@@ -46,7 +46,7 @@ describe('H1 confirmation gate', () => {
     const scores = new Map<string, WalletScore>([
       ['A', emptyScore('A', { realizedPnl30d: 100_000 })],
     ]);
-    const ctx: MarketCtx = { now: new Date(), recentSwaps: [], priceSamples: [], scores };
+    const ctx: MarketCtx = { now: new Date(), recentSwaps: [], priceSamples: [], scores, recentSignals: new Map() };
     expect(h.onSwap(swap, ctx)).toBeNull();
   });
 
@@ -60,7 +60,7 @@ describe('H1 confirmation gate', () => {
       ['A', emptyScore('A', { realizedPnl30d: 100_000 })],
       ['B', emptyScore('B')],
     ]);
-    const ctx: MarketCtx = { now: t, recentSwaps: [earlier], priceSamples: [], scores };
+    const ctx: MarketCtx = { now: t, recentSwaps: [earlier], priceSamples: [], scores, recentSignals: new Map() };
     const sigs = h.onSwap(swap, ctx);
     expect(sigs).not.toBeNull();
     expect(sigs!.length).toBe(1);
@@ -77,7 +77,7 @@ describe('H1 confirmation gate', () => {
       ['A', emptyScore('A')],
       ['B', emptyScore('B')],
     ]);
-    const ctx: MarketCtx = { now: t, recentSwaps: [earlier], priceSamples: [], scores };
+    const ctx: MarketCtx = { now: t, recentSwaps: [earlier], priceSamples: [], scores, recentSignals: new Map() };
     expect(h.onSwap(swap, ctx)).toBeNull();
   });
 });
@@ -90,6 +90,73 @@ describe('H6 snipe-then-hold state machine', () => {
   });
 });
 
+describe('H7 confluence gate', () => {
+  function ctxWithSignals(entries: Array<[string, 'buy' | 'sell', string]>): MarketCtx {
+    const m = new Map();
+    let i = 1n;
+    for (const [hyp, side, reason] of entries) {
+      m.set(hyp, {
+        hypothesisId: hyp,
+        side,
+        count: 1,
+        lastTs: new Date(Date.now() - 5_000),
+        lastSignalId: i++,
+        lastReason: reason,
+      });
+    }
+    return { now: new Date(), recentSwaps: [], priceSamples: [], scores: new Map(), recentSignals: m };
+  }
+
+  it('does not fire on a single tier-A signal', async () => {
+    const { H7ConfluenceGate } = await import('../src/hypotheses/h7-confluence-gate.js');
+    const h = new H7ConfluenceGate();
+    const swap = mkSwap({ wallet: 'X', side: 'buy', amountUsd: 500, baseMint: 'M1' });
+    const ctx = ctxWithSignals([['h2', 'buy', 'cluster of 3']]);
+    expect(h.onSwap(swap, ctx)).toBeNull();
+  });
+
+  it('fires when 2 tier-A hypotheses converge', async () => {
+    const { H7ConfluenceGate } = await import('../src/hypotheses/h7-confluence-gate.js');
+    const h = new H7ConfluenceGate();
+    const swap = mkSwap({ wallet: 'X', side: 'buy', amountUsd: 500, baseMint: 'M2' });
+    const ctx = ctxWithSignals([
+      ['h2', 'buy', 'cluster'],
+      ['h3', 'buy', 'dev re-buying'],
+    ]);
+    const sigs = h.onSwap(swap, ctx);
+    expect(sigs).not.toBeNull();
+    expect(sigs![0]!.side).toBe('buy');
+    expect(sigs![0]!.sizeUsd).toBe(150);
+  });
+
+  it('vetoes entry when H5 sell signal present', async () => {
+    const { H7ConfluenceGate } = await import('../src/hypotheses/h7-confluence-gate.js');
+    const h = new H7ConfluenceGate();
+    const swap = mkSwap({ wallet: 'X', side: 'buy', amountUsd: 500, baseMint: 'M3' });
+    const ctx = ctxWithSignals([
+      ['h2', 'buy', 'cluster'],
+      ['h3', 'buy', 'dev re-buying'],
+      ['h5', 'sell', 'losers piling in'],
+    ]);
+    expect(h.onSwap(swap, ctx)).toBeNull();
+  });
+
+  it('does not re-fire on the same mint within throttle window', async () => {
+    const { H7ConfluenceGate } = await import('../src/hypotheses/h7-confluence-gate.js');
+    const h = new H7ConfluenceGate();
+    const swap = mkSwap({ wallet: 'X', side: 'buy', amountUsd: 500, baseMint: 'M4' });
+    const ctx = ctxWithSignals([
+      ['h2', 'buy', 'cluster'],
+      ['h4', 'buy', 'pre-listing accumulation'],
+    ]);
+    const first = h.onSwap(swap, ctx);
+    expect(first).not.toBeNull();
+    // Second call within cooldown returns null even if new ctx still has triggers
+    const second = h.onSwap(swap, ctx);
+    expect(second).toBeNull();
+  });
+});
+
 function emptyCtx(): MarketCtx {
-  return { now: new Date(), recentSwaps: [], priceSamples: [], scores: new Map() };
+  return { now: new Date(), recentSwaps: [], priceSamples: [], scores: new Map(), recentSignals: new Map() };
 }

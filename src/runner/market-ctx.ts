@@ -1,6 +1,12 @@
 import { sql as dsql } from 'drizzle-orm';
 import { db, schema } from '../core/db/client.js';
-import type { MarketCtx, NormalizedSwap, PriceSample, WalletScore } from '../core/types.js';
+import type {
+  MarketCtx,
+  NormalizedSwap,
+  PriceSample,
+  RecentSignalAgg,
+  WalletScore,
+} from '../core/types.js';
 
 /**
  * Build a fresh MarketCtx for a token at a given moment.
@@ -46,11 +52,56 @@ export async function buildMarketCtx(
     priceUsd: r.priceUsd,
     volumeUsd5m: r.volumeUsd5m,
   }));
+  // Aggregate recent signals on this mint by hypothesisId — used by meta-hypotheses (H7).
+  // We fetch lightweight rows; full meta isn't needed here.
+  const sigRows = await db.execute(dsql`
+    SELECT DISTINCT ON (hypothesis_id, side)
+           id, hypothesis_id, side, ts, reason
+    FROM signals
+    WHERE base_mint = ${baseMint} AND ts >= ${since}
+    ORDER BY hypothesis_id, side, ts DESC
+  `);
+  const sigCounts = await db.execute(dsql`
+    SELECT hypothesis_id, side, COUNT(*)::int AS cnt
+    FROM signals
+    WHERE base_mint = ${baseMint} AND ts >= ${since}
+    GROUP BY hypothesis_id, side
+  `);
+  const countMap = new Map<string, number>();
+  for (const r of sigCounts as unknown as Array<{
+    hypothesis_id: string;
+    side: string;
+    cnt: number;
+  }>) {
+    countMap.set(`${r.hypothesis_id}|${r.side}`, r.cnt);
+  }
+  const recentSignals = new Map<string, RecentSignalAgg>();
+  for (const r of sigRows as unknown as Array<{
+    id: string | bigint;
+    hypothesis_id: string;
+    side: string;
+    ts: Date;
+    reason: string;
+  }>) {
+    const key = r.hypothesis_id;
+    // Prefer 'buy' side over 'sell' if both present for same hypothesis on same mint
+    const existing = recentSignals.get(key);
+    if (existing && existing.side === 'buy' && r.side === 'sell') continue;
+    recentSignals.set(key, {
+      hypothesisId: r.hypothesis_id,
+      side: r.side as 'buy' | 'sell',
+      count: countMap.get(`${r.hypothesis_id}|${r.side}`) ?? 1,
+      lastTs: r.ts,
+      lastSignalId: BigInt(r.id),
+      lastReason: r.reason,
+    });
+  }
   return {
     now: new Date(),
     recentSwaps,
     priceSamples,
     scores: walletScores,
+    recentSignals,
   };
 }
 

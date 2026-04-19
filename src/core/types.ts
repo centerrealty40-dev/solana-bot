@@ -102,6 +102,19 @@ export interface LiveFill {
 
 export type Fill = PaperFill | LiveFill;
 
+export interface RecentSignalAgg {
+  hypothesisId: string;
+  side: SwapSide;
+  /** how many signals from this hypothesis fired on this mint within the lookback window */
+  count: number;
+  /** most recent signal timestamp */
+  lastTs: Date;
+  /** most recent signal id (FK back to signals.id) */
+  lastSignalId: bigint;
+  /** most recent reason text */
+  lastReason: string;
+}
+
 export interface MarketCtx {
   /** time of evaluation (paper trade may use historical time) */
   now: Date;
@@ -111,6 +124,12 @@ export interface MarketCtx {
   priceSamples: PriceSample[];
   /** wallet scores (read-only snapshot) */
   scores: ReadonlyMap<Address, WalletScore>;
+  /**
+   * Aggregated recent signals from OTHER hypotheses on this mint, keyed by hypothesisId.
+   * Lookback window: 60 minutes. Used by meta-hypotheses (e.g. H7 confluence gate)
+   * to synchronously check cross-hypothesis convergence without an extra DB query.
+   */
+  recentSignals: Map<string, RecentSignalAgg>;
 }
 
 export interface WalletScore {

@@ -14,6 +14,8 @@ const ConfigSchema = z.object({
   logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   walletKeypairPath: z.string().optional().default(''),
   maxPositionUsd: z.coerce.number().positive().default(50),
+  /** Higher cap for high-conviction meta-hypotheses (H7 confluence gate). */
+  maxPositionUsdHighConviction: z.coerce.number().positive().default(150),
   dailyLossLimitPct: z.coerce.number().positive().default(5),
   telegramBotToken: z.string().optional().default(''),
   telegramChatId: z.string().optional().default(''),
@@ -36,6 +38,7 @@ function loadConfig(): AppConfig {
     logLevel: process.env.LOG_LEVEL,
     walletKeypairPath: process.env.WALLET_KEYPAIR_PATH,
     maxPositionUsd: process.env.MAX_POSITION_USD,
+    maxPositionUsdHighConviction: process.env.MAX_POSITION_USD_HIGH_CONVICTION,
     dailyLossLimitPct: process.env.DAILY_LOSS_LIMIT_PCT,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId: process.env.TELEGRAM_CHAT_ID,

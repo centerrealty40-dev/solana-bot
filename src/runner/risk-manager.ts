@@ -26,9 +26,15 @@ export interface RiskDecision {
  * Note: in paper mode the kill-switch still applies — we want the same shape of
  * curve we'd see in live.
  */
+/** Hypotheses allowed to use the high-conviction position cap. */
+const HIGH_CONVICTION_HYPOTHESES = new Set(['h7']);
+
 export async function evaluate(signal: HypothesisSignal): Promise<RiskDecision> {
-  // 1. hard cap
-  const cappedSize = Math.min(signal.sizeUsd, config.maxPositionUsd);
+  // 1. hard cap (per-hypothesis tier)
+  const sizeCap = HIGH_CONVICTION_HYPOTHESES.has(signal.hypothesisId)
+    ? config.maxPositionUsdHighConviction
+    : config.maxPositionUsd;
+  const cappedSize = Math.min(signal.sizeUsd, sizeCap);
 
   // 2. daily PnL kill switch (paper mode uses virtual $1k baseline; live mode uses configured)
   const today = new Date().toISOString().slice(0, 10);

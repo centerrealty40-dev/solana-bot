@@ -71,7 +71,22 @@ Following the plan's stages:
 - [x] Stage 2 — hypothesis runner + paper executor + Jupiter quote simulator + dashboard SQL views
 - [x] Stage 3 — H1 (confirmation gate copy), H2 (wallet clustering), H3 (dev signal)
 - [x] Stage 4 — H4 (pre-listing accumulation), H5 (negative copy), H6 (snipe-then-hold)
+- [x] Stage 4b — H7 (confluence gate: 2+ converging signals + H5 veto)
 - [ ] Stage 5 — live pilot (only after a hypothesis passes 100+ paper trades with positive expectancy; **not started, manual gate**)
+
+### Hypothesis tiers and the meta-gate
+
+| Id | Tier | Weight | Idea |
+|----|------|--------|------|
+| H1 | B | 1 | 2+ watchlist wallets converge on same mint, one with big PnL |
+| H2 | A | 2 | 3+ wallets from one Louvain cluster buy same mint |
+| H3 | A | 2 | Token's dev wallet re-buys after 24h+ inactivity |
+| H4 | A | 2 | 5+ early-entry wallets quietly accumulate before a trend |
+| H5 | veto | — | Loser-cluster buying = local-top warning (filter, not entry) |
+| H6 | A | 2 | Snipe-and-hold wallet adds to position |
+| **H7** | meta | gate | Enters only if score (sum of weights of buy-signals on same mint within 60min) >= 4 AND no H5 sell-signal in window. Diversity bonus +2 when 3+ distinct hypotheses fire. Position size 3× base ($150). |
+
+H7 is the high-conviction strategy you asked for — it trades much less often than H1–H6 individually, but every entry has independent corroboration.
 
 ## Telegram monitoring
 

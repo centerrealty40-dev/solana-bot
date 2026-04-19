@@ -5,6 +5,7 @@ import { H3DevSignal } from '../hypotheses/h3-dev-signal.js';
 import { H4PreListing } from '../hypotheses/h4-pre-listing.js';
 import { H5NegativeCopy } from '../hypotheses/h5-negative-copy.js';
 import { H6SnipeThenHold } from '../hypotheses/h6-snipe-then-hold.js';
+import { H7ConfluenceGate } from '../hypotheses/h7-confluence-gate.js';
 
 /**
  * Single source of truth for all available hypotheses. Disable any by removing from the array.
@@ -17,6 +18,7 @@ export function buildHypotheses(): Hypothesis[] {
     new H4PreListing(),
     new H5NegativeCopy(),
     new H6SnipeThenHold(),
+    new H7ConfluenceGate(),
   ];
 }
 
