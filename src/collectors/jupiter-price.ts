@@ -4,11 +4,20 @@ import { QUOTE_MINTS } from '../core/constants.js';
 
 const log = child('jupiter-price');
 
-const JUP_PRICE_URL = 'https://lite-api.jup.ag/price/v2';
+/**
+ * We try multiple Jupiter price endpoints because they keep migrating
+ * and silently breaking the previous one. Order = preference.
+ */
+const JUP_PRICE_ENDPOINTS = [
+  'https://lite-api.jup.ag/price/v3',
+  'https://lite-api.jup.ag/price/v2',
+  'https://api.jup.ag/price/v2',
+];
 
 interface JupPriceResponse {
-  data: Record<string, { id: string; price: number | string; type?: string } | null>;
-  timeTaken?: number;
+  data?: Record<string, { id: string; price: number | string; type?: string } | null>;
+  /** v3 sometimes returns the map directly without the data wrapper */
+  [k: string]: unknown;
 }
 
 /**
@@ -30,25 +39,81 @@ export async function getJupPrices(mints: string[]): Promise<Record<string, numb
     else stale.push(m);
   }
   if (stale.length === 0) return fresh;
-  try {
-    const url = `${JUP_PRICE_URL}?ids=${stale.join(',')}`;
-    const res = await request(url, { method: 'GET' });
-    if (res.statusCode !== 200) {
-      log.warn({ status: res.statusCode }, 'jup price non-200');
-      return fresh;
+
+  // Try each Jupiter endpoint in order until one returns useful data
+  for (const base of JUP_PRICE_ENDPOINTS) {
+    try {
+      const url = `${base}?ids=${stale.join(',')}`;
+      const res = await request(url, { method: 'GET' });
+      if (res.statusCode !== 200) {
+        log.debug({ status: res.statusCode, base }, 'jup price endpoint non-200, trying next');
+        continue;
+      }
+      const json = (await res.body.json()) as JupPriceResponse;
+      // v2: { data: { mint: { price } } }; v3: { mint: { usdPrice } } in some variants
+      const dataMap =
+        (json.data && typeof json.data === 'object'
+          ? json.data
+          : (json as Record<string, { price?: number | string; usdPrice?: number | string } | null>));
+      let added = 0;
+      for (const [k, v] of Object.entries(dataMap ?? {})) {
+        if (!v || typeof v !== 'object') continue;
+        const obj = v as { price?: number | string; usdPrice?: number | string };
+        const raw = obj.price ?? obj.usdPrice;
+        const priceNum = typeof raw === 'string' ? Number(raw) : raw;
+        if (priceNum === undefined || !Number.isFinite(priceNum) || priceNum <= 0) continue;
+        cache.set(k, { price: priceNum, ts: now });
+        fresh[k] = priceNum;
+        added++;
+      }
+      if (added > 0) return fresh;
+    } catch (err) {
+      log.debug({ err: String(err), base }, 'jup price endpoint failed, trying next');
     }
-    const json = (await res.body.json()) as JupPriceResponse;
-    for (const [k, v] of Object.entries(json.data ?? {})) {
-      if (!v) continue;
-      const priceNum = typeof v.price === 'string' ? Number(v.price) : v.price;
-      if (!Number.isFinite(priceNum)) continue;
-      cache.set(k, { price: priceNum, ts: now });
-      fresh[k] = priceNum;
+  }
+
+  // All Jupiter endpoints failed — fall back to DexScreener for the well-known
+  // quote mints (SOL/USDC/USDT). USDC and USDT are 1:1 by definition.
+  log.warn('all jupiter endpoints failed; falling back to DexScreener for quote prices');
+  for (const m of stale) {
+    if (m === QUOTE_MINTS.USDC || m === QUOTE_MINTS.USDT) {
+      cache.set(m, { price: 1, ts: now });
+      fresh[m] = 1;
+    } else {
+      const px = await getDexScreenerPrice(m);
+      if (px > 0) {
+        cache.set(m, { price: px, ts: now });
+        fresh[m] = px;
+      }
     }
-  } catch (err) {
-    log.warn({ err }, 'jup price fetch failed');
   }
   return fresh;
+}
+
+/**
+ * Fallback: pull priceUsd for a mint from DexScreener (no auth, very reliable).
+ * Picks the deepest-liquidity Solana pair to minimize wick noise.
+ */
+async function getDexScreenerPrice(mint: string): Promise<number> {
+  try {
+    const url = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
+    const res = await request(url, { method: 'GET' });
+    if (res.statusCode !== 200) return 0;
+    const json = (await res.body.json()) as {
+      pairs?: Array<{
+        chainId: string;
+        priceUsd?: string;
+        liquidity?: { usd?: number };
+      }>;
+    };
+    const pairs = (json.pairs ?? []).filter((p) => p.chainId === 'solana');
+    pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
+    const px = Number(pairs[0]?.priceUsd ?? 0);
+    return Number.isFinite(px) ? px : 0;
+  } catch (err) {
+    log.warn({ err: String(err), mint }, 'dexscreener price fallback failed');
+    return 0;
+  }
 }
 
 /** Convenience: SOL price in USD. */

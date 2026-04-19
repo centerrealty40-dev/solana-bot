@@ -114,9 +114,9 @@ export interface FilterOpts {
 }
 
 const FILTER_DEFAULTS: Required<FilterOpts> = {
-  minTokens: 3,
+  minTokens: 2,
   maxTokens: 80,
-  minVolumeUsd: 1_000,
+  minVolumeUsd: 500,
   maxVolumeUsd: 5_000_000,
   minSwaps: 4,
   maxSwaps: 1_000,

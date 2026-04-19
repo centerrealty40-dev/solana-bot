@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   const maxAgeHours = Number(process.env.SEED_MAX_AGE_HOURS ?? 24 * 60);
   const minAgeHours = Number(process.env.SEED_MIN_AGE_HOURS ?? 2);
   const limit = Number(process.env.SEED_LIMIT ?? 200);
-  const minTokens = Number(process.env.SEED_MIN_TOKENS ?? 3);
+  const minTokens = Number(process.env.SEED_MIN_TOKENS ?? 2);
   const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 5);
   const dryRun = process.env.SEED_DRY_RUN === '1';
   const cluster = process.env.SEED_CLUSTER === '1';
