@@ -153,27 +153,68 @@ free credits in roughly one hour. The platform now enforces:
 Switch to `HELIUS_MODE=wallets` only after seeding `watchlist_wallets` with a
 curated list (50–500 addresses) and confirming `helius:status` shows zero usage.
 
-### Seeding the watchlist (without spending Helius credits)
+### Seeding the watchlist
 
-The `watchlist_wallets` table is populated from Birdeye's top-traders endpoint
-(free tier). Helius is **not** called during seeding.
+There are two seeders. Pick one based on what you have:
+
+#### Option A — Birdeye-based (free, but shallow)
+
+Uses Birdeye's top-traders endpoint. Helius is **not** touched. Free, but
+yields very few wallets (1-30) on the free Birdeye plan because it surfaces
+mostly arbitrage bots and CEX hot wallets.
 
 ```bash
-# 1. Get a free Birdeye Starter API key at https://bds.birdeye.so/
-# 2. Put it in .env as BIRDEYE_API_KEY=...
-# 3. Seed (defaults: 30 hot tokens × 10 top traders, ~150 wallets after filter):
-npm run watchlist:seed
-# Optional knobs (env vars):
-#   SEED_TOKENS=50 SEED_PER_TOKEN=15 SEED_LIMIT=200 SEED_MIN_TOKENS=2 npm run watchlist:seed
-# Dry-run (preview without writing):
+# 1. Free Birdeye Starter API key at https://bds.birdeye.so/ -> .env BIRDEYE_API_KEY=...
+# 2. Dry-run preview:
 SEED_DRY_RUN=1 npm run watchlist:seed
+# 3. Apply:
+npm run watchlist:seed
+```
 
-# 4. Inspect / curate
+#### Option B — Helius-based discovery (recommended)
+
+Uses your Helius Developer plan to pull actual SWAP transactions for trending
+memecoins, then aggregates per-wallet quality features (breadth, buy/sell
+balance, time clustering, top-token concentration) and ranks by composite
+quality score. Yields 50-300 high-conviction smart-money candidates.
+
+```bash
+# Cost: SEED_TARGET_TOKENS * SEED_PAGES_PER_TOKEN * 100 credits
+# Default: 50 * 2 * 100 = 10,000 credits one-shot (well under daily budget)
+
+# Set HELIUS_MODE=wallets first so heliusFetch is allowed:
+sed -i 's/^HELIUS_MODE=.*/HELIUS_MODE=wallets/' .env
+
+# Dry-run (NO DB writes, but DOES spend credits to discover):
+SEED_DRY_RUN=1 npm run watchlist:seed:helius
+
+# Apply:
+npm run watchlist:seed:helius
+
+# Optional knobs (env vars):
+#   SEED_TARGET_TOKENS=50    tokens to scan
+#   SEED_PAGES_PER_TOKEN=2   pages of 100 SWAP txs per token
+#   SEED_LIMIT=200           max wallets to upsert
+#   SEED_MIN_TOKENS=3        wallet must touch >= N distinct tokens
+#   SEED_MIN_GAP_SEC=5       median trade gap >= N sec (anti-MEV)
+#   SEED_MIN_FDV=500000      memecoin range, lower bound
+#   SEED_MAX_FDV=500000000   memecoin range, upper bound
+#   SEED_CLUSTER=1           dedup by funding source (extra credits)
+#   SEED_REQUIRE_NET_ACCUM=1 keep only wallets with positive USD net flow
+```
+
+The orchestrator unions four token sources (Birdeye top + DexScreener trending
++ DexScreener boosts + DexScreener fresh profiles), filters to memecoin FDV
+range with min liquidity / volume / age, then pulls real swaps from Helius.
+
+#### Inspect / curate / flip live
+
+```bash
 npm run watchlist:show
 npm run watchlist:add -- --note "twitter:@kookcap" Hb6NS...
 npm run watchlist:remove -- WqU8...
 
-# 5. Only after the watchlist looks sane, flip to wallets mode:
+# After the watchlist looks sane:
 sed -i 's/^HELIUS_MODE=.*/HELIUS_MODE=wallets/' .env
 pm2 restart sa-api --update-env
 pm2 logs sa-api --lines 10

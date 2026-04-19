@@ -23,7 +23,7 @@ export interface BirdeyeTopTrader {
   volumeSell?: number;
 }
 
-interface BirdeyeListEntry {
+export interface BirdeyeListEntry {
   address: string;
   symbol: string;
   v24hUSD?: number;
