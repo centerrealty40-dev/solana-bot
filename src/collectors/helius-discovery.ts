@@ -58,23 +58,40 @@ export async function getSwappersForToken(
       (before ? `&before=${before}` : '');
 
     let txs: HeliusEnhancedTx[] = [];
-    try {
-      const res = await heliusFetch({
-        url,
-        kind: 'wallet_history',
-        note: `discovery:${mint.slice(0, 6)} p${p}`,
-      });
-      if (res.statusCode !== 200) {
-        log.warn({ mint, status: res.statusCode, page: p }, 'helius discovery non-200');
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await heliusFetch({
+          url,
+          kind: 'wallet_history',
+          note: `discovery:${mint.slice(0, 6)} p${p}${attempt > 0 ? ` retry${attempt}` : ''}`,
+        });
+        lastStatus = res.statusCode;
+        if (res.statusCode === 200) {
+          txs = (await res.body.json()) as HeliusEnhancedTx[];
+          break;
+        }
+        // Retry only on transient server errors
+        if (res.statusCode >= 500 && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        break;
+      } catch (err) {
+        if (err instanceof HeliusGuardError) {
+          log.warn({ mint, reason: err.reason }, `guard blocked discovery: ${err.message}`);
+          return out;
+        }
+        log.warn({ err: String(err), mint, attempt }, 'helius discovery fetch failed');
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
         break;
       }
-      txs = (await res.body.json()) as HeliusEnhancedTx[];
-    } catch (err) {
-      if (err instanceof HeliusGuardError) {
-        log.warn({ mint, reason: err.reason }, `guard blocked discovery: ${err.message}`);
-        break;
-      }
-      log.warn({ err: String(err), mint }, 'helius discovery fetch failed');
+    }
+    if (txs.length === 0 && lastStatus !== 200) {
+      log.warn({ mint, status: lastStatus, page: p }, 'helius discovery gave up after retries');
       break;
     }
 

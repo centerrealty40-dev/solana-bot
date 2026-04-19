@@ -84,33 +84,45 @@ export async function getTopSolanaTokens(
   const minFdv = opts.minFdvUsd ?? 1_000_000;        // > $1M FDV (filter dust/scams)
   const maxFdv = opts.maxFdvUsd ?? 500_000_000;       // < $500M FDV (filter bluechips)
   const minLiq = opts.minLiquidity ?? 50_000;
-  const overFetch = Math.min(limit * 3, 50);
 
-  const url =
-    `${BIRDEYE_BASE}/defi/tokenlist` +
-    `?sort_by=v24hUSD&sort_type=desc&offset=0&limit=${overFetch}&min_liquidity=${minLiq}`;
-  try {
-    const res = await request(url, { method: 'GET', headers: HEADERS() });
-    if (res.statusCode !== 200) {
-      log.warn({ status: res.statusCode }, 'birdeye tokenlist non-200');
-      return [];
+  // Birdeye allows up to 50 per page; paginate to cover top-200 by 24h volume,
+  // then post-filter (a lot will get dropped by bluechip + FDV filters).
+  const PAGE_SIZE = 50;
+  const MAX_OFFSET = 200;
+  const all: BirdeyeListEntry[] = [];
+
+  for (let offset = 0; offset <= MAX_OFFSET; offset += PAGE_SIZE) {
+    const url =
+      `${BIRDEYE_BASE}/defi/tokenlist` +
+      `?sort_by=v24hUSD&sort_type=desc&offset=${offset}&limit=${PAGE_SIZE}&min_liquidity=${minLiq}`;
+    try {
+      const res = await request(url, { method: 'GET', headers: HEADERS() });
+      if (res.statusCode !== 200) {
+        log.warn({ status: res.statusCode, offset }, 'birdeye tokenlist non-200');
+        break;
+      }
+      const json = (await res.body.json()) as { data?: { tokens?: BirdeyeListEntry[] } };
+      const page = json.data?.tokens ?? [];
+      if (page.length === 0) break;
+      all.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    } catch (err) {
+      log.warn({ err: String(err), offset }, 'birdeye tokenlist failed');
+      break;
     }
-    const json = (await res.body.json()) as { data?: { tokens?: BirdeyeListEntry[] } };
-    const all = json.data?.tokens ?? [];
-
-    const filtered = all
-      .filter((t) => !!t.address)
-      .filter((t) => !BLUECHIP_BLACKLIST.has(t.address))
-      .filter((t) => {
-        const fdv = t.mc ?? 0;
-        return fdv === 0 || (fdv >= minFdv && fdv <= maxFdv);
-      });
-
-    return filtered.slice(0, limit);
-  } catch (err) {
-    log.warn({ err: String(err) }, 'birdeye tokenlist failed');
-    return [];
+    await sleep(POLITE_DELAY_MS);
   }
+
+  log.info({ rawCount: all.length }, 'birdeye tokenlist pages fetched');
+  const filtered = all
+    .filter((t) => !!t.address)
+    .filter((t) => !BLUECHIP_BLACKLIST.has(t.address))
+    .filter((t) => {
+      const fdv = t.mc ?? 0;
+      return fdv === 0 || (fdv >= minFdv && fdv <= maxFdv);
+    });
+
+  return filtered.slice(0, limit);
 }
 
 /**
