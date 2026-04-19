@@ -53,10 +53,10 @@ async function main(): Promise<void> {
 
   const targetTokens = Number(process.env.SEED_TARGET_TOKENS ?? 50);
   const pages = Number(process.env.SEED_PAGES_PER_TOKEN ?? 2);
-  const minFdv = Number(process.env.SEED_MIN_FDV ?? 500_000);
-  const maxFdv = Number(process.env.SEED_MAX_FDV ?? 500_000_000);
-  const minLiq = Number(process.env.SEED_MIN_LIQ ?? 30_000);
-  const minVol = Number(process.env.SEED_MIN_VOL ?? 100_000);
+  const minFdv = Number(process.env.SEED_MIN_FDV ?? 200_000);
+  const maxFdv = Number(process.env.SEED_MAX_FDV ?? 1_000_000_000);
+  const minLiq = Number(process.env.SEED_MIN_LIQ ?? 15_000);
+  const minVol = Number(process.env.SEED_MIN_VOL ?? 30_000);
   const maxAgeHours = Number(process.env.SEED_MAX_AGE_HOURS ?? 24 * 60);
   const minAgeHours = Number(process.env.SEED_MIN_AGE_HOURS ?? 2);
   const limit = Number(process.env.SEED_LIMIT ?? 200);

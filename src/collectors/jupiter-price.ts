@@ -4,10 +4,10 @@ import { QUOTE_MINTS } from '../core/constants.js';
 
 const log = child('jupiter-price');
 
-const JUP_PRICE_URL = 'https://price.jup.ag/v6/price';
+const JUP_PRICE_URL = 'https://lite-api.jup.ag/price/v2';
 
 interface JupPriceResponse {
-  data: Record<string, { id: string; price: number }>;
+  data: Record<string, { id: string; price: number | string; type?: string } | null>;
   timeTaken?: number;
 }
 
@@ -39,8 +39,11 @@ export async function getJupPrices(mints: string[]): Promise<Record<string, numb
     }
     const json = (await res.body.json()) as JupPriceResponse;
     for (const [k, v] of Object.entries(json.data ?? {})) {
-      cache.set(k, { price: v.price, ts: now });
-      fresh[k] = v.price;
+      if (!v) continue;
+      const priceNum = typeof v.price === 'string' ? Number(v.price) : v.price;
+      if (!Number.isFinite(priceNum)) continue;
+      cache.set(k, { price: priceNum, ts: now });
+      fresh[k] = priceNum;
     }
   } catch (err) {
     log.warn({ err }, 'jup price fetch failed');

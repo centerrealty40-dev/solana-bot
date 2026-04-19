@@ -17,22 +17,38 @@ export interface UniverseToken {
   sources: Set<string>;
 }
 
+/**
+ * Mint blacklist — confirmed addresses of stables / wrapped majors / LSTs
+ * whose top traders are arbitrage bots or market makers, not the kind of
+ * edge we want to learn from.
+ *
+ * The symbol-based regex below catches additional variants we might miss.
+ */
 const BLUECHIP_BLACKLIST = new Set<string>([
-  'So11111111111111111111111111111111111111112',
-  'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So',
-  'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn',
-  '7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj',
-  'bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1',
-  'jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v',
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-  'USDH1SM1ojwWUga67PGrgFWUHibbjqMvuMaDkRJTgkX',
-  'A9mUU4qviSctJVPJdBJWkb28deg915LYJKrzQ19ji3FM',
-  'USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA',
-  '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E',
-  '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh',
-  '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs',
+  'So11111111111111111111111111111111111111112',  // wSOL
+  'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So', // mSOL
+  'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn', // jitoSOL
+  '7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj', // stSOL
+  'bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1',  // bSOL
+  'jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v', // jupSOL
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+  '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E', // soBTC (deprecated)
+  '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh', // wBTC (Wormhole)
+  '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs', // wETH (Wormhole)
 ]);
+
+/**
+ * Symbol-based blacklist regex — catches stables, LSTs, wrapped majors, and
+ * bridged big-cap tokens (BTC/ETH/HYPE/etc) without needing exact mint addresses.
+ */
+const BLUECHIP_SYMBOL_RE = /^(USD[A-Z0-9]*|.*USDC|.*USDT|w?SOL|j[a-z]+SOL|bSOL|mSOL|stSOL|.*[bw]?BTC|.*[bw]?ETH|HYPE|SUI|DOGE|XRP|ADA|LINK|UNI|ARB|OP|MATIC|AVAX|DOT|TRX|TON|LTC|XMR|XLM)$/i;
+
+function isBluechip(mint: string, symbol?: string): boolean {
+  if (BLUECHIP_BLACKLIST.has(mint)) return true;
+  if (symbol && BLUECHIP_SYMBOL_RE.test(symbol)) return true;
+  return false;
+}
 
 /**
  * Fetch DexScreener token-boosts (paid promotion → strong organic activity proxy).
@@ -150,19 +166,19 @@ export async function buildTokenUniverse(opts: {
 } = {}): Promise<UniverseToken[]> {
   const o = {
     targetCount: opts.targetCount ?? 50,
-    minFdvUsd: opts.minFdvUsd ?? 500_000,
-    maxFdvUsd: opts.maxFdvUsd ?? 500_000_000,
-    minLiquidityUsd: opts.minLiquidityUsd ?? 30_000,
-    minVolume24hUsd: opts.minVolume24hUsd ?? 100_000,
-    maxAgeHours: opts.maxAgeHours ?? 24 * 60, // 60 days
-    minAgeHours: opts.minAgeHours ?? 2, // > 2h drops the freshest rug bait
+    minFdvUsd: opts.minFdvUsd ?? 200_000,
+    maxFdvUsd: opts.maxFdvUsd ?? 1_000_000_000,
+    minLiquidityUsd: opts.minLiquidityUsd ?? 15_000,
+    minVolume24hUsd: opts.minVolume24hUsd ?? 30_000,
+    maxAgeHours: opts.maxAgeHours ?? 24 * 90, // 90 days
+    minAgeHours: opts.minAgeHours ?? 1, // > 1h drops the freshest rug bait
   };
 
   log.info({ filters: o }, 'building token universe');
 
   const candidates = new Map<string, UniverseToken>();
   const note = (mint: string, source: string, partial: Partial<UniverseToken>) => {
-    if (BLUECHIP_BLACKLIST.has(mint) || isQuoteMint(mint)) return;
+    if (isBluechip(mint, partial.symbol) || isQuoteMint(mint)) return;
     let t = candidates.get(mint);
     if (!t) {
       t = {
@@ -224,7 +240,7 @@ export async function buildTokenUniverse(opts: {
   // Source 3 & 4: boosts + new profiles (need enrichment)
   const [boosts, profiles] = await Promise.all([getDexScreenerBoosts(), getDexScreenerNewProfiles()]);
   log.info({ boosts: boosts.length, profiles: profiles.length }, 'dexscreener boosts/profiles fetched');
-  const toEnrich = Array.from(new Set([...boosts, ...profiles])).slice(0, 90);
+  const toEnrich = Array.from(new Set([...boosts, ...profiles])).slice(0, 180);
   if (toEnrich.length) {
     const enrichment = await enrichDexScreener(toEnrich);
     for (const m of boosts) {

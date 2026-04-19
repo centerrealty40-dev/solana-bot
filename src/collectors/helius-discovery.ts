@@ -95,6 +95,38 @@ export async function getSwappersForToken(
 }
 
 /**
+ * Helius is inconsistent about how it reports token amounts in `events.swap`:
+ *   - newer payloads use `rawTokenAmount: { tokenAmount: string, decimals: number }`
+ *   - older/webhook payloads use `tokenAmount: { tokenAmount: string, decimals: number }`
+ *   - some use a flat `tokenAmount: number` (already decimal-adjusted)
+ *
+ * This helper returns the human-readable token quantity regardless of format.
+ */
+function readSwapLegAmount(leg: unknown): number {
+  if (!leg || typeof leg !== 'object') return 0;
+  const l = leg as Record<string, unknown>;
+
+  const raw = l.rawTokenAmount as { tokenAmount?: string | number; decimals?: number } | undefined;
+  if (raw && raw.tokenAmount !== undefined && raw.decimals !== undefined) {
+    return Number(raw.tokenAmount) / 10 ** Number(raw.decimals);
+  }
+
+  const ta = l.tokenAmount;
+  if (ta && typeof ta === 'object') {
+    const obj = ta as { tokenAmount?: string | number; decimals?: number };
+    if (obj.tokenAmount !== undefined && obj.decimals !== undefined) {
+      return Number(obj.tokenAmount) / 10 ** Number(obj.decimals);
+    }
+  }
+  if (typeof ta === 'number') return ta;
+  if (typeof ta === 'string') {
+    const n = Number(ta);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+/**
  * Reduce one Helius enhanced tx to a SwapEvent for the given target mint.
  * Returns null if the tx doesn't actually swap our target.
  *
@@ -116,38 +148,41 @@ function parseSwapEvent(
 
   // Try the parsed-swap path first (cleanest)
   if (swap) {
-    const ourOutput = (swap.tokenOutputs ?? []).find((o) => o.mint === targetMint);
-    const ourInput = (swap.tokenInputs ?? []).find((i) => i.mint === targetMint);
+    const ourOutput = (swap.tokenOutputs ?? []).find((o) => o && o.mint === targetMint);
+    const ourInput = (swap.tokenInputs ?? []).find((i) => i && i.mint === targetMint);
     const side: 'buy' | 'sell' | null = ourOutput ? 'buy' : ourInput ? 'sell' : null;
-    if (!side) return null;
+    if (!side) {
+      // Sometimes the swap payload doesn't list the user-side leg — fall through
+      // to tokenTransfers heuristic below.
+    } else {
+      const quoteLegs = [
+        ...(swap.tokenInputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
+        ...(swap.tokenOutputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
+      ];
 
-    // Derive USD from the quote side (whichever of inputs/outputs holds a quote mint)
-    const quoteLegs = [
-      ...(swap.tokenInputs ?? []).filter((l) => isQuoteMint(l.mint)),
-      ...(swap.tokenOutputs ?? []).filter((l) => isQuoteMint(l.mint)),
-    ];
+      let amountUsd = 0;
+      if (quoteLegs.length > 0) {
+        const qLeg = quoteLegs[0]!;
+        const qty = readSwapLegAmount(qLeg);
+        const price =
+          quotePrices[qLeg.mint] ??
+          (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
+        amountUsd = qty * price;
+      } else if (swap.nativeInput || swap.nativeOutput) {
+        const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
+        const sol = lamports / 1e9;
+        amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
+      }
 
-    let amountUsd = 0;
-    if (quoteLegs.length > 0) {
-      const qLeg = quoteLegs[0]!;
-      const decimals = qLeg.tokenAmount.decimals;
-      const qty = Number(qLeg.tokenAmount.tokenAmount) / 10 ** decimals;
-      const price = quotePrices[qLeg.mint] ?? (qLeg.mint === QUOTE_MINTS.USDC ? 1 : qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
-      amountUsd = qty * price;
-    } else if (swap.nativeInput || swap.nativeOutput) {
-      const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
-      const sol = lamports / 1e9;
-      amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
+      return {
+        wallet,
+        baseMint: targetMint,
+        amountUsd,
+        side,
+        ts: tx.timestamp,
+        signature: tx.signature,
+      };
     }
-
-    return {
-      wallet,
-      baseMint: targetMint,
-      amountUsd,
-      side,
-      ts: tx.timestamp,
-      signature: tx.signature,
-    };
   }
 
   // Fallback: scan tokenTransfers for the target mint and feePayer involvement
