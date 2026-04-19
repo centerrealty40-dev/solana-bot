@@ -153,6 +153,33 @@ free credits in roughly one hour. The platform now enforces:
 Switch to `HELIUS_MODE=wallets` only after seeding `watchlist_wallets` with a
 curated list (50–500 addresses) and confirming `helius:status` shows zero usage.
 
+### Seeding the watchlist (without spending Helius credits)
+
+The `watchlist_wallets` table is populated from Birdeye's top-traders endpoint
+(free tier). Helius is **not** called during seeding.
+
+```bash
+# 1. Get a free Birdeye Starter API key at https://bds.birdeye.so/
+# 2. Put it in .env as BIRDEYE_API_KEY=...
+# 3. Seed (defaults: 30 hot tokens × 10 top traders, ~150 wallets after filter):
+npm run watchlist:seed
+# Optional knobs (env vars):
+#   SEED_TOKENS=50 SEED_PER_TOKEN=15 SEED_LIMIT=200 SEED_MIN_TOKENS=2 npm run watchlist:seed
+# Dry-run (preview without writing):
+SEED_DRY_RUN=1 npm run watchlist:seed
+
+# 4. Inspect / curate
+npm run watchlist:show
+npm run watchlist:add -- --note "twitter:@kookcap" Hb6NS...
+npm run watchlist:remove -- WqU8...
+
+# 5. Only after the watchlist looks sane, flip to wallets mode:
+sed -i 's/^HELIUS_MODE=.*/HELIUS_MODE=wallets/' .env
+pm2 restart sa-api --update-env
+pm2 logs sa-api --lines 10
+# Expect: "created helius webhook id=... addresses=N"
+```
+
 ## License
 
 Private / unpublished.

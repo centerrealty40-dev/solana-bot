@@ -30,7 +30,11 @@
     "telegram:test": "tsx src/scripts/telegram-test.ts",
     "report:daily": "tsx src/scripts/daily-report.ts",
     "helius:wipe": "tsx src/scripts/helius-wipe.ts",
-    "helius:status": "tsx src/scripts/helius-status.ts"
+    "helius:status": "tsx src/scripts/helius-status.ts",
+    "watchlist:seed": "tsx src/scripts/seed-watchlist.ts",
+    "watchlist:show": "tsx src/scripts/watchlist-show.ts",
+    "watchlist:add": "tsx src/scripts/watchlist-add.ts",
+    "watchlist:remove": "tsx src/scripts/watchlist-remove.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
