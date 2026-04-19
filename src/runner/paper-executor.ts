@@ -4,6 +4,7 @@ import { child } from '../core/logger.js';
 import { estimatePaperFill } from './jupiter-sim.js';
 import { openPosition, applyExit } from './position-store.js';
 import { QUOTE_MINTS } from '../core/constants.js';
+import { notifyEntry, notifyExit } from './telegram.js';
 import type { ExitSignal, HypothesisPositionView, HypothesisSignal } from '../hypotheses/base.js';
 
 const log = child('paper-executor');
@@ -68,6 +69,16 @@ export async function executePaperEntry(
     },
     'paper entry filled',
   );
+  void notifyEntry({
+    hypothesisId: signal.hypothesisId,
+    positionId,
+    baseMint: signal.baseMint,
+    sizeUsd: approvedSizeUsd,
+    entryPriceUsd: fill.fillPriceUsd,
+    slippageBps: fill.slippageBps,
+    feeUsd: fill.feeUsd,
+    reason: signal.reason,
+  });
   return positionId;
 }
 
@@ -107,6 +118,23 @@ export async function executePaperExit(
     },
     'paper exit filled',
   );
+  // PnL contributed by THIS exit only (mirrors applyExit's internal formula)
+  const tradePnl =
+    pos.sizeUsd * fraction * (fill.fillPriceUsd / Math.max(pos.entryPriceUsd, 1e-12) - 1) -
+    fill.feeUsd;
+  void notifyExit({
+    hypothesisId: pos.hypothesisId,
+    positionId: pos.positionId,
+    baseMint: pos.baseMint,
+    fraction,
+    entryPriceUsd: pos.entryPriceUsd,
+    exitPriceUsd: fill.fillPriceUsd,
+    realizedPnlUsd: tradePnl,
+    totalPnlUsd: updated.realizedPnlUsd,
+    heldMs: Date.now() - pos.openedAt.getTime(),
+    closed: updated.status === 'closed',
+    reason: exit.reason,
+  });
   // Update daily PnL aggregate
   if (updated.status === 'closed') {
     const day = new Date().toISOString().slice(0, 10);

@@ -73,6 +73,21 @@ Following the plan's stages:
 - [x] Stage 4 — H4 (pre-listing accumulation), H5 (negative copy), H6 (snipe-then-hold)
 - [ ] Stage 5 — live pilot (only after a hypothesis passes 100+ paper trades with positive expectancy; **not started, manual gate**)
 
+## Telegram monitoring
+
+Three layers of visibility while the bot runs unattended:
+
+1. **Per-trade alerts** — every paper entry/exit sends a Markdown message
+   (token symbol, size, entry/exit price, slippage, hold time, trade & total PnL, reason).
+2. **Heartbeat** every 6 hours — confirms the runner is alive and shows window stats
+   (swaps processed, signals raised, entries, closes, open positions, window PnL).
+3. **Daily report** at 21:00 UTC (00:00 MSK) — per-hypothesis trades / winrate / PnL
+   plus daily total and open positions count.
+
+Setup: see the comment block in `.env.example` (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID),
+then `npm run telegram:test`. Manually trigger today's summary anytime with
+`npm run report:daily` (or `npm run report:daily 2026-04-19` for a specific day).
+
 ## Hypothesis evaluation
 
 A hypothesis is considered "working" only if, on 100+ paper trades:

@@ -19,3 +19,6 @@ export function buildHypotheses(): Hypothesis[] {
     new H6SnipeThenHold(),
   ];
 }
+
+/** Lightweight catalog (id + describe) for scripts that don't want to instantiate hypotheses heavily. */
+export const ALL_HYPOTHESES = buildHypotheses().map((h) => ({ id: h.id, describe: h.describe() }));

@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     testTimeout: 10_000,
+    setupFiles: ['tests/setup.ts'],
   },
   esbuild: {
     target: 'es2022',
