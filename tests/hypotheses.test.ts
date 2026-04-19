@@ -157,6 +157,124 @@ describe('H7 confluence gate', () => {
   });
 });
 
+describe('H9 liquidity shock dip-buy', () => {
+  function buildPanicCtx(panicPrice: number): MarketCtx {
+    const now = Date.now();
+    const swaps: NormalizedSwap[] = [];
+    // 60 normal swaps spread over the last hour, $300 each, price ~ 1.0
+    for (let i = 0; i < 60; i++) {
+      swaps.push(
+        mkSwap({
+          wallet: `W${i}`,
+          blockTime: new Date(now - (60 - i) * 60_000),
+          side: i % 2 === 0 ? 'buy' : 'sell',
+          amountUsd: 300,
+          baseMint: 'M9',
+          priceUsd: 1.0,
+          signature: `s${i}`,
+        }),
+      );
+    }
+    // panic dump: 8 sells at $4000 each in the last 8 minutes, prices stepping down
+    for (let i = 0; i < 8; i++) {
+      const p = 1.0 - (i + 1) * 0.04; // 0.96, 0.92, ..., 0.68
+      swaps.push(
+        mkSwap({
+          wallet: `P${i}`,
+          blockTime: new Date(now - (8 - i) * 60_000),
+          side: 'sell',
+          amountUsd: 4000,
+          baseMint: 'M9',
+          priceUsd: p,
+          signature: `p${i}`,
+        }),
+      );
+    }
+    // tiny opposing buys
+    for (let i = 0; i < 2; i++) {
+      swaps.push(
+        mkSwap({
+          wallet: `B${i}`,
+          blockTime: new Date(now - (3 - i) * 60_000),
+          side: 'buy',
+          amountUsd: 200,
+          baseMint: 'M9',
+          priceUsd: panicPrice + 0.02,
+          signature: `b${i}`,
+        }),
+      );
+    }
+    return { now: new Date(), recentSwaps: swaps.reverse(), priceSamples: [], scores: new Map(), recentSignals: new Map() };
+  }
+
+  it('fires on -20%+ dip with sell pressure ≥4× and adequate liquidity', async () => {
+    const { H9LiquidityShock } = await import('../src/hypotheses/h9-liquidity-shock.js');
+    const h = new H9LiquidityShock();
+    const ctx = buildPanicCtx(0.7);
+    const swap = mkSwap({
+      wallet: 'BUYER',
+      blockTime: new Date(),
+      side: 'buy',
+      amountUsd: 100,
+      baseMint: 'M9',
+      priceUsd: 0.7,
+      signature: 'trigger',
+    });
+    const sigs = h.onSwap(swap, ctx);
+    expect(sigs).not.toBeNull();
+    expect(sigs![0]!.side).toBe('buy');
+  });
+
+  it('does not fire on shallow drop', async () => {
+    const { H9LiquidityShock } = await import('../src/hypotheses/h9-liquidity-shock.js');
+    const h = new H9LiquidityShock();
+    const ctx = buildPanicCtx(0.95);
+    const swap = mkSwap({
+      wallet: 'BUYER',
+      blockTime: new Date(),
+      side: 'buy',
+      amountUsd: 100,
+      baseMint: 'M9',
+      priceUsd: 0.95,
+      signature: 'trigger',
+    });
+    expect(h.onSwap(swap, ctx)).toBeNull();
+  });
+});
+
+describe('H10 whale quiet accumulation', () => {
+  it('fires on $5k+ buy from PnL-positive wallet', async () => {
+    const { H10WhaleQuiet } = await import('../src/hypotheses/h10-whale-quiet.js');
+    const h = new H10WhaleQuiet();
+    const scores = new Map([
+      ['WHALE', emptyScore('WHALE', { realizedPnl30d: 25_000, holdingAvgMinutes: 240 })],
+    ]);
+    const ctx: MarketCtx = { now: new Date(), recentSwaps: [], priceSamples: [], scores, recentSignals: new Map() };
+    const swap = mkSwap({ wallet: 'WHALE', blockTime: new Date(), side: 'buy', amountUsd: 7500, baseMint: 'M10' });
+    const sigs = h.onSwap(swap, ctx);
+    expect(sigs).not.toBeNull();
+  });
+
+  it('rejects unknown wallet', async () => {
+    const { H10WhaleQuiet } = await import('../src/hypotheses/h10-whale-quiet.js');
+    const h = new H10WhaleQuiet();
+    const ctx: MarketCtx = { now: new Date(), recentSwaps: [], priceSamples: [], scores: new Map(), recentSignals: new Map() };
+    const swap = mkSwap({ wallet: 'GHOST', blockTime: new Date(), side: 'buy', amountUsd: 7500, baseMint: 'M10' });
+    expect(h.onSwap(swap, ctx)).toBeNull();
+  });
+
+  it('rejects PnL-negative wallet', async () => {
+    const { H10WhaleQuiet } = await import('../src/hypotheses/h10-whale-quiet.js');
+    const h = new H10WhaleQuiet();
+    const scores = new Map([
+      ['LOSER', emptyScore('LOSER', { realizedPnl30d: -500, holdingAvgMinutes: 240 })],
+    ]);
+    const ctx: MarketCtx = { now: new Date(), recentSwaps: [], priceSamples: [], scores, recentSignals: new Map() };
+    const swap = mkSwap({ wallet: 'LOSER', blockTime: new Date(), side: 'buy', amountUsd: 7500, baseMint: 'M10' });
+    expect(h.onSwap(swap, ctx)).toBeNull();
+  });
+});
+
 function emptyCtx(): MarketCtx {
   return { now: new Date(), recentSwaps: [], priceSamples: [], scores: new Map(), recentSignals: new Map() };
 }

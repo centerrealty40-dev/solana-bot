@@ -50,13 +50,18 @@ export class H6SnipeThenHold implements Hypothesis {
 
   private async getFirstSeen(mint: string): Promise<number> {
     if (this.firstSeen.has(mint)) return this.firstSeen.get(mint)!;
-    const rows = await db.execute(dsql`
-      SELECT EXTRACT(EPOCH FROM MIN(block_time)) * 1000 AS first_ms
-      FROM swaps WHERE base_mint = ${mint}
-    `);
-    const ms = Number(((rows as unknown as Array<{ first_ms: number | string | null }>)[0]?.first_ms) ?? 0);
-    this.firstSeen.set(mint, ms);
-    return ms;
+    try {
+      const rows = await db.execute(dsql`
+        SELECT EXTRACT(EPOCH FROM MIN(block_time)) * 1000 AS first_ms
+        FROM swaps WHERE base_mint = ${mint}
+      `);
+      const ms = Number(((rows as unknown as Array<{ first_ms: number | string | null }>)[0]?.first_ms) ?? 0);
+      this.firstSeen.set(mint, ms);
+      return ms;
+    } catch {
+      // DB unavailable (tests, transient network) — return 0 so caller treats as unknown
+      return 0;
+    }
   }
 
   onSwap(swap: NormalizedSwap, _ctx: MarketCtx): HypothesisSignal[] | null {

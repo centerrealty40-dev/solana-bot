@@ -74,7 +74,9 @@ Following the plan's stages:
 - [x] Stage 4b — H7 (confluence gate: 2+ converging signals + H5 veto)
 - [ ] Stage 5 — live pilot (only after a hypothesis passes 100+ paper trades with positive expectancy; **not started, manual gate**)
 
-### Hypothesis tiers and the meta-gate
+### Hypothesis catalog
+
+Wallet-driven (need scoring engine output):
 
 | Id | Tier | Weight | Idea |
 |----|------|--------|------|
@@ -84,9 +86,20 @@ Following the plan's stages:
 | H4 | A | 2 | 5+ early-entry wallets quietly accumulate before a trend |
 | H5 | veto | — | Loser-cluster buying = local-top warning (filter, not entry) |
 | H6 | A | 2 | Snipe-and-hold wallet adds to position |
-| **H7** | meta | gate | Enters only if score (sum of weights of buy-signals on same mint within 60min) >= 4 AND no H5 sell-signal in window. Diversity bonus +2 when 3+ distinct hypotheses fire. Position size 3× base ($150). |
+| **H7** | meta | gate | Score ≥ 4 of buy-signals on same mint within 60min AND no H5 veto. Diversity bonus +2 with 3+ distinct hyps. Size 3× base ($150). |
 
-H7 is the high-conviction strategy you asked for — it trades much less often than H1–H6 individually, but every entry has independent corroboration.
+Standalone, market-data-only (work from day 1, independent of scoring engine):
+
+| Id | Idea |
+|----|------|
+| H8 | Volume-spike breakout (5min buy-volume ≥4× hourly avg + new 1h price ATH) |
+| H9 | Liquidity-shock dip-buy (≥-20% in 10min, sell/buy ratio ≥4×, liquid token only) — fast scalp |
+| H10 | Single $5k+ buy from PnL-positive wallet without immediate flip pattern |
+| H11 | Holder-velocity surge (25+ unique buyers / 10min, organic retail size, no single-wallet dominance) |
+
+H8–H11 are deliberately orthogonal to H1–H7: they don't depend on a watchlist, clusters,
+or any pre-built wallet reputation, so they accumulate paper data the very first hour
+the runner is up. They feed into the same Telegram alerts and daily-report flow.
 
 ## Telegram monitoring
 
