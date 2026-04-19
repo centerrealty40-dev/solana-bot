@@ -24,10 +24,12 @@ const log = child('seed-watchlist');
  * Helius is NOT touched anywhere in this flow — it's pure Birdeye + Postgres.
  *
  * CLI flags via env vars:
- *   SEED_TOKENS=30          how many tokens to scan
+ *   SEED_TOKENS=30          how many tokens to scan (after bluechip filter)
  *   SEED_PER_TOKEN=10       how many top traders per token
  *   SEED_LIMIT=150          max wallets to insert
  *   SEED_MIN_TOKENS=2       wallet must appear in >= this many tokens' top
+ *   SEED_MIN_FDV=1000000    min FDV $ for token universe (skip dust/scams)
+ *   SEED_MAX_FDV=500000000  max FDV $ for token universe (skip bluechips)
  *   SEED_DRY_RUN=1          show what would be inserted, do not write
  */
 async function main(): Promise<void> {
@@ -42,20 +44,28 @@ async function main(): Promise<void> {
   const perToken = Number(process.env.SEED_PER_TOKEN ?? 10);
   const limit = Number(process.env.SEED_LIMIT ?? 150);
   const minTokens = Number(process.env.SEED_MIN_TOKENS ?? 2);
+  const minFdv = Number(process.env.SEED_MIN_FDV ?? 1_000_000);
+  const maxFdv = Number(process.env.SEED_MAX_FDV ?? 500_000_000);
   const dryRun = process.env.SEED_DRY_RUN === '1';
 
   log.info(
-    { seedTokens, perToken, limit, minTokens, dryRun },
+    { seedTokens, perToken, limit, minTokens, minFdv, maxFdv, dryRun },
     'seeding watchlist from Birdeye top traders',
   );
 
-  log.info('step 1: fetching top SOL tokens by 24h USD volume...');
-  const tokens = await getTopSolanaTokens(seedTokens);
+  log.info('step 1: fetching top SOL tokens by 24h USD volume (excluding bluechips)...');
+  const tokens = await getTopSolanaTokens(seedTokens, { minFdvUsd: minFdv, maxFdvUsd: maxFdv });
   if (tokens.length === 0) {
     log.error('no tokens returned by Birdeye; check API key and quota');
     process.exit(1);
   }
-  log.info({ count: tokens.length, sample: tokens.slice(0, 3).map((t) => t.symbol) }, 'top tokens loaded');
+  log.info(
+    {
+      count: tokens.length,
+      symbols: tokens.map((t) => t.symbol).join(', '),
+    },
+    'token universe loaded',
+  );
 
   log.info(
     `step 2: fetching top ${perToken} traders per token (~${tokens.length * 2.5}s with polite rate-limit)`,
