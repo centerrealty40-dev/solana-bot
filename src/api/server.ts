@@ -34,11 +34,15 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Best-effort: register/update Helius webhook on startup if config provided.
-  if (config.heliusApiKey && config.heliusWebhookUrl) {
+  // Best-effort: register/update Helius webhook on startup.
+  // The function itself is a no-op when HELIUS_MODE=off, and refuses to
+  // subscribe to programs even in 'wallets'/'unsafe' modes.
+  if (config.heliusMode !== 'off' && config.heliusApiKey && config.heliusWebhookUrl) {
     void ensureHeliusWebhook().catch((err) =>
       logger.warn({ err: String(err) }, 'webhook ensure failed'),
     );
+  } else {
+    log.info({ mode: config.heliusMode }, 'helius webhook auto-register skipped');
   }
 
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {

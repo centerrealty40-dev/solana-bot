@@ -272,6 +272,36 @@ export const watchlistWallets = pgTable(
 );
 
 /**
+ * Append-only ledger of every outbound Helius API call.
+ *
+ * Used by the `heliusGuard` circuit breaker:
+ *   - count today's calls -> compare against daily budget
+ *   - count this-month calls -> compare against monthly budget
+ *
+ * Keeping it append-only (no aggregation) makes audits trivial after an incident
+ * like the 2026-04 program-subscription burn.
+ */
+export const heliusUsage = pgTable(
+  'helius_usage',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
+    /** logical bucket ('webhook_register', 'wallet_history', 'rpc_call', etc.) */
+    kind: varchar('kind', { length: 32 }).notNull(),
+    /** estimated credits this call consumed; webhook-register is ~1, history page is ~100 */
+    creditsEstimate: integer('credits_estimate').notNull().default(1),
+    /** http status returned (or 0 if call short-circuited by guard) */
+    statusCode: integer('status_code').notNull().default(0),
+    /** short note for debugging — wallet, endpoint, error message head */
+    note: text('note'),
+  },
+  (t) => ({
+    tsIdx: index('helius_usage_ts_idx').on(t.ts),
+    kindTsIdx: index('helius_usage_kind_ts_idx').on(t.kind, t.ts),
+  }),
+);
+
+/**
  * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
  */
 export const dailyPnl = pgTable(

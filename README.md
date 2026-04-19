@@ -128,11 +128,30 @@ A hypothesis is considered "working" only if, on 100+ paper trades:
 
 ## Safety
 
+### Trading
 - Wallet keypairs **only** in `.env` / `WALLET_KEYPAIR_PATH`, never committed
 - Hot wallet capped via `MAX_POSITION_USD` and `DAILY_LOSS_LIMIT_PCT`
 - Live executor restricted to Jupiter Aggregator program ID
 - Hard slippage cap in every quote
 - Telegram alert on every executed trade and on kill-switch trip
+
+### Helius credit guard (added after 2026-04 burn incident)
+
+On 2026-04-19 we accidentally subscribed an enhanced webhook to entire DEX
+programs (Raydium, Pumpfun, Jupiter, Orca) and burned ~984k of 1M monthly
+free credits in roughly one hour. The platform now enforces:
+
+| Layer | Guarantee |
+| --- | --- |
+| `HELIUS_MODE=off` (default) | Code never makes a Helius call. Period. |
+| `core/helius-guard.ts` | Every outbound call passes through `heliusFetch()` which checks daily/monthly budgets BEFORE the network request. Exceeded -> short-circuits with `HeliusGuardError`. |
+| `helius_usage` ledger | Every call (and every blocked attempt) is logged with timestamp, kind, status, and credit estimate — full forensic trail. |
+| `ensureHeliusWebhook()` | Refuses to register if watchlist is empty, exceeds `HELIUS_MAX_WATCHLIST_SIZE`, or contains a known DEX program id. |
+| `npm run helius:wipe` | Emergency stop-cock — deletes every webhook for the current API key. |
+| `npm run helius:status` | Prints today / this-month credit usage vs budget. |
+
+Switch to `HELIUS_MODE=wallets` only after seeding `watchlist_wallets` with a
+curated list (50–500 addresses) and confirming `helius:status` shows zero usage.
 
 ## License
 

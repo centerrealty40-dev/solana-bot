@@ -8,6 +8,24 @@ const ConfigSchema = z.object({
   heliusRpcUrl: z.string().optional().default(''),
   heliusWebhookUrl: z.string().optional().default(''),
   heliusWebhookAuth: z.string().optional().default(''),
+  /**
+   * Master kill-switch for ALL Helius API access.
+   *   - 'off'      : do not touch Helius at all (default after 2026-04 incident)
+   *   - 'wallets'  : only register webhook on a watchlist of specific wallets,
+   *                  history backfill allowed within budget
+   *   - 'unsafe'   : allow program-level subscriptions; only use if you know
+   *                  exactly what you are doing and have a paid plan
+   */
+  heliusMode: z.enum(['off', 'wallets', 'unsafe']).default('off'),
+  /** Hard daily ceiling on Helius credits (estimated). Guard short-circuits beyond. */
+  heliusDailyBudget: z.coerce.number().int().positive().default(30_000),
+  /** Hard monthly ceiling on Helius credits (estimated). */
+  heliusMonthlyBudget: z.coerce.number().int().positive().default(800_000),
+  /**
+   * Maximum number of wallet addresses we will ever pass to a Helius webhook.
+   * Set well below the practical "OK we know what we are doing" threshold.
+   */
+  heliusMaxWatchlistSize: z.coerce.number().int().positive().default(500),
   birdeyeApiKey: z.string().optional().default(''),
   apiHost: z.string().default('0.0.0.0'),
   apiPort: z.coerce.number().int().positive().default(3000),
@@ -32,6 +50,10 @@ function loadConfig(): AppConfig {
     heliusRpcUrl: process.env.HELIUS_RPC_URL,
     heliusWebhookUrl: process.env.HELIUS_WEBHOOK_URL,
     heliusWebhookAuth: process.env.HELIUS_WEBHOOK_AUTH,
+    heliusMode: process.env.HELIUS_MODE,
+    heliusDailyBudget: process.env.HELIUS_DAILY_BUDGET,
+    heliusMonthlyBudget: process.env.HELIUS_MONTHLY_BUDGET,
+    heliusMaxWatchlistSize: process.env.HELIUS_MAX_WATCHLIST_SIZE,
     birdeyeApiKey: process.env.BIRDEYE_API_KEY,
     apiHost: process.env.API_HOST,
     apiPort: process.env.API_PORT,
