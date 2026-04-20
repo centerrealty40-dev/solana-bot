@@ -229,13 +229,24 @@ LONGFORM_DUMP=cache/longform.json npm run watchlist:seed:longform
 
 The "non-obvious" path. Real alpha traders know they're being watched and
 actively rotate funds across multiple wallets to evade copy-trading. By
-tracing OUTGOING transfers from a pool of "anchor wallets", we find the
-hidden rotation accounts that have never appeared on any smart-money list.
+tracing transfers around a pool of "anchor wallets" we find the hidden
+rotation accounts that have never appeared on any smart-money list.
 
-Multi-funder candidates (recipient funded by 2+ different seed wallets) are
-the strongest signal — that's a coordinated operator running a rotation
-network. CEX hot wallets are filtered via a curated blacklist + a fan-in
-heuristic that auto-detects unknown CEXes.
+The discovery is **bidirectional** by default — Helius returns both
+directions in one call so it costs nothing extra:
+
+  * **OUT-graph** (anchor → unknown candidate): the candidate is a rotation
+    account funded BY our anchors. Multi-funder candidates (recipient funded
+    by 2+ different anchors) are the strongest signal.
+  * **IN-graph** (unknown parent → anchor): the parent is the OPERATOR'S
+    TREASURY one level up the rotation tree. Parents that fund 2+ of our
+    anchors are inserted under `source='rotation-parent'`.
+  * **Bidirectional hubs**: wallets appearing in BOTH graphs (active in the
+    network as both source and destination of capital). These get a
+    `+ROT_HUB_BONUS` score boost and are marked `[BI-HUB N↔]` in output.
+
+CEX hot wallets are filtered via a curated blacklist + a fan-in heuristic
+that auto-detects unknown CEXes funding too many seeds at once.
 
 **Bootstrap problem:** rotation discovery needs an anchor pool of wallets
 to trace from. Our `helius-seed` / `pump-seed` / `longform-seed` filters are

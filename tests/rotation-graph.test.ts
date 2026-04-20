@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildRotationGraph,
+  buildIncomingGraph,
   detectFanInOutliers,
+  detectParentOperators,
+  detectBidirectionalHubs,
   computeBehavior,
   scoreFundingProfile,
   scoreRotationCandidate,
@@ -294,6 +297,107 @@ describe('collapseRotationFleets', () => {
     const collapsed = collapseRotationFleets(candidates);
     const wallets = collapsed.map((c) => c.wallet).sort();
     expect(wallets).toEqual(['cand2', 'cand4']);
+  });
+});
+
+describe('buildIncomingGraph', () => {
+  it('aggregates parent→seed edges from incoming transfers', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      seedA: [
+        te('seedA', 'parentP', 5, 1_000, 'in'),
+        te('seedA', 'someoneElse', 1, 1_100, 'out'), // ignored
+      ],
+      seedB: [te('seedB', 'parentP', 3, 1_200, 'in')],
+      seedC: [te('seedC', 'otherParent', 7, 1_300, 'in')],
+    };
+    const parents = buildIncomingGraph(seedToTransfers);
+    expect(parents.size).toBe(2);
+    const p = parents.get('parentP')!;
+    expect(p.children.sort()).toEqual(['seedA', 'seedB']);
+    expect(p.totalSol).toBeCloseTo(8, 5);
+    expect(p.firstFundedTs).toBe(1_000);
+    expect(p.lastFundedTs).toBe(1_200);
+  });
+
+  it('skips outgoing transfers and seed-to-seed funding', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      seedA: [
+        te('seedA', 'seedB', 5, 1_000, 'in'), // seed-to-seed: skip
+        te('seedA', 'parentP', 3, 1_100, 'in'),
+      ],
+      seedB: [],
+    };
+    const parents = buildIncomingGraph(seedToTransfers);
+    expect(parents.has('seedB')).toBe(false);
+    expect(parents.has('parentP')).toBe(true);
+  });
+});
+
+describe('detectParentOperators', () => {
+  it('returns only parents that funded >=minChildren seeds', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      s1: [te('s1', 'parent_multi', 5, 1_000, 'in')],
+      s2: [te('s2', 'parent_multi', 5, 1_001, 'in')],
+      s3: [te('s3', 'parent_multi', 5, 1_002, 'in')],
+      s4: [te('s4', 'parent_single', 5, 1_003, 'in')],
+    };
+    const parents = buildIncomingGraph(seedToTransfers);
+    const ops = detectParentOperators(parents, 4, { minChildren: 2 });
+    expect(ops.map((p) => p.wallet)).toEqual(['parent_multi']);
+  });
+
+  it('drops fan-in outliers (likely CEX-like services)', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {};
+    for (let i = 0; i < 10; i++) {
+      seedToTransfers[`seed${i}`] = [te(`seed${i}`, 'cexLike', 5, 1_000 + i, 'in')];
+    }
+    seedToTransfers['seedA'] = [te('seedA', 'realParent', 5, 2_000, 'in')];
+    seedToTransfers['seedB'] = [te('seedB', 'realParent', 5, 2_001, 'in')];
+    const parents = buildIncomingGraph(seedToTransfers);
+    const ops = detectParentOperators(parents, 12, { minChildren: 2, fanInCap: 5 });
+    // cexLike has 10 children → exceeds fanInCap=5, so dropped.
+    // realParent has 2 children → kept.
+    expect(ops.map((p) => p.wallet)).toEqual(['realParent']);
+  });
+
+  it('sorts by children count desc, then total SOL desc', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      s1: [te('s1', 'parentBig', 100, 1_000, 'in'), te('s1', 'parentMore', 1, 1_001, 'in')],
+      s2: [te('s2', 'parentBig', 100, 1_002, 'in'), te('s2', 'parentMore', 1, 1_003, 'in')],
+      s3: [te('s3', 'parentMore', 1, 1_004, 'in')],
+    };
+    const parents = buildIncomingGraph(seedToTransfers);
+    const ops = detectParentOperators(parents, 3, { minChildren: 2 });
+    // parentMore has 3 children, parentBig has 2 → parentMore comes first.
+    expect(ops.map((p) => p.wallet)).toEqual(['parentMore', 'parentBig']);
+  });
+});
+
+describe('detectBidirectionalHubs', () => {
+  it('flags wallets that appear in BOTH out-graph (as candidate) and in-graph (as parent)', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      s1: [te('s1', 'hubW', 3, 1_000, 'out'), te('s1', 'hubW', 2, 1_500, 'in')],
+      s2: [te('s2', 'hubW', 1, 1_100, 'out'), te('s2', 'hubW', 4, 1_600, 'in')],
+      s3: [te('s3', 'plainCand', 5, 1_200, 'out')],
+    };
+    const { candidates } = buildRotationGraph(seedToTransfers);
+    const parents = buildIncomingGraph(seedToTransfers);
+    const hubs = detectBidirectionalHubs(candidates, parents, 2);
+    expect(hubs.has('hubW')).toBe(true);
+    expect(hubs.has('plainCand')).toBe(false);
+  });
+
+  it('does not flag wallet that is only a single-direction match', () => {
+    const seedToTransfers: Record<string, TransferEvent[]> = {
+      s1: [te('s1', 'onlyOut', 3, 1_000, 'out')],
+      s2: [te('s2', 'onlyOut', 3, 1_100, 'out')],
+      s3: [te('s3', 'onlyIn', 5, 1_200, 'in')],
+      s4: [te('s4', 'onlyIn', 5, 1_300, 'in')],
+    };
+    const { candidates } = buildRotationGraph(seedToTransfers);
+    const parents = buildIncomingGraph(seedToTransfers);
+    const hubs = detectBidirectionalHubs(candidates, parents, 2);
+    expect(hubs.size).toBe(0);
   });
 });
 

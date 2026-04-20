@@ -66,6 +66,31 @@ export interface RotationCandidate {
 }
 
 /**
+ * A parent operator: an external wallet that funded 2+ of our seeds. Strong
+ * signal that all those seeds are themselves rotation accounts of one human.
+ *
+ * Knowing a parent gives us two new discovery surfaces:
+ *   1. The parent itself is a high-value watchlist target (the human's "treasury")
+ *   2. The parent's OTHER outgoing transfers (siblings) are likely additional
+ *      rotation accounts of the same operator we don't know about yet
+ */
+export interface ParentOperator {
+  wallet: string;
+  /** distinct seeds this parent funded */
+  children: string[];
+  /** all funding edges from parent to children, sorted by ts ascending */
+  edges: FundingEdge[];
+  /** sum of amountSol across edges */
+  totalSol: number;
+  /** sum of amountUsd across edges */
+  totalUsd: number;
+  /** earliest funding ts across children */
+  firstFundedTs: number;
+  /** latest funding ts across children */
+  lastFundedTs: number;
+}
+
+/**
  * Build the funder→candidate graph from raw transfer events. We only consider
  * 'out' transfers from each seed (i.e., seed sent value to someone else).
  *
@@ -139,6 +164,121 @@ export function buildRotationGraph(
   }
 
   return { candidates, edges };
+}
+
+/**
+ * Build the parent→seed graph by inspecting INCOMING transfers. Mirror of
+ * buildRotationGraph but on the 'in' direction: who funded our seed wallets?
+ *
+ * A "parent operator" is any external wallet that funded 2+ of our seeds —
+ * meaning the seeds themselves are likely rotation accounts of one human, and
+ * the parent is the human's primary wallet (treasury). Discovering parents
+ * effectively lets us climb one level up the rotation tree.
+ *
+ * Same exclusion rules as buildRotationGraph apply (CEX, programs, self).
+ */
+export function buildIncomingGraph(
+  seedToTransfers: Record<string, TransferEvent[]>,
+  opts: {
+    minSolPerEdge?: number;
+    excludeAdditional?: ReadonlySet<string>;
+  } = {},
+): Map<string, ParentOperator> {
+  const minSolPerEdge = opts.minSolPerEdge ?? 0.5;
+  const seedSet = new Set(Object.keys(seedToTransfers));
+  const exclude = opts.excludeAdditional ?? new Set<string>();
+
+  const parents = new Map<string, ParentOperator>();
+
+  for (const [seed, transfers] of Object.entries(seedToTransfers)) {
+    for (const t of transfers) {
+      if (t.direction !== 'in') continue;
+      if (t.amountSol < minSolPerEdge) continue;
+      const funder = t.counterparty;
+      if (funder === seed) continue;
+      if (seedSet.has(funder)) continue; // intra-seed transfers tracked elsewhere
+      if (isExcludedAddress(funder)) continue;
+      if (exclude.has(funder)) continue;
+
+      const edge: FundingEdge = {
+        seed: funder, // parent is the funder
+        candidate: seed,
+        amountSol: t.amountSol,
+        amountUsd: t.amountUsd,
+        ts: t.ts,
+        signature: t.signature,
+      };
+
+      let parent = parents.get(funder);
+      if (!parent) {
+        parent = {
+          wallet: funder,
+          children: [],
+          edges: [],
+          totalSol: 0,
+          totalUsd: 0,
+          firstFundedTs: edge.ts,
+          lastFundedTs: edge.ts,
+        };
+        parents.set(funder, parent);
+      }
+      parent.edges.push(edge);
+      parent.totalSol += edge.amountSol;
+      parent.totalUsd += edge.amountUsd;
+      if (edge.ts < parent.firstFundedTs) parent.firstFundedTs = edge.ts;
+      if (edge.ts > parent.lastFundedTs) parent.lastFundedTs = edge.ts;
+      if (!parent.children.includes(seed)) parent.children.push(seed);
+    }
+  }
+
+  for (const p of parents.values()) {
+    p.edges.sort((a, b) => a.ts - b.ts);
+  }
+
+  return parents;
+}
+
+/**
+ * Filter parent map to only those that funded >= minChildren distinct seeds,
+ * then drop fan-in outliers (CEX-like wallets funding everyone). Sorted by
+ * children count descending, then totalSol descending.
+ *
+ * @param totalSeeds size of the seed pool, used to set the fan-in cap
+ */
+export function detectParentOperators(
+  parents: Map<string, ParentOperator>,
+  totalSeeds: number,
+  opts: { minChildren?: number; fanInCap?: number } = {},
+): ParentOperator[] {
+  const minChildren = opts.minChildren ?? 2;
+  const cap = opts.fanInCap ?? Math.max(15, Math.ceil(totalSeeds * 0.5));
+  return Array.from(parents.values())
+    .filter((p) => p.children.length >= minChildren && p.children.length < cap)
+    .sort((a, b) => {
+      if (b.children.length !== a.children.length) return b.children.length - a.children.length;
+      return b.totalSol - a.totalSol;
+    });
+}
+
+/**
+ * Bidirectional rotation: a wallet that BOTH (a) was funded by our seeds
+ * (out-graph candidate) AND (b) sent value to multiple of our seeds (in-graph
+ * parent). This is the rare strongest signal — the wallet is an active hub
+ * in the operator's rotation network, both receiving and dispatching capital.
+ *
+ * Returns the set of wallets to boost.
+ */
+export function detectBidirectionalHubs(
+  candidates: Map<string, CandidateProfile>,
+  parents: Map<string, ParentOperator>,
+  minSeedFanIn = 2,
+): Set<string> {
+  const hubs = new Set<string>();
+  for (const w of candidates.keys()) {
+    const p = parents.get(w);
+    if (p && p.children.length >= minSeedFanIn) hubs.add(w);
+  }
+  return hubs;
 }
 
 /**

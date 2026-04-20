@@ -9,13 +9,17 @@ import { getWalletTransfers, type TransferEvent } from '../collectors/wallet-tra
 import { getWalletSwapHistory, type SwapEvent } from '../collectors/helius-discovery.js';
 import {
   buildRotationGraph,
+  buildIncomingGraph,
   detectFanInOutliers,
+  detectParentOperators,
+  detectBidirectionalHubs,
   computeBehavior,
   scoreRotationCandidate,
   collapseRotationFleets,
   formatRotationNote,
   type RotationCandidate,
   type CandidateProfile,
+  type ParentOperator,
 } from '../scoring/rotation-graph.js';
 import { getUsageSnapshot } from '../core/helius-guard.js';
 
@@ -60,6 +64,15 @@ const log = child('seed-rotation');
  *   ROT_DUMP=path.json             dump all collected data after run (offline tuning)
  *   ROT_LOAD=path.json             skip Helius, load from file (FREE)
  *   ROT_ANTI_FLEET=1               collapse near-duplicate wallets (default on)
+ *   ROT_BIDIRECTIONAL=1            also analyze INCOMING transfers to detect
+ *                                  parent operators + bidirectional hubs (default on,
+ *                                  free — same Helius data, just opposite direction)
+ *   ROT_MIN_PARENT_CHILDREN=2      parent must fund >= N seeds to be flagged
+ *   ROT_PROMOTE_PARENTS=1          insert top parents as source='rotation-parent'
+ *                                  (default on; their treasury wallets are gold)
+ *   ROT_PARENT_LIMIT=50            cap on parents to insert
+ *   ROT_HUB_BONUS=30               score bonus added to bidirectional hubs
+ *                                  (candidates that are ALSO parents of multiple seeds)
  */
 
 interface RotationCache {
@@ -121,6 +134,11 @@ async function main(): Promise<void> {
   const dumpPath = process.env.ROT_DUMP ?? '';
   const loadPath = process.env.ROT_LOAD ?? '';
   const antiFleet = process.env.ROT_ANTI_FLEET !== '0';
+  const bidirectional = process.env.ROT_BIDIRECTIONAL !== '0';
+  const minParentChildren = Number(process.env.ROT_MIN_PARENT_CHILDREN ?? 2);
+  const promoteParents = process.env.ROT_PROMOTE_PARENTS !== '0';
+  const parentLimit = Number(process.env.ROT_PARENT_LIMIT ?? 50);
+  const hubBonus = Number(process.env.ROT_HUB_BONUS ?? 30);
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -196,12 +214,17 @@ async function main(): Promise<void> {
     const solPriceUsd = prices[QUOTE_MINTS.SOL] ?? 0;
     log.info({ solPriceUsd }, 'sol price resolved');
 
-    log.info('step 2: pulling outgoing transfer history per seed (credit-spending)');
+    const fetchDirection = bidirectional ? 'both' : 'out';
+    log.info(
+      { direction: fetchDirection, bidirectional },
+      'step 2: pulling transfer history per seed (credit-spending)' +
+        (bidirectional ? '; using BOTH directions to catch parent operators (no extra cost)' : ''),
+    );
     const seedToTransfers: Record<string, TransferEvent[]> = {};
     for (let i = 0; i < seeds.length; i++) {
       const s = seeds[i]!;
       const txs = await getWalletTransfers(s, transferPages, solPriceUsd, {
-        direction: 'out',
+        direction: fetchDirection,
         minAmountSol: minSolPerEdge,
       });
       seedToTransfers[s] = txs;
@@ -287,15 +310,56 @@ async function main(): Promise<void> {
   const outliers = detectFanInOutliers(rebuiltCandidates, seeds.length, fanInCapOverride);
   for (const o of outliers) rebuiltCandidates.delete(o);
 
+  // Bidirectional analysis: build the parent (incoming) graph, detect operators
+  // and hubs. Free if we already pulled both directions in step 2.
+  let parents = new Map<string, ParentOperator>();
+  let parentOps: ParentOperator[] = [];
+  let hubs = new Set<string>();
+  const hasInbound = Object.values(cache.seedToTransfers).some((arr) =>
+    arr.some((t) => t.direction === 'in'),
+  );
+  if (hasInbound) {
+    parents = buildIncomingGraph(cache.seedToTransfers, { minSolPerEdge });
+    parentOps = detectParentOperators(parents, seeds.length, {
+      minChildren: minParentChildren,
+      fanInCap: fanInCapOverride,
+    });
+    hubs = detectBidirectionalHubs(rebuiltCandidates, parents, minParentChildren);
+    log.info(
+      {
+        rawParents: parents.size,
+        confirmedParentOperators: parentOps.length,
+        bidirectionalHubs: hubs.size,
+        minParentChildren,
+      },
+      'incoming graph built',
+    );
+  } else {
+    log.warn(
+      'no inbound transfers in cache — bidirectional analysis skipped (set ROT_BIDIRECTIONAL=1 and re-fetch)',
+    );
+  }
+
   const scored: RotationCandidate[] = [];
   for (const profile of rebuiltCandidates.values()) {
     if (profile.funders.length < minFunders) continue;
     const swaps = cache.candidateToSwaps[profile.wallet] ?? [];
     const behavior = computeBehavior(swaps, profile);
-    scored.push(scoreRotationCandidate(profile, behavior));
+    const cand = scoreRotationCandidate(profile, behavior);
+    // Bidirectional hub bonus: candidate is also a parent of 2+ seeds = strong
+    // signal of an operator's central rotation hub.
+    if (hubs.has(profile.wallet)) {
+      const p = parents.get(profile.wallet)!;
+      cand.score += hubBonus;
+      cand.reason = `[BI-HUB ${p.children.length}↔] ` + cand.reason;
+    }
+    scored.push(cand);
   }
   scored.sort((a, b) => b.score - a.score);
-  log.info({ scored: scored.length, topScore: scored[0]?.score ?? 0 }, 'scoring done');
+  log.info(
+    { scored: scored.length, topScore: scored[0]?.score ?? 0, hubsBoosted: hubs.size },
+    'scoring done',
+  );
 
   // Anti-fleet
   let final = scored;
@@ -331,6 +395,31 @@ async function main(): Promise<void> {
     console.log(`${wallet}  ${score} ${funders} ${sol}  ${swaps} ${mints}  ${reason}`);
   }
   console.log('');
+
+  // Parent operators table — wallets that funded multiple seeds. These are
+  // likely the OPERATOR'S TREASURY / MAIN WALLET (one level up from rotation).
+  if (parentOps.length > 0) {
+    console.log('Top PARENT OPERATORS (treasuries that fund multiple seeds):');
+    console.log(
+      'Wallet                                              Children TotalSOL  WindowDays  Note',
+    );
+    console.log(
+      '--------------------------------------------------  -------- --------  ----------  --------------------------',
+    );
+    for (const p of parentOps.slice(0, 20)) {
+      const wallet = p.wallet.padEnd(50);
+      const ch = String(p.children.length).padStart(8);
+      const sol = p.totalSol.toFixed(1).padStart(8);
+      const win = ((p.lastFundedTs - p.firstFundedTs) / 86_400).toFixed(1).padStart(10);
+      const note =
+        `funded ${p.children
+          .slice(0, 3)
+          .map((c) => c.slice(0, 4))
+          .join(',')}` + (p.children.length > 3 ? `+${p.children.length - 3}` : '');
+      console.log(`${wallet}  ${ch} ${sol}  ${win}  ${note}`);
+    }
+    console.log('');
+  }
 
   // Diagnostic: distribution of why candidates didn't make it
   const totalRebuilt = rebuiltCandidates.size + outliers.size;
@@ -377,6 +466,10 @@ async function main(): Promise<void> {
   let inserted = 0;
   let updated = 0;
   let purged = 0;
+  let parentInserted = 0;
+  let parentUpdated = 0;
+  const parentsToInsert =
+    promoteParents && parentOps.length > 0 ? parentOps.slice(0, parentLimit) : [];
   await db.transaction(async (tx) => {
     if (purgeOld) {
       const finalSet = final.map((c) => c.wallet);
@@ -414,9 +507,48 @@ async function main(): Promise<void> {
         updated++;
       }
     }
+    // Promote parent operators as their own watchlist source. These are the
+    // operator's treasury/main wallets — different signal than rotation hubs,
+    // so we keep them under a distinct source for downstream PnL attribution.
+    for (const p of parentsToInsert) {
+      const sol = p.totalSol.toFixed(1);
+      const note = `parent ch=${p.children.length} cap=${sol}SOL win=${(
+        (p.lastFundedTs - p.firstFundedTs) / 86_400
+      ).toFixed(1)}d`;
+      const existing = await tx
+        .select({ wallet: schema.watchlistWallets.wallet })
+        .from(schema.watchlistWallets)
+        .where(dsql`${schema.watchlistWallets.wallet} = ${p.wallet}`)
+        .limit(1);
+      if (existing.length === 0) {
+        await tx.insert(schema.watchlistWallets).values({
+          wallet: p.wallet,
+          source: 'rotation-parent',
+          note,
+        });
+        parentInserted++;
+      } else {
+        await tx
+          .update(schema.watchlistWallets)
+          .set({ removedAt: null, note })
+          .where(dsql`${schema.watchlistWallets.wallet} = ${p.wallet}`);
+        parentUpdated++;
+      }
+    }
   });
 
-  log.info({ inserted, updated, purged, total: final.length }, 'rotation-seed complete');
+  log.info(
+    {
+      inserted,
+      updated,
+      purged,
+      total: final.length,
+      parentInserted,
+      parentUpdated,
+      parentTotal: parentsToInsert.length,
+    },
+    'rotation-seed complete',
+  );
   log.info('next: `npm run watchlist:show` to inspect, then ensure HELIUS_MODE=wallets and `pm2 restart sa-api`');
   process.exit(0);
 }
