@@ -282,6 +282,48 @@ export function detectBidirectionalHubs(
 }
 
 /**
+ * Detect "pass-through routers": wallets that receive AND send capital across
+ * many counterparties but never trade. This is the classic CEX hot-wallet
+ * pattern (Binance/Bybit/OKX hot wallets we don't have in our blacklist),
+ * NFT marketplace withdrawal aggregators, or fund mixers.
+ *
+ * A real operator's treasury can also look like this — they disburse capital
+ * without trading themselves. The distinguishing factor is volume and
+ * counterparty diversity, but at our scale we can't reliably tell them apart
+ * automatically. Default behavior is to flag them so the user can manually
+ * spot-check on Solscan rather than auto-promoting them as alpha.
+ *
+ * Triggers:
+ *   - candidate has >= minBidirectionalEdges distinct funders (out-graph)
+ *   - same wallet is parent of >= minBidirectionalEdges distinct seeds (in-graph)
+ *   - total SOL flow >= minSolFlow (i.e., not a small operator)
+ *   - candidate has zero swap activity in our verification window
+ *
+ * @param candidateToSwaps swap history per candidate (from verification step)
+ */
+export function detectPassThroughRouters(
+  candidates: Map<string, CandidateProfile>,
+  parents: Map<string, ParentOperator>,
+  candidateToSwaps: Record<string, SwapEvent[]>,
+  opts: { minBidirectionalEdges?: number; minSolFlow?: number } = {},
+): Set<string> {
+  const minEdges = opts.minBidirectionalEdges ?? 5;
+  const minSolFlow = opts.minSolFlow ?? 50;
+  const flagged = new Set<string>();
+  for (const [w, c] of candidates) {
+    const p = parents.get(w);
+    if (!p) continue;
+    if (c.funders.length < minEdges) continue;
+    if (p.children.length < minEdges) continue;
+    if (c.totalSol < minSolFlow) continue;
+    const swaps = candidateToSwaps[w] ?? [];
+    if (swaps.length > 0) continue;
+    flagged.add(w);
+  }
+  return flagged;
+}
+
+/**
  * Heuristic CEX detection: any candidate that is a recipient of more than
  * `fanInCap` distinct seeds is almost certainly a hot wallet (CEX, MM, or
  * onramp), not an alpha rotation account. Real operators rotate across 2-10

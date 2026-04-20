@@ -5,6 +5,7 @@ import {
   detectFanInOutliers,
   detectParentOperators,
   detectBidirectionalHubs,
+  detectPassThroughRouters,
   computeBehavior,
   scoreFundingProfile,
   scoreRotationCandidate,
@@ -398,6 +399,50 @@ describe('detectBidirectionalHubs', () => {
     const parents = buildIncomingGraph(seedToTransfers);
     const hubs = detectBidirectionalHubs(candidates, parents, 2);
     expect(hubs.size).toBe(0);
+  });
+});
+
+describe('detectPassThroughRouters', () => {
+  function makeBidirectional(
+    wallet: string,
+    edges: number,
+    totalSol: number,
+  ): { candidates: Map<string, CandidateProfile>; parents: Map<string, ReturnType<typeof buildIncomingGraph> extends Map<string, infer V> ? V : never> } {
+    const seedToTransfers: Record<string, TransferEvent[]> = {};
+    for (let i = 0; i < edges; i++) {
+      seedToTransfers[`s${i}`] = [
+        te(`s${i}`, wallet, totalSol / edges, 1_000 + i, 'out'),
+        te(`s${i}`, wallet, totalSol / edges, 2_000 + i, 'in'),
+      ];
+    }
+    const { candidates } = buildRotationGraph(seedToTransfers);
+    const parents = buildIncomingGraph(seedToTransfers);
+    return { candidates, parents };
+  }
+
+  it('flags wallets with high BI-HUB AND big flow AND zero own swaps', () => {
+    const { candidates, parents } = makeBidirectional('routerW', 6, 120);
+    const routers = detectPassThroughRouters(candidates, parents, {});
+    expect(routers.has('routerW')).toBe(true);
+  });
+
+  it('does NOT flag wallet that has any swap activity (real trader)', () => {
+    const { candidates, parents } = makeBidirectional('traderW', 6, 120);
+    const swaps = { traderW: [sw('traderW', 'mintA', 'buy', 50, 5_000)] };
+    const routers = detectPassThroughRouters(candidates, parents, swaps);
+    expect(routers.has('traderW')).toBe(false);
+  });
+
+  it('does NOT flag wallet below the SOL flow threshold (small operators)', () => {
+    const { candidates, parents } = makeBidirectional('smallW', 6, 10);
+    const routers = detectPassThroughRouters(candidates, parents, {});
+    expect(routers.has('smallW')).toBe(false);
+  });
+
+  it('does NOT flag wallet with low fan-in/fan-out (could be small rotation)', () => {
+    const { candidates, parents } = makeBidirectional('focusedW', 3, 200);
+    const routers = detectPassThroughRouters(candidates, parents, {});
+    expect(routers.has('focusedW')).toBe(false);
   });
 });
 

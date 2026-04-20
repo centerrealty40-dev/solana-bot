@@ -13,6 +13,7 @@ import {
   detectFanInOutliers,
   detectParentOperators,
   detectBidirectionalHubs,
+  detectPassThroughRouters,
   computeBehavior,
   scoreRotationCandidate,
   collapseRotationFleets,
@@ -73,6 +74,14 @@ const log = child('seed-rotation');
  *   ROT_PARENT_LIMIT=50            cap on parents to insert
  *   ROT_HUB_BONUS=30               score bonus added to bidirectional hubs
  *                                  (candidates that are ALSO parents of multiple seeds)
+ *   ROT_HUB_REQUIRES_SWAP=1        only apply BI-HUB bonus when candidate has 1+
+ *                                  own swap (default on; pass-through routers
+ *                                  with 0 swaps don't get boosted)
+ *   ROT_DROP_ROUTERS=1             drop pass-through routers entirely (5+ funders
+ *                                  AND 5+ children AND 0 swaps AND >50 SOL flow);
+ *                                  these are likely CEX hot wallets (default on)
+ *   ROT_ROUTER_MIN_EDGES=5         router detection: min funders == min children
+ *   ROT_ROUTER_MIN_SOL=50          router detection: min total SOL throughput
  */
 
 interface RotationCache {
@@ -139,6 +148,10 @@ async function main(): Promise<void> {
   const promoteParents = process.env.ROT_PROMOTE_PARENTS !== '0';
   const parentLimit = Number(process.env.ROT_PARENT_LIMIT ?? 50);
   const hubBonus = Number(process.env.ROT_HUB_BONUS ?? 30);
+  const hubRequiresSwap = process.env.ROT_HUB_REQUIRES_SWAP !== '0';
+  const dropRouters = process.env.ROT_DROP_ROUTERS !== '0';
+  const routerMinEdges = Number(process.env.ROT_ROUTER_MIN_EDGES ?? 5);
+  const routerMinSol = Number(process.env.ROT_ROUTER_MIN_SOL ?? 50);
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -315,6 +328,7 @@ async function main(): Promise<void> {
   let parents = new Map<string, ParentOperator>();
   let parentOps: ParentOperator[] = [];
   let hubs = new Set<string>();
+  let routers = new Set<string>();
   const hasInbound = Object.values(cache.seedToTransfers).some((arr) =>
     arr.some((t) => t.direction === 'in'),
   );
@@ -325,15 +339,34 @@ async function main(): Promise<void> {
       fanInCap: fanInCapOverride,
     });
     hubs = detectBidirectionalHubs(rebuiltCandidates, parents, minParentChildren);
+
+    // Pass-through router detection (likely CEX hot wallets / aggregators we
+    // don't have in the static blacklist). These look very strong on the graph
+    // (high BI-HUB) but they don't actually trade — they just route capital.
+    if (dropRouters) {
+      routers = detectPassThroughRouters(rebuiltCandidates, parents, cache.candidateToSwaps, {
+        minBidirectionalEdges: routerMinEdges,
+        minSolFlow: routerMinSol,
+      });
+    }
     log.info(
       {
         rawParents: parents.size,
         confirmedParentOperators: parentOps.length,
         bidirectionalHubs: hubs.size,
+        passThroughRouters: routers.size,
         minParentChildren,
+        routerMinEdges,
+        routerMinSol,
       },
       'incoming graph built',
     );
+    if (routers.size > 0) {
+      log.info(
+        { sample: Array.from(routers).slice(0, 5) },
+        'pass-through routers will be excluded (likely unblacklisted CEX hot wallets / aggregators)',
+      );
+    }
   } else {
     log.warn(
       'no inbound transfers in cache — bidirectional analysis skipped (set ROT_BIDIRECTIONAL=1 and re-fetch)',
@@ -341,23 +374,42 @@ async function main(): Promise<void> {
   }
 
   const scored: RotationCandidate[] = [];
+  let droppedRouters = 0;
+  let hubsBoosted = 0;
   for (const profile of rebuiltCandidates.values()) {
     if (profile.funders.length < minFunders) continue;
+    if (routers.has(profile.wallet)) {
+      droppedRouters++;
+      continue;
+    }
     const swaps = cache.candidateToSwaps[profile.wallet] ?? [];
     const behavior = computeBehavior(swaps, profile);
     const cand = scoreRotationCandidate(profile, behavior);
     // Bidirectional hub bonus: candidate is also a parent of 2+ seeds = strong
-    // signal of an operator's central rotation hub.
+    // signal of an operator's central rotation hub. Only apply when candidate
+    // has actual trading activity — otherwise it's a pass-through router.
     if (hubs.has(profile.wallet)) {
       const p = parents.get(profile.wallet)!;
-      cand.score += hubBonus;
-      cand.reason = `[BI-HUB ${p.children.length}↔] ` + cand.reason;
+      const eligible = !hubRequiresSwap || (behavior !== null && behavior.swapCount >= 1);
+      if (eligible) {
+        cand.score += hubBonus;
+        cand.reason = `[BI-HUB ${p.children.length}↔] ` + cand.reason;
+        hubsBoosted++;
+      } else {
+        cand.reason = `[BI-HUB-passive ${p.children.length}↔ no_swap] ` + cand.reason;
+      }
     }
     scored.push(cand);
   }
   scored.sort((a, b) => b.score - a.score);
   log.info(
-    { scored: scored.length, topScore: scored[0]?.score ?? 0, hubsBoosted: hubs.size },
+    {
+      scored: scored.length,
+      topScore: scored[0]?.score ?? 0,
+      hubsBoosted,
+      hubsPassive: hubs.size - hubsBoosted,
+      droppedRouters,
+    },
     'scoring done',
   );
 
