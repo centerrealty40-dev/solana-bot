@@ -59,7 +59,12 @@ const log = child('seed-rotation');
  *   ROT_MIN_FUNDERS=1              candidate must have >= this many distinct funders
  *                                  (set 2+ for cross-seed rotation only)
  *   ROT_FAN_IN_CAP=auto            override the auto fan-in cap (CEX detection)
- *   ROT_VERIFY_TOP=80              top-N candidates to deep-verify with swap history
+ *   ROT_VERIFY_TOP=200             top-N candidates to deep-verify with swap history
+ *                                  (raised from 80 — fan-in scoring favors HODL receivers
+ *                                  with multi-funder profiles, single-funder MEMECOIN-OP
+ *                                  candidates land deep in the rank queue)
+ *   ROT_VERIFY_ALL=0               1 = verify ALL candidates regardless of rank
+ *                                  (cost: rawCandidates * verifyPages * 100 credits)
  *   ROT_VERIFY_PAGES=1             swap history pages per verified candidate
  *   ROT_LIMIT=200                  max wallets to insert
  *   ROT_DRY_RUN=1                  show plan, do not write
@@ -71,6 +76,10 @@ const log = child('seed-rotation');
  *                                  parent operators + bidirectional hubs (default on,
  *                                  free — same Helius data, just opposite direction)
  *   ROT_MIN_PARENT_CHILDREN=2      parent must fund >= N seeds to be flagged
+ *   ROT_REQUIRE_SWAP_FOR_INSERT=1  only insert candidates with verified swaps into
+ *                                  watchlist_wallets (default on). Without this,
+ *                                  fan-in HODL receivers flood the table when seeds
+ *                                  are non-pumped tokens. Parents bypass this gate.
  *   ROT_PROMOTE_PARENTS=1          insert top parents as source='rotation-parent'
  *                                  (default on; their treasury wallets are gold)
  *   ROT_PARENT_LIMIT=50            cap on parents to insert
@@ -165,7 +174,8 @@ async function main(): Promise<void> {
   const fanInCapOverride = process.env.ROT_FAN_IN_CAP
     ? Number(process.env.ROT_FAN_IN_CAP)
     : undefined;
-  const verifyTop = Number(process.env.ROT_VERIFY_TOP ?? 80);
+  const verifyTop = Number(process.env.ROT_VERIFY_TOP ?? 200);
+  const verifyAll = process.env.ROT_VERIFY_ALL === '1';
   const verifyPages = Number(process.env.ROT_VERIFY_PAGES ?? 1);
   const limit = Number(process.env.ROT_LIMIT ?? 200);
   const dryRun = process.env.ROT_DRY_RUN === '1';
@@ -177,6 +187,12 @@ async function main(): Promise<void> {
   const minParentChildren = Number(process.env.ROT_MIN_PARENT_CHILDREN ?? 2);
   const promoteParents = process.env.ROT_PROMOTE_PARENTS !== '0';
   const parentLimit = Number(process.env.ROT_PARENT_LIMIT ?? 50);
+  // When true (default), only candidates with >=1 verified swap are inserted
+  // into watchlist_wallets. Without this gate, fan-in HODL receivers (the
+  // bulk of survivors when seeds are non-pumped tokens) flood the watchlist
+  // with non-tradeable noise. Parent-operators are inserted separately via
+  // ROT_PROMOTE_PARENTS regardless of this flag.
+  const requireSwapForInsert = process.env.ROT_REQUIRE_SWAP_FOR_INSERT !== '0';
   const hubBonus = Number(process.env.ROT_HUB_BONUS ?? 30);
   const hubRequiresSwap = process.env.ROT_HUB_REQUIRES_SWAP !== '0';
   const dropRouters = process.env.ROT_DROP_ROUTERS !== '0';
@@ -328,8 +344,11 @@ async function main(): Promise<void> {
       const sb = b.funders.length * 30 + Math.log10(1 + b.totalSol) * 8;
       return sb - sa;
     });
-    const toVerify = preVerify.slice(0, verifyTop);
-    log.info({ toVerify: toVerify.length }, 'top candidates selected for swap verification');
+    const toVerify = verifyAll ? preVerify : preVerify.slice(0, verifyTop);
+    log.info(
+      { toVerify: toVerify.length, mode: verifyAll ? 'all' : `top-${verifyTop}` },
+      'candidates selected for swap verification',
+    );
 
     log.info('step 4: verifying candidates with swap history (credit-spending)');
     const candidateToSwaps: Record<string, SwapEvent[]> = {};
@@ -792,8 +811,11 @@ async function main(): Promise<void> {
   const parentsToInsert =
     promoteParents && parentOps.length > 0 ? parentOps.slice(0, parentLimit) : [];
   await db.transaction(async (tx) => {
+    const insertable = requireSwapForInsert
+      ? final.filter((c) => (c.behavior?.swapCount ?? 0) > 0)
+      : final;
     if (purgeOld) {
-      const finalSet = final.map((c) => c.wallet);
+      const finalSet = insertable.map((c) => c.wallet);
       const stale = await tx.execute(dsql`
         UPDATE watchlist_wallets
         SET removed_at = NOW()
@@ -806,7 +828,7 @@ async function main(): Promise<void> {
         (stale as { rowCount?: number; length?: number }).rowCount ??
         (Array.isArray(stale) ? stale.length : 0);
     }
-    for (const c of final) {
+    for (const c of insertable) {
       const note = formatRotationNote(c);
       const existing = await tx
         .select({ wallet: schema.watchlistWallets.wallet })
