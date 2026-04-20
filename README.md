@@ -229,7 +229,7 @@ LONGFORM_DUMP=cache/longform.json npm run watchlist:seed:longform
 
 The "non-obvious" path. Real alpha traders know they're being watched and
 actively rotate funds across multiple wallets to evade copy-trading. By
-tracing OUTGOING transfers from your existing seed wallets, we find the
+tracing OUTGOING transfers from a pool of "anchor wallets", we find the
 hidden rotation accounts that have never appeared on any smart-money list.
 
 Multi-funder candidates (recipient funded by 2+ different seed wallets) are
@@ -237,17 +237,30 @@ the strongest signal — that's a coordinated operator running a rotation
 network. CEX hot wallets are filtered via a curated blacklist + a fan-in
 heuristic that auto-detects unknown CEXes.
 
-```bash
-# Cost is very small: ROT_SEED_LIMIT * ROT_TRANSFER_PAGES * 100 + ROT_VERIFY_TOP * 100
-# Default: 80 * 2 * 100 + 80 * 100 = 24,000 credits per run
-ROT_DRY_RUN=1 npm run watchlist:seed:rotation
+**Bootstrap problem:** rotation discovery needs an anchor pool of wallets
+to trace from. Our `helius-seed` / `pump-seed` / `longform-seed` filters are
+designed for cross-token alpha and often produce very few wallets. Solution:
+extract "raw whales" from the cached pump/longform discovery data — wallets
+that put real SOL into single tokens that subsequently won. These don't pass
+our cross-token filter but they ARE real-money buyers, perfect anchor points.
+This step uses already-paid-for cache data, so it's FREE.
 
-# Persist for free offline re-tuning (different ROT_MIN_FUNDERS values etc.)
-ROT_DUMP=cache/rot.json npm run watchlist:seed:rotation
+```bash
+# 0. (one-time) Extract whale anchors from existing cache. FREE — no Helius credits.
+npm run whales:extract -- --in cache/pump.json --out seeds/whales.txt --top 100
+# (or --in cache/longform.json once you've run watchlist:seed:longform with LONGFORM_DUMP)
+
+# 1. Dry-run rotation discovery against those anchors
+# Cost: ROT_SEED_LIMIT * ROT_TRANSFER_PAGES * 100 + ROT_VERIFY_TOP * 100
+# Default: 80 * 2 * 100 + 80 * 100 = 24,000 credits per run
+ROT_SEED_FILE=seeds/whales.txt ROT_DRY_RUN=1 ROT_DUMP=cache/rot.json \
+  npm run watchlist:seed:rotation
+
+# 2. Persist for free offline re-tuning (different ROT_MIN_FUNDERS values etc.)
 ROT_LOAD=cache/rot.json ROT_MIN_FUNDERS=2 npm run watchlist:seed:rotation
 
-# Apply (creates source='rotation-seed' rows)
-ROT_PURGE_OLD=1 npm run watchlist:seed:rotation
+# 3. Apply (creates source='rotation-seed' rows)
+ROT_SEED_FILE=seeds/whales.txt ROT_PURGE_OLD=1 npm run watchlist:seed:rotation
 ```
 
 #### Wallet behavior deep-dive

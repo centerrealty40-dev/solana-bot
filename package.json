@@ -37,6 +37,7 @@
     "watchlist:seed:longform": "tsx src/scripts/seed-watchlist-longform.ts",
     "watchlist:seed:rotation": "tsx src/scripts/seed-watchlist-rotation.ts",
     "watchlist:deepdive": "tsx src/scripts/wallet-deep-dive.ts",
+    "whales:extract": "tsx src/scripts/extract-whales.ts",
     "watchlist:show": "tsx src/scripts/watchlist-show.ts",
     "watchlist:add": "tsx src/scripts/watchlist-add.ts",
     "watchlist:remove": "tsx src/scripts/watchlist-remove.ts"
