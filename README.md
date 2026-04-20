@@ -207,6 +207,58 @@ The orchestrator unions four token sources (Birdeye top + DexScreener trending
 + DexScreener boosts + DexScreener fresh profiles), filters to memecoin FDV
 range with min liquidity / volume / age, then pulls real swaps from Helius.
 
+#### Option C — Pump-retro alpha discovery
+
+```bash
+# Find tokens that pumped 50%+ in the last 24h, then identify the wallets
+# that bought EARLY (pre-pump). Cross-tabulate hits across multiple pumps.
+PUMP_DRY_RUN=1 npm run watchlist:seed:pump
+PUMP_DUMP=cache/pump.json npm run watchlist:seed:pump   # cache for free re-tuning
+```
+
+#### Option D — Long-form alpha discovery
+
+```bash
+# Find tokens that grew large over weeks (14-90 days, FDV >$3M), then identify
+# meaningful early buyers (>=0.3 SOL, ranks 30-500) within their first 7 days.
+LONGFORM_DRY_RUN=1 npm run watchlist:seed:longform
+LONGFORM_DUMP=cache/longform.json npm run watchlist:seed:longform
+```
+
+#### Option E — Rotation network discovery (H8, hidden alpha)
+
+The "non-obvious" path. Real alpha traders know they're being watched and
+actively rotate funds across multiple wallets to evade copy-trading. By
+tracing OUTGOING transfers from your existing seed wallets, we find the
+hidden rotation accounts that have never appeared on any smart-money list.
+
+Multi-funder candidates (recipient funded by 2+ different seed wallets) are
+the strongest signal — that's a coordinated operator running a rotation
+network. CEX hot wallets are filtered via a curated blacklist + a fan-in
+heuristic that auto-detects unknown CEXes.
+
+```bash
+# Cost is very small: ROT_SEED_LIMIT * ROT_TRANSFER_PAGES * 100 + ROT_VERIFY_TOP * 100
+# Default: 80 * 2 * 100 + 80 * 100 = 24,000 credits per run
+ROT_DRY_RUN=1 npm run watchlist:seed:rotation
+
+# Persist for free offline re-tuning (different ROT_MIN_FUNDERS values etc.)
+ROT_DUMP=cache/rot.json npm run watchlist:seed:rotation
+ROT_LOAD=cache/rot.json ROT_MIN_FUNDERS=2 npm run watchlist:seed:rotation
+
+# Apply (creates source='rotation-seed' rows)
+ROT_PURGE_OLD=1 npm run watchlist:seed:rotation
+```
+
+#### Wallet behavior deep-dive
+
+After any of the above, classify each wallet's actual trading behavior:
+
+```bash
+DEEPDIVE_DRY_RUN=1 npm run watchlist:deepdive
+DEEPDIVE_PURGE=1 npm run watchlist:deepdive   # soft-remove low-quality wallets
+```
+
 #### Inspect / curate / flip live
 
 ```bash

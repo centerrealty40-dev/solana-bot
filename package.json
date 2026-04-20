@@ -35,6 +35,7 @@
     "watchlist:seed:helius": "tsx src/scripts/seed-watchlist-helius.ts",
     "watchlist:seed:pump": "tsx src/scripts/seed-watchlist-pump.ts",
     "watchlist:seed:longform": "tsx src/scripts/seed-watchlist-longform.ts",
+    "watchlist:seed:rotation": "tsx src/scripts/seed-watchlist-rotation.ts",
     "watchlist:deepdive": "tsx src/scripts/wallet-deep-dive.ts",
     "watchlist:show": "tsx src/scripts/watchlist-show.ts",
     "watchlist:add": "tsx src/scripts/watchlist-add.ts",
