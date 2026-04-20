@@ -41,8 +41,14 @@ const BLUECHIP_BLACKLIST = new Set<string>([
 /**
  * Symbol-based blacklist regex — catches stables, LSTs, wrapped majors, and
  * bridged big-cap tokens (BTC/ETH/HYPE/etc) without needing exact mint addresses.
+ *
+ * Patterns:
+ *   - any *USD* / USD* / *USDC / *USDT / PYUSD / DAI / FDUSD / USDe / etc
+ *   - SOL family (LSTs, wrapped variants)
+ *   - BTC/ETH wrapped/bridged
+ *   - Top-cap tickers from other chains that get bridged in (HYPE/SUI/DOGE/etc)
  */
-const BLUECHIP_SYMBOL_RE = /^(USD[A-Z0-9]*|.*USDC|.*USDT|w?SOL|j[a-z]+SOL|bSOL|mSOL|stSOL|.*[bw]?BTC|.*[bw]?ETH|HYPE|SUI|DOGE|XRP|ADA|LINK|UNI|ARB|OP|MATIC|AVAX|DOT|TRX|TON|LTC|XMR|XLM)$/i;
+const BLUECHIP_SYMBOL_RE = /^(.*USD[A-Z0-9]*|.*USDT|.*USDC|PYUSD|FDUSD|USDe|DAI|TUSD|FRAX|w?SOL|j[a-z]+SOL|bSOL|mSOL|stSOL|.*[bw]?BTC|.*[bw]?ETH|HYPE|SUI|DOGE|XRP|ADA|LINK|UNI|ARB|OP|MATIC|AVAX|DOT|TRX|TON|LTC|XMR|XLM|JUP|RAY|ORCA|JTO)$/i;
 
 function isBluechip(mint: string, symbol?: string): boolean {
   if (BLUECHIP_BLACKLIST.has(mint)) return true;

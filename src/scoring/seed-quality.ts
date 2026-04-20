@@ -91,26 +91,41 @@ export function aggregateSwapEvents(events: SwapEvent[]): Map<string, WalletFeat
 /**
  * Filtering knobs. Defaults are tuned to keep ~100-300 high-quality candidates
  * out of ~5-10k raw wallets observed across 30-50 trending memecoins.
+ *
+ * Filter operates in two tiers:
+ *   - Multi-token (tokenCount >= minTokens && tokenCount <= maxTokens):
+ *     diversification + balance — classic "smart money rotates"
+ *   - Specialist (tokenCount == 1 but heavy & balanced activity):
+ *     "this trader knows ONE coin really well" — they place bigger bets,
+ *     enter/exit cleanly, and may have an info edge on that token
  */
 export interface FilterOpts {
-  /** minimum distinct tokens — drops one-token whales */
+  /** minimum distinct tokens for the multi-token tier */
   minTokens?: number;
   /** maximum distinct tokens — drops MEV bots that touch everything */
   maxTokens?: number;
-  /** minimum total USD volume — drops dust */
+  /** minimum total USD volume (multi-token) */
   minVolumeUsd?: number;
   /** maximum total USD volume — drops AMM proxies / market makers */
   maxVolumeUsd?: number;
-  /** minimum swap count */
+  /** minimum swap count (multi-token) */
   minSwaps?: number;
   /** maximum swap count — drops automation that hammers many txs */
   maxSwaps?: number;
   /** minimum median gap seconds — drops sub-second MEV / arb */
   minMedianGapSec?: number;
-  /** maximum top-token concentration (0..1) — drops one-shot wallets */
+  /** maximum top-token concentration (0..1) — multi-token tier only */
   maxTopTokenConcentration?: number;
   /** require non-negative net flow (accumulating); when false, allow distributing too */
   requireNetAccumulation?: boolean;
+  /** if false, single-token wallets are excluded entirely */
+  allowSpecialists?: boolean;
+  /** specialist tier: minimum swap count (default 10) */
+  minSpecialistSwaps?: number;
+  /** specialist tier: minimum USD volume (default 2000) */
+  minSpecialistVolumeUsd?: number;
+  /** specialist tier: minimum buy/sell balance ratio (0 to 1; 0.2 = at least 20% of trades on opposite side) */
+  minSpecialistBalance?: number;
 }
 
 const FILTER_DEFAULTS: Required<FilterOpts> = {
@@ -123,6 +138,10 @@ const FILTER_DEFAULTS: Required<FilterOpts> = {
   minMedianGapSec: 5,
   maxTopTokenConcentration: 0.7,
   requireNetAccumulation: false,
+  allowSpecialists: true,
+  minSpecialistSwaps: 10,
+  minSpecialistVolumeUsd: 2_000,
+  minSpecialistBalance: 0.2,
 };
 
 /**
@@ -136,13 +155,28 @@ export function filterWallets(
   const o = { ...FILTER_DEFAULTS, ...opts };
   const kept: WalletFeatures[] = [];
   for (const f of feats) {
-    if (f.tokenCount < o.minTokens || f.tokenCount > o.maxTokens) continue;
-    if (f.volumeUsd < o.minVolumeUsd || f.volumeUsd > o.maxVolumeUsd) continue;
-    if (f.swapCount < o.minSwaps || f.swapCount > o.maxSwaps) continue;
+    // Universal hard filters (apply to both tiers)
+    if (f.tokenCount > o.maxTokens) continue;
+    if (f.volumeUsd > o.maxVolumeUsd) continue;
+    if (f.swapCount > o.maxSwaps) continue;
     if (Number.isFinite(f.medianGapSec) && f.medianGapSec < o.minMedianGapSec) continue;
-    if (f.topTokenConcentration > o.maxTopTokenConcentration) continue;
     if (o.requireNetAccumulation && f.netFlowUsd < 0) continue;
-    kept.push(f);
+
+    if (f.tokenCount === 1) {
+      if (!o.allowSpecialists) continue;
+      if (f.swapCount < o.minSpecialistSwaps) continue;
+      if (f.volumeUsd < o.minSpecialistVolumeUsd) continue;
+      const total = f.buyCount + f.sellCount;
+      const balance = total > 0 ? Math.min(f.buyCount, f.sellCount) / total : 0;
+      if (balance < o.minSpecialistBalance) continue;
+      kept.push(f);
+    } else {
+      if (f.tokenCount < o.minTokens) continue;
+      if (f.volumeUsd < o.minVolumeUsd) continue;
+      if (f.swapCount < o.minSwaps) continue;
+      if (f.topTokenConcentration > o.maxTopTokenConcentration) continue;
+      kept.push(f);
+    }
   }
   return kept;
 }

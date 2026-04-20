@@ -61,6 +61,7 @@ async function main(): Promise<void> {
   const minAgeHours = Number(process.env.SEED_MIN_AGE_HOURS ?? 2);
   const limit = Number(process.env.SEED_LIMIT ?? 200);
   const minTokens = Number(process.env.SEED_MIN_TOKENS ?? 2);
+  const allowSpecialists = process.env.SEED_NO_SPECIALISTS !== '1';
   const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 5);
   const dryRun = process.env.SEED_DRY_RUN === '1';
   const cluster = process.env.SEED_CLUSTER === '1';
@@ -137,7 +138,12 @@ async function main(): Promise<void> {
     minTokens,
     minMedianGapSec: minGapSec,
     requireNetAccumulation: requireNetAccum,
+    allowSpecialists,
   });
+
+  const multiToken = ranked.filter((w) => w.tokenCount >= 2).length;
+  const specialists = ranked.filter((w) => w.tokenCount === 1).length;
+  log.info({ multiToken, specialists }, 'breakdown of passing wallets');
 
   log.info(
     {

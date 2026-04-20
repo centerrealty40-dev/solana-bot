@@ -47,12 +47,13 @@ describe('seed-quality.aggregateSwapEvents', () => {
 describe('seed-quality.filterWallets', () => {
   it('drops wallets with too few tokens or too small volume', () => {
     const events: SwapEvent[] = [
-      ev('one_token', 'mintA', 'buy', 100_000, 1),
-      ev('one_token', 'mintA', 'sell', 99_000, 2),
+      // single-token wallet with too-fast trades and unbalanced - dropped by specialist tier
+      ev('one_token_fast', 'mintA', 'buy', 100_000, 1),
+      ev('one_token_fast', 'mintA', 'sell', 99_000, 2),
       ev('dust', 'mintA', 'buy', 1, 1),
-      ev('dust', 'mintB', 'buy', 1, 2),
-      ev('dust', 'mintC', 'buy', 1, 3),
-      ev('dust', 'mintD', 'buy', 1, 4),
+      ev('dust', 'mintB', 'buy', 1, 100),
+      ev('dust', 'mintC', 'buy', 1, 200),
+      ev('dust', 'mintD', 'buy', 1, 300),
       ev('good', 'mintA', 'buy', 5_000, 1),
       ev('good', 'mintB', 'buy', 4_000, 60),
       ev('good', 'mintC', 'buy', 3_000, 120),
@@ -61,8 +62,39 @@ describe('seed-quality.filterWallets', () => {
     const agg = aggregateSwapEvents(events);
     const kept = filterWallets(agg.values()).map((w) => w.wallet);
     expect(kept).toContain('good');
-    expect(kept).not.toContain('one_token');
-    expect(kept).not.toContain('dust');
+    expect(kept).not.toContain('one_token_fast'); // < 10 swaps, gap=1s
+    expect(kept).not.toContain('dust'); // $4 volume
+  });
+
+  it('keeps single-token specialists when they are heavy and balanced', () => {
+    // 12 swaps in one token, 6/6 balanced, $24k volume, gaps ~60s -> specialist
+    const evs: SwapEvent[] = [];
+    for (let i = 0; i < 12; i++) {
+      evs.push(ev('specialist', 'mintA', i % 2 ? 'sell' : 'buy', 2_000, i * 60));
+    }
+    const agg = aggregateSwapEvents(evs);
+    const kept = filterWallets(agg.values()).map((w) => w.wallet);
+    expect(kept).toContain('specialist');
+  });
+
+  it('rejects single-token aper (only buys, dumps later)', () => {
+    const evs: SwapEvent[] = [];
+    for (let i = 0; i < 12; i++) {
+      evs.push(ev('aper', 'mintA', 'buy', 2_000, i * 60)); // pure buy, no balance
+    }
+    const agg = aggregateSwapEvents(evs);
+    const kept = filterWallets(agg.values()).map((w) => w.wallet);
+    expect(kept).not.toContain('aper');
+  });
+
+  it('respects allowSpecialists=false', () => {
+    const evs: SwapEvent[] = [];
+    for (let i = 0; i < 12; i++) {
+      evs.push(ev('specialist', 'mintA', i % 2 ? 'sell' : 'buy', 2_000, i * 60));
+    }
+    const agg = aggregateSwapEvents(evs);
+    const kept = filterWallets(agg.values(), { allowSpecialists: false }).map((w) => w.wallet);
+    expect(kept).not.toContain('specialist');
   });
 
   it('drops MEV bots with sub-second median gap', () => {
