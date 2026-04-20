@@ -16,7 +16,15 @@ function ev(
   amountUsd: number,
   ts: number,
 ): SwapEvent {
-  return { wallet, baseMint, side, amountUsd, ts, signature: `${wallet.slice(0, 4)}-${ts}` };
+  return {
+    wallet,
+    baseMint,
+    side,
+    amountUsd,
+    solValue: 0,
+    ts,
+    signature: `${wallet.slice(0, 4)}-${ts}`,
+  };
 }
 
 describe('extractEarlyBuyers', () => {

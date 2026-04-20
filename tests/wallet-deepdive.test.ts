@@ -13,7 +13,15 @@ function ev(
   ts: number,
   amountUsd = 0,
 ): SwapEvent {
-  return { wallet, baseMint, side, ts, amountUsd, signature: `sig-${ts}-${baseMint.slice(0, 4)}` };
+  return {
+    wallet,
+    baseMint,
+    side,
+    ts,
+    amountUsd,
+    solValue: 0,
+    signature: `sig-${ts}-${baseMint.slice(0, 4)}`,
+  };
 }
 
 const WALLET = 'WtestWalletAddress11111111111111111111111111';

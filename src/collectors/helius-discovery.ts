@@ -20,6 +20,10 @@ export interface SwapEvent {
   baseMint: string;
   /** USD value of the swap; 0 if we couldn't price */
   amountUsd: number;
+  /** Quote-leg value expressed in SOL. Reliable even when Jupiter pricing
+   * fails for the base token, since Helius always reports native/SOL legs
+   * correctly and USDC->SOL conversion is straightforward. 0 if no quote leg. */
+  solValue: number;
   /** 'buy' = wallet received baseMint, 'sell' = wallet sent baseMint */
   side: 'buy' | 'sell';
   /** unix epoch seconds */
@@ -177,24 +181,12 @@ function parseSwapEvent(
         ...(swap.tokenOutputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
       ];
 
-      let amountUsd = 0;
-      if (quoteLegs.length > 0) {
-        const qLeg = quoteLegs[0]!;
-        const qty = readSwapLegAmount(qLeg);
-        const price =
-          quotePrices[qLeg.mint] ??
-          (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
-        amountUsd = qty * price;
-      } else if (swap.nativeInput || swap.nativeOutput) {
-        const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
-        const sol = lamports / 1e9;
-        amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
-      }
-
+      const { amountUsd, solValue } = computeQuoteValues(swap, quoteLegs, quotePrices);
       return {
         wallet,
         baseMint: targetMint,
         amountUsd,
+        solValue,
         side,
         ts: tx.timestamp,
         signature: tx.signature,
@@ -208,28 +200,171 @@ function parseSwapEvent(
   if (!ours) return null;
   const side: 'buy' | 'sell' = ours.toUserAccount === wallet ? 'buy' : 'sell';
 
-  // Best-effort USD from any quote-mint transfer to/from the wallet
-  const quoteTransfer = transfers.find(
-    (t) => isQuoteMint(t.mint) && (t.fromUserAccount === wallet || t.toUserAccount === wallet),
-  );
-  let amountUsd = 0;
-  if (quoteTransfer) {
-    const price =
-      quotePrices[quoteTransfer.mint] ??
-      (quoteTransfer.mint === QUOTE_MINTS.USDC || quoteTransfer.mint === QUOTE_MINTS.USDT
-        ? 1
-        : 0);
-    amountUsd = quoteTransfer.tokenAmount * price;
-  }
-
+  const { amountUsd, solValue } = computeQuoteValuesFromTransfers(transfers, wallet, quotePrices);
   return {
     wallet,
     baseMint: targetMint,
     amountUsd,
+    solValue,
     side,
     ts: tx.timestamp,
     signature: tx.signature,
   };
+}
+
+/**
+ * Extract both USD and SOL-equivalent values from a parsed swap's quote legs.
+ * SOL value is the more reliable signal: native legs come straight from
+ * the chain (lamports), and USDC/USDT have fixed 1.0 USD pricing so we can
+ * convert via the SOL price. Useful when memecoin USD pricing fails entirely.
+ */
+function computeQuoteValues(
+  swap: NonNullable<HeliusEnhancedTx['events']>['swap'],
+  quoteLegs: Array<{ mint: string }>,
+  quotePrices: Record<string, number>,
+): { amountUsd: number; solValue: number } {
+  const solPriceUsd = quotePrices[QUOTE_MINTS.SOL] ?? 0;
+  if (quoteLegs.length > 0) {
+    const qLeg = quoteLegs[0]!;
+    const qty = readSwapLegAmount(qLeg);
+    if (qLeg.mint === QUOTE_MINTS.SOL) {
+      const amountUsd = qty * solPriceUsd;
+      return { amountUsd, solValue: qty };
+    }
+    if (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT) {
+      const amountUsd = qty;
+      const solValue = solPriceUsd > 0 ? qty / solPriceUsd : 0;
+      return { amountUsd, solValue };
+    }
+    // Other quote mint with explicit price — convert via that price
+    const price = quotePrices[qLeg.mint] ?? 0;
+    const amountUsd = qty * price;
+    const solValue = solPriceUsd > 0 ? amountUsd / solPriceUsd : 0;
+    return { amountUsd, solValue };
+  }
+  if (swap?.nativeInput || swap?.nativeOutput) {
+    const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
+    const sol = lamports / 1e9;
+    return { amountUsd: sol * solPriceUsd, solValue: sol };
+  }
+  return { amountUsd: 0, solValue: 0 };
+}
+
+/**
+ * Same as computeQuoteValues but for the tokenTransfers fallback path.
+ * Picks the quote-mint transfer involving the wallet and computes both values.
+ */
+function computeQuoteValuesFromTransfers(
+  transfers: NonNullable<HeliusEnhancedTx['tokenTransfers']>,
+  wallet: string,
+  quotePrices: Record<string, number>,
+): { amountUsd: number; solValue: number } {
+  const solPriceUsd = quotePrices[QUOTE_MINTS.SOL] ?? 0;
+  const quoteTransfer = transfers.find(
+    (t) => isQuoteMint(t.mint) && (t.fromUserAccount === wallet || t.toUserAccount === wallet),
+  );
+  if (!quoteTransfer) return { amountUsd: 0, solValue: 0 };
+  if (quoteTransfer.mint === QUOTE_MINTS.SOL) {
+    const amountUsd = quoteTransfer.tokenAmount * solPriceUsd;
+    return { amountUsd, solValue: quoteTransfer.tokenAmount };
+  }
+  if (quoteTransfer.mint === QUOTE_MINTS.USDC || quoteTransfer.mint === QUOTE_MINTS.USDT) {
+    const amountUsd = quoteTransfer.tokenAmount;
+    const solValue = solPriceUsd > 0 ? quoteTransfer.tokenAmount / solPriceUsd : 0;
+    return { amountUsd, solValue };
+  }
+  const price = quotePrices[quoteTransfer.mint] ?? 0;
+  const amountUsd = quoteTransfer.tokenAmount * price;
+  const solValue = solPriceUsd > 0 ? amountUsd / solPriceUsd : 0;
+  return { amountUsd, solValue };
+}
+
+/**
+ * Like getSwappersForToken, but designed for "long-form" discovery: paginates
+ * the token's swap history aggressively backward (up to maxPages or until the
+ * end of history). Stops early if all txs in a page are older than untilTs
+ * (avoid wasting credits past your time window of interest).
+ *
+ * Cost is up to maxPages * 100 credits. For a 14-30 day old token this is
+ * typically 50-200 pages = 5,000-20,000 credits per token.
+ *
+ * @param mint     token mint to scan
+ * @param maxPages cap on pages of 100 txs (default 200 = ~20,000 swaps max)
+ * @param untilTs  unix-sec lower bound; stop paginating when page tail <= this
+ * @param quotePrices quote-mint USD prices (provide once)
+ */
+export async function getDeepHistoryForToken(
+  mint: string,
+  maxPages = 200,
+  untilTs?: number,
+  quotePrices: Record<string, number> = {},
+): Promise<SwapEvent[]> {
+  if (config.heliusMode === 'off') return [];
+
+  const out: SwapEvent[] = [];
+  let before: string | undefined;
+
+  for (let p = 0; p < maxPages; p++) {
+    const url =
+      `${HELIUS_API}/v0/addresses/${mint}/transactions` +
+      `?api-key=${config.heliusApiKey}&type=SWAP&limit=100` +
+      (before ? `&before=${before}` : '');
+
+    let txs: HeliusEnhancedTx[] = [];
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await heliusFetch({
+          url,
+          kind: 'wallet_history',
+          note: `deep:${mint.slice(0, 6)} p${p}${attempt > 0 ? ` retry${attempt}` : ''}`,
+        });
+        lastStatus = res.statusCode;
+        if (res.statusCode === 200) {
+          txs = (await res.body.json()) as HeliusEnhancedTx[];
+          break;
+        }
+        if (res.statusCode >= 500 && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        break;
+      } catch (err) {
+        if (err instanceof HeliusGuardError) {
+          log.warn({ mint, reason: err.reason }, 'guard blocked deep history');
+          return out;
+        }
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+      }
+    }
+    if (txs.length === 0 && lastStatus !== 200) {
+      log.warn({ mint, status: lastStatus, page: p }, 'deep history gave up after retries');
+      break;
+    }
+    if (txs.length === 0) break;
+
+    for (const tx of txs) {
+      const ev = parseSwapEvent(tx, mint, quotePrices);
+      if (ev) out.push(ev);
+    }
+
+    // Each page is older than the previous (newest-first pagination). If the
+    // OLDEST tx in this page is already past our cutoff, we have what we need.
+    const minTsInPage = txs.reduce(
+      (m, t) => (t.timestamp && t.timestamp < m ? t.timestamp : m),
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (untilTs !== undefined && minTsInPage < untilTs) break;
+
+    before = txs[txs.length - 1]?.signature;
+    if (!before) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return out;
 }
 
 /**
@@ -371,27 +506,16 @@ function parseSwapEventForWallet(
     }
 
     if (baseMint && side) {
-      let amountUsd = 0;
       const quoteLegs = [
         ...(swap.tokenInputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
         ...(swap.tokenOutputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
       ];
-      if (quoteLegs.length > 0) {
-        const qLeg = quoteLegs[0]!;
-        const qty = readSwapLegAmount(qLeg);
-        const price =
-          quotePrices[qLeg.mint] ??
-          (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
-        amountUsd = qty * price;
-      } else if (swap.nativeInput || swap.nativeOutput) {
-        const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
-        const sol = lamports / 1e9;
-        amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
-      }
+      const { amountUsd, solValue } = computeQuoteValues(swap, quoteLegs, quotePrices);
       return {
         wallet,
         baseMint,
         amountUsd,
+        solValue,
         side,
         ts: tx.timestamp,
         signature: tx.signature,
@@ -399,27 +523,16 @@ function parseSwapEventForWallet(
     }
   }
 
-  // Fallback: scan tokenTransfers for any non-quote mint movement
   const transfers = tx.tokenTransfers ?? [];
   const ours = transfers.find((t) => !isQuoteMint(t.mint));
   if (!ours) return null;
   const side: 'buy' | 'sell' = ours.toUserAccount === wallet ? 'buy' : 'sell';
-  const quoteTransfer = transfers.find(
-    (t) => isQuoteMint(t.mint) && (t.fromUserAccount === wallet || t.toUserAccount === wallet),
-  );
-  let amountUsd = 0;
-  if (quoteTransfer) {
-    const price =
-      quotePrices[quoteTransfer.mint] ??
-      (quoteTransfer.mint === QUOTE_MINTS.USDC || quoteTransfer.mint === QUOTE_MINTS.USDT
-        ? 1
-        : 0);
-    amountUsd = quoteTransfer.tokenAmount * price;
-  }
+  const { amountUsd, solValue } = computeQuoteValuesFromTransfers(transfers, wallet, quotePrices);
   return {
     wallet,
     baseMint: ours.mint,
     amountUsd,
+    solValue,
     side,
     ts: tx.timestamp,
     signature: tx.signature,
