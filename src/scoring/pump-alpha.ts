@@ -221,9 +221,11 @@ export function filterSnipersWithStats(
     let reason: SniperFilterDetail['reason'] = 'kept';
     if (minAvgRank > 0 && w.avgRank <= minAvgRank) {
       reason = 'auto_sniper_rank';
-    } else if (avgUsd === 0 && skipUsdIfMissing) {
-      // Pricing data missing for these tokens — can't apply USD-based filter.
-      // Keep the wallet but flag for visibility.
+    } else if (avgUsd < 5 && skipUsdIfMissing) {
+      // Pricing data missing or partial for these tokens — can't apply
+      // USD-based filter meaningfully. Below $5/buy is the noise floor: it's
+      // almost always "Jupiter didn't know the token" rather than "trader
+      // bought $4 of memecoin". Keep the wallet but flag for visibility.
       reason = 'no_usd_data_kept';
     } else if (avgUsd < minAvgUsd) {
       reason = 'low_avg_usd';
