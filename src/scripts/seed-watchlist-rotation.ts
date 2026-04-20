@@ -97,13 +97,17 @@ const log = child('seed-rotation');
  *                                  fresh-funded "may deploy soon" wallets)
  *   ROT_DROP_RETAIL_MICRO=1        drop wallets classified as RETAIL-MICRO (avg buy
  *                                  below threshold) — small manual retail noise. On by default.
- *   ROT_OPERATOR_CLUSTERING=1      group candidates by (primary funder + funding size)
- *                                  to identify multi-account operators. Default on.
+ *   ROT_OPERATOR_CLUSTERING=0      group candidates by (primary funder + funding size)
+ *                                  to identify multi-account operators. Off by default
+ *                                  because in practice multiple alpha-seeds independently
+ *                                  fund different deploy-wallets with similar amounts (~10 SOL),
+ *                                  which the algorithm misclusters. Useful only when seeds
+ *                                  share a common parent funder (rare).
  *   ROT_CLUSTER_AMOUNT_BUCKET=1.0  funding-size bucket in SOL for clustering
- *                                  (1.0 = wallets funded with 9.5 and 10.1 SOL → same bucket)
  *   ROT_CLUSTER_REP_ONLY=0         emit only one representative per operator cluster
- *                                  (default 0 = keep all members for parallel signal,
- *                                  set to 1 if you want to copy-trade only one wallet/operator)
+ *   ROT_INSPECT=W1,W2,...          DEBUG: print full diagnostics for these wallets
+ *                                  (even if they were filtered out earlier in the pipeline).
+ *                                  Use to understand why a manually-spotted wallet was dropped.
  */
 
 interface RotationCache {
@@ -179,9 +183,13 @@ async function main(): Promise<void> {
   const dropPassiveHubs = process.env.ROT_DROP_PASSIVE_HUBS !== '0';
   const requireSwap = process.env.ROT_REQUIRE_SWAP === '1';
   const dropRetailMicro = process.env.ROT_DROP_RETAIL_MICRO !== '0';
-  const operatorClustering = process.env.ROT_OPERATOR_CLUSTERING !== '0';
+  const operatorClustering = process.env.ROT_OPERATOR_CLUSTERING === '1';
   const clusterAmountBucket = Number(process.env.ROT_CLUSTER_AMOUNT_BUCKET ?? 1.0);
   const clusterRepOnly = process.env.ROT_CLUSTER_REP_ONLY === '1';
+  const inspectWallets = (process.env.ROT_INSPECT ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -409,26 +417,42 @@ async function main(): Promise<void> {
   }
 
   const scored: RotationCandidate[] = [];
-  let droppedRouters = 0;
-  let droppedStale = 0;
-  let droppedAbandoned = 0;
-  let droppedNoSwap = 0;
-  let droppedPassiveHubs = 0;
-  let droppedRetailMicro = 0;
+  // For diagnostics: every dropped candidate is captured with reason and full
+  // candidate object so we can print top-N dropped per reason and answer
+  // "why was wallet X dropped?" queries via ROT_INSPECT.
+  type DropReason =
+    | 'router'
+    | 'stale-swap'
+    | 'abandoned'
+    | 'no-swap-tight'
+    | 'passive-hub'
+    | 'retail-micro';
+  const dropped: Array<{ cand: RotationCandidate; reason: DropReason }> = [];
   let hubsBoosted = 0;
   const now = Math.floor(Date.now() / 1000);
   for (const profile of rebuiltCandidates.values()) {
     if (profile.funders.length < minFunders) continue;
-    if (routers.has(profile.wallet)) {
-      droppedRouters++;
-      continue;
-    }
     const swaps = cache.candidateToSwaps[profile.wallet] ?? [];
     const behavior = computeBehavior(swaps, profile);
+    // Build a "shadow" candidate even for dropped wallets so inspect-mode and
+    // diagnostics can show full info for any reason.
+    const shadow: RotationCandidate = {
+      wallet: profile.wallet,
+      profile,
+      behavior,
+      score: 0,
+      reason: '',
+    };
 
-    // Tight mode: drop ANY no-swap candidate (pure-traders only)
+    if (routers.has(profile.wallet)) {
+      shadow.reason = 'DROP=router (high bidirectional flow, 0 swaps)';
+      dropped.push({ cand: shadow, reason: 'router' });
+      continue;
+    }
+
     if (requireSwap && (behavior === null || behavior.swapCount === 0)) {
-      droppedNoSwap++;
+      shadow.reason = 'DROP=no-swap-tight (ROT_REQUIRE_SWAP=1)';
+      dropped.push({ cand: shadow, reason: 'no-swap-tight' });
       continue;
     }
 
@@ -438,12 +462,15 @@ async function main(): Promise<void> {
       dropRetailMicro,
     });
     if (cand.score === 0) {
-      if (cand.reason.includes('STALE: last swap')) droppedStale++;
-      else if (cand.reason.includes('STALE: funded')) droppedAbandoned++;
-      else if (cand.reason.includes('RETAIL-MICRO')) droppedRetailMicro++;
+      if (cand.reason.includes('STALE: last swap')) {
+        dropped.push({ cand, reason: 'stale-swap' });
+      } else if (cand.reason.includes('STALE: funded')) {
+        dropped.push({ cand, reason: 'abandoned' });
+      } else if (cand.reason.includes('RETAIL-MICRO')) {
+        dropped.push({ cand, reason: 'retail-micro' });
+      }
       continue;
     }
-    // Bidirectional hub handling
     if (hubs.has(profile.wallet)) {
       const p = parents.get(profile.wallet)!;
       const eligible = !hubRequiresSwap || (behavior !== null && behavior.swapCount >= 1);
@@ -452,10 +479,8 @@ async function main(): Promise<void> {
         cand.reason = `[BI-HUB ${p.children.length}↔] ` + cand.reason;
         hubsBoosted++;
       } else if (dropPassiveHubs) {
-        // BI-HUB-passive = wallet is a parent of multiple seeds but does ZERO swaps
-        // → pass-through wallet (CEX hot, treasury, aggregator). Useless to copy-trade.
-        // Keep as parent-operator only (handled in promotion step below).
-        droppedPassiveHubs++;
+        cand.reason = `DROP=passive-hub (parent of ${p.children.length}, no swap)`;
+        dropped.push({ cand, reason: 'passive-hub' });
         continue;
       } else {
         cand.reason = `[BI-HUB-passive ${p.children.length}↔ no_swap] ` + cand.reason;
@@ -463,6 +488,12 @@ async function main(): Promise<void> {
     }
     scored.push(cand);
   }
+  const droppedRouters = dropped.filter((d) => d.reason === 'router').length;
+  const droppedStale = dropped.filter((d) => d.reason === 'stale-swap').length;
+  const droppedAbandoned = dropped.filter((d) => d.reason === 'abandoned').length;
+  const droppedNoSwap = dropped.filter((d) => d.reason === 'no-swap-tight').length;
+  const droppedPassiveHubs = dropped.filter((d) => d.reason === 'passive-hub').length;
+  const droppedRetailMicro = dropped.filter((d) => d.reason === 'retail-micro').length;
   scored.sort((a, b) => b.score - a.score);
   log.info(
     {
@@ -572,6 +603,104 @@ async function main(): Promise<void> {
       const sw = String(cl.totalSwaps).padStart(10);
       const rep = cl.representative.wallet.slice(0, 12) + '..';
       console.log(`${f}  ${mem} ${size} ${total} ${sw} ${rep}`);
+    }
+    console.log('');
+  }
+
+  // Dropped wallets table — useful to verify filters aren't too aggressive
+  // and to manually spot legit alpha that got accidentally filtered.
+  const reasonsToShow: DropReason[] = ['retail-micro', 'stale-swap', 'abandoned', 'router'];
+  for (const r of reasonsToShow) {
+    const list = dropped
+      .filter((d) => d.reason === r)
+      .sort((a, b) => {
+        const sa = a.cand.behavior?.swapCount ?? 0;
+        const sb = b.cand.behavior?.swapCount ?? 0;
+        return sb - sa;
+      })
+      .slice(0, 8);
+    if (list.length === 0) continue;
+    console.log(`\nTop ${list.length} dropped (reason=${r}):`);
+    console.log(
+      'Wallet                                              Funders TotalSOL Swaps Mints  AvgBuy MedBuy TotalUSD  Class      Reason',
+    );
+    console.log(
+      '--------------------------------------------------  ------- -------- ----- -----  ------ ------ --------  ---------- -----------------------------',
+    );
+    for (const d of list) {
+      const c = d.cand;
+      const wallet = c.wallet.padEnd(50);
+      const f = String(c.profile.funders.length).padStart(7);
+      const sol = c.profile.totalSol.toFixed(1).padStart(8);
+      const sw = String(c.behavior?.swapCount ?? 0).padStart(5);
+      const mi = String(c.behavior?.distinctMints ?? 0).padStart(5);
+      const avg = `$${(c.behavior?.avgBuyUsd ?? 0).toFixed(0)}`.padStart(6);
+      const med = `$${(c.behavior?.medianBuyUsd ?? 0).toFixed(0)}`.padStart(6);
+      const tot = `$${(c.behavior?.totalSwapUsd ?? 0).toFixed(0)}`.padStart(8);
+      const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(10);
+      const reason = c.reason.slice(0, 60);
+      console.log(`${wallet}  ${f} ${sol} ${sw} ${mi}  ${avg} ${med} ${tot}  ${cls} ${reason}`);
+    }
+  }
+  console.log('');
+
+  // INSPECT mode — print full diagnostic for explicitly-named wallets.
+  // Use this to trace why a manually-spotted wallet was filtered/scored a certain way.
+  if (inspectWallets.length > 0) {
+    console.log(`\n=== INSPECT (${inspectWallets.length} wallets) ===`);
+    for (const w of inspectWallets) {
+      // Check survivors first, then dropped, then raw cache
+      const surv = scored.find((c) => c.wallet === w);
+      const drop = dropped.find((d) => d.cand.wallet === w);
+      const inFinal = final.find((c) => c.wallet === w);
+      const profile = rebuiltCandidates.get(w);
+      const swaps = cache.candidateToSwaps[w] ?? [];
+      const transferCount =
+        Object.values(cache.seedToTransfers).reduce(
+          (s, arr) => s + arr.filter((t) => t.counterparty === w).length,
+          0,
+        );
+
+      console.log(`\nWallet: ${w}`);
+      if (!profile) {
+        console.log(
+          `  status: NOT in candidate set (no qualifying inbound transfers from any seed)`,
+        );
+        console.log(`  raw transfers in cache (counterparty matches): ${transferCount}`);
+        continue;
+      }
+      console.log(`  funders: ${profile.funders.length} (${profile.funders.slice(0, 3).join(',')}${profile.funders.length > 3 ? '...' : ''})`);
+      console.log(`  totalSol: ${profile.totalSol.toFixed(2)}`);
+      console.log(
+        `  fundingWindow: ${profile.firstFundedTs} → ${profile.lastFundedTs} (${((profile.lastFundedTs - profile.firstFundedTs) / 86_400).toFixed(2)}d)`,
+      );
+      console.log(`  swapCount in cache: ${swaps.length}`);
+      const beh = computeBehavior(swaps, profile);
+      if (beh) {
+        const ageD = (now - beh.lastSwapTs) / 86_400;
+        console.log(
+          `  behavior: ${beh.behaviorClass} | ${beh.buyCount}b/${beh.sellCount}s | mints=${beh.distinctMints} | avgBuy=$${beh.avgBuyUsd.toFixed(1)} medBuy=$${beh.medianBuyUsd.toFixed(1)} totalUsd=$${beh.totalSwapUsd.toFixed(0)} | lastSwap=${ageD.toFixed(1)}d ago | flags=[${beh.flags.join(',') || 'none'}]`,
+        );
+      } else {
+        console.log(`  behavior: NO swaps in cache`);
+      }
+      if (routers.has(w)) console.log(`  graph-flag: PASS-THROUGH ROUTER`);
+      if (hubs.has(w)) console.log(`  graph-flag: BIDIRECTIONAL HUB`);
+      const isParent = parents.get(w);
+      if (isParent) console.log(`  graph-flag: PARENT (children=${isParent.children.length})`);
+
+      if (inFinal) {
+        const idx = final.indexOf(inFinal);
+        console.log(`  status: SURVIVED — final position #${idx + 1}, score ${inFinal.score.toFixed(1)}`);
+        console.log(`  reason: ${inFinal.reason}`);
+      } else if (surv) {
+        console.log(`  status: SCORED but didn't make top-${limit}, score ${surv.score.toFixed(1)}`);
+        console.log(`  reason: ${surv.reason}`);
+      } else if (drop) {
+        console.log(`  status: DROPPED (${drop.reason}) — ${drop.cand.reason}`);
+      } else {
+        console.log(`  status: filtered earlier (likely funder count < ${minFunders})`);
+      }
     }
     console.log('');
   }

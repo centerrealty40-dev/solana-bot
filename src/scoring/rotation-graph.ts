@@ -482,6 +482,7 @@ export function computeBehavior(
     avgBuyUsd,
     medianBuyUsd,
     pricedBuyCount: pricedBuyUsds.length,
+    totalSwapUsd,
   });
 
   return {
@@ -504,45 +505,63 @@ export function computeBehavior(
 /**
  * Classify wallet behavior from raw counts.
  *
- * Decision logic:
- *   1. Need >= 2 priced buys to even consider sizing → otherwise UNCLASSIFIED
- *      (avoid mislabeling unpriced memecoin trades as RETAIL-MICRO)
- *   2. avg buy < $30 (configurable) → RETAIL-MICRO (manual retail noise)
- *   3. buy ratio > 0.85 + 2+ mints + avg >= $50 → OP-SOURCE
- *      (buy-leg of multi-wallet operator: many purchases, no sells, decent size)
- *   4. buy ratio > 0.75 → BUY-HEAVY
- *   5. sell ratio > 0.75 → SELL-HEAVY (exit wallet of an operator)
- *   6. otherwise → BALANCED
+ * Decision logic (RETAIL-MICRO has multiple triggers — feedback from manual
+ * review showed avgBuyUsd alone is too lenient. A wallet doing one $24 trade
+ * 2 weeks ago and one $90 trade an hour ago has avg $57 but is clearly
+ * sporadic retail noise. We add median + total-volume + buy-rate gates):
+ *
+ *   1. RETAIL-MICRO if pricedBuyCount >= 2 AND any of:
+ *        - avgBuyUsd < minAvgBuyUsd ($30)
+ *        - medianBuyUsd < minMedianBuyUsd ($20)
+ *        - totalSwapUsd < minTotalSwapUsd ($300) AND total swaps < 15
+ *      (small lifetime volume + few swaps = inconsequential trader)
+ *   2. OP-SOURCE if buyRatio >= 0.85 + 2+ mints + buyCount >= minOpSourceBuys (3)
+ *      AND (pricedBuyCount === 0 OR avgBuyUsd >= 50)
+ *      (require evidence: 2 random buys aren't an operator pattern)
+ *   3. BUY-HEAVY if buyRatio >= 0.75
+ *   4. SELL-HEAVY if sellRatio >= 0.75 (exit wallet of an operator)
+ *   5. BALANCED otherwise
  */
-export function classifyBehavior(metrics: {
+export interface ClassifyMetrics {
   buyCount: number;
   sellCount: number;
   distinctMints: number;
   avgBuyUsd: number;
   medianBuyUsd: number;
   pricedBuyCount: number;
+  /** lifetime USD across all swaps (buys + sells) */
+  totalSwapUsd?: number;
   minAvgBuyUsd?: number;
-}): BehaviorClass {
-  const { buyCount, sellCount, distinctMints, avgBuyUsd, pricedBuyCount } = metrics;
-  const minAvgBuyUsd = metrics.minAvgBuyUsd ?? 30;
-  const total = buyCount + sellCount;
+  minMedianBuyUsd?: number;
+  minTotalSwapUsd?: number;
+  minOpSourceBuys?: number;
+}
+
+export function classifyBehavior(m: ClassifyMetrics): BehaviorClass {
+  const minAvgBuyUsd = m.minAvgBuyUsd ?? 30;
+  const minMedianBuyUsd = m.minMedianBuyUsd ?? 20;
+  const minTotalSwapUsd = m.minTotalSwapUsd ?? 300;
+  const minOpSourceBuys = m.minOpSourceBuys ?? 3;
+  const totalSwapUsd = m.totalSwapUsd ?? 0;
+  const total = m.buyCount + m.sellCount;
   if (total === 0) return 'UNCLASSIFIED';
 
-  const buyRatio = buyCount / total;
-  const sellRatio = sellCount / total;
+  const buyRatio = m.buyCount / total;
+  const sellRatio = m.sellCount / total;
 
-  // RETAIL-MICRO: avg priced buy below threshold (small manual trader)
-  if (pricedBuyCount >= 2 && avgBuyUsd > 0 && avgBuyUsd < minAvgBuyUsd) {
-    return 'RETAIL-MICRO';
+  if (m.pricedBuyCount >= 2) {
+    if (m.avgBuyUsd > 0 && m.avgBuyUsd < minAvgBuyUsd) return 'RETAIL-MICRO';
+    if (m.medianBuyUsd > 0 && m.medianBuyUsd < minMedianBuyUsd) return 'RETAIL-MICRO';
+    if (totalSwapUsd > 0 && totalSwapUsd < minTotalSwapUsd && total < 15) {
+      return 'RETAIL-MICRO';
+    }
   }
 
-  // OP-SOURCE: heavy buy bias + multi-mint + meaningful size
-  // (size requirement gracefully degrades when we have no pricing data:
-  // pricedBuyCount === 0 still allows OP-SOURCE based on flow pattern)
   if (
     buyRatio >= 0.85 &&
-    distinctMints >= 2 &&
-    (pricedBuyCount === 0 || avgBuyUsd >= 50)
+    m.distinctMints >= 2 &&
+    m.buyCount >= minOpSourceBuys &&
+    (m.pricedBuyCount === 0 || m.avgBuyUsd >= 50)
   ) {
     return 'OP-SOURCE';
   }
