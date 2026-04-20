@@ -33,6 +33,7 @@
     "helius:status": "tsx src/scripts/helius-status.ts",
     "watchlist:seed": "tsx src/scripts/seed-watchlist.ts",
     "watchlist:seed:helius": "tsx src/scripts/seed-watchlist-helius.ts",
+    "watchlist:seed:pump": "tsx src/scripts/seed-watchlist-pump.ts",
     "watchlist:show": "tsx src/scripts/watchlist-show.ts",
     "watchlist:add": "tsx src/scripts/watchlist-add.ts",
     "watchlist:remove": "tsx src/scripts/watchlist-remove.ts"
