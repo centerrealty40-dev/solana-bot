@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import { sql as dsql } from 'drizzle-orm';
 import { db, schema } from '../core/db/client.js';
 import { config } from '../core/config.js';
@@ -42,6 +43,11 @@ const log = child('seed-helius');
  *   SEED_DRY_RUN=1                show plan + top wallets, do not write
  *   SEED_CLUSTER=1                fetch funding source for cluster dedup (extra credits)
  *   SEED_REQUIRE_NET_ACCUM=0      require positive net flow (accumulation)
+ *   SEED_DUMP_EVENTS=path.json    after fetch, dump merged events to file (for offline tuning)
+ *   SEED_LOAD_EVENTS=path.json    skip Helius entirely, load events from file (FREE, fast tuning)
+ *   SEED_MIN_MT_BALANCE=0.15      multi-token tier: min buy/sell balance — drops bot fleets
+ *   SEED_ANTI_FLEET=1             collapse near-duplicate wallets (likely same entity) to top-1
+ *   SEED_PURGE_OLD=1              soft-delete wallets from prior helius-seed runs not in current top-N
  */
 async function main(): Promise<void> {
   if (config.heliusMode === 'off') {
@@ -72,160 +78,86 @@ async function main(): Promise<void> {
   const allowSpecialists = process.env.SEED_NO_SPECIALISTS !== '1';
   const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 2);
   const maxConc = Number(process.env.SEED_MAX_CONC ?? 0.85);
+  const minMtBalance = Number(process.env.SEED_MIN_MT_BALANCE ?? 0.15);
+  const dumpEventsPath = process.env.SEED_DUMP_EVENTS ?? '';
+  const loadEventsPath = process.env.SEED_LOAD_EVENTS ?? '';
+  const antiFleet = process.env.SEED_ANTI_FLEET !== '0';
+  const purgeOld = process.env.SEED_PURGE_OLD === '1';
   const dryRun = process.env.SEED_DRY_RUN === '1';
   const cluster = process.env.SEED_CLUSTER === '1';
   const requireNetAccum = process.env.SEED_REQUIRE_NET_ACCUM === '1';
 
-  const stage1Credits = targetTokens * pages * 100;
-  const stage2Credits = stage2 ? stage2Top * stage2Pages * 100 : 0;
-  const expectedCredits = stage1Credits + stage2Credits;
-  log.info(
-    {
-      targetTokens,
-      pages,
-      stage1Credits,
-      stage2,
-      stage2Top,
-      stage2Pages,
-      stage2Credits,
-      totalExpectedCredits: expectedCredits,
-      cluster,
-      dryRun,
-    },
-    'plan: two-stage discovery (token-side + wallet-side)',
-  );
+  let allEvents: SwapEvent[] = [];
+  let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
 
-  // Pre-flight credit check
-  const before = await getUsageSnapshot();
-  log.info(
-    {
-      mode: before.mode,
-      todayUsed: before.today,
-      todayBudget: before.dailyBudget,
-      monthlyUsed: before.thisMonth,
-      monthlyBudget: before.monthlyBudget,
-    },
-    'helius credit snapshot (before run)',
-  );
-  if (before.today + expectedCredits > before.dailyBudget) {
-    log.error(
-      `would breach daily budget: ${before.today} + ${expectedCredits} > ${before.dailyBudget}. Increase HELIUS_DAILY_BUDGET, reduce SEED_TARGET_TOKENS, or set SEED_NO_STAGE2=1.`,
-    );
-    process.exit(1);
-  }
-
-  // Step 1: token universe
-  log.info('step 1: building token universe...');
-  const universe = await buildTokenUniverse({
-    targetCount: targetTokens,
-    minFdvUsd: minFdv,
-    maxFdvUsd: maxFdv,
-    minLiquidityUsd: minLiq,
-    minVolume24hUsd: minVol,
-    maxAgeHours,
-    minAgeHours,
-  });
-  if (universe.length === 0) {
-    log.error('empty universe — relax filters');
-    process.exit(1);
-  }
-  log.info(
-    {
-      tokens: universe.length,
-      preview: universe.slice(0, 8).map((t) => `${t.symbol ?? t.mint.slice(0, 4)}(${t.sources.size}src)`).join(', '),
-    },
-    'universe ready',
-  );
-
-  // Step 2 (stage 1): token-side discovery — sample ~200 latest swaps per token
-  log.info('step 2 stage-1: pulling swap transactions from Helius (token-side scan)');
-  const stage1Events = await discoverSwappers(
-    universe.map((t) => t.mint),
-    pages,
-  );
-  if (stage1Events.length === 0) {
-    log.error('no swap events returned in stage 1 — Helius API issue or empty tokens');
-    process.exit(1);
-  }
-  const stage1Wallets = new Set(stage1Events.map((e) => e.wallet));
-  log.info(
-    {
-      stage1Events: stage1Events.length,
-      stage1Wallets: stage1Wallets.size,
-    },
-    'stage-1 done',
-  );
-
-  // Stage 2: smart candidate selection — pre-aggregate stage-1 features
-  // so we can EXCLUDE obvious bots (sub-2s median gap with many swaps) BEFORE
-  // we spend credits on them. We then rank by a heuristic that biases toward
-  // real money (USD-weighted appearances) instead of raw frequency.
-  let allEvents: SwapEvent[] = stage1Events;
-  if (stage2) {
-    const stage1Agg = aggregateSwapEvents(stage1Events);
-    type Cand = { wallet: string; score: number; reason: string };
-    const cands: Cand[] = [];
-    let dropBot = 0;
-    let dropFew = 0;
-    let dropDust = 0;
-    for (const f of stage1Agg.values()) {
-      if (f.swapCount < stage2MinAppearances) {
-        dropFew++;
-        continue;
-      }
-      // Obvious bot: many fast swaps in our window → don't waste credits
-      if (f.swapCount >= 5 && Number.isFinite(f.medianGapSec) && f.medianGapSec < 1) {
-        dropBot++;
-        continue;
-      }
-      // Pure dust (every swap < $20 USD and total < $50): probably noise
-      if (f.volumeUsd < 50) {
-        dropDust++;
-        continue;
-      }
-      // Composite candidate score: rewards $$ size and breadth, log-dampened
-      const breadth = Math.log10(Math.max(1, f.tokenCount)) * 2;
-      const money = Math.log10(Math.max(1, f.volumeUsd)) * 1.5;
-      const presence = Math.log10(f.swapCount);
-      cands.push({
-        wallet: f.wallet,
-        score: breadth + money + presence,
-        reason: `tk=${f.tokenCount} sw=${f.swapCount} vol=$${Math.round(f.volumeUsd)}`,
-      });
-    }
-    cands.sort((a, b) => b.score - a.score);
-    const candidates = cands.slice(0, stage2Top).map((c) => c.wallet);
-
+  if (loadEventsPath) {
+    log.info({ path: loadEventsPath }, 'SEED_LOAD_EVENTS: skipping Helius, loading cached events from disk (FREE)');
+    const raw = await fs.readFile(loadEventsPath, 'utf8');
+    allEvents = JSON.parse(raw) as SwapEvent[];
     log.info(
       {
-        eligibleCands: cands.length,
-        candidatesPicked: candidates.length,
-        droppedBot: dropBot,
-        droppedTooFew: dropFew,
-        droppedDust: dropDust,
-        topPreview: cands.slice(0, 5).map((c) => `${c.wallet.slice(0, 6)}(${c.reason})`).join(' | '),
+        events: allEvents.length,
+        wallets: new Set(allEvents.map((e) => e.wallet)).size,
       },
-      'stage-2 candidate selection',
+      'cached events loaded',
+    );
+  } else {
+    const stage1Credits = targetTokens * pages * 100;
+    const stage2Credits = stage2 ? stage2Top * stage2Pages * 100 : 0;
+    const expectedCredits = stage1Credits + stage2Credits;
+    log.info(
+      {
+        targetTokens,
+        pages,
+        stage1Credits,
+        stage2,
+        stage2Top,
+        stage2Pages,
+        stage2Credits,
+        totalExpectedCredits: expectedCredits,
+        cluster,
+        dryRun,
+        dumpEventsPath: dumpEventsPath || null,
+      },
+      'plan: two-stage discovery (token-side + wallet-side)',
     );
 
-    if (candidates.length > 0) {
-      const stage2Events = await deepDiveWallets(candidates, stage2Pages);
-      const seen = new Set(stage1Events.map((e) => e.signature));
-      let added = 0;
-      for (const e of stage2Events) {
-        if (!seen.has(e.signature)) {
-          allEvents.push(e);
-          added++;
-        }
-      }
-      log.info(
-        {
-          stage2Events: stage2Events.length,
-          newAfterDedup: added,
-          totalEvents: allEvents.length,
-        },
-        'stage-2 merged',
+    before = await getUsageSnapshot();
+    log.info(
+      {
+        mode: before.mode,
+        todayUsed: before.today,
+        todayBudget: before.dailyBudget,
+        monthlyUsed: before.thisMonth,
+        monthlyBudget: before.monthlyBudget,
+      },
+      'helius credit snapshot (before run)',
+    );
+    if (before.today + expectedCredits > before.dailyBudget) {
+      log.error(
+        `would breach daily budget: ${before.today} + ${expectedCredits} > ${before.dailyBudget}. Increase HELIUS_DAILY_BUDGET, reduce SEED_TARGET_TOKENS, or set SEED_NO_STAGE2=1.`,
       );
+      process.exit(1);
+    }
+
+    allEvents = await fetchAllEvents({
+      targetTokens,
+      pages,
+      minFdv,
+      maxFdv,
+      minLiq,
+      minVol,
+      maxAgeHours,
+      minAgeHours,
+      stage2,
+      stage2Top,
+      stage2MinAppearances,
+      stage2Pages,
+    });
+
+    if (dumpEventsPath) {
+      await fs.writeFile(dumpEventsPath, JSON.stringify(allEvents));
+      log.info({ path: dumpEventsPath, events: allEvents.length }, 'events dumped to disk for offline re-tuning');
     }
   }
 
@@ -235,6 +167,7 @@ async function main(): Promise<void> {
     minTokens,
     minMedianGapSec: minGapSec,
     maxTopTokenConcentration: maxConc,
+    minMultiTokenBalance: minMtBalance,
     requireNetAccumulation: requireNetAccum,
     allowSpecialists,
   });
@@ -254,6 +187,7 @@ async function main(): Promise<void> {
       droppedMinVolume: stats.droppedMinVolume,
       droppedMinSwaps: stats.droppedMinSwaps,
       droppedConcentration: stats.droppedConcentration,
+      droppedMultiBalance: stats.droppedMultiBalance,
       droppedSpecSwaps: stats.droppedSpecialistSwaps,
       droppedSpecVolume: stats.droppedSpecialistVolume,
       droppedSpecBalance: stats.droppedSpecialistBalance,
@@ -261,7 +195,6 @@ async function main(): Promise<void> {
     'filter rejection breakdown',
   );
 
-  // Show what the strongest REJECTED wallets looked like — helps tune knobs
   if (ranked.length < 20) {
     const rejects = allFeatures
       .filter((f) => !ranked.some((r) => r.wallet === f.wallet))
@@ -296,12 +229,24 @@ async function main(): Promise<void> {
     'ranking done',
   );
 
-  // Step 5: optional cluster dedup
-  let final: typeof ranked = ranked;
-  if (cluster && ranked.length > 0) {
+  // Anti-fleet: collapse near-duplicate wallets (likely the same entity running N accounts).
+  let postFleet: typeof ranked = ranked;
+  if (antiFleet && ranked.length > 1) {
+    postFleet = collapseFleets(ranked);
+    if (postFleet.length < ranked.length) {
+      log.info(
+        { before: ranked.length, after: postFleet.length, collapsed: ranked.length - postFleet.length },
+        'anti-fleet: collapsed near-duplicates (kept top-score per cluster)',
+      );
+    }
+  }
+
+  // Optional: cluster dedup by funding source (uses extra credits)
+  let final: typeof ranked = postFleet;
+  if (cluster && postFleet.length > 0) {
     log.info('step 5: cluster dedup via funding source (uses extra credits)');
-    final = await dedupByFundingSource(ranked.slice(0, limit * 3));
-    log.info({ before: ranked.length, after: final.length }, 'cluster dedup done');
+    final = await dedupByFundingSource(postFleet.slice(0, limit * 3));
+    log.info({ before: postFleet.length, after: final.length }, 'cluster dedup done');
   }
 
   final = final.slice(0, limit);
@@ -327,16 +272,18 @@ async function main(): Promise<void> {
   }
   console.log('');
 
-  const after = await getUsageSnapshot();
-  log.info(
-    {
-      todayUsed: after.today,
-      delta: after.today - before.today,
-      monthlyUsed: after.thisMonth,
-      monthlyDelta: after.thisMonth - before.thisMonth,
-    },
-    'helius credit snapshot (after run)',
-  );
+  if (before) {
+    const after = await getUsageSnapshot();
+    log.info(
+      {
+        todayUsed: after.today,
+        delta: after.today - before.today,
+        monthlyUsed: after.thisMonth,
+        monthlyDelta: after.thisMonth - before.thisMonth,
+      },
+      'helius credit snapshot (after run)',
+    );
+  }
 
   if (dryRun) {
     log.info('SEED_DRY_RUN=1; not writing to DB');
@@ -351,7 +298,20 @@ async function main(): Promise<void> {
   log.info('step 6: upserting into watchlist_wallets');
   let inserted = 0;
   let updated = 0;
+  let purged = 0;
   await db.transaction(async (tx) => {
+    const finalSet = new Set(final.map((w) => w.wallet));
+    if (purgeOld) {
+      const stale = await tx.execute(dsql`
+        UPDATE watchlist_wallets
+        SET removed_at = NOW()
+        WHERE source = 'helius-seed'
+          AND removed_at IS NULL
+          AND wallet NOT IN (${dsql.join([...finalSet].map((w) => dsql`${w}`), dsql`, `)})
+        RETURNING wallet
+      `);
+      purged = (stale as { rowCount?: number; length?: number }).rowCount ?? (Array.isArray(stale) ? stale.length : 0);
+    }
     for (const w of final) {
       const note = formatNote(w);
       const existing = await tx
@@ -376,9 +336,162 @@ async function main(): Promise<void> {
     }
   });
 
-  log.info({ inserted, updated, total: final.length }, 'seed complete');
+  log.info({ inserted, updated, purged, total: final.length }, 'seed complete');
   log.info('next: confirm `npm run watchlist:show`, then ensure HELIUS_MODE=wallets and `pm2 restart sa-api`');
   process.exit(0);
+}
+
+/**
+ * Pull the entire token universe + Stage 1 + Stage 2 events from Helius.
+ * Extracted from main() so it can be skipped via SEED_LOAD_EVENTS.
+ */
+async function fetchAllEvents(opts: {
+  targetTokens: number;
+  pages: number;
+  minFdv: number;
+  maxFdv: number;
+  minLiq: number;
+  minVol: number;
+  maxAgeHours: number;
+  minAgeHours: number;
+  stage2: boolean;
+  stage2Top: number;
+  stage2MinAppearances: number;
+  stage2Pages: number;
+}): Promise<SwapEvent[]> {
+  log.info('step 1: building token universe...');
+  const universe = await buildTokenUniverse({
+    targetCount: opts.targetTokens,
+    minFdvUsd: opts.minFdv,
+    maxFdvUsd: opts.maxFdv,
+    minLiquidityUsd: opts.minLiq,
+    minVolume24hUsd: opts.minVol,
+    maxAgeHours: opts.maxAgeHours,
+    minAgeHours: opts.minAgeHours,
+  });
+  if (universe.length === 0) {
+    log.error('empty universe — relax filters');
+    process.exit(1);
+  }
+  log.info(
+    {
+      tokens: universe.length,
+      preview: universe.slice(0, 8).map((t) => `${t.symbol ?? t.mint.slice(0, 4)}(${t.sources.size}src)`).join(', '),
+    },
+    'universe ready',
+  );
+
+  log.info('step 2 stage-1: pulling swap transactions from Helius (token-side scan)');
+  const stage1Events = await discoverSwappers(
+    universe.map((t) => t.mint),
+    opts.pages,
+  );
+  if (stage1Events.length === 0) {
+    log.error('no swap events returned in stage 1 — Helius API issue or empty tokens');
+    process.exit(1);
+  }
+  log.info(
+    {
+      stage1Events: stage1Events.length,
+      stage1Wallets: new Set(stage1Events.map((e) => e.wallet)).size,
+    },
+    'stage-1 done',
+  );
+
+  let allEvents: SwapEvent[] = stage1Events;
+  if (opts.stage2) {
+    const stage1Agg = aggregateSwapEvents(stage1Events);
+    type Cand = { wallet: string; score: number; reason: string };
+    const cands: Cand[] = [];
+    let dropBot = 0;
+    let dropFew = 0;
+    let dropDust = 0;
+    for (const f of stage1Agg.values()) {
+      if (f.swapCount < opts.stage2MinAppearances) {
+        dropFew++;
+        continue;
+      }
+      if (f.swapCount >= 5 && Number.isFinite(f.medianGapSec) && f.medianGapSec < 1) {
+        dropBot++;
+        continue;
+      }
+      if (f.volumeUsd < 50) {
+        dropDust++;
+        continue;
+      }
+      const breadth = Math.log10(Math.max(1, f.tokenCount)) * 2;
+      const money = Math.log10(Math.max(1, f.volumeUsd)) * 1.5;
+      const presence = Math.log10(f.swapCount);
+      cands.push({
+        wallet: f.wallet,
+        score: breadth + money + presence,
+        reason: `tk=${f.tokenCount} sw=${f.swapCount} vol=$${Math.round(f.volumeUsd)}`,
+      });
+    }
+    cands.sort((a, b) => b.score - a.score);
+    const candidates = cands.slice(0, opts.stage2Top).map((c) => c.wallet);
+
+    log.info(
+      {
+        eligibleCands: cands.length,
+        candidatesPicked: candidates.length,
+        droppedBot: dropBot,
+        droppedTooFew: dropFew,
+        droppedDust: dropDust,
+        topPreview: cands.slice(0, 5).map((c) => `${c.wallet.slice(0, 6)}(${c.reason})`).join(' | '),
+      },
+      'stage-2 candidate selection',
+    );
+
+    if (candidates.length > 0) {
+      const stage2Events = await deepDiveWallets(candidates, opts.stage2Pages);
+      const seen = new Set(stage1Events.map((e) => e.signature));
+      let added = 0;
+      for (const e of stage2Events) {
+        if (!seen.has(e.signature)) {
+          allEvents.push(e);
+          added++;
+        }
+      }
+      log.info(
+        {
+          stage2Events: stage2Events.length,
+          newAfterDedup: added,
+          totalEvents: allEvents.length,
+        },
+        'stage-2 merged',
+      );
+    }
+  }
+
+  return allEvents;
+}
+
+/**
+ * Anti-fleet: collapse near-duplicate wallets that look like the same entity
+ * running multiple accounts (e.g. an MM bot fleet, a sniper service mirror,
+ * a wash-trading farm). We bucket by a coarse feature fingerprint and keep
+ * only the highest-score wallet from each bucket.
+ *
+ * The fingerprint is (tokenCount bucket, swapCount log-bucket, conc bucket,
+ * pure-buy flag, gap log-bucket). Wallets in the same bucket are treated as
+ * one entity. Conservative defaults — only collapses very obvious fleets.
+ */
+function collapseFleets<T extends WalletFeatures & { score: number }>(ranked: T[]): T[] {
+  const buckets = new Map<string, T>();
+  for (const w of ranked) {
+    const total = w.buyCount + w.sellCount;
+    const pureBuy = total > 0 && w.sellCount === 0;
+    const tkBucket = w.tokenCount; // exact — fleets share token count
+    const swBucket = Math.round(Math.log10(Math.max(1, w.swapCount)) * 4); // ~25% bucket
+    const concBucket = Math.round(w.topTokenConcentration * 10); // 10 bins
+    const gap = Number.isFinite(w.medianGapSec) ? w.medianGapSec : 60;
+    const gapBucket = Math.round(Math.log10(Math.max(1, gap)) * 3);
+    const fp = `${tkBucket}|${swBucket}|${concBucket}|${pureBuy ? 1 : 0}|${gapBucket}`;
+    const cur = buckets.get(fp);
+    if (!cur || cur.score < w.score) buckets.set(fp, w);
+  }
+  return Array.from(buckets.values()).sort((a, b) => b.score - a.score);
 }
 
 function formatNote(w: WalletFeatures & { score: number }): string {

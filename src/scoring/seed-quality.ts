@@ -126,6 +126,8 @@ export interface FilterOpts {
   minSpecialistVolumeUsd?: number;
   /** specialist tier: minimum buy/sell balance ratio (0 to 1; 0.2 = at least 20% of trades on opposite side) */
   minSpecialistBalance?: number;
+  /** multi-token tier: minimum buy/sell balance — drops "buy-only" bot fleets that pump tokens */
+  minMultiTokenBalance?: number;
 }
 
 const FILTER_DEFAULTS: Required<FilterOpts> = {
@@ -142,6 +144,7 @@ const FILTER_DEFAULTS: Required<FilterOpts> = {
   minSpecialistSwaps: 10,
   minSpecialistVolumeUsd: 2_000,
   minSpecialistBalance: 0.2,
+  minMultiTokenBalance: 0.15,
 };
 
 /** Counts of why each wallet was rejected. Exposed for diagnostics. */
@@ -161,6 +164,7 @@ export interface FilterStats {
   droppedMinVolume: number;
   droppedMinSwaps: number;
   droppedConcentration: number;
+  droppedMultiBalance: number;
 }
 
 /**
@@ -190,6 +194,7 @@ export function filterWalletsWithStats(
     droppedMinVolume: 0,
     droppedMinSwaps: 0,
     droppedConcentration: 0,
+    droppedMultiBalance: 0,
   };
 
   for (const f of feats) {
@@ -251,6 +256,13 @@ export function filterWalletsWithStats(
       }
       if (f.topTokenConcentration > o.maxTopTokenConcentration) {
         stats.droppedConcentration++;
+        continue;
+      }
+      const totalMt = f.buyCount + f.sellCount;
+      const balanceMt =
+        totalMt > 0 ? Math.min(f.buyCount, f.sellCount) / totalMt : 0;
+      if (balanceMt < o.minMultiTokenBalance) {
+        stats.droppedMultiBalance++;
         continue;
       }
       kept.push(f);
