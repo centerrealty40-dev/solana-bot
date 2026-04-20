@@ -3,7 +3,7 @@ import { db, schema } from '../core/db/client.js';
 import { config } from '../core/config.js';
 import { child } from '../core/logger.js';
 import { buildTokenUniverse } from '../collectors/token-universe.js';
-import { discoverSwappers } from '../collectors/helius-discovery.js';
+import { discoverSwappers, deepDiveWallets, type SwapEvent } from '../collectors/helius-discovery.js';
 import { rankWallets, type WalletFeatures } from '../scoring/seed-quality.js';
 import { heliusFetch, getUsageSnapshot, HeliusGuardError } from '../core/helius-guard.js';
 
@@ -53,6 +53,10 @@ async function main(): Promise<void> {
 
   const targetTokens = Number(process.env.SEED_TARGET_TOKENS ?? 50);
   const pages = Number(process.env.SEED_PAGES_PER_TOKEN ?? 2);
+  const stage2 = process.env.SEED_NO_STAGE2 !== '1';
+  const stage2Top = Number(process.env.SEED_STAGE2_TOP ?? 150);
+  const stage2MinAppearances = Number(process.env.SEED_STAGE2_MIN_APPEARANCES ?? 2);
+  const stage2Pages = Number(process.env.SEED_STAGE2_PAGES ?? 1);
   const minFdv = Number(process.env.SEED_MIN_FDV ?? 200_000);
   const maxFdv = Number(process.env.SEED_MAX_FDV ?? 1_000_000_000);
   const minLiq = Number(process.env.SEED_MIN_LIQ ?? 15_000);
@@ -67,16 +71,23 @@ async function main(): Promise<void> {
   const cluster = process.env.SEED_CLUSTER === '1';
   const requireNetAccum = process.env.SEED_REQUIRE_NET_ACCUM === '1';
 
-  const expectedCredits = targetTokens * pages * 100;
+  const stage1Credits = targetTokens * pages * 100;
+  const stage2Credits = stage2 ? stage2Top * stage2Pages * 100 : 0;
+  const expectedCredits = stage1Credits + stage2Credits;
   log.info(
     {
       targetTokens,
       pages,
-      expectedCredits,
+      stage1Credits,
+      stage2,
+      stage2Top,
+      stage2Pages,
+      stage2Credits,
+      totalExpectedCredits: expectedCredits,
       cluster,
       dryRun,
     },
-    'plan: discover swappers via Helius, then rank',
+    'plan: two-stage discovery (token-side + wallet-side)',
   );
 
   // Pre-flight credit check
@@ -93,7 +104,7 @@ async function main(): Promise<void> {
   );
   if (before.today + expectedCredits > before.dailyBudget) {
     log.error(
-      `would breach daily budget: ${before.today} + ${expectedCredits} > ${before.dailyBudget}. Increase HELIUS_DAILY_BUDGET or reduce SEED_TARGET_TOKENS.`,
+      `would breach daily budget: ${before.today} + ${expectedCredits} > ${before.dailyBudget}. Increase HELIUS_DAILY_BUDGET, reduce SEED_TARGET_TOKENS, or set SEED_NO_STAGE2=1.`,
     );
     process.exit(1);
   }
@@ -121,20 +132,74 @@ async function main(): Promise<void> {
     'universe ready',
   );
 
-  // Step 2: discover swappers
-  log.info('step 2: pulling swap transactions from Helius (this is the credit-spending step)');
-  const events = await discoverSwappers(
+  // Step 2 (stage 1): token-side discovery — sample ~200 latest swaps per token
+  log.info('step 2 stage-1: pulling swap transactions from Helius (token-side scan)');
+  const stage1Events = await discoverSwappers(
     universe.map((t) => t.mint),
     pages,
   );
-  if (events.length === 0) {
-    log.error('no swap events returned — Helius API issue or empty tokens');
+  if (stage1Events.length === 0) {
+    log.error('no swap events returned in stage 1 — Helius API issue or empty tokens');
     process.exit(1);
   }
+  const stage1Wallets = new Set(stage1Events.map((e) => e.wallet));
+  log.info(
+    {
+      stage1Events: stage1Events.length,
+      stage1Wallets: stage1Wallets.size,
+    },
+    'stage-1 done',
+  );
 
-  // Step 3 & 4: aggregate, filter, rank
+  // Stage 2: deep-dive top candidates by raw appearance count.
+  // This sees their FULL recent history, including tokens NOT in our universe,
+  // so we can correctly assess breadth and balance.
+  let allEvents: SwapEvent[] = stage1Events;
+  if (stage2) {
+    const appearancesByWallet = new Map<string, number>();
+    for (const e of stage1Events) {
+      appearancesByWallet.set(e.wallet, (appearancesByWallet.get(e.wallet) ?? 0) + 1);
+    }
+    const candidates = [...appearancesByWallet.entries()]
+      .filter(([, c]) => c >= stage2MinAppearances)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, stage2Top)
+      .map(([w]) => w);
+
+    log.info(
+      {
+        candidatesPicked: candidates.length,
+        minAppearances: stage2MinAppearances,
+        cap: stage2Top,
+      },
+      'stage-2 candidate selection',
+    );
+
+    if (candidates.length > 0) {
+      const stage2Events = await deepDiveWallets(candidates, stage2Pages);
+      // Merge stage 1 + stage 2 events by signature (dedup)
+      const seen = new Set(stage1Events.map((e) => e.signature));
+      let added = 0;
+      for (const e of stage2Events) {
+        if (!seen.has(e.signature)) {
+          allEvents.push(e);
+          added++;
+        }
+      }
+      log.info(
+        {
+          stage2Events: stage2Events.length,
+          newAfterDedup: added,
+          totalEvents: allEvents.length,
+        },
+        'stage-2 merged',
+      );
+    }
+  }
+
+  // Step 3 & 4: aggregate, filter, rank using merged data
   log.info('step 3-4: aggregating + scoring wallets');
-  const ranked = rankWallets(events, {
+  const ranked = rankWallets(allEvents, {
     minTokens,
     minMedianGapSec: minGapSec,
     requireNetAccumulation: requireNetAccum,
@@ -147,9 +212,9 @@ async function main(): Promise<void> {
 
   log.info(
     {
-      totalWalletsObserved: new Set(events.map((e) => e.wallet)).size,
+      totalWalletsObserved: new Set(allEvents.map((e) => e.wallet)).size,
       passedFilters: ranked.length,
-      eventsTotal: events.length,
+      eventsTotal: allEvents.length,
     },
     'ranking done',
   );
