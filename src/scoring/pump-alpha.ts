@@ -168,14 +168,19 @@ export function aggregatePumpHits(
  */
 export function filterSnipers(
   wallets: PumpAlphaWallet[],
-  opts: { minAvgUsd?: number; minSpreadSec?: number } = {},
+  opts: {
+    minAvgUsd?: number;
+    minSpreadSec?: number;
+    minAvgRank?: number;
+    skipUsdFilterIfMissing?: boolean;
+  } = {},
 ): PumpAlphaWallet[] {
   return filterSnipersWithStats(wallets, opts).kept;
 }
 
 export interface SniperFilterDetail {
   wallet: PumpAlphaWallet;
-  reason: 'kept' | 'low_avg_usd' | 'short_spread';
+  reason: 'kept' | 'low_avg_usd' | 'short_spread' | 'auto_sniper_rank' | 'no_usd_data_kept';
   avgUsd: number;
   spreadSec: number;
 }
@@ -184,13 +189,29 @@ export interface SniperFilterDetail {
  * Same as filterSnipers but returns kept + per-wallet detail (avg USD, spread,
  * reason for rejection). Used in the seed script for diagnostics so we can see
  * what the filter is killing and tune accordingly.
+ *
+ * Filters applied (in order):
+ *   1. Auto-sniper rank: if a wallet's avg rank across hits is <= minAvgRank
+ *      (default 0 = disabled, set to ~3 to drop wallets always at rank 1-3).
+ *   2. USD avg: drop if avg buy < minAvgUsd. If skipUsdFilterIfMissing=true
+ *      AND avgUsd === 0 (pricing data unavailable), this filter is bypassed
+ *      and the wallet is kept (marked 'no_usd_data_kept').
+ *   3. Spread: drop if all hits happened within minSpreadSec of each other
+ *      (multi-token sniper batch).
  */
 export function filterSnipersWithStats(
   wallets: PumpAlphaWallet[],
-  opts: { minAvgUsd?: number; minSpreadSec?: number } = {},
+  opts: {
+    minAvgUsd?: number;
+    minSpreadSec?: number;
+    minAvgRank?: number;
+    skipUsdFilterIfMissing?: boolean;
+  } = {},
 ): { kept: PumpAlphaWallet[]; details: SniperFilterDetail[] } {
   const minAvgUsd = opts.minAvgUsd ?? 50;
   const minSpreadSec = opts.minSpreadSec ?? 60;
+  const minAvgRank = opts.minAvgRank ?? 0;
+  const skipUsdIfMissing = opts.skipUsdFilterIfMissing ?? true;
   const kept: PumpAlphaWallet[] = [];
   const details: SniperFilterDetail[] = [];
   for (const w of wallets) {
@@ -198,10 +219,19 @@ export function filterSnipersWithStats(
     const tss = w.hits.map((h) => h.ts).sort((a, b) => a - b);
     const spreadSec = tss[tss.length - 1]! - tss[0]!;
     let reason: SniperFilterDetail['reason'] = 'kept';
-    if (avgUsd < minAvgUsd) reason = 'low_avg_usd';
-    else if (spreadSec < minSpreadSec) reason = 'short_spread';
+    if (minAvgRank > 0 && w.avgRank <= minAvgRank) {
+      reason = 'auto_sniper_rank';
+    } else if (avgUsd === 0 && skipUsdIfMissing) {
+      // Pricing data missing for these tokens — can't apply USD-based filter.
+      // Keep the wallet but flag for visibility.
+      reason = 'no_usd_data_kept';
+    } else if (avgUsd < minAvgUsd) {
+      reason = 'low_avg_usd';
+    } else if (spreadSec < minSpreadSec) {
+      reason = 'short_spread';
+    }
     details.push({ wallet: w, reason, avgUsd, spreadSec });
-    if (reason === 'kept') kept.push(w);
+    if (reason === 'kept' || reason === 'no_usd_data_kept') kept.push(w);
   }
   return { kept, details };
 }

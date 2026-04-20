@@ -45,8 +45,11 @@ const log = child('seed-pump');
  *   PUMP_TOP_BUYERS=50              top-N earliest buyers per token to keep
  *   PUMP_LOOKBACK_HOURS=24          window for "early in the move"
  *   PUMP_MIN_HITS=2                 wallet must appear in N+ distinct pumps
- *   PUMP_MIN_AVG_USD=50             drop snipers spending tiny $/buy
- *   PUMP_MIN_SPREAD_SEC=60          drop multi-token sniper batches (sub-min spread)
+ *   PUMP_MIN_AVG_USD=25             drop snipers spending tiny $/buy
+ *   PUMP_MIN_SPREAD_SEC=30          drop multi-token sniper batches (sub-min spread)
+ *   PUMP_MIN_AVG_RANK=3             drop wallets always at rank<=N (auto-snipers)
+ *   PUMP_STRICT_USD=1               keep USD filter even when pricing missing
+ *                                   (default 0 = bypass when avgUsd=0 globally)
  *   PUMP_LIMIT=200                  max wallets to insert
  *   PUMP_DRY_RUN=1                  show plan + top wallets, do not write
  *   PUMP_PURGE_OLD=1                soft-delete prior pump-seed wallets not in new top
@@ -82,6 +85,14 @@ async function main(): Promise<void> {
   const minHits = Number(process.env.PUMP_MIN_HITS ?? 2);
   const minAvgUsd = Number(process.env.PUMP_MIN_AVG_USD ?? 25);
   const minSpreadSec = Number(process.env.PUMP_MIN_SPREAD_SEC ?? 30);
+  // Drop "auto-snipers": wallets whose avg rank across hits is <= this (they
+  // ALWAYS land in position 1-3 = automated launchpad sniping). Default 3.
+  const minAvgRank = Number(process.env.PUMP_MIN_AVG_RANK ?? 3);
+  // If pricing data is missing for the pumped tokens (avgUsd === 0 for ALL
+  // wallets), bypass the USD filter rather than killing every candidate.
+  // Reality: small-cap pumps often have no Jupiter pricing, but spread+rank
+  // alone is enough signal. Default ON.
+  const skipUsdIfMissing = process.env.PUMP_STRICT_USD !== '1';
   const limit = Number(process.env.PUMP_LIMIT ?? 200);
   const dryRun = process.env.PUMP_DRY_RUN === '1';
   const purgeOld = process.env.PUMP_PURGE_OLD === '1';
@@ -219,17 +230,26 @@ async function main(): Promise<void> {
 
   // Step 5: drop snipers
   const beforeSniper = alpha.length;
-  const sniperResult = filterSnipersWithStats(alpha, { minAvgUsd, minSpreadSec });
+  const sniperResult = filterSnipersWithStats(alpha, {
+    minAvgUsd,
+    minSpreadSec,
+    minAvgRank,
+    skipUsdFilterIfMissing: skipUsdIfMissing,
+  });
   alpha = sniperResult.kept;
   const droppedLowUsd = sniperResult.details.filter((d) => d.reason === 'low_avg_usd').length;
   const droppedShortSpread = sniperResult.details.filter((d) => d.reason === 'short_spread').length;
+  const droppedAutoSniper = sniperResult.details.filter((d) => d.reason === 'auto_sniper_rank').length;
+  const keptNoUsd = sniperResult.details.filter((d) => d.reason === 'no_usd_data_kept').length;
   log.info(
     {
       before: beforeSniper,
       after: alpha.length,
       droppedLowAvgUsd: droppedLowUsd,
       droppedShortSpread: droppedShortSpread,
-      thresholds: { minAvgUsd, minSpreadSec },
+      droppedAutoSniperRank: droppedAutoSniper,
+      keptNoUsdData: keptNoUsd,
+      thresholds: { minAvgUsd, minSpreadSec, minAvgRank, skipUsdIfMissing },
     },
     'sniper filter applied',
   );
@@ -240,33 +260,36 @@ async function main(): Promise<void> {
   if (alpha.length < 10 && sniperResult.details.length > 0) {
     const symbolByMint2 = new Map(cache.pumped.map((p) => [p.mint, p.symbol]));
     const dropped = sniperResult.details
-      .filter((d) => d.reason !== 'kept')
+      .filter((d) => d.reason !== 'kept' && d.reason !== 'no_usd_data_kept')
       .sort((a, b) => b.wallet.score - a.wallet.score)
-      .slice(0, 12);
-    console.log('\nTop wallets DROPPED by sniper filter (review to tune):');
-    console.log(
-      'Wallet                                              Score Hits  AvgUSD  SpreadSec  Reason         Hits',
-    );
-    console.log(
-      '--------------------------------------------------  ----- ----  ------  ---------  -------------  ----------',
-    );
-    for (const d of dropped) {
-      const w = d.wallet;
-      const wallet = w.wallet.padEnd(50);
-      const score = w.score.toFixed(1).padStart(5);
-      const hits = String(w.hitCount).padStart(4);
-      const avg = `$${Math.round(d.avgUsd)}`.padStart(6);
-      const spread = String(d.spreadSec).padStart(9);
-      const reason = (d.reason === 'low_avg_usd' ? 'low_avg_usd' : 'short_spread').padEnd(13);
-      const hitsList = w.hits
-        .slice()
-        .sort((a, b) => a.rank - b.rank)
-        .slice(0, 3)
-        .map((h) => `${symbolByMint2.get(h.mint) ?? h.mint.slice(0, 4)}#${h.rank}`)
-        .join(',');
-      console.log(`${wallet}  ${score} ${hits}  ${avg}  ${spread}  ${reason}  ${hitsList}`);
+      .slice(0, 15);
+    if (dropped.length > 0) {
+      console.log('\nTop wallets DROPPED by sniper filter (review to tune):');
+      console.log(
+        'Wallet                                              Score Hits AvgRank  AvgUSD  SpreadSec  Reason             Hits',
+      );
+      console.log(
+        '--------------------------------------------------  ----- ---- -------  ------  ---------  -----------------  ----------',
+      );
+      for (const d of dropped) {
+        const w = d.wallet;
+        const wallet = w.wallet.padEnd(50);
+        const score = w.score.toFixed(1).padStart(5);
+        const hits = String(w.hitCount).padStart(4);
+        const avgRank = w.avgRank.toFixed(1).padStart(7);
+        const avg = `$${Math.round(d.avgUsd)}`.padStart(6);
+        const spread = String(d.spreadSec).padStart(9);
+        const reason = d.reason.padEnd(17);
+        const hitsList = w.hits
+          .slice()
+          .sort((a, b) => a.rank - b.rank)
+          .slice(0, 3)
+          .map((h) => `${symbolByMint2.get(h.mint) ?? h.mint.slice(0, 4)}#${h.rank}`)
+          .join(',');
+        console.log(`${wallet}  ${score} ${hits} ${avgRank}  ${avg}  ${spread}  ${reason}  ${hitsList}`);
+      }
+      console.log('');
     }
-    console.log('');
   }
 
   // Step 6: anti-fleet
