@@ -86,6 +86,13 @@ const log = child('seed-rotation');
  *                                  (critical: ancient activity != current alpha)
  *   ROT_MAX_FUNDING_AGE_NO_SWAP=14 drop no-swap wallets whose funding is older than N days
  *                                  (i.e., they were funded but never deployed = abandoned)
+ *   ROT_DROP_PASSIVE_HUBS=1        drop BI-HUB-passive (no own swap activity) from
+ *                                  rotation-seed entirely. They're pass-through wallets;
+ *                                  copy-trading them is pointless. Still kept as
+ *                                  rotation-parent if they qualify (default on)
+ *   ROT_REQUIRE_SWAP=0             tight mode: drop ANY no-swap candidate entirely
+ *                                  (use only when wanting pure traders, dropping all
+ *                                  fresh-funded "may deploy soon" wallets)
  */
 
 interface RotationCache {
@@ -158,6 +165,8 @@ async function main(): Promise<void> {
   const routerMinSol = Number(process.env.ROT_ROUTER_MIN_SOL ?? 50);
   const maxStaleDays = Number(process.env.ROT_MAX_STALE_DAYS ?? 30);
   const maxFundingAgeNoSwap = Number(process.env.ROT_MAX_FUNDING_AGE_NO_SWAP ?? 14);
+  const dropPassiveHubs = process.env.ROT_DROP_PASSIVE_HUBS !== '0';
+  const requireSwap = process.env.ROT_REQUIRE_SWAP === '1';
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -355,10 +364,15 @@ async function main(): Promise<void> {
         minSolFlow: routerMinSol,
       });
     }
+    // Routers are NOT real treasuries — strip them from parent-operator promotion
+    // (otherwise we end up promoting CEX hot wallets as "rotation-parent")
+    const parentOpsBefore = parentOps.length;
+    parentOps = parentOps.filter((p) => !routers.has(p.wallet));
     log.info(
       {
         rawParents: parents.size,
         confirmedParentOperators: parentOps.length,
+        parentsFilteredAsRouters: parentOpsBefore - parentOps.length,
         bidirectionalHubs: hubs.size,
         passThroughRouters: routers.size,
         minParentChildren,
@@ -383,6 +397,8 @@ async function main(): Promise<void> {
   let droppedRouters = 0;
   let droppedStale = 0;
   let droppedAbandoned = 0;
+  let droppedNoSwap = 0;
+  let droppedPassiveHubs = 0;
   let hubsBoosted = 0;
   const now = Math.floor(Date.now() / 1000);
   for (const profile of rebuiltCandidates.values()) {
@@ -393,19 +409,23 @@ async function main(): Promise<void> {
     }
     const swaps = cache.candidateToSwaps[profile.wallet] ?? [];
     const behavior = computeBehavior(swaps, profile);
+
+    // Tight mode: drop ANY no-swap candidate (pure-traders only)
+    if (requireSwap && (behavior === null || behavior.swapCount === 0)) {
+      droppedNoSwap++;
+      continue;
+    }
+
     const cand = scoreRotationCandidate(profile, behavior, now, {
       maxStaleDays,
       maxFundingAgeDaysNoSwap: maxFundingAgeNoSwap,
     });
-    // Track WHY they got 0 (staleness reasons hardcoded by scoreRotationCandidate)
     if (cand.score === 0) {
       if (cand.reason.includes('STALE: last swap')) droppedStale++;
       else if (cand.reason.includes('STALE: funded')) droppedAbandoned++;
       continue;
     }
-    // Bidirectional hub bonus: candidate is also a parent of 2+ seeds = strong
-    // signal of an operator's central rotation hub. Only apply when candidate
-    // has actual trading activity — otherwise it's a pass-through router.
+    // Bidirectional hub handling
     if (hubs.has(profile.wallet)) {
       const p = parents.get(profile.wallet)!;
       const eligible = !hubRequiresSwap || (behavior !== null && behavior.swapCount >= 1);
@@ -413,6 +433,12 @@ async function main(): Promise<void> {
         cand.score += hubBonus;
         cand.reason = `[BI-HUB ${p.children.length}↔] ` + cand.reason;
         hubsBoosted++;
+      } else if (dropPassiveHubs) {
+        // BI-HUB-passive = wallet is a parent of multiple seeds but does ZERO swaps
+        // → pass-through wallet (CEX hot, treasury, aggregator). Useless to copy-trade.
+        // Keep as parent-operator only (handled in promotion step below).
+        droppedPassiveHubs++;
+        continue;
       } else {
         cand.reason = `[BI-HUB-passive ${p.children.length}↔ no_swap] ` + cand.reason;
       }
@@ -429,8 +455,11 @@ async function main(): Promise<void> {
       droppedRouters,
       droppedStale,
       droppedAbandoned,
+      droppedNoSwap,
+      droppedPassiveHubs,
       maxStaleDays,
       maxFundingAgeNoSwap,
+      requireSwap,
     },
     'scoring done',
   );
@@ -510,6 +539,8 @@ async function main(): Promise<void> {
       droppedRouters,
       droppedStale,
       droppedAbandoned,
+      droppedNoSwapTight: droppedNoSwap,
+      droppedPassiveHubs,
       droppedNoSwapKept: dropNoSwap,
       survivedToFinal: final.length,
     },
