@@ -71,11 +71,11 @@ async function main(): Promise<void> {
   }
 
   const targetTokens = Number(process.env.PUMP_TARGET_TOKENS ?? 30);
-  const minChange = Number(process.env.PUMP_MIN_CHANGE_PCT ?? 100);
-  const maxChange = Number(process.env.PUMP_MAX_CHANGE_PCT ?? 2000);
-  const minLiq = Number(process.env.PUMP_MIN_LIQ ?? 30_000);
-  const minVol = Number(process.env.PUMP_MIN_VOL ?? 100_000);
-  const minAgeHours = Number(process.env.PUMP_MIN_AGE_HOURS ?? 6);
+  const minChange = Number(process.env.PUMP_MIN_CHANGE_PCT ?? 50);
+  const maxChange = Number(process.env.PUMP_MAX_CHANGE_PCT ?? 5000);
+  const minLiq = Number(process.env.PUMP_MIN_LIQ ?? 10_000);
+  const minVol = Number(process.env.PUMP_MIN_VOL ?? 30_000);
+  const minAgeHours = Number(process.env.PUMP_MIN_AGE_HOURS ?? 4);
   const depthPages = Number(process.env.PUMP_DEPTH_PAGES ?? 10);
   const topBuyers = Number(process.env.PUMP_TOP_BUYERS ?? 50);
   const lookbackHours = Number(process.env.PUMP_LOOKBACK_HOURS ?? 24);

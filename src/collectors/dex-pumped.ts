@@ -68,15 +68,29 @@ interface DexPair {
 }
 
 /**
- * Pull a wide trending pool from DexScreener via two endpoints:
- *   - search?q=solana — returns top trending pairs by volume
- *   - search?q=raydium / search?q=pump — surfaces additional pump-platform tokens
+ * Pull a wide trending pool from DexScreener via the search endpoint with
+ * many seed queries. Each query returns up to ~30-100 pairs. We dedupe and
+ * keep the deepest-liquidity pool per mint downstream.
  *
- * No auth, generous rate limits. The same pair can appear in multiple results
- * (different pools); we keep the deepest-liquidity one per mint.
+ * No auth, generous rate limits. The diversity of queries matters more than
+ * any single one — DexScreener's relevance algorithm pulls different sets
+ * for different terms even when the underlying activity overlaps.
  */
 async function fetchTrendingPairs(): Promise<DexPair[]> {
-  const queries = ['solana', 'raydium', 'pump'];
+  const queries = [
+    'solana',
+    'raydium',
+    'pump',
+    'pumpfun',
+    'meteora',
+    'memecoin',
+    'meme',
+    'sol',
+    'bonk',
+    'jup',
+    'orca',
+    'launch',
+  ];
   const collected: DexPair[] = [];
   for (const q of queries) {
     try {
@@ -112,6 +126,43 @@ async function fetchBoostedMints(): Promise<string[]> {
     return json.filter((b) => b.chainId === 'solana').map((b) => b.tokenAddress);
   } catch (err) {
     log.warn({ err: String(err) }, 'dex boosts failed');
+    return [];
+  }
+}
+
+/**
+ * Top-boosted-tokens — orthogonal endpoint surfacing tokens with the most
+ * accumulated boost spend (vs latest-boosts which is recency-sorted).
+ * Usually different set than latest, broadens our pool.
+ */
+async function fetchTopBoostedMints(): Promise<string[]> {
+  try {
+    const res = await request('https://api.dexscreener.com/token-boosts/top/v1', {
+      method: 'GET',
+    });
+    if (res.statusCode !== 200) return [];
+    const json = (await res.body.json()) as Array<{ chainId: string; tokenAddress: string }>;
+    return json.filter((b) => b.chainId === 'solana').map((b) => b.tokenAddress);
+  } catch (err) {
+    log.warn({ err: String(err) }, 'dex top-boosts failed');
+    return [];
+  }
+}
+
+/**
+ * Token-profiles latest — newly-listed tokens with profile pages.
+ * Heavy overlap with launch-stage memecoins; broadens our pool.
+ */
+async function fetchProfileMints(): Promise<string[]> {
+  try {
+    const res = await request('https://api.dexscreener.com/token-profiles/latest/v1', {
+      method: 'GET',
+    });
+    if (res.statusCode !== 200) return [];
+    const json = (await res.body.json()) as Array<{ chainId: string; tokenAddress: string }>;
+    return json.filter((b) => b.chainId === 'solana').map((b) => b.tokenAddress);
+  } catch (err) {
+    log.warn({ err: String(err) }, 'dex profiles failed');
     return [];
   }
 }
@@ -165,23 +216,36 @@ export async function findPumpedTokens(opts: {
   limit?: number;
 } = {}): Promise<PumpedToken[]> {
   const o = {
-    minPriceChangePct: opts.minPriceChangePct ?? 100, // 2x
-    maxPriceChangePct: opts.maxPriceChangePct ?? 2000, // 21x cap
-    minLiquidityUsd: opts.minLiquidityUsd ?? 30_000,
-    minVolume24hUsd: opts.minVolume24hUsd ?? 100_000,
-    minAgeHours: opts.minAgeHours ?? 6, // skip fresh launches (snipers, not alpha)
-    maxAgeHours: opts.maxAgeHours ?? 24 * 30, // 30 days
+    minPriceChangePct: opts.minPriceChangePct ?? 50, // 1.5x — wider net for thin markets
+    maxPriceChangePct: opts.maxPriceChangePct ?? 5000, // 51x — keep some room for genuine moonshots
+    minLiquidityUsd: opts.minLiquidityUsd ?? 10_000,
+    minVolume24hUsd: opts.minVolume24hUsd ?? 30_000,
+    minAgeHours: opts.minAgeHours ?? 4, // 4h skips most pure-snipe windows but keeps fresh runners
+    maxAgeHours: opts.maxAgeHours ?? 24 * 30,
     limit: opts.limit ?? 50,
   };
   log.info({ filters: o }, 'searching pumped tokens');
 
-  const trending = await fetchTrendingPairs();
-  const boosted = await fetchBoostedMints();
-  log.info({ trendingPairs: trending.length, boostedMints: boosted.length }, 'pools fetched');
+  const [trending, boostedLatest, boostedTop, profiles] = await Promise.all([
+    fetchTrendingPairs(),
+    fetchBoostedMints(),
+    fetchTopBoostedMints(),
+    fetchProfileMints(),
+  ]);
+  log.info(
+    {
+      trendingPairs: trending.length,
+      boostedLatest: boostedLatest.length,
+      boostedTop: boostedTop.length,
+      profiles: profiles.length,
+    },
+    'pools fetched',
+  );
 
   const enriched: DexPair[] = [...trending];
-  if (boosted.length) {
-    const enrich = await enrichMints(boosted);
+  const mintsToEnrich = Array.from(new Set([...boostedLatest, ...boostedTop, ...profiles]));
+  if (mintsToEnrich.length) {
+    const enrich = await enrichMints(mintsToEnrich);
     enriched.push(...enrich);
   }
 
@@ -207,16 +271,21 @@ export async function findPumpedTokens(opts: {
   let droppedAge = 0;
 
   for (const p of byMint.values()) {
-    const ch24 = p.priceChange?.h24;
-    if (ch24 === undefined || ch24 === null) {
+    const ch24 = p.priceChange?.h24 ?? null;
+    const ch6 = p.priceChange?.h6 ?? null;
+    if (ch24 === null && ch6 === null) {
       droppedNoChange++;
       continue;
     }
-    if (ch24 < o.minPriceChangePct) {
+    // Treat token as pumped if EITHER 24h OR 6h timeframe crossed threshold.
+    // Catches both "fully developed" pumps (h24 high) and "in-flight" moves
+    // (h6 high but h24 still low) — both have early buyers we want.
+    const peakChange = Math.max(ch24 ?? -Infinity, ch6 ?? -Infinity);
+    if (peakChange < o.minPriceChangePct) {
       droppedSmallChange++;
       continue;
     }
-    if (ch24 > o.maxPriceChangePct) {
+    if (peakChange > o.maxPriceChangePct) {
       droppedHugeChange++;
       continue;
     }
@@ -239,8 +308,8 @@ export async function findPumpedTokens(opts: {
       mint: p.baseToken.address,
       symbol: p.baseToken.symbol,
       priceUsd: p.priceUsd ? Number(p.priceUsd) : undefined,
-      priceChangeH24: ch24,
-      priceChangeH6: p.priceChange?.h6,
+      priceChangeH24: ch24 ?? 0,
+      priceChangeH6: ch6 ?? undefined,
       priceChangeH1: p.priceChange?.h1,
       liquidityUsd: liq,
       volume24hUsd: vol,
@@ -251,8 +320,10 @@ export async function findPumpedTokens(opts: {
   }
 
   candidates.sort((a, b) => {
-    const sa = a.priceChangeH24 * Math.sqrt(Math.max(1, a.liquidityUsd));
-    const sb = b.priceChangeH24 * Math.sqrt(Math.max(1, b.liquidityUsd));
+    const peakA = Math.max(a.priceChangeH24, a.priceChangeH6 ?? 0);
+    const peakB = Math.max(b.priceChangeH24, b.priceChangeH6 ?? 0);
+    const sa = peakA * Math.sqrt(Math.max(1, a.liquidityUsd));
+    const sb = peakB * Math.sqrt(Math.max(1, b.liquidityUsd));
     return sb - sa;
   });
 
@@ -269,7 +340,10 @@ export async function findPumpedTokens(opts: {
       droppedAge,
       preview: final
         .slice(0, 8)
-        .map((t) => `${t.symbol ?? t.mint.slice(0, 4)}(+${Math.round(t.priceChangeH24)}%)`)
+        .map((t) => {
+          const peak = Math.max(t.priceChangeH24, t.priceChangeH6 ?? 0);
+          return `${t.symbol ?? t.mint.slice(0, 4)}(+${Math.round(peak)}%)`;
+        })
         .join(', '),
     },
     'pumped tokens selected',
