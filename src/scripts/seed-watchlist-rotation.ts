@@ -82,6 +82,10 @@ const log = child('seed-rotation');
  *                                  these are likely CEX hot wallets (default on)
  *   ROT_ROUTER_MIN_EDGES=5         router detection: min funders == min children
  *   ROT_ROUTER_MIN_SOL=50          router detection: min total SOL throughput
+ *   ROT_MAX_STALE_DAYS=30          drop wallets whose LAST swap is older than N days
+ *                                  (critical: ancient activity != current alpha)
+ *   ROT_MAX_FUNDING_AGE_NO_SWAP=14 drop no-swap wallets whose funding is older than N days
+ *                                  (i.e., they were funded but never deployed = abandoned)
  */
 
 interface RotationCache {
@@ -152,6 +156,8 @@ async function main(): Promise<void> {
   const dropRouters = process.env.ROT_DROP_ROUTERS !== '0';
   const routerMinEdges = Number(process.env.ROT_ROUTER_MIN_EDGES ?? 5);
   const routerMinSol = Number(process.env.ROT_ROUTER_MIN_SOL ?? 50);
+  const maxStaleDays = Number(process.env.ROT_MAX_STALE_DAYS ?? 30);
+  const maxFundingAgeNoSwap = Number(process.env.ROT_MAX_FUNDING_AGE_NO_SWAP ?? 14);
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -375,7 +381,10 @@ async function main(): Promise<void> {
 
   const scored: RotationCandidate[] = [];
   let droppedRouters = 0;
+  let droppedStale = 0;
+  let droppedAbandoned = 0;
   let hubsBoosted = 0;
+  const now = Math.floor(Date.now() / 1000);
   for (const profile of rebuiltCandidates.values()) {
     if (profile.funders.length < minFunders) continue;
     if (routers.has(profile.wallet)) {
@@ -384,7 +393,16 @@ async function main(): Promise<void> {
     }
     const swaps = cache.candidateToSwaps[profile.wallet] ?? [];
     const behavior = computeBehavior(swaps, profile);
-    const cand = scoreRotationCandidate(profile, behavior);
+    const cand = scoreRotationCandidate(profile, behavior, now, {
+      maxStaleDays,
+      maxFundingAgeDaysNoSwap: maxFundingAgeNoSwap,
+    });
+    // Track WHY they got 0 (staleness reasons hardcoded by scoreRotationCandidate)
+    if (cand.score === 0) {
+      if (cand.reason.includes('STALE: last swap')) droppedStale++;
+      else if (cand.reason.includes('STALE: funded')) droppedAbandoned++;
+      continue;
+    }
     // Bidirectional hub bonus: candidate is also a parent of 2+ seeds = strong
     // signal of an operator's central rotation hub. Only apply when candidate
     // has actual trading activity — otherwise it's a pass-through router.
@@ -409,6 +427,10 @@ async function main(): Promise<void> {
       hubsBoosted,
       hubsPassive: hubs.size - hubsBoosted,
       droppedRouters,
+      droppedStale,
+      droppedAbandoned,
+      maxStaleDays,
+      maxFundingAgeNoSwap,
     },
     'scoring done',
   );
@@ -485,7 +507,10 @@ async function main(): Promise<void> {
       totalCandidatesObserved: totalRebuilt,
       droppedFanInOutlier: dropFanIn,
       droppedMinFunders: dropMinFunders,
-      droppedNoSwap: dropNoSwap,
+      droppedRouters,
+      droppedStale,
+      droppedAbandoned,
+      droppedNoSwapKept: dropNoSwap,
       survivedToFinal: final.length,
     },
     'pipeline funnel',

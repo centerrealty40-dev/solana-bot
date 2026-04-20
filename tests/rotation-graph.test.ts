@@ -257,15 +257,71 @@ describe('scoreRotationCandidate', () => {
     expect(c.score).toBeGreaterThan(baseScore + 15);
   });
 
-  it('drops bot-like candidates significantly', () => {
+  it('drops to score 0 when last swap is older than maxStaleDays (DEAD wallet)', () => {
+    // Wallet has 30 great-looking swaps from 6 months ago
+    const oldTs = 100_000;
     const swaps: SwapEvent[] = [];
-    for (let i = 0; i < 100; i++) {
-      swaps.push(sw('cand', `mint${i % 5}`, 'buy', 30, 1_500 + i)); // 1s apart
+    for (let i = 0; i < 30; i++) {
+      swaps.push(sw('cand', `mint${i % 5}`, i % 2 === 0 ? 'buy' : 'sell', 200, oldTs + i * 100));
     }
     const beh = computeBehavior(swaps, baseProfile)!;
-    const c = scoreRotationCandidate(baseProfile, beh, 2_000);
-    const baseScore = scoreFundingProfile(baseProfile, 2_000).score;
-    // -25 (bot_clustering) -15 (buy_only)
+    const now = oldTs + 86_400 * 180; // 180 days later
+    const c = scoreRotationCandidate(baseProfile, beh, now, { maxStaleDays: 30 });
+    expect(c.score).toBe(0);
+    expect(c.reason).toContain('STALE: last swap');
+  });
+
+  it('drops no-swap wallet to score 0 when funding is older than maxFundingAgeDaysNoSwap', () => {
+    const profile: CandidateProfile = {
+      ...baseProfile,
+      firstFundedTs: 1_000,
+      lastFundedTs: 1_000,
+    };
+    const now = 1_000 + 86_400 * 60; // 60 days later
+    const c = scoreRotationCandidate(profile, null, now, { maxFundingAgeDaysNoSwap: 14 });
+    expect(c.score).toBe(0);
+    expect(c.reason).toContain('STALE: funded');
+  });
+
+  it('keeps no-swap wallet when funding is fresh (recently funded, may deploy)', () => {
+    const now = baseProfile.lastFundedTs + 86_400 * 3; // 3 days later
+    const c = scoreRotationCandidate(baseProfile, null, now, { maxFundingAgeDaysNoSwap: 14 });
+    expect(c.score).toBeGreaterThan(0);
+    expect(c.reason).toContain('NO swaps yet');
+    expect(c.reason).toContain('may deploy soon');
+  });
+
+  it('rewards fresh-swap candidates with extra bonus', () => {
+    const now = 1_000_000;
+    const swaps: SwapEvent[] = [
+      sw('cand', 'mintA', 'buy', 100, now - 86_400), // 1 day ago
+      sw('cand', 'mintB', 'sell', 100, now - 3_600), // 1 hour ago
+    ];
+    const profile: CandidateProfile = {
+      ...baseProfile,
+      firstFundedTs: now - 86_400 * 2,
+      lastFundedTs: now - 86_400,
+    };
+    const beh = computeBehavior(swaps, profile)!;
+    const c = scoreRotationCandidate(profile, beh, now);
+    expect(c.reason).toContain('fresh-swap');
+  });
+
+  it('drops bot-like candidates significantly', () => {
+    const now = 1_000_000;
+    const profile: CandidateProfile = {
+      ...baseProfile,
+      firstFundedTs: now - 86_400,
+      lastFundedTs: now - 3_600,
+    };
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 100; i++) {
+      swaps.push(sw('cand', `mint${i % 5}`, 'buy', 30, now - 100 + i)); // 1s apart, recent
+    }
+    const beh = computeBehavior(swaps, profile)!;
+    const c = scoreRotationCandidate(profile, beh, now);
+    const baseScore = scoreFundingProfile(profile, now).score;
+    // -25 (bot_clustering) -15 (buy_only) > +5 (fresh) so net negative
     expect(c.score).toBeLessThan(baseScore);
     expect(c.reason).toContain('bot-like');
   });

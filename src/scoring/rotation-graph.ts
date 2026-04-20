@@ -42,6 +42,11 @@ export interface CandidateBehavior {
   swapCount: number;
   /** distinct base mints traded */
   distinctMints: number;
+  /** unix-sec of the FIRST swap by this wallet in the verification window */
+  firstSwapTs: number;
+  /** unix-sec of the MOST RECENT swap (critical for staleness check — a wallet
+   * with 30 swaps from 6 months ago is NOT an active trader) */
+  lastSwapTs: number;
   /** seconds between firstFundedTs and the first swap (lower = more deliberate) */
   timeToFirstSwapSec: number | null;
   /** total USD swap volume observed */
@@ -405,6 +410,7 @@ export function computeBehavior(
 
   // Time-to-first-swap from first funding event
   const firstSwapTs = sortedSwaps[0]!.ts;
+  const lastSwapTs = sortedSwaps[sortedSwaps.length - 1]!.ts;
   let timeToFirstSwapSec: number | null = null;
   if (firstSwapTs >= profile.firstFundedTs) {
     timeToFirstSwapSec = firstSwapTs - profile.firstFundedTs;
@@ -429,6 +435,8 @@ export function computeBehavior(
   return {
     swapCount: sortedSwaps.length,
     distinctMints,
+    firstSwapTs,
+    lastSwapTs,
     timeToFirstSwapSec,
     totalSwapUsd,
     buySellRatio,
@@ -439,29 +447,62 @@ export function computeBehavior(
 /**
  * Combine funding score with behavior metrics into the final rotation score.
  *
- * Behavior modifiers:
+ * Staleness gate (CRITICAL):
+ *   - For wallets WITH swaps: drop to score 0 if last swap > maxStaleDays old.
+ *     A wallet with 30 swaps from 6 months ago is dead, regardless of how
+ *     "balanced" or "multi-token" those ancient swaps look.
+ *   - For wallets WITH NO swaps: drop to score 0 if first funding > maxFundingAgeDaysNoSwap
+ *     old. They've been funded but never deployed = abandoned.
+ *
+ * Behavior modifiers (only applied if not stale):
  *   - +15 if 2+ distinct mints traded (real trader, not single-token holder)
  *   - +10 if first swap happened within 24h of first funding (deliberate deploy)
  *   - +5  if buySellRatio between 0.7 and 1.5 (balanced, not just accumulation)
+ *   - +5  if last swap is fresh (< 7 days old) → bonus for actively trading
  *   - -25 if 'high_velocity' or 'bot_clustering' (bot, not human)
  *   - -15 if 'buy_only' (could be a HODLer not an active rotation)
- *   - drop entirely if totalSwapUsd == 0 AND swapCount > 0 (no priced data,
- *     can't validate — keep but mark)
+ *   - -10 if 'single_token' (probably a one-shot deployment, not a rotation)
  */
 export function scoreRotationCandidate(
   profile: CandidateProfile,
   behavior: CandidateBehavior | null,
   now = Math.floor(Date.now() / 1000),
+  opts: { maxStaleDays?: number; maxFundingAgeDaysNoSwap?: number } = {},
 ): RotationCandidate {
+  const maxStaleDays = opts.maxStaleDays ?? 30;
+  const maxFundingAgeDaysNoSwap = opts.maxFundingAgeDaysNoSwap ?? 14;
   const { score: baseScore, reason: baseReason } = scoreFundingProfile(profile, now);
 
   if (!behavior) {
+    // No swap activity. If the funding is also old, the wallet is dead/abandoned.
+    const fundingAgeDays = (now - profile.lastFundedTs) / 86_400;
+    if (fundingAgeDays > maxFundingAgeDaysNoSwap) {
+      return {
+        wallet: profile.wallet,
+        profile,
+        behavior,
+        score: 0,
+        reason: `${baseReason}; STALE: funded ${fundingAgeDays.toFixed(0)}d ago, never traded`,
+      };
+    }
     return {
       wallet: profile.wallet,
       profile,
       behavior,
-      score: baseScore * 0.4, // heavy penalty: no swap activity at all
-      reason: `${baseReason}; NO swaps (likely passive holder)`,
+      score: baseScore * 0.4,
+      reason: `${baseReason}; NO swaps yet (funded ${fundingAgeDays.toFixed(0)}d ago, may deploy soon)`,
+    };
+  }
+
+  // Staleness check on last swap — the most critical gate.
+  const lastSwapAgeDays = (now - behavior.lastSwapTs) / 86_400;
+  if (lastSwapAgeDays > maxStaleDays) {
+    return {
+      wallet: profile.wallet,
+      profile,
+      behavior,
+      score: 0,
+      reason: `${baseReason}; STALE: last swap ${lastSwapAgeDays.toFixed(0)}d ago (${behavior.swapCount} historical swaps)`,
     };
   }
 
@@ -480,6 +521,10 @@ export function scoreRotationCandidate(
     mod += 5;
     reasonParts.push('balanced');
   }
+  if (lastSwapAgeDays <= 7) {
+    mod += 5;
+    reasonParts.push(`fresh-swap (${lastSwapAgeDays.toFixed(0)}d)`);
+  }
   if (behavior.flags.includes('high_velocity') || behavior.flags.includes('bot_clustering')) {
     mod -= 25;
     reasonParts.push('bot-like');
@@ -494,7 +539,7 @@ export function scoreRotationCandidate(
   }
 
   const score = Math.max(0, baseScore + mod);
-  const reason = `${baseReason}; ${behavior.swapCount} swaps${reasonParts.length > 0 ? '; ' + reasonParts.join(', ') : ''}`;
+  const reason = `${baseReason}; ${behavior.swapCount} swaps (last ${lastSwapAgeDays.toFixed(1)}d ago)${reasonParts.length > 0 ? '; ' + reasonParts.join(', ') : ''}`;
   return { wallet: profile.wallet, profile, behavior, score, reason };
 }
 
