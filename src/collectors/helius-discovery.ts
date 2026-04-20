@@ -333,10 +333,16 @@ export async function getWalletSwapHistory(
 }
 
 /**
- * Same as `parseSwapEvent` but the user-side leg is determined by the
- * wallet we're inspecting (not by a target mint).
+ * Same as `parseSwapEvent` but the base mint is determined dynamically
+ * (we don't have a target — we have a wallet, and want to know which
+ * token they swapped). Since `feePayer === wallet` already tells us this
+ * is their transaction, we don't filter swap legs by `userAccount` (which
+ * Helius often populates with an intermediate ATA or aggregator route,
+ * not the trader's wallet).
  *
- * The base mint is whichever non-quote token the wallet swapped to/from.
+ * Fallbacks:
+ *   1. parsed `events.swap` with non-quote leg
+ *   2. `tokenTransfers` array (any non-quote mint involved)
  */
 function parseSwapEventForWallet(
   tx: HeliusEnhancedTx,
@@ -347,52 +353,77 @@ function parseSwapEventForWallet(
   const swap = tx.events?.swap;
 
   if (swap) {
-    // Find any non-quote leg the wallet received (= buy) or sent (= sell)
-    const recvBase = (swap.tokenOutputs ?? []).find(
-      (o) => o && o.userAccount === wallet && !isQuoteMint(o.mint),
-    );
-    const sentBase = (swap.tokenInputs ?? []).find(
-      (i) => i && i.userAccount === wallet && !isQuoteMint(i.mint),
-    );
+    // Whatever non-quote mint appears in inputs/outputs is what they swapped.
+    // If it appears in outputs they RECEIVED it (= buy). If in inputs (= sell).
+    // For token-to-token swaps both can be present; we prefer the output side
+    // (the "destination" token of the swap is the more meaningful signal).
+    const baseOutput = (swap.tokenOutputs ?? []).find((o) => o && !isQuoteMint(o.mint));
+    const baseInput = (swap.tokenInputs ?? []).find((i) => i && !isQuoteMint(i.mint));
+
     let baseMint: string | null = null;
     let side: 'buy' | 'sell' | null = null;
-    if (recvBase) {
-      baseMint = recvBase.mint;
+    if (baseOutput) {
+      baseMint = baseOutput.mint;
       side = 'buy';
-    } else if (sentBase) {
-      baseMint = sentBase.mint;
+    } else if (baseInput) {
+      baseMint = baseInput.mint;
       side = 'sell';
     }
-    if (!baseMint || !side) return null;
 
-    const quoteLegs = [
-      ...(swap.tokenInputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
-      ...(swap.tokenOutputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
-    ];
-    let amountUsd = 0;
-    if (quoteLegs.length > 0) {
-      const qLeg = quoteLegs[0]!;
-      const qty = readSwapLegAmount(qLeg);
-      const price =
-        quotePrices[qLeg.mint] ??
-        (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
-      amountUsd = qty * price;
-    } else if (swap.nativeInput || swap.nativeOutput) {
-      const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
-      const sol = lamports / 1e9;
-      amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
+    if (baseMint && side) {
+      let amountUsd = 0;
+      const quoteLegs = [
+        ...(swap.tokenInputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
+        ...(swap.tokenOutputs ?? []).filter((l) => l && isQuoteMint(l.mint)),
+      ];
+      if (quoteLegs.length > 0) {
+        const qLeg = quoteLegs[0]!;
+        const qty = readSwapLegAmount(qLeg);
+        const price =
+          quotePrices[qLeg.mint] ??
+          (qLeg.mint === QUOTE_MINTS.USDC || qLeg.mint === QUOTE_MINTS.USDT ? 1 : 0);
+        amountUsd = qty * price;
+      } else if (swap.nativeInput || swap.nativeOutput) {
+        const lamports = Number(swap.nativeInput?.amount ?? swap.nativeOutput?.amount ?? 0);
+        const sol = lamports / 1e9;
+        amountUsd = sol * (quotePrices[QUOTE_MINTS.SOL] ?? 0);
+      }
+      return {
+        wallet,
+        baseMint,
+        amountUsd,
+        side,
+        ts: tx.timestamp,
+        signature: tx.signature,
+      };
     }
-    return {
-      wallet,
-      baseMint,
-      amountUsd,
-      side,
-      ts: tx.timestamp,
-      signature: tx.signature,
-    };
   }
 
-  return null;
+  // Fallback: scan tokenTransfers for any non-quote mint movement
+  const transfers = tx.tokenTransfers ?? [];
+  const ours = transfers.find((t) => !isQuoteMint(t.mint));
+  if (!ours) return null;
+  const side: 'buy' | 'sell' = ours.toUserAccount === wallet ? 'buy' : 'sell';
+  const quoteTransfer = transfers.find(
+    (t) => isQuoteMint(t.mint) && (t.fromUserAccount === wallet || t.toUserAccount === wallet),
+  );
+  let amountUsd = 0;
+  if (quoteTransfer) {
+    const price =
+      quotePrices[quoteTransfer.mint] ??
+      (quoteTransfer.mint === QUOTE_MINTS.USDC || quoteTransfer.mint === QUOTE_MINTS.USDT
+        ? 1
+        : 0);
+    amountUsd = quoteTransfer.tokenAmount * price;
+  }
+  return {
+    wallet,
+    baseMint: ours.mint,
+    amountUsd,
+    side,
+    ts: tx.timestamp,
+    signature: tx.signature,
+  };
 }
 
 /**
