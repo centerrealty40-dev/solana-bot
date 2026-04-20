@@ -1,0 +1,24 @@
+H8: add MEMECOIN-OP class to fix false-positive RETAIL-MICRO filtering
+
+INSPECT mode revealed a critical false-positive: GoorwtjW (avg $16, 10 buys,
+4 mints, fresh, confirmed alpha) and CnjzwkRh (avg $14, 11 buys, 3 mints)
+were being dropped as RETAIL-MICRO. These are the micro-sniper operator
+pattern: small targeted entries into fresh memecoins, then transferred to a
+sell-leg wallet — NOT retail noise.
+
+Conversely EprMqnDB (avg $78, 3 buys) was passing through as BALANCED but
+is sporadic manual retail. Avg buy size alone is the wrong signal. The
+right signal is size + activity + multi-mint together.
+
+Changes
+- New BehaviorClass MEMECOIN-OP: avg $5-30 + buyCount>=5 + mints>=2 +
+  buyRatio>=0.6 (the GoorwtjW/CnjzwkRh pattern). Score boost +30, above
+  OP-SOURCE +25. Still suppressed for bot-flagged wallets.
+- RETAIL-MICRO narrowed: ultra-tiny (under $5 avg) OR small avg + low
+  conviction (under 5 buys AND under 2 mints). No longer triggered by size
+  alone.
+- Display: widened Class column to 12 chars to fit MEMECOIN-OP.
+- Tests: 6 new cases for MEMECOIN-OP/RETAIL-MICRO logic, 121 total passing.
+
+This should put GoorwtjW/CnjzwkRh top of the list while still filtering
+true dust like ultra-tiny single-mint random buys.

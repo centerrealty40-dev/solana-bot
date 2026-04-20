@@ -515,13 +515,58 @@ describe('classifyBehavior', () => {
     ).toBe('UNCLASSIFIED');
   });
 
-  it('returns RETAIL-MICRO for small avg buys', () => {
+  it('returns RETAIL-MICRO only for ultra-tiny avg (<$5)', () => {
     expect(
       classifyBehavior({
-        buyCount: 5, sellCount: 3, distinctMints: 4,
-        avgBuyUsd: 15, medianBuyUsd: 12, pricedBuyCount: 5,
+        buyCount: 10, sellCount: 5, distinctMints: 4,
+        avgBuyUsd: 3, medianBuyUsd: 3, pricedBuyCount: 10,
       }),
     ).toBe('RETAIL-MICRO');
+  });
+
+  it('returns RETAIL-MICRO for small avg + low conviction (<5 buys, <2 mints)', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 3, sellCount: 1, distinctMints: 1,
+        avgBuyUsd: 15, medianBuyUsd: 15, pricedBuyCount: 3,
+      }),
+    ).toBe('RETAIL-MICRO');
+  });
+
+  it('does NOT classify as RETAIL-MICRO when activity + multi-mint present', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 10, sellCount: 4, distinctMints: 4,
+        avgBuyUsd: 16, medianBuyUsd: 12, pricedBuyCount: 10,
+      }),
+    ).not.toBe('RETAIL-MICRO');
+  });
+
+  it('returns MEMECOIN-OP for micro-sniper operator pattern', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 10, sellCount: 4, distinctMints: 4,
+        avgBuyUsd: 16, medianBuyUsd: 12, pricedBuyCount: 10,
+      }),
+    ).toBe('MEMECOIN-OP');
+  });
+
+  it('returns MEMECOIN-OP for the CnjzwkRh case', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 11, sellCount: 3, distinctMints: 3,
+        avgBuyUsd: 14, medianBuyUsd: 5, pricedBuyCount: 11,
+      }),
+    ).toBe('MEMECOIN-OP');
+  });
+
+  it('does NOT return MEMECOIN-OP if not enough mints', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 10, sellCount: 4, distinctMints: 1,
+        avgBuyUsd: 16, medianBuyUsd: 12, pricedBuyCount: 10,
+      }),
+    ).not.toBe('MEMECOIN-OP');
   });
 
   it('returns OP-SOURCE for buy-heavy + multi-mint + meaningful size', () => {
@@ -569,21 +614,20 @@ describe('classifyBehavior', () => {
     ).toBe('BALANCED');
   });
 
-  it('respects custom minAvgBuyUsd threshold', () => {
+  it('respects minMemecoinOpBuys threshold (4 buys not enough by default)', () => {
     expect(
       classifyBehavior({
-        buyCount: 5, sellCount: 1, distinctMints: 3,
-        avgBuyUsd: 25, medianBuyUsd: 25, pricedBuyCount: 5,
-        minAvgBuyUsd: 20,
+        buyCount: 4, sellCount: 1, distinctMints: 3,
+        avgBuyUsd: 15, medianBuyUsd: 15, pricedBuyCount: 4,
       }),
-    ).not.toBe('RETAIL-MICRO');
+    ).not.toBe('MEMECOIN-OP');
     expect(
       classifyBehavior({
-        buyCount: 5, sellCount: 1, distinctMints: 3,
-        avgBuyUsd: 15, medianBuyUsd: 15, pricedBuyCount: 5,
-        minAvgBuyUsd: 20,
+        buyCount: 4, sellCount: 1, distinctMints: 3,
+        avgBuyUsd: 15, medianBuyUsd: 15, pricedBuyCount: 4,
+        minMemecoinOpBuys: 4,
       }),
-    ).toBe('RETAIL-MICRO');
+    ).toBe('MEMECOIN-OP');
   });
 });
 
@@ -604,10 +648,10 @@ describe('scoreRotationCandidate behavior-class integration', () => {
     lastFundedTs: now - 3_600,
   };
 
-  it('drops RETAIL-MICRO wallets entirely (default)', () => {
+  it('drops RETAIL-MICRO wallets entirely (default) — ultra-tiny avg', () => {
     const swaps: SwapEvent[] = [];
     for (let i = 0; i < 5; i++) {
-      swaps.push(sw('cand', `m${i}`, 'buy', 15, now - 1000 - i * 100));
+      swaps.push(sw('cand', `m${i}`, 'buy', 3, now - 1000 - i * 100));
     }
     const beh = computeBehavior(swaps, recentProfile)!;
     expect(beh.behaviorClass).toBe('RETAIL-MICRO');
@@ -619,11 +663,27 @@ describe('scoreRotationCandidate behavior-class integration', () => {
   it('keeps RETAIL-MICRO if dropRetailMicro=false', () => {
     const swaps: SwapEvent[] = [];
     for (let i = 0; i < 5; i++) {
-      swaps.push(sw('cand', `m${i}`, 'buy', 15, now - 1000 - i * 100));
+      swaps.push(sw('cand', `m${i}`, 'buy', 3, now - 1000 - i * 100));
     }
     const beh = computeBehavior(swaps, recentProfile)!;
     const c = scoreRotationCandidate(recentProfile, beh, now, { dropRetailMicro: false });
     expect(c.score).toBeGreaterThan(0);
+  });
+
+  it('strongly boosts MEMECOIN-OP class (the GoorwtjW pattern)', () => {
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 10; i++) {
+      swaps.push(sw('cand', `m${i % 4}`, 'buy', 15, now - 1000 - i * 100));
+    }
+    for (let i = 0; i < 4; i++) {
+      swaps.push(sw('cand', `m${i % 4}`, 'sell', 20, now - 500 + i * 50));
+    }
+    const beh = computeBehavior(swaps, recentProfile)!;
+    expect(beh.behaviorClass).toBe('MEMECOIN-OP');
+    const c = scoreRotationCandidate(recentProfile, beh, now);
+    const baseScore = scoreFundingProfile(recentProfile, now).score;
+    expect(c.score).toBeGreaterThan(baseScore + 25);
+    expect(c.reason).toContain('MEMECOIN-OP');
   });
 
   it('boosts OP-SOURCE class significantly', () => {

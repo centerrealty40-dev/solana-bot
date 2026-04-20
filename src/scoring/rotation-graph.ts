@@ -69,18 +69,24 @@ export interface CandidateBehavior {
 
 /**
  * High-level behavior classification used for filtering and scoring.
- *   OP-SOURCE     — buy-heavy with meaningful sizes + multi-mint:
- *                   likely the BUY-leg of a multi-wallet operator (purchases
+ *   MEMECOIN-OP   — micro buys ($5-$30 avg) BUT high activity + multi-mint
+ *                   + buy-heavy. The "micro-sniper" operator pattern: small
+ *                   targeted entries into fresh memecoins, then transferred
+ *                   to a sell-wallet. Critical signal — these wallets look
+ *                   like noise by size alone but ARE alpha.
+ *   OP-SOURCE     — buy-heavy + multi-mint + larger sizes ($50+ avg):
+ *                   classic buy-leg of a multi-wallet operator (purchases
  *                   accumulate here, then transferred to a sell-wallet).
- *                   THIS IS THE ALPHA SIGNAL we care about.
- *   BUY-HEAVY     — mostly buys but small sizes / single mint
+ *   BUY-HEAVY     — mostly buys but few mints / mid sizes
  *   BALANCED      — normal trader doing both buys and sells
  *   SELL-HEAVY    — mostly sells (the offload wallet of an operator,
  *                   useful for exit timing)
- *   RETAIL-MICRO  — avg buy < threshold (noise from manual retail trader)
+ *   RETAIL-MICRO  — small avg AND low conviction (<5 buys, <2 mints)
+ *                   — manual dust trader with no operator pattern
  *   UNCLASSIFIED  — too few priced events to decide
  */
 export type BehaviorClass =
+  | 'MEMECOIN-OP'
   | 'OP-SOURCE'
   | 'BUY-HEAVY'
   | 'BALANCED'
@@ -505,22 +511,28 @@ export function computeBehavior(
 /**
  * Classify wallet behavior from raw counts.
  *
- * Decision logic (RETAIL-MICRO has multiple triggers — feedback from manual
- * review showed avgBuyUsd alone is too lenient. A wallet doing one $24 trade
- * 2 weeks ago and one $90 trade an hour ago has avg $57 but is clearly
- * sporadic retail noise. We add median + total-volume + buy-rate gates):
+ * CRITICAL LESSON from manual review: avg buy size alone is a TERRIBLE filter
+ * for memecoin-era operators. Wallets like GoorwtjW (avg $16, 10 buys, 4 mints,
+ * fresh) and CnjzwkRh (avg $14, 11 buys, 3 mints) are confirmed alpha — they
+ * micro-snipe fresh memecoins on the buy-leg, then transfer tokens out to a
+ * sell-leg wallet. Their per-trade size is small BY DESIGN.
  *
- *   1. RETAIL-MICRO if pricedBuyCount >= 2 AND any of:
- *        - avgBuyUsd < minAvgBuyUsd ($30)
- *        - medianBuyUsd < minMedianBuyUsd ($20)
- *        - totalSwapUsd < minTotalSwapUsd ($300) AND total swaps < 15
- *      (small lifetime volume + few swaps = inconsequential trader)
- *   2. OP-SOURCE if buyRatio >= 0.85 + 2+ mints + buyCount >= minOpSourceBuys (3)
- *      AND (pricedBuyCount === 0 OR avgBuyUsd >= 50)
- *      (require evidence: 2 random buys aren't an operator pattern)
- *   3. BUY-HEAVY if buyRatio >= 0.75
- *   4. SELL-HEAVY if sellRatio >= 0.75 (exit wallet of an operator)
- *   5. BALANCED otherwise
+ * Conversely EprMqnDB (avg $78, 3 buys, 4 mints) has bigger avg but is just
+ * a sporadic manual retail trader.
+ *
+ * → Size + activity together. Not size alone.
+ *
+ * Decision logic (in order):
+ *   1. RETAIL-MICRO only when truly tiny AND no operator pattern:
+ *        a) ultra-tiny (<$5 avg) — almost always dust regardless of activity
+ *        b) small avg (<$30) AND <5 buys AND <2 mints — low-conviction retail
+ *   2. MEMECOIN-OP — small avg ($5-30) + high activity + multi-mint + buy-heavy
+ *      → the micro-sniper operator pattern. STRONG ALPHA SIGNAL.
+ *   3. OP-SOURCE — buy-heavy + multi-mint + buyCount>=3 + avg>=$50
+ *      → the larger-position operator pattern (or unpriced)
+ *   4. BUY-HEAVY — buyRatio >= 0.75 (mid signal)
+ *   5. SELL-HEAVY — sellRatio >= 0.75 (offload-leg of an operator)
+ *   6. BALANCED — fallback (normal trader, no specific pattern)
  */
 export interface ClassifyMetrics {
   buyCount: number;
@@ -531,32 +543,44 @@ export interface ClassifyMetrics {
   pricedBuyCount: number;
   /** lifetime USD across all swaps (buys + sells) */
   totalSwapUsd?: number;
-  minAvgBuyUsd?: number;
-  minMedianBuyUsd?: number;
-  minTotalSwapUsd?: number;
   minOpSourceBuys?: number;
+  /** memecoin-op activity threshold (default: 5 buys) */
+  minMemecoinOpBuys?: number;
 }
 
 export function classifyBehavior(m: ClassifyMetrics): BehaviorClass {
-  const minAvgBuyUsd = m.minAvgBuyUsd ?? 30;
-  const minMedianBuyUsd = m.minMedianBuyUsd ?? 20;
-  const minTotalSwapUsd = m.minTotalSwapUsd ?? 300;
   const minOpSourceBuys = m.minOpSourceBuys ?? 3;
-  const totalSwapUsd = m.totalSwapUsd ?? 0;
+  const minMemecoinOpBuys = m.minMemecoinOpBuys ?? 5;
   const total = m.buyCount + m.sellCount;
   if (total === 0) return 'UNCLASSIFIED';
 
   const buyRatio = m.buyCount / total;
   const sellRatio = m.sellCount / total;
 
-  if (m.pricedBuyCount >= 2) {
-    if (m.avgBuyUsd > 0 && m.avgBuyUsd < minAvgBuyUsd) return 'RETAIL-MICRO';
-    if (m.medianBuyUsd > 0 && m.medianBuyUsd < minMedianBuyUsd) return 'RETAIL-MICRO';
-    if (totalSwapUsd > 0 && totalSwapUsd < minTotalSwapUsd && total < 15) {
-      return 'RETAIL-MICRO';
-    }
+  // RETAIL-MICRO — truly negligible. Two narrow gates.
+  if (m.pricedBuyCount >= 2 && m.avgBuyUsd > 0 && m.avgBuyUsd < 5) {
+    return 'RETAIL-MICRO';
+  }
+  if (
+    m.pricedBuyCount >= 2 &&
+    m.avgBuyUsd > 0 && m.avgBuyUsd < 30 &&
+    m.buyCount < 5 &&
+    m.distinctMints < 2
+  ) {
+    return 'RETAIL-MICRO';
   }
 
+  // MEMECOIN-OP — micro buys but real operator activity (the GoorwtjW pattern)
+  if (
+    m.avgBuyUsd > 0 && m.avgBuyUsd < 30 &&
+    m.buyCount >= minMemecoinOpBuys &&
+    m.distinctMints >= 2 &&
+    buyRatio >= 0.6
+  ) {
+    return 'MEMECOIN-OP';
+  }
+
+  // OP-SOURCE — larger-position buy-heavy operator
   if (
     buyRatio >= 0.85 &&
     m.distinctMints >= 2 &&
@@ -582,10 +606,11 @@ export function classifyBehavior(m: ClassifyMetrics): BehaviorClass {
  *     old. They've been funded but never deployed = abandoned.
  *
  * Behavior modifiers (only applied if not stale):
- *   - +25 if behaviorClass = OP-SOURCE (the alpha signal — buy-leg of operator)
+ *   - +30 if behaviorClass = MEMECOIN-OP (micro-sniper operator — strongest)
+ *   - +25 if behaviorClass = OP-SOURCE (larger-position operator buy-leg)
  *   - +10 if behaviorClass = SELL-HEAVY (exit wallet, useful for timing)
  *   - +5  if behaviorClass = BUY-HEAVY (modest signal)
- *   - DROP to 0 if behaviorClass = RETAIL-MICRO and minAvgBuyUsd > 0
+ *   - DROP to 0 if behaviorClass = RETAIL-MICRO and dropRetailMicro=true
  *   - +15 if 2+ distinct mints traded (real trader, not single-token holder)
  *   - +10 if first swap happened within 24h of first funding (deliberate deploy)
  *   - +5  if buySellRatio between 0.7 and 1.5 (balanced, not just accumulation)
@@ -668,6 +693,12 @@ export function scoreRotationCandidate(
   // it's an MEV/arb bot. Only humans get the class bonus.
   if (!isBot) {
     switch (behavior.behaviorClass) {
+      case 'MEMECOIN-OP':
+        mod += 30;
+        reasonParts.push(
+          `MEMECOIN-OP (${behavior.buyCount}b avg $${behavior.avgBuyUsd.toFixed(0)} ${behavior.distinctMints}mints)`,
+        );
+        break;
       case 'OP-SOURCE':
         mod += 25;
         reasonParts.push(`OP-SOURCE (avg $${behavior.avgBuyUsd.toFixed(0)})`);

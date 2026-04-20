@@ -95,8 +95,12 @@ const log = child('seed-rotation');
  *   ROT_REQUIRE_SWAP=0             tight mode: drop ANY no-swap candidate entirely
  *                                  (use only when wanting pure traders, dropping all
  *                                  fresh-funded "may deploy soon" wallets)
- *   ROT_DROP_RETAIL_MICRO=1        drop wallets classified as RETAIL-MICRO (avg buy
- *                                  below threshold) — small manual retail noise. On by default.
+ *   ROT_DROP_RETAIL_MICRO=1        drop wallets classified as RETAIL-MICRO. RETAIL-MICRO
+ *                                  is now narrow: ultra-tiny (<$5 avg) OR small (<$30 avg)
+ *                                  AND <5 buys AND <2 mints. Active micro-snipers
+ *                                  (small avg + many buys + multi-mint) are NOT dropped —
+ *                                  they're classified as MEMECOIN-OP and boosted instead.
+ *                                  On by default.
  *   ROT_OPERATOR_CLUSTERING=0      group candidates by (primary funder + funding size)
  *                                  to identify multi-account operators. Off by default
  *                                  because in practice multiple alpha-seeds independently
@@ -565,10 +569,10 @@ async function main(): Promise<void> {
   // Print preview
   console.log('\nTop rotation-network wallets:');
   console.log(
-    'Wallet                                              Score Cl  Funders TotalSOL  Swaps Mints  Class      Reason',
+    'Wallet                                              Score Cl  Funders TotalSOL  Swaps Mints  Class        Reason',
   );
   console.log(
-    '--------------------------------------------------  ----- --- ------- --------  ----- -----  ---------- -----------------------------',
+    '--------------------------------------------------  ----- --- ------- --------  ----- -----  ------------ -----------------------------',
   );
   for (const c of final.slice(0, 30)) {
     const wallet = c.wallet.padEnd(50);
@@ -579,7 +583,7 @@ async function main(): Promise<void> {
     const sol = c.profile.totalSol.toFixed(1).padStart(8);
     const swaps = String(c.behavior?.swapCount ?? 0).padStart(5);
     const mints = String(c.behavior?.distinctMints ?? 0).padStart(5);
-    const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(10);
+    const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(12);
     const reason = c.reason.slice(0, 60);
     console.log(`${wallet}  ${score} ${clusterTag} ${funders} ${sol}  ${swaps} ${mints}  ${cls} ${reason}`);
   }
@@ -622,10 +626,10 @@ async function main(): Promise<void> {
     if (list.length === 0) continue;
     console.log(`\nTop ${list.length} dropped (reason=${r}):`);
     console.log(
-      'Wallet                                              Funders TotalSOL Swaps Mints  AvgBuy MedBuy TotalUSD  Class      Reason',
+      'Wallet                                              Funders TotalSOL Swaps Mints  AvgBuy MedBuy TotalUSD  Class        Reason',
     );
     console.log(
-      '--------------------------------------------------  ------- -------- ----- -----  ------ ------ --------  ---------- -----------------------------',
+      '--------------------------------------------------  ------- -------- ----- -----  ------ ------ --------  ------------ -----------------------------',
     );
     for (const d of list) {
       const c = d.cand;
@@ -637,7 +641,7 @@ async function main(): Promise<void> {
       const avg = `$${(c.behavior?.avgBuyUsd ?? 0).toFixed(0)}`.padStart(6);
       const med = `$${(c.behavior?.medianBuyUsd ?? 0).toFixed(0)}`.padStart(6);
       const tot = `$${(c.behavior?.totalSwapUsd ?? 0).toFixed(0)}`.padStart(8);
-      const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(10);
+      const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(12);
       const reason = c.reason.slice(0, 60);
       console.log(`${wallet}  ${f} ${sol} ${sw} ${mi}  ${avg} ${med} ${tot}  ${cls} ${reason}`);
     }
