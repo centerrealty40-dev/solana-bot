@@ -48,6 +48,13 @@ const log = child('seed-helius');
  *   SEED_MIN_MT_BALANCE=0.15      multi-token tier: min buy/sell balance — drops bot fleets
  *   SEED_ANTI_FLEET=1             collapse near-duplicate wallets (likely same entity) to top-1
  *   SEED_PURGE_OLD=1              soft-delete wallets from prior helius-seed runs not in current top-N
+ *   SEED_MIN_SPEC_SWAPS=10        specialist tier: min swaps in their one token
+ *   SEED_MIN_SPEC_VOL=2000        specialist tier: min USD volume
+ *   SEED_MIN_SPEC_BALANCE=0.2     specialist tier: min buy/sell balance
+ *   SEED_NO_SPECIALISTS=1         disable specialist tier entirely (multi-token only)
+ *   SEED_MIN_SWAPS=4              multi-token tier: min swap count
+ *   SEED_MIN_VOLUME=500           multi-token tier: min USD volume
+ *   SEED_MAX_TOKENS=80            both tiers: max distinct tokens (drops MEV)
  */
 async function main(): Promise<void> {
   if (config.heliusMode === 'off') {
@@ -79,6 +86,12 @@ async function main(): Promise<void> {
   const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 2);
   const maxConc = Number(process.env.SEED_MAX_CONC ?? 0.85);
   const minMtBalance = Number(process.env.SEED_MIN_MT_BALANCE ?? 0.15);
+  const minSpecSwaps = Number(process.env.SEED_MIN_SPEC_SWAPS ?? 10);
+  const minSpecVol = Number(process.env.SEED_MIN_SPEC_VOL ?? 2_000);
+  const minSpecBalance = Number(process.env.SEED_MIN_SPEC_BALANCE ?? 0.2);
+  const minSwaps = Number(process.env.SEED_MIN_SWAPS ?? 4);
+  const minVolume = Number(process.env.SEED_MIN_VOLUME ?? 500);
+  const maxTokens = Number(process.env.SEED_MAX_TOKENS ?? 80);
   const dumpEventsPath = process.env.SEED_DUMP_EVENTS ?? '';
   const loadEventsPath = process.env.SEED_LOAD_EVENTS ?? '';
   const antiFleet = process.env.SEED_ANTI_FLEET !== '0';
@@ -165,11 +178,17 @@ async function main(): Promise<void> {
   log.info('step 3-4: aggregating + scoring wallets');
   const { ranked, allFeatures, stats } = rankWalletsWithStats(allEvents, {
     minTokens,
+    maxTokens,
+    minSwaps,
+    minVolumeUsd: minVolume,
     minMedianGapSec: minGapSec,
     maxTopTokenConcentration: maxConc,
     minMultiTokenBalance: minMtBalance,
     requireNetAccumulation: requireNetAccum,
     allowSpecialists,
+    minSpecialistSwaps: minSpecSwaps,
+    minSpecialistVolumeUsd: minSpecVol,
+    minSpecialistBalance: minSpecBalance,
   });
 
   const multiToken = ranked.filter((w) => w.tokenCount >= 2).length;
