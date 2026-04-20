@@ -17,10 +17,12 @@ import {
   computeBehavior,
   scoreRotationCandidate,
   collapseRotationFleets,
+  clusterByOperator,
   formatRotationNote,
   type RotationCandidate,
   type CandidateProfile,
   type ParentOperator,
+  type OperatorCluster,
 } from '../scoring/rotation-graph.js';
 import { getUsageSnapshot } from '../core/helius-guard.js';
 
@@ -93,6 +95,15 @@ const log = child('seed-rotation');
  *   ROT_REQUIRE_SWAP=0             tight mode: drop ANY no-swap candidate entirely
  *                                  (use only when wanting pure traders, dropping all
  *                                  fresh-funded "may deploy soon" wallets)
+ *   ROT_DROP_RETAIL_MICRO=1        drop wallets classified as RETAIL-MICRO (avg buy
+ *                                  below threshold) — small manual retail noise. On by default.
+ *   ROT_OPERATOR_CLUSTERING=1      group candidates by (primary funder + funding size)
+ *                                  to identify multi-account operators. Default on.
+ *   ROT_CLUSTER_AMOUNT_BUCKET=1.0  funding-size bucket in SOL for clustering
+ *                                  (1.0 = wallets funded with 9.5 and 10.1 SOL → same bucket)
+ *   ROT_CLUSTER_REP_ONLY=0         emit only one representative per operator cluster
+ *                                  (default 0 = keep all members for parallel signal,
+ *                                  set to 1 if you want to copy-trade only one wallet/operator)
  */
 
 interface RotationCache {
@@ -167,6 +178,10 @@ async function main(): Promise<void> {
   const maxFundingAgeNoSwap = Number(process.env.ROT_MAX_FUNDING_AGE_NO_SWAP ?? 14);
   const dropPassiveHubs = process.env.ROT_DROP_PASSIVE_HUBS !== '0';
   const requireSwap = process.env.ROT_REQUIRE_SWAP === '1';
+  const dropRetailMicro = process.env.ROT_DROP_RETAIL_MICRO !== '0';
+  const operatorClustering = process.env.ROT_OPERATOR_CLUSTERING !== '0';
+  const clusterAmountBucket = Number(process.env.ROT_CLUSTER_AMOUNT_BUCKET ?? 1.0);
+  const clusterRepOnly = process.env.ROT_CLUSTER_REP_ONLY === '1';
 
   let cache: RotationCache;
   let before: Awaited<ReturnType<typeof getUsageSnapshot>> | null = null;
@@ -399,6 +414,7 @@ async function main(): Promise<void> {
   let droppedAbandoned = 0;
   let droppedNoSwap = 0;
   let droppedPassiveHubs = 0;
+  let droppedRetailMicro = 0;
   let hubsBoosted = 0;
   const now = Math.floor(Date.now() / 1000);
   for (const profile of rebuiltCandidates.values()) {
@@ -419,10 +435,12 @@ async function main(): Promise<void> {
     const cand = scoreRotationCandidate(profile, behavior, now, {
       maxStaleDays,
       maxFundingAgeDaysNoSwap: maxFundingAgeNoSwap,
+      dropRetailMicro,
     });
     if (cand.score === 0) {
       if (cand.reason.includes('STALE: last swap')) droppedStale++;
       else if (cand.reason.includes('STALE: funded')) droppedAbandoned++;
+      else if (cand.reason.includes('RETAIL-MICRO')) droppedRetailMicro++;
       continue;
     }
     // Bidirectional hub handling
@@ -457,9 +475,11 @@ async function main(): Promise<void> {
       droppedAbandoned,
       droppedNoSwap,
       droppedPassiveHubs,
+      droppedRetailMicro,
       maxStaleDays,
       maxFundingAgeNoSwap,
       requireSwap,
+      dropRetailMicro,
     },
     'scoring done',
   );
@@ -477,27 +497,84 @@ async function main(): Promise<void> {
     }
   }
 
+  // Operator clustering — group by (primary funder + funding-size bucket).
+  // Wallets in the same cluster are likely the same operator's rotation accounts.
+  let clusters: OperatorCluster[] = [];
+  const walletToClusterId = new Map<string, { id: string; size: number }>();
+  if (operatorClustering && final.length > 1) {
+    clusters = clusterByOperator(final, clusterAmountBucket);
+    let multiMember = 0;
+    for (const cl of clusters) {
+      if (cl.members.length >= 2) multiMember++;
+      for (const m of cl.members) {
+        walletToClusterId.set(m.wallet, { id: cl.id, size: cl.members.length });
+      }
+    }
+    log.info(
+      {
+        totalClusters: clusters.length,
+        multiMemberClusters: multiMember,
+        biggestCluster: clusters[0]?.members.length ?? 0,
+        bucketSol: clusterAmountBucket,
+      },
+      'operator clustering done',
+    );
+    if (clusterRepOnly) {
+      const beforeRep = final.length;
+      final = clusters.map((c) => c.representative);
+      log.info(
+        { before: beforeRep, after: final.length, dropped: beforeRep - final.length },
+        'cluster-rep-only mode: keeping one wallet per operator',
+      );
+    }
+  }
+
   final = final.slice(0, limit);
 
   // Print preview
   console.log('\nTop rotation-network wallets:');
   console.log(
-    'Wallet                                              Score Funders TotalSOL  Swaps Mints  Reason',
+    'Wallet                                              Score Cl  Funders TotalSOL  Swaps Mints  Class      Reason',
   );
   console.log(
-    '--------------------------------------------------  ----- ------- --------  ----- -----  ---------------------------------',
+    '--------------------------------------------------  ----- --- ------- --------  ----- -----  ---------- -----------------------------',
   );
   for (const c of final.slice(0, 30)) {
     const wallet = c.wallet.padEnd(50);
     const score = c.score.toFixed(1).padStart(5);
+    const clusterInfo = walletToClusterId.get(c.wallet);
+    const clusterTag = clusterInfo && clusterInfo.size >= 2 ? `x${clusterInfo.size}`.padStart(3) : '   ';
     const funders = String(c.profile.funders.length).padStart(7);
     const sol = c.profile.totalSol.toFixed(1).padStart(8);
     const swaps = String(c.behavior?.swapCount ?? 0).padStart(5);
     const mints = String(c.behavior?.distinctMints ?? 0).padStart(5);
+    const cls = (c.behavior?.behaviorClass ?? 'NO-SWAP').padEnd(10);
     const reason = c.reason.slice(0, 60);
-    console.log(`${wallet}  ${score} ${funders} ${sol}  ${swaps} ${mints}  ${reason}`);
+    console.log(`${wallet}  ${score} ${clusterTag} ${funders} ${sol}  ${swaps} ${mints}  ${cls} ${reason}`);
   }
   console.log('');
+
+  // Operator clusters table — show top multi-member clusters
+  const multiClusters = clusters.filter((c) => c.members.length >= 2);
+  if (multiClusters.length > 0) {
+    console.log(`\nTop OPERATOR CLUSTERS (multi-wallet operators):`);
+    console.log(
+      'PrimaryFunder                                       Members FundSize TotalSOL TotalSwaps Representative',
+    );
+    console.log(
+      '--------------------------------------------------  ------- -------- -------- ---------- --------------------------',
+    );
+    for (const cl of multiClusters.slice(0, 15)) {
+      const f = cl.funder.padEnd(50);
+      const mem = String(cl.members.length).padStart(7);
+      const size = `${cl.fundingSizeSol.toFixed(1)}SOL`.padStart(8);
+      const total = cl.totalSol.toFixed(1).padStart(8);
+      const sw = String(cl.totalSwaps).padStart(10);
+      const rep = cl.representative.wallet.slice(0, 12) + '..';
+      console.log(`${f}  ${mem} ${size} ${total} ${sw} ${rep}`);
+    }
+    console.log('');
+  }
 
   // Parent operators table — wallets that funded multiple seeds. These are
   // likely the OPERATOR'S TREASURY / MAIN WALLET (one level up from rotation).
@@ -541,8 +618,11 @@ async function main(): Promise<void> {
       droppedAbandoned,
       droppedNoSwapTight: droppedNoSwap,
       droppedPassiveHubs,
+      droppedRetailMicro,
       droppedNoSwapKept: dropNoSwap,
       survivedToFinal: final.length,
+      operatorClusters: clusters.length,
+      multiMemberClusters: clusters.filter((c) => c.members.length >= 2).length,
     },
     'pipeline funnel',
   );

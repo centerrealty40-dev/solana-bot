@@ -53,9 +53,40 @@ export interface CandidateBehavior {
   totalSwapUsd: number;
   /** ratio of buys to sells (close to 1 = balanced trader; >>1 = accumulator) */
   buySellRatio: number | null;
+  /** number of buys */
+  buyCount: number;
+  /** number of sells */
+  sellCount: number;
+  /** average USD per buy (excluding 0-priced events) — critical for retail-noise detection */
+  avgBuyUsd: number;
+  /** median USD per buy — more robust than average for skewed distributions */
+  medianBuyUsd: number;
+  /** behavior class: OP-SOURCE / BUY-HEAVY / BALANCED / SELL-HEAVY / RETAIL-MICRO / UNCLASSIFIED */
+  behaviorClass: BehaviorClass;
   /** suspicious patterns detected during verification */
   flags: string[];
 }
+
+/**
+ * High-level behavior classification used for filtering and scoring.
+ *   OP-SOURCE     — buy-heavy with meaningful sizes + multi-mint:
+ *                   likely the BUY-leg of a multi-wallet operator (purchases
+ *                   accumulate here, then transferred to a sell-wallet).
+ *                   THIS IS THE ALPHA SIGNAL we care about.
+ *   BUY-HEAVY     — mostly buys but small sizes / single mint
+ *   BALANCED      — normal trader doing both buys and sells
+ *   SELL-HEAVY    — mostly sells (the offload wallet of an operator,
+ *                   useful for exit timing)
+ *   RETAIL-MICRO  — avg buy < threshold (noise from manual retail trader)
+ *   UNCLASSIFIED  — too few priced events to decide
+ */
+export type BehaviorClass =
+  | 'OP-SOURCE'
+  | 'BUY-HEAVY'
+  | 'BALANCED'
+  | 'SELL-HEAVY'
+  | 'RETAIL-MICRO'
+  | 'UNCLASSIFIED';
 
 /**
  * Final ranked rotation candidate.
@@ -417,20 +448,41 @@ export function computeBehavior(
   }
 
   const totalSwapUsd = sortedSwaps.reduce((s, sw) => s + sw.amountUsd, 0);
-  const buys = sortedSwaps.filter((s) => s.side === 'buy').length;
-  const sells = sortedSwaps.filter((s) => s.side === 'sell').length;
+  const buyEvents = sortedSwaps.filter((s) => s.side === 'buy');
+  const sellEvents = sortedSwaps.filter((s) => s.side === 'sell');
+  const buys = buyEvents.length;
+  const sells = sellEvents.length;
   const buySellRatio = sells > 0 ? buys / sells : null;
+
+  // Avg/median buy size (priced only — drops events with amountUsd=0 from
+  // unpriced memecoins). If we have no priced buys we leave both at 0,
+  // which the classifier treats as UNCLASSIFIED rather than RETAIL-MICRO.
+  const pricedBuyUsds = buyEvents.map((e) => e.amountUsd).filter((u) => u > 0).sort((a, b) => a - b);
+  const avgBuyUsd =
+    pricedBuyUsds.length > 0
+      ? pricedBuyUsds.reduce((s, v) => s + v, 0) / pricedBuyUsds.length
+      : 0;
+  const medianBuyUsd =
+    pricedBuyUsds.length > 0 ? pricedBuyUsds[Math.floor(pricedBuyUsds.length / 2)]! : 0;
 
   const flags: string[] = [];
   if (sortedSwaps.length > 80) flags.push('high_velocity');
   if (sells === 0 && buys >= 5) flags.push('buy_only');
   if (distinctMints === 1 && sortedSwaps.length >= 5) flags.push('single_token');
-  // Sub-second clusters are bot signatures
   let clusterCount = 0;
   for (let i = 1; i < sortedSwaps.length; i++) {
     if (sortedSwaps[i]!.ts - sortedSwaps[i - 1]!.ts <= 1) clusterCount++;
   }
   if (clusterCount >= 5) flags.push('bot_clustering');
+
+  const behaviorClass = classifyBehavior({
+    buyCount: buys,
+    sellCount: sells,
+    distinctMints,
+    avgBuyUsd,
+    medianBuyUsd,
+    pricedBuyCount: pricedBuyUsds.length,
+  });
 
   return {
     swapCount: sortedSwaps.length,
@@ -440,8 +492,64 @@ export function computeBehavior(
     timeToFirstSwapSec,
     totalSwapUsd,
     buySellRatio,
+    buyCount: buys,
+    sellCount: sells,
+    avgBuyUsd,
+    medianBuyUsd,
+    behaviorClass,
     flags,
   };
+}
+
+/**
+ * Classify wallet behavior from raw counts.
+ *
+ * Decision logic:
+ *   1. Need >= 2 priced buys to even consider sizing → otherwise UNCLASSIFIED
+ *      (avoid mislabeling unpriced memecoin trades as RETAIL-MICRO)
+ *   2. avg buy < $30 (configurable) → RETAIL-MICRO (manual retail noise)
+ *   3. buy ratio > 0.85 + 2+ mints + avg >= $50 → OP-SOURCE
+ *      (buy-leg of multi-wallet operator: many purchases, no sells, decent size)
+ *   4. buy ratio > 0.75 → BUY-HEAVY
+ *   5. sell ratio > 0.75 → SELL-HEAVY (exit wallet of an operator)
+ *   6. otherwise → BALANCED
+ */
+export function classifyBehavior(metrics: {
+  buyCount: number;
+  sellCount: number;
+  distinctMints: number;
+  avgBuyUsd: number;
+  medianBuyUsd: number;
+  pricedBuyCount: number;
+  minAvgBuyUsd?: number;
+}): BehaviorClass {
+  const { buyCount, sellCount, distinctMints, avgBuyUsd, pricedBuyCount } = metrics;
+  const minAvgBuyUsd = metrics.minAvgBuyUsd ?? 30;
+  const total = buyCount + sellCount;
+  if (total === 0) return 'UNCLASSIFIED';
+
+  const buyRatio = buyCount / total;
+  const sellRatio = sellCount / total;
+
+  // RETAIL-MICRO: avg priced buy below threshold (small manual trader)
+  if (pricedBuyCount >= 2 && avgBuyUsd > 0 && avgBuyUsd < minAvgBuyUsd) {
+    return 'RETAIL-MICRO';
+  }
+
+  // OP-SOURCE: heavy buy bias + multi-mint + meaningful size
+  // (size requirement gracefully degrades when we have no pricing data:
+  // pricedBuyCount === 0 still allows OP-SOURCE based on flow pattern)
+  if (
+    buyRatio >= 0.85 &&
+    distinctMints >= 2 &&
+    (pricedBuyCount === 0 || avgBuyUsd >= 50)
+  ) {
+    return 'OP-SOURCE';
+  }
+
+  if (buyRatio >= 0.75) return 'BUY-HEAVY';
+  if (sellRatio >= 0.75) return 'SELL-HEAVY';
+  return 'BALANCED';
 }
 
 /**
@@ -455,22 +563,34 @@ export function computeBehavior(
  *     old. They've been funded but never deployed = abandoned.
  *
  * Behavior modifiers (only applied if not stale):
+ *   - +25 if behaviorClass = OP-SOURCE (the alpha signal — buy-leg of operator)
+ *   - +10 if behaviorClass = SELL-HEAVY (exit wallet, useful for timing)
+ *   - +5  if behaviorClass = BUY-HEAVY (modest signal)
+ *   - DROP to 0 if behaviorClass = RETAIL-MICRO and minAvgBuyUsd > 0
  *   - +15 if 2+ distinct mints traded (real trader, not single-token holder)
  *   - +10 if first swap happened within 24h of first funding (deliberate deploy)
  *   - +5  if buySellRatio between 0.7 and 1.5 (balanced, not just accumulation)
  *   - +5  if last swap is fresh (< 7 days old) → bonus for actively trading
  *   - -25 if 'high_velocity' or 'bot_clustering' (bot, not human)
- *   - -15 if 'buy_only' (could be a HODLer not an active rotation)
+ *   - DROPPED handling for 'buy_only' — the OP-SOURCE class supersedes the
+ *     old "buy-only" penalty. NOT penalized anymore: buy-only is the desired
+ *     signal for a multi-wallet operator (purchases here, sells elsewhere).
  *   - -10 if 'single_token' (probably a one-shot deployment, not a rotation)
  */
 export function scoreRotationCandidate(
   profile: CandidateProfile,
   behavior: CandidateBehavior | null,
   now = Math.floor(Date.now() / 1000),
-  opts: { maxStaleDays?: number; maxFundingAgeDaysNoSwap?: number } = {},
+  opts: {
+    maxStaleDays?: number;
+    maxFundingAgeDaysNoSwap?: number;
+    /** drop RETAIL-MICRO entirely (default: drop). Set to 0 to keep them */
+    dropRetailMicro?: boolean;
+  } = {},
 ): RotationCandidate {
   const maxStaleDays = opts.maxStaleDays ?? 30;
   const maxFundingAgeDaysNoSwap = opts.maxFundingAgeDaysNoSwap ?? 14;
+  const dropRetailMicro = opts.dropRetailMicro ?? true;
   const { score: baseScore, reason: baseReason } = scoreFundingProfile(profile, now);
 
   if (!behavior) {
@@ -506,8 +626,49 @@ export function scoreRotationCandidate(
     };
   }
 
+  // Retail-micro filter — manual retail trader with sub-threshold avg buys.
+  // Per user feedback: "$24 two weeks ago, $90 an hour ago" type wallets
+  // are noise, not alpha.
+  if (dropRetailMicro && behavior.behaviorClass === 'RETAIL-MICRO') {
+    return {
+      wallet: profile.wallet,
+      profile,
+      behavior,
+      score: 0,
+      reason: `${baseReason}; RETAIL-MICRO: avg buy $${behavior.avgBuyUsd.toFixed(0)} (${behavior.buyCount} buys, ${behavior.sellCount} sells)`,
+    };
+  }
+
   let mod = 0;
   const reasonParts: string[] = [];
+  const isBot =
+    behavior.flags.includes('high_velocity') || behavior.flags.includes('bot_clustering');
+
+  // Behavior-class bonuses — the primary alpha signal.
+  // Suppressed for bot-like wallets: a bot doing 100 buys on 5 mints isn't OP-SOURCE,
+  // it's an MEV/arb bot. Only humans get the class bonus.
+  if (!isBot) {
+    switch (behavior.behaviorClass) {
+      case 'OP-SOURCE':
+        mod += 25;
+        reasonParts.push(`OP-SOURCE (avg $${behavior.avgBuyUsd.toFixed(0)})`);
+        break;
+      case 'SELL-HEAVY':
+        mod += 10;
+        reasonParts.push(`SELL-HEAVY (exit-leg)`);
+        break;
+      case 'BUY-HEAVY':
+        mod += 5;
+        reasonParts.push(`BUY-HEAVY`);
+        break;
+      case 'BALANCED':
+        reasonParts.push(`BALANCED`);
+        break;
+      case 'UNCLASSIFIED':
+        reasonParts.push(`unpriced (${behavior.buyCount}b/${behavior.sellCount}s)`);
+        break;
+    }
+  }
 
   if (behavior.distinctMints >= 2) {
     mod += 15;
@@ -519,19 +680,16 @@ export function scoreRotationCandidate(
   }
   if (behavior.buySellRatio !== null && behavior.buySellRatio >= 0.7 && behavior.buySellRatio <= 1.5) {
     mod += 5;
-    reasonParts.push('balanced');
+    reasonParts.push('balanced-bs');
   }
   if (lastSwapAgeDays <= 7) {
     mod += 5;
     reasonParts.push(`fresh-swap (${lastSwapAgeDays.toFixed(0)}d)`);
   }
-  if (behavior.flags.includes('high_velocity') || behavior.flags.includes('bot_clustering')) {
-    mod -= 25;
+  if (isBot) {
+    // Strong penalty: MEV/arb bots have nothing to do with rotation alpha.
+    mod -= 50;
     reasonParts.push('bot-like');
-  }
-  if (behavior.flags.includes('buy_only')) {
-    mod -= 15;
-    reasonParts.push('buy-only');
   }
   if (behavior.flags.includes('single_token')) {
     mod -= 10;
@@ -565,6 +723,95 @@ export function collapseRotationFleets(
     }
   }
   return Array.from(byFleet.values()).sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Operator cluster: a group of candidate wallets that share the same funder
+ * AND received similarly-sized funding (within a tolerance). These are likely
+ * different rotation accounts of the SAME operator and should be treated as
+ * one alpha source for copy-trade signal de-duplication.
+ *
+ * NOTE: This is wider than collapseRotationFleets — fleets are time-clustered,
+ * but an operator may deploy wallets sequentially over hours/days yet still
+ * be ONE operator. Cluster-key uses funder + amount-bucket only (no time).
+ */
+export interface OperatorCluster {
+  /** synthetic cluster id (funder + amount bucket) */
+  id: string;
+  /** the dominant funder for this cluster (highest aggregate flow) */
+  funder: string;
+  /** approximate per-wallet funding size in SOL (bucket label) */
+  fundingSizeSol: number;
+  /** all member wallets ordered by individual score desc */
+  members: RotationCandidate[];
+  /** total swaps across all members (signal strength) */
+  totalSwaps: number;
+  /** total funding received across all members */
+  totalSol: number;
+  /** the single best representative (highest individual score) */
+  representative: RotationCandidate;
+}
+
+/**
+ * Group candidates into operator clusters by SHARED FUNDER + similar
+ * funding amount (rounded to 0.5-SOL bucket). Wallets with multiple funders
+ * are clustered by their primary (largest) funding edge.
+ */
+export function clusterByOperator(
+  candidates: RotationCandidate[],
+  amountBucketSol = 1.0,
+): OperatorCluster[] {
+  const groups = new Map<string, RotationCandidate[]>();
+  for (const c of candidates) {
+    if (c.profile.funders.length === 0) continue;
+    // Pick primary funder = the one with the largest cumulative SOL inflow
+    const flowByFunder = new Map<string, number>();
+    for (const e of c.profile.edges) {
+      flowByFunder.set(e.seed, (flowByFunder.get(e.seed) ?? 0) + e.amountSol);
+    }
+    let primaryFunder = c.profile.funders[0]!;
+    let maxFlow = 0;
+    for (const [f, v] of flowByFunder) {
+      if (v > maxFlow) {
+        maxFlow = v;
+        primaryFunder = f;
+      }
+    }
+    const sizeBucket = Math.round(c.profile.totalSol / amountBucketSol) * amountBucketSol;
+    const key = `${primaryFunder}|${sizeBucket.toFixed(1)}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(c);
+    groups.set(key, arr);
+  }
+
+  const clusters: OperatorCluster[] = [];
+  for (const [id, members] of groups) {
+    if (members.length === 0) continue;
+    members.sort((a, b) => b.score - a.score);
+    const [funder, sizeStr] = id.split('|');
+    const fundingSizeSol = Number(sizeStr);
+    const totalSwaps = members.reduce(
+      (s, m) => s + (m.behavior?.swapCount ?? 0),
+      0,
+    );
+    const totalSol = members.reduce((s, m) => s + m.profile.totalSol, 0);
+    clusters.push({
+      id,
+      funder: funder!,
+      fundingSizeSol,
+      members,
+      totalSwaps,
+      totalSol,
+      representative: members[0]!,
+    });
+  }
+
+  // Sort by (cluster size desc, then by representative score desc)
+  clusters.sort((a, b) => {
+    if (b.members.length !== a.members.length) return b.members.length - a.members.length;
+    return b.representative.score - a.representative.score;
+  });
+  return clusters;
 }
 
 /**

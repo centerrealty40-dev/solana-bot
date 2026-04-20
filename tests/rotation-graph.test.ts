@@ -7,11 +7,14 @@ import {
   detectBidirectionalHubs,
   detectPassThroughRouters,
   computeBehavior,
+  classifyBehavior,
   scoreFundingProfile,
   scoreRotationCandidate,
   collapseRotationFleets,
+  clusterByOperator,
   formatRotationNote,
   type CandidateProfile,
+  type RotationCandidate,
 } from '../src/scoring/rotation-graph.js';
 import type { TransferEvent } from '../src/collectors/wallet-transfers.js';
 import type { SwapEvent } from '../src/collectors/helius-discovery.js';
@@ -499,6 +502,218 @@ describe('detectPassThroughRouters', () => {
     const { candidates, parents } = makeBidirectional('focusedW', 3, 200);
     const routers = detectPassThroughRouters(candidates, parents, {});
     expect(routers.has('focusedW')).toBe(false);
+  });
+});
+
+describe('classifyBehavior', () => {
+  it('returns UNCLASSIFIED for zero swaps', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 0, sellCount: 0, distinctMints: 0,
+        avgBuyUsd: 0, medianBuyUsd: 0, pricedBuyCount: 0,
+      }),
+    ).toBe('UNCLASSIFIED');
+  });
+
+  it('returns RETAIL-MICRO for small avg buys', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 5, sellCount: 3, distinctMints: 4,
+        avgBuyUsd: 15, medianBuyUsd: 12, pricedBuyCount: 5,
+      }),
+    ).toBe('RETAIL-MICRO');
+  });
+
+  it('returns OP-SOURCE for buy-heavy + multi-mint + meaningful size', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 10, sellCount: 1, distinctMints: 4,
+        avgBuyUsd: 80, medianBuyUsd: 70, pricedBuyCount: 10,
+      }),
+    ).toBe('OP-SOURCE');
+  });
+
+  it('returns OP-SOURCE for unpriced buy-heavy multi-mint (memecoin trades)', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 8, sellCount: 0, distinctMints: 3,
+        avgBuyUsd: 0, medianBuyUsd: 0, pricedBuyCount: 0,
+      }),
+    ).toBe('OP-SOURCE');
+  });
+
+  it('returns BUY-HEAVY for single-mint buy-heavy (not OP-SOURCE)', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 8, sellCount: 1, distinctMints: 1,
+        avgBuyUsd: 100, medianBuyUsd: 100, pricedBuyCount: 8,
+      }),
+    ).toBe('BUY-HEAVY');
+  });
+
+  it('returns SELL-HEAVY for offload wallets', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 1, sellCount: 8, distinctMints: 3,
+        avgBuyUsd: 50, medianBuyUsd: 50, pricedBuyCount: 1,
+      }),
+    ).toBe('SELL-HEAVY');
+  });
+
+  it('returns BALANCED otherwise', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 5, sellCount: 5, distinctMints: 4,
+        avgBuyUsd: 80, medianBuyUsd: 70, pricedBuyCount: 5,
+      }),
+    ).toBe('BALANCED');
+  });
+
+  it('respects custom minAvgBuyUsd threshold', () => {
+    expect(
+      classifyBehavior({
+        buyCount: 5, sellCount: 1, distinctMints: 3,
+        avgBuyUsd: 25, medianBuyUsd: 25, pricedBuyCount: 5,
+        minAvgBuyUsd: 20,
+      }),
+    ).not.toBe('RETAIL-MICRO');
+    expect(
+      classifyBehavior({
+        buyCount: 5, sellCount: 1, distinctMints: 3,
+        avgBuyUsd: 15, medianBuyUsd: 15, pricedBuyCount: 5,
+        minAvgBuyUsd: 20,
+      }),
+    ).toBe('RETAIL-MICRO');
+  });
+});
+
+describe('scoreRotationCandidate behavior-class integration', () => {
+  const baseProfile: CandidateProfile = {
+    wallet: 'cand',
+    funders: ['s1', 's2'],
+    edges: [],
+    totalSol: 8,
+    totalUsd: 1600,
+    firstFundedTs: 100,
+    lastFundedTs: 200,
+  };
+  const now = 1_000_000;
+  const recentProfile: CandidateProfile = {
+    ...baseProfile,
+    firstFundedTs: now - 86_400 * 5,
+    lastFundedTs: now - 3_600,
+  };
+
+  it('drops RETAIL-MICRO wallets entirely (default)', () => {
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      swaps.push(sw('cand', `m${i}`, 'buy', 15, now - 1000 - i * 100));
+    }
+    const beh = computeBehavior(swaps, recentProfile)!;
+    expect(beh.behaviorClass).toBe('RETAIL-MICRO');
+    const c = scoreRotationCandidate(recentProfile, beh, now);
+    expect(c.score).toBe(0);
+    expect(c.reason).toContain('RETAIL-MICRO');
+  });
+
+  it('keeps RETAIL-MICRO if dropRetailMicro=false', () => {
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      swaps.push(sw('cand', `m${i}`, 'buy', 15, now - 1000 - i * 100));
+    }
+    const beh = computeBehavior(swaps, recentProfile)!;
+    const c = scoreRotationCandidate(recentProfile, beh, now, { dropRetailMicro: false });
+    expect(c.score).toBeGreaterThan(0);
+  });
+
+  it('boosts OP-SOURCE class significantly', () => {
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 8; i++) {
+      swaps.push(sw('cand', `m${i % 4}`, 'buy', 100, now - 1000 - i * 100));
+    }
+    const beh = computeBehavior(swaps, recentProfile)!;
+    expect(beh.behaviorClass).toBe('OP-SOURCE');
+    const c = scoreRotationCandidate(recentProfile, beh, now);
+    const baseScore = scoreFundingProfile(recentProfile, now).score;
+    expect(c.score).toBeGreaterThan(baseScore + 20);
+    expect(c.reason).toContain('OP-SOURCE');
+  });
+
+  it('does NOT boost OP-SOURCE if wallet looks like a bot (high velocity)', () => {
+    const swaps: SwapEvent[] = [];
+    for (let i = 0; i < 100; i++) {
+      swaps.push(sw('cand', `m${i % 5}`, 'buy', 100, now - 100 + i));
+    }
+    const beh = computeBehavior(swaps, recentProfile)!;
+    expect(beh.flags).toContain('bot_clustering');
+    const c = scoreRotationCandidate(recentProfile, beh, now);
+    expect(c.reason).not.toContain('OP-SOURCE');
+    expect(c.reason).toContain('bot-like');
+  });
+});
+
+describe('clusterByOperator', () => {
+  function makeCand(wallet: string, funder: string, totalSol: number, score = 50): RotationCandidate {
+    return {
+      wallet,
+      profile: {
+        wallet,
+        funders: [funder],
+        edges: [{ seed: funder, candidate: wallet, amountSol: totalSol, amountUsd: totalSol * 200, ts: 1000, signature: 'sig' }],
+        totalSol,
+        totalUsd: totalSol * 200,
+        firstFundedTs: 1000,
+        lastFundedTs: 1000,
+      },
+      behavior: null,
+      score,
+      reason: '',
+    };
+  }
+
+  it('groups same-funder same-amount-bucket wallets into one cluster', () => {
+    const cands = [
+      makeCand('w1', 'fX', 9.5),
+      makeCand('w2', 'fX', 10.1),
+      makeCand('w3', 'fX', 9.8),
+      makeCand('w4', 'fY', 10.0),
+    ];
+    const clusters = clusterByOperator(cands, 1.0);
+    const fxCluster = clusters.find((c) => c.funder === 'fX');
+    expect(fxCluster?.members.length).toBe(3);
+    const fyCluster = clusters.find((c) => c.funder === 'fY');
+    expect(fyCluster?.members.length).toBe(1);
+  });
+
+  it('separates clusters by amount bucket', () => {
+    const cands = [
+      makeCand('w1', 'fX', 9.5),
+      makeCand('w2', 'fX', 50.0),
+    ];
+    const clusters = clusterByOperator(cands, 1.0);
+    expect(clusters.length).toBe(2);
+  });
+
+  it('picks highest-scoring member as representative', () => {
+    const cands = [
+      makeCand('w1', 'fX', 9.5, 30),
+      makeCand('w2', 'fX', 10.1, 80),
+      makeCand('w3', 'fX', 9.8, 50),
+    ];
+    const clusters = clusterByOperator(cands, 1.0);
+    expect(clusters[0]?.representative.wallet).toBe('w2');
+  });
+
+  it('sorts clusters by member count desc', () => {
+    const cands = [
+      makeCand('w1', 'fA', 5),
+      makeCand('w2', 'fB', 5),
+      makeCand('w3', 'fB', 5),
+      makeCand('w4', 'fB', 5),
+    ];
+    const clusters = clusterByOperator(cands, 1.0);
+    expect(clusters[0]?.funder).toBe('fB');
+    expect(clusters[0]?.members.length).toBe(3);
   });
 });
 
