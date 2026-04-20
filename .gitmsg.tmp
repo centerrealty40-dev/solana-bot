@@ -1,0 +1,20 @@
+universe-collect: wide token-pool collector for seed-pool expansion
+
+Adds `npm run universe:collect` — pulls a wide pool of ACTIVE Solana tokens
+(not just pumped ones) and dumps their swap history to cache/universe.json
+in the same shape as cache/pump.json. Drop-in input for whales:extract.
+
+The H8 rotation pipeline currently surfaces 11 MEMECOIN-OP candidates from
+100 seeds derived from 8 cached tokens. Scaling tokens by 10x should give
+us ~10x more anchor whales and ~10x more rotation candidates, growing the
+operator watchlist organically.
+
+Why a separate command from seed:pump:
+- seed:pump targets pumped tokens specifically and writes to watchlist
+- collect-universe gathers RAW active-token data without pump filter or DB
+  writes — purely for downstream offline use (extract-whales -> rotation)
+
+CLI knobs: UNIV_TARGET_TOKENS / UNIV_PAGES / UNIV_MIN_LIQ / UNIV_MIN_VOL /
+UNIV_MIN_AGE_HOURS / UNIV_MAX_AGE_DAYS / UNIV_OUT / UNIV_DRY_RUN.
+
+Defaults: 100 tokens * 5 pages = 50k credits per run (fits in daily budget).
