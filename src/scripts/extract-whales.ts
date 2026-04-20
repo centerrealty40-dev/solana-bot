@@ -32,18 +32,41 @@ const log = child('extract-whales');
 
 interface WalletWhaleStats {
   wallet: string;
+  /** SOL accumulated across priced buys only (best-effort) */
   totalSol: number;
+  /** USD accumulated across priced buys only (best-effort) */
   totalUsd: number;
+  /** distinct cached tokens this wallet bought */
   distinctTokens: number;
-  topBuys: Array<{ mint: string; symbol: string; sol: number; ts: number }>;
+  /** buys with sizing data (solValue > 0 OR amountUsd > 0) */
+  pricedBuys: number;
+  /** ALL buys (priced + unpriced); presence signal when sizing missing */
+  totalBuys: number;
+  /** composite ranking score */
+  score: number;
+  topBuys: Array<{ mint: string; symbol: string; sol: number; usd: number; ts: number }>;
 }
 
-function parseArgs(): { inPath: string; outPath: string; top: number; minSol: number; format: 'txt' | 'csv' } {
+interface ParsedArgs {
+  inPath: string;
+  outPath: string;
+  top: number;
+  minSol: number;
+  minTokens: number;
+  minBuys: number;
+  solPrice: number;
+  format: 'txt' | 'csv';
+}
+
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
   let inPath = '';
   let outPath = '';
   let top = 100;
-  let minSol = 1;
+  let minSol = 0;
+  let minTokens = 1;
+  let minBuys = 1;
+  let solPrice = 200;
   let format: 'txt' | 'csv' = 'txt';
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
@@ -59,15 +82,24 @@ function parseArgs(): { inPath: string; outPath: string; top: number; minSol: nu
     else if (a === '--out') outPath = next();
     else if (a === '--top') top = Number(next());
     else if (a === '--min-sol') minSol = Number(next());
+    else if (a === '--min-tokens') minTokens = Number(next());
+    else if (a === '--min-buys') minBuys = Number(next());
+    else if (a === '--sol-price') solPrice = Number(next());
     else if (a === '--csv') format = 'csv';
   }
   if (!inPath || !outPath) {
     console.error(
-      'Usage: npm run whales:extract -- --in cache/pump.json --out seeds/whales.txt [--top 100] [--min-sol 1] [--csv]',
+      'Usage: npm run whales:extract -- --in cache/pump.json --out seeds/whales.txt\n' +
+        '       [--top 100] [--min-sol 0] [--min-tokens 1] [--min-buys 1]\n' +
+        '       [--sol-price 200] [--csv]\n\n' +
+        '  --min-tokens/--min-buys are presence-based filters (work even when\n' +
+        '  Jupiter pricing is missing for most cached events, which is common\n' +
+        '  for fresh memecoins). --min-sol additionally filters wallets with\n' +
+        '  enough sized buys.',
     );
     process.exit(1);
   }
-  return { inPath, outPath, top, minSol, format };
+  return { inPath, outPath, top, minSol, minTokens, minBuys, solPrice, format };
 }
 
 /**
@@ -102,20 +134,49 @@ function unifyCache(
 /**
  * Aggregate per-wallet statistics across all token events. We only count BUYS
  * (the relevant signal — sellers are usually team/snipers exiting).
+ *
+ * Sizing is best-effort:
+ *   - Use `e.solValue` if populated (new parser).
+ *   - Else derive from `e.amountUsd` / solPrice if amountUsd > 0 (works for
+ *     events priced via Jupiter even on older caches).
+ *   - Else solValue=0, but the buy is STILL counted in totalBuys/distinctTokens
+ *     as a presence signal — for fresh memecoins where pricing is missing,
+ *     wallet appearance across multiple winners is itself meaningful.
+ *
+ * Composite score:
+ *   distinctTokens * 30        ← multi-token presence is the strongest signal
+ *   + log10(1+totalUsd) * 10   ← real-money sizing where available
+ *   + log10(1+totalBuys) * 5   ← high-conviction wallets buy multiple times
  */
 function aggregateWhales(
   perTokenEvents: Record<string, SwapEvent[]>,
   symbolByMint: Map<string, string>,
-): WalletWhaleStats[] {
+  solPrice: number,
+): { whales: WalletWhaleStats[]; coverage: { totalBuys: number; pricedBuys: number } } {
   const byWallet = new Map<string, WalletWhaleStats>();
+  let totalBuysSeen = 0;
+  let pricedBuysSeen = 0;
 
   for (const [mint, events] of Object.entries(perTokenEvents)) {
     const symbol = symbolByMint.get(mint) ?? mint.slice(0, 6);
     for (const e of events) {
       if (e.side !== 'buy') continue;
-      if (e.solValue <= 0) continue; // can't size unpriced trades
       const w = e.wallet;
       if (isExcludedAddress(w)) continue;
+      totalBuysSeen++;
+
+      // Best-effort sizing
+      let sol = typeof e.solValue === 'number' && e.solValue > 0 ? e.solValue : 0;
+      let usd = typeof e.amountUsd === 'number' && e.amountUsd > 0 ? e.amountUsd : 0;
+      if (sol === 0 && usd > 0 && solPrice > 0) {
+        sol = usd / solPrice;
+      }
+      if (sol === 0 && usd === 0) {
+        // unpriced — still count presence below, no sizing contribution
+      } else {
+        pricedBuysSeen++;
+      }
+
       let stats = byWallet.get(w);
       if (!stats) {
         stats = {
@@ -123,30 +184,44 @@ function aggregateWhales(
           totalSol: 0,
           totalUsd: 0,
           distinctTokens: 0,
+          pricedBuys: 0,
+          totalBuys: 0,
+          score: 0,
           topBuys: [],
         };
         byWallet.set(w, stats);
       }
-      stats.totalSol += e.solValue;
-      stats.totalUsd += e.amountUsd;
-      stats.topBuys.push({ mint, symbol, sol: e.solValue, ts: e.ts });
+      stats.totalSol += sol;
+      stats.totalUsd += usd;
+      stats.totalBuys += 1;
+      if (sol > 0 || usd > 0) stats.pricedBuys += 1;
+      stats.topBuys.push({ mint, symbol, sol, usd, ts: e.ts });
     }
   }
 
-  // Compute distinctTokens after the fact and trim topBuys to the 5 largest
   for (const stats of byWallet.values()) {
     stats.distinctTokens = new Set(stats.topBuys.map((b) => b.mint)).size;
-    stats.topBuys.sort((a, b) => b.sol - a.sol);
+    // Composite scoring
+    stats.score =
+      stats.distinctTokens * 30 +
+      Math.log10(1 + stats.totalUsd) * 10 +
+      Math.log10(1 + stats.totalBuys) * 5;
+    // Largest first; if no priced buys, fall back to chronological for sanity
+    stats.topBuys.sort((a, b) => b.sol + b.usd / 1000 - (a.sol + a.usd / 1000));
     stats.topBuys = stats.topBuys.slice(0, 5);
   }
 
-  return Array.from(byWallet.values()).sort((a, b) => b.totalSol - a.totalSol);
+  const whales = Array.from(byWallet.values()).sort((a, b) => b.score - a.score);
+  return { whales, coverage: { totalBuys: totalBuysSeen, pricedBuys: pricedBuysSeen } };
 }
 
 async function main(): Promise<void> {
-  const { inPath, outPath, top, minSol, format } = parseArgs();
+  const { inPath, outPath, top, minSol, minTokens, minBuys, solPrice, format } = parseArgs();
 
-  log.info({ inPath, outPath, top, minSol }, 'extracting whales from cache');
+  log.info(
+    { inPath, outPath, top, minSol, minTokens, minBuys, solPrice },
+    'extracting whales from cache',
+  );
   const raw = JSON.parse(await fs.readFile(inPath, 'utf8'));
   const { symbolByMint, perTokenEvents } = unifyCache(raw);
 
@@ -156,36 +231,64 @@ async function main(): Promise<void> {
     'cache loaded',
   );
 
-  let whales = aggregateWhales(perTokenEvents, symbolByMint);
-  log.info({ totalWallets: whales.length }, 'aggregation done');
-
-  // Filter by min SOL
-  const beforeMin = whales.length;
-  whales = whales.filter((w) => w.totalSol >= minSol);
-  if (whales.length < beforeMin) {
-    log.info({ before: beforeMin, after: whales.length, minSol }, 'min-sol filter applied');
+  const { whales: aggregated, coverage } = aggregateWhales(perTokenEvents, symbolByMint, solPrice);
+  let whales = aggregated;
+  const pricedPct = coverage.totalBuys > 0 ? (coverage.pricedBuys / coverage.totalBuys) * 100 : 0;
+  log.info(
+    {
+      totalWallets: whales.length,
+      pricedBuys: coverage.pricedBuys,
+      totalBuys: coverage.totalBuys,
+      pricedPct: pricedPct.toFixed(1) + '%',
+    },
+    'aggregation done',
+  );
+  if (pricedPct < 30) {
+    log.warn(
+      `only ${pricedPct.toFixed(1)}% of cached buys have pricing data — Jupiter doesn't price most ` +
+        'fresh memecoins. Falling back to presence-based ranking (distinctTokens + buyCount). ' +
+        'For better sizing data, regenerate cache: ' +
+        '`PUMP_DUMP=cache/pump.json npm run watchlist:seed:pump`',
+    );
   }
+
+  // Apply filters in order: presence-based first (always work), then sized
+  const before = whales.length;
+  whales = whales.filter(
+    (w) => w.distinctTokens >= minTokens && w.totalBuys >= minBuys && w.totalSol >= minSol,
+  );
+  log.info(
+    { before, after: whales.length, minSol, minTokens, minBuys },
+    'filters applied',
+  );
 
   // Cap to top-N
   whales = whales.slice(0, top);
 
   // Print preview
-  console.log(`\nTop ${Math.min(30, whales.length)} whales by SOL spent on cached tokens:`);
+  console.log(`\nTop ${Math.min(30, whales.length)} whales by composite score:`);
   console.log(
-    'Wallet                                              TotalSOL  Tokens  TopBuys',
+    'Wallet                                              Score  Tokens  Buys   Priced  TotalSOL  TotalUSD  TopBuys',
   );
   console.log(
-    '--------------------------------------------------  --------  ------  ----------------------------------',
+    '--------------------------------------------------  -----  ------  -----  ------  --------  --------  -----------------------',
   );
   for (const w of whales.slice(0, 30)) {
     const wallet = w.wallet.padEnd(50);
-    const sol = w.totalSol.toFixed(1).padStart(8);
+    const score = w.score.toFixed(1).padStart(5);
     const tokens = String(w.distinctTokens).padStart(6);
+    const buys = String(w.totalBuys).padStart(5);
+    const priced = String(w.pricedBuys).padStart(6);
+    const sol = w.totalSol.toFixed(1).padStart(8);
+    const usd = ('$' + Math.round(w.totalUsd).toLocaleString()).padStart(8);
     const top3 = w.topBuys
       .slice(0, 3)
-      .map((b) => `${b.symbol}(${b.sol.toFixed(1)})`)
+      .map((b) => {
+        const size = b.sol > 0 ? `${b.sol.toFixed(1)}S` : b.usd > 0 ? `$${Math.round(b.usd)}` : '?';
+        return `${b.symbol}(${size})`;
+      })
       .join(', ');
-    console.log(`${wallet}  ${sol}  ${tokens}  ${top3}`);
+    console.log(`${wallet}  ${score} ${tokens}  ${buys}  ${priced}  ${sol}  ${usd}  ${top3}`);
   }
   console.log('');
 
@@ -195,10 +298,10 @@ async function main(): Promise<void> {
     await fs.mkdir(outDir, { recursive: true }).catch(() => {});
   }
   if (format === 'csv') {
-    const lines = ['wallet,total_sol,total_usd,distinct_tokens'];
+    const lines = ['wallet,score,distinct_tokens,total_buys,priced_buys,total_sol,total_usd'];
     for (const w of whales) {
       lines.push(
-        `${w.wallet},${w.totalSol.toFixed(2)},${w.totalUsd.toFixed(2)},${w.distinctTokens}`,
+        `${w.wallet},${w.score.toFixed(2)},${w.distinctTokens},${w.totalBuys},${w.pricedBuys},${w.totalSol.toFixed(2)},${w.totalUsd.toFixed(2)}`,
       );
     }
     await fs.writeFile(outPath, lines.join('\n') + '\n');
