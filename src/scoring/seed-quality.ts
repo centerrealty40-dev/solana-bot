@@ -135,8 +135,8 @@ const FILTER_DEFAULTS: Required<FilterOpts> = {
   maxVolumeUsd: 5_000_000,
   minSwaps: 4,
   maxSwaps: 1_000,
-  minMedianGapSec: 5,
-  maxTopTokenConcentration: 0.7,
+  minMedianGapSec: 2,
+  maxTopTokenConcentration: 0.85,
   requireNetAccumulation: false,
   allowSpecialists: true,
   minSpecialistSwaps: 10,
@@ -144,41 +144,130 @@ const FILTER_DEFAULTS: Required<FilterOpts> = {
   minSpecialistBalance: 0.2,
 };
 
+/** Counts of why each wallet was rejected. Exposed for diagnostics. */
+export interface FilterStats {
+  total: number;
+  kept: number;
+  droppedMaxTokens: number;
+  droppedMaxVolume: number;
+  droppedMaxSwaps: number;
+  droppedMinGap: number;
+  droppedNetAccum: number;
+  droppedSpecialistDisabled: number;
+  droppedSpecialistSwaps: number;
+  droppedSpecialistVolume: number;
+  droppedSpecialistBalance: number;
+  droppedMinTokens: number;
+  droppedMinVolume: number;
+  droppedMinSwaps: number;
+  droppedConcentration: number;
+}
+
 /**
  * Reject obviously-bad wallets (bots, MMs, dust). Keeps everything else
- * for the ranker to score.
+ * for the ranker to score. Returns both the kept set AND a per-reason
+ * tally so callers can see which gate is actually killing candidates.
+ */
+export function filterWalletsWithStats(
+  feats: Iterable<WalletFeatures>,
+  opts: FilterOpts = {},
+): { kept: WalletFeatures[]; stats: FilterStats } {
+  const o = { ...FILTER_DEFAULTS, ...opts };
+  const kept: WalletFeatures[] = [];
+  const stats: FilterStats = {
+    total: 0,
+    kept: 0,
+    droppedMaxTokens: 0,
+    droppedMaxVolume: 0,
+    droppedMaxSwaps: 0,
+    droppedMinGap: 0,
+    droppedNetAccum: 0,
+    droppedSpecialistDisabled: 0,
+    droppedSpecialistSwaps: 0,
+    droppedSpecialistVolume: 0,
+    droppedSpecialistBalance: 0,
+    droppedMinTokens: 0,
+    droppedMinVolume: 0,
+    droppedMinSwaps: 0,
+    droppedConcentration: 0,
+  };
+
+  for (const f of feats) {
+    stats.total++;
+    if (f.tokenCount > o.maxTokens) {
+      stats.droppedMaxTokens++;
+      continue;
+    }
+    if (f.volumeUsd > o.maxVolumeUsd) {
+      stats.droppedMaxVolume++;
+      continue;
+    }
+    if (f.swapCount > o.maxSwaps) {
+      stats.droppedMaxSwaps++;
+      continue;
+    }
+    if (Number.isFinite(f.medianGapSec) && f.medianGapSec < o.minMedianGapSec) {
+      stats.droppedMinGap++;
+      continue;
+    }
+    if (o.requireNetAccumulation && f.netFlowUsd < 0) {
+      stats.droppedNetAccum++;
+      continue;
+    }
+
+    if (f.tokenCount === 1) {
+      if (!o.allowSpecialists) {
+        stats.droppedSpecialistDisabled++;
+        continue;
+      }
+      if (f.swapCount < o.minSpecialistSwaps) {
+        stats.droppedSpecialistSwaps++;
+        continue;
+      }
+      if (f.volumeUsd < o.minSpecialistVolumeUsd) {
+        stats.droppedSpecialistVolume++;
+        continue;
+      }
+      const total = f.buyCount + f.sellCount;
+      const balance = total > 0 ? Math.min(f.buyCount, f.sellCount) / total : 0;
+      if (balance < o.minSpecialistBalance) {
+        stats.droppedSpecialistBalance++;
+        continue;
+      }
+      kept.push(f);
+      stats.kept++;
+    } else {
+      if (f.tokenCount < o.minTokens) {
+        stats.droppedMinTokens++;
+        continue;
+      }
+      if (f.volumeUsd < o.minVolumeUsd) {
+        stats.droppedMinVolume++;
+        continue;
+      }
+      if (f.swapCount < o.minSwaps) {
+        stats.droppedMinSwaps++;
+        continue;
+      }
+      if (f.topTokenConcentration > o.maxTopTokenConcentration) {
+        stats.droppedConcentration++;
+        continue;
+      }
+      kept.push(f);
+      stats.kept++;
+    }
+  }
+  return { kept, stats };
+}
+
+/**
+ * Backwards-compatible wrapper that just returns the kept wallets.
  */
 export function filterWallets(
   feats: Iterable<WalletFeatures>,
   opts: FilterOpts = {},
 ): WalletFeatures[] {
-  const o = { ...FILTER_DEFAULTS, ...opts };
-  const kept: WalletFeatures[] = [];
-  for (const f of feats) {
-    // Universal hard filters (apply to both tiers)
-    if (f.tokenCount > o.maxTokens) continue;
-    if (f.volumeUsd > o.maxVolumeUsd) continue;
-    if (f.swapCount > o.maxSwaps) continue;
-    if (Number.isFinite(f.medianGapSec) && f.medianGapSec < o.minMedianGapSec) continue;
-    if (o.requireNetAccumulation && f.netFlowUsd < 0) continue;
-
-    if (f.tokenCount === 1) {
-      if (!o.allowSpecialists) continue;
-      if (f.swapCount < o.minSpecialistSwaps) continue;
-      if (f.volumeUsd < o.minSpecialistVolumeUsd) continue;
-      const total = f.buyCount + f.sellCount;
-      const balance = total > 0 ? Math.min(f.buyCount, f.sellCount) / total : 0;
-      if (balance < o.minSpecialistBalance) continue;
-      kept.push(f);
-    } else {
-      if (f.tokenCount < o.minTokens) continue;
-      if (f.volumeUsd < o.minVolumeUsd) continue;
-      if (f.swapCount < o.minSwaps) continue;
-      if (f.topTokenConcentration > o.maxTopTokenConcentration) continue;
-      kept.push(f);
-    }
-  }
-  return kept;
+  return filterWalletsWithStats(feats, opts).kept;
 }
 
 /**
@@ -217,9 +306,26 @@ export function rankWallets(
   events: SwapEvent[],
   filterOpts: FilterOpts = {},
 ): Array<WalletFeatures & { score: number }> {
+  return rankWalletsWithStats(events, filterOpts).ranked;
+}
+
+/**
+ * Same as rankWallets, but also returns aggregated features and filter stats
+ * so callers can diagnose why so few/many wallets passed.
+ */
+export function rankWalletsWithStats(
+  events: SwapEvent[],
+  filterOpts: FilterOpts = {},
+): {
+  ranked: Array<WalletFeatures & { score: number }>;
+  allFeatures: WalletFeatures[];
+  stats: FilterStats;
+} {
   const agg = aggregateSwapEvents(events);
-  const filtered = filterWallets(agg.values(), filterOpts);
-  const scored = filtered.map((f) => ({ ...f, score: scoreWallet(f) }));
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
+  const allFeatures = Array.from(agg.values());
+  const { kept, stats } = filterWalletsWithStats(allFeatures, filterOpts);
+  const ranked = kept
+    .map((f) => ({ ...f, score: scoreWallet(f) }))
+    .sort((a, b) => b.score - a.score);
+  return { ranked, allFeatures, stats };
 }

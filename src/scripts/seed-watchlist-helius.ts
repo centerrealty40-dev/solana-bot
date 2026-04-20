@@ -4,7 +4,11 @@ import { config } from '../core/config.js';
 import { child } from '../core/logger.js';
 import { buildTokenUniverse } from '../collectors/token-universe.js';
 import { discoverSwappers, deepDiveWallets, type SwapEvent } from '../collectors/helius-discovery.js';
-import { rankWallets, type WalletFeatures } from '../scoring/seed-quality.js';
+import {
+  aggregateSwapEvents,
+  rankWalletsWithStats,
+  type WalletFeatures,
+} from '../scoring/seed-quality.js';
 import { heliusFetch, getUsageSnapshot, HeliusGuardError } from '../core/helius-guard.js';
 
 const log = child('seed-helius');
@@ -66,7 +70,8 @@ async function main(): Promise<void> {
   const limit = Number(process.env.SEED_LIMIT ?? 200);
   const minTokens = Number(process.env.SEED_MIN_TOKENS ?? 2);
   const allowSpecialists = process.env.SEED_NO_SPECIALISTS !== '1';
-  const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 5);
+  const minGapSec = Number(process.env.SEED_MIN_GAP_SEC ?? 2);
+  const maxConc = Number(process.env.SEED_MAX_CONC ?? 0.85);
   const dryRun = process.env.SEED_DRY_RUN === '1';
   const cluster = process.env.SEED_CLUSTER === '1';
   const requireNetAccum = process.env.SEED_REQUIRE_NET_ACCUM === '1';
@@ -151,33 +156,60 @@ async function main(): Promise<void> {
     'stage-1 done',
   );
 
-  // Stage 2: deep-dive top candidates by raw appearance count.
-  // This sees their FULL recent history, including tokens NOT in our universe,
-  // so we can correctly assess breadth and balance.
+  // Stage 2: smart candidate selection — pre-aggregate stage-1 features
+  // so we can EXCLUDE obvious bots (sub-2s median gap with many swaps) BEFORE
+  // we spend credits on them. We then rank by a heuristic that biases toward
+  // real money (USD-weighted appearances) instead of raw frequency.
   let allEvents: SwapEvent[] = stage1Events;
   if (stage2) {
-    const appearancesByWallet = new Map<string, number>();
-    for (const e of stage1Events) {
-      appearancesByWallet.set(e.wallet, (appearancesByWallet.get(e.wallet) ?? 0) + 1);
+    const stage1Agg = aggregateSwapEvents(stage1Events);
+    type Cand = { wallet: string; score: number; reason: string };
+    const cands: Cand[] = [];
+    let dropBot = 0;
+    let dropFew = 0;
+    let dropDust = 0;
+    for (const f of stage1Agg.values()) {
+      if (f.swapCount < stage2MinAppearances) {
+        dropFew++;
+        continue;
+      }
+      // Obvious bot: many fast swaps in our window → don't waste credits
+      if (f.swapCount >= 5 && Number.isFinite(f.medianGapSec) && f.medianGapSec < 1) {
+        dropBot++;
+        continue;
+      }
+      // Pure dust (every swap < $20 USD and total < $50): probably noise
+      if (f.volumeUsd < 50) {
+        dropDust++;
+        continue;
+      }
+      // Composite candidate score: rewards $$ size and breadth, log-dampened
+      const breadth = Math.log10(Math.max(1, f.tokenCount)) * 2;
+      const money = Math.log10(Math.max(1, f.volumeUsd)) * 1.5;
+      const presence = Math.log10(f.swapCount);
+      cands.push({
+        wallet: f.wallet,
+        score: breadth + money + presence,
+        reason: `tk=${f.tokenCount} sw=${f.swapCount} vol=$${Math.round(f.volumeUsd)}`,
+      });
     }
-    const candidates = [...appearancesByWallet.entries()]
-      .filter(([, c]) => c >= stage2MinAppearances)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, stage2Top)
-      .map(([w]) => w);
+    cands.sort((a, b) => b.score - a.score);
+    const candidates = cands.slice(0, stage2Top).map((c) => c.wallet);
 
     log.info(
       {
+        eligibleCands: cands.length,
         candidatesPicked: candidates.length,
-        minAppearances: stage2MinAppearances,
-        cap: stage2Top,
+        droppedBot: dropBot,
+        droppedTooFew: dropFew,
+        droppedDust: dropDust,
+        topPreview: cands.slice(0, 5).map((c) => `${c.wallet.slice(0, 6)}(${c.reason})`).join(' | '),
       },
       'stage-2 candidate selection',
     );
 
     if (candidates.length > 0) {
       const stage2Events = await deepDiveWallets(candidates, stage2Pages);
-      // Merge stage 1 + stage 2 events by signature (dedup)
       const seen = new Set(stage1Events.map((e) => e.signature));
       let added = 0;
       for (const e of stage2Events) {
@@ -199,9 +231,10 @@ async function main(): Promise<void> {
 
   // Step 3 & 4: aggregate, filter, rank using merged data
   log.info('step 3-4: aggregating + scoring wallets');
-  const ranked = rankWallets(allEvents, {
+  const { ranked, allFeatures, stats } = rankWalletsWithStats(allEvents, {
     minTokens,
     minMedianGapSec: minGapSec,
+    maxTopTokenConcentration: maxConc,
     requireNetAccumulation: requireNetAccum,
     allowSpecialists,
   });
@@ -209,6 +242,50 @@ async function main(): Promise<void> {
   const multiToken = ranked.filter((w) => w.tokenCount >= 2).length;
   const specialists = ranked.filter((w) => w.tokenCount === 1).length;
   log.info({ multiToken, specialists }, 'breakdown of passing wallets');
+  log.info(
+    {
+      total: stats.total,
+      kept: stats.kept,
+      droppedMaxTokens: stats.droppedMaxTokens,
+      droppedMaxVolume: stats.droppedMaxVolume,
+      droppedMaxSwaps: stats.droppedMaxSwaps,
+      droppedMinGap: stats.droppedMinGap,
+      droppedMinTokens: stats.droppedMinTokens,
+      droppedMinVolume: stats.droppedMinVolume,
+      droppedMinSwaps: stats.droppedMinSwaps,
+      droppedConcentration: stats.droppedConcentration,
+      droppedSpecSwaps: stats.droppedSpecialistSwaps,
+      droppedSpecVolume: stats.droppedSpecialistVolume,
+      droppedSpecBalance: stats.droppedSpecialistBalance,
+    },
+    'filter rejection breakdown',
+  );
+
+  // Show what the strongest REJECTED wallets looked like — helps tune knobs
+  if (ranked.length < 20) {
+    const rejects = allFeatures
+      .filter((f) => !ranked.some((r) => r.wallet === f.wallet))
+      .map((f) => ({ ...f, vScore: Math.log10(Math.max(1, f.volumeUsd)) + f.swapCount * 0.05 }))
+      .sort((a, b) => b.vScore - a.vScore)
+      .slice(0, 10);
+    console.log('\nTop-10 REJECTED wallets (by activity), to help diagnose filters:');
+    console.log(
+      'Wallet                                              Tokens Swaps  B/S      Volume USD  GapSec  TopConc',
+    );
+    for (const w of rejects) {
+      const wallet = w.wallet.padEnd(50);
+      const tk = String(w.tokenCount).padStart(6);
+      const sw = String(w.swapCount).padStart(5);
+      const bs = `${w.buyCount}/${w.sellCount}`.padStart(7);
+      const vol = `$${Math.round(w.volumeUsd).toLocaleString()}`.padStart(11);
+      const gap = (Number.isFinite(w.medianGapSec) ? Math.round(w.medianGapSec) : NaN)
+        .toString()
+        .padStart(7);
+      const conc = w.topTokenConcentration.toFixed(2).padStart(7);
+      console.log(`${wallet}  ${tk} ${sw}  ${bs}  ${vol} ${gap} ${conc}`);
+    }
+    console.log('');
+  }
 
   log.info(
     {
