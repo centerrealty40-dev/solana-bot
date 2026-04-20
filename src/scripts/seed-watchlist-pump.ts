@@ -8,7 +8,7 @@ import { getSwappersForToken, type SwapEvent } from '../collectors/helius-discov
 import {
   extractEarlyBuyers,
   aggregatePumpHits,
-  filterSnipers,
+  filterSnipersWithStats,
   collapsePumpFleets,
   formatPumpNote,
   type EarlyBuyerHit,
@@ -80,8 +80,8 @@ async function main(): Promise<void> {
   const topBuyers = Number(process.env.PUMP_TOP_BUYERS ?? 50);
   const lookbackHours = Number(process.env.PUMP_LOOKBACK_HOURS ?? 24);
   const minHits = Number(process.env.PUMP_MIN_HITS ?? 2);
-  const minAvgUsd = Number(process.env.PUMP_MIN_AVG_USD ?? 50);
-  const minSpreadSec = Number(process.env.PUMP_MIN_SPREAD_SEC ?? 60);
+  const minAvgUsd = Number(process.env.PUMP_MIN_AVG_USD ?? 25);
+  const minSpreadSec = Number(process.env.PUMP_MIN_SPREAD_SEC ?? 30);
   const limit = Number(process.env.PUMP_LIMIT ?? 200);
   const dryRun = process.env.PUMP_DRY_RUN === '1';
   const purgeOld = process.env.PUMP_PURGE_OLD === '1';
@@ -219,15 +219,55 @@ async function main(): Promise<void> {
 
   // Step 5: drop snipers
   const beforeSniper = alpha.length;
-  alpha = filterSnipers(alpha, { minAvgUsd, minSpreadSec });
+  const sniperResult = filterSnipersWithStats(alpha, { minAvgUsd, minSpreadSec });
+  alpha = sniperResult.kept;
+  const droppedLowUsd = sniperResult.details.filter((d) => d.reason === 'low_avg_usd').length;
+  const droppedShortSpread = sniperResult.details.filter((d) => d.reason === 'short_spread').length;
   log.info(
     {
       before: beforeSniper,
       after: alpha.length,
-      droppedSnipers: beforeSniper - alpha.length,
+      droppedLowAvgUsd: droppedLowUsd,
+      droppedShortSpread: droppedShortSpread,
+      thresholds: { minAvgUsd, minSpreadSec },
     },
     'sniper filter applied',
   );
+
+  // If sniper filter wiped most/all candidates, show what they looked like
+  // so we can tune knobs. This is the moment where most signal lives —
+  // the borderline wallets are exactly the ones we want to evaluate manually.
+  if (alpha.length < 10 && sniperResult.details.length > 0) {
+    const symbolByMint2 = new Map(cache.pumped.map((p) => [p.mint, p.symbol]));
+    const dropped = sniperResult.details
+      .filter((d) => d.reason !== 'kept')
+      .sort((a, b) => b.wallet.score - a.wallet.score)
+      .slice(0, 12);
+    console.log('\nTop wallets DROPPED by sniper filter (review to tune):');
+    console.log(
+      'Wallet                                              Score Hits  AvgUSD  SpreadSec  Reason         Hits',
+    );
+    console.log(
+      '--------------------------------------------------  ----- ----  ------  ---------  -------------  ----------',
+    );
+    for (const d of dropped) {
+      const w = d.wallet;
+      const wallet = w.wallet.padEnd(50);
+      const score = w.score.toFixed(1).padStart(5);
+      const hits = String(w.hitCount).padStart(4);
+      const avg = `$${Math.round(d.avgUsd)}`.padStart(6);
+      const spread = String(d.spreadSec).padStart(9);
+      const reason = (d.reason === 'low_avg_usd' ? 'low_avg_usd' : 'short_spread').padEnd(13);
+      const hitsList = w.hits
+        .slice()
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, 3)
+        .map((h) => `${symbolByMint2.get(h.mint) ?? h.mint.slice(0, 4)}#${h.rank}`)
+        .join(',');
+      console.log(`${wallet}  ${score} ${hits}  ${avg}  ${spread}  ${reason}  ${hitsList}`);
+    }
+    console.log('');
+  }
 
   // Step 6: anti-fleet
   if (antiFleet && alpha.length > 1) {

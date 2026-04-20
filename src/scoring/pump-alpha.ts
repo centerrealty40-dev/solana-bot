@@ -170,18 +170,40 @@ export function filterSnipers(
   wallets: PumpAlphaWallet[],
   opts: { minAvgUsd?: number; minSpreadSec?: number } = {},
 ): PumpAlphaWallet[] {
+  return filterSnipersWithStats(wallets, opts).kept;
+}
+
+export interface SniperFilterDetail {
+  wallet: PumpAlphaWallet;
+  reason: 'kept' | 'low_avg_usd' | 'short_spread';
+  avgUsd: number;
+  spreadSec: number;
+}
+
+/**
+ * Same as filterSnipers but returns kept + per-wallet detail (avg USD, spread,
+ * reason for rejection). Used in the seed script for diagnostics so we can see
+ * what the filter is killing and tune accordingly.
+ */
+export function filterSnipersWithStats(
+  wallets: PumpAlphaWallet[],
+  opts: { minAvgUsd?: number; minSpreadSec?: number } = {},
+): { kept: PumpAlphaWallet[]; details: SniperFilterDetail[] } {
   const minAvgUsd = opts.minAvgUsd ?? 50;
   const minSpreadSec = opts.minSpreadSec ?? 60;
-  const out: PumpAlphaWallet[] = [];
+  const kept: PumpAlphaWallet[] = [];
+  const details: SniperFilterDetail[] = [];
   for (const w of wallets) {
     const avgUsd = w.totalBuyUsd / w.hitCount;
-    if (avgUsd < minAvgUsd) continue;
     const tss = w.hits.map((h) => h.ts).sort((a, b) => a - b);
-    const spread = tss[tss.length - 1]! - tss[0]!;
-    if (spread < minSpreadSec) continue;
-    out.push(w);
+    const spreadSec = tss[tss.length - 1]! - tss[0]!;
+    let reason: SniperFilterDetail['reason'] = 'kept';
+    if (avgUsd < minAvgUsd) reason = 'low_avg_usd';
+    else if (spreadSec < minSpreadSec) reason = 'short_spread';
+    details.push({ wallet: w, reason, avgUsd, spreadSec });
+    if (reason === 'kept') kept.push(w);
   }
-  return out;
+  return { kept, details };
 }
 
 /**
