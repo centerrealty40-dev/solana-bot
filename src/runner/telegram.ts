@@ -208,8 +208,12 @@ export async function notifyCopyEntry(args: {
   const text =
     `📥 *COPY BUY (paper)* \`#${args.positionId}\`\n` +
     `Token: ${label}\n` +
-    `Leader: \`${shortWallet(args.triggerWallet)}\` bought ${fmtUsd(args.leadAmountUsd)} on ${args.dex}\n` +
-    `Our paper size: ${fmtUsd(args.sizeUsd)} @ ${fmtUsd(args.entryPriceUsd, 6)}`;
+    `Mint: \`${args.baseMint}\`\n` +
+    `Leader: \`${args.triggerWallet}\` bought ${fmtUsd(args.leadAmountUsd)} on ${args.dex}\n` +
+    `Our paper size: ${fmtUsd(args.sizeUsd)} @ ${fmtUsd(args.entryPriceUsd, 6)}\n` +
+    `[DexScreener](https://dexscreener.com/solana/${args.baseMint}) | ` +
+    `[Solscan token](https://solscan.io/token/${args.baseMint}) | ` +
+    `[Leader wallet](https://solscan.io/account/${args.triggerWallet})`;
   await sendTelegram(text);
 }
 
@@ -231,10 +235,14 @@ export async function notifyCopyExit(args: {
   const text =
     `${emoji} *COPY SELL (paper)* \`#${args.positionId}\`\n` +
     `Token: ${label}\n` +
-    `Leader: \`${shortWallet(args.triggerWallet)}\`\n` +
+    `Mint: \`${args.baseMint}\`\n` +
+    `Leader: \`${args.triggerWallet}\`\n` +
     `${fmtUsd(args.entryPriceUsd, 6)} → ${fmtUsd(args.exitPriceUsd, 6)}  (${fmtPct(pct)})\n` +
     `Held: ${fmtDuration(args.heldMs)}  |  PnL: ${fmtUsd(args.pnlUsd)}\n` +
-    `Reason: ${escapeMd(reasonHuman)}`;
+    `Reason: ${escapeMd(reasonHuman)}\n` +
+    `[DexScreener](https://dexscreener.com/solana/${args.baseMint}) | ` +
+    `[Solscan token](https://solscan.io/token/${args.baseMint}) | ` +
+    `[Leader wallet](https://solscan.io/account/${args.triggerWallet})`;
   await sendTelegram(text);
 }
 
