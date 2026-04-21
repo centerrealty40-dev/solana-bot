@@ -25,6 +25,7 @@ const log = child('wallet-tagger');
 const PRIORITY = [
   'cex_hot_wallet',
   'scam_treasury',  // boss/treasury wallet that funds multiple scam operators
+  'scam_payout',    // collector wallet that drains profits from operators
   'scam_operator',
   'scam_proxy',
   'sniper',
@@ -113,6 +114,34 @@ export async function tagWallet(wallet: string): Promise<string[]> {
       context: `funded:${tp.n_funded}_ops|total:${tp.total_sol.toFixed(0)}sol`,
     });
     tagsApplied.push('scam_treasury');
+  }
+
+  // 0b. Scam payout — wallet RECEIVED SOL from ≥3 distinct scam_operator wallets.
+  // The collector behind a coordinated rug; usually the same human as scam_treasury
+  // but on a separate address for anti-forensics. Tracking these gives us an
+  // exit-side intel target: when payout receives a fresh inflow it means the
+  // operation just printed money.
+  const payoutProbe = (await db.execute(
+    dsql.raw(`
+      SELECT COUNT(DISTINCT mf.source_wallet)::int AS n_drained,
+             SUM(mf.amount)::float AS total_sol
+      FROM money_flows mf
+      JOIN entity_wallets ew ON ew.wallet = mf.source_wallet
+      WHERE mf.target_wallet = '${wallet}'
+        AND ew.primary_tag IN ('scam_operator','scam_proxy')
+        AND mf.asset = 'SOL'
+    `),
+  )) as unknown as Array<{ n_drained: number; total_sol: number }>;
+  const pp = payoutProbe[0];
+  if (pp && pp.n_drained >= 3) {
+    await addTag({
+      wallet,
+      tag: 'scam_payout',
+      confidence: Math.min(100, 60 + pp.n_drained * 3),
+      source: 'multi_drained_from_operators',
+      context: `drained_from:${pp.n_drained}_ops|total:${pp.total_sol.toFixed(0)}sol`,
+    });
+    tagsApplied.push('scam_payout');
   }
 
   // Pull profile + activity stats
