@@ -16,7 +16,7 @@
 import 'dotenv/config';
 import { request } from 'undici';
 import { config } from '../core/config.js';
-import { db } from '../core/db/client.js';
+import { db, schema } from '../core/db/client.js';
 import { sql as dsql } from 'drizzle-orm';
 import { child } from '../core/logger.js';
 
@@ -263,6 +263,15 @@ async function main(): Promise<void> {
     console.log(`To remove, run:`);
     console.log(`  PURGE_CONFIRM=1 npm run cluster:purge -- ${target}`);
     console.log(`  npm run webhook:register`);
+
+    // Persist into wallet_clusters + tag every member
+    await persistScamCluster({
+      target,
+      members: stats.map((s) => s.wallet),
+      funders: stats.flatMap((s) => s.funders.slice(0, 1).map((f) => f.wallet)),
+      score,
+      meanFunding: mean,
+    });
   } else if (score >= 40) {
     console.log(`\nVerdict: SUSPICIOUS — manual review recommended (${score.toFixed(0)}/100)`);
   } else {
@@ -270,6 +279,86 @@ async function main(): Promise<void> {
   }
 
   process.exit(0);
+}
+
+/**
+ * Persist a confirmed scam cluster into the Atlas:
+ *   - one row in wallet_clusters (with the target mint as evidence)
+ *   - tag every member wallet as 'scam_operator'
+ *   - tag every primary funder as 'scam_proxy'
+ *
+ * This grows the persistent intel layer that downstream products will query.
+ */
+async function persistScamCluster(args: {
+  target: string;
+  members: string[];
+  funders: string[];
+  score: number;
+  meanFunding: number;
+}): Promise<void> {
+  const label = `scam ring (target=${args.target.slice(0, 8)}, mean_in=${args.meanFunding.toFixed(0)} SOL)`;
+  const inserted = await db
+    .insert(schema.walletClusters)
+    .values({
+      label,
+      kind: 'scam_ring',
+      confidence: Math.round(args.score),
+      walletCount: args.members.length,
+      totalInflowSol: args.meanFunding * args.members.length,
+      touchedMints: [args.target],
+      detectedBy: 'analyze-cluster',
+      note: `members:${args.members.length} funders:${args.funders.length}`,
+    })
+    .returning({ id: schema.walletClusters.id });
+  const clusterId = inserted[0]?.id;
+  if (!clusterId) {
+    log.warn('cluster insert returned no id, skipping wallet linkage');
+    return;
+  }
+
+  // Link members + tag them
+  for (const w of args.members) {
+    await db
+      .insert(schema.entityWallets)
+      .values({ wallet: w, clusterId: Number(clusterId), primaryTag: 'scam_operator' })
+      .onConflictDoUpdate({
+        target: schema.entityWallets.wallet,
+        set: { clusterId: Number(clusterId), primaryTag: 'scam_operator' },
+      });
+    await db
+      .insert(schema.walletTags)
+      .values({
+        wallet: w,
+        tag: 'scam_operator',
+        confidence: Math.round(args.score),
+        source: 'analyze-cluster',
+        context: `cluster:${clusterId}|target:${args.target}`,
+      })
+      .onConflictDoNothing();
+  }
+
+  // Tag funders as scam_proxy (without overriding their existing primary)
+  for (const f of args.funders) {
+    if (!f) continue;
+    await db
+      .insert(schema.entityWallets)
+      .values({ wallet: f })
+      .onConflictDoNothing();
+    await db
+      .insert(schema.walletTags)
+      .values({
+        wallet: f,
+        tag: 'scam_proxy',
+        confidence: 70,
+        source: 'analyze-cluster',
+        context: `cluster:${clusterId}|funded:${args.members.length}`,
+      })
+      .onConflictDoNothing();
+  }
+
+  console.log(`\n💾 Persisted scam cluster #${clusterId} into atlas:`);
+  console.log(`   ${args.members.length} wallets tagged 'scam_operator'`);
+  console.log(`   ${args.funders.length} funders tagged 'scam_proxy'`);
 }
 
 main().catch((err) => {

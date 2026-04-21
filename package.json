@@ -47,7 +47,8 @@
     "copy:sweep": "tsx src/scripts/copy-sweep.ts",
     "db:stats": "tsx src/scripts/db-stats.ts",
     "analyze:cluster": "tsx src/scripts/analyze-cluster.ts",
-    "cluster:purge": "tsx src/scripts/cluster-purge.ts"
+    "cluster:purge": "tsx src/scripts/cluster-purge.ts",
+    "wallet:trace": "tsx src/scripts/wallet-trace.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
