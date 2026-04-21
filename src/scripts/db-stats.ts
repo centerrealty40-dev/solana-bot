@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     console.log('--------------------------------------------------  -----  ----------  --------------------');
     for (const r of wlRows) {
       console.log(
-        `${r.wallet.padEnd(50)}  ${String(r.swaps).padStart(5)}  ${('$' + (r.max_usd ?? 0).toFixed(0)).padStart(10)}  ${r.last_swap.toISOString()}`,
+        `${r.wallet.padEnd(50)}  ${String(r.swaps).padStart(5)}  ${('$' + Number(r.max_usd ?? 0).toFixed(0)).padStart(10)}  ${String(r.last_swap)}`,
       );
     }
   }
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     console.log('----------------------------------------------------  ------  ----  --------------------');
     for (const r of buyRows) {
       console.log(
-        `${r.base_mint.padEnd(52)}  ${String(r.distinct_buyers).padStart(6)}  ${String(r.buys).padStart(4)}  ${r.last.toISOString()}`,
+        `${r.base_mint.padEnd(52)}  ${String(r.distinct_buyers).padStart(6)}  ${String(r.buys).padStart(4)}  ${String(r.last)}`,
       );
     }
   }
