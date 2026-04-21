@@ -191,10 +191,6 @@ export async function notifyDailyReport(args: {
 
 /* ----- Copy-trader (paper) events ----- */
 
-function shortWallet(w: string): string {
-  return `${w.slice(0, 4)}…${w.slice(-4)}`;
-}
-
 export async function notifyCopyEntry(args: {
   positionId: bigint;
   baseMint: string;
