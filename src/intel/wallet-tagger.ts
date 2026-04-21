@@ -24,6 +24,7 @@ const log = child('wallet-tagger');
 
 const PRIORITY = [
   'cex_hot_wallet',
+  'scam_treasury',  // boss/treasury wallet that funds multiple scam operators
   'scam_operator',
   'scam_proxy',
   'sniper',
@@ -86,6 +87,32 @@ export async function tagWallet(wallet: string): Promise<string[]> {
   if (cexLabel) {
     await addTag({ wallet, tag: 'cex_hot_wallet', confidence: 100, source: 'cex_list', context: cexLabel });
     tagsApplied.push('cex_hot_wallet');
+  }
+
+  // 0a. Scam treasury — wallet funded ≥3 distinct scam_operator wallets.
+  // The boss/payroll account behind a coordinated rug operation. Highest-value
+  // intel target: monitoring it lets us pre-empt every future pump it launches.
+  const treasuryProbe = (await db.execute(
+    dsql.raw(`
+      SELECT COUNT(DISTINCT mf.target_wallet)::int AS n_funded,
+             SUM(mf.amount)::float AS total_sol
+      FROM money_flows mf
+      JOIN entity_wallets ew ON ew.wallet = mf.target_wallet
+      WHERE mf.source_wallet = '${wallet}'
+        AND ew.primary_tag IN ('scam_operator','scam_proxy')
+        AND mf.asset = 'SOL'
+    `),
+  )) as unknown as Array<{ n_funded: number; total_sol: number }>;
+  const tp = treasuryProbe[0];
+  if (tp && tp.n_funded >= 3) {
+    await addTag({
+      wallet,
+      tag: 'scam_treasury',
+      confidence: Math.min(100, 60 + tp.n_funded * 3),
+      source: 'multi_funded_operators',
+      context: `funded:${tp.n_funded}_ops|total:${tp.total_sol.toFixed(0)}sol`,
+    });
+    tagsApplied.push('scam_treasury');
   }
 
   // Pull profile + activity stats
