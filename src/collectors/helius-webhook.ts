@@ -7,6 +7,7 @@ import { normalizeHeliusSwap, type HeliusEnhancedTx } from './normalizer.js';
 import { getJupPrices } from './jupiter-price.js';
 import { QUOTE_MINTS, DEX_PROGRAMS } from '../core/constants.js';
 import { heliusFetch, HeliusGuardError } from '../core/helius-guard.js';
+import { processCopyBatch } from '../runner/copy-trader.js';
 
 const log = child('helius-webhook');
 
@@ -202,11 +203,31 @@ export async function deleteAllHeliusWebhooks(): Promise<{ deleted: number }> {
 export async function processHeliusBatch(txs: HeliusEnhancedTx[]): Promise<number> {
   if (txs.length === 0) return 0;
   const quotePrices = await getJupPrices([QUOTE_MINTS.SOL]);
+  // Pre-load watchlist once per batch so we can apply different dust thresholds:
+  //   - watchlist wallets are curated (MEMECOIN-OP lead buys can be $20-30,
+  //     dropping them at $50 silently breaks the copy-trader); keep ALL their
+  //     swaps with amountUsd > $5 as the only floor (Helius price glitches).
+  //   - non-watchlist wallets (collateral data ingested by association) keep
+  //     the conservative $50 floor to avoid swap-table pollution.
+  const wlRows = await db
+    .select({ wallet: schema.watchlistWallets.wallet })
+    .from(schema.watchlistWallets)
+    .where(dsql`${schema.watchlistWallets.removedAt} IS NULL`);
+  const wlSet = new Set(wlRows.map((r) => r.wallet));
   const allSwaps = txs
     .flatMap((tx) => normalizeHeliusSwap(tx, quotePrices))
-    .filter((s) => s.amountUsd >= 50);
+    .filter((s) => (wlSet.has(s.wallet) ? s.amountUsd >= 5 : s.amountUsd >= 50));
   if (allSwaps.length === 0) return 0;
-  return insertSwapsBatch(allSwaps);
+  const inserted = await insertSwapsBatch(allSwaps);
+  // Fire copy-trader AFTER the swaps are persisted so any DB lookups inside
+  // the copy logic see consistent state. Failures here MUST NOT propagate to
+  // the webhook caller (we already acked the data), so swallow + log inside.
+  try {
+    await processCopyBatch(allSwaps);
+  } catch (err) {
+    log.error({ err: String(err), batch: allSwaps.length }, 'copy-trader batch failed');
+  }
+  return inserted;
 }
 
 /**

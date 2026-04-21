@@ -302,6 +302,27 @@ export const heliusUsage = pgTable(
 );
 
 /**
+ * First-N attribution table for the copy-trader.
+ *
+ * The first watchlist wallet that buys a brand new mint registers itself here
+ * and gets a paper position; subsequent buys by other watchlist wallets are
+ * dropped as follow-the-leader noise.
+ */
+export const copySeenMints = pgTable(
+  'copy_seen_mints',
+  {
+    mint: varchar('mint', { length: 64 }).primaryKey(),
+    firstWallet: varchar('first_wallet', { length: 64 }).notNull(),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    firstSignature: varchar('first_signature', { length: 96 }),
+  },
+  (t) => ({
+    firstWalletIdx: index('copy_seen_mints_first_wallet_idx').on(t.firstWallet),
+    firstSeenIdx: index('copy_seen_mints_first_seen_idx').on(t.firstSeenAt),
+  }),
+);
+
+/**
  * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
  */
 export const dailyPnl = pgTable(

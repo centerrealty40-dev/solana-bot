@@ -189,6 +189,55 @@ export async function notifyDailyReport(args: {
   await sendTelegram(text);
 }
 
+/* ----- Copy-trader (paper) events ----- */
+
+function shortWallet(w: string): string {
+  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+
+export async function notifyCopyEntry(args: {
+  positionId: bigint;
+  baseMint: string;
+  triggerWallet: string;
+  sizeUsd: number;
+  entryPriceUsd: number;
+  leadAmountUsd: number;
+  dex: string;
+}): Promise<void> {
+  const label = await tokenLabel(args.baseMint);
+  const text =
+    `📥 *COPY BUY (paper)* \`#${args.positionId}\`\n` +
+    `Token: ${label}\n` +
+    `Leader: \`${shortWallet(args.triggerWallet)}\` bought ${fmtUsd(args.leadAmountUsd)} on ${args.dex}\n` +
+    `Our paper size: ${fmtUsd(args.sizeUsd)} @ ${fmtUsd(args.entryPriceUsd, 6)}`;
+  await sendTelegram(text);
+}
+
+export async function notifyCopyExit(args: {
+  positionId: bigint;
+  baseMint: string;
+  triggerWallet: string;
+  entryPriceUsd: number;
+  exitPriceUsd: number;
+  pnlUsd: number;
+  heldMs: number;
+  reason: string;
+}): Promise<void> {
+  const label = await tokenLabel(args.baseMint);
+  const pct = args.exitPriceUsd / Math.max(args.entryPriceUsd, 1e-12) - 1;
+  const emoji = args.pnlUsd >= 0 ? '✅' : '❌';
+  const reasonHuman =
+    args.reason === 'mirror_leader_sell' ? 'leader sold (mirror)' : args.reason;
+  const text =
+    `${emoji} *COPY SELL (paper)* \`#${args.positionId}\`\n` +
+    `Token: ${label}\n` +
+    `Leader: \`${shortWallet(args.triggerWallet)}\`\n` +
+    `${fmtUsd(args.entryPriceUsd, 6)} → ${fmtUsd(args.exitPriceUsd, 6)}  (${fmtPct(pct)})\n` +
+    `Held: ${fmtDuration(args.heldMs)}  |  PnL: ${fmtUsd(args.pnlUsd)}\n` +
+    `Reason: ${escapeMd(reasonHuman)}`;
+  await sendTelegram(text);
+}
+
 export async function notifyError(component: string, err: unknown): Promise<void> {
   const msg = err instanceof Error ? err.message : String(err);
   await sendTelegram(`⚠️ *Error in ${escapeMd(component)}*\n\`\`\`\n${msg.slice(0, 500)}\n\`\`\``);
