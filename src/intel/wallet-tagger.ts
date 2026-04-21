@@ -252,7 +252,8 @@ export async function tagWallet(wallet: string): Promise<string[]> {
     }
   }
 
-  log.debug({ wallet, tagsApplied: [...allTags], primary: [...allTags].find((t) => PRIORITY.includes(t)) }, 'tagged');
+  const primary = PRIORITY.find((t) => allTags.has(t)) ?? null;
+  log.debug({ wallet, tagsApplied: [...allTags], primary }, 'tagged');
   return tagsApplied;
 }
 
