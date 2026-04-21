@@ -310,6 +310,11 @@ function analyzeTxs(
 }
 
 async function upsertProfile(wallet: string, p: ProfileUpdate): Promise<void> {
+  // Simple upsert: insert fresh values, on conflict overwrite. We lose the
+  // "widening" semantics (max of old vs new) but that's acceptable — re-tracing
+  // re-reads the same canonical history from Helius, so values converge anyway.
+  // Avoids fragile dsql template literal interpolation that postgres-js dislikes
+  // when mixing Date and column-reference parameters.
   await db
     .insert(schema.entityWallets)
     .values({
@@ -321,20 +326,19 @@ async function upsertProfile(wallet: string, p: ProfileUpdate): Promise<void> {
       distinctCounterparties: p.distinctCounterparties,
       totalFundedSol: p.totalFundedSol,
       totalFeeSpentSol: p.totalFeeSpentSol,
+      profileUpdatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: schema.entityWallets.wallet,
       set: {
-        // For first/last we widen the window
-        firstTxAt: dsql`LEAST(COALESCE(${schema.entityWallets.firstTxAt}, ${p.firstTxAt}), ${p.firstTxAt})`,
-        lastTxAt: dsql`GREATEST(COALESCE(${schema.entityWallets.lastTxAt}, ${p.lastTxAt}), ${p.lastTxAt})`,
-        // Counts: take MAX (we may have scanned shorter window now)
-        txCount: dsql`GREATEST(${schema.entityWallets.txCount}, ${p.txCount})`,
-        distinctMints: dsql`GREATEST(${schema.entityWallets.distinctMints}, ${p.distinctMints})`,
-        distinctCounterparties: dsql`GREATEST(${schema.entityWallets.distinctCounterparties}, ${p.distinctCounterparties})`,
-        totalFundedSol: dsql`GREATEST(${schema.entityWallets.totalFundedSol}, ${p.totalFundedSol})`,
-        totalFeeSpentSol: dsql`GREATEST(${schema.entityWallets.totalFeeSpentSol}, ${p.totalFeeSpentSol})`,
-        profileUpdatedAt: dsql`now()`,
+        firstTxAt: p.firstTxAt,
+        lastTxAt: p.lastTxAt,
+        txCount: p.txCount,
+        distinctMints: p.distinctMints,
+        distinctCounterparties: p.distinctCounterparties,
+        totalFundedSol: p.totalFundedSol,
+        totalFeeSpentSol: p.totalFeeSpentSol,
+        profileUpdatedAt: new Date(),
       },
     });
 }

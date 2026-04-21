@@ -145,24 +145,34 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Find watchlist wallets that bought this mint
+  // Find ALL wallets that bought this mint (not just watchlist — we want
+  // forensic analysis on any known-bad mint, even after we purged the cluster
+  // from watchlist).
   const buyers = (await db.execute(
     dsql.raw(`
-      SELECT DISTINCT s.wallet
-      FROM swaps s JOIN watchlist_wallets w ON w.wallet = s.wallet
-      WHERE w.removed_at IS NULL
-        AND s.base_mint = '${target}'
-        AND s.side = 'buy'
+      SELECT s.wallet, COUNT(*)::int AS n_buys, SUM(s.amount_usd)::float AS total_usd
+      FROM swaps s
+      WHERE s.base_mint = '${target}' AND s.side = 'buy'
+      GROUP BY s.wallet
+      ORDER BY n_buys DESC
+      LIMIT 20
     `),
-  )) as unknown as Array<{ wallet: string }>;
+  )) as unknown as Array<{ wallet: string; n_buys: number; total_usd: number }>;
 
   console.log(`\n=== Analyzing cluster around ${target} ===\n`);
-  console.log(`Watchlist wallets that bought it: ${buyers.length}\n`);
+  console.log(`Wallets that bought this mint (top 20 by buy count): ${buyers.length}\n`);
 
   if (buyers.length === 0) {
-    console.log('(nobody from watchlist bought this — nothing to analyze)');
+    console.log('(no buyers in our swaps table — has Helius pulled this mint? Try wallet:trace on a known buyer)');
     process.exit(0);
   }
+
+  console.log('Buyer                                              n_buys  total_usd');
+  console.log('--------------------------------------------------  ------  ----------');
+  for (const b of buyers) {
+    console.log(`${b.wallet.padEnd(50)}  ${String(b.n_buys).padStart(6)}  $${Number(b.total_usd).toFixed(0)}`);
+  }
+  console.log('');
 
   const stats: WalletStats[] = [];
   for (const b of buyers) {
