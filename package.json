@@ -44,7 +44,8 @@
     "watchlist:remove": "tsx src/scripts/watchlist-remove.ts",
     "webhook:register": "tsx src/scripts/helius-register-webhook.ts",
     "copy:status": "tsx src/scripts/copy-status.ts",
-    "copy:sweep": "tsx src/scripts/copy-sweep.ts"
+    "copy:sweep": "tsx src/scripts/copy-sweep.ts",
+    "db:stats": "tsx src/scripts/db-stats.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
