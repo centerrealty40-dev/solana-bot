@@ -92,15 +92,33 @@ export function normalizeHeliusSwap(
 
   for (const ti of swap.tokenInputs ?? []) {
     if (ti.userAccount !== wallet) continue;
+    // Helius pumpfun bonding-curve swaps occasionally emit tokenInputs without
+    // a `tokenAmount` object (the swap is fully described by the SOL leg + the
+    // mint reference, with the token amount living elsewhere in the payload).
+    // Skipping these legs avoids a crash and only loses one mint side; the
+    // SOL leg + the matching tokenOutput on the other side still let us
+    // reconstruct the swap.
+    if (!ti.tokenAmount || ti.tokenAmount.tokenAmount === undefined || ti.tokenAmount.decimals === undefined) {
+      log.debug({ sig: tx.signature, mint: ti.mint }, 'tokenInputs leg missing tokenAmount, skipping');
+      continue;
+    }
     const decimals = ti.tokenAmount.decimals;
-    const raw = BigInt(ti.tokenAmount.tokenAmount);
+    let raw: bigint;
+    try { raw = BigInt(ti.tokenAmount.tokenAmount); }
+    catch { continue; }
     const cur = walletDelta.get(ti.mint);
     walletDelta.set(ti.mint, { raw: (cur?.raw ?? 0n) - raw, decimals });
   }
   for (const to of swap.tokenOutputs ?? []) {
     if (to.userAccount !== wallet) continue;
+    if (!to.tokenAmount || to.tokenAmount.tokenAmount === undefined || to.tokenAmount.decimals === undefined) {
+      log.debug({ sig: tx.signature, mint: to.mint }, 'tokenOutputs leg missing tokenAmount, skipping');
+      continue;
+    }
     const decimals = to.tokenAmount.decimals;
-    const raw = BigInt(to.tokenAmount.tokenAmount);
+    let raw: bigint;
+    try { raw = BigInt(to.tokenAmount.tokenAmount); }
+    catch { continue; }
     const cur = walletDelta.get(to.mint);
     walletDelta.set(to.mint, { raw: (cur?.raw ?? 0n) + raw, decimals });
   }
