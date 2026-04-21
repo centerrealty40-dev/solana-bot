@@ -90,7 +90,16 @@ export async function ensureHeliusWebhook(): Promise<string | null> {
 
   const body = {
     webhookURL: config.heliusWebhookUrl,
-    transactionTypes: ['SWAP'],
+    // We subscribe to ALL transaction types instead of ['SWAP'] because the
+    // Helius enhanced parser only labels a tx as SWAP for a small whitelist of
+    // DEX programs (Jupiter, Raydium, Orca, Pumpfun core). Many memecoin and
+    // launchpad programs (e.g. Boobs, custom bonding curves, new aggregators)
+    // produce real swaps that never get the SWAP label and would be silently
+    // dropped from delivery. Our normalizer.ts has a tokenTransfers fallback
+    // that reconstructs the swap from raw deltas, so 'Any' is safe and gives
+    // us full coverage. Cost-wise: deliveries are free (only outbound API
+    // calls consume credits), and 104 wallets generate <1 event/sec on average.
+    transactionTypes: ['Any'],
     accountAddresses,
     webhookType: 'enhanced',
     authHeader: config.heliusWebhookAuth || undefined,
