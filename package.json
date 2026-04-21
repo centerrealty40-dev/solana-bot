@@ -45,7 +45,9 @@
     "webhook:register": "tsx src/scripts/helius-register-webhook.ts",
     "copy:status": "tsx src/scripts/copy-status.ts",
     "copy:sweep": "tsx src/scripts/copy-sweep.ts",
-    "db:stats": "tsx src/scripts/db-stats.ts"
+    "db:stats": "tsx src/scripts/db-stats.ts",
+    "analyze:cluster": "tsx src/scripts/analyze-cluster.ts",
+    "cluster:purge": "tsx src/scripts/cluster-purge.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
