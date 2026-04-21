@@ -200,33 +200,33 @@ async function printTopRecipients(wallet: string): Promise<void> {
   console.log('');
 }
 
-async function printMermaid(root: string, hops: number): Promise<void> {
-  // Pull all flows touching the root or wallets within `hops` of root.
-  // For visual clarity we cap to top-N edges per wallet.
+async function printMermaid(root: string, _hops: number): Promise<void> {
+  // 1-hop neighborhood visualization. Postgres doesn't allow multiple recursive
+  // references in one CTE, and cycles (A→B + B→A) would loop forever in a
+  // naive recursive walk. So instead we collect direct neighbors and show all
+  // edges between {root + neighbors}. To go deeper, run wallet:trace on each
+  // interesting funder/recipient — the data accumulates in money_flows and the
+  // next visualization will be richer.
   const flows = (await db.execute(
     dsql.raw(`
-      WITH RECURSIVE neighborhood(w, depth) AS (
-        SELECT '${root}', 0
-        UNION ALL
-        SELECT mf.source_wallet, depth+1
-        FROM money_flows mf JOIN neighborhood n ON mf.target_wallet = n.w
-        WHERE depth < ${hops} AND mf.asset='SOL'
-        UNION ALL
-        SELECT mf.target_wallet, depth+1
-        FROM money_flows mf JOIN neighborhood n ON mf.source_wallet = n.w
-        WHERE depth < ${hops} AND mf.asset='SOL'
+      WITH neighbors AS (
+        SELECT source_wallet AS w FROM money_flows WHERE target_wallet = '${root}' AND asset='SOL'
+        UNION
+        SELECT target_wallet AS w FROM money_flows WHERE source_wallet = '${root}' AND asset='SOL'
       ),
-      uniq AS (SELECT DISTINCT w FROM neighborhood),
-      ranked AS (
-        SELECT mf.source_wallet, mf.target_wallet, SUM(mf.amount) AS sol, COUNT(*) AS n
-        FROM money_flows mf
-        WHERE mf.asset='SOL'
-          AND mf.source_wallet IN (SELECT w FROM uniq)
-          AND mf.target_wallet IN (SELECT w FROM uniq)
-        GROUP BY mf.source_wallet, mf.target_wallet
-        ORDER BY sol DESC LIMIT 60
+      nodes AS (
+        SELECT '${root}' AS w
+        UNION
+        SELECT w FROM neighbors
       )
-      SELECT * FROM ranked
+      SELECT mf.source_wallet, mf.target_wallet, SUM(mf.amount) AS sol, COUNT(*) AS n
+      FROM money_flows mf
+      WHERE mf.asset='SOL'
+        AND mf.source_wallet IN (SELECT w FROM nodes)
+        AND mf.target_wallet IN (SELECT w FROM nodes)
+      GROUP BY mf.source_wallet, mf.target_wallet
+      ORDER BY sol DESC
+      LIMIT 60
     `),
   )) as unknown as Array<{ source_wallet: string; target_wallet: string; sol: number; n: number }>;
 
