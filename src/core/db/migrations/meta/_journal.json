@@ -15,6 +15,13 @@
       "when": 1776625800000,
       "tag": "0001_helius_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776700000000,
+      "tag": "0002_copy_trader",
+      "breakpoints": true
     }
   ]
 }
