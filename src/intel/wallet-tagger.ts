@@ -98,14 +98,16 @@ export async function tagWallet(wallet: string): Promise<string[]> {
   if (!profile) return tagsApplied; // wallet not in atlas yet
 
   const ageDays = profile.firstTxAt
-    ? (Date.now() - profile.firstTxAt.getTime()) / 86_400_000
+    ? (Date.now() - new Date(profile.firstTxAt).getTime()) / 86_400_000
     : 0;
-  const idleDays = profile.lastTxAt
-    ? (Date.now() - profile.lastTxAt.getTime()) / 86_400_000
-    : 999;
+  const hasActivityData = profile.lastTxAt !== null;
+  const idleDays = hasActivityData
+    ? (Date.now() - new Date(profile.lastTxAt!).getTime()) / 86_400_000
+    : 0;
 
-  // 1. Inactive — hasn't traded in 90+ days
-  if (idleDays >= 90) {
+  // 1. Inactive — hasn't traded in 90+ days. Only fire if we actually have
+  // activity timestamps; null lastTxAt = "never traced" not "very inactive".
+  if (hasActivityData && idleDays >= 90) {
     await addTag({ wallet, tag: 'inactive', confidence: 100, source: 'recency', context: `idle_${idleDays.toFixed(0)}d` });
     tagsApplied.push('inactive');
   }

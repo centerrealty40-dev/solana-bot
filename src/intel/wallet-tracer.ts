@@ -124,13 +124,19 @@ export async function traceWallet(
       continue;
     }
 
-    // Cache: skip if recently traced
+    // Cache: skip if recently traced AND we actually have data (txCount > 0).
+    // Stub rows can be inserted by other components (analyze-cluster persists
+    // funder shells without fetching their history) — those should NOT count
+    // as cache hits or we'd never enrich them.
     const existing = await db
-      .select({ updatedAt: schema.entityWallets.profileUpdatedAt })
+      .select({
+        updatedAt: schema.entityWallets.profileUpdatedAt,
+        txCount: schema.entityWallets.txCount,
+      })
       .from(schema.entityWallets)
       .where(eq(schema.entityWallets.wallet, wallet))
       .limit(1);
-    if (existing[0]) {
+    if (existing[0] && existing[0].txCount > 0) {
       const ageHours = (Date.now() - existing[0].updatedAt.getTime()) / 3_600_000;
       if (ageHours < o.cacheHours) {
         log.debug({ wallet, ageHours: ageHours.toFixed(1) }, 'cache hit, skipping fetch');
