@@ -76,6 +76,77 @@ const MIN_LEAD_USD = 10;
 const COPY_TIME_STOP_HOURS = 48;
 
 /**
+ * Honeypot pre-check via DexScreener.
+ *
+ * Discovered the hard way: H8 rotation network reliably finds wallet clusters,
+ * but those clusters can also be the SCAMMER's own laundering ring buying his
+ * own honeypot token to fake volume (5 fresh wallets all buying mint X with
+ * ~$50k each, no sell side ever). A copy-trade follower mirrors the buy and
+ * gets locked in.
+ *
+ * Cheapest defence: before opening a copy position, ask DexScreener if anyone
+ * outside the cluster has been able to SELL the token in the last hour. No
+ * sells + many buys = honeypot or freshly-launched rug bait.
+ *
+ * Cache results for 60 s so a burst of leader buys on the same mint doesn't
+ * hammer DexScreener.
+ */
+const honeypotCache = new Map<string, { ts: number; verdict: { reject: boolean; reason: string } }>();
+const HONEYPOT_CACHE_MS = 60_000;
+
+async function honeypotPrecheck(mint: string): Promise<{ reject: boolean; reason: string }> {
+  const cached = honeypotCache.get(mint);
+  if (cached && Date.now() - cached.ts < HONEYPOT_CACHE_MS) return cached.verdict;
+
+  const verdict = await (async (): Promise<{ reject: boolean; reason: string }> => {
+    try {
+      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return { reject: false, reason: '' }; // fail-open: don't block on infra issues
+      const j = (await res.json()) as { pairs?: Array<{
+        txns?: { h1?: { buys: number; sells: number }; h6?: { buys: number; sells: number } };
+        liquidity?: { usd?: number };
+        priceUsd?: string;
+      }> };
+      const pairs = j.pairs ?? [];
+      if (pairs.length === 0) return { reject: true, reason: 'no_dex_pair' };
+
+      // Aggregate across all pairs (Raydium + pump.fun bonding etc)
+      const tot = { buys1: 0, sells1: 0, buys6: 0, sells6: 0, liq: 0 };
+      for (const p of pairs) {
+        tot.buys1 += p.txns?.h1?.buys ?? 0;
+        tot.sells1 += p.txns?.h1?.sells ?? 0;
+        tot.buys6 += p.txns?.h6?.buys ?? 0;
+        tot.sells6 += p.txns?.h6?.sells ?? 0;
+        tot.liq += p.liquidity?.usd ?? 0;
+      }
+
+      // Hard honeypot signal: meaningful buy activity but ZERO sells in last hour
+      if (tot.buys1 >= 10 && tot.sells1 === 0) {
+        return { reject: true, reason: `honeypot_${tot.buys1}b/0s_h1` };
+      }
+      // Soft signal: very low sell ratio over 6h (only allow if liquidity is decent)
+      const ratio6 = tot.sells6 / Math.max(tot.buys6, 1);
+      if (tot.buys6 >= 30 && ratio6 < 0.05) {
+        return { reject: true, reason: `near_honeypot_${(ratio6 * 100).toFixed(0)}%_sells_h6` };
+      }
+      // Rug bait: liquidity too low to ever exit at scale
+      if (tot.liq < 3000) {
+        return { reject: true, reason: `low_liq_$${tot.liq.toFixed(0)}` };
+      }
+      return { reject: false, reason: '' };
+    } catch (err) {
+      log.debug({ err: String(err), mint }, 'honeypot precheck failed, fail-open');
+      return { reject: false, reason: '' };
+    }
+  })();
+
+  honeypotCache.set(mint, { ts: Date.now(), verdict });
+  return verdict;
+}
+
+/**
  * Process a batch of normalized swaps after they are persisted.
  *
  * Caller (helius-webhook.processHeliusBatch) invokes this AFTER insertSwapsBatch
@@ -113,6 +184,17 @@ async function onLeaderBuy(swap: NormalizedSwap): Promise<void> {
     log.debug(
       { wallet: swap.wallet, mint: swap.baseMint, usd: swap.amountUsd },
       'lead buy too small, ignoring',
+    );
+    return;
+  }
+
+  // Honeypot pre-check (DexScreener) — block wallets-cluster pumps of un-sellable
+  // tokens. Cached for 60s to avoid hammering DexScreener on bursts.
+  const hp = await honeypotPrecheck(swap.baseMint);
+  if (hp.reject) {
+    log.warn(
+      { wallet: swap.wallet, mint: swap.baseMint, reason: hp.reason },
+      'honeypot precheck blocked copy entry',
     );
     return;
   }

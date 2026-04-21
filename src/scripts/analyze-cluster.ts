@@ -211,31 +211,62 @@ async function main(): Promise<void> {
     }
     console.log('');
   } else {
-    console.log('No shared funders detected (each wallet funded independently)\n');
+    console.log('No directly-shared funders (intermediary wallets used)\n');
   }
 
   const monomaniacs = stats.filter((s) => s.topMintShare >= 0.5);
   const fresh = stats.filter((s) => s.firstSeen && (Date.now() / 1000 - s.firstSeen) / 86400 < 14);
+  const veryFresh = stats.filter((s) => s.firstSeen && (Date.now() / 1000 - s.firstSeen) / 86400 < 1);
+
+  // Detect "uniform funding through intermediaries" — the scammer's usual
+  // obfuscation: route ~same SOL amount through N different wallets to avoid
+  // a direct shared-funder link. If primary funding amounts are within ±20%
+  // of each other AND all wallets are fresh, that is itself a strong signal.
+  const primaryAmounts = stats
+    .map((s) => s.funders[0]?.sol ?? 0)
+    .filter((x) => x > 0);
+  let uniformFunding = false;
+  let mean = 0;
+  let cv = 1; // coefficient of variation
+  if (primaryAmounts.length >= 3) {
+    mean = primaryAmounts.reduce((a, b) => a + b, 0) / primaryAmounts.length;
+    const variance =
+      primaryAmounts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / primaryAmounts.length;
+    const stdev = Math.sqrt(variance);
+    cv = mean > 0 ? stdev / mean : 1;
+    uniformFunding = cv < 0.15; // < 15% spread = clearly coordinated
+  }
 
   const score =
     (commonFunders.length > 0 ? 40 : 0) +
-    (monomaniacs.length / stats.length) * 40 +
-    (fresh.length / stats.length) * 20;
+    (uniformFunding ? 35 : 0) +
+    (monomaniacs.length / stats.length) * 25 +
+    (veryFresh.length / stats.length) * 25 +
+    (fresh.length === stats.length && veryFresh.length < stats.length ? 10 : 0);
 
-  console.log(`Scam confidence: ${score.toFixed(0)}/100`);
-  console.log(`  - shared funder:       ${commonFunders.length > 0 ? 'YES (+40)' : 'no'}`);
+  console.log(`Scam confidence: ${Math.min(100, score).toFixed(0)}/100`);
+  console.log(`  - shared funder direct:          ${commonFunders.length > 0 ? 'YES (+40)' : 'no'}`);
   console.log(
-    `  - monomaniacs (>=50% on TARGET): ${monomaniacs.length}/${stats.length}  (+${((monomaniacs.length / stats.length) * 40).toFixed(0)})`,
+    `  - uniform funding via intermediaries: ${uniformFunding ? `YES — ${primaryAmounts.length} funders sent ~${mean.toFixed(0)} SOL each (cv=${(cv * 100).toFixed(0)}%) (+35)` : `no (cv=${(cv * 100).toFixed(0)}%)`}`,
   );
   console.log(
-    `  - fresh wallets (<14d):          ${fresh.length}/${stats.length}  (+${((fresh.length / stats.length) * 20).toFixed(0)})`,
+    `  - monomaniacs (>=50% on TARGET): ${monomaniacs.length}/${stats.length}  (+${((monomaniacs.length / stats.length) * 25).toFixed(0)})`,
+  );
+  console.log(
+    `  - very fresh wallets (<1d):      ${veryFresh.length}/${stats.length}  (+${((veryFresh.length / stats.length) * 25).toFixed(0)})`,
+  );
+  console.log(
+    `  - all fresh (<14d):              ${fresh.length}/${stats.length}  ${fresh.length === stats.length && veryFresh.length < stats.length ? '(+10)' : ''}`,
   );
   if (score >= 60) {
     console.log(`\n⚠️  VERDICT: SCAMMER CLUSTER — recommend removing all ${stats.length} wallets from watchlist`);
     console.log(`To remove, run:`);
-    console.log(`  npm run cluster:purge -- ${target}`);
+    console.log(`  PURGE_CONFIRM=1 npm run cluster:purge -- ${target}`);
+    console.log(`  npm run webhook:register`);
+  } else if (score >= 40) {
+    console.log(`\nVerdict: SUSPICIOUS — manual review recommended (${score.toFixed(0)}/100)`);
   } else {
-    console.log(`\nVerdict: inconclusive, manual review needed`);
+    console.log(`\nVerdict: probably real alpha (${score.toFixed(0)}/100)`);
   }
 
   process.exit(0);
