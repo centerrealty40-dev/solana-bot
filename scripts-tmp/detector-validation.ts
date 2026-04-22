@@ -71,7 +71,8 @@ interface Args {
   n: number;                   // size of each group (winners + losers)
   winners?: string[];          // manual mint override
   losers?: string[];
-  losersFromDb: boolean;       // pull losers from our `swaps` DB
+  losersFromDb: boolean;       // pull losers from our `swaps` DB by low liq
+  losersFromFarms: boolean;    // pull losers as mints touched by farm-tagged wallets
 }
 
 function parseArgs(): Args {
@@ -86,6 +87,7 @@ function parseArgs(): Args {
     winners: csv(get('--winners')),
     losers: csv(get('--losers')),
     losersFromDb: argv.includes('--losers-from-db'),
+    losersFromFarms: argv.includes('--losers-from-farms'),
   };
 }
 
@@ -191,6 +193,59 @@ async function fetchLosersFromDb(limit: number): Promise<{ mint: string; wallets
     }));
   } catch (e) {
     console.warn(`[db] losers query failed: ${(e as Error).message}`);
+    return [];
+  }
+}
+
+/**
+ * Stronger losers source: mints where wallets tagged as scam/farm by our
+ * `wallet-tagger` were among the early buyers. This gives us *active* sybil
+ * operations (which our detector was actually built for), not passive failed
+ * launches.
+ *
+ * Returns mints ordered by farm-buyer concentration (highest first).
+ */
+async function fetchLosersFromFarms(limit: number): Promise<{ mint: string; farmBuyers: number; totalBuyers: number; firstSeen: Date }[]> {
+  try {
+    const rows = await db.execute(dsql`
+      WITH base AS (
+        SELECT s.base_mint AS mint,
+               s.wallet,
+               s.block_time,
+               wt.tag
+        FROM swaps s
+        JOIN wallet_tags wt ON wt.wallet = s.wallet
+        WHERE wt.tag IN (
+          'scam_operator', 'scam_payout', 'scam_treasury',
+          'bot_farm_boss', 'bot_farm_distributor',
+          'gas_distributor', 'terminal_distributor'
+        )
+          AND s.side = 'buy'
+          AND s.base_mint NOT IN (
+            'So11111111111111111111111111111111111111112',
+            'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+            'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'
+          )
+          AND s.block_time >= now() - interval '30 days'
+      )
+      SELECT mint,
+             COUNT(DISTINCT wallet) FILTER (WHERE tag IS NOT NULL) AS farm_buyers,
+             COUNT(DISTINCT wallet) AS total_buyers,
+             MIN(block_time) AS first_seen
+      FROM base
+      GROUP BY mint
+      HAVING COUNT(DISTINCT wallet) FILTER (WHERE tag IS NOT NULL) >= 2
+      ORDER BY COUNT(DISTINCT wallet) FILTER (WHERE tag IS NOT NULL) DESC
+      LIMIT ${limit}
+    `);
+    return (rows as any[]).map(r => ({
+      mint: r.mint,
+      farmBuyers: Number(r.farm_buyers),
+      totalBuyers: Number(r.total_buyers),
+      firstSeen: new Date(r.first_seen),
+    }));
+  } catch (e) {
+    console.warn(`[db] losers-from-farms query failed: ${(e as Error).message}`);
     return [];
   }
 }
@@ -369,29 +424,59 @@ interface BuyerScanResult {
   oldestReachedSec: number;   // 0 if no txs at all
   reachedLaunch: boolean;
   pages: number;
+  source: string;             // 'pool' | 'mint' | 'pool→mint'
 }
 
-async function getEarliestSwapBuyers(
-  mint: string, launchMs: number, n: number,
-): Promise<BuyerScanResult> {
-  const launchSec = Math.floor(launchMs / 1000);
-  const cutoffSec = launchSec + 3600;
+/**
+ * Pull as much history as possible for `addr` (mint OR pool), back to launchMs.
+ * Stops early when we've reached the launch window or pagination ends.
+ */
+async function pullHist(addr: string, launchSec: number): Promise<{ txs: any[]; pages: number; oldestSec: number }> {
   const all: any[] = [];
   let cursor: string | undefined;
   let pagesUsed = 0;
-  let oldestReachedSec = 0;
+  let oldestSec = 0;
   for (let p = 0; p < MAX_PAGES; p++) {
-    const txs = await fetchHist(mint, 100, cursor);
+    const txs = await fetchHist(addr, 100, cursor);
     pagesUsed = p + 1;
     if (!txs.length) break;
     all.push(...txs);
-    const oldestSec = txs[txs.length - 1]?.timestamp ?? 0;
-    oldestReachedSec = oldestSec;
+    oldestSec = txs[txs.length - 1]?.timestamp ?? 0;
     cursor = txs[txs.length - 1].signature;
     if (oldestSec <= launchSec) break;
     if (txs.length < 100) break;
     await sleep(HELIUS_PAGE_DELAY_MS);
   }
+  return { txs: all, pages: pagesUsed, oldestSec };
+}
+
+/**
+ * Get earliest buyers of `mint` within 1h of launch.
+ * Strategy: prefer pool-address pagination (pool has only swap-related txs,
+ * far fewer than mint, much higher chance to reach launch). Fall back to
+ * mint pagination if pool gives nothing.
+ */
+async function getEarliestSwapBuyers(
+  mint: string, pairAddress: string | undefined, launchMs: number, n: number,
+): Promise<BuyerScanResult> {
+  const launchSec = Math.floor(launchMs / 1000);
+  const cutoffSec = launchSec + 3600;
+
+  let source = 'mint';
+  let { txs: all, pages, oldestSec } = pairAddress
+    ? await pullHist(pairAddress, launchSec)
+    : { txs: [] as any[], pages: 0, oldestSec: 0 };
+  if (pairAddress) source = 'pool';
+
+  // Fall back to mint pagination if pool gave nothing OR didn't reach launch
+  if (all.length === 0 || (oldestSec > 0 && oldestSec > launchSec + 3600)) {
+    const fallback = await pullHist(mint, launchSec);
+    if (fallback.txs.length > all.length) {
+      all = fallback.txs; pages = fallback.pages; oldestSec = fallback.oldestSec;
+      source = pairAddress ? 'pool→mint' : 'mint';
+    }
+  }
+
   all.sort((a, b) => a.timestamp - b.timestamp);
 
   const buyers: BuyerInfo[] = [];
@@ -407,9 +492,10 @@ async function getEarliestSwapBuyers(
   return {
     buyers,
     txsTotal: all.length,
-    oldestReachedSec,
-    reachedLaunch: oldestReachedSec > 0 && oldestReachedSec <= launchSec,
-    pages: pagesUsed,
+    oldestReachedSec: oldestSec,
+    reachedLaunch: oldestSec > 0 && oldestSec <= launchSec,
+    pages,
+    source,
   };
 }
 
@@ -484,13 +570,13 @@ function score(group: 'WIN' | 'LOSE', pair: DexPair, buyers: BuyerInfo[]): Score
 async function processOne(group: 'WIN' | 'LOSE', pair: DexPair, idx: number, total: number): Promise<Score> {
   const launchMs = pair.pairCreatedAt ?? Date.now() - DAY_MS * 7;
   process.stderr.write(`  [${group} ${idx + 1}/${total}] ${pair.baseToken.symbol.padEnd(10)} ${pair.baseToken.address.slice(0, 8)}… `);
-  const r = await getEarliestSwapBuyers(pair.baseToken.address, launchMs, FIRST_BUYERS_N);
+  const r = await getEarliestSwapBuyers(pair.baseToken.address, pair.pairAddress, launchMs, FIRST_BUYERS_N);
   const oldestStr = r.oldestReachedSec
     ? new Date(r.oldestReachedSec * 1000).toISOString().slice(5, 16).replace('T', ' ')
     : 'none';
   const launchStr = new Date(launchMs).toISOString().slice(5, 16).replace('T', ' ');
   process.stderr.write(
-    `tx=${r.txsTotal} pg=${r.pages} oldest=${oldestStr} launch=${launchStr} reached=${r.reachedLaunch ? 'Y' : 'N'} buyers=${r.buyers.length} `,
+    `src=${r.source} tx=${r.txsTotal} pg=${r.pages} oldest=${oldestStr} launch=${launchStr} reached=${r.reachedLaunch ? 'Y' : 'N'} buyers=${r.buyers.length} `,
   );
   if (r.buyers.length >= 5) {
     await annotateFunders(r.buyers);
@@ -553,6 +639,40 @@ async function main() {
         seen.add(p.baseToken.address);
         if (loserPairs.length >= args.n) break;
       }
+    }
+  }
+
+  if (args.losersFromFarms) {
+    console.log('[db] pulling losers from farm-tagged buyers (HIGH-quality sybil mints)...');
+    const farmMints = await fetchLosersFromFarms(args.n * 3);
+    console.log(`[db] found ${farmMints.length} mints touched by farm-tagged wallets`);
+    if (farmMints.length) {
+      const mints = farmMints.map(x => x.mint);
+      const dexPairs = await fetchPairs(mints);
+      const seen = new Set(loserPairs.map(p => p.baseToken.address));
+      let added = 0;
+      for (const fm of farmMints) {
+        if (seen.has(fm.mint)) continue;
+        const p = dexPairs.get(fm.mint);
+        if (!p) {
+          // Mint exists in our swaps but Dexscreener has no pair info — likely fully dead.
+          // Synthesize minimal pair so we can still try Helius lookup.
+          const synth: DexPair = {
+            chainId: 'solana',
+            pairAddress: '',
+            baseToken: { address: fm.mint, name: '?', symbol: `farm${added + 1}` },
+            pairCreatedAt: fm.firstSeen.getTime(),
+            liquidity: { usd: 0 },
+          };
+          loserPairs.push(synth);
+        } else {
+          loserPairs.push(p);
+        }
+        seen.add(fm.mint);
+        added++;
+        if (loserPairs.length >= args.n) break;
+      }
+      console.log(`[db] +${added} farm-losers added`);
     }
   }
 
