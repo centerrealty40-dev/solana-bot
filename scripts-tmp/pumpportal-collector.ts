@@ -25,6 +25,7 @@ import WebSocket from 'ws';
 import { fetch } from 'undici';
 import { child } from '../src/core/logger.js';
 import { insertSwapsBatch } from '../src/core/db/repository.js';
+import { db, schema } from '../src/core/db/client.js';
 import type { NormalizedSwap } from '../src/core/types.js';
 
 const log = child('pumpportal');
@@ -120,17 +121,53 @@ function tradePoolEvictExpired(): string[] {
 // Buffer + flush
 // =====================================================================
 const swapBuf: NormalizedSwap[] = [];
+interface NewTokenRow {
+  mint: string; symbol: string; name: string; devWallet: string;
+  firstSeenAt: Date; metadata: Record<string, unknown>;
+}
+const tokenBuf: NewTokenRow[] = [];
 let totalInserted = 0;
+let totalTokens = 0;
 let totalEvents = 0;
 
 async function flushBuffer(): Promise<void> {
-  if (swapBuf.length === 0) return;
-  const batch = swapBuf.splice(0, swapBuf.length);
-  try {
-    const n = await insertSwapsBatch(batch);
-    totalInserted += n;
-  } catch (err) {
-    log.warn({ err: String(err), n: batch.length }, 'flush failed');
+  // 1. swaps
+  if (swapBuf.length > 0) {
+    const batch = swapBuf.splice(0, swapBuf.length);
+    try {
+      const n = await insertSwapsBatch(batch);
+      totalInserted += n;
+    } catch (err) {
+      log.warn({ err: String(err), n: batch.length }, 'swap flush failed');
+    }
+  }
+  // 2. tokens metadata (UPDATE on conflict — pp:create gives us name/symbol/dev)
+  if (tokenBuf.length > 0) {
+    const batch = tokenBuf.splice(0, tokenBuf.length);
+    try {
+      for (const t of batch) {
+        await db.insert(schema.tokens).values({
+          mint: t.mint,
+          symbol: t.symbol,
+          name: t.name,
+          decimals: PUMP_DECIMALS,
+          devWallet: t.devWallet,
+          firstSeenAt: t.firstSeenAt,
+          metadata: t.metadata,
+        }).onConflictDoUpdate({
+          target: schema.tokens.mint,
+          set: {
+            symbol: t.symbol,
+            name: t.name,
+            devWallet: t.devWallet,
+            metadata: t.metadata,
+          },
+        });
+        totalTokens++;
+      }
+    } catch (err) {
+      log.warn({ err: String(err), n: batch.length }, 'token flush failed');
+    }
   }
 }
 
@@ -234,9 +271,9 @@ function connect(): void {
     let ev: any;
     try { ev = JSON.parse(String(raw)); } catch { return; }
 
-    // Server-side acks etc.: { message: "Successfully subscribed..." }
+    // Server-side acks etc.: { message: "Successfully subscribed..." } — silent
     if (typeof ev.message === 'string' && !ev.signature) {
-      log.info({ msg: ev.message }, 'pp ack');
+      log.debug({ msg: ev.message }, 'pp ack');
       return;
     }
 
@@ -252,6 +289,21 @@ function connect(): void {
     if ((ev.txType === 'create' || ev.txType === 'createPool') && ev.mint) {
       const fresh = tradePoolAdd(ev.mint);
       if (fresh) subscribeTrades([ev.mint]);
+      // persist token metadata (anti-factory + scam-dev filters need this)
+      tokenBuf.push({
+        mint: ev.mint,
+        symbol: String(ev.symbol ?? '').slice(0, 32),
+        name: String(ev.name ?? '').slice(0, 128),
+        devWallet: ev.traderPublicKey,
+        firstSeenAt: new Date(),
+        metadata: {
+          uri: ev.uri,
+          bondingCurveKey: ev.bondingCurveKey,
+          pool: ev.pool,
+          initialMcSol: ev.marketCapSol,
+          source: 'pumpportal',
+        },
+      });
       // initialBuy is also a trade — record it
       if (ev.initialBuy && ev.solAmount) {
         const initBuy = normalizeTrade({
@@ -324,8 +376,10 @@ async function main(): Promise<void> {
       events_per_sec: evRate.toFixed(1),
       swaps_total: totalInserted,
       swaps_per_sec: insRate.toFixed(1),
+      tokens_created: totalTokens,
       pool_size: tradePool.size,
-      buf: swapBuf.length,
+      buf_swaps: swapBuf.length,
+      buf_tokens: tokenBuf.length,
       sol_usd: SOL_USD.toFixed(2),
       evicted: evicted.length,
     }, 'stats');

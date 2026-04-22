@@ -59,7 +59,9 @@
     "paper:stats": "tsx scripts-tmp/rings-paper-stats.ts",
     "paper:debug": "tsx scripts-tmp/rings-debug.ts",
     "pp:collector": "tsx scripts-tmp/pumpportal-collector.ts",
-    "pp:collector:once": "tsx scripts-tmp/pumpportal-collector.ts --once"
+    "pp:collector:once": "tsx scripts-tmp/pumpportal-collector.ts --once",
+    "runner:detect": "tsx scripts-tmp/runner-detector.ts",
+    "runner:detect:once": "tsx scripts-tmp/runner-detector.ts --once"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
