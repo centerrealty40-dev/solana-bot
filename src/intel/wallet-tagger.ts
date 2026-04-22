@@ -24,15 +24,22 @@ const log = child('wallet-tagger');
 
 const PRIORITY = [
   'cex_hot_wallet',
-  'scam_treasury',  // boss/treasury wallet that funds multiple scam operators
-  'scam_payout',    // collector wallet that drains profits from operators
+  'terminal_distributor',   // public trading terminal paymaster (Axiom/Photon/...)
+  'scam_treasury',
+  'scam_payout',
   'scam_operator',
   'scam_proxy',
+  'whale',                  // moves >=100 SOL per transfer or >=1000 SOL totals
+  'bot_farm_boss',          // collector receiving from many small sources
+  'bot_farm_distributor',   // sender to many wallets w/ medium SOL amounts (live raids)
   'sniper',
   'mev_bot',
+  'terminal_user',          // received gas from terminal_distributor
+  'meme_flipper',           // many mints via 1-2 aggregators (real human flipper)
   'smart_money',
   'insider',
   'rotation_node',
+  'gas_distributor',        // micro-amounts (<0.5 SOL) to many — paymasters, helpers
   'lp_provider',
   'retail',
   'inactive',
@@ -46,6 +53,15 @@ const KNOWN_CEX_HOT_WALLETS = new Map<string, string>([
   ['CcUxkA15UrdAvGWP8dZjB5wcjrjnwR9rmZE8tjPbZbhB', 'Kraken'],
   ['BieeZkdnBAgNYknzo3RH2vku7FyyUWXR9JuYAxHvxSfa', 'OKX'],
   ['G2FAbFQPFa5qKXCetoFZQEvF9BVvCKbvGJSvb1Sj6w7Z', 'KuCoin'],
+]);
+
+/**
+ * Public trading terminals that fund their users with starter SOL.
+ * Receivers of these wallets are real human traders using that terminal.
+ * Add more as we identify them on-chain.
+ */
+const KNOWN_TERMINAL_DISTRIBUTORS = new Map<string, string>([
+  ['AxiomRXZAq1Jgjj9pHmNqVP7Lhu67wLXZJZbaK87TTSk', 'Axiom Trade'],
 ]);
 
 interface AddTagArgs {
@@ -88,6 +104,44 @@ export async function tagWallet(wallet: string): Promise<string[]> {
   if (cexLabel) {
     await addTag({ wallet, tag: 'cex_hot_wallet', confidence: 100, source: 'cex_list', context: cexLabel });
     tagsApplied.push('cex_hot_wallet');
+  }
+
+  // 0c. Terminal distributor — public terminals (Axiom etc) that paymaster their users.
+  const termLabel = KNOWN_TERMINAL_DISTRIBUTORS.get(wallet);
+  if (termLabel) {
+    await addTag({ wallet, tag: 'terminal_distributor', confidence: 100, source: 'terminal_list', context: termLabel });
+    tagsApplied.push('terminal_distributor');
+  }
+
+  // 0d. Terminal user — received SOL from a known terminal distributor.
+  // These are real human traders using that terminal. Highest-value targets
+  // because they are humans, not bots, and they trade with their own money.
+  const termIds = [...KNOWN_TERMINAL_DISTRIBUTORS.keys()].map(k => `'${k}'`).join(',');
+  if (termIds.length > 0) {
+    const termRecv = (await db.execute(
+      dsql.raw(`
+        SELECT source_wallet, SUM(amount)::float AS sol, COUNT(*)::int AS n
+        FROM money_flows
+        WHERE target_wallet = '${wallet}'
+          AND source_wallet IN (${termIds})
+          AND asset = 'SOL'
+        GROUP BY source_wallet
+        ORDER BY sol DESC
+        LIMIT 1
+      `),
+    )) as unknown as Array<{ source_wallet: string; sol: number; n: number }>;
+    const tr = termRecv[0];
+    if (tr && tr.sol >= 0.05) {
+      const label = KNOWN_TERMINAL_DISTRIBUTORS.get(tr.source_wallet) ?? 'unknown';
+      await addTag({
+        wallet,
+        tag: 'terminal_user',
+        confidence: 90,
+        source: 'received_from_terminal',
+        context: `${label}|${tr.sol.toFixed(3)}sol|${tr.n}tx`,
+      });
+      tagsApplied.push('terminal_user');
+    }
   }
 
   // 0a. Scam treasury — wallet funded ≥3 distinct scam_operator wallets.
@@ -251,6 +305,104 @@ export async function tagWallet(wallet: string): Promise<string[]> {
       context: `age${ageDays.toFixed(0)}d_mints${ss.n_mints}_in${profile.totalFundedSol.toFixed(0)}sol`,
     });
     tagsApplied.push('rotation_node');
+  }
+
+  // 4a-4d. Outbound funding profile (one query, multiple rules).
+  const outProbe = (await db.execute(
+    dsql.raw(`
+      SELECT
+        COUNT(DISTINCT target_wallet)::int                              AS recipients,
+        COUNT(*)::int                                                   AS n_tx,
+        COALESCE(AVG(amount), 0)::float                                 AS avg_sol,
+        COALESCE(SUM(amount), 0)::float                                 AS sum_sol,
+        COALESCE(MAX(amount), 0)::float                                 AS max_sol,
+        COALESCE(EXTRACT(EPOCH FROM (MAX(tx_time) - MIN(tx_time))), 0)::float AS span_sec,
+        COALESCE(EXTRACT(EPOCH FROM (now() - MAX(tx_time))), 0)::float  AS idle_sec
+      FROM money_flows
+      WHERE source_wallet = '${wallet}' AND asset = 'SOL' AND amount > 0
+    `),
+  )) as unknown as Array<{
+    recipients: number; n_tx: number; avg_sol: number; sum_sol: number;
+    max_sol: number; span_sec: number; idle_sec: number;
+  }>;
+  const out = outProbe[0] ?? { recipients: 0, n_tx: 0, avg_sol: 0, sum_sol: 0, max_sol: 0, span_sec: 0, idle_sec: 1e12 };
+
+  // 4a. Whale — moves big SOL (single tx >=100 SOL OR cumulative >=1000 SOL out)
+  if (out.max_sol >= 100 || out.sum_sol >= 1000) {
+    await addTag({
+      wallet, tag: 'whale', confidence: 75, source: 'big_sol_out',
+      context: `max=${out.max_sol.toFixed(0)}sol|sum=${out.sum_sol.toFixed(0)}sol|n=${out.n_tx}`,
+    });
+    tagsApplied.push('whale');
+  }
+
+  // 4b. Bot-farm distributor — many recipients, medium avg, sustained activity, recent.
+  // The SOL-dispatcher of a bot fleet. Real signal in our niche: when this guy
+  // sprays SOL into 30+ wallets within minutes, a coordinated buy/raid is imminent.
+  // Excludes whales (filtered by avg_sol upper bound) and gas_distributors (avg too small).
+  if (
+    out.recipients >= 30 &&
+    out.avg_sol >= 0.5 && out.avg_sol <= 30 &&
+    out.idle_sec < 14 * 86400  // active in last 14 days
+  ) {
+    await addTag({
+      wallet, tag: 'bot_farm_distributor', confidence: 65, source: 'many_med_recipients',
+      context: `r=${out.recipients}|avg=${out.avg_sol.toFixed(2)}sol|sum=${out.sum_sol.toFixed(0)}sol`,
+    });
+    tagsApplied.push('bot_farm_distributor');
+  }
+
+  // 4c. Gas distributor — micro amounts (<0.5 SOL avg) to many recipients.
+  // These are paymasters/helpers; not as interesting as bot_farm_distributor.
+  if (out.recipients >= 20 && out.avg_sol > 0 && out.avg_sol < 0.5) {
+    await addTag({
+      wallet, tag: 'gas_distributor', confidence: 70, source: 'micro_amounts_many',
+      context: `r=${out.recipients}|avg=${out.avg_sol.toFixed(3)}sol`,
+    });
+    tagsApplied.push('gas_distributor');
+  }
+
+  // 4d. Bot-farm boss — collects SOL FROM many sources with small per-source amounts.
+  // The drain side of a bot fleet (workers send their profits up to boss).
+  const inProbe = (await db.execute(
+    dsql.raw(`
+      SELECT
+        COUNT(DISTINCT source_wallet)::int                              AS sources,
+        COUNT(*)::int                                                   AS n_tx,
+        COALESCE(AVG(amount), 0)::float                                 AS avg_sol,
+        COALESCE(SUM(amount), 0)::float                                 AS sum_sol,
+        COALESCE(EXTRACT(EPOCH FROM (now() - MAX(tx_time))), 0)::float  AS idle_sec
+      FROM money_flows
+      WHERE target_wallet = '${wallet}' AND asset = 'SOL' AND amount > 0
+    `),
+  )) as unknown as Array<{ sources: number; n_tx: number; avg_sol: number; sum_sol: number; idle_sec: number }>;
+  const inn = inProbe[0] ?? { sources: 0, n_tx: 0, avg_sol: 0, sum_sol: 0, idle_sec: 1e12 };
+
+  if (
+    inn.sources >= 30 &&
+    inn.avg_sol < 10 &&  // not whales sending to it
+    inn.idle_sec < 14 * 86400
+  ) {
+    await addTag({
+      wallet, tag: 'bot_farm_boss', confidence: 60, source: 'many_small_sources',
+      context: `s=${inn.sources}|avg=${inn.avg_sol.toFixed(2)}sol|sum=${inn.sum_sol.toFixed(0)}sol`,
+    });
+    tagsApplied.push('bot_farm_boss');
+  }
+
+  // 4e. Meme flipper — many distinct mints traded via 1-2 routers (=Jupiter/pump.fun only).
+  // High distinct_mints + low distinct_counterparties is the on-chain signature
+  // of a real human flipping memecoins through aggregators (no direct CEX/funder relations).
+  if (
+    profile.distinctMints >= 20 &&
+    profile.distinctCounterparties <= 4 &&
+    profile.txCount >= 30
+  ) {
+    await addTag({
+      wallet, tag: 'meme_flipper', confidence: 70, source: 'many_mints_few_cps',
+      context: `mints=${profile.distinctMints}|cps=${profile.distinctCounterparties}|tx=${profile.txCount}`,
+    });
+    tagsApplied.push('meme_flipper');
   }
 
   // 5. Smart money (provisional, will sharpen with realized PnL later):
