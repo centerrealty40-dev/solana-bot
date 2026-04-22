@@ -134,14 +134,15 @@ async function main() {
   console.log(`Время: ${Math.floor(elapsed/60)}m${elapsed%60}s,  errors: ${errors}/${seeds.length}\n`);
 
   // Топ-20 новооткрытых хабов (много контрагентов = центральная роль в сети)
+  const sinceSec = elapsed + 60;
   const topRes: any = await db.execute(dsql`
     SELECT wallet, distinct_counterparties, distinct_mints, tx_count, total_funded_sol
     FROM entity_wallets
-    WHERE profile_created_at > now() - ($1 || ' seconds')::interval
+    WHERE profile_created_at > now() - (${sinceSec}::int * interval '1 second')
       AND tx_count > 0
     ORDER BY distinct_counterparties DESC
     LIMIT 20
-  `, [String(elapsed + 60)]);
+  `);
   const topRows = Array.isArray(topRes) ? topRes : topRes.rows ?? [];
   if (topRows.length > 0) {
     console.log(`ТОП-20 НОВЫХ ХАБОВ (по числу контрагентов):`);
