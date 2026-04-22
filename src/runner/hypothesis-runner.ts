@@ -220,7 +220,12 @@ export class HypothesisRunner {
         }
       }
     } catch (err) {
-      log.error({ err: String(err) }, 'pollSwaps failed');
+      log.error(
+        {
+          err: err instanceof Error ? { message: err.message, stack: err.stack, name: err.name } : String(err),
+        },
+        'pollSwaps failed',
+      );
     }
   }
 
