@@ -52,7 +52,8 @@
     "sanctum:monitor": "tsx scripts-tmp/sanctum-monitor.ts",
     "sanctum:monitor:loop": "tsx scripts-tmp/sanctum-monitor.ts --loop",
     "detector:validate": "tsx scripts-tmp/detector-validation.ts",
-    "tagging:verify": "tsx scripts-tmp/verify-tagging.ts"
+    "tagging:verify": "tsx scripts-tmp/verify-tagging.ts",
+    "rings:backtest": "tsx scripts-tmp/coordinated-rings-backtest.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
