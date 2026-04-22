@@ -56,7 +56,8 @@
     "rings:backtest": "tsx scripts-tmp/coordinated-rings-backtest.ts",
     "paper:trader": "tsx scripts-tmp/rings-paper-trader.ts",
     "paper:trader:once": "tsx scripts-tmp/rings-paper-trader.ts --once",
-    "paper:stats": "tsx scripts-tmp/rings-paper-stats.ts"
+    "paper:stats": "tsx scripts-tmp/rings-paper-stats.ts",
+    "paper:debug": "tsx scripts-tmp/rings-debug.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

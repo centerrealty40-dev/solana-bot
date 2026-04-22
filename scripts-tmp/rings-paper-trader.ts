@@ -477,8 +477,9 @@ async function closePosition(p: PaperTradeRow, price: number, reason: string, st
 // SCAN CYCLE
 // ============================================================
 async function scanCycle() {
+  const t0 = Date.now();
   const candidates = await findFreshRings();
-  if (candidates.length === 0) return;
+  const stats = { found: candidates.length, dup: 0, rej_ind: 0, rej_dex: 0, rej_qual: 0, rej_pf: 0, opened: 0 };
 
   for (const c of candidates) {
     // Already in paper_trades?
@@ -486,25 +487,41 @@ async function scanCycle() {
       .from(schema.paperTrades)
       .where(dsql`${schema.paperTrades.mint} = ${c.mint} AND ${schema.paperTrades.alertTs} = ${new Date(c.windowStart)}`)
       .limit(1);
-    if (existing.length > 0) continue;
+    if (existing.length > 0) { stats.dup++; continue; }
 
     const ind = await checkIndependence(c);
     if (!ind.pass) {
-      log.debug({ mint: c.mint, reason: ind.reason }, 'reject:independence');
+      stats.rej_ind++;
+      log.info({ mint: c.mint, buyers: c.uniqueBuyers, reason: ind.reason }, 'reject:independence');
       continue;
     }
 
     const dex = await fetchDexInfo(c.mint);
-    if (!dex) { log.debug({ mint: c.mint }, 'reject:no_dex_data'); continue; }
+    if (!dex) {
+      stats.rej_dex++;
+      log.info({ mint: c.mint }, 'reject:no_dex_data');
+      continue;
+    }
     const q = checkQuality(dex);
-    if (!q.pass) { log.debug({ mint: c.mint, reason: q.reason }, 'reject:quality'); continue; }
+    if (!q.pass) {
+      stats.rej_qual++;
+      log.info({ mint: c.mint, reason: q.reason, liq: dex.liquidityUsd, age_min: dex.ageMin.toFixed(0) }, 'reject:quality');
+      continue;
+    }
 
     const pf = await preflight(c.mint);
-    if (!pf.pass) { log.info({ mint: c.mint, reason: pf.reason }, 'reject:preflight'); continue; }
+    if (!pf.pass) {
+      stats.rej_pf++;
+      log.info({ mint: c.mint, reason: pf.reason }, 'reject:preflight');
+      continue;
+    }
 
+    stats.opened++;
     await openPosition(c, ind, dex, pf);
     await sleep(500);  // be nice to APIs
   }
+
+  log.info({ ...stats, ms: Date.now() - t0 }, 'scan cycle done');
 }
 
 // ============================================================
