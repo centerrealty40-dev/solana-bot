@@ -53,7 +53,10 @@
     "sanctum:monitor:loop": "tsx scripts-tmp/sanctum-monitor.ts --loop",
     "detector:validate": "tsx scripts-tmp/detector-validation.ts",
     "tagging:verify": "tsx scripts-tmp/verify-tagging.ts",
-    "rings:backtest": "tsx scripts-tmp/coordinated-rings-backtest.ts"
+    "rings:backtest": "tsx scripts-tmp/coordinated-rings-backtest.ts",
+    "paper:trader": "tsx scripts-tmp/rings-paper-trader.ts",
+    "paper:trader:once": "tsx scripts-tmp/rings-paper-trader.ts --once",
+    "paper:stats": "tsx scripts-tmp/rings-paper-stats.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

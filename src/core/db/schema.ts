@@ -615,6 +615,53 @@ export const sanctumSnapshots = pgTable(
 );
 
 /**
+ * Paper-trader virtual positions for the coordinated-rings strategy.
+ *
+ * Each row = one virtual $10 position opened when our ring-detector fires
+ * AND all filters pass (liquidity, age, honeypot, vol survival). We then
+ * simulate a staircase exit:
+ *   - +100% (2x)  → sell 50% (recover stake, keep skin in the game)
+ *   - +400% (5x)  → sell another 30%
+ *   - 20% moon-bag exits on trailing stop -50% from peak OR 7-day timeout
+ *   - Hard stop-loss at -60% from entry
+ *
+ * NO real money is touched. We track quotes from Dexscreener every N seconds
+ * and update remaining_fraction / realized_pnl_usd accordingly.
+ */
+export const paperTrades = pgTable(
+  'paper_trades',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    mint: varchar('mint', { length: 64 }).notNull(),
+    poolAddress: varchar('pool_address', { length: 64 }),
+
+    alertTs: timestamp('alert_ts', { withTimezone: true }).notNull(),
+    entryTs: timestamp('entry_ts', { withTimezone: true }).notNull(),
+    entryPriceUsd: doublePrecision('entry_price_usd').notNull(),
+    entrySizeUsd: doublePrecision('entry_size_usd').notNull(),
+
+    alertMeta: jsonb('alert_meta').$type<Record<string, unknown>>().notNull().default({}),
+    filterResults: jsonb('filter_results').$type<Record<string, unknown>>().notNull().default({}),
+
+    remainingFraction: doublePrecision('remaining_fraction').notNull().default(1.0),
+    realizedPnlUsd: doublePrecision('realized_pnl_usd').notNull().default(0),
+    maxPriceSeenUsd: doublePrecision('max_price_seen_usd').notNull(),
+    lastPriceUsd: doublePrecision('last_price_usd').notNull(),
+    lastCheckTs: timestamp('last_check_ts', { withTimezone: true }).notNull().defaultNow(),
+
+    status: varchar('status', { length: 24 }).notNull().default('open'),
+    exitEvents: jsonb('exit_events').$type<unknown[]>().notNull().default([]),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    statusIdx: index('paper_trades_status_idx').on(t.status),
+    mintIdx: index('paper_trades_mint_idx').on(t.mint),
+    entryIdx: index('paper_trades_entry_idx').on(t.entryTs),
+    mintEntryUq: uniqueIndex('paper_trades_mint_entry_uq').on(t.mint, t.entryTs),
+  }),
+);
+
+/**
  * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
  */
 export const dailyPnl = pgTable(
