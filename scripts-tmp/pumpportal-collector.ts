@@ -55,15 +55,32 @@ const POOL_TO_DEX: Record<string, NormalizedSwap['dex']> = {
 let SOL_USD = 200;  // sane default
 
 async function refreshSolPrice(): Promise<void> {
+  // Берём через Jupiter price API — самый надёжный для SOL/USDC
+  try {
+    const r = await fetch(`https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`);
+    if (r.ok) {
+      const j: any = await r.json();
+      const px = Number(j?.[SOL_MINT]?.usdPrice ?? j?.data?.[SOL_MINT]?.price ?? 0);
+      if (px > 20 && px < 5000) {
+        SOL_USD = px;
+        log.debug({ sol_usd: SOL_USD, src: 'jupiter' }, 'SOL price refreshed');
+        return;
+      }
+    }
+  } catch (err) {
+    log.warn({ err: String(err) }, 'jup SOL price failed');
+  }
+  // fallback: DexScreener — берём pair с MAX liquidity
   try {
     const r = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${SOL_MINT}`);
     if (!r.ok) return;
     const j: any = await r.json();
-    const top = Array.isArray(j) ? j.find((p: any) => p.priceUsd) : null;
-    const px = Number(top?.priceUsd ?? 0);
-    if (px > 50 && px < 5000) {
+    if (!Array.isArray(j)) return;
+    const sorted = [...j].sort((a: any, b: any) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
+    const px = Number(sorted[0]?.priceUsd ?? 0);
+    if (px > 20 && px < 5000) {
       SOL_USD = px;
-      log.debug({ sol_usd: SOL_USD }, 'SOL price refreshed');
+      log.debug({ sol_usd: SOL_USD, src: 'dexscreener' }, 'SOL price refreshed (fallback)');
     }
   } catch (err) {
     log.warn({ err: String(err) }, 'SOL price refresh failed');
@@ -156,6 +173,7 @@ function normalizeTrade(ev: any): NormalizedSwap | null {
 let ws: WebSocket | null = null;
 let reconnectAttempt = 0;
 let pendingTradeSubs: string[] = [];
+const sampleSeen = new Map<string, number>();
 
 function wsSend(payload: any): void {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -218,22 +236,32 @@ function connect(): void {
 
     // Server-side acks etc.: { message: "Successfully subscribed..." }
     if (typeof ev.message === 'string' && !ev.signature) {
-      log.debug({ msg: ev.message }, 'pp ack');
+      log.info({ msg: ev.message }, 'pp ack');
       return;
     }
 
-    // 1. New token event
-    if (ev.txType === 'create' && ev.mint) {
+    // diagnostic: log first 3 events of each txType to understand format
+    const k = ev.txType ?? '(no_txType)';
+    const seen = sampleSeen.get(k) ?? 0;
+    if (seen < 3) {
+      sampleSeen.set(k, seen + 1);
+      log.info({ sample: ev }, `raw event sample [${k}]`);
+    }
+
+    // 1. New token event — может прилетать как 'create' либо ничего о txType
+    if ((ev.txType === 'create' || ev.txType === 'createPool') && ev.mint) {
       const fresh = tradePoolAdd(ev.mint);
       if (fresh) subscribeTrades([ev.mint]);
       // initialBuy is also a trade — record it
-      const initBuy = normalizeTrade({
-        ...ev,
-        txType: 'buy',
-        tokenAmount: ev.initialBuy,
-        solAmount: ev.solAmount,
-      });
-      if (initBuy) swapBuf.push(initBuy);
+      if (ev.initialBuy && ev.solAmount) {
+        const initBuy = normalizeTrade({
+          ...ev,
+          txType: 'buy',
+          tokenAmount: ev.initialBuy,
+          solAmount: ev.solAmount,
+        });
+        if (initBuy) swapBuf.push(initBuy);
+      }
       return;
     }
 
