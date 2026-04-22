@@ -80,7 +80,9 @@ async function main() {
     LIMIT 10
   `));
   for (const t of top) {
-    console.log(`  ${t.base_mint}  buyers=${t.buyers}  vol=$${t.total_usd}  span=${t.first_buy.toISOString().slice(0,16)} → ${t.last_buy.toISOString().slice(0,16)}`);
+    const fb = new Date(t.first_buy).toISOString();
+    const lb = new Date(t.last_buy).toISOString();
+    console.log(`  ${t.base_mint}  buyers=${t.buyers}  vol=$${t.total_usd}  span=${fb.slice(0,16)} → ${lb.slice(0,16)}`);
   }
 
   // самый свежий ring: топ кандидаты в последний час
@@ -106,7 +108,9 @@ async function main() {
     console.log('  (none)');
   } else {
     for (const f of fresh) {
-      console.log(`  ${f.base_mint}  buyers=${f.buyers}  vol=$${f.total_usd}  ${f.first.toISOString().slice(11,19)} → ${f.last.toISOString().slice(11,19)}`);
+      const fa = new Date(f.first).toISOString();
+      const la = new Date(f.last).toISOString();
+      console.log(`  ${f.base_mint}  buyers=${f.buyers}  vol=$${f.total_usd}  ${fa.slice(11,19)} → ${la.slice(11,19)}`);
     }
   }
 
