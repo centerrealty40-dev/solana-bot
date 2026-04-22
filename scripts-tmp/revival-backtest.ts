@@ -1,17 +1,14 @@
 /**
- * Backtest «Revival Sniper» strategy
+ * Backtest «Revival Sniper» strategy — v2
  *
- * Гипотеза: старый токен (>30d) который внезапно пробуждается
- * с большим объёмом, можно купить на T+5min от volume-spike
- * и закрыть с TP +50% / SL -20% / timeout 60min с положительным EV.
+ * v1 проблема: Helius events.swap ловит ~5% реальных сделок
+ *              + mint-адрес видит подмножество (большинство трейдов идут через pool)
  *
- * Метод:
- *   1. Качаем все swaps через Helius enhanced
- *   2. Восстанавливаем 1-minute candles (vwap, hi/lo, vol)
- *   3. Скользящим окном ищем 1h где: vol >= SPIKE_VOL_X × baseline_hourly_vol(7d)
- *      AND price_change >= SPIKE_PRICE_PCT
- *   4. Заходим на T+ENTRY_DELAY_MIN
- *   5. Симулируем выход по TP/SL/timeout на VWAP минутных свеч
+ * v2 фикс:
+ *   - Pool-адреса из Dexscreener (топ-3 по ликвидности)
+ *   - Fetch tx истории каждого пула
+ *   - Свопы реконструируем из tokenTransfers + nativeTransfers (как наш normalizer)
+ *   - Пагинация останавливается по дате (revival ± окно)
  */
 
 import 'dotenv/config';
@@ -19,23 +16,35 @@ import 'dotenv/config';
 const HELIUS_KEY = process.env.HELIUS_API_KEY;
 if (!HELIUS_KEY) { console.error('HELIUS_API_KEY missing'); process.exit(1); }
 
-const TOKENS = [
-  { name: 'TOKABU',   mint: 'H8xQ6poBjB9DTPMDTKWzWPrnxu4bDEhybxiouF8Ppump' },
-  { name: 'JONATHAN', mint: 'EJmkht54g9zKws1C2qAVvjdhwKSy9suhdBsSDU6egcrL' },
-  { name: 'PUMPCADE', mint: 'Eg2ymQ2aQqjMcibnmTt8erC6Tvk9PVpJZCxvVPJz2agu' },
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
+const WSOL_MINT = SOL_MINT;
+
+interface TokenSpec {
+  name: string;
+  mint: string;
+  revivalDateIso: string;
+  windowDaysBefore: number;
+  windowDaysAfter: number;
+}
+
+const TOKENS: TokenSpec[] = [
+  { name: 'TOKABU',   mint: 'H8xQ6poBjB9DTPMDTKWzWPrnxu4bDEhybxiouF8Ppump', revivalDateIso: '2026-04-15T00:00:00Z', windowDaysBefore: 14, windowDaysAfter: 5 },
+  { name: 'JONATHAN', mint: 'EJmkht54g9zKws1C2qAVvjdhwKSy9suhdBsSDU6egcrL', revivalDateIso: '2026-04-02T00:00:00Z', windowDaysBefore: 14, windowDaysAfter: 5 },
+  { name: 'PUMPCADE', mint: 'Eg2ymQ2aQqjMcibnmTt8erC6Tvk9PVpJZCxvVPJz2agu', revivalDateIso: '2026-04-14T00:00:00Z', windowDaysBefore: 14, windowDaysAfter: 5 },
 ];
 
-const MAX_PAGES = 200;            // up to 20k txs per token
-const TP             = 1.5;        // +50%
-const SL             = 0.8;        // -20%
+const MAX_PAGES_PER_POOL = 800;
+const TOP_POOLS_PER_TOKEN = 3;
+const TP             = 1.5;
+const SL             = 0.8;
 const TIMEOUT_MIN    = 60;
 const ENTRY_DELAY_MIN = 5;
 const SPIKE_VOL_X    = 5;
 const SPIKE_PRICE_PCT = 20;
 const BASELINE_DAYS  = 7;
-const MIN_BASELINE_HOURS = 4;     // need at least some baseline to compute X
+const MIN_BASELINE_HOURS = 4;
 
-interface Swap { ts: number; price: number; volSol: number; side: 'buy' | 'sell'; }
+interface Swap { ts: number; price: number; volSol: number; side: 'buy' | 'sell'; sig: string; }
 interface Candle { ts: number; vwap: number; high: number; low: number; volSol: number; count: number; }
 interface Trade {
   entryTs: number; entryPrice: number;
@@ -44,62 +53,126 @@ interface Trade {
   pnlPct: number;  rMultiple: number;
 }
 
-function getTokenDecAmount(t: any): number {
-  if (!t) return 0;
-  if (t.rawTokenAmount?.tokenAmount && t.rawTokenAmount.decimals != null) {
-    return Number(t.rawTokenAmount.tokenAmount) / Math.pow(10, t.rawTokenAmount.decimals);
-  }
-  if (typeof t.tokenAmount === 'number') return t.tokenAmount;
-  if (typeof t.tokenAmount === 'string') return Number(t.tokenAmount);
-  return 0;
-}
-
-async function fetchHist(addr: string, before?: string): Promise<any[]> {
+async function fetchHist(addr: string, before?: string, retries = 3): Promise<any[]> {
   const u = new URL(`https://api.helius.xyz/v0/addresses/${addr}/transactions`);
   u.searchParams.set('api-key', HELIUS_KEY!);
   u.searchParams.set('limit', '100');
   if (before) u.searchParams.set('before', before);
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let i = 0; i < retries; i++) {
     try {
       const r = await fetch(u.toString());
       if (r.status === 429) { await new Promise(res => setTimeout(res, 1500)); continue; }
-      if (!r.ok) return [];
+      if (!r.ok) {
+        if (i === retries - 1) console.error(`fetchHist ${addr.slice(0,8)} → ${r.status}`);
+        await new Promise(res => setTimeout(res, 500));
+        continue;
+      }
       return await r.json() as any[];
-    } catch { await new Promise(res => setTimeout(res, 500)); }
+    } catch (e) { await new Promise(res => setTimeout(res, 500)); }
   }
   return [];
 }
 
-async function fetchAllSwaps(mint: string): Promise<Swap[]> {
+interface DexPair {
+  pairAddress: string;
+  baseToken: { address: string };
+  quoteToken: { address: string };
+  liquidity?: { usd?: number };
+  pairCreatedAt?: number;
+}
+
+async function findPools(mint: string): Promise<{ pool: string; liq: number }[]> {
+  const r = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${mint}`);
+  const j = await r.json() as any;
+  const pairs: DexPair[] = (j.pairs ?? []).filter((p: any) =>
+    p.chainId === 'solana' &&
+    (p.baseToken?.address === mint || p.quoteToken?.address === mint)
+  );
+  pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
+  return pairs.slice(0, TOP_POOLS_PER_TOKEN).map(p => ({ pool: p.pairAddress, liq: p.liquidity?.usd ?? 0 }));
+}
+
+/**
+ * Reconstruct a swap from a tx by looking at token + native transfers.
+ * For our target mint we want: how much SOL was paid/received, how much mint was received/paid.
+ * Returns null if tx doesn't look like a buy/sell of this mint.
+ */
+function extractSwap(tx: any, mint: string): Omit<Swap, 'sig'> | null {
+  const tokenTransfers = tx.tokenTransfers ?? [];
+  const nativeTransfers = tx.nativeTransfers ?? [];
+  if (!tokenTransfers.length) return null;
+
+  // Sum token movements per wallet (positive = received, negative = sent) for our mint
+  const mintNetByWallet = new Map<string, number>();
+  for (const t of tokenTransfers) {
+    if (t.mint !== mint) continue;
+    const amt = Number(t.tokenAmount ?? 0);
+    if (!isFinite(amt) || amt === 0) continue;
+    if (t.fromUserAccount) mintNetByWallet.set(t.fromUserAccount, (mintNetByWallet.get(t.fromUserAccount) ?? 0) - amt);
+    if (t.toUserAccount)   mintNetByWallet.set(t.toUserAccount,   (mintNetByWallet.get(t.toUserAccount)   ?? 0) + amt);
+  }
+
+  // Sum native SOL movements per wallet
+  const solNetByWallet = new Map<string, number>();
+  for (const n of nativeTransfers) {
+    const amt = Number(n.amount ?? 0) / 1e9;
+    if (n.fromUserAccount) solNetByWallet.set(n.fromUserAccount, (solNetByWallet.get(n.fromUserAccount) ?? 0) - amt);
+    if (n.toUserAccount)   solNetByWallet.set(n.toUserAccount,   (solNetByWallet.get(n.toUserAccount)   ?? 0) + amt);
+  }
+  // Also account for WSOL transfers as SOL
+  for (const t of tokenTransfers) {
+    if (t.mint !== WSOL_MINT) continue;
+    const amt = Number(t.tokenAmount ?? 0);
+    if (t.fromUserAccount) solNetByWallet.set(t.fromUserAccount, (solNetByWallet.get(t.fromUserAccount) ?? 0) - amt);
+    if (t.toUserAccount)   solNetByWallet.set(t.toUserAccount,   (solNetByWallet.get(t.toUserAccount)   ?? 0) + amt);
+  }
+
+  // Find a wallet that swapped — got tokens and lost SOL (BUY) or vice versa (SELL).
+  // Take the largest absolute movement.
+  let best: { wallet: string; tokDelta: number; solDelta: number; side: 'buy' | 'sell' } | null = null;
+  for (const [wallet, tokDelta] of mintNetByWallet) {
+    const solDelta = solNetByWallet.get(wallet) ?? 0;
+    if (Math.abs(tokDelta) < 1e-9) continue;
+    if (tokDelta > 0 && solDelta < -0.0001) {
+      const candidate = { wallet, tokDelta, solDelta, side: 'buy' as const };
+      if (!best || Math.abs(tokDelta) > Math.abs(best.tokDelta)) best = candidate;
+    } else if (tokDelta < 0 && solDelta > 0.0001) {
+      const candidate = { wallet, tokDelta, solDelta, side: 'sell' as const };
+      if (!best || Math.abs(tokDelta) > Math.abs(best.tokDelta)) best = candidate;
+    }
+  }
+  if (!best) return null;
+  const solAmt = Math.abs(best.solDelta);
+  const tokAmt = Math.abs(best.tokDelta);
+  if (solAmt < 0.001 || tokAmt < 1e-9) return null;
+  return { ts: tx.timestamp, price: solAmt / tokAmt, volSol: solAmt, side: best.side };
+}
+
+async function fetchPoolSwaps(pool: string, mint: string, fromTsSec: number, toTsSec: number): Promise<Swap[]> {
   const swaps: Swap[] = [];
   let cursor: string | undefined;
-  for (let p = 0; p < MAX_PAGES; p++) {
-    const txs = await fetchHist(mint, cursor);
+  for (let p = 0; p < MAX_PAGES_PER_POOL; p++) {
+    const txs = await fetchHist(pool, cursor);
     if (!txs.length) break;
+    let oldestInPage = Number.MAX_SAFE_INTEGER;
     for (const tx of txs) {
-      const s = tx.events?.swap;
-      if (!s) continue;
-      const out = s.tokenOutputs?.find((t: any) => t.mint === mint);
-      const inp = s.tokenInputs?.find((t: any) => t.mint === mint);
-      const nIn  = s.nativeInput?.amount ? Number(s.nativeInput.amount) / 1e9 : 0;
-      const nOut = s.nativeOutput?.amount ? Number(s.nativeOutput.amount) / 1e9 : 0;
-      let side: 'buy' | 'sell' | undefined;
-      let solAmt = 0; let tokAmt = 0;
-      if (out && nIn > 0) { side = 'buy'; solAmt = nIn; tokAmt = getTokenDecAmount(out); }
-      else if (inp && nOut > 0) { side = 'sell'; solAmt = nOut; tokAmt = getTokenDecAmount(inp); }
-      if (!side || solAmt <= 0 || tokAmt <= 0) continue;
-      swaps.push({ ts: tx.timestamp, price: solAmt / tokAmt, volSol: solAmt, side });
+      oldestInPage = Math.min(oldestInPage, tx.timestamp);
+      if (tx.timestamp > toTsSec) continue;
+      if (tx.timestamp < fromTsSec) continue;
+      const s = extractSwap(tx, mint);
+      if (s) swaps.push({ ...s, sig: tx.signature });
     }
     cursor = txs[txs.length - 1].signature;
-    if (p % 10 === 9) process.stderr.write(`page ${p+1}/${MAX_PAGES}, swaps=${swaps.length}\n`);
+    if (p % 10 === 9) process.stderr.write(`    pool ${pool.slice(0,8)} page ${p+1}, swaps=${swaps.length}, oldest=${new Date(oldestInPage * 1000).toISOString()}\n`);
+    if (oldestInPage < fromTsSec) break;
     if (txs.length < 100) break;
   }
-  swaps.sort((a, b) => a.ts - b.ts);
   return swaps;
 }
 
 function bucketize(swaps: Swap[]): Candle[] {
   if (!swaps.length) return [];
+  swaps.sort((a, b) => a.ts - b.ts);
   const byMin = new Map<number, Candle>();
   for (const s of swaps) {
     const m = Math.floor(s.ts / 60) * 60;
@@ -187,16 +260,44 @@ function simulate(candles: Candle[], spikeIdx: number): Trade | undefined {
 }
 
 async function main() {
-  const results: { name: string; trade?: Trade; spike?: number; n_swaps: number; n_candles: number; spike_ts?: number }[] = [];
+  const results: { name: string; trade?: Trade; spike?: number; n_swaps: number; n_candles: number; pools: string[] }[] = [];
+
   for (const tok of TOKENS) {
     console.log(`\n=== ${tok.name} ===`);
     console.log(`mint: ${tok.mint}`);
-    process.stderr.write(`Fetching swaps...\n`);
-    const swaps = await fetchAllSwaps(tok.mint);
-    console.log(`Swaps total: ${swaps.length}`);
-    if (swaps.length < 50) {
+    const revivalSec = Math.floor(new Date(tok.revivalDateIso).getTime() / 1000);
+    const fromSec = revivalSec - tok.windowDaysBefore * 24 * 3600;
+    const toSec   = revivalSec + tok.windowDaysAfter * 24 * 3600;
+    console.log(`Window: ${new Date(fromSec * 1000).toISOString()} → ${new Date(toSec * 1000).toISOString()}`);
+
+    process.stderr.write(`  Discovering pools via Dexscreener...\n`);
+    const pools = await findPools(tok.mint);
+    console.log(`Pools found: ${pools.length}`);
+    for (const p of pools) console.log(`  ${p.pool}  liq=$${p.liq.toFixed(0)}`);
+    if (!pools.length) {
+      console.log(`No pools found, skipping`);
+      results.push({ name: tok.name, n_swaps: 0, n_candles: 0, pools: [] });
+      continue;
+    }
+
+    const allSwaps: Swap[] = [];
+    for (const p of pools) {
+      process.stderr.write(`  Fetching pool ${p.pool.slice(0,8)}…\n`);
+      const ps = await fetchPoolSwaps(p.pool, tok.mint, fromSec, toSec);
+      process.stderr.write(`    +${ps.length} swaps\n`);
+      allSwaps.push(...ps);
+    }
+    const dedup = new Map<string, Swap>();
+    for (const s of allSwaps) {
+      const key = `${s.sig}_${s.side}_${s.volSol.toFixed(4)}`;
+      if (!dedup.has(key)) dedup.set(key, s);
+    }
+    const swaps = [...dedup.values()];
+    console.log(`Swaps total (deduped): ${swaps.length}`);
+
+    if (swaps.length < 100) {
       console.log(`Too few swaps for analysis`);
-      results.push({ name: tok.name, n_swaps: swaps.length, n_candles: 0 });
+      results.push({ name: tok.name, n_swaps: swaps.length, n_candles: 0, pools: pools.map(p => p.pool) });
       continue;
     }
     const candles = bucketize(swaps);
@@ -206,22 +307,22 @@ async function main() {
     const spikeIdx = findSpike(candles);
     if (spikeIdx < 0) {
       console.log(`No spike matching vol≥${SPIKE_VOL_X}x AND price≥+${SPIKE_PRICE_PCT}% in 1h`);
-      results.push({ name: tok.name, n_swaps: swaps.length, n_candles: candles.length });
+      results.push({ name: tok.name, n_swaps: swaps.length, n_candles: candles.length, pools: pools.map(p => p.pool) });
       continue;
     }
     const spikeTs = candles[spikeIdx].ts;
-    console.log(`Spike detected at: ${new Date(spikeTs * 1000).toISOString()} (candle #${spikeIdx})`);
+    console.log(`Spike detected: ${new Date(spikeTs * 1000).toISOString()} (candle #${spikeIdx})`);
 
     const trade = simulate(candles, spikeIdx);
     if (!trade) {
       console.log(`Could not simulate (no liquidity post-spike)`);
-      results.push({ name: tok.name, spike: spikeIdx, spike_ts: spikeTs, n_swaps: swaps.length, n_candles: candles.length });
+      results.push({ name: tok.name, spike: spikeIdx, n_swaps: swaps.length, n_candles: candles.length, pools: pools.map(p => p.pool) });
       continue;
     }
     console.log(`Entry: ${new Date(trade.entryTs * 1000).toISOString()} @ ${trade.entryPrice.toExponential(3)} SOL/token`);
     console.log(`Exit:  ${new Date(trade.exitTs  * 1000).toISOString()} @ ${trade.exitPrice .toExponential(3)} (${trade.reason})`);
     console.log(`P&L: ${trade.pnlPct.toFixed(1)}%   R: ${trade.rMultiple.toFixed(2)}`);
-    results.push({ name: tok.name, trade, spike: spikeIdx, spike_ts: spikeTs, n_swaps: swaps.length, n_candles: candles.length });
+    results.push({ name: tok.name, trade, spike: spikeIdx, n_swaps: swaps.length, n_candles: candles.length, pools: pools.map(p => p.pool) });
   }
 
   console.log(`\n\n========== AGGREGATE ==========`);
