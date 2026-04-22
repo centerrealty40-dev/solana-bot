@@ -48,7 +48,9 @@
     "db:stats": "tsx src/scripts/db-stats.ts",
     "analyze:cluster": "tsx src/scripts/analyze-cluster.ts",
     "cluster:purge": "tsx src/scripts/cluster-purge.ts",
-    "wallet:trace": "tsx src/scripts/wallet-trace.ts"
+    "wallet:trace": "tsx src/scripts/wallet-trace.ts",
+    "sanctum:monitor": "tsx scripts-tmp/sanctum-monitor.ts",
+    "sanctum:monitor:loop": "tsx scripts-tmp/sanctum-monitor.ts --loop"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

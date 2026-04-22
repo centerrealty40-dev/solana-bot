@@ -572,6 +572,49 @@ export const programs = pgTable(
 );
 
 /**
+ * Sanctum LST arb observations.
+ *
+ * Sample (every N seconds) the true par-value of each LST from Sanctum's
+ * extra-api AND the actual market price on Jupiter. The delta is the arb
+ * opportunity. Used during the discovery phase to size the edge before
+ * we wire up an executor.
+ */
+export const sanctumSnapshots = pgTable(
+  'sanctum_snapshots',
+  {
+    id: bigint('id', { mode: 'number' })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
+
+    lstSymbol: varchar('lst_symbol', { length: 16 }).notNull(),
+    lstMint: varchar('lst_mint', { length: 64 }).notNull(),
+
+    /** Sample size in SOL-equivalent (e.g., 10, 100, 1000). */
+    sizeSol: doublePrecision('size_sol').notNull(),
+
+    /** True par-value: 1 LST = X SOL (Sanctum extra-api /v1/sol-value/current). */
+    sanctumSolValue: doublePrecision('sanctum_sol_value').notNull(),
+    /** Market value: 1 LST = X SOL on Jupiter (best route, includes hop fees). */
+    jupiterSolPerLst: doublePrecision('jupiter_sol_per_lst').notNull(),
+    /** Jupiter's reported price impact pct for this size. */
+    jupiterPriceImpactPct: doublePrecision('jupiter_price_impact_pct'),
+
+    /** ((jupiter / sanctum) - 1) * 100 — negative = LST below par (arb!). */
+    arbPct: doublePrecision('arb_pct').notNull(),
+    /** Gross profit in SOL terms if executed at this snapshot (no fees). */
+    arbSolGross: doublePrecision('arb_sol_gross').notNull(),
+
+    meta: jsonb('meta').$type<Record<string, unknown>>().default({}),
+  },
+  (t) => ({
+    tsIdx: index('sanctum_snapshots_ts_idx').on(t.ts),
+    lstIdx: index('sanctum_snapshots_lst_idx').on(t.lstMint),
+    arbIdx: index('sanctum_snapshots_arb_idx').on(t.arbPct),
+  }),
+);
+
+/**
  * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
  */
 export const dailyPnl = pgTable(

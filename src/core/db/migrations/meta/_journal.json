@@ -36,6 +36,13 @@
       "when": 1776912000000,
       "tag": "0004_programs",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777000000000,
+      "tag": "0005_sanctum_monitor",
+      "breakpoints": true
     }
   ]
 }
