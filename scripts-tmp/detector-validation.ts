@@ -49,7 +49,10 @@ const PAYMENT_MINTS = new Set([SOL_MINT, USDC_MINT]);
 const FIRST_BUYERS_N = 30;
 const FUNDING_LOOKBACK_SEC = 3600;
 const FUNDING_MAX_LAMPORTS = 50_000_000; // 0.05 SOL
-const MAX_PAGES = 30;
+const MAX_PAGES = 50;
+const HELIUS_PAGE_DELAY_MS = 250;
+const HELIUS_RETRIES = 4;
+const FUNDER_CONCURRENCY = 2;
 
 const WINNER_MIN_LIQ_USD = 50_000;
 const WINNER_MIN_VOL24_USD = 10_000;
@@ -261,16 +264,45 @@ async function discoverCandidates(targetN: number): Promise<{ winners: DexPair[]
 
 // ─── Helius: first buyers + funder check (lifted from pumpcade-backtest) ────
 
+/**
+ * Fetch a page of Helius parsed transactions for an address.
+ * Retries on HTTP 429 with exponential backoff so rate-limit failures
+ * don't silently masquerade as "no data".
+ */
 async function fetchHist(addr: string, limit = 100, before?: string): Promise<any[]> {
   const u = new URL(`https://api.helius.xyz/v0/addresses/${addr}/transactions`);
   u.searchParams.set('api-key', HELIUS_KEY!);
   u.searchParams.set('limit', String(limit));
   if (before) u.searchParams.set('before', before);
-  try {
-    const r = await fetch(u.toString());
-    if (!r.ok) return [];
-    return await r.json() as any[];
-  } catch { return []; }
+
+  let backoff = 1_000;
+  for (let attempt = 0; attempt <= HELIUS_RETRIES; attempt++) {
+    try {
+      const r = await fetch(u.toString());
+      if (r.status === 429) {
+        if (attempt === HELIUS_RETRIES) {
+          console.warn(`[helius] 429 after ${HELIUS_RETRIES + 1} attempts on ${addr.slice(0, 8)}…`);
+          return [];
+        }
+        await sleep(backoff);
+        backoff *= 2;
+        continue;
+      }
+      if (!r.ok) {
+        console.warn(`[helius] HTTP ${r.status} on ${addr.slice(0, 8)}… ${r.statusText}`);
+        return [];
+      }
+      return await r.json() as any[];
+    } catch (e) {
+      if (attempt === HELIUS_RETRIES) {
+        console.warn(`[helius] fetch error on ${addr.slice(0, 8)}…: ${(e as Error).message}`);
+        return [];
+      }
+      await sleep(backoff);
+      backoff *= 2;
+    }
+  }
+  return [];
 }
 
 interface BuyerInfo {
@@ -331,19 +363,34 @@ function extractBuyer(tx: any, mint: string): string | null {
   return null;
 }
 
-async function getEarliestSwapBuyers(mint: string, launchMs: number, n: number): Promise<BuyerInfo[]> {
+interface BuyerScanResult {
+  buyers: BuyerInfo[];
+  txsTotal: number;
+  oldestReachedSec: number;   // 0 if no txs at all
+  reachedLaunch: boolean;
+  pages: number;
+}
+
+async function getEarliestSwapBuyers(
+  mint: string, launchMs: number, n: number,
+): Promise<BuyerScanResult> {
   const launchSec = Math.floor(launchMs / 1000);
   const cutoffSec = launchSec + 3600;
   const all: any[] = [];
   let cursor: string | undefined;
+  let pagesUsed = 0;
+  let oldestReachedSec = 0;
   for (let p = 0; p < MAX_PAGES; p++) {
     const txs = await fetchHist(mint, 100, cursor);
+    pagesUsed = p + 1;
     if (!txs.length) break;
     all.push(...txs);
     const oldestSec = txs[txs.length - 1]?.timestamp ?? 0;
+    oldestReachedSec = oldestSec;
     cursor = txs[txs.length - 1].signature;
     if (oldestSec <= launchSec) break;
     if (txs.length < 100) break;
+    await sleep(HELIUS_PAGE_DELAY_MS);
   }
   all.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -357,11 +404,17 @@ async function getEarliestSwapBuyers(mint: string, launchMs: number, n: number):
     buyers.push({ wallet: buyer, buyTs: tx.timestamp });
     if (buyers.length >= n) break;
   }
-  return buyers;
+  return {
+    buyers,
+    txsTotal: all.length,
+    oldestReachedSec,
+    reachedLaunch: oldestReachedSec > 0 && oldestReachedSec <= launchSec,
+    pages: pagesUsed,
+  };
 }
 
 async function annotateFunders(buyers: BuyerInfo[]): Promise<void> {
-  await pMap(buyers, 6, async (buyer) => {
+  await pMap(buyers, FUNDER_CONCURRENCY, async (buyer) => {
     const cutoffSec = buyer.buyTs - FUNDING_LOOKBACK_SEC;
     const txs = await fetchHist(buyer.wallet, 25);
     let best: { from: string; amount: number; ts: number } | undefined;
@@ -431,14 +484,20 @@ function score(group: 'WIN' | 'LOSE', pair: DexPair, buyers: BuyerInfo[]): Score
 async function processOne(group: 'WIN' | 'LOSE', pair: DexPair, idx: number, total: number): Promise<Score> {
   const launchMs = pair.pairCreatedAt ?? Date.now() - DAY_MS * 7;
   process.stderr.write(`  [${group} ${idx + 1}/${total}] ${pair.baseToken.symbol.padEnd(10)} ${pair.baseToken.address.slice(0, 8)}… `);
-  const buyers = await getEarliestSwapBuyers(pair.baseToken.address, launchMs, FIRST_BUYERS_N);
-  process.stderr.write(`buyers=${buyers.length} `);
-  if (buyers.length >= 5) {
-    await annotateFunders(buyers);
-    const funded = buyers.filter(b => b.funder).length;
+  const r = await getEarliestSwapBuyers(pair.baseToken.address, launchMs, FIRST_BUYERS_N);
+  const oldestStr = r.oldestReachedSec
+    ? new Date(r.oldestReachedSec * 1000).toISOString().slice(5, 16).replace('T', ' ')
+    : 'none';
+  const launchStr = new Date(launchMs).toISOString().slice(5, 16).replace('T', ' ');
+  process.stderr.write(
+    `tx=${r.txsTotal} pg=${r.pages} oldest=${oldestStr} launch=${launchStr} reached=${r.reachedLaunch ? 'Y' : 'N'} buyers=${r.buyers.length} `,
+  );
+  if (r.buyers.length >= 5) {
+    await annotateFunders(r.buyers);
+    const funded = r.buyers.filter(b => b.funder).length;
     process.stderr.write(`funded=${funded} `);
   }
-  const s = score(group, pair, buyers);
+  const s = score(group, pair, r.buyers);
   process.stderr.write(`clean=${s.cleanliness < 0 ? 'NA' : s.cleanliness.toFixed(0)}\n`);
   return s;
 }
