@@ -34,9 +34,15 @@
  *   npx tsx scripts-tmp/detector-validation.ts --winners A,B,C --losers D,E,F
  */
 import 'dotenv/config';
+import { sql as dsql } from 'drizzle-orm';
+import { db } from '../src/core/db/client.js';
 
 const HELIUS_KEY = process.env.HELIUS_API_KEY;
 if (!HELIUS_KEY) { console.error('HELIUS_API_KEY missing'); process.exit(1); }
+
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const PAYMENT_MINTS = new Set([SOL_MINT, USDC_MINT]);
 
 // ─── Tunables ───────────────────────────────────────────────────────────────
 
@@ -50,9 +56,9 @@ const WINNER_MIN_VOL24_USD = 10_000;
 const WINNER_MIN_AGE_DAYS = 3;
 const WINNER_MAX_AGE_DAYS = 30;
 
-const LOSER_MAX_LIQ_USD = 5_000;
+const LOSER_MAX_LIQ_USD = 10_000;
 const LOSER_MIN_AGE_DAYS = 1;
-const LOSER_MAX_AGE_DAYS = 14;
+const LOSER_MAX_AGE_DAYS = 30;
 
 const DAY_MS = 86_400_000;
 
@@ -62,6 +68,7 @@ interface Args {
   n: number;                   // size of each group (winners + losers)
   winners?: string[];          // manual mint override
   losers?: string[];
+  losersFromDb: boolean;       // pull losers from our `swaps` DB
 }
 
 function parseArgs(): Args {
@@ -75,6 +82,7 @@ function parseArgs(): Args {
     n: Number(get('--n') ?? 7),
     winners: csv(get('--winners')),
     losers: csv(get('--losers')),
+    losersFromDb: argv.includes('--losers-from-db'),
   };
 }
 
@@ -146,6 +154,44 @@ async function fetchPairs(mints: string[]): Promise<Map<string, DexPair>> {
   return out;
 }
 
+/**
+ * Pull mints from our `swaps` table that:
+ *   - had activity in the last 1-30 days (so age window is reasonable for Helius)
+ *   - had at least N distinct wallets touch them (was a real trading episode)
+ *   - are not SOL/USDC/major stablecoins
+ * Returns ordered by recency. Caller must intersect with current liq < threshold.
+ */
+async function fetchLosersFromDb(limit: number): Promise<{ mint: string; wallets: number; firstSeen: Date }[]> {
+  try {
+    const rows = await db.execute(dsql`
+      SELECT base_mint AS mint,
+             COUNT(DISTINCT wallet) AS wallets,
+             MIN(block_time) AS first_seen,
+             MAX(block_time) AS last_seen
+      FROM swaps
+      WHERE base_mint NOT IN (
+        'So11111111111111111111111111111111111111112',
+        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'
+      )
+        AND block_time >= now() - interval '30 days'
+        AND block_time <= now() - interval '1 days'
+      GROUP BY base_mint
+      HAVING COUNT(DISTINCT wallet) >= 5
+      ORDER BY MIN(block_time) DESC
+      LIMIT ${limit}
+    `);
+    return (rows as any[]).map(r => ({
+      mint: r.mint,
+      wallets: Number(r.wallets),
+      firstSeen: new Date(r.first_seen),
+    }));
+  } catch (e) {
+    console.warn(`[db] losers query failed: ${(e as Error).message}`);
+    return [];
+  }
+}
+
 async function discoverCandidates(targetN: number): Promise<{ winners: DexPair[]; losers: DexPair[] }> {
   console.log('[discover] pulling boosted tokens (winners pool)...');
   let boosted: DexProfile[] = [];
@@ -161,9 +207,17 @@ async function discoverCandidates(targetN: number): Promise<{ winners: DexPair[]
   } catch (e) { console.warn(`[dex] latest profiles failed: ${(e as Error).message}`); }
   const profilesSol = profiles.filter(p => p.chainId === 'solana').slice(0, 100);
 
+  console.log('[discover] pulling latest boosted (extra pool)...');
+  let boostedLatest: DexProfile[] = [];
+  try {
+    boostedLatest = await fetchJson<DexProfile[]>('https://api.dexscreener.com/token-boosts/latest/v1');
+  } catch (e) { console.warn(`[dex] latest-boosts failed: ${(e as Error).message}`); }
+  const boostedLatestSol = boostedLatest.filter(p => p.chainId === 'solana').slice(0, 100);
+
   const allMints = [...new Set([
     ...boostedSol.map(p => p.tokenAddress),
     ...profilesSol.map(p => p.tokenAddress),
+    ...boostedLatestSol.map(p => p.tokenAddress),
   ])];
   console.log(`[discover] pulling pair data for ${allMints.length} candidates...`);
   const pairsByMint = await fetchPairs(allMints);
@@ -227,6 +281,56 @@ interface BuyerInfo {
   funderTsBefore?: number;
 }
 
+/**
+ * Try to extract the buyer of `mint` from a Helius transaction.
+ * Strategy:
+ *   1. Primary: events.swap (works on Raydium / Jupiter / Meteora)
+ *   2. Fallback: tokenTransfers showing `mint` arriving at a wallet that ALSO
+ *      paid SOL or USDC out in the same tx (this catches pump.fun bonding-curve
+ *      buys, which Helius doesn't classify as SWAP events).
+ * Returns the buyer wallet, or null if this tx is not a buy of `mint`.
+ */
+function extractBuyer(tx: any, mint: string): string | null {
+  // Primary: enhanced swap event
+  const swap = tx.events?.swap;
+  if (swap) {
+    const out = swap.tokenOutputs?.[0];
+    if (out?.mint === mint) {
+      return out.userAccount ?? tx.feePayer ?? null;
+    }
+  }
+
+  // Fallback: tokenTransfers + verify payment
+  const tts = (tx.tokenTransfers ?? []) as any[];
+  const candidates = tts.filter(t => t.mint === mint && (t.tokenAmount ?? 0) > 0 && t.toUserAccount);
+  if (!candidates.length) return null;
+
+  // for each potential buyer (recipient of `mint`), confirm they paid in this tx
+  for (const c of candidates) {
+    const buyer = c.toUserAccount as string;
+
+    // a) paid native SOL
+    const paidSol = (tx.nativeTransfers ?? []).some((n: any) =>
+      n.fromUserAccount === buyer && (n.amount ?? 0) > 0
+    );
+    if (paidSol) return buyer;
+
+    // b) paid WSOL or USDC via token transfer
+    const paidPayment = tts.some(t =>
+      t.fromUserAccount === buyer && PAYMENT_MINTS.has(t.mint) && (t.tokenAmount ?? 0) > 0
+    );
+    if (paidPayment) return buyer;
+  }
+
+  // Last resort: if there's exactly one recipient of `mint` and they're the feePayer,
+  // it's almost certainly the buyer (pump.fun edge case where SOL routes through PDA).
+  if (candidates.length === 1 && candidates[0].toUserAccount === tx.feePayer) {
+    return tx.feePayer;
+  }
+
+  return null;
+}
+
 async function getEarliestSwapBuyers(mint: string, launchMs: number, n: number): Promise<BuyerInfo[]> {
   const launchSec = Math.floor(launchMs / 1000);
   const cutoffSec = launchSec + 3600;
@@ -247,11 +351,7 @@ async function getEarliestSwapBuyers(mint: string, launchMs: number, n: number):
   const seen = new Set<string>();
   for (const tx of all) {
     if (tx.timestamp > cutoffSec) break;
-    const swap = tx.events?.swap;
-    if (!swap) continue;
-    const out = swap.tokenOutputs?.[0];
-    if (out?.mint !== mint) continue;
-    const buyer = out.userAccount ?? tx.feePayer;
+    const buyer = extractBuyer(tx, mint);
     if (!buyer || seen.has(buyer)) continue;
     seen.add(buyer);
     buyers.push({ wallet: buyer, buyTs: tx.timestamp });
@@ -371,6 +471,30 @@ async function main() {
     const found = await discoverCandidates(args.n);
     winnerPairs = found.winners;
     loserPairs = found.losers;
+  }
+
+  if (args.losersFromDb) {
+    console.log('[db] pulling extra loser candidates from our swaps history...');
+    const extra = await fetchLosersFromDb(args.n * 3);
+    if (extra.length) {
+      const mints = extra.map(x => x.mint);
+      const dexPairs = await fetchPairs(mints);
+      const dbLosers: DexPair[] = [];
+      for (const m of mints) {
+        const p = dexPairs.get(m);
+        if (!p) continue;
+        const liq = p.liquidity?.usd ?? 0;
+        if (liq <= LOSER_MAX_LIQ_USD) dbLosers.push(p);
+      }
+      console.log(`[db] +${dbLosers.length} losers from DB (active 1-30d ago, current liq <= $${LOSER_MAX_LIQ_USD})`);
+      const seen = new Set(loserPairs.map(p => p.baseToken.address));
+      for (const p of dbLosers) {
+        if (seen.has(p.baseToken.address)) continue;
+        loserPairs.push(p);
+        seen.add(p.baseToken.address);
+        if (loserPairs.length >= args.n) break;
+      }
+    }
   }
 
   console.log(`\n--- WINNERS (${winnerPairs.length}) ---`);
