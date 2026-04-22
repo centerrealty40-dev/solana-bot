@@ -57,7 +57,9 @@
     "paper:trader": "tsx scripts-tmp/rings-paper-trader.ts",
     "paper:trader:once": "tsx scripts-tmp/rings-paper-trader.ts --once",
     "paper:stats": "tsx scripts-tmp/rings-paper-stats.ts",
-    "paper:debug": "tsx scripts-tmp/rings-debug.ts"
+    "paper:debug": "tsx scripts-tmp/rings-debug.ts",
+    "pp:collector": "tsx scripts-tmp/pumpportal-collector.ts",
+    "pp:collector:once": "tsx scripts-tmp/pumpportal-collector.ts --once"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

@@ -34,7 +34,7 @@ export interface NormalizedSwap {
   amountUsd: number;
   /** which DEX program executed it */
   dex: 'raydium' | 'jupiter' | 'pumpfun' | 'meteora' | 'orca' | 'unknown';
-  source: 'helius_webhook' | 'dexscreener' | 'birdeye' | 'manual';
+  source: 'helius_webhook' | 'dexscreener' | 'birdeye' | 'pumpportal' | 'manual';
 }
 
 export interface TokenInfo {
