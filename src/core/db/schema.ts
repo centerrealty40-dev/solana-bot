@@ -521,6 +521,57 @@ export const walletClusters = pgTable(
 );
 
 /**
+ * On-chain programs / protocols catalog.
+ *
+ * Strategy B (Infrastructure Frontrunner) needs to know which programs are
+ * young, growing, and have predictable on-chain intents (DCA orders, vault
+ * unlocks, liquidations, etc.). This table is our working catalog.
+ *
+ * Long-term it also feeds Strategy A (sellable risk-intel API).
+ */
+export const programs = pgTable(
+  'programs',
+  {
+    /** On-chain program address OR DefiLlama slug if address unknown. */
+    programId: varchar('program_id', { length: 64 }).primaryKey(),
+    name: varchar('name', { length: 128 }),
+    slug: varchar('slug', { length: 128 }),
+    /** Protocol category: DEX, Lending, Yield, Liquid Staking, Derivatives, etc. */
+    category: varchar('category', { length: 64 }),
+    chain: varchar('chain', { length: 16 }).notNull().default('solana'),
+    /** Where we found it: 'defillama' | 'discovered' | 'manual' */
+    source: varchar('source', { length: 32 }).notNull(),
+    url: text('url'),
+    twitter: varchar('twitter', { length: 64 }),
+    /** Public listing date if known (DefiLlama listedAt). */
+    listedAt: timestamp('listed_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }).notNull().defaultNow(),
+
+    tvlUsd: doublePrecision('tvl_usd'),
+    change1d: doublePrecision('change_1d'),
+    change7d: doublePrecision('change_7d'),
+    change1m: doublePrecision('change_1m'),
+
+    /** 'pending' | 'reviewed' | 'edge_found' | 'no_edge' | 'discarded' */
+    reviewStatus: varchar('review_status', { length: 32 }).notNull().default('pending'),
+    /** 'high' | 'medium' | 'low' | 'skip' */
+    ourPriority: varchar('our_priority', { length: 16 }).notNull().default('medium'),
+    /** What edge we suspect: 'dca' | 'limit_orders' | 'liquidations' | 'vault_unlock' | etc. */
+    edgeType: varchar('edge_type', { length: 64 }),
+    notes: text('notes'),
+
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  },
+  (t) => ({
+    categoryIdx: index('programs_category_idx').on(t.category),
+    priorityIdx: index('programs_priority_idx').on(t.ourPriority),
+    statusIdx: index('programs_status_idx').on(t.reviewStatus),
+    listedIdx: index('programs_listed_idx').on(t.listedAt),
+  }),
+);
+
+/**
  * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
  */
 export const dailyPnl = pgTable(
