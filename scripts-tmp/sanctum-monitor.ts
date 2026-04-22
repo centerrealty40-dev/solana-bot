@@ -67,6 +67,11 @@ const LST_REGISTRY: Array<{ symbol: string; mint: string; decimals: number }> = 
 
 const SAMPLE_SIZES_SOL = [10, 100, 1000];
 
+/** Delay between Jupiter quote requests to stay under free-tier rate limits (~10 RPS). */
+const JUP_QUOTE_DELAY_MS = 350;
+/** Retries on HTTP 429 from Jupiter (each waits 2× previous, starting at 1s). */
+const JUP_QUOTE_RETRIES = 3;
+
 // ────────────────────────────────────────────────────────────────────────────
 // Args
 // ────────────────────────────────────────────────────────────────────────────
@@ -103,12 +108,42 @@ async function fetchJson<T = unknown>(url: string, timeoutMs = 8_000): Promise<T
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status} ${res.statusText} from ${url}: ${body.slice(0, 200)}`);
+      const err = new Error(
+        `HTTP ${res.status} ${res.statusText} from ${url}: ${body.slice(0, 200)}`,
+      ) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
     }
     return (await res.json()) as T;
   } finally {
     clearTimeout(timer);
   }
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Same as fetchJson but retries on 429 with exponential backoff.
+ * Used for Jupiter where free-tier rate limits hit easily.
+ */
+async function fetchJsonWith429Retry<T = unknown>(
+  url: string,
+  retries = JUP_QUOTE_RETRIES,
+  baseDelayMs = 1_000,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchJson<T>(url);
+    } catch (e) {
+      lastErr = e;
+      const status = (e as { status?: number }).status;
+      if (status !== 429 || attempt === retries) throw e;
+      const wait = baseDelayMs * Math.pow(2, attempt);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -171,7 +206,7 @@ async function quoteLstToSol(
     `${JUPITER_QUOTE_URL}?inputMint=${lstMint}&outputMint=${SOL_MINT}` +
     `&amount=${amountRaw}&slippageBps=50&swapMode=ExactIn&onlyDirectRoutes=false`;
   try {
-    const r = await fetchJson<JupQuoteResp>(url);
+    const r = await fetchJsonWith429Retry<JupQuoteResp>(url);
     const outSol = Number(r.outAmount) / LAMPORTS_PER_SOL;
     const inLst = Number(r.inAmount) / 10 ** lstDecimals;
     const solPerLst = outSol / inLst;
@@ -231,6 +266,8 @@ async function runIteration(args: Args): Promise<Snapshot[]> {
       // amount of LST equivalent to `sizeSol` SOL at par
       const lstUi = sizeSol / par;
       const q = await quoteLstToSol(lst.mint, lst.decimals, lstUi);
+      // throttle to stay under Jupiter free-tier RPS even when quote succeeded fast
+      await sleep(JUP_QUOTE_DELAY_MS);
       if (!q) continue;
 
       const arbPct = (q.solPerLst / par - 1) * 100;
