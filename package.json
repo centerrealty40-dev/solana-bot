@@ -64,8 +64,8 @@
     "runner:detect:once": "tsx scripts-tmp/runner-detector.ts --once",
     "retro:validate": "tsx scripts-tmp/retro-validate-detector.ts",
     "retro:validate:auto": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15",
-    "retro:sweep": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 5,10,15,20,30,45,60,90",
-    "retro:sweep:relaxed": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 5,10,15,20,30,45,60,90 --relaxed"
+    "retro:sweep": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 3,5,7,10,15,20,30,45 --window-start 2",
+    "retro:sweep:relaxed": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 3,5,7,10,15,20,30,45 --window-start 2 --relaxed"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

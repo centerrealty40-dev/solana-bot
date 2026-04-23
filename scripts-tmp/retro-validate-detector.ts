@@ -41,7 +41,7 @@ const AGE_AT_DECISION_MIN = 15;       // оцениваем состояние �
 // strict (default) = из runner-detector
 const STRICT = {
   MIN_UNIQUE_BUYERS: 20, MIN_BUY_SOL: 5, MIN_BUY_SELL_RATIO: 1.5,
-  MAX_TOP_BUYER_SHARE: 0.30, MIN_BC_PROGRESS: 0.25, MAX_BC_PROGRESS: 0.90,
+  MAX_TOP_BUYER_SHARE: 0.30, MIN_BC_PROGRESS: 0.25, MAX_BC_PROGRESS: 0.95,
 };
 // relaxed — для калибровки: поймём, ловит ли вообще
 const RELAXED = {
@@ -162,6 +162,14 @@ interface Txn {
   feePayer: string;
   nativeTransfers?: Array<{ fromUserAccount: string; toUserAccount: string; amount: number }>;
   tokenTransfers?: Array<{ fromUserAccount: string; toUserAccount: string; mint: string; tokenAmount: number }>;
+  events?: {
+    swap?: {
+      nativeInput?: { account: string; amount: string | number };
+      nativeOutput?: { account: string; amount: string | number };
+      tokenInputs?: Array<{ userAccount: string; mint: string; rawTokenAmount?: { tokenAmount: string; decimals: number } }>;
+      tokenOutputs?: Array<{ userAccount: string; mint: string; rawTokenAmount?: { tokenAmount: string; decimals: number } }>;
+    };
+  };
   type?: string;
 }
 
@@ -201,8 +209,30 @@ interface Trade {
   solAmount: number; tokenAmount: number; signature: string;
 }
 
+const WSOL = 'So11111111111111111111111111111111111111112';
+
 function parseTrade(tx: Txn, mint: string, bondingCurve: string): Trade | null {
   const signer = tx.feePayer;
+  const ts = tx.timestamp * 1000;
+
+  // [1] Helius normalized swap event — наиболее надёжный
+  const sw = tx.events?.swap;
+  if (sw) {
+    const nIn = Number(sw.nativeInput?.amount ?? 0) / 1e9;
+    const nOut = Number(sw.nativeOutput?.amount ?? 0) / 1e9;
+    const tInOurs = (sw.tokenInputs ?? []).find(t => t.mint === mint);
+    const tOutOurs = (sw.tokenOutputs ?? []).find(t => t.mint === mint);
+    const tokenAmt = (t: typeof tInOurs): number =>
+      t ? Number(t.rawTokenAmount?.tokenAmount ?? 0) / Math.pow(10, t.rawTokenAmount?.decimals ?? 6) : 0;
+    if (nIn > 0 && tOutOurs) {
+      return { ts, signer, side: 'buy', solAmount: nIn, tokenAmount: tokenAmt(tOutOurs), signature: tx.signature };
+    }
+    if (nOut > 0 && tInOurs) {
+      return { ts, signer, side: 'sell', solAmount: nOut, tokenAmount: tokenAmt(tInOurs), signature: tx.signature };
+    }
+  }
+
+  // [2] Direct native transfers signer↔BC (старая pump.fun)
   let solDir: 1 | -1 | 0 = 0;
   let solAmount = 0;
   for (const nt of tx.nativeTransfers ?? []) {
@@ -212,21 +242,40 @@ function parseTrade(tx: Txn, mint: string, bondingCurve: string): Trade | null {
       solDir = -1; solAmount = Math.max(solAmount, nt.amount / 1e9);
     }
   }
-  if (solDir === 0 || solAmount <= 0) return null;
-
-  let tokenAmount = 0;
-  for (const tt of tx.tokenTransfers ?? []) {
-    if (tt.mint !== mint) continue;
-    const amt = Number(tt.tokenAmount ?? 0);
-    if (amt > tokenAmount) tokenAmount = amt;
+  if (solDir !== 0 && solAmount > 0) {
+    let tokenAmount = 0;
+    for (const tt of tx.tokenTransfers ?? []) {
+      if (tt.mint !== mint) continue;
+      const amt = Number(tt.tokenAmount ?? 0);
+      if (amt > tokenAmount) tokenAmount = amt;
+    }
+    if (tokenAmount > 0) {
+      return { ts, signer, side: solDir > 0 ? 'buy' : 'sell', solAmount, tokenAmount, signature: tx.signature };
+    }
   }
-  if (tokenAmount <= 0) return null;
 
-  return {
-    ts: tx.timestamp * 1000,
-    signer, side: solDir > 0 ? 'buy' : 'sell',
-    solAmount, tokenAmount, signature: tx.signature,
-  };
+  // [3] WSOL token transfers (новая pump.fun / PumpSwap)
+  let wsolDir: 1 | -1 | 0 = 0;
+  let wsolAmt = 0;
+  for (const tt of tx.tokenTransfers ?? []) {
+    if (tt.mint !== WSOL) continue;
+    const amt = Number(tt.tokenAmount ?? 0);
+    if (tt.fromUserAccount === signer && amt > 0) { wsolDir = 1; wsolAmt = Math.max(wsolAmt, amt); }
+    else if (tt.toUserAccount === signer && amt > 0) { wsolDir = -1; wsolAmt = Math.max(wsolAmt, amt); }
+  }
+  if (wsolDir !== 0 && wsolAmt > 0) {
+    let tokenAmount = 0;
+    for (const tt of tx.tokenTransfers ?? []) {
+      if (tt.mint !== mint) continue;
+      const amt = Number(tt.tokenAmount ?? 0);
+      if (amt > tokenAmount) tokenAmount = amt;
+    }
+    if (tokenAmount > 0) {
+      return { ts, signer, side: wsolDir > 0 ? 'buy' : 'sell', solAmount: wsolAmt, tokenAmount, signature: tx.signature };
+    }
+  }
+
+  return null;
 }
 
 // =====================================================================
