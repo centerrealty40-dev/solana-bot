@@ -66,7 +66,10 @@
     "retro:validate:auto": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15",
     "retro:sweep": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 3,5,7,10,15,20,30,45 --window-start 2",
     "retro:sweep:relaxed": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 3,5,7,10,15,20,30,45 --window-start 2 --relaxed",
-    "retro:precision": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --with-controls 20 --sweep 5,7,10 --window-start 2"
+    "retro:precision": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --with-controls 20 --sweep 5,7,10 --window-start 2",
+    "retro:precision:big": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 20 --with-controls 60 --sweep 5,7,10 --window-start 2",
+    "paper:live": "tsx scripts-tmp/live-paper-trader.ts",
+    "paper:live:dry": "tsx scripts-tmp/live-paper-trader.ts --dry-run"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
