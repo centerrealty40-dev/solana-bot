@@ -83,6 +83,45 @@ function bondingCurvePda(mint: string): string {
   return pda.toBase58();
 }
 
+/**
+ * Автоопределение реального bonding curve / pool аккаунта для mint.
+ *  1) Пробуем стандартный pump.fun BC PDA — если первая страница транзакций
+ *     парсится в реальные трейды → возвращаем его.
+ *  2) Иначе fallback: тащим транзакции на самом mint, ищем общего
+ *     контрагента по nativeTransfer (с feePayer) и tokenTransfer (нашего mint).
+ *     Это даёт нам реальный пул — будь то PumpSwap AMM, Raydium и т.д.
+ */
+async function findBondingCurve(mint: string): Promise<{ addr: string; via: string } | null> {
+  const std = bondingCurvePda(mint);
+  const stdTxns = await heliusTxns(std);
+  for (const tx of stdTxns.slice(0, 15)) {
+    if (parseTrade(tx, mint, std)) return { addr: std, via: 'std-pda' };
+  }
+  // fallback — autodetect by mint history
+  const mintTxns = await heliusTxns(mint);
+  const score = new Map<string, number>();
+  for (const tx of mintTxns.slice(0, 25)) {
+    const signer = tx.feePayer;
+    const nativeCounterparties = new Set<string>();
+    for (const nt of tx.nativeTransfers ?? []) {
+      if (nt.fromUserAccount === signer && nt.toUserAccount !== signer) nativeCounterparties.add(nt.toUserAccount);
+      if (nt.toUserAccount === signer && nt.fromUserAccount !== signer) nativeCounterparties.add(nt.fromUserAccount);
+    }
+    const tokenParticipants = new Set<string>();
+    for (const tt of tx.tokenTransfers ?? []) {
+      if (tt.mint !== mint) continue;
+      if (tt.fromUserAccount && tt.fromUserAccount !== signer) tokenParticipants.add(tt.fromUserAccount);
+      if (tt.toUserAccount && tt.toUserAccount !== signer) tokenParticipants.add(tt.toUserAccount);
+    }
+    for (const c of nativeCounterparties) {
+      if (tokenParticipants.has(c)) score.set(c, (score.get(c) ?? 0) + 1);
+    }
+  }
+  if (score.size === 0) return null;
+  const best = [...score.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { addr: best[0], via: `auto(${best[1]}/${mintTxns.length})` };
+}
+
 // =====================================================================
 // DISCOVERY
 // =====================================================================
@@ -304,9 +343,11 @@ function metricsAt(txns: Txn[], mint: string, bc: string, creationTs: number,
 }
 
 async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMin: number): Promise<Verdict | null> {
-  const bc = bondingCurvePda(mint);
+  const bcInfo = await findBondingCurve(mint);
+  if (!bcInfo) { console.log(`  ! cannot locate BC/pool for mint`); return null; }
+  const bc = bcInfo.addr;
   const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
+  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc} (via ${bcInfo.via})`); return null; }
   const creationTs = txns[0].timestamp * 1000;
 
   const { m, trades } = metricsAt(txns, mint, bc, creationTs, windowStartMin, ageAtDecisionMin);
@@ -327,9 +368,11 @@ async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMi
  */
 async function sweepOne(mint: string, points: number[], windowStartMin: number)
     : Promise<{ creationTs: number; perPoint: Record<number, Verdict>; txnsCount: number; peakBc: number } | null> {
-  const bc = bondingCurvePda(mint);
+  const bcInfo = await findBondingCurve(mint);
+  if (!bcInfo) { console.log(`  ! cannot locate BC/pool for mint`); return null; }
+  const bc = bcInfo.addr;
   const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! NO txns on BC ${bc} → likely already migrated to Raydium`); return null; }
+  if (txns.length === 0) { console.log(`  ! NO txns on ${bc} (via ${bcInfo.via})`); return null; }
   const creationTs = txns[0].timestamp * 1000;
   const lastTs = txns[txns.length - 1].timestamp * 1000;
   const ageH = (Date.now() - creationTs) / 3_600_000;
@@ -343,7 +386,7 @@ async function sweepOne(mint: string, points: number[], windowStartMin: number)
     if (m.bcProgress > peakBc) peakBc = m.bcProgress;
     out[p] = evaluate(m);
   }
-  console.log(`  txns_on_bc=${txns.length}  age=${ageH.toFixed(1)}h  bc_active=${lifeH.toFixed(2)}h  peak_bc=${(peakBc * 100).toFixed(0)}%`);
+  console.log(`  pool=${bcInfo.via}  txns=${txns.length}  age=${ageH.toFixed(1)}h  bc_active=${lifeH.toFixed(2)}h  peak_bc=${(peakBc * 100).toFixed(0)}%`);
   const cells = points.filter(p => p > windowStartMin).map(p => {
     const v = out[p];
     if (v.pass) return `${p}m:PASS(b=${v.m.uniqueBuyers},bc=${(v.m.bcProgress*100).toFixed(0)}%)`;
