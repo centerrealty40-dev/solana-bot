@@ -87,38 +87,52 @@ function bondingCurvePda(mint: string): string {
 // DISCOVERY
 // =====================================================================
 async function discoverRunners(limit: number): Promise<string[]> {
-  console.log(`\n[DISCOVERY] fetching real pump.fun runners from DexScreener (filtering by priceChange.h24)...`);
-  // Тянем pairs по нескольким широким search-запросам, фильтруем по:
-  //  - chainId=solana, mint endsWith 'pump'
-  //  - pairCreatedAt < 14 days
-  //  - priceChange.h24 ≥ 200% (реальный pump, не просто boost)
-  //  - liquidity.usd ≥ 30000
-  const queries = ['solana', 'pump', 'sol', 'meme', 'dog', 'cat', 'pepe', 'ai'];
-  const seen = new Map<string, { mint: string; gain: number; liq: number; ageH: number }>();
+  console.log(`\n[DISCOVERY] fetching top pump.fun tokens still on bonding curve (frontend-api-v3)...`);
+  // pump.fun internal API: топ по market_cap среди НЕgraduated (на BC)
+  // и среди graduated (recently migrated) — сравним обе категории
+  const seen = new Map<string, { mint: string; mc: number; ageH: number; complete: boolean; sym: string }>();
   const now = Date.now();
-  for (const q of queries) {
-    const j: any = await fetchJson(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`);
-    const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
-    for (const p of pairs) {
-      if (p.chainId !== 'solana') continue;
-      const mint = p.baseToken?.address;
-      if (!mint || !mint.endsWith('pump')) continue;
-      if (seen.has(mint)) continue;
-      const created = Number(p.pairCreatedAt ?? 0);
+
+  // 1. На BC, топ по mcap
+  const onBc: any[] | null = await fetchJson(
+    'https://frontend-api-v3.pump.fun/coins?offset=0&limit=200&sort=usd_market_cap&order=DESC&includeNsfw=false',
+  );
+  if (Array.isArray(onBc)) {
+    for (const c of onBc) {
+      const mint = String(c.mint ?? '');
+      if (!mint) continue;
+      const created = Number(c.created_timestamp ?? 0);
       const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
-      if (ageH > 14 * 24 || ageH < 1) continue;
-      const liq = Number(p.liquidity?.usd ?? 0);
-      if (liq < 30000) continue;
-      const gain = Number(p.priceChange?.h24 ?? 0);
-      if (gain < 200) continue;  // < 3x за 24h — не runner
-      seen.set(mint, { mint, gain, liq, ageH });
+      if (ageH > 14 * 24 || ageH < 0.05) continue;        // 14 days — 3 min
+      const mc = Number(c.usd_market_cap ?? 0);
+      if (mc < 20000) continue;
+      seen.set(mint, { mint, mc, ageH, complete: !!c.complete, sym: String(c.symbol ?? '?') });
     }
-    await sleep(200);
+  } else {
+    console.log(`  ! no data from frontend-api-v3 (likely blocked or changed)`);
   }
-  const sorted = [...seen.values()].sort((a, b) => b.gain - a.gain).slice(0, limit);
-  console.log(`[DISCOVERY] found ${sorted.length} real pump.fun runners (h24 gain ≥200%, liq ≥$30k):`);
+
+  // 2. Recently migrated (graduated to PumpSwap) — у них уже есть полная BC-история
+  const grad: any[] | null = await fetchJson(
+    'https://frontend-api-v3.pump.fun/coins?offset=0&limit=100&sort=last_trade_timestamp&order=DESC&includeNsfw=false&complete=true',
+  );
+  if (Array.isArray(grad)) {
+    for (const c of grad) {
+      const mint = String(c.mint ?? '');
+      if (!mint || seen.has(mint)) continue;
+      const created = Number(c.created_timestamp ?? 0);
+      const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
+      if (ageH > 7 * 24) continue;      // graduated should be recent
+      const mc = Number(c.usd_market_cap ?? 0);
+      if (mc < 50000) continue;
+      seen.set(mint, { mint, mc, ageH, complete: true, sym: String(c.symbol ?? '?') });
+    }
+  }
+
+  const sorted = [...seen.values()].sort((a, b) => b.mc - a.mc).slice(0, limit);
+  console.log(`[DISCOVERY] found ${sorted.length} pump.fun candidates:`);
   for (const r of sorted) {
-    console.log(`  ${r.mint}  gain=${r.gain.toFixed(0)}%  liq=$${r.liq.toFixed(0)}  age=${r.ageH.toFixed(1)}h`);
+    console.log(`  ${r.mint}  $${r.sym.padEnd(10)}  mc=$${(r.mc / 1000).toFixed(1)}k  age=${r.ageH.toFixed(1)}h  ${r.complete ? '[GRADUATED]' : '[on-BC]'}`);
   }
   return sorted.map(r => r.mint);
 }
