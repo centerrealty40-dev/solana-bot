@@ -361,7 +361,7 @@ async function sweepOne(c: Candidate, points: number[], windowStartMin: number)
     if (m.bcProgress > peakBc) peakBc = m.bcProgress;
     out[p] = evaluate(m);
   }
-  console.log(`  pool=${bcInfo.via}  txns=${txns.length}  age=${ageH.toFixed(1)}h  bc_active=${lifeH.toFixed(2)}h  peak_bc=${(peakBc * 100).toFixed(0)}%`);
+  console.log(`  bc=${bc.slice(0, 8)}…  txns=${txns.length}  age=${ageH.toFixed(1)}h  bc_active=${lifeH.toFixed(2)}h  peak_bc=${(peakBc * 100).toFixed(0)}%`);
   const cells = points.filter(p => p > windowStartMin).map(p => {
     const v = out[p];
     if (v.pass) return `${p}m:PASS(b=${v.m.uniqueBuyers},bc=${(v.m.bcProgress*100).toFixed(0)}%)`;
