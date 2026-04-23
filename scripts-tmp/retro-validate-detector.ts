@@ -38,12 +38,17 @@ const PUMP_FUN_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEw
 const WINDOW_START_MIN = 5;
 const AGE_AT_DECISION_MIN = 15;       // оцениваем состояние в этой точке
 
-const MIN_UNIQUE_BUYERS = 20;
-const MIN_BUY_SOL = 5;
-const MIN_BUY_SELL_RATIO = 1.5;
-const MAX_TOP_BUYER_SHARE = 0.30;
-const MIN_BC_PROGRESS = 0.25;
-const MAX_BC_PROGRESS = 0.90;
+// strict (default) = из runner-detector
+const STRICT = {
+  MIN_UNIQUE_BUYERS: 20, MIN_BUY_SOL: 5, MIN_BUY_SELL_RATIO: 1.5,
+  MAX_TOP_BUYER_SHARE: 0.30, MIN_BC_PROGRESS: 0.25, MAX_BC_PROGRESS: 0.90,
+};
+// relaxed — для калибровки: поймём, ловит ли вообще
+const RELAXED = {
+  MIN_UNIQUE_BUYERS: 5, MIN_BUY_SOL: 1, MIN_BUY_SELL_RATIO: 1.0,
+  MAX_TOP_BUYER_SHARE: 0.60, MIN_BC_PROGRESS: 0.05, MAX_BC_PROGRESS: 0.99,
+};
+let FILTERS = STRICT;
 const BC_GRADUATION_SOL = 85;
 
 // =====================================================================
@@ -82,36 +87,40 @@ function bondingCurvePda(mint: string): string {
 // DISCOVERY
 // =====================================================================
 async function discoverRunners(limit: number): Promise<string[]> {
-  console.log(`\n[DISCOVERY] fetching top boosted pump.fun tokens from DexScreener...`);
-  // 1. token-boosts/top/v1 — те кого реально продвигали, т.е. прошли runner stage
-  const boosts: any[] | null = await fetchJson(`https://api.dexscreener.com/token-boosts/top/v1`);
-  const mints: string[] = [];
-  if (Array.isArray(boosts)) {
-    for (const b of boosts) {
-      if (b.chainId !== 'solana') continue;
-      const addr = String(b.tokenAddress ?? '');
-      if (!addr.endsWith('pump')) continue;   // нас интересуют только pump.fun mint'ы
-      mints.push(addr);
-      if (mints.length >= limit) break;
-    }
-  }
-  // 2. Fallback: trending search
-  if (mints.length < limit) {
-    const search: any = await fetchJson(`https://api.dexscreener.com/latest/dex/search?q=pump`);
-    const pairs = Array.isArray(search?.pairs) ? search.pairs : [];
-    const seen = new Set(mints);
+  console.log(`\n[DISCOVERY] fetching real pump.fun runners from DexScreener (filtering by priceChange.h24)...`);
+  // Тянем pairs по нескольким широким search-запросам, фильтруем по:
+  //  - chainId=solana, mint endsWith 'pump'
+  //  - pairCreatedAt < 14 days
+  //  - priceChange.h24 ≥ 200% (реальный pump, не просто boost)
+  //  - liquidity.usd ≥ 30000
+  const queries = ['solana', 'pump', 'sol', 'meme', 'dog', 'cat', 'pepe', 'ai'];
+  const seen = new Map<string, { mint: string; gain: number; liq: number; ageH: number }>();
+  const now = Date.now();
+  for (const q of queries) {
+    const j: any = await fetchJson(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`);
+    const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
     for (const p of pairs) {
       if (p.chainId !== 'solana') continue;
       const mint = p.baseToken?.address;
       if (!mint || !mint.endsWith('pump')) continue;
       if (seen.has(mint)) continue;
-      if (Number(p.liquidity?.usd ?? 0) < 20000) continue;
-      mints.push(mint); seen.add(mint);
-      if (mints.length >= limit) break;
+      const created = Number(p.pairCreatedAt ?? 0);
+      const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
+      if (ageH > 14 * 24 || ageH < 1) continue;
+      const liq = Number(p.liquidity?.usd ?? 0);
+      if (liq < 30000) continue;
+      const gain = Number(p.priceChange?.h24 ?? 0);
+      if (gain < 200) continue;  // < 3x за 24h — не runner
+      seen.set(mint, { mint, gain, liq, ageH });
     }
+    await sleep(200);
   }
-  console.log(`[DISCOVERY] found ${mints.length} pump.fun runners`);
-  return mints;
+  const sorted = [...seen.values()].sort((a, b) => b.gain - a.gain).slice(0, limit);
+  console.log(`[DISCOVERY] found ${sorted.length} real pump.fun runners (h24 gain ≥200%, liq ≥$30k):`);
+  for (const r of sorted) {
+    console.log(`  ${r.mint}  gain=${r.gain.toFixed(0)}%  liq=$${r.liq.toFixed(0)}  age=${r.ageH.toFixed(1)}h`);
+  }
+  return sorted.map(r => r.mint);
 }
 
 // =====================================================================
@@ -231,16 +240,16 @@ interface Verdict { pass: boolean; reasons: string[]; m: Metrics; }
 
 function evaluate(m: Metrics): Verdict {
   const r: string[] = [];
-  if (m.uniqueBuyers < MIN_UNIQUE_BUYERS) r.push(`buyers=${m.uniqueBuyers}<${MIN_UNIQUE_BUYERS}`);
-  if (m.sumBuySol < MIN_BUY_SOL) r.push(`buy_sol=${m.sumBuySol.toFixed(2)}<${MIN_BUY_SOL}`);
-  if (m.sumSellSol > 0 && m.sumBuySol / m.sumSellSol < MIN_BUY_SELL_RATIO)
-    r.push(`b/s=${(m.sumBuySol / m.sumSellSol).toFixed(2)}<${MIN_BUY_SELL_RATIO}`);
-  if (m.topBuyerShare > MAX_TOP_BUYER_SHARE)
-    r.push(`top=${(m.topBuyerShare * 100).toFixed(0)}%>${MAX_TOP_BUYER_SHARE * 100}%`);
-  if (m.bcProgress < MIN_BC_PROGRESS)
-    r.push(`bc=${(m.bcProgress * 100).toFixed(0)}%<${MIN_BC_PROGRESS * 100}%`);
-  if (m.bcProgress > MAX_BC_PROGRESS)
-    r.push(`bc=${(m.bcProgress * 100).toFixed(0)}%>${MAX_BC_PROGRESS * 100}%_graduated`);
+  if (m.uniqueBuyers < FILTERS.MIN_UNIQUE_BUYERS) r.push(`buyers=${m.uniqueBuyers}<${FILTERS.MIN_UNIQUE_BUYERS}`);
+  if (m.sumBuySol < FILTERS.MIN_BUY_SOL) r.push(`buy_sol=${m.sumBuySol.toFixed(2)}<${FILTERS.MIN_BUY_SOL}`);
+  if (m.sumSellSol > 0 && m.sumBuySol / m.sumSellSol < FILTERS.MIN_BUY_SELL_RATIO)
+    r.push(`b/s=${(m.sumBuySol / m.sumSellSol).toFixed(2)}<${FILTERS.MIN_BUY_SELL_RATIO}`);
+  if (m.topBuyerShare > FILTERS.MAX_TOP_BUYER_SHARE)
+    r.push(`top=${(m.topBuyerShare * 100).toFixed(0)}%>${FILTERS.MAX_TOP_BUYER_SHARE * 100}%`);
+  if (m.bcProgress < FILTERS.MIN_BC_PROGRESS)
+    r.push(`bc=${(m.bcProgress * 100).toFixed(0)}%<${FILTERS.MIN_BC_PROGRESS * 100}%`);
+  if (m.bcProgress > FILTERS.MAX_BC_PROGRESS)
+    r.push(`bc=${(m.bcProgress * 100).toFixed(0)}%>${FILTERS.MAX_BC_PROGRESS * 100}%_graduated`);
   return { pass: r.length === 0, reasons: r, m };
 }
 
@@ -258,6 +267,7 @@ function parseArgs() {
     limit: parseInt(get('--limit') ?? '15', 10),
     ageAtDecision: parseInt(get('--age-min') ?? String(AGE_AT_DECISION_MIN), 10),
     windowStart: parseInt(get('--window-start') ?? String(WINDOW_START_MIN), 10),
+    relaxed: has('--relaxed'),
     sweep: sweepRaw
       ? sweepRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0)
       : null as number[] | null,
@@ -302,26 +312,32 @@ async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMi
  * в нескольких decision-точках. Помогает найти оптимальное окно входа.
  */
 async function sweepOne(mint: string, points: number[], windowStartMin: number)
-    : Promise<{ creationTs: number; perPoint: Record<number, Verdict>; txnsCount: number } | null> {
+    : Promise<{ creationTs: number; perPoint: Record<number, Verdict>; txnsCount: number; peakBc: number } | null> {
   const bc = bondingCurvePda(mint);
   const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
+  if (txns.length === 0) { console.log(`  ! NO txns on BC ${bc} → likely already migrated to Raydium`); return null; }
   const creationTs = txns[0].timestamp * 1000;
+  const lastTs = txns[txns.length - 1].timestamp * 1000;
+  const ageH = (Date.now() - creationTs) / 3_600_000;
+  const lifeH = (lastTs - creationTs) / 3_600_000;
+
   const out: Record<number, Verdict> = {};
+  let peakBc = 0;
   for (const p of points) {
     if (p <= windowStartMin) continue;
     const { m } = metricsAt(txns, mint, bc, creationTs, windowStartMin, p);
+    if (m.bcProgress > peakBc) peakBc = m.bcProgress;
     out[p] = evaluate(m);
   }
-  // короткая распечатка
+  console.log(`  txns_on_bc=${txns.length}  age=${ageH.toFixed(1)}h  bc_active=${lifeH.toFixed(2)}h  peak_bc=${(peakBc * 100).toFixed(0)}%`);
   const cells = points.filter(p => p > windowStartMin).map(p => {
     const v = out[p];
     if (v.pass) return `${p}m:PASS(b=${v.m.uniqueBuyers},bc=${(v.m.bcProgress*100).toFixed(0)}%)`;
     const r = v.reasons[0]?.split('=')[0] ?? '?';
-    return `${p}m:${r}`;
+    return `${p}m:${r}(b=${v.m.uniqueBuyers},bc=${(v.m.bcProgress*100).toFixed(0)}%)`;
   });
   console.log(`  ${cells.join('  ')}`);
-  return { creationTs, perPoint: out, txnsCount: txns.length };
+  return { creationTs, perPoint: out, txnsCount: txns.length, peakBc };
 }
 
 async function main() {
@@ -336,6 +352,7 @@ async function main() {
     if (mints.length === 0) { console.log('No mints discovered.'); process.exit(0); }
   }
 
+  if (args.relaxed) FILTERS = RELAXED;
   console.log(`\n=== RETRO-VALIDATE RUNNER DETECTOR ===`);
   console.log(`Mints: ${mints.length}`);
   if (args.sweep) {
@@ -344,8 +361,9 @@ async function main() {
     console.log(`Decision point: ${args.ageAtDecision} min`);
   }
   console.log(`Window start: ${args.windowStart} min`);
-  console.log(`Filters: buyers≥${MIN_UNIQUE_BUYERS}, buy_sol≥${MIN_BUY_SOL}, b/s≥${MIN_BUY_SELL_RATIO}, ` +
-              `top≤${MAX_TOP_BUYER_SHARE * 100}%, bc∈[${MIN_BC_PROGRESS * 100}..${MAX_BC_PROGRESS * 100}]%`);
+  console.log(`Filters [${args.relaxed ? 'RELAXED' : 'STRICT'}]: ` +
+              `buyers≥${FILTERS.MIN_UNIQUE_BUYERS}, buy_sol≥${FILTERS.MIN_BUY_SOL}, b/s≥${FILTERS.MIN_BUY_SELL_RATIO}, ` +
+              `top≤${FILTERS.MAX_TOP_BUYER_SHARE * 100}%, bc∈[${FILTERS.MIN_BC_PROGRESS * 100}..${FILTERS.MAX_BC_PROGRESS * 100}]%`);
 
   // ===== SWEEP MODE =====
   if (args.sweep) {
