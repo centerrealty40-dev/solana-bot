@@ -41,7 +41,7 @@ const AGE_AT_DECISION_MIN = 15;       // оцениваем состояние �
 // strict (default) = из runner-detector
 const STRICT = {
   MIN_UNIQUE_BUYERS: 20, MIN_BUY_SOL: 5, MIN_BUY_SELL_RATIO: 1.5,
-  MAX_TOP_BUYER_SHARE: 0.30, MIN_BC_PROGRESS: 0.25, MAX_BC_PROGRESS: 0.95,
+  MAX_TOP_BUYER_SHARE: 0.35, MIN_BC_PROGRESS: 0.25, MAX_BC_PROGRESS: 0.95,
 };
 // relaxed — для калибровки: поймём, ловит ли вообще
 const RELAXED = {
@@ -151,6 +151,48 @@ async function discoverRunners(limit: number): Promise<Candidate[]> {
                 `parts=${r.participants}  ${tag}`);
   }
   return sorted;
+}
+
+/**
+ * Control set: random pump.fun токены того же возраста которые НЕ стали runners
+ *   (ATH < $20k за всё время существования).
+ * Используется для измерения precision: сколько false positives даёт детектор.
+ */
+async function discoverNonRunners(limit: number): Promise<Candidate[]> {
+  console.log(`\n[CONTROL SET] fetching pump.fun NON-runners (ATH < $20k, age 4-48h)...`);
+  const seen = new Map<string, Candidate>();
+  const now = Date.now();
+
+  // Тащим страницами по 200 свежих токенов и фильтруем тех что не пампили
+  for (let offset = 0; offset < 800 && seen.size < limit * 3; offset += 200) {
+    const arr: any[] | null = await fetchJson(
+      `https://frontend-api-v3.pump.fun/coins?offset=${offset}&limit=200&sort=created_timestamp&order=DESC&includeNsfw=false`,
+    );
+    if (!Array.isArray(arr)) break;
+    for (const c of arr) {
+      const cand = pickCandidate(c, now);
+      if (!cand) continue;
+      if (cand.ageH < 4 || cand.ageH > 48) continue;       // прожили хотя бы 4ч — судьба ясна
+      if (cand.athMc >= 20000) continue;                    // были runner'ом или почти — не control
+      if (seen.has(cand.mint)) continue;
+      seen.set(cand.mint, cand);
+    }
+    await sleep(200);
+  }
+
+  // Random sample (чтобы не брать только последние подряд)
+  const all = [...seen.values()];
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+  const sample = all.slice(0, limit);
+  console.log(`[CONTROL SET] sampled ${sample.length} non-runners from ${all.length} candidates:`);
+  for (const r of sample) {
+    console.log(`  ${r.mint}  $${r.symbol.padEnd(10)}  ath=$${(r.athMc / 1000).toFixed(1)}k  ` +
+                `now=$${(r.mc / 1000).toFixed(1)}k  age=${r.ageH.toFixed(1)}h`);
+  }
+  return sample;
 }
 
 // =====================================================================
@@ -344,6 +386,7 @@ function parseArgs() {
     mints: (get('--mints') ?? '').split(',').map(s => s.trim()).filter(Boolean),
     auto: has('--auto'),
     limit: parseInt(get('--limit') ?? '15', 10),
+    controlsLimit: parseInt(get('--with-controls') ?? '0', 10),
     ageAtDecision: parseInt(get('--age-min') ?? String(AGE_AT_DECISION_MIN), 10),
     windowStart: parseInt(get('--window-start') ?? String(WINDOW_START_MIN), 10),
     relaxed: has('--relaxed'),
@@ -460,30 +503,43 @@ async function main() {
   // ===== SWEEP MODE =====
   if (args.sweep) {
     const points = args.sweep;
-    const sweepResults: Array<{ mint: string; perPoint: Record<number, Verdict> | null }> = [];
-    for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i];
-      console.log(`\n[${i + 1}/${candidates.length}] ${c.mint}  $${c.symbol}  ATH=$${(c.athMc / 1000).toFixed(0)}k`);
+    // Подмешиваем control set, помечая label
+    let controls: Candidate[] = [];
+    if (args.controlsLimit > 0) {
+      controls = await discoverNonRunners(args.controlsLimit);
+    }
+    const all: Array<{ c: Candidate; label: 'runner' | 'control' }> = [
+      ...candidates.map(c => ({ c, label: 'runner' as const })),
+      ...controls.map(c => ({ c, label: 'control' as const })),
+    ];
+
+    const sweepResults: Array<{ mint: string; label: 'runner' | 'control'; perPoint: Record<number, Verdict> | null }> = [];
+    for (let i = 0; i < all.length; i++) {
+      const { c, label } = all[i];
+      console.log(`\n[${i + 1}/${all.length}] ${label === 'control' ? '[CTRL] ' : ''}${c.mint}  $${c.symbol}  ATH=$${(c.athMc / 1000).toFixed(0)}k`);
       try {
         const r = await sweepOne(c, points, args.windowStart);
-        sweepResults.push({ mint: c.mint, perPoint: r?.perPoint ?? null });
+        sweepResults.push({ mint: c.mint, label, perPoint: r?.perPoint ?? null });
       } catch (err) {
         console.log(`  ERROR: ${err}`);
-        sweepResults.push({ mint: c.mint, perPoint: null });
+        sweepResults.push({ mint: c.mint, label, perPoint: null });
       }
       await sleep(500);
     }
 
-    console.log(`\n${'='.repeat(72)}`);
-    console.log(`SWEEP RECALL by decision point`);
-    console.log('='.repeat(72));
-    const evaluated = sweepResults.filter(r => r.perPoint).length;
-    console.log(`Evaluated: ${evaluated}/${sweepResults.length}\n`);
-    console.log(`  point  PASS  recall  fail_breakdown`);
+    const runnerRes = sweepResults.filter(r => r.label === 'runner');
+    const controlRes = sweepResults.filter(r => r.label === 'control');
+
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`RECALL (runners) by decision point`);
+    console.log('='.repeat(80));
+    const rEval = runnerRes.filter(r => r.perPoint).length;
+    console.log(`Evaluated: ${rEval}/${runnerRes.length}\n`);
+    console.log(`  point  TP   recall  fail_breakdown`);
     for (const p of points) {
       if (p <= args.windowStart) continue;
       let pass = 0; const reasons = new Map<string, number>();
-      for (const r of sweepResults) {
+      for (const r of runnerRes) {
         const v = r.perPoint?.[p];
         if (!v) continue;
         if (v.pass) pass++;
@@ -495,16 +551,58 @@ async function main() {
       const breakdown = [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 4)
         .map(([k, n]) => `${k}=${n}`).join(' ');
       console.log(`  ${String(p).padStart(3)}m   ${String(pass).padStart(3)}   ` +
-                  `${(pass / Math.max(evaluated, 1) * 100).toFixed(0).padStart(3)}%   ${breakdown}`);
+                  `${(pass / Math.max(rEval, 1) * 100).toFixed(0).padStart(3)}%   ${breakdown}`);
     }
 
-    // Per-mint best-window
-    console.log(`\nPer-mint best PASS window:`);
-    for (const r of sweepResults) {
+    if (controlRes.length > 0) {
+      const cEval = controlRes.filter(r => r.perPoint).length;
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`PRECISION on CONTROL SET (non-runners) — false positive analysis`);
+      console.log('='.repeat(80));
+      console.log(`Evaluated: ${cEval}/${controlRes.length}\n`);
+      console.log(`  point  FP   FPR    precision (TP/(TP+FP))`);
+      for (const p of points) {
+        if (p <= args.windowStart) continue;
+        const tp = runnerRes.filter(r => r.perPoint?.[p]?.pass).length;
+        const fp = controlRes.filter(r => r.perPoint?.[p]?.pass).length;
+        const fpr = fp / Math.max(cEval, 1);
+        const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+        console.log(`  ${String(p).padStart(3)}m   ${String(fp).padStart(3)}   ` +
+                    `${(fpr * 100).toFixed(0).padStart(3)}%    ${(precision * 100).toFixed(0)}%`);
+      }
+
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`COMBINED METRICS (precision × recall)`);
+      console.log('='.repeat(80));
+      console.log(`  point  recall  precision  F1     trades_per_runner_seen`);
+      for (const p of points) {
+        if (p <= args.windowStart) continue;
+        const tp = runnerRes.filter(r => r.perPoint?.[p]?.pass).length;
+        const fp = controlRes.filter(r => r.perPoint?.[p]?.pass).length;
+        const recall = tp / Math.max(rEval, 1);
+        const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+        const f1 = recall + precision > 0 ? 2 * recall * precision / (recall + precision) : 0;
+        // Estimate: при равной плотности runner:control = 1:N в реальности (где N ~ много)
+        // expected trades per actual runner caught = tp_rate / fp_rate (как поднять precision)
+        console.log(`  ${String(p).padStart(3)}m   ${(recall * 100).toFixed(0).padStart(4)}%   ${(precision * 100).toFixed(0).padStart(4)}%      ${f1.toFixed(2)}`);
+      }
+    }
+
+    console.log(`\nPer-mint best PASS window (RUNNERS):`);
+    for (const r of runnerRes) {
       if (!r.perPoint) { console.log(`  ${r.mint.slice(0, 8)}…  no data`); continue; }
       const passWindows = points.filter(p => r.perPoint![p]?.pass);
       const tag = passWindows.length ? `PASS @ ${passWindows.join(',')} min` : 'never PASS';
       console.log(`  ${r.mint.slice(0, 8)}…  ${tag}`);
+    }
+    if (controlRes.length > 0) {
+      console.log(`\nFalse positives in CONTROL SET (these would have been losing trades):`);
+      for (const r of controlRes) {
+        if (!r.perPoint) continue;
+        const passWindows = points.filter(p => r.perPoint![p]?.pass);
+        if (passWindows.length === 0) continue;
+        console.log(`  ${r.mint.slice(0, 8)}…  PASS @ ${passWindows.join(',')} min`);
+      }
     }
     process.exit(0);
   }
