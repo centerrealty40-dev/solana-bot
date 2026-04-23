@@ -251,23 +251,23 @@ function parseArgs() {
   const a = process.argv.slice(2);
   const get = (k: string) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
   const has = (k: string) => a.includes(k);
+  const sweepRaw = get('--sweep');
   return {
     mints: (get('--mints') ?? '').split(',').map(s => s.trim()).filter(Boolean),
     auto: has('--auto'),
     limit: parseInt(get('--limit') ?? '15', 10),
     ageAtDecision: parseInt(get('--age-min') ?? String(AGE_AT_DECISION_MIN), 10),
     windowStart: parseInt(get('--window-start') ?? String(WINDOW_START_MIN), 10),
+    sweep: sweepRaw
+      ? sweepRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0)
+      : null as number[] | null,
   };
 }
 
-async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMin: number): Promise<Verdict | null> {
-  const bc = bondingCurvePda(mint);
-  const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
-  const creationTs = txns[0].timestamp * 1000;
+function metricsAt(txns: Txn[], mint: string, bc: string, creationTs: number,
+                   windowStartMin: number, decisionMin: number): { m: Metrics; trades: number } {
   const windowStart = creationTs + windowStartMin * 60_000;
-  const decisionTs = creationTs + ageAtDecisionMin * 60_000;
-
+  const decisionTs = creationTs + decisionMin * 60_000;
   const trades: Trade[] = [];
   for (const tx of txns) {
     const ts = tx.timestamp * 1000;
@@ -276,17 +276,52 @@ async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMi
     const tr = parseTrade(tx, mint, bc);
     if (tr) trades.push(tr);
   }
+  return { m: computeMetrics(trades), trades: trades.length };
+}
 
-  const m = computeMetrics(trades);
+async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMin: number): Promise<Verdict | null> {
+  const bc = bondingCurvePda(mint);
+  const txns = await fetchEarlyBcTxns(bc, 25);
+  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
+  const creationTs = txns[0].timestamp * 1000;
+
+  const { m, trades } = metricsAt(txns, mint, bc, creationTs, windowStartMin, ageAtDecisionMin);
   const v = evaluate(m);
   console.log(
     `  [${v.pass ? 'PASS' : 'FAIL'}] buyers=${m.uniqueBuyers}  ` +
     `buy_sol=${m.sumBuySol.toFixed(2)} (sell=${m.sumSellSol.toFixed(2)})  ` +
     `top=${(m.topBuyerShare * 100).toFixed(0)}%  bc=${(m.bcProgress * 100).toFixed(0)}%  ` +
-    `trades=${trades.length}  txns_scanned=${txns.length}` +
+    `trades=${trades}  txns_scanned=${txns.length}` +
     (v.reasons.length ? `\n        reasons: ${v.reasons.join(' | ')}` : ''),
   );
   return v;
+}
+
+/**
+ * Sweep: для каждого mint фетчим транзы один раз, оцениваем метрики
+ * в нескольких decision-точках. Помогает найти оптимальное окно входа.
+ */
+async function sweepOne(mint: string, points: number[], windowStartMin: number)
+    : Promise<{ creationTs: number; perPoint: Record<number, Verdict>; txnsCount: number } | null> {
+  const bc = bondingCurvePda(mint);
+  const txns = await fetchEarlyBcTxns(bc, 25);
+  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
+  const creationTs = txns[0].timestamp * 1000;
+  const out: Record<number, Verdict> = {};
+  for (const p of points) {
+    if (p <= windowStartMin) continue;
+    const { m } = metricsAt(txns, mint, bc, creationTs, windowStartMin, p);
+    out[p] = evaluate(m);
+  }
+  // короткая распечатка
+  const cells = points.filter(p => p > windowStartMin).map(p => {
+    const v = out[p];
+    if (v.pass) return `${p}m:PASS(b=${v.m.uniqueBuyers},bc=${(v.m.bcProgress*100).toFixed(0)}%)`;
+    const r = v.reasons[0]?.split('=')[0] ?? '?';
+    return `${p}m:${r}`;
+  });
+  console.log(`  ${cells.join('  ')}`);
+  return { creationTs, perPoint: out, txnsCount: txns.length };
 }
 
 async function main() {
@@ -303,11 +338,68 @@ async function main() {
 
   console.log(`\n=== RETRO-VALIDATE RUNNER DETECTOR ===`);
   console.log(`Mints: ${mints.length}`);
-  console.log(`Decision point: ${args.ageAtDecision} min from creation`);
-  console.log(`Window: [${args.windowStart}..${args.ageAtDecision}] min`);
+  if (args.sweep) {
+    console.log(`SWEEP mode — decision points: ${args.sweep.join(', ')} min`);
+  } else {
+    console.log(`Decision point: ${args.ageAtDecision} min`);
+  }
+  console.log(`Window start: ${args.windowStart} min`);
   console.log(`Filters: buyers≥${MIN_UNIQUE_BUYERS}, buy_sol≥${MIN_BUY_SOL}, b/s≥${MIN_BUY_SELL_RATIO}, ` +
               `top≤${MAX_TOP_BUYER_SHARE * 100}%, bc∈[${MIN_BC_PROGRESS * 100}..${MAX_BC_PROGRESS * 100}]%`);
 
+  // ===== SWEEP MODE =====
+  if (args.sweep) {
+    const points = args.sweep;
+    const sweepResults: Array<{ mint: string; perPoint: Record<number, Verdict> | null }> = [];
+    for (let i = 0; i < mints.length; i++) {
+      const mint = mints[i];
+      console.log(`\n[${i + 1}/${mints.length}] ${mint}`);
+      try {
+        const r = await sweepOne(mint, points, args.windowStart);
+        sweepResults.push({ mint, perPoint: r?.perPoint ?? null });
+      } catch (err) {
+        console.log(`  ERROR: ${err}`);
+        sweepResults.push({ mint, perPoint: null });
+      }
+      await sleep(500);
+    }
+
+    console.log(`\n${'='.repeat(72)}`);
+    console.log(`SWEEP RECALL by decision point`);
+    console.log('='.repeat(72));
+    const evaluated = sweepResults.filter(r => r.perPoint).length;
+    console.log(`Evaluated: ${evaluated}/${sweepResults.length}\n`);
+    console.log(`  point  PASS  recall  fail_breakdown`);
+    for (const p of points) {
+      if (p <= args.windowStart) continue;
+      let pass = 0; const reasons = new Map<string, number>();
+      for (const r of sweepResults) {
+        const v = r.perPoint?.[p];
+        if (!v) continue;
+        if (v.pass) pass++;
+        else for (const rsn of v.reasons) {
+          const key = rsn.split('=')[0] + (rsn.includes('<') ? '_lo' : rsn.includes('>') ? '_hi' : '');
+          reasons.set(key, (reasons.get(key) ?? 0) + 1);
+        }
+      }
+      const breakdown = [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 4)
+        .map(([k, n]) => `${k}=${n}`).join(' ');
+      console.log(`  ${String(p).padStart(3)}m   ${String(pass).padStart(3)}   ` +
+                  `${(pass / Math.max(evaluated, 1) * 100).toFixed(0).padStart(3)}%   ${breakdown}`);
+    }
+
+    // Per-mint best-window
+    console.log(`\nPer-mint best PASS window:`);
+    for (const r of sweepResults) {
+      if (!r.perPoint) { console.log(`  ${r.mint.slice(0, 8)}…  no data`); continue; }
+      const passWindows = points.filter(p => r.perPoint![p]?.pass);
+      const tag = passWindows.length ? `PASS @ ${passWindows.join(',')} min` : 'never PASS';
+      console.log(`  ${r.mint.slice(0, 8)}…  ${tag}`);
+    }
+    process.exit(0);
+  }
+
+  // ===== SINGLE-POINT MODE =====
   const results: Array<{ mint: string; v: Verdict | null }> = [];
   for (let i = 0; i < mints.length; i++) {
     const mint = mints[i];
@@ -326,7 +418,6 @@ async function main() {
   const passed = results.filter(r => r.v?.pass).length;
   const failed = results.filter(r => r.v && !r.v.pass).length;
 
-  // Top reasons for failure
   const reasonCounts = new Map<string, number>();
   for (const r of results) {
     if (!r.v || r.v.pass) continue;
@@ -348,18 +439,6 @@ async function main() {
       console.log(`  ${k.padEnd(18)} ${n} (${(n / failed * 100).toFixed(0)}%)`);
     }
   }
-
-  console.log(`\nInterpretation:`);
-  if (evaluated < results.length * 0.5) {
-    console.log(`  ⚠ Too many unresolved — Helius API limits or BC no longer exists (migrated). Retry with lower --limit.`);
-  } else if (passed / evaluated >= 0.5) {
-    console.log(`  ✓ Recall ≥50% — детектор ловит большинство runners в окне. Фильтры рабочие.`);
-  } else if (passed / evaluated >= 0.2) {
-    console.log(`  ~ Recall 20-50% — пропускаем многих runners. Смотри top reasons: если 'bc=<25%' — снижай MIN_BC_PROGRESS; если 'buyers<20' — снижай MIN_UNIQUE_BUYERS.`);
-  } else {
-    console.log(`  ✗ Recall <20% — фильтры слишком жёсткие для runner'ов в окне 5..15 мин. Большая часть runners вирусятся позже. Либо расширяем окно, либо ослабляем пороги.`);
-  }
-
   process.exit(0);
 }
 

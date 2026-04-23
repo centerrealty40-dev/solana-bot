@@ -63,7 +63,8 @@
     "runner:detect": "tsx scripts-tmp/runner-detector.ts",
     "runner:detect:once": "tsx scripts-tmp/runner-detector.ts --once",
     "retro:validate": "tsx scripts-tmp/retro-validate-detector.ts",
-    "retro:validate:auto": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15"
+    "retro:validate:auto": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15",
+    "retro:sweep": "tsx scripts-tmp/retro-validate-detector.ts --auto --limit 15 --sweep 5,10,15,20,30,45,60,90"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
