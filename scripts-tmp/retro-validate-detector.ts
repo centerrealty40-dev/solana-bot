@@ -159,28 +159,34 @@ async function discoverRunners(limit: number): Promise<Candidate[]> {
  * Используется для измерения precision: сколько false positives даёт детектор.
  */
 async function discoverNonRunners(limit: number): Promise<Candidate[]> {
-  console.log(`\n[CONTROL SET] fetching pump.fun NON-runners (ATH < $20k, age 4-48h)...`);
+  console.log(`\n[CONTROL SET] fetching pump.fun NON-runners (ATH < $15k, age 2-24h)...`);
   const seen = new Map<string, Candidate>();
   const now = Date.now();
 
-  // Тащим страницами по 200 свежих токенов и фильтруем тех что не пампили
-  for (let offset = 0; offset < 800 && seen.size < limit * 3; offset += 200) {
+  // На pump.fun ~4-5k tokens/day = ~200/hour. Для возраста 2-24h нужны offset ~400..5000.
+  // Идём с большим шагом и собираем кандидатов.
+  const offsets = [500, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
+  for (const offset of offsets) {
+    if (seen.size >= limit * 4) break;
     const arr: any[] | null = await fetchJson(
       `https://frontend-api-v3.pump.fun/coins?offset=${offset}&limit=200&sort=created_timestamp&order=DESC&includeNsfw=false`,
     );
-    if (!Array.isArray(arr)) break;
+    if (!Array.isArray(arr)) continue;
+    let acceptedFromPage = 0;
     for (const c of arr) {
       const cand = pickCandidate(c, now);
       if (!cand) continue;
-      if (cand.ageH < 4 || cand.ageH > 48) continue;       // прожили хотя бы 4ч — судьба ясна
-      if (cand.athMc >= 20000) continue;                    // были runner'ом или почти — не control
+      if (cand.ageH < 2 || cand.ageH > 24) continue;
+      if (cand.athMc >= 15000) continue;             // были runner — не control
       if (seen.has(cand.mint)) continue;
       seen.set(cand.mint, cand);
+      acceptedFromPage++;
     }
     await sleep(200);
+    if (acceptedFromPage === 0 && offset >= 3000) break;
   }
 
-  // Random sample (чтобы не брать только последние подряд)
+  // Random sample
   const all = [...seen.values()];
   for (let i = all.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -190,7 +196,7 @@ async function discoverNonRunners(limit: number): Promise<Candidate[]> {
   console.log(`[CONTROL SET] sampled ${sample.length} non-runners from ${all.length} candidates:`);
   for (const r of sample) {
     console.log(`  ${r.mint}  $${r.symbol.padEnd(10)}  ath=$${(r.athMc / 1000).toFixed(1)}k  ` +
-                `now=$${(r.mc / 1000).toFixed(1)}k  age=${r.ageH.toFixed(1)}h`);
+                `now=$${(r.mc / 1000).toFixed(2)}k  age=${r.ageH.toFixed(1)}h`);
   }
   return sample;
 }
