@@ -26,6 +26,8 @@
 import 'dotenv/config';
 import { PublicKey } from '@solana/web3.js';
 import { fetch } from 'undici';
+import { sql as dsql } from 'drizzle-orm';
+import { db } from '../src/core/db/client.js';
 
 const HELIUS_KEY = process.env.HELIUS_API_KEY!;
 if (!HELIUS_KEY) { console.error('HELIUS_API_KEY missing'); process.exit(1); }
@@ -132,7 +134,9 @@ async function discoverRunners(limit: number): Promise<Candidate[]> {
     for (const c of arr) {
       const cand = pickCandidate(c, now);
       if (!cand) continue;
-      if (cand.ageH > 14 * 24 || cand.ageH < 0.05) continue;
+      // age ≤ 48h: для старых токенов Helius pagination (25 стр × 100 txns) не доходит до BC trades,
+      //   они теряются под лавиной post-graduation pumpswap транзакций
+      if (cand.ageH > 48 || cand.ageH < 0.05) continue;
       // фильтр: реальный runner — ATH ≥ $50k (не просто token который существует)
       if (cand.athMc < 50000) continue;
       if (!seen.has(cand.mint)) seen.set(cand.mint, cand);
@@ -155,50 +159,59 @@ async function discoverRunners(limit: number): Promise<Candidate[]> {
 
 /**
  * Control set: random pump.fun токены того же возраста которые НЕ стали runners
- *   (ATH < $20k за всё время существования).
- * Используется для измерения precision: сколько false positives даёт детектор.
+ *   (ATH < $15k за всё время существования).
+ * Источник: наша таблица `tokens`, которую наполняет pp:collector.
+ * pump.fun frontend-api ограничивает пагинацию до ~3500 строк (≈1ч глубина),
+ * чего недостаточно для возраста 2-24ч, поэтому идём через свою БД.
  */
 async function discoverNonRunners(limit: number): Promise<Candidate[]> {
-  console.log(`\n[CONTROL SET] fetching pump.fun NON-runners (ATH < $15k, age 2-24h)...`);
-  const seen = new Map<string, Candidate>();
+  console.log(`\n[CONTROL SET] fetching pump.fun NON-runners (ATH < $15k, age 2-24h) from local DB...`);
+
+  // Берём мinты возраста 2-24ч, добавленные нашим collector'ом
+  const sampleSize = Math.max(limit * 8, 80);
+  let dbRows: Array<{ mint: string; first_seen_at: any }> = [];
+  try {
+    const r: any = await db.execute(dsql.raw(`
+      SELECT mint, first_seen_at
+      FROM tokens
+      WHERE first_seen_at < now() - interval '2 hours'
+        AND first_seen_at > now() - interval '24 hours'
+      ORDER BY random()
+      LIMIT ${sampleSize}
+    `));
+    dbRows = Array.isArray(r) ? r : (r.rows ?? []);
+  } catch (err) {
+    console.log(`  ! DB query failed: ${err}`);
+    return [];
+  }
+  console.log(`  pulled ${dbRows.length} candidates from local DB (random sample)`);
+  if (dbRows.length === 0) {
+    console.log(`  ! no tokens in 2-24h window — pp:collector may not have been running long enough`);
+    return [];
+  }
+
+  // Для каждого делаем lightweight check ATH через pump.fun /coins/{mint}
   const now = Date.now();
-
-  // На pump.fun ~4-5k tokens/day = ~200/hour. Для возраста 2-24h нужны offset ~400..5000.
-  // Идём с большим шагом и собираем кандидатов.
-  const offsets = [500, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
-  for (const offset of offsets) {
-    if (seen.size >= limit * 4) break;
-    const arr: any[] | null = await fetchJson(
-      `https://frontend-api-v3.pump.fun/coins?offset=${offset}&limit=200&sort=created_timestamp&order=DESC&includeNsfw=false`,
-    );
-    if (!Array.isArray(arr)) continue;
-    let acceptedFromPage = 0;
-    for (const c of arr) {
-      const cand = pickCandidate(c, now);
-      if (!cand) continue;
-      if (cand.ageH < 2 || cand.ageH > 24) continue;
-      if (cand.athMc >= 15000) continue;             // были runner — не control
-      if (seen.has(cand.mint)) continue;
-      seen.set(cand.mint, cand);
-      acceptedFromPage++;
-    }
-    await sleep(200);
-    if (acceptedFromPage === 0 && offset >= 3000) break;
+  const out: Candidate[] = [];
+  let checked = 0, runnerSkipped = 0, missing = 0;
+  for (const row of dbRows) {
+    if (out.length >= limit) break;
+    checked++;
+    const j: any = await fetchJson(`https://frontend-api-v3.pump.fun/coins/${row.mint}`);
+    await sleep(120);
+    if (!j || !j.bonding_curve) { missing++; continue; }
+    const cand = pickCandidate(j, now);
+    if (!cand) { missing++; continue; }
+    if (cand.ageH < 2 || cand.ageH > 24) continue;        // sanity check (random может попасть)
+    if (cand.athMc >= 15000) { runnerSkipped++; continue; } // не control — был runner
+    out.push(cand);
   }
-
-  // Random sample
-  const all = [...seen.values()];
-  for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [all[i], all[j]] = [all[j], all[i]];
-  }
-  const sample = all.slice(0, limit);
-  console.log(`[CONTROL SET] sampled ${sample.length} non-runners from ${all.length} candidates:`);
-  for (const r of sample) {
-    console.log(`  ${r.mint}  $${r.symbol.padEnd(10)}  ath=$${(r.athMc / 1000).toFixed(1)}k  ` +
+  console.log(`  checked ${checked} mints: ${out.length} non-runners, ${runnerSkipped} skipped (ATH≥$15k), ${missing} no API data`);
+  for (const r of out) {
+    console.log(`  ${r.mint}  $${(r.symbol || '?').padEnd(10)}  ath=$${(r.athMc / 1000).toFixed(1)}k  ` +
                 `now=$${(r.mc / 1000).toFixed(2)}k  age=${r.ageH.toFixed(1)}h`);
   }
-  return sample;
+  return out;
 }
 
 // =====================================================================
