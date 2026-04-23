@@ -83,97 +83,74 @@ function bondingCurvePda(mint: string): string {
   return pda.toBase58();
 }
 
-/**
- * Автоопределение реального bonding curve / pool аккаунта для mint.
- *  1) Пробуем стандартный pump.fun BC PDA — если первая страница транзакций
- *     парсится в реальные трейды → возвращаем его.
- *  2) Иначе fallback: тащим транзакции на самом mint, ищем общего
- *     контрагента по nativeTransfer (с feePayer) и tokenTransfer (нашего mint).
- *     Это даёт нам реальный пул — будь то PumpSwap AMM, Raydium и т.д.
- */
-async function findBondingCurve(mint: string): Promise<{ addr: string; via: string } | null> {
-  const std = bondingCurvePda(mint);
-  const stdTxns = await heliusTxns(std);
-  for (const tx of stdTxns.slice(0, 15)) {
-    if (parseTrade(tx, mint, std)) return { addr: std, via: 'std-pda' };
-  }
-  // fallback — autodetect by mint history
-  const mintTxns = await heliusTxns(mint);
-  const score = new Map<string, number>();
-  for (const tx of mintTxns.slice(0, 25)) {
-    const signer = tx.feePayer;
-    const nativeCounterparties = new Set<string>();
-    for (const nt of tx.nativeTransfers ?? []) {
-      if (nt.fromUserAccount === signer && nt.toUserAccount !== signer) nativeCounterparties.add(nt.toUserAccount);
-      if (nt.toUserAccount === signer && nt.fromUserAccount !== signer) nativeCounterparties.add(nt.fromUserAccount);
-    }
-    const tokenParticipants = new Set<string>();
-    for (const tt of tx.tokenTransfers ?? []) {
-      if (tt.mint !== mint) continue;
-      if (tt.fromUserAccount && tt.fromUserAccount !== signer) tokenParticipants.add(tt.fromUserAccount);
-      if (tt.toUserAccount && tt.toUserAccount !== signer) tokenParticipants.add(tt.toUserAccount);
-    }
-    for (const c of nativeCounterparties) {
-      if (tokenParticipants.has(c)) score.set(c, (score.get(c) ?? 0) + 1);
-    }
-  }
-  if (score.size === 0) return null;
-  const best = [...score.entries()].sort((a, b) => b[1] - a[1])[0];
-  return { addr: best[0], via: `auto(${best[1]}/${mintTxns.length})` };
-}
 
 // =====================================================================
 // DISCOVERY
 // =====================================================================
-async function discoverRunners(limit: number): Promise<string[]> {
-  console.log(`\n[DISCOVERY] fetching top pump.fun tokens still on bonding curve (frontend-api-v3)...`);
-  // pump.fun internal API: топ по market_cap среди НЕgraduated (на BC)
-  // и среди graduated (recently migrated) — сравним обе категории
-  const seen = new Map<string, { mint: string; mc: number; ageH: number; complete: boolean; sym: string }>();
+interface Candidate {
+  mint: string;
+  symbol: string;
+  bondingCurve: string;
+  pumpSwapPool?: string;
+  complete: boolean;
+  ageH: number;
+  mc: number;
+  athMc: number;
+  athTs: number;        // timestamp пика
+  participants: number; // num_participants — встроенный ground truth активности
+}
+
+function pickCandidate(c: any, now: number): Candidate | null {
+  const mint = String(c?.mint ?? '');
+  const bc = String(c?.bonding_curve ?? '');
+  if (!mint || !bc) return null;
+  const created = Number(c.created_timestamp ?? 0);
+  const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
+  return {
+    mint, symbol: String(c.symbol ?? '?'), bondingCurve: bc,
+    pumpSwapPool: c.pump_swap_pool ? String(c.pump_swap_pool) : undefined,
+    complete: !!c.complete, ageH,
+    mc: Number(c.usd_market_cap ?? 0),
+    athMc: Number(c.ath_market_cap ?? 0),
+    athTs: Number(c.ath_market_cap_timestamp ?? 0),
+    participants: Number(c.num_participants ?? 0),
+  };
+}
+
+async function discoverRunners(limit: number): Promise<Candidate[]> {
+  console.log(`\n[DISCOVERY] fetching top pump.fun tokens (frontend-api-v3)...`);
+  const seen = new Map<string, Candidate>();
   const now = Date.now();
 
-  // 1. На BC, топ по mcap
-  const onBc: any[] | null = await fetchJson(
+  const lists = [
     'https://frontend-api-v3.pump.fun/coins?offset=0&limit=200&sort=usd_market_cap&order=DESC&includeNsfw=false',
-  );
-  if (Array.isArray(onBc)) {
-    for (const c of onBc) {
-      const mint = String(c.mint ?? '');
-      if (!mint) continue;
-      const created = Number(c.created_timestamp ?? 0);
-      const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
-      if (ageH > 14 * 24 || ageH < 0.05) continue;        // 14 days — 3 min
-      const mc = Number(c.usd_market_cap ?? 0);
-      if (mc < 20000) continue;
-      seen.set(mint, { mint, mc, ageH, complete: !!c.complete, sym: String(c.symbol ?? '?') });
-    }
-  } else {
-    console.log(`  ! no data from frontend-api-v3 (likely blocked or changed)`);
-  }
-
-  // 2. Recently migrated (graduated to PumpSwap) — у них уже есть полная BC-история
-  const grad: any[] | null = await fetchJson(
     'https://frontend-api-v3.pump.fun/coins?offset=0&limit=100&sort=last_trade_timestamp&order=DESC&includeNsfw=false&complete=true',
-  );
-  if (Array.isArray(grad)) {
-    for (const c of grad) {
-      const mint = String(c.mint ?? '');
-      if (!mint || seen.has(mint)) continue;
-      const created = Number(c.created_timestamp ?? 0);
-      const ageH = created > 0 ? (now - created) / 3_600_000 : 999;
-      if (ageH > 7 * 24) continue;      // graduated should be recent
-      const mc = Number(c.usd_market_cap ?? 0);
-      if (mc < 50000) continue;
-      seen.set(mint, { mint, mc, ageH, complete: true, sym: String(c.symbol ?? '?') });
+  ];
+  for (const url of lists) {
+    const arr: any[] | null = await fetchJson(url);
+    if (!Array.isArray(arr)) continue;
+    for (const c of arr) {
+      const cand = pickCandidate(c, now);
+      if (!cand) continue;
+      if (cand.ageH > 14 * 24 || cand.ageH < 0.05) continue;
+      // фильтр: реальный runner — ATH ≥ $50k (не просто token который существует)
+      if (cand.athMc < 50000) continue;
+      if (!seen.has(cand.mint)) seen.set(cand.mint, cand);
     }
+    await sleep(200);
   }
 
-  const sorted = [...seen.values()].sort((a, b) => b.mc - a.mc).slice(0, limit);
-  console.log(`[DISCOVERY] found ${sorted.length} pump.fun candidates:`);
+  // sort by ATH market cap — это самый честный ranking "runner-strength"
+  const sorted = [...seen.values()].sort((a, b) => b.athMc - a.athMc).slice(0, limit);
+  console.log(`[DISCOVERY] found ${sorted.length} pump.fun runners (ATH ≥ $50k):`);
   for (const r of sorted) {
-    console.log(`  ${r.mint}  $${r.sym.padEnd(10)}  mc=$${(r.mc / 1000).toFixed(1)}k  age=${r.ageH.toFixed(1)}h  ${r.complete ? '[GRADUATED]' : '[on-BC]'}`);
+    const tag = r.complete ? '[GRADUATED]' : '[on-BC]';
+    const drawdown = r.athMc > 0 ? `${((r.mc / r.athMc - 1) * 100).toFixed(0)}%` : '?';
+    console.log(`  ${r.mint}  $${r.symbol.padEnd(10)}  ath=$${(r.athMc / 1000).toFixed(0)}k  ` +
+                `now=$${(r.mc / 1000).toFixed(1)}k(${drawdown})  age=${r.ageH.toFixed(1)}h  ` +
+                `parts=${r.participants}  ${tag}`);
   }
-  return sorted.map(r => r.mint);
+  return sorted;
 }
 
 // =====================================================================
@@ -342,12 +319,11 @@ function metricsAt(txns: Txn[], mint: string, bc: string, creationTs: number,
   return { m: computeMetrics(trades), trades: trades.length };
 }
 
-async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMin: number): Promise<Verdict | null> {
-  const bcInfo = await findBondingCurve(mint);
-  if (!bcInfo) { console.log(`  ! cannot locate BC/pool for mint`); return null; }
-  const bc = bcInfo.addr;
+async function validateOne(c: Candidate, ageAtDecisionMin: number, windowStartMin: number): Promise<Verdict | null> {
+  const mint = c.mint;
+  const bc = c.bondingCurve;
   const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc} (via ${bcInfo.via})`); return null; }
+  if (txns.length === 0) { console.log(`  ! no txns on BC ${bc}`); return null; }
   const creationTs = txns[0].timestamp * 1000;
 
   const { m, trades } = metricsAt(txns, mint, bc, creationTs, windowStartMin, ageAtDecisionMin);
@@ -366,13 +342,12 @@ async function validateOne(mint: string, ageAtDecisionMin: number, windowStartMi
  * Sweep: для каждого mint фетчим транзы один раз, оцениваем метрики
  * в нескольких decision-точках. Помогает найти оптимальное окно входа.
  */
-async function sweepOne(mint: string, points: number[], windowStartMin: number)
+async function sweepOne(c: Candidate, points: number[], windowStartMin: number)
     : Promise<{ creationTs: number; perPoint: Record<number, Verdict>; txnsCount: number; peakBc: number } | null> {
-  const bcInfo = await findBondingCurve(mint);
-  if (!bcInfo) { console.log(`  ! cannot locate BC/pool for mint`); return null; }
-  const bc = bcInfo.addr;
+  const mint = c.mint;
+  const bc = c.bondingCurve;
   const txns = await fetchEarlyBcTxns(bc, 25);
-  if (txns.length === 0) { console.log(`  ! NO txns on ${bc} (via ${bcInfo.via})`); return null; }
+  if (txns.length === 0) { console.log(`  ! NO txns on BC ${bc}`); return null; }
   const creationTs = txns[0].timestamp * 1000;
   const lastTs = txns[txns.length - 1].timestamp * 1000;
   const ageH = (Date.now() - creationTs) / 3_600_000;
@@ -397,21 +372,32 @@ async function sweepOne(mint: string, points: number[], windowStartMin: number)
   return { creationTs, perPoint: out, txnsCount: txns.length, peakBc };
 }
 
+async function fetchCandidateByMint(mint: string): Promise<Candidate | null> {
+  const j: any = await fetchJson(`https://frontend-api-v3.pump.fun/coins/${mint}`);
+  if (!j || !j.bonding_curve) return null;
+  return pickCandidate(j, Date.now());
+}
+
 async function main() {
   const args = parseArgs();
-  let mints: string[] = args.mints;
-  if (mints.length === 0) {
-    if (!args.auto) {
-      console.log('Usage: --mints "m1,m2,..." OR --auto --limit N');
-      process.exit(1);
+  let candidates: Candidate[] = [];
+  if (args.mints.length > 0) {
+    for (const m of args.mints) {
+      const c = await fetchCandidateByMint(m);
+      if (c) candidates.push(c);
+      else console.log(`  ! could not fetch coin info for ${m}`);
     }
-    mints = await discoverRunners(args.limit);
-    if (mints.length === 0) { console.log('No mints discovered.'); process.exit(0); }
+  } else if (args.auto) {
+    candidates = await discoverRunners(args.limit);
+  } else {
+    console.log('Usage: --mints "m1,m2,..." OR --auto --limit N');
+    process.exit(1);
   }
+  if (candidates.length === 0) { console.log('No candidates.'); process.exit(0); }
 
   if (args.relaxed) FILTERS = RELAXED;
   console.log(`\n=== RETRO-VALIDATE RUNNER DETECTOR ===`);
-  console.log(`Mints: ${mints.length}`);
+  console.log(`Mints: ${candidates.length}`);
   if (args.sweep) {
     console.log(`SWEEP mode — decision points: ${args.sweep.join(', ')} min`);
   } else {
@@ -426,15 +412,15 @@ async function main() {
   if (args.sweep) {
     const points = args.sweep;
     const sweepResults: Array<{ mint: string; perPoint: Record<number, Verdict> | null }> = [];
-    for (let i = 0; i < mints.length; i++) {
-      const mint = mints[i];
-      console.log(`\n[${i + 1}/${mints.length}] ${mint}`);
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      console.log(`\n[${i + 1}/${candidates.length}] ${c.mint}  $${c.symbol}  ATH=$${(c.athMc / 1000).toFixed(0)}k`);
       try {
-        const r = await sweepOne(mint, points, args.windowStart);
-        sweepResults.push({ mint, perPoint: r?.perPoint ?? null });
+        const r = await sweepOne(c, points, args.windowStart);
+        sweepResults.push({ mint: c.mint, perPoint: r?.perPoint ?? null });
       } catch (err) {
         console.log(`  ERROR: ${err}`);
-        sweepResults.push({ mint, perPoint: null });
+        sweepResults.push({ mint: c.mint, perPoint: null });
       }
       await sleep(500);
     }
@@ -476,15 +462,15 @@ async function main() {
 
   // ===== SINGLE-POINT MODE =====
   const results: Array<{ mint: string; v: Verdict | null }> = [];
-  for (let i = 0; i < mints.length; i++) {
-    const mint = mints[i];
-    console.log(`\n[${i + 1}/${mints.length}] ${mint}`);
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    console.log(`\n[${i + 1}/${candidates.length}] ${c.mint}  $${c.symbol}  ATH=$${(c.athMc / 1000).toFixed(0)}k`);
     try {
-      const v = await validateOne(mint, args.ageAtDecision, args.windowStart);
-      results.push({ mint, v });
+      const v = await validateOne(c, args.ageAtDecision, args.windowStart);
+      results.push({ mint: c.mint, v });
     } catch (err) {
       console.log(`  ERROR: ${err}`);
-      results.push({ mint, v: null });
+      results.push({ mint: c.mint, v: null });
     }
     await sleep(500);
   }
