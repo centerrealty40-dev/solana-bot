@@ -114,7 +114,7 @@ interface Txn {
   events?: { swap?: any };
 }
 
-async function fetchEarlyBcTxns(bcAddr: string, maxPages = 10): Promise<Txn[]> {
+async function fetchEarlyBcTxns(bcAddr: string, maxPages = 4): Promise<Txn[]> {
   const collected: Txn[] = [];
   let cursor: string | undefined;
   for (let i = 0; i < maxPages; i++) {
@@ -287,18 +287,44 @@ function loadStore(): void {
 // =====================================================================
 // DISCOVERY: fresh mints from `tokens` table (filled by pp:collector)
 // =====================================================================
-interface FreshMint { mint: string; symbol: string; bondingCurve: string; firstSeenAt: Date; }
+interface FreshMint { mint: string; symbol: string; bondingCurve: string; firstSeenAt: Date;
+                      preBuyers: number; preBuyUsd: number; }
+
+// Pre-filter thresholds: бесплатно через нашу БД отбраковываем явно мёртвые,
+//   ДО того как тратить Helius credits. STRICT-фильтр требует ≥20 buyers и ≥5 SOL.
+//   Если в нашей БД даже 5 buyers нет — токен точно не runner.
+const PRE_MIN_BUYERS = 5;
+const PRE_MIN_BUY_USD = 300;     // ~3 SOL @ $100/SOL
 
 async function fetchFreshMints(): Promise<FreshMint[]> {
-  // mints возрастом DECISION_AGE_MIN..DECISION_AGE_MAX_MIN которые ещё не оценивали
+  // Один JOIN-запрос: tokens × swaps в окне [first_seen+2..+7 мин],
+  //   считаем уникальных buyers и сумму buy USD.
   const r: any = await db.execute(dsql.raw(`
-    SELECT mint, symbol, first_seen_at, metadata
-    FROM tokens
-    WHERE first_seen_at < now() - interval '${DECISION_AGE_MIN} minutes'
-      AND first_seen_at > now() - interval '${DECISION_AGE_MAX_MIN} minutes'
-      AND metadata->>'source' = 'pumpportal'
-    ORDER BY first_seen_at ASC
-    LIMIT 100
+    WITH fresh AS (
+      SELECT mint, symbol, first_seen_at, metadata
+      FROM tokens
+      WHERE first_seen_at < now() - interval '${DECISION_AGE_MIN} minutes'
+        AND first_seen_at > now() - interval '${DECISION_AGE_MAX_MIN} minutes'
+        AND metadata->>'source' = 'pumpportal'
+      ORDER BY first_seen_at ASC
+      LIMIT 200
+    )
+    SELECT
+      f.mint, f.symbol, f.first_seen_at, f.metadata,
+      COALESCE(a.buyers, 0)::int AS pre_buyers,
+      COALESCE(a.buy_usd, 0)::float AS pre_buy_usd
+    FROM fresh f
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(DISTINCT s.wallet) AS buyers,
+        SUM(s.amount_usd)        AS buy_usd
+      FROM swaps s
+      WHERE s.base_mint = f.mint
+        AND s.side = 'buy'
+        AND s.block_time >= f.first_seen_at + interval '${WINDOW_START_MIN} minutes'
+        AND s.block_time <= f.first_seen_at + interval '${DECISION_AGE_MIN} minutes'
+        AND s.amount_usd >= 20
+    ) a ON true
   `));
   const rows: any[] = Array.isArray(r) ? r : (r.rows ?? []);
   const out: FreshMint[] = [];
@@ -308,6 +334,8 @@ async function fetchFreshMints(): Promise<FreshMint[]> {
     out.push({
       mint: row.mint, symbol: row.symbol ?? '?', bondingCurve: bc,
       firstSeenAt: new Date(row.first_seen_at),
+      preBuyers: Number(row.pre_buyers ?? 0),
+      preBuyUsd: Number(row.pre_buy_usd ?? 0),
     });
   }
   return out;
@@ -322,20 +350,32 @@ async function fetchCurrentMc(mint: string): Promise<{ mc: number; ath: number }
 // =====================================================================
 // DISCOVERY LOOP
 // =====================================================================
-let stats = { discovered: 0, evaluated: 0, passed: 0, opened: 0, closed: { TP: 0, SL: 0, TRAIL: 0, TIMEOUT: 0, NO_DATA: 0 } };
+let stats = { discovered: 0, preFiltered: 0, evaluated: 0, passed: 0, opened: 0, closed: { TP: 0, SL: 0, TRAIL: 0, TIMEOUT: 0, NO_DATA: 0 } };
 
 async function discoveryTick(): Promise<void> {
   const fresh = await fetchFreshMints();
   if (fresh.length === 0) return;
   stats.discovered += fresh.length;
 
+  let preFiltered = 0;
   for (const fm of fresh) {
     if (evaluatedMints.has(fm.mint)) continue;
     const ageMin = (Date.now() - fm.firstSeenAt.getTime()) / 60_000;
 
+    // Бесплатный pre-filter через нашу БД: если уже видно что мёртвый — Helius не зовём
+    if (fm.preBuyers < PRE_MIN_BUYERS || fm.preBuyUsd < PRE_MIN_BUY_USD) {
+      evaluatedMints.add(fm.mint);
+      preFiltered++;
+      stats.preFiltered++;
+      append({ kind: 'eval', mint: fm.mint, symbol: fm.symbol, ageMin: ageMin.toFixed(1),
+               pass: false, reason: 'pre_filter',
+               pre: { buyers: fm.preBuyers, buy_usd: +fm.preBuyUsd.toFixed(0) } });
+      continue;
+    }
+
     let txns: Txn[];
     try {
-      txns = await fetchEarlyBcTxns(fm.bondingCurve, 8);
+      txns = await fetchEarlyBcTxns(fm.bondingCurve, 4);
     } catch (err) {
       console.warn(`[eval-err] ${fm.mint.slice(0, 8)} fetch txns: ${err}`);
       continue;
@@ -344,7 +384,7 @@ async function discoveryTick(): Promise<void> {
       // bc может быть некорректным — попробуем PDA
       const pdaBc = bondingCurvePda(fm.mint);
       if (pdaBc !== fm.bondingCurve) {
-        try { txns = await fetchEarlyBcTxns(pdaBc, 8); } catch {}
+        try { txns = await fetchEarlyBcTxns(pdaBc, 4); } catch {}
       }
     }
     if (txns.length === 0) {
@@ -463,7 +503,7 @@ function statsTick(): void {
   const sumPnl = closed.reduce((s, c) => s + c.pnlPct, 0);
   const peakAvg = closed.length > 0 ? closed.reduce((s, c) => s + c.peakPnlPct, 0) / closed.length : 0;
   console.log(`\n${'='.repeat(76)}`);
-  console.log(`[STATS] discovered=${stats.discovered}  evaluated=${stats.evaluated}  passed=${stats.passed}  opened=${stats.opened}`);
+  console.log(`[STATS] discovered=${stats.discovered}  pre_filtered=${stats.preFiltered}  evaluated=${stats.evaluated}  passed=${stats.passed}  opened=${stats.opened}`);
   console.log(`        open=${open.size}  closed=${closed.length}  wins=${wins}  win_rate=${winRate.toFixed(0)}%`);
   console.log(`        avg_pnl=${avgPnl >= 0 ? '+' : ''}${avgPnl.toFixed(1)}%  sum_pnl=${sumPnl >= 0 ? '+' : ''}${sumPnl.toFixed(1)}%  avg_peak=+${peakAvg.toFixed(1)}%`);
   console.log(`        exits: TP=${stats.closed.TP} SL=${stats.closed.SL} TRAIL=${stats.closed.TRAIL} TIMEOUT=${stats.closed.TIMEOUT} NO_DATA=${stats.closed.NO_DATA}`);
