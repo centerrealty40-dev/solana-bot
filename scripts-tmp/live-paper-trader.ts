@@ -38,11 +38,12 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 // детектор (mirror retro-validator STRICT)
 const FILTERS = {
-  MIN_UNIQUE_BUYERS: 20,
-  MIN_BUY_SOL: 5,
-  MIN_BUY_SELL_RATIO: 1.5,
-  MAX_TOP_BUYER_SHARE: 0.35,
-  MIN_BC_PROGRESS: 0.25,
+  MIN_UNIQUE_BUYERS: 8,
+  MIN_BUY_SOL: 1.5,
+  MIN_BUY_SELL_RATIO: 0.7,
+  MAX_BUY_SELL_RATIO: 1.3,
+  MAX_TOP_BUYER_SHARE: 0.60,
+  MIN_BC_PROGRESS: 0.10,
   MAX_BC_PROGRESS: 0.95,
 };
 const BC_GRADUATION_SOL = 85;
@@ -53,11 +54,16 @@ const DECISION_AGE_MIN = 7;
 const DECISION_AGE_MAX_MIN = 12;     // если позже — пропускаем (поздно входить)
 
 // exit
-const TP_X = 3.0;                    // +200%
-const SL_X = 0.5;                    // -50%
-const TRAIL_DROP = 0.4;              // -40% от пика после 2x
-const TRAIL_TRIGGER_X = 2.0;
+const TP_X = 3.0;                    // V7: фиксируем на +200%
+const SL_X = 0.8;                    // -20% stop-loss
+const TRAIL_DROP = 0.3;              // -30% trail drop
+const TRAIL_TRIGGER_X = 1.5;         // trail arm at +50%
 const TIMEOUT_HOURS = 12;
+const TP1_X = 3.0;
+const TP1_SELL_PCT = 0.25;
+const TP2_X = 5.0;
+const TP2_SELL_PCT = 0.50;
+const MAX_OPEN_POSITIONS = 50;
 
 // частоты
 const DISCOVERY_INTERVAL_MS = 30_000;
@@ -65,7 +71,7 @@ const TRACK_INTERVAL_MS = 60_000;
 const STATS_INTERVAL_MS = 5 * 60_000;
 const SOL_PRICE_REFRESH_MS = 5 * 60_000;
 
-const STORE_PATH = '/tmp/paper-trades.jsonl';
+const STORE_PATH = process.env.PAPER_TRADES_PATH || '/tmp/paper-trades.jsonl';
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -116,6 +122,10 @@ interface OpenTrade {
   peakMcUsd: number;
   peakPnlPct: number;
   trailingArmed: boolean;
+  remainingPct: number;
+  realizedPnlPct: number;
+  tp1Done: boolean;
+  tp2Done: boolean;
 }
 interface ClosedTrade extends OpenTrade {
   exitTs: number;
@@ -148,6 +158,8 @@ function loadStore(): void {
         open.set(e.mint, {
           mint: e.mint, symbol: e.symbol, entryTs: e.entryTs, entryMcUsd: e.entryMcUsd,
           entryMetrics: e.entryMetrics, peakMcUsd: e.entryMcUsd, peakPnlPct: 0, trailingArmed: false,
+      remainingPct: 1, realizedPnlPct: 0, tp1Done: false, tp2Done: false,
+      remainingPct: 1, realizedPnlPct: 0, tp1Done: false, tp2Done: false,
         });
       }
       if (e.kind === 'close') {
@@ -183,7 +195,7 @@ async function fetchFreshAggregates(): Promise<FreshAggRow[]> {
       JOIN fresh f ON s.base_mint = f.mint
       WHERE s.block_time >= f.first_seen_at + interval '${WINDOW_START_MIN} minutes'
         AND s.block_time <= f.first_seen_at + interval '${DECISION_AGE_MIN} minutes'
-        AND s.amount_usd >= 5
+        AND s.amount_usd >= 5\n        AND s.wallet NOT IN (SELECT wallet FROM rug_wallet_denylist WHERE active = TRUE)
     ),
     per_buyer AS (
       SELECT base_mint, wallet, SUM(amount_usd) AS w_usd
@@ -238,10 +250,15 @@ function evaluate(m: Metrics): Verdict {
   const r: string[] = [];
   if (m.uniqueBuyers < FILTERS.MIN_UNIQUE_BUYERS) r.push(`buyers<${FILTERS.MIN_UNIQUE_BUYERS}`);
   if (m.sumBuySol < FILTERS.MIN_BUY_SOL) r.push(`buy_sol<${FILTERS.MIN_BUY_SOL}`);
-  if (m.sumSellSol > 0 && m.sumBuySol / m.sumSellSol < FILTERS.MIN_BUY_SELL_RATIO) r.push(`bs<${FILTERS.MIN_BUY_SELL_RATIO}`);
+  const buySellRatio = m.sumSellSol > 0 ? (m.sumBuySol / m.sumSellSol) : 999;
+  const sellBuyRatio = m.sumBuySol > 0 ? (m.sumSellSol / m.sumBuySol) : 0;
+  if (buySellRatio < FILTERS.MIN_BUY_SELL_RATIO) r.push(`bs<${FILTERS.MIN_BUY_SELL_RATIO}`);
+  if (buySellRatio > FILTERS.MAX_BUY_SELL_RATIO) r.push(`bs>${FILTERS.MAX_BUY_SELL_RATIO}`);
+  // Heatmap-driven anti-rug pattern: many buyers, distributed buys, but weak sell support.
+  if (m.uniqueBuyers >= 15 && m.topBuyerShare < 0.25 && sellBuyRatio < 1.0) r.push('rug_farm_pattern');
   if (m.topBuyerShare > FILTERS.MAX_TOP_BUYER_SHARE) r.push(`top>${FILTERS.MAX_TOP_BUYER_SHARE * 100}%`);
   if (m.bcProgress < FILTERS.MIN_BC_PROGRESS) r.push(`bc<${FILTERS.MIN_BC_PROGRESS * 100}%`);
-  if (m.bcProgress > FILTERS.MAX_BC_PROGRESS) r.push(`bc>${FILTERS.MAX_BC_PROGRESS * 100}%`);
+  if (m.bcProgress > FILTERS.MAX_BC_PROGRESS) r.push(`bc>${FILTERS.MAX_BC_PROGRESS * 100}%`);\n  const sellBuy = m.sumBuySol > 0 ? (m.sumSellSol / m.sumBuySol) : 0;\n  if (m.uniqueBuyers >= 15 && m.topBuyerShare < 0.25 && sellBuy < 1.0) r.push("rug_farm_pattern");
   return { pass: r.length === 0, reasons: r, m };
 }
 
@@ -292,10 +309,13 @@ async function discoveryTick(): Promise<void> {
       append({ kind: 'eval-skip-open', mint: row.mint, reason: 'no_mc' });
       continue;
     }
+    if (open.size >= MAX_OPEN_POSITIONS) { append({ kind: 'eval-skip-open', mint: row.mint, reason: 'max_open' }); continue; }
     const ot: OpenTrade = {
       mint: row.mint, symbol: row.symbol, entryTs: Date.now(),
       entryMcUsd: cur.mc, entryMetrics: m,
       peakMcUsd: cur.mc, peakPnlPct: 0, trailingArmed: false,
+      remainingPct: 1, realizedPnlPct: 0, tp1Done: false, tp2Done: false,
+      remainingPct: 1, realizedPnlPct: 0, tp1Done: false, tp2Done: false,
     };
     open.set(row.mint, ot);
     stats.opened++;
@@ -325,26 +345,52 @@ async function trackerTick(): Promise<void> {
     }
     const x = cur.mc / ot.entryMcUsd;
     const pnlPct = (x - 1) * 100;
+    append({ kind: 'tick', mint, mc: cur.mc, pnlPct });
     if (cur.mc > ot.peakMcUsd) {
       ot.peakMcUsd = cur.mc;
       ot.peakPnlPct = pnlPct;
       if (x >= TRAIL_TRIGGER_X) ot.trailingArmed = true;
     }
 
-    const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+    const ageH = (Date.now() - ot.entryTs) / 3_600_000;    // backward compatibility for old open records
+    if (ot.remainingPct == null) ot.remainingPct = 1;
+    if (ot.realizedPnlPct == null) ot.realizedPnlPct = 0;
+    if (ot.tp1Done == null) ot.tp1Done = false;
+    if (ot.tp2Done == null) ot.tp2Done = false;
+
+    // partial TP ladder: 25% @ x3, 50% @ x5
+    if (!ot.tp1Done && x >= TP1_X && ot.remainingPct > 0) {
+      const sold = Math.min(TP1_SELL_PCT, ot.remainingPct);
+      ot.realizedPnlPct += sold * (TP1_X - 1) * 100;
+      ot.remainingPct -= sold;
+      ot.tp1Done = true;
+      append({ kind: 'partial-close', mint, level: 'TP1', soldPct: sold, x: TP1_X, remainingPct: ot.remainingPct, realizedPnlPct: ot.realizedPnlPct });
+      console.log(`[TP1] ${mint.slice(0, 8)} sold=${(sold * 100).toFixed(0)}% @${TP1_X}x rem=${(ot.remainingPct * 100).toFixed(0)}%`);
+    }
+
+    if (!ot.tp2Done && x >= TP2_X && ot.remainingPct > 0) {
+      const sold = Math.min(TP2_SELL_PCT, ot.remainingPct);
+      ot.realizedPnlPct += sold * (TP2_X - 1) * 100;
+      ot.remainingPct -= sold;
+      ot.tp2Done = true;
+      append({ kind: 'partial-close', mint, level: 'TP2', soldPct: sold, x: TP2_X, remainingPct: ot.remainingPct, realizedPnlPct: ot.realizedPnlPct });
+      console.log(`[TP2] ${mint.slice(0, 8)} sold=${(sold * 100).toFixed(0)}% @${TP2_X}x rem=${(ot.remainingPct * 100).toFixed(0)}%`);
+    }
+
     let exitReason: ExitReason | null = null;
-    if (x >= TP_X) exitReason = 'TP';
+    if (ot.remainingPct <= 0) exitReason = 'TP';
     else if (x <= SL_X) exitReason = 'SL';
     else if (ot.trailingArmed && cur.mc <= ot.peakMcUsd * (1 - TRAIL_DROP)) exitReason = 'TRAIL';
     else if (ageH >= TIMEOUT_HOURS) exitReason = 'TIMEOUT';
 
     if (exitReason) {
-      const ct: ClosedTrade = { ...ot, exitTs: Date.now(), exitMcUsd: cur.mc, exitReason, pnlPct, durationMin: ageH * 60 };
+      const totalPnlPct = (ot.realizedPnlPct || 0) + (ot.remainingPct || 0) * pnlPct;
+      const ct: ClosedTrade = { ...ot, exitTs: Date.now(), exitMcUsd: cur.mc, exitReason, pnlPct: totalPnlPct, durationMin: ageH * 60 };
       open.delete(mint); closed.push(ct); stats.closed[exitReason]++;
       append({ kind: 'close', ...ct });
-      const arrow = pnlPct >= 0 ? '+' : '';
-      console.log(`[${exitReason}] ${mint.slice(0, 8)} $${ot.symbol}  pnl=${arrow}${pnlPct.toFixed(0)}%  ` +
-                  `peak=+${ot.peakPnlPct.toFixed(0)}%  age=${ageH.toFixed(1)}h`);
+      const arrow = totalPnlPct >= 0 ? '+' : '';
+      console.log(`[${exitReason}] ${mint.slice(0, 8)} $${ot.symbol}  pnl=${arrow}${totalPnlPct.toFixed(0)}%  ` +
+                  `peak=+${ot.peakPnlPct.toFixed(0)}%  age=${ageH.toFixed(1)}h  rem=${((ot.remainingPct || 0) * 100).toFixed(0)}%`);
     }
   }
 }
@@ -369,8 +415,8 @@ function statsTick(): void {
 async function main(): Promise<void> {
   console.log(`=== LIVE PAPER-TRADER (DB-only) ===`);
   console.log(`store=${STORE_PATH}  dry_run=${DRY_RUN}`);
-  console.log(`filters: buyers≥${FILTERS.MIN_UNIQUE_BUYERS}, buy_sol≥${FILTERS.MIN_BUY_SOL}, top≤${FILTERS.MAX_TOP_BUYER_SHARE * 100}%, bc∈[${FILTERS.MIN_BC_PROGRESS * 100}..${FILTERS.MAX_BC_PROGRESS * 100}]%`);
-  console.log(`window: [${WINDOW_START_MIN}..${DECISION_AGE_MIN}] min  exit: TP=${TP_X}x SL=${SL_X}x TRAIL=-${TRAIL_DROP * 100}% from peak (after ${TRAIL_TRIGGER_X}x)  TIMEOUT=${TIMEOUT_HOURS}h`);
+  console.log(`filters: buyers≥${FILTERS.MIN_UNIQUE_BUYERS}, buy_sol≥${FILTERS.MIN_BUY_SOL}, bs∈[${FILTERS.MIN_BUY_SELL_RATIO}..${FILTERS.MAX_BUY_SELL_RATIO}], top≤${FILTERS.MAX_TOP_BUYER_SHARE * 100}%, bc∈[${FILTERS.MIN_BC_PROGRESS * 100}..${FILTERS.MAX_BC_PROGRESS * 100}]%`);
+  console.log(`window: [${WINDOW_START_MIN}..${DECISION_AGE_MIN}] min  exit: TP1=${TP1_X}x@${TP1_SELL_PCT * 100}% TP2=${TP2_X}x@${TP2_SELL_PCT * 100}% SL=${SL_X}x TRAIL=-${TRAIL_DROP * 100}% (after ${TRAIL_TRIGGER_X}x) TIMEOUT=${TIMEOUT_HOURS}h`);
 
   loadStore();
   await refreshSolPrice();

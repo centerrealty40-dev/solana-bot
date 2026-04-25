@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Live Paper-Trader · Pump.fun Runner Detector</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  body { background: radial-gradient(ellipse at top, #1a1a2e 0%, #0f0f1e 50%, #050510 100%); min-height: 100vh; font-family: 'Inter', -apple-system, sans-serif; }
+  .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
+  .glass-strong { background: rgba(255,255,255,0.06); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.12); }
+  .glow-green { box-shadow: 0 0 30px rgba(74,222,128,0.15); }
+  .glow-red { box-shadow: 0 0 30px rgba(248,113,113,0.15); }
+  .grad-text { background: linear-gradient(135deg, #a78bfa 0%, #f472b6 50%, #facc15 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .grad-money { background: linear-gradient(135deg, #34d399 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .grad-loss { background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .pulse-dot { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+  .row:hover { background: rgba(255,255,255,0.03); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+  ::-webkit-scrollbar-thumb { background: rgba(167,139,250,0.3); border-radius: 4px; }
+  .tip { position: relative; cursor: help; border-bottom: 1px dotted rgba(167,139,250,0.5); }
+  .tip:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, rgba(20,20,40,0.98), rgba(10,10,25,0.98));
+    color: #e2e8f0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    white-space: normal;
+    width: 300px;
+    font-size: 11px;
+    line-height: 1.5;
+    z-index: 100;
+    border: 1px solid rgba(167,139,250,0.3);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
+    text-align: left;
+    pointer-events: none;
+    font-weight: normal;
+  }
+  .tip:hover::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(20,20,40,0.98);
+    z-index: 100;
+    pointer-events: none;
+  }
+  .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; }
+  .bar > div { height: 100%; transition: width .3s ease; }
+</style>
+</head>
+<body class="text-slate-100" x-data="dash()" x-init="boot()">
+
+<header class="max-w-7xl mx-auto px-6 pt-8 pb-4">
+  <div class="flex items-center justify-between flex-wrap gap-4">
+    <div>
+      <h1 class="text-3xl md:text-4xl font-black grad-text">Live Paper-Trader</h1>
+      <p class="text-sm text-slate-400 mt-1">Pump.fun Runner Detector · V7 calibration · Auto-refresh 8s</p>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <span class="flex items-center gap-2 px-3 py-1.5 rounded-full glass">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+        <span class="text-slate-300" x-text="state.hoursOfData ? state.hoursOfData.toFixed(1) + 'h running' : 'loading…'"></span>
+      </span>
+      <span class="px-3 py-1.5 rounded-full glass text-slate-400" x-text="'updated ' + lastUpdate"></span>
+    </div>
+  </div>
+</header>
+
+<!-- LEGEND BANNER -->
+<section class="max-w-7xl mx-auto px-6 pb-4">
+  <div class="glass-strong rounded-xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+    <div class="flex items-center gap-2">
+      <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold uppercase tracking-wider">Paper Money</span>
+      <span class="text-slate-300">Simulation only · no real funds at risk</span>
+    </div>
+    <div class="flex items-center gap-5 text-slate-300 num">
+      <span><span class="text-slate-500">position:</span> <span class="font-bold text-violet-300" x-text="'$'+(state.legend?.positionUsd||100)"></span> / trade</span>
+      <span><span class="text-slate-500">bank start:</span> <span class="font-bold" x-text="'$'+(state.legend?.bankStartUsd||1000).toLocaleString()"></span></span>
+      <span><span class="text-slate-500">strategy:</span> <span class="font-mono text-amber-300" x-text="state.config?.calibration||'V7'"></span></span>
+      <span><span class="text-slate-500">started:</span> <span class="font-mono" x-text="state.startedAt ? new Date(state.startedAt).toLocaleString() : '—'"></span></span>
+    </div>
+  </div>
+</section>
+
+<main class="max-w-7xl mx-auto px-6 pb-20 space-y-6">
+
+  <!-- BANK CARDS -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="glass-strong rounded-2xl p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-400">Bank Now</div>
+      <div class="text-3xl font-black mt-2 num" :class="(state.legend?.bankNowUsd||0) >= (state.legend?.bankStartUsd||1000) ? 'grad-money' : 'grad-loss'" x-text="fmtUsd(state.legend?.bankNowUsd)"></div>
+      <div class="text-xs mt-1 num" :class="(state.legend?.roiPct||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="'ROI ' + fmtPct(state.legend?.roiPct)"></div>
+    </div>
+    <div class="glass rounded-2xl p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-400">Realized PnL</div>
+      <div class="text-3xl font-black mt-2 num" :class="(state.metrics?.sumPnlUsd||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(state.metrics?.sumPnlUsd)"></div>
+      <div class="text-xs text-slate-500 mt-1 num" x-text="(state.metrics?.total||0) + ' closed · ' + fmtPct(state.metrics?.sumPnl) + ' sum-pct'"></div>
+    </div>
+    <div class="glass rounded-2xl p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-400">Unrealized</div>
+      <div class="text-3xl font-black mt-2 num" :class="(state.legend?.unrealizedUsd||0) >= 0 ? 'text-sky-300' : 'text-rose-400'" x-text="fmtUsdSigned(state.legend?.unrealizedUsd)"></div>
+      <div class="text-xs text-slate-500 mt-1 num" x-text="'risk: ' + fmtUsd(state.legend?.capitalAtRiskUsd) + ' (' + (state.open?.length||0) + ' open)'"></div>
+    </div>
+    <div class="glass rounded-2xl p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-400">Win Rate</div>
+      <div class="text-3xl font-black mt-2 num text-amber-300" x-text="(state.metrics?.winRate||0).toFixed(1) + '%'"></div>
+      <div class="text-xs text-slate-500 mt-1" x-text="(state.metrics?.wins||0) + ' winners · avg peak ' + fmtPct(state.metrics?.avgPeak)"></div>
+    </div>
+  </section>
+
+  <!-- OPEN -->
+  <section class="glass rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <h2 class="text-lg font-bold">Open Positions</h2>
+      <span class="text-xs text-slate-400">
+        <span class="tip" data-tip="Take Profit: при достижении +200% от цены входа фиксируем прибыль 3x. Не даём токену откатиться обратно.">TP +200%</span> ·
+        <span class="tip" data-tip="Stop Loss: при падении на −30% от входа закрываем позицию, чтобы избежать обвала до −90%. Защита капитала от глубоких пиков.">SL −30%</span> ·
+        <span class="tip" data-tip="Trailing Stop: после касания +50% активируется трейлинг. Если цена откатится на −40% от достигнутого пика — закрываем, фиксируя оставшуюся прибыль.">trail @ +50% (drop −40%)</span> ·
+        <span class="tip" data-tip="Timeout: если за 12 часов не сработал TP, SL или TRAIL — закрываем позицию по текущей цене и освобождаем капитал для новых входов.">timeout 12h</span>
+      </span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs uppercase text-slate-500 border-b border-white/5">
+          <tr><th class="text-left py-2 px-2">Symbol</th><th class="text-right">Entry MC</th><th class="text-right">Current MC</th><th class="text-right">Peak %</th><th class="text-right">PnL %</th><th class="text-right">PnL $</th><th class="text-right">Age</th><th class="text-center">Trail</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="p in (state.open||[])" :key="p.mint">
+            <tr class="row border-b border-white/5">
+              <td class="py-2 px-2"><a class="font-mono text-violet-300 hover:text-violet-200" :href="'https://pump.fun/'+p.mint" target="_blank" x-text="'$'+(p.symbol||'?')"></a><div class="text-[10px] text-slate-600 font-mono" x-text="p.mint.slice(0,8)+'…'"></div></td>
+              <td class="text-right num text-slate-300" x-text="fmtUsd(p.entryMcUsd)"></td>
+              <td class="text-right num" :class="p.hasLiveMc ? 'text-slate-100' : 'text-slate-600 italic'" x-text="fmtUsd(p.currentMcUsd)"></td>
+              <td class="text-right num text-violet-300" x-text="fmtPct(p.peakPnlPct)"></td>
+              <td class="text-right num font-bold" :class="p.pnlPct >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(p.pnlPct)"></td>
+              <td class="text-right num font-bold" :class="p.pnlUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(p.pnlUsd)"></td>
+              <td class="text-right num text-slate-500" x-text="p.ageMin.toFixed(0)+'m'"></td>
+              <td class="text-center"><span x-show="p.trailingArmed" class="text-amber-400">●</span><span x-show="!p.trailingArmed" class="text-slate-700">○</span></td>
+            </tr>
+          </template>
+          <tr x-show="!state.open?.length"><td colspan="8" class="text-center py-8 text-slate-600">no open positions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- WINNERS / LOSERS -->
+  <section class="grid md:grid-cols-2 gap-6">
+    <div class="glass rounded-2xl p-6 glow-green">
+      <h2 class="text-lg font-bold mb-4 text-emerald-400">Top Winners</h2>
+      <div class="space-y-2">
+        <template x-for="t in (state.topWinners||[])" :key="t.mint">
+          <div class="flex items-center justify-between text-sm row px-2 py-1.5 rounded">
+            <a class="font-mono text-emerald-300" :href="'https://pump.fun/'+t.mint" target="_blank" x-text="'$'+(t.symbol||'?')"></a>
+            <div class="flex gap-3 num text-xs items-center">
+              <span class="text-slate-500" x-text="t.exitReason"></span>
+              <span class="text-emerald-400 font-bold" x-text="fmtUsdSigned(t.pnlUsd)"></span>
+              <span class="text-slate-400" x-text="'(' + fmtPct(t.pnlPct) + ')'"></span>
+            </div>
+          </div>
+        </template>
+        <div x-show="!(state.topWinners||[]).length" class="text-center py-6 text-slate-600 text-sm">no winners yet</div>
+      </div>
+    </div>
+    <div class="glass rounded-2xl p-6 glow-red">
+      <h2 class="text-lg font-bold mb-4 text-rose-400">Top Losers</h2>
+      <div class="space-y-2">
+        <template x-for="t in (state.topLosers||[])" :key="t.mint">
+          <div class="flex items-center justify-between text-sm row px-2 py-1.5 rounded">
+            <a class="font-mono text-rose-300" :href="'https://pump.fun/'+t.mint" target="_blank" x-text="'$'+(t.symbol||'?')"></a>
+            <div class="flex gap-3 num text-xs items-center">
+              <span class="text-slate-500" x-text="t.exitReason"></span>
+              <span class="text-rose-400 font-bold" x-text="fmtUsdSigned(t.pnlUsd)"></span>
+              <span class="text-slate-400" x-text="'(' + fmtPct(t.pnlPct) + ')'"></span>
+            </div>
+          </div>
+        </template>
+        <div x-show="!(state.topLosers||[]).length" class="text-center py-6 text-slate-600 text-sm">no losers yet</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXIT DISTRIBUTION -->
+  <section class="glass rounded-2xl p-6">
+    <h2 class="text-lg font-bold mb-4">Exit Distribution
+      <span class="text-xs font-normal text-slate-400 ml-2">— как закрылись все сделки с момента старта V7</span>
+    </h2>
+    <div class="space-y-3">
+      <template x-for="row in exitRows()" :key="row.key">
+        <div>
+          <div class="flex items-center justify-between text-sm mb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs uppercase tracking-wider tip" :class="row.text" :data-tip="row.tip" x-text="row.key"></span>
+              <span class="text-slate-500 text-xs num" x-text="row.count + ' / ' + row.total + ' (' + row.pct.toFixed(0) + '%)'"></span>
+            </div>
+            <div class="flex items-center gap-3 text-xs num">
+              <span class="text-slate-400">avg PnL:</span>
+              <span :class="row.avgPct >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(row.avgPct)"></span>
+              <span class="text-slate-600">·</span>
+              <span class="font-bold" :class="row.sumUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(row.sumUsd)"></span>
+            </div>
+          </div>
+          <div class="bar"><div :class="row.bar" :style="'width:' + row.pct + '%'"></div></div>
+        </div>
+      </template>
+      <div x-show="!(state.metrics?.total)" class="text-center py-6 text-slate-600 text-sm">no closed trades yet</div>
+    </div>
+  </section>
+
+  <!-- RECENT CLOSED -->
+  <section class="glass rounded-2xl p-6">
+    <h2 class="text-lg font-bold mb-4">Recent Closed Trades</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs uppercase text-slate-500 border-b border-white/5">
+          <tr><th class="text-left py-2 px-2">Symbol</th><th class="text-right">Entry MC</th><th class="text-right">Exit MC</th><th class="text-right">Peak %</th><th class="text-right">PnL %</th><th class="text-right">PnL $</th><th class="text-center">Exit</th><th class="text-right">Closed</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="t in (state.recentClosed||[])" :key="t.mint+t.exitTs">
+            <tr class="row border-b border-white/5">
+              <td class="py-2 px-2"><a class="font-mono text-violet-300" :href="'https://pump.fun/'+t.mint" target="_blank" x-text="'$'+(t.symbol||'?')"></a></td>
+              <td class="text-right num text-slate-400" x-text="fmtUsd(t.entryMcUsd)"></td>
+              <td class="text-right num text-slate-300" x-text="fmtUsd(t.exitMcUsd)"></td>
+              <td class="text-right num text-violet-400" x-text="fmtPct(t.peakPnlPct)"></td>
+              <td class="text-right num" :class="t.pnlPct >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(t.pnlPct)"></td>
+              <td class="text-right num font-bold" :class="t.pnlUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(t.pnlUsd)"></td>
+              <td class="text-center"><span class="text-xs px-2 py-0.5 rounded tip" :class="exitColor(t.exitReason)" :data-tip="exitTip(t.exitReason)" x-text="t.exitReason"></span></td>
+              <td class="text-right text-xs text-slate-500" x-text="ago(t.exitTs)"></td>
+            </tr>
+          </template>
+          <tr x-show="!(state.recentClosed||[]).length"><td colspan="8" class="text-center py-8 text-slate-600">no closed trades yet — V7 just started</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer class="border-t border-white/5 py-6 text-center text-xs text-slate-500 space-y-2">
+  <div class="flex items-center justify-center gap-6 num">
+    <span><span class="text-slate-300 font-bold" x-text="visits.total"></span> total views</span>
+    <span><span class="text-slate-300 font-bold" x-text="visits.uniqueDay"></span> unique 24h</span>
+    <span><span class="text-slate-300 font-bold" x-text="visits.uniqueHour"></span> last hour</span>
+    <span><span class="text-slate-300 font-bold" x-text="visits.unique7d"></span> 7d</span>
+  </div>
+  <div>built with <span class="text-rose-400">♥</span> · paper-trades only · no financial advice</div>
+</footer>
+
+<script>
+function dash() {
+  return {
+    state: {}, visits: { total: 0, uniqueDay: 0, uniqueHour: 0, unique7d: 0 }, lastUpdate: '—',
+    async boot() { await this.refresh(); setInterval(() => this.refresh(), 8000); },
+    async refresh() {
+      try {
+        const [s, v] = await Promise.all([fetch('/api/state').then(r=>r.json()), fetch('/api/visits').then(r=>r.json())]);
+        this.state = s; this.visits = v;
+        this.lastUpdate = new Date().toLocaleTimeString();
+      } catch(e) { console.error(e); }
+    },
+    fmtPct(n) { if (n == null || isNaN(n)) return '—'; const s = n >= 0 ? '+' : ''; return s + n.toFixed(1) + '%'; },
+    fmtUsd(n) { if (n == null || isNaN(n)) return '—'; const a = Math.abs(n); if (a >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M'; if (a >= 1e3) return '$' + (n/1e3).toFixed(1) + 'k'; return '$' + n.toFixed(2); },
+    fmtUsdSigned(n) { if (n == null || isNaN(n)) return '—'; const sign = n >= 0 ? '+' : '-'; const a = Math.abs(n); if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(2) + 'M'; if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k'; return sign + '$' + a.toFixed(2); },
+    ago(ts) { const m = (Date.now()-ts)/60000; if (m < 60) return m.toFixed(0)+'m'; const h = m/60; if (h < 24) return h.toFixed(1)+'h'; return (h/24).toFixed(1)+'d'; },
+    exitColor(r) { return { TP: 'bg-emerald-500/20 text-emerald-300', SL: 'bg-rose-500/20 text-rose-300', TRAIL: 'bg-amber-500/20 text-amber-300', TIMEOUT: 'bg-slate-500/20 text-slate-300', NO_DATA: 'bg-slate-700/20 text-slate-500' }[r] || 'bg-slate-500/20'; },
+    exitTip(r) {
+      return ({
+        TP: 'Take Profit (+200%): цена достигла 3x от входа, прибыль зафиксирована.',
+        SL: 'Stop Loss (−30%): цена упала ниже −30% от входа — закрыли чтобы не уйти в полный обвал. Это «соскамилось», но мы режем потерю до глубокого drawdown.',
+        TRAIL: 'Trailing Stop (−40% от пика): после касания +50% включился трейлинг, цена откатилась на −40% от достигнутого пика — фиксируем оставшуюся прибыль.',
+        TIMEOUT: 'Timeout 12h: за 12 часов после входа ни TP, ни SL, ни триггер трейла не сработали. Закрываем по текущей цене и освобождаем капитал.',
+        NO_DATA: 'No Data: pump.fun frontend-api перестал отдавать market cap для этого токена. Скорее всего токен мигрировал на Raydium / делистнут / окончательно умер. Считаем как полный убыток (−100%).'
+      })[r] || '';
+    },
+    exitRows() {
+      const br = this.state.metrics?.exitsBreakdown || {};
+      const total = this.state.metrics?.total || 0;
+      const order = ['TP','TRAIL','SL','TIMEOUT','NO_DATA'];
+      const colors = {
+        TP:      { bar: 'bg-emerald-500', text: 'text-emerald-300' },
+        TRAIL:   { bar: 'bg-amber-500',   text: 'text-amber-300' },
+        SL:      { bar: 'bg-rose-500',    text: 'text-rose-300' },
+        TIMEOUT: { bar: 'bg-slate-500',   text: 'text-slate-300' },
+        NO_DATA: { bar: 'bg-slate-700',   text: 'text-slate-500' },
+      };
+      return order.filter(k => (br[k]?.count || 0) > 0).map(k => ({
+        key: k, count: br[k].count, total,
+        pct: total ? (br[k].count/total)*100 : 0,
+        avgPct: br[k].avgPct,
+        sumUsd: br[k].sumUsd,
+        bar: colors[k].bar, text: colors[k].text,
+        tip: this.exitTip(k),
+      }));
+    }
+  };
+}
+</script>
+</body>
+</html>
