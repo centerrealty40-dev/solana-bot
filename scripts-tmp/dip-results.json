@@ -1,0 +1,847 @@
+{
+  "generated_at": "2026-04-26T20:21:26.249Z",
+  "wallet": "498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma",
+  "lookback_days": 30,
+  "backtest": [
+    {
+      "id": "aggressive",
+      "config": {
+        "id": "aggressive",
+        "entry": {
+          "dipPct": -16,
+          "lookbackMin": 7,
+          "minLiquidityUsd": 6000,
+          "minVolumeUsd5m": 700,
+          "minTrades5m": 5,
+          "requireRouteable": false,
+          "maxSlippageBps": 600,
+          "cooldownMin": 25
+        },
+        "dca": {
+          "enabled": true,
+          "levels": [
+            {
+              "triggerPct": -0.1,
+              "addFraction": 0.7
+            },
+            {
+              "triggerPct": -0.2,
+              "addFraction": 1
+            }
+          ],
+          "killStopPct": -0.3,
+          "requireAliveForAdd": true
+        },
+        "exit": {
+          "stopLossPct": -0.14,
+          "tpLadder": [
+            {
+              "pnlPct": 0.1,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.2,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.5,
+              "sellFraction": 0.25
+            }
+          ],
+          "trailActivateAfterTp": 1,
+          "trailDropPct": 0.16,
+          "timeoutMin": 170
+        },
+        "risk": {
+          "maxOpen": 5
+        },
+        "costs": {
+          "feeBps": 30,
+          "slippageBps": 400
+        }
+      },
+      "trades": 4,
+      "win_rate_pct": 50,
+      "avg_pnl_pct": 6.312609634596712,
+      "median_pnl_pct": 1.0747559965095679,
+      "sum_pnl_usd": 18.937828903790134,
+      "max_drawdown_usd": -19.627002148845563,
+      "runner_gate": {
+        "min_holders": 2000,
+        "min_age_hours": 6,
+        "max_age_hours": 240,
+        "min_lp_to_fdv": 0.05,
+        "min_volume_1h_usd": 8000,
+        "min_volume_1m_usd": 120,
+        "min_trades_1h": 45,
+        "min_buys_1h": 20,
+        "min_sells_1h": 8,
+        "knife_window_min": 5,
+        "knife_max_drop_pct": -14,
+        "btc_halt_1h_pct": -2,
+        "btc_halt_4h_pct": -4,
+        "btc_mints": [
+          "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"
+        ],
+        "btc_missing_points": 169,
+        "require_intel_fields": false,
+        "max_entries_per_mint_window": 2,
+        "entries_per_mint_window_min": 180,
+        "skipped_by_mint_window_cap": 5,
+        "scam_tags": [
+          "scam_operator",
+          "scam_proxy",
+          "scam_treasury",
+          "scam_payout",
+          "bot_farm_distributor",
+          "bot_farm_boss",
+          "gas_distributor"
+        ],
+        "rejected_by_reason": {
+          "holders": 106,
+          "falling_knife": 47,
+          "volume_1h": 3,
+          "near_honeypot_h6": 1
+        }
+      },
+      "exits": {
+        "TRAIL": 1,
+        "SL": 1,
+        "TIMEOUT": 2
+      },
+      "sample_trades": [
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T01:29:00.000Z",
+          "entry_price_usd": 0.0009452,
+          "dip_pct": -25.516154452324656,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 297322.97,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 3182103.8200000003,
+            "volume1mUsd": 14314.952,
+            "knifeDropPct": -7.242394504416094,
+            "buys1h": 12584,
+            "sells1h": 10293,
+            "buys6h": 12584,
+            "sells6h": 10293,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T01:37:00.000Z",
+          "exit_price_usd": 0.0008669,
+          "exit_reason": "TRAIL",
+          "gross_pnl_pct": -1.8059669911130005,
+          "net_pnl_pct": -10.328310410495142,
+          "pnl_usd": -7.7462328078713565,
+          "invested_usd": 75,
+          "execution_cost_usd": 6.391757564536606,
+          "events": [
+            {
+              "ts": "2026-04-26T01:31:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 25.49460431654676,
+              "pnl_usd": 2.9946043165467593
+            },
+            {
+              "ts": "2026-04-26T01:37:00.000Z",
+              "kind": "sell",
+              "reason": "TRAIL",
+              "sell_fraction": 1,
+              "proceeds_usd": 48.15092044011849,
+              "pnl_usd": -4.34907955988151
+            }
+          ]
+        },
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T02:00:00.000Z",
+          "entry_price_usd": 0.001047,
+          "dip_pct": -16.24,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 313772.75,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 4676477.69,
+            "volume1mUsd": 7570.192,
+            "knifeDropPct": -10.051546391752586,
+            "buys1h": 19024,
+            "sells1h": 15755,
+            "buys6h": 19024,
+            "sells6h": 15755,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T02:27:00.000Z",
+          "exit_price_usd": 0.0008824,
+          "exit_reason": "SL",
+          "gross_pnl_pct": -7.5663801337153656,
+          "net_pnl_pct": -15.841025787965608,
+          "pnl_usd": -11.880769340974204,
+          "invested_usd": 75,
+          "execution_cost_usd": 6.2059842406876795,
+          "events": [
+            {
+              "ts": "2026-04-26T02:15:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 25.078796561604587,
+              "pnl_usd": 2.5787965616045874
+            },
+            {
+              "ts": "2026-04-26T02:27:00.000Z",
+              "kind": "sell",
+              "reason": "SL",
+              "sell_fraction": 1,
+              "proceeds_usd": 44.24641833810889,
+              "pnl_usd": -8.253581661891111
+            }
+          ]
+        },
+        {
+          "mint": "Gg3gYix6aL2HXj6UyJ5cH8UnLsXxK19BaPJMjUKYMJ3g",
+          "entry_ts": "2026-04-26T04:47:00.000Z",
+          "entry_price_usd": 0.09561,
+          "dip_pct": -21.37335526315789,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 183348.57,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 491395.97000000015,
+            "volume1mUsd": 7808.178,
+            "knifeDropPct": 123.492286115007,
+            "buys1h": 223,
+            "sells1h": 255,
+            "buys6h": 1094,
+            "sells6h": 1411,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T07:37:00.000Z",
+          "exit_price_usd": 0.1183,
+          "exit_reason": "TIMEOUT",
+          "gross_pnl_pct": 22.02489279364083,
+          "net_pnl_pct": 12.477822403514278,
+          "pnl_usd": 9.358366802635707,
+          "invested_usd": 75,
+          "execution_cost_usd": 7.1603027925949165,
+          "events": [
+            {
+              "ts": "2026-04-26T04:54:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 27.086601819893314,
+              "pnl_usd": 4.586601819893314
+            },
+            {
+              "ts": "2026-04-26T04:54:00.000Z",
+              "kind": "sell",
+              "reason": "TP_20",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 18.96062127392532,
+              "pnl_usd": 3.2106212739253195
+            },
+            {
+              "ts": "2026-04-26T07:37:00.000Z",
+              "kind": "sell",
+              "reason": "TIMEOUT",
+              "sell_fraction": 1,
+              "proceeds_usd": 45.47144650141199,
+              "pnl_usd": 8.72144650141199
+            }
+          ]
+        },
+        {
+          "mint": "DACYVx34V5aQaehN3MZGYxPfoyQYHZSnFAFw3T2Vbonk",
+          "entry_ts": "2026-04-26T17:10:00.000Z",
+          "entry_price_usd": 0.000225,
+          "dip_pct": -18.831168831168842,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 37096.77,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 178637.9899999999,
+            "volume1mUsd": 173.254,
+            "knifeDropPct": 8.853410740203183,
+            "buys1h": 805,
+            "sells1h": 460,
+            "buys6h": 6096,
+            "sells6h": 3192,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T20:00:00.000Z",
+          "exit_price_usd": 0.0004066,
+          "exit_reason": "TIMEOUT",
+          "gross_pnl_pct": 49.67811111111109,
+          "net_pnl_pct": 38.94195233333332,
+          "pnl_usd": 29.20646424999999,
+          "invested_usd": 75,
+          "execution_cost_usd": 8.052119083333332,
+          "events": [
+            {
+              "ts": "2026-04-26T17:35:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 25.919999999999998,
+              "pnl_usd": 3.419999999999998
+            },
+            {
+              "ts": "2026-04-26T17:39:00.000Z",
+              "kind": "sell",
+              "reason": "TP_20",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 19.767999999999994,
+              "pnl_usd": 4.017999999999994
+            },
+            {
+              "ts": "2026-04-26T19:06:00.000Z",
+              "kind": "sell",
+              "reason": "TP_50",
+              "sell_fraction": 0.25,
+              "proceeds_usd": 16.762083333333333,
+              "pnl_usd": 7.574583333333333
+            },
+            {
+              "ts": "2026-04-26T20:00:00.000Z",
+              "kind": "sell",
+              "reason": "TIMEOUT",
+              "sell_fraction": 1,
+              "proceeds_usd": 49.808499999999995,
+              "pnl_usd": 22.245999999999995
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conservative",
+      "config": {
+        "id": "conservative",
+        "entry": {
+          "dipPct": -30,
+          "lookbackMin": 15,
+          "minLiquidityUsd": 25000,
+          "minVolumeUsd5m": 3000,
+          "minTrades5m": 12,
+          "requireRouteable": true,
+          "maxSlippageBps": 250,
+          "cooldownMin": 90
+        },
+        "dca": {
+          "enabled": false,
+          "levels": [],
+          "killStopPct": -0.11,
+          "requireAliveForAdd": false
+        },
+        "exit": {
+          "stopLossPct": -0.11,
+          "tpLadder": [
+            {
+              "pnlPct": 0.1,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.2,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.5,
+              "sellFraction": 0.25
+            }
+          ],
+          "trailActivateAfterTp": 2,
+          "trailDropPct": 0.1,
+          "timeoutMin": 70
+        },
+        "risk": {
+          "maxOpen": 2
+        },
+        "costs": {
+          "feeBps": 30,
+          "slippageBps": 180
+        }
+      },
+      "trades": 0,
+      "win_rate_pct": 0,
+      "avg_pnl_pct": 0,
+      "median_pnl_pct": null,
+      "sum_pnl_usd": 0,
+      "max_drawdown_usd": 0,
+      "runner_gate": {
+        "min_holders": 2000,
+        "min_age_hours": 6,
+        "max_age_hours": 240,
+        "min_lp_to_fdv": 0.05,
+        "min_volume_1h_usd": 8000,
+        "min_volume_1m_usd": 120,
+        "min_trades_1h": 45,
+        "min_buys_1h": 20,
+        "min_sells_1h": 8,
+        "knife_window_min": 5,
+        "knife_max_drop_pct": -14,
+        "btc_halt_1h_pct": -2,
+        "btc_halt_4h_pct": -4,
+        "btc_mints": [
+          "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"
+        ],
+        "btc_missing_points": 23,
+        "require_intel_fields": false,
+        "max_entries_per_mint_window": 2,
+        "entries_per_mint_window_min": 180,
+        "skipped_by_mint_window_cap": 0,
+        "scam_tags": [
+          "scam_operator",
+          "scam_proxy",
+          "scam_treasury",
+          "scam_payout",
+          "bot_farm_distributor",
+          "bot_farm_boss",
+          "gas_distributor"
+        ],
+        "rejected_by_reason": {
+          "holders": 21,
+          "falling_knife": 2
+        }
+      },
+      "exits": {},
+      "sample_trades": []
+    },
+    {
+      "id": "dno_safe",
+      "config": {
+        "id": "dno_safe",
+        "entry": {
+          "dipPct": -18,
+          "lookbackMin": 8,
+          "minLiquidityUsd": 10000,
+          "minVolumeUsd5m": 1200,
+          "minTrades5m": 8,
+          "requireRouteable": true,
+          "maxSlippageBps": 300,
+          "cooldownMin": 35
+        },
+        "dca": {
+          "enabled": true,
+          "levels": [
+            {
+              "triggerPct": -0.07,
+              "addFraction": 0.35
+            }
+          ],
+          "killStopPct": -0.14,
+          "requireAliveForAdd": true
+        },
+        "exit": {
+          "stopLossPct": -0.09,
+          "tpLadder": [
+            {
+              "pnlPct": 0.08,
+              "sellFraction": 0.35
+            },
+            {
+              "pnlPct": 0.16,
+              "sellFraction": 0.35
+            },
+            {
+              "pnlPct": 0.35,
+              "sellFraction": 0.2
+            }
+          ],
+          "trailActivateAfterTp": 1,
+          "trailDropPct": 0.1,
+          "timeoutMin": 35
+        },
+        "risk": {
+          "maxOpen": 2
+        },
+        "costs": {
+          "feeBps": 30,
+          "slippageBps": 220
+        }
+      },
+      "trades": 2,
+      "win_rate_pct": 50,
+      "avg_pnl_pct": -5.4027404681613875,
+      "median_pnl_pct": -5.4027404681613875,
+      "sum_pnl_usd": -11.14764450727353,
+      "max_drawdown_usd": -11.739344676549873,
+      "runner_gate": {
+        "min_holders": 2000,
+        "min_age_hours": 6,
+        "max_age_hours": 240,
+        "min_lp_to_fdv": 0.05,
+        "min_volume_1h_usd": 8000,
+        "min_volume_1m_usd": 120,
+        "min_trades_1h": 45,
+        "min_buys_1h": 20,
+        "min_sells_1h": 8,
+        "knife_window_min": 5,
+        "knife_max_drop_pct": -14,
+        "btc_halt_1h_pct": -2,
+        "btc_halt_4h_pct": -4,
+        "btc_mints": [
+          "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"
+        ],
+        "btc_missing_points": 44,
+        "require_intel_fields": false,
+        "max_entries_per_mint_window": 2,
+        "entries_per_mint_window_min": 180,
+        "skipped_by_mint_window_cap": 0,
+        "scam_tags": [
+          "scam_operator",
+          "scam_proxy",
+          "scam_treasury",
+          "scam_payout",
+          "bot_farm_distributor",
+          "bot_farm_boss",
+          "gas_distributor"
+        ],
+        "rejected_by_reason": {
+          "holders": 26,
+          "falling_knife": 14
+        }
+      },
+      "exits": {
+        "TRAIL": 1,
+        "SL": 1
+      },
+      "sample_trades": [
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T01:29:00.000Z",
+          "entry_price_usd": 0.0009452,
+          "dip_pct": -27.292307692307695,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 297322.97,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 3182103.8200000003,
+            "volume1mUsd": 14314.952,
+            "knifeDropPct": -7.242394504416094,
+            "buys1h": 12584,
+            "sells1h": 10293,
+            "buys6h": 12584,
+            "sells6h": 10293,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T01:35:00.000Z",
+          "exit_price_usd": 0.0009638,
+          "exit_reason": "TRAIL",
+          "gross_pnl_pct": 5.937367752856535,
+          "net_pnl_pct": 0.7889335590351235,
+          "pnl_usd": 0.5917001692763426,
+          "invested_usd": 75,
+          "execution_cost_usd": 3.861325645366059,
+          "events": [
+            {
+              "ts": "2026-04-26T01:31:00.000Z",
+              "kind": "sell",
+              "reason": "TP_8",
+              "sell_fraction": 0.35,
+              "proceeds_usd": 29.743705035971217,
+              "pnl_usd": 3.4937050359712174
+            },
+            {
+              "ts": "2026-04-26T01:35:00.000Z",
+              "kind": "sell",
+              "reason": "TRAIL",
+              "sell_fraction": 1,
+              "proceeds_usd": 49.709320778671184,
+              "pnl_usd": 0.9593207786711844
+            }
+          ]
+        },
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T02:33:00.000Z",
+          "entry_price_usd": 0.0008904,
+          "dip_pct": -24.15672913117547,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 290174.86,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 2144808.5100000002,
+            "volume1mUsd": 8373.332,
+            "knifeDropPct": -1.9491245457548767,
+            "buys1h": 9061,
+            "sells1h": 7042,
+            "buys6h": 22642,
+            "sells6h": 18253,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T02:39:00.000Z",
+          "exit_price_usd": 0.0008091,
+          "exit_reason": "SL",
+          "gross_pnl_pct": -6.763502046520924,
+          "net_pnl_pct": -11.5944144953579,
+          "pnl_usd": -11.739344676549873,
+          "invested_usd": 101.25,
+          "execution_cost_usd": 4.891298854447438,
+          "events": [
+            {
+              "ts": "2026-04-26T02:39:00.000Z",
+              "kind": "buy_add",
+              "trigger_pct": -0.07,
+              "add_usd": 26.25,
+              "add_fraction": 0.35
+            },
+            {
+              "ts": "2026-04-26T02:39:00.000Z",
+              "kind": "sell",
+              "reason": "SL",
+              "sell_fraction": 1,
+              "proceeds_usd": 94.40195417789757,
+              "pnl_usd": -6.848045822102435
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "balanced",
+      "config": {
+        "id": "balanced",
+        "entry": {
+          "dipPct": -22,
+          "lookbackMin": 10,
+          "minLiquidityUsd": 12000,
+          "minVolumeUsd5m": 1500,
+          "minTrades5m": 8,
+          "requireRouteable": true,
+          "maxSlippageBps": 350,
+          "cooldownMin": 45
+        },
+        "dca": {
+          "enabled": true,
+          "levels": [
+            {
+              "triggerPct": -0.08,
+              "addFraction": 0.5
+            },
+            {
+              "triggerPct": -0.16,
+              "addFraction": 0.75
+            }
+          ],
+          "killStopPct": -0.24,
+          "requireAliveForAdd": true
+        },
+        "exit": {
+          "stopLossPct": -0.1,
+          "tpLadder": [
+            {
+              "pnlPct": 0.1,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.2,
+              "sellFraction": 0.3
+            },
+            {
+              "pnlPct": 0.5,
+              "sellFraction": 0.25
+            }
+          ],
+          "trailActivateAfterTp": 2,
+          "trailDropPct": 0.12,
+          "timeoutMin": 100
+        },
+        "risk": {
+          "maxOpen": 3
+        },
+        "costs": {
+          "feeBps": 30,
+          "slippageBps": 250
+        }
+      },
+      "trades": 2,
+      "win_rate_pct": 0,
+      "avg_pnl_pct": -9.917717916932723,
+      "median_pnl_pct": -9.917717916932723,
+      "sum_pnl_usd": -14.876576875399085,
+      "max_drawdown_usd": -14.876576875399085,
+      "runner_gate": {
+        "min_holders": 2000,
+        "min_age_hours": 6,
+        "max_age_hours": 240,
+        "min_lp_to_fdv": 0.05,
+        "min_volume_1h_usd": 8000,
+        "min_volume_1m_usd": 120,
+        "min_trades_1h": 45,
+        "min_buys_1h": 20,
+        "min_sells_1h": 8,
+        "knife_window_min": 5,
+        "knife_max_drop_pct": -14,
+        "btc_halt_1h_pct": -2,
+        "btc_halt_4h_pct": -4,
+        "btc_mints": [
+          "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"
+        ],
+        "btc_missing_points": 42,
+        "require_intel_fields": false,
+        "max_entries_per_mint_window": 2,
+        "entries_per_mint_window_min": 180,
+        "skipped_by_mint_window_cap": 0,
+        "scam_tags": [
+          "scam_operator",
+          "scam_proxy",
+          "scam_treasury",
+          "scam_payout",
+          "bot_farm_distributor",
+          "bot_farm_boss",
+          "gas_distributor"
+        ],
+        "rejected_by_reason": {
+          "holders": 24,
+          "falling_knife": 10
+        }
+      },
+      "exits": {
+        "SL": 2
+      },
+      "sample_trades": [
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T01:29:00.000Z",
+          "entry_price_usd": 0.0009452,
+          "dip_pct": -38.86157826649418,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 297322.97,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 3182103.8200000003,
+            "volume1mUsd": 14314.952,
+            "knifeDropPct": -7.242394504416094,
+            "buys1h": 12584,
+            "sells1h": 10293,
+            "buys6h": 12584,
+            "sells6h": 10293,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T01:38:00.000Z",
+          "exit_price_usd": 0.0008433,
+          "exit_reason": "SL",
+          "gross_pnl_pct": -3.553745239102848,
+          "net_pnl_pct": -9.05424037240797,
+          "pnl_usd": -6.790680279305977,
+          "invested_usd": 75,
+          "execution_cost_usd": 4.125371349978841,
+          "events": [
+            {
+              "ts": "2026-04-26T01:31:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 25.49460431654676,
+              "pnl_usd": 2.9946043165467593
+            },
+            {
+              "ts": "2026-04-26T01:38:00.000Z",
+              "kind": "sell",
+              "reason": "SL",
+              "sell_fraction": 1,
+              "proceeds_usd": 46.840086754126105,
+              "pnl_usd": -5.659913245873895
+            }
+          ]
+        },
+        {
+          "mint": "KMnDBXcPXoz6oMJW5XG4tXdwSWpmWEP2RQM1Uujpump",
+          "entry_ts": "2026-04-26T02:32:00.000Z",
+          "entry_price_usd": 0.0008549,
+          "dip_pct": -26.554982817869423,
+          "runner": {
+            "holders": null,
+            "ageHours": null,
+            "liquidityUsd": 284309.69,
+            "fdvUsd": null,
+            "lpToFdv": null,
+            "volume1hUsd": 2159156.7199999997,
+            "volume1mUsd": 7395.814,
+            "knifeDropPct": -3.1165004533091567,
+            "buys1h": 9130,
+            "sells1h": 7146,
+            "buys6h": 22501,
+            "sells6h": 18148,
+            "txBurstCount": null
+          },
+          "btc": {
+            "ret1hPct": null,
+            "ret4hPct": null
+          },
+          "exit_ts": "2026-04-26T02:42:00.000Z",
+          "exit_price_usd": 0.000749,
+          "exit_reason": "SL",
+          "gross_pnl_pct": -5.33044800561469,
+          "net_pnl_pct": -10.781195461457477,
+          "pnl_usd": -8.085896596093107,
+          "invested_usd": 75,
+          "execution_cost_usd": 4.088060591882091,
+          "events": [
+            {
+              "ts": "2026-04-26T02:34:00.000Z",
+              "kind": "sell",
+              "reason": "TP_10",
+              "sell_fraction": 0.3,
+              "proceeds_usd": 25.00555620540414,
+              "pnl_usd": 2.5055562054041403
+            },
+            {
+              "ts": "2026-04-26T02:42:00.000Z",
+              "kind": "sell",
+              "reason": "SL",
+              "sell_fraction": 1,
+              "proceeds_usd": 45.99660779038484,
+              "pnl_usd": -6.503392209615157
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

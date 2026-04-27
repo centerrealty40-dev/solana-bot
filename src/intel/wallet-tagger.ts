@@ -22,28 +22,48 @@ import { child } from '../core/logger.js';
 
 const log = child('wallet-tagger');
 
-const PRIORITY = [
+/**
+ * Tag precedence for `entity_wallets.primary_tag` (highest first).
+ * Exported for downstream writers (e.g. scam-farm-detective) that must not
+ * overwrite a stronger label with a weaker one.
+ */
+export const PRIMARY_TAG_PRIORITY = [
   'cex_hot_wallet',
-  'terminal_distributor',   // public trading terminal paymaster (Axiom/Photon/...)
+  'terminal_distributor', // public trading terminal paymaster (Axiom/Photon/...)
   'scam_treasury',
   'scam_payout',
   'scam_operator',
   'scam_proxy',
-  'whale',                  // moves >=100 SOL per transfer or >=1000 SOL totals
-  'bot_farm_boss',          // collector receiving from many small sources
-  'bot_farm_distributor',   // sender to many wallets w/ medium SOL amounts (live raids)
+  'whale', // moves >=100 SOL per transfer or >=1000 SOL totals
+  'bot_farm_boss', // collector receiving from many small sources
+  'bot_farm_distributor', // sender to many wallets w/ medium SOL amounts (live raids)
   'sniper',
   'mev_bot',
-  'terminal_user',          // received gas from terminal_distributor
-  'meme_flipper',           // many mints via 1-2 aggregators (real human flipper)
+  'terminal_user', // received gas from terminal_distributor
+  'meme_flipper', // many mints via 1-2 aggregators (real human flipper)
   'smart_money',
   'insider',
   'rotation_node',
-  'gas_distributor',        // micro-amounts (<0.5 SOL) to many — paymasters, helpers
+  'gas_distributor', // micro-amounts (<0.5 SOL) to many — paymasters, helpers
   'lp_provider',
   'retail',
   'inactive',
-];
+] as const;
+
+const PRIORITY = PRIMARY_TAG_PRIORITY;
+
+/**
+ * Return the best primary tag for a set of tag names, or null if none match.
+ */
+export function pickPrimaryTagFromSet(tags: Set<string> | string[]): string | null {
+  const s = Array.isArray(tags) ? new Set(tags) : tags;
+  for (const t of PRIMARY_TAG_PRIORITY) {
+    if (s.has(t)) {
+      return t;
+    }
+  }
+  return null;
+}
 
 const KNOWN_CEX_HOT_WALLETS = new Map<string, string>([
   ['5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9', 'Binance hot 1'],

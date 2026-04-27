@@ -11,6 +11,9 @@ const DEX_SEARCH_TERMS = (process.env.RAYDIUM_DEX_SEARCH_TERMS || 'raydium,solan
   .map((v) => v.trim())
   .filter(Boolean);
 const GECKO_TRENDING_PAGES = Number(process.env.RAYDIUM_GECKO_TRENDING_PAGES || 2);
+const SHORTLIST_MIN_LIQ_USD = Number(process.env.RAYDIUM_SHORTLIST_MIN_LIQ_USD || 20_000);
+const SHORTLIST_MIN_VOL5M_USD = Number(process.env.RAYDIUM_SHORTLIST_MIN_VOL5M_USD || 2_000);
+const RPC_FEATURES = ['holders', 'largest_accounts', 'authorities', 'tx_burst'];
 const ONCE = process.argv.includes('--once');
 
 if (!process.env.DATABASE_URL) {
@@ -118,7 +121,7 @@ function normalizeDexScreenerPair(pair, bucketTs) {
   const txnsM5 = pair?.txns?.m5 ?? {};
   return {
     ts: bucketTs,
-    source: 'dexscreener',
+    source: 'raydium',
     pair_address: pairAddress,
     base_mint: baseMint,
     quote_mint: quoteMint,
@@ -130,7 +133,39 @@ function normalizeDexScreenerPair(pair, bucketTs) {
     sells_5m: toInt(txnsM5?.sells),
     fdv_usd: toNum(pair?.fdv),
     market_cap_usd: toNum(pair?.marketCap),
+    base_symbol: pair?.baseToken?.symbol ?? null,
+    base_name: pair?.baseToken?.name ?? null,
   };
+}
+
+async function upsertTokensMeta(rows, pool) {
+  const seen = new Map();
+  for (const r of rows) {
+    if (!r?.base_mint) continue;
+    if (!r.base_symbol && !r.base_name) continue;
+    if (!seen.has(r.base_mint)) seen.set(r.base_mint, { symbol: r.base_symbol, name: r.base_name });
+  }
+  if (seen.size === 0) return 0;
+  let touched = 0;
+  for (const [mint, meta] of seen) {
+    try {
+      const res = await pool.query(
+        `INSERT INTO tokens (mint, symbol, name, metadata)
+         VALUES ($1, $2, $3, jsonb_build_object('source','raydium'))
+         ON CONFLICT (mint) DO UPDATE SET
+           symbol = COALESCE(NULLIF(tokens.symbol, ''), EXCLUDED.symbol),
+           name   = COALESCE(NULLIF(tokens.name,   ''), EXCLUDED.name),
+           metadata = CASE
+             WHEN COALESCE(tokens.metadata->>'source','') = ''
+             THEN COALESCE(tokens.metadata, '{}'::jsonb) || jsonb_build_object('source','raydium')
+             ELSE tokens.metadata
+           END`,
+        [mint, meta.symbol, meta.name],
+      );
+      touched += Number(res.rowCount ?? 0);
+    } catch { /* per-mint best-effort */ }
+  }
+  return touched;
 }
 
 function normalizeGeckoPool(poolData, bucketTs) {
@@ -146,7 +181,7 @@ function normalizeGeckoPool(poolData, bucketTs) {
   const tx5m = attrs?.transactions?.m5 ?? {};
   return {
     ts: bucketTs,
-    source: 'geckoterminal',
+    source: 'raydium',
     pair_address: pairAddress,
     base_mint: baseMint,
     quote_mint: quoteMint,
@@ -272,6 +307,35 @@ async function upsertSnapshots(rows) {
   return rows.length;
 }
 
+function shortlistMints(rows) {
+  const mints = new Set();
+  for (const row of rows) {
+    const liq = Number(row.liquidity_usd ?? 0);
+    const vol5m = Number(row.volume_5m ?? 0);
+    if (liq >= SHORTLIST_MIN_LIQ_USD && vol5m >= SHORTLIST_MIN_VOL5M_USD) {
+      mints.add(row.base_mint);
+    }
+  }
+  return [...mints];
+}
+
+async function enqueueRpcTasks(shortlistedMints) {
+  if (shortlistedMints.length === 0) return 0;
+  let enqueued = 0;
+  for (const mint of shortlistedMints) {
+    for (const feature of RPC_FEATURES) {
+      const res = await pool.query(
+        `INSERT INTO rpc_tasks (mint, feature_type, priority, not_before)
+         VALUES ($1, $2, 50, NOW())
+         ON CONFLICT DO NOTHING`,
+        [mint, feature],
+      );
+      enqueued += Number(res.rowCount ?? 0);
+    }
+  }
+  return enqueued;
+}
+
 async function collectOneTick() {
   const tickStartedAt = Date.now();
   const bucketTs = getMinuteBucketUtc();
@@ -286,6 +350,9 @@ async function collectOneTick() {
     }
 
     const written = await upsertSnapshots(rows);
+    await upsertTokensMeta(rows, pool).catch(() => {});
+    const shortlistedMints = shortlistMints(rows);
+    const rpcTasksEnqueued = await enqueueRpcTasks(shortlistedMints);
     ticksTotal += 1;
     rowsCollectedTotal += rows.length;
     rowsUpsertedTotal += written;
@@ -295,6 +362,8 @@ async function collectOneTick() {
       bucketTs: bucketTs.toISOString(),
       collected: rows.length,
       upserted: written,
+      shortlistedMints: shortlistedMints.length,
+      rpcTasksEnqueued,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
       rowsUpsertedTotal,
@@ -345,6 +414,8 @@ async function main() {
     once: ONCE,
     searchTerms: DEX_SEARCH_TERMS,
     geckoTrendingPages: GECKO_TRENDING_PAGES,
+    shortlistMinLiqUsd: SHORTLIST_MIN_LIQ_USD,
+    shortlistMinVol5mUsd: SHORTLIST_MIN_VOL5M_USD,
   });
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

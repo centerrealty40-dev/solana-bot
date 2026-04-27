@@ -50,6 +50,13 @@
       "when": 1777200000000,
       "tag": "0006_paper_trades",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778000000000,
+      "tag": "0007_scam_farm_candidates",
+      "breakpoints": true
     }
   ]
 }

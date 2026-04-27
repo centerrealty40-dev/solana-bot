@@ -33,8 +33,8 @@ export interface NormalizedSwap {
   priceUsd: number;
   amountUsd: number;
   /** which DEX program executed it */
-  dex: 'raydium' | 'jupiter' | 'pumpfun' | 'meteora' | 'orca' | 'unknown';
-  source: 'helius_webhook' | 'dexscreener' | 'birdeye' | 'pumpportal' | 'manual';
+  dex: 'raydium' | 'jupiter' | 'pumpfun' | 'pumpswap' | 'meteora' | 'orca' | 'unknown';
+  source: 'helius_webhook' | 'dexscreener' | 'birdeye' | 'pumpportal' | 'manual' | 'rpc_backfill';
 }
 
 export interface TokenInfo {

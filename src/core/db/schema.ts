@@ -521,6 +521,43 @@ export const walletClusters = pgTable(
 );
 
 /**
+ * Scam-farm / orchestrated-ring candidates (DB-first review queue).
+ *
+ * `candidate_id` = sha256 hex (64 chars) of normalized rule + wallets + mints.
+ * Strong scores trigger Wallet Atlas writes when SCAM_FARM_WRITE_ATLAS=1.
+ */
+export const scamFarmCandidates = pgTable(
+  'scam_farm_candidates',
+  {
+    candidateId: varchar('candidate_id', { length: 64 }).primaryKey(),
+    /** open | needs_evidence | confirmed | dismissed */
+    status: varchar('status', { length: 24 }).notNull().default('open'),
+    score: doublePrecision('score').notNull().default(0),
+    /** e.g. ["sync_fund", "orchestrate_split"] */
+    ruleIds: jsonb('rule_ids').$type<string[]>().notNull().default([]),
+    /** Optional dominant funder from money_flows / wallets */
+    funder: varchar('funder', { length: 64 }),
+    participantWallets: jsonb('participant_wallets').$type<string[]>().notNull().default([]),
+    /** Rug-anchor mints (blacklisted / collapsed liq) tied to this candidate */
+    anchorMints: jsonb('anchor_mints').$type<string[]>().notNull().default([]),
+    /** Evidence: signatures, window stats, RPC notes (JSON) */
+    artifacts: jsonb('artifacts').$type<Record<string, unknown>>().notNull().default({}),
+    /** Manual / pipeline soft-revoke: do not auto-apply tags again */
+    reverted: boolean('reverted').notNull().default(false),
+    /** Set after successful idempotent write to wallet_tags / clusters */
+    wroteToAtlas: boolean('wrote_to_atlas').notNull().default(false),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('scam_farm_candidates_status_idx').on(t.status),
+    lastRunIdx: index('scam_farm_candidates_last_run_idx').on(t.lastRunAt),
+  }),
+);
+
+/**
  * On-chain programs / protocols catalog.
  *
  * Strategy B (Infrastructure Frontrunner) needs to know which programs are

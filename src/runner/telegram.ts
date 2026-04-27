@@ -3,10 +3,11 @@ import { sql as dsql } from 'drizzle-orm';
 import { config } from '../core/config.js';
 import { db, schema } from '../core/db/client.js';
 import { child } from '../core/logger.js';
+import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('telegram');
 
-/** Best-effort Markdown send. No-ops when bot token / chat id are missing. */
+/** Legacy raw send (no tag) — оставлено для совместимости. Новый код должен использовать `sendTagged`. */
 export async function sendTelegram(text: string): Promise<void> {
   if (!config.telegramBotToken || !config.telegramChatId) return;
   const url = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;
@@ -29,6 +30,8 @@ export async function sendTelegram(text: string): Promise<void> {
     log.warn({ err: String(err) }, 'telegram send failed');
   }
 }
+
+export { sendTagged };
 
 /* ----- Helpers ----- */
 
@@ -240,6 +243,26 @@ export async function notifyCopyExit(args: {
     `[Solscan token](https://solscan.io/token/${args.baseMint}) | ` +
     `[Leader wallet](https://solscan.io/account/${args.triggerWallet})`;
   await sendTelegram(text);
+}
+
+/**
+ * Daily discover-smart-money report (candidates + tagged this run). No-op if TELEGRAM_* missing.
+ * Opt-out: DISCOVER_SM_TELEGRAM=0. Dry-run: only sent if DISCOVER_SM_SEND_IN_DRY=1.
+ */
+export async function notifyDiscoverSmartMoneyRun(args: {
+  candidates: number;
+  tagged: number;
+  dryRun: boolean;
+}): Promise<void> {
+  if (process.env.DISCOVER_SM_TELEGRAM === '0') return;
+  if (args.dryRun && process.env.DISCOVER_SM_SEND_IN_DRY !== '1') return;
+  const pre = args.dryRun ? 'Smart money discovery (dry run)\n' : 'Smart money discovery\n';
+  const text =
+    pre +
+    `Кандидатов по эвристике: ${args.candidates}\n` +
+    `В Wallet Atlas за прогон: ${args.tagged}\n` +
+    `источник: discover_sm_run`;
+  await sendTagged('REPORT', 'smart-money', text);
 }
 
 export async function notifyError(component: string, err: unknown): Promise<void> {

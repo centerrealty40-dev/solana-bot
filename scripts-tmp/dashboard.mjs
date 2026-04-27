@@ -1,11 +1,17 @@
+import 'dotenv/config';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import pg from 'pg';
+const { Pool } = pg;
 
 const PORT = Number(process.env.PORT || 3007);
 const STORE = process.env.STORE_PATH || '/tmp/paper-trades.jsonl';
 const VISITS = process.env.VISITS_PATH || '/tmp/dashboard-visits.jsonl';
 const HTML_PATH = new URL('./dashboard.html', import.meta.url);
+const HTML2_PATH = new URL('./dashboard-paper2.html', import.meta.url);
+const PAPER2_DIR = process.env.PAPER2_DIR || '/opt/solana-alpha/data/paper2';
 
 // PAPER-MONEY LEGEND
 const POSITION_USD = Number(process.env.POSITION_USD || 100);
@@ -25,18 +31,83 @@ async function getMc(m) {
   return null;
 }
 
-function loadStore() {
-  if (!fs.existsSync(STORE)) return { open: [], closed: [], firstTs: Date.now(), lastTs: Date.now(), resetTs: 0 };
-  const lines = fs.readFileSync(STORE, 'utf-8').split('\n').filter(Boolean);
+// Live price + mcap для post/migration позиций (metricType=price) — берём из *_pair_snapshots.
+const dbPool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, max: 4 }) : null;
+const dexCache = new Map(); // mint -> { ts, price, mcap, symbol, name }
+const DEX_TTL_MS = 30_000;
+async function getDexLive(mint) {
+  if (!dbPool) return null;
+  const c = dexCache.get(mint);
+  if (c && Date.now() - c.ts < DEX_TTL_MS) return c;
+  try {
+    const tk = await dbPool.query('SELECT symbol, name FROM tokens WHERE mint = $1 LIMIT 1', [mint]).catch(() => ({ rows: [] }));
+    const tables = ['pumpswap_pair_snapshots', 'raydium_pair_snapshots', 'meteora_pair_snapshots'];
+    let best = null;
+    for (const t of tables) {
+      try {
+        const r = await dbPool.query(
+          `SELECT price_usd, market_cap_usd, ts FROM ${t} WHERE base_mint = $1 ORDER BY ts DESC LIMIT 1`,
+          [mint],
+        );
+        const row = r.rows?.[0];
+        if (!row) continue;
+        if (!best || (row.ts && (!best.ts || row.ts > best.ts))) best = row;
+      } catch { /* table missing — skip */ }
+    }
+    const sym = tk.rows?.[0]?.symbol;
+    const out = {
+      ts: Date.now(),
+      price: Number(best?.price_usd ?? 0) || null,
+      mcap: Number(best?.market_cap_usd ?? 0) || null,
+      symbol: sym && String(sym).length ? sym : null,
+      name: tk.rows?.[0]?.name ?? null,
+    };
+    dexCache.set(mint, out);
+    return out;
+  } catch { return null; }
+}
+
+function loadStoreFromFile(filePath) {
+  if (!fs.existsSync(filePath)) return { open: [], closed: [], firstTs: Date.now(), lastTs: Date.now(), resetTs: 0, evals1h: 0, passed1h: 0, failReasons: [] };
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
   const om = new Map(), cl = [];
   let f = Date.now(), l = 0, resetTs = 0;
+  let evals1h = 0;
+  let passed1h = 0;
+  const failReasonsCount = new Map();
+  const since1h = Date.now() - 3600_000;
   for (const ln of lines) {
     if (ln.includes('"kind":"tick"')) continue;
     let e; try { e = JSON.parse(ln); } catch { continue; }
     if (e.ts) { if (e.ts < f) f = e.ts; if (e.ts > l) l = e.ts; }
     if (e.kind === 'reset') { resetTs = e.ts; continue; }
+    if (e.kind === 'eval' && (e.ts || 0) >= since1h) {
+      evals1h++;
+      if (e.pass) passed1h++;
+      else {
+        for (const r of (e.reasons || [])) {
+          failReasonsCount.set(r, (failReasonsCount.get(r) || 0) + 1);
+        }
+      }
+    }
     if (e.kind === 'open') {
-      om.set(e.mint, { mint: e.mint, symbol: e.symbol, entryTs: e.entryTs, entryMcUsd: e.entryMcUsd, peakMcUsd: e.entryMcUsd, peakPnlPct: 0, trailingArmed: false });
+      const featMc = (e.features && (e.features.market_cap_usd || e.features.fdv_usd)) || 0;
+      om.set(e.mint, {
+        mint: e.mint,
+        symbol: e.symbol,
+        entryTs: e.entryTs,
+        entryMcUsd: e.entryMcUsd,
+        entryRealMcUsd: e.entry_mc_usd || featMc || null,
+        openedAtIso: e.opened_at_iso || (e.entryTs ? new Date(e.entryTs).toISOString() : null),
+        lane: e.lane,
+        source: e.source,
+        metricType: e.metricType,
+        features: e.features || null,
+        btc: e.btc || null,
+        peakMcUsd: e.entryMcUsd,
+        peakPnlPct: 0,
+        trailingArmed: false,
+      });
     } else if (e.kind === 'peak' && om.has(e.mint)) {
       const o = om.get(e.mint);
       o.peakMcUsd = Math.max(o.peakMcUsd, e.peakMcUsd || 0);
@@ -44,7 +115,12 @@ function loadStore() {
       o.trailingArmed = o.trailingArmed || !!e.trailingArmed;
     } else if (e.kind === 'close') { om.delete(e.mint); cl.push(e); }
   }
-  return { open: [...om.values()], closed: cl, firstTs: f, lastTs: l, resetTs };
+  const failReasons = [...failReasonsCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ reason: k, count: v }));
+  return { open: [...om.values()], closed: cl, firstTs: f, lastTs: l, resetTs, evals1h, passed1h, failReasons };
+}
+
+function loadStore() {
+  return loadStoreFromFile(STORE);
 }
 
 function pctToUsd(p) { return (p / 100) * POSITION_USD; }
@@ -118,6 +194,12 @@ const server = createServer(async (req, res) => {
     res.end(fs.readFileSync(HTML_PATH, 'utf-8'));
     return;
   }
+  if (u.pathname === '/papertrader2') {
+    logVisit(req);
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.end(fs.readFileSync(HTML2_PATH, 'utf-8'));
+    return;
+  }
   if (u.pathname === '/api/state') {
     const { open, closed, firstTs, lastTs, resetTs } = loadStore();
     const en = await Promise.all(open.map(async ot => {
@@ -148,6 +230,110 @@ const server = createServer(async (req, res) => {
       topLosers: [...closedWithUsd].sort((a,b)=>a.pnlPct-b.pnlPct).slice(0,5),
       config: { tp: 3, sl: 0.3, trailTrigger: 1.5, trailDrop: 0.4, timeoutHours: 12, calibration: 'V7' }
     }));
+    return;
+  }
+  if (u.pathname === '/api/paper2') {
+    let files = [];
+    try {
+      if (fs.existsSync(PAPER2_DIR)) {
+        files = fs
+          .readdirSync(PAPER2_DIR)
+          .filter((f) => f.endsWith('.jsonl'))
+          .map((f) => path.join(PAPER2_DIR, f));
+      }
+    } catch {}
+
+    const strategies = [];
+    for (const fp of files) {
+      const sid = path.basename(fp, '.jsonl');
+      const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons } = loadStoreFromFile(fp);
+      const m = metrics(closed);
+      const closedWithUsd = closed.map((c) => ({ ...c, pnlUsd: pctToUsd(c.pnlPct) }));
+      const startedAt = resetTs || firstTs;
+      const enrichedOpen = await Promise.all(open.slice(0, 30).map(async (ot) => {
+        const isPrice = ot.metricType === 'price';
+        const dex = await getDexLive(ot.mint);
+        let pnl = null, cur = ot.peakMcUsd || ot.entryMcUsd || 0, hasLive = false, mcDisplay = ot.entryRealMcUsd || null;
+        let symbol = ot.symbol;
+        if (dex) {
+          if (dex.symbol) symbol = dex.symbol;
+          if (!mcDisplay && dex.mcap) mcDisplay = dex.mcap;
+        }
+        if (isPrice) {
+          // PnL по цене токена (entryMcUsd для price-входов на самом деле = price)
+          if (dex?.price && ot.entryMcUsd > 0) {
+            pnl = ((dex.price / ot.entryMcUsd) - 1) * 100;
+            cur = dex.mcap || dex.price;
+            hasLive = true;
+          }
+        } else {
+          // launchpad: pump.fun mcap (legacy путь)
+          const cm = await getMc(ot.mint);
+          if (cm && ot.entryMcUsd > 0) {
+            pnl = ((cm / ot.entryMcUsd) - 1) * 100;
+            cur = cm;
+            hasLive = true;
+          }
+        }
+        return {
+          ...ot,
+          symbol,
+          currentMcUsd: cur,
+          entryRealMcUsd: mcDisplay,
+          peakMcUsd: Math.max(ot.peakMcUsd || 0, cur),
+          pnlPct: pnl,
+          pnlUsd: pnl != null ? pctToUsd(pnl) : null,
+          ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60000,
+          hasLiveMc: hasLive,
+        };
+      }));
+      const unrealizedUsd = enrichedOpen.reduce((s, x) => s + (x.pnlUsd || 0), 0);
+      strategies.push({
+        strategyId: sid,
+        file: fp,
+        openCount: open.length,
+        closedCount: closed.length,
+        startedAt,
+        lastTs,
+        hoursOfData: (Date.now() - startedAt) / 3600000,
+        sumPnlUsd: m.sumPnlUsd,
+        winRate: m.winRate,
+        avgPnl: m.avgPnl,
+        avgPeak: m.avgPeak,
+        bestPnlUsd: m.bestPnlUsd,
+        worstPnlUsd: m.worstPnlUsd,
+        unrealizedUsd,
+        exits: m.exits,
+        exitsBreakdown: m.exitsBreakdown,
+        evals1h,
+        passed1h,
+        failReasons,
+        open: enrichedOpen,
+        recentClosed: [...closedWithUsd].sort((a, b) => b.exitTs - a.exitTs).slice(0, 20),
+      });
+    }
+    strategies.sort((a, b) => b.sumPnlUsd - a.sumPnlUsd);
+
+    const totals = strategies.reduce(
+      (acc, s) => {
+        acc.strategies += 1;
+        acc.open += s.openCount;
+        acc.closed += s.closedCount;
+        acc.sumPnlUsd += s.sumPnlUsd;
+        return acc;
+      },
+      { strategies: 0, open: 0, closed: 0, sumPnlUsd: 0 },
+    );
+
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({
+        now: Date.now(),
+        paper2Dir: PAPER2_DIR,
+        totals,
+        strategies,
+      }),
+    );
     return;
   }
   if (u.pathname === '/api/visits') {
