@@ -65,13 +65,15 @@ sudo -u salpha -H bash -lc '
   cd /opt/solana-alpha &&
   git fetch origin &&
   git reset --hard origin/v2 &&
-  npm ci --omit=dev &&
+  npm install --omit=dev &&
   npm run db:migrate &&
   pm2 delete all 2>/dev/null || true
   pm2 start ecosystem.config.cjs &&
   pm2 save
 '
 ```
+
+(`npm ci --omit=dev` may fail on some hosts with optional-dep lockfile skew; `npm install --omit=dev` is the supported fallback.)
 
 Smoke:
 
