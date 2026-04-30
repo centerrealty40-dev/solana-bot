@@ -3,7 +3,6 @@ import type { AtlasTx } from './cursor.js';
 import { sqlSwapIds } from './sql-ids.js';
 
 const SOURCE = 'sa-atlas';
-const CONF = 70;
 
 function conflictUpdate(): ReturnType<typeof sql> {
   return sql`
@@ -23,7 +22,7 @@ export async function applyActivityTags(tx: AtlasTx, ids: bigint[], windowHours:
 
   await tx.execute(sql`
     INSERT INTO wallet_tags (wallet, tag, confidence, source, context, added_at)
-    SELECT sub.wallet, 'pump_active', ${CONF}, ${SOURCE},
+    SELECT sub.wallet, 'pump_active', 70, ${SOURCE},
       'window=' || ${String(h)} || 'h|n=' || sub.n::text,
       now()
     FROM (
@@ -40,7 +39,7 @@ export async function applyActivityTags(tx: AtlasTx, ids: bigint[], windowHours:
 
   await tx.execute(sql`
     INSERT INTO wallet_tags (wallet, tag, confidence, source, context, added_at)
-    SELECT sub.wallet, 'pump_buyer', ${CONF}, ${SOURCE},
+    SELECT sub.wallet, 'pump_buyer', 70, ${SOURCE},
       'window=' || ${String(h)} || 'h|buys=' || sub.n::text,
       now()
     FROM (
@@ -58,7 +57,7 @@ export async function applyActivityTags(tx: AtlasTx, ids: bigint[], windowHours:
 
   await tx.execute(sql`
     INSERT INTO wallet_tags (wallet, tag, confidence, source, context, added_at)
-    SELECT sub.wallet, 'pump_seller', ${CONF}, ${SOURCE},
+    SELECT sub.wallet, 'pump_seller', 70, ${SOURCE},
       'window=' || ${String(h)} || 'h|sells=' || sub.n::text,
       now()
     FROM (
@@ -76,7 +75,7 @@ export async function applyActivityTags(tx: AtlasTx, ids: bigint[], windowHours:
 
   await tx.execute(sql`
     INSERT INTO wallet_tags (wallet, tag, confidence, source, context, added_at)
-    SELECT DISTINCT s2.wallet, 'pump_high_roller', ${CONF}, ${SOURCE},
+    SELECT DISTINCT s2.wallet, 'pump_high_roller', 70, ${SOURCE},
       'window=' || ${String(h)} || 'h|amount_usd>=1000',
       now()
     FROM swaps s2
@@ -92,7 +91,7 @@ export async function applyActivityTags(tx: AtlasTx, ids: bigint[], windowHours:
     SELECT DISTINCT ON (s.wallet)
       s.wallet,
       'pump_first_buyer',
-      ${CONF},
+      70,
       ${SOURCE},
       'mint=' || s.base_mint || '|within30sOfFirstSeen',
       now()
