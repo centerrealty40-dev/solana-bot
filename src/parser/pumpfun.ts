@@ -36,10 +36,19 @@ function accountKeysList(message: Record<string, unknown> | undefined): string[]
   return out;
 }
 
+/** Prefer first signer account (fee payer / authority), not merely index 0 for loaded-address layouts. */
 function feePayerPubkey(tx: TxJsonParsed): string | null {
   const msg = tx.transaction?.message as Record<string, unknown> | undefined;
-  const keys = accountKeysList(msg);
-  return keys[0] ?? null;
+  if (!msg) return null;
+  const keysRaw = (msg.accountKeys ?? msg.staticAccountKeys) as unknown;
+  if (!Array.isArray(keysRaw) || keysRaw.length === 0) return null;
+  for (const k of keysRaw) {
+    if (k && typeof k === 'object' && 'pubkey' in k) {
+      const o = k as { pubkey?: string; signer?: boolean };
+      if (o.signer && typeof o.pubkey === 'string') return o.pubkey;
+    }
+  }
+  return accountKeysList(msg)[0] ?? null;
 }
 
 function logsArray(tx: TxJsonParsed): string[] {
@@ -48,14 +57,19 @@ function logsArray(tx: TxJsonParsed): string[] {
   return lm.map(String);
 }
 
-/** Fast filter — avoids wasted balance math on unrelated txs. */
+/**
+ * Fast filter — avoids treating every pump mention as a trade.
+ * Requires virtual-reserve lines (spec W4) + explicit Buy/Sell inside pump flow.
+ */
 export function isPumpfunSwap(tx: TxJsonParsed | null | undefined, pumpProgramId: string): boolean {
   if (!tx?.meta) return false;
   if (tx.meta.err != null) return false;
   const logs = logsArray(tx);
   const mentionsPump = logs.some((l) => l.includes(pumpProgramId));
   const buySell = logs.some((l) => l.includes('Instruction: Buy') || l.includes('Instruction: Sell'));
-  return mentionsPump && buySell;
+  const hasVirtualSol = logs.some((l) => /\bvSOL:\s*\d+/.test(l));
+  const hasVirtualTok = logs.some((l) => /\bvToken:\s*\d+/.test(l));
+  return mentionsPump && buySell && hasVirtualSol && hasVirtualTok;
 }
 
 function balanceTotalsForOwner(balances: TokenBal[] | null | undefined, owner: string): Map<string, bigint> {
