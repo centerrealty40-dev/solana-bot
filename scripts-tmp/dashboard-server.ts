@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
+import postgres from 'postgres';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,18 @@ function resolvedOrgCursorPath(): string | null {
 }
 const HTML_PATH = path.join(__dirname, 'dashboard.html');
 const VISITS_PATH = process.env.VISITS_PATH ?? '/tmp/dashboard-visits.jsonl';
+
+let pgSql: ReturnType<typeof postgres> | null = null;
+function pgPool(): ReturnType<typeof postgres> {
+  const url = process.env.SA_PG_DSN || process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error('SA_PG_DSN or DATABASE_URL is required for /api/stream/health');
+  }
+  if (!pgSql) {
+    pgSql = postgres(url, { max: 2, idle_timeout: 20 });
+  }
+  return pgSql;
+}
 
 interface OpenTrade {
   mint: string;
@@ -398,6 +411,31 @@ app.get('/api/state', async (_req, reply) => {
 });
 
 app.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
+
+app.get('/api/stream/health', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  try {
+    const sql = pgPool();
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*)::bigint FROM stream_events) AS total,
+        (SELECT count(*)::bigint FROM stream_events WHERE received_at > now() - interval '1 minute') AS m1,
+        (SELECT count(*)::bigint FROM stream_events WHERE received_at > now() - interval '5 minutes') AS m5,
+        (SELECT max(received_at) FROM stream_events) AS last_event_at,
+        (SELECT count(DISTINCT program_id)::bigint FROM stream_events) AS distinct_programs
+    `;
+    return {
+      total: Number(row.total),
+      m1: Number(row.m1),
+      m5: Number(row.m5),
+      last_event_at: row.last_event_at,
+      distinct_programs: Number(row.distinct_programs),
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
 
 app.listen({ port: PORT, host: HOST }).then(() => {
   console.log(`[dashboard] listening on http://${HOST}:${PORT}`);

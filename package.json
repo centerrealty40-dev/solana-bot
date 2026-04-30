@@ -16,7 +16,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "dashboard": "tsx scripts-tmp/dashboard-server.ts"
+    "dashboard": "tsx scripts-tmp/dashboard-server.ts",
+    "stream": "tsx src/scripts/stream.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

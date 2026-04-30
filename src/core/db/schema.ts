@@ -391,3 +391,28 @@ export const programs = pgTable(
     listedIdx: index('programs_listed_idx').on(t.listedAt),
   }),
 );
+
+/**
+ * Raw `logsSubscribe` notifications (W3+). Append-only; dedupe on (signature, program_id).
+ */
+export const streamEvents = pgTable(
+  'stream_events',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    signature: varchar('signature', { length: 96 }).notNull(),
+    slot: bigint('slot', { mode: 'number' }).notNull(),
+    programId: varchar('program_id', { length: 64 }).notNull(),
+    kind: varchar('kind', { length: 16 }).notNull().default('log'),
+    err: jsonb('err').$type<unknown>(),
+    logCount: integer('log_count').notNull().default(0),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    observedSlot: bigint('observed_slot', { mode: 'number' }),
+  },
+  (t) => ({
+    sigProgramUq: uniqueIndex('stream_events_sig_program_uq').on(t.signature, t.programId),
+    receivedIdx: index('stream_events_received_idx').on(t.receivedAt),
+    progRcvIdx: index('stream_events_program_received_idx').on(t.programId, t.receivedAt),
+    slotIdx: index('stream_events_slot_idx').on(t.slot),
+  }),
+);
