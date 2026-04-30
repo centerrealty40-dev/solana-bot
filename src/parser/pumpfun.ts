@@ -60,13 +60,16 @@ function logsArray(tx: TxJsonParsed): string[] {
   return lm.map(String);
 }
 
-/** Fast filter — Pump invoke + explicit Buy/Sell log line. */
+/** Fast filter — Pump program + Anchor-style Buy/Sell log lines only (cuts unrelated mentions). */
 export function isPumpfunSwap(tx: TxJsonParsed | null | undefined, pumpProgramId: string): boolean {
   if (!tx?.meta) return false;
   if (tx.meta.err != null) return false;
   const logs = logsArray(tx);
   const mentionsPump = logs.some((l) => l.includes(pumpProgramId));
-  const buySell = logs.some((l) => l.includes('Instruction: Buy') || l.includes('Instruction: Sell'));
+  const buySell = logs.some(
+    (l) =>
+      l.includes('Program log: Instruction: Buy') || l.includes('Program log: Instruction: Sell'),
+  );
   return mentionsPump && buySell;
 }
 
@@ -158,13 +161,17 @@ function tryDecodeForWallet(
   }
   if (!baseMint || baseDelta === 0n) return null;
 
-  // Buy path sometimes spends native SOL without touching WSOL token balances in meta.
-  if (quoteDelta === 0n && baseDelta > 0n && typeof tx.meta?.fee === 'number') {
+  // Buy: native SOL spent (no WSOL token row); Sell: native SOL received (no WSOL row).
+  if (quoteDelta === 0n && typeof tx.meta?.fee === 'number') {
     const lam = walletLamportsDelta(tx, wallet);
     const fee = BigInt(tx.meta.fee);
-    if (lam !== null && lam < 0n) {
-      const spent = -lam - fee;
-      if (spent > 0n) quoteDelta = -spent;
+    if (lam !== null) {
+      if (baseDelta > 0n && lam < 0n) {
+        const spent = -lam - fee;
+        if (spent > 0n) quoteDelta = -spent;
+      } else if (baseDelta < 0n && lam > 0n) {
+        quoteDelta = lam;
+      }
     }
   }
 
