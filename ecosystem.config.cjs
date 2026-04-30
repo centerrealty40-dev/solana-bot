@@ -1,6 +1,6 @@
 /**
  * PM2 для VPS (/opt/solana-alpha) после W1/W2 slim.
- * Дашборд + sa-stream (raw logsSubscribe) + sa-parser (Pump.fun → swaps).
+ * Дашборд + sa-stream + sa-parser + sa-atlas (swap tail → entity_wallets / tags / flows).
  *
  * Запуск: pm2 start ecosystem.config.cjs
  */
@@ -49,6 +49,24 @@ module.exports = {
       cwd: root,
       script: 'npm',
       args: 'run --silent parser',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 3000,
+      max_memory_restart: '350M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
+    {
+      name: 'sa-atlas',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent atlas',
       interpreter: 'none',
       exec_mode: 'fork',
       instances: 1,

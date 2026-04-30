@@ -45,7 +45,9 @@ let pgSql: ReturnType<typeof postgres> | null = null;
 function pgPool(): ReturnType<typeof postgres> {
   const url = process.env.SA_PG_DSN || process.env.DATABASE_URL;
   if (!url) {
-    throw new Error('SA_PG_DSN or DATABASE_URL is required for /api/stream/health and /api/parser/health');
+    throw new Error(
+      'SA_PG_DSN or DATABASE_URL is required for /api/stream/health, /api/parser/health, /api/atlas/health',
+    );
   }
   if (!pgSql) {
     pgSql = postgres(url, { max: 2, idle_timeout: 20 });
@@ -417,6 +419,37 @@ function parserProgramId(): string {
     process.env.SA_PARSER_PROGRAM_ID?.trim() || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
   );
 }
+
+const ATLAS_CURSOR_NAME = 'swap-enrich';
+
+app.get('/api/atlas/health', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  try {
+    const sql = pgPool();
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*)::bigint FROM entity_wallets) AS ew_total,
+        (SELECT count(*)::bigint FROM entity_wallets WHERE profile_updated_at > now() - interval '5 minutes') AS ew_m5,
+        (SELECT count(*)::bigint FROM wallet_tags WHERE source = 'sa-atlas') AS atlas_tags_total,
+        (SELECT count(*)::bigint FROM wallet_tags WHERE source = 'sa-atlas' AND added_at > now() - interval '5 minutes') AS atlas_tags_m5,
+        (SELECT count(*)::bigint FROM money_flows WHERE observed_at > now() - interval '5 minutes' AND target_wallet LIKE 'pump:%') AS atlas_flows_m5,
+        (SELECT last_swap_id FROM atlas_cursor WHERE name = ${ATLAS_CURSOR_NAME}) AS cursor_id,
+        (SELECT count(*)::bigint FROM swaps WHERE id > coalesce((SELECT last_swap_id FROM atlas_cursor WHERE name = ${ATLAS_CURSOR_NAME}), 0)) AS lag_swaps
+    `;
+    return {
+      ew_total: Number(row.ew_total),
+      ew_m5: Number(row.ew_m5),
+      atlas_tags_total: Number(row.atlas_tags_total),
+      atlas_tags_m5: Number(row.atlas_tags_m5),
+      atlas_flows_m5: Number(row.atlas_flows_m5),
+      cursor_id: row.cursor_id != null ? String(row.cursor_id) : null,
+      lag_swaps: Number(row.lag_swaps),
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
 
 app.get('/api/parser/health', async (_req, reply) => {
   reply.header('cache-control', 'no-store');

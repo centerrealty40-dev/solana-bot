@@ -103,6 +103,7 @@ export const swaps = pgTable(
     walletTimeIdx: index('swaps_wallet_time_idx').on(t.wallet, t.blockTime),
     baseTimeIdx: index('swaps_base_time_idx').on(t.baseMint, t.blockTime),
     timeIdx: index('swaps_time_idx').on(t.blockTime),
+    createdAtIdx: index('swaps_created_at_idx').on(t.createdAt),
   }),
 );
 
@@ -398,6 +399,14 @@ export const programs = pgTable(
 /**
  * Parser ingest cursor — one row per subscribed program_id (W4 sa-parser).
  */
+/** sa-atlas / future atlas jobs — cursor over tail of `swaps`. */
+export const atlasCursor = pgTable('atlas_cursor', {
+  name: varchar('name', { length: 48 }).primaryKey(),
+  lastSwapId: bigint('last_swap_id', { mode: 'bigint' }).notNull(),
+  lastProcessedAt: timestamp('last_processed_at', { withTimezone: true }).notNull().defaultNow(),
+  stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
+});
+
 export const parserCursor = pgTable('parser_cursor', {
   programId: varchar('program_id', { length: 64 }).primaryKey(),
   lastEventId: bigint('last_event_id', { mode: 'bigint' }).notNull(),

@@ -18,7 +18,8 @@
     "db:studio": "drizzle-kit studio",
     "dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "stream": "tsx src/scripts/stream.ts",
-    "parser": "tsx src/scripts/parser.ts"
+    "parser": "tsx src/scripts/parser.ts",
+    "atlas": "tsx src/scripts/atlas.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
