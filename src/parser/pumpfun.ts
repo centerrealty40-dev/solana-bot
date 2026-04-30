@@ -67,9 +67,10 @@ export function isPumpfunSwap(tx: TxJsonParsed | null | undefined, pumpProgramId
   const logs = logsArray(tx);
   const mentionsPump = logs.some((l) => l.includes(pumpProgramId));
   const buySell = logs.some((l) => l.includes('Instruction: Buy') || l.includes('Instruction: Sell'));
-  const hasVirtualSol = logs.some((l) => /\bvSOL:\s*\d+/.test(l));
-  const hasVirtualTok = logs.some((l) => /\bvToken:\s*\d+/.test(l));
-  return mentionsPump && buySell && hasVirtualSol && hasVirtualTok;
+  const hasVirtualCurve = logs.some(
+    (l) => /\bvSOL:\s*\d+/.test(l) || /\bvToken:\s*\d+/.test(l),
+  );
+  return mentionsPump && buySell && hasVirtualCurve;
 }
 
 function balanceTotalsForOwner(balances: TokenBal[] | null | undefined, owner: string): Map<string, bigint> {
