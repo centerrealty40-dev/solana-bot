@@ -1,7 +1,6 @@
 /**
  * PM2 для VPS (/opt/solana-alpha) после W1/W2 slim.
- * Дашборд + sa-stream (raw logsSubscribe). Дальше: sa-warm-writer, sa-atlas
- * появятся в W3+.
+ * Дашборд + sa-stream (raw logsSubscribe) + sa-parser (Pump.fun → swaps).
  *
  * Запуск: pm2 start ecosystem.config.cjs
  */
@@ -39,6 +38,24 @@ module.exports = {
       max_restarts: 50,
       restart_delay: 3000,
       max_memory_restart: '300M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
+    {
+      name: 'sa-parser',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent parser',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 3000,
+      max_memory_restart: '350M',
       merge_logs: true,
       time: true,
       env: {

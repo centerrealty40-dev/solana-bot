@@ -45,7 +45,7 @@ let pgSql: ReturnType<typeof postgres> | null = null;
 function pgPool(): ReturnType<typeof postgres> {
   const url = process.env.SA_PG_DSN || process.env.DATABASE_URL;
   if (!url) {
-    throw new Error('SA_PG_DSN or DATABASE_URL is required for /api/stream/health');
+    throw new Error('SA_PG_DSN or DATABASE_URL is required for /api/stream/health and /api/parser/health');
   }
   if (!pgSql) {
     pgSql = postgres(url, { max: 2, idle_timeout: 20 });
@@ -411,6 +411,44 @@ app.get('/api/state', async (_req, reply) => {
 });
 
 app.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
+
+function parserProgramId(): string {
+  return (
+    process.env.SA_PARSER_PROGRAM_ID?.trim() || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
+  );
+}
+
+app.get('/api/parser/health', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  try {
+    const sql = pgPool();
+    const pid = parserProgramId();
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*)::bigint FROM swaps) AS swaps_total,
+        (SELECT count(*)::bigint FROM swaps WHERE created_at > now() - interval '1 minute') AS m1,
+        (SELECT count(*)::bigint FROM swaps WHERE created_at > now() - interval '5 minutes') AS m5,
+        (SELECT max(block_time) FROM swaps) AS last_block_time,
+        (SELECT max(created_at) FROM swaps) AS last_inserted_at,
+        (SELECT last_event_id FROM parser_cursor WHERE program_id = ${pid}) AS cursor_id,
+        (SELECT count(*)::bigint FROM stream_events
+           WHERE program_id = ${pid}
+             AND id > coalesce((SELECT last_event_id FROM parser_cursor WHERE program_id = ${pid}), 0)) AS lag_events
+    `;
+    return {
+      swaps_total: Number(row.swaps_total),
+      m1: Number(row.m1),
+      m5: Number(row.m5),
+      last_block_time: row.last_block_time,
+      last_inserted_at: row.last_inserted_at,
+      cursor_id: row.cursor_id != null ? String(row.cursor_id) : null,
+      lag_events: Number(row.lag_events),
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
 
 app.get('/api/stream/health', async (_req, reply) => {
   reply.header('cache-control', 'no-store');

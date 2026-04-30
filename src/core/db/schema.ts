@@ -395,6 +395,18 @@ export const programs = pgTable(
 /**
  * Raw `logsSubscribe` notifications (W3+). Append-only; dedupe on (signature, program_id).
  */
+/**
+ * Parser ingest cursor — one row per subscribed program_id (W4 sa-parser).
+ */
+export const parserCursor = pgTable('parser_cursor', {
+  programId: varchar('program_id', { length: 64 }).primaryKey(),
+  lastEventId: bigint('last_event_id', { mode: 'bigint' }).notNull(),
+  lastSignature: varchar('last_signature', { length: 96 }),
+  lastSlot: bigint('last_slot', { mode: 'number' }),
+  lastProcessedAt: timestamp('last_processed_at', { withTimezone: true }).notNull().defaultNow(),
+  stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
+});
+
 export const streamEvents = pgTable(
   'stream_events',
   {
