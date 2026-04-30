@@ -93,9 +93,13 @@ export type TxJsonParsed = {
   blockTime?: number | null;
   meta?: {
     err?: unknown | null;
+    fee?: number | null;
     logMessages?: string[] | null;
+    preBalances?: number[] | null;
+    postBalances?: number[] | null;
     preTokenBalances?: TokenBal[] | null;
     postTokenBalances?: TokenBal[] | null;
+    loadedAddresses?: { writable?: string[]; readonly?: string[] } | null;
   } | null;
   transaction?: {
     signatures?: string[];

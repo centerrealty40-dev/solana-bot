@@ -36,19 +36,22 @@ function accountKeysList(message: Record<string, unknown> | undefined): string[]
   return out;
 }
 
-/** Prefer first signer account (fee payer / authority), not merely index 0 for loaded-address layouts. */
-function feePayerPubkey(tx: TxJsonParsed): string | null {
+/** All tx signers (Pump swaps occasionally differ from fee-payer-only balance shifts). */
+function signerPubkeys(tx: TxJsonParsed): string[] {
   const msg = tx.transaction?.message as Record<string, unknown> | undefined;
-  if (!msg) return null;
+  if (!msg) return [];
   const keysRaw = (msg.accountKeys ?? msg.staticAccountKeys) as unknown;
-  if (!Array.isArray(keysRaw) || keysRaw.length === 0) return null;
+  if (!Array.isArray(keysRaw)) return [];
+  const out: string[] = [];
   for (const k of keysRaw) {
     if (k && typeof k === 'object' && 'pubkey' in k) {
       const o = k as { pubkey?: string; signer?: boolean };
-      if (o.signer && typeof o.pubkey === 'string') return o.pubkey;
+      if (o.signer && typeof o.pubkey === 'string') out.push(o.pubkey);
     }
   }
-  return accountKeysList(msg)[0] ?? null;
+  if (out.length > 0) return out;
+  const fallback = accountKeysList(msg)[0];
+  return fallback ? [fallback] : [];
 }
 
 function logsArray(tx: TxJsonParsed): string[] {
@@ -57,20 +60,36 @@ function logsArray(tx: TxJsonParsed): string[] {
   return lm.map(String);
 }
 
-/**
- * Fast filter — avoids treating every pump mention as a trade.
- * Requires virtual-reserve lines (spec W4) + explicit Buy/Sell inside pump flow.
- */
+/** Fast filter — Pump invoke + explicit Buy/Sell log line. */
 export function isPumpfunSwap(tx: TxJsonParsed | null | undefined, pumpProgramId: string): boolean {
   if (!tx?.meta) return false;
   if (tx.meta.err != null) return false;
   const logs = logsArray(tx);
   const mentionsPump = logs.some((l) => l.includes(pumpProgramId));
   const buySell = logs.some((l) => l.includes('Instruction: Buy') || l.includes('Instruction: Sell'));
-  const hasVirtualCurve = logs.some(
-    (l) => /\bvSOL:\s*\d+/.test(l) || /\bvToken:\s*\d+/.test(l),
-  );
-  return mentionsPump && buySell && hasVirtualCurve;
+  return mentionsPump && buySell;
+}
+
+function fullAccountKeys(tx: TxJsonParsed): string[] {
+  const msg = tx.transaction?.message as Record<string, unknown> | undefined;
+  const base = accountKeysList(msg);
+  const loaded = tx.meta?.loadedAddresses;
+  if (!loaded || typeof loaded !== 'object') return base;
+  const w = Array.isArray(loaded.writable) ? loaded.writable.map(String) : [];
+  const r = Array.isArray(loaded.readonly) ? loaded.readonly.map(String) : [];
+  return [...base, ...w, ...r];
+}
+
+function walletLamportsDelta(tx: TxJsonParsed, wallet: string): bigint | null {
+  const keys = fullAccountKeys(tx);
+  const wi = keys.indexOf(wallet);
+  const pre = tx.meta?.preBalances;
+  const post = tx.meta?.postBalances;
+  if (wi < 0 || !Array.isArray(pre) || !Array.isArray(post)) return null;
+  const a = pre[wi];
+  const b = post[wi];
+  if (typeof a !== 'number' || typeof b !== 'number') return null;
+  return BigInt(b) - BigInt(a);
 }
 
 function balanceTotalsForOwner(balances: TokenBal[] | null | undefined, owner: string): Map<string, bigint> {
@@ -100,29 +119,14 @@ function decimalsForMint(balances: TokenBal[] | null | undefined, owner: string,
   return null;
 }
 
-/**
- * Minimal Pump.fun swap decoder (no Anchor IDL): Buy/Sell logs + signer WSOL vs SPL deltas.
- * Multi-leg / ambiguous mint movements → empty array (counts as decode failure upstream).
- */
-export function decodePumpfunSwap(
-  tx: TxJsonParsed | null | undefined,
-  pumpProgramId: string,
+function tryDecodeForWallet(
+  wallet: string,
+  tx: TxJsonParsed,
+  sig: string,
+  slot: number,
+  bt: number,
   solUsd: number,
-): SwapInsert[] {
-  if (!tx || !isPumpfunSwap(tx, pumpProgramId)) return [];
-
-  const wallet = feePayerPubkey(tx);
-  if (!wallet) return [];
-
-  const sig = tx.transaction?.signatures?.[0];
-  if (!sig || typeof sig !== 'string') return [];
-
-  const slot = typeof tx.slot === 'number' && Number.isFinite(tx.slot) ? tx.slot : null;
-  if (slot === null) return [];
-
-  const bt = tx.blockTime;
-  if (typeof bt !== 'number' || !Number.isFinite(bt)) return [];
-
+): SwapInsert | null {
   const pre = balanceTotalsForOwner(tx.meta?.preTokenBalances ?? [], wallet);
   const post = balanceTotalsForOwner(tx.meta?.postTokenBalances ?? [], wallet);
 
@@ -139,7 +143,7 @@ export function decodePumpfunSwap(
     }
   }
 
-  if (baseDeltas.size === 0) return [];
+  if (baseDeltas.size === 0) return null;
 
   let baseMint = '';
   let baseDelta = 0n;
@@ -152,12 +156,24 @@ export function decodePumpfunSwap(
       baseDelta = d;
     }
   }
-  if (!baseMint || baseDelta === 0n || quoteDelta === 0n) return [];
+  if (!baseMint || baseDelta === 0n) return null;
+
+  // Buy path sometimes spends native SOL without touching WSOL token balances in meta.
+  if (quoteDelta === 0n && baseDelta > 0n && typeof tx.meta?.fee === 'number') {
+    const lam = walletLamportsDelta(tx, wallet);
+    const fee = BigInt(tx.meta.fee);
+    if (lam !== null && lam < 0n) {
+      const spent = -lam - fee;
+      if (spent > 0n) quoteDelta = -spent;
+    }
+  }
+
+  if (quoteDelta === 0n) return null;
 
   let side: 'buy' | 'sell';
   if (baseDelta > 0n && quoteDelta < 0n) side = 'buy';
   else if (baseDelta < 0n && quoteDelta > 0n) side = 'sell';
-  else return [];
+  else return null;
 
   const baseAmountRaw = baseDelta >= 0n ? baseDelta : -baseDelta;
   const quoteAmountRaw = quoteDelta >= 0n ? quoteDelta : -quoteDelta;
@@ -166,52 +182,7 @@ export function decodePumpfunSwap(
     decimalsForMint(tx.meta?.postTokenBalances ?? [], wallet, baseMint) ??
     decimalsForMint(tx.meta?.preTokenBalances ?? [], wallet, baseMint);
   if (dec === null || dec < 0 || dec > 18) {
-    return [
-      {
-        signature: sig,
-        slot,
-        blockTime: new Date(bt * 1000),
-        wallet,
-        baseMint,
-        quoteMint: WSOL_MINT,
-        side,
-        baseAmountRaw,
-        quoteAmountRaw,
-        priceUsd: 0,
-        amountUsd: 0,
-        dex: 'pumpfun',
-        source: 'sa-parser-noprice',
-      },
-    ];
-  }
-
-  const baseHuman = Number(baseAmountRaw) / 10 ** dec;
-  const quoteHuman = Number(quoteAmountRaw) / 1e9;
-  if (!Number.isFinite(baseHuman) || !Number.isFinite(quoteHuman) || baseHuman <= 0 || quoteHuman <= 0) {
-    return [
-      {
-        signature: sig,
-        slot,
-        blockTime: new Date(bt * 1000),
-        wallet,
-        baseMint,
-        quoteMint: WSOL_MINT,
-        side,
-        baseAmountRaw,
-        quoteAmountRaw,
-        priceUsd: 0,
-        amountUsd: 0,
-        dex: 'pumpfun',
-        source: 'sa-parser-noprice',
-      },
-    ];
-  }
-
-  const amountUsd = quoteHuman * solUsd;
-  const priceUsd = amountUsd / baseHuman;
-
-  return [
-    {
+    return {
       signature: sig,
       slot,
       blockTime: new Date(bt * 1000),
@@ -221,10 +192,77 @@ export function decodePumpfunSwap(
       side,
       baseAmountRaw,
       quoteAmountRaw,
-      priceUsd,
-      amountUsd,
+      priceUsd: 0,
+      amountUsd: 0,
       dex: 'pumpfun',
-      source: 'sa-parser',
-    },
-  ];
+      source: 'sa-parser-noprice',
+    };
+  }
+
+  const baseHuman = Number(baseAmountRaw) / 10 ** dec;
+  const quoteHuman = Number(quoteAmountRaw) / 1e9;
+  if (!Number.isFinite(baseHuman) || !Number.isFinite(quoteHuman) || baseHuman <= 0 || quoteHuman <= 0) {
+    return {
+      signature: sig,
+      slot,
+      blockTime: new Date(bt * 1000),
+      wallet,
+      baseMint,
+      quoteMint: WSOL_MINT,
+      side,
+      baseAmountRaw,
+      quoteAmountRaw,
+      priceUsd: 0,
+      amountUsd: 0,
+      dex: 'pumpfun',
+      source: 'sa-parser-noprice',
+    };
+  }
+
+  const amountUsd = quoteHuman * solUsd;
+  const priceUsd = amountUsd / baseHuman;
+
+  return {
+    signature: sig,
+    slot,
+    blockTime: new Date(bt * 1000),
+    wallet,
+    baseMint,
+    quoteMint: WSOL_MINT,
+    side,
+    baseAmountRaw,
+    quoteAmountRaw,
+    priceUsd,
+    amountUsd,
+    dex: 'pumpfun',
+    source: 'sa-parser',
+  };
+}
+
+/**
+ * Minimal Pump.fun swap decoder (no Anchor IDL): Buy/Sell logs + SPL balance deltas.
+ * Tries each signer until WSOL vs mint deltas line up.
+ */
+export function decodePumpfunSwap(
+  tx: TxJsonParsed | null | undefined,
+  pumpProgramId: string,
+  solUsd: number,
+): SwapInsert[] {
+  if (!tx || !isPumpfunSwap(tx, pumpProgramId)) return [];
+
+  const sig = tx.transaction?.signatures?.[0];
+  if (!sig || typeof sig !== 'string') return [];
+
+  const slot = typeof tx.slot === 'number' && Number.isFinite(tx.slot) ? tx.slot : null;
+  if (slot === null) return [];
+
+  const bt = tx.blockTime;
+  if (typeof bt !== 'number' || !Number.isFinite(bt)) return [];
+
+  for (const wallet of signerPubkeys(tx)) {
+    const row = tryDecodeForWallet(wallet, tx, sig, slot, bt, solUsd);
+    if (row) return [row];
+  }
+
+  return [];
 }
