@@ -91,7 +91,7 @@ if ! sudo -u salpha bash -lc 'command -v pm2' >/dev/null 2>&1; then
   sudo -u salpha npm install -g pm2@latest
 fi
 sudo -u salpha bash -lc "cd '$APP_DIR' && pm2 delete dashboard-organizer-paper 2>/dev/null || true"
-sudo -u salpha bash -lc "cd '$APP_DIR' && pm2 start ecosystem.vps.cjs --only dashboard-organizer-paper && pm2 save"
+sudo -u salpha bash -lc "cd '$APP_DIR' && pm2 start ecosystem.config.cjs && pm2 save"
 
 STARTUP_CMD="$(sudo -u salpha bash -lc 'pm2 startup systemd -u salpha --hp /home/salpha' | grep -E '^sudo ' || true)"
 if [ -n "$STARTUP_CMD" ]; then

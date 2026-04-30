@@ -44,7 +44,7 @@ export type AppConfig = z.infer<typeof ConfigSchema>;
 
 function loadConfig(): AppConfig {
   const parsed = ConfigSchema.safeParse({
-    databaseUrl: process.env.DATABASE_URL,
+    databaseUrl: process.env.SA_PG_DSN || process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
     heliusApiKey: process.env.HELIUS_API_KEY,
     heliusRpcUrl: process.env.HELIUS_RPC_URL,

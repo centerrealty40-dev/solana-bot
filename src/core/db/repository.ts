@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql as dsql } from 'drizzle-orm';
 import { db, schema } from './client.js';
 import type { NormalizedSwap } from '../types.js';
 
@@ -123,24 +123,5 @@ export async function getActiveWallets30d(minTrades = 5): Promise<string[]> {
     .groupBy(schema.swaps.wallet)
     .having(dsql`count(*) >= ${minTrades}`)
     .limit(5000);
-  return rows.map((r) => r.wallet);
-}
-
-export async function getWalletScores(
-  wallets: string[],
-): Promise<Map<string, typeof schema.walletScores.$inferSelect>> {
-  if (wallets.length === 0) return new Map();
-  const rows = await db
-    .select()
-    .from(schema.walletScores)
-    .where(inArray(schema.walletScores.wallet, wallets));
-  return new Map(rows.map((r) => [r.wallet, r]));
-}
-
-export async function getWatchlistWallets(): Promise<string[]> {
-  const rows = await db
-    .select({ wallet: schema.watchlistWallets.wallet })
-    .from(schema.watchlistWallets)
-    .where(dsql`${schema.watchlistWallets.removedAt} IS NULL`);
   return rows.map((r) => r.wallet);
 }

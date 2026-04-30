@@ -10,24 +10,16 @@
 
 ## 1. PM2 — манифест в git
 
-Файл `**ecosystem.vps.cjs**` в корне репозитория описывает **текущий** боевой набор приложений (см. таблицу ниже; число процессов может расти при добавлении коллекторов).
+После **W2 slim** файл `ecosystem.config.cjs` в корне репозитория описывает **только** процесс **`dashboard-organizer-paper`** (дашборд на `HOST`/`PORT`, `STORE_PATH` к JSONL — см. сам файл).
 
-Не путать с `**ecosystem.config.cjs`** — там legacy-стек (sa-api, sa-collector, sa-scoring, sa-runner) под старую схему из README.
+Краткая операторская сводка по железу и TLS: **`deploy/README.md`**.
 
 ```bash
 cd /opt/solana-alpha
-pm2 start ecosystem.vps.cjs    # первичный запуск полного набора
-pm2 save
+sudo -u salpha -H bash -lc 'pm2 start ecosystem.config.cjs && pm2 save'
 ```
 
-**Осторожно:** `pm2 start ecosystem.vps.cjs --only <имя>` на проде **может поднять отдельный процесс `ecosystem.vps` вместо нужных приложений**. Новые ingestion-процессы добавляйте **явным** `pm2 start scripts-tmp/<collector>.mjs --name sa-… --cwd /opt/solana-alpha --interpreter node …` (см. §5) или держите список команд в заметках оператора. Для **одного** бумажного процесса надёжнее:
-
-```bash
-sudo -u salpha pm2 start /opt/solana-alpha/scripts-tmp/profiles/run-pt1-XXX.sh \
-  --name pt1-XXX --interpreter bash --cwd /opt/solana-alpha --time --update-env
-```
-
-Перезапуск существующего: `sudo -u salpha pm2 restart pt1-fresh-validated --update-env`.
+Таблица ниже — **исторический** манифест до W1/W2; большинство процессов и скриптов удалены из репозитория. Оставлено как архив рассуждений.
 
 ### Состав (имена процессов)
 
@@ -43,7 +35,7 @@ sudo -u salpha pm2 start /opt/solana-alpha/scripts-tmp/profiles/run-pt1-XXX.sh \
 | `sa-pumpswap-collector`     | ingestion | `npm run pumpswap-collector:start` (+ PM2 `cron_restart` раз в 6 ч)                                                                                                                                                                                                                                                                                                                                                               |
 | `sa-rpc-collector`          | ingestion | `npm run rpc-collector:start`                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `sa-sigseed-worker`         | pipeline  | `npm run sigseed:worker`                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `sa-wallet-trace-worker`    | pipeline  | Не в `ecosystem.vps.cjs` (избегаем `pm2 start … --only ecosystem`); первичный запуск: `pm2 start npm --name sa-wallet-trace-worker --cwd /opt/solana-alpha --interpreter none --merge-logs --time -- run --silent wallet:trace:worker` под `salpha`. Очередь `wallet_trace_queue` → RPC (`getSignatures`+`getTransaction`, ретраи/лимиты см. env). Опционально: `WALLET_TRACE_WORKER_BATCH=3` для съёма нескольких задач за цикл. |
+| `sa-wallet-trace-worker`    | pipeline  | Не в `ecosystem.config.cjs` (избегаем `pm2 start … --only ecosystem`); первичный запуск: `pm2 start npm --name sa-wallet-trace-worker --cwd /opt/solana-alpha --interpreter none --merge-logs --time -- run --silent wallet:trace:worker` под `salpha`. Очередь `wallet_trace_queue` → RPC (`getSignatures`+`getTransaction`, ретраи/лимиты см. env). Опционально: `WALLET_TRACE_WORKER_BATCH=3` для съёма нескольких задач за цикл. |
 | `pt1-smart-lottery`         | paper     | `profiles/run-pt1-smart-lottery.sh` → `paper:live`                                                                                                                                                                                                                                                                                                                                                                                |
 | `pt1-fresh-validated`       | paper     | `profiles/run-pt1-fresh-validated.sh`                                                                                                                                                                                                                                                                                                                                                                                             |
 | `pt1-dip-runners`           | paper     | `profiles/run-pt1-dip-runners.sh`                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -212,7 +204,7 @@ sudo -u salpha pm2 save
 ## 7. Фаза C — organizer paper как остальные pt1
 
 - Профиль: `**scripts-tmp/profiles/run-pt1-organizer-paper.sh**` — те же `PAPER_TRACK_*`, что у других бумажных стратегий; `PAPER_STRATEGY_KIND=runner_organizer`, журнал `organizer-paper.jsonl`.
-- В `**ecosystem.vps.cjs**` процесс `pt1-organizer-paper` запускается через этот bash-профиль (не через `npm run paper:live` с inline env).
+- В `**ecosystem.config.cjs**` процесс `pt1-organizer-paper` запускается через этот bash-профиль (не через `npm run paper:live` с inline env).
 
 ### Сверка PM2 ↔ git-манифест
 
