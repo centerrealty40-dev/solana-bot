@@ -9,7 +9,16 @@ import { hourKeyUtc } from './solana-rpc-meter.js';
 
 const log = child('qn-feature-usage');
 
-export const QN_FEATURE_KEYS = ['safety', 'pri_fee', 'price_verify', 'sim', 'liq_watch', 'holders'] as const;
+export const QN_FEATURE_KEYS = [
+  'safety',
+  'pri_fee',
+  'price_verify',
+  'sim',
+  'liq_watch',
+  'holders',
+  /** W7.6 — impulse confirm on-chain spot (Orca whirlpool + optional paths). */
+  'impulse_confirm',
+] as const;
 export type QnFeature = (typeof QN_FEATURE_KEYS)[number];
 
 function monthKey(d = new Date()): string {
@@ -44,6 +53,7 @@ const BUDGET_ENV: Record<QnFeature, string> = {
   sim: 'QN_FEATURE_BUDGET_SIM',
   liq_watch: 'QN_FEATURE_BUDGET_LIQ_WATCH',
   holders: 'QN_FEATURE_BUDGET_HOLDERS',
+  impulse_confirm: 'QN_FEATURE_BUDGET_IMPULSE_CONFIRM',
 };
 
 const DEFAULT_BUDGET: Record<QnFeature, number> = {
@@ -53,6 +63,8 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   sim: 6_000_000,
   liq_watch: 12_000_000,
   holders: 10_000_000,
+  /** Monthly cap for impulse confirm QN calls (rolling 6h kill is separate; see impulse-qn-rolling). */
+  impulse_confirm: 5_000_000,
 };
 
 export function qnFeatureBudgetMonth(f: QnFeature): number {

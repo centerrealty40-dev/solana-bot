@@ -217,6 +217,32 @@ const ConfigSchema = z.object({
   holdersOnFail: z.enum(['block', 'warn', 'db_fallback']).default('db_fallback'),
   holdersDbWriteback: z.boolean().default(false),
   holdersGpaCreditsPerCall: z.coerce.number().int().min(10).max(2_000).default(100),
+
+  /** W7.6 — impulse confirm (PG delta → QN Orca spot → Jupiter corridor). */
+  impulseConfirmEnabled: z.boolean().default(false),
+  /** Positive magnitude; trigger when Δ_pg ≤ −this (unless impulsePgAbsMode). */
+  impulsePgMinDropPct: z.coerce.number().nonnegative().default(5),
+  /** When true, trigger on abs(Δ_pg) ≥ impulsePgMinAbsPct. */
+  impulsePgAbsMode: z.boolean().default(false),
+  impulsePgMinAbsPct: z.coerce.number().nonnegative().default(5),
+  impulsePgMaxAgeSecMin: z.coerce.number().nonnegative().default(10),
+  impulsePgMaxAgeSecMax: z.coerce.number().nonnegative().default(120),
+  impulseRpcMaxPerMin: z.coerce.number().int().positive().default(30),
+  impulseSingleFlightMs: z.coerce.number().int().positive().default(15_000),
+  impulseMintCooldownSec: z.coerce.number().nonnegative().default(0),
+  impulseRpcTimeoutMs: z.coerce.number().int().min(500).max(15_000).default(3500),
+  impulseRpcRetryCount: z.coerce.number().int().min(0).max(3).default(1),
+  impulseRpcRetryBackoffMs: z.coerce.number().int().min(0).default(400),
+  impulseMaxUpPctFromAnchor: z.coerce.number().nonnegative().default(30),
+  impulseMaxDownPctFromAnchor: z.coerce.number().nonnegative().default(70),
+  impulseMaxDisagreePct: z.coerce.number().nonnegative().default(8),
+  impulseRequireJupiter: z.boolean().default(true),
+  impulseAllowOnchainOnly: z.boolean().default(false),
+  /** When pool layout has no QN decoder (non-Orca), allow Jupiter-only impulse path. */
+  impulseAllowJupiterOnlyUnsupported: z.boolean().default(true),
+  impulseDipPolicy: z.enum(['shadow', 'parallel_and', 'parallel_or', 'boost']).default('parallel_and'),
+  impulseQnCreditsPerCall: z.coerce.number().int().min(10).max(500).default(30),
+  impulseJupiterTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
 }).transform((data) => {
   const { dipLookbackWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
@@ -379,6 +405,55 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     })(),
     holdersDbWriteback: envBool(process.env.PAPER_HOLDERS_DB_WRITEBACK, false),
     holdersGpaCreditsPerCall: process.env.PAPER_HOLDERS_GPA_CREDITS_PER_CALL,
+
+    impulseConfirmEnabled: envBool(process.env.PAPER_IMPULSE_CONFIRM_ENABLED, false),
+    impulsePgMinDropPct: process.env.PAPER_IMPULSE_PG_MIN_DROP_PCT ?? process.env.IMPULSE_PG_MIN_DROP_PCT,
+    impulsePgAbsMode: envBool(process.env.PAPER_IMPULSE_PG_ABS_MODE, false),
+    impulsePgMinAbsPct: process.env.PAPER_IMPULSE_PG_MIN_ABS_PCT ?? process.env.IMPULSE_PG_MIN_ABS_PCT,
+    impulsePgMaxAgeSecMin:
+      process.env.PAPER_IMPULSE_PG_MAX_AGE_SEC_MIN ?? process.env.IMPULSE_PG_MAX_AGE_SEC_MIN,
+    impulsePgMaxAgeSecMax:
+      process.env.PAPER_IMPULSE_PG_MAX_AGE_SEC_MAX ?? process.env.IMPULSE_PG_MAX_AGE_SEC_MAX,
+    impulseRpcMaxPerMin: process.env.PAPER_IMPULSE_RPC_MAX_PER_MIN ?? process.env.IMPULSE_RPC_MAX_PER_MIN,
+    impulseSingleFlightMs:
+      process.env.PAPER_IMPULSE_SINGLE_FLIGHT_MS ?? process.env.IMPULSE_SINGLE_FLIGHT_MS,
+    impulseMintCooldownSec:
+      process.env.PAPER_IMPULSE_MINT_COOLDOWN_SEC ?? process.env.IMPULSE_MINT_COOLDOWN_SEC,
+    impulseRpcTimeoutMs: process.env.PAPER_IMPULSE_RPC_TIMEOUT_MS ?? process.env.IMPULSE_RPC_TIMEOUT_MS,
+    impulseRpcRetryCount:
+      process.env.PAPER_IMPULSE_RPC_RETRY_COUNT ?? process.env.IMPULSE_RPC_RETRY_COUNT,
+    impulseRpcRetryBackoffMs:
+      process.env.PAPER_IMPULSE_RPC_RETRY_BACKOFF_MS ?? process.env.IMPULSE_RPC_RETRY_MS,
+    impulseMaxUpPctFromAnchor:
+      process.env.PAPER_IMPULSE_MAX_UP_PCT_FROM_ANCHOR ?? process.env.IMPULSE_MAX_UP_PCT_FROM_ANCHOR,
+    impulseMaxDownPctFromAnchor:
+      process.env.PAPER_IMPULSE_MAX_DOWN_PCT_FROM_ANCHOR ?? process.env.IMPULSE_MAX_DOWN_PCT_FROM_ANCHOR,
+    impulseMaxDisagreePct:
+      process.env.PAPER_IMPULSE_MAX_DISAGREE_PCT ?? process.env.IMPULSE_MAX_DISAGREE_PCT,
+    impulseRequireJupiter: envBool(
+      process.env.PAPER_IMPULSE_REQUIRE_JUPITER ?? process.env.IMPULSE_REQUIRE_JUPITER,
+      true,
+    ),
+    impulseAllowOnchainOnly: envBool(
+      process.env.PAPER_IMPULSE_ALLOW_ONCHAIN_ONLY ?? process.env.IMPULSE_ALLOW_ONCHAIN_ONLY,
+      false,
+    ),
+    impulseAllowJupiterOnlyUnsupported: envBool(
+      process.env.PAPER_IMPULSE_ALLOW_JUPITER_ONLY_UNSUPPORTED ??
+        process.env.IMPULSE_ONCHAIN_FALLBACK_JUPITER_ONLY,
+      true,
+    ),
+    impulseDipPolicy: (() => {
+      const v = (
+        process.env.PAPER_IMPULSE_DIP_POLICY ??
+        process.env.IMPULSE_DIP_POLICY ??
+        ''
+      ).toLowerCase();
+      if (v === 'shadow' || v === 'parallel_and' || v === 'parallel_or' || v === 'boost') return v;
+      return undefined;
+    })(),
+    impulseQnCreditsPerCall: process.env.PAPER_IMPULSE_QN_CREDITS_PER_CALL,
+    impulseJupiterTimeoutMs: process.env.PAPER_IMPULSE_JUPITER_TIMEOUT_MS,
   });
 
   if (!parsed.success) {

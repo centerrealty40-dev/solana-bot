@@ -40,12 +40,25 @@ export interface VerifyEntryPriceArgs {
   sizeUsd: number;
   solUsd: number;
   snapshotPriceUsd: number;
+  /** When set (e.g. W7.6 impulse within TTL), skip duplicate Jupiter HTTP request. */
+  reuseVerdict?: PriceVerifyVerdict | null;
 }
 
-export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<PriceVerifyVerdict> {
-  const { cfg, mint, outMintDecimals, sizeUsd, solUsd, snapshotPriceUsd } = args;
+/**
+ * Jupiter SOL→mint quote for a USD notional (same math as verifyEntryPrice).
+ * Used by W7.6 impulse path even when W7.4 price verify is disabled.
+ */
+export async function jupiterQuoteBuyPriceUsd(args: {
+  mint: string;
+  outMintDecimals: number;
+  sizeUsd: number;
+  solUsd: number;
+  snapshotPriceUsd: number;
+  slippageBps: number;
+  timeoutMs: number;
+}): Promise<PriceVerifyVerdict> {
+  const { mint, outMintDecimals, sizeUsd, solUsd, snapshotPriceUsd, slippageBps, timeoutMs } = args;
   const ts = Date.now();
-  if (!cfg.priceVerifyEnabled) return { kind: 'skipped', reason: 'feature-disabled', ts };
   if (!(solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
   if (!(snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
   if (!(sizeUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
@@ -55,12 +68,12 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
   url.searchParams.set('inputMint', WRAPPED_SOL_MINT);
   url.searchParams.set('outputMint', mint);
   url.searchParams.set('amount', String(lamports));
-  url.searchParams.set('slippageBps', String(cfg.priceVerifyMaxSlipBps));
+  url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
 
   const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, cfg.priceVerifyTimeoutMs));
+  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
   let elapsed = 0;
   let resp: Response | null = null;
   let txt: string | null = null;
@@ -73,7 +86,7 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
     });
     elapsed = Date.now() - start;
     if (!resp.ok) {
-      log.debug({ status: resp.status, mint, elapsed }, 'jupiter quote http error');
+      log.debug({ status: resp.status, mint, elapsed }, 'jupiter quote http error (impulse)');
       return { kind: 'skipped', reason: 'http-error', ts };
     }
     txt = await resp.text();
@@ -82,7 +95,7 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
     const aborted = (e as Error)?.name === 'AbortError';
     log.debug(
       { mint, elapsed, err: (e as Error)?.message },
-      aborted ? 'jupiter quote timeout' : 'jupiter quote fetch fail',
+      aborted ? 'jupiter quote timeout (impulse)' : 'jupiter quote fetch fail (impulse)',
     );
     return { kind: 'skipped', reason: aborted ? 'timeout' : 'fetch-fail', ts };
   } finally {
@@ -126,34 +139,6 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
   const routeHops = Array.isArray(body?.routePlan) ? body.routePlan.length : 1;
   const slipPct = +(((snapshotPriceUsd - jupiterPriceUsd) / snapshotPriceUsd) * 100).toFixed(4);
 
-  if (slipPct > cfg.priceVerifyMaxSlipPct) {
-    return {
-      kind: 'blocked',
-      jupiterPriceUsd,
-      snapshotPriceUsd,
-      slipPct,
-      priceImpactPct,
-      routeHops,
-      reason: 'slip-too-high',
-      source: 'jupiter',
-      ageMs: elapsed,
-      ts,
-    };
-  }
-  if (priceImpactPct > cfg.priceVerifyMaxPriceImpactPct) {
-    return {
-      kind: 'blocked',
-      jupiterPriceUsd,
-      snapshotPriceUsd,
-      slipPct,
-      priceImpactPct,
-      routeHops,
-      reason: 'impact-too-high',
-      source: 'jupiter',
-      ageMs: elapsed,
-      ts,
-    };
-  }
   return {
     kind: 'ok',
     jupiterPriceUsd,
@@ -165,6 +150,98 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
     ageMs: elapsed,
     ts,
   };
+}
+
+export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<PriceVerifyVerdict> {
+  const { cfg, mint, outMintDecimals, sizeUsd, solUsd, snapshotPriceUsd, reuseVerdict } = args;
+  const ts = Date.now();
+  if (!cfg.priceVerifyEnabled) return { kind: 'skipped', reason: 'feature-disabled', ts };
+
+  if (reuseVerdict?.kind === 'ok') {
+    const q = reuseVerdict;
+    const slipPct = +(((snapshotPriceUsd - q.jupiterPriceUsd) / snapshotPriceUsd) * 100).toFixed(4);
+    if (slipPct > cfg.priceVerifyMaxSlipPct) {
+      return {
+        kind: 'blocked',
+        jupiterPriceUsd: q.jupiterPriceUsd,
+        snapshotPriceUsd,
+        slipPct,
+        priceImpactPct: q.priceImpactPct,
+        routeHops: q.routeHops,
+        reason: 'slip-too-high',
+        source: 'jupiter',
+        ageMs: q.ageMs,
+        ts,
+      };
+    }
+    if (q.priceImpactPct > cfg.priceVerifyMaxPriceImpactPct) {
+      return {
+        kind: 'blocked',
+        jupiterPriceUsd: q.jupiterPriceUsd,
+        snapshotPriceUsd,
+        slipPct,
+        priceImpactPct: q.priceImpactPct,
+        routeHops: q.routeHops,
+        reason: 'impact-too-high',
+        source: 'jupiter',
+        ageMs: q.ageMs,
+        ts,
+      };
+    }
+    return {
+      kind: 'ok',
+      jupiterPriceUsd: q.jupiterPriceUsd,
+      snapshotPriceUsd,
+      slipPct,
+      priceImpactPct: q.priceImpactPct,
+      routeHops: q.routeHops,
+      source: 'jupiter',
+      ageMs: q.ageMs,
+      ts,
+    };
+  }
+
+  const q = await jupiterQuoteBuyPriceUsd({
+    mint,
+    outMintDecimals,
+    sizeUsd,
+    solUsd,
+    snapshotPriceUsd,
+    slippageBps: cfg.priceVerifyMaxSlipBps,
+    timeoutMs: cfg.priceVerifyTimeoutMs,
+  });
+
+  if (q.kind !== 'ok') return q;
+
+  if (q.slipPct > cfg.priceVerifyMaxSlipPct) {
+    return {
+      kind: 'blocked',
+      jupiterPriceUsd: q.jupiterPriceUsd,
+      snapshotPriceUsd,
+      slipPct: q.slipPct,
+      priceImpactPct: q.priceImpactPct,
+      routeHops: q.routeHops,
+      reason: 'slip-too-high',
+      source: 'jupiter',
+      ageMs: q.ageMs,
+      ts,
+    };
+  }
+  if (q.priceImpactPct > cfg.priceVerifyMaxPriceImpactPct) {
+    return {
+      kind: 'blocked',
+      jupiterPriceUsd: q.jupiterPriceUsd,
+      snapshotPriceUsd,
+      slipPct: q.slipPct,
+      priceImpactPct: q.priceImpactPct,
+      routeHops: q.routeHops,
+      reason: 'impact-too-high',
+      source: 'jupiter',
+      ageMs: q.ageMs,
+      ts,
+    };
+  }
+  return q;
 }
 
 /** Test seam — vitest only. */

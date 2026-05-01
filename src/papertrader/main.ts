@@ -15,6 +15,7 @@ import {
 } from './pricing.js';
 import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
 import { verifyEntryPrice } from './pricing/price-verify.js';
+import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impulse-confirm.js';
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
@@ -114,6 +115,14 @@ export async function main(): Promise<void> {
           useAddon: cfg.holdersUseQnAddon,
         }
       : { enabled: false },
+    impulseConfirm: cfg.impulseConfirmEnabled
+      ? {
+          enabled: true,
+          dipPolicy: cfg.impulseDipPolicy,
+          pgDropPct: cfg.impulsePgMinDropPct,
+          dipPolicyDetail: cfg.impulsePgAbsMode ? `abs>=${cfg.impulsePgMinAbsPct}%` : undefined,
+        }
+      : { enabled: false },
   });
 
   await Promise.allSettled([refreshSolPrice(), refreshBtcContext(cfg)]);
@@ -211,6 +220,41 @@ export async function main(): Promise<void> {
           safetyAttached = outcome.kind === 'verdict' ? outcome.verdict : { skipped: outcome.reason };
         }
 
+        let impulseConfirm: import('./pricing/impulse-confirm.js').ImpulseConfirmStamp | null = null;
+        let impulseJupiterReuse: PriceVerifyVerdict | null = null;
+        if (cfg.impulseConfirmEnabled) {
+          const liveSol = getSolUsd() ?? 0;
+          let baseDec: number | null = null;
+          if (safetyAttached && 'decimals' in safetyAttached && safetyAttached.decimals != null) {
+            const d0 = Number(safetyAttached.decimals);
+            if (Number.isFinite(d0) && d0 >= 0 && d0 <= 24) baseDec = Math.floor(d0);
+          }
+          const ig = await runImpulseConfirmGate({
+            cfg,
+            lane: d.lane,
+            mint: d.mint,
+            symbol: d.symbol,
+            source: d.source,
+            pairAddress: row.pair_address,
+            anchorPriceUsd: d.features.price_usd,
+            baseDecimals: baseDec,
+            solUsd: liveSol,
+          });
+          impulseConfirm = ig.stamp;
+          if (ig.blocksOpen) {
+            appendEvent({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              reason: ig.reason,
+              impulseConfirm: ig.stamp,
+            });
+            continue;
+          }
+          impulseJupiterReuse = ig.jupiterVerdictForReuse;
+        }
+
         /** Same as ladder/close rows — lets dashboards show mcap at Open when snapshots have it. */
         let mcUsdLiveOpen: number | null = null;
         try {
@@ -231,6 +275,10 @@ export async function main(): Promise<void> {
             if (Number.isFinite(d0) && d0 >= 0) dec = Math.floor(d0);
           }
           try {
+            const reused =
+              impulseJupiterReuse ??
+              takeImpulseJupiterReuse(ot.mint, 3000) ??
+              null;
             priceVerify = await verifyEntryPrice({
               cfg,
               mint: ot.mint,
@@ -238,6 +286,7 @@ export async function main(): Promise<void> {
               sizeUsd: cfg.positionUsd,
               solUsd: getSolUsd() ?? 0,
               snapshotPriceUsd: snapshotEntryPriceUsd,
+              reuseVerdict: reused?.kind === 'ok' ? reused : undefined,
             });
           } catch (e) {
             logger.warn({ err: (e as Error)?.message, mint: ot.mint }, 'verifyEntryPrice threw');
@@ -303,6 +352,7 @@ export async function main(): Promise<void> {
           mcUsdLive: mcUsdLiveOpen,
           priorityFee: pfQuoteOpen,
           priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
+          impulseConfirm: impulseConfirm ?? undefined,
         });
 
         open.set(ot.mint, ot);

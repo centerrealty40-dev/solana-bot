@@ -222,9 +222,17 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        /* Explicit off — prevents stale PM2 env after removing per-strategy overrides */
-        PAPER_LIQ_WATCH_ENABLED: '0',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
+        /* W7.6 impulse confirm — default off; rolling 6h QN kill + Telegram at IMPULSE_QN_ROLLING_MAX_CREDITS */
+        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
+
+        /* W7.5 §10.5 — full rollout (liquidity drain watch) */
+        PAPER_LIQ_WATCH_ENABLED: '1',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
         PAPER_LIQ_WATCH_DRAIN_PCT: '35',
         PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
         PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
@@ -340,8 +348,16 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        PAPER_LIQ_WATCH_ENABLED: '0',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
+        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
+
+        /* W7.5 §10.5 — full rollout (pt1-oscar) */
+        PAPER_LIQ_WATCH_ENABLED: '1',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
         PAPER_LIQ_WATCH_DRAIN_PCT: '35',
         PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
         PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
@@ -461,7 +477,14 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        /* W7.5 canary §10.4 — pt1-dno production force-close */
+        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
+
+        /* W7.5 §10.5 — full rollout (pt1-dno) */
         PAPER_LIQ_WATCH_ENABLED: '1',
         PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
         PAPER_LIQ_WATCH_DRAIN_PCT: '35',
