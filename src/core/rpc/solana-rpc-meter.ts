@@ -186,7 +186,7 @@ function dailyEnforce(): boolean {
 
 /**
  * Сверхдневной бюджет по данным Admin API (все каналы), если в кэше свежий снимок.
- * Вкл.: QUICKNODE_DAILY_ENFORCE_PROVIDER=1 + опрос /data/quicknode-provider-daily.json (см. sa-stream).
+ * Вкл.: QUICKNODE_DAILY_ENFORCE_PROVIDER=1 + опрос /data/quicknode-provider-daily.json (dashboard / usage loop).
  */
 function getProviderBlockSnapshot(credits: number): { used: number } | null {
   if (process.env.QUICKNODE_DAILY_ENFORCE_PROVIDER !== '1') return null;

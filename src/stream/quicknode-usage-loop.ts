@@ -1,4 +1,5 @@
 import { child } from '../core/logger.js';
+import { emitQuickNodeBillingMilestones } from '../core/rpc/quicknode-billing-alerts.js';
 import {
   fetchQuickNodeBillingPeriodSummary,
   fetchQuickNodeRpcUsageWindow,
@@ -145,4 +146,23 @@ export function startQuickNodeUsageReporting(): void {
 
   void hourlyRemaining();
   setInterval(() => void hourlyRemaining(), hourlyMs);
+
+  /** Чаще, чем часовой отчёт: пороги по биллинг-периоду (1M credits / N% лимита). */
+  const milestonePollMs = Math.max(
+    60_000,
+    Number(process.env.QUICKNODE_BILLING_MILESTONE_POLL_MS || 300_000),
+  );
+
+  const milestoneTick = async () => {
+    try {
+      const s = await fetchQuickNodeBillingPeriodSummary();
+      if (!s) return;
+      await emitQuickNodeBillingMilestones(s);
+    } catch (e) {
+      log.warn({ err: String(e) }, 'quicknode billing milestone tick failed');
+    }
+  };
+
+  void milestoneTick();
+  setInterval(() => void milestoneTick(), milestonePollMs);
 }

@@ -21,6 +21,7 @@ import { fetch } from 'undici';
 import postgres from 'postgres';
 import { qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
 import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
+import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2127,4 +2128,5 @@ app.listen({ port: PORT, host: HOST }).then(() => {
   console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
   const cp = resolvedOrgCursorPath();
   console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
+  startQuickNodeUsageReporting();
 });
