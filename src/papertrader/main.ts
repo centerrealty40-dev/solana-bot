@@ -13,6 +13,7 @@ import {
   getBtcContext,
   getLiveMcUsd,
 } from './pricing.js';
+import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
@@ -88,9 +89,11 @@ export async function main(): Promise<void> {
     timeoutHours: cfg.timeoutHours,
     restoredOpen: open.size,
     safetyCheckEnabled: cfg.safetyCheckEnabled,
+    priorityFeeEnabled: cfg.priorityFeeEnabled,
   });
 
   await Promise.allSettled([refreshSolPrice(), refreshBtcContext(cfg)]);
+  startPriorityFeeTicker(cfg);
 
   async function discoveryTick(): Promise<void> {
     stats.ticks++;
@@ -193,6 +196,7 @@ export async function main(): Promise<void> {
           /* best-effort */
         }
 
+        const pfQuoteOpen = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         appendEvent({
           kind: 'open',
           mint: ot.mint,
@@ -215,6 +219,7 @@ export async function main(): Promise<void> {
           context_swaps: ctxSwaps,
           safety: safetyAttached,
           mcUsdLive: mcUsdLiveOpen,
+          priorityFee: pfQuoteOpen,
         });
 
         open.set(ot.mint, ot);
@@ -337,6 +342,7 @@ export async function main(): Promise<void> {
 
   const shutdown = (sig: string) => {
     logger.info({ msg: 'papertrader shutdown', sig, stats, open: open.size, closed: closed.length });
+    stopPriorityFeeTicker();
     clearInterval(discoveryTimer);
     clearInterval(trackerTimer);
     clearInterval(followupTimer);

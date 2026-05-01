@@ -149,6 +149,14 @@ const ConfigSchema = z.object({
   safetyRequireMintAuthNull: z.boolean().default(true),
   safetyRequireFreezeAuthNull: z.boolean().default(true),
   safetyTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
+
+  /** W7.3 — live priority-fee monitor. */
+  priorityFeeEnabled: z.boolean().default(false),
+  priorityFeeTickerMs: z.coerce.number().int().min(15_000).max(600_000).default(60_000),
+  priorityFeeMaxAgeMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
+  priorityFeeRpcTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
+  priorityFeePercentile: z.enum(['p50', 'p75', 'p90']).default('p75'),
+  priorityFeeTargetCu: z.coerce.number().int().min(50_000).max(1_400_000).default(200_000),
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -264,6 +272,16 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       const x = Number.isFinite(n) ? n : 2500;
       return Math.max(500, Math.min(10_000, x));
     })(),
+    priorityFeeEnabled: process.env.PAPER_PRIORITY_FEE_ENABLED === '1',
+    priorityFeeTickerMs: process.env.PAPER_PRIORITY_FEE_TICKER_MS,
+    priorityFeeMaxAgeMs: process.env.PAPER_PRIORITY_FEE_MAX_AGE_MS,
+    priorityFeeRpcTimeoutMs: process.env.PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS,
+    priorityFeePercentile: (() => {
+      const v = process.env.PAPER_PRIORITY_FEE_PERCENTILE;
+      if (v === 'p50' || v === 'p75' || v === 'p90') return v;
+      return undefined;
+    })(),
+    priorityFeeTargetCu: process.env.PAPER_PRIORITY_FEE_TARGET_CU,
   });
 
   if (!parsed.success) {

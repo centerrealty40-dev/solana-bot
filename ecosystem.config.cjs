@@ -202,6 +202,7 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
         PAPER_SAFETY_CHECK_ENABLED: '0',
+        PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
@@ -279,6 +280,7 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
         PAPER_SAFETY_CHECK_ENABLED: '0',
+        PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
@@ -405,6 +407,14 @@ module.exports = {
         PAPER_DIP_DCA_PRED_MIN_CHUNK_USD: '3000',
         PAPER_DIP_DCA_AGGR_MIN_SELLS_24H: '6',
         PAPER_DIP_DCA_AGGR_MAX_INTERVAL_MIN: '15',
+
+        PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_PRIORITY_FEE_TICKER_MS: '60000',
+        PAPER_PRIORITY_FEE_MAX_AGE_MS: '600000',
+        PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS: '2500',
+        PAPER_PRIORITY_FEE_PERCENTILE: 'p75',
+        PAPER_PRIORITY_FEE_TARGET_CU: '200000',
+        PAPER_PRIORITY_FEE_CACHE_PATH: path.join(root, 'data/priority-fee-cache.json'),
       },
     },
   ],

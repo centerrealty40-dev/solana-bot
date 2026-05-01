@@ -1,6 +1,7 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import type { ClosedTrade, ExitReason, OpenTrade, PartialSell, PositionLeg } from '../types.js';
-import { fetchLatestSnapshotPrice, getLiveMcUsd } from '../pricing.js';
+import { fetchLatestSnapshotPrice, getLiveMcUsd, getSolUsd } from '../pricing.js';
+import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import { appendEvent } from '../store-jsonl.js';
 import { fetchContextSwaps } from './context-swaps.js';
@@ -40,8 +41,10 @@ function buildClosedTrade(args: {
   effectiveSell: number;
   exitReason: ExitReason;
   ageH: number;
+  /** W7.3 — per simulated tx (buy/sell legs + partials + final exit). */
+  networkFeeUsdPerTx: number;
 }): ClosedTrade {
-  const { cfg, ot, marketSell, effectiveSell, exitReason, ageH } = args;
+  const { cfg, ot, marketSell, effectiveSell, exitReason, ageH, networkFeeUsdPerTx } = args;
   let finalProceeds = 0;
   let finalGrossProceeds = 0;
   if (ot.remainingFraction > 1e-6 && marketSell > 0) {
@@ -55,7 +58,7 @@ function buildClosedTrade(args: {
   const totalPnlPct = ot.totalInvestedUsd > 0 ? (netPnlUsd / ot.totalInvestedUsd) * 100 : 0;
   const grossPnlPct = ot.totalInvestedUsd > 0 ? (grossPnlUsd / ot.totalInvestedUsd) * 100 : 0;
 
-  const networkFeeUsdTotal = (ot.legs.length + ot.partialSells.length + 1) * cfg.networkFeeUsd;
+  const networkFeeUsdTotal = (ot.legs.length + ot.partialSells.length + 1) * networkFeeUsdPerTx;
 
   const slipDynamicBpsEntry = 0;
   const slipDynamicBpsExit = 0;
@@ -118,6 +121,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (!(curMetric > 0)) {
       if (ageH > cfg.timeoutHours) {
+        const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
           cfg,
           ot,
@@ -125,6 +130,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           effectiveSell: 0,
           exitReason: 'NO_DATA',
           ageH,
+          networkFeeUsdPerTx: perTxNd,
         });
         open.delete(mint);
         closed.push(ct);
@@ -141,6 +147,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           btc_exit: btcCtx(),
           exit_swaps: exitSwaps,
           mcUsdLive: mcUsdLive_closeNd,
+          priorityFee: pfCloseNd,
         });
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -201,6 +208,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             mint,
             ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
           );
+          const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
           appendEvent({
             kind: 'dca_add',
             mint,
@@ -214,6 +222,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             totalInvestedUsd: ot.totalInvestedUsd,
             legCount: ot.legs.length,
             mcUsdLive: mcUsdLive_dca,
+            priorityFee: pfDca,
           });
           console.log(
             `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% avgEff=${ot.avgEntry.toFixed(8)}`,
@@ -262,6 +271,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             mint,
             ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
           );
+          const pfPs = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
           appendEvent({
             kind: 'partial_sell',
             mint,
@@ -277,6 +287,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             grossPnlUsd,
             remainingFraction: ot.remainingFraction,
             mcUsdLive: mcUsdLive_ps,
+            priorityFee: pfPs,
           });
           console.log(
             `[TP${(lvl.pnlPct * 100).toFixed(0)}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
@@ -304,7 +315,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         null,
       );
       const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
-      const ct = buildClosedTrade({ cfg, ot, marketSell, effectiveSell, exitReason, ageH });
+      const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+      const perTxClose = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+      const ct = buildClosedTrade({
+        cfg,
+        ot,
+        marketSell,
+        effectiveSell,
+        exitReason,
+        ageH,
+        networkFeeUsdPerTx: perTxClose,
+      });
       open.delete(mint);
       closed.push(ct);
       const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
@@ -322,6 +343,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         exit_effective_price: effectiveSell,
         exit_swaps: exitSwaps,
         mcUsdLive: mcUsdLive_close,
+        priorityFee: pfClose,
       });
       peakStateByMint.delete(mint);
       const arrow = ct.pnlPct >= 0 ? '+' : '';

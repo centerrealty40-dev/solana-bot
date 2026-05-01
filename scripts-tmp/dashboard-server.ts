@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
 import postgres from 'postgres';
 import { qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
+import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -876,6 +877,8 @@ type Paper2OpenItem = {
   peakPnlPct: number;
   trailingArmed: boolean;
   totalInvestedUsd: number;
+  /** W7.3 — per-tx network fee snapshot from journal `open.priorityFee.usd`. */
+  entryPriorityFeeUsd: number | null;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -1121,6 +1124,10 @@ function loadPaper2File(filePath: string): {
       const emp = Number(e.entryMarketPrice ?? 0);
       const baselinePriceUsd =
         emp > 0 ? emp : legMp > 0 ? legMp : null;
+      const pfOpen = e.priorityFee as { usd?: number } | undefined;
+      const pfOpenUsd = Number(pfOpen?.usd ?? 0);
+      const entryPriorityFeeUsd =
+        Number.isFinite(pfOpenUsd) && pfOpenUsd > 0 ? pfOpenUsd : null;
       om.set(mint, {
         mint,
         symbol: String(e.symbol ?? ''),
@@ -1140,6 +1147,7 @@ function loadPaper2File(filePath: string): {
         // NOTE: never fall back to entryMcUsd here — that's the market cap
         // (millions $), not the position size. 0 means "use POSITION_USD_DEFAULT".
         totalInvestedUsd: Number(e.totalInvestedUsd ?? 0),
+        entryPriorityFeeUsd,
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
       const tev = buildTimelineEvent(e, metricType, entryRealMcUsd);
@@ -1267,6 +1275,21 @@ app.get('/papertrader2', async (_req, reply) => {
   return fs.readFileSync(HTML2_PATH, 'utf-8');
 });
 
+app.get('/api/paper2/priority-fee', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  const solUsd = Number(process.env.DASHBOARD_SOL_USD ?? 160);
+  const targetCu = Number(process.env.PAPER_PRIORITY_FEE_TARGET_CU ?? 200_000);
+  const payload = buildPriorityFeeMonitorApiPayload({
+    solUsd: Number.isFinite(solUsd) && solUsd > 0 ? solUsd : 160,
+    targetCu: Number.isFinite(targetCu) && targetCu > 0 ? targetCu : 200_000,
+  });
+  if (payload.ok !== true) {
+    reply.code(503);
+    return payload;
+  }
+  return payload;
+});
+
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
   let files: string[] = [];
@@ -1311,6 +1334,7 @@ app.get('/api/paper2', async (_req, reply) => {
     /** Extra mcap source when pair_snapshots are empty (pump.fun). */
     liveMcProvenance: 'snapshots' | 'pump.fun' | null;
     timeline: TimelineEvent[];
+    entryPriorityFeeUsd: number | null;
   };
 
   type StrategyRow = {
@@ -1338,6 +1362,8 @@ app.get('/api/paper2', async (_req, reply) => {
     failReasons: Array<{ reason: string; count: number }>;
     open: EnrichedOpen[];
     recentClosed: Array<Record<string, unknown>>;
+    /** W7.3 — sum of `priorityFee.usd` on journal close rows (stamp at exit). */
+    priorityFeeUsdTotal: number;
   };
 
   const strategies: StrategyRow[] = [];
@@ -1362,6 +1388,9 @@ app.get('/api/paper2', async (_req, reply) => {
           const entryTs = Number(c.entryTs ?? 0);
           const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(String(c.mint), entryTs, timelineSorted);
           const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
+          const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
+          const exitPriorityFeeUsd =
+            Number.isFinite(exitPfUsd) && exitPfUsd > 0 ? exitPfUsd : null;
           const tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
           if (
             tlOut.length &&
@@ -1384,6 +1413,7 @@ app.get('/api/paper2', async (_req, reply) => {
             dex: costs && costs.dex,
             entryMcapAtBuyUsd,
             exitMcapUsd: exitMcapUsd != null && exitMcapUsd > 0 ? exitMcapUsd : null,
+            exitPriorityFeeUsd,
             timeline: tlOut,
           };
         }),
@@ -1556,6 +1586,7 @@ app.get('/api/paper2', async (_req, reply) => {
           livePxProvenance,
           liveMcProvenance,
           timeline: timelineOut,
+          entryPriorityFeeUsd: ot.entryPriorityFeeUsd ?? null,
         };
       }),
     );
@@ -1565,6 +1596,11 @@ app.get('/api/paper2', async (_req, reply) => {
     const unrealizedUsd = enrichedOpen.reduce((acc, o) => acc + (o.pnlUsd ?? 0), 0);
     const realizedPnlUsd = m.sumPnlUsd;
     const totalPnlUsd = realizedPnlUsd + unrealizedUsd;
+
+    const priorityFeeUsdTotal = closed.reduce((acc, row) => {
+      const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
+      return acc + (pf > 0 ? pf : 0);
+    }, 0);
 
     strategies.push({
       strategyId: sid,
@@ -1591,6 +1627,7 @@ app.get('/api/paper2', async (_req, reply) => {
       failReasons,
       open: enrichedOpen,
       recentClosed: closedWithUsd,
+      priorityFeeUsdTotal,
     });
   }
   strategies.sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
