@@ -9,7 +9,13 @@ import { WRAPPED_SOL_MINT } from '../types.js';
 
 const log = child('price-verify');
 
-const QUOTE_API_BASE_DEFAULT = 'https://quote-api.jup.ag/v6/quote';
+/**
+ * Default Jupiter quote endpoint. Old `quote-api.jup.ag/v6/quote` was DNS-decommissioned
+ * in 2025 — see Jupiter Developer Platform migration guide. We use the public lite-api
+ * (no API key, ~60 req/min/IP, response shape backwards-compatible with v6: outAmount,
+ * priceImpactPct, routePlan are the same field names). Override via PAPER_PRICE_VERIFY_QUOTE_URL.
+ */
+const QUOTE_API_BASE_DEFAULT = 'https://lite-api.jup.ag/swap/v1/quote';
 
 function quoteApiBase(): string {
   const v = process.env.PAPER_PRICE_VERIFY_QUOTE_URL?.trim();
