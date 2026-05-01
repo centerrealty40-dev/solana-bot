@@ -94,15 +94,38 @@ export async function emitQuickNodeBillingMilestones(s: BillingSummaryForAlerts)
   if (stepCred <= 0 && pct <= 0) return;
 
   const pk = periodKey(s);
-  let st = readState();
-  if (!st || st.periodKey !== pk) {
-    st = { periodKey: pk, lastCreditStep: 0, lastPctChunk: 0 };
-  }
+  const prev = readState();
+  const freshPeriod = !prev || prev.periodKey !== pk;
 
   const used = Math.max(0, s.credits_used);
   const limit = Math.max(1, s.limit);
 
-  let next = { ...st };
+  const reachedCredit =
+    stepCred > 0 ? Math.floor(used / stepCred) : 0;
+  const reachedPctChunk =
+    pct > 0 ? Math.floor((used * 100) / (limit * pct)) : 0;
+
+  let next: StoredState = freshPeriod
+    ? { periodKey: pk, lastCreditStep: reachedCredit, lastPctChunk: reachedPctChunk }
+    : {
+        periodKey: pk,
+        lastCreditStep:
+          typeof prev!.lastCreditStep === 'number' && prev!.lastCreditStep >= 0
+            ? prev!.lastCreditStep
+            : 0,
+        lastPctChunk:
+          typeof prev!.lastPctChunk === 'number' && prev!.lastPctChunk >= 0 ? prev!.lastPctChunk : 0,
+      };
+
+  if (freshPeriod) {
+    writeState(next);
+    log.info(
+      { used: Math.round(used), reachedCredit, reachedPctChunk, periodKey: pk },
+      'quicknode billing milestones baseline (no backlog telegram)',
+    );
+    return;
+  }
+
   const pctUsed = ((used / limit) * 100).toFixed(2);
   const periodLine = (() => {
     const a = isoUtcFromUnixSec(s.start_time);
