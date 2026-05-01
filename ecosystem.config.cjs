@@ -1,6 +1,6 @@
 /**
  * PM2 для VPS (/opt/solana-alpha) после W1/W2 slim.
- * Дашборд + sa-stream + sa-parser + sa-atlas + W6.1 DEX collectors.
+ * Дашборд + sa-stream + sa-parser + sa-atlas + W6.1 DEX collectors + W6.3a paper skeleton.
  *
  * Запуск: pm2 start ecosystem.config.cjs
  */
@@ -174,6 +174,29 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         DIRECT_LP_ENQUEUE_RPC: '0',
+      },
+    },
+    {
+      name: 'pt1-skeleton-test',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent papertrader',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 5000,
+      max_memory_restart: '300M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        PAPER_STRATEGY_ID: 'pt1-skeleton-test',
+        PAPER_STRATEGY_KIND: 'fresh',
+        PAPER_TRADES_PATH: path.join(root, 'data/paper2/pt1-skeleton-test.jsonl'),
+        PAPER_HEARTBEAT_INTERVAL_MS: '10000',
+        PAPER_DRY_RUN: 'true',
       },
     },
   ],

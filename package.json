@@ -19,7 +19,8 @@
     "dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "stream": "tsx src/scripts/stream.ts",
     "parser": "tsx src/scripts/parser.ts",
-    "atlas": "tsx src/scripts/atlas.ts"
+    "atlas": "tsx src/scripts/atlas.ts",
+    "papertrader": "tsx src/scripts/papertrader.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",
