@@ -54,44 +54,27 @@ export function getBtcContext(): {
   };
 }
 
-export async function refreshBtcContext(cfg: PaperTraderConfig): Promise<void> {
-  if (!cfg.btcMints.length) return;
-  const mintsSql = cfg.btcMints.map((m) => `'${m.replace(/'/g, "''")}'`).join(',');
-  const r = await db.execute(dsql.raw(`
-    SELECT block_time AS ts, price_usd
-    FROM swaps
-    WHERE base_mint IN (${mintsSql})
-      AND price_usd > 0
-      AND block_time >= now() - interval '6 hours'
-    ORDER BY block_time ASC
-  `));
-  const rows = r as unknown as Array<{ ts: unknown; price_usd: number | string }>;
-  if (rows.length < 2) {
+export async function refreshBtcContext(_cfg: PaperTraderConfig): Promise<void> {
+  void _cfg;
+  const j = await fetchJson<unknown[][]>(
+    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=5',
+  );
+  if (!j || !Array.isArray(j) || j.length < 5) {
     btcRet1hPct = null;
     btcRet4hPct = null;
     return;
   }
-  const series = rows.map((row) => ({
-    t: new Date(String(row.ts)).getTime(),
-    p: Number(row.price_usd),
-  }));
-  const latest = series[series.length - 1];
-  const findClosest = (targetTs: number) => {
-    let best = series[0];
-    let bestDiff = Math.abs(series[0].t - targetTs);
-    for (const s of series) {
-      const d = Math.abs(s.t - targetTs);
-      if (d < bestDiff) {
-        best = s;
-        bestDiff = d;
-      }
-    }
-    return best;
-  };
-  const a1 = findClosest(latest.t - 60 * 60_000);
-  const a4 = findClosest(latest.t - 4 * 60 * 60_000);
-  btcRet1hPct = a1 && a1.p > 0 ? (latest.p / a1.p - 1) * 100 : null;
-  btcRet4hPct = a4 && a4.p > 0 ? (latest.p / a4.p - 1) * 100 : null;
+  const closes = j.map((row) => Number(row[4])).filter((x) => Number.isFinite(x) && x > 0);
+  if (closes.length < 5) {
+    btcRet1hPct = null;
+    btcRet4hPct = null;
+    return;
+  }
+  const last = closes[closes.length - 1];
+  const oneAgo = closes[closes.length - 2];
+  const fourAgo = closes[closes.length - 5];
+  btcRet1hPct = oneAgo > 0 ? (last / oneAgo - 1) * 100 : null;
+  btcRet4hPct = fourAgo > 0 ? (last / fourAgo - 1) * 100 : null;
   btcLastUpdateTs = Date.now();
 }
 

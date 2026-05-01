@@ -129,3 +129,93 @@ export interface HeartbeatEvent extends JsonlEventBase {
   /** "no candidates" / "filters not implemented" / "discovery skipped" — диагностика. */
   note?: string;
 }
+
+export interface SnapshotCandidateRow {
+  mint: string;
+  symbol: string;
+  ts: Date | string;
+  launch_ts: Date | string | null;
+  age_min: number | null;
+  price_usd: number;
+  liquidity_usd: number;
+  volume_5m: number;
+  buys_5m: number;
+  sells_5m: number;
+  market_cap_usd: number | null;
+  source: string;
+  holder_count: number;
+  token_age_min: number;
+}
+
+export interface DipContext {
+  high_px: number;
+  low_px: number;
+}
+
+export interface SnapshotFeatures {
+  price_usd: number;
+  liq_usd: number;
+  vol5m_usd: number;
+  buys5m: number;
+  sells5m: number;
+  buy_sell_ratio_5m: number | null;
+  holders: number;
+  token_age_min: number;
+  dip_pct: number | null;
+  impulse_pct: number | null;
+}
+
+export type SellerProfile =
+  | 'capitulator'
+  | 'dca_predictable'
+  | 'dca_aggressive'
+  | 'panic_random'
+  | 'unknown';
+
+export interface WhaleSeller {
+  wallet: string;
+  amount_usd: number;
+  pct_of_position_dumped: number;
+  pct_total_dumped_now: number;
+  is_creator: boolean;
+  profile: SellerProfile;
+  n_sells_24h: number;
+  median_interval_min: number | null;
+  median_chunk_usd: number | null;
+}
+
+export interface WhaleAnalysis {
+  enabled: boolean;
+  creator_wallet: string | null;
+  creator_dumped_pct: number;
+  creator_dump_block: boolean;
+  large_sells: WhaleSeller[];
+  single_whale_capitulation: boolean;
+  group_sell_pressure: boolean;
+  dca_predictable_present: boolean;
+  dca_aggressive_present: boolean;
+  trigger_fired: 'whale_capitulation' | 'group_pressure' | 'dca_predictable' | null;
+  block_reasons: string[];
+}
+
+export interface EvalEvent extends JsonlEventBase {
+  kind: 'eval';
+  lane: Lane;
+  source?: string;
+  mint: string;
+  symbol: string;
+  ageMin: number;
+  pass: boolean;
+  reasons: string[];
+  m: SnapshotFeatures;
+  btc: { ret1h_pct: number | null; ret4h_pct: number | null; updated_ts: number | null };
+  whale_analysis: WhaleAnalysis | null;
+}
+
+export interface EvalSkipOpenEvent extends JsonlEventBase {
+  kind: 'eval-skip-open';
+  lane: Lane;
+  source?: string;
+  mint: string;
+  reason: string;
+}
