@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
+    [x-cloak] { display: none !important; }
     body { background:#0a0f1c; color:#e5e7eb; }
     .card { background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); }
     .mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
@@ -169,18 +170,42 @@
           <h3 class="font-semibold mb-2">Open positions</h3>
           <div class="space-y-1 text-sm">
             <template x-for="o in (selectedRow()?.open || [])" :key="o.mint + o.entryTs">
-              <div class="flex items-center justify-between border-b border-white/5 pb-1">
-                <div class="flex flex-col">
-                  <a :href="gmgn(o.mint)" target="_blank" class="text-amber-300" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
-                  <span class="text-[10px] text-slate-500">
-                    age <span x-text="Math.round(o.ageMin || 0)"></span>m ·
-                    cur <span x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
-                    <span x-show="!o.hasLiveMc" class="text-rose-400/60">· no live mcap</span>
-                  </span>
+              <div class="border-b border-white/5 pb-1">
+                <div class="flex items-center justify-between cursor-pointer hover:bg-white/5 px-1 -mx-1 rounded"
+                     @click="toggleExpand(o.mint + ':' + o.entryTs)">
+                  <div class="flex flex-col">
+                    <div>
+                      <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
+                      <a :href="gmgn(o.mint)" target="_blank" @click.stop
+                         class="text-amber-300" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      <span class="text-slate-500 text-[10px] ml-1" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
+                    </div>
+                    <span class="text-[10px] text-slate-500">
+                      age <span x-text="Math.round(o.ageMin || 0)"></span>m ·
+                      cur <span x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
+                      <span x-show="!o.hasLiveMc" class="text-rose-400/60">· no live mcap</span>
+                    </span>
+                  </div>
+                  <div class="text-right">
+                    <div class="mono font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
+                    <div class="text-[10px]" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                  </div>
                 </div>
-                <div class="text-right">
-                  <div class="mono font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
-                  <div class="text-[10px]" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
+                     class="mt-2 ml-4 border-l-2 border-violet-500/40 pl-3 py-1 space-y-1 text-[11px] mono">
+                  <template x-for="(ev, i) in (o.timeline || [])" :key="i">
+                    <div class="flex items-baseline gap-2">
+                      <span class="text-slate-500 w-28 shrink-0" x-text="fmtTimelineTs(ev.ts)"></span>
+                      <span class="flex-1" :class="timelineColor(ev)">
+                        <span x-text="ev.label"></span>
+                        <span class="text-slate-500"> · mcap </span>
+                        <span x-text="ev.mcUsd ? fmtUsd(ev.mcUsd) : 'n/a'"></span>
+                        <span x-show="ev.pnlUsd != null" class="text-slate-500"> · </span>
+                        <span x-show="ev.pnlUsd != null" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="ev.pnlUsd != null ? fmtUsdSigned(ev.pnlUsd) : ''"></span>
+                      </span>
+                    </div>
+                  </template>
+                  <div x-show="!(o.timeline || []).length" class="text-slate-500">no events recorded</div>
                 </div>
               </div>
             </template>
@@ -192,14 +217,38 @@
           <h3 class="font-semibold mb-2">Recent closes</h3>
           <div class="space-y-1 text-sm">
             <template x-for="c in (selectedRow()?.recentClosed || [])" :key="c.mint + c.exitTs">
-              <div class="flex items-center justify-between border-b border-white/5 pb-1">
-                <div class="flex flex-col">
-                  <a :href="gmgn(c.mint)" target="_blank" class="text-sky-300" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
-                  <span class="text-[10px] text-slate-500" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+              <div class="border-b border-white/5 pb-1">
+                <div class="flex items-center justify-between cursor-pointer hover:bg-white/5 px-1 -mx-1 rounded"
+                     @click="toggleExpand('c:' + c.mint + ':' + c.exitTs)">
+                  <div class="flex flex-col">
+                    <div>
+                      <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
+                      <a :href="gmgn(c.mint)" target="_blank" @click.stop
+                         class="text-sky-300" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      <span class="text-slate-500 text-[10px] ml-1" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
+                    </div>
+                    <span class="text-[10px] text-slate-500" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+                  </div>
+                  <div class="text-right">
+                    <div class="mono" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
+                    <div class="text-[10px]" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                  </div>
                 </div>
-                <div class="text-right">
-                  <div class="mono" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
-                  <div class="text-[10px]" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
+                     class="mt-2 ml-4 border-l-2 border-sky-500/40 pl-3 py-1 space-y-1 text-[11px] mono">
+                  <template x-for="(ev, i) in (c.timeline || [])" :key="i">
+                    <div class="flex items-baseline gap-2">
+                      <span class="text-slate-500 w-28 shrink-0" x-text="fmtTimelineTs(ev.ts)"></span>
+                      <span class="flex-1" :class="timelineColor(ev)">
+                        <span x-text="ev.label"></span>
+                        <span class="text-slate-500"> · mcap </span>
+                        <span x-text="ev.mcUsd ? fmtUsd(ev.mcUsd) : 'n/a'"></span>
+                        <span x-show="ev.pnlUsd != null" class="text-slate-500"> · </span>
+                        <span x-show="ev.pnlUsd != null" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="ev.pnlUsd != null ? fmtUsdSigned(ev.pnlUsd) : ''"></span>
+                      </span>
+                    </div>
+                  </template>
+                  <div x-show="!(c.timeline || []).length" class="text-slate-500">no events recorded</div>
                 </div>
               </div>
             </template>
@@ -259,6 +308,33 @@
         state: {},
         selected: null,
         updatedAt: '—',
+        expanded: {},
+        toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
+        isExpanded(key) { return !!this.expanded[key]; },
+        fmtTimelineTs(ts) {
+          if (!ts) return '—';
+          const d = new Date(Number(ts));
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          const ss = String(d.getSeconds()).padStart(2, '0');
+          return `${dd}.${mm}, ${hh}:${mi}:${ss}`;
+        },
+        timelineColor(ev) {
+          if (!ev) return 'text-slate-300';
+          if (ev.kind === 'open') return 'text-amber-300';
+          if (ev.kind === 'dca_add') return 'text-violet-300';
+          if (ev.kind === 'partial_sell') return 'text-emerald-300';
+          if (ev.kind === 'close') {
+            const r = String(ev.reason || '').toUpperCase();
+            if (r === 'TP') return 'text-emerald-400';
+            if (r === 'SL' || r === 'KILLSTOP') return 'text-rose-400';
+            if (r === 'TRAIL') return 'text-cyan-300';
+            return 'text-slate-300';
+          }
+          return 'text-slate-300';
+        },
         async boot() {
           await this.refresh();
           setInterval(() => this.refresh(), 15000);

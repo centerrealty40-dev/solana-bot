@@ -736,6 +736,125 @@ type Paper2OpenItem = {
 
 type Paper2ClosedRow = Record<string, unknown>;
 
+/**
+ * Per-position audit timeline derived from jsonl events.
+ * mcUsd is USD market cap when known (only when metricType === 'mc'),
+ * null otherwise (so the UI can render "mcap n/a" exactly like the spec).
+ */
+type TimelineEvent = {
+  ts: number;
+  kind: 'open' | 'dca_add' | 'partial_sell' | 'close';
+  label: string;
+  mcUsd: number | null;
+  /** % of base position (DCA) or % of remaining position (partial_sell). */
+  sizePct: number | null;
+  pnlPct: number | null;
+  pnlUsd: number | null;
+  reason: string | null;
+  remainingFraction: number | null;
+};
+
+function fmtSignedPct(p: number | null | undefined): string {
+  if (p == null || !Number.isFinite(p)) return '';
+  const sign = p >= 0 ? '+' : '';
+  return `${sign}${p.toFixed(0)}%`;
+}
+
+function buildTimelineEvent(
+  e: Record<string, unknown>,
+  metricType: string | null,
+  entryRealMcUsd: number | null,
+): TimelineEvent | null {
+  const ts = Number(e.ts ?? 0);
+  if (!ts) return null;
+  const kind = String(e.kind || '');
+  const isMcMetric = metricType === 'mc';
+  const marketPrice = Number(e.marketPrice ?? 0);
+  const liveMc = isMcMetric && marketPrice > 0 ? marketPrice : null;
+
+  if (kind === 'open') {
+    const openMc =
+      entryRealMcUsd && entryRealMcUsd > 0
+        ? entryRealMcUsd
+        : isMcMetric && Number(e.entryMcUsd ?? 0) > 0
+          ? Number(e.entryMcUsd)
+          : null;
+    return {
+      ts,
+      kind: 'open',
+      label: 'Open',
+      mcUsd: openMc,
+      sizePct: null,
+      pnlPct: null,
+      pnlUsd: null,
+      reason: null,
+      remainingFraction: 1,
+    };
+  }
+  if (kind === 'dca_add') {
+    const triggerPct = Number(e.triggerPct ?? 0) * 100; // -7%, -15%, ...
+    const sizeUsd = Number(e.sizeUsd ?? 0);
+    const label = `DCA add · +$${sizeUsd.toFixed(0)} @ ${fmtSignedPct(triggerPct)}`;
+    return {
+      ts,
+      kind: 'dca_add',
+      label,
+      mcUsd: liveMc,
+      sizePct: null,
+      pnlPct: null,
+      pnlUsd: null,
+      reason: 'dca',
+      remainingFraction: null,
+    };
+  }
+  if (kind === 'partial_sell') {
+    const sellFraction = Number(e.sellFraction ?? 0);
+    const ladderPnlPct = Number(e.ladderPnlPct ?? 0) * 100;
+    const reason = String(e.reason || 'partial_sell');
+    const sellPct = Math.round(sellFraction * 100);
+    const niceReason =
+      reason === 'TP_LADDER' ? 'Ladder (take profit)' : reason.toLowerCase().replace(/_/g, ' ');
+    const label = `${niceReason} · sell ${sellPct}% of remaining @ ${fmtSignedPct(ladderPnlPct)}`;
+    const pnlUsd = Number(e.pnlUsd ?? 0);
+    return {
+      ts,
+      kind: 'partial_sell',
+      label,
+      mcUsd: liveMc,
+      sizePct: sellFraction,
+      pnlPct: ladderPnlPct,
+      pnlUsd: Number.isFinite(pnlUsd) ? pnlUsd : null,
+      reason,
+      remainingFraction: Number(e.remainingFraction ?? null),
+    };
+  }
+  if (kind === 'close') {
+    const exitReason = String(e.exitReason || 'CLOSE');
+    const exitMc = Number(e.exitMcUsd ?? 0);
+    const exitMarketPrice = Number(e.exit_market_price ?? 0);
+    const closeMc =
+      isMcMetric && exitMarketPrice > 0
+        ? exitMarketPrice
+        : isMcMetric && exitMc > 0
+          ? exitMc
+          : null;
+    const pnlPct = Number(e.pnlPct ?? 0);
+    const netPnlUsd = Number(e.netPnlUsd ?? 0);
+    return {
+      ts,
+      kind: 'close',
+      label: `Close · ${exitReason}`,
+      mcUsd: closeMc,
+      sizePct: null,
+      pnlPct: Number.isFinite(pnlPct) ? pnlPct : null,
+      pnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : null,
+      reason: exitReason,
+      remainingFraction: 0,
+    };
+  }
+  return null;
+}
+
 function loadPaper2File(filePath: string): {
   open: Paper2OpenItem[];
   closed: Paper2ClosedRow[];
@@ -745,6 +864,8 @@ function loadPaper2File(filePath: string): {
   evals1h: number;
   passed1h: number;
   failReasons: Array<{ reason: string; count: number }>;
+  /** Per-position timeline keyed by mint (open positions). */
+  openTimelines: Map<string, TimelineEvent[]>;
 } {
   if (!fs.existsSync(filePath)) {
     return {
@@ -756,6 +877,7 @@ function loadPaper2File(filePath: string): {
       evals1h: 0,
       passed1h: 0,
       failReasons: [],
+      openTimelines: new Map(),
     };
   }
   const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
@@ -768,6 +890,14 @@ function loadPaper2File(filePath: string): {
   let passed1h = 0;
   const failReasonsCount = new Map<string, number>();
   const since1h = Date.now() - 3_600_000;
+  // Build per-position timelines. Keyed by mint while the position is open;
+  // on close we attach the collected events to the close row and clear the
+  // bucket so the next re-open of the same mint starts fresh.
+  const liveTimelines = new Map<string, TimelineEvent[]>();
+  // Cache of (mint -> { metricType, entryRealMcUsd }) so dca_add / partial_sell /
+  // close events know how to interpret marketPrice (mcap vs token price).
+  const liveMeta = new Map<string, { metricType: string | null; entryRealMcUsd: number | null }>();
+
   for (const ln of lines) {
     let e: Record<string, unknown>;
     try {
@@ -795,22 +925,24 @@ function loadPaper2File(filePath: string): {
         }
       }
     }
+    const mint = String(e.mint ?? '');
     if (e.kind === 'open') {
       const feat = e.features as Record<string, unknown> | undefined;
       const featMc =
         feat && ((typeof feat.market_cap_usd === 'number' ? feat.market_cap_usd : 0) ||
           (typeof feat.fdv_usd === 'number' ? feat.fdv_usd : 0));
-      const mint = String(e.mint ?? '');
+      const metricType = e.metricType != null ? String(e.metricType) : null;
+      const entryRealMcUsd = featMc ? Number(featMc) : null;
       om.set(mint, {
         mint,
         symbol: String(e.symbol ?? ''),
         entryTs: Number(e.entryTs ?? 0),
         entryMcUsd: Number(e.entryMcUsd ?? 0),
-        entryRealMcUsd: featMc ? Number(featMc) : null,
+        entryRealMcUsd,
         openedAtIso: e.entryTs ? new Date(Number(e.entryTs)).toISOString() : null,
         lane: e.lane != null ? String(e.lane) : null,
         source: e.source != null ? String(e.source) : null,
-        metricType: e.metricType != null ? String(e.metricType) : null,
+        metricType,
         features: e.features ?? null,
         btc: e.btc ?? null,
         peakMcUsd: Number(e.entryMcUsd ?? 0),
@@ -820,25 +952,51 @@ function loadPaper2File(filePath: string): {
         // (millions $), not the position size. 0 means "use POSITION_USD_DEFAULT".
         totalInvestedUsd: Number(e.totalInvestedUsd ?? 0),
       });
+      liveMeta.set(mint, { metricType, entryRealMcUsd });
+      const tev = buildTimelineEvent(e, metricType, entryRealMcUsd);
+      liveTimelines.set(mint, tev ? [tev] : []);
     } else if (e.kind === 'peak') {
-      const mint = String(e.mint ?? '');
       const o = om.get(mint);
       if (o) {
         o.peakMcUsd = Math.max(o.peakMcUsd, Number(e.peakMcUsd ?? 0));
         o.peakPnlPct = Math.max(o.peakPnlPct, Number(e.peakPnlPct ?? 0));
         o.trailingArmed = o.trailingArmed || Boolean(e.trailingArmed);
       }
+    } else if (e.kind === 'dca_add' || e.kind === 'partial_sell') {
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const tev = buildTimelineEvent(e, meta.metricType, meta.entryRealMcUsd);
+      if (tev) {
+        const arr = liveTimelines.get(mint) ?? [];
+        arr.push(tev);
+        liveTimelines.set(mint, arr);
+      }
     } else if (e.kind === 'close') {
-      const mint = String(e.mint ?? '');
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const tev = buildTimelineEvent(e, meta.metricType, meta.entryRealMcUsd);
+      const arr = liveTimelines.get(mint) ?? [];
+      if (tev) arr.push(tev);
+      const closedRow: Paper2ClosedRow = { ...e, __timeline: arr };
+      cl.push(closedRow);
       om.delete(mint);
-      cl.push(e);
+      liveMeta.delete(mint);
+      liveTimelines.delete(mint);
     }
   }
   const failReasons = [...failReasonsCount.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([reason, count]) => ({ reason, count }));
-  return { open: [...om.values()], closed: cl, firstTs: f, lastTs: l, resetTs, evals1h, passed1h, failReasons };
+  return {
+    open: [...om.values()],
+    closed: cl,
+    firstTs: f,
+    lastTs: l,
+    resetTs,
+    evals1h,
+    passed1h,
+    failReasons,
+    openTimelines: liveTimelines,
+  };
 }
 
 function paper2Metrics(closed: Paper2ClosedRow[]): {
@@ -952,6 +1110,7 @@ app.get('/api/paper2', async (_req, reply) => {
     pnlUsd: number | null;
     ageMin: number;
     hasLiveMc: boolean;
+    timeline: TimelineEvent[];
   };
 
   type StrategyRow = {
@@ -985,7 +1144,7 @@ app.get('/api/paper2', async (_req, reply) => {
 
   for (const fp of files) {
     const sid = path.basename(fp, '.jsonl');
-    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons } = loadPaper2File(fp);
+    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loadPaper2File(fp);
     const m = paper2Metrics(closed);
     const startedAt = resetTs || firstTs;
     const closedWithUsd = closed
@@ -997,6 +1156,7 @@ app.get('/api/paper2', async (_req, reply) => {
             ? netUsd
             : (POSITION_USD_DEFAULT * pnlPct) / 100;
         const costs = c.costs as Record<string, unknown> | undefined;
+        const timeline = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
         return {
           mint: c.mint,
           symbol: c.symbol,
@@ -1006,6 +1166,7 @@ app.get('/api/paper2', async (_req, reply) => {
           pnlUsd,
           durationMin: Number(c.durationMin ?? 0),
           dex: costs && costs.dex,
+          timeline,
         };
       })
       .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
@@ -1058,6 +1219,7 @@ app.get('/api/paper2', async (_req, reply) => {
           pnlUsd,
           ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
           hasLiveMc,
+          timeline: openTimelines.get(ot.mint) ?? [],
         };
       }),
     );
