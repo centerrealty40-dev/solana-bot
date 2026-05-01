@@ -15,6 +15,10 @@
     .pill-ok { background: rgba(16,185,129,.12); color:#34d399; }
     .pill-bad { background: rgba(244,63,94,.12); color:#fb7185; }
     .pill-info { background: rgba(99,102,241,.15); color:#a5b4fc; }
+    /* Timeline readability */
+    .timeline-pane { font-size: 0.9375rem; line-height: 1.55; }
+    .timeline-pane .timeline-ts { flex: 0 0 auto; width: 9.75rem; }
+    @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 10.75rem; } }
   </style>
 </head>
 <body x-data="paperBoard()" x-init="boot()" class="min-h-screen">
@@ -131,7 +135,7 @@
         </div>
         <div class="card rounded p-3">
           <div class="text-[10px] uppercase text-slate-500">Unrealized</div>
-          <div class="text-lg font-bold" :class="(selectedRow()?.unrealizedUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.unrealizedUsd)"></div>
+          <div class="text-lg font-bold" :class="(selectedRow()?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.unrealizedPnlUsd ?? selectedRow()?.unrealizedUsd)"></div>
         </div>
         <div class="card rounded p-3">
           <div class="text-[10px] uppercase text-slate-500">Avg / Avg Peak</div>
@@ -177,31 +181,32 @@
                     <div>
                       <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <a :href="gmgn(o.mint)" target="_blank" @click.stop
-                         class="text-amber-300" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
-                      <span class="text-slate-500 text-[10px] ml-1" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
+                         class="text-amber-300 text-sm font-medium" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      <span class="text-slate-500 text-xs ml-1" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <span class="text-[10px] text-slate-500">
+                    <span class="text-xs text-slate-500">
                       age <span x-text="Math.round(o.ageMin || 0)"></span>m ·
-                      cur <span x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
-                      <span x-show="!o.hasLiveMc" class="text-rose-400/60">· no live mcap</span>
+                      <span class="text-slate-400" x-text="liveCurCaption(o)"></span>
                     </span>
                   </div>
                   <div class="text-right">
-                    <div class="mono font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
-                    <div class="text-[10px]" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                    <div class="mono text-sm font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
+                    <div class="text-xs" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
-                     class="mt-2 ml-4 border-l-2 border-violet-500/40 pl-3 py-1 space-y-1 text-[11px] mono">
+                     class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <template x-for="(ev, i) in (o.timeline || [])" :key="i">
-                    <div class="flex items-baseline gap-2">
-                      <span class="text-slate-500 w-28 shrink-0" x-text="fmtTimelineTs(ev.ts)"></span>
-                      <span class="flex-1" :class="timelineColor(ev)">
-                        <span x-text="ev.label"></span>
-                        <span class="text-slate-500"> · mcap </span>
-                        <span x-text="ev.mcUsd ? fmtUsd(ev.mcUsd) : 'n/a'"></span>
-                        <span x-show="ev.pnlUsd != null" class="text-slate-500"> · </span>
-                        <span x-show="ev.pnlUsd != null" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="ev.pnlUsd != null ? fmtUsdSigned(ev.pnlUsd) : ''"></span>
+                    <div class="flex items-start gap-3 leading-snug">
+                      <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
+                      <span class="flex-1 min-w-0" :class="timelineColor(ev)">
+                        <span class="font-medium" x-text="ev.label"></span>
+                        <span class="text-slate-500"> · </span>
+                        <span class="text-slate-400" x-text="timelineMarketLine(ev)"></span>
+                        <span x-show="ev.pnlUsd != null">
+                          <span class="text-slate-500"> · </span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
+                        </span>
                       </span>
                     </div>
                   </template>
@@ -224,27 +229,29 @@
                     <div>
                       <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
                       <a :href="gmgn(c.mint)" target="_blank" @click.stop
-                         class="text-sky-300" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
-                      <span class="text-slate-500 text-[10px] ml-1" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
+                         class="text-sky-300 text-sm font-medium" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      <span class="text-slate-500 text-xs ml-1" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <span class="text-[10px] text-slate-500" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+                    <span class="text-xs text-slate-500" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
                   </div>
                   <div class="text-right">
-                    <div class="mono" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
-                    <div class="text-[10px]" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                    <div class="mono text-sm" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
+                    <div class="text-xs" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
-                     class="mt-2 ml-4 border-l-2 border-sky-500/40 pl-3 py-1 space-y-1 text-[11px] mono">
+                     class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-sky-500/55 pl-4 py-2 space-y-2">
                   <template x-for="(ev, i) in (c.timeline || [])" :key="i">
-                    <div class="flex items-baseline gap-2">
-                      <span class="text-slate-500 w-28 shrink-0" x-text="fmtTimelineTs(ev.ts)"></span>
-                      <span class="flex-1" :class="timelineColor(ev)">
-                        <span x-text="ev.label"></span>
-                        <span class="text-slate-500"> · mcap </span>
-                        <span x-text="ev.mcUsd ? fmtUsd(ev.mcUsd) : 'n/a'"></span>
-                        <span x-show="ev.pnlUsd != null" class="text-slate-500"> · </span>
-                        <span x-show="ev.pnlUsd != null" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="ev.pnlUsd != null ? fmtUsdSigned(ev.pnlUsd) : ''"></span>
+                    <div class="flex items-start gap-3 leading-snug">
+                      <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
+                      <span class="flex-1 min-w-0" :class="timelineColor(ev)">
+                        <span class="font-medium" x-text="ev.label"></span>
+                        <span class="text-slate-500"> · </span>
+                        <span class="text-slate-400" x-text="timelineMarketLine(ev)"></span>
+                        <span x-show="ev.pnlUsd != null">
+                          <span class="text-slate-500"> · </span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
+                        </span>
                       </span>
                     </div>
                   </template>
@@ -321,6 +328,25 @@
           const ss = String(d.getSeconds()).padStart(2, '0');
           return `${dd}.${mm}, ${hh}:${mi}:${ss}`;
         },
+        timelineMarketLine(ev) {
+          const m = Number(ev.mcUsd || 0);
+          const p = Number(ev.spotPxUsd ?? 0);
+          const chunks = [];
+          chunks.push(`mcap ${m > 0 ? this.fmtUsd(m) : 'n/a'}`);
+          if (p > 0) chunks.push(`px ${this.fmtPrice(p)}`);
+          return chunks.join(' · ');
+        },
+        liveCurCaption(o) {
+          const m = Number(o?.currentMcUsd || 0);
+          const px = Number(o?.livePriceUsd ?? 0);
+          const chunks = [];
+          if (o?.hasLiveMc && m > 0) chunks.push(`mcap ${this.fmtUsd(m)}`);
+          else chunks.push('mcap n/a');
+          if (o?.hasLivePrice && px > 0) chunks.push(`spot ${this.fmtPrice(px)}`);
+          else if (!(o?.hasLiveMc && m > 0) && !(px > 0))
+            chunks.push('no snapshot (6h)');
+          return chunks.join(' · ');
+        },
         timelineColor(ev) {
           if (!ev) return 'text-slate-300';
           if (ev.kind === 'open') return 'text-amber-300';
@@ -365,6 +391,14 @@
           return `$${x.toFixed(2)}`;
         },
         fmtUsdSigned(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : '-'}${this.fmtUsd(Math.abs(x))}`; },
+        fmtPrice(v) {
+          const x = Number(v);
+          if (!(x > 0) || !Number.isFinite(x)) return '$—';
+          const a = Math.abs(x);
+          if (a >= 1) return `$${x.toFixed(4)}`;
+          if (a >= 1e-2) return `$${x.toFixed(6)}`;
+          return `$${x.toExponential(2)}`;
+        },
       };
     }
   </script>

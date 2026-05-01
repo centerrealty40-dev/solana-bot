@@ -159,6 +159,48 @@ async function getCurrentMcAny(mint: string): Promise<number | null> {
   return await getDexLiveMc(mint);
 }
 
+/** Latest token USD spot price from DEX snapshots (AMM strategies use metricType=price). */
+const dexPxCache = new Map<string, { px: number; ts: number }>();
+const DEX_PX_TTL_MS = 30_000;
+
+async function getDexLivePrice(mint: string, source: string | null): Promise<number | null> {
+  const cacheKey = `${mint}|${source || 'any'}`;
+  const cached = dexPxCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < DEX_PX_TTL_MS) return cached.px;
+  let sql: ReturnType<typeof postgres>;
+  try {
+    sql = pgPool();
+  } catch {
+    return null;
+  }
+  const sources: readonly string[] = ['raydium', 'meteora', 'orca', 'moonshot'];
+  const tableOrder =
+    source && sources.includes(source) ? [`${source}_pair_snapshots`, ...sources.filter((s) => s !== source).map((s) => `${s}_pair_snapshots`)] : DEX_SNAPSHOT_TABLES.slice();
+  const subqueries = tableOrder.map(
+    (t) => `
+      SELECT ts, price_usd FROM ${t}
+      WHERE base_mint = $1 AND ts >= now() - interval '6 hours'
+        AND price_usd IS NOT NULL AND price_usd > 0
+      ORDER BY ts DESC LIMIT 1
+    `,
+  ).join(' UNION ALL ');
+  try {
+    const rows = await sql.unsafe(
+      `SELECT ts, price_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
+      [mint],
+    );
+    if (!rows.length) return null;
+    const px = Number(rows[0].price_usd ?? 0);
+    if (px > 0) {
+      dexPxCache.set(cacheKey, { px, ts: Date.now() });
+      return px;
+    }
+  } catch {
+    /* swallow */
+  }
+  return null;
+}
+
 // ---------------------------------------------------------
 // store reader
 // ---------------------------------------------------------
@@ -722,6 +764,8 @@ type Paper2OpenItem = {
   entryTs: number;
   entryMcUsd: number;
   entryRealMcUsd: number | null;
+  /** Entry spot USD/token from journal (`entryMarketPrice` / legs[0].marketPrice). Used when metricType=price. */
+  baselinePriceUsd: number | null;
   openedAtIso: string | null;
   lane: string | null;
   source: string | null;
@@ -746,6 +790,8 @@ type TimelineEvent = {
   kind: 'open' | 'dca_add' | 'partial_sell' | 'close';
   label: string;
   mcUsd: number | null;
+  /** Spot USD/token at event time when strategy tracks price not mcap */
+  spotPxUsd: number | null;
   /** % of base position (DCA) or % of remaining position (partial_sell). */
   sizePct: number | null;
   pnlPct: number | null;
@@ -770,20 +816,32 @@ function buildTimelineEvent(
   const kind = String(e.kind || '');
   const isMcMetric = metricType === 'mc';
   const marketPrice = Number(e.marketPrice ?? 0);
-  const liveMc = isMcMetric && marketPrice > 0 ? marketPrice : null;
+  /** W7.2+ stamped mcap snapshot on each ledger row — takes precedence. */
+  const mcFromJournal = (): number | null => {
+    const j = Number(e.mcUsdLive ?? 0);
+    return Number.isFinite(j) && j > 0 ? j : null;
+  };
+
+  const liveMc = (): number | null => mcFromJournal() ?? (isMcMetric && marketPrice > 0 ? marketPrice : null);
+  const spotPxFromMetric = (): number | null =>
+    mcFromJournal() != null ? null : !isMcMetric && marketPrice > 0 ? marketPrice : null;
 
   if (kind === 'open') {
     const openMc =
       entryRealMcUsd && entryRealMcUsd > 0
         ? entryRealMcUsd
-        : isMcMetric && Number(e.entryMcUsd ?? 0) > 0
-          ? Number(e.entryMcUsd)
-          : null;
+        : mcFromJournal() ??
+          (isMcMetric && Number(e.entryMcUsd ?? 0) > 0 ? Number(e.entryMcUsd) : null);
+    const legs = Array.isArray(e.legs) ? (e.legs as Record<string, unknown>[]) : [];
+    const legMp = legs[0] ? Number(legs[0].marketPrice ?? 0) : 0;
+    const entryMp = Number(e.entryMarketPrice ?? 0);
+    const spotPx = entryMp > 0 ? entryMp : legMp > 0 ? legMp : null;
     return {
       ts,
       kind: 'open',
       label: 'Open',
       mcUsd: openMc,
+      spotPxUsd: spotPx != null && spotPx > 0 ? spotPx : null,
       sizePct: null,
       pnlPct: null,
       pnlUsd: null,
@@ -799,7 +857,8 @@ function buildTimelineEvent(
       ts,
       kind: 'dca_add',
       label,
-      mcUsd: liveMc,
+      mcUsd: liveMc(),
+      spotPxUsd: spotPxFromMetric(),
       sizePct: null,
       pnlPct: null,
       pnlUsd: null,
@@ -820,7 +879,8 @@ function buildTimelineEvent(
       ts,
       kind: 'partial_sell',
       label,
-      mcUsd: liveMc,
+      mcUsd: liveMc(),
+      spotPxUsd: spotPxFromMetric(),
       sizePct: sellFraction,
       pnlPct: ladderPnlPct,
       pnlUsd: Number.isFinite(pnlUsd) ? pnlUsd : null,
@@ -832,12 +892,15 @@ function buildTimelineEvent(
     const exitReason = String(e.exitReason || 'CLOSE');
     const exitMc = Number(e.exitMcUsd ?? 0);
     const exitMarketPrice = Number(e.exit_market_price ?? 0);
-    const closeMc =
+    const closeMcFromMetric =
       isMcMetric && exitMarketPrice > 0
         ? exitMarketPrice
         : isMcMetric && exitMc > 0
           ? exitMc
           : null;
+    const closeMc = mcFromJournal() ?? closeMcFromMetric;
+    const closeSpot =
+      mcFromJournal() != null ? null : !isMcMetric && exitMarketPrice > 0 ? exitMarketPrice : null;
     const pnlPct = Number(e.pnlPct ?? 0);
     const netPnlUsd = Number(e.netPnlUsd ?? 0);
     return {
@@ -845,6 +908,7 @@ function buildTimelineEvent(
       kind: 'close',
       label: `Close · ${exitReason}`,
       mcUsd: closeMc,
+      spotPxUsd: closeSpot,
       sizePct: null,
       pnlPct: Number.isFinite(pnlPct) ? pnlPct : null,
       pnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : null,
@@ -933,12 +997,18 @@ function loadPaper2File(filePath: string): {
           (typeof feat.fdv_usd === 'number' ? feat.fdv_usd : 0));
       const metricType = e.metricType != null ? String(e.metricType) : null;
       const entryRealMcUsd = featMc ? Number(featMc) : null;
+      const legsArr = Array.isArray(e.legs) ? (e.legs as Record<string, unknown>[]) : [];
+      const legMp = legsArr[0] ? Number(legsArr[0].marketPrice ?? 0) : 0;
+      const emp = Number(e.entryMarketPrice ?? 0);
+      const baselinePriceUsd =
+        emp > 0 ? emp : legMp > 0 ? legMp : null;
       om.set(mint, {
         mint,
         symbol: String(e.symbol ?? ''),
         entryTs: Number(e.entryTs ?? 0),
         entryMcUsd: Number(e.entryMcUsd ?? 0),
         entryRealMcUsd,
+        baselinePriceUsd,
         openedAtIso: e.entryTs ? new Date(Number(e.entryTs)).toISOString() : null,
         lane: e.lane != null ? String(e.lane) : null,
         source: e.source != null ? String(e.source) : null,
@@ -1098,11 +1168,13 @@ app.get('/api/paper2', async (_req, reply) => {
     entryTs: number;
     entryMcUsd: number;
     entryRealMcUsd: number | null;
+    baselinePriceUsd: number | null;
+    metricType: string | null;
     openedAtIso: string | null;
     lane: string | null;
     source: string | null;
-    metricType: string | null;
     currentMcUsd: number;
+    livePriceUsd: number | null;
     peakMcUsd: number;
     peakPnlPct: number;
     trailingArmed: boolean;
@@ -1110,6 +1182,7 @@ app.get('/api/paper2', async (_req, reply) => {
     pnlUsd: number | null;
     ageMin: number;
     hasLiveMc: boolean;
+    hasLivePrice: boolean;
     timeline: TimelineEvent[];
   };
 
@@ -1166,7 +1239,7 @@ app.get('/api/paper2', async (_req, reply) => {
           pnlUsd,
           durationMin: Number(c.durationMin ?? 0),
           dex: costs && costs.dex,
-          timeline,
+          timeline: timeline.slice().sort((a, b) => a.ts - b.ts),
         };
       })
       .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
@@ -1184,14 +1257,27 @@ app.get('/api/paper2', async (_req, reply) => {
     const PNL_PCT_CLAMP = 100_000; // 1000x
     const enrichedOpen: EnrichedOpen[] = await Promise.all(
       open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
+        const isMcMetric = ot.metricType === 'mc';
         const liveMc = await getCurrentMcAny(ot.mint).catch(() => null);
         const hasLiveMc = liveMc != null && liveMc > 0;
+
+        let livePx: number | null = null;
+        if (!isMcMetric) {
+          livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
+        }
+        const hasLivePrice = livePx != null && livePx > 0;
+
         const baseEntryUsd =
           ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
-        const currentMcUsd = hasLiveMc ? (liveMc as number) : ot.peakMcUsd || baseEntryUsd || 0;
+        const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
+
+        const currentMcUsd = hasLiveMc ? liveMc : baseEntryUsd ?? 0;
+        const livePriceUsd = hasLivePrice ? livePx : null;
+
         let pnlPct: number | null = null;
         let pnlUsd: number | null = null;
-        if (hasLiveMc && baseEntryUsd && baseEntryUsd > 0) {
+
+        if (isMcMetric && hasLiveMc && baseEntryUsd && baseEntryUsd > 0) {
           let p = ((liveMc as number) / baseEntryUsd - 1) * 100;
           if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
             pnlPct = p;
@@ -1200,18 +1286,32 @@ app.get('/api/paper2', async (_req, reply) => {
               investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
             pnlUsd = (invested * pnlPct) / 100;
           }
+        } else if (!isMcMetric && hasLivePrice && basePx && basePx > 0) {
+          let p = ((livePx as number) / basePx - 1) * 100;
+          if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
+            pnlPct = p;
+            const investedRaw = ot.totalInvestedUsd;
+            const invested =
+              investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
+            pnlUsd = (invested * pnlPct) / 100;
+          }
         }
+
+        const rawTimeline = openTimelines.get(ot.mint) ?? [];
+
         return {
           mint: ot.mint,
           symbol: ot.symbol,
           entryTs: ot.entryTs,
           entryMcUsd: ot.entryMcUsd,
           entryRealMcUsd: ot.entryRealMcUsd,
+          baselinePriceUsd: ot.baselinePriceUsd,
+          metricType: ot.metricType,
           openedAtIso: ot.openedAtIso,
           lane: ot.lane,
           source: ot.source,
-          metricType: ot.metricType,
           currentMcUsd,
+          livePriceUsd,
           peakMcUsd: ot.peakMcUsd,
           peakPnlPct: ot.peakPnlPct,
           trailingArmed: ot.trailingArmed,
@@ -1219,11 +1319,13 @@ app.get('/api/paper2', async (_req, reply) => {
           pnlUsd,
           ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
           hasLiveMc,
-          timeline: openTimelines.get(ot.mint) ?? [],
+          hasLivePrice,
+          timeline: rawTimeline.slice().sort((a, b) => a.ts - b.ts),
         };
       }),
     );
-    enrichedOpen.sort((a, b) => (b.pnlUsd ?? -Infinity) - (a.pnlUsd ?? -Infinity));
+
+    enrichedOpen.sort((a, b) => (b.entryTs || 0) - (a.entryTs || 0));
 
     const unrealizedUsd = enrichedOpen.reduce((acc, o) => acc + (o.pnlUsd ?? 0), 0);
     const realizedPnlUsd = m.sumPnlUsd;
