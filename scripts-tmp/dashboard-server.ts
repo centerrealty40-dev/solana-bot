@@ -816,7 +816,9 @@ function loadPaper2File(filePath: string): {
         peakMcUsd: Number(e.entryMcUsd ?? 0),
         peakPnlPct: 0,
         trailingArmed: false,
-        totalInvestedUsd: Number(e.totalInvestedUsd ?? e.entryMcUsd ?? 0),
+        // NOTE: never fall back to entryMcUsd here — that's the market cap
+        // (millions $), not the position size. 0 means "use POSITION_USD_DEFAULT".
+        totalInvestedUsd: Number(e.totalInvestedUsd ?? 0),
       });
     } else if (e.kind === 'peak') {
       const mint = String(e.mint ?? '');
@@ -1021,7 +1023,12 @@ app.get('/api/paper2', async (_req, reply) => {
         let pnlUsd: number | null = null;
         if (hasLiveMc && baseEntry > 0) {
           pnlPct = ((liveMc as number) / baseEntry - 1) * 100;
-          const invested = ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd : POSITION_USD_DEFAULT;
+          // Sanity cap: position size for these strategies is ~$100. If the
+          // jsonl smuggled in something obviously larger (legacy data confused
+          // mcap with position size), fall back to the default $100 base.
+          const investedRaw = ot.totalInvestedUsd;
+          const invested =
+            investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
           pnlUsd = (invested * pnlPct) / 100;
         }
         return {
