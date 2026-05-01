@@ -1,6 +1,6 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import type { ClosedTrade, ExitReason, OpenTrade, PartialSell, PositionLeg } from '../types.js';
-import { fetchLatestSnapshotPrice } from '../pricing.js';
+import { fetchLatestSnapshotPrice, getLiveMcUsd } from '../pricing.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import { appendEvent } from '../store-jsonl.js';
 import { fetchContextSwaps } from './context-swaps.js';
@@ -130,12 +130,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         closed.push(ct);
         stats.closed.NO_DATA++;
         const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+        const mcUsdLive_closeNd = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+        );
         appendEvent({
           kind: 'close',
           ...ct,
           peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
           btc_exit: btcCtx(),
           exit_swaps: exitSwaps,
+          mcUsdLive: mcUsdLive_closeNd,
         });
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -192,6 +197,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
           ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
           ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
+          const mcUsdLive_dca = await getLiveMcUsd(
+            mint,
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          );
           appendEvent({
             kind: 'dca_add',
             mint,
@@ -204,6 +213,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             avgEntryMarket: ot.avgEntryMarket,
             totalInvestedUsd: ot.totalInvestedUsd,
             legCount: ot.legs.length,
+            mcUsdLive: mcUsdLive_dca,
           });
           console.log(
             `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% avgEff=${ot.avgEntry.toFixed(8)}`,
@@ -248,6 +258,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.partialSells.push(ps);
           ot.remainingFraction *= 1 - sellFraction;
           ot.ladderUsedLevels.add(lvl.pnlPct);
+          const mcUsdLive_ps = await getLiveMcUsd(
+            mint,
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          );
           appendEvent({
             kind: 'partial_sell',
             mint,
@@ -262,6 +276,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             pnlUsd,
             grossPnlUsd,
             remainingFraction: ot.remainingFraction,
+            mcUsdLive: mcUsdLive_ps,
           });
           console.log(
             `[TP${(lvl.pnlPct * 100).toFixed(0)}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
@@ -294,6 +309,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       closed.push(ct);
       const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
       if (stats.closed[statKey] != null) stats.closed[statKey]++;
+      const mcUsdLive_close = await getLiveMcUsd(
+        mint,
+        ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+      );
       appendEvent({
         kind: 'close',
         ...ct,
@@ -302,6 +321,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         exit_market_price: marketSell,
         exit_effective_price: effectiveSell,
         exit_swaps: exitSwaps,
+        mcUsdLive: mcUsdLive_close,
       });
       peakStateByMint.delete(mint);
       const arrow = ct.pnlPct >= 0 ? '+' : '';

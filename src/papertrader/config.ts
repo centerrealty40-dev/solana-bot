@@ -142,6 +142,13 @@ const ConfigSchema = z.object({
   peakLogStepPct: z.coerce.number().nonnegative().default(1),
 
   statsIntervalMs: z.coerce.number().int().positive().default(5 * 60_000),
+
+  /** W7.2 — QuickNode pre-entry safety (feature `safety`). */
+  safetyCheckEnabled: z.boolean().default(false),
+  safetyTopHolderMaxPct: z.coerce.number().min(0).max(100).default(40),
+  safetyRequireMintAuthNull: z.boolean().default(true),
+  safetyRequireFreezeAuthNull: z.boolean().default(true),
+  safetyTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -244,6 +251,19 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     preEntryDynamicsEnabled: envBool(process.env.PAPER_PRE_ENTRY_DYNAMICS, true),
     peakLogStepPct: process.env.PAPER_PEAK_LOG_STEP_PCT,
     statsIntervalMs: process.env.PAPER_STATS_INTERVAL_MS,
+    safetyCheckEnabled: process.env.PAPER_SAFETY_CHECK_ENABLED === '1',
+    safetyTopHolderMaxPct: (() => {
+      const n = Number(process.env.PAPER_SAFETY_TOP_HOLDER_MAX_PCT ?? 40);
+      const x = Number.isFinite(n) ? n : 40;
+      return Math.max(0, Math.min(100, x));
+    })(),
+    safetyRequireMintAuthNull: process.env.PAPER_SAFETY_REQUIRE_MINT_AUTH_NULL !== '0',
+    safetyRequireFreezeAuthNull: process.env.PAPER_SAFETY_REQUIRE_FREEZE_AUTH_NULL !== '0',
+    safetyTimeoutMs: (() => {
+      const n = Number(process.env.PAPER_SAFETY_TIMEOUT_MS || 2500);
+      const x = Number.isFinite(n) ? n : 2500;
+      return Math.max(500, Math.min(10_000, x));
+    })(),
   });
 
   if (!parsed.success) {

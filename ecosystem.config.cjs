@@ -201,6 +201,8 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
+        PAPER_SAFETY_CHECK_ENABLED: '0',
+        PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
@@ -276,6 +278,8 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
+        PAPER_SAFETY_CHECK_ENABLED: '0',
+        PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
@@ -351,6 +355,8 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
+        PAPER_SAFETY_CHECK_ENABLED: '1',
+        PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',

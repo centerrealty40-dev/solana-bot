@@ -108,3 +108,67 @@ export async function fetchLatestSnapshotPrice(
   }
   return null;
 }
+
+// ---------------------------------------------------------
+// Live USD market cap (W7.2): snapshot tables → pump.fun, RAM cache.
+// ---------------------------------------------------------
+
+export async function fetchLatestSnapshotMcap(
+  mint: string,
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot',
+): Promise<number | null> {
+  const tables: string[] = source
+    ? [`${source}_pair_snapshots`]
+    : ['raydium_pair_snapshots', 'meteora_pair_snapshots', 'orca_pair_snapshots', 'moonshot_pair_snapshots'];
+  const safeMint = mint.replace(/'/g, "''");
+  for (const t of tables) {
+    const r = await db.execute(dsql.raw(`
+      SELECT market_cap_usd, fdv_usd
+      FROM ${t}
+      WHERE base_mint = '${safeMint}'
+      ORDER BY ts DESC
+      LIMIT 1
+    `));
+    const rows = r as unknown as Array<{ market_cap_usd: number | string | null; fdv_usd: number | string | null }>;
+    const mc = Number(rows[0]?.market_cap_usd ?? 0);
+    if (mc > 0) return mc;
+    const fdv = Number(rows[0]?.fdv_usd ?? 0);
+    if (fdv > 0) return fdv;
+  }
+  return null;
+}
+
+const _liveMcCache = new Map<string, { mc: number; ts: number }>();
+
+function liveMcTtlMs(): number {
+  const v = Number(process.env.PAPER_LIVE_MCAP_TTL_MS || 30_000);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 30_000;
+}
+
+/**
+ * Best-effort live USD market cap for timeline stamping.
+ * Order: pair_snapshots → pump.fun → null. Cached per mint (default 30s).
+ */
+export async function getLiveMcUsd(
+  mint: string,
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot',
+): Promise<number | null> {
+  const cached = _liveMcCache.get(mint);
+  if (cached && Date.now() - cached.ts < liveMcTtlMs()) return cached.mc > 0 ? cached.mc : null;
+  let mc: number | null = null;
+  try {
+    mc = await fetchLatestSnapshotMcap(mint, source);
+  } catch {
+    /* best-effort */
+  }
+  if (mc == null || !(mc > 0)) {
+    try {
+      const p = await fetchPumpfunMc(mint);
+      if (p && p.mc > 0) mc = p.mc;
+    } catch {
+      /* best-effort */
+    }
+  }
+  _liveMcCache.set(mint, { mc: mc && mc > 0 ? mc : 0, ts: Date.now() });
+  return mc && mc > 0 ? mc : null;
+}
