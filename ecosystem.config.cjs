@@ -425,21 +425,28 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
-        PAPER_SAFETY_CHECK_ENABLED: '0',
+        PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_PRIORITY_FEE_TICKER_MS: '60000',
+        PAPER_PRIORITY_FEE_MAX_AGE_MS: '600000',
+        PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS: '2500',
+        PAPER_PRIORITY_FEE_PERCENTILE: 'p75',
+        PAPER_PRIORITY_FEE_TARGET_CU: '200000',
+        PAPER_PRIORITY_FEE_CACHE_PATH: path.join(root, 'data/priority-fee-cache.json'),
         PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '180',
+        /* DNO entry — tighter pool than diprunner */
+        PAPER_POST_MIN_AGE_MIN: '30',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '50000',
+        PAPER_POST_MIN_LIQ_USD: '8000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        PAPER_MIN_HOLDER_COUNT: '2000',
+        PAPER_MIN_HOLDER_COUNT: '1000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -450,15 +457,18 @@ module.exports = {
         PAPER_DIP_COOLDOWN_MIN: '120',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
-        PAPER_DCA_LEVELS: '-10:0.3,-20:0.3',
-        PAPER_DCA_KILLSTOP: '-0.40',
-        PAPER_TP_LADDER: '0.10:0.40,0.20:0.50,0.30:0.80,0.40:1.0',
+        /* DNO — single DCA −10% → +30% notional; kill −25% vs avg entry */
+        PAPER_DCA_LEVELS: '-10:0.3',
+        PAPER_DCA_KILLSTOP: '-0.25',
+        /* TP ladder: each sellFraction applies to remaining position */
+        PAPER_TP_LADDER: '0.05:0.30,0.10:0.50,0.15:0.80,0.20:1.0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
+        /* ladder_retrace: exit TRAIL when PnL falls back below prior fired step */
         PAPER_TRAIL_MODE: 'ladder_retrace',
         PAPER_TRAIL_DROP: '0.10',
         PAPER_TRAIL_TRIGGER_X: '1.10',
-        PAPER_TIMEOUT_HOURS: '24',
+        PAPER_TIMEOUT_HOURS: '2',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -493,14 +503,13 @@ module.exports = {
         QN_FEATURE_BUDGET_HOLDERS: '10000000',
 
         PAPER_PRICE_VERIFY_ENABLED: '1',
-        PAPER_PRICE_VERIFY_BLOCK_ON_FAIL: '0',
+        PAPER_PRICE_VERIFY_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_USE_JUPITER_PRICE: '0',
         PAPER_PRICE_VERIFY_MAX_SLIP_PCT: '4.0',
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        /* Explicit off — prevents stale PM2 env after removing per-strategy overrides */
         PAPER_LIQ_WATCH_ENABLED: '0',
         PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
         PAPER_LIQ_WATCH_DRAIN_PCT: '35',
