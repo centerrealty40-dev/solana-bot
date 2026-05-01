@@ -20,7 +20,7 @@
 | W6.3a | [`W6.3a_paper_trader_skeleton.md`](./W6.3a_paper_trader_skeleton.md) | **выполнено** ✓ (skeleton + `pt1-skeleton-test` PM2-app, HEAD `8a9de0e`) | W6.1 |
 | W6.3b | [`W6.3b_paper_trader_discovery.md`](./W6.3b_paper_trader_discovery.md) | **выполнено** ✓ (discovery + filters + dip + whale + Binance BTC, HEAD `282f745`) | W6.3a |
 | W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **выполнено** ✓ (executor + main loop, HEAD `cfe34e2`) | W6.3b |
-| W6.4 | `W6.4_observability_port.md` | **следующая** (observability port — `/api/paper2`, `/papertrader2`, hourly TG report, advisor, healthcheck, post-mortem) | W6.3c |
+| W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **готова** (observability port: `/api/paper2`, `/papertrader2`, advisor/healthcheck/hourly-report/digest/post-mortem, cron, logrotate) | W6.3c |
 | W6.5 | `W6.5_strategy_launch.md` | будет после W6.4 DoD | W6.4 |
 | W6.6 | `W6.6_strategy_lab_port.md` | через ≥7 дней работы paper | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
