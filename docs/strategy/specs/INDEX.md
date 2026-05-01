@@ -21,11 +21,13 @@
 | W6.3b | [`W6.3b_paper_trader_discovery.md`](./W6.3b_paper_trader_discovery.md) | **выполнено** ✓ (discovery + filters + dip + whale + Binance BTC, HEAD `282f745`) | W6.3a |
 | W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **выполнено** ✓ (executor + main loop, HEAD `cfe34e2`) | W6.3b |
 | W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **выполнено** ✓ (observability port + cron + logrotate, HEAD `ecca52a`) | W6.3c |
-| W6.5 | `W6.5_strategy_launch.md` | **следующая** | W6.4 |
-| W6.6 | `W6.6_strategy_lab_port.md` | через ≥7 дней работы paper | W6.5 + runtime data |
+| W6.5 | [`W6.5_strategy_launch.md`](./W6.5_strategy_launch.md) | **выполнено** ✓ (DipRunner/Oscar/Dno PM2 + whale silence + heartbeat HC, HEAD `40d27dc`; см. примечание Dno ниже) | W6.4 |
+| W6.6 | `W6.6_strategy_lab_port.md` | **следующая** (через ≥7 дней работы paper) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
 
 **W6.2 (Intel layer / smart-money discovery / RPC queue) — отменён в первом цикле.** Будет переоткрыт в W6.7 если/когда понадобится Smart Lottery.
+
+**Примечание W6.5 (DoD):** `pt1-dno` использует узкое окно возраста post-lane (180–4320 мин). Если за окно наблюдения в БД нет ни одного кандидата, в JSONL идут только `heartbeat` (`disc=0`), без строк `eval` — это ожидаемо, но формальный DoD «≥5 eval за 30 мин» для Dno в такой сессии не достигается. Разрешение: дождаться появления зрелых пар в окне или отдельный hot-fix `W6.5.1` (ослабить `PAPER_POST_MIN_AGE_MIN` / `PAPER_DIP_MIN_AGE_MIN` для Dno) по решению пользователя.
 
 ## Сквозные требования к W6.3a/b/c
 
