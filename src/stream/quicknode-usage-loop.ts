@@ -90,8 +90,7 @@ export function startQuickNodeUsageReporting(): void {
     }
   };
 
-  void tick();
-  setInterval(() => void tick(), pollMs);
+  const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
   const hourlyMs = Math.max(
     60_000,
@@ -99,7 +98,8 @@ export function startQuickNodeUsageReporting(): void {
   );
 
   const hourlyRemaining = async () => {
-    if (process.env.QUICKNODE_HOURLY_REMAINING_TELEGRAM === '0') return;
+    /* Часовой отчёт — отдельный лимит Console API; по умолчанию выкл. Вкл.: QUICKNODE_HOURLY_REMAINING_TELEGRAM=1 */
+    if (process.env.QUICKNODE_HOURLY_REMAINING_TELEGRAM !== '1') return;
     try {
       const s = await fetchQuickNodeBillingPeriodSummary();
       if (!s) return;
@@ -112,7 +112,7 @@ export function startQuickNodeUsageReporting(): void {
           : '';
 
       const recentParts: string[] = [];
-      const recentRaw = (process.env.QUICKNODE_HOURLY_RECENT_MINUTES_LIST || '10,30,60')
+      const recentRaw = (process.env.QUICKNODE_HOURLY_RECENT_MINUTES_LIST ?? '')
         .split(',')
         .map((x) => Number(String(x).trim()))
         .filter((n) => Number.isFinite(n) && n > 0 && n <= 24 * 60);
@@ -144,9 +144,6 @@ export function startQuickNodeUsageReporting(): void {
     }
   };
 
-  void hourlyRemaining();
-  setInterval(() => void hourlyRemaining(), hourlyMs);
-
   /** Чаще, чем часовой отчёт: пороги по биллинг-периоду (1M credits / N% лимита). */
   const milestonePollMs = Math.max(
     60_000,
@@ -163,6 +160,21 @@ export function startQuickNodeUsageReporting(): void {
     }
   };
 
-  void milestoneTick();
+  /** Подряд несколько GET к Console API дают 429; разносим старт и опираемся на кэш billing summary. */
+  const runStartupSequence = async () => {
+    try {
+      await tick();
+      await pause(800);
+      await milestoneTick();
+      await pause(800);
+      await hourlyRemaining();
+    } catch (e) {
+      log.warn({ err: String(e) }, 'quicknode usage startup sequence failed');
+    }
+  };
+  void runStartupSequence();
+
+  setInterval(() => void tick(), pollMs);
+  setInterval(() => void hourlyRemaining(), hourlyMs);
   setInterval(() => void milestoneTick(), milestonePollMs);
 }

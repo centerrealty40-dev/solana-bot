@@ -122,19 +122,31 @@ export async function fetchQuickNodeRpcUsageWindow(
   }
 }
 
-/**
- * Сводка за текущий биллинг-период плана (без start/end — как в дашборде QuickNode).
- * В ответе есть credits_remaining и limit.
- */
-export async function fetchQuickNodeBillingPeriodSummary(): Promise<{
+export type QuickNodeBillingPeriodSummary = {
   credits_used: number;
   credits_remaining: number;
   limit: number;
   start_time?: number;
   end_time?: number;
-} | null> {
+};
+
+let billingSummaryCache: { value: QuickNodeBillingPeriodSummary; fetchedAt: number } | null = null;
+
+/**
+ * Сводка за текущий биллинг-период плана (без start/end — как в дашборде QuickNode).
+ * В ответе есть credits_remaining и limit.
+ * Короткий in-memory кэш снимает всплеск параллельных запросов при старте (иначе Console API часто отвечает 429).
+ */
+export async function fetchQuickNodeBillingPeriodSummary(): Promise<QuickNodeBillingPeriodSummary | null> {
   const key = adminApiKey();
   if (!key) return null;
+
+  const ttlMs = Math.max(0, Number(process.env.QUICKNODE_BILLING_SUMMARY_CACHE_MS ?? 15_000));
+  const now = Date.now();
+  if (ttlMs > 0 && billingSummaryCache && now - billingSummaryCache.fetchedAt < ttlMs) {
+    return billingSummaryCache.value;
+  }
+
   try {
     const res = await fetch(API_BASE, {
       method: 'GET',
@@ -163,13 +175,15 @@ export async function fetchQuickNodeBillingPeriodSummary(): Promise<{
       log.warn({ u }, 'QuickNode billing summary missing credits_remaining/limit');
       return null;
     }
-    return {
+    const summary: QuickNodeBillingPeriodSummary = {
       credits_used: u.credits_used,
       credits_remaining: rem,
       limit: lim,
       start_time: u.start_time,
       end_time: u.end_time,
     };
+    billingSummaryCache = { value: summary, fetchedAt: Date.now() };
+    return summary;
   } catch (e) {
     log.warn({ err: String(e) }, 'QuickNode billing summary fetch failed');
     return null;
