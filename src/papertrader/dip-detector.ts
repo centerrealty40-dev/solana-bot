@@ -15,11 +15,19 @@ function sqlQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/** Per-mint high/low for each lookback window (minutes). */
+export type DipContextByWindows = Map<number, DipContext>;
+
+/**
+ * Fetch MAX/MIN price_usd per mint per configured window in one scan (WHERE capped at max window).
+ */
 export async function fetchDipContextMap(
   cfg: PaperTraderConfig,
   rows: SnapshotCandidateRow[],
-): Promise<Map<string, DipContext>> {
-  const map = new Map<string, DipContext>();
+): Promise<Map<string, DipContextByWindows>> {
+  const map = new Map<string, DipContextByWindows>();
+  const windows = cfg.dipLookbackWindowsMin;
+  const maxWin = Math.max(...windows);
   const byTable = new Map<string, string[]>();
   for (const r of rows) {
     const t = sourceSnapshotTable(r.source);
@@ -29,6 +37,14 @@ export async function fetchDipContextMap(
     byTable.set(t, arr);
   }
 
+  const aggCols = windows
+    .map(
+      (w) =>
+        `MAX(COALESCE(price_usd, 0)) FILTER (WHERE ts >= now() - interval '${w} minutes')::float AS high_w${w},\n` +
+        `        MIN(NULLIF(COALESCE(price_usd, 0), 0)) FILTER (WHERE ts >= now() - interval '${w} minutes' AND COALESCE(price_usd, 0) > 0)::float AS low_w${w}`,
+    )
+    .join(',\n        ');
+
   for (const [table, mintsRaw] of byTable.entries()) {
     const uniq = [...new Set(mintsRaw)];
     if (!uniq.length) continue;
@@ -36,29 +52,44 @@ export async function fetchDipContextMap(
     const r = await db.execute(dsql.raw(`
       SELECT
         base_mint AS mint,
-        MAX(COALESCE(price_usd, 0))::float AS high_px,
-        MIN(NULLIF(COALESCE(price_usd, 0), 0))::float AS low_px
+        ${aggCols}
       FROM ${table}
-      WHERE ts >= now() - interval '${cfg.dipLookbackMin} minutes'
+      WHERE ts >= now() - interval '${maxWin} minutes'
         AND base_mint IN (${mintsSql})
       GROUP BY base_mint
     `));
-    const out = r as unknown as Array<{ mint: string; high_px: number | string; low_px: number | string }>;
+    const out = r as unknown as Array<Record<string, unknown>>;
     for (const row of out) {
-      map.set(String(row.mint), {
-        high_px: Number(row.high_px || 0),
-        low_px: Number(row.low_px || 0),
-      });
+      const mint = String(row.mint ?? '');
+      const inner = new Map<number, DipContext>();
+      for (const w of windows) {
+        const hi = row[`high_w${w}`];
+        const lo = row[`low_w${w}`];
+        inner.set(w, {
+          high_px: Number(hi ?? 0) || 0,
+          low_px: Number(lo ?? 0) || 0,
+        });
+      }
+      map.set(mint, inner);
     }
   }
   return map;
 }
 
-export function evaluateDip(
+export interface DipEvalResult {
+  reasons: string[];
+  dipPct: number | null;
+  impulsePct: number | null;
+  /** Window (minutes) whose high/low satisfied the dip gate; null if none passed. */
+  dipLookbackUsedMin: number | null;
+}
+
+/** Single-window dip math (impulse = range within that same window). */
+export function evaluateDipOneWindow(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: DipContext | null,
-): { reasons: string[]; dipPct: number | null; impulsePct: number | null } {
+): Omit<DipEvalResult, 'dipLookbackUsedMin'> {
   const reasons: string[] = [];
   if ((row.token_age_min ?? 0) < cfg.dipMinAgeMin) reasons.push(`dip_age<${cfg.dipMinAgeMin}m`);
   if (!ctx || !(ctx.high_px > 0)) {
@@ -70,4 +101,43 @@ export function evaluateDip(
   const impulsePct = ctx.low_px > 0 ? (ctx.high_px / ctx.low_px - 1) * 100 : null;
   if ((impulsePct ?? 0) < cfg.dipMinImpulsePct) reasons.push(`impulse<${cfg.dipMinImpulsePct}%`);
   return { reasons, dipPct, impulsePct };
+}
+
+/**
+ * OR across `cfg.dipLookbackWindowsMin`: pass if any window satisfies the same dip / impulse bounds.
+ * On pass, `dip_pct` / `impulse_pct` / `dipLookbackUsedMin` refer to the **first** passing window (shortest lookback first).
+ */
+export function evaluateDip(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  ctxByWindow?: DipContextByWindows | null,
+): DipEvalResult {
+  if (!ctxByWindow || ctxByWindow.size === 0) {
+    return {
+      reasons: ['dip_ctx_missing'],
+      dipPct: null,
+      impulsePct: null,
+      dipLookbackUsedMin: null,
+    };
+  }
+  const failHints: string[] = [];
+  for (const w of cfg.dipLookbackWindowsMin) {
+    const ctx = ctxByWindow.get(w);
+    const part = evaluateDipOneWindow(cfg, row, ctx);
+    if (part.reasons.length === 0) {
+      return {
+        reasons: [],
+        dipPct: part.dipPct,
+        impulsePct: part.impulsePct,
+        dipLookbackUsedMin: w,
+      };
+    }
+    failHints.push(`${w}m:${part.reasons[0]}`);
+  }
+  return {
+    reasons: [`dip_no_window_pass(${failHints.join(';')})`],
+    dipPct: null,
+    impulsePct: null,
+    dipLookbackUsedMin: null,
+  };
 }

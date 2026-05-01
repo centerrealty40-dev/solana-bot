@@ -5,6 +5,16 @@ import { evaluateSnapshot } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import { fetchDipContextMap, evaluateDip } from '../dip-detector.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
+import { resolveHolderCount } from '../holders/holders-resolve.js';
+
+export interface HoldersDecisionMeta {
+  holders_db: number;
+  holders_live: number | null;
+  holders_source: 'qn_addon' | 'qn_gpa' | 'cache_pos' | 'db' | 'none';
+  holders_age_ms: number | null;
+  holders_fail_reason?: string;
+  holders_used_for_gate: number;
+}
 
 export interface EvalDecision {
   lane: Lane;
@@ -16,6 +26,7 @@ export interface EvalDecision {
   reasons: string[];
   features: SnapshotFeatures;
   whale: WhaleAnalysis | null;
+  holdersMeta?: HoldersDecisionMeta;
 }
 
 export interface DiscoveryTickResult {
@@ -39,10 +50,12 @@ function buildFeatures(
   row: SnapshotCandidateRow,
   dipPct: number | null,
   impulsePct: number | null,
+  dipLookbackUsedMin: number | null,
 ): SnapshotFeatures {
   return {
     price_usd: +Number(row.price_usd || 0).toFixed(8),
     liq_usd: +Number(row.liquidity_usd || 0).toFixed(0),
+    pair_address: row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
     vol5m_usd: +Number(row.volume_5m || 0).toFixed(0),
     buys5m: row.buys_5m,
     sells5m: row.sells_5m,
@@ -51,6 +64,7 @@ function buildFeatures(
     token_age_min: +Number(row.token_age_min ?? 0).toFixed(1),
     dip_pct: dipPct !== null ? +dipPct.toFixed(2) : null,
     impulse_pct: impulsePct !== null ? +impulsePct.toFixed(2) : null,
+    dip_lookback_min: dipLookbackUsedMin,
     market_cap_usd:
       row.market_cap_usd != null && Number(row.market_cap_usd) > 0
         ? +Number(row.market_cap_usd).toFixed(2)
@@ -79,13 +93,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const decisions: EvalDecision[] = [];
   let evaluated = 0;
   let passed = 0;
+  let liveHoldersThisTick = 0;
+  const liveHoldersEnabled =
+    cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
   for (const { row, lane } of snapshotTagged) {
     if (!shouldEvaluate(row.mint, reevalAfterSec)) continue;
     evaluated++;
 
     const v = evaluateSnapshot(cfg, row, lane);
-    const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count);
+    const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
+      skipHolderCheck: liveHoldersEnabled,
+    });
     const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
     const baseReasons = [...v.reasons, ...globalReasons, ...dipEval.reasons];
     const baseDipPass = baseReasons.length === 0;
@@ -114,7 +133,66 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
     }
 
-    const mergedReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
+    const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
+    const cheapPass = preHoldersReasons.length === 0;
+
+    let holdersMeta: HoldersDecisionMeta | undefined;
+    const holderReasons: string[] = [];
+
+    if (liveHoldersEnabled && cheapPass) {
+      const dbHolders = Number(row.holder_count ?? 0);
+      if (liveHoldersThisTick >= cfg.holdersMaxPerTick) {
+        holdersMeta = {
+          holders_db: dbHolders,
+          holders_live: null,
+          holders_source: 'none',
+          holders_age_ms: null,
+          holders_fail_reason: 'budget_per_tick',
+          holders_used_for_gate: dbHolders,
+        };
+        if (cfg.holdersOnFail === 'block') {
+          holderReasons.push('holders_unknown:budget_per_tick');
+        } else if (cfg.holdersOnFail === 'db_fallback') {
+          if (dbHolders < cfg.globalMinHolderCount) {
+            holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+          }
+        }
+      } else {
+        liveHoldersThisTick += 1;
+        const r = await resolveHolderCount(cfg, row.mint);
+        if (r.ok) {
+          holdersMeta = {
+            holders_db: dbHolders,
+            holders_live: r.count,
+            holders_source: r.source,
+            holders_age_ms: r.ageMs,
+            holders_used_for_gate: r.count,
+          };
+          if (r.count < cfg.globalMinHolderCount) {
+            holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
+          }
+        } else {
+          holdersMeta = {
+            holders_db: dbHolders,
+            holders_live: null,
+            holders_source: 'none',
+            holders_age_ms: null,
+            holders_fail_reason: r.reason,
+            holders_used_for_gate: dbHolders,
+          };
+          if (cfg.holdersOnFail === 'block') {
+            holderReasons.push(`holders_unknown:${r.reason}`);
+          } else if (cfg.holdersOnFail === 'db_fallback') {
+            holdersMeta.holders_source = 'db';
+            if (dbHolders < cfg.globalMinHolderCount) {
+              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+            }
+          }
+        }
+      }
+    }
+
+    const mergedReasons = [...preHoldersReasons, ...holderReasons];
     const pass = mergedReasons.length === 0;
     if (pass) passed++;
 
@@ -126,8 +204,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       ageMin: +Number(row.age_min ?? 0).toFixed(1),
       pass,
       reasons: mergedReasons,
-      features: buildFeatures(row, dipEval.dipPct, dipEval.impulsePct),
+      features: buildFeatures(row, dipEval.dipPct, dipEval.impulsePct, dipEval.dipLookbackUsedMin),
       whale,
+      holdersMeta,
     });
   }
 

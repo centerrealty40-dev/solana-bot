@@ -12,6 +12,18 @@ function envBool(v: unknown, defaultVal: boolean): boolean {
   return defaultVal;
 }
 
+/** CSV minutes, e.g. `120,360,720`. Empty → `[primaryMin]` only (legacy single-window dip). */
+export function resolveDipLookbackWindows(primaryMin: number, csv: string): number[] {
+  const t = csv.trim();
+  if (!t) return [primaryMin];
+  const nums = t
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const uniq = [...new Set(nums)].sort((a, b) => a - b);
+  return uniq.length ? uniq : [primaryMin];
+}
+
 const ConfigSchema = z.object({
   strategyId: z.string().default('paper_v1'),
   strategyKind: StrategyKindSchema.default('fresh'),
@@ -85,6 +97,8 @@ const ConfigSchema = z.object({
 
   // ---- dip detector ----
   dipLookbackMin: z.coerce.number().int().positive().default(60),
+  /** Parsed into `dipLookbackWindowsMin` after transform (see `PAPER_DIP_LOOKBACK_WINDOWS_MIN`). */
+  dipLookbackWindowsCsv: z.string().default(''),
   dipMinDropPct: z.coerce.number().default(-12),
   dipMaxDropPct: z.coerce.number().default(-45),
   dipMinImpulsePct: z.coerce.number().default(20),
@@ -125,6 +139,11 @@ const ConfigSchema = z.object({
   slX: z.coerce.number().nonnegative().default(0),
   trailDrop: z.coerce.number().min(0).max(1).default(0.5),
   trailTriggerX: z.coerce.number().positive().default(1.3),
+  /**
+   * peak — классический трейл от peakMcUsd после trailTriggerX.
+   * ladder_retrace — если уже были продажи по TP-ladder и PnL откатился до предыдущей ступени ладдера (или ниже), закрыть весь остаток (reason TRAIL).
+   */
+  trailMode: z.enum(['peak', 'ladder_retrace']).default('peak'),
   timeoutHours: z.coerce.number().positive().default(12),
 
   dcaLevelsSpec: z.string().default(''),
@@ -166,6 +185,42 @@ const ConfigSchema = z.object({
   priceVerifyMaxSlipBps: z.coerce.number().int().min(10).max(5_000).default(400),
   priceVerifyMaxPriceImpactPct: z.coerce.number().min(0.1).max(80).default(8.0),
   priceVerifyTimeoutMs: z.coerce.number().int().min(500).max(8_000).default(2500),
+
+  /** W7.5 — liquidity drain watch (pool liq vs entry baseline). */
+  liqWatchEnabled: z.boolean().default(false),
+  liqWatchForceClose: z.boolean().default(false),
+  liqWatchDrainPct: z.coerce.number().min(5).max(95).default(35),
+  liqWatchMinAgeMin: z.coerce.number().min(0).max(120).default(1),
+  liqWatchConsecutiveFailures: z.coerce.number().int().min(1).max(10).default(2),
+  liqWatchSnapshotMaxAgeMs: z.coerce.number().int().min(15_000).max(15 * 60 * 1000).default(120_000),
+  liqWatchRpcFallback: z.boolean().default(false),
+  liqWatchStampOnAllClose: z.boolean().default(true),
+  liqWatchStampOnTrack: z.boolean().default(false),
+
+  /** Live SPL holder-count resolver via QuickNode. */
+  holdersLiveEnabled: z.boolean().default(false),
+  holdersUseQnAddon: z.boolean().default(false),
+  holdersTtlMs: z.coerce.number().int().min(5_000).max(15 * 60_000).default(90_000),
+  holdersNegTtlMs: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
+  holdersMaxPerTick: z.coerce.number().int().min(1).max(200).default(10),
+  holdersTimeoutMs: z.coerce.number().int().min(1_000).max(15_000).default(4000),
+  holdersIncludeToken2022: z.boolean().default(true),
+  holdersExcludeOwners: z
+    .string()
+    .default('')
+    .transform((s) =>
+      s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  holdersOnFail: z.enum(['block', 'warn', 'db_fallback']).default('db_fallback'),
+  holdersDbWriteback: z.boolean().default(false),
+  holdersGpaCreditsPerCall: z.coerce.number().int().min(10).max(2_000).default(100),
+}).transform((data) => {
+  const { dipLookbackWindowsCsv, ...rest } = data;
+  const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
+  return { ...rest, dipLookbackWindowsMin };
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -224,6 +279,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,
     dipLookbackMin: process.env.PAPER_DIP_LOOKBACK_MIN,
+    dipLookbackWindowsCsv: process.env.PAPER_DIP_LOOKBACK_WINDOWS_MIN ?? '',
     dipMinDropPct: process.env.PAPER_DIP_MIN_DROP_PCT,
     dipMaxDropPct: process.env.PAPER_DIP_MAX_DROP_PCT,
     dipMinImpulsePct: process.env.PAPER_DIP_MIN_IMPULSE_PCT,
@@ -258,6 +314,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     slX: process.env.PAPER_SL_X,
     trailDrop: process.env.PAPER_TRAIL_DROP,
     trailTriggerX: process.env.PAPER_TRAIL_TRIGGER_X,
+    trailMode: process.env.PAPER_TRAIL_MODE === 'ladder_retrace' ? 'ladder_retrace' : 'peak',
     timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,
@@ -298,6 +355,30 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     priceVerifyMaxSlipBps: process.env.PAPER_PRICE_VERIFY_MAX_SLIP_BPS,
     priceVerifyMaxPriceImpactPct: process.env.PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT,
     priceVerifyTimeoutMs: process.env.PAPER_PRICE_VERIFY_TIMEOUT_MS,
+    liqWatchEnabled: process.env.PAPER_LIQ_WATCH_ENABLED === '1',
+    liqWatchForceClose: process.env.PAPER_LIQ_WATCH_FORCE_CLOSE === '1',
+    liqWatchDrainPct: process.env.PAPER_LIQ_WATCH_DRAIN_PCT,
+    liqWatchMinAgeMin: process.env.PAPER_LIQ_WATCH_MIN_AGE_MIN,
+    liqWatchConsecutiveFailures: process.env.PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES,
+    liqWatchSnapshotMaxAgeMs: process.env.PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS,
+    liqWatchRpcFallback: process.env.PAPER_LIQ_WATCH_RPC_FALLBACK === '1',
+    liqWatchStampOnAllClose: process.env.PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE !== '0',
+    liqWatchStampOnTrack: process.env.PAPER_LIQ_WATCH_STAMP_ON_TRACK === '1',
+    holdersLiveEnabled: envBool(process.env.PAPER_HOLDERS_LIVE_ENABLED, false),
+    holdersUseQnAddon: envBool(process.env.PAPER_HOLDERS_USE_QN_ADDON, false),
+    holdersTtlMs: process.env.PAPER_HOLDERS_TTL_MS,
+    holdersNegTtlMs: process.env.PAPER_HOLDERS_NEG_TTL_MS,
+    holdersMaxPerTick: process.env.PAPER_HOLDERS_MAX_PER_TICK,
+    holdersTimeoutMs: process.env.PAPER_HOLDERS_TIMEOUT_MS,
+    holdersIncludeToken2022: envBool(process.env.PAPER_HOLDERS_INCLUDE_TOKEN2022, true),
+    holdersExcludeOwners: process.env.PAPER_HOLDERS_EXCLUDE_OWNERS,
+    holdersOnFail: (() => {
+      const v = (process.env.PAPER_HOLDERS_ON_FAIL || '').toLowerCase();
+      if (v === 'block' || v === 'warn' || v === 'db_fallback') return v;
+      return undefined;
+    })(),
+    holdersDbWriteback: envBool(process.env.PAPER_HOLDERS_DB_WRITEBACK, false),
+    holdersGpaCreditsPerCall: process.env.PAPER_HOLDERS_GPA_CREDITS_PER_CALL,
   });
 
   if (!parsed.success) {

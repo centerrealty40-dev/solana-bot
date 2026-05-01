@@ -221,6 +221,8 @@ export interface SnapshotFeatures {
   token_age_min: number;
   dip_pct: number | null;
   impulse_pct: number | null;
+  /** Lookback window (minutes) that satisfied the dip OR-gate; null if eval failed or legacy rows. */
+  dip_lookback_min: number | null;
   /** Pool-reported mcap (or FDV coalesced in SQL) at discovery row — stamped into jsonl for dashboards. */
   market_cap_usd: number | null;
 }

@@ -21,7 +21,7 @@ export async function fetchSnapshotLaneCandidates(
     SELECT
       p.base_mint AS mint,
       COALESCE(tok.symbol, '?') AS symbol,
-      0::int AS holder_count,
+      COALESCE(tok.holder_count, 0)::int AS holder_count,
       EXTRACT(EPOCH FROM (now() - COALESCE(tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
       p.ts,
       NULL::timestamptz AS launch_ts,
@@ -32,6 +32,7 @@ export async function fetchSnapshotLaneCandidates(
       COALESCE(p.buys_5m, 0)::int AS buys_5m,
       COALESCE(p.sells_5m, 0)::int AS sells_5m,
       COALESCE(p.market_cap_usd, p.fdv_usd, 0)::float AS market_cap_usd,
+      p.pair_address::text AS pair_address,
       '${t.source}'::text AS source
     FROM ${t.table} p
     LEFT JOIN tokens tok ON tok.mint = p.base_mint

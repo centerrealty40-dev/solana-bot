@@ -31,6 +31,7 @@ import { trackerTick, type TrackerStats } from './executor/tracker.js';
 import { loadStore } from './executor/store-restore.js';
 import type { ClosedTrade, ExitReason, OpenTrade, PriceVerifyVerdict, SafetyVerdict } from './types.js';
 import { evaluateMintSafety } from './safety/index.js';
+import { getHoldersResolveStats } from './holders/holders-resolve.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -70,7 +71,15 @@ export async function main(): Promise<void> {
     errors: 0,
   };
   const trackerStats: TrackerStats = {
-    closed: { TP: 0, SL: 0, TRAIL: 0, TIMEOUT: 0, NO_DATA: 0, KILLSTOP: 0 } as Record<ExitReason, number>,
+    closed: {
+      TP: 0,
+      SL: 0,
+      TRAIL: 0,
+      TIMEOUT: 0,
+      NO_DATA: 0,
+      KILLSTOP: 0,
+      LIQ_DRAIN: 0,
+    } as Record<ExitReason, number>,
   };
 
   logger.info({
@@ -88,10 +97,23 @@ export async function main(): Promise<void> {
     slX: cfg.slX,
     trailDrop: cfg.trailDrop,
     trailTriggerX: cfg.trailTriggerX,
+    trailMode: cfg.trailMode,
     timeoutHours: cfg.timeoutHours,
     restoredOpen: open.size,
     safetyCheckEnabled: cfg.safetyCheckEnabled,
     priorityFeeEnabled: cfg.priorityFeeEnabled,
+    holdersLive: cfg.holdersLiveEnabled
+      ? {
+          enabled: true,
+          minHolderCount: cfg.globalMinHolderCount,
+          ttlMs: cfg.holdersTtlMs,
+          maxPerTick: cfg.holdersMaxPerTick,
+          includeToken2022: cfg.holdersIncludeToken2022,
+          onFail: cfg.holdersOnFail,
+          dbWriteback: cfg.holdersDbWriteback,
+          useAddon: cfg.holdersUseQnAddon,
+        }
+      : { enabled: false },
   });
 
   await Promise.allSettled([refreshSolPrice(), refreshBtcContext(cfg)]);
@@ -119,6 +141,7 @@ export async function main(): Promise<void> {
           m: d.features,
           btc,
           whale_analysis: d.whale,
+          holders_meta: d.holdersMeta ?? null,
         });
         if (!d.pass) continue;
         if (open.has(d.mint)) {
@@ -149,6 +172,7 @@ export async function main(): Promise<void> {
           source: d.source,
           holder_count: d.features.holders,
           token_age_min: d.features.token_age_min,
+          pair_address: d.features.pair_address ?? null,
         };
         let ot = makeOpenTradeFromEntry({
           cfg,
@@ -239,7 +263,7 @@ export async function main(): Promise<void> {
             cfg.priceVerifyUseJupiterPrice &&
             priceVerify.jupiterPriceUsd > 0
           ) {
-            const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd };
+            const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd, pair_address: row.pair_address };
             ot = makeOpenTradeFromEntry({
               cfg,
               row: rowJ,
@@ -267,6 +291,8 @@ export async function main(): Promise<void> {
           totalInvestedUsd: ot.totalInvestedUsd,
           avgEntry: ot.avgEntry,
           avgEntryMarket: ot.avgEntryMarket,
+          pairAddress: ot.pairAddress,
+          entryLiqUsd: ot.entryLiqUsd,
           eval_reasons: d.reasons,
           features: d.features,
           btc,
@@ -355,6 +381,7 @@ export async function main(): Promise<void> {
   }, cfg.followupTickMs);
 
   const heartbeatTimer = setInterval(() => {
+    const holdersStats = cfg.holdersLiveEnabled ? getHoldersResolveStats() : null;
     appendEvent({
       kind: 'heartbeat',
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
@@ -364,6 +391,7 @@ export async function main(): Promise<void> {
       btc: getBtcContext(),
       note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
+      holdersResolveStats: holdersStats,
     });
     logger.info({
       msg: 'heartbeat',
@@ -373,6 +401,7 @@ export async function main(): Promise<void> {
       open: open.size,
       closed: closed.length,
       trackerStats: trackerStats.closed,
+      holdersResolveStats: holdersStats,
     });
   }, cfg.heartbeatIntervalMs);
 

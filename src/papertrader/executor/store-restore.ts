@@ -70,6 +70,14 @@ function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | nu
       ladderUsedLevels: new Set<number>(
         Array.isArray(o.ladderUsedLevels) ? (o.ladderUsedLevels as number[]) : [],
       ),
+      pairAddress:
+        o.pairAddress != null && String(o.pairAddress).trim() ? String(o.pairAddress) : null,
+      entryLiqUsd:
+        typeof o.entryLiqUsd === 'number' && Number(o.entryLiqUsd) > 0 ? Number(o.entryLiqUsd) : null,
+      lastObservedPriceUsd:
+        typeof o.lastObservedPriceUsd === 'number' && Number(o.lastObservedPriceUsd) > 0
+          ? Number(o.lastObservedPriceUsd)
+          : undefined,
     };
     if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
     return ot;

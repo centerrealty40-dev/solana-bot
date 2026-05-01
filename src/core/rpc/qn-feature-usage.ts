@@ -9,7 +9,7 @@ import { hourKeyUtc } from './solana-rpc-meter.js';
 
 const log = child('qn-feature-usage');
 
-export const QN_FEATURE_KEYS = ['safety', 'pri_fee', 'price_verify', 'sim', 'liq_watch'] as const;
+export const QN_FEATURE_KEYS = ['safety', 'pri_fee', 'price_verify', 'sim', 'liq_watch', 'holders'] as const;
 export type QnFeature = (typeof QN_FEATURE_KEYS)[number];
 
 function monthKey(d = new Date()): string {
@@ -43,6 +43,7 @@ const BUDGET_ENV: Record<QnFeature, string> = {
   price_verify: 'QN_FEATURE_BUDGET_PRICE_VERIFY',
   sim: 'QN_FEATURE_BUDGET_SIM',
   liq_watch: 'QN_FEATURE_BUDGET_LIQ_WATCH',
+  holders: 'QN_FEATURE_BUDGET_HOLDERS',
 };
 
 const DEFAULT_BUDGET: Record<QnFeature, number> = {
@@ -51,6 +52,7 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   price_verify: 4_000_000,
   sim: 6_000_000,
   liq_watch: 12_000_000,
+  holders: 10_000_000,
 };
 
 export function qnFeatureBudgetMonth(f: QnFeature): number {

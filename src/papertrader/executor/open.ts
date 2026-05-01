@@ -55,6 +55,12 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
     remainingFraction: 1,
     dcaUsedLevels: new Set<number>(),
     ladderUsedLevels: new Set<number>(),
+    pairAddress:
+      row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
+    entryLiqUsd:
+      typeof row.liquidity_usd === 'number' && Number(row.liquidity_usd) > 0
+        ? Number(row.liquidity_usd)
+        : null,
   };
 }
 
