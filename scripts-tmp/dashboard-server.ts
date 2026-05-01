@@ -12,6 +12,7 @@
  * Nginx прокидывает laivy.ru → http://127.0.0.1:3007
  */
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -102,6 +103,60 @@ async function getCurrentMc(mint: string): Promise<number | null> {
     /* ignore */
   }
   return null;
+}
+
+// ---------------------------------------------------------
+// live mcap fallback: read most recent row from *_pair_snapshots
+// (used for AMM mints where pump.fun frontend returns nothing)
+// ---------------------------------------------------------
+const dexMcCache = new Map<string, { mc: number; ts: number }>();
+const DEX_MC_TTL_MS = 30_000;
+const DEX_SNAPSHOT_TABLES = [
+  'raydium_pair_snapshots',
+  'meteora_pair_snapshots',
+  'orca_pair_snapshots',
+  'moonshot_pair_snapshots',
+] as const;
+
+async function getDexLiveMc(mint: string): Promise<number | null> {
+  const cached = dexMcCache.get(mint);
+  if (cached && Date.now() - cached.ts < DEX_MC_TTL_MS) return cached.mc;
+  let sql: ReturnType<typeof postgres>;
+  try {
+    sql = pgPool();
+  } catch {
+    return null;
+  }
+  // Build a UNION ALL across all known DEX snapshot tables and pick the most
+  // recent non-null mcap (or fdv as a fallback) within the last 6 hours.
+  const subqueries = DEX_SNAPSHOT_TABLES.map(
+    (t) => `
+      SELECT ts, market_cap_usd, fdv_usd FROM ${t}
+      WHERE base_mint = $1 AND ts >= now() - interval '6 hours'
+      ORDER BY ts DESC LIMIT 1
+    `,
+  ).join(' UNION ALL ');
+  try {
+    const rows = await sql.unsafe(
+      `SELECT ts, market_cap_usd, fdv_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
+      [mint],
+    );
+    if (!rows.length) return null;
+    const mc = Number(rows[0].market_cap_usd ?? rows[0].fdv_usd ?? 0);
+    if (mc > 0) {
+      dexMcCache.set(mint, { mc, ts: Date.now() });
+      return mc;
+    }
+  } catch {
+    /* table may be missing in some envs — silently ignore */
+  }
+  return null;
+}
+
+async function getCurrentMcAny(mint: string): Promise<number | null> {
+  const pump = await getCurrentMc(mint);
+  if (pump != null) return pump;
+  return await getDexLiveMc(mint);
 }
 
 // ---------------------------------------------------------
@@ -295,9 +350,58 @@ function computeMetrics(closed: ClosedTrade[]) {
 const app = Fastify({ logger: false });
 
 // ---------------------------------------------------------
+// HTTP Basic Auth (optional, opt-in via env)
+//
+// If DASHBOARD_BASIC_USER and DASHBOARD_BASIC_PASSWORD are set, every request
+// except /api/health (used by external uptime monitors) requires correct
+// HTTP Basic credentials. Empty / missing env disables auth (legacy behavior).
+// ---------------------------------------------------------
+const BASIC_USER = (process.env.DASHBOARD_BASIC_USER || '').trim();
+const BASIC_PASS = (process.env.DASHBOARD_BASIC_PASSWORD || '').trim();
+const BASIC_REALM = process.env.DASHBOARD_BASIC_REALM || 'Solana Alpha Dashboard';
+const BASIC_AUTH_ENABLED = BASIC_USER.length > 0 && BASIC_PASS.length > 0;
+const BASIC_AUTH_BYPASS = new Set<string>(['/api/health']);
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8');
+  const bb = Buffer.from(b, 'utf8');
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+function parseBasicAuthHeader(header: string | undefined): { user: string; pass: string } | null {
+  if (!header || !header.toLowerCase().startsWith('basic ')) return null;
+  try {
+    const decoded = Buffer.from(header.slice(6).trim(), 'base64').toString('utf8');
+    const idx = decoded.indexOf(':');
+    if (idx < 0) return null;
+    return { user: decoded.slice(0, idx), pass: decoded.slice(idx + 1) };
+  } catch {
+    return null;
+  }
+}
+
+if (BASIC_AUTH_ENABLED) {
+  app.addHook('onRequest', async (req, reply) => {
+    const url = (req.raw.url || '/').split('?')[0];
+    if (BASIC_AUTH_BYPASS.has(url)) return;
+    const creds = parseBasicAuthHeader(req.headers['authorization'] as string | undefined);
+    const ok = !!creds && safeEqual(creds.user, BASIC_USER) && safeEqual(creds.pass, BASIC_PASS);
+    if (!ok) {
+      reply
+        .header('WWW-Authenticate', `Basic realm="${BASIC_REALM.replace(/"/g, '')}", charset="UTF-8"`)
+        .code(401)
+        .send({ ok: false, error: 'unauthorized' });
+    }
+  });
+  console.log(`[dashboard] HTTP Basic Auth ENABLED (user=${BASIC_USER}, bypass=${[...BASIC_AUTH_BYPASS].join(',')})`);
+} else {
+  console.log('[dashboard] HTTP Basic Auth disabled (set DASHBOARD_BASIC_USER + DASHBOARD_BASIC_PASSWORD to enable)');
+}
+
+// ---------------------------------------------------------
 // visit counter (privacy: store hashed IP prefix only)
 // ---------------------------------------------------------
-import crypto from 'node:crypto';
 function hashIp(ip: string): string {
   const trimmed = ip.replace(/^::ffff:/, '').split(',')[0].trim();
   // оставляем только первые 2 октета IPv4 / первые 4 группы IPv6 + соль
@@ -828,7 +932,27 @@ app.get('/api/paper2', async (_req, reply) => {
     /* ignore */
   }
 
-  const strategies: Array<{
+  type EnrichedOpen = {
+    mint: string;
+    symbol: string;
+    entryTs: number;
+    entryMcUsd: number;
+    entryRealMcUsd: number | null;
+    openedAtIso: string | null;
+    lane: string | null;
+    source: string | null;
+    metricType: string | null;
+    currentMcUsd: number;
+    peakMcUsd: number;
+    peakPnlPct: number;
+    trailingArmed: boolean;
+    pnlPct: number | null;
+    pnlUsd: number | null;
+    ageMin: number;
+    hasLiveMc: boolean;
+  };
+
+  type StrategyRow = {
     strategyId: string;
     file: string;
     openCount: number;
@@ -837,6 +961,9 @@ app.get('/api/paper2', async (_req, reply) => {
     lastTs: number;
     hoursOfData: number;
     sumPnlUsd: number;
+    realizedPnlUsd: number;
+    unrealizedPnlUsd: number;
+    totalPnlUsd: number;
     winRate: number;
     avgPnl: number;
     avgPeak: number;
@@ -848,9 +975,11 @@ app.get('/api/paper2', async (_req, reply) => {
     evals1h: number;
     passed1h: number;
     failReasons: Array<{ reason: string; count: number }>;
-    open: Array<Record<string, unknown>>;
+    open: EnrichedOpen[];
     recentClosed: Array<Record<string, unknown>>;
-  }> = [];
+  };
+
+  const strategies: StrategyRow[] = [];
 
   for (const fp of files) {
     const sid = path.basename(fp, '.jsonl');
@@ -880,25 +1009,47 @@ app.get('/api/paper2', async (_req, reply) => {
       .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
       .slice(0, 20);
 
-    const enrichedOpen = open.slice(0, 30).map((ot) => ({
-      mint: ot.mint,
-      symbol: ot.symbol,
-      entryTs: ot.entryTs,
-      entryMcUsd: ot.entryMcUsd,
-      entryRealMcUsd: ot.entryRealMcUsd,
-      openedAtIso: ot.openedAtIso,
-      lane: ot.lane,
-      source: ot.source,
-      metricType: ot.metricType,
-      currentMcUsd: ot.peakMcUsd || ot.entryMcUsd || 0,
-      peakMcUsd: ot.peakMcUsd,
-      peakPnlPct: ot.peakPnlPct,
-      trailingArmed: ot.trailingArmed,
-      pnlPct: null,
-      pnlUsd: null,
-      ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
-      hasLiveMc: false,
-    }));
+    // Enrich open positions with a live mcap (pump.fun -> DEX snapshot fallback),
+    // recompute pnl% and pnl$ when possible. Capped to 30 rows for sanity.
+    const enrichedOpen: EnrichedOpen[] = await Promise.all(
+      open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
+        const liveMc = await getCurrentMcAny(ot.mint).catch(() => null);
+        const baseEntry = ot.entryRealMcUsd && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : ot.entryMcUsd;
+        const hasLiveMc = liveMc != null && liveMc > 0;
+        const currentMcUsd = hasLiveMc ? (liveMc as number) : ot.peakMcUsd || baseEntry || 0;
+        let pnlPct: number | null = null;
+        let pnlUsd: number | null = null;
+        if (hasLiveMc && baseEntry > 0) {
+          pnlPct = ((liveMc as number) / baseEntry - 1) * 100;
+          const invested = ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd : POSITION_USD_DEFAULT;
+          pnlUsd = (invested * pnlPct) / 100;
+        }
+        return {
+          mint: ot.mint,
+          symbol: ot.symbol,
+          entryTs: ot.entryTs,
+          entryMcUsd: ot.entryMcUsd,
+          entryRealMcUsd: ot.entryRealMcUsd,
+          openedAtIso: ot.openedAtIso,
+          lane: ot.lane,
+          source: ot.source,
+          metricType: ot.metricType,
+          currentMcUsd,
+          peakMcUsd: ot.peakMcUsd,
+          peakPnlPct: ot.peakPnlPct,
+          trailingArmed: ot.trailingArmed,
+          pnlPct,
+          pnlUsd,
+          ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
+          hasLiveMc,
+        };
+      }),
+    );
+    enrichedOpen.sort((a, b) => (b.pnlUsd ?? -Infinity) - (a.pnlUsd ?? -Infinity));
+
+    const unrealizedUsd = enrichedOpen.reduce((acc, o) => acc + (o.pnlUsd ?? 0), 0);
+    const realizedPnlUsd = m.sumPnlUsd;
+    const totalPnlUsd = realizedPnlUsd + unrealizedUsd;
 
     strategies.push({
       strategyId: sid,
@@ -909,12 +1060,15 @@ app.get('/api/paper2', async (_req, reply) => {
       lastTs,
       hoursOfData: (Date.now() - startedAt) / 3_600_000,
       sumPnlUsd: m.sumPnlUsd,
+      realizedPnlUsd,
+      unrealizedPnlUsd: unrealizedUsd,
+      totalPnlUsd,
       winRate: m.winRate,
       avgPnl: m.avgPnl,
       avgPeak: m.avgPeak,
       bestPnlUsd: m.bestPnlUsd,
       worstPnlUsd: m.worstPnlUsd,
-      unrealizedUsd: 0,
+      unrealizedUsd,
       exits: m.exits,
       exitsBreakdown: m.exitsBreakdown,
       evals1h,
@@ -924,7 +1078,7 @@ app.get('/api/paper2', async (_req, reply) => {
       recentClosed: closedWithUsd,
     });
   }
-  strategies.sort((a, b) => b.sumPnlUsd - a.sumPnlUsd);
+  strategies.sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
 
   const totals = strategies.reduce(
     (acc, s) => {
@@ -932,9 +1086,20 @@ app.get('/api/paper2', async (_req, reply) => {
       acc.open += s.openCount;
       acc.closed += s.closedCount;
       acc.sumPnlUsd += s.sumPnlUsd;
+      acc.realizedPnlUsd += s.realizedPnlUsd;
+      acc.unrealizedPnlUsd += s.unrealizedPnlUsd;
+      acc.totalPnlUsd += s.totalPnlUsd;
       return acc;
     },
-    { strategies: 0, open: 0, closed: 0, sumPnlUsd: 0 },
+    {
+      strategies: 0,
+      open: 0,
+      closed: 0,
+      sumPnlUsd: 0,
+      realizedPnlUsd: 0,
+      unrealizedPnlUsd: 0,
+      totalPnlUsd: 0,
+    },
   );
 
   return { now: Date.now(), paper2Dir: PAPER2_DIR, totals, strategies };

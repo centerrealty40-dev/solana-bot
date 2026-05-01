@@ -263,7 +263,10 @@ function dash() {
     async boot() { await this.refresh(); setInterval(() => this.refresh(), 8000); },
     async refresh() {
       try {
-        const [s, v] = await Promise.all([fetch('/api/state').then(r=>r.json()), fetch('/api/visits').then(r=>r.json())]);
+        const [s, v] = await Promise.all([
+          fetch('/api/state', { credentials: 'include' }).then(r=>r.json()),
+          fetch('/api/visits', { credentials: 'include' }).then(r=>r.json()),
+        ]);
         this.state = s; this.visits = v;
         this.lastUpdate = new Date().toLocaleTimeString();
       } catch(e) { console.error(e); }

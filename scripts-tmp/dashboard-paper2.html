@@ -26,6 +26,39 @@
       <div class="text-xs text-slate-400">updated: <span x-text="updatedAt">—</span></div>
     </header>
 
+    <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div class="card rounded-lg p-3">
+        <div class="text-[10px] uppercase text-slate-500">Σ Realized</div>
+        <div class="text-lg font-bold mono"
+             :class="(state.totals?.realizedPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+             x-text="fmtUsdSigned(state.totals?.realizedPnlUsd)"></div>
+      </div>
+      <div class="card rounded-lg p-3">
+        <div class="text-[10px] uppercase text-slate-500">Σ Unrealized</div>
+        <div class="text-lg font-bold mono"
+             :class="(state.totals?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'"
+             x-text="fmtUsdSigned(state.totals?.unrealizedPnlUsd)"></div>
+      </div>
+      <div class="card rounded-lg p-3">
+        <div class="text-[10px] uppercase text-slate-500">Σ Total</div>
+        <div class="text-lg font-bold mono"
+             :class="(state.totals?.totalPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+             x-text="fmtUsdSigned(state.totals?.totalPnlUsd)"></div>
+      </div>
+      <div class="card rounded-lg p-3">
+        <div class="text-[10px] uppercase text-slate-500">Open / Closed</div>
+        <div class="text-lg font-bold mono">
+          <span x-text="(state.totals?.open || 0)"></span>
+          <span class="text-slate-500"> / </span>
+          <span x-text="(state.totals?.closed || 0)"></span>
+        </div>
+      </div>
+      <div class="card rounded-lg p-3">
+        <div class="text-[10px] uppercase text-slate-500">Strategies</div>
+        <div class="text-lg font-bold mono" x-text="(state.totals?.strategies || 0)"></div>
+      </div>
+    </section>
+
     <section class="grid md:grid-cols-3 lg:grid-cols-5 gap-4">
       <template x-for="s in (state.strategies || [])" :key="s.strategyId">
         <div class="card rounded-lg p-4 cursor-pointer transition"
@@ -40,11 +73,15 @@
           <div class="grid grid-cols-3 gap-2 mt-4 text-sm mono">
             <div>
               <div class="text-[10px] uppercase text-slate-500">Realized</div>
-              <div class="font-bold" :class="s.sumPnlUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.sumPnlUsd)"></div>
+              <div class="font-bold" :class="(s.realizedPnlUsd ?? s.sumPnlUsd) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.realizedPnlUsd ?? s.sumPnlUsd)"></div>
             </div>
             <div>
               <div class="text-[10px] uppercase text-slate-500">Unreal</div>
-              <div class="font-bold" :class="(s.unrealizedUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(s.unrealizedUsd || 0)"></div>
+              <div class="font-bold" :class="(s.unrealizedPnlUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(s.unrealizedPnlUsd || 0)"></div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase text-slate-500">Total</div>
+              <div class="font-bold" :class="(s.totalPnlUsd||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.totalPnlUsd || 0)"></div>
             </div>
             <div>
               <div class="text-[10px] uppercase text-slate-500">WinRate</div>
@@ -55,12 +92,12 @@
               <div class="font-bold" x-text="s.openCount"></div>
             </div>
             <div>
-              <div class="text-[10px] uppercase text-slate-500">Closed</div>
-              <div class="font-bold" x-text="s.closedCount"></div>
-            </div>
-            <div>
-              <div class="text-[10px] uppercase text-slate-500">Hours</div>
-              <div class="font-bold" x-text="(s.hoursOfData || 0).toFixed(1)"></div>
+              <div class="text-[10px] uppercase text-slate-500">Closed · Hours</div>
+              <div class="font-bold">
+                <span x-text="s.closedCount"></span>
+                <span class="text-slate-500"> · </span>
+                <span x-text="(s.hoursOfData || 0).toFixed(1)"></span>
+              </div>
             </div>
           </div>
 
@@ -137,14 +174,13 @@
                   <a :href="gmgn(o.mint)" target="_blank" class="text-amber-300" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
                   <span class="text-[10px] text-slate-500">
                     age <span x-text="Math.round(o.ageMin || 0)"></span>m ·
-                    open <span x-text="(o.openedAtIso || '').slice(11, 19) || '—'"></span> ·
-                    mc <span x-text="o.entryRealMcUsd ? fmtUsd(o.entryRealMcUsd) : 'n/a'"></span> ·
                     cur <span x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
+                    <span x-show="!o.hasLiveMc" class="text-rose-400/60">· no live mcap</span>
                   </span>
                 </div>
                 <div class="text-right">
-                  <div class="mono" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
-                  <div class="text-[10px] text-slate-500" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                  <div class="mono font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
+                  <div class="text-[10px]" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
                 </div>
               </div>
             </template>
@@ -229,7 +265,7 @@
         },
         async refresh() {
           try {
-            const j = await fetch('/api/paper2').then((r) => r.json());
+            const j = await fetch('/api/paper2', { credentials: 'include' }).then((r) => r.json());
             this.state = j;
             if (!this.selected && (j.strategies || []).length) this.selected = j.strategies[0].strategyId;
             this.updatedAt = new Date().toLocaleTimeString();
