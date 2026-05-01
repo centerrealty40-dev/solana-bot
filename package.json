@@ -20,7 +20,13 @@
     "stream": "tsx src/scripts/stream.ts",
     "parser": "tsx src/scripts/parser.ts",
     "atlas": "tsx src/scripts/atlas.ts",
-    "papertrader": "tsx src/scripts/papertrader.ts"
+    "papertrader": "tsx src/scripts/papertrader.ts",
+    "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
+    "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",
+    "paper2:healthcheck": "node scripts-tmp/paper2-healthcheck.mjs",
+    "paper2:hourly-report": "node scripts-tmp/hourly-telegram-report.mjs",
+    "paper2:advisor-digest": "node scripts-tmp/advisor-digest.mjs",
+    "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

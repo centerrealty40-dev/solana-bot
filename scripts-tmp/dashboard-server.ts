@@ -40,6 +40,9 @@ function resolvedOrgCursorPath(): string | null {
 }
 const HTML_PATH = path.join(__dirname, 'dashboard.html');
 const VISITS_PATH = process.env.VISITS_PATH ?? '/tmp/dashboard-visits.jsonl';
+const PAPER2_DIR = process.env.PAPER2_DIR ?? '/opt/solana-alpha/data/paper2';
+const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
+const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
 let pgSql: ReturnType<typeof postgres> | null = null;
 function pgPool(): ReturnType<typeof postgres> {
@@ -597,6 +600,338 @@ app.get('/api/direct-lp/health', async (_req, reply) => {
     reply.code(503);
     return { ok: false, error: String(e) };
   }
+});
+
+// ---------------------------------------------------------
+// /api/paper2 — read every *.jsonl in PAPER2_DIR and aggregate.
+// Uses W6.3c close.netPnlUsd directly (NOT pctToUsd(pnlPct)).
+// ---------------------------------------------------------
+type Paper2OpenItem = {
+  mint: string;
+  symbol: string;
+  entryTs: number;
+  entryMcUsd: number;
+  entryRealMcUsd: number | null;
+  openedAtIso: string | null;
+  lane: string | null;
+  source: string | null;
+  metricType: string | null;
+  features: unknown;
+  btc: unknown;
+  peakMcUsd: number;
+  peakPnlPct: number;
+  trailingArmed: boolean;
+  totalInvestedUsd: number;
+};
+
+type Paper2ClosedRow = Record<string, unknown>;
+
+function loadPaper2File(filePath: string): {
+  open: Paper2OpenItem[];
+  closed: Paper2ClosedRow[];
+  firstTs: number;
+  lastTs: number;
+  resetTs: number;
+  evals1h: number;
+  passed1h: number;
+  failReasons: Array<{ reason: string; count: number }>;
+} {
+  if (!fs.existsSync(filePath)) {
+    return {
+      open: [],
+      closed: [],
+      firstTs: Date.now(),
+      lastTs: Date.now(),
+      resetTs: 0,
+      evals1h: 0,
+      passed1h: 0,
+      failReasons: [],
+    };
+  }
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+  const om = new Map<string, Paper2OpenItem>();
+  const cl: Paper2ClosedRow[] = [];
+  let f = Date.now();
+  let l = 0;
+  let resetTs = 0;
+  let evals1h = 0;
+  let passed1h = 0;
+  const failReasonsCount = new Map<string, number>();
+  const since1h = Date.now() - 3_600_000;
+  for (const ln of lines) {
+    let e: Record<string, unknown>;
+    try {
+      e = JSON.parse(ln) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const ts = typeof e.ts === 'number' ? e.ts : 0;
+    if (ts) {
+      if (ts < f) f = ts;
+      if (ts > l) l = ts;
+    }
+    if (e.kind === 'reset') {
+      resetTs = typeof e.ts === 'number' ? e.ts : 0;
+      continue;
+    }
+    if (e.kind === 'eval' && ts >= since1h) {
+      evals1h++;
+      if (e.pass === true) passed1h++;
+      else {
+        const reasons = Array.isArray(e.reasons) ? e.reasons : [];
+        for (const r of reasons) {
+          const key = String(r);
+          failReasonsCount.set(key, (failReasonsCount.get(key) || 0) + 1);
+        }
+      }
+    }
+    if (e.kind === 'open') {
+      const feat = e.features as Record<string, unknown> | undefined;
+      const featMc =
+        feat && ((typeof feat.market_cap_usd === 'number' ? feat.market_cap_usd : 0) ||
+          (typeof feat.fdv_usd === 'number' ? feat.fdv_usd : 0));
+      const mint = String(e.mint ?? '');
+      om.set(mint, {
+        mint,
+        symbol: String(e.symbol ?? ''),
+        entryTs: Number(e.entryTs ?? 0),
+        entryMcUsd: Number(e.entryMcUsd ?? 0),
+        entryRealMcUsd: featMc ? Number(featMc) : null,
+        openedAtIso: e.entryTs ? new Date(Number(e.entryTs)).toISOString() : null,
+        lane: e.lane != null ? String(e.lane) : null,
+        source: e.source != null ? String(e.source) : null,
+        metricType: e.metricType != null ? String(e.metricType) : null,
+        features: e.features ?? null,
+        btc: e.btc ?? null,
+        peakMcUsd: Number(e.entryMcUsd ?? 0),
+        peakPnlPct: 0,
+        trailingArmed: false,
+        totalInvestedUsd: Number(e.totalInvestedUsd ?? e.entryMcUsd ?? 0),
+      });
+    } else if (e.kind === 'peak') {
+      const mint = String(e.mint ?? '');
+      const o = om.get(mint);
+      if (o) {
+        o.peakMcUsd = Math.max(o.peakMcUsd, Number(e.peakMcUsd ?? 0));
+        o.peakPnlPct = Math.max(o.peakPnlPct, Number(e.peakPnlPct ?? 0));
+        o.trailingArmed = o.trailingArmed || Boolean(e.trailingArmed);
+      }
+    } else if (e.kind === 'close') {
+      const mint = String(e.mint ?? '');
+      om.delete(mint);
+      cl.push(e);
+    }
+  }
+  const failReasons = [...failReasonsCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([reason, count]) => ({ reason, count }));
+  return { open: [...om.values()], closed: cl, firstTs: f, lastTs: l, resetTs, evals1h, passed1h, failReasons };
+}
+
+function paper2Metrics(closed: Paper2ClosedRow[]): {
+  total: number;
+  wins: number;
+  winRate: number;
+  sumPnlUsd: number;
+  avgPnl: number;
+  avgPeak: number;
+  bestPnlUsd: number;
+  worstPnlUsd: number;
+  exits: Record<string, number>;
+  exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
+} {
+  const exitKinds = ['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP'] as const;
+  const exits: Record<string, number> = Object.fromEntries(exitKinds.map((k) => [k, 0]));
+  const breakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }> =
+    Object.fromEntries(exitKinds.map((k) => [k, { count: 0, sumPct: 0, sumUsd: 0, avgPct: 0 }]));
+  if (!closed.length) {
+    return {
+      total: 0,
+      wins: 0,
+      winRate: 0,
+      sumPnlUsd: 0,
+      avgPnl: 0,
+      avgPeak: 0,
+      bestPnlUsd: 0,
+      worstPnlUsd: 0,
+      exits,
+      exitsBreakdown: breakdown,
+    };
+  }
+  let sumPct = 0;
+  let sumPeak = 0;
+  let wins = 0;
+  let bestUsd = -Infinity;
+  let worstUsd = Infinity;
+  let sumUsd = 0;
+  for (const c of closed) {
+    const pnlPct = Number(c.pnlPct ?? 0);
+    const netUsd = c.netPnlUsd;
+    const pnlUsd =
+      typeof netUsd === 'number' && Number.isFinite(netUsd)
+        ? netUsd
+        : (POSITION_USD_DEFAULT * pnlPct) / 100;
+    sumPct += pnlPct;
+    sumUsd += pnlUsd;
+    sumPeak += Number(c.peakPnlPct ?? c['peak_pnl_pct'] ?? 0);
+    if (pnlPct > 0) wins++;
+    if (pnlUsd > bestUsd) bestUsd = pnlUsd;
+    if (pnlUsd < worstUsd) worstUsd = pnlUsd;
+    const r = String(c.exitReason ?? 'NO_DATA');
+    if (exits[r] != null) exits[r]++;
+    if (breakdown[r]) {
+      breakdown[r].count++;
+      breakdown[r].sumPct += pnlPct;
+      breakdown[r].sumUsd += pnlUsd;
+    }
+  }
+  for (const k of Object.keys(breakdown)) {
+    breakdown[k].avgPct = breakdown[k].count ? breakdown[k].sumPct / breakdown[k].count : 0;
+  }
+  return {
+    total: closed.length,
+    wins,
+    winRate: (wins / closed.length) * 100,
+    sumPnlUsd: sumUsd,
+    avgPnl: sumPct / closed.length,
+    avgPeak: sumPeak / closed.length,
+    bestPnlUsd: bestUsd === -Infinity ? 0 : bestUsd,
+    worstPnlUsd: worstUsd === Infinity ? 0 : worstUsd,
+    exits,
+    exitsBreakdown: breakdown,
+  };
+}
+
+app.get('/papertrader2', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return fs.readFileSync(HTML2_PATH, 'utf-8');
+});
+
+app.get('/api/paper2', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  let files: string[] = [];
+  try {
+    if (fs.existsSync(PAPER2_DIR)) {
+      files = fs
+        .readdirSync(PAPER2_DIR)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => path.join(PAPER2_DIR, f));
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const strategies: Array<{
+    strategyId: string;
+    file: string;
+    openCount: number;
+    closedCount: number;
+    startedAt: number;
+    lastTs: number;
+    hoursOfData: number;
+    sumPnlUsd: number;
+    winRate: number;
+    avgPnl: number;
+    avgPeak: number;
+    bestPnlUsd: number;
+    worstPnlUsd: number;
+    unrealizedUsd: number;
+    exits: Record<string, number>;
+    exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
+    evals1h: number;
+    passed1h: number;
+    failReasons: Array<{ reason: string; count: number }>;
+    open: Array<Record<string, unknown>>;
+    recentClosed: Array<Record<string, unknown>>;
+  }> = [];
+
+  for (const fp of files) {
+    const sid = path.basename(fp, '.jsonl');
+    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons } = loadPaper2File(fp);
+    const m = paper2Metrics(closed);
+    const startedAt = resetTs || firstTs;
+    const closedWithUsd = closed
+      .map((c) => {
+        const pnlPct = Number(c.pnlPct ?? 0);
+        const netUsd = c.netPnlUsd;
+        const pnlUsd =
+          typeof netUsd === 'number' && Number.isFinite(netUsd)
+            ? netUsd
+            : (POSITION_USD_DEFAULT * pnlPct) / 100;
+        const costs = c.costs as Record<string, unknown> | undefined;
+        return {
+          mint: c.mint,
+          symbol: c.symbol,
+          exitTs: c.exitTs,
+          exitReason: c.exitReason,
+          pnlPct,
+          pnlUsd,
+          durationMin: Number(c.durationMin ?? 0),
+          dex: costs && costs.dex,
+        };
+      })
+      .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
+      .slice(0, 20);
+
+    const enrichedOpen = open.slice(0, 30).map((ot) => ({
+      mint: ot.mint,
+      symbol: ot.symbol,
+      entryTs: ot.entryTs,
+      entryMcUsd: ot.entryMcUsd,
+      entryRealMcUsd: ot.entryRealMcUsd,
+      openedAtIso: ot.openedAtIso,
+      lane: ot.lane,
+      source: ot.source,
+      metricType: ot.metricType,
+      currentMcUsd: ot.peakMcUsd || ot.entryMcUsd || 0,
+      peakMcUsd: ot.peakMcUsd,
+      peakPnlPct: ot.peakPnlPct,
+      trailingArmed: ot.trailingArmed,
+      pnlPct: null,
+      pnlUsd: null,
+      ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
+      hasLiveMc: false,
+    }));
+
+    strategies.push({
+      strategyId: sid,
+      file: fp,
+      openCount: open.length,
+      closedCount: closed.length,
+      startedAt,
+      lastTs,
+      hoursOfData: (Date.now() - startedAt) / 3_600_000,
+      sumPnlUsd: m.sumPnlUsd,
+      winRate: m.winRate,
+      avgPnl: m.avgPnl,
+      avgPeak: m.avgPeak,
+      bestPnlUsd: m.bestPnlUsd,
+      worstPnlUsd: m.worstPnlUsd,
+      unrealizedUsd: 0,
+      exits: m.exits,
+      exitsBreakdown: m.exitsBreakdown,
+      evals1h,
+      passed1h,
+      failReasons,
+      open: enrichedOpen,
+      recentClosed: closedWithUsd,
+    });
+  }
+  strategies.sort((a, b) => b.sumPnlUsd - a.sumPnlUsd);
+
+  const totals = strategies.reduce(
+    (acc, s) => {
+      acc.strategies += 1;
+      acc.open += s.openCount;
+      acc.closed += s.closedCount;
+      acc.sumPnlUsd += s.sumPnlUsd;
+      return acc;
+    },
+    { strategies: 0, open: 0, closed: 0, sumPnlUsd: 0 },
+  );
+
+  return { now: Date.now(), paper2Dir: PAPER2_DIR, totals, strategies };
 });
 
 app.listen({ port: PORT, host: HOST }).then(() => {
