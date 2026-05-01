@@ -223,7 +223,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
         /* W7.6 impulse confirm — default off; rolling 6h QN kill + Telegram at IMPULSE_QN_ROLLING_MAX_CREDITS */
-        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
@@ -348,7 +348,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
@@ -477,7 +477,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        PAPER_IMPULSE_CONFIRM_ENABLED: '0',
+        PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
