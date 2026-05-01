@@ -118,6 +118,29 @@ const ConfigSchema = z.object({
   filtMaxTopBuyerShare: z.coerce.number().min(0).max(1).default(0.35),
   filtMinBcProgress: z.coerce.number().min(0).max(1).default(0.25),
   filtMaxBcProgress: z.coerce.number().min(0).max(1).default(0.95),
+
+  // ---- exits (W6.3c) ----
+  tpX: z.coerce.number().positive().default(5.0),
+  slX: z.coerce.number().nonnegative().default(0),
+  trailDrop: z.coerce.number().min(0).max(1).default(0.5),
+  trailTriggerX: z.coerce.number().positive().default(1.3),
+  timeoutHours: z.coerce.number().positive().default(12),
+
+  dcaLevelsSpec: z.string().default(''),
+  dcaKillstop: z.coerce.number().default(0),
+
+  tpLadderSpec: z.string().default(''),
+
+  followupOffsetsMinSpec: z.string().default('30,60,120'),
+
+  contextSwapsEnabled: z.boolean().default(true),
+  contextSwapsLimit: z.coerce.number().int().min(1).max(50).default(5),
+
+  preEntryDynamicsEnabled: z.boolean().default(true),
+
+  peakLogStepPct: z.coerce.number().nonnegative().default(1),
+
+  statsIntervalMs: z.coerce.number().int().positive().default(5 * 60_000),
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -205,6 +228,20 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     filtMaxTopBuyerShare: process.env.PAPER_MAX_TOP_BUYER_SHARE,
     filtMinBcProgress: process.env.PAPER_MIN_BC_PROGRESS,
     filtMaxBcProgress: process.env.PAPER_MAX_BC_PROGRESS,
+    tpX: process.env.PAPER_TP_X,
+    slX: process.env.PAPER_SL_X,
+    trailDrop: process.env.PAPER_TRAIL_DROP,
+    trailTriggerX: process.env.PAPER_TRAIL_TRIGGER_X,
+    timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
+    dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
+    dcaKillstop: process.env.PAPER_DCA_KILLSTOP,
+    tpLadderSpec: process.env.PAPER_TP_LADDER,
+    followupOffsetsMinSpec: process.env.PAPER_FOLLOWUP_OFFSETS_MIN,
+    contextSwapsEnabled: envBool(process.env.PAPER_CONTEXT_SWAPS, true),
+    contextSwapsLimit: process.env.PAPER_CONTEXT_SWAPS_LIMIT,
+    preEntryDynamicsEnabled: envBool(process.env.PAPER_PRE_ENTRY_DYNAMICS, true),
+    peakLogStepPct: process.env.PAPER_PEAK_LOG_STEP_PCT,
+    statsIntervalMs: process.env.PAPER_STATS_INTERVAL_MS,
   });
 
   if (!parsed.success) {
@@ -250,4 +287,49 @@ export function slipBaseBpsForDex(cfg: PaperTraderConfig, dex: DexId): number {
     case 'moonshot':
       return cfg.slipBaseBpsMoonshot;
   }
+}
+
+export interface DcaLevel {
+  triggerPct: number;
+  addFraction: number;
+}
+
+export interface TpLadderLevel {
+  pnlPct: number;
+  sellFraction: number;
+}
+
+export function parseDcaLevels(spec: string | undefined | null): DcaLevel[] {
+  if (!spec) return [];
+  return spec
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [trig, frac] = p.split(':').map((s) => Number(s));
+      return { triggerPct: trig / 100, addFraction: frac };
+    })
+    .filter((l) => Number.isFinite(l.triggerPct) && Number.isFinite(l.addFraction) && l.addFraction > 0);
+}
+
+export function parseTpLadder(spec: string | undefined | null): TpLadderLevel[] {
+  if (!spec) return [];
+  return spec
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [pnl, frac] = p.split(':').map((s) => Number(s));
+      return { pnlPct: pnl, sellFraction: frac };
+    })
+    .filter((l) => Number.isFinite(l.pnlPct) && Number.isFinite(l.sellFraction) && l.sellFraction > 0);
+}
+
+export function parseFollowupOffsets(spec: string | undefined | null): number[] {
+  if (!spec) return [];
+  return spec
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
 }

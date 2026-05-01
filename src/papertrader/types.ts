@@ -219,3 +219,47 @@ export interface EvalSkipOpenEvent extends JsonlEventBase {
   mint: string;
   reason: string;
 }
+
+export interface PreEntryDynamics {
+  holders_30m_ago: number;
+  holders_10m_ago: number;
+  holders_now: number;
+  holders_delta_30_to_now: number;
+  holders_delta_10_to_now: number;
+  vol5m_30m_ago_usd: number;
+  vol5m_10m_ago_usd: number;
+  vol5m_now_usd: number;
+  vol_growth_30m_pct: number | null;
+  vol_growth_10m_pct: number | null;
+  bs_5m_30m_ago: number | null;
+  bs_5m_10m_ago: number | null;
+  bs_5m_now: number | null;
+  price_30m_ago: number | null;
+  price_10m_ago: number | null;
+  price_now: number | null;
+  price_growth_30m_pct: number | null;
+  price_growth_10m_pct: number | null;
+  trend_holders: 'rising' | 'flat' | 'falling' | 'unknown';
+  trend_volume: 'rising' | 'flat' | 'falling' | 'unknown';
+  trend_price: 'rising' | 'flat' | 'falling' | 'unknown';
+}
+
+export interface PendingFollowup {
+  mint: string;
+  symbol: string;
+  entryTs: number;
+  entryPrice: number;
+  entryMarketPrice: number;
+  metricType: 'mc' | 'price';
+  source?: string;
+  offsetMin: number;
+  dueTs: number;
+}
+
+export interface ContextSwap {
+  ts: number;
+  side: string;
+  amount_usd: number;
+  price_usd: number;
+  wallet?: string;
+}

@@ -1,0 +1,125 @@
+import fs from 'node:fs';
+import type { OpenTrade, PartialSell } from '../types.js';
+import { markFollowupCompleted } from './followup.js';
+
+export interface RestoreState {
+  evaluatedAt: Map<string, number>;
+  lastEntryTsByMint: Map<string, number>;
+  open: Map<string, OpenTrade>;
+}
+
+function mapPartialSell(p: Record<string, unknown>): PartialSell {
+  return {
+    ts: Number(p.ts),
+    price: Number(p.price),
+    marketPrice: Number(p.marketPrice ?? p.price),
+    sellFraction: Number(p.sellFraction),
+    reason: (p.reason ?? 'TP_LADDER') as PartialSell['reason'],
+    proceedsUsd: Number(p.proceedsUsd ?? 0),
+    grossProceedsUsd: Number(p.grossProceedsUsd ?? 0),
+    pnlUsd: Number(p.pnlUsd ?? 0),
+    grossPnlUsd: Number(p.grossPnlUsd ?? 0),
+  };
+}
+
+function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | null {
+  try {
+    const rawPartials = Array.isArray(o.partialSells) ? o.partialSells : [];
+    const partialSells: PartialSell[] = rawPartials.map((p) =>
+      mapPartialSell(
+        typeof p === 'object' && p !== null ? (p as unknown as Record<string, unknown>) : {},
+      ),
+    );
+
+    const ot: OpenTrade = {
+      mint: o.mint,
+      symbol: o.symbol ?? '?',
+      lane: (o.lane ?? 'post_migration') as OpenTrade['lane'],
+      source: o.source,
+      metricType: (o.metricType ?? 'price') as OpenTrade['metricType'],
+      dex: (o.dex ?? 'raydium') as OpenTrade['dex'],
+      entryTs: Number(o.entryTs ?? Date.now()),
+      entryMcUsd: Number(o.entryMcUsd ?? 0),
+      entryMetrics: o.entryMetrics ?? {
+        uniqueBuyers: 0,
+        uniqueSellers: 0,
+        sumBuySol: 0,
+        sumSellSol: 0,
+        topBuyerShare: 0,
+        bcProgress: 0,
+      },
+      peakMcUsd: Number(o.peakMcUsd ?? o.entryMcUsd ?? 0),
+      peakPnlPct: Number(o.peakPnlPct ?? 0),
+      trailingArmed: Boolean(o.trailingArmed ?? false),
+      legs: Array.isArray(o.legs)
+        ? o.legs.map((l) => ({
+            ts: Number(l.ts),
+            price: Number(l.price),
+            marketPrice: Number(l.marketPrice ?? l.price),
+            sizeUsd: Number(l.sizeUsd),
+            reason: (l.reason ?? 'open') as 'open' | 'dca',
+            triggerPct: l.triggerPct,
+          }))
+        : [],
+      partialSells,
+      totalInvestedUsd: Number(o.totalInvestedUsd ?? 0),
+      avgEntry: Number(o.avgEntry ?? o.entryMcUsd ?? 0),
+      avgEntryMarket: Number(o.avgEntryMarket ?? o.entryMcUsd ?? 0),
+      remainingFraction: Number(o.remainingFraction ?? 1),
+      dcaUsedLevels: new Set<number>(Array.isArray(o.dcaUsedLevels) ? (o.dcaUsedLevels as number[]) : []),
+      ladderUsedLevels: new Set<number>(
+        Array.isArray(o.ladderUsedLevels) ? (o.ladderUsedLevels as number[]) : [],
+      ),
+    };
+    if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
+    return ot;
+  } catch {
+    return null;
+  }
+}
+
+export function loadStore(storePath: string): RestoreState {
+  const state: RestoreState = {
+    evaluatedAt: new Map(),
+    lastEntryTsByMint: new Map(),
+    open: new Map(),
+  };
+  if (!fs.existsSync(storePath)) return state;
+  const lines = fs.readFileSync(storePath, 'utf-8').split('\n').filter(Boolean);
+  for (const ln of lines) {
+    try {
+      const e = JSON.parse(ln) as {
+        kind?: string;
+        mint?: string;
+        ts?: number;
+        entryTs?: number;
+        offsetMin?: number;
+      };
+      if (e.kind === 'eval' && e.mint) {
+        const ts = Number(e.ts || 0);
+        const prev = state.evaluatedAt.get(e.mint) || 0;
+        if (ts > prev) state.evaluatedAt.set(e.mint, ts);
+      }
+      if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
+        const ot = rehydrateOpen(e as Partial<OpenTrade> & { mint: string });
+        if (ot) state.open.set(e.mint, ot);
+        const prev = state.lastEntryTsByMint.get(e.mint) || 0;
+        if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);
+      }
+      if (e.kind === 'close' && e.mint) {
+        state.open.delete(e.mint);
+      }
+      if (
+        e.kind === 'followup_snapshot' &&
+        e.mint &&
+        typeof e.entryTs === 'number' &&
+        typeof e.offsetMin === 'number'
+      ) {
+        markFollowupCompleted(e.mint, e.entryTs, e.offsetMin);
+      }
+    } catch {
+      // ignore corrupt line
+    }
+  }
+  return state;
+}

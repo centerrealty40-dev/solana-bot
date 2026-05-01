@@ -25,13 +25,13 @@ export interface DiscoveryTickResult {
   decisions: EvalDecision[];
 }
 
-const evaluatedAt = new Map<string, number>();
-const lastEntryTsByMint = new Map<string, number>();
+export const evaluatedAtMap = new Map<string, number>();
+export const lastEntryTsByMintMap = new Map<string, number>();
 
 function shouldEvaluate(mint: string, reevalAfterSec: number): boolean {
-  const last = evaluatedAt.get(mint) || 0;
+  const last = evaluatedAtMap.get(mint) || 0;
   if (Date.now() - last < reevalAfterSec * 1000) return false;
-  evaluatedAt.set(mint, Date.now());
+  evaluatedAtMap.set(mint, Date.now());
   return true;
 }
 
@@ -101,7 +101,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
     const cooldownMin =
       whale?.trigger_fired === 'dca_predictable' ? cfg.dipCooldownMinScalp : cfg.dipCooldownMinDefault;
-    const lastEntry = lastEntryTsByMint.get(row.mint) || 0;
+    const lastEntry = lastEntryTsByMintMap.get(row.mint) || 0;
     const minutesSinceLast = (Date.now() - lastEntry) / 60_000;
     const cooldownReasons: string[] = [];
     if (lastEntry > 0 && minutesSinceLast < cooldownMin) {
@@ -128,4 +128,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   }
 
   return { discovered: snapshotTagged.length, evaluated, passed, decisions };
+}
+
+export function recordEntryTs(mint: string, ts: number): void {
+  lastEntryTsByMintMap.set(mint, ts);
 }
