@@ -279,3 +279,13 @@ export interface ContextSwap {
   price_usd: number;
   wallet?: string;
 }
+
+/** W7.3 — live priority fee snapshot stamped onto open/dca_add/partial_sell/close events. */
+export interface PriorityFeeQuote {
+  microLamportsPerCu: number | null;
+  computeUnits: number;
+  usd: number;
+  source: 'live' | 'fallback';
+  ageMs: number | null;
+  ts: number;
+}
