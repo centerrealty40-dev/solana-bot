@@ -50,3 +50,35 @@ seeds/whales*.txt
 
 # W0: VPS backup snapshots (secrets); salvage branch only
 _vps-backup-*/
+
+# Ad-hoc per-task diagnostic scripts (W7.x audits, smoke probes, hotfix dumps)
+# Reusable utilities should NOT use the underscore prefix and should NOT live in
+# scripts-tmp/. Anything starting with `_w<digit>` or `_check_`, `_inspect_`,
+# `_confirm_`, `_audit_`, `_smoke`, `_dump_`, `_probe`, `_hotfix_`, `_health_`,
+# `_postcanary_`, `_status_`, `_qn_reset` is per-session noise — never commit.
+scripts-tmp/_w[0-9]*
+scripts-tmp/_check_*
+scripts-tmp/_inspect_*
+scripts-tmp/_confirm_*
+scripts-tmp/_audit_*
+scripts-tmp/_smoke*
+scripts-tmp/_dump_*
+scripts-tmp/_probe*
+scripts-tmp/_hotfix_*
+scripts-tmp/_health_*
+scripts-tmp/_postcanary_*
+scripts-tmp/_status*
+scripts-tmp/_qn_reset*
+scripts-tmp/_pull_*
+scripts-tmp/_apply_*
+scripts-tmp/_enable_*
+scripts-tmp/_verify_*
+scripts-tmp/_diag*
+scripts-tmp/_full_health*
+scripts-tmp/_safety_*
+scripts-tmp/_jupiter_*
+scripts-tmp/_parse_*
+scripts-tmp/_sync_*
+# Allow explicitly reusable underscore-prefixed utilities:
+!scripts-tmp/_deploy-dashboard-auth.sh
+!scripts-tmp/_metrics_collectors.sql
