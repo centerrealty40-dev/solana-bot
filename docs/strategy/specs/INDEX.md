@@ -22,6 +22,7 @@
 | W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **выполнено** ✓ (executor + main loop, HEAD `cfe34e2`) | W6.3b |
 | W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **выполнено** ✓ (observability port + cron + logrotate, HEAD `ecca52a`) | W6.3c |
 | W6.5 | [`W6.5_strategy_launch.md`](./W6.5_strategy_launch.md) | **выполнено** ✓ (DipRunner/Oscar/Dno PM2 + whale silence + heartbeat HC, HEAD `40d27dc`; см. примечание Dno ниже) | W6.4 |
+| W7.2 | [`W7.2_safety_check_and_live_mcap.md`](./W7.2_safety_check_and_live_mcap.md) | **выполнено** ✓ (pre-entry QN safety + `mcUsdLive` timeline; canary safety на `pt1-dno`, HEAD `5faa6e5`) | W7.1 |
 | W6.6 | `W6.6_strategy_lab_port.md` | **следующая** (через ≥7 дней работы paper) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
 
