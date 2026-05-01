@@ -1261,17 +1261,18 @@ app.get('/api/paper2', async (_req, reply) => {
         const liveMc = await getCurrentMcAny(ot.mint).catch(() => null);
         const hasLiveMc = liveMc != null && liveMc > 0;
 
+        const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
+        /** Always try spot when we have an entry-price baseline — some journals omit mcap fields on pump/MC rows. */
         let livePx: number | null = null;
-        if (!isMcMetric) {
+        if (basePx) {
           livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
         }
         const hasLivePrice = livePx != null && livePx > 0;
 
         const baseEntryUsd =
           ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
-        const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
 
-        const currentMcUsd = hasLiveMc ? liveMc : baseEntryUsd ?? 0;
+        const currentMcUsd = hasLiveMc ? (liveMc as number) : baseEntryUsd ?? 0;
         const livePriceUsd = hasLivePrice ? livePx : null;
 
         let pnlPct: number | null = null;
@@ -1286,7 +1287,9 @@ app.get('/api/paper2', async (_req, reply) => {
               investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
             pnlUsd = (invested * pnlPct) / 100;
           }
-        } else if (!isMcMetric && hasLivePrice && basePx && basePx > 0) {
+        }
+        /** Price-based unrealized — also used when mcap baseline is missing but entry spot exists. */
+        if (pnlPct == null && hasLivePrice && basePx && basePx > 0) {
           let p = ((livePx as number) / basePx - 1) * 100;
           if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
             pnlPct = p;
