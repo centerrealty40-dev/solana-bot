@@ -508,6 +508,97 @@ app.get('/api/stream/health', async (_req, reply) => {
   }
 });
 
+const DEX_SOURCE_TABLES = {
+  raydium: 'raydium_pair_snapshots',
+  meteora: 'meteora_pair_snapshots',
+  orca: 'orca_pair_snapshots',
+  moonshot: 'moonshot_pair_snapshots',
+} as const;
+
+app.get<{ Params: { source: string } }>('/api/dex/:source/health', async (req, reply) => {
+  reply.header('cache-control', 'no-store');
+  const src = String(req.params.source || '').toLowerCase();
+  const table = DEX_SOURCE_TABLES[src as keyof typeof DEX_SOURCE_TABLES];
+  if (!table) {
+    reply.code(404);
+    return { ok: false, error: `unknown source: ${src}` };
+  }
+  try {
+    const sql = pgPool();
+    const [row] = await sql.unsafe(
+      `SELECT
+        (SELECT count(*)::bigint FROM ${table}) AS total,
+        (SELECT count(*)::bigint FROM ${table} WHERE created_at > now() - interval '1 minute') AS m1,
+        (SELECT count(*)::bigint FROM ${table} WHERE created_at > now() - interval '5 minutes') AS m5,
+        (SELECT max(ts) FROM ${table}) AS last_bucket_ts,
+        (SELECT max(created_at) FROM ${table}) AS last_inserted_at,
+        (SELECT count(DISTINCT base_mint)::bigint FROM ${table} WHERE ts > now() - interval '1 hour') AS distinct_mints_h1`,
+    );
+    return {
+      source: src,
+      total: Number(row.total),
+      m1: Number(row.m1),
+      m5: Number(row.m5),
+      last_bucket_ts: row.last_bucket_ts,
+      last_inserted_at: row.last_inserted_at,
+      distinct_mints_h1: Number(row.distinct_mints_h1),
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
+
+app.get('/api/jupiter/health', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  try {
+    const sql = pgPool();
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*)::bigint FROM jupiter_route_snapshots) AS total,
+        (SELECT count(*)::bigint FROM jupiter_route_snapshots WHERE created_at > now() - interval '5 minutes') AS m5,
+        (SELECT count(*)::bigint FROM jupiter_route_snapshots WHERE created_at > now() - interval '5 minutes' AND routeable = true) AS routeable_m5,
+        (SELECT max(ts) FROM jupiter_route_snapshots) AS last_bucket_ts,
+        (SELECT count(DISTINCT mint)::bigint FROM jupiter_route_snapshots WHERE ts > now() - interval '1 hour') AS distinct_mints_h1
+    `;
+    return {
+      total: Number(row.total),
+      m5: Number(row.m5),
+      routeable_m5: Number(row.routeable_m5),
+      last_bucket_ts: row.last_bucket_ts,
+      distinct_mints_h1: Number(row.distinct_mints_h1),
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
+
+app.get('/api/direct-lp/health', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  try {
+    const sql = pgPool();
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*)::bigint FROM direct_lp_events) AS total,
+        (SELECT count(*)::bigint FROM direct_lp_events WHERE created_at > now() - interval '1 hour') AS h1,
+        (SELECT max(ts) FROM direct_lp_events) AS last_event_ts,
+        (SELECT count(DISTINCT base_mint)::bigint FROM direct_lp_events WHERE ts > now() - interval '24 hours') AS distinct_mints_d1,
+        (SELECT avg(confidence)::float FROM direct_lp_events WHERE ts > now() - interval '24 hours') AS avg_confidence_d1
+    `;
+    return {
+      total: Number(row.total),
+      h1: Number(row.h1),
+      last_event_ts: row.last_event_ts,
+      distinct_mints_d1: Number(row.distinct_mints_d1),
+      avg_confidence_d1: row.avg_confidence_d1 != null ? Number(row.avg_confidence_d1) : null,
+    };
+  } catch (e) {
+    reply.code(503);
+    return { ok: false, error: String(e) };
+  }
+});
+
 app.listen({ port: PORT, host: HOST }).then(() => {
   console.log(`[dashboard] listening on http://${HOST}:${PORT}`);
   console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
