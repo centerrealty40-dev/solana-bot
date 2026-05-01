@@ -24,6 +24,7 @@
 | W6.5 | [`W6.5_strategy_launch.md`](./W6.5_strategy_launch.md) | **выполнено** ✓ (DipRunner/Oscar/Dno PM2 + whale silence + heartbeat HC, HEAD `40d27dc`; см. примечание Dno ниже) | W6.4 |
 | W7.2 | [`W7.2_safety_check_and_live_mcap.md`](./W7.2_safety_check_and_live_mcap.md) | **выполнено** ✓ (pre-entry QN safety + `mcUsdLive` timeline; canary safety на `pt1-dno`, HEAD `5faa6e5`) | W7.1 |
 | W7.3 | [`W7.3_priority_fee_monitor.md`](./W7.3_priority_fee_monitor.md) | **выполнено** ✓ (live priority fee + JSONL `priorityFee`; full rollout pt1-{diprunner,oscar,dno}, HEAD `185044e`) | W7.2 |
+| W7.4 | [`W7.4_pre_entry_price_verify.md`](./W7.4_pre_entry_price_verify.md) | **выполнено** ✓ (Jupiter quote pre-entry; canary shadow → block → full → use_jupiter_price; HEAD `d4d7bce`) | W7.3 |
 | W6.6 | `W6.6_strategy_lab_port.md` | **отложена** (через ≥7 дней работы paper после W7.3..W7.6) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
 
