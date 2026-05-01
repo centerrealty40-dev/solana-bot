@@ -25,6 +25,7 @@
 | W7.2 | [`W7.2_safety_check_and_live_mcap.md`](./W7.2_safety_check_and_live_mcap.md) | **выполнено** ✓ (pre-entry QN safety + `mcUsdLive` timeline; canary safety на `pt1-dno`, HEAD `5faa6e5`) | W7.1 |
 | W7.3 | [`W7.3_priority_fee_monitor.md`](./W7.3_priority_fee_monitor.md) | **выполнено** ✓ (live priority fee + JSONL `priorityFee`; full rollout pt1-{diprunner,oscar,dno}, HEAD `185044e`) | W7.2 |
 | W7.4 | [`W7.4_pre_entry_price_verify.md`](./W7.4_pre_entry_price_verify.md) | **выполнено** ✓ (Jupiter quote pre-entry; canary shadow → block → full → use_jupiter_price; HEAD `d4d7bce`) | W7.3 |
+| W7.5 | [`W7.5_liquidity_drain_watch.md`](./W7.5_liquidity_drain_watch.md) | **выполнено** ✓ (LIQ_DRAIN + snapshot `liquidity_usd` drain watch; PM2 canary → full на VPS; экосистемные коммиты `64c5910`/`1697202`, полный трио на `92bdb60`) | W7.4 |
 | W7.6 | [`W7.6_impulse_confirm_entry_path.md`](./W7.6_impulse_confirm_entry_path.md) | **design** (PG-дельта → QuickNode on-chain → Jupiter; без реализации в этом файле) | W6.3b + W7.4 |
 | W6.6 | `W6.6_strategy_lab_port.md` | **отложена** (через ≥7 дней работы paper после W7.3..W7.6) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
