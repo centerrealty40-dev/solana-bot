@@ -879,9 +879,170 @@ type Paper2OpenItem = {
   totalInvestedUsd: number;
   /** W7.3 — per-tx network fee snapshot from journal `open.priorityFee.usd`. */
   entryPriorityFeeUsd: number | null;
+  /** W7.4 — Jupiter pre-entry quote vs snapshot (open row only; carried to closed via journal map). */
+  entryPriceVerifySlipPct: number | null;
+  entryPriceVerifyImpactPct: number | null;
+  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
+
+type PriceVerifyDtoFromJsonl = {
+  kind: 'ok' | 'blocked' | 'skipped';
+  slipPct?: number;
+  priceImpactPct?: number;
+};
+
+function priceVerifyUiFields(pv: unknown): {
+  entryPriceVerifySlipPct: number | null;
+  entryPriceVerifyImpactPct: number | null;
+  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+} {
+  if (!pv || typeof pv !== 'object') {
+    return {
+      entryPriceVerifySlipPct: null,
+      entryPriceVerifyImpactPct: null,
+      entryPriceVerifySource: null,
+    };
+  }
+  const p = pv as PriceVerifyDtoFromJsonl;
+  const entryPriceVerifySlipPct =
+    p.kind !== 'skipped' && Number.isFinite(p.slipPct) ? +Number(p.slipPct).toFixed(2) : null;
+  const entryPriceVerifyImpactPct =
+    p.kind !== 'skipped' && Number.isFinite(p.priceImpactPct)
+      ? +Number(p.priceImpactPct).toFixed(2)
+      : null;
+  const entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null =
+    p.kind === 'ok' ? 'jupiter' : p.kind === 'blocked' ? 'blocked' : p.kind === 'skipped' ? 'skipped' : null;
+  return { entryPriceVerifySlipPct, entryPriceVerifyImpactPct, entryPriceVerifySource };
+}
+
+const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
+  okCount: number;
+  blockedCount: number;
+  skippedCount: number;
+  avgSlipPct: number | null;
+  p90SlipPct: number | null;
+} {
+  const slips: number[] = [];
+  let blocked = 0;
+  let skipped = 0;
+  if (!fs.existsSync(filePath)) {
+    return { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null };
+  }
+  const cutoff = Date.now() - windowMs;
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+  for (const ln of lines) {
+    let ev: Record<string, unknown>;
+    try {
+      ev = JSON.parse(ln) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const ts = typeof ev.ts === 'number' ? ev.ts : 0;
+    if (ts < cutoff) continue;
+    if (ev.kind === 'open' && ev.priceVerify && typeof ev.priceVerify === 'object') {
+      const pv = ev.priceVerify as { kind?: string; slipPct?: number };
+      if (pv.kind === 'ok') {
+        const s = Number(pv.slipPct);
+        if (Number.isFinite(s)) slips.push(s);
+      } else if (pv.kind === 'blocked') blocked += 1;
+      else if (pv.kind === 'skipped') skipped += 1;
+    } else if (
+      ev.kind === 'eval-skip-open' &&
+      typeof ev.reason === 'string' &&
+      ev.reason.startsWith('price_verify:')
+    ) {
+      blocked += 1;
+    }
+  }
+  const sortedSlips = [...slips].sort((a, b) => a - b);
+  const avgSlipPct =
+    slips.length > 0 ? +((slips.reduce((a, b) => a + b, 0) / slips.length).toFixed(3)) : null;
+  const p90SlipPct =
+    slips.length > 0
+      ? sortedSlips[Math.min(sortedSlips.length - 1, Math.floor(sortedSlips.length * 0.9))]
+      : null;
+  return {
+    okCount: slips.length,
+    blockedCount: blocked,
+    skippedCount: skipped,
+    avgSlipPct,
+    p90SlipPct,
+  };
+}
+
+function priceVerifyStatsEndpointSlice(filePath: string, windowMs: number): {
+  okCount: number;
+  blockedCount: number;
+  skippedCount: number;
+  avgSlipPct: number | null;
+  p90SlipPct: number | null;
+  avgImpactPct: number | null;
+} {
+  const slips: number[] = [];
+  const impacts: number[] = [];
+  let blocked = 0;
+  let skipped = 0;
+  if (!fs.existsSync(filePath)) {
+    return {
+      okCount: 0,
+      blockedCount: 0,
+      skippedCount: 0,
+      avgSlipPct: null,
+      p90SlipPct: null,
+      avgImpactPct: null,
+    };
+  }
+  const cutoff = Date.now() - windowMs;
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+  for (const ln of lines) {
+    let ev: Record<string, unknown>;
+    try {
+      ev = JSON.parse(ln) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const ts = typeof ev.ts === 'number' ? ev.ts : 0;
+    if (ts < cutoff) continue;
+    if (ev.kind === 'open' && ev.priceVerify && typeof ev.priceVerify === 'object') {
+      const pv = ev.priceVerify as { kind?: string; slipPct?: number; priceImpactPct?: number };
+      if (pv.kind === 'ok') {
+        if (Number.isFinite(pv.slipPct)) slips.push(Number(pv.slipPct));
+        if (Number.isFinite(pv.priceImpactPct)) impacts.push(Number(pv.priceImpactPct));
+      } else if (pv.kind === 'blocked') {
+        blocked += 1;
+      } else if (pv.kind === 'skipped') {
+        skipped += 1;
+      }
+    } else if (
+      ev.kind === 'eval-skip-open' &&
+      typeof ev.reason === 'string' &&
+      ev.reason.startsWith('price_verify:')
+    ) {
+      blocked += 1;
+    }
+  }
+  const sorted = [...slips].sort((a, b) => a - b);
+  const avgSlipPct =
+    slips.length > 0 ? +((slips.reduce((a, b) => a + b, 0) / slips.length).toFixed(3)) : null;
+  const p90SlipPct =
+    slips.length > 0 ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))] : null;
+  const avgImpactPct =
+    impacts.length > 0
+      ? +((impacts.reduce((a, b) => a + b, 0) / impacts.length).toFixed(3))
+      : null;
+  return {
+    okCount: slips.length,
+    blockedCount: blocked,
+    skippedCount: skipped,
+    avgSlipPct,
+    p90SlipPct,
+    avgImpactPct,
+  };
+}
 
 /**
  * Per-position audit timeline derived from jsonl events.
@@ -1083,6 +1244,15 @@ function loadPaper2File(filePath: string): {
   // Cache of (mint -> { metricType, entryRealMcUsd }) so dca_add / partial_sell /
   // close events know how to interpret marketPrice (mcap vs token price).
   const liveMeta = new Map<string, { metricType: string | null; entryRealMcUsd: number | null }>();
+  /** W7.4 — stamp at `open`, joined onto `close` for dashboard rows. */
+  const entryPriceVerifyByMint = new Map<
+    string,
+    {
+      entryPriceVerifySlipPct: number | null;
+      entryPriceVerifyImpactPct: number | null;
+      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+    }
+  >();
 
   for (const ln of lines) {
     let e: Record<string, unknown>;
@@ -1128,6 +1298,8 @@ function loadPaper2File(filePath: string): {
       const pfOpenUsd = Number(pfOpen?.usd ?? 0);
       const entryPriorityFeeUsd =
         Number.isFinite(pfOpenUsd) && pfOpenUsd > 0 ? pfOpenUsd : null;
+      const pvUi = priceVerifyUiFields(e.priceVerify);
+      entryPriceVerifyByMint.set(mint, pvUi);
       om.set(mint, {
         mint,
         symbol: String(e.symbol ?? ''),
@@ -1148,6 +1320,7 @@ function loadPaper2File(filePath: string): {
         // (millions $), not the position size. 0 means "use POSITION_USD_DEFAULT".
         totalInvestedUsd: Number(e.totalInvestedUsd ?? 0),
         entryPriorityFeeUsd,
+        ...pvUi,
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
       const tev = buildTimelineEvent(e, metricType, entryRealMcUsd);
@@ -1172,7 +1345,13 @@ function loadPaper2File(filePath: string): {
       const tev = buildTimelineEvent(e, meta.metricType, meta.entryRealMcUsd);
       const arr = liveTimelines.get(mint) ?? [];
       if (tev) arr.push(tev);
-      const closedRow: Paper2ClosedRow = { ...e, __timeline: arr };
+      const pvEntry = entryPriceVerifyByMint.get(mint) ?? {
+        entryPriceVerifySlipPct: null,
+        entryPriceVerifyImpactPct: null,
+        entryPriceVerifySource: null,
+      };
+      entryPriceVerifyByMint.delete(mint);
+      const closedRow: Paper2ClosedRow = { ...e, ...pvEntry, __timeline: arr };
       cl.push(closedRow);
       om.delete(mint);
       liveMeta.delete(mint);
@@ -1335,6 +1514,9 @@ app.get('/api/paper2', async (_req, reply) => {
     liveMcProvenance: 'snapshots' | 'pump.fun' | null;
     timeline: TimelineEvent[];
     entryPriorityFeeUsd: number | null;
+    entryPriceVerifySlipPct: number | null;
+    entryPriceVerifyImpactPct: number | null;
+    entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
   };
 
   type StrategyRow = {
@@ -1364,6 +1546,14 @@ app.get('/api/paper2', async (_req, reply) => {
     recentClosed: Array<Record<string, unknown>>;
     /** W7.3 — sum of `priorityFee.usd` on journal close rows (stamp at exit). */
     priorityFeeUsdTotal: number;
+    /** W7.4 — rolling aggregates from jsonl (24h window). */
+    priceVerify: {
+      okCount: number;
+      blockedCount: number;
+      skippedCount: number;
+      avgSlipPct: number | null;
+      p90SlipPct: number | null;
+    };
   };
 
   const strategies: StrategyRow[] = [];
@@ -1401,6 +1591,16 @@ app.get('/api/paper2', async (_req, reply) => {
           ) {
             tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
           }
+          const entryPriceVerifySlipPct =
+            typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
+          const entryPriceVerifyImpactPct =
+            typeof c.entryPriceVerifyImpactPct === 'number' ? c.entryPriceVerifyImpactPct : null;
+          const entryPriceVerifySource =
+            c.entryPriceVerifySource === 'jupiter' ||
+            c.entryPriceVerifySource === 'skipped' ||
+            c.entryPriceVerifySource === 'blocked'
+              ? c.entryPriceVerifySource
+              : null;
           return {
             mint: c.mint,
             symbol: c.symbol,
@@ -1414,6 +1614,9 @@ app.get('/api/paper2', async (_req, reply) => {
             entryMcapAtBuyUsd,
             exitMcapUsd: exitMcapUsd != null && exitMcapUsd > 0 ? exitMcapUsd : null,
             exitPriorityFeeUsd,
+            entryPriceVerifySlipPct,
+            entryPriceVerifyImpactPct,
+            entryPriceVerifySource,
             timeline: tlOut,
           };
         }),
@@ -1587,6 +1790,9 @@ app.get('/api/paper2', async (_req, reply) => {
           liveMcProvenance,
           timeline: timelineOut,
           entryPriorityFeeUsd: ot.entryPriorityFeeUsd ?? null,
+          entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
+          entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
+          entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
         };
       }),
     );
@@ -1601,6 +1807,8 @@ app.get('/api/paper2', async (_req, reply) => {
       const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
       return acc + (pf > 0 ? pf : 0);
     }, 0);
+
+    const priceVerify = aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
 
     strategies.push({
       strategyId: sid,
@@ -1628,6 +1836,7 @@ app.get('/api/paper2', async (_req, reply) => {
       open: enrichedOpen,
       recentClosed: closedWithUsd,
       priorityFeeUsdTotal,
+      priceVerify,
     });
   }
   strategies.sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
@@ -1655,6 +1864,47 @@ app.get('/api/paper2', async (_req, reply) => {
   );
 
   return { now: Date.now(), paper2Dir: PAPER2_DIR, totals, strategies };
+});
+
+app.get('/api/paper2/price-verify-stats', async (req, reply) => {
+  reply.header('cache-control', 'no-store');
+  let files: string[] = [];
+  try {
+    if (fs.existsSync(PAPER2_DIR)) {
+      files = fs
+        .readdirSync(PAPER2_DIR)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => path.join(PAPER2_DIR, f));
+    }
+  } catch {
+    /* ignore */
+  }
+  const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
+  const windowMin = Math.max(5, Math.min(7 * 24 * 60, Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 1440));
+  const windowMs = windowMin * 60 * 1000;
+  const perStrategy: Record<string, unknown> = {};
+  let okGlobal = 0;
+  let blockedGlobal = 0;
+  let skippedGlobal = 0;
+  for (const fp of files) {
+    const sid = path.basename(fp, '.jsonl');
+    const slice = priceVerifyStatsEndpointSlice(fp, windowMs);
+    perStrategy[sid] = slice;
+    okGlobal += slice.okCount;
+    blockedGlobal += slice.blockedCount;
+    skippedGlobal += slice.skippedCount;
+  }
+  return {
+    windowMin,
+    perStrategy,
+    global: {
+      okCount: okGlobal,
+      blockedCount: blockedGlobal,
+      skippedCount: skippedGlobal,
+      blockedRate:
+        okGlobal + blockedGlobal > 0 ? +(blockedGlobal / (okGlobal + blockedGlobal)).toFixed(4) : 0,
+    },
+  };
 });
 
 app.listen({ port: PORT, host: HOST }).then(() => {

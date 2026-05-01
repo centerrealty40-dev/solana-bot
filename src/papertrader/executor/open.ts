@@ -17,14 +17,16 @@ export interface MakeOpenArgs {
   lane: Lane;
   dex: DexId;
   liquidityUsd: number | null | undefined;
+  /** W7.4 — reuse entry timestamp when rebuilding OpenTrade after Jupiter price override. */
+  entryTs?: number;
 }
 
 export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
-  const { cfg, row, lane, dex, liquidityUsd } = args;
+  const { cfg, row, lane, dex, liquidityUsd, entryTs: fixedEntryTs } = args;
   const sizeUsd = cfg.positionUsd;
   const marketPrice = Number(row.price_usd);
   const { effectivePrice } = applyEntryCosts(cfg, marketPrice, dex, sizeUsd, liquidityUsd ?? row.liquidity_usd);
-  const ts = Date.now();
+  const ts = fixedEntryTs ?? Date.now();
   const firstLeg: PositionLeg = {
     ts,
     price: effectivePrice,

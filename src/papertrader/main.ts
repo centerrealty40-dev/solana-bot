@@ -14,6 +14,7 @@ import {
   getLiveMcUsd,
 } from './pricing.js';
 import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
+import { verifyEntryPrice } from './pricing/price-verify.js';
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
@@ -28,7 +29,7 @@ import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
 import { trackerTick, type TrackerStats } from './executor/tracker.js';
 import { loadStore } from './executor/store-restore.js';
-import type { ClosedTrade, ExitReason, OpenTrade, SafetyVerdict } from './types.js';
+import type { ClosedTrade, ExitReason, OpenTrade, PriceVerifyVerdict, SafetyVerdict } from './types.js';
 import { evaluateMintSafety } from './safety/index.js';
 
 const logger = pino({ name: 'papertrader' });
@@ -64,6 +65,7 @@ export async function main(): Promise<void> {
     passed: 0,
     opened: 0,
     skippedSafety: 0,
+    skippedPriceVerify: 0,
     ticks: 0,
     errors: 0,
   };
@@ -148,7 +150,7 @@ export async function main(): Promise<void> {
           holder_count: d.features.holders,
           token_age_min: d.features.token_age_min,
         };
-        const ot = makeOpenTradeFromEntry({
+        let ot = makeOpenTradeFromEntry({
           cfg,
           row,
           lane: d.lane,
@@ -196,6 +198,59 @@ export async function main(): Promise<void> {
           /* best-effort */
         }
 
+        const snapshotEntryPriceUsd = d.features.price_usd;
+        let priceVerify: PriceVerifyVerdict | null = null;
+        if (cfg.priceVerifyEnabled) {
+          let dec = 6;
+          if (safetyAttached && 'decimals' in safetyAttached && safetyAttached.decimals != null) {
+            const d0 = Number(safetyAttached.decimals);
+            if (Number.isFinite(d0) && d0 >= 0) dec = Math.floor(d0);
+          }
+          try {
+            priceVerify = await verifyEntryPrice({
+              cfg,
+              mint: ot.mint,
+              outMintDecimals: dec,
+              sizeUsd: cfg.positionUsd,
+              solUsd: getSolUsd() ?? 0,
+              snapshotPriceUsd: snapshotEntryPriceUsd,
+            });
+          } catch (e) {
+            logger.warn({ err: (e as Error)?.message, mint: ot.mint }, 'verifyEntryPrice threw');
+            priceVerify = { kind: 'skipped', reason: 'fetch-fail', ts: Date.now() };
+          }
+          if (priceVerify.kind === 'blocked' && cfg.priceVerifyBlockOnFail) {
+            stats.skippedPriceVerify += 1;
+            appendEvent({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: ot.mint,
+              reason: `price_verify:${priceVerify.reason}`,
+              snapshotPriceUsd: priceVerify.snapshotPriceUsd,
+              jupiterPriceUsd: priceVerify.jupiterPriceUsd,
+              slipPct: priceVerify.slipPct,
+              priceImpactPct: priceVerify.priceImpactPct,
+            });
+            continue;
+          }
+          if (
+            priceVerify.kind === 'ok' &&
+            cfg.priceVerifyUseJupiterPrice &&
+            priceVerify.jupiterPriceUsd > 0
+          ) {
+            const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd };
+            ot = makeOpenTradeFromEntry({
+              cfg,
+              row: rowJ,
+              lane: d.lane,
+              dex,
+              liquidityUsd: d.features.liq_usd,
+              entryTs: ot.entryTs,
+            });
+          }
+        }
+
         const pfQuoteOpen = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         appendEvent({
           kind: 'open',
@@ -207,6 +262,7 @@ export async function main(): Promise<void> {
           entryTs: ot.entryTs,
           entryMcUsd: ot.entryMcUsd,
           entryMarketPrice: ot.legs[0]?.marketPrice ?? ot.entryMcUsd,
+          snapshotEntryPriceUsd,
           legs: ot.legs,
           totalInvestedUsd: ot.totalInvestedUsd,
           avgEntry: ot.avgEntry,
@@ -220,6 +276,7 @@ export async function main(): Promise<void> {
           safety: safetyAttached,
           mcUsdLive: mcUsdLiveOpen,
           priorityFee: pfQuoteOpen,
+          priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
         });
 
         open.set(ot.mint, ot);
@@ -305,7 +362,8 @@ export async function main(): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      skippedPriceVerify: stats.skippedPriceVerify,
     });
     logger.info({
       msg: 'heartbeat',

@@ -289,3 +289,46 @@ export interface PriorityFeeQuote {
   ageMs: number | null;
   ts: number;
 }
+
+/** Wrapped SOL mint — Jupiter quote `inputMint` for SOL → token. */
+export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+/**
+ * W7.4 — pre-entry price verification verdict (Jupiter quote sanity check).
+ * Stamped on `open` when cfg.priceVerifyEnabled === true.
+ */
+export type PriceVerifyVerdict =
+  | {
+      kind: 'ok';
+      jupiterPriceUsd: number;
+      snapshotPriceUsd: number;
+      slipPct: number;
+      priceImpactPct: number;
+      routeHops: number;
+      source: 'jupiter';
+      ageMs: number;
+      ts: number;
+    }
+  | {
+      kind: 'blocked';
+      jupiterPriceUsd: number;
+      snapshotPriceUsd: number;
+      slipPct: number;
+      priceImpactPct: number;
+      routeHops: number;
+      reason: 'slip-too-high' | 'impact-too-high' | 'no-route';
+      source: 'jupiter';
+      ageMs: number;
+      ts: number;
+    }
+  | {
+      kind: 'skipped';
+      reason:
+        | 'feature-disabled'
+        | 'sol-px-missing'
+        | 'fetch-fail'
+        | 'timeout'
+        | 'http-error'
+        | 'parse-error';
+      ts: number;
+    };

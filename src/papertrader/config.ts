@@ -157,6 +157,15 @@ const ConfigSchema = z.object({
   priorityFeeRpcTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
   priorityFeePercentile: z.enum(['p50', 'p75', 'p90']).default('p75'),
   priorityFeeTargetCu: z.coerce.number().int().min(50_000).max(1_400_000).default(200_000),
+
+  /** W7.4 — pre-entry Jupiter quote sanity check. */
+  priceVerifyEnabled: z.boolean().default(false),
+  priceVerifyBlockOnFail: z.boolean().default(false),
+  priceVerifyUseJupiterPrice: z.boolean().default(false),
+  priceVerifyMaxSlipPct: z.coerce.number().min(0.1).max(50).default(4.0),
+  priceVerifyMaxSlipBps: z.coerce.number().int().min(10).max(5_000).default(400),
+  priceVerifyMaxPriceImpactPct: z.coerce.number().min(0.1).max(80).default(8.0),
+  priceVerifyTimeoutMs: z.coerce.number().int().min(500).max(8_000).default(2500),
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -282,6 +291,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       return undefined;
     })(),
     priorityFeeTargetCu: process.env.PAPER_PRIORITY_FEE_TARGET_CU,
+    priceVerifyEnabled: process.env.PAPER_PRICE_VERIFY_ENABLED === '1',
+    priceVerifyBlockOnFail: process.env.PAPER_PRICE_VERIFY_BLOCK_ON_FAIL === '1',
+    priceVerifyUseJupiterPrice: process.env.PAPER_PRICE_VERIFY_USE_JUPITER_PRICE === '1',
+    priceVerifyMaxSlipPct: process.env.PAPER_PRICE_VERIFY_MAX_SLIP_PCT,
+    priceVerifyMaxSlipBps: process.env.PAPER_PRICE_VERIFY_MAX_SLIP_BPS,
+    priceVerifyMaxPriceImpactPct: process.env.PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT,
+    priceVerifyTimeoutMs: process.env.PAPER_PRICE_VERIFY_TIMEOUT_MS,
   });
 
   if (!parsed.success) {

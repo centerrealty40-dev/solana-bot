@@ -125,9 +125,12 @@
             </div>
           </div>
 
-          <div class="mt-4 text-xs text-slate-300">
+          <div class="mt-4 text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-1 items-center">
             <span class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
             <span class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span class="text-slate-400 ml-1" x-show="s.priceVerify"
+                  x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
+                          + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
           </div>
         </div>
       </template>
@@ -142,8 +145,11 @@
           <h2 class="text-2xl font-bold text-white" x-text="describe(selected).label"></h2>
           <div class="text-sm text-slate-300 mt-1 max-w-3xl" x-text="describe(selected).description"></div>
         </div>
-        <div class="text-sm text-slate-300">
-          last event: <span class="mono text-slate-100" x-text="lastTs(selectedRow())"></span>
+        <div class="text-sm text-slate-300 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>last event: <span class="mono text-slate-100" x-text="lastTs(selectedRow())"></span></span>
+          <span class="text-slate-400" x-show="selectedRow()?.priceVerify"
+                x-text="'pverify ' + (selectedRow()?.priceVerify?.blockedCount ?? 0) + ' blocked · '
+                        + (selectedRow()?.priceVerify?.avgSlipPct != null ? selectedRow().priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
         </div>
       </div>
 
@@ -216,6 +222,11 @@
                       <span class="font-semibold mono"
                             :class="entryMcapOk(o) ? 'text-sky-200' : 'text-slate-500'"
                             x-text="entryMcapOk(o) ? fmtUsd(o.entryMcapAtBuyUsd) : 'n/a'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry slip</span>
+                      <span class="font-semibold mono"
+                            :class="entrySlipColor(o)"
+                            x-text="entrySlipLabel(o)"></span>
                     </div>
                   </div>
                   <div class="text-right max-w-[13rem]">
@@ -272,6 +283,11 @@
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">at close</span>
                       <span class="font-semibold mono" :class="closedExitMcapOk(c) ? 'text-slate-200' : 'text-slate-500'" x-text="closedExitMcapOk(c) ? fmtUsd(c.exitMcapUsd) : 'n/a'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry slip</span>
+                      <span class="font-semibold mono"
+                            :class="entrySlipColor(c)"
+                            x-text="entrySlipLabel(c)"></span>
                     </div>
                   </div>
                   <div class="text-right">
@@ -342,6 +358,18 @@
         oneLiner: 'Scalp pullbacks on Raydium/Meteora runners ≥6h old. DCA + TP-ladder.',
         description: 'Same as Dip Runners — PM2 id pt1-diprunner. Post-migration pools, DCA + TP-ladder, killstop. Position $100 base.',
       },
+      'pt1-dno': {
+        label: 'Dno (pt1-dno)',
+        tag: 'dno',
+        oneLiner: 'Fast scalper on mature post-lane pools (3–72h). No DCA, tight ladder.',
+        description: 'PM2 id pt1-dno. Post-lane age 180–4320 min, tight TP-ladder, hard SL, timeout 1h. Position $100.',
+      },
+      'pt1-oscar': {
+        label: 'Oscar (pt1-oscar)',
+        tag: 'oscar',
+        oneLiner: 'Mid-hold dip strategy with balanced TP-ladder + DCA.',
+        description: 'PM2 id pt1-oscar. Oscar-style dip runner clone. Position $100 base.',
+      },
       pt1_oscar_clone: {
         label: 'Oscar Clone',
         tag: 'oscar',
@@ -394,6 +422,21 @@
           if (p === 'journal') return 'Цена для PnL: последняя в журнале';
           if (p === 'snapshots') return 'Цена для PnL: DEX-снимки';
           return '';
+        },
+        entrySlipLabel(o) {
+          if (o.entryPriceVerifySource == null) return 'n/a';
+          if (o.entryPriceVerifySource === 'blocked') return 'blocked';
+          if (o.entryPriceVerifySource === 'skipped') return 'skip';
+          if (o.entryPriceVerifySlipPct == null) return 'n/a';
+          const v = o.entryPriceVerifySlipPct;
+          return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+        },
+        entrySlipColor(o) {
+          if (o.entryPriceVerifySource !== 'jupiter') return 'text-slate-500';
+          const v = Math.abs(o.entryPriceVerifySlipPct ?? 0);
+          if (v >= 4) return 'text-rose-400';
+          if (v >= 2) return 'text-amber-300';
+          return 'text-emerald-300';
         },
         closedEntryMcapOk(c) {
           const x = Number(c?.entryMcapAtBuyUsd ?? 0);
