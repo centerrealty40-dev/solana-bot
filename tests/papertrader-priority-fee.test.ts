@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
 
 vi.mock('../src/core/rpc/qn-client.js', () => ({
   qnCall: vi.fn(),
@@ -25,6 +27,11 @@ const baseCfg = {
 beforeEach(() => {
   vi.mocked(qnCall).mockReset();
   _resetPriorityFeeStateForTests();
+  // Avoid reading repo workspace data/priority-fee-cache.json (would look like "live").
+  process.env.PAPER_PRIORITY_FEE_CACHE_PATH = path.join(
+    os.tmpdir(),
+    `vitest-priority-fee-no-cache-${process.pid}-${Date.now()}.json`,
+  );
 });
 
 describe('priority-fee monitor', () => {

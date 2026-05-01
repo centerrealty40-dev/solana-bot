@@ -454,6 +454,17 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+
+        // W7.5 — canary 1: pt1-dno shadow only (diprunner/oscar omit until full rollout).
+        PAPER_LIQ_WATCH_ENABLED: '1',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
+        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
+        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
+        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
+        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
+        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
+        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
+        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
       },
     },
   ],

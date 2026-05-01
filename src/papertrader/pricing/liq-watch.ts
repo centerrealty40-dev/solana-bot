@@ -203,3 +203,8 @@ export async function buildOptionalLiqWatchCloseStamp(
     ts,
   };
 }
+
+/** Test seam — vitest only (shared DB client has no pool to tear down here). */
+export function _liqWatchInternalForTests(): { reset(): void } {
+  return { reset(): void {} };
+}
