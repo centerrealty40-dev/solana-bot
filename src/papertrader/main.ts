@@ -442,6 +442,7 @@ export async function main(): Promise<void> {
       note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
       holdersResolveStats: holdersStats,
+      trackerStats: trackerStats.closed,
     });
     logger.info({
       msg: 'heartbeat',

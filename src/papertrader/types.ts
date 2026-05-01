@@ -182,6 +182,8 @@ export interface HeartbeatEvent extends JsonlEventBase {
   btc: { ret1h_pct: number | null; ret4h_pct: number | null; updated_ts: number | null };
   /** "no candidates" / "filters not implemented" / "discovery skipped" — диагностика. */
   note?: string;
+  /** W7.5 — exit counters including LIQ_DRAIN (same object as tracker stats RAM). */
+  trackerStats?: Record<ExitReason, number>;
 }
 
 export interface SnapshotCandidateRow {
