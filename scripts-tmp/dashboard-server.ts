@@ -176,10 +176,11 @@ async function getDexLivePrice(mint: string, source: string | null): Promise<num
   const sources: readonly string[] = ['raydium', 'meteora', 'orca', 'moonshot'];
   const tableOrder =
     source && sources.includes(source) ? [`${source}_pair_snapshots`, ...sources.filter((s) => s !== source).map((s) => `${s}_pair_snapshots`)] : DEX_SNAPSHOT_TABLES.slice();
+  /** Wider than mcap cache: pair collectors can lag; UI only needs a reasonable reference. */
   const subqueries = tableOrder.map(
     (t) => `
       SELECT ts, price_usd FROM ${t}
-      WHERE base_mint = $1 AND ts >= now() - interval '6 hours'
+      WHERE base_mint = $1 AND ts >= now() - interval '7 days'
         AND price_usd IS NOT NULL AND price_usd > 0
       ORDER BY ts DESC LIMIT 1
     `,
@@ -1258,7 +1259,10 @@ app.get('/api/paper2', async (_req, reply) => {
     const enrichedOpen: EnrichedOpen[] = await Promise.all(
       open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
         const isMcMetric = ot.metricType === 'mc';
-        const liveMc = await getCurrentMcAny(ot.mint).catch(() => null);
+        /** Pump.fun USD mcap is only meaningful when the strategy journals metricType=mc; otherwise skip (avoid nonsense values on AMM migrations). */
+        const liveMc = isMcMetric
+          ? await getCurrentMcAny(ot.mint).catch(() => null)
+          : null;
         const hasLiveMc = liveMc != null && liveMc > 0;
 
         const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
@@ -1272,7 +1276,7 @@ app.get('/api/paper2', async (_req, reply) => {
         const baseEntryUsd =
           ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
 
-        const currentMcUsd = hasLiveMc ? (liveMc as number) : baseEntryUsd ?? 0;
+        const currentMcUsd = hasLiveMc ? (liveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
         const livePriceUsd = hasLivePrice ? livePx : null;
 
         let pnlPct: number | null = null;
