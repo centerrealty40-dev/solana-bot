@@ -8,160 +8,179 @@
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
-    body { background:#0a0f1c; color:#e5e7eb; }
+    body { background:#0a0f1c; color:#e5e7eb; font-size: 16px; }
     .card { background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); }
     .mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
-    .pill { display:inline-flex; padding:0 8px; border-radius:999px; font-size:11px; line-height:18px; }
+    /* Small caps labels — larger & higher contrast than raw text-[10px] slate-500 */
+    .label-caps {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #cbd5e1;
+    }
+    .stat-num {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #f8fafc;
+      line-height: 1.25;
+    }
+    .pill { display:inline-flex; padding:2px 10px; border-radius:999px; font-size:12px; line-height:1.35; font-weight:600; }
     .pill-ok { background: rgba(16,185,129,.12); color:#34d399; }
     .pill-bad { background: rgba(244,63,94,.12); color:#fb7185; }
-    .pill-info { background: rgba(99,102,241,.15); color:#a5b4fc; }
+    .pill-info { background: rgba(99,102,241,.15); color:#c7d2fe; }
     /* Timeline readability */
-    .timeline-pane { font-size: 0.9375rem; line-height: 1.55; }
-    .timeline-pane .timeline-ts { flex: 0 0 auto; width: 9.75rem; }
-    @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 10.75rem; } }
+    .timeline-pane { font-size: 1.0625rem; line-height: 1.55; color: #e2e8f0; }
+    .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
+    @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
   </style>
 </head>
 <body x-data="paperBoard()" x-init="boot()" class="min-h-screen">
-  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+  <main class="max-w-[min(100%,96rem)] w-full mx-auto px-4 sm:px-6 py-6 space-y-7">
     <header class="flex items-center justify-between gap-3 flex-wrap">
       <div>
-        <h1 class="text-3xl font-black">PaperTrader · 3 strategies</h1>
-        <p class="text-sm text-slate-400">refresh 15s · position $100 each · advisor every 4h · digest daily</p>
+        <h1 class="text-3xl font-black tracking-tight text-white">PaperTrader · 3 strategies</h1>
+        <p class="text-sm text-slate-300 mt-1">refresh 15s · position $100 each · advisor every 4h · digest daily</p>
       </div>
-      <div class="text-xs text-slate-400">updated: <span x-text="updatedAt">—</span></div>
+      <div class="text-sm text-slate-300">updated: <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
     </header>
 
-    <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
-      <div class="card rounded-lg p-3">
-        <div class="text-[10px] uppercase text-slate-500">Σ Realized</div>
-        <div class="text-lg font-bold mono"
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div class="card rounded-xl p-4">
+        <div class="label-caps">Σ Realized</div>
+        <div class="text-xl font-bold mono stat-num mt-1"
              :class="(state.totals?.realizedPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
              x-text="fmtUsdSigned(state.totals?.realizedPnlUsd)"></div>
       </div>
-      <div class="card rounded-lg p-3">
-        <div class="text-[10px] uppercase text-slate-500">Σ Unrealized</div>
-        <div class="text-lg font-bold mono"
+      <div class="card rounded-xl p-4">
+        <div class="label-caps">Σ Unrealized</div>
+        <div class="text-xl font-bold mono stat-num mt-1"
              :class="(state.totals?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'"
              x-text="fmtUsdSigned(state.totals?.unrealizedPnlUsd)"></div>
       </div>
-      <div class="card rounded-lg p-3">
-        <div class="text-[10px] uppercase text-slate-500">Σ Total</div>
-        <div class="text-lg font-bold mono"
+      <div class="card rounded-xl p-4">
+        <div class="label-caps">Σ Total</div>
+        <div class="text-xl font-bold mono stat-num mt-1"
              :class="(state.totals?.totalPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
              x-text="fmtUsdSigned(state.totals?.totalPnlUsd)"></div>
       </div>
-      <div class="card rounded-lg p-3">
-        <div class="text-[10px] uppercase text-slate-500">Open / Closed</div>
-        <div class="text-lg font-bold mono">
+      <div class="card rounded-xl p-4">
+        <div class="label-caps">Open / Closed</div>
+        <div class="text-xl font-bold mono stat-num mt-1">
           <span x-text="(state.totals?.open || 0)"></span>
-          <span class="text-slate-500"> / </span>
+          <span class="text-slate-400 font-semibold"> / </span>
           <span x-text="(state.totals?.closed || 0)"></span>
         </div>
       </div>
-      <div class="card rounded-lg p-3">
-        <div class="text-[10px] uppercase text-slate-500">Strategies</div>
-        <div class="text-lg font-bold mono" x-text="(state.totals?.strategies || 0)"></div>
+      <div class="card rounded-xl p-4">
+        <div class="label-caps">Strategies</div>
+        <div class="text-xl font-bold mono stat-num mt-1" x-text="(state.totals?.strategies || 0)"></div>
       </div>
     </section>
 
-    <section class="grid md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <!-- Three strategy tiles use full width (no lg:5-col squeeze). -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
       <template x-for="s in (state.strategies || [])" :key="s.strategyId">
-        <div class="card rounded-lg p-4 cursor-pointer transition"
-             :class="selected === s.strategyId ? 'ring-2 ring-violet-500/60' : 'hover:bg-white/5'"
+        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition min-h-[220px]"
+             :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
              @click="selected = s.strategyId">
-          <div class="flex items-center justify-between">
-            <div class="text-base font-semibold" x-text="describe(s.strategyId).label"></div>
-            <span class="pill pill-info" x-text="describe(s.strategyId).tag"></span>
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-lg font-bold text-white" x-text="describe(s.strategyId).label"></div>
+            <span class="pill pill-info shrink-0" x-text="describe(s.strategyId).tag"></span>
           </div>
-          <div class="text-xs text-slate-400 mt-1" x-text="describe(s.strategyId).oneLiner"></div>
+          <div class="text-sm text-slate-300 mt-2 leading-snug" x-text="describe(s.strategyId).oneLiner"></div>
 
-          <div class="grid grid-cols-3 gap-2 mt-4 text-sm mono">
+          <div class="grid grid-cols-3 gap-x-4 gap-y-4 mt-5 mono">
             <div>
-              <div class="text-[10px] uppercase text-slate-500">Realized</div>
-              <div class="font-bold" :class="(s.realizedPnlUsd ?? s.sumPnlUsd) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.realizedPnlUsd ?? s.sumPnlUsd)"></div>
+              <div class="label-caps">Realized</div>
+              <div class="stat-num mt-1" :class="(s.realizedPnlUsd ?? s.sumPnlUsd) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.realizedPnlUsd ?? s.sumPnlUsd)"></div>
             </div>
             <div>
-              <div class="text-[10px] uppercase text-slate-500">Unreal</div>
-              <div class="font-bold" :class="(s.unrealizedPnlUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(s.unrealizedPnlUsd || 0)"></div>
+              <div class="label-caps">Unreal</div>
+              <div class="stat-num mt-1" :class="(s.unrealizedPnlUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(s.unrealizedPnlUsd || 0)"></div>
             </div>
             <div>
-              <div class="text-[10px] uppercase text-slate-500">Total</div>
-              <div class="font-bold" :class="(s.totalPnlUsd||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.totalPnlUsd || 0)"></div>
+              <div class="label-caps">Total</div>
+              <div class="stat-num mt-1" :class="(s.totalPnlUsd||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.totalPnlUsd || 0)"></div>
             </div>
             <div>
-              <div class="text-[10px] uppercase text-slate-500">WinRate</div>
-              <div class="font-bold" x-text="s.closedCount ? fmtPct(s.winRate) : '—'"></div>
+              <div class="label-caps">Win rate</div>
+              <div class="stat-num mt-1 text-white" x-text="s.closedCount ? fmtPct(s.winRate) : '—'"></div>
             </div>
             <div>
-              <div class="text-[10px] uppercase text-slate-500">Open</div>
-              <div class="font-bold" x-text="s.openCount"></div>
+              <div class="label-caps">Open</div>
+              <div class="stat-num mt-1 text-white" x-text="s.openCount"></div>
             </div>
-            <div>
-              <div class="text-[10px] uppercase text-slate-500">Closed · Hours</div>
-              <div class="font-bold">
-                <span x-text="s.closedCount"></span>
-                <span class="text-slate-500"> · </span>
-                <span x-text="(s.hoursOfData || 0).toFixed(1)"></span>
+            <div class="col-span-3 md:col-span-1">
+              <div class="flex flex-wrap gap-x-10 gap-y-2">
+                <div>
+                  <div class="label-caps">Closed</div>
+                  <div class="stat-num mt-1 text-white" x-text="s.closedCount"></div>
+                </div>
+                <div>
+                  <div class="label-caps">Hours</div>
+                  <div class="stat-num mt-1 text-white" x-text="(s.hoursOfData || 0).toFixed(1)"></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="mt-3 text-[11px] text-slate-400">
+          <div class="mt-4 text-xs text-slate-300">
             <span class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
             <span class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
           </div>
         </div>
       </template>
-      <div x-show="!(state.strategies || []).length" class="card rounded-lg p-6 text-center text-slate-500 md:col-span-3">
+      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 md:col-span-3">
         No strategies yet — collectors warming up.
       </div>
     </section>
 
-    <section class="card rounded-lg p-4" x-show="selectedRow()">
+    <section class="card rounded-xl p-5 lg:p-6" x-show="selectedRow()">
       <div class="flex items-baseline justify-between gap-2 flex-wrap">
         <div>
-          <h2 class="text-xl font-bold" x-text="describe(selected).label"></h2>
-          <div class="text-xs text-slate-400" x-text="describe(selected).description"></div>
+          <h2 class="text-2xl font-bold text-white" x-text="describe(selected).label"></h2>
+          <div class="text-sm text-slate-300 mt-1 max-w-3xl" x-text="describe(selected).description"></div>
         </div>
-        <div class="text-xs text-slate-500">
-          last event: <span class="mono" x-text="lastTs(selectedRow())"></span>
+        <div class="text-sm text-slate-300">
+          last event: <span class="mono text-slate-100" x-text="lastTs(selectedRow())"></span>
         </div>
       </div>
 
-      <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm mono">
-        <div class="card rounded p-3">
-          <div class="text-[10px] uppercase text-slate-500">Realized PnL</div>
-          <div class="text-lg font-bold" :class="(selectedRow()?.sumPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.sumPnlUsd)"></div>
+      <div class="grid md:grid-cols-4 gap-4 mt-5 mono">
+        <div class="card rounded-lg p-4">
+          <div class="label-caps">Realized PnL</div>
+          <div class="text-xl font-bold mt-1" :class="(selectedRow()?.sumPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.sumPnlUsd)"></div>
         </div>
-        <div class="card rounded p-3">
-          <div class="text-[10px] uppercase text-slate-500">Unrealized</div>
-          <div class="text-lg font-bold" :class="(selectedRow()?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.unrealizedPnlUsd ?? selectedRow()?.unrealizedUsd)"></div>
+        <div class="card rounded-lg p-4">
+          <div class="label-caps">Unrealized</div>
+          <div class="text-xl font-bold mt-1" :class="(selectedRow()?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(selectedRow()?.unrealizedPnlUsd ?? selectedRow()?.unrealizedUsd)"></div>
         </div>
-        <div class="card rounded p-3">
-          <div class="text-[10px] uppercase text-slate-500">Avg / Avg Peak</div>
-          <div class="text-lg font-bold">
+        <div class="card rounded-lg p-4">
+          <div class="label-caps">Avg / Avg Peak</div>
+          <div class="text-xl font-bold mt-1 text-slate-50">
             <span x-text="fmtPct(selectedRow()?.avgPnl)"></span>
-            <span class="text-slate-500"> / </span>
+            <span class="text-slate-400"> / </span>
             <span x-text="fmtPct(selectedRow()?.avgPeak)"></span>
           </div>
         </div>
-        <div class="card rounded p-3">
-          <div class="text-[10px] uppercase text-slate-500">Best / Worst trade</div>
-          <div class="text-lg font-bold">
+        <div class="card rounded-lg p-4">
+          <div class="label-caps">Best / Worst trade</div>
+          <div class="text-xl font-bold mt-1">
             <span class="text-emerald-400" x-text="fmtUsdSigned(selectedRow()?.bestPnlUsd)"></span>
-            <span class="text-slate-500"> / </span>
+            <span class="text-slate-400"> / </span>
             <span class="text-rose-400" x-text="fmtUsdSigned(selectedRow()?.worstPnlUsd)"></span>
           </div>
         </div>
       </div>
 
-      <div class="grid md:grid-cols-5 gap-2 text-xs mono mt-3">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm mono mt-4">
         <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA']" :key="r">
-          <div class="card rounded p-2">
-            <div class="text-[10px] uppercase text-slate-500" x-text="r"></div>
-            <div class="font-bold">
+          <div class="card rounded-lg p-3">
+            <div class="label-caps" x-text="r"></div>
+            <div class="stat-num mt-1 text-base">
               <span x-text="(selectedRow()?.exitsBreakdown?.[r]?.count) || 0"></span>
-              <span class="text-slate-500" x-show="selectedRow()?.exitsBreakdown?.[r]?.count">·</span>
+              <span class="text-slate-400" x-show="selectedRow()?.exitsBreakdown?.[r]?.count">·</span>
               <span x-show="selectedRow()?.exitsBreakdown?.[r]?.count" :class="(selectedRow()?.exitsBreakdown?.[r]?.sumUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
                     x-text="fmtUsdSigned(selectedRow()?.exitsBreakdown?.[r]?.sumUsd)"></span>
             </div>
@@ -169,29 +188,41 @@
         </template>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4 mt-5">
+      <div class="grid md:grid-cols-2 gap-6 lg:gap-8 mt-6">
         <div>
-          <h3 class="font-semibold mb-2">Open positions</h3>
-          <div class="space-y-1 text-sm">
+          <h3 class="text-lg font-bold text-white mb-3">Open positions</h3>
+          <div class="space-y-2 text-base">
             <template x-for="o in (selectedRow()?.open || [])" :key="o.mint + o.entryTs">
               <div class="border-b border-white/5 pb-1">
                 <div class="flex items-center justify-between cursor-pointer hover:bg-white/5 px-1 -mx-1 rounded"
                      @click="toggleExpand(o.mint + ':' + o.entryTs)">
                   <div class="flex flex-col">
                     <div>
-                      <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
+                      <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <a :href="gmgn(o.mint)" target="_blank" @click.stop
-                         class="text-amber-300 text-sm font-medium" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
-                      <span class="text-slate-500 text-xs ml-1" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
+                         class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <span class="text-xs text-slate-500">
-                      age <span x-text="Math.round(o.ageMin || 0)"></span>m ·
-                      <span class="text-slate-400" x-text="liveCurCaption(o)"></span>
-                    </span>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug">
+                      <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">live mcap</span>
+                      <span class="font-semibold mono"
+                            :class="o.hasLiveMc ? 'text-emerald-300' : 'text-rose-400'"
+                            x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
+                      <span class="text-slate-500 text-xs" x-text="liveMcSourceLabel(o)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">at buy</span>
+                      <span class="font-semibold mono"
+                            :class="entryMcapOk(o) ? 'text-sky-200' : 'text-slate-500'"
+                            x-text="entryMcapOk(o) ? fmtUsd(o.entryMcapAtBuyUsd) : 'n/a'"></span>
+                    </div>
                   </div>
-                  <div class="text-right">
-                    <div class="mono text-sm font-semibold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
-                    <div class="text-xs" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                  <div class="text-right max-w-[13rem]">
+                    <div class="mono text-base font-bold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
+                    <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет цены (сначала DEX-снимки base/quote, затем журнал, затем Jupiter). Проверьте базу входа в open.</div>
+                    <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
@@ -202,7 +233,7 @@
                       <span class="flex-1 min-w-0" :class="timelineColor(ev)">
                         <span class="font-medium" x-text="ev.label"></span>
                         <span class="text-slate-500"> · </span>
-                        <span class="text-slate-400" x-text="timelineMarketLine(ev)"></span>
+                        <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
                         <span x-show="ev.pnlUsd != null">
                           <span class="text-slate-500"> · </span>
                           <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
@@ -219,24 +250,33 @@
         </div>
 
         <div>
-          <h3 class="font-semibold mb-2">Recent closes</h3>
-          <div class="space-y-1 text-sm">
+          <h3 class="text-lg font-bold text-white mb-3">Recent closes</h3>
+          <div class="space-y-2 text-base">
             <template x-for="c in (selectedRow()?.recentClosed || [])" :key="c.mint + c.exitTs">
               <div class="border-b border-white/5 pb-1">
                 <div class="flex items-center justify-between cursor-pointer hover:bg-white/5 px-1 -mx-1 rounded"
                      @click="toggleExpand('c:' + c.mint + ':' + c.exitTs)">
                   <div class="flex flex-col">
                     <div>
-                      <span class="text-slate-500 text-[10px] mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
+                      <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
                       <a :href="gmgn(c.mint)" target="_blank" @click.stop
-                         class="text-sky-300 text-sm font-medium" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
-                      <span class="text-slate-500 text-xs ml-1" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
+                         class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <span class="text-xs text-slate-500" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm">
+                      <span class="text-slate-300" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug">
+                      <span class="text-slate-400">mcap at buy</span>
+                      <span class="font-semibold mono" :class="closedEntryMcapOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryMcapOk(c) ? fmtUsd(c.entryMcapAtBuyUsd) : 'n/a'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">at close</span>
+                      <span class="font-semibold mono" :class="closedExitMcapOk(c) ? 'text-slate-200' : 'text-slate-500'" x-text="closedExitMcapOk(c) ? fmtUsd(c.exitMcapUsd) : 'n/a'"></span>
+                    </div>
                   </div>
                   <div class="text-right">
-                    <div class="mono text-sm" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
-                    <div class="text-xs" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                    <div class="mono text-base font-bold" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
+                    <div class="text-sm font-medium" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
@@ -247,7 +287,7 @@
                       <span class="flex-1 min-w-0" :class="timelineColor(ev)">
                         <span class="font-medium" x-text="ev.label"></span>
                         <span class="text-slate-500"> · </span>
-                        <span class="text-slate-400" x-text="timelineMarketLine(ev)"></span>
+                        <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
                         <span x-show="ev.pnlUsd != null">
                           <span class="text-slate-500"> · </span>
                           <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
@@ -264,13 +304,13 @@
         </div>
       </div>
 
-      <div class="mt-5">
-        <h3 class="font-semibold mb-2">Top fail reasons (last 1h)</h3>
-        <div class="flex flex-wrap gap-2 text-xs">
+      <div class="mt-6">
+        <h3 class="text-lg font-bold text-white mb-3">Top fail reasons (last 1h)</h3>
+        <div class="flex flex-wrap gap-2 text-sm">
           <template x-for="r in (selectedRow()?.failReasons || [])" :key="r.reason">
             <span class="pill pill-bad" x-text="r.reason + ': ' + r.count"></span>
           </template>
-          <span x-show="!(selectedRow()?.failReasons || []).length" class="text-slate-500">no fails</span>
+          <span x-show="!(selectedRow()?.failReasons || []).length" class="text-slate-400">no fails</span>
         </div>
       </div>
     </section>
@@ -295,6 +335,12 @@
         tag: 'dip',
         oneLiner: 'Scalp pullbacks on Raydium/Meteora runners ≥6h old. DCA + TP-ladder.',
         description: 'Post-migration only. Age ≥6h, liquidity ≥$20k, vol5m ≥$2k. Dip -10..-30% from 2h high after a ≥30% impulse. DCA: -7% +50% size, -15% +50% size, killstop -22% from average. TP-ladder 5/10/15% (30/35/25%) + trailing 10% on rest. Timeout 90m. Position $100 base.',
+      },
+      'pt1-diprunner': {
+        label: 'Deep Runner (diprunner)',
+        tag: 'dip',
+        oneLiner: 'Scalp pullbacks on Raydium/Meteora runners ≥6h old. DCA + TP-ladder.',
+        description: 'Same as Dip Runners — PM2 id pt1-diprunner. Post-migration pools, DCA + TP-ladder, killstop. Position $100 base.',
       },
       pt1_oscar_clone: {
         label: 'Oscar Clone',
@@ -330,22 +376,32 @@
         },
         timelineMarketLine(ev) {
           const m = Number(ev.mcUsd || 0);
-          const p = Number(ev.spotPxUsd ?? 0);
-          const chunks = [];
-          chunks.push(`mcap ${m > 0 ? this.fmtUsd(m) : 'n/a'}`);
-          if (p > 0) chunks.push(`px ${this.fmtPrice(p)}`);
-          return chunks.join(' · ');
+          return `mcap ${m > 0 ? this.fmtUsd(m) : 'n/a'}`;
         },
-        liveCurCaption(o) {
-          const m = Number(o?.currentMcUsd || 0);
-          const px = Number(o?.livePriceUsd ?? 0);
-          const chunks = [];
-          if (o?.hasLiveMc && m > 0) chunks.push(`mcap ${this.fmtUsd(m)}`);
-          else chunks.push('mcap n/a');
-          if (o?.hasLivePrice && px > 0) chunks.push(`spot ${this.fmtPrice(px)}`);
-          else if (!(o?.hasLiveMc && m > 0) && !(px > 0))
-            chunks.push('no snapshot (6h)');
-          return chunks.join(' · ');
+        entryMcapOk(o) {
+          const x = Number(o?.entryMcapAtBuyUsd ?? 0);
+          return Number.isFinite(x) && x > 0;
+        },
+        liveMcSourceLabel(o) {
+          if (!o?.hasLiveMc) return '';
+          if (o.liveMcProvenance === 'pump.fun') return '(pump.fun)';
+          if (o.liveMcProvenance === 'snapshots') return '(DEX)';
+          return '';
+        },
+        livePxSourceLabel(o) {
+          const p = o?.livePxProvenance;
+          if (p === 'jupiter') return 'Цена для PnL: Jupiter';
+          if (p === 'journal') return 'Цена для PnL: последняя в журнале';
+          if (p === 'snapshots') return 'Цена для PnL: DEX-снимки';
+          return '';
+        },
+        closedEntryMcapOk(c) {
+          const x = Number(c?.entryMcapAtBuyUsd ?? 0);
+          return Number.isFinite(x) && x > 0;
+        },
+        closedExitMcapOk(c) {
+          const x = Number(c?.exitMcapUsd ?? 0);
+          return Number.isFinite(x) && x > 0;
         },
         timelineColor(ev) {
           if (!ev) return 'text-slate-300';
@@ -391,14 +447,6 @@
           return `$${x.toFixed(2)}`;
         },
         fmtUsdSigned(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : '-'}${this.fmtUsd(Math.abs(x))}`; },
-        fmtPrice(v) {
-          const x = Number(v);
-          if (!(x > 0) || !Number.isFinite(x)) return '$—';
-          const a = Math.abs(x);
-          if (a >= 1) return `$${x.toFixed(4)}`;
-          if (a >= 1e-2) return `$${x.toFixed(6)}`;
-          return `$${x.toExponential(2)}`;
-        },
       };
     }
   </script>

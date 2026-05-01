@@ -163,6 +163,8 @@ export interface SnapshotFeatures {
   token_age_min: number;
   dip_pct: number | null;
   impulse_pct: number | null;
+  /** Pool-reported mcap (or FDV coalesced in SQL) at discovery row — stamped into jsonl for dashboards. */
+  market_cap_usd: number | null;
 }
 
 export type SellerProfile =

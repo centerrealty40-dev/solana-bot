@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -319,6 +320,17 @@ async function collectOneTick() {
       sourceUsed = 'geckoterminal';
       rows = await fetchFromGeckoTrending(bucketTs);
     }
+
+    rows = await mergePaper2OpenMintSnapshots({
+      rows,
+      bucketTs,
+      fetchJsonWithRetry,
+      sleep,
+      normalizeDexPair: normalizeDexScreenerPair,
+      dedupByPairAddress,
+      log,
+      component: 'meteora-collector',
+    });
 
     const written = await upsertSnapshots(rows);
     await upsertTokensMeta(rows, pool).catch(() => {});

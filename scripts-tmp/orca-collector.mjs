@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -324,6 +325,17 @@ async function collectOneTick() {
         'geckoterminal-new',
       );
     }
+
+    rows = await mergePaper2OpenMintSnapshots({
+      rows,
+      bucketTs,
+      fetchJsonWithRetry,
+      sleep,
+      normalizeDexPair: normalizeDexScreenerPair,
+      dedupByPairAddress,
+      log,
+      component: 'orca-collector',
+    });
 
     const written = await upsertSnapshots(rows);
     ticksTotal += 1;

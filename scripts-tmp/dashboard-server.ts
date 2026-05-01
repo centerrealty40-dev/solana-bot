@@ -118,28 +118,93 @@ const DEX_SNAPSHOT_TABLES = [
   'moonshot_pair_snapshots',
 ] as const;
 
+/** Solana base58 mint — safe single-quoted literal for raw SQL fragments. */
+function sqlMintQuoted(mint: string): string | null {
+  if (!mint || mint.length > 64) return null;
+  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(mint)) return null;
+  return `'${mint.replace(/'/g, "''")}'`;
+}
+
+/** Pool row may index the traded mint as base or quote depending on collector/orientation. */
+function sqlMintPoolMatch(mq: string): string {
+  return `(base_mint = ${mq} OR quote_mint = ${mq})`;
+}
+
+const jupPxCache = new Map<string, { px: number; ts: number }>();
+const JUP_PX_TTL_MS = 15_000;
+
+/** Jupiter v3 — same family as v1-style dashboards when PG pair rows lag or miss the mint side. */
+async function getJupiterTokenPriceUsd(mint: string): Promise<number | null> {
+  if (!sqlMintQuoted(mint)) return null;
+  const hit = jupPxCache.get(mint);
+  if (hit && Date.now() - hit.ts < JUP_PX_TTL_MS) return hit.px;
+  try {
+    const r = await fetch(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(mint)}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as Record<string, { usdPrice?: number }> & {
+      data?: Record<string, { price?: number }>;
+    };
+    const px = Number(j[mint]?.usdPrice ?? j?.data?.[mint]?.price ?? 0);
+    if (px > 0 && Number.isFinite(px)) {
+      jupPxCache.set(mint, { px, ts: Date.now() });
+      return px;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function entryMcapFromOpenTimelineEvent(tl: TimelineEvent[]): number | null {
+  const ev = tl.find((e) => e.kind === 'open');
+  const n = Number(ev?.mcUsd ?? 0);
+  return n > 0 && Number.isFinite(n) ? n : null;
+}
+
+function exitMcapFromCloseTimelineEvent(tl: TimelineEvent[]): number | null {
+  const closes = tl.filter((e) => e.kind === 'close');
+  const last = closes[closes.length - 1];
+  const n = Number(last?.mcUsd ?? 0);
+  return n > 0 && Number.isFinite(n) ? n : null;
+}
+
+async function resolveEntryMcapAtBuyUsd(
+  mint: string,
+  entryTs: number,
+  timelineSorted: TimelineEvent[],
+): Promise<number | null> {
+  const fromTl = entryMcapFromOpenTimelineEvent(timelineSorted);
+  if (fromTl != null) return fromTl;
+  if (entryTs > 0) return await getDexMcapNearestBefore(mint, entryTs).catch(() => null);
+  return null;
+}
+
 async function getDexLiveMc(mint: string): Promise<number | null> {
   const cached = dexMcCache.get(mint);
   if (cached && Date.now() - cached.ts < DEX_MC_TTL_MS) return cached.mc;
+  const mq = sqlMintQuoted(mint);
+  if (!mq) return null;
   let sql: ReturnType<typeof postgres>;
   try {
     sql = pgPool();
   } catch {
     return null;
   }
-  // Build a UNION ALL across all known DEX snapshot tables and pick the most
-  // recent non-null mcap (or fdv as a fallback) within the last 6 hours.
+  // Same window as spot reads — collectors can be sparse on illiquid pools.
   const subqueries = DEX_SNAPSHOT_TABLES.map(
     (t) => `
       SELECT ts, market_cap_usd, fdv_usd FROM ${t}
-      WHERE base_mint = $1 AND ts >= now() - interval '6 hours'
+      WHERE ${sqlMintPoolMatch(mq)} AND ts >= now() - interval '7 days'
+        AND (COALESCE(market_cap_usd, 0) > 0 OR COALESCE(fdv_usd, 0) > 0)
       ORDER BY ts DESC LIMIT 1
     `,
   ).join(' UNION ALL ');
   try {
     const rows = await sql.unsafe(
       `SELECT ts, market_cap_usd, fdv_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
-      [mint],
     );
     if (!rows.length) return null;
     const mc = Number(rows[0].market_cap_usd ?? rows[0].fdv_usd ?? 0);
@@ -151,6 +216,39 @@ async function getDexLiveMc(mint: string): Promise<number | null> {
     /* table may be missing in some envs — silently ignore */
   }
   return null;
+}
+
+/** Latest snapshot mcap at or before entry time (for legacy jsonl without features.market_cap_usd). */
+async function getDexMcapNearestBefore(mint: string, beforeMs: number): Promise<number | null> {
+  const mq = sqlMintQuoted(mint);
+  if (!mq) return null;
+  const epochSec = Math.floor(beforeMs / 1000);
+  if (!Number.isFinite(epochSec) || epochSec <= 0) return null;
+  let sql: ReturnType<typeof postgres>;
+  try {
+    sql = pgPool();
+  } catch {
+    return null;
+  }
+  const subqueries = DEX_SNAPSHOT_TABLES.map(
+    (t) => `
+      SELECT ts, market_cap_usd, fdv_usd FROM ${t}
+      WHERE ${sqlMintPoolMatch(mq)}
+        AND extract(epoch from ts) <= ${epochSec}
+        AND (COALESCE(market_cap_usd, 0) > 0 OR COALESCE(fdv_usd, 0) > 0)
+      ORDER BY ts DESC LIMIT 1
+    `,
+  ).join(' UNION ALL ');
+  try {
+    const rows = await sql.unsafe(
+      `SELECT ts, market_cap_usd, fdv_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
+    );
+    if (!rows.length) return null;
+    const mc = Number(rows[0].market_cap_usd ?? rows[0].fdv_usd ?? 0);
+    return mc > 0 ? mc : null;
+  } catch {
+    return null;
+  }
 }
 
 async function getCurrentMcAny(mint: string): Promise<number | null> {
@@ -167,6 +265,8 @@ async function getDexLivePrice(mint: string, source: string | null): Promise<num
   const cacheKey = `${mint}|${source || 'any'}`;
   const cached = dexPxCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < DEX_PX_TTL_MS) return cached.px;
+  const mq = sqlMintQuoted(mint);
+  if (!mq) return null;
   let sql: ReturnType<typeof postgres>;
   try {
     sql = pgPool();
@@ -180,7 +280,7 @@ async function getDexLivePrice(mint: string, source: string | null): Promise<num
   const subqueries = tableOrder.map(
     (t) => `
       SELECT ts, price_usd FROM ${t}
-      WHERE base_mint = $1 AND ts >= now() - interval '7 days'
+      WHERE ${sqlMintPoolMatch(mq)} AND ts >= now() - interval '7 days'
         AND price_usd IS NOT NULL AND price_usd > 0
       ORDER BY ts DESC LIMIT 1
     `,
@@ -188,7 +288,6 @@ async function getDexLivePrice(mint: string, source: string | null): Promise<num
   try {
     const rows = await sql.unsafe(
       `SELECT ts, price_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
-      [mint],
     );
     if (!rows.length) return null;
     const px = Number(rows[0].price_usd ?? 0);
@@ -801,6 +900,25 @@ type TimelineEvent = {
   remainingFraction: number | null;
 };
 
+const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
+
+/**
+ * Last known journal spot px (DCA / ladder / close) when pair_snapshots miss the mint.
+ * IMPORTANT: skip the `open` event itself — its spot equals the entry price by construction,
+ * which would yield pnlPct ≡ 0 and mask the real unrealized PnL.
+ */
+function latestTimelineSpotUsd(timeline: TimelineEvent[], maxAgeMs: number): number | null {
+  const now = Date.now();
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const ev = timeline[i];
+    if (ev.kind === 'open') continue;
+    const p = Number(ev.spotPxUsd ?? 0);
+    if (!(p > 0)) continue;
+    if (now - ev.ts <= maxAgeMs) return p;
+  }
+  return null;
+}
+
 function fmtSignedPct(p: number | null | undefined): string {
   if (p == null || !Number.isFinite(p)) return '';
   const sign = p >= 0 ? '+' : '';
@@ -1169,6 +1287,8 @@ app.get('/api/paper2', async (_req, reply) => {
     entryTs: number;
     entryMcUsd: number;
     entryRealMcUsd: number | null;
+    /** Journal mcap at buy, else last-resort DEX snapshot at/before entryTs. */
+    entryMcapAtBuyUsd: number | null;
     baselinePriceUsd: number | null;
     metricType: string | null;
     openedAtIso: string | null;
@@ -1184,6 +1304,12 @@ app.get('/api/paper2', async (_req, reply) => {
     ageMin: number;
     hasLiveMc: boolean;
     hasLivePrice: boolean;
+    /** When true, spot for unrealized came from journal timeline (no DEX row). */
+    livePriceStale: boolean;
+    /** Where live price for PnL came from (Jupiter when snapshots miss the mint side). */
+    livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null;
+    /** Extra mcap source when pair_snapshots are empty (pump.fun). */
+    liveMcProvenance: 'snapshots' | 'pump.fun' | null;
     timeline: TimelineEvent[];
   };
 
@@ -1221,28 +1347,48 @@ app.get('/api/paper2', async (_req, reply) => {
     const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loadPaper2File(fp);
     const m = paper2Metrics(closed);
     const startedAt = resetTs || firstTs;
-    const closedWithUsd = closed
-      .map((c) => {
-        const pnlPct = Number(c.pnlPct ?? 0);
-        const netUsd = c.netPnlUsd;
-        const pnlUsd =
-          typeof netUsd === 'number' && Number.isFinite(netUsd)
-            ? netUsd
-            : (POSITION_USD_DEFAULT * pnlPct) / 100;
-        const costs = c.costs as Record<string, unknown> | undefined;
-        const timeline = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
-        return {
-          mint: c.mint,
-          symbol: c.symbol,
-          exitTs: c.exitTs,
-          exitReason: c.exitReason,
-          pnlPct,
-          pnlUsd,
-          durationMin: Number(c.durationMin ?? 0),
-          dex: costs && costs.dex,
-          timeline: timeline.slice().sort((a, b) => a.ts - b.ts),
-        };
-      })
+    const closedWithUsd = (
+      await Promise.all(
+        closed.map(async (c) => {
+          const pnlPct = Number(c.pnlPct ?? 0);
+          const netUsd = c.netPnlUsd;
+          const pnlUsd =
+            typeof netUsd === 'number' && Number.isFinite(netUsd)
+              ? netUsd
+              : (POSITION_USD_DEFAULT * pnlPct) / 100;
+          const costs = c.costs as Record<string, unknown> | undefined;
+          const timelineRaw = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
+          const timelineSorted = timelineRaw.slice().sort((a, b) => a.ts - b.ts);
+          const entryTs = Number(c.entryTs ?? 0);
+          const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(String(c.mint), entryTs, timelineSorted);
+          const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
+          const tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+          if (
+            tlOut.length &&
+            tlOut[0].kind === 'open' &&
+            entryMcapAtBuyUsd != null &&
+            entryMcapAtBuyUsd > 0 &&
+            (!(Number(tlOut[0].mcUsd) > 0) || tlOut[0].mcUsd == null)
+          ) {
+            tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
+          }
+          return {
+            mint: c.mint,
+            symbol: c.symbol,
+            exitTs: c.exitTs,
+            entryTs: c.entryTs,
+            exitReason: c.exitReason,
+            pnlPct,
+            pnlUsd,
+            durationMin: Number(c.durationMin ?? 0),
+            dex: costs && costs.dex,
+            entryMcapAtBuyUsd,
+            exitMcapUsd: exitMcapUsd != null && exitMcapUsd > 0 ? exitMcapUsd : null,
+            timeline: tlOut,
+          };
+        }),
+      )
+    )
       .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
       .slice(0, 20);
 
@@ -1258,53 +1404,131 @@ app.get('/api/paper2', async (_req, reply) => {
     const PNL_PCT_CLAMP = 100_000; // 1000x
     const enrichedOpen: EnrichedOpen[] = await Promise.all(
       open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
+        const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
         const isMcMetric = ot.metricType === 'mc';
-        /** Pump.fun USD mcap is only meaningful when the strategy journals metricType=mc; otherwise skip (avoid nonsense values on AMM migrations). */
-        const liveMc = isMcMetric
-          ? await getCurrentMcAny(ot.mint).catch(() => null)
-          : null;
-        const hasLiveMc = liveMc != null && liveMc > 0;
+        /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
+        const liveMcForPnl = isMcMetric ? await getCurrentMcAny(ot.mint).catch(() => null) : null;
+        /** DEX snapshots often have mcap even for price-tracked (post-migration) pools — show in UI. */
+        const dexMcDisplay =
+          liveMcForPnl != null && liveMcForPnl > 0
+            ? null
+            : await getDexLiveMc(ot.mint).catch(() => null);
+        let displayLiveMc: number | null =
+          liveMcForPnl != null && liveMcForPnl > 0
+            ? liveMcForPnl
+            : dexMcDisplay != null && dexMcDisplay > 0
+              ? dexMcDisplay
+              : null;
+        let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
+        if (displayLiveMc != null && displayLiveMc > 0) {
+          liveMcProvenance = 'snapshots';
+        } else {
+          const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
+          if (pumpOnly != null && pumpOnly > 0) {
+            displayLiveMc = pumpOnly;
+            liveMcProvenance = 'pump.fun';
+          }
+        }
+        const hasLiveMc = displayLiveMc != null;
 
         const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
-        /** Always try spot when we have an entry-price baseline — some journals omit mcap fields on pump/MC rows. */
+        /** Snapshots → journal spot → Jupiter (v1-style off-chain quote when PG misses the mint). */
         let livePx: number | null = null;
+        let livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null = null;
         if (basePx) {
           livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
+          if (livePx) livePxProvenance = 'snapshots';
+        }
+        let livePriceStale = false;
+        if (!livePx && basePx) {
+          const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
+          if (st != null) {
+            livePx = st;
+            livePriceStale = true;
+            livePxProvenance = 'journal';
+          }
+        }
+        if (!livePx && basePx) {
+          const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
+          if (jpx != null && jpx > 0) {
+            livePx = jpx;
+            livePriceStale = false;
+            livePxProvenance = 'jupiter';
+          }
         }
         const hasLivePrice = livePx != null && livePx > 0;
 
         const baseEntryUsd =
           ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
 
-        const currentMcUsd = hasLiveMc ? (liveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
+        let entryMcapAtBuyUsd =
+          ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
+        if (entryMcapAtBuyUsd == null) {
+          entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
+        }
+
+        const timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+        if (
+          timelineOut.length &&
+          timelineOut[0].kind === 'open' &&
+          (timelineOut[0].mcUsd == null || !(Number(timelineOut[0].mcUsd) > 0)) &&
+          entryMcapAtBuyUsd != null &&
+          entryMcapAtBuyUsd > 0
+        ) {
+          timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
+        }
+
+        const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
         const livePriceUsd = hasLivePrice ? livePx : null;
 
         let pnlPct: number | null = null;
         let pnlUsd: number | null = null;
 
-        if (isMcMetric && hasLiveMc && baseEntryUsd && baseEntryUsd > 0) {
-          let p = ((liveMc as number) / baseEntryUsd - 1) * 100;
-          if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
-            pnlPct = p;
-            const investedRaw = ot.totalInvestedUsd;
-            const invested =
-              investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
-            pnlUsd = (invested * pnlPct) / 100;
+        const investedFor = (): number => {
+          const investedRaw = ot.totalInvestedUsd;
+          return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
+        };
+        const tryByMcap = (): boolean => {
+          /**
+           * Mcap-based unrealized PnL. We use entryMcapAtBuyUsd (real USD mcap at buy,
+           * possibly back-filled from snapshots) rather than the legacy `entryMcUsd` which
+           * for price-tracked strategies stores a per-token price and is NOT a market cap.
+           */
+          const entryMc = entryMcapAtBuyUsd;
+          if (!(entryMc && entryMc > 0)) return false;
+          if (!(displayLiveMc && displayLiveMc > 0)) return false;
+          const p = ((displayLiveMc as number) / entryMc - 1) * 100;
+          if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
+          pnlPct = p;
+          pnlUsd = (investedFor() * p) / 100;
+          return true;
+        };
+        const tryByPrice = (): boolean => {
+          if (!(basePx && basePx > 0 && hasLivePrice && livePx && livePx > 0)) return false;
+          /**
+           * If our only "live" price is the journal-derived spot equal to the entry, this is
+           * a stale pseudo-price (e.g. position has no DCA/partial events yet). Bail so the
+           * mcap path can produce a real PnL number.
+           */
+          if (livePxProvenance === 'journal' && Math.abs((livePx as number) - basePx) / basePx < 1e-6) {
+            return false;
           }
-        }
-        /** Price-based unrealized — also used when mcap baseline is missing but entry spot exists. */
-        if (pnlPct == null && hasLivePrice && basePx && basePx > 0) {
-          let p = ((livePx as number) / basePx - 1) * 100;
-          if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
-            pnlPct = p;
-            const investedRaw = ot.totalInvestedUsd;
-            const invested =
-              investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
-            pnlUsd = (invested * pnlPct) / 100;
-          }
-        }
+          const p = ((livePx as number) / basePx - 1) * 100;
+          if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
+          pnlPct = p;
+          pnlUsd = (investedFor() * p) / 100;
+          return true;
+        };
 
-        const rawTimeline = openTimelines.get(ot.mint) ?? [];
+        /**
+         * mc-strategies prefer mcap, price-strategies prefer price; in either case fall
+         * through to the other so we always render a number when either signal is alive.
+         */
+        if (isMcMetric) {
+          if (!tryByMcap()) tryByPrice();
+        } else {
+          if (!tryByPrice()) tryByMcap();
+        }
 
         return {
           mint: ot.mint,
@@ -1312,6 +1536,7 @@ app.get('/api/paper2', async (_req, reply) => {
           entryTs: ot.entryTs,
           entryMcUsd: ot.entryMcUsd,
           entryRealMcUsd: ot.entryRealMcUsd,
+          entryMcapAtBuyUsd,
           baselinePriceUsd: ot.baselinePriceUsd,
           metricType: ot.metricType,
           openedAtIso: ot.openedAtIso,
@@ -1327,7 +1552,10 @@ app.get('/api/paper2', async (_req, reply) => {
           ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
           hasLiveMc,
           hasLivePrice,
-          timeline: rawTimeline.slice().sort((a, b) => a.ts - b.ts),
+          livePriceStale,
+          livePxProvenance,
+          liveMcProvenance,
+          timeline: timelineOut,
         };
       }),
     );

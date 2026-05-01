@@ -6,7 +6,13 @@ import {
   parseTpLadder,
 } from './config.js';
 import { configureStore, appendEvent } from './store-jsonl.js';
-import { refreshSolPrice, getSolUsd, refreshBtcContext, getBtcContext } from './pricing.js';
+import {
+  refreshSolPrice,
+  getSolUsd,
+  refreshBtcContext,
+  getBtcContext,
+  getLiveMcUsd,
+} from './pricing.js';
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
@@ -134,7 +140,7 @@ export async function main(): Promise<void> {
           volume_5m: d.features.vol5m_usd,
           buys_5m: d.features.buys5m,
           sells_5m: d.features.sells5m,
-          market_cap_usd: null,
+          market_cap_usd: d.features.market_cap_usd,
           source: d.source,
           holder_count: d.features.holders,
           token_age_min: d.features.token_age_min,
@@ -176,6 +182,17 @@ export async function main(): Promise<void> {
           safetyAttached = outcome.kind === 'verdict' ? outcome.verdict : { skipped: outcome.reason };
         }
 
+        /** Same as ladder/close rows — lets dashboards show mcap at Open when snapshots have it. */
+        let mcUsdLiveOpen: number | null = null;
+        try {
+          mcUsdLiveOpen = await getLiveMcUsd(
+            ot.mint,
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot',
+          );
+        } catch {
+          /* best-effort */
+        }
+
         appendEvent({
           kind: 'open',
           mint: ot.mint,
@@ -197,6 +214,7 @@ export async function main(): Promise<void> {
           pre_entry_dynamics: preDyn,
           context_swaps: ctxSwaps,
           safety: safetyAttached,
+          mcUsdLive: mcUsdLiveOpen,
         });
 
         open.set(ot.mint, ot);

@@ -51,6 +51,10 @@ function buildFeatures(
     token_age_min: +Number(row.token_age_min ?? 0).toFixed(1),
     dip_pct: dipPct !== null ? +dipPct.toFixed(2) : null,
     impulse_pct: impulsePct !== null ? +impulsePct.toFixed(2) : null,
+    market_cap_usd:
+      row.market_cap_usd != null && Number(row.market_cap_usd) > 0
+        ? +Number(row.market_cap_usd).toFixed(2)
+        : null,
   };
 }
 

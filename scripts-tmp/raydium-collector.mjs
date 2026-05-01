@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -318,6 +319,21 @@ async function collectOneTick() {
       sourceUsed = 'geckoterminal';
       rows = await fetchFromGeckoTrending(bucketTs);
     }
+
+    rows = await mergePaper2OpenMintSnapshots({
+      rows,
+      bucketTs,
+      fetchJsonWithRetry,
+      sleep,
+      normalizeDexPair: (p, bt) => {
+        if (p?.chainId !== 'solana') return null;
+        if (String(p?.dexId || '').toLowerCase() !== 'raydium') return null;
+        return normalizeDexScreenerPair(p, bt);
+      },
+      dedupByPairAddress,
+      log,
+      component: 'raydium-collector',
+    });
 
     const written = await upsertSnapshots(rows);
     await upsertTokensMeta(rows, pool).catch(() => {});
