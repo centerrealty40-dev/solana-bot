@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
 import postgres from 'postgres';
+import { qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -416,6 +417,11 @@ app.get('/api/state', async (_req, reply) => {
 });
 
 app.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
+
+app.get('/api/qn/usage', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  return qnUsageSnapshot();
+});
 
 function parserProgramId(): string {
   return (

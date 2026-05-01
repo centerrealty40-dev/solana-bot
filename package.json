@@ -26,7 +26,8 @@
     "paper2:healthcheck": "node scripts-tmp/paper2-healthcheck.mjs",
     "paper2:hourly-report": "node scripts-tmp/hourly-telegram-report.mjs",
     "paper2:advisor-digest": "node scripts-tmp/advisor-digest.mjs",
-    "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs"
+    "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs",
+    "qn:smoke": "tsx src/scripts/qn-smoke.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.95.0",

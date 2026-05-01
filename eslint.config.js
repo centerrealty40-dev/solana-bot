@@ -7,6 +7,7 @@ export default [
     ignores: [
       'dist/**',
       'node_modules/**',
+      'tests/**',
       'scripts-tmp/**',
       'drizzle.config.ts',
       'vitest.config.ts',
