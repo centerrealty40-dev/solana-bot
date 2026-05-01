@@ -461,9 +461,9 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
-        /* W7.5 canary §10.3 — pt1-dno shadow (diprunner/oscar remain explicit off above) */
+        /* W7.5 canary §10.4 — pt1-dno production force-close */
         PAPER_LIQ_WATCH_ENABLED: '1',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
         PAPER_LIQ_WATCH_DRAIN_PCT: '35',
         PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
         PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
