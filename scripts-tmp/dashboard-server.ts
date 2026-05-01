@@ -1013,23 +1013,32 @@ app.get('/api/paper2', async (_req, reply) => {
 
     // Enrich open positions with a live mcap (pump.fun -> DEX snapshot fallback),
     // recompute pnl% and pnl$ when possible. Capped to 30 rows for sanity.
+    //
+    // IMPORTANT: entryMcUsd in legacy jsonl is NOT a USD market cap — it's
+    // a tiny per-token-price-like number (e.g. 0.003) that cannot be compared
+    // with USD live mcap. Only entryRealMcUsd (taken from features.market_cap_usd
+    // or features.fdv_usd at open-time) is a legitimate USD baseline.
+    // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
+    // future jsonl row has a misclassified baseline.
+    const PNL_PCT_CLAMP = 100_000; // 1000x
     const enrichedOpen: EnrichedOpen[] = await Promise.all(
       open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
         const liveMc = await getCurrentMcAny(ot.mint).catch(() => null);
-        const baseEntry = ot.entryRealMcUsd && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : ot.entryMcUsd;
         const hasLiveMc = liveMc != null && liveMc > 0;
-        const currentMcUsd = hasLiveMc ? (liveMc as number) : ot.peakMcUsd || baseEntry || 0;
+        const baseEntryUsd =
+          ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
+        const currentMcUsd = hasLiveMc ? (liveMc as number) : ot.peakMcUsd || baseEntryUsd || 0;
         let pnlPct: number | null = null;
         let pnlUsd: number | null = null;
-        if (hasLiveMc && baseEntry > 0) {
-          pnlPct = ((liveMc as number) / baseEntry - 1) * 100;
-          // Sanity cap: position size for these strategies is ~$100. If the
-          // jsonl smuggled in something obviously larger (legacy data confused
-          // mcap with position size), fall back to the default $100 base.
-          const investedRaw = ot.totalInvestedUsd;
-          const invested =
-            investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
-          pnlUsd = (invested * pnlPct) / 100;
+        if (hasLiveMc && baseEntryUsd && baseEntryUsd > 0) {
+          let p = ((liveMc as number) / baseEntryUsd - 1) * 100;
+          if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
+            pnlPct = p;
+            const investedRaw = ot.totalInvestedUsd;
+            const invested =
+              investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
+            pnlUsd = (invested * pnlPct) / 100;
+          }
         }
         return {
           mint: ot.mint,
