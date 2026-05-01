@@ -110,6 +110,7 @@ const ConfigSchema = z.object({
   whaleDcaPredMinChunkUsd: z.coerce.number().nonnegative().default(3_000),
   whaleDcaAggrMinSells24h: z.coerce.number().int().nonnegative().default(6),
   whaleDcaAggrMaxIntervalMin: z.coerce.number().nonnegative().default(15),
+  whaleSilenceMinAfterLastSell: z.coerce.number().nonnegative().default(0),
 
   // ---- legacy launchpad filters ----
   filtMinUniqueBuyers: z.coerce.number().int().nonnegative().default(20),
@@ -222,6 +223,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     whaleDcaPredMinChunkUsd: process.env.PAPER_DIP_DCA_PRED_MIN_CHUNK_USD,
     whaleDcaAggrMinSells24h: process.env.PAPER_DIP_DCA_AGGR_MIN_SELLS_24H,
     whaleDcaAggrMaxIntervalMin: process.env.PAPER_DIP_DCA_AGGR_MAX_INTERVAL_MIN,
+    whaleSilenceMinAfterLastSell: process.env.PAPER_DIP_WHALE_SILENCE_MIN,
     filtMinUniqueBuyers: process.env.PAPER_MIN_UNIQUE_BUYERS,
     filtMinBuySol: process.env.PAPER_MIN_BUY_SOL,
     filtMinBuySellRatio: process.env.PAPER_MIN_BUY_SELL_RATIO,

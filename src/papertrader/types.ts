@@ -167,6 +167,7 @@ export interface SnapshotFeatures {
 
 export type SellerProfile =
   | 'capitulator'
+  | 'still_dumping'
   | 'dca_predictable'
   | 'dca_aggressive'
   | 'panic_random'

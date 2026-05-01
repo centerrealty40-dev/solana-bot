@@ -129,6 +129,21 @@ export async function fetchWhaleAnalysis(cfg: PaperTraderConfig, mint: string): 
             const curr = new Date(String(r3rows[i].block_time)).getTime();
             if (curr > prev) intervalsMin.push((curr - prev) / 60_000);
           }
+          const rLast = await db.execute(dsql.raw(`
+          SELECT MAX(block_time) AS bt
+          FROM swaps
+          WHERE wallet = '${safeW}'
+            AND base_mint = '${safeMint}'
+            AND side = 'sell'
+            AND block_time >= now() - interval '24 hours'
+        `));
+          const lastRows = rLast as unknown as Array<{ bt: unknown }>;
+          const bt = lastRows[0]?.bt;
+          let lastSellTsMs = 0;
+          if (bt != null && bt !== '') {
+            const t = new Date(String(bt)).getTime();
+            if (Number.isFinite(t)) lastSellTsMs = t;
+          }
           return {
             wallet,
             total_buy_on_mint: Number(baseInfo.total_buy_on_mint || 0),
@@ -136,6 +151,7 @@ export async function fetchWhaleAnalysis(cfg: PaperTraderConfig, mint: string): 
             n_sells_24h: Number(baseInfo.n_sells_24h || 0),
             median_chunk_usd: median(chunks),
             median_interval_min: median(intervalsMin),
+            last_sell_ts_ms: lastSellTsMs,
           };
         } catch (err) {
           console.warn(`whale enrich failed for ${wallet}: ${err}`);
@@ -151,6 +167,7 @@ export async function fetchWhaleAnalysis(cfg: PaperTraderConfig, mint: string): 
         n_sells_24h: number;
         median_chunk_usd: number | null;
         median_interval_min: number | null;
+        last_sell_ts_ms: number;
       }
     >();
     for (const e of enrichments) if (e) byWallet.set(e.wallet, e);
@@ -169,6 +186,7 @@ export async function fetchWhaleAnalysis(cfg: PaperTraderConfig, mint: string): 
         n_sells_24h: 0,
         median_chunk_usd: null,
         median_interval_min: null,
+        last_sell_ts_ms: 0,
       };
       const totalBuy = enr.total_buy_on_mint || 0;
       const totalSell = enr.total_sell_on_mint || 0;
@@ -196,7 +214,20 @@ export async function fetchWhaleAnalysis(cfg: PaperTraderConfig, mint: string): 
       largeSellersOut.push(seller);
 
       if (!isCreator) {
-        if (profile === 'capitulator') singleCapitulation = true;
+        if (profile === 'capitulator') {
+          let silenceOk = true;
+          if (cfg.whaleSilenceMinAfterLastSell > 0) {
+            const rowTs = new Date(String(sell.block_time)).getTime();
+            const lastSellTs = Math.max(enr.last_sell_ts_ms ?? 0, Number.isFinite(rowTs) ? rowTs : 0);
+            if (lastSellTs <= 0) silenceOk = false;
+            else {
+              const ageMin = (Date.now() - lastSellTs) / 60_000;
+              silenceOk = ageMin >= cfg.whaleSilenceMinAfterLastSell;
+            }
+            if (!silenceOk) seller.profile = 'still_dumping';
+          }
+          if (silenceOk) singleCapitulation = true;
+        }
         if (profile === 'dca_predictable') dcaPredictablePresent = true;
         if (profile === 'dca_aggressive') dcaAggressivePresent = true;
         if (pctOfPositionThis >= cfg.whaleGroupDumpPct) {
