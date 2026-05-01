@@ -199,6 +199,19 @@ export interface WhaleAnalysis {
   block_reasons: string[];
 }
 
+/** W7.2 on-chain pre-entry safety (QuickNode batch). */
+export interface SafetyVerdict {
+  ok: boolean;
+  reasons: string[];
+  mint_authority: string | null;
+  freeze_authority: string | null;
+  top_holder_pct: number | null;
+  decimals: number | null;
+  /** Raw supply (u64 as string). */
+  supply: string | null;
+  ts: number;
+}
+
 export interface EvalEvent extends JsonlEventBase {
   kind: 'eval';
   lane: Lane;

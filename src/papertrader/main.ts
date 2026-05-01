@@ -21,7 +21,8 @@ import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
 import { trackerTick, type TrackerStats } from './executor/tracker.js';
 import { loadStore } from './executor/store-restore.js';
-import type { ClosedTrade, ExitReason, OpenTrade } from './types.js';
+import type { ClosedTrade, ExitReason, OpenTrade, SafetyVerdict } from './types.js';
+import { evaluateMintSafety } from './safety/index.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -55,6 +56,7 @@ export async function main(): Promise<void> {
     evaluated: 0,
     passed: 0,
     opened: 0,
+    skippedSafety: 0,
     ticks: 0,
     errors: 0,
   };
@@ -79,6 +81,7 @@ export async function main(): Promise<void> {
     trailTriggerX: cfg.trailTriggerX,
     timeoutHours: cfg.timeoutHours,
     restoredOpen: open.size,
+    safetyCheckEnabled: cfg.safetyCheckEnabled,
   });
 
   await Promise.allSettled([refreshSolPrice(), refreshBtcContext(cfg)]);
@@ -149,6 +152,30 @@ export async function main(): Promise<void> {
           : null;
         const ctxSwaps = await fetchContextSwaps(cfg, d.mint, ot.entryTs);
 
+        let safetyAttached: SafetyVerdict | { skipped: string } | null = null;
+        if (cfg.safetyCheckEnabled) {
+          const isAmm = ot.metricType !== 'mc';
+          const outcome = await evaluateMintSafety(d.mint, {
+            topHolderMaxPct: cfg.safetyTopHolderMaxPct,
+            requireMintAuthorityNull: cfg.safetyRequireMintAuthNull,
+            requireFreezeAuthorityNull: cfg.safetyRequireFreezeAuthNull,
+            treatAsAmm: isAmm,
+            timeoutMs: cfg.safetyTimeoutMs,
+          });
+          if (outcome.kind === 'verdict' && !outcome.verdict.ok) {
+            appendEvent({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              reason: `safety:${outcome.verdict.reasons.join(',')}`,
+            });
+            stats.skippedSafety += 1;
+            continue;
+          }
+          safetyAttached = outcome.kind === 'verdict' ? outcome.verdict : { skipped: outcome.reason };
+        }
+
         appendEvent({
           kind: 'open',
           mint: ot.mint,
@@ -169,6 +196,7 @@ export async function main(): Promise<void> {
           whale_analysis: d.whale,
           pre_entry_dynamics: preDyn,
           context_swaps: ctxSwaps,
+          safety: safetyAttached,
         });
 
         open.set(ot.mint, ot);
@@ -254,7 +282,7 @@ export async function main(): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
     });
     logger.info({
       msg: 'heartbeat',
