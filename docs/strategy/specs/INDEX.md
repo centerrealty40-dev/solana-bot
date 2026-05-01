@@ -19,7 +19,7 @@
 | W6.1 | [`W6.1_dex_collectors_port.md`](./W6.1_dex_collectors_port.md) | **выполнено** ✓ (6 PM2 коллекторов + health endpoints, HEAD `85f19d5`) | W6.0 |
 | W6.3a | [`W6.3a_paper_trader_skeleton.md`](./W6.3a_paper_trader_skeleton.md) | **выполнено** ✓ (skeleton + `pt1-skeleton-test` PM2-app, HEAD `8a9de0e`) | W6.1 |
 | W6.3b | [`W6.3b_paper_trader_discovery.md`](./W6.3b_paper_trader_discovery.md) | **выполнено** ✓ (discovery + filters + dip + whale + Binance BTC, HEAD `282f745`) | W6.3a |
-| W6.3c | `W6.3c_paper_trader_executor.md` | **следующая** (executor + main loop) | W6.3b |
+| W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **готова** (executor + main loop: open/dca/tp-ladder/trailing/exit/followup; `pt1-dip-executor-test` PM2-app, заменяет discovery-test) | W6.3b |
 | W6.4 | `W6.4_observability_port.md` | будет после W6.3c DoD | W6.3c |
 | W6.5 | `W6.5_strategy_launch.md` | будет после W6.4 DoD | W6.4 |
 | W6.6 | `W6.6_strategy_lab_port.md` | через ≥7 дней работы paper | W6.5 + runtime data |
