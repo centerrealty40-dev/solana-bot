@@ -119,6 +119,73 @@ const DEX_SNAPSHOT_TABLES = [
   'moonshot_pair_snapshots',
 ] as const;
 
+/** W7.5 — align with paper-trader `PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS` for live liq badge freshness. */
+const PAPER2_LIQ_SNAPSHOT_MAX_AGE_MS = Number(process.env.PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS ?? 120_000);
+
+/**
+ * Latest pool `liquidity_usd` for dashboard open rows (same tables as executor liq-watch).
+ */
+async function fetchPairLiquidityUsdFromPg(
+  pairAddress: string | null | undefined,
+  source: string | null | undefined,
+): Promise<number | null> {
+  const pa = pairAddress?.trim();
+  if (!pa) return null;
+  const src = (source || 'raydium').toLowerCase();
+  let sqlPg: ReturnType<typeof postgres>;
+  try {
+    sqlPg = pgPool();
+  } catch {
+    return null;
+  }
+  const maxAge =
+    Number.isFinite(PAPER2_LIQ_SNAPSHOT_MAX_AGE_MS) && PAPER2_LIQ_SNAPSHOT_MAX_AGE_MS > 0
+      ? PAPER2_LIQ_SNAPSHOT_MAX_AGE_MS
+      : 120_000;
+  const now = Date.now();
+  try {
+    let row: { liquidity_usd: unknown; ts: Date } | undefined;
+    if (src === 'raydium') {
+      const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM raydium_pair_snapshots
+        WHERE pair_address = ${pa}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      row = rows[0];
+    } else if (src === 'meteora') {
+      const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM meteora_pair_snapshots
+        WHERE pair_address = ${pa}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      row = rows[0];
+    } else if (src === 'orca') {
+      const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM orca_pair_snapshots
+        WHERE pair_address = ${pa}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      row = rows[0];
+    } else if (src === 'moonshot') {
+      const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM moonshot_pair_snapshots
+        WHERE pair_address = ${pa}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      row = rows[0];
+    } else {
+      return null;
+    }
+    if (!row) return null;
+    const ageMs = Math.max(0, now - new Date(row.ts).getTime());
+    if (ageMs > maxAge) return null;
+    const liq = row.liquidity_usd != null ? Number(row.liquidity_usd) : NaN;
+    return Number.isFinite(liq) && liq > 0 ? liq : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Solana base58 mint — safe single-quoted literal for raw SQL fragments. */
 function sqlMintQuoted(mint: string): string | null {
   if (!mint || mint.length > 64) return null;
@@ -883,6 +950,10 @@ type Paper2OpenItem = {
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
   entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  /** W7.5 — pool address from journal open row / features. */
+  pairAddress: string | null;
+  /** W7.5 — entry liquidity USD baseline. */
+  entryLiqUsd: number | null;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -1300,6 +1371,18 @@ function loadPaper2File(filePath: string): {
         Number.isFinite(pfOpenUsd) && pfOpenUsd > 0 ? pfOpenUsd : null;
       const pvUi = priceVerifyUiFields(e.priceVerify);
       entryPriceVerifyByMint.set(mint, pvUi);
+      const entryLiqFromEv =
+        typeof e.entryLiqUsd === 'number' && Number(e.entryLiqUsd) > 0 ? Number(e.entryLiqUsd) : null;
+      const featLiq =
+        feat && typeof feat.liq_usd === 'number' && Number(feat.liq_usd) > 0 ? Number(feat.liq_usd) : null;
+      const entryLiqUsd = entryLiqFromEv ?? featLiq;
+      const pairFromEv =
+        e.pairAddress != null && String(e.pairAddress).trim() ? String(e.pairAddress).trim() : null;
+      const featPair =
+        feat?.pair_address != null && String(feat.pair_address).trim()
+          ? String(feat.pair_address).trim()
+          : null;
+      const pairAddress = pairFromEv ?? featPair;
       om.set(mint, {
         mint,
         symbol: String(e.symbol ?? ''),
@@ -1320,6 +1403,8 @@ function loadPaper2File(filePath: string): {
         // (millions $), not the position size. 0 means "use POSITION_USD_DEFAULT".
         totalInvestedUsd: Number(e.totalInvestedUsd ?? 0),
         entryPriorityFeeUsd,
+        pairAddress,
+        entryLiqUsd,
         ...pvUi,
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
@@ -1387,7 +1472,7 @@ function paper2Metrics(closed: Paper2ClosedRow[]): {
   exits: Record<string, number>;
   exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
 } {
-  const exitKinds = ['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP'] as const;
+  const exitKinds = ['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP', 'LIQ_DRAIN'] as const;
   const exits: Record<string, number> = Object.fromEntries(exitKinds.map((k) => [k, 0]));
   const breakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }> =
     Object.fromEntries(exitKinds.map((k) => [k, { count: 0, sumPct: 0, sumUsd: 0, avgPct: 0 }]));
@@ -1517,6 +1602,9 @@ app.get('/api/paper2', async (_req, reply) => {
     entryPriceVerifySlipPct: number | null;
     entryPriceVerifyImpactPct: number | null;
     entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+    entryLiqUsd: number | null;
+    currentLiqUsd: number | null;
+    liqDropPct: number | null;
   };
 
   type StrategyRow = {
@@ -1554,6 +1642,8 @@ app.get('/api/paper2', async (_req, reply) => {
       avgSlipPct: number | null;
       p90SlipPct: number | null;
     };
+    /** W7.5 — liquidity drain exits in this journal. */
+    liqDrain: { exits: number; avgDropPct: number | null; p90DropPct: number | null };
   };
 
   const strategies: StrategyRow[] = [];
@@ -1601,6 +1691,14 @@ app.get('/api/paper2', async (_req, reply) => {
             c.entryPriceVerifySource === 'blocked'
               ? c.entryPriceVerifySource
               : null;
+          const lw = c.liqWatch as { currentLiqUsd?: unknown; dropPct?: unknown } | undefined;
+          const exitLiqUsd =
+            lw != null && Number.isFinite(Number(lw.currentLiqUsd)) && Number(lw.currentLiqUsd) > 0
+              ? Number(lw.currentLiqUsd)
+              : null;
+          const exitLiqDropPct =
+            lw != null && Number.isFinite(Number(lw.dropPct)) ? +Number(lw.dropPct).toFixed(2) : null;
+          const exitContext = (c as { exitContext?: unknown }).exitContext ?? null;
           return {
             mint: c.mint,
             symbol: c.symbol,
@@ -1617,6 +1715,9 @@ app.get('/api/paper2', async (_req, reply) => {
             entryPriceVerifySlipPct,
             entryPriceVerifyImpactPct,
             entryPriceVerifySource,
+            exitLiqUsd,
+            exitLiqDropPct,
+            exitContext,
             timeline: tlOut,
           };
         }),
@@ -1763,6 +1864,18 @@ app.get('/api/paper2', async (_req, reply) => {
           if (!tryByPrice()) tryByMcap();
         }
 
+        const entryLiqUsdVal = ot.entryLiqUsd ?? null;
+        const currentLiqUsdVal = await fetchPairLiquidityUsdFromPg(ot.pairAddress, ot.source).catch(
+          () => null,
+        );
+        const liqDropPct =
+          entryLiqUsdVal != null &&
+          entryLiqUsdVal > 0 &&
+          currentLiqUsdVal != null &&
+          Number.isFinite(currentLiqUsdVal)
+            ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
+            : null;
+
         return {
           mint: ot.mint,
           symbol: ot.symbol,
@@ -1793,6 +1906,9 @@ app.get('/api/paper2', async (_req, reply) => {
           entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
           entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
           entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
+          entryLiqUsd: entryLiqUsdVal,
+          currentLiqUsd: currentLiqUsdVal,
+          liqDropPct,
         };
       }),
     );
@@ -1809,6 +1925,25 @@ app.get('/api/paper2', async (_req, reply) => {
     }, 0);
 
     const priceVerify = aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
+
+    const liqDrain = (() => {
+      let exits = 0;
+      const drops: number[] = [];
+      for (const r of closed) {
+        if (String(r.exitReason) !== 'LIQ_DRAIN') continue;
+        exits += 1;
+        const d = Number((r as { liqWatch?: { dropPct?: number } }).liqWatch?.dropPct ?? NaN);
+        if (Number.isFinite(d)) drops.push(d);
+      }
+      const sorted = [...drops].sort((a, b) => a - b);
+      return {
+        exits,
+        avgDropPct: drops.length ? +((drops.reduce((a, b) => a + b, 0) / drops.length).toFixed(2)) : null,
+        p90DropPct: drops.length
+          ? sorted[Math.min(sorted.length - 1, Math.floor(drops.length * 0.9))]
+          : null,
+      };
+    })();
 
     strategies.push({
       strategyId: sid,
@@ -1837,6 +1972,7 @@ app.get('/api/paper2', async (_req, reply) => {
       recentClosed: closedWithUsd,
       priorityFeeUsdTotal,
       priceVerify,
+      liqDrain,
     });
   }
   strategies.sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
@@ -1905,6 +2041,85 @@ app.get('/api/paper2/price-verify-stats', async (req, reply) => {
         okGlobal + blockedGlobal > 0 ? +(blockedGlobal / (okGlobal + blockedGlobal)).toFixed(4) : 0,
     },
   };
+});
+
+function aggregateLiqWatchEndpointSlice(filePath: string, windowMs: number): {
+  liqDrainExits: number;
+  avgDropPct: number | null;
+  p90DropPct: number | null;
+  rpcFallbackUsedCount: number;
+  snapshotMissCount: number;
+} {
+  const drops: number[] = [];
+  let exits = 0;
+  let rpcFallbackUsedCount = 0;
+  let snapshotMissCount = 0;
+  if (!fs.existsSync(filePath)) {
+    return {
+      liqDrainExits: 0,
+      avgDropPct: null,
+      p90DropPct: null,
+      rpcFallbackUsedCount: 0,
+      snapshotMissCount: 0,
+    };
+  }
+  const cutoff = Date.now() - windowMs;
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+  for (const ln of lines) {
+    let ev: Record<string, unknown>;
+    try {
+      ev = JSON.parse(ln) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const ts = typeof ev.ts === 'number' ? ev.ts : 0;
+    if (ts < cutoff) continue;
+    if (ev.kind !== 'close') continue;
+    if (ev.exitReason !== 'LIQ_DRAIN') continue;
+    exits += 1;
+    const lw = ev.liqWatch as { dropPct?: unknown; source?: unknown } | undefined;
+    const d = Number(lw?.dropPct ?? NaN);
+    if (Number.isFinite(d)) drops.push(d);
+    if (lw?.source === 'rpc') rpcFallbackUsedCount += 1;
+    if (lw?.source === 'none') snapshotMissCount += 1;
+  }
+  const sorted = [...drops].sort((a, b) => a - b);
+  return {
+    liqDrainExits: exits,
+    avgDropPct: drops.length ? +((drops.reduce((a, b) => a + b, 0) / drops.length).toFixed(2)) : null,
+    p90DropPct: drops.length
+      ? sorted[Math.min(sorted.length - 1, Math.floor(drops.length * 0.9))]
+      : null,
+    rpcFallbackUsedCount,
+    snapshotMissCount,
+  };
+}
+
+app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
+  reply.header('cache-control', 'no-store');
+  let files: string[] = [];
+  try {
+    if (fs.existsSync(PAPER2_DIR)) {
+      files = fs
+        .readdirSync(PAPER2_DIR)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => path.join(PAPER2_DIR, f));
+    }
+  } catch {
+    /* ignore */
+  }
+  const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
+  const windowMin = Math.max(
+    5,
+    Math.min(7 * 24 * 60, Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 1440),
+  );
+  const windowMs = windowMin * 60 * 1000;
+  const perStrategy: Record<string, unknown> = {};
+  for (const fp of files) {
+    const sid = path.basename(fp, '.jsonl');
+    perStrategy[sid] = aggregateLiqWatchEndpointSlice(fp, windowMs);
+  }
+  return { windowMin, perStrategy };
 });
 
 app.listen({ port: PORT, host: HOST }).then(() => {

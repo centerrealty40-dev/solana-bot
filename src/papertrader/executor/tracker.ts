@@ -1,12 +1,46 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
-import type { ClosedTrade, ExitReason, OpenTrade, PartialSell, PositionLeg } from '../types.js';
+import type {
+  ClosedTrade,
+  DexSource,
+  ExitContext,
+  ExitReason,
+  OpenTrade,
+  PartialSell,
+  PositionLeg,
+} from '../types.js';
 import { fetchLatestSnapshotPrice, getLiveMcUsd, getSolUsd } from '../pricing.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
+import {
+  buildOptionalLiqWatchCloseStamp,
+  evaluateLiqDrainState,
+  loadCurrentPoolLiqUsd,
+} from '../pricing/liq-watch.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import { appendEvent } from '../store-jsonl.js';
 import { fetchContextSwaps } from './context-swaps.js';
+import { child } from '../../core/logger.js';
+
+const log = child('tracker');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const LV_EPS = 1e-9;
+
+/**
+ * После частичных TP по ладдеру: если текущий PnL (доля) опустился до уровня предыдущей ступени
+ * относительно самой высокой уже сработавшей ступени — закрываем весь остаток.
+ */
+export function ladderRetraceTriggered(ot: OpenTrade, tpLadder: TpLadderLevel[], xAvg: number): boolean {
+  if (tpLadder.length === 0 || ot.ladderUsedLevels.size === 0) return false;
+  const sorted = [...tpLadder].sort((a, b) => a.pnlPct - b.pnlPct);
+  const fired = [...ot.ladderUsedLevels].sort((a, b) => a - b);
+  const highestFired = fired[fired.length - 1];
+  const idx = sorted.findIndex((l) => Math.abs(l.pnlPct - highestFired) < LV_EPS);
+  if (idx < 0) return false;
+  const prevThreshold = idx > 0 ? sorted[idx - 1].pnlPct : 0;
+  const curPnlFrac = xAvg - 1;
+  return curPnlFrac <= prevThreshold + LV_EPS;
+}
 
 export interface TrackerStats {
   closed: Record<ExitReason, number>;
@@ -32,6 +66,100 @@ function totalProceedsNet(ot: OpenTrade): number {
 }
 function totalProceedsGross(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.grossProceedsUsd || 0), 0);
+}
+
+/**
+ * Builds a self-contained, audit-ready summary of WHY this trade is closing.
+ * Lets the dashboard render "TP +7.2% (peak +32%, retrace −19pp)" style strings
+ * instead of just "TP".
+ *
+ * Pure helper — no I/O. All inputs are taken from the OpenTrade snapshot and
+ * the per-strategy config that fired the close.
+ */
+function buildExitContext(args: {
+  cfg: PaperTraderConfig;
+  ot: OpenTrade;
+  closePnlPct: number;
+  ageH: number;
+  exitReason: ExitReason;
+  curMetric: number;
+  xAvg: number;
+  tpLadder: TpLadderLevel[];
+  liqDrop?: { dropPct: number; entryLiqUsd: number; currentLiqUsd: number; ageMs: number } | null;
+}): ExitContext {
+  const { cfg, ot, closePnlPct, ageH, exitReason, curMetric, xAvg, tpLadder, liqDrop } = args;
+  const peak = ot.peakPnlPct;
+  const retraceFromPeakPct =
+    peak > 0 && Number.isFinite(peak)
+      ? +(((peak - closePnlPct) / peak) * 100).toFixed(2)
+      : null;
+  const tpLadderHits = ot.ladderUsedLevels?.size ?? 0;
+  const tpLadderTotal = tpLadder.length;
+  const dcaLegsAdded = Math.max(0, ot.legs.length - 1);
+
+  let triggerLabel = exitReason as string;
+  switch (exitReason) {
+    case 'TP': {
+      if (ot.remainingFraction <= 1e-6 && tpLadderHits > 0) {
+        triggerLabel = `TP ladder fully unwound (${tpLadderHits}/${tpLadderTotal} hits)`;
+      } else if (xAvg >= cfg.tpX) {
+        triggerLabel = `TP xAvg≥${cfg.tpX.toFixed(2)} (cur ${xAvg.toFixed(2)}x)`;
+      } else {
+        triggerLabel = `TP (no remaining)`;
+      }
+      break;
+    }
+    case 'SL':
+      triggerLabel = `SL xAvg≤${cfg.slX.toFixed(2)} (cur ${xAvg.toFixed(2)}x)`;
+      break;
+    case 'TRAIL':
+      if (cfg.trailMode === 'ladder_retrace') {
+        triggerLabel = `TRAIL ladder retrace (${tpLadderHits}/${tpLadderTotal} hits, cur ${xAvg.toFixed(2)}x, peak ${(1 + peak / 100).toFixed(2)}x)`;
+      } else {
+        const peakX = ot.peakMcUsd > 0 ? curMetric / ot.peakMcUsd : 0;
+        triggerLabel = `TRAIL peak retrace ${((peakX - 1) * 100).toFixed(1)}% from peak (drop≥${(cfg.trailDrop * 100).toFixed(0)}%)`;
+      }
+      break;
+    case 'TIMEOUT':
+      triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
+      break;
+    case 'KILLSTOP':
+      triggerLabel = `DCA killstop ${(cfg.dcaKillstop * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
+      break;
+    case 'NO_DATA':
+      triggerLabel = `no-data ${cfg.timeoutHours}h (price stream gone — hard close)`;
+      break;
+    case 'LIQ_DRAIN':
+      if (liqDrop) {
+        const ageS = Math.round(liqDrop.ageMs / 1000);
+        triggerLabel = `liq drop ${liqDrop.dropPct.toFixed(1)}% ($${Math.round(liqDrop.entryLiqUsd).toLocaleString()} → $${Math.round(liqDrop.currentLiqUsd).toLocaleString()}, snapshot ${ageS}s old)`;
+      } else {
+        triggerLabel = `liq drain (no detail)`;
+      }
+      break;
+  }
+
+  return {
+    closePnlPct: +closePnlPct.toFixed(2),
+    peakPnlPct: +peak.toFixed(2),
+    retraceFromPeakPct,
+    trailingArmed: ot.trailingArmed,
+    ageHours: +ageH.toFixed(3),
+    tpLadderHits,
+    tpLadderTotal,
+    dcaLegsAdded,
+    remainingFractionAtClose: +ot.remainingFraction.toFixed(4),
+    triggerLabel,
+    cfgSnapshot: {
+      tpX: cfg.tpX,
+      slX: cfg.slX,
+      trailMode: cfg.trailMode,
+      trailDrop: cfg.trailDrop,
+      trailTriggerX: cfg.trailTriggerX,
+      timeoutHours: cfg.timeoutHours,
+      dcaKillstop: cfg.dcaKillstop,
+    },
+  };
 }
 
 function buildClosedTrade(args: {
@@ -117,7 +245,131 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
     await sleep(120);
 
+    if (curMetric > 0) {
+      ot.lastObservedPriceUsd = curMetric;
+    }
+
     const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+
+    // ----- W7.5 — liquidity drain watch (before TP/SL/TRAIL and NO_DATA stall close) -----
+    if (cfg.liqWatchEnabled && ot.pairAddress && (ot.entryLiqUsd ?? 0) > 0) {
+      const positionAgeMs = Math.max(0, Date.now() - ot.entryTs);
+      const load = await loadCurrentPoolLiqUsd({
+        pairAddress: ot.pairAddress,
+        source: ot.source as DexSource,
+        cfg,
+      });
+      const verdict = evaluateLiqDrainState({
+        cfg,
+        entryLiqUsd: ot.entryLiqUsd!,
+        load,
+        consecutiveFailures: ot.liqWatchConsecutiveFailures ?? 0,
+        positionAgeMs,
+      });
+
+      if (verdict.kind === 'pending') {
+        ot.liqWatchConsecutiveFailures = verdict.consecutiveFailures;
+        ot.liqWatchLastLiqUsd = verdict.currentLiqUsd;
+      } else if (verdict.kind === 'ok') {
+        ot.liqWatchConsecutiveFailures = 0;
+        ot.liqWatchLastLiqUsd = verdict.currentLiqUsd;
+        ot.liqWatchLastDropPct = verdict.dropPct;
+      } else if (verdict.kind === 'force-close' && cfg.liqWatchForceClose) {
+        ot.liqWatchConsecutiveFailures = cfg.liqWatchConsecutiveFailures;
+        const rawPx =
+          ot.lastObservedPriceUsd ??
+          ot.legs[0]?.marketPrice ??
+          ot.avgEntryMarket ??
+          ot.avgEntry ??
+          0;
+        const marketSell = Number(rawPx) > 0 ? Number(rawPx) : ot.avgEntry > 0 ? ot.avgEntry : 0;
+        const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+        const { effectivePrice: effectiveSell } = applyExitCosts(
+          cfg,
+          marketSell,
+          ot.dex,
+          Math.max(1, investedRemaining),
+          null,
+        );
+        const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+        const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        const perTxClose = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+        const ct = buildClosedTrade({
+          cfg,
+          ot,
+          marketSell,
+          effectiveSell,
+          exitReason: 'LIQ_DRAIN',
+          ageH,
+          networkFeeUsdPerTx: perTxClose,
+        });
+        const exitContext = buildExitContext({
+          cfg,
+          ot,
+          closePnlPct: ct.pnlPct,
+          ageH,
+          exitReason: 'LIQ_DRAIN',
+          curMetric: marketSell,
+          xAvg: ot.avgEntry > 0 ? marketSell / ot.avgEntry : 1,
+          tpLadder,
+          liqDrop: {
+            dropPct: verdict.dropPct,
+            entryLiqUsd: ot.entryLiqUsd ?? 0,
+            currentLiqUsd: verdict.currentLiqUsd,
+            ageMs: verdict.ageMs,
+          },
+        });
+        ct.exitContext = exitContext;
+        open.delete(mint);
+        closed.push(ct);
+        stats.closed.LIQ_DRAIN++;
+        const mcUsdLive_close = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+        );
+        appendEvent({
+          kind: 'close',
+          ...ct,
+          peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+          btc_exit: btcCtx(),
+          exit_market_price: marketSell,
+          exit_effective_price: effectiveSell,
+          exit_swaps: exitSwaps,
+          mcUsdLive: mcUsdLive_close,
+          priorityFee: pfClose,
+          exitContext,
+          liqWatch: {
+            source: verdict.from,
+            entryLiqUsd: ot.entryLiqUsd,
+            currentLiqUsd: verdict.currentLiqUsd,
+            dropPct: verdict.dropPct,
+            ageMs: verdict.ageMs,
+            consecutiveFailures: cfg.liqWatchConsecutiveFailures,
+            ts: verdict.ts,
+          },
+        });
+        peakStateByMint.delete(mint);
+        console.log(
+          `[LIQ_DRAIN] ${mint.slice(0, 8)} $${ot.symbol} drop=${verdict.dropPct.toFixed(1)}% liq=$${verdict.currentLiqUsd.toFixed(0)}`,
+        );
+        continue;
+      } else if (verdict.kind === 'force-close' && !cfg.liqWatchForceClose) {
+        log.warn(
+          { mint: mint.slice(0, 8), dropPct: verdict.dropPct, currentLiqUsd: verdict.currentLiqUsd },
+          'liq-watch force-close suppressed (shadow)',
+        );
+        ot.liqWatchLastLiqUsd = verdict.currentLiqUsd;
+        ot.liqWatchLastDropPct = verdict.dropPct;
+      }
+
+      if (cfg.liqWatchStampOnTrack) {
+        appendEvent({
+          kind: 'liq_watch_tick',
+          mint,
+          verdict,
+        });
+      }
+    }
 
     if (!(curMetric > 0)) {
       if (ageH > cfg.timeoutHours) {
@@ -132,6 +384,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ageH,
           networkFeeUsdPerTx: perTxNd,
         });
+        const exitContextNd = buildExitContext({
+          cfg,
+          ot,
+          closePnlPct: ct.pnlPct,
+          ageH,
+          exitReason: 'NO_DATA',
+          curMetric: 0,
+          xAvg: 0,
+          tpLadder,
+        });
+        ct.exitContext = exitContextNd;
         open.delete(mint);
         closed.push(ct);
         stats.closed.NO_DATA++;
@@ -140,6 +403,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
         );
+        const liqWatchNoData = await buildOptionalLiqWatchCloseStamp(cfg, ot);
         appendEvent({
           kind: 'close',
           ...ct,
@@ -148,6 +412,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           exit_swaps: exitSwaps,
           mcUsdLive: mcUsdLive_closeNd,
           priorityFee: pfCloseNd,
+          exitContext: exitContextNd,
+          ...(liqWatchNoData ? { liqWatch: liqWatchNoData } : {}),
         });
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -300,7 +566,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (cfg.dcaKillstop < 0 && pnlPctVsAvg / 100 <= cfg.dcaKillstop) exitReason = 'KILLSTOP';
     else if (xAvg >= cfg.tpX) exitReason = 'TP';
     else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
-    else if (ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop)) exitReason = 'TRAIL';
+    else if (cfg.trailMode === 'ladder_retrace' && ladderRetraceTriggered(ot, tpLadder, xAvg))
+      exitReason = 'TRAIL';
+    else if (cfg.trailMode === 'peak' && ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop))
+      exitReason = 'TRAIL';
     else if (ageH >= cfg.timeoutHours) exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
@@ -326,6 +595,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ageH,
         networkFeeUsdPerTx: perTxClose,
       });
+      const exitContextMain = buildExitContext({
+        cfg,
+        ot,
+        closePnlPct: ct.pnlPct,
+        ageH,
+        exitReason,
+        curMetric,
+        xAvg,
+        tpLadder,
+      });
+      ct.exitContext = exitContextMain;
       open.delete(mint);
       closed.push(ct);
       const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
@@ -334,6 +614,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
       );
+      const liqWatchExit = await buildOptionalLiqWatchCloseStamp(cfg, ot);
       appendEvent({
         kind: 'close',
         ...ct,
@@ -344,6 +625,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         exit_swaps: exitSwaps,
         mcUsdLive: mcUsdLive_close,
         priorityFee: pfClose,
+        exitContext: exitContextMain,
+        ...(liqWatchExit ? { liqWatch: liqWatchExit } : {}),
       });
       peakStateByMint.delete(mint);
       const arrow = ct.pnlPct >= 0 ? '+' : '';

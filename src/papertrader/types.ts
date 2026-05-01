@@ -1,6 +1,6 @@
 export type Lane = 'launchpad_early' | 'migration_event' | 'post_migration';
 export type StrategyKind = 'fresh' | 'dip' | 'smart_lottery' | 'fresh_validated';
-export type ExitReason = 'TP' | 'SL' | 'TRAIL' | 'TIMEOUT' | 'NO_DATA' | 'KILLSTOP';
+export type ExitReason = 'TP' | 'SL' | 'TRAIL' | 'TIMEOUT' | 'NO_DATA' | 'KILLSTOP' | 'LIQ_DRAIN';
 export type DexId = 'pumpfun' | 'pumpswap' | 'raydium' | 'orca' | 'meteora' | 'moonshot';
 
 export interface Metrics {
@@ -65,6 +65,16 @@ export interface OpenTrade {
   dcaUsedLevels: Set<number>;
   /** TP-ladder pnl levels already used (0.05, 0.10, ...). */
   ladderUsedLevels: Set<number>;
+  /** W7.5 — pool/pair address from discovery snapshot (liquidity drain watch). */
+  pairAddress: string | null;
+  /** W7.5 — pool liquidity USD at entry (baseline for drain detection). */
+  entryLiqUsd: number | null;
+  /** W7.5 — consecutive tracker ticks with liquidity below drain threshold. */
+  liqWatchConsecutiveFailures?: number;
+  liqWatchLastLiqUsd?: number | null;
+  liqWatchLastDropPct?: number | null;
+  /** W7.5 — last good snapshot price from tracker (for emergency LIQ_DRAIN exit). */
+  lastObservedPriceUsd?: number | null;
 }
 
 export interface CloseCosts {
@@ -79,6 +89,47 @@ export interface CloseCosts {
   slippage_cost_usd: number;
   network_cost_usd: number;
   net_pnl_usd: number;
+}
+
+/**
+ * Rich context attached to every `close` event so the dashboard can render a
+ * concrete, audit-ready exit reason (instead of just "TP" or "SL").
+ *
+ * Goal: when reviewing a closed trade you should be able to tell within ~2 sec
+ * whether the exit was justified by checking peakPnlPct, retraceFromPeakPct,
+ * triggerLabel, and whether the trail was actually armed.
+ */
+export interface ExitContext {
+  /** Final realized PnL % from average entry (== ClosedTrade.pnlPct, copied for self-contained UI). */
+  closePnlPct: number;
+  /** Highest PnL % observed during the lifetime of the position. */
+  peakPnlPct: number;
+  /** ((peak - close) / peak) * 100. Positive number = how much we gave up after the peak. NaN if peak<=0. */
+  retraceFromPeakPct: number | null;
+  /** Whether trail mechanism actually armed (price reached cfg.trailTriggerX). */
+  trailingArmed: boolean;
+  /** Hours in position when the close fired. */
+  ageHours: number;
+  /** Number of TP-ladder levels that fired before final close. */
+  tpLadderHits: number;
+  /** Total TP-ladder levels configured for this strategy. */
+  tpLadderTotal: number;
+  /** Number of DCA legs added (excluding the initial entry leg). */
+  dcaLegsAdded: number;
+  /** Fraction of the position still open at the moment of final close (0 = fully sold via TP ladder). */
+  remainingFractionAtClose: number;
+  /** Short human label of the trigger that actually fired, e.g. "TP xAvg≥1.50", "SL xAvg≤0.90", "ladder retrace from 1.20x→below 1.10x", "peak retrace -10%", "TIMEOUT 1h", "DCA killstop -25%", "no-data 1h", "liq drop -84% in 60s". */
+  triggerLabel: string;
+  /** Strategy parameter snapshot at the moment of close — for audit (was tpX 1.5? trail 5 %?). */
+  cfgSnapshot: {
+    tpX: number;
+    slX: number;
+    trailMode: 'ladder_retrace' | 'peak';
+    trailDrop: number;
+    trailTriggerX: number;
+    timeoutHours: number;
+    dcaKillstop: number;
+  };
 }
 
 export interface ClosedTrade extends OpenTrade {
@@ -100,6 +151,8 @@ export interface ClosedTrade extends OpenTrade {
   /** Theoretical entry/exit prices (raw market). */
   theoretical_entry_price: number;
   theoretical_exit_price: number;
+  /** Audit-ready breakdown of why this trade closed; stamped by tracker. */
+  exitContext?: ExitContext;
 }
 
 export type JsonlEventKind =
@@ -111,7 +164,8 @@ export type JsonlEventKind =
   | 'dca_add'
   | 'partial_sell'
   | 'close'
-  | 'followup_snapshot';
+  | 'followup_snapshot'
+  | 'liq_watch_tick';
 
 export interface JsonlEventBase {
   ts: number;
@@ -145,6 +199,8 @@ export interface SnapshotCandidateRow {
   source: string;
   holder_count: number;
   token_age_min: number;
+  /** Pool address from DEX snapshot row (W7.5). */
+  pair_address: string | null;
 }
 
 export interface DipContext {
@@ -155,6 +211,8 @@ export interface DipContext {
 export interface SnapshotFeatures {
   price_usd: number;
   liq_usd: number;
+  /** Pool/pair address from snapshot (W7.5). */
+  pair_address: string | null;
   vol5m_usd: number;
   buys5m: number;
   sells5m: number;
@@ -289,6 +347,51 @@ export interface PriorityFeeQuote {
   ageMs: number | null;
   ts: number;
 }
+
+/** W7.5 — DEX snapshot source for pool liquidity lookup. */
+export type DexSource = 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pump' | 'jupiter';
+
+/**
+ * W7.5 — liquidity drain watch verdict (per tracker tick).
+ * Stamped onto `close` events with exitReason='LIQ_DRAIN'.
+ */
+export type LiqWatchVerdict =
+  | {
+      kind: 'ok';
+      currentLiqUsd: number;
+      dropPct: number;
+      ageMs: number;
+      from: 'snapshot' | 'rpc';
+      ts: number;
+    }
+  | {
+      kind: 'pending';
+      currentLiqUsd: number | null;
+      consecutiveFailures: number;
+      ageMs: number | null;
+      ts: number;
+    }
+  | {
+      kind: 'force-close';
+      reason: 'LIQ_DRAIN';
+      currentLiqUsd: number;
+      dropPct: number;
+      ageMs: number;
+      from: 'snapshot' | 'rpc';
+      ts: number;
+    }
+  | {
+      kind: 'skipped';
+      reason:
+        | 'feature-disabled'
+        | 'no-pair-address'
+        | 'no-entry-liq'
+        | 'snapshot-stale'
+        | 'rpc-disabled'
+        | 'rpc-failed'
+        | 'pre-min-age';
+      ts: number;
+    };
 
 /** Wrapped SOL mint — Jupiter quote `inputMint` for SOL → token. */
 export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';

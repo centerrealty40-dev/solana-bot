@@ -19,10 +19,10 @@
       text-transform: uppercase;
       color: #cbd5e1;
     }
+    /* No fixed color — use Tailwind text-* on each cell so negatives stay rose/emerald. */
     .stat-num {
       font-size: 1.125rem;
       font-weight: 700;
-      color: #f8fafc;
       line-height: 1.25;
     }
     .pill { display:inline-flex; padding:2px 10px; border-radius:999px; font-size:12px; line-height:1.35; font-weight:600; }
@@ -55,7 +55,7 @@
       <div class="card rounded-xl p-4">
         <div class="label-caps">Σ Unrealized</div>
         <div class="text-xl font-bold mono stat-num mt-1"
-             :class="(state.totals?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'"
+             :class="(state.totals?.unrealizedPnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'"
              x-text="fmtUsdSigned(state.totals?.unrealizedPnlUsd)"></div>
       </div>
       <div class="card rounded-xl p-4">
@@ -66,7 +66,7 @@
       </div>
       <div class="card rounded-xl p-4">
         <div class="label-caps">Open / Closed</div>
-        <div class="text-xl font-bold mono stat-num mt-1">
+        <div class="text-xl font-bold mono stat-num mt-1 text-slate-50">
           <span x-text="(state.totals?.open || 0)"></span>
           <span class="text-slate-400 font-semibold"> / </span>
           <span x-text="(state.totals?.closed || 0)"></span>
@@ -74,30 +74,29 @@
       </div>
       <div class="card rounded-xl p-4">
         <div class="label-caps">Strategies</div>
-        <div class="text-xl font-bold mono stat-num mt-1" x-text="(state.totals?.strategies || 0)"></div>
+        <div class="text-xl font-bold mono stat-num mt-1 text-slate-50" x-text="(state.totals?.strategies || 0)"></div>
       </div>
     </section>
 
     <!-- Three strategy tiles use full width (no lg:5-col squeeze). -->
     <section class="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
       <template x-for="s in (state.strategies || [])" :key="s.strategyId">
-        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition min-h-[220px]"
+        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition"
              :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
              @click="selected = s.strategyId">
           <div class="flex items-center justify-between gap-2">
             <div class="text-lg font-bold text-white" x-text="describe(s.strategyId).label"></div>
             <span class="pill pill-info shrink-0" x-text="describe(s.strategyId).tag"></span>
           </div>
-          <div class="text-sm text-slate-300 mt-2 leading-snug" x-text="describe(s.strategyId).oneLiner"></div>
 
-          <div class="grid grid-cols-3 gap-x-4 gap-y-4 mt-5 mono">
+          <div class="grid grid-cols-3 gap-x-4 gap-y-4 mt-4 mono">
             <div>
               <div class="label-caps">Realized</div>
               <div class="stat-num mt-1" :class="(s.realizedPnlUsd ?? s.sumPnlUsd) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtUsdSigned(s.realizedPnlUsd ?? s.sumPnlUsd)"></div>
             </div>
             <div>
               <div class="label-caps">Unreal</div>
-              <div class="stat-num mt-1" :class="(s.unrealizedPnlUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(s.unrealizedPnlUsd || 0)"></div>
+              <div class="stat-num mt-1" :class="(s.unrealizedPnlUsd||0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="fmtUsdSigned(s.unrealizedPnlUsd || 0)"></div>
             </div>
             <div>
               <div class="label-caps">Total</div>
@@ -105,21 +104,21 @@
             </div>
             <div>
               <div class="label-caps">Win rate</div>
-              <div class="stat-num mt-1 text-white" x-text="s.closedCount ? fmtPct(s.winRate) : '—'"></div>
+              <div class="stat-num mt-1 text-slate-50" x-text="s.closedCount ? fmtPct(s.winRate) : '—'"></div>
             </div>
             <div>
               <div class="label-caps">Open</div>
-              <div class="stat-num mt-1 text-white" x-text="s.openCount"></div>
+              <div class="stat-num mt-1 text-slate-50" x-text="s.openCount"></div>
             </div>
             <div class="col-span-3 md:col-span-1">
               <div class="flex flex-wrap gap-x-10 gap-y-2">
                 <div>
                   <div class="label-caps">Closed</div>
-                  <div class="stat-num mt-1 text-white" x-text="s.closedCount"></div>
+                  <div class="stat-num mt-1 text-slate-50" x-text="s.closedCount"></div>
                 </div>
                 <div>
                   <div class="label-caps">Hours</div>
-                  <div class="stat-num mt-1 text-white" x-text="(s.hoursOfData || 0).toFixed(1)"></div>
+                  <div class="stat-num mt-1 text-slate-50" x-text="(s.hoursOfData || 0).toFixed(1)"></div>
                 </div>
               </div>
             </div>
@@ -131,6 +130,9 @@
             <span class="text-slate-400 ml-1" x-show="s.priceVerify"
                   x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
                           + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
+            <span class="text-slate-400 ml-1"
+                  x-text="'liq_drain ' + (s.liqDrain?.exits ?? 0) + ' exits · '
+                          + (s.liqDrain?.avgDropPct != null ? s.liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
           </div>
         </div>
       </template>
@@ -143,13 +145,18 @@
       <div class="flex items-baseline justify-between gap-2 flex-wrap">
         <div>
           <h2 class="text-2xl font-bold text-white" x-text="describe(selected).label"></h2>
-          <div class="text-sm text-slate-300 mt-1 max-w-3xl" x-text="describe(selected).description"></div>
+          <p class="text-sm text-slate-400 mt-1 max-w-4xl" x-text="describe(selected).oneLiner"></p>
+          <div class="text-sm text-slate-300 mt-3 max-w-4xl leading-relaxed whitespace-pre-line border-l-2 border-violet-500/40 pl-4"
+               x-text="describe(selected).details"></div>
         </div>
         <div class="text-sm text-slate-300 flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>last event: <span class="mono text-slate-100" x-text="lastTs(selectedRow())"></span></span>
           <span class="text-slate-400" x-show="selectedRow()?.priceVerify"
                 x-text="'pverify ' + (selectedRow()?.priceVerify?.blockedCount ?? 0) + ' blocked · '
                         + (selectedRow()?.priceVerify?.avgSlipPct != null ? selectedRow().priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
+          <span class="text-slate-400 ml-2"
+                x-text="'liq_drain ' + (selectedRow()?.liqDrain?.exits ?? 0) + ' exits · '
+                        + (selectedRow()?.liqDrain?.avgDropPct != null ? selectedRow().liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
         </div>
       </div>
 
@@ -164,24 +171,24 @@
         </div>
         <div class="card rounded-lg p-4">
           <div class="label-caps">Avg / Avg Peak</div>
-          <div class="text-xl font-bold mt-1 text-slate-50">
-            <span x-text="fmtPct(selectedRow()?.avgPnl)"></span>
+          <div class="text-xl font-bold mt-1">
+            <span :class="signedPctColor(selectedRow()?.avgPnl)" x-text="fmtPct(selectedRow()?.avgPnl)"></span>
             <span class="text-slate-400"> / </span>
-            <span x-text="fmtPct(selectedRow()?.avgPeak)"></span>
+            <span :class="signedPctColor(selectedRow()?.avgPeak)" x-text="fmtPct(selectedRow()?.avgPeak)"></span>
           </div>
         </div>
         <div class="card rounded-lg p-4">
           <div class="label-caps">Best / Worst trade</div>
           <div class="text-xl font-bold mt-1">
-            <span class="text-emerald-400" x-text="fmtUsdSigned(selectedRow()?.bestPnlUsd)"></span>
+            <span :class="signedUsdColor(selectedRow()?.bestPnlUsd)" x-text="fmtUsdSigned(selectedRow()?.bestPnlUsd)"></span>
             <span class="text-slate-400"> / </span>
-            <span class="text-rose-400" x-text="fmtUsdSigned(selectedRow()?.worstPnlUsd)"></span>
+            <span :class="signedUsdColor(selectedRow()?.worstPnlUsd)" x-text="fmtUsdSigned(selectedRow()?.worstPnlUsd)"></span>
           </div>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm mono mt-4">
-        <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA']" :key="r">
+      <div class="grid grid-cols-2 sm:grid-cols-6 gap-3 text-sm mono mt-4">
+        <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA','LIQ_DRAIN']" :key="r">
           <div class="card rounded-lg p-3">
             <div class="label-caps" x-text="r"></div>
             <div class="stat-num mt-1 text-base">
@@ -227,11 +234,16 @@
                       <span class="font-semibold mono"
                             :class="entrySlipColor(o)"
                             x-text="entrySlipLabel(o)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">liq drop</span>
+                      <span class="font-semibold mono"
+                            :class="liqDropColor(o)"
+                            x-text="liqDropLabel(o)"></span>
                     </div>
                   </div>
                   <div class="text-right max-w-[13rem]">
                     <div class="mono text-base font-bold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
-                    <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
+                    <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
                     <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет цены (сначала DEX-снимки base/quote, затем журнал, затем Jupiter). Проверьте базу входа в open.</div>
                     <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
@@ -247,7 +259,7 @@
                         <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
                         <span x-show="ev.pnlUsd != null">
                           <span class="text-slate-500"> · </span>
-                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
                         </span>
                       </span>
                     </div>
@@ -275,8 +287,12 @@
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm">
-                      <span class="text-slate-300" x-text="c.exitReason + ' · age ' + Math.round((c.durationMin || 0)) + 'm'"></span>
+                      <span class="pill shrink-0 text-xs"
+                            :class="exitReasonPillClass(c)"
+                            x-text="c.exitReason"></span>
+                      <span class="text-slate-300" x-text="exitReasonHeadline(c)"></span>
                     </div>
+                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-text="exitReasonDetail(c)"></div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug">
                       <span class="text-slate-400">mcap at buy</span>
                       <span class="font-semibold mono" :class="closedEntryMcapOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryMcapOk(c) ? fmtUsd(c.entryMcapAtBuyUsd) : 'n/a'"></span>
@@ -292,7 +308,7 @@
                   </div>
                   <div class="text-right">
                     <div class="mono text-base font-bold" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
-                    <div class="text-sm font-medium" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                    <div class="text-sm font-medium" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
@@ -306,7 +322,7 @@
                         <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
                         <span x-show="ev.pnlUsd != null">
                           <span class="text-slate-500"> · </span>
-                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="fmtUsdSigned(ev.pnlUsd)"></span>
                         </span>
                       </span>
                     </div>
@@ -337,50 +353,58 @@
       pt1_smart_lottery: {
         label: 'Smart Lottery',
         tag: 'lottery',
-        oneLiner: 'Pump.fun launch — only when wallet atlas sees smart-tagged early buyers.',
-        description: 'Buys pump.fun tokens within first 30 minutes only when whale / sniper / meme_flipper / rotation_node wallets appear in early swaps and there is no scam/bot tag. TP=20x, no SL, trail -50% after 5x, timeout 48h. Position $100.',
+        oneLiner: 'Pump.fun в первые ~30 минут — только при «умных» кошельках в ранних свопах.',
+        details:
+          'Вход:\n• Лейн launchpad; решение в окне возраста токена по env paper-trader.\n• Фильтр atlas: в ранних свопах должны появиться кошельки с тегами whale / sniper / meme_flipper / rotation_node; исключаются scam/bot.\n\nПозиция: $100 (paper).\n\nВыходы (типовой профиль spec):\n• Жёсткий TP ~×20 от входа.\n• Отдельный SL может быть отключён — упор на трейл и таймаут.\n• Трейлинг ~−50% от пика после того как цена прошла ~×5 от входа.\n• Таймаут позиции до ~48 ч.\n\nПримечание: эта стратегия может не быть запущена на текущем PM2 — блок для совместимости дашборда.',
       },
       pt1_fresh_validated: {
         label: 'Fresh Validated',
         tag: 'fresh',
-        oneLiner: 'Pump.fun 30-120m, 150+ holders, growing vs early baseline.',
-        description: 'Skips first 30 minutes. Requires holders ≥150, vol5m ≥$1.5k, top buyer share <25%, growth ≥+50% vs price at 10-15m. TP +50%, SL -25%, trail -20% after +30%, timeout 4h. Position $100.',
+        oneLiner: 'Pump.fun 30–120 мин: много холдеров и рост относительно ранней базы.',
+        details:
+          'Вход:\n• Пропуск первых 30 мин после создания.\n• Холдеры ≥ ~150, vol 5m ≥ ~$1.5k, доля топ-покупателя < ~25%.\n• Рост цены vs база на окне 10–15 мин ≥ ~+50%.\n\nПозиция: $100.\n\nВыходы (типовой профиль):\n• TP около +50%.\n• SL около −25%.\n• Трейл ~−20% от пика после ~+30% нереализованной прибыли.\n• Таймаут ~4 ч.',
       },
       pt1_dip_runners: {
         label: 'Dip Runners',
         tag: 'dip',
-        oneLiner: 'Scalp pullbacks on Raydium/Meteora runners ≥6h old. DCA + TP-ladder.',
-        description: 'Post-migration only. Age ≥6h, liquidity ≥$20k, vol5m ≥$2k. Dip -10..-30% from 2h high after a ≥30% impulse. DCA: -7% +50% size, -15% +50% size, killstop -22% from average. TP-ladder 5/10/15% (30/35/25%) + trailing 10% on rest. Timeout 90m. Position $100 base.',
+        oneLiner: 'Шаблон «дип на пост-миграции»: устаревшее имя, см. pt1-diprunner для прод.',
+        details:
+          'Исторический ярлык. Все актуальные параметры — у PM2 `pt1-diprunner` (файл ecosystem.config.cjs и блок ниже).',
       },
       'pt1-diprunner': {
         label: 'Deep Runner (diprunner)',
         tag: 'dip',
-        oneLiner: 'Scalp pullbacks on Raydium/Meteora runners ≥6h old. DCA + TP-ladder.',
-        description: 'Same as Dip Runners — PM2 id pt1-diprunner. Post-migration pools, DCA + TP-ladder, killstop. Position $100 base.',
+        oneLiner: 'Пост-миграция: жёсткий отбор пула, дип за 2 ч −15…−50%, DCA, ладдер TP, трейл по откату ступеней.',
+        details:
+          'Вход (discovery), prod PM2:\n• Лейны: только POST (после миграции), launchpad/migration выкл.\n• Снимок пула: ликвидность ≥ $50 000; объём 5m ≥ $10 000; покупок 5m ≥ 4, продаж ≥ 3; buy/sell ≥ 0.98.\n• Возраст пула в данных снимка ≥ 180 мин (> 3 ч); верхняя граница по env не ограничена.\n• Холдеры: глобальный порог ≥ 2000 — live-резолв через QuickNode перед каждой оценкой входа (getProgramAccounts Token + Token-2022, dataSlice owner+amount, дедуп уникальных owner с ненулевым балансом). Кэш 90 с, до 10 запросов/тик. Политика при недоступности QN: db_fallback (использовать `tokens.holder_count`, если он ≥ 2000). Live-значение пишется обратно в БД.\n• Дип за окно lookback 120 мин (2 ч): цена ниже хая окна на 15–50% (`dip_min` −15%, `dip_max` −50%); импульс перед дипом ≥ 12%; кулдаун повторного входа 120 мин (скальп 20 мин).\n• Киты: анализ вкл., принудительный whale-trigger выкл.; safety QN выкл.\n\nПозиция: первая нога $100.\n\nDCA (от первой ноги по цене):\n• −10% — докупка на 30% от начальной позиции ($30);\n• −20% — ещё докупка на 30% от начальной ($30).\n\nKill-stop: −40% к PnL от средней цены входа.\n\nTP-ladder (доля от текущего остатка после каждого шага):\n• +10% → продать 40%;\n• +20% → 50% от остатка;\n• +30% → 80% от остатка;\n• +40% → 100% от остатка (закрыть всё, что осталось).\n\n«Трейл» (режим `PAPER_TRAIL_MODE=ladder_retrace`): классический трейл от пика отключён для выхода; если уже срабатывали ступени ладдера и нереализованный PnL откатывается до уровня предыдущей ступени (например после +20% упали обратно до +10% или ниже) — закрывается вся оставшаяся позиция (в журнале reason TRAIL).\n\nЖёсткий TP по множителю `TP_X` выставлен очень высоко (×100), чтобы не пересекаться с ладдером; SL по множителю выкл. (`SL_X=0`).\n\nТаймаут позиции: 24 ч.\n\nКомиссии: live priority fee вкл.',
       },
       'pt1-dno': {
         label: 'Dno (pt1-dno)',
         tag: 'dno',
-        oneLiner: 'Fast scalper on mature post-lane pools (3–72h). No DCA, tight ladder.',
-        description: 'PM2 id pt1-dno. Post-lane age 180–4320 min, tight TP-ladder, hard SL, timeout 1h. Position $100.',
+        oneLiner: 'Быстрый скальп на «зрелых» пост-пулах 3–72 ч; без DCA; жёсткий SL.',
+        details:
+          'Вход (discovery / dip), env VPS:\n• Лейны: POST вкл., launchpad и migration выкл.\n• Возраст пула в снимке: 180…4320 мин (3…72 ч).\n• Ликвидность ≥ $8 000; объём 5m ≥ $500; покупок ≥ 4, продаж ≥ 3; buy/sell ≥ 0.98.\n• Дип: lookback 120 мин; откат −5%…−30%; импульс ≥ +12%; мин. возраст токена для дипа 180 мин (совпадает с нижней границей пост-лейна); кулдаун 120 мин (скальп 20 мин).\n• Киты: анализ вкл.; capitulation порог 0.85.\n• Safety-check (QN): вкл.\n• Pre-entry price verify (Jupiter quote): вкл., режим shadow (`BLOCK_ON_FAIL=0`).\n\nПозиция: $100; DCA уровней нет (`PAPER_DCA_LEVELS` пусто).\n\nKill-stop: выкл. (`PAPER_DCA_KILLSTOP` = 0).\n\nTP-ladder:\n• +5% → 30%; +10% → 30%; +20% → 30%; +30% → 10% остатка.\n\nМножители:\n• TP_X = 1.5×; SL_X = 0.90 — жёсткий стоп около −10% от входа.\n\nТрейлинг:\n• После ~+5% к сценарию входа (`TRAIL_TRIGGER_X` 1.05); трейл −5% от пика (`TRAIL_DROP` 0.05).\n\nТаймаут: 1 ч.\n\nКомиссии: priority fee вкл.',
       },
       'pt1-oscar': {
         label: 'Oscar (pt1-oscar)',
         tag: 'oscar',
-        oneLiner: 'Mid-hold dip strategy with balanced TP-ladder + DCA.',
-        description: 'PM2 id pt1-oscar. Oscar-style dip runner clone. Position $100 base.',
+        oneLiner: 'Средний горизонт: один уровень DCA, широкий TP-ladder, мягче трейл.',
+        details:
+          'Вход (discovery / dip), env VPS:\n• Лейны и ликвидность/vol/Buy-Sell как у diprunner (POST; liq ≥ $8 000; vol5m ≥ $500; buys ≥ 4, sells ≥ 3; B/S ≥ 0.98; возраст пула min/max 0 в env).\n• Дип: lookback 120 мин; откат −5%…−30%; импульс ≥ +12%; мин. возраст для дипа 0 мин; кулдаун 120 мин (скальп 20 мин).\n• Киты: анализ вкл.; whale-trigger не обязателен.\n• Safety: выкл. в ecosystem.\n\nПозиция: $100.\n\nDCA:\n• Один уровень: при −12% от средней — докупка +50% к базе (`−12:0.5`).\n\nKill-stop:\n• −25% от средней (`PAPER_DCA_KILLSTOP −0.25`).\n\nTP-ladder:\n• +30% PnL → 30% позиции; +60% → 40%; +100% → 20%.\n\nМножители:\n• TP_X = 3.0×; SL_X = 0 — фиксированный SL по множителю выключен.\n\nТрейлинг:\n• После ~+30% (`TRAIL_TRIGGER_X` 1.30); трейл −20% от пика (`TRAIL_DROP` 0.20).\n\nТаймаут: 2 ч.\n\nКомиссии: priority fee вкл.',
       },
       pt1_oscar_clone: {
         label: 'Oscar Clone',
         tag: 'oscar',
-        oneLiner: 'Mid-hold (~30m) on launchpad runners, balanced TP-ladder + 1 DCA leg.',
-        description: 'Pump.fun age 7-90m, holders ≥80, vol5m ≥$0.8k, growth ≥+30%. DCA once at -12% (+50% size), killstop -25%. TP-ladder 30/60/100% (30/40/20%) + trailing 20% after +30%. Timeout 2h. Position $100 base.',
+        oneLiner: 'Легенда клиона Oscar на launchpad-возрастах (не текущий PM2 trio).',
+        details:
+          'Вход (концепт):\n• Возраст pump.fun ~7–90 мин; холдеры ≥ ~80; vol5m ≥ ~$800; рост от базы ≥ ~+30%.\n\nПозиция: $100.\n\nDCA: одна докупка при −12% (+50% к базе).\nKill-stop: −25% от средней.\nTP-ladder: +30% / +60% / +100% с продажами 30% / 40% / 20% остатка.\nТрейл: ~−20% от пика после ~+30% прибыли.\nТаймаут ~2 ч.',
       },
       pt1_dno_clone: {
         label: 'Dno Clone',
         tag: 'dno',
-        oneLiner: 'Fast scalper on launch (~12m hold), tight TP/SL, no DCA.',
-        description: 'Pump.fun age 5-30m, holders ≥40, vol5m ≥$0.6k, b/s ≥1.5, growth ≥+20%. NO DCA. Tight TP-ladder 10/20/30% (40/40/20%). Hard SL -15%, trailing -10% after +10%. Timeout 60m. Position $100.',
+        oneLiner: 'Легенда клиона Dno на коротком возрасте (не текущий pt1-dno).',
+        details:
+          'Вход (концепт):\n• Возраст ~5–30 мин; холдеры ≥ ~40; vol5m ≥ ~$600; buy/sell ≥ ~1.5; рост ≥ ~+20%.\n\nПозиция: $100; без DCA.\nTP-ladder: +10% / +20% / +30% с долями ~40% / 40% / 20%.\nЖёсткий SL ~−15%; трейл ~−10% от пика после ~+10%.\nТаймаут ~60 мин.',
       },
     };
 
@@ -438,6 +462,66 @@
           if (v >= 2) return 'text-amber-300';
           return 'text-emerald-300';
         },
+        liqDropLabel(o) {
+          if (o.entryLiqUsd == null || !(Number(o.entryLiqUsd) > 0)) return 'n/a';
+          if (o.liqDropPct == null) return '·';
+          return o.liqDropPct.toFixed(1) + '%';
+        },
+        liqDropColor(o) {
+          if (o.liqDropPct == null) return 'text-slate-500';
+          const v = o.liqDropPct;
+          if (v >= 25) return 'text-rose-400';
+          if (v >= 10) return 'text-amber-300';
+          return 'text-emerald-300';
+        },
+        exitReasonPillClass(c) {
+          const r = c?.exitReason;
+          const pnl = Number(c?.pnlPct ?? 0);
+          if (r === 'TP') return pnl >= 0 ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-500/40'
+                                          : 'bg-amber-500/25 text-amber-200 border border-amber-500/40';
+          if (r === 'TRAIL') return 'bg-sky-500/25 text-sky-200 border border-sky-500/40';
+          if (r === 'SL') return 'bg-rose-500/25 text-rose-200 border border-rose-500/40';
+          if (r === 'KILLSTOP') return 'bg-rose-700/30 text-rose-100 border border-rose-700/50';
+          if (r === 'TIMEOUT') return 'bg-slate-500/25 text-slate-200 border border-slate-500/40';
+          if (r === 'NO_DATA') return 'bg-violet-500/25 text-violet-200 border border-violet-500/40';
+          if (r === 'LIQ_DRAIN') return 'bg-rose-700/30 text-rose-100 border border-rose-700/50';
+          return 'bg-slate-600/25 text-slate-300 border border-slate-600/40';
+        },
+        exitReasonHeadline(c) {
+          const ageMin = Math.round(Number(c?.durationMin ?? 0));
+          const peakPnl = c?.exitContext?.peakPnlPct;
+          const closePnl = c?.exitContext?.closePnlPct ?? Number(c?.pnlPct ?? 0);
+          const retrace = c?.exitContext?.retraceFromPeakPct;
+          const parts = [];
+          if (Number.isFinite(closePnl)) {
+            parts.push((closePnl >= 0 ? '+' : '') + closePnl.toFixed(1) + '%');
+          }
+          if (Number.isFinite(peakPnl) && peakPnl > 0) {
+            parts.push('peak +' + peakPnl.toFixed(1) + '%');
+          }
+          if (Number.isFinite(retrace) && retrace > 0) {
+            parts.push('retrace −' + retrace.toFixed(0) + 'pp');
+          }
+          parts.push('age ' + ageMin + 'm');
+          return parts.join(' · ');
+        },
+        exitReasonDetail(c) {
+          const ec = c?.exitContext;
+          if (!ec) return '';
+          const bits = [];
+          if (ec.triggerLabel) bits.push(ec.triggerLabel);
+          if (Number(ec.tpLadderTotal ?? 0) > 0) {
+            bits.push('TP ladder ' + (ec.tpLadderHits || 0) + '/' + ec.tpLadderTotal + ' hits');
+          }
+          if (Number(ec.dcaLegsAdded ?? 0) > 0) bits.push(ec.dcaLegsAdded + ' DCA legs');
+          if (ec.remainingFractionAtClose != null && ec.remainingFractionAtClose > 0.001 && ec.remainingFractionAtClose < 0.999) {
+            bits.push((ec.remainingFractionAtClose * 100).toFixed(0) + '% remain at close');
+          }
+          if (ec.trailingArmed === false && (c?.exitReason === 'TIMEOUT' || c?.exitReason === 'TRAIL')) {
+            bits.push('trail NEVER armed');
+          }
+          return bits.join(' · ');
+        },
         closedEntryMcapOk(c) {
           const x = Number(c?.entryMcapAtBuyUsd ?? 0);
           return Number.isFinite(x) && x > 0;
@@ -456,6 +540,7 @@
             if (r === 'TP') return 'text-emerald-400';
             if (r === 'SL' || r === 'KILLSTOP') return 'text-rose-400';
             if (r === 'TRAIL') return 'text-cyan-300';
+            if (r === 'LIQ_DRAIN') return 'text-rose-300';
             return 'text-slate-300';
           }
           return 'text-slate-300';
@@ -474,7 +559,14 @@
         },
         selectedRow() { return (this.state.strategies || []).find((s) => s.strategyId === this.selected) || null; },
         describe(id) {
-          return STRATEGY_META[id] || { label: id, tag: 'custom', oneLiner: '', description: '' };
+          const m = STRATEGY_META[id] || {};
+          const details = m.details || m.description || '';
+          return {
+            label: m.label || String(id),
+            tag: m.tag || 'custom',
+            oneLiner: m.oneLiner || '',
+            details,
+          };
         },
         lastTs(s) {
           if (!s?.lastTs) return '—';
@@ -482,6 +574,17 @@
         },
         short(m) { return m ? (m.slice(0, 6) + '…' + m.slice(-4)) : '-'; },
         gmgn(m) { return `https://gmgn.ai/sol/token/${m}`; },
+        /** Emerald / rose by sign; slate when n/a (matches fmtPct “—”). */
+        signedPctColor(v) {
+          if (v == null || v === '' || Number.isNaN(Number(v))) return 'text-slate-300';
+          return Number(v) >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        },
+        signedUsdColor(v) {
+          if (v == null || v === '') return 'text-slate-300';
+          const n = Number(v);
+          if (!Number.isFinite(n)) return 'text-slate-300';
+          return n >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        },
         fmtPct(v) { if (v == null || isNaN(v)) return '—'; return `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`; },
         fmtUsd(v) {
           const x = Number(v || 0), a = Math.abs(x);
