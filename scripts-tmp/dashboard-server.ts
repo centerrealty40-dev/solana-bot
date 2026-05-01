@@ -1448,9 +1448,12 @@ function loadPaper2File(filePath: string): {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([reason, count]) => ({ reason, count }));
+  /** Последняя строка `reset` в журнале — дашборд считает только закрытия с exitTs ≥ reset.ts (jsonl не режем). */
+  const closedVisible =
+    resetTs > 0 ? cl.filter((c) => Number((c as { exitTs?: unknown }).exitTs ?? 0) >= resetTs) : cl;
   return {
     open: [...om.values()],
-    closed: cl,
+    closed: closedVisible,
     firstTs: f,
     lastTs: l,
     resetTs,
