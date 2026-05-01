@@ -437,3 +437,111 @@ export const streamEvents = pgTable(
     slotIdx: index('stream_events_slot_idx').on(t.slot),
   }),
 );
+
+/* =====================================================================
+ * W6.0 — DEX snapshots, jupiter routes, direct-LP events.
+ * Read by: paper-trader (POST/MIGRATION lanes), direct-lp-detector.
+ * Written by: per-DEX collectors (W6.1).
+ * ===================================================================== */
+
+const pairSnapshotColumns = () => ({
+  ts: timestamp('ts', { withTimezone: true }).notNull(),
+  source: text('source').notNull(),
+  pairAddress: text('pair_address').notNull(),
+  baseMint: text('base_mint').notNull(),
+  quoteMint: text('quote_mint').notNull(),
+  priceUsd: doublePrecision('price_usd'),
+  liquidityUsd: doublePrecision('liquidity_usd'),
+  volume5m: doublePrecision('volume_5m'),
+  volume1h: doublePrecision('volume_1h'),
+  buys5m: integer('buys_5m'),
+  sells5m: integer('sells_5m'),
+  fdvUsd: doublePrecision('fdv_usd'),
+  marketCapUsd: doublePrecision('market_cap_usd'),
+  launchTs: timestamp('launch_ts', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const raydiumPairSnapshots = pgTable(
+  'raydium_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('raydium_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('raydium_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('raydium_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const meteoraPairSnapshots = pgTable(
+  'meteora_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('meteora_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('meteora_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('meteora_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const orcaPairSnapshots = pgTable(
+  'orca_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('orca_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('orca_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('orca_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const moonshotPairSnapshots = pgTable(
+  'moonshot_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('moonshot_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('moonshot_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('moonshot_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const jupiterRouteSnapshots = pgTable(
+  'jupiter_route_snapshots',
+  {
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    mint: text('mint').notNull(),
+    routeable: boolean('routeable').notNull(),
+    bestOutUsd: doublePrecision('best_out_usd'),
+    estimatedSlippageBps: doublePrecision('estimated_slippage_bps'),
+    quoteInUsd: doublePrecision('quote_in_usd'),
+    hops: integer('hops'),
+    venue: text('venue'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    mintTsUq: uniqueIndex('jupiter_route_snapshots_mint_ts_uq').on(t.mint, t.ts),
+    tsIdx: index('jupiter_route_snapshots_ts_idx').on(t.ts),
+    mintIdx: index('jupiter_route_snapshots_mint_idx').on(t.mint),
+  }),
+);
+
+export const directLpEvents = pgTable(
+  'direct_lp_events',
+  {
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    pairAddress: text('pair_address').notNull(),
+    baseMint: text('base_mint').notNull(),
+    quoteMint: text('quote_mint').notNull(),
+    dex: text('dex').notNull(),
+    firstPriceUsd: doublePrecision('first_price_usd'),
+    firstLiquidityUsd: doublePrecision('first_liquidity_usd'),
+    launchInferredTs: timestamp('launch_inferred_ts', { withTimezone: true }),
+    confidence: doublePrecision('confidence'),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniq: uniqueIndex('direct_lp_events_uq').on(t.baseMint, t.pairAddress, t.ts),
+    baseIdx: index('direct_lp_events_base_idx').on(t.baseMint),
+    tsIdx: index('direct_lp_events_ts_idx').on(t.ts),
+  }),
+);

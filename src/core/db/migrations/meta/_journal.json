@@ -85,6 +85,27 @@
       "when": 1779300000000,
       "tag": "0011_atlas_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779400000000,
+      "tag": "0012_dex_pair_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779400000001,
+      "tag": "0013_jupiter_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779400000002,
+      "tag": "0014_direct_lp_events",
+      "breakpoints": true
     }
   ]
 }
