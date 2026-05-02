@@ -1149,8 +1149,8 @@ type TimelineEvent = {
   reason: string | null;
   remainingFraction: number | null;
   /**
-   * Trade-flow USD for dashboard copy: buys (open / DCA), cost basis sold (partial / final close).
-   * Not mark-to-market.
+   * Trade-flow USD for dashboard: buys (open / DCA); partial_sell = gross proceeds;
+   * close = cost basis of closed slice. Not mark-to-market.
    */
   amountUsd: number | null;
 };
@@ -1262,19 +1262,19 @@ function buildTimelineEvent(
       reason === 'TP_LADDER' ? 'Ladder (take profit)' : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
     const proceedsUsd = Number(e.proceedsUsd ?? 0);
-    const soldCostUsd =
-      Number.isFinite(proceedsUsd) && Number.isFinite(pnlUsd) && proceedsUsd > 0
-        ? proceedsUsd - pnlUsd
+    const proceedsLabel =
+      proceedsUsd > 0 && Number.isFinite(proceedsUsd)
+        ? proceedsUsd >= 1000
+          ? `$${(proceedsUsd / 1000).toFixed(1)}k`
+          : `$${proceedsUsd.toFixed(0)}`
         : null;
-    const soldLabelUsd =
-      soldCostUsd != null && soldCostUsd > 0
-        ? soldCostUsd >= 1000
-          ? `$${(soldCostUsd / 1000).toFixed(1)}k`
-          : `$${soldCostUsd.toFixed(0)}`
-        : null;
-    const label = `${niceReason} · sell ${sellPct}% of remaining @ ${fmtSignedPct(ladderPnlPct)}${
-      soldLabelUsd ? ` · продано ${soldLabelUsd} (cost)` : ''
-    }`;
+    const ladderPctPlain =
+      Number.isFinite(ladderPnlPct) && ladderPnlPct !== 0
+        ? `${ladderPnlPct < 0 ? '−' : ''}${Math.abs(ladderPnlPct).toFixed(0)}%`
+        : '';
+    const label = `${niceReason} · sell ${sellPct}% of remaining${
+      ladderPctPlain ? ` @ ${ladderPctPlain} PnL` : ''
+    }${proceedsLabel ? ` · продано ${proceedsLabel}` : ''}`;
     return {
       ts,
       kind: 'partial_sell',
@@ -1286,8 +1286,7 @@ function buildTimelineEvent(
       pnlUsd: Number.isFinite(pnlUsd) ? pnlUsd : null,
       reason,
       remainingFraction: Number(e.remainingFraction ?? null),
-      amountUsd:
-        soldCostUsd != null && Number.isFinite(soldCostUsd) && soldCostUsd > 0 ? soldCostUsd : null,
+      amountUsd: proceedsUsd > 0 && Number.isFinite(proceedsUsd) ? proceedsUsd : null,
     };
   }
   if (kind === 'close') {
