@@ -8,6 +8,27 @@
 
 ---
 
+## [1.5.1] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.1`.
+
+### Добавлено
+
+- **`docs/strategy/ROADMAP.md`** — единая дорожная карта (статусы пакетов; SSOT выполненного по-прежнему `INDEX` + `CHANGELOG`).
+- **`docs/strategy/specs/W6.3c_tp_ladder_remaining_mark_spec.md`** — файла не было в git, хотя на него уже ссылался [`INDEX.md`](./specs/INDEX.md) (W6.3c.1); устранено нарушение целостности каталога спек.
+- Утилиты **`scripts-tmp/paper2-agg-eval-reasons.mjs`**, **`paper2-count-eval-recent.mjs`**, **`paper2-analyze-price-verify-jsonl.mjs`** — закреплены в репо (имена как у остальных `paper2-*.mjs`).
+
+### Изменено
+
+- **`docs/strategy/specs/W7.6_impulse_confirm_entry_path.md`** — статус блока: соответствие реализации (`impulse-confirm.ts`, Orca vs Jupiter-only ветки).
+- **[`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)** — инварианты **I5** (INDEX ↔ файлы в коммите), **I6** (чистое дерево перед push в `v2`); шаг закрытия задачи и пункты чеклиста §10; исправлена отсылка деплоя на **§7** (раньше ошибочно было §8).
+
+### Откат
+
+- `VERSION` **`1.5.0`** и удаление добавленных путей / revert коммита.
+
+---
+
 ## [1.5.0] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.0`.
