@@ -8,6 +8,24 @@
 
 ---
 
+## [1.4.0] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.4.0`.
+
+### Добавлено
+
+- **W8.0 Phase 1 — замороженный контракт JSONL для `live-oscar`:** поле **`liveSchema: 1`** на каждой строке; типы событий `live_boot`, `live_shutdown`, `heartbeat`, `execution_attempt`, `execution_result`, `execution_skip`, `risk_block`, `capital_skip`, `capital_rotate_close`; валидация **Zod**; единая запись через **`appendLiveJsonlEvent`**; **`intentId`** (UUID v4) и **`newLiveIntentId()`**; матрица **`fsync`** по [`W8.0_phase1_live_jsonl_contract.md`](../specs/W8.0_phase1_live_jsonl_contract.md). Опционально **`LIVE_JSONL_FSYNC_HEARTBEAT=1`**.
+
+### Миграции / деплой
+
+- Деплой по желанию: процесс **`live-oscar`** по-прежнему без торговли (`LIVE_STRATEGY_ENABLED=0`). После выката новые строки в `LIVE_TRADES_PATH` содержат `liveSchema: 1`; старые строки Phase 0 без `liveSchema` остаются валидными для человеческого чтения, replay Phase 7 будет документировать политику.
+
+### Откат
+
+- Код: revert коммита W8.0-p1 или `VERSION` **`1.3.0`** + откат `src/live/*`.
+
+---
+
 ## [1.3.0] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.3.0`.
