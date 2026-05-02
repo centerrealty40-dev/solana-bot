@@ -525,6 +525,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
+        /** PG-импульс по паре может закрыть dip-windows без классического окна (см. impulse-confirm + dip-clones). */
+        PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         /** Δ между двумя PG-снимками пути импульса; было 5 — слишком чувствительно к шуму минутки */
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '15',

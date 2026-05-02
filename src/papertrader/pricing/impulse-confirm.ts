@@ -60,6 +60,35 @@ async function fetchLastTwoSnapshots(
   }));
 }
 
+/**
+ * Только PG-триггер импульса (два последних снимка пары), без QN/Jupiter.
+ * Совпадает с началом `runImpulseConfirmGate` до решения по Δ_pg; для bypass dip-windows в discovery.
+ */
+export async function impulsePgSnapTriggerOk(
+  cfg: PaperTraderConfig,
+  mint: string,
+  source: string,
+  pairAddress: string | null,
+): Promise<boolean> {
+  if (!cfg.impulseConfirmEnabled) return false;
+  if (!impulseFeatureAllowedByKillSwitch()) return false;
+  if (!pairAddress || !String(pairAddress).trim()) return false;
+  const pair = String(pairAddress).trim();
+  const snaps = await fetchLastTwoSnapshots(source, mint, pair);
+  if (!snaps) return false;
+  const sNew = snaps[0]!;
+  const sPrev = snaps[1]!;
+  const pNew = sNew.price_usd;
+  const pPrev = sPrev.price_usd;
+  if (!(pPrev > 0) || !(pNew > 0)) return false;
+  const ageSec = (Date.now() - sNew.ts.getTime()) / 1000;
+  if (ageSec < cfg.impulsePgMaxAgeSecMin || ageSec > cfg.impulsePgMaxAgeSecMax) return false;
+  const deltaPgPct = ((pNew - pPrev) / pPrev) * 100;
+  return cfg.impulsePgAbsMode
+    ? Math.abs(deltaPgPct) >= cfg.impulsePgMinAbsPct
+    : deltaPgPct <= -cfg.impulsePgMinDropPct;
+}
+
 export interface ImpulseConfirmStamp {
   verdict: 'pass' | 'fail' | 'skipped';
   reason?: string;

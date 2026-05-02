@@ -250,6 +250,11 @@ const ConfigSchema = z.object({
   impulseDipPolicy: z.enum(['shadow', 'parallel_and', 'parallel_or', 'boost']).default('parallel_and'),
   impulseQnCreditsPerCall: z.coerce.number().int().min(10).max(500).default(30),
   impulseJupiterTimeoutMs: z.coerce.number().int().min(500).max(10_000).default(2500),
+  /**
+   * Если dip-windows не прошли, но PG-импульс по паре сработал — считать dip-гейт пройденным для остальных фильтров.
+   * Полный impulse (QN/Jupiter) по-прежнему в executor; Orca — только один из путей ончейн-спота.
+   */
+  entryImpulsePgBypassesDip: z.boolean().default(false),
 }).transform((data) => {
   const { dipLookbackWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
@@ -465,6 +470,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     })(),
     impulseQnCreditsPerCall: process.env.PAPER_IMPULSE_QN_CREDITS_PER_CALL,
     impulseJupiterTimeoutMs: process.env.PAPER_IMPULSE_JUPITER_TIMEOUT_MS,
+    entryImpulsePgBypassesDip: envBool(process.env.PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP, false),
   });
 
   if (!parsed.success) {

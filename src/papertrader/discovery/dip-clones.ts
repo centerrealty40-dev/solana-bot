@@ -6,6 +6,7 @@ import { globalGate } from '../filters/global-gate.js';
 import { fetchDipContextMap, evaluateDip } from '../dip-detector.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
+import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -27,6 +28,8 @@ export interface EvalDecision {
   features: SnapshotFeatures;
   whale: WhaleAnalysis | null;
   holdersMeta?: HoldersDecisionMeta;
+  /** Как пройден входной гейт цены (если применимо); см. `PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`. */
+  entryPath?: 'dip_windows' | 'impulse_pg_snap';
 }
 
 export interface DiscoveryTickResult {
@@ -106,7 +109,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       skipHolderCheck: liveHoldersEnabled,
     });
     const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
-    const baseReasons = [...v.reasons, ...globalReasons, ...dipEval.reasons];
+    let dipReasonsForGate = dipEval.reasons;
+    let entryPath: EvalDecision['entryPath'];
+    if (dipEval.reasons.length === 0) {
+      entryPath = 'dip_windows';
+    } else if (cfg.entryImpulsePgBypassesDip) {
+      const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
+      if (bypass) {
+        dipReasonsForGate = [];
+        entryPath = 'impulse_pg_snap';
+      }
+    }
+    const baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
     const baseDipPass = baseReasons.length === 0;
 
     let whale: WhaleAnalysis | null = null;
@@ -207,6 +221,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       features: buildFeatures(row, dipEval.dipPct, dipEval.impulsePct, dipEval.dipLookbackUsedMin),
       whale,
       holdersMeta,
+      entryPath,
     });
   }
 

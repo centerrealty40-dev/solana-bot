@@ -151,6 +151,7 @@ export async function main(): Promise<void> {
           btc,
           whale_analysis: d.whale,
           holders_meta: d.holdersMeta ?? null,
+          entry_path: d.entryPath,
         });
         if (!d.pass) continue;
         if (open.has(d.mint)) {

@@ -288,6 +288,8 @@ export interface EvalEvent extends JsonlEventBase {
   m: SnapshotFeatures;
   btc: { ret1h_pct: number | null; ret4h_pct: number | null; updated_ts: number | null };
   whale_analysis: WhaleAnalysis | null;
+  /** См. `PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`; только наблюдаемость. */
+  entry_path?: 'dip_windows' | 'impulse_pg_snap';
 }
 
 export interface EvalSkipOpenEvent extends JsonlEventBase {
