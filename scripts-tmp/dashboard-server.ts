@@ -1259,22 +1259,18 @@ function buildTimelineEvent(
     const reason = String(e.reason || 'partial_sell');
     const sellPct = Math.round(sellFraction * 100);
     const niceReason =
-      reason === 'TP_LADDER' ? 'Ladder (take profit)' : reason.toLowerCase().replace(/_/g, ' ');
+      reason === 'TP_LADDER'
+        ? 'Лестница TP'
+        : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
     const proceedsUsd = Number(e.proceedsUsd ?? 0);
-    const proceedsLabel =
-      proceedsUsd > 0 && Number.isFinite(proceedsUsd)
-        ? proceedsUsd >= 1000
-          ? `$${(proceedsUsd / 1000).toFixed(1)}k`
-          : `$${proceedsUsd.toFixed(0)}`
-        : null;
     const ladderPctPlain =
       Number.isFinite(ladderPnlPct) && ladderPnlPct !== 0
         ? `${ladderPnlPct < 0 ? '−' : ''}${Math.abs(ladderPnlPct).toFixed(0)}%`
         : '';
-    const label = `${niceReason} · sell ${sellPct}% of remaining${
-      ladderPctPlain ? ` @ ${ladderPctPlain} PnL` : ''
-    }${proceedsLabel ? ` · продано ${proceedsLabel}` : ''}`;
+    const label = ladderPctPlain
+      ? `${niceReason} · ${sellPct}% от остатка позиции при ${ladderPctPlain} PnL`
+      : `${niceReason} · ${sellPct}% от остатка позиции`;
     return {
       ts,
       kind: 'partial_sell',
