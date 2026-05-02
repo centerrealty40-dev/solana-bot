@@ -1,17 +1,18 @@
 /**
- * Следит за PM2-логами DEX-коллекторов: Telegram при DexScreener/Gecko 429 (retry)
- * и при росте числа «skipping tick» в скользящем окне.
+ * Следит за PM2-логами DEX-коллекторов. Один Telegram [ALERT][dex_collectors] на события:
+ * HTTP 429, retry по 5xx, сбои запросов, tick failed, skipping tick / всплеск skip,
+ * pool shutdown, fatal.
  *
  * Env:
  *   COLLECTOR_WATCH_POLL_MS — интервал чтения (default 15000)
- *   COLLECTOR_WATCH_LOGS — через запятую пути к *-out.log; иначе $PM2_HOME/logs/sa-{orca,moonshot,raydium,meteora,pumpswap}-out.log
- *   COLLECTOR_WATCH_STATE — JSON с оффсетами (default data/collector-log-watch-state.json)
- *   COLLECTOR_WATCH_THROTTLE_429_MS — пауза между объединёнными ALERT про 429 (default 90000)
- *   COLLECTOR_WATCH_THROTTLE_SKIP_MS — пауза для одиночных skip (default 120000)
- *   COLLECTOR_WATCH_SKIP_WINDOW_MS — окно «роста» skip (default 600000)
- *   COLLECTOR_WATCH_SKIP_SPIKE_MIN — порог «всплеска» skip за окно (default 3)
- *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — как у остальных скриптов
- *   Опционально: TELEGRAM_COOLDOWN_ALERT_DEXSCREENER_429_MS — второй слой паузы в sendTagged (subtag dexscreener_429)
+ *   COLLECTOR_WATCH_LOGS — через запятую пути к *-out.log
+ *   COLLECTOR_WATCH_STATE — JSON (default data/collector-log-watch-state.json)
+ *   COLLECTOR_WATCH_THROTTLE_ALERT_MS — пауза между алертами для «важных» событий
+ *     (429, 5xx retry, сеть, всплеск skip, pool shutdown), не для tick_failed/fatal (default 90000)
+ *   COLLECTOR_WATCH_THROTTLE_SKIP_MS — если в батче только обычный skipping tick (default 120000)
+ *   COLLECTOR_WATCH_SKIP_WINDOW_MS / COLLECTOR_WATCH_SKIP_SPIKE_MIN — окно и порог всплеска skip
+ *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+ *   TELEGRAM_COOLDOWN_ALERT_DEX_COLLECTORS_MS — опционально, второй слой в sendTagged
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -22,10 +23,15 @@ import { sendTagged } from '../scripts/lib/telegram.mjs';
 const POLL_MS = Number(process.env.COLLECTOR_WATCH_POLL_MS || 15_000);
 const STATE_PATH =
   process.env.COLLECTOR_WATCH_STATE || path.join('data', 'collector-log-watch-state.json');
-const THROTTLE_429_MS = Number(process.env.COLLECTOR_WATCH_THROTTLE_429_MS ?? 90_000);
+const THROTTLE_ALERT_MS = Number(
+  process.env.COLLECTOR_WATCH_THROTTLE_ALERT_MS ??
+    process.env.COLLECTOR_WATCH_THROTTLE_429_MS ??
+    90_000,
+);
 const THROTTLE_SKIP_MS = Number(process.env.COLLECTOR_WATCH_THROTTLE_SKIP_MS ?? 120_000);
 const SKIP_WINDOW_MS = Number(process.env.COLLECTOR_WATCH_SKIP_WINDOW_MS ?? 600_000);
 const SKIP_SPIKE_MIN = Number(process.env.COLLECTOR_WATCH_SKIP_SPIKE_MIN ?? 3);
+const ERR_SNIP = Number(process.env.COLLECTOR_WATCH_ERR_SNIP || 280);
 
 function defaultLogFiles() {
   const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), '.pm2');
@@ -83,72 +89,194 @@ function pruneSkips(state, collector, now) {
   return state.skipTs[collector];
 }
 
-/** Один Telegram на все 429 за тик: DexScreener/Gecko и т.д., без деления по коллекторам. */
-async function flush429Alerts(state, pending) {
-  if (!pending.length) return;
-  const now = Date.now();
-  if (now - (state.throttle['429:global'] ?? 0) < THROTTLE_429_MS) return;
-
-  /** Последний объект по каждому коллектору за этот проход чтения логов */
-  const byCollector = new Map();
-  for (const { collector, obj } of pending) {
-    byCollector.set(collector, obj);
-  }
-
-  const names = [...byCollector.keys()].sort();
-  const details = names.map((c) => {
-    const o = byCollector.get(c);
-    const bits = [c];
-    if (o.retryTag) bits.push(`tag=${o.retryTag}`);
-    if (o.attempt != null) bits.push(`attempt=${o.attempt}`);
-    if (o.backoffMs != null) bits.push(`backoff=${o.backoffMs}ms`);
-    return bits.join(' ');
-  });
-
-  state.throttle['429:global'] = now;
-  saveState(state);
-
-  const text = [
-    'Внешнее API (DexScreener/Gecko и др.): HTTP 429 — лимит запросов, запланирован retry.',
-    `Затронутые коллекторы: ${names.join(', ')}.`,
-    details.join(' | '),
-  ].join(' ');
-
-  await sendTagged('ALERT', 'dexscreener_429', text);
+function emptyBatch() {
+  return {
+    http429: [],
+    httpRetryOther: [],
+    requestFailedRetrying: [],
+    tickFailed: [],
+    poolShutdown: [],
+    fatal: [],
+    skipLines: [],
+    skipHadSpike: false,
+  };
 }
 
-async function alertSkip(collector, state) {
+function snip(s) {
+  if (typeof s !== 'string') return '';
+  return s.length <= ERR_SNIP ? s : `${s.slice(0, ERR_SNIP)}…`;
+}
+
+/** skip → строки для общего сообщения + флаг всплеска */
+function recordSkip(state, collector, batch) {
   const now = Date.now();
   if (!state.skipTs[collector]) state.skipTs[collector] = [];
   pruneSkips(state, collector, now);
   state.skipTs[collector].push(now);
   const window = state.skipTs[collector];
   const n = window.length;
+  const winMin = Math.round(SKIP_WINDOW_MS / 60000);
 
   const spikeN = state.lastSpikeN[collector] ?? 0;
   if (n >= SKIP_SPIKE_MIN && n > spikeN) {
     state.lastSpikeN[collector] = n;
     saveState(state);
-    await sendTagged(
-      'ALERT',
-      `dex_skip_spike_${collector}`,
-      `Рост «skipping tick»: ${n} за ${Math.round(SKIP_WINDOW_MS / 60000)} мин (${collector}). Тик дольше интервала — проверьте нагрузку/API/БД.`,
+    batch.skipHadSpike = true;
+    batch.skipLines.push(
+      `Тик не успевает — всплеск «skipping tick» (${collector}): ${n} раз за ${winMin} мин (интервал короче длительности тика).`,
     );
     return;
   }
 
-  const k = `skip:${collector}`;
+  const k = `skipplain:${collector}`;
   if (now - (state.throttle[k] ?? 0) < THROTTLE_SKIP_MS) return;
   state.throttle[k] = now;
   saveState(state);
-  await sendTagged(
-    'ALERT',
-    `dex_skip_${collector}`,
-    `Skipping tick (${collector}): предыдущий тик ещё выполняется. В окне ~${Math.round(SKIP_WINDOW_MS / 60000)} мин уже ${n} событ.`,
+  batch.skipLines.push(
+    `Тик не успевает (${collector}): предыдущий тик ещё выполняется (за ${winMin} мин в окне ${n} событ.).`,
   );
 }
 
-/** Когда окно опустело — сбрасываем порог spike, чтобы следующая серия снова алертилась. */
+function dispatchLine(coll, obj, state, batch) {
+  const msg = obj.msg;
+  if (msg === 'request retry scheduled' && obj.status === 429) {
+    batch.http429.push({ collector: coll, obj });
+    return;
+  }
+  if (msg === 'request retry scheduled' && obj.status != null && obj.status !== 429) {
+    batch.httpRetryOther.push({ collector: coll, obj });
+    return;
+  }
+  if (msg === 'request failed, retrying') {
+    batch.requestFailedRetrying.push({ collector: coll, obj });
+    return;
+  }
+  if (msg === 'tick failed') {
+    batch.tickFailed.push({ collector: coll, obj });
+    return;
+  }
+  if (msg === 'skipping tick, previous run still active') {
+    recordSkip(state, coll, batch);
+    return;
+  }
+  if (msg === 'pool shutdown warning') {
+    batch.poolShutdown.push({ collector: coll, obj });
+    return;
+  }
+  if (msg === 'fatal error') {
+    batch.fatal.push({ collector: coll, obj });
+  }
+}
+
+function batchHasContent(b) {
+  return !!(
+    b.http429.length ||
+    b.httpRetryOther.length ||
+    b.requestFailedRetrying.length ||
+    b.tickFailed.length ||
+    b.poolShutdown.length ||
+    b.fatal.length ||
+    b.skipLines.length
+  );
+}
+
+/** Только «мягкий» skipping tick, без остального */
+function batchIsRoutineOnly(b) {
+  return (
+    !b.http429.length &&
+    !b.httpRetryOther.length &&
+    !b.requestFailedRetrying.length &&
+    !b.tickFailed.length &&
+    !b.poolShutdown.length &&
+    !b.fatal.length &&
+    b.skipLines.length > 0 &&
+    !b.skipHadSpike
+  );
+}
+
+function buildAlertBody(batch) {
+  const lines = ['⚠️ Коллекторы DEX — проблемы в логах:'];
+
+  if (batch.http429.length) {
+    const by = new Map();
+    for (const { collector, obj } of batch.http429) {
+      by.set(collector, obj);
+    }
+    const names = [...by.keys()].sort();
+    const details = names.map((c) => {
+      const o = by.get(c);
+      const bits = [c];
+      if (o.retryTag) bits.push(`tag=${o.retryTag}`);
+      if (o.attempt != null) bits.push(`attempt=${o.attempt}`);
+      if (o.backoffMs != null) bits.push(`backoff=${o.backoffMs}ms`);
+      return bits.join(' ');
+    });
+    lines.push(`• HTTP 429 (лимит запросов / rate limit): ${names.join(', ')}`);
+    lines.push(`  ${details.join(' | ')}`);
+  }
+
+  if (batch.httpRetryOther.length) {
+    const parts = batch.httpRetryOther.map(({ collector, obj }) => {
+      const bits = [`${collector}`];
+      if (obj.status != null) bits.push(`HTTP ${obj.status}`);
+      if (obj.retryTag) bits.push(String(obj.retryTag));
+      return bits.join(' ');
+    });
+    lines.push(`• HTTP retry (5xx и т.п., не 429): ${parts.join('; ')}`);
+  }
+
+  const netMax = Number(process.env.COLLECTOR_WATCH_NET_EVENTS_MAX || 6);
+  if (batch.requestFailedRetrying.length) {
+    const slice = batch.requestFailedRetrying.slice(0, netMax);
+    const parts = slice.map(({ collector, obj }) => {
+      return `${collector}: ${snip(obj.error || '')}`;
+    });
+    lines.push(`• Запрос не удался, retry: ${parts.join(' · ')}`);
+    if (batch.requestFailedRetrying.length > netMax) {
+      lines.push(`  …ещё ${batch.requestFailedRetrying.length - netMax} строк`);
+    }
+  }
+
+  for (const { collector, obj } of batch.tickFailed) {
+    lines.push(`• Ошибка тика (${collector}): ${snip(obj.error || '')}`);
+  }
+
+  for (const line of batch.skipLines) {
+    lines.push(`• ${line}`);
+  }
+
+  for (const { collector, obj } of batch.poolShutdown) {
+    lines.push(`• Pool / БД (${collector}): ${snip(obj.error || 'shutdown warning')}`);
+  }
+
+  for (const { collector, obj } of batch.fatal) {
+    lines.push(`• FATAL (${collector}): ${snip(obj.error || '')}`);
+  }
+
+  return lines.join('\n');
+}
+
+async function flushUnifiedAlert(state, batch) {
+  if (!batchHasContent(batch)) return;
+
+  const now = Date.now();
+  const immediate = batch.tickFailed.length > 0 || batch.fatal.length > 0;
+
+  if (!immediate) {
+    if (batchIsRoutineOnly(batch)) {
+      if (now - (state.throttle['unified:routine'] ?? 0) < THROTTLE_SKIP_MS) return;
+      state.throttle['unified:routine'] = now;
+    } else {
+      if (now - (state.throttle['unified:alert'] ?? 0) < THROTTLE_ALERT_MS) return;
+      state.throttle['unified:alert'] = now;
+    }
+    saveState(state);
+  }
+
+  const body = buildAlertBody(batch);
+  await sendTagged('ALERT', 'dex_collectors', body);
+}
+
 function decaySpikeCounter(state, collector, now) {
   const window = pruneSkips(state, collector, now);
   if (window.length === 0 && (state.lastSpikeN[collector] ?? 0) > 0) {
@@ -157,7 +285,7 @@ function decaySpikeCounter(state, collector, now) {
   }
 }
 
-async function scanFile(absPath, state, pending429) {
+function scanFile(absPath, state, batch) {
   if (!fs.existsSync(absPath)) return;
   const st = fs.statSync(absPath);
   const size = st.size;
@@ -175,19 +303,12 @@ async function scanFile(absPath, state, pending429) {
     fs.readSync(fd, buf, 0, toRead, offset);
     const chunk = buf.toString('utf8');
     const coll = collectorKey(absPath);
-    const now = Date.now();
 
     for (const line of chunk.split('\n')) {
       if (!line.trim()) continue;
       const obj = parseJsonLine(line);
       if (!obj || typeof obj.msg !== 'string') continue;
-
-      if (obj.msg === 'request retry scheduled' && obj.status === 429) {
-        pending429.push({ collector: coll, obj });
-      }
-      if (obj.msg === 'skipping tick, previous run still active') {
-        await alertSkip(coll, state);
-      }
+      dispatchLine(coll, obj, state, batch);
     }
 
     state.offsets[absPath] = size;
@@ -206,16 +327,16 @@ async function tick() {
   if (!state.skipTs) state.skipTs = {};
   if (!state.lastSpikeN) state.lastSpikeN = {};
 
-  const pending429 = [];
+  const batch = emptyBatch();
   for (const p of paths) {
     try {
-      await scanFile(path.resolve(p), state, pending429);
+      scanFile(path.resolve(p), state, batch);
     } catch (e) {
       console.error(JSON.stringify({ ts: new Date().toISOString(), err: String(e), file: p }));
     }
   }
 
-  await flush429Alerts(state, pending429);
+  await flushUnifiedAlert(state, batch);
 
   const now = Date.now();
   for (const p of paths) {
@@ -232,6 +353,9 @@ async function main() {
       pollMs: POLL_MS,
       logs: paths,
       statePath: STATE_PATH,
+      telegramTag: 'dex_collectors',
+      throttleAlertMs: THROTTLE_ALERT_MS,
+      throttleRoutineSkipMs: THROTTLE_SKIP_MS,
       skipWindowMin: SKIP_WINDOW_MS / 60000,
       skipSpikeMin: SKIP_SPIKE_MIN,
     }),
