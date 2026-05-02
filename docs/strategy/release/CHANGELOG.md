@@ -8,6 +8,20 @@
 
 ---
 
+## [1.5.6] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.6`.
+
+### Добавлено
+
+- **Спека W8.0 Phase 3:** [`W8.0_phase3_wallet_simulate_spec.md`](../specs/W8.0_phase3_wallet_simulate_spec.md) — lazy keypair (**P3-I1**), подпись swap tx, **`simulateTransaction`** только через **`qnCall`** (`feature: 'sim'`), JSONL **`execution_result`** (`sim_ok` / `sim_err`), self-test ENV, DoD §10; обновлены [`W8.0_IMPLEMENTATION_PHASES.md`](../specs/W8.0_IMPLEMENTATION_PHASES.md) и строка **W8.0-p3** в [`INDEX.md`](../specs/INDEX.md).
+
+### Откат
+
+- `VERSION` **`1.5.5`** и удаление спеки / строки INDEX / откат правок деревьев фаз.
+
+---
+
 ## [1.5.4] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.4`.

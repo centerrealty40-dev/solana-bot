@@ -41,6 +41,7 @@
 | W7.8 | [`W7.8_simulate_transaction_audit.md`](./W7.8_simulate_transaction_audit.md) | **выполнено** ✓ (аудит исполнимости: Jupiter unsigned swap + `simulateTransaction` через `qnCall` feature `sim`, семпл на пути `open`, опциональное поле `simAudit` в JSONL; v1 **не** gate; продукт **1.3.0**, см. [`CHANGELOG`](../release/CHANGELOG.md)) | (m) W7.1 + W7.4 + W6.3c |
 | W8.0 | [`W8.0_live_oscar_trading_bot.md`](./W8.0_live_oscar_trading_bot.md) | **normative draft** (live Oscar параллельно paper; **Phase 2+ в коде:** `src/live/jupiter.ts` и др.; актуальный semver — [`VERSION`](../release/VERSION); см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W6.3c + W7.4 + release model |
 | W8.0-p1 | [`W8.0_phase1_live_jsonl_contract.md`](./W8.0_phase1_live_jsonl_contract.md) | **выполнено** ✓ (контракт JSONL live-oscar в коде: `src/live/events.ts`, `appendLiveJsonlEvent`; продукт **1.4.0**; см. [`CHANGELOG`](../release/CHANGELOG.md)) | W8.0 Phase 0 |
+| W8.0-p3 | [`W8.0_phase3_wallet_simulate_spec.md`](./W8.0_phase3_wallet_simulate_spec.md) | **normative** (Phase 3: keypair lazy-load, подпись Jupiter tx, `simulateTransaction` через `qnCall`; без `sendTransaction`; см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0 Phase 2 + W8.0-p1 |
 | W6.6 | `W6.6_strategy_lab_port.md` | **отложена** (через ≥7 дней работы paper после W7.3..W7.6) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
 
