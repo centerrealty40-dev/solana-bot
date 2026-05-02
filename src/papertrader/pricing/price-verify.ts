@@ -191,6 +191,171 @@ export async function jupiterQuoteBuyPriceUsd(args: {
   };
 }
 
+export async function jupiterQuoteSellPriceUsd(args: {
+  mint: string;
+  tokenDecimals: number;
+  usdNotional: number;
+  solUsd: number;
+  snapshotPriceUsd: number;
+  slippageBps: number;
+  timeoutMs: number;
+}): Promise<PriceVerifyVerdict> {
+  const { mint, tokenDecimals, usdNotional, solUsd, snapshotPriceUsd, slippageBps, timeoutMs } = args;
+  const ts = Date.now();
+  const dec = Math.max(0, Math.min(24, Math.floor(tokenDecimals)));
+  if (!(solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(usdNotional > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+
+  const tokenHuman = usdNotional / snapshotPriceUsd;
+  const rawFloat = tokenHuman * Math.pow(10, dec);
+  const rawAmount = Math.max(1, Math.floor(Number.isFinite(rawFloat) ? rawFloat : 0));
+  const url = new URL(quoteApiBase());
+  url.searchParams.set('inputMint', mint);
+  url.searchParams.set('outputMint', WRAPPED_SOL_MINT);
+  url.searchParams.set('amount', String(rawAmount));
+  url.searchParams.set('slippageBps', String(slippageBps));
+  url.searchParams.set('onlyDirectRoutes', 'false');
+  url.searchParams.set('asLegacyTransaction', 'false');
+
+  const ac = new AbortController();
+  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
+  let elapsed = 0;
+  let resp: Response | null = null;
+  let txt: string | null = null;
+  const start = Date.now();
+  try {
+    resp = await fetch(url.toString(), {
+      method: 'GET',
+      signal: ac.signal,
+      headers: { accept: 'application/json' },
+    });
+    elapsed = Date.now() - start;
+    if (!resp.ok) {
+      log.debug({ status: resp.status, mint, elapsed }, 'jupiter sell quote http error');
+      return { kind: 'skipped', reason: 'http-error', ts };
+    }
+    txt = await resp.text();
+  } catch (e) {
+    elapsed = Date.now() - start;
+    const aborted = (e as Error)?.name === 'AbortError';
+    log.debug(
+      { mint, elapsed, err: (e as Error)?.message },
+      aborted ? 'jupiter sell quote timeout' : 'jupiter sell quote fetch fail',
+    );
+    return { kind: 'skipped', reason: aborted ? 'timeout' : 'fetch-fail', ts };
+  } finally {
+    clearTimeout(tt);
+  }
+
+  let body: JupiterQuoteResponse | null = null;
+  try {
+    body = JSON.parse(txt!) as JupiterQuoteResponse;
+  } catch {
+    return { kind: 'skipped', reason: 'parse-error', ts };
+  }
+
+  const outAmountStr = body?.outAmount;
+  if (!outAmountStr || !/^\d+$/.test(outAmountStr)) {
+    return { kind: 'skipped', reason: 'parse-error', ts };
+  }
+  const lamportsOut = Number(outAmountStr);
+  if (!(lamportsOut > 0)) {
+    return {
+      kind: 'blocked',
+      jupiterPriceUsd: 0,
+      snapshotPriceUsd,
+      slipPct: 0,
+      priceImpactPct: 0,
+      routeHops: 0,
+      reason: 'no-route',
+      source: 'jupiter',
+      ageMs: elapsed,
+      ts,
+    };
+  }
+  const tokensSold = rawAmount / Math.pow(10, dec);
+  if (!(tokensSold > 0)) return { kind: 'skipped', reason: 'parse-error', ts };
+  const usdOut = (lamportsOut / 1e9) * solUsd;
+  const jupiterPriceUsd = usdOut / tokensSold;
+  if (!(jupiterPriceUsd > 0) || !Number.isFinite(jupiterPriceUsd)) {
+    return { kind: 'skipped', reason: 'parse-error', ts };
+  }
+  const priceImpactPct = +Number(body?.priceImpactPct ?? 0).toFixed(4) * 100;
+  const routeHops = Array.isArray(body?.routePlan) ? body.routePlan.length : 1;
+  const slipPct = +(((snapshotPriceUsd - jupiterPriceUsd) / snapshotPriceUsd) * 100).toFixed(4);
+
+  return {
+    kind: 'ok',
+    jupiterPriceUsd,
+    snapshotPriceUsd,
+    slipPct,
+    priceImpactPct,
+    routeHops,
+    source: 'jupiter',
+    ageMs: elapsed,
+    ts,
+  };
+}
+
+export interface VerifyExitPriceArgs {
+  cfg: PaperTraderConfig;
+  mint: string;
+  tokenDecimals: number;
+  usdNotional: number;
+  solUsd: number;
+  snapshotPriceUsd: number;
+}
+
+/** W7.4.2 — Jupiter token→SOL quote vs snapshot exit price (same slip/impact gates as entry). */
+export async function verifyExitPrice(args: VerifyExitPriceArgs): Promise<PriceVerifyVerdict> {
+  const { cfg, mint, tokenDecimals, usdNotional, solUsd, snapshotPriceUsd } = args;
+  const ts = Date.now();
+  if (!cfg.priceVerifyExitEnabled) return { kind: 'skipped', reason: 'feature-disabled', ts };
+
+  const q = await jupiterQuoteSellPriceUsd({
+    mint,
+    tokenDecimals,
+    usdNotional,
+    solUsd,
+    snapshotPriceUsd,
+    slippageBps: cfg.priceVerifyMaxSlipBps,
+    timeoutMs: cfg.priceVerifyTimeoutMs,
+  });
+
+  if (q.kind !== 'ok') return q;
+
+  if (q.slipPct > cfg.priceVerifyMaxSlipPct) {
+    return {
+      kind: 'blocked',
+      jupiterPriceUsd: q.jupiterPriceUsd,
+      snapshotPriceUsd,
+      slipPct: q.slipPct,
+      priceImpactPct: q.priceImpactPct,
+      routeHops: q.routeHops,
+      reason: 'slip-too-high',
+      source: 'jupiter',
+      ageMs: q.ageMs,
+      ts,
+    };
+  }
+  if (q.priceImpactPct > cfg.priceVerifyMaxPriceImpactPct) {
+    return {
+      kind: 'blocked',
+      jupiterPriceUsd: q.jupiterPriceUsd,
+      snapshotPriceUsd,
+      slipPct: q.slipPct,
+      priceImpactPct: q.priceImpactPct,
+      routeHops: q.routeHops,
+      reason: 'impact-too-high',
+      source: 'jupiter',
+      ageMs: q.ageMs,
+      ts,
+    };
+  }
+  return q;
+}
+
 export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<PriceVerifyVerdict> {
   const { cfg, mint, outMintDecimals, sizeUsd, solUsd, snapshotPriceUsd, reuseVerdict } = args;
   const ts = Date.now();

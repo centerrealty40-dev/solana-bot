@@ -157,6 +157,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       KILLSTOP: 0,
       LIQ_DRAIN: 0,
     } as Record<ExitReason, number>,
+    skippedPriceVerifyExit: 0,
   };
 
   logger.info({
@@ -561,8 +562,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
+      skippedPriceVerifyExit: trackerStats.skippedPriceVerifyExit,
       holdersResolveStats: holdersStats,
       trackerStats: trackerStats.closed,
     });

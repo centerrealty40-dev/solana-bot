@@ -266,6 +266,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
+        PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
 
         /* W7.6 impulse confirm — default off; rolling 6h QN kill + Telegram at IMPULSE_QN_ROLLING_MAX_CREDITS */
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
@@ -397,6 +399,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
+        PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
@@ -449,6 +453,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
+        PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         /** Unused file — live-oscar never writes paper JSONL (P4-I1); path must exist only for config defaults. */
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         /** W8.0 Phase 0 — торговля выкл. до go/no-go и фаз 1–6; только heartbeat в JSONL. */
@@ -579,6 +585,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
+        PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         /** PG-импульс по паре может закрыть dip-windows без классического окна (см. impulse-confirm + dip-clones). */

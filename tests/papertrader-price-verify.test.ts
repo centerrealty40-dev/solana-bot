@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { verifyEntryPrice } from '../src/papertrader/pricing/price-verify.js';
+import { verifyEntryPrice, verifyExitPrice } from '../src/papertrader/pricing/price-verify.js';
 
 const baseCfg = {
   priceVerifyEnabled: true,
@@ -9,6 +9,8 @@ const baseCfg = {
   priceVerifyMaxSlipBps: 400,
   priceVerifyMaxPriceImpactPct: 8.0,
   priceVerifyTimeoutMs: 1500,
+  priceVerifyExitEnabled: true,
+  priceVerifyExitBlockOnFail: true,
 } as never;
 
 const mintFoo = 'FoooooofakeMint11111111111111111111111111111';
@@ -123,5 +125,51 @@ describe('verifyEntryPrice', () => {
     });
     expect(v.kind).toBe('skipped');
     if (v.kind === 'skipped') expect(v.reason).toBe('fetch-fail');
+  });
+});
+
+describe('verifyExitPrice (W7.4.2)', () => {
+  it('returns skipped feature-disabled when exit verify off', async () => {
+    const v = await verifyExitPrice({
+      cfg: { ...baseCfg, priceVerifyExitEnabled: false } as never,
+      mint: mintFoo,
+      tokenDecimals: 6,
+      usdNotional: 50,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+    });
+    expect(v.kind).toBe('skipped');
+    if (v.kind === 'skipped') expect(v.reason).toBe('feature-disabled');
+  });
+
+  it('returns ok when sell slip within threshold', async () => {
+    mockJupiter({ outAmount: '625000000', priceImpactPct: '0.005', routePlan: [{}] });
+    const v = await verifyExitPrice({
+      cfg: baseCfg,
+      mint: mintFoo,
+      tokenDecimals: 6,
+      usdNotional: 100,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+    });
+    expect(v.kind).toBe('ok');
+    if (v.kind === 'ok') {
+      expect(v.jupiterPriceUsd).toBeCloseTo(0.0001, 8);
+      expect(v.slipPct).toBeCloseTo(0, 4);
+    }
+  });
+
+  it('blocks when sell slip > threshold', async () => {
+    mockJupiter({ outAmount: '312500000', priceImpactPct: '0.005', routePlan: [{}] });
+    const v = await verifyExitPrice({
+      cfg: baseCfg,
+      mint: mintFoo,
+      tokenDecimals: 6,
+      usdNotional: 100,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+    });
+    expect(v.kind).toBe('blocked');
+    if (v.kind === 'blocked') expect(v.reason).toBe('slip-too-high');
   });
 });

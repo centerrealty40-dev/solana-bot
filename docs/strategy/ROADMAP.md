@@ -84,7 +84,7 @@
 | ID     | Статус  | Цель (кратко)                                                          | После   | Примечание                      |
 | ------ | ------- | ---------------------------------------------------------------------- | ------- | ------------------------------- |
 | W7.4.1 | backlog | Retries / circuit для Jupiter quote при `skipped`                      | W7.4    | `W7.4_*.md` — будущие шаги      |
-| W7.4.2 | backlog | Pre-**exit** price verify (quote перед закрытием)                      | W7.4.1? |                                 |
+| W7.4.2 | done             | Pre-**exit** price verify (Jupiter mint→SOL vs snapshot перед partial/full close) | W7.4     | `W7.4.2_pre_exit_price_verify.md`, `price-verify.ts` + `tracker.ts` |
 | W7.4.3 | backlog | Dedup quote per mint, TTL                                              | W7.4    |                                 |
 | W7.5.1 | backlog | Vault-адреса в open + `getMultipleAccounts` для liq (толстый RPC path) | W7.5    | `liq-watch` placeholder в коде  |
 | W7.5.2 | backlog | Heuristic «rug» до срабатывания liq-drain                              | W7.5    |                                 |

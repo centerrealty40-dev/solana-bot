@@ -205,6 +205,10 @@ const ConfigSchema = z.object({
   priceVerifyMaxPriceImpactPct: z.coerce.number().min(0.1).max(80).default(8.0),
   priceVerifyTimeoutMs: z.coerce.number().int().min(500).max(8_000).default(2500),
 
+  /** W7.4.2 — pre-exit Jupiter quote (token→SOL) vs snapshot before partial/full sells; thresholds reuse entry limits. */
+  priceVerifyExitEnabled: z.boolean().default(false),
+  priceVerifyExitBlockOnFail: z.boolean().default(false),
+
   /** W7.5 — liquidity drain watch (pool liq vs entry baseline). */
   liqWatchEnabled: z.boolean().default(false),
   liqWatchForceClose: z.boolean().default(false),
@@ -432,6 +436,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     priceVerifyMaxSlipBps: process.env.PAPER_PRICE_VERIFY_MAX_SLIP_BPS,
     priceVerifyMaxPriceImpactPct: process.env.PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT,
     priceVerifyTimeoutMs: process.env.PAPER_PRICE_VERIFY_TIMEOUT_MS,
+    priceVerifyExitEnabled: process.env.PAPER_PRICE_VERIFY_EXIT_ENABLED === '1',
+    priceVerifyExitBlockOnFail: process.env.PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL === '1',
     liqWatchEnabled: process.env.PAPER_LIQ_WATCH_ENABLED === '1',
     liqWatchForceClose: process.env.PAPER_LIQ_WATCH_FORCE_CLOSE === '1',
     liqWatchDrainPct: process.env.PAPER_LIQ_WATCH_DRAIN_PCT,

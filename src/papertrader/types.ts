@@ -170,6 +170,7 @@ export type JsonlEventKind =
   | 'heartbeat'
   | 'eval'
   | 'eval-skip-open'
+  | 'eval-skip-exit'
   | 'open'
   | 'peak'
   | 'dca_add'
@@ -195,6 +196,8 @@ export interface HeartbeatEvent extends JsonlEventBase {
   note?: string;
   /** W7.5 — exit counters including LIQ_DRAIN (same object as tracker stats RAM). */
   trackerStats?: Record<ExitReason, number>;
+  /** W7.4.2 — deferred exits (blocked pre-exit Jupiter quote with block_on_fail). */
+  skippedPriceVerifyExit?: number;
 }
 
 export interface SnapshotCandidateRow {
@@ -319,6 +322,15 @@ export interface EvalSkipOpenEvent extends JsonlEventBase {
   reason: string;
 }
 
+/** W7.4.2 — deferred exit because Jupiter pre-exit quote vs snapshot failed gates. */
+export interface EvalSkipExitEvent extends JsonlEventBase {
+  kind: 'eval-skip-exit';
+  mint: string;
+  context: 'partial_sell' | 'close';
+  reason: string;
+  priceVerifyExit: PriceVerifyVerdict;
+}
+
 export interface PreEntryDynamics {
   holders_30m_ago: number;
   holders_10m_ago: number;
@@ -431,6 +443,7 @@ export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 /**
  * W7.4 — pre-entry price verification verdict (Jupiter quote sanity check).
  * Stamped on `open` when cfg.priceVerifyEnabled === true.
+ * W7.4.2 — same shape for pre-exit (token→SOL quote vs snapshot exit price).
  */
 export type PriceVerifyVerdict =
   | {

@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.0] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.0`.
+
+### Добавлено
+
+- **W7.4.2 pre-exit price verify:** перед частичной продажей (TP ladder) и полным закрытием трекер запрашивает Jupiter quote **token → SOL**, сравнивает исполнимую цену USD/токен с ценой снапшота по тем же порогам, что pre-entry (`PAPER_PRICE_VERIFY_MAX_*`). При `PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL=1` выход **откладывается** на следующий тик (`eval-skip-exit` в JSONL); на успешных выходах в журнал пишется `priceVerifyExit`. **LIQ_DRAIN** и **NO_DATA** по-прежнему без pre-exit.
+- **ENV:** `PAPER_PRICE_VERIFY_EXIT_ENABLED`, `PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL` — [`config.ts`](../../../src/papertrader/config.ts), [`.env.example`](../../../.env.example).
+- **Спека:** [`W7.4.2_pre_exit_price_verify.md`](../specs/W7.4.2_pre_exit_price_verify.md).
+- **PM2:** `PAPER_PRICE_VERIFY_EXIT_*` включены для `pt1-diprunner`, `pt1-oscar`, `pt1-dno`, `live-oscar` в [`ecosystem.config.cjs`](../../../ecosystem.config.cjs).
+
+### Откат
+
+- `VERSION` **`1.10.4`**; выставить **`PAPER_PRICE_VERIFY_EXIT_ENABLED=0`** (или только снять **`EXIT_BLOCK_ON_FAIL`**) для затронутых приложений; **`pm2 reload … --update-env`**.
+
+---
+
 ## [1.10.4] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.4`.

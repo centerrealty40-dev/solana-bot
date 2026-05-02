@@ -7,8 +7,10 @@ import type {
   OpenTrade,
   PartialSell,
   PositionLeg,
+  PriceVerifyVerdict,
 } from '../types.js';
 import { fetchLatestSnapshotPrice, getLiveMcUsd, getSolUsd } from '../pricing.js';
+import { verifyExitPrice } from '../pricing/price-verify.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
   buildOptionalLiqWatchCloseStamp,
@@ -34,8 +36,68 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export { ladderRetraceTriggered } from './tp-ladder-state.js';
 
+/** W7.4.2 — returns verdict for JSONL stamping; `defer` means skip this exit attempt until next tracker tick. */
+async function exitPriceVerifyGate(args: {
+  cfg: PaperTraderConfig;
+  mint: string;
+  symbol: string;
+  tokenDecimals: number;
+  usdNotional: number;
+  snapshotPriceUsd: number;
+  context: 'partial_sell' | 'close';
+  journalAppend: TrackerArgs['journalAppend'];
+  stats: TrackerStats;
+}): Promise<{ defer: boolean; verdict: PriceVerifyVerdict | null }> {
+  const {
+    cfg,
+    mint,
+    symbol,
+    tokenDecimals,
+    usdNotional,
+    snapshotPriceUsd,
+    context,
+    journalAppend,
+    stats,
+  } = args;
+  if (!cfg.priceVerifyExitEnabled) return { defer: false, verdict: null };
+  if (!(usdNotional > 1e-6) || !(snapshotPriceUsd > 0)) return { defer: false, verdict: null };
+
+  const solUsd = getSolUsd() ?? 0;
+  let verdict: PriceVerifyVerdict;
+  try {
+    verdict = await verifyExitPrice({
+      cfg,
+      mint,
+      tokenDecimals,
+      usdNotional,
+      solUsd,
+      snapshotPriceUsd,
+    });
+  } catch (e) {
+    log.warn({ err: (e as Error)?.message, mint: mint.slice(0, 8) }, 'verifyExitPrice threw');
+    verdict = { kind: 'skipped', reason: 'fetch-fail', ts: Date.now() };
+  }
+
+  if (verdict.kind === 'blocked' && cfg.priceVerifyExitBlockOnFail) {
+    stats.skippedPriceVerifyExit += 1;
+    journalAppend({
+      kind: 'eval-skip-exit',
+      mint,
+      symbol,
+      context,
+      reason: `price_verify_exit:${verdict.reason}`,
+      priceVerifyExit: verdict,
+    });
+    return { defer: true, verdict };
+  }
+
+  return { defer: false, verdict };
+}
+
 export interface TrackerStats {
   closed: Record<ExitReason, number>;
+  /** W7.4.2 — exits deferred because pre-exit Jupiter quote failed gates with block_on_fail. */
+  skippedPriceVerifyExit: number;
 }
 
 export interface TrackerArgs {
@@ -556,6 +618,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           const pnlUsd = proceedsUsd - investedSoldUsd;
           const grossPnlUsd = grossProceedsUsd - investedSoldUsd;
 
+          const exitPvPartial = await exitPriceVerifyGate({
+            cfg,
+            mint,
+            symbol: ot.symbol,
+            tokenDecimals: ot.tokenDecimals ?? 6,
+            usdNotional: investedSoldUsd,
+            snapshotPriceUsd: marketSell,
+            context: 'partial_sell',
+            journalAppend,
+            stats,
+          });
+          if (exitPvPartial.defer) continue;
+
           if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
             const ok = await livePhase4.tryTokenToSolSell({
               mint,
@@ -605,6 +680,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             remainingFraction: ot.remainingFraction,
             mcUsdLive: mcUsdLive_ps,
             priorityFee: pfPs,
+            ...(exitPvPartial.verdict ? { priceVerifyExit: exitPvPartial.verdict } : {}),
           });
           journalLiveStrategy?.({
             kind: 'live_position_partial_sell',
@@ -662,6 +738,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         tpLadder,
       });
       ct.exitContext = exitContextMain;
+      const exitPvClose = await exitPriceVerifyGate({
+        cfg,
+        mint,
+        symbol: ot.symbol,
+        tokenDecimals: ot.tokenDecimals ?? 6,
+        usdNotional: investedRemaining,
+        snapshotPriceUsd: marketSell,
+        context: 'close',
+        journalAppend,
+        stats,
+      });
+      if (exitPvClose.defer) continue;
+
       if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
         const ok = await livePhase4.tryTokenToSolSell({
           mint,
@@ -694,6 +783,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         priorityFee: pfClose,
         exitContext: exitContextMain,
         ...(liqWatchExit ? { liqWatch: liqWatchExit } : {}),
+        ...(exitPvClose.verdict ? { priceVerifyExit: exitPvClose.verdict } : {}),
       });
       journalLiveStrategy?.({
         kind: 'live_position_close',
