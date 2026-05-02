@@ -1212,6 +1212,51 @@ export type TimelineEvent = {
    * close = cost basis of closed slice. Not mark-to-market.
    */
   amountUsd: number | null;
+  /** Set when live journal correlates an on-chain swap (`execution_result.txSignature`). */
+  txSignature?: string | null;
+};
+
+/** Solana mainnet explorer link for a transaction signature. */
+export function solscanTxUrl(signature: string): string {
+  const s = String(signature ?? '').trim();
+  return `https://solscan.io/tx/${encodeURIComponent(s)}`;
+}
+
+/** Open row shape returned by `/api/paper2` after live enrichment. */
+export type Paper2ApiEnrichedOpen = {
+  mint: string;
+  symbol: string;
+  entryTs: number;
+  entryMcUsd: number;
+  entryRealMcUsd: number | null;
+  entryMcapAtBuyUsd: number | null;
+  baselinePriceUsd: number | null;
+  metricType: string | null;
+  openedAtIso: string | null;
+  lane: string | null;
+  source: string | null;
+  currentMcUsd: number;
+  livePriceUsd: number | null;
+  peakMcUsd: number;
+  peakPnlPct: number;
+  trailingArmed: boolean;
+  pnlPct: number | null;
+  pnlUsd: number | null;
+  ageMin: number;
+  hasLiveMc: boolean;
+  hasLivePrice: boolean;
+  livePriceStale: boolean;
+  livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null;
+  liveMcProvenance: 'snapshots' | 'pump.fun' | null;
+  timeline: TimelineEvent[];
+  entryPriorityFeeUsd: number | null;
+  entryPriceVerifySlipPct: number | null;
+  entryPriceVerifyImpactPct: number | null;
+  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  entryLiqUsd: number | null;
+  currentLiqUsd: number | null;
+  liqDropPct: number | null;
+  remainingCostBasisUsd: number;
 };
 
 const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
@@ -1675,6 +1720,382 @@ export function loadPaper2File(filePath: string): {
   };
 }
 
+export type Paper2FileLoad = ReturnType<typeof loadPaper2File>;
+
+type LiveOscarPaper2Extras = {
+  liveReconcileBoot?: DashboardPaper2StrategyRow['liveReconcileBoot'];
+  liveReconcileReport?: DashboardPaper2StrategyRow['liveReconcileReport'];
+};
+
+export type LiveOscarPaper2Load = Paper2FileLoad & {
+  hbOpen: number;
+  hbClosed: number;
+  liveExtras?: LiveOscarPaper2Extras;
+};
+
+function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | null {
+  const em = ot.entryMetrics as Record<string, unknown> | undefined;
+  if (!em || typeof em !== 'object') return null;
+  const mc = Number(em.market_cap_usd ?? em.fdv_usd ?? 0);
+  return Number.isFinite(mc) && mc > 0 ? mc : null;
+}
+
+function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
+  const z = Date.now();
+  return {
+    open: [],
+    closed: [],
+    firstTs: z,
+    lastTs: z,
+    resetTs: 0,
+    evals1h: 0,
+    passed1h: 0,
+    failReasons: [],
+    openTimelines: new Map(),
+    hbOpen: 0,
+    hbClosed: 0,
+  };
+}
+
+/**
+ * Parse `live-oscar` JSONL (`channel: live`) into the same shapes as `loadPaper2File`,
+ * including per-mint timelines with optional `txSignature` (from `execution_result` correlation).
+ */
+export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Load {
+  if (!fs.existsSync(filePath)) return emptyLiveOscarPaper2Load();
+
+  const om = new Map<string, Paper2OpenItem>();
+  const cl: Paper2ClosedRow[] = [];
+  let f = Date.now();
+  let l = 0;
+  let resetTs = 0;
+  const failReasonsCount = new Map<string, number>();
+  const since1h = Date.now() - 3_600_000;
+  let evals1h = 0;
+  let passed1h = 0;
+  let hbOpen = 0;
+  let hbClosed = 0;
+  let liveReconcileBoot: LiveOscarPaper2Extras['liveReconcileBoot'];
+  let liveReconcileReport: LiveOscarPaper2Extras['liveReconcileReport'];
+
+  const liveTimelines = new Map<string, TimelineEvent[]>();
+  const liveMeta = new Map<string, { metricType: string | null; entryRealMcUsd: number | null }>();
+
+  const intentToMint = new Map<string, string>();
+  const sigQueues = new Map<string, string[]>();
+
+  const enqueueSig = (mint: string, sig: string) => {
+    const q = sigQueues.get(mint) ?? [];
+    q.push(sig);
+    sigQueues.set(mint, q);
+  };
+  const dequeueSig = (mint: string): string | undefined => {
+    const q = sigQueues.get(mint);
+    if (!q?.length) return undefined;
+    const s = q.shift()!;
+    if (!q.length) sigQueues.delete(mint);
+    else sigQueues.set(mint, q);
+    return s;
+  };
+
+  const attachSig = (mint: string, ev: TimelineEvent | null): TimelineEvent | null => {
+    if (!ev) return null;
+    const sig = dequeueSig(mint);
+    if (!sig) return ev;
+    return { ...ev, txSignature: sig };
+  };
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return emptyLiveOscarPaper2Load();
+  }
+
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(t) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.channel !== 'live') continue;
+
+    const ts = typeof o.ts === 'number' ? o.ts : 0;
+    if (ts) {
+      if (ts < f) f = ts;
+      if (ts > l) l = ts;
+    }
+
+    const kind = o.kind;
+
+    if (kind === 'reset') {
+      resetTs = ts;
+      continue;
+    }
+
+    if (kind === 'heartbeat') {
+      hbOpen = Number(o.openPositions ?? 0);
+      hbClosed = Number(o.closedTotal ?? 0);
+      const st = o.reconcileBootStatus;
+      if (typeof st === 'string' && st) {
+        const div = o.reconcileMintsDivergent;
+        const chain = o.reconcileChainOnlyMints;
+        liveReconcileBoot = {
+          status: st,
+          skipReason: typeof o.reconcileBootSkipReason === 'string' ? o.reconcileBootSkipReason : undefined,
+          divergentCount: Array.isArray(div) ? div.length : undefined,
+          chainOnlyCount: Array.isArray(chain) ? chain.length : undefined,
+          journalTruncated: typeof o.journalReplayTruncated === 'boolean' ? o.journalReplayTruncated : undefined,
+        };
+      }
+      continue;
+    }
+
+    if (kind === 'live_reconcile_report') {
+      const ta = o.txAnchorSample as { notFound?: unknown[]; rpcErrors?: unknown } | undefined;
+      liveReconcileReport = {
+        ts,
+        ok: Boolean(o.ok),
+        reconcileStatus: String(o.reconcileStatus ?? ''),
+        txAnchorMissing: Array.isArray(ta?.notFound) ? ta.notFound.length : undefined,
+        txAnchorRpcErrors: typeof ta?.rpcErrors === 'number' ? ta.rpcErrors : undefined,
+      };
+      continue;
+    }
+
+    if (kind === 'execution_attempt') {
+      if (ts >= since1h) evals1h += 1;
+      const id = String(o.intentId ?? '');
+      const m = String(o.mint ?? '');
+      if (id && m) intentToMint.set(id, m);
+      continue;
+    }
+
+    if (kind === 'execution_result') {
+      const id = String(o.intentId ?? '');
+      const mint = intentToMint.get(id);
+      const sigRaw = o.txSignature;
+      const status = String(o.status ?? '');
+      if (mint && typeof sigRaw === 'string') {
+        const sig = sigRaw.trim();
+        if (sig.length >= 64) enqueueSig(mint, sig);
+      }
+      intentToMint.delete(id);
+      if (ts >= since1h && (status === 'sim_ok' || status === 'confirmed')) passed1h += 1;
+      continue;
+    }
+
+    if (kind === 'execution_skip' && typeof o.reason === 'string' && o.reason) {
+      failReasonsCount.set(o.reason, (failReasonsCount.get(o.reason) ?? 0) + 1);
+      continue;
+    }
+
+    const mint = String(o.mint ?? '');
+    if (!mint) continue;
+
+    if (kind === 'live_position_open') {
+      const ot = (o.openTrade ?? {}) as Record<string, unknown>;
+      const metricType = ot.metricType != null ? String(ot.metricType) : null;
+      const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
+      const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
+      const legMp = legsArr[0] ? Number(legsArr[0].marketPrice ?? 0) : 0;
+      const emp = Number(ot.avgEntryMarket ?? 0);
+      const baselinePriceUsd = emp > 0 ? emp : legMp > 0 ? legMp : null;
+
+      om.set(mint, {
+        mint,
+        symbol: String(ot.symbol ?? ''),
+        entryTs: Number(ot.entryTs ?? 0),
+        entryMcUsd: Number(ot.entryMcUsd ?? 0),
+        entryRealMcUsd,
+        baselinePriceUsd,
+        openedAtIso: ot.entryTs ? new Date(Number(ot.entryTs)).toISOString() : null,
+        lane: ot.lane != null ? String(ot.lane) : null,
+        source: ot.source != null ? String(ot.source) : null,
+        metricType,
+        features: null,
+        btc: null,
+        peakMcUsd: Number(ot.peakMcUsd ?? 0),
+        peakPnlPct: Number(ot.peakPnlPct ?? 0),
+        trailingArmed: Boolean(ot.trailingArmed),
+        totalInvestedUsd: Number(ot.totalInvestedUsd ?? 0),
+        entryPriorityFeeUsd: null,
+        entryPriceVerifySlipPct: null,
+        entryPriceVerifyImpactPct: null,
+        entryPriceVerifySource: null,
+        pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
+        entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
+        remainingFraction: Number(ot.remainingFraction ?? 1),
+      });
+      liveMeta.set(mint, { metricType, entryRealMcUsd });
+
+      const syn: Record<string, unknown> = {
+        kind: 'open',
+        ts,
+        mint,
+        symbol: ot.symbol,
+        lane: ot.lane,
+        source: ot.source,
+        dex: ot.dex,
+        entryTs: ot.entryTs,
+        entryMcUsd: ot.entryMcUsd,
+        entryMarketPrice: legsArr[0] ? legsArr[0].marketPrice ?? ot.entryMcUsd : ot.entryMcUsd,
+        legs: ot.legs,
+        totalInvestedUsd: ot.totalInvestedUsd,
+        metricType,
+        mcUsdLive: undefined,
+      };
+      const tev = attachSig(mint, buildTimelineEvent(syn, metricType, entryRealMcUsd));
+      liveTimelines.set(mint, tev ? [tev] : []);
+      continue;
+    }
+
+    if (kind === 'live_position_dca') {
+      const ot = (o.openTrade ?? {}) as Record<string, unknown>;
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
+      const lastLeg = legsArr[legsArr.length - 1];
+      if (!lastLeg) continue;
+      const usedIdx = Array.isArray(ot.dcaUsedIndices) ? (ot.dcaUsedIndices as number[]) : [];
+      const dcaStepIndex = usedIdx.length ? usedIdx[usedIdx.length - 1]! : Math.max(0, legsArr.length - 2);
+      const dcaLevelsTotal =
+        Array.isArray(ot.dcaUsedLevels) && ot.dcaUsedLevels.length > 0 ? ot.dcaUsedLevels.length : 1;
+
+      const syn: Record<string, unknown> = {
+        kind: 'dca_add',
+        ts,
+        mint,
+        marketPrice: Number(lastLeg.marketPrice ?? lastLeg.price ?? 0),
+        sizeUsd: Number(lastLeg.sizeUsd ?? 0),
+        triggerPct: Number(lastLeg.triggerPct ?? 0),
+        dcaStepIndex,
+        dcaLevelsTotal,
+        totalInvestedUsd: ot.totalInvestedUsd,
+        mcUsdLive: undefined,
+      };
+      const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
+      if (tev) {
+        const arr = liveTimelines.get(mint) ?? [];
+        arr.push(tev);
+        liveTimelines.set(mint, arr);
+      }
+      const cur = om.get(mint);
+      if (cur) {
+        const tiu = Number(ot.totalInvestedUsd ?? 0);
+        if (tiu > 0) cur.totalInvestedUsd = tiu;
+        cur.remainingFraction = 1;
+      }
+      continue;
+    }
+
+    if (kind === 'live_position_partial_sell') {
+      const ot = (o.openTrade ?? {}) as Record<string, unknown>;
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const partials = Array.isArray(ot.partialSells) ? (ot.partialSells as Record<string, unknown>[]) : [];
+      const ps = partials[partials.length - 1];
+      if (!ps) continue;
+      const ladderUsed = Array.isArray(ot.ladderUsedIndices) ? (ot.ladderUsedIndices as number[]) : [];
+      const stepIdx = ladderUsed.length ? ladderUsed[ladderUsed.length - 1]! : 0;
+      const lvlArr = Array.isArray(ot.ladderUsedLevels) ? (ot.ladderUsedLevels as number[]) : [];
+      const ladderRungsTotal = lvlArr.length > 0 ? lvlArr.length : 2;
+      const ladderPnlPctRaw =
+        lvlArr.length > stepIdx ? lvlArr[stepIdx] : lvlArr.length ? lvlArr[lvlArr.length - 1] : 0;
+
+      const syn: Record<string, unknown> = {
+        kind: 'partial_sell',
+        ts,
+        mint,
+        marketPrice: Number(ps.marketPrice ?? ps.price ?? 0),
+        sellFraction: Number(ps.sellFraction ?? 0),
+        ladderStepIndex: stepIdx,
+        ladderRungsTotal,
+        ladderPnlPct: Number(ladderPnlPctRaw ?? 0),
+        reason: String(ps.reason ?? 'partial_sell'),
+        proceedsUsd: Number(ps.proceedsUsd ?? 0),
+        pnlUsd: Number(ps.pnlUsd ?? 0),
+        remainingFraction: Number(ot.remainingFraction ?? 0),
+        mcUsdLive: undefined,
+      };
+      const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
+      if (tev) {
+        const arr = liveTimelines.get(mint) ?? [];
+        arr.push(tev);
+        liveTimelines.set(mint, arr);
+      }
+      const op = om.get(mint);
+      if (op) {
+        const rf = Number(ot.remainingFraction ?? NaN);
+        if (Number.isFinite(rf) && rf >= 0 && rf <= 1) op.remainingFraction = rf;
+      }
+      continue;
+    }
+
+    if (kind === 'live_position_close') {
+      const ct = (o.closedTrade ?? {}) as Record<string, unknown>;
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const syn: Record<string, unknown> = {
+        kind: 'close',
+        ts,
+        mint,
+        exitTs: ct.exitTs,
+        exitMcUsd: ct.exitMcUsd,
+        exit_market_price:
+          Number(ct.theoretical_exit_price ?? ct.effective_exit_price ?? ct.exitMcUsd ?? 0) || undefined,
+        pnlPct: ct.pnlPct,
+        netPnlUsd: ct.netPnlUsd,
+        exitReason: ct.exitReason,
+        remainingFraction: 0,
+        totalInvestedUsd: ct.totalInvestedUsd,
+      };
+      const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
+      const arr = liveTimelines.get(mint) ?? [];
+      if (tev) arr.push(tev);
+
+      const closedRow: Paper2ClosedRow = {
+        ...ct,
+        mint,
+        symbol: ct.symbol ?? om.get(mint)?.symbol ?? '',
+        __timeline: arr,
+      };
+      cl.push(closedRow);
+      om.delete(mint);
+      liveMeta.delete(mint);
+      liveTimelines.delete(mint);
+    }
+  }
+
+  const failReasons = [...failReasonsCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([reason, count]) => ({ reason, count }));
+
+  const closedVisible =
+    resetTs > 0 ? cl.filter((c) => Number((c as { exitTs?: unknown }).exitTs ?? 0) >= resetTs) : cl;
+
+  const extras: LiveOscarPaper2Extras | undefined =
+    liveReconcileBoot || liveReconcileReport
+      ? { ...(liveReconcileBoot ? { liveReconcileBoot } : {}), ...(liveReconcileReport ? { liveReconcileReport } : {}) }
+      : undefined;
+
+  return {
+    open: [...om.values()],
+    closed: closedVisible,
+    firstTs: f,
+    lastTs: l,
+    resetTs,
+    evals1h,
+    passed1h,
+    failReasons,
+    openTimelines: liveTimelines,
+    hbOpen,
+    hbClosed,
+    ...(extras ? { liveExtras: extras } : {}),
+  };
+}
+
 function paper2Metrics(closed: Paper2ClosedRow[]): {
   total: number;
   wins: number;
@@ -1783,98 +2204,25 @@ function makeEmptyDashboardStrategyRow(strategyId: string, file: string): Dashbo
 }
 
 /**
- * Summarize live-oscar JSONL for the PaperTrader2 dashboard (channel live).
- * PnL timelines stay empty until Phase 4+ mirrors paper-shaped rows or executed amounts land in journal.
+ * Summarize live-oscar JSONL for tests and lightweight callers (no PG/Jupiter enrichment).
+ * Full `/api/paper2` row uses `loadLiveOscarJsonlAsPaper2` + `buildPaper2StrategyRowFromLoad`.
  */
 export function aggregateLiveOscarJsonlForDashboard(filePath: string): DashboardPaper2StrategyRow {
   const fallback = (): DashboardPaper2StrategyRow => makeEmptyDashboardStrategyRow('live-oscar', filePath);
   if (!fs.existsSync(filePath)) return fallback();
 
-  const failReasonsCount = new Map<string, number>();
-  let firstTs = 0;
-  let lastTs = 0;
-  let hbOpen = 0;
-  let hbClosed = 0;
-  let liveReconcileBoot: DashboardPaper2StrategyRow['liveReconcileBoot'];
-  let liveReconcileReport: DashboardPaper2StrategyRow['liveReconcileReport'];
+  const ll = loadLiveOscarJsonlAsPaper2(filePath);
+  const m = paper2Metrics(ll.closed);
+  const startedAt = ll.resetTs || ll.firstTs;
   const now = Date.now();
-  const h1 = now - 60 * 60 * 1000;
-  let evals1h = 0;
-  let passed1h = 0;
-
-  let raw: string;
-  try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return fallback();
-  }
-
-  for (const line of raw.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    let o: Record<string, unknown>;
-    try {
-      o = JSON.parse(t) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    if (o.channel !== 'live') continue;
-    const ts = Number(o.ts ?? 0);
-    if (Number.isFinite(ts) && ts > 0) {
-      if (!firstTs || ts < firstTs) firstTs = ts;
-      if (ts > lastTs) lastTs = ts;
-    }
-    const kind = o.kind;
-    if (kind === 'heartbeat') {
-      hbOpen = Number(o.openPositions ?? 0);
-      hbClosed = Number(o.closedTotal ?? 0);
-      const st = o.reconcileBootStatus;
-      if (typeof st === 'string' && st) {
-        const div = o.reconcileMintsDivergent;
-        const chain = o.reconcileChainOnlyMints;
-        liveReconcileBoot = {
-          status: st,
-          skipReason: typeof o.reconcileBootSkipReason === 'string' ? o.reconcileBootSkipReason : undefined,
-          divergentCount: Array.isArray(div) ? div.length : undefined,
-          chainOnlyCount: Array.isArray(chain) ? chain.length : undefined,
-          journalTruncated: typeof o.journalReplayTruncated === 'boolean' ? o.journalReplayTruncated : undefined,
-        };
-      }
-    }
-    if (kind === 'live_reconcile_report') {
-      const ta = o.txAnchorSample as { notFound?: unknown[]; rpcErrors?: unknown } | undefined;
-      liveReconcileReport = {
-        ts,
-        ok: Boolean(o.ok),
-        reconcileStatus: String(o.reconcileStatus ?? ''),
-        txAnchorMissing: Array.isArray(ta?.notFound) ? ta.notFound.length : undefined,
-        txAnchorRpcErrors: typeof ta?.rpcErrors === 'number' ? ta.rpcErrors : undefined,
-      };
-    }
-    if (kind === 'execution_attempt' && ts >= h1) evals1h += 1;
-    if (kind === 'execution_result' && ts >= h1) {
-      const st = String(o.status ?? '');
-      if (st === 'sim_ok' || st === 'confirmed') passed1h += 1;
-    }
-    if (kind === 'execution_skip' && typeof o.reason === 'string' && o.reason) {
-      failReasonsCount.set(o.reason, (failReasonsCount.get(o.reason) ?? 0) + 1);
-    }
-  }
-
-  const m = paper2Metrics([]);
-  const startedAt = firstTs > 0 ? firstTs : Date.now();
-  const failReasons = [...failReasonsCount.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([reason, count]) => ({ reason, count }));
 
   return {
     strategyId: 'live-oscar',
     file: filePath,
-    openCount: hbOpen,
-    closedCount: hbClosed,
+    openCount: Math.max(ll.open.length, ll.hbOpen),
+    closedCount: Math.max(ll.closed.length, ll.hbClosed),
     startedAt,
-    lastTs: lastTs > 0 ? lastTs : startedAt,
+    lastTs: ll.lastTs > 0 ? ll.lastTs : startedAt,
     hoursOfData: (now - startedAt) / 3_600_000,
     sumPnlUsd: m.sumPnlUsd,
     realizedPnlUsd: 0,
@@ -1888,16 +2236,15 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
     unrealizedUsd: 0,
     exits: m.exits,
     exitsBreakdown: m.exitsBreakdown,
-    evals1h,
-    passed1h,
-    failReasons,
+    evals1h: ll.evals1h,
+    passed1h: ll.passed1h,
+    failReasons: ll.failReasons,
     open: [],
     recentClosed: [],
     priorityFeeUsdTotal: 0,
     priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
     liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
-    ...(liveReconcileBoot ? { liveReconcileBoot } : {}),
-    ...(liveReconcileReport ? { liveReconcileReport } : {}),
+    ...(ll.liveExtras ?? {}),
   };
 }
 
@@ -1942,52 +2289,13 @@ app.get('/api/paper2', async (_req, reply) => {
     /* ignore */
   }
 
-  type EnrichedOpen = {
-    mint: string;
-    symbol: string;
-    entryTs: number;
-    entryMcUsd: number;
-    entryRealMcUsd: number | null;
-    /** Journal mcap at buy, else last-resort DEX snapshot at/before entryTs. */
-    entryMcapAtBuyUsd: number | null;
-    baselinePriceUsd: number | null;
-    metricType: string | null;
-    openedAtIso: string | null;
-    lane: string | null;
-    source: string | null;
-    currentMcUsd: number;
-    livePriceUsd: number | null;
-    peakMcUsd: number;
-    peakPnlPct: number;
-    trailingArmed: boolean;
-    pnlPct: number | null;
-    pnlUsd: number | null;
-    ageMin: number;
-    hasLiveMc: boolean;
-    hasLivePrice: boolean;
-    /** When true, spot for unrealized came from journal timeline (no DEX row). */
-    livePriceStale: boolean;
-    /** Where live price for PnL came from (Jupiter when snapshots miss the mint side). */
-    livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null;
-    /** Extra mcap source when pair_snapshots are empty (pump.fun). */
-    liveMcProvenance: 'snapshots' | 'pump.fun' | null;
-    timeline: TimelineEvent[];
-    entryPriorityFeeUsd: number | null;
-    entryPriceVerifySlipPct: number | null;
-    entryPriceVerifyImpactPct: number | null;
-    entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
-    entryLiqUsd: number | null;
-    currentLiqUsd: number | null;
-    liqDropPct: number | null;
-    /** Cost basis still in the position: totalInvestedUsd × remainingFraction (not mark-to-market). */
-    remainingCostBasisUsd: number;
-  };
-
-  const strategies: Array<DashboardPaper2StrategyRow & { open: EnrichedOpen[] }> = [];
-
-  for (const fp of files) {
-    const sid = path.basename(fp, '.jsonl');
-    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loadPaper2File(fp);
+  async function buildPaper2StrategyRowFromLoad(
+    fp: string,
+    sid: string,
+    loaded: Paper2FileLoad,
+    hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
+  ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
+    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
     const m = paper2Metrics(closed);
     const startedAt = resetTs || firstTs;
     const closedWithUsd = (
@@ -2074,8 +2382,8 @@ app.get('/api/paper2', async (_req, reply) => {
     // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
     // future jsonl row has a misclassified baseline.
     const PNL_PCT_CLAMP = 100_000; // 1000x
-    const enrichedOpen: EnrichedOpen[] = await Promise.all(
-      open.slice(0, 30).map(async (ot): Promise<EnrichedOpen> => {
+    const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
+      open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
         const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
         const isMcMetric = ot.metricType === 'mc';
         /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
@@ -2288,11 +2596,11 @@ app.get('/api/paper2', async (_req, reply) => {
       };
     })();
 
-    strategies.push({
+    return {
       strategyId: sid,
       file: fp,
-      openCount: open.length,
-      closedCount: closed.length,
+      openCount: Math.max(open.length, hb?.hbOpen ?? 0),
+      closedCount: Math.max(closed.length, hb?.hbClosed ?? 0),
       startedAt,
       lastTs,
       hoursOfData: (Date.now() - startedAt) / 3_600_000,
@@ -2316,10 +2624,23 @@ app.get('/api/paper2', async (_req, reply) => {
       priorityFeeUsdTotal,
       priceVerify,
       liqDrain,
-    });
+      ...(hb?.reconcileExtras ?? {}),
+    };
   }
 
-  const liveRow = aggregateLiveOscarJsonlForDashboard(DASHBOARD_LIVE_OSCAR_JSONL);
+  const strategies: Array<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> = [];
+  for (const fp of files) {
+    const sid = path.basename(fp, '.jsonl');
+    strategies.push(await buildPaper2StrategyRowFromLoad(fp, sid, loadPaper2File(fp)));
+  }
+
+  const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
+  const liveRow = await buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
+    hbOpen,
+    hbClosed,
+    reconcileExtras: liveExtras,
+  });
   const merged = mergeDashboardStrategyPanels([liveRow, ...strategies]);
 
   const totals = merged.reduce(

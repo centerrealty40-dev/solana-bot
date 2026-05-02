@@ -551,19 +551,29 @@ module.exports = {
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
 
-        /** W8.0 §9 rollout — шаг 1: полный Oscar-цикл без ключа и без send (только quote/build + JSONL). ~1 неделя наблюдения vs `pt1-oscar`. */
+        /** W8.0 §9 rollout — шаг 3: `live` + микролимиты §3.3 (sendTransaction + confirm); см. RUNBOOK §0.2 и [`W8.0_live_oscar_trading_bot.md`](docs/strategy/specs/W8.0_live_oscar_trading_bot.md) §9. */
         LIVE_STRATEGY_ENABLED: '1',
-        LIVE_EXECUTION_MODE: 'dry_run',
+        LIVE_EXECUTION_MODE: 'live',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         LIVE_PARITY_PAPER_TRADES_PATH: path.join(root, 'data/paper2/pt1-oscar.jsonl'),
+        /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
+        LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
+        LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
+        /** §3.3 канарейка — те же значения при переходе на `live` (§9 шаг 3). */
+        LIVE_MAX_POSITION_USD: '10',
+        LIVE_MAX_OPEN_POSITIONS: '5',
+        LIVE_MAX_STRATEGY_LOSS_USD: '50',
+        LIVE_KILL_AFTER_CONSEC_FAIL: '3',
+        /** Не открывать новые позиции, если на кошельке меньше ~0.05 SOL (комиссии + буфер). */
+        LIVE_MIN_WALLET_SOL: '0.05',
       },
     },
     {

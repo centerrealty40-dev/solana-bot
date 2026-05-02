@@ -21,6 +21,22 @@ function keypairFromBase58(trimmed: string): Keypair {
 }
 
 /**
+ * File on disk: Solana CLI JSON `[byte,...]` **or** a single-line Phantom/base58 secret (common export).
+ */
+function keypairFromWalletFileContent(fileRaw: string): Keypair {
+  const content = fileRaw.trim();
+  if (!content) throw new Error('keypair file is empty');
+  if (content.startsWith('[')) {
+    return keypairFromJsonFileContent(content);
+  }
+  try {
+    return keypairFromBase58(content);
+  } catch {
+    return keypairFromJsonFileContent(content);
+  }
+}
+
+/**
  * Resolve secret: if `trimmed` points to an existing file, read it; else JSON array or base58.
  */
 export function loadLiveKeypairFromSecretEnv(secretRaw: string): Keypair {
@@ -30,7 +46,7 @@ export function loadLiveKeypairFromSecretEnv(secretRaw: string): Keypair {
   try {
     if (fs.existsSync(trimmed) && fs.statSync(trimmed).isFile()) {
       const fileRaw = fs.readFileSync(trimmed, 'utf8');
-      return keypairFromJsonFileContent(fileRaw);
+      return keypairFromWalletFileContent(fileRaw);
     }
   } catch (e) {
     throw new Error(`failed to read wallet keypair file: ${(e as Error).message}`);

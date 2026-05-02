@@ -8,6 +8,83 @@
 
 ---
 
+## [1.11.13] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.13`.
+
+### Live Oscar — W8.0 §9 шаг 3 (`live`)
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`LIVE_EXECUTION_MODE=live`** при сохранении микролимитов §3.3 (`LIVE_MAX_POSITION_USD`, `LIVE_MAX_OPEN_POSITIONS`, …).
+- Runbook: [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §0.2; деплой на VPS — только Git по [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) §5.2.
+
+### Откат шага 3
+
+- В ecosystem **`LIVE_EXECUTION_MODE=simulate`** (шаг 2) или **`dry_run`** (шаг 1); коммит в **`v2`**, push, деплой §5.2.
+
+---
+
+## [1.11.12] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.12`.
+
+### Live Oscar — keypair-файл из Phantom (base58)
+
+- **`loadLiveKeypairFromSecretEnv`:** если **`LIVE_WALLET_SECRET`** указывает на файл, поддерживается содержимое как JSON-массив байт (CLI), так и **одна строка base58** (типичный экспорт Phantom).
+
+### Откат
+
+- Откат кода `wallet.ts` на версию **1.11.11**.
+
+---
+
+## [1.11.11] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.11`.
+
+### Live Oscar — привязка к вашему кошельку
+
+- **`LIVE_WALLET_PUBKEY`** (env): ожидаемый публичный адрес; при **`simulate`/`live`** и заданном ключе процесс сверяет pubkey из **`LIVE_WALLET_SECRET`** с этим значением и падает при расхождении.
+- **`LIVE_WALLET_PUBKEY`**: задаётся на VPS (например в `ecosystem.config.cjs`), когда keypair-файл уже совпадает с вашим кошельком — иначе процесс завершится с ошибкой сверки (не включайте до загрузки верного файла).
+- Runbook: [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §0.1 (про сид-фразу и keypair).
+
+### Откат
+
+- Убрать **`LIVE_WALLET_PUBKEY`** из env и перезагрузить PM2; откат кода — предыдущий коммит.
+
+---
+
+## [1.11.10] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.10`.
+
+### Live Oscar — лимиты и дашборд
+
+- **`LIVE_MAX_OPEN_POSITIONS=5`** в `ecosystem.config.cjs` (`live-oscar`).
+- **`/papertrader2`:** таймлайн показывает ссылку **Solscan** на транзакцию, если в событии есть `txSignature` (on-chain подтверждённые свапы в live-журнале).
+- **`loadLiveOscarJsonlAsPaper2`:** парсинг `live_position_*` в API paper2 для колонки Live Oscar + корреляция `execution_result.txSignature` с событиями таймлайна.
+
+### Откат
+
+- В ecosystem вернуть прежнее **`LIVE_MAX_OPEN_POSITIONS`**; откатить правки `dashboard-server.ts` / `dashboard-paper2.html` при необходимости.
+
+---
+
+## [1.11.9] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.9`.
+
+### Live Oscar — rollout W8.0 §9 шаг 2 (simulate + микролимиты)
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`LIVE_EXECUTION_MODE=simulate`**, **`LIVE_WALLET_SECRET`** → путь к микро-keypair на VPS, лимиты §3.3 (**`LIVE_MAX_POSITION_USD=10`**, **`LIVE_MAX_OPEN_POSITIONS=1`**, **`LIVE_MAX_STRATEGY_LOSS_USD=50`**, **`LIVE_KILL_AFTER_CONSEC_FAIL=3`**, **`LIVE_MIN_WALLET_SOL=0.05`**).
+- Операторский скрипт: **`scripts/ops/ensure-live-micro-keypair.mjs`** — создаёт keypair при первом запуске, если файла нет.
+- Runbook: [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §0.1.
+
+### Откат шага 2
+
+- В ecosystem вернуть **`LIVE_EXECUTION_MODE=dry_run`**, убрать **`LIVE_WALLET_SECRET`** из блока `live-oscar` (или оставить файл на диске — в **`dry_run`** не используется), **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**.
+
+---
+
 ## [1.11.8] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.8`.

@@ -25,6 +25,7 @@ import {
   type TxAnchorSampleResult,
 } from './reconcile-tx-anchor-sample.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
+import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -39,6 +40,25 @@ function loadOptionalInheritEnv(): void {
 export async function main(): Promise<void> {
   loadOptionalInheritEnv();
   const liveCfg = loadLiveOscarConfig();
+
+  if (
+    liveCfg.strategyEnabled &&
+    (liveCfg.executionMode === 'simulate' || liveCfg.executionMode === 'live')
+  ) {
+    const expected = liveCfg.liveWalletPubkeyExpected?.trim();
+    const secret = liveCfg.walletSecret?.trim();
+    if (expected && secret) {
+      const kp = loadLiveKeypairFromSecretEnv(secret);
+      const got = kp.publicKey.toBase58();
+      if (got !== expected) {
+        throw new Error(
+          `LIVE_WALLET_PUBKEY does not match LIVE_WALLET_SECRET (expected ${expected}, loaded ${got})`,
+        );
+      }
+      log.info({ pubkey: got }, 'live-oscar wallet pubkey matches LIVE_WALLET_PUBKEY');
+    }
+  }
+
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
   clearLiveReconcileBlock();
   setLiveReconcileBootSnapshot(null);

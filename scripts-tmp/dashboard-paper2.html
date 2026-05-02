@@ -273,6 +273,10 @@
                           <span class="text-slate-500"> · </span>
                           <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
                         </span>
+                        <span x-show="ev.txSignature">
+                          <span class="text-slate-500"> · </span>
+                          <a :href="'https://solscan.io/tx/' + encodeURIComponent(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
+                        </span>
                         <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                           <span class="text-slate-500"> · </span>
                           <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="'PnL ' + fmtUsdSigned(ev.pnlUsd)"></span>
@@ -342,6 +346,10 @@
                         <span x-show="timelineUsdTail(ev)">
                           <span class="text-slate-500"> · </span>
                           <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
+                        </span>
+                        <span x-show="ev.txSignature">
+                          <span class="text-slate-500"> · </span>
+                          <a :href="'https://solscan.io/tx/' + encodeURIComponent(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
                         </span>
                         <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                           <span class="text-slate-500"> · </span>

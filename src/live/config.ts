@@ -58,6 +58,11 @@ const LiveOscarConfigSchema = z
     parityPaperTradesPath: z.string().optional(),
     /** Required when enabled + simulate|live; never loaded by Phase 0 runtime unless enabled. */
     walletSecret: z.string().optional(),
+    /**
+     * Optional: expected base58 pubkey for the key loaded from `walletSecret`.
+     * When set, live-oscar verifies at boot so the wrong keypair file cannot sign swaps.
+     */
+    liveWalletPubkeyExpected: z.string().min(32).max(64).optional(),
 
     /** W8.0 Phase 2 — Jupiter lite-api (defaults match public lite-api hosts). */
     liveJupiterQuoteUrl: z.string().min(1).optional(),
@@ -170,6 +175,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     heartbeatIntervalMs: process.env.LIVE_HEARTBEAT_INTERVAL_MS,
     parityPaperTradesPath: parityPaper,
     walletSecret: process.env.LIVE_WALLET_SECRET,
+    liveWalletPubkeyExpected: process.env.LIVE_WALLET_PUBKEY?.trim() || undefined,
     liveJupiterQuoteUrl: process.env.LIVE_JUPITER_QUOTE_URL?.trim() || undefined,
     liveJupiterSwapUrl: process.env.LIVE_JUPITER_SWAP_URL?.trim() || undefined,
     liveJupiterQuoteTimeoutMs: process.env.LIVE_JUPITER_QUOTE_TIMEOUT_MS,
