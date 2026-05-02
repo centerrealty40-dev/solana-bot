@@ -2,6 +2,8 @@
 
 Цель: много мелких правок в коротком окне **не превращаются** в хаотичные перезаписи сервера и «пропавшие» изменения.
 
+**Единый сводный норматив:** [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md).
+
 Связанные документы: [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md), [`VERSION`](./VERSION), [`CHANGELOG.md`](./CHANGELOG.md).
 
 ---

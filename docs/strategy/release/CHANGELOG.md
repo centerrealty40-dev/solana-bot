@@ -8,6 +8,20 @@
 
 ---
 
+## [1.10.2] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.2`.
+
+### Добавлено
+
+- **Единый норматив** деплоя и параллельной работы: [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) — свод **GitHub / локальный диск / VPS**, запрет рутинного **`scp`** tracked-кода поверх git-клона на проде; согласование с Cursor rule `server-autodeploy`. Перекрёстные ссылки в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md), [`PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md), [`specs/INDEX.md`](../specs/INDEX.md).
+
+### Откат
+
+- Удалить указательный файл и записи в смежных документах; `VERSION` **`1.10.1`**.
+
+---
+
 ## [1.10.1] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.1`.

@@ -10,6 +10,7 @@
 - [`../release/VERSION`](../release/VERSION) — текущая версия продукта (semver).
 - [`../release/CHANGELOG.md`](../release/CHANGELOG.md) — что вошло в каждую версию и как откатиться.
 - [`../release/PARALLEL_WORKFLOW.md`](../release/PARALLEL_WORKFLOW.md) — как работать вдвоём/втроём агентов и не ломать деплой.
+- [`../release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](../release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md) — **единый свод:** версии, GitHub, локальный диск, VPS; канон деплоя (**Git на прод-клоне**, не `scp` tracked-кода поверх дерева).
 - [`../release/DIAGNOSTIC_SCRIPTS.md`](../release/DIAGNOSTIC_SCRIPTS.md) — **нормативно:** классы **A/B/C** для скриптов анализа сделок и JSONL (`scripts-tmp/`, префикс `_`, `.gitignore`).
 
 ## Принципы спецификаций

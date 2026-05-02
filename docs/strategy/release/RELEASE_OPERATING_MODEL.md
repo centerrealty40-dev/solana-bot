@@ -158,6 +158,8 @@
 
 ## 7. Деплой
 
+**Сводный норматив:** [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) §5 — канон обновления `/opt/solana-alpha`.
+
 ### 7.1 Принципы
 
 - Деплой = **доставка конкретного коммита** из git на сервер, а не «скопировали файл с ноутбука».
@@ -268,6 +270,7 @@ scp -i c:/Users/cente/.ssh/botadmin_187_auto <local> root@187.124.38.242:<remote
 | 2026-05-02 | 1.5.3 | §7.4: канон SSH (`root` + IP + ключ `botadmin_187_auto`); агенты не опрашивают владельца о способе входа. |
 | 2026-05-02 | 1.5.4 | §9.3 + ссылка на [`DIAGNOSTIC_SCRIPTS.md`](./DIAGNOSTIC_SCRIPTS.md); норматив по классам A/B/C для диагностических скриптов. |
 | 2026-05-02 | 1.6.2 | **I7**, **I8**; §4.7 параллельная работа и монополия на semver; §6 уточнён под исполнителя vs интегратора; §8.1 — `git revert` для точечного отката. |
+| 2026-05-03 | 1.10.2 | §7: ссылка на [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) как сводный норматив деплоя VPS и согласование с Cursor rules. |
 
 ---
 
