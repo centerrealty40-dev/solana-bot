@@ -26,6 +26,13 @@ const LiveOscarConfigSchema = z
     parityPaperTradesPath: z.string().optional(),
     /** Required when enabled + simulate|live; never loaded by Phase 0 runtime unless enabled. */
     walletSecret: z.string().optional(),
+
+    /** W8.0 Phase 2 — Jupiter lite-api (defaults match public lite-api hosts). */
+    liveJupiterQuoteUrl: z.string().min(1).optional(),
+    liveJupiterSwapUrl: z.string().min(1).optional(),
+    liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
+    liveJupiterSwapTimeoutMs: z.coerce.number().int().min(500).max(60_000).default(8000),
+    liveDefaultSlippageBps: z.coerce.number().int().min(10).max(5000).default(400),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -72,6 +79,11 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     heartbeatIntervalMs: process.env.LIVE_HEARTBEAT_INTERVAL_MS,
     parityPaperTradesPath: parityPaper,
     walletSecret: process.env.LIVE_WALLET_SECRET,
+    liveJupiterQuoteUrl: process.env.LIVE_JUPITER_QUOTE_URL?.trim() || undefined,
+    liveJupiterSwapUrl: process.env.LIVE_JUPITER_SWAP_URL?.trim() || undefined,
+    liveJupiterQuoteTimeoutMs: process.env.LIVE_JUPITER_QUOTE_TIMEOUT_MS,
+    liveJupiterSwapTimeoutMs: process.env.LIVE_JUPITER_SWAP_TIMEOUT_MS,
+    liveDefaultSlippageBps: process.env.LIVE_DEFAULT_SLIPPAGE_BPS,
   });
 
   if (!parsed.success) {

@@ -8,6 +8,24 @@
 
 ---
 
+## [1.5.0] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.0`.
+
+### Добавлено
+
+- **W8.0 Phase 2 — Jupiter для live-oscar:** `src/live/jupiter.ts` — GET quote (SOL→mint) с настраиваемым **`LIVE_JUPITER_QUOTE_URL`**, POST unsigned swap с **`LIVE_JUPITER_SWAP_URL`**; нормализованный **`quoteSnapshot`** (§5 W8.0-p1) + поля **`swapBuildOk` / `swapTxBase64Len` / `swapBuildReason`**; опциональный смок **`runLiveJupiterSelfTest`** (`LIVE_PHASE2_JUPITER_SELF_TEST=1`, **`LIVE_PHASE2_SELF_TEST_MINT`**) пишет **`execution_attempt`** или **`execution_skip`** после `live_boot`. Конфиг: **`LIVE_JUPITER_QUOTE_TIMEOUT_MS`**, **`LIVE_JUPITER_SWAP_TIMEOUT_MS`**, **`LIVE_DEFAULT_SLIPPAGE_BPS`**; заголовок **`JUPITER_API_KEY`** при наличии.
+
+### Миграции / деплой
+
+- Без обязательных вызовов Jupiter, пока не включён self-test. Paper-процессы не затронуты.
+
+### Откат
+
+- Revert коммита Phase 2 или `VERSION` **`1.4.0`** + удаление `src/live/jupiter*.ts` и правок `config.ts` / `main.ts`.
+
+---
+
 ## [1.4.0] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.4.0`.
