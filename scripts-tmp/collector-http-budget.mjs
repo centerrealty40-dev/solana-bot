@@ -29,14 +29,14 @@ const collectors = [
   },
   {
     name: 'sa-orca',
-    intervalMs: Number(process.env.ORCA_COLLECTOR_INTERVAL_MS || 90_000),
+    intervalMs: Number(process.env.ORCA_COLLECTOR_INTERVAL_MS || 60_000),
     searchTerms: (process.env.ORCA_DEX_SEARCH_TERMS || 'orca,whirlpool,orca solana').split(',').filter(Boolean).length,
     geckoTrendPages: Number(process.env.ORCA_GECKO_TRENDING_PAGES || 2),
     geckoNewPages: Number(process.env.ORCA_GECKO_NEW_POOLS_PAGES || 2),
   },
   {
     name: 'sa-moonshot',
-    intervalMs: Number(process.env.MOONSHOT_COLLECTOR_INTERVAL_MS || 90_000),
+    intervalMs: Number(process.env.MOONSHOT_COLLECTOR_INTERVAL_MS || 60_000),
     searchTerms: (process.env.MOONSHOT_DEX_SEARCH_TERMS || 'moonshot,moonshot solana,moonshot token')
       .split(',')
       .filter(Boolean).length,

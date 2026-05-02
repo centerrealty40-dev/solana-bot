@@ -1,6 +1,6 @@
 /**
  * PM2 для VPS (/opt/solana-alpha) после W1/W2 slim.
- * Дашборд + W6.1 DEX collectors (+ PumpSwap) + W6.3a paper skeleton (stream/parser/atlas выключены).
+ * Дашборд + W6.1 DEX collectors (все пять тиков по умолчанию 60s) + W6.3a paper skeleton (stream/parser/atlas выключены).
  *
  * Запуск новых процессов только точечно:
  *   pm2 start ecosystem.config.cjs --only sa-pumpswap
@@ -73,8 +73,8 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** Ease Dex/Gecko RPM — PumpSwap + Raydium + Meteora stay at 60s. */
-        ORCA_COLLECTOR_INTERVAL_MS: '90000',
+        /** Explicit 60s — PM2 may retain removed keys across reload; override stale dump. */
+        ORCA_COLLECTOR_INTERVAL_MS: '60000',
       },
     },
     {
@@ -92,7 +92,7 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        MOONSHOT_COLLECTOR_INTERVAL_MS: '90000',
+        MOONSHOT_COLLECTOR_INTERVAL_MS: '60000',
       },
     },
     {
@@ -109,6 +109,25 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: { NODE_ENV: 'production' },
+    },
+    {
+      name: 'sa-collector-watch',
+      cwd: root,
+      script: 'scripts-tmp/collector-log-watch.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '120M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** Читает TELEGRAM_* из .env; ALERT вне тихих часов только для non-ALERT — см. sendTagged. */
+        COLLECTOR_WATCH_POLL_MS: '15000',
+      },
     },
     {
       name: 'sa-jupiter',
