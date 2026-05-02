@@ -125,7 +125,7 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** Читает TELEGRAM_* из .env; ALERT вне тихих часов только для non-ALERT — см. sendTagged. */
+        /** TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID из .env (как paper2-healthcheck). Категория ALERT — круглосуточно. */
         COLLECTOR_WATCH_POLL_MS: '15000',
       },
     },
