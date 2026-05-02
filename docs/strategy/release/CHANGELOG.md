@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.2] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.2`.
+
+### Изменено
+
+- **`dashboard-paper2.html`:** расширено описание стратегии **Live Oscar** — полное зеркало paper-слоя (паритет с pt1-oscar), отличия **W7.3 / W7.5 / W7.8**, W7.4 / W7.4.2, интервалы и блок **LIVE_*** из [`ecosystem.config.cjs`](../../../ecosystem.config.cjs).
+- Подписи **pt1-diprunner**, **pt1-dno**, **pt1-oscar** синхронизированы с текущими флагами RPC/Priority fee / verify (`ecosystem.config.cjs`).
+
+### Откат
+
+- `VERSION` **`1.11.1`**; откатить правки в **`scripts-tmp/dashboard-paper2.html`**.
+
+---
+
 ## [1.11.1] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.1`.
