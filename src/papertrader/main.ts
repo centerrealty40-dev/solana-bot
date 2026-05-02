@@ -29,6 +29,7 @@ import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
 import { trackerTick, type TrackerStats } from './executor/tracker.js';
+import { reconcileOpenTradeDcaFromLegs } from './executor/dca-state.js';
 import { loadStore } from './executor/store-restore.js';
 import type { ClosedTrade, ExitReason, OpenTrade, PriceVerifyVerdict, SafetyVerdict } from './types.js';
 import { evaluateMintSafety } from './safety/index.js';
@@ -58,6 +59,9 @@ export async function main(): Promise<void> {
   for (const [mint, ts] of restored.evaluatedAt) evaluatedAtMap.set(mint, ts);
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
   const open: Map<string, OpenTrade> = restored.open;
+  for (const ot of open.values()) {
+    reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
+  }
   const closed: ClosedTrade[] = [];
 
   const startedAt = Date.now();

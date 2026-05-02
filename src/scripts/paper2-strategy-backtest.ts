@@ -19,6 +19,12 @@ import { loadPaperTraderConfig, parseDcaLevels, parseTpLadder } from '../papertr
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../papertrader/costs.js';
 import type { ClosedTrade, DexId, ExitReason, Lane, OpenTrade, PartialSell, PositionLeg } from '../papertrader/types.js';
 import {
+  dcaCrossedDownward,
+  dcaEffPrev,
+  dcaStepOrTriggerTaken,
+  markDcaStepFired,
+} from '../papertrader/executor/dca-state.js';
+import {
   ladderStepOrThresholdTaken,
   markLadderStepFired,
 } from '../papertrader/executor/tp-ladder-state.js';
@@ -162,6 +168,7 @@ function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
     avgEntryMarket: leg0.marketPrice ?? leg0.price,
     remainingFraction: 1,
     dcaUsedLevels: new Set(),
+    dcaUsedIndices: new Set(),
     ladderUsedLevels: new Set(),
     ladderUsedIndices: new Set(),
     pairAddress,
@@ -252,31 +259,32 @@ function simStep(args: {
   }
 
   if ((dcaLevels.length > 0 || cfg.dcaKillstop < 0) && ot.remainingFraction > 0) {
-    for (const lvl of dcaLevels) {
-      if (ot.dcaUsedLevels.has(lvl.triggerPct)) continue;
-      if (dropFromFirstPct <= lvl.triggerPct) {
-        const addUsd = cfg.positionUsd * lvl.addFraction;
-        const marketBuy = curMetric;
-        const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
-        ot.legs.push({
-          ts: virtualNow,
-          price: effectiveBuy,
-          marketPrice: marketBuy,
-          sizeUsd: addUsd,
-          reason: 'dca',
-          triggerPct: lvl.triggerPct,
-        });
-        ot.totalInvestedUsd += addUsd;
-        const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
-        ot.avgEntry = num / ot.totalInvestedUsd;
-        const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
-        ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-        ot.dcaUsedLevels.add(lvl.triggerPct);
-        ot.remainingFraction = 1;
-        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
-        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
-        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
-      }
+    const effPrevDrop = dcaEffPrev(ot);
+    for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
+      const lvl = dcaLevels[dcaIdx]!;
+      if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
+      if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
+      const addUsd = cfg.positionUsd * lvl.addFraction;
+      const marketBuy = curMetric;
+      const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+      ot.legs.push({
+        ts: virtualNow,
+        price: effectiveBuy,
+        marketPrice: marketBuy,
+        sizeUsd: addUsd,
+        reason: 'dca',
+        triggerPct: lvl.triggerPct,
+      });
+      ot.totalInvestedUsd += addUsd;
+      const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+      ot.avgEntry = num / ot.totalInvestedUsd;
+      const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+      ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+      markDcaStepFired(ot, dcaIdx, lvl.triggerPct);
+      ot.remainingFraction = 1;
+      if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
+      ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+      ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
     }
   }
 
@@ -347,6 +355,9 @@ function simStep(args: {
     return { closed: ct, exitReason };
   }
 
+  if (curMetric > 0 && Number.isFinite(dropFromFirstPct)) {
+    ot.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
+  }
   return { closed: null, exitReason: 'OPEN' };
 }
 
@@ -356,8 +367,10 @@ function deepCloneOpen(ot: OpenTrade): OpenTrade {
     legs: ot.legs.map((l) => ({ ...l })),
     partialSells: ot.partialSells.map((p) => ({ ...p })),
     dcaUsedLevels: new Set(ot.dcaUsedLevels),
+    dcaUsedIndices: new Set(ot.dcaUsedIndices),
     ladderUsedLevels: new Set(ot.ladderUsedLevels),
     ladderUsedIndices: new Set(ot.ladderUsedIndices),
+    dcaLastEvalDropFromFirstPct: ot.dcaLastEvalDropFromFirstPct,
     entryMetrics: { ...ot.entryMetrics },
   };
 }

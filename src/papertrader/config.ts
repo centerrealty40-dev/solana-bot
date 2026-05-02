@@ -530,7 +530,7 @@ export interface TpLadderLevel {
 
 export function parseDcaLevels(spec: string | undefined | null): DcaLevel[] {
   if (!spec) return [];
-  return spec
+  const parts = spec
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean)
@@ -539,6 +539,12 @@ export function parseDcaLevels(spec: string | undefined | null): DcaLevel[] {
       return { triggerPct: trig / 100, addFraction: frac };
     })
     .filter((l) => Number.isFinite(l.triggerPct) && Number.isFinite(l.addFraction) && l.addFraction > 0);
+  /** Same threshold twice → last addFraction wins; sort descending: shallower rung first (e.g. −7% then −14%), matching how price hits levels over time. */
+  const byTrig = new Map<number, DcaLevel>();
+  for (const l of parts) {
+    byTrig.set(l.triggerPct, l);
+  }
+  return [...byTrig.entries()].sort((a, b) => b[0] - a[0]).map(([, level]) => level);
 }
 
 export function parseTpLadder(spec: string | undefined | null): TpLadderLevel[] {

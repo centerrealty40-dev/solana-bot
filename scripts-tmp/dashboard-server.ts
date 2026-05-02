@@ -1235,7 +1235,16 @@ function buildTimelineEvent(
     const addUsd =
       sizeUsd > 0 ? sizeUsd : Number(e.addUsd ?? e.add_usd ?? e.dcaUsd ?? e.dca_usd ?? 0);
     const sz = addUsd > 0 ? addUsd : sizeUsd;
-    const label = `DCA · уровень ${fmtSignedPct(triggerPct)}`;
+    const dcaStep = Number(e.dcaStepIndex ?? NaN);
+    const dcaTot = Number(e.dcaLevelsTotal ?? NaN);
+    let stepPart = '';
+    if (Number.isFinite(dcaStep) && dcaStep >= 0) {
+      stepPart =
+        Number.isFinite(dcaTot) && dcaTot > 0
+          ? ` · шаг ${Math.floor(dcaStep) + 1}/${Math.floor(dcaTot)}`
+          : ` · шаг ${Math.floor(dcaStep) + 1}`;
+    }
+    const label = `DCA${stepPart} · уровень ${fmtSignedPct(triggerPct)} (от первой ноги)`;
     return {
       ts,
       kind: 'dca_add',

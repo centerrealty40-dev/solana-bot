@@ -72,6 +72,11 @@ function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | nu
       avgEntryMarket: Number(o.avgEntryMarket ?? o.entryMcUsd ?? 0),
       remainingFraction: Number(o.remainingFraction ?? 1),
       dcaUsedLevels: new Set<number>(Array.isArray(o.dcaUsedLevels) ? (o.dcaUsedLevels as number[]) : []),
+      dcaUsedIndices: new Set<number>(
+        Array.isArray((o as unknown as { dcaUsedIndices?: number[] }).dcaUsedIndices)
+          ? (o as unknown as { dcaUsedIndices: number[] }).dcaUsedIndices
+          : [],
+      ),
       ladderUsedLevels: new Set<number>(
         Array.isArray(o.ladderUsedLevels) ? (o.ladderUsedLevels as number[]) : [],
       ),
@@ -145,7 +150,11 @@ function applyDcaAddLedgerLine(state: RestoreState, raw: Record<string, unknown>
 
   const trig = leg.triggerPct;
   if (trig !== undefined && Number.isFinite(trig)) {
-    ot.dcaUsedLevels.add(trig);
+    ladderRememberLevel(ot.dcaUsedLevels, trig);
+  }
+  const stepIdx = Number(raw.dcaStepIndex ?? NaN);
+  if (Number.isFinite(stepIdx) && stepIdx >= 0) {
+    ot.dcaUsedIndices.add(Math.floor(stepIdx));
   }
 
   if (typeof raw.totalInvestedUsd === 'number' && raw.totalInvestedUsd > 0) {

@@ -54,6 +54,7 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
     avgEntryMarket: marketPrice,
     remainingFraction: 1,
     dcaUsedLevels: new Set<number>(),
+    dcaUsedIndices: new Set<number>(),
     ladderUsedLevels: new Set<number>(),
     ladderUsedIndices: new Set<number>(),
     pairAddress:

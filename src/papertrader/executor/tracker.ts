@@ -24,6 +24,7 @@ import {
   ladderStepOrThresholdTaken,
   markLadderStepFired,
 } from './tp-ladder-state.js';
+import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
 import { child } from '../../core/logger.js';
 
 const log = child('tracker');
@@ -436,54 +437,57 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if ((dcaLevels.length > 0 || cfg.dcaKillstop < 0) && ot.remainingFraction > 0) {
-      for (const lvl of dcaLevels) {
-        if (ot.dcaUsedLevels.has(lvl.triggerPct)) continue;
-        if (dropFromFirstPct <= lvl.triggerPct) {
-          const addUsd = cfg.positionUsd * lvl.addFraction;
-          const marketBuy = curMetric;
-          const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
-          ot.legs.push({
-            ts: Date.now(),
-            price: effectiveBuy,
-            marketPrice: marketBuy,
-            sizeUsd: addUsd,
-            reason: 'dca',
-            triggerPct: lvl.triggerPct,
-          });
-          ot.totalInvestedUsd += addUsd;
-          const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
-          ot.avgEntry = num / ot.totalInvestedUsd;
-          const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
-          ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-          ot.dcaUsedLevels.add(lvl.triggerPct);
-          ot.remainingFraction = 1;
-          if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
-          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
-          ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
-          const mcUsdLive_dca = await getLiveMcUsd(
-            mint,
-            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
-          );
-          const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
-          appendEvent({
-            kind: 'dca_add',
-            mint,
-            ts: Date.now(),
-            price: effectiveBuy,
-            marketPrice: marketBuy,
-            sizeUsd: addUsd,
-            triggerPct: lvl.triggerPct,
-            avgEntry: ot.avgEntry,
-            avgEntryMarket: ot.avgEntryMarket,
-            totalInvestedUsd: ot.totalInvestedUsd,
-            legCount: ot.legs.length,
-            mcUsdLive: mcUsdLive_dca,
-            priorityFee: pfDca,
-          });
-          console.log(
-            `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% avgEff=${ot.avgEntry.toFixed(8)}`,
-          );
-        }
+      const effPrevDrop = dcaEffPrev(ot);
+      for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
+        const lvl = dcaLevels[dcaIdx]!;
+        if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
+        if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
+        const addUsd = cfg.positionUsd * lvl.addFraction;
+        const marketBuy = curMetric;
+        const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+        ot.legs.push({
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          reason: 'dca',
+          triggerPct: lvl.triggerPct,
+        });
+        ot.totalInvestedUsd += addUsd;
+        const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+        ot.avgEntry = num / ot.totalInvestedUsd;
+        const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+        ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+        markDcaStepFired(ot, dcaIdx, lvl.triggerPct);
+        ot.remainingFraction = 1;
+        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
+        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
+        const mcUsdLive_dca = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+        );
+        const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        appendEvent({
+          kind: 'dca_add',
+          mint,
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          dcaStepIndex: dcaIdx,
+          dcaLevelsTotal: dcaLevels.length,
+          triggerPct: lvl.triggerPct,
+          avgEntry: ot.avgEntry,
+          avgEntryMarket: ot.avgEntryMarket,
+          totalInvestedUsd: ot.totalInvestedUsd,
+          legCount: ot.legs.length,
+          mcUsdLive: mcUsdLive_dca,
+          priorityFee: pfDca,
+        });
+        console.log(
+          `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% step=${dcaIdx + 1}/${dcaLevels.length} avgEff=${ot.avgEntry.toFixed(8)}`,
+        );
       }
     }
 
@@ -626,6 +630,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       console.log(
         `[${exitReason}] ${mint.slice(0, 8)} $${ot.symbol} pnl_net=${arrow}${ct.pnlPct.toFixed(1)}%/$${ct.netPnlUsd.toFixed(2)} legs=${ot.legs.length} sells=${ot.partialSells.length} age=${ageH.toFixed(1)}h`,
       );
+    }
+
+    if (curMetric > 0 && open.has(mint) && Number.isFinite(dropFromFirstPct)) {
+      const ote = open.get(mint);
+      if (ote) ote.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
     }
   }
 }

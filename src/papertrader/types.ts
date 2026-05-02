@@ -61,8 +61,15 @@ export interface OpenTrade {
   /** Weighted-average MARKET entry price — used for gross PnL. */
   avgEntryMarket: number;
   remainingFraction: number;
-  /** DCA levels (in pct) already triggered (-7, -15, ...). */
+  /** DCA drawdown levels (as fraction) already used — legacy; use with epsilon match and `dcaUsedIndices`. */
   dcaUsedLevels: Set<number>;
+  /** Indices into sorted `PAPER_DCA_LEVELS` (canonical, prevents double-fills). */
+  dcaUsedIndices: Set<number>;
+  /**
+   * Last tick's drawdown vs first leg: `(price/first-1)`.
+   * Drives one-way (down) DCA: avoid re-entries after relief rallies. Not in JSONL `open`; in-memory + restore via replay.
+   */
+  dcaLastEvalDropFromFirstPct?: number;
   /** TP-ladder pnl levels already used (0.05, 0.10, …) — legacy; kept for restore / JSONL without step index. */
   ladderUsedLevels: Set<number>;
   /** 0-based indices into the sorted `PAPER_TP_LADDER` rungs — canonical «already fired» marker. */
