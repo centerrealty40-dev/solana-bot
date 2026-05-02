@@ -10,6 +10,7 @@
 2. **Reconcile** сравнивает ожидаемые SPL-атомы из восстановленного `OpenTrade` с **`getTokenAccountsByOwner`** (Token + Token-2022). Дополнительно запрашивается **`getBalance`** (SOL, lamports) для heartbeat — **не** используется как жёсткий gate на расхождение с журналом (журнал не хранит целевой SOL).
 3. Read-only RPC Phase 7 идёт через **`qnCall`** с feature **`sim`** (тот же бюджет, что симуляции Phase 3 / `getBalance` в Phase 5). Отдельного `live_read` в метере нет — зафиксировано в CHANGELOG продукта.
 4. **`LIVE_RECONCILE_MODE=block_new`** (дефолт): при расхождении SPL или при ошибке RPC списка токенов новые **`buy_open`/DCA** блокируются (`risk_block` с лимитами **`reconcile_divergence`** или **`reconcile_rpc_fail`**). Выходы по трекеру **не** режутся этим флагом.
+5. **Свежесть Jupiter quote (W8.0 §10):** **`LIVE_QUOTE_MAX_AGE_MS`** — верхняя граница возраста **`quoteSnapshot.quoteAgeMs`** до подписи/sim/send. **Дефолт в коде и в `ecosystem.config.cjs` для `live-oscar`: 8000 ms.** Значение **`0`** выключает проверку (только если явно задано в окружении). При превышении лимита — **`execution_result`** **`sim_err`** с префиксом **`quote_stale:`**. После смены переменной в ecosystem: **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** (или эквивалентный деплой по [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md)).
 
 ---
 

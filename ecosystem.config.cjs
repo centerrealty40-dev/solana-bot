@@ -561,6 +561,8 @@ module.exports = {
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
+        /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
+        LIVE_QUOTE_MAX_AGE_MS: '8000',
       },
     },
     {

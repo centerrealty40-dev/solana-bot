@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.7] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.7`.
+
+### Live Oscar — quote freshness по умолчанию включена
+
+- **`LIVE_QUOTE_MAX_AGE_MS`:** если переменная **не** задана, конфиг использует **8000 ms**; **`0`** явно **выключает** гейт.
+- **`ecosystem.config.cjs`** (`live-oscar`): **`LIVE_QUOTE_MAX_AGE_MS: '8000'`** для видимости в проде.
+- Runbook: [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §1 п.5; после правки env в ecosystem — **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**.
+
+### Откат
+
+- `VERSION` **`1.11.6`**; выставить **`LIVE_QUOTE_MAX_AGE_MS=0`** или убрать ключ из ecosystem и перезагрузить PM2.
+
+---
+
 ## [1.11.6] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.6`.

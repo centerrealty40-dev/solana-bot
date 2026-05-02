@@ -65,8 +65,11 @@ const LiveOscarConfigSchema = z
     liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
     liveJupiterSwapTimeoutMs: z.coerce.number().int().min(500).max(60_000).default(8000),
     liveDefaultSlippageBps: z.coerce.number().int().min(10).max(5000).default(400),
-    /** When set, Phase 4 blocks swap if Jupiter `quoteSnapshot.quoteAgeMs` exceeds this (ms). */
-    liveQuoteMaxAgeMs: z.coerce.number().int().min(1).max(600_000).optional(),
+    /**
+     * Phase 4 blocks swap if `quoteSnapshot.quoteAgeMs` exceeds this (ms).
+     * Default **8000** when env unset (loader); **`LIVE_QUOTE_MAX_AGE_MS=0`** disables the gate.
+     */
+    liveQuoteMaxAgeMs: z.number().int().min(1).max(600_000).optional(),
 
     /** W8.0 Phase 3 — sign + simulateTransaction (qnCall feature sim). */
     liveSimEnabled: z.boolean(),
@@ -174,9 +177,11 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveDefaultSlippageBps: process.env.LIVE_DEFAULT_SLIPPAGE_BPS,
     liveQuoteMaxAgeMs: (() => {
       const s = process.env.LIVE_QUOTE_MAX_AGE_MS?.trim();
-      if (!s) return undefined;
+      if (s === '0') return undefined;
+      if (!s) return 8000;
       const n = Number.parseInt(s, 10);
-      return Number.isFinite(n) && n >= 1 ? Math.min(n, 600_000) : undefined;
+      if (!Number.isFinite(n) || n < 1) return 8000;
+      return Math.min(n, 600_000);
     })(),
 
     liveSimEnabled: envBool(process.env.LIVE_SIM_ENABLED, true),

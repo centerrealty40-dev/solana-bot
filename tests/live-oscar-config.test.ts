@@ -94,6 +94,24 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveReconcileMode).toBe('trust_chain');
   });
 
+  it('defaults LIVE_QUOTE_MAX_AGE_MS to 8000; 0 disables', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+
+    delete process.env.LIVE_QUOTE_MAX_AGE_MS;
+    expect(loadLiveOscarConfig().liveQuoteMaxAgeMs).toBe(8000);
+
+    process.env.LIVE_QUOTE_MAX_AGE_MS = '0';
+    expect(loadLiveOscarConfig().liveQuoteMaxAgeMs).toBeUndefined();
+
+    process.env.LIVE_QUOTE_MAX_AGE_MS = '2500';
+    expect(loadLiveOscarConfig().liveQuoteMaxAgeMs).toBe(2500);
+  });
+
   it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {
     process.env.LIVE_STRATEGY_ENABLED = '1';
     process.env.LIVE_EXECUTION_MODE = 'live';
