@@ -203,7 +203,7 @@ export async function phase5AllowIncreaseExposure(args: {
   const { liveCfg, deps, paperPositionUsd, intendedUsd, isNewPosition } = args;
 
   if (!liveCfg.strategyEnabled || liveCfg.executionMode === 'dry_run') return true;
-  if (liveCfg.executionMode !== 'simulate') return true;
+  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return true;
 
   const solUsd = getSolUsd() ?? 0;
   if (!(solUsd > 0)) {
@@ -382,7 +382,7 @@ export async function phase5AllowIncreaseExposure(args: {
 
     rotatedThisTick.add(pick.mint);
 
-    if (sellRes.wsolOutLamports != null) {
+    if (liveCfg.executionMode === 'simulate' && sellRes.wsolOutLamports != null) {
       virtualExtraLamports += sellRes.wsolOutLamports;
     }
 

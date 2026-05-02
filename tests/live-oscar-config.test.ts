@@ -63,7 +63,7 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveMaxPositionUsd).toBeUndefined();
   });
 
-  it('rejects LIVE_EXECUTION_MODE=live until Phase 6 when strategy enabled', () => {
+  it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {
     process.env.LIVE_STRATEGY_ENABLED = '1';
     process.env.LIVE_EXECUTION_MODE = 'live';
     process.env.LIVE_STRATEGY_PROFILE = 'oscar';
@@ -71,6 +71,9 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
     process.env.LIVE_WALLET_SECRET = '[1,2,3]';
 
-    expect(() => loadLiveOscarConfig()).toThrow(/Phase 6/);
+    const cfg = loadLiveOscarConfig();
+    expect(cfg.executionMode).toBe('live');
+    expect(cfg.liveConfirmCommitment).toBe('confirmed');
+    expect(cfg.liveSimBeforeSend).toBe(true);
   });
 });

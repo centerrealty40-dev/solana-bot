@@ -59,6 +59,8 @@ export const ExecutionResultSchema = z.object({
   txSignature: z.string().nullable().optional(),
   simulated: z.boolean().optional(),
   unitsConsumed: z.number().nullable().optional(),
+  /** W8.0 Phase 6 — confirmation slot when status is confirmed. */
+  slot: z.number().int().nonnegative().nullable().optional(),
   error: z.object({ code: z.number().optional(), message: z.string() }).optional(),
   executedPriceUsd: z.number().nullable().optional(),
 });

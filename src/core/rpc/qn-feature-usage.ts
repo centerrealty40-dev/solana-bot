@@ -14,6 +14,8 @@ export const QN_FEATURE_KEYS = [
   'pri_fee',
   'price_verify',
   'sim',
+  /** W8.0 Phase 6 — sendTransaction + signature polling for live-oscar. */
+  'live_send',
   'liq_watch',
   'holders',
   /** W7.6 — impulse confirm on-chain spot (Orca whirlpool + optional paths). */
@@ -51,6 +53,7 @@ const BUDGET_ENV: Record<QnFeature, string> = {
   pri_fee: 'QN_FEATURE_BUDGET_PRI_FEE',
   price_verify: 'QN_FEATURE_BUDGET_PRICE_VERIFY',
   sim: 'QN_FEATURE_BUDGET_SIM',
+  live_send: 'QN_FEATURE_BUDGET_LIVE_SEND',
   liq_watch: 'QN_FEATURE_BUDGET_LIQ_WATCH',
   holders: 'QN_FEATURE_BUDGET_HOLDERS',
   impulse_confirm: 'QN_FEATURE_BUDGET_IMPULSE_CONFIRM',
@@ -61,6 +64,7 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   pri_fee: 2_000_000,
   price_verify: 4_000_000,
   sim: 6_000_000,
+  live_send: 4_000_000,
   liq_watch: 12_000_000,
   holders: 10_000_000,
   /** Monthly cap for impulse confirm QN calls (rolling 6h kill is separate; see impulse-qn-rolling). */

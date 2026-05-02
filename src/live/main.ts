@@ -35,7 +35,7 @@ export async function main(): Promise<void> {
       strategyEnabled: liveCfg.strategyEnabled,
       executionMode: liveCfg.executionMode,
     },
-    'live-oscar executor start (W8.0-p5)',
+    'live-oscar executor start (W8.0-p6)',
   );
 
   appendLiveJsonlEvent({
@@ -43,7 +43,7 @@ export async function main(): Promise<void> {
     profile: liveCfg.profile,
     liveStrategyEnabled: liveCfg.strategyEnabled,
     executionMode: liveCfg.executionMode,
-    phase: 'W8.0-p5',
+    phase: 'W8.0-p6',
   });
 
   void runLiveJupiterSelfTest(liveCfg).catch((err) => {
@@ -71,7 +71,7 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p5 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note: `W8.0-p6 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
       });
     },
   });

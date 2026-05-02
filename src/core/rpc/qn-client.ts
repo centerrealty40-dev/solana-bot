@@ -23,6 +23,8 @@ export type QnCallOpts = {
   creditsPerCall?: number;
   /** Per-call timeout, ms. Default 8000. */
   timeoutMs?: number;
+  /** POST JSON-RPC here instead of SA_RPC_HTTP_URL (Phase 6 LIVE_RPC_HTTP_URL). */
+  httpUrl?: string;
 };
 
 export type QnRpcResult<T> =
@@ -50,6 +52,11 @@ type JsonRpcResp = {
 
 function rpcUrl(): string {
   return (process.env.SA_RPC_HTTP_URL || '').trim();
+}
+
+function resolveRpcUrl(httpUrlOverride?: string): string {
+  const o = httpUrlOverride?.trim();
+  return o && o.length > 0 ? o : rpcUrl();
 }
 
 function defaultCreditsPerCall(opts: QnCallOpts): number {
@@ -113,9 +120,9 @@ async function releaseAll(feature: QnFeature, cost: number): Promise<void> {
 }
 
 export async function qnCall<T>(method: string, params: unknown[], opts: QnCallOpts): Promise<QnRpcResult<T>> {
-  const url = rpcUrl();
+  const url = resolveRpcUrl(opts.httpUrl);
   if (!url) {
-    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing' };
+    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing (or empty LIVE_RPC_HTTP_URL)' };
   }
   const cost = defaultCreditsPerCall(opts);
   const timeoutMs = opts.timeoutMs ?? 8000;
@@ -171,9 +178,9 @@ export async function qnBatchCall<T>(
   items: Array<{ method: string; params: unknown[] }>,
   opts: QnCallOpts,
 ): Promise<QnRpcResult<T[]>> {
-  const url = rpcUrl();
+  const url = resolveRpcUrl(opts.httpUrl);
   if (!url) {
-    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing' };
+    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing (or empty LIVE_RPC_HTTP_URL)' };
   }
   if (items.length === 0) {
     return { ok: true, value: [] };

@@ -16,6 +16,7 @@ import type {
   LivePhase4BuyOpenContext,
 } from './phase4-types.js';
 import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
+import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -41,6 +42,45 @@ export function tokenAmountRawFromUsd(
   return raw.toString();
 }
 
+function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcome): boolean {
+  if (outcome.ok) {
+    appendLiveJsonlEvent({
+      kind: 'execution_result',
+      intentId,
+      status: 'confirmed',
+      txSignature: outcome.signature,
+      simulated: false,
+      unitsConsumed: outcome.preSimUnits,
+      slot: outcome.slot,
+    });
+    notifyLiveExecutionSimOk();
+    return true;
+  }
+  if (outcome.kind === 'sim_err') {
+    appendLiveJsonlEvent({
+      kind: 'execution_result',
+      intentId,
+      status: 'sim_err',
+      simulated: true,
+      unitsConsumed: outcome.preSimUnits ?? null,
+      error: { message: outcome.message },
+    });
+    notifyLiveExecutionSimErr();
+    return false;
+  }
+  appendLiveJsonlEvent({
+    kind: 'execution_result',
+    intentId,
+    status: 'failed',
+    simulated: false,
+    txSignature: outcome.signature ?? null,
+    unitsConsumed: outcome.preSimUnits ?? null,
+    error: { message: outcome.message },
+  });
+  notifyLiveExecutionSimErr();
+  return false;
+}
+
 async function runSolToTokenPipeline(
   liveCfg: LiveOscarConfig,
   args: {
@@ -59,7 +99,7 @@ async function runSolToTokenPipeline(
     });
     return false;
   }
-  if (liveCfg.executionMode !== 'simulate') return false;
+  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return false;
 
   const solUsd = getSolUsd() ?? 0;
   const intentId = newLiveIntentId();
@@ -102,36 +142,49 @@ async function runSolToTokenPipeline(
   }
 
   const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
-  const sim = await liveSimulateSignedTransaction({
-    cfg: liveCfg,
-    signedTxSerializedBase64: signedB64,
-  });
 
-  if (!sim.ok) {
+  if (liveCfg.executionMode === 'simulate') {
+    const sim = await liveSimulateSignedTransaction({
+      cfg: liveCfg,
+      signedTxSerializedBase64: signedB64,
+    });
+
+    if (!sim.ok) {
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        unitsConsumed: sim.unitsConsumed ?? null,
+        error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
+      });
+      notifyLiveExecutionSimErr();
+      return false;
+    }
+
     appendLiveJsonlEvent({
       kind: 'execution_result',
       intentId,
-      status: 'sim_err',
+      status: 'sim_ok',
       simulated: true,
       unitsConsumed: sim.unitsConsumed ?? null,
-      error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
     });
-    notifyLiveExecutionSimErr();
-    return false;
+    notifyLiveExecutionSimOk();
+    return true;
   }
 
-  appendLiveJsonlEvent({
-    kind: 'execution_result',
-    intentId,
-    status: 'sim_ok',
-    simulated: true,
-    unitsConsumed: sim.unitsConsumed ?? null,
+  const liveOut = await liveSendSignedSwapPipeline({
+    cfg: liveCfg,
+    signedTxSerializedBase64: signedB64,
   });
-  notifyLiveExecutionSimOk();
-  return true;
+  return finalizeLiveSendJsonl(intentId, liveOut);
 }
 
-export type LiveTokenToSolPipelineResult = { ok: boolean; wsolOutLamports?: bigint };
+export type LiveTokenToSolPipelineResult = {
+  ok: boolean;
+  wsolOutLamports?: bigint;
+  txSignature?: string | null;
+};
 
 async function runTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
@@ -153,7 +206,7 @@ async function runTokenToSolPipeline(
     });
     return { ok: false };
   }
-  if (liveCfg.executionMode !== 'simulate') return { ok: false };
+  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return { ok: false };
 
   const raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
   if (raw == null) {
@@ -209,33 +262,48 @@ async function runTokenToSolPipeline(
   const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
 
   const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
-  const sim = await liveSimulateSignedTransaction({
-    cfg: liveCfg,
-    signedTxSerializedBase64: signedB64,
-  });
 
-  if (!sim.ok) {
+  if (liveCfg.executionMode === 'simulate') {
+    const sim = await liveSimulateSignedTransaction({
+      cfg: liveCfg,
+      signedTxSerializedBase64: signedB64,
+    });
+
+    if (!sim.ok) {
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        unitsConsumed: sim.unitsConsumed ?? null,
+        error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
+      });
+      notifyLiveExecutionSimErr();
+      return { ok: false };
+    }
+
     appendLiveJsonlEvent({
       kind: 'execution_result',
       intentId,
-      status: 'sim_err',
+      status: 'sim_ok',
       simulated: true,
       unitsConsumed: sim.unitsConsumed ?? null,
-      error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
     });
-    notifyLiveExecutionSimErr();
-    return { ok: false };
+    notifyLiveExecutionSimOk();
+    return { ok: true, wsolOutLamports: wsolOut ?? undefined };
   }
 
-  appendLiveJsonlEvent({
-    kind: 'execution_result',
-    intentId,
-    status: 'sim_ok',
-    simulated: true,
-    unitsConsumed: sim.unitsConsumed ?? null,
+  const liveOut = await liveSendSignedSwapPipeline({
+    cfg: liveCfg,
+    signedTxSerializedBase64: signedB64,
   });
-  notifyLiveExecutionSimOk();
-  return { ok: true, wsolOutLamports: wsolOut ?? undefined };
+  const ok = finalizeLiveSendJsonl(intentId, liveOut);
+  return {
+    ok,
+    wsolOutLamports:
+      liveCfg.executionMode === 'live' ? undefined : ok ? wsolOut ?? undefined : undefined,
+    txSignature: liveOut.ok ? liveOut.signature : liveOut.signature ?? undefined,
+  };
 }
 
 function wsolOutLamportsFromSellQuote(q: Record<string, unknown>): bigint | null {

@@ -4,6 +4,9 @@ import { z } from 'zod';
 
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 const ProfileSchema = z.enum(['oscar']);
+const LiveConfirmCommitmentSchema = z.enum(['processed', 'confirmed', 'finalized']);
+
+export type LiveConfirmCommitmentLevel = z.infer<typeof LiveConfirmCommitmentSchema>;
 
 function envBool(v: unknown, defaultVal: boolean): boolean {
   if (v === undefined || v === null || v === '') return defaultVal;
@@ -25,6 +28,12 @@ function optionalPositiveIntEnv(name: string): number | undefined {
   if (!s) return undefined;
   const n = Number.parseInt(s, 10);
   return Number.isFinite(n) && n >= 1 ? n : undefined;
+}
+
+function parseLiveConfirmCommitment(raw: string | undefined): 'processed' | 'confirmed' | 'finalized' | undefined {
+  const s = raw?.trim().toLowerCase();
+  if (s === 'processed' || s === 'confirmed' || s === 'finalized') return s;
+  return undefined;
 }
 
 const LiveOscarConfigSchema = z
@@ -69,16 +78,20 @@ const LiveOscarConfigSchema = z
     liveCapitalRotateCascade: z.boolean().default(false),
     /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). */
     liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(10_000_000),
+
+    /** W8.0 Phase 6 — send + confirm (live). */
+    liveConfirmCommitment: LiveConfirmCommitmentSchema.default('confirmed'),
+    liveConfirmTimeoutMs: z.coerce.number().int().min(3000).max(600_000).default(60_000),
+    liveSendSkipPreflight: z.boolean().default(false),
+    liveSimBeforeSend: z.boolean().default(true),
+    liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
+    liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
+    liveSendCreditsPerCall: z.coerce.number().int().min(10).max(200).default(30),
+    liveSendRpcTimeoutMs: z.coerce.number().int().min(3000).max(120_000).default(25_000),
+    /** When set, send + confirm use this URL instead of SA_RPC_HTTP_URL (simulate may still use SA_RPC_HTTP_URL). */
+    liveRpcHttpUrl: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.strategyEnabled && data.executionMode === 'live') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'LIVE_EXECUTION_MODE=live is not supported until Phase 6 (send/confirm). Use dry_run or simulate.',
-        path: ['executionMode'],
-      });
-    }
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
       const w = data.walletSecret?.trim();
       if (!w) {
@@ -155,6 +168,16 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
     liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
+
+    liveConfirmCommitment: parseLiveConfirmCommitment(process.env.LIVE_CONFIRM_COMMITMENT),
+    liveConfirmTimeoutMs: process.env.LIVE_CONFIRM_TIMEOUT_MS,
+    liveSendSkipPreflight: envBool(process.env.LIVE_SEND_SKIP_PREFLIGHT, false),
+    liveSimBeforeSend: envBool(process.env.LIVE_SIM_BEFORE_SEND, true),
+    liveSendMaxRetries: process.env.LIVE_SEND_MAX_RETRIES,
+    liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
+    liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,
+    liveSendRpcTimeoutMs: process.env.LIVE_SEND_RPC_TIMEOUT_MS,
+    liveRpcHttpUrl: process.env.LIVE_RPC_HTTP_URL?.trim() || undefined,
   });
 
   if (!parsed.success) {
