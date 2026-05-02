@@ -8,6 +8,20 @@
 
 ---
 
+## [1.10.4] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.4`.
+
+### Изменено
+
+- **PM2 `live-oscar`:** включены **W7.4 pre-entry price verify** и **`PAPER_PRICE_VERIFY_BLOCK_ON_FAIL=1`** с теми же порогами, что у **`pt1-oscar`** ([`ecosystem.config.cjs`](../../../ecosystem.config.cjs)) — общий discovery до `tryExecuteBuyOpen` больше не зависит от «забытых» переменных только на VPS.
+
+### Откат
+
+- `VERSION` **`1.10.3`**; в **`ecosystem.config.cjs`** для `live-oscar` удалить или выставить **`PAPER_PRICE_VERIFY_ENABLED=0`** / **`PAPER_PRICE_VERIFY_BLOCK_ON_FAIL=0`**; **`pm2 reload live-oscar --update-env`**.
+
+---
+
 ## [1.10.3] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.3`.
