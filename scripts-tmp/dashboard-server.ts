@@ -45,6 +45,10 @@ function resolvedOrgCursorPath(): string | null {
 const HTML_PATH = path.join(__dirname, 'dashboard.html');
 const VISITS_PATH = process.env.VISITS_PATH ?? '/tmp/dashboard-visits.jsonl';
 const PAPER2_DIR = process.env.PAPER2_DIR ?? '/opt/solana-alpha/data/paper2';
+/** Live Oscar JSONL for /api/paper2 first panel (W8.0-p4 dashboard); never scan from PAPER2_DIR. */
+const DASHBOARD_LIVE_OSCAR_JSONL =
+  process.env.DASHBOARD_LIVE_OSCAR_JSONL?.trim() ||
+  path.resolve(PAPER2_DIR, '..', 'live', 'pt1-oscar-live.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
@@ -1005,6 +1009,45 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Fixed column order on `/papertrader2` — see W8.0-p4 § «Дашборд». */
+export const DASHBOARD_PANEL_ORDER = ['live-oscar', 'pt1-oscar', 'pt1-diprunner', 'pt1-dno'] as const;
+
+export type DashboardPaper2StrategyRow = {
+  strategyId: string;
+  file: string;
+  openCount: number;
+  closedCount: number;
+  startedAt: number;
+  lastTs: number;
+  hoursOfData: number;
+  sumPnlUsd: number;
+  realizedPnlUsd: number;
+  unrealizedPnlUsd: number;
+  totalPnlUsd: number;
+  winRate: number;
+  avgPnl: number;
+  avgPeak: number;
+  bestPnlUsd: number;
+  worstPnlUsd: number;
+  unrealizedUsd: number;
+  exits: Record<string, number>;
+  exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
+  evals1h: number;
+  passed1h: number;
+  failReasons: Array<{ reason: string; count: number }>;
+  open: unknown[];
+  recentClosed: unknown[];
+  priorityFeeUsdTotal: number;
+  priceVerify: {
+    okCount: number;
+    blockedCount: number;
+    skippedCount: number;
+    avgSlipPct: number | null;
+    p90SlipPct: number | null;
+  };
+  liqDrain: { exits: number; avgDropPct: number | null; p90DropPct: number | null };
+};
+
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
   okCount: number;
   blockedCount: number;
@@ -1690,6 +1733,138 @@ function paper2Metrics(closed: Paper2ClosedRow[]): {
   };
 }
 
+function makeEmptyDashboardStrategyRow(strategyId: string, file: string): DashboardPaper2StrategyRow {
+  const m = paper2Metrics([]);
+  return {
+    strategyId,
+    file,
+    openCount: 0,
+    closedCount: 0,
+    startedAt: Date.now(),
+    lastTs: 0,
+    hoursOfData: 0,
+    sumPnlUsd: m.sumPnlUsd,
+    realizedPnlUsd: 0,
+    unrealizedPnlUsd: 0,
+    totalPnlUsd: 0,
+    winRate: m.winRate,
+    avgPnl: m.avgPnl,
+    avgPeak: m.avgPeak,
+    bestPnlUsd: m.bestPnlUsd,
+    worstPnlUsd: m.worstPnlUsd,
+    unrealizedUsd: 0,
+    exits: m.exits,
+    exitsBreakdown: m.exitsBreakdown,
+    evals1h: 0,
+    passed1h: 0,
+    failReasons: [],
+    open: [],
+    recentClosed: [],
+    priorityFeeUsdTotal: 0,
+    priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
+    liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+  };
+}
+
+/**
+ * Summarize live-oscar JSONL for the PaperTrader2 dashboard (channel live).
+ * PnL timelines stay empty until Phase 4+ mirrors paper-shaped rows or executed amounts land in journal.
+ */
+export function aggregateLiveOscarJsonlForDashboard(filePath: string): DashboardPaper2StrategyRow {
+  const fallback = (): DashboardPaper2StrategyRow => makeEmptyDashboardStrategyRow('live-oscar', filePath);
+  if (!fs.existsSync(filePath)) return fallback();
+
+  const failReasonsCount = new Map<string, number>();
+  let firstTs = 0;
+  let lastTs = 0;
+  let hbOpen = 0;
+  let hbClosed = 0;
+  const now = Date.now();
+  const h1 = now - 60 * 60 * 1000;
+  let evals1h = 0;
+  let passed1h = 0;
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return fallback();
+  }
+
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(t) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.channel !== 'live') continue;
+    const ts = Number(o.ts ?? 0);
+    if (Number.isFinite(ts) && ts > 0) {
+      if (!firstTs || ts < firstTs) firstTs = ts;
+      if (ts > lastTs) lastTs = ts;
+    }
+    const kind = o.kind;
+    if (kind === 'heartbeat') {
+      hbOpen = Number(o.openPositions ?? 0);
+      hbClosed = Number(o.closedTotal ?? 0);
+    }
+    if (kind === 'execution_attempt' && ts >= h1) evals1h += 1;
+    if (kind === 'execution_result' && ts >= h1) {
+      const st = String(o.status ?? '');
+      if (st === 'sim_ok' || st === 'confirmed') passed1h += 1;
+    }
+    if (kind === 'execution_skip' && typeof o.reason === 'string' && o.reason) {
+      failReasonsCount.set(o.reason, (failReasonsCount.get(o.reason) ?? 0) + 1);
+    }
+  }
+
+  const m = paper2Metrics([]);
+  const startedAt = firstTs > 0 ? firstTs : Date.now();
+  const failReasons = [...failReasonsCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([reason, count]) => ({ reason, count }));
+
+  return {
+    strategyId: 'live-oscar',
+    file: filePath,
+    openCount: hbOpen,
+    closedCount: hbClosed,
+    startedAt,
+    lastTs: lastTs > 0 ? lastTs : startedAt,
+    hoursOfData: (now - startedAt) / 3_600_000,
+    sumPnlUsd: m.sumPnlUsd,
+    realizedPnlUsd: 0,
+    unrealizedPnlUsd: 0,
+    totalPnlUsd: 0,
+    winRate: m.winRate,
+    avgPnl: m.avgPnl,
+    avgPeak: m.avgPeak,
+    bestPnlUsd: m.bestPnlUsd,
+    worstPnlUsd: m.worstPnlUsd,
+    unrealizedUsd: 0,
+    exits: m.exits,
+    exitsBreakdown: m.exitsBreakdown,
+    evals1h,
+    passed1h,
+    failReasons,
+    open: [],
+    recentClosed: [],
+    priorityFeeUsdTotal: 0,
+    priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
+    liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+  };
+}
+
+/** Enforce fixed four columns: Live Oscar, Paper Oscar, Deep Runner, Dno. */
+export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[]): DashboardPaper2StrategyRow[] {
+  const byId = new Map(rows.map((r) => [r.strategyId, r]));
+  return DASHBOARD_PANEL_ORDER.map((id) => byId.get(id) ?? makeEmptyDashboardStrategyRow(id, '—'));
+}
+
 app.get('/papertrader2', async (_req, reply) => {
   reply.header('content-type', 'text/html; charset=utf-8');
   return fs.readFileSync(HTML2_PATH, 'utf-8');
@@ -1718,6 +1893,7 @@ app.get('/api/paper2', async (_req, reply) => {
       files = fs
         .readdirSync(PAPER2_DIR)
         .filter((f) => f.endsWith('.jsonl'))
+        .filter((f) => f !== 'pt1-oscar-live.jsonl')
         .map((f) => path.join(PAPER2_DIR, f));
     }
   } catch {
@@ -1765,46 +1941,7 @@ app.get('/api/paper2', async (_req, reply) => {
     remainingCostBasisUsd: number;
   };
 
-  type StrategyRow = {
-    strategyId: string;
-    file: string;
-    openCount: number;
-    closedCount: number;
-    startedAt: number;
-    lastTs: number;
-    hoursOfData: number;
-    sumPnlUsd: number;
-    realizedPnlUsd: number;
-    unrealizedPnlUsd: number;
-    totalPnlUsd: number;
-    winRate: number;
-    avgPnl: number;
-    avgPeak: number;
-    bestPnlUsd: number;
-    worstPnlUsd: number;
-    unrealizedUsd: number;
-    exits: Record<string, number>;
-    exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
-    evals1h: number;
-    passed1h: number;
-    failReasons: Array<{ reason: string; count: number }>;
-    open: EnrichedOpen[];
-    recentClosed: Array<Record<string, unknown>>;
-    /** W7.3 — sum of `priorityFee.usd` on journal close rows (stamp at exit). */
-    priorityFeeUsdTotal: number;
-    /** W7.4 — rolling aggregates from jsonl (24h window). */
-    priceVerify: {
-      okCount: number;
-      blockedCount: number;
-      skippedCount: number;
-      avgSlipPct: number | null;
-      p90SlipPct: number | null;
-    };
-    /** W7.5 — liquidity drain exits in this journal. */
-    liqDrain: { exits: number; avgDropPct: number | null; p90DropPct: number | null };
-  };
-
-  const strategies: StrategyRow[] = [];
+  const strategies: Array<DashboardPaper2StrategyRow & { open: EnrichedOpen[] }> = [];
 
   for (const fp of files) {
     const sid = path.basename(fp, '.jsonl');
@@ -2139,9 +2276,11 @@ app.get('/api/paper2', async (_req, reply) => {
       liqDrain,
     });
   }
-  strategies.sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
 
-  const totals = strategies.reduce(
+  const liveRow = aggregateLiveOscarJsonlForDashboard(DASHBOARD_LIVE_OSCAR_JSONL);
+  const merged = mergeDashboardStrategyPanels([liveRow, ...strategies]);
+
+  const totals = merged.reduce(
     (acc, s) => {
       acc.strategies += 1;
       acc.open += s.openCount;
@@ -2163,7 +2302,14 @@ app.get('/api/paper2', async (_req, reply) => {
     },
   );
 
-  return { now: Date.now(), paper2Dir: PAPER2_DIR, totals, strategies };
+  return {
+    now: Date.now(),
+    paper2Dir: PAPER2_DIR,
+    liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
+    panelOrder: DASHBOARD_PANEL_ORDER,
+    totals,
+    strategies: merged,
+  };
 });
 
 app.get('/api/paper2/price-verify-stats', async (req, reply) => {
