@@ -59,7 +59,7 @@ npm run typecheck
 | **Проверка** | `npm run typecheck` (+ тесты по затронутым областям). Обязательно **`npm run check:hygiene`** — целостность ссылок из [`specs/INDEX.md`](../specs/INDEX.md) и формат [`VERSION`](./VERSION) (**I5** в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)). Перед **`git push origin v2`**: **`npm run check:hygiene:integration`** (чистое дерево, **I6**). |
 | **Версия** | Один коммит (можно последним в серии): обновить [`VERSION`](./VERSION), дописать блок в [`CHANGELOG.md`](./CHANGELOG.md) со списком изменений за окно (можно кратко: «batch: см. коммиты с SHA₁..SHA₂»). |
 | **Публикация** | `git push origin v2`. |
-| **Деплой** | Один прогон на сервер на **тот же SHA**, что только что на `v2`. Записать SHA в тикет/чат. |
+| **Деплой** | Один прогон на сервер на **тот же SHA**, что только что на `v2`. Записать SHA в тикет/чат. SSH для агентов: **§7.4** в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) (канон `root` + IP + ключ, без вопросов владельцу). |
 
 Так вы получаете: **много коммитов в истории**, но **одна зафиксированная версия продукта** и **одно состояние сервера** на конец окна.
 
