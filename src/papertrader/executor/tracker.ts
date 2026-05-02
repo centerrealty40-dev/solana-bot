@@ -26,6 +26,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const LV_EPS = 1e-9;
 
+function ladderLevelTaken(levels: Set<number>, pnlPct: number): boolean {
+  for (const u of levels) {
+    if (Math.abs(u - pnlPct) <= LV_EPS) return true;
+  }
+  return false;
+}
+
+function ladderLevelMark(levels: Set<number>, pnlPct: number): void {
+  if (ladderLevelTaken(levels, pnlPct)) return;
+  levels.add(pnlPct);
+}
+
 /**
  * После частичных TP по ладдеру: если текущий PnL (доля) опустился до уровня предыдущей ступени
  * относительно самой высокой уже сработавшей ступени — закрываем весь остаток.
@@ -499,7 +511,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (tpLadder.length > 0 && ot.remainingFraction > 0) {
       for (const lvl of tpLadder) {
-        if (ot.ladderUsedLevels.has(lvl.pnlPct)) continue;
+        if (ladderLevelTaken(ot.ladderUsedLevels, lvl.pnlPct)) continue;
         if (xAvg - 1 >= lvl.pnlPct) {
           const sellFraction = Math.min(1, lvl.sellFraction);
           const marketSell = curMetric;
@@ -532,7 +544,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           };
           ot.partialSells.push(ps);
           ot.remainingFraction *= 1 - sellFraction;
-          ot.ladderUsedLevels.add(lvl.pnlPct);
+          ladderLevelMark(ot.ladderUsedLevels, lvl.pnlPct);
           const mcUsdLive_ps = await getLiveMcUsd(
             mint,
             ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,

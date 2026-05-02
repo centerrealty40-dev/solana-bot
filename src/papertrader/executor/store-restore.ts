@@ -1,6 +1,16 @@
 import fs from 'node:fs';
-import type { OpenTrade, PartialSell } from '../types.js';
+import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
+
+/** Align with tracker ladder level comparison (avoid duplicate TP rungs after restart). */
+const LADDER_LEVEL_EPS = 1e-9;
+
+function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
+  for (const u of used) {
+    if (Math.abs(u - pnlPct) <= LADDER_LEVEL_EPS) return;
+  }
+  used.add(pnlPct);
+}
 
 export interface RestoreState {
   evaluatedAt: Map<string, number>;
@@ -86,6 +96,66 @@ function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | nu
   }
 }
 
+function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unknown>): void {
+  const mint = raw.mint != null ? String(raw.mint) : '';
+  if (!mint) return;
+  const ot = state.open.get(mint);
+  if (!ot) return;
+
+  ot.partialSells.push(mapPartialSell(raw));
+
+  const sf = Number(raw.sellFraction ?? 0);
+  if (sf > 0 && sf <= 1 && Number.isFinite(sf)) {
+    ot.remainingFraction *= 1 - sf;
+  }
+
+  const reason = String(raw.reason ?? '');
+  const lp = Number(raw.ladderPnlPct ?? NaN);
+  if (reason === 'TP_LADDER' && Number.isFinite(lp)) {
+    ladderRememberLevel(ot.ladderUsedLevels, lp);
+  }
+}
+
+function applyDcaAddLedgerLine(state: RestoreState, raw: Record<string, unknown>): void {
+  const mint = raw.mint != null ? String(raw.mint) : '';
+  if (!mint) return;
+  const ot = state.open.get(mint);
+  if (!ot) return;
+
+  const ts = Number(raw.ts ?? Date.now());
+  const price = Number(raw.price ?? 0);
+  const marketPrice = Number(raw.marketPrice ?? raw.price ?? 0);
+  const sizeUsd = Number(raw.sizeUsd ?? 0);
+  if (!(sizeUsd > 0)) return;
+
+  const leg: PositionLeg = {
+    ts,
+    price: price > 0 ? price : marketPrice,
+    marketPrice: marketPrice > 0 ? marketPrice : price,
+    sizeUsd,
+    reason: 'dca',
+    triggerPct:
+      raw.triggerPct !== undefined && raw.triggerPct !== null ? Number(raw.triggerPct) : undefined,
+  };
+  ot.legs.push(leg);
+
+  const trig = leg.triggerPct;
+  if (trig !== undefined && Number.isFinite(trig)) {
+    ot.dcaUsedLevels.add(trig);
+  }
+
+  if (typeof raw.totalInvestedUsd === 'number' && raw.totalInvestedUsd > 0) {
+    ot.totalInvestedUsd = raw.totalInvestedUsd;
+  } else {
+    ot.totalInvestedUsd += sizeUsd;
+  }
+  if (typeof raw.avgEntry === 'number' && raw.avgEntry > 0) ot.avgEntry = raw.avgEntry;
+  if (typeof raw.avgEntryMarket === 'number' && raw.avgEntryMarket > 0) {
+    ot.avgEntryMarket = raw.avgEntryMarket;
+  }
+  ot.remainingFraction = 1;
+}
+
 export function loadStore(storePath: string): RestoreState {
   const state: RestoreState = {
     evaluatedAt: new Map(),
@@ -113,6 +183,12 @@ export function loadStore(storePath: string): RestoreState {
         if (ot) state.open.set(e.mint, ot);
         const prev = state.lastEntryTsByMint.get(e.mint) || 0;
         if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);
+      }
+      if (e.kind === 'partial_sell' && e.mint) {
+        applyPartialSellLedgerLine(state, e as unknown as Record<string, unknown>);
+      }
+      if (e.kind === 'dca_add' && e.mint) {
+        applyDcaAddLedgerLine(state, e as unknown as Record<string, unknown>);
       }
       if (e.kind === 'close' && e.mint) {
         state.open.delete(e.mint);
