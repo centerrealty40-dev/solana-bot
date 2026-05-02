@@ -477,7 +477,8 @@ export type PriceVerifyVerdict =
         | 'fetch-fail'
         | 'timeout'
         | 'http-error'
-        | 'parse-error';
+        | 'parse-error'
+        | 'circuit-open';
       ts: number;
     };
 

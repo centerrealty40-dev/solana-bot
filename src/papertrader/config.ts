@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import type { QuoteResilience } from './pricing/jupiter-quote-resilience.js';
 import type { DexId } from './types.js';
 
 const StrategyKindSchema = z.enum(['fresh', 'dip', 'smart_lottery', 'fresh_validated']);
@@ -208,6 +209,16 @@ const ConfigSchema = z.object({
   /** W7.4.2 — pre-exit Jupiter quote (token→SOL) vs snapshot before partial/full sells; thresholds reuse entry limits. */
   priceVerifyExitEnabled: z.boolean().default(false),
   priceVerifyExitBlockOnFail: z.boolean().default(false),
+
+  /** W7.4.1 — Jupiter quote retries + circuit breaker (shared: entry, exit, impulse, sim-audit quote fetch). */
+  priceVerifyQuoteRetriesEnabled: z.boolean().default(true),
+  priceVerifyQuoteMaxAttempts: z.coerce.number().int().min(1).max(5).default(3),
+  priceVerifyQuoteRetryBackoffMs: z.coerce.number().int().min(0).max(10_000).default(300),
+  priceVerifyCircuitEnabled: z.boolean().default(true),
+  priceVerifyCircuitWindowMs: z.coerce.number().int().min(60_000).max(3_600_000).default(1_800_000),
+  priceVerifyCircuitSkipRatePct: z.coerce.number().min(1).max(99).default(10),
+  priceVerifyCircuitMinAttempts: z.coerce.number().int().min(3).max(500).default(12),
+  priceVerifyCircuitCooldownMs: z.coerce.number().int().min(5_000).max(600_000).default(90_000),
 
   /** W7.5 — liquidity drain watch (pool liq vs entry baseline). */
   liqWatchEnabled: z.boolean().default(false),
@@ -438,6 +449,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     priceVerifyTimeoutMs: process.env.PAPER_PRICE_VERIFY_TIMEOUT_MS,
     priceVerifyExitEnabled: process.env.PAPER_PRICE_VERIFY_EXIT_ENABLED === '1',
     priceVerifyExitBlockOnFail: process.env.PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL === '1',
+    priceVerifyQuoteRetriesEnabled: envBool(process.env.PAPER_PRICE_VERIFY_QUOTE_RETRIES_ENABLED, true),
+    priceVerifyQuoteMaxAttempts: process.env.PAPER_PRICE_VERIFY_QUOTE_MAX_ATTEMPTS,
+    priceVerifyQuoteRetryBackoffMs: process.env.PAPER_PRICE_VERIFY_QUOTE_RETRY_BACKOFF_MS,
+    priceVerifyCircuitEnabled: envBool(process.env.PAPER_PRICE_VERIFY_CIRCUIT_ENABLED, true),
+    priceVerifyCircuitWindowMs: process.env.PAPER_PRICE_VERIFY_CIRCUIT_WINDOW_MS,
+    priceVerifyCircuitSkipRatePct: process.env.PAPER_PRICE_VERIFY_CIRCUIT_SKIP_RATE_PCT,
+    priceVerifyCircuitMinAttempts: process.env.PAPER_PRICE_VERIFY_CIRCUIT_MIN_ATTEMPTS,
+    priceVerifyCircuitCooldownMs: process.env.PAPER_PRICE_VERIFY_CIRCUIT_COOLDOWN_MS,
     liqWatchEnabled: process.env.PAPER_LIQ_WATCH_ENABLED === '1',
     liqWatchForceClose: process.env.PAPER_LIQ_WATCH_FORCE_CLOSE === '1',
     liqWatchDrainPct: process.env.PAPER_LIQ_WATCH_DRAIN_PCT,
@@ -580,6 +599,21 @@ export function slipBaseBpsForDex(cfg: PaperTraderConfig, dex: DexId): number {
     case 'moonshot':
       return cfg.slipBaseBpsMoonshot;
   }
+}
+
+/** W7.4.1 — Jupiter quote resilience for entry/exit/impulse/sim-audit paths (omit both → legacy single-attempt, no breaker). */
+export function quoteResilienceFromPaperCfg(cfg: PaperTraderConfig): QuoteResilience | undefined {
+  if (!cfg.priceVerifyQuoteRetriesEnabled && !cfg.priceVerifyCircuitEnabled) return undefined;
+  return {
+    retriesEnabled: cfg.priceVerifyQuoteRetriesEnabled,
+    maxAttempts: cfg.priceVerifyQuoteRetriesEnabled ? cfg.priceVerifyQuoteMaxAttempts : 1,
+    retryBackoffMs: cfg.priceVerifyQuoteRetryBackoffMs,
+    circuitEnabled: cfg.priceVerifyCircuitEnabled,
+    circuitWindowMs: cfg.priceVerifyCircuitWindowMs,
+    circuitSkipRatePct: cfg.priceVerifyCircuitSkipRatePct,
+    circuitMinAttempts: cfg.priceVerifyCircuitMinAttempts,
+    circuitCooldownMs: cfg.priceVerifyCircuitCooldownMs,
+  };
 }
 
 export interface DcaLevel {

@@ -1,11 +1,20 @@
 /**
  * W7.4 — Pre-entry price verification via Jupiter quote API.
- * Public-free HTTP; single attempt, hard timeout.
+ * W7.4.1 — optional retries + circuit breaker (`jupiter-quote-resilience.ts`).
  */
 import { child } from '../../core/logger.js';
 import type { PaperTraderConfig } from '../config.js';
+import { quoteResilienceFromPaperCfg } from '../config.js';
 import type { PriceVerifyVerdict } from '../types.js';
 import { WRAPPED_SOL_MINT } from '../types.js';
+import {
+  gateCircuit,
+  isRetryableQuoteReason,
+  recordTransportResult,
+  resetQuoteResilienceForTests,
+  sleepBackoff,
+  type QuoteResilience,
+} from './jupiter-quote-resilience.js';
 
 const log = child('price-verify');
 
@@ -32,9 +41,16 @@ export async function fetchJupiterBuyQuoteResponse(args: {
   solUsd: number;
   slippageBps: number;
   timeoutMs: number;
+  /** W7.4.1 — when set, retries + circuit (same as verify paths). */
+  resilience?: QuoteResilience | null;
 }): Promise<Record<string, unknown> | null> {
-  const { mint, sizeUsd, solUsd, slippageBps, timeoutMs } = args;
+  const { mint, sizeUsd, solUsd, slippageBps, timeoutMs, resilience } = args;
   if (!(solUsd > 0) || !(sizeUsd > 0)) return null;
+
+  const gated = gateCircuit(resilience ?? undefined);
+  if (gated) return null;
+
+  const maxAttempts = resilience?.maxAttempts ?? 1;
   const lamports = Math.max(1, Math.floor((sizeUsd / solUsd) * 1e9));
   const url = new URL(quoteApiBase());
   url.searchParams.set('inputMint', WRAPPED_SOL_MINT);
@@ -43,22 +59,45 @@ export async function fetchJupiterBuyQuoteResponse(args: {
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
-  try {
-    const resp = await fetch(url.toString(), {
-      method: 'GET',
-      signal: ac.signal,
-      headers: { accept: 'application/json' },
-    });
-    if (!resp.ok) return null;
-    const j = (await resp.json()) as unknown;
-    return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(tt);
+  const urlStr = url.toString();
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const ac = new AbortController();
+    const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
+    let okJson: Record<string, unknown> | null = null;
+    try {
+      const resp = await fetch(urlStr, {
+        method: 'GET',
+        signal: ac.signal,
+        headers: { accept: 'application/json' },
+      });
+      if (!resp.ok) {
+        okJson = null;
+      } else {
+        const j = (await resp.json()) as unknown;
+        okJson =
+          typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+      }
+    } catch {
+      okJson = null;
+    } finally {
+      clearTimeout(tt);
+    }
+
+    if (okJson) {
+      recordTransportResult(true, resilience ?? undefined);
+      return okJson;
+    }
+
+    const more = attempt + 1 < maxAttempts && (resilience?.retriesEnabled ?? false);
+    if (!more) {
+      recordTransportResult(false, resilience ?? undefined);
+      return null;
+    }
+    await sleepBackoff(resilience?.retryBackoffMs ?? 0, attempt);
   }
+
+  return null;
 }
 
 interface JupiterQuoteResponse {
@@ -83,11 +122,7 @@ export interface VerifyEntryPriceArgs {
   reuseVerdict?: PriceVerifyVerdict | null;
 }
 
-/**
- * Jupiter SOL→mint quote for a USD notional (same math as verifyEntryPrice).
- * Used by W7.6 impulse path even when W7.4 price verify is disabled.
- */
-export async function jupiterQuoteBuyPriceUsd(args: {
+type JupiterQuoteBuyOnceArgs = {
   mint: string;
   outMintDecimals: number;
   sizeUsd: number;
@@ -95,12 +130,11 @@ export async function jupiterQuoteBuyPriceUsd(args: {
   snapshotPriceUsd: number;
   slippageBps: number;
   timeoutMs: number;
-}): Promise<PriceVerifyVerdict> {
+};
+
+async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promise<PriceVerifyVerdict> {
   const { mint, outMintDecimals, sizeUsd, solUsd, snapshotPriceUsd, slippageBps, timeoutMs } = args;
   const ts = Date.now();
-  if (!(solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
-  if (!(snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
-  if (!(sizeUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
 
   const lamports = Math.max(1, Math.floor((sizeUsd / solUsd) * 1e9));
   const url = new URL(quoteApiBase());
@@ -191,7 +225,44 @@ export async function jupiterQuoteBuyPriceUsd(args: {
   };
 }
 
-export async function jupiterQuoteSellPriceUsd(args: {
+/**
+ * Jupiter SOL→mint quote for a USD notional (same math as verifyEntryPrice).
+ * Used by W7.6 impulse path even when W7.4 price verify is disabled.
+ */
+export async function jupiterQuoteBuyPriceUsd(
+  args: JupiterQuoteBuyOnceArgs & { resilience?: QuoteResilience | null },
+): Promise<PriceVerifyVerdict> {
+  const { resilience, ...onceArgs } = args;
+  const ts = Date.now();
+  if (!(onceArgs.solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(onceArgs.snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(onceArgs.sizeUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+
+  const gated = gateCircuit(resilience ?? undefined);
+  if (gated) return gated;
+
+  const maxAttempts = resilience?.maxAttempts ?? 1;
+  let last!: PriceVerifyVerdict;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    last = await jupiterQuoteBuyPriceUsdOnce(onceArgs);
+    if (last.kind === 'ok' || last.kind === 'blocked') {
+      recordTransportResult(true, resilience ?? undefined);
+      return last;
+    }
+    if (last.kind === 'skipped' && !isRetryableQuoteReason(last.reason)) {
+      return last;
+    }
+    const more = attempt + 1 < maxAttempts && (resilience?.retriesEnabled ?? false);
+    if (!more) {
+      recordTransportResult(false, resilience ?? undefined);
+      return last;
+    }
+    await sleepBackoff(resilience?.retryBackoffMs ?? 0, attempt);
+  }
+  return last;
+}
+
+type JupiterQuoteSellOnceArgs = {
   mint: string;
   tokenDecimals: number;
   usdNotional: number;
@@ -199,13 +270,12 @@ export async function jupiterQuoteSellPriceUsd(args: {
   snapshotPriceUsd: number;
   slippageBps: number;
   timeoutMs: number;
-}): Promise<PriceVerifyVerdict> {
+};
+
+async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Promise<PriceVerifyVerdict> {
   const { mint, tokenDecimals, usdNotional, solUsd, snapshotPriceUsd, slippageBps, timeoutMs } = args;
   const ts = Date.now();
   const dec = Math.max(0, Math.min(24, Math.floor(tokenDecimals)));
-  if (!(solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
-  if (!(snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
-  if (!(usdNotional > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
 
   const tokenHuman = usdNotional / snapshotPriceUsd;
   const rawFloat = tokenHuman * Math.pow(10, dec);
@@ -298,6 +368,39 @@ export async function jupiterQuoteSellPriceUsd(args: {
   };
 }
 
+export async function jupiterQuoteSellPriceUsd(
+  args: JupiterQuoteSellOnceArgs & { resilience?: QuoteResilience | null },
+): Promise<PriceVerifyVerdict> {
+  const { resilience, ...onceArgs } = args;
+  const ts = Date.now();
+  if (!(onceArgs.solUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(onceArgs.snapshotPriceUsd > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+  if (!(onceArgs.usdNotional > 0)) return { kind: 'skipped', reason: 'sol-px-missing', ts };
+
+  const gated = gateCircuit(resilience ?? undefined);
+  if (gated) return gated;
+
+  const maxAttempts = resilience?.maxAttempts ?? 1;
+  let last!: PriceVerifyVerdict;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    last = await jupiterQuoteSellPriceUsdOnce(onceArgs);
+    if (last.kind === 'ok' || last.kind === 'blocked') {
+      recordTransportResult(true, resilience ?? undefined);
+      return last;
+    }
+    if (last.kind === 'skipped' && !isRetryableQuoteReason(last.reason)) {
+      return last;
+    }
+    const more = attempt + 1 < maxAttempts && (resilience?.retriesEnabled ?? false);
+    if (!more) {
+      recordTransportResult(false, resilience ?? undefined);
+      return last;
+    }
+    await sleepBackoff(resilience?.retryBackoffMs ?? 0, attempt);
+  }
+  return last;
+}
+
 export interface VerifyExitPriceArgs {
   cfg: PaperTraderConfig;
   mint: string;
@@ -321,6 +424,7 @@ export async function verifyExitPrice(args: VerifyExitPriceArgs): Promise<PriceV
     snapshotPriceUsd,
     slippageBps: cfg.priceVerifyMaxSlipBps,
     timeoutMs: cfg.priceVerifyTimeoutMs,
+    resilience: quoteResilienceFromPaperCfg(cfg),
   });
 
   if (q.kind !== 'ok') return q;
@@ -413,6 +517,7 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
     snapshotPriceUsd,
     slippageBps: cfg.priceVerifyMaxSlipBps,
     timeoutMs: cfg.priceVerifyTimeoutMs,
+    resilience: quoteResilienceFromPaperCfg(cfg),
   });
 
   if (q.kind !== 'ok') return q;
@@ -450,5 +555,5 @@ export async function verifyEntryPrice(args: VerifyEntryPriceArgs): Promise<Pric
 
 /** Test seam — vitest only. */
 export function _priceVerifyInternalForTests(): void {
-  /* no-op */
+  resetQuoteResilienceForTests();
 }

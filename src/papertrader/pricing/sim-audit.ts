@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { qnCall } from '../../core/rpc/qn-client.js';
 import { child } from '../../core/logger.js';
-import type { PaperTraderConfig } from '../config.js';
+import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import type { SimAuditStamp } from '../types.js';
 import { fetchJupiterBuyQuoteResponse } from './price-verify.js';
 
@@ -166,6 +166,7 @@ export async function runOpenSimAudit(args: OpenSimAuditArgs): Promise<SimAuditS
     solUsd,
     slippageBps: cfg.priceVerifyMaxSlipBps,
     timeoutMs: quoteTimeout,
+    resilience: quoteResilienceFromPaperCfg(cfg),
   });
   if (!quote || typeof quote !== 'object') {
     return { kind: 'skipped', reason: 'no_build', ts: Date.now(), wallMs: Date.now() - t0 };

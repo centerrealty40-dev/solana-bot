@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.3] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.3`.
+
+### Добавлено
+
+- **W7.4.1** — повторные запросы Jupiter lite-api quote с экспоненциальным backoff на транзитных `skipped` (`http-error`, `timeout`, `fetch-fail`, `parse-error`) и **circuit breaker**: скользящее окно, порог доли неудач строго выше `PAPER_PRICE_VERIFY_CIRCUIT_SKIP_RATE_PCT`, cooldown; вердикт `skipped` / `circuit-open`. Охватывает pre-entry (`verifyEntryPrice`), pre-exit (`verifyExitPrice`), коридор Jupiter в **W7.6** (`impulse-confirm`), quote-fetch в **W7.8** (`fetchJupiterBuyQuoteResponse`).
+- Спека [`docs/strategy/specs/W7.4.1_jupiter_quote_retries_circuit.md`](../specs/W7.4.1_jupiter_quote_retries_circuit.md); строка в [`INDEX`](../specs/INDEX.md); [`ROADMAP`](../ROADMAP.md) обновлён.
+
+### Откат
+
+- `VERSION` **`1.11.2`**; выставить `PAPER_PRICE_VERIFY_QUOTE_RETRIES_ENABLED=0` и `PAPER_PRICE_VERIFY_CIRCUIT_ENABLED=0` (или откатить коммит с `jupiter-quote-resilience.ts` и правками `price-verify.ts`).
+
+---
+
 ## [1.11.2] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.2`.

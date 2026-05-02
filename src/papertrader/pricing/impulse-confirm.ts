@@ -5,7 +5,7 @@ import { sql as dsql } from 'drizzle-orm';
 import { db } from '../../core/db/client.js';
 import { qnCall } from '../../core/rpc/qn-client.js';
 import { child } from '../../core/logger.js';
-import type { PaperTraderConfig } from '../config.js';
+import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import type { Lane, PriceVerifyVerdict } from '../types.js';
 import { jupiterQuoteBuyPriceUsd } from './price-verify.js';
 import {
@@ -387,6 +387,7 @@ export async function runImpulseConfirmGate(args: {
     snapshotPriceUsd: anchorPriceUsd,
     slippageBps: cfg.priceVerifyMaxSlipBps,
     timeoutMs: cfg.impulseJupiterTimeoutMs,
+    resilience: quoteResilienceFromPaperCfg(cfg),
   });
   const jupMs = Date.now() - tJup;
   jupiterReuse.set(mint, { ts: Date.now(), verdict: jup });

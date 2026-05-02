@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { verifyEntryPrice, verifyExitPrice } from '../src/papertrader/pricing/price-verify.js';
+import { resetQuoteResilienceForTests } from '../src/papertrader/pricing/jupiter-quote-resilience.js';
+import {
+  jupiterQuoteBuyPriceUsd,
+  verifyEntryPrice,
+  verifyExitPrice,
+} from '../src/papertrader/pricing/price-verify.js';
 
 const baseCfg = {
   priceVerifyEnabled: true,
@@ -17,6 +22,7 @@ const mintFoo = 'FoooooofakeMint11111111111111111111111111111';
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  resetQuoteResilienceForTests();
 });
 
 function mockJupiter(body: unknown, status = 200) {
@@ -125,6 +131,40 @@ describe('verifyEntryPrice', () => {
     });
     expect(v.kind).toBe('skipped');
     if (v.kind === 'skipped') expect(v.reason).toBe('fetch-fail');
+  });
+
+  it('W7.4.1 retries transient HTTP failure then succeeds', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ outAmount: '1000000000000', priceImpactPct: '0.005', routePlan: [{}] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ) as unknown as typeof fetch;
+
+    const v = await jupiterQuoteBuyPriceUsd({
+      mint: mintFoo,
+      outMintDecimals: 6,
+      sizeUsd: 100,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+      slippageBps: 400,
+      timeoutMs: 1500,
+      resilience: {
+        retriesEnabled: true,
+        maxAttempts: 3,
+        retryBackoffMs: 0,
+        circuitEnabled: false,
+        circuitWindowMs: 1_800_000,
+        circuitSkipRatePct: 10,
+        circuitMinAttempts: 12,
+        circuitCooldownMs: 90_000,
+      },
+    });
+    expect(v.kind).toBe('ok');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
 
