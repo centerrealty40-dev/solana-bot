@@ -79,6 +79,7 @@ export interface ImpulseConfirmStamp {
     anchorUsd: number;
     maxUpPct: number;
     maxDownPct: number;
+    minDownPct?: number;
     maxDisagreePct: number;
     deltaOnchainPct?: number;
     deltaJupiterPct?: number;
@@ -388,6 +389,7 @@ export async function runImpulseConfirmGate(args: {
     anchorUsd: anchor,
     maxUpPct: cfg.impulseMaxUpPctFromAnchor,
     maxDownPct: cfg.impulseMaxDownPctFromAnchor,
+    minDownPct: cfg.impulseMinDownPctFromAnchor,
     maxDisagreePct: cfg.impulseMaxDisagreePct,
   };
 
@@ -419,10 +421,16 @@ export async function runImpulseConfirmGate(args: {
 
   for (const c of checks) {
     const d = corridorDeltaPct(anchor, c.spot);
-    if (!Number.isFinite(d) || d > cfg.impulseMaxUpPctFromAnchor || d < -cfg.impulseMaxDownPctFromAnchor) {
+    const tooShallow =
+      cfg.impulseMinDownPctFromAnchor > 0 && d > -cfg.impulseMinDownPctFromAnchor;
+    const tooDeepOrHigh =
+      !Number.isFinite(d) ||
+      d > cfg.impulseMaxUpPctFromAnchor ||
+      d < -cfg.impulseMaxDownPctFromAnchor;
+    if (tooDeepOrHigh || tooShallow) {
       const failStamp: ImpulseConfirmStamp = {
         verdict: 'fail',
-        reason: 'impulse:corridor_fail',
+        reason: tooShallow ? 'impulse:corridor_too_shallow' : 'impulse:corridor_fail',
         dipPolicy: cfg.impulseDipPolicy,
         trigger: triggerCtx,
         onchainUsd,

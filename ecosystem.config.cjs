@@ -526,7 +526,11 @@ module.exports = {
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
-        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        /** Δ между двумя PG-снимками пути импульса; было 5 — слишком чувствительно к шуму минутки */
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '15',
+        /** Live (QN Orca spot / Jupiter) vs якорь=pNew: только если цена в полосе −50%…−15% от снимка */
+        PAPER_IMPULSE_MIN_DOWN_PCT_FROM_ANCHOR: '15',
+        PAPER_IMPULSE_MAX_DOWN_PCT_FROM_ANCHOR: '50',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',

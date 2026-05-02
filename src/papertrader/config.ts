@@ -238,7 +238,10 @@ const ConfigSchema = z.object({
   impulseRpcRetryCount: z.coerce.number().int().min(0).max(3).default(1),
   impulseRpcRetryBackoffMs: z.coerce.number().int().min(0).default(400),
   impulseMaxUpPctFromAnchor: z.coerce.number().nonnegative().default(30),
+  /** Live spot vs якорь (новый PG snap): отклонение не глубже этого % (например 50 ⇒ цена не ниже −50% от якоря). */
   impulseMaxDownPctFromAnchor: z.coerce.number().nonnegative().default(70),
+  /** Если >0: live spot должен быть **не выше** якоря минимум на столько % (якорь − spot ≥ min). 0 = выкл. */
+  impulseMinDownPctFromAnchor: z.coerce.number().nonnegative().default(0),
   impulseMaxDisagreePct: z.coerce.number().nonnegative().default(8),
   impulseRequireJupiter: z.boolean().default(true),
   impulseAllowOnchainOnly: z.boolean().default(false),
@@ -434,6 +437,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_IMPULSE_MAX_UP_PCT_FROM_ANCHOR ?? process.env.IMPULSE_MAX_UP_PCT_FROM_ANCHOR,
     impulseMaxDownPctFromAnchor:
       process.env.PAPER_IMPULSE_MAX_DOWN_PCT_FROM_ANCHOR ?? process.env.IMPULSE_MAX_DOWN_PCT_FROM_ANCHOR,
+    impulseMinDownPctFromAnchor:
+      process.env.PAPER_IMPULSE_MIN_DOWN_PCT_FROM_ANCHOR ?? process.env.IMPULSE_MIN_DOWN_PCT_FROM_ANCHOR,
     impulseMaxDisagreePct:
       process.env.PAPER_IMPULSE_MAX_DISAGREE_PCT ?? process.env.IMPULSE_MAX_DISAGREE_PCT,
     impulseRequireJupiter: envBool(
