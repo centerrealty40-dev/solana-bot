@@ -2,6 +2,14 @@
 
 Папка содержит формальные спецификации для дешёвого агента-исполнителя. **Каждая спецификация — самодостаточна:** содержит все необходимые входные данные, контракты, acceptance criteria и forbidden actions. Агенту-исполнителю НЕ нужен доступ к `salvage/pre-v2` worktree, потому что все нужные сниппеты уже выписаны.
 
+## Управление релизами продукта (normative)
+
+Единая операционная модель, semver продукта, журнал релизов и правила отката:
+
+- [`../release/RELEASE_OPERATING_MODEL.md`](../release/RELEASE_OPERATING_MODEL.md) — **обязательный** регламент изменений, SSOT, рестарт/replay, деплой, чеклист.
+- [`../release/VERSION`](../release/VERSION) — текущая версия продукта (semver).
+- [`../release/CHANGELOG.md`](../release/CHANGELOG.md) — что вошло в каждую версию и как откатиться.
+
 ## Принципы спецификаций
 
 1. **Каждая spec — атомарная задача.** Один PR → один merged commit → DoD проверяется автоматически или одним SQL/curl.
@@ -20,6 +28,7 @@
 | W6.3a | [`W6.3a_paper_trader_skeleton.md`](./W6.3a_paper_trader_skeleton.md) | **выполнено** ✓ (skeleton + `pt1-skeleton-test` PM2-app, HEAD `8a9de0e`) | W6.1 |
 | W6.3b | [`W6.3b_paper_trader_discovery.md`](./W6.3b_paper_trader_discovery.md) | **выполнено** ✓ (discovery + filters + dip + whale + Binance BTC, HEAD `282f745`) | W6.3a |
 | W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **выполнено** ✓ (executor + main loop, HEAD `cfe34e2`) | W6.3b |
+| W6.3c.1 | [`W6.3c_tp_ladder_remaining_mark_spec.md`](./W6.3c_tp_ladder_remaining_mark_spec.md) | **normative** (семантика `sellFraction` = доля остатка MTM; аудит `tracker.ts`; UX дашборда) | W6.3c |
 | W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **выполнено** ✓ (observability port + cron + logrotate, HEAD `ecca52a`) | W6.3c |
 | W6.5 | [`W6.5_strategy_launch.md`](./W6.5_strategy_launch.md) | **выполнено** ✓ (DipRunner/Oscar/Dno PM2 + whale silence + heartbeat HC, HEAD `40d27dc`; см. примечание Dno ниже) | W6.4 |
 | W7.2 | [`W7.2_safety_check_and_live_mcap.md`](./W7.2_safety_check_and_live_mcap.md) | **выполнено** ✓ (pre-entry QN safety + `mcUsdLive` timeline; canary safety на `pt1-dno`, HEAD `5faa6e5`) | W7.1 |
