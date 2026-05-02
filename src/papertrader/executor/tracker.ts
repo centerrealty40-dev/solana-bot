@@ -26,6 +26,7 @@ import {
 } from './tp-ladder-state.js';
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
 import { child } from '../../core/logger.js';
+import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 
 const log = child('tracker');
 
@@ -47,6 +48,8 @@ export interface TrackerArgs {
   btcCtx: () => { ret1h_pct: number | null; ret4h_pct: number | null; updated_ts: number | null };
   /** Paper JSONL or live noop — never mix stores (W8.0-p4 P4-I1). */
   journalAppend: (event: Record<string, unknown>) => void;
+  /** W8.0 Phase 7 — live JSONL `live_position_*` mirror for replay. */
+  journalLiveStrategy?: (event: Record<string, unknown>) => void;
   /** Live-oscar simulate sells / DCA buys after tracker decisions. */
   livePhase4?: LiveOscarPhase4Tracker;
 }
@@ -219,7 +222,8 @@ function buildClosedTrade(args: {
 }
 
 export async function trackerTick(args: TrackerArgs): Promise<void> {
-  const { cfg, open, closed, dcaLevels, tpLadder, stats, btcCtx, journalAppend, livePhase4 } = args;
+  const { cfg, open, closed, dcaLevels, tpLadder, stats, btcCtx, journalAppend, journalLiveStrategy, livePhase4 } =
+    args;
   if (open.size === 0) return;
   const mints = [...open.keys()];
 
@@ -354,6 +358,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             ts: verdict.ts,
           },
         });
+        journalLiveStrategy?.({
+          kind: 'live_position_close',
+          mint,
+          closedTrade: serializeClosedTrade(ct),
+        });
         peakStateByMint.delete(mint);
         console.log(
           `[LIQ_DRAIN] ${mint.slice(0, 8)} $${ot.symbol} drop=${verdict.dropPct.toFixed(1)}% liq=$${verdict.currentLiqUsd.toFixed(0)}`,
@@ -420,6 +429,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           priorityFee: pfCloseNd,
           exitContext: exitContextNd,
           ...(liqWatchNoData ? { liqWatch: liqWatchNoData } : {}),
+        });
+        journalLiveStrategy?.({
+          kind: 'live_position_close',
+          mint,
+          closedTrade: serializeClosedTrade(ct),
         });
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -508,6 +522,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mcUsdLive: mcUsdLive_dca,
           priorityFee: pfDca,
         });
+        journalLiveStrategy?.({
+          kind: 'live_position_dca',
+          mint,
+          openTrade: serializeOpenTrade(ot),
+        });
         console.log(
           `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% step=${dcaIdx + 1}/${dcaLevels.length} avgEff=${ot.avgEntry.toFixed(8)}`,
         );
@@ -586,6 +605,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             remainingFraction: ot.remainingFraction,
             mcUsdLive: mcUsdLive_ps,
             priorityFee: pfPs,
+          });
+          journalLiveStrategy?.({
+            kind: 'live_position_partial_sell',
+            mint,
+            openTrade: serializeOpenTrade(ot),
           });
           console.log(
             `[TP${(lvl.pnlPct * 100).toFixed(0)}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
@@ -670,6 +694,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         priorityFee: pfClose,
         exitContext: exitContextMain,
         ...(liqWatchExit ? { liqWatch: liqWatchExit } : {}),
+      });
+      journalLiveStrategy?.({
+        kind: 'live_position_close',
+        mint,
+        closedTrade: serializeClosedTrade(ct),
       });
       peakStateByMint.delete(mint);
       const arrow = ct.pnlPct >= 0 ? '+' : '';

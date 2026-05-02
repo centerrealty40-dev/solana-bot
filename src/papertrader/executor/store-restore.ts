@@ -27,7 +27,8 @@ function mapPartialSell(p: Record<string, unknown>): PartialSell {
   };
 }
 
-function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | null {
+/** JSON snapshot → `OpenTrade` (paper JSONL `open` rows + Phase 7 live mirror events). */
+export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string }): OpenTrade | null {
   try {
     const rawPartials = Array.isArray(o.partialSells) ? o.partialSells : [];
     const partialSells: PartialSell[] = rawPartials.map((p) =>
@@ -192,7 +193,7 @@ export function loadStore(storePath: string): RestoreState {
         if (ts > prev) state.evaluatedAt.set(e.mint, ts);
       }
       if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
-        const ot = rehydrateOpen(e as Partial<OpenTrade> & { mint: string });
+        const ot = restoreOpenTradeFromJson(e as Partial<OpenTrade> & { mint: string });
         if (ot) state.open.set(e.mint, ot);
         const prev = state.lastEntryTsByMint.get(e.mint) || 0;
         if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);

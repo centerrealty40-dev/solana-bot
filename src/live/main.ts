@@ -9,8 +9,12 @@ import { runLiveJupiterSelfTest } from './jupiter-self-test.js';
 import { runLivePhase3SimSelfTest } from './phase3-self-test.js';
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
+import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
+import { clearLiveReconcileBlock, setLiveReconcileBlock } from './live-reconcile-state.js';
 import { createLiveOscarPhase5Bundle } from './phase5-runtime.js';
+import { reconcileLiveWalletVsReplay } from './reconcile-live.js';
+import { replayLiveStrategyJournal } from './replay-strategy-journal.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -26,6 +30,63 @@ export async function main(): Promise<void> {
   loadOptionalInheritEnv();
   const liveCfg = loadLiveOscarConfig();
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
+  clearLiveReconcileBlock();
+
+  let liveStrategyReplay: { open: Map<string, OpenTrade>; closed: ClosedTrade[] } | undefined;
+  if (liveCfg.strategyEnabled && liveCfg.liveReplayOnBoot) {
+    liveStrategyReplay = replayLiveStrategyJournal({
+      storePath: liveCfg.liveTradesPath,
+      strategyId: liveCfg.strategyId,
+      tailLines: liveCfg.liveReplayTailLines,
+      sinceTs: liveCfg.liveReplaySinceTs,
+    });
+    log.info(
+      {
+        replayOpen: liveStrategyReplay.open.size,
+        replayClosed: liveStrategyReplay.closed.length,
+      },
+      'live-oscar Phase 7 replay',
+    );
+  }
+
+  if (
+    liveCfg.strategyEnabled &&
+    liveCfg.liveReconcileOnBoot &&
+    (liveCfg.executionMode === 'simulate' || liveCfg.executionMode === 'live') &&
+    liveStrategyReplay &&
+    liveStrategyReplay.open.size > 0
+  ) {
+    const rec = await reconcileLiveWalletVsReplay({
+      liveCfg,
+      open: liveStrategyReplay.open,
+      toleranceAtoms: BigInt(liveCfg.liveReconcileToleranceAtoms),
+      mode: liveCfg.liveReconcileMode,
+    });
+    if (!rec.ok) {
+      const detailStr = JSON.stringify({ mismatches: rec.mismatches }).slice(0, 500);
+      if (liveCfg.liveReconcileMode === 'block_new') {
+        setLiveReconcileBlock(true);
+        appendLiveJsonlEvent({
+          kind: 'risk_block',
+          limit: 'reconcile_divergence',
+          detail: { mismatches: rec.mismatches },
+        });
+      } else if (liveCfg.liveReconcileMode === 'report') {
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'reconcile_mismatch',
+          detail: detailStr,
+        });
+      } else {
+        log.warn({ mismatches: rec.mismatches }, 'reconcile mismatch (trust_chain v1 same as report)');
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'reconcile_mismatch_trust_chain_stub',
+          detail: detailStr,
+        });
+      }
+    }
+  }
 
   log.info(
     {
@@ -35,7 +96,7 @@ export async function main(): Promise<void> {
       strategyEnabled: liveCfg.strategyEnabled,
       executionMode: liveCfg.executionMode,
     },
-    'live-oscar executor start (W8.0-p6)',
+    'live-oscar executor start (W8.0-p7)',
   );
 
   appendLiveJsonlEvent({
@@ -43,7 +104,7 @@ export async function main(): Promise<void> {
     profile: liveCfg.profile,
     liveStrategyEnabled: liveCfg.strategyEnabled,
     executionMode: liveCfg.executionMode,
-    phase: 'W8.0-p6',
+    phase: 'W8.0-p7',
   });
 
   void runLiveJupiterSelfTest(liveCfg).catch((err) => {
@@ -59,6 +120,8 @@ export async function main(): Promise<void> {
   await paperOscarMain({
     journalAppend: () => {},
     skipPaperJsonlStore: true,
+    liveStrategyReplay,
+    journalLiveStrategy: (body) => appendLiveJsonlEvent(body),
     liveOscarFactory: (deps) => createLiveOscarPhase5Bundle(liveCfg, deps, paperBaseline.positionUsd),
     onShutdown: (sig) => {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
@@ -71,7 +134,7 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p6 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note: `W8.0-p7 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
       });
     },
   });

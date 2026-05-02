@@ -40,6 +40,11 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return ['sim_ok', 'sim_err', 'sent', 'confirmed', 'failed'].includes(body.status);
     case 'execution_skip':
       return true;
+    case 'live_position_open':
+    case 'live_position_dca':
+    case 'live_position_partial_sell':
+    case 'live_position_close':
+      return true;
     default:
       return false;
   }

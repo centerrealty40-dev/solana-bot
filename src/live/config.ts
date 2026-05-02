@@ -5,6 +5,15 @@ import { z } from 'zod';
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 const ProfileSchema = z.enum(['oscar']);
 const LiveConfirmCommitmentSchema = z.enum(['processed', 'confirmed', 'finalized']);
+const LiveReconcileModeSchema = z.enum(['report', 'block_new', 'trust_chain']);
+
+export type LiveReconcileMode = z.infer<typeof LiveReconcileModeSchema>;
+
+function parseLiveReconcileMode(raw: string | undefined): LiveReconcileMode {
+  const s = raw?.trim().toLowerCase();
+  if (s === 'report' || s === 'trust_chain') return s;
+  return 'block_new';
+}
 
 export type LiveConfirmCommitmentLevel = z.infer<typeof LiveConfirmCommitmentSchema>;
 
@@ -90,6 +99,14 @@ const LiveOscarConfigSchema = z
     liveSendRpcTimeoutMs: z.coerce.number().int().min(3000).max(120_000).default(25_000),
     /** When set, send + confirm use this URL instead of SA_RPC_HTTP_URL (simulate may still use SA_RPC_HTTP_URL). */
     liveRpcHttpUrl: z.string().min(1).optional(),
+
+    /** W8.0 Phase 7 — replay `live_position_*` from LIVE_TRADES_PATH before Oscar loop. */
+    liveReplayOnBoot: z.boolean(),
+    liveReplayTailLines: z.coerce.number().int().min(1).optional(),
+    liveReplaySinceTs: z.coerce.number().finite().optional(),
+    liveReconcileOnBoot: z.boolean(),
+    liveReconcileMode: LiveReconcileModeSchema,
+    liveReconcileToleranceAtoms: z.number().int().min(0),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -178,6 +195,23 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,
     liveSendRpcTimeoutMs: process.env.LIVE_SEND_RPC_TIMEOUT_MS,
     liveRpcHttpUrl: process.env.LIVE_RPC_HTTP_URL?.trim() || undefined,
+
+    liveReplayOnBoot: envBool(process.env.LIVE_REPLAY_ON_BOOT, true),
+    liveReplayTailLines: optionalPositiveIntEnv('LIVE_REPLAY_TAIL_LINES'),
+    liveReplaySinceTs: (() => {
+      const s = process.env.LIVE_REPLAY_SINCE_TS?.trim();
+      if (!s) return undefined;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : undefined;
+    })(),
+    liveReconcileOnBoot: envBool(process.env.LIVE_RECONCILE_ON_BOOT, true),
+    liveReconcileMode: parseLiveReconcileMode(process.env.LIVE_RECONCILE_MODE),
+    liveReconcileToleranceAtoms: (() => {
+      const s = process.env.LIVE_RECONCILE_TOLERANCE_ATOMS?.trim();
+      if (!s) return 10_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 10_000;
+    })(),
   });
 
   if (!parsed.success) {

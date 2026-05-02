@@ -11,6 +11,7 @@ import type { LiveOscarStrategyDeps } from './phase4-types.js';
 import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
+import { liveReconcileBlocksNewExposure } from './live-reconcile-state.js';
 
 export function capitalNotionalXUsd(liveCfg: LiveOscarConfig, paperPositionUsd: number): number {
   return liveCfg.liveEntryNotionalUsd ?? liveCfg.liveMaxPositionUsd ?? paperPositionUsd;
@@ -204,6 +205,8 @@ export async function phase5AllowIncreaseExposure(args: {
 
   if (!liveCfg.strategyEnabled || liveCfg.executionMode === 'dry_run') return true;
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return true;
+
+  if (liveReconcileBlocksNewExposure()) return false;
 
   const solUsd = getSolUsd() ?? 0;
   if (!(solUsd > 0)) {

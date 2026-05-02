@@ -61,6 +61,10 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveEntryMinFreeMult).toBeCloseTo(2.5, 5);
     expect(cfg.liveFreeSolBufferLamports).toBe(5_000_000);
     expect(cfg.liveMaxPositionUsd).toBeUndefined();
+    expect(cfg.liveReplayOnBoot).toBe(true);
+    expect(cfg.liveReconcileOnBoot).toBe(true);
+    expect(cfg.liveReconcileMode).toBe('block_new');
+    expect(cfg.liveReconcileToleranceAtoms).toBe(10_000);
   });
 
   it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {

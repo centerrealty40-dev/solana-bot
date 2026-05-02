@@ -41,6 +41,7 @@ import type {
   SafetyVerdict,
   SimAuditStamp,
 } from './types.js';
+import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
 
@@ -54,6 +55,10 @@ export interface PapertraderMainOptions {
   liveOscar?: LiveOscarRuntimeBundle;
   /** Phase 5 — bundle needs live open/closed maps; preferred over `liveOscar` when both set. */
   liveOscarFactory?: (deps: LiveOscarStrategyDeps) => LiveOscarRuntimeBundle;
+  /** Phase 7 — seed from live JSONL replay (`live-oscar` + `skipPaperJsonlStore`). */
+  liveStrategyReplay?: { open: Map<string, OpenTrade>; closed: ClosedTrade[] };
+  /** Phase 7 — validated live JSONL mirror events (`live_position_*`). */
+  journalLiveStrategy?: (event: Record<string, unknown>) => void;
   onShutdown?: (signal: string) => void;
   onOscarHeartbeat?: (payload: {
     openPositions: number;
@@ -107,11 +112,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     : loadStore(cfg.storePath);
   for (const [mint, ts] of restored.evaluatedAt) evaluatedAtMap.set(mint, ts);
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
-  const open: Map<string, OpenTrade> = restored.open;
+  const open: Map<string, OpenTrade> =
+    opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
   for (const ot of open.values()) {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
   }
-  const closed: ClosedTrade[] = [];
+  const closed: ClosedTrade[] =
+    opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? [...opts.liveStrategyReplay.closed] : [];
 
   let liveOscarResolved = false;
   let cachedLiveOscar: LiveOscarRuntimeBundle | undefined;
@@ -463,6 +470,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         open.set(ot.mint, ot);
+        opts?.journalLiveStrategy?.({
+          kind: 'live_position_open',
+          mint: ot.mint,
+          openTrade: serializeOpenTrade(ot),
+        });
         recordEntryTs(ot.mint, ot.entryTs);
         stats.opened++;
         schedulePendingFollowups(
@@ -515,6 +527,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           stats: trackerStats,
           btcCtx: getBtcContext,
           journalAppend,
+          journalLiveStrategy: opts?.journalLiveStrategy,
           livePhase4: resolveLiveOscar()?.tracker,
         }),
         45_000,

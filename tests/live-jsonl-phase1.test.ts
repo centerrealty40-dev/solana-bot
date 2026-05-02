@@ -82,6 +82,26 @@ describe('W8.0-p1 live JSONL contract', () => {
         unrealizedPnlUsd: 3.5,
         txSignature: null,
       },
+      {
+        kind: 'live_position_open',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        openTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', symbol: 'X' },
+      },
+      {
+        kind: 'live_position_dca',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        openTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', symbol: 'X' },
+      },
+      {
+        kind: 'live_position_partial_sell',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        openTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', symbol: 'X' },
+      },
+      {
+        kind: 'live_position_close',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        closedTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', exitTs: 1 },
+      },
     ];
     for (const b of bodies) {
       const again = parseLiveEventBody(JSON.parse(JSON.stringify(b)));
@@ -118,6 +138,13 @@ describe('W8.0-p1 live JSONL contract', () => {
         kind: 'execution_result',
         intentId: sampleIntent,
         status: 'sim_ok',
+      }),
+    ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_position_open',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        openTrade: {},
       }),
     ).toBe(true);
   });

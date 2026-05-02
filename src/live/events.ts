@@ -92,6 +92,31 @@ export const CapitalRotateCloseSchema = z.object({
   txSignature: z.string().nullable().optional(),
 });
 
+/** W8.0 Phase 7 — mirror of in-memory `OpenTrade` after confirmed live entry / mutations (replay). */
+export const LivePositionOpenSchema = z.object({
+  kind: z.literal('live_position_open'),
+  mint: z.string().min(1).max(64),
+  openTrade: z.record(z.string(), z.unknown()),
+});
+
+export const LivePositionDcaSchema = z.object({
+  kind: z.literal('live_position_dca'),
+  mint: z.string().min(1).max(64),
+  openTrade: z.record(z.string(), z.unknown()),
+});
+
+export const LivePositionPartialSellSchema = z.object({
+  kind: z.literal('live_position_partial_sell'),
+  mint: z.string().min(1).max(64),
+  openTrade: z.record(z.string(), z.unknown()),
+});
+
+export const LivePositionCloseSchema = z.object({
+  kind: z.literal('live_position_close'),
+  mint: z.string().min(1).max(64),
+  closedTrade: z.record(z.string(), z.unknown()),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -102,6 +127,10 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   RiskBlockSchema,
   CapitalSkipSchema,
   CapitalRotateCloseSchema,
+  LivePositionOpenSchema,
+  LivePositionDcaSchema,
+  LivePositionPartialSellSchema,
+  LivePositionCloseSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;
