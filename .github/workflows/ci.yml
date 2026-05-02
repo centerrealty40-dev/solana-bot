@@ -1,0 +1,29 @@
+# Solana Alpha — быстрые проверки без Postgres (см. npm run verify для полного цикла локально).
+name: ci
+
+on:
+  push:
+    branches: [v2, main]
+  pull_request:
+    branches: [v2, main]
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Release hygiene (INDEX ↔ tree, VERSION format)
+        run: npm run check:hygiene

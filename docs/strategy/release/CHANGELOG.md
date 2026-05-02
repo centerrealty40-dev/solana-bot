@@ -8,6 +8,26 @@
 
 ---
 
+## [1.5.2] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.2`.
+
+### Добавлено
+
+- **`scripts/check-release-hygiene.mjs`** + npm-скрипты **`check:hygiene`**, **`check:hygiene:integration`** (`--git-clean`), агрегатор **`verify`** (`typecheck` + hygiene + `test`) — автоматическая проверка **I5** (ссылки из [`INDEX.md`](../specs/INDEX.md)) и формата [`VERSION`](./VERSION); интеграционный режим дополнительно проверяет **I6**.
+- **GitHub Actions** `.github/workflows/ci.yml`: на push/PR в `v2` и `main` — `npm ci`, `typecheck`, `check:hygiene` (без БД).
+
+### Изменено
+
+- [`PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) и [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) — явное требование запуска проверок перед merge/push.
+- [`INDEX.md`](../specs/INDEX.md) строка W8.0: semver не захардкожен, отсылка на [`VERSION`](./VERSION).
+
+### Откат
+
+- Удалить скрипт/workflow или `VERSION` **`1.5.1`**.
+
+---
+
 ## [1.5.1] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.1`.

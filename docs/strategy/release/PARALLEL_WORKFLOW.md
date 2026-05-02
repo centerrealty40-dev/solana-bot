@@ -56,7 +56,7 @@ npm run typecheck
 |------|----------|
 | **Набор изменений** | Агенты пушат коммиты в **свои** ветки (или в общую `integration/hourly-N` — см. ниже). На сервер **не трогаем**. |
 | **Слияние** | Интегратор мержит ветки в `v2` (или делает один squash-merge PR). |
-| **Проверка** | `npm run typecheck` (+ тесты по затронутым областям). |
+| **Проверка** | `npm run typecheck` (+ тесты по затронутым областям). Обязательно **`npm run check:hygiene`** — целостность ссылок из [`specs/INDEX.md`](../specs/INDEX.md) и формат [`VERSION`](./VERSION) (**I5** в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)). Перед **`git push origin v2`**: **`npm run check:hygiene:integration`** (чистое дерево, **I6**). |
 | **Версия** | Один коммит (можно последним в серии): обновить [`VERSION`](./VERSION), дописать блок в [`CHANGELOG.md`](./CHANGELOG.md) со списком изменений за окно (можно кратко: «batch: см. коммиты с SHA₁..SHA₂»). |
 | **Публикация** | `git push origin v2`. |
 | **Деплой** | Один прогон на сервер на **тот же SHA**, что только что на `v2`. Записать SHA в тикет/чат. |
@@ -95,6 +95,7 @@ npm run typecheck
 
 - [ ] `git pull` / merge завершён, рабочее дерево чистое.
 - [ ] `npm run typecheck` (и тесты по необходимости) зелёные.
+- [ ] `npm run check:hygiene` зелёный; непосредственно перед push в `v2` — `npm run check:hygiene:integration`.
 - [ ] `VERSION` и `CHANGELOG` отражают **этот** выпуск (или явно помечено «без bump — только деплой SHA», если политика временно ослаблена).
 - [ ] Запланирован **один** деплой; после него `git rev-parse HEAD` на сервере записан.
 

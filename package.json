@@ -10,6 +10,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:hygiene": "node scripts/check-release-hygiene.mjs",
+    "check:hygiene:integration": "node scripts/check-release-hygiene.mjs --git-clean",
+    "verify": "npm run typecheck && npm run check:hygiene && npm run test",
     "test": "vitest run",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
