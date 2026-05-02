@@ -8,6 +8,28 @@
 
 ---
 
+## [1.5.7] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.7`.
+
+### Исправлено
+
+- **Счётчик холдеров (QN GPA):** для **Token-2022** убран фильтр `dataSize: 165` в `getProgramAccounts` (`holders-resolve.ts`). Аккаунты с **extensions** длиннее 165 байт больше не отбрасываются — устранён сильный недосчёт у популярных mint.
+
+### Добавлено
+
+- Утилита класса **A** ([`DIAGNOSTIC_SCRIPTS.md`](./DIAGNOSTIC_SCRIPTS.md)): `scripts-tmp/paper2-diagnose-holders-gpa.mjs`, npm **`paper2:diagnose-holders-gpa`** — сравнение старого и нового GPA для произвольного mint (read-only RPC).
+
+### Миграции / деплой
+
+- `npm run typecheck`; затем **`pm2 reload`** для paper-процессов, где включён live gate по холдерам (при необходимости полный restart по политике релиза).
+
+### Откат
+
+- Revert коммита или `VERSION` **`1.5.6`** + откат `holders-resolve.ts` и удаление утилиты/npm-скрипта.
+
+---
+
 ## [1.5.6] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.5.6`.

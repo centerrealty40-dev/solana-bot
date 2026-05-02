@@ -127,7 +127,12 @@ function getCachedFresh(mint: string, ttlPosMs: number, ttlNegMs: number): Cache
   return null;
 }
 
-function gpaParams(programId: string, mint: string): unknown[] {
+/**
+ * Classic SPL Token: все ATA фиксированного размера — `dataSize` ускоряет GPA и снижает трафик.
+ * Token-2022: те же поля mint/owner/amount в базе 165 байт, но **расширения увеличивают длину аккаунта**.
+ * Фильтр `dataSize: 165` на Token-2022 **выкидывает** такие счета → сильный недосчёт холдеров в live-гейте.
+ */
+function gpaParamsClassicToken(programId: string, mint: string): unknown[] {
   return [
     programId,
     {
@@ -135,6 +140,19 @@ function gpaParams(programId: string, mint: string): unknown[] {
       commitment: 'confirmed',
       dataSlice: { offset: 32, length: 40 },
       filters: [{ dataSize: SPL_ACCOUNT_DATA_SIZE }, { memcmp: { offset: 0, bytes: mint } }],
+    },
+  ];
+}
+
+/** Token-2022 only: без `dataSize`, чтобы включить аккаунты с extensions. */
+function gpaParamsToken2022AnySize(mint: string): unknown[] {
+  return [
+    TOKEN_2022_PROGRAM_ID,
+    {
+      encoding: 'base64',
+      commitment: 'confirmed',
+      dataSlice: { offset: 32, length: 40 },
+      filters: [{ memcmp: { offset: 0, bytes: mint } }],
     },
   ];
 }
@@ -150,10 +168,10 @@ async function callGpa(
 ): Promise<HolderResolveResult> {
   const items = includeToken2022
     ? [
-        { method: 'getProgramAccounts', params: gpaParams(TOKEN_PROGRAM_ID, mint) },
-        { method: 'getProgramAccounts', params: gpaParams(TOKEN_2022_PROGRAM_ID, mint) },
+        { method: 'getProgramAccounts', params: gpaParamsClassicToken(TOKEN_PROGRAM_ID, mint) },
+        { method: 'getProgramAccounts', params: gpaParamsToken2022AnySize(mint) },
       ]
-    : [{ method: 'getProgramAccounts', params: gpaParams(TOKEN_PROGRAM_ID, mint) }];
+    : [{ method: 'getProgramAccounts', params: gpaParamsClassicToken(TOKEN_PROGRAM_ID, mint) }];
 
   const res = await qnBatchCall<GpaItem[]>(items, {
     feature: 'holders',
