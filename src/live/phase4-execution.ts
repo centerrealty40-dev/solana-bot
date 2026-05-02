@@ -3,7 +3,11 @@
  */
 import type { Keypair } from '@solana/web3.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { liveBuyQuoteAndPrepareSnapshot, liveSellQuoteAndPrepareSnapshot } from './jupiter.js';
+import {
+  liveBuyQuoteAndPrepareSnapshot,
+  liveQuoteExceedsMaxAge,
+  liveSellQuoteAndPrepareSnapshot,
+} from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
@@ -141,6 +145,26 @@ async function runSolToTokenPipeline(
     return false;
   }
 
+  const snapForAge = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
+  if (liveQuoteExceedsMaxAge(snapForAge, liveCfg.liveQuoteMaxAgeMs)) {
+    const age = snapForAge.quoteAgeMs;
+    const max = liveCfg.liveQuoteMaxAgeMs;
+    appendLiveJsonlEvent({
+      kind: 'execution_result',
+      intentId,
+      status: 'sim_err',
+      simulated: true,
+      error: {
+        message:
+          typeof age === 'number' && Number.isFinite(age) && max != null
+            ? `quote_stale:${Math.round(age)}ms>${max}ms`
+            : 'quote_stale:bad_or_missing_quoteAgeMs',
+      },
+    });
+    notifyLiveExecutionSimErr();
+    return false;
+  }
+
   const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
 
   if (liveCfg.executionMode === 'simulate') {
@@ -254,6 +278,26 @@ async function runTokenToSolPipeline(
       status: 'sim_err',
       simulated: true,
       error: { message: reason },
+    });
+    notifyLiveExecutionSimErr();
+    return { ok: false };
+  }
+
+  const snapForAgeSell = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
+  if (liveQuoteExceedsMaxAge(snapForAgeSell, liveCfg.liveQuoteMaxAgeMs)) {
+    const age = snapForAgeSell.quoteAgeMs;
+    const max = liveCfg.liveQuoteMaxAgeMs;
+    appendLiveJsonlEvent({
+      kind: 'execution_result',
+      intentId,
+      status: 'sim_err',
+      simulated: true,
+      error: {
+        message:
+          typeof age === 'number' && Number.isFinite(age) && max != null
+            ? `quote_stale:${Math.round(age)}ms>${max}ms`
+            : 'quote_stale:bad_or_missing_quoteAgeMs',
+      },
     });
     notifyLiveExecutionSimErr();
     return { ok: false };

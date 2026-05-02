@@ -74,6 +74,19 @@ export function liveQuoteSnapshotFromResponse(
   return snap;
 }
 
+/**
+ * W8.0 parent §10 — when `maxAgeMs` is set (>0), swap is blocked if `quoteAgeMs` is missing, invalid, or exceeds the limit.
+ */
+export function liveQuoteExceedsMaxAge(
+  quoteSnapshot: Record<string, unknown>,
+  maxAgeMs: number | undefined,
+): boolean {
+  if (maxAgeMs == null || maxAgeMs <= 0) return false;
+  const raw = quoteSnapshot.quoteAgeMs;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return true;
+  return raw > maxAgeMs;
+}
+
 async function httpGetQuote(
   quoteBaseUrl: string,
   args: {

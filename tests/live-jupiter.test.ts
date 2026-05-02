@@ -3,6 +3,7 @@ import type { LiveOscarConfig } from '../src/live/config.js';
 import {
   liveBuildUnsignedSwapTx,
   liveFetchBuyQuote,
+  liveQuoteExceedsMaxAge,
   liveQuoteSnapshotFromResponse,
   resolveLiveJupiterQuoteUrl,
   resolveLiveJupiterSwapUrl,
@@ -66,6 +67,20 @@ describe('live Jupiter Phase 2', () => {
     expect(s.quoteAgeMs).toBe(42);
     expect(s.swapBuildOk).toBe(true);
     expect(s.swapTxBase64Len).toBe(120);
+  });
+
+  it('liveQuoteExceedsMaxAge is off when max unset', () => {
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 999_999 }, undefined)).toBe(false);
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 999_999 }, 0)).toBe(false);
+  });
+
+  it('liveQuoteExceedsMaxAge rejects stale or bad ages', () => {
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 99 }, 100)).toBe(false);
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 100 }, 100)).toBe(false);
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 100 }, 99)).toBe(true);
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: 101 }, 100)).toBe(true);
+    expect(liveQuoteExceedsMaxAge({}, 500)).toBe(true);
+    expect(liveQuoteExceedsMaxAge({ quoteAgeMs: '40' }, 50)).toBe(true);
   });
 
   it('liveFetchBuyQuote parses GET quote', async () => {

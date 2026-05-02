@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.6] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.6`.
+
+### Live Oscar — свежесть Jupiter quote (W8.0 §10)
+
+- **`LIVE_QUOTE_MAX_AGE_MS`** (опционально): после успешного quote+build Phase 4 сравнивает **`quoteSnapshot.quoteAgeMs`** с лимитом; при превышении или отсутствии валидного возраста — **`execution_result`** **`sim_err`** с **`quote_stale:…`** и счётчик consec-fail как у прочих `sim_err` ([`jupiter.ts`](../../../src/live/jupiter.ts) `liveQuoteExceedsMaxAge`, [`phase4-execution.ts`](../../../src/live/phase4-execution.ts)).
+
+### Откат
+
+- `VERSION` **`1.11.5`**; unset **`LIVE_QUOTE_MAX_AGE_MS`**.
+
+---
+
 ## [1.11.5] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.5`.
