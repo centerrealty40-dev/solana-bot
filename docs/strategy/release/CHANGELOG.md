@@ -8,6 +8,20 @@
 
 ---
 
+## [1.10.1] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.1`.
+
+### Изменено
+
+- **PM2 `pt1-oscar`:** **`PAPER_DCA_LEVELS`** — одна ступень **−7%** (доля докупки **0.3** от базовой позиции); **`PAPER_DCA_KILLSTOP`** **−14%**; **`PAPER_TP_LADDER`** — **+10%** PnL → **50%** текущего остатка, **+20%** PnL → **100%** остатка (полное закрытие оставшегося), см. [`ecosystem.config.cjs`](../../../ecosystem.config.cjs).
+
+### Откат
+
+- `VERSION` **`1.10.0`**; в **`ecosystem.config.cjs`** для `pt1-oscar` вернуть прежние **`PAPER_DCA_LEVELS`**, **`PAPER_DCA_KILLSTOP`**, **`PAPER_TP_LADDER`**; **`pm2 reload pt1-oscar --update-env`**.
+
+---
+
 ## [1.10.0] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.10.0`.

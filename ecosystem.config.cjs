@@ -347,9 +347,10 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        PAPER_DCA_LEVELS: '-7:0.3,-14:0.3',
-        PAPER_DCA_KILLSTOP: '-0.25',
-        PAPER_TP_LADDER: '0.10:0.30,0.20:0.50,0.30:1.0',
+        /* Oscar: одна ступень DCA −7%; kill −14%; TP-ladder доля от остатка: +10%→50%, +20%→100% */
+        PAPER_DCA_LEVELS: '-7:0.3',
+        PAPER_DCA_KILLSTOP: '-0.14',
+        PAPER_TP_LADDER: '0.10:0.50,0.20:1.0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
