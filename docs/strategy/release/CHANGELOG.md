@@ -8,26 +8,6 @@
 
 ---
 
-## [1.6.1] — 2026-05-02
-
-**Git-тег продукта (рекомендуемый):** `sa-alpha-1.6.1`.
-
-### Добавлено
-
-- **Дашборд `/papertrader2`:** первая колонка **Live Oscar** (`live-oscar`), фиксированный порядок **Live → Paper Oscar → Deep Runner → Dno** (`DASHBOARD_PANEL_ORDER`); журнал live **`DASHBOARD_LIVE_OSCAR_JSONL`** (дефолт от `PAPER2_DIR`); исключение **`pt1-oscar-live.jsonl`** из сканирования `PAPER2_DIR`.
-- Тесты **`tests/dashboard-paper2-panels.test.ts`**.
-- Спека **W8.0-p4:** §7 buy+sell+DCA в одном релизе, §3.3.1 два профиля ENV, §7.1 дашборд, закрыт §13.
-
-### Миграции / деплой
-
-- PM2 **`dashboard-organizer-paper`:** задать **`PAPER2_DIR`** и опционально **`DASHBOARD_LIVE_OSCAR_JSONL`** (в **`ecosystem.config.cjs`** уже добавлены дефолты путей).
-
-### Откат
-
-- Revert изменений в **`scripts-tmp/dashboard-server.ts`**, **`dashboard-paper2.html`**, **`ecosystem.config.cjs`**; `VERSION` **`1.6.0`**.
-
----
-
 ## [1.6.0] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.6.0`.
