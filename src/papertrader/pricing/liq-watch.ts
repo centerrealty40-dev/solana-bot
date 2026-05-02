@@ -13,13 +13,15 @@ type SnapTable =
   | 'raydium_pair_snapshots'
   | 'meteora_pair_snapshots'
   | 'orca_pair_snapshots'
-  | 'moonshot_pair_snapshots';
+  | 'moonshot_pair_snapshots'
+  | 'pumpswap_pair_snapshots';
 
 const TABLE_BY_SOURCE: Record<DexSource, SnapTable | null> = {
   raydium: 'raydium_pair_snapshots',
   meteora: 'meteora_pair_snapshots',
   orca: 'orca_pair_snapshots',
   moonshot: 'moonshot_pair_snapshots',
+  pumpswap: 'pumpswap_pair_snapshots',
   pump: null,
   jupiter: null,
 };
@@ -68,6 +70,14 @@ async function selectLatestLiquidity(
     case 'moonshot_pair_snapshots': {
       const rows = await sql<{ liquidity_usd: unknown; ts: Date }[]>`
         SELECT liquidity_usd, ts FROM moonshot_pair_snapshots
+        WHERE pair_address = ${pairAddress}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      return rows[0];
+    }
+    case 'pumpswap_pair_snapshots': {
+      const rows = await sql<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM pumpswap_pair_snapshots
         WHERE pair_address = ${pairAddress}
         ORDER BY ts DESC LIMIT 1
       `;

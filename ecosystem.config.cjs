@@ -1,8 +1,10 @@
 /**
  * PM2 для VPS (/opt/solana-alpha) после W1/W2 slim.
- * Дашборд + W6.1 DEX collectors + W6.3a paper skeleton (stream/parser/atlas выключены).
+ * Дашборд + W6.1 DEX collectors (+ PumpSwap) + W6.3a paper skeleton (stream/parser/atlas выключены).
  *
- * Запуск: pm2 start ecosystem.config.cjs
+ * Запуск новых процессов только точечно:
+ *   pm2 start ecosystem.config.cjs --only sa-pumpswap
+ * Не использовать массовый `pm2 start ecosystem.config.cjs` без `--only` — поднимет всё из списка.
  */
 const path = require('path');
 const root = __dirname;
@@ -69,12 +71,34 @@ module.exports = {
       max_memory_restart: '300M',
       merge_logs: true,
       time: true,
-      env: { NODE_ENV: 'production' },
+      env: {
+        NODE_ENV: 'production',
+        /** Ease Dex/Gecko RPM — PumpSwap + Raydium + Meteora stay at 60s. */
+        ORCA_COLLECTOR_INTERVAL_MS: '90000',
+      },
     },
     {
       name: 'sa-moonshot',
       cwd: root,
       script: 'scripts-tmp/moonshot-collector.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '300M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        MOONSHOT_COLLECTOR_INTERVAL_MS: '90000',
+      },
+    },
+    {
+      name: 'sa-pumpswap',
+      cwd: root,
+      script: 'scripts-tmp/pumpswap-collector.mjs',
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,

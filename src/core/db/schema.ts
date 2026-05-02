@@ -502,6 +502,16 @@ export const moonshotPairSnapshots = pgTable(
   }),
 );
 
+export const pumpswapPairSnapshots = pgTable(
+  'pumpswap_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('pumpswap_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('pumpswap_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('pumpswap_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
 export const jupiterRouteSnapshots = pgTable(
   'jupiter_route_snapshots',
   {

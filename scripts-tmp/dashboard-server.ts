@@ -118,6 +118,7 @@ const DEX_SNAPSHOT_TABLES = [
   'meteora_pair_snapshots',
   'orca_pair_snapshots',
   'moonshot_pair_snapshots',
+  'pumpswap_pair_snapshots',
 ] as const;
 
 /** W7.5 — align with paper-trader `PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS` for live liq badge freshness. */
@@ -170,6 +171,13 @@ async function fetchPairLiquidityUsdFromPg(
     } else if (src === 'moonshot') {
       const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
         SELECT liquidity_usd, ts FROM moonshot_pair_snapshots
+        WHERE pair_address = ${pa}
+        ORDER BY ts DESC LIMIT 1
+      `;
+      row = rows[0];
+    } else if (src === 'pumpswap') {
+      const rows = await sqlPg<{ liquidity_usd: unknown; ts: Date }[]>`
+        SELECT liquidity_usd, ts FROM pumpswap_pair_snapshots
         WHERE pair_address = ${pa}
         ORDER BY ts DESC LIMIT 1
       `;
@@ -342,7 +350,7 @@ async function getDexLivePrice(mint: string, source: string | null): Promise<num
   } catch {
     return null;
   }
-  const sources: readonly string[] = ['raydium', 'meteora', 'orca', 'moonshot'];
+  const sources: readonly string[] = ['raydium', 'meteora', 'orca', 'moonshot', 'pumpswap'];
   const tableOrder =
     source && sources.includes(source) ? [`${source}_pair_snapshots`, ...sources.filter((s) => s !== source).map((s) => `${s}_pair_snapshots`)] : DEX_SNAPSHOT_TABLES.slice();
   /** Wider than mcap cache: pair collectors can lag; UI only needs a reasonable reference. */
@@ -837,6 +845,7 @@ const DEX_SOURCE_TABLES = {
   meteora: 'meteora_pair_snapshots',
   orca: 'orca_pair_snapshots',
   moonshot: 'moonshot_pair_snapshots',
+  pumpswap: 'pumpswap_pair_snapshots',
 } as const;
 
 app.get<{ Params: { source: string } }>('/api/dex/:source/health', async (req, reply) => {
@@ -955,6 +964,11 @@ type Paper2OpenItem = {
   pairAddress: string | null;
   /** W7.5 — entry liquidity USD baseline. */
   entryLiqUsd: number | null;
+  /**
+   * Fraction of the position still held (from last `partial_sell.remainingFraction`, else 1).
+   * DCA rows reset the live tracker position to 100% remainder — we mirror that via `dca_add` handling.
+   */
+  remainingFraction: number;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -1134,6 +1148,11 @@ type TimelineEvent = {
   pnlUsd: number | null;
   reason: string | null;
   remainingFraction: number | null;
+  /**
+   * Trade-flow USD for dashboard copy: buys (open / DCA), cost basis sold (partial / final close).
+   * Not mark-to-market.
+   */
+  amountUsd: number | null;
 };
 
 const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
@@ -1191,10 +1210,17 @@ function buildTimelineEvent(
     const legMp = legs[0] ? Number(legs[0].marketPrice ?? 0) : 0;
     const entryMp = Number(e.entryMarketPrice ?? 0);
     const spotPx = entryMp > 0 ? entryMp : legMp > 0 ? legMp : null;
+    let amountOpen = Number(e.totalInvestedUsd ?? e.total_invested_usd ?? 0);
+    if (!(amountOpen > 0) && legs.length) {
+      amountOpen = legs.reduce((s, l) => s + Number(l.sizeUsd ?? l.size_usd ?? 0), 0);
+    }
+    const openLabelUsd =
+      amountOpen >= 1000 ? `$${(amountOpen / 1000).toFixed(1)}k` : `$${amountOpen.toFixed(0)}`;
+    const openLabel = amountOpen > 0 ? `Open · куплено ${openLabelUsd}` : 'Open';
     return {
       ts,
       kind: 'open',
-      label: 'Open',
+      label: openLabel,
       mcUsd: openMc,
       spotPxUsd: spotPx != null && spotPx > 0 ? spotPx : null,
       sizePct: null,
@@ -1202,12 +1228,17 @@ function buildTimelineEvent(
       pnlUsd: null,
       reason: null,
       remainingFraction: 1,
+      amountUsd: amountOpen > 0 ? amountOpen : null,
     };
   }
   if (kind === 'dca_add') {
     const triggerPct = Number(e.triggerPct ?? 0) * 100; // -7%, -15%, ...
-    const sizeUsd = Number(e.sizeUsd ?? 0);
-    const label = `DCA add · +$${sizeUsd.toFixed(0)} @ ${fmtSignedPct(triggerPct)}`;
+    const sizeUsd = Number(e.sizeUsd ?? e.size_usd ?? 0);
+    const addUsd =
+      sizeUsd > 0 ? sizeUsd : Number(e.addUsd ?? e.add_usd ?? e.dcaUsd ?? e.dca_usd ?? 0);
+    const sz = addUsd > 0 ? addUsd : sizeUsd;
+    const usdStr = sz >= 1000 ? `$${(sz / 1000).toFixed(1)}k` : `$${sz.toFixed(0)}`;
+    const label = `DCA · докупка ${usdStr} @ ${fmtSignedPct(triggerPct)}`;
     return {
       ts,
       kind: 'dca_add',
@@ -1219,6 +1250,7 @@ function buildTimelineEvent(
       pnlUsd: null,
       reason: 'dca',
       remainingFraction: null,
+      amountUsd: sz > 0 ? sz : null,
     };
   }
   if (kind === 'partial_sell') {
@@ -1228,8 +1260,21 @@ function buildTimelineEvent(
     const sellPct = Math.round(sellFraction * 100);
     const niceReason =
       reason === 'TP_LADDER' ? 'Ladder (take profit)' : reason.toLowerCase().replace(/_/g, ' ');
-    const label = `${niceReason} · sell ${sellPct}% of remaining @ ${fmtSignedPct(ladderPnlPct)}`;
     const pnlUsd = Number(e.pnlUsd ?? 0);
+    const proceedsUsd = Number(e.proceedsUsd ?? 0);
+    const soldCostUsd =
+      Number.isFinite(proceedsUsd) && Number.isFinite(pnlUsd) && proceedsUsd > 0
+        ? proceedsUsd - pnlUsd
+        : null;
+    const soldLabelUsd =
+      soldCostUsd != null && soldCostUsd > 0
+        ? soldCostUsd >= 1000
+          ? `$${(soldCostUsd / 1000).toFixed(1)}k`
+          : `$${soldCostUsd.toFixed(0)}`
+        : null;
+    const label = `${niceReason} · sell ${sellPct}% of remaining @ ${fmtSignedPct(ladderPnlPct)}${
+      soldLabelUsd ? ` · продано ${soldLabelUsd} (cost)` : ''
+    }`;
     return {
       ts,
       kind: 'partial_sell',
@@ -1241,6 +1286,8 @@ function buildTimelineEvent(
       pnlUsd: Number.isFinite(pnlUsd) ? pnlUsd : null,
       reason,
       remainingFraction: Number(e.remainingFraction ?? null),
+      amountUsd:
+        soldCostUsd != null && Number.isFinite(soldCostUsd) && soldCostUsd > 0 ? soldCostUsd : null,
     };
   }
   if (kind === 'close') {
@@ -1258,10 +1305,20 @@ function buildTimelineEvent(
       mcFromJournal() != null ? null : !isMcMetric && exitMarketPrice > 0 ? exitMarketPrice : null;
     const pnlPct = Number(e.pnlPct ?? 0);
     const netPnlUsd = Number(e.netPnlUsd ?? 0);
+    const tiuClose = Number(e.totalInvestedUsd ?? e.total_invested_usd ?? 0);
+    const rfClose = Number(e.remainingFraction ?? 0);
+    const closeSoldCost =
+      tiuClose > 0 && Number.isFinite(rfClose) && rfClose > 0 ? tiuClose * rfClose : null;
+    const closeUsdLbl =
+      closeSoldCost != null && closeSoldCost > 0
+        ? closeSoldCost >= 1000
+          ? `$${(closeSoldCost / 1000).toFixed(1)}k`
+          : `$${closeSoldCost.toFixed(0)}`
+        : null;
     return {
       ts,
       kind: 'close',
-      label: `Close · ${exitReason}`,
+      label: `Close · ${exitReason}${closeUsdLbl ? ` · выход ${closeUsdLbl} (cost)` : ''}`,
       mcUsd: closeMc,
       spotPxUsd: closeSpot,
       sizePct: null,
@@ -1269,9 +1326,78 @@ function buildTimelineEvent(
       pnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : null,
       reason: exitReason,
       remainingFraction: 0,
+      amountUsd: closeSoldCost,
     };
   }
   return null;
+}
+
+function normalizeTimelineLabelForUsdParse(label: string): string {
+  return label
+    .replace(/\uFF04/g, '$')
+    .replace(/\uFF0B/g, '+')
+    .replace(/\u2212/g, '-')
+    .replace(/\u00A0/g, ' ');
+}
+
+/** Back-fill amountUsd from human-readable labels (legacy rows, odd journals). */
+function enrichTimelineAmountUsd(ev: TimelineEvent): TimelineEvent {
+  const cur = Number(ev.amountUsd ?? NaN);
+  if (Number.isFinite(cur) && cur > 0) return ev;
+  const lab = normalizeTimelineLabelForUsdParse(ev.label ?? '');
+  const patch = (n: number): TimelineEvent => ({ ...ev, amountUsd: n });
+
+  if (ev.kind === 'dca_add') {
+    const m =
+      lab.match(/\+\s*\$\s*([\d.]+)/) ||
+      lab.match(/докупка\s+\$\s*([\d.]+)/i) ||
+      lab.match(/\badd\s+\$\s*([\d.]+)/i);
+    if (m) {
+      const v = Number(m[1]);
+      if (v > 0) return patch(v);
+    }
+  }
+  if (ev.kind === 'open') {
+    const mk = lab.match(/куплено\s+\$\s*([\d.]+)\s*k\b/i);
+    if (mk) {
+      const v = Number(mk[1]) * 1000;
+      if (v > 0) return patch(v);
+    }
+    const m = lab.match(/куплено\s+\$\s*([\d.]+)\b/i);
+    if (m) {
+      const v = Number(m[1]);
+      if (v > 0) return patch(v);
+    }
+  }
+  if (ev.kind === 'partial_sell') {
+    const mk = lab.match(/продано\s+\$\s*([\d.]+)\s*k\b/i);
+    if (mk) {
+      const v = Number(mk[1]) * 1000;
+      if (v > 0) return patch(v);
+    }
+    const m = lab.match(/продано\s+\$\s*([\d.]+)\b/i);
+    if (m) {
+      const v = Number(m[1]);
+      if (v > 0) return patch(v);
+    }
+  }
+  if (ev.kind === 'close') {
+    const mk = lab.match(/выход\s+\$\s*([\d.]+)\s*k\b/i);
+    if (mk) {
+      const v = Number(mk[1]) * 1000;
+      if (v > 0) return patch(v);
+    }
+    const m = lab.match(/выход\s+\$\s*([\d.]+)\b/i);
+    if (m) {
+      const v = Number(m[1]);
+      if (v > 0) return patch(v);
+    }
+  }
+  return ev;
+}
+
+function finalizeTimelineForApi(timeline: TimelineEvent[]): TimelineEvent[] {
+  return timeline.map(enrichTimelineAmountUsd);
 }
 
 function loadPaper2File(filePath: string): {
@@ -1406,6 +1532,7 @@ function loadPaper2File(filePath: string): {
         entryPriorityFeeUsd,
         pairAddress,
         entryLiqUsd,
+        remainingFraction: 1,
         ...pvUi,
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
@@ -1418,7 +1545,26 @@ function loadPaper2File(filePath: string): {
         o.peakPnlPct = Math.max(o.peakPnlPct, Number(e.peakPnlPct ?? 0));
         o.trailingArmed = o.trailingArmed || Boolean(e.trailingArmed);
       }
-    } else if (e.kind === 'dca_add' || e.kind === 'partial_sell') {
+    } else if (e.kind === 'dca_add') {
+      const o = om.get(mint);
+      if (o) {
+        const tiu = Number(e.totalInvestedUsd ?? 0);
+        if (tiu > 0) o.totalInvestedUsd = tiu;
+        o.remainingFraction = 1;
+      }
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const tev = buildTimelineEvent(e, meta.metricType, meta.entryRealMcUsd);
+      if (tev) {
+        const arr = liveTimelines.get(mint) ?? [];
+        arr.push(tev);
+        liveTimelines.set(mint, arr);
+      }
+    } else if (e.kind === 'partial_sell') {
+      const o = om.get(mint);
+      if (o) {
+        const rf = Number(e.remainingFraction ?? NaN);
+        if (Number.isFinite(rf) && rf >= 0 && rf <= 1) o.remainingFraction = rf;
+      }
       const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
       const tev = buildTimelineEvent(e, meta.metricType, meta.entryRealMcUsd);
       if (tev) {
@@ -1609,6 +1755,8 @@ app.get('/api/paper2', async (_req, reply) => {
     entryLiqUsd: number | null;
     currentLiqUsd: number | null;
     liqDropPct: number | null;
+    /** Cost basis still in the position: totalInvestedUsd × remainingFraction (not mark-to-market). */
+    remainingCostBasisUsd: number;
   };
 
   type StrategyRow = {
@@ -1675,7 +1823,7 @@ app.get('/api/paper2', async (_req, reply) => {
           const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
           const exitPriorityFeeUsd =
             Number.isFinite(exitPfUsd) && exitPfUsd > 0 ? exitPfUsd : null;
-          const tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+          let tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
           if (
             tlOut.length &&
             tlOut[0].kind === 'open' &&
@@ -1685,6 +1833,7 @@ app.get('/api/paper2', async (_req, reply) => {
           ) {
             tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
           }
+          tlOut = finalizeTimelineForApi(tlOut);
           const entryPriceVerifySlipPct =
             typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
           const entryPriceVerifyImpactPct =
@@ -1805,7 +1954,7 @@ app.get('/api/paper2', async (_req, reply) => {
           entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
         }
 
-        const timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+        let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
         if (
           timelineOut.length &&
           timelineOut[0].kind === 'open' &&
@@ -1815,6 +1964,7 @@ app.get('/api/paper2', async (_req, reply) => {
         ) {
           timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
         }
+        timelineOut = finalizeTimelineForApi(timelineOut);
 
         const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
         const livePriceUsd = hasLivePrice ? livePx : null;
@@ -1880,6 +2030,9 @@ app.get('/api/paper2', async (_req, reply) => {
             ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
             : null;
 
+        const remainingCostBasisUsd =
+          ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction) : 0;
+
         return {
           mint: ot.mint,
           symbol: ot.symbol,
@@ -1913,6 +2066,7 @@ app.get('/api/paper2', async (_req, reply) => {
           entryLiqUsd: entryLiqUsdVal,
           currentLiqUsd: currentLiqUsdVal,
           liqDropPct,
+          remainingCostBasisUsd,
         };
       }),
     );

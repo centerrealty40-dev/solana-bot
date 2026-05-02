@@ -115,6 +115,7 @@ const HEALTH_CHECKS = [
   { source: 'meteora', table: 'meteora_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'orca', table: 'orca_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'moonshot', table: 'moonshot_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
+  { source: 'pumpswap', table: 'pumpswap_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'jupiter', table: 'jupiter_route_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'direct_lp', table: 'direct_lp_events', tsCol: 'ts', maxAgeMin: 240 },
 ];
@@ -143,7 +144,16 @@ async function fetchHealth(pool) {
 }
 
 async function fetchCoverage(pool) {
-  const cov = { pump: 0, raydium: 0, meteora: 0, orca: 0, moonshot: 0, jupiter: 0, total: 0 };
+  const cov = {
+    pump: 0,
+    raydium: 0,
+    meteora: 0,
+    orca: 0,
+    moonshot: 0,
+    pumpswap: 0,
+    jupiter: 0,
+    total: 0,
+  };
   if (!pool) return cov;
   const client = await pool.connect();
   try {
@@ -152,7 +162,15 @@ async function fetchCoverage(pool) {
       return Boolean(r.rows[0]?.t);
     }
 
-    const checks = ['tokens', 'raydium_pair_snapshots', 'meteora_pair_snapshots', 'orca_pair_snapshots', 'moonshot_pair_snapshots', 'jupiter_route_snapshots'];
+    const checks = [
+      'tokens',
+      'raydium_pair_snapshots',
+      'meteora_pair_snapshots',
+      'orca_pair_snapshots',
+      'moonshot_pair_snapshots',
+      'pumpswap_pair_snapshots',
+      'jupiter_route_snapshots',
+    ];
     const exists = {};
     for (const t of checks) exists[t] = await tableExists(t);
 
@@ -164,6 +182,7 @@ async function fetchCoverage(pool) {
     if (exists.meteora_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'meteora'::text AS source FROM meteora_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
     if (exists.orca_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'orca'::text AS source FROM orca_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
     if (exists.moonshot_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'moonshot'::text AS source FROM moonshot_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
+    if (exists.pumpswap_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'pumpswap'::text AS source FROM pumpswap_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
     if (exists.jupiter_route_snapshots) unions.push(`SELECT DISTINCT mint::text AS mint, 'jupiter'::text AS source FROM jupiter_route_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
     if (!unions.length) return cov;
 

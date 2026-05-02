@@ -88,11 +88,17 @@ export async function fetchPumpfunMc(mint: string): Promise<{ mc: number; ath: n
 
 export async function fetchLatestSnapshotPrice(
   mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot',
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
 ): Promise<number | null> {
   const tables: string[] = source
     ? [`${source}_pair_snapshots`]
-    : ['raydium_pair_snapshots', 'meteora_pair_snapshots', 'orca_pair_snapshots', 'moonshot_pair_snapshots'];
+    : [
+        'raydium_pair_snapshots',
+        'meteora_pair_snapshots',
+        'orca_pair_snapshots',
+        'moonshot_pair_snapshots',
+        'pumpswap_pair_snapshots',
+      ];
   const safeMint = mint.replace(/'/g, "''");
   for (const t of tables) {
     const r = await db.execute(dsql.raw(`
@@ -115,11 +121,17 @@ export async function fetchLatestSnapshotPrice(
 
 export async function fetchLatestSnapshotMcap(
   mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot',
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
 ): Promise<number | null> {
   const tables: string[] = source
     ? [`${source}_pair_snapshots`]
-    : ['raydium_pair_snapshots', 'meteora_pair_snapshots', 'orca_pair_snapshots', 'moonshot_pair_snapshots'];
+    : [
+        'raydium_pair_snapshots',
+        'meteora_pair_snapshots',
+        'orca_pair_snapshots',
+        'moonshot_pair_snapshots',
+        'pumpswap_pair_snapshots',
+      ];
   const safeMint = mint.replace(/'/g, "''");
   for (const t of tables) {
     const r = await db.execute(dsql.raw(`
@@ -151,7 +163,7 @@ function liveMcTtlMs(): number {
  */
 export async function getLiveMcUsd(
   mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot',
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
 ): Promise<number | null> {
   const cached = _liveMcCache.get(mint);
   if (cached && Date.now() - cached.ts < liveMcTtlMs()) return cached.mc > 0 ? cached.mc : null;

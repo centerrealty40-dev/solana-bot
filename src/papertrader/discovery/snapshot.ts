@@ -9,6 +9,7 @@ const SNAPSHOT_TABLES: Array<{ table: string; source: string }> = [
   { table: 'meteora_pair_snapshots', source: 'meteora' },
   { table: 'orca_pair_snapshots', source: 'orca' },
   { table: 'moonshot_pair_snapshots', source: 'moonshot' },
+  { table: 'pumpswap_pair_snapshots', source: 'pumpswap' },
 ];
 
 export async function fetchSnapshotLaneCandidates(

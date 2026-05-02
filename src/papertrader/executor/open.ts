@@ -74,6 +74,8 @@ export function snapshotSourceToDex(source: string): DexId {
       return 'meteora';
     case 'moonshot':
       return 'moonshot';
+    case 'pumpswap':
+      return 'pumpswap';
     default:
       return 'raydium';
   }

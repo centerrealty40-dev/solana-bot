@@ -8,6 +8,7 @@ function sourceSnapshotTable(source: string): string | null {
   if (source === 'meteora') return 'meteora_pair_snapshots';
   if (source === 'orca') return 'orca_pair_snapshots';
   if (source === 'moonshot') return 'moonshot_pair_snapshots';
+  if (source === 'pumpswap') return 'pumpswap_pair_snapshots';
   return null;
 }
 

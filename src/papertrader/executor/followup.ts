@@ -65,7 +65,7 @@ export async function followupTick(): Promise<void> {
       curMetric = Number(
         await fetchLatestSnapshotPrice(
           f.mint,
-          f.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          f.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         ) ?? 0,
       );
     } catch (err) {

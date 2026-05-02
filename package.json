@@ -27,6 +27,8 @@
     "paper2:hourly-report": "node scripts-tmp/hourly-telegram-report.mjs",
     "paper2:advisor-digest": "node scripts-tmp/advisor-digest.mjs",
     "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs",
+    "collector:http-budget": "node scripts-tmp/collector-http-budget.mjs",
+    "collector:profile-once": "node scripts-tmp/collector-profile-once.mjs",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts"
   },

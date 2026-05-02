@@ -131,6 +131,7 @@ async function buildCandidateSources() {
     'meteora_pair_snapshots',
     'orca_pair_snapshots',
     'moonshot_pair_snapshots',
+    'pumpswap_pair_snapshots',
   ]) {
     if (!(await tableExists(tableName))) continue;
     const source = tableName.replace('_pair_snapshots', '');

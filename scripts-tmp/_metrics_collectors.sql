@@ -17,6 +17,15 @@ SELECT
   max(created_at) AS last_row_created_at
 FROM raydium_pair_snapshots;
 
+SELECT '--- PumpSwap (sa-pumpswap → pumpswap_pair_snapshots) ---' AS section;
+SELECT
+  count(*) FILTER (WHERE created_at > now() - interval '1 hour') AS rows_inserted_1h,
+  count(*) FILTER (WHERE created_at > now() - interval '24 hours') AS rows_inserted_24h,
+  count(DISTINCT base_mint) FILTER (WHERE created_at > now() - interval '1 hour') AS distinct_base_mints_1h,
+  max(ts) AS last_pair_ts,
+  max(created_at) AS last_row_created_at
+FROM pumpswap_pair_snapshots;
+
 SELECT '--- Pump bonding curve / swap (sa-stream → sa-parser → swaps) ---' AS section;
 SELECT
   dex,

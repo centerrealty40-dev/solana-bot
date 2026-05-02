@@ -353,7 +353,14 @@ export interface PriorityFeeQuote {
 }
 
 /** W7.5 — DEX snapshot source for pool liquidity lookup. */
-export type DexSource = 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pump' | 'jupiter';
+export type DexSource =
+  | 'raydium'
+  | 'meteora'
+  | 'orca'
+  | 'moonshot'
+  | 'pumpswap'
+  | 'pump'
+  | 'jupiter';
 
 /**
  * W7.5 — liquidity drain watch verdict (per tracker tick).

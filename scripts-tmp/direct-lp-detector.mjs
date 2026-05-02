@@ -109,6 +109,12 @@ async function buildCandidateSql() {
   if (await tableExists('orca_pair_snapshots')) {
     snapshotSources.push(snapshotSelect('orca_pair_snapshots', 'orca', true));
   }
+  if (await tableExists('moonshot_pair_snapshots')) {
+    snapshotSources.push(snapshotSelect('moonshot_pair_snapshots', 'moonshot', true));
+  }
+  if (await tableExists('pumpswap_pair_snapshots')) {
+    snapshotSources.push(snapshotSelect('pumpswap_pair_snapshots', 'pumpswap', true));
+  }
   if (snapshotSources.length === 0) return null;
 
   const hasTokens = await tableExists('tokens');

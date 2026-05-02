@@ -260,7 +260,7 @@ export async function main(): Promise<void> {
         try {
           mcUsdLiveOpen = await getLiveMcUsd(
             ot.mint,
-            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot',
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
           );
         } catch {
           /* best-effort */

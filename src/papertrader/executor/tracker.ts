@@ -237,7 +237,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       curMetric = Number(
         await fetchLatestSnapshotPrice(
           mint,
-          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         ) ?? 0,
       );
     } catch (err) {
@@ -325,7 +325,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         stats.closed.LIQ_DRAIN++;
         const mcUsdLive_close = await getLiveMcUsd(
           mint,
-          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
         appendEvent({
           kind: 'close',
@@ -401,7 +401,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
         const mcUsdLive_closeNd = await getLiveMcUsd(
           mint,
-          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
         const liqWatchNoData = await buildOptionalLiqWatchCloseStamp(cfg, ot);
         appendEvent({
@@ -472,7 +472,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
           const mcUsdLive_dca = await getLiveMcUsd(
             mint,
-            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
           );
           const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
           appendEvent({
@@ -535,7 +535,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.ladderUsedLevels.add(lvl.pnlPct);
           const mcUsdLive_ps = await getLiveMcUsd(
             mint,
-            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
           );
           const pfPs = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
           appendEvent({
@@ -612,7 +612,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       if (stats.closed[statKey] != null) stats.closed[statKey]++;
       const mcUsdLive_close = await getLiveMcUsd(
         mint,
-        ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | undefined,
+        ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
       );
       const liqWatchExit = await buildOptionalLiqWatchCloseStamp(cfg, ot);
       appendEvent({

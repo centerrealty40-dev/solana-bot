@@ -74,11 +74,13 @@ async function main() {
         SELECT t.mint,
                BOOL_OR(rps.base_mint IS NOT NULL) AS in_raydium,
                BOOL_OR(mps.base_mint IS NOT NULL) AS in_meteora,
-               BOOL_OR(ops.base_mint IS NOT NULL) AS in_orca
+               BOOL_OR(ops.base_mint IS NOT NULL) AS in_orca,
+               BOOL_OR(pps.base_mint IS NOT NULL) AS in_pumpswap
         FROM targets t
         LEFT JOIN raydium_pair_snapshots rps ON rps.base_mint = t.mint
         LEFT JOIN meteora_pair_snapshots mps ON mps.base_mint = t.mint
         LEFT JOIN orca_pair_snapshots ops ON ops.base_mint = t.mint
+        LEFT JOIN pumpswap_pair_snapshots pps ON pps.base_mint = t.mint
         GROUP BY t.mint
         `,
         mints,
@@ -88,7 +90,8 @@ async function main() {
           inRaydium: !!row.in_raydium,
           inMeteora: !!row.in_meteora,
           inOrca: !!row.in_orca,
-          anyDex: !!(row.in_raydium || row.in_meteora || row.in_orca),
+          inPumpswap: !!row.in_pumpswap,
+          anyDex: !!(row.in_raydium || row.in_meteora || row.in_orca || row.in_pumpswap),
         });
       }
     }
