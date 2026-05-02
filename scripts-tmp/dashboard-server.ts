@@ -1214,9 +1214,7 @@ function buildTimelineEvent(
     if (!(amountOpen > 0) && legs.length) {
       amountOpen = legs.reduce((s, l) => s + Number(l.sizeUsd ?? l.size_usd ?? 0), 0);
     }
-    const openLabelUsd =
-      amountOpen >= 1000 ? `$${(amountOpen / 1000).toFixed(1)}k` : `$${amountOpen.toFixed(0)}`;
-    const openLabel = amountOpen > 0 ? `Open · куплено ${openLabelUsd}` : 'Open';
+    const openLabel = 'Open';
     return {
       ts,
       kind: 'open',
@@ -1237,8 +1235,7 @@ function buildTimelineEvent(
     const addUsd =
       sizeUsd > 0 ? sizeUsd : Number(e.addUsd ?? e.add_usd ?? e.dcaUsd ?? e.dca_usd ?? 0);
     const sz = addUsd > 0 ? addUsd : sizeUsd;
-    const usdStr = sz >= 1000 ? `$${(sz / 1000).toFixed(1)}k` : `$${sz.toFixed(0)}`;
-    const label = `DCA · докупка ${usdStr} @ ${fmtSignedPct(triggerPct)}`;
+    const label = `DCA · уровень ${fmtSignedPct(triggerPct)}`;
     return {
       ts,
       kind: 'dca_add',
@@ -1304,16 +1301,10 @@ function buildTimelineEvent(
     const rfClose = Number(e.remainingFraction ?? 0);
     const closeSoldCost =
       tiuClose > 0 && Number.isFinite(rfClose) && rfClose > 0 ? tiuClose * rfClose : null;
-    const closeUsdLbl =
-      closeSoldCost != null && closeSoldCost > 0
-        ? closeSoldCost >= 1000
-          ? `$${(closeSoldCost / 1000).toFixed(1)}k`
-          : `$${closeSoldCost.toFixed(0)}`
-        : null;
     return {
       ts,
       kind: 'close',
-      label: `Close · ${exitReason}${closeUsdLbl ? ` · выход ${closeUsdLbl} (cost)` : ''}`,
+      label: `Close · ${exitReason}`,
       mcUsd: closeMc,
       spotPxUsd: closeSpot,
       sizePct: null,

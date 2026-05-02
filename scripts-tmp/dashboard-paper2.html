@@ -254,27 +254,24 @@
                 <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    Плашка USD: докупка — сумма ноги; частичная продажа по лестнице — выручка. Доля в % — в тексте строки. Для ступеней лестницы прибыль по шагу не дублируем — смотрите общий PnL позиции справа.
+                    После mcap — сумма ноги (вход/DCA), выручка по лестнице (≈) или объём закрытого куска (−). PnL по шагу лестницы не показываем.
                   </div>
                   <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
-                    <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3 leading-snug">
+                    <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
-                      <div class="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                        <span
-                          class="inline-flex items-center rounded-md px-2 py-0.5 text-base sm:text-[15px] font-black tabular-nums tracking-tight border leading-none"
-                          :class="timelineUsdBadgeWrapClass(ev)"
-                          x-show="timelineUsdAmount(ev)"
-                          x-text="timelineUsdCol(ev)"></span>
-                        <span class="min-w-0" :class="timelineColor(ev)">
-                          <span class="font-medium" x-text="ev.label"></span>
+                      <span class="flex-1 min-w-0" :class="timelineColor(ev)">
+                        <span class="font-medium" x-text="ev.label"></span>
+                        <span class="text-slate-500"> · </span>
+                        <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
+                        <span x-show="timelineUsdTail(ev)">
                           <span class="text-slate-500"> · </span>
-                          <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
-                          <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
-                            <span class="text-slate-500"> · </span>
-                            <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="'PnL ' + fmtUsdSigned(ev.pnlUsd)"></span>
-                          </span>
+                          <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
                         </span>
-                      </div>
+                        <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
+                          <span class="text-slate-500"> · </span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="'PnL ' + fmtUsdSigned(ev.pnlUsd)"></span>
+                        </span>
+                      </span>
                     </div>
                   </template>
                   <div x-show="!(o.timeline || []).length" class="text-slate-500">no events recorded</div>
@@ -327,27 +324,24 @@
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-sky-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    Плашка USD: докупка — сумма ноги; частичная продажа по лестнице — выручка. Доля в % — в тексте строки. Для ступеней лестницы прибыль по шагу не дублируем — итог по сделке в шапке карточки.
+                    После mcap — сумма ноги (вход/DCA), выручка по лестнице (≈) или объём закрытого куска (−). PnL по шагу лестницы не показываем.
                   </div>
                   <template x-for="(ev, i) in (c.timeline || [])" :key="(ev.ts || '') + '-' + i">
-                    <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3 leading-snug">
+                    <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
-                      <div class="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                        <span
-                          class="inline-flex items-center rounded-md px-2 py-0.5 text-base sm:text-[15px] font-black tabular-nums tracking-tight border leading-none"
-                          :class="timelineUsdBadgeWrapClass(ev)"
-                          x-show="timelineUsdAmount(ev)"
-                          x-text="timelineUsdCol(ev)"></span>
-                        <span class="min-w-0" :class="timelineColor(ev)">
-                          <span class="font-medium" x-text="ev.label"></span>
+                      <span class="flex-1 min-w-0" :class="timelineColor(ev)">
+                        <span class="font-medium" x-text="ev.label"></span>
+                        <span class="text-slate-500"> · </span>
+                        <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
+                        <span x-show="timelineUsdTail(ev)">
                           <span class="text-slate-500"> · </span>
-                          <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
-                          <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
-                            <span class="text-slate-500"> · </span>
-                            <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="'PnL ' + fmtUsdSigned(ev.pnlUsd)"></span>
-                          </span>
+                          <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
                         </span>
-                      </div>
+                        <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
+                          <span class="text-slate-500"> · </span>
+                          <span class="font-medium" :class="(ev.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="'PnL ' + fmtUsdSigned(ev.pnlUsd)"></span>
+                        </span>
+                      </span>
                     </div>
                   </template>
                   <div x-show="!(c.timeline || []).length" class="text-slate-500">no events recorded</div>
@@ -489,22 +483,14 @@
           if (xu) return Number(xu[1]);
           return null;
         },
-        timelineUsdCol(ev) {
+        /** USD tail after mcap: open/DCA plain, ladder ≈proceeds, close −cost slice. */
+        timelineUsdTail(ev) {
           const a = this.timelineUsdAmount(ev);
-          if (!(a > 0)) return '—';
+          if (!(a > 0)) return '';
           const u = this.fmtUsd(a);
           if (ev.kind === 'partial_sell') return '≈' + u;
           if (ev.kind === 'close') return '−' + u;
           return u;
-        },
-        timelineUsdBadgeWrapClass(ev) {
-          if (ev.kind === 'partial_sell') {
-            return 'bg-emerald-500/18 border-emerald-500/45 text-emerald-100';
-          }
-          if (ev.kind === 'close') {
-            return 'bg-rose-500/18 border-rose-500/45 text-rose-100';
-          }
-          return 'bg-sky-500/18 border-sky-500/45 text-sky-100';
         },
         entryMcapOk(o) {
           const x = Number(o?.entryMcapAtBuyUsd ?? 0);
