@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PaperTrader · 3 strategies</title>
+  <title>PaperTrader · 4 strategies</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
@@ -39,8 +39,8 @@
   <main class="max-w-[min(100%,96rem)] w-full mx-auto px-4 sm:px-6 py-6 space-y-7">
     <header class="flex items-center justify-between gap-3 flex-wrap">
       <div>
-        <h1 class="text-3xl font-black tracking-tight text-white">PaperTrader · 3 strategies</h1>
-        <p class="text-sm text-slate-300 mt-1">refresh 15s · position $100 each · advisor every 4h · digest daily</p>
+        <h1 class="text-3xl font-black tracking-tight text-white">PaperTrader · 4 strategies</h1>
+        <p class="text-sm text-slate-300 mt-1">refresh 15s · columns fixed: Live Oscar → Paper Oscar → Deep Runner → Dno · advisor every 4h · digest daily</p>
       </div>
       <div class="text-sm text-slate-300">updated: <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
     </header>
@@ -78,10 +78,10 @@
       </div>
     </section>
 
-    <!-- Three strategy tiles use full width (no lg:5-col squeeze). -->
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
+    <!-- Four strategy tiles — order fixed server-side (see DASHBOARD_PANEL_ORDER). -->
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 lg:gap-6">
       <template x-for="s in (state.strategies || [])" :key="s.strategyId">
-        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition"
+        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition select-none"
              :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
              @click="selected = s.strategyId">
           <div class="flex items-center justify-between gap-2">
@@ -136,7 +136,7 @@
           </div>
         </div>
       </template>
-      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 md:col-span-3">
+      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 md:col-span-2 xl:col-span-4">
         No strategies yet — collectors warming up.
       </div>
     </section>
@@ -367,6 +367,13 @@
 
   <script>
     const STRATEGY_META = {
+      'live-oscar': {
+        label: 'Live Oscar',
+        tag: 'live',
+        oneLiner: 'Реальное исполнение (отдельный журнал и кошелёк); параметры только из baseline ENV, не из канарейки pt1-oscar.',
+        details:
+          'Источник данных для этой колонки: JSONL live-oscar (`DASHBOARD_LIVE_OSCAR_JSONL` / `data/live/pt1-oscar-live.jsonl`), не файл paper Oscar.\n\nОперационная модель:\n• Экспериментальные правки параметров — только на **Paper Oscar** (`pt1-oscar`).\n• **Live Oscar** использует отдельный **baseline** профиль ENV; промоут изменений из канарейки — только вручную после проверки PnL.\n• Запрещено подключать один и тот же «живой» include/env-файл к обоим процессам без явного решения (см. W8.0-p4).\n\nДашборд: колонки фиксированы слева направо — Live Oscar, Paper Oscar, Deep Runner, Dno; порядок не зависит от PnL.',
+      },
       pt1_smart_lottery: {
         label: 'Smart Lottery',
         tag: 'lottery',
@@ -615,7 +622,11 @@
           try {
             const j = await fetch('/api/paper2', { credentials: 'include' }).then((r) => r.json());
             this.state = j;
-            if (!this.selected && (j.strategies || []).length) this.selected = j.strategies[0].strategyId;
+            if (!this.selected && (j.strategies || []).length) {
+              const pref = 'live-oscar';
+              const ids = (j.strategies || []).map((x) => x.strategyId);
+              this.selected = ids.includes(pref) ? pref : j.strategies[0].strategyId;
+            }
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }
         },
