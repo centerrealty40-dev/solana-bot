@@ -192,8 +192,8 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
-        PAPER_SAFETY_CHECK_ENABLED: '0',
-        PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_SAFETY_CHECK_ENABLED: '1',
+        PAPER_PRIORITY_FEE_ENABLED: '0',
         PAPER_LIVE_MCAP_TTL_MS: '30000',
 
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
@@ -268,6 +268,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
+        PAPER_SIM_AUDIT_ENABLED: '0',
 
         /* W7.6 impulse confirm — default off; rolling 6h QN kill + Telegram at IMPULSE_QN_ROLLING_MAX_CREDITS */
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
@@ -277,16 +278,9 @@ module.exports = {
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
 
-        /* W7.5 §10.5 — full rollout (liquidity drain watch) */
-        PAPER_LIQ_WATCH_ENABLED: '1',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
-        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
-        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
-        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
-        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
-        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
-        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
-        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+        /** W7.5 — только у `live-oscar` (экономия RPC на paper). */
+        PAPER_LIQ_WATCH_ENABLED: '0',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
       },
     },
     {
@@ -315,7 +309,7 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
         PAPER_SAFETY_CHECK_ENABLED: '1',
-        PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_PRIORITY_FEE_ENABLED: '0',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
         PAPER_PRIORITY_FEE_MAX_AGE_MS: '600000',
         PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS: '2500',
@@ -401,6 +395,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
+        PAPER_SIM_AUDIT_ENABLED: '0',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
@@ -409,16 +404,9 @@ module.exports = {
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
 
-        /* W7.5 §10.5 — full rollout (pt1-oscar) */
-        PAPER_LIQ_WATCH_ENABLED: '1',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
-        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
-        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
-        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
-        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
-        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
-        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
-        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+        /** W7.5 — только у `live-oscar`. */
+        PAPER_LIQ_WATCH_ENABLED: '0',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
       },
     },
     {
@@ -438,14 +426,96 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         /**
-         * Paper Oscar core env: dip lane + dry_run off so gates run (W8.0-p4).
-         * Доп. `PAPER_*` (лимиты, impulse, liq-watch, …) — через серверный `.env` / `LIVE_INHERIT_ENV_FILE`
-         * при полном паритете с `pt1-oscar`; **W7.4 pre-entry** ниже зафиксирован в репо (I1 RELEASE_OPERATING_MODEL).
+         * Paper-слой = паритет с `pt1-oscar` (W7.2 / holders / W7.6 / W7.4).
+         * W7.3 priority fee, W7.5 liq-watch, W7.8 sim-audit — **только** этот процесс (на pt1-* выкл.).
          */
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar',
+        /** Unused file — live-oscar never writes paper JSONL (P4-I1). */
+        PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
+        PAPER_HEARTBEAT_INTERVAL_MS: '30000',
+        PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        PAPER_TRACK_INTERVAL_MS: '30000',
+        PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Same Jupiter quote gates as `pt1-oscar` — общий discovery в `papertrader/main.ts` до live adapter. */
+        PAPER_POSITION_USD: '100',
+        PAPER_SAFETY_CHECK_ENABLED: '1',
+        PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_PRIORITY_FEE_TICKER_MS: '60000',
+        PAPER_PRIORITY_FEE_MAX_AGE_MS: '600000',
+        PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS: '2500',
+        PAPER_PRIORITY_FEE_PERCENTILE: 'p75',
+        PAPER_PRIORITY_FEE_TARGET_CU: '200000',
+        PAPER_PRIORITY_FEE_CACHE_PATH: path.join(root, 'data/priority-fee-cache-live-oscar.json'),
+        PAPER_LIVE_MCAP_TTL_MS: '30000',
+
+        PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
+        PAPER_ENABLE_MIGRATION_LANE: 'false',
+        PAPER_ENABLE_POST_LANE: 'true',
+        PAPER_POST_MIN_AGE_MIN: '120',
+        PAPER_POST_MAX_AGE_MIN: '0',
+        PAPER_POST_MIN_LIQ_USD: '25000',
+        PAPER_POST_MIN_VOL_5M_USD: '10000',
+        PAPER_POST_MIN_BUYS_5M: '4',
+        PAPER_POST_MIN_SELLS_5M: '3',
+        PAPER_POST_MIN_BS: '0.98',
+        PAPER_MIN_HOLDER_COUNT: '1500',
+
+        PAPER_DIP_LOOKBACK_MIN: '120',
+        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
+        PAPER_DIP_MIN_DROP_PCT: '-15',
+        PAPER_DIP_MAX_DROP_PCT: '-50',
+        PAPER_DIP_MIN_IMPULSE_PCT: '12',
+        PAPER_DIP_MIN_AGE_MIN: '0',
+        PAPER_DIP_COOLDOWN_MIN: '120',
+        PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+
+        PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
+        PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+
+        PAPER_DCA_LEVELS: '-7:0.3',
+        PAPER_DCA_KILLSTOP: '-0.14',
+        PAPER_TP_LADDER: '0.10:0.50,0.20:1.0',
+        PAPER_TP_X: '100',
+        PAPER_SL_X: '0',
+        PAPER_TRAIL_MODE: 'ladder_retrace',
+        PAPER_TRAIL_DROP: '0.10',
+        PAPER_TRAIL_TRIGGER_X: '1.10',
+        PAPER_TIMEOUT_HOURS: '12',
+        PAPER_PEAK_LOG_STEP_PCT: '1',
+
+        PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
+        PAPER_DIP_REQUIRE_WHALE_TRIGGER: '0',
+        PAPER_DIP_LARGE_SELL_USD: '3000',
+        PAPER_DIP_RECENT_LOOKBACK_MIN: '10',
+        PAPER_DIP_CAPITULATION_PCT: '0.7',
+        PAPER_DIP_WHALE_SILENCE_MIN: '10',
+        PAPER_DIP_GROUP_SELL_USD: '5000',
+        PAPER_DIP_GROUP_MIN_SELLERS: '2',
+        PAPER_DIP_GROUP_DUMP_PCT: '0.4',
+        PAPER_DIP_BLOCK_CREATOR_DUMP: '1',
+        PAPER_DIP_CREATOR_DUMP_LOOKBACK_MIN: '20',
+        PAPER_DIP_CREATOR_DUMP_MIN_PCT: '0.05',
+        PAPER_DIP_CREATOR_DUMP_MAX_PCT: '0.6',
+        PAPER_DIP_DCA_PRED_MIN_SELLS_24H: '4',
+        PAPER_DIP_DCA_PRED_MIN_INTERVAL_MIN: '30',
+        PAPER_DIP_DCA_PRED_MIN_CHUNK_USD: '3000',
+        PAPER_DIP_DCA_AGGR_MIN_SELLS_24H: '6',
+        PAPER_DIP_DCA_AGGR_MAX_INTERVAL_MIN: '15',
+
+        PAPER_HOLDERS_LIVE_ENABLED: '1',
+        PAPER_HOLDERS_USE_QN_ADDON: '0',
+        PAPER_HOLDERS_TTL_MS: '90000',
+        PAPER_HOLDERS_NEG_TTL_MS: '15000',
+        PAPER_HOLDERS_MAX_PER_TICK: '10',
+        PAPER_HOLDERS_TIMEOUT_MS: '4000',
+        PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
+        PAPER_HOLDERS_ON_FAIL: 'db_fallback',
+        PAPER_HOLDERS_DB_WRITEBACK: '1',
+        PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
+        QN_FEATURE_BUDGET_HOLDERS: '10000000',
+
         PAPER_PRICE_VERIFY_ENABLED: '1',
         PAPER_PRICE_VERIFY_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_USE_JUPITER_PRICE: '0',
@@ -455,18 +525,39 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
-        /** Unused file — live-oscar never writes paper JSONL (P4-I1); path must exist only for config defaults. */
-        PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
-        /** W8.0 Phase 0 — торговля выкл. до go/no-go и фаз 1–6; только heartbeat в JSONL. */
+
+        PAPER_SIM_AUDIT_ENABLED: '1',
+        PAPER_SIM_SAMPLE_PCT: '5',
+        PAPER_SIM_MAX_WALL_MS: '8000',
+        PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_SIM_USE_JUPITER_BUILD: '1',
+        PAPER_SIM_CREDS_PER_CALL: '30',
+        PAPER_SIM_STRICT_BUDGET: '1',
+
+        PAPER_IMPULSE_CONFIRM_ENABLED: '1',
+        PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
+
+        PAPER_LIQ_WATCH_ENABLED: '1',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
+        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
+        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
+        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
+        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
+        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
+        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
+        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+
         LIVE_STRATEGY_ENABLED: '0',
         LIVE_EXECUTION_MODE: 'dry_run',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
-        /** Guard: must differ from LIVE_TRADES_PATH (Oscar paper journal). */
         LIVE_PARITY_PAPER_TRADES_PATH: path.join(root, 'data/paper2/pt1-oscar.jsonl'),
-        /** Phase 3 sim defaults (override in server env if needed); SA_RPC_HTTP_URL inherited from dotenv / shell. */
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
@@ -501,7 +592,7 @@ module.exports = {
         PAPER_SNAPSHOT_CANDIDATE_LIMIT: '900',
         PAPER_DISCOVERY_REEVAL_SEC: '30',
         PAPER_SAFETY_CHECK_ENABLED: '1',
-        PAPER_PRIORITY_FEE_ENABLED: '1',
+        PAPER_PRIORITY_FEE_ENABLED: '0',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
         PAPER_PRIORITY_FEE_MAX_AGE_MS: '600000',
         PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS: '2500',
@@ -587,6 +678,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
+        PAPER_SIM_AUDIT_ENABLED: '0',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         /** PG-импульс по паре может закрыть dip-windows без классического окна (см. impulse-confirm + dip-clones). */
@@ -601,16 +693,9 @@ module.exports = {
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
 
-        /* W7.5 §10.5 — full rollout (pt1-dno) */
-        PAPER_LIQ_WATCH_ENABLED: '1',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
-        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
-        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
-        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
-        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
-        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
-        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
-        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+        /** W7.5 — только у `live-oscar`. */
+        PAPER_LIQ_WATCH_ENABLED: '0',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
       },
     },
   ],

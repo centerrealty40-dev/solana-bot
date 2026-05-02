@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.1] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.1`.
+
+### Изменено
+
+- **RPC / QN нагрузка:** **W7.3** priority fee, **W7.5** liq-watch и **W7.8** paper sim-audit включены **только** у PM2 **`live-oscar`**; у **`pt1-diprunner`**, **`pt1-oscar`**, **`pt1-dno`** выключены (`PAPER_PRIORITY_FEE_ENABLED=0`, `PAPER_LIQ_WATCH_ENABLED=0`, `PAPER_SIM_AUDIT_ENABLED=0`).
+- **W7.2 safety** включён и у **`pt1-diprunner`** (паритет с остальными тремя по «тяжёлому» pre-entry контуру).
+- **`live-oscar`:** paper-слой выровнен с **`pt1-oscar`** (интервалы, post/dip/DCA, holders, impulse, W7.4); отдельный кеш **`priority-fee-cache-live-oscar.json`**; **`PAPER_SIM_AUDIT`** канарейка **5%** семпла.
+
+### Откат
+
+- `VERSION` **`1.11.0`**; восстановить прежние флаги в **`ecosystem.config.cjs`** для четырёх приложений; **`pm2 reload ecosystem.config.cjs --update-env`**.
+
+---
+
 ## [1.11.0] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.0`.
