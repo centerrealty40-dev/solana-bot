@@ -457,3 +457,17 @@ export type PriceVerifyVerdict =
         | 'parse-error';
       ts: number;
     };
+
+/** W7.8 — on-chain `simulateTransaction` audit (Jupiter-unsigned build + QN). Stamped on `open` when enabled / sampled. */
+export type SimAuditStamp =
+  | { kind: 'skipped'; reason: string; ts: number; wallMs?: number }
+  | {
+      kind: 'ok' | 'err';
+      ts: number;
+      wallMs: number;
+      qnCredits: number;
+      err?: { code: number; message: string } | null;
+      unitsConsumed?: number | null;
+      buildKind: 'jupiter' | 'disabled';
+      notes?: string;
+    };

@@ -255,6 +255,15 @@ const ConfigSchema = z.object({
    * Полный impulse (QN/Jupiter) по-прежнему в executor; Orca — только один из путей ончейн-спота.
    */
   entryImpulsePgBypassesDip: z.boolean().default(false),
+
+  /** W7.8 — JSONL `simAudit` on sampled opens (Jupiter build + `simulateTransaction` via `qnCall` feature `sim`). */
+  simAuditEnabled: z.boolean().default(false),
+  simSamplePct: z.coerce.number().int().min(0).max(100).default(0),
+  simMaxWallMs: z.coerce.number().int().min(2000).max(60_000).default(8000),
+  simBuildTimeoutMs: z.coerce.number().int().min(1000).max(30_000).default(5000),
+  simUseJupiterBuild: z.boolean().default(true),
+  simCredsPerCall: z.coerce.number().int().min(10).max(200).default(30),
+  simStrictBudget: z.boolean().default(true),
 }).transform((data) => {
   const { dipLookbackWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
@@ -471,6 +480,27 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     impulseQnCreditsPerCall: process.env.PAPER_IMPULSE_QN_CREDITS_PER_CALL,
     impulseJupiterTimeoutMs: process.env.PAPER_IMPULSE_JUPITER_TIMEOUT_MS,
     entryImpulsePgBypassesDip: envBool(process.env.PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP, false),
+    simAuditEnabled: envBool(process.env.PAPER_SIM_AUDIT_ENABLED, false),
+    simSamplePct: (() => {
+      const n = parseInt(String(process.env.PAPER_SIM_SAMPLE_PCT ?? '0'), 10);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.min(100, n);
+    })(),
+    simMaxWallMs: (() => {
+      const n = Number(process.env.PAPER_SIM_MAX_WALL_MS ?? 8000);
+      return Number.isFinite(n) ? Math.max(2000, Math.min(60_000, Math.floor(n))) : 8000;
+    })(),
+    simBuildTimeoutMs: (() => {
+      const n = Number(process.env.PAPER_SIM_BUILD_TIMEOUT_MS ?? 5000);
+      return Number.isFinite(n) ? Math.max(1000, Math.min(30_000, Math.floor(n))) : 5000;
+    })(),
+    simUseJupiterBuild: process.env.PAPER_SIM_USE_JUPITER_BUILD !== '0',
+    simCredsPerCall: (() => {
+      const n = parseInt(String(process.env.PAPER_SIM_CREDS_PER_CALL ?? '30'), 10);
+      if (!Number.isFinite(n) || n < 10) return 30;
+      return Math.min(200, n);
+    })(),
+    simStrictBudget: process.env.PAPER_SIM_STRICT_BUDGET !== '0',
   });
 
   if (!parsed.success) {

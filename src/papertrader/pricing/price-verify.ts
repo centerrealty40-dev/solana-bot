@@ -17,9 +17,48 @@ const log = child('price-verify');
  */
 const QUOTE_API_BASE_DEFAULT = 'https://lite-api.jup.ag/swap/v1/quote';
 
-function quoteApiBase(): string {
+export function quoteApiBase(): string {
   const v = process.env.PAPER_PRICE_VERIFY_QUOTE_URL?.trim();
   return v && v.length > 0 ? v : QUOTE_API_BASE_DEFAULT;
+}
+
+/**
+ * W7.8 / W7.4 — raw GET `/swap/v1/quote` JSON (for Jupiter `/swap` body `quoteResponse`).
+ * Same params as jupiterQuoteBuyPriceUsd/verifyEntryPrice.
+ */
+export async function fetchJupiterBuyQuoteResponse(args: {
+  mint: string;
+  sizeUsd: number;
+  solUsd: number;
+  slippageBps: number;
+  timeoutMs: number;
+}): Promise<Record<string, unknown> | null> {
+  const { mint, sizeUsd, solUsd, slippageBps, timeoutMs } = args;
+  if (!(solUsd > 0) || !(sizeUsd > 0)) return null;
+  const lamports = Math.max(1, Math.floor((sizeUsd / solUsd) * 1e9));
+  const url = new URL(quoteApiBase());
+  url.searchParams.set('inputMint', WRAPPED_SOL_MINT);
+  url.searchParams.set('outputMint', mint);
+  url.searchParams.set('amount', String(lamports));
+  url.searchParams.set('slippageBps', String(slippageBps));
+  url.searchParams.set('onlyDirectRoutes', 'false');
+  url.searchParams.set('asLegacyTransaction', 'false');
+  const ac = new AbortController();
+  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
+  try {
+    const resp = await fetch(url.toString(), {
+      method: 'GET',
+      signal: ac.signal,
+      headers: { accept: 'application/json' },
+    });
+    if (!resp.ok) return null;
+    const j = (await resp.json()) as unknown;
+    return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(tt);
+  }
 }
 
 interface JupiterQuoteResponse {

@@ -15,6 +15,7 @@ import {
 } from './pricing.js';
 import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
 import { verifyEntryPrice } from './pricing/price-verify.js';
+import { runOpenSimAudit } from './pricing/sim-audit.js';
 import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impulse-confirm.js';
 import {
   evaluatedAtMap,
@@ -31,7 +32,14 @@ import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from '.
 import { trackerTick, type TrackerStats } from './executor/tracker.js';
 import { reconcileOpenTradeDcaFromLegs } from './executor/dca-state.js';
 import { loadStore } from './executor/store-restore.js';
-import type { ClosedTrade, ExitReason, OpenTrade, PriceVerifyVerdict, SafetyVerdict } from './types.js';
+import type {
+  ClosedTrade,
+  ExitReason,
+  OpenTrade,
+  PriceVerifyVerdict,
+  SafetyVerdict,
+  SimAuditStamp,
+} from './types.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
 
@@ -330,6 +338,22 @@ export async function main(): Promise<void> {
         }
 
         const pfQuoteOpen = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+
+        let simAudit: SimAuditStamp | null = null;
+        if (cfg.simAuditEnabled) {
+          try {
+            simAudit = await runOpenSimAudit({
+              cfg,
+              mint: ot.mint,
+              entryTs: ot.entryTs,
+              solUsd: getSolUsd() ?? 0,
+            });
+          } catch (e) {
+            logger.warn({ err: (e as Error)?.message, mint: ot.mint }, 'runOpenSimAudit threw');
+            simAudit = { kind: 'skipped', reason: 'exception', ts: Date.now(), wallMs: 0 };
+          }
+        }
+
         appendEvent({
           kind: 'open',
           mint: ot.mint,
@@ -358,6 +382,7 @@ export async function main(): Promise<void> {
           priorityFee: pfQuoteOpen,
           priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
           impulseConfirm: impulseConfirm ?? undefined,
+          ...(simAudit != null ? { simAudit } : {}),
         });
 
         open.set(ot.mint, ot);
