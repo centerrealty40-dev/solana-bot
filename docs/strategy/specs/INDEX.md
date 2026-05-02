@@ -9,6 +9,7 @@
 - [`../release/RELEASE_OPERATING_MODEL.md`](../release/RELEASE_OPERATING_MODEL.md) — **обязательный** регламент изменений, SSOT, рестарт/replay, деплой, чеклист.
 - [`../release/VERSION`](../release/VERSION) — текущая версия продукта (semver).
 - [`../release/CHANGELOG.md`](../release/CHANGELOG.md) — что вошло в каждую версию и как откатиться.
+- [`../release/PARALLEL_WORKFLOW.md`](../release/PARALLEL_WORKFLOW.md) — как работать вдвоём/втроём агентов и не ломать деплой.
 
 ## Принципы спецификаций
 
