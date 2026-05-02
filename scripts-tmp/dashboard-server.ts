@@ -1265,9 +1265,20 @@ function buildTimelineEvent(
       Number.isFinite(ladderPnlPct) && ladderPnlPct !== 0
         ? `${ladderPnlPct < 0 ? '−' : ''}${Math.abs(ladderPnlPct).toFixed(0)}%`
         : '';
-    const label = ladderPctPlain
-      ? `${niceReason} · ${sellPct}% от остатка позиции при ${ladderPctPlain} PnL`
-      : `${niceReason} · ${sellPct}% от остатка позиции`;
+    const stepIdxRaw = Number(e.ladderStepIndex ?? NaN);
+    const rungsTotal = Number(e.ladderRungsTotal ?? NaN);
+    const stepLabel =
+      reason === 'TP_LADDER' && Number.isFinite(stepIdxRaw) && stepIdxRaw >= 0
+        ? Number.isFinite(rungsTotal) && rungsTotal > 0
+          ? `шаг ${Math.floor(stepIdxRaw) + 1}/${Math.floor(rungsTotal)}`
+          : `шаг ${Math.floor(stepIdxRaw) + 1}`
+        : '';
+    const label =
+      stepLabel && ladderPctPlain
+        ? `${niceReason} · ${stepLabel}: ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+        : ladderPctPlain
+          ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+          : `${niceReason} · ${sellPct}% остатка`;
     return {
       ts,
       kind: 'partial_sell',

@@ -11,7 +11,10 @@ const ladder: TpLadderLevel[] = [
 ];
 
 function ot(levels: number[]): OpenTrade {
-  return { ladderUsedLevels: new Set(levels) } as OpenTrade;
+  return {
+    ladderUsedLevels: new Set(levels),
+    ladderUsedIndices: new Set<number>(),
+  } as OpenTrade;
 }
 
 describe('ladderRetraceTriggered', () => {
@@ -29,5 +32,14 @@ describe('ladderRetraceTriggered', () => {
     expect(ladderRetraceTriggered(ot([0.1, 0.2]), ladder, 1.11)).toBe(false);
     expect(ladderRetraceTriggered(ot([0.1, 0.2]), ladder, 1.1)).toBe(true);
     expect(ladderRetraceTriggered(ot([0.1, 0.2]), ladder, 1.09)).toBe(true);
+  });
+
+  it('ladderUsedIndices without legacy floats still counts toward retrace', () => {
+    const hitFirst = {
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set([0]),
+    } as OpenTrade;
+    expect(ladderRetraceTriggered(hitFirst, ladder, 1.05)).toBe(false);
+    expect(ladderRetraceTriggered(hitFirst, ladder, 1.0)).toBe(true);
   });
 });

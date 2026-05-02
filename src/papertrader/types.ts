@@ -63,8 +63,10 @@ export interface OpenTrade {
   remainingFraction: number;
   /** DCA levels (in pct) already triggered (-7, -15, ...). */
   dcaUsedLevels: Set<number>;
-  /** TP-ladder pnl levels already used (0.05, 0.10, ...). */
+  /** TP-ladder pnl levels already used (0.05, 0.10, …) — legacy; kept for restore / JSONL without step index. */
   ladderUsedLevels: Set<number>;
+  /** 0-based indices into the sorted `PAPER_TP_LADDER` rungs — canonical «already fired» marker. */
+  ladderUsedIndices: Set<number>;
   /** W7.5 — pool/pair address from discovery snapshot (liquidity drain watch). */
   pairAddress: string | null;
   /** W7.5 — pool liquidity USD at entry (baseline for drain detection). */

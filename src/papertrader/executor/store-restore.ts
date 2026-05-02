@@ -1,15 +1,10 @@
 import fs from 'node:fs';
 import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
-
-/** Align with tracker ladder level comparison (avoid duplicate TP rungs after restart). */
-const LADDER_LEVEL_EPS = 1e-9;
+import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
-  for (const u of used) {
-    if (Math.abs(u - pnlPct) <= LADDER_LEVEL_EPS) return;
-  }
-  used.add(pnlPct);
+  ladderPnlThresholdMark(used, pnlPct);
 }
 
 export interface RestoreState {
@@ -80,6 +75,11 @@ function rehydrateOpen(o: Partial<OpenTrade> & { mint: string }): OpenTrade | nu
       ladderUsedLevels: new Set<number>(
         Array.isArray(o.ladderUsedLevels) ? (o.ladderUsedLevels as number[]) : [],
       ),
+      ladderUsedIndices: new Set<number>(
+        Array.isArray((o as unknown as { ladderUsedIndices?: number[] }).ladderUsedIndices)
+          ? (o as unknown as { ladderUsedIndices: number[] }).ladderUsedIndices
+          : [],
+      ),
       pairAddress:
         o.pairAddress != null && String(o.pairAddress).trim() ? String(o.pairAddress) : null,
       entryLiqUsd:
@@ -110,6 +110,10 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
 
   const reason = String(raw.reason ?? '');
+  const stepIdx = Number(raw.ladderStepIndex ?? NaN);
+  if (reason === 'TP_LADDER' && Number.isFinite(stepIdx) && stepIdx >= 0) {
+    ot.ladderUsedIndices.add(Math.floor(stepIdx));
+  }
   const lp = Number(raw.ladderPnlPct ?? NaN);
   if (reason === 'TP_LADDER' && Number.isFinite(lp)) {
     ladderRememberLevel(ot.ladderUsedLevels, lp);

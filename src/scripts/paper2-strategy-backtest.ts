@@ -18,6 +18,10 @@ import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../papertrader/
 import { loadPaperTraderConfig, parseDcaLevels, parseTpLadder } from '../papertrader/config.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../papertrader/costs.js';
 import type { ClosedTrade, DexId, ExitReason, Lane, OpenTrade, PartialSell, PositionLeg } from '../papertrader/types.js';
+import {
+  ladderStepOrThresholdTaken,
+  markLadderStepFired,
+} from '../papertrader/executor/tp-ladder-state.js';
 
 const EMPTY_METRICS: OpenTrade['entryMetrics'] = {
   uniqueBuyers: 0,
@@ -159,6 +163,7 @@ function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
     remainingFraction: 1,
     dcaUsedLevels: new Set(),
     ladderUsedLevels: new Set(),
+    ladderUsedIndices: new Set(),
     pairAddress,
     entryLiqUsd,
   };
@@ -277,8 +282,9 @@ function simStep(args: {
 
   /** Ladder threshold matches live `tracker.ts`: uses `xAvg` from tick start (before DCA), while sizing uses post-DCA `ot`. */
   if (tpLadder.length > 0 && ot.remainingFraction > 0) {
-    for (const lvl of tpLadder) {
-      if (ot.ladderUsedLevels.has(lvl.pnlPct)) continue;
+    for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
+      const lvl = tpLadder[stepIdx]!;
+      if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
       if (xAvg - 1 >= lvl.pnlPct) {
         const sellFraction = Math.min(1, lvl.sellFraction);
         const marketSell = curMetric;
@@ -304,7 +310,7 @@ function simStep(args: {
         };
         ot.partialSells.push(ps);
         ot.remainingFraction *= 1 - sellFraction;
-        ot.ladderUsedLevels.add(lvl.pnlPct);
+        markLadderStepFired(ot, stepIdx, lvl.pnlPct);
       }
     }
   }
@@ -351,6 +357,7 @@ function deepCloneOpen(ot: OpenTrade): OpenTrade {
     partialSells: ot.partialSells.map((p) => ({ ...p })),
     dcaUsedLevels: new Set(ot.dcaUsedLevels),
     ladderUsedLevels: new Set(ot.ladderUsedLevels),
+    ladderUsedIndices: new Set(ot.ladderUsedIndices),
     entryMetrics: { ...ot.entryMetrics },
   };
 }

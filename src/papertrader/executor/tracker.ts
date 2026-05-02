@@ -18,41 +18,19 @@ import {
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import { appendEvent } from '../store-jsonl.js';
 import { fetchContextSwaps } from './context-swaps.js';
+import {
+  collectFiredLadderPnls,
+  ladderRetraceTriggered,
+  ladderStepOrThresholdTaken,
+  markLadderStepFired,
+} from './tp-ladder-state.js';
 import { child } from '../../core/logger.js';
 
 const log = child('tracker');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const LV_EPS = 1e-9;
-
-function ladderLevelTaken(levels: Set<number>, pnlPct: number): boolean {
-  for (const u of levels) {
-    if (Math.abs(u - pnlPct) <= LV_EPS) return true;
-  }
-  return false;
-}
-
-function ladderLevelMark(levels: Set<number>, pnlPct: number): void {
-  if (ladderLevelTaken(levels, pnlPct)) return;
-  levels.add(pnlPct);
-}
-
-/**
- * После частичных TP по ладдеру: если текущий PnL (доля) опустился до уровня предыдущей ступени
- * относительно самой высокой уже сработавшей ступени — закрываем весь остаток.
- */
-export function ladderRetraceTriggered(ot: OpenTrade, tpLadder: TpLadderLevel[], xAvg: number): boolean {
-  if (tpLadder.length === 0 || ot.ladderUsedLevels.size === 0) return false;
-  const sorted = [...tpLadder].sort((a, b) => a.pnlPct - b.pnlPct);
-  const fired = [...ot.ladderUsedLevels].sort((a, b) => a - b);
-  const highestFired = fired[fired.length - 1];
-  const idx = sorted.findIndex((l) => Math.abs(l.pnlPct - highestFired) < LV_EPS);
-  if (idx < 0) return false;
-  const prevThreshold = idx > 0 ? sorted[idx - 1].pnlPct : 0;
-  const curPnlFrac = xAvg - 1;
-  return curPnlFrac <= prevThreshold + LV_EPS;
-}
+export { ladderRetraceTriggered } from './tp-ladder-state.js';
 
 export interface TrackerStats {
   closed: Record<ExitReason, number>;
@@ -105,7 +83,7 @@ function buildExitContext(args: {
     peak > 0 && Number.isFinite(peak)
       ? +(((peak - closePnlPct) / peak) * 100).toFixed(2)
       : null;
-  const tpLadderHits = ot.ladderUsedLevels?.size ?? 0;
+  const tpLadderHits = collectFiredLadderPnls(ot, tpLadder).length;
   const tpLadderTotal = tpLadder.length;
   const dcaLegsAdded = Math.max(0, ot.legs.length - 1);
 
@@ -510,8 +488,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (tpLadder.length > 0 && ot.remainingFraction > 0) {
-      for (const lvl of tpLadder) {
-        if (ladderLevelTaken(ot.ladderUsedLevels, lvl.pnlPct)) continue;
+      for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
+        const lvl = tpLadder[stepIdx]!;
+        if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
         if (xAvg - 1 >= lvl.pnlPct) {
           const sellFraction = Math.min(1, lvl.sellFraction);
           const marketSell = curMetric;
@@ -544,7 +523,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           };
           ot.partialSells.push(ps);
           ot.remainingFraction *= 1 - sellFraction;
-          ladderLevelMark(ot.ladderUsedLevels, lvl.pnlPct);
+          markLadderStepFired(ot, stepIdx, lvl.pnlPct);
           const mcUsdLive_ps = await getLiveMcUsd(
             mint,
             ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
@@ -557,6 +536,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             price: effectiveSell,
             marketPrice: marketSell,
             sellFraction,
+            ladderStepIndex: stepIdx,
+            ladderRungsTotal: tpLadder.length,
             ladderPnlPct: lvl.pnlPct,
             reason: 'TP_LADDER',
             proceedsUsd,

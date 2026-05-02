@@ -543,7 +543,7 @@ export function parseDcaLevels(spec: string | undefined | null): DcaLevel[] {
 
 export function parseTpLadder(spec: string | undefined | null): TpLadderLevel[] {
   if (!spec) return [];
-  return spec
+  const parts = spec
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean)
@@ -552,6 +552,12 @@ export function parseTpLadder(spec: string | undefined | null): TpLadderLevel[] 
       return { pnlPct: pnl, sellFraction: frac };
     })
     .filter((l) => Number.isFinite(l.pnlPct) && Number.isFinite(l.sellFraction) && l.sellFraction > 0);
+  /** Stable combat order: ascending PnL threshold; duplicate thresholds keep last sellFraction from spec. */
+  const byPnl = new Map<number, TpLadderLevel>();
+  for (const l of parts) {
+    byPnl.set(l.pnlPct, l);
+  }
+  return [...byPnl.entries()].sort((a, b) => a[0] - b[0]).map(([, level]) => level);
 }
 
 export function parseFollowupOffsets(spec: string | undefined | null): number[] {
