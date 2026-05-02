@@ -15,6 +15,7 @@ import type {
   LiveOscarRuntimeBundle,
   LivePhase4BuyOpenContext,
 } from './phase4-types.js';
+import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -96,6 +97,7 @@ async function runSolToTokenPipeline(
       simulated: true,
       error: { message: reason },
     });
+    notifyLiveExecutionSimErr();
     return false;
   }
 
@@ -114,6 +116,7 @@ async function runSolToTokenPipeline(
       unitsConsumed: sim.unitsConsumed ?? null,
       error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
     });
+    notifyLiveExecutionSimErr();
     return false;
   }
 
@@ -124,8 +127,11 @@ async function runSolToTokenPipeline(
     simulated: true,
     unitsConsumed: sim.unitsConsumed ?? null,
   });
+  notifyLiveExecutionSimOk();
   return true;
 }
+
+export type LiveTokenToSolPipelineResult = { ok: boolean; wsolOutLamports?: bigint };
 
 async function runTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
@@ -137,17 +143,17 @@ async function runTokenToSolPipeline(
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
   },
-): Promise<boolean> {
-  if (!liveCfg.strategyEnabled) return false;
+): Promise<LiveTokenToSolPipelineResult> {
+  if (!liveCfg.strategyEnabled) return { ok: false };
   if (liveCfg.executionMode === 'dry_run') {
     appendLiveJsonlEvent({
       kind: 'execution_skip',
       reason: `dry_run:${args.intentKind}`,
       detail: args.mint.slice(0, 8),
     });
-    return false;
+    return { ok: false };
   }
-  if (liveCfg.executionMode !== 'simulate') return false;
+  if (liveCfg.executionMode !== 'simulate') return { ok: false };
 
   const raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
   if (raw == null) {
@@ -156,7 +162,7 @@ async function runTokenToSolPipeline(
       reason: 'token_amount_raw',
       detail: args.mint.slice(0, 8),
     });
-    return false;
+    return { ok: false };
   }
 
   const solUsd = getSolUsd() ?? 0;
@@ -196,8 +202,11 @@ async function runTokenToSolPipeline(
       simulated: true,
       error: { message: reason },
     });
-    return false;
+    notifyLiveExecutionSimErr();
+    return { ok: false };
   }
+
+  const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
 
   const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
   const sim = await liveSimulateSignedTransaction({
@@ -214,7 +223,8 @@ async function runTokenToSolPipeline(
       unitsConsumed: sim.unitsConsumed ?? null,
       error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
     });
-    return false;
+    notifyLiveExecutionSimErr();
+    return { ok: false };
   }
 
   appendLiveJsonlEvent({
@@ -224,7 +234,29 @@ async function runTokenToSolPipeline(
     simulated: true,
     unitsConsumed: sim.unitsConsumed ?? null,
   });
-  return true;
+  notifyLiveExecutionSimOk();
+  return { ok: true, wsolOutLamports: wsolOut ?? undefined };
+}
+
+function wsolOutLamportsFromSellQuote(q: Record<string, unknown>): bigint | null {
+  const out = q.outAmount;
+  if (typeof out === 'string' && /^\d+$/.test(out)) return BigInt(out);
+  return null;
+}
+
+/** Phase 5 capital rotation — same JSONL + consec hooks as tracker sells. */
+export async function executeLiveTokenToSolPipeline(
+  liveCfg: LiveOscarConfig,
+  args: {
+    mint: string;
+    symbol: string;
+    usdNotional: number;
+    priceUsdPerToken: number;
+    decimals: number;
+    intentKind: 'sell_partial' | 'sell_full';
+  },
+): Promise<LiveTokenToSolPipelineResult> {
+  return runTokenToSolPipeline(liveCfg, args);
 }
 
 function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
@@ -251,7 +283,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
       });
     },
     tryTokenToSolSell(args) {
-      return runTokenToSolPipeline(liveCfg, args);
+      return runTokenToSolPipeline(liveCfg, args).then((r) => r.ok);
     },
   };
 }

@@ -6,7 +6,7 @@ import {
   parseTpLadder,
 } from './config.js';
 import { configureStore, appendEvent } from './store-jsonl.js';
-import type { LiveOscarRuntimeBundle } from '../live/phase4-types.js';
+import type { LiveOscarRuntimeBundle, LiveOscarStrategyDeps } from '../live/phase4-types.js';
 import {
   refreshSolPrice,
   getSolUsd,
@@ -52,6 +52,8 @@ export interface PapertraderMainOptions {
   /** Live-oscar: do not read/write paper store path. */
   skipPaperJsonlStore?: boolean;
   liveOscar?: LiveOscarRuntimeBundle;
+  /** Phase 5 — bundle needs live open/closed maps; preferred over `liveOscar` when both set. */
+  liveOscarFactory?: (deps: LiveOscarStrategyDeps) => LiveOscarRuntimeBundle;
   onShutdown?: (signal: string) => void;
   onOscarHeartbeat?: (payload: {
     openPositions: number;
@@ -110,6 +112,22 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
   }
   const closed: ClosedTrade[] = [];
+
+  let liveOscarResolved = false;
+  let cachedLiveOscar: LiveOscarRuntimeBundle | undefined;
+  function resolveLiveOscar(): LiveOscarRuntimeBundle | undefined {
+    if (liveOscarResolved) return cachedLiveOscar;
+    liveOscarResolved = true;
+    if (opts?.liveOscarFactory) {
+      cachedLiveOscar = opts.liveOscarFactory({
+        getOpen: () => open,
+        getClosed: () => closed,
+      });
+      return cachedLiveOscar;
+    }
+    cachedLiveOscar = opts?.liveOscar;
+    return cachedLiveOscar;
+  }
 
   const startedAt = Date.now();
   const stats = {
@@ -215,7 +233,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           });
           continue;
         }
-        if (cfg.dryRun && !opts?.liveOscar) continue;
+        if (cfg.dryRun && !resolveLiveOscar()) continue;
 
         const dex = snapshotSourceToDex(d.source);
         const row = {
@@ -400,9 +418,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         ot.tokenDecimals = tokenDecimals;
 
-        if (opts?.liveOscar) {
-          const opened = await opts.liveOscar.discovery.tryExecuteBuyOpen({
-            liveCfg: opts.liveOscar.liveCfg,
+        const liveOscar = resolveLiveOscar();
+        if (liveOscar) {
+          const opened = await liveOscar.discovery.tryExecuteBuyOpen({
+            liveCfg: liveOscar.liveCfg,
             paperCfg: cfg,
             ot,
             decision: d,
@@ -496,7 +515,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           stats: trackerStats,
           btcCtx: getBtcContext,
           journalAppend,
-          livePhase4: opts?.liveOscar?.tracker,
+          livePhase4: resolveLiveOscar()?.tracker,
         }),
         45_000,
         'trackerTick',

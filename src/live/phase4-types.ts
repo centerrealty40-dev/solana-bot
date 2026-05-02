@@ -1,6 +1,6 @@
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import type { EvalDecision } from '../papertrader/discovery/dip-clones.js';
-import type { OpenTrade } from '../papertrader/types.js';
+import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
 
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */
@@ -35,4 +35,10 @@ export interface LiveOscarRuntimeBundle {
   liveCfg: LiveOscarConfig;
   discovery: LiveOscarPhase4Discovery;
   tracker: LiveOscarPhase4Tracker;
+}
+
+/** Paper Oscar maps — Phase 5 risk/capital (W8.0-p5). */
+export interface LiveOscarStrategyDeps {
+  getOpen: () => Map<string, OpenTrade>;
+  getClosed: () => ClosedTrade[];
 }

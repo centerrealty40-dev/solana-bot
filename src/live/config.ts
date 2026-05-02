@@ -13,6 +13,20 @@ function envBool(v: unknown, defaultVal: boolean): boolean {
   return defaultVal;
 }
 
+function optionalPositiveEnv(name: string): number | undefined {
+  const s = process.env[name]?.trim();
+  if (!s) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function optionalPositiveIntEnv(name: string): number | undefined {
+  const s = process.env[name]?.trim();
+  if (!s) return undefined;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) && n >= 1 ? n : undefined;
+}
+
 const LiveOscarConfigSchema = z
   .object({
     strategyEnabled: z.boolean(),
@@ -40,6 +54,21 @@ const LiveOscarConfigSchema = z
     liveSimCreditsPerCall: z.coerce.number().int().min(10).max(200),
     liveSimReplaceRecentBlockhash: z.boolean().default(true),
     liveSimSigVerify: z.boolean().default(false),
+
+    /** W8.0 Phase 5 — §3.3 risk / §3.4 capital (optional limits: unset ⇒ check skipped). */
+    liveMaxPositionUsd: z.coerce.number().positive().optional(),
+    liveMaxOpenPositions: z.coerce.number().int().min(1).optional(),
+    liveMaxStrategyLossUsd: z.coerce.number().positive().optional(),
+    /** 0 = disabled (CHANGELOG). */
+    liveKillAfterConsecFail: z.coerce.number().int().min(0).default(0),
+    liveHaltCloseAllOnMaxLoss: z.boolean().default(false),
+    /** Minimum native SOL (whole SOL, not lamports) to allow new exposure. */
+    liveMinWalletSol: z.coerce.number().positive().optional(),
+    liveEntryNotionalUsd: z.coerce.number().positive().optional(),
+    liveEntryMinFreeMult: z.coerce.number().positive().default(2),
+    liveCapitalRotateCascade: z.boolean().default(false),
+    /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). */
+    liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(10_000_000),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && data.executionMode === 'live') {
@@ -115,6 +144,17 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
     liveSimReplaceRecentBlockhash: envBool(process.env.LIVE_SIM_REPLACE_RECENT_BLOCKHASH, true),
     liveSimSigVerify: envBool(process.env.LIVE_SIM_SIG_VERIFY, false),
+
+    liveMaxPositionUsd: optionalPositiveEnv('LIVE_MAX_POSITION_USD'),
+    liveMaxOpenPositions: optionalPositiveIntEnv('LIVE_MAX_OPEN_POSITIONS'),
+    liveMaxStrategyLossUsd: optionalPositiveEnv('LIVE_MAX_STRATEGY_LOSS_USD'),
+    liveKillAfterConsecFail: process.env.LIVE_KILL_AFTER_CONSEC_FAIL,
+    liveHaltCloseAllOnMaxLoss: envBool(process.env.LIVE_HALT_CLOSE_ALL_ON_MAX_LOSS, false),
+    liveMinWalletSol: optionalPositiveEnv('LIVE_MIN_WALLET_SOL'),
+    liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
+    liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
+    liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
+    liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
   });
 
   if (!parsed.success) {

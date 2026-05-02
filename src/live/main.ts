@@ -7,9 +7,10 @@ import pino from 'pino';
 import { loadLiveOscarConfig } from './config.js';
 import { runLiveJupiterSelfTest } from './jupiter-self-test.js';
 import { runLivePhase3SimSelfTest } from './phase3-self-test.js';
-import { createLiveOscarPhase4Bundle } from './phase4-execution.js';
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
+import { loadPaperTraderConfig } from '../papertrader/config.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
+import { createLiveOscarPhase5Bundle } from './phase5-runtime.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -34,7 +35,7 @@ export async function main(): Promise<void> {
       strategyEnabled: liveCfg.strategyEnabled,
       executionMode: liveCfg.executionMode,
     },
-    'live-oscar executor start (W8.0-p4)',
+    'live-oscar executor start (W8.0-p5)',
   );
 
   appendLiveJsonlEvent({
@@ -42,7 +43,7 @@ export async function main(): Promise<void> {
     profile: liveCfg.profile,
     liveStrategyEnabled: liveCfg.strategyEnabled,
     executionMode: liveCfg.executionMode,
-    phase: 'W8.0-p4',
+    phase: 'W8.0-p5',
   });
 
   void runLiveJupiterSelfTest(liveCfg).catch((err) => {
@@ -53,12 +54,12 @@ export async function main(): Promise<void> {
     log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
   });
 
-  const phase4 = createLiveOscarPhase4Bundle(liveCfg);
+  const paperBaseline = loadPaperTraderConfig();
 
   await paperOscarMain({
     journalAppend: () => {},
     skipPaperJsonlStore: true,
-    liveOscar: phase4,
+    liveOscarFactory: (deps) => createLiveOscarPhase5Bundle(liveCfg, deps, paperBaseline.positionUsd),
     onShutdown: (sig) => {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
     },
@@ -70,7 +71,7 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p4 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note: `W8.0-p5 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
       });
     },
   });
