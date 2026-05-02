@@ -27,7 +27,7 @@ export async function fetchDipContextMap(
   rows: SnapshotCandidateRow[],
 ): Promise<Map<string, DipContextByWindows>> {
   const map = new Map<string, DipContextByWindows>();
-  const windows = cfg.dipLookbackWindowsMin;
+  const windows = cfg.dipAggregationWindowsMin;
   const maxWin = Math.max(...windows);
   const byTable = new Map<string, string[]>();
   for (const r of rows) {
@@ -141,4 +141,44 @@ export function evaluateDip(
     impulsePct: null,
     dipLookbackUsedMin: null,
   };
+}
+
+export type RecoveryVetoResult = {
+  reasons: string[];
+  bounces: Record<number, number>;
+};
+
+export function evaluateRecoveryVeto(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  ctxByWindow: DipContextByWindows | null | undefined,
+  dipLookbackUsedMin: number | null,
+): RecoveryVetoResult {
+  const bounces: Record<number, number> = {};
+  if (!cfg.dipRecoveryVetoEnabled || cfg.dipRecoveryVetoWindowsMin.length === 0) {
+    return { reasons: [], bounces };
+  }
+  if (!ctxByWindow || dipLookbackUsedMin == null) {
+    return { reasons: [], bounces };
+  }
+  const price = Number(row.price_usd);
+  if (!(price > 0)) {
+    return { reasons: [], bounces };
+  }
+
+  const reasons: string[] = [];
+  const thr = cfg.dipRecoveryVetoMaxBouncePct;
+
+  for (const v of cfg.dipRecoveryVetoWindowsMin) {
+    if (v >= dipLookbackUsedMin) continue;
+    const ctx = ctxByWindow.get(v);
+    if (!ctx || !(ctx.low_px > 0)) continue;
+    const bounce = (price / ctx.low_px - 1) * 100;
+    bounces[v] = +bounce.toFixed(2);
+    if (bounce >= thr) {
+      reasons.push(`recovery_veto_${v}m_bounce${bounces[v].toFixed(1)}>=${thr}%`);
+    }
+  }
+
+  return { reasons, bounces };
 }

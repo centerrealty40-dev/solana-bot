@@ -24,6 +24,17 @@ export function resolveDipLookbackWindows(primaryMin: number, csv: string): numb
   return uniq.length ? uniq : [primaryMin];
 }
 
+/** Окна только для recovery veto (без fallback на primary). */
+export function resolveRecoveryVetoWindows(csv: string): number[] {
+  const t = csv.trim();
+  if (!t) return [];
+  const nums = t
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return [...new Set(nums)].sort((a, b) => a - b);
+}
+
 const ConfigSchema = z.object({
   strategyId: z.string().default('paper_v1'),
   strategyKind: StrategyKindSchema.default('fresh'),
@@ -109,6 +120,10 @@ const ConfigSchema = z.object({
   dipMinAgeMin: z.coerce.number().nonnegative().default(25),
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
+
+  dipRecoveryVetoEnabled: z.boolean().default(false),
+  dipRecoveryVetoWindowsCsv: z.string().default(''),
+  dipRecoveryVetoMaxBouncePct: z.coerce.number().min(0.1).max(500).default(12),
 
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
@@ -265,9 +280,19 @@ const ConfigSchema = z.object({
   simCredsPerCall: z.coerce.number().int().min(10).max(200).default(30),
   simStrictBudget: z.boolean().default(true),
 }).transform((data) => {
-  const { dipLookbackWindowsCsv, ...rest } = data;
+  const { dipLookbackWindowsCsv, dipRecoveryVetoWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
-  return { ...rest, dipLookbackWindowsMin };
+  const dipRecoveryVetoWindowsMin = resolveRecoveryVetoWindows(dipRecoveryVetoWindowsCsv);
+  const dipAggregationWindowsMin =
+    rest.dipRecoveryVetoEnabled && dipRecoveryVetoWindowsMin.length > 0
+      ? [...new Set([...dipLookbackWindowsMin, ...dipRecoveryVetoWindowsMin])].sort((a, b) => a - b)
+      : dipLookbackWindowsMin;
+  return {
+    ...rest,
+    dipLookbackWindowsMin,
+    dipRecoveryVetoWindowsMin,
+    dipAggregationWindowsMin,
+  };
 });
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
@@ -335,6 +360,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipMinAgeMin: process.env.PAPER_DIP_MIN_AGE_MIN,
     dipCooldownMinDefault: process.env.PAPER_DIP_COOLDOWN_MIN,
     dipCooldownMinScalp: process.env.PAPER_DIP_COOLDOWN_MIN_SCALP,
+    dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
+    dipRecoveryVetoWindowsCsv: process.env.PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN ?? '',
+    dipRecoveryVetoMaxBouncePct: process.env.PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

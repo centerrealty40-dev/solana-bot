@@ -3,7 +3,12 @@ import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from
 import { fetchSnapshotLaneCandidates } from './snapshot.js';
 import { evaluateSnapshot } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
-import { fetchDipContextMap, evaluateDip } from '../dip-detector.js';
+import {
+  fetchDipContextMap,
+  evaluateDip,
+  evaluateRecoveryVeto,
+  type RecoveryVetoResult,
+} from '../dip-detector.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
@@ -54,8 +59,10 @@ function buildFeatures(
   dipPct: number | null,
   impulsePct: number | null,
   dipLookbackUsedMin: number | null,
+  cfg: PaperTraderConfig,
+  recoveryVeto: RecoveryVetoResult | undefined,
 ): SnapshotFeatures {
-  return {
+  const base: SnapshotFeatures = {
     price_usd: +Number(row.price_usd || 0).toFixed(8),
     liq_usd: +Number(row.liquidity_usd || 0).toFixed(0),
     pair_address: row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
@@ -73,6 +80,19 @@ function buildFeatures(
         ? +Number(row.market_cap_usd).toFixed(2)
         : null,
   };
+  if (cfg.dipRecoveryVetoEnabled && recoveryVeto) {
+    base.recovery_veto = {
+      threshold_pct: cfg.dipRecoveryVetoMaxBouncePct,
+      veto_windows_min: cfg.dipRecoveryVetoWindowsMin,
+      dip_window_used_min: dipLookbackUsedMin,
+      bounces_pct: Object.fromEntries(
+        Object.entries(recoveryVeto.bounces).map(([k, v]) => [String(k), v]),
+      ),
+      vetoed: recoveryVeto.reasons.length > 0,
+      veto_reasons: recoveryVeto.reasons,
+    };
+  }
+  return base;
 }
 
 export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<DiscoveryTickResult> {
@@ -111,8 +131,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
+    let recoveryVeto: RecoveryVetoResult | undefined;
     if (dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
+      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
+      if (recoveryVeto.reasons.length > 0) {
+        dipReasonsForGate = recoveryVeto.reasons;
+        entryPath = undefined;
+      }
     } else if (cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
       if (bypass) {
@@ -218,7 +244,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       ageMin: +Number(row.age_min ?? 0).toFixed(1),
       pass,
       reasons: mergedReasons,
-      features: buildFeatures(row, dipEval.dipPct, dipEval.impulsePct, dipEval.dipLookbackUsedMin),
+      features: buildFeatures(
+        row,
+        dipEval.dipPct,
+        dipEval.impulsePct,
+        dipEval.dipLookbackUsedMin,
+        cfg,
+        recoveryVeto,
+      ),
       whale,
       holdersMeta,
       entryPath,

@@ -236,6 +236,14 @@ export interface SnapshotFeatures {
   dip_lookback_min: number | null;
   /** Pool-reported mcap (or FDV coalesced in SQL) at discovery row — stamped into jsonl for dashboards. */
   market_cap_usd: number | null;
+  recovery_veto?: {
+    threshold_pct: number;
+    veto_windows_min: number[];
+    dip_window_used_min: number | null;
+    bounces_pct: Record<string, number>;
+    vetoed: boolean;
+    veto_reasons: string[];
+  };
 }
 
 export type SellerProfile =

@@ -8,6 +8,40 @@
 
 ---
 
+## [1.6.3] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.6.3`.
+
+### Добавлено
+
+- **Recovery veto (dip):** после прохода dip-windows опционально блокировать вход, если по более короткому окну PG отскок от low ≥ порога (`PAPER_DIP_RECOVERY_VETO_*`). Реализация: [`src/papertrader/dip-detector.ts`](../../../src/papertrader/dip-detector.ts) (`evaluateRecoveryVeto`), интеграция в discovery; в JSONL `eval.m.recovery_veto`.
+- Утилита [`scripts-tmp/paper2-diagnose-dip-recovery.ts`](../../../scripts-tmp/paper2-diagnose-dip-recovery.ts), npm **`paper2:diagnose-dip-recovery`**.
+
+### Изменено
+
+- **PM2 `pt1-oscar`:** **`PAPER_DIP_RECOVERY_VETO_ENABLED=1`**, окна **`30,60`** мин, порог **`12`**% — вето активно сразу после деплоя этого релиза.
+
+### Откат
+
+- `VERSION` **`1.6.2`**; в **`ecosystem.config.cjs`** для `pt1-oscar`: **`PAPER_DIP_RECOVERY_VETO_ENABLED: '0'`** или удалить три ключа **`PAPER_DIP_RECOVERY_VETO_*`**; при полном откате кода — revert коммита с dip-recovery.
+
+---
+
+## [1.6.2] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.6.2`.
+
+### Добавлено
+
+- **[`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md):** инварианты **I7** (монополия интегратора на `VERSION`/`CHANGELOG`, обязательный `git fetch` / опора на `origin/v2` перед bump), **I8** (до пяти параллельных исполнителей при соблюдении параллельного workflow); §4.7 параллельная работа и опциональный «резерв» semver; §6 — разделение исполнитель / интегратор; §8.1 — явное допущение **`git revert`** для точечного отката на `v2`.
+- **[`PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md):** лимит и слоты **`task/agent-1-*` … `task/agent-5-*`**, локальные коммиты и **`git worktree`**, запреты для исполнителей, расширенный merge до пяти веток, чеклист интегратора с **I7**, §7 про **`git revert`**, §10 таблица «от черновиков до чистого push».
+
+### Откат
+
+- Документы: revert этого коммита; `VERSION` **`1.6.1`**.
+
+---
+
 ## [1.6.1] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.6.1`.
@@ -45,10 +79,6 @@
 ### Откат
 
 - `VERSION` **`1.5.7`** и revert изменений Phase 3 в `src/live/**` и связанных тестах; при симуляции на сервере убедиться, что **`LIVE_EXECUTION_MODE`** не остаётся в неконсистентном состоянии.
-
-### Операционная заметка (2026-05-02)
-
-- Переменные **`PAPER_DIP_RECOVERY_VETO_*`** в PM2 **не задавать** до отдельного согласованного релиза (локальный черновик другого агента не вливался в git).
 
 ---
 
