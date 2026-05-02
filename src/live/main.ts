@@ -1,12 +1,22 @@
 /**
- * W8.0 Live Oscar — Phase 0–1: config + validated JSONL (heartbeat); no RPC / signing.
+ * W8.0 Live Oscar — config + JSONL; Phase 2 Jupiter; Phase 3 sign + simulate (optional self-test).
  */
 import pino from 'pino';
 import { loadLiveOscarConfig } from './config.js';
 import { runLiveJupiterSelfTest } from './jupiter-self-test.js';
+import { runLivePhase3SimSelfTest } from './phase3-self-test.js';
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 
 const log = pino({ name: 'live-oscar' });
+
+function heartbeatNote(cfg: ReturnType<typeof loadLiveOscarConfig>): string {
+  if (!cfg.strategyEnabled) return 'live disabled — heartbeat only (W8.0-p3)';
+  if (cfg.executionMode === 'dry_run')
+    return 'phase2/3: Jupiter self-test optional; no wallet/simulate until simulate mode';
+  if (cfg.executionMode === 'simulate')
+    return 'phase3: wallet + simulateTransaction wired; send still Phase 6';
+  return cfg.executionMode;
+}
 
 export function main(): void {
   const cfg = loadLiveOscarConfig();
@@ -20,7 +30,7 @@ export function main(): void {
       strategyEnabled: cfg.strategyEnabled,
       executionMode: cfg.executionMode,
     },
-    'live-oscar executor start (W8.0 phase 1)',
+    'live-oscar executor start (W8.0-p3)',
   );
 
   appendLiveJsonlEvent({
@@ -28,11 +38,15 @@ export function main(): void {
     profile: cfg.profile,
     liveStrategyEnabled: cfg.strategyEnabled,
     executionMode: cfg.executionMode,
-    phase: 'W8.0-p2',
+    phase: 'W8.0-p3',
   });
 
   void runLiveJupiterSelfTest(cfg).catch((err) => {
     log.error({ err: (err as Error)?.message }, 'runLiveJupiterSelfTest failed');
+  });
+
+  void runLivePhase3SimSelfTest(cfg).catch((err) => {
+    log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
   });
 
   const heartbeatTimer = setInterval(() => {
@@ -43,9 +57,7 @@ export function main(): void {
       closedTotal: 0,
       liveStrategyEnabled: cfg.strategyEnabled,
       executionMode: cfg.executionMode,
-      note: cfg.strategyEnabled
-        ? 'phase2: Jupiter quote/build wired; simulate/send in later phases'
-        : 'live disabled — heartbeat only (W8.0-p2)',
+      note: heartbeatNote(cfg),
     });
     log.debug({ uptimeSec: Math.floor(process.uptime()) }, 'live-oscar heartbeat');
   }, cfg.heartbeatIntervalMs);

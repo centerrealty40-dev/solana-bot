@@ -19,6 +19,11 @@ function baseCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
     liveJupiterQuoteTimeoutMs: 5000,
     liveJupiterSwapTimeoutMs: 8000,
     liveDefaultSlippageBps: 400,
+    liveSimEnabled: true,
+    liveSimTimeoutMs: 12_000,
+    liveSimCreditsPerCall: 30,
+    liveSimReplaceRecentBlockhash: true,
+    liveSimSigVerify: false,
     ...over,
   } as LiveOscarConfig;
 }

@@ -33,8 +33,23 @@ const LiveOscarConfigSchema = z
     liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
     liveJupiterSwapTimeoutMs: z.coerce.number().int().min(500).max(60_000).default(8000),
     liveDefaultSlippageBps: z.coerce.number().int().min(10).max(5000).default(400),
+
+    /** W8.0 Phase 3 — sign + simulateTransaction (qnCall feature sim). */
+    liveSimEnabled: z.boolean(),
+    liveSimTimeoutMs: z.coerce.number().int().min(2000).max(60_000),
+    liveSimCreditsPerCall: z.coerce.number().int().min(10).max(200),
+    liveSimReplaceRecentBlockhash: z.boolean().default(true),
+    liveSimSigVerify: z.boolean().default(false),
   })
   .superRefine((data, ctx) => {
+    if (data.strategyEnabled && data.executionMode === 'live') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'LIVE_EXECUTION_MODE=live is not supported until Phase 6 (send/confirm). Use dry_run or simulate.',
+        path: ['executionMode'],
+      });
+    }
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
       const w = data.walletSecret?.trim();
       if (!w) {
@@ -84,6 +99,22 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveJupiterQuoteTimeoutMs: process.env.LIVE_JUPITER_QUOTE_TIMEOUT_MS,
     liveJupiterSwapTimeoutMs: process.env.LIVE_JUPITER_SWAP_TIMEOUT_MS,
     liveDefaultSlippageBps: process.env.LIVE_DEFAULT_SLIPPAGE_BPS,
+
+    liveSimEnabled: envBool(process.env.LIVE_SIM_ENABLED, true),
+    liveSimTimeoutMs: (() => {
+      const s = process.env.LIVE_SIM_TIMEOUT_MS?.trim();
+      if (!s) return 12_000;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 12_000;
+    })(),
+    liveSimCreditsPerCall: (() => {
+      const s = process.env.LIVE_SIM_CREDITS_PER_CALL?.trim();
+      if (!s) return 30;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 30;
+    })(),
+    liveSimReplaceRecentBlockhash: envBool(process.env.LIVE_SIM_REPLACE_RECENT_BLOCKHASH, true),
+    liveSimSigVerify: envBool(process.env.LIVE_SIM_SIG_VERIFY, false),
   });
 
   if (!parsed.success) {

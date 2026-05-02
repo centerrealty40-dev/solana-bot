@@ -435,6 +435,10 @@ module.exports = {
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** Guard: must differ from LIVE_TRADES_PATH (Oscar paper journal). */
         LIVE_PARITY_PAPER_TRADES_PATH: path.join(root, 'data/paper2/pt1-oscar.jsonl'),
+        /** Phase 3 sim defaults (override in server env if needed); SA_RPC_HTTP_URL inherited from dotenv / shell. */
+        LIVE_SIM_ENABLED: '1',
+        LIVE_SIM_TIMEOUT_MS: '12000',
+        LIVE_SIM_CREDITS_PER_CALL: '30',
       },
     },
     {

@@ -44,4 +44,15 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
 
     expect(() => loadLiveOscarConfig()).toThrow(/LIVE_WALLET_SECRET/);
   });
+
+  it('rejects LIVE_EXECUTION_MODE=live until Phase 6 when strategy enabled', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '1';
+    process.env.LIVE_EXECUTION_MODE = 'live';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    process.env.LIVE_WALLET_SECRET = '[1,2,3]';
+
+    expect(() => loadLiveOscarConfig()).toThrow(/Phase 6/);
+  });
 });
