@@ -6,11 +6,12 @@
  *   COLLECTOR_WATCH_POLL_MS — интервал чтения (default 15000)
  *   COLLECTOR_WATCH_LOGS — через запятую пути к *-out.log; иначе $PM2_HOME/logs/sa-{orca,moonshot,raydium,meteora,pumpswap}-out.log
  *   COLLECTOR_WATCH_STATE — JSON с оффсетами (default data/collector-log-watch-state.json)
- *   COLLECTOR_WATCH_THROTTLE_429_MS — пауза между ALERT по одному коллектору для 429 (default 90000)
+ *   COLLECTOR_WATCH_THROTTLE_429_MS — пауза между объединёнными ALERT про 429 (default 90000)
  *   COLLECTOR_WATCH_THROTTLE_SKIP_MS — пауза для одиночных skip (default 120000)
  *   COLLECTOR_WATCH_SKIP_WINDOW_MS — окно «роста» skip (default 600000)
  *   COLLECTOR_WATCH_SKIP_SPIKE_MIN — порог «всплеска» skip за окно (default 3)
  *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — как у остальных скриптов
+ *   Опционально: TELEGRAM_COOLDOWN_ALERT_DEXSCREENER_429_MS — второй слой паузы в sendTagged (subtag dexscreener_429)
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -82,25 +83,38 @@ function pruneSkips(state, collector, now) {
   return state.skipTs[collector];
 }
 
-async function alert429(collector, obj, state) {
+/** Один Telegram на все 429 за тик: DexScreener/Gecko и т.д., без деления по коллекторам. */
+async function flush429Alerts(state, pending) {
+  if (!pending.length) return;
   const now = Date.now();
-  const k = `429:${collector}`;
-  if (now - (state.throttle[k] ?? 0) < THROTTLE_429_MS) return;
-  state.throttle[k] = now;
+  if (now - (state.throttle['429:global'] ?? 0) < THROTTLE_429_MS) return;
+
+  /** Последний объект по каждому коллектору за этот проход чтения логов */
+  const byCollector = new Map();
+  for (const { collector, obj } of pending) {
+    byCollector.set(collector, obj);
+  }
+
+  const names = [...byCollector.keys()].sort();
+  const details = names.map((c) => {
+    const o = byCollector.get(c);
+    const bits = [c];
+    if (o.retryTag) bits.push(`tag=${o.retryTag}`);
+    if (o.attempt != null) bits.push(`attempt=${o.attempt}`);
+    if (o.backoffMs != null) bits.push(`backoff=${o.backoffMs}ms`);
+    return bits.join(' ');
+  });
+
+  state.throttle['429:global'] = now;
   saveState(state);
-  const detail = [
-    `collector=${collector}`,
-    obj.retryTag ? `tag=${obj.retryTag}` : '',
-    obj.attempt != null ? `attempt=${obj.attempt}` : '',
-    obj.backoffMs != null ? `backoffMs=${obj.backoffMs}` : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  await sendTagged(
-    'ALERT',
-    `dex_429_${collector}`,
-    `Dex/HTTP 429 → request retry scheduled. ${detail}`,
-  );
+
+  const text = [
+    'Внешнее API (DexScreener/Gecko и др.): HTTP 429 — лимит запросов, запланирован retry.',
+    `Затронутые коллекторы: ${names.join(', ')}.`,
+    details.join(' | '),
+  ].join(' ');
+
+  await sendTagged('ALERT', 'dexscreener_429', text);
 }
 
 async function alertSkip(collector, state) {
@@ -143,7 +157,7 @@ function decaySpikeCounter(state, collector, now) {
   }
 }
 
-async function scanFile(absPath, state) {
+async function scanFile(absPath, state, pending429) {
   if (!fs.existsSync(absPath)) return;
   const st = fs.statSync(absPath);
   const size = st.size;
@@ -169,7 +183,7 @@ async function scanFile(absPath, state) {
       if (!obj || typeof obj.msg !== 'string') continue;
 
       if (obj.msg === 'request retry scheduled' && obj.status === 429) {
-        await alert429(coll, obj, state);
+        pending429.push({ collector: coll, obj });
       }
       if (obj.msg === 'skipping tick, previous run still active') {
         await alertSkip(coll, state);
@@ -192,13 +206,16 @@ async function tick() {
   if (!state.skipTs) state.skipTs = {};
   if (!state.lastSpikeN) state.lastSpikeN = {};
 
+  const pending429 = [];
   for (const p of paths) {
     try {
-      await scanFile(path.resolve(p), state);
+      await scanFile(path.resolve(p), state, pending429);
     } catch (e) {
       console.error(JSON.stringify({ ts: new Date().toISOString(), err: String(e), file: p }));
     }
   }
+
+  await flush429Alerts(state, pending429);
 
   const now = Date.now();
   for (const p of paths) {
