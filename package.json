@@ -21,6 +21,7 @@
     "parser": "tsx src/scripts/parser.ts",
     "atlas": "tsx src/scripts/atlas.ts",
     "papertrader": "tsx src/scripts/papertrader.ts",
+    "live-oscar": "tsx src/scripts/live-oscar.ts",
     "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",
     "paper2:healthcheck": "node scripts-tmp/paper2-healthcheck.mjs",

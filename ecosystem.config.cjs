@@ -411,6 +411,33 @@ module.exports = {
       },
     },
     {
+      name: 'live-oscar',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent live-oscar',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 5000,
+      max_memory_restart: '200M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** W8.0 Phase 0 — торговля выкл. до go/no-go и фаз 1–6; только heartbeat в JSONL. */
+        LIVE_STRATEGY_ENABLED: '0',
+        LIVE_EXECUTION_MODE: 'dry_run',
+        LIVE_STRATEGY_PROFILE: 'oscar',
+        LIVE_STRATEGY_ID: 'live-oscar',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        LIVE_HEARTBEAT_INTERVAL_MS: '60000',
+        /** Guard: must differ from LIVE_TRADES_PATH (Oscar paper journal). */
+        LIVE_PARITY_PAPER_TRADES_PATH: path.join(root, 'data/paper2/pt1-oscar.jsonl'),
+      },
+    },
+    {
       name: 'pt1-dno',
       cwd: root,
       script: 'npm',
