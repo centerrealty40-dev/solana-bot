@@ -36,6 +36,13 @@ export const HeartbeatEventSchema = z.object({
   liveStrategyEnabled: z.boolean(),
   executionMode: ExecutionModeSchema,
   note: z.string().optional(),
+  /** W8.0 Phase 7 — boot reconcile outcome (optional; omitted on legacy writers). */
+  reconcileBootStatus: z.enum(['ok', 'mismatch', 'rpc_fail', 'skipped']).optional(),
+  reconcileBootSkipReason: z.string().max(160).optional(),
+  reconcileMintsDivergent: z.array(z.string()).optional(),
+  reconcileWalletSolLamports: z.string().optional(),
+  reconcileChainOnlyMints: z.array(z.string()).optional(),
+  journalReplayTruncated: z.boolean().optional(),
 });
 
 export const ExecutionAttemptSchema = z.object({

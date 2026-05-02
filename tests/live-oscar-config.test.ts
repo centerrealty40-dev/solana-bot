@@ -67,6 +67,33 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveReconcileToleranceAtoms).toBe(10_000);
   });
 
+  it('rejects LIVE_RECONCILE_MODE=trust_chain without LIVE_RECONCILE_TRUST_CHAIN_ALLOWED', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    process.env.LIVE_RECONCILE_MODE = 'trust_chain';
+    delete process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED;
+
+    expect(() => loadLiveOscarConfig()).toThrow(/LIVE_RECONCILE_TRUST_CHAIN_ALLOWED/);
+  });
+
+  it('allows LIVE_RECONCILE_MODE=trust_chain when LIVE_RECONCILE_TRUST_CHAIN_ALLOWED=1', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    process.env.LIVE_RECONCILE_MODE = 'trust_chain';
+    process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED = '1';
+
+    const cfg = loadLiveOscarConfig();
+    expect(cfg.liveReconcileMode).toBe('trust_chain');
+  });
+
   it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {
     process.env.LIVE_STRATEGY_ENABLED = '1';
     process.env.LIVE_EXECUTION_MODE = 'live';

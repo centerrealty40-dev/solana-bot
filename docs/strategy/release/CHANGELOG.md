@@ -8,6 +8,26 @@
 
 ---
 
+## [1.11.4] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.4`.
+
+### Live Oscar — W8.0 Phase 7 (закрытие хвостов чеклиста)
+
+- **Replay:** `LIVE_REPLAY_MAX_FILE_BYTES` (дефолт 25 MiB) — при превышении читается только **хвост** файла (`readLiveJournalLinesBounded`); флаг **`journalTruncated`** в результате replay и **`journalReplayTruncated`** в heartbeat.
+- **Reconcile:** параллельно **`getBalance`** (SOL lamports) и SPL; в результате — **`walletSolLamports`**, **`chainOnlyMints`** (ATA не из восстановленного `open`). Read-only RPC Phase 7 через **`qnCall` feature `sim`** (зафиксировано как канон; отдельного `live_read` в метере нет).
+- **Boot telemetry:** снимок reconcile в **`live-reconcile-state`** → опциональные поля в каждом **`heartbeat`** (`reconcileBootStatus`, divergent mints, SOL, chain-only mints, truncated replay).
+- **Безопасность:** при ошибке RPC списка токенов (`rpc_fail`) в режиме **`block_new`** выставляется блок новых входов + **`risk_block` / `reconcile_rpc_fail`** (раньше блок не включался).
+- **`trust_chain`:** конфиг **отвергается**, пока не задано **`LIVE_RECONCILE_TRUST_CHAIN_ALLOWED=1`** (явное разрешение заглушки v1).
+- **Документы:** [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md); спека [`W8.0_phase7_implementation_checklist.md`](../specs/W8.0_phase7_implementation_checklist.md) обновлена.
+- **Канон replay v1:** восстановление позиций только из **`live_position_*`**, не из **`execution_*`** (путь **A** спеки).
+
+### Откат
+
+- `VERSION` **`1.11.3`**; откатить коммит; при необходимости **`LIVE_REPLAY_MAX_FILE_BYTES`** увеличить или отключить reconcile.
+
+---
+
 ## [1.11.3] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.3`.

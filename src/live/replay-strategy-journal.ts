@@ -6,6 +6,33 @@ import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
 import { restoreClosedTradeFromJson } from './strategy-snapshot.js';
 
+/** Read UTF-8 lines; if file larger than `maxFileBytes`, only the trailing chunk is read (partial first line dropped). */
+export function readLiveJournalLinesBounded(
+  storePath: string,
+  maxFileBytes: number,
+): { lines: string[]; truncated: boolean } {
+  const stat = fs.statSync(storePath);
+  const sz = stat.size;
+  if (sz <= maxFileBytes) {
+    return { lines: fs.readFileSync(storePath, 'utf-8').split('\n'), truncated: false };
+  }
+  const fd = fs.openSync(storePath, 'r');
+  try {
+    const readLen = Math.min(maxFileBytes, sz);
+    const start = sz - readLen;
+    const buf = Buffer.alloc(readLen);
+    fs.readSync(fd, buf, 0, readLen, start);
+    let text = buf.toString('utf-8');
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      if (nl !== -1) text = text.slice(nl + 1);
+    }
+    return { lines: text.split('\n'), truncated: true };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 const POSITION_KINDS = new Set([
   'live_position_open',
   'live_position_dca',
@@ -20,6 +47,11 @@ export interface ReplayLiveStrategyJournalOpts {
   tailLines?: number;
   /** If set, drop rows whose envelope `ts` is strictly less than this. */
   sinceTs?: number;
+  /**
+   * Max journal file size (bytes) to load fully; beyond this only the trailing `maxFileBytes` chunk is scanned.
+   * @default 26_214_400 (25 MiB) when passed from `loadLiveOscarConfig`; omit in tests for unbounded read.
+   */
+  maxFileBytes?: number;
 }
 
 interface SortRow {
@@ -33,6 +65,8 @@ interface SortRow {
 export interface ReplayLiveStrategyJournalResult {
   open: Map<string, OpenTrade>;
   closed: ClosedTrade[];
+  /** True when only a trailing byte chunk of the journal was scanned (`maxFileBytes` cap). */
+  journalTruncated?: boolean;
 }
 
 function lineMatchesChannel(row: Record<string, unknown>): boolean {
@@ -48,8 +82,13 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
     return { open, closed };
   }
 
-  let lines = fs.readFileSync(opts.storePath, 'utf-8').split('\n');
-  lines = lines.filter((ln) => ln.trim().length > 0);
+  const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
+  const { lines: rawLines, truncated } =
+    maxB >= Number.MAX_SAFE_INTEGER
+      ? { lines: fs.readFileSync(opts.storePath, 'utf-8').split('\n'), truncated: false }
+      : readLiveJournalLinesBounded(opts.storePath, maxB);
+
+  let lines = rawLines.filter((ln) => ln.trim().length > 0);
   if (opts.tailLines != null && opts.tailLines > 0 && lines.length > opts.tailLines) {
     lines = lines.slice(-opts.tailLines);
   }
@@ -111,5 +150,5 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
     }
   }
 
-  return { open, closed };
+  return { open, closed, journalTruncated: truncated || undefined };
 }

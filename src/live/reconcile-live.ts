@@ -1,8 +1,10 @@
 /**
  * W8.0 Phase 7 — SPL balances vs replayed `open` positions (RPC via `qnCall`, feature **`sim`** + optional `LIVE_RPC_HTTP_URL`).
+ * Read-only RPC uses the same **`sim`** credit bucket as Phase 3 simulate + Phase 5 `getBalance` (documented in CHANGELOG).
  */
 import { qnCall } from '../core/rpc/qn-client.js';
 import type { OpenTrade } from '../papertrader/types.js';
+import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import type { LiveOscarConfig, LiveReconcileMode } from './config.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 
@@ -46,15 +48,29 @@ function parseTokenAccountsRpcValue(raw: unknown): Map<string, bigint> {
   return out;
 }
 
-async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<string, bigint> | null> {
-  const pk = walletPubkey58(cfg);
-  if (!pk) return null;
-  const opts = {
+function qnReadOpts(cfg: LiveOscarConfig) {
+  return {
     feature: 'sim' as const,
     creditsPerCall: cfg.liveSimCreditsPerCall,
     timeoutMs: cfg.liveSimTimeoutMs,
     httpUrl: cfg.liveRpcHttpUrl,
   };
+}
+
+async function fetchWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null> {
+  const pk = walletPubkey58(cfg);
+  if (!pk) return null;
+  const res = await qnCall<number>('getBalance', [pk, { commitment: 'processed' }], qnReadOpts(cfg));
+  if (!res.ok) return null;
+  const v = res.value;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? BigInt(Math.floor(n)) : null;
+}
+
+async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<string, bigint> | null> {
+  const pk = walletPubkey58(cfg);
+  if (!pk) return null;
+  const opts = qnReadOpts(cfg);
   const merged = new Map<string, bigint>();
   for (const programId of [SPL_TOKEN, SPL_TOKEN_2022]) {
     const res = await qnCall<unknown>(
@@ -86,6 +102,20 @@ export interface ReconcileLiveWalletResult {
   ok: boolean;
   mode: LiveReconcileMode;
   mismatches: Array<{ mint: string; expectedRaw: string; actualRaw: string; note?: string }>;
+  /** Native SOL balance (lamports) when RPC succeeds. */
+  walletSolLamports?: string | null;
+  /** SPL mints with non-zero chain balance not present in replayed `open` (dust / leftovers). */
+  chainOnlyMints?: string[];
+}
+
+function chainOnlyMintsSorted(chain: Map<string, bigint>, openMints: Set<string>): string[] {
+  const out: string[] = [];
+  for (const m of chain.keys()) {
+    if (m === WRAPPED_SOL_MINT) continue;
+    if (!openMints.has(m)) out.push(m);
+  }
+  out.sort();
+  return out;
 }
 
 export async function reconcileLiveWalletVsReplay(args: {
@@ -98,11 +128,13 @@ export async function reconcileLiveWalletVsReplay(args: {
   const tol = args.toleranceAtoms < 0n ? 0n : args.toleranceAtoms;
   const mismatches: ReconcileLiveWalletResult['mismatches'] = [];
 
-  if (open.size === 0) {
-    return { ok: true, mode, mismatches };
-  }
+  const [solLamports, chain] = await Promise.all([
+    fetchWalletSolLamports(liveCfg),
+    fetchWalletTokenRawByMint(liveCfg),
+  ]);
 
-  const chain = await fetchWalletTokenRawByMint(liveCfg);
+  const walletSolStr = solLamports != null ? solLamports.toString() : null;
+
   if (chain === null) {
     mismatches.push({
       mint: '_rpc_',
@@ -110,7 +142,14 @@ export async function reconcileLiveWalletVsReplay(args: {
       actualRaw: '0',
       note: 'getTokenAccountsByOwner_failed',
     });
-    return { ok: false, mode, mismatches };
+    return { ok: false, mode, mismatches, walletSolLamports: walletSolStr };
+  }
+
+  const openMintSet = new Set(open.keys());
+  const chainOnly = chainOnlyMintsSorted(chain, openMintSet);
+
+  if (open.size === 0) {
+    return { ok: true, mode, mismatches, walletSolLamports: walletSolStr, chainOnlyMints: chainOnly };
   }
 
   for (const ot of open.values()) {
@@ -135,5 +174,12 @@ export async function reconcileLiveWalletVsReplay(args: {
     }
   }
 
-  return { ok: mismatches.length === 0, mode, mismatches };
+  const ok = mismatches.length === 0;
+  return {
+    ok,
+    mode,
+    mismatches,
+    walletSolLamports: walletSolStr,
+    chainOnlyMints: chainOnly.length ? chainOnly : undefined,
+  };
 }

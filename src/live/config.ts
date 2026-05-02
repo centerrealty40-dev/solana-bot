@@ -104,11 +104,21 @@ const LiveOscarConfigSchema = z
     liveReplayOnBoot: z.boolean(),
     liveReplayTailLines: z.coerce.number().int().min(1).optional(),
     liveReplaySinceTs: z.coerce.number().finite().optional(),
+    /** Beyond this size (bytes) only the trailing chunk of `LIVE_TRADES_PATH` is scanned for replay. */
+    liveReplayMaxFileBytes: z.coerce.number().int().min(65_536).max(512 * 1024 * 1024).default(26_214_400),
     liveReconcileOnBoot: z.boolean(),
     liveReconcileMode: LiveReconcileModeSchema,
     liveReconcileToleranceAtoms: z.number().int().min(0),
   })
   .superRefine((data, ctx) => {
+    if (data.liveReconcileMode === 'trust_chain' && !envBool(process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED, false)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'LIVE_RECONCILE_MODE=trust_chain requires LIVE_RECONCILE_TRUST_CHAIN_ALLOWED=1 (v1 stub only; see RUNBOOK_LIVE_OSCAR_PHASE7.md)',
+        path: ['liveReconcileMode'],
+      });
+    }
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
       const w = data.walletSecret?.trim();
       if (!w) {
@@ -204,6 +214,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number(s);
       return Number.isFinite(n) ? n : undefined;
     })(),
+    liveReplayMaxFileBytes: process.env.LIVE_REPLAY_MAX_FILE_BYTES,
     liveReconcileOnBoot: envBool(process.env.LIVE_RECONCILE_ON_BOOT, true),
     liveReconcileMode: parseLiveReconcileMode(process.env.LIVE_RECONCILE_MODE),
     liveReconcileToleranceAtoms: (() => {

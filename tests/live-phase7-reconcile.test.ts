@@ -67,9 +67,10 @@ describe('reconcileLiveWalletVsReplay (Phase 7)', () => {
     const ot = mintOt(100, 1, 6);
     const expectedRaw = 100n * 1_000_000n;
 
-    let rpcCall = 0;
-    vi.spyOn(qnClient, 'qnCall').mockImplementation(async () => {
-      rpcCall++;
+    let tokenRpc = 0;
+    vi.spyOn(qnClient, 'qnCall').mockImplementation(async (method: string) => {
+      if (method === 'getBalance') return { ok: true, value: 500_000_000 };
+      tokenRpc++;
       const row = [
         {
           account: {
@@ -85,7 +86,7 @@ describe('reconcileLiveWalletVsReplay (Phase 7)', () => {
         },
       ];
       // SPL + Token-2022: only first RPC returns balances so merge does not double-count.
-      return { ok: true, value: rpcCall === 1 ? row : [] };
+      return { ok: true, value: tokenRpc === 1 ? row : [] };
     });
 
     const liveCfg = loadLiveOscarConfig();
@@ -110,9 +111,10 @@ describe('reconcileLiveWalletVsReplay (Phase 7)', () => {
 
     const ot = mintOt(100, 1, 6);
 
-    let rpcCall2 = 0;
-    vi.spyOn(qnClient, 'qnCall').mockImplementation(async () => {
-      rpcCall2++;
+    let tokenRpc2 = 0;
+    vi.spyOn(qnClient, 'qnCall').mockImplementation(async (method: string) => {
+      if (method === 'getBalance') return { ok: true, value: 500_000_000 };
+      tokenRpc2++;
       const row = [
         {
           account: {
@@ -127,7 +129,7 @@ describe('reconcileLiveWalletVsReplay (Phase 7)', () => {
           },
         },
       ];
-      return { ok: true, value: rpcCall2 === 1 ? row : [] };
+      return { ok: true, value: tokenRpc2 === 1 ? row : [] };
     });
 
     const liveCfg = loadLiveOscarConfig();
@@ -140,5 +142,147 @@ describe('reconcileLiveWalletVsReplay (Phase 7)', () => {
     });
     expect(rec.ok).toBe(false);
     expect(rec.mismatches.some((m) => m.mint === ot.mint)).toBe(true);
+  });
+
+  it('validates two open mints in one reconcile pass', async () => {
+    process.env.LIVE_STRATEGY_ENABLED = '1';
+    process.env.LIVE_EXECUTION_MODE = 'simulate';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    process.env.LIVE_WALLET_SECRET = JSON.stringify(Array.from(Keypair.generate().secretKey));
+
+    const otA = mintOt(100, 1, 6);
+    const otB = { ...mintOt(50, 2, 6), mint: 'MintBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' };
+
+    let tokenRpc = 0;
+    vi.spyOn(qnClient, 'qnCall').mockImplementation(async (method: string) => {
+      if (method === 'getBalance') return { ok: true, value: 900_000_000 };
+      tokenRpc++;
+      const row = [
+        {
+          account: {
+            data: {
+              parsed: {
+                info: {
+                  mint: otA.mint,
+                  tokenAmount: { amount: '100000000', decimals: 6 },
+                },
+              },
+            },
+          },
+        },
+        {
+          account: {
+            data: {
+              parsed: {
+                info: {
+                  mint: otB.mint,
+                  tokenAmount: { amount: '25000000', decimals: 6 },
+                },
+              },
+            },
+          },
+        },
+      ];
+      return { ok: true, value: tokenRpc === 1 ? row : [] };
+    });
+
+    const liveCfg = loadLiveOscarConfig();
+    const open = new Map([
+      [otA.mint, otA],
+      [otB.mint, otB],
+    ]);
+    const rec = await reconcileLiveWalletVsReplay({
+      liveCfg,
+      open,
+      toleranceAtoms: 500n,
+      mode: 'block_new',
+    });
+    expect(rec.ok).toBe(true);
+    expect(rec.walletSolLamports).toBe('900000000');
+  });
+
+  it('reports chain-only mints (wallet dust not in replayed open)', async () => {
+    process.env.LIVE_STRATEGY_ENABLED = '1';
+    process.env.LIVE_EXECUTION_MODE = 'simulate';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    process.env.LIVE_WALLET_SECRET = JSON.stringify(Array.from(Keypair.generate().secretKey));
+
+    const ot = mintOt(100, 1, 6);
+    const extraMint = 'MintEXTRAEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE';
+
+    let tokenRpc = 0;
+    vi.spyOn(qnClient, 'qnCall').mockImplementation(async (method: string) => {
+      if (method === 'getBalance') return { ok: true, value: 400_000_000 };
+      tokenRpc++;
+      const row = [
+        {
+          account: {
+            data: {
+              parsed: {
+                info: {
+                  mint: ot.mint,
+                  tokenAmount: { amount: '100000000', decimals: 6 },
+                },
+              },
+            },
+          },
+        },
+        {
+          account: {
+            data: {
+              parsed: {
+                info: {
+                  mint: extraMint,
+                  tokenAmount: { amount: '999', decimals: 6 },
+                },
+              },
+            },
+          },
+        },
+      ];
+      return { ok: true, value: tokenRpc === 1 ? row : [] };
+    });
+
+    const liveCfg = loadLiveOscarConfig();
+    const open = new Map([[ot.mint, ot]]);
+    const rec = await reconcileLiveWalletVsReplay({
+      liveCfg,
+      open,
+      toleranceAtoms: 1000n,
+      mode: 'report',
+    });
+    expect(rec.ok).toBe(true);
+    expect(rec.chainOnlyMints).toContain(extraMint);
+  });
+
+  it('fails when getTokenAccountsByOwner errors after getBalance', async () => {
+    process.env.LIVE_STRATEGY_ENABLED = '1';
+    process.env.LIVE_EXECUTION_MODE = 'simulate';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    process.env.LIVE_WALLET_SECRET = JSON.stringify(Array.from(Keypair.generate().secretKey));
+
+    const ot = mintOt(100, 1, 6);
+
+    vi.spyOn(qnClient, 'qnCall').mockImplementation(async (method: string) => {
+      if (method === 'getBalance') return { ok: true, value: 100_000_000 };
+      return { ok: false, reason: 'rpc_error', message: 'boom' };
+    });
+
+    const liveCfg = loadLiveOscarConfig();
+    const rec = await reconcileLiveWalletVsReplay({
+      liveCfg,
+      open: new Map([[ot.mint, ot]]),
+      toleranceAtoms: 1000n,
+      mode: 'block_new',
+    });
+    expect(rec.ok).toBe(false);
+    expect(rec.mismatches.some((m) => m.mint === '_rpc_')).toBe(true);
+    expect(rec.walletSolLamports).toBe('100000000');
   });
 });

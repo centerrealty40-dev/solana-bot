@@ -115,6 +115,27 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
     expect(r.closed[0]!.mint).toBe(mintA);
   });
 
+  it('sets journalTruncated when LIVE_TRADES_PATH exceeds maxFileBytes', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-p7-maxb-'));
+    const p = path.join(dir, 'live.jsonl');
+    const mint = 'MintDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
+    const ot = minimalOpen(mint, 1);
+    const row = JSON.stringify({
+      ts: 1,
+      strategyId: 'live-oscar',
+      channel: 'live',
+      kind: 'live_position_open',
+      mint,
+      openTrade: serializeOpenTrade(ot),
+    });
+    const padding = `${'y'.repeat(9000)}\n`;
+    fs.writeFileSync(p, padding + row + '\n', 'utf-8');
+    const r = replayLiveStrategyJournal({ storePath: p, strategyId: 'live-oscar', maxFileBytes: 2500 });
+    expect(r.journalTruncated).toBe(true);
+    expect(r.open.size).toBe(1);
+    expect(r.open.has(mint)).toBe(true);
+  });
+
   it('respects LIVE_REPLAY_TAIL_LINES via caller tailLines option', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-p7-tail-'));
     const p = path.join(dir, 'live.jsonl');
