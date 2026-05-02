@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.8] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.8`.
+
+### Live Oscar — старт rollout W8.0 §9 шаг 1
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`LIVE_STRATEGY_ENABLED=1`**, **`LIVE_EXECUTION_MODE=dry_run`** — неделя наблюдения паритета с **`pt1-oscar`** без ключа и без on-chain send (см. [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §0).
+
+### Откат шага 1
+
+- В ecosystem выставить **`LIVE_STRATEGY_ENABLED=0`**, **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**.
+
+---
+
 ## [1.11.7] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.7`.

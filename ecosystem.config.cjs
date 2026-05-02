@@ -551,7 +551,8 @@ module.exports = {
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
 
-        LIVE_STRATEGY_ENABLED: '0',
+        /** W8.0 §9 rollout — шаг 1: полный Oscar-цикл без ключа и без send (только quote/build + JSONL). ~1 неделя наблюдения vs `pt1-oscar`. */
+        LIVE_STRATEGY_ENABLED: '1',
         LIVE_EXECUTION_MODE: 'dry_run',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',

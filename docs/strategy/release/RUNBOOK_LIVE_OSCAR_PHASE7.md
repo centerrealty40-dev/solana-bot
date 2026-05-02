@@ -1,6 +1,27 @@
 # Runbook — Live Oscar Phase 7 (replay + reconcile)
 
-Операционные сценарии для процесса **`live-oscar`** после включения **W8.0-p7**. Нормативная спека: [`../specs/W8.0_phase7_replay_reconcile_spec.md`](../specs/W8.0_phase7_replay_reconcile_spec.md). Чеклист кода: [`../specs/W8.0_phase7_implementation_checklist.md`](../specs/W8.0_phase7_implementation_checklist.md).
+Операционные сценарии для процесса **`live-oscar`** после включения **W8.0-p7**. Нормативная спека: [`../specs/W8.0_phase7_replay_reconcile_spec.md`](../specs/W8.0_phase7_replay_reconcile_spec.md). Чеклист кода: [`../specs/W8.0_phase7_implementation_checklist.md`](../specs/W8.0_phase7_implementation_checklist.md). Rollout live: родительская спека [`../specs/W8.0_live_oscar_trading_bot.md`](../specs/W8.0_live_oscar_trading_bot.md) §9.
+
+---
+
+## 0. Rollout W8.0 §9 — шаг 1 (**`dry_run`**, ~1 неделя)
+
+**Цель:** гонять тот же discovery/трекер/Oscar-логику, что и **`pt1-oscar`**, но **без** подписи транзакций и **без** отправки в сеть; сравнивать кандидатов и «намерения» с бумажным Oscar.
+
+| Параметр | Значение (prod в `ecosystem.config.cjs`) |
+|----------|------------------------------------------|
+| **`LIVE_STRATEGY_ENABLED`** | **`1`** |
+| **`LIVE_EXECUTION_MODE`** | **`dry_run`** |
+| **`LIVE_WALLET_SECRET`** | **не нужен** (конфиг это допускает в `dry_run`) |
+
+**Что пишется в JSONL:** попытки исполнения заканчиваются **`execution_skip`** с причинами вида **`dry_run:buy_open`** / **`dry_run:dca_add`** и т.п. — это ожидаемо. Jupiter quote/swap-build может вызываться по политике Phase 4 — сеть не трогаем.
+
+**Reconcile на boot:** в **`dry_run`** Phase 7 reconcile **пропускается** (см. `live/main.ts`); в **`heartbeat`** будет **`reconcileBootStatus: skipped`**, **`reconcileBootSkipReason: dry_run`**.
+
+**После смены режима в ecosystem:**  
+`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`
+
+**Критерий перехода к шагу 2 (`simulate`):** минимум **~7 дней** наблюдения, нет критичных расхождений live vs paper по твоим правилам, зафиксирован короткий отчёт (хотя бы список замечаний). Шаг 2 — отдельное решение + микро-кошелёк + **`LIVE_EXECUTION_MODE=simulate`**.
 
 ---
 
