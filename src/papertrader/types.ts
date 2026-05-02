@@ -84,6 +84,8 @@ export interface OpenTrade {
   liqWatchLastDropPct?: number | null;
   /** W7.5 — last good snapshot price from tracker (for emergency LIQ_DRAIN exit). */
   lastObservedPriceUsd?: number | null;
+  /** W8.0-p4 — SPL decimals for Jupiter sizing (live-oscar); optional on paper restore. */
+  tokenDecimals?: number | null;
 }
 
 export interface CloseCosts {

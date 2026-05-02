@@ -229,3 +229,79 @@ export async function liveBuyQuoteAndPrepareSnapshot(args: {
 
   return { quoteResponse: fetched.quoteResponse, quoteSnapshot, swapBuild };
 }
+
+async function httpGetSellQuote(
+  quoteBaseUrl: string,
+  args: {
+    inputMint: string;
+    amountRaw: string;
+    slippageBps: number;
+    timeoutMs: number;
+  },
+): Promise<Record<string, unknown> | null> {
+  const { inputMint, amountRaw, slippageBps, timeoutMs } = args;
+  const url = new URL(quoteBaseUrl);
+  url.searchParams.set('inputMint', inputMint);
+  url.searchParams.set('outputMint', WRAPPED_SOL_MINT);
+  url.searchParams.set('amount', amountRaw);
+  url.searchParams.set('slippageBps', String(slippageBps));
+  url.searchParams.set('onlyDirectRoutes', 'false');
+  url.searchParams.set('asLegacyTransaction', 'false');
+  const ac = new AbortController();
+  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
+  try {
+    const resp = await fetch(url.toString(), {
+      method: 'GET',
+      signal: ac.signal,
+      headers: { accept: 'application/json' },
+    });
+    if (!resp.ok) return null;
+    const j = (await resp.json()) as unknown;
+    return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(tt);
+  }
+}
+
+/** Token → SOL quote + optional unsigned swap (W8.0-p4 sells / exits). */
+export async function liveSellQuoteAndPrepareSnapshot(args: {
+  cfg: LiveOscarConfig;
+  inputMint: string;
+  tokenAmountRaw: string;
+  solUsd: number;
+  userPublicKey: string;
+}): Promise<{
+  quoteResponse: Record<string, unknown>;
+  quoteSnapshot: Record<string, unknown>;
+  swapBuild: { ok: true; b64: string } | { ok: false; reason: string };
+} | null> {
+  const { cfg, inputMint, tokenAmountRaw, solUsd, userPublicKey } = args;
+  if (!(solUsd > 0) || !tokenAmountRaw || tokenAmountRaw === '0') return null;
+  const t0 = Date.now();
+  const quoteResponse = await httpGetSellQuote(resolveLiveJupiterQuoteUrl(cfg), {
+    inputMint,
+    amountRaw: tokenAmountRaw,
+    slippageBps: cfg.liveDefaultSlippageBps,
+    timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
+  });
+  const quoteAgeMs = Date.now() - t0;
+  if (!quoteResponse) return null;
+
+  const swapBuild = await liveBuildUnsignedSwapTx({
+    cfg,
+    quoteResponse,
+    userPublicKey,
+  });
+
+  const quoteSnapshot = liveQuoteSnapshotFromResponse(quoteResponse, {
+    slippageBps: cfg.liveDefaultSlippageBps,
+    quoteAgeMs,
+    swapBuildOk: swapBuild.ok,
+    swapTxBase64Len: swapBuild.ok ? swapBuild.b64.length : undefined,
+    swapBuildReason: swapBuild.ok ? undefined : swapBuild.reason,
+  });
+
+  return { quoteResponse, quoteSnapshot, swapBuild };
+}

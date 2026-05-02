@@ -16,7 +16,7 @@ import {
   loadCurrentPoolLiqUsd,
 } from '../pricing/liq-watch.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
-import { appendEvent } from '../store-jsonl.js';
+import type { LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
 import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
@@ -45,6 +45,10 @@ export interface TrackerArgs {
   tpLadder: TpLadderLevel[];
   stats: TrackerStats;
   btcCtx: () => { ret1h_pct: number | null; ret4h_pct: number | null; updated_ts: number | null };
+  /** Paper JSONL or live noop — never mix stores (W8.0-p4 P4-I1). */
+  journalAppend: (event: Record<string, unknown>) => void;
+  /** Live-oscar simulate sells / DCA buys after tracker decisions. */
+  livePhase4?: LiveOscarPhase4Tracker;
 }
 
 interface PeakState {
@@ -215,7 +219,7 @@ function buildClosedTrade(args: {
 }
 
 export async function trackerTick(args: TrackerArgs): Promise<void> {
-  const { cfg, open, closed, dcaLevels, tpLadder, stats, btcCtx } = args;
+  const { cfg, open, closed, dcaLevels, tpLadder, stats, btcCtx, journalAppend, livePhase4 } = args;
   if (open.size === 0) return;
   const mints = [...open.keys()];
 
@@ -311,6 +315,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           },
         });
         ct.exitContext = exitContext;
+        if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
+          const ok = await livePhase4.tryTokenToSolSell({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: investedRemaining,
+            priceUsdPerToken: marketSell,
+            decimals: ot.tokenDecimals ?? 6,
+            intentKind: 'sell_full',
+          });
+          if (!ok) continue;
+        }
         open.delete(mint);
         closed.push(ct);
         stats.closed.LIQ_DRAIN++;
@@ -318,7 +333,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
-        appendEvent({
+        journalAppend({
           kind: 'close',
           ...ct,
           peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
@@ -354,7 +369,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       if (cfg.liqWatchStampOnTrack) {
-        appendEvent({
+        journalAppend({
           kind: 'liq_watch_tick',
           mint,
           verdict,
@@ -395,7 +410,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
         const liqWatchNoData = await buildOptionalLiqWatchCloseStamp(cfg, ot);
-        appendEvent({
+        journalAppend({
           kind: 'close',
           ...ct,
           peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
@@ -426,7 +441,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= ps.lastPersistedPeak + cfg.peakLogStepPct) {
         ps.lastPersistedPeak = pnlPctVsAvg;
         peakStateByMint.set(mint, ps);
-        appendEvent({
+        journalAppend({
           kind: 'peak',
           mint,
           peakMcUsd: ot.peakMcUsd,
@@ -443,6 +458,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
         if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
         const addUsd = cfg.positionUsd * lvl.addFraction;
+        if (livePhase4) {
+          const ok = await livePhase4.trySolToTokenBuy({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: addUsd,
+          });
+          if (!ok) continue;
+        }
         const marketBuy = curMetric;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
         ot.legs.push({
@@ -468,7 +491,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
         const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
-        appendEvent({
+        journalAppend({
           kind: 'dca_add',
           mint,
           ts: Date.now(),
@@ -514,6 +537,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           const pnlUsd = proceedsUsd - investedSoldUsd;
           const grossPnlUsd = grossProceedsUsd - investedSoldUsd;
 
+          if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
+            const ok = await livePhase4.tryTokenToSolSell({
+              mint,
+              symbol: ot.symbol,
+              usdNotional: investedSoldUsd,
+              priceUsdPerToken: marketSell,
+              decimals: ot.tokenDecimals ?? 6,
+              intentKind: 'sell_partial',
+            });
+            if (!ok) continue;
+          }
+
           const ps: PartialSell = {
             ts: Date.now(),
             price: effectiveSell,
@@ -533,7 +568,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
           );
           const pfPs = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
-          appendEvent({
+          journalAppend({
             kind: 'partial_sell',
             mint,
             ts: ps.ts,
@@ -603,6 +638,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         tpLadder,
       });
       ct.exitContext = exitContextMain;
+      if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
+        const ok = await livePhase4.tryTokenToSolSell({
+          mint,
+          symbol: ot.symbol,
+          usdNotional: investedRemaining,
+          priceUsdPerToken: marketSell,
+          decimals: ot.tokenDecimals ?? 6,
+          intentKind: 'sell_full',
+        });
+        if (!ok) continue;
+      }
       open.delete(mint);
       closed.push(ct);
       const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
@@ -612,7 +658,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
       );
       const liqWatchExit = await buildOptionalLiqWatchCloseStamp(cfg, ot);
-      appendEvent({
+      journalAppend({
         kind: 'close',
         ...ct,
         peak_pnl_pct: +ot.peakPnlPct.toFixed(2),

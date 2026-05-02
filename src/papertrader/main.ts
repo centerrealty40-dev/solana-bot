@@ -6,6 +6,7 @@ import {
   parseTpLadder,
 } from './config.js';
 import { configureStore, appendEvent } from './store-jsonl.js';
+import type { LiveOscarRuntimeBundle } from '../live/phase4-types.js';
 import {
   refreshSolPrice,
   getSolUsd,
@@ -45,6 +46,30 @@ import { getHoldersResolveStats } from './holders/holders-resolve.js';
 
 const logger = pino({ name: 'papertrader' });
 
+export interface PapertraderMainOptions {
+  /** Default: paper JSONL `appendEvent`. Live-oscar passes noop (P4-I1). */
+  journalAppend?: (event: Record<string, unknown>) => void;
+  /** Live-oscar: do not read/write paper store path. */
+  skipPaperJsonlStore?: boolean;
+  liveOscar?: LiveOscarRuntimeBundle;
+  onShutdown?: (signal: string) => void;
+  onOscarHeartbeat?: (payload: {
+    openPositions: number;
+    closedTotal: number;
+    stats: {
+      discovered: number;
+      evaluated: number;
+      passed: number;
+      opened: number;
+      skippedSafety: number;
+      skippedPriceVerify: number;
+      ticks: number;
+      errors: number;
+    };
+    trackerClosed: TrackerStats['closed'];
+  }) => void;
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p,
@@ -52,9 +77,17 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-export async function main(): Promise<void> {
+export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const cfg = loadPaperTraderConfig();
-  configureStore({ storePath: cfg.storePath, strategyId: cfg.strategyId });
+  const journalAppend =
+    opts?.journalAppend ??
+    ((e: Record<string, unknown>) => {
+      appendEvent(e as never);
+    });
+
+  if (!opts?.skipPaperJsonlStore) {
+    configureStore({ storePath: cfg.storePath, strategyId: cfg.strategyId });
+  }
 
   void fetchLaunchpadCandidates;
   void fetchFreshValidatedCandidates;
@@ -63,7 +96,13 @@ export async function main(): Promise<void> {
   const tpLadder = parseTpLadder(cfg.tpLadderSpec);
   const followupOffsets = parseFollowupOffsets(cfg.followupOffsetsMinSpec);
 
-  const restored = loadStore(cfg.storePath);
+  const restored = opts?.skipPaperJsonlStore
+    ? {
+        evaluatedAt: new Map<string, number>(),
+        lastEntryTsByMint: new Map<string, number>(),
+        open: new Map<string, OpenTrade>(),
+      }
+    : loadStore(cfg.storePath);
   for (const [mint, ts] of restored.evaluatedAt) evaluatedAtMap.set(mint, ts);
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
   const open: Map<string, OpenTrade> = restored.open;
@@ -150,7 +189,7 @@ export async function main(): Promise<void> {
       stats.passed += res.passed;
       const btc = getBtcContext();
       for (const d of res.decisions) {
-        appendEvent({
+        journalAppend({
           kind: 'eval',
           lane: d.lane,
           source: d.source,
@@ -167,7 +206,7 @@ export async function main(): Promise<void> {
         });
         if (!d.pass) continue;
         if (open.has(d.mint)) {
-          appendEvent({
+          journalAppend({
             kind: 'eval-skip-open',
             lane: d.lane,
             source: d.source,
@@ -176,7 +215,7 @@ export async function main(): Promise<void> {
           });
           continue;
         }
-        if (cfg.dryRun) continue;
+        if (cfg.dryRun && !opts?.liveOscar) continue;
 
         const dex = snapshotSourceToDex(d.source);
         const row = {
@@ -220,7 +259,7 @@ export async function main(): Promise<void> {
             timeoutMs: cfg.safetyTimeoutMs,
           });
           if (outcome.kind === 'verdict' && !outcome.verdict.ok) {
-            appendEvent({
+            journalAppend({
               kind: 'eval-skip-open',
               lane: d.lane,
               source: d.source,
@@ -255,7 +294,7 @@ export async function main(): Promise<void> {
           });
           impulseConfirm = ig.stamp;
           if (ig.blocksOpen) {
-            appendEvent({
+            journalAppend({
               kind: 'eval-skip-open',
               lane: d.lane,
               source: d.source,
@@ -307,7 +346,7 @@ export async function main(): Promise<void> {
           }
           if (priceVerify.kind === 'blocked' && cfg.priceVerifyBlockOnFail) {
             stats.skippedPriceVerify += 1;
-            appendEvent({
+            journalAppend({
               kind: 'eval-skip-open',
               lane: d.lane,
               source: d.source,
@@ -354,36 +393,55 @@ export async function main(): Promise<void> {
           }
         }
 
-        appendEvent({
-          kind: 'open',
-          mint: ot.mint,
-          symbol: ot.symbol,
-          lane: ot.lane,
-          source: ot.source,
-          dex: ot.dex,
-          entryTs: ot.entryTs,
-          entryMcUsd: ot.entryMcUsd,
-          entryMarketPrice: ot.legs[0]?.marketPrice ?? ot.entryMcUsd,
-          snapshotEntryPriceUsd,
-          legs: ot.legs,
-          totalInvestedUsd: ot.totalInvestedUsd,
-          avgEntry: ot.avgEntry,
-          avgEntryMarket: ot.avgEntryMarket,
-          pairAddress: ot.pairAddress,
-          entryLiqUsd: ot.entryLiqUsd,
-          eval_reasons: d.reasons,
-          features: d.features,
-          btc,
-          whale_analysis: d.whale,
-          pre_entry_dynamics: preDyn,
-          context_swaps: ctxSwaps,
-          safety: safetyAttached,
-          mcUsdLive: mcUsdLiveOpen,
-          priorityFee: pfQuoteOpen,
-          priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
-          impulseConfirm: impulseConfirm ?? undefined,
-          ...(simAudit != null ? { simAudit } : {}),
-        });
+        let tokenDecimals: number | null = null;
+        if (safetyAttached && 'decimals' in safetyAttached && safetyAttached.decimals != null) {
+          const d0 = Number(safetyAttached.decimals);
+          if (Number.isFinite(d0) && d0 >= 0 && d0 <= 24) tokenDecimals = Math.floor(d0);
+        }
+        ot.tokenDecimals = tokenDecimals;
+
+        if (opts?.liveOscar) {
+          const opened = await opts.liveOscar.discovery.tryExecuteBuyOpen({
+            liveCfg: opts.liveOscar.liveCfg,
+            paperCfg: cfg,
+            ot,
+            decision: d,
+            snapshotEntryPriceUsd,
+            tokenDecimals,
+          });
+          if (!opened) continue;
+        } else {
+          journalAppend({
+            kind: 'open',
+            mint: ot.mint,
+            symbol: ot.symbol,
+            lane: ot.lane,
+            source: ot.source,
+            dex: ot.dex,
+            entryTs: ot.entryTs,
+            entryMcUsd: ot.entryMcUsd,
+            entryMarketPrice: ot.legs[0]?.marketPrice ?? ot.entryMcUsd,
+            snapshotEntryPriceUsd,
+            legs: ot.legs,
+            totalInvestedUsd: ot.totalInvestedUsd,
+            avgEntry: ot.avgEntry,
+            avgEntryMarket: ot.avgEntryMarket,
+            pairAddress: ot.pairAddress,
+            entryLiqUsd: ot.entryLiqUsd,
+            eval_reasons: d.reasons,
+            features: d.features,
+            btc,
+            whale_analysis: d.whale,
+            pre_entry_dynamics: preDyn,
+            context_swaps: ctxSwaps,
+            safety: safetyAttached,
+            mcUsdLive: mcUsdLiveOpen,
+            priorityFee: pfQuoteOpen,
+            priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
+            impulseConfirm: impulseConfirm ?? undefined,
+            ...(simAudit != null ? { simAudit } : {}),
+          });
+        }
 
         open.set(ot.mint, ot);
         recordEntryTs(ot.mint, ot.entryTs);
@@ -437,6 +495,8 @@ export async function main(): Promise<void> {
           tpLadder,
           stats: trackerStats,
           btcCtx: getBtcContext,
+          journalAppend,
+          livePhase4: opts?.liveOscar?.tracker,
         }),
         45_000,
         'trackerTick',
@@ -462,7 +522,7 @@ export async function main(): Promise<void> {
 
   const heartbeatTimer = setInterval(() => {
     const holdersStats = cfg.holdersLiveEnabled ? getHoldersResolveStats() : null;
-    appendEvent({
+    journalAppend({
       kind: 'heartbeat',
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       openPositions: open.size,
@@ -473,6 +533,12 @@ export async function main(): Promise<void> {
       skippedPriceVerify: stats.skippedPriceVerify,
       holdersResolveStats: holdersStats,
       trackerStats: trackerStats.closed,
+    });
+    opts?.onOscarHeartbeat?.({
+      openPositions: open.size,
+      closedTotal: closed.length,
+      stats: { ...stats },
+      trackerClosed: trackerStats.closed,
     });
     logger.info({
       msg: 'heartbeat',
@@ -509,6 +575,7 @@ export async function main(): Promise<void> {
   await discoveryTick();
 
   const shutdown = (sig: string) => {
+    opts?.onShutdown?.(sig);
     logger.info({ msg: 'papertrader shutdown', sig, stats, open: open.size, closed: closed.length });
     stopPriorityFeeTicker();
     clearInterval(discoveryTimer);

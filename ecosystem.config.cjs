@@ -432,6 +432,12 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
+        /** Paper Oscar core env: dip lane + dry_run off so gates run (W8.0-p4). Align full `PAPER_*` with pt1-oscar via server `.env` or LIVE_INHERIT_ENV_FILE. */
+        PAPER_STRATEGY_KIND: 'dip',
+        PAPER_STRATEGY_ID: 'live-oscar',
+        PAPER_DRY_RUN: 'false',
+        /** Unused file — live-oscar never writes paper JSONL (P4-I1); path must exist only for config defaults. */
+        PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         /** W8.0 Phase 0 — торговля выкл. до go/no-go и фаз 1–6; только heartbeat в JSONL. */
         LIVE_STRATEGY_ENABLED: '0',
         LIVE_EXECUTION_MODE: 'dry_run',
