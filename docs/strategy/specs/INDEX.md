@@ -48,7 +48,7 @@
 | W8.0-p4 | [`W8.0_phase4_oscar_parity_adapter_spec.md`](./W8.0_phase4_oscar_parity_adapter_spec.md) | **выполнено** ✓ (продукт **1.7.0**; см. [`CHANGELOG`](../release/CHANGELOG.md), [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0-p3 + paper Oscar (`main`/`tracker`) |
 | W8.0-p5 | [`W8.0_phase5_risk_capital_gates_spec.md`](./W8.0_phase5_risk_capital_gates_spec.md) | **выполнено в коде** (продукт **1.8.0**; [`CHANGELOG`](../release/CHANGELOG.md); см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0-p4 + [`W8.0_live_oscar_trading_bot.md`](./W8.0_live_oscar_trading_bot.md) §3.3–§3.4 |
 | W8.0-p6 | [`W8.0_phase6_live_send_confirm_spec.md`](./W8.0_phase6_live_send_confirm_spec.md) | **выполнено в коде** (продукт **1.9.0**; [`CHANGELOG`](../release/CHANGELOG.md); см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0-p5 + W8.0-p3 + W8.0-p1 |
-| W8.0-p7 | [`W8.0_phase7_replay_reconcile_spec.md`](./W8.0_phase7_replay_reconcile_spec.md) | **normative draft** (Phase 7: replay `LIVE_TRADES_PATH` + on-chain reconcile; см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0-p6 + W8.0-p1 + paper restore patterns |
+| W8.0-p7 | [`W8.0_phase7_replay_reconcile_spec.md`](./W8.0_phase7_replay_reconcile_spec.md) | **normative draft** + [**чеклист реализации**](./W8.0_phase7_implementation_checklist.md) (replay `live_position_*` + SPL reconcile; статус строк vs код) | W8.0-p6 + W8.0-p1 + paper restore patterns |
 | W6.6 | `W6.6_strategy_lab_port.md` | **отложена** (через ≥7 дней работы paper после W7.3..W7.6) | W6.5 + runtime data |
 | W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
 
