@@ -63,7 +63,7 @@ export async function fetchSnapshotLaneCandidates(
       AND buys_5m >= ${lc.MIN_BUYS_5M}
       AND sells_5m >= ${lc.MIN_SELLS_5M}
     ORDER BY ts DESC
-    LIMIT 300
+    LIMIT ${cfg.snapshotCandidateLimit}
   `));
   return r as unknown as SnapshotCandidateRow[];
 }

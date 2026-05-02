@@ -93,6 +93,10 @@ const ConfigSchema = z.object({
   lanePostMinSells5m: z.coerce.number().int().nonnegative().default(10),
   lanePostMinAgeMin: z.coerce.number().nonnegative().default(25),
   lanePostMaxAgeMin: z.coerce.number().nonnegative().default(180),
+  /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
+  snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
+  /** Min seconds before re-evaluating the same mint in discovery (per process). */
+  discoveryReevalSec: z.coerce.number().int().min(5).max(600).default(60),
   snapshotMinBs: z.coerce.number().nonnegative().default(1.0),
 
   // ---- dip detector ----
@@ -303,6 +307,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMinSells5m: process.env.PAPER_POST_MIN_SELLS_5M,
     lanePostMinAgeMin: process.env.PAPER_POST_MIN_AGE_MIN,
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
+    snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
+    discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,
     dipLookbackMin: process.env.PAPER_DIP_LOOKBACK_MIN,
     dipLookbackWindowsCsv: process.env.PAPER_DIP_LOOKBACK_WINDOWS_MIN ?? '',

@@ -88,7 +88,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg,
     snapshotTagged.map((x) => x.row),
   );
-  const reevalAfterSec = 60;
+  const reevalAfterSec = cfg.discoveryReevalSec;
 
   const decisions: EvalDecision[] = [];
   let evaluated = 0;

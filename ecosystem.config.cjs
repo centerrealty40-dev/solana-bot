@@ -435,6 +435,9 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         PAPER_POSITION_USD: '100',
+        /** DNO: шире поиск по снимкам + чаще переоценка mint внутри одного процесса */
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '900',
+        PAPER_DISCOVERY_REEVAL_SEC: '30',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -459,7 +462,8 @@ module.exports = {
         PAPER_MIN_HOLDER_COUNT: '1000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
-        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
+        /** Короткие окна первыми (сортировка в config): ловим резкие проливы на свежих парах */
+        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '15,30,120,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-15',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
@@ -504,7 +508,7 @@ module.exports = {
         PAPER_HOLDERS_USE_QN_ADDON: '0',
         PAPER_HOLDERS_TTL_MS: '90000',
         PAPER_HOLDERS_NEG_TTL_MS: '15000',
-        PAPER_HOLDERS_MAX_PER_TICK: '10',
+        PAPER_HOLDERS_MAX_PER_TICK: '40',
         PAPER_HOLDERS_TIMEOUT_MS: '4000',
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
         PAPER_HOLDERS_ON_FAIL: 'db_fallback',
