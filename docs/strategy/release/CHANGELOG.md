@@ -8,6 +8,24 @@
 
 ---
 
+## [1.11.5] — 2026-05-02
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.5`.
+
+### Live Oscar — Phase 7 хвосты (report, tx sample, CLI, дашборд)
+
+- **`live_reconcile_report`** в **`LIVE_TRADES_PATH`** с **`liveSchema: 2`** (полный итог boot reconcile + опционально **`txAnchorSample`**).
+- **`LIVE_RECONCILE_TX_SAMPLE_N`** — до N последних **`confirmed`** подписей → **`getTransaction`** (мягкая проверка якоря; см. runbook §9).
+- **`npm run live-reconcile`** — одноразовый replay + reconcile без торгового цикла.
+- Дашборд **`/papertrader2`**: индикаторы boot reconcile и tx anchor для колонки live-oscar.
+- Документы: [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](./RUNBOOK_LIVE_OSCAR_PHASE7.md) §7–11; [`W8.0_phase1_live_jsonl_contract.md`](../specs/W8.0_phase1_live_jsonl_contract.md) — вид **`live_reconcile_report`**.
+
+### Откат
+
+- `VERSION` **`1.11.4`**; выставить **`LIVE_RECONCILE_TX_SAMPLE_N=0`**; потребители, жёстко ожидающие только `liveSchema: 1`, могут игнорировать строки с `liveSchema: 2`.
+
+---
+
 ## [1.11.4] — 2026-05-02
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.4`.

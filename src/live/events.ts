@@ -4,6 +4,8 @@
 import { z } from 'zod';
 
 export const LIVE_SCHEMA_V1 = 1 as const;
+/** New JSONL kinds introduced after W8.0-p1 (Phase 7 report row). */
+export const LIVE_SCHEMA_V2 = 2 as const;
 
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 
@@ -124,6 +126,37 @@ export const LivePositionCloseSchema = z.object({
   closedTrade: z.record(z.string(), z.unknown()),
 });
 
+const LiveReconcileModeFieldSchema = z.enum(['report', 'block_new', 'trust_chain']);
+
+/** Phase 7 structured reconcile outcome (`liveSchema: 2` at write time). */
+export const LiveReconcileReportSchema = z.object({
+  kind: z.literal('live_reconcile_report'),
+  ok: z.boolean(),
+  reconcileStatus: z.enum(['ok', 'mismatch', 'rpc_fail', 'skipped']),
+  mode: LiveReconcileModeFieldSchema,
+  skipReason: z.string().max(160).optional(),
+  mismatches: z
+    .array(
+      z.object({
+        mint: z.string(),
+        expectedRaw: z.string(),
+        actualRaw: z.string(),
+        note: z.string().optional(),
+      }),
+    )
+    .optional(),
+  walletSolLamports: z.string().nullable().optional(),
+  chainOnlyMints: z.array(z.string()).optional(),
+  journalReplayTruncated: z.boolean().optional(),
+  txAnchorSample: z
+    .object({
+      checked: z.number().int().nonnegative(),
+      notFound: z.array(z.string()),
+      rpcErrors: z.number().int().nonnegative(),
+    })
+    .optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -138,6 +171,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePositionDcaSchema,
   LivePositionPartialSellSchema,
   LivePositionCloseSchema,
+  LiveReconcileReportSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

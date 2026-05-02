@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   LIVE_SCHEMA_V1,
+  LIVE_SCHEMA_V2,
   parseLiveEventBody,
   safeParseLiveEventBody,
   type LiveEventBody,
@@ -147,6 +148,35 @@ describe('W8.0-p1 live JSONL contract', () => {
         openTrade: {},
       }),
     ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_reconcile_report',
+        ok: true,
+        reconcileStatus: 'skipped',
+        mode: 'report',
+      }),
+    ).toBe(true);
+  });
+
+  it('parses live_reconcile_report (liveSchema envelope 2 at write time)', () => {
+    const body: LiveEventBody = {
+      kind: 'live_reconcile_report',
+      ok: false,
+      reconcileStatus: 'mismatch',
+      mode: 'block_new',
+      mismatches: [{ mint: 'm1', expectedRaw: '10', actualRaw: '9' }],
+      txAnchorSample: { checked: 2, notFound: [], rpcErrors: 0 },
+    };
+    expect(parseLiveEventBody(JSON.parse(JSON.stringify(body)))).toEqual(body);
+    const row = {
+      ts: 1,
+      strategyId: 'live-oscar',
+      channel: 'live',
+      liveSchema: LIVE_SCHEMA_V2,
+      ...body,
+    };
+    expect(row.liveSchema).toBe(LIVE_SCHEMA_V2);
+    expect(parseLiveEventBody(row)).toEqual(body);
   });
 });
 
@@ -178,6 +208,19 @@ describe('appendLiveJsonlEvent integration', () => {
     expect(j.strategyId).toBe('live-oscar');
     expect(j.channel).toBe('live');
     expect(typeof j.ts).toBe('number');
+  });
+
+  it('writes live_reconcile_report with liveSchema 2', () => {
+    appendLiveJsonlEvent({
+      kind: 'live_reconcile_report',
+      ok: true,
+      reconcileStatus: 'ok',
+      mode: 'report',
+    });
+    const line = fs.readFileSync(tmp, 'utf8').trim();
+    const j = JSON.parse(line) as Record<string, unknown>;
+    expect(j.kind).toBe('live_reconcile_report');
+    expect(j.liveSchema).toBe(LIVE_SCHEMA_V2);
   });
 
   it('skips invalid payloads', () => {

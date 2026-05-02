@@ -124,4 +124,49 @@ describe('aggregateLiveOscarJsonlForDashboard', () => {
     expect(r.evals1h).toBeGreaterThanOrEqual(1);
     expect(r.passed1h).toBeGreaterThanOrEqual(1);
   });
+
+  it('parses reconcile boot heartbeat and live_reconcile_report', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'live-dash-'));
+    const fp = path.join(tmpDir, 'live.jsonl');
+    const base = Date.now() - 120_000;
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base,
+          strategyId: 'live-oscar',
+          channel: 'live',
+          liveSchema: 1,
+          kind: 'heartbeat',
+          uptimeSec: 10,
+          openPositions: 1,
+          closedTotal: 0,
+          liveStrategyEnabled: true,
+          executionMode: 'live',
+          reconcileBootStatus: 'ok',
+          reconcileMintsDivergent: [],
+          reconcileChainOnlyMints: ['MintX'],
+          journalReplayTruncated: false,
+        }),
+        JSON.stringify({
+          ts: base + 5000,
+          strategyId: 'live-oscar',
+          channel: 'live',
+          liveSchema: 2,
+          kind: 'live_reconcile_report',
+          ok: true,
+          reconcileStatus: 'ok',
+          mode: 'block_new',
+          txAnchorSample: { checked: 2, notFound: ['sig1'], rpcErrors: 0 },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const r = aggregateLiveOscarJsonlForDashboard(fp);
+    expect(r.liveReconcileBoot?.status).toBe('ok');
+    expect(r.liveReconcileBoot?.chainOnlyCount).toBe(1);
+    expect(r.liveReconcileReport?.ok).toBe(true);
+    expect(r.liveReconcileReport?.txAnchorMissing).toBe(1);
+  });
 });

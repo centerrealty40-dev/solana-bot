@@ -17,7 +17,13 @@ import {
   setLiveReconcileBootSnapshot,
 } from './live-reconcile-state.js';
 import { createLiveOscarPhase5Bundle } from './phase5-runtime.js';
+import { appendLiveReconcileReportJsonl } from './live-reconcile-report.js';
 import { reconcileLiveWalletVsReplay } from './reconcile-live.js';
+import {
+  collectRecentConfirmedTxSignatures,
+  verifyTxAnchorSample,
+  type TxAnchorSampleResult,
+} from './reconcile-tx-anchor-sample.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
 
 const log = pino({ name: 'live-oscar' });
@@ -42,8 +48,20 @@ export async function main(): Promise<void> {
   if (!liveCfg.strategyEnabled) {
     log.info({}, 'live-oscar Phase 7 replay skipped (LIVE_STRATEGY_ENABLED=0)');
     setLiveReconcileBootSnapshot({ status: 'skipped', skipReason: 'strategy_disabled' });
+    appendLiveReconcileReportJsonl({
+      liveCfg,
+      reconcileStatus: 'skipped',
+      ok: true,
+      skipReason: 'strategy_disabled',
+    });
   } else if (!liveCfg.liveReplayOnBoot) {
     setLiveReconcileBootSnapshot({ status: 'skipped', skipReason: 'replay_off' });
+    appendLiveReconcileReportJsonl({
+      liveCfg,
+      reconcileStatus: 'skipped',
+      ok: true,
+      skipReason: 'replay_off',
+    });
   } else {
     liveStrategyReplay = replayLiveStrategyJournal({
       storePath: liveCfg.liveTradesPath,
@@ -68,12 +86,50 @@ export async function main(): Promise<void> {
       );
     }
 
+    let txAnchorSample: TxAnchorSampleResult | undefined;
+    if (liveCfg.liveReconcileTxSampleN > 0) {
+      const sigs = collectRecentConfirmedTxSignatures({
+        storePath: liveCfg.liveTradesPath,
+        strategyId: liveCfg.strategyId,
+        limit: liveCfg.liveReconcileTxSampleN,
+        maxFileBytes: liveCfg.liveReplayMaxFileBytes,
+      });
+      txAnchorSample = await verifyTxAnchorSample(liveCfg, sigs);
+      if (txAnchorSample.notFound.length > 0 || txAnchorSample.rpcErrors > 0) {
+        log.warn({ txAnchorSample }, 'live-oscar Phase 7 tx anchor sample issues');
+      }
+    }
+
     if (liveCfg.executionMode === 'dry_run') {
       setLiveReconcileBootSnapshot({ status: 'skipped', skipReason: 'dry_run', journalTruncated });
+      appendLiveReconcileReportJsonl({
+        liveCfg,
+        reconcileStatus: 'skipped',
+        ok: true,
+        skipReason: 'dry_run',
+        journalReplayTruncated: journalTruncated,
+        txAnchorSample,
+      });
     } else if (!liveCfg.liveReconcileOnBoot) {
       setLiveReconcileBootSnapshot({ status: 'skipped', skipReason: 'reconcile_off', journalTruncated });
+      appendLiveReconcileReportJsonl({
+        liveCfg,
+        reconcileStatus: 'skipped',
+        ok: true,
+        skipReason: 'reconcile_off',
+        journalReplayTruncated: journalTruncated,
+        txAnchorSample,
+      });
     } else if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') {
       setLiveReconcileBootSnapshot({ status: 'skipped', skipReason: 'execution_mode', journalTruncated });
+      appendLiveReconcileReportJsonl({
+        liveCfg,
+        reconcileStatus: 'skipped',
+        ok: true,
+        skipReason: 'execution_mode',
+        journalReplayTruncated: journalTruncated,
+        txAnchorSample,
+      });
     } else {
       const rec = await reconcileLiveWalletVsReplay({
         liveCfg,
@@ -114,6 +170,14 @@ export async function main(): Promise<void> {
             detail: detailStr,
           });
         }
+        appendLiveReconcileReportJsonl({
+          liveCfg,
+          reconcileStatus: 'rpc_fail',
+          ok: false,
+          rec,
+          journalReplayTruncated: journalTruncated,
+          txAnchorSample,
+        });
       } else if (!rec.ok) {
         setLiveReconcileBootSnapshot({
           status: 'mismatch',
@@ -144,12 +208,28 @@ export async function main(): Promise<void> {
             detail: detailStr,
           });
         }
+        appendLiveReconcileReportJsonl({
+          liveCfg,
+          reconcileStatus: 'mismatch',
+          ok: false,
+          rec,
+          journalReplayTruncated: journalTruncated,
+          txAnchorSample,
+        });
       } else {
         setLiveReconcileBootSnapshot({
           status: 'ok',
           walletSolLamports: rec.walletSolLamports,
           chainOnlyMints: rec.chainOnlyMints,
           journalTruncated,
+        });
+        appendLiveReconcileReportJsonl({
+          liveCfg,
+          reconcileStatus: 'ok',
+          ok: true,
+          rec,
+          journalReplayTruncated: journalTruncated,
+          txAnchorSample,
         });
       }
     }

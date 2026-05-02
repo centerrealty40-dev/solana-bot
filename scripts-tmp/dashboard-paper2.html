@@ -133,6 +133,12 @@
             <span class="text-slate-400 ml-1"
                   x-text="'liq_drain ' + (s.liqDrain?.exits ?? 0) + ' exits · '
                           + (s.liqDrain?.avgDropPct != null ? s.liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
+            <span x-show="s.strategyId === 'live-oscar' && s.liveReconcileBoot?.status" class="pill shrink-0"
+                  :class="s.liveReconcileBoot?.status === 'ok' ? 'pill-ok' : (s.liveReconcileBoot?.status === 'skipped' ? 'pill-info' : 'pill-warn')"
+                  x-text="'reconcile boot: ' + (s.liveReconcileBoot?.status || '')"></span>
+            <span x-show="s.strategyId === 'live-oscar' && s.liveReconcileReport && (s.liveReconcileReport.txAnchorMissing || s.liveReconcileReport.txAnchorRpcErrors)"
+                  class="pill pill-warn shrink-0"
+                  x-text="'tx anchor Δ ' + (s.liveReconcileReport?.txAnchorMissing || 0) + ' miss · ' + (s.liveReconcileReport?.txAnchorRpcErrors || 0) + ' rpc'"></span>
           </div>
         </div>
       </template>

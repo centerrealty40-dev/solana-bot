@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { LiveEventBody } from './events.js';
-import { LIVE_SCHEMA_V1, safeParseLiveEventBody } from './events.js';
+import { LIVE_SCHEMA_V1, LIVE_SCHEMA_V2, safeParseLiveEventBody } from './events.js';
+
+function envelopeLiveSchema(body: LiveEventBody): number {
+  return body.kind === 'live_reconcile_report' ? LIVE_SCHEMA_V2 : LIVE_SCHEMA_V1;
+}
 
 let storePath = '';
 let strategyId = 'live-oscar';
@@ -45,6 +49,8 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_position_partial_sell':
     case 'live_position_close':
       return true;
+    case 'live_reconcile_report':
+      return true;
     default:
       return false;
   }
@@ -66,7 +72,7 @@ export function appendLiveJsonlEvent(body: unknown, opts?: { sync?: boolean }): 
       ts: Date.now(),
       strategyId,
       channel: 'live',
-      liveSchema: LIVE_SCHEMA_V1,
+      liveSchema: envelopeLiveSchema(validated),
       ...validated,
     };
     const line = JSON.stringify(payload) + '\n';

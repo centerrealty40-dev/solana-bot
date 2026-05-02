@@ -46,3 +46,40 @@
 ## 6. Heartbeat
 
 В **`heartbeat`** (после boot) добавлены опциональные поля: **`reconcileBootStatus`**, **`reconcileBootSkipReason`**, **`reconcileMintsDivergent`**, **`reconcileWalletSolLamports`**, **`reconcileChainOnlyMints`**, **`journalReplayTruncated`**. Используйте для дашборда и алертов (полный пласт Phase 8 — отдельно).
+
+Колонка **Live Oscar** на **`/papertrader2`** показывает последний **`reconcile boot:*`** из heartbeat и предупреждение по **`live_reconcile_report.txAnchorSample`**, если есть пропуски по RPC.
+
+---
+
+## 7. Решение по пути replay **(B)** и индексу `intentId` (§4 спеки)
+
+- **Путь (B)** — восстановление позиций **только** из **`execution_attempt` / `execution_result`** — **не реализуется**: дублирует состояние, которое уже надёжно отражено в **`live_position_*`**, и требует вывода полного `OpenTrade` из исполнения с высоким риском расхождений. Канон остаётся **путь (A)**.
+- **Индекс по `intentId`** для упорядочивания execution-событий при **(B)** — **n/a** при каноне **(A)**.
+
+---
+
+## 8. Строка **`live_reconcile_report`** (`liveSchema: 2`)
+
+На каждом старте процесса (после ветки replay/reconcile) в **`LIVE_TRADES_PATH`** дописывается одна строка **`kind: live_reconcile_report`** с **`liveSchema: 2`**: итог SPL reconcile (`ok`, `reconcileStatus`, `mode`, при необходимости **`mismatches`**, SOL, **`chainOnlyMints`**, **`journalReplayTruncated`**). Пишется **после** возможных **`risk_block`** / **`execution_skip`** по reconcile.
+
+---
+
+## 9. Выборочная проверка **`txSignature`** (мягкий якорь P7-I4)
+
+- **`LIVE_RECONCILE_TX_SAMPLE_N`** (целое **0…50**, дефолт **0**): при **`N > 0`** после replay процесс берёт **до N** последних уникальных подписей из журнала со статусом **`execution_result.confirmed`** и вызывает **`getTransaction`** (тот же **`qnCall` / feature `sim`**, commitment как **`LIVE_CONFIRM_COMMITMENT`**). Результат попадает в **`live_reconcile_report.txAnchorSample`** (`checked`, `notFound`, `rpcErrors`). Отсутствие tx в RPC **не** переводит SPL reconcile в fail — это отдельный сигнал для оператора.
+
+---
+
+## 10. CLI без запуска Oscar
+
+```bash
+npm run live-reconcile
+```
+
+Загружает тот же ENV, что **`live-oscar`**, выполняет replay + reconcile (+ tx sample, если **`LIVE_RECONCILE_TX_SAMPLE_N > 0`**), печатает JSON в stdout; код выхода **1** при ошибке SPL reconcile или при проблемах tx sample (`notFound` / `rpcErrors`). Не запускает торговый цикл.
+
+---
+
+## 11. Относительный допуск reconcile (%)
+
+По решению продукта остаётся только **`LIVE_RECONCILE_TOLERANCE_ATOMS`**; процентный допуск к остатку **не вводился**.

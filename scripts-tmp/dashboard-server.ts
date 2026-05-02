@@ -1046,6 +1046,22 @@ export type DashboardPaper2StrategyRow = {
     p90SlipPct: number | null;
   };
   liqDrain: { exits: number; avgDropPct: number | null; p90DropPct: number | null };
+  /** Last boot reconcile fields from `heartbeat` (live-oscar / Phase 7). */
+  liveReconcileBoot?: {
+    status?: string;
+    skipReason?: string;
+    divergentCount?: number;
+    chainOnlyCount?: number;
+    journalTruncated?: boolean;
+  };
+  /** Last structured row from `live_reconcile_report` (`liveSchema: 2`). */
+  liveReconcileReport?: {
+    ts: number;
+    ok: boolean;
+    reconcileStatus: string;
+    txAnchorMissing?: number;
+    txAnchorRpcErrors?: number;
+  };
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -1779,6 +1795,8 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   let lastTs = 0;
   let hbOpen = 0;
   let hbClosed = 0;
+  let liveReconcileBoot: DashboardPaper2StrategyRow['liveReconcileBoot'];
+  let liveReconcileReport: DashboardPaper2StrategyRow['liveReconcileReport'];
   const now = Date.now();
   const h1 = now - 60 * 60 * 1000;
   let evals1h = 0;
@@ -1810,6 +1828,28 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
     if (kind === 'heartbeat') {
       hbOpen = Number(o.openPositions ?? 0);
       hbClosed = Number(o.closedTotal ?? 0);
+      const st = o.reconcileBootStatus;
+      if (typeof st === 'string' && st) {
+        const div = o.reconcileMintsDivergent;
+        const chain = o.reconcileChainOnlyMints;
+        liveReconcileBoot = {
+          status: st,
+          skipReason: typeof o.reconcileBootSkipReason === 'string' ? o.reconcileBootSkipReason : undefined,
+          divergentCount: Array.isArray(div) ? div.length : undefined,
+          chainOnlyCount: Array.isArray(chain) ? chain.length : undefined,
+          journalTruncated: typeof o.journalReplayTruncated === 'boolean' ? o.journalReplayTruncated : undefined,
+        };
+      }
+    }
+    if (kind === 'live_reconcile_report') {
+      const ta = o.txAnchorSample as { notFound?: unknown[]; rpcErrors?: unknown } | undefined;
+      liveReconcileReport = {
+        ts,
+        ok: Boolean(o.ok),
+        reconcileStatus: String(o.reconcileStatus ?? ''),
+        txAnchorMissing: Array.isArray(ta?.notFound) ? ta.notFound.length : undefined,
+        txAnchorRpcErrors: typeof ta?.rpcErrors === 'number' ? ta.rpcErrors : undefined,
+      };
     }
     if (kind === 'execution_attempt' && ts >= h1) evals1h += 1;
     if (kind === 'execution_result' && ts >= h1) {
@@ -1856,6 +1896,8 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
     priorityFeeUsdTotal: 0,
     priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
     liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+    ...(liveReconcileBoot ? { liveReconcileBoot } : {}),
+    ...(liveReconcileReport ? { liveReconcileReport } : {}),
   };
 }
 

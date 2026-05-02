@@ -109,6 +109,8 @@ const LiveOscarConfigSchema = z
     liveReconcileOnBoot: z.boolean(),
     liveReconcileMode: LiveReconcileModeSchema,
     liveReconcileToleranceAtoms: z.number().int().min(0),
+    /** 0 = off. Sample-verify last N confirmed `execution_result` rows via getTransaction (Phase 7 tail). */
+    liveReconcileTxSampleN: z.coerce.number().int().min(0).max(50).default(0),
   })
   .superRefine((data, ctx) => {
     if (data.liveReconcileMode === 'trust_chain' && !envBool(process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED, false)) {
@@ -222,6 +224,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 10_000;
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? n : 10_000;
+    })(),
+    liveReconcileTxSampleN: (() => {
+      const s = process.env.LIVE_RECONCILE_TX_SAMPLE_N?.trim();
+      if (!s) return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
   });
 
