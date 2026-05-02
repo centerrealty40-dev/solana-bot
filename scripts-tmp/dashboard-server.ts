@@ -936,7 +936,7 @@ app.get('/api/direct-lp/health', async (_req, reply) => {
 // /api/paper2 — read every *.jsonl in PAPER2_DIR and aggregate.
 // Uses W6.3c close.netPnlUsd directly (NOT pctToUsd(pnlPct)).
 // ---------------------------------------------------------
-type Paper2OpenItem = {
+export type Paper2OpenItem = {
   mint: string;
   symbol: string;
   entryTs: number;
@@ -1135,7 +1135,7 @@ function priceVerifyStatsEndpointSlice(filePath: string, windowMs: number): {
  * mcUsd is USD market cap when known (only when metricType === 'mc'),
  * null otherwise (so the UI can render "mcap n/a" exactly like the spec).
  */
-type TimelineEvent = {
+export type TimelineEvent = {
   ts: number;
   kind: 'open' | 'dca_add' | 'partial_sell' | 'close';
   label: string;
@@ -1180,7 +1180,7 @@ function fmtSignedPct(p: number | null | undefined): string {
   return `${sign}${p.toFixed(0)}%`;
 }
 
-function buildTimelineEvent(
+export function buildTimelineEvent(
   e: Record<string, unknown>,
   metricType: string | null,
   entryRealMcUsd: number | null,
@@ -1402,11 +1402,11 @@ function enrichTimelineAmountUsd(ev: TimelineEvent): TimelineEvent {
   return ev;
 }
 
-function finalizeTimelineForApi(timeline: TimelineEvent[]): TimelineEvent[] {
+export function finalizeTimelineForApi(timeline: TimelineEvent[]): TimelineEvent[] {
   return timeline.map(enrichTimelineAmountUsd);
 }
 
-function loadPaper2File(filePath: string): {
+export function loadPaper2File(filePath: string): {
   open: Paper2OpenItem[];
   closed: Paper2ClosedRow[];
   firstTs: number;
@@ -2286,10 +2286,12 @@ app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
   return { windowMin, perStrategy };
 });
 
-app.listen({ port: PORT, host: HOST }).then(() => {
-  console.log(`[dashboard] listening on http://${HOST}:${PORT}`);
-  console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
-  const cp = resolvedOrgCursorPath();
-  console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
-  startQuickNodeUsageReporting();
-});
+if (process.env.DASHBOARD_NO_LISTEN !== '1') {
+  app.listen({ port: PORT, host: HOST }).then(() => {
+    console.log(`[dashboard] listening on http://${HOST}:${PORT}`);
+    console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
+    const cp = resolvedOrgCursorPath();
+    console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
+    startQuickNodeUsageReporting();
+  });
+}
