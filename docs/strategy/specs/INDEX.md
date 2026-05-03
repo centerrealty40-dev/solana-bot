@@ -50,9 +50,12 @@
 | W8.0-p6 | [`W8.0_phase6_live_send_confirm_spec.md`](./W8.0_phase6_live_send_confirm_spec.md) | **выполнено в коде** (продукт **1.9.0**; [`CHANGELOG`](../release/CHANGELOG.md); см. [`W8.0_IMPLEMENTATION_PHASES`](./W8.0_IMPLEMENTATION_PHASES.md)) | W8.0-p5 + W8.0-p3 + W8.0-p1 |
 | W8.0-p7 | [`W8.0_phase7_replay_reconcile_spec.md`](./W8.0_phase7_replay_reconcile_spec.md) | **выполнено в коде** ✓ v1 (продукт **1.11.13** rollout §9 шаг 3 **live** + §0.2 runbook; [`CHANGELOG`](../release/CHANGELOG.md), [`RUNBOOK_LIVE_OSCAR_PHASE7.md`](../release/RUNBOOK_LIVE_OSCAR_PHASE7.md), [`чеклист`](./W8.0_phase7_implementation_checklist.md)) | W8.0-p6 + W8.0-p1 + paper restore patterns |
 | W6.6 | `W6.6_strategy_lab_port.md` | **отложена** (через ≥7 дней работы paper после W7.3..W7.6) | W6.5 + runtime data |
-| W6.7+ | _(пока без spec)_ Smart Lottery, Coverage, smart-money | по решению пользователя | W6.6 |
+| W6.7 | [`W6.7_gecko_raydium_wallet_seed_collector_local.md`](../../Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md) | **normative** — хаб **`docs/Smart Lottery V2/`**: Gecko `new_pools` + Raydium + QuickNode → `wallets` (локально v1) | W6.0 |
+| W6.7+ | Coverage и прочие ветки smart-money | по решению пользователя; дорожная карта и концепты — [`../../Smart Lottery V2/README.md`](../../Smart Lottery V2/README.md) | W6.6 |
 
-**W6.2 (Intel layer / smart-money discovery / RPC queue) — отменён в первом цикле.** Будет переоткрыт в W6.7 если/когда понадобится Smart Lottery.
+**W6.2 (Intel layer / smart-money discovery / RPC queue) — отменён в первом цикле.** Направление продолжается в **W6.7** и документах **`docs/Smart Lottery V2/`** (не искать разрозненно по `specs/`).
+
+**Аналитический контур:** агент начинает с [`../../Smart Lottery V2/README.md`](../../Smart Lottery V2/README.md).
 
 **Примечание W6.5 (DoD):** все prod бумажные стратегии (`pt1-oscar`, `pt1-diprunner`, `pt1-dno`) и **`live-oscar`** используют пост-lane с **минимальным возрастом пула в снимке 2880 мин (48 ч / 2 дня)** и **`PAPER_POST_MAX_AGE_MIN=0`** (верхняя граница не задана); SSOT — блоки `env` в [`ecosystem.config.cjs`](../../../ecosystem.config.cjs). Если за окно наблюдения в БД мало зрелых пар, в JSONL возможны серии только `heartbeat` (`disc=0`) — это ожидаемо; формальный DoD «≥5 eval за 30 мин» в такой сессии может не достигаться до появления кандидатов или по решению пользователя — точечный hot-fix параметров (например ослабить `PAPER_POST_MIN_AGE_MIN` только для отдельного PM2-приложения) оформляется отдельным коммитом и записью в [`CHANGELOG`](../release/CHANGELOG.md).
 

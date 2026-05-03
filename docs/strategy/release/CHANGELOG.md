@@ -8,6 +8,25 @@
 
 ---
 
+## [1.11.27] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.27`.
+
+### W6.7 — коллектор Gecko → Raydium → RPC для пополнения `wallets` (пилот)
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** `new_pools` GeckoTerminal, фильтр Raydium, `getSignaturesForAddress` / `getTransaction` (режим **`v1b`** по умолчанию), **`INSERT … ON CONFLICT DO NOTHING`** в **`wallets`** с контрактом `metadata` из W6.7 §6.3; **`batch_id`** по PI-5 — один на процесс; последовательная обработка пулов; env **`SA_GRWS_*`**.
+- **`package.json`:** скрипт **`npm run sa-grws-collector`**.
+- **`.env.example`:** блок переменных W6.7 §8.
+- **`scripts/check-release-hygiene.mjs`**, **`docs/strategy/specs/INDEX.md`:** проверка относительных ссылок допускает пробелы/`%20` в пути (папка **`Smart Lottery V2`**).
+
+PM2 на VPS по умолчанию не добавлялся (локальный пилот / ручной запуск по [`W6.7`](../../Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md)).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.26 -- scripts-tmp/sa-grws-collector.mjs package.json .env.example scripts/check-release-hygiene.mjs docs/strategy/specs/INDEX.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** (или **`git reset --hard sa-alpha-1.11.26`** на клоне). Перезапуск PM2 не требуется.
+
+---
+
 ## [1.11.26] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.26`.

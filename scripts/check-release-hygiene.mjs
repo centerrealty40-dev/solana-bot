@@ -41,12 +41,19 @@ ok(`product VERSION ${ver}`);
 // --- INDEX links ---
 if (!fs.existsSync(indexPath)) fail(`missing ${path.relative(root, indexPath)}`);
 const indexText = fs.readFileSync(indexPath, 'utf8');
-const linkRe = /\]\((\.\.?\/[^)#\s]+)/g;
+const linkRe = /\]\((\.\.?\/[^)]+)\)/g;
 const targets = new Set();
 let m;
 while ((m = linkRe.exec(indexText)) !== null) {
-  let rel = m[1];
+  let rel = m[1].trim();
+  const hashIdx = rel.indexOf('#');
+  if (hashIdx >= 0) rel = rel.slice(0, hashIdx);
   if (rel.includes('://')) continue;
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    /* keep raw */
+  }
   targets.add(rel);
 }
 
