@@ -254,6 +254,31 @@ export async function aggregateConfirmedSwapSlippage(
 
     if (!quoteOutStr) {
       legacyMissingQuoteAmounts += 1;
+      const loadedLegacy = await fetchTransactionOk(cfg, signature);
+      if (!loadedLegacy) {
+        rpcFailures += 1;
+        rows.push({
+          intentId,
+          side,
+          mint,
+          signature,
+          attemptTs,
+          slipOutPctApprox: null,
+          slipUsdApprox: null,
+          quoteOutRaw: null,
+          actualOutRaw: null,
+          note: 'legacy_journal_missing_quoteOutAmount+rpc_fail',
+        });
+        continue;
+      }
+      const keysL = (loadedLegacy.message.accountKeys ?? []) as unknown[];
+      const ixL = signerIndex(keysL, walletPk);
+      let actualLegacy: string | null = null;
+      if (side === 'buy') {
+        actualLegacy = mintOwnerRawDelta(loadedLegacy.meta, mint, walletPk).toString();
+      } else {
+        actualLegacy = solProceedsLamports(loadedLegacy.meta, walletPk, ixL).toString();
+      }
       rows.push({
         intentId,
         side,
@@ -263,8 +288,9 @@ export async function aggregateConfirmedSwapSlippage(
         slipOutPctApprox: null,
         slipUsdApprox: null,
         quoteOutRaw: null,
-        actualOutRaw: null,
-        note: 'legacy_journal_missing_quoteOutAmount',
+        actualOutRaw: actualLegacy,
+        note:
+          'legacy_journal_missing_quoteOutAmount — slip vs Jupiter quote не восстановить из журнала; новые сделки получат quoteOutAmount в snapshot',
       });
       continue;
     }
