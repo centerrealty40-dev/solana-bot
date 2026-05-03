@@ -3,7 +3,7 @@
  */
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { qnCall } from '../core/rpc/qn-client.js';
+import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import { liveFetchBuyQuote } from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import type { LiveOscarConfig } from './config.js';
@@ -104,15 +104,13 @@ async function aggregateStrategyPnlUsd(args: {
 async function rpcWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null> {
   const pk = walletPubkey58(cfg);
   if (!pk) return null;
-  const res = await qnCall<number>('getBalance', [pk, { commitment: 'processed' }], {
+  const res = await qnCall<unknown>('getBalance', [pk, { commitment: 'processed' }], {
     feature: 'sim',
     creditsPerCall: cfg.liveSimCreditsPerCall,
     timeoutMs: cfg.liveSimTimeoutMs,
   });
   if (!res.ok) return null;
-  const v = res.value;
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? BigInt(Math.floor(n)) : null;
+  return lamportsFromGetBalanceResult(res.value);
 }
 
 async function freeUsdSolOnly(args: {

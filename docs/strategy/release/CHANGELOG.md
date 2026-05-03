@@ -8,6 +8,111 @@
 
 ---
 
+## [1.11.20] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.20`.
+
+**Интеграция:** в этот же git-тег и push в **`origin/v2`** впервые входят накопленные в рабочем дереве изменения, текстово описанные в журнале ниже как **[1.11.19]** (дашборд cookie, hourly RPC, сопутствующие правки **`ecosystem.config.cjs`**, **`.env.example`**, **`deploy/RUNTIME.md`**, **`W6.4_observability_port.md`**).
+
+### RPC `getBalance` — паритет с QuickNode (Live Phase 5 / reconcile)
+
+- **Симптом:** в live-журнале **`risk_block`** с **`limit: wallet_balance_rpc`** при работающем RPC; paper **`pt1-oscar`** мог открывать позиции в тот же период.
+- **Причина:** ответ QuickNode для **`getBalance`** часто имеет вид **`{ context, value }`**, а код ожидал голое число лампортов → **`NaN`** → **`null`** lamports → ложный блок Phase 5.
+- **`src/core/rpc/qn-client.ts`:** **`lamportsFromGetBalanceResult`** — разбор обоих форматов (число или вложенный **`value`**).
+- **`src/live/phase5-gates.ts`**, **`src/live/reconcile-live.ts`:** использование парсера вместо **`Number(result)`** по объекту.
+- **`tests/qn-getbalance-lamports.test.ts`:** регрессия на форму QuickNode.
+- **`scripts/diag-live-wallet-rpc.ts`**, npm **`diag:live-wallet-rpc`** — диагностика (сырой POST + **`qnCall`** с **`feature: sim`**, снимок meter).
+- **`docs/strategy/release/DIAGNOSTIC_SCRIPTS.md`:** §3 — явное исключение для утилит в **`scripts/*.ts`** с импортом из **`src/`**.
+- **`docs/strategy/release/RUNBOOK_LIVE_OSCAR_PHASE7.md`:** примечание про форму ответа **`getBalance`**.
+
+### Откат
+
+- Revert коммита с **`lamportsFromGetBalanceResult`** и связанными вызовами (или восстановить файлы до **1.11.19**); **`pm2 restart live-oscar --update-env`** на VPS.
+
+---
+
+## [1.11.19] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.19`.
+
+### Дашборд PaperTrader2 — мобильный вход после Basic Auth
+
+- **`scripts-tmp/dashboard-server.ts`:** при успешном HTTP Basic или валидной cookie **`sa_dash_sess`** выставляется **HttpOnly** сессионная cookie (HMAC, sliding ~7 суток). Так **`fetch('/api/paper2', { credentials: 'include' })`** на телефонах получает доступ без повторной отправки заголовка `Authorization` (типичная причина «перезагрузки» и пустого состояния только на mobile).
+
+### Hourly Telegram — баланс кошелька
+
+- **`scripts-tmp/hourly-telegram-report.mjs`:** в цепочку RPC добавлен **`SA_RPC_HTTP_URL`** (как на VPS в `.env`).
+- На сервере в **`/opt/solana-alpha/.env`** должен быть **`LIVE_WALLET_PUBKEY`** (или **`HOURLY_WALLET_PUBKEY`**), иначе в отчёте остаётся текст про незаданный ключ.
+
+### Откат
+
+- Откат **`dashboard-server.ts`** на версию без cookie; удалить опциональные **`DASHBOARD_SESSION_SECRET`** / cookie у клиентов не обязательно.
+
+---
+
+## [1.11.18] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.18`.
+
+### Deep Runner (`pt1-diprunner`) — dip-паритет с Oscar + recovery veto
+
+- Параметры дипа (**lookback 120/360/720**, откат −15…−50%, импульс ≥12%, мин. возраст дипа 0, кулдаун 120 / скальп 20) уже были в **`ecosystem.config.cjs`**; добавлены **`PAPER_DIP_RECOVERY_VETO_*`** как у **`pt1-oscar`**.
+- Дашборд **`/papertrader2`**: описание Deep Runner приведено к фактическим env; уточнён контекст **live holders** (общий модуль **`holders-resolve.ts`**, в т.ч. исправление GPA Token-2022 без недосчёта из‑за `dataSize`).
+
+### Откат
+
+- Удалить три ключа **`PAPER_DIP_RECOVERY_VETO_*`** из блока **`pt1-diprunner`** и `pm2 reload ecosystem.config.cjs --only pt1-diprunner --update-env`.
+
+---
+
+## [1.11.17] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.17`.
+
+### Live Oscar — микролимиты: вход $10, потолок потерь стратегии $50
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`PAPER_POSITION_USD=10`**, **`LIVE_MAX_POSITION_USD=10`**, **`LIVE_MAX_STRATEGY_LOSS_USD=50`** (без изменений по сумме, зафиксировано в комментарии как совокупный лимит стратегии).
+- Дашборд: мета Live Oscar отражает **$10** и **$50**.
+
+### Откат
+
+- Вернуть прежние USD-значения в блоке **`live-oscar`** и **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**.
+
+---
+
+## [1.11.16] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.16`.
+
+### Live Oscar — хотфикс: возраст пула 12 ч + снятие ложного risk_block на вход
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`PAPER_POST_MIN_AGE_MIN=720`** (12 ч); ранее 360 (6 ч).
+- **`LIVE_MAX_POSITION_USD=100`** — выровнено с **`PAPER_POSITION_USD`**; при **`10`** live-контур стабильно писал **`risk_block`** (`max_position_usd`: intent $100 vs max $10), из‑за чего не было ни одной покупки при **`executionMode=live`**.
+- Дашборд: текст меты Live Oscar — **720 мин (12 ч)**.
+
+### Откат
+
+- В ecosystem для **`live-oscar`**: **`PAPER_POST_MIN_AGE_MIN`** как было; **`LIVE_MAX_POSITION_USD=10`** только если снова нужна канарейка §3.3; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.15] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.15`.
+
+### Live Oscar — возраст пула 6 ч, тайм-аут 8 ч; hourly Telegram
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`PAPER_POST_MIN_AGE_MIN=360`** (6 ч), **`PAPER_TIMEOUT_HOURS=8`**; paper **`pt1-oscar`** без изменений (120 мин / 12 ч).
+- **`scripts-tmp/hourly-telegram-report.mjs`**: одно сообщение — Coverage (unique mints), Health по источникам, блок **Live Oscar** (открытые позиции, новые открытия за час, реализованный / нереализованный / суммарный PnL), **Eval** из paper Oscar JSONL, баланс **SOL/USDC**, сводка **failed/sim_err** за час с разбивкой по причинам.
+- Дашборд **`/papertrader2`**: текст меты **Live Oscar** приведён к 360 мин / 8 ч.
+- **`.env.example`**: переменные **`HOURLY_*`** для hourly-отчёта.
+
+### Откат
+
+- В ecosystem для **`live-oscar`** вернуть **`PAPER_POST_MIN_AGE_MIN=120`**, **`PAPER_TIMEOUT_HOURS=12`** (как у pt1-oscar) при необходимости паритета; откат hourly — предыдущий коммит `hourly-telegram-report.mjs`.
+
+---
+
 ## [1.11.14] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.14`.

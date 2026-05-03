@@ -37,6 +37,7 @@
     "collector:http-budget": "node scripts-tmp/collector-http-budget.mjs",
     "collector:log-watch": "node scripts-tmp/collector-log-watch.mjs",
     "collector:profile-once": "node scripts-tmp/collector-profile-once.mjs",
+    "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts"
   },

@@ -2,7 +2,7 @@
  * W8.0 Phase 7 — SPL balances vs replayed `open` positions (RPC via `qnCall`, feature **`sim`** + optional `LIVE_RPC_HTTP_URL`).
  * Read-only RPC uses the same **`sim`** credit bucket as Phase 3 simulate + Phase 5 `getBalance` (documented in CHANGELOG).
  */
-import { qnCall } from '../core/rpc/qn-client.js';
+import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import type { OpenTrade } from '../papertrader/types.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import type { LiveOscarConfig, LiveReconcileMode } from './config.js';
@@ -60,11 +60,9 @@ function qnReadOpts(cfg: LiveOscarConfig) {
 async function fetchWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null> {
   const pk = walletPubkey58(cfg);
   if (!pk) return null;
-  const res = await qnCall<number>('getBalance', [pk, { commitment: 'processed' }], qnReadOpts(cfg));
+  const res = await qnCall<unknown>('getBalance', [pk, { commitment: 'processed' }], qnReadOpts(cfg));
   if (!res.ok) return null;
-  const v = res.value;
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? BigInt(Math.floor(n)) : null;
+  return lamportsFromGetBalanceResult(res.value);
 }
 
 async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<string, bigint> | null> {

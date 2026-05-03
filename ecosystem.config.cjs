@@ -217,6 +217,11 @@ module.exports = {
         PAPER_DIP_COOLDOWN_MIN: '120',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
+        /** Паритет с pt1-oscar по «recovery veto» дипа (окна от локального дна). */
+        PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
+        PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+
         PAPER_DCA_LEVELS: '-10:0.3,-20:0.3',
         PAPER_DCA_KILLSTOP: '-0.40',
         PAPER_TP_LADDER: '0.10:0.40,0.20:0.50,0.30:0.80,0.40:1.0',
@@ -440,7 +445,8 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        PAPER_POSITION_USD: '100',
+        /** Микро live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе `risk_block` на входе. */
+        PAPER_POSITION_USD: '10',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -454,7 +460,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '120',
+        /** Live Oscar — минимальный возраст пула в снимке 12 ч (не паритет с pt1-oscar 120 мин). */
+        PAPER_POST_MIN_AGE_MIN: '720',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
@@ -486,7 +493,8 @@ module.exports = {
         PAPER_TRAIL_MODE: 'ladder_retrace',
         PAPER_TRAIL_DROP: '0.10',
         PAPER_TRAIL_TRIGGER_X: '1.10',
-        PAPER_TIMEOUT_HOURS: '12',
+        /** Live Oscar — тайм-аут позиции 8 ч. */
+        PAPER_TIMEOUT_HOURS: '8',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -571,9 +579,10 @@ module.exports = {
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
-        /** §3.3 канарейка — те же значения при переходе на `live` (§9 шаг 3). */
+        /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`). */
         LIVE_MAX_POSITION_USD: '10',
         LIVE_MAX_OPEN_POSITIONS: '5',
+        /** Потолок совокупного убытка по стратегии на кошельке (live risk); ≠ односделочный SL. */
         LIVE_MAX_STRATEGY_LOSS_USD: '50',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /** Не открывать новые позиции, если на кошельке меньше ~0.05 SOL (комиссии + буфер). */

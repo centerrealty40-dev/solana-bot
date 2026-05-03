@@ -174,6 +174,27 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
   }
 }
 
+/**
+ * Solana `getBalance` JSON-RPC: some nodes return a bare lamports integer; QuickNode often returns
+ * `{ context: {...}, value: number }`. Parses either shape for Phase 5 / reconcile.
+ */
+export function lamportsFromGetBalanceResult(result: unknown): bigint | null {
+  if (typeof result === 'number' && Number.isFinite(result)) {
+    return BigInt(Math.floor(result));
+  }
+  if (typeof result === 'string' && /^\d+$/.test(result)) {
+    try {
+      return BigInt(result);
+    } catch {
+      return null;
+    }
+  }
+  if (result && typeof result === 'object' && 'value' in result) {
+    return lamportsFromGetBalanceResult((result as { value: unknown }).value);
+  }
+  return null;
+}
+
 export async function qnBatchCall<T>(
   items: Array<{ method: string; params: unknown[] }>,
   opts: QnCallOpts,

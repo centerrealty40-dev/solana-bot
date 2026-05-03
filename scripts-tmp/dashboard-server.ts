@@ -604,20 +604,117 @@ function parseBasicAuthHeader(header: string | undefined): { user: string; pass:
   }
 }
 
+/** После успешного входа — HttpOnly cookie; мобильные браузеры часто не прикрепляют Authorization к fetch(/api/…). */
+const DASH_SESSION_COOKIE = 'sa_dash_sess';
+const DASH_SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
+
+function dashSessionSecret(): crypto.BinaryLike {
+  const raw = (process.env.DASHBOARD_SESSION_SECRET || '').trim();
+  if (raw.length >= 16) return raw;
+  return crypto.createHash('sha256').update(`sa-dash-sess|${BASIC_USER}|${BASIC_PASS}`, 'utf8').digest();
+}
+
+function signDashSession(): string {
+  const exp = Math.floor(Date.now() / 1000) + DASH_SESSION_MAX_AGE_SEC;
+  const payload = `${BASIC_USER}:${exp}`;
+  const mac = crypto.createHmac('sha256', dashSessionSecret()).update(payload).digest();
+  const inner = `${payload}:${mac.toString('base64url')}`;
+  return Buffer.from(inner, 'utf8').toString('base64url');
+}
+
+function verifyDashSession(token: string): boolean {
+  try {
+    const inner = Buffer.from(token, 'base64url').toString('utf8');
+    const sigSep = inner.lastIndexOf(':');
+    if (sigSep < 0) return false;
+    const payload = inner.slice(0, sigSep);
+    const sigStr = inner.slice(sigSep + 1);
+    const userSep = payload.indexOf(':');
+    if (userSep < 0) return false;
+    const u = payload.slice(0, userSep);
+    const exp = Number(payload.slice(userSep + 1));
+    if (u !== BASIC_USER || !Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+    const mac = crypto.createHmac('sha256', dashSessionSecret()).update(payload).digest();
+    let sigBuf: Buffer;
+    try {
+      sigBuf = Buffer.from(sigStr, 'base64url');
+    } catch {
+      return false;
+    }
+    if (sigBuf.length !== mac.length) return false;
+    return crypto.timingSafeEqual(sigBuf, mac);
+  } catch {
+    return false;
+  }
+}
+
+function parseCookieHeader(h: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!h) return out;
+  for (const part of h.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim();
+    let v = part.slice(i + 1).trim();
+    if (k) {
+      try {
+        v = decodeURIComponent(v);
+      } catch {
+        /* keep raw */
+      }
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function dashCookieSecure(req: { headers: Record<string, unknown> }): boolean {
+  if ((process.env.DASHBOARD_COOKIE_SECURE || '').trim() === '0') return false;
+  const xf = String(req.headers['x-forwarded-proto'] ?? '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (xf === 'https') return true;
+  return process.env.NODE_ENV === 'production';
+}
+
+function buildDashSetCookie(token: string, req: { headers: Record<string, unknown> }): string {
+  const parts = [
+    `${DASH_SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${DASH_SESSION_MAX_AGE_SEC}`,
+  ];
+  if (dashCookieSecure(req)) parts.push('Secure');
+  return parts.join('; ');
+}
+
 if (BASIC_AUTH_ENABLED) {
   app.addHook('onRequest', async (req, reply) => {
     const url = (req.raw.url || '/').split('?')[0];
     if (BASIC_AUTH_BYPASS.has(url)) return;
+
+    const cookies = parseCookieHeader(req.headers.cookie as string | undefined);
+    const sessionTok = cookies[DASH_SESSION_COOKIE];
+    const sessionOk = !!sessionTok && verifyDashSession(sessionTok);
+
     const creds = parseBasicAuthHeader(req.headers['authorization'] as string | undefined);
-    const ok = !!creds && safeEqual(creds.user, BASIC_USER) && safeEqual(creds.pass, BASIC_PASS);
-    if (!ok) {
-      reply
-        .header('WWW-Authenticate', `Basic realm="${BASIC_REALM.replace(/"/g, '')}", charset="UTF-8"`)
-        .code(401)
-        .send({ ok: false, error: 'unauthorized' });
+    const basicOk = !!creds && safeEqual(creds.user, BASIC_USER) && safeEqual(creds.pass, BASIC_PASS);
+
+    if (sessionOk || basicOk) {
+      reply.header('Set-Cookie', buildDashSetCookie(signDashSession(), req));
+      return;
     }
+
+    reply
+      .header('WWW-Authenticate', `Basic realm="${BASIC_REALM.replace(/"/g, '')}", charset="UTF-8"`)
+      .code(401)
+      .send({ ok: false, error: 'unauthorized' });
   });
-  console.log(`[dashboard] HTTP Basic Auth ENABLED (user=${BASIC_USER}, bypass=${[...BASIC_AUTH_BYPASS].join(',')})`);
+  console.log(
+    `[dashboard] HTTP Basic Auth ENABLED (user=${BASIC_USER}, cookie=${DASH_SESSION_COOKIE}, bypass=${[...BASIC_AUTH_BYPASS].join(',')})`,
+  );
 } else {
   console.log('[dashboard] HTTP Basic Auth disabled (set DASHBOARD_BASIC_USER + DASHBOARD_BASIC_PASSWORD to enable)');
 }

@@ -5,46 +5,149 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const STORE_PATH = process.env.PAPER_TRADES_PATH || '/opt/solana-alpha/data/paper-trades.jsonl';
-const PAPER2_DIR = process.env.PAPER2_DIR || '/opt/solana-alpha/data/paper2';
+const ROOT = process.env.SOLANA_ALPHA_ROOT || '/opt/solana-alpha';
+const PAPER2_DIR = process.env.PAPER2_DIR || path.join(ROOT, 'data/paper2');
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const POSITION_USD = Number(process.env.POSITION_USD || 100);
 const COVERAGE_HOURS = Number(process.env.HOURLY_COVERAGE_HOURS || 1);
-const TOP_N = Number(process.env.HOURLY_TOP_N || 4);
 const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
+
+const LIVE_JSONL =
+  process.env.HOURLY_LIVE_JSONL ||
+  process.env.LIVE_TRADES_PATH ||
+  path.join(ROOT, 'data/live/pt1-oscar-live.jsonl');
+const OSCAR_EVAL_JSONL =
+  process.env.HOURLY_OSCAR_EVAL_JSONL || path.join(PAPER2_DIR, 'pt1-oscar.jsonl');
+const LIVE_STRATEGY_ID = process.env.HOURLY_LIVE_STRATEGY_ID || 'live-oscar';
+
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 const HOUR_MS = 60 * 60 * 1000;
 const now = Date.now();
 const since = now - HOUR_MS;
 
-function shortMint(m) {
-  if (!m || m.length < 10) return m || '-';
-  return `${m.slice(0, 4)}...${m.slice(-4)}`;
+const POSITION_KINDS = new Set([
+  'live_position_open',
+  'live_position_dca',
+  'live_position_partial_sell',
+  'live_position_close',
+]);
+
+function lineMatchesLiveChannel(row) {
+  const ch = row.channel;
+  return ch === undefined || ch === null || ch === 'live';
 }
-function gmgnUrl(m) { return `https://gmgn.ai/sol/token/${m}`; }
-function fmtPct(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : ''}${x.toFixed(0)}%`; }
-function fmtUsd(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : ''}$${x.toFixed(0)}`; }
+
+function strategyMatches(row) {
+  const sid = row.strategyId != null ? String(row.strategyId) : '';
+  return sid === '' || sid === LIVE_STRATEGY_ID;
+}
+
+/** Replay live_position_* state + PnL aggregates (aligned with live replay semantics). */
+function summarizeLiveOscarFromJournal(events) {
+  const batch = [];
+  for (let lineIdx = 0; lineIdx < events.length; lineIdx++) {
+    const row = events[lineIdx];
+    if (!row || typeof row !== 'object') continue;
+    const kind = row.kind != null ? String(row.kind) : '';
+    if (!POSITION_KINDS.has(kind)) continue;
+    if (!strategyMatches(row)) continue;
+    if (!lineMatchesLiveChannel(row)) continue;
+    const mint = row.mint != null ? String(row.mint) : '';
+    if (!mint) continue;
+    const tsRaw = row.ts;
+    const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
+    batch.push({ ts, lineIdx, kind, mint, row });
+  }
+  batch.sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.lineIdx - b.lineIdx));
+
+  const openByMint = new Map();
+  let realizedClosedUsd = 0;
+  let opensLastHour = 0;
+
+  for (const { ts, kind, mint, row } of batch) {
+    if (ts >= since && kind === 'live_position_open') opensLastHour += 1;
+
+    if (kind === 'live_position_open' || kind === 'live_position_dca' || kind === 'live_position_partial_sell') {
+      const ot = row.openTrade;
+      if (typeof ot === 'object' && ot !== null) openByMint.set(mint, ot);
+      continue;
+    }
+    if (kind === 'live_position_close') {
+      const ct = row.closedTrade;
+      realizedClosedUsd += Number(ct?.netPnlUsd ?? 0);
+      openByMint.delete(mint);
+    }
+  }
+
+  let realizedPartialsOpenUsd = 0;
+  let unrealizedUsd = 0;
+  for (const ot of openByMint.values()) {
+    const partials = Array.isArray(ot.partialSells) ? ot.partialSells : [];
+    for (const p of partials) {
+      realizedPartialsOpenUsd += Number(p?.pnlUsd ?? 0);
+    }
+    const inv = Number(ot.totalInvestedUsd ?? 0) * Number(ot.remainingFraction ?? 1);
+    const px = Number(ot.lastObservedPriceUsd ?? 0);
+    const avg = Number(ot.avgEntry ?? 0);
+    if (inv > 0 && px > 0 && avg > 0) {
+      const markVal = inv * (px / avg);
+      unrealizedUsd += markVal - inv;
+    }
+  }
+
+  const realizedTotalUsd = realizedClosedUsd + realizedPartialsOpenUsd;
+  const totalPnlUsd = realizedTotalUsd + unrealizedUsd;
+
+  return {
+    openNow: openByMint.size,
+    opensLastHour,
+    realizedTotalUsd,
+    unrealizedUsd,
+    totalPnlUsd,
+  };
+}
 
 function parseJsonl(p) {
   if (!fs.existsSync(p)) return [];
   const lines = fs.readFileSync(p, 'utf8').split('\n').filter(Boolean);
   const out = [];
   for (const ln of lines) {
-    try { out.push(JSON.parse(ln)); } catch {}
+    try {
+      out.push(JSON.parse(ln));
+    } catch {
+      /* skip */
+    }
   }
   return out;
 }
 
-function listStores() {
-  const stores = [];
-  if (fs.existsSync(STORE_PATH)) stores.push({ strategyId: process.env.PAPER_STRATEGY_ID || 'paper_v1', file: STORE_PATH });
-  if (fs.existsSync(PAPER2_DIR)) {
-    for (const f of fs.readdirSync(PAPER2_DIR).filter((x) => x.endsWith('.jsonl')).sort()) {
-      stores.push({ strategyId: path.basename(f, '.jsonl'), file: path.join(PAPER2_DIR, f) });
-    }
+function countEvalPassPaper(events, sinceMs) {
+  let lastResetTs = 0;
+  for (const e of events) {
+    if (e.kind === 'reset') lastResetTs = Math.max(lastResetTs, e.ts || 0);
   }
-  return stores;
+  const scoped = events.filter((e) => (e.ts || 0) >= lastResetTs);
+  const hourly = scoped.filter((e) => (e.ts || 0) >= sinceMs && e.kind === 'eval');
+  const passed = hourly.filter((e) => !!e.pass).length;
+  return { evals: hourly.length, passed };
+}
+
+function aggregateExecutionFailures(events, sinceMs) {
+  const buckets = new Map();
+  for (const e of events) {
+    if (e.kind !== 'execution_result') continue;
+    if ((e.ts || 0) < sinceMs) continue;
+    const st = String(e.status || '');
+    if (st !== 'failed' && st !== 'sim_err') continue;
+    const msg =
+      st === 'sim_err'
+        ? String(e.error?.message || e.detail || 'sim_err').trim() || 'sim_err'
+        : String(e.error?.message || e.message || 'failed').trim() || 'failed';
+    const key = `${st}: ${msg.slice(0, 140)}`;
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+  }
+  return buckets;
 }
 
 async function sendTelegram(text) {
@@ -54,58 +157,6 @@ async function sendTelegram(text) {
   }
   const { sendTagged } = await import('../scripts/lib/telegram.mjs');
   await sendTagged('REPORT', 'strategies', text);
-  return;
-  // eslint-disable-next-line no-unreachable
-  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Telegram ${r.status}: ${body.slice(0, 200)}`);
-  }
-}
-
-function summarizeStrategy(events, strategyId) {
-  const byMintOpen = new Map();
-  let lastResetTs = 0;
-  for (const e of events) if (e.kind === 'reset') lastResetTs = Math.max(lastResetTs, e.ts || 0);
-  const scoped = events.filter((e) => (e.ts || 0) >= lastResetTs);
-
-  for (const e of scoped) {
-    if (e.kind === 'open') byMintOpen.set(e.mint, e);
-    if (e.kind === 'close') byMintOpen.delete(e.mint);
-  }
-
-  const hourly = scoped.filter((e) => (e.ts || 0) >= since);
-  const evals = hourly.filter((e) => e.kind === 'eval');
-  const opens = hourly.filter((e) => e.kind === 'open');
-  const closes = hourly.filter((e) => e.kind === 'close');
-  const passed = evals.filter((e) => !!e.pass).length;
-  const wins = closes.filter((e) => Number(e.pnlPct || 0) > 0).length;
-  const realizedUsd = closes.reduce((s, e) => s + (POSITION_USD * Number(e.pnlPct || 0)) / 100, 0);
-
-  return {
-    strategyId,
-    evals: evals.length,
-    passed,
-    opens: opens.length,
-    closes: closes.length,
-    wins,
-    realizedUsd,
-    openCount: byMintOpen.size,
-    closesArr: closes.map((c) => ({
-      symbol: c.symbol || '-',
-      mint: c.mint,
-      lane: c.lane || 'legacy',
-      reason: c.exitReason || '-',
-      pnlPct: Number(c.pnlPct || 0),
-      pnlUsd: (POSITION_USD * Number(c.pnlPct || 0)) / 100,
-      strategyId,
-    })),
-  };
 }
 
 const HEALTH_CHECKS = [
@@ -128,13 +179,19 @@ async function fetchHealth(pool) {
     for (const h of HEALTH_CHECKS) {
       try {
         const r = await client.query(
-          `SELECT MAX(${h.tsCol}) AS ts, EXTRACT(EPOCH FROM (now() - MAX(${h.tsCol})))::int AS age_sec FROM ${h.table}`
+          `SELECT MAX(${h.tsCol}) AS ts, EXTRACT(EPOCH FROM (now() - MAX(${h.tsCol})))::int AS age_sec FROM ${h.table}`,
         );
         const ageSec = Number(r.rows[0]?.age_sec ?? 0);
         const ok = ageSec >= 0 && ageSec <= h.maxAgeMin * 60;
         out.push({ source: h.source, ageSec, maxAgeSec: h.maxAgeMin * 60, ok });
       } catch (err) {
-        out.push({ source: h.source, ageSec: null, maxAgeSec: h.maxAgeMin * 60, ok: false, error: String(err?.message || err) });
+        out.push({
+          source: h.source,
+          ageSec: null,
+          maxAgeSec: h.maxAgeMin * 60,
+          ok: false,
+          error: String(err?.message || err),
+        });
       }
     }
     return out;
@@ -176,14 +233,34 @@ async function fetchCoverage(pool) {
 
     const unions = [];
     if (exists.tokens) {
-      unions.push(`SELECT mint::text AS mint, 'pump'::text AS source FROM tokens WHERE first_seen_at >= now() - (${COVERAGE_HOURS}::int * interval '1 hour') AND metadata->>'source' IN ('pumpportal','moonshot','bonk')`);
+      unions.push(
+        `SELECT mint::text AS mint, 'pump'::text AS source FROM tokens WHERE first_seen_at >= now() - (${COVERAGE_HOURS}::int * interval '1 hour') AND metadata->>'source' IN ('pumpportal','moonshot','bonk')`,
+      );
     }
-    if (exists.raydium_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'raydium'::text AS source FROM raydium_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.meteora_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'meteora'::text AS source FROM meteora_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.orca_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'orca'::text AS source FROM orca_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.moonshot_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'moonshot'::text AS source FROM moonshot_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.pumpswap_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'pumpswap'::text AS source FROM pumpswap_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.jupiter_route_snapshots) unions.push(`SELECT DISTINCT mint::text AS mint, 'jupiter'::text AS source FROM jupiter_route_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
+    if (exists.raydium_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'raydium'::text AS source FROM raydium_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.meteora_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'meteora'::text AS source FROM meteora_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.orca_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'orca'::text AS source FROM orca_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.moonshot_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'moonshot'::text AS source FROM moonshot_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.pumpswap_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'pumpswap'::text AS source FROM pumpswap_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.jupiter_route_snapshots)
+      unions.push(
+        `SELECT DISTINCT mint::text AS mint, 'jupiter'::text AS source FROM jupiter_route_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
     if (!unions.length) return cov;
 
     const r = await client.query(`
@@ -210,54 +287,73 @@ function fmtAge(sec) {
   if (!Number.isFinite(x)) return 'n/a';
   if (x < 60) return `${x}s`;
   const m = Math.round(x / 60);
-  if (m < 90) return `${m}m`;
+  if (m < 120) return `${m}m`;
   const h = Math.round(m / 60);
   return `${h}h`;
 }
 
-function compactReport(strats, coverage, health) {
-  const totalEval = strats.reduce((s, x) => s + x.evals, 0);
-  const totalPass = strats.reduce((s, x) => s + x.passed, 0);
-  const totalOpens = strats.reduce((s, x) => s + x.opens, 0);
-  const totalCloses = strats.reduce((s, x) => s + x.closes, 0);
-  const totalWins = strats.reduce((s, x) => s + x.wins, 0);
-  const totalReal = strats.reduce((s, x) => s + x.realizedUsd, 0);
-  const totalOpen = strats.reduce((s, x) => s + x.openCount, 0);
+/** Human-readable max staleness label, e.g. max 5m / max 4h */
+function fmtMaxAgeLabel(maxAgeSec) {
+  const m = maxAgeSec / 60;
+  if (m >= 60 && m % 60 === 0) return `max ${m / 60}h`;
+  return `max ${Math.round(m)}m`;
+}
 
-  const allCloses = strats.flatMap((s) => s.closesArr);
-  const winners = [...allCloses].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, TOP_N);
-  const losers = [...allCloses].sort((a, b) => a.pnlPct - b.pnlPct).slice(0, TOP_N);
+function fmtUsdSigned(v) {
+  const x = Number(v || 0);
+  const sign = x >= 0 ? '+' : '';
+  return `${sign}$${x.toFixed(2)}`;
+}
 
+async function rpcJson(rpcUrl, method, params) {
+  const r = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j.error) throw new Error(j.error.message || String(j.error));
+  return j.result;
+}
+
+async function fetchWalletBalances(rpcUrl, ownerPubkey) {
+  const lamports = await rpcJson(rpcUrl, 'getBalance', [ownerPubkey]);
+  const sol = Number(lamports) / 1e9;
+  let usdc = null;
+  try {
+    const tok = await rpcJson(rpcUrl, 'getTokenAccountsByOwner', [
+      ownerPubkey,
+      { mint: USDC_MINT },
+      { encoding: 'jsonParsed' },
+    ]);
+    let sum = 0;
+    for (const { account } of tok.value || []) {
+      const ui = account?.data?.parsed?.info?.tokenAmount?.uiAmount;
+      if (typeof ui === 'number' && Number.isFinite(ui)) sum += ui;
+    }
+    usdc = sum;
+  } catch {
+    usdc = null;
+  }
+  return { sol, usdc };
+}
+
+function buildHourlyReport({
+  coverage,
+  health,
+  live,
+  evalAgg,
+  failBuckets,
+  wallet,
+  walletNote,
+}) {
   const lines = [];
-  lines.push(`Hourly summary · last 60m`);
-  lines.push(`Strategies: ${strats.length} | Eval: ${totalEval} (pass ${totalPass}) | Open: ${totalOpen}`);
-  lines.push(`Closed: ${totalCloses} (wins ${totalWins}) | Real: ${fmtUsd(totalReal)}`);
-  lines.push('');
+  lines.push(`Hourly report · UTC ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
 
-  lines.push('By strategy (real $):');
-  const sortedStrats = [...strats].sort((a, b) => b.realizedUsd - a.realizedUsd);
-  for (const s of sortedStrats) {
-    lines.push(`- ${s.strategyId}: ${fmtUsd(s.realizedUsd)} | open=${s.openCount} close=${s.closes} wins=${s.wins}`);
-  }
   lines.push('');
-
-  lines.push('Best closes (1h):');
-  if (!winners.length) lines.push('- none');
-  for (const w of winners) {
-    lines.push(`- ${w.symbol} ${w.reason} ${fmtPct(w.pnlPct)} ${fmtUsd(w.pnlUsd)} [${w.strategyId}] ${gmgnUrl(w.mint)}`);
-  }
-  lines.push('');
-
-  lines.push('Worst closes (1h):');
-  if (!losers.length) lines.push('- none');
-  for (const l of losers) {
-    lines.push(`- ${l.symbol} ${l.reason} ${fmtPct(l.pnlPct)} ${fmtUsd(l.pnlUsd)} [${l.strategyId}] ${gmgnUrl(l.mint)}`);
-  }
-  lines.push('');
-
   lines.push(`Coverage (last ${COVERAGE_HOURS}h, unique mints):`);
   if (!coverage || !coverage.total) {
-    lines.push('- no data');
+    lines.push('- total: 0 (no DB / no data)');
   } else {
     lines.push(`- total: ${coverage.total}`);
     for (const k of ['pump', 'raydium', 'meteora', 'orca', 'moonshot', 'jupiter']) {
@@ -265,28 +361,100 @@ function compactReport(strats, coverage, health) {
     }
   }
 
-  if (health && health.length) {
-    lines.push('');
-    lines.push('Health (data freshness):');
-    const stale = health.filter((h) => !h.ok);
-    if (!stale.length) {
-      lines.push('- all sources OK');
-    }
+  lines.push('');
+  lines.push('Health (data freshness):');
+  if (!health || !health.length) {
+    lines.push('- (no DB connection)');
+  } else {
     for (const h of health) {
       const tag = h.ok ? 'OK' : 'STALE';
       const ageStr = h.ageSec === null ? 'n/a' : fmtAge(h.ageSec);
-      lines.push(`- ${h.source}: ${tag} ${ageStr} (max ${fmtAge(h.maxAgeSec)})`);
+      const maxL = fmtMaxAgeLabel(h.maxAgeSec);
+      const err = h.error ? ` err=${h.error.slice(0, 80)}` : '';
+      lines.push(`- ${h.source}: ${tag} ${ageStr} (${maxL})${err}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('Live Oscar');
+  lines.push(`- Открытых позиций (сейчас): ${live.openNow}`);
+  lines.push(`- Новых открытий за час: ${live.opensLastHour}`);
+  lines.push(`- Реализованный PnL (кумулятивно): ${fmtUsdSigned(live.realizedTotalUsd)}`);
+  lines.push(
+    `- Нереализованный PnL (mark, lastObservedPriceUsd): ${fmtUsdSigned(live.unrealizedUsd)}`,
+  );
+  lines.push(`- Суммарный PnL: ${fmtUsdSigned(live.totalPnlUsd)}`);
+
+  lines.push('');
+  lines.push(`Eval: ${evalAgg.evals} pass ${evalAgg.passed}`);
+
+  lines.push('');
+  lines.push('Кошелёк');
+  if (walletNote) lines.push(`- ${walletNote}`);
+  if (wallet) {
+    lines.push(`- SOL: ${wallet.sol.toFixed(4)}`);
+    lines.push(`- USDC: ${wallet.usdc != null ? wallet.usdc.toFixed(2) : 'n/a'}`);
+  }
+
+  lines.push('');
+  const failTotal = [...failBuckets.values()].reduce((a, b) => a + b, 0);
+  lines.push(`Неуспешные исполнения (за час, failed + sim_err): ${failTotal}`);
+  if (!failBuckets.size) {
+    lines.push('- нет');
+  } else {
+    const sorted = [...failBuckets.entries()].sort((a, b) => b[1] - a[1]);
+    for (const [reason, n] of sorted) {
+      lines.push(`- ${reason} — ${n}`);
     }
   }
 
   return lines.join('\n').slice(0, 3900);
 }
 
-async function main() {
-  const stores = listStores();
-  if (!stores.length) throw new Error('No paper stores found');
+function listStoresDebug() {
+  const STORE_PATH = process.env.PAPER_TRADES_PATH || path.join(ROOT, 'data/paper-trades.jsonl');
+  const stores = [];
+  if (fs.existsSync(STORE_PATH))
+    stores.push({ strategyId: process.env.PAPER_STRATEGY_ID || 'paper_v1', file: STORE_PATH });
+  if (fs.existsSync(PAPER2_DIR)) {
+    for (const f of fs.readdirSync(PAPER2_DIR).filter((x) => x.endsWith('.jsonl')).sort()) {
+      stores.push({ strategyId: path.basename(f, '.jsonl'), file: path.join(PAPER2_DIR, f) });
+    }
+  }
+  return stores;
+}
 
-  const strats = stores.map((s) => summarizeStrategy(parseJsonl(s.file), s.strategyId));
+async function main() {
+  const liveEvents = parseJsonl(LIVE_JSONL);
+  const live = summarizeLiveOscarFromJournal(liveEvents);
+  const failBuckets = aggregateExecutionFailures(liveEvents, since);
+
+  const evalEvents = fs.existsSync(OSCAR_EVAL_JSONL) ? parseJsonl(OSCAR_EVAL_JSONL) : [];
+  const evalAgg = countEvalPassPaper(evalEvents, since);
+
+  const rpcUrl =
+    process.env.HOURLY_RPC_URL ||
+    process.env.SA_RPC_HTTP_URL ||
+    process.env.SA_RPC_URL ||
+    process.env.QUICKNODE_HTTP_URL ||
+    process.env.HELIUS_RPC_URL ||
+    '';
+  const walletPk = process.env.HOURLY_WALLET_PUBKEY || process.env.LIVE_WALLET_PUBKEY || '';
+
+  let wallet = null;
+  let walletNote = '';
+  if (!rpcUrl) {
+    walletNote =
+      'RPC не задан (HOURLY_RPC_URL / SA_RPC_HTTP_URL / SA_RPC_URL / QUICKNODE_HTTP_URL)';
+  } else if (!walletPk) {
+    walletNote = 'Публичный ключ не задан (LIVE_WALLET_PUBKEY / HOURLY_WALLET_PUBKEY)';
+  } else {
+    try {
+      wallet = await fetchWalletBalances(rpcUrl, walletPk);
+    } catch (e) {
+      walletNote = `RPC ошибка: ${(e && e.message) || e}`;
+    }
+  }
 
   let coverage = null;
   let health = [];
@@ -300,19 +468,32 @@ async function main() {
     } catch (e) {
       console.warn('coverage/health failed:', e?.message || e);
     } finally {
-      try { await pool?.end(); } catch {}
+      try {
+        await pool?.end();
+      } catch {
+        /* noop */
+      }
     }
   }
 
-  const text = compactReport(strats, coverage, health);
+  const text = buildHourlyReport({
+    coverage,
+    health,
+    live,
+    evalAgg,
+    failBuckets,
+    wallet,
+    walletNote,
+  });
+
   await sendTelegram(text);
-  console.log('sent', { strategies: strats.length, len: text.length });
+  console.log('sent', { len: text.length, liveJsonl: LIVE_JSONL });
 
   if (DETAIL_MODE) {
-    const detailed = stores
+    const detailed = listStoresDebug()
       .map((s) => `- ${s.strategyId}: ${s.file}`)
       .join('\n');
-    console.log('stores:\n' + detailed);
+    console.log('paper stores (debug):\n' + detailed);
   }
 }
 
