@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.24] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.24`.
+
+### Hot-fix — пост-lane 2 дня и холдеры ≥3000 (четыре prod стратегии)
+
+- **`ecosystem.config.cjs`:** **`PAPER_POST_MIN_AGE_MIN=2880`** (48 ч / 2 дня) для **`pt1-diprunner`**, **`pt1-oscar`**, **`live-oscar`**, **`pt1-dno`**.
+- **`PAPER_MIN_HOLDER_COUNT=3000`** для тех же процессов (ранее 2000 / 1500 / 1500 / 1000).
+- **`scripts-tmp/dashboard-paper2.html`**, **`docs/strategy/specs/INDEX.md`** (примечание W6.5): зеркало SSOT в UI/доках.
+
+### Откат
+
+- В **`ecosystem.config.cjs`**: **`PAPER_POST_MIN_AGE_MIN=720`**; **`PAPER_MIN_HOLDER_COUNT`** как в **`sa-alpha-1.11.22`** (diprunner 2000, oscar/live-oscar 1500, dno 1000). Затем **`pm2 reload ecosystem.config.cjs --only pt1-diprunner,pt1-oscar,pt1-dno,live-oscar,dashboard-organizer-paper --update-env`** под **`salpha`**.
+- Или **`git reset --hard sa-alpha-1.11.22`** на сервер-клоне и reload PM2 ([`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) §5.2).
+
+---
+
 ## [1.11.22] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.22`.

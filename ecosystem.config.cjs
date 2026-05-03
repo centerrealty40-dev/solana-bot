@@ -199,15 +199,15 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет pt1-oscar / live-oscar); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '720',
+        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '50000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        PAPER_MIN_HOLDER_COUNT: '2000',
+        PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -327,15 +327,15 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет всех бумажных стратегий); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '720',
+        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        PAPER_MIN_HOLDER_COUNT: '1500',
+        PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -462,15 +462,15 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет pt1-oscar / diprunner / dno); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '720',
+        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        PAPER_MIN_HOLDER_COUNT: '1500',
+        PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -632,15 +632,15 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет бумажных стратегий); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '720',
+        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '8000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        PAPER_MIN_HOLDER_COUNT: '1000',
+        PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         /** Короткие окна первыми (сортировка в config): ловим резкие проливы на свежих парах */
