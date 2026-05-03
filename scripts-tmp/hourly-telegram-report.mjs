@@ -367,7 +367,15 @@ function buildHourlyReport({
     lines.push('- total: 0 (no DB / no data)');
   } else {
     lines.push(`- total: ${coverage.total}`);
-    for (const k of ['pump', 'raydium', 'meteora', 'orca', 'moonshot', 'jupiter']) {
+    for (const k of [
+      'pump',
+      'pumpswap', // HOTFIX: show in hourly Telegram; deploy hourly-telegram-report.mjs to VPS with next batch
+      'raydium',
+      'meteora',
+      'orca',
+      'moonshot',
+      'jupiter',
+    ]) {
       lines.push(`- ${k}: ${coverage[k] || 0}`);
     }
   }
