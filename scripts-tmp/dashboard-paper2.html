@@ -282,8 +282,8 @@
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">live mcap</span>
                       <span class="font-semibold mono"
-                            :class="o.hasLiveMc ? 'text-emerald-300' : 'text-rose-400'"
-                            x-text="o.hasLiveMc ? fmtUsd(o.currentMcUsd) : 'n/a'"></span>
+                            :class="liveMcapHeaderClass(o)"
+                            x-text="liveMcapHeaderText(o)"></span>
                       <span class="text-slate-500 text-xs" x-text="liveMcSourceLabel(o)"></span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">at buy</span>
@@ -520,14 +520,30 @@
           const ss = String(d.getSeconds()).padStart(2, '0');
           return `${dd}.${mm}, ${hh}:${mi}:${ss}`;
         },
+        /** Spot token USD for UI when mcap missing (same decimals as timeline). */
+        formatTokenUsdPx(p) {
+          const s = Number(p || 0);
+          if (!(s > 0)) return '';
+          if (s >= 0.01) return s.toFixed(4);
+          return s.toFixed(6);
+        },
+        liveMcapHeaderText(o) {
+          if (o?.hasLiveMc && Number(o.currentMcUsd) > 0) return this.fmtUsd(o.currentMcUsd);
+          const px = this.formatTokenUsdPx(o?.livePriceUsd);
+          if (px) return `token $${px}`;
+          return 'n/a';
+        },
+        liveMcapHeaderClass(o) {
+          if (o?.hasLiveMc && Number(o.currentMcUsd) > 0) return 'text-emerald-300';
+          const px = Number(o?.livePriceUsd || 0);
+          if (px > 0) return 'text-sky-300';
+          return 'text-rose-400';
+        },
         timelineMarketLine(ev) {
           const m = Number(ev.mcUsd || 0);
           if (m > 0) return `mcap ${this.fmtUsd(m)}`;
-          const s = Number(ev.spotPxUsd || 0);
-          if (s > 0) {
-            if (s >= 0.01) return `token $${s.toFixed(4)}`;
-            return `token $${s.toFixed(6)}`;
-          }
+          const px = this.formatTokenUsdPx(ev.spotPxUsd);
+          if (px) return `token $${px}`;
           return 'mcap n/a';
         },
         normalizeTimelineLabelForUsdParse(s) {
@@ -580,9 +596,16 @@
           return Number.isFinite(x) && x > 0;
         },
         liveMcSourceLabel(o) {
-          if (!o?.hasLiveMc) return '';
-          if (o.liveMcProvenance === 'pump.fun') return '(pump.fun)';
-          if (o.liveMcProvenance === 'snapshots') return '(DEX)';
+          if (o?.hasLiveMc) {
+            if (o.liveMcProvenance === 'pump.fun') return '(pump.fun)';
+            if (o.liveMcProvenance === 'snapshots') return '(DEX)';
+            return '';
+          }
+          if (Number(o?.livePriceUsd || 0) > 0 && o?.livePxProvenance) {
+            if (o.livePxProvenance === 'jupiter') return '(Jupiter)';
+            if (o.livePxProvenance === 'journal') return '(journal)';
+            if (o.livePxProvenance === 'snapshots') return '(DEX)';
+          }
           return '';
         },
         livePxSourceLabel(o) {
