@@ -175,17 +175,64 @@ async function fetchJsonWithRetry(url, retryTag = 'http') {
   throw new Error(`${retryTag} exhausted retries`);
 }
 
+const GECKO_HTTP_HEADERS = {
+  accept: 'application/json',
+  'User-Agent':
+    'Mozilla/5.0 (compatible; sa-grws-collector/0.1; +https://github.com/centerrealty40-dev/solana-bot)',
+};
+
+/**
+ * Gecko иногда отвечает HTTP 200 с телом без `data[]` (лимиты / антибот). Тогда ретраим.
+ */
+async function fetchGeckoPoolsPage(page) {
+  const url = `https://api.geckoterminal.com/api/v2/networks/solana/new_pools?page=${page}`;
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+      const res = await fetch(url, {
+        headers: GECKO_HTTP_HEADERS,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        lastErr = new Error(`gecko status=${res.status}`);
+        const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+        if (!retryable) throw lastErr;
+        await sleep(Math.min(10_000, 700 * 2 ** attempt));
+        continue;
+      }
+
+      if (!Array.isArray(json?.data)) {
+        lastErr = new Error(
+          `gecko-new_pools missing data[] keys=${Object.keys(json || {}).join(',')}`,
+        );
+        await sleep(Math.min(10_000, 700 * 2 ** attempt));
+        continue;
+      }
+
+      return json.data;
+    } catch (e) {
+      lastErr = e;
+      if (attempt === MAX_RETRIES) break;
+      await sleep(Math.min(10_000, 700 * 2 ** attempt));
+    }
+  }
+  throw lastErr ?? new Error(`gecko page ${page} exhausted`);
+}
+
 async function fetchGeckoNewPoolsRaydium() {
   const out = [];
   for (let page = 1; page <= GECKO_PAGES_MAX; page += 1) {
-    const url = `https://api.geckoterminal.com/api/v2/networks/solana/new_pools?page=${page}`;
-    const json = await fetchJsonWithRetry(url, 'gecko-new_pools');
-    const rows = Array.isArray(json?.data) ? json.data : [];
+    const rows = await fetchGeckoPoolsPage(page);
     for (const row of rows) {
       const p = parseGeckoRaydiumPool(row);
       if (p) out.push(p);
     }
-    await sleep(250);
+    await sleep(400);
   }
   const dedup = new Map();
   for (const p of out) {

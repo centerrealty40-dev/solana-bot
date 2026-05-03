@@ -5,11 +5,21 @@ KEY_FILE="$APP/data/qn-admin-api-key.secret"
 QN_API="https://api.quicknode.com/v0/usage/rpc"
 LOG=/tmp/grws-pilot-$(date -u +%Y%m%dT%H%M%SZ).log
 
+qn_period_credits() {
+  sudo -u salpha bash -lc "KEY=\$(cat '$KEY_FILE'); curl -sS '$QN_API' -H 'accept: application/json' -H \"x-api-key: \${KEY}\"" |
+    node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);const u=j.data??j;console.log(typeof u.credits_used==='number'?u.credits_used:'na');}catch(e){console.log('parse_err');}});"
+}
+
 echo "=== GRWS pilot log: $LOG ===" | tee "$LOG"
+echo "cron_note=avoid TG hourly at :05 UTC; sleep reduces Gecko 429 noise" | tee -a "$LOG"
+sleep 75
 echo "utc_mark_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$LOG"
 
 T0=$(date +%s)
 echo "T0_unix=$T0" | tee -a "$LOG"
+
+CRED_START="$(qn_period_credits)"
+echo "qn_billing_period_credits_used_start=$CRED_START" | tee -a "$LOG"
 
 BEFORE=$(sudo -u postgres psql -d solana_alpha -t -A -c "SELECT count(*)::text FROM wallets WHERE coalesce(metadata->>'collector_id','') = 'sa-grws';")
 echo "wallets_sa_grws_before=$BEFORE" | tee -a "$LOG"
@@ -37,5 +47,14 @@ echo "qn_experiment_window_json=$WIN_JSON" | tee -a "$LOG"
 
 AFTER=$(sudo -u postgres psql -d solana_alpha -t -A -c "SELECT count(*)::text FROM wallets WHERE coalesce(metadata->>'collector_id','') = 'sa-grws';")
 echo "wallets_sa_grws_after=$AFTER" | tee -a "$LOG"
+
+sleep 3
+CRED_END="$(qn_period_credits)"
+echo "qn_billing_period_credits_used_end=$CRED_END" | tee -a "$LOG"
+node -e "
+const a=process.argv[1], b=process.argv[2];
+const x=Number(a), y=Number(b);
+console.log('qn_billing_delta_approx=' + (Number.isFinite(x)&&Number.isFinite(y) ? String(Math.round(y-x)) : 'n/a'));
+" "$CRED_START" "$CRED_END" | tee -a "$LOG"
 
 echo "=== pilot done ===" | tee -a "$LOG"

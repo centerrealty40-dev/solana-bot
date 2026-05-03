@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.29] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.29`.
+
+### W6.7 — Gecko `new_pools`: ретраи при теле без `data[]`
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** отдельный fetch Gecko с **User-Agent**, пауза **400 ms** между страницами; если ответ **200** без массива **`data`** (типично при лимитах), **ретрай** с backoff вместо тихого «0 пулов».
+- **`scripts-tmp/_grws-pilot-measure.sh`:** пауза **75 s** перед прогоном (меньше пересечений с cron TG `:05` и всплесками Gecko); замер **`credits_used`** биллинг-периода QuickNode Console API до/после (дельта **приблизительная**, включает фоновый расход других процессов).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.28 -- scripts-tmp/sa-grws-collector.mjs scripts-tmp/_grws-pilot-measure.sh docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.28] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.28`.
