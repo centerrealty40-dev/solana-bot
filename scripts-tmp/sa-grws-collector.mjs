@@ -121,12 +121,14 @@ function looksLikeSolanaPubkey(s) {
 
 function looksLikeRaydiumGeckoPool(poolData) {
   const attrs = poolData?.attributes ?? {};
+  const dexId = String(poolData?.relationships?.dex?.data?.id ?? '').toLowerCase();
   const blob = [
     attrs.dex_name,
     attrs.name,
     attrs.address,
     poolData?.id,
     attrs.pool_name,
+    dexId,
   ]
     .filter(Boolean)
     .join(' ')

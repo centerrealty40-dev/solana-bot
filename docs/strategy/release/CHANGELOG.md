@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.28] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.28`.
+
+### W6.7 — hot-fix: Raydium на Gecko `new_pools`
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** признак Raydium берётся также из **`relationships.dex.data.id`** (актуальный ответ API); иначе список пулов мог быть пустым при непустой выдаче Gecko.
+- **`scripts-tmp/_grws-pilot-measure.sh`:** вспомогательный замер окна QuickNode Admin API + прогон коллектора (операторский).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.27 -- scripts-tmp/sa-grws-collector.mjs scripts-tmp/_grws-pilot-measure.sh docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.27] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.27`.
