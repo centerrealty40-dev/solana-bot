@@ -49,18 +49,37 @@ export function collectFiredLadderPnls(ot: OpenTrade, tpLadder: TpLadderLevel[])
 }
 
 /**
+ * After partial TPs on a **grid** (no discrete `tpLadder` rows): same retrace rule using fired PnL thresholds only.
+ */
+export function ladderRetraceTriggeredGrid(ot: OpenTrade, xAvg: number): boolean {
+  const fired = collectFiredLadderPnls(ot, []);
+  if (fired.length === 0) return false;
+  const prevThreshold = fired.length >= 2 ? fired[fired.length - 2]! : 0;
+  const curPnlFrac = xAvg - 1;
+  return curPnlFrac <= prevThreshold + LADDER_PNL_EPS;
+}
+
+export type LadderRetraceMode = 'discrete' | 'grid';
+
+/**
  * After partial TPs: if unrealized PnL (vs avg) falls back to the previous rung's threshold
  * relative to the highest rung already hit — close the remainder.
  */
-export function ladderRetraceTriggered(ot: OpenTrade, tpLadder: TpLadderLevel[], xAvg: number): boolean {
+export function ladderRetraceTriggered(
+  ot: OpenTrade,
+  tpLadder: TpLadderLevel[],
+  xAvg: number,
+  mode: LadderRetraceMode = 'discrete',
+): boolean {
+  if (mode === 'grid') return ladderRetraceTriggeredGrid(ot, xAvg);
   if (tpLadder.length === 0) return false;
   const fired = collectFiredLadderPnls(ot, tpLadder);
   if (fired.length === 0) return false;
   const sorted = [...tpLadder].sort((a, b) => a.pnlPct - b.pnlPct);
-  const highestFired = fired[fired.length - 1];
+  const highestFired = fired[fired.length - 1]!;
   const idx = sorted.findIndex((l) => Math.abs(l.pnlPct - highestFired) <= LADDER_PNL_EPS);
   if (idx < 0) return false;
-  const prevThreshold = idx > 0 ? sorted[idx - 1].pnlPct : 0;
+  const prevThreshold = idx > 0 ? sorted[idx - 1]!.pnlPct : 0;
   const curPnlFrac = xAvg - 1;
   return curPnlFrac <= prevThreshold + LADDER_PNL_EPS;
 }

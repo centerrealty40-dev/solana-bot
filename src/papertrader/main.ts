@@ -100,7 +100,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   void fetchFreshValidatedCandidates;
 
   const dcaLevels = parseDcaLevels(cfg.dcaLevelsSpec);
-  const tpLadder = parseTpLadder(cfg.tpLadderSpec);
+  const tpLadder = cfg.tpGridStepPnl > 0 ? [] : parseTpLadder(cfg.tpLadderSpec);
   const followupOffsets = parseFollowupOffsets(cfg.followupOffsetsMinSpec);
 
   const restored = opts?.skipPaperJsonlStore
@@ -170,6 +170,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     whaleEnabled: cfg.whaleEnabled,
     dcaLevels: dcaLevels.length,
     tpLadder: tpLadder.length,
+    tpGridStepPnl: cfg.tpGridStepPnl,
     followupOffsets,
     tpX: cfg.tpX,
     slX: cfg.slX,

@@ -43,3 +43,17 @@ describe('ladderRetraceTriggered', () => {
     expect(ladderRetraceTriggered(hitFirst, ladder, 1.0)).toBe(true);
   });
 });
+
+describe('ladderRetraceTriggered grid mode', () => {
+  it('after +5% and +10% filled, dip to <= +5% PnL triggers', () => {
+    expect(ladderRetraceTriggered(ot([0.05, 0.1]), [], 1.11, 'grid')).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.05, 0.1]), [], 1.051, 'grid')).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.05, 0.1]), [], 1.05, 'grid')).toBe(true);
+    expect(ladderRetraceTriggered(ot([0.05, 0.1]), [], 1.049, 'grid')).toBe(true);
+  });
+
+  it('after first grid rung +5%, breach back to <= 0% triggers', () => {
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid')).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.0, 'grid')).toBe(true);
+  });
+});

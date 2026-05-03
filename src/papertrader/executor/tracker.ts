@@ -23,7 +23,10 @@ import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
   ladderRetraceTriggered,
+  ladderPnlThresholdMark,
+  ladderPnlThresholdTaken,
   ladderStepOrThresholdTaken,
+  LADDER_PNL_EPS,
   markLadderStepFired,
 } from './tp-ladder-state.js';
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
@@ -153,15 +156,19 @@ function buildExitContext(args: {
     peak > 0 && Number.isFinite(peak)
       ? +(((peak - closePnlPct) / peak) * 100).toFixed(2)
       : null;
-  const tpLadderHits = collectFiredLadderPnls(ot, tpLadder).length;
-  const tpLadderTotal = tpLadder.length;
+  const tpLadderHits =
+    cfg.tpGridStepPnl > 0 ? collectFiredLadderPnls(ot, []).length : collectFiredLadderPnls(ot, tpLadder).length;
+  const tpLadderTotal = cfg.tpGridStepPnl > 0 ? 0 : tpLadder.length;
   const dcaLegsAdded = Math.max(0, ot.legs.length - 1);
 
   let triggerLabel = exitReason as string;
   switch (exitReason) {
     case 'TP': {
       if (ot.remainingFraction <= 1e-6 && tpLadderHits > 0) {
-        triggerLabel = `TP ladder fully unwound (${tpLadderHits}/${tpLadderTotal} hits)`;
+        triggerLabel =
+          cfg.tpGridStepPnl > 0
+            ? `TP grid fully unwound (${tpLadderHits} partials)`
+            : `TP ladder fully unwound (${tpLadderHits}/${tpLadderTotal} hits)`;
       } else if (xAvg >= cfg.tpX) {
         triggerLabel = `TP xAvg≥${cfg.tpX.toFixed(2)} (cur ${xAvg.toFixed(2)}x)`;
       } else {
@@ -174,7 +181,10 @@ function buildExitContext(args: {
       break;
     case 'TRAIL':
       if (cfg.trailMode === 'ladder_retrace') {
-        triggerLabel = `TRAIL ladder retrace (${tpLadderHits}/${tpLadderTotal} hits, cur ${xAvg.toFixed(2)}x, peak ${(1 + peak / 100).toFixed(2)}x)`;
+        triggerLabel =
+          cfg.tpGridStepPnl > 0
+            ? `TRAIL grid retrace (${tpLadderHits} partials, cur ${xAvg.toFixed(2)}x, peak ${(1 + peak / 100).toFixed(2)}x)`
+            : `TRAIL ladder retrace (${tpLadderHits}/${tpLadderTotal} hits, cur ${xAvg.toFixed(2)}x, peak ${(1 + peak / 100).toFixed(2)}x)`;
       } else {
         const peakX = ot.peakMcUsd > 0 ? curMetric / ot.peakMcUsd : 0;
         triggerLabel = `TRAIL peak retrace ${((peakX - 1) * 100).toFixed(1)}% from peak (drop≥${(cfg.trailDrop * 100).toFixed(0)}%)`;
@@ -281,6 +291,137 @@ function buildClosedTrade(args: {
     theoretical_entry_price: firstLeg ? firstLeg.marketPrice : ot.avgEntryMarket,
     theoretical_exit_price: marketSell,
   };
+}
+
+type TpPartialSellResult = 'ok' | 'defer_next' | 'abort_mint';
+
+/** Shared partial TP path for discrete ladder rungs and TP grid steps. */
+async function tryExecuteTpPartialSell(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  sellFraction: number;
+  ladderStepIndex: number;
+  ladderRungsTotal: number;
+  ladderPnlPct: number;
+  tpGrid: boolean;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  stats: TrackerStats;
+  markLadder: () => void;
+  logLabelPct: string;
+}): Promise<TpPartialSellResult> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction: rawSellFrac,
+    ladderStepIndex,
+    ladderRungsTotal,
+    ladderPnlPct,
+    tpGrid,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    stats,
+    markLadder,
+    logLabelPct,
+  } = args;
+  const sellFraction = Math.min(1, rawSellFrac);
+  const marketSell = curMetric;
+  const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
+  const { effectivePrice: effectiveSell } = applyExitCosts(
+    cfg,
+    marketSell,
+    ot.dex,
+    investedSoldUsd,
+    null,
+  );
+  const remainingValueNet = ot.totalInvestedUsd * ot.remainingFraction * (effectiveSell / ot.avgEntry);
+  const proceedsUsd = remainingValueNet * sellFraction;
+  const remainingValueGross =
+    ot.totalInvestedUsd * ot.remainingFraction * (marketSell / ot.avgEntryMarket);
+  const grossProceedsUsd = remainingValueGross * sellFraction;
+  const pnlUsd = proceedsUsd - investedSoldUsd;
+  const grossPnlUsd = grossProceedsUsd - investedSoldUsd;
+
+  const exitPvPartial = await exitPriceVerifyGate({
+    cfg,
+    mint,
+    symbol: ot.symbol,
+    tokenDecimals: ot.tokenDecimals ?? 6,
+    usdNotional: investedSoldUsd,
+    snapshotPriceUsd: marketSell,
+    context: 'partial_sell',
+    journalAppend,
+    stats,
+  });
+  if (exitPvPartial.defer) return 'defer_next';
+
+  if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
+    const ok = await livePhase4.tryTokenToSolSell({
+      mint,
+      symbol: ot.symbol,
+      usdNotional: investedSoldUsd,
+      priceUsdPerToken: marketSell,
+      decimals: ot.tokenDecimals ?? 6,
+      intentKind: 'sell_partial',
+    });
+    if (!ok) return 'abort_mint';
+  }
+
+  const ps: PartialSell = {
+    ts: Date.now(),
+    price: effectiveSell,
+    marketPrice: marketSell,
+    sellFraction,
+    reason: 'TP_LADDER',
+    proceedsUsd,
+    grossProceedsUsd,
+    pnlUsd,
+    grossPnlUsd,
+  };
+  ot.partialSells.push(ps);
+  ot.remainingFraction *= 1 - sellFraction;
+  markLadder();
+  const mcUsdLive_ps = await getLiveMcUsd(
+    mint,
+    ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+  );
+  const pfPs = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+  journalAppend({
+    kind: 'partial_sell',
+    mint,
+    ts: ps.ts,
+    price: effectiveSell,
+    marketPrice: marketSell,
+    sellFraction,
+    ladderStepIndex,
+    ladderRungsTotal,
+    ladderPnlPct,
+    reason: 'TP_LADDER',
+    proceedsUsd,
+    grossProceedsUsd,
+    pnlUsd,
+    grossPnlUsd,
+    remainingFraction: ot.remainingFraction,
+    mcUsdLive: mcUsdLive_ps,
+    priorityFee: pfPs,
+    ...(tpGrid ? { tpGrid: true } : {}),
+    ...(exitPvPartial.verdict ? { priceVerifyExit: exitPvPartial.verdict } : {}),
+  });
+  journalLiveStrategy?.({
+    kind: 'live_position_partial_sell',
+    mint,
+    openTrade: serializeOpenTrade(ot),
+  });
+  console.log(
+    `[${logLabelPct}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
+  );
+  return 'ok';
 }
 
 export async function trackerTick(args: TrackerArgs): Promise<void> {
@@ -527,7 +668,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if ((dcaLevels.length > 0 || cfg.dcaKillstop < 0) && ot.remainingFraction > 0) {
+    const mayDca =
+      (cfg.tpGridStepPnl <= 0 || ot.partialSells.length === 0) &&
+      (dcaLevels.length > 0 || cfg.dcaKillstop < 0) &&
+      ot.remainingFraction > 0;
+    if (mayDca) {
       const effPrevDrop = dcaEffPrev(ot);
       for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
         const lvl = dcaLevels[dcaIdx]!;
@@ -595,101 +740,69 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (cfg.tpGridStepPnl > 0 && ot.remainingFraction > 0) {
+      const pnlFrac = xAvg - 1;
+      const step = cfg.tpGridStepPnl;
+      const sellFrac = Math.min(1, cfg.tpGridSellFraction);
+      const maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
+      for (let k = 1; k <= maxK; k++) {
+        const threshold = k * step;
+        if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
+        if (pnlFrac + LADDER_PNL_EPS < threshold) break;
+        const r = await tryExecuteTpPartialSell({
+          mint,
+          ot,
+          cfg,
+          curMetric,
+          sellFraction: sellFrac,
+          ladderStepIndex: k - 1,
+          ladderRungsTotal: 0,
+          ladderPnlPct: threshold,
+          tpGrid: true,
+          journalAppend,
+          journalLiveStrategy,
+          livePhase4,
+          stats,
+          markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
+          logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
+        });
+        if (r === 'abort_mint') {
+          break;
+        }
+        if (r === 'defer_next') {
+          break;
+        }
+      }
+    }
+
     if (tpLadder.length > 0 && ot.remainingFraction > 0) {
       for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
         const lvl = tpLadder[stepIdx]!;
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
         if (xAvg - 1 >= lvl.pnlPct) {
-          const sellFraction = Math.min(1, lvl.sellFraction);
-          const marketSell = curMetric;
-          const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
-          const { effectivePrice: effectiveSell } = applyExitCosts(
+          const r = await tryExecuteTpPartialSell({
+            mint,
+            ot,
             cfg,
-            marketSell,
-            ot.dex,
-            investedSoldUsd,
-            null,
-          );
-          const remainingValueNet = ot.totalInvestedUsd * ot.remainingFraction * (effectiveSell / ot.avgEntry);
-          const proceedsUsd = remainingValueNet * sellFraction;
-          const remainingValueGross =
-            ot.totalInvestedUsd * ot.remainingFraction * (marketSell / ot.avgEntryMarket);
-          const grossProceedsUsd = remainingValueGross * sellFraction;
-          const pnlUsd = proceedsUsd - investedSoldUsd;
-          const grossPnlUsd = grossProceedsUsd - investedSoldUsd;
-
-          const exitPvPartial = await exitPriceVerifyGate({
-            cfg,
-            mint,
-            symbol: ot.symbol,
-            tokenDecimals: ot.tokenDecimals ?? 6,
-            usdNotional: investedSoldUsd,
-            snapshotPriceUsd: marketSell,
-            context: 'partial_sell',
-            journalAppend,
-            stats,
-          });
-          if (exitPvPartial.defer) continue;
-
-          if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
-            const ok = await livePhase4.tryTokenToSolSell({
-              mint,
-              symbol: ot.symbol,
-              usdNotional: investedSoldUsd,
-              priceUsdPerToken: marketSell,
-              decimals: ot.tokenDecimals ?? 6,
-              intentKind: 'sell_partial',
-            });
-            if (!ok) continue;
-          }
-
-          const ps: PartialSell = {
-            ts: Date.now(),
-            price: effectiveSell,
-            marketPrice: marketSell,
-            sellFraction,
-            reason: 'TP_LADDER',
-            proceedsUsd,
-            grossProceedsUsd,
-            pnlUsd,
-            grossPnlUsd,
-          };
-          ot.partialSells.push(ps);
-          ot.remainingFraction *= 1 - sellFraction;
-          markLadderStepFired(ot, stepIdx, lvl.pnlPct);
-          const mcUsdLive_ps = await getLiveMcUsd(
-            mint,
-            ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
-          );
-          const pfPs = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
-          journalAppend({
-            kind: 'partial_sell',
-            mint,
-            ts: ps.ts,
-            price: effectiveSell,
-            marketPrice: marketSell,
-            sellFraction,
+            curMetric,
+            sellFraction: lvl.sellFraction,
             ladderStepIndex: stepIdx,
             ladderRungsTotal: tpLadder.length,
             ladderPnlPct: lvl.pnlPct,
-            reason: 'TP_LADDER',
-            proceedsUsd,
-            grossProceedsUsd,
-            pnlUsd,
-            grossPnlUsd,
-            remainingFraction: ot.remainingFraction,
-            mcUsdLive: mcUsdLive_ps,
-            priorityFee: pfPs,
-            ...(exitPvPartial.verdict ? { priceVerifyExit: exitPvPartial.verdict } : {}),
+            tpGrid: false,
+            journalAppend,
+            journalLiveStrategy,
+            livePhase4,
+            stats,
+            markLadder: () => markLadderStepFired(ot, stepIdx, lvl.pnlPct),
+            logLabelPct: `TP+${(lvl.pnlPct * 100).toFixed(0)}%`,
           });
-          journalLiveStrategy?.({
-            kind: 'live_position_partial_sell',
-            mint,
-            openTrade: serializeOpenTrade(ot),
-          });
-          console.log(
-            `[TP${(lvl.pnlPct * 100).toFixed(0)}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
-          );
+          if (r === 'abort_mint') {
+            continue;
+          }
+          if (r === 'defer_next') {
+            continue;
+          }
         }
       }
     }
@@ -698,7 +811,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (cfg.dcaKillstop < 0 && pnlPctVsAvg / 100 <= cfg.dcaKillstop) exitReason = 'KILLSTOP';
     else if (xAvg >= cfg.tpX) exitReason = 'TP';
     else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
-    else if (cfg.trailMode === 'ladder_retrace' && ladderRetraceTriggered(ot, tpLadder, xAvg))
+    else if (
+      cfg.trailMode === 'ladder_retrace' &&
+      ladderRetraceTriggered(ot, tpLadder, xAvg, cfg.tpGridStepPnl > 0 ? 'grid' : 'discrete')
+    )
       exitReason = 'TRAIL';
     else if (cfg.trailMode === 'peak' && ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop))
       exitReason = 'TRAIL';

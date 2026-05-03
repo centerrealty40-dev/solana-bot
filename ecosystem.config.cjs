@@ -343,10 +343,12 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        /* Oscar: одна ступень DCA −7%; kill −14%; TP-ladder доля от остатка: +10%→50%, +20%→100% */
+        /* Oscar: DCA −7% только до первого частичного TP; сетка +5% PnL → 20% текущего остатка; retrace → full close */
         PAPER_DCA_LEVELS: '-7:0.3',
         PAPER_DCA_KILLSTOP: '-0.14',
-        PAPER_TP_LADDER: '0.10:0.50,0.20:1.0',
+        PAPER_TP_LADDER: '',
+        PAPER_TP_GRID_STEP_PNL: '0.05',
+        PAPER_TP_GRID_SELL_FRACTION: '0.2',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
@@ -476,7 +478,9 @@ module.exports = {
 
         PAPER_DCA_LEVELS: '-7:0.3',
         PAPER_DCA_KILLSTOP: '-0.14',
-        PAPER_TP_LADDER: '0.10:0.50,0.20:1.0',
+        PAPER_TP_LADDER: '',
+        PAPER_TP_GRID_STEP_PNL: '0.05',
+        PAPER_TP_GRID_SELL_FRACTION: '0.2',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',

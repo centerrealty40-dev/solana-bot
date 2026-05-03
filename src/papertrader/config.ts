@@ -171,6 +171,14 @@ const ConfigSchema = z.object({
 
   tpLadderSpec: z.string().default(''),
 
+  /**
+   * Oscar-style TP grid: each multiple of this **PnL fraction vs avg** (e.g. 0.05 = +5%) fires once;
+   * each hit sells `tpGridSellFraction` of **current** remaining position. Empty discrete `tpLadder` when >0.
+   * Retrace (`ladder_retrace`) uses previous threshold like the discrete ladder.
+   */
+  tpGridStepPnl: z.coerce.number().nonnegative().default(0),
+  tpGridSellFraction: z.coerce.number().min(0).max(1).default(0.2),
+
   followupOffsetsMinSpec: z.string().default('30,60,120'),
 
   contextSwapsEnabled: z.boolean().default(true),
@@ -411,6 +419,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,
     tpLadderSpec: process.env.PAPER_TP_LADDER,
+    tpGridStepPnl: process.env.PAPER_TP_GRID_STEP_PNL,
+    tpGridSellFraction: process.env.PAPER_TP_GRID_SELL_FRACTION,
     followupOffsetsMinSpec: process.env.PAPER_FOLLOWUP_OFFSETS_MIN,
     contextSwapsEnabled: envBool(process.env.PAPER_CONTEXT_SWAPS, true),
     contextSwapsLimit: process.env.PAPER_CONTEXT_SWAPS_LIMIT,

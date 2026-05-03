@@ -1368,9 +1368,12 @@ export function buildTimelineEvent(
     const ladderPnlPct = Number(e.ladderPnlPct ?? 0) * 100;
     const reason = String(e.reason || 'partial_sell');
     const sellPct = Math.round(sellFraction * 100);
+    const isTpGrid = e.tpGrid === true || e.tpGrid === 'true';
     const niceReason =
       reason === 'TP_LADDER'
-        ? 'Лестница TP'
+        ? isTpGrid
+          ? 'Сетка TP (Oscar)'
+          : 'Лестница TP'
         : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
     const proceedsUsd = Number(e.proceedsUsd ?? 0);
@@ -1380,18 +1383,23 @@ export function buildTimelineEvent(
         : '';
     const stepIdxRaw = Number(e.ladderStepIndex ?? NaN);
     const rungsTotal = Number(e.ladderRungsTotal ?? NaN);
-    const stepLabel =
-      reason === 'TP_LADDER' && Number.isFinite(stepIdxRaw) && stepIdxRaw >= 0
+    const stepLabel = isTpGrid
+      ? Number.isFinite(stepIdxRaw) && stepIdxRaw >= 0
+        ? `ступень сетки ${Math.floor(stepIdxRaw) + 1} (+${ladderPctPlain} к среднему)`
+        : ''
+      : reason === 'TP_LADDER' && Number.isFinite(stepIdxRaw) && stepIdxRaw >= 0
         ? Number.isFinite(rungsTotal) && rungsTotal > 0
           ? `шаг ${Math.floor(stepIdxRaw) + 1}/${Math.floor(rungsTotal)}`
           : `шаг ${Math.floor(stepIdxRaw) + 1}`
         : '';
     const label =
-      stepLabel && ladderPctPlain
-        ? `${niceReason} · ${stepLabel}: ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
-        : ladderPctPlain
-          ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
-          : `${niceReason} · ${sellPct}% остатка`;
+      isTpGrid && stepLabel
+        ? `${niceReason} · ${stepLabel}: ${sellPct}% от остатка`
+        : stepLabel && ladderPctPlain
+          ? `${niceReason} · ${stepLabel}: ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+          : ladderPctPlain
+            ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+            : `${niceReason} · ${sellPct}% остатка`;
     return {
       ts,
       kind: 'partial_sell',
