@@ -10,6 +10,7 @@
  */
 import 'dotenv/config';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -67,6 +68,45 @@ const EXTRA_IGNORE = new Set(
 
 function ignoreProgramIds() {
   return new Set([...SA_GRWS_BUILTIN_IGNORE_PROGRAMS, ...EXTRA_IGNORE]);
+}
+
+/**
+ * Опционально: фиксированные пулы для бенчмарка RPC/БД без Gecko (замер QuickNode и т.п.).
+ * Задаётся **`SA_GRWS_SEED_POOLS_JSON`** или файлом **`SA_GRWS_SEED_POOLS_PATH`** (JSON-массив объектов с pool_address, base_mint, quote_mint).
+ */
+function loadSeedPools() {
+  const path = process.env.SA_GRWS_SEED_POOLS_PATH?.trim();
+  let raw = (process.env.SA_GRWS_SEED_POOLS_JSON || '').trim();
+  if (path) {
+    try {
+      raw = fs.readFileSync(path, 'utf8').trim();
+    } catch {
+      return null;
+    }
+  }
+  if (!raw) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return null;
+    /** @type {{ pool_address: string, base_mint: string, quote_mint: string }[]} */
+    const out = [];
+    for (const x of arr) {
+      if (!x || typeof x !== 'object') continue;
+      const pool_address = x.pool_address;
+      const base_mint = x.base_mint;
+      const quote_mint = x.quote_mint;
+      if (
+        typeof pool_address === 'string' &&
+        typeof base_mint === 'string' &&
+        typeof quote_mint === 'string'
+      ) {
+        out.push({ pool_address, base_mint, quote_mint });
+      }
+    }
+    return out.length ? out.slice(0, MAX_POOLS_PER_RUN) : null;
+  } catch {
+    return null;
+  }
 }
 
 if (!DATABASE_URL) {
@@ -370,7 +410,7 @@ async function collectWalletsFromPool(poolRow, batchId, ignorePrograms) {
   }
   return {
     walletRows: [...dedup.values()],
-    signaturesPages: sigs.length > 0 ? SIG_PAGES_MAX : 0,
+    signaturesPages: sigPages,
     txFetched,
   };
 }
@@ -401,7 +441,13 @@ async function collectOneTick(batchId) {
   let errorsTotal = 0;
 
   try {
-    const pools = await fetchGeckoNewPoolsRaydium();
+    const seedPools = loadSeedPools();
+    const pools = seedPools ?? (await fetchGeckoNewPoolsRaydium());
+    if (seedPools) {
+      log('info', 'using seed pools (SA_GRWS_SEED_POOLS_JSON or SA_GRWS_SEED_POOLS_PATH)', {
+        count: pools.length,
+      });
+    }
     poolsRaydium = pools.length;
 
     /** @type {{ address: string, metadata: object }[]} */

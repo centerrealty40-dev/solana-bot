@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.30] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.30`.
+
+### W6.7 — seed-пулы для бенчмарка без Gecko
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** **`SA_GRWS_SEED_POOLS_JSON`** или **`SA_GRWS_SEED_POOLS_PATH`** — фиксированный список пулов (обход Gecko для замеров RPC/БД); исправлен **`signaturesPages`** в ответе пула (использовался неверный счётчик).
+- **`scripts-tmp/_grws-pilot-measure.sh`:** записывает seed JSON и задаёт **`SA_GRWS_SEED_POOLS_PATH`** для пилотного замера.
+- **`.env.example`:** закомментированные ключи seed.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.29 -- scripts-tmp/sa-grws-collector.mjs scripts-tmp/_grws-pilot-measure.sh .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.29] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.29`.

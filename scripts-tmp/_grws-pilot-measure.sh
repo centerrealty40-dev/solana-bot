@@ -13,6 +13,13 @@ qn_period_credits() {
 echo "=== GRWS pilot log: $LOG ===" | tee "$LOG"
 echo "cron_note=avoid TG hourly at :05 UTC; sleep reduces Gecko 429 noise" | tee -a "$LOG"
 sleep 75
+SEED_JSON=/tmp/grws-seed-pools.json
+cat >"$SEED_JSON" <<'EOF'
+[{"pool_address":"DQpk9uTXHDNbg2dC6K2r5Yyh11T3XRvxqj4BuCap8uu6","base_mint":"6PCvNLVm46eXHNAPEMARFCDTGimWRRQV37mrSBMHKAyu","quote_mint":"So11111111111111111111111111111111111111112"}]
+EOF
+chmod a+r "$SEED_JSON"
+echo "seed_pools_file=$SEED_JSON (benchmark; skips Gecko)" | tee -a "$LOG"
+
 echo "utc_mark_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$LOG"
 
 T0=$(date +%s)
@@ -29,10 +36,10 @@ REF_JSON=$(sudo -u salpha bash -lc "KEY=\$(cat '$KEY_FILE'); curl -sS '${QN_API}
 echo "qn_ref_window_last_120s_json=$REF_JSON" | tee -a "$LOG"
 
 sudo -u salpha bash -lc "cd '$APP' && \
-  SA_GRWS_GECKO_PAGES_MAX=2 \
+  SA_GRWS_SEED_POOLS_PATH=${SEED_JSON} \
   SA_GRWS_MAX_POOLS_PER_RUN=5 \
   SA_GRWS_SIG_PAGES_MAX=3 \
-  SA_GRWS_MAX_TX_FETCHES_PER_POOL=12 \
+  SA_GRWS_MAX_TX_FETCHES_PER_POOL=15 \
   SA_GRWS_RPC_SLEEP_MS=350 \
   SA_GRWS_DRY_RUN=0 \
   /usr/bin/node scripts-tmp/sa-grws-collector.mjs" 2>&1 | tee -a "$LOG"
