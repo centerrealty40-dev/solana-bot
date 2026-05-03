@@ -20,7 +20,10 @@ sleep 90
 
 SEED_JSON=/tmp/grws-seed-pools.json
 cat >"$SEED_JSON" <<'EOF'
-[{"pool_address":"DQpk9uTXHDNbg2dC6K2r5Yyh11T3XRvxqj4BuCap8uu6","base_mint":"6PCvNLVm46eXHNAPEMARFCDTGimWRRQV37mrSBMHKAyu","quote_mint":"So11111111111111111111111111111111111111112"}]
+[
+  {"pool_address":"DQpk9uTXHDNbg2dC6K2r5Yyh11T3XRvxqj4BuCap8uu6","base_mint":"6PCvNLVm46eXHNAPEMARFCDTGimWRRQV37mrSBMHKAyu","quote_mint":"So11111111111111111111111111111111111111112"},
+  {"pool_address":"DQMdyMjAA7hXT1GPoJst24pM73EW4MvF43YzxQC2xAcu","base_mint":"BLUfV9N4akXeakbRKSpHx2uatjGURUpbEMSv9ukVGsra","quote_mint":"So11111111111111111111111111111111111111112"}
+]
 EOF
 chmod a+r "$SEED_JSON"
 echo "seed_pools_file=$SEED_JSON (обход Gecko для стабильного пилота)" | tee -a "$LOG"
@@ -28,7 +31,7 @@ echo "seed_pools_file=$SEED_JSON (обход Gecko для стабильного
 T_MARK=$(date +%s)
 WINDOW_START=$((T_MARK - 3600))
 echo "utc_T_MARK=$(date -u -d "@${T_MARK}" +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$LOG"
-echo "qn_window_for_delta=[start=\${WINDOW_START}..end=T_MARK] then end=T_POLL after 120s sleep" | tee -a "$LOG"
+echo "qn_window_for_delta=start=${WINDOW_START} end=T_MARK then extended to T_POLL (+120s)" | tee -a "$LOG"
 
 CRED_BEFORE="$(qn_credits_used_in_window "$WINDOW_START" "$T_MARK")"
 echo "qn_credits_used_window_before_run(start=${WINDOW_START},end=${T_MARK})=$CRED_BEFORE" | tee -a "$LOG"
