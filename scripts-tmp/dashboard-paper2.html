@@ -29,6 +29,13 @@
     .pill-ok { background: rgba(16,185,129,.12); color:#34d399; }
     .pill-bad { background: rgba(244,63,94,.12); color:#fb7185; }
     .pill-info { background: rgba(99,102,241,.15); color:#c7d2fe; }
+    /* Header spot tickers — compact strip */
+    .ticker-strip .ticker-card {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 0.65rem;
+      padding: 0.45rem 0.65rem;
+    }
     /* Timeline readability */
     .timeline-pane { font-size: 1.0625rem; line-height: 1.55; color: #e2e8f0; }
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
@@ -37,12 +44,38 @@
 </head>
 <body x-data="paperBoard()" x-init="boot()" class="min-h-screen">
   <main class="max-w-[min(100%,96rem)] w-full mx-auto px-4 sm:px-6 py-6 space-y-7">
-    <header class="flex items-center justify-between gap-3 flex-wrap">
-      <div>
-        <h1 class="text-3xl font-black tracking-tight text-white">PaperTrader · 4 strategies</h1>
-        <p class="text-sm text-slate-300 mt-1">refresh 15s · columns fixed: Live Oscar → Paper Oscar → Deep Runner → Dno · advisor every 4h · digest daily</p>
+    <header class="flex flex-col gap-3 lg:gap-2">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
+        <h1 class="text-3xl font-black tracking-tight text-white shrink-0">PaperTrader · 4 strategies</h1>
+
+        <!-- BTC / ETH / SOL — центр шапки на широких экранах -->
+        <div class="ticker-strip flex flex-wrap gap-2 sm:gap-2.5 justify-center lg:flex-1 lg:justify-center min-w-0">
+          <template x-for="a in (crypto.assets || [])" :key="a.symbol">
+            <div class="ticker-card min-w-0">
+              <div class="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+                <span class="text-sm font-bold text-white tracking-tight" x-text="a.symbol"></span>
+                <span class="mono text-sm font-semibold text-slate-100" x-text="fmtUsd(a.priceUsd)"></span>
+              </div>
+              <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight">
+                <span class="text-slate-500">30m</span><span class="mono font-semibold" :class="signedPctColor(a.chg30mPct)" x-text="fmtPct(a.chg30mPct)"></span>
+                <span class="text-slate-600 hidden sm:inline">·</span>
+                <span class="text-slate-500">1h</span><span class="mono font-semibold" :class="signedPctColor(a.chg1hPct)" x-text="fmtPct(a.chg1hPct)"></span>
+                <span class="text-slate-600 hidden sm:inline">·</span>
+                <span class="text-slate-500">4h</span><span class="mono font-semibold" :class="signedPctColor(a.chg4hPct)" x-text="fmtPct(a.chg4hPct)"></span>
+                <span class="text-slate-600 hidden sm:inline">·</span>
+                <span class="text-slate-500">12h</span><span class="mono font-semibold" :class="signedPctColor(a.chg12hPct)" x-text="fmtPct(a.chg12hPct)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="text-sm text-slate-300 shrink-0 lg:text-right flex flex-col lg:items-end gap-1">
+          <div><span class="text-slate-500">updated</span> <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
+          <div class="text-[10px] text-slate-600 leading-tight" x-show="crypto.updatedAt">
+            CoinGecko<span class="mono text-slate-500" x-text="cryptoTickerStamp"></span>
+          </div>
+        </div>
       </div>
-      <div class="text-sm text-slate-300">updated: <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
     </header>
 
     <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -456,6 +489,8 @@
     function paperBoard() {
       return {
         state: {},
+        crypto: { ok: false, updatedAt: 0, source: 'coingecko', assets: [] },
+        cryptoTickerStamp: '',
         selected: null,
         updatedAt: '—',
         expanded: {},
@@ -639,7 +674,22 @@
         },
         async boot() {
           await this.refresh();
+          this.refreshCrypto();
           setInterval(() => this.refresh(), 15000);
+          setInterval(() => this.refreshCrypto(), 60000);
+        },
+        async refreshCrypto() {
+          try {
+            const j = await fetch('/api/paper2/crypto-ticker', { credentials: 'include' }).then((r) =>
+              r.json(),
+            );
+            this.crypto = j;
+            const u = Number(j.updatedAt);
+            this.cryptoTickerStamp =
+              Number.isFinite(u) && u > 0 ? ' · ref ' + new Date(u).toLocaleTimeString() : '';
+          } catch (e) {
+            console.error(e);
+          }
         },
         async refresh() {
           try {
@@ -683,7 +733,9 @@
         },
         fmtPct(v) { if (v == null || isNaN(v)) return '—'; return `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`; },
         fmtUsd(v) {
-          const x = Number(v || 0), a = Math.abs(x);
+          if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
+          const x = Number(v),
+            a = Math.abs(x);
           if (a >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
           if (a >= 1e3) return `$${(x / 1e3).toFixed(1)}k`;
           return `$${x.toFixed(2)}`;

@@ -2379,6 +2379,186 @@ app.get('/api/paper2/priority-fee', async (_req, reply) => {
   return payload;
 });
 
+// ---------------------------------------------------------
+// PaperTrader2 header: BTC / ETH / SOL spot + % vs 30m / 1h / 4h / 12h (CoinGecko)
+// ---------------------------------------------------------
+const CRYPTO_TICKER_SPECS = [
+  { coingeckoId: 'bitcoin', symbol: 'BTC' },
+  { coingeckoId: 'ethereum', symbol: 'ETH' },
+  { coingeckoId: 'solana', symbol: 'SOL' },
+] as const;
+
+interface CryptoTickerAssetRow {
+  id: string;
+  symbol: string;
+  priceUsd: number | null;
+  chg30mPct: number | null;
+  chg1hPct: number | null;
+  chg4hPct: number | null;
+  chg12hPct: number | null;
+}
+
+interface CryptoTickerApiPayload {
+  ok: boolean;
+  updatedAt: number;
+  source: 'coingecko';
+  assets: CryptoTickerAssetRow[];
+  error?: string;
+}
+
+function cgApiBaseAndHeaders(): { base: string; headers: Record<string, string> } {
+  const key = (process.env.COINGECKO_API_KEY || '').trim();
+  if (key) {
+    return {
+      base: 'https://pro-api.coingecko.com/api/v3',
+      headers: { 'x-cg-pro-api-key': key },
+    };
+  }
+  return { base: 'https://api.coingecko.com/api/v3', headers: {} };
+}
+
+/** Last sample at or before target time (chart series is sorted asc by ms). */
+function priceAtOrBefore(series: [number, number][], targetMs: number): number | null {
+  if (!Array.isArray(series) || series.length === 0) return null;
+  let lo = 0;
+  let hi = series.length - 1;
+  let bestIdx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const ts = series[mid][0];
+    if (ts <= targetMs) {
+      bestIdx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (bestIdx < 0) return null;
+  const px = Number(series[bestIdx][1]);
+  return Number.isFinite(px) && px > 0 ? px : null;
+}
+
+function pctChangeVsPast(current: number | null, past: number | null): number | null {
+  if (current == null || past == null || past <= 0 || current <= 0) return null;
+  return +(((current - past) / past) * 100).toFixed(4);
+}
+
+let cryptoTickerCache: { at: number; payload: CryptoTickerApiPayload } | null = null;
+
+async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
+  const now = Date.now();
+  const cached = cryptoTickerCache;
+  const ttlMs = cached?.payload.ok === false ? 20_000 : 60_000;
+  if (cached && now - cached.at < ttlMs) return cached.payload;
+
+  const { base, headers } = cgApiBaseAndHeaders();
+  const ids = CRYPTO_TICKER_SPECS.map((s) => s.coingeckoId).join(',');
+  const signal = AbortSignal.timeout(14_000);
+
+  const emptyAssets = (): CryptoTickerAssetRow[] =>
+    CRYPTO_TICKER_SPECS.map((s) => ({
+      id: s.coingeckoId,
+      symbol: s.symbol,
+      priceUsd: null,
+      chg30mPct: null,
+      chg1hPct: null,
+      chg4hPct: null,
+      chg12hPct: null,
+    }));
+
+  try {
+    const simpleUrl = `${base}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
+    const simpleRes = await fetch(simpleUrl, { headers, signal });
+    if (!simpleRes.ok) {
+      const errPayload: CryptoTickerApiPayload = {
+        ok: false,
+        updatedAt: now,
+        source: 'coingecko',
+        assets: emptyAssets(),
+        error: `simple/price HTTP ${simpleRes.status}`,
+      };
+      cryptoTickerCache = { at: now, payload: errPayload };
+      return errPayload;
+    }
+    const simpleJson = (await simpleRes.json()) as Record<string, { usd?: number } | undefined>;
+
+    const chartPromises = CRYPTO_TICKER_SPECS.map(async (spec) => {
+      const url = `${base}/coins/${spec.coingeckoId}/market_chart?vs_currency=usd&days=1`;
+      try {
+        const r = await fetch(url, { headers, signal });
+        if (!r.ok) return { id: spec.coingeckoId, prices: null as [number, number][] | null };
+        const j = (await r.json()) as { prices?: [number, number][] };
+        return { id: spec.coingeckoId, prices: Array.isArray(j.prices) ? j.prices : null };
+      } catch {
+        return { id: spec.coingeckoId, prices: null };
+      }
+    });
+
+    const charts = await Promise.all(chartPromises);
+    const chartById = new Map(charts.map((c) => [c.id, c.prices]));
+
+    const t30 = now - 30 * 60 * 1000;
+    const t1h = now - 60 * 60 * 1000;
+    const t4h = now - 4 * 60 * 60 * 1000;
+    const t12h = now - 12 * 60 * 60 * 1000;
+
+    const assets: CryptoTickerAssetRow[] = CRYPTO_TICKER_SPECS.map((spec) => {
+      const row = simpleJson[spec.coingeckoId];
+      let priceUsd =
+        row && typeof row.usd === 'number' && Number.isFinite(row.usd) && row.usd > 0 ? row.usd : null;
+
+      const series = chartById.get(spec.coingeckoId);
+      if (priceUsd == null && series?.length) {
+        const last = series[series.length - 1];
+        const lp = Number(last[1]);
+        if (Number.isFinite(lp) && lp > 0) priceUsd = lp;
+      }
+
+      const p30 = series ? priceAtOrBefore(series, t30) : null;
+      const p1h = series ? priceAtOrBefore(series, t1h) : null;
+      const p4h = series ? priceAtOrBefore(series, t4h) : null;
+      const p12 = series ? priceAtOrBefore(series, t12h) : null;
+
+      return {
+        id: spec.coingeckoId,
+        symbol: spec.symbol,
+        priceUsd,
+        chg30mPct: pctChangeVsPast(priceUsd, p30),
+        chg1hPct: pctChangeVsPast(priceUsd, p1h),
+        chg4hPct: pctChangeVsPast(priceUsd, p4h),
+        chg12hPct: pctChangeVsPast(priceUsd, p12),
+      };
+    });
+
+    const anyPrice = assets.some((a) => a.priceUsd != null);
+    const payload: CryptoTickerApiPayload = {
+      ok: anyPrice,
+      updatedAt: now,
+      source: 'coingecko',
+      assets,
+      ...(anyPrice ? {} : { error: 'no_prices' }),
+    };
+    cryptoTickerCache = { at: Date.now(), payload };
+    return payload;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const errPayload: CryptoTickerApiPayload = {
+      ok: false,
+      updatedAt: now,
+      source: 'coingecko',
+      assets: emptyAssets(),
+      error: msg,
+    };
+    cryptoTickerCache = { at: now, payload: errPayload };
+    return errPayload;
+  }
+}
+
+app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  return fetchCryptoTickerPayload();
+});
+
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
   let files: string[] = [];

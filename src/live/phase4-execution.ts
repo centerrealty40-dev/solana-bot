@@ -21,6 +21,11 @@ import type {
 } from './phase4-types.js';
 import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
 import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
+import {
+  clearLiveBuyCooldown,
+  isMintBlockedForAmbiguousLiveBuy,
+  registerAmbiguousLiveBuyCooldown,
+} from './pending-buy-cooldown.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -104,6 +109,19 @@ async function runSolToTokenPipeline(
     return false;
   }
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return false;
+
+  if (
+    liveCfg.executionMode === 'live' &&
+    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add') &&
+    isMintBlockedForAmbiguousLiveBuy(args.mint)
+  ) {
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_ambiguous_buy_cooldown:${args.intentKind}`,
+      detail: args.mint.slice(0, 12),
+    });
+    return false;
+  }
 
   const solUsd = getSolUsd() ?? 0;
   const intentId = newLiveIntentId();
@@ -201,7 +219,22 @@ async function runSolToTokenPipeline(
     cfg: liveCfg,
     signedTxSerializedBase64: signedB64,
   });
-  return finalizeLiveSendJsonl(intentId, liveOut);
+  const ok = finalizeLiveSendJsonl(intentId, liveOut);
+  if (liveCfg.executionMode === 'live') {
+    if (ok) {
+      clearLiveBuyCooldown(args.mint);
+    } else if (
+      !liveOut.ok &&
+      liveOut.signature &&
+      liveOut.kind === 'confirm_timeout' &&
+      (args.intentKind === 'buy_open' || args.intentKind === 'dca_add')
+    ) {
+      registerAmbiguousLiveBuyCooldown(args.mint);
+    } else {
+      clearLiveBuyCooldown(args.mint);
+    }
+  }
+  return ok;
 }
 
 export type LiveTokenToSolPipelineResult = {
@@ -342,6 +375,9 @@ async function runTokenToSolPipeline(
     signedTxSerializedBase64: signedB64,
   });
   const ok = finalizeLiveSendJsonl(intentId, liveOut);
+  if (liveCfg.executionMode === 'live' && ok) {
+    clearLiveBuyCooldown(args.mint);
+  }
   return {
     ok,
     wsolOutLamports:

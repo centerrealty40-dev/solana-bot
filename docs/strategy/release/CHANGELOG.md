@@ -8,6 +8,32 @@
 
 ---
 
+## [1.11.22] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.22`.
+
+### Live Oscar — подтверждение swap и восстановление зеркала позиций в журнале
+
+- **`src/live/phase6-send.ts`:** корректный разбор ответа **`getSignatureStatuses`** (`value` vs голый массив); при таймауте опроса — **`getTransaction`**: если транзакция в блоке без **`meta.err`**, исход считается успешным (снижает ложные **`failed`** при «медленном» RPC).
+- **`src/live/pending-buy-cooldown.ts`**, **`src/live/phase4-execution.ts`**, **`src/papertrader/main.ts`:** после неоднозначного сценария с подписью на цепи и **`confirm_timeout`** — короткий cooldown на повторный **`buy_open`/`dca_add`** по тому же mint (снижение двойных входов).
+- **`src/live/repair-missed-live-buys.ts`**, **`src/live/main.ts`:** при старте **`live`** после Phase 7 replay — поиск пар **`execution_attempt` (buy) + `execution_result` (`failed` + tx)** с фактическим зачислением токена на кошелёк; дописывание **`live_position_open`** / **`live_position_dca`** и повторный replay. Env: **`LIVE_REPAIR_MISSED_OPENS`**, **`LIVE_REPAIR_MISSED_OPEN_MAX_AGE_MS`** (см. **`.env.example`**).
+
+### Дашборд и отчёты (вспомогательные скрипты)
+
+- **`scripts-tmp/dashboard-server.ts`**, **`scripts-tmp/dashboard-paper2.html`:** доработки сервера дашборда и разметки стратегий (в т.ч. удобство mobile / метаданные).
+- **`scripts-tmp/hourly-telegram-report.mjs`:** цепочка RPC для баланса и сопутствующие правки.
+
+### Утилиты диагностики live (не PM2)
+
+- **`scripts-tmp/check-tx-once.mjs`**, **`scripts-tmp/verify-swap-tx.mjs`:** разовая проверка подписи / свопа через RPC.
+
+### Откат
+
+- Выключить repair: **`LIVE_REPAIR_MISSED_OPENS=0`** → **`pm2 restart live-oscar --update-env`**.
+- Полный откат кода: revert коммита **1.11.22** (или восстановить файлы из тега **`sa-alpha-1.11.21`**) и перезапуск **`live-oscar`**.
+
+---
+
 ## [1.11.21] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.21`.

@@ -40,9 +40,23 @@ type SigRow = {
   slot?: number;
 };
 
+/**
+ * Solana `getSignatureStatuses` → `result` is `{ context, value: (SignatureStatus|null)[] }`.
+ * Some proxies return the array bare; Phase 6 must accept both or polling never sees status → `confirm_timeout`.
+ */
+function signatureStatusArrayFromRpcResult(raw: unknown): unknown[] | null {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object' && 'value' in raw) {
+    const v = (raw as { value: unknown }).value;
+    if (Array.isArray(v)) return v;
+  }
+  return null;
+}
+
 function firstSignatureStatus(raw: unknown): SigRow | null {
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const x = raw[0];
+  const arr = signatureStatusArrayFromRpcResult(raw);
+  if (!arr || arr.length === 0) return null;
+  const x = arr[0];
   if (x == null) return null;
   if (typeof x !== 'object') return null;
   return x as SigRow;
@@ -60,6 +74,41 @@ function liveRpcBase(cfg: LiveOscarConfig) {
     creditsPerCall: cfg.liveSendCreditsPerCall,
     timeoutMs: cfg.liveSendRpcTimeoutMs,
     httpUrl: cfg.liveRpcHttpUrl,
+  };
+}
+
+/**
+ * If `getSignatureStatuses` polling times out (e.g. misconfigured node) but the tx landed,
+ * accept success when `getTransaction` returns a committed tx with `meta.err == null`.
+ */
+async function tryRecoverConfirmedViaGetTransaction(args: {
+  cfg: LiveOscarConfig;
+  signature: string;
+}): Promise<{ ok: true; slot: number | null } | { ok: false }> {
+  const res = await qnCall<unknown>(
+    'getTransaction',
+    [
+      args.signature,
+      {
+        encoding: 'json',
+        maxSupportedTransactionVersion: 0,
+        commitment: args.cfg.liveConfirmCommitment,
+      },
+    ],
+    {
+      ...liveRpcBase(args.cfg),
+      timeoutMs: Math.min(20_000, Math.max(5000, args.cfg.liveSendRpcTimeoutMs)),
+    },
+  );
+  if (!res.ok) return { ok: false };
+  const tx = res.value as { meta?: { err?: unknown }; slot?: number } | null;
+  if (tx == null || typeof tx !== 'object') return { ok: false };
+  const err = tx.meta?.err;
+  if (err != null && err !== false) return { ok: false };
+  const slot = tx.slot;
+  return {
+    ok: true,
+    slot: typeof slot === 'number' && Number.isFinite(slot) ? slot : null,
   };
 }
 
@@ -200,6 +249,17 @@ export async function liveSendSignedSwapPipeline(args: {
   const polled = await pollUntilConfirmed({ cfg, signature, deadlineMs: deadline });
 
   if (!polled.ok) {
+    if (polled.kind === 'confirm_timeout' && signature) {
+      const recovered = await tryRecoverConfirmedViaGetTransaction({ cfg, signature });
+      if (recovered.ok) {
+        return {
+          ok: true,
+          signature,
+          slot: recovered.slot,
+          preSimUnits,
+        };
+      }
+    }
     return {
       ok: false,
       kind: polled.kind,

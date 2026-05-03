@@ -316,9 +316,20 @@ async function rpcJson(rpcUrl, method, params) {
   return j.result;
 }
 
+/** QuickNode / Solana JSON-RPC: legacy flat lamports or `{ context, value }`. */
+function lamportsFromGetBalanceResult(result) {
+  if (typeof result === 'number' && Number.isFinite(result)) return result;
+  if (typeof result === 'string' && /^\d+$/.test(result)) return Number(result);
+  if (result && typeof result === 'object' && 'value' in result) {
+    return lamportsFromGetBalanceResult(result.value);
+  }
+  return NaN;
+}
+
 async function fetchWalletBalances(rpcUrl, ownerPubkey) {
-  const lamports = await rpcJson(rpcUrl, 'getBalance', [ownerPubkey]);
-  const sol = Number(lamports) / 1e9;
+  const raw = await rpcJson(rpcUrl, 'getBalance', [ownerPubkey]);
+  const lamports = lamportsFromGetBalanceResult(raw);
+  const sol = Number.isFinite(lamports) ? lamports / 1e9 : NaN;
   let usdc = null;
   try {
     const tok = await rpcJson(rpcUrl, 'getTokenAccountsByOwner', [
@@ -392,7 +403,11 @@ function buildHourlyReport({
   lines.push('Кошелёк');
   if (walletNote) lines.push(`- ${walletNote}`);
   if (wallet) {
-    lines.push(`- SOL: ${wallet.sol.toFixed(4)}`);
+    const solLine =
+      typeof wallet.sol === 'number' && Number.isFinite(wallet.sol)
+        ? wallet.sol.toFixed(4)
+        : 'n/a';
+    lines.push(`- SOL: ${solLine}`);
     lines.push(`- USDC: ${wallet.usdc != null ? wallet.usdc.toFixed(2) : 'n/a'}`);
   }
 

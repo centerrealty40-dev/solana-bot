@@ -41,6 +41,7 @@ import type {
   SafetyVerdict,
   SimAuditStamp,
 } from './types.js';
+import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
@@ -239,6 +240,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             source: d.source,
             mint: d.mint,
             reason: 'already_open',
+          });
+          continue;
+        }
+        if (resolveLiveOscar() && isMintBlockedForAmbiguousLiveBuy(d.mint)) {
+          opts?.journalLiveStrategy?.({
+            kind: 'execution_skip',
+            reason: 'live_ambiguous_buy_cooldown:discovery',
+            detail: d.mint.slice(0, 12),
           });
           continue;
         }

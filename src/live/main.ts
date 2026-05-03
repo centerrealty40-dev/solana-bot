@@ -25,6 +25,7 @@ import {
   type TxAnchorSampleResult,
 } from './reconcile-tx-anchor-sample.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
+import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 
 const log = pino({ name: 'live-oscar' });
@@ -60,6 +61,7 @@ export async function main(): Promise<void> {
   }
 
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
+  const paperBaseline = loadPaperTraderConfig();
   clearLiveReconcileBlock();
   setLiveReconcileBootSnapshot(null);
 
@@ -104,6 +106,30 @@ export async function main(): Promise<void> {
         { path: liveCfg.liveTradesPath, maxBytes: liveCfg.liveReplayMaxFileBytes },
         'live journal replay used trailing-byte truncation (LIVE_REPLAY_MAX_FILE_BYTES)',
       );
+    }
+
+    if (liveCfg.executionMode === 'live' && liveCfg.walletSecret?.trim()) {
+      try {
+        const pk = loadLiveKeypairFromSecretEnv(liveCfg.walletSecret.trim()).publicKey.toBase58();
+        const repair = await repairMissedLiveBuysFromJournal({
+          liveCfg,
+          paperCfg: paperBaseline,
+          initialOpen: liveStrategyReplay.open,
+          walletPubkey: pk,
+        });
+        if (repair.appended > 0) {
+          log.info(repair, 'live-oscar repaired missed on-chain buys into live journal');
+          liveStrategyReplay = replayLiveStrategyJournal({
+            storePath: liveCfg.liveTradesPath,
+            strategyId: liveCfg.strategyId,
+            tailLines: liveCfg.liveReplayTailLines,
+            sinceTs: liveCfg.liveReplaySinceTs,
+            maxFileBytes: liveCfg.liveReplayMaxFileBytes,
+          });
+        }
+      } catch (err) {
+        log.warn({ err: (err as Error)?.message }, 'repairMissedLiveBuysFromJournal failed');
+      }
     }
 
     let txAnchorSample: TxAnchorSampleResult | undefined;
@@ -281,8 +307,6 @@ export async function main(): Promise<void> {
   void runLivePhase3SimSelfTest(liveCfg).catch((err) => {
     log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
   });
-
-  const paperBaseline = loadPaperTraderConfig();
 
   await paperOscarMain({
     journalAppend: () => {},
