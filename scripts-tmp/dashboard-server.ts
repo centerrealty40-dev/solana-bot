@@ -299,7 +299,22 @@ async function getDexLiveMc(mint: string): Promise<number | null> {
   return null;
 }
 
-/** Latest snapshot mcap at or before entry time (for legacy jsonl without features.market_cap_usd). */
+/** Per-(mint, event-second) cache for timeline mcap back-fill only. */
+const timelineEventMcapCache = new Map<string, number | null | undefined>();
+function getDexMcapNearestBeforeCached(mint: string, beforeMs: number): Promise<number | null> {
+  const k = `${mint}\t${Math.floor(beforeMs / 1000)}`;
+  if (timelineEventMcapCache.has(k)) return Promise.resolve(timelineEventMcapCache.get(k) ?? null);
+  return getDexMcapNearestBefore(mint, beforeMs)
+    .then((v) => {
+      timelineEventMcapCache.set(k, v);
+      return v;
+    })
+    .catch(() => {
+      timelineEventMcapCache.set(k, null);
+      return null;
+    });
+}
+
 async function getDexMcapNearestBefore(mint: string, beforeMs: number): Promise<number | null> {
   const mq = sqlMintQuoted(mint);
   if (!mq) return null;
@@ -330,6 +345,75 @@ async function getDexMcapNearestBefore(mint: string, beforeMs: number): Promise<
   } catch {
     return null;
   }
+}
+
+/**
+ * repair / same-ms JSONL: spurious dca_add right after open (same ts, +0% trigger, same notional) — drop from UI.
+ */
+export function filterSpuriousDcaOpenDuplicate(timeline: TimelineEvent[]): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  for (const ev of timeline) {
+    if (ev.kind === 'dca_add' && out.length) {
+      const prev = out[out.length - 1]!;
+      if (prev.kind === 'open' && ev.ts === prev.ts) {
+        const lab = String(ev.label || '');
+        if (/уровень\s*\+0%|уровень\s*0%|\+0%\s*\(от первой ноги\)/.test(lab)) {
+          const a0 = Number(prev.amountUsd ?? 0);
+          const a1 = Number(ev.amountUsd ?? 0);
+          if (a0 > 0 && a1 > 0 && Math.abs(a0 - a1) / Math.max(a0, a1) < 0.02) {
+            continue;
+          }
+        }
+      }
+    }
+    out.push(ev);
+  }
+  return out;
+}
+
+export async function enrichTimelineMcapGaps(
+  mint: string,
+  timeline: TimelineEvent[],
+  maxEvents = 32,
+): Promise<TimelineEvent[]> {
+  if (!mint?.trim()) return timeline;
+  const n = Math.min(timeline.length, maxEvents);
+  const head = await Promise.all(
+    timeline.slice(0, n).map(async (ev) => {
+      if (Number(ev.mcUsd) > 0) return ev;
+      const mc = await getDexMcapNearestBeforeCached(mint, ev.ts);
+      if (mc != null && mc > 0) return { ...ev, mcUsd: mc };
+      return ev;
+    }),
+  );
+  return n < timeline.length ? head.concat(timeline.slice(n)) : head;
+}
+
+const tokenSymbolByMint = new Map<string, { s: string; at: number }>();
+const TOKEN_SYMBOL_TTL_MS = 6 * 3_600_000;
+
+/** When journal has `?` (repair / missing metadata), resolve from DexScreener token API. */
+async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null | undefined): Promise<string> {
+  const t0 = (fromJournal ?? '').trim();
+  if (t0 && t0 !== '?' && t0.length > 0) return t0.slice(0, 32);
+  const c = tokenSymbolByMint.get(mint);
+  if (c && Date.now() - c.at < TOKEN_SYMBOL_TTL_MS) return c.s;
+  try {
+    const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`, {
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!r.ok) return t0 || '?';
+    const j = (await r.json()) as { pairs?: { baseToken?: { symbol?: string } }[] };
+    const p = j?.pairs?.[0];
+    const sym = String(p?.baseToken?.symbol || '').trim();
+    if (sym) {
+      tokenSymbolByMint.set(mint, { s: sym, at: Date.now() });
+      return sym.slice(0, 32);
+    }
+  } catch {
+    /* optional */
+  }
+  return t0 && t0 !== '?' ? t0 : '?';
 }
 
 async function getCurrentMcAny(mint: string): Promise<number | null> {
@@ -2037,6 +2121,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
 
+      const emMc0 = entryRealMcFromLiveOpenTrade(ot);
       const syn: Record<string, unknown> = {
         kind: 'open',
         ts,
@@ -2051,7 +2136,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         legs: ot.legs,
         totalInvestedUsd: ot.totalInvestedUsd,
         metricType,
-        mcUsdLive: undefined,
+        ...(emMc0 != null && emMc0 > 0 ? { mcUsdLive: emMc0 } : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, metricType, entryRealMcUsd));
       liveTimelines.set(mint, tev ? [tev] : []);
@@ -2668,6 +2753,7 @@ app.get('/api/paper2', async (_req, reply) => {
           const exitPriorityFeeUsd =
             Number.isFinite(exitPfUsd) && exitPfUsd > 0 ? exitPfUsd : null;
           let tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+          tlOut = filterSpuriousDcaOpenDuplicate(tlOut);
           if (
             tlOut.length &&
             tlOut[0].kind === 'open' &&
@@ -2677,7 +2763,9 @@ app.get('/api/paper2', async (_req, reply) => {
           ) {
             tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
           }
+          tlOut = await enrichTimelineMcapGaps(String(c.mint), tlOut);
           tlOut = finalizeTimelineForApi(tlOut);
+          const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
           const entryPriceVerifySlipPct =
             typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
           const entryPriceVerifyImpactPct =
@@ -2698,7 +2786,7 @@ app.get('/api/paper2', async (_req, reply) => {
           const exitContext = (c as { exitContext?: unknown }).exitContext ?? null;
           return {
             mint: c.mint,
-            symbol: c.symbol,
+            symbol: closedDisplaySymbol,
             exitTs: c.exitTs,
             entryTs: c.entryTs,
             exitReason: c.exitReason,
@@ -2799,6 +2887,7 @@ app.get('/api/paper2', async (_req, reply) => {
         }
 
         let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+        timelineOut = filterSpuriousDcaOpenDuplicate(timelineOut);
         if (
           timelineOut.length &&
           timelineOut[0].kind === 'open' &&
@@ -2808,7 +2897,10 @@ app.get('/api/paper2', async (_req, reply) => {
         ) {
           timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
         }
+        timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut);
         timelineOut = finalizeTimelineForApi(timelineOut);
+
+        const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
         const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
         const livePriceUsd = hasLivePrice ? livePx : null;
@@ -2879,7 +2971,7 @@ app.get('/api/paper2', async (_req, reply) => {
 
         return {
           mint: ot.mint,
-          symbol: ot.symbol,
+          symbol: displaySymbol,
           entryTs: ot.entryTs,
           entryMcUsd: ot.entryMcUsd,
           entryRealMcUsd: ot.entryRealMcUsd,

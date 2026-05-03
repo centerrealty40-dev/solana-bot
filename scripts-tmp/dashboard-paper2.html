@@ -522,7 +522,13 @@
         },
         timelineMarketLine(ev) {
           const m = Number(ev.mcUsd || 0);
-          return `mcap ${m > 0 ? this.fmtUsd(m) : 'n/a'}`;
+          if (m > 0) return `mcap ${this.fmtUsd(m)}`;
+          const s = Number(ev.spotPxUsd || 0);
+          if (s > 0) {
+            if (s >= 0.01) return `token $${s.toFixed(4)}`;
+            return `token $${s.toFixed(6)}`;
+          }
+          return 'mcap n/a';
         },
         normalizeTimelineLabelForUsdParse(s) {
           return String(s || '')
