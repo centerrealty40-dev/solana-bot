@@ -11,6 +11,8 @@ export type LiveReconcileBootSnapshot = {
   walletSolLamports?: string | null;
   chainOnlyMints?: string[];
   journalTruncated?: boolean;
+  /** W8.0-p7.1 — mint prefixes quarantined at boot (ghost anchors). */
+  quarantinedMints?: string[];
 };
 
 let bootSnapshot: LiveReconcileBootSnapshot | null = null;

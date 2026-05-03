@@ -7,6 +7,7 @@ import {
   collectRecentConfirmedTxSignatures,
   verifyTxAnchorSample,
 } from '../live/reconcile-tx-anchor-sample.js';
+import { verifyReplayedOpenBuyAnchorsOnBoot } from '../live/boot-anchor-verify.js';
 import { replayLiveStrategyJournal } from '../live/replay-strategy-journal.js';
 
 async function run(): Promise<void> {
@@ -17,11 +18,25 @@ async function run(): Promise<void> {
     tailLines: liveCfg.liveReplayTailLines,
     sinceTs: liveCfg.liveReplaySinceTs,
     maxFileBytes: liveCfg.liveReplayMaxFileBytes,
+    trustGhostPositions: liveCfg.liveReplayTrustGhostPositions,
   });
+
+  let open = replay.open;
+  let anchorBoot:
+    | Awaited<ReturnType<typeof verifyReplayedOpenBuyAnchorsOnBoot>>
+    | undefined;
+  if (
+    liveCfg.executionMode === 'live' &&
+    liveCfg.liveAnchorVerifyOnBoot &&
+    liveCfg.walletSecret?.trim()
+  ) {
+    anchorBoot = await verifyReplayedOpenBuyAnchorsOnBoot({ liveCfg, open });
+    open = anchorBoot.open;
+  }
 
   let rec = await reconcileLiveWalletVsReplay({
     liveCfg,
-    open: replay.open,
+    open,
     toleranceAtoms: BigInt(liveCfg.liveReconcileToleranceAtoms),
     mode: liveCfg.liveReconcileMode,
   });
@@ -38,8 +53,16 @@ async function run(): Promise<void> {
   }
 
   const payload = {
-    replayOpenMints: replay.open.size,
+    replayOpenMints: open.size,
     journalReplayTruncated: Boolean(replay.journalTruncated),
+    anchorBootVerify: anchorBoot
+      ? {
+          ghostCount: anchorBoot.ghostDetails.length,
+          ghosts: anchorBoot.ghostDetails,
+          rpcFailed: anchorBoot.rpcFailed,
+          rpcPendingMints: anchorBoot.rpcPendingMints,
+        }
+      : undefined,
     reconcile: rec,
     txAnchorSample: txAnchor,
   };
@@ -49,7 +72,8 @@ async function run(): Promise<void> {
   const splBad = rpcFail || !rec.ok;
   const anchorBad =
     txAnchor != null && (txAnchor.notFound.length > 0 || txAnchor.rpcErrors > 0);
-  process.exit(splBad || anchorBad ? 1 : 0);
+  const anchorBootRpcBad = anchorBoot?.rpcFailed === true;
+  process.exit(splBad || anchorBad || anchorBootRpcBad ? 1 : 0);
 }
 
 run().catch((err) => {

@@ -86,6 +86,12 @@ export interface OpenTrade {
   lastObservedPriceUsd?: number | null;
   /** W8.0-p4 — SPL decimals for Jupiter sizing (live-oscar); optional on paper restore. */
   tokenDecimals?: number | null;
+  /**
+   * W8.0-p7.1 — confirmed buy tx signatures (open first, then each DCA leg). Required for chain replay filtering.
+   */
+  entryLegSignatures?: string[];
+  /** W8.0-p7.1 — `simulate` skips on-chain anchor verification at boot. */
+  liveAnchorMode?: 'chain' | 'simulate';
 }
 
 export interface CloseCosts {

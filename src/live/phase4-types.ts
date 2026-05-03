@@ -3,6 +3,16 @@ import type { EvalDecision } from '../papertrader/discovery/dip-clones.js';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
 
+/** W8.0-p7.1 — outcome of SOL→token pipeline (live anchor vs simulate). */
+export type LiveBuyAnchorMode = 'chain' | 'simulate';
+
+export interface LiveBuyPipelineResult {
+  ok: boolean;
+  anchorMode: LiveBuyAnchorMode;
+  /** Populated when `anchorMode === 'chain'` and swap landed on-chain. */
+  confirmedBuyTxSignature?: string | null;
+}
+
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */
 export interface LivePhase4BuyOpenContext {
   liveCfg: LiveOscarConfig;
@@ -14,12 +24,12 @@ export interface LivePhase4BuyOpenContext {
 }
 
 export interface LiveOscarPhase4Discovery {
-  /** Returns true if in-memory position should be opened (simulate ok or policy). */
-  tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<boolean>;
+  /** When `ok`, caller must attach `entryLegSignatures` / `liveAnchorMode` before `live_position_open` JSONL. */
+  tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<LiveBuyPipelineResult>;
 }
 
 export interface LiveOscarPhase4Tracker {
-  trySolToTokenBuy(args: { mint: string; symbol: string; usdNotional: number }): Promise<boolean>;
+  trySolToTokenBuy(args: { mint: string; symbol: string; usdNotional: number }): Promise<LiveBuyPipelineResult>;
 
   tryTokenToSolSell(args: {
     mint: string;

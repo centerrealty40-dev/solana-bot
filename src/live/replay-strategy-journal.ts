@@ -52,6 +52,10 @@ export interface ReplayLiveStrategyJournalOpts {
    * @default 26_214_400 (25 MiB) when passed from `loadLiveOscarConfig`; omit in tests for unbounded read.
    */
   maxFileBytes?: number;
+  /**
+   * W8.0-p7.1 — when false (default), `live_position_open` / `live_position_dca` rows without chain/simulate anchors are skipped.
+   */
+  trustGhostPositions?: boolean;
 }
 
 interface SortRow {
@@ -60,6 +64,34 @@ interface SortRow {
   kind: string;
   mint: string;
   payload: Record<string, unknown>;
+}
+
+/** Collect canonical + legacy repair signatures from a serialized `openTrade` object. */
+export function entryLegSignaturesFromOpenTradeJson(raw: Record<string, unknown>): string[] {
+  const el = raw.entryLegSignatures;
+  const out: string[] = [];
+  if (Array.isArray(el)) {
+    for (const x of el) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  if (out.length > 0) return out;
+  const legacyPrimary = raw.repairedFromTxSignature;
+  if (typeof legacyPrimary === 'string' && legacyPrimary.length >= 32) out.push(legacyPrimary);
+  const legs = raw.repairedLegSignatures;
+  if (Array.isArray(legs)) {
+    for (const x of legs) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  return out;
+}
+
+export function openTradePassesReplayAnchorGate(raw: Record<string, unknown>, trustGhostPositions: boolean): boolean {
+  if (trustGhostPositions) return true;
+  const mode = raw.liveAnchorMode;
+  if (mode === 'simulate') return true;
+  return entryLegSignaturesFromOpenTradeJson(raw).length > 0;
 }
 
 export interface ReplayLiveStrategyJournalResult {
@@ -77,6 +109,7 @@ function lineMatchesChannel(row: Record<string, unknown>): boolean {
 export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): ReplayLiveStrategyJournalResult {
   const open = new Map<string, OpenTrade>();
   const closed: ClosedTrade[] = [];
+  const trustGhost = opts.trustGhostPositions === true;
 
   if (!opts.storePath?.trim() || !fs.existsSync(opts.storePath)) {
     return { open, closed };
@@ -127,7 +160,15 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
   for (const row of batch) {
     switch (row.kind) {
       case 'live_position_open':
-      case 'live_position_dca':
+      case 'live_position_dca': {
+        const otRaw = row.payload.openTrade;
+        if (typeof otRaw !== 'object' || otRaw === null) break;
+        const otr = otRaw as Record<string, unknown>;
+        if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
+        const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
+        if (ot) open.set(row.mint, ot);
+        break;
+      }
       case 'live_position_partial_sell': {
         const otRaw = row.payload.openTrade;
         if (typeof otRaw !== 'object' || otRaw === null) break;

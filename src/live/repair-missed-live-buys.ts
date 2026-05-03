@@ -11,7 +11,7 @@ import type { DexId, Metrics, OpenTrade, PositionLeg } from '../papertrader/type
 import { serializeOpenTrade } from './strategy-snapshot.js';
 import type { LiveOscarConfig } from './config.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
-import { readLiveJournalLinesBounded } from './replay-strategy-journal.js';
+import { entryLegSignaturesFromOpenTradeJson, readLiveJournalLinesBounded } from './replay-strategy-journal.js';
 
 function envBool(v: unknown, defaultVal: boolean): boolean {
   if (v === undefined || v === null || v === '') return defaultVal;
@@ -220,6 +220,9 @@ function collectRepairedBuySignatures(lines: string[], strategyId: string): Set<
     const otRaw = row.openTrade;
     if (typeof otRaw !== 'object' || otRaw === null) continue;
     const o = otRaw as Record<string, unknown>;
+    for (const sig of entryLegSignaturesFromOpenTradeJson(o)) {
+      out.add(sig);
+    }
     const primary = o.repairedFromTxSignature;
     if (typeof primary === 'string' && primary.length > 8) out.add(primary);
     const legs = o.repairedLegSignatures;
@@ -416,6 +419,8 @@ export async function repairMissedLiveBuysFromJournal(args: {
           decimals,
           blockTimeMs: tx.blockTimeMs,
         });
+        otNew.entryLegSignatures = [c.signature];
+        otNew.liveAnchorMode = 'chain';
         const snap = serializeOpenTrade(otNew);
         snap.repairedFromTxSignature = c.signature;
         snap.repairedLegSignatures = [c.signature];
@@ -443,6 +448,8 @@ export async function repairMissedLiveBuysFromJournal(args: {
         ts: tx.blockTimeMs,
       });
       ot.tokenDecimals = ot.tokenDecimals ?? decimals;
+      ot.entryLegSignatures = [...(ot.entryLegSignatures ?? []), c.signature];
+      ot.liveAnchorMode = 'chain';
 
       const snap = serializeOpenTrade(ot);
       const prev = Array.isArray(snap.repairedLegSignatures)

@@ -121,6 +121,13 @@ const LiveOscarConfigSchema = z
     liveReconcileToleranceAtoms: z.number().int().min(0),
     /** 0 = off. Sample-verify last N confirmed `execution_result` rows via getTransaction (Phase 7 tail). */
     liveReconcileTxSampleN: z.coerce.number().int().min(0).max(50).default(0),
+
+    /** W8.0-p7.1 — replay keeps legacy rows without `entryLegSignatures` when true (dangerous). */
+    liveReplayTrustGhostPositions: z.boolean().default(false),
+    /** W8.0-p7.1 — enforce `PAPER_POSITION_USD` vs live entry/max limits at boot (live mode). */
+    liveStrictNotionalParity: z.boolean().default(true),
+    /** W8.0-p7.1 — after replay, verify each `entryLegSignatures` tx via RPC (live mode). */
+    liveAnchorVerifyOnBoot: z.boolean().default(true),
   })
   .superRefine((data, ctx) => {
     if (data.liveReconcileMode === 'trust_chain' && !envBool(process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED, false)) {
@@ -250,6 +257,9 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
+    liveReplayTrustGhostPositions: envBool(process.env.LIVE_REPLAY_TRUST_GHOST_POSITIONS, false),
+    liveStrictNotionalParity: envBool(process.env.LIVE_STRICT_NOTIONAL_PARITY, true),
+    liveAnchorVerifyOnBoot: envBool(process.env.LIVE_ANCHOR_VERIFY_ON_BOOT, true),
   });
 
   if (!parsed.success) {

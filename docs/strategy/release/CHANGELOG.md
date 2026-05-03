@@ -8,6 +8,25 @@
 
 ---
 
+## [1.11.26] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.26`.
+
+### Live Oscar — W8.0-p7.1: журнал ↔ цепь, якоря входов, notional parity (снимает ложный «вечный» reconcile-block)
+
+- **`src/live/main.ts`:** перед SPL-reconcile — **паритет номинала** paper/live (`evaluateLiveNotionalParity`, env **`LIVE_STRICT_NOTIONAL_PARITY`**, по умолчанию вкл.); **`commitBootSnapshot`** не затирает статус при активном parity-block; replay через общие **`replayJournalOpts()`** (в т.ч. **`LIVE_REPLAY_TRUST_GHOST_POSITIONS`**); после repair — повторный replay; **верификация `entryLegSignatures` на boot** (`verifyReplayedOpenBuyAnchorsOnBoot`, **`LIVE_ANCHOR_VERIFY_ON_BOOT`**).
+- **Новые модули:** **`boot-anchor-verify.ts`**, **`notional-parity.ts`**, **`live-buy-anchor.ts`** — проверка якорных tx и дописывание якорей в журнал после **open/DCA** (paper → live JSONL).
+- **`replay-strategy-journal.ts`**, **`repair-missed-live-buys.ts`**, **`store-jsonl`**, **`phase4`/`phase5`**, **`live-reconcile-*`**, **`strategy-snapshot`**, **`events`**, **`config`:** поддержка p7.1 и событий.
+- **`src/papertrader`:** вызовы якорения live-buy после открытия/DCA; типы/store-restore при необходимости.
+- **`src/scripts/live-reconcile-cli.ts`**, **`.env.example`:** документация env-ключей p7.1.
+- **Тесты:** **`tests/live-phase7-p71.test.ts`**, обновлён **`live-phase7-replay.test.ts`**.
+
+### Откат
+
+- **`git reset --hard sa-alpha-1.11.25`** на клоне и деплой по [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) §5.2; **`pm2 reload ecosystem.config.cjs --only live-oscar,pt1-oscar,pt1-diprunner,pt1-dno --update-env`** под **`salpha`** (при необходимости **`dashboard-organizer-paper`**).
+
+---
+
 ## [1.11.25] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.25`.

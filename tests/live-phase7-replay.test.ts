@@ -6,6 +6,11 @@ import { replayLiveStrategyJournal } from '../src/live/replay-strategy-journal.j
 import { serializeClosedTrade, serializeOpenTrade } from '../src/live/strategy-snapshot.js';
 import type { ClosedTrade, OpenTrade } from '../src/papertrader/types.js';
 
+/** p7.1 replay requires simulate anchor or `entryLegSignatures` unless `trustGhostPositions`. */
+function liveOpenTradeSnapshot(ot: OpenTrade): Record<string, unknown> {
+  return { ...serializeOpenTrade(ot), liveAnchorMode: 'simulate' as const };
+}
+
 function minimalOpen(mint: string, avg: number): OpenTrade {
   const ts = Date.now();
   return {
@@ -58,7 +63,7 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
         channel: 'live',
         kind: 'live_position_open',
         mint: mintB,
-        openTrade: serializeOpenTrade(otB),
+        openTrade: liveOpenTradeSnapshot(otB),
       }),
       JSON.stringify({
         ts: 100,
@@ -66,7 +71,7 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
         channel: 'live',
         kind: 'live_position_open',
         mint: mintA,
-        openTrade: serializeOpenTrade(otA),
+        openTrade: liveOpenTradeSnapshot(otA),
       }),
       JSON.stringify({
         ts: 150,
@@ -126,7 +131,7 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
       channel: 'live',
       kind: 'live_position_open',
       mint,
-      openTrade: serializeOpenTrade(ot),
+      openTrade: liveOpenTradeSnapshot(ot),
     });
     const padding = `${'y'.repeat(9000)}\n`;
     fs.writeFileSync(p, padding + row + '\n', 'utf-8');
@@ -147,7 +152,7 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
       channel: 'live',
       kind: 'live_position_open',
       mint,
-      openTrade: serializeOpenTrade(ot),
+      openTrade: liveOpenTradeSnapshot(ot),
     };
     fs.writeFileSync(p, `${JSON.stringify({ noise: 1 })}\n${JSON.stringify(row)}\n`, 'utf-8');
     const r = replayLiveStrategyJournal({ storePath: p, strategyId: 'live-oscar', tailLines: 1 });

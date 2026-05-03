@@ -36,6 +36,10 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     liqWatchLastDropPct: ot.liqWatchLastDropPct,
     lastObservedPriceUsd: ot.lastObservedPriceUsd,
     tokenDecimals: ot.tokenDecimals,
+    ...(ot.entryLegSignatures != null && ot.entryLegSignatures.length > 0
+      ? { entryLegSignatures: [...ot.entryLegSignatures] }
+      : {}),
+    ...(ot.liveAnchorMode ? { liveAnchorMode: ot.liveAnchorMode } : {}),
   };
 }
 

@@ -95,6 +95,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           ? Number(o.lastObservedPriceUsd)
           : undefined,
     };
+    const els = (o as unknown as { entryLegSignatures?: unknown }).entryLegSignatures;
+    if (Array.isArray(els) && els.every((x) => typeof x === 'string')) {
+      ot.entryLegSignatures = els as string[];
+    }
+    const lam = (o as unknown as { liveAnchorMode?: unknown }).liveAnchorMode;
+    if (lam === 'chain' || lam === 'simulate') {
+      ot.liveAnchorMode = lam;
+    }
     if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
     return ot;
   } catch {

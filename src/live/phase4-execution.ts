@@ -14,6 +14,7 @@ import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { newLiveIntentId } from './intent.js';
 import type { LiveOscarConfig } from './config.js';
 import type {
+  LiveBuyPipelineResult,
   LiveOscarPhase4Discovery,
   LiveOscarPhase4Tracker,
   LiveOscarRuntimeBundle,
@@ -90,6 +91,10 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
   return false;
 }
 
+function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['anchorMode'] {
+  return liveCfg.executionMode === 'simulate' ? 'simulate' : 'chain';
+}
+
 async function runSolToTokenPipeline(
   liveCfg: LiveOscarConfig,
   args: {
@@ -98,17 +103,20 @@ async function runSolToTokenPipeline(
     usdNotional: number;
     intentKind: 'buy_open' | 'dca_add';
   },
-): Promise<boolean> {
-  if (!liveCfg.strategyEnabled) return false;
+): Promise<LiveBuyPipelineResult> {
+  const mode = pipelineAnchorMode(liveCfg);
+  if (!liveCfg.strategyEnabled) return { ok: false, anchorMode: mode };
   if (liveCfg.executionMode === 'dry_run') {
     appendLiveJsonlEvent({
       kind: 'execution_skip',
       reason: `dry_run:${args.intentKind}`,
       detail: args.mint.slice(0, 8),
     });
-    return false;
+    return { ok: false, anchorMode: mode };
   }
-  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return false;
+  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') {
+    return { ok: false, anchorMode: mode };
+  }
 
   if (
     liveCfg.executionMode === 'live' &&
@@ -120,7 +128,7 @@ async function runSolToTokenPipeline(
       reason: `live_ambiguous_buy_cooldown:${args.intentKind}`,
       detail: args.mint.slice(0, 12),
     });
-    return false;
+    return { ok: false, anchorMode: mode };
   }
 
   const solUsd = getSolUsd() ?? 0;
@@ -160,7 +168,7 @@ async function runSolToTokenPipeline(
       error: { message: reason },
     });
     notifyLiveExecutionSimErr();
-    return false;
+    return { ok: false, anchorMode: mode };
   }
 
   const snapForAge = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
@@ -180,7 +188,7 @@ async function runSolToTokenPipeline(
       },
     });
     notifyLiveExecutionSimErr();
-    return false;
+    return { ok: false, anchorMode: mode };
   }
 
   const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
@@ -201,7 +209,7 @@ async function runSolToTokenPipeline(
         error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
       });
       notifyLiveExecutionSimErr();
-      return false;
+      return { ok: false, anchorMode: 'simulate' };
     }
 
     appendLiveJsonlEvent({
@@ -212,7 +220,7 @@ async function runSolToTokenPipeline(
       unitsConsumed: sim.unitsConsumed ?? null,
     });
     notifyLiveExecutionSimOk();
-    return true;
+    return { ok: true, anchorMode: 'simulate' };
   }
 
   const liveOut = await liveSendSignedSwapPipeline({
@@ -234,7 +242,10 @@ async function runSolToTokenPipeline(
       clearLiveBuyCooldown(args.mint);
     }
   }
-  return ok;
+  if (ok && liveOut.signature) {
+    return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
+  }
+  return { ok: false, anchorMode: 'chain' };
 }
 
 export type LiveTokenToSolPipelineResult = {
@@ -409,7 +420,7 @@ export async function executeLiveTokenToSolPipeline(
 
 function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
   return {
-    async tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<boolean> {
+    async tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<LiveBuyPipelineResult> {
       return runSolToTokenPipeline(liveCfg, {
         mint: ctx.ot.mint,
         symbol: ctx.ot.symbol,

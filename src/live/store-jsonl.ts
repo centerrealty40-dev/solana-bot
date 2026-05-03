@@ -4,7 +4,9 @@ import type { LiveEventBody } from './events.js';
 import { LIVE_SCHEMA_V1, LIVE_SCHEMA_V2, safeParseLiveEventBody } from './events.js';
 
 function envelopeLiveSchema(body: LiveEventBody): number {
-  return body.kind === 'live_reconcile_report' ? LIVE_SCHEMA_V2 : LIVE_SCHEMA_V1;
+  return body.kind === 'live_reconcile_report' || body.kind === 'live_reconcile_quarantine'
+    ? LIVE_SCHEMA_V2
+    : LIVE_SCHEMA_V1;
 }
 
 let storePath = '';
@@ -50,6 +52,7 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_position_close':
       return true;
     case 'live_reconcile_report':
+    case 'live_reconcile_quarantine':
       return true;
     default:
       return false;

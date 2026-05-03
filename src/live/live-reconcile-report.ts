@@ -15,6 +15,9 @@ export function appendLiveReconcileReportJsonl(args: {
   rec?: ReconcileLiveWalletResult | null;
   journalReplayTruncated?: boolean;
   txAnchorSample?: TxAnchorSampleResult;
+  /** W8.0-p7.1 — mint prefixes excluded as ghost anchors at boot. */
+  quarantinedMints?: string[];
+  anchorRpcPendingMints?: string[];
 }): void {
   const mismatches = args.rec?.mismatches?.length
     ? args.rec.mismatches.map((m) => ({
@@ -36,5 +39,7 @@ export function appendLiveReconcileReportJsonl(args: {
     chainOnlyMints: args.rec?.chainOnlyMints,
     journalReplayTruncated: args.journalReplayTruncated,
     ...(args.txAnchorSample ? { txAnchorSample: args.txAnchorSample } : {}),
+    ...(args.quarantinedMints?.length ? { quarantinedMints: args.quarantinedMints } : {}),
+    ...(args.anchorRpcPendingMints?.length ? { anchorRpcPendingMints: args.anchorRpcPendingMints } : {}),
   });
 }

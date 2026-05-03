@@ -45,6 +45,8 @@ export const HeartbeatEventSchema = z.object({
   reconcileWalletSolLamports: z.string().optional(),
   reconcileChainOnlyMints: z.array(z.string()).optional(),
   journalReplayTruncated: z.boolean().optional(),
+  /** W8.0-p7.1 — mint prefixes dropped from replay as ghost / quarantined at boot. */
+  quarantinedMints: z.array(z.string()).optional(),
 });
 
 export const ExecutionAttemptSchema = z.object({
@@ -155,6 +157,17 @@ export const LiveReconcileReportSchema = z.object({
       rpcErrors: z.number().int().nonnegative(),
     })
     .optional(),
+  quarantinedMints: z.array(z.string()).optional(),
+  anchorRpcPendingMints: z.array(z.string()).optional(),
+});
+
+/** W8.0-p7.1 — diagnostic row when replay anchor verification rejects a mint. */
+export const LiveReconcileQuarantineSchema = z.object({
+  kind: z.literal('live_reconcile_quarantine'),
+  mint: z.string().min(1).max(64),
+  reason: z.string().min(1).max(120),
+  journalLineHint: z.string().max(200).optional(),
+  suggestedAction: z.string().max(200).optional(),
 });
 
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
@@ -172,6 +185,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePositionPartialSellSchema,
   LivePositionCloseSchema,
   LiveReconcileReportSchema,
+  LiveReconcileQuarantineSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

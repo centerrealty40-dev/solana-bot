@@ -18,7 +18,7 @@ import {
   loadCurrentPoolLiqUsd,
 } from '../pricing/liq-watch.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
-import type { LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
+import type { LiveBuyPipelineResult, LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
 import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
@@ -31,6 +31,7 @@ import {
 } from './tp-ladder-state.js';
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
 import { child } from '../../core/logger.js';
+import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 
 const log = child('tracker');
@@ -679,13 +680,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
         if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
         const addUsd = cfg.positionUsd * lvl.addFraction;
+        let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
-          const ok = await livePhase4.trySolToTokenBuy({
+          dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
             usdNotional: addUsd,
           });
-          if (!ok) continue;
+          if (!dcaBuyRes.ok) continue;
         }
         const marketBuy = curMetric;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
@@ -707,6 +709,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
+        if (livePhase4 && dcaBuyRes) {
+          appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+        }
         const mcUsdLive_dca = await getLiveMcUsd(
           mint,
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,

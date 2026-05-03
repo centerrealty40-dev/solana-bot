@@ -42,6 +42,7 @@ import type {
   SimAuditStamp,
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
+import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
@@ -446,7 +447,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             snapshotEntryPriceUsd,
             tokenDecimals,
           });
-          if (!opened) continue;
+          if (!opened.ok) continue;
+          applyLiveBuyAnchorsAfterOpen(ot, opened);
         } else {
           journalAppend({
             kind: 'open',
