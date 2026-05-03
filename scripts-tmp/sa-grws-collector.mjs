@@ -7,6 +7,11 @@
  * Usage:
  *   DATABASE_URL=... SA_GRWS_RPC_URL=... node scripts-tmp/sa-grws-collector.mjs
  *   node scripts-tmp/sa-grws-collector.mjs --daemon
+ *
+ * Кредиты QuickNode: запросы идут напрямую в JSON-RPC; локальный **`quicknode-usage.json`**
+ * и **`recordSolanaRpcCredits`** этим файлом не вызываются. В логе тика — **`rpcBillableCalls`**
+ * и **`estimatedQuicknodeCredits`** (× **`QUICKNODE_CREDITS_PER_SOLANA_RPC`**). Сводка Admin API
+ * «за несколько секунд» часто **0** из‑за агрегации; сравнивайте **UTC‑сутки** или дашборд QN.
  */
 import 'dotenv/config';
 import crypto from 'node:crypto';
@@ -56,8 +61,13 @@ const DRY_RUN = process.env.SA_GRWS_DRY_RUN === '1';
 const MAX_RETRIES = Math.max(0, envNum('SA_GRWS_HTTP_MAX_RETRIES', 4));
 const HTTP_TIMEOUT_MS = Math.max(1000, envNum('SA_GRWS_HTTP_TIMEOUT_MS', 15_000));
 const SIG_LIMIT = Math.min(1000, Math.max(10, envNum('SA_GRWS_SIG_PAGE_LIMIT', 100)));
+const GECKO_PAGE_SLEEP_MS = Math.max(0, envNum('SA_GRWS_GECKO_PAGE_SLEEP_MS', 650));
+/** Оценка для логов (как в .env торгового контура); реальный список QN — у провайдера. */
+const QN_CREDITS_PER_RPC_CALL = Math.max(1, envNum('QUICKNODE_CREDITS_PER_SOLANA_RPC', 30));
 const DAEMON = process.argv.includes('--daemon');
 const INTERVAL_MS = Math.max(60_000, envNum('SA_GRWS_INTERVAL_MS', 600_000));
+
+let rpcBillableCalls = 0;
 
 const EXTRA_IGNORE = new Set(
   (process.env.SA_GRWS_IGNORE_PROGRAM_IDS || '')
@@ -159,30 +169,45 @@ function looksLikeSolanaPubkey(s) {
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
 }
 
-function looksLikeRaydiumGeckoPool(poolData) {
+/** Mint из Gecko token ref id вида `solana_<pubkey>`. */
+function geckoMintFromTokenRefId(refId) {
+  if (typeof refId !== 'string' || refId.length < 8) return null;
+  if (refId.startsWith('solana_')) return refId.slice('solana_'.length);
+  const parts = refId.split('_');
+  return parts.length >= 2 ? parts[parts.length - 1] : refId;
+}
+
+/** Адрес пула: атрибуты или JSON:API id `solana_<pool>`. */
+function geckoPoolPubkey(poolData) {
   const attrs = poolData?.attributes ?? {};
+  const a = attrs?.address ?? attrs?.pool_address ?? null;
+  if (typeof a === 'string' && looksLikeSolanaPubkey(a)) return a;
+  const rawId = poolData?.id;
+  if (typeof rawId === 'string' && rawId.startsWith('solana_')) {
+    const p = rawId.slice('solana_'.length);
+    if (looksLikeSolanaPubkey(p)) return p;
+  }
+  return typeof a === 'string' ? a : null;
+}
+
+/**
+ * Raydium на Gecko v2: признак в **`relationships.dex.data.id`** (`raydium`, `raydium-clmm`, …).
+ * В **`new_pools`** часто нет `attributes.dex_name` — только id DEX (см. raydium-collector `trending_pools`, там ещё бывает legacy dex_name).
+ */
+function isRaydiumDexGeckoPool(poolData) {
   const dexId = String(poolData?.relationships?.dex?.data?.id ?? '').toLowerCase();
-  const blob = [
-    attrs.dex_name,
-    attrs.name,
-    attrs.address,
-    poolData?.id,
-    attrs.pool_name,
-    dexId,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return blob.includes('raydium');
+  if (dexId === 'raydium' || dexId.startsWith('raydium-')) return true;
+  const attrs = poolData?.attributes ?? {};
+  const legacy = String(attrs.dex_name ?? attrs.dex ?? '').toLowerCase();
+  return legacy.includes('raydium');
 }
 
 function parseGeckoRaydiumPool(poolData) {
-  const attrs = poolData?.attributes ?? {};
   const rel = poolData?.relationships ?? {};
-  if (!looksLikeRaydiumGeckoPool(poolData)) return null;
-  const pairAddress = attrs?.address ?? attrs?.pool_address ?? null;
-  const baseMint = rel?.base_token?.data?.id?.split('_').pop() ?? null;
-  const quoteMint = rel?.quote_token?.data?.id?.split('_').pop() ?? null;
+  if (!isRaydiumDexGeckoPool(poolData)) return null;
+  const pairAddress = geckoPoolPubkey(poolData);
+  const baseMint = geckoMintFromTokenRefId(rel?.base_token?.data?.id);
+  const quoteMint = geckoMintFromTokenRefId(rel?.quote_token?.data?.id);
   if (!pairAddress || !baseMint || !quoteMint) return null;
   return { pool_address: pairAddress, base_mint: baseMint, quote_mint: quoteMint };
 }
@@ -272,7 +297,7 @@ async function fetchGeckoNewPoolsRaydium() {
       const p = parseGeckoRaydiumPool(row);
       if (p) out.push(p);
     }
-    await sleep(400);
+    await sleep(GECKO_PAGE_SLEEP_MS);
   }
   const dedup = new Map();
   for (const p of out) {
@@ -294,6 +319,7 @@ async function rpcCall(method, params) {
     });
     const j = await res.json().catch(() => ({}));
     if (j.error) throw new Error(j.error.message || String(j.error));
+    rpcBillableCalls += 1;
     return j.result;
   } finally {
     clearTimeout(timeout);
@@ -432,6 +458,7 @@ async function insertWalletBatch(client, rows) {
 /** @param {string} batchId PI-5: один batch_id на жизнь процесса (не на каждый тик daemon). */
 async function collectOneTick(batchId) {
   const tickStartedAt = Date.now();
+  rpcBillableCalls = 0;
   const ignorePrograms = ignoreProgramIds();
 
   let poolsRaydium = 0;
@@ -502,6 +529,9 @@ async function collectOneTick(batchId) {
       walletsUnique: uniqueRows.length,
       walletsInserted,
       txFetchedTotal,
+      rpcBillableCalls,
+      estimatedQuicknodeCredits: rpcBillableCalls * QN_CREDITS_PER_RPC_CALL,
+      quicknodeCreditsPerCallAssumed: QN_CREDITS_PER_RPC_CALL,
       errorsTotal,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,

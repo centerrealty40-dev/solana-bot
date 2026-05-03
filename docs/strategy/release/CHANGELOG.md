@@ -8,6 +8,37 @@
 
 ---
 
+## [1.11.32] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.32`.
+
+### W6.7 — GRWS: Raydium по `dex.id`, пауза Gecko, оценка QN в логах
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** Raydium — явно по **`relationships.dex.data.id`** (`raydium`, `raydium-*`) + legacy `dex_name`; адрес пула и mint из Gecko через префикс **`solana_`**; **`SA_GRWS_GECKO_PAGE_SLEEP_MS`** (дефолт **650 ms**) снижает 429; в **`tick completed`** — **`rpcBillableCalls`**, **`estimatedQuicknodeCredits`** (× **`QUICKNODE_CREDITS_PER_SOLANA_RPC`**); комментарий в шапке файла про отсутствие записи в **`quicknode-usage.json`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.31 -- scripts-tmp/sa-grws-collector.mjs .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
+## [1.11.31] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.31`.
+
+### Live Oscar — выход по TIMEOUT при verify block + reconcile «журнал vs нулевой баланс»
+
+- **`live_exit_verify_defer`** в live JSONL — каждый defer/эскалация pre-exit Jupiter verify (paper `eval-skip-exit` по-прежнему noop в live).
+- **`PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION`** (дефолт **60**): после N defer для **TIMEOUT** один проход закрытия с `ignoreBlockOnFail` + событие `phase: escalate_proceed`.
+- Новый **`ExitReason` `RECONCILE_ORPHAN`**: при **`LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE=1`** и boot reconcile **mismatch** с **actualRaw=0** для mint — позиция снимается без Jupiter sell (`live_position_close` + paper-close stamp).
+- **`LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE`**, дашборд **`RECONCILE_ORPHAN`**, **`ecosystem.config.cjs`** для `live-oscar`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.30 -- src/papertrader/executor/tracker.ts src/papertrader/main.ts src/papertrader/config.ts src/papertrader/types.ts src/live/main.ts src/live/config.ts src/live/events.ts src/live/store-jsonl.ts src/live/live-reconcile-state.ts ecosystem.config.cjs scripts-tmp/dashboard-paper2.html scripts-tmp/dashboard-server.ts tests/live-jsonl-phase1.test.ts tests/live-oscar-config.test.ts .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.30] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.30`.
