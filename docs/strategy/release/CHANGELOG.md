@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.21] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.21`.
+
+### Пост-lane — единый минимальный возраст пула 12 ч (бумага + live)
+
+- **`ecosystem.config.cjs`:** для **`pt1-oscar`**, **`pt1-diprunner`**, **`pt1-dno`**, **`live-oscar`** выставлено **`PAPER_POST_MIN_AGE_MIN=720`** (12 ч); **`PAPER_POST_MAX_AGE_MIN=0`** (верхняя граница по возрасту в снимке не задаётся).
+- **`scripts-tmp/dashboard-paper2.html`:** тексты **STRATEGY_META** (Oscar, Deep Runner, Dno, Live Oscar) приведены к этим числам; уточнён объём 5m для Dno ($10 000 — как в ecosystem).
+- **`.env.example`**, **[`specs/INDEX.md`](../specs/INDEX.md)** (примечание W6.5), фрагмент примера в **[`W6.5_strategy_launch.md`](../specs/W6.5_strategy_launch.md)** — согласованы с SSOT.
+
+### Откат
+
+- В ecosystem вернуть прежние **`PAPER_POST_MIN_AGE_MIN`** / **`PAPER_POST_MAX_AGE_MIN`** по приложениям; **`pm2 reload ecosystem.config.cjs --update-env`** для затронутых процессов.
+
+---
+
 ## [1.11.20] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.20`.

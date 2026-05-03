@@ -199,7 +199,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '180',
+        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет pt1-oscar / live-oscar); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '720',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '50000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
@@ -326,7 +327,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '120',
+        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет всех бумажных стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '720',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
@@ -460,7 +462,7 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Live Oscar — минимальный возраст пула в снимке 12 ч (не паритет с pt1-oscar 120 мин). */
+        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет pt1-oscar / diprunner / dno); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '720',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '25000',
@@ -630,8 +632,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /* DNO entry — tighter pool than diprunner */
-        PAPER_POST_MIN_AGE_MIN: '30',
+        /** Пост-lane: мин. возраст пула в снимке 12 ч (паритет бумажных стратегий); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '720',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '8000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
