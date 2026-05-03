@@ -52,6 +52,8 @@ describe('live Jupiter Phase 2', () => {
     const q = {
       inputMint: 'So11111111111111111111111111111111111111112',
       outputMint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      inAmount: '1500000',
+      outAmount: '999000000000',
       priceImpactPct: '0.01',
       routePlan: [{}, {}],
     };
@@ -67,6 +69,8 @@ describe('live Jupiter Phase 2', () => {
     expect(s.quoteAgeMs).toBe(42);
     expect(s.swapBuildOk).toBe(true);
     expect(s.swapTxBase64Len).toBe(120);
+    expect(s.quoteInAmount).toBe('1500000');
+    expect(s.quoteOutAmount).toBe('999000000000');
   });
 
   it('liveQuoteExceedsMaxAge is off when max unset', () => {

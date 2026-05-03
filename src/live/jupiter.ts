@@ -68,6 +68,14 @@ export function liveQuoteSnapshotFromResponse(
     inputMint: typeof quoteResponse.inputMint === 'string' ? quoteResponse.inputMint : WRAPPED_SOL_MINT,
     outputMint: typeof quoteResponse.outputMint === 'string' ? quoteResponse.outputMint : '',
   };
+  const inAmt = quoteResponse.inAmount;
+  const outAmt = quoteResponse.outAmount;
+  if (typeof inAmt === 'string' && /^\d+$/.test(inAmt)) snap.quoteInAmount = inAmt;
+  else if (typeof inAmt === 'number' && Number.isFinite(inAmt) && inAmt >= 0)
+    snap.quoteInAmount = String(Math.floor(inAmt));
+  if (typeof outAmt === 'string' && /^\d+$/.test(outAmt)) snap.quoteOutAmount = outAmt;
+  else if (typeof outAmt === 'number' && Number.isFinite(outAmt) && outAmt >= 0)
+    snap.quoteOutAmount = String(Math.floor(outAmt));
   if (args.swapBuildOk !== undefined) snap.swapBuildOk = args.swapBuildOk;
   if (args.swapTxBase64Len !== undefined) snap.swapTxBase64Len = args.swapTxBase64Len;
   if (args.swapBuildReason !== undefined) snap.swapBuildReason = args.swapBuildReason;
