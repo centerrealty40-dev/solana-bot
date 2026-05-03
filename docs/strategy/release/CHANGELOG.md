@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.25] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.25`.
+
+### Дашборд и главная страница сайта — явная плашка пост-lane (48 ч / 3000 холдеров)
+
+- **`scripts-tmp/dashboard.html`** (`/`): краткий текст prod-порогов пост-lane и ссылка на **`/papertrader2`**.
+- **`scripts-tmp/dashboard-paper2.html`** (`/papertrader2`): заметная плашка под шапкой с **`PAPER_POST_MIN_AGE_MIN=2880`** и **`PAPER_MIN_HOLDER_COUNT=3000`**; у **Oscar** обновлён **one-liner**, чтобы возраст пула и холдеры были видны в шапке карточки (детали в `STRATEGY_META` уже совпадали с SSOT).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.24 -- scripts-tmp/dashboard.html scripts-tmp/dashboard-paper2.html docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** (или **`git reset --hard sa-alpha-1.11.24`** на клоне), затем деплой на сервер; перезапуск PM2 **`dashboard-organizer-paper`** не обязателен для HTML (файл читается с диска на каждый запрос), но **`pm2 reload … --update-env`** допустим по политике релиза.
+
+---
+
 ## [1.11.24] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.24`.

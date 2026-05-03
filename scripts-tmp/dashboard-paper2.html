@@ -90,6 +90,16 @@
           </div>
         </div>
       </div>
+      <section class="card rounded-xl px-4 py-3 border border-violet-500/25 bg-violet-950/25 mt-1">
+        <p class="text-sm text-slate-300 leading-relaxed">
+          <span class="font-semibold text-violet-200">Prod · пост-lane</span> (все четыре стратегии в колонках):
+          минимальный возраст пула в снимке <strong class="text-white">48 ч / 2 дня</strong>
+          (<span class="mono text-slate-400 text-[13px]">PAPER_POST_MIN_AGE_MIN=2880</span>),
+          минимум холдеров <strong class="text-white">3000</strong>
+          (<span class="mono text-slate-400 text-[13px]">PAPER_MIN_HOLDER_COUNT</span>).
+          Подробности — в блоке «Параметры стратегии» при выборе стратегии ниже.
+        </p>
+      </section>
     </header>
 
     <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -480,7 +490,7 @@
         label: 'Oscar (pt1-oscar)',
         tag: 'oscar',
         oneLiner:
-          'POST после миграции: строже отбор пула; DCA −7% только до первого частичного TP; сетка +5% → 20% остатка; откат к предыдущему порогу — полное закрытие; recovery veto; ladder_retrace.',
+          'POST после миграции: пул ≥48 ч (2 дня), ≥3000 холдеров; строже ликв.; DCA −7% только до первого частичного TP; сетка +5% → 20% остатка; откат к предыдущему порогу — полное закрытие; recovery veto; ladder_retrace.',
         details:
           'Числовой SSOT: блок env для PM2 name pt1-oscar в ecosystem.config.cjs. Изменения — через GitHub и деплой по docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md (§5.2: fetch v2, reset --hard origin/v2, npm ci, pm2 reload ecosystem.config.cjs --update-env); без рутинного scp поверх git-клона. Ниже — текстовое зеркало prod на момент версии продукта (VERSION / CHANGELOG).\n\nВход (discovery / dip):\n• Лейны: только POST; launchpad/migration выкл.\n• Возраст пула в снимке ≥ **2880 мин** (48 ч, 2 дня); верхняя граница по env не ограничена (`PAPER_POST_MAX_AGE_MIN=0`).\n• Ликвидность ≥ $25 000; объём 5m ≥ $10 000; покупок 5m ≥ 4, продаж ≥ 3; buy/sell ≥ 0.98.\n• Холдеры ≥ 3000 (live QN + db_fallback).\n• Дип: окна lookback 120,360,720 мин; откат −15%…−50%; импульс ≥ +12%; мин. возраст для дипа 0 мин; кулдаун 120 мин (скальп 20 мин).\n• Recovery veto дипа (PAPER_DIP_RECOVERY_VETO_*): вкл.; окна 30 и 60 мин от локального дна; если отскок от дна в этих окнах > 12%, вход по дипу не берётся.\n• Киты: анализ вкл.; whale-trigger не обязателен.\n• Safety-check (QN): вкл. (PAPER_SAFETY_CHECK_ENABLED=1).\n\nПозиция: первая нога $100 (PAPER_POSITION_USD).\n\nDCA (PAPER_DCA_LEVELS):\n• Одна докупка при −7% от первой ноги — 30% к базовой позиции ($30).\n• Уровень не более одного раза; усреднение только при новом движении цены вниз через порог относительно предыдущего тика.\n• После **первого частичного тейк-профита по сетке** новые DCA **запрещены** — только дальнейшие частичные продажи и полный выход по правилам ниже.\n\nKill-stop (PAPER_DCA_KILLSTOP):\n• −14% к PnL от средней цены входа.\n\nСетка TP (`PAPER_TP_GRID_STEP_PNL`, `PAPER_TP_GRID_SELL_FRACTION`; дискретный `PAPER_TP_LADDER` пуст):\n• Каждые **+5%** нереализованного PnL к средней открывает новую ступень (число ступеней не ограничено).\n• На каждой ступени продаётся **20%** от **текущего** остатка позиции.\n\nМножители:\n• TP_X = ×100 (выходы задаёт сетка и полное закрытие); SL_X = 0 — фиксированный SL по множителю выкл.\n\nТрейлинг (PAPER_TRAIL_MODE=ladder_retrace):\n• Если PnL откатывает до уровня **предыдущей** ступени сетки (например после +10% цена возвращается к +5% или ниже относительно средней) — закрывается вся оставшаяся позиция (в журнале TRAIL).\n• Параметры env: TRAIL_TRIGGER_X 1.10; TRAIL_DROP 0.10.\n\nТаймаут: 12 ч (PAPER_TIMEOUT_HOURS).\n\n**W7.3 priority fee, W7.5 liq-watch, W7.8 sim-audit** на этом процессе **выкл.** (см. **live-oscar**, где они вкл.). Комиссии в журнале: статический fallback.',
       },
