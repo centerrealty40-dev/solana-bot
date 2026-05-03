@@ -1,6 +1,15 @@
 export type Lane = 'launchpad_early' | 'migration_event' | 'post_migration';
 export type StrategyKind = 'fresh' | 'dip' | 'smart_lottery' | 'fresh_validated';
-export type ExitReason = 'TP' | 'SL' | 'TRAIL' | 'TIMEOUT' | 'NO_DATA' | 'KILLSTOP' | 'LIQ_DRAIN';
+export type ExitReason =
+  | 'TP'
+  | 'SL'
+  | 'TRAIL'
+  | 'TIMEOUT'
+  | 'NO_DATA'
+  | 'KILLSTOP'
+  | 'LIQ_DRAIN'
+  /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
+  | 'RECONCILE_ORPHAN';
 export type DexId = 'pumpfun' | 'pumpswap' | 'raydium' | 'orca' | 'meteora' | 'moonshot';
 
 export interface Metrics {

@@ -51,6 +51,8 @@ async function exitPriceVerifyGate(args: {
   context: 'partial_sell' | 'close';
   journalAppend: TrackerArgs['journalAppend'];
   stats: TrackerStats;
+  /** When true, blocked quotes do not defer (TIMEOUT escalation path). */
+  ignoreBlockOnFail?: boolean;
 }): Promise<{ defer: boolean; verdict: PriceVerifyVerdict | null }> {
   const {
     cfg,
@@ -62,6 +64,7 @@ async function exitPriceVerifyGate(args: {
     context,
     journalAppend,
     stats,
+    ignoreBlockOnFail,
   } = args;
   if (!cfg.priceVerifyExitEnabled) return { defer: false, verdict: null };
   if (!(usdNotional > 1e-6) || !(snapshotPriceUsd > 0)) return { defer: false, verdict: null };
@@ -82,7 +85,7 @@ async function exitPriceVerifyGate(args: {
     verdict = { kind: 'skipped', reason: 'fetch-fail', ts: Date.now() };
   }
 
-  if (verdict.kind === 'blocked' && cfg.priceVerifyExitBlockOnFail) {
+  if (verdict.kind === 'blocked' && cfg.priceVerifyExitBlockOnFail && !ignoreBlockOnFail) {
     stats.skippedPriceVerifyExit += 1;
     journalAppend({
       kind: 'eval-skip-exit',
@@ -118,12 +121,37 @@ export interface TrackerArgs {
   journalLiveStrategy?: (event: Record<string, unknown>) => void;
   /** Live-oscar simulate sells / DCA buys after tracker decisions. */
   livePhase4?: LiveOscarPhase4Tracker;
+  /**
+   * Mint list from boot reconcile: journal expected tokens but wallet raw balance was 0.
+   * When set, tracker paper-closes those opens as RECONCILE_ORPHAN (no Jupiter sell).
+   */
+  reconcilePaperCloseZeroMints?: () => readonly string[] | undefined;
 }
 
 interface PeakState {
   lastPersistedPeak: number;
 }
 const peakStateByMint = new Map<string, PeakState>();
+
+/** Consecutive full-exit verify defers per mint (TIMEOUT escalation). */
+const exitCloseVerifyDefersByMint = new Map<string, number>();
+/** Telemetry for partial sells (live JSONL only). */
+const exitPartialVerifyDefersByMint = new Map<string, number>();
+
+function clearExitCloseDeferForMint(mint: string): void {
+  exitCloseVerifyDefersByMint.delete(mint);
+}
+
+function clearExitPartialDeferForMint(mint: string): void {
+  exitPartialVerifyDefersByMint.delete(mint);
+}
+
+function priceVerifyVerdictSummary(verdict: PriceVerifyVerdict | null): string {
+  if (!verdict) return 'none';
+  if (verdict.kind === 'ok') return 'ok';
+  if (verdict.kind === 'blocked') return `blocked:${verdict.reason}`;
+  return `skipped:${verdict.reason}`;
+}
 
 function totalProceedsNet(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.proceedsUsd || 0), 0);
@@ -207,6 +235,9 @@ function buildExitContext(args: {
       } else {
         triggerLabel = `liq drain (no detail)`;
       }
+      break;
+    case 'RECONCILE_ORPHAN':
+      triggerLabel = `reconcile orphan (journal expected tokens, wallet raw balance 0 at boot)`;
       break;
   }
 
@@ -360,7 +391,20 @@ async function tryExecuteTpPartialSell(args: {
     journalAppend,
     stats,
   });
-  if (exitPvPartial.defer) return 'defer_next';
+  if (exitPvPartial.defer) {
+    const n = (exitPartialVerifyDefersByMint.get(mint) ?? 0) + 1;
+    exitPartialVerifyDefersByMint.set(mint, n);
+    journalLiveStrategy?.({
+      kind: 'live_exit_verify_defer',
+      mint,
+      context: 'partial_sell',
+      phase: 'defer',
+      consecutiveDefers: n,
+      verdictSummary: priceVerifyVerdictSummary(exitPvPartial.verdict),
+    });
+    return 'defer_next';
+  }
+  clearExitPartialDeferForMint(mint);
 
   if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
     const ok = await livePhase4.tryTokenToSolSell({
@@ -425,9 +469,111 @@ async function tryExecuteTpPartialSell(args: {
   return 'ok';
 }
 
+async function closeOpenTradeReconcileOrphan(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+  stats: TrackerStats;
+  tpLadder: TpLadderLevel[];
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  btcCtx: TrackerArgs['btcCtx'];
+}): Promise<void> {
+  const { mint, ot, cfg, open, closed, stats, tpLadder, journalAppend, journalLiveStrategy, btcCtx } = args;
+  const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+  const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+  const perTxNd = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+  const ct = buildClosedTrade({
+    cfg,
+    ot,
+    marketSell: 0,
+    effectiveSell: 0,
+    exitReason: 'RECONCILE_ORPHAN',
+    ageH,
+    networkFeeUsdPerTx: perTxNd,
+  });
+  const exitCtx = buildExitContext({
+    cfg,
+    ot,
+    closePnlPct: ct.pnlPct,
+    ageH,
+    exitReason: 'RECONCILE_ORPHAN',
+    curMetric: 0,
+    xAvg: 0,
+    tpLadder,
+  });
+  ct.exitContext = exitCtx;
+  clearExitCloseDeferForMint(mint);
+  clearExitPartialDeferForMint(mint);
+  open.delete(mint);
+  closed.push(ct);
+  stats.closed.RECONCILE_ORPHAN++;
+  const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+  const mcUsdLive_close = await getLiveMcUsd(
+    mint,
+    ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+  );
+  const liqWatchStamp = await buildOptionalLiqWatchCloseStamp(cfg, ot);
+  journalAppend({
+    kind: 'close',
+    ...ct,
+    peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+    btc_exit: btcCtx(),
+    exit_swaps: exitSwaps,
+    mcUsdLive: mcUsdLive_close,
+    priorityFee: pfClose,
+    exitContext: exitCtx,
+    reconcileOrphan: true,
+    ...(liqWatchStamp ? { liqWatch: liqWatchStamp } : {}),
+  });
+  journalLiveStrategy?.({
+    kind: 'live_position_close',
+    mint,
+    closedTrade: serializeClosedTrade(ct),
+  });
+  peakStateByMint.delete(mint);
+  console.log(`[RECONCILE_ORPHAN] ${mint.slice(0, 8)} $${ot.symbol}`);
+}
+
 export async function trackerTick(args: TrackerArgs): Promise<void> {
-  const { cfg, open, closed, dcaLevels, tpLadder, stats, btcCtx, journalAppend, journalLiveStrategy, livePhase4 } =
-    args;
+  const {
+    cfg,
+    open,
+    closed,
+    dcaLevels,
+    tpLadder,
+    stats,
+    btcCtx,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    reconcilePaperCloseZeroMints,
+  } = args;
+
+  const orphanMints = reconcilePaperCloseZeroMints?.();
+  if (orphanMints?.length) {
+    const oz = new Set(orphanMints);
+    for (const m of [...open.keys()]) {
+      if (!oz.has(m)) continue;
+      const ot = open.get(m);
+      if (!ot) continue;
+      await closeOpenTradeReconcileOrphan({
+        mint: m,
+        ot,
+        cfg,
+        open,
+        closed,
+        stats,
+        tpLadder,
+        journalAppend,
+        journalLiveStrategy,
+        btcCtx,
+      });
+    }
+  }
+
   if (open.size === 0) return;
   const mints = [...open.keys()];
 
@@ -534,6 +680,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           });
           if (!ok) continue;
         }
+        clearExitCloseDeferForMint(mint);
+        clearExitPartialDeferForMint(mint);
         open.delete(mint);
         closed.push(ct);
         stats.closed.LIQ_DRAIN++;
@@ -614,6 +762,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           tpLadder,
         });
         ct.exitContext = exitContextNd;
+        clearExitCloseDeferForMint(mint);
+        clearExitPartialDeferForMint(mint);
         open.delete(mint);
         closed.push(ct);
         stats.closed.NO_DATA++;
@@ -859,6 +1009,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         tpLadder,
       });
       ct.exitContext = exitContextMain;
+      const prevCloseDefers = exitCloseVerifyDefersByMint.get(mint) ?? 0;
+      const maxEsc = cfg.priceVerifyExitMaxDefersEscalation;
+      const escalateTimeoutVerify =
+        exitReason === 'TIMEOUT' && maxEsc > 0 && prevCloseDefers >= maxEsc;
       const exitPvClose = await exitPriceVerifyGate({
         cfg,
         mint,
@@ -869,8 +1023,36 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         context: 'close',
         journalAppend,
         stats,
+        ignoreBlockOnFail: escalateTimeoutVerify,
       });
-      if (exitPvClose.defer) continue;
+      if (exitPvClose.defer) {
+        const n = (exitCloseVerifyDefersByMint.get(mint) ?? 0) + 1;
+        exitCloseVerifyDefersByMint.set(mint, n);
+        journalLiveStrategy?.({
+          kind: 'live_exit_verify_defer',
+          mint,
+          context: 'close',
+          phase: 'defer',
+          consecutiveDefers: n,
+          verdictSummary: priceVerifyVerdictSummary(exitPvClose.verdict),
+          exitReason,
+        });
+        continue;
+      }
+      if (escalateTimeoutVerify && exitPvClose.verdict?.kind === 'blocked') {
+        journalLiveStrategy?.({
+          kind: 'live_exit_verify_defer',
+          mint,
+          context: 'close',
+          phase: 'escalate_proceed',
+          consecutiveDefers: prevCloseDefers,
+          verdictSummary: priceVerifyVerdictSummary(exitPvClose.verdict),
+          exitReason,
+        });
+      }
+      if (exitPvClose.verdict == null || exitPvClose.verdict.kind !== 'blocked') {
+        clearExitCloseDeferForMint(mint);
+      }
 
       if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
         const ok = await livePhase4.tryTokenToSolSell({
@@ -884,6 +1066,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (!ok) continue;
       }
       open.delete(mint);
+      clearExitCloseDeferForMint(mint);
+      clearExitPartialDeferForMint(mint);
       closed.push(ct);
       const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
       if (stats.closed[statKey] != null) stats.closed[statKey]++;

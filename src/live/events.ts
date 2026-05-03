@@ -170,6 +170,19 @@ export const LiveReconcileQuarantineSchema = z.object({
   suggestedAction: z.string().max(200).optional(),
 });
 
+/** Pre-exit Jupiter verify deferred (paper JSONL noop in live) or escalated for TIMEOUT after N defers. */
+export const LiveExitVerifyDeferSchema = z.object({
+  kind: z.literal('live_exit_verify_defer'),
+  mint: z.string().min(1).max(64),
+  context: z.enum(['partial_sell', 'close']),
+  phase: z.enum(['defer', 'escalate_proceed']),
+  consecutiveDefers: z.number().int().min(0),
+  verdictSummary: z.string().max(240),
+  exitReason: z
+    .enum(['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP', 'LIQ_DRAIN', 'RECONCILE_ORPHAN'])
+    .optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -186,6 +199,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePositionCloseSchema,
   LiveReconcileReportSchema,
   LiveReconcileQuarantineSchema,
+  LiveExitVerifyDeferSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

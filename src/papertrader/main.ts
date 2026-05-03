@@ -61,6 +61,8 @@ export interface PapertraderMainOptions {
   liveStrategyReplay?: { open: Map<string, OpenTrade>; closed: ClosedTrade[] };
   /** Phase 7 — validated live JSONL mirror events (`live_position_*`). */
   journalLiveStrategy?: (event: Record<string, unknown>) => void;
+  /** Live: mints with journal vs wallet zero-balance mismatch at boot — tracker paper-closes as RECONCILE_ORPHAN. */
+  reconcilePaperCloseZeroMints?: () => readonly string[] | undefined;
   onShutdown?: (signal: string) => void;
   onOscarHeartbeat?: (payload: {
     openPositions: number;
@@ -158,6 +160,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       NO_DATA: 0,
       KILLSTOP: 0,
       LIQ_DRAIN: 0,
+      RECONCILE_ORPHAN: 0,
     } as Record<ExitReason, number>,
     skippedPriceVerifyExit: 0,
   };
@@ -542,6 +545,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           journalAppend,
           journalLiveStrategy: opts?.journalLiveStrategy,
           livePhase4: resolveLiveOscar()?.tracker,
+          reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
         }),
         45_000,
         'trackerTick',

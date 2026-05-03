@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.33] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.33`.
+
+### Live Oscar (hotfix) — TP grid 5% / 30%
+
+- **`ecosystem.config.cjs`** (`live-oscar`): **`PAPER_TP_GRID_SELL_FRACTION`** **0.2 → 0.3** (30% текущего остатка на ступень); **`PAPER_TP_GRID_STEP_PNL`** **0.05** (+5% PnL к средней); **`PAPER_TP_LADDER`** пуст (только сетка).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.32 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.32] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.32`.

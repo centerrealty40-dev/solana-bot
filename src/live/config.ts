@@ -128,6 +128,11 @@ const LiveOscarConfigSchema = z
     liveStrictNotionalParity: z.boolean().default(true),
     /** W8.0-p7.1 — after replay, verify each `entryLegSignatures` tx via RPC (live mode). */
     liveAnchorVerifyOnBoot: z.boolean().default(true),
+    /**
+     * When boot reconcile reports journal vs wallet mismatch with **zero** on-chain balance for a mint,
+     * tracker removes that `open` row (paper-close + live_position_close) without attempting Jupiter sell.
+     */
+    liveReconcilePaperCloseZeroBalance: z.boolean().default(true),
   })
   .superRefine((data, ctx) => {
     if (data.liveReconcileMode === 'trust_chain' && !envBool(process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED, false)) {
@@ -260,6 +265,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveReplayTrustGhostPositions: envBool(process.env.LIVE_REPLAY_TRUST_GHOST_POSITIONS, false),
     liveStrictNotionalParity: envBool(process.env.LIVE_STRICT_NOTIONAL_PARITY, true),
     liveAnchorVerifyOnBoot: envBool(process.env.LIVE_ANCHOR_VERIFY_ON_BOOT, true),
+    liveReconcilePaperCloseZeroBalance: envBool(process.env.LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE, true),
   });
 
   if (!parsed.success) {

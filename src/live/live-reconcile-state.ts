@@ -8,6 +8,11 @@ export type LiveReconcileBootSnapshot = {
   status: 'ok' | 'mismatch' | 'rpc_fail' | 'skipped';
   skipReason?: string;
   divergentMints?: string[];
+  /**
+   * Mint-level mismatches where replay expected token atoms but chain balance was 0.
+   * Used to drop ghost `open` rows when LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE=1.
+   */
+  zeroBalanceMismatchMints?: string[];
   walletSolLamports?: string | null;
   chainOnlyMints?: string[];
   journalTruncated?: boolean;

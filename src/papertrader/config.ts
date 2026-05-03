@@ -217,6 +217,12 @@ const ConfigSchema = z.object({
   /** W7.4.2 — pre-exit Jupiter quote (token→SOL) vs snapshot before partial/full sells; thresholds reuse entry limits. */
   priceVerifyExitEnabled: z.boolean().default(false),
   priceVerifyExitBlockOnFail: z.boolean().default(false),
+  /**
+   * After this many consecutive **full exit** verify defers for the same mint, TIMEOUT closes skip
+   * `block_on_fail` for one attempt (live telemetry: `live_exit_verify_defer` phase escalate_proceed).
+   * **0** = disable escalation (legacy: can defer indefinitely).
+   */
+  priceVerifyExitMaxDefersEscalation: z.coerce.number().int().min(0).max(50_000).default(60),
 
   /** W7.4.1 — Jupiter quote retries + circuit breaker (shared: entry, exit, impulse, sim-audit quote fetch). */
   priceVerifyQuoteRetriesEnabled: z.boolean().default(true),
@@ -459,6 +465,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     priceVerifyTimeoutMs: process.env.PAPER_PRICE_VERIFY_TIMEOUT_MS,
     priceVerifyExitEnabled: process.env.PAPER_PRICE_VERIFY_EXIT_ENABLED === '1',
     priceVerifyExitBlockOnFail: process.env.PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL === '1',
+    priceVerifyExitMaxDefersEscalation: process.env.PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION,
     priceVerifyQuoteRetriesEnabled: envBool(process.env.PAPER_PRICE_VERIFY_QUOTE_RETRIES_ENABLED, true),
     priceVerifyQuoteMaxAttempts: process.env.PAPER_PRICE_VERIFY_QUOTE_MAX_ATTEMPTS,
     priceVerifyQuoteRetryBackoffMs: process.env.PAPER_PRICE_VERIFY_QUOTE_RETRY_BACKOFF_MS,

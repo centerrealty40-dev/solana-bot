@@ -336,9 +336,22 @@ export async function main(): Promise<void> {
           quarantinedMints: bootQuarantineMintPrefixes,
         });
       } else if (!rec.ok) {
+        const zeroBalanceMismatchMints = rec.mismatches
+          .filter((m) => {
+            if (m.mint === '_rpc_') return false;
+            if (m.actualRaw !== '0') return false;
+            if (m.expectedRaw === 'unknown') return false;
+            try {
+              return BigInt(m.expectedRaw) > 0n;
+            } catch {
+              return false;
+            }
+          })
+          .map((m) => m.mint);
         commitBootSnapshot({
           status: 'mismatch',
           divergentMints: divergentMintList,
+          zeroBalanceMismatchMints: zeroBalanceMismatchMints.length ? zeroBalanceMismatchMints : undefined,
           walletSolLamports: rec.walletSolLamports,
           chainOnlyMints: rec.chainOnlyMints,
           journalTruncated,
@@ -428,6 +441,14 @@ export async function main(): Promise<void> {
     skipPaperJsonlStore: true,
     liveStrategyReplay,
     journalLiveStrategy: (body) => appendLiveJsonlEvent(body),
+    reconcilePaperCloseZeroMints: liveCfg.liveReconcilePaperCloseZeroBalance
+      ? () => {
+          const b = getLiveReconcileBootSnapshot();
+          return b?.status === 'mismatch' && b.zeroBalanceMismatchMints?.length
+            ? b.zeroBalanceMismatchMints
+            : undefined;
+        }
+      : undefined,
     liveOscarFactory: (deps) => createLiveOscarPhase5Bundle(liveCfg, deps, paperBaseline.positionUsd),
     onShutdown: (sig) => {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });

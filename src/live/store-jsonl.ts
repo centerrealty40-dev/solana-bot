@@ -54,6 +54,8 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_reconcile_report':
     case 'live_reconcile_quarantine':
       return true;
+    case 'live_exit_verify_defer':
+      return true;
     default:
       return false;
   }

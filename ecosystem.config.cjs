@@ -487,9 +487,10 @@ module.exports = {
 
         PAPER_DCA_LEVELS: '-7:0.3',
         PAPER_DCA_KILLSTOP: '-0.14',
+        /** TP grid: +5% PnL к средней за ступень; 30% текущего остатка; число ступеней не ограничивается конфигом (`PAPER_TP_LADDER` пуст). */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.2',
+        PAPER_TP_GRID_SELL_FRACTION: '0.3',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
@@ -539,6 +540,8 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
+        /** После N defer pre-exit Jupiter verify по TIMEOUT — один проход без block_on_fail (см. live_exit_verify_defer). */
+        PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
 
         PAPER_SIM_AUDIT_ENABLED: '1',
         PAPER_SIM_SAMPLE_PCT: '5',
@@ -589,6 +592,8 @@ module.exports = {
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /** Не открывать новые позиции, если на кошельке меньше ~0.05 SOL (комиссии + буфер). */
         LIVE_MIN_WALLET_SOL: '0.05',
+        /** Снять «висящие» open из журнала при mismatch и фактическом нулевом балансе mint на кошельке. */
+        LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE: '1',
       },
     },
     {

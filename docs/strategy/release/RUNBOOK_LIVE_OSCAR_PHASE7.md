@@ -1,6 +1,6 @@
 # Runbook — Live Oscar Phase 7 (replay + reconcile)
 
-Операционные сценарии для процесса **`live-oscar`** после включения **W8.0-p7**. Нормативная спека: [`../specs/W8.0_phase7_replay_reconcile_spec.md`](../specs/W8.0_phase7_replay_reconcile_spec.md). Чеклист кода: [`../specs/W8.0_phase7_implementation_checklist.md`](../specs/W8.0_phase7_implementation_checklist.md). Rollout live: родительская спека [`../specs/W8.0_live_oscar_trading_bot.md`](../specs/W8.0_live_oscar_trading_bot.md) §9.
+Операционные сценарии для процесса **`live-oscar`** после включения **W8.0-p7**. Нормативная спека: [`../specs/W8.0_phase7_replay_reconcile_spec.md`](../specs/W8.0_phase7_replay_reconcile_spec.md). Дополнение **p7.1** (якоря, quarantine, notional parity): [`../specs/W8.0_phase7_1_chain_anchored_live_journal_spec.md`](../specs/W8.0_phase7_1_chain_anchored_live_journal_spec.md). Чеклист кода: [`../specs/W8.0_phase7_implementation_checklist.md`](../specs/W8.0_phase7_implementation_checklist.md). Rollout live: родительская спека [`../specs/W8.0_live_oscar_trading_bot.md`](../specs/W8.0_live_oscar_trading_bot.md) §9.
 
 ---
 
@@ -158,3 +158,17 @@ npm run live-reconcile
 ## 11. Относительный допуск reconcile (%)
 
 По решению продукта остаётся только **`LIVE_RECONCILE_TOLERANCE_ATOMS`**; процентный допуск к остатку **не вводился**.
+
+---
+
+## 12. W8.0-p7.1 — якоря **`entryLegSignatures`**, quarantine, паритет notional
+
+С **продукта 1.11.23** новые строки **`live_position_*`** для **`simulate`** несут **`liveAnchorMode: simulate`**; для **`live`** после **`confirmed`** buy — непустой **`entryLegSignatures`** (подписи swap).
+
+| Переменная | Дефолт | Смысл |
+|------------|--------|--------|
+| **`LIVE_REPLAY_TRUST_GHOST_POSITIONS`** | **`0`** | **`1`** — replay применяет строки без якорей (как до p7.1). **Опасно** при рассинхроне журнал/цепь. |
+| **`LIVE_STRICT_NOTIONAL_PARITY`** | **`1`** | В **`live`** при несогласованности **`PAPER_POSITION_USD`** с **`LIVE_ENTRY_NOTIONAL_USD`** / **`LIVE_MAX_POSITION_USD`** → **`risk_block`** **`parity_notional_mismatch`**, новые входы заблокированы. |
+| **`LIVE_ANCHOR_VERIFY_ON_BOOT`** | **`1`** | В **`live`** перед SPL reconcile — **`getTransaction`** по каждой подписи в **`entryLegSignatures`**; ошибочная/отсутствующая tx → строки **`live_reconcile_quarantine`**, mint исключается из **`open`** для reconcile; транспортный сбой RPC → **`anchor_verify_rpc_fail`** (аналогично **`rpc_fail`** reconcile). |
+
+В **`heartbeat`** могут появиться **`quarantinedMints`** (префиксы mint). Откат см. **CHANGELOG 1.11.23**.

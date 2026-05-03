@@ -103,6 +103,15 @@ describe('W8.0-p1 live JSONL contract', () => {
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         closedTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', exitTs: 1 },
       },
+      {
+        kind: 'live_exit_verify_defer',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        context: 'close',
+        phase: 'escalate_proceed',
+        consecutiveDefers: 60,
+        verdictSummary: 'blocked:slip-too-high',
+        exitReason: 'TIMEOUT',
+      },
     ];
     for (const b of bodies) {
       const again = parseLiveEventBody(JSON.parse(JSON.stringify(b)));
@@ -146,6 +155,16 @@ describe('W8.0-p1 live JSONL contract', () => {
         kind: 'live_position_open',
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         openTrade: {},
+      }),
+    ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_exit_verify_defer',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        context: 'partial_sell',
+        phase: 'defer',
+        consecutiveDefers: 1,
+        verdictSummary: 'blocked:impact-too-high',
       }),
     ).toBe(true);
     expect(

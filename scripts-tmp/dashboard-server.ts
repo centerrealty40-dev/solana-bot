@@ -2298,7 +2298,7 @@ function paper2Metrics(closed: Paper2ClosedRow[]): {
   exits: Record<string, number>;
   exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
 } {
-  const exitKinds = ['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP', 'LIQ_DRAIN'] as const;
+  const exitKinds = ['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP', 'LIQ_DRAIN', 'RECONCILE_ORPHAN'] as const;
   const exits: Record<string, number> = Object.fromEntries(exitKinds.map((k) => [k, 0]));
   const breakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }> =
     Object.fromEntries(exitKinds.map((k) => [k, { count: 0, sumPct: 0, sumUsd: 0, avgPct: 0 }]));
