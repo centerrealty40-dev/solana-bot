@@ -55,7 +55,7 @@ echo "qn_experiment_window_json=$WIN_JSON" | tee -a "$LOG"
 AFTER=$(sudo -u postgres psql -d solana_alpha -t -A -c "SELECT count(*)::text FROM wallets WHERE coalesce(metadata->>'collector_id','') = 'sa-grws';")
 echo "wallets_sa_grws_after=$AFTER" | tee -a "$LOG"
 
-sleep 3
+sleep 45
 CRED_END="$(qn_period_credits)"
 echo "qn_billing_period_credits_used_end=$CRED_END" | tee -a "$LOG"
 node -e "
