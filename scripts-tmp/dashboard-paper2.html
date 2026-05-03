@@ -48,23 +48,37 @@
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
         <h1 class="text-3xl font-black tracking-tight text-white shrink-0">PaperTrader · 4 strategies</h1>
 
-        <!-- BTC / ETH / SOL — центр шапки на широких экранах -->
+        <!-- BTC · Wallet SOL (RPC) · SOL spot — центр шапки -->
         <div class="ticker-strip flex flex-wrap gap-2 sm:gap-2.5 justify-center lg:flex-1 lg:justify-center min-w-0">
-          <template x-for="a in (crypto.assets || [])" :key="a.symbol">
+          <template x-for="a in (crypto.assets || [])" :key="a.id || a.symbol">
             <div class="ticker-card min-w-0">
-              <div class="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
-                <span class="text-sm font-bold text-white tracking-tight" x-text="a.symbol"></span>
-                <span class="mono text-sm font-semibold text-slate-100" x-text="fmtUsd(a.priceUsd)"></span>
-              </div>
-              <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight">
-                <span class="text-slate-500">30m</span><span class="mono font-semibold" :class="signedPctColor(a.chg30mPct)" x-text="fmtPct(a.chg30mPct)"></span>
-                <span class="text-slate-600 hidden sm:inline">·</span>
-                <span class="text-slate-500">1h</span><span class="mono font-semibold" :class="signedPctColor(a.chg1hPct)" x-text="fmtPct(a.chg1hPct)"></span>
-                <span class="text-slate-600 hidden sm:inline">·</span>
-                <span class="text-slate-500">4h</span><span class="mono font-semibold" :class="signedPctColor(a.chg4hPct)" x-text="fmtPct(a.chg4hPct)"></span>
-                <span class="text-slate-600 hidden sm:inline">·</span>
-                <span class="text-slate-500">12h</span><span class="mono font-semibold" :class="signedPctColor(a.chg12hPct)" x-text="fmtPct(a.chg12hPct)"></span>
-              </div>
+              <template x-if="a.rowKind === 'wallet_sol'">
+                <div>
+                  <div class="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+                    <span class="text-sm font-bold text-white tracking-tight" x-text="a.symbol"></span>
+                    <span class="mono text-sm font-semibold text-violet-200" x-text="fmtSolBalance(a.balanceSol)"></span>
+                  </div>
+                  <div class="mt-1 text-[11px] leading-tight text-slate-500 mono" x-text="a.walletPubkeyShort || 'set LIVE_WALLET_PUBKEY + SA_RPC_HTTP_URL'"></div>
+                  <div class="mt-0.5 text-[10px] text-slate-600">native · getBalance</div>
+                </div>
+              </template>
+              <template x-if="!(a.rowKind === 'wallet_sol')">
+                <div>
+                  <div class="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+                    <span class="text-sm font-bold text-white tracking-tight" x-text="a.symbol"></span>
+                    <span class="mono text-sm font-semibold text-slate-100" x-text="fmtUsd(a.priceUsd)"></span>
+                  </div>
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight">
+                    <span class="text-slate-500">30m</span><span class="mono font-semibold" :class="signedPctColor(a.chg30mPct)" x-text="fmtPct(a.chg30mPct)"></span>
+                    <span class="text-slate-600 hidden sm:inline">·</span>
+                    <span class="text-slate-500">1h</span><span class="mono font-semibold" :class="signedPctColor(a.chg1hPct)" x-text="fmtPct(a.chg1hPct)"></span>
+                    <span class="text-slate-600 hidden sm:inline">·</span>
+                    <span class="text-slate-500">4h</span><span class="mono font-semibold" :class="signedPctColor(a.chg4hPct)" x-text="fmtPct(a.chg4hPct)"></span>
+                    <span class="text-slate-600 hidden sm:inline">·</span>
+                    <span class="text-slate-500">12h</span><span class="mono font-semibold" :class="signedPctColor(a.chg12hPct)" x-text="fmtPct(a.chg12hPct)"></span>
+                  </div>
+                </div>
+              </template>
             </div>
           </template>
         </div>
@@ -72,7 +86,7 @@
         <div class="text-sm text-slate-300 shrink-0 lg:text-right flex flex-col lg:items-end gap-1">
           <div><span class="text-slate-500">updated</span> <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
           <div class="text-[10px] text-slate-600 leading-tight" x-show="crypto.updatedAt">
-            CoinGecko<span class="mono text-slate-500" x-text="cryptoTickerStamp"></span>
+            Spot: CoinGecko · Wallet: RPC<span class="mono text-slate-500" x-text="cryptoTickerStamp"></span>
           </div>
         </div>
       </div>
@@ -732,6 +746,12 @@
           return n >= 0 ? 'text-emerald-400' : 'text-rose-400';
         },
         fmtPct(v) { if (v == null || isNaN(v)) return '—'; return `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`; },
+        fmtSolBalance(v) {
+          if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
+          const x = Number(v);
+          const t = x >= 100 ? x.toFixed(2) : x.toFixed(4);
+          return t + ' SOL';
+        },
         fmtUsd(v) {
           if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
           const x = Number(v),

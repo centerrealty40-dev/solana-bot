@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
 import postgres from 'postgres';
-import { qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
+import { lamportsFromGetBalanceResult, qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
 import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
 import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
 
@@ -2380,17 +2380,20 @@ app.get('/api/paper2/priority-fee', async (_req, reply) => {
 });
 
 // ---------------------------------------------------------
-// PaperTrader2 header: BTC / ETH / SOL spot + % vs 30m / 1h / 4h / 12h (CoinGecko)
+// PaperTrader2 header: BTC spot · wallet SOL (RPC) · SOL spot — % vs 30m / 1h / 4h / 12h for spots (CoinGecko)
 // ---------------------------------------------------------
-const CRYPTO_TICKER_SPECS = [
+const CRYPTO_TICKER_SPOT_SPECS = [
   { coingeckoId: 'bitcoin', symbol: 'BTC' },
-  { coingeckoId: 'ethereum', symbol: 'ETH' },
   { coingeckoId: 'solana', symbol: 'SOL' },
 ] as const;
 
 interface CryptoTickerAssetRow {
   id: string;
   symbol: string;
+  /** Middle panel: native SOL balance via getBalance (not CoinGecko). */
+  rowKind?: 'coingecko' | 'wallet_sol';
+  balanceSol?: number | null;
+  walletPubkeyShort?: string | null;
   priceUsd: number | null;
   chg30mPct: number | null;
   chg1hPct: number | null;
@@ -2445,6 +2448,45 @@ function pctChangeVsPast(current: number | null, past: number | null): number | 
 
 let cryptoTickerCache: { at: number; payload: CryptoTickerApiPayload } | null = null;
 
+async function fetchWalletSolTickerRow(signal: AbortSignal): Promise<CryptoTickerAssetRow> {
+  const pk = (process.env.LIVE_WALLET_PUBKEY || process.env.HOURLY_WALLET_PUBKEY || '').trim();
+  const rpc = (process.env.HOURLY_RPC_URL || process.env.SA_RPC_HTTP_URL || process.env.SA_RPC_URL || '').trim();
+  const base: CryptoTickerAssetRow = {
+    id: 'wallet_sol',
+    symbol: 'Wallet',
+    rowKind: 'wallet_sol',
+    priceUsd: null,
+    balanceSol: null,
+    walletPubkeyShort: pk ? `${pk.slice(0, 4)}…${pk.slice(-4)}` : null,
+    chg30mPct: null,
+    chg1hPct: null,
+    chg4hPct: null,
+    chg12hPct: null,
+  };
+  if (!pk || !rpc) return base;
+  try {
+    const res = await fetch(rpc, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getBalance',
+        params: [pk, { commitment: 'confirmed' }],
+      }),
+      signal,
+    });
+    const j = (await res.json()) as { result?: unknown; error?: { message?: string } };
+    if (j.error) return { ...base, balanceSol: null };
+    const lamports = lamportsFromGetBalanceResult(j.result);
+    if (lamports == null) return base;
+    const sol = Number(lamports) / 1e9;
+    return { ...base, balanceSol: Number.isFinite(sol) ? sol : null };
+  } catch {
+    return base;
+  }
+}
+
 async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
   const now = Date.now();
   const cached = cryptoTickerCache;
@@ -2452,11 +2494,11 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
   if (cached && now - cached.at < ttlMs) return cached.payload;
 
   const { base, headers } = cgApiBaseAndHeaders();
-  const ids = CRYPTO_TICKER_SPECS.map((s) => s.coingeckoId).join(',');
+  const ids = CRYPTO_TICKER_SPOT_SPECS.map((s) => s.coingeckoId).join(',');
   const signal = AbortSignal.timeout(14_000);
 
-  const emptyAssets = (): CryptoTickerAssetRow[] =>
-    CRYPTO_TICKER_SPECS.map((s) => ({
+  const emptySpotRows = (): CryptoTickerAssetRow[] =>
+    CRYPTO_TICKER_SPOT_SPECS.map((s) => ({
       id: s.coingeckoId,
       symbol: s.symbol,
       priceUsd: null,
@@ -2467,14 +2509,18 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
     }));
 
   try {
+    const walletRowPromise = fetchWalletSolTickerRow(signal);
+
     const simpleUrl = `${base}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
     const simpleRes = await fetch(simpleUrl, { headers, signal });
     if (!simpleRes.ok) {
+      const spot = emptySpotRows();
+      const walletRow = await walletRowPromise;
       const errPayload: CryptoTickerApiPayload = {
         ok: false,
         updatedAt: now,
         source: 'coingecko',
-        assets: emptyAssets(),
+        assets: [spot[0]!, walletRow, spot[1]!],
         error: `simple/price HTTP ${simpleRes.status}`,
       };
       cryptoTickerCache = { at: now, payload: errPayload };
@@ -2482,7 +2528,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
     }
     const simpleJson = (await simpleRes.json()) as Record<string, { usd?: number } | undefined>;
 
-    const chartPromises = CRYPTO_TICKER_SPECS.map(async (spec) => {
+    const chartPromises = CRYPTO_TICKER_SPOT_SPECS.map(async (spec) => {
       const url = `${base}/coins/${spec.coingeckoId}/market_chart?vs_currency=usd&days=1`;
       try {
         const r = await fetch(url, { headers, signal });
@@ -2494,7 +2540,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
       }
     });
 
-    const charts = await Promise.all(chartPromises);
+    const [charts, walletRow] = await Promise.all([Promise.all(chartPromises), walletRowPromise]);
     const chartById = new Map(charts.map((c) => [c.id, c.prices]));
 
     const t30 = now - 30 * 60 * 1000;
@@ -2502,7 +2548,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
     const t4h = now - 4 * 60 * 60 * 1000;
     const t12h = now - 12 * 60 * 60 * 1000;
 
-    const assets: CryptoTickerAssetRow[] = CRYPTO_TICKER_SPECS.map((spec) => {
+    const spotAssets: CryptoTickerAssetRow[] = CRYPTO_TICKER_SPOT_SPECS.map((spec) => {
       const row = simpleJson[spec.coingeckoId];
       let priceUsd =
         row && typeof row.usd === 'number' && Number.isFinite(row.usd) && row.usd > 0 ? row.usd : null;
@@ -2530,7 +2576,9 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
       };
     });
 
-    const anyPrice = assets.some((a) => a.priceUsd != null);
+    const assets: CryptoTickerAssetRow[] = [spotAssets[0]!, walletRow, spotAssets[1]!];
+
+    const anyPrice = spotAssets.some((a) => a.priceUsd != null);
     const payload: CryptoTickerApiPayload = {
       ok: anyPrice,
       updatedAt: now,
@@ -2542,11 +2590,29 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
     return payload;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    const spot = emptySpotRows();
+    let walletRow: CryptoTickerAssetRow;
+    try {
+      walletRow = await fetchWalletSolTickerRow(signal);
+    } catch {
+      walletRow = {
+        id: 'wallet_sol',
+        symbol: 'Wallet',
+        rowKind: 'wallet_sol',
+        priceUsd: null,
+        balanceSol: null,
+        walletPubkeyShort: null,
+        chg30mPct: null,
+        chg1hPct: null,
+        chg4hPct: null,
+        chg12hPct: null,
+      };
+    }
     const errPayload: CryptoTickerApiPayload = {
       ok: false,
       updatedAt: now,
       source: 'coingecko',
-      assets: emptyAssets(),
+      assets: [spot[0]!, walletRow, spot[1]!],
       error: msg,
     };
     cryptoTickerCache = { at: now, payload: errPayload };
