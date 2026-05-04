@@ -555,3 +555,41 @@ export const directLpEvents = pgTable(
     tsIdx: index('direct_lp_events_ts_idx').on(t.ts),
   }),
 );
+
+/**
+ * Wallet Intel policy outcomes (W6.9 / W6.11): BLOCK_TRADE, SMART_TIER_*, UNKNOWN.
+ * Versioned by product semver in rule_set_version.
+ */
+export const walletIntelDecisions = pgTable(
+  'wallet_intel_decisions',
+  {
+    walletAddress: varchar('wallet_address', { length: 64 }).notNull(),
+    ruleSetVersion: text('rule_set_version').notNull(),
+    decision: varchar('decision', { length: 32 }).notNull(),
+    score: doublePrecision('score').notNull().default(0),
+    reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+    sources: jsonb('sources').$type<Record<string, unknown>>().notNull().default({}),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.walletAddress, t.ruleSetVersion] }),
+    decisionVerIdx: index('wallet_intel_decisions_decision_version_idx').on(t.decision, t.ruleSetVersion),
+    computedIdx: index('wallet_intel_decisions_computed_at_idx').on(t.computedAt),
+  }),
+);
+
+export const walletIntelRuns = pgTable(
+  'wallet_intel_runs',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    ruleSetVersion: text('rule_set_version').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+    status: varchar('status', { length: 16 }).notNull().default('ok'),
+    error: text('error'),
+  },
+  (t) => ({
+    startedIdx: index('wallet_intel_runs_started_idx').on(t.startedAt),
+  }),
+);

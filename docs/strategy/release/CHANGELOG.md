@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.63] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.63`.
+
+### Intel — Wallet Intel policy + CLI (W6.9 / W6.11)
+
+- **Миграция `0016_wallet_intel`:** таблицы **`wallet_intel_decisions`**, **`wallet_intel_runs`**.
+- **`src/intel/wallet-intel/`:** классификация кошелька по тегам + участию в **`scam_farm_candidates`** (порог и статусы через ENV), **`mintDecision`** для mint-gate.
+- **npm:** `scam-farm:detect`, `wallet-intel:doctor`, `wallet-intel:policy`, `wallet-intel:mint-check`, `wallet-intel:pipeline`.
+- **`.env.example`:** блоки **`SCAM_FARM_*`** и **`WALLET_INTEL_*`**.
+
+### Откат
+
+- Откат миграции вручную (`DROP TABLE wallet_intel_decisions, wallet_intel_runs`) только после согласования; проще **`git checkout sa-alpha-1.11.62 --`** затронутые пути и редеплой **`v2`**.
+
+---
+
 ## [1.11.62] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.62`.

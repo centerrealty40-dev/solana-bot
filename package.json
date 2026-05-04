@@ -43,7 +43,13 @@
     "sa-wallet-orchestrator": "node scripts-tmp/sa-wallet-orchestrator.mjs",
     "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
-    "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts"
+    "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts",
+    "paper2:timeout-slice": "tsx src/scripts/paper2-timeout-slice.ts",
+    "scam-farm:detect": "tsx src/scripts/scam-farm-detective.ts",
+    "wallet-intel:doctor": "tsx src/scripts/wallet-intel-doctor.ts",
+    "wallet-intel:policy": "tsx src/scripts/wallet-intel-policy.ts",
+    "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",
+    "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

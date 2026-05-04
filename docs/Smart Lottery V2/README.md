@@ -36,6 +36,7 @@
 | [`W6.9_wallet_intel_detective_trading_spec.md`](./W6.9_wallet_intel_detective_trading_spec.md) | Normative spec: **Wallet Intel Detective** для торговли — denylist ферм / foundation smart money; слои L0–L4; правило по новому mint; фазы внедрения; **Helius опционально** (Phase 1–2) |
 | [`W6.9_IMPLEMENTATION_CHECKLIST.md`](./W6.9_IMPLEMENTATION_CHECKLIST.md) | Чеклист реализации **v1** для агента: npm/CLI, миграции, схемы таблиц, E2E прогон, non-goals |
 | [`W6.10_bot_umbrella_and_intel_pipeline.md`](./W6.10_bot_umbrella_and_intel_pipeline.md) | Umbrella-тег **`bot`**, слои A/B, единый пайплайн с W6.9, таксономия без wipe, задел на подтипы ботов |
+| [`W6.11_intel_policy_dashboard_operator_spec.md`](./W6.11_intel_policy_dashboard_operator_spec.md) | Normative: решения оператора (ENV, K=1000, permissive mint-gate, WRITE_ATLAS), таксономия тегов ↔ политика, метрики scam-farm, дашборд **`/SmartLottery`** на etonne-moi.com |
 
 ---
 
