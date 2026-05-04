@@ -111,6 +111,14 @@ export async function runWalletIntelMaterialize(options: {
     .from(schema.walletTags)
     .where(inArray(schema.walletTags.wallet, walletList));
 
+  const primRows = await db
+    .select({
+      wallet: schema.entityWallets.wallet,
+      primaryTag: schema.entityWallets.primaryTag,
+    })
+    .from(schema.entityWallets)
+    .where(inArray(schema.entityWallets.wallet, walletList));
+
   const tagsByWallet = new Map<string, Set<string>>();
   for (const row of tagRows) {
     let set = tagsByWallet.get(row.wallet);
@@ -119,6 +127,15 @@ export async function runWalletIntelMaterialize(options: {
       tagsByWallet.set(row.wallet, set);
     }
     set.add(row.tag);
+  }
+  for (const row of primRows) {
+    if (!row.primaryTag) continue;
+    let set = tagsByWallet.get(row.wallet);
+    if (!set) {
+      set = new Set();
+      tagsByWallet.set(row.wallet, set);
+    }
+    set.add(row.primaryTag);
   }
 
   let blockTrade = 0;
