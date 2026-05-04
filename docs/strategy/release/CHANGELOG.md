@@ -16,6 +16,7 @@
 
 - **`fetchLiveWalletSplBalancesByMint`** (`reconcile-live.ts`): ответ **`getTokenAccountsByOwner`** имеет вид **`{ context, value: [...] }`**, а парсер ожидал голый массив → карта балансов была **пустой**.
 - Следствие: **`sell_full`** не подставлял **полный on-chain raw**, оставался только **USD-math** (недопродажа крупного хвоста); **`live_post_close_tail`** получал **`zero_balance`** при реальном остатке на кошельке.
+- **`package-lock.json`:** синхронизация под **`npm ci`** на Linux (опциональная зависимость **`utf-8-validate`** / корректное дерево для npm 10 на VPS).
 
 ### Откат
 
