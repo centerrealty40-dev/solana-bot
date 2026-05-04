@@ -131,7 +131,10 @@ module.exports = {
         /** W6.8 — Gecko multi-lane → QN → wallets; под ~1.5M кредитов/сутки (~38% ниже пикового RPC/job vs пилот). */
         SA_ORCH_SCHEDULER_TICK_MS: '10000',
         SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
-        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '1500000',
+        /** W6.13 — операционный пул ~70% от глобального дневного капа; PM2 перекрывает `.env`. */
+        SA_QN_GLOBAL_CREDITS_PER_DAY: '1500000',
+        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '700000',
+        SA_BACKFILL_MAX_CREDITS_PER_DAY: '320000',
         SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
         SA_ORCH_MAX_RPC_PER_JOB: '1200',
         SA_ORCH_MAX_RPC_PER_POOL: '180',

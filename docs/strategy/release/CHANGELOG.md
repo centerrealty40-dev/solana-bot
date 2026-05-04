@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.77] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.77`.
+
+### Согласование PM2 — лимиты QuickNode (W6.13)
+
+- В `ecosystem.config.cjs` для `sa-wallet-orchestrator`: `SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY=700000`, `SA_BACKFILL_MAX_CREDITS_PER_DAY=320000`, `SA_QN_GLOBAL_CREDITS_PER_DAY=1500000` — совпадает с проверкой `sa-qn-budget-check` и не перекрывает весь глобальный кап оркестратором.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.76 -- ecosystem.config.cjs`**.
+
+---
+
 ## [1.11.76] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.76`.
