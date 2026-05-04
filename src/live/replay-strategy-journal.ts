@@ -172,6 +172,8 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
       case 'live_position_partial_sell': {
         const otRaw = row.payload.openTrade;
         if (typeof otRaw !== 'object' || otRaw === null) break;
+        const otr = otRaw as Record<string, unknown>;
+        if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
         const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
         if (ot) open.set(row.mint, ot);
         break;

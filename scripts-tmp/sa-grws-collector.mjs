@@ -7,15 +7,22 @@
  * Usage:
  *   DATABASE_URL=... SA_GRWS_RPC_URL=... node scripts-tmp/sa-grws-collector.mjs
  *   node scripts-tmp/sa-grws-collector.mjs --daemon
+ *   node scripts-tmp/sa-grws-collector.mjs --budget-report
  *
  * Кредиты QuickNode: запросы идут напрямую в JSON-RPC; локальный **`quicknode-usage.json`**
  * и **`recordSolanaRpcCredits`** этим файлом не вызываются. В логе тика — **`rpcBillableCalls`**
  * и **`estimatedQuicknodeCredits`** (× **`QUICKNODE_CREDITS_PER_SOLANA_RPC`**). Сводка Admin API
  * «за несколько секунд» часто **0** из‑за агрегации; сравнивайте **UTC‑сутки** или дашборд QN.
+ *
+ * Бюджет: **`SA_GRWS_MAX_QUICKNODE_CREDITS_PER_DAY`** (дефолт 1.5M), счётчик **`data/sa-grws-budget-state.json`** (UTC‑сутки).
+ * Gecko Public API — ориентир **30 HTTP‑вызовов/мин**; троттлинг **`SA_GRWS_GECKO_TARGET_CALLS_PER_MINUTE`** (дефолт 28).
+ * Диагностика без БД: **`node scripts-tmp/sa-grws-collector.mjs --budget-report`**.
+ * Полная сводка пилота: **`npm run sa-grws-analytics`** (БД + budget state + опционально JSONL тиков **`SA_GRWS_TICK_LOG_PATH`**).
  */
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -64,8 +71,67 @@ const SIG_LIMIT = Math.min(1000, Math.max(10, envNum('SA_GRWS_SIG_PAGE_LIMIT', 1
 const GECKO_PAGE_SLEEP_MS = Math.max(0, envNum('SA_GRWS_GECKO_PAGE_SLEEP_MS', 650));
 /** Оценка для логов (как в .env торгового контура); реальный список QN — у провайдера. */
 const QN_CREDITS_PER_RPC_CALL = Math.max(1, envNum('QUICKNODE_CREDITS_PER_SOLANA_RPC', 30));
+/** Оценочный дневной потолок JSON-RPC (кредиты QN / кредиты за вызов). Персист в state-файле. */
+const SA_GRWS_MAX_QN_CREDITS_PER_DAY = Math.max(1000, envNum('SA_GRWS_MAX_QUICKNODE_CREDITS_PER_DAY', 1_500_000));
+const SA_GRWS_RPC_BUDGET_HEADROOM = Math.min(1, Math.max(0.5, envNum('SA_GRWS_RPC_BUDGET_HEADROOM', 0.94)));
+/** 0 = авто из интервала daemon и дневного лимита. */
+const SA_GRWS_MAX_RPC_CALLS_PER_TICK = Math.max(0, envNum('SA_GRWS_MAX_RPC_CALLS_PER_TICK', 0));
+const SA_GRWS_GECKO_TARGET_CPM = Math.max(1, Math.min(60, envNum('SA_GRWS_GECKO_TARGET_CALLS_PER_MINUTE', 28)));
+const SA_GRWS_GECKO_MIN_INTERVAL_MS_RAW = Math.max(0, envNum('SA_GRWS_GECKO_MIN_INTERVAL_MS', 0));
+function geckoMinIntervalMs() {
+  if (SA_GRWS_GECKO_MIN_INTERVAL_MS_RAW > 0) return SA_GRWS_GECKO_MIN_INTERVAL_MS_RAW;
+  return Math.ceil(60000 / SA_GRWS_GECKO_TARGET_CPM);
+}
+const SA_GRWS_MAX_GECKO_HTTP_PER_DAY = Math.max(10, envNum('SA_GRWS_MAX_GECKO_HTTP_PER_DAY', 40_000));
+const SA_GRWS_BREADTH_FIRST = process.env.SA_GRWS_BREADTH_FIRST !== '0';
+/** Пилот: только HTTP Gecko + фильтр Raydium, без JSON-RPC (см. `sa-grws-pilot-diagnose.mjs`). */
+const GECKO_ONLY_DIAGNOSTIC = process.env.SA_GRWS_GECKO_ONLY_DIAGNOSTIC === '1';
+
 const DAEMON = process.argv.includes('--daemon');
 const INTERVAL_MS = Math.max(60_000, envNum('SA_GRWS_INTERVAL_MS', 600_000));
+const BUDGET_REPORT = process.argv.includes('--budget-report');
+
+function printBudgetReport() {
+  const maxRpcPerDay = Math.floor(SA_GRWS_MAX_QN_CREDITS_PER_DAY / QN_CREDITS_PER_RPC_CALL);
+  const ticksPerDay = DAEMON ? Math.max(1, Math.floor(86400000 / INTERVAL_MS)) : 1;
+  const autoTickCap = DAEMON
+    ? Math.max(1, Math.floor((maxRpcPerDay / ticksPerDay) * SA_GRWS_RPC_BUDGET_HEADROOM))
+    : maxRpcPerDay;
+  const effectiveTickCap =
+    SA_GRWS_MAX_RPC_CALLS_PER_TICK > 0
+      ? Math.min(SA_GRWS_MAX_RPC_CALLS_PER_TICK, maxRpcPerDay)
+      : autoTickCap;
+  const geckoMs = geckoMinIntervalMs();
+  console.log(
+    JSON.stringify(
+      {
+        component: 'sa-grws-budget-report',
+        quicknodeCreditsPerRpcAssumed: QN_CREDITS_PER_RPC_CALL,
+        maxQuicknodeCreditsPerDay: SA_GRWS_MAX_QN_CREDITS_PER_DAY,
+        maxBillableRpcCallsPerDay: maxRpcPerDay,
+        daemon: DAEMON,
+        intervalMs: INTERVAL_MS,
+        ticksPerDayUtcApprox: ticksPerDay,
+        rpcBudgetHeadroom: SA_GRWS_RPC_BUDGET_HEADROOM,
+        autoRpcCallsPerTickApprox: autoTickCap,
+        manualMaxRpcCallsPerTickEnv: SA_GRWS_MAX_RPC_CALLS_PER_TICK || null,
+        effectiveRpcCallsPerTickCap: effectiveTickCap,
+        geckoTargetCallsPerMinute: SA_GRWS_GECKO_TARGET_CPM,
+        geckoMinIntervalMs: geckoMs,
+        geckoMaxHttpPerDaySoftCap: SA_GRWS_MAX_GECKO_HTTP_PER_DAY,
+        breadthFirstPools: SA_GRWS_BREADTH_FIRST,
+        budgetStatePathDefault: 'data/sa-grws-budget-state.json',
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+if (BUDGET_REPORT) {
+  printBudgetReport();
+  process.exit(0);
+}
 
 let rpcBillableCalls = 0;
 
@@ -85,11 +151,11 @@ function ignoreProgramIds() {
  * Задаётся **`SA_GRWS_SEED_POOLS_JSON`** или файлом **`SA_GRWS_SEED_POOLS_PATH`** (JSON-массив объектов с pool_address, base_mint, quote_mint).
  */
 function loadSeedPools() {
-  const path = process.env.SA_GRWS_SEED_POOLS_PATH?.trim();
+  const seedPath = process.env.SA_GRWS_SEED_POOLS_PATH?.trim();
   let raw = (process.env.SA_GRWS_SEED_POOLS_JSON || '').trim();
-  if (path) {
+  if (seedPath) {
     try {
-      raw = fs.readFileSync(path, 'utf8').trim();
+      raw = fs.readFileSync(seedPath, 'utf8').trim();
     } catch {
       return null;
     }
@@ -133,6 +199,10 @@ const pool = new Pool({ connectionString: DATABASE_URL });
 let isTickRunning = false;
 let isShuttingDown = false;
 let ticksTotal = 0;
+/** Лимит billable RPC на текущий тик (устанавливается в collectOneTick). */
+let tickRpcCapActive = Number.MAX_SAFE_INTEGER;
+let geckoHttpCallsThisTick = 0;
+let lastGeckoThrottleAtMs = 0;
 
 function log(level, message, meta = {}) {
   const entry = {
@@ -147,8 +217,86 @@ function log(level, message, meta = {}) {
   else console.log(line);
 }
 
+/** Один JSON на строку — для `npm run sa-grws-analytics` (траектория тиков). */
+function appendSaGrwsTickLog(payload) {
+  const rel = envStr('SA_GRWS_TICK_LOG_PATH', '').trim();
+  if (!rel || DRY_RUN) return;
+  const fp = path.resolve(process.cwd(), rel);
+  try {
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.appendFileSync(fp, `${JSON.stringify(payload)}\n`, 'utf8');
+  } catch (e) {
+    log('warn', 'SA_GRWS_TICK_LOG_PATH append failed', { err: String(e), path: fp });
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function budgetStatePath() {
+  return envStr('SA_GRWS_BUDGET_STATE_PATH', path.join(process.cwd(), 'data', 'sa-grws-budget-state.json'));
+}
+
+function utcDayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function readBudgetStateRaw() {
+  const p = budgetStatePath();
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    const j = JSON.parse(raw);
+    return {
+      day: typeof j.day === 'string' ? j.day : '',
+      rpcCallsDay: Number(j.rpcCallsDay) || 0,
+      geckoCallsDay: Number(j.geckoCallsDay) || 0,
+      updatedAtMs: Number(j.updatedAtMs) || 0,
+    };
+  } catch {
+    return { day: '', rpcCallsDay: 0, geckoCallsDay: 0, updatedAtMs: 0 };
+  }
+}
+
+function writeBudgetStateRaw(s) {
+  const p = budgetStatePath();
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(s), 'utf8');
+  } catch (e) {
+    log('warn', 'budget state write failed', { path: p, err: String(e) });
+  }
+}
+
+/** Сброс счётчиков при смене UTC‑суток. */
+function getBudgetState() {
+  const key = utcDayKey();
+  let s = readBudgetStateRaw();
+  if (s.day !== key) {
+    s = { day: key, rpcCallsDay: 0, geckoCallsDay: 0, updatedAtMs: Date.now() };
+    writeBudgetStateRaw(s);
+  }
+  return s;
+}
+
+function persistBudgetTickSpend(rpcDelta, geckoDelta) {
+  const key = utcDayKey();
+  let s = readBudgetStateRaw();
+  if (s.day !== key) {
+    s = { day: key, rpcCallsDay: 0, geckoCallsDay: 0, updatedAtMs: Date.now() };
+  }
+  s.rpcCallsDay += rpcDelta;
+  s.geckoCallsDay += geckoDelta;
+  s.updatedAtMs = Date.now();
+  writeBudgetStateRaw(s);
+}
+
+async function geckoThrottle() {
+  const minI = geckoMinIntervalMs();
+  const now = Date.now();
+  const wait = lastGeckoThrottleAtMs + minI - now;
+  if (wait > 0) await sleep(wait);
+  lastGeckoThrottleAtMs = Date.now();
 }
 
 function makeBatchId() {
@@ -253,6 +401,12 @@ async function fetchGeckoPoolsPage(page) {
   const url = `https://api.geckoterminal.com/api/v2/networks/solana/new_pools?page=${page}`;
   let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    await geckoThrottle();
+    const bsG = getBudgetState();
+    if (bsG.geckoCallsDay + geckoHttpCallsThisTick >= SA_GRWS_MAX_GECKO_HTTP_PER_DAY) {
+      throw Object.assign(new Error('SA_GRWS_GECKO_DAY_BUDGET'), { code: 'SA_GRWS_GECKO_DAY_BUDGET' });
+    }
+    geckoHttpCallsThisTick += 1;
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
@@ -292,7 +446,25 @@ async function fetchGeckoPoolsPage(page) {
 async function fetchGeckoNewPoolsRaydium() {
   const out = [];
   for (let page = 1; page <= GECKO_PAGES_MAX; page += 1) {
-    const rows = await fetchGeckoPoolsPage(page);
+    const bs = getBudgetState();
+    if (bs.geckoCallsDay + geckoHttpCallsThisTick >= SA_GRWS_MAX_GECKO_HTTP_PER_DAY) {
+      log('warn', 'gecko daily soft cap reached before page', {
+        page,
+        geckoCallsDay: bs.geckoCallsDay,
+        geckoCallsThisTick: geckoHttpCallsThisTick,
+      });
+      break;
+    }
+    let rows;
+    try {
+      rows = await fetchGeckoPoolsPage(page);
+    } catch (e) {
+      if (e?.code === 'SA_GRWS_GECKO_DAY_BUDGET') {
+        log('info', 'gecko day budget stop', { page });
+        break;
+      }
+      throw e;
+    }
     for (const row of rows) {
       const p = parseGeckoRaydiumPool(row);
       if (p) out.push(p);
@@ -307,6 +479,15 @@ async function fetchGeckoNewPoolsRaydium() {
 }
 
 async function rpcCall(method, params) {
+  if (tickRpcCapActive < Number.MAX_SAFE_INTEGER && rpcBillableCalls >= tickRpcCapActive) {
+    throw Object.assign(new Error('SA_GRWS_RPC_TICK_BUDGET'), { code: 'SA_GRWS_RPC_TICK_BUDGET' });
+  }
+  const maxRpcPerDay = Math.floor(SA_GRWS_MAX_QN_CREDITS_PER_DAY / QN_CREDITS_PER_RPC_CALL);
+  const bs = getBudgetState();
+  if (bs.rpcCallsDay + rpcBillableCalls + 1 > maxRpcPerDay) {
+    throw Object.assign(new Error('SA_GRWS_RPC_DAY_BUDGET'), { code: 'SA_GRWS_RPC_DAY_BUDGET' });
+  }
+
   const body = { jsonrpc: '2.0', id: 1, method, params };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
@@ -380,7 +561,8 @@ async function collectSignaturesForPool(poolAddress) {
   return { signatures, pageCount };
 }
 
-async function collectWalletsFromPool(poolRow, batchId, ignorePrograms) {
+async function collectWalletsFromPool(poolRow, batchId, ignorePrograms, opts = {}) {
+  const maxTxCap = opts.maxTxPerPool ?? MAX_TX_PER_POOL;
   const { pool_address, base_mint, quote_mint } = poolRow;
   const seedTs = new Date().toISOString();
   const metaBase = {
@@ -408,7 +590,7 @@ async function collectWalletsFromPool(poolRow, batchId, ignorePrograms) {
   }
 
   let txFetched = 0;
-  const lim = Math.min(sigs.length, MAX_TX_PER_POOL);
+  const lim = Math.min(sigs.length, maxTxCap);
   for (let i = 0; i < lim; i += 1) {
     const sig = sigs[i];
     try {
@@ -426,6 +608,9 @@ async function collectWalletsFromPool(poolRow, batchId, ignorePrograms) {
         walletRows.push({ address: pk, metadata: { ...metaBase } });
       }
     } catch (e) {
+      if (e?.code === 'SA_GRWS_RPC_TICK_BUDGET' || e?.code === 'SA_GRWS_RPC_DAY_BUDGET') {
+        throw e;
+      }
       log('warn', 'getTransaction failed', { sig: sig?.slice(0, 16), err: String(e) });
     }
   }
@@ -459,6 +644,7 @@ async function insertWalletBatch(client, rows) {
 async function collectOneTick(batchId) {
   const tickStartedAt = Date.now();
   rpcBillableCalls = 0;
+  geckoHttpCallsThisTick = 0;
   const ignorePrograms = ignoreProgramIds();
 
   let poolsRaydium = 0;
@@ -467,7 +653,39 @@ async function collectOneTick(batchId) {
   let txFetchedTotal = 0;
   let errorsTotal = 0;
 
+  const bs0 = getBudgetState();
+  const maxRpcPerDay = Math.floor(SA_GRWS_MAX_QN_CREDITS_PER_DAY / QN_CREDITS_PER_RPC_CALL);
+  const remainingRpcDay = Math.max(0, maxRpcPerDay - bs0.rpcCallsDay);
+  let tickCapComputed = remainingRpcDay;
+  if (SA_GRWS_MAX_RPC_CALLS_PER_TICK > 0) {
+    tickCapComputed = Math.min(SA_GRWS_MAX_RPC_CALLS_PER_TICK, remainingRpcDay);
+  } else if (DAEMON) {
+    const ticksPerDay = Math.max(1, Math.floor(86400000 / INTERVAL_MS));
+    tickCapComputed = Math.min(
+      remainingRpcDay,
+      Math.max(1, Math.floor((maxRpcPerDay / ticksPerDay) * SA_GRWS_RPC_BUDGET_HEADROOM)),
+    );
+  }
+  tickRpcCapActive = Math.max(0, tickCapComputed);
+
   try {
+    if (tickRpcCapActive <= 0) {
+      log('warn', 'daily rpc budget exhausted, skip tick', {
+        rpcCallsDay: bs0.rpcCallsDay,
+        maxRpcPerDay,
+        maxQuicknodeCreditsPerDay: SA_GRWS_MAX_QN_CREDITS_PER_DAY,
+      });
+      appendSaGrwsTickLog({
+        kind: 'tick_skipped',
+        ts: new Date().toISOString(),
+        reason: 'daily_rpc_budget_exhausted',
+        rpcCallsDay: bs0.rpcCallsDay,
+        maxRpcPerDay,
+        geckoCallsDay: bs0.geckoCallsDay,
+      });
+      return;
+    }
+
     const seedPools = loadSeedPools();
     const pools = seedPools ?? (await fetchGeckoNewPoolsRaydium());
     if (seedPools) {
@@ -477,20 +695,68 @@ async function collectOneTick(batchId) {
     }
     poolsRaydium = pools.length;
 
+    if (GECKO_ONLY_DIAGNOSTIC) {
+      log('info', 'pilot diagnose gecko funnel (no RPC)', {
+        poolsRaydium,
+        geckoHttpCallsThisTick,
+        geckoPagesMax: GECKO_PAGES_MAX,
+        maxPoolsPerRun: MAX_POOLS_PER_RUN,
+        elapsedMs: Date.now() - tickStartedAt,
+      });
+      appendSaGrwsTickLog({
+        kind: 'pilot_gecko_only',
+        ts: new Date().toISOString(),
+        poolsRaydium,
+        geckoHttpCallsThisTick,
+        geckoPagesMax: GECKO_PAGES_MAX,
+        elapsedMs: Date.now() - tickStartedAt,
+      });
+      return;
+    }
+
     /** @type {{ address: string, metadata: object }[]} */
     const allWalletRows = [];
 
-    for (const p of pools) {
+    for (let pi = 0; pi < pools.length; pi += 1) {
+      const p = pools[pi];
+      const poolsRemaining = pools.length - pi;
+      /** @type {{ maxTxPerPool?: number }} */
+      let poolOpts = {};
+      if (SA_GRWS_BREADTH_FIRST && MODE === 'v1b' && MAX_TX_PER_POOL > 0) {
+        const rpcLeft = tickRpcCapActive - rpcBillableCalls;
+        if (rpcLeft <= 0) break;
+        const minNeeded = SIG_PAGES_MAX + 1;
+        if (rpcLeft < minNeeded) {
+          log('info', 'tick rpc budget too low for next pool', { rpcLeft, poolsRemaining });
+          break;
+        }
+        const fairShare = Math.floor(rpcLeft / poolsRemaining);
+        const maxTxDynamic = Math.min(
+          MAX_TX_PER_POOL,
+          Math.max(3, fairShare - SIG_PAGES_MAX),
+        );
+        poolOpts = { maxTxPerPool: maxTxDynamic };
+      }
+
       try {
         const { walletRows, signaturesPages, txFetched } = await collectWalletsFromPool(
           p,
           batchId,
           ignorePrograms,
+          poolOpts,
         );
         signaturesPagesApprox += signaturesPages;
         txFetchedTotal += txFetched;
         allWalletRows.push(...walletRows);
       } catch (e) {
+        if (e?.code === 'SA_GRWS_RPC_TICK_BUDGET' || e?.code === 'SA_GRWS_RPC_DAY_BUDGET') {
+          log('info', 'rpc budget exhausted, stopping pools', {
+            code: e.code,
+            rpcBillableCalls,
+            tickRpcCapActive,
+          });
+          break;
+        }
         errorsTotal += 1;
         log('warn', 'pool processing failed', {
           pool: p.pool_address?.slice(0, 8),
@@ -532,13 +798,37 @@ async function collectOneTick(batchId) {
       rpcBillableCalls,
       estimatedQuicknodeCredits: rpcBillableCalls * QN_CREDITS_PER_RPC_CALL,
       quicknodeCreditsPerCallAssumed: QN_CREDITS_PER_RPC_CALL,
+      rpcCallsDayBeforeTick: bs0.rpcCallsDay,
+      rpcCallsDayAfterTickApprox: bs0.rpcCallsDay + rpcBillableCalls,
+      geckoHttpCallsThisTick,
+      geckoCallsDayBeforeTick: bs0.geckoCallsDay,
+      tickRpcCapActive,
+      maxBillableRpcPerDay: maxRpcPerDay,
+      budgetStatePath: budgetStatePath(),
       errorsTotal,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
     });
+    appendSaGrwsTickLog({
+      kind: 'tick_completed',
+      ts: new Date().toISOString(),
+      batchId,
+      poolsRaydium,
+      walletsInserted,
+      walletsUnique: uniqueRows.length,
+      txFetchedTotal,
+      rpcBillableCalls,
+      estimatedQuicknodeCredits: rpcBillableCalls * QN_CREDITS_PER_RPC_CALL,
+      geckoHttpCallsThisTick,
+      elapsedMs: Date.now() - tickStartedAt,
+      errorsTotal,
+    });
   } catch (e) {
     errorsTotal += 1;
     log('error', 'tick failed', { err: String(e), elapsedMs: Date.now() - tickStartedAt });
+  } finally {
+    persistBudgetTickSpend(rpcBillableCalls, geckoHttpCallsThisTick);
+    tickRpcCapActive = Number.MAX_SAFE_INTEGER;
   }
 }
 
@@ -582,6 +872,12 @@ async function main() {
     maxPoolsPerRun: MAX_POOLS_PER_RUN,
     sigPagesMax: SIG_PAGES_MAX,
     maxTxPerPool: MAX_TX_PER_POOL,
+    maxQuicknodeCreditsPerDay: SA_GRWS_MAX_QN_CREDITS_PER_DAY,
+    geckoTargetCpm: SA_GRWS_GECKO_TARGET_CPM,
+    geckoMinIntervalMs: geckoMinIntervalMs(),
+    breadthFirstPools: SA_GRWS_BREADTH_FIRST,
+    budgetStatePath: budgetStatePath(),
+    tickLogPath: envStr('SA_GRWS_TICK_LOG_PATH', '').trim() || null,
   });
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

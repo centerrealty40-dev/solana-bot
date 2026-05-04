@@ -50,11 +50,18 @@ export function collectFiredLadderPnls(ot: OpenTrade, tpLadder: TpLadderLevel[])
 
 /**
  * After partial TPs on a **grid** (no discrete `tpLadder` rows): same retrace rule using fired PnL thresholds only.
+ * @param firstRungRetraceMinPnlPct когда сработала только первая ступень, подставляем этот порог вместо «0 к средней»
+ *        (см. `PaperTraderConfig.tpGridFirstRungRetraceMinPnlPct`).
  */
-export function ladderRetraceTriggeredGrid(ot: OpenTrade, xAvg: number): boolean {
+export function ladderRetraceTriggeredGrid(
+  ot: OpenTrade,
+  xAvg: number,
+  firstRungRetraceMinPnlPct = 0,
+): boolean {
   const fired = collectFiredLadderPnls(ot, []);
   if (fired.length === 0) return false;
-  const prevThreshold = fired.length >= 2 ? fired[fired.length - 2]! : 0;
+  const prevThreshold =
+    fired.length >= 2 ? fired[fired.length - 2]! : Math.max(0, firstRungRetraceMinPnlPct);
   const curPnlFrac = xAvg - 1;
   return curPnlFrac <= prevThreshold + LADDER_PNL_EPS;
 }
@@ -70,8 +77,10 @@ export function ladderRetraceTriggered(
   tpLadder: TpLadderLevel[],
   xAvg: number,
   mode: LadderRetraceMode = 'discrete',
+  /** Используется только в `grid`; см. config `tpGridFirstRungRetraceMinPnlPct`. */
+  tpGridFirstRungRetraceMinPnlPct = 0,
 ): boolean {
-  if (mode === 'grid') return ladderRetraceTriggeredGrid(ot, xAvg);
+  if (mode === 'grid') return ladderRetraceTriggeredGrid(ot, xAvg, tpGridFirstRungRetraceMinPnlPct);
   if (tpLadder.length === 0) return false;
   const fired = collectFiredLadderPnls(ot, tpLadder);
   if (fired.length === 0) return false;

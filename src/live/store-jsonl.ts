@@ -37,6 +37,7 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_boot':
     case 'live_shutdown':
     case 'risk_block':
+    case 'risk_note':
     case 'capital_skip':
     case 'capital_rotate_close':
       return true;
@@ -55,6 +56,10 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_reconcile_quarantine':
       return true;
     case 'live_exit_verify_defer':
+      return true;
+    case 'live_periodic_self_heal':
+      return true;
+    case 'live_post_close_tail':
       return true;
     default:
       return false;

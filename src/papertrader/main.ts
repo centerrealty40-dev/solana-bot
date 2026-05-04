@@ -42,6 +42,7 @@ import type {
   SimAuditStamp,
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
+import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
@@ -63,7 +64,18 @@ export interface PapertraderMainOptions {
   journalLiveStrategy?: (event: Record<string, unknown>) => void;
   /** Live: mints with journal vs wallet zero-balance mismatch at boot — tracker paper-closes as RECONCILE_ORPHAN. */
   reconcilePaperCloseZeroMints?: () => readonly string[] | undefined;
+  /** Live: SPL re-read before orphan close — avoid false orphan on transient RPC/indexer empty reads. */
+  verifyReconcileOrphanWalletZero?: (mint: string) => Promise<boolean>;
+  /** Optional: min age since `entryTs` before RECONCILE_ORPHAN paper-close (live integrations). */
+  reconcileOrphanMinPositionAgeMs?: number;
   onShutdown?: (signal: string) => void;
+  /**
+   * Live-oscar only: periodic tail sweep + stuck-open force exit (`live/main` closes over `liveCfg`).
+   */
+  livePeriodicSelfHealFactory?: (
+    ctx: LivePeriodicSelfHealPaperContext,
+  ) => ReturnType<typeof setInterval> | null;
+
   onOscarHeartbeat?: (payload: {
     openPositions: number;
     closedTotal: number;
@@ -161,6 +173,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       KILLSTOP: 0,
       LIQ_DRAIN: 0,
       RECONCILE_ORPHAN: 0,
+      PERIODIC_HEAL: 0,
     } as Record<ExitReason, number>,
     skippedPriceVerifyExit: 0,
   };
@@ -545,7 +558,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           journalAppend,
           journalLiveStrategy: opts?.journalLiveStrategy,
           livePhase4: resolveLiveOscar()?.tracker,
+          liveOscarCfg: resolveLiveOscar()?.liveCfg,
           reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
+          verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
+          reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
         }),
         45_000,
         'trackerTick',
@@ -615,6 +631,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     });
   }, cfg.statsIntervalMs);
 
+  const livePeriodicHealTimer = opts?.livePeriodicSelfHealFactory?.({
+    paperCfg: cfg,
+    getOpen: () => open,
+    getClosed: () => closed,
+    tpLadder,
+    trackerStats,
+    btcCtx: getBtcContext,
+    journalAppend,
+    journalLiveStrategy: opts?.journalLiveStrategy,
+    resolveLiveOscar,
+    isTrackerBusy: () => trackerRunning,
+  });
+
   const solTimer = setInterval(() => {
     void refreshSolPrice();
   }, cfg.solPriceRefreshMs);
@@ -633,6 +662,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     clearInterval(followupTimer);
     clearInterval(heartbeatTimer);
     clearInterval(statsTimer);
+    if (livePeriodicHealTimer) clearInterval(livePeriodicHealTimer);
     clearInterval(solTimer);
     clearInterval(btcTimer);
     setTimeout(() => process.exit(0), 200);

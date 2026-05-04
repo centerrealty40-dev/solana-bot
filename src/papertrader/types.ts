@@ -9,7 +9,9 @@ export type ExitReason =
   | 'KILLSTOP'
   | 'LIQ_DRAIN'
   /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
-  | 'RECONCILE_ORPHAN';
+  | 'RECONCILE_ORPHAN'
+  /** Live periodic job: force full exit + chain-sized sell, skipping exit price-verify defer loop. */
+  | 'PERIODIC_HEAL';
 export type DexId = 'pumpfun' | 'pumpswap' | 'raydium' | 'orca' | 'meteora' | 'moonshot';
 
 export interface Metrics {

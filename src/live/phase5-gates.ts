@@ -2,7 +2,7 @@
  * W8.0 Phase 5 — §3.3 risk + §3.4 capital gates before Phase 4 adapter (simulate).
  */
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
-import { getSolUsd } from '../papertrader/pricing.js';
+import { getBtcContext, getSolUsd } from '../papertrader/pricing.js';
 import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import { liveFetchBuyQuote } from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
@@ -216,6 +216,58 @@ export async function phase5AllowIncreaseExposure(args: {
     return false;
   }
 
+  if (liveCfg.executionMode === 'live' && isNewPosition) {
+    if (liveCfg.liveBtcGateEnabled) {
+      const btc = getBtcContext();
+      const staleMs = liveCfg.liveBtcGateMaxStaleMs;
+      const ts = btc.updated_ts;
+      const fresh = typeof ts === 'number' && ts > 0 && Date.now() - ts <= staleMs;
+      if (fresh) {
+        const d1 = liveCfg.liveBtcBlockNewBuys1hDrawdownPct;
+        const d4 = liveCfg.liveBtcBlockNewBuys4hDrawdownPct;
+        if (btc.ret1h_pct != null && btc.ret1h_pct <= -d1) {
+          appendLiveJsonlEvent({
+            kind: 'risk_block',
+            limit: 'btc_dump_1h',
+            detail: { ret1h_pct: btc.ret1h_pct, blockAtDrawdownPct: d1 },
+          });
+          return false;
+        }
+        if (btc.ret4h_pct != null && btc.ret4h_pct <= -d4) {
+          appendLiveJsonlEvent({
+            kind: 'risk_block',
+            limit: 'btc_dump_4h',
+            detail: { ret4h_pct: btc.ret4h_pct, blockAtDrawdownPct: d4 },
+          });
+          return false;
+        }
+      }
+    }
+
+    const minEq = liveCfg.liveMinWalletSolEquityUsd;
+    if (minEq != null && minEq > 0) {
+      const lamportsEq = await rpcWalletSolLamports(liveCfg);
+      if (lamportsEq === null) {
+        appendLiveJsonlEvent({
+          kind: 'risk_block',
+          limit: 'wallet_balance_rpc',
+          detail: { context: 'min_wallet_sol_equity_usd' },
+        });
+        return false;
+      }
+      const solBalEq = Number(lamportsEq) / 1e9;
+      const equityUsd = solBalEq * solUsd;
+      if (equityUsd < minEq) {
+        appendLiveJsonlEvent({
+          kind: 'risk_block',
+          limit: 'min_wallet_sol_equity_usd',
+          detail: { equityUsd, minUsd: minEq, solBal: solBalEq },
+        });
+        return false;
+      }
+    }
+  }
+
   const probeUsd = Math.max(5, Math.min(50, capitalNotionalXUsd(liveCfg, paperPositionUsd)));
 
   const consecLimit = liveCfg.liveKillAfterConsecFail;
@@ -317,6 +369,8 @@ export async function phase5AllowIncreaseExposure(args: {
 
   if (freeUsd >= requiredFree) return true;
 
+  const shortfallAt = (free: number) => Math.max(0, requiredFree - free);
+
   const openMap = deps.getOpen();
   if (openMap.size === 0) {
     appendLiveJsonlEvent({
@@ -324,6 +378,7 @@ export async function phase5AllowIncreaseExposure(args: {
       reason: 'insufficient_free_balance_no_positions',
       freeUsdEstimate: freeUsd,
       requiredFreeUsd: requiredFree,
+      shortfallUsd: shortfallAt(freeUsd),
     });
     return false;
   }
@@ -344,6 +399,7 @@ export async function phase5AllowIncreaseExposure(args: {
         reason: 'no_profitable_position_to_close',
         freeUsdEstimate: freeUsd,
         requiredFreeUsd: requiredFree,
+        shortfallUsd: shortfallAt(freeUsd),
       });
       return false;
     }
@@ -377,6 +433,7 @@ export async function phase5AllowIncreaseExposure(args: {
         reason: 'rotation_sim_failed',
         freeUsdEstimate: freeUsd,
         requiredFreeUsd: requiredFree,
+        shortfallUsd: shortfallAt(freeUsd),
       });
       return false;
     }
@@ -405,6 +462,7 @@ export async function phase5AllowIncreaseExposure(args: {
         reason: 'insufficient_free_after_rotation',
         freeUsdEstimate: freeUsd,
         requiredFreeUsd: requiredFree,
+        shortfallUsd: shortfallAt(freeUsd),
       });
       return false;
     }

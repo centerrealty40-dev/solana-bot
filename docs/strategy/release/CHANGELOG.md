@@ -8,6 +8,262 @@
 
 ---
 
+## [1.11.48] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.48`.
+
+### Live Oscar — BTC gate + SOL equity floor + удвоение микролимитов (ecosystem)
+
+- **Только `LIVE_EXECUTION_MODE=live`** и **только новые позиции** (`buy_open`, не DCA): если контекст BTC из Binance **свежий** (`≤ LIVE_BTC_GATE_MAX_STALE_MS`, дефолт **15 мин**), блок **`risk_block`** при **`ret1h_pct ≤ −2.5`** или **`ret4h_pct ≤ −5`** (пороги в п.п.: `LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT`, `LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT`). Выключение: **`LIVE_BTC_GATE_ENABLED=0`**. При устаревших/пустых данных BTC **вход не режется** (fail-open).
+- **`LIVE_MIN_WALLET_SOL_EQUITY_USD`**: live-only новые входы — **`native SOL × SOL/USD ≥ N`** иначе **`risk_block`** `min_wallet_sol_equity_usd`.
+- **`ecosystem.config.cjs` → live-oscar:** **`PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` → 20**; **`LIVE_MIN_WALLET_SOL_EQUITY_USD=22`**; убран **`LIVE_MIN_WALLET_SOL`**; **`LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD` → 12**; **`LIVE_BTC_GATE_ENABLED=1`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.47 -- src/live/config.ts src/live/phase5-gates.ts ecosystem.config.cjs .env.example tests/live-oscar-config.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.47] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.47`.
+
+### Live Oscar — дожим хвоста SPL после полного close
+
+- После каждого **`live_position_close`** (TP/SL/TRAIL/TIMEOUT/KILLSTOP, LIQ_DRAIN, PERIODIC_HEAL, RECONCILE_ORPHAN): через **`LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS`** (дефолт **60000**, **`0`** = выкл.) повторно читается баланс mint на кошельке; если **`> 0`**, выполняется **`sell_full`** (фактический raw с цепи через существующий Phase 4 pipeline).
+- JSONL: **`live_post_close_tail`** (`ok`, `note`, опц. `rawAtoms`, `estUsd`).
+- **`LIVE_POST_CLOSE_TAIL_SWEEP_MIN_USD`** — нижняя подсказка notional для микро-хвостов (дефолт **0.05**).
+- Повторный close по тому же mint до срабатывания таймера сбрасывает предыдущий timeout и планирует новый.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.46 -- src/live/post-close-tail-sweep.ts src/live/config.ts src/live/events.ts src/live/store-jsonl.ts src/live/periodic-self-heal.ts src/papertrader/executor/tracker.ts src/papertrader/main.ts ecosystem.config.cjs .env.example tests/live-oscar-config.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.46] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.46`.
+
+### Live Oscar — предохранитель «уже есть монета на кошельке»
+
+- Перед **`buy_open`** в режиме **`live`**: если оценка стоимости SPL по mint на торговом кошельке **≥ `LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD`** (баланс RPC × цена из snapshot DB или Jupiter lite-api), своп **не выполняется**, в JSONL — **`execution_skip`** `wallet_holds_mint_over_usd_cap`. **`0`** = выключено (дефолт в коде).
+- **`dca_add` / simulate** не затрагиваются.
+- Если RPC балансов или цены нет — **вход не блокируется** (как и при отключённом reconcile: не глушим торговлю из‑за сбоев оценки).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.45 -- src/live/config.ts src/live/phase4-execution.ts src/papertrader/pricing.ts ecosystem.config.cjs .env.example tests/live-oscar-config.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 restart live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.45] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.45`.
+
+### Live Oscar — удалён SPL reconcile (журнал vs кошелёк)
+
+- Boot больше не вызывает **`reconcileLiveWalletVsReplay`**, не ставит **`risk_block`** по **`reconcile_*`**, не закрывает **`RECONCILE_ORPHAN`** из boot mismatch; **`live_reconcile_report`** остаётся строкой диагностики со **`skipReason: spl_reconcile_removed`** (и прежними **`skipped`** для dry_run / execution_mode).
+- Pending RPC при anchor-verify на буте — только **`execution_skip`** / **`skipped`**, без блокировки новых входов.
+- Периодический self-heal: хвостовые продажи и force-close «зависших» open без сверки журнала; поле **`reconcileOk`** в JSONL оставлено **`true`** для совместимости дашборда.
+- Удалены **`npm run live-reconcile`**, скрипт **`live-reconcile-cli.ts`**, env-ключи загрузчика **`LIVE_RECONCILE_ON_BOOT`**, **`LIVE_RECONCILE_MODE`**, **`LIVE_RECONCILE_TOLERANCE_ATOMS`**, **`LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE`**, **`LIVE_ORPHAN_MIN_POSITION_AGE_MS`** (старые строки в `.env` просто игнорируются). Сохранены **`LIVE_RECONCILE_TX_SAMPLE_N`**, **`LIVE_RECONCILE_BLOCK_MAX_MS`** (TTL для блока по **parity**).
+- **`risk_note`:** **`exposure_block_ttl_cleared`** вместо **`reconcile_block_ttl_cleared`** при срабатывании TTL.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.44 -- src/live src/papertrader package.json ecosystem.config.cjs .env.example tests docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → на VPS: **`pm2 flush live-oscar && pm2 restart live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.44] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.44`.
+
+### Hotfix — кулдаун повторного входа по mint (**30 мин**)
+
+- **`ecosystem.config.cjs`:** **`PAPER_DIP_COOLDOWN_MIN`** **120 → 30** у **`pt1-diprunner`**, **`pt1-oscar`**, **`pt1-dno`**, **`live-oscar`** (меньше расхождения бумаги vs live после частичных проходов по одному mint).
+- **`.env.example`:** то же значение по умолчанию.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.43 -- ecosystem.config.cjs .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only pt1-diprunner,pt1-oscar,pt1-dno,live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.43] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.43`.
+
+### Live Oscar — стабилизация P0/P1 (reconcile, капитал, фаталы)
+
+- **P0:** возраст reconcile exposure block в heartbeat (`reconcileBlocksNewExposure`, `reconcileBlockAgeSec`); опциональный TTL **`LIVE_RECONCILE_BLOCK_MAX_MS`** (0 = выкл.); fail-fast при **`PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD`** в `live`/`simulate`; схема JSONL **`risk_note`** (в т.ч. `reconcile_block_ttl_cleared`, orphan verify).
+- **P1:** повторное чтение SPL через **`getTokenAccountsByOwner`** (~2.5 с) при первом `null` в boot/tick reconcile; поле **`shortfallUsd`** во всех **`capital_skip`**; **`src/scripts/live-oscar.ts`** — запись **`data/live/last-fatal.json`** при **`uncaughtException`** / **`unhandledRejection`** / падении **`main`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.42 -- src/live/config.ts src/live/events.ts src/live/store-jsonl.ts src/live/main.ts src/live/live-reconcile-state.ts src/live/reconcile-live.ts src/live/phase5-gates.ts src/scripts/live-oscar.ts ecosystem.config.cjs tests/live-oscar-config.test.ts tests/live-jsonl-phase1.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → на VPS: **`pm2 flush live-oscar && pm2 restart live-oscar --update-env`**.
+
+---
+
+## [1.11.42] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.42`.
+
+### Oscar TP-grid — retrace после первой ступени не к безубытку
+
+- **Проблема:** при одной сработавшей ступени сетки «предыдущий порог» для **`ladder_retrace`** был **0% к средней** → остаток закрывался на откате к входу/ниже; плюс с частичного TP съедался комиссиями.
+- **`src/papertrader/executor/tp-ladder-state.ts`:** для grid, если заполнена только первая ступень, использовать **`tpGridFirstRungRetraceMinPnlPct`** вместо нуля.
+- **`src/papertrader/config.ts`**, **`.env.example`:** **`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`** (доля PnL к средней; prod **0.025** ≈ +2.5%).
+- **`ecosystem.config.cjs`:** **`pt1-oscar`**, **`live-oscar`** — **`0.025`**.
+### Откат
+
+- **`git checkout sa-alpha-1.11.41 -- src/papertrader/config.ts src/papertrader/executor/tp-ladder-state.ts src/papertrader/executor/tracker.ts ecosystem.config.cjs .env.example tests/papertrader-ladder-retrace.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only pt1-oscar,live-oscar --update-env`**.
+
+---
+
+## [1.11.41] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.41`.
+
+### W6.8 — коллектор‑оркестратор пополнения `wallets` (Gecko → QuickNode)
+
+- **`scripts-tmp/wallet-orchestrator-lib.mjs`**, **`scripts-tmp/sa-wallet-orchestrator.mjs`:** один процесс с планировщиком UTC (new_pools / trending / extended / daily_deep по lane), глобальный троттлинг Gecko (**≤28/мин** по умолчанию), мягкий дневной потолок Gecko HTTP и billable RPC под **1 500 000** кредитов QuickNode/сутки (**`QUICKNODE_CREDITS_PER_SOLANA_RPC`**, **`SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY`**), веса lane + резерв RPC; запись в **`wallets`** с **`gecko_multi_seed`** / **`seed_lane`**; **`--budget-report`**, **`--once`**, **`--daemon`**.
+- **`tests/wallet-orchestrator-lib.test.ts`:** юнит‑тесты расписания и вспомогательных функций.
+- **`package.json`:** `npm run sa-wallet-orchestrator`; **`ecosystem.config.cjs`:** процесс **`sa-wallet-orchestrator`** (`--daemon`).
+- Торговые `*-collector.mjs` (DexScreener) **не изменялись**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.40 -- scripts-tmp/wallet-orchestrator-lib.mjs scripts-tmp/sa-wallet-orchestrator.mjs tests/wallet-orchestrator-lib.test.ts package.json ecosystem.config.cjs .env.example .gitignore docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md docs/Smart Lottery\ V2/W6.8_wallet_ingest_orchestrator_gecko_multi_source.md`** → на VPS: **`pm2 delete sa-wallet-orchestrator`** (или отключить автозапуск), восстановить предыдущий **`ecosystem.config.cjs`**.
+
+---
+
+## [1.11.40] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.40`.
+
+### Live Oscar — снятие Phase 5 блока после reconcile
+
+- **`LIVE_RECONCILE_MODE=block_new`:** при boot создаётся «липкий» флаг **`reconcileBlocksNewExposure`**; после **`RECONCILE_ORPHAN`** журнал в памяти совпадает с кошельком, но флаг **никогда не сбрасывался** → **`phase5AllowIncreaseExposure`** молча запрещала **любые** новые покупки (бумажный Oscar в отдельном процессе этого ограничения не имеет).
+- **`src/live/main.ts`:** **`liveClearExposureBlockHook`** — после закрытия boot-сирот повторный **`reconcileLiveWalletVsReplay`** и **`clearLiveReconcileBlock()`** при **`rec.ok`**.
+- **`src/live/periodic-self-heal.ts`:** при **`reconcileOk`** на тике heal — **`clearLiveReconcileBlock()`** (дефолт интервал heal до 30 мин — без хука сирот блок мог держаться долго).
+- **`src/papertrader/main.ts`**, **`src/papertrader/executor/tracker.ts`:** проводка хука после **`RECONCILE_ORPHAN`**.
+- **`tests/live-reconcile-block-clear.test.ts`:** регрессия — Phase 5 при липком флаге отклоняет вход до SOL/RPC; после **`clearLiveReconcileBlock()`** этот стоп снимается.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.39 -- src/live/main.ts src/live/periodic-self-heal.ts src/papertrader/main.ts src/papertrader/executor/tracker.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → перезапуск **`live-oscar`**.
+
+---
+
+## [1.11.39] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.39`.
+
+### Live Oscar — `repairedLegSignatures` → якорь входа в `OpenTrade`
+
+- **`src/papertrader/executor/store-restore.ts`:** при восстановлении из JSON объединяются **`entryLegSignatures`** и legacy **`repairedFromTxSignature` / `repairedLegSignatures`** (как в live replay). Иначе **`verifyReplayedOpenBuyAnchorsOnBoot`** видел пустые подписи, выкидывал позицию (**`missing_entry_leg_signatures`**), а дашборд (линейный проход JSONL) продолжал считать её **открытой** без **`live_position_close`** → расхождение с процессом и «вечный BELIEF».
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.38 -- src/papertrader/executor/store-restore.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → перезапуск **`live-oscar`**.
+
+---
+
+## [1.11.37] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.37`.
+
+### Live Oscar — RECONCILE_ORPHAN без фантомного −100%
+
+- **`src/papertrader/executor/tracker.ts`:** при **`RECONCILE_ORPHAN`** пересчитываются proceeds/PnL: учитываются уже совершённые **`partialSells`**, остаток списывается **по себестоимости** (`remainingFraction × invested`), без вымышленной полной потери позиции.
+- **`scripts-tmp/patch-live-reconcile-orphan-neutral.mjs`:** разовый проход по **`live_position_close`** в live JSONL для исправления старых строк.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.36 -- src/papertrader/executor/tracker.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → восстановить JSONL из **`.bak-reconcile-orphan-*`** при необходимости → перезапуск **`live-oscar`**.
+
+---
+
+## [1.11.38] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.38`.
+
+### W6.7 — пилотная диагностика GRWS (серия сценариев)
+
+- **`scripts-tmp/sa-grws-pilot-diagnose.mjs`**, **`npm run sa-grws-pilot-diagnose`:** несколько прогонов с паузами (`SA_GRWS_PILOT_PAUSE_MS`), дельты budget-state, средние RPC/Gecko, экстраполяция тиков/сутки по QuickNode и Gecko; отчёт **`data/sa-grws-pilot-diagnose-report.json`**.
+- **`scripts-tmp/sa-grws-collector.mjs`:** режим **`SA_GRWS_GECKO_ONLY_DIAGNOSTIC=1`** — замер воронки Gecko→Raydium без JSON-RPC.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.37 -- scripts-tmp/sa-grws-pilot-diagnose.mjs scripts-tmp/sa-grws-collector.mjs package.json .gitignore docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md docs/Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md`**.
+
+---
+
+## [1.11.36] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.36`.
+
+### W6.7 — SA-GRWS: отчёт аналитики пилота + журнал тиков
+
+- **`scripts-tmp/sa-grws-analytics.mjs`**, **`npm run sa-grws-analytics`:** сводка кошельков по окнам времени (Postgres), оценка кредитов QuickNode и нагрузки Gecko из **`sa-grws-budget-state.json`**, опционально усреднение по **`SA_GRWS_TICK_LOG_PATH`** JSONL; **`summaryRu`** в JSON.
+- **`scripts-tmp/sa-grws-collector.mjs`:** опциональная запись тика в JSONL (**`SA_GRWS_TICK_LOG_PATH`**); пропуск тика по дневному RPC также логируется в JSONL.
+- **`scripts-tmp/_grws-pilot-measure.sh`:** включает **`SA_GRWS_TICK_LOG_PATH`** и парсит **`geckoHttpCallsThisTick`** из лога.
+- **`docs/Smart Lottery V2/W6.7_…md`**, **`.env.example`**, **`.gitignore`**, **`package.json`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.35 -- scripts-tmp/sa-grws-analytics.mjs scripts-tmp/sa-grws-collector.mjs scripts-tmp/_grws-pilot-measure.sh package.json .env.example .gitignore docs/Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
+## [1.11.35] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.35`.
+
+### W6.7 — SA-GRWS collector: бюджет QuickNode + троттлинг Gecko
+
+- **`scripts-tmp/sa-grws-collector.mjs`:** персистентные счётчики **`data/sa-grws-budget-state.json`** (UTC‑сутки); дневной потолок **`SA_GRWS_MAX_QUICKNODE_CREDITS_PER_DAY`** (дефолт 1.5M кредитов); кап RPC на тик (daemon — авто из интервала и **`SA_GRWS_RPC_BUDGET_HEADROOM`**); проверка перед каждым **`rpcCall`**; троттлинг HTTP к Gecko (**`SA_GRWS_GECKO_TARGET_CALLS_PER_MINUTE`**, дефолт 28/min); soft‑cap **`SA_GRWS_MAX_GECKO_HTTP_PER_DAY`**; режим **`--budget-report`**; **`SA_GRWS_BREADTH_FIRST`** распределяет **`getTransaction`** между пулами на тик.
+- **`docs/Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md`**, **`.env.example`**, **`.gitignore`**: документация и игнор state‑файла.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.34 -- scripts-tmp/sa-grws-collector.mjs docs/Smart Lottery V2/W6.7_gecko_raydium_wallet_seed_collector_local.md .env.example .gitignore docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
+## [1.11.35] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.35`.
+
+### Live Oscar — периодический self-heal (30 мин по умолчанию)
+
+- **`src/live/periodic-self-heal.ts`:** по таймеру (**`LIVE_PERIODIC_SELF_HEAL_MS`**, default **1_800_000** = 30 мин; **`0`** = выкл.) в режиме **`live`**: SPL reconcile (report-only), продажа **хвостов** по mint, которые **не в `open`**, но есть на кошельке и есть в истории **`closed`** процесса (или любые chain-only при **`LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY=1`**), с порогом **`LIVE_PERIODIC_SWEEP_MIN_USD`** (default **0.25**); принудительное закрытие **зависших open** старше **`timeoutHours` + `LIVE_PERIODIC_STUCK_GRACE_HOURS`** с ончейн-балансом через **`trackerForceFullExitLive`** (продажа без exit price-verify). Сводка в JSONL: **`live_periodic_self_heal`**.
+- **`src/papertrader/executor/tracker.ts`:** экспорт **`trackerForceFullExitLive`**, причина выхода **`PERIODIC_HEAL`**.
+- **`src/papertrader/types.ts`**, **`src/papertrader/main.ts`**, **`src/live/main.ts`**, **`src/live/config.ts`**, **`src/live/events.ts`**, **`src/live/store-jsonl.ts`**: конфиг, события, wiring таймера, очистка при shutdown.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.34 -- src/live/periodic-self-heal.ts src/papertrader/executor/tracker.ts src/papertrader/types.ts src/papertrader/main.ts src/live/main.ts src/live/config.ts src/live/events.ts src/live/store-jsonl.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md ecosystem.config.cjs`** → перезапуск **`live-oscar`**.
+
+---
+
+## [1.11.34] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.34`.
+
+### Live Oscar — продажа по фактическому SPL-балансу (без хвостов)
+
+- **`src/live/phase4-execution.ts`:** в режиме **`live`** перед Jupiter quote для продажи выполняется **`getTokenAccountsByOwner`** (как в reconcile); для **`sell_full`** в срок берётся **весь on-chain остаток** по mint (не `floor(usd/price)`); для **`sell_partial`** сумма **ограничивается сверху** реальным балансом, если бумажная модель завысила атомы. В **`execution_attempt`** добавлено поле **`sellAmountSource`**: `usd_math` | `chain_full_balance` | `usd_capped_by_chain`.
+- **`src/live/reconcile-live.ts`:** экспорт **`fetchLiveWalletSplBalancesByMint`** для переиспользования Phase 4.
+- **`src/live/replay-strategy-journal.ts`:** строки **`live_position_partial_sell`** проходят тот же **anchor gate**, что и `live_position_open` / `dca`, чтобы «призраки» без **`entryLegSignatures`** не восстанавливались только из partial.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.33 -- src/live/phase4-execution.ts src/live/reconcile-live.ts src/live/replay-strategy-journal.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → перезапуск **`live-oscar`** под **`salpha`**.
+
+---
+
 ## [1.11.33] — 2026-05-03
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.33`.

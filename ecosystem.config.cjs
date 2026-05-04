@@ -113,6 +113,35 @@ module.exports = {
       env: { NODE_ENV: 'production' },
     },
     {
+      name: 'sa-wallet-orchestrator',
+      cwd: root,
+      script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
+      args: '--daemon',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 8000,
+      max_memory_restart: '220M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** W6.8 — Gecko multi-lane → QN → wallets; смягчённый пилот v2 (см. .env.example). */
+        SA_ORCH_SCHEDULER_TICK_MS: '10000',
+        SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '28',
+        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '1500000',
+        SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
+        SA_ORCH_MAX_RPC_PER_JOB: '1200',
+        SA_ORCH_MAX_RPC_PER_POOL: '180',
+        SA_ORCH_MAX_POOLS_PER_JOB: '28',
+        SA_ORCH_SIG_PAGES_MAX: '5',
+        SA_ORCH_MAX_TX_FETCHES_PER_POOL: '22',
+        SA_ORCH_RPC_SLEEP_MS: '220',
+      },
+    },
+    {
       name: 'sa-collector-watch',
       cwd: root,
       script: 'scripts-tmp/collector-log-watch.mjs',
@@ -202,7 +231,8 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '50000',
+        /** Было 50k — узкий поток vs Oscar (25k); выравниваем вселенную входов для A/B. */
+        PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
@@ -215,7 +245,7 @@ module.exports = {
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '120',
+        PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
         /** Паритет с pt1-oscar по «recovery veto» дипа (окна от локального дна). */
@@ -224,7 +254,8 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
         PAPER_DCA_LEVELS: '-10:0.3,-20:0.3',
-        PAPER_DCA_KILLSTOP: '-0.40',
+        /** Было −40%: глубокие «висяки»; чуть раньше режем среднее vs двойная DCA. */
+        PAPER_DCA_KILLSTOP: '-0.35',
         PAPER_TP_LADDER: '0.10:0.40,0.20:0.50,0.30:0.80,0.40:1.0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
@@ -343,7 +374,7 @@ module.exports = {
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '120',
+        PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
@@ -356,12 +387,20 @@ module.exports = {
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.2',
+        /** После 1-й ступени сетки не ждать отката к 0% к средней — фиксировать остаток при откате до ~+2.5%. */
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
-        PAPER_TRAIL_DROP: '0.10',
-        PAPER_TRAIL_TRIGGER_X: '1.10',
-        PAPER_TIMEOUT_HOURS: '12',
+        /** Эксперимент: было 0.10 — реже выбивает TRAIL на шуме после триггера. */
+        PAPER_TRAIL_DROP: '0.12',
+        /**
+         * Paper-Oscar: ниже порог «вооружения» трейла (arming / peak-логика). При `ladder_retrace` основной выход TRAIL
+         * идёт через откат от сетки TP; для классического peak+trail нужен `PAPER_TRAIL_MODE=peak`.
+         */
+        PAPER_TRAIL_TRIGGER_X: '1.06',
+        /** Эксперимент: было 12h — даём сетке TP чуть больше времени до TIMEOUT. */
+        PAPER_TIMEOUT_HOURS: '16',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -447,8 +486,8 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Микро live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе `risk_block` на входе. */
-        PAPER_POSITION_USD: '10',
+        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
+        PAPER_POSITION_USD: '20',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -478,7 +517,7 @@ module.exports = {
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '120',
+        PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
@@ -491,6 +530,7 @@ module.exports = {
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.3',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
@@ -585,15 +625,28 @@ module.exports = {
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`). */
-        LIVE_MAX_POSITION_USD: '10',
+        LIVE_MAX_POSITION_USD: '20',
         LIVE_MAX_OPEN_POSITIONS: '5',
         /** Потолок совокупного убытка по стратегии на кошельке (live risk); ≠ односделочный SL. */
         LIVE_MAX_STRATEGY_LOSS_USD: '50',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
-        /** Не открывать новые позиции, если на кошельке меньше ~0.05 SOL (комиссии + буфер). */
-        LIVE_MIN_WALLET_SOL: '0.05',
-        /** Снять «висящие» open из журнала при mismatch и фактическом нулевом балансе mint на кошельке. */
-        LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE: '1',
+        /** Live-only новые входы: стоимость нативного SOL на кошельке (× SOL/USD) должна быть ≥ этого USD. */
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '22',
+        /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
+        LIVE_BTC_GATE_ENABLED: '1',
+        /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
+        LIVE_RECONCILE_BLOCK_MAX_MS: '0',
+        /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
+        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '12',
+        /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
+        LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
+
+        /** Периодический хвост на кошельке + force-close зависших open (`src/live/periodic-self-heal.ts`). */
+        LIVE_PERIODIC_SELF_HEAL_MS: '1800000',
+        LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
+        LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
+        /** `1` = продавать любые SPL не в open выше min USD (осторожно: скам-airdrops). */
+        LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
       },
     },
     {
@@ -640,7 +693,8 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '8000',
+        /** Эксперимент: было 8k — больше шлака; выравниваем с Oscar/Diprunner (25k). */
+        PAPER_POST_MIN_LIQ_USD: '25000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
@@ -648,13 +702,16 @@ module.exports = {
         PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
-        /** Короткие окна первыми (сортировка в config): ловим резкие проливы на свежих парах */
-        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '15,30,120,360,720',
+        /**
+         * Эксперимент: убрали только 15m (шум); оставили 30m — часть «острых» дипов без полной потери короткого горизонта.
+         * Recovery veto см. `evaluateRecoveryVeto`: работает для окон вето < dipLookbackUsedMin (при входе по 120m вето 30/60 живы).
+         */
+        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '30,120,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-15',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '120',
+        PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
 
         /* DNO — single DCA −10% → +30% notional; kill −25% vs avg entry */
@@ -668,7 +725,8 @@ module.exports = {
         PAPER_TRAIL_MODE: 'ladder_retrace',
         PAPER_TRAIL_DROP: '0.10',
         PAPER_TRAIL_TRIGGER_X: '1.10',
-        PAPER_TIMEOUT_HOURS: '2',
+        /** Эксперимент: было 2h — мало TIMEOUT-выходов «в ноль»; 8h ближе к горизонту отработки трейла/лестницы. */
+        PAPER_TIMEOUT_HOURS: '8',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',

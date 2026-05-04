@@ -178,6 +178,13 @@ const ConfigSchema = z.object({
    */
   tpGridStepPnl: z.coerce.number().nonnegative().default(0),
   tpGridSellFraction: z.coerce.number().min(0).max(1).default(0.2),
+  /**
+   * После **первой** срабатывающей ступени TP-grid «предыдущий порог» для retrace был бы 0 (= безубыток к средней).
+   * Здесь задаётся **минимальный PnL (доля, напр. 0.025 = +2.5%)**: закрываем остаток, когда нереализованный xAvg-1
+   * опускается до этого уровня **или ниже** — раньше, чем дать цене уйти в ноль/минус между тиками трекера.
+   * `0` = прежнее поведение (retrace к 0%).
+   */
+  tpGridFirstRungRetraceMinPnlPct: z.coerce.number().min(0).max(0.5).default(0),
 
   followupOffsetsMinSpec: z.string().default('30,60,120'),
 
@@ -427,6 +434,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     tpLadderSpec: process.env.PAPER_TP_LADDER,
     tpGridStepPnl: process.env.PAPER_TP_GRID_STEP_PNL,
     tpGridSellFraction: process.env.PAPER_TP_GRID_SELL_FRACTION,
+    tpGridFirstRungRetraceMinPnlPct: process.env.PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
     followupOffsetsMinSpec: process.env.PAPER_FOLLOWUP_OFFSETS_MIN,
     contextSwapsEnabled: envBool(process.env.PAPER_CONTEXT_SWAPS, true),
     contextSwapsLimit: process.env.PAPER_CONTEXT_SWAPS_LIMIT,

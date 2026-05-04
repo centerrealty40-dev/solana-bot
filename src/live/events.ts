@@ -47,6 +47,17 @@ export const HeartbeatEventSchema = z.object({
   journalReplayTruncated: z.boolean().optional(),
   /** W8.0-p7.1 — mint prefixes dropped from replay as ghost / quarantined at boot. */
   quarantinedMints: z.array(z.string()).optional(),
+  /** True when Phase 5 forbids new exposure (strict notional parity / legacy flag name). */
+  reconcileBlocksNewExposure: z.boolean().optional(),
+  /** Seconds since exposure block was first armed (same stint); omitted when not blocked. */
+  reconcileBlockAgeSec: z.number().finite().nonnegative().optional(),
+});
+
+/** Ops / diagnostics row (non-fatal); used for orphan verify deferral, reconcile TTL clear, etc. */
+export const RiskNoteSchema = z.object({
+  kind: z.literal('risk_note'),
+  reason: z.string().min(1).max(160),
+  detail: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const ExecutionAttemptSchema = z.object({
@@ -56,6 +67,7 @@ export const ExecutionAttemptSchema = z.object({
   mint: z.string().min(1).max(64),
   intendedUsd: z.number().nullable().optional(),
   intendedAmountAtomic: z.string().optional(),
+  sellAmountSource: z.enum(['usd_math', 'chain_full_balance', 'usd_capped_by_chain']).optional(),
   executionMode: ExecutionModeSchema,
   quoteSnapshot: z.record(z.string(), z.unknown()).optional(),
   targetPriceUsd: z.number().nullable().optional(),
@@ -94,6 +106,8 @@ export const CapitalSkipSchema = z.object({
   reason: z.string().min(1),
   freeUsdEstimate: z.number().nullable().optional(),
   requiredFreeUsd: z.number().nullable().optional(),
+  /** max(0, requiredFreeUsd - freeUsdEstimate) when both are finite numbers. */
+  shortfallUsd: z.number().finite().nonnegative().optional(),
 });
 
 export const CapitalRotateCloseSchema = z.object({
@@ -128,14 +142,12 @@ export const LivePositionCloseSchema = z.object({
   closedTrade: z.record(z.string(), z.unknown()),
 });
 
-const LiveReconcileModeFieldSchema = z.enum(['report', 'block_new', 'trust_chain']);
-
-/** Phase 7 structured reconcile outcome (`liveSchema: 2` at write time). */
+/** Phase 7 structured boot diagnostic row (`liveSchema: 2` at write time). Legacy rows may include `mode`. */
 export const LiveReconcileReportSchema = z.object({
   kind: z.literal('live_reconcile_report'),
   ok: z.boolean(),
   reconcileStatus: z.enum(['ok', 'mismatch', 'rpc_fail', 'skipped']),
-  mode: LiveReconcileModeFieldSchema,
+  mode: z.enum(['report', 'block_new', 'trust_chain']).optional(),
   skipReason: z.string().max(160).optional(),
   mismatches: z
     .array(
@@ -179,8 +191,41 @@ export const LiveExitVerifyDeferSchema = z.object({
   consecutiveDefers: z.number().int().min(0),
   verdictSummary: z.string().max(240),
   exitReason: z
-    .enum(['TP', 'SL', 'TRAIL', 'TIMEOUT', 'NO_DATA', 'KILLSTOP', 'LIQ_DRAIN', 'RECONCILE_ORPHAN'])
+    .enum([
+      'TP',
+      'SL',
+      'TRAIL',
+      'TIMEOUT',
+      'NO_DATA',
+      'KILLSTOP',
+      'LIQ_DRAIN',
+      'RECONCILE_ORPHAN',
+      'PERIODIC_HEAL',
+    ])
     .optional(),
+});
+
+/** Periodic tail sweep + stuck-open hygiene (live-oscar). `reconcileOk` kept for dashboard compat (always true). */
+export const LivePeriodicSelfHealReportSchema = z.object({
+  kind: z.literal('live_periodic_self_heal'),
+  ok: z.boolean(),
+  reconcileOk: z.boolean(),
+  staleOpensForced: z.number().int().nonnegative(),
+  tailSweepsAttempted: z.number().int().nonnegative(),
+  tailSweepsOk: z.number().int().nonnegative(),
+  divergentMints: z.array(z.string()).optional(),
+  chainOnlyMints: z.array(z.string()).optional(),
+  note: z.string().max(500).optional(),
+});
+
+/** One-shot delayed dust sell after `live_position_close` (live-oscar). */
+export const LivePostCloseTailSchema = z.object({
+  kind: z.literal('live_post_close_tail'),
+  mint: z.string().min(1).max(64),
+  ok: z.boolean(),
+  note: z.string().max(240).optional(),
+  rawAtoms: z.string().max(64).optional(),
+  estUsd: z.number().finite().optional(),
 });
 
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
@@ -191,6 +236,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   ExecutionResultSchema,
   ExecutionSkipSchema,
   RiskBlockSchema,
+  RiskNoteSchema,
   CapitalSkipSchema,
   CapitalRotateCloseSchema,
   LivePositionOpenSchema,
@@ -200,6 +246,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveReconcileReportSchema,
   LiveReconcileQuarantineSchema,
   LiveExitVerifyDeferSchema,
+  LivePeriodicSelfHealReportSchema,
+  LivePostCloseTailSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

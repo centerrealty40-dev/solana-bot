@@ -14,13 +14,14 @@ import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
 import {
   clearLiveReconcileBlock,
   getLiveReconcileBootSnapshot,
+  liveReconcileBlockAgeSec,
+  liveReconcileBlocksNewExposure,
   setLiveReconcileBlock,
   setLiveReconcileBootSnapshot,
   type LiveReconcileBootSnapshot,
 } from './live-reconcile-state.js';
 import { createLiveOscarPhase5Bundle } from './phase5-runtime.js';
 import { appendLiveReconcileReportJsonl } from './live-reconcile-report.js';
-import { reconcileLiveWalletVsReplay } from './reconcile-live.js';
 import {
   collectRecentConfirmedTxSignatures,
   verifyTxAnchorSample,
@@ -30,6 +31,7 @@ import { evaluateLiveNotionalParity } from './notional-parity.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
+import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -65,6 +67,23 @@ export async function main(): Promise<void> {
 
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
   const paperBaseline = loadPaperTraderConfig();
+
+  if (
+    liveCfg.strategyEnabled &&
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate')
+  ) {
+    const maxUsd = liveCfg.liveMaxPositionUsd;
+    if (
+      maxUsd != null &&
+      Number.isFinite(maxUsd) &&
+      Math.abs(paperBaseline.positionUsd - maxUsd) > 1e-6
+    ) {
+      throw new Error(
+        `live-oscar: PAPER_POSITION_USD (${paperBaseline.positionUsd}) must equal LIVE_MAX_POSITION_USD (${maxUsd}). Fix env / LIVE_INHERIT_ENV_FILE (see ecosystem live-oscar).`,
+      );
+    }
+  }
+
   clearLiveReconcileBlock();
   setLiveReconcileBootSnapshot(null);
 
@@ -117,7 +136,6 @@ export async function main(): Promise<void> {
     log.info({}, 'live-oscar Phase 7 replay skipped (LIVE_STRATEGY_ENABLED=0)');
     commitBootSnapshot({ status: 'skipped', skipReason: 'strategy_disabled' });
     appendLiveReconcileReportJsonl({
-      liveCfg,
       reconcileStatus: 'skipped',
       ok: true,
       skipReason: 'strategy_disabled',
@@ -125,7 +143,6 @@ export async function main(): Promise<void> {
   } else if (!liveCfg.liveReplayOnBoot) {
     commitBootSnapshot({ status: 'skipped', skipReason: 'replay_off' });
     appendLiveReconcileReportJsonl({
-      liveCfg,
       reconcileStatus: 'skipped',
       ok: true,
       skipReason: 'replay_off',
@@ -220,27 +237,15 @@ export async function main(): Promise<void> {
     if (liveCfg.executionMode === 'dry_run') {
       commitBootSnapshot({ status: 'skipped', skipReason: 'dry_run', journalTruncated });
       appendLiveReconcileReportJsonl({
-        liveCfg,
         reconcileStatus: 'skipped',
         ok: true,
         skipReason: 'dry_run',
         journalReplayTruncated: journalTruncated,
         txAnchorSample,
       });
-    } else if (!liveCfg.liveReconcileOnBoot) {
-      commitBootSnapshot({ status: 'skipped', skipReason: 'reconcile_off', journalTruncated });
-      appendLiveReconcileReportJsonl({
-        liveCfg,
-        reconcileStatus: 'skipped',
-        ok: true,
-        skipReason: 'reconcile_off',
-        journalReplayTruncated: journalTruncated,
-        txAnchorSample,
-      });
     } else if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') {
       commitBootSnapshot({ status: 'skipped', skipReason: 'execution_mode', journalTruncated });
       appendLiveReconcileReportJsonl({
-        liveCfg,
         reconcileStatus: 'skipped',
         ok: true,
         skipReason: 'execution_mode',
@@ -248,164 +253,42 @@ export async function main(): Promise<void> {
         txAnchorSample,
       });
     } else if (anchorRpcPendingMints.length > 0) {
+      log.warn({ anchorRpcPendingMints }, 'live-oscar boot anchor verify still pending RPC (no exposure block)');
       commitBootSnapshot({
-        status: 'rpc_fail',
-        skipReason: 'anchor_verify_rpc_fail',
+        status: 'skipped',
+        skipReason: 'anchor_verify_rpc_pending',
         journalTruncated,
         quarantinedMints: bootQuarantineMintPrefixes,
       });
-      const detailStr = JSON.stringify({ anchorRpcPendingMints }).slice(0, 500);
-      if (liveCfg.liveReconcileMode === 'block_new') {
-        setLiveReconcileBlock(true);
-        appendLiveJsonlEvent({
-          kind: 'risk_block',
-          limit: 'anchor_verify_rpc_fail',
-          detail: { anchorRpcPendingMints },
-        });
-      } else if (liveCfg.liveReconcileMode === 'report') {
-        appendLiveJsonlEvent({
-          kind: 'execution_skip',
-          reason: 'anchor_verify_rpc_fail',
-          detail: detailStr,
-        });
-      } else {
-        appendLiveJsonlEvent({
-          kind: 'execution_skip',
-          reason: 'anchor_verify_rpc_fail_trust_chain_stub',
-          detail: detailStr,
-        });
-      }
+      appendLiveJsonlEvent({
+        kind: 'execution_skip',
+        reason: 'anchor_verify_rpc_pending',
+        detail: JSON.stringify({ anchorRpcPendingMints }).slice(0, 500),
+      });
       appendLiveReconcileReportJsonl({
-        liveCfg,
-        reconcileStatus: 'rpc_fail',
-        ok: false,
-        skipReason: 'anchor_verify_rpc_fail',
+        reconcileStatus: 'skipped',
+        ok: true,
+        skipReason: 'anchor_verify_rpc_pending',
         journalReplayTruncated: journalTruncated,
         txAnchorSample,
         anchorRpcPendingMints,
         quarantinedMints: bootQuarantineMintPrefixes,
       });
     } else {
-      const rec = await reconcileLiveWalletVsReplay({
-        liveCfg,
-        open: liveStrategyReplay.open,
-        toleranceAtoms: BigInt(liveCfg.liveReconcileToleranceAtoms),
-        mode: liveCfg.liveReconcileMode,
+      commitBootSnapshot({
+        status: 'skipped',
+        skipReason: 'spl_reconcile_removed',
+        journalTruncated,
+        quarantinedMints: bootQuarantineMintPrefixes,
       });
-
-      const rpcFail = rec.mismatches.some((m) => m.mint === '_rpc_');
-      const divergentMintList = rec.mismatches.filter((m) => m.mint !== '_rpc_').map((m) => m.mint);
-
-      if (rpcFail) {
-        commitBootSnapshot({
-          status: 'rpc_fail',
-          divergentMints: divergentMintList.length ? divergentMintList : undefined,
-          walletSolLamports: rec.walletSolLamports,
-          chainOnlyMints: rec.chainOnlyMints,
-          journalTruncated,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-        const detailStr = JSON.stringify({ mismatches: rec.mismatches }).slice(0, 500);
-        if (liveCfg.liveReconcileMode === 'block_new') {
-          setLiveReconcileBlock(true);
-          appendLiveJsonlEvent({
-            kind: 'risk_block',
-            limit: 'reconcile_rpc_fail',
-            detail: { mismatches: rec.mismatches },
-          });
-        } else if (liveCfg.liveReconcileMode === 'report') {
-          appendLiveJsonlEvent({
-            kind: 'execution_skip',
-            reason: 'reconcile_rpc_fail',
-            detail: detailStr,
-          });
-        } else {
-          appendLiveJsonlEvent({
-            kind: 'execution_skip',
-            reason: 'reconcile_rpc_fail_trust_chain_stub',
-            detail: detailStr,
-          });
-        }
-        appendLiveReconcileReportJsonl({
-          liveCfg,
-          reconcileStatus: 'rpc_fail',
-          ok: false,
-          rec,
-          journalReplayTruncated: journalTruncated,
-          txAnchorSample,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-      } else if (!rec.ok) {
-        const zeroBalanceMismatchMints = rec.mismatches
-          .filter((m) => {
-            if (m.mint === '_rpc_') return false;
-            if (m.actualRaw !== '0') return false;
-            if (m.expectedRaw === 'unknown') return false;
-            try {
-              return BigInt(m.expectedRaw) > 0n;
-            } catch {
-              return false;
-            }
-          })
-          .map((m) => m.mint);
-        commitBootSnapshot({
-          status: 'mismatch',
-          divergentMints: divergentMintList,
-          zeroBalanceMismatchMints: zeroBalanceMismatchMints.length ? zeroBalanceMismatchMints : undefined,
-          walletSolLamports: rec.walletSolLamports,
-          chainOnlyMints: rec.chainOnlyMints,
-          journalTruncated,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-        const detailStr = JSON.stringify({ mismatches: rec.mismatches }).slice(0, 500);
-        if (liveCfg.liveReconcileMode === 'block_new') {
-          setLiveReconcileBlock(true);
-          appendLiveJsonlEvent({
-            kind: 'risk_block',
-            limit: 'reconcile_divergence',
-            detail: { mismatches: rec.mismatches },
-          });
-        } else if (liveCfg.liveReconcileMode === 'report') {
-          appendLiveJsonlEvent({
-            kind: 'execution_skip',
-            reason: 'reconcile_mismatch',
-            detail: detailStr,
-          });
-        } else {
-          log.warn({ mismatches: rec.mismatches }, 'reconcile mismatch (trust_chain v1 same as report)');
-          appendLiveJsonlEvent({
-            kind: 'execution_skip',
-            reason: 'reconcile_mismatch_trust_chain_stub',
-            detail: detailStr,
-          });
-        }
-        appendLiveReconcileReportJsonl({
-          liveCfg,
-          reconcileStatus: 'mismatch',
-          ok: false,
-          rec,
-          journalReplayTruncated: journalTruncated,
-          txAnchorSample,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-      } else {
-        commitBootSnapshot({
-          status: 'ok',
-          walletSolLamports: rec.walletSolLamports,
-          chainOnlyMints: rec.chainOnlyMints,
-          journalTruncated,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-        appendLiveReconcileReportJsonl({
-          liveCfg,
-          reconcileStatus: 'ok',
-          ok: true,
-          rec,
-          journalReplayTruncated: journalTruncated,
-          txAnchorSample,
-          quarantinedMints: bootQuarantineMintPrefixes,
-        });
-      }
+      appendLiveReconcileReportJsonl({
+        reconcileStatus: 'skipped',
+        ok: true,
+        skipReason: 'spl_reconcile_removed',
+        journalReplayTruncated: journalTruncated,
+        txAnchorSample,
+        quarantinedMints: bootQuarantineMintPrefixes,
+      });
     }
   }
 
@@ -441,21 +324,38 @@ export async function main(): Promise<void> {
     skipPaperJsonlStore: true,
     liveStrategyReplay,
     journalLiveStrategy: (body) => appendLiveJsonlEvent(body),
-    reconcilePaperCloseZeroMints: liveCfg.liveReconcilePaperCloseZeroBalance
-      ? () => {
-          const b = getLiveReconcileBootSnapshot();
-          return b?.status === 'mismatch' && b.zeroBalanceMismatchMints?.length
-            ? b.zeroBalanceMismatchMints
-            : undefined;
-        }
-      : undefined,
     liveOscarFactory: (deps) => createLiveOscarPhase5Bundle(liveCfg, deps, paperBaseline.positionUsd),
     onShutdown: (sig) => {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
     },
+    livePeriodicSelfHealFactory: (ctx) => startLivePeriodicSelfHeal({ ...ctx, liveCfg }),
+
     onOscarHeartbeat: ({ openPositions, closedTotal, stats, trackerClosed }) => {
+      const maxBlockMs = liveCfg.liveReconcileBlockMaxMs;
+      if (
+        maxBlockMs > 0 &&
+        liveReconcileBlocksNewExposure() &&
+        liveCfg.strategyEnabled &&
+        (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate')
+      ) {
+        const ageSec = liveReconcileBlockAgeSec();
+        if (ageSec != null && ageSec * 1000 >= maxBlockMs) {
+          clearLiveReconcileBlock();
+          appendLiveJsonlEvent({
+            kind: 'risk_note',
+            reason: 'exposure_block_ttl_cleared',
+            detail: { ageSec: +ageSec.toFixed(1), maxMs: maxBlockMs },
+          });
+          log.warn(
+            { ageSec, maxMs: maxBlockMs },
+            'exposure block cleared by LIVE_RECONCILE_BLOCK_MAX_MS (parity / legacy flag; emergency)',
+          );
+        }
+      }
+
       const boot = getLiveReconcileBootSnapshot();
       const qm = boot?.quarantinedMints ?? bootQuarantineMintPrefixes;
+      const blockAgeSec = liveReconcileBlockAgeSec();
       appendLiveJsonlEvent({
         kind: 'heartbeat',
         uptimeSec: Math.floor(process.uptime()),
@@ -464,6 +364,12 @@ export async function main(): Promise<void> {
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
         note: `W8.0-p7 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        ...(liveReconcileBlocksNewExposure()
+          ? {
+              reconcileBlocksNewExposure: true,
+              ...(blockAgeSec != null ? { reconcileBlockAgeSec: +blockAgeSec.toFixed(1) } : {}),
+            }
+          : {}),
         ...(boot && {
           reconcileBootStatus: boot.status,
           reconcileBootSkipReason: boot.skipReason,

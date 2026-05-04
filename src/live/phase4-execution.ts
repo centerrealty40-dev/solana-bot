@@ -2,7 +2,11 @@
  * W8.0 Phase 4 — Oscar parity: gates stay in papertrader; execution → Jupiter + simulate + live JSONL.
  */
 import type { Keypair } from '@solana/web3.js';
-import { getSolUsd } from '../papertrader/pricing.js';
+import {
+  fetchJupiterTokenUsdPrice,
+  fetchLatestSnapshotPrice,
+  getSolUsd,
+} from '../papertrader/pricing.js';
 import {
   liveBuyQuoteAndPrepareSnapshot,
   liveQuoteExceedsMaxAge,
@@ -20,8 +24,10 @@ import type {
   LiveOscarRuntimeBundle,
   LivePhase4BuyOpenContext,
 } from './phase4-types.js';
+import type { DexSource } from '../papertrader/types.js';
 import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
 import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
+import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import {
   clearLiveBuyCooldown,
   isMintBlockedForAmbiguousLiveBuy,
@@ -93,6 +99,36 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
 
 function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['anchorMode'] {
   return liveCfg.executionMode === 'simulate' ? 'simulate' : 'chain';
+}
+
+/** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
+async function estimateLiveWalletMintHoldingUsd(args: {
+  liveCfg: LiveOscarConfig;
+  mint: string;
+  tokenDecimals: number;
+  dexSource?: string;
+}): Promise<number | null> {
+  const chain = await fetchLiveWalletSplBalancesByMint(args.liveCfg);
+  if (!chain) return null;
+  const raw = chain.get(args.mint) ?? 0n;
+  if (raw === 0n) return 0;
+
+  const dec = Math.min(24, Math.max(0, Math.floor(args.tokenDecimals)));
+  const tokens = Number(raw) / 10 ** dec;
+  if (!Number.isFinite(tokens) || tokens <= 0) return null;
+
+  const src = args.dexSource as DexSource | undefined;
+  let px = await fetchLatestSnapshotPrice(
+    args.mint,
+    src && ['raydium', 'meteora', 'orca', 'moonshot', 'pumpswap'].includes(src)
+      ? (src as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap')
+      : undefined,
+  );
+  if (px == null || !(px > 0)) {
+    px = await fetchJupiterTokenUsdPrice(args.mint);
+  }
+  if (px == null || !(px > 0)) return null;
+  return tokens * px;
 }
 
 async function runSolToTokenPipeline(
@@ -276,7 +312,7 @@ async function runTokenToSolPipeline(
   }
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return { ok: false };
 
-  const raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
+  let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
   if (raw == null) {
     appendLiveJsonlEvent({
       kind: 'execution_skip',
@@ -284,6 +320,22 @@ async function runTokenToSolPipeline(
       detail: args.mint.slice(0, 8),
     });
     return { ok: false };
+  }
+
+  let sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain' = 'usd_math';
+  if (liveCfg.executionMode === 'live') {
+    const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+    const chainAmt = chainMap?.get(args.mint);
+    if (chainAmt != null && chainAmt > 0n) {
+      const computedBn = BigInt(raw);
+      if (args.intentKind === 'sell_full') {
+        raw = chainAmt.toString();
+        sellAmountSource = 'chain_full_balance';
+      } else if (computedBn > chainAmt) {
+        raw = chainAmt.toString();
+        sellAmountSource = 'usd_capped_by_chain';
+      }
+    }
   }
 
   const solUsd = getSolUsd() ?? 0;
@@ -308,6 +360,7 @@ async function runTokenToSolPipeline(
     mint: args.mint,
     intendedUsd: args.usdNotional,
     intendedAmountAtomic: raw,
+    sellAmountSource,
     executionMode: liveCfg.executionMode,
     quoteSnapshot,
     targetPriceUsd: args.priceUsdPerToken,
@@ -421,6 +474,34 @@ export async function executeLiveTokenToSolPipeline(
 function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
   return {
     async tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<LiveBuyPipelineResult> {
+      const mode = pipelineAnchorMode(ctx.liveCfg);
+      const minUsd = ctx.liveCfg.liveSkipBuyOpenIfWalletMintMinUsd;
+      if (
+        minUsd > 0 &&
+        ctx.liveCfg.strategyEnabled &&
+        ctx.liveCfg.executionMode === 'live'
+      ) {
+        const dec = ctx.tokenDecimals ?? ctx.ot.tokenDecimals ?? 6;
+        const est = await estimateLiveWalletMintHoldingUsd({
+          liveCfg: ctx.liveCfg,
+          mint: ctx.ot.mint,
+          tokenDecimals: dec,
+          dexSource: ctx.ot.source,
+        });
+        if (est != null && est >= minUsd) {
+          appendLiveJsonlEvent({
+            kind: 'execution_skip',
+            reason: 'wallet_holds_mint_over_usd_cap',
+            detail: JSON.stringify({
+              mint: ctx.ot.mint,
+              estUsd: +est.toFixed(6),
+              minUsd,
+            }).slice(0, 500),
+          });
+          return { ok: false, anchorMode: mode };
+        }
+      }
+
       return runSolToTokenPipeline(liveCfg, {
         mint: ctx.ot.mint,
         symbol: ctx.ot.symbol,

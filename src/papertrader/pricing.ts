@@ -29,13 +29,25 @@ export function getSolUsd(): number {
 }
 
 type JupiterPriceV3 = Record<string, { usdPrice?: number; price?: number }> & {
-  data?: Record<string, { price?: number }>;
+  data?: Record<string, { price?: number; usdPrice?: number }>;
 };
 
 export async function refreshSolPrice(): Promise<void> {
   const j = await fetchJson<JupiterPriceV3>(`https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`);
   const px = Number(j?.[SOL_MINT]?.usdPrice ?? j?.data?.[SOL_MINT]?.price ?? 0);
   if (px > 20 && px < 5000) solUsd = px;
+}
+
+/** Best-effort token USD price (Jupiter lite-api); used when DB snapshot price missing. */
+export async function fetchJupiterTokenUsdPrice(mint: string): Promise<number | null> {
+  const id = mint.trim();
+  if (!id) return null;
+  const j = await fetchJson<JupiterPriceV3>(
+    `https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(id)}`,
+  );
+  const row = j?.[id] ?? j?.data?.[id];
+  const px = Number(row?.usdPrice ?? row?.price ?? 0);
+  return px > 0 && Number.isFinite(px) ? px : null;
 }
 
 let btcRet1hPct: number | null = null;

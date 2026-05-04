@@ -5,16 +5,6 @@ import { z } from 'zod';
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 const ProfileSchema = z.enum(['oscar']);
 const LiveConfirmCommitmentSchema = z.enum(['processed', 'confirmed', 'finalized']);
-const LiveReconcileModeSchema = z.enum(['report', 'block_new', 'trust_chain']);
-
-export type LiveReconcileMode = z.infer<typeof LiveReconcileModeSchema>;
-
-function parseLiveReconcileMode(raw: string | undefined): LiveReconcileMode {
-  const s = raw?.trim().toLowerCase();
-  if (s === 'report' || s === 'trust_chain') return s;
-  return 'block_new';
-}
-
 export type LiveConfirmCommitmentLevel = z.infer<typeof LiveConfirmCommitmentSchema>;
 
 function envBool(v: unknown, defaultVal: boolean): boolean {
@@ -92,6 +82,20 @@ const LiveOscarConfigSchema = z
     liveHaltCloseAllOnMaxLoss: z.boolean().default(false),
     /** Minimum native SOL (whole SOL, not lamports) to allow new exposure. */
     liveMinWalletSol: z.coerce.number().positive().optional(),
+    /**
+     * **Live-only**, **new positions only**: require `native_SOL × SOL/USD ≥ this` before buy_open.
+     * Optional; complements `liveMinWalletSol` when both set (both must pass).
+     */
+    liveMinWalletSolEquityUsd: z.coerce.number().positive().optional(),
+
+    /** Live-only: block **new** buys when Binance BTC context is fresh and drawdown exceeds thresholds below. */
+    liveBtcGateEnabled: z.boolean().default(true),
+    /** Skip BTC gate if `getBtcContext().updated_ts` older than this (ms). */
+    liveBtcGateMaxStaleMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
+    /** Block when `ret1h_pct ≤ −this` (percent points). ~2–3% catches sharp hourly dumps without noise. */
+    liveBtcBlockNewBuys1hDrawdownPct: z.coerce.number().min(0).max(50).default(2.5),
+    /** Block when `ret4h_pct ≤ −this` (percent points). ~5% aligns with risk-off sessions. */
+    liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(5),
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     liveCapitalRotateCascade: z.boolean().default(false),
@@ -116,9 +120,6 @@ const LiveOscarConfigSchema = z
     liveReplaySinceTs: z.coerce.number().finite().optional(),
     /** Beyond this size (bytes) only the trailing chunk of `LIVE_TRADES_PATH` is scanned for replay. */
     liveReplayMaxFileBytes: z.coerce.number().int().min(65_536).max(512 * 1024 * 1024).default(26_214_400),
-    liveReconcileOnBoot: z.boolean(),
-    liveReconcileMode: LiveReconcileModeSchema,
-    liveReconcileToleranceAtoms: z.number().int().min(0),
     /** 0 = off. Sample-verify last N confirmed `execution_result` rows via getTransaction (Phase 7 tail). */
     liveReconcileTxSampleN: z.coerce.number().int().min(0).max(50).default(0),
 
@@ -129,20 +130,38 @@ const LiveOscarConfigSchema = z
     /** W8.0-p7.1 — after replay, verify each `entryLegSignatures` tx via RPC (live mode). */
     liveAnchorVerifyOnBoot: z.boolean().default(true),
     /**
-     * When boot reconcile reports journal vs wallet mismatch with **zero** on-chain balance for a mint,
-     * tracker removes that `open` row (paper-close + live_position_close) without attempting Jupiter sell.
+     * 0 = off. When notional parity arms exposure block for longer than this (ms), clear it and emit `risk_note`
+     * `exposure_block_ttl_cleared` (emergency; ops must fix root cause).
      */
-    liveReconcilePaperCloseZeroBalance: z.boolean().default(true),
+    liveReconcileBlockMaxMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+
+    /** 0 = off. Else interval (ms) for periodic tail sweep + stuck-open force exit (live only). */
+    livePeriodicSelfHealMs: z.coerce.number().int().min(0).max(86_400_000).default(1_800_000),
+    /** Skip chain-only tail sweep below this estimated USD (spam / dust). */
+    livePeriodicSweepMinUsd: z.coerce.number().min(0).max(1_000_000).default(0.25),
+    /**
+     * When false (default), tail sweep only runs for mints that appear in this process's `closed[]` history.
+     * When true, any non-open SPL balance above min USD is sold (airdrops / unknown tokens — higher risk).
+     */
+    livePeriodicSweepUnknownChainOnly: z.boolean().default(false),
+    /** Hours beyond `timeoutHours` before forcing PERIODIC_HEAL on an open with on-chain balance. */
+    livePeriodicStuckGraceHours: z.coerce.number().min(0).max(168).default(0.5),
+
+    /**
+     * 0 = off. In **live** `buy_open` only: skip swap if wallet already holds this mint worth ≥ this USD
+     * (chain balance × snapshot/Jupiter price). Does not replace full reconcile; avoids duplicate buys when journal lags.
+     */
+    liveSkipBuyOpenIfWalletMintMinUsd: z.coerce.number().min(0).max(1_000_000).default(0),
+
+    /**
+     * 0 = off. After **`live_position_close`** in **live**, wait this many ms then if SPL balance for that mint
+     * remains on the wallet, run **`sell_full`** (chain-sized) to clear dust tails.
+     */
+    livePostCloseTailSweepDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
+    /** Floor USD notional hint for Jupiter when estimating microscopic tails (actual sell uses on-chain raw). */
+    livePostCloseTailSweepMinUsd: z.coerce.number().min(0).max(1000).default(0.05),
   })
   .superRefine((data, ctx) => {
-    if (data.liveReconcileMode === 'trust_chain' && !envBool(process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED, false)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'LIVE_RECONCILE_MODE=trust_chain requires LIVE_RECONCILE_TRUST_CHAIN_ALLOWED=1 (v1 stub only; see RUNBOOK_LIVE_OSCAR_PHASE7.md)',
-        path: ['liveReconcileMode'],
-      });
-    }
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
       const w = data.walletSecret?.trim();
       if (!w) {
@@ -224,6 +243,26 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveKillAfterConsecFail: process.env.LIVE_KILL_AFTER_CONSEC_FAIL,
     liveHaltCloseAllOnMaxLoss: envBool(process.env.LIVE_HALT_CLOSE_ALL_ON_MAX_LOSS, false),
     liveMinWalletSol: optionalPositiveEnv('LIVE_MIN_WALLET_SOL'),
+    liveMinWalletSolEquityUsd: optionalPositiveEnv('LIVE_MIN_WALLET_SOL_EQUITY_USD'),
+    liveBtcGateEnabled: envBool(process.env.LIVE_BTC_GATE_ENABLED, true),
+    liveBtcGateMaxStaleMs: (() => {
+      const s = process.env.LIVE_BTC_GATE_MAX_STALE_MS?.trim();
+      if (!s) return 900_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 60_000 ? Math.min(n, 3_600_000) : 900_000;
+    })(),
+    liveBtcBlockNewBuys1hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT?.trim();
+      if (!s) return 2.5;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 2.5;
+    })(),
+    liveBtcBlockNewBuys4hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT?.trim();
+      if (!s) return 5;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 5;
+    })(),
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
@@ -248,14 +287,6 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       return Number.isFinite(n) ? n : undefined;
     })(),
     liveReplayMaxFileBytes: process.env.LIVE_REPLAY_MAX_FILE_BYTES,
-    liveReconcileOnBoot: envBool(process.env.LIVE_RECONCILE_ON_BOOT, true),
-    liveReconcileMode: parseLiveReconcileMode(process.env.LIVE_RECONCILE_MODE),
-    liveReconcileToleranceAtoms: (() => {
-      const s = process.env.LIVE_RECONCILE_TOLERANCE_ATOMS?.trim();
-      if (!s) return 10_000;
-      const n = Number.parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? n : 10_000;
-    })(),
     liveReconcileTxSampleN: (() => {
       const s = process.env.LIVE_RECONCILE_TX_SAMPLE_N?.trim();
       if (!s) return 0;
@@ -265,7 +296,53 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveReplayTrustGhostPositions: envBool(process.env.LIVE_REPLAY_TRUST_GHOST_POSITIONS, false),
     liveStrictNotionalParity: envBool(process.env.LIVE_STRICT_NOTIONAL_PARITY, true),
     liveAnchorVerifyOnBoot: envBool(process.env.LIVE_ANCHOR_VERIFY_ON_BOOT, true),
-    liveReconcilePaperCloseZeroBalance: envBool(process.env.LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE, true),
+
+    liveReconcileBlockMaxMs: (() => {
+      const s = process.env.LIVE_RECONCILE_BLOCK_MAX_MS?.trim();
+      if (!s || s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 86_400_000) : 0;
+    })(),
+
+    livePeriodicSelfHealMs: (() => {
+      const s = process.env.LIVE_PERIODIC_SELF_HEAL_MS?.trim();
+      if (s === '0') return 0;
+      if (!s) return 1_800_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 1_800_000;
+    })(),
+    livePeriodicSweepMinUsd: (() => {
+      const s = process.env.LIVE_PERIODIC_SWEEP_MIN_USD?.trim();
+      if (!s) return 0.25;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? n : 0.25;
+    })(),
+    livePeriodicSweepUnknownChainOnly: envBool(process.env.LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY, false),
+    livePeriodicStuckGraceHours: (() => {
+      const s = process.env.LIVE_PERIODIC_STUCK_GRACE_HOURS?.trim();
+      if (!s) return 0.5;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 168) : 0.5;
+    })(),
+    liveSkipBuyOpenIfWalletMintMinUsd: (() => {
+      const s = process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD?.trim();
+      if (!s || s === '0') return 0;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 0;
+    })(),
+    livePostCloseTailSweepDelayMs: (() => {
+      const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS?.trim();
+      if (!s) return 60_000;
+      if (s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 3_600_000) : 60_000;
+    })(),
+    livePostCloseTailSweepMinUsd: (() => {
+      const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MIN_USD?.trim();
+      if (!s) return 0.05;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : 0.05;
+    })(),
   });
 
   if (!parsed.success) {

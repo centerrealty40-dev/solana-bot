@@ -1,11 +1,9 @@
 /**
- * W8.0 Phase 7 — SPL balances vs replayed `open` positions (RPC via `qnCall`, feature **`sim`** + optional `LIVE_RPC_HTTP_URL`).
- * Read-only RPC uses the same **`sim`** credit bucket as Phase 3 simulate + Phase 5 `getBalance` (documented in CHANGELOG).
+ * SPL balances on the live wallet (RPC via `qnCall`, feature **`sim`** + optional `LIVE_RPC_HTTP_URL`).
+ * Used by live sells and periodic tail sweep. Journal-vs-wallet SPL reconcile gates were removed.
  */
-import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
-import type { OpenTrade } from '../papertrader/types.js';
-import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
-import type { LiveOscarConfig, LiveReconcileMode } from './config.js';
+import { qnCall } from '../core/rpc/qn-client.js';
+import type { LiveOscarConfig } from './config.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 
 const SPL_TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
@@ -57,15 +55,12 @@ function qnReadOpts(cfg: LiveOscarConfig) {
   };
 }
 
-async function fetchWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null> {
-  const pk = walletPubkey58(cfg);
-  if (!pk) return null;
-  const res = await qnCall<unknown>('getBalance', [pk, { commitment: 'processed' }], qnReadOpts(cfg));
-  if (!res.ok) return null;
-  return lamportsFromGetBalanceResult(res.value);
-}
+type SplBalanceCommitment = 'processed' | 'confirmed' | 'finalized';
 
-async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<string, bigint> | null> {
+async function fetchWalletTokenRawByMint(
+  cfg: LiveOscarConfig,
+  commitment: SplBalanceCommitment = 'confirmed',
+): Promise<Map<string, bigint> | null> {
   const pk = walletPubkey58(cfg);
   if (!pk) return null;
   const opts = qnReadOpts(cfg);
@@ -73,7 +68,7 @@ async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<stri
   for (const programId of [SPL_TOKEN, SPL_TOKEN_2022]) {
     const res = await qnCall<unknown>(
       'getTokenAccountsByOwner',
-      [pk, { programId }, { encoding: 'jsonParsed' }],
+      [pk, { programId }, { encoding: 'jsonParsed', commitment }],
       opts,
     );
     if (!res.ok) return null;
@@ -85,99 +80,9 @@ async function fetchWalletTokenRawByMint(cfg: LiveOscarConfig): Promise<Map<stri
   return merged;
 }
 
-function expectedTokenRawAtoms(ot: OpenTrade): bigint | null {
-  const dec = ot.tokenDecimals ?? 6;
-  if (!(ot.avgEntry > 0) || !(ot.totalInvestedUsd > 0)) return null;
-  const usdRem = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
-  const tokens = usdRem / ot.avgEntry;
-  if (!Number.isFinite(tokens) || tokens <= 0) return null;
-  const factor = 10 ** dec;
-  const raw = BigInt(Math.max(0, Math.floor(tokens * factor + 1e-9)));
-  return raw;
-}
-
-export interface ReconcileLiveWalletResult {
-  ok: boolean;
-  mode: LiveReconcileMode;
-  mismatches: Array<{ mint: string; expectedRaw: string; actualRaw: string; note?: string }>;
-  /** Native SOL balance (lamports) when RPC succeeds. */
-  walletSolLamports?: string | null;
-  /** SPL mints with non-zero chain balance not present in replayed `open` (dust / leftovers). */
-  chainOnlyMints?: string[];
-}
-
-function chainOnlyMintsSorted(chain: Map<string, bigint>, openMints: Set<string>): string[] {
-  const out: string[] = [];
-  for (const m of chain.keys()) {
-    if (m === WRAPPED_SOL_MINT) continue;
-    if (!openMints.has(m)) out.push(m);
-  }
-  out.sort();
-  return out;
-}
-
-export async function reconcileLiveWalletVsReplay(args: {
-  liveCfg: LiveOscarConfig;
-  open: Map<string, OpenTrade>;
-  toleranceAtoms: bigint;
-  mode: LiveReconcileMode;
-}): Promise<ReconcileLiveWalletResult> {
-  const { liveCfg, open, mode } = args;
-  const tol = args.toleranceAtoms < 0n ? 0n : args.toleranceAtoms;
-  const mismatches: ReconcileLiveWalletResult['mismatches'] = [];
-
-  const [solLamports, chain] = await Promise.all([
-    fetchWalletSolLamports(liveCfg),
-    fetchWalletTokenRawByMint(liveCfg),
-  ]);
-
-  const walletSolStr = solLamports != null ? solLamports.toString() : null;
-
-  if (chain === null) {
-    mismatches.push({
-      mint: '_rpc_',
-      expectedRaw: '0',
-      actualRaw: '0',
-      note: 'getTokenAccountsByOwner_failed',
-    });
-    return { ok: false, mode, mismatches, walletSolLamports: walletSolStr };
-  }
-
-  const openMintSet = new Set(open.keys());
-  const chainOnly = chainOnlyMintsSorted(chain, openMintSet);
-
-  if (open.size === 0) {
-    return { ok: true, mode, mismatches, walletSolLamports: walletSolStr, chainOnlyMints: chainOnly };
-  }
-
-  for (const ot of open.values()) {
-    const exp = expectedTokenRawAtoms(ot);
-    if (exp === null) {
-      mismatches.push({
-        mint: ot.mint,
-        expectedRaw: 'unknown',
-        actualRaw: (chain.get(ot.mint) ?? 0n).toString(),
-        note: 'expected_skipped_bad_avg_or_invested',
-      });
-      continue;
-    }
-    const act = chain.get(ot.mint) ?? 0n;
-    const diff = exp > act ? exp - act : act - exp;
-    if (diff > tol) {
-      mismatches.push({
-        mint: ot.mint,
-        expectedRaw: exp.toString(),
-        actualRaw: act.toString(),
-      });
-    }
-  }
-
-  const ok = mismatches.length === 0;
-  return {
-    ok,
-    mode,
-    mismatches,
-    walletSolLamports: walletSolStr,
-    chainOnlyMints: chainOnly.length ? chainOnly : undefined,
-  };
+/** SPL Token + Token-2022 balances per mint (raw atoms). Used by live sells to avoid USD-math dust tails. */
+export async function fetchLiveWalletSplBalancesByMint(
+  cfg: LiveOscarConfig,
+): Promise<Map<string, bigint> | null> {
+  return fetchWalletTokenRawByMint(cfg, 'confirmed');
 }

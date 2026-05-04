@@ -7,6 +7,27 @@ function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
 }
 
+/** Mirror `entryLegSignaturesFromOpenTradeJson` (live replay) — avoid importing live/replay (cycle). */
+function entryLegSignaturesFromRestorePayload(raw: Record<string, unknown>): string[] {
+  const el = raw.entryLegSignatures;
+  const out: string[] = [];
+  if (Array.isArray(el)) {
+    for (const x of el) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  if (out.length > 0) return out;
+  const legacyPrimary = raw.repairedFromTxSignature;
+  if (typeof legacyPrimary === 'string' && legacyPrimary.length >= 32) out.push(legacyPrimary);
+  const legs = raw.repairedLegSignatures;
+  if (Array.isArray(legs)) {
+    for (const x of legs) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  return out;
+}
+
 export interface RestoreState {
   evaluatedAt: Map<string, number>;
   lastEntryTsByMint: Map<string, number>;
@@ -95,13 +116,16 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           ? Number(o.lastObservedPriceUsd)
           : undefined,
     };
-    const els = (o as unknown as { entryLegSignatures?: unknown }).entryLegSignatures;
-    if (Array.isArray(els) && els.every((x) => typeof x === 'string')) {
-      ot.entryLegSignatures = els as string[];
+    const rawPayload = o as unknown as Record<string, unknown>;
+    const mergedSigs = entryLegSignaturesFromRestorePayload(rawPayload);
+    if (mergedSigs.length > 0) {
+      ot.entryLegSignatures = mergedSigs;
     }
     const lam = (o as unknown as { liveAnchorMode?: unknown }).liveAnchorMode;
     if (lam === 'chain' || lam === 'simulate') {
       ot.liveAnchorMode = lam;
+    } else if (!ot.liveAnchorMode && mergedSigs.length > 0) {
+      ot.liveAnchorMode = 'chain';
     }
     if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
     return ot;
