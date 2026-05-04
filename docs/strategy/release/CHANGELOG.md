@@ -8,6 +8,24 @@
 
 ---
 
+## [1.11.64] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.64`.
+
+### Intel — устранение ограничений v1
+
+- **`ensureDecisionsForWallets`:** общая материализация по списку адресов; **`mint-check`** по умолчанию дописывает решения для покупателей без строки (`WALLET_INTEL_MINT_CHECK_MATERIALIZE`, флаг **`--no-materialize-missing`**).
+- **`wallet-intel:policy --ensure-wallets=a,b,c`** — точечный прогон без лимита batch.
+- **`wallet-intel-pipeline --dry-run`:** scam-farm и policy без записи; tagger пропускается; восстановление `SCAM_FARM_*` env в `finally`.
+- **`wallet-intel:doctor`:** массив **`warnings`** (пустые `money_flows` / `swaps`, пустой Atlas при непустых `wallets`).
+- **`REDIS_URL`:** не задан или пустой → дефолт **`redis://127.0.0.1:6379`** (CLI/intel; прод задаёт явный URL).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.63 --`** затронутые пути → редеплой **`v2`**.
+
+---
+
 ## [1.11.63] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.63`.

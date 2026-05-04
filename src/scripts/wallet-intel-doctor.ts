@@ -51,6 +51,23 @@ Exit 2 if WALLET_INTEL_REQUIRE_SWAP_COVERAGE=1 and recent swaps = 0 (24h window)
   const candTotal = await countAll('scam_farm_candidates');
   const decisionsTotal = await countAll('wallet_intel_decisions');
 
+  const warnings: string[] = [];
+  if (flows24 === 0) {
+    warnings.push(
+      'money_flows_last_24h=0 — правила scam-farm вроде sync_fund почти не получат рёбер; добивайте ingest/backfill потоков или смирьтесь с узким детективом.',
+    );
+  }
+  if (swaps24 === 0) {
+    warnings.push(
+      'swaps_last_24h=0 — нет сделок в окне; mint-gate и orchestrate_split по swaps не работают.',
+    );
+  }
+  if (entityTotal === 0 && walletsTotal > 0) {
+    warnings.push(
+      'entity_wallets пуст при непустых wallets — tagAtlas/Atlas не покрывают сид; промоут wallets→entity или RUN_TAGGER.',
+    );
+  }
+
   const out = {
     swaps_last_24h: swaps24,
     money_flows_last_24h: flows24,
@@ -59,6 +76,7 @@ Exit 2 if WALLET_INTEL_REQUIRE_SWAP_COVERAGE=1 and recent swaps = 0 (24h window)
     scam_farm_candidates_total: candTotal,
     wallet_intel_decisions_total: decisionsTotal,
     require_swap_coverage: env.requireSwapCoverage,
+    warnings,
   };
   console.log(JSON.stringify(out, null, 2));
 

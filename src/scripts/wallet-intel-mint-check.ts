@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../core/db/client.js';
+import { ensureDecisionsForWallets } from '../intel/wallet-intel/ensure-decisions.js';
 import { mintDecision } from '../intel/wallet-intel/mint-decision.js';
 import { loadWalletIntelEnv } from '../intel/wallet-intel/load-policy-env.js';
 import { readProductRuleSetVersion } from '../intel/wallet-intel/read-version.js';
@@ -19,6 +20,10 @@ function hasHelpFlag(): boolean {
   return process.argv.includes('--help') || process.argv.includes('-h');
 }
 
+function noMaterializeMissingFlag(): boolean {
+  return process.argv.includes('--no-materialize-missing');
+}
+
 async function main(): Promise<void> {
   if (hasHelpFlag()) {
     console.log(`wallet-intel-mint-check — MINT_DECISION для одного mint
@@ -26,6 +31,9 @@ async function main(): Promise<void> {
   tsx src/scripts/wallet-intel-mint-check.ts --mint <BASE_MINT>
 
 Берёт первые WALLET_INTEL_EARLY_BUYERS_K уникальных покупателей (buy) по времени.
+
+По умолчанию дописывает строки wallet_intel_decisions для покупателей без решения
+(WALLET_INTEL_MINT_CHECK_MATERIALIZE=1). Отключить: --no-materialize-missing
 `);
     process.exit(0);
   }
@@ -103,6 +111,24 @@ async function main(): Promise<void> {
     map.set(r.wallet, r.decision);
   }
 
+  const missingBeforeCount = buyers.filter((w) => !map.has(w)).length;
+
+  let ensureMetrics: Record<string, unknown> | null = null;
+  const skipMat = noMaterializeMissingFlag() || !env.mintCheckMaterializeMissing;
+  const missing = buyers.filter((w) => !map.has(w));
+  if (!skipMat && missing.length > 0) {
+    const ensured = await ensureDecisionsForWallets(missing, { dryRun: false, env });
+    ensureMetrics = {
+      ensured_wallets: ensured.walletsConsidered,
+      block_trade: ensured.blockTrade,
+      smart_tier_a: ensured.smartTierA,
+      unknown: ensured.unknown,
+    };
+    for (const [w, d] of ensured.decisionsByWallet) {
+      map.set(w, d);
+    }
+  }
+
   const decision = mintDecision(buyers, map, {
     requireSwapCoverage: env.requireSwapCoverage,
   });
@@ -114,7 +140,10 @@ async function main(): Promise<void> {
         early_buyers_count: buyers.length,
         rule_set_version: ruleSetVersion,
         mint_decision: decision,
-        missing_decisions: buyers.filter((w) => !map.has(w)).length,
+        missing_decisions_before_materialize: missingBeforeCount,
+        materialize_missing_skipped: skipMat,
+        materialized_for_missing: ensureMetrics,
+        missing_decisions_after: buyers.filter((w) => !map.has(w)).length,
       },
       null,
       2,

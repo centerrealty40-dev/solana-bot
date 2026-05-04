@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { desc, sql } from 'drizzle-orm';
 import { db, schema } from '../../core/db/client.js';
 import { child } from '../../core/logger.js';
-import { classifyWallet } from './classify-wallet.js';
+import { ensureDecisionsForWallets, queryScamFarmBlockWalletSet } from './ensure-decisions.js';
 import { loadWalletIntelEnv } from './load-policy-env.js';
 import { readProductRuleSetVersion } from './read-version.js';
 
@@ -17,51 +17,21 @@ export type MaterializeMetrics = {
   ruleSetVersion: string;
 };
 
-function participantSetFromCandidates(
-  rows: (typeof schema.scamFarmCandidates.$inferSelect)[],
-): Set<string> {
-  const s = new Set<string>();
-  for (const r of rows) {
-    const arr = r.participantWallets ?? [];
-    for (const w of arr) {
-      if (w) s.add(w);
-    }
-  }
-  return s;
-}
-
 /**
- * Load wallets to score: recent entity_wallets + optional union scam participants (capped).
+ * Load wallets to score: scam participants first (до лимита), затем свежие entity_wallets.
  */
 export async function runWalletIntelMaterialize(options: {
   dryRun: boolean;
   limitOverride?: number;
 }): Promise<MaterializeMetrics> {
   const env = loadWalletIntelEnv();
-  const ruleSetVersion = readProductRuleSetVersion(env.ruleSetVersionOverride);
 
   const limit = Math.min(
     options.limitOverride ?? env.policyWalletLimit,
     env.policyWalletLimit,
   );
 
-  const statusFilter =
-    env.scamFarmBlockStatuses.length > 0
-      ? env.scamFarmBlockStatuses
-      : (['confirmed', 'needs_evidence'] as const);
-
-  const candRows = await db
-    .select()
-    .from(schema.scamFarmCandidates)
-    .where(
-      and(
-        eq(schema.scamFarmCandidates.reverted, false),
-        inArray(schema.scamFarmCandidates.status, [...statusFilter]),
-        gte(schema.scamFarmCandidates.score, env.scamFarmBlockMinScore),
-      ),
-    );
-
-  const scamBlockWallets = participantSetFromCandidates(candRows);
+  const scamBlockWallets = await queryScamFarmBlockWalletSet(env);
 
   const entityRows = await db
     .select({ wallet: schema.entityWallets.wallet })
@@ -72,7 +42,6 @@ export async function runWalletIntelMaterialize(options: {
     .orderBy(desc(schema.entityWallets.profileUpdatedAt))
     .limit(limit);
 
-  /** Scam participants first (must get BLOCK rows), then recent Atlas wallets up to cap */
   const walletList: string[] = [];
   const seen = new Set<string>();
   for (const w of scamBlockWallets) {
@@ -92,6 +61,7 @@ export async function runWalletIntelMaterialize(options: {
 
   if (walletList.length === 0) {
     log.warn('wallet-intel: no wallets to process');
+    const ruleSetVersion = readProductRuleSetVersion(env.ruleSetVersionOverride);
     return {
       walletsConsidered: 0,
       blockTrade: 0,
@@ -103,97 +73,13 @@ export async function runWalletIntelMaterialize(options: {
     };
   }
 
-  const tagRows = await db
-    .select({
-      wallet: schema.walletTags.wallet,
-      tag: schema.walletTags.tag,
-    })
-    .from(schema.walletTags)
-    .where(inArray(schema.walletTags.wallet, walletList));
-
-  const primRows = await db
-    .select({
-      wallet: schema.entityWallets.wallet,
-      primaryTag: schema.entityWallets.primaryTag,
-    })
-    .from(schema.entityWallets)
-    .where(inArray(schema.entityWallets.wallet, walletList));
-
-  const tagsByWallet = new Map<string, Set<string>>();
-  for (const row of tagRows) {
-    let set = tagsByWallet.get(row.wallet);
-    if (!set) {
-      set = new Set();
-      tagsByWallet.set(row.wallet, set);
-    }
-    set.add(row.tag);
-  }
-  for (const row of primRows) {
-    if (!row.primaryTag) continue;
-    let set = tagsByWallet.get(row.wallet);
-    if (!set) {
-      set = new Set();
-      tagsByWallet.set(row.wallet, set);
-    }
-    set.add(row.primaryTag);
-  }
-
-  let blockTrade = 0;
-  let smartTierA = 0;
-  let unknown = 0;
-  let upserted = 0;
-
-  const now = new Date();
-
-  for (const wallet of walletList) {
-    const tags = tagsByWallet.get(wallet) ?? new Set<string>();
-    const r = classifyWallet(tags, {
-      inScamFarmBlockSet: scamBlockWallets.has(wallet),
-      botPrimarySuppressesSmart: env.botPrimarySuppressesSmart,
-    });
-    if (r.decision === 'BLOCK_TRADE') blockTrade += 1;
-    else if (r.decision === 'SMART_TIER_A') smartTierA += 1;
-    else unknown += 1;
-
-    if (!options.dryRun) {
-      await db
-        .insert(schema.walletIntelDecisions)
-        .values({
-          walletAddress: wallet,
-          ruleSetVersion,
-          decision: r.decision,
-          score: r.score,
-          reasons: r.reasons,
-          sources: r.sources,
-          computedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.walletIntelDecisions.walletAddress,
-            schema.walletIntelDecisions.ruleSetVersion,
-          ],
-          set: {
-            decision: r.decision,
-            score: r.score,
-            reasons: r.reasons,
-            sources: r.sources,
-            computedAt: now,
-          },
-        });
-    }
-    upserted += 1;
-  }
-
-  const metrics: MaterializeMetrics = {
-    walletsConsidered: walletList.length,
-    blockTrade,
-    smartTierA,
-    unknown,
-    upserted,
+  const full = await ensureDecisionsForWallets(walletList, {
     dryRun: options.dryRun,
-    ruleSetVersion,
-  };
-  log.info(metrics, 'wallet-intel materialize done');
+    env,
+    scamBlockWallets,
+  });
+
+  const { decisionsByWallet: _d, ...metrics } = full;
   return metrics;
 }
 

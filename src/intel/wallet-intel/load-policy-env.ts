@@ -25,6 +25,8 @@ const Schema = z.object({
   ruleSetVersionOverride: z.string().optional(),
   runTagger: z.boolean().default(false),
   taggerLookbackHours: z.coerce.number().int().min(1).max(24 * 90).default(168),
+  /** При mint-check дописывать решения для покупателей без строки в wallet_intel_decisions */
+  mintCheckMaterializeMissing: z.boolean().default(true),
 });
 
 export type WalletIntelEnv = z.infer<typeof Schema>;
@@ -42,6 +44,7 @@ export function loadWalletIntelEnv(): WalletIntelEnv {
     ruleSetVersionOverride: process.env.WALLET_INTEL_RULE_SET_VERSION,
     runTagger: boolEnv(process.env.WALLET_INTEL_RUN_TAGGER, false),
     taggerLookbackHours: process.env.WALLET_INTEL_TAGGER_LOOKBACK_HOURS,
+    mintCheckMaterializeMissing: boolEnv(process.env.WALLET_INTEL_MINT_CHECK_MATERIALIZE, true),
   });
   if (!parsed.success) {
     throw new Error(`wallet-intel env: ${parsed.error.message}`);
