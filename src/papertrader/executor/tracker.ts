@@ -145,10 +145,13 @@ export interface TrackerArgs {
   /** Live-oscar env (post-close tail sweep, etc.). */
   liveOscarCfg?: LiveOscarConfig;
   /**
-   * Mint list from boot reconcile: journal expected tokens but wallet raw balance was 0.
-   * When set, tracker paper-closes those opens as RECONCILE_ORPHAN (no Jupiter sell).
+   * Live: each tracker tick — SPL RPC vs journal `open`. Return mints that are still **open** in memory
+   * but have **zero** raw token balance on the wallet (sold externally, failed journal write, etc.).
+   * Tracker paper-closes them as RECONCILE_ORPHAN after optional age grace + second RPC verify.
    */
-  reconcilePaperCloseZeroMints?: () => readonly string[] | undefined;
+  reconcilePaperCloseZeroMints?: (
+    open: Map<string, OpenTrade>,
+  ) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /**
    * Live: re-check SPL balance before orphan paper-close. Return false on RPC failure or if tokens remain —
    * avoids false orphan when boot reconcile saw a transient empty wallet read.
@@ -771,7 +774,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   } = args;
 
   let reconciledOrphans = 0;
-  const orphanMints = reconcilePaperCloseZeroMints?.();
+  let orphanMints: readonly string[] | undefined;
+  if (reconcilePaperCloseZeroMints) {
+    const rawList = reconcilePaperCloseZeroMints(open);
+    orphanMints = rawList instanceof Promise ? await rawList : rawList;
+  }
   if (orphanMints?.length) {
     const oz = new Set(orphanMints);
     const graceMs = reconcileOrphanMinPositionAgeMs ?? 0;
@@ -972,7 +979,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (!(curMetric > 0)) {
-      if (ageH > cfg.timeoutHours) {
+      if (ageH >= cfg.timeoutHours) {
         const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
@@ -1262,7 +1269,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         context: 'close',
         journalAppend,
         stats,
-        ignoreBlockOnFail: escalateTimeoutVerify,
+        /** TIMEOUT must not wedge on Jupiter exit-verify defers (live-oscar); escalation still applies for other exits. */
+        ignoreBlockOnFail: escalateTimeoutVerify || exitReason === 'TIMEOUT',
       });
       if (exitPvClose.defer) {
         const n = (exitCloseVerifyDefersByMint.get(mint) ?? 0) + 1;

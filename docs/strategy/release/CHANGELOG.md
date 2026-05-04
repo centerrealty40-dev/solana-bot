@@ -8,6 +8,43 @@
 
 ---
 
+## [1.11.55] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.55`.
+
+### Live Oscar — тайм-аут и соответствие журнала кошельку
+
+- **Непрерывный orphan-reconcile:** `live/main.ts` снова передаёт в paper-трекер **`reconcilePaperCloseZeroMints(open)`** + **`verifyReconcileOrphanWalletZero`** (SPL RPC через `fetchLiveWalletSplBalancesByMint`). Каждый тик: mint в `open`, но **0** атомов на кошельке → бумажное закрытие **`RECONCILE_ORPHAN`** + `live_position_close` (раньше колбэки не передавались после удаления boot SPL reconcile — дашборд мог расходиться с цепью).
+- **Сигнатура колбэка:** принимает актуальный `Map` открытых позиций; допускает `async` (см. `tracker.ts`, `papertrader/main.ts`).
+- **TIMEOUT не блокируется exit price-verify:** для `exitReason === 'TIMEOUT'` включён **`ignoreBlockOnFail`** на pre-exit Jupiter verify (без бесконечных `live_exit_verify_defer`).
+- **NO_DATA при отсутствии цены:** порог возраста выровнен с TIMEOUT — **`ageH >= timeoutHours`** (было строгое `>`).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.54 -- src/live/main.ts src/papertrader/main.ts src/papertrader/executor/tracker.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой + **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
+## [1.11.54] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.54`.
+
+### Live Oscar — позиция 40 USD и порог кошелька 50 USD на новые входы
+
+- **`ecosystem.config.cjs` → live-oscar:** **`PAPER_POSITION_USD`** и **`LIVE_MAX_POSITION_USD` → 40** (было 20); исполняемый размер в SOL по-прежнему из Jupiter quote по USD-нотации.
+- **`LIVE_MIN_WALLET_SOL_EQUITY_USD` → 50** (было 22): блок **`buy_open`**, если оценка нативного SOL на кошельке (× `solUsd`) ниже порога; **`LIVE_MAX_STRATEGY_LOSS_USD=50`** без изменений; DCA (`isNewPosition: false`) порогом не режется.
+
+### Документация
+
+- **`docs/strategy/specs/W8.0_live_oscar_trading_bot.md`** §3.3–§3.4 (примеры X / 2X / минимальный SOL-equity).
+- **`docs/strategy/specs/W8.0_phase5_risk_capital_gates_spec.md`** §3.1 — явная строка про **`LIVE_MIN_WALLET_SOL_EQUITY_USD`**.
+
+### Откат
+
+- В **`ecosystem.config.cjs`** для **`live-oscar`:** вернуть **`PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD`** к **20**, **`LIVE_MIN_WALLET_SOL_EQUITY_USD`** к **22** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`** (после **`pm2 flush live-oscar`** по политике ops).
+
+---
+
 ## [1.11.53] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.53`.

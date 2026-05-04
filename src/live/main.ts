@@ -32,8 +32,13 @@ import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from 
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
+import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
+import type { OpenTrade } from '../papertrader/types.js';
 
 const log = pino({ name: 'live-oscar' });
+
+/** Skip orphan RECONCILE_ORPHAN right after `entryTs` (RPC / indexer lag vs fresh buys). */
+const LIVE_ORPHAN_RECONCILE_MIN_AGE_MS = 120_000;
 
 /** Optional second `.env` fragment with `PAPER_*` baseline for parity (W8.0-p4 §3.3.1). */
 function loadOptionalInheritEnv(): void {
@@ -319,6 +324,11 @@ export async function main(): Promise<void> {
     log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
   });
 
+  const orphanReconcileLive =
+    liveCfg.strategyEnabled &&
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
+    Boolean(liveCfg.walletSecret?.trim());
+
   await paperOscarMain({
     journalAppend: () => {},
     skipPaperJsonlStore: true,
@@ -329,6 +339,28 @@ export async function main(): Promise<void> {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
     },
     livePeriodicSelfHealFactory: (ctx) => startLivePeriodicSelfHeal({ ...ctx, liveCfg }),
+
+    reconcilePaperCloseZeroMints: orphanReconcileLive
+      ? async (open: Map<string, OpenTrade>) => {
+          const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+          if (!chainMap) return undefined;
+          const orphans: string[] = [];
+          for (const mint of open.keys()) {
+            const b = chainMap.get(mint);
+            if (!b || b === 0n) orphans.push(mint);
+          }
+          return orphans.length ? orphans : undefined;
+        }
+      : undefined,
+    verifyReconcileOrphanWalletZero: orphanReconcileLive
+      ? async (mint: string) => {
+          const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+          if (!chainMap) return false;
+          const b = chainMap.get(mint);
+          return !b || b === 0n;
+        }
+      : undefined,
+    reconcileOrphanMinPositionAgeMs: orphanReconcileLive ? LIVE_ORPHAN_RECONCILE_MIN_AGE_MS : undefined,
 
     onOscarHeartbeat: ({ openPositions, closedTotal, stats, trackerClosed }) => {
       const maxBlockMs = liveCfg.liveReconcileBlockMaxMs;

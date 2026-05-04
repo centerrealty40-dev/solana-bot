@@ -62,8 +62,10 @@ export interface PapertraderMainOptions {
   liveStrategyReplay?: { open: Map<string, OpenTrade>; closed: ClosedTrade[] };
   /** Phase 7 — validated live JSONL mirror events (`live_position_*`). */
   journalLiveStrategy?: (event: Record<string, unknown>) => void;
-  /** Live: mints with journal vs wallet zero-balance mismatch at boot — tracker paper-closes as RECONCILE_ORPHAN. */
-  reconcilePaperCloseZeroMints?: () => readonly string[] | undefined;
+  /** Live: tracker tick — opens with zero on-chain SPL balance → RECONCILE_ORPHAN (see `tracker.ts`). */
+  reconcilePaperCloseZeroMints?: (
+    open: Map<string, OpenTrade>,
+  ) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** Live: SPL re-read before orphan close — avoid false orphan on transient RPC/indexer empty reads. */
   verifyReconcileOrphanWalletZero?: (mint: string) => Promise<boolean>;
   /** Optional: min age since `entryTs` before RECONCILE_ORPHAN paper-close (live integrations). */

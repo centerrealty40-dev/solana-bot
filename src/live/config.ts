@@ -90,8 +90,8 @@ const LiveOscarConfigSchema = z
     /** Minimum native SOL (whole SOL, not lamports) to allow new exposure. */
     liveMinWalletSol: z.coerce.number().positive().optional(),
     /**
-     * **Live-only**, **new positions only**: require `native_SOL × SOL/USD ≥ this` before buy_open.
-     * Optional; complements `liveMinWalletSol` when both set (both must pass).
+     * **Live-only**, **buy_open only** (новый mint): require `native_SOL × SOL/USD ≥ this` before swap.
+     * DCA adds use `isNewPosition: false` and skip this gate. Optional; complements `liveMinWalletSol` when both set (both must pass).
      */
     liveMinWalletSolEquityUsd: z.coerce.number().positive().optional(),
 

@@ -487,7 +487,7 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
-        PAPER_POSITION_USD: '20',
+        PAPER_POSITION_USD: '40',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -631,14 +631,14 @@ module.exports = {
          * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`). */
-        LIVE_MAX_POSITION_USD: '20',
+        /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по этой USD-нотации. */
+        LIVE_MAX_POSITION_USD: '40',
         LIVE_MAX_OPEN_POSITIONS: '5',
         /** Потолок совокупного убытка по стратегии на кошельке (live risk); ≠ односделочный SL. */
         LIVE_MAX_STRATEGY_LOSS_USD: '50',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
-        /** Live-only новые входы: стоимость нативного SOL на кошельке (× SOL/USD) должна быть ≥ этого USD. */
-        LIVE_MIN_WALLET_SOL_EQUITY_USD: '22',
+        /** Live-only, только **новый** buy_open: нативный SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется. */
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '50',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
