@@ -122,6 +122,8 @@ let rpcBillableJob = 0;
 let geckoHttpJob = 0;
 let tickRpcCapJob = Infinity;
 let lastGeckoThrottleAtMs = 0;
+/** Предупреждение раз на UTC-день: rpcCallsDay в state выше effMax (часто после снижения SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY без сброса state). */
+let lastWarnedRpcBudgetMismatchDay = '';
 
 function log(level, message, meta = {}) {
   const entry = {
@@ -225,6 +227,17 @@ function getState() {
   if (!s.rpcByLane || typeof s.rpcByLane !== 'object') s.rpcByLane = {};
   for (const l of LANES) {
     if (typeof s.rpcByLane[l] !== 'number') s.rpcByLane[l] = 0;
+  }
+  const effMaxRpc = maxRpcPerDayEffective();
+  if (s.day === key && s.rpcCallsDay > effMaxRpc && lastWarnedRpcBudgetMismatchDay !== key) {
+    lastWarnedRpcBudgetMismatchDay = key;
+    log('warn', 'orch rpcCallsDay exceeds effective daily RPC budget (jobs will skip until UTC day rollover or adjust state / raise SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY)', {
+      rpcCallsDay: s.rpcCallsDay,
+      effectiveMaxRpcApprox: effMaxRpc,
+      maxQuicknodeCreditsPerDay: MAX_QN_CREDITS_DAY,
+      creditsPerRpcAssumed: QN_CREDITS_PER_RPC,
+      reserveRpcPct: RESERVE_RPC_PCT,
+    });
   }
   return s;
 }
