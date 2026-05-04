@@ -19,11 +19,23 @@ function walletPubkey58(cfg: LiveOscarConfig): string | null {
   }
 }
 
+/**
+ * `getTokenAccountsByOwner` JSON-RPC `result` is normally `{ context, value: [...] }`;
+ * some gateways may return a bare array. Normalize to the account entry list.
+ */
+function tokenAccountEntriesFromOwnerRpcResult(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { value?: unknown }).value)) {
+    return (raw as { value: unknown[] }).value;
+  }
+  return [];
+}
+
 /** Merge parsed token accounts (raw amount atoms) by mint. */
 function parseTokenAccountsRpcValue(raw: unknown): Map<string, bigint> {
   const out = new Map<string, bigint>();
-  if (!Array.isArray(raw)) return out;
-  for (const entry of raw) {
+  const entries = tokenAccountEntriesFromOwnerRpcResult(raw);
+  for (const entry of entries) {
     if (typeof entry !== 'object' || entry === null) continue;
     const acc = (entry as { account?: { data?: unknown } }).account;
     const data = acc?.data;
@@ -85,4 +97,9 @@ export async function fetchLiveWalletSplBalancesByMint(
   cfg: LiveOscarConfig,
 ): Promise<Map<string, bigint> | null> {
   return fetchWalletTokenRawByMint(cfg, 'confirmed');
+}
+
+/** Tests / diagnostics: parse `getTokenAccountsByOwner` `result` after unwrap. */
+export function parseTokenBalancesFromGetTokenAccountsByOwnerResult(result: unknown): Map<string, bigint> {
+  return parseTokenAccountsRpcValue(result);
 }

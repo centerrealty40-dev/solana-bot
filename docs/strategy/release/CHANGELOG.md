@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.49] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.49`.
+
+### Live — критический фикс: SPL балансы кошелька с QuickNode / Solana RPC
+
+- **`fetchLiveWalletSplBalancesByMint`** (`reconcile-live.ts`): ответ **`getTokenAccountsByOwner`** имеет вид **`{ context, value: [...] }`**, а парсер ожидал голый массив → карта балансов была **пустой**.
+- Следствие: **`sell_full`** не подставлял **полный on-chain raw**, оставался только **USD-math** (недопродажа крупного хвоста); **`live_post_close_tail`** получал **`zero_balance`** при реальном остатке на кошельке.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.48 -- src/live/reconcile-live.ts tests/live-reconcile-rpc-parse.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.48] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.48`.
