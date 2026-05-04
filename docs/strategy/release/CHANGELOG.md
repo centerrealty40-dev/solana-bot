@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.62] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.62`.
+
+### Процесс — норматив: атомарность изменений кода и зелёный CI
+
+- **[`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md):** §**4.2** — как вносить правки в TypeScript/контракты модулей, чтобы **`npm run typecheck`** на GitHub совпадал с локальной практикой; VPS (`git pull` без «грязного» `src/`), откат; явный антипаттерн «только потребитель без типов в репо» (ошибки вида `LiveBuyIncreaseDeny` / `increaseDeny`).
+- **[`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md):** инвариант **I9**; §**9.4** — чеклист TS перед push/merge.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.61 -- docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md docs/strategy/release/RELEASE_OPERATING_MODEL.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.61] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.61`.
