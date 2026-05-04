@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.76] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.76`.
+
+### Уточнение — вывод установщика crontab
+
+- Убран повторный дамп блока в конце `install-detective-data-plane-salpha.sh` (проверка: `sudo -u salpha crontab -l`).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.75 -- scripts/cron/install-detective-data-plane-salpha.sh`**.
+
+---
+
 ## [1.11.75] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.75`.

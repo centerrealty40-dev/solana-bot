@@ -44,5 +44,4 @@ crontab "$TMP"
 rm -f "$TMP"
 EOSCRIPT
 
-echo "[ok] detective data-plane cron installed for user $U"
-sudo -u "$U" crontab -l | sed -n '/# SA_ALPHA_DP_BEGIN/,/# SA_ALPHA_DP_END/p'
+echo "[ok] detective data-plane cron installed for user $U (markers: # SA_ALPHA_DP_BEGIN … # SA_ALPHA_DP_END)"
