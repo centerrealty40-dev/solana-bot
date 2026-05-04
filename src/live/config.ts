@@ -167,6 +167,16 @@ const LiveOscarConfigSchema = z
     livePostCloseTailSweepDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
     /** Floor USD notional hint for Jupiter when estimating microscopic tails (actual sell uses on-chain raw). */
     livePostCloseTailSweepMinUsd: z.coerce.number().min(0).max(1000).default(0.05),
+
+    /**
+     * Двухногий вход: после первого `buy_open` трекер докупает `(1 − PAPER_ENTRY_FIRST_LEG_FRACTION)×positionUsd`,
+     * если цена по котировке Jupiter в пределах ±`liveEntryScaleInCorridorPct` % к рыночному якорю первой ноги.
+     */
+    liveEntryScaleInEnabled: z.boolean().default(false),
+    liveEntryScaleInDelayMs: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+    liveEntryScaleInCorridorPct: z.coerce.number().min(0.1).max(50).default(3),
+    liveEntryScaleInMaxSwapAttempts: z.coerce.number().int().min(1).max(50).default(5),
+    liveEntryScaleInRetryBackoffMs: z.coerce.number().int().min(200).max(120_000).default(2000),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -349,6 +359,32 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 0.05;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : 0.05;
+    })(),
+
+    liveEntryScaleInEnabled: envBool(process.env.LIVE_ENTRY_SCALE_IN_ENABLED, false),
+    liveEntryScaleInDelayMs: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_DELAY_MS?.trim();
+      if (!s) return 30_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 1000 ? Math.min(n, 600_000) : 30_000;
+    })(),
+    liveEntryScaleInCorridorPct: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT?.trim();
+      if (!s) return 3;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0.1 ? Math.min(n, 50) : 3;
+    })(),
+    liveEntryScaleInMaxSwapAttempts: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS?.trim();
+      if (!s) return 5;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 1 ? Math.min(n, 50) : 5;
+    })(),
+    liveEntryScaleInRetryBackoffMs: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS?.trim();
+      if (!s) return 2000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 200 ? Math.min(n, 120_000) : 2000;
     })(),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();

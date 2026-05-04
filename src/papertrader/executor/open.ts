@@ -23,7 +23,7 @@ export interface MakeOpenArgs {
 
 export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
   const { cfg, row, lane, dex, liquidityUsd, entryTs: fixedEntryTs } = args;
-  const sizeUsd = cfg.positionUsd;
+  const sizeUsd = cfg.positionUsd * cfg.entryFirstLegFraction;
   const marketPrice = Number(row.price_usd);
   const { effectivePrice } = applyEntryCosts(cfg, marketPrice, dex, sizeUsd, liquidityUsd ?? row.liquidity_usd);
   const ts = fixedEntryTs ?? Date.now();

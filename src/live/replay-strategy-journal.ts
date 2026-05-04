@@ -35,6 +35,7 @@ export function readLiveJournalLinesBounded(
 
 const POSITION_KINDS = new Set([
   'live_position_open',
+  'live_position_scale_in',
   'live_position_dca',
   'live_position_partial_sell',
   'live_position_close',
@@ -160,6 +161,7 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
   for (const row of batch) {
     switch (row.kind) {
       case 'live_position_open':
+      case 'live_position_scale_in':
       case 'live_position_dca': {
         const otRaw = row.payload.openTrade;
         if (typeof otRaw !== 'object' || otRaw === null) break;

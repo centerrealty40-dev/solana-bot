@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.56] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.56`.
+
+### Live Oscar — двухногий вход (70% + 30%) с коридором Jupiter
+
+- **Paper-слой:** `PAPER_ENTRY_FIRST_LEG_FRACTION` (default **1** у pt1-*); первая нога `OpenTrade` и Jupiter quote-verify/sim-audit по **`positionUsd × fraction`**.
+- **Live:** `LIVE_ENTRY_SCALE_IN_ENABLED` и env **`LIVE_ENTRY_SCALE_IN_*`** — после задержки вторая нога по **`buy_scale_in`**, если implied Jupiter USD/token в **±corridorPct** к **marketPrice первой ноги**; при падении свопа в коридоре — до **N** попыток с backoff; при выходе из коридора или **DCA раньше второй ноги** — отложенная докупка снимается.
+- **Журнал:** `live_position_open` (+ `timelineOpenLabelRu`, `liveScaleInParams`), `live_position_scale_in`, paper `scale_in_add`; replay **`live_position_scale_in`**.
+- **Дашборд:** таймлайн «Покупка 70% позиции» / «Докупка 30% позиции»; блок описания live-oscar в `dashboard-paper2.html`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.55 --`** затронутые пути (`src/papertrader/types.ts`, `config.ts`, `main.ts`, `executor/open.ts`, `executor/tracker.ts`, `pricing/sim-audit.ts`, `live/config.ts`, `live/main.ts`, `live/phase4-*.ts`, `live/entry-scale-in.ts`, `live/events.ts`, `live/store-jsonl.ts`, `live/replay-strategy-journal.ts`, `live/repair-missed-live-buys.ts`, `live/strategy-snapshot.ts`, `executor/store-restore.ts`, `scripts-tmp/dashboard-server.ts`, `scripts-tmp/dashboard-paper2.html`, `ecosystem.config.cjs`, `tests/papertrader-sim-audit.test.ts`, `docs/strategy/release/VERSION`, `docs/strategy/release/CHANGELOG.md`) → деплой **`v2`** + **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.55] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.55`.

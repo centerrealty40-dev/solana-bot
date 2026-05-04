@@ -31,7 +31,7 @@ export interface PositionLeg {
   marketPrice: number;
   /** Money we paid for this leg (paper) — reduces our paper bank. */
   sizeUsd: number;
-  reason: 'open' | 'dca';
+  reason: 'open' | 'dca' | 'scale_in';
   /** For dca: trigger percentage that fired (e.g. -0.07, -0.15). */
   triggerPct?: number;
 }
@@ -103,6 +103,28 @@ export interface OpenTrade {
   entryLegSignatures?: string[];
   /** W8.0-p7.1 — `simulate` skips on-chain anchor verification at boot. */
   liveAnchorMode?: 'chain' | 'simulate';
+
+  /**
+   * Live Oscar — запланированная вторая нога входа (доля позиции после первого SOL→token).
+   * Сериализуется в `live_position_*` для replay; сбрасывается при DCA раньше второй ноги или при выходе цены из коридора.
+   */
+  livePendingScaleIn?: LivePendingScaleIn | null;
+}
+
+/** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */
+export interface LivePendingScaleIn {
+  /** Рыночная цена первой ноги (USD/token) — якорь для ±corridorPct. */
+  anchorMarketUsd: number;
+  /** USD-нотация второй ноги (= positionUsd × (1 − entryFirstLegFraction)). */
+  secondLegUsd: number;
+  /** Не раньше этого времени (ms) планировать проверку коридора и своп. */
+  executeAfterTs: number;
+  corridorPct: number;
+  maxSwapAttempts: number;
+  /** Число завершённых попыток свопа (успех или провал после коридора). */
+  swapAttempts: number;
+  /** После неудачного свопа в коридоре — не пытаться раньше этого ts. */
+  nextAttemptAfterTs: number;
 }
 
 export interface CloseCosts {

@@ -137,7 +137,7 @@ async function runSolToTokenPipeline(
     mint: string;
     symbol: string;
     usdNotional: number;
-    intentKind: 'buy_open' | 'dca_add';
+    intentKind: 'buy_open' | 'dca_add' | 'buy_scale_in';
   },
 ): Promise<LiveBuyPipelineResult> {
   const mode = pipelineAnchorMode(liveCfg);
@@ -156,7 +156,7 @@ async function runSolToTokenPipeline(
 
   if (
     liveCfg.executionMode === 'live' &&
-    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add') &&
+    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add' || args.intentKind === 'buy_scale_in') &&
     isMintBlockedForAmbiguousLiveBuy(args.mint)
   ) {
     appendLiveJsonlEvent({
@@ -271,7 +271,9 @@ async function runSolToTokenPipeline(
       !liveOut.ok &&
       liveOut.signature &&
       liveOut.kind === 'confirm_timeout' &&
-      (args.intentKind === 'buy_open' || args.intentKind === 'dca_add')
+      (args.intentKind === 'buy_open' ||
+        args.intentKind === 'dca_add' ||
+        args.intentKind === 'buy_scale_in')
     ) {
       registerAmbiguousLiveBuyCooldown(args.mint);
     } else {
@@ -525,10 +527,13 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
         }
       }
 
+      const firstUsd =
+        ctx.ot.legs[0]?.sizeUsd ??
+        ctx.paperCfg.positionUsd * ctx.paperCfg.entryFirstLegFraction;
       return runSolToTokenPipeline(liveCfg, {
         mint: ctx.ot.mint,
         symbol: ctx.ot.symbol,
-        usdNotional: ctx.paperCfg.positionUsd,
+        usdNotional: firstUsd,
         intentKind: 'buy_open',
       });
     },
@@ -542,7 +547,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
         mint: args.mint,
         symbol: args.symbol,
         usdNotional: args.usdNotional,
-        intentKind: 'dca_add',
+        intentKind: args.intentKind === 'buy_scale_in' ? 'buy_scale_in' : 'dca_add',
       });
     },
     tryTokenToSolSell(args) {

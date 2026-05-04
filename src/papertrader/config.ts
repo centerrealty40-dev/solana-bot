@@ -47,6 +47,11 @@ const ConfigSchema = z.object({
   solPriceRefreshMs: z.coerce.number().int().positive().default(5 * 60_000),
   btcContextRefreshMs: z.coerce.number().int().positive().default(5 * 60_000),
   positionUsd: z.coerce.number().positive().default(100),
+  /**
+   * Доля **первой** ноги входа от `positionUsd` (1 = как раньше — полная позиция одним свопом).
+   * Live Oscar: при < 1 и `LIVE_ENTRY_SCALE_IN_ENABLED` вторая нога исполняется отдельно в трекере (коридор Jupiter к якорю первой ноги).
+   */
+  entryFirstLegFraction: z.coerce.number().min(0.01).max(1).default(1),
   btcMints: z
     .string()
     .default(
@@ -345,6 +350,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     solPriceRefreshMs: process.env.PAPER_SOL_PRICE_REFRESH_MS,
     btcContextRefreshMs: process.env.PAPER_BTC_CONTEXT_REFRESH_MS,
     positionUsd: process.env.PAPER_POSITION_USD,
+    entryFirstLegFraction: process.env.PAPER_ENTRY_FIRST_LEG_FRACTION,
     btcMints: process.env.PAPER_BTC_MINTS,
     feeBpsPumpfun: process.env.PAPER_FEE_BPS_PUMPFUN,
     feeBpsPumpswap: process.env.PAPER_FEE_BPS_PUMPSWAP,

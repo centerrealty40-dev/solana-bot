@@ -40,6 +40,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { entryLegSignatures: [...ot.entryLegSignatures] }
       : {}),
     ...(ot.liveAnchorMode ? { liveAnchorMode: ot.liveAnchorMode } : {}),
+    ...(ot.livePendingScaleIn != null ? { livePendingScaleIn: { ...ot.livePendingScaleIn } } : {}),
   };
 }
 

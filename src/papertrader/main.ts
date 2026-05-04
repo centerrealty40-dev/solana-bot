@@ -390,7 +390,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               cfg,
               mint: ot.mint,
               outMintDecimals: dec,
-              sizeUsd: cfg.positionUsd,
+              sizeUsd: cfg.positionUsd * cfg.entryFirstLegFraction,
               solUsd: getSolUsd() ?? 0,
               snapshotPriceUsd: snapshotEntryPriceUsd,
               reuseVerdict: reused?.kind === 'ok' ? reused : undefined,
@@ -467,6 +467,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           });
           if (!opened.ok) continue;
           applyLiveBuyAnchorsAfterOpen(ot, opened);
+          if (
+            liveOscar.liveCfg.liveEntryScaleInEnabled &&
+            liveOscar.liveCfg.executionMode === 'live' &&
+            cfg.entryFirstLegFraction < 1 - 1e-9
+          ) {
+            const secondUsd = cfg.positionUsd * (1 - cfg.entryFirstLegFraction);
+            if (secondUsd > 1e-6) {
+              ot.livePendingScaleIn = {
+                anchorMarketUsd: ot.legs[0]?.marketPrice ?? snapshotEntryPriceUsd,
+                secondLegUsd: secondUsd,
+                executeAfterTs: Date.now() + liveOscar.liveCfg.liveEntryScaleInDelayMs,
+                corridorPct: liveOscar.liveCfg.liveEntryScaleInCorridorPct,
+                maxSwapAttempts: liveOscar.liveCfg.liveEntryScaleInMaxSwapAttempts,
+                swapAttempts: 0,
+                nextAttemptAfterTs: 0,
+              };
+            }
+          }
         } else {
           journalAppend({
             kind: 'open',
@@ -501,10 +519,30 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         open.set(ot.mint, ot);
+        const liveOscarForJournal = resolveLiveOscar();
+        const liveOpenExtras: Record<string, unknown> =
+          liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
+            ? {
+                timelineOpenLabelRu: `Покупка ${Math.round(cfg.entryFirstLegFraction * 100)}% позиции`,
+                liveScaleInParams: {
+                  liveEntryScaleInEnabled: liveOscarForJournal.liveCfg.liveEntryScaleInEnabled,
+                  executionMode: liveOscarForJournal.liveCfg.executionMode,
+                  firstLegFraction: cfg.entryFirstLegFraction,
+                  secondLegFraction: +(1 - cfg.entryFirstLegFraction).toFixed(6),
+                  delayMs: liveOscarForJournal.liveCfg.liveEntryScaleInDelayMs,
+                  corridorPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorPct,
+                  maxSwapAttempts: liveOscarForJournal.liveCfg.liveEntryScaleInMaxSwapAttempts,
+                  retryBackoffMs: liveOscarForJournal.liveCfg.liveEntryScaleInRetryBackoffMs,
+                  corridorCheckDescription:
+                    'Jupiter SOL→token quote implied USD/token vs рыночная цена первой ноги; симметричный коридор ±corridorPct %.',
+                },
+              }
+            : {};
         opts?.journalLiveStrategy?.({
           kind: 'live_position_open',
           mint: ot.mint,
           openTrade: serializeOpenTrade(ot),
+          ...liveOpenExtras,
         });
         recordEntryTs(ot.mint, ot.entryTs);
         stats.opened++;

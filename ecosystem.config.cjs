@@ -488,6 +488,8 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
         PAPER_POSITION_USD: '40',
+        /** Первая нога входа — доля от `PAPER_POSITION_USD`; вторая нога live см. `LIVE_ENTRY_SCALE_IN_*`. */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -647,6 +649,13 @@ module.exports = {
         LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '12',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
+
+        /** Двухногий вход: вторая доля после задержки, если Jupiter в коридоре к цене первой ноги (`src/live/entry-scale-in.ts`). */
+        LIVE_ENTRY_SCALE_IN_ENABLED: '1',
+        LIVE_ENTRY_SCALE_IN_DELAY_MS: '30000',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT: '3',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
+        LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
         /** Периодический хвост на кошельке + force-close зависших open (`src/live/periodic-self-heal.ts`). */
         LIVE_PERIODIC_SELF_HEAL_MS: '1800000',

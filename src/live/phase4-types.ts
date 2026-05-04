@@ -29,7 +29,13 @@ export interface LiveOscarPhase4Discovery {
 }
 
 export interface LiveOscarPhase4Tracker {
-  trySolToTokenBuy(args: { mint: string; symbol: string; usdNotional: number }): Promise<LiveBuyPipelineResult>;
+  trySolToTokenBuy(args: {
+    mint: string;
+    symbol: string;
+    usdNotional: number;
+    /** По умолчанию `dca_add`; вторая нога входа — `buy_scale_in`. */
+    intentKind?: 'dca_add' | 'buy_scale_in';
+  }): Promise<LiveBuyPipelineResult>;
 
   tryTokenToSolSell(args: {
     mint: string;

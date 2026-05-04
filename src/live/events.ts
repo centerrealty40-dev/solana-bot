@@ -122,6 +122,15 @@ export const LivePositionOpenSchema = z.object({
   kind: z.literal('live_position_open'),
   mint: z.string().min(1).max(64),
   openTrade: z.record(z.string(), z.unknown()),
+  /** Явная подпись для таймлайна дашборда (двухногий вход). */
+  timelineOpenLabelRu: z.string().max(200).optional(),
+  liveScaleInParams: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const LivePositionScaleInSchema = z.object({
+  kind: z.literal('live_position_scale_in'),
+  mint: z.string().min(1).max(64),
+  openTrade: z.record(z.string(), z.unknown()),
 });
 
 export const LivePositionDcaSchema = z.object({
@@ -240,6 +249,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   CapitalSkipSchema,
   CapitalRotateCloseSchema,
   LivePositionOpenSchema,
+  LivePositionScaleInSchema,
   LivePositionDcaSchema,
   LivePositionPartialSellSchema,
   LivePositionCloseSchema,

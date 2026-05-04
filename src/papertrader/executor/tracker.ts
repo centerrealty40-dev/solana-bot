@@ -35,6 +35,7 @@ import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
+import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 
 const log = child('tracker');
 
@@ -1035,6 +1036,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       continue;
     }
 
+    if (livePhase4 && liveOscarCfg && ot.livePendingScaleIn) {
+      await tryLiveEntryScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        livePhase4,
+        liveOscarCfg,
+        journalAppend,
+        journalLiveStrategy,
+      });
+    }
+
     const firstPrice = ot.legs[0]?.price || ot.entryMcUsd;
     const dropFromFirstPct = curMetric / firstPrice - 1;
     const xAvg = curMetric / ot.avgEntry;
@@ -1069,6 +1083,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const lvl = dcaLevels[dcaIdx]!;
         if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
         if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
+        ot.livePendingScaleIn = null;
         const addUsd = cfg.positionUsd * lvl.addFraction;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {

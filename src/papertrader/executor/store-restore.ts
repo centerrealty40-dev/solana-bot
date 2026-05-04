@@ -84,7 +84,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
             price: Number(l.price),
             marketPrice: Number(l.marketPrice ?? l.price),
             sizeUsd: Number(l.sizeUsd),
-            reason: (l.reason ?? 'open') as 'open' | 'dca',
+            reason: (l.reason ?? 'open') as 'open' | 'dca' | 'scale_in',
             triggerPct: l.triggerPct,
           }))
         : [],
@@ -128,6 +128,35 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveAnchorMode = 'chain';
     }
     if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
+
+    const lpsi = rawPayload.livePendingScaleIn;
+    if (lpsi != null && typeof lpsi === 'object') {
+      const p = lpsi as Record<string, unknown>;
+      const anchorMarketUsd = Number(p.anchorMarketUsd);
+      const secondLegUsd = Number(p.secondLegUsd);
+      const executeAfterTs = Number(p.executeAfterTs);
+      const corridorPct = Number(p.corridorPct);
+      const maxSwapAttempts = Number(p.maxSwapAttempts);
+      if (
+        anchorMarketUsd > 0 &&
+        secondLegUsd > 0 &&
+        Number.isFinite(executeAfterTs) &&
+        corridorPct > 0 &&
+        Number.isFinite(maxSwapAttempts) &&
+        maxSwapAttempts >= 1
+      ) {
+        ot.livePendingScaleIn = {
+          anchorMarketUsd,
+          secondLegUsd,
+          executeAfterTs,
+          corridorPct,
+          maxSwapAttempts: Math.floor(maxSwapAttempts),
+          swapAttempts: Math.max(0, Math.floor(Number(p.swapAttempts ?? 0))),
+          nextAttemptAfterTs: Math.max(0, Number(p.nextAttemptAfterTs ?? 0)),
+        };
+      }
+    }
+
     return ot;
   } catch {
     return null;

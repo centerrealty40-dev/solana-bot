@@ -20,6 +20,7 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     simCredsPerCall: 30,
     simStrictBudget: true,
     positionUsd: 100,
+    entryFirstLegFraction: 1,
     priceVerifyMaxSlipBps: 400,
     ...over,
   } as PaperTraderConfig;

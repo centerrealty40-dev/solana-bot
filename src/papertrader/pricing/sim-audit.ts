@@ -151,7 +151,8 @@ export async function runOpenSimAudit(args: OpenSimAuditArgs): Promise<SimAuditS
   if (!cfg.simUseJupiterBuild) {
     return { kind: 'skipped', reason: 'no_build', ts: Date.now(), wallMs: Date.now() - t0 };
   }
-  if (!(solUsd > 0) || !Number.isFinite(cfg.positionUsd) || cfg.positionUsd <= 0) {
+  const openProbeUsd = cfg.positionUsd * cfg.entryFirstLegFraction;
+  if (!(solUsd > 0) || !Number.isFinite(openProbeUsd) || openProbeUsd <= 0) {
     return { kind: 'skipped', reason: 'sol-px-missing', ts: Date.now(), wallMs: Date.now() - t0 };
   }
 
@@ -162,7 +163,7 @@ export async function runOpenSimAudit(args: OpenSimAuditArgs): Promise<SimAuditS
 
   const quote = await fetchJupiterBuyQuoteResponse({
     mint,
-    sizeUsd: cfg.positionUsd,
+    sizeUsd: openProbeUsd,
     solUsd,
     slippageBps: cfg.priceVerifyMaxSlipBps,
     timeoutMs: quoteTimeout,

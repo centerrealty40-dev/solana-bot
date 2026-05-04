@@ -216,7 +216,12 @@ function collectRepairedBuySignatures(lines: string[], strategyId: string): Set<
     if (String(row.strategyId ?? '') !== strategyId) continue;
     if (!lineMatchesChannel(row)) continue;
     const kind = String(row.kind ?? '');
-    if (kind !== 'live_position_open' && kind !== 'live_position_dca') continue;
+    if (
+      kind !== 'live_position_open' &&
+      kind !== 'live_position_scale_in' &&
+      kind !== 'live_position_dca'
+    )
+      continue;
     const otRaw = row.openTrade;
     if (typeof otRaw !== 'object' || otRaw === null) continue;
     const o = otRaw as Record<string, unknown>;

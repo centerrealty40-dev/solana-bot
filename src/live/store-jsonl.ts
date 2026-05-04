@@ -48,6 +48,7 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'execution_skip':
       return true;
     case 'live_position_open':
+    case 'live_position_scale_in':
     case 'live_position_dca':
     case 'live_position_partial_sell':
     case 'live_position_close':

@@ -75,6 +75,17 @@ export async function main(): Promise<void> {
 
   if (
     liveCfg.strategyEnabled &&
+    liveCfg.executionMode === 'live' &&
+    paperBaseline.entryFirstLegFraction < 1 - 1e-9 &&
+    !liveCfg.liveEntryScaleInEnabled
+  ) {
+    throw new Error(
+      'live-oscar: PAPER_ENTRY_FIRST_LEG_FRACTION < 1 requires LIVE_ENTRY_SCALE_IN_ENABLED=1 (или верните долю первой ноги к 1).',
+    );
+  }
+
+  if (
+    liveCfg.strategyEnabled &&
     (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate')
   ) {
     const maxUsd = liveCfg.liveMaxPositionUsd;

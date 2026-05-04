@@ -1377,7 +1377,7 @@ function priceVerifyStatsEndpointSlice(filePath: string, windowMs: number): {
  */
 export type TimelineEvent = {
   ts: number;
-  kind: 'open' | 'dca_add' | 'partial_sell' | 'close';
+  kind: 'open' | 'dca_add' | 'scale_in_add' | 'partial_sell' | 'close';
   label: string;
   mcUsd: number | null;
   /** Spot USD/token at event time when strategy tracks price not mcap */
@@ -1499,7 +1499,11 @@ export function buildTimelineEvent(
     if (!(amountOpen > 0) && legs.length) {
       amountOpen = legs.reduce((s, l) => s + Number(l.sizeUsd ?? l.size_usd ?? 0), 0);
     }
-    const openLabel = 'Open';
+    const ruOpen =
+      typeof e.timelineOpenLabelRu === 'string' && e.timelineOpenLabelRu.trim().length
+        ? String(e.timelineOpenLabelRu).trim()
+        : null;
+    const openLabel = ruOpen ?? 'Open';
     return {
       ts,
       kind: 'open',
@@ -1512,6 +1516,31 @@ export function buildTimelineEvent(
       reason: null,
       remainingFraction: 1,
       amountUsd: amountOpen > 0 ? amountOpen : null,
+    };
+  }
+  if (kind === 'scale_in_add') {
+    const fracFull = Number(e.secondLegFractionOfFull ?? 0);
+    const pct =
+      fracFull > 0 && fracFull <= 1 ? Math.round(fracFull * 100) : Number(e.scaleInPctRounded ?? NaN);
+    const ru =
+      typeof e.timelineLabelRu === 'string' && e.timelineLabelRu.trim().length
+        ? String(e.timelineLabelRu).trim()
+        : Number.isFinite(pct) && pct > 0
+          ? `Докупка ${pct}% позиции`
+          : 'Докупка второй ноги входа';
+    const sizeUsd = Number(e.sizeUsd ?? e.size_usd ?? 0);
+    return {
+      ts,
+      kind: 'scale_in_add',
+      label: ru,
+      mcUsd: liveMc(),
+      spotPxUsd: spotPxFromMetric(),
+      sizePct: null,
+      pnlPct: null,
+      pnlUsd: null,
+      reason: 'scale_in',
+      remainingFraction: null,
+      amountUsd: sizeUsd > 0 ? sizeUsd : null,
     };
   }
   if (kind === 'dca_add') {
@@ -2137,9 +2166,51 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         totalInvestedUsd: ot.totalInvestedUsd,
         metricType,
         ...(emMc0 != null && emMc0 > 0 ? { mcUsdLive: emMc0 } : {}),
+        ...(typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
+          ? { timelineOpenLabelRu: o.timelineOpenLabelRu.trim() }
+          : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, metricType, entryRealMcUsd));
       liveTimelines.set(mint, tev ? [tev] : []);
+      continue;
+    }
+
+    if (kind === 'live_position_scale_in') {
+      const ot = (o.openTrade ?? {}) as Record<string, unknown>;
+      const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+      const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
+      const lastLeg = legsArr[legsArr.length - 1];
+      if (!lastLeg || String(lastLeg.reason ?? '') !== 'scale_in') continue;
+      const posUsd = Number(ot.totalInvestedUsd ?? 0);
+      const legUsd = Number(lastLeg.sizeUsd ?? 0);
+      const fracFull = posUsd > 0 && legUsd > 0 ? legUsd / posUsd : 0;
+
+      const syn: Record<string, unknown> = {
+        kind: 'scale_in_add',
+        ts,
+        mint,
+        marketPrice: Number(lastLeg.marketPrice ?? lastLeg.price ?? 0),
+        sizeUsd: legUsd,
+        secondLegFractionOfFull: fracFull > 0 ? +fracFull.toFixed(6) : undefined,
+        timelineLabelRu:
+          fracFull > 0
+            ? `Докупка ${Math.round(fracFull * 100)}% позиции`
+            : 'Докупка второй ноги входа',
+        totalInvestedUsd: ot.totalInvestedUsd,
+        mcUsdLive: undefined,
+      };
+      const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
+      if (tev) {
+        const arr = liveTimelines.get(mint) ?? [];
+        arr.push(tev);
+        liveTimelines.set(mint, arr);
+      }
+      const cur = om.get(mint);
+      if (cur) {
+        const tiu = Number(ot.totalInvestedUsd ?? 0);
+        if (tiu > 0) cur.totalInvestedUsd = tiu;
+        cur.remainingFraction = 1;
+      }
       continue;
     }
 
