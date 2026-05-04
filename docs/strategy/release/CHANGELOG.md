@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.80] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.80`.
+
+### Detective ledger 2M / Telegram / sigseed включён по конфигу
+
+- **`SA_QN_GLOBAL_CREDITS_PER_DAY`:** эталон **2 000 000** (detective: оркестратор, backfill, sigseed, scam-farm RPC-probe через **`sa-qn-json-rpc`**). При исчерпании — блок этих RPC до следующего UTC-дня + один **`[ALERT][detective-qn-day-cap]`** (миграция **`0020_sa_qn_global_daily_detective_alert`**, колонка **`detective_cap_alert_sent`**; выкл.: **`SA_QN_DETECTIVE_CAP_TELEGRAM=0`**).
+- **Торговые стратегии** по-прежнему **`qn-client`** / **`QUICKNODE_*`** meter — отдельный контур, detective ledger их не режет.
+- **`ecosystem.config.cjs`:** `SA_QN_GLOBAL_CREDITS_PER_DAY=2000000`, orch **850k**, backfill **350k** (≈70 % от 2M с запасом под **sigseed** в `.env`).
+- Документация **`.env.example`**, **`RUNTIME.md`**: пример включённого sigseed и согласованных потолков.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.79`** на затронутые пути; при необходимости **`ALTER TABLE sa_qn_global_daily DROP COLUMN detective_cap_alert_sent`**.
+
+---
+
 ## [1.11.79] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.79`.

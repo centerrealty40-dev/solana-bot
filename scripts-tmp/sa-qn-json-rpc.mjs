@@ -5,6 +5,7 @@
 import {
   qnCreditsPerRpc,
   qnGlobalLedgerEnabled,
+  qnGlobalNotifyDetectiveCapBlocked,
   qnGlobalRefundCredits,
   qnGlobalReserveCredits,
 } from './sa-qn-global-budget-lib.mjs';
@@ -22,6 +23,11 @@ export async function jsonRpcWithQnLedger(pool, opts) {
   if (qnGlobalLedgerEnabled()) {
     const res = await qnGlobalReserveCredits(pool, { componentId, credits });
     if (!res.ok) {
+      await qnGlobalNotifyDetectiveCapBlocked(pool, {
+        dailyCap: res.dailyCap,
+        creditsUsed: res.creditsUsed,
+        creditsRemaining: res.creditsRemaining,
+      }).catch(() => {});
       return {
         error: {
           code: 'QN_GLOBAL_DAY_CAP',

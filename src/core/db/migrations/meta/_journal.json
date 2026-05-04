@@ -141,6 +141,13 @@
       "when": 1779900000000,
       "tag": "0019_signatures_seed_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0020_sa_qn_global_daily_detective_alert",
+      "breakpoints": true
     }
   ]
 }

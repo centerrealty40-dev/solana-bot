@@ -109,6 +109,47 @@ export async function qnGlobalReserveCredits(pool, opts) {
 }
 
 /**
+ * Один ALERT в Telegram за UTC-день при блокировке detective ledger (`sa_qn_global_daily`).
+ * Не затрагивает торговые процессы (paper/live → `qn-client` / `solana-rpc-meter`).
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ dailyCap?: number, creditsUsed?: number, creditsRemaining?: number }} opts
+ */
+export async function qnGlobalNotifyDetectiveCapBlocked(pool, opts = {}) {
+  const raw = (process.env.SA_QN_DETECTIVE_CAP_TELEGRAM ?? '1').trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'no') return;
+
+  const day = utcUsageDateString();
+  const dailyCap = opts.dailyCap ?? qnGlobalDailyCapCredits();
+  const creditsUsed = Number(opts.creditsUsed) || 0;
+  const creditsRemaining = Number(opts.creditsRemaining) || 0;
+
+  const client = await pool.connect();
+  try {
+    const r = await client.query(
+      `UPDATE sa_qn_global_daily
+       SET detective_cap_alert_sent = true
+       WHERE usage_date = $1::date AND detective_cap_alert_sent = false
+       RETURNING usage_date`,
+      [day],
+    );
+    if (r.rowCount === 0) return;
+
+    const { sendTagged } = await import('../scripts/lib/telegram.mjs');
+    const msg =
+      `Smart Lottery / detective: исчерпан дневной лимит ledger QuickNode ${dailyCap.toLocaleString('en-US')} credits (UTC ${day}). ` +
+      `Использовано ≈${Math.round(creditsUsed).toLocaleString('en-US')}, остаток ${Math.round(creditsRemaining).toLocaleString('en-US')}. ` +
+      `Billable RPC через sa_qn_global_daily (оркестратор кошельков, wallet-backfill, sigseed, scam-farm RPC-probe) заблокированы до следующего UTC-дня. ` +
+      `Paper/live стратегии (qn-client, отдельный лимит QUICKNODE_* / meter) этим ledger не режутся.`;
+    await sendTagged('ALERT', 'detective-qn-day-cap', msg);
+  } catch (e) {
+    console.warn('[sa-qn-global-budget-lib] detective cap telegram failed', String(e));
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Откат резерва (ошибка RPC до успешного ответа).
  * @param {import('pg').Pool} pool
  * @param {{ componentId: string, credits: number }} opts
