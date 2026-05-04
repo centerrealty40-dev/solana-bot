@@ -1,11 +1,12 @@
 /**
  * W6.12 S03 — Sigseed: mint-scoped `getSignaturesForAddress` → pump.fun `swaps` (без stream).
  *
- *   npm run sigseed:enqueue              # лимит из SA_SIGSEED_ENQUEUE_BATCH (default 300)
+ *   npm run sigseed:enqueue              # лимит из SA_SIGSEED_ENQUEUE_BATCH (default 280)
  *   npm run sigseed:enqueue -- --from-dex=500
  *   npm run sigseed:run
  *
  * Gates: `SA_SIGSEED_ENQUEUE_ENABLED=1` (enqueue), `SA_SIGSEED_ENABLED=1` (run).
+ * Жёсткий потолок за прогон: `SA_SIGSEED_MAX_CREDITS_PER_RUN` (default 60k); мягкий дневной по компоненту — `SA_SIGSEED_MAX_CREDITS_PER_DAY` (default 400k).
  * Миграция `0019_signatures_seed_queue`.
  */
 import 'dotenv/config';
@@ -86,6 +87,10 @@ async function rpcJsonRpc(
   return j.result;
 }
 
+function creditsPerSolanaRpc(): number {
+  return envNum('QUICKNODE_CREDITS_PER_SOLANA_RPC', 30);
+}
+
 async function sigseedCreditsUsed(client: pg.PoolClient): Promise<number> {
   const res = await client.query(
     `SELECT COALESCE((by_component->>'sigseed_worker')::bigint, 0)::text AS u
@@ -125,7 +130,7 @@ async function enqueueFromDex(
   swapsCeiling: number,
   dryRun: boolean,
 ): Promise<number> {
-  const maxPerDay = envNum('SA_SIGSEED_ENQUEUE_MAX_PER_DAY', 400);
+  const maxPerDay = envNum('SA_SIGSEED_ENQUEUE_MAX_PER_DAY', 1200);
   const today = await countEnqueuedToday(client);
   const room = Math.max(0, maxPerDay - today);
   const take = Math.min(limit, room);
@@ -203,7 +208,7 @@ async function sleep(ms: number) {
 async function main() {
   const { fromDex: fromDexArg, dryRun, enqueueMode } = parseArgs();
   const enqueueLimit: number | null =
-    enqueueMode || fromDexArg !== null ? (fromDexArg ?? envNum('SA_SIGSEED_ENQUEUE_BATCH', 300)) : null;
+    enqueueMode || fromDexArg !== null ? (fromDexArg ?? envNum('SA_SIGSEED_ENQUEUE_BATCH', 280)) : null;
   const databaseUrl = process.env.DATABASE_URL || process.env.SA_PG_DSN;
   if (!databaseUrl) {
     console.error('[fatal] DATABASE_URL or SA_PG_DSN required');
@@ -265,16 +270,30 @@ async function main() {
   }
 
   const jr = await loadQnJsonRpc();
-  const maxMints = envNum('SA_SIGSEED_MAX_MINTS_PER_RUN', 25);
+  const cpRpc = creditsPerSolanaRpc();
+  /** 0 = без лимита за один запуск (не рекомендуется на проде). */
+  const maxCreditsPerRun = envNum('SA_SIGSEED_MAX_CREDITS_PER_RUN', 60_000);
+  let runCreditsBilled = 0;
+
+  const maxMints = envNum('SA_SIGSEED_MAX_MINTS_PER_RUN', 22);
   const sigPagesMax = envNum('SA_SIGSEED_SIG_PAGES_MAX', 2);
-  const maxTx = envNum('SA_SIGSEED_MAX_TX_PER_MINT', 20);
-  const rpcSleep = envNum('SA_SIGSEED_RPC_SLEEP_MS', 250);
+  const maxTx = envNum('SA_SIGSEED_MAX_TX_PER_MINT', 16);
+  const rpcSleep = envNum('SA_SIGSEED_RPC_SLEEP_MS', 380);
+
+  async function billRpc(method: string, params: unknown): Promise<unknown> {
+    if (maxCreditsPerRun > 0 && runCreditsBilled + cpRpc > maxCreditsPerRun) {
+      throw Object.assign(new Error('SIGSEED_RUN_CREDIT_CAP'), { code: 'SIGSEED_RUN_CREDIT_CAP' });
+    }
+    const out = await rpcJsonRpc(poolPg, jr, rpcUrl, method, params);
+    runCreditsBilled += cpRpc;
+    return out;
+  }
   const pumpProgram = envStr('SA_PARSER_PROGRAM_ID', PUMP_FUN_PROGRAM_ID);
   const solUsd = envNum('SA_SOL_USD_FALLBACK', 150);
   /** 0 = только глобальный ledger (не суммировать в sa-qn-budget-check); мягкий потолок компонента выкл. */
   const maxComponentCredits = (() => {
     const raw = process.env.SA_SIGSEED_MAX_CREDITS_PER_DAY;
-    if (raw === undefined || raw === '') return 120_000;
+    if (raw === undefined || raw === '') return 400_000;
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return 0;
     return Math.floor(n);
@@ -321,31 +340,40 @@ async function main() {
       const mints = await pickMintBatch(lockClient, maxMints);
       if (mints.length === 0) {
         console.log(
-          JSON.stringify({
-            ok: true,
-            component: 'sigseed-run',
-            warning: 'queue empty — run sigseed:enqueue -- --from-dex=N',
-            mints: 0,
-          }),
-          null,
-          2,
+          JSON.stringify(
+            {
+              ok: true,
+              component: 'sigseed-run',
+              warning: 'queue empty — run sigseed:enqueue -- --from-dex=N',
+              mints: 0,
+            },
+            null,
+            2,
+          ),
         );
         return;
       }
+
+      let skipSuccessSummary = false;
 
       for (const mint of mints) {
         const usedNow = await sigseedCreditsUsed(lockClient);
         if (maxComponentCredits > 0 && usedNow >= maxComponentCredits) {
           console.log(
-            JSON.stringify({
-              ok: false,
-              component: 'sigseed-run',
-              code: 'SIGSEED_COMPONENT_DAY_CAP',
-              partial: { swapsInserted, txFetched },
-            }),
-            null,
-            2,
+            JSON.stringify(
+              {
+                ok: false,
+                component: 'sigseed-run',
+                code: 'SIGSEED_COMPONENT_DAY_CAP',
+                partial: { swapsInserted, txFetched },
+                runCreditsBilled,
+                maxCreditsPerRun,
+              },
+              null,
+              2,
+            ),
           );
+          skipSuccessSummary = true;
           break;
         }
 
@@ -363,7 +391,7 @@ async function main() {
             const opts: { limit: number; before?: string } = { limit: 100 };
             if (before) opts.before = before;
 
-            const sigChunk = (await rpcJsonRpc(poolPg, jr, rpcUrl, 'getSignaturesForAddress', [
+            const sigChunk = (await billRpc('getSignaturesForAddress', [
               mint,
               opts,
             ])) as Array<{ signature?: string; err?: unknown }> | null;
@@ -377,7 +405,7 @@ async function main() {
               const sig = row.signature;
               if (!sig || row.err) continue;
 
-              const txJson = (await rpcJsonRpc(poolPg, jr, rpcUrl, 'getTransaction', [
+              const txJson = (await billRpc('getTransaction', [
                 sig,
                 { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 },
               ])) as TxJsonParsed | null;
@@ -413,39 +441,70 @@ async function main() {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code) : '';
+          if (code === 'SIGSEED_RUN_CREDIT_CAP') {
+            await lockClient.query(
+              `UPDATE signatures_seed_queue SET status = 'pending', error_message = $2, last_run_at = now() WHERE mint = $1`,
+              [mint, 'SIGSEED_RUN_CREDIT_CAP'],
+            );
+            console.log(
+              JSON.stringify(
+                {
+                  ok: false,
+                  component: 'sigseed-run',
+                  code: 'SIGSEED_RUN_CREDIT_CAP',
+                  runCreditsBilled,
+                  maxCreditsPerRun,
+                  partial: { swapsInserted, txFetched },
+                },
+                null,
+                2,
+              ),
+            );
+            skipSuccessSummary = true;
+            break;
+          }
           await lockClient.query(
             `UPDATE signatures_seed_queue SET status = 'error', error_message = $2, last_run_at = now() WHERE mint = $1`,
             [mint, msg.slice(0, 2000)],
           );
           if (code === 'QN_GLOBAL_DAY_CAP') {
             console.log(
-              JSON.stringify({
-                ok: false,
-                component: 'sigseed-run',
-                code: 'QN_GLOBAL_DAY_CAP',
-                partial: { swapsInserted, txFetched },
-              }),
-              null,
-              2,
+              JSON.stringify(
+                {
+                  ok: false,
+                  component: 'sigseed-run',
+                  code: 'QN_GLOBAL_DAY_CAP',
+                  partial: { swapsInserted, txFetched },
+                  runCreditsBilled,
+                  maxCreditsPerRun,
+                },
+                null,
+                2,
+              ),
             );
+            skipSuccessSummary = true;
             break;
           }
         }
       }
 
-      console.log(
-        JSON.stringify(
-          {
-            ok: true,
-            component: 'sigseed-run',
-            mints: mints.length,
-            txFetched,
-            swapsInserted,
-          },
-          null,
-          2,
-        ),
-      );
+      if (!skipSuccessSummary) {
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              component: 'sigseed-run',
+              mints: mints.length,
+              txFetched,
+              swapsInserted,
+              runCreditsBilled,
+              maxCreditsPerRun,
+            },
+            null,
+            2,
+          ),
+        );
+      }
     } finally {
       await lockClient.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]).catch(() => {});
     }

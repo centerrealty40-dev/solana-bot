@@ -16,6 +16,7 @@ import {
 } from './pricing.js';
 import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
 import { verifyEntryPrice } from './pricing/price-verify.js';
+import { resolveTpRegimeForOpen } from './pricing/tp-regime.js';
 import { runOpenSimAudit } from './pricing/sim-audit.js';
 import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impulse-confirm.js';
 import {
@@ -475,6 +476,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           if (Number.isFinite(d0) && d0 >= 0 && d0 <= 24) tokenDecimals = Math.floor(d0);
         }
         ot.tokenDecimals = tokenDecimals;
+
+        await resolveTpRegimeForOpen(cfg, ot);
 
         const liveOscar = resolveLiveOscar();
         if (liveOscar) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Идемпотентно добавляет в crontab пользователя salpha блок задач контура детектива
-# без стрима: enqueue → wallet-backfill:pilot → funding → (опц.) sigseed → scam-farm → отчёты ledger.
+# без стрима: enqueue → wallet-backfill:pilot → funding → sigseed (ежечасно) → scam-farm → отчёты ledger.
 #
 # Запуск на VPS (после git pull):
 #   sudo bash /opt/solana-alpha/scripts/cron/install-detective-data-plane-salpha.sh
@@ -37,8 +37,8 @@ SHELL=/bin/bash
 15 4 * * * cd $ROOT && npm run scam-farm:detect >> $ROOT/data/logs/scam-farm-detect-cron.log 2>&1
 5 */6 * * * cd $ROOT && npm run sa-qn-global-report >> $ROOT/data/logs/sa-qn-global-report.log 2>&1
 0 4 * * * cd $ROOT && npm run sa-qn-budget-check >> $ROOT/data/logs/sa-qn-budget-check.log 2>&1
-32 3 * * * cd $ROOT && SA_SIGSEED_ENQUEUE_ENABLED=1 npm run sigseed:enqueue >> $ROOT/data/logs/sigseed-enqueue.log 2>&1
-48 3 * * * cd $ROOT && SA_SIGSEED_ENABLED=1 npm run sigseed:run >> $ROOT/data/logs/sigseed-run.log 2>&1
+8 * * * * cd $ROOT && SA_SIGSEED_ENQUEUE_ENABLED=1 npm run sigseed:enqueue >> $ROOT/data/logs/sigseed-enqueue.log 2>&1
+18 * * * * cd $ROOT && SA_SIGSEED_ENABLED=1 npm run sigseed:run >> $ROOT/data/logs/sigseed-run.log 2>&1
 # SA_ALPHA_DP_END
 EOF
 

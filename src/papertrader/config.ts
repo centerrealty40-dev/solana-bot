@@ -198,6 +198,15 @@ const ConfigSchema = z.object({
    */
   tpGridFirstRungRetraceMinPnlPct: z.coerce.number().min(0).max(0.5).default(0),
 
+  /** Paper fork: метка режима по пути цены в PG `pair_snapshots` при открытии → fork TP-grid. */
+  tpRegimeEnabled: z.boolean().default(false),
+  tpRegimeLookbackMin: z.coerce.number().int().positive().default(720),
+  tpRegimeMinSamples: z.coerce.number().int().min(1).default(3),
+  tpRegimeDownNetPct: z.coerce.number().default(-5),
+  tpRegimeUpNetPct: z.coerce.number().default(5),
+  tpRegimeSidewaysAbsNetPct: z.coerce.number().nonnegative().default(3),
+  tpRegimeSidewaysMinRangePct: z.coerce.number().nonnegative().default(15),
+
   followupOffsetsMinSpec: z.string().default('30,60,120'),
 
   contextSwapsEnabled: z.boolean().default(true),
@@ -451,6 +460,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     tpGridStepPnl: process.env.PAPER_TP_GRID_STEP_PNL,
     tpGridSellFraction: process.env.PAPER_TP_GRID_SELL_FRACTION,
     tpGridFirstRungRetraceMinPnlPct: process.env.PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
+    tpRegimeEnabled: envBool(process.env.PAPER_TP_REGIME_ENABLED, false),
+    tpRegimeLookbackMin: process.env.PAPER_TP_REGIME_LOOKBACK_MIN,
+    tpRegimeMinSamples: process.env.PAPER_TP_REGIME_MIN_SAMPLES,
+    tpRegimeDownNetPct: process.env.PAPER_TP_REGIME_DOWN_NET_PCT,
+    tpRegimeUpNetPct: process.env.PAPER_TP_REGIME_UP_NET_PCT,
+    tpRegimeSidewaysAbsNetPct: process.env.PAPER_TP_REGIME_SIDEWAYS_ABS_NET_PCT,
+    tpRegimeSidewaysMinRangePct: process.env.PAPER_TP_REGIME_SIDEWAYS_MIN_RANGE_PCT,
     followupOffsetsMinSpec: process.env.PAPER_FOLLOWUP_OFFSETS_MIN,
     contextSwapsEnabled: envBool(process.env.PAPER_CONTEXT_SWAPS, true),
     contextSwapsLimit: process.env.PAPER_CONTEXT_SWAPS_LIMIT,

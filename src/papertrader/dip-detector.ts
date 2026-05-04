@@ -3,7 +3,8 @@ import { db } from '../core/db/client.js';
 import type { PaperTraderConfig } from './config.js';
 import type { DipContext, SnapshotCandidateRow } from './types.js';
 
-function sourceSnapshotTable(source: string): string | null {
+/** Имя таблицы PG-снимков по `pair_snapshots` для источника пула (dip / tp-regime). */
+export function sourceSnapshotTable(source: string): string | null {
   if (source === 'raydium') return 'raydium_pair_snapshots';
   if (source === 'meteora') return 'meteora_pair_snapshots';
   if (source === 'orca') return 'orca_pair_snapshots';

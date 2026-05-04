@@ -38,7 +38,7 @@ const EMPTY_METRICS: OpenTrade['entryMetrics'] = {
   bcProgress: 0,
 };
 
-interface Anchor {
+export interface Anchor {
   ts: number;
   p: number;
 }
@@ -60,7 +60,7 @@ function flag(name: string): boolean {
   return process.argv.includes(name);
 }
 
-function priceAt(anchors: Anchor[], t: number): number {
+export function priceAt(anchors: Anchor[], t: number): number {
   if (anchors.length === 0) return 0;
   if (t <= anchors[0].ts) return anchors[0].p;
   const last = anchors[anchors.length - 1];
@@ -214,7 +214,7 @@ interface SimResult {
 /**
  * One synchronous tracker step — mirrors `tracker.ts` order (minus network / appendEvent).
  */
-function simStep(args: {
+export function simStep(args: {
   cfg: PaperTraderConfig;
   ot: OpenTrade;
   curMetric: number;

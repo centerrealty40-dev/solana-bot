@@ -38,6 +38,24 @@ export interface PositionLeg {
   triggerPct?: number;
 }
 
+/** Paper TP-grid regime fork — метка по статистике цены в PG snapshots до входа. */
+export type TpRegime = 'unknown' | 'up' | 'down' | 'sideways';
+
+/** Переопределения глобального TP-grid для конкретного открытия (см. `tp-regime.ts`). */
+export interface TpGridOverrides {
+  gridStepPnl?: number;
+  gridSellFraction?: number;
+  gridMaxRungs?: number;
+  gridFirstRungRetraceMinPnlPct?: number;
+}
+
+export interface TpRegimeFeatures {
+  netMovePct: number;
+  rangePct: number;
+  sampleCount: number;
+  table: string | null;
+}
+
 export interface PartialSell {
   ts: number;
   /** EFFECTIVE sell price (with sell costs applied). */
@@ -50,6 +68,13 @@ export interface PartialSell {
   grossProceedsUsd: number;
   pnlUsd: number;
   grossPnlUsd: number;
+  /**
+   * Live: gross SOL credited by swap (lamports), from confirmed tx meta when available.
+   * When set with `proceedsUsdSource === 'chain_sol'`, proceedsUsd/pnlUsd use SOL×spot vs cost slice.
+   */
+  solProceedsLamports?: string;
+  /** `chain_sol` = lamports из подтверждённой tx meta; `jupiter_quote` = outAmount котировки; `model` = только снимок/applyExitCosts. */
+  proceedsUsdSource?: 'chain_sol' | 'jupiter_quote' | 'model';
 }
 
 export interface OpenTrade {
@@ -111,6 +136,11 @@ export interface OpenTrade {
    * Сериализуется в `live_position_*` для replay; сбрасывается при DCA раньше второй ноги или при выходе цены из коридора.
    */
   livePendingScaleIn?: LivePendingScaleIn | null;
+
+  /** TP-grid regime + overrides — заполняется при `PAPER_TP_REGIME_ENABLED` на открытии. */
+  tpRegime?: TpRegime;
+  tpRegimeFeatures?: TpRegimeFeatures;
+  tpGridOverrides?: TpGridOverrides;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */

@@ -27,6 +27,7 @@ import type {
 import type { DexSource } from '../papertrader/types.js';
 import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
 import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
+import { fetchConfirmedSwapSolProceedsLamports } from './swap-tx-sol-proceeds.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import {
   clearLiveBuyCooldown,
@@ -289,6 +290,8 @@ async function runSolToTokenPipeline(
 export type LiveTokenToSolPipelineResult = {
   ok: boolean;
   wsolOutLamports?: bigint;
+  /** Откуда взяты lamports для учёта partial/full sell. */
+  solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
   txSignature?: string | null;
 };
 
@@ -456,7 +459,11 @@ async function runTokenToSolPipeline(
       unitsConsumed: sim.unitsConsumed ?? null,
     });
     notifyLiveExecutionSimOk();
-    return { ok: true, wsolOutLamports: wsolOut ?? undefined };
+    return {
+      ok: true,
+      wsolOutLamports: wsolOut ?? undefined,
+      solProceedsSource: wsolOut != null && wsolOut > 0n ? 'jupiter_quote' : undefined,
+    };
   }
 
   const liveOut = await liveSendSignedSwapPipeline({
@@ -467,10 +474,28 @@ async function runTokenToSolPipeline(
   if (liveCfg.executionMode === 'live' && ok) {
     clearLiveBuyCooldown(args.mint);
   }
+
+  let outLamports: bigint | undefined;
+  let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
+  if (ok && liveCfg.executionMode === 'live' && liveOut.ok && liveOut.signature) {
+    const chain = await fetchConfirmedSwapSolProceedsLamports(liveCfg, liveOut.signature, pk);
+    if (chain != null && chain > 0n) {
+      outLamports = chain;
+      solProceedsSource = 'confirmed_meta';
+    }
+  }
+  if (outLamports == null && ok) {
+    const q = wsolOut ?? undefined;
+    if (q != null && q > 0n) {
+      outLamports = q;
+      solProceedsSource = 'jupiter_quote';
+    }
+  }
+
   return {
     ok,
-    wsolOutLamports:
-      liveCfg.executionMode === 'live' ? undefined : ok ? wsolOut ?? undefined : undefined,
+    wsolOutLamports: ok ? outLamports : undefined,
+    solProceedsSource: ok ? solProceedsSource : undefined,
     txSignature: liveOut.ok ? liveOut.signature : liveOut.signature ?? undefined,
   };
 }
@@ -551,7 +576,11 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
       });
     },
     tryTokenToSolSell(args) {
-      return runTokenToSolPipeline(liveCfg, args).then((r) => r.ok);
+      return runTokenToSolPipeline(liveCfg, args).then((r) => ({
+        ok: r.ok,
+        solProceedsLamports: r.wsolOutLamports,
+        solProceedsSource: r.solProceedsSource,
+      }));
     },
   };
 }

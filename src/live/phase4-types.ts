@@ -28,6 +28,14 @@ export interface LiveOscarPhase4Discovery {
   tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<LiveBuyPipelineResult>;
 }
 
+/** Token→SOL sell: chain proceeds when `solProceedsLamports` parsed from confirmed tx (live). */
+export type LiveTokenToSolSellResult = {
+  ok: boolean;
+  solProceedsLamports?: bigint;
+  /** Совпадает с `LiveTokenToSolPipelineResult.solProceedsSource` после свопа. */
+  solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
+};
+
 export interface LiveOscarPhase4Tracker {
   trySolToTokenBuy(args: {
     mint: string;
@@ -44,7 +52,7 @@ export interface LiveOscarPhase4Tracker {
     priceUsdPerToken: number;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
-  }): Promise<boolean>;
+  }): Promise<LiveTokenToSolSellResult>;
 }
 
 export interface LiveOscarRuntimeBundle {

@@ -35,6 +35,15 @@ export interface RestoreState {
 }
 
 function mapPartialSell(p: Record<string, unknown>): PartialSell {
+  const solL =
+    typeof p.solProceedsLamports === 'string' && /^\d+$/.test(p.solProceedsLamports)
+      ? p.solProceedsLamports
+      : undefined;
+  const src = p.proceedsUsdSource;
+  const proceedsUsdSource =
+    src === 'chain_sol' || src === 'jupiter_quote' || src === 'model'
+      ? (src as PartialSell['proceedsUsdSource'])
+      : undefined;
   return {
     ts: Number(p.ts),
     price: Number(p.price),
@@ -45,6 +54,8 @@ function mapPartialSell(p: Record<string, unknown>): PartialSell {
     grossProceedsUsd: Number(p.grossProceedsUsd ?? 0),
     pnlUsd: Number(p.pnlUsd ?? 0),
     grossPnlUsd: Number(p.grossPnlUsd ?? 0),
+    ...(solL ? { solProceedsLamports: solL } : {}),
+    ...(proceedsUsdSource ? { proceedsUsdSource } : {}),
   };
 }
 
@@ -171,6 +182,42 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           nextAttemptAfterTs: Math.max(0, Number(p.nextAttemptAfterTs ?? 0)),
         };
       }
+    }
+
+    const tpReg = rawPayload.tpRegime;
+    if (tpReg === 'unknown' || tpReg === 'up' || tpReg === 'down' || tpReg === 'sideways') {
+      ot.tpRegime = tpReg;
+    }
+    const tpFeat = rawPayload.tpRegimeFeatures;
+    if (tpFeat != null && typeof tpFeat === 'object') {
+      const f = tpFeat as Record<string, unknown>;
+      ot.tpRegimeFeatures = {
+        netMovePct: Number(f.netMovePct ?? 0),
+        rangePct: Number(f.rangePct ?? 0),
+        sampleCount: Number(f.sampleCount ?? 0),
+        table: f.table != null && String(f.table).trim() ? String(f.table) : null,
+      };
+    }
+    const tpOv = rawPayload.tpGridOverrides;
+    if (tpOv != null && typeof tpOv === 'object') {
+      const g = tpOv as Record<string, unknown>;
+      const overrides: NonNullable<OpenTrade['tpGridOverrides']> = {};
+      if (g.gridStepPnl != null && Number.isFinite(Number(g.gridStepPnl))) {
+        overrides.gridStepPnl = Number(g.gridStepPnl);
+      }
+      if (g.gridSellFraction != null && Number.isFinite(Number(g.gridSellFraction))) {
+        overrides.gridSellFraction = Number(g.gridSellFraction);
+      }
+      if (g.gridMaxRungs != null && Number.isFinite(Number(g.gridMaxRungs))) {
+        overrides.gridMaxRungs = Math.floor(Number(g.gridMaxRungs));
+      }
+      if (
+        g.gridFirstRungRetraceMinPnlPct != null &&
+        Number.isFinite(Number(g.gridFirstRungRetraceMinPnlPct))
+      ) {
+        overrides.gridFirstRungRetraceMinPnlPct = Number(g.gridFirstRungRetraceMinPnlPct);
+      }
+      if (Object.keys(overrides).length > 0) ot.tpGridOverrides = overrides;
     }
 
     return ot;

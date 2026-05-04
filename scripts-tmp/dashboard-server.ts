@@ -1191,7 +1191,14 @@ function priceVerifyUiFields(pv: unknown): {
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Fixed column order on `/papertrader2` — see W8.0-p4 § «Дашборд». */
-export const DASHBOARD_PANEL_ORDER = ['live-oscar', 'pt1-oscar', 'pt1-diprunner', 'pt1-dno'] as const;
+/** Фиксированные плитки на `/papertrader2` (пятая — Oscar + TP regime fork). */
+export const DASHBOARD_PANEL_ORDER = [
+  'live-oscar',
+  'pt1-oscar',
+  'pt1-oscar-regime',
+  'pt1-diprunner',
+  'pt1-dno',
+] as const;
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -2937,7 +2944,12 @@ app.get('/api/paper2', async (_req, reply) => {
         const hasLiveMc = displayLiveMc != null;
 
         const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
-        /** Snapshots → journal spot → Jupiter (v1-style off-chain quote when PG misses the mint). */
+        /**
+         * Snapshots → Jupiter → journal spot.
+         * Journal fallback must stay last: after partial TP the last timeline spot is the sell print,
+         * not the current market — using it before Jupiter made UI PnL match «stuck at last TP» while
+         * the tracker still uses PG/Jupiter for decisions (misleading «live mcap» / token row).
+         */
         let livePx: number | null = null;
         let livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null = null;
         if (basePx) {
@@ -2946,19 +2958,19 @@ app.get('/api/paper2', async (_req, reply) => {
         }
         let livePriceStale = false;
         if (!livePx && basePx) {
-          const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
-          if (st != null) {
-            livePx = st;
-            livePriceStale = true;
-            livePxProvenance = 'journal';
-          }
-        }
-        if (!livePx && basePx) {
           const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
           if (jpx != null && jpx > 0) {
             livePx = jpx;
             livePriceStale = false;
             livePxProvenance = 'jupiter';
+          }
+        }
+        if (!livePx && basePx) {
+          const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
+          if (st != null) {
+            livePx = st;
+            livePriceStale = true;
+            livePxProvenance = 'journal';
           }
         }
         const hasLivePrice = livePx != null && livePx > 0;
