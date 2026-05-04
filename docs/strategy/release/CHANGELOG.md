@@ -8,6 +8,25 @@
 
 ---
 
+## [1.11.59] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.59`.
+
+### Discovery — guard объёма 5m vs 1h (paper + live Oscar)
+
+- **`src/papertrader/discovery/snapshot.ts`:** в выборку кандидатов добавлено поле **`volume_1h`** из парных снимков DEX.
+- **`src/papertrader/filters/snapshot-filter.ts`:** **`evaluateVol5m1hGuard`** — при **`PAPER_VOL_5M_1H_GUARD_ENABLED=1`** отсекаются строки с отсутствующим/малым **`volume_1h`** и подозрительным всплеском **`volume_5m`** относительно среднего за 5 минут из часа (**`volume_1h / 12`**), если **`volume_5m > (volume_1h/12) * PAPER_VOL_5M_SPIKE_MAX_MULT`**.
+- **`src/papertrader/config.ts`:** env **`PAPER_VOL_5M_1H_GUARD_ENABLED`**, **`PAPER_VOL_1H_MIN_USD`** (дефолт **36000**), **`PAPER_VOL_5M_SPIKE_MAX_MULT`** (дефолт **7**); выключатель guard по умолчанию **выкл.** для обратной совместимости без env.
+- **`ecosystem.config.cjs`:** guard **вкл.** для **`pt1-diprunner`**, **`pt1-oscar`**, **`pt1-dno`**, **`live-oscar`** с теми же стартовыми числами.
+- **`src/papertrader/types.ts`**, **`dip-clones.ts`:** в **`features`** журнала добавлено **`vol1h_usd`**.
+- **Тесты:** `tests/vol-5m-1h-guard.test.ts`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.58 -- src/papertrader/discovery/snapshot.ts src/papertrader/filters/snapshot-filter.ts src/papertrader/config.ts src/papertrader/types.ts src/papertrader/discovery/dip-clones.ts src/papertrader/main.ts ecosystem.config.cjs .env.example tests/fixtures/w7_8_open_sim_audit_ok.jsonl tests/vol-5m-1h-guard.test.ts tests/papertrader-dip-recovery-veto.test.ts tests/papertrader-dip-windows.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой **`v2`** + **`pm2 reload ecosystem.config.cjs --only pt1-diprunner,pt1-oscar,pt1-dno,live-oscar --update-env`** под **`salpha`** (или точечно **`PAPER_VOL_5M_1H_GUARD_ENABLED=0`** в ecosystem без отката кода).
+
+---
+
 ## [1.11.58] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.58`.

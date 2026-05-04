@@ -115,6 +115,13 @@ const ConfigSchema = z.object({
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
   discoveryReevalSec: z.coerce.number().int().min(5).max(600).default(60),
   snapshotMinBs: z.coerce.number().nonnegative().default(1.0),
+  /**
+   * Require pair snapshot `volume_5m` to be consistent with `volume_1h` (same row).
+   * Fails if hour volume missing/below floor or vol_5m exceeds (vol_1h/12)*mult (spike vs flat hour).
+   */
+  vol5m1hGuardEnabled: z.boolean().default(false),
+  vol1hMinUsd: z.coerce.number().nonnegative().default(36_000),
+  vol5mSpikeMaxMult: z.coerce.number().min(1.01).max(48).default(7),
 
   // ---- dip detector ----
   dipLookbackMin: z.coerce.number().int().positive().default(60),
@@ -394,6 +401,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,
+    vol5m1hGuardEnabled: envBool(process.env.PAPER_VOL_5M_1H_GUARD_ENABLED, false),
+    vol1hMinUsd: process.env.PAPER_VOL_1H_MIN_USD,
+    vol5mSpikeMaxMult: process.env.PAPER_VOL_5M_SPIKE_MAX_MULT,
     dipLookbackMin: process.env.PAPER_DIP_LOOKBACK_MIN,
     dipLookbackWindowsCsv: process.env.PAPER_DIP_LOOKBACK_WINDOWS_MIN ?? '',
     dipMinDropPct: process.env.PAPER_DIP_MIN_DROP_PCT,

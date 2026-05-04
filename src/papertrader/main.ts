@@ -302,6 +302,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           price_usd: d.features.price_usd,
           liquidity_usd: d.features.liq_usd,
           volume_5m: d.features.vol5m_usd,
+          volume_1h: d.features.vol1h_usd ?? 0,
           buys_5m: d.features.buys5m,
           sells_5m: d.features.sells5m,
           market_cap_usd: d.features.market_cap_usd,

@@ -237,10 +237,22 @@ module.exports = {
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
+        PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
+        PAPER_VOL_1H_MIN_USD: '36000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '3000',
 
-        PAPER_DIP_LOOKBACK_MIN: '120',
-        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
+        /**
+         * Deep Runner ≠ Oscar: отдельная гипотеза (дольше горизонт / глубже откат), не «подогнать под победителя недели».
+         * — Мин. окно дипа 180m (не 120m): меньше микро-откатов, жёстче требование к просадке.
+         * — Одна DCA на −15% (не −7% как Oscar и не двойная −10/−20): меньше наращивания в нож.
+         * — Kill −26%: компромисс между хвостами −35% и микро-циклом Oscar −14%.
+         * — TP-ladder с более высокими ступенями vs сетка Oscar +5%: даём победителям разгон.
+         * — Трейл шире / позже arm vs Oscar: ловим более длинные отскоки.
+         * — Таймаут 20h vs экспер. Oscar 4h: ставка на более медленное mean-reversion.
+         */
+        PAPER_DIP_LOOKBACK_MIN: '180',
+        PAPER_DIP_LOOKBACK_WINDOWS_MIN: '180,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-15',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
@@ -253,16 +265,15 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        PAPER_DCA_LEVELS: '-10:0.3,-20:0.3',
-        /** Было −40%: глубокие «висяки»; чуть раньше режем среднее vs двойная DCA. */
-        PAPER_DCA_KILLSTOP: '-0.35',
-        PAPER_TP_LADDER: '0.10:0.40,0.20:0.50,0.30:0.80,0.40:1.0',
+        PAPER_DCA_LEVELS: '-15:0.3',
+        PAPER_DCA_KILLSTOP: '-0.26',
+        PAPER_TP_LADDER: '0.18:0.35,0.35:0.45,0.55:0.80,0.90:1.0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
-        PAPER_TRAIL_DROP: '0.10',
-        PAPER_TRAIL_TRIGGER_X: '1.10',
-        PAPER_TIMEOUT_HOURS: '24',
+        PAPER_TRAIL_DROP: '0.15',
+        PAPER_TRAIL_TRIGGER_X: '1.14',
+        PAPER_TIMEOUT_HOURS: '20',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -366,6 +377,9 @@ module.exports = {
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
+        PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
+        PAPER_VOL_1H_MIN_USD: '36000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
@@ -399,8 +413,8 @@ module.exports = {
          * идёт через откат от сетки TP; для классического peak+trail нужен `PAPER_TRAIL_MODE=peak`.
          */
         PAPER_TRAIL_TRIGGER_X: '1.06',
-        /** Эксперимент: было 12h — даём сетке TP чуть больше времени до TIMEOUT. */
-        PAPER_TIMEOUT_HOURS: '16',
+        /** Hotfix (2026-05-04): 4h timeout для недельной проверки vs прежние 16h. */
+        PAPER_TIMEOUT_HOURS: '4',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -511,6 +525,9 @@ module.exports = {
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
+        PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
+        PAPER_VOL_1H_MIN_USD: '36000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
@@ -715,6 +732,9 @@ module.exports = {
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
+        PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
+        PAPER_VOL_1H_MIN_USD: '36000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',

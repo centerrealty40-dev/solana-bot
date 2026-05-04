@@ -19,6 +19,7 @@ function row(priceUsd: number, tokenAgeMin = 100): SnapshotCandidateRow {
     price_usd: priceUsd,
     liquidity_usd: 10_000,
     volume_5m: 1000,
+    volume_1h: 120_000,
     buys_5m: 10,
     sells_5m: 10,
     holder_count: 5000,

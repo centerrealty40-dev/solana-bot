@@ -30,6 +30,7 @@ export async function fetchSnapshotLaneCandidates(
       COALESCE(p.price_usd, 0)::float AS price_usd,
       COALESCE(p.liquidity_usd, 0)::float AS liquidity_usd,
       COALESCE(p.volume_5m, 0)::float AS volume_5m,
+      COALESCE(p.volume_1h, 0)::float AS volume_1h,
       COALESCE(p.buys_5m, 0)::int AS buys_5m,
       COALESCE(p.sells_5m, 0)::int AS sells_5m,
       COALESCE(p.market_cap_usd, p.fdv_usd, 0)::float AS market_cap_usd,

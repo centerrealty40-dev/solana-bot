@@ -67,6 +67,7 @@ function buildFeatures(
     liq_usd: +Number(row.liquidity_usd || 0).toFixed(0),
     pair_address: row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
     vol5m_usd: +Number(row.volume_5m || 0).toFixed(0),
+    vol1h_usd: +Number(row.volume_1h ?? 0).toFixed(0),
     buys5m: row.buys_5m,
     sells5m: row.sells_5m,
     buy_sell_ratio_5m: row.sells_5m > 0 ? +(row.buys_5m / row.sells_5m).toFixed(2) : null,

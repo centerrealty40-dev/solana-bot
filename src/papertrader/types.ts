@@ -250,6 +250,8 @@ export interface SnapshotCandidateRow {
   price_usd: number;
   liquidity_usd: number;
   volume_5m: number;
+  /** DEX snapshot hourly volume (USD), same source as collectors — used for 5m vs 1h consistency guard. */
+  volume_1h: number;
   buys_5m: number;
   sells_5m: number;
   market_cap_usd: number | null;
@@ -271,6 +273,8 @@ export interface SnapshotFeatures {
   /** Pool/pair address from snapshot (W7.5). */
   pair_address: string | null;
   vol5m_usd: number;
+  /** Hourly volume from pair snapshot row (USD). */
+  vol1h_usd: number;
   buys5m: number;
   sells5m: number;
   buy_sell_ratio_5m: number | null;
