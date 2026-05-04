@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.72] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.72`.
+
+### W6.12 — pilot wallet-backfill для `swaps` без стрима + расширенный doctor
+
+- **`npm run wallet-backfill:pilot`:** узкие дефолты **`SA_BACKFILL_*`**, верхняя оценка кредитов в stdout, делегирование в **`wallet-backfill-run`** (совместимо с **`--enqueue-from-wallets`**, **`--dry-run`**).
+- **`wallet-intel:doctor`:** **`swaps_last_168h`**, **`money_flows_last_168h`**, **`swaps_total`**, **`swaps_last_block_time`**, **`swaps_last_created_at`**; предупреждение при «старых» свопах.
+- **`scripts/cron/wallet-backfill-pilot-salpha.sh`**, **`deploy/RUNTIME.md`:** процедура только через **git pull**; формула кредитов; цепочка **`sa-qn-global-report` → pilot → doctor → detect**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.71`** на затронутые пути.
+
+---
+
 ## [1.11.71] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.71`.

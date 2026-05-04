@@ -44,6 +44,7 @@
     "sa-qn-global-report": "node scripts-tmp/sa-qn-global-report.mjs",
     "sa-qn-budget-check": "node scripts-tmp/sa-qn-budget-check.mjs",
     "wallet-backfill:run": "tsx src/scripts/wallet-backfill-run.ts",
+    "wallet-backfill:pilot": "tsx src/scripts/wallet-backfill-pilot.ts",
     "wallet-funding:backfill": "tsx src/scripts/wallet-funding-backfill.ts",
     "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
