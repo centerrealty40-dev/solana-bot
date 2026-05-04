@@ -84,6 +84,7 @@ scripts-tmp/_safety_*
 scripts-tmp/_jupiter_*
 scripts-tmp/_parse_*
 scripts-tmp/_sync_*
+scripts-tmp/_run_export_*
 # Allow explicitly reusable underscore-prefixed utilities:
 !scripts-tmp/_deploy-dashboard-auth.sh
 !scripts-tmp/_metrics_collectors.sql
