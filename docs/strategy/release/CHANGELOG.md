@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.75] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.75`.
+
+### Исправление — `install-detective-data-plane-salpha.sh` и crontab `salpha`
+
+- Вся сборка `crontab` выполняется под **`salpha`** (`mktemp` + `crontab`), чтобы не было `Permission denied` на временном файле.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.74 -- scripts/cron/install-detective-data-plane-salpha.sh`**.
+
+---
+
 ## [1.11.74] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.74`.
