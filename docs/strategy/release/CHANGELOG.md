@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.61] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.61`.
+
+### Сборка — `entry-scale-in` без зависимости от несинхронизированных типов Phase4
+
+- **`src/live/entry-scale-in.ts`:** убраны ссылки на **`LiveBuyIncreaseDeny`** / **`increaseDeny`** (ещё не в типах **`LiveBuyPipelineResult`** на ветке **v2**); логика повторов свопа второй ноги — как до расширения telemetry (retry + giveup с подписью таймлайна).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.60 -- src/live/entry-scale-in.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой + **`pm2 flush live-oscar && pm2 restart live-oscar --update-env`** под **`salpha`** (на **v2** без этого патча `tsc` падает).
+
+---
+
 ## [1.11.60] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.60`.

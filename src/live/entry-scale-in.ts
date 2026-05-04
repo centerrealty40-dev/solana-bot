@@ -7,55 +7,11 @@ import { jupiterQuoteBuyPriceUsd } from '../papertrader/pricing/price-verify.js'
 import { applyEntryCosts } from '../papertrader/costs.js';
 import type { OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
-import type { LiveBuyIncreaseDeny, LiveOscarPhase4Tracker } from './phase4-types.js';
+import type { LiveOscarPhase4Tracker } from './phase4-types.js';
 import { appendLiveBuyAnchorsAfterDca } from './live-buy-anchor.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { getPriorityFeeUsd } from '../papertrader/pricing/priority-fee.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
-
-function timelineRuPhase5Gate(deny: LiveBuyIncreaseDeny): string {
-  if (deny.phase !== 'phase5') return '';
-  const cr = deny.capitalSkipReason;
-  if (deny.code === 'capital_no_profitable_rotation' || cr === 'no_profitable_position_to_close') {
-    return 'Докупка отменена: не хватает свободного SOL под буфер Phase 5; не нашлось прибыльной позиции для ротации капитала.';
-  }
-  if (deny.code === 'capital_insufficient_after_rotation' || cr === 'insufficient_free_after_rotation') {
-    return 'Докупка отменена: после ротации капитала всё ещё недостаточно свободного SOL для буфера.';
-  }
-  if (deny.code === 'capital_insufficient_no_positions' || cr === 'insufficient_free_balance_no_positions') {
-    return 'Докупка отменена: открытых позиций нет, свободного SOL меньше требуемого буфера.';
-  }
-  if (deny.code === 'capital_rotation_failed' || cr === 'rotation_sim_failed') {
-    return 'Докупка отменена: не удалось исполнить продажу при ротации капитала.';
-  }
-  if (deny.code.startsWith('capital_')) {
-    return `Докупка отменена: капитальный гейт Phase 5 (${deny.code}).`;
-  }
-  return `Докупка отменена: Phase 5 заблокировала увеличение экспозиции (${deny.code}).`;
-}
-
-function timelineRuPhase4Deny(code: string): string {
-  switch (code) {
-    case 'ambiguous_buy_cooldown':
-      return 'Докупка заблокирована: кулдаун после неоднозначной покупки по этому mint.';
-    case 'strategy_disabled':
-      return 'Докупка отменена: стратегия выключена (LIVE_STRATEGY_ENABLED).';
-    case 'dry_run':
-      return 'Докупка отменена: режим dry_run.';
-    case 'execution_mode_invalid':
-      return 'Докупка отменена: недопустимый LIVE_EXECUTION_MODE.';
-    case 'swap_quote_or_build_failed':
-      return 'Докупка не выполнена: Jupiter не дал маршрут/сборку свопа для второй ноги.';
-    case 'quote_stale':
-      return 'Докупка не выполнена: котировка устарела по liveQuoteMaxAgeMs.';
-    case 'simulate_preflight_failed':
-      return 'Докупка не выполнена: симуляция транзакции не прошла.';
-    case 'swap_send_failed':
-      return 'Докупка не выполнена: отправка свопа не подтвердилась.';
-    default:
-      return `Докупка не выполнена: исполнение (${code}).`;
-  }
-}
 
 function parsePending(raw: unknown): NonNullable<OpenTrade['livePendingScaleIn']> | null {
   if (raw == null || typeof raw !== 'object') return null;
@@ -197,41 +153,8 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   });
 
   if (!buyRes.ok) {
-    const deny = buyRes.increaseDeny;
-    if (deny?.phase === 'phase5') {
-      finishCancel('live_scale_in_skipped_phase5', {
-        phase5BlockCode: deny.code,
-        capitalSkipReason: deny.capitalSkipReason,
-        inCorridor: true,
-        signedDevPct: +signedDevPct.toFixed(4),
-        diffPct: +diffPctAbs.toFixed(4),
-        corridorUpPct: pending.corridorUpPct,
-        corridorDownPct: pending.corridorDownPct,
-        timelineLabelRu: timelineRuPhase5Gate(deny),
-      });
-      return;
-    }
-    const immediatePhase4 =
-      deny?.phase === 'phase4' &&
-      ['strategy_disabled', 'dry_run', 'execution_mode_invalid'].includes(deny.code);
-    if (immediatePhase4 && deny) {
-      finishCancel('live_scale_in_skipped_phase4', {
-        phase4Code: deny.code,
-        inCorridor: true,
-        signedDevPct: +signedDevPct.toFixed(4),
-        diffPct: +diffPctAbs.toFixed(4),
-        corridorUpPct: pending.corridorUpPct,
-        corridorDownPct: pending.corridorDownPct,
-        timelineLabelRu: timelineRuPhase4Deny(deny.code),
-      });
-      return;
-    }
-
     pending.swapAttempts += 1;
     if (pending.swapAttempts >= pending.maxSwapAttempts) {
-      const tlSwap = deny
-        ? `${timelineRuPhase4Deny(deny.code)} Исчерпано ${pending.swapAttempts} попыток.`
-        : `Докупка отменена: своп второй ноги не прошёл после ${pending.swapAttempts} попыток (цена при этом была в коридоре).`;
       finishCancel('live_scale_in_swap_giveup', {
         attempts: pending.swapAttempts,
         inCorridor: true,
@@ -239,8 +162,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
         diffPct: +diffPctAbs.toFixed(4),
         corridorUpPct: pending.corridorUpPct,
         corridorDownPct: pending.corridorDownPct,
-        lastIncreaseDeny: deny,
-        timelineLabelRu: tlSwap,
+        timelineLabelRu: `Докупка отменена: своп второй ноги не прошёл после ${pending.swapAttempts} попыток (цена при этом была в коридоре).`,
       });
     } else {
       pending.nextAttemptAfterTs = now + liveOscarCfg.liveEntryScaleInRetryBackoffMs;
