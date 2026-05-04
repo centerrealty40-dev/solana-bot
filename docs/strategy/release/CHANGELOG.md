@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.74] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.74`.
+
+### Контур детектива без стрима на `v2` (sigseed в коде отсутствует)
+
+- **Явно зафиксировано в `deploy/RUNTIME.md`:** на ветке **`v2`** нет реализации **sigseed** (нет `sigseed:*`, очередей, `rpc_features`) — только документация.
+- **`scripts/cron/install-detective-data-plane-salpha.sh`:** идемпотентная установка crontab-блока **`SA_ALPHA_DP_*`** для **enqueue → `wallet-backfill:pilot` → `wallet-funding:backfill` → `scam-farm:detect` → `sa-qn-global-report` / `sa-qn-budget-check`** (UTC).
+- **`src/scripts/wallet-funding-backfill.ts`:** добавлен в git (**W6.12 S04**), уже есть **`npm run wallet-funding:backfill`**.
+
+### Откат
+
+- Удалить блок `# SA_ALPHA_DP_BEGIN` … `# SA_ALPHA_DP_END` из `crontab -u salpha -e`; **`git checkout sa-alpha-1.11.73`**.
+
+---
+
 ## [1.11.73] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.73`.
@@ -19,6 +35,23 @@
 ### Откат
 
 - **`git checkout sa-alpha-1.11.72 -- deploy/RUNTIME.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
+## [1.11.73] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.73`.
+
+### Paper Oscar A/B — TP regime по 12h снимкам + live dip «flush» guard
+
+- **`pt1-oscar-regime` (PM2):** общий env с `pt1-oscar` через `ecosystem-paper-pt1-oscar-env.cjs`; отличия — `PAPER_STRATEGY_ID`, журнал `data/paper2/pt1-oscar-regime.jsonl`, `PAPER_TP_REGIME_ENABLED=1`.
+- **Режимы:** `down` → одна ступень TP-grid, продажа 100% остатка; `sideways` → не более 2 ступеней; `up` / `unknown` → поведение как у baseline сетки.
+- **`PAPER_DIP_FLUSH_GUARD_*`:** доп. фильтр входа по короткому окну high (по умолчанию 45m, min drop −7%) — включён для **live-oscar** в ecosystem.
+- **Дашборд:** колонка `pt1-oscar-regime`, сетка тайлов `xl:grid-cols-5`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.72`** и `pm2 reload ecosystem.config.cjs --only pt1-oscar,pt1-oscar-regime,live-oscar --update-env` (или отключить новый процесс).
 
 ---
 
