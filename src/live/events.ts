@@ -211,6 +211,8 @@ export const LivePeriodicSelfHealReportSchema = z.object({
   ok: z.boolean(),
   reconcileOk: z.boolean(),
   staleOpensForced: z.number().int().nonnegative(),
+  /** Open positions past **`timeoutHours`** with **zero** on-chain SPL: paper-closed as **`RECONCILE_ORPHAN`** (dashboard/journal sync). */
+  journalWalletZeroClosed: z.number().int().nonnegative().optional(),
   tailSweepsAttempted: z.number().int().nonnegative(),
   tailSweepsOk: z.number().int().nonnegative(),
   divergentMints: z.array(z.string()).optional(),

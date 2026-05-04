@@ -504,7 +504,11 @@ async function tryExecuteTpPartialSell(args: {
   return 'ok';
 }
 
-async function closeOpenTradeReconcileOrphan(args: {
+/**
+ * Paper-close an open as **`RECONCILE_ORPHAN`** when the wallet has no SPL balance for this mint
+ * (caller confirms via boot list or on-chain read). No Jupiter sell.
+ */
+export async function trackerPaperCloseReconcileOrphan(args: {
   mint: string;
   ot: OpenTrade;
   cfg: PaperTraderConfig;
@@ -781,7 +785,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const ot = open.get(m);
       if (!ot) continue;
       if (graceMs > 0 && ot.entryTs > 0 && nowOrphan - ot.entryTs < graceMs) continue;
-      await closeOpenTradeReconcileOrphan({
+      await trackerPaperCloseReconcileOrphan({
         mint: m,
         ot,
         cfg,

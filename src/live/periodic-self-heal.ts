@@ -3,7 +3,7 @@
  */
 import type { PaperTraderConfig, TpLadderLevel } from '../papertrader/config.js';
 import type { TrackerStats, TrackerArgs } from '../papertrader/executor/tracker.js';
-import { trackerForceFullExitLive } from '../papertrader/executor/tracker.js';
+import { trackerForceFullExitLive, trackerPaperCloseReconcileOrphan } from '../papertrader/executor/tracker.js';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { getLiveMcUsd } from '../papertrader/pricing.js';
@@ -50,6 +50,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
     if (running || ctx.isTrackerBusy()) return;
     running = true;
     let staleOpensForced = 0;
+    let journalWalletZeroClosed = 0;
     let tailSweepsAttempted = 0;
     let tailSweepsOk = 0;
     let note: string | undefined;
@@ -66,6 +67,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           ok: false,
           reconcileOk: true,
           staleOpensForced,
+          journalWalletZeroClosed,
           tailSweepsAttempted,
           tailSweepsOk,
           note,
@@ -116,9 +118,28 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
       const openEntries = [...open.entries()];
       for (const [mint, ot] of openEntries) {
         const ageH = (Date.now() - ot.entryTs) / 3_600_000;
-        if (!(ageH >= stuckThresholdH)) continue;
-        const bal = chainMap.get(mint);
-        if (!bal || bal === 0n) continue;
+        const bal = chainMap.get(mint) ?? 0n;
+
+        /** Past **`PAPER_TIMEOUT_HOURS`**: if journal still shows open but wallet has no SPL, sync to closed (no Jupiter). */
+        if (ageH >= paperCfg.timeoutHours && bal === 0n) {
+          await trackerPaperCloseReconcileOrphan({
+            mint,
+            ot,
+            cfg: paperCfg,
+            open,
+            closed,
+            tpLadder: ctx.tpLadder,
+            stats: ctx.trackerStats,
+            btcCtx: ctx.btcCtx,
+            journalAppend: ctx.journalAppend,
+            journalLiveStrategy: ctx.journalLiveStrategy,
+            liveOscarCfg: liveCfg,
+          });
+          journalWalletZeroClosed++;
+          continue;
+        }
+
+        if (!(ageH >= stuckThresholdH) || bal === 0n) continue;
 
         const mcOpen = await getLiveMcUsd(
           mint,
@@ -149,6 +170,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         ok: true,
         reconcileOk: true,
         staleOpensForced,
+        journalWalletZeroClosed,
         tailSweepsAttempted,
         tailSweepsOk,
       });
@@ -159,6 +181,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         ok: false,
         reconcileOk: true,
         staleOpensForced,
+        journalWalletZeroClosed,
         tailSweepsAttempted,
         tailSweepsOk,
         note,

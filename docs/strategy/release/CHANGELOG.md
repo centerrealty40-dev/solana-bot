@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.52] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.52`.
+
+### Live — синхрон журнала/дашборда с кошельком после тайм-аута
+
+- В **`live_periodic_self_heal`** (нужен **`LIVE_PERIODIC_SELF_HEAL_MS` > 0**): если позиция **старше `PAPER_TIMEOUT_HOURS`** и по RPC **нет SPL** по этому mint → **paper-close** с **`RECONCILE_ORPHAN`** (как при boot-orphan), **без** Jupiter — убирает «зависшие» open после ручной продажи или сбоев, когда на кошельке уже **0** токенов.
+- JSONL-сводка: поле **`journalWalletZeroClosed`**.
+- Экспорт **`trackerPaperCloseReconcileOrphan`** для переиспользования того же пути закрытия.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.51 -- src/papertrader/executor/tracker.ts src/live/periodic-self-heal.ts src/live/events.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой **`v2`** по Git.
+
+---
+
 ## [1.11.51] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.51`.
