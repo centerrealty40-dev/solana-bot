@@ -11,6 +11,8 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const COVERAGE_HOURS = Number(process.env.HOURLY_COVERAGE_HOURS || 1);
 const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
+/** W6.13 P0.2 — одна строка сводки ledger в телеграм-отчёте (требует PG_URL). */
+const APPEND_QN_LEDGER = process.env.HOURLY_APPEND_QN_LEDGER === '1';
 
 const LIVE_JSONL =
   process.env.HOURLY_LIVE_JSONL ||
@@ -387,6 +389,20 @@ async function fetchWalletBalances(rpcUrl, ownerPubkey) {
   return { sol, usdc };
 }
 
+async function fetchQnLedgerSummary(pool) {
+  const { qnGlobalReadSnapshot, qnGlobalDailyCapCredits } = await import('./sa-qn-global-budget-lib.mjs');
+  const snap = await qnGlobalReadSnapshot(pool);
+  const capEnv = qnGlobalDailyCapCredits();
+  const bc = snap.byComponent && typeof snap.byComponent === 'object' ? snap.byComponent : {};
+  const top = Object.entries(bc)
+    .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))
+    .slice(0, 8)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+  const line = `UTC ${snap.usageDate}: used ${snap.creditsUsed}/${capEnv}, remaining ${snap.creditsRemaining}${top ? ` | ${top}` : ''}`;
+  return line.slice(0, 480);
+}
+
 function buildHourlyReport({
   coverage,
   orchWallets,
@@ -396,6 +412,7 @@ function buildHourlyReport({
   failBuckets,
   wallet,
   walletNote,
+  qnLedgerLine,
 }) {
   const lines = [];
   lines.push(`Hourly report · UTC ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
@@ -429,6 +446,14 @@ function buildHourlyReport({
       lines.push(`- ${k}: ${orchWallets[k] ?? 0}`);
     }
     if (orchWallets.other > 0) lines.push(`- прочие/неизв. lane: ${orchWallets.other}`);
+  }
+
+  lines.push('');
+  lines.push('QuickNode global ledger (sa_qn_global_daily):');
+  if (!qnLedgerLine) {
+    lines.push(`- (нет данных или выключено; HOURLY_APPEND_QN_LEDGER=1 + DATABASE_URL)`);
+  } else {
+    lines.push(`- ${qnLedgerLine}`);
   }
 
   lines.push('');
@@ -533,6 +558,7 @@ async function main() {
   let coverage = null;
   let orchWallets = null;
   let health = [];
+  let qnLedgerLine = null;
   let pool = null;
   const PG_URL = process.env.SA_PG_DSN || process.env.DATABASE_URL;
   if (PG_URL) {
@@ -541,6 +567,9 @@ async function main() {
       coverage = await fetchCoverage(pool);
       orchWallets = await fetchOrchestratorWalletInserts(pool);
       health = await fetchHealth(pool);
+      if (APPEND_QN_LEDGER) {
+        qnLedgerLine = await fetchQnLedgerSummary(pool);
+      }
     } catch (e) {
       console.warn('coverage/health failed:', e?.message || e);
     } finally {
@@ -561,6 +590,7 @@ async function main() {
     failBuckets,
     wallet,
     walletNote,
+    qnLedgerLine,
   });
 
   await sendTelegram(text);

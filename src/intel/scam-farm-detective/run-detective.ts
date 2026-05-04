@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import pg from 'pg';
 import { db, schema } from '../../core/db/client.js';
 import { child } from '../../core/logger.js';
 import { makeCandidateId } from './candidate-id.js';
@@ -182,11 +183,20 @@ export async function runScamFarmDetectivePass(_options: { config?: ScamFarmConf
 
   const rpcCounters: RpcCounters = { calls: 0 };
   if (c.enableRpc) {
-    for (const [, a] of aggs) {
-      if (rpcCounters.calls >= c.rpcBudget) {
-        break;
+    const probePgUrl = process.env.DATABASE_URL || process.env.SA_PG_DSN;
+    const probePool = probePgUrl ? new pg.Pool({ connectionString: probePgUrl }) : null;
+    try {
+      for (const [, a] of aggs) {
+        if (rpcCounters.calls >= c.rpcBudget) {
+          break;
+        }
+        const r = await maybeAlchemyProbes(c, [...a.participants], rpcCounters, { pgPool: probePool });
+        if (r.stoppedForDayCap) {
+          break;
+        }
       }
-      await maybeAlchemyProbes(c, [...a.participants], rpcCounters);
+    } finally {
+      await probePool?.end().catch(() => {});
     }
   }
 

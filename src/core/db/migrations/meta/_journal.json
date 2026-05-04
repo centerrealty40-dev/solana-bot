@@ -120,6 +120,20 @@
       "when": 1779600000000,
       "tag": "0016_wallet_intel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779700000000,
+      "tag": "0017_sa_qn_global_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0018_wallet_backfill_queue",
+      "breakpoints": true
     }
   ]
 }

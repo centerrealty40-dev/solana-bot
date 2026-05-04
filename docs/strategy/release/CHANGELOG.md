@@ -8,6 +8,108 @@
 
 ---
 
+## [1.11.70] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.70`.
+
+### W6.13 — операционный бюджет ~70%, резерв ~30%, наблюдаемость
+
+- **`scripts-tmp/sa-qn-global-budget-lib.mjs`:** **`auditOperationalBudgetDeclared`**, **`logOperationalBudgetWarnings`**, **`qnOperationalPoolCeilingCredits`** (доля через **`SA_QN_OPERATIONAL_POOL_PCT`**, default **70**); учёт **`SA_SIGSEED_MAX_CREDITS_PER_DAY`**, **`SA_WALLET_TRACE_MAX_CREDITS_PER_DAY`**, **`SA_BOT_ANALYZER_MAX_CREDITS_PER_DAY`**, **`SA_BACKFILL_MAX_CREDITS_PER_DAY`** / оценка при **`SA_BACKFILL_ENABLED=1`**, **`SCAM_FARM_MAX_RPC_CREDITS_PER_DAY`** или **`SCAM_FARM_RPC_BUDGET`** × кредиты при **`SCAM_FARM_ENABLE_RPC=1`**.
+- **`scripts-tmp/sa-wallet-orchestrator.mjs`**, **`wallet-backfill-run`:** предупреждения при старте при превышении целевого операционного потолка.
+- **`npm run sa-qn-budget-check`** — JSON в stdout + **`warn`** в stderr для cron.
+- **`hourly-telegram-report.mjs`:** секция ledger при **`HOURLY_APPEND_QN_LEDGER=1`** (нужен **`DATABASE_URL`** / **`SA_PG_DSN`** в окружении hourly).
+- **`scam-farm-detective` / `rpc-probe`:** при наличии **`DATABASE_URL`** billable **`getAccountInfo`** через **`jsonRpcWithQnLedger`** (`scam_farm_rpc_probe`), остановка при **`QN_GLOBAL_DAY_CAP`**.
+- **`wallet-backfill-run`:** приоритет очереди по **`metadata.seed_lane`** (enqueue + **`pickBatch`**).
+- **Тесты:** `tests/sa-qn-global-budget-lib.test.ts`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.69`** на затронутые пути; при сбоях hourly — **`HOURLY_APPEND_QN_LEDGER=0`**; при RPC detective — **`SA_QN_GLOBAL_LEDGER_ENABLED=0`** или **`SCAM_FARM_ENABLE_RPC=0`** (после согласования).
+
+---
+
+## [1.11.69] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.69`.
+
+### W6.12 S05 — операционная готовность (документация runtime)
+
+- **`deploy/RUNTIME.md`:** пример cron для **`wallet-backfill:run`** и **`wallet-funding:backfill`**, ссылка на **`sa-qn-global-report`** и спеку **W6.12 S05**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.68 -- deploy/RUNTIME.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
+## [1.11.68] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.68`.
+
+### W6.12 S04 — funding_source из money_flows
+
+- **`src/scripts/wallet-funding-backfill.ts`:** SQL-батч — первый вход **SOL** по **`money_flows`** за **`SA_FUNDING_LOOKBACK_DAYS`** → **`wallets.funding_source`** / **`funding_ts`** (только где **`funding_source IS NULL`**).
+- **npm:** **`npm run wallet-funding:backfill`**, флаг **`--dry-run`** (без **`SA_FUNDING_BACKFILL_ENABLED`**); лимит строк за прогон **`SA_FUNDING_BATCH_SIZE`**.
+
+### Откат
+
+- Обнулить поля точечным SQL только после согласования; git **`sa-alpha-1.11.67`**.
+
+---
+
+## [1.11.67] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.67`.
+
+### W6.12 S03 — общий JSON-RPC слой под глобальный ledger
+
+- **`scripts-tmp/sa-qn-json-rpc.mjs`:** **`jsonRpcWithQnLedger`** — reserve/refund кредитов + вызов RPC; **`component_id`** задаёт потребитель (**`wallet_orchestrator`**, **`wallet_backfill`**, далее **`sigseed_worker`** / **`wallet_trace_worker`** при подключении кода на VPS).
+- **`sa-wallet-orchestrator`:** billable RPC переведены на **`jsonRpcWithQnLedger`** (без дублирования логики S01).
+- **`wallet-backfill-run`:** использует тот же модуль.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.66 --`** затронутые пути; при необходимости временно **`SA_QN_GLOBAL_LEDGER_ENABLED=0`**.
+
+---
+
+## [1.11.66] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.66`.
+
+### W6.12 S02 — wallet-centric backfill
+
+- **Миграция `0018_wallet_backfill_queue`:** очередь **`wallet_backfill_queue`**.
+- **`src/intel/wallet-backfill-sol-flows.ts`:** извлечение нативных SOL transfers из **jsonParsed** tx → строки **`money_flows`**.
+- **`src/scripts/wallet-backfill-run.ts`:** прогон с лимитами **`SA_BACKFILL_*`**, интеграция **глобального ledger** (`wallet_backfill`), pump.fun **`swaps`** через **`decodePumpfunSwap`**, источник свопов **`wallet_backfill`**.
+- **npm:** **`npm run wallet-backfill:run`**; **`--enqueue-from-wallets=N`** заполняет очередь из **`wallets`**; **`--dry-run`**. Рабочий прогон только при **`SA_BACKFILL_ENABLED=1`**.
+- **Тест:** `tests/wallet-backfill-sol-flows.test.ts`.
+
+### Откат
+
+- Выключить прогон: **`SA_BACKFILL_ENABLED=0`** / не ставить cron.
+- Откат миграции: **`DROP TABLE IF EXISTS wallet_backfill_queue;`** (после согласования); git **`sa-alpha-1.11.65`**.
+
+---
+
+## [1.11.65] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.65`.
+
+### W6.12 S01 — глобальный учёт QuickNode-кредитов
+
+- **Миграция `0017_sa_qn_global_daily`:** таблица **`sa_qn_global_daily`** (`usage_date`, `credits_used`, `by_component`, `updated_at`).
+- **`scripts-tmp/sa-qn-global-budget-lib.mjs`:** резерв кредитов перед billable RPC (`FOR UPDATE`), **refund** при ошибке JSON-RPC; cap из **`SA_QN_GLOBAL_CREDITS_PER_DAY`** или fallback **`SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY`**.
+- **`sa-wallet-orchestrator`:** при **`SA_QN_GLOBAL_LEDGER_ENABLED=1`** (default) каждый успешный billable RPC списывает кредиты в ledger; код **`QN_GLOBAL_DAY_CAP`** при исчерпании дня.
+- **CLI:** **`npm run sa-qn-global-report`** (`scripts-tmp/sa-qn-global-report.mjs`).
+
+### Откат
+
+- Выключить ledger: **`SA_QN_GLOBAL_LEDGER_ENABLED=0`** → перезапуск **`sa-wallet-orchestrator`**.
+- Откат миграции: **`DROP TABLE IF EXISTS sa_qn_global_daily;`** (после согласования); git **`sa-alpha-1.11.64`** на затронутые пути.
+
+---
+
 ## [1.11.64] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.64`.

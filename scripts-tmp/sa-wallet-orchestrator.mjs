@@ -26,7 +26,10 @@ import {
   geckoDexPoolSlugsForLane,
   fireSlotKey,
   isMinuteAlignedForJob,
+  computeOrchestratorJobRpcCap,
 } from './wallet-orchestrator-lib.mjs';
+import { qnGlobalLedgerEnabled, logOperationalBudgetWarnings } from './sa-qn-global-budget-lib.mjs';
+import { jsonRpcWithQnLedger } from './sa-qn-json-rpc.mjs';
 
 const { Pool } = pg;
 
@@ -80,6 +83,15 @@ const DAILY_DEEP_HOUR_UTC = Math.max(0, Math.min(23, envNum('SA_ORCH_DAILY_DEEP_
 const HTTP_TIMEOUT_MS = Math.max(3000, envNum('SA_ORCH_HTTP_TIMEOUT_MS', 15_000));
 const MAX_RETRIES = Math.max(0, envNum('SA_ORCH_HTTP_MAX_RETRIES', 4));
 const DRY_RUN = process.env.SA_ORCH_DRY_RUN === '1';
+
+/** `lane` — раздельный дневной RPC по весам; `global` — общий остаток дня на все lane (максимум от лимита кредитов). */
+const ORCH_BUDGET_MODE =
+  envStr('SA_ORCH_BUDGET_MODE', 'lane').toLowerCase() === 'global' ? 'global' : 'lane';
+
+/** W6.12 S01/S03 — общий дневной ledger (`sa_qn_global_daily`); биллинг через `sa-qn-json-rpc.mjs`. */
+const QN_LEDGER_ENABLED = qnGlobalLedgerEnabled();
+
+logOperationalBudgetWarnings(process.env, { component: 'sa-wallet-orchestrator' });
 
 const DAEMON = process.argv.includes('--daemon');
 const RUN_ONCE = process.argv.includes('--once');
@@ -404,30 +416,32 @@ async function fetchGeckoDexPoolsPage(dexSlug, page, state) {
 }
 
 async function rpcCall(method, params, state) {
-  const maxRpc = Math.floor(MAX_QN_CREDITS_DAY / QN_CREDITS_PER_RPC);
-  if (state.rpcCallsDay + rpcBillableJob >= maxRpc) {
+  const maxRpcDay = maxRpcPerDayEffective();
+  if (state.rpcCallsDay + rpcBillableJob >= maxRpcDay) {
     throw Object.assign(new Error('ORCH_QN_DAY_CAP'), { code: 'ORCH_QN_DAY_CAP' });
   }
   if (rpcBillableJob >= tickRpcCapJob) {
     throw Object.assign(new Error('ORCH_JOB_RPC_CAP'), { code: 'ORCH_JOB_RPC_CAP' });
   }
-  const body = { jsonrpc: '2.0', id: 1, method, params };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-  try {
-    const res = await fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const j = await res.json().catch(() => ({}));
-    if (j.error) throw new Error(j.error.message || String(j.error));
-    rpcBillableJob += 1;
-    return j.result;
-  } finally {
-    clearTimeout(timeout);
+
+  const j = await jsonRpcWithQnLedger(poolPg, {
+    rpcUrl: RPC_URL,
+    componentId: 'wallet_orchestrator',
+    method,
+    params,
+    timeoutMs: HTTP_TIMEOUT_MS,
+    credits: QN_CREDITS_PER_RPC,
+  });
+  if (j.error) {
+    const er = j.error;
+    if (er && typeof er === 'object' && er.code === 'QN_GLOBAL_DAY_CAP') {
+      throw Object.assign(new Error('QN_GLOBAL_DAY_CAP'), er);
+    }
+    const msg = er && typeof er === 'object' && 'message' in er ? String(er.message) : String(er);
+    throw new Error(msg);
   }
+  rpcBillableJob += 1;
+  return j.result;
 }
 
 function extractSignerPubkeys(txJson) {
@@ -473,7 +487,12 @@ async function collectPoolWallets(poolRow, batchId, ignoreProgs, metaBase, laneR
       before = chunk[chunk.length - 1]?.signature;
       if (chunk.length < 100) break;
     } catch (e) {
-      if (e?.code === 'ORCH_JOB_RPC_CAP' || e?.code === 'ORCH_QN_DAY_CAP') throw e;
+      if (
+        e?.code === 'ORCH_JOB_RPC_CAP' ||
+        e?.code === 'ORCH_QN_DAY_CAP' ||
+        e?.code === 'QN_GLOBAL_DAY_CAP'
+      )
+        throw e;
       log('warn', 'getSignaturesForAddress failed', { pool: pool_address.slice(0, 8), err: String(e) });
       break;
     }
@@ -498,7 +517,12 @@ async function collectPoolWallets(poolRow, batchId, ignoreProgs, metaBase, laneR
         walletRows.push({ address: pk, metadata: { ...metaBase } });
       }
     } catch (e) {
-      if (e?.code === 'ORCH_JOB_RPC_CAP' || e?.code === 'ORCH_QN_DAY_CAP') throw e;
+      if (
+        e?.code === 'ORCH_JOB_RPC_CAP' ||
+        e?.code === 'ORCH_QN_DAY_CAP' ||
+        e?.code === 'QN_GLOBAL_DAY_CAP'
+      )
+        throw e;
       log('warn', 'getTransaction failed', { sig: sig?.slice(0, 12), err: String(e) });
     }
   }
@@ -523,12 +547,16 @@ async function insertWalletBatch(client, rows) {
 }
 
 function computeJobRpcCap(state, weights, laneId) {
-  const maxHard = Math.floor(MAX_QN_CREDITS_DAY / QN_CREDITS_PER_RPC);
-  const globalLeft = Math.max(0, maxHard - state.rpcCallsDay);
+  const effDay = maxRpcPerDayEffective();
+  const globalLeft = Math.max(0, effDay - state.rpcCallsDay);
   const laneBudget = laneDailyBudgetRpc(weights, laneId);
   const laneUsed = state.rpcByLane[laneId] || 0;
   const laneLeft = Math.max(0, laneBudget - laneUsed);
-  return Math.min(ORCH_MAX_RPC_PER_JOB, globalLeft, laneLeft);
+  return computeOrchestratorJobRpcCap(ORCH_BUDGET_MODE, {
+    maxPerJob: ORCH_MAX_RPC_PER_JOB,
+    effectiveDayCapRemaining: globalLeft,
+    laneRemaining: laneLeft,
+  });
 }
 
 /** @returns {Promise<boolean>} true — job реально отработал (можно помечать слот); false — пропуск без траты слота */
@@ -617,7 +645,12 @@ async function runJob(laneId, laneIdx, jobType, weights, batchId) {
       walletsUnique += walletRows.length;
       allRows.push(...walletRows);
     } catch (e) {
-      if (e?.code === 'ORCH_JOB_RPC_CAP' || e?.code === 'ORCH_QN_DAY_CAP') break;
+      if (
+        e?.code === 'ORCH_JOB_RPC_CAP' ||
+        e?.code === 'ORCH_QN_DAY_CAP' ||
+        e?.code === 'QN_GLOBAL_DAY_CAP'
+      )
+        break;
       log('warn', 'pool harvest failed', { pool: pr.pool_address.slice(0, 8), err: String(e) });
     }
   }
@@ -700,7 +733,17 @@ async function schedulerWaveBody(batchId) {
         const committed = await runJob(laneId, li, jobType, weights, batchId);
         if (committed) markSlotFired(getState(), laneId, jobType, hourUtc, utcDay);
       } catch (e) {
-        log('error', 'orch job failed', { laneId, jobType, err: String(e) });
+        const code = e?.code;
+        if (code === 'QN_GLOBAL_DAY_CAP') {
+          log('warn', 'orch job stopped global qn day cap', {
+            laneId,
+            jobType,
+            creditsRemaining: e?.creditsRemaining,
+            dailyCap: e?.dailyCap,
+          });
+        } else {
+          log('error', 'orch job failed', { laneId, jobType, err: String(e) });
+        }
       }
     }
   }
@@ -736,8 +779,10 @@ async function main() {
     statePath: statePath(),
     weightsPath: weightsPath(),
     dryRun: DRY_RUN,
+    budgetMode: ORCH_BUDGET_MODE,
     maxQnCreditsDay: MAX_QN_CREDITS_DAY,
     reserveRpcPct: RESERVE_RPC_PCT,
+    qnGlobalLedgerEnabled: QN_LEDGER_ENABLED,
   });
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
