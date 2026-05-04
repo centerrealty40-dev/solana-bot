@@ -11,7 +11,9 @@ export type ExitReason =
   /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
   | 'RECONCILE_ORPHAN'
   /** Live periodic job: force full exit + chain-sized sell, skipping exit price-verify defer loop. */
-  | 'PERIODIC_HEAL';
+  | 'PERIODIC_HEAL'
+  /** Phase 5: полный on-chain sell для освобождения SOL под новый вход (не ошибка журнала). */
+  | 'CAPITAL_ROTATE';
 export type DexId = 'pumpfun' | 'pumpswap' | 'raydium' | 'orca' | 'meteora' | 'moonshot';
 
 export interface Metrics {

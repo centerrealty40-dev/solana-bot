@@ -438,6 +438,20 @@ export async function phase5AllowIncreaseExposure(args: {
       return false;
     }
 
+    const pxForJournal = px > 0 ? px : pick.ot.avgEntry;
+    try {
+      await deps.finalizeCapitalRotatePaperClose?.(pick.mint, pxForJournal, liveCfg);
+    } catch (err) {
+      appendLiveJsonlEvent({
+        kind: 'risk_note',
+        reason: 'capital_rotate_paper_sync_failed',
+        detail: {
+          mint: pick.mint,
+          err: String((err as Error)?.message ?? err).slice(0, 240),
+        },
+      });
+    }
+
     rotatedThisTick.add(pick.mint);
 
     if (liveCfg.executionMode === 'simulate' && sellRes.wsolOutLamports != null) {

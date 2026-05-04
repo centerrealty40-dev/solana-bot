@@ -210,6 +210,7 @@ export const LiveExitVerifyDeferSchema = z.object({
       'LIQ_DRAIN',
       'RECONCILE_ORPHAN',
       'PERIODIC_HEAL',
+      'CAPITAL_ROTATE',
     ])
     .optional(),
 });

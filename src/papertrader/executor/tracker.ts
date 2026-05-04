@@ -273,10 +273,13 @@ function buildExitContext(args: {
       }
       break;
     case 'RECONCILE_ORPHAN':
-      triggerLabel = `reconcile orphan (journal expected tokens, wallet raw balance 0 at boot)`;
+      triggerLabel = `reconcile orphan (в журнале позиция ещё open, на кошельке 0 токенов по mint)`;
       break;
     case 'PERIODIC_HEAL':
       triggerLabel = `periodic self-heal (stuck open / wallet sync)`;
+      break;
+    case 'CAPITAL_ROTATE':
+      triggerLabel = `Ротация капитала (Phase 5): полный on-chain sell для освобождения SOL под новый вход — не сбой кода`;
       break;
   }
 
@@ -628,6 +631,132 @@ async function closeOpenTradeReconcileOrphan(args: {
   scheduleTailAfterLiveClose(liveOscarCfg, mint, ot.symbol, ot.tokenDecimals ?? 6, pxOrphan, ot.source);
   peakStateByMint.delete(mint);
   console.log(`[RECONCILE_ORPHAN] ${mint.slice(0, 8)} $${ot.symbol}`);
+}
+
+/**
+ * Phase 5 capital rotation: `sell_full` уже исполнен on-chain — синхронизировать память стратегии и live JSONL,
+ * чтобы дашборд не показывал ложный «RECONCILE_ORPHAN» на следующем тике.
+ */
+export async function finalizeLiveCapitalRotatePaperClose(args: {
+  cfg: PaperTraderConfig;
+  mint: string;
+  /** USD/token, как при ранжировании ротации (lastObserved / avgEntry). */
+  marketSellPx: number;
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+  stats: TrackerStats;
+  tpLadder: TpLadderLevel[];
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  btcCtx: TrackerArgs['btcCtx'];
+  liveOscarCfg?: LiveOscarConfig;
+}): Promise<boolean> {
+  const {
+    cfg,
+    mint,
+    marketSellPx,
+    open,
+    closed,
+    stats,
+    tpLadder,
+    journalAppend,
+    journalLiveStrategy,
+    btcCtx,
+    liveOscarCfg,
+  } = args;
+  const ot = open.get(mint);
+  if (!ot) return false;
+  const marketSell =
+    marketSellPx > 0
+      ? marketSellPx
+      : ot.lastObservedPriceUsd ?? ot.avgEntryMarket ?? ot.avgEntry;
+  if (!(marketSell > 0)) return false;
+
+  const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+  if (investedRemaining <= 1e-6) {
+    open.delete(mint);
+    peakStateByMint.delete(mint);
+    clearExitCloseDeferForMint(mint);
+    clearExitPartialDeferForMint(mint);
+    return true;
+  }
+
+  const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+  const { effectivePrice: effectiveSell } = applyExitCosts(
+    cfg,
+    marketSell,
+    ot.dex,
+    Math.max(1, investedRemaining),
+    null,
+  );
+  const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+  const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+  const perTxClose = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+  const ct = buildClosedTrade({
+    cfg,
+    ot,
+    marketSell,
+    effectiveSell,
+    exitReason: 'CAPITAL_ROTATE',
+    ageH,
+    networkFeeUsdPerTx: perTxClose,
+  });
+  const xAvg = ot.avgEntry > 0 ? marketSell / ot.avgEntry : 0;
+  const exitContextMain = buildExitContext({
+    cfg,
+    ot,
+    closePnlPct: ct.pnlPct,
+    ageH,
+    exitReason: 'CAPITAL_ROTATE',
+    curMetric: marketSell,
+    xAvg,
+    tpLadder,
+  });
+  ct.exitContext = exitContextMain;
+
+  clearExitCloseDeferForMint(mint);
+  clearExitPartialDeferForMint(mint);
+  open.delete(mint);
+  closed.push(ct);
+  if (stats.closed.CAPITAL_ROTATE != null) stats.closed.CAPITAL_ROTATE++;
+
+  const mcUsdLive_close = await getLiveMcUsd(
+    mint,
+    ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+  );
+  const liqWatchExit = await buildOptionalLiqWatchCloseStamp(cfg, ot);
+  journalAppend({
+    kind: 'close',
+    ...ct,
+    peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+    btc_exit: btcCtx(),
+    exit_market_price: marketSell,
+    exit_effective_price: effectiveSell,
+    exit_swaps: exitSwaps,
+    mcUsdLive: mcUsdLive_close,
+    priorityFee: pfClose,
+    exitContext: exitContextMain,
+    capitalRotate: true,
+    ...(liqWatchExit ? { liqWatch: liqWatchExit } : {}),
+  });
+  journalLiveStrategy?.({
+    kind: 'live_position_close',
+    mint,
+    closedTrade: serializeClosedTrade(ct),
+  });
+  scheduleTailAfterLiveClose(
+    liveOscarCfg,
+    mint,
+    ot.symbol,
+    ot.tokenDecimals ?? 6,
+    marketSell,
+    ot.source,
+  );
+  peakStateByMint.delete(mint);
+  console.log(
+    `[CAPITAL_ROTATE] ${mint.slice(0, 8)} $${ot.symbol} pnl_net=${ct.pnlPct >= 0 ? '+' : ''}${ct.pnlPct.toFixed(1)}%`,
+  );
+  return true;
 }
 
 /**

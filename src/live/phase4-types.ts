@@ -57,4 +57,13 @@ export interface LiveOscarRuntimeBundle {
 export interface LiveOscarStrategyDeps {
   getOpen: () => Map<string, OpenTrade>;
   getClosed: () => ClosedTrade[];
+  /**
+   * После успешного `sell_full` в ротации капитала — синхронизировать `open`/`closed` и `live_position_close`
+   * (иначе трекер позже закроет как RECONCILE_ORPHAN).
+   */
+  finalizeCapitalRotatePaperClose?: (
+    mint: string,
+    marketSellPx: number,
+    liveCfg: LiveOscarConfig,
+  ) => Promise<void>;
 }

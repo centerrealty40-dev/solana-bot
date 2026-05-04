@@ -30,7 +30,11 @@ import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js'
 import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
-import { trackerTick, type TrackerStats } from './executor/tracker.js';
+import {
+  trackerTick,
+  finalizeLiveCapitalRotatePaperClose,
+  type TrackerStats,
+} from './executor/tracker.js';
 import { reconcileOpenTradeDcaFromLegs } from './executor/dca-state.js';
 import { loadStore } from './executor/store-restore.js';
 import type {
@@ -147,6 +151,21 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       cachedLiveOscar = opts.liveOscarFactory({
         getOpen: () => open,
         getClosed: () => closed,
+        finalizeCapitalRotatePaperClose: async (mint, marketSellPx, liveOscarCfg) => {
+          await finalizeLiveCapitalRotatePaperClose({
+            cfg,
+            mint,
+            marketSellPx,
+            open,
+            closed,
+            stats: trackerStats,
+            tpLadder,
+            journalAppend,
+            journalLiveStrategy: opts?.journalLiveStrategy,
+            btcCtx: getBtcContext,
+            liveOscarCfg,
+          });
+        },
       });
       return cachedLiveOscar;
     }
@@ -176,6 +195,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       LIQ_DRAIN: 0,
       RECONCILE_ORPHAN: 0,
       PERIODIC_HEAL: 0,
+      CAPITAL_ROTATE: 0,
     } as Record<ExitReason, number>,
     skippedPriceVerifyExit: 0,
   };

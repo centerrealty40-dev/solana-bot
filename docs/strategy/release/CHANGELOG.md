@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.57] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.57`.
+
+### Live Oscar — закрытие после ротации капитала не как RECONCILE_ORPHAN
+
+- **Проблема:** Phase 5 вызывал `sell_full` on-chain, но не обновлял `open`/`closed` и не писал `live_position_close` → на следующем тике orphan reconcile давал **`RECONCILE_ORPHAN`** (выглядело как поломка).
+- **Решение:** новый **`ExitReason` `CAPITAL_ROTATE`** + **`finalizeLiveCapitalRotatePaperClose`** (`tracker.ts`) сразу после успешного rotation sell; колбэк в **`LiveOscarStrategyDeps`**; **`risk_note`** `capital_rotate_paper_sync_failed` при исключении.
+- **Дашборд:** подпись таймлайна для `CAPITAL_ROTATE`, счётчики выходов, стили pill/timeline; уточнён текст **`RECONCILE_ORPHAN`** в `triggerLabel`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.56 --`** затронутые пути → деплой **`v2`** + **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.56] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.56`.
