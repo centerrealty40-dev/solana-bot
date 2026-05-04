@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.73] — 2026-05-05
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.73`.
+
+### RUNTIME — sigseed vs pilot, замер кредитов на прогон
+
+- **`deploy/RUNTIME.md`:** что такое **sigseed** (pipeline 2), связь с торговыми стратегиями (опосредованно через данные), как проверить **PM2/cron** на хосте; **таблица** «сколько раз в сутки» **`wallet-backfill:pilot`** при подпуле **50k–150k** кредитов на backfill по фактическому замеру **~15,3k**/прогон.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.72 -- deploy/RUNTIME.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`**.
+
+---
+
 ## [1.11.72] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.72`.
