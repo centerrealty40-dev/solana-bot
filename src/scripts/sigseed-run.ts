@@ -271,7 +271,14 @@ async function main() {
   const rpcSleep = envNum('SA_SIGSEED_RPC_SLEEP_MS', 250);
   const pumpProgram = envStr('SA_PARSER_PROGRAM_ID', PUMP_FUN_PROGRAM_ID);
   const solUsd = envNum('SA_SOL_USD_FALLBACK', 150);
-  const maxComponentCredits = envNum('SA_SIGSEED_MAX_CREDITS_PER_DAY', 120_000);
+  /** 0 = только глобальный ledger (не суммировать в sa-qn-budget-check); мягкий потолок компонента выкл. */
+  const maxComponentCredits = (() => {
+    const raw = process.env.SA_SIGSEED_MAX_CREDITS_PER_DAY;
+    if (raw === undefined || raw === '') return 120_000;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.floor(n);
+  })();
 
   const lockClient = await poolPg.connect();
   let swapsInserted = 0;
