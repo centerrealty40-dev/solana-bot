@@ -62,36 +62,70 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveFreeSolBufferLamports).toBe(5_000_000);
     expect(cfg.liveMaxPositionUsd).toBeUndefined();
     expect(cfg.liveReplayOnBoot).toBe(true);
-    expect(cfg.liveReconcileOnBoot).toBe(true);
-    expect(cfg.liveReconcileMode).toBe('block_new');
-    expect(cfg.liveReconcileToleranceAtoms).toBe(10_000);
+    expect(cfg.liveReconcileBlockMaxMs).toBe(0);
   });
 
-  it('rejects LIVE_RECONCILE_MODE=trust_chain without LIVE_RECONCILE_TRUST_CHAIN_ALLOWED', () => {
+  it('loads live BTC gate + SOL equity defaults', () => {
     process.env.LIVE_STRATEGY_ENABLED = '0';
     process.env.LIVE_EXECUTION_MODE = 'dry_run';
     process.env.LIVE_STRATEGY_PROFILE = 'oscar';
     process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
     process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
     delete process.env.LIVE_WALLET_SECRET;
-    process.env.LIVE_RECONCILE_MODE = 'trust_chain';
-    delete process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED;
-
-    expect(() => loadLiveOscarConfig()).toThrow(/LIVE_RECONCILE_TRUST_CHAIN_ALLOWED/);
+    delete process.env.LIVE_BTC_GATE_ENABLED;
+    const c = loadLiveOscarConfig();
+    expect(c.liveBtcGateEnabled).toBe(true);
+    expect(c.liveBtcGateMaxStaleMs).toBe(900_000);
+    expect(c.liveBtcBlockNewBuys1hDrawdownPct).toBe(2.5);
+    expect(c.liveBtcBlockNewBuys4hDrawdownPct).toBe(5);
+    expect(c.liveMinWalletSolEquityUsd).toBeUndefined();
+    process.env.LIVE_BTC_GATE_ENABLED = '0';
+    expect(loadLiveOscarConfig().liveBtcGateEnabled).toBe(false);
+    delete process.env.LIVE_BTC_GATE_ENABLED;
+    process.env.LIVE_MIN_WALLET_SOL_EQUITY_USD = '22';
+    expect(loadLiveOscarConfig().liveMinWalletSolEquityUsd).toBe(22);
+    delete process.env.LIVE_MIN_WALLET_SOL_EQUITY_USD;
   });
 
-  it('allows LIVE_RECONCILE_MODE=trust_chain when LIVE_RECONCILE_TRUST_CHAIN_ALLOWED=1', () => {
+  it('parses LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS (0 disables)', () => {
     process.env.LIVE_STRATEGY_ENABLED = '0';
     process.env.LIVE_EXECUTION_MODE = 'dry_run';
     process.env.LIVE_STRATEGY_PROFILE = 'oscar';
     process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
     process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
     delete process.env.LIVE_WALLET_SECRET;
-    process.env.LIVE_RECONCILE_MODE = 'trust_chain';
-    process.env.LIVE_RECONCILE_TRUST_CHAIN_ALLOWED = '1';
+    delete process.env.LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS;
+    expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(60_000);
+    process.env.LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS = '0';
+    expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(0);
+    process.env.LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS = '120000';
+    expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(120_000);
+  });
+
+  it('parses LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD = '7.5';
+    expect(loadLiveOscarConfig().liveSkipBuyOpenIfWalletMintMinUsd).toBe(7.5);
+    delete process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD;
+    expect(loadLiveOscarConfig().liveSkipBuyOpenIfWalletMintMinUsd).toBe(0);
+  });
+
+  it('parses LIVE_RECONCILE_BLOCK_MAX_MS', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    process.env.LIVE_RECONCILE_BLOCK_MAX_MS = '3600000';
 
     const cfg = loadLiveOscarConfig();
-    expect(cfg.liveReconcileMode).toBe('trust_chain');
+    expect(cfg.liveReconcileBlockMaxMs).toBe(3_600_000);
   });
 
   it('defaults LIVE_QUOTE_MAX_AGE_MS to 8000; 0 disables', () => {
@@ -110,19 +144,6 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
 
     process.env.LIVE_QUOTE_MAX_AGE_MS = '2500';
     expect(loadLiveOscarConfig().liveQuoteMaxAgeMs).toBe(2500);
-  });
-
-  it('defaults LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE to true', () => {
-    process.env.LIVE_STRATEGY_ENABLED = '0';
-    process.env.LIVE_EXECUTION_MODE = 'dry_run';
-    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
-    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
-    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
-    delete process.env.LIVE_WALLET_SECRET;
-    delete process.env.LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE;
-    expect(loadLiveOscarConfig().liveReconcilePaperCloseZeroBalance).toBe(true);
-    process.env.LIVE_RECONCILE_PAPER_CLOSE_ZERO_BALANCE = '0';
-    expect(loadLiveOscarConfig().liveReconcilePaperCloseZeroBalance).toBe(false);
   });
 
   it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {

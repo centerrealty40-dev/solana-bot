@@ -56,7 +56,7 @@ const COLLECTOR_SEMVER = envStr('SA_ORCH_COLLECTOR_SEMVER', '0.1.0');
 const QN_CREDITS_PER_RPC = Math.max(1, envNum('QUICKNODE_CREDITS_PER_SOLANA_RPC', 30));
 const MAX_QN_CREDITS_DAY = Math.max(10_000, envNum('SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY', 1_500_000));
 const MAX_GECKO_HTTP_DAY = Math.max(100, envNum('SA_ORCH_MAX_GECKO_HTTP_PER_DAY', 40_000));
-const GECKO_TARGET_CPM = Math.max(1, Math.min(60, envNum('SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE', 28)));
+const GECKO_TARGET_CPM = Math.max(1, Math.min(60, envNum('SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE', 24)));
 const GECKO_MIN_INTERVAL_MS = Math.max(0, envNum('SA_ORCH_GECKO_MIN_INTERVAL_MS', 0));
 function geckoMinIntervalMs() {
   if (GECKO_MIN_INTERVAL_MS > 0) return GECKO_MIN_INTERVAL_MS;
@@ -64,12 +64,14 @@ function geckoMinIntervalMs() {
 }
 
 const RESERVE_RPC_PCT = Math.min(0.2, Math.max(0, envNum('SA_ORCH_RESERVE_RPC_PCT', 5) / 100));
-/** Pilot v2: смягчённые лимиты (всё ещё укладывается в SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY при умеренном числе job). */
+/** Бюджет QN: держим типичный job заметно ниже cap; см. также pools/tx/sig ниже. */
 const ORCH_MAX_RPC_PER_JOB = Math.max(10, envNum('SA_ORCH_MAX_RPC_PER_JOB', 1200));
 const ORCH_MAX_RPC_PER_POOL = Math.max(5, envNum('SA_ORCH_MAX_RPC_PER_POOL', 180));
-const ORCH_MAX_POOLS_PER_JOB = Math.max(1, envNum('SA_ORCH_MAX_POOLS_PER_JOB', 28));
-const ORCH_SIG_PAGES_MAX = Math.max(1, envNum('SA_ORCH_SIG_PAGES_MAX', 5));
-const ORCH_TX_PER_POOL = Math.max(0, envNum('SA_ORCH_MAX_TX_FETCHES_PER_POOL', 22));
+/** Меньше пулов ≈ линейная экономия RPC без большого ущерба (хвост пулов часто даёт дубликаты). */
+const ORCH_MAX_POOLS_PER_JOB = Math.max(1, envNum('SA_ORCH_MAX_POOLS_PER_JOB', 20));
+const ORCH_SIG_PAGES_MAX = Math.max(1, envNum('SA_ORCH_SIG_PAGES_MAX', 4));
+/** Узкая полоса по tx сильнее всего режет кредиты; верх ленты обычно даёт большую долю подписантов. */
+const ORCH_TX_PER_POOL = Math.max(0, envNum('SA_ORCH_MAX_TX_FETCHES_PER_POOL', 18));
 const ORCH_RPC_SLEEP_MS = Math.max(0, envNum('SA_ORCH_RPC_SLEEP_MS', 220));
 /** Частый тик + «окно после фазы» в lib — иначе легко пропустить целый час по lane. */
 const ORCH_SCHEDULER_MS = Math.max(5_000, envNum('SA_ORCH_SCHEDULER_TICK_MS', 10_000));

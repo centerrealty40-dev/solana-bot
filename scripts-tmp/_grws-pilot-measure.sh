@@ -44,6 +44,7 @@ echo "wallets_sa_grws_total_before=$W_BEFORE_TOTAL" | tee -a "$LOG"
 
 sudo -u salpha bash -lc "cd '$APP' && \
   SA_GRWS_SEED_POOLS_PATH=${SEED_JSON} \
+  SA_GRWS_TICK_LOG_PATH=data/sa-grws-ticks.jsonl \
   SA_GRWS_MAX_POOLS_PER_RUN=5 \
   SA_GRWS_SIG_PAGES_MAX=3 \
   SA_GRWS_MAX_TX_FETCHES_PER_POOL=15 \
@@ -88,9 +89,11 @@ try {
   console.log('collector_rpcBillableCalls=' + (j.rpcBillableCalls ?? 'n/a'));
   console.log('collector_estimatedQuicknodeCredits=' + (j.estimatedQuicknodeCredits ?? 'n/a'));
   console.log('collector_txFetchedTotal=' + (j.txFetchedTotal ?? 'n/a'));
+  console.log('collector_geckoHttpCallsThisTick=' + (j.geckoHttpCallsThisTick ?? 'n/a'));
 } catch (e) {
   console.log('collector_tick_parse=error');
 }
 " "$LOG" | tee -a "$LOG"
 
 echo "=== pilot done ===" | tee -a "$LOG"
+echo "full_analytics_hint=sudo -u salpha bash -lc 'cd $APP && set -a && [ -f .env ] && . ./.env; set +a && npm run sa-grws-analytics'" | tee -a "$LOG"

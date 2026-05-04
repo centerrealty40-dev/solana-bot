@@ -44,6 +44,11 @@ dump.pm2
 *.bak.*
 *.bak-*
 quicknode-usage.json
+sa-grws-budget-state.json
+sa-grws-ticks.jsonl
+sa-grws-pilot-diagnose-report.json
+wallet-orchestrator-state.json
+wallet-orchestrator-weights.json
 
 # Operator-local seed datasets
 seeds/whales*.txt

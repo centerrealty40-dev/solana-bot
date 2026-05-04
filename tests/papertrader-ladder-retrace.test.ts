@@ -56,4 +56,11 @@ describe('ladderRetraceTriggered grid mode', () => {
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid')).toBe(false);
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.0, 'grid')).toBe(true);
   });
+
+  it('after first grid rung +5%, positive floor exits remainder above breakeven', () => {
+    const floor = 0.025;
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid', floor)).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.026, 'grid', floor)).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.024, 'grid', floor)).toBe(true);
+  });
 });

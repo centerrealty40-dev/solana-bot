@@ -76,6 +76,7 @@ describe('W8.0-p1 live JSONL contract', () => {
         reason: 'insufficient_free_balance_no_positions',
         freeUsdEstimate: 5,
         requiredFreeUsd: 20,
+        shortfallUsd: 15,
       },
       {
         kind: 'capital_rotate_close',
@@ -172,7 +173,6 @@ describe('W8.0-p1 live JSONL contract', () => {
         kind: 'live_reconcile_report',
         ok: true,
         reconcileStatus: 'skipped',
-        mode: 'report',
       }),
     ).toBe(true);
   });
@@ -234,7 +234,6 @@ describe('appendLiveJsonlEvent integration', () => {
       kind: 'live_reconcile_report',
       ok: true,
       reconcileStatus: 'ok',
-      mode: 'report',
     });
     const line = fs.readFileSync(tmp, 'utf8').trim();
     const j = JSON.parse(line) as Record<string, unknown>;

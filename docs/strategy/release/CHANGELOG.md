@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.51] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.51`.
+
+### Документация процесса — Git `v2`, CI, branch protection
+
+- **`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`:** добавлен §**4.1** (branch protection на **`v2`**, обязательный CI, без force-push, роль человека при merge).
+- Согласовано с платформенными правилами Ideas: **`docs/agents/TASK_INTAKE_TEMPLATE.md`** (поле **Deploy session**, **ALLOWED_SURFACE**), **`AGENT_BOOTSTRAP.md`**, **`.cursor/rules/server-autodeploy.mdc`** (деплой только после явной deploy-session; без секретов в контексте).
+
+### Откат
+
+- Документ-only: **`git checkout sa-alpha-1.11.50 -- docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** (и при необходимости revert связанного платформенного коммита в Ideas).
+
+---
+
 ## [1.11.50] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.50`.

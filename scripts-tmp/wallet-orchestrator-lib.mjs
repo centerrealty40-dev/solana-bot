@@ -46,7 +46,7 @@ export function matchLaneDex(poolData, laneId) {
 export function basePagesForJobType(jobType) {
   switch (jobType) {
     case 'new_pools':
-      return 3;
+      return 2;
     case 'trending_pools':
       return 2;
     case 'extended':

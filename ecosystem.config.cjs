@@ -128,16 +128,16 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** W6.8 — Gecko multi-lane → QN → wallets; смягчённый пилот v2 (см. .env.example). */
+        /** W6.8 — Gecko multi-lane → QN → wallets; под ~1.5M кредитов/сутки (~38% ниже пикового RPC/job vs пилот). */
         SA_ORCH_SCHEDULER_TICK_MS: '10000',
-        SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '28',
+        SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
         SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '1500000',
         SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
         SA_ORCH_MAX_RPC_PER_JOB: '1200',
         SA_ORCH_MAX_RPC_PER_POOL: '180',
-        SA_ORCH_MAX_POOLS_PER_JOB: '28',
-        SA_ORCH_SIG_PAGES_MAX: '5',
-        SA_ORCH_MAX_TX_FETCHES_PER_POOL: '22',
+        SA_ORCH_MAX_POOLS_PER_JOB: '20',
+        SA_ORCH_SIG_PAGES_MAX: '4',
+        SA_ORCH_MAX_TX_FETCHES_PER_POOL: '18',
         SA_ORCH_RPC_SLEEP_MS: '220',
       },
     },

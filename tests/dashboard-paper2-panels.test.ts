@@ -156,7 +156,6 @@ describe('aggregateLiveOscarJsonlForDashboard', () => {
           kind: 'live_reconcile_report',
           ok: true,
           reconcileStatus: 'ok',
-          mode: 'block_new',
           txAnchorSample: { checked: 2, notFound: ['sig1'], rpcErrors: 0 },
         }),
       ].join('\n') + '\n',

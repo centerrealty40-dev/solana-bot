@@ -32,6 +32,10 @@
 | [`ROADMAP_SMART_MONEY_DATA_PLANE.md`](./ROADMAP_SMART_MONEY_DATA_PLANE.md) | Дорожная карта: ingest → canonical → теги → архив → сигналы; риски |
 | [`CONCEPT_DATA_PLANE_STAGING_TAGS_LIFECYCLE.md`](./CONCEPT_DATA_PLANE_STAGING_TAGS_LIFECYCLE.md) | Staging vs canonical, версии коллекторов/правил, теги, неактивность 90d |
 | [`W6.7_gecko_raydium_wallet_seed_collector_local.md`](./W6.7_gecko_raydium_wallet_seed_collector_local.md) | Normative spec: Gecko `new_pools` + Raydium + QuickNode → `wallets` (локально v1) + **pilot defaults §6.6** |
+| [`W6.8_wallet_ingest_orchestrator_gecko_multi_source.md`](./W6.8_wallet_ingest_orchestrator_gecko_multi_source.md) | Normative spec: **оркестратор** ingest в `wallets` по нескольким DEX‑lane (только Gecko + QN), **веса** lane, **weekly rebalance**, без DexScreener; торговые коллекторы не трогаются |
+| [`W6.9_wallet_intel_detective_trading_spec.md`](./W6.9_wallet_intel_detective_trading_spec.md) | Normative spec: **Wallet Intel Detective** для торговли — denylist ферм / foundation smart money; слои L0–L4; правило по новому mint; фазы внедрения; **Helius опционально** (Phase 1–2) |
+| [`W6.9_IMPLEMENTATION_CHECKLIST.md`](./W6.9_IMPLEMENTATION_CHECKLIST.md) | Чеклист реализации **v1** для агента: npm/CLI, миграции, схемы таблиц, E2E прогон, non-goals |
+| [`W6.10_bot_umbrella_and_intel_pipeline.md`](./W6.10_bot_umbrella_and_intel_pipeline.md) | Umbrella-тег **`bot`**, слои A/B, единый пайплайн с W6.9, таксономия без wipe, задел на подтипы ботов |
 
 ---
 
