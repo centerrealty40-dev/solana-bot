@@ -325,16 +325,39 @@ async function runTokenToSolPipeline(
   let sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain' = 'usd_math';
   if (liveCfg.executionMode === 'live') {
     const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
-    const chainAmt = chainMap?.get(args.mint);
-    if (chainAmt != null && chainAmt > 0n) {
-      const computedBn = BigInt(raw);
-      if (args.intentKind === 'sell_full') {
-        raw = chainAmt.toString();
-        sellAmountSource = 'chain_full_balance';
-      } else if (computedBn > chainAmt) {
-        raw = chainAmt.toString();
-        sellAmountSource = 'usd_capped_by_chain';
-      }
+    if (chainMap == null) {
+      appendLiveJsonlEvent({
+        kind: 'execution_skip',
+        reason: 'spl_balance_rpc_null',
+        detail: args.mint.slice(0, 8),
+      });
+      return { ok: false };
+    }
+    const chainAmt = chainMap.get(args.mint) ?? 0n;
+    if (chainAmt === 0n) {
+      appendLiveJsonlEvent({
+        kind: 'execution_skip',
+        reason: 'wallet_spl_balance_zero',
+        detail: JSON.stringify({ mint: args.mint, intentKind: args.intentKind }).slice(0, 400),
+      });
+      return { ok: false };
+    }
+    const computedBn = BigInt(raw);
+    if (computedBn === 0n) {
+      appendLiveJsonlEvent({
+        kind: 'execution_skip',
+        reason: 'sell_amount_zero',
+        detail: args.mint.slice(0, 8),
+      });
+      return { ok: false };
+    }
+    if (args.intentKind === 'sell_full') {
+      raw = chainAmt.toString();
+      sellAmountSource = 'chain_full_balance';
+    } else {
+      const capped = computedBn < chainAmt ? computedBn : chainAmt;
+      raw = capped.toString();
+      sellAmountSource = computedBn > chainAmt ? 'usd_capped_by_chain' : 'usd_math';
     }
   }
 

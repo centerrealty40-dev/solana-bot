@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.50] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.50`.
+
+### Live Phase 4 — не симулировать продажу без SPL на кошельке
+
+- При **`LIVE_EXECUTION_MODE=live`** и **`sell_partial` / `sell_full`**: если RPC-баланс mint **0** или **нет ответа SPL** → **`execution_skip`** (`wallet_spl_balance_zero` / `spl_balance_rpc_null`), **без** Jupiter simulate — убирает лавину **`sim_err` `6024` (Jupiter `InsufficientFunds`)**, когда журнал/трекер ещё держит позицию, а токенов на ATA уже нет.
+- **`sell_partial`**: объём всегда **`min(USD-math, chain)`**, чтобы не запрашивать у Jupiter больше атомов, чем есть on-chain.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.49 -- src/live/phase4-execution.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.49] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.49`.
