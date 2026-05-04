@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.58] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.58`.
+
+### Observability — hourly Telegram: новые `wallets` оркестратора по `seed_lane`
+
+- **`scripts-tmp/hourly-telegram-report.mjs`:** после Coverage добавлен блок с числом **новых строк** `wallets` за **`HOURLY_COVERAGE_HOURS`**, с фильтром оркестратора (`collector_id = sa-wallet-orch` или `gecko_multi_seed`) и разбивкой по **`metadata.seed_lane`** (фиксированный порядок lane + прочие).
+- **Нормативка:** **W6.8** §10 п.4 (spec **0.2**), **W6.4** п.3, **`deploy/RUNTIME.md`**, комментарий к **`HOURLY_COVERAGE_HOURS`** в **`.env.example`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.57 -- scripts-tmp/hourly-telegram-report.mjs docs/Smart Lottery V2/W6.8_wallet_ingest_orchestrator_gecko_multi_source.md docs/strategy/specs/W6.4_observability_port.md deploy/RUNTIME.md .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой **`v2`** на VPS (cron подхватит скрипт со следующего часа).
+
+---
+
 ## [1.11.57] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.57`.

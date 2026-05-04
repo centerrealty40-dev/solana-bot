@@ -152,7 +152,7 @@ Per-DEX отбор «smart money» по раннерам из `<dex>_pair_snapsh
 
 - `strategy-simulator` — **должен быть только у одного пользователя** (см. §4).
 - `raydium-healthcheck.mjs`
-- `hourly-telegram-report.mjs` — сводка в Telegram: Coverage + Health + **Live Oscar** (PnL, открытыя), Eval (paper `pt1-oscar.jsonl`), баланс кошелька (**`HOURLY_RPC_URL`** / **`HOURLY_WALLET_PUBKEY`**, иначе fallback **`SA_RPC_*`** / **`LIVE_WALLET_PUBKEY`**), неуспешные исполнения за час; см. **`HOURLY_*`** в `.env.example`
+- `hourly-telegram-report.mjs` — сводка в Telegram: Coverage + **оркестратор кошельков** (новые **`wallets`** за **`HOURLY_COVERAGE_HOURS`** по **`seed_lane`**, W6.8 §10 п.4) + Health + **Live Oscar** (PnL, открытыя), Eval (paper `pt1-oscar.jsonl`), баланс кошелька (**`HOURLY_RPC_URL`** / **`HOURLY_WALLET_PUBKEY`**, иначе fallback **`SA_RPC_*`** / **`LIVE_WALLET_PUBKEY`**), неуспешные исполнения за час; см. **`HOURLY_*`** в `.env.example`
 - `paper2-healthcheck.mjs` (два варианта с разными флагами Telegram)
 - `paper2-advisor.mjs`
 - `sa-export-root-pm2.sh` ежеминутно — экспорт `pm2 jlist` root в `/run/sa-root-pm2.json` для `health-summary` (см. `scripts/cron/export-root-pm2.sh`).

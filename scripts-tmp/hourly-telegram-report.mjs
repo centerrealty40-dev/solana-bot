@@ -200,6 +200,44 @@ async function fetchHealth(pool) {
   }
 }
 
+const ORCH_WALLET_LANES = ['pumpswap', 'raydium', 'meteora', 'orca', 'moonshot'];
+
+/** Новые строки `wallets` от коллектора-оркестратора за окно HOURLY_COVERAGE_HOURS (по metadata.seed_lane). */
+async function fetchOrchestratorWalletInserts(pool) {
+  const base = { pumpswap: 0, raydium: 0, meteora: 0, orca: 0, moonshot: 0, other: 0, total: 0 };
+  if (!pool) return base;
+  const hours = Number.isFinite(COVERAGE_HOURS) && COVERAGE_HOURS > 0 ? Math.min(168, Math.floor(COVERAGE_HOURS)) : 1;
+  const client = await pool.connect();
+  try {
+    const reg = await client.query(`SELECT to_regclass('public.wallets') AS t`);
+    if (!reg.rows[0]?.t) return base;
+
+    const r = await client.query(
+      `SELECT COALESCE(metadata->>'seed_lane', '(unknown)') AS lane, COUNT(*)::int AS cnt
+       FROM wallets
+       WHERE first_seen_at >= now() - ($1::int * interval '1 hour')
+         AND (
+           metadata->>'collector_id' = 'sa-wallet-orch'
+           OR COALESCE(metadata->>'gecko_multi_seed', '') IN ('true', '1')
+         )
+       GROUP BY 1`,
+      [hours],
+    );
+
+    const out = { ...base };
+    for (const row of r.rows) {
+      const lane = String(row.lane || '').toLowerCase();
+      const cnt = Number(row.cnt || 0);
+      if (ORCH_WALLET_LANES.includes(lane)) out[lane] = cnt;
+      else out.other += cnt;
+    }
+    out.total = ORCH_WALLET_LANES.reduce((s, l) => s + out[l], 0) + out.other;
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
 async function fetchCoverage(pool) {
   const cov = {
     pump: 0,
@@ -351,6 +389,7 @@ async function fetchWalletBalances(rpcUrl, ownerPubkey) {
 
 function buildHourlyReport({
   coverage,
+  orchWallets,
   health,
   live,
   evalAgg,
@@ -378,6 +417,18 @@ function buildHourlyReport({
     ]) {
       lines.push(`- ${k}: ${coverage[k] || 0}`);
     }
+  }
+
+  lines.push('');
+  lines.push(`Оркестратор кошельков (новые строки wallets за ${COVERAGE_HOURS}h, по seed_lane):`);
+  if (orchWallets == null) {
+    lines.push('- (нет PG / ошибка выборки)');
+  } else {
+    lines.push(`- всего: ${orchWallets.total}`);
+    for (const k of ORCH_WALLET_LANES) {
+      lines.push(`- ${k}: ${orchWallets[k] ?? 0}`);
+    }
+    if (orchWallets.other > 0) lines.push(`- прочие/неизв. lane: ${orchWallets.other}`);
   }
 
   lines.push('');
@@ -480,6 +531,7 @@ async function main() {
   }
 
   let coverage = null;
+  let orchWallets = null;
   let health = [];
   let pool = null;
   const PG_URL = process.env.SA_PG_DSN || process.env.DATABASE_URL;
@@ -487,6 +539,7 @@ async function main() {
     try {
       pool = new Pool({ connectionString: PG_URL });
       coverage = await fetchCoverage(pool);
+      orchWallets = await fetchOrchestratorWalletInserts(pool);
       health = await fetchHealth(pool);
     } catch (e) {
       console.warn('coverage/health failed:', e?.message || e);
@@ -501,6 +554,7 @@ async function main() {
 
   const text = buildHourlyReport({
     coverage,
+    orchWallets,
     health,
     live,
     evalAgg,
