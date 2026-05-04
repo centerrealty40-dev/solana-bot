@@ -135,13 +135,28 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       const anchorMarketUsd = Number(p.anchorMarketUsd);
       const secondLegUsd = Number(p.secondLegUsd);
       const executeAfterTs = Number(p.executeAfterTs);
-      const corridorPct = Number(p.corridorPct);
+      const legacySym = Number(p.corridorPct);
+      const upRaw = Number(p.corridorUpPct);
+      const downRaw = Number(p.corridorDownPct);
+      let corridorUpPct: number;
+      let corridorDownPct: number;
+      if (Number.isFinite(upRaw) && upRaw > 0 && Number.isFinite(downRaw) && downRaw > 0) {
+        corridorUpPct = upRaw;
+        corridorDownPct = downRaw;
+      } else if (Number.isFinite(legacySym) && legacySym > 0) {
+        corridorUpPct = legacySym;
+        corridorDownPct = legacySym;
+      } else {
+        corridorUpPct = 0;
+        corridorDownPct = 0;
+      }
       const maxSwapAttempts = Number(p.maxSwapAttempts);
       if (
         anchorMarketUsd > 0 &&
         secondLegUsd > 0 &&
         Number.isFinite(executeAfterTs) &&
-        corridorPct > 0 &&
+        corridorUpPct > 0 &&
+        corridorDownPct > 0 &&
         Number.isFinite(maxSwapAttempts) &&
         maxSwapAttempts >= 1
       ) {
@@ -149,7 +164,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           anchorMarketUsd,
           secondLegUsd,
           executeAfterTs,
-          corridorPct,
+          corridorUpPct,
+          corridorDownPct,
           maxSwapAttempts: Math.floor(maxSwapAttempts),
           swapAttempts: Math.max(0, Math.floor(Number(p.swapAttempts ?? 0))),
           nextAttemptAfterTs: Math.max(0, Number(p.nextAttemptAfterTs ?? 0)),

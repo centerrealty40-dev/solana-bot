@@ -170,11 +170,15 @@ const LiveOscarConfigSchema = z
 
     /**
      * Двухногий вход: после первого `buy_open` трекер докупает `(1 − PAPER_ENTRY_FIRST_LEG_FRACTION)×positionUsd`,
-     * если цена по котировке Jupiter в пределах ±`liveEntryScaleInCorridorPct` % к рыночному якорю первой ноги.
+     * если Jupiter implied цена в коридоре к якорю первой ноги: до +`liveEntryScaleInCorridorUpPct` % и до −`liveEntryScaleInCorridorDownPct` %.
+     * Если заданы только `LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT`, оба направления берут это значение (симметрично).
      */
     liveEntryScaleInEnabled: z.boolean().default(false),
     liveEntryScaleInDelayMs: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+    /** Симметричный fallback, когда не заданы UP/DOWN env. */
     liveEntryScaleInCorridorPct: z.coerce.number().min(0.1).max(50).default(3),
+    liveEntryScaleInCorridorUpPct: z.coerce.number().min(0.01).max(50).default(3),
+    liveEntryScaleInCorridorDownPct: z.coerce.number().min(0.01).max(50).default(3),
     liveEntryScaleInMaxSwapAttempts: z.coerce.number().int().min(1).max(50).default(5),
     liveEntryScaleInRetryBackoffMs: z.coerce.number().int().min(200).max(120_000).default(2000),
   })
@@ -213,6 +217,25 @@ function assertPathsDiffer(livePath: string, paperPath: string | undefined): voi
 export function loadLiveOscarConfig(): LiveOscarConfig {
   const parityPaper =
     process.env.LIVE_PARITY_PAPER_TRADES_PATH?.trim() || process.env.PAPER_TRADES_PATH?.trim() || undefined;
+
+  const symCorridorPct = (() => {
+    const s = process.env.LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT?.trim();
+    if (!s) return 3;
+    const n = Number(s);
+    return Number.isFinite(n) && n >= 0.1 ? Math.min(n, 50) : 3;
+  })();
+  const corridorUpPct = (() => {
+    const s = process.env.LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT?.trim();
+    if (!s) return symCorridorPct;
+    const n = Number(s);
+    return Number.isFinite(n) && n >= 0.01 ? Math.min(n, 50) : symCorridorPct;
+  })();
+  const corridorDownPct = (() => {
+    const s = process.env.LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT?.trim();
+    if (!s) return symCorridorPct;
+    const n = Number(s);
+    return Number.isFinite(n) && n >= 0.01 ? Math.min(n, 50) : symCorridorPct;
+  })();
 
   const parsed = LiveOscarConfigSchema.safeParse({
     strategyEnabled: envBool(process.env.LIVE_STRATEGY_ENABLED, false),
@@ -368,12 +391,9 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 1000 ? Math.min(n, 600_000) : 30_000;
     })(),
-    liveEntryScaleInCorridorPct: (() => {
-      const s = process.env.LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT?.trim();
-      if (!s) return 3;
-      const n = Number(s);
-      return Number.isFinite(n) && n >= 0.1 ? Math.min(n, 50) : 3;
-    })(),
+    liveEntryScaleInCorridorPct: symCorridorPct,
+    liveEntryScaleInCorridorUpPct: corridorUpPct,
+    liveEntryScaleInCorridorDownPct: corridorDownPct,
     liveEntryScaleInMaxSwapAttempts: (() => {
       const s = process.env.LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS?.trim();
       if (!s) return 5;

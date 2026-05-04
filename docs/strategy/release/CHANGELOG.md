@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.60] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.60`.
+
+### Live Oscar — профиль второй ноги и риска (асимметричный коридор, без DCA, kill −5%)
+
+- **`src/live/config.ts`:** env **`LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT`** и **`LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT`**; при отсутствии — симметричный fallback из **`LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT`** (как раньше).
+- **`src/live/entry-scale-in.ts`**, **`src/papertrader/types.ts`**, **`src/papertrader/main.ts`**, **`src/papertrader/executor/store-restore.ts`:** pending второй ноги хранит **`corridorUpPct` / `corridorDownPct`**; восстановление из журнала понимает legacy **`corridorPct`**.
+- **`ecosystem.config.cjs` (`live-oscar`):** задержка второй ноги **30 с**; коридор **+1% / −2%**; **`PAPER_DCA_LEVELS` пуст** (DCA нет); **`PAPER_DCA_KILLSTOP=-0.05`** (−5% к средней); первая нога **70%** без изменений.
+- **`scripts-tmp/dashboard-paper2.html`:** блок **live-oscar** в `STRATEGY_META` приведён к этим числам.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.59 -- src/live/config.ts src/live/entry-scale-in.ts src/papertrader/types.ts src/papertrader/main.ts src/papertrader/executor/store-restore.ts ecosystem.config.cjs scripts-tmp/dashboard-paper2.html .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → деплой **`v2`** + **`pm2 flush live-oscar && pm2 restart live-oscar --update-env`** (или **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**) под **`salpha`**.
+
+---
+
 ## [1.11.59] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.59`.

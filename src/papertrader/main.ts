@@ -499,7 +499,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 anchorMarketUsd: ot.legs[0]?.marketPrice ?? snapshotEntryPriceUsd,
                 secondLegUsd: secondUsd,
                 executeAfterTs: Date.now() + liveOscar.liveCfg.liveEntryScaleInDelayMs,
-                corridorPct: liveOscar.liveCfg.liveEntryScaleInCorridorPct,
+                corridorUpPct: liveOscar.liveCfg.liveEntryScaleInCorridorUpPct,
+                corridorDownPct: liveOscar.liveCfg.liveEntryScaleInCorridorDownPct,
                 maxSwapAttempts: liveOscar.liveCfg.liveEntryScaleInMaxSwapAttempts,
                 swapAttempts: 0,
                 nextAttemptAfterTs: 0,
@@ -551,11 +552,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   firstLegFraction: cfg.entryFirstLegFraction,
                   secondLegFraction: +(1 - cfg.entryFirstLegFraction).toFixed(6),
                   delayMs: liveOscarForJournal.liveCfg.liveEntryScaleInDelayMs,
-                  corridorPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorPct,
+                  corridorSymFallbackPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorPct,
+                  corridorUpPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorUpPct,
+                  corridorDownPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorDownPct,
                   maxSwapAttempts: liveOscarForJournal.liveCfg.liveEntryScaleInMaxSwapAttempts,
                   retryBackoffMs: liveOscarForJournal.liveCfg.liveEntryScaleInRetryBackoffMs,
                   corridorCheckDescription:
-                    'Jupiter SOL→token quote implied USD/token vs рыночная цена первой ноги; симметричный коридор ±corridorPct %.',
+                    'Jupiter SOL→token quote implied USD/token vs рыночная цена первой ноги; коридор до +corridorUpPct % и до −corridorDownPct % (если задан только LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT — симметрично).',
                 },
               }
             : {};

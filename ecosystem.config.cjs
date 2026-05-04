@@ -543,8 +543,9 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        PAPER_DCA_LEVELS: '-7:0.3',
-        PAPER_DCA_KILLSTOP: '-0.14',
+        /** Live Oscar: без DCA между ногами — только 70% + отложенная 30% по коридору Jupiter. */
+        PAPER_DCA_LEVELS: '',
+        PAPER_DCA_KILLSTOP: '-0.05',
         /** TP grid: +5% PnL к средней за ступень; 30% текущего остатка; число ступеней не ограничивается конфигом (`PAPER_TP_LADDER` пуст). */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
@@ -670,7 +671,9 @@ module.exports = {
         /** Двухногий вход: вторая доля после задержки, если Jupiter в коридоре к цене первой ноги (`src/live/entry-scale-in.ts`). */
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '30000',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT: '3',
+        /** Асимметричный коридор второй ноги к якорю первой (USD/token): до +1% / до −2%; без давления на стакан. */
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
         LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 

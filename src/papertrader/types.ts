@@ -115,13 +115,16 @@ export interface OpenTrade {
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */
 export interface LivePendingScaleIn {
-  /** Рыночная цена первой ноги (USD/token) — якорь для ±corridorPct. */
+  /** Рыночная цена первой ноги (USD/token) — якорь для коридора. */
   anchorMarketUsd: number;
   /** USD-нотация второй ноги (= positionUsd × (1 − entryFirstLegFraction)). */
   secondLegUsd: number;
   /** Не раньше этого времени (ms) планировать проверку коридора и своп. */
   executeAfterTs: number;
-  corridorPct: number;
+  /** Допустимое отклонение вверх от якоря, в процентных пунктах (например 1 = до +1%). */
+  corridorUpPct: number;
+  /** Допустимое отклонение вниз от якоря, в процентных пунктах (например 2 = до −2%). */
+  corridorDownPct: number;
   maxSwapAttempts: number;
   /** Число завершённых попыток свопа (успех или провал после коридора). */
   swapAttempts: number;
