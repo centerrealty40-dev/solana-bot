@@ -22,6 +22,32 @@ export function resolveLiveJupiterSwapUrl(cfg: LiveOscarConfig): string {
   return u && u.length > 0 ? u : SWAP_URL_DEFAULT;
 }
 
+/** POST body for `/swap/v1/swap` (live-oscar). Adds Jupiter priority cap when configured. */
+export function liveJupiterSwapPostBody(args: {
+  cfg: LiveOscarConfig;
+  quoteResponse: Record<string, unknown>;
+  userPublicKey: string;
+}): Record<string, unknown> {
+  const { cfg, quoteResponse, userPublicKey } = args;
+  const body: Record<string, unknown> = {
+    quoteResponse,
+    userPublicKey,
+    wrapAndUnwrapSol: true,
+    dynamicComputeUnitLimit: false,
+    asLegacyTransaction: false,
+  };
+  const maxLp = cfg.liveJupiterPriorityMaxLamports;
+  if (typeof maxLp === 'number' && maxLp >= 1) {
+    body.prioritizationFeeLamports = {
+      priorityLevelWithMaxLamports: {
+        priorityLevel: cfg.liveJupiterSwapPriorityLevel,
+        maxLamports: maxLp,
+      },
+    };
+  }
+  return body;
+}
+
 /** Deterministic user pubkey for Jupiter swap body when wallet not loaded (never live-send). */
 export function liveJupiterPlaceholderPubkey(): string {
   const digest = createHash('sha256')
@@ -179,13 +205,7 @@ export async function liveBuildUnsignedSwapTx(args: {
   };
   if (key) headers['x-api-key'] = key;
   try {
-    const body = {
-      quoteResponse,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: false,
-      asLegacyTransaction: false,
-    };
+    const body = liveJupiterSwapPostBody({ cfg, quoteResponse, userPublicKey });
     const res = await fetch(resolveLiveJupiterSwapUrl(cfg), {
       method: 'POST',
       headers,

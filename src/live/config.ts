@@ -61,6 +61,13 @@ const LiveOscarConfigSchema = z
     liveJupiterSwapTimeoutMs: z.coerce.number().int().min(500).max(60_000).default(8000),
     liveDefaultSlippageBps: z.coerce.number().int().min(10).max(5000).default(400),
     /**
+     * Optional: max prioritization lamports passed to Jupiter `/swap/v1/swap` as `priorityLevelWithMaxLamports.maxLamports`.
+     * Unset ⇒ omit field (Jupiter default). Example: **0.0001 SOL** = `100_000` lamports via **`LIVE_JUPITER_PRIORITY_MAX_SOL`**.
+     */
+    liveJupiterPriorityMaxLamports: z.number().int().min(1).max(50_000_000).optional(),
+    /** Hint level paired with `liveJupiterPriorityMaxLamports` (Jupiter API spelling). */
+    liveJupiterSwapPriorityLevel: z.enum(['medium', 'high', 'veryHigh']).default('medium'),
+    /**
      * Phase 4 blocks swap if `quoteSnapshot.quoteAgeMs` exceeds this (ms).
      * Default **8000** when env unset (loader); **`LIVE_QUOTE_MAX_AGE_MS=0`** disables the gate.
      */
@@ -342,6 +349,27 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 0.05;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : 0.05;
+    })(),
+    liveJupiterPriorityMaxLamports: (() => {
+      const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();
+      if (sol) {
+        const n = Number(sol);
+        if (Number.isFinite(n) && n > 0) {
+          const lam = Math.round(n * 1e9);
+          if (lam >= 1 && lam <= 50_000_000) return lam;
+        }
+      }
+      const lamEnv = process.env.LIVE_JUPITER_PRIORITY_MAX_LAMPORTS?.trim();
+      if (!lamEnv) return undefined;
+      const n = Number.parseInt(lamEnv, 10);
+      if (!Number.isFinite(n) || n < 1) return undefined;
+      return Math.min(n, 50_000_000);
+    })(),
+    liveJupiterSwapPriorityLevel: (() => {
+      const s = (process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL ?? 'medium').trim().toLowerCase();
+      if (s === 'high') return 'high';
+      if (s === 'veryhigh' || s === 'very_high') return 'veryHigh';
+      return 'medium';
     })(),
   });
 

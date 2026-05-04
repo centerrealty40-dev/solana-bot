@@ -624,6 +624,13 @@ module.exports = {
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
+        /** Jupiter quote + swap: max execution tolerances (bps). */
+        LIVE_DEFAULT_SLIPPAGE_BPS: '300',
+        /**
+         * Jupiter `/swap/v1/swap`: cap priority fee at **0.0001 SOL** (100_000 lamports) via `priorityLevelWithMaxLamports`.
+         * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
+         */
+        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`). */
         LIVE_MAX_POSITION_USD: '20',
         LIVE_MAX_OPEN_POSITIONS: '5',

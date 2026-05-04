@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.53] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.53`.
+
+### Live Jupiter — slippage 300 bps + потолок приоритета 0.0001 SOL
+
+- **`LIVE_DEFAULT_SLIPPAGE_BPS=300`** в **`ecosystem.config.cjs`** для **`live-oscar`** (был дефолт кода 400 без явного env).
+- Новые env: **`LIVE_JUPITER_PRIORITY_MAX_SOL`** или **`LIVE_JUPITER_PRIORITY_MAX_LAMPORTS`**, опционально **`LIVE_JUPITER_SWAP_PRIORITY_LEVEL`** (`medium` | `high` | `veryHigh`) → тело POST **`/swap/v1/swap`** получает **`prioritizationFeeLamports.priorityLevelWithMaxLamports`** с **`maxLamports`** (кап по желанию ops). Хелпер **`liveJupiterSwapPostBody`** в **`src/live/jupiter.ts`**.
+
+### Откат
+
+- Удалить/закомментировать новые ключи в **`ecosystem.config.cjs`** и **`git checkout sa-alpha-1.11.52 --`** затронутые файлы → **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**.
+
+---
+
 ## [1.11.52] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.52`.

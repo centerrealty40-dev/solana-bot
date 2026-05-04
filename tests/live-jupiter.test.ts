@@ -3,6 +3,7 @@ import type { LiveOscarConfig } from '../src/live/config.js';
 import {
   liveBuildUnsignedSwapTx,
   liveFetchBuyQuote,
+  liveJupiterSwapPostBody,
   liveQuoteExceedsMaxAge,
   liveQuoteSnapshotFromResponse,
   resolveLiveJupiterQuoteUrl,
@@ -25,6 +26,7 @@ function baseCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
     liveSimCreditsPerCall: 30,
     liveSimReplaceRecentBlockhash: true,
     liveSimSigVerify: false,
+    liveJupiterSwapPriorityLevel: 'medium',
     ...over,
   } as LiveOscarConfig;
 }
@@ -127,5 +129,35 @@ describe('live Jupiter Phase 2', () => {
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.b64).toBe('QUJD');
+  });
+
+  it('liveJupiterSwapPostBody adds prioritizationFeeLamports when max lamports set', () => {
+    const body = liveJupiterSwapPostBody({
+      cfg: baseCfg({ liveJupiterPriorityMaxLamports: 100_000, liveJupiterSwapPriorityLevel: 'medium' }),
+      quoteResponse: { routePlan: [] },
+      userPublicKey: '11111111111111111111111111111111',
+    });
+    expect(body.prioritizationFeeLamports).toEqual({
+      priorityLevelWithMaxLamports: { priorityLevel: 'medium', maxLamports: 100_000 },
+    });
+  });
+
+  it('liveBuildUnsignedSwapTx POST includes Jupiter priority cap', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ swapTransaction: 'QUJD' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    await liveBuildUnsignedSwapTx({
+      cfg: baseCfg({ liveJupiterPriorityMaxLamports: 100_000 }),
+      quoteResponse: { routePlan: [] },
+      userPublicKey: '11111111111111111111111111111111',
+    });
+
+    const posted = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(posted.prioritizationFeeLamports.priorityLevelWithMaxLamports.maxLamports).toBe(100_000);
   });
 });

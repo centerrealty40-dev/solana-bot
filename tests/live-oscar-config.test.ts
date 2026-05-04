@@ -146,6 +146,35 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(loadLiveOscarConfig().liveQuoteMaxAgeMs).toBe(2500);
   });
 
+  it('parses LIVE_JUPITER_PRIORITY_MAX_SOL and LIVE_JUPITER_SWAP_PRIORITY_LEVEL', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    process.env.LIVE_JUPITER_PRIORITY_MAX_SOL = '0.0001';
+    delete process.env.LIVE_JUPITER_PRIORITY_MAX_LAMPORTS;
+    delete process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL;
+    let cfg = loadLiveOscarConfig();
+    expect(cfg.liveJupiterPriorityMaxLamports).toBe(100_000);
+    expect(cfg.liveJupiterSwapPriorityLevel).toBe('medium');
+
+    process.env.LIVE_JUPITER_PRIORITY_MAX_LAMPORTS = '200000';
+    delete process.env.LIVE_JUPITER_PRIORITY_MAX_SOL;
+    cfg = loadLiveOscarConfig();
+    expect(cfg.liveJupiterPriorityMaxLamports).toBe(200_000);
+
+    process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL = 'high';
+    cfg = loadLiveOscarConfig();
+    expect(cfg.liveJupiterSwapPriorityLevel).toBe('high');
+    delete process.env.LIVE_JUPITER_PRIORITY_MAX_LAMPORTS;
+    delete process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL;
+    delete process.env.LIVE_JUPITER_PRIORITY_MAX_SOL;
+    cfg = loadLiveOscarConfig();
+    expect(cfg.liveJupiterPriorityMaxLamports).toBeUndefined();
+  });
+
   it('allows LIVE_EXECUTION_MODE=live when strategy enabled and wallet set (Phase 6)', () => {
     process.env.LIVE_STRATEGY_ENABLED = '1';
     process.env.LIVE_EXECUTION_MODE = 'live';
