@@ -121,3 +121,20 @@ export function isMinuteAlignedForJob({ laneIdx, jobType, now, dailyDeepHourUtc 
   if (jobType === 'daily_deep') return h === dailyDeepHourUtc;
   return false;
 }
+
+/**
+ * Лимит billable RPC на один job оркестратора.
+ *
+ * - `lane`: жёсткий дневной потолок по lane (веса) — lane может «замёрзнуть», пока другие недобирают глобальный лимит.
+ * - `global`: один общий остаток на день (`effectiveDayCapRemaining`) — «выжимаем» пул ~1.5M кредитов; веса остаются для метрик/отчётов и режима `lane`.
+ *
+ * @param {'lane' | 'global'} mode
+ * @param {{ maxPerJob: number; effectiveDayCapRemaining: number; laneRemaining?: number }} p
+ */
+export function computeOrchestratorJobRpcCap(mode, p) {
+  const { maxPerJob, effectiveDayCapRemaining, laneRemaining = Number.POSITIVE_INFINITY } = p;
+  const g = Math.max(0, effectiveDayCapRemaining);
+  if (mode === 'global') return Math.min(maxPerJob, g);
+  const lane = Math.max(0, laneRemaining);
+  return Math.min(maxPerJob, g, lane);
+}

@@ -7,6 +7,7 @@ import {
   geckoDexPoolSlugsForLane,
   fireSlotKey,
   isMinuteAlignedForJob,
+  computeOrchestratorJobRpcCap,
 } from '../scripts-tmp/wallet-orchestrator-lib.mjs';
 
 describe('wallet-orchestrator-lib', () => {
@@ -32,6 +33,30 @@ describe('wallet-orchestrator-lib', () => {
 
   it('fireSlotKey', () => {
     expect(fireSlotKey('2026-05-04', 'new_pools', 'orca', 7)).toContain('h7');
+  });
+
+  it('computeOrchestratorJobRpcCap lane vs global', () => {
+    expect(
+      computeOrchestratorJobRpcCap('lane', {
+        maxPerJob: 1200,
+        effectiveDayCapRemaining: 500,
+        laneRemaining: 10_000,
+      }),
+    ).toBe(500);
+    expect(
+      computeOrchestratorJobRpcCap('lane', {
+        maxPerJob: 1200,
+        effectiveDayCapRemaining: 500,
+        laneRemaining: 100,
+      }),
+    ).toBe(100);
+    expect(
+      computeOrchestratorJobRpcCap('global', {
+        maxPerJob: 1200,
+        effectiveDayCapRemaining: 500,
+        laneRemaining: 0,
+      }),
+    ).toBe(500);
   });
 
   it('geckoPathForJobType', () => {
