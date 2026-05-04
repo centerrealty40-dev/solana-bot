@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.52] — 2026-05-04
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.52`.
+
+### Интегратор — канон платформы и Cursor rules в репозитории
+
+- В дерево **`solana-bot`** добавлены **`docs/platform/**`**, **`docs/agents/**`**, **`scripts/platform/**`**, **`.cursor/rules/**`** как единый SSOT (ранее жили только в монорепозитории Ideas без remote).
+- Обновлены перекрёстные ссылки и **`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`** §6 (синхронизация с Ideas).
+- Платформа **`docs/platform/VERSION` → 1.5.2**, запись в **`PLATFORM_CHANGELOG.md`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.51 -- docs/platform docs/agents scripts/platform .cursor docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`** → при необходимости деплой только если требуется откат рабочего дерева на сервере.
+
+---
+
 ## [1.11.51] — 2026-05-04
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.51`.

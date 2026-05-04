@@ -1,0 +1,85 @@
+---
+description: Multi-product platform guardrails and startup context
+alwaysApply: true
+---
+
+# Multi-Product Platform Rule
+
+This workspace hosts multiple co-existing products on a shared platform.
+Multiple agents may be active in parallel on different products.
+
+## Read Before Substantial Work (in this order)
+
+1. `docs/platform/VERSION` — current platform version.
+2. `docs/platform/PLATFORM_CHANGELOG.md` — top entry: what changed last.
+3. `docs/platform/PLATFORM_CONTEXT.md`
+4. `docs/platform/BOUNDARIES.md`
+5. `docs/platform/DB_TOPOLOGY.md`
+6. `docs/platform/PRODUCT_REGISTRY.md` (generated from
+   `docs/platform/products.yaml` — that yaml is the source of truth)
+7. `docs/agents/AGENT_BOOTSTRAP.md`
+8. The current product's `PRODUCT_SCOPE.md` if present.
+9. If the task touches **release, GitHub integration branch, VPS deploy,
+   or parallel agent coordination** for Solana Alpha:  
+   `docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md`
+   (pointer: `docs/agents/NORM_UNIFIED_RELEASE_AND_RUNTIME.md`).
+
+## Deploy sessions and secrets (Solana Alpha)
+
+- Unless the user **explicitly** marks a **deploy-session** (or production incident triage), agents **do not** SSH/`scp` to production and **do not** paste SSH private keys, DB passwords, or full prod `.env` into chat.
+- Tracked code on `/opt/solana-alpha` updates **only** via **`origin/v2`** + `git reset --hard` + `npm ci` (see NORM §5). Routine **`scp`** of tracked trees is **forbidden**.
+
+If you cannot identify the current platform version, you are working
+against stale assumptions — re-read the bootstrap.
+
+## Scope Discipline
+
+- Work only inside the current product scope unless explicitly told otherwise.
+- Do not modify another product's schema, env keys, jobs, or pages.
+- Keep shared-core changes backward-compatible for all registered products.
+- `PRODUCT_REGISTRY.md` is generated; edit `products.yaml` and run
+  `node docs/platform/generate-registry.mjs`.
+
+## Database Safety
+
+- Assume one PostgreSQL instance with schema-per-product isolation.
+- Never perform cross-schema writes in feature tasks.
+- Per-product DB roles enforce write isolation; do not bypass.
+
+## Runtime Safety
+
+- Use product-prefixed systemd units, log paths, lock keys, and env vars.
+- Avoid restarting or reconfiguring other products' workers.
+
+## Versioning Discipline
+
+- Any change to `docs/platform/**`, `docs/agents/**`,
+  `.cursor/rules/multi-product-platform.mdc`, `scripts/platform/**`,
+  or `docs/platform/products.yaml` REQUIRES:
+  - bumping `docs/platform/VERSION` (semver: MAJOR breaking, MINOR additive,
+    PATCH clarification);
+  - adding a new entry at the top of `docs/platform/PLATFORM_CHANGELOG.md`
+    using the template in that file;
+  - including a rollback note in that entry.
+- This is enforced by `scripts/platform/check-boundaries.sh` which is
+  installable as a per-repo pre-commit hook.
+
+## Cross-Product Changes
+
+If a single commit must touch more than one product:
+
+1. Get explicit user approval.
+2. Add a `Cross-product: <reason>` line to the commit message
+   (otherwise the boundary checker will reject the commit).
+3. Document the rationale in `PLATFORM_CHANGELOG.md`.
+
+## Delivery Format
+
+In your final response, state changed surface clearly:
+
+- product(s) touched,
+- files changed,
+- schemas/services/timers touched,
+- explicit "no cross-product changes" confirmation (or, if there are,
+  list them with justification),
+- platform `VERSION` after change, if you bumped it.

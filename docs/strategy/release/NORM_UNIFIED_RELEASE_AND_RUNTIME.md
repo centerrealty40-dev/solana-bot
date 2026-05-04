@@ -88,20 +88,22 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 ---
 
-## 6. Монорепозиторий Ideas (если ваш клон его содержит)
+## 6. Платформа, агенты и Cursor rules в этом репозитории
 
-Если **`solana-alpha`** лежит внутри дерева **Ideas** и правятся **`docs/platform/**`**, **`docs/agents/**`**, **`.cursor/rules/multi-product-platform.mdc`**, **`products.yaml`** — действуют правила платформы: bump **`docs/platform/VERSION`** и **`PLATFORM_CHANGELOG.md`**. При работе **только** в отдельном клоне **`solana-bot`** этот § не применяется.
+Канонические **`docs/platform/**`**, **`docs/agents/**`**, **`scripts/platform/**`**, **`.cursor/rules/**`** версионируются **в этом репозитории** (`solana-bot`). При локальной структуре **Ideas/** (родительская папка над рабочей копией продукта) не держите расходящуюся вторую правду только в Ideas: после правок интегратор переносит изменения сюда и делает push в **`v2`**.
+
+Любое изменение этих путей требует bump **`docs/platform/VERSION`** и записи в **`docs/platform/PLATFORM_CHANGELOG.md`** (см. правило в `.cursor/rules/multi-product-platform.mdc`).
 
 ---
 
 ## 7. Карта детальных документов
 
-| Тема | Файл (от корня продукта `solana-alpha`) |
+| Тема | Файл (от корня репозитория) |
 |------|----------------------------------------|
 | SSOT, replay JSONL, риски | [`docs/strategy/release/RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) |
 | Параллельные агенты | [`docs/strategy/release/PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) |
 | CI hygiene | [`scripts/check-release-hygiene.mjs`](../../../scripts/check-release-hygiene.mjs) |
-| Платформа (при дереве Ideas) | `docs/platform/BOUNDARIES.md`, `docs/agents/AGENT_BOOTSTRAP.md` |
+| Платформа и агенты | [`docs/platform/BOUNDARIES.md`](../../platform/BOUNDARIES.md), [`docs/agents/AGENT_BOOTSTRAP.md`](../../agents/AGENT_BOOTSTRAP.md) |
 
 ---
 
@@ -119,6 +121,7 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 | Дата | Версия продукта | Суть |
 |------|-----------------|------|
+| 2026-05-04 | 1.11.52 | §6 — канон платформы/`agents`/`.cursor` в репозитории; синхронизация с деревом Ideas. |
 | 2026-05-04 | 1.11.51 | §4.1 — рекомендуемая branch protection на **`v2`**, CI, запрет force-push; роли при merge. |
 | 2026-05-03 | 1.10.2 | Публикация сводного норматива; приоритет Git на VPS; согласование с Cursor rule `server-autodeploy`. |
 
