@@ -31,5 +31,12 @@
     }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "src/papertrader/pricing/tp-regime.ts",
+    "src/papertrader/executor/tp-grid-effective.ts",
+    "src/scripts/live-oscar-mint-counterfactual.ts"
+  ]
 }

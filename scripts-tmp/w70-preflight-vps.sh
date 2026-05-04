@@ -23,7 +23,7 @@ cp -a "$SA_HOME/.pm2/dump.pm2" "$BACKUP_DIR/dump.pm2.bak" 2>/dev/null || true
 
 echo "=== W7.0 .env upserts ==="
 upsert_env QUICKNODE_DAILY_CREDIT_BUDGET 2400000
-upsert_env QUICKNODE_HOURLY_CREDIT_BUDGET 100000
+upsert_env QUICKNODE_HOURLY_CREDIT_BUDGET 0
 upsert_env QUICKNODE_DAILY_ENFORCE 1
 upsert_env QUICKNODE_USAGE_TELEGRAM 0
 upsert_env QUICKNODE_HOURLY_REMAINING_TELEGRAM 1

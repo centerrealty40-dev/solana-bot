@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.78] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.78`.
+
+### Функция — W6.12 S03 Sigseed на `v2`
+
+- Миграция **`0019_signatures_seed_queue`**, скрипты **`sigseed:enqueue`** / **`sigseed:run`** (`src/scripts/sigseed-run.ts`): очередь минтов из `*_pair_snapshots` → RPC (`sigseed_worker` в **`sa_qn_global_daily`**) → **`decodePumpfunSwap`** → **`swaps`** (`source=sigseed`). Advisory lock **`941337041`**, gates **`SA_SIGSEED_ENQUEUE_ENABLED`** / **`SA_SIGSEED_ENABLED`**.
+- Cron detective installer: строки sigseed (по умолчанию gates **0**).
+- **`deploy/RUNTIME.md`**: актуальное описание контура; **`w70-preflight-vps.sh`**: **`QUICKNODE_HOURLY_CREDIT_BUDGET=0`**.
+- **`tsconfig.json`**: временный exclude для незавершённых локальных файлов papertrader/counterfactual (не в git).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.77 --`** затронутые пути; **`DROP TABLE signatures_seed_queue`** при необходимости снять миграцию вручную (осторожно: только если таблица пуста/не нужна).
+
+---
+
 ## [1.11.77] — 2026-05-05
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.77`.

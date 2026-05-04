@@ -134,6 +134,13 @@
       "when": 1779800000000,
       "tag": "0018_wallet_backfill_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1779900000000,
+      "tag": "0019_signatures_seed_queue",
+      "breakpoints": true
     }
   ]
 }

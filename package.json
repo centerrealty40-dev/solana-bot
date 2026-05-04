@@ -46,6 +46,8 @@
     "wallet-backfill:run": "tsx src/scripts/wallet-backfill-run.ts",
     "wallet-backfill:pilot": "tsx src/scripts/wallet-backfill-pilot.ts",
     "wallet-funding:backfill": "tsx src/scripts/wallet-funding-backfill.ts",
+    "sigseed:enqueue": "tsx src/scripts/sigseed-run.ts --enqueue",
+    "sigseed:run": "tsx src/scripts/sigseed-run.ts",
     "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts",
