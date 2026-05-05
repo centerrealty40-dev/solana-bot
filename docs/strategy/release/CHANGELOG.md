@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.100] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.100`.
+
+### Изменено
+
+- **`swaps` allowlist (sigseed / wallet-backfill):** добавлены программы **Jupiter v4** (`JUP4…`), **Raydium CPMM** + **route** (docs.raydium.io), **Meteora DAMM v2** (`cpamdp…`, docs.meteora.ag), **Phoenix**, **Lifinity v2**, **Moonit/Moonshot** launchpad (`MoonCV…` — `tokenLaunchpadIdlV4.address` в gomoonit/moonit-sdk). Поле **`dex`** в строках: `moonshot` / `phoenix` / `lifinity` / пр. по `inferDex`.
+- **`src/core/constants.ts` `DEX_PROGRAMS`**, **`known-addresses` `PROGRAM_ADDRESSES`**, **`deploy/RUNTIME.md`** — синхронизировано.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.99`**.
+
+---
+
 ## [1.11.99] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.99`.

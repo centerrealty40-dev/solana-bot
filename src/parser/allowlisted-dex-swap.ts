@@ -15,21 +15,40 @@ const USDC_MINT_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDT_MINT_MAINNET = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 
 const JUPITER_V6 = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
+/** Jupiter aggregator v4 (legacy routes still seen on-chain). */
+const JUPITER_V4 = 'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB';
 const RAYDIUM_AMM_V4 = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
 const RAYDIUM_CLMM = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+/** Raydium CPMM — docs.raydium.io program-addresses */
+const RAYDIUM_CPMM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
+/** Raydium AMM routing program */
+const RAYDIUM_ROUTE = 'routeUGWgWzqBWFcrCfv8tritsqukccJPu3q5GPP3xS';
 const METEORA_DLMM = 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo';
+/** Meteora DAMM v2 — docs.meteora.ag */
+const METEORA_DAMM_V2 = 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG';
 const ORCA_WHIRLPOOL = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
 const PUMP_FUN_PROGRAM_ID = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+const PHOENIX = 'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY';
+const LIFINITY_V2 = '2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3c';
+/** Moonit / Moonshot token launchpad (IDL V4 `address`, gomoonit/moonit-sdk). */
+const MOONIT_LAUNCHPAD = 'MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG';
 
 /** Programs that justify balance-based swap decode (hot paths for live-oscar / Jupiter). */
 export const SWAPS_ALLOWLISTED_PROGRAM_IDS: ReadonlySet<string> = new Set([
   PUMP_FUN_PROGRAM_ID,
   PUMP_SWAP_AMM_PROGRAM_ID,
+  MOONIT_LAUNCHPAD,
   JUPITER_V6,
+  JUPITER_V4,
   RAYDIUM_AMM_V4,
   RAYDIUM_CLMM,
+  RAYDIUM_CPMM,
+  RAYDIUM_ROUTE,
   METEORA_DLMM,
+  METEORA_DAMM_V2,
   ORCA_WHIRLPOOL,
+  PHOENIX,
+  LIFINITY_V2,
 ]);
 
 function logsArray(tx: TxJsonParsed): string[] {
@@ -134,12 +153,17 @@ function walletLamportsDelta(tx: TxJsonParsed, wallet: string): bigint | null {
 }
 
 function inferDex(ids: Set<string>): string {
+  if (ids.has(MOONIT_LAUNCHPAD)) return 'moonshot';
   if (ids.has(PUMP_FUN_PROGRAM_ID)) return 'pumpfun';
   if (ids.has(PUMP_SWAP_AMM_PROGRAM_ID)) return 'pumpswap';
-  if (ids.has(JUPITER_V6)) return 'jupiter';
-  if (ids.has(RAYDIUM_AMM_V4) || ids.has(RAYDIUM_CLMM)) return 'raydium';
-  if (ids.has(METEORA_DLMM)) return 'meteora';
+  if (ids.has(PHOENIX)) return 'phoenix';
+  if (ids.has(LIFINITY_V2)) return 'lifinity';
+  if (ids.has(RAYDIUM_CPMM) || ids.has(RAYDIUM_ROUTE) || ids.has(RAYDIUM_AMM_V4) || ids.has(RAYDIUM_CLMM)) {
+    return 'raydium';
+  }
+  if (ids.has(METEORA_DLMM) || ids.has(METEORA_DAMM_V2)) return 'meteora';
   if (ids.has(ORCA_WHIRLPOOL)) return 'orca';
+  if (ids.has(JUPITER_V6) || ids.has(JUPITER_V4)) return 'jupiter';
   return 'unknown';
 }
 

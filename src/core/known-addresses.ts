@@ -54,18 +54,26 @@ export const CEX_HOT_WALLETS: ReadonlySet<string> = new Set([
  * graphs as recipients of routing legs. NOT operator wallets.
  */
 export const PROGRAM_ADDRESSES: ReadonlySet<string> = new Set([
-  // Jupiter router
+  // Jupiter routers
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+  'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB',
   // Raydium AMM v4
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
   // Raydium CLMM
   'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK',
+  // Raydium CPMM + routing (program-addresses)
+  'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C',
+  'routeUGWgWzqBWFcrCfv8tritsqukccJPu3q5GPP3xS',
   // Pump.fun bonding curve
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
   // Pump.fun PumpSwap AMM (post-migration)
   'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+  // Moonit / Moonshot launchpad (moonit-sdk IDL V4)
+  'MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG',
   // Meteora DLMM
   'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
+  // Meteora DAMM v2
+  'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
   // Orca Whirlpool
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc',
   // Phoenix
