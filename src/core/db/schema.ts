@@ -342,6 +342,52 @@ export const scamFarmCandidates = pgTable(
   }),
 );
 
+/** W6.14 — graph phase B: merged “farm” groups + treasury linkage (tags use separate `source`). */
+export const scamFarmMetaClusters = pgTable(
+  'scam_farm_meta_clusters',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull().unique(),
+    label: text('label'),
+    confidence: integer('confidence').notNull().default(50),
+    detectionReason: jsonb('detection_reason').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    updatedIdx: index('scam_farm_meta_clusters_updated_idx').on(t.updatedAt),
+  }),
+);
+
+export const scamFarmMetaClusterMembers = pgTable(
+  'scam_farm_meta_cluster_members',
+  {
+    metaClusterId: bigint('meta_cluster_id', { mode: 'number' })
+      .notNull()
+      .references(() => scamFarmMetaClusters.id, { onDelete: 'cascade' }),
+    wallet: varchar('wallet', { length: 64 }).notNull(),
+    role: varchar('role', { length: 24 }).notNull().default('unknown'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.metaClusterId, t.wallet] }),
+    walletIdx: index('scam_farm_meta_cluster_members_wallet_idx').on(t.wallet),
+  }),
+);
+
+export const scamFarmMetaClusterCandidates = pgTable(
+  'scam_farm_meta_cluster_candidates',
+  {
+    metaClusterId: bigint('meta_cluster_id', { mode: 'number' })
+      .notNull()
+      .references(() => scamFarmMetaClusters.id, { onDelete: 'cascade' }),
+    candidateId: varchar('candidate_id', { length: 64 }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.metaClusterId, t.candidateId] }),
+    candIdx: index('scam_farm_meta_cluster_candidates_cand_idx').on(t.candidateId),
+  }),
+);
+
 /**
  * On-chain programs / protocols catalog.
  *

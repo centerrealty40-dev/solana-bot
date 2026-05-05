@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.83] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.83`.
+
+### Scam-farm — фаза B (W6.14): граф, treasury/sink, мета-кластеры
+
+- **Миграция `0021_scam_farm_meta_graph`:** таблицы `scam_farm_meta_clusters`, `scam_farm_meta_cluster_members`, `scam_farm_meta_cluster_candidates` (идемпотентность мета по `fingerprint` SHA256 от отсортированных кошельков компоненты).
+- **Код:** `src/intel/scam-farm-detective/graph/*` — узкий/широкий поиск sinks по `money_flows`, теги `farm_sink` / `farm_treasury` (`source=scam_farm_graph`), мета-кластеры и `farm_meta_member` (`source=scam_farm_meta`), relay (`relay_hub`), опционально temporal (`farm_time_cohort`, `source=scam_farm_temporal`) и CEX hint по allowlist.
+- **CLI:** `npm run scam-farm:graph`; переменные окружения — блок в `.env.example`. По умолчанию **`SCAM_FARM_GRAPH_ENABLED=0`**, **`SCAM_FARM_GRAPH_DRY_RUN=1`** (безопасный noop).
+- **Cron:** `scripts/cron/install-detective-data-plane-salpha.sh` — строка **`35 4`** UTC после `scam-farm:detect`; включение записи через `.env` на сервере (`SCAM_FARM_GRAPH_ENABLED=1`, `SCAM_FARM_GRAPH_DRY_RUN=0`).
+
+### Откат
+
+- Отключить граф: **`SCAM_FARM_GRAPH_ENABLED=0`** (или не задавать); при необходимости удалить cron-строку `scam-farm:graph` и откатить миграцию **`0021`** только по согласованию (данные мета-кластеров и новые теги с `scam_farm_graph` / `scam_farm_meta` / `scam_farm_temporal`).
+
+---
+
 ## [1.11.82] — 2026-05-01
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.82`.

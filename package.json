@@ -1,6 +1,6 @@
 {
   "name": "solana-alpha-research-platform",
-  "version": "0.1.0",
+  "version": "1.11.83",
   "private": true,
   "description": "Modular research platform for testing on-chain alpha hypotheses on Solana DEX",
   "type": "module",
@@ -66,6 +66,7 @@
     "paper2:tp-regime-buckets": "tsx src/scripts/paper2-tp-regime-bucket-backtest.ts",
     "paper2:regime-class-branch": "tsx src/scripts/paper2-regime-class-branch-backtest.ts",
     "scam-farm:detect": "tsx src/scripts/scam-farm-detective.ts",
+    "scam-farm:graph": "tsx src/scripts/scam-farm-graph.ts",
     "wallet-intel:doctor": "tsx src/scripts/wallet-intel-doctor.ts",
     "wallet-intel:policy": "tsx src/scripts/wallet-intel-policy.ts",
     "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",

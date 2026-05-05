@@ -148,6 +148,13 @@
       "when": 1780000000000,
       "tag": "0020_sa_qn_global_daily_detective_alert",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780100000000,
+      "tag": "0021_scam_farm_meta_graph",
+      "breakpoints": true
     }
   ]
 }

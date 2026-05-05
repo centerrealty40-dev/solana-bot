@@ -37,6 +37,7 @@
 | [`W6.9_IMPLEMENTATION_CHECKLIST.md`](./W6.9_IMPLEMENTATION_CHECKLIST.md) | Чеклист реализации **v1** для агента: npm/CLI, миграции, схемы таблиц, E2E прогон, non-goals |
 | [`W6.10_bot_umbrella_and_intel_pipeline.md`](./W6.10_bot_umbrella_and_intel_pipeline.md) | Umbrella-тег **`bot`**, слои A/B, единый пайплайн с W6.9, таксономия без wipe, задел на подтипы ботов |
 | [`W6.11_intel_policy_dashboard_operator_spec.md`](./W6.11_intel_policy_dashboard_operator_spec.md) | Normative: решения оператора (ENV, K=1000, permissive mint-gate, WRITE_ATLAS), таксономия тегов ↔ политика, метрики scam-farm, дашборд **`/SmartLottery`** на etonne-moi.com |
+| [`W6.14_scam_farm_analyzer_optimization_spec.md`](./W6.14_scam_farm_analyzer_optimization_spec.md) | Normative: оптимизация scam-farm analyzer — фаза B (treasury/sink, мета-кластеры, relay, temporal, CEX hint), новые теги/`source`, витрины, лимиты, roadmap P0–P5 |
 
 ---
 
