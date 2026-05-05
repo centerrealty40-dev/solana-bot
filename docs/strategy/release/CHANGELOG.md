@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.89] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.89`.
+
+### Wallet intel — W6.10 bot-bucket в прод-контуре
+
+- **`src/intel/bot-bucket/*`**, **`src/scripts/intel-bot-bucket.ts`**: модуль уже в дереве; добавлены **`npm run intel:bot-bucket`**, хук **`WALLET_INTEL_RUN_BOT_BUCKET`** в **`wallet-intel-pipeline`**, политика **`classifyWallet`**: тег **`bot`** → **UNKNOWN** (`bot_umbrella_tag`).
+- **`scripts/cron/install-detective-data-plane-salpha.sh`**: ежедневный cron **04:14 UTC** с **`BOT_BUCKET_ENABLED=1 BOT_BUCKET_DRY_RUN=0`** перед **`scam-farm:detect`**.
+- **`.env.example`**: переменные **`BOT_*`** и **`WALLET_INTEL_RUN_BOT_BUCKET`**.
+
+### Откат
+
+- Удалить строку **`intel:bot-bucket`** из crontab вручную или переустановить блок без неё из предыдущего коммита; **`git checkout sa-alpha-1.11.88`**.
+
+---
+
 ## [1.11.88] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.88`.

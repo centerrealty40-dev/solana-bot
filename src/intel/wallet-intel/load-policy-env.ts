@@ -24,6 +24,8 @@ const Schema = z.object({
   earlyWindowMinutes: z.coerce.number().int().min(1).max(24 * 60).default(45),
   ruleSetVersionOverride: z.string().optional(),
   runTagger: z.boolean().default(false),
+  /** Перед scam-farm запустить intel-bot-bucket (запись `bot` в wallet_tags). */
+  runBotBucket: z.boolean().default(false),
   taggerLookbackHours: z.coerce.number().int().min(1).max(24 * 90).default(168),
   /** При mint-check дописывать решения для покупателей без строки в wallet_intel_decisions */
   mintCheckMaterializeMissing: z.boolean().default(true),
@@ -43,6 +45,7 @@ export function loadWalletIntelEnv(): WalletIntelEnv {
     earlyWindowMinutes: process.env.WALLET_INTEL_T_EARLY_MINUTES,
     ruleSetVersionOverride: process.env.WALLET_INTEL_RULE_SET_VERSION,
     runTagger: boolEnv(process.env.WALLET_INTEL_RUN_TAGGER, false),
+    runBotBucket: boolEnv(process.env.WALLET_INTEL_RUN_BOT_BUCKET, false),
     taggerLookbackHours: process.env.WALLET_INTEL_TAGGER_LOOKBACK_HOURS,
     mintCheckMaterializeMissing: boolEnv(process.env.WALLET_INTEL_MINT_CHECK_MATERIALIZE, true),
   });

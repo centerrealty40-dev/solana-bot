@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { runBotBucketPass } from '../intel/bot-bucket/run-bot-bucket.js';
 import { tagAtlas } from '../intel/wallet-tagger.js';
 import { runScamFarmDetectivePass } from '../intel/scam-farm-detective/run-detective.js';
 import {
@@ -23,11 +24,12 @@ function dryPolicyOnly(): boolean {
 
 async function main(): Promise<void> {
   if (hasHelpFlag()) {
-    console.log(`wallet-intel-pipeline — tagAtlas (optional) → scam-farm → wallet-intel-policy
+    console.log(`wallet-intel-pipeline — tagAtlas (optional) → bot-bucket (optional) → scam-farm → wallet-intel-policy
 
 Env:
   WALLET_INTEL_RUN_TAGGER=1   — перед детективом запустить tagAtlas (тяжёлый)
   WALLET_INTEL_TAGGER_LOOKBACK_HOURS  — окно для tagAtlas (default 168)
+  WALLET_INTEL_RUN_BOT_BUCKET=1 — перед scam-farm запустить intel-bot-bucket (пишет tag bot; нужен BOT_BUCKET_* или force в коде)
   SCAM_FARM_* , WALLET_INTEL_*
 
 Flags:
@@ -59,6 +61,12 @@ Flags:
       steps.tagAtlas = t;
     } else if (env.runTagger && fullDry) {
       steps.tagAtlas = { skipped: true, reason: 'full_dry_run' };
+    }
+
+    if (env.runBotBucket && !fullDry) {
+      steps.botBucket = await runBotBucketPass({ force: true, dryRun: false });
+    } else if (env.runBotBucket && fullDry) {
+      steps.botBucket = { skipped: true, reason: 'full_dry_run' };
     }
 
     const scamMetrics = await runScamFarmDetectivePass();

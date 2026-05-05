@@ -54,6 +54,15 @@ describe('classifyWallet', () => {
     expect(r.decision).toBe('SMART_TIER_A');
   });
 
+  it('UNKNOWN when bot umbrella tag present even with smart_money (W6.10)', () => {
+    const r = classifyWallet(new Set(['smart_money', 'bot']), {
+      inScamFarmBlockSet: false,
+      botPrimarySuppressesSmart: true,
+    });
+    expect(r.decision).toBe('UNKNOWN');
+    expect(r.reasons).toContain('bot_umbrella_tag');
+  });
+
   it('suppress SMART when primary mev_bot with smart_money tag', () => {
     const r = classifyWallet(new Set(['mev_bot', 'smart_money']), {
       inScamFarmBlockSet: false,

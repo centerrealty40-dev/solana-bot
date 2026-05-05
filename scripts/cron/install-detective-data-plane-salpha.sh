@@ -34,6 +34,7 @@ SHELL=/bin/bash
 10 3 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 npm run wallet-backfill:run -- --enqueue-from-wallets=500 >> $ROOT/data/logs/wallet-backfill-enqueue.log 2>&1
 25 3 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 npm run wallet-backfill:pilot >> $ROOT/data/logs/wallet-backfill-pilot-cron.log 2>&1
 40 3 * * * cd $ROOT && SA_FUNDING_BACKFILL_ENABLED=1 npm run wallet-funding:backfill >> $ROOT/data/logs/wallet-funding-backfill.log 2>&1
+14 4 * * * cd $ROOT && BOT_BUCKET_ENABLED=1 BOT_BUCKET_DRY_RUN=0 npm run intel:bot-bucket >> $ROOT/data/logs/intel-bot-bucket-cron.log 2>&1
 15 4 * * * cd $ROOT && npm run scam-farm:detect >> $ROOT/data/logs/scam-farm-detect-cron.log 2>&1
 35 4 * * * cd $ROOT && npm run scam-farm:graph >> $ROOT/data/logs/scam-farm-graph-cron.log 2>&1
 5 */6 * * * cd $ROOT && npm run sa-qn-global-report >> $ROOT/data/logs/sa-qn-global-report.log 2>&1

@@ -46,6 +46,17 @@ export function classifyWallet(tags: Set<string>, opts: ClassifyOpts): ClassifyR
     }
   }
 
+  /** W6.10 — umbrella `bot` не даёт SMART_TIER_A даже при smart_money. */
+  if (tags.has('bot')) {
+    reasons.push('bot_umbrella_tag');
+    return {
+      decision: 'UNKNOWN',
+      score: 38,
+      reasons,
+      sources: { tags: [...tags], primaryTag: primary },
+    };
+  }
+
   let smartEligible = false;
   for (const t of tags) {
     if (SMART_TIER_A_TAGS.has(t)) {
