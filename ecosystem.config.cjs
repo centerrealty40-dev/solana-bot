@@ -677,13 +677,6 @@ module.exports = {
         /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по этой USD-нотации. */
         LIVE_MAX_POSITION_USD: '40',
         LIVE_MAX_OPEN_POSITIONS: '5',
-        /** Потолок совокупного убытка по стратегии на кошельке (live risk); ≠ односделочный SL. */
-        LIVE_MAX_STRATEGY_LOSS_USD: '50',
-        /**
-         * Коррекция к сумме (реализованное из журнала + MTM по открытым) перед сравнением с лимитом.
-         * 2026-05-01: +56 — разовое выравнивание после расхождения модели с фактом (−55.7 в risk_block при ~−26 сумме closes).
-         */
-        LIVE_STRATEGY_PNL_OFFSET_USD: '56',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /** Live-only, только **новый** buy_open: нативный SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется. */
         LIVE_MIN_WALLET_SOL_EQUITY_USD: '50',
