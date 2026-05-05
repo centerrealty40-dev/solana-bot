@@ -572,14 +572,21 @@ function computeJobRpcCap(state, weights, laneId) {
   });
 }
 
-/** @returns {Promise<boolean>} true — job реально отработал (можно помечать слот); false — пропуск без траты слота */
+/** @returns {Promise<boolean>} всегда true при нормальном завершении (в т.ч. 0 вставок); false только если пропуск из‑за исчерпания дневного RPC-пула оркестратора до входа в job */
 async function runJob(laneId, laneIdx, jobType, weights, batchId) {
   const state = getState();
   rpcBillableJob = 0;
   geckoHttpJob = 0;
   tickRpcCapJob = computeJobRpcCap(state, weights, laneId);
   if (tickRpcCapJob <= 0) {
-    log('warn', 'job skipped zero rpc budget', { laneId, jobType });
+    const eff = maxRpcPerDayEffective();
+    log('warn', 'job skipped zero rpc budget', {
+      laneId,
+      jobType,
+      rpcCallsDay: state.rpcCallsDay,
+      effectiveDayBillableRpcCapApprox: eff,
+      hint: 'SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY (+ reserve) для этого процесса; сброс на следующий UTC-день или поднять лимит',
+    });
     return false;
   }
 
@@ -717,7 +724,8 @@ async function runJob(laneId, laneIdx, jobType, weights, batchId) {
 
 function markSlotFired(state, laneId, jobType, hourUtc, utcDay) {
   const slot = fireSlotKey(utcDay, jobType, laneId, hourUtc);
-  let s = readStateRaw();
+  /** `getState()` синхронизирует день при смене UTC-даты — иначе `readStateRaw().day !== utcDay` давал тихий no-op. */
+  const s = getState();
   if (s.day !== utcDay) return;
   s.firedSlots[slot] = Date.now();
   writeStateRaw(s);
@@ -743,8 +751,9 @@ async function schedulerWaveBody(batchId) {
       if (alreadyFired(getState(), laneId, jobType, hourUtc, utcDay)) continue;
       log('info', 'orch job start', { laneId, jobType, hourUtc, minuteUtc: now.getUTCMinutes() });
       try {
-        const committed = await runJob(laneId, li, jobType, weights, batchId);
-        if (committed) markSlotFired(getState(), laneId, jobType, hourUtc, utcDay);
+        await runJob(laneId, li, jobType, weights, batchId);
+        /** Помечаем слот и при «0 RPC budget», иначе повтор каждые SA_ORCH_SCHEDULER_TICK_MS без вставок в wallets. */
+        markSlotFired(getState(), laneId, jobType, hourUtc, utcDay);
       } catch (e) {
         const code = e?.code;
         if (code === 'QN_GLOBAL_DAY_CAP') {

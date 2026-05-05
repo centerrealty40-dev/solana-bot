@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.88] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.88`.
+
+### Оркестратор кошельков — выше дневные капы QN + исправление повторов слота
+
+- **`ecosystem.config.cjs` (`sa-wallet-orchestrator`):** **`SA_QN_GLOBAL_CREDITS_PER_DAY=4000000`**, **`SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY=2200000`**, **`SA_BACKFILL_MAX_CREDITS_PER_DAY=500000`** — чтобы локальный потолок оркестратора не обрывал поток при заявленном низком расходе QuickNode.
+- **`scripts-tmp/sa-wallet-orchestrator.mjs`:** после попытки job всегда **`markSlotFired`** (включая пропуск из‑за нулевого RPC-бюджета); **`markSlotFired`** через **`getState()`**; расширенный **`job skipped zero rpc budget`** в логах.
+
+### Откат
+
+- Прежние значения в **`ecosystem.config.cjs`** для блока **`sa-wallet-orchestrator`** или **`git checkout sa-alpha-1.11.87`**.
+
+---
+
 ## [1.11.87] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.87`.

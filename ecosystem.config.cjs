@@ -128,13 +128,13 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** W6.8 — Gecko multi-lane → QN → wallets; под ~1.5M кредитов/сутки (~38% ниже пикового RPC/job vs пилот). */
+        /** W6.8 — Gecko multi-lane → QN → wallets; локальный потолок оркестратора см. SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY. */
         SA_ORCH_SCHEDULER_TICK_MS: '10000',
         SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
-        /** W6.13 — detective ledger (orch/backfill/sigseed); paper/live используют qn-client / meter. */
-        SA_QN_GLOBAL_CREDITS_PER_DAY: '2000000',
-        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '850000',
-        SA_BACKFILL_MAX_CREDITS_PER_DAY: '350000',
+        /** W6.13 — detective ledger (orch/backfill/sigseed); глобальный кап выше суммы подпулов при низком фактическом расходе QN. */
+        SA_QN_GLOBAL_CREDITS_PER_DAY: '4000000',
+        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '2200000',
+        SA_BACKFILL_MAX_CREDITS_PER_DAY: '500000',
         SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
         SA_ORCH_MAX_RPC_PER_JOB: '1200',
         SA_ORCH_MAX_RPC_PER_POOL: '180',
