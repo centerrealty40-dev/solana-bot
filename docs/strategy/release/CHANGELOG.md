@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.101] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.101`.
+
+### Операции (прод VPS, W9 + инжест `swaps`)
+
+- Репозиторий **`/opt/solana-alpha`** выровнен с **`origin/v2`** на кодовой базе **1.11.100** (расширенный allowlist DEX); **`npm ci`**, **`db:migrate`** под **`salpha`**; устранён **`EACCES`** на `node_modules` через **`chown -R salpha:salpha /opt/solana-alpha`** (см. [`deploy/RUNTIME.md`](../../../deploy/RUNTIME.md)).
+- **Боевой прогон `sigseed:run`** (`SA_SIGSEED_ENABLED=1`): **22** mint, **352** `getTransaction`, **~11,2k** кредитов QN за прогон, **229** новых вставок в **`swaps`** (новый декодер).
+- **`npm run dip-bot-intel:coverage`:** частичное покрытие якорных mint по **`swaps`** (не «все ноль»); **`npm run dip-bot-intel:run`** — без ошибок, **0** billable RPC.
+- Предупреждение воркера: суммарные объявленные дневные потолки компонентов > 70% от `SA_QN_GLOBAL_CREDITS_PER_DAY` — см. env / [`W6.13`](../Smart%20Lottery%20V2/) при необходимости снизить потолки.
+
+### Откат
+
+- Документация только: **`git checkout sa-alpha-1.11.100`**.
+
+---
+
 ## [1.11.100] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.100`.

@@ -4,6 +4,8 @@
 
 Репозиторий: `/opt/solana-alpha`, пользователь процессов: `**salpha`**, PM2 home: `/home/salpha/.pm2`.
 
+**Деплой (`git` + `npm ci`):** рабочий каталог и **`node_modules`** должны принадлежать **`salpha`**. Норматив: `git fetch origin v2 && git reset --hard origin/v2`, затем `npm ci` под `salpha`. Если **`npm ci`** падает с **`EACCES`** на удалении/записи в `node_modules` (часто после прогона под `root`), от root: **`chown -R salpha:salpha /opt/solana-alpha`**, повторить **`sudo -u salpha npm ci`**. Миграции: **`npm run db:migrate`**.
+
 **RPC / очередь:** если `rpc_tasks` раздута (сотни тысяч `queued`), новые DEX-коллекторы поднимаются с `**RAYDIUM_ENQUEUE_RPC` / `METEORA_ENQUEUE_RPC` / `ORCA_ENQUEUE_RPC` = `0`** — они всё равно пишут `*_pair_snapshots` для `enqueue-seed-signatures`, но не добавляют задачи в `rpc_tasks`. Включить `=1` после просадки очереди.
 
 ---
