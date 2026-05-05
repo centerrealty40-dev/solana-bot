@@ -3,6 +3,7 @@
  *
  *   npm run wallet-backfill:run
  *   npm run wallet-backfill:run -- --enqueue-from-wallets=2000
+ *   npm run wallet-backfill:run -- --enqueue-from-wallets=500 --dry-run   # S06: только расчёт gate, без INSERT
  *
  * Env: см. `.env.example` (SA_BACKFILL_*). Требуется миграция `0018_wallet_backfill_queue`.
  */
@@ -13,6 +14,10 @@ import type { TxJsonParsed } from '../parser/rpc-http.js';
 import { decodePumpfunSwap, PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import { insertSwaps, touchTokensAndWallets } from '../parser/writer.js';
 import { extractNativeSolTransfers } from '../intel/wallet-backfill-sol-flows.js';
+import {
+  computeEnqueueBatchSize,
+  parseOptionalPositiveIntEnv,
+} from '../intel/wallet-backfill-enqueue-gate.js';
 
 const { Pool } = pg;
 
@@ -96,6 +101,12 @@ function parseArgs() {
   return { enqueueFromWallets, dryRun };
 }
 
+async function countPendingQueue(pool: pg.Pool): Promise<number> {
+  const res = await pool.query(`SELECT count(*)::int AS c FROM wallet_backfill_queue WHERE status = 'pending'`);
+  const row = res.rows[0] as { c?: number } | undefined;
+  return row?.c ?? 0;
+}
+
 async function enqueueFromWallets(pool: pg.Pool, limit: number): Promise<number> {
   const res = await pool.query(
     `INSERT INTO wallet_backfill_queue (address, status, priority)
@@ -166,21 +177,86 @@ async function main() {
   const budgetMod = await import('../../scripts-tmp/sa-qn-global-budget-lib.mjs');
   budgetMod.logOperationalBudgetWarnings(process.env, { component: 'wallet-backfill' });
 
-  const rpcUrl = pickRpcUrl();
-  if (!rpcUrl) {
-    console.error('[fatal] SA_BACKFILL_RPC_URL or SA_RPC_HTTP_URL required');
-    process.exit(1);
-  }
-
   const poolPg = new Pool({ connectionString: databaseUrl });
-  const jr = await loadQnJsonRpc();
 
   try {
     if (enqueueN !== null) {
-      const n = await enqueueFromWallets(poolPg, enqueueN);
-      console.log(JSON.stringify({ ok: true, component: 'wallet-backfill', enqueued: n }, null, 2));
+      const pendingCount = await countPendingQueue(poolPg);
+      const gatePendingMax = parseOptionalPositiveIntEnv(process.env.SA_BACKFILL_ENQUEUE_GATE_PENDING_MAX);
+      const softCap = parseOptionalPositiveIntEnv(process.env.SA_BACKFILL_ENQUEUE_SOFT_CAP);
+      const gate = computeEnqueueBatchSize({
+        pendingCount,
+        requested: enqueueN,
+        gatePendingMax,
+        softCap,
+      });
+
+      if (dryRun) {
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              component: 'wallet-backfill',
+              mode: 'enqueue',
+              dry_run: true,
+              pending_count: pendingCount,
+              requested: enqueueN,
+              effective_n: gate.effectiveN,
+              gate_skipped: gate.skipped,
+              gate_reason: gate.reason,
+              gate_pending_max: gatePendingMax,
+              soft_cap: softCap,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      if (gate.effectiveN <= 0) {
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              component: 'wallet-backfill',
+              enqueued: 0,
+              pending_count_before: pendingCount,
+              requested: enqueueN,
+              gate,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      const n = await enqueueFromWallets(poolPg, gate.effectiveN);
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            component: 'wallet-backfill',
+            enqueued: n,
+            pending_count_before: pendingCount,
+            requested: enqueueN,
+            gate,
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
+
+    const rpcUrl = pickRpcUrl();
+    if (!rpcUrl) {
+      console.error('[fatal] SA_BACKFILL_RPC_URL or SA_RPC_HTTP_URL required');
+      process.exit(1);
+    }
+
+    const jr = await loadQnJsonRpc();
 
     if (process.env.SA_BACKFILL_ENABLED !== '1') {
       console.error('[fatal] SA_BACKFILL_ENABLED=1 required for run (safety gate)');

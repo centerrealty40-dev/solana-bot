@@ -8,6 +8,24 @@
 
 ---
 
+## [1.11.92] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.92`.
+
+### Wallet backfill — W6.12 S06 enqueue gate
+
+- **`src/intel/wallet-backfill-enqueue-gate.ts`:** расчёт эффективного батча по **`pending`**, **`SA_BACKFILL_ENQUEUE_GATE_PENDING_MAX`**, **`SA_BACKFILL_ENQUEUE_SOFT_CAP`**.
+- **`src/scripts/wallet-backfill-run.ts`:** перед enqueue — подсчёт `pending`, режим **`--dry-run`** для диагностики без INSERT; ветка enqueue не требует RPC URL.
+- **`tests/wallet-backfill-enqueue-gate.test.ts`:** покрытие веток gate / soft cap.
+- **`scripts/cron/install-detective-data-plane-salpha.sh`:** в строке enqueue выставлены **`SA_BACKFILL_ENQUEUE_GATE_PENDING_MAX=1500`**, **`SA_BACKFILL_ENQUEUE_SOFT_CAP=2400`** (подстройка под фактическую очередь — через env на VPS или правка скрипта).
+- **`.env.example`**, спека **S06** — синхронизация с реализацией.
+
+### Откат
+
+- Убрать переменные gate из cron или задать пустые; **`git checkout sa-alpha-1.11.91`** для кода.
+
+---
+
 ## [1.11.91] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.91`.

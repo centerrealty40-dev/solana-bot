@@ -31,7 +31,7 @@ cat >>"$TMP" <<EOF
 # SA_ALPHA_DP_BEGIN
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
-10 3 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 npm run wallet-backfill:run -- --enqueue-from-wallets=500 >> $ROOT/data/logs/wallet-backfill-enqueue.log 2>&1
+10 3 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 SA_BACKFILL_ENQUEUE_GATE_PENDING_MAX=1500 SA_BACKFILL_ENQUEUE_SOFT_CAP=2400 npm run wallet-backfill:run -- --enqueue-from-wallets=500 >> $ROOT/data/logs/wallet-backfill-enqueue.log 2>&1
 25 3 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 SA_BACKFILL_MAX_WALLETS_PER_RUN=160 SA_BACKFILL_SIG_PAGES_MAX=3 SA_BACKFILL_MAX_TX_PER_WALLET=32 npm run wallet-backfill:pilot >> $ROOT/data/logs/wallet-backfill-pilot-cron.log 2>&1
 17 15 * * * cd $ROOT && SA_BACKFILL_ENABLED=1 SA_BACKFILL_MAX_WALLETS_PER_RUN=120 SA_BACKFILL_SIG_PAGES_MAX=3 SA_BACKFILL_MAX_TX_PER_WALLET=28 npm run wallet-backfill:pilot >> $ROOT/data/logs/wallet-backfill-pilot-pm-cron.log 2>&1
 40 3 * * * cd $ROOT && SA_FUNDING_BACKFILL_ENABLED=1 npm run wallet-funding:backfill >> $ROOT/data/logs/wallet-funding-backfill.log 2>&1
