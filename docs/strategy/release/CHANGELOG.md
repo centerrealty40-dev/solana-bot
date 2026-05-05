@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.90] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.90`.
+
+### Детектив — свежесть `swaps`, bot-bucket окно, backfill ширина
+
+- **Диагностика:** `scripts/diag/swaps-pipeline-diagnostics.sql` — разрез `swaps.source` + очередь `wallet_backfill_queue`.
+- **`install-detective-data-plane-salpha.sh`:** `intel:bot-bucket` с **`BOT_LAYER_B_SINCE_HOURS=168`**; **`wallet-backfill:pilot`** — утренний прогон с **`SA_BACKFILL_MAX_WALLETS_PER_RUN=160`** / **`MAX_TX=32`**, второй прогон **15:17 UTC** (**120** кошельков / **28** tx) для разгрузки очереди; верхняя оценка QN на оба прогона порядка **~2.8×10⁵** billable RPC-кредитов при 30/вызов (реально ниже).
+- **`src/intel/bot-bucket/constants.ts`:** комментарий — предложение подтегов под `bot` (`bot_hf_swap`, `bot_spray_mints`, `bot_sol_hub`, `bot_combo_full`, фильтр `pump:*`).
+- **`.env.example`:** зафиксировано: в **`swaps`** попадает только **pump.fun** из стрима/backfill/sigseed; без **`sa-parser`/стрима** основной объём замирает.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.89`** или прежняя строка cron без второго pilot и без `BOT_LAYER_B_SINCE_HOURS`.
+
+---
+
 ## [1.11.89] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.89`.
