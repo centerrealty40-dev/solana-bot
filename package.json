@@ -1,6 +1,6 @@
 {
   "name": "solana-alpha-research-platform",
-  "version": "1.11.92",
+  "version": "1.11.93",
   "private": true,
   "description": "Modular research platform for testing on-chain alpha hypotheses on Solana DEX",
   "type": "module",
@@ -44,6 +44,7 @@
     "sa-qn-global-report": "node scripts-tmp/sa-qn-global-report.mjs",
     "sa-qn-budget-check": "node scripts-tmp/sa-qn-budget-check.mjs",
     "wallet-backfill:run": "tsx src/scripts/wallet-backfill-run.ts",
+    "wallet-backfill:metrics": "tsx src/scripts/wallet-backfill-metrics.ts",
     "wallet-backfill:pilot": "tsx src/scripts/wallet-backfill-pilot.ts",
     "wallet-funding:backfill": "tsx src/scripts/wallet-funding-backfill.ts",
     "sigseed:enqueue": "tsx src/scripts/sigseed-run.ts --enqueue",
