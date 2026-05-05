@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.82] — 2026-05-01
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.82`.
+
+### Live Oscar — scale-in 70/30, коридор ±5/−7%, TP до второй ноги
+
+- **`ecosystem.config.cjs` (live-oscar):** `PAPER_ENTRY_FIRST_LEG_FRACTION=0.7`, `LIVE_ENTRY_SCALE_IN_DELAY_MS=5000`, коридор **`+5% / −7%`** к якорю первой ноги.
+- **`tracker.ts`:** проверка второй ноги перенесена **после** частичных TP по сетке; при уже сработавшей ступени докупка не выполняется.
+- **`entry-scale-in.ts`:** защита от докупки при ненулевом **`partialSells`** (`risk_note` `live_scale_in_skip_partial_tp_fired`).
+- Дашборд / **IDEALIZED_OSCAR_STACK_SPEC.md** / **`.env.example`** — синхронизация описания.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.81`** и **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`**; прежние числа: доля первой ноги **0.55**, задержка **30 000** мс, коридор **+1 / −2**.
+
+---
+
 ## [1.11.81] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.81`.

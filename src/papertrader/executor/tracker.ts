@@ -1234,19 +1234,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       continue;
     }
 
-    if (livePhase4 && liveOscarCfg && ot.livePendingScaleIn) {
-      await tryLiveEntryScaleInTrackerStep({
-        cfg,
-        ot,
-        mint,
-        curMetric,
-        livePhase4,
-        liveOscarCfg,
-        journalAppend,
-        journalLiveStrategy,
-      });
-    }
-
     const firstPrice = ot.legs[0]?.price || ot.entryMcUsd;
     const dropFromFirstPct = curMetric / firstPrice - 1;
     const xAvg = curMetric / ot.avgEntry;
@@ -1425,6 +1412,25 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           }
         }
       }
+    }
+
+    /** Вторая нога — после оценки частичных TP: не докупать, если уже была ступень сетки (меньше «жирного» усреднения перед kill). */
+    if (
+      livePhase4 &&
+      liveOscarCfg &&
+      ot.livePendingScaleIn &&
+      ot.partialSells.length === 0
+    ) {
+      await tryLiveEntryScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        livePhase4,
+        liveOscarCfg,
+        journalAppend,
+        journalLiveStrategy,
+      });
     }
 
     let exitReason: ExitReason | null = null;

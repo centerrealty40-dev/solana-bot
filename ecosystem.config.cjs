@@ -512,8 +512,8 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
         PAPER_POSITION_USD: '40',
-        /** Первая нога входа — доля от `PAPER_POSITION_USD`; вторая нога ≈45% (паритет с pt1 DCA add 0.45 при двух ногах). */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.55',
+        /** Первая нога **70%**; вторая **30%** после короткой задержки и коридора Jupiter ± к первой ноге (см. LIVE_ENTRY_SCALE_IN_*). */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -690,10 +690,11 @@ module.exports = {
 
         /** Двухногий вход: вторая доля после задержки, если Jupiter в коридоре к цене первой ноги (`src/live/entry-scale-in.ts`). */
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
-        LIVE_ENTRY_SCALE_IN_DELAY_MS: '30000',
-        /** Асимметричный коридор второй ноги к якорю первой (USD/token): до +1% / до −2%; без давления на стакан. */
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
+        /** 5 с — успевает сработать частичный TP по сетке до второй ноги (трекер оценивает TP раньше scale-in). */
+        LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
+        /** Коридор второй ноги к якорю первой ноги (USD/token): до +5% / до −7% (меньше перекоса «вниз = жирная позиция» vs узкий +1/−2). */
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
         LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 

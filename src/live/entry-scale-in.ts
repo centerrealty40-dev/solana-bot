@@ -74,6 +74,22 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   if (!pending) return;
   ot.livePendingScaleIn = pending;
 
+  if (ot.partialSells.length > 0) {
+    ot.livePendingScaleIn = null;
+    appendLiveJsonlEvent({
+      kind: 'risk_note',
+      reason: 'live_scale_in_skip_partial_tp_fired',
+      detail: {
+        mint,
+        partialSellCount: ot.partialSells.length,
+        timelineKind: 'scale_in_skip',
+        timelineLabelRu:
+          'Докупка второй ноги отменена: уже сработала частичная фиксация по сетке TP — не увеличиваем нотацию перед следующими выходами.',
+      },
+    });
+    return;
+  }
+
   if (!liveOscarCfg.liveEntryScaleInEnabled || liveOscarCfg.executionMode !== 'live') return;
 
   const now = Date.now();
