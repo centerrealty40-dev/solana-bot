@@ -60,8 +60,10 @@ export const PROGRAM_ADDRESSES: ReadonlySet<string> = new Set([
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
   // Raydium CLMM
   'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK',
-  // Pump.fun
+  // Pump.fun bonding curve
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+  // Pump.fun PumpSwap AMM (post-migration)
+  'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
   // Meteora DLMM
   'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
   // Orca Whirlpool

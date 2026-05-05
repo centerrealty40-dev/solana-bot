@@ -11,7 +11,8 @@ import 'dotenv/config';
 import pg from 'pg';
 import { db, schema, sql as pgSqlClient } from '../core/db/client.js';
 import type { TxJsonParsed } from '../parser/rpc-http.js';
-import { decodePumpfunSwap, PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
+import { decodeAllowlistedDexSwapInserts } from '../parser/allowlisted-dex-swap.js';
+import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import { insertSwaps, touchTokensAndWallets } from '../parser/writer.js';
 import { extractNativeSolTransfers } from '../intel/wallet-backfill-sol-flows.js';
 import {
@@ -328,7 +329,7 @@ async function main() {
 
             if (!txJson || txJson.meta?.err != null) continue;
 
-            const swaps = decodePumpfunSwap(txJson, pumpProgram, solUsd).map((s) => ({
+            const swaps = decodeAllowlistedDexSwapInserts(txJson, pumpProgram, solUsd).map((s) => ({
               ...s,
               source: 'wallet_backfill',
             }));

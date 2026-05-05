@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.99] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.99`.
+
+### Исправлено / инжест `swaps`
+
+- **Корневая причина пустых `swaps` по якорям Live Oscar:** в **`sigseed-run`** и **`wallet-backfill`** использовался только **`decodePumpfunSwap`** (bonding curve); маршруты **Jupiter → PumpSwap / Raydium / Orca / Meteora** не попадали в таблицу.
+- **`src/parser/allowlisted-dex-swap.ts`:** после pump.fun‑декода — разрешённый список program id + **балансовый** разбор сделки (quote: WSOL, лампорты, USDC, USDT); подключено к **`sigseed:run`** и **`wallet-backfill`**.
+- **`src/core/known-addresses.ts`:** в **`PROGRAM_ADDRESSES`** добавлен **PumpSwap AMM** (`pAMMBay…`).
+- **`deploy/RUNTIME.md`**, **W9.0 §11.8:** аналитика и пост-деплой шаги (`sigseed` / backfill → `dip-bot-intel:coverage`).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.98`**; при необходимости откатить только код парсера — уже вставленные строки **`swaps`** не трогаются.
+
+---
+
 ## [1.11.98] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.98`.

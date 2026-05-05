@@ -37,7 +37,7 @@ function accountKeysList(message: Record<string, unknown> | undefined): string[]
 }
 
 /** All tx signers (Pump swaps occasionally differ from fee-payer-only balance shifts). */
-function signerPubkeys(tx: TxJsonParsed): string[] {
+export function signerPubkeys(tx: TxJsonParsed): string[] {
   const msg = tx.transaction?.message as Record<string, unknown> | undefined;
   if (!msg) return [];
   const keysRaw = (msg.accountKeys ?? msg.staticAccountKeys) as unknown;
