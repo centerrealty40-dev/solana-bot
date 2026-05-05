@@ -1,15 +1,24 @@
-/** Disjoint-set для мета-кластеров по рёбрам кошелёк↔кошелёк. */
+/** Disjoint-set для мета-кластеров (итеративный find — без переполнения стека на длинных цепочках). */
 export class UnionFind {
   private readonly parent = new Map<string, string>();
 
   find(x: string): string {
-    let p = this.parent.get(x);
-    if (p === undefined) {
-      this.parent.set(x, x);
-      return x;
+    let cur = x;
+    const path: string[] = [];
+    while (true) {
+      let p = this.parent.get(cur);
+      if (p === undefined) {
+        this.parent.set(cur, cur);
+        p = cur;
+      }
+      if (p === cur) break;
+      path.push(cur);
+      cur = p;
     }
-    const root = this.find(p);
-    if (root !== p) this.parent.set(x, root);
+    const root = cur;
+    for (const n of path) {
+      this.parent.set(n, root);
+    }
     return root;
   }
 
