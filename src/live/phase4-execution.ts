@@ -479,9 +479,35 @@ async function runTokenToSolPipeline(
   let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
   if (ok && liveCfg.executionMode === 'live' && liveOut.ok && liveOut.signature) {
     const chain = await fetchConfirmedSwapSolProceedsLamports(liveCfg, liveOut.signature, pk);
+    const quoteOk = wsolOut != null && wsolOut > 0n ? wsolOut : null;
+    /**
+     * Partial (and occasionally full) sells: meta-based SOL credit can be a tiny false positive
+     * (unwrap / WSOL bookkeeping) while Jupiter `outAmount` matches the real swap — using chain alone
+     * makes partial `proceedsUsd` ~dust and full-trade `netPnlUsd` falsely negative.
+     */
+    const QUOTE_FLOOR_LAMPORTS = 500_000n;
     if (chain != null && chain > 0n) {
-      outLamports = chain;
-      solProceedsSource = 'confirmed_meta';
+      if (
+        quoteOk != null &&
+        quoteOk >= QUOTE_FLOOR_LAMPORTS &&
+        chain < quoteOk / 5n
+      ) {
+        appendLiveJsonlEvent({
+          kind: 'risk_note',
+          reason: 'sell_sol_proceeds_chain_below_quote',
+          detail: JSON.stringify({
+            mint: args.mint.slice(0, 12),
+            intentKind: args.intentKind,
+            chainLamports: chain.toString(),
+            quoteLamports: quoteOk.toString(),
+          }).slice(0, 500),
+        });
+        outLamports = quoteOk;
+        solProceedsSource = 'jupiter_quote';
+      } else {
+        outLamports = chain;
+        solProceedsSource = 'confirmed_meta';
+      }
     }
   }
   if (outLamports == null && ok) {

@@ -503,19 +503,37 @@ async function tryExecuteTpPartialSell(args: {
   ) {
     const actualUsd = (Number(sellOut.solProceedsLamports) / 1e9) * spotSol;
     const tokensSold = investedSoldUsd / ot.avgEntry;
+    const modeledProceedsFloor = proceedsUsd;
     if (tokensSold > 1e-18 && Number.isFinite(actualUsd)) {
-      proceedsUsd = actualUsd;
-      grossProceedsUsd = actualUsd;
-      pnlUsd = proceedsUsd - investedSoldUsd;
-      grossPnlUsd = pnlUsd;
-      effectiveSell = proceedsUsd / tokensSold;
-      proceedsUsdSource =
-        sellOut.solProceedsSource === 'confirmed_meta'
-          ? 'chain_sol'
-          : sellOut.solProceedsSource === 'jupiter_quote'
-            ? 'jupiter_quote'
-            : 'chain_sol';
-      solProceedsLamports = sellOut.solProceedsLamports.toString();
+      const chainImplausible =
+        modeledProceedsFloor > 2 &&
+        actualUsd < Math.min(modeledProceedsFloor * 0.2, Math.max(0.5, modeledProceedsFloor * 0.35)) &&
+        marketSell >= ot.avgEntry * 0.97;
+      if (chainImplausible) {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            actualUsd,
+            modeledProceedsUsd: modeledProceedsFloor,
+            investedSoldUsd,
+          },
+          'live partial sell chain SOL→USD implausible vs modeled proceeds; keeping modeled USD',
+        );
+      } else {
+        proceedsUsd = actualUsd;
+        grossProceedsUsd = actualUsd;
+        pnlUsd = proceedsUsd - investedSoldUsd;
+        grossPnlUsd = pnlUsd;
+        effectiveSell = proceedsUsd / tokensSold;
+        proceedsUsdSource =
+          sellOut.solProceedsSource === 'confirmed_meta'
+            ? 'chain_sol'
+            : sellOut.solProceedsSource === 'jupiter_quote'
+              ? 'jupiter_quote'
+              : 'chain_sol';
+        solProceedsLamports = sellOut.solProceedsLamports.toString();
+      }
     }
   }
 

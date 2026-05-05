@@ -375,31 +375,34 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /** IDEALIZED Oscar §3.1 — liq ≥200k / vol5m ≥20k. */
-        PAPER_POST_MIN_LIQ_USD: '200000',
-        PAPER_POST_MIN_VOL_5M_USD: '20000',
-        PAPER_POST_MIN_BUYS_5M: '4',
-        PAPER_POST_MIN_SELLS_5M: '3',
-        PAPER_POST_MIN_BS: '0.98',
+        /**
+         * 2026-05 — смягчение воронки входа (pt1-oscar): больше открытых paper-сделок для статистики.
+         * Выходы / DCA / сетка TP без изменений.
+         */
+        PAPER_POST_MIN_LIQ_USD: '120000',
+        PAPER_POST_MIN_VOL_5M_USD: '12000',
+        PAPER_POST_MIN_BUYS_5M: '3',
+        PAPER_POST_MIN_SELLS_5M: '2',
+        PAPER_POST_MIN_BS: '0.92',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '36000',
-        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
-        PAPER_MIN_HOLDER_COUNT: '3000',
+        PAPER_VOL_1H_MIN_USD: '22000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '8',
+        PAPER_MIN_HOLDER_COUNT: '2000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        PAPER_DIP_MIN_DROP_PCT: '-15',
+        PAPER_DIP_MIN_DROP_PCT: '-12',
         PAPER_DIP_MAX_DROP_PCT: '-50',
-        PAPER_DIP_MIN_IMPULSE_PCT: '12',
+        PAPER_DIP_MIN_IMPULSE_PCT: '10',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '30',
-        PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** §4.2 — кулдаун по mint после убыточного exit. */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
+        PAPER_DIP_COOLDOWN_MIN: '20',
+        PAPER_DIP_COOLDOWN_MIN_SCALP: '14',
+        /** §4.2 — кулдаун по mint после убыточного exit (короче → больше повторных входов). */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '6',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
-        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '15',
 
         /* Oscar: DCA −7% только до первого частичного TP; докупка 45% нотионала; сетка 15% от остатка на ступень */
         PAPER_DCA_LEVELS: '-7:0.45',
@@ -471,8 +474,8 @@ module.exports = {
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
-        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
-        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '4',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '40',
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
 
@@ -676,6 +679,11 @@ module.exports = {
         LIVE_MAX_OPEN_POSITIONS: '5',
         /** Потолок совокупного убытка по стратегии на кошельке (live risk); ≠ односделочный SL. */
         LIVE_MAX_STRATEGY_LOSS_USD: '50',
+        /**
+         * Коррекция к сумме (реализованное из журнала + MTM по открытым) перед сравнением с лимитом.
+         * 2026-05-01: +56 — разовое выравнивание после расхождения модели с фактом (−55.7 в risk_block при ~−26 сумме closes).
+         */
+        LIVE_STRATEGY_PNL_OFFSET_USD: '56',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /** Live-only, только **новый** buy_open: нативный SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется. */
         LIVE_MIN_WALLET_SOL_EQUITY_USD: '50',
