@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.94] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.94`.
+
+### Wallet backfill — двухслотовый потолок кредитов в метриках (SSOT)
+
+- **`src/intel/wallet-backfill-cron-presets.ts`:** пресеты утреннего и дневного **wallet-backfill:pilot** (синхронно с **`scripts/cron/install-detective-data-plane-salpha.sh`**); функция **`pilotSlotCeilingCredits`**.
+- **`wallet-backfill:metrics`:** поля **`credits_upper_bound_pilot_slots`** (слоты + **`daily_sum_ceiling`**), **`interpretation.sa_parser_stream`**, **`spec_ref`**.
+- **`tests/wallet-backfill-cron-presets.test.ts`:** контроль суммы потолков при 30 кредитах/RPC.
+- **W6.12 S06** §7.1, **`.env.example`**, комментарий в install-cron.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.93`**.
+
+---
+
 ## [1.11.93] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.93`.

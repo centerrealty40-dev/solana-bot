@@ -9,6 +9,10 @@
 import 'dotenv/config';
 import pg from 'pg';
 import {
+  DETECTIVE_DATA_PLANE_PILOT_PRESETS,
+  pilotSlotCeilingCredits,
+} from '../intel/wallet-backfill-cron-presets.js';
+import {
   computeEnqueueBatchSize,
   parseOptionalPositiveIntEnv,
 } from '../intel/wallet-backfill-enqueue-gate.js';
@@ -30,8 +34,9 @@ Env:
   SA_BACKFILL_ENQUEUE_GATE_PENDING_MAX  как в cron / .env
   SA_BACKFILL_ENQUEUE_SOFT_CAP
 
-Оценка кредитов — из текущих env (задайте те же, что в cron pilot, перед запуском):
-  SA_BACKFILL_MAX_WALLETS_PER_RUN, SA_BACKFILL_SIG_PAGES_MAX, SA_BACKFILL_MAX_TX_PER_WALLET
+Оценка кредитов pilot — два слота из SSOT \`wallet-backfill-cron-presets.ts\` (синхронно с install-detective cron).
+
+Опционально переопределить биллинг RPC:
   QUICKNODE_CREDITS_PER_SOLANA_RPC (default 30)
 `);
 }
@@ -80,20 +85,38 @@ async function main(): Promise<void> {
     });
 
     const cp = envNum('QUICKNODE_CREDITS_PER_SOLANA_RPC', 30);
-    const w = envNum('SA_BACKFILL_MAX_WALLETS_PER_RUN', 500);
-    const sig = envNum('SA_BACKFILL_SIG_PAGES_MAX', 3);
-    const tx = envNum('SA_BACKFILL_MAX_TX_PER_WALLET', 40);
-    const ceilingOneRun = w * (sig + tx) * cp;
+
+    const pilotSlotRows = DETECTIVE_DATA_PLANE_PILOT_PRESETS.map((slot) => ({
+      id: slot.id,
+      cron_hint: slot.cronHint,
+      max_wallets: slot.maxWallets,
+      sig_pages_max: slot.sigPagesMax,
+      max_tx_per_wallet: slot.maxTxPerWallet,
+      ceiling_credits: pilotSlotCeilingCredits(slot, cp),
+    }));
+    const pilotDailyCeilingSum = pilotSlotRows.reduce((a, r) => a + r.ceiling_credits, 0);
 
     const swapsGrowing =
       swapsRes.rows.some((r: { rows_24h?: string | bigint }) => Number(r.rows_24h ?? 0) > 0) ||
       swapsRes.rows.some((r: { rows_7d?: string | bigint }) => Number(r.rows_7d ?? 0) > 0);
+
+    const parserRow = swapsRes.rows.find((r: { source?: string }) => r.source === 'sa-parser') as
+      | { rows_24h?: string | bigint; newest_swap_chain_time?: Date | string }
+      | undefined;
+    const parser24 = parserRow ? Number(parserRow.rows_24h ?? 0) : 0;
+    const parserStale = Boolean(parserRow && parser24 === 0);
+
+    const backfillRow = swapsRes.rows.find((r: { source?: string }) => r.source === 'wallet_backfill') as
+      | { rows_24h?: string | bigint }
+      | undefined;
+    const backfill24 = backfillRow ? Number(backfillRow.rows_24h ?? 0) : 0;
 
     console.log(
       JSON.stringify(
         {
           ok: true,
           component: 'wallet-backfill-metrics',
+          spec_ref: 'W6.12 S06',
           rpc_calls: 0,
           queue: {
             pending_count: pendingCount,
@@ -110,11 +133,12 @@ async function main(): Promise<void> {
             skipped: gatePreview.skipped,
             reason: gatePreview.reason,
           },
-          credits_upper_bound_one_backfill_run: {
-            formula: 'MAX_WALLETS * (SIG_PAGES_MAX + MAX_TX_PER_WALLET) * CREDITS_PER_RPC',
-            values: { wallets: w, sig_pages: sig, max_tx: tx, credits_per_rpc: cp },
-            ceiling: ceilingOneRun,
-            note: 'Верхняя граница; фактические RPC часто ниже (ранний выход по очереди sig). Задайте env как в cron перед сравнением.',
+          credits_upper_bound_pilot_slots: {
+            credits_per_rpc: cp,
+            ssot: 'src/intel/wallet-backfill-cron-presets.ts ↔ scripts/cron/install-detective-data-plane-salpha.sh',
+            slots: pilotSlotRows,
+            daily_sum_ceiling: pilotDailyCeilingSum,
+            note: 'Сумма двух ежедневных pilot-прогонов; фактический RPC ниже при раннем выходе. Без учёта sigseed/scam-farm/orchestrator.',
           },
           interpretation: {
             base_swaps_growing: swapsGrowing
@@ -123,6 +147,14 @@ async function main(): Promise<void> {
             gate: gatePreview.skipped
               ? 'Enqueue при текущих порогах был бы пропущен или обнулён — см. gate_reason.'
               : `До ${gatePreview.effectiveN} адресов можно добавить за один enqueue при запросе ${previewRequested}.`,
+            sa_parser_stream:
+              parserStale && backfill24 > 0
+                ? 'sa-parser без свежих строк за 24h — ожидаемо без стрима; свежесть тащит wallet_backfill/sigseed.'
+                : parserStale && backfill24 === 0 && !swapsGrowing
+                  ? 'Нет ни sa-parser 24h, ни wallet_backfill 24h — проверить очередь и cron pilot.'
+                  : parserStale
+                    ? 'sa-parser не обновляется за 24h; при необходимости свежего firehose — отдельный бюджетный контур.'
+                    : 'sa-parser даёт строки за 24h (или нет таблицы источника в выборке).',
           },
         },
         null,

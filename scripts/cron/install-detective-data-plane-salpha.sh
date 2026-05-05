@@ -2,6 +2,9 @@
 # Идемпотентно добавляет в crontab пользователя salpha блок задач контура детектива
 # без стрима: enqueue → wallet-backfill:pilot (ширина задаётся env в строке cron) → funding → sigseed → bot-bucket → scam-farm → отчёты ledger.
 #
+# Числа SA_BACKFILL_MAX_WALLETS_PER_RUN / SIG_PAGES / MAX_TX в строках pilot должны совпадать с
+# src/intel/wallet-backfill-cron-presets.ts (метрики npm run wallet-backfill:metrics).
+#
 # Запуск на VPS (после git pull):
 #   sudo bash /opt/solana-alpha/scripts/cron/install-detective-data-plane-salpha.sh
 #
