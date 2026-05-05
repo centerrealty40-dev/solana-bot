@@ -31,6 +31,8 @@ function entryLegSignaturesFromRestorePayload(raw: Record<string, unknown>): str
 export interface RestoreState {
   evaluatedAt: Map<string, number>;
   lastEntryTsByMint: Map<string, number>;
+  /** Последний убыточный exit по mint (replay журнала). */
+  lastLossExitTsByMint: Map<string, number>;
   open: Map<string, OpenTrade>;
 }
 
@@ -220,6 +222,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       if (Object.keys(overrides).length > 0) ot.tpGridOverrides = overrides;
     }
 
+    const lep = rawPayload.liveExitProfileMode;
+    if (lep === 'A' || lep === 'B') ot.liveExitProfileMode = lep;
+
     return ot;
   } catch {
     return null;
@@ -298,6 +303,7 @@ export function loadStore(storePath: string): RestoreState {
   const state: RestoreState = {
     evaluatedAt: new Map(),
     lastEntryTsByMint: new Map(),
+    lastLossExitTsByMint: new Map(),
     open: new Map(),
   };
   if (!fs.existsSync(storePath)) return state;
@@ -329,6 +335,13 @@ export function loadStore(storePath: string): RestoreState {
         applyDcaAddLedgerLine(state, e as unknown as Record<string, unknown>);
       }
       if (e.kind === 'close' && e.mint) {
+        const rawClose = e as Record<string, unknown>;
+        const net = Number(rawClose.netPnlUsd ?? 0);
+        const exitTs = Number(rawClose.exitTs ?? rawClose.ts ?? 0);
+        if (net < 0 && exitTs > 0) {
+          const prev = state.lastLossExitTsByMint.get(e.mint) ?? 0;
+          if (exitTs >= prev) state.lastLossExitTsByMint.set(e.mint, exitTs);
+        }
         state.open.delete(e.mint);
       }
       if (

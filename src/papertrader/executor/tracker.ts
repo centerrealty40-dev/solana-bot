@@ -1,4 +1,6 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
+import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
+import { recordLossExitIfApplicable } from '../discovery/dip-clones.js';
 import type {
   ClosedTrade,
   DexSource,
@@ -34,7 +36,7 @@ import {
   markLadderStepFired,
 } from './tp-ladder-state.js';
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
-import { tpGridEffective } from './tp-grid-effective.js';
+import { dcaKillstopEffective, tpGridEffective } from './tp-grid-effective.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
@@ -221,6 +223,7 @@ function buildExitContext(args: {
   liqDrop?: { dropPct: number; entryLiqUsd: number; currentLiqUsd: number; ageMs: number } | null;
 }): ExitContext {
   const { cfg, ot, closePnlPct, ageH, exitReason, curMetric, xAvg, tpLadder, liqDrop } = args;
+  const killEff = dcaKillstopEffective(ot, cfg);
   const peak = ot.peakPnlPct;
   const retraceFromPeakPct =
     peak > 0 && Number.isFinite(peak)
@@ -264,7 +267,7 @@ function buildExitContext(args: {
       triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
       break;
     case 'KILLSTOP':
-      triggerLabel = `DCA killstop ${(cfg.dcaKillstop * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
+      triggerLabel = `DCA killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
       break;
     case 'NO_DATA':
       triggerLabel = `no-data ${cfg.timeoutHours}h (price stream gone — hard close)`;
@@ -306,7 +309,7 @@ function buildExitContext(args: {
       trailDrop: cfg.trailDrop,
       trailTriggerX: cfg.trailTriggerX,
       timeoutHours: cfg.timeoutHours,
-      dcaKillstop: cfg.dcaKillstop,
+      dcaKillstop: killEff,
     },
   };
 }
@@ -428,6 +431,10 @@ async function tryExecuteTpPartialSell(args: {
   let grossPnlUsd = grossProceedsUsd - investedSoldUsd;
   let effectiveSell = modeledEffectiveSell;
 
+  const prevPartialDefers = exitPartialVerifyDefersByMint.get(mint) ?? 0;
+  const maxEsc = cfg.priceVerifyExitMaxDefersEscalation;
+  const escalatePartialVerify = maxEsc > 0 && prevPartialDefers >= maxEsc;
+
   const exitPvPartial = await exitPriceVerifyGate({
     cfg,
     mint,
@@ -438,6 +445,7 @@ async function tryExecuteTpPartialSell(args: {
     context: 'partial_sell',
     journalAppend,
     stats,
+    ignoreBlockOnFail: escalatePartialVerify,
   });
   if (exitPvPartial.defer) {
     const n = (exitPartialVerifyDefersByMint.get(mint) ?? 0) + 1;
@@ -451,6 +459,16 @@ async function tryExecuteTpPartialSell(args: {
       verdictSummary: priceVerifyVerdictSummary(exitPvPartial.verdict),
     });
     return 'defer_next';
+  }
+  if (escalatePartialVerify && exitPvPartial.verdict?.kind === 'blocked') {
+    journalLiveStrategy?.({
+      kind: 'live_exit_verify_defer',
+      mint,
+      context: 'partial_sell',
+      phase: 'escalate_proceed',
+      consecutiveDefers: prevPartialDefers,
+      verdictSummary: priceVerifyVerdictSummary(exitPvPartial.verdict),
+    });
   }
   clearExitPartialDeferForMint(mint);
 
@@ -671,6 +689,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
+  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
   const pxOrphan =
     ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 1e-12;
   scheduleTailAfterLiveClose(liveOscarCfg, mint, ot.symbol, ot.tokenDecimals ?? 6, pxOrphan, ot.source);
@@ -789,6 +808,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
+  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -915,6 +935,7 @@ export async function trackerForceFullExitLive(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
+  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -987,6 +1008,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   for (const mint of mints) {
     const ot = open.get(mint);
     if (!ot) continue;
+    const effCfg = cfgEffectiveForOpen(cfg, ot);
 
     let curMetric = 0;
     try {
@@ -1060,7 +1082,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           networkFeeUsdPerTx: perTxClose,
         });
         const exitContext = buildExitContext({
-          cfg,
+          cfg: effCfg,
           ot,
           closePnlPct: ct.pnlPct,
           ageH,
@@ -1122,6 +1144,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
+        recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
         scheduleTailAfterLiveClose(
           liveOscarCfg,
           mint,
@@ -1154,7 +1177,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (!(curMetric > 0)) {
-      if (ageH >= cfg.timeoutHours) {
+      if (ageH >= effCfg.timeoutHours) {
         const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
@@ -1167,7 +1190,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           networkFeeUsdPerTx: perTxNd,
         });
         const exitContextNd = buildExitContext({
-          cfg,
+          cfg: effCfg,
           ot,
           closePnlPct: ct.pnlPct,
           ageH,
@@ -1204,6 +1227,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
+        recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
       }
@@ -1227,15 +1251,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const dropFromFirstPct = curMetric / firstPrice - 1;
     const xAvg = curMetric / ot.avgEntry;
     const pnlPctVsAvg = (xAvg - 1) * 100;
-    const tgEff = tpGridEffective(ot, cfg);
+    const tgEff = tpGridEffective(ot, effCfg);
 
     if (curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
-      if (xAvg >= cfg.trailTriggerX) ot.trailingArmed = true;
+      if (xAvg >= effCfg.trailTriggerX) ot.trailingArmed = true;
       const ps = peakStateByMint.get(mint) || { lastPersistedPeak: -Infinity };
-      if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= ps.lastPersistedPeak + cfg.peakLogStepPct) {
+      if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= ps.lastPersistedPeak + effCfg.peakLogStepPct) {
         ps.lastPersistedPeak = pnlPctVsAvg;
         peakStateByMint.set(mint, ps);
         journalAppend({
@@ -1248,9 +1272,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    const killEff = dcaKillstopEffective(ot, effCfg);
     const mayDca =
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
-      (dcaLevels.length > 0 || cfg.dcaKillstop < 0) &&
+      (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0;
     if (mayDca) {
       const effPrevDrop = dcaEffPrev(ot);
@@ -1288,7 +1313,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.remainingFraction = 1;
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
-        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
+        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
+        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
         }
@@ -1313,6 +1339,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           legCount: ot.legs.length,
           mcUsdLive: mcUsdLive_dca,
           priorityFee: pfDca,
+          ...(cfg.liveExitModeAbEnabled
+            ? {
+                timelineLabelRu: `DCA шаг ${dcaIdx + 1}/${dcaLevels.length} (${(lvl.triggerPct * 100).toFixed(0)}%) · режим выхода B`,
+                liveExitProfileMode: 'B' as const,
+              }
+            : {}),
         });
         journalLiveStrategy?.({
           kind: 'live_position_dca',
@@ -1337,23 +1369,23 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const threshold = k * step;
         if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
         if (pnlFrac + LADDER_PNL_EPS < threshold) break;
-        const r = await tryExecuteTpPartialSell({
-          mint,
-          ot,
-          cfg,
-          curMetric,
-          sellFraction: sellFrac,
-          ladderStepIndex: k - 1,
-          ladderRungsTotal: 0,
-          ladderPnlPct: threshold,
-          tpGrid: true,
-          journalAppend,
-          journalLiveStrategy,
-          livePhase4,
-          stats,
-          markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
-          logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
-        });
+          const r = await tryExecuteTpPartialSell({
+            mint,
+            ot,
+            cfg: effCfg,
+            curMetric,
+            sellFraction: sellFrac,
+            ladderStepIndex: k - 1,
+            ladderRungsTotal: 0,
+            ladderPnlPct: threshold,
+            tpGrid: true,
+            journalAppend,
+            journalLiveStrategy,
+            livePhase4,
+            stats,
+            markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
+            logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
+          });
         if (r === 'abort_mint') {
           break;
         }
@@ -1371,7 +1403,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           const r = await tryExecuteTpPartialSell({
             mint,
             ot,
-            cfg,
+            cfg: effCfg,
             curMetric,
             sellFraction: lvl.sellFraction,
             ladderStepIndex: stepIdx,
@@ -1396,11 +1428,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     let exitReason: ExitReason | null = null;
-    if (cfg.dcaKillstop < 0 && pnlPctVsAvg / 100 <= cfg.dcaKillstop) exitReason = 'KILLSTOP';
-    else if (xAvg >= cfg.tpX) exitReason = 'TP';
-    else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
+    if (killEff < 0 && pnlPctVsAvg / 100 <= killEff) exitReason = 'KILLSTOP';
+    else if (xAvg >= effCfg.tpX) exitReason = 'TP';
+    else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
     else if (
-      cfg.trailMode === 'ladder_retrace' &&
+      effCfg.trailMode === 'ladder_retrace' &&
       ladderRetraceTriggered(
         ot,
         tpLadder,
@@ -1410,9 +1442,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       )
     )
       exitReason = 'TRAIL';
-    else if (cfg.trailMode === 'peak' && ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop))
+    else if (
+      effCfg.trailMode === 'peak' &&
+      ot.trailingArmed &&
+      curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
+    )
       exitReason = 'TRAIL';
-    else if (ageH >= cfg.timeoutHours) exitReason = 'TIMEOUT';
+    else if (ageH >= effCfg.timeoutHours) exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
     if (exitReason) {
@@ -1438,7 +1474,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         networkFeeUsdPerTx: perTxClose,
       });
       const exitContextMain = buildExitContext({
-        cfg,
+        cfg: effCfg,
         ot,
         closePnlPct: ct.pnlPct,
         ageH,
@@ -1450,8 +1486,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ct.exitContext = exitContextMain;
       const prevCloseDefers = exitCloseVerifyDefersByMint.get(mint) ?? 0;
       const maxEsc = cfg.priceVerifyExitMaxDefersEscalation;
-      const escalateTimeoutVerify =
-        exitReason === 'TIMEOUT' && maxEsc > 0 && prevCloseDefers >= maxEsc;
+      /** After N verify defers, force proceed on full exit (TRAIL/KILLSTOP etc.), same cap as partial escalation. */
+      const escalateCloseVerify = maxEsc > 0 && prevCloseDefers >= maxEsc;
       const exitPvClose = await exitPriceVerifyGate({
         cfg,
         mint,
@@ -1462,8 +1498,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         context: 'close',
         journalAppend,
         stats,
-        /** TIMEOUT must not wedge on Jupiter exit-verify defers (live-oscar); escalation still applies for other exits. */
-        ignoreBlockOnFail: escalateTimeoutVerify || exitReason === 'TIMEOUT',
+        /** TIMEOUT bypasses verify immediately; other reasons escalate after `priceVerifyExitMaxDefersEscalation` defers. */
+        ignoreBlockOnFail: escalateCloseVerify || exitReason === 'TIMEOUT',
       });
       if (exitPvClose.defer) {
         const n = (exitCloseVerifyDefersByMint.get(mint) ?? 0) + 1;
@@ -1479,7 +1515,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
         continue;
       }
-      if (escalateTimeoutVerify && exitPvClose.verdict?.kind === 'blocked') {
+      if (escalateCloseVerify && exitPvClose.verdict?.kind === 'blocked') {
         journalLiveStrategy?.({
           kind: 'live_exit_verify_defer',
           mint,
@@ -1535,6 +1571,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         closedTrade: serializeClosedTrade(ct),
       });
+      recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
       scheduleTailAfterLiveClose(
         liveOscarCfg,
         mint,

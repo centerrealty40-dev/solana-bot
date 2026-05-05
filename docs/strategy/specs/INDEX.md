@@ -63,6 +63,10 @@
 
 - **Execution realism.** Любая spec для W6.3 ОБЯЗАНА включать модуль `src/papertrader/costs.ts` с per-DEX комиссиями + size-aware slippage + network fee. Подробности — секция «Execution realism» в [`../W6_AUDIT.md`](../W6_AUDIT.md). Цель: paper PnL должен быть **upper bound** для live, не fantasy.
 
+## Сводный стек Oscar (idealized)
+
+- [`IDEALIZED_OSCAR_STACK_SPEC.md`](./IDEALIZED_OSCAR_STACK_SPEC.md) — единая спецификация **Paper ∥ Live**: общие гейты (liq/vol 200k/20k, loss-only 12h, дип/импульс/W7.6); paper — **классы пути + tp-regime** на выходах; live — **режимы A/B по факту усреднения** без tp-regime классов; контрфакт §7.3; чеклист §14 и план внедрения §15.
+
 ## Как использовать
 
 1. Оркестратор-агент (этот, Claude Opus) пишет следующую spec на основе результатов предыдущей.

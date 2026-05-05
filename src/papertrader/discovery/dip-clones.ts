@@ -46,6 +46,22 @@ export interface DiscoveryTickResult {
 
 export const evaluatedAtMap = new Map<string, number>();
 export const lastEntryTsByMintMap = new Map<string, number>();
+/** Последний **убыточный** exitTs по mint (ms) для `PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS`. */
+export const lastLossExitTsByMintMap = new Map<string, number>();
+
+export function recordLossExitIfApplicable(
+  cfg: PaperTraderConfig,
+  mint: string,
+  exitTsMs: number,
+  netPnlUsd: number,
+): void {
+  const h = cfg.dipLossExitCooldownHours;
+  if (!(Number(h) > 0)) return;
+  if (!(netPnlUsd < 0)) return;
+  if (!(exitTsMs > 0)) return;
+  const prev = lastLossExitTsByMintMap.get(mint) ?? 0;
+  if (exitTsMs >= prev) lastLossExitTsByMintMap.set(mint, exitTsMs);
+}
 
 function shouldEvaluate(mint: string, reevalAfterSec: number): boolean {
   const last = evaluatedAtMap.get(mint) || 0;
@@ -172,6 +188,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       cooldownReasons.push(
         `cooldown_active_${cooldownMin}m_left_${(cooldownMin - minutesSinceLast).toFixed(0)}m`,
       );
+    }
+
+    const lossH = cfg.dipLossExitCooldownHours;
+    if (Number(lossH) > 0) {
+      const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
+      const resumeAt = lastLossExit + lossH * 3_600_000;
+      if (lastLossExit > 0 && Date.now() < resumeAt) {
+        const leftH = (resumeAt - Date.now()) / 3_600_000;
+        cooldownReasons.push(
+          `loss_exit_cooldown_${lossH}h_left_${leftH.toFixed(2)}h`,
+        );
+      }
     }
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];

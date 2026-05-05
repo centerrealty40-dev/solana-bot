@@ -21,3 +21,10 @@ export function tpGridEffective(
     firstRungRetraceMinPnlPct: o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct,
   };
 }
+
+/** DCA killstop for exit/DCA gating: regime override on the open trade, else global config. */
+export function dcaKillstopEffective(ot: OpenTrade, cfg: PaperTraderConfig): number {
+  const o = ot.tpGridOverrides?.dcaKillstop;
+  if (typeof o === 'number' && o < 0) return o;
+  return cfg.dcaKillstop;
+}

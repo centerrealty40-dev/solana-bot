@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.81] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.81`.
+
+### Oscar (paper + live) — IDEALIZED stack, дашборд, документация
+
+- **Спека:** выравнивание с [`docs/strategy/specs/IDEALIZED_OSCAR_STACK_SPEC.md`](../specs/IDEALIZED_OSCAR_STACK_SPEC.md): усиленные пороги пост-lane (**ликв. ≥ $200k**, **vol 5m ≥ $20k**) для **pt1-oscar** и **live-oscar**; **paper:** `PAPER_TP_REGIME_ENABLED=1`, **`PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS=12`**; **live paper-слой:** `PAPER_TP_REGIME_ENABLED=0`, **`PAPER_LIVE_EXIT_MODE_AB=1`** и overrides **`PAPER_LIVE_EXIT_MODE_B_*`** (trail / timeout / kill).
+- **Код:** журнал scale-in с `liveExitProfileMode`; paper `open` — то же при `PAPER_LIVE_EXIT_MODE_AB`; DCA-журнал — `liveExitProfileMode: B`; дашборд: поле **`contextNote`** в таймлайне (TP-regime на open/close у paper, режимы A/B; replay **live** JSONL подмешивает `tpRegime` / `liveExitProfileMode` из snapshot).
+- **`scripts-tmp/dashboard-paper2.html`:** обновлены описания стратегий и подсказки таймлайна.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.80`** (или тег **`sa-alpha-1.11.80`**); затем **`pm2 reload ecosystem.config.cjs --only pt1-oscar,live-oscar --update-env`** под **`salpha`** и при необходимости перезапуск процесса дашборда. Предыдущие значения порогов входа в ecosystem: **$25k / $10k** vol 5m; у paper не было единого TP-regime по умолчанию и блока loss-exit cooldown в том виде.
+
+---
+
 ## [1.11.80] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.80`.

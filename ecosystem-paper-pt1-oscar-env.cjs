@@ -1,6 +1,6 @@
 /**
- * Shared PM2 env for Paper Oscar ($100 dip / post-lane). Used by `pt1-oscar` and `pt1-oscar-regime`
- * (identical entry; regime fork only adds PAPER_TP_REGIME_ENABLED + journal path).
+ * Reference env block for Paper Oscar — должен совпадать с **`pt1-oscar`** в `ecosystem.config.cjs`.
+ * Форк **pt1-oscar-regime** при необходимости переопределяет только журнал и флаги эксперимента.
  */
 const path = require('path');
 
@@ -31,8 +31,8 @@ module.exports = function pt1OscarPaperTraderEnv(root) {
     PAPER_ENABLE_POST_LANE: 'true',
     PAPER_POST_MIN_AGE_MIN: '2880',
     PAPER_POST_MAX_AGE_MIN: '0',
-    PAPER_POST_MIN_LIQ_USD: '25000',
-    PAPER_POST_MIN_VOL_5M_USD: '10000',
+    PAPER_POST_MIN_LIQ_USD: '200000',
+    PAPER_POST_MIN_VOL_5M_USD: '20000',
     PAPER_POST_MIN_BUYS_5M: '4',
     PAPER_POST_MIN_SELLS_5M: '3',
     PAPER_POST_MIN_BS: '0.98',
@@ -49,16 +49,21 @@ module.exports = function pt1OscarPaperTraderEnv(root) {
     PAPER_DIP_MIN_AGE_MIN: '0',
     PAPER_DIP_COOLDOWN_MIN: '30',
     PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+    PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
 
     PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
     PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
     PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-    PAPER_DCA_LEVELS: '-7:0.3',
+    PAPER_DCA_LEVELS: '-7:0.45',
     PAPER_DCA_KILLSTOP: '-0.14',
+    /** Tighter stop when TP regime at open is `down` (pt1-oscar-regime); global −14% still applies if unset. */
+    PAPER_TP_REGIME_DOWN_DCA_KILLSTOP: '-0.07',
+    /** Prod pt1-oscar: классы пути до входа → overrides сетки (см. IDEALIZED_OSCAR_STACK_SPEC §7). */
+    PAPER_TP_REGIME_ENABLED: '1',
     PAPER_TP_LADDER: '',
     PAPER_TP_GRID_STEP_PNL: '0.05',
-    PAPER_TP_GRID_SELL_FRACTION: '0.2',
+    PAPER_TP_GRID_SELL_FRACTION: '0.15',
     PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
     PAPER_TP_X: '100',
     PAPER_SL_X: '0',

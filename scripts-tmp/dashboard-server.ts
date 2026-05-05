@@ -1402,6 +1402,8 @@ export type TimelineEvent = {
   amountUsd: number | null;
   /** Set when live journal correlates an on-chain swap (`execution_result.txSignature`). */
   txSignature?: string | null;
+  /** Доп. строки: TP-regime (paper), режим выхода A/B (live) — см. IDEALIZED_OSCAR_STACK_SPEC. */
+  contextNote?: string | null;
 };
 
 /** Solana mainnet explorer link for a transaction signature. */
@@ -1472,6 +1474,32 @@ function fmtSignedPct(p: number | null | undefined): string {
   return `${sign}${p.toFixed(0)}%`;
 }
 
+/** Человекочитаемое пояснение к классу пути до входа (журнал `tpRegime`). */
+function tpRegimeRu(tp: unknown): string | null {
+  const raw = typeof tp === 'string' ? tp.trim().toLowerCase() : '';
+  if (!raw) return null;
+  const map: Record<string, string> = {
+    down: 'вниз',
+    up: 'вверх',
+    sideways: 'флэт',
+    unknown: 'не классифицирован',
+  };
+  return map[raw] ?? raw;
+}
+
+/** Контекст для строк таймлайна open/close (paper + live). */
+function timelineContextNoteFromJournal(e: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  const tpRu = tpRegimeRu(e.tpRegime);
+  if (tpRu) parts.push(`Класс пути до входа (TP-regime): ${tpRu} (${String(e.tpRegime)})`);
+  const mode = e.liveExitProfileMode;
+  if (mode === 'A')
+    parts.push('Режим выхода A/B: A — до второй ноги входа или до DCA');
+  else if (mode === 'B')
+    parts.push('Режим выхода A/B: B — после второй ноги или DCA (профиль B)');
+  return parts.length ? parts.join('\n') : null;
+}
+
 export function buildTimelineEvent(
   e: Record<string, unknown>,
   metricType: string | null,
@@ -1511,6 +1539,7 @@ export function buildTimelineEvent(
         ? String(e.timelineOpenLabelRu).trim()
         : null;
     const openLabel = ruOpen ?? 'Open';
+    const ctxOpen = timelineContextNoteFromJournal(e);
     return {
       ts,
       kind: 'open',
@@ -1523,6 +1552,7 @@ export function buildTimelineEvent(
       reason: null,
       remainingFraction: 1,
       amountUsd: amountOpen > 0 ? amountOpen : null,
+      ...(ctxOpen ? { contextNote: ctxOpen } : {}),
     };
   }
   if (kind === 'scale_in_add') {
@@ -1536,6 +1566,7 @@ export function buildTimelineEvent(
           ? `Докупка ${pct}% позиции`
           : 'Докупка второй ноги входа';
     const sizeUsd = Number(e.sizeUsd ?? e.size_usd ?? 0);
+    const ctxScale = timelineContextNoteFromJournal(e);
     return {
       ts,
       kind: 'scale_in_add',
@@ -1548,6 +1579,7 @@ export function buildTimelineEvent(
       reason: 'scale_in',
       remainingFraction: null,
       amountUsd: sizeUsd > 0 ? sizeUsd : null,
+      ...(ctxScale ? { contextNote: ctxScale } : {}),
     };
   }
   if (kind === 'dca_add') {
@@ -1565,7 +1597,12 @@ export function buildTimelineEvent(
           ? ` · шаг ${Math.floor(dcaStep) + 1}/${Math.floor(dcaTot)}`
           : ` · шаг ${Math.floor(dcaStep) + 1}`;
     }
-    const label = `DCA${stepPart} · уровень ${fmtSignedPct(triggerPct)} (от первой ноги)`;
+    const ruDca =
+      typeof e.timelineLabelRu === 'string' && e.timelineLabelRu.trim().length
+        ? String(e.timelineLabelRu).trim()
+        : null;
+    const label = ruDca ?? `DCA${stepPart} · уровень ${fmtSignedPct(triggerPct)} (от первой ноги)`;
+    const ctxDca = timelineContextNoteFromJournal(e);
     return {
       ts,
       kind: 'dca_add',
@@ -1578,6 +1615,7 @@ export function buildTimelineEvent(
       reason: 'dca',
       remainingFraction: null,
       amountUsd: sz > 0 ? sz : null,
+      ...(ctxDca ? { contextNote: ctxDca } : {}),
     };
   }
   if (kind === 'partial_sell') {
@@ -1654,6 +1692,7 @@ export function buildTimelineEvent(
     const rfClose = Number(e.remainingFraction ?? 0);
     const closeSoldCost =
       tiuClose > 0 && Number.isFinite(rfClose) && rfClose > 0 ? tiuClose * rfClose : null;
+    const ctxClose = timelineContextNoteFromJournal(e);
     return {
       ts,
       kind: 'close',
@@ -1666,6 +1705,7 @@ export function buildTimelineEvent(
       reason: exitReason,
       remainingFraction: 0,
       amountUsd: closeSoldCost,
+      ...(ctxClose ? { contextNote: ctxClose } : {}),
     };
   }
   return null;
@@ -2180,6 +2220,10 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         ...(typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
           ? { timelineOpenLabelRu: o.timelineOpenLabelRu.trim() }
           : {}),
+        ...(typeof ot.tpRegime === 'string' && ot.tpRegime.trim() ? { tpRegime: ot.tpRegime } : {}),
+        ...(ot.liveExitProfileMode === 'A' || ot.liveExitProfileMode === 'B'
+          ? { liveExitProfileMode: ot.liveExitProfileMode }
+          : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, metricType, entryRealMcUsd));
       liveTimelines.set(mint, tev ? [tev] : []);
@@ -2196,6 +2240,8 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const legUsd = Number(lastLeg.sizeUsd ?? 0);
       const fracFull = posUsd > 0 && legUsd > 0 ? legUsd / posUsd : 0;
 
+      const baseLab =
+        fracFull > 0 ? `Докупка ${Math.round(fracFull * 100)}% позиции` : 'Докупка второй ноги входа';
       const syn: Record<string, unknown> = {
         kind: 'scale_in_add',
         ts,
@@ -2204,11 +2250,12 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         sizeUsd: legUsd,
         secondLegFractionOfFull: fracFull > 0 ? +fracFull.toFixed(6) : undefined,
         timelineLabelRu:
-          fracFull > 0
-            ? `Докупка ${Math.round(fracFull * 100)}% позиции`
-            : 'Докупка второй ноги входа',
+          ot.liveExitProfileMode === 'B' ? `${baseLab} · режим выхода B` : baseLab,
         totalInvestedUsd: ot.totalInvestedUsd,
         mcUsdLive: undefined,
+        ...(ot.liveExitProfileMode === 'A' || ot.liveExitProfileMode === 'B'
+          ? { liveExitProfileMode: ot.liveExitProfileMode }
+          : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
       if (tev) {
@@ -2236,17 +2283,26 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const dcaLevelsTotal =
         Array.isArray(ot.dcaUsedLevels) && ot.dcaUsedLevels.length > 0 ? ot.dcaUsedLevels.length : 1;
 
+      const trig = Number(lastLeg.triggerPct ?? 0);
       const syn: Record<string, unknown> = {
         kind: 'dca_add',
         ts,
         mint,
         marketPrice: Number(lastLeg.marketPrice ?? lastLeg.price ?? 0),
         sizeUsd: Number(lastLeg.sizeUsd ?? 0),
-        triggerPct: Number(lastLeg.triggerPct ?? 0),
+        triggerPct: trig,
         dcaStepIndex,
         dcaLevelsTotal,
         totalInvestedUsd: ot.totalInvestedUsd,
         mcUsdLive: undefined,
+        ...(ot.liveExitProfileMode === 'B'
+          ? {
+              timelineLabelRu: `DCA шаг ${dcaStepIndex + 1}/${dcaLevelsTotal} (${(trig * 100).toFixed(0)}%) · режим выхода B`,
+              liveExitProfileMode: 'B',
+            }
+          : ot.liveExitProfileMode === 'A'
+            ? { liveExitProfileMode: 'A' }
+            : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
       if (tev) {
@@ -2321,6 +2377,10 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         exitReason: ct.exitReason,
         remainingFraction: 0,
         totalInvestedUsd: ct.totalInvestedUsd,
+        ...(typeof ct.tpRegime === 'string' && ct.tpRegime.trim() ? { tpRegime: ct.tpRegime } : {}),
+        ...(ct.liveExitProfileMode === 'A' || ct.liveExitProfileMode === 'B'
+          ? { liveExitProfileMode: ct.liveExitProfileMode }
+          : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
       const arr = liveTimelines.get(mint) ?? [];

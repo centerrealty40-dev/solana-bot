@@ -22,6 +22,7 @@ import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impuls
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
+  lastLossExitTsByMintMap,
   recordEntryTs,
   runDipDiscovery,
 } from './discovery/dip-clones.js';
@@ -130,11 +131,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     ? {
         evaluatedAt: new Map<string, number>(),
         lastEntryTsByMint: new Map<string, number>(),
+        lastLossExitTsByMint: new Map<string, number>(),
         open: new Map<string, OpenTrade>(),
       }
     : loadStore(cfg.storePath);
   for (const [mint, ts] of restored.evaluatedAt) evaluatedAtMap.set(mint, ts);
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
+  for (const [mint, ts] of restored.lastLossExitTsByMint) lastLossExitTsByMintMap.set(mint, ts);
   const open: Map<string, OpenTrade> =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
   for (const ot of open.values()) {
@@ -478,6 +481,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         ot.tokenDecimals = tokenDecimals;
 
         await resolveTpRegimeForOpen(cfg, ot);
+        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'A';
 
         const liveOscar = resolveLiveOscar();
         if (liveOscar) {
@@ -540,6 +544,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             priceVerify: cfg.priceVerifyEnabled ? priceVerify : null,
             impulseConfirm: impulseConfirm ?? undefined,
             ...(simAudit != null ? { simAudit } : {}),
+            ...(ot.tpRegime ? { tpRegime: ot.tpRegime } : {}),
+            ...(ot.tpRegimeFeatures ? { tpRegimeFeatures: { ...ot.tpRegimeFeatures } } : {}),
+            ...(ot.tpGridOverrides ? { tpGridOverrides: { ...ot.tpGridOverrides } } : {}),
+            ...(cfg.liveExitModeAbEnabled && ot.liveExitProfileMode
+              ? { liveExitProfileMode: ot.liveExitProfileMode }
+              : {}),
           });
         }
 

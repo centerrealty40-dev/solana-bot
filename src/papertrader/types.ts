@@ -47,6 +47,8 @@ export interface TpGridOverrides {
   gridSellFraction?: number;
   gridMaxRungs?: number;
   gridFirstRungRetraceMinPnlPct?: number;
+  /** Regime fork: override `PAPER_DCA_KILLSTOP` for this open (negative fraction). */
+  dcaKillstop?: number;
 }
 
 export interface TpRegimeFeatures {
@@ -141,6 +143,12 @@ export interface OpenTrade {
   tpRegime?: TpRegime;
   tpRegimeFeatures?: TpRegimeFeatures;
   tpGridOverrides?: TpGridOverrides;
+
+  /**
+   * Live Oscar (`PAPER_LIVE_EXIT_MODE_AB`): **A** до первого усреднения (DCA или scale-in), **B** после.
+   * Paper игнорирует; задаётся в main/трекере при включённом флаге.
+   */
+  liveExitProfileMode?: 'A' | 'B';
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */

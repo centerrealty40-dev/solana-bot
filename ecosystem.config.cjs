@@ -375,8 +375,9 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '25000',
-        PAPER_POST_MIN_VOL_5M_USD: '10000',
+        /** IDEALIZED Oscar §3.1 — liq ≥200k / vol5m ≥20k. */
+        PAPER_POST_MIN_LIQ_USD: '200000',
+        PAPER_POST_MIN_VOL_5M_USD: '20000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
@@ -393,17 +394,23 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+        /** §4.2 — кулдаун по mint после убыточного exit. */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        /* Oscar: DCA −7% только до первого частичного TP; сетка +5% PnL → 20% текущего остатка; retrace → full close */
-        PAPER_DCA_LEVELS: '-7:0.3',
+        /* Oscar: DCA −7% только до первого частичного TP; докупка 45% нотионала; сетка 15% от остатка на ступень */
+        PAPER_DCA_LEVELS: '-7:0.45',
         PAPER_DCA_KILLSTOP: '-0.14',
+        /** При `PAPER_TP_REGIME_ENABLED=1` и метке `down` на входе — ужесточить killstop (скальп). */
+        PAPER_TP_REGIME_DOWN_DCA_KILLSTOP: '-0.07',
+        /** Paper Oscar — классы пути до входа → overrides сетки (IDEALIZED §7). */
+        PAPER_TP_REGIME_ENABLED: '1',
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.2',
+        PAPER_TP_GRID_SELL_FRACTION: '0.15',
         /** После 1-й ступени сетки не ждать отката к 0% к средней — фиксировать остаток при откате до ~+2.5%. */
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
@@ -505,8 +512,8 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
         PAPER_POSITION_USD: '40',
-        /** Первая нога входа — доля от `PAPER_POSITION_USD`; вторая нога live см. `LIVE_ENTRY_SCALE_IN_*`. */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
+        /** Первая нога входа — доля от `PAPER_POSITION_USD`; вторая нога ≈45% (паритет с pt1 DCA add 0.45 при двух ногах). */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.55',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -523,8 +530,8 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '25000',
-        PAPER_POST_MIN_VOL_5M_USD: '10000',
+        PAPER_POST_MIN_LIQ_USD: '200000',
+        PAPER_POST_MIN_VOL_5M_USD: '20000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
@@ -541,18 +548,28 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
+        /** Live: без tp-regime классов на входе; режимы A/B после усреднения (IDEALIZED §8.2). */
+        PAPER_TP_REGIME_ENABLED: '0',
+        /** Режим A = параметры ниже до второй ноги; режим B после scale-in (или DCA, если включат уровни). */
+        PAPER_LIVE_EXIT_MODE_AB: '1',
+        PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
+        PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
+        PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
+
         /** Live Oscar: без DCA между ногами — только 70% + отложенная 30% по коридору Jupiter. */
         PAPER_DCA_LEVELS: '',
         PAPER_DCA_KILLSTOP: '-0.05',
-        /** TP grid: +5% PnL к средней за ступень; 30% текущего остатка; число ступеней не ограничивается конфигом (`PAPER_TP_LADDER` пуст). */
+        /** TP grid: +5% PnL к средней за ступень; 15% текущего остатка за ступень. */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.3',
+        PAPER_TP_GRID_SELL_FRACTION: '0.15',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',

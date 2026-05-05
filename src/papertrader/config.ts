@@ -13,6 +13,12 @@ function envBool(v: unknown, defaultVal: boolean): boolean {
   return defaultVal;
 }
 
+function envOptNum(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** CSV minutes, e.g. `120,360,720`. Empty → `[primaryMin]` only (legacy single-window dip). */
 export function resolveDipLookbackWindows(primaryMin: number, csv: string): number[] {
   const t = csv.trim();
@@ -133,6 +139,19 @@ const ConfigSchema = z.object({
   dipMinAgeMin: z.coerce.number().nonnegative().default(25),
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
+  /** После убыточного закрытия — пауза повторного входа на тот же mint (часы). 0 = выкл. */
+  dipLossExitCooldownHours: z.coerce.number().nonnegative().default(0),
+
+  /** Live Oscar: режимы выхода A/B (до / после усреднения). Paper: держать false. */
+  liveExitModeAbEnabled: z.boolean().default(false),
+  liveExitModeBTrailDrop: z.coerce.number().min(0).max(1).optional(),
+  liveExitModeBTrailTriggerX: z.coerce.number().positive().optional(),
+  liveExitModeBTimeoutHours: z.coerce.number().positive().optional(),
+  liveExitModeBTpGridStepPnl: z.coerce.number().nonnegative().optional(),
+  liveExitModeBTpGridSellFraction: z.coerce.number().min(0).max(1).optional(),
+  liveExitModeBTpGridFirstRungRetraceMinPnlPct: z.coerce.number().min(0).max(0.5).optional(),
+  liveExitModeBDcaKillstop: z.coerce.number().optional(),
+  liveExitModeBPeakLogStepPct: z.coerce.number().nonnegative().optional(),
 
   dipRecoveryVetoEnabled: z.boolean().default(false),
   dipRecoveryVetoWindowsCsv: z.string().default(''),
@@ -206,6 +225,11 @@ const ConfigSchema = z.object({
   tpRegimeUpNetPct: z.coerce.number().default(5),
   tpRegimeSidewaysAbsNetPct: z.coerce.number().nonnegative().default(3),
   tpRegimeSidewaysMinRangePct: z.coerce.number().nonnegative().default(15),
+  /**
+   * When regime at open is `down`, stamp `tpGridOverrides.dcaKillstop` (tighter scalp-style stop).
+   * Omit env to leave global `PAPER_DCA_KILLSTOP` only.
+   */
+  tpRegimeDownDcaKillstop: z.number().min(-0.99).max(-0.001).optional(),
 
   followupOffsetsMinSpec: z.string().default('30,60,120'),
 
@@ -246,9 +270,11 @@ const ConfigSchema = z.object({
   priceVerifyExitEnabled: z.boolean().default(false),
   priceVerifyExitBlockOnFail: z.boolean().default(false),
   /**
-   * After this many consecutive **full exit** verify defers for the same mint, TIMEOUT closes skip
-   * `block_on_fail` for one attempt (live telemetry: `live_exit_verify_defer` phase escalate_proceed).
-   * **0** = disable escalation (legacy: can defer indefinitely).
+   * After this many consecutive pre-exit verify defers for the same mint:
+   * - **partial sells**: next attempt skips `block_on_fail`.
+   * - **full exit**: TIMEOUT bypasses verify on first attempt; TRAIL/KILLSTOP/… escalate after this many defers.
+   * Telemetry: `live_exit_verify_defer` phase `escalate_proceed`.
+   * **0** = disable escalation for partial + non-TIMEOUT closes (legacy wedge).
    */
   priceVerifyExitMaxDefersEscalation: z.coerce.number().int().min(0).max(50_000).default(60),
 
@@ -421,6 +447,18 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipMinAgeMin: process.env.PAPER_DIP_MIN_AGE_MIN,
     dipCooldownMinDefault: process.env.PAPER_DIP_COOLDOWN_MIN,
     dipCooldownMinScalp: process.env.PAPER_DIP_COOLDOWN_MIN_SCALP,
+    dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,
+    liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
+    liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
+    liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),
+    liveExitModeBTimeoutHours: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS),
+    liveExitModeBTpGridStepPnl: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL),
+    liveExitModeBTpGridSellFraction: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION),
+    liveExitModeBTpGridFirstRungRetraceMinPnlPct: envOptNum(
+      process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
+    ),
+    liveExitModeBDcaKillstop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP),
+    liveExitModeBPeakLogStepPct: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_PEAK_LOG_STEP_PCT),
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
     dipRecoveryVetoWindowsCsv: process.env.PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN ?? '',
     dipRecoveryVetoMaxBouncePct: process.env.PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT,
@@ -467,6 +505,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     tpRegimeUpNetPct: process.env.PAPER_TP_REGIME_UP_NET_PCT,
     tpRegimeSidewaysAbsNetPct: process.env.PAPER_TP_REGIME_SIDEWAYS_ABS_NET_PCT,
     tpRegimeSidewaysMinRangePct: process.env.PAPER_TP_REGIME_SIDEWAYS_MIN_RANGE_PCT,
+    tpRegimeDownDcaKillstop: (() => {
+      const raw = process.env.PAPER_TP_REGIME_DOWN_DCA_KILLSTOP;
+      if (raw === undefined || raw === '') return undefined;
+      const n = Number(raw);
+      return Number.isFinite(n) && n < 0 ? n : undefined;
+    })(),
     followupOffsetsMinSpec: process.env.PAPER_FOLLOWUP_OFFSETS_MIN,
     contextSwapsEnabled: envBool(process.env.PAPER_CONTEXT_SWAPS, true),
     contextSwapsLimit: process.env.PAPER_CONTEXT_SWAPS_LIMIT,

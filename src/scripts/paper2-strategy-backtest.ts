@@ -12,7 +12,9 @@
  * two logs may be missed. Tier-B improvement: densify from pair_snapshots in PG.
  */
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as readline from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../papertrader/config.js';
 import { loadPaperTraderConfig, parseDcaLevels, parseTpLadder } from '../papertrader/config.js';
@@ -25,6 +27,14 @@ import {
   markDcaStepFired,
 } from '../papertrader/executor/dca-state.js';
 import {
+  dcaKillstopEffective,
+  tpGridEffective,
+} from '../papertrader/executor/tp-grid-effective.js';
+import {
+  LADDER_PNL_EPS,
+  ladderPnlThresholdMark,
+  ladderPnlThresholdTaken,
+  ladderRetraceTriggered,
   ladderStepOrThresholdTaken,
   markLadderStepFired,
 } from '../papertrader/executor/tp-ladder-state.js';
@@ -134,7 +144,22 @@ function buildClosedTradeSim(args: {
   };
 }
 
-function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
+/** Instant full exit at `marketSell` (no partials) — for oracle / hold-thesis probes vs PG path. */
+export function oracleFullExitNetPnlUsd(cfg: PaperTraderConfig, ot: OpenTrade, marketSell: number): number {
+  const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+  if (investedRemaining <= 1e-9 || marketSell <= 0) return 0;
+  const { effectivePrice: effectiveSell } = applyExitCosts(
+    cfg,
+    marketSell,
+    ot.dex,
+    Math.max(1, investedRemaining),
+    ot.entryLiqUsd,
+  );
+  const finalProceeds = investedRemaining * (effectiveSell / ot.avgEntry);
+  return finalProceeds - ot.totalInvestedUsd;
+}
+
+export function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
   const legs = open.legs as PositionLeg[] | undefined;
   const leg0 = legs?.[0];
   if (!leg0) throw new Error('open event missing legs[0]');
@@ -148,7 +173,7 @@ function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
   const entryLiqRaw = open.entryLiqUsd ?? feat?.liq_usd;
   const entryLiqUsd =
     typeof entryLiqRaw === 'number' && Number(entryLiqRaw) > 0 ? Number(entryLiqRaw) : null;
-  return {
+  const ot: OpenTrade = {
     mint: String(open.mint),
     symbol: String(open.symbol ?? ''),
     lane: (open.lane as Lane) || 'post_migration',
@@ -174,6 +199,13 @@ function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
     pairAddress,
     entryLiqUsd,
   };
+  const tpR = open.tpRegime as OpenTrade['tpRegime'] | undefined;
+  if (tpR) ot.tpRegime = tpR;
+  const tpGo = open.tpGridOverrides as OpenTrade['tpGridOverrides'] | undefined;
+  if (tpGo && typeof tpGo === 'object') ot.tpGridOverrides = { ...tpGo };
+  const tpRf = open.tpRegimeFeatures as OpenTrade['tpRegimeFeatures'] | undefined;
+  if (tpRf && typeof tpRf === 'object') ot.tpRegimeFeatures = { ...tpRf };
+  return ot;
 }
 
 function anchorsFromEvents(events: Record<string, unknown>[]): Anchor[] {
@@ -245,8 +277,10 @@ export function simStep(args: {
 
   const firstPrice = ot.legs[0]?.price || ot.entryMcUsd;
   const dropFromFirstPct = curMetric / firstPrice - 1;
+  /** Snapshot at tick start (matches `tracker.ts` exit gate inputs). */
   const xAvg = curMetric / ot.avgEntry;
   const pnlPctVsAvg = (xAvg - 1) * 100;
+  const tgEff = tpGridEffective(ot, cfg);
 
   if (curMetric > ot.peakMcUsd) {
     const wasArmed = ot.trailingArmed;
@@ -258,7 +292,12 @@ export function simStep(args: {
     }
   }
 
-  if ((dcaLevels.length > 0 || cfg.dcaKillstop < 0) && ot.remainingFraction > 0) {
+  const killEffBt = dcaKillstopEffective(ot, cfg);
+  const mayDca =
+    (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
+    (dcaLevels.length > 0 || killEffBt < 0) &&
+    ot.remainingFraction > 0;
+  if (mayDca) {
     const effPrevDrop = dcaEffPrev(ot);
     for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
       const lvl = dcaLevels[dcaIdx]!;
@@ -288,7 +327,47 @@ export function simStep(args: {
     }
   }
 
-  /** Ladder threshold matches live `tracker.ts`: uses `xAvg` from tick start (before DCA), while sizing uses post-DCA `ot`. */
+  /** TP grid (+5% steps, etc.) — same order as `tracker.ts`. Partial sizing uses post-DCA `ot`; thresholds use tick-start `xAvg`. */
+  if (tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
+    const pnlFrac = xAvg - 1;
+    const step = tgEff.stepPnl;
+    const sellFrac = Math.min(1, tgEff.sellFraction);
+    let maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
+    if (tgEff.maxRungs != null && tgEff.maxRungs >= 1) {
+      maxK = Math.min(maxK, tgEff.maxRungs);
+    }
+    for (let k = 1; k <= maxK; k++) {
+      const threshold = k * step;
+      if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
+      if (pnlFrac + LADDER_PNL_EPS < threshold) break;
+      const sellFraction = sellFrac;
+      const marketSellPx = curMetric;
+      const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
+      const { effectivePrice: effectiveSell } = applyExitCosts(cfg, marketSellPx, ot.dex, investedSoldUsd, null);
+      const remainingValueNet = ot.totalInvestedUsd * ot.remainingFraction * (effectiveSell / ot.avgEntry);
+      const proceedsUsd = remainingValueNet * sellFraction;
+      const remainingValueGross =
+        ot.totalInvestedUsd * ot.remainingFraction * (marketSellPx / ot.avgEntryMarket);
+      const grossProceedsUsd = remainingValueGross * sellFraction;
+      const pnlUsd = proceedsUsd - investedSoldUsd;
+      const grossPnlUsd = grossProceedsUsd - investedSoldUsd;
+      ot.partialSells.push({
+        ts: virtualNow,
+        price: effectiveSell,
+        marketPrice: marketSellPx,
+        sellFraction,
+        reason: 'TP_LADDER',
+        proceedsUsd,
+        grossProceedsUsd,
+        pnlUsd,
+        grossPnlUsd,
+      });
+      ot.remainingFraction *= 1 - sellFraction;
+      ladderPnlThresholdMark(ot.ladderUsedLevels, threshold);
+    }
+  }
+
+  /** Discrete `PAPER_TP_LADDER` rows (if any). */
   if (tpLadder.length > 0 && ot.remainingFraction > 0) {
     for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
       const lvl = tpLadder[stepIdx]!;
@@ -323,13 +402,23 @@ export function simStep(args: {
     }
   }
 
-  const xAvgExit = curMetric / ot.avgEntry;
-  const pnlPctVsAvgExit = (xAvgExit - 1) * 100;
   let exitReason: ExitReason | null = null;
-  if (cfg.dcaKillstop < 0 && pnlPctVsAvgExit / 100 <= cfg.dcaKillstop) exitReason = 'KILLSTOP';
-  else if (xAvgExit >= cfg.tpX) exitReason = 'TP';
-  else if (cfg.slX > 0 && xAvgExit <= cfg.slX) exitReason = 'SL';
-  else if (ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop)) exitReason = 'TRAIL';
+  if (killEffBt < 0 && pnlPctVsAvg / 100 <= killEffBt) exitReason = 'KILLSTOP';
+  else if (xAvg >= cfg.tpX) exitReason = 'TP';
+  else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
+  else if (
+    cfg.trailMode === 'ladder_retrace' &&
+    ladderRetraceTriggered(
+      ot,
+      tpLadder,
+      xAvg,
+      tgEff.stepPnl > 0 ? 'grid' : 'discrete',
+      tgEff.firstRungRetraceMinPnlPct,
+    )
+  )
+    exitReason = 'TRAIL';
+  else if (cfg.trailMode === 'peak' && ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop))
+    exitReason = 'TRAIL';
   else if (ageH >= cfg.timeoutHours) exitReason = 'TIMEOUT';
   if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
@@ -375,23 +464,29 @@ function deepCloneOpen(ot: OpenTrade): OpenTrade {
   };
 }
 
-function simulateLifecycle(args: {
+export function simulateLifecycle(args: {
   baseOt: OpenTrade;
   anchors: Anchor[];
   cfg: PaperTraderConfig;
+  /** After any simulated `dca` leg exists, switch exit/grid/trail/timeout to this config (next tick onward). */
+  cfgAfterDca?: PaperTraderConfig;
   dcaLevels: DcaLevel[];
   tpLadder: TpLadderLevel[];
   stepMs: number;
 }): ClosedTrade | null {
-  const { baseOt, anchors, cfg, dcaLevels, tpLadder, stepMs } = args;
+  const { baseOt, anchors, cfg, cfgAfterDca, dcaLevels, tpLadder, stepMs } = args;
   const ot = deepCloneOpen(baseOt);
   const peakLog = { lastPersistedPeak: -Infinity };
+  let activeCfg = cfg;
   const lastAnchorTs = anchors.length ? anchors[anchors.length - 1].ts : baseOt.entryTs;
 
   for (let t = ot.entryTs; t <= lastAnchorTs + stepMs; t += stepMs) {
     const curMetric = priceAt(anchors, t);
-    const r = simStep({ cfg, ot, curMetric, virtualNow: t, dcaLevels, tpLadder, peakLog });
+    const r = simStep({ cfg: activeCfg, ot, curMetric, virtualNow: t, dcaLevels, tpLadder, peakLog });
     if (r.closed) return r.closed;
+    if (cfgAfterDca && ot.legs.some((l) => l.reason === 'dca')) {
+      activeCfg = cfgAfterDca;
+    }
   }
 
   // Force close at end of path if still open (label TIMEOUT at last price).
@@ -402,14 +497,14 @@ function simulateLifecycle(args: {
     const marketSell = curMetric;
     const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
     const { effectivePrice: effectiveSell } = applyExitCosts(
-      cfg,
+      activeCfg,
       marketSell,
       ot.dex,
       Math.max(1, investedRemaining),
       null,
     );
     return buildClosedTradeSim({
-      cfg,
+      cfg: activeCfg,
       ot,
       marketSell,
       effectiveSell,
@@ -419,7 +514,7 @@ function simulateLifecycle(args: {
     });
   }
   return buildClosedTradeSim({
-    cfg,
+    cfg: activeCfg,
     ot,
     marketSell: 0,
     effectiveSell: 0,
@@ -474,7 +569,7 @@ async function main(): Promise<void> {
   const jsonlPath = arg('--jsonl');
   if (!jsonlPath || !fs.existsSync(jsonlPath)) {
     console.error(
-      'Usage: tsx src/scripts/paper2-strategy-backtest.ts --jsonl <path.jsonl> [--grid quick|medium|dno] [--step-ms N] [--features-only] [--no-dca] [--bucket-dip]',
+      'Usage: tsx src/scripts/paper2-strategy-backtest.ts --jsonl <path.jsonl> [--grid quick|medium|dno] [--step-ms N] [--features-only] [--no-dca] [--bucket-dip] [--since-close-hours N]',
     );
     process.exit(1);
   }
@@ -484,6 +579,7 @@ async function main(): Promise<void> {
   const featuresOnly = flag('--features-only');
   const noDca = flag('--no-dca');
   const bucketDip = flag('--bucket-dip');
+  const sinceCloseH = Number(arg('--since-close-hours') ?? NaN);
 
   let cfg: PaperTraderConfig;
   try {
@@ -493,7 +589,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const lifecycles = await readLifecycles(jsonlPath);
+  let lifecycles = await readLifecycles(jsonlPath);
+  if (Number.isFinite(sinceCloseH) && sinceCloseH > 0) {
+    const sinceTs = Date.now() - sinceCloseH * 3_600_000;
+    lifecycles = lifecycles.filter((lc) => {
+      const c = lc.close;
+      const exitTs = typeof c.exitTs === 'number' ? c.exitTs : 0;
+      const wallTs = typeof c.ts === 'number' ? c.ts : 0;
+      const t = exitTs > 0 ? exitTs : wallTs;
+      return t >= sinceTs;
+    });
+    console.log(`\n(--since-close-hours ${sinceCloseH}) Lifecycles with exit time in window: ${lifecycles.length}`);
+  }
   if (lifecycles.length === 0) {
     console.error('No complete open→close lifecycles found in file.');
     process.exit(1);
@@ -660,7 +767,17 @@ async function main(): Promise<void> {
   console.log('\nNote: ladder/DCA specs follow PAPER_DCA_LEVELS / PAPER_TP_LADDER from env; extend script to grid those strings if needed.');
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+/** Only run CLI when this file is the process entry (imports must not fire main()). */
+function ranAsCliScript(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const here = path.resolve(fileURLToPath(import.meta.url));
+  return path.resolve(entry) === here;
+}
+
+if (ranAsCliScript()) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
