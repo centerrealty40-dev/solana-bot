@@ -68,8 +68,9 @@ export async function fetchBuyersInWindow(
   sql: postgres.Sql,
   args: { mint: string; windowStartMs: number; windowEndMs: number; minUsd: number; excludeWallet: string | null },
 ): Promise<{ wallet: string; buyUsd: number; swapsRows: number }[]> {
-  const t0 = new Date(args.windowStartMs);
-  const t1 = new Date(args.windowEndMs);
+  // `postgres` tagged-template driver does not bind JS `Date`; use ISO for timestamptz.
+  const t0 = new Date(args.windowStartMs).toISOString();
+  const t1 = new Date(args.windowEndMs).toISOString();
   const rows = await sql<{ wallet: string; buy_usd: number; ct: number }[]>`
     SELECT wallet::text,
            COALESCE(SUM(amount_usd), 0)::float8 AS buy_usd,
