@@ -508,9 +508,9 @@
         label: 'Oscar · TP regime',
         tag: 'paper',
         oneLiner:
-          'Отдельный журнал с тем же профилем, что pt1-oscar; основной **pt1-oscar** в prod уже несёт **`PAPER_TP_REGIME_ENABLED=1`** — этот ряд для параллельных экспериментов и истории (`pt1-oscar-regime.jsonl`).',
+          'Второй бумажный Oscar — отдельный журнал **`pt1-oscar-regime.jsonl`**. **Классификация пути до входа (TP-regime) включена** (`PAPER_TP_REGIME_ENABLED=1`): классы down/up/sideways/unknown → те же overrides сетки TP и при необходимости kill, что у основного pt1-oscar (см. карточку **Oscar (pt1-oscar)**). Колонка нужна для параллельного ряда и истории.',
         details:
-          'SSOT: общий блок env с **pt1-oscar** через `ecosystem-paper-pt1-oscar-env.cjs`; отличия — `PAPER_STRATEGY_ID`, файл **`data/paper2/pt1-oscar-regime.jsonl`**, **`PAPER_TP_REGIME_ENABLED=1`**. Остальные параметры входа/DCA/сетки — как у Oscar (см. карточку pt1-oscar); меняется только разметка режима и переопределения сетки при открытии.\n\nПодробнее в `docs/strategy/release/CHANGELOG.md` (релиз с `pt1-oscar-regime`).',
+          '**Режим классов монеты:** включён — **`PAPER_TP_REGIME_ENABLED=1`**. По PG-снимкам пула перед открытием считается класс пути (**down / up / sideways / unknown**); для **down** и **sideways** подмешиваются **`tpGridOverrides`**, для **down** может действовать **`PAPER_TP_REGIME_DOWN_DCA_KILLSTOP`** (см. `src/papertrader/pricing/tp-regime.ts`). Журнал: **`data/paper2/pt1-oscar-regime.jsonl`**.\n\nОсновной **`pt1-oscar`** в prod сейчас тоже с **`PAPER_TP_REGIME_ENABLED=1`** — отличие колонки только в **файле журнала** и в том, что процесс **`pt1-oscar-regime`** может быть включён отдельно в PM2 для A/B.\n\nОстальные параметры входа/DCA/сетки по замыслу совпадают с **Oscar (pt1-oscar)** — см. там же блок про вход и сетку.\n\nПодробнее в `docs/strategy/release/CHANGELOG.md` (релиз с `pt1-oscar-regime`).',
       },
       'pt1-oscar': {
         label: 'Oscar (pt1-oscar)',
