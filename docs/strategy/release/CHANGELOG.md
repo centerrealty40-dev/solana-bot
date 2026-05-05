@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.95] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.95`.
+
+### Hourly Telegram — блок детектива (PG-only) + сдвиг cron bot-bucket
+
+- **`scripts-tmp/hourly-telegram-report.mjs`:** в том же сообщении, что Coverage / оркестратор / Health — секция **«Детектив · bot-bucket / backfill»**: за последний час и всего по тегу **`bot`** (строки и уник. кошельки), узкие теги **`mev_bot`**, **`bot_farm_boss`**, **`bot_farm_distributor`**, **`sniper`**, очередь **`wallet_backfill_queue`** (pending/running/done/error), топ **`error_message`**. Без доп. RPC. Выкл: **`HOURLY_APPEND_DETECTIVE_INTEL=0`**.
+- **`scripts/cron/install-detective-data-plane-salpha.sh`:** **`intel:bot-bucket`** перенесён с **04:14** на **04:12** UTC (развести пик PG с **`scam-farm:detect`** в **04:15**). После pull на VPS: повторный запуск install-скрипта.
+- **`deploy/RUNTIME.md`**, **`.env.example`:** env и описание.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.94`**; на VPS переустановить cron из скрипта предыдущей версии при необходимости; **`HOURLY_APPEND_DETECTIVE_INTEL=0`** отключает блок в hourly.
+
+---
+
 ## [1.11.94] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.94`.

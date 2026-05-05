@@ -180,6 +180,8 @@ sudo bash /opt/solana-alpha/scripts/cron/install-detective-data-plane-salpha.sh
 
 Блок помечен `# SA_ALPHA_DP_BEGIN` … `# SA_ALPHA_DP_END` (повторный запуск перезаписывает только этот блок).
 
+**Расписание блока (UTC, `salpha`):** `03:10` `wallet-backfill:run` (enqueue); `03:25` и `15:17` `wallet-backfill:pilot`; `03:40` `wallet-funding:backfill`; `04:12` `intel:bot-bucket`; `04:15` `scam-farm:detect`; `04:35` `scam-farm:graph`; минута **5** каждые **6** ч `sa-qn-global-report`; `00 4 * * *` `sa-qn-budget-check`; каждый час **`:08`** `sigseed:enqueue`, **`:18`** `sigseed:run`. **Hourly Telegram** (отдельная строка crontab, чаще всего **`:05`**) идёт **раньше** ежечасного sigseed — лёгкие read-only запросы к PG в отчёте не конкурируют с **`:08`**.
+
 ---
 
 ##### Sigseed (pipeline 2) — текущая реализация `v2`
@@ -223,6 +225,7 @@ npm run scam-farm:detect
 | `SCAM_FARM_MAX_RPC_CREDITS_PER_DAY` | Явные кредиты для RPC-фазы detective; иначе `SCAM_FARM_RPC_BUDGET` × `QUICKNODE_CREDITS_PER_SOLANA_RPC`. |
 | `npm run sa-qn-budget-check` | Проверка суммы потолков (stdout JSON, предупреждения в stderr). |
 | `HOURLY_APPEND_QN_LEDGER=1` | В **hourly-telegram-report** добавить строку `sa_qn_global_daily` (нужен PG в env hourly). |
+| `HOURLY_APPEND_DETECTIVE_INTEL` | По умолчанию включён (`≠0`): в том же hourly-сообщении блок **bot-bucket / backfill** (счётчики по `wallet_tags`, очередь `wallet_backfill_queue`). Выключить: `HOURLY_APPEND_DETECTIVE_INTEL=0`. |
 
 **Cron (рекомендация):** раз в сутки после UTC-смены или перед scam-farm — `npm run sa-qn-global-report >> data/logs/sa-qn-global-report.log`; опционально `npm run sa-qn-budget-check >> data/logs/sa-qn-budget-check.log 2>&1`.
 
@@ -258,7 +261,7 @@ Per-DEX отбор «smart money» по раннерам из `<dex>_pair_snapsh
 
 - `strategy-simulator` — **должен быть только у одного пользователя** (см. §4).
 - `raydium-healthcheck.mjs`
-- `hourly-telegram-report.mjs` — сводка в Telegram: Coverage + **оркестратор кошельков** (новые **`wallets`** за **`HOURLY_COVERAGE_HOURS`** по **`seed_lane`**, W6.8 §10 п.4) + Health + **Live Oscar** (PnL, открытыя), Eval (paper `pt1-oscar.jsonl`), баланс кошелька (**`HOURLY_RPC_URL`** / **`HOURLY_WALLET_PUBKEY`**, иначе fallback **`SA_RPC_*`** / **`LIVE_WALLET_PUBKEY`**), неуспешные исполнения за час; см. **`HOURLY_*`** в `.env.example`
+- `hourly-telegram-report.mjs` — сводка в Telegram: Coverage + **оркестратор кошельков** (новые **`wallets`** за **`HOURLY_COVERAGE_HOURS`** по **`seed_lane`**, W6.8 §10 п.4) + **детектив** (тег `bot` за час / всего, узкие теги, очередь backfill, топ ошибок; только PG, **`HOURLY_APPEND_DETECTIVE_INTEL`**) + Health + **Live Oscar** (PnL, открытыя), Eval (paper `pt1-oscar.jsonl`), баланс кошелька (**`HOURLY_RPC_URL`** / **`HOURLY_WALLET_PUBKEY`**, иначе fallback **`SA_RPC_*`** / **`LIVE_WALLET_PUBKEY`**), неуспешные исполнения за час; см. **`HOURLY_*`** в `.env.example`
 - `paper2-healthcheck.mjs` (два варианта с разными флагами Telegram)
 - `paper2-advisor.mjs`
 - `sa-export-root-pm2.sh` ежеминутно — экспорт `pm2 jlist` root в `/run/sa-root-pm2.json` для `health-summary` (см. `scripts/cron/export-root-pm2.sh`).

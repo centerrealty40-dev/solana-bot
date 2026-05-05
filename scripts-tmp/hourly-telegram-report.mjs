@@ -13,6 +13,8 @@ const COVERAGE_HOURS = Number(process.env.HOURLY_COVERAGE_HOURS || 1);
 const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
 /** W6.13 P0.2 — одна строка сводки ledger в телеграм-отчёте (требует PG_URL). */
 const APPEND_QN_LEDGER = process.env.HOURLY_APPEND_QN_LEDGER === '1';
+/** W6.12 S06 / W6.10 — блок детектива (bot-теги, узкие теги, очередь backfill). Только SQL; выкл: HOURLY_APPEND_DETECTIVE_INTEL=0 */
+const APPEND_DETECTIVE_INTEL = process.env.HOURLY_APPEND_DETECTIVE_INTEL !== '0';
 
 const LIVE_JSONL =
   process.env.HOURLY_LIVE_JSONL ||
@@ -205,6 +207,100 @@ async function fetchHealth(pool) {
 const ORCH_WALLET_LANES = ['pumpswap', 'raydium', 'meteora', 'orca', 'moonshot'];
 
 /** Новые строки `wallets` от коллектора-оркестратора за окно HOURLY_COVERAGE_HOURS (по metadata.seed_lane). */
+const NARROW_TAGS_FOR_INTEL = ['mev_bot', 'bot_farm_boss', 'bot_farm_distributor', 'sniper'];
+
+/** Сводка bot-bucket / wallet_backfill для часового TG (без RPC). */
+async function fetchDetectiveIntelSummary(pool) {
+  if (!pool) return null;
+  const client = await pool.connect();
+  try {
+    const reg = await client.query(`SELECT to_regclass('public.wallet_tags') AS wt, to_regclass('public.wallet_backfill_queue') AS q`);
+    const hasWt = Boolean(reg.rows[0]?.wt);
+    const hasQ = Boolean(reg.rows[0]?.q);
+    if (!hasWt && !hasQ) {
+      return { ok: true, empty: true, note: 'нет таблиц wallet_tags / wallet_backfill_queue' };
+    }
+
+    let botRows1h = null;
+    let botWallets1h = null;
+    let botRowsTotal = null;
+    let botWalletsTotal = null;
+    let lastBotAddedAt = null;
+    let narrowRowsTotal = null;
+    let narrowWalletsTotal = null;
+    const queueByStatus = {};
+
+    if (hasWt) {
+      const r1 = await client.query(
+        `SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag = 'bot' AND added_at >= now() - interval '1 hour'`,
+      );
+      botRows1h = Number(r1.rows[0]?.c ?? 0);
+
+      const r2 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag = 'bot' AND added_at >= now() - interval '1 hour'`,
+      );
+      botWallets1h = Number(r2.rows[0]?.c ?? 0);
+
+      const r3 = await client.query(`SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag = 'bot'`);
+      botRowsTotal = Number(r3.rows[0]?.c ?? 0);
+
+      const r4 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag = 'bot'`,
+      );
+      botWalletsTotal = Number(r4.rows[0]?.c ?? 0);
+
+      const r5 = await client.query(`SELECT MAX(added_at) AS ts FROM wallet_tags WHERE tag = 'bot'`);
+      lastBotAddedAt = r5.rows[0]?.ts ? String(r5.rows[0].ts) : null;
+
+      const nt = NARROW_TAGS_FOR_INTEL.map((t) => `'${t.replace(/'/g, "''")}'`).join(', ');
+      const r6 = await client.query(
+        `SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag IN (${nt})`,
+      );
+      narrowRowsTotal = Number(r6.rows[0]?.c ?? 0);
+
+      const r7 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag IN (${nt})`,
+      );
+      narrowWalletsTotal = Number(r7.rows[0]?.c ?? 0);
+    }
+
+    let errorSamples = [];
+    if (hasQ) {
+      const qs = await client.query(
+        `SELECT status, COUNT(*)::int AS n FROM wallet_backfill_queue GROUP BY status ORDER BY status`,
+      );
+      for (const row of qs.rows) {
+        queueByStatus[String(row.status)] = Number(row.n ?? 0);
+      }
+
+      const qe = await client.query(
+        `SELECT COALESCE(left(error_message, 96), '(empty)') AS msg, COUNT(*)::int AS n
+         FROM wallet_backfill_queue
+         WHERE status = 'error' AND error_message IS NOT NULL AND length(trim(error_message)) > 0
+         GROUP BY 1 ORDER BY n DESC LIMIT 4`,
+      );
+      errorSamples = qe.rows.map((row) => ({ msg: String(row.msg), n: Number(row.n ?? 0) }));
+    }
+
+    return {
+      ok: true,
+      botRows1h,
+      botWallets1h,
+      botRowsTotal,
+      botWalletsTotal,
+      lastBotAddedAt,
+      narrowRowsTotal,
+      narrowWalletsTotal,
+      queueByStatus,
+      errorSamples,
+    };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  } finally {
+    client.release();
+  }
+}
+
 async function fetchOrchestratorWalletInserts(pool) {
   const base = { pumpswap: 0, raydium: 0, meteora: 0, orca: 0, moonshot: 0, other: 0, total: 0 };
   if (!pool) return base;
@@ -406,6 +502,7 @@ async function fetchQnLedgerSummary(pool) {
 function buildHourlyReport({
   coverage,
   orchWallets,
+  detectiveIntel,
   health,
   live,
   evalAgg,
@@ -446,6 +543,45 @@ function buildHourlyReport({
       lines.push(`- ${k}: ${orchWallets[k] ?? 0}`);
     }
     if (orchWallets.other > 0) lines.push(`- прочие/неизв. lane: ${orchWallets.other}`);
+  }
+
+  lines.push('');
+  lines.push('Детектив · bot-bucket / backfill (PG-only, см. HOURLY_APPEND_DETECTIVE_INTEL)');
+  lines.push(
+    '- Cron (UTC): enqueue 03:10; pilot 03:25 и 15:17; intel:bot-bucket 04:12; scam-farm:detect 04:15 — install-detective-data-plane-salpha.sh',
+  );
+  if (!detectiveIntel) {
+    lines.push('- (нет PG или блок выключен HOURLY_APPEND_DETECTIVE_INTEL=0)');
+  } else if (detectiveIntel.empty) {
+    lines.push(`- ${detectiveIntel.note || 'нет таблиц'}`);
+  } else if (detectiveIntel.ok === false) {
+    lines.push(`- ошибка выборки: ${String(detectiveIntel.error || '').slice(0, 200)}`);
+  } else {
+    lines.push(
+      `- Тег bot за последний час: ${detectiveIntel.botRows1h ?? 'n/a'} строк, ${detectiveIntel.botWallets1h ?? 'n/a'} уник. кошельков`,
+    );
+    lines.push(
+      `- Всего с тегом bot: ${detectiveIntel.botWalletsTotal ?? 'n/a'} кошельков (${detectiveIntel.botRowsTotal ?? 'n/a'} строк tag×source)`,
+    );
+    lines.push(
+      `- Узкие теги (${NARROW_TAGS_FOR_INTEL.join(', ')}): ${detectiveIntel.narrowRowsTotal ?? 'n/a'} строк, ${detectiveIntel.narrowWalletsTotal ?? 'n/a'} уник. кошельков`,
+    );
+    lines.push(
+      `- Последняя запись bot (added_at): ${detectiveIntel.lastBotAddedAt ? detectiveIntel.lastBotAddedAt.slice(0, 19) : 'н/д'}`,
+    );
+    const q = detectiveIntel.queueByStatus || {};
+    lines.push(
+      `- Очередь wallet_backfill: pending ${q.pending ?? 0}, running ${q.running ?? 0}, done ${q.done ?? 0}, error ${q.error ?? 0}`,
+    );
+    const errs = detectiveIntel.errorSamples || [];
+    if (!errs.length) {
+      lines.push('- Ошибки очереди (топ): нет классифицированных error_message');
+    } else {
+      lines.push('- Ошибки очереди (топ по частоте):');
+      for (const { msg, n } of errs) {
+        lines.push(`  · ×${n}: ${msg}`);
+      }
+    }
   }
 
   lines.push('');
@@ -507,7 +643,7 @@ function buildHourlyReport({
     }
   }
 
-  return lines.join('\n').slice(0, 3900);
+  return lines.join('\n').slice(0, 4050);
 }
 
 function listStoresDebug() {
@@ -557,6 +693,7 @@ async function main() {
 
   let coverage = null;
   let orchWallets = null;
+  let detectiveIntel = null;
   let health = [];
   let qnLedgerLine = null;
   let pool = null;
@@ -566,6 +703,9 @@ async function main() {
       pool = new Pool({ connectionString: PG_URL });
       coverage = await fetchCoverage(pool);
       orchWallets = await fetchOrchestratorWalletInserts(pool);
+      if (APPEND_DETECTIVE_INTEL) {
+        detectiveIntel = await fetchDetectiveIntelSummary(pool);
+      }
       health = await fetchHealth(pool);
       if (APPEND_QN_LEDGER) {
         qnLedgerLine = await fetchQnLedgerSummary(pool);
@@ -584,6 +724,7 @@ async function main() {
   const text = buildHourlyReport({
     coverage,
     orchWallets,
+    detectiveIntel,
     health,
     live,
     evalAgg,
