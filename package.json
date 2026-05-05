@@ -25,6 +25,7 @@
     "atlas": "tsx src/scripts/atlas.ts",
     "papertrader": "tsx src/scripts/papertrader.ts",
     "live-oscar": "tsx src/scripts/live-oscar.ts",
+    "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",
     "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",

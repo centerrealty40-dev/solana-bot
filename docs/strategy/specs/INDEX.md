@@ -57,6 +57,8 @@
 
 **Аналитический контур:** агент начинает с [`../../Smart Lottery V2/README.md`](../../Smart Lottery V2/README.md).
 
+| W9.0 | [`W9.0_dip_bot_intel_spec.md`](./W9.0_dip_bot_intel_spec.md) | **normative** — интеллект по **`dip_bot`**: якоря MVP только **Live Oscar**; **bootstrap** daily **02:25 UTC**, затем **steady** вторник **02:25 UTC**; пре-окно, RPC без внешнего индексатора, тег в Postgres рядом с **`bot`**, кластеризация; фаза 2 — профили выхода | JSONL live, Postgres, RPC |
+
 **Примечание W6.5 (DoD):** все prod бумажные стратегии (`pt1-oscar`, `pt1-diprunner`, `pt1-dno`) и **`live-oscar`** используют пост-lane с **минимальным возрастом пула в снимке 2880 мин (48 ч / 2 дня)** и **`PAPER_POST_MAX_AGE_MIN=0`** (верхняя граница не задана); SSOT — блоки `env` в [`ecosystem.config.cjs`](../../../ecosystem.config.cjs). Если за окно наблюдения в БД мало зрелых пар, в JSONL возможны серии только `heartbeat` (`disc=0`) — это ожидаемо; формальный DoD «≥5 eval за 30 мин» в такой сессии может не достигаться до появления кандидатов или по решению пользователя — точечный hot-fix параметров (например ослабить `PAPER_POST_MIN_AGE_MIN` только для отдельного PM2-приложения) оформляется отдельным коммитом и записью в [`CHANGELOG`](../release/CHANGELOG.md).
 
 ## Сквозные требования к W6.3a/b/c

@@ -78,7 +78,8 @@ async function fetchPricePathStats(args: {
   return { n, firstPx, lastPx, hi, lo };
 }
 
-function classifyRegime(args: {
+/** Exported for unit tests and deterministic regime stamps. */
+export function classifyRegime(args: {
   cfg: PaperTraderConfig;
   netMovePct: number;
   rangePct: number;

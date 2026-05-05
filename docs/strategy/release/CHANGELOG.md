@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.96] — 2026-05-03
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.96`.
+
+### Добавлено
+
+- **W9.0 dip_bot intel (v1):** миграция **`0022_dip_bot_intel`** (`dip_bot_intel_state`, `dip_bot_intel_anchors_processed`, `dip_bot_intel_observations`); джоба **`npm run dip-bot-intel:run`** — якоря **`live_position_open`** только **`live-oscar`** из JSONL (`DIP_BOT_LIVE_JSONL` / `LIVE_TRADES_PATH`), покупатели в пре-окне из **`swaps`** (Postgres-first, **0 billable RPC** в v1); продвижение в **`wallet_tags`** с `tag=dip_bot`, `source=dip_bot_intel` при **`DIP_BOT_MIN_HITS`**. Установщик cron: **`scripts/cron/install-dip-bot-cron-salpha.sh`** (steady: вт **02:25** UTC). См. [`W9.0_dip_bot_intel_spec.md`](../strategy/specs/W9.0_dip_bot_intel_spec.md).
+
+### Откат
+
+- `VERSION` **`1.11.95`**; `git checkout sa-alpha-1.11.95`; при необходимости откатить миграцию **`0022`** и строки **`wallet_tags`** с **`source=dip_bot_intel`**; убрать блок **`DIP_BOT_CRON_*`** из crontab **`salpha`**.
+
+---
+
 ## [1.11.95] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.95`.
