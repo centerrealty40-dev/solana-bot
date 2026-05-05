@@ -13,32 +13,39 @@ function parseCsvAddresses(raw: string | undefined): string[] {
     .filter((s) => s.length >= 32 && s.length <= 64);
 }
 
+/** Явный env: если переменная не задана — берём defaultWhenUnset (Zod default не сработает при передаче false из isTruthy(undefined)). */
+function envBool(key: string, defaultWhenUnset: boolean): boolean {
+  const v = process.env[key];
+  if (v === undefined || v === '') return defaultWhenUnset;
+  return isTruthy(v);
+}
+
 const EnvSchema = z.object({
   enabled: z.boolean().default(false),
   dryRun: z.boolean().default(true),
-  statementTimeoutMs: z.coerce.number().int().min(0).max(3_600_000).default(180_000),
+  statementTimeoutMs: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
 
   seedCap: z.coerce.number().int().min(100).max(500_000).default(25_000),
 
-  sinkLookbackHours: z.coerce.number().int().min(1).max(720).default(72),
+  sinkLookbackHours: z.coerce.number().int().min(1).max(720).default(168),
   sinkAsset: z.string().min(1).max(16).default('SOL'),
-  sinkMinSources: z.coerce.number().int().min(2).max(10_000).default(8),
-  treasuryMinSources: z.coerce.number().int().min(2).max(20_000).default(12),
-  sinkMinTotalSol: z.coerce.number().min(0).default(0.05),
-  sinkMaxTargetsPerRun: z.coerce.number().int().min(1).max(5000).default(500),
+  sinkMinSources: z.coerce.number().int().min(2).max(10_000).default(5),
+  treasuryMinSources: z.coerce.number().int().min(2).max(20_000).default(8),
+  sinkMinTotalSol: z.coerce.number().min(0).default(0.02),
+  sinkMaxTargetsPerRun: z.coerce.number().int().min(1).max(5000).default(800),
 
-  sinkWideMode: z.boolean().default(false),
-  sinkWideMinSources: z.coerce.number().int().min(3).max(50_000).default(15),
+  sinkWideMode: z.boolean().default(true),
+  sinkWideMinSources: z.coerce.number().int().min(3).max(50_000).default(10),
 
   excludeTargets: z.array(z.string()).default([]),
 
   metaMinWallets: z.coerce.number().int().min(2).max(50_000).default(4),
   metaFlowEdges: z.boolean().default(true),
-  metaFlowEdgesLimit: z.coerce.number().int().min(0).max(100_000).default(8000),
+  metaFlowEdgesLimit: z.coerce.number().int().min(0).max(100_000).default(12_000),
 
   relayEnabled: z.boolean().default(true),
-  relayMinIn: z.coerce.number().int().min(2).max(5000).default(4),
-  relayMinOut: z.coerce.number().int().min(2).max(5000).default(4),
+  relayMinIn: z.coerce.number().int().min(2).max(5000).default(3),
+  relayMinOut: z.coerce.number().int().min(2).max(5000).default(3),
   relayHubCap: z.coerce.number().int().min(10).max(50_000).default(600),
 
   temporalEnabled: z.boolean().default(false),
@@ -73,7 +80,7 @@ export function loadScamFarmGraphConfig(): ScamFarmGraphConfig {
     sinkMinTotalSol: process.env.SCAM_FARM_SINK_MIN_TOTAL_SOL,
     sinkMaxTargetsPerRun: process.env.SCAM_FARM_SINK_MAX_TARGETS_PER_RUN,
 
-    sinkWideMode: isTruthy(process.env.SCAM_FARM_SINK_WIDE_MODE),
+    sinkWideMode: envBool('SCAM_FARM_SINK_WIDE_MODE', true),
     sinkWideMinSources: process.env.SCAM_FARM_SINK_WIDE_MIN_SOURCES,
 
     excludeTargets: parseCsvAddresses(process.env.SCAM_FARM_SINK_EXCLUDE_WALLETS),
