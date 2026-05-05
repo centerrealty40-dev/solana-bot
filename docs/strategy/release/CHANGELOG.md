@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.91] — 2026-04-30
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.91`.
+
+### Документация — W6.12 S06 (bounded completeness ingest без stream)
+
+- Новая нормативная спека `docs/Smart Lottery V2/W6.12_S06_bounded_completeness_swap_ingest_plan_spec.md`: вселенная **U**, сходимость **`wallet_backfill_queue`**, gate enqueue, формулы кредитов (S01), метрики SQL, фазы месяца **M0–M3**, согласование окон scam-farm / bot-bucket.
+- Обновлены `docs/Smart Lottery V2/W6.12_OVERVIEW_detective_without_chain_firehose.md` (таблица §3) и `docs/Smart Lottery V2/README.md` (блок W6.12).
+- **`.env.example`:** закомментированные заготовки **S06** (`SA_BACKFILL_ENQUEUE_*`) до появления реализации gate в коде.
+
+### Откат
+
+- Документы: **`git checkout sa-alpha-1.11.90`** для указанных путей или revert коммита.
+
+---
+
 ## [1.11.90] — 2026-04-30
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.90`.

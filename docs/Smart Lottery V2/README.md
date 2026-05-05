@@ -39,6 +39,13 @@
 | [`W6.11_intel_policy_dashboard_operator_spec.md`](./W6.11_intel_policy_dashboard_operator_spec.md) | Normative: решения оператора (ENV, K=1000, permissive mint-gate, WRITE_ATLAS), таксономия тегов ↔ политика, метрики scam-farm, дашборд **`/SmartLottery`** на etonne-moi.com |
 | [`W6.14_scam_farm_analyzer_optimization_spec.md`](./W6.14_scam_farm_analyzer_optimization_spec.md) | Normative: оптимизация scam-farm analyzer — фаза B (treasury/sink, мета-кластеры, relay, temporal, CEX hint), новые теги/`source`, витрины, лимиты, roadmap P0–P5 |
 
+### W6.12 — детектив без chain-wide firehose (ingest + бюджет)
+
+| Документ | Назначение |
+|----------|------------|
+| [`W6.12_OVERVIEW_detective_without_chain_firehose.md`](./W6.12_OVERVIEW_detective_without_chain_firehose.md) | Обзор контура, карта S01–S06 |
+| [`W6.12_S06_bounded_completeness_swap_ingest_plan_spec.md`](./W6.12_S06_bounded_completeness_swap_ingest_plan_spec.md) | **S06:** месячный план сходимости `wallet_backfill_queue`, формулы кредитов, gate enqueue, метрики SQL, согласование окон scam-farm / bot-bucket |
+
 ---
 
 ## Указатель на смежные документы (не дублировать без нужды)
