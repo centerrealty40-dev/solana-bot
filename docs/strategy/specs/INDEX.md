@@ -32,7 +32,7 @@
 | W6.3b | [`W6.3b_paper_trader_discovery.md`](./W6.3b_paper_trader_discovery.md) | **выполнено** ✓ (discovery + filters + dip + whale + Binance BTC, HEAD `282f745`) | W6.3a |
 | W6.3c | [`W6.3c_paper_trader_executor.md`](./W6.3c_paper_trader_executor.md) | **выполнено** ✓ (executor + main loop, HEAD `cfe34e2`) | W6.3b |
 | W6.3c.1 | [`W6.3c_tp_ladder_remaining_mark_spec.md`](./W6.3c_tp_ladder_remaining_mark_spec.md) | **normative** (семантика `sellFraction` = доля остатка MTM; аудит `tracker.ts`; UX дашборда) | W6.3c |
-| W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **выполнено** ✓ (observability port + cron + logrotate, HEAD `ecca52a`) | W6.3c |
+| W6.4 | [`W6.4_observability_port.md`](./W6.4_observability_port.md) | **выполнено** ✓ (observability port + cron + logrotate; hourly Health **`swaps`** по **`created_at`** **1.11.102**, см. **`deploy/RUNTIME.md`** §2) | W6.3c |
 | W6.5 | [`W6.5_strategy_launch.md`](./W6.5_strategy_launch.md) | **выполнено** ✓ (DipRunner/Oscar/Dno PM2 + whale silence + heartbeat HC, HEAD `40d27dc`; см. примечание Dno ниже) | W6.4 |
 | W7.2 | [`W7.2_safety_check_and_live_mcap.md`](./W7.2_safety_check_and_live_mcap.md) | **выполнено** ✓ (pre-entry QN safety + `mcUsdLive` timeline; canary safety на `pt1-dno`, HEAD `5faa6e5`) | W7.1 |
 | W7.3 | [`W7.3_priority_fee_monitor.md`](./W7.3_priority_fee_monitor.md) | **выполнено** ✓ (live priority fee + JSONL `priorityFee`; full rollout pt1-{diprunner,oscar,dno}, HEAD `185044e`) | W7.2 |

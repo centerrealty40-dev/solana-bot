@@ -10,6 +10,8 @@ const PAPER2_DIR = process.env.PAPER2_DIR || path.join(ROOT, 'data/paper2');
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const COVERAGE_HOURS = Number(process.env.HOURLY_COVERAGE_HOURS || 1);
+/** Свежесть ингеста `swaps` в Health (по max(created_at)); контур backfill/sigseed — не near-tip по block_time. */
+const HEALTH_SWAPS_INGEST_MAX_MIN = Number(process.env.HOURLY_HEALTH_SWAPS_INGEST_MAX_MIN || 30);
 const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
 /** W6.13 P0.2 — одна строка сводки ledger в телеграм-отчёте (требует PG_URL). */
 const APPEND_QN_LEDGER = process.env.HOURLY_APPEND_QN_LEDGER === '1';
@@ -165,7 +167,14 @@ async function sendTelegram(text) {
 
 const HEALTH_CHECKS = [
   { source: 'pump (tokens)', table: 'tokens', tsCol: 'first_seen_at', maxAgeMin: 5 },
-  { source: 'swaps', table: 'swaps', tsCol: 'block_time', maxAgeMin: 5 },
+  /** Вторичное поле chainTsCol — только диагностика (on-chain время последней строки); OK считается по ингесту. */
+  {
+    source: 'swaps',
+    table: 'swaps',
+    tsCol: 'created_at',
+    maxAgeMin: HEALTH_SWAPS_INGEST_MAX_MIN,
+    chainTsCol: 'block_time',
+  },
   { source: 'raydium', table: 'raydium_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'meteora', table: 'meteora_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'orca', table: 'orca_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
@@ -182,12 +191,33 @@ async function fetchHealth(pool) {
     const out = [];
     for (const h of HEALTH_CHECKS) {
       try {
+        let chainAgeSec = null;
+        if ('chainTsCol' in h && h.chainTsCol) {
+          const rc = await client.query(
+            `SELECT EXTRACT(EPOCH FROM (now() - MAX(${h.chainTsCol})))::int AS age_sec FROM ${h.table}`,
+          );
+          const cRaw = rc.rows[0]?.age_sec;
+          chainAgeSec = cRaw == null ? null : Number(cRaw);
+        }
         const r = await client.query(
           `SELECT MAX(${h.tsCol}) AS ts, EXTRACT(EPOCH FROM (now() - MAX(${h.tsCol})))::int AS age_sec FROM ${h.table}`,
         );
-        const ageSec = Number(r.rows[0]?.age_sec ?? 0);
-        const ok = ageSec >= 0 && ageSec <= h.maxAgeMin * 60;
-        out.push({ source: h.source, ageSec, maxAgeSec: h.maxAgeMin * 60, ok });
+        const tsMax = r.rows[0]?.ts;
+        const rawAge = r.rows[0]?.age_sec;
+        const ageSec = rawAge == null ? null : Number(rawAge);
+        const ok =
+          tsMax != null &&
+          ageSec != null &&
+          Number.isFinite(ageSec) &&
+          ageSec >= 0 &&
+          ageSec <= h.maxAgeMin * 60;
+        out.push({
+          source: h.source,
+          ageSec,
+          maxAgeSec: h.maxAgeMin * 60,
+          ok,
+          ...(typeof chainAgeSec === 'number' && Number.isFinite(chainAgeSec) ? { chainAgeSec } : {}),
+        });
       } catch (err) {
         out.push({
           source: h.source,
@@ -602,7 +632,14 @@ function buildHourlyReport({
       const ageStr = h.ageSec === null ? 'n/a' : fmtAge(h.ageSec);
       const maxL = fmtMaxAgeLabel(h.maxAgeSec);
       const err = h.error ? ` err=${h.error.slice(0, 80)}` : '';
-      lines.push(`- ${h.source}: ${tag} ${ageStr} (${maxL})${err}`);
+      const hasChain = typeof h.chainAgeSec === 'number' && Number.isFinite(h.chainAgeSec);
+      if (hasChain) {
+        lines.push(
+          `- ${h.source}: ${tag} ingest ${ageStr} (${maxL}) · chain_lag ${fmtAge(h.chainAgeSec)} (max block_time)${err}`,
+        );
+      } else {
+        lines.push(`- ${h.source}: ${tag} ${ageStr} (${maxL})${err}`);
+      }
     }
   }
 

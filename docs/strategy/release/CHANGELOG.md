@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.102] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.102`.
+
+### Hourly Health · `swaps` — ингест vs chain_lag (устранение ложного STALE)
+
+- **`scripts-tmp/hourly-telegram-report.mjs`:** для **`swaps`** OK/STALE считается по **`max(created_at)`** и **`HOURLY_HEALTH_SWAPS_INGEST_MAX_MIN`** (default **30** мин); в строку отчёта добавлен **`chain_lag`** по **`max(block_time)`** (контекст при backfill/sigseed, не отдельный порог STALE). Защита от пустой таблицы (`ts` NULL → STALE).
+- **`deploy/RUNTIME.md`:** нормативная семантика + **чеклист инцидента** (вставки за 15 мин, логи backfill/sigseed, ledger).
+- **`docs/strategy/specs/W6.4_observability_port.md`**, **`.env.example`:** синхронизация контракта hourly Health.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.101`**; задать прежнюю логику Health только при необходимости — откат файла `hourly-telegram-report.mjs` из тега **1.11.101**.
+
+---
+
 ## [1.11.101] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.101`.
