@@ -56,6 +56,21 @@ async function main(): Promise<void> {
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
   const { chunk, fileSize } = readTailFromOffset(jsonlPath, offset);
+
+  /** Avoid resetting watermark when JSONL is temporarily empty / locked (race during rotation). */
+  if (fileSize === 0 && offset > 0) {
+    console.log(
+      JSON.stringify({
+        ok: true,
+        warning: 'dip_bot_intel_jsonl_zero_bytes_preserve_watermark',
+        jsonlPath,
+        jsonlPrevOffset: offset,
+        jsonlFileSize: fileSize,
+      }),
+    );
+    return;
+  }
+
   const lines = chunk.split('\n').filter((l) => l.trim());
 
   /** Distinct new anchors in tail order */

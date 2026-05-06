@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.116] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.116`.
+
+### W9.0 dip_bot — добить «оконные» дыры + максимальный список кандидатов
+
+- **`npm run dip-bot-intel:export-candidates`:** все кошельки из **`dip_bot_intel_observations`** (сортировка по числу наблюдений); **`--csv`**; **`--detail`** — до **80** **`anchor_mint`** на кошелёк для ручного отбора «настоящих» ботов.
+- **`dip-bot-intel:run`:** при **0** байт в JSONL и ненулевом watermark — **сохраняем** offset (гонки/ротация журнала).
+- **`scripts-tmp/_vps_dip_bot_gap_max_closure.sh`:** до **`DIP_BOT_GAP_MAX_ITERATIONS`** циклов: **`anchor-gaps`** → **`sigseed:enqueue-mints`** → глубокий **`sigseed:run`** (env: **`DIP_BOT_MAX_SIG_PAGES`**, **`DIP_BOT_MAX_SIG_TX`**, **`DIP_BOT_MAX_SIG_CREDITS_RUN`**, …) → resweep paper+live с **`DIP_BOT_GAP_T_PRE_MS`** по умолчанию **2 ч**; финально **`coverage`**, **`anchor-gaps`**, файлы **`data/logs/dip_bot_candidates_detail.json`** и **`dip_bot_candidates.csv`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.115`**.
+
+---
+
 ## [1.11.115] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.115`.

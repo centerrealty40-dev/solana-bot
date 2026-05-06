@@ -1,6 +1,6 @@
 {
   "name": "solana-alpha-research-platform",
-  "version": "1.11.115",
+  "version": "1.11.116",
   "private": true,
   "description": "Modular research platform for testing on-chain alpha hypotheses on Solana DEX",
   "type": "module",
@@ -28,6 +28,7 @@
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "dip-bot-intel:coverage": "tsx src/scripts/dip-bot-intel-coverage.ts",
     "dip-bot-intel:anchor-gaps": "tsx src/scripts/dip-bot-intel-anchor-gaps.ts",
+    "dip-bot-intel:export-candidates": "tsx src/scripts/dip-bot-intel-export-candidates.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",
     "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",
