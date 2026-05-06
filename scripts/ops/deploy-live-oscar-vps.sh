@@ -15,7 +15,11 @@ if [[ "${EUID:-0}" -ne 0 ]]; then
   exit 1
 fi
 
-sudo -u salpha -H bash -lc "
+# Не держать приложения под PM2 от root (иначе второй дамп и путаница с пользователем процессов).
+pm2 kill 2>/dev/null || true
+
+# login-shell (-lc) ломает PM2_HOME; задаём явно и неинтерактивный bash -c.
+sudo -u salpha env PM2_HOME=/home/salpha/.pm2 HOME=/home/salpha bash -c "
 set -euo pipefail
 cd '${APP_DIR}'
 git fetch origin '${GIT_BRANCH}'
@@ -24,7 +28,8 @@ mkdir -p data/live
 touch data/live/dashboard-store.jsonl
 npm ci
 pm2 delete dashboard-organizer-paper 2>/dev/null || true
-pm2 reload '${APP_DIR}/ecosystem.config.cjs' --update-env
+for n in pt1-oscar pt1-dno pt1-diprunner pt1-oscar-regime pt1-smart-lottery; do pm2 delete \"\$n\" 2>/dev/null || true; done
+pm2 startOrReload '${APP_DIR}/ecosystem.config.cjs' --update-env
 pm2 save
 git rev-parse HEAD
 git status -sb
