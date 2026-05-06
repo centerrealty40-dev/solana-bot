@@ -55,6 +55,12 @@ const log = child('tracker');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Закрытие по TIMEOUT отключается после прогресса по позиции (ожидание отработки сетки после долгого удержания). Сплит scale-in не считается DCA. */
+function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
+  if (ot.partialSells.length > 0) return true;
+  return ot.legs.some((l) => l.reason === 'dca');
+}
+
 function scheduleTailAfterLiveClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   mint: string,
@@ -1745,7 +1751,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
     )
       exitReason = 'TRAIL';
-    else if (ageH >= effCfg.timeoutHours) exitReason = 'TIMEOUT';
+    else if (ageH >= effCfg.timeoutHours && !timeoutSuppressedByProgress(ot)) exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
     if (exitReason) {

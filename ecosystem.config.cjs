@@ -322,7 +322,7 @@ module.exports = {
         PAPER_TRAIL_MODE: 'ladder_retrace',
         PAPER_TRAIL_DROP: '0.10',
         PAPER_TRAIL_TRIGGER_X: '1.10',
-        /** Live Oscar — тайм-аут позиции 8 ч. */
+        /** Live Oscar — тайм-аут 8 ч; в трекере отключён после первого partial TP или DCA (см. tracker `timeoutSuppressedByProgress`). */
         PAPER_TIMEOUT_HOURS: '8',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
