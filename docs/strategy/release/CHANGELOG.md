@@ -8,6 +8,25 @@
 
 ---
 
+## [1.11.115] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.115`.
+
+### Paper Smart Lottery (`smart_lottery`)
+
+- **`runSmartLotteryDiscovery`:** молодые пулы по порогам **`SMLOT_*`** (migration/post lane); **`evaluateSnapshotSmartLottery`** + те же BS и vol5m/1h guard, что у paper2.
+- **Intel-гейт:** ранние покупатели в **`swaps`** после первого buy в окне **`SMLOT_EARLY_BUY_WINDOW_SEC`**; блок при **`BLOCK_TRADE`**, плохих **`wallet_tags`**, **`entity_wallets.cluster_id`**, **`scam_farm_meta_cluster_members`** (флаги **`SMLOT_BLOCK_*`**); опционально **`SMLOT_REQUIRE_EARLY_SWAP_COVERAGE`**.
+- **`main.ts`:** **`PAPER_STRATEGY_KIND=smart_lottery`** использует тот же открывающий/трекер-путь, что dip.
+- **PM2:** **`pt1-smart-lottery`** в **`ecosystem.config.cjs`** (журнал **`data/paper2/pt1-smart-lottery.jsonl`**; TP ×20, trail ×5, timeout 48 ч, без DCA).
+- **Дашборд:** **`buildPaper2StrategyRowFromLoad`** на уровне модуля; **`pt1-smart-lottery.jsonl`** исключён из **`/api/paper2`**; **`/api/smart-lottery`**, **`/smart-lottery`**, **`/SmartLottery`**, **`dashboard-smart-lottery.html`**.
+- **`package.json` `version`:** синхронизирован с **`VERSION`** (**1.11.115**).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.114`**; при необходимости **`pm2 delete pt1-smart-lottery`**.
+
+---
+
 ## [1.11.114] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.114`.
@@ -30,25 +49,6 @@
 ### Откат
 
 - **`git checkout sa-alpha-1.11.113`**; `pm2 delete pt1-oscar-regime` при необходимости.
-
----
-
-## [1.11.113] — 2026-05-06
-
-**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.113`.
-
-### Paper Smart Lottery (`smart_lottery`)
-
-- **`runSmartLotteryDiscovery`:** молодые пулы по отдельным порогам **`SMLOT_*`** (migration/post lane); общие **`evaluateSnapshotSmartLottery`** + BS и vol5m/1h guard как у paper2.
-- **Intel-гейт:** ранние покупатели в **`swaps`** после первого buy в окне **`SMLOT_EARLY_BUY_WINDOW_SEC`**; блок при **`BLOCK_TRADE`**, плохих **`wallet_tags`**, **`entity_wallets.cluster_id`**, **`scam_farm_meta_cluster_members`** (флаги **`SMLOT_BLOCK_*`**); опционально **`SMLOT_REQUIRE_EARLY_SWAP_COVERAGE`**.
-- **`main.ts`:** ветка **`PAPER_STRATEGY_KIND=smart_lottery`** — тот же открытие позиций/трекер, что у dip.
-- **PM2:** процесс **`pt1-smart-lottery`** в **`ecosystem.config.cjs`** (журнал **`data/paper2/pt1-smart-lottery.jsonl`**, профиль выходов TP ×20 / trail ×5 / timeout 48 ч, без DCA).
-- **Дашборд:** **`buildPaper2StrategyRowFromLoad`** вынесен на уровень модуля; **`pt1-smart-lottery.jsonl`** исключён из скана **`/api/paper2`**; **`/api/smart-lottery`**, **`/smart-lottery`**, **`/SmartLottery`**, HTML **`dashboard-smart-lottery.html`**.
-- **`package.json` `version`:** выровнено с продуктовой **`VERSION`** (**1.11.113**), чтобы в логах CI/npm не было расхождения.
-
-### Откат
-
-- **`git checkout sa-alpha-1.11.112`**; убрать процесс **`pt1-smart-lottery`** из PM2 при необходимости.
 
 ---
 

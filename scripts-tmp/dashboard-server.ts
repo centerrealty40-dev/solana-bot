@@ -50,6 +50,10 @@ const DASHBOARD_LIVE_OSCAR_JSONL =
   process.env.DASHBOARD_LIVE_OSCAR_JSONL?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'live', 'pt1-oscar-live.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
+const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
+/** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
+const DASHBOARD_SMLOT_JSONL =
+  process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
 let pgSql: ReturnType<typeof postgres> | null = null;
@@ -2602,6 +2606,16 @@ app.get('/papertrader2', async (_req, reply) => {
   return fs.readFileSync(HTML2_PATH, 'utf-8');
 });
 
+app.get('/smart-lottery', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return fs.readFileSync(HTML_SMLOT_PATH, 'utf-8');
+});
+
+app.get('/SmartLottery', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return fs.readFileSync(HTML_SMLOT_PATH, 'utf-8');
+});
+
 app.get('/api/paper2/priority-fee', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
   const solUsd = Number(process.env.DASHBOARD_SOL_USD ?? 160);
@@ -2858,6 +2872,380 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
   }
 }
 
+async function buildPaper2StrategyRowFromLoad(
+  fp: string,
+  sid: string,
+  loaded: Paper2FileLoad,
+  hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
+): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
+  const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
+  const m = paper2Metrics(closed);
+  const startedAt = resetTs || firstTs;
+  const closedWithUsd = (
+    await Promise.all(
+      closed.map(async (c) => {
+        const pnlPct = Number(c.pnlPct ?? 0);
+        const netUsd = c.netPnlUsd;
+        const pnlUsd =
+          typeof netUsd === 'number' && Number.isFinite(netUsd)
+            ? netUsd
+            : (POSITION_USD_DEFAULT * pnlPct) / 100;
+        const costs = c.costs as Record<string, unknown> | undefined;
+        const timelineRaw = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
+        const timelineSorted = timelineRaw.slice().sort((a, b) => a.ts - b.ts);
+        const entryTs = Number(c.entryTs ?? 0);
+        const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(String(c.mint), entryTs, timelineSorted);
+        const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
+        const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
+        const exitPriorityFeeUsd =
+          Number.isFinite(exitPfUsd) && exitPfUsd > 0 ? exitPfUsd : null;
+        let tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+        tlOut = filterSpuriousDcaOpenDuplicate(tlOut);
+        if (
+          tlOut.length &&
+          tlOut[0].kind === 'open' &&
+          entryMcapAtBuyUsd != null &&
+          entryMcapAtBuyUsd > 0 &&
+          (!(Number(tlOut[0].mcUsd) > 0) || tlOut[0].mcUsd == null)
+        ) {
+          tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
+        }
+        tlOut = await enrichTimelineMcapGaps(String(c.mint), tlOut);
+        tlOut = finalizeTimelineForApi(tlOut);
+        const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
+        const entryPriceVerifySlipPct =
+          typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
+        const entryPriceVerifyImpactPct =
+          typeof c.entryPriceVerifyImpactPct === 'number' ? c.entryPriceVerifyImpactPct : null;
+        const entryPriceVerifySource =
+          c.entryPriceVerifySource === 'jupiter' ||
+          c.entryPriceVerifySource === 'skipped' ||
+          c.entryPriceVerifySource === 'blocked'
+            ? c.entryPriceVerifySource
+            : null;
+        const lw = c.liqWatch as { currentLiqUsd?: unknown; dropPct?: unknown } | undefined;
+        const exitLiqUsd =
+          lw != null && Number.isFinite(Number(lw.currentLiqUsd)) && Number(lw.currentLiqUsd) > 0
+            ? Number(lw.currentLiqUsd)
+            : null;
+        const exitLiqDropPct =
+          lw != null && Number.isFinite(Number(lw.dropPct)) ? +Number(lw.dropPct).toFixed(2) : null;
+        const exitContext = (c as { exitContext?: unknown }).exitContext ?? null;
+        return {
+          mint: c.mint,
+          symbol: closedDisplaySymbol,
+          exitTs: c.exitTs,
+          entryTs: c.entryTs,
+          exitReason: c.exitReason,
+          pnlPct,
+          pnlUsd,
+          durationMin: Number(c.durationMin ?? 0),
+          dex: costs && costs.dex,
+          entryMcapAtBuyUsd,
+          exitMcapUsd: exitMcapUsd != null && exitMcapUsd > 0 ? exitMcapUsd : null,
+          exitPriorityFeeUsd,
+          entryPriceVerifySlipPct,
+          entryPriceVerifyImpactPct,
+          entryPriceVerifySource,
+          exitLiqUsd,
+          exitLiqDropPct,
+          exitContext,
+          timeline: tlOut,
+        };
+      }),
+    )
+  )
+    .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
+    .slice(0, 20);
+
+  // Enrich open positions with a live mcap (pump.fun -> DEX snapshot fallback),
+  // recompute pnl% and pnl$ when possible. Capped to 30 rows for sanity.
+  //
+  // IMPORTANT: entryMcUsd in legacy jsonl is NOT a USD market cap — it's
+  // a tiny per-token-price-like number (e.g. 0.003) that cannot be compared
+  // with USD live mcap. Only entryRealMcUsd (taken from features.market_cap_usd
+  // or features.fdv_usd at open-time) is a legitimate USD baseline.
+  // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
+  // future jsonl row has a misclassified baseline.
+  const PNL_PCT_CLAMP = 100_000; // 1000x
+  const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
+    open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
+      const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
+      const isMcMetric = ot.metricType === 'mc';
+      /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
+      const liveMcForPnl = isMcMetric ? await getCurrentMcAny(ot.mint).catch(() => null) : null;
+      /** DEX snapshots often have mcap even for price-tracked (post-migration) pools — show in UI. */
+      const dexMcDisplay =
+        liveMcForPnl != null && liveMcForPnl > 0
+          ? null
+          : await getDexLiveMc(ot.mint).catch(() => null);
+      let displayLiveMc: number | null =
+        liveMcForPnl != null && liveMcForPnl > 0
+          ? liveMcForPnl
+          : dexMcDisplay != null && dexMcDisplay > 0
+            ? dexMcDisplay
+            : null;
+      let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
+      if (displayLiveMc != null && displayLiveMc > 0) {
+        liveMcProvenance = 'snapshots';
+      } else {
+        const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
+        if (pumpOnly != null && pumpOnly > 0) {
+          displayLiveMc = pumpOnly;
+          liveMcProvenance = 'pump.fun';
+        }
+      }
+      const hasLiveMc = displayLiveMc != null;
+
+      const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
+      /**
+       * Snapshots → Jupiter → journal spot.
+       * Journal fallback must stay last: after partial TP the last timeline spot is the sell print,
+       * not the current market — using it before Jupiter made UI PnL match «stuck at last TP» while
+       * the tracker still uses PG/Jupiter for decisions (misleading «live mcap» / token row).
+       */
+      let livePx: number | null = null;
+      let livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null = null;
+      if (basePx) {
+        livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
+        if (livePx) livePxProvenance = 'snapshots';
+      }
+      let livePriceStale = false;
+      if (!livePx && basePx) {
+        const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
+        if (jpx != null && jpx > 0) {
+          livePx = jpx;
+          livePriceStale = false;
+          livePxProvenance = 'jupiter';
+        }
+      }
+      if (!livePx && basePx) {
+        const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
+        if (st != null) {
+          livePx = st;
+          livePriceStale = true;
+          livePxProvenance = 'journal';
+        }
+      }
+      const hasLivePrice = livePx != null && livePx > 0;
+
+      const baseEntryUsd =
+        ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
+
+      let entryMcapAtBuyUsd =
+        ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
+      if (entryMcapAtBuyUsd == null) {
+        entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
+      }
+
+      let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
+      timelineOut = filterSpuriousDcaOpenDuplicate(timelineOut);
+      if (
+        timelineOut.length &&
+        timelineOut[0].kind === 'open' &&
+        (timelineOut[0].mcUsd == null || !(Number(timelineOut[0].mcUsd) > 0)) &&
+        entryMcapAtBuyUsd != null &&
+        entryMcapAtBuyUsd > 0
+      ) {
+        timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
+      }
+      timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut);
+      timelineOut = finalizeTimelineForApi(timelineOut);
+
+      const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
+
+      const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
+      const livePriceUsd = hasLivePrice ? livePx : null;
+
+      let pnlPct: number | null = null;
+      let pnlUsd: number | null = null;
+
+      const investedFor = (): number => {
+        const investedRaw = ot.totalInvestedUsd;
+        return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
+      };
+      const tryByMcap = (): boolean => {
+        /**
+         * Mcap-based unrealized PnL. We use entryMcapAtBuyUsd (real USD mcap at buy,
+         * possibly back-filled from snapshots) rather than the legacy `entryMcUsd` which
+         * for price-tracked strategies stores a per-token price and is NOT a market cap.
+         */
+        const entryMc = entryMcapAtBuyUsd;
+        if (!(entryMc && entryMc > 0)) return false;
+        if (!(displayLiveMc && displayLiveMc > 0)) return false;
+        const p = ((displayLiveMc as number) / entryMc - 1) * 100;
+        if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
+        pnlPct = p;
+        pnlUsd = (investedFor() * p) / 100;
+        return true;
+      };
+      const tryByPrice = (): boolean => {
+        if (!(basePx && basePx > 0 && hasLivePrice && livePx && livePx > 0)) return false;
+        /**
+         * If our only "live" price is the journal-derived spot equal to the entry, this is
+         * a stale pseudo-price (e.g. position has no DCA/partial events yet). Bail so the
+         * mcap path can produce a real PnL number.
+         */
+        if (livePxProvenance === 'journal' && Math.abs((livePx as number) - basePx) / basePx < 1e-6) {
+          return false;
+        }
+        const p = ((livePx as number) / basePx - 1) * 100;
+        if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
+        pnlPct = p;
+        pnlUsd = (investedFor() * p) / 100;
+        return true;
+      };
+
+      /**
+       * mc-strategies prefer mcap, price-strategies prefer price; in either case fall
+       * through to the other so we always render a number when either signal is alive.
+       */
+      if (isMcMetric) {
+        if (!tryByMcap()) tryByPrice();
+      } else {
+        if (!tryByPrice()) tryByMcap();
+      }
+
+      const entryLiqUsdVal = ot.entryLiqUsd ?? null;
+      const currentLiqUsdVal = await fetchPairLiquidityUsdFromPg(ot.pairAddress, ot.source).catch(
+        () => null,
+      );
+      const liqDropPct =
+        entryLiqUsdVal != null &&
+        entryLiqUsdVal > 0 &&
+        currentLiqUsdVal != null &&
+        Number.isFinite(currentLiqUsdVal)
+          ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
+          : null;
+
+      const remainingCostBasisUsd =
+        ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction) : 0;
+
+      return {
+        mint: ot.mint,
+        symbol: displaySymbol,
+        entryTs: ot.entryTs,
+        entryMcUsd: ot.entryMcUsd,
+        entryRealMcUsd: ot.entryRealMcUsd,
+        entryMcapAtBuyUsd,
+        baselinePriceUsd: ot.baselinePriceUsd,
+        metricType: ot.metricType,
+        openedAtIso: ot.openedAtIso,
+        lane: ot.lane,
+        source: ot.source,
+        currentMcUsd,
+        livePriceUsd,
+        peakMcUsd: ot.peakMcUsd,
+        peakPnlPct: ot.peakPnlPct,
+        trailingArmed: ot.trailingArmed,
+        pnlPct,
+        pnlUsd,
+        ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
+        hasLiveMc,
+        hasLivePrice,
+        livePriceStale,
+        livePxProvenance,
+        liveMcProvenance,
+        timeline: timelineOut,
+        entryPriorityFeeUsd: ot.entryPriorityFeeUsd ?? null,
+        entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
+        entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
+        entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
+        entryLiqUsd: entryLiqUsdVal,
+        currentLiqUsd: currentLiqUsdVal,
+        liqDropPct,
+        remainingCostBasisUsd,
+      };
+    }),
+  );
+
+  enrichedOpen.sort((a, b) => (b.entryTs || 0) - (a.entryTs || 0));
+
+  const unrealizedUsd = enrichedOpen.reduce((acc, o) => acc + (o.pnlUsd ?? 0), 0);
+  const realizedPnlUsd = m.sumPnlUsd;
+  const totalPnlUsd = realizedPnlUsd + unrealizedUsd;
+
+  const priorityFeeUsdTotal = closed.reduce((acc, row) => {
+    const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
+    return acc + (pf > 0 ? pf : 0);
+  }, 0);
+
+  const priceVerify = aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
+
+  const liqDrain = (() => {
+    let exits = 0;
+    const drops: number[] = [];
+    for (const r of closed) {
+      if (String(r.exitReason) !== 'LIQ_DRAIN') continue;
+      exits += 1;
+      const d = Number((r as { liqWatch?: { dropPct?: number } }).liqWatch?.dropPct ?? NaN);
+      if (Number.isFinite(d)) drops.push(d);
+    }
+    const sorted = [...drops].sort((a, b) => a - b);
+    return {
+      exits,
+      avgDropPct: drops.length ? +((drops.reduce((a, b) => a + b, 0) / drops.length).toFixed(2)) : null,
+      p90DropPct: drops.length
+        ? sorted[Math.min(sorted.length - 1, Math.floor(drops.length * 0.9))]
+        : null,
+    };
+  })();
+
+  return {
+    strategyId: sid,
+    file: fp,
+    openCount: Math.max(open.length, hb?.hbOpen ?? 0),
+    closedCount: Math.max(closed.length, hb?.hbClosed ?? 0),
+    startedAt,
+    lastTs,
+    hoursOfData: (Date.now() - startedAt) / 3_600_000,
+    sumPnlUsd: m.sumPnlUsd,
+    realizedPnlUsd,
+    unrealizedPnlUsd: unrealizedUsd,
+    totalPnlUsd,
+    winRate: m.winRate,
+    avgPnl: m.avgPnl,
+    avgPeak: m.avgPeak,
+    bestPnlUsd: m.bestPnlUsd,
+    worstPnlUsd: m.worstPnlUsd,
+    unrealizedUsd,
+    exits: m.exits,
+    exitsBreakdown: m.exitsBreakdown,
+    evals1h,
+    passed1h,
+    failReasons,
+    open: enrichedOpen,
+    recentClosed: closedWithUsd,
+    priorityFeeUsdTotal,
+    priceVerify,
+    liqDrain,
+    ...(hb?.reconcileExtras ?? {}),
+  };
+}
+
+app.get('/api/smart-lottery', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  const fp = DASHBOARD_SMLOT_JSONL;
+  const sid = path.basename(fp, '.jsonl');
+  const row = await buildPaper2StrategyRowFromLoad(fp, sid, loadPaper2File(fp));
+  const totals = {
+    strategies: 1,
+    open: row.openCount,
+    closed: row.closedCount,
+    sumPnlUsd: row.sumPnlUsd,
+    realizedPnlUsd: row.realizedPnlUsd,
+    unrealizedPnlUsd: row.unrealizedPnlUsd,
+    totalPnlUsd: row.totalPnlUsd,
+  };
+  return {
+    now: Date.now(),
+    paper2Dir: PAPER2_DIR,
+    smartLotteryJsonl: fp,
+    totals,
+    strategies: [row],
+  };
+});
+
 app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
   return fetchCryptoTickerPayload();
@@ -2872,362 +3260,13 @@ app.get('/api/paper2', async (_req, reply) => {
         .readdirSync(PAPER2_DIR)
         .filter((f) => f.endsWith('.jsonl'))
         .filter((f) => f !== 'pt1-oscar-live.jsonl')
+        .filter((f) => f !== 'pt1-smart-lottery.jsonl')
         .map((f) => path.join(PAPER2_DIR, f));
     }
   } catch {
     /* ignore */
   }
 
-  async function buildPaper2StrategyRowFromLoad(
-    fp: string,
-    sid: string,
-    loaded: Paper2FileLoad,
-    hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
-  ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
-    const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
-    const m = paper2Metrics(closed);
-    const startedAt = resetTs || firstTs;
-    const closedWithUsd = (
-      await Promise.all(
-        closed.map(async (c) => {
-          const pnlPct = Number(c.pnlPct ?? 0);
-          const netUsd = c.netPnlUsd;
-          const pnlUsd =
-            typeof netUsd === 'number' && Number.isFinite(netUsd)
-              ? netUsd
-              : (POSITION_USD_DEFAULT * pnlPct) / 100;
-          const costs = c.costs as Record<string, unknown> | undefined;
-          const timelineRaw = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
-          const timelineSorted = timelineRaw.slice().sort((a, b) => a.ts - b.ts);
-          const entryTs = Number(c.entryTs ?? 0);
-          const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(String(c.mint), entryTs, timelineSorted);
-          const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
-          const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
-          const exitPriorityFeeUsd =
-            Number.isFinite(exitPfUsd) && exitPfUsd > 0 ? exitPfUsd : null;
-          let tlOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
-          tlOut = filterSpuriousDcaOpenDuplicate(tlOut);
-          if (
-            tlOut.length &&
-            tlOut[0].kind === 'open' &&
-            entryMcapAtBuyUsd != null &&
-            entryMcapAtBuyUsd > 0 &&
-            (!(Number(tlOut[0].mcUsd) > 0) || tlOut[0].mcUsd == null)
-          ) {
-            tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
-          }
-          tlOut = await enrichTimelineMcapGaps(String(c.mint), tlOut);
-          tlOut = finalizeTimelineForApi(tlOut);
-          const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
-          const entryPriceVerifySlipPct =
-            typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
-          const entryPriceVerifyImpactPct =
-            typeof c.entryPriceVerifyImpactPct === 'number' ? c.entryPriceVerifyImpactPct : null;
-          const entryPriceVerifySource =
-            c.entryPriceVerifySource === 'jupiter' ||
-            c.entryPriceVerifySource === 'skipped' ||
-            c.entryPriceVerifySource === 'blocked'
-              ? c.entryPriceVerifySource
-              : null;
-          const lw = c.liqWatch as { currentLiqUsd?: unknown; dropPct?: unknown } | undefined;
-          const exitLiqUsd =
-            lw != null && Number.isFinite(Number(lw.currentLiqUsd)) && Number(lw.currentLiqUsd) > 0
-              ? Number(lw.currentLiqUsd)
-              : null;
-          const exitLiqDropPct =
-            lw != null && Number.isFinite(Number(lw.dropPct)) ? +Number(lw.dropPct).toFixed(2) : null;
-          const exitContext = (c as { exitContext?: unknown }).exitContext ?? null;
-          return {
-            mint: c.mint,
-            symbol: closedDisplaySymbol,
-            exitTs: c.exitTs,
-            entryTs: c.entryTs,
-            exitReason: c.exitReason,
-            pnlPct,
-            pnlUsd,
-            durationMin: Number(c.durationMin ?? 0),
-            dex: costs && costs.dex,
-            entryMcapAtBuyUsd,
-            exitMcapUsd: exitMcapUsd != null && exitMcapUsd > 0 ? exitMcapUsd : null,
-            exitPriorityFeeUsd,
-            entryPriceVerifySlipPct,
-            entryPriceVerifyImpactPct,
-            entryPriceVerifySource,
-            exitLiqUsd,
-            exitLiqDropPct,
-            exitContext,
-            timeline: tlOut,
-          };
-        }),
-      )
-    )
-      .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
-      .slice(0, 20);
-
-    // Enrich open positions with a live mcap (pump.fun -> DEX snapshot fallback),
-    // recompute pnl% and pnl$ when possible. Capped to 30 rows for sanity.
-    //
-    // IMPORTANT: entryMcUsd in legacy jsonl is NOT a USD market cap — it's
-    // a tiny per-token-price-like number (e.g. 0.003) that cannot be compared
-    // with USD live mcap. Only entryRealMcUsd (taken from features.market_cap_usd
-    // or features.fdv_usd at open-time) is a legitimate USD baseline.
-    // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
-    // future jsonl row has a misclassified baseline.
-    const PNL_PCT_CLAMP = 100_000; // 1000x
-    const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
-      open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
-        const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
-        const isMcMetric = ot.metricType === 'mc';
-        /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
-        const liveMcForPnl = isMcMetric ? await getCurrentMcAny(ot.mint).catch(() => null) : null;
-        /** DEX snapshots often have mcap even for price-tracked (post-migration) pools — show in UI. */
-        const dexMcDisplay =
-          liveMcForPnl != null && liveMcForPnl > 0
-            ? null
-            : await getDexLiveMc(ot.mint).catch(() => null);
-        let displayLiveMc: number | null =
-          liveMcForPnl != null && liveMcForPnl > 0
-            ? liveMcForPnl
-            : dexMcDisplay != null && dexMcDisplay > 0
-              ? dexMcDisplay
-              : null;
-        let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
-        if (displayLiveMc != null && displayLiveMc > 0) {
-          liveMcProvenance = 'snapshots';
-        } else {
-          const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
-          if (pumpOnly != null && pumpOnly > 0) {
-            displayLiveMc = pumpOnly;
-            liveMcProvenance = 'pump.fun';
-          }
-        }
-        const hasLiveMc = displayLiveMc != null;
-
-        const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
-        /**
-         * Snapshots → Jupiter → journal spot.
-         * Journal fallback must stay last: after partial TP the last timeline spot is the sell print,
-         * not the current market — using it before Jupiter made UI PnL match «stuck at last TP» while
-         * the tracker still uses PG/Jupiter for decisions (misleading «live mcap» / token row).
-         */
-        let livePx: number | null = null;
-        let livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null = null;
-        if (basePx) {
-          livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
-          if (livePx) livePxProvenance = 'snapshots';
-        }
-        let livePriceStale = false;
-        if (!livePx && basePx) {
-          const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
-          if (jpx != null && jpx > 0) {
-            livePx = jpx;
-            livePriceStale = false;
-            livePxProvenance = 'jupiter';
-          }
-        }
-        if (!livePx && basePx) {
-          const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
-          if (st != null) {
-            livePx = st;
-            livePriceStale = true;
-            livePxProvenance = 'journal';
-          }
-        }
-        const hasLivePrice = livePx != null && livePx > 0;
-
-        const baseEntryUsd =
-          ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
-
-        let entryMcapAtBuyUsd =
-          ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
-        if (entryMcapAtBuyUsd == null) {
-          entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
-        }
-
-        let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
-        timelineOut = filterSpuriousDcaOpenDuplicate(timelineOut);
-        if (
-          timelineOut.length &&
-          timelineOut[0].kind === 'open' &&
-          (timelineOut[0].mcUsd == null || !(Number(timelineOut[0].mcUsd) > 0)) &&
-          entryMcapAtBuyUsd != null &&
-          entryMcapAtBuyUsd > 0
-        ) {
-          timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
-        }
-        timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut);
-        timelineOut = finalizeTimelineForApi(timelineOut);
-
-        const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
-
-        const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
-        const livePriceUsd = hasLivePrice ? livePx : null;
-
-        let pnlPct: number | null = null;
-        let pnlUsd: number | null = null;
-
-        const investedFor = (): number => {
-          const investedRaw = ot.totalInvestedUsd;
-          return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
-        };
-        const tryByMcap = (): boolean => {
-          /**
-           * Mcap-based unrealized PnL. We use entryMcapAtBuyUsd (real USD mcap at buy,
-           * possibly back-filled from snapshots) rather than the legacy `entryMcUsd` which
-           * for price-tracked strategies stores a per-token price and is NOT a market cap.
-           */
-          const entryMc = entryMcapAtBuyUsd;
-          if (!(entryMc && entryMc > 0)) return false;
-          if (!(displayLiveMc && displayLiveMc > 0)) return false;
-          const p = ((displayLiveMc as number) / entryMc - 1) * 100;
-          if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
-          pnlPct = p;
-          pnlUsd = (investedFor() * p) / 100;
-          return true;
-        };
-        const tryByPrice = (): boolean => {
-          if (!(basePx && basePx > 0 && hasLivePrice && livePx && livePx > 0)) return false;
-          /**
-           * If our only "live" price is the journal-derived spot equal to the entry, this is
-           * a stale pseudo-price (e.g. position has no DCA/partial events yet). Bail so the
-           * mcap path can produce a real PnL number.
-           */
-          if (livePxProvenance === 'journal' && Math.abs((livePx as number) - basePx) / basePx < 1e-6) {
-            return false;
-          }
-          const p = ((livePx as number) / basePx - 1) * 100;
-          if (!Number.isFinite(p) || Math.abs(p) > PNL_PCT_CLAMP) return false;
-          pnlPct = p;
-          pnlUsd = (investedFor() * p) / 100;
-          return true;
-        };
-
-        /**
-         * mc-strategies prefer mcap, price-strategies prefer price; in either case fall
-         * through to the other so we always render a number when either signal is alive.
-         */
-        if (isMcMetric) {
-          if (!tryByMcap()) tryByPrice();
-        } else {
-          if (!tryByPrice()) tryByMcap();
-        }
-
-        const entryLiqUsdVal = ot.entryLiqUsd ?? null;
-        const currentLiqUsdVal = await fetchPairLiquidityUsdFromPg(ot.pairAddress, ot.source).catch(
-          () => null,
-        );
-        const liqDropPct =
-          entryLiqUsdVal != null &&
-          entryLiqUsdVal > 0 &&
-          currentLiqUsdVal != null &&
-          Number.isFinite(currentLiqUsdVal)
-            ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
-            : null;
-
-        const remainingCostBasisUsd =
-          ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction) : 0;
-
-        return {
-          mint: ot.mint,
-          symbol: displaySymbol,
-          entryTs: ot.entryTs,
-          entryMcUsd: ot.entryMcUsd,
-          entryRealMcUsd: ot.entryRealMcUsd,
-          entryMcapAtBuyUsd,
-          baselinePriceUsd: ot.baselinePriceUsd,
-          metricType: ot.metricType,
-          openedAtIso: ot.openedAtIso,
-          lane: ot.lane,
-          source: ot.source,
-          currentMcUsd,
-          livePriceUsd,
-          peakMcUsd: ot.peakMcUsd,
-          peakPnlPct: ot.peakPnlPct,
-          trailingArmed: ot.trailingArmed,
-          pnlPct,
-          pnlUsd,
-          ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
-          hasLiveMc,
-          hasLivePrice,
-          livePriceStale,
-          livePxProvenance,
-          liveMcProvenance,
-          timeline: timelineOut,
-          entryPriorityFeeUsd: ot.entryPriorityFeeUsd ?? null,
-          entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
-          entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
-          entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
-          entryLiqUsd: entryLiqUsdVal,
-          currentLiqUsd: currentLiqUsdVal,
-          liqDropPct,
-          remainingCostBasisUsd,
-        };
-      }),
-    );
-
-    enrichedOpen.sort((a, b) => (b.entryTs || 0) - (a.entryTs || 0));
-
-    const unrealizedUsd = enrichedOpen.reduce((acc, o) => acc + (o.pnlUsd ?? 0), 0);
-    const realizedPnlUsd = m.sumPnlUsd;
-    const totalPnlUsd = realizedPnlUsd + unrealizedUsd;
-
-    const priorityFeeUsdTotal = closed.reduce((acc, row) => {
-      const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
-      return acc + (pf > 0 ? pf : 0);
-    }, 0);
-
-    const priceVerify = aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
-
-    const liqDrain = (() => {
-      let exits = 0;
-      const drops: number[] = [];
-      for (const r of closed) {
-        if (String(r.exitReason) !== 'LIQ_DRAIN') continue;
-        exits += 1;
-        const d = Number((r as { liqWatch?: { dropPct?: number } }).liqWatch?.dropPct ?? NaN);
-        if (Number.isFinite(d)) drops.push(d);
-      }
-      const sorted = [...drops].sort((a, b) => a - b);
-      return {
-        exits,
-        avgDropPct: drops.length ? +((drops.reduce((a, b) => a + b, 0) / drops.length).toFixed(2)) : null,
-        p90DropPct: drops.length
-          ? sorted[Math.min(sorted.length - 1, Math.floor(drops.length * 0.9))]
-          : null,
-      };
-    })();
-
-    return {
-      strategyId: sid,
-      file: fp,
-      openCount: Math.max(open.length, hb?.hbOpen ?? 0),
-      closedCount: Math.max(closed.length, hb?.hbClosed ?? 0),
-      startedAt,
-      lastTs,
-      hoursOfData: (Date.now() - startedAt) / 3_600_000,
-      sumPnlUsd: m.sumPnlUsd,
-      realizedPnlUsd,
-      unrealizedPnlUsd: unrealizedUsd,
-      totalPnlUsd,
-      winRate: m.winRate,
-      avgPnl: m.avgPnl,
-      avgPeak: m.avgPeak,
-      bestPnlUsd: m.bestPnlUsd,
-      worstPnlUsd: m.worstPnlUsd,
-      unrealizedUsd,
-      exits: m.exits,
-      exitsBreakdown: m.exitsBreakdown,
-      evals1h,
-      passed1h,
-      failReasons,
-      open: enrichedOpen,
-      recentClosed: closedWithUsd,
-      priorityFeeUsdTotal,
-      priceVerify,
-      liqDrain,
-      ...(hb?.reconcileExtras ?? {}),
-    };
-  }
 
   const strategies: Array<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> = [];
   for (const fp of files) {

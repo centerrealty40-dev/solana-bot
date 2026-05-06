@@ -26,6 +26,7 @@ import {
   recordEntryTs,
   runDipDiscovery,
 } from './discovery/dip-clones.js';
+import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
@@ -266,8 +267,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   async function discoveryTick(): Promise<void> {
     stats.ticks++;
     try {
-      if (cfg.strategyKind !== 'dip') return;
-      const res = await runDipDiscovery(cfg);
+      if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
+      const res =
+        cfg.strategyKind === 'dip'
+          ? await runDipDiscovery(cfg)
+          : await runSmartLotteryDiscovery(cfg);
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
@@ -684,7 +688,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `dip executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `${cfg.strategyKind} executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
       skippedPriceVerifyExit: trackerStats.skippedPriceVerifyExit,
       holdersResolveStats: holdersStats,

@@ -368,6 +368,34 @@ const ConfigSchema = z.object({
   simUseJupiterBuild: z.boolean().default(true),
   simCredsPerCall: z.coerce.number().int().min(10).max(200).default(30),
   simStrictBudget: z.boolean().default(true),
+
+  // ---- smart_lottery paper (young pools + early-buyer intel gate) ----
+  smlotEnableMigrationLane: z.boolean().default(true),
+  smlotEnablePostLane: z.boolean().default(false),
+  smlotMigMinAgeMin: z.coerce.number().nonnegative().default(2),
+  smlotMigMaxAgeMin: z.coerce.number().nonnegative().default(45),
+  smlotMigMinLiqUsd: z.coerce.number().nonnegative().default(12_000),
+  smlotMigMaxLiqUsd: z.coerce.number().nonnegative().default(0),
+  smlotMigMinVol5mUsd: z.coerce.number().nonnegative().default(1_800),
+  smlotMigMinBuys5m: z.coerce.number().int().nonnegative().default(16),
+  smlotMigMinSells5m: z.coerce.number().int().nonnegative().default(8),
+  smlotPostMinAgeMin: z.coerce.number().nonnegative().default(25),
+  smlotPostMaxAgeMin: z.coerce.number().nonnegative().default(180),
+  smlotPostMinLiqUsd: z.coerce.number().nonnegative().default(15_000),
+  smlotPostMaxLiqUsd: z.coerce.number().nonnegative().default(0),
+  smlotPostMinVol5mUsd: z.coerce.number().nonnegative().default(2_500),
+  smlotPostMinBuys5m: z.coerce.number().int().nonnegative().default(16),
+  smlotPostMinSells5m: z.coerce.number().int().nonnegative().default(10),
+  /** 0 = reuse `snapshotCandidateLimit`. */
+  smlotSnapshotCandidateLimit: z.coerce.number().int().min(0).max(5000).default(0),
+  smlotIntelGateEnabled: z.boolean().default(true),
+  smlotEarlyBuyWindowSec: z.coerce.number().int().min(30).max(7200).default(180),
+  smlotEarlyBuyWalletCap: z.coerce.number().int().min(5).max(300).default(60),
+  smlotRequireEarlySwapCoverage: z.boolean().default(false),
+  smlotBlockIntelBlockTrade: z.boolean().default(true),
+  smlotBlockBadTags: z.boolean().default(true),
+  smlotBlockClusteredWallets: z.boolean().default(true),
+  smlotBlockScamFarmMeta: z.boolean().default(true),
 }).transform((data) => {
   const { dipLookbackWindowsCsv, dipRecoveryVetoWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
@@ -664,6 +692,32 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       return Math.min(200, n);
     })(),
     simStrictBudget: process.env.PAPER_SIM_STRICT_BUDGET !== '0',
+
+    smlotEnableMigrationLane: envBool(process.env.SMLOT_ENABLE_MIGRATION_LANE, true),
+    smlotEnablePostLane: envBool(process.env.SMLOT_ENABLE_POST_LANE, false),
+    smlotMigMinAgeMin: process.env.SMLOT_MIG_MIN_AGE_MIN,
+    smlotMigMaxAgeMin: process.env.SMLOT_MIG_MAX_AGE_MIN,
+    smlotMigMinLiqUsd: process.env.SMLOT_MIG_MIN_LIQ_USD,
+    smlotMigMaxLiqUsd: process.env.SMLOT_MIG_MAX_LIQ_USD,
+    smlotMigMinVol5mUsd: process.env.SMLOT_MIG_MIN_VOL_5M_USD,
+    smlotMigMinBuys5m: process.env.SMLOT_MIG_MIN_BUYS_5M,
+    smlotMigMinSells5m: process.env.SMLOT_MIG_MIN_SELLS_5M,
+    smlotPostMinAgeMin: process.env.SMLOT_POST_MIN_AGE_MIN,
+    smlotPostMaxAgeMin: process.env.SMLOT_POST_MAX_AGE_MIN,
+    smlotPostMinLiqUsd: process.env.SMLOT_POST_MIN_LIQ_USD,
+    smlotPostMaxLiqUsd: process.env.SMLOT_POST_MAX_LIQ_USD,
+    smlotPostMinVol5mUsd: process.env.SMLOT_POST_MIN_VOL_5M_USD,
+    smlotPostMinBuys5m: process.env.SMLOT_POST_MIN_BUYS_5M,
+    smlotPostMinSells5m: process.env.SMLOT_POST_MIN_SELLS_5M,
+    smlotSnapshotCandidateLimit: process.env.SMLOT_SNAPSHOT_CANDIDATE_LIMIT,
+    smlotIntelGateEnabled: envBool(process.env.SMLOT_INTEL_GATE_ENABLED, true),
+    smlotEarlyBuyWindowSec: process.env.SMLOT_EARLY_BUY_WINDOW_SEC,
+    smlotEarlyBuyWalletCap: process.env.SMLOT_EARLY_BUY_WALLET_CAP,
+    smlotRequireEarlySwapCoverage: envBool(process.env.SMLOT_REQUIRE_EARLY_SWAP_COVERAGE, false),
+    smlotBlockIntelBlockTrade: envBool(process.env.SMLOT_BLOCK_INTEL_BLOCK_TRADE, true),
+    smlotBlockBadTags: envBool(process.env.SMLOT_BLOCK_BAD_TAGS, true),
+    smlotBlockClusteredWallets: envBool(process.env.SMLOT_BLOCK_CLUSTERED_WALLETS, true),
+    smlotBlockScamFarmMeta: envBool(process.env.SMLOT_BLOCK_SCAM_FARM_META, true),
   });
 
   if (!parsed.success) {
