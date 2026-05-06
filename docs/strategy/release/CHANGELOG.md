@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.121] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.121`.
+
+- **`ecosystem.config.cjs`** (`live-oscar-dashboard`): **`STORE_PATH`** снова **`data/paper2/organizer-paper.jsonl`**. Путь **`dashboard-store.jsonl`** не распознаётся как organizer-журнал в **`dashboard-server.ts`**, из‑за этого отключались курсор организатора и связанный режим UI (в логах: «not organizer journal»).
+- **`deploy-live-oscar-vps.sh`**: вместо пустого **`touch`** под live — **`mkdir -p data/paper2`** и **`touch`** **`organizer-paper.jsonl`** только если файла ещё нет.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.120`**.
+
+---
+
 ## [1.11.120] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.120`.

@@ -24,8 +24,10 @@ set -euo pipefail
 cd '${APP_DIR}'
 git fetch origin '${GIT_BRANCH}'
 git reset --hard \"origin/${GIT_BRANCH}\"
-mkdir -p data/live
-touch data/live/dashboard-store.jsonl
+mkdir -p data/live data/paper2
+if [[ ! -f data/paper2/organizer-paper.jsonl ]]; then
+  touch data/paper2/organizer-paper.jsonl
+fi
 npm ci
 pm2 delete dashboard-organizer-paper 2>/dev/null || true
 for n in pt1-oscar pt1-dno pt1-diprunner pt1-oscar-regime pt1-smart-lottery; do pm2 delete \"\$n\" 2>/dev/null || true; done

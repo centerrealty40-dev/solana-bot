@@ -18,7 +18,8 @@ module.exports = {
       env: {
         HOST: '0.0.0.0',
         PORT: '3008',
-        STORE_PATH: path.join(root, 'data/live/dashboard-store.jsonl'),
+        /** Должен совпадать с `isOrganizerPaperStorePath` в dashboard-server (имя `organizer-paper.jsonl`). */
+        STORE_PATH: path.join(root, 'data/paper2/organizer-paper.jsonl'),
         PAPER2_DIR: path.join(root, 'data/paper2'),
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
