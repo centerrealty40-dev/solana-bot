@@ -624,7 +624,11 @@ async function tryExecuteTpPartialSell(args: {
     ...(solProceedsLamports ? { solProceedsLamports } : {}),
     proceedsUsdSource,
   };
+  const isFirstTpLadderPartial = ot.partialSells.length === 0;
+  const wasExitModeB = ot.liveExitProfileMode === 'B';
   ot.partialSells.push(ps);
+  /** Live A/B: первый take-profit по лестнице фиксирует «победный» профиль A; после реального DCA (режим B) — выход обратно в A. */
+  if (cfg.liveExitModeAbEnabled && isFirstTpLadderPartial) ot.liveExitProfileMode = 'A';
   ot.remainingFraction *= 1 - sellFraction;
   /**
    * Live partial: Phase 4 caps token raw amount to on-chain balance (`computedBn > chainAmt` → sell all atoms).
@@ -675,6 +679,12 @@ async function tryExecuteTpPartialSell(args: {
     ...(exitPvPartial.verdict ? { priceVerifyExit: exitPvPartial.verdict } : {}),
     ...(solProceedsLamports ? { solProceedsLamports } : {}),
     proceedsUsdSource,
+    ...(cfg.liveExitModeAbEnabled && ot.liveExitProfileMode
+      ? { liveExitProfileMode: ot.liveExitProfileMode }
+      : {}),
+    ...(cfg.liveExitModeAbEnabled && isFirstTpLadderPartial && wasExitModeB
+      ? { timelineLabelRu: 'Первый take-profit · переход в режим выхода A' }
+      : {}),
   });
   journalLiveStrategy?.({
     kind: 'live_position_partial_sell',

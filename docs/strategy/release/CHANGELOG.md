@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.140] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.140`.
+
+- **Live A/B (исправление семантики):** двухногий **scale-in** — сплит ликвидности, **не** DCA; **`liveExitProfileMode`** не переходит в **B** на второй ноге (**`entry-scale-in.ts`** снова фиксирует **A** в журнале). **B** только после **`dca_add`** по **`PAPER_DCA_LEVELS`**. **Первый** partial TP по лестнице (**`tracker.ts`**, `tryExecuteTpPartialSell`) выставляет **`liveExitProfileMode = 'A'`** (в т.ч. выход из B после разворота). Спецификация **`IDEALIZED_OSCAR_STACK_SPEC.md`** §0 / §8.2 / §9.2 / §15 и комментарии **`ecosystem.config.cjs`** приведены в соответствие.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.139`** (или **`1.11.138`**, если нужно убрать и ошибочную логику **B** после scale-in из **1.11.139**).
+
+---
+
 ## [1.11.139] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.139`.
@@ -363,7 +375,7 @@
 
 | Процесс | Назначение |
 |---------|------------|
-| **`live-oscar`** | Реальные сделки; пост-lane как в prod (**лиq ≥ $200k**, vol **20k / 36k**, holders **≥3000**); выходы A/B после scale-in; **без** TP-regime классов. |
+| **`live-oscar`** | Реальные сделки; пост-lane как в prod (**лиq ≥ $200k**, vol **20k / 36k**, holders **≥3000**); выходы A/B (**B** после DCA, двухногий вход — **A**); **без** TP-regime классов. |
 | **`pt1-oscar`** | Бумага **$100**; **лиq строго $100k–$200k**; holders **≥1000**; vol **17k / 32k**; **`PAPER_TP_REGIME_ENABLED=0`**. |
 | **`pt1-oscar-regime`** | Те же входные пороги, что **`pt1-oscar`**, но **`PAPER_TP_REGIME_ENABLED=1`** (классы **down / sideways / up / unknown** → overrides сетки TP / kill); журнал **`data/paper2/pt1-oscar-regime.jsonl`**. |
 

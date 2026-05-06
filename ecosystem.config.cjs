@@ -290,7 +290,7 @@ module.exports = {
 
         /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A/B: A после первой ноги; B после второй ноги scale-in или после DCA по `PAPER_DCA_LEVELS` — env `PAPER_LIVE_EXIT_MODE_B_*`. */
+        /** Режим A/B: A при плановом входе (обе ноги scale-in = сплит ликвидности, не DCA); B только после DCA по `PAPER_DCA_LEVELS`; первый TP по лестнице → снова A — env `PAPER_LIVE_EXIT_MODE_B_*`. */
         PAPER_LIVE_EXIT_MODE_AB: '1',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
@@ -307,7 +307,7 @@ module.exports = {
 
         /** Live Oscar: без DCA между ногами — только $20 + отложенные $10 по коридору Jupiter. */
         PAPER_DCA_LEVELS: '',
-        /** Режим A: kill-stop до второй ноги (см. также режим B −7%). */
+        /** Режим A: базовый kill −5% при отсутствии DCA (см. режим B −7%). */
         PAPER_DCA_KILLSTOP: '-0.05',
         /**
          * Режим A — «полная лестница» (IDEALIZED §9.2): +5% к средней; 15% остатка за ступень;

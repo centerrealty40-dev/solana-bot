@@ -217,8 +217,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
   ot.avgEntryMarket = numM / ot.totalInvestedUsd;
   ot.remainingFraction = 1;
-  /** После второй ноги входа (scale-in) — тот же смысл, что «усреднились»: профиль выхода B (как после DCA). */
-  if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+  /** Вторая нога — плановый сплит входа (меньше удар по стакану), не DCA на просадке; профиль выхода остаётся A до реального DCA или первого TP (см. IDEALIZED §8.2–§9.2). */
   appendLiveBuyAnchorsAfterDca(ot, buyRes);
 
   ot.livePendingScaleIn = null;
@@ -248,8 +247,8 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
     corridorUpPct: pending.corridorUpPct,
     corridorDownPct: pending.corridorDownPct,
-    timelineLabelRu: `${`Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции`}${cfg.liveExitModeAbEnabled ? ' · режим выхода B (вторая нога входа)' : ''}`,
-    ...(cfg.liveExitModeAbEnabled ? { liveExitProfileMode: 'B' as const } : {}),
+    timelineLabelRu: `${`Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции`}${cfg.liveExitModeAbEnabled ? ' · режим выхода A (сплит входа)' : ''}`,
+    ...(cfg.liveExitModeAbEnabled ? { liveExitProfileMode: 'A' as const } : {}),
   });
 
   journalLiveStrategy?.({

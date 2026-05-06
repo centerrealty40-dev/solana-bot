@@ -1,6 +1,6 @@
 /**
- * Live Oscar — режимы выхода A/B (§ IDEALIZED_OSCAR_STACK_SPEC): после первого усреднения
- * подмешиваются параметры из env `PAPER_LIVE_EXIT_MODE_B_*`.
+ * Live Oscar — режимы выхода A/B (§ IDEALIZED_OSCAR_STACK_SPEC): параметры `PAPER_LIVE_EXIT_MODE_B_*`
+ * только пока `liveExitProfileMode === 'B'` (после DCA по `PAPER_DCA_LEVELS`). Первый partial TP → снова A.
  */
 import type { PaperTraderConfig } from './config.js';
 import type { OpenTrade } from './types.js';

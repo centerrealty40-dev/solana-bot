@@ -332,7 +332,7 @@
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
                     После mcap — сумма ноги (вход/DCA), выручка по лестнице (≈) или объём закрытого куска (−). У ладдера в подписи — шаг K/N из журнала и доля текущего остатка позиции при пороге PnL к средней (после предыдущих частичных продаж остаток меньше); PnL по шагу отдельно не показываем.
-                    У Paper Oscar под строкой open/close при включённом TP-regime показывается класс пути до входа (down/up/sideways/unknown); у Live Oscar — режим выхода A/B после первой ноги и переключение на B после второй ноги (или DCA).
+                    У Paper Oscar под строкой open/close при включённом TP-regime показывается класс пути до входа (down/up/sideways/unknown); у Live Oscar — режим выхода A/B: B только после DCA, двухногий вход остаётся A; первый TP → A.
                   </div>
                   <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
@@ -464,7 +464,7 @@
         label: 'Live Oscar',
         tag: 'live',
         oneLiner:
-          'Live **$55 + $25** (итого **$80**); POST ≥48 ч; **$200k / $20k vol 5m**; вторая нога после **5 с**, коридор Jupiter **+5% / −7%**; импульс PG **≥12%**; **режим A** до второй ноги: сетка TP **+5% / 15%** остатка, kill **−5%**; **режим B** после второй ноги: сетка **+5% / 50%** остатка (макс. 4 ступени), kill **−7%**, trail/timeout из env B — см. IDEALIZED §9.2; W8.0 live.',
+          'Live (типично **две ноги** — сплит ликвидности, не DCA); POST ≥48 ч; **$200k / $20k vol 5m**; вторая нога после задержки, коридор Jupiter **+5% / −7%**; импульс PG **≥12%**; **режим A** при плановом входе (обе ноги): сетка **+5% / 15%** остатка, kill **−5%**; **режим B** только после **DCA** по уровням: сетка **+5% / 50%** (макс. 4 ступени), kill **−7%**; **первый TP** → снова **A** — IDEALIZED §9.2; W8.0 live.',
         details:
           'SSOT: блок PM2 **live-oscar** в ecosystem.config.cjs. Нотионал **$80** ($55 + $25). Журнал data/live/pt1-oscar-live.jsonl. На VPS только Live Oscar при DASHBOARD_PAPER2_LIVE_OSCAR_ONLY=1.',
       },
