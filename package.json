@@ -1,6 +1,6 @@
 {
   "name": "solana-alpha-research-platform",
-  "version": "1.11.116",
+  "version": "1.11.117",
   "private": true,
   "description": "Modular research platform for testing on-chain alpha hypotheses on Solana DEX",
   "type": "module",

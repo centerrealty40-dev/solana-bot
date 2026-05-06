@@ -4,6 +4,7 @@ import {
   capitalNotionalXUsd,
   capitalRequiredFreeUsd,
   tokenUsdFromBuyQuote,
+  tokenUsdFromBuyQuoteFitDecimals,
 } from '../src/live/phase5-gates.js';
 
 function partialCfg(over: Partial<LiveOscarConfig>): LiveOscarConfig {
@@ -41,5 +42,31 @@ describe('tokenUsdFromBuyQuote', () => {
   it('returns null on bad shapes', () => {
     expect(tokenUsdFromBuyQuote({}, 200, 6)).toBeNull();
     expect(tokenUsdFromBuyQuote({ inAmount: 'x', outAmount: '1' }, 200, 6)).toBeNull();
+  });
+});
+
+describe('tokenUsdFromBuyQuoteFitDecimals', () => {
+  it('picks decimals that match anchor when hint is wrong', () => {
+    const q = {
+      inAmount: '1000000000',
+      outAmount: '769230769230',
+    };
+    const solUsd = 200;
+    const anchor = 0.26;
+    const wrongHint = tokenUsdFromBuyQuote(q, solUsd, 6);
+    expect(wrongHint).not.toBeNull();
+    expect(wrongHint!).toBeLessThan(anchor / 10);
+
+    const fit = tokenUsdFromBuyQuoteFitDecimals(q, solUsd, 6, anchor);
+    expect(fit).not.toBeNull();
+    expect(fit!.decimalsUsed).toBe(9);
+    expect(fit!.px).toBeCloseTo(anchor, 1);
+  });
+
+  it('falls back to hint when anchor missing', () => {
+    const q = { inAmount: '1000000000', outAmount: '200000000' };
+    const fit = tokenUsdFromBuyQuoteFitDecimals(q, 200, 6, 0);
+    expect(fit?.px).toBeCloseTo(1, 5);
+    expect(fit?.decimalsUsed).toBe(6);
   });
 });

@@ -66,9 +66,20 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   liveOscarCfg: LiveOscarConfig;
   journalAppend: (event: Record<string, unknown>) => void;
   journalLiveStrategy?: (event: Record<string, unknown>) => void;
+  /** Live: discovery Phase 5 may rotate capital and drop the open leg — abort stale scale-in. */
+  verifyStillOpen?: () => boolean;
 }): Promise<void> {
-  const { cfg, ot, mint, curMetric, livePhase4, liveOscarCfg, journalAppend, journalLiveStrategy } =
-    args;
+  const {
+    cfg,
+    ot,
+    mint,
+    curMetric,
+    livePhase4,
+    liveOscarCfg,
+    journalAppend,
+    journalLiveStrategy,
+    verifyStillOpen,
+  } = args;
 
   const pending = parsePending(ot.livePendingScaleIn as unknown);
   if (!pending) return;
@@ -160,6 +171,8 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     });
     return;
   }
+
+  if (verifyStillOpen && !verifyStillOpen()) return;
 
   const buyRes = await livePhase4.trySolToTokenBuy({
     mint,

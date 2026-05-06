@@ -50,6 +50,51 @@ export function tokenUsdFromBuyQuote(
   return (solSpent * solUsd) / tokensOut;
 }
 
+/**
+ * Pick decimals 0…24 that best match `anchorUsdPerToken` (usually `avgEntryMarket` / first-leg fill).
+ * Wrong mint decimals (e.g. safety skipped → fallback 6 vs real 9) otherwise shrink MTM ~10^(Δd) and trip false KILLSTOP.
+ */
+export function tokenUsdFromBuyQuoteFitDecimals(
+  quoteResponse: Record<string, unknown>,
+  solUsd: number,
+  hintDecimals: number,
+  anchorUsdPerToken: number,
+): { px: number; decimalsUsed: number } | null {
+  const dHint = Math.min(24, Math.max(0, Math.floor(hintDecimals)));
+  const hintPx = tokenUsdFromBuyQuote(quoteResponse, solUsd, dHint);
+
+  if (!(anchorUsdPerToken > 0) || !Number.isFinite(anchorUsdPerToken)) {
+    if (hintPx == null || !(hintPx > 0)) return null;
+    return { px: hintPx, decimalsUsed: dHint };
+  }
+
+  let bestD = dHint;
+  let bestPx = hintPx;
+  let bestErr =
+    hintPx != null && hintPx > 0
+      ? Math.abs(hintPx - anchorUsdPerToken) / anchorUsdPerToken
+      : Number.POSITIVE_INFINITY;
+
+  for (let d = 0; d <= 24; d++) {
+    const px = tokenUsdFromBuyQuote(quoteResponse, solUsd, d);
+    if (px == null || !(px > 0)) continue;
+    const err = Math.abs(px - anchorUsdPerToken) / anchorUsdPerToken;
+    if (err < bestErr) {
+      bestErr = err;
+      bestD = d;
+      bestPx = px;
+    }
+  }
+
+  if (bestPx == null || !(bestPx > 0)) return null;
+
+  if (bestErr > 2 && hintPx != null && hintPx > 0) {
+    return { px: hintPx, decimalsUsed: dHint };
+  }
+
+  return { px: bestPx, decimalsUsed: bestD };
+}
+
 async function unrealizedOneUsd(args: {
   ot: OpenTrade;
   liveCfg: LiveOscarConfig;
@@ -58,6 +103,8 @@ async function unrealizedOneUsd(args: {
 }): Promise<number | null> {
   const { ot, liveCfg, solUsd, probeUsd } = args;
   const dec = ot.tokenDecimals ?? 6;
+  const anchor =
+    ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0;
   const fetched = await liveFetchBuyQuote({
     cfg: liveCfg,
     outputMint: ot.mint,
@@ -65,7 +112,8 @@ async function unrealizedOneUsd(args: {
     solUsd,
   });
   if (!fetched) return null;
-  const px = tokenUsdFromBuyQuote(fetched.quoteResponse, solUsd, dec);
+  const fit = tokenUsdFromBuyQuoteFitDecimals(fetched.quoteResponse, solUsd, dec, anchor);
+  const px = fit?.px ?? null;
   if (!(px != null && px > 0) || !(ot.avgEntry > 0)) return null;
   const cost = ot.totalInvestedUsd * ot.remainingFraction;
   const value = cost * (px / ot.avgEntry);

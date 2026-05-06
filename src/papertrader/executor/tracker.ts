@@ -44,7 +44,7 @@ import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
-import { tokenUsdFromBuyQuote } from '../../live/phase5-gates.js';
+import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import {
   notifyLiveTrackerJupiterFallback,
   notifyLiveTrackerSnapshotJupiterDivergence,
@@ -1053,7 +1053,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (livePhase4 && liveOscarCfg && curMetric > 0) {
       const solUsd = getSolUsd() ?? 0;
       const snapPx = curMetric;
-      const dec = ot.tokenDecimals ?? 6;
+      const hintDec = ot.tokenDecimals ?? 6;
+      const anchorPx =
+        ot.avgEntryMarket > 0
+          ? ot.avgEntryMarket
+          : ot.avgEntry > 0
+            ? ot.avgEntry
+            : snapPx;
       const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
       const probeUsd = Math.max(5, Math.min(45, remUsd * 0.12));
 
@@ -1089,7 +1095,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               reason: 'quote-null',
             });
           } else {
-            const jpx = tokenUsdFromBuyQuote(fq.quoteResponse, solUsd, dec);
+            const fit = tokenUsdFromBuyQuoteFitDecimals(
+              fq.quoteResponse,
+              solUsd,
+              hintDec,
+              anchorPx,
+            );
+            const jpx = fit?.px;
             if (jpx == null || !(jpx > 0)) {
               void notifyLiveTrackerJupiterFallback({
                 strategyId: cfg.strategyId,
@@ -1102,30 +1114,58 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 reason: 'jupiter-price-null',
               });
             } else {
-              const diverge = Math.abs(snapPx - jpx) / jpx;
-              if (diverge > 0.035) {
+              const fittedDec = fit!.decimalsUsed;
+              if (fittedDec !== hintDec && ot.tokenDecimals !== fittedDec) {
                 log.warn(
                   {
                     mint: mint.slice(0, 8),
                     symbol: ot.symbol,
+                    hintDec,
+                    fittedDec,
+                  },
+                  'live tracker: adjusted mint decimals from Jupiter quote vs entry anchor (MTM)',
+                );
+                ot.tokenDecimals = fittedDec;
+              }
+              const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
+              const divergeVsAnchor = Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18);
+              if (divergeVsSnap > 0.035) {
+                if (divergeVsAnchor > 2) {
+                  log.warn(
+                    {
+                      mint: mint.slice(0, 8),
+                      symbol: ot.symbol,
+                      snapshotPx: snapPx,
+                      jupiterPx: jpx,
+                      anchorPx,
+                      divergeVsAnchorPct: +(divergeVsAnchor * 100).toFixed(1),
+                    },
+                    'live tracker: Jupiter MTM conflicts with entry anchor; keeping PG snapshot for decisions',
+                  );
+                } else {
+                  log.warn(
+                    {
+                      mint: mint.slice(0, 8),
+                      symbol: ot.symbol,
+                      snapshotPx: snapPx,
+                      jupiterPx: jpx,
+                      divergePct: +(divergeVsSnap * 100).toFixed(2),
+                    },
+                    'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
+                  );
+                  void notifyLiveTrackerSnapshotJupiterDivergence({
+                    strategyId: cfg.strategyId,
+                    mint,
+                    symbol: ot.symbol,
                     snapshotPx: snapPx,
                     jupiterPx: jpx,
-                    divergePct: +(diverge * 100).toFixed(2),
-                  },
-                  'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
-                );
-                void notifyLiveTrackerSnapshotJupiterDivergence({
-                  strategyId: cfg.strategyId,
-                  mint,
-                  symbol: ot.symbol,
-                  snapshotPx: snapPx,
-                  jupiterPx: jpx,
-                  divergePct: diverge * 100,
-                  probeUsd,
-                  avgEntryMarket: ot.avgEntryMarket,
-                });
+                    divergePct: divergeVsSnap * 100,
+                    probeUsd,
+                    avgEntryMarket: ot.avgEntryMarket,
+                  });
+                  curMetric = jpx;
+                }
               }
-              curMetric = jpx;
             }
           }
         } catch (e) {
@@ -1401,6 +1441,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const addUsd = cfg.positionUsd * lvl.addFraction;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
+          if (!open.has(mint)) continue;
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
@@ -1557,6 +1598,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         liveOscarCfg,
         journalAppend,
         journalLiveStrategy,
+        verifyStillOpen: () => open.has(mint),
       });
     }
 
