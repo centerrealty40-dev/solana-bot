@@ -43,7 +43,10 @@ module.exports = {
       max_memory_restart: '300M',
       merge_logs: true,
       time: true,
-      env: { NODE_ENV: 'production' },
+      env: {
+        NODE_ENV: 'production',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+      },
     },
     {
       name: 'sa-meteora',
@@ -58,7 +61,10 @@ module.exports = {
       max_memory_restart: '300M',
       merge_logs: true,
       time: true,
-      env: { NODE_ENV: 'production' },
+      env: {
+        NODE_ENV: 'production',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+      },
     },
     {
       name: 'sa-orca',
@@ -77,6 +83,7 @@ module.exports = {
         NODE_ENV: 'production',
         /** Explicit 60s — PM2 may retain removed keys across reload; override stale dump. */
         ORCA_COLLECTOR_INTERVAL_MS: '60000',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
     {
@@ -95,6 +102,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '60000',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
     {
@@ -110,7 +118,10 @@ module.exports = {
       max_memory_restart: '300M',
       merge_logs: true,
       time: true,
-      env: { NODE_ENV: 'production' },
+      env: {
+        NODE_ENV: 'production',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+      },
     },
     {
       name: 'sa-wallet-orchestrator',
@@ -611,6 +622,8 @@ module.exports = {
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
         PAPER_HOLDERS_ON_FAIL: 'db_fallback',
         PAPER_HOLDERS_DB_WRITEBACK: '1',
+        /** Прогрев `tokens.holder_count` для до N кандидатов с нулём в SQL до основного eval (см. dip-clones). */
+        PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '12',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
         QN_FEATURE_BUDGET_HOLDERS: '10000000',
 

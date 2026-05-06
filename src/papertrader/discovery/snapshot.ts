@@ -17,16 +17,17 @@ export async function fetchSnapshotLaneCandidates(
   lane: Lane,
 ): Promise<SnapshotCandidateRow[]> {
   const lc = laneCfg(cfg, lane);
+  /** Pool/token age anchor: pair launch when collectors filled `launch_ts` (DexScreener `pairCreatedAt`, etc.), else first time we saw the mint in `tokens`. */
   const unions = SNAPSHOT_TABLES.map(
     (t) => `
     SELECT
       p.base_mint AS mint,
       COALESCE(tok.symbol, '?') AS symbol,
       COALESCE(tok.holder_count, 0)::int AS holder_count,
-      EXTRACT(EPOCH FROM (now() - COALESCE(tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
+      EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
       p.ts,
-      NULL::timestamptz AS launch_ts,
-      EXTRACT(EPOCH FROM (p.ts - COALESCE(tok.first_seen_at, p.ts))) / 60.0 AS age_min,
+      p.launch_ts AS launch_ts,
+      EXTRACT(EPOCH FROM (p.ts - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS age_min,
       COALESCE(p.price_usd, 0)::float AS price_usd,
       COALESCE(p.liquidity_usd, 0)::float AS liquidity_usd,
       COALESCE(p.volume_5m, 0)::float AS volume_5m,

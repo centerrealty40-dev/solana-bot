@@ -318,6 +318,8 @@ const ConfigSchema = z.object({
     ),
   holdersOnFail: z.enum(['block', 'warn', 'db_fallback']).default('db_fallback'),
   holdersDbWriteback: z.boolean().default(false),
+  /** Before evaluating candidates, resolve holder counts for up to N mints with `holder_count=0` in snapshot SQL (RPC + optional DB writeback). Reduces false «0 holders» in PG and in-row fallback. */
+  holdersSnapshotWarmupMax: z.coerce.number().int().min(0).max(200).default(0),
   holdersGpaCreditsPerCall: z.coerce.number().int().min(10).max(2_000).default(100),
 
   /** W7.6 — impulse confirm (PG delta → QN Orca spot → Jupiter corridor). */
@@ -581,6 +583,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       return undefined;
     })(),
     holdersDbWriteback: envBool(process.env.PAPER_HOLDERS_DB_WRITEBACK, false),
+    holdersSnapshotWarmupMax: process.env.PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX,
     holdersGpaCreditsPerCall: process.env.PAPER_HOLDERS_GPA_CREDITS_PER_CALL,
 
     impulseConfirmEnabled: envBool(process.env.PAPER_IMPULSE_CONFIRM_ENABLED, false),

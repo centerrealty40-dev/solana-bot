@@ -112,6 +112,37 @@ function buildFeatures(
   return base;
 }
 
+async function warmupSnapshotHolderCounts(
+  cfg: PaperTraderConfig,
+  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }>,
+): Promise<void> {
+  const max = cfg.holdersSnapshotWarmupMax;
+  if (!(max > 0)) return;
+
+  const mints: string[] = [];
+  const seen = new Set<string>();
+  for (const { row } of snapshotTagged) {
+    if ((row.holder_count ?? 0) > 0) continue;
+    if (seen.has(row.mint)) continue;
+    seen.add(row.mint);
+    mints.push(row.mint);
+    if (mints.length >= max) break;
+  }
+  if (mints.length === 0) return;
+
+  const resolved = new Map<string, number>();
+  for (const mint of mints) {
+    const r = await resolveHolderCount(cfg, mint);
+    if (r.ok) resolved.set(mint, r.count);
+  }
+  if (resolved.size === 0) return;
+
+  for (const x of snapshotTagged) {
+    const c = resolved.get(x.row.mint);
+    if (c !== undefined) x.row.holder_count = c;
+  }
+}
+
 export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<DiscoveryTickResult> {
   const [migRows, postRows] = await Promise.all([
     cfg.enableMigrationLane ? fetchSnapshotLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
@@ -128,6 +159,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg,
     snapshotTagged.map((x) => x.row),
   );
+  await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
 
   const decisions: EvalDecision[] = [];

@@ -1,13 +1,15 @@
 /**
- * Ensures DEX snapshot collectors also ingest pools for mints that are open in paper2 journals,
- * so the dashboard can resolve live price / mcap for unrealized PnL.
+ * Ensures DEX snapshot collectors also ingest pools for mints that are open in paper2 journals
+ * or in the Live Oscar JSONL, so discovery / dashboard see pairs that trending feeds omit.
  *
- * Disable via env: PAPER2_SNAPSHOT_OPENS=0
+ * Disable paper+live enrich: PAPER2_SNAPSHOT_OPENS=0
+ * Disable live side only: PAPER2_SNAPSHOT_LIVE_OPENS=0
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
+const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
 const TOKEN_CHUNK = 10;
 const DS_DELAY_MS = 350;
 
@@ -56,6 +58,42 @@ export function loadPaper2OpenMintsSync(paper2Dir) {
   return [...out];
 }
 
+/** Replay Live Oscar JSONL: open positions until `live_position_close`. */
+export function loadLiveOscarOpenMintsSync() {
+  if (process.env.PAPER2_SNAPSHOT_LIVE_OPENS === '0') return [];
+  const fp = process.env.LIVE_TRADES_PATH || process.env.PAPER2_SNAPSHOT_LIVE_JSONL || DEFAULT_LIVE_JSONL;
+  if (!fp || !fs.existsSync(fp)) return [];
+  let buf;
+  try {
+    buf = fs.readFileSync(fp, 'utf-8');
+  } catch {
+    return [];
+  }
+  const open = new Map();
+  for (const ln of buf.split('\n')) {
+    if (!ln.trim()) continue;
+    try {
+      const e = JSON.parse(ln);
+      if (e.channel && e.channel !== 'live') continue;
+      const mint = e.mint;
+      if (!mint || typeof mint !== 'string') continue;
+      const k = e.kind;
+      if (k === 'live_position_open' || k === 'live_position_scale_in' || k === 'live_position_dca') {
+        open.set(mint, true);
+      } else if (k === 'live_position_close') {
+        open.delete(mint);
+      }
+    } catch {
+      /* ignore bad line */
+    }
+  }
+  const out = [];
+  for (const m of open.keys()) {
+    if (isPlausibleMint(m)) out.push(m);
+  }
+  return out;
+}
+
 function mintsTouchedByRows(rows) {
   const s = new Set();
   for (const r of rows) {
@@ -92,9 +130,11 @@ export async function mergePaper2OpenMintSnapshots({
   const dir = paper2Dir || process.env.PAPER2_DIR || DEFAULT_PAPER2_DIR;
   let openMints;
   try {
-    openMints = loadPaper2OpenMintsSync(dir);
+    const paper = loadPaper2OpenMintsSync(dir);
+    const live = loadLiveOscarOpenMintsSync();
+    openMints = [...new Set([...paper, ...live])];
   } catch (e) {
-    if (log) log('warn', 'paper2 open mints load failed', { error: String(e), component });
+    if (log) log('warn', 'paper2/live open mints load failed', { error: String(e), component });
     return rows;
   }
   if (openMints.length === 0) return rows;
@@ -128,7 +168,7 @@ export async function mergePaper2OpenMintSnapshots({
 
   if (extra.length === 0) {
     if (log) {
-      log('info', 'paper2 open mints: token lookup produced no rows for this dex', {
+      log('info', 'paper2/live open mints: token lookup produced no rows for this dex', {
         component,
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
@@ -139,7 +179,7 @@ export async function mergePaper2OpenMintSnapshots({
 
   const merged = dedupByPairAddress([...rows, ...extra]);
   if (log) {
-    log('info', 'paper2 open mint snapshots merged', {
+    log('info', 'paper2/live open mint snapshots merged', {
       component,
       openMintCount: openMints.length,
       missingFromPrimaryTick: missing.length,

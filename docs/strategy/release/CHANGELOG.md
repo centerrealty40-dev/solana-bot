@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.111] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.111`.
+
+### Discovery — возраст пула ближе к GMGN
+
+- **`fetchSnapshotLaneCandidates`:** `age_min` и `token_age_min` считаются от **`COALESCE(pair_snapshots.launch_ts, tokens.first_seen_at, snapshot_ts)`** вместо игнора **`launch_ts`** (раньше в SQL всегда подставлялся `NULL`). Это согласует пост-lane возраст с **`pairCreatedAt`** там, где коллекторы уже пишут **`launch_ts`** (Orca, Moonshot, PumpSwap и т.д.).
+- **`launch_ts`** из строки снепшота пробрасывается в **`SnapshotCandidateRow`**.
+- **Холдеры:** опциональный прогрев **`PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX`** — до N минтов с **`holder_count=0`** в SQL перед eval вызывается **`resolveHolderCount`** (writeback в **`tokens`** как при включённом **`PAPER_HOLDERS_DB_WRITEBACK`**); строки кандидатов в памяти обновляются для того же тика.
+- **Collectors `mergePaper2OpenMintSnapshots`:** объединение mint из **Live Oscar JSONL** (**`LIVE_TRADES_PATH`** / **`PAPER2_SNAPSHOT_LIVE_JSONL`**) с paper opens; DexScreener **`/tokens/`** добор для открытых live-позиций. Отключить только live: **`PAPER2_SNAPSHOT_LIVE_OPENS=0`**. У процессов **`sa-*`** в **`ecosystem.config.cjs`** задан **`LIVE_TRADES_PATH`** рядом с репо.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.110`**.
+
+---
+
 ## [1.11.110] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.110`.
