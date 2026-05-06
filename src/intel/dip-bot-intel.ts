@@ -10,7 +10,8 @@ export const DIP_BOT_TAG_SOURCE = 'dip_bot_intel';
 
 export type DipBotIntelEnv = {
   liveJsonlPath: string;
-  strategyIdFilter: string;
+  /** Accept anchors from any of these journal `strategyId` values (comma-separated in env). */
+  strategyIds: string[];
   tPreMs: number;
   minUsdPerAnchorBuyer: number;
   minHitsForTag: number;
@@ -24,9 +25,14 @@ export function loadDipBotEnv(): DipBotIntelEnv {
     process.env.DIP_BOT_LIVE_JSONL?.trim() ||
     process.env.LIVE_TRADES_PATH?.trim() ||
     `${root}/data/live/pt1-oscar-live.jsonl`;
+  const rawIds = process.env.DIP_BOT_ANCHOR_STRATEGY_IDS || 'live-oscar,pt1-oscar';
+  const strategyIds = rawIds
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   return {
     liveJsonlPath,
-    strategyIdFilter: (process.env.DIP_BOT_ANCHOR_STRATEGY_IDS || 'live-oscar').split(',')[0]!.trim(),
+    strategyIds: strategyIds.length > 0 ? strategyIds : ['live-oscar'],
     tPreMs: Math.max(5_000, Number(process.env.DIP_BOT_T_PRE_MS || 60_000)),
     minUsdPerAnchorBuyer: Math.max(0, Number(process.env.DIP_BOT_MIN_USD_ONE_EVENT || 50)),
     minHitsForTag: Math.max(1, Number(process.env.DIP_BOT_MIN_HITS || 3)),
@@ -37,7 +43,7 @@ export function loadDipBotEnv(): DipBotIntelEnv {
 
 export function extractLiveOscarOpenAnchors(
   line: string,
-  strategyIdFilter: string,
+  strategyIds: string[],
 ): { mint: string; entryTsMs: number } | null {
   const t = line.trim();
   if (!t) return null;
@@ -49,7 +55,8 @@ export function extractLiveOscarOpenAnchors(
   }
   if (!obj || typeof obj !== 'object') return null;
   const rec = obj as Record<string, unknown>;
-  if (String(rec.strategyId || '') !== strategyIdFilter) return null;
+  const sid = String(rec.strategyId || '');
+  if (!strategyIds.includes(sid)) return null;
   let body: LiveEventBody;
   try {
     body = parseLiveEventBody(obj);

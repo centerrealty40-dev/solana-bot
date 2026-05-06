@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const pending: { mint: string; entryTsMs: number }[] = [];
   const seen = new Set<string>();
   for (const line of lines) {
-    const anchor = extractLiveOscarOpenAnchors(line, env.strategyIdFilter);
+    const anchor = extractLiveOscarOpenAnchors(line, env.strategyIds);
     if (!anchor) continue;
     const key = `${anchor.mint}:${anchor.entryTsMs}`;
     if (seen.has(key)) continue;

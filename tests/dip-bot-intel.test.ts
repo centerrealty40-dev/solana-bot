@@ -38,7 +38,7 @@ describe('dip-bot-intel', () => {
         },
       },
     });
-    const a = extractLiveOscarOpenAnchors(line, 'live-oscar');
+    const a = extractLiveOscarOpenAnchors(line, ['live-oscar']);
     expect(a).not.toBeNull();
     expect(a!.mint).toBe('Mint111111111111111111111111111111111111111');
     expect(a!.entryTsMs).toBe(1_700_000_100_000);
@@ -54,12 +54,32 @@ describe('dip-bot-intel', () => {
       mint: 'M',
       openTrade: { entryTs: 100 },
     });
-    expect(extractLiveOscarOpenAnchors(line, 'live-oscar')).toBeNull();
+    expect(extractLiveOscarOpenAnchors(line, ['live-oscar'])).toBeNull();
+  });
+
+  it('extractLiveOscarOpenAnchors accepts pt1-oscar when in allowlist', () => {
+    const line = JSON.stringify({
+      ts: 1,
+      strategyId: 'pt1-oscar',
+      channel: 'live',
+      liveSchema: LIVE_SCHEMA_V1,
+      kind: 'live_position_open',
+      mint: 'Mint222222222222222222222222222222222222222',
+      openTrade: {
+        mint: 'Mint222222222222222222222222222222222222222',
+        entryTs: 999,
+      },
+    });
+    expect(extractLiveOscarOpenAnchors(line, ['live-oscar', 'pt1-oscar'])!.mint).toBe(
+      'Mint222222222222222222222222222222222222222',
+    );
+    expect(extractLiveOscarOpenAnchors(line, ['live-oscar'])).toBeNull();
   });
 
   it('loadDipBotEnv reads defaults', () => {
     const e = loadDipBotEnv();
-    expect(e.strategyIdFilter).toBe('live-oscar');
+    expect(e.strategyIds).toContain('live-oscar');
+    expect(e.strategyIds).toContain('pt1-oscar');
     expect(e.tPreMs).toBeGreaterThanOrEqual(60_000);
     expect(e.maxAnchorsPerRun).toBeGreaterThan(0);
   });
