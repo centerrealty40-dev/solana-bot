@@ -10,8 +10,11 @@ export const DIP_BOT_TAG_SOURCE = 'dip_bot_intel';
 
 export type DipBotIntelEnv = {
   liveJsonlPath: string;
-  /** Accept anchors from any of these journal `strategyId` values (comma-separated in env). */
-  strategyIds: string[];
+  /**
+   * Accept anchors only if journal `strategyId` is in this list.
+   * `null` = accept any `strategyId` that matches anchor shape (set env `DIP_BOT_ANCHOR_STRATEGY_IDS=*` or `all`).
+   */
+  strategyIds: string[] | null;
   tPreMs: number;
   minUsdPerAnchorBuyer: number;
   minHitsForTag: number;
@@ -25,14 +28,18 @@ export function loadDipBotEnv(): DipBotIntelEnv {
     process.env.DIP_BOT_LIVE_JSONL?.trim() ||
     process.env.LIVE_TRADES_PATH?.trim() ||
     `${root}/data/live/pt1-oscar-live.jsonl`;
-  const rawIds = process.env.DIP_BOT_ANCHOR_STRATEGY_IDS || 'live-oscar,pt1-oscar';
-  const strategyIds = rawIds
+  const rawIds = (process.env.DIP_BOT_ANCHOR_STRATEGY_IDS || 'live-oscar,pt1-oscar').trim();
+  const lower = rawIds.toLowerCase();
+  const strategyIdsAny =
+    rawIds === '*' || lower === 'all' || process.env.DIP_BOT_ANCHOR_ANY_STRATEGY === '1';
+  const strategyIdsList = rawIds
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((s) => s !== '*' && s.toLowerCase() !== 'all');
   return {
     liveJsonlPath,
-    strategyIds: strategyIds.length > 0 ? strategyIds : ['live-oscar'],
+    strategyIds: strategyIdsAny ? null : strategyIdsList.length > 0 ? strategyIdsList : ['live-oscar'],
     tPreMs: Math.max(5_000, Number(process.env.DIP_BOT_T_PRE_MS || 60_000)),
     minUsdPerAnchorBuyer: Math.max(0, Number(process.env.DIP_BOT_MIN_USD_ONE_EVENT || 50)),
     minHitsForTag: Math.max(1, Number(process.env.DIP_BOT_MIN_HITS || 3)),
@@ -41,9 +48,14 @@ export function loadDipBotEnv(): DipBotIntelEnv {
   };
 }
 
+function strategyAllowed(strategyIds: string[] | null, sid: string): boolean {
+  if (strategyIds === null) return true;
+  return strategyIds.includes(sid);
+}
+
 export function extractLiveOscarOpenAnchors(
   line: string,
-  strategyIds: string[],
+  strategyIds: string[] | null,
 ): { mint: string; entryTsMs: number } | null {
   const t = line.trim();
   if (!t) return null;
@@ -56,7 +68,7 @@ export function extractLiveOscarOpenAnchors(
   if (!obj || typeof obj !== 'object') return null;
   const rec = obj as Record<string, unknown>;
   const sid = String(rec.strategyId || '');
-  if (!strategyIds.includes(sid)) return null;
+  if (!strategyAllowed(strategyIds, sid)) return null;
   let body: LiveEventBody;
   try {
     body = parseLiveEventBody(obj);
@@ -77,7 +89,7 @@ export function extractLiveOscarOpenAnchors(
  */
 export function extractPaperOscarOpenAnchors(
   line: string,
-  strategyIds: string[],
+  strategyIds: string[] | null,
 ): { mint: string; entryTsMs: number } | null {
   const t = line.trim();
   if (!t) return null;
@@ -90,7 +102,7 @@ export function extractPaperOscarOpenAnchors(
   if (!obj || typeof obj !== 'object') return null;
   const rec = obj as Record<string, unknown>;
   const sid = String(rec.strategyId || '');
-  if (!strategyIds.includes(sid)) return null;
+  if (!strategyAllowed(strategyIds, sid)) return null;
   if (String(rec.kind || '') !== 'open') return null;
   const mint = String(rec.mint || '').trim();
   const entryTsMs = Number(rec.entryTs ?? NaN);
@@ -101,7 +113,7 @@ export function extractPaperOscarOpenAnchors(
 /** Try live mirror row first, then paper-native `open`. */
 export function extractDipBotJournalAnchors(
   line: string,
-  strategyIds: string[],
+  strategyIds: string[] | null,
 ): { mint: string; entryTsMs: number } | null {
   return extractLiveOscarOpenAnchors(line, strategyIds) ?? extractPaperOscarOpenAnchors(line, strategyIds);
 }

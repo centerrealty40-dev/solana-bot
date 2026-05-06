@@ -8,6 +8,38 @@
 
 ---
 
+## [1.11.110] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.110`.
+
+### W9.0 — конвейер «дыры dip_bot → sigseed → пересчёт»
+
+- **`npm run sigseed:enqueue-mints`:** ставит в **`signatures_seed_queue`** минты из **`--from-dip-anchor-gaps`**, **`--mints=a,b`**, или **`--stdin`** + JSON как у **`dip-bot-intel:anchor-gaps`** (не требует **`SA_SIGSEED_ENQUEUE_ENABLED`**).
+- **`scripts-tmp/_vps_dip_bot_gap_sigseed_resweep.sh`:** якорные gaps → enqueue → несколько раундов **`sigseed:run`** → сброс только **`dip_bot_intel_anchors_processed`** + watermark → серия **`dip-bot-intel:run`** → **`coverage`** + **`anchor-gaps`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.109`**.
+
+---
+
+## [1.11.109] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.109`.
+
+### W9.0 dip_bot intel — «перешерстить всё»: любые стратегии + якоря без `swaps`
+
+- **`DIP_BOT_ANCHOR_STRATEGY_IDS`:** значения **`*`** или **`all`** (регистр не важен), либо **`DIP_BOT_ANCHOR_ANY_STRATEGY=1`** — из журнала берутся все якоря **`live_position_open`** / paper **`open`**, без фильтра по `strategyId`.
+- **`npm run dip-bot-intel:run`:** в JSON-лог добавлено поле **`anchorStrategyFilter`** (`*` или CSV).
+- **`npm run dip-bot-intel:anchor-gaps`:** список **`anchor_mint`**, у которых в **`dip_bot_intel_anchors_processed`** только строки с **`buyer_rows = 0`** (дыра инжеста `swaps` → дальше sigseed/backfill по [`deploy/RUNTIME.md`](../../../deploy/RUNTIME.md)).
+- **`scripts-tmp/_vps_dip_bot_exhaustive_sweep.sh`:** бумага + live, полный сброс intel; по умолчанию один проход максимального recall (`*` стратегии, **`T_PRE_MS=1800000`**, **`MIN_USD=0`**). Списки **`DIP_BOT_EXHAUSTIVE_T_PRE_LIST`** / **`DIP_BOT_EXHAUSTIVE_MIN_USD_LIST`** задают сетку (каждая ячейка — заново очищает intel).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.108`**.
+
+---
+
 ## [1.11.108] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.108`.

@@ -108,6 +108,7 @@ async function main(): Promise<void> {
     JSON.stringify({
       ok: true,
       jsonlPath,
+      anchorStrategyFilter: env.strategyIds === null ? '*' : env.strategyIds.join(','),
       jsonlPrevOffset: offset,
       jsonlNewOffset: newOffset,
       jsonlFileSize: fileSize,

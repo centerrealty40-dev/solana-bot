@@ -1,6 +1,6 @@
 {
   "name": "solana-alpha-research-platform",
-  "version": "1.11.108",
+  "version": "1.11.110",
   "private": true,
   "description": "Modular research platform for testing on-chain alpha hypotheses on Solana DEX",
   "type": "module",
@@ -27,6 +27,7 @@
     "live-oscar": "tsx src/scripts/live-oscar.ts",
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "dip-bot-intel:coverage": "tsx src/scripts/dip-bot-intel-coverage.ts",
+    "dip-bot-intel:anchor-gaps": "tsx src/scripts/dip-bot-intel-anchor-gaps.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",
     "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",
@@ -50,6 +51,7 @@
     "wallet-backfill:pilot": "tsx src/scripts/wallet-backfill-pilot.ts",
     "wallet-funding:backfill": "tsx src/scripts/wallet-funding-backfill.ts",
     "sigseed:enqueue": "tsx src/scripts/sigseed-run.ts --enqueue",
+    "sigseed:enqueue-mints": "tsx src/scripts/sigseed-enqueue-mints.ts",
     "sigseed:run": "tsx src/scripts/sigseed-run.ts",
     "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",

@@ -49,6 +49,20 @@ describe('dip-bot-intel', () => {
     expect(a!.entryTsMs).toBe(1_700_000_100_000);
   });
 
+  it('extractLiveOscarOpenAnchors accepts any strategy when filter is null', () => {
+    const line = JSON.stringify({
+      ts: 1,
+      strategyId: 'other-strategy',
+      channel: 'live',
+      liveSchema: LIVE_SCHEMA_V1,
+      kind: 'live_position_open',
+      mint: 'M',
+      openTrade: { entryTs: 100 },
+    });
+    expect(extractLiveOscarOpenAnchors(line, null)).not.toBeNull();
+    expect(extractLiveOscarOpenAnchors(line, ['live-oscar'])).toBeNull();
+  });
+
   it('extractLiveOscarOpenAnchors ignores wrong strategy', () => {
     const line = JSON.stringify({
       ts: 1,
