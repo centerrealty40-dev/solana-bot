@@ -383,62 +383,61 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
+
+        /**
+         * Paper Oscar — недельный эксперимент «хрупкие пулы»: паритет с **live-oscar** по возрасту пост-lane, BS, spike-guard,
+         * дипу / китам / выходам / liq-watch / сим-аудиту; отличия только: **бумага $100**, ликвидность **$100k–$200k**,
+         * holders **≥1000**, объёмные полы чуть ниже live (17k / 32k vs 20k / 36k).
+         */
         PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /**
-         * 2026-05 — смягчение воронки входа (pt1-oscar): больше открытых paper-сделок для статистики.
-         * Выходы / DCA / сетка TP без изменений.
-         */
-        PAPER_POST_MIN_LIQ_USD: '120000',
-        PAPER_POST_MIN_VOL_5M_USD: '12000',
-        PAPER_POST_MIN_BUYS_5M: '3',
-        PAPER_POST_MIN_SELLS_5M: '2',
-        PAPER_POST_MIN_BS: '0.92',
+        PAPER_POST_MIN_LIQ_USD: '100000',
+        PAPER_POST_MAX_LIQ_USD: '200000',
+        PAPER_POST_MIN_VOL_5M_USD: '17000',
+        PAPER_POST_MIN_BUYS_5M: '4',
+        PAPER_POST_MIN_SELLS_5M: '3',
+        PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '22000',
-        PAPER_VOL_5M_SPIKE_MAX_MULT: '8',
-        PAPER_MIN_HOLDER_COUNT: '2000',
+        PAPER_VOL_1H_MIN_USD: '32000',
+        PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
+        PAPER_MIN_HOLDER_COUNT: '1000',
+
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '900',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        PAPER_DIP_MIN_DROP_PCT: '-12',
+        PAPER_DIP_MIN_DROP_PCT: '-15',
         PAPER_DIP_MAX_DROP_PCT: '-50',
-        PAPER_DIP_MIN_IMPULSE_PCT: '10',
+        PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN: '20',
-        PAPER_DIP_COOLDOWN_MIN_SCALP: '14',
-        /** §4.2 — кулдаун по mint после убыточного exit (короче → больше повторных входов). */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '6',
+        PAPER_DIP_COOLDOWN_MIN: '30',
+        PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
-        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '15',
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        /* Oscar: DCA −7% только до первого частичного TP; докупка 45% нотионала; сетка 15% от остатка на ступень */
-        PAPER_DCA_LEVELS: '-7:0.45',
-        PAPER_DCA_KILLSTOP: '-0.14',
-        /** При `PAPER_TP_REGIME_ENABLED=1` и метке `down` на входе — ужесточить killstop (скальп). */
-        PAPER_TP_REGIME_DOWN_DCA_KILLSTOP: '-0.07',
-        /** Paper Oscar — классы пути до входа → overrides сетки (IDEALIZED §7). */
-        PAPER_TP_REGIME_ENABLED: '1',
+        /** Паритет с live-oscar: без TP-regime на входе; режимы A/B — те же env, что у live (одноногий paper всё равно ветку A). */
+        PAPER_TP_REGIME_ENABLED: '0',
+        PAPER_LIVE_EXIT_MODE_AB: '1',
+        PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
+        PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
+        PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
+
+        PAPER_DCA_LEVELS: '',
+        PAPER_DCA_KILLSTOP: '-0.05',
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.15',
-        /** После 1-й ступени сетки не ждать отката к 0% к средней — фиксировать остаток при откате до ~+2.5%. */
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
-        /** Эксперимент: было 0.10 — реже выбивает TRAIL на шуме после триггера. */
-        PAPER_TRAIL_DROP: '0.12',
-        /**
-         * Paper-Oscar: ниже порог «вооружения» трейла (arming / peak-логика). При `ladder_retrace` основной выход TRAIL
-         * идёт через откат от сетки TP; для классического peak+trail нужен `PAPER_TRAIL_MODE=peak`.
-         */
-        PAPER_TRAIL_TRIGGER_X: '1.06',
-        /** Hotfix (2026-05-04): 4h timeout для недельной проверки vs прежние 16h. */
-        PAPER_TIMEOUT_HOURS: '4',
+        PAPER_TRAIL_DROP: '0.10',
+        PAPER_TRAIL_TRIGGER_X: '1.10',
+        PAPER_TIMEOUT_HOURS: '8',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -469,6 +468,7 @@ module.exports = {
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
         PAPER_HOLDERS_ON_FAIL: 'db_fallback',
         PAPER_HOLDERS_DB_WRITEBACK: '1',
+        PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '12',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
         QN_FEATURE_BUDGET_HOLDERS: '10000000',
 
@@ -481,18 +481,32 @@ module.exports = {
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
-        PAPER_SIM_AUDIT_ENABLED: '0',
+        PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
+
+        PAPER_SIM_AUDIT_ENABLED: '1',
+        PAPER_SIM_SAMPLE_PCT: '5',
+        PAPER_SIM_MAX_WALL_MS: '8000',
+        PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_SIM_USE_JUPITER_BUILD: '1',
+        PAPER_SIM_CREDS_PER_CALL: '30',
+        PAPER_SIM_STRICT_BUDGET: '1',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
-        PAPER_IMPULSE_PG_MIN_DROP_PCT: '4',
-        PAPER_IMPULSE_RPC_MAX_PER_MIN: '40',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
 
-        /** W7.5 — только у `live-oscar`. */
-        PAPER_LIQ_WATCH_ENABLED: '0',
-        PAPER_LIQ_WATCH_FORCE_CLOSE: '0',
+        PAPER_LIQ_WATCH_ENABLED: '1',
+        PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
+        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
+        PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
+        PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
+        PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
+        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
+        PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
+        PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
       },
     },
     {

@@ -110,12 +110,16 @@ const ConfigSchema = z.object({
   laneMigMinSells5m: z.coerce.number().int().nonnegative().default(8),
   laneMigMinAgeMin: z.coerce.number().nonnegative().default(2),
   laneMigMaxAgeMin: z.coerce.number().nonnegative().default(25),
+  /** 0 = no cap. Upper bound on pool USD liquidity for migration lane snapshot SQL + evaluateSnapshot. */
+  laneMigMaxLiqUsd: z.coerce.number().nonnegative().default(0),
   lanePostMinLiqUsd: z.coerce.number().nonnegative().default(15_000),
   lanePostMinVol5mUsd: z.coerce.number().nonnegative().default(2_500),
   lanePostMinBuys5m: z.coerce.number().int().nonnegative().default(16),
   lanePostMinSells5m: z.coerce.number().int().nonnegative().default(10),
   lanePostMinAgeMin: z.coerce.number().nonnegative().default(25),
   lanePostMaxAgeMin: z.coerce.number().nonnegative().default(180),
+  /** 0 = no cap. Upper bound on pool USD liquidity for post lane snapshot SQL + evaluateSnapshot. */
+  lanePostMaxLiqUsd: z.coerce.number().nonnegative().default(0),
   /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
   snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
@@ -429,12 +433,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     laneMigMinSells5m: process.env.PAPER_MIG_MIN_SELLS_5M,
     laneMigMinAgeMin: process.env.PAPER_MIG_MIN_AGE_MIN,
     laneMigMaxAgeMin: process.env.PAPER_MIG_MAX_AGE_MIN,
+    laneMigMaxLiqUsd: process.env.PAPER_MIG_MAX_LIQ_USD,
     lanePostMinLiqUsd: process.env.PAPER_POST_MIN_LIQ_USD,
     lanePostMinVol5mUsd: process.env.PAPER_POST_MIN_VOL_5M_USD,
     lanePostMinBuys5m: process.env.PAPER_POST_MIN_BUYS_5M,
     lanePostMinSells5m: process.env.PAPER_POST_MIN_SELLS_5M,
     lanePostMinAgeMin: process.env.PAPER_POST_MIN_AGE_MIN,
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
+    lanePostMaxLiqUsd: process.env.PAPER_POST_MAX_LIQ_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,

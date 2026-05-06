@@ -37,12 +37,14 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     lanePostMinSells5m: 3,
     lanePostMinAgeMin: 2880,
     lanePostMaxAgeMin: 0,
+    lanePostMaxLiqUsd: 0,
     laneMigMinLiqUsd: 12_000,
     laneMigMinVol5mUsd: 1800,
     laneMigMinBuys5m: 18,
     laneMigMinSells5m: 8,
     laneMigMinAgeMin: 2,
     laneMigMaxAgeMin: 25,
+    laneMigMaxLiqUsd: 0,
   } as unknown as PaperTraderConfig;
   return { ...cfg, ...over };
 }
@@ -83,6 +85,14 @@ describe('evaluateVol5m1hGuard', () => {
 });
 
 describe('evaluateSnapshot integrates guard', () => {
+  it('rejects liquidity above post lane max when set', () => {
+    const cfg = baseCfg({ lanePostMaxLiqUsd: 200_000 });
+    const row = baseRow({ liquidity_usd: 250_000 });
+    const v = evaluateSnapshot(cfg, row, 'post_migration');
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((x) => x.startsWith('liq>'))).toBe(true);
+  });
+
   it('includes vol spike reason in snapshot failure', () => {
     const cfg = baseCfg({ vol5mSpikeMaxMult: 4 });
     const row = baseRow({ volume_5m: 40_000, volume_1h: 48_000 }); // baseline 4k, ratio 10

@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.112] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.112`.
+
+### Paper Oscar (pt1-oscar) — недельный эксперимент «хрупкие пулы» vs live
+
+- **Паритет с live-oscar** по пост-lane возрасту (48 ч), BS 0.98, spike-guard 7×, дипу / recovery veto / китам / выходам (trail 10%/1.10, timeout 8 ч, без DCA-между-ногами), impulse (PG 5%), price-verify + exit defers, **sim-audit**, **liq-watch** force-close.
+- **Отличия только:** бумага **$100**, ликвидность **$100k–$200k** (`PAPER_POST_MAX_LIQ_USD`), holders **≥1000**, объёмы **17k / 32k** (5m / floor 1h) vs live **20k / 36k**.
+- **`PAPER_POST_MAX_LIQ_USD` / `PAPER_MIG_MAX_LIQ_USD`:** новые env (0 = без потолка); SQL snapshot + `evaluateSnapshot`.
+- **Сброс журнала дашборда перед неделей:** на VPS `bash scripts-tmp/archive-pt1-oscar-journal.sh` (или вручную `mv`/`touch`), затем `pm2 reload` только **`pt1-oscar`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.111`**; вернуть прежний блок **`pt1-oscar`** в `ecosystem.config.cjs` из истории; при необходимости восстановить journal из `*.bak-*`.
+
+---
+
 ## [1.11.111] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.111`.

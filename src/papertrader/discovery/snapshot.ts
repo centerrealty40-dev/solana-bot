@@ -45,6 +45,7 @@ export async function fetchSnapshotLaneCandidates(
   ).join('\nUNION ALL\n');
 
   const maxAgeFilter = lc.MAX_AGE_MIN > 0 ? `AND COALESCE(age_min, 0) <= ${lc.MAX_AGE_MIN}` : '';
+  const maxLiqFilter = lc.MAX_LIQ_USD > 0 ? `AND liquidity_usd <= ${lc.MAX_LIQ_USD}` : '';
 
   const r = await db.execute(dsql.raw(`
     WITH raw AS (
@@ -61,6 +62,7 @@ export async function fetchSnapshotLaneCandidates(
       AND COALESCE(age_min, 0) >= ${lc.MIN_AGE_MIN}
       ${maxAgeFilter}
       AND liquidity_usd >= ${lc.MIN_LIQ_USD}
+      ${maxLiqFilter}
       AND volume_5m >= ${lc.MIN_VOL_5M_USD}
       AND buys_5m >= ${lc.MIN_BUYS_5M}
       AND sells_5m >= ${lc.MIN_SELLS_5M}
