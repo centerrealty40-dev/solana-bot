@@ -46,7 +46,7 @@ export interface DiscoveryTickResult {
 
 export const evaluatedAtMap = new Map<string, number>();
 export const lastEntryTsByMintMap = new Map<string, number>();
-/** Последний **убыточный** exitTs по mint (ms) для `PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS`. */
+/** Последний **убыточный** exitTs по mint (ms) для loss-exit cooldown (минуты и/или часы). */
 export const lastLossExitTsByMintMap = new Map<string, number>();
 
 export function recordLossExitIfApplicable(
@@ -56,7 +56,8 @@ export function recordLossExitIfApplicable(
   netPnlUsd: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
-  if (!cfg.dipLossExitCooldownEnabled || !(Number(h) > 0)) return;
+  const m = cfg.dipLossExitCooldownMinutes;
+  if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
   if (!(netPnlUsd < 0)) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastLossExitTsByMintMap.get(mint) ?? 0;
@@ -222,15 +223,24 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
     }
 
-    const lossH = cfg.dipLossExitCooldownHours;
-    if (cfg.dipLossExitCooldownEnabled && Number(lossH) > 0) {
+    if (cfg.dipLossExitCooldownEnabled) {
+      const lossMin = cfg.dipLossExitCooldownMinutes;
+      const lossH = cfg.dipLossExitCooldownHours;
       const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
-      const resumeAt = lastLossExit + lossH * 3_600_000;
-      if (lastLossExit > 0 && Date.now() < resumeAt) {
-        const leftH = (resumeAt - Date.now()) / 3_600_000;
-        cooldownReasons.push(
-          `loss_exit_cooldown_${lossH}h_left_${leftH.toFixed(2)}h`,
-        );
+      if (lastLossExit > 0) {
+        let resumeAt = 0;
+        let label = '';
+        if (Number(lossMin) > 0) {
+          resumeAt = lastLossExit + lossMin * 60_000;
+          label = `${lossMin}m`;
+        } else if (Number(lossH) > 0) {
+          resumeAt = lastLossExit + lossH * 3_600_000;
+          label = `${lossH}h`;
+        }
+        if (resumeAt > 0 && Date.now() < resumeAt) {
+          const leftMin = (resumeAt - Date.now()) / 60_000;
+          cooldownReasons.push(`loss_exit_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+        }
       }
     }
 

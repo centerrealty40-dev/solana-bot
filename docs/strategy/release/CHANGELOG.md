@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.138] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.138`.
+
+- **Повторный вход после убыточного закрытия:** env **`PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES`** (приоритет над часами); **`recordLossExitIfApplicable`** учитывает минуты или часы. **`ecosystem` (`live-oscar`):** **`PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED=true`**, **`MINUTES=10`**, **`HOURS=0`**.
+- **Меньше шума в Telegram:** **`LIVE_JUPITER_TRACKER_TELEGRAM=0`** (нет `live-jupiter-tracker-diverge` / fallback); **`live-oscar-dashboard`:** **`QUICKNODE_USAGE_TELEGRAM=0`**, **`QUICKNODE_HOURLY_REMAINING_TELEGRAM=0`**, **`QUICKNODE_BILLING_MILESTONES=0`**; **`hourly-telegram-report.mjs`** шлёт только при **`TELEGRAM_HOURLY_REPORT_ENABLED=1`** (дефолт выкл.); **`paper2-healthcheck.mjs`** — алерт в TG только при **`PAPER2_HEALTH_TELEGRAM_ON_ALERT=1`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.137`** и прежние env-флаги в ecosystem / `.env`.
+
+---
+
 ## [1.11.137] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.137`.

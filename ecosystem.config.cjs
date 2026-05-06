@@ -24,6 +24,10 @@ module.exports = {
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         /** Только колонка Live Oscar на `/papertrader2` (без пустых pt1-плиток). */
         DASHBOARD_PAPER2_LIVE_OSCAR_ONLY: '1',
+        /** QuickNode Admin API → Telegram: выкл. (`quicknode-balance`, `quicknode-usage`, milestones). */
+        QUICKNODE_USAGE_TELEGRAM: '0',
+        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '0',
+        QUICKNODE_BILLING_MILESTONES: '0',
       },
     },
     {
@@ -275,12 +279,10 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /**
-         * Временно: выкл. паузу после убыточного выхода по mint (`dip-clones` / smart-lottery).
-         * Часы не удаляем — при возврате поставить `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED=1`.
-         */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
+        /** После убыточного закрытия по mint — пауза повторного входа (минуты имеют приоритет над часами). */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -417,11 +419,10 @@ module.exports = {
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
-         * Telegram ALERT при сбое Jupiter-probe в трекере или расхождении PG vs Jupiter; см. `src/core/telegram/jupiter-alerts.ts`.
-         * `0` = выкл. Circuit breaker (price-verify): `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0`.
-         * Троттлинг per-mint: `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS` (default 300000).
+         * `0` — не слать `live-jupiter-tracker-diverge` / `live-jupiter-tracker-fallback` в Telegram.
+         * Circuit breaker price-verify: `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` при необходимости отдельно.
          */
-        LIVE_JUPITER_TRACKER_TELEGRAM: '1',
+        LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         /** Jupiter quote + swap: max execution tolerances (bps). */
         LIVE_DEFAULT_SLIPPAGE_BPS: '300',
         /**

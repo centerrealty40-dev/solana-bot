@@ -8,7 +8,8 @@ const MAX_STALE_MIN = Number(process.env.PAPER2_MAX_STALE_MIN || 20);
 const TAIL_LINES = Number(process.env.PAPER2_HEALTH_TAIL_LINES || 1500);
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const HEALTH_TELEGRAM_ON_ALERT = process.env.PAPER2_HEALTH_TELEGRAM_ON_ALERT !== '0';
+/** Алерты в Telegram только при `PAPER2_HEALTH_TELEGRAM_ON_ALERT=1` (раньше было «вкл. по умолчанию»). */
+const HEALTH_TELEGRAM_ON_ALERT = process.env.PAPER2_HEALTH_TELEGRAM_ON_ALERT === '1';
 const HEALTH_TELEGRAM_ON_OK = process.env.PAPER2_HEALTH_TELEGRAM_ON_OK === '1';
 
 function listStrategyFiles() {

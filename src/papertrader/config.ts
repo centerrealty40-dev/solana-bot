@@ -143,8 +143,10 @@ const ConfigSchema = z.object({
   dipMinAgeMin: z.coerce.number().nonnegative().default(25),
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
-  /** После убыточного закрытия — пауза повторного входа на тот же mint (часы). 0 = выкл. */
+  /** После убыточного закрытия — пауза повторного входа на тот же mint (часы). 0 = выкл., если заданы минуты. */
   dipLossExitCooldownHours: z.coerce.number().nonnegative().default(0),
+  /** После убыточного закрытия — пауза (минуты). Если > 0, имеет приоритет над часами. 0 = использовать только часы. */
+  dipLossExitCooldownMinutes: z.coerce.number().nonnegative().default(0),
   /**
    * Master switch for loss-exit cooldown (temporary ops). When false, `dipLossExitCooldownHours` is ignored.
    * Env: `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED` (default true).
@@ -493,6 +495,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipCooldownMinDefault: process.env.PAPER_DIP_COOLDOWN_MIN,
     dipCooldownMinScalp: process.env.PAPER_DIP_COOLDOWN_MIN_SCALP,
     dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,
+    dipLossExitCooldownMinutes: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES,
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),

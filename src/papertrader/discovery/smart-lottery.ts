@@ -222,13 +222,24 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
       );
     }
 
-    const lossH = cfg.dipLossExitCooldownHours;
-    if (cfg.dipLossExitCooldownEnabled && Number(lossH) > 0) {
+    if (cfg.dipLossExitCooldownEnabled) {
+      const lossMin = cfg.dipLossExitCooldownMinutes;
+      const lossH = cfg.dipLossExitCooldownHours;
       const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
-      const resumeAt = lastLossExit + lossH * 3_600_000;
-      if (lastLossExit > 0 && Date.now() < resumeAt) {
-        const leftH = (resumeAt - Date.now()) / 3_600_000;
-        cooldownReasons.push(`loss_exit_cooldown_${lossH}h_left_${leftH.toFixed(2)}h`);
+      if (lastLossExit > 0) {
+        let resumeAt = 0;
+        let label = '';
+        if (Number(lossMin) > 0) {
+          resumeAt = lastLossExit + lossMin * 60_000;
+          label = `${lossMin}m`;
+        } else if (Number(lossH) > 0) {
+          resumeAt = lastLossExit + lossH * 3_600_000;
+          label = `${lossH}h`;
+        }
+        if (resumeAt > 0 && Date.now() < resumeAt) {
+          const leftMin = (resumeAt - Date.now()) / 60_000;
+          cooldownReasons.push(`loss_exit_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+        }
       }
     }
 
