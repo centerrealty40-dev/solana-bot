@@ -192,7 +192,7 @@ const LiveOscarConfigSchema = z
 
     /**
      * Live-only: после всех paper-гейтов, перед `buy_open` — разрешать вход только если mint есть в файле whitelist.
-     * Нет в списке → `eval-skip-open` + Telegram (ALERT), без покупки.
+     * Нет в списке → `live_whitelist_skip` + Telegram (категория `LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`, дефолт ADVICE).
      */
     liveMintWhitelistEnabled: z.boolean().default(false),
     /** Путь к файлу: один mint (base58) на строку, строки `#…` — комментарии. Относительный путь — от `process.cwd()`. */

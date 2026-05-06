@@ -237,10 +237,10 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. При **$90** и доле 0.6875 ≈ **$62** + **$28** scale-in. */
-        PAPER_POSITION_USD: '90',
-        /** Первая нога / полный нотионал; вторая доля через scale-in (`LIVE_ENTRY_SCALE_IN_*`). */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6875',
+        /** Полный нотионал **$120**: первая нога **$90**, вторая **$30** через `LIVE_ENTRY_SCALE_IN_DELAY_MS` (доля **0.75**). */
+        PAPER_POSITION_USD: '120',
+        /** Первая нога $90 / $120 = 0.75; вторая нога $30 — scale-in. */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -400,9 +400,11 @@ module.exports = {
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
-        /** Разрешённые mint для новых входов; иначе skip + ALERT Telegram (см. `src/live/mint-whitelist.ts`). */
+        /** Разрешённые mint для новых входов; иначе skip + Telegram (см. `LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`). */
         LIVE_MINT_WHITELIST_ENABLED: '1',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
+        /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
+        LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
@@ -428,7 +430,7 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '90',
+        LIVE_MAX_POSITION_USD: '120',
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
@@ -448,7 +450,7 @@ module.exports = {
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
-        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '22',
+        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '30',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 

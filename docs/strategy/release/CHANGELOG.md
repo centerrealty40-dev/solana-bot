@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.137] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.137`.
+
+- **Двухногий вход live-oscar:** полная позиция **$120** — первая нога **$90**, вторая **$30** через **`LIVE_ENTRY_SCALE_IN_DELAY_MS`** (5 с); **`PAPER_ENTRY_FIRST_LEG_FRACTION=0.75`**. **`LIVE_MAX_POSITION_USD`** / **`PAPER_POSITION_USD`** = **120**. **`LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD`** = **30**.
+- **Whitelist skip → Telegram:** переменная **`LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`** (дефолт в коде **ADVICE**, в ecosystem для live-oscar — **ADVICE**), чтобы не засорять канал ALERT; при необходимости жёсткого будильника — **ALERT**.
+- Прод **`.env`:** оператор записал **`TELEGRAM_BOT_TOKEN`** / **`TELEGRAM_CHAT_ID`** на VPS (не в git).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.136`** и прежние USD/доля в ecosystem или env.
+
+---
+
 ## [1.11.136] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.136`.

@@ -4,7 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { sendTagged } from '../core/telegram/sender.js';
+import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
 import { child } from '../core/logger.js';
 
 const log = child('live-mint-whitelist');
@@ -14,6 +14,12 @@ let cachedMtimeMs = 0;
 let cachedSet = new Set<string>();
 
 const lastTelegramByMint = new Map<string, number>();
+
+function whitelistSkipTelegramCategory(): TelegramCategory {
+  const s = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY?.trim().toUpperCase();
+  if (s === 'ALERT' || s === 'REPORT' || s === 'ADVICE' || s === 'HEALTH') return s;
+  return 'ADVICE';
+}
 
 export function resolveLiveMintWhitelistPath(raw: string): string {
   const t = raw.trim();
@@ -66,7 +72,7 @@ export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldo
   }
   const sym = symbol?.trim() || '?';
   void sendTagged(
-    'ALERT',
+    whitelistSkipTelegramCategory(),
     'live_whitelist_miss',
     `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\nsymbol: ${sym}\nmint: ${key}`,
   );
