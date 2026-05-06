@@ -16,6 +16,9 @@ export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): Pape
   if (cfg.liveExitModeBTpGridFirstRungRetraceMinPnlPct != null) {
     p.tpGridFirstRungRetraceMinPnlPct = cfg.liveExitModeBTpGridFirstRungRetraceMinPnlPct;
   }
+  if (cfg.liveExitModeBTpGridMaxRungs != null) {
+    p.tpGridMaxRungs = Math.floor(cfg.liveExitModeBTpGridMaxRungs);
+  }
   if (cfg.liveExitModeBDcaKillstop != null) p.dcaKillstop = cfg.liveExitModeBDcaKillstop;
   if (cfg.liveExitModeBPeakLogStepPct != null) p.peakLogStepPct = cfg.liveExitModeBPeakLogStepPct;
   if (Object.keys(p).length === 0) return cfg;

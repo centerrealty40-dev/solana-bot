@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.126] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.126`.
+
+- **`live-oscar`:** режим **B** по IDEALIZED §9.2 — отдельная TP-сетка: **`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`** (шаг **+5%**, **50%** остатка за ступень, retrace **2%**, макс. **4** ступени); режим **A** без изменений (**15%** / retrace **2.5%**).
+- **`dashboard-server` / paper2 HTML:** в таймлайнах open / partial / close явные подписи **«· режим A/B»** и расширенный `contextNote`; частичные продажи live подтягивают `liveExitProfileMode` из `openTrade`.
+- **`IDEALIZED_OSCAR_STACK_SPEC.md`:** §8.2 статус, §9.2 — таблица численного паритета с ecosystem.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.125`**.
+
+---
+
 ## [1.11.125] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.125`.

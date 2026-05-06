@@ -17,7 +17,7 @@ export function tpGridEffective(
   return {
     stepPnl: o?.gridStepPnl ?? cfg.tpGridStepPnl,
     sellFraction: Math.min(1, o?.gridSellFraction ?? cfg.tpGridSellFraction),
-    maxRungs: o?.gridMaxRungs,
+    maxRungs: o?.gridMaxRungs ?? cfg.tpGridMaxRungs,
     firstRungRetraceMinPnlPct: o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct,
   };
 }

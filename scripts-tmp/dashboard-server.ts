@@ -1518,11 +1518,23 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const tpRu = tpRegimeRu(e.tpRegime);
   if (tpRu) parts.push(`Класс пути до входа (TP-regime): ${tpRu} (${String(e.tpRegime)})`);
   const mode = e.liveExitProfileMode;
-  if (mode === 'A')
-    parts.push('Режим выхода A/B: A — до второй ноги входа или до DCA');
-  else if (mode === 'B')
-    parts.push('Режим выхода A/B: B — после второй ноги или DCA (профиль B)');
+  if (mode === 'A') {
+    parts.push(
+      'Режим A (IDEALIZED §9.2): до второй ноги или DCA — полная лестница TP (+5% к средней, 15% остатка за ступень), kill-stop базовый −5% к средней, базовые trail/timeout.',
+    );
+  } else if (mode === 'B') {
+    parts.push(
+      'Режим B (IDEALIZED §9.2): после второй ноги или DCA — агрессивная сетка TP (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_* в ecosystem), kill −7%, trail/timeout из env режима B.',
+    );
+  }
   return parts.length ? parts.join('\n') : null;
+}
+
+function liveExitModeLabelSuffix(e: Record<string, unknown>): string {
+  const mode = e.liveExitProfileMode;
+  if (mode === 'B') return ' · режим B';
+  if (mode === 'A') return ' · режим A';
+  return '';
 }
 
 export function buildTimelineEvent(
@@ -1563,7 +1575,7 @@ export function buildTimelineEvent(
       typeof e.timelineOpenLabelRu === 'string' && e.timelineOpenLabelRu.trim().length
         ? String(e.timelineOpenLabelRu).trim()
         : null;
-    const openLabel = ruOpen ?? 'Open';
+    const openLabel = `${ruOpen ?? 'Open'}${liveExitModeLabelSuffix(e)}`;
     const ctxOpen = timelineContextNoteFromJournal(e);
     return {
       ts,
@@ -1672,7 +1684,7 @@ export function buildTimelineEvent(
           ? `шаг ${Math.floor(stepIdxRaw) + 1}/${Math.floor(rungsTotal)}`
           : `шаг ${Math.floor(stepIdxRaw) + 1}`
         : '';
-    const label =
+    const basePartialLabel =
       isTpGrid && stepLabel
         ? `${niceReason} · ${stepLabel}: ${sellPct}% от остатка`
         : stepLabel && ladderPctPlain
@@ -1680,6 +1692,8 @@ export function buildTimelineEvent(
           : ladderPctPlain
             ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
             : `${niceReason} · ${sellPct}% остатка`;
+    const label = `${basePartialLabel}${liveExitModeLabelSuffix(e)}`;
+    const ctxPartial = timelineContextNoteFromJournal(e);
     return {
       ts,
       kind: 'partial_sell',
@@ -1692,14 +1706,15 @@ export function buildTimelineEvent(
       reason,
       remainingFraction: Number(e.remainingFraction ?? null),
       amountUsd: proceedsUsd > 0 && Number.isFinite(proceedsUsd) ? proceedsUsd : null,
+      ...(ctxPartial ? { contextNote: ctxPartial } : {}),
     };
   }
   if (kind === 'close') {
     const exitReason = String(e.exitReason || 'CLOSE');
     const closeLabel =
       exitReason === 'CAPITAL_ROTATE'
-        ? 'Close · CAPITAL_ROTATE — ротация капитала Phase 5 (ожидаемо, не сбой)'
-        : `Close · ${exitReason}`;
+        ? `Close · CAPITAL_ROTATE — ротация капитала Phase 5 (ожидаемо, не сбой)${liveExitModeLabelSuffix(e)}`
+        : `Close · ${exitReason}${liveExitModeLabelSuffix(e)}`;
     const exitMc = Number(e.exitMcUsd ?? 0);
     const exitMarketPrice = Number(e.exit_market_price ?? 0);
     const closeMcFromMetric =
@@ -2371,6 +2386,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         pnlUsd: Number(ps.pnlUsd ?? 0),
         remainingFraction: Number(ot.remainingFraction ?? 0),
         mcUsdLive: undefined,
+        ...(ot.liveExitProfileMode === 'A' || ot.liveExitProfileMode === 'B'
+          ? { liveExitProfileMode: ot.liveExitProfileMode }
+          : {}),
       };
       const tev = attachSig(mint, buildTimelineEvent(syn, meta.metricType, meta.entryRealMcUsd));
       if (tev) {

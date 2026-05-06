@@ -154,6 +154,8 @@ const ConfigSchema = z.object({
   liveExitModeBTpGridStepPnl: z.coerce.number().nonnegative().optional(),
   liveExitModeBTpGridSellFraction: z.coerce.number().min(0).max(1).optional(),
   liveExitModeBTpGridFirstRungRetraceMinPnlPct: z.coerce.number().min(0).max(0.5).optional(),
+  /** Ограничить число ступеней TP-grid в режиме B (остальное через финальный выход). */
+  liveExitModeBTpGridMaxRungs: z.coerce.number().int().positive().optional(),
   liveExitModeBDcaKillstop: z.coerce.number().optional(),
   liveExitModeBPeakLogStepPct: z.coerce.number().nonnegative().optional(),
 
@@ -220,6 +222,8 @@ const ConfigSchema = z.object({
    * `0` = прежнее поведение (retrace к 0%).
    */
   tpGridFirstRungRetraceMinPnlPct: z.coerce.number().min(0).max(0.5).default(0),
+  /** Лимит ступеней TP-grid (режим A или база); обычно не задаётся = без лимита. */
+  tpGridMaxRungs: z.coerce.number().int().positive().optional(),
 
   /** Paper fork: метка режима по пути цены в PG `pair_snapshots` при открытии → fork TP-grid. */
   tpRegimeEnabled: z.boolean().default(false),
@@ -493,6 +497,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveExitModeBTpGridFirstRungRetraceMinPnlPct: envOptNum(
       process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
     ),
+    liveExitModeBTpGridMaxRungs: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS),
     liveExitModeBDcaKillstop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP),
     liveExitModeBPeakLogStepPct: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_PEAK_LOG_STEP_PCT),
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
@@ -534,6 +539,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     tpGridStepPnl: process.env.PAPER_TP_GRID_STEP_PNL,
     tpGridSellFraction: process.env.PAPER_TP_GRID_SELL_FRACTION,
     tpGridFirstRungRetraceMinPnlPct: process.env.PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
+    tpGridMaxRungs: envOptNum(process.env.PAPER_TP_GRID_MAX_RUNGS),
     tpRegimeEnabled: envBool(process.env.PAPER_TP_REGIME_ENABLED, false),
     tpRegimeLookbackMin: process.env.PAPER_TP_REGIME_LOOKBACK_MIN,
     tpRegimeMinSamples: process.env.PAPER_TP_REGIME_MIN_SAMPLES,

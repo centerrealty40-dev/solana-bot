@@ -282,19 +282,31 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
 
-        /** Live: без tp-regime классов на входе; режимы A/B после усреднения (IDEALIZED §8.2). */
+        /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A = параметры ниже до второй ноги; режим B после scale-in (или DCA, если включат уровни). */
+        /** Режим A/B вкл.: A до второй ноги / DCA; B после — ужесточённая сетка TP + env ниже. */
         PAPER_LIVE_EXIT_MODE_AB: '1',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
+        /**
+         * Режим B — «после боли» (IDEALIZED §9.2): та же ступень +5% к средней, но продаём большую долю остатка
+         * за ступень и ограничиваем число ступеней — быстрее выйти в зелёный/около нуля.
+         */
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.05',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.50',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
 
         /** Live Oscar: без DCA между ногами — только $20 + отложенные $10 по коридору Jupiter. */
         PAPER_DCA_LEVELS: '',
+        /** Режим A: kill-stop до второй ноги (см. также режим B −7%). */
         PAPER_DCA_KILLSTOP: '-0.05',
-        /** TP grid: +5% PnL к средней за ступень; 15% текущего остатка за ступень. */
+        /**
+         * Режим A — «полная лестница» (IDEALIZED §9.2): +5% к средней; 15% остатка за ступень;
+         * retrace-защита после 1-й ступени 2.5%.
+         */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.15',
