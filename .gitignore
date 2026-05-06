@@ -88,3 +88,13 @@ scripts-tmp/_run_export_*
 # Allow explicitly reusable underscore-prefixed utilities:
 !scripts-tmp/_deploy-dashboard-auth.sh
 !scripts-tmp/_metrics_collectors.sql
+
+# One-off operator SQL/shell probes (local-only; keep repo status clean)
+scripts-tmp/bot-bucket-report*.sql
+scripts-tmp/dip-bot-*.sql
+scripts-tmp/scam-farm-*.sql
+scripts-tmp/sigseed-*.sql
+scripts-tmp/patch-graph-env-vps.sh
+scripts-tmp/run-bot-*.sh
+scripts-tmp/run-swaps-diag.sh
+scripts-tmp/vps-dip-bot-bootstrap-run.sh

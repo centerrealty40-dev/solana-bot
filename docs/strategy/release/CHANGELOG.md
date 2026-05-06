@@ -8,6 +8,23 @@
 
 ---
 
+## [1.11.104] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.104`.
+
+### Live tracker · Jupiter tradable price + Telegram
+
+- **`src/core/telegram/jupiter-alerts.ts`:** тегированные алерты для live-трекера (fallback на PG при сбое quote, расхождение snapshot vs Jupiter) и при открытии circuit breaker price-verify (`jupiter-quote-resilience`). Управление env: `LIVE_JUPITER_TRACKER_TELEGRAM`, `JUPITER_QUOTE_CIRCUIT_TELEGRAM`, `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS`.
+- **`tracker.ts` (live):** для Oscar live при наличии позиции — проба Jupiter SOL→token; решения TP/trail/scale-in по tradable цене; при ошибках — алерты и откат на snapshot.
+- **`jupiter-quote-resilience.ts`:** Telegram при первом открытии sliding-window circuit (не спам при продлении того же окна).
+- **`.gitignore`:** разовые отчёты `scripts-tmp/*.sql` / `run-*.sh` из сессий оператора не засоряют `git status`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.103`**; при необходимости удалить блок импортов/пробы Jupiter в `tracker.ts` и импорт алертов в `jupiter-quote-resilience.ts` по diff тегов.
+
+---
+
 ## [1.11.103] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.103`.

@@ -2,6 +2,7 @@
  * W7.4.1 — Jupiter lite-api quote retries (exponential backoff) + sliding-window circuit breaker
  * when transport-level `skipped` rate exceeds a threshold (spec: >10% over 30 min).
  */
+import { notifyJupiterQuoteCircuitBreakerOpen } from '../../core/telegram/jupiter-alerts.js';
 import { child } from '../../core/logger.js';
 import type { PriceVerifyVerdict } from '../types.js';
 
@@ -71,11 +72,20 @@ export function recordTransportResult(
   const fails = ring.filter((e) => !e.ok).length;
   const pct = (fails / n) * 100;
   if (pct > resilience.circuitSkipRatePct) {
+    const wasAlreadyOpen = now < circuitOpenUntil;
     circuitOpenUntil = now + resilience.circuitCooldownMs;
     log.warn(
       { fails, n, pct, cooldownMs: resilience.circuitCooldownMs },
       'jupiter quote circuit breaker open',
     );
+    if (!wasAlreadyOpen) {
+      void notifyJupiterQuoteCircuitBreakerOpen({
+        fails,
+        windowSamples: n,
+        failPct: pct,
+        cooldownMs: resilience.circuitCooldownMs,
+      });
+    }
   }
 }
 

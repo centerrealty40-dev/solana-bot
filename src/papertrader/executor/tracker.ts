@@ -43,6 +43,12 @@ import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
+import { liveFetchBuyQuote } from '../../live/jupiter.js';
+import { tokenUsdFromBuyQuote } from '../../live/phase5-gates.js';
+import {
+  notifyLiveTrackerJupiterFallback,
+  notifyLiveTrackerSnapshotJupiterDivergence,
+} from '../../core/telegram/jupiter-alerts.js';
 
 const log = child('tracker');
 
@@ -1039,6 +1045,109 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
+
+    /**
+     * Live: решения TP / peak / trail по Jupiter tradable; иначе PG snapshot ведёт к ложным ступеням сетки.
+     * Telegram при сбое quote или сильном расхождении — `src/core/telegram/jupiter-alerts.ts`.
+     */
+    if (livePhase4 && liveOscarCfg && curMetric > 0) {
+      const solUsd = getSolUsd() ?? 0;
+      const snapPx = curMetric;
+      const dec = ot.tokenDecimals ?? 6;
+      const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
+      const probeUsd = Math.max(5, Math.min(45, remUsd * 0.12));
+
+      if (!(solUsd > 0)) {
+        void notifyLiveTrackerJupiterFallback({
+          strategyId: cfg.strategyId,
+          mint,
+          symbol: ot.symbol,
+          snapshotPx: snapPx,
+          probeUsd,
+          solUsd: 0,
+          dexSource: ot.source,
+          reason: 'exception',
+          errorMessage: 'solUsd missing — Jupiter probe skipped',
+        });
+      } else {
+        try {
+          const fq = await liveFetchBuyQuote({
+            cfg: liveOscarCfg,
+            outputMint: mint,
+            sizeUsd: probeUsd,
+            solUsd,
+          });
+          if (!fq) {
+            void notifyLiveTrackerJupiterFallback({
+              strategyId: cfg.strategyId,
+              mint,
+              symbol: ot.symbol,
+              snapshotPx: snapPx,
+              probeUsd,
+              solUsd,
+              dexSource: ot.source,
+              reason: 'quote-null',
+            });
+          } else {
+            const jpx = tokenUsdFromBuyQuote(fq.quoteResponse, solUsd, dec);
+            if (jpx == null || !(jpx > 0)) {
+              void notifyLiveTrackerJupiterFallback({
+                strategyId: cfg.strategyId,
+                mint,
+                symbol: ot.symbol,
+                snapshotPx: snapPx,
+                probeUsd,
+                solUsd,
+                dexSource: ot.source,
+                reason: 'jupiter-price-null',
+              });
+            } else {
+              const diverge = Math.abs(snapPx - jpx) / jpx;
+              if (diverge > 0.035) {
+                log.warn(
+                  {
+                    mint: mint.slice(0, 8),
+                    symbol: ot.symbol,
+                    snapshotPx: snapPx,
+                    jupiterPx: jpx,
+                    divergePct: +(diverge * 100).toFixed(2),
+                  },
+                  'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
+                );
+                void notifyLiveTrackerSnapshotJupiterDivergence({
+                  strategyId: cfg.strategyId,
+                  mint,
+                  symbol: ot.symbol,
+                  snapshotPx: snapPx,
+                  jupiterPx: jpx,
+                  divergePct: diverge * 100,
+                  probeUsd,
+                  avgEntryMarket: ot.avgEntryMarket,
+                });
+              }
+              curMetric = jpx;
+            }
+          }
+        } catch (e) {
+          log.warn(
+            { mint: mint.slice(0, 8), err: (e as Error)?.message },
+            'live tracker: Jupiter probe failed; keeping snapshot price',
+          );
+          void notifyLiveTrackerJupiterFallback({
+            strategyId: cfg.strategyId,
+            mint,
+            symbol: ot.symbol,
+            snapshotPx: snapPx,
+            probeUsd,
+            solUsd,
+            dexSource: ot.source,
+            reason: 'exception',
+            errorMessage: (e as Error)?.message,
+          });
+        }
+      }
+    }
+
     await sleep(120);
 
     if (curMetric > 0) {
