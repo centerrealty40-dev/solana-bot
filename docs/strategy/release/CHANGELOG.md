@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.106] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.106`.
+
+### Live Phase 5 — убран лимит совокупного PnL стратегии
+
+- **`src/live/phase5-gates.ts`:** удалены **`LIVE_MAX_STRATEGY_LOSS_USD`** / **`risk_block` `max_strategy_loss`**, **`mtm_unavailable`** на этом пути и **`LIVE_HALT_CLOSE_ALL_ON_MAX_LOSS`** (принудительное закрытие всех позиций при лимите).
+- **`src/live/config.ts`**, **`.env.example`:** переменные **`LIVE_MAX_STRATEGY_LOSS_USD`**, **`LIVE_HALT_CLOSE_ALL_ON_MAX_LOSS`** больше не читаются.
+- Спеки **W8.0** (live oscar, Phase 5, Phase 7, Phase 1 JSONL), **RUNBOOK**, **IDEALIZED**, дашборд **`scripts-tmp/dashboard-paper2.html`**, тесты JSONL / reconcile — синхронизированы.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.105`** и восстановить переменные в **`.env`** / PM2 при необходимости.
+
+---
+
 ## [1.11.104] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.104`.

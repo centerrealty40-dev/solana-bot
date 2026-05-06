@@ -18,7 +18,6 @@ describe('live reconcile sticky block (Phase 5 gate)', () => {
     executionMode: 'live',
     liveKillAfterConsecFail: 0,
     liveMaxOpenPositions: undefined,
-    liveMaxStrategyLossUsd: undefined,
     liveMaxPositionUsd: undefined,
     liveMinWalletSol: undefined,
     liveFreeSolBufferLamports: 0,

@@ -83,10 +83,8 @@ const LiveOscarConfigSchema = z
     /** W8.0 Phase 5 — §3.3 risk / §3.4 capital (optional limits: unset ⇒ check skipped). */
     liveMaxPositionUsd: z.coerce.number().positive().optional(),
     liveMaxOpenPositions: z.coerce.number().int().min(1).optional(),
-    liveMaxStrategyLossUsd: z.coerce.number().positive().optional(),
     /** 0 = disabled (CHANGELOG). */
     liveKillAfterConsecFail: z.coerce.number().int().min(0).default(0),
-    liveHaltCloseAllOnMaxLoss: z.boolean().default(false),
     /** Minimum native SOL (whole SOL, not lamports) to allow new exposure. */
     liveMinWalletSol: z.coerce.number().positive().optional(),
     /**
@@ -279,9 +277,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
 
     liveMaxPositionUsd: optionalPositiveEnv('LIVE_MAX_POSITION_USD'),
     liveMaxOpenPositions: optionalPositiveIntEnv('LIVE_MAX_OPEN_POSITIONS'),
-    liveMaxStrategyLossUsd: optionalPositiveEnv('LIVE_MAX_STRATEGY_LOSS_USD'),
     liveKillAfterConsecFail: process.env.LIVE_KILL_AFTER_CONSEC_FAIL,
-    liveHaltCloseAllOnMaxLoss: envBool(process.env.LIVE_HALT_CLOSE_ALL_ON_MAX_LOSS, false),
     liveMinWalletSol: optionalPositiveEnv('LIVE_MIN_WALLET_SOL'),
     liveMinWalletSolEquityUsd: optionalPositiveEnv('LIVE_MIN_WALLET_SOL_EQUITY_USD'),
     liveBtcGateEnabled: envBool(process.env.LIVE_BTC_GATE_ENABLED, true),

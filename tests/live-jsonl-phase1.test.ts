@@ -68,8 +68,8 @@ describe('W8.0-p1 live JSONL contract', () => {
       { kind: 'execution_skip', reason: 'strategy_disabled' },
       {
         kind: 'risk_block',
-        limit: 'max_strategy_loss',
-        detail: { lossUsd: '-51.2' },
+        limit: 'max_open_positions',
+        detail: { open: 5, max: 5 },
       },
       {
         kind: 'capital_skip',

@@ -1,7 +1,7 @@
 /**
  * W8.0 Phase 5 — §3.3 risk + §3.4 capital gates before Phase 4 adapter (simulate).
  */
-import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
+import type { OpenTrade } from '../papertrader/types.js';
 import { getBtcContext, getSolUsd } from '../papertrader/pricing.js';
 import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import { liveFetchBuyQuote } from './jupiter.js';
@@ -50,14 +50,6 @@ export function tokenUsdFromBuyQuote(
   return (solSpent * solUsd) / tokensOut;
 }
 
-function realizedNetSumUsd(closed: ClosedTrade[]): number {
-  let s = 0;
-  for (const c of closed) {
-    if (Number.isFinite(c.netPnlUsd)) s += c.netPnlUsd;
-  }
-  return s;
-}
-
 async function unrealizedOneUsd(args: {
   ot: OpenTrade;
   liveCfg: LiveOscarConfig;
@@ -78,27 +70,6 @@ async function unrealizedOneUsd(args: {
   const cost = ot.totalInvestedUsd * ot.remainingFraction;
   const value = cost * (px / ot.avgEntry);
   return value - cost;
-}
-
-async function aggregateStrategyPnlUsd(args: {
-  deps: LiveOscarStrategyDeps;
-  liveCfg: LiveOscarConfig;
-  solUsd: number;
-  probeUsd: number;
-}): Promise<{ total: number; mtmOk: boolean }> {
-  const realized = realizedNetSumUsd(args.deps.getClosed());
-  let unrealized = 0;
-  for (const ot of args.deps.getOpen().values()) {
-    const u = await unrealizedOneUsd({
-      ot,
-      liveCfg: args.liveCfg,
-      solUsd: args.solUsd,
-      probeUsd: args.probeUsd,
-    });
-    if (u === null) return { total: realized, mtmOk: false };
-    unrealized += u;
-  }
-  return { total: realized + unrealized, mtmOk: true };
 }
 
 async function rpcWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null> {
@@ -168,25 +139,6 @@ async function rankProfitableOpens(args: {
     return a.entryTs - b.entryTs;
   });
   return rows;
-}
-
-async function haltSimCloseAllOpens(liveCfg: LiveOscarConfig, deps: LiveOscarStrategyDeps): Promise<void> {
-  const opens = [...deps.getOpen().values()];
-  for (const ot of opens) {
-    const invested = ot.totalInvestedUsd * ot.remainingFraction;
-    const px =
-      ot.lastObservedPriceUsd != null && ot.lastObservedPriceUsd > 0
-        ? ot.lastObservedPriceUsd
-        : ot.avgEntry;
-    await executeLiveTokenToSolPipeline(liveCfg, {
-      mint: ot.mint,
-      symbol: ot.symbol,
-      usdNotional: Math.max(invested, 1e-6),
-      priceUsdPerToken: px > 0 ? px : ot.avgEntry,
-      decimals: ot.tokenDecimals ?? 6,
-      intentKind: 'sell_full',
-    });
-  }
 }
 
 /**
@@ -288,35 +240,6 @@ export async function phase5AllowIncreaseExposure(args: {
       detail: { open: deps.getOpen().size, max: maxOpen },
     });
     return false;
-  }
-
-  const maxLoss = liveCfg.liveMaxStrategyLossUsd;
-  if (maxLoss != null) {
-    const pnl = await aggregateStrategyPnlUsd({
-      deps,
-      liveCfg,
-      solUsd,
-      probeUsd,
-    });
-    if (!pnl.mtmOk) {
-      appendLiveJsonlEvent({
-        kind: 'risk_block',
-        limit: 'mtm_unavailable',
-        detail: {},
-      });
-      return false;
-    }
-    if (pnl.total <= -maxLoss) {
-      appendLiveJsonlEvent({
-        kind: 'risk_block',
-        limit: 'max_strategy_loss',
-        detail: { strategyPnlUsd: pnl.total, limitUsd: -maxLoss },
-      });
-      if (liveCfg.liveHaltCloseAllOnMaxLoss) {
-        await haltSimCloseAllOpens(liveCfg, deps);
-      }
-      return false;
-    }
   }
 
   const maxPosUsd = liveCfg.liveMaxPositionUsd;

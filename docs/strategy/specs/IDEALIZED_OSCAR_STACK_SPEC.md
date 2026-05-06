@@ -269,7 +269,7 @@
 
 ## 12. Live-only: риск, BTC-gate, двухногий вход
 
-См. `live-oscar` в `ecosystem.config.cjs`: `LIVE_MAX_OPEN_POSITIONS`, `LIVE_MAX_STRATEGY_LOSS_USD`, `LIVE_KILL_AFTER_CONSEC_FAIL`, `LIVE_BTC_GATE_ENABLED`, scale-in коридор ±**1%**/−**2%**, periodic self-heal, и т.д. Детально — **`docs/strategy/specs/W8.0_live_oscar_trading_bot.md`**.
+См. `live-oscar` в `ecosystem.config.cjs`: `LIVE_MAX_OPEN_POSITIONS`, `LIVE_KILL_AFTER_CONSEC_FAIL`, `LIVE_BTC_GATE_ENABLED`, scale-in коридор ±**1%**/−**2%**, periodic self-heal, и т.д. Детально — **`docs/strategy/specs/W8.0_live_oscar_trading_bot.md`**.
 
 ---
 
