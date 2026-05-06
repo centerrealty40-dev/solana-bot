@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.125] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.125`.
+
+- **`live-oscar` (PM2):** **`PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS=0`** — отключена пауза после убыточного выхода по mint (раньше 12 ч).
+- **`scripts-tmp/report-live-opens-vs-wallet.ts`** — отчёт «replay журнала open mints» vs **`getTokenAccountsByOwner`** торгового кошелька (для сверки дашборда с реальными SPL).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.124`**.
+
+---
+
 ## [1.11.124] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.124`.

@@ -275,7 +275,8 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
+        /** 0 = без паузы после убыточного выхода по mint. */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
