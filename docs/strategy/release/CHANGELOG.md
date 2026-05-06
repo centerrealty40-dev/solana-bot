@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.133] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.133`.
+
+- **`PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED`** — явный master-switch (default **`true`**); при **`false`** часы **`PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS`** не применяются (`dip-clones`, smart-lottery, запись `lastLossExit`).
+- **`ecosystem` (`live-oscar`):** **`PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED=false`**, **`PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS=12`** сохранены для временного отключения.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.132`**.
+
+---
+
 ## [1.11.132] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.132`.

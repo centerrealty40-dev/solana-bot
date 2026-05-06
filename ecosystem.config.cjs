@@ -275,8 +275,12 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** 0 = без паузы после убыточного выхода по mint. */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
+        /**
+         * Временно: выкл. паузу после убыточного выхода по mint (`dip-clones` / smart-lottery).
+         * Часы не удаляем — при возврате поставить `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED=1`.
+         */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '12',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',

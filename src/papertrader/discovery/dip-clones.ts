@@ -56,7 +56,7 @@ export function recordLossExitIfApplicable(
   netPnlUsd: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
-  if (!(Number(h) > 0)) return;
+  if (!cfg.dipLossExitCooldownEnabled || !(Number(h) > 0)) return;
   if (!(netPnlUsd < 0)) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastLossExitTsByMintMap.get(mint) ?? 0;
@@ -223,7 +223,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
 
     const lossH = cfg.dipLossExitCooldownHours;
-    if (Number(lossH) > 0) {
+    if (cfg.dipLossExitCooldownEnabled && Number(lossH) > 0) {
       const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
       const resumeAt = lastLossExit + lossH * 3_600_000;
       if (lastLossExit > 0 && Date.now() < resumeAt) {

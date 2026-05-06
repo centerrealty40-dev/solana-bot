@@ -223,7 +223,7 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     }
 
     const lossH = cfg.dipLossExitCooldownHours;
-    if (Number(lossH) > 0) {
+    if (cfg.dipLossExitCooldownEnabled && Number(lossH) > 0) {
       const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
       const resumeAt = lastLossExit + lossH * 3_600_000;
       if (lastLossExit > 0 && Date.now() < resumeAt) {
