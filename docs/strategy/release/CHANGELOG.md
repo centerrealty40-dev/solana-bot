@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.136] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.136`.
+
+- **`data/live/live-oscar-mint-whitelist.txt`:** добавлен mint **EITHER** `HmBdm8vbisABUjkxms6ZUnoaXbfwFM6ymxShWfAENaoi` (был в `live_position_close`, не было в списке).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.135`** и восстановить предыдущую версию whitelist на сервере при необходимости.
+
+---
+
 ## [1.11.135] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.135`.
