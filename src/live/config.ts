@@ -103,6 +103,15 @@ const LiveOscarConfigSchema = z
     liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(5),
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
+    /**
+     * When true: enforce free native SOL (USD) ≥ k·X before buy_open / scale-in; may emit capital_skip or CAPITAL_ROTATE.
+     * When false (default): skip this check entirely (Jupiter swap uses on-chain balance; RPC free-SOL estimate was unreliable in prod).
+     */
+    livePhase5FreeSolGateEnabled: z.boolean().default(false),
+    /**
+     * Only if `livePhase5FreeSolGateEnabled`: when true, may sell a profitable open to free SOL. When false, only capital_skip.
+     */
+    liveCapitalRotateEnabled: z.boolean().default(false),
     liveCapitalRotateCascade: z.boolean().default(false),
     /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). */
     liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(10_000_000),
@@ -301,6 +310,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
+    livePhase5FreeSolGateEnabled: envBool(process.env.LIVE_PHASE5_FREE_SOL_GATE_ENABLED, false),
+    liveCapitalRotateEnabled: envBool(process.env.LIVE_CAPITAL_ROTATE_ENABLED, false),
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
     liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
 

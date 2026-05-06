@@ -209,6 +209,70 @@ function totalProceedsGross(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.grossProceedsUsd || 0), 0);
 }
 
+/** После live `sell_full`: подставить фактические SOL→USD последней ноги (раньше оставался только modeled effectiveSell). */
+function applyLiveFullCloseProceedsFromChain(args: {
+  ct: ClosedTrade;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  sellOut: LiveTokenToSolSellResult;
+  marketSell: number;
+  networkFeeUsdPerTx: number;
+}): void {
+  const { ct, ot, cfg, sellOut, marketSell, networkFeeUsdPerTx } = args;
+  const spotSol = getSolUsd() ?? 0;
+  if (!(sellOut.solProceedsLamports != null && sellOut.solProceedsLamports > 0n && spotSol > 0)) {
+    return;
+  }
+  const actualFinalUsd = (Number(sellOut.solProceedsLamports) / 1e9) * spotSol;
+  const partialNet = totalProceedsNet(ot);
+  const partialGross = totalProceedsGross(ot);
+  const modeledFinalUsd = ct.totalProceedsUsd - partialNet;
+  const chainImplausible =
+    modeledFinalUsd > 2 &&
+    actualFinalUsd <
+      Math.min(modeledFinalUsd * 0.2, Math.max(0.5, modeledFinalUsd * 0.35)) &&
+    marketSell >= ot.avgEntry * 0.97;
+  if (chainImplausible) {
+    log.warn(
+      {
+        mint: ot.mint.slice(0, 8),
+        actualFinalUsd,
+        modeledFinalUsd,
+      },
+      'live full close: chain SOL→USD implausible vs modeled; keeping modeled final proceeds',
+    );
+    return;
+  }
+  const totalProceedsUsd = partialNet + actualFinalUsd;
+  const grossTotalProceedsUsd = partialGross + actualFinalUsd;
+  const netPnlUsd = totalProceedsUsd - ot.totalInvestedUsd;
+  const grossPnlUsd = grossTotalProceedsUsd - ot.totalInvestedUsd;
+  const networkFeeUsdTotal = (ot.legs.length + ot.partialSells.length + 1) * networkFeeUsdPerTx;
+  const investedRem = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+  const tokensClose = investedRem > 0 && ot.avgEntry > 0 ? investedRem / ot.avgEntry : 0;
+  let effectiveExit = ct.effective_exit_price;
+  if (tokensClose > 1e-18 && Number.isFinite(actualFinalUsd)) {
+    effectiveExit = actualFinalUsd / tokensClose;
+  }
+  ct.totalProceedsUsd = totalProceedsUsd;
+  ct.grossTotalProceedsUsd = grossTotalProceedsUsd;
+  ct.netPnlUsd = netPnlUsd;
+  ct.grossPnlUsd = grossPnlUsd;
+  ct.grossPnlPct = ot.totalInvestedUsd > 0 ? (grossPnlUsd / ot.totalInvestedUsd) * 100 : 0;
+  ct.pnlPct = ot.totalInvestedUsd > 0 ? (netPnlUsd / ot.totalInvestedUsd) * 100 : 0;
+  ct.effective_exit_price = effectiveExit;
+  ct.costs = buildCloseCosts({
+    cfg,
+    trade: ot,
+    exit: { effectivePrice: effectiveExit, marketPrice: marketSell },
+    networkFeeUsdTotal,
+    slipDynamicBpsEntry: 0,
+    slipDynamicBpsExit: 0,
+    netPnlUsd,
+    grossPnlUsd,
+  });
+}
+
 /**
  * Builds a self-contained, audit-ready summary of WHY this trade is closing.
  * Lets the dashboard render "TP +7.2% (peak +32%, retrace −19pp)" style strings
@@ -908,6 +972,25 @@ export async function trackerForceFullExitLive(args: {
     networkFeeUsdPerTx: perTxClose,
   });
   const xAvg = marketSell / ot.avgEntry;
+
+  const okSell = await livePhase4.tryTokenToSolSell({
+    mint,
+    symbol: ot.symbol,
+    usdNotional: usdForSell,
+    priceUsdPerToken: marketSell,
+    decimals: ot.tokenDecimals ?? 6,
+    intentKind: 'sell_full',
+  });
+  if (!okSell.ok) return false;
+
+  applyLiveFullCloseProceedsFromChain({
+    ct,
+    ot,
+    cfg,
+    sellOut: okSell,
+    marketSell,
+    networkFeeUsdPerTx: perTxClose,
+  });
   const exitContextMain = buildExitContext({
     cfg,
     ot,
@@ -919,16 +1002,6 @@ export async function trackerForceFullExitLive(args: {
     tpLadder,
   });
   ct.exitContext = exitContextMain;
-
-  const okSell = await livePhase4.tryTokenToSolSell({
-    mint,
-    symbol: ot.symbol,
-    usdNotional: usdForSell,
-    priceUsdPerToken: marketSell,
-    decimals: ot.tokenDecimals ?? 6,
-    intentKind: 'sell_full',
-  });
-  if (!okSell.ok) return false;
 
   clearExitCloseDeferForMint(mint);
   clearExitPartialDeferForMint(mint);
@@ -946,7 +1019,7 @@ export async function trackerForceFullExitLive(args: {
     peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
     btc_exit: btcCtx(),
     exit_market_price: marketSell,
-    exit_effective_price: effectiveSell,
+    exit_effective_price: ct.effective_exit_price,
     exit_swaps: exitSwaps,
     mcUsdLive: mcUsdLive_close,
     priorityFee: pfClose,
@@ -1258,6 +1331,26 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ageH,
           networkFeeUsdPerTx: perTxClose,
         });
+        let liqSellOut: LiveTokenToSolSellResult = { ok: true };
+        if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
+          liqSellOut = await livePhase4.tryTokenToSolSell({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: investedRemaining,
+            priceUsdPerToken: marketSell,
+            decimals: ot.tokenDecimals ?? 6,
+            intentKind: 'sell_full',
+          });
+          if (!liqSellOut.ok) continue;
+        }
+        applyLiveFullCloseProceedsFromChain({
+          ct,
+          ot,
+          cfg,
+          sellOut: liqSellOut,
+          marketSell,
+          networkFeeUsdPerTx: perTxClose,
+        });
         const exitContext = buildExitContext({
           cfg: effCfg,
           ot,
@@ -1275,17 +1368,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           },
         });
         ct.exitContext = exitContext;
-        if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
-          const ok = await livePhase4.tryTokenToSolSell({
-            mint,
-            symbol: ot.symbol,
-            usdNotional: investedRemaining,
-            priceUsdPerToken: marketSell,
-            decimals: ot.tokenDecimals ?? 6,
-            intentKind: 'sell_full',
-          });
-          if (!ok.ok) continue;
-        }
         clearExitCloseDeferForMint(mint);
         clearExitPartialDeferForMint(mint);
         open.delete(mint);
@@ -1301,7 +1383,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
           btc_exit: btcCtx(),
           exit_market_price: marketSell,
-          exit_effective_price: effectiveSell,
+          exit_effective_price: ct.effective_exit_price,
           exit_swaps: exitSwaps,
           mcUsdLive: mcUsdLive_close,
           priorityFee: pfClose,
@@ -1658,17 +1740,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ageH,
         networkFeeUsdPerTx: perTxClose,
       });
-      const exitContextMain = buildExitContext({
-        cfg: effCfg,
-        ot,
-        closePnlPct: ct.pnlPct,
-        ageH,
-        exitReason,
-        curMetric,
-        xAvg,
-        tpLadder,
-      });
-      ct.exitContext = exitContextMain;
       const prevCloseDefers = exitCloseVerifyDefersByMint.get(mint) ?? 0;
       const maxEsc = cfg.priceVerifyExitMaxDefersEscalation;
       /** After N verify defers, force proceed on full exit (TRAIL/KILLSTOP etc.), same cap as partial escalation. */
@@ -1715,8 +1786,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         clearExitCloseDeferForMint(mint);
       }
 
+      let sellFullOut: LiveTokenToSolSellResult = { ok: true };
       if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
-        const ok = await livePhase4.tryTokenToSolSell({
+        sellFullOut = await livePhase4.tryTokenToSolSell({
           mint,
           symbol: ot.symbol,
           usdNotional: investedRemaining,
@@ -1724,8 +1796,27 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           decimals: ot.tokenDecimals ?? 6,
           intentKind: 'sell_full',
         });
-        if (!ok.ok) continue;
+        if (!sellFullOut.ok) continue;
       }
+      applyLiveFullCloseProceedsFromChain({
+        ct,
+        ot,
+        cfg,
+        sellOut: sellFullOut,
+        marketSell,
+        networkFeeUsdPerTx: perTxClose,
+      });
+      const exitContextMain = buildExitContext({
+        cfg: effCfg,
+        ot,
+        closePnlPct: ct.pnlPct,
+        ageH,
+        exitReason,
+        curMetric,
+        xAvg,
+        tpLadder,
+      });
+      ct.exitContext = exitContextMain;
       open.delete(mint);
       clearExitCloseDeferForMint(mint);
       clearExitPartialDeferForMint(mint);
@@ -1743,7 +1834,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
         btc_exit: btcCtx(),
         exit_market_price: marketSell,
-        exit_effective_price: effectiveSell,
+        exit_effective_price: ct.effective_exit_price,
         exit_swaps: exitSwaps,
         mcUsdLive: mcUsdLive_close,
         priorityFee: pfClose,

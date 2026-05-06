@@ -1520,11 +1520,11 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const mode = e.liveExitProfileMode;
   if (mode === 'A') {
     parts.push(
-      'Режим A (IDEALIZED §9.2): до второй ноги или DCA — полная лестница TP (+5% к средней, 15% остатка за ступень), kill-stop базовый −5% к средней, базовые trail/timeout.',
+      'Режим A (IDEALIZED §9.2): включая после плановой второй ноги входа (scale-in); до первого DCA по `PAPER_DCA_LEVELS` — полная лестница TP (+5% к средней, 15% остатка за ступень), kill-stop базовый −5% к средней, базовые trail/timeout.',
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B (IDEALIZED §9.2): после второй ноги или DCA — агрессивная сетка TP (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_* в ecosystem), kill −7%, trail/timeout из env режима B.',
+      'Режим B (IDEALIZED §9.2): только после DCA (усреднение по триггерам `PAPER_DCA_LEVELS`) — агрессивная сетка TP (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_* в ecosystem), kill −7%, trail/timeout из env режима B.',
     );
   }
   return parts.length ? parts.join('\n') : null;
@@ -2290,7 +2290,11 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         sizeUsd: legUsd,
         secondLegFractionOfFull: fracFull > 0 ? +fracFull.toFixed(6) : undefined,
         timelineLabelRu:
-          ot.liveExitProfileMode === 'B' ? `${baseLab} · режим выхода B` : baseLab,
+          ot.liveExitProfileMode === 'B'
+            ? `${baseLab} · режим выхода B`
+            : ot.liveExitProfileMode === 'A'
+              ? `${baseLab} · режим A`
+              : baseLab,
         totalInvestedUsd: ot.totalInvestedUsd,
         mcUsdLive: undefined,
         ...(ot.liveExitProfileMode === 'A' || ot.liveExitProfileMode === 'B'

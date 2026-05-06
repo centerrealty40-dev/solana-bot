@@ -14,11 +14,18 @@ export function tpGridEffective(
   firstRungRetraceMinPnlPct: number;
 } {
   const o = ot.tpGridOverrides;
+  /** Режим B live — параметры сетки только из cfg (effCfg), без legacy tp-regime overrides на открытии. */
+  const ignoreOverrides = cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B';
   return {
-    stepPnl: o?.gridStepPnl ?? cfg.tpGridStepPnl,
-    sellFraction: Math.min(1, o?.gridSellFraction ?? cfg.tpGridSellFraction),
-    maxRungs: o?.gridMaxRungs ?? cfg.tpGridMaxRungs,
-    firstRungRetraceMinPnlPct: o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct,
+    stepPnl: ignoreOverrides ? cfg.tpGridStepPnl : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
+    sellFraction: Math.min(
+      1,
+      ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
+    ),
+    maxRungs: ignoreOverrides ? cfg.tpGridMaxRungs : (o?.gridMaxRungs ?? cfg.tpGridMaxRungs),
+    firstRungRetraceMinPnlPct: ignoreOverrides
+      ? cfg.tpGridFirstRungRetraceMinPnlPct
+      : (o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct),
   };
 }
 

@@ -217,7 +217,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
   ot.avgEntryMarket = numM / ot.totalInvestedUsd;
   ot.remainingFraction = 1;
-  if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+  /** Плановая вторая нога входа — не режим B; B только после DCA по `PAPER_DCA_LEVELS` (IDEALIZED). */
   appendLiveBuyAnchorsAfterDca(ot, buyRes);
 
   ot.livePendingScaleIn = null;
@@ -247,8 +247,8 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
     corridorUpPct: pending.corridorUpPct,
     corridorDownPct: pending.corridorDownPct,
-    timelineLabelRu: `${`Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции`}${cfg.liveExitModeAbEnabled ? ' · режим выхода B' : ''}`,
-    ...(cfg.liveExitModeAbEnabled ? { liveExitProfileMode: 'B' as const } : {}),
+    timelineLabelRu: `${`Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции`}${cfg.liveExitModeAbEnabled ? ' · режим A (вторая нога входа, не DCA)' : ''}`,
+    ...(cfg.liveExitModeAbEnabled ? { liveExitProfileMode: 'A' as const } : {}),
   });
 
   journalLiveStrategy?.({

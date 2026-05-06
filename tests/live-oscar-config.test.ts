@@ -65,6 +65,27 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveReconcileBlockMaxMs).toBe(0);
   });
 
+  it('parses LIVE_CAPITAL_ROTATE_ENABLED and LIVE_PHASE5_FREE_SOL_GATE_ENABLED', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.LIVE_CAPITAL_ROTATE_ENABLED;
+    delete process.env.LIVE_PHASE5_FREE_SOL_GATE_ENABLED;
+    const d = loadLiveOscarConfig();
+    expect(d.liveCapitalRotateEnabled).toBe(false);
+    expect(d.livePhase5FreeSolGateEnabled).toBe(false);
+    process.env.LIVE_CAPITAL_ROTATE_ENABLED = '1';
+    process.env.LIVE_PHASE5_FREE_SOL_GATE_ENABLED = '1';
+    const e = loadLiveOscarConfig();
+    expect(e.liveCapitalRotateEnabled).toBe(true);
+    expect(e.livePhase5FreeSolGateEnabled).toBe(true);
+    delete process.env.LIVE_CAPITAL_ROTATE_ENABLED;
+    delete process.env.LIVE_PHASE5_FREE_SOL_GATE_ENABLED;
+  });
+
   it('loads live BTC gate + SOL equity defaults', () => {
     process.env.LIVE_STRATEGY_ENABLED = '0';
     process.env.LIVE_EXECUTION_MODE = 'dry_run';

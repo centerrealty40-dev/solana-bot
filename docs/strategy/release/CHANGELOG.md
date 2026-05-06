@@ -8,6 +8,49 @@
 
 ---
 
+## [1.11.130] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.130`.
+
+- **Phase 5:** новый флаг **`LIVE_PHASE5_FREE_SOL_GATE_ENABLED`** (дефолт **`0`** / выкл.). Пока выкл., **`phase5AllowIncreaseExposure`** **не** вызывает оценку свободного SOL и **не** режет входы по **`k·X`**, **нет** **`capital_skip`**/**`CAPITAL_ROTATE`** на этом пути. Включает старое поведение: **`1`**.
+- **`LIVE_CAPITAL_ROTATE_ENABLED`** — дефолт в коде сменён на **`0`**; имеет смысл только при включённом гейте.
+- **`ecosystem` (`live-oscar`):** вместо отдельного ротация-флага — явный **`LIVE_PHASE5_FREE_SOL_GATE_ENABLED=0`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.129`**.
+
+---
+
+## [1.11.129] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.129`.
+
+- **Phase 5 (`phase5-gates.ts`):** флаг **`LIVE_CAPITAL_ROTATE_ENABLED`** (дефолт **`1`** для обратной совместимости). При **`0`** при нехватке свободного SOL под **k·X** новый вход блокируется событием **`capital_skip`** `capital_rotate_disabled` — открытые позиции **не** продаются «ради места».
+- **`ecosystem.config.cjs` (`live-oscar`):** **`LIVE_CAPITAL_ROTATE_ENABLED=0`** — отключить массовые закрытия по ротации на типичном узком кошельке; при необходимости освобождать SOL вручную или снизить **`LIVE_ENTRY_MIN_FREE_MULT`**.
+- **`.env.example`:** пояснение к **`LIVE_ENTRY_MIN_FREE_MULT`** и ротации.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.128`**.
+
+---
+
+## [1.11.128] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.128`.
+
+- **`tracker.ts`:** после успешного live `sell_full` пересчёт итогового PnL из фактических SOL→USD последней ноги (`applyLiveFullCloseProceedsFromChain`), затем заново строится `exitContext` и в журнал уходит скорректированный `exit_effective_price` (тот же guard «implausible vs modeled», что у частичных выходов).
+- **`dashboard-server`:** подписи режима A/B в подсказках таймлайна и синтетическая строка scale-in — **B только после DCA**; после второй ноги явно **«· режим A»**.
+- **`IDEALIZED_OSCAR_STACK_SPEC.md`:** §0 / §8.2 / §9.2 / §15 — режим **B** только после DCA; scale-in остаётся в **A**.
+- **`ecosystem.config.cjs`:** комментарий к `PAPER_LIVE_EXIT_MODE_AB` приведён к той же семантике.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.127`**.
+
+---
+
 ## [1.11.127] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.127`.

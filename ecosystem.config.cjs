@@ -284,7 +284,7 @@ module.exports = {
 
         /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A/B вкл.: A до второй ноги / DCA; B после — ужесточённая сетка TP + env ниже. */
+        /** Режим A/B вкл.: A до первого DCA (включая после scale-in второй ноги); B только после DCA — ужесточённая сетка TP + env ниже. */
         PAPER_LIVE_EXIT_MODE_AB: '1',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
@@ -421,6 +421,12 @@ module.exports = {
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
         LIVE_MAX_POSITION_USD: '80',
         LIVE_MAX_OPEN_POSITIONS: '5',
+        /**
+         * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
+         * (Оценка free SOL через getBalance расходилась с реальностью; swap и так использует кошелёк.)
+         * Включить прежнее W8.0-p5: LIVE_PHASE5_FREE_SOL_GATE_ENABLED=1 (опц. LIVE_CAPITAL_ROTATE_ENABLED=1).
+         */
+        LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /**
          * Live-only, только **новый** buy_open: SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется.

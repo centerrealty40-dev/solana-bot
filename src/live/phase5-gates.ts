@@ -322,6 +322,10 @@ export async function phase5AllowIncreaseExposure(args: {
     }
   }
 
+  if (!liveCfg.livePhase5FreeSolGateEnabled) {
+    return true;
+  }
+
   const requiredFree = capitalRequiredFreeUsd(liveCfg, paperPositionUsd);
   let virtualExtraLamports = 0n;
 
@@ -347,6 +351,17 @@ export async function phase5AllowIncreaseExposure(args: {
     appendLiveJsonlEvent({
       kind: 'capital_skip',
       reason: 'insufficient_free_balance_no_positions',
+      freeUsdEstimate: freeUsd,
+      requiredFreeUsd: requiredFree,
+      shortfallUsd: shortfallAt(freeUsd),
+    });
+    return false;
+  }
+
+  if (!liveCfg.liveCapitalRotateEnabled) {
+    appendLiveJsonlEvent({
+      kind: 'capital_skip',
+      reason: 'capital_rotate_disabled',
       freeUsdEstimate: freeUsd,
       requiredFreeUsd: requiredFree,
       shortfallUsd: shortfallAt(freeUsd),
