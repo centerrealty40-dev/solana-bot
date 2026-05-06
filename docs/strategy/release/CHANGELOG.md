@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.108] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.108`.
+
+### W9.0 dip_bot intel — якоря из paper JSONL (`kind: open`)
+
+- **`pt1-oscar.jsonl`** в основном содержит нативные события paper (**`kind: "open"`**), а не **`live_position_open`** (зеркало live). Джоба теперь извлекает якорь из **`open`** при совпадении **`strategyId`** с allowlist.
+- **`extractDipBotJournalAnchors`**: сначала **`live_position_open`**, затем paper **`open`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.107`**.
+
+---
+
 ## [1.11.107] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.107`.

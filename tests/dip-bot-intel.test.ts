@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { LIVE_SCHEMA_V1 } from '../src/live/events.js';
-import { extractLiveOscarOpenAnchors, loadDipBotEnv } from '../src/intel/dip-bot-intel.js';
+import {
+  extractDipBotJournalAnchors,
+  extractLiveOscarOpenAnchors,
+  extractPaperOscarOpenAnchors,
+  loadDipBotEnv,
+} from '../src/intel/dip-bot-intel.js';
 
 describe('dip-bot-intel', () => {
   it('extractLiveOscarOpenAnchors parses live_position_open envelope', () => {
@@ -55,6 +60,22 @@ describe('dip-bot-intel', () => {
       openTrade: { entryTs: 100 },
     });
     expect(extractLiveOscarOpenAnchors(line, ['live-oscar'])).toBeNull();
+  });
+
+  it('extractPaperOscarOpenAnchors parses paper journal kind open', () => {
+    const line = JSON.stringify({
+      ts: 1,
+      strategyId: 'pt1-oscar',
+      kind: 'open',
+      mint: 'Mint333333333333333333333333333333333333333',
+      entryTs: 1234567890,
+      symbol: 'X',
+    });
+    const a = extractPaperOscarOpenAnchors(line, ['pt1-oscar']);
+    expect(a).not.toBeNull();
+    expect(a!.mint).toBe('Mint333333333333333333333333333333333333333');
+    expect(a!.entryTsMs).toBe(1234567890);
+    expect(extractDipBotJournalAnchors(line, ['pt1-oscar'])!.mint).toBe(a!.mint);
   });
 
   it('extractLiveOscarOpenAnchors accepts pt1-oscar when in allowlist', () => {

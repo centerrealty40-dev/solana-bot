@@ -71,6 +71,41 @@ export function extractLiveOscarOpenAnchors(
   return { mint, entryTsMs };
 }
 
+/**
+ * Paper Oscar journal (`pt1-oscar.jsonl`): native rows use `kind: "open"` + `mint` + `entryTs`
+ * (see `papertrader/main.ts` `journalAppend`). Distinct from mirrored `live_position_open`.
+ */
+export function extractPaperOscarOpenAnchors(
+  line: string,
+  strategyIds: string[],
+): { mint: string; entryTsMs: number } | null {
+  const t = line.trim();
+  if (!t) return null;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(t);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  const rec = obj as Record<string, unknown>;
+  const sid = String(rec.strategyId || '');
+  if (!strategyIds.includes(sid)) return null;
+  if (String(rec.kind || '') !== 'open') return null;
+  const mint = String(rec.mint || '').trim();
+  const entryTsMs = Number(rec.entryTs ?? NaN);
+  if (!mint || !Number.isFinite(entryTsMs) || entryTsMs <= 0) return null;
+  return { mint, entryTsMs };
+}
+
+/** Try live mirror row first, then paper-native `open`. */
+export function extractDipBotJournalAnchors(
+  line: string,
+  strategyIds: string[],
+): { mint: string; entryTsMs: number } | null {
+  return extractLiveOscarOpenAnchors(line, strategyIds) ?? extractPaperOscarOpenAnchors(line, strategyIds);
+}
+
 export async function fetchBuyersInWindow(
   sql: postgres.Sql,
   args: { mint: string; windowStartMs: number; windowEndMs: number; minUsd: number; excludeWallet: string | null },
