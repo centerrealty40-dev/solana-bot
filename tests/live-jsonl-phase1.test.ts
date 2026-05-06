@@ -105,6 +105,12 @@ describe('W8.0-p1 live JSONL contract', () => {
         closedTrade: { mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', exitTs: 1 },
       },
       {
+        kind: 'live_whitelist_skip',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        symbol: 'ABC',
+        lane: 'stream',
+      },
+      {
         kind: 'live_exit_verify_defer',
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         context: 'close',
@@ -173,6 +179,12 @@ describe('W8.0-p1 live JSONL contract', () => {
         kind: 'live_reconcile_report',
         ok: true,
         reconcileStatus: 'skipped',
+      }),
+    ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_whitelist_skip',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       }),
     ).toBe(true);
   });

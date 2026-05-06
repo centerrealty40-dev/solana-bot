@@ -406,7 +406,7 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p7 oscar: opened=${stats.opened} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note: `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
         ...(liveReconcileBlocksNewExposure()
           ? {
               reconcileBlocksNewExposure: true,

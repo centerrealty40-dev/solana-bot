@@ -237,9 +237,9 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. Первая нога **$55**, вторая **$25** → **$80**. */
-        PAPER_POSITION_USD: '80',
-        /** 55/80 — первая нога $55; вторая $25 через scale-in (`LIVE_ENTRY_SCALE_IN_*`). */
+        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. При **$90** и доле 0.6875 ≈ **$62** + **$28** scale-in. */
+        PAPER_POSITION_USD: '90',
+        /** Первая нога / полный нотионал; вторая доля через scale-in (`LIVE_ENTRY_SCALE_IN_*`). */
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6875',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -400,6 +400,11 @@ module.exports = {
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        /** Разрешённые mint для новых входов; иначе skip + ALERT Telegram (см. `src/live/mint-whitelist.ts`). */
+        LIVE_MINT_WHITELIST_ENABLED: '1',
+        LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
+        /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
+        LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
@@ -423,8 +428,8 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '80',
-        LIVE_MAX_OPEN_POSITIONS: '5',
+        LIVE_MAX_POSITION_USD: '90',
+        LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
          * (Оценка free SOL через getBalance расходилась с реальностью; swap и так использует кошелёк.)

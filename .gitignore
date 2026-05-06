@@ -22,7 +22,9 @@ keypairs/
 
 # Local / runtime state
 cache/
-data/
+data/**
+!data/live/
+!data/live/live-oscar-mint-whitelist.txt
 backups/
 *.sqlite
 *.db

@@ -8,6 +8,33 @@
 
 ---
 
+## [1.11.135] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.135`.
+
+- **Live whitelist → Telegram:** дефолт **`LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS=0`** (без кулдауна; каждый проход гейтов может снова отправить алерт по тому же mint). В **`ecosystem.config.cjs` (`live-oscar`)** выставлено **`0`**.
+- **`ecosystem.config.cjs` (`live-oscar`):** **`PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` = 90**, **`LIVE_MAX_OPEN_POSITIONS` = 30** (при сохранённой **`PAPER_ENTRY_FIRST_LEG_FRACTION`** ≈ $62 + $28 scale-in).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.134`**.
+
+---
+
+## [1.11.134] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.134`.
+
+- **Live mint whitelist:** при **`LIVE_MINT_WHITELIST_ENABLED=1`** после всех paper-гейтов и перед **`buy_open`** mint должен быть в файле (**`LIVE_MINT_WHITELIST_PATH`**, по умолчанию `data/live/live-oscar-mint-whitelist.txt`). Иначе — строка **`live_whitelist_skip`** в live JSONL, покупка не выполняется, в Telegram уходит **`[ALERT][live_whitelist_miss]`** (опциональный троттлинг per-mint: **`LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS`**; с **1.11.135** дефолт **0**). Файл подхватывается заново при изменении mtime. (У live-oscar **`journalAppend`** — no-op; бумажный **`eval-skip-open`** в журнал не попадает.)
+- **`scripts/compare-live-closes-whitelist.mjs`** — сравнение уникальных mint из **`live_position_close`** в JSONL с whitelist (аргументы: путь к JSONL, путь к whitelist).
+- **`ecosystem.config.cjs` (`live-oscar`):** whitelist включён, путь на `data/live/live-oscar-mint-whitelist.txt`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.133`** и в PM2 убрать **`LIVE_MINT_WHITELIST_ENABLED`** или выставить **`0`**.
+
+---
+
 ## [1.11.133] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.133`.

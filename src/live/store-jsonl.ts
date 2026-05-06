@@ -62,6 +62,8 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return true;
     case 'live_post_close_tail':
       return true;
+    case 'live_whitelist_skip':
+      return true;
     default:
       return false;
   }

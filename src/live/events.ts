@@ -238,6 +238,15 @@ export const LivePostCloseTailSchema = z.object({
   estUsd: z.number().finite().optional(),
 });
 
+/** Candidate passed paper gates but mint not on allowlist (`LIVE_MINT_WHITELIST_ENABLED`). */
+export const LiveWhitelistSkipSchema = z.object({
+  kind: z.literal('live_whitelist_skip'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -259,6 +268,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveExitVerifyDeferSchema,
   LivePeriodicSelfHealReportSchema,
   LivePostCloseTailSchema,
+  LiveWhitelistSkipSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

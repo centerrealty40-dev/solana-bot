@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -188,6 +189,16 @@ const LiveOscarConfigSchema = z
     liveEntryScaleInCorridorDownPct: z.coerce.number().min(0.01).max(50).default(3),
     liveEntryScaleInMaxSwapAttempts: z.coerce.number().int().min(1).max(50).default(5),
     liveEntryScaleInRetryBackoffMs: z.coerce.number().int().min(200).max(120_000).default(2000),
+
+    /**
+     * Live-only: после всех paper-гейтов, перед `buy_open` — разрешать вход только если mint есть в файле whitelist.
+     * Нет в списке → `eval-skip-open` + Telegram (ALERT), без покупки.
+     */
+    liveMintWhitelistEnabled: z.boolean().default(false),
+    /** Путь к файлу: один mint (base58) на строку, строки `#…` — комментарии. Относительный путь — от `process.cwd()`. */
+    liveMintWhitelistPath: z.string().min(1).default('data/live/live-oscar-mint-whitelist.txt'),
+    /** Между повторными Telegram по одному и тому же mint (мс). `0` = каждый проход гейтов может отправить снова. */
+    liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -413,6 +424,15 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 200 ? Math.min(n, 120_000) : 2000;
     })(),
+    liveMintWhitelistEnabled: envBool(process.env.LIVE_MINT_WHITELIST_ENABLED, false),
+    liveMintWhitelistPath: process.env.LIVE_MINT_WHITELIST_PATH?.trim() || 'data/live/live-oscar-mint-whitelist.txt',
+    liveMintWhitelistNotifyCooldownMs: (() => {
+      const s = process.env.LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS?.trim();
+      if (!s) return 0;
+      if (s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
+    })(),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();
       if (sol) {
@@ -443,6 +463,15 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
 
   const cfg = parsed.data;
   assertPathsDiffer(cfg.liveTradesPath, cfg.parityPaperTradesPath);
+
+  if (cfg.liveMintWhitelistEnabled) {
+    const abs = path.isAbsolute(cfg.liveMintWhitelistPath.trim())
+      ? cfg.liveMintWhitelistPath.trim()
+      : path.resolve(process.cwd(), cfg.liveMintWhitelistPath.trim());
+    if (!fs.existsSync(abs)) {
+      throw new Error(`LIVE_MINT_WHITELIST_ENABLED=1 but whitelist file missing: ${abs}`);
+    }
+  }
 
   return cfg;
 }

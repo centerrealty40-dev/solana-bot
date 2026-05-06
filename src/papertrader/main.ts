@@ -49,6 +49,7 @@ import type {
   SimAuditStamp,
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
+import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
@@ -88,13 +89,14 @@ export interface PapertraderMainOptions {
   onOscarHeartbeat?: (payload: {
     openPositions: number;
     closedTotal: number;
-    stats: {
+      stats: {
       discovered: number;
       evaluated: number;
       passed: number;
       opened: number;
       skippedSafety: number;
       skippedPriceVerify: number;
+      skippedLiveMintWhitelist: number;
       ticks: number;
       errors: number;
     };
@@ -129,6 +131,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     ((e: Record<string, unknown>) => {
       appendEvent(e as never);
     });
+  const journalLiveStrategy = opts?.journalLiveStrategy;
 
   if (!opts?.skipPaperJsonlStore) {
     configureStore({ storePath: cfg.storePath, strategyId: cfg.strategyId });
@@ -199,6 +202,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     opened: 0,
     skippedSafety: 0,
     skippedPriceVerify: 0,
+    skippedLiveMintWhitelist: 0,
     ticks: 0,
     errors: 0,
   };
@@ -501,6 +505,32 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'A';
 
         const liveOscar = resolveLiveOscar();
+        if (liveOscar?.liveCfg.liveMintWhitelistEnabled) {
+          if (!isMintOnLiveWhitelist(liveOscar.liveCfg.liveMintWhitelistPath, ot.mint)) {
+            stats.skippedLiveMintWhitelist += 1;
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: ot.mint,
+              symbol: ot.symbol,
+              reason: 'live_mint_whitelist',
+            });
+            journalLiveStrategy?.({
+              kind: 'live_whitelist_skip',
+              mint: ot.mint,
+              symbol: ot.symbol,
+              lane: d.lane,
+              source: d.source,
+            });
+            void notifyLiveMintWhitelistSkip(
+              ot.symbol,
+              ot.mint,
+              liveOscar.liveCfg.liveMintWhitelistNotifyCooldownMs,
+            );
+            continue;
+          }
+        }
         if (liveOscar) {
           const opened = await liveOscar.discovery.tryExecuteBuyOpen({
             liveCfg: liveOscar.liveCfg,
@@ -688,7 +718,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `${cfg.strategyKind} executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `${cfg.strategyKind} executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_live_mint_whitelist=${stats.skippedLiveMintWhitelist} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
       skippedPriceVerifyExit: trackerStats.skippedPriceVerifyExit,
       holdersResolveStats: holdersStats,

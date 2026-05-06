@@ -405,6 +405,7 @@ export interface EvalSkipOpenEvent extends JsonlEventBase {
   lane: Lane;
   source?: string;
   mint: string;
+  symbol?: string;
   reason: string;
 }
 

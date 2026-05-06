@@ -25,6 +25,7 @@
     "atlas": "tsx src/scripts/atlas.ts",
     "papertrader": "tsx src/scripts/papertrader.ts",
     "live-oscar": "tsx src/scripts/live-oscar.ts",
+    "live:compare-whitelist-closes": "node scripts/compare-live-closes-whitelist.mjs",
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "dip-bot-intel:coverage": "tsx src/scripts/dip-bot-intel-coverage.ts",
     "dip-bot-intel:anchor-gaps": "tsx src/scripts/dip-bot-intel-anchor-gaps.ts",
