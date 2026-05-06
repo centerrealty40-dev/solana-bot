@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.127] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.127`.
+
+- **`live-oscar`:** нотионал **$80** — первая нога **$55**, вторая **$25** (`PAPER_ENTRY_FIRST_LEG_FRACTION=0.6875`); **`LIVE_MAX_POSITION_USD`**, **`LIVE_MIN_WALLET_SOL_EQUITY_USD`**, **`LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD`** согласованы с большим размером.
+- **`dashboard-paper2.html`:** текст стратегии под **$55 + $25**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.126`**.
+
+---
+
 ## [1.11.126] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.126`.

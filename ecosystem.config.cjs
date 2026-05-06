@@ -237,10 +237,10 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. Микро: $20 + $10 = $30. */
-        PAPER_POSITION_USD: '30',
-        /** Первая нога **$20** (⅔); вторая **$10** — scale-in по `LIVE_ENTRY_SCALE_IN_*`. */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6666666666666666',
+        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. Первая нога **$55**, вторая **$25** → **$80**. */
+        PAPER_POSITION_USD: '80',
+        /** 55/80 — первая нога $55; вторая $25 через scale-in (`LIVE_ENTRY_SCALE_IN_*`). */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6875',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -418,20 +418,21 @@ module.exports = {
          * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        /** Микролимит §3.3: полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '30',
+        /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
+        LIVE_MAX_POSITION_USD: '80',
         LIVE_MAX_OPEN_POSITIONS: '5',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /**
          * Live-only, только **новый** buy_open: SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется.
          */
-        LIVE_MIN_WALLET_SOL_EQUITY_USD: '28',
+        /** Масштаб от прежнего $30-профиля (~28) под нотионал $80. */
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '75',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
-        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '8',
+        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '22',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 
