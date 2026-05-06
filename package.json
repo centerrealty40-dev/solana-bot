@@ -56,6 +56,8 @@
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts",
     "paper2:timeout-slice": "tsx src/scripts/paper2-timeout-slice.ts",
     "paper2:expectancy-window": "tsx src/scripts/paper2-expectancy-window.ts",
+    "paper2:post-analyze": "node scripts/paper2-post-analyze.mjs",
+    "paper2:analyze-kill-sl": "node scripts-tmp/analyze-kill-sl-roots.mjs",
     "paper2:counterfactual-pg": "tsx src/scripts/paper2-counterfactual-pg.ts",
     "paper2:universe-matrix": "tsx src/scripts/paper2-universe-strategy-matrix.ts",
     "paper2:hold-thesis-scan": "tsx src/scripts/paper2-hold-thesis-scan.ts",

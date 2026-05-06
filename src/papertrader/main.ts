@@ -110,6 +110,19 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const cfg = loadPaperTraderConfig();
+  logger.info(
+    {
+      strategyId: cfg.strategyId,
+      tpX: cfg.tpX,
+      slX: cfg.slX,
+      dcaKillstop: cfg.dcaKillstop,
+      timeoutHours: cfg.timeoutHours,
+      trailMode: cfg.trailMode,
+      trailTriggerX: cfg.trailTriggerX,
+      trailDrop: cfg.trailDrop,
+    },
+    'papertrader resolved exit thresholds (audit SL/KILLSTOP/TIMEOUT/TRAIL)',
+  );
   const journalAppend =
     opts?.journalAppend ??
     ((e: Record<string, unknown>) => {
