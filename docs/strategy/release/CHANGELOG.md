@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.103] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.103`.
+
+### Live Oscar · канон нотионала в Git (`ecosystem.config.cjs`)
+
+- **`live-oscar`:** **`PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` → 80** (две ноги **$55 + $25**, **`PAPER_ENTRY_FIRST_LEG_FRACTION` → 0.6875**); **`LIVE_MIN_WALLET_SOL_EQUITY_USD` → 65**. Интервал второй ноги без изменений (**`LIVE_ENTRY_SCALE_IN_DELAY_MS` = 5 с**).
+- **`scripts-tmp/dashboard-paper2.html`:** текст карточки Live Oscar приведён к тем же числам.
+- **Операционно:** правки нотионала допускаются **только через коммит в `v2` и деплой по NORM** (`fetch` + `reset --hard origin/v2` + `npm ci` + `pm2 reload … --update-env`). Рутинный **`scp`** `ecosystem.config.cjs` на VPS без записи в Git запрещён нормативом и даёт расхождение с **`git reset --hard`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.102`** и восстановить прежний блок **`live-oscar`** в **`ecosystem.config.cjs`** из того тега (было **40 USD**, **0.7**, **`LIVE_MIN_WALLET_SOL_EQUITY_USD` = 50**).
+
+---
+
 ## [1.11.102] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.102`.

@@ -513,10 +513,10 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. */
-        PAPER_POSITION_USD: '40',
-        /** Первая нога **70%**; вторая **30%** после короткой задержки и коридора Jupiter ± к первой ноге (см. LIVE_ENTRY_SCALE_IN_*). */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
+        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. Итого две ноги: $55 + $25. */
+        PAPER_POSITION_USD: '80',
+        /** Первая нога **$55** (~68.75%); вторая **$25** после той же задержки и коридора Jupiter ± к первой ноге (см. LIVE_ENTRY_SCALE_IN_*). */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6875',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -566,7 +566,7 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
 
-        /** Live Oscar: без DCA между ногами — только 70% + отложенная 30% по коридору Jupiter. */
+        /** Live Oscar: без DCA между ногами — только $55 + отложенные $25 по коридору Jupiter. */
         PAPER_DCA_LEVELS: '',
         PAPER_DCA_KILLSTOP: '-0.05',
         /** TP grid: +5% PnL к средней за ступень; 15% текущего остатка за ступень. */
@@ -667,6 +667,12 @@ module.exports = {
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
+        /**
+         * Telegram ALERT при сбое Jupiter-probe в трекере или расхождении PG vs Jupiter; см. `src/core/telegram/jupiter-alerts.ts`.
+         * `0` = выкл. Circuit breaker (price-verify): `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0`.
+         * Троттлинг per-mint: `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS` (default 300000).
+         */
+        LIVE_JUPITER_TRACKER_TELEGRAM: '1',
         /** Jupiter quote + swap: max execution tolerances (bps). */
         LIVE_DEFAULT_SLIPPAGE_BPS: '300',
         /**
@@ -674,12 +680,14 @@ module.exports = {
          * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        /** Микролимит §3.3: размер первой ноги live (согласован с `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по этой USD-нотации. */
-        LIVE_MAX_POSITION_USD: '40',
+        /** Микролимит §3.3: полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
+        LIVE_MAX_POSITION_USD: '80',
         LIVE_MAX_OPEN_POSITIONS: '5',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
-        /** Live-only, только **новый** buy_open: нативный SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется. */
-        LIVE_MIN_WALLET_SOL_EQUITY_USD: '50',
+        /**
+         * Live-only, только **новый** buy_open: SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется.
+         */
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '65',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
