@@ -25,6 +25,10 @@ const LIVE_JSONL =
 const OSCAR_EVAL_JSONL =
   process.env.HOURLY_OSCAR_EVAL_JSONL || path.join(PAPER2_DIR, 'pt1-oscar.jsonl');
 const LIVE_STRATEGY_ID = process.env.HOURLY_LIVE_STRATEGY_ID || 'live-oscar';
+/** `0` / `false` — скрипт завершается без отправки в Telegram (cron на VPS). */
+const HOURLY_TELEGRAM_ENABLED = !['0', 'false', 'no'].includes(
+  String(process.env.TELEGRAM_HOURLY_REPORT_ENABLED ?? '1').toLowerCase(),
+);
 
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
@@ -697,6 +701,16 @@ function listStoresDebug() {
 }
 
 async function main() {
+  if (!HOURLY_TELEGRAM_ENABLED) {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        msg: 'hourly telegram report disabled (TELEGRAM_HOURLY_REPORT_ENABLED)',
+      }),
+    );
+    return;
+  }
+
   const liveEvents = parseJsonl(LIVE_JSONL);
   const live = summarizeLiveOscarFromJournal(liveEvents);
   const failBuckets = aggregateExecutionFailures(liveEvents, since);

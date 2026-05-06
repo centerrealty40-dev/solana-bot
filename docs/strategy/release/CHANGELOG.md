@@ -8,6 +8,49 @@
 
 ---
 
+## [1.11.124] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.124`.
+
+- **`live-oscar`:** микро-позиция **$30** (**$20 + $10**), `PAPER_ENTRY_FIRST_LEG_FRACTION` ≈ **⅔**; **`LIVE_MIN_WALLET_SOL_EQUITY_USD` → 28**; **`LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD` → 8**.
+- **`live-oscar-dashboard`:** **`DASHBOARD_PAPER2_LIVE_OSCAR_ONLY=1`** — `/api/paper2` отдаёт только Live Oscar (раньше пять колонок получались из `mergeDashboardStrategyPanels` даже без pt1-журналов).
+- **`sa-collector-watch`:** **`COLLECTOR_WATCH_TELEGRAM=0`** — без `[ALERT][dex_collectors]` в Telegram.
+- **`hourly-telegram-report.mjs`:** выключение через **`TELEGRAM_HOURLY_REPORT_ENABLED=0`** в окружении cron (по умолчанию отчёт как раньше включён).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.123`**.
+
+---
+
+## [1.11.123] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.123`.
+
+- **`tracker.ts` (live):** убран глобальный **`PAPER_LIVE_MIN_HOLD_MS_BEFORE_EXIT`** — он блокировал законные **KILLSTOP / SL / TRAIL / TP / TIMEOUT** в окне удержания. Вместо этого MTM для решений берётся из **Jupiter** при каждом тике, если котировка не противоречит якорю входа (**≤2×** расхождение с `avgEntryMarket` / `avgEntry`); иначе fallback на PG или якорь. Jupiter запрашивается **даже если PG ещё не дал строку** (нет ложного **NO_DATA** из‑за отставания снимка).
+- **`config.ts` / `ecosystem.config.cjs`:** ключ **`PAPER_LIVE_MIN_HOLD_MS_BEFORE_EXIT`** удалён из схемы и из **`live-oscar`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.122`**.
+
+---
+
+## [1.11.122] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.122`.
+
+- **`live-oscar` (`ecosystem.config.cjs`):** **`PAPER_LIVE_MIN_HOLD_MS_BEFORE_EXIT=120000`** — первые две минуты после входа трекер не исполняет частичные TP и полный выход по обычным причинам (защита от «купил–сразу продал» из‑за расхождения цены PG snapshot и Jupiter); **`LIQ_DRAIN`** по-прежнему без задержки.
+- **`PAPER_IMPULSE_PG_MIN_DROP_PCT`:** **5 → 12** — импульс по двум PG-снимкам реже срабатывает на шуме между тиками коллектора.
+
+**Заменено в 1.11.123:** окно min-hold убрано в пользу Jupiter-first MTM в трекере.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.121`**.
+
+---
+
 ## [1.11.121] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.121`.

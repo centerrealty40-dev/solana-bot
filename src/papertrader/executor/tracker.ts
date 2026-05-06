@@ -1034,41 +1034,45 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!ot) continue;
     const effCfg = cfgEffectiveForOpen(cfg, ot);
 
-    let curMetric = 0;
+    let snapPx = 0;
     try {
-      curMetric = Number(
-        await fetchLatestSnapshotPrice(
-          mint,
-          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
-        ) ?? 0,
+      const raw = await fetchLatestSnapshotPrice(
+        mint,
+        ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
       );
+      snapPx = Number(raw ?? 0);
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
+    let curMetric = snapPx > 0 ? snapPx : 0;
 
     /**
-     * Live: решения TP / peak / trail по Jupiter tradable; иначе PG snapshot ведёт к ложным ступеням сетки.
-     * Telegram при сбое quote или сильном расхождении — `src/core/telegram/jupiter-alerts.ts`.
+     * Live: MTM для TP / trail / SL — в первую очередь Jupiter tradable (SOL→token quote), а не PG `price_usd`
+     * (коллектор может отставать или расходиться с реальным маршрутом). PG остаётся fallback, если Jupiter
+     * выглядит сломанным относительно якоря входа (>2× расхождение). Пробуем Jupiter даже при пустом PG.
+     * Telegram при сбое quote или сильном PG↔Jupiter — `src/core/telegram/jupiter-alerts.ts`.
      */
-    if (livePhase4 && liveOscarCfg && curMetric > 0) {
+    if (livePhase4 && liveOscarCfg) {
       const solUsd = getSolUsd() ?? 0;
-      const snapPx = curMetric;
       const hintDec = ot.tokenDecimals ?? 6;
       const anchorPx =
         ot.avgEntryMarket > 0
           ? ot.avgEntryMarket
           : ot.avgEntry > 0
             ? ot.avgEntry
-            : snapPx;
+            : snapPx > 0
+              ? snapPx
+              : 0;
       const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
       const probeUsd = Math.max(5, Math.min(45, remUsd * 0.12));
+      const snapshotPxForAlerts = snapPx > 0 ? snapPx : anchorPx;
 
       if (!(solUsd > 0)) {
         void notifyLiveTrackerJupiterFallback({
           strategyId: cfg.strategyId,
           mint,
           symbol: ot.symbol,
-          snapshotPx: snapPx,
+          snapshotPx: snapshotPxForAlerts,
           probeUsd,
           solUsd: 0,
           dexSource: ot.source,
@@ -1088,26 +1092,21 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               strategyId: cfg.strategyId,
               mint,
               symbol: ot.symbol,
-              snapshotPx: snapPx,
+              snapshotPx: snapshotPxForAlerts,
               probeUsd,
               solUsd,
               dexSource: ot.source,
               reason: 'quote-null',
             });
           } else {
-            const fit = tokenUsdFromBuyQuoteFitDecimals(
-              fq.quoteResponse,
-              solUsd,
-              hintDec,
-              anchorPx,
-            );
+            const fit = tokenUsdFromBuyQuoteFitDecimals(fq.quoteResponse, solUsd, hintDec, anchorPx);
             const jpx = fit?.px;
             if (jpx == null || !(jpx > 0)) {
               void notifyLiveTrackerJupiterFallback({
                 strategyId: cfg.strategyId,
                 mint,
                 symbol: ot.symbol,
-                snapshotPx: snapPx,
+                snapshotPx: snapshotPxForAlerts,
                 probeUsd,
                 solUsd,
                 dexSource: ot.source,
@@ -1127,22 +1126,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 );
                 ot.tokenDecimals = fittedDec;
               }
-              const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
-              const divergeVsAnchor = Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18);
-              if (divergeVsSnap > 0.035) {
-                if (divergeVsAnchor > 2) {
-                  log.warn(
-                    {
-                      mint: mint.slice(0, 8),
-                      symbol: ot.symbol,
-                      snapshotPx: snapPx,
-                      jupiterPx: jpx,
-                      anchorPx,
-                      divergeVsAnchorPct: +(divergeVsAnchor * 100).toFixed(1),
-                    },
-                    'live tracker: Jupiter MTM conflicts with entry anchor; keeping PG snapshot for decisions',
-                  );
-                } else {
+              const divergeVsAnchor =
+                anchorPx > 0 ? Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18) : 0;
+              const jupiterSaneVsEntry = !(anchorPx > 0) || divergeVsAnchor <= 2;
+              if (jupiterSaneVsEntry) {
+                curMetric = jpx;
+                const divergeVsSnap =
+                  snapPx > 0 ? Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18) : Number.POSITIVE_INFINITY;
+                if (snapPx > 0 && divergeVsSnap > 0.035) {
                   log.warn(
                     {
                       mint: mint.slice(0, 8),
@@ -1163,8 +1154,27 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                     probeUsd,
                     avgEntryMarket: ot.avgEntryMarket,
                   });
-                  curMetric = jpx;
+                } else if (!(snapPx > 0)) {
+                  log.warn(
+                    { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
+                    'live tracker: PG price missing; using Jupiter MTM',
+                  );
                 }
+              } else {
+                log.warn(
+                  {
+                    mint: mint.slice(0, 8),
+                    symbol: ot.symbol,
+                    snapshotPx: snapPx,
+                    jupiterPx: jpx,
+                    anchorPx,
+                    divergeVsAnchorPct: +(divergeVsAnchor * 100).toFixed(1),
+                  },
+                  'live tracker: Jupiter MTM conflicts with entry anchor; keeping PG / entry fallback',
+                );
+                if (snapPx > 0) curMetric = snapPx;
+                else if (anchorPx > 0) curMetric = anchorPx;
+                else curMetric = jpx;
               }
             }
           }
@@ -1177,7 +1187,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             strategyId: cfg.strategyId,
             mint,
             symbol: ot.symbol,
-            snapshotPx: snapPx,
+            snapshotPx: snapshotPxForAlerts,
             probeUsd,
             solUsd,
             dexSource: ot.source,

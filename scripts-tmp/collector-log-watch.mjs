@@ -13,6 +13,7 @@
  *   COLLECTOR_WATCH_SKIP_WINDOW_MS / COLLECTOR_WATCH_SKIP_SPIKE_MIN — окно и порог всплеска skip
  *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
  *   TELEGRAM_COOLDOWN_ALERT_DEX_COLLECTORS_MS — опционально, второй слой в sendTagged
+ *   COLLECTOR_WATCH_TELEGRAM — `0` не вызывает sendTagged (логи PM2 без изменений).
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -32,6 +33,9 @@ const THROTTLE_SKIP_MS = Number(process.env.COLLECTOR_WATCH_THROTTLE_SKIP_MS ?? 
 const SKIP_WINDOW_MS = Number(process.env.COLLECTOR_WATCH_SKIP_WINDOW_MS ?? 600_000);
 const SKIP_SPIKE_MIN = Number(process.env.COLLECTOR_WATCH_SKIP_SPIKE_MIN ?? 3);
 const ERR_SNIP = Number(process.env.COLLECTOR_WATCH_ERR_SNIP || 280);
+const COLLECTOR_WATCH_TELEGRAM = !['0', 'false', 'no'].includes(
+  String(process.env.COLLECTOR_WATCH_TELEGRAM ?? '1').toLowerCase(),
+);
 
 function defaultLogFiles() {
   const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), '.pm2');
@@ -274,7 +278,7 @@ async function flushUnifiedAlert(state, batch) {
   }
 
   const body = buildAlertBody(batch);
-  await sendTagged('ALERT', 'dex_collectors', body);
+  if (COLLECTOR_WATCH_TELEGRAM) await sendTagged('ALERT', 'dex_collectors', body);
 }
 
 function decaySpikeCounter(state, collector, now) {
@@ -354,6 +358,7 @@ async function main() {
       logs: paths,
       statePath: STATE_PATH,
       telegramTag: 'dex_collectors',
+      telegramEnabled: COLLECTOR_WATCH_TELEGRAM,
       throttleAlertMs: THROTTLE_ALERT_MS,
       throttleRoutineSkipMs: THROTTLE_SKIP_MS,
       skipWindowMin: SKIP_WINDOW_MS / 60000,

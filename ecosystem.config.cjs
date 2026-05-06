@@ -22,6 +22,8 @@ module.exports = {
         STORE_PATH: path.join(root, 'data/paper2/organizer-paper.jsonl'),
         PAPER2_DIR: path.join(root, 'data/paper2'),
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        /** Только колонка Live Oscar на `/papertrader2` (без пустых pt1-плиток). */
+        DASHBOARD_PAPER2_LIVE_OSCAR_ONLY: '1',
       },
     },
     {
@@ -166,6 +168,8 @@ module.exports = {
         NODE_ENV: 'production',
         /** TELEGRAM_* из .env. Один чат: [ALERT][dex_collectors] — 429, тики, сеть, tick failed, fatal. */
         COLLECTOR_WATCH_POLL_MS: '15000',
+        /** `0` — не слать dex_collectors в Telegram (логи PM2 остаются). */
+        COLLECTOR_WATCH_TELEGRAM: '0',
       },
     },
     {
@@ -233,10 +237,10 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`, иначе fail-fast на boot. Итого две ноги: $55 + $25. */
-        PAPER_POSITION_USD: '80',
-        /** Первая нога **$55** (~68.75%); вторая **$25** после той же задержки и коридора Jupiter ± к первой ноге (см. LIVE_ENTRY_SCALE_IN_*). */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6875',
+        /** Live §3.3: должно совпадать с `LIVE_MAX_POSITION_USD`. Микро: $20 + $10 = $30. */
+        PAPER_POSITION_USD: '30',
+        /** Первая нога **$20** (⅔); вторая **$10** — scale-in по `LIVE_ENTRY_SCALE_IN_*`. */
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.6666666666666666',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -286,7 +290,7 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
 
-        /** Live Oscar: без DCA между ногами — только $55 + отложенные $25 по коридору Jupiter. */
+        /** Live Oscar: без DCA между ногами — только $20 + отложенные $10 по коридору Jupiter. */
         PAPER_DCA_LEVELS: '',
         PAPER_DCA_KILLSTOP: '-0.05',
         /** TP grid: +5% PnL к средней за ступень; 15% текущего остатка за ступень. */
@@ -358,7 +362,7 @@ module.exports = {
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
-        PAPER_IMPULSE_PG_MIN_DROP_PCT: '5',
+        PAPER_IMPULSE_PG_MIN_DROP_PCT: '12',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
         QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
         IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
@@ -402,19 +406,19 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Микролимит §3.3: полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '80',
+        LIVE_MAX_POSITION_USD: '30',
         LIVE_MAX_OPEN_POSITIONS: '5',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /**
          * Live-only, только **новый** buy_open: SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется.
          */
-        LIVE_MIN_WALLET_SOL_EQUITY_USD: '65',
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '28',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
-        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '12',
+        LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '8',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 

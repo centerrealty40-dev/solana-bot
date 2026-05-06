@@ -56,6 +56,27 @@ const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
+/** VPS live-only: не сканировать paper2-журналы и не раздувать `/papertrader2` пустыми pt1-колонками. */
+function dashboardPaper2LiveOscarOnly(): boolean {
+  const v = (process.env.DASHBOARD_PAPER2_LIVE_OSCAR_ONLY ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+function listPaper2StrategyJournalPaths(): string[] {
+  if (dashboardPaper2LiveOscarOnly()) return [];
+  try {
+    if (!fs.existsSync(PAPER2_DIR)) return [];
+    return fs
+      .readdirSync(PAPER2_DIR)
+      .filter((f) => f.endsWith('.jsonl'))
+      .filter((f) => f !== 'pt1-oscar-live.jsonl')
+      .filter((f) => f !== 'pt1-smart-lottery.jsonl')
+      .map((f) => path.join(PAPER2_DIR, f));
+  } catch {
+    return [];
+  }
+}
+
 let pgSql: ReturnType<typeof postgres> | null = null;
 function pgPool(): ReturnType<typeof postgres> {
   const url = process.env.SA_PG_DSN || process.env.DATABASE_URL;
@@ -3253,20 +3274,7 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
-  let files: string[] = [];
-  try {
-    if (fs.existsSync(PAPER2_DIR)) {
-      files = fs
-        .readdirSync(PAPER2_DIR)
-        .filter((f) => f.endsWith('.jsonl'))
-        .filter((f) => f !== 'pt1-oscar-live.jsonl')
-        .filter((f) => f !== 'pt1-smart-lottery.jsonl')
-        .map((f) => path.join(PAPER2_DIR, f));
-    }
-  } catch {
-    /* ignore */
-  }
-
+  const files = listPaper2StrategyJournalPaths();
 
   const strategies: Array<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> = [];
   for (const fp of files) {
@@ -3281,7 +3289,9 @@ app.get('/api/paper2', async (_req, reply) => {
     hbClosed,
     reconcileExtras: liveExtras,
   });
-  const merged = mergeDashboardStrategyPanels([liveRow, ...strategies]);
+  const merged = dashboardPaper2LiveOscarOnly()
+    ? [liveRow]
+    : mergeDashboardStrategyPanels([liveRow, ...strategies]);
 
   const totals = merged.reduce(
     (acc, s) => {
@@ -3309,7 +3319,7 @@ app.get('/api/paper2', async (_req, reply) => {
     now: Date.now(),
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
-    panelOrder: DASHBOARD_PANEL_ORDER,
+    panelOrder: dashboardPaper2LiveOscarOnly() ? (['live-oscar'] as const) : DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,
   };
@@ -3318,15 +3328,19 @@ app.get('/api/paper2', async (_req, reply) => {
 app.get('/api/paper2/price-verify-stats', async (req, reply) => {
   reply.header('cache-control', 'no-store');
   let files: string[] = [];
-  try {
-    if (fs.existsSync(PAPER2_DIR)) {
-      files = fs
-        .readdirSync(PAPER2_DIR)
-        .filter((f) => f.endsWith('.jsonl'))
-        .map((f) => path.join(PAPER2_DIR, f));
+  if (dashboardPaper2LiveOscarOnly()) {
+    files = fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL) ? [DASHBOARD_LIVE_OSCAR_JSONL] : [];
+  } else {
+    try {
+      if (fs.existsSync(PAPER2_DIR)) {
+        files = fs
+          .readdirSync(PAPER2_DIR)
+          .filter((f) => f.endsWith('.jsonl'))
+          .map((f) => path.join(PAPER2_DIR, f));
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
   const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
   const windowMin = Math.max(5, Math.min(7 * 24 * 60, Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 1440));
@@ -3336,7 +3350,7 @@ app.get('/api/paper2/price-verify-stats', async (req, reply) => {
   let blockedGlobal = 0;
   let skippedGlobal = 0;
   for (const fp of files) {
-    const sid = path.basename(fp, '.jsonl');
+    const sid = dashboardPaper2LiveOscarOnly() ? 'live-oscar' : path.basename(fp, '.jsonl');
     const slice = priceVerifyStatsEndpointSlice(fp, windowMs);
     perStrategy[sid] = slice;
     okGlobal += slice.okCount;
@@ -3411,15 +3425,19 @@ function aggregateLiqWatchEndpointSlice(filePath: string, windowMs: number): {
 app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
   reply.header('cache-control', 'no-store');
   let files: string[] = [];
-  try {
-    if (fs.existsSync(PAPER2_DIR)) {
-      files = fs
-        .readdirSync(PAPER2_DIR)
-        .filter((f) => f.endsWith('.jsonl'))
-        .map((f) => path.join(PAPER2_DIR, f));
+  if (dashboardPaper2LiveOscarOnly()) {
+    files = fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL) ? [DASHBOARD_LIVE_OSCAR_JSONL] : [];
+  } else {
+    try {
+      if (fs.existsSync(PAPER2_DIR)) {
+        files = fs
+          .readdirSync(PAPER2_DIR)
+          .filter((f) => f.endsWith('.jsonl'))
+          .map((f) => path.join(PAPER2_DIR, f));
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
   const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
   const windowMin = Math.max(
@@ -3429,7 +3447,7 @@ app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
   const windowMs = windowMin * 60 * 1000;
   const perStrategy: Record<string, unknown> = {};
   for (const fp of files) {
-    const sid = path.basename(fp, '.jsonl');
+    const sid = dashboardPaper2LiveOscarOnly() ? 'live-oscar' : path.basename(fp, '.jsonl');
     perStrategy[sid] = aggregateLiqWatchEndpointSlice(fp, windowMs);
   }
   return { windowMin, perStrategy };
