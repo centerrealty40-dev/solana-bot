@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.139] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.139`.
+
+- **Live A/B после scale-in:** успешная **вторая нога входа** (`entry-scale-in.ts`) выставляет **`liveExitProfileMode = 'B'`** на `OpenTrade` и в событии **`scale_in_add`** — трекер и `cfg-effective-for-open` применяют профиль **`PAPER_LIVE_EXIT_MODE_B_*`** (как после DCA). Обновлена **`IDEALIZED_OSCAR_STACK_SPEC.md`** и комментарий в **`ecosystem.config.cjs`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.138`**.
+
+---
+
 ## [1.11.138] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.138`.

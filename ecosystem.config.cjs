@@ -290,7 +290,7 @@ module.exports = {
 
         /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A/B вкл.: A до первого DCA (включая после scale-in второй ноги); B только после DCA — ужесточённая сетка TP + env ниже. */
+        /** Режим A/B: A после первой ноги; B после второй ноги scale-in или после DCA по `PAPER_DCA_LEVELS` — env `PAPER_LIVE_EXIT_MODE_B_*`. */
         PAPER_LIVE_EXIT_MODE_AB: '1',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
