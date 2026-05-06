@@ -429,10 +429,11 @@ module.exports = {
         LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',
         /**
-         * Live-only, только **новый** buy_open: SOL на кошельке × SOL/USD ≥ этого порога; DCA не режется.
+         * Гейты по оценке нативного SOL через getBalance — выкл. (пустая строка ⇒ в коде порог не задаётся).
+         * Перекрывает возможные значения из `/opt/solana-alpha/.env` для PM2-процесса.
          */
-        /** Масштаб от прежнего $30-профиля (~28) под нотионал $80. */
-        LIVE_MIN_WALLET_SOL_EQUITY_USD: '75',
+        LIVE_MIN_WALLET_SOL: '',
+        LIVE_MIN_WALLET_SOL_EQUITY_USD: '',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
