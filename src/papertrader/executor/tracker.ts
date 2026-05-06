@@ -40,6 +40,7 @@ import { dcaKillstopEffective, tpGridEffective } from './tp-grid-effective.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
+import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
@@ -461,6 +462,7 @@ async function tryExecuteTpPartialSell(args: {
   journalAppend: TrackerArgs['journalAppend'];
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
   stats: TrackerStats;
   markLadder: () => void;
   logLabelPct: string;
@@ -478,12 +480,14 @@ async function tryExecuteTpPartialSell(args: {
     journalAppend,
     journalLiveStrategy,
     livePhase4,
+    liveOscarCfg,
     stats,
     markLadder,
     logLabelPct,
   } = args;
   const sellFraction = Math.min(1, rawSellFrac);
   const marketSell = curMetric;
+  if (!(ot.remainingFraction > 1e-12)) return 'ok';
   const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
   const { effectivePrice: modeledEffectiveSell } = applyExitCosts(
     cfg,
@@ -622,6 +626,27 @@ async function tryExecuteTpPartialSell(args: {
   };
   ot.partialSells.push(ps);
   ot.remainingFraction *= 1 - sellFraction;
+  /**
+   * Live partial: Phase 4 caps token raw amount to on-chain balance (`computedBn > chainAmt` → sell all atoms).
+   * Paper model still assumes only `sellFraction` of remainder left → phantom open + RECONCILE_ORPHAN next tick.
+   * If wallet already has 0 SPL for mint after confirmed sell, force remainder to zero.
+   */
+  if (
+    liveOscarCfg?.strategyEnabled &&
+    liveOscarCfg.executionMode === 'live' &&
+    livePhase4 &&
+    sellOut.ok
+  ) {
+    const chainMap = await fetchLiveWalletSplBalancesByMint(liveOscarCfg);
+    const bal = chainMap?.get(mint);
+    if (chainMap != null && (!bal || bal === 0n)) {
+      ot.remainingFraction = 0;
+      log.info(
+        { mint: mint.slice(0, 8), symbol: ot.symbol },
+        'live partial TP: SPL balance 0 after sell — sync remainingFraction=0 (avoid false orphan)',
+      );
+    }
+  }
   markLadder();
   const mcUsdLive_ps = await getLiveMcUsd(
     mint,
@@ -1629,6 +1654,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             journalAppend,
             journalLiveStrategy,
             livePhase4,
+            liveOscarCfg,
             stats,
             markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
             logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
@@ -1660,6 +1686,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             journalAppend,
             journalLiveStrategy,
             livePhase4,
+            liveOscarCfg,
             stats,
             markLadder: () => markLadderStepFired(ot, stepIdx, lvl.pnlPct),
             logLabelPct: `TP+${(lvl.pnlPct * 100).toFixed(0)}%`,
