@@ -99,7 +99,11 @@ function main(): void {
   const trustGhost = argv.has('--trust-ghost');
 
   const url = rpcUrl();
-  const storePath = (process.env.LIVE_TRADES_PATH || '').trim();
+  let storePath = (process.env.LIVE_TRADES_PATH || '').trim();
+  if (!storePath) {
+    const fallback = path.resolve(process.cwd(), 'data/live/pt1-oscar-live.jsonl');
+    if (fs.existsSync(fallback)) storePath = fallback;
+  }
   const wallet = (process.env.LIVE_WALLET_PUBKEY || '').trim();
   const strategyId = (process.env.LIVE_STRATEGY_ID || 'live-oscar').trim();
   const maxBRaw = process.env.LIVE_REPLAY_MAX_FILE_BYTES?.trim();
