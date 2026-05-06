@@ -8,11 +8,23 @@
 
 ---
 
+## [1.11.141] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.141`.
+
+- **Live режим B липкий:** после DCA **`liveExitProfileMode = 'B'`** сохраняется до **`close`** — **убран** переход **B→A** на первом partial TP (**`tracker.ts`** `tryExecuteTpPartialSell`). Обновлены **`IDEALIZED_OSCAR_STACK_SPEC.md`**, **`cfg-effective-for-open.ts`**, **`ecosystem.config.cjs`**, подсказки дашборда.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.140`**.
+
+---
+
 ## [1.11.140] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.140`.
 
-- **Live A/B (исправление семантики):** двухногий **scale-in** — сплит ликвидности, **не** DCA; **`liveExitProfileMode`** не переходит в **B** на второй ноге (**`entry-scale-in.ts`** снова фиксирует **A** в журнале). **B** только после **`dca_add`** по **`PAPER_DCA_LEVELS`**. **Первый** partial TP по лестнице (**`tracker.ts`**, `tryExecuteTpPartialSell`) выставляет **`liveExitProfileMode = 'A'`** (в т.ч. выход из B после разворота). Спецификация **`IDEALIZED_OSCAR_STACK_SPEC.md`** §0 / §8.2 / §9.2 / §15 и комментарии **`ecosystem.config.cjs`** приведены в соответствие.
+- **Live A/B (исправление семантики):** двухногий **scale-in** — сплит ликвидности, **не** DCA; **`liveExitProfileMode`** не переходит в **B** на второй ноге (**`entry-scale-in.ts`** снова фиксирует **A** в журнале). **B** только после **`dca_add`** по **`PAPER_DCA_LEVELS`**. *(В **1.11.140** ошибочно добавлен переход в **A** на первом partial TP — отменён в **1.11.141**.)* Спецификация **`IDEALIZED_OSCAR_STACK_SPEC.md`** §0 / §8.2 / §9.2 / §15 и комментарии **`ecosystem.config.cjs`**.
 
 ### Откат
 

@@ -1520,11 +1520,11 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const mode = e.liveExitProfileMode;
   if (mode === 'A') {
     parts.push(
-      'Режим A (IDEALIZED §9.2): плановый двухногий scale-in — сплит ликвидности (не DCA), профиль A сохраняется после второй ноги; до первого DCA по `PAPER_DCA_LEVELS` — полная лестница TP (+5% к средней, 15% остатка за ступень), kill −5%, базовые trail/timeout. Первый partial TP по лестнице фиксирует режим A (в т.ч. возврат из B).',
+      'Режим A (IDEALIZED §9.2): плановый двухногий scale-in — сплит ликвидности (не DCA), профиль A после второй ноги; до DCA по `PAPER_DCA_LEVELS` — лестница TP (+5% к средней, 15% остатка за ступень), kill −5%, базовые trail/timeout.',
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B (IDEALIZED §9.2): только после DCA (усреднение по триггерам `PAPER_DCA_LEVELS`) — агрессивная сетка TP (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_* в ecosystem), kill −7%, trail/timeout из env режима B; первый TP снова переводит в A.',
+      'Режим B (IDEALIZED §9.2): только после DCA по `PAPER_DCA_LEVELS` — лестница с крупными долями за ступень (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_*), kill −7%, trail/timeout из env B; режим сохраняется до закрытия позиции (нет B→A на частичных TP).',
     );
   }
   return parts.length ? parts.join('\n') : null;

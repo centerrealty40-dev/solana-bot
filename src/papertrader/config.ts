@@ -153,7 +153,7 @@ const ConfigSchema = z.object({
    */
   dipLossExitCooldownEnabled: z.boolean().default(true),
 
-  /** Live Oscar: A/B — B только после DCA; сплит-вход двумя ногами остаётся A; первый TP → A. Paper: false. */
+  /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
   liveExitModeBTrailDrop: z.coerce.number().min(0).max(1).optional(),
   liveExitModeBTrailTriggerX: z.coerce.number().positive().optional(),
