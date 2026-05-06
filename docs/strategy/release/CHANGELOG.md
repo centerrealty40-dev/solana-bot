@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.119] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.119`.
+
+- Дашборд PM2 переименован **`live-oscar-dashboard`** (старое имя убираем); `STORE_PATH` → `data/live/dashboard-store.jsonl` (файл создаётся деплоем, каталог `data/` в git не трекается).
+- Скрипт деплоя VPS: **`scripts/ops/deploy-live-oscar-vps.sh`** (от root: fetch → reset на `v2` → `touch` store → `npm ci` → удалить старый `dashboard-organizer-paper` → `pm2 reload`).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.118`**.
+
+---
+
 ## [1.11.118] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.118`.

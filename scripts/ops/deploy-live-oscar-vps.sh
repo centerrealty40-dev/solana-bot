@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Обновить код Живого Оскара на VPS и перезапустить PM2.
+# Запуск: от root на сервере (или sudo bash …).
+# Переменные: APP_DIR (по умолчанию /opt/solana-alpha), GIT_BRANCH (по умолчанию v2).
+#
+# Отдельный GitHub-репозиторий «только Oscar» этим скриптом не создаётся — это другой объём работ.
+
+set -euo pipefail
+
+APP_DIR="${APP_DIR:-/opt/solana-alpha}"
+GIT_BRANCH="${GIT_BRANCH:-v2}"
+
+if [[ "${EUID:-0}" -ne 0 ]]; then
+  echo "Нужен root (или sudo), чтобы выполнить команды от пользователя salpha."
+  exit 1
+fi
+
+sudo -u salpha -H bash -lc "
+set -euo pipefail
+cd '${APP_DIR}'
+git fetch origin '${GIT_BRANCH}'
+git reset --hard \"origin/${GIT_BRANCH}\"
+mkdir -p data/live
+touch data/live/dashboard-store.jsonl
+npm ci
+pm2 delete dashboard-organizer-paper 2>/dev/null || true
+pm2 reload '${APP_DIR}/ecosystem.config.cjs' --update-env
+pm2 save
+git rev-parse HEAD
+git status -sb
+"

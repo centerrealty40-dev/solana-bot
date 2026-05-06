@@ -1,22 +1,11 @@
-/**
- * PM2 для VPS (/opt/solana-alpha) — **минимальный прод для Live Oscar без урезания продукта**.
- *
- * В списке только то, что нужно живому Oscar как на сервере: дашборд (live JSONL), пять DEX collectors,
- * wallet orchestrator, collector watch, Jupiter watcher, direct-lp detector, процесс **live-oscar**
- * (все PAPER_* / LIVE_* предохранители, двухногий вход, reconcile, Jupiter, кошелёк — в env этого приложения).
- *
- * Убраны отдельные **paper** PM2 (`pt1-*`) — они не входят в состав Live Oscar и только дублировали нагрузку.
- * Исходники в `src/` общие; менялся только список процессов PM2.
- *
- * Запуск точечно: `pm2 start ecosystem.config.cjs --only <name>`
- */
+/** VPS `/opt/solana-alpha`: Живой Оскар + дашборд + сборщики снимков (PM2 читает этот файл). */
 const path = require('path');
 const root = __dirname;
 
 module.exports = {
   apps: [
     {
-      name: 'dashboard-organizer-paper',
+      name: 'live-oscar-dashboard',
       cwd: root,
       script: 'npm',
       args: 'run --silent dashboard',
@@ -29,7 +18,7 @@ module.exports = {
       env: {
         HOST: '0.0.0.0',
         PORT: '3008',
-        STORE_PATH: path.join(root, 'data/paper2/organizer-paper.jsonl'),
+        STORE_PATH: path.join(root, 'data/live/dashboard-store.jsonl'),
         PAPER2_DIR: path.join(root, 'data/paper2'),
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },

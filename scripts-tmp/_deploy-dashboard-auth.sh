@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Idempotent helper: upserts DASHBOARD_BASIC_USER / DASHBOARD_BASIC_PASSWORD
-# into /opt/solana-alpha/.env on the VPS and restarts dashboard-organizer-paper
+# into /opt/solana-alpha/.env on the VPS and restarts live-oscar-dashboard
 # under salpha. Secrets are NEVER stored in the repo.
 #
 # Usage (from local machine, NOT committed-secret):
@@ -53,8 +53,8 @@ echo "[deploy-auth] upserting DASHBOARD_BASIC_USER and DASHBOARD_BASIC_PASSWORD 
 upsert_env_remote DASHBOARD_BASIC_USER "$DASHBOARD_BASIC_USER"
 upsert_env_remote DASHBOARD_BASIC_PASSWORD "$DASHBOARD_BASIC_PASSWORD"
 
-echo "[deploy-auth] restarting dashboard-organizer-paper under salpha"
-$EXEC "sudo -u salpha pm2 flush dashboard-organizer-paper && sudo -u salpha pm2 restart dashboard-organizer-paper --update-env"
+echo "[deploy-auth] restarting live-oscar-dashboard under salpha"
+$EXEC "sudo -u salpha pm2 flush live-oscar-dashboard && sudo -u salpha pm2 restart live-oscar-dashboard --update-env"
 
 echo "[deploy-auth] smoke-test:"
 $EXEC "curl -sS -o /dev/null -w 'health(no-auth): HTTP %{http_code}\n' http://127.0.0.1:3007/api/health"
