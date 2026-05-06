@@ -1,11 +1,14 @@
 /**
- * PM2 для VPS (/opt/solana-alpha).
- * Торговая стратегия в проде: только **live-oscar** (paper-процессы pt1-* убраны из списка по запросу оператора).
- * Дашборд + DEX collectors + orchestrator оставлены — без них live discovery обычно недопитается свежими снимками в PG.
+ * PM2 для VPS (/opt/solana-alpha) — **минимальный прод для Live Oscar без урезания продукта**.
  *
- * Запуск новых процессов только точечно:
- *   pm2 start ecosystem.config.cjs --only sa-pumpswap
- * Не использовать массовый `pm2 start ecosystem.config.cjs` без `--only` — поднимет всё из списка.
+ * В списке только то, что нужно живому Oscar как на сервере: дашборд (live JSONL), пять DEX collectors,
+ * wallet orchestrator, collector watch, Jupiter watcher, direct-lp detector, процесс **live-oscar**
+ * (все PAPER_* / LIVE_* предохранители, двухногий вход, reconcile, Jupiter, кошелёк — в env этого приложения).
+ *
+ * Убраны отдельные **paper** PM2 (`pt1-*`) — они не входят в состав Live Oscar и только дублировали нагрузку.
+ * Исходники в `src/` общие; менялся только список процессов PM2.
+ *
+ * Запуск точечно: `pm2 start ecosystem.config.cjs --only <name>`
  */
 const path = require('path');
 const root = __dirname;

@@ -12,19 +12,15 @@
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.118`.
 
-### PM2: только торговый **live-oscar** (бумажные стратегии убраны из ecosystem)
+### Прод-стек Live Oscar (PM2)
 
-- Из **`ecosystem.config.cjs`** удалены приложения **`pt1-diprunner`**, **`pt1-oscar`**, **`pt1-oscar-regime`**, **`pt1-dno`**, **`pt1-smart-lottery`** — они больше не стартуют при **`pm2 reload`** по этому файлу.
-- Оставлены **дашборд**, **DEX collectors** (`sa-*`), **оркестратор** — без них обычно засыхает подача снимков в PG для discovery live.
-- У **`live-oscar`** убран **`LIVE_PARITY_PAPER_TRADES_PATH`** (бумажный паритет больше не ведётся отдельным процессом).
+Полный набор процессов для Live Oscar: дашборд, collectors снимков, orchestrator, watch, **live-oscar** (все прежние env). Удалены только лишние **отдельные** paper-процессы `pt1-*` из списка PM2. `LIVE_PARITY_PAPER_TRADES_PATH` убран — отдельный бумажный Oscar на VPS больше не крутится; поле в коде опционально и нигде не использовалось кроме конфига.
 
-**После деплоя на VPS (под `salpha`):** `pm2 reload ecosystem.config.cjs --update-env && pm2 save`; при необходимости **`pm2 delete`** для старых имён (`pt1-oscar`, …), если они ещё висят в дампе.
-
-Исходники paper/live ядра в **`src/`** не удалялись — **Live Oscar собирается из того же кода**, иначе сборка ломается.
+**VPS:** `pm2 reload ecosystem.config.cjs --update-env && pm2 save` под **`salpha`**; старые `pt1-*` из дампа — **`pm2 delete <name>`**.
 
 ### Откат
 
-- **`git checkout sa-alpha-1.11.117`** и восстановить удалённые блоки в **`ecosystem.config.cjs`** из того тега.
+- **`git checkout sa-alpha-1.11.117`** (полный **`ecosystem.config.cjs`** из того тега).
 
 ---
 
