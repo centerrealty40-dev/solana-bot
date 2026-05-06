@@ -8,6 +8,50 @@
 
 ---
 
+## [1.11.114] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.114`.
+
+### Три контура Oscar — явное разделение
+
+| Процесс | Назначение |
+|---------|------------|
+| **`live-oscar`** | Реальные сделки; пост-lane как в prod (**лиq ≥ $200k**, vol **20k / 36k**, holders **≥3000**); выходы A/B после scale-in; **без** TP-regime классов. |
+| **`pt1-oscar`** | Бумага **$100**; **лиq строго $100k–$200k**; holders **≥1000**; vol **17k / 32k**; **`PAPER_TP_REGIME_ENABLED=0`**. |
+| **`pt1-oscar-regime`** | Те же входные пороги, что **`pt1-oscar`**, но **`PAPER_TP_REGIME_ENABLED=1`** (классы **down / sideways / up / unknown** → overrides сетки TP / kill); журнал **`data/paper2/pt1-oscar-regime.jsonl`**. |
+
+- **PM2:** добавлено приложение **`pt1-oscar-regime`** в **`ecosystem.config.cjs`** (отдельный **`PAPER_PRIORITY_FEE_CACHE_PATH`**).
+- **Дашборд:** обновлены описания карточек **`pt1-oscar`** и **`pt1-oscar-regime`** в **`scripts-tmp/dashboard-paper2.html`**.
+
+**Деплой:** после `git reset --hard origin/v2` и `npm ci` — первый запуск:  
+`pm2 start ecosystem.config.cjs --only pt1-oscar-regime --update-env`  
+далее достаточно `pm2 reload ecosystem.config.cjs --update-env`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.113`**; `pm2 delete pt1-oscar-regime` при необходимости.
+
+---
+
+## [1.11.113] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.113`.
+
+### Paper Smart Lottery (`smart_lottery`)
+
+- **`runSmartLotteryDiscovery`:** молодые пулы по отдельным порогам **`SMLOT_*`** (migration/post lane); общие **`evaluateSnapshotSmartLottery`** + BS и vol5m/1h guard как у paper2.
+- **Intel-гейт:** ранние покупатели в **`swaps`** после первого buy в окне **`SMLOT_EARLY_BUY_WINDOW_SEC`**; блок при **`BLOCK_TRADE`**, плохих **`wallet_tags`**, **`entity_wallets.cluster_id`**, **`scam_farm_meta_cluster_members`** (флаги **`SMLOT_BLOCK_*`**); опционально **`SMLOT_REQUIRE_EARLY_SWAP_COVERAGE`**.
+- **`main.ts`:** ветка **`PAPER_STRATEGY_KIND=smart_lottery`** — тот же открытие позиций/трекер, что у dip.
+- **PM2:** процесс **`pt1-smart-lottery`** в **`ecosystem.config.cjs`** (журнал **`data/paper2/pt1-smart-lottery.jsonl`**, профиль выходов TP ×20 / trail ×5 / timeout 48 ч, без DCA).
+- **Дашборд:** **`buildPaper2StrategyRowFromLoad`** вынесен на уровень модуля; **`pt1-smart-lottery.jsonl`** исключён из скана **`/api/paper2`**; **`/api/smart-lottery`**, **`/smart-lottery`**, **`/SmartLottery`**, HTML **`dashboard-smart-lottery.html`**.
+- **`package.json` `version`:** выровнено с продуктовой **`VERSION`** (**1.11.113**), чтобы в логах CI/npm не было расхождения.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.112`**; убрать процесс **`pt1-smart-lottery`** из PM2 при необходимости.
+
+---
+
 ## [1.11.112] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.112`.
