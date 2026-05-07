@@ -9,6 +9,9 @@ import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('sa-stream-qn-usage');
 
+/** Защита от двойного `setInterval`, если listen-callback когда-либо вызовется повторно в том же процессе. */
+let quickNodeUsageReportingStarted = false;
+
 function isoUtcFromUnixSec(sec?: number): string | null {
   if (sec == null || !Number.isFinite(sec)) return null;
   return new Date(sec * 1000).toISOString();
@@ -23,6 +26,12 @@ let lastCapAlertDayUtc: string | null = null;
  * Опционально шлёт сводку в Telegram (REPORT).
  */
 export function startQuickNodeUsageReporting(): void {
+  if (quickNodeUsageReportingStarted) {
+    log.warn('startQuickNodeUsageReporting: already active — ignoring duplicate call (prevents stacked timers)');
+    return;
+  }
+  quickNodeUsageReportingStarted = true;
+
   const fromFile = process.env.QUICKNODE_ADMIN_API_KEY_FILE?.trim();
   const key =
     process.env.QUICKNODE_ADMIN_API_KEY?.trim() ||
@@ -92,14 +101,28 @@ export function startQuickNodeUsageReporting(): void {
 
   const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+  /** Минимум 1 час: иначе ошибочный `.env` даёт спам раз в минуту и дубли рядом по времени. */
   const hourlyMs = Math.max(
-    60_000,
+    3_600_000,
     Number(process.env.QUICKNODE_HOURLY_REMAINING_TELEGRAM_MS || 3_600_000),
   );
+
+  let lastHourlyBalanceTelegramMs = 0;
 
   const hourlyRemaining = async () => {
     /* Часовой отчёт — отдельный лимит Console API; по умолчанию выкл. Вкл.: QUICKNODE_HOURLY_REMAINING_TELEGRAM=1 */
     if (process.env.QUICKNODE_HOURLY_REMAINING_TELEGRAM !== '1') return;
+    const now = Date.now();
+    if (now - lastHourlyBalanceTelegramMs < hourlyMs) {
+      log.debug(
+        {
+          minMs: hourlyMs,
+          nextInMs: hourlyMs - (now - lastHourlyBalanceTelegramMs),
+        },
+        'quicknode-balance telegram skipped (in-process min gap)',
+      );
+      return;
+    }
     try {
       const s = await fetchQuickNodeBillingPeriodSummary();
       if (!s) return;
@@ -135,6 +158,7 @@ export function startQuickNodeUsageReporting(): void {
         periodLine +
         recentLine;
       const ok = await sendTagged('ALERT', 'quicknode-balance', msg);
+      if (ok) lastHourlyBalanceTelegramMs = Date.now();
       log.info(
         { ok, remaining: s.credits_remaining, limit: s.limit, used: s.credits_used },
         'quicknode hourly balance telegram',

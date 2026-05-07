@@ -27,13 +27,16 @@ module.exports = {
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
         /**
          * QuickNode Admin API → Telegram:
-         * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — раз в час `[ALERT][quicknode-balance]` со скользящими окнами 10m/30m/60m.
+         * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — не чаще 1×/ч `[ALERT][quicknode-balance]` (интервал ≥1h в коде + cooldown ниже).
          * - `QUICKNODE_USAGE_TELEGRAM` (общая дневная сводка) и milestones — выкл., чтобы не шумели.
          */
         QUICKNODE_USAGE_TELEGRAM: '0',
         QUICKNODE_HOURLY_REMAINING_TELEGRAM: '1',
+        QUICKNODE_HOURLY_REMAINING_TELEGRAM_MS: '3600000',
         QUICKNODE_HOURLY_RECENT_MINUTES_LIST: '10,30,60',
         QUICKNODE_BILLING_MILESTONES: '0',
+        /** Дублирующая страховка в sender: один и тот же subtag не чаще 1 ч даже при двух процессах / перезапусках. */
+        TELEGRAM_COOLDOWN_ALERT_QUICKNODE_BALANCE_MS: '3600000',
       },
     },
     {
