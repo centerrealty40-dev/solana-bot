@@ -165,6 +165,11 @@ const ConfigSchema = z.object({
   liveExitModeBTpGridMaxRungs: z.coerce.number().int().positive().optional(),
   liveExitModeBDcaKillstop: z.coerce.number().optional(),
   liveExitModeBPeakLogStepPct: z.coerce.number().nonnegative().optional(),
+  /**
+   * Paper Oscar IDEALIZED (v2.1 / v2.2): доля PnL к avg для включения режима B и докупа 20%.
+   * Отрицательная дробь (напр. −0.06 = −6%). Env: `PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC`.
+   */
+  idealizedOscarModeBArmFrac: z.coerce.number().min(-0.99).max(-0.0001).default(-0.04),
 
   dipRecoveryVetoEnabled: z.boolean().default(false),
   dipRecoveryVetoWindowsCsv: z.string().default(''),
@@ -509,6 +514,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveExitModeBTpGridMaxRungs: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS),
     liveExitModeBDcaKillstop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP),
     liveExitModeBPeakLogStepPct: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_PEAK_LOG_STEP_PCT),
+    idealizedOscarModeBArmFrac:
+      envOptNum(process.env.PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC) ?? -0.04,
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
     dipRecoveryVetoWindowsCsv: process.env.PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN ?? '',
     dipRecoveryVetoMaxBouncePct: process.env.PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT,

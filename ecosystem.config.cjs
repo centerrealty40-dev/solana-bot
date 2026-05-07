@@ -729,8 +729,10 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        /** Spec V2.1 §5.3 */
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
+        /** Spec V2.1 §5.3 — kill после усреднения в режиме B: −12% к avg (было −8%). */
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.12',
+        /** Докуп режима B при −6% к avg (было −4% в коде по умолчанию). */
+        PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC: '-0.06',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.50',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
@@ -890,7 +892,10 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
+        /** Kill после усреднения в режиме B: −12% к avg (было −8%). */
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.12',
+        /** Докуп режима B при −6% к avg (было −4%). */
+        PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC: '-0.06',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.50',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',

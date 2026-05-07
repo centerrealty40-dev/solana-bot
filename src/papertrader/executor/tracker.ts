@@ -1567,7 +1567,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const isPaperOscarIdealized = isPaperOscarIdealizedStackStrategyId(cfg.strategyId);
     if (isPaperOscarIdealized && paperOscarIdealizedNeutralFull(ot)) {
       const pnlFracPre = xAvg - 1;
-      if (pnlFracPre <= -0.04 + LADDER_PNL_EPS) {
+      const armBFrac = cfg.idealizedOscarModeBArmFrac;
+      if (pnlFracPre <= armBFrac + LADDER_PNL_EPS) {
         const addUsd = cfg.positionUsd * 0.2;
         const marketBuy = curMetric;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
@@ -1577,7 +1578,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           marketPrice: marketBuy,
           sizeUsd: addUsd,
           reason: 'dca',
-          triggerPct: -0.04,
+          triggerPct: armBFrac,
         });
         ot.totalInvestedUsd += addUsd;
         const numB = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
@@ -1613,14 +1614,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           sizeUsd: addUsd,
           dcaStepIndex: 0,
           dcaLevelsTotal: 1,
-          triggerPct: -0.04,
+          triggerPct: armBFrac,
           avgEntry: ot.avgEntry,
           avgEntryMarket: ot.avgEntryMarket,
           totalInvestedUsd: ot.totalInvestedUsd,
           legCount: ot.legs.length,
           mcUsdLive: mcUsdLiveV21b,
           priorityFee: pfV21b,
-          timelineLabelRu: 'Paper Oscar V2.1 · режим B (−4% к avg) · докуп 20% нотионала',
+          timelineLabelRu: `Paper Oscar IDEALIZED · режим B (${(armBFrac * 100).toFixed(0)}% к avg) · докуп 20% нотионала`,
           liveExitProfileMode: 'B',
         });
         console.log(
