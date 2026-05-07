@@ -247,9 +247,9 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Полный нотионал **$120**: первая нога **$90**, вторая **$30** через `LIVE_ENTRY_SCALE_IN_DELAY_MS` (доля **0.75**). */
-        PAPER_POSITION_USD: '120',
-        /** Первая нога $90 / $120 = 0.75; вторая нога $30 — scale-in. */
+        /** Полный нотионал **$160**: первая нога **$120**, вторая **$40** через `LIVE_ENTRY_SCALE_IN_DELAY_MS` (доля **0.75**). */
+        PAPER_POSITION_USD: '160',
+        /** Первая нога $120 / $160 = 0.75; вторая нога $40 — scale-in. */
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -449,7 +449,7 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '120',
+        LIVE_MAX_POSITION_USD: '160',
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
