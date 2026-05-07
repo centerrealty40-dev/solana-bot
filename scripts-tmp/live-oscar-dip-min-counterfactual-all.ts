@@ -10,6 +10,11 @@
  *
  * Сценарий B — без bypass и с **dip min = −30%** вместо −15 (ужесточение), max −50.
  *
+ * Сценарий C — гипотеза **`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP=1`** при текущем dip min **−30%**:
+ * вход разрешён, если классический gate прошёл **или** сработал PG-триггер как в
+ * `impulsePgSnapTriggerOk` (два последних снимка **по паре**, Δ ≤ −12%, возраст снимка 10–120 с);
+ * **без** QN/Jupiter (полный impulse confirm в executor не воспроизводится).
+ *
  * Run on VPS:
  *   cd /opt/solana-alpha && set -a && . ./.env && set +a && npx tsx scripts-tmp/live-oscar-dip-min-counterfactual-all.ts
  *
@@ -33,6 +38,12 @@ const DIP_MIN_FACTUAL_NEG15 = -15;
 const DIP_MIN_STRICT_NEG30 = -30;
 const DIP_MAX_DROP_NEG50 = -50;
 
+/** Как у live-oscar в ecosystem (`PAPER_IMPULSE_PG_*`). */
+const IMPULSE_PG_MIN_DROP_PCT = 12;
+const IMPULSE_PG_MAX_AGE_SEC_MIN = 10;
+const IMPULSE_PG_MAX_AGE_SEC_MAX = 120;
+const IMPULSE_PG_ABS_MODE = false;
+
 const TABLES: Record<string, string> = {
   pumpswap: 'pumpswap_pair_snapshots',
   raydium: 'raydium_pair_snapshots',
@@ -55,6 +66,7 @@ interface CloseEv {
   entryTs: number;
   netPnlUsd: number;
   dex: string;
+  pairAddress: string | null;
 }
 
 function bisectLeft(arr: number[], x: number): number {
@@ -176,6 +188,61 @@ async function loadSnapshotsForMint(
   return { tsMs, px };
 }
 
+/** Два последних снимка по mint+pair с ts ≤ decisionTs (как бы выглядел запрос в момент входа). */
+async function fetchLastTwoPairSnapshotsBefore(
+  mint: string,
+  dex: string,
+  pairAddress: string,
+  decisionTsMs: number,
+): Promise<Array<{ tsMs: number; priceUsd: number }> | null> {
+  const pair = String(pairAddress).trim();
+  if (!pair) return null;
+  const src = dex.toLowerCase().trim();
+  const table = TABLES[src] ?? TABLES.pumpswap!;
+  const t = quoteSqlIdent(table);
+  const mintEsc = sqlQuoteMint(mint);
+  const pairEsc = sqlQuoteMint(pair);
+  const endSec = (decisionTsMs / 1000).toFixed(3);
+
+  const raw = await db.execute(dsql.raw(`
+    SELECT (EXTRACT(EPOCH FROM ts) * 1000)::bigint AS ts_ms,
+           COALESCE(price_usd, 0)::float AS price_usd
+    FROM ${t}
+    WHERE base_mint = ${mintEsc}
+      AND pair_address = ${pairEsc}
+      AND ts <= to_timestamp(${endSec}) AT TIME ZONE 'UTC'
+      AND COALESCE(price_usd, 0) > 0
+    ORDER BY ts DESC
+    LIMIT 2
+  `));
+
+  const rows = raw as unknown as Array<{ ts_ms: string | bigint; price_usd: number }>;
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+
+  return rows.map((r) => ({
+    tsMs: typeof r.ts_ms === 'bigint' ? Number(r.ts_ms) : Number(r.ts_ms),
+    priceUsd: r.price_usd,
+  }));
+}
+
+/** Реплика `impulsePgSnapTriggerOk` на историческом entryTs (kill-switch не учитывается). */
+function impulsePgSnapTriggerOkReplay(
+  entryTsMs: number,
+  snaps: Array<{ tsMs: number; priceUsd: number }>,
+): boolean {
+  const sNew = snaps[0]!;
+  const sPrev = snaps[1]!;
+  const pNew = sNew.priceUsd;
+  const pPrev = sPrev.priceUsd;
+  if (!(pPrev > 0) || !(pNew > 0)) return false;
+  const ageSec = (entryTsMs - sNew.tsMs) / 1000;
+  if (ageSec < IMPULSE_PG_MAX_AGE_SEC_MIN || ageSec > IMPULSE_PG_MAX_AGE_SEC_MAX) return false;
+  const deltaPgPct = ((pNew - pPrev) / pPrev) * 100;
+  return IMPULSE_PG_ABS_MODE
+    ? Math.abs(deltaPgPct) >= IMPULSE_PG_MIN_DROP_PCT
+    : deltaPgPct <= -IMPULSE_PG_MIN_DROP_PCT;
+}
+
 async function main(): Promise<void> {
   const jsonlPath =
     process.argv[2]?.trim() ||
@@ -204,8 +271,11 @@ async function main(): Promise<void> {
     const net = ct.netPnlUsd;
     let dex = String(ct.dex ?? ct.source ?? 'pumpswap').toLowerCase().trim();
     if (!TABLES[dex]) dex = 'pumpswap';
+    const pairRaw = ct.pairAddress;
+    const pairAddress =
+      pairRaw != null && String(pairRaw).trim() ? String(pairRaw).trim() : null;
     if (!mint || !(entryTs > 0) || typeof net !== 'number') continue;
-    closes.push({ mint, entryTs, netPnlUsd: net, dex });
+    closes.push({ mint, entryTs, netPnlUsd: net, dex, pairAddress });
   }
 
   const actualSum = closes.reduce((a, c) => a + c.netPnlUsd, 0);
@@ -226,6 +296,14 @@ async function main(): Promise<void> {
 
   const scenA = mkAgg(); // classical, dip min -15
   const scenB = mkAgg(); // classical, dip min -30
+
+  let permitClassicalOrImpulse_n = 0;
+  let permitClassicalOrImpulse_sum = 0;
+  let marginalImpulseOnly_n = 0;
+  let marginalImpulseOnly_sum = 0;
+  let failBoth_n = 0;
+  let failBoth_sum = 0;
+  let impulseReplaySkippedNoPair = 0;
 
   for (const [, arr] of byMintDex) {
     arr.sort((a, b) => a.entryTs - b.entryTs);
@@ -251,6 +329,28 @@ async function main(): Promise<void> {
 
       const pass15 = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_FACTUAL_NEG15, DIP_MAX_DROP_NEG50);
       const pass30 = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_STRICT_NEG30, DIP_MAX_DROP_NEG50);
+
+      let impulsePgOk = false;
+      if (c.pairAddress) {
+        const pairSnaps = await fetchLastTwoPairSnapshotsBefore(c.mint, c.dex, c.pairAddress, c.entryTs);
+        impulsePgOk = pairSnaps ? impulsePgSnapTriggerOkReplay(c.entryTs, pairSnaps) : false;
+      } else {
+        impulseReplaySkippedNoPair++;
+      }
+
+      const permitHypotheticalBypass = pass30.pass || impulsePgOk;
+      if (permitHypotheticalBypass) {
+        permitClassicalOrImpulse_n++;
+        permitClassicalOrImpulse_sum += c.netPnlUsd;
+      }
+      if (!pass30.pass && impulsePgOk) {
+        marginalImpulseOnly_n++;
+        marginalImpulseOnly_sum += c.netPnlUsd;
+      }
+      if (!pass30.pass && !impulsePgOk) {
+        failBoth_n++;
+        failBoth_sum += c.netPnlUsd;
+      }
 
       if (pass15.pass) {
         scenA.sumNet += c.netPnlUsd;
@@ -320,9 +420,26 @@ async function main(): Promise<void> {
           deltaSumNetPnlUsd_classicalSubset_A_minus_B: fmt(scenA.sumNet - scenB.sumNet),
         },
 
+        scenarioC_hypothetical_ENTRY_IMPULSE_PG_BYPASS_DIP_enabled_dipMinNeg30: {
+          meaning:
+            'Если бы включили обход dip по PG-импульсу (как в dip-clones при entryImpulsePgBypassesDip): вход разрешён при классическом gate ИЛИ PG Δ; ниже только триггер двух снимков по pair, без QN/Jupiter.',
+          dipMinDropPct: DIP_MIN_STRICT_NEG30,
+          impulsePgMinDropPct: IMPULSE_PG_MIN_DROP_PCT,
+          impulsePgSnapAgeSecRange: [IMPULSE_PG_MAX_AGE_SEC_MIN, IMPULSE_PG_MAX_AGE_SEC_MAX],
+          classicalOnly_passCount: scenB.nPass,
+          classicalOnly_sumNetPnlUsd: fmt(scenB.sumNet),
+          permit_classical_OR_impulsePgSnap_passCount: permitClassicalOrImpulse_n,
+          permit_classical_OR_impulsePgSnap_sumNetPnlUsd: fmt(permitClassicalOrImpulse_sum),
+          extraTradesVsClassicalOnly_fromImpulsePgSnap: marginalImpulseOnly_n,
+          extraSumNetPnlUsd_marginalImpulseOnly: fmt(marginalImpulseOnly_sum),
+          tradesFailClassicalAndFailImpulsePgReplay_count: failBoth_n,
+          tradesFailClassicalAndFailImpulsePgReplay_sumNetPnlUsd_observed: fmt(failBoth_sum),
+          closesMissingPairAddress_impulseSkipped: impulseReplaySkippedNoPair,
+        },
+
         closesWithoutUsableSnapshots: noSnap,
         notes: [
-          'Naive backtest: суммируется исторический net сделок, прошедших gate; без симуляции impulse_pg_snap.',
+          'Naive backtest: суммируется исторический net сделок, прошедших gate; scenario C — только PG-часть impulse, без QN/Jupiter.',
           'Если closesEvaluatedWithSnapshots < closesInJournal — часть строк не попала в расчёт из‑за отсутствия PG ряда.',
         ],
       },
