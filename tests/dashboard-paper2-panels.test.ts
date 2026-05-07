@@ -50,25 +50,27 @@ function row(id: string, total: number): DashboardPaper2StrategyRow {
 }
 
 describe('mergeDashboardStrategyPanels', () => {
-  it('orders Live → Oscar → Oscar regime → Deep Runner → Dno regardless of input PnL order', () => {
+  it('orders Live → Paper Oscar V2.1 → Oscar → Oscar regime → Deep Runner → Dno regardless of input PnL order', () => {
     const merged = mergeDashboardStrategyPanels([
       row('pt1-diprunner', 300),
       row('live-oscar', 50),
+      row('paper-oscar-v21', 42),
       row('pt1-oscar', 200),
       row('pt1-oscar-regime', 77),
       row('pt1-dno', 100),
     ]);
     expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
     expect(merged[0]!.totalPnlUsd).toBe(50);
-    expect(merged[1]!.totalPnlUsd).toBe(200);
-    expect(merged[2]!.totalPnlUsd).toBe(77);
-    expect(merged[3]!.totalPnlUsd).toBe(300);
-    expect(merged[4]!.totalPnlUsd).toBe(100);
+    expect(merged[1]!.totalPnlUsd).toBe(42);
+    expect(merged[2]!.totalPnlUsd).toBe(200);
+    expect(merged[3]!.totalPnlUsd).toBe(77);
+    expect(merged[4]!.totalPnlUsd).toBe(300);
+    expect(merged[5]!.totalPnlUsd).toBe(100);
   });
 
   it('fills missing strategies with empty placeholders', () => {
     const merged = mergeDashboardStrategyPanels([row('live-oscar', 1)]);
-    expect(merged.length).toBe(5);
+    expect(merged.length).toBe(6);
     expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
     expect(merged[1]!.openCount).toBe(0);
   });

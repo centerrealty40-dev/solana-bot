@@ -56,6 +56,8 @@ import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
+import { PAPER_OSCAR_V21_STRATEGY_ID } from './paper-oscar-v21.js';
+import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -512,7 +514,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         ot.tokenDecimals = tokenDecimals;
 
         await resolveTpRegimeForOpen(cfg, ot);
-        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'A';
+        if (cfg.liveExitModeAbEnabled && cfg.strategyId !== PAPER_OSCAR_V21_STRATEGY_ID) {
+          ot.liveExitProfileMode = 'A';
+        }
 
         const liveOscar = resolveLiveOscar();
         if (liveOscar?.liveCfg.liveMintWhitelistEnabled) {
@@ -617,6 +621,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ? { liveExitProfileMode: ot.liveExitProfileMode }
               : {}),
           });
+          if (cfg.strategyId === PAPER_OSCAR_V21_STRATEGY_ID) {
+            const si = readPaperOscarScaleInEnv();
+            if (si.enabled && cfg.entryFirstLegFraction < 1 - 1e-9) {
+              const secondUsd = cfg.positionUsd * (1 - cfg.entryFirstLegFraction);
+              if (secondUsd > 1e-6) {
+                ot.livePendingScaleIn = {
+                  anchorMarketUsd: ot.legs[0]?.marketPrice ?? snapshotEntryPriceUsd,
+                  secondLegUsd: secondUsd,
+                  executeAfterTs: Date.now() + si.delayMs,
+                  corridorUpPct: si.corridorUpPct,
+                  corridorDownPct: si.corridorDownPct,
+                  maxSwapAttempts: si.maxSwapAttempts,
+                  swapAttempts: 0,
+                  nextAttemptAfterTs: 0,
+                };
+              }
+            }
+          }
         }
 
         open.set(ot.mint, ot);

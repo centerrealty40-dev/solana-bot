@@ -44,6 +44,8 @@ import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
+import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
+import { PAPER_OSCAR_V21_STRATEGY_ID } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
@@ -60,6 +62,22 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
   if (ot.partialSells.length > 0) return true;
   return ot.legs.some((l) => l.reason === 'dca');
+}
+
+/** Paper Oscar V2.1 — до триггера ± или пока ждём вторую ногу: без TP/kill/trail (таймаут и liq — как обычно). */
+function paperOscarV21ExitMute(ot: OpenTrade): boolean {
+  if (ot.livePendingScaleIn) return true;
+  const complete = ot.legs.some((l) => l.reason === 'scale_in');
+  if (complete && !ot.liveExitProfileMode) return true;
+  return false;
+}
+
+function paperOscarV21NeutralFull(ot: OpenTrade): boolean {
+  return (
+    ot.legs.some((l) => l.reason === 'scale_in') &&
+    !ot.livePendingScaleIn &&
+    !ot.liveExitProfileMode
+  );
 }
 
 function scheduleTailAfterLiveClose(
@@ -1140,7 +1158,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   for (const mint of mints) {
     const ot = open.get(mint);
     if (!ot) continue;
-    const effCfg = cfgEffectiveForOpen(cfg, ot);
+    let effCfg = cfgEffectiveForOpen(cfg, ot);
 
     let snapPx = 0;
     try {
@@ -1543,11 +1561,119 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     const firstPrice = ot.legs[0]?.price || ot.entryMcUsd;
     const dropFromFirstPct = curMetric / firstPrice - 1;
-    const xAvg = curMetric / ot.avgEntry;
-    const pnlPctVsAvg = (xAvg - 1) * 100;
-    const tgEff = tpGridEffective(ot, effCfg);
+    let xAvg = curMetric / ot.avgEntry;
+    let pnlPctVsAvg = (xAvg - 1) * 100;
 
-    if (curMetric > ot.peakMcUsd) {
+    const isV21 = cfg.strategyId === PAPER_OSCAR_V21_STRATEGY_ID;
+    if (isV21 && paperOscarV21NeutralFull(ot)) {
+      const pnlFracPre = xAvg - 1;
+      if (pnlFracPre <= -0.04 + LADDER_PNL_EPS) {
+        const addUsd = cfg.positionUsd * 0.2;
+        const marketBuy = curMetric;
+        const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+        ot.legs.push({
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          reason: 'dca',
+          triggerPct: -0.04,
+        });
+        ot.totalInvestedUsd += addUsd;
+        const numB = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+        ot.avgEntry = numB / ot.totalInvestedUsd;
+        const numMB = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+        ot.avgEntryMarket = numMB / ot.totalInvestedUsd;
+        ot.remainingFraction = 1;
+        ot.liveExitProfileMode = 'B';
+        effCfg = cfgEffectiveForOpen(cfg, ot);
+        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
+        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
+        const mcUsdLiveV21b = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+        );
+        const pfV21b = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        journalAppend({
+          kind: 'paper_oscar_v21_arm',
+          mint,
+          ts: Date.now(),
+          mode: 'B',
+          marketPrice: curMetric,
+          pnlFracToAvg: +pnlFracPre.toFixed(6),
+          avgEntry: ot.avgEntry,
+        });
+        journalAppend({
+          kind: 'dca_add',
+          mint,
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          dcaStepIndex: 0,
+          dcaLevelsTotal: 1,
+          triggerPct: -0.04,
+          avgEntry: ot.avgEntry,
+          avgEntryMarket: ot.avgEntryMarket,
+          totalInvestedUsd: ot.totalInvestedUsd,
+          legCount: ot.legs.length,
+          mcUsdLive: mcUsdLiveV21b,
+          priorityFee: pfV21b,
+          timelineLabelRu: 'Paper Oscar V2.1 · режим B (−4% к avg) · докуп 20% нотионала',
+          liveExitProfileMode: 'B',
+        });
+        console.log(
+          `[PAPER_V21_B] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} avgEff=${ot.avgEntry.toFixed(8)}`,
+        );
+      } else if (pnlFracPre >= 0.05 - LADDER_PNL_EPS) {
+        ot.liveExitProfileMode = 'A';
+        effCfg = cfgEffectiveForOpen(cfg, ot);
+        journalAppend({
+          kind: 'paper_oscar_v21_arm',
+          mint,
+          ts: Date.now(),
+          mode: 'A',
+          marketPrice: curMetric,
+          pnlFracToAvg: +pnlFracPre.toFixed(6),
+          avgEntry: ot.avgEntry,
+        });
+        const tgA = tpGridEffective(ot, effCfg);
+        const rArm = await tryExecuteTpPartialSell({
+          mint,
+          ot,
+          cfg: effCfg,
+          curMetric,
+          sellFraction: Math.min(1, tgA.sellFraction),
+          ladderStepIndex: 0,
+          ladderRungsTotal: 0,
+          ladderPnlPct: 0.05,
+          tpGrid: true,
+          journalAppend,
+          journalLiveStrategy,
+          livePhase4,
+          liveOscarCfg,
+          stats,
+          markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, 0.05),
+          logLabelPct: 'TPgrid+5%',
+        });
+        if (rArm !== 'abort_mint') {
+          effCfg = cfgEffectiveForOpen(cfg, ot);
+        }
+        console.log(`[PAPER_V21_A] ${mint.slice(0, 8)} $${ot.symbol} arm=${rArm}`);
+      }
+    }
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+
+    const v21Mute = isV21 && paperOscarV21ExitMute(ot);
+    const tgEff = tpGridEffective(ot, effCfg);
+    const killEff = dcaKillstopEffective(ot, effCfg);
+
+    if (!(isV21 && v21Mute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
@@ -1566,8 +1692,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    const killEff = dcaKillstopEffective(ot, effCfg);
     const mayDca =
+      !(isV21 && v21Mute) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0;
@@ -1652,7 +1778,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
+    if (!(isV21 && v21Mute) && tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
       const sellFrac = Math.min(1, tgEff.sellFraction);
@@ -1691,7 +1817,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (tpLadder.length > 0 && ot.remainingFraction > 0) {
+    if (!(isV21 && v21Mute) && tpLadder.length > 0 && ot.remainingFraction > 0) {
       for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
         const lvl = tpLadder[stepIdx]!;
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
@@ -1744,28 +1870,41 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       });
     }
 
-    let exitReason: ExitReason | null = null;
-    if (killEff < 0 && pnlPctVsAvg / 100 <= killEff) exitReason = 'KILLSTOP';
-    else if (xAvg >= effCfg.tpX) exitReason = 'TP';
-    else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
-    else if (
-      effCfg.trailMode === 'ladder_retrace' &&
-      ladderRetraceTriggered(
+    if (!livePhase4 && isV21 && ot.livePendingScaleIn && ot.partialSells.length === 0) {
+      await tryPaperOnlyScaleInTrackerStep({
+        cfg,
         ot,
-        tpLadder,
-        xAvg,
-        tgEff.stepPnl > 0 ? 'grid' : 'discrete',
-        tgEff.firstRungRetraceMinPnlPct,
+        mint,
+        curMetric,
+        journalAppend,
+        verifyStillOpen: () => open.has(mint),
+      });
+    }
+
+    let exitReason: ExitReason | null = null;
+    if (!(isV21 && v21Mute)) {
+      if (killEff < 0 && pnlPctVsAvg / 100 <= killEff) exitReason = 'KILLSTOP';
+      else if (xAvg >= effCfg.tpX) exitReason = 'TP';
+      else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
+      else if (
+        effCfg.trailMode === 'ladder_retrace' &&
+        ladderRetraceTriggered(
+          ot,
+          tpLadder,
+          xAvg,
+          tgEff.stepPnl > 0 ? 'grid' : 'discrete',
+          tgEff.firstRungRetraceMinPnlPct,
+        )
       )
-    )
-      exitReason = 'TRAIL';
-    else if (
-      effCfg.trailMode === 'peak' &&
-      ot.trailingArmed &&
-      curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
-    )
-      exitReason = 'TRAIL';
-    else if (ageH >= effCfg.timeoutHours && !timeoutSuppressedByProgress(ot)) exitReason = 'TIMEOUT';
+        exitReason = 'TRAIL';
+      else if (
+        effCfg.trailMode === 'peak' &&
+        ot.trailingArmed &&
+        curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
+      )
+        exitReason = 'TRAIL';
+    }
+    if (!exitReason && ageH >= effCfg.timeoutHours && !timeoutSuppressedByProgress(ot)) exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
     if (exitReason) {

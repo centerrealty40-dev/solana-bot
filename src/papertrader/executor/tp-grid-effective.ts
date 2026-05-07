@@ -1,5 +1,6 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
+import { PAPER_OSCAR_V21_STRATEGY_ID } from '../paper-oscar-v21.js';
 
 /**
  * Per-open overrides for TP grid (regime fork). When `tpGridOverrides` is absent, uses global `cfg`.
@@ -16,13 +17,19 @@ export function tpGridEffective(
   const o = ot.tpGridOverrides;
   /** Режим B live — параметры сетки только из cfg (effCfg), без legacy tp-regime overrides на открытии. */
   const ignoreOverrides = cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B';
+  const paperV21UnlimitedB =
+    cfg.strategyId === PAPER_OSCAR_V21_STRATEGY_ID && ot.liveExitProfileMode === 'B';
   return {
     stepPnl: ignoreOverrides ? cfg.tpGridStepPnl : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
     sellFraction: Math.min(
       1,
       ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
     ),
-    maxRungs: ignoreOverrides ? cfg.tpGridMaxRungs : (o?.gridMaxRungs ?? cfg.tpGridMaxRungs),
+    maxRungs: paperV21UnlimitedB
+      ? undefined
+      : ignoreOverrides
+        ? cfg.tpGridMaxRungs
+        : (o?.gridMaxRungs ?? cfg.tpGridMaxRungs),
     firstRungRetraceMinPnlPct: ignoreOverrides
       ? cfg.tpGridFirstRungRetraceMinPnlPct
       : (o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct),

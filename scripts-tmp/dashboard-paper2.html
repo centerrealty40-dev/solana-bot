@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PaperTrader · 5 strategies</title>
+  <title>PaperTrader · strategies</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
@@ -42,7 +42,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      <1024px — одна колонка; ≥1024px — ровно 5 колонок в один ряд (minmax(0,1fr) снимает перенос из-за min-content).
+      <1024px — одна колонка; ≥1024px — ровно 6 колонок в один ряд (minmax(0,1fr) снимает перенос из-за min-content).
     */
     .dash-desktop-five-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-five-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 1.5rem;
       }
     }
@@ -92,7 +92,7 @@
   <main class="w-full max-w-none mx-auto px-3 sm:px-6 lg:px-10 py-6 space-y-7">
     <header class="flex flex-col gap-3 lg:gap-2">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
-        <h1 class="text-3xl font-black tracking-tight text-white shrink-0">PaperTrader · 5 strategies</h1>
+        <h1 class="text-3xl font-black tracking-tight text-white shrink-0">PaperTrader · dashboard</h1>
 
         <!-- BTC · Wallet SOL (RPC) · SOL spot — центр шапки -->
         <div class="ticker-strip flex flex-wrap gap-2 sm:gap-2.5 justify-center lg:flex-1 lg:justify-center min-w-0">
@@ -171,7 +171,7 @@
       </div>
     </section>
 
-    <!-- Strategy tiles: порядок с сервера (DASHBOARD_PANEL_ORDER); на десктопе всегда 5 в ряд — см. .dash-desktop-five-cols -->
+    <!-- Strategy tiles: порядок с сервера (DASHBOARD_PANEL_ORDER); на десктопе 6 в ряд — см. .dash-desktop-five-cols -->
     <section class="dash-desktop-five-cols">
       <template x-for="s in (state.strategies || [])" :key="s.strategyId">
         <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition select-none min-w-0"
@@ -235,7 +235,7 @@
           </div>
         </div>
       </template>
-      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 col-span-full lg:col-span-5">
+      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 col-span-full lg:col-span-6">
         No strategies yet — collectors warming up.
       </div>
     </section>
@@ -460,6 +460,14 @@
 
   <script>
     const STRATEGY_META = {
+      'paper-oscar-v21': {
+        label: 'Paper Oscar V2.1',
+        tag: 'paper',
+        oneLiner:
+          'Тот же discovery/данные, что у Live Oscar; выходы по IDEALIZED V2.1: нейтральная фаза после двух ног; режим A только после +5% к avg; режим B только после −4% (+ докуп 20% notional); kill B −8%; сетка B без лимита ступеней.',
+        details:
+          'SSOT поведения: `docs/strategy/specs/IDEALIZED_OSCAR_STACK_SPEC_V2.md` v2.1.\nЖурнал: `data/paper2/paper-oscar-v21.jsonl`.\nPM2: `paper-oscar-v21` (`npm run paper-oscar-v21`).\nLive-oscar и его трекер не меняются — отдельная ветка `paper-oscar-v21` в `tracker.ts` / `paper-entry-scale-in.ts`.',
+      },
       'live-oscar': {
         label: 'Live Oscar',
         tag: 'live',
@@ -742,6 +750,7 @@
         timelineColor(ev) {
           if (!ev) return 'text-slate-300';
           if (ev.kind === 'open') return 'text-amber-300';
+          if (ev.kind === 'strategy_note') return 'text-fuchsia-300';
           if (ev.kind === 'dca_add') return 'text-violet-300';
           if (ev.kind === 'scale_in_add') return 'text-sky-300';
           if (ev.kind === 'scale_in_skip') return 'text-amber-200';
