@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.149] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.149`.
+
+- **Telegram — `[ALERT][quicknode-balance]` восстановлен:** в **`ecosystem.config.cjs`** для **`live-oscar-dashboard`** включены **`QUICKNODE_HOURLY_REMAINING_TELEGRAM=1`** и **`QUICKNODE_HOURLY_RECENT_MINUTES_LIST=10,30,60`**. Раз в час уходит сообщение в требуемом формате (биллинг-период + скользящие окна 10m/30m/60m). Источник — QuickNode Admin API (`fetchQuickNodeBillingPeriodSummary` + `fetchQuickNodeRpcUsageWindow`).
+- **Telegram — `[REPORT|ALERT][jupiter-shadow]` (новый канал):** добавлен **`scripts-tmp/jupiter-shadow-hourly.mjs`** + cron-установщик **`scripts/cron/install-jupiter-shadow-hourly-cron-salpha.sh`** (`0 * * * *` UTC). Раз в час шлёт сводку по фоновой нагрузке на Jupiter lite-api (`signal-lab.jsonl` + `mtm-shadow.jsonl`): количество событий, ошибок, медианы wallMs / bps. ALERT при `errors / total ≥ JUPITER_SHADOW_HOURLY_ALERT_RATIO` (default 0.2, минимум `JUPITER_SHADOW_HOURLY_MIN_EVENTS=5`); иначе REPORT. Можно форсировать ALERT через `JUPITER_SHADOW_HOURLY_FORCE_ALERT=1`.
+- **Откат хламов прошлой попытки:** убран мой временный cron `hourly-telegram-report.mjs` под `salpha` и сопутствующие флаги **`TELEGRAM_HOURLY_REPORT_ENABLED`** / **`HOURLY_APPEND_QN_LEDGER`** в **`/opt/solana-alpha/.env`** (оставались как мусор после неверной интерпретации запроса).
+- **Документация:** обновлены **`deploy/RUNTIME.md`** (новая строка cron для `jupiter-shadow-hourly`) и **`.env.example`** (флаги QuickNode hourly + Jupiter hourly).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.148`**, в **`ecosystem.config.cjs`** вернуть **`QUICKNODE_HOURLY_REMAINING_TELEGRAM='0'`** и убрать **`QUICKNODE_HOURLY_RECENT_MINUTES_LIST`**, **`pm2 reload live-oscar-dashboard --update-env`**. Под `salpha` убрать cron-блок **`# JUPITER_SHADOW_HOURLY_BEGIN`…`END`** через `crontab -e`.
+
+---
+
 ## [1.11.148] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.148`.

@@ -24,9 +24,14 @@ module.exports = {
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         /** Только колонка Live Oscar на `/papertrader2` (без пустых pt1-плиток). */
         DASHBOARD_PAPER2_LIVE_OSCAR_ONLY: '1',
-        /** QuickNode Admin API → Telegram: выкл. (`quicknode-balance`, `quicknode-usage`, milestones). */
+        /**
+         * QuickNode Admin API → Telegram:
+         * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — раз в час `[ALERT][quicknode-balance]` со скользящими окнами 10m/30m/60m.
+         * - `QUICKNODE_USAGE_TELEGRAM` (общая дневная сводка) и milestones — выкл., чтобы не шумели.
+         */
         QUICKNODE_USAGE_TELEGRAM: '0',
-        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '0',
+        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '1',
+        QUICKNODE_HOURLY_RECENT_MINUTES_LIST: '10,30,60',
         QUICKNODE_BILLING_MILESTONES: '0',
       },
     },
