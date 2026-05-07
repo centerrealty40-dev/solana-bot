@@ -267,8 +267,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 48 ч / 2 дня (паритет всех prod стратегий); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '2880',
+        /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '200000',
         PAPER_POST_MIN_VOL_5M_USD: '20000',
@@ -536,7 +536,7 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '2880',
+        PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         /** Ослабление входа — как paper-oscar-v22 (остальные `PAPER_*` как у live-oscar в ecosystem). */
         PAPER_POST_MIN_LIQ_USD: '100000',
@@ -698,7 +698,7 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '2880',
+        PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '200000',
         PAPER_POST_MIN_VOL_5M_USD: '20000',
@@ -861,7 +861,7 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '2880',
+        PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '100000',
         PAPER_POST_MIN_VOL_5M_USD: '10000',
