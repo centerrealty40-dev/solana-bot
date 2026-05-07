@@ -46,22 +46,20 @@ export interface DiscoveryTickResult {
 
 export const evaluatedAtMap = new Map<string, number>();
 export const lastEntryTsByMintMap = new Map<string, number>();
-/** Последний **убыточный** exitTs по mint (ms) для loss-exit cooldown (минуты и/или часы). */
-export const lastLossExitTsByMintMap = new Map<string, number>();
+/** Последний `exitTs` полного закрытия по mint (ms) — пауза перед повторным входом в тот же mint. */
+export const lastPostExitBuyCooldownTsByMintMap = new Map<string, number>();
 
-export function recordLossExitIfApplicable(
+export function recordPostExitBuyCooldownIfApplicable(
   cfg: PaperTraderConfig,
   mint: string,
   exitTsMs: number,
-  netPnlUsd: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
   const m = cfg.dipLossExitCooldownMinutes;
   if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
-  if (!(netPnlUsd < 0)) return;
   if (!(exitTsMs > 0)) return;
-  const prev = lastLossExitTsByMintMap.get(mint) ?? 0;
-  if (exitTsMs >= prev) lastLossExitTsByMintMap.set(mint, exitTsMs);
+  const prev = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (exitTsMs >= prev) lastPostExitBuyCooldownTsByMintMap.set(mint, exitTsMs);
 }
 
 function shouldEvaluate(mint: string, reevalAfterSec: number): boolean {
@@ -226,20 +224,20 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (cfg.dipLossExitCooldownEnabled) {
       const lossMin = cfg.dipLossExitCooldownMinutes;
       const lossH = cfg.dipLossExitCooldownHours;
-      const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
-      if (lastLossExit > 0) {
+      const lastExit = lastPostExitBuyCooldownTsByMintMap.get(row.mint) ?? 0;
+      if (lastExit > 0) {
         let resumeAt = 0;
         let label = '';
         if (Number(lossMin) > 0) {
-          resumeAt = lastLossExit + lossMin * 60_000;
+          resumeAt = lastExit + lossMin * 60_000;
           label = `${lossMin}m`;
         } else if (Number(lossH) > 0) {
-          resumeAt = lastLossExit + lossH * 3_600_000;
+          resumeAt = lastExit + lossH * 3_600_000;
           label = `${lossH}h`;
         }
         if (resumeAt > 0 && Date.now() < resumeAt) {
           const leftMin = (resumeAt - Date.now()) / 60_000;
-          cooldownReasons.push(`loss_exit_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+          cooldownReasons.push(`post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
         }
       }
     }

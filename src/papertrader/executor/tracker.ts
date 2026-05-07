@@ -1,6 +1,6 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
-import { recordLossExitIfApplicable } from '../discovery/dip-clones.js';
+import { recordPostExitBuyCooldownIfApplicable } from '../discovery/dip-clones.js';
 import type {
   ClosedTrade,
   DexSource,
@@ -812,7 +812,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
   const pxOrphan =
     ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 1e-12;
   scheduleTailAfterLiveClose(liveOscarCfg, mint, ot.symbol, ot.tokenDecimals ?? 6, pxOrphan, ot.source);
@@ -931,7 +931,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1067,7 +1067,7 @@ export async function trackerForceFullExitLive(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1451,7 +1451,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+        recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
         scheduleTailAfterLiveClose(
           liveOscarCfg,
           mint,
@@ -1534,7 +1534,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+        recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
       }
@@ -1897,7 +1897,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         closedTrade: serializeClosedTrade(ct),
       });
-      recordLossExitIfApplicable(cfg, mint, ct.exitTs, ct.netPnlUsd);
+      recordPostExitBuyCooldownIfApplicable(cfg, mint, ct.exitTs);
       scheduleTailAfterLiveClose(
         liveOscarCfg,
         mint,

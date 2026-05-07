@@ -22,7 +22,7 @@ import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impuls
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
-  lastLossExitTsByMintMap,
+  lastPostExitBuyCooldownTsByMintMap,
   recordEntryTs,
   runDipDiscovery,
 } from './discovery/dip-clones.js';
@@ -149,13 +149,22 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     ? {
         evaluatedAt: new Map<string, number>(),
         lastEntryTsByMint: new Map<string, number>(),
-        lastLossExitTsByMint: new Map<string, number>(),
+        lastPostExitBuyCooldownTsByMint: new Map<string, number>(),
         open: new Map<string, OpenTrade>(),
       }
     : loadStore(cfg.storePath);
   for (const [mint, ts] of restored.evaluatedAt) evaluatedAtMap.set(mint, ts);
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
-  for (const [mint, ts] of restored.lastLossExitTsByMint) lastLossExitTsByMintMap.set(mint, ts);
+  for (const [mint, ts] of restored.lastPostExitBuyCooldownTsByMint) {
+    lastPostExitBuyCooldownTsByMintMap.set(mint, ts);
+  }
+  if (opts?.skipPaperJsonlStore && opts.liveStrategyReplay?.closed?.length) {
+    for (const ct of opts.liveStrategyReplay.closed) {
+      if (!(ct.exitTs > 0)) continue;
+      const prev = lastPostExitBuyCooldownTsByMintMap.get(ct.mint) ?? 0;
+      if (ct.exitTs >= prev) lastPostExitBuyCooldownTsByMintMap.set(ct.mint, ct.exitTs);
+    }
+  }
   const open: Map<string, OpenTrade> =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
   for (const ot of open.values()) {

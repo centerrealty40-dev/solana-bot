@@ -284,7 +284,7 @@ module.exports = {
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** После убыточного закрытия по mint — пауза повторного входа (минуты имеют приоритет над часами). */
+        /** После **любого** полного закрытия по mint — 30m пауза повторного входа (имена env исторически `LOSS_`). */
         PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '30',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',

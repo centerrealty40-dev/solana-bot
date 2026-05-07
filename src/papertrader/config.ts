@@ -143,12 +143,12 @@ const ConfigSchema = z.object({
   dipMinAgeMin: z.coerce.number().nonnegative().default(25),
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
-  /** После убыточного закрытия — пауза повторного входа на тот же mint (часы). 0 = выкл., если заданы минуты. */
+  /** После **любого** полного закрытия позиции по mint — пауза повторного входа в тот же mint (часы). 0 = выкл., если заданы минуты. */
   dipLossExitCooldownHours: z.coerce.number().nonnegative().default(0),
-  /** После убыточного закрытия — пауза (минуты). Если > 0, имеет приоритет над часами. 0 = использовать только часы. */
+  /** То же, в минутах (приоритет над часами при > 0). Env historically `PAPER_DIP_LOSS_EXIT_COOLDOWN_*`. */
   dipLossExitCooldownMinutes: z.coerce.number().nonnegative().default(0),
   /**
-   * Master switch for loss-exit cooldown (temporary ops). When false, `dipLossExitCooldownHours` is ignored.
+   * Включает паузу после полного выхода по mint (profit или loss). When false, минуты/часы не применяются.
    * Env: `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED` (default true).
    */
   dipLossExitCooldownEnabled: z.boolean().default(true),

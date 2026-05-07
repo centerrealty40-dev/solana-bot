@@ -9,7 +9,7 @@ import { resolveHolderCount } from '../holders/holders-resolve.js';
 import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
-  lastLossExitTsByMintMap,
+  lastPostExitBuyCooldownTsByMintMap,
   type DiscoveryTickResult,
   type EvalDecision,
   type HoldersDecisionMeta,
@@ -225,20 +225,20 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     if (cfg.dipLossExitCooldownEnabled) {
       const lossMin = cfg.dipLossExitCooldownMinutes;
       const lossH = cfg.dipLossExitCooldownHours;
-      const lastLossExit = lastLossExitTsByMintMap.get(row.mint) ?? 0;
-      if (lastLossExit > 0) {
+      const lastExit = lastPostExitBuyCooldownTsByMintMap.get(row.mint) ?? 0;
+      if (lastExit > 0) {
         let resumeAt = 0;
         let label = '';
         if (Number(lossMin) > 0) {
-          resumeAt = lastLossExit + lossMin * 60_000;
+          resumeAt = lastExit + lossMin * 60_000;
           label = `${lossMin}m`;
         } else if (Number(lossH) > 0) {
-          resumeAt = lastLossExit + lossH * 3_600_000;
+          resumeAt = lastExit + lossH * 3_600_000;
           label = `${lossH}h`;
         }
         if (resumeAt > 0 && Date.now() < resumeAt) {
           const leftMin = (resumeAt - Date.now()) / 60_000;
-          cooldownReasons.push(`loss_exit_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+          cooldownReasons.push(`post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
         }
       }
     }

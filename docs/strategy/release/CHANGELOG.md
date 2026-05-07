@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.150] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.150`.
+
+- **Post-exit buy cooldown (все исходы):** `PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES` / `HOURS` теперь отсчитываются от **любого** полного закрытия по mint (TP/SL/trail/…), не только убытка. Реализация: `recordPostExitBuyCooldownIfApplicable`, карта `lastPostExitBuyCooldownTsByMintMap`, причина в eval — `post_exit_buy_cooldown_*`. Восстановление из paper JSONL: `loadStore` → `lastPostExitBuyCooldownTsByMint`. Live-oscar: при старте из replay journal сидим cooldown из `liveStrategyReplay.closed` (макс. `exitTs` на mint), чтобы PM2-restart не «забывал» свежую продажу.
+- **Env (имена прежние):** `PAPER_DIP_LOSS_EXIT_COOLDOWN_*` — семантика расширена; в **`ecosystem` (`live-oscar`)** по-прежнему **30** минут.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.149`**, **`pm2 reload live-oscar --update-env`**.
+
+---
+
 ## [1.11.149] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.149`.
