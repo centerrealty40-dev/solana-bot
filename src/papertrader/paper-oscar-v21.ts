@@ -17,3 +17,8 @@ export function usesPaperOscarSecondLegScaleIn(strategyId: string): boolean {
     strategyId === PAPER_OSCAR_RISKY_STRATEGY_ID
   );
 }
+
+/** Все бумажные Oscar процессов дашборда (`paper-oscar-*`) — без live mint whitelist (остаётся у `live-oscar`). */
+export function isPaperOscarFamilyStrategyId(strategyId: string): boolean {
+  return strategyId.startsWith('paper-oscar');
+}

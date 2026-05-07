@@ -58,6 +58,7 @@ import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
 import {
   isPaperOscarIdealizedStackStrategyId,
+  isPaperOscarFamilyStrategyId,
   usesPaperOscarSecondLegScaleIn,
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
@@ -522,7 +523,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         const liveOscar = resolveLiveOscar();
-        if (liveOscar?.liveCfg.liveMintWhitelistEnabled) {
+        if (
+          liveOscar?.liveCfg.liveMintWhitelistEnabled &&
+          !isPaperOscarFamilyStrategyId(cfg.strategyId)
+        ) {
           if (!isMintOnLiveWhitelist(liveOscar.liveCfg.liveMintWhitelistPath, ot.mint)) {
             stats.skippedLiveMintWhitelist += 1;
             journalAppend({
