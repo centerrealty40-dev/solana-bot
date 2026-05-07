@@ -60,6 +60,9 @@ const DASHBOARD_PAPER_OSCAR_RISKY_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_RISKY_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-risky.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
+/** Base Alpha — paper bots placeholder + DB analytics (reads optional BASE_ALPHA_DATABASE_URL). */
+const HTML_BASE_PATH = path.join(__dirname, 'dashboard-base.html');
+const HTML_BASE_ANALYTICS_PATH = path.join(__dirname, 'dashboard-base-analytics.html');
 /** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
 const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
@@ -87,6 +90,21 @@ function pgPool(): ReturnType<typeof postgres> {
     pgSql = postgres(url, { max: 2, idle_timeout: 20 });
   }
   return pgSql;
+}
+
+/** Optional second Postgres: Base Alpha product DB (same VPS, usually port 5433). Used only by /api/base-alpha/stats. */
+let baseAlphaPgSql: ReturnType<typeof postgres> | null = null;
+function baseAlphaDatabaseUrl(): string | null {
+  const u = (process.env.BASE_ALPHA_DATABASE_URL || process.env.BALPHA_DATABASE_URL || '').trim();
+  return u || null;
+}
+function baseAlphaPgPool(): ReturnType<typeof postgres> | null {
+  const url = baseAlphaDatabaseUrl();
+  if (!url) return null;
+  if (!baseAlphaPgSql) {
+    baseAlphaPgSql = postgres(url, { max: 2, idle_timeout: 20 });
+  }
+  return baseAlphaPgSql;
 }
 
 interface OpenTrade {
@@ -2171,17 +2189,35 @@ function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | nul
  */
 function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>): Record<string, unknown> {
   if (String(ct.exitReason ?? '') !== 'PERIODIC_HEAL') return ct;
-  const avgEntry = Number(ct.avgEntry ?? 0);
-  const invested = Number(ct.totalInvestedUsd ?? 0);
+  let avgEntry = Number(ct.avgEntry ?? 0);
+  if (!(avgEntry > 0 && Number.isFinite(avgEntry))) {
+    avgEntry = Number(ct.avgEntryMarket ?? 0);
+  }
+  let invested = Number(ct.totalInvestedUsd ?? 0);
+  if (!(invested > 0)) {
+    const legs = Array.isArray(ct.legs) ? (ct.legs as Record<string, unknown>[]) : [];
+    invested = legs.reduce((s, x) => s + Number(x.sizeUsd ?? x.size_usd ?? 0), 0);
+  }
+  /** Pump-мемы: цена токена USD; верхняя планка защищает от случайного mc в поле avg. */
   if (!(avgEntry > 0 && avgEntry < 500 && invested > 0)) return ct;
 
-  const exitPx = Number(ct.theoretical_exit_price ?? ct.effective_exit_price ?? 0);
-  const ratio = exitPx > 0 ? exitPx / avgEntry : 0;
+  const theoPx = Number(ct.theoretical_exit_price ?? 0);
+  const effPx = Number(ct.effective_exit_price ?? 0);
+  const exitMcRaw = Number(ct.exitMcUsd ?? 0);
   const pnlPct = Number(ct.pnlPct ?? 0);
   const net = Number(ct.netPnlUsd ?? 0);
+
+  /** В багованном heal «theoretical» = market cap; «effective» иногда уже поправлен с цепи. */
+  const absurdSpotPx = (px: number): boolean =>
+    avgEntry > 0 &&
+    px > 0 &&
+    Number.isFinite(px) &&
+    (px / avgEntry > 200 || (px > 25_000 && avgEntry < 50));
+
   const corrupt =
-    (avgEntry < 1 && ratio > 150) ||
-    (exitPx > 50_000 && avgEntry < 10) ||
+    absurdSpotPx(theoPx) ||
+    absurdSpotPx(effPx) ||
+    absurdSpotPx(exitMcRaw) ||
     Math.abs(pnlPct) > 400 ||
     Math.abs(net) > Math.max(5000, invested * 80);
 
@@ -2208,6 +2244,7 @@ function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>)
     out.grossPnlPct = 0;
     out.theoretical_exit_price = avgEntry;
     out.effective_exit_price = avgEntry;
+    out.exitMcUsd = avgEntry;
     out.__pnlDisplayRepair = 'periodic_heal_corrupt_no_partial_basis';
     return out;
   }
@@ -2224,6 +2261,7 @@ function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>)
   out.grossPnlPct = pnlPctRepair;
   out.theoretical_exit_price = lastPx;
   out.effective_exit_price = lastPx;
+  out.exitMcUsd = lastPx;
   out.totalProceedsUsd = totalRecv;
   out.grossTotalProceedsUsd = totalRecv;
   if (out.exitContext && typeof out.exitContext === 'object') {
@@ -2844,6 +2882,103 @@ app.get('/smart-lottery', async (_req, reply) => {
 app.get('/SmartLottery', async (_req, reply) => {
   reply.header('content-type', 'text/html; charset=utf-8');
   return fs.readFileSync(HTML_SMLOT_PATH, 'utf-8');
+});
+
+app.get('/base', async (req, reply) => {
+  recordVisit(getClientIp(req), req.headers['user-agent'] as string, req.headers['referer'] as string);
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return fs.readFileSync(HTML_BASE_PATH, 'utf-8');
+});
+
+app.get('/base-analytics', async (req, reply) => {
+  recordVisit(getClientIp(req), req.headers['user-agent'] as string, req.headers['referer'] as string);
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return fs.readFileSync(HTML_BASE_ANALYTICS_PATH, 'utf-8');
+});
+
+app.get('/api/base-alpha/stats', async (_req, reply) => {
+  reply.header('cache-control', 'no-store');
+  const sqlBa = baseAlphaPgPool();
+  if (!sqlBa) {
+    return {
+      ok: false as const,
+      error:
+        'BASE_ALPHA_DATABASE_URL (or BALPHA_DATABASE_URL) is not set. Add the Base Alpha Postgres DSN on this host (e.g. postgresql://balpha:***@127.0.0.1:5433/base_alpha).',
+    };
+  }
+  try {
+    const poolsByDex = await sqlBa<{ dex: string; n: bigint }[]>`
+      SELECT dex::text AS dex, count(*)::bigint AS n FROM pools GROUP BY dex ORDER BY dex
+    `;
+    const [snapRow] = await sqlBa<{ c: bigint }[]>`SELECT count(*)::bigint AS c FROM pool_snapshots`;
+    const [swapRow] = await sqlBa<{ c: bigint }[]>`SELECT count(*)::bigint AS c FROM swap_events`;
+    const [maxSnap] = await sqlBa<{ m: string | null }[]>`
+      SELECT max(block)::text AS m FROM pool_snapshots
+    `;
+    const [maxSwap] = await sqlBa<{ m: string | null }[]>`
+      SELECT max(block)::text AS m FROM swap_events
+    `;
+    const collectors24h = await sqlBa<{ collector: string; runs: bigint; rows_ins: bigint; credits: bigint }[]>`
+      SELECT collector,
+             count(*)::bigint AS runs,
+             coalesce(sum(rows_inserted), 0)::bigint AS rows_ins,
+             coalesce(sum(credits_used), 0)::bigint AS credits
+      FROM collector_runs
+      WHERE started_at > now() - interval '24 hours'
+      GROUP BY collector
+      ORDER BY collector
+    `;
+    const recentPools = await sqlBa<
+      { id: number; dex: string; address: string; token0: string; token1: string; created_at_block: string | null }[]
+    >`
+      SELECT id, dex::text AS dex, address, token0, token1, created_at_block::text AS created_at_block
+      FROM pools
+      ORDER BY id DESC
+      LIMIT 20
+    `;
+    const topSwapPools = await sqlBa<{ address: string; dex: string; swap_count: bigint }[]>`
+      SELECT p.address, p.dex::text AS dex, count(*)::bigint AS swap_count
+      FROM swap_events s
+      JOIN pools p ON p.id = s.pool_id
+      GROUP BY p.id, p.address, p.dex
+      ORDER BY swap_count DESC
+      LIMIT 15
+    `;
+    return {
+      ok: true as const,
+      updatedAt: Date.now(),
+      poolsByDex: poolsByDex.map((r) => ({ dex: r.dex, count: Number(r.n) })),
+      poolSnapshotsTotal: Number(snapRow?.c ?? 0),
+      swapEventsTotal: Number(swapRow?.c ?? 0),
+      maxSnapshotBlock: maxSnap?.m ?? null,
+      maxSwapBlock: maxSwap?.m ?? null,
+      collectors24h: collectors24h.map((r) => ({
+        collector: r.collector,
+        runs: Number(r.runs),
+        rowsInserted: Number(r.rows_ins),
+        creditsUsed: Number(r.credits),
+      })),
+      recentPools: recentPools.map((r) => ({
+        id: r.id,
+        dex: r.dex,
+        address: r.address,
+        token0: r.token0,
+        token1: r.token1,
+        createdAtBlock: r.created_at_block,
+      })),
+      topSwapPools: topSwapPools.map((r) => ({
+        address: r.address,
+        dex: r.dex,
+        swapCount: Number(r.swap_count),
+      })),
+    };
+  } catch (err: unknown) {
+    reply.code(503);
+    return {
+      ok: false as const,
+      error: String((err as Error)?.message ?? err),
+    };
+  }
 });
 
 app.get('/api/paper2/priority-fee', async (_req, reply) => {
