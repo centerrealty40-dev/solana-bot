@@ -52,6 +52,9 @@ const DASHBOARD_LIVE_OSCAR_JSONL =
 /** Paper Oscar IDEALIZED V2.1 — отдельный jsonl; панель рядом с live на `/papertrader2`. */
 const DASHBOARD_PAPER_OSCAR_V21_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_V21_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-v21.jsonl');
+/** Paper Oscar V2.2 — клон v2.1, более рискованные гейты входа; отдельный jsonl. */
+const DASHBOARD_PAPER_OSCAR_V22_JSONL =
+  process.env.DASHBOARD_PAPER_OSCAR_V22_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-v22.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
 /** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
@@ -59,26 +62,13 @@ const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
-/** VPS live-only: не сканировать paper2-журналы и не раздувать `/papertrader2` пустыми pt1-колонками. */
-function dashboardPaper2LiveOscarOnly(): boolean {
-  const v = (process.env.DASHBOARD_PAPER2_LIVE_OSCAR_ONLY ?? '').trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes';
-}
-
-function listPaper2StrategyJournalPaths(): string[] {
-  if (dashboardPaper2LiveOscarOnly()) return [];
-  try {
-    if (!fs.existsSync(PAPER2_DIR)) return [];
-    return fs
-      .readdirSync(PAPER2_DIR)
-      .filter((f) => f.endsWith('.jsonl'))
-      .filter((f) => f !== 'pt1-oscar-live.jsonl')
-      .filter((f) => f !== 'pt1-smart-lottery.jsonl')
-      .filter((f) => f !== 'paper-oscar-v21.jsonl')
-      .map((f) => path.join(PAPER2_DIR, f));
-  } catch {
-    return [];
-  }
+/** Журналы трёх плиток Oscar на `/papertrader2` (без сканирования каталога paper2 — нет «старых» pt1-колонок). */
+function dashboardOscarPanelJsonlFiles(): string[] {
+  const out: string[] = [];
+  if (fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_JSONL);
+  if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V21_JSONL);
+  if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V22_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V22_JSONL);
+  return out;
 }
 
 let pgSql: ReturnType<typeof postgres> | null = null;
@@ -1147,7 +1137,7 @@ app.get('/api/direct-lp/health', async (_req, reply) => {
 });
 
 // ---------------------------------------------------------
-// /api/paper2 — read every *.jsonl in PAPER2_DIR and aggregate.
+// /api/paper2 — три фиксированные плитки Oscar: live + paper V2.1 + paper V2.2 (`mergeDashboardStrategyPanels`).
 // Uses W6.3c close.netPnlUsd directly (NOT pctToUsd(pnlPct)).
 // ---------------------------------------------------------
 export type Paper2OpenItem = {
@@ -1219,16 +1209,8 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Fixed column order on `/papertrader2` — see W8.0-p4 § «Дашборд». */
-/** Фиксированные плитки на `/papertrader2` (пятая — Oscar + TP regime fork). */
-export const DASHBOARD_PANEL_ORDER = [
-  'live-oscar',
-  'paper-oscar-v21',
-  'pt1-oscar',
-  'pt1-oscar-regime',
-  'pt1-diprunner',
-  'pt1-dno',
-] as const;
+/** Три плитки Oscar на `/papertrader2`: live + paper IDEALIZED v2.1 + paper v2.2 (рискованнее вход). */
+export const DASHBOARD_PANEL_ORDER = ['live-oscar', 'paper-oscar-v21', 'paper-oscar-v22'] as const;
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -2687,7 +2669,7 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   };
 }
 
-/** Enforce fixed four columns: Live Oscar, Paper Oscar, Deep Runner, Dno. */
+/** Фиксированный порядок трёх колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
 export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[]): DashboardPaper2StrategyRow[] {
   const byId = new Map(rows.map((r) => [r.strategyId, r]));
   return DASHBOARD_PANEL_ORDER.map((id) => byId.get(id) ?? makeEmptyDashboardStrategyRow(id, '—'));
@@ -3345,13 +3327,6 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store');
-  const files = listPaper2StrategyJournalPaths();
-
-  const strategies: Array<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> = [];
-  for (const fp of files) {
-    const sid = path.basename(fp, '.jsonl');
-    strategies.push(await buildPaper2StrategyRowFromLoad(fp, sid, loadPaper2File(fp)));
-  }
 
   const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
@@ -3366,9 +3341,13 @@ app.get('/api/paper2', async (_req, reply) => {
     'paper-oscar-v21',
     paperV21Load,
   );
-  const merged = dashboardPaper2LiveOscarOnly()
-    ? mergeDashboardStrategyPanels([liveRow, paperV21Row])
-    : mergeDashboardStrategyPanels([liveRow, paperV21Row, ...strategies]);
+  const paperV22Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V22_JSONL);
+  const paperV22Row = await buildPaper2StrategyRowFromLoad(
+    DASHBOARD_PAPER_OSCAR_V22_JSONL,
+    'paper-oscar-v22',
+    paperV22Load,
+  );
+  const merged = mergeDashboardStrategyPanels([liveRow, paperV21Row, paperV22Row]);
 
   const totals = merged.reduce(
     (acc, s) => {
@@ -3397,9 +3376,8 @@ app.get('/api/paper2', async (_req, reply) => {
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
     paperOscarV21Jsonl: DASHBOARD_PAPER_OSCAR_V21_JSONL,
-    panelOrder: dashboardPaper2LiveOscarOnly()
-      ? (['live-oscar', 'paper-oscar-v21'] as const)
-      : DASHBOARD_PANEL_ORDER,
+    paperOscarV22Jsonl: DASHBOARD_PAPER_OSCAR_V22_JSONL,
+    panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,
   };
@@ -3407,24 +3385,7 @@ app.get('/api/paper2', async (_req, reply) => {
 
 app.get('/api/paper2/price-verify-stats', async (req, reply) => {
   reply.header('cache-control', 'no-store');
-  let files: string[] = [];
-  if (dashboardPaper2LiveOscarOnly()) {
-    files = [
-      ...(fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL) ? [DASHBOARD_LIVE_OSCAR_JSONL] : []),
-      ...(fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL) ? [DASHBOARD_PAPER_OSCAR_V21_JSONL] : []),
-    ];
-  } else {
-    try {
-      if (fs.existsSync(PAPER2_DIR)) {
-        files = fs
-          .readdirSync(PAPER2_DIR)
-          .filter((f) => f.endsWith('.jsonl'))
-          .map((f) => path.join(PAPER2_DIR, f));
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  const files = dashboardOscarPanelJsonlFiles();
   const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
   const windowMin = Math.max(5, Math.min(7 * 24 * 60, Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 1440));
   const windowMs = windowMin * 60 * 1000;
@@ -3507,24 +3468,7 @@ function aggregateLiqWatchEndpointSlice(filePath: string, windowMs: number): {
 
 app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
   reply.header('cache-control', 'no-store');
-  let files: string[] = [];
-  if (dashboardPaper2LiveOscarOnly()) {
-    files = [
-      ...(fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL) ? [DASHBOARD_LIVE_OSCAR_JSONL] : []),
-      ...(fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL) ? [DASHBOARD_PAPER_OSCAR_V21_JSONL] : []),
-    ];
-  } else {
-    try {
-      if (fs.existsSync(PAPER2_DIR)) {
-        files = fs
-          .readdirSync(PAPER2_DIR)
-          .filter((f) => f.endsWith('.jsonl'))
-          .map((f) => path.join(PAPER2_DIR, f));
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  const files = dashboardOscarPanelJsonlFiles();
   const rawMin = Number((req.query as { windowMin?: string })?.windowMin);
   const windowMin = Math.max(
     5,

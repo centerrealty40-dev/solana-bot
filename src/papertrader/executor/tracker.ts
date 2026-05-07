@@ -45,7 +45,7 @@ import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
-import { PAPER_OSCAR_V21_STRATEGY_ID } from '../paper-oscar-v21.js';
+import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
@@ -64,15 +64,15 @@ function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
   return ot.legs.some((l) => l.reason === 'dca');
 }
 
-/** Paper Oscar V2.1 — до триггера ± или пока ждём вторую ногу: без TP/kill/trail (таймаут и liq — как обычно). */
-function paperOscarV21ExitMute(ot: OpenTrade): boolean {
+/** Paper Oscar IDEALIZED (v2.1/v2.2) — до триггера ± или пока ждём вторую ногу: без TP/kill/trail (таймаут и liq — как обычно). */
+function paperOscarIdealizedExitMute(ot: OpenTrade): boolean {
   if (ot.livePendingScaleIn) return true;
   const complete = ot.legs.some((l) => l.reason === 'scale_in');
   if (complete && !ot.liveExitProfileMode) return true;
   return false;
 }
 
-function paperOscarV21NeutralFull(ot: OpenTrade): boolean {
+function paperOscarIdealizedNeutralFull(ot: OpenTrade): boolean {
   return (
     ot.legs.some((l) => l.reason === 'scale_in') &&
     !ot.livePendingScaleIn &&
@@ -1564,8 +1564,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     let xAvg = curMetric / ot.avgEntry;
     let pnlPctVsAvg = (xAvg - 1) * 100;
 
-    const isV21 = cfg.strategyId === PAPER_OSCAR_V21_STRATEGY_ID;
-    if (isV21 && paperOscarV21NeutralFull(ot)) {
+    const isPaperOscarIdealized = isPaperOscarIdealizedStackStrategyId(cfg.strategyId);
+    if (isPaperOscarIdealized && paperOscarIdealizedNeutralFull(ot)) {
       const pnlFracPre = xAvg - 1;
       if (pnlFracPre <= -0.04 + LADDER_PNL_EPS) {
         const addUsd = cfg.positionUsd * 0.2;
@@ -1669,11 +1669,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       pnlPctVsAvg = (xAvg - 1) * 100;
     }
 
-    const v21Mute = isV21 && paperOscarV21ExitMute(ot);
+    const idealizedMute = isPaperOscarIdealized && paperOscarIdealizedExitMute(ot);
     const tgEff = tpGridEffective(ot, effCfg);
     const killEff = dcaKillstopEffective(ot, effCfg);
 
-    if (!(isV21 && v21Mute) && curMetric > ot.peakMcUsd) {
+    if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
@@ -1693,7 +1693,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     const mayDca =
-      !(isV21 && v21Mute) &&
+      !(isPaperOscarIdealized && idealizedMute) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0;
@@ -1778,7 +1778,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (!(isV21 && v21Mute) && tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
+    if (!(isPaperOscarIdealized && idealizedMute) && tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
       const sellFrac = Math.min(1, tgEff.sellFraction);
@@ -1817,7 +1817,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (!(isV21 && v21Mute) && tpLadder.length > 0 && ot.remainingFraction > 0) {
+    if (!(isPaperOscarIdealized && idealizedMute) && tpLadder.length > 0 && ot.remainingFraction > 0) {
       for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
         const lvl = tpLadder[stepIdx]!;
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
@@ -1870,7 +1870,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       });
     }
 
-    if (!livePhase4 && isV21 && ot.livePendingScaleIn && ot.partialSells.length === 0) {
+    if (!livePhase4 && isPaperOscarIdealized && ot.livePendingScaleIn && ot.partialSells.length === 0) {
       await tryPaperOnlyScaleInTrackerStep({
         cfg,
         ot,
@@ -1882,7 +1882,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     let exitReason: ExitReason | null = null;
-    if (!(isV21 && v21Mute)) {
+    if (!(isPaperOscarIdealized && idealizedMute)) {
       if (killEff < 0 && pnlPctVsAvg / 100 <= killEff) exitReason = 'KILLSTOP';
       else if (xAvg >= effCfg.tpX) exitReason = 'TP';
       else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';

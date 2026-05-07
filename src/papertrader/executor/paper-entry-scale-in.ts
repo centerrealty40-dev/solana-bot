@@ -9,7 +9,7 @@ import { applyEntryCosts } from '../costs.js';
 import type { OpenTrade } from '../types.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { readPaperOscarScaleInEnv } from './paper-scale-in-env.js';
-import { PAPER_OSCAR_V21_STRATEGY_ID } from '../paper-oscar-v21.js';
+import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 
 function parsePending(raw: unknown): NonNullable<OpenTrade['livePendingScaleIn']> | null {
   if (raw == null || typeof raw !== 'object') return null;
@@ -64,7 +64,7 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
   verifyStillOpen?: () => boolean;
 }): Promise<void> {
   const { cfg, ot, mint, curMetric, journalAppend, verifyStillOpen } = args;
-  if (cfg.strategyId !== PAPER_OSCAR_V21_STRATEGY_ID) return;
+  if (!isPaperOscarIdealizedStackStrategyId(cfg.strategyId)) return;
 
   const si = readPaperOscarScaleInEnv();
   if (!si.enabled) return;
