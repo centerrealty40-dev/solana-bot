@@ -6,7 +6,10 @@ import type { TrackerStats, TrackerArgs } from '../papertrader/executor/tracker.
 import { trackerForceFullExitLive } from '../papertrader/executor/tracker.js';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
-import { getLiveMcUsd } from '../papertrader/pricing.js';
+import {
+  fetchJupiterTokenUsdPrice,
+  fetchLatestSnapshotPrice,
+} from '../papertrader/pricing.js';
 import type { LiveOscarConfig } from './config.js';
 import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import type { LiveOscarRuntimeBundle } from './phase4-types.js';
@@ -36,6 +39,16 @@ function lastClosedForMint(closed: ClosedTrade[], mint: string): ClosedTrade | u
     if (c?.mint === mint) return c;
   }
   return undefined;
+}
+
+/** USD **за 1 токен** (spot). Не путать с `getLiveMcUsd` — там market cap для метаданных. */
+async function resolveSpotUsdPerToken(
+  mint: string,
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
+): Promise<number | null> {
+  const snap = await fetchLatestSnapshotPrice(mint, source);
+  if (snap != null && snap > 0 && Number.isFinite(snap)) return snap;
+  return fetchJupiterTokenUsdPrice(mint);
 }
 
 export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContext): NodeJS.Timeout | null {
@@ -86,14 +99,13 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
 
         const ref = lastClosedForMint(closed, mint);
         const dec = ref?.tokenDecimals ?? 6;
-        const mc = await getLiveMcUsd(
+        const spotUsd = await resolveSpotUsdPerToken(
           mint,
           ref?.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
-        if (typeof mc !== 'number' || !Number.isFinite(mc) || mc <= 0) continue;
-        const mcUsd = mc;
+        if (typeof spotUsd !== 'number' || !Number.isFinite(spotUsd) || spotUsd <= 0) continue;
         const tokens = Number(rawBal) / 10 ** dec;
-        const estUsd = tokens * mcUsd;
+        const estUsd = tokens * spotUsd;
         if (!(estUsd >= minUsd)) continue;
 
         tailSweepsAttempted++;
@@ -102,7 +114,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           mint,
           symbol: sym,
           usdNotional: Math.max(estUsd, minUsd),
-          priceUsdPerToken: mcUsd,
+          priceUsdPerToken: spotUsd,
           decimals: dec,
           intentKind: 'sell_full',
         });
@@ -120,12 +132,11 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         const bal = chainMap.get(mint);
         if (!bal || bal === 0n) continue;
 
-        const mcOpen = await getLiveMcUsd(
+        const spotExit = await resolveSpotUsdPerToken(
           mint,
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
-        if (typeof mcOpen !== 'number' || !Number.isFinite(mcOpen) || mcOpen <= 0) continue;
-        const mcExit = mcOpen;
+        if (typeof spotExit !== 'number' || !Number.isFinite(spotExit) || spotExit <= 0) continue;
 
         const ok = await trackerForceFullExitLive({
           cfg: paperCfg,
@@ -139,7 +150,7 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           livePhase4: phase4,
           liveOscarCfg: liveCfg,
           mint,
-          marketSell: mcExit,
+          marketSell: spotExit,
         });
         if (ok) staleOpensForced++;
       }
