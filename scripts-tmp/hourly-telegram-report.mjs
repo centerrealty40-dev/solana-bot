@@ -17,6 +17,11 @@ const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
 const APPEND_QN_LEDGER = process.env.HOURLY_APPEND_QN_LEDGER === '1';
 /** W6.12 S06 / W6.10 — блок детектива (bot-теги, узкие теги, очередь backfill). Только SQL; выкл: HOURLY_APPEND_DETECTIVE_INTEL=0 */
 const APPEND_DETECTIVE_INTEL = process.env.HOURLY_APPEND_DETECTIVE_INTEL !== '0';
+/** MTM shadow — сводка второго Jupiter-probe по `mtm-shadow.jsonl`; выкл: HOURLY_APPEND_MTM_SHADOW=0 */
+const APPEND_MTM_SHADOW = process.env.HOURLY_APPEND_MTM_SHADOW !== '0';
+const MTM_SHADOW_JSONL =
+  process.env.HOURLY_MTM_SHADOW_JSONL ||
+  path.join(ROOT, 'data/live/mtm-shadow.jsonl');
 
 const LIVE_JSONL =
   process.env.HOURLY_LIVE_JSONL ||
@@ -141,6 +146,36 @@ function countEvalPassPaper(events, sinceMs) {
   const hourly = scoped.filter((e) => (e.ts || 0) >= sinceMs && e.kind === 'eval');
   const passed = hourly.filter((e) => !!e.pass).length;
   return { evals: hourly.length, passed };
+}
+
+function summarizeMtmShadowHourly(events, sinceMs, strategyIdFilter) {
+  let n = 0;
+  let errs = 0;
+  let disagree = 0;
+  let widePa = 0;
+  const mints = new Set();
+  const bpsList = [];
+  for (const e of events) {
+    if ((e.ts || 0) < sinceMs) continue;
+    if (e.channel !== 'mtm_shadow') continue;
+    if (e.kind !== 'mtm_shadow_probe') continue;
+    const sid = e.strategyId != null ? String(e.strategyId) : '';
+    if (strategyIdFilter && sid && sid !== strategyIdFilter) continue;
+    const p = e.payload;
+    if (!p || typeof p !== 'object') continue;
+    n += 1;
+    if (p.mint) mints.add(String(p.mint));
+    if (p.errorAlt) errs += 1;
+    if (p.priceDisagreement) disagree += 1;
+    const bps = Number(p.divergePrimaryVsAltBps);
+    if (Number.isFinite(bps)) {
+      bpsList.push(bps);
+      if (bps > 150) widePa += 1;
+    }
+  }
+  bpsList.sort((a, b) => a - b);
+  const medianBps = bpsList.length ? bpsList[Math.floor(bpsList.length / 2)] : null;
+  return { n, mints: mints.size, errs, disagree, widePa, medianBps };
 }
 
 function aggregateExecutionFailures(events, sinceMs) {
@@ -539,6 +574,7 @@ function buildHourlyReport({
   detectiveIntel,
   health,
   live,
+  mtmShadow,
   evalAgg,
   failBuckets,
   wallet,
@@ -657,6 +693,19 @@ function buildHourlyReport({
   );
   lines.push(`- Суммарный PnL: ${fmtUsdSigned(live.totalPnlUsd)}`);
 
+  if (mtmShadow && APPEND_MTM_SHADOW) {
+    lines.push('');
+    lines.push('MTM shadow (фон, второй Jupiter-probe на открытых позициях, за час)');
+    lines.push(`- событий: ${mtmShadow.n}, уник. mint: ${mtmShadow.mints}`);
+    lines.push(
+      `- медиана |primary−alt| bps: ${mtmShadow.medianBps != null ? mtmShadow.medianBps : 'н/д'}`,
+    );
+    lines.push(
+      `- primary↔alt >150 bps: ${mtmShadow.widePa}, priceDisagreement: ${mtmShadow.disagree}, ошибки alt-quote: ${mtmShadow.errs}`,
+    );
+    lines.push(`- JSONL: ${mtmShadow.pathNote || '—'}`);
+  }
+
   lines.push('');
   lines.push(`Eval: ${evalAgg.evals} pass ${evalAgg.passed}`);
 
@@ -714,6 +763,15 @@ async function main() {
   const liveEvents = parseJsonl(LIVE_JSONL);
   const live = summarizeLiveOscarFromJournal(liveEvents);
   const failBuckets = aggregateExecutionFailures(liveEvents, since);
+
+  let mtmShadow = null;
+  if (APPEND_MTM_SHADOW) {
+    const mtmEvents = parseJsonl(MTM_SHADOW_JSONL);
+    mtmShadow = {
+      ...summarizeMtmShadowHourly(mtmEvents, since, LIVE_STRATEGY_ID),
+      pathNote: MTM_SHADOW_JSONL,
+    };
+  }
 
   const evalEvents = fs.existsSync(OSCAR_EVAL_JSONL) ? parseJsonl(OSCAR_EVAL_JSONL) : [];
   const evalAgg = countEvalPassPaper(evalEvents, since);
@@ -778,6 +836,7 @@ async function main() {
     detectiveIntel,
     health,
     live,
+    mtmShadow,
     evalAgg,
     failBuckets,
     wallet,

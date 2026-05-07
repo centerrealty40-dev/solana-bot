@@ -8,6 +8,80 @@
 
 ---
 
+## [1.11.148] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.148`.
+
+- **Live-oscar loss cooldown:** **`PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES`** в **`ecosystem.config.cjs`** поднят с **10** до **30** минут (после убыточного `live_position_close` повторный вход по mint блокируется полчаса; часы остаются `0`). Применяется через **`pm2 reload live-oscar --update-env`**.
+- **Все накопленные shadow-патчи слиты в `v2`:** код **`src/live/signal-lab.ts`**, **`src/live/mtm-shadow.ts`**, env в **`loadLiveOscarConfig`** (`SIGNAL_LAB_*`, `MTM_SHADOW_*`), вызовы из **`papertrader/main.ts`** и **`tracker.ts`**, hooks bootstrap в **`live/main.ts`**, hourly Telegram блок MTM shadow в **`scripts-tmp/hourly-telegram-report.mjs`**, `npm run jupiter:shadow-watch` + установщик cron `scripts/cron/install-jupiter-shadow-watch-cron-salpha.sh`. Тесты: **`tests/signal-lab.test.ts`**, обновлён **`tests/live-oscar-config.test.ts`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.147`**, **`pm2 reload live-oscar --update-env`**; убрать `MINUTES=30` (вернуть `10`) и удалить SIGNAL_LAB_* / MTM_SHADOW_* env при необходимости.
+
+---
+
+## [1.11.147] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.147`.
+
+- **Cron Jupiter shadow-watch:** **`scripts/cron/install-jupiter-shadow-watch-cron-salpha.sh`** — ставит **`salpha`** задачу **`*/10`** UTC, **`SHADOW_WATCH_TELEGRAM=1`**, лог **`data/logs/jupiter-shadow-watch.log`**. Скрипт грузит **`$SOLANA_ALPHA_ROOT/.env`**; Telegram при пороге ошибок lite-api. Документация: **`deploy/RUNTIME.md`** §2.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.146`**; `crontab -e` под `salpha` — удалить блок `JUPITER_SHADOW_WATCH_CRON_*`.
+
+---
+
+## [1.11.146] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.146`.
+
+- **`scripts-tmp/jupiter-shadow-watch.mjs` + `npm run jupiter:shadow-watch`:** раз в запуск считает ошибки в **`signal-lab.jsonl`** / **`mtm-shadow.jsonl`** за окно (дефолт 10 мин); опционально **`SHADOW_WATCH_TELEGRAM=1`** — ALERT при высокой доле ошибок **Jupiter HTTP** (не QuickNode). Env и пример cron — **`.env.example`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.145`**; убрать строку cron при необходимости.
+
+---
+
+## [1.11.145] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.145`.
+
+- **Накопление shadow-логов по умолчанию в PM2 live-oscar:** в **`ecosystem.config.cjs`** включены **`SIGNAL_LAB_*`** (100% sample, alt probe 0.55) и **`MTM_SHADOW_*`** (100% sample, alt 0.58), пути под `data/live/*.jsonl`. Торговая логика не меняется — только дополнительные Jupiter-запросы и запись JSONL. **`.env.example`** — профиль для hourly + те же пути.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.144`** и убрать новые ключи из `ecosystem.config.cjs` при необходимости.
+
+---
+
+## [1.11.144] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.144`.
+
+- **MTM shadow (фон):** после успешного основного Jupiter-probe в **`tracker.ts`** — опциональный **второй** quote другого размера (`MTM_SHADOW_ALT_FRACTION`), запись в **`MTM_SHADOW_PATH`** (`channel: mtm_shadow`). Не меняет `curMetric`, scale-in и выходы. Env: `MTM_SHADOW_ENABLED`, `MTM_SHADOW_SAMPLE_PCT`, `MTM_SHADOW_PATH`.
+- **Hourly Telegram:** в **`hourly-telegram-report.mjs`** блок сводки MTM shadow за час (события, медиана bps primary↔alt, `priceDisagreement`, ошибки alt-quote); путь override: **`HOURLY_MTM_SHADOW_JSONL`**; выкл. блока: **`HOURLY_APPEND_MTM_SHADOW=0`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.143`**.
+
+---
+
+## [1.11.143] — 2026-05-06
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.143`.
+
+- **Signal lab:** фоновый JSONL (`SIGNAL_LAB_PATH`, по умолчанию `data/live/signal-lab.jsonl`) — снимок **после** live whitelist и **до** `tryExecuteBuyOpen`: PG price, выборка `SIGNAL_LAB_SAMPLE_PCT`, опциональный второй Jupiter-probe (`SIGNAL_LAB_ALT_PROBE_FRACTION`), bps vs PG, дельта `solanaRpcMeterCounters` (месячные credits). Код: `src/live/signal-lab.ts`, env в `loadLiveOscarConfig`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.142`**.
+
+---
+
 ## [1.11.142] — 2026-05-06
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.142`.

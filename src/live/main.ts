@@ -8,6 +8,8 @@ import { loadLiveOscarConfig } from './config.js';
 import { runLiveJupiterSelfTest } from './jupiter-self-test.js';
 import { runLivePhase3SimSelfTest } from './phase3-self-test.js';
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
+import { configureSignalLabStore } from './signal-lab.js';
+import { configureMtmShadowStore } from './mtm-shadow.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
@@ -71,6 +73,8 @@ export async function main(): Promise<void> {
   }
 
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
+  configureSignalLabStore({ storePath: liveCfg.signalLabPath, strategyId: liveCfg.strategyId });
+  configureMtmShadowStore({ storePath: liveCfg.mtmShadowPath, strategyId: liveCfg.strategyId });
   const paperBaseline = loadPaperTraderConfig();
 
   if (

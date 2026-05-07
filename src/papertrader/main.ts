@@ -52,6 +52,7 @@ import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.j
 import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
+import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
@@ -532,6 +533,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           }
         }
         if (liveOscar) {
+          scheduleSignalLabPreBuyOpen({
+            liveCfg: liveOscar.liveCfg,
+            paperCfg: cfg,
+            ot,
+            decision: d,
+            snapshotEntryPriceUsd,
+            tokenDecimals,
+            priceVerify,
+          });
           const opened = await liveOscar.discovery.tryExecuteBuyOpen({
             liveCfg: liveOscar.liveCfg,
             paperCfg: cfg,

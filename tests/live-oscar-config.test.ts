@@ -209,4 +209,81 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(cfg.liveConfirmCommitment).toBe('confirmed');
     expect(cfg.liveSimBeforeSend).toBe(true);
   });
+
+  it('parses signal lab env defaults and rejects path collision with live / parity journals', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.SIGNAL_LAB_ENABLED;
+    delete process.env.SIGNAL_LAB_SAMPLE_PCT;
+    delete process.env.SIGNAL_LAB_PATH;
+    delete process.env.SIGNAL_LAB_ALT_PROBE_FRACTION;
+
+    const cfg = loadLiveOscarConfig();
+    expect(cfg.signalLabEnabled).toBe(false);
+    expect(cfg.signalLabSamplePct).toBe(25);
+    expect(cfg.signalLabPath).toContain('signal-lab.jsonl');
+    expect(cfg.signalLabAltProbeFraction).toBe(0);
+
+    process.env.SIGNAL_LAB_ENABLED = '1';
+    process.env.SIGNAL_LAB_SAMPLE_PCT = '50';
+    process.env.SIGNAL_LAB_ALT_PROBE_FRACTION = '0.6';
+    process.env.SIGNAL_LAB_PATH = '/tmp/signal-lab-test.jsonl';
+    const b = loadLiveOscarConfig();
+    expect(b.signalLabEnabled).toBe(true);
+    expect(b.signalLabSamplePct).toBe(50);
+    expect(b.signalLabAltProbeFraction).toBeCloseTo(0.6, 5);
+
+    process.env.SIGNAL_LAB_PATH = '/tmp/live-test.jsonl';
+    expect(() => loadLiveOscarConfig()).toThrow(/SIGNAL_LAB_PATH must differ from LIVE_TRADES_PATH/);
+
+    process.env.SIGNAL_LAB_PATH = '/tmp/paper-test.jsonl';
+    expect(() => loadLiveOscarConfig()).toThrow(/SIGNAL_LAB_PATH must differ from LIVE_PARITY_PAPER_TRADES_PATH/);
+
+    delete process.env.SIGNAL_LAB_ENABLED;
+    delete process.env.SIGNAL_LAB_SAMPLE_PCT;
+    delete process.env.SIGNAL_LAB_PATH;
+    delete process.env.SIGNAL_LAB_ALT_PROBE_FRACTION;
+  });
+
+  it('parses MTM shadow env defaults and rejects collisions with live / parity / signal-lab paths', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.MTM_SHADOW_ENABLED;
+    delete process.env.MTM_SHADOW_SAMPLE_PCT;
+    delete process.env.MTM_SHADOW_PATH;
+    delete process.env.MTM_SHADOW_ALT_FRACTION;
+    process.env.SIGNAL_LAB_PATH = '/tmp/signal-lab-test.jsonl';
+
+    const cfg = loadLiveOscarConfig();
+    expect(cfg.mtmShadowEnabled).toBe(false);
+    expect(cfg.mtmShadowSamplePct).toBe(12);
+    expect(cfg.mtmShadowPath).toContain('mtm-shadow.jsonl');
+    expect(cfg.mtmShadowAltFraction).toBe(0);
+
+    process.env.MTM_SHADOW_ENABLED = '1';
+    process.env.MTM_SHADOW_SAMPLE_PCT = '20';
+    process.env.MTM_SHADOW_ALT_FRACTION = '0.55';
+    process.env.MTM_SHADOW_PATH = '/tmp/mtm-shadow-test.jsonl';
+    const b = loadLiveOscarConfig();
+    expect(b.mtmShadowEnabled).toBe(true);
+    expect(b.mtmShadowSamplePct).toBe(20);
+    expect(b.mtmShadowAltFraction).toBeCloseTo(0.55, 5);
+
+    process.env.MTM_SHADOW_PATH = '/tmp/signal-lab-test.jsonl';
+    expect(() => loadLiveOscarConfig()).toThrow(/MTM_SHADOW_PATH must differ from SIGNAL_LAB_PATH/);
+
+    delete process.env.MTM_SHADOW_ENABLED;
+    delete process.env.MTM_SHADOW_SAMPLE_PCT;
+    delete process.env.MTM_SHADOW_PATH;
+    delete process.env.MTM_SHADOW_ALT_FRACTION;
+    delete process.env.SIGNAL_LAB_PATH;
+  });
 });

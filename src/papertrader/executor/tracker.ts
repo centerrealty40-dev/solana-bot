@@ -46,6 +46,7 @@ import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-sn
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
+import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
   notifyLiveTrackerJupiterFallback,
   notifyLiveTrackerSnapshotJupiterDivergence,
@@ -1233,6 +1234,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 );
                 ot.tokenDecimals = fittedDec;
               }
+              void scheduleMtmShadowTrackerProbe({
+                liveCfg: liveOscarCfg,
+                paperStrategyId: cfg.strategyId,
+                ot,
+                mint,
+                snapshotPgUsd: snapPx,
+                probeUsdPrimary: probeUsd,
+                solUsd,
+                decimalsHint: ot.tokenDecimals ?? fittedDec,
+                anchorPx,
+                primaryJupiterUsd: jpx,
+                primaryQuoteResponse: fq.quoteResponse,
+              });
               const divergeVsAnchor =
                 anchorPx > 0 ? Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18) : 0;
               const jupiterSaneVsEntry = !(anchorPx > 0) || divergeVsAnchor <= 2;

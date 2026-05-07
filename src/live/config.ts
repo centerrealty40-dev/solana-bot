@@ -199,6 +199,31 @@ const LiveOscarConfigSchema = z
     liveMintWhitelistPath: z.string().min(1).default('data/live/live-oscar-mint-whitelist.txt'),
     /** Между повторными Telegram по одному и тому же mint (мс). `0` = каждый проход гейтов может отправить снова. */
     liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+
+    /**
+     * Signal lab — параллельный сбор снимков до `buy_open` в отдельный JSONL (не влияет на гейты и PnL).
+     * См. `src/live/signal-lab.ts`.
+     */
+    signalLabEnabled: z.boolean().default(false),
+    /** Доля кандидатов (0–100), для которых пишется снимок после прохождения гейтов. */
+    signalLabSamplePct: z.coerce.number().min(0).max(100).default(25),
+    signalLabPath: z.string().min(1).default('data/live/signal-lab.jsonl'),
+    /**
+     * Доля от размера первого Jupiter-probe для второго котирования (0 = второй probe выключен).
+     * Например `0.55` → второй запрос на ~55% нотации первого probe.
+     */
+    signalLabAltProbeFraction: z.coerce.number().min(0).max(1).default(0),
+
+    /**
+     * MTM shadow — второй Jupiter-probe на открытых позициях (трекер), отдельный JSONL; не влияет на MTM/PnL.
+     * См. `src/live/mtm-shadow.ts`.
+     */
+    mtmShadowEnabled: z.boolean().default(false),
+    /** Доля тиков с открытыми позициями (0–100), где делается второй probe после успешного основного. */
+    mtmShadowSamplePct: z.coerce.number().min(0).max(100).default(12),
+    mtmShadowPath: z.string().min(1).default('data/live/mtm-shadow.jsonl'),
+    /** Размер alt-probe относительно основного probe USD (например `0.58`); `0` = выключено. */
+    mtmShadowAltFraction: z.coerce.number().min(0).max(1).default(0),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -226,6 +251,43 @@ function assertPathsDiffer(livePath: string, paperPath: string | undefined): voi
     throw new Error(
       `LIVE_TRADES_PATH must differ from PAPER_TRADES_PATH / LIVE_PARITY_PAPER_TRADES_PATH (both resolved to ${a})`,
     );
+  }
+}
+
+function assertSignalLabPathDistinct(labPath: string, livePath: string, parityPath: string | undefined): void {
+  const lab = path.resolve(process.cwd(), labPath.trim());
+  const live = path.resolve(process.cwd(), livePath.trim());
+  if (lab === live) {
+    throw new Error(`SIGNAL_LAB_PATH must differ from LIVE_TRADES_PATH (both resolved to ${lab})`);
+  }
+  if (parityPath?.trim()) {
+    const paper = path.resolve(process.cwd(), parityPath.trim());
+    if (lab === paper) {
+      throw new Error(`SIGNAL_LAB_PATH must differ from LIVE_PARITY_PAPER_TRADES_PATH (both resolved to ${lab})`);
+    }
+  }
+}
+
+function assertMtmShadowPathDistinct(
+  shadowPath: string,
+  livePath: string,
+  parityPath: string | undefined,
+  signalLabPath: string,
+): void {
+  const sh = path.resolve(process.cwd(), shadowPath.trim());
+  const live = path.resolve(process.cwd(), livePath.trim());
+  if (sh === live) {
+    throw new Error(`MTM_SHADOW_PATH must differ from LIVE_TRADES_PATH (both resolved to ${sh})`);
+  }
+  if (parityPath?.trim()) {
+    const paper = path.resolve(process.cwd(), parityPath.trim());
+    if (sh === paper) {
+      throw new Error(`MTM_SHADOW_PATH must differ from LIVE_PARITY_PAPER_TRADES_PATH (both resolved to ${sh})`);
+    }
+  }
+  const lab = path.resolve(process.cwd(), signalLabPath.trim());
+  if (sh === lab) {
+    throw new Error(`MTM_SHADOW_PATH must differ from SIGNAL_LAB_PATH (both resolved to ${sh})`);
   }
 }
 
@@ -433,6 +495,34 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
     })(),
+    signalLabEnabled: envBool(process.env.SIGNAL_LAB_ENABLED, false),
+    signalLabSamplePct: (() => {
+      const s = process.env.SIGNAL_LAB_SAMPLE_PCT?.trim();
+      if (!s) return 25;
+      const n = Number(s);
+      return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 25;
+    })(),
+    signalLabPath: process.env.SIGNAL_LAB_PATH?.trim() || 'data/live/signal-lab.jsonl',
+    signalLabAltProbeFraction: (() => {
+      const s = process.env.SIGNAL_LAB_ALT_PROBE_FRACTION?.trim();
+      if (!s || s === '0') return 0;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(1, n) : 0;
+    })(),
+    mtmShadowEnabled: envBool(process.env.MTM_SHADOW_ENABLED, false),
+    mtmShadowSamplePct: (() => {
+      const s = process.env.MTM_SHADOW_SAMPLE_PCT?.trim();
+      if (!s) return 12;
+      const n = Number(s);
+      return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 12;
+    })(),
+    mtmShadowPath: process.env.MTM_SHADOW_PATH?.trim() || 'data/live/mtm-shadow.jsonl',
+    mtmShadowAltFraction: (() => {
+      const s = process.env.MTM_SHADOW_ALT_FRACTION?.trim();
+      if (!s || s === '0') return 0;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(1, n) : 0;
+    })(),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();
       if (sol) {
@@ -463,6 +553,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
 
   const cfg = parsed.data;
   assertPathsDiffer(cfg.liveTradesPath, cfg.parityPaperTradesPath);
+  assertSignalLabPathDistinct(cfg.signalLabPath, cfg.liveTradesPath, cfg.parityPaperTradesPath);
+  assertMtmShadowPathDistinct(
+    cfg.mtmShadowPath,
+    cfg.liveTradesPath,
+    cfg.parityPaperTradesPath,
+    cfg.signalLabPath,
+  );
 
   if (cfg.liveMintWhitelistEnabled) {
     const abs = path.isAbsolute(cfg.liveMintWhitelistPath.trim())

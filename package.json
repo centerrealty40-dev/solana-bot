@@ -36,6 +36,7 @@
     "paper2:diagnose-holders-gpa": "node scripts-tmp/paper2-diagnose-holders-gpa.mjs",
     "paper2:diagnose-dip-recovery": "tsx scripts-tmp/paper2-diagnose-dip-recovery.ts",
     "paper2:healthcheck": "node scripts-tmp/paper2-healthcheck.mjs",
+    "jupiter:shadow-watch": "node scripts-tmp/jupiter-shadow-watch.mjs",
     "paper2:hourly-report": "node scripts-tmp/hourly-telegram-report.mjs",
     "paper2:advisor-digest": "node scripts-tmp/advisor-digest.mjs",
     "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs",

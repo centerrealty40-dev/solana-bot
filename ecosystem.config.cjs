@@ -281,7 +281,7 @@ module.exports = {
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
         /** После убыточного закрытия по mint — пауза повторного входа (минуты имеют приоритет над часами). */
         PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '30',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
@@ -409,6 +409,18 @@ module.exports = {
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
+        /**
+         * Shadow diagnostics — только JSONL (+ блок в hourly-report); не меняет решения по сделкам.
+         * Jupiter/RPC нагрузка растёт при SAMPLE_PCT=100; при лимитах снизить SAMPLE_PCT или выставить ALT-доли в 0.
+         */
+        SIGNAL_LAB_ENABLED: '1',
+        SIGNAL_LAB_SAMPLE_PCT: '100',
+        SIGNAL_LAB_PATH: path.join(root, 'data/live/signal-lab.jsonl'),
+        SIGNAL_LAB_ALT_PROBE_FRACTION: '0.55',
+        MTM_SHADOW_ENABLED: '1',
+        MTM_SHADOW_SAMPLE_PCT: '100',
+        MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow.jsonl'),
+        MTM_SHADOW_ALT_FRACTION: '0.58',
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
