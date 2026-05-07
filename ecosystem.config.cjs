@@ -282,7 +282,8 @@ module.exports = {
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        PAPER_DIP_MIN_DROP_PCT: '-15',
+        /** Live Oscar only: мин. глубина просадки цены от high выбранного окна (OR 120/360/720 мин). Значение −30 в env = −30%. */
+        PAPER_DIP_MIN_DROP_PCT: '-30',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
