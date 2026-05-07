@@ -1,15 +1,14 @@
 /**
- * Live Oscar — контрфактуалы по всем `live_position_close` в JSONL:
+ * Live Oscar — контрфактуалы по всем `live_position_close` в JSONL.
  *
- * 1) Только классический dip + recovery veto по PG-снимкам (как в prod evaluateDip /
- *    evaluateRecoveryVeto). Обход **impulse/pg-snap** не моделируется — если бы его не было,
- *    в реальности считалось бы только это; сделки, которые прошли бы только через bypass,
- *    дают расхождение с replay (см. bypassCandidates).
+ * Модель: только **классический** dip OR(120/360/720 мин) + recovery veto (30/60 мин, bounce < 12%),
+ * как в prod. **Impulse / pg-snap bypass не моделируется** — если классический gate на минуте входа
+ * по PG не проходит, считаем, что без bypass сделки бы не было.
  *
- * 2) Отдельные прогоны **PAPER_DIP_MAX_DROP_PCT** = −15 и −30 при фиксированном
- *    **PAPER_DIP_MIN_DROP_PCT** = −30 (как сейчас на live-oscar). По коду: проход требует
- *    dipPct <= dip_min И dipPct >= dip_max (обе отрицательные); при min=−30 и max=−15
- *    допустимый интервал пуст — ожидайте 0 проходов.
+ * Сценарий A — «убрали только bypass»: фактический порог глубины дипа **PAPER_DIP_MIN_DROP_PCT = −15**
+ * (как раньше на live-oscar / paper-oscar), **PAPER_DIP_MAX_DROP_PCT = −50**.
+ *
+ * Сценарий B — без bypass и с **dip min = −30%** вместо −15 (ужесточение), max −50.
  *
  * Run on VPS:
  *   cd /opt/solana-alpha && set -a && . ./.env && set +a && npx tsx scripts-tmp/live-oscar-dip-min-counterfactual-all.ts
@@ -28,8 +27,11 @@ const RECOVERY_WINDOWS_MIN = [30, 60];
 const DIP_MIN_IMPULSE_PCT = 12;
 const RECOVERY_MAX_BOUNCE_PCT = 12;
 
-/** Текущий live-oscar dip_min после последнего изменения ecosystem. */
-const DIP_MIN_LIVE_OSCAR = -30;
+/** Фактический порог по вашей постановке для закрытых сделок (исторический live-oscar до смены). */
+const DIP_MIN_FACTUAL_NEG15 = -15;
+/** Ужесточённый порог (текущий live-oscar в ecosystem). */
+const DIP_MIN_STRICT_NEG30 = -30;
+const DIP_MAX_DROP_NEG50 = -50;
 
 const TABLES: Record<string, string> = {
   pumpswap: 'pumpswap_pair_snapshots',
@@ -219,16 +221,11 @@ async function main(): Promise<void> {
 
   let noSnap = 0;
 
-  type Agg = { sumNet: number; nPass: number };
-  const mkAgg = (): Agg => ({ sumNet: 0, nPass: 0 });
+  type Agg = { sumNet: number; nPass: number; bypassSum: number; nBypass: number };
+  const mkAgg = (): Agg => ({ sumNet: 0, nPass: 0, bypassSum: 0, nBypass: 0 });
 
-  const classicalProd = mkAgg(); // min -30 max -50 (как ecosystem до экспериментов max)
-  const classicalMax30 = mkAgg();
-  const classicalMax15 = mkAgg();
-  const replayMin15Max50 = mkAgg();
-
-  let bypassCandidateSum = 0;
-  let bypassCandidateCount = 0;
+  const scenA = mkAgg(); // classical, dip min -15
+  const scenB = mkAgg(); // classical, dip min -30
 
   for (const [, arr] of byMintDex) {
     arr.sort((a, b) => a.entryTs - b.entryTs);
@@ -252,94 +249,81 @@ async function main(): Promise<void> {
       }
       const snapPx = px[idx]!;
 
-      const prodPass = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_LIVE_OSCAR, -50);
-      const max30Pass = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_LIVE_OSCAR, -30);
-      const max15Pass = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_LIVE_OSCAR, -15);
-      const min15Pass = passesGateAtEntry(snapPx, tsMs, px, idx, -15, -50);
+      const pass15 = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_FACTUAL_NEG15, DIP_MAX_DROP_NEG50);
+      const pass30 = passesGateAtEntry(snapPx, tsMs, px, idx, DIP_MIN_STRICT_NEG30, DIP_MAX_DROP_NEG50);
 
-      if (prodPass.pass) {
-        classicalProd.sumNet += c.netPnlUsd;
-        classicalProd.nPass++;
+      if (pass15.pass) {
+        scenA.sumNet += c.netPnlUsd;
+        scenA.nPass++;
       } else {
-        bypassCandidateSum += c.netPnlUsd;
-        bypassCandidateCount++;
+        scenA.bypassSum += c.netPnlUsd;
+        scenA.nBypass++;
       }
 
-      if (max30Pass.pass) {
-        classicalMax30.sumNet += c.netPnlUsd;
-        classicalMax30.nPass++;
-      }
-      if (max15Pass.pass) {
-        classicalMax15.sumNet += c.netPnlUsd;
-        classicalMax15.nPass++;
-      }
-      if (min15Pass.pass) {
-        replayMin15Max50.sumNet += c.netPnlUsd;
-        replayMin15Max50.nPass++;
+      if (pass30.pass) {
+        scenB.sumNet += c.netPnlUsd;
+        scenB.nPass++;
+      } else {
+        scenB.bypassSum += c.netPnlUsd;
+        scenB.nBypass++;
       }
     }
   }
 
-  const bandNote =
-    'При dip_min=−30 и dip_max=−15 условие dipPct≤−30 и dipPct≥−15 одновременно невыполнимо — ожидается 0 проходов. При dip_max=−30 допускается только узкая полоса у −30% от high.';
+  const evaluatedCloses = scenA.nPass + scenA.nBypass;
+  const fmt = (x: number) => +x.toFixed(6);
 
   console.log(
     JSON.stringify(
       {
         jsonlPath,
-        closes: nCloses,
+        closesInJournal: nCloses,
+        closesEvaluatedWithSnapshots: evaluatedCloses,
         uniqueMintDexGroups: byMintDex.size,
-        actualTotalNetPnlUsd: +actualSum.toFixed(6),
+        actualAllClosedTrades: {
+          count: nCloses,
+          sumNetPnlUsd: fmt(actualSum),
+        },
 
-        withoutImpulsePgSnap_world: {
+        scenarioA_removeImpulseOnly_factualDipMinNeg15: {
           meaning:
-            'Суммируем net только если на минуте входа проходит классический dip OR(120/360/720)+recovery veto; bypass impulse/pg-snap не считается.',
-          dipMinDropPct: DIP_MIN_LIVE_OSCAR,
-          dipMaxDropPct: -50,
-          tradesPassingClassicalGate: classicalProd.nPass,
-          tradesFewerVsAllCloses: nCloses - classicalProd.nPass,
-          pctFewerTrades: +(((nCloses - classicalProd.nPass) / Math.max(nCloses, 1)) * 100).toFixed(1),
-          sumNetPnlUsdIfOnlyClassical: +classicalProd.sumNet.toFixed(6),
-          deltaVsActualUsd: +(classicalProd.sumNet - actualSum).toFixed(6),
+            'Только классический gate; порог глубины дипа как при −15% (исторический режим). Сделки без прохода gate — те, что в live появились бы только через impulse/pg-snap (или расхождение PG vs live).',
+          dipMinDropPct: DIP_MIN_FACTUAL_NEG15,
+          dipMaxDropPct: DIP_MAX_DROP_NEG50,
+          tradesWouldOccurWithoutBypass: scenA.nPass,
+          tradesFewerVsAllJournalCloses: nCloses - scenA.nPass,
+          pctFewerVsAllJournalCloses: fmt(((nCloses - scenA.nPass) / Math.max(nCloses, 1)) * 100),
+          tradesAttributedToImpulseOrMismatch: scenA.nBypass,
+          sumNetPnlUsd_of_classicalOnlySubset: fmt(scenA.sumNet),
+          sumNetPnlUsd_of_bypassSubset_observed: fmt(scenA.bypassSum),
+          deltaVsActualSum_ifReplaceTotalWithClassicalSubset: fmt(scenA.sumNet - actualSum),
         },
 
-        bypassOrReplayMismatch: {
+        scenarioB_noImpulse_dipMinNeg30: {
           meaning:
-            'Закрытия, где классический gate (min−30 max−50) на PG-снимке не прошёл, но сделка в live была — типично bypass impulse/pg-snap или расхождение минуты PG vs live.',
-          count: bypassCandidateCount,
-          sumObservedNetPnlUsd: +bypassCandidateSum.toFixed(6),
+            'Тот же классический gate, но минимальная глубина дипа −30% вместо −15% (ужесточение).',
+          dipMinDropPct: DIP_MIN_STRICT_NEG30,
+          dipMaxDropPct: DIP_MAX_DROP_NEG50,
+          tradesWouldOccurWithoutBypass: scenB.nPass,
+          tradesFewerVsAllJournalCloses: nCloses - scenB.nPass,
+          pctFewerVsAllJournalCloses: fmt(((nCloses - scenB.nPass) / Math.max(nCloses, 1)) * 100),
+          tradesAttributedToImpulseOrMismatch: scenB.nBypass,
+          sumNetPnlUsd_of_classicalOnlySubset: fmt(scenB.sumNet),
+          sumNetPnlUsd_of_bypassSubset_observed: fmt(scenB.bypassSum),
+          deltaVsActualSum_ifReplaceTotalWithClassicalSubset: fmt(scenB.sumNet - actualSum),
         },
 
-        dipMaxDropSensitivity_sameDipMinNeg30: {
-          dipMinDropPct: DIP_MIN_LIVE_OSCAR,
-          maxNeg50_baseline: {
-            tradesPassing: classicalProd.nPass,
-            sumNetPnlUsd: +classicalProd.sumNet.toFixed(6),
-          },
-          maxNeg30: {
-            tradesPassing: classicalMax30.nPass,
-            tradesFewerVsBaselineMax50: classicalProd.nPass - classicalMax30.nPass,
-            sumNetPnlUsd: +classicalMax30.sumNet.toFixed(6),
-            deltaVsBaselineUsd: +(classicalMax30.sumNet - classicalProd.sumNet).toFixed(6),
-          },
-          maxNeg15: {
-            tradesPassing: classicalMax15.nPass,
-            tradesFewerVsBaselineMax50: classicalProd.nPass - classicalMax15.nPass,
-            sumNetPnlUsd: +classicalMax15.sumNet.toFixed(6),
-            deltaVsBaselineUsd: +(classicalMax15.sumNet - classicalProd.sumNet).toFixed(6),
-            bandNote,
-          },
-        },
-
-        legacyReplay_dipMinNeg15_maxNeg50: {
-          tradesPassing: replayMin15Max50.nPass,
-          sumNetPnlUsd: +replayMin15Max50.sumNet.toFixed(6),
+        effect_of_tightening_dip_min_from_15_to_30_classicalOnly: {
+          meaning:
+            'Разница между сценарием A и B: сколько «лишних» входов давал более мягкий −15% при том же классическом пути.',
+          extraTradesAllowedByDipMinNeg15vsNeg30: scenA.nPass - scenB.nPass,
+          deltaSumNetPnlUsd_classicalSubset_A_minus_B: fmt(scenA.sumNet - scenB.sumNet),
         },
 
         closesWithoutUsableSnapshots: noSnap,
         notes: [
-          'PG snapshots ~1m; без симуляции impulse_pg_snap.',
-          bandNote,
+          'Naive backtest: суммируется исторический net сделок, прошедших gate; без симуляции impulse_pg_snap.',
+          'Если closesEvaluatedWithSnapshots < closesInJournal — часть строк не попала в расчёт из‑за отсутствия PG ряда.',
         ],
       },
       null,
