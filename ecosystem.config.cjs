@@ -493,7 +493,7 @@ module.exports = {
     },
     /**
      * Paper Oscar Risky — бумага; паритет выходов/режимов A–B с **live-oscar** (`PAPER_LIVE_EXIT_MODE_AB` и остальные `PAPER_*` как у live).
-     * Гейты пост-снимка ослаблены как у **paper-oscar-v22**: $100k liq, 1k holders, $10k vol5m, $60k vol1h guard.
+     * Гейты пост-снимка ослаблены как у **paper-oscar-v22**: $100k liq, 1k holders, $10k vol5m, $30k vol1h guard.
      */
     {
       name: 'paper-oscar-risky',
@@ -542,7 +542,7 @@ module.exports = {
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '60000',
+        PAPER_VOL_1H_MIN_USD: '30000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '1000',
         PAPER_DIP_LOOKBACK_MIN: '120',
@@ -862,7 +862,7 @@ module.exports = {
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '60000',
+        PAPER_VOL_1H_MIN_USD: '30000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '1000',
         PAPER_DIP_LOOKBACK_MIN: '120',
