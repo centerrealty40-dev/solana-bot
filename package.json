@@ -26,6 +26,7 @@
     "papertrader": "tsx src/scripts/papertrader.ts",
     "paper-oscar-v21": "tsx src/scripts/papertrader.ts",
     "paper-oscar-v22": "tsx src/scripts/papertrader.ts",
+    "paper-oscar-risky": "tsx src/scripts/papertrader.ts",
     "live-oscar": "tsx src/scripts/live-oscar.ts",
     "live:compare-whitelist-closes": "node scripts/compare-live-closes-whitelist.mjs",
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",

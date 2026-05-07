@@ -55,6 +55,9 @@ const DASHBOARD_PAPER_OSCAR_V21_JSONL =
 /** Paper Oscar V2.2 — клон v2.1, более рискованные гейты входа; отдельный jsonl. */
 const DASHBOARD_PAPER_OSCAR_V22_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_V22_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-v22.jsonl');
+/** Paper Oscar Risky — бумажный паритет live-осскара по выходам; гейты входа как v2.2. */
+const DASHBOARD_PAPER_OSCAR_RISKY_JSONL =
+  process.env.DASHBOARD_PAPER_OSCAR_RISKY_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-risky.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
 /** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
@@ -62,10 +65,11 @@ const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 
-/** Журналы трёх плиток Oscar на `/papertrader2` (без сканирования каталога paper2 — нет «старых» pt1-колонок). */
+/** Журналы плиток Oscar на `/papertrader2` (без сканирования каталога paper2). */
 function dashboardOscarPanelJsonlFiles(): string[] {
   const out: string[] = [];
   if (fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_JSONL);
+  if (fs.existsSync(DASHBOARD_PAPER_OSCAR_RISKY_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V22_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V22_JSONL);
   return out;
@@ -1209,8 +1213,13 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Три плитки Oscar на `/papertrader2`: live + paper IDEALIZED v2.1 + paper v2.2 (рискованнее вход). */
-export const DASHBOARD_PANEL_ORDER = ['live-oscar', 'paper-oscar-v21', 'paper-oscar-v22'] as const;
+/** Плитки Oscar на `/papertrader2`: live → бумажный паритет live (Risky) → IDEALIZED v2.1 → v2.2. */
+export const DASHBOARD_PANEL_ORDER = [
+  'live-oscar',
+  'paper-oscar-risky',
+  'paper-oscar-v21',
+  'paper-oscar-v22',
+] as const;
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3335,6 +3344,12 @@ app.get('/api/paper2', async (_req, reply) => {
     hbClosed,
     reconcileExtras: liveExtras,
   });
+  const paperRiskyLoad = loadPaper2File(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
+  const paperRiskyRow = await buildPaper2StrategyRowFromLoad(
+    DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
+    'paper-oscar-risky',
+    paperRiskyLoad,
+  );
   const paperV21Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   const paperV21Row = await buildPaper2StrategyRowFromLoad(
     DASHBOARD_PAPER_OSCAR_V21_JSONL,
@@ -3347,7 +3362,7 @@ app.get('/api/paper2', async (_req, reply) => {
     'paper-oscar-v22',
     paperV22Load,
   );
-  const merged = mergeDashboardStrategyPanels([liveRow, paperV21Row, paperV22Row]);
+  const merged = mergeDashboardStrategyPanels([liveRow, paperRiskyRow, paperV21Row, paperV22Row]);
 
   const totals = merged.reduce(
     (acc, s) => {
@@ -3375,6 +3390,7 @@ app.get('/api/paper2', async (_req, reply) => {
     now: Date.now(),
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
+    paperOscarRiskyJsonl: DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
     paperOscarV21Jsonl: DASHBOARD_PAPER_OSCAR_V21_JSONL,
     paperOscarV22Jsonl: DASHBOARD_PAPER_OSCAR_V22_JSONL,
     panelOrder: DASHBOARD_PANEL_ORDER,
