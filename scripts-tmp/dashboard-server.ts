@@ -1833,8 +1833,83 @@ function enrichTimelineAmountUsd(ev: TimelineEvent): TimelineEvent {
   return ev;
 }
 
-export function finalizeTimelineForApi(timeline: TimelineEvent[]): TimelineEvent[] {
-  return timeline.map(enrichTimelineAmountUsd);
+const OSCAR_EXIT_MODE_LABEL_SUFFIX_A = ' · режим A';
+const OSCAR_EXIT_MODE_LABEL_SUFFIX_B = ' · режим B';
+
+function stripOscarExitModeLabelSuffix(label: string): string {
+  let s = label;
+  for (;;) {
+    if (s.endsWith(OSCAR_EXIT_MODE_LABEL_SUFFIX_A)) s = s.slice(0, -OSCAR_EXIT_MODE_LABEL_SUFFIX_A.length);
+    else if (s.endsWith(OSCAR_EXIT_MODE_LABEL_SUFFIX_B)) s = s.slice(0, -OSCAR_EXIT_MODE_LABEL_SUFFIX_B.length);
+    else return s;
+  }
+}
+
+type OscarDeferredCtxStage = 'pre_tp' | 'post_tp_pre_dca' | 'post_dca';
+
+/** Скрываем пояснения A/B в таймлайне до фактического «включения» режима (после 1-го TP или 1-го DCA). */
+function filterOscarDeferredContextNote(
+  note: string | null | undefined,
+  stage: OscarDeferredCtxStage,
+): string | null | undefined {
+  if (note == null || note === '') return note;
+  const lines = note.split('\n');
+  const tpLine = lines.find((l) => l.startsWith('Класс пути до входа')) ?? null;
+  const modeALine = lines.find((l) => l.startsWith('Режим A (IDEALIZED')) ?? null;
+  const modeBLine = lines.find((l) => l.startsWith('Режим B (IDEALIZED')) ?? null;
+  const parts: string[] = [];
+  if (tpLine) parts.push(tpLine);
+  if (stage === 'post_tp_pre_dca' && modeALine) parts.push(modeALine);
+  if (stage === 'post_dca' && modeBLine) parts.push(modeBLine);
+  if (!parts.length) return undefined;
+  return parts.join('\n');
+}
+
+/**
+ * Плитки DASHBOARD_PANEL_ORDER: A/B в подписи и contextNote не показываем на open/scale-in до 1-го TP;
+ * после 1-го DCA везде B. Только дашборд, журнал не меняется.
+ */
+function applyOscarDashboardDeferredAbLabels(timeline: TimelineEvent[]): TimelineEvent[] {
+  const sorted = timeline.slice().sort((a, b) => a.ts - b.ts);
+  let seenTp = false;
+  let seenDca = false;
+  const out: TimelineEvent[] = [];
+  for (const ev of sorted) {
+    const isFirstTp = ev.kind === 'partial_sell' && !seenTp;
+    const isFirstDca = ev.kind === 'dca_add' && !seenDca;
+    const stage: OscarDeferredCtxStage =
+      seenDca || isFirstDca ? 'post_dca' : seenTp || isFirstTp ? 'post_tp_pre_dca' : 'pre_tp';
+    const labelBase = stripOscarExitModeLabelSuffix(ev.label);
+    const ctx = filterOscarDeferredContextNote(ev.contextNote, stage);
+
+    let suffix = '';
+    if (ev.kind !== 'open' && ev.kind !== 'strategy_note') {
+      if (ev.kind === 'dca_add') suffix = OSCAR_EXIT_MODE_LABEL_SUFFIX_B;
+      else if (ev.kind === 'partial_sell')
+        suffix = seenDca ? OSCAR_EXIT_MODE_LABEL_SUFFIX_B : OSCAR_EXIT_MODE_LABEL_SUFFIX_A;
+      else if (seenDca) suffix = OSCAR_EXIT_MODE_LABEL_SUFFIX_B;
+      else if (seenTp) suffix = OSCAR_EXIT_MODE_LABEL_SUFFIX_A;
+    }
+
+    if (ev.kind === 'partial_sell') seenTp = true;
+    if (ev.kind === 'dca_add') seenDca = true;
+
+    const { contextNote: _omitCtx, ...rest } = ev;
+    out.push({
+      ...rest,
+      label: labelBase + suffix,
+      ...(ctx != null && ctx !== '' ? { contextNote: ctx } : {}),
+    });
+  }
+  return out;
+}
+
+export function finalizeTimelineForApi(timeline: TimelineEvent[], strategyId?: string): TimelineEvent[] {
+  const enriched = timeline.map(enrichTimelineAmountUsd);
+  if (strategyId && (DASHBOARD_PANEL_ORDER as readonly string[]).includes(strategyId)) {
+    return applyOscarDashboardDeferredAbLabels(enriched);
+  }
+  return enriched;
 }
 
 export function loadPaper2File(filePath: string): {
@@ -2087,6 +2162,78 @@ function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | nul
   if (!em || typeof em !== 'object') return null;
   const mc = Number(em.market_cap_usd ?? em.fdv_usd ?? 0);
   return Number.isFinite(mc) && mc > 0 ? mc : null;
+}
+
+/**
+ * Live `PERIODIC_HEAL` раньше получал в трекер «цену выхода» = USD **market cap** (`getLiveMcUsd`),
+ * из‑за чего в JSONL остались космические pnlPct/netPnlUsd. Журнал не переписываем — чиним только
+ * отдачу в дашборд: оценка по сумме partial TP + остаток × последняя известная market price partial.
+ */
+function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>): Record<string, unknown> {
+  if (String(ct.exitReason ?? '') !== 'PERIODIC_HEAL') return ct;
+  const avgEntry = Number(ct.avgEntry ?? 0);
+  const invested = Number(ct.totalInvestedUsd ?? 0);
+  if (!(avgEntry > 0 && avgEntry < 500 && invested > 0)) return ct;
+
+  const exitPx = Number(ct.theoretical_exit_price ?? ct.effective_exit_price ?? 0);
+  const ratio = exitPx > 0 ? exitPx / avgEntry : 0;
+  const pnlPct = Number(ct.pnlPct ?? 0);
+  const net = Number(ct.netPnlUsd ?? 0);
+  const corrupt =
+    (avgEntry < 1 && ratio > 150) ||
+    (exitPx > 50_000 && avgEntry < 10) ||
+    Math.abs(pnlPct) > 400 ||
+    Math.abs(net) > Math.max(5000, invested * 80);
+
+  if (!corrupt) return ct;
+
+  const partials = Array.isArray(ct.partialSells)
+    ? (ct.partialSells as Record<string, unknown>[])
+    : [];
+  const sumPartial = partials.reduce((s, p) => s + Number(p.proceedsUsd ?? 0), 0);
+  const exitCtx = ct.exitContext as Record<string, unknown> | undefined;
+  const remRaw =
+    exitCtx && exitCtx.remainingFractionAtClose != null
+      ? Number(exitCtx.remainingFractionAtClose)
+      : NaN;
+  const lastPs = partials.length ? partials[partials.length - 1]! : null;
+  const lastPx = lastPs ? Number(lastPs.marketPrice ?? lastPs.price ?? 0) : 0;
+  const rem = Number.isFinite(remRaw) && remRaw > 0 && remRaw <= 1 ? remRaw : NaN;
+
+  if (!(sumPartial >= 0 && Number.isFinite(rem) && lastPx > 0)) {
+    const out = { ...ct };
+    out.pnlPct = 0;
+    out.netPnlUsd = 0;
+    out.grossPnlUsd = 0;
+    out.grossPnlPct = 0;
+    out.theoretical_exit_price = avgEntry;
+    out.effective_exit_price = avgEntry;
+    out.__pnlDisplayRepair = 'periodic_heal_corrupt_no_partial_basis';
+    return out;
+  }
+
+  const remainderGrossUsd = invested * rem * (lastPx / avgEntry);
+  const totalRecv = sumPartial + remainderGrossUsd;
+  const netRepair = totalRecv - invested;
+  const pnlPctRepair = (netRepair / invested) * 100;
+
+  const out = { ...ct };
+  out.netPnlUsd = netRepair;
+  out.pnlPct = pnlPctRepair;
+  out.grossPnlUsd = netRepair;
+  out.grossPnlPct = pnlPctRepair;
+  out.theoretical_exit_price = lastPx;
+  out.effective_exit_price = lastPx;
+  out.totalProceedsUsd = totalRecv;
+  out.grossTotalProceedsUsd = totalRecv;
+  if (out.exitContext && typeof out.exitContext === 'object') {
+    out.exitContext = {
+      ...(out.exitContext as Record<string, unknown>),
+      closePnlPct: +pnlPctRepair.toFixed(2),
+    };
+  }
+  out.__pnlDisplayRepair = 'periodic_heal_estimated_from_partials';
+  return out;
 }
 
 function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
@@ -2449,7 +2596,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
     }
 
     if (kind === 'live_position_close') {
-      const ct = (o.closedTrade ?? {}) as Record<string, unknown>;
+      const ct = sanitizeCorruptLivePeriodicHealClosedTrade((o.closedTrade ?? {}) as Record<string, unknown>);
       const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
       const syn: Record<string, unknown> = {
         kind: 'close',
@@ -2994,7 +3141,7 @@ async function buildPaper2StrategyRowFromLoad(
           tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
         }
         tlOut = await enrichTimelineMcapGaps(String(c.mint), tlOut);
-        tlOut = finalizeTimelineForApi(tlOut);
+        tlOut = finalizeTimelineForApi(tlOut, sid);
         const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
         const entryPriceVerifySlipPct =
           typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
@@ -3133,7 +3280,7 @@ async function buildPaper2StrategyRowFromLoad(
         timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
       }
       timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut);
-      timelineOut = finalizeTimelineForApi(timelineOut);
+      timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
       const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
