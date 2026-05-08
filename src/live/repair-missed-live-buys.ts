@@ -187,7 +187,11 @@ function buildOpenFromBuyRepair(args: {
   };
 }
 
-function mergeDcaLeg(ot: OpenTrade, args: { addUsd: number; marketBuy: number; effectiveBuy: number; ts: number }): void {
+function mergeDcaLeg(
+  ot: OpenTrade,
+  args: { addUsd: number; marketBuy: number; effectiveBuy: number; ts: number },
+  strategyId?: string,
+): void {
   ot.legs.push({
     ts: args.ts,
     price: args.effectiveBuy,
@@ -195,6 +199,7 @@ function mergeDcaLeg(ot: OpenTrade, args: { addUsd: number; marketBuy: number; e
     sizeUsd: args.addUsd,
     reason: 'dca',
   });
+  if (strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += args.addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;
@@ -446,12 +451,16 @@ export async function repairMissedLiveBuysFromJournal(args: {
 
       const marketBuy = c.intendedUsd / delta.deltaUi;
       const { effectivePrice: effectiveBuy } = applyEntryCosts(paperCfg, marketBuy, ot.dex, c.intendedUsd, null);
-      mergeDcaLeg(ot, {
-        addUsd: c.intendedUsd,
-        marketBuy,
-        effectiveBuy,
-        ts: tx.blockTimeMs,
-      });
+      mergeDcaLeg(
+        ot,
+        {
+          addUsd: c.intendedUsd,
+          marketBuy,
+          effectiveBuy,
+          ts: tx.blockTimeMs,
+        },
+        paperCfg.strategyId,
+      );
       ot.tokenDecimals = ot.tokenDecimals ?? decimals;
       ot.entryLegSignatures = [...(ot.entryLegSignatures ?? []), c.signature];
       ot.liveAnchorMode = 'chain';
