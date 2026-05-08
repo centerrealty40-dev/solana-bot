@@ -1,7 +1,8 @@
 /**
  * Jupiter shadow — почасовая сводка (fired by cron `0 * * * *`):
  * читает signal-lab.jsonl + mtm-shadow.jsonl за `JUPITER_SHADOW_HOURLY_WINDOW_MS` (default 1h)
- * и шлёт одно сообщение в Telegram. ALERT при доле ошибок ≥ порога, иначе REPORT (можно силой ALERT через JUPITER_SHADOW_HOURLY_FORCE_ALERT=1).
+ * и при **наличии ошибок** шлёт одно сообщение в Telegram. При ошибок 0 — по умолчанию не шлём (см. `JUPITER_SHADOW_HOURLY_SEND_IF_ZERO_ERRORS=1`).
+ * ALERT при доле ошибок ≥ порога, иначе REPORT (можно силой ALERT через `JUPITER_SHADOW_HOURLY_FORCE_ALERT=1`).
  *
  * Источник: только локальные JSONL (Jupiter lite-api / shadow). НЕ дергает QuickNode.
  */
@@ -17,6 +18,9 @@ const TAIL_BYTES = Number(process.env.JUPITER_SHADOW_HOURLY_TAIL_BYTES || 12 * 1
 const ALERT_RATIO = Number(process.env.JUPITER_SHADOW_HOURLY_ALERT_RATIO || 0.2);
 const MIN_EVENTS = Number(process.env.JUPITER_SHADOW_HOURLY_MIN_EVENTS || 5);
 const FORCE_ALERT = String(process.env.JUPITER_SHADOW_HOURLY_FORCE_ALERT || '').trim() === '1';
+/** `1` — как раньше: слать почасовой REPORT даже при 0 ошибок. По умолчанию не шлём, если ошибок нет. */
+const SEND_IF_ZERO_ERRORS =
+  String(process.env.JUPITER_SHADOW_HOURLY_SEND_IF_ZERO_ERRORS || '').trim() === '1';
 
 const SIGNAL_PATH =
   process.env.SHADOW_WATCH_SIGNAL_PATH || path.join(ROOT, 'data', 'live', 'signal-lab.jsonl');
@@ -110,6 +114,21 @@ async function main() {
   const total = sig.total + mtm.total;
   const errs = sig.errs + mtm.errs;
   const ratio = total > 0 ? errs / total : 0;
+
+  if (errs === 0 && !SEND_IF_ZERO_ERRORS) {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        skippedTelegram: true,
+        reason: 'zero_errors',
+        total,
+        errs,
+        windowMin: Math.round(WINDOW_MS / 60000),
+      }),
+    );
+    return;
+  }
+
   const triggerAlert = FORCE_ALERT || (total >= MIN_EVENTS && ratio >= ALERT_RATIO);
   const category = triggerAlert ? 'ALERT' : 'REPORT';
 
