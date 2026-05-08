@@ -1752,7 +1752,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           : dcaEffPrev(ot);
         const currDropMetric = usePnlVsAvgForDca ? curMetric / ot.avgEntry - 1 : dropFromFirstPct;
         if (!dcaCrossedDownward(effPrevDrop, currDropMetric, lvl.triggerPct)) continue;
-        ot.livePendingScaleIn = null;
         const addUsd = cfg.positionUsd * lvl.addFraction;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
@@ -1764,6 +1763,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           });
           if (!dcaBuyRes.ok) continue;
         }
+        /** Усреднение реально состоялось — план второй ноги сплита больше не нужен (не снимаем pending при неудачном свопе DCA). */
+        ot.livePendingScaleIn = null;
         const marketBuy = curMetric;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
         ot.legs.push({
@@ -1938,7 +1939,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    /** Вторая нога сплита — после DCA и partial TP на тике (частичный TP или DCA снимают pending в `entry-scale-in.ts`). */
+    /**
+     * Вторая нога (25%) — в конце тика: на этом же проходе уже обработаны DCA и partial TP.
+     * Если сработало усреднение или частичный TP — pending снят выше, до сюда не доходим (вторая нога не нужна).
+     */
     if (
       livePhase4 &&
       liveOscarCfg &&
