@@ -606,6 +606,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
         ok: r.ok,
         solProceedsLamports: r.wsolOutLamports,
         solProceedsSource: r.solProceedsSource,
+        txSignature: r.txSignature,
       }));
     },
   };

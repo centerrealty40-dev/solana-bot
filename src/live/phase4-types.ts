@@ -34,6 +34,8 @@ export type LiveTokenToSolSellResult = {
   solProceedsLamports?: bigint;
   /** Совпадает с `LiveTokenToSolPipelineResult.solProceedsSource` после свопа. */
   solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
+  /** Подпись подтверждённой сделки (live), для оффлайн-аудита PnL по цепочке. */
+  txSignature?: string | null;
 };
 
 export interface LiveOscarPhase4Tracker {

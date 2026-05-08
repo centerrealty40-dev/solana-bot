@@ -77,6 +77,8 @@ export interface PartialSell {
   solProceedsLamports?: string;
   /** `chain_sol` = lamports из подтверждённой tx meta; `jupiter_quote` = outAmount котировки; `model` = только снимок/applyExitCosts. */
   proceedsUsdSource?: 'chain_sol' | 'jupiter_quote' | 'model';
+  /** Live: подпись подтверждённого partial sell (Jupiter), для сверки с RPC. */
+  exitTxSignature?: string;
 }
 
 export interface OpenTrade {
@@ -246,6 +248,8 @@ export interface ClosedTrade extends OpenTrade {
   theoretical_exit_price: number;
   /** Audit-ready breakdown of why this trade closed; stamped by tracker. */
   exitContext?: ExitContext;
+  /** Live: подпись финального `sell_full`, если был on-chain выход. */
+  fullExitTxSignature?: string;
 }
 
 export type JsonlEventKind =

@@ -235,6 +235,11 @@ function totalProceedsGross(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.grossProceedsUsd || 0), 0);
 }
 
+function stampFullExitTxSignature(ct: ClosedTrade, sellOut: LiveTokenToSolSellResult): void {
+  const s = sellOut.txSignature;
+  if (typeof s === 'string' && s.length > 16) ct.fullExitTxSignature = s;
+}
+
 /** После live `sell_full`: подставить фактические SOL→USD последней ноги (раньше оставался только modeled effectiveSell). */
 function applyLiveFullCloseProceedsFromChain(args: {
   ct: ClosedTrade;
@@ -636,6 +641,9 @@ async function tryExecuteTpPartialSell(args: {
     }
   }
 
+  const exitTxSig =
+    typeof sellOut.txSignature === 'string' && sellOut.txSignature.length > 16 ? sellOut.txSignature : undefined;
+
   const ps: PartialSell = {
     ts: Date.now(),
     price: effectiveSell,
@@ -648,6 +656,7 @@ async function tryExecuteTpPartialSell(args: {
     grossPnlUsd,
     ...(solProceedsLamports ? { solProceedsLamports } : {}),
     proceedsUsdSource,
+    ...(exitTxSig ? { exitTxSignature: exitTxSig } : {}),
   };
   ot.partialSells.push(ps);
   ot.remainingFraction *= 1 - sellFraction;
@@ -700,6 +709,7 @@ async function tryExecuteTpPartialSell(args: {
     ...(exitPvPartial.verdict ? { priceVerifyExit: exitPvPartial.verdict } : {}),
     ...(solProceedsLamports ? { solProceedsLamports } : {}),
     proceedsUsdSource,
+    ...(exitTxSig ? { exitTxSignature: exitTxSig } : {}),
     ...(cfg.liveExitModeAbEnabled && ot.liveExitProfileMode
       ? { liveExitProfileMode: ot.liveExitProfileMode }
       : {}),
@@ -1044,6 +1054,7 @@ export async function trackerForceFullExitLive(args: {
     marketSell,
     networkFeeUsdPerTx: perTxClose,
   });
+  stampFullExitTxSignature(ct, okSell);
   const exitContextMain = buildExitContext({
     cfg,
     ot,
@@ -1417,6 +1428,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           marketSell,
           networkFeeUsdPerTx: perTxClose,
         });
+        stampFullExitTxSignature(ct, liqSellOut);
         const exitContext = buildExitContext({
           cfg: effCfg,
           ot,
@@ -1996,6 +2008,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         marketSell,
         networkFeeUsdPerTx: perTxClose,
       });
+      stampFullExitTxSignature(ct, sellFullOut);
       const exitContextMain = buildExitContext({
         cfg: effCfg,
         ot,

@@ -67,6 +67,7 @@ export function serializeClosedTrade(ct: ClosedTrade): Record<string, unknown> {
     theoretical_entry_price: ct.theoretical_entry_price,
     theoretical_exit_price: ct.theoretical_exit_price,
     exitContext: ct.exitContext,
+    ...(ct.fullExitTxSignature ? { fullExitTxSignature: ct.fullExitTxSignature } : {}),
   };
 }
 
@@ -76,6 +77,10 @@ export function restoreClosedTradeFromJson(raw: Record<string, unknown>): Closed
   try {
     const costs = raw.costs;
     if (typeof costs !== 'object' || costs === null) return null;
+    const fullExit =
+      typeof raw.fullExitTxSignature === 'string' && raw.fullExitTxSignature.length > 16
+        ? raw.fullExitTxSignature
+        : undefined;
     return {
       ...base,
       exitTs: Number(raw.exitTs),
@@ -94,6 +99,7 @@ export function restoreClosedTradeFromJson(raw: Record<string, unknown>): Closed
       theoretical_entry_price: Number(raw.theoretical_entry_price ?? base.avgEntryMarket),
       theoretical_exit_price: Number(raw.theoretical_exit_price ?? 0),
       exitContext: raw.exitContext as ClosedTrade['exitContext'],
+      ...(fullExit ? { fullExitTxSignature: fullExit } : {}),
     };
   } catch {
     return null;

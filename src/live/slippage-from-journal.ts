@@ -65,7 +65,7 @@ export function resolveLiveWalletPk(cfg: LiveOscarConfig): string {
 }
 
 /** Pair execution_attempt with execution_result per intentId (same scan as repair-missed). */
-function pairExecutionRows(
+export function pairExecutionRows(
   lines: string[],
   strategyId: string,
 ): Map<string, { attempt?: Record<string, unknown>; result?: Record<string, unknown> }> {
