@@ -37,20 +37,18 @@ async function main(): Promise<void> {
   const demoMint = 'So11111111111111111111111111111111111111112';
   const demoSym = 'WSOL/ping';
   const gmgnUrl = `https://gmgn.ai/sol/token/${encodeURIComponent(demoMint)}`;
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const escA = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-  const o = { telegramBotToken, telegramChatId, skipQuietHours: true as const, parseMode: 'HTML' as const };
+  const o = { telegramBotToken, telegramChatId, skipQuietHours: true as const };
   await sendTagged(
     'ADVICE',
     'live_whitelist_miss',
-    `Тест (ping): кандидат прошёл гейты, но mint не в whitelist.<br/>symbol: ${esc(demoSym)}<br/>mint: <code>${esc(demoMint)}</code><br/><a href="${escA(gmgnUrl)}">GMGN</a>`,
+    `Тест (ping): кандидат прошёл гейты, но mint не в whitelist.\nsymbol: ${demoSym}\nmint: ${demoMint}\nGMGN: ${gmgnUrl}`,
     o,
   );
   await sendTagged(
     'ALERT',
     'live_whitelist_consec_loss_drop',
-    `Тест (ping): монета удалена из whitelist после N подряд убыточных сделок.<br/>symbol: ${esc(demoSym)}<br/>mint: <code>${esc(demoMint)}</code><br/><a href="${escA(gmgnUrl)}">GMGN</a>`,
+    `Тест (ping): монета удалена из whitelist после N подряд убыточных сделок.\nsymbol: ${demoSym}\nmint: ${demoMint}\nGMGN: ${gmgnUrl}`,
     o,
   );
   console.log('OK: sent ADVICE+ALERT test messages via whitelist bot (skipQuietHours)');

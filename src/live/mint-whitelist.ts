@@ -10,37 +10,28 @@ import type { LiveOscarConfig } from './config.js';
 
 const log = child('live-mint-whitelist');
 
-/** Карточка токена на gmgn.ai (Solana). */
+/** Карточка токена на gmgn.ai (Solana). Отдельной строкой в тексте — клиент Telegram делает URL кликабельным без parse_mode. */
 function gmgnSolTokenUrl(mint: string): string {
   return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
 }
 
-function escapeTelegramHtmlText(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/** Значение HTML-атрибута `href`. */
-function escapeTelegramHtmlAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function whitelistAlertHtmlBodyMiss(sym: string, mint: string): string {
+function whitelistAlertTextMiss(sym: string, mint: string): string {
   const url = gmgnSolTokenUrl(mint);
   return (
-    `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.<br/>` +
-    `symbol: ${escapeTelegramHtmlText(sym)}<br/>` +
-    `mint: <code>${escapeTelegramHtmlText(mint)}</code><br/>` +
-    `<a href="${escapeTelegramHtmlAttr(url)}">GMGN</a>`
+    `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\n` +
+    `symbol: ${sym}\n` +
+    `mint: ${mint}\n` +
+    `GMGN: ${url}`
   );
 }
 
-function whitelistAlertHtmlBodyDrop(sym: string, mint: string, threshold: number): string {
+function whitelistAlertTextDrop(sym: string, mint: string, threshold: number): string {
   const url = gmgnSolTokenUrl(mint);
   return (
-    `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).<br/>` +
-    `symbol: ${escapeTelegramHtmlText(sym)}<br/>` +
-    `mint: <code>${escapeTelegramHtmlText(mint)}</code><br/>` +
-    `<a href="${escapeTelegramHtmlAttr(url)}">GMGN</a>`
+    `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).\n` +
+    `symbol: ${sym}\n` +
+    `mint: ${mint}\n` +
+    `GMGN: ${url}`
   );
 }
 
@@ -127,8 +118,8 @@ export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldo
     const ok = await sendTagged(
       whitelistSkipTelegramCategory(),
       'live_whitelist_miss',
-      whitelistAlertHtmlBodyMiss(sym, key),
-      { ...whitelistAlertsTelegramOpts(), parseMode: 'HTML' },
+      whitelistAlertTextMiss(sym, key),
+      whitelistAlertsTelegramOpts(),
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
     if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
@@ -270,8 +261,8 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
     const ok = await sendTagged(
       whitelistDropTelegramCategory(),
       'live_whitelist_consec_loss_drop',
-      whitelistAlertHtmlBodyDrop(sym, key, threshold),
-      { ...whitelistAlertsTelegramOpts(), parseMode: 'HTML' },
+      whitelistAlertTextDrop(sym, key, threshold),
+      whitelistAlertsTelegramOpts(),
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_consec_loss_drop telegram');
   })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_consec_loss_drop telegram failed'));
