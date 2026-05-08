@@ -60,9 +60,6 @@ const DASHBOARD_PAPER_OSCAR_RISKY_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_RISKY_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-risky.jsonl');
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
-/** Base Alpha — paper bots placeholder + DB analytics (reads optional BASE_ALPHA_DATABASE_URL). */
-const HTML_BASE_PATH = path.join(__dirname, 'dashboard-base.html');
-const HTML_BASE_ANALYTICS_PATH = path.join(__dirname, 'dashboard-base-analytics.html');
 /** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
 const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
@@ -90,21 +87,6 @@ function pgPool(): ReturnType<typeof postgres> {
     pgSql = postgres(url, { max: 2, idle_timeout: 20 });
   }
   return pgSql;
-}
-
-/** Optional second Postgres: Base Alpha product DB (same VPS, usually port 5433). Used only by /api/base-alpha/stats. */
-let baseAlphaPgSql: ReturnType<typeof postgres> | null = null;
-function baseAlphaDatabaseUrl(): string | null {
-  const u = (process.env.BASE_ALPHA_DATABASE_URL || process.env.BALPHA_DATABASE_URL || '').trim();
-  return u || null;
-}
-function baseAlphaPgPool(): ReturnType<typeof postgres> | null {
-  const url = baseAlphaDatabaseUrl();
-  if (!url) return null;
-  if (!baseAlphaPgSql) {
-    baseAlphaPgSql = postgres(url, { max: 2, idle_timeout: 20 });
-  }
-  return baseAlphaPgSql;
 }
 
 interface OpenTrade {
@@ -1532,13 +1514,18 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const tpRu = tpRegimeRu(e.tpRegime);
   if (tpRu) parts.push(`Класс пути до входа (TP-regime): ${tpRu} (${String(e.tpRegime)})`);
   const mode = e.liveExitProfileMode;
+  const evKind = String(e.kind || '');
   if (mode === 'A') {
     parts.push(
-      'Режим A (IDEALIZED §9.2): плановый двухногий scale-in — сплит ликвидности (не DCA), профиль A после второй ноги; до DCA по `PAPER_DCA_LEVELS` — лестница TP (+5% к средней, 15% остатка за ступень), kill −5%, базовые trail/timeout.',
+      'Режим A: назначается при первой ступени лестницы TP (live-oscar) или аналогичном профиле; лестница и kill/trail — как в env режима A (`PAPER_TP_GRID_*`, `PAPER_DCA_KILLSTOP`).',
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B (IDEALIZED §9.2): только после DCA по `PAPER_DCA_LEVELS` — лестница с крупными долями за ступень (см. PAPER_LIVE_EXIT_MODE_B_TP_GRID_*), kill −7%, trail/timeout из env B; режим сохраняется до закрытия позиции (нет B→A на частичных TP).',
+      'Режим B: только после DCA по `PAPER_DCA_LEVELS` — лестница с крупными долями за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`), kill/trail/timeout из env B; до закрытия не откатывается в A.',
+    );
+  } else if (evKind === 'open' || evKind === 'scale_in_add') {
+    parts.push(
+      'Режим выхода A/B не назначен: двухногий вход 75%+25% — плановый сплит (не DCA). B включается после DCA по просадке; A — при первой ступени TP.',
     );
   }
   return parts.length ? parts.join('\n') : null;
@@ -2882,103 +2869,6 @@ app.get('/smart-lottery', async (_req, reply) => {
 app.get('/SmartLottery', async (_req, reply) => {
   reply.header('content-type', 'text/html; charset=utf-8');
   return fs.readFileSync(HTML_SMLOT_PATH, 'utf-8');
-});
-
-app.get('/base', async (req, reply) => {
-  recordVisit(getClientIp(req), req.headers['user-agent'] as string, req.headers['referer'] as string);
-  reply.header('content-type', 'text/html; charset=utf-8');
-  return fs.readFileSync(HTML_BASE_PATH, 'utf-8');
-});
-
-app.get('/base-analytics', async (req, reply) => {
-  recordVisit(getClientIp(req), req.headers['user-agent'] as string, req.headers['referer'] as string);
-  reply.header('content-type', 'text/html; charset=utf-8');
-  return fs.readFileSync(HTML_BASE_ANALYTICS_PATH, 'utf-8');
-});
-
-app.get('/api/base-alpha/stats', async (_req, reply) => {
-  reply.header('cache-control', 'no-store');
-  const sqlBa = baseAlphaPgPool();
-  if (!sqlBa) {
-    return {
-      ok: false as const,
-      error:
-        'BASE_ALPHA_DATABASE_URL (or BALPHA_DATABASE_URL) is not set. Add the Base Alpha Postgres DSN on this host (e.g. postgresql://balpha:***@127.0.0.1:5433/base_alpha).',
-    };
-  }
-  try {
-    const poolsByDex = await sqlBa<{ dex: string; n: bigint }[]>`
-      SELECT dex::text AS dex, count(*)::bigint AS n FROM pools GROUP BY dex ORDER BY dex
-    `;
-    const [snapRow] = await sqlBa<{ c: bigint }[]>`SELECT count(*)::bigint AS c FROM pool_snapshots`;
-    const [swapRow] = await sqlBa<{ c: bigint }[]>`SELECT count(*)::bigint AS c FROM swap_events`;
-    const [maxSnap] = await sqlBa<{ m: string | null }[]>`
-      SELECT max(block)::text AS m FROM pool_snapshots
-    `;
-    const [maxSwap] = await sqlBa<{ m: string | null }[]>`
-      SELECT max(block)::text AS m FROM swap_events
-    `;
-    const collectors24h = await sqlBa<{ collector: string; runs: bigint; rows_ins: bigint; credits: bigint }[]>`
-      SELECT collector,
-             count(*)::bigint AS runs,
-             coalesce(sum(rows_inserted), 0)::bigint AS rows_ins,
-             coalesce(sum(credits_used), 0)::bigint AS credits
-      FROM collector_runs
-      WHERE started_at > now() - interval '24 hours'
-      GROUP BY collector
-      ORDER BY collector
-    `;
-    const recentPools = await sqlBa<
-      { id: number; dex: string; address: string; token0: string; token1: string; created_at_block: string | null }[]
-    >`
-      SELECT id, dex::text AS dex, address, token0, token1, created_at_block::text AS created_at_block
-      FROM pools
-      ORDER BY id DESC
-      LIMIT 20
-    `;
-    const topSwapPools = await sqlBa<{ address: string; dex: string; swap_count: bigint }[]>`
-      SELECT p.address, p.dex::text AS dex, count(*)::bigint AS swap_count
-      FROM swap_events s
-      JOIN pools p ON p.id = s.pool_id
-      GROUP BY p.id, p.address, p.dex
-      ORDER BY swap_count DESC
-      LIMIT 15
-    `;
-    return {
-      ok: true as const,
-      updatedAt: Date.now(),
-      poolsByDex: poolsByDex.map((r) => ({ dex: r.dex, count: Number(r.n) })),
-      poolSnapshotsTotal: Number(snapRow?.c ?? 0),
-      swapEventsTotal: Number(swapRow?.c ?? 0),
-      maxSnapshotBlock: maxSnap?.m ?? null,
-      maxSwapBlock: maxSwap?.m ?? null,
-      collectors24h: collectors24h.map((r) => ({
-        collector: r.collector,
-        runs: Number(r.runs),
-        rowsInserted: Number(r.rows_ins),
-        creditsUsed: Number(r.credits),
-      })),
-      recentPools: recentPools.map((r) => ({
-        id: r.id,
-        dex: r.dex,
-        address: r.address,
-        token0: r.token0,
-        token1: r.token1,
-        createdAtBlock: r.created_at_block,
-      })),
-      topSwapPools: topSwapPools.map((r) => ({
-        address: r.address,
-        dex: r.dex,
-        swapCount: Number(r.swap_count),
-      })),
-    };
-  } catch (err: unknown) {
-    reply.code(503);
-    return {
-      ok: false as const,
-      error: String((err as Error)?.message ?? err),
-    };
-  }
 });
 
 app.get('/api/paper2/priority-fee', async (_req, reply) => {

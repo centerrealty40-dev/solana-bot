@@ -1171,6 +1171,20 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!ot) continue;
     let effCfg = cfgEffectiveForOpen(cfg, ot);
 
+    /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
+    if (
+      cfg.strategyId === 'live-oscar' &&
+      cfg.liveExitModeAbEnabled &&
+      ot.liveExitProfileMode === 'A' &&
+      ot.partialSells.length === 0 &&
+      ot.dcaUsedIndices.size === 0 &&
+      ot.dcaUsedLevels.size === 0 &&
+      ot.legs.length > 0 &&
+      ot.legs.every((l) => l.reason === 'open' || l.reason === 'scale_in')
+    ) {
+      ot.liveExitProfileMode = undefined;
+    }
+
     let snapPx = 0;
     try {
       const raw = await fetchLatestSnapshotPrice(
@@ -1809,24 +1823,32 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const threshold = k * step;
         if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
         if (pnlFrac + LADDER_PNL_EPS < threshold) break;
-          const r = await tryExecuteTpPartialSell({
-            mint,
-            ot,
-            cfg: effCfg,
-            curMetric,
-            sellFraction: sellFrac,
-            ladderStepIndex: k - 1,
-            ladderRungsTotal: 0,
-            ladderPnlPct: threshold,
-            tpGrid: true,
-            journalAppend,
-            journalLiveStrategy,
-            livePhase4,
-            liveOscarCfg,
-            stats,
-            markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
-            logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
-          });
+        if (
+          cfg.strategyId === 'live-oscar' &&
+          cfg.liveExitModeAbEnabled &&
+          ot.liveExitProfileMode == null &&
+          k === 1
+        ) {
+          ot.liveExitProfileMode = 'A';
+        }
+        const r = await tryExecuteTpPartialSell({
+          mint,
+          ot,
+          cfg: effCfg,
+          curMetric,
+          sellFraction: sellFrac,
+          ladderStepIndex: k - 1,
+          ladderRungsTotal: 0,
+          ladderPnlPct: threshold,
+          tpGrid: true,
+          journalAppend,
+          journalLiveStrategy,
+          livePhase4,
+          liveOscarCfg,
+          stats,
+          markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
+          logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
+        });
         if (r === 'abort_mint') {
           break;
         }
@@ -1841,6 +1863,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const lvl = tpLadder[stepIdx]!;
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
         if (xAvg - 1 >= lvl.pnlPct) {
+          if (
+            cfg.strategyId === 'live-oscar' &&
+            cfg.liveExitModeAbEnabled &&
+            ot.liveExitProfileMode == null &&
+            stepIdx === 0
+          ) {
+            ot.liveExitProfileMode = 'A';
+          }
           const r = await tryExecuteTpPartialSell({
             mint,
             ot,

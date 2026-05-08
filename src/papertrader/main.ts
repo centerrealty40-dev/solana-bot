@@ -522,7 +522,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         ot.tokenDecimals = tokenDecimals;
 
         await resolveTpRegimeForOpen(cfg, ot);
-        if (cfg.liveExitModeAbEnabled && !isPaperOscarIdealizedStackStrategyId(cfg.strategyId)) {
+        /**
+         * Live Oscar: режим A/B не ставим на входе — сплит 75%+25% обязателен и не является DCA.
+         * A включается трекером при первой ступени TP-сетки; B — при реальном DCA по просадке.
+         */
+        if (
+          cfg.liveExitModeAbEnabled &&
+          !isPaperOscarIdealizedStackStrategyId(cfg.strategyId) &&
+          cfg.strategyId !== 'live-oscar'
+        ) {
           ot.liveExitProfileMode = 'A';
         }
 

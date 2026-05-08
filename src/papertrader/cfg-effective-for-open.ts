@@ -1,6 +1,7 @@
 /**
  * Live Oscar — режимы выхода A/B (§ IDEALIZED_OSCAR_STACK_SPEC): параметры `PAPER_LIVE_EXIT_MODE_B_*`
- * пока `liveExitProfileMode === 'B'`. После DCA режим **B** сохраняется до закрытия позиции (обратно в A не переключаем).
+ * пока `liveExitProfileMode === 'B'`. Пока режим не назначен или A — используется базовый `cfg` (сетка/kill из `PAPER_*`).
+ * После DCA режим **B** сохраняется до закрытия (нет B→A на частичных TP).
  */
 import type { PaperTraderConfig } from './config.js';
 import type { OpenTrade } from './types.js';
