@@ -1706,14 +1706,22 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     let tgEff = tpGridEffective(ot, effCfg);
     let killEff = dcaKillstopEffective(ot, effCfg);
 
-    /** §3 `IDEALIZED_OSCAR_STACK_SPEC_V2`: до активации A/B TP-сетка не работает; после сплита первая ступень только при +step к avg. */
+    /** §3 V2: TP не в нейтрали до первой ступени +step к avg — но только после полного сплита. Пока ждём вторую ногу (`livePendingScaleIn`), TP глушим. Если сплит сорвался (pending снят, ноги нет) — не блокировать TP бесконечно на одной ноге 75%. */
     const liveOscarAb = cfg.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled;
     const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
-    const skipTpGridLiveOscarNeutral =
+    const awaitingMandatoryScaleIn =
       liveOscarAb &&
       ot.liveExitProfileMode == null &&
-      (!entrySplitComplete ||
-        (ot.avgEntry > 0 && curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl));
+      !entrySplitComplete &&
+      ot.livePendingScaleIn != null;
+    const neutralBelowFirstTpAfterFullSplit =
+      liveOscarAb &&
+      ot.liveExitProfileMode == null &&
+      entrySplitComplete &&
+      ot.avgEntry > 0 &&
+      curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl;
+    const skipTpGridLiveOscarNeutral =
+      awaitingMandatoryScaleIn || neutralBelowFirstTpAfterFullSplit;
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
@@ -1734,8 +1742,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    /** Сплит 75%+25% — не DCA (`entry-scale-in.ts`); настоящее усреднение только по `PAPER_DCA_LEVELS` после полного входа. */
-    const liveOscarDcaBlockedUntilSplit = liveOscarAb && !entrySplitComplete;
+    /** Пока реально ждём вторую ногу сплита — не смешивать с DCA. Если ожидание снято без второй ноги — DCA по общим правилам снова допустим. */
+    const liveOscarDcaBlockedUntilSplit =
+      liveOscarAb && !entrySplitComplete && ot.livePendingScaleIn != null;
     const liveOscarNoDcaInModeA = liveOscarAb && ot.liveExitProfileMode === 'A';
 
     const mayDca =
