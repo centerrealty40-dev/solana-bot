@@ -422,6 +422,11 @@ module.exports = {
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
+        /**
+         * Отдельный бот для TG только по `live_whitelist_miss` и `live_whitelist_consec_loss_drop`.
+         * Chat: `TELEGRAM_CHAT_ID` из `.env`, если не задан `LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID`.
+         */
+        LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN: '8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30',
         /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
         LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
         /**

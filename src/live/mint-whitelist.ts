@@ -22,6 +22,19 @@ function whitelistSkipTelegramCategory(): TelegramCategory {
   return 'ADVICE';
 }
 
+/** Отдельный бот/чат только для `live_whitelist_miss` и `live_whitelist_consec_loss_drop`. Chat по умолчанию — `TELEGRAM_CHAT_ID`. */
+function whitelistAlertsTelegramOpts(): {
+  telegramBotToken?: string;
+  telegramChatId?: string;
+} {
+  const telegramBotToken = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
+  const telegramChatId = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
+  const o: { telegramBotToken?: string; telegramChatId?: string } = {};
+  if (telegramBotToken) o.telegramBotToken = telegramBotToken;
+  if (telegramChatId) o.telegramChatId = telegramChatId;
+  return o;
+}
+
 export function resolveLiveMintWhitelistPath(raw: string): string {
   const t = raw.trim();
   if (!t) return path.resolve(process.cwd(), 'data/live/live-oscar-mint-whitelist.txt');
@@ -76,6 +89,7 @@ export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldo
       whitelistSkipTelegramCategory(),
       'live_whitelist_miss',
       `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\nsymbol: ${sym}\nmint: ${key}`,
+      whitelistAlertsTelegramOpts(),
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
     if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
@@ -218,6 +232,7 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
       whitelistDropTelegramCategory(),
       'live_whitelist_consec_loss_drop',
       `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).\nsymbol: ${sym}\nmint: ${key}`,
+      whitelistAlertsTelegramOpts(),
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_consec_loss_drop telegram');
   })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_consec_loss_drop telegram failed'));

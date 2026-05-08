@@ -78,6 +78,10 @@ function chunk(text: string, max = 3800): string[] {
 interface SendOpts {
   parseMode?: 'Markdown' | 'HTML';
   disablePreview?: boolean;
+  /** Если задано — не использовать `TELEGRAM_BOT_TOKEN` (отдельный бот / канал). */
+  telegramBotToken?: string;
+  /** Если задано — не использовать `TELEGRAM_CHAT_ID`. */
+  telegramChatId?: string;
 }
 
 /**
@@ -89,8 +93,8 @@ export async function sendTagged(
   text: string,
   opts: SendOpts = {},
 ): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const token = (opts.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN)?.trim();
+  const chat = (opts.telegramChatId ?? process.env.TELEGRAM_CHAT_ID)?.trim();
   if (!token || !chat) {
     log.warn('TELEGRAM_BOT_TOKEN/CHAT_ID missing; sendTagged skipped');
     return false;
@@ -111,8 +115,6 @@ export async function sendTagged(
       log.debug({ tag, cd }, 'suppressed by cooldown');
       return false;
     }
-    st[tagKey] = Date.now();
-    writeState(st);
   }
 
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -138,5 +140,12 @@ export async function sendTagged(
       log.warn({ err: String(e) }, 'telegram send failed');
     }
   }
+
+  if (cd > 0 && ok) {
+    const st = readState();
+    st[tagKey] = Date.now();
+    writeState(st);
+  }
+
   return ok;
 }
