@@ -7,6 +7,7 @@ import { globalGate } from '../filters/global-gate.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import {
+  appendLiveReentryPriceGapReasons,
   evaluatedAtMap,
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
@@ -242,6 +243,8 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
         }
       }
     }
+
+    appendLiveReentryPriceGapReasons(cfg, row.mint, row.price_usd, cooldownReasons);
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
     const cheapPass = preHoldersReasons.length === 0;

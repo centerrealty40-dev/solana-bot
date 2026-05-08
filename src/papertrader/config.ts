@@ -152,6 +152,12 @@ const ConfigSchema = z.object({
    * Env: `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED` (default true).
    */
   dipLossExitCooldownEnabled: z.boolean().default(true),
+  /**
+   * Live discovery: не открывать повторно по mint, пока цена кандидата (`snapshot price_usd`)
+   * не ниже последнего рыночного выхода минимум на N% (0 = выкл.).
+   * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT`.
+   */
+  liveReentryMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(0),
 
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
@@ -502,6 +508,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,
     dipLossExitCooldownMinutes: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES,
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
+    liveReentryMinDropFromLastExitPct: process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT,
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),

@@ -35,6 +35,7 @@
     "dip-bot-intel:export-candidates": "tsx src/scripts/dip-bot-intel-export-candidates.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",
     "live-chain-pnl-audit": "tsx scripts-tmp/live-chain-pnl-audit.ts",
+    "live-reentry-gap-counterfactual": "tsx scripts-tmp/live-reentry-exit-price-gap-counterfactual.ts",
     "paper2:dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "paper2:advisor": "node scripts-tmp/paper2-advisor.mjs",
     "paper2:diagnose-holders-gpa": "node scripts-tmp/paper2-diagnose-holders-gpa.mjs",

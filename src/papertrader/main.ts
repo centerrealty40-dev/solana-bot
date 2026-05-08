@@ -24,6 +24,7 @@ import {
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
   recordEntryTs,
+  recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
 } from './discovery/dip-clones.js';
 import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
@@ -169,6 +170,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       if (!(ct.exitTs > 0)) continue;
       const prev = lastPostExitBuyCooldownTsByMintMap.get(ct.mint) ?? 0;
       if (ct.exitTs >= prev) lastPostExitBuyCooldownTsByMintMap.set(ct.mint, ct.exitTs);
+      const px =
+        ct.theoretical_exit_price > 0 ? ct.theoretical_exit_price : ct.effective_exit_price;
+      recordLastExitMarketSnapshotAfterClose(ct.mint, ct.exitTs, px);
     }
   }
   const open: Map<string, OpenTrade> =

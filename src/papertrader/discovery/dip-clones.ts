@@ -49,6 +49,50 @@ export const lastEntryTsByMintMap = new Map<string, number>();
 /** Последний `exitTs` полного закрытия по mint (ms) — пауза перед повторным входом в тот же mint. */
 export const lastPostExitBuyCooldownTsByMintMap = new Map<string, number>();
 
+/** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
+export const lastExitMarketSnapshotByMintMap = new Map<string, { exitTs: number; marketUsd: number }>();
+
+export function recordLastExitMarketSnapshotAfterClose(mint: string, exitTsMs: number, marketUsd: number): void {
+  if (!(exitTsMs > 0)) return;
+  const px = Number(marketUsd);
+  if (!(px > 0)) return;
+  const prev = lastExitMarketSnapshotByMintMap.get(mint);
+  if (!prev || exitTsMs >= prev.exitTs) {
+    lastExitMarketSnapshotByMintMap.set(mint, { exitTs: exitTsMs, marketUsd: px });
+  }
+}
+
+/** После полного закрытия: cooldown по времени + снимок цены выхода для гейта re-entry. */
+export function recordAfterFullCloseForMintRepeatGate(
+  cfg: PaperTraderConfig,
+  mint: string,
+  exitTsMs: number,
+  theoreticalExitUsd: number,
+  effectiveExitUsd: number,
+): void {
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs);
+  const px = theoreticalExitUsd > 0 ? theoreticalExitUsd : effectiveExitUsd;
+  recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px);
+}
+
+export function appendLiveReentryPriceGapReasons(
+  cfg: PaperTraderConfig,
+  mint: string,
+  snapshotPriceUsd: number,
+  out: string[],
+): void {
+  const pct = cfg.liveReentryMinDropFromLastExitPct;
+  if (!(Number(pct) > 0)) return;
+  const snap = lastExitMarketSnapshotByMintMap.get(mint);
+  if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
+  const maxAllowed = snap.marketUsd * (1 - pct / 100);
+  if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
+    out.push(
+      `reentry_price_above_last_exit_minus_${pct}pct(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
+    );
+  }
+}
+
 export function recordPostExitBuyCooldownIfApplicable(
   cfg: PaperTraderConfig,
   mint: string,
@@ -241,6 +285,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
     }
+
+    appendLiveReentryPriceGapReasons(cfg, row.mint, row.price_usd, cooldownReasons);
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
     const cheapPass = preHoldersReasons.length === 0;
