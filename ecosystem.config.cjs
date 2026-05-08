@@ -250,9 +250,9 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** по DCA −6% или исторический сплит; доля первой ноги **0.75**. */
+        /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** по DCA −4% или исторический сплит; доля первой ноги **0.75**. */
         PAPER_POSITION_USD: '600',
-        /** Первая нога $450 / $600 = 0.75; вторая $150 — по коридору Jupiter (+1/−2%%) или усреднение −6%% (`PAPER_DCA_LEVELS`). */
+        /** Первая нога $450 / $600 = 0.75; вторая $150 — по коридору Jupiter (+1/−2%%) или усреднение −4%% (`PAPER_DCA_LEVELS`). */
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -305,7 +305,7 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.12',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
         /**
          * Режим B — «после боли» (IDEALIZED §9.2): та же ступень +5% к средней, но продаём большую долю остатка
          * за ступень и ограничиваем число ступеней — быстрее выйти в зелёный/около нуля.
@@ -316,12 +316,12 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
 
         /**
-         * Усреднение −6%% от первой ноги (`-6` в parseDcaLevels); доля 0.25 = $150 при $600 — снимает план второй ноги сплита.
+         * Усреднение −4%% от первой ноги (`-4` в parseDcaLevels); доля 0.25 = $150 при $600 — снимает план второй ноги сплита.
          * Доля первой ноги < 1: вторая нога через `LIVE_ENTRY_SCALE_IN_*` (коридор +1/−2%%, опрос вне коридора 30 с).
          */
-        PAPER_DCA_LEVELS: '-6:0.25',
-        /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −12%% к avg. */
-        PAPER_DCA_KILLSTOP: '-0.12',
+        PAPER_DCA_LEVELS: '-4:0.25',
+        /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −8%% к avg. */
+        PAPER_DCA_KILLSTOP: '-0.08',
         /**
          * Режим A — «полная лестница» (IDEALIZED §9.2): +5% к средней; 15% остатка за ступень;
          * retrace-защита после 1-й ступени 2.5%.
