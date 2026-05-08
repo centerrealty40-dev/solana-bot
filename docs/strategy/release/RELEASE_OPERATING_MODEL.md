@@ -178,21 +178,29 @@
 
 ### 7.4 SSH-доступ агента / автоматизации (единственный канон)
 
-Чтобы исполнители (в т.ч. ИИ-агенты в Cursor) **не спрашивали владельца «как зайти на сервер»**, используется **только** связка ниже. Иное (`User botadmin`, DNS `*.hstgr.cloud`, другие ключи из `~/.ssh/config` на рабочей станции) для этого хоста **не подставлять** — конфиг пользователя может указывать другого пользователя или ключ, не совпадающий с `authorized_keys` у **`root`** на VPS.
+Чтобы исполнители (в т.ч. ИИ-агенты в Cursor) **не спрашивали владельца «как зайти на сервер»**, используется **только** связка ниже.
+
+**Именование «Bot Admin»:** это доступ по ключу **`botadmin_187_auto`** (учётная запись автоматизации у мейнтейнера). На данном VPS этот ключ установлен в **`authorized_keys` пользователя `root`**. Вход **`botadmin@187.124.38.242`** с тем же ключом **не работает** (ключ не добавлен для пользователя `botadmin` на хосте). DNS `*.hstgr.cloud` и чужие строки из локального `~/.ssh/config` для этого IP **не подставлять**.
 
 | Параметр | Значение |
 |----------|----------|
 | Хост | **`187.124.38.242`** (только IP). |
-| Пользователь SSH | **`root`**. |
-| Ключ | Приватный **`c:/Users/cente/.ssh/botadmin_187_auto`**; в каждой команде явно **`-i c:/Users/cente/.ssh/botadmin_187_auto`**. |
+| Пользователь SSH | **`root`** (единственный принимающий этот ключ на хосте). |
+| Ключ (Bot Admin) | Приватный **`c:/Users/cente/.ssh/botadmin_187_auto`**; в каждой команде явно **`-i c:/Users/cente/.ssh/botadmin_187_auto`**. |
 | Каталог продукта на сервере | **`/opt/solana-alpha`**. |
-| PM2 и файлы рантайма | как прежде под пользователем **`salpha`**: `sudo -u salpha pm2 …` |
+| PM2 и файлы рантайма | под пользователем **`salpha`**: **`sudo -u salpha -H bash -lc '…'`** (или эквивалент с явным `HOME`/`PM2_HOME`, см. `scripts/ops/deploy-live-oscar-vps.sh`). |
 
 Примеры:
 
 ```text
 ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "<cmd>"
 scp -i c:/Users/cente/.ssh/botadmin_187_auto <local> root@187.124.38.242:<remote>
+```
+
+Единый вызов выката **v2** (fetch / reset / npm ci / pm2 reload от **`salpha`**):
+
+```text
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env && git rev-parse HEAD && git status -sb'"
 ```
 
 Если вход по этим параметрам невозможен — **остановка** и эскалация владельцу (новый IP, ключ, сеть); самовольно менять пользователя или ключ **запрещено**.

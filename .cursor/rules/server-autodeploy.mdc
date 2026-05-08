@@ -25,18 +25,25 @@ Tracked-код в **`/opt/solana-alpha`** попадает на сервер **�
 ## Доступ к серверу (когда deploy-session разрешён)
 
 - **Host:** `187.124.38.242` (использовать IP; DNS-алиасы из локального `~/.ssh/config` могут конфликтовать с пользователем ключа).
-- **User для SSH:** `root` для входа; команды приложения — **`sudo -u salpha`** (`pm2`, работа в `/opt/solana-alpha` от имени владельца клона).
-- **IdentityFile:** ключ прод-сервера хранится у мейнтейнера локально; в промпт агента **не** подставлять содержимое ключа. Если задача не про деплой — ключ не нужен.
+- **«Bot Admin» / ключ:** локальный ключ автоматизации **`botadmin_187_auto`** (Windows: `c:/Users/cente/.ssh/botadmin_187_auto`). Это и есть рабочий «Bot Admin»-доступ; содержимое ключа в чат не копировать.
+- **User для SSH:** на этом VPS указанный ключ привязан к **`root`** (`authorized_keys` у root). Учётная запись Linux **`botadmin`** с тем же ключом здесь **не принимается** (`Permission denied`) — не подменять пользователя из сторонних SSH config.
+- Команды приложения выполнять как **`sudo -u salpha`** (`pm2`, `git`/`npm` в `/opt/solana-alpha` от владельца клона).
 
 Шаблон (после того как merge в `v2` и нужен деплой):
 
 ```text
-ssh -i <path-to-maintainer-key> -o StrictHostKeyChecking=accept-new root@187.124.38.242 "<cmd>"
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "<cmd>"
+```
+
+Один вызов для выката (оболочка на хосте под `root`, всё приложение под `salpha`):
+
+```text
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env && git rev-parse HEAD && git status -sb'"
 ```
 
 ## Последовательность после `git push origin v2`
 
-На сервере от **`root`**, команды в репозитории от **`salpha`**:
+На сервере сессия SSH заходит как **`root`** (по ключу выше); команды в репозитории — от **`salpha`**:
 
 ```bash
 cd /opt/solana-alpha
