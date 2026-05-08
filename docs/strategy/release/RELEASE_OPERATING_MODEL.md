@@ -203,6 +203,12 @@ scp -i c:/Users/cente/.ssh/botadmin_187_auto <local> root@187.124.38.242:<remote
 ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env && git rev-parse HEAD && git status -sb'"
 ```
 
+Вход **`botadmin@187.124.38.242`** с тем же ключом (разовая настройка: `scripts-tmp/_vps_setup_botadmin_ssh.sh` от root). Для команд под **`salpha`** используйте **`bash -c`** (не **`bash -lc`**): login-shell у `salpha` может получить «чужой» cwd/`HOME` и не найти `.env` при цепочке `sudo` от `botadmin`.
+
+```text
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto botadmin@187.124.38.242 "sudo -u salpha -H bash -c 'cd /opt/solana-alpha && set -a && . ./.env && set +a && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env'"
+```
+
 Если вход по этим параметрам невозможен — **остановка** и эскалация владельцу (новый IP, ключ, сеть); самовольно менять пользователя или ключ **запрещено**.
 
 ---

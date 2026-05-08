@@ -41,6 +41,12 @@ ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new
 ssh -i c:/Users/cente/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.38.242 "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env && git rev-parse HEAD && git status -sb'"
 ```
 
+Тот же выкат **от `botadmin`** (после `scripts-tmp/_vps_setup_botadmin_ssh.sh`): замените **`bash -lc`** на **`bash -c`** у `salpha`, иначе при интерактивном login возможны ошибки cwd/`./.env`.
+
+```text
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto botadmin@187.124.38.242 "sudo -u salpha -H bash -c 'cd /opt/solana-alpha && set -a && . ./.env && set +a && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env'"
+```
+
 ## Последовательность после `git push origin v2`
 
 На сервере сессия SSH заходит как **`root`** (по ключу выше); команды в репозитории — от **`salpha`**:
