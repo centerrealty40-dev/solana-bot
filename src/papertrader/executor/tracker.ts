@@ -1738,6 +1738,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           reason: 'dca',
           triggerPct: lvl.triggerPct,
         });
+        if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
         ot.totalInvestedUsd += addUsd;
         const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
         ot.avgEntry = num / ot.totalInvestedUsd;
@@ -1896,26 +1897,48 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     let exitReason: ExitReason | null = null;
     if (!(isPaperOscarIdealized && idealizedMute)) {
-      if (killEff < 0 && pnlPctVsAvg / 100 <= killEff) exitReason = 'KILLSTOP';
-      else if (xAvg >= effCfg.tpX) exitReason = 'TP';
-      else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
-      else if (
-        effCfg.trailMode === 'ladder_retrace' &&
-        ladderRetraceTriggered(
-          ot,
-          tpLadder,
-          xAvg,
-          tgEff.stepPnl > 0 ? 'grid' : 'discrete',
-          tgEff.firstRungRetraceMinPnlPct,
+      const inKillTerritory = killEff < 0 && pnlPctVsAvg / 100 <= killEff;
+      if (inKillTerritory) {
+        const debounceKillAfterReplenish =
+          cfg.strategyId === 'live-oscar' && ot.legs.length > 1;
+        if (debounceKillAfterReplenish) {
+          const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
+          ot.liveKillstopBelowStreak = nextStreak;
+          if (nextStreak >= 2) exitReason = 'KILLSTOP';
+          else {
+            console.log(
+              `[KILLSTOP_DEBOUNCE] ${mint.slice(0, 8)} $${ot.symbol} streak=${nextStreak}/2 legs=${ot.legs.length} pnlVsAvg=${pnlPctVsAvg.toFixed(2)}% killEff=${(killEff * 100).toFixed(1)}%`,
+            );
+          }
+        } else {
+          ot.liveKillstopBelowStreak = 0;
+          exitReason = 'KILLSTOP';
+        }
+      } else {
+        ot.liveKillstopBelowStreak = 0;
+      }
+
+      if (!exitReason) {
+        if (xAvg >= effCfg.tpX) exitReason = 'TP';
+        else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
+        else if (
+          effCfg.trailMode === 'ladder_retrace' &&
+          ladderRetraceTriggered(
+            ot,
+            tpLadder,
+            xAvg,
+            tgEff.stepPnl > 0 ? 'grid' : 'discrete',
+            tgEff.firstRungRetraceMinPnlPct,
+          )
         )
-      )
-        exitReason = 'TRAIL';
-      else if (
-        effCfg.trailMode === 'peak' &&
-        ot.trailingArmed &&
-        curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
-      )
-        exitReason = 'TRAIL';
+          exitReason = 'TRAIL';
+        else if (
+          effCfg.trailMode === 'peak' &&
+          ot.trailingArmed &&
+          curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
+        )
+          exitReason = 'TRAIL';
+      }
     }
     if (!exitReason && ageH >= effCfg.timeoutHours && !timeoutSuppressedByProgress(ot)) exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';

@@ -211,6 +211,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     sizeUsd: addUsd,
     reason: 'scale_in',
   });
+  if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;

@@ -151,6 +151,12 @@ export interface OpenTrade {
    * Paper игнорирует; задаётся в main/трекере при включённом флаге.
    */
   liveExitProfileMode?: 'A' | 'B';
+
+  /**
+   * Live Oscar — подряд идущие тики трекера, на которых выполняется условие KILLSTOP (PnL vs avg).
+   * После пополнения позиции (`legs.length > 1`) выход только при streak ≥ 2; иначе сброс в 0.
+   */
+  liveKillstopBelowStreak?: number;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */

@@ -226,6 +226,11 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     const lep = rawPayload.liveExitProfileMode;
     if (lep === 'A' || lep === 'B') ot.liveExitProfileMode = lep;
 
+    const lkbs = rawPayload.liveKillstopBelowStreak;
+    if (typeof lkbs === 'number' && Number.isFinite(lkbs) && lkbs >= 1) {
+      ot.liveKillstopBelowStreak = Math.min(255, Math.floor(lkbs));
+    }
+
     return ot;
   } catch {
     return null;

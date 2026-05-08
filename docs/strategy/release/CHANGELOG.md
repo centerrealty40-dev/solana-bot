@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.151] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.151`.
+
+- **Live Oscar — KILLSTOP после пополнения:** при `strategyId === live-oscar` и более чем одной ноге (`legs.length > 1`) условие kill-stop требует **два подряд тика** трекера в зоне kill (поле `liveKillstopBelowStreak`). После DCA или успешной второй ноги scale-in счётчик сбрасывается. Одиночная нога и прочие стратегии — немедленный KILLSTOP как раньше. Снимок/восстановление: `serializeOpenTrade` / `restoreOpenTradeFromJson`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.150`**, **`pm2 reload ecosystem.config.cjs --update-env`** (или точечный reload `live-oscar`).
+
+---
+
 ## [1.11.150] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.150`.
