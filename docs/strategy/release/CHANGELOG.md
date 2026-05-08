@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.156] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.156`.
+
+- **Live Oscar — whitelist:** после **N** подряд **убыточных** полных закрытий по mint, который **есть в whitelist**, строка удаляется из файла списка и уходит Telegram (**ALERT** по умолчанию, тег `live_whitelist_consec_loss_drop`). Счётчик хранится в `data/live/live-oscar-whitelist-consec-loss.json`. Env: **`LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES`** (дефолт **2**, **`0`** = выкл.), опц. **`LIVE_MINT_WHITELIST_DROP_TELEGRAM_CATEGORY`**, **`LIVE_MINT_WHITELIST_LOSS_STREAK_PATH`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.155`** и убрать/обнулить **`LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES`** на хосте при необходимости.
+
+---
+
 ## [1.11.155] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.155`.

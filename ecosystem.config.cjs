@@ -422,6 +422,8 @@ module.exports = {
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
+        /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
+        LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
         /**
          * Shadow diagnostics — только JSONL (+ блок в hourly-report); не меняет решения по сделкам.
          * Jupiter/RPC нагрузка растёт при SAMPLE_PCT=100; при лимитах снизить SAMPLE_PCT или выставить ALT-доли в 0.

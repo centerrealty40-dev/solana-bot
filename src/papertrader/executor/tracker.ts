@@ -44,6 +44,7 @@ import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
+import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-whitelist.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
@@ -725,6 +726,22 @@ async function tryExecuteTpPartialSell(args: {
   return 'ok';
 }
 
+function hookLiveWhitelistAfterFullClose(
+  liveOscarCfg: LiveOscarConfig | undefined,
+  cfg: PaperTraderConfig,
+  mint: string,
+  symbol: string,
+  netPnlUsd: number,
+): void {
+  onLiveOscarFullCloseUpdateWhitelistLossStreak({
+    liveOscarCfg,
+    strategyId: cfg.strategyId,
+    mint,
+    symbol,
+    netPnlUsd,
+  });
+}
+
 async function closeOpenTradeReconcileOrphan(args: {
   mint: string;
   ot: OpenTrade;
@@ -841,6 +858,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
   const pxOrphan =
     ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 1e-12;
   scheduleTailAfterLiveClose(liveOscarCfg, mint, ot.symbol, ot.tokenDecimals ?? 6, pxOrphan, ot.source);
@@ -960,6 +978,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1097,6 +1116,7 @@ export async function trackerForceFullExitLive(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1502,6 +1522,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           closedTrade: serializeClosedTrade(ct),
         });
         recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+        hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
         scheduleTailAfterLiveClose(
           liveOscarCfg,
           mint,
@@ -1585,6 +1606,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           closedTrade: serializeClosedTrade(ct),
         });
         recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+        hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
       }
@@ -2159,6 +2181,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         closedTrade: serializeClosedTrade(ct),
       });
       recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+      hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
       scheduleTailAfterLiveClose(
         liveOscarCfg,
         mint,

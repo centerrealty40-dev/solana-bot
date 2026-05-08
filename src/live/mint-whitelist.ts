@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
 import { child } from '../core/logger.js';
+import type { LiveOscarConfig } from './config.js';
 
 const log = child('live-mint-whitelist');
 
@@ -62,18 +63,171 @@ export function isMintOnLiveWhitelist(relOrAbsPath: string, mint: string): boole
 }
 
 export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldownMs: number): void {
-  const now = Date.now();
   const key = mint.trim();
   if (!key) return;
-  if (cooldownMs > 0) {
-    const last = lastTelegramByMint.get(key) ?? 0;
-    if (now - last < cooldownMs) return;
-    lastTelegramByMint.set(key, now);
-  }
   const sym = symbol?.trim() || '?';
-  void sendTagged(
-    whitelistSkipTelegramCategory(),
-    'live_whitelist_miss',
-    `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\nsymbol: ${sym}\nmint: ${key}`,
-  );
+  void (async () => {
+    const now = Date.now();
+    if (cooldownMs > 0) {
+      const last = lastTelegramByMint.get(key) ?? 0;
+      if (now - last < cooldownMs) return;
+    }
+    const ok = await sendTagged(
+      whitelistSkipTelegramCategory(),
+      'live_whitelist_miss',
+      `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\nsymbol: ${sym}\nmint: ${key}`,
+    );
+    log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
+    if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
+  })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_miss telegram failed'));
+}
+
+/** Сколько подряд убыточных **полных** закрытий live по mint → удаление из whitelist. `0` = выкл. */
+function consecLossRemoveThreshold(): number {
+  const s = process.env.LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES?.trim();
+  if (s === '0' || s === '') return 0;
+  if (s == null || s === undefined) return 2;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 50) : 2;
+}
+
+function whitelistConsecLossStreakPath(): string {
+  const raw = process.env.LIVE_MINT_WHITELIST_LOSS_STREAK_PATH?.trim();
+  if (raw) return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+  return path.resolve(process.cwd(), 'data/live/live-oscar-whitelist-consec-loss.json');
+}
+
+function readConsecLossStreaks(): Record<string, number> {
+  const p = whitelistConsecLossStreakPath();
+  try {
+    const j = JSON.parse(fs.readFileSync(p, 'utf8')) as { streaks?: unknown };
+    const st = j.streaks;
+    if (!st || typeof st !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(st)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) out[k.trim()] = Math.floor(n);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeConsecLossStreaks(streaks: Record<string, number>): void {
+  const p = whitelistConsecLossStreakPath();
+  const dir = path.dirname(p);
+  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${p}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ streaks }, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, p);
+}
+
+/** Удалить строку с mint из файла whitelist (комментарии на строке сохраняются для остальных). */
+function removeMintLinesFromWhitelistFile(absWhitelistPath: string, mint: string): boolean {
+  const key = mint.trim();
+  if (!key || !fs.existsSync(absWhitelistPath)) return false;
+  const body = fs.readFileSync(absWhitelistPath, 'utf8');
+  const lines = body.split(/\r?\n/);
+  const out: string[] = [];
+  let removed = false;
+  for (const line of lines) {
+    const cut = line.split('#')[0]?.trim() ?? '';
+    if (cut === key) {
+      removed = true;
+      continue;
+    }
+    out.push(line);
+  }
+  if (!removed) return false;
+  const newBody = out.join('\n').replace(/\n*$/, '\n');
+  const tmp = `${absWhitelistPath}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, newBody, 'utf8');
+  fs.renameSync(tmp, absWhitelistPath);
+  clearLiveMintWhitelistCache();
+  log.info({ path: absWhitelistPath, mint: key }, 'live mint removed from whitelist file (consec losses)');
+  return true;
+}
+
+function whitelistDropTelegramCategory(): TelegramCategory {
+  const s = process.env.LIVE_MINT_WHITELIST_DROP_TELEGRAM_CATEGORY?.trim().toUpperCase();
+  if (s === 'ALERT' || s === 'REPORT' || s === 'ADVICE' || s === 'HEALTH') return s;
+  return 'ALERT';
+}
+
+/**
+ * После полного закрытия live-oscar: учёт подряд убыточных сделок по mint в whitelist;
+ * при достижении порога — удаление mint из файла и Telegram.
+ */
+export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
+  liveOscarCfg: LiveOscarConfig | undefined;
+  strategyId: string;
+  mint: string;
+  symbol: string;
+  netPnlUsd: number;
+}): void {
+  const { liveOscarCfg, strategyId, mint, symbol, netPnlUsd } = args;
+  const key = mint.trim();
+  if (!key || !liveOscarCfg) return;
+  if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
+  if (!liveOscarCfg.liveMintWhitelistEnabled) return;
+
+  const threshold = consecLossRemoveThreshold();
+  if (threshold < 1) return;
+
+  const wlPath = resolveLiveMintWhitelistPath(liveOscarCfg.liveMintWhitelistPath);
+  if (!isMintOnLiveWhitelist(liveOscarCfg.liveMintWhitelistPath, key)) {
+    const streaks = readConsecLossStreaks();
+    if (streaks[key] != null) {
+      delete streaks[key];
+      writeConsecLossStreaks(streaks);
+    }
+    return;
+  }
+
+  const streaks = readConsecLossStreaks();
+  const prev = streaks[key] ?? 0;
+
+  if (!(netPnlUsd < 0)) {
+    streaks[key] = 0;
+    writeConsecLossStreaks(streaks);
+    return;
+  }
+
+  const next = prev + 1;
+  streaks[key] = next;
+  writeConsecLossStreaks(streaks);
+
+  if (next < threshold) {
+    log.info({ mint: key, streak: next, threshold }, 'live whitelist consec loss streak');
+    return;
+  }
+
+  const sym = symbol?.trim() || '?';
+  const removed = removeMintLinesFromWhitelistFile(wlPath, key);
+  delete streaks[key];
+  writeConsecLossStreaks(streaks);
+
+  if (!removed) {
+    log.warn({ mint: key }, 'live whitelist consec loss threshold reached but mint not in file');
+    return;
+  }
+
+  void (async () => {
+    const ok = await sendTagged(
+      whitelistDropTelegramCategory(),
+      'live_whitelist_consec_loss_drop',
+      `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).\nsymbol: ${sym}\nmint: ${key}`,
+    );
+    log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_consec_loss_drop telegram');
+  })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_consec_loss_drop telegram failed'));
+}
+
+/** Только для тестов / ручного сброса счётчиков. */
+export function clearWhitelistConsecutiveLossStreaksForTests(): void {
+  try {
+    fs.unlinkSync(whitelistConsecLossStreakPath());
+  } catch {
+    /* noop */
+  }
 }
