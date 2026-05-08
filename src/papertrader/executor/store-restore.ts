@@ -231,6 +231,11 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveKillstopBelowStreak = Math.min(255, Math.floor(lkbs));
     }
 
+    const dlap = rawPayload.dcaLastEvalPnlVsAvgFrac;
+    if (typeof dlap === 'number' && Number.isFinite(dlap)) {
+      ot.dcaLastEvalPnlVsAvgFrac = dlap;
+    }
+
     return ot;
   } catch {
     return null;

@@ -1703,8 +1703,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     const idealizedMute = isPaperOscarIdealized && paperOscarIdealizedExitMute(ot);
-    const tgEff = tpGridEffective(ot, effCfg);
-    const killEff = dcaKillstopEffective(ot, effCfg);
+    let tgEff = tpGridEffective(ot, effCfg);
+    let killEff = dcaKillstopEffective(ot, effCfg);
+
+    /** §3 `IDEALIZED_OSCAR_STACK_SPEC_V2`: до активации A/B TP-сетка не работает; после сплита первая ступень только при +step к avg. */
+    const liveOscarAb = cfg.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled;
+    const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
+    const skipTpGridLiveOscarNeutral =
+      liveOscarAb &&
+      ot.liveExitProfileMode == null &&
+      (!entrySplitComplete ||
+        (ot.avgEntry > 0 && curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl));
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
@@ -1725,22 +1734,32 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    /** Уже набран плановый сплит через `scale_in` — не добавлять вторую «DCA» ногу поверх (избегаем третьей ноги). */
-    const skipLiveOscarDcaBecauseLegacySplit =
-      cfg.strategyId === 'live-oscar' && ot.legs.some((l) => l.reason === 'scale_in');
+    /** Сплит 75%+25% — не DCA (`entry-scale-in.ts`); настоящее усреднение только по `PAPER_DCA_LEVELS` после полного входа. */
+    const liveOscarDcaBlockedUntilSplit = liveOscarAb && !entrySplitComplete;
+    const liveOscarNoDcaInModeA = liveOscarAb && ot.liveExitProfileMode === 'A';
 
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
-      !skipLiveOscarDcaBecauseLegacySplit;
+      !liveOscarDcaBlockedUntilSplit &&
+      !liveOscarNoDcaInModeA;
+
     if (mayDca) {
-      const effPrevDrop = dcaEffPrev(ot);
       for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
         const lvl = dcaLevels[dcaIdx]!;
         if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
-        if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
+        /** §2 V2: в нейтрали после сплита триггер DCA — просадка к `avgEntry`; после назначения B — классика vs первая нога. */
+        const usePnlVsAvgForDca =
+          liveOscarAb && ot.liveExitProfileMode == null && entrySplitComplete && ot.avgEntry > 0;
+        const effPrevDrop = usePnlVsAvgForDca
+          ? ot.dcaLastEvalPnlVsAvgFrac != null && Number.isFinite(ot.dcaLastEvalPnlVsAvgFrac)
+            ? ot.dcaLastEvalPnlVsAvgFrac
+            : Number.POSITIVE_INFINITY
+          : dcaEffPrev(ot);
+        const currDropMetric = usePnlVsAvgForDca ? curMetric / ot.avgEntry - 1 : dropFromFirstPct;
+        if (!dcaCrossedDownward(effPrevDrop, currDropMetric, lvl.triggerPct)) continue;
         ot.livePendingScaleIn = null;
         const addUsd = cfg.positionUsd * lvl.addFraction;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
@@ -1817,7 +1836,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (!(isPaperOscarIdealized && idealizedMute) && tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
+    effCfg = cfgEffectiveForOpen(cfg, ot);
+    tgEff = tpGridEffective(ot, effCfg);
+    killEff = dcaKillstopEffective(ot, effCfg);
+
+    if (
+      !(isPaperOscarIdealized && idealizedMute) &&
+      !skipTpGridLiveOscarNeutral &&
+      tgEff.stepPnl > 0 &&
+      ot.remainingFraction > 0
+    ) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
       const sellFrac = Math.min(1, tgEff.sellFraction);
@@ -1864,7 +1892,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    if (!(isPaperOscarIdealized && idealizedMute) && tpLadder.length > 0 && ot.remainingFraction > 0) {
+    if (
+      !(isPaperOscarIdealized && idealizedMute) &&
+      !skipTpGridLiveOscarNeutral &&
+      tpLadder.length > 0 &&
+      ot.remainingFraction > 0
+    ) {
       for (let stepIdx = 0; stepIdx < tpLadder.length; stepIdx++) {
         const lvl = tpLadder[stepIdx]!;
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
@@ -2130,9 +2163,21 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       );
     }
 
-    if (curMetric > 0 && open.has(mint) && Number.isFinite(dropFromFirstPct)) {
+    if (curMetric > 0 && open.has(mint)) {
       const ote = open.get(mint);
-      if (ote) ote.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
+      if (ote) {
+        if (Number.isFinite(dropFromFirstPct)) ote.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
+        const splitOk = ote.legs.some((l) => l.reason === 'scale_in');
+        if (
+          cfg.strategyId === 'live-oscar' &&
+          cfg.liveExitModeAbEnabled &&
+          ote.liveExitProfileMode == null &&
+          splitOk &&
+          ote.avgEntry > 0
+        ) {
+          ote.dcaLastEvalPnlVsAvgFrac = curMetric / ote.avgEntry - 1;
+        }
+      }
     }
   }
 }

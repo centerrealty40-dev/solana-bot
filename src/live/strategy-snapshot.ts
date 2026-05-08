@@ -31,6 +31,9 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     pairAddress: ot.pairAddress,
     entryLiqUsd: ot.entryLiqUsd,
     dcaLastEvalDropFromFirstPct: ot.dcaLastEvalDropFromFirstPct,
+    ...(typeof ot.dcaLastEvalPnlVsAvgFrac === 'number' && Number.isFinite(ot.dcaLastEvalPnlVsAvgFrac)
+      ? { dcaLastEvalPnlVsAvgFrac: ot.dcaLastEvalPnlVsAvgFrac }
+      : {}),
     liqWatchConsecutiveFailures: ot.liqWatchConsecutiveFailures,
     liqWatchLastLiqUsd: ot.liqWatchLastLiqUsd,
     liqWatchLastDropPct: ot.liqWatchLastDropPct,

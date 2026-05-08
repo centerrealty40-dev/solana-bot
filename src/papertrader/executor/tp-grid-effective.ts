@@ -19,13 +19,16 @@ export function tpGridEffective(
   const ignoreOverrides = cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B';
   const paperIdealizedUnlimitedB =
     isPaperOscarIdealizedStackStrategyId(cfg.strategyId) && ot.liveExitProfileMode === 'B';
+  /** §5.4 `IDEALIZED_OSCAR_STACK_SPEC_V2` — лестница B без верхней крышки (prod был maxRungs=4). */
+  const liveOscarUnlimitedB = cfg.strategyId === 'live-oscar' && ot.liveExitProfileMode === 'B';
+  const unlimitedBGrid = paperIdealizedUnlimitedB || liveOscarUnlimitedB;
   return {
     stepPnl: ignoreOverrides ? cfg.tpGridStepPnl : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
     sellFraction: Math.min(
       1,
       ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
     ),
-    maxRungs: paperIdealizedUnlimitedB
+    maxRungs: unlimitedBGrid
       ? undefined
       : ignoreOverrides
         ? cfg.tpGridMaxRungs

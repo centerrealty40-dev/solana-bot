@@ -112,6 +112,11 @@ export interface OpenTrade {
    * Drives one-way (down) DCA: avoid re-entries after relief rallies. Not in JSONL `open`; in-memory + restore via replay.
    */
   dcaLastEvalDropFromFirstPct?: number;
+  /**
+   * Last tick's PnL fraction vs weighted avg: `(price/avgEntry - 1)`.
+   * Used for live-oscar A/B **neutral** phase (§2 `IDEALIZED_OSCAR_STACK_SPEC_V2`): DCA triggers vs `avgEntry` after full split, not vs first leg.
+   */
+  dcaLastEvalPnlVsAvgFrac?: number;
   /** TP-ladder pnl levels already used (0.05, 0.10, …) — legacy; kept for restore / JSONL without step index. */
   ladderUsedLevels: Set<number>;
   /** 0-based indices into the sorted `PAPER_TP_LADDER` rungs — canonical «already fired» marker. */
