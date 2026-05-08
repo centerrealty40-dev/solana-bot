@@ -1292,7 +1292,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               });
               const divergeVsAnchor =
                 anchorPx > 0 ? Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18) : 0;
-              const jupiterSaneVsEntry = !(anchorPx > 0) || divergeVsAnchor <= 2;
+              /**
+               * При jpx ниже якоря относительное расхождение всегда ≤ 1 (максимум −100%% к якорю).
+               * Режим `divergeVsAnchor > 2` возможен только при сильном пампе (jpx ≫ anchor).
+               * Тогда не подменяем Jupiter устаревшим PG — иначе MTM занижается и лестница TP не срабатывает.
+               */
+              const jupiterSaneVsEntry =
+                !(anchorPx > 0) || divergeVsAnchor <= 2 || jpx >= anchorPx - 1e-18;
               if (jupiterSaneVsEntry) {
                 curMetric = jpx;
                 const divergeVsSnap =
