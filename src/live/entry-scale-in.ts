@@ -85,6 +85,23 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   if (!pending) return;
   ot.livePendingScaleIn = pending;
 
+  if (!liveOscarCfg.liveEntryScaleInEnabled || liveOscarCfg.executionMode !== 'live') {
+    ot.livePendingScaleIn = null;
+    if (liveOscarCfg.executionMode === 'live' && !liveOscarCfg.liveEntryScaleInEnabled) {
+      appendLiveJsonlEvent({
+        kind: 'risk_note',
+        reason: 'live_scale_in_disabled_clear_pending',
+        detail: {
+          mint,
+          timelineKind: 'scale_in_skip',
+          timelineLabelRu:
+            'Плановый scale-in выключен в конфиге: ожидание второй ноги по коридору снято (вторая нога — через DCA по стратегии).',
+        },
+      });
+    }
+    return;
+  }
+
   if (ot.partialSells.length > 0) {
     ot.livePendingScaleIn = null;
     appendLiveJsonlEvent({
@@ -100,8 +117,6 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     });
     return;
   }
-
-  if (!liveOscarCfg.liveEntryScaleInEnabled || liveOscarCfg.executionMode !== 'live') return;
 
   const now = Date.now();
   if (now < pending.executeAfterTs) return;

@@ -250,9 +250,9 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** через `LIVE_ENTRY_SCALE_IN_DELAY_MS` (доля **0.75**). */
+        /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** по DCA −6% или исторический сплит; доля первой ноги **0.75**. */
         PAPER_POSITION_USD: '600',
-        /** Первая нога $450 / $600 = 0.75; вторая нога $150 — scale-in. */
+        /** Первая нога $450 / $600 = 0.75; вторая $150 — через `PAPER_DCA_LEVELS` (scale-in выкл.). */
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -270,7 +270,7 @@ module.exports = {
         /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '200000',
+        PAPER_POST_MIN_LIQ_USD: '140000',
         PAPER_POST_MIN_VOL_5M_USD: '20000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
@@ -300,12 +300,12 @@ module.exports = {
 
         /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A/B: A при плановом входе (обе ноги = сплит, не DCA); B только после DCA — держим B до закрытия; env `PAPER_LIVE_EXIT_MODE_B_*`. */
+        /** Режим A/B: A до усреднения по `PAPER_DCA_LEVELS` или до первого TP; B после DCA — держим B до закрытия; env `PAPER_LIVE_EXIT_MODE_B_*`. */
         PAPER_LIVE_EXIT_MODE_AB: '1',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.12',
         /**
          * Режим B — «после боли» (IDEALIZED §9.2): та же ступень +5% к средней, но продаём большую долю остатка
          * за ступень и ограничиваем число ступеней — быстрее выйти в зелёный/около нуля.
@@ -315,10 +315,13 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
 
-        /** Live Oscar: без DCA между ногами — вторая нога только по scale-in (`LIVE_ENTRY_SCALE_IN_*`). */
-        PAPER_DCA_LEVELS: '',
-        /** Режим A: базовый kill −5% при отсутствии DCA (см. режим B −7%). */
-        PAPER_DCA_KILLSTOP: '-0.05',
+        /**
+         * Вторая нога по просадке −6% от первой (`-6` в spec = −6%% после деления в parseDcaLevels); доля 0.25 = $150 при $600.
+         * Плановый scale-in выключен — см. LIVE_ENTRY_SCALE_IN_ENABLED.
+         */
+        PAPER_DCA_LEVELS: '-6:0.25',
+        /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −12%% к avg. */
+        PAPER_DCA_KILLSTOP: '-0.12',
         /**
          * Режим A — «полная лестница» (IDEALIZED §9.2): +5% к средней; 15% остатка за ступень;
          * retrace-защита после 1-й ступени 2.5%.
@@ -477,8 +480,8 @@ module.exports = {
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 
-        /** Двухногий вход: вторая доля после задержки, если Jupiter в коридоре к цене первой ноги (`src/live/entry-scale-in.ts`). */
-        LIVE_ENTRY_SCALE_IN_ENABLED: '1',
+        /** Плановый коридорный scale-in выкл.: вторая нога только по `PAPER_DCA_LEVELS` (−6%). */
+        LIVE_ENTRY_SCALE_IN_ENABLED: '0',
         /** 5 с — успевает сработать частичный TP по сетке до второй ноги (трекер оценивает TP раньше scale-in). */
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         /** Коридор второй ноги к якорю первой ноги (USD/token): до +5% / до −7% (меньше перекоса «вниз = жирная позиция» vs узкий +1/−2). */

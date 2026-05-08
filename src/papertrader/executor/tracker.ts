@@ -1705,11 +1705,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    /** Уже набран плановый сплит через `scale_in` — не добавлять вторую «DCA» ногу поверх (избегаем третьей ноги). */
+    const skipLiveOscarDcaBecauseLegacySplit =
+      cfg.strategyId === 'live-oscar' && ot.legs.some((l) => l.reason === 'scale_in');
+
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
-      ot.remainingFraction > 0;
+      ot.remainingFraction > 0 &&
+      !skipLiveOscarDcaBecauseLegacySplit;
     if (mayDca) {
       const effPrevDrop = dcaEffPrev(ot);
       for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
