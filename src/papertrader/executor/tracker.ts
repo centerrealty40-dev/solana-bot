@@ -1697,6 +1697,37 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    /** Обязательный сплит второй ноги до partial TP / сетки: иначе `partialSells` отменяет scale-in в `entry-scale-in.ts`. */
+    if (
+      livePhase4 &&
+      liveOscarCfg &&
+      ot.livePendingScaleIn &&
+      ot.partialSells.length === 0
+    ) {
+      await tryLiveEntryScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        livePhase4,
+        liveOscarCfg,
+        journalAppend,
+        journalLiveStrategy,
+        verifyStillOpen: () => open.has(mint),
+      });
+    }
+
+    if (!livePhase4 && isPaperOscarIdealized && ot.livePendingScaleIn && ot.partialSells.length === 0) {
+      await tryPaperOnlyScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        journalAppend,
+        verifyStillOpen: () => open.has(mint),
+      });
+    }
+
     if (ot.avgEntry > 0) {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
@@ -1945,37 +1976,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           }
         }
       }
-    }
-
-    /** Вторая нога — после оценки частичных TP: не докупать, если уже была ступень сетки (меньше «жирного» усреднения перед kill). */
-    if (
-      livePhase4 &&
-      liveOscarCfg &&
-      ot.livePendingScaleIn &&
-      ot.partialSells.length === 0
-    ) {
-      await tryLiveEntryScaleInTrackerStep({
-        cfg,
-        ot,
-        mint,
-        curMetric,
-        livePhase4,
-        liveOscarCfg,
-        journalAppend,
-        journalLiveStrategy,
-        verifyStillOpen: () => open.has(mint),
-      });
-    }
-
-    if (!livePhase4 && isPaperOscarIdealized && ot.livePendingScaleIn && ot.partialSells.length === 0) {
-      await tryPaperOnlyScaleInTrackerStep({
-        cfg,
-        ot,
-        mint,
-        curMetric,
-        journalAppend,
-        verifyStillOpen: () => open.has(mint),
-      });
     }
 
     let exitReason: ExitReason | null = null;

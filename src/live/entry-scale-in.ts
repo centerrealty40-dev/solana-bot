@@ -1,5 +1,7 @@
 /**
- * Live Oscar — вторая нога входа: после задержки докупка остатка notional, если Jupiter-цена в коридоре к якорю первой ноги.
+ * Live Oscar — обязательная вторая нога сплита: после задержки докупка остатка notional.
+ * Коридор Jupiter к якорю первой ноги — мягкий гейт: повторы с backoff; после исчерпания
+ * попыток сплит всё равно исполняется (swap в Phase4 / журнал `risk_note`).
  */
 import { getLiveMcUsd, getSolUsd } from '../papertrader/pricing.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../papertrader/config.js';
@@ -125,16 +127,11 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   const dec = ot.tokenDecimals ?? 6;
   const solUsd = getSolUsd() ?? 0;
 
-  const quote = await jupiterQuoteBuyPriceUsd({
-    mint,
-    outMintDecimals: dec,
-    sizeUsd: pending.secondLegUsd,
-    solUsd,
-    snapshotPriceUsd: pending.anchorMarketUsd,
-    slippageBps: cfg.priceVerifyMaxSlipBps,
-    timeoutMs: cfg.priceVerifyTimeoutMs,
-    resilience: quoteResilienceFromPaperCfg(cfg),
-  });
+  const backoffMs = liveOscarCfg.liveEntryScaleInRetryBackoffMs;
+  const scheduleRetry = () => {
+    pending.nextAttemptAfterTs = now + backoffMs;
+    ot.livePendingScaleIn = pending;
+  };
 
   const finishCancel = (reason: string, detail: Record<string, unknown>) => {
     ot.livePendingScaleIn = null;
@@ -152,39 +149,71 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     });
   };
 
+  const quote = await jupiterQuoteBuyPriceUsd({
+    mint,
+    outMintDecimals: dec,
+    sizeUsd: pending.secondLegUsd,
+    solUsd,
+    snapshotPriceUsd: pending.anchorMarketUsd,
+    slippageBps: cfg.priceVerifyMaxSlipBps,
+    timeoutMs: cfg.priceVerifyTimeoutMs,
+    resilience: quoteResilienceFromPaperCfg(cfg),
+  });
+
+  let implied = 0;
+  let haveImpliedQuote = false;
+  let signedDevPct = 0;
+  let diffPctAbs = 0;
+
   if (quote.kind !== 'ok' || !(quote.jupiterPriceUsd > 0)) {
     pending.swapAttempts += 1;
-    if (pending.swapAttempts >= pending.maxSwapAttempts) {
-      finishCancel('live_scale_in_quote_giveup', {
+    if (pending.swapAttempts < pending.maxSwapAttempts) {
+      scheduleRetry();
+      return;
+    }
+    appendLiveJsonlEvent({
+      kind: 'risk_note',
+      reason: 'live_scale_in_quote_exhausted_mandatory_buy',
+      detail: {
+        mint,
         attempts: pending.swapAttempts,
         quoteKind: quote.kind,
-        timelineLabelRu: `Докупка отменена: котировка Jupiter для второй ноги не пришла после ${pending.swapAttempts} попыток (${quote.kind}).`,
-      });
-    } else {
-      pending.nextAttemptAfterTs = now + liveOscarCfg.liveEntryScaleInRetryBackoffMs;
-      ot.livePendingScaleIn = pending;
-    }
-    return;
-  }
-
-  const implied = quote.jupiterPriceUsd;
-  const signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
-  const diffPctAbs = Math.abs(signedDevPct);
-  const eps = 1e-6;
-  const outCorridor =
-    signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
-  if (outCorridor) {
-    const sign = signedDevPct >= 0 ? '+' : '';
-    finishCancel('live_scale_in_corridor_exit', {
-      anchorMarketUsd: pending.anchorMarketUsd,
-      jupiterPriceUsd: implied,
-      signedDevPct: +signedDevPct.toFixed(4),
-      diffPct: +diffPctAbs.toFixed(4),
-      corridorUpPct: pending.corridorUpPct,
-      corridorDownPct: pending.corridorDownPct,
-      timelineLabelRu: `Докупка отменена: цена Jupiter вне коридора +${pending.corridorUpPct}% / −${pending.corridorDownPct}% к первой ноге (отклонение ${sign}${signedDevPct.toFixed(2)}%).`,
+        timelineLabelRu: `Вторая нога (сплит): после ${pending.swapAttempts} неудачных pre-котировок Jupiter выполняем обязательный swap второй ноги (котировка внутри Phase4).`,
+      },
     });
-    return;
+    pending.swapAttempts = 0;
+  } else {
+    implied = quote.jupiterPriceUsd;
+    haveImpliedQuote = true;
+    signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
+    diffPctAbs = Math.abs(signedDevPct);
+    const eps = 1e-6;
+    const outCorridor =
+      signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
+    if (outCorridor) {
+      pending.swapAttempts += 1;
+      if (pending.swapAttempts < pending.maxSwapAttempts) {
+        scheduleRetry();
+        return;
+      }
+      const sign = signedDevPct >= 0 ? '+' : '';
+      appendLiveJsonlEvent({
+        kind: 'risk_note',
+        reason: 'live_scale_in_corridor_exhausted_mandatory_buy',
+        detail: {
+          mint,
+          attempts: pending.swapAttempts,
+          anchorMarketUsd: pending.anchorMarketUsd,
+          jupiterPriceUsd: implied,
+          signedDevPct: +signedDevPct.toFixed(4),
+          diffPct: +diffPctAbs.toFixed(4),
+          corridorUpPct: pending.corridorUpPct,
+          corridorDownPct: pending.corridorDownPct,
+          timelineLabelRu: `Вторая нога (сплит): цена вне коридора +${pending.corridorUpPct}% / −${pending.corridorDownPct}% (${sign}${signedDevPct.toFixed(2)}%) после ${pending.swapAttempts} попыток — исполняем обязательный swap (без отмены сплита).`,
+        },
+      });
+      pending.swapAttempts = 0;
+    }
   }
 
   if (verifyStillOpen && !verifyStillOpen()) return;
@@ -206,16 +235,15 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
         diffPct: +diffPctAbs.toFixed(4),
         corridorUpPct: pending.corridorUpPct,
         corridorDownPct: pending.corridorDownPct,
-        timelineLabelRu: `Докупка отменена: своп второй ноги не прошёл после ${pending.swapAttempts} попыток (цена при этом была в коридоре).`,
+        timelineLabelRu: `Докупка отменена: своп второй ноги не прошёл после ${pending.swapAttempts} попыток.`,
       });
     } else {
-      pending.nextAttemptAfterTs = now + liveOscarCfg.liveEntryScaleInRetryBackoffMs;
-      ot.livePendingScaleIn = pending;
+      scheduleRetry();
     }
     return;
   }
 
-  const marketBuy = curMetric > 0 ? curMetric : implied;
+  const marketBuy = curMetric > 0 ? curMetric : haveImpliedQuote ? implied : pending.anchorMarketUsd;
   const addUsd = pending.secondLegUsd;
   const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
 
@@ -259,8 +287,12 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     legCount: ot.legs.length,
     mcUsdLive,
     priorityFee: pf,
-    jupiterCorridorSignedDevPct: +signedDevPct.toFixed(4),
-    jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
+    ...(haveImpliedQuote
+      ? {
+          jupiterCorridorSignedDevPct: +signedDevPct.toFixed(4),
+          jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
+        }
+      : {}),
     corridorUpPct: pending.corridorUpPct,
     corridorDownPct: pending.corridorDownPct,
     timelineLabelRu: `${`Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции`}${cfg.liveExitModeAbEnabled ? ' · сплит входа (не DCA); режим A/B не назначен до первого TP или DCA' : ''}`,

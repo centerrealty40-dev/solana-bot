@@ -487,7 +487,7 @@ module.exports = {
         /** Коридор второй ноги к якорю первой ноги (USD/token): до +5% / до −7% (меньше перекоса «вниз = жирная позиция» vs узкий +1/−2). */
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
         /** Периодический хвост на кошельке + force-close зависших open (`src/live/periodic-self-heal.ts`). */
@@ -656,7 +656,7 @@ module.exports = {
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },
@@ -820,7 +820,7 @@ module.exports = {
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },
@@ -983,7 +983,7 @@ module.exports = {
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '5',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },

@@ -96,6 +96,11 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
   const dec = ot.tokenDecimals ?? 6;
   const solUsd = getSolUsd() ?? 0;
 
+  const scheduleRetry = () => {
+    pending.nextAttemptAfterTs = now + si.retryBackoffMs;
+    ot.livePendingScaleIn = pending;
+  };
+
   const quote = await jupiterQuoteBuyPriceUsd({
     mint,
     outMintDecimals: dec,
@@ -107,59 +112,62 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
     resilience: quoteResilienceFromPaperCfg(cfg),
   });
 
-  const finishCancel = (reason: string, detail: Record<string, unknown>) => {
-    ot.livePendingScaleIn = null;
-    const tlRaw = detail.timelineLabelRu;
-    const tl = typeof tlRaw === 'string' && tlRaw.trim().length ? String(tlRaw).trim() : undefined;
-    journalAppend({
-      kind: 'risk_note',
-      reason,
-      mint,
-      detail: {
-        ...detail,
-        ...(tl ? { timelineKind: 'scale_in_skip', timelineLabelRu: tl } : {}),
-      },
-    });
-  };
+  let implied = 0;
+  let haveImpliedQuote = false;
+  let signedDevPct = 0;
+  let diffPctAbs = 0;
 
   if (quote.kind !== 'ok' || !(quote.jupiterPriceUsd > 0)) {
     pending.swapAttempts += 1;
-    if (pending.swapAttempts >= pending.maxSwapAttempts) {
-      finishCancel('paper_scale_in_quote_giveup', {
+    if (pending.swapAttempts < pending.maxSwapAttempts) {
+      scheduleRetry();
+      return;
+    }
+    journalAppend({
+      kind: 'risk_note',
+      reason: 'paper_scale_in_quote_exhausted_mandatory_fill',
+      mint,
+      detail: {
         attempts: pending.swapAttempts,
         quoteKind: quote.kind,
-        timelineLabelRu: `Докупка отменена: котировка Jupiter для второй ноги не пришла после ${pending.swapAttempts} попыток (${quote.kind}).`,
-      });
-    } else {
-      pending.nextAttemptAfterTs = now + si.retryBackoffMs;
-      ot.livePendingScaleIn = pending;
-    }
-    return;
-  }
-
-  const implied = quote.jupiterPriceUsd;
-  const signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
-  const diffPctAbs = Math.abs(signedDevPct);
-  const eps = 1e-6;
-  const outCorridor =
-    signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
-  if (outCorridor) {
-    const sign = signedDevPct >= 0 ? '+' : '';
-    finishCancel('paper_scale_in_corridor_exit', {
-      anchorMarketUsd: pending.anchorMarketUsd,
-      jupiterPriceUsd: implied,
-      signedDevPct: +signedDevPct.toFixed(4),
-      diffPct: +diffPctAbs.toFixed(4),
-      corridorUpPct: pending.corridorUpPct,
-      corridorDownPct: pending.corridorDownPct,
-      timelineLabelRu: `Докупка отменена: цена Jupiter вне коридора +${pending.corridorUpPct}% / −${pending.corridorDownPct}% к первой ноге (отклонение ${sign}${signedDevPct.toFixed(2)}%).`,
+        timelineLabelRu: `Paper scale-in: после ${pending.swapAttempts} неудачных котировок фиксируем вторую ногу по MTM/якорю (обязательный сплит).`,
+      },
     });
-    return;
+  } else {
+    implied = quote.jupiterPriceUsd;
+    haveImpliedQuote = true;
+    signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
+    diffPctAbs = Math.abs(signedDevPct);
+    const eps = 1e-6;
+    const outCorridor =
+      signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
+    if (outCorridor) {
+      pending.swapAttempts += 1;
+      if (pending.swapAttempts < pending.maxSwapAttempts) {
+        scheduleRetry();
+        return;
+      }
+      const sign = signedDevPct >= 0 ? '+' : '';
+      journalAppend({
+        kind: 'risk_note',
+        reason: 'paper_scale_in_corridor_exhausted_mandatory_fill',
+        mint,
+        detail: {
+          attempts: pending.swapAttempts,
+          anchorMarketUsd: pending.anchorMarketUsd,
+          jupiterPriceUsd: implied,
+          signedDevPct: +signedDevPct.toFixed(4),
+          corridorUpPct: pending.corridorUpPct,
+          corridorDownPct: pending.corridorDownPct,
+          timelineLabelRu: `Paper scale-in: коридор превышен (${sign}${signedDevPct.toFixed(2)}%) после ${pending.swapAttempts} попыток — обязательная вторая нога по котировке.`,
+        },
+      });
+    }
   }
 
   if (verifyStillOpen && !verifyStillOpen()) return;
 
-  const marketBuy = curMetric > 0 ? curMetric : implied;
+  const marketBuy = curMetric > 0 ? curMetric : haveImpliedQuote ? implied : pending.anchorMarketUsd;
   const addUsd = pending.secondLegUsd;
   const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
 
@@ -200,8 +208,12 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
     legCount: ot.legs.length,
     mcUsdLive,
     priorityFee: pf,
-    jupiterCorridorSignedDevPct: +signedDevPct.toFixed(4),
-    jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
+    ...(haveImpliedQuote
+      ? {
+          jupiterCorridorSignedDevPct: +signedDevPct.toFixed(4),
+          jupiterCorridorDiffPct: +diffPctAbs.toFixed(4),
+        }
+      : {}),
     corridorUpPct: pending.corridorUpPct,
     corridorDownPct: pending.corridorDownPct,
     timelineLabelRu: `Докупка ${Math.round((addUsd / cfg.positionUsd) * 100)}% позиции (paper V2.1 — нейтральная фаза до триггера ±)`,
