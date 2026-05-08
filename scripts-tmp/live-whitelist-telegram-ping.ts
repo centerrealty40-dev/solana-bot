@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     'Тест: монета удалена из whitelist после N подряд убыточных сделок (ping).',
     o,
   );
-  console.log('OK: sent 2 ALERT test messages via whitelist bot');
+  console.log('OK: sent ADVICE+ALERT test messages via whitelist bot (skipQuietHours)');
 }
 
 main().catch((e) => {
