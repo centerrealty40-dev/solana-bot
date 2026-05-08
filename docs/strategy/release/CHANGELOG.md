@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.153] — 2026-05-08
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.153`.
+
+- **Live Oscar — нотионал:** `PAPER_POSITION_USD` и **`LIVE_MAX_POSITION_USD`** = **600** USD; доля первой ноги **0.75** (первая нога **$450**, вторая **$150** scale-in). SSOT: блок **`live-oscar`** в `ecosystem.config.cjs`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.152`** и вернуть в ecosystem для **`live-oscar`** прежние **`PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD`** (**200**) или задать значения на хосте; **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`**.
+
+---
+
 ## [1.11.152] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.152`.
