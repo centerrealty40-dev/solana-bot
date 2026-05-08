@@ -424,9 +424,10 @@ module.exports = {
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
         /**
          * Отдельный бот для TG только по `live_whitelist_miss` и `live_whitelist_consec_loss_drop`.
-         * Chat: `TELEGRAM_CHAT_ID` из `.env`, если не задан `LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID`.
+         * Эти алерты всегда без тихих часов (`skipQuietHours` в коде).
          */
         LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN: '8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30',
+        LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID: '-1003878024799',
         /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
         LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
         /**

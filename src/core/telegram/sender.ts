@@ -3,7 +3,7 @@
  * тихими часами для не-`ALERT` категорий.
  *
  * Категории: HEALTH | REPORT | ADVICE | ALERT.
- *   HEALTH/REPORT/ADVICE подчиняются TELEGRAM_QUIET_FROM..TO (часы UTC).
+ *   HEALTH/REPORT/ADVICE подчиняются TELEGRAM_QUIET_FROM..TO (часы UTC), кроме вызовов с `skipQuietHours`.
  *   ALERT всегда проходит.
  *
  * Cooldown: env `TELEGRAM_COOLDOWN_<CATEGORY>_<SUBTAG>_MS` (uppercase, dot→_) — ms.
@@ -82,6 +82,8 @@ interface SendOpts {
   telegramBotToken?: string;
   /** Если задано — не использовать `TELEGRAM_CHAT_ID`. */
   telegramChatId?: string;
+  /** Игнорировать `TELEGRAM_QUIET_FROM` / `TELEGRAM_QUIET_TO` (отправлять и для ADVICE/REPORT/HEALTH). */
+  skipQuietHours?: boolean;
 }
 
 /**
@@ -102,7 +104,7 @@ export async function sendTagged(
   const tag = `[${category}][${subtag}]`;
   const tagKey = `${category}.${subtag}`.toLowerCase();
 
-  if (category !== 'ALERT' && inQuietHours()) {
+  if (category !== 'ALERT' && !opts.skipQuietHours && inQuietHours()) {
     log.debug({ tag }, 'suppressed by quiet hours');
     return false;
   }

@@ -26,10 +26,15 @@ function whitelistSkipTelegramCategory(): TelegramCategory {
 function whitelistAlertsTelegramOpts(): {
   telegramBotToken?: string;
   telegramChatId?: string;
+  skipQuietHours: boolean;
 } {
   const telegramBotToken = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
   const telegramChatId = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
-  const o: { telegramBotToken?: string; telegramChatId?: string } = {};
+  const o: {
+    telegramBotToken?: string;
+    telegramChatId?: string;
+    skipQuietHours: boolean;
+  } = { skipQuietHours: true };
   if (telegramBotToken) o.telegramBotToken = telegramBotToken;
   if (telegramChatId) o.telegramChatId = telegramChatId;
   return o;
