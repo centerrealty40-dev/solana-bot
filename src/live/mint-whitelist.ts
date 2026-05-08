@@ -10,6 +10,40 @@ import type { LiveOscarConfig } from './config.js';
 
 const log = child('live-mint-whitelist');
 
+/** Карточка токена на gmgn.ai (Solana). */
+function gmgnSolTokenUrl(mint: string): string {
+  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
+}
+
+function escapeTelegramHtmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Значение HTML-атрибута `href`. */
+function escapeTelegramHtmlAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function whitelistAlertHtmlBodyMiss(sym: string, mint: string): string {
+  const url = gmgnSolTokenUrl(mint);
+  return (
+    `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.<br/>` +
+    `symbol: ${escapeTelegramHtmlText(sym)}<br/>` +
+    `mint: <code>${escapeTelegramHtmlText(mint)}</code><br/>` +
+    `<a href="${escapeTelegramHtmlAttr(url)}">GMGN</a>`
+  );
+}
+
+function whitelistAlertHtmlBodyDrop(sym: string, mint: string, threshold: number): string {
+  const url = gmgnSolTokenUrl(mint);
+  return (
+    `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).<br/>` +
+    `symbol: ${escapeTelegramHtmlText(sym)}<br/>` +
+    `mint: <code>${escapeTelegramHtmlText(mint)}</code><br/>` +
+    `<a href="${escapeTelegramHtmlAttr(url)}">GMGN</a>`
+  );
+}
+
 let cachedAbsPath = '';
 let cachedMtimeMs = 0;
 let cachedSet = new Set<string>();
@@ -93,8 +127,8 @@ export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldo
     const ok = await sendTagged(
       whitelistSkipTelegramCategory(),
       'live_whitelist_miss',
-      `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\nsymbol: ${sym}\nmint: ${key}`,
-      whitelistAlertsTelegramOpts(),
+      whitelistAlertHtmlBodyMiss(sym, key),
+      { ...whitelistAlertsTelegramOpts(), parseMode: 'HTML' },
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
     if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
@@ -236,8 +270,8 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
     const ok = await sendTagged(
       whitelistDropTelegramCategory(),
       'live_whitelist_consec_loss_drop',
-      `Монета удалена из whitelist после ${threshold} подряд убыточных сделок (live).\nsymbol: ${sym}\nmint: ${key}`,
-      whitelistAlertsTelegramOpts(),
+      whitelistAlertHtmlBodyDrop(sym, key, threshold),
+      { ...whitelistAlertsTelegramOpts(), parseMode: 'HTML' },
     );
     log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_consec_loss_drop telegram');
   })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_consec_loss_drop telegram failed'));
