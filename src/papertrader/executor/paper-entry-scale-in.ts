@@ -1,6 +1,6 @@
 /**
  * Вторая нога scale-in для paper-only Oscar V2.1 (без on-chain swap).
- * Коридор и Jupiter — как у `tryLiveEntryScaleInTrackerStep`.
+ * Семантика коридора и опроса — как у `tryLiveEntryScaleInTrackerStep`.
  */
 import { getSolUsd, getLiveMcUsd } from '../pricing.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
@@ -83,7 +83,22 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
         partialSellCount: ot.partialSells.length,
         timelineKind: 'scale_in_skip',
         timelineLabelRu:
-          'Докупка второй ноги отменена: уже сработала частичная фиксация по сетке TP — не увеличиваем нотацию перед следующими выходами.',
+          'Докупка второй ноги отменена: уже сработала частичная фиксация по сетке TP — план второй ноги снят.',
+      },
+    });
+    return;
+  }
+
+  if (ot.legs.some((l) => l.reason === 'dca')) {
+    ot.livePendingScaleIn = null;
+    journalAppend({
+      kind: 'risk_note',
+      reason: 'paper_scale_in_skip_after_dca',
+      mint,
+      detail: {
+        timelineKind: 'scale_in_skip',
+        timelineLabelRu:
+          'Докупка второй ноги отменена: уже было усреднение (DCA) — вторая нога сплита не нужна.',
       },
     });
     return;
@@ -96,8 +111,13 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
   const dec = ot.tokenDecimals ?? 6;
   const solUsd = getSolUsd() ?? 0;
 
-  const scheduleRetry = () => {
-    pending.nextAttemptAfterTs = now + si.retryBackoffMs;
+  const scheduleBackoffRetry = () => {
+    pending.nextAttemptAfterTs = Date.now() + si.retryBackoffMs;
+    ot.livePendingScaleIn = pending;
+  };
+
+  const scheduleCorridorPoll = () => {
+    pending.nextAttemptAfterTs = Date.now() + si.outOfCorridorPollMs;
     ot.livePendingScaleIn = pending;
   };
 
@@ -120,50 +140,37 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
   if (quote.kind !== 'ok' || !(quote.jupiterPriceUsd > 0)) {
     pending.swapAttempts += 1;
     if (pending.swapAttempts < pending.maxSwapAttempts) {
-      scheduleRetry();
+      scheduleBackoffRetry();
       return;
     }
+    ot.livePendingScaleIn = null;
     journalAppend({
       kind: 'risk_note',
-      reason: 'paper_scale_in_quote_exhausted_mandatory_fill',
+      reason: 'paper_scale_in_quote_giveup',
       mint,
       detail: {
         attempts: pending.swapAttempts,
         quoteKind: quote.kind,
-        timelineLabelRu: `Paper scale-in: после ${pending.swapAttempts} неудачных котировок фиксируем вторую ногу по MTM/якорю (обязательный сплит).`,
+        timelineKind: 'scale_in_skip',
+        timelineLabelRu: `План второй ноги снят: нет котировки Jupiter после ${pending.swapAttempts} попыток.`,
       },
     });
-  } else {
-    implied = quote.jupiterPriceUsd;
-    haveImpliedQuote = true;
-    signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
-    diffPctAbs = Math.abs(signedDevPct);
-    const eps = 1e-6;
-    const outCorridor =
-      signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
-    if (outCorridor) {
-      pending.swapAttempts += 1;
-      if (pending.swapAttempts < pending.maxSwapAttempts) {
-        scheduleRetry();
-        return;
-      }
-      const sign = signedDevPct >= 0 ? '+' : '';
-      journalAppend({
-        kind: 'risk_note',
-        reason: 'paper_scale_in_corridor_exhausted_mandatory_fill',
-        mint,
-        detail: {
-          attempts: pending.swapAttempts,
-          anchorMarketUsd: pending.anchorMarketUsd,
-          jupiterPriceUsd: implied,
-          signedDevPct: +signedDevPct.toFixed(4),
-          corridorUpPct: pending.corridorUpPct,
-          corridorDownPct: pending.corridorDownPct,
-          timelineLabelRu: `Paper scale-in: коридор превышен (${sign}${signedDevPct.toFixed(2)}%) после ${pending.swapAttempts} попыток — обязательная вторая нога по котировке.`,
-        },
-      });
-    }
+    return;
   }
+
+  implied = quote.jupiterPriceUsd;
+  haveImpliedQuote = true;
+  signedDevPct = (implied / pending.anchorMarketUsd - 1) * 100;
+  diffPctAbs = Math.abs(signedDevPct);
+  const eps = 1e-6;
+  const outCorridor =
+    signedDevPct > pending.corridorUpPct + eps || signedDevPct < -pending.corridorDownPct - eps;
+  if (outCorridor) {
+    scheduleCorridorPoll();
+    return;
+  }
+
+  pending.swapAttempts = 0;
 
   if (verifyStillOpen && !verifyStillOpen()) return;
 

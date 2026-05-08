@@ -1697,37 +1697,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    /** Обязательный сплит второй ноги до partial TP / сетки: иначе `partialSells` отменяет scale-in в `entry-scale-in.ts`. */
-    if (
-      livePhase4 &&
-      liveOscarCfg &&
-      ot.livePendingScaleIn &&
-      ot.partialSells.length === 0
-    ) {
-      await tryLiveEntryScaleInTrackerStep({
-        cfg,
-        ot,
-        mint,
-        curMetric,
-        livePhase4,
-        liveOscarCfg,
-        journalAppend,
-        journalLiveStrategy,
-        verifyStillOpen: () => open.has(mint),
-      });
-    }
-
-    if (!livePhase4 && isPaperOscarIdealized && ot.livePendingScaleIn && ot.partialSells.length === 0) {
-      await tryPaperOnlyScaleInTrackerStep({
-        cfg,
-        ot,
-        mint,
-        curMetric,
-        journalAppend,
-        verifyStillOpen: () => open.has(mint),
-      });
-    }
-
     if (ot.avgEntry > 0) {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
@@ -1737,22 +1706,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     let tgEff = tpGridEffective(ot, effCfg);
     let killEff = dcaKillstopEffective(ot, effCfg);
 
-    /** §3 V2: TP не в нейтрали до первой ступени +step к avg — но только после полного сплита. Пока ждём вторую ногу (`livePendingScaleIn`), TP глушим. Если сплит сорвался (pending снят, ноги нет) — не блокировать TP бесконечно на одной ноге 75%. */
     const liveOscarAb = cfg.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled;
     const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
-    const awaitingMandatoryScaleIn =
-      liveOscarAb &&
-      ot.liveExitProfileMode == null &&
-      !entrySplitComplete &&
-      ot.livePendingScaleIn != null;
-    const neutralBelowFirstTpAfterFullSplit =
-      liveOscarAb &&
-      ot.liveExitProfileMode == null &&
-      entrySplitComplete &&
-      ot.avgEntry > 0 &&
-      curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl;
-    const skipTpGridLiveOscarNeutral =
-      awaitingMandatoryScaleIn || neutralBelowFirstTpAfterFullSplit;
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
@@ -1773,9 +1728,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    /** Пока реально ждём вторую ногу сплита — не смешивать с DCA. Если ожидание снято без второй ноги — DCA по общим правилам снова допустим. */
-    const liveOscarDcaBlockedUntilSplit =
-      liveOscarAb && !entrySplitComplete && ot.livePendingScaleIn != null;
+    /** Усреднение до второй ноги сплита допустимо (−6%% к первой ноге снимает план второй ноги — см. `entry-scale-in.ts`). */
     const liveOscarNoDcaInModeA = liveOscarAb && ot.liveExitProfileMode === 'A';
 
     const mayDca =
@@ -1783,7 +1736,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
-      !liveOscarDcaBlockedUntilSplit &&
       !liveOscarNoDcaInModeA;
 
     if (mayDca) {
@@ -1879,6 +1831,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     effCfg = cfgEffectiveForOpen(cfg, ot);
     tgEff = tpGridEffective(ot, effCfg);
     killEff = dcaKillstopEffective(ot, effCfg);
+
+    const neutralBelowFirstTpAfterFullSplit =
+      liveOscarAb &&
+      ot.liveExitProfileMode == null &&
+      entrySplitComplete &&
+      ot.avgEntry > 0 &&
+      curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl;
+    const skipTpGridLiveOscarNeutral = neutralBelowFirstTpAfterFullSplit;
 
     if (
       !(isPaperOscarIdealized && idealizedMute) &&
@@ -1977,6 +1937,44 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
     }
+
+    /** Вторая нога сплита — после DCA и partial TP на тике (частичный TP или DCA снимают pending в `entry-scale-in.ts`). */
+    if (
+      livePhase4 &&
+      liveOscarCfg &&
+      ot.livePendingScaleIn &&
+      ot.partialSells.length === 0
+    ) {
+      await tryLiveEntryScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        livePhase4,
+        liveOscarCfg,
+        journalAppend,
+        journalLiveStrategy,
+        verifyStillOpen: () => open.has(mint),
+      });
+    }
+
+    if (!livePhase4 && isPaperOscarIdealized && ot.livePendingScaleIn && ot.partialSells.length === 0) {
+      await tryPaperOnlyScaleInTrackerStep({
+        cfg,
+        ot,
+        mint,
+        curMetric,
+        journalAppend,
+        verifyStillOpen: () => open.has(mint),
+      });
+    }
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    effCfg = cfgEffectiveForOpen(cfg, ot);
+    killEff = dcaKillstopEffective(ot, effCfg);
 
     let exitReason: ExitReason | null = null;
     if (!(isPaperOscarIdealized && idealizedMute)) {

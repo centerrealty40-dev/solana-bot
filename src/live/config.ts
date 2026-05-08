@@ -179,6 +179,7 @@ const LiveOscarConfigSchema = z
     /**
      * Двухногий вход: после первого `buy_open` трекер докупает `(1 − PAPER_ENTRY_FIRST_LEG_FRACTION)×positionUsd`,
      * если Jupiter implied цена в коридоре к якорю первой ноги: до +`liveEntryScaleInCorridorUpPct` % и до −`liveEntryScaleInCorridorDownPct` %.
+     * Вне коридора — ждём `liveEntryScaleInOutOfCorridorPollMs` и проверяем снова (без принудительной второй ноги).
      * Если заданы только `LIVE_ENTRY_SCALE_IN_CORRIDOR_PCT`, оба направления берут это значение (симметрично).
      */
     liveEntryScaleInEnabled: z.boolean().default(false),
@@ -187,6 +188,8 @@ const LiveOscarConfigSchema = z
     liveEntryScaleInCorridorPct: z.coerce.number().min(0.1).max(50).default(3),
     liveEntryScaleInCorridorUpPct: z.coerce.number().min(0.01).max(50).default(3),
     liveEntryScaleInCorridorDownPct: z.coerce.number().min(0.01).max(50).default(3),
+    /** Интервал повторной проверки коридора после выхода цены за допуск (мс). */
+    liveEntryScaleInOutOfCorridorPollMs: z.coerce.number().int().min(1000).max(600_000).default(30_000),
     liveEntryScaleInMaxSwapAttempts: z.coerce.number().int().min(1).max(50).default(5),
     liveEntryScaleInRetryBackoffMs: z.coerce.number().int().min(200).max(120_000).default(2000),
 
@@ -485,6 +488,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 2000;
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 200 ? Math.min(n, 120_000) : 2000;
+    })(),
+    liveEntryScaleInOutOfCorridorPollMs: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS?.trim();
+      if (!s) return 30_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 1000 ? Math.min(n, 600_000) : 30_000;
     })(),
     liveMintWhitelistEnabled: envBool(process.env.LIVE_MINT_WHITELIST_ENABLED, false),
     liveMintWhitelistPath: process.env.LIVE_MINT_WHITELIST_PATH?.trim() || 'data/live/live-oscar-mint-whitelist.txt',

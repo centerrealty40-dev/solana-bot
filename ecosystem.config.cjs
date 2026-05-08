@@ -252,7 +252,7 @@ module.exports = {
         PAPER_DRY_RUN: 'false',
         /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** по DCA −6% или исторический сплит; доля первой ноги **0.75**. */
         PAPER_POSITION_USD: '600',
-        /** Первая нога $450 / $600 = 0.75; вторая $150 — через `PAPER_DCA_LEVELS` (scale-in выкл.). */
+        /** Первая нога $450 / $600 = 0.75; вторая $150 — по коридору Jupiter (+1/−2%%) или усреднение −6%% (`PAPER_DCA_LEVELS`). */
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -316,8 +316,8 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
 
         /**
-         * Вторая нога по просадке −6% от первой (`-6` в spec = −6%% после деления в parseDcaLevels); доля 0.25 = $150 при $600.
-         * Обязательный сплит 75%+25% — через `LIVE_ENTRY_SCALE_IN_ENABLED=1` (иначе при доле первой ноги меньше 1 процесс не стартует).
+         * Усреднение −6%% от первой ноги (`-6` в parseDcaLevels); доля 0.25 = $150 при $600 — снимает план второй ноги сплита.
+         * Доля первой ноги < 1: вторая нога через `LIVE_ENTRY_SCALE_IN_*` (коридор +1/−2%%, опрос вне коридора 30 с).
          */
         PAPER_DCA_LEVELS: '-6:0.25',
         /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −12%% к avg. */
@@ -480,14 +480,15 @@ module.exports = {
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 
-        /** Обязательная вторая нога входа (коридор Jupiter к первой ноге); при `0` и доле первой ноги меньше 1 live-oscar падает при старте. */
+        /** Вторая нога входа по коридору Jupiter; при `0` и доле первой ноги меньше 1 live-oscar падает при старте. */
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
-        /** 5 с — успевает сработать частичный TP по сетке до второй ноги (трекер оценивает TP раньше scale-in). */
+        /** Минимальная задержка после первой ноги перед проверкой коридора второй ноги. */
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
-        /** Коридор второй ноги к якорю первой ноги (USD/token): до +5% / до −7% (меньше перекоса «вниз = жирная позиция» vs узкий +1/−2). */
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
+        /** Коридор второй ноги к якорю первой ноги: до +1% / до −2%; вне коридора — пауза `LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS`. */
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
+        LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS: '30000',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
         /** Периодический хвост на кошельке + force-close зависших open (`src/live/periodic-self-heal.ts`). */
@@ -654,9 +655,10 @@ module.exports = {
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
+        LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS: '30000',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },
@@ -818,9 +820,10 @@ module.exports = {
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
+        LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS: '30000',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },
@@ -981,9 +984,10 @@ module.exports = {
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
         LIVE_ENTRY_SCALE_IN_ENABLED: '1',
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '5',
-        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '7',
-        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '15',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
+        LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',
+        LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS: '30000',
+        LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
       },
     },

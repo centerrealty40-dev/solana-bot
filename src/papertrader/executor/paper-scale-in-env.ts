@@ -15,6 +15,7 @@ export type PaperOscarScaleInEnv = {
   delayMs: number;
   corridorUpPct: number;
   corridorDownPct: number;
+  outOfCorridorPollMs: number;
   maxSwapAttempts: number;
   retryBackoffMs: number;
 };
@@ -49,6 +50,12 @@ export function readPaperOscarScaleInEnv(): PaperOscarScaleInEnv {
     })(),
     corridorUpPct,
     corridorDownPct,
+    outOfCorridorPollMs: (() => {
+      const s = process.env.LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS?.trim();
+      if (!s) return 30_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 1000 ? Math.min(n, 600_000) : 30_000;
+    })(),
     maxSwapAttempts: (() => {
       const s = process.env.LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS?.trim();
       if (!s) return 5;

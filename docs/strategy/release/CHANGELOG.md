@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.154] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.154`.
+
+- **Live Oscar — scale-in:** коридор второй ноги **+1% / −2%** к якорю первой ноги; вне коридора — опрос каждые **30 с** (`LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS`); без принудительной второй ноги после ретраев. Частичный TP или DCA снимают план второй ноги. На тике порядок: **DCA → TP → scale-in**. DCA до второй ноги разрешён (`PAPER_DCA_LEVELS` **−6%** для прод-плитки). Режим **A** при первом TP **+5%**, **B** при усреднении; kill режима B **−12%** (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`). SSOT: **`live-oscar`** в `ecosystem.config.cjs`, `entry-scale-in.ts`, `tracker.ts`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.153`** и **`pm2 reload ecosystem.config.cjs --only live-oscar --update-env`** под **`salpha`** (или вернуть прежние `LIVE_ENTRY_SCALE_IN_*` на хосте).
+
+---
+
 ## [1.11.153] — 2026-05-08
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.153`.
