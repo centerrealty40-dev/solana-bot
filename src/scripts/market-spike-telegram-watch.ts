@@ -6,6 +6,10 @@
  *
  * Запуск: SPIKE_ALERT_TELEGRAM_BOT_TOKEN=… SPIKE_ALERT_TELEGRAM_CHAT_ID=… npx tsx src/scripts/market-spike-telegram-watch.ts
  * Или PM2: см. ecosystem.market-spike-watch.cjs (отдельный файл — без reload основного ecosystem.config.cjs).
+ *
+ * Окно сравнения: SPIKE_ALERT_LOOKBACK_SEC (по умолчанию 60). Устаревшее SPIKE_ALERT_WINDOW_MIN (минуты)
+ * задаёт то же в секундах, если LOOKBACK_SEC не задан. Коллекторы часто пишут ts с минутным бакетом —
+ * фактическая дискретность может быть около минуты даже при lookback 60s.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -37,11 +41,29 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
-const WINDOW_MIN = Math.max(5, Math.min(180, envNum('SPIKE_ALERT_WINDOW_MIN', 30)));
+/** Сравнение px_now vs последний снимок не новее чем now−LOOKBACK_SEC (без новых HTTP/RPC). */
+function resolveLookbackSec(): number {
+  const secRaw = process.env.SPIKE_ALERT_LOOKBACK_SEC?.trim();
+  if (secRaw) {
+    return Math.max(30, Math.min(7200, envNum('SPIKE_ALERT_LOOKBACK_SEC', 60)));
+  }
+  const minRaw = process.env.SPIKE_ALERT_WINDOW_MIN?.trim();
+  if (minRaw) {
+    const wm = Math.max(1, Math.min(180, envNum('SPIKE_ALERT_WINDOW_MIN', 30)));
+    return wm * 60;
+  }
+  return 60;
+}
+
+const LOOKBACK_SEC = resolveLookbackSec();
+/** Насколько глубоко искать «последний» снимок (сек); запас относительно lookback. */
+const LATEST_FLOOR_SEC = Math.max(180, Math.min(3600, Math.ceil(LOOKBACK_SEC * 15)));
+
 const THRESHOLD_PCT = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 5)));
 const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
+const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
 const COOLDOWN_MS = Math.max(0, envNum('SPIKE_ALERT_COOLDOWN_MS', 3_600_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('SPIKE_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('SPIKE_ALERT_DRY_RUN', false);
@@ -91,6 +113,8 @@ type CandidateRow = {
 function buildQuery(table: DexTable): string {
   const liqClause =
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
+  const volClause =
+    MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
   return `
 WITH latest AS (
   SELECT DISTINCT ON (s.base_mint)
@@ -102,7 +126,7 @@ WITH latest AS (
     s.liquidity_usd AS liq_usd
   FROM ${table} s
   INNER JOIN tokens t ON t.mint = s.base_mint
-  WHERE s.ts > now() - interval '25 minutes'
+  WHERE s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
     AND COALESCE(s.price_usd, 0) > 0
     AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}
     AND (
@@ -110,6 +134,7 @@ WITH latest AS (
       OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
     )
     ${liqClause}
+    ${volClause}
   ORDER BY s.base_mint, s.ts DESC
   LIMIT ${MAX_ROWS}
 )
@@ -129,7 +154,7 @@ INNER JOIN LATERAL (
   SELECT s2.price_usd, s2.ts
   FROM ${table} s2
   WHERE s2.base_mint = l.base_mint
-    AND s2.ts <= now() - interval '${WINDOW_MIN} minutes'
+    AND s2.ts <= now() - (${LOOKBACK_SEC} * interval '1 second')
     AND COALESCE(s2.price_usd, 0) > 0
   ORDER BY s2.ts DESC
   LIMIT 1
@@ -222,8 +247,9 @@ async function main(): Promise<void> {
     const sym = row.symbol?.trim() || '?';
     const kind = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
     const tag = `[MARKET][${kind}]`;
+    const winLabel = LOOKBACK_SEC >= 120 ? `~${Math.round(LOOKBACK_SEC / 60)} мин` : `~${LOOKBACK_SEC}s`;
     const body =
-      `${tag} ${row.pct >= 0 ? 'Рост' : 'Пролив'} ~${Math.abs(row.pct).toFixed(2)}% за ~${WINDOW_MIN} мин\n` +
+      `${tag} ${row.pct >= 0 ? 'Рост' : 'Пролив'} ~${Math.abs(row.pct).toFixed(2)}% за ${winLabel}\n` +
       `symbol: ${sym}\n` +
       `mint: ${row.base_mint}\n` +
       `dex: ${row.dex}  pair: ${row.pair_address}\n` +
@@ -249,7 +275,7 @@ async function main(): Promise<void> {
   if (COOLDOWN_MS > 0 && sent > 0) saveCooldown(cooldown);
 
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% window=${WINDOW_MIN}m holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% lookback=${LOOKBACK_SEC}s holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h liq>=${MIN_LIQ_USD} vol5m>=${MIN_VOL_5M_USD}`,
   );
 }
 
