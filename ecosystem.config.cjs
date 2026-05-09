@@ -310,12 +310,12 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
         /**
          * Режим B: усреднение по `PAPER_DCA_LEVELS` (−4%%); kill −8%% (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`).
-         * Лестница TP: **+7%%** к средней за ступень, **20%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
+         * Лестница TP: **+2.5%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
          * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
          * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.
          */
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.07',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.20',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.025',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
 
         /**
@@ -326,12 +326,12 @@ module.exports = {
         /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −8%% к avg. */
         PAPER_DCA_KILLSTOP: '-0.08',
         /**
-         * Режим A — «полная лестница» (IDEALIZED §9.2): +5% к средней; 15% остатка за ступень;
-         * retrace-защита после 1-й ступени 2.5%.
+         * Режим A — «полная лестница»: **+2.5%%** к средней за ступень; **5%%** остатка за ступень;
+         * retrace-защита после 1-й ступени (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
          */
         PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.15',
+        PAPER_TP_GRID_STEP_PNL: '0.025',
+        PAPER_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
