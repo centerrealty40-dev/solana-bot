@@ -247,6 +247,29 @@ export const LiveWhitelistSkipSchema = z.object({
   source: z.string().max(64).optional(),
 });
 
+/** Oscar discovery: candidate failed paper eval gates (`pass: false`); mirrors dropped paper JSONL on live-oscar. */
+export const LiveDiscoveryEvalSchema = z.object({
+  kind: z.literal('live_discovery_eval'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  ageMin: z.number().finite().optional(),
+  reasons: z.array(z.string().max(400)).min(1).max(24),
+  entryPath: z.string().max(120).optional(),
+});
+
+/** Passed eval but open blocked (safety, impulse, price verify, already_open, etc.). */
+export const LiveDiscoverySkipOpenSchema = z.object({
+  kind: z.literal('live_discovery_skip_open'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  reason: z.string().min(1).max(500),
+  detail: z.string().max(2000).optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -269,6 +292,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePeriodicSelfHealReportSchema,
   LivePostCloseTailSchema,
   LiveWhitelistSkipSchema,
+  LiveDiscoveryEvalSchema,
+  LiveDiscoverySkipOpenSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

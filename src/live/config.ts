@@ -204,6 +204,12 @@ const LiveOscarConfigSchema = z
     liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
     /**
+     * When true: append `live_discovery_eval` / `live_discovery_skip_open` to LIVE_TRADES_PATH from paper Oscar discovery
+     * (live-oscar otherwise drops paper `journalAppend`). Disable with LIVE_DISCOVERY_AUDIT_JSONL=0 if JSONL volume is an issue.
+     */
+    liveDiscoveryAuditJsonlEnabled: z.boolean().default(true),
+
+    /**
      * Signal lab — параллельный сбор снимков до `buy_open` в отдельный JSONL (не влияет на гейты и PnL).
      * См. `src/live/signal-lab.ts`.
      */
@@ -504,6 +510,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
     })(),
+    liveDiscoveryAuditJsonlEnabled: envBool(process.env.LIVE_DISCOVERY_AUDIT_JSONL, true),
     signalLabEnabled: envBool(process.env.SIGNAL_LAB_ENABLED, false),
     signalLabSamplePct: (() => {
       const s = process.env.SIGNAL_LAB_SAMPLE_PCT?.trim();

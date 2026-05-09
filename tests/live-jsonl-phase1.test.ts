@@ -111,6 +111,23 @@ describe('W8.0-p1 live JSONL contract', () => {
         lane: 'stream',
       },
       {
+        kind: 'live_discovery_eval',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reasons: ['dip_no_window_pass(test)'],
+        symbol: 'ABC',
+        lane: 'post',
+        source: 'pumpswap',
+        ageMin: 2222,
+        entryPath: 'post_migration',
+      },
+      {
+        kind: 'live_discovery_skip_open',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reason: 'price_verify:blocked',
+        symbol: 'ABC',
+        detail: '{"slipPct":1.2}',
+      },
+      {
         kind: 'live_exit_verify_defer',
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         context: 'close',
@@ -185,6 +202,20 @@ describe('W8.0-p1 live JSONL contract', () => {
       liveEventDefaultFsync({
         kind: 'live_whitelist_skip',
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      }),
+    ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_discovery_eval',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reasons: ['x'],
+      }),
+    ).toBe(false);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_discovery_skip_open',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reason: 'safety:x',
       }),
     ).toBe(true);
   });

@@ -64,6 +64,10 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return true;
     case 'live_whitelist_skip':
       return true;
+    case 'live_discovery_eval':
+      return false;
+    case 'live_discovery_skip_open':
+      return true;
     default:
       return false;
   }

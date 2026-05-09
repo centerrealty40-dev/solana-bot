@@ -7,6 +7,7 @@ import pino from 'pino';
 import { loadLiveOscarConfig } from './config.js';
 import { runLiveJupiterSelfTest } from './jupiter-self-test.js';
 import { runLivePhase3SimSelfTest } from './phase3-self-test.js';
+import { createLiveDiscoveryAuditJournalAppend } from './discovery-audit-jsonl.js';
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 import { configureSignalLabStore } from './signal-lab.js';
 import { configureMtmShadowStore } from './mtm-shadow.js';
@@ -345,7 +346,7 @@ export async function main(): Promise<void> {
     Boolean(liveCfg.walletSecret?.trim());
 
   await paperOscarMain({
-    journalAppend: () => {},
+    journalAppend: createLiveDiscoveryAuditJournalAppend(liveCfg.liveDiscoveryAuditJsonlEnabled),
     skipPaperJsonlStore: true,
     liveStrategyReplay,
     journalLiveStrategy: (body) => appendLiveJsonlEvent(body),

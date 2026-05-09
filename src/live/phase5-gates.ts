@@ -204,7 +204,14 @@ export async function phase5AllowIncreaseExposure(args: {
   if (!liveCfg.strategyEnabled || liveCfg.executionMode === 'dry_run') return true;
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return true;
 
-  if (liveReconcileBlocksNewExposure()) return false;
+  if (liveReconcileBlocksNewExposure()) {
+    appendLiveJsonlEvent({
+      kind: 'risk_note',
+      reason: 'phase5_skip_exposure_reconcile_block',
+      detail: { isNewPosition },
+    });
+    return false;
+  }
 
   const solUsd = getSolUsd() ?? 0;
   if (!(solUsd > 0)) {

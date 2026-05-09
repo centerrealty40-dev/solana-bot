@@ -67,7 +67,7 @@ import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 const logger = pino({ name: 'papertrader' });
 
 export interface PapertraderMainOptions {
-  /** Default: paper JSONL `appendEvent`. Live-oscar passes noop (P4-I1). */
+  /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
   journalAppend?: (event: Record<string, unknown>) => void;
   /** Live-oscar: do not read/write paper store path. */
   skipPaperJsonlStore?: boolean;
