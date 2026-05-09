@@ -247,6 +247,15 @@ export const LiveWhitelistSkipSchema = z.object({
   source: z.string().max(64).optional(),
 });
 
+/** Mint на постоянном denylist (seed/local); вход заблокирован даже при ошибочном возврате строки в whitelist. */
+export const LivePermanentDenySkipSchema = z.object({
+  kind: z.literal('live_permanent_deny_skip'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+});
+
 /** Oscar discovery: candidate failed paper eval gates (`pass: false`); mirrors dropped paper JSONL on live-oscar. */
 export const LiveDiscoveryEvalSchema = z.object({
   kind: z.literal('live_discovery_eval'),
@@ -316,6 +325,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePeriodicSelfHealReportSchema,
   LivePostCloseTailSchema,
   LiveWhitelistSkipSchema,
+  LivePermanentDenySkipSchema,
   LiveDiscoveryEvalSchema,
   LiveDiscoveryTickSkipSchema,
   LiveDiscoveryUniverseMissSchema,

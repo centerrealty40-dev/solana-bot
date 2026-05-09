@@ -1,12 +1,17 @@
 /**
  * Live Oscar — mint allowlist file (one base58 mint per line, `#` comments).
  * Reloads when mtime changes.
+ *
+ * При ручном удалении mint из whitelist добавьте его в постоянный denylist
+ * (`live-oscar-permanent-denylist.seed.txt` в Git или локальный `…denylist.txt` на VPS),
+ * иначе только автоматическое удаление по consec-loss допишет локальный denylist.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
+import { appendMintToPermanentDenylistLocal } from './mint-permanent-denylist.js';
 
 const log = child('live-mint-whitelist');
 
@@ -251,6 +256,10 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
   const removed = removeMintLinesFromWhitelistFile(wlPath, key);
   delete streaks[key];
   writeConsecLossStreaks(streaks);
+
+  if (removed) {
+    appendMintToPermanentDenylistLocal(liveOscarCfg, key);
+  }
 
   if (!removed) {
     log.warn({ mint: key }, 'live whitelist consec loss threshold reached but mint not in file');

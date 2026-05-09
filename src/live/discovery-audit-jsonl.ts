@@ -40,8 +40,8 @@ function reasonsForEval(raw: unknown, passTrue: boolean): string[] {
   return normalizeReasons(raw);
 }
 
-/** Skip duplicate: `live_whitelist_skip` already records this path. */
-const SKIP_OPEN_DEDUPE_REASONS = new Set(['live_mint_whitelist']);
+/** Skip duplicate: live JSONL already records this path. */
+const SKIP_OPEN_DEDUPE_REASONS = new Set(['live_mint_whitelist', 'live_permanent_deny']);
 
 function detailFromEvalSkipOpenRest(row: Record<string, unknown>): string | undefined {
   const { kind: _k, mint: _m, symbol: _s, lane: _l, source: _src, reason: _r, ...rest } = row;

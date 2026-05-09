@@ -34,6 +34,7 @@ import {
   isMintBlockedForAmbiguousLiveBuy,
   registerAmbiguousLiveBuyCooldown,
 } from './pending-buy-cooldown.js';
+import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -152,6 +153,18 @@ async function runSolToTokenPipeline(
     return { ok: false, anchorMode: mode };
   }
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') {
+    return { ok: false, anchorMode: mode };
+  }
+
+  if (
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
+    isMintPermanentlyDeniedLiveOscar(liveCfg, args.mint)
+  ) {
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_permanent_deny:${args.intentKind}`,
+      detail: args.mint.slice(0, 12),
+    });
     return { ok: false, anchorMode: mode };
   }
 

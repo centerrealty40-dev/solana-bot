@@ -204,6 +204,20 @@ const LiveOscarConfigSchema = z
     liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
     /**
+     * Необратимый запрет на SOL→token для mint (объединение seed из репозитория + локальный файл на VPS).
+     * Локальный файл gitignored — переживает `git reset`; seed — tracked, защищает от случайного возврата строк в whitelist.
+     */
+    livePermanentDenylistDisabled: z.boolean().default(false),
+    livePermanentDenylistLocalPath: z
+      .string()
+      .min(1)
+      .default('data/live/live-oscar-permanent-denylist.txt'),
+    livePermanentDenylistSeedPath: z
+      .string()
+      .min(1)
+      .default('data/live/live-oscar-permanent-denylist.seed.txt'),
+
+    /**
      * Ручной blacklist mint: совпадает с paper `mintBlacklistPath` / `LIVE_MINT_BLACKLIST_*` — файл должен существовать при включении.
      */
     liveMintBlacklistEnabled: z.boolean().default(false),
@@ -516,6 +530,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
     })(),
+    livePermanentDenylistDisabled: envBool(process.env.LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED, false),
+    livePermanentDenylistLocalPath:
+      process.env.LIVE_OSCAR_PERMANENT_DENYLIST_LOCAL_PATH?.trim() ||
+      'data/live/live-oscar-permanent-denylist.txt',
+    livePermanentDenylistSeedPath:
+      process.env.LIVE_OSCAR_PERMANENT_DENYLIST_SEED_PATH?.trim() ||
+      'data/live/live-oscar-permanent-denylist.seed.txt',
     liveMintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     liveMintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveDiscoveryAuditJsonlEnabled: envBool(process.env.LIVE_DISCOVERY_AUDIT_JSONL, true),

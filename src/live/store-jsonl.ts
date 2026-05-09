@@ -64,6 +64,8 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return true;
     case 'live_whitelist_skip':
       return true;
+    case 'live_permanent_deny_skip':
+      return true;
     case 'live_discovery_eval':
       return false;
     case 'live_discovery_tick_skip':

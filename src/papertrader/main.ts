@@ -50,6 +50,7 @@ import type {
   SimAuditStamp,
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
+import { isMintPermanentlyDeniedLiveOscar } from '../live/mint-permanent-denylist.js';
 import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
 import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
@@ -106,6 +107,7 @@ export interface PapertraderMainOptions {
       skippedSafety: number;
       skippedPriceVerify: number;
       skippedLiveMintWhitelist: number;
+      skippedLivePermanentDeny: number;
       ticks: number;
       errors: number;
     };
@@ -224,6 +226,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     skippedSafety: 0,
     skippedPriceVerify: 0,
     skippedLiveMintWhitelist: 0,
+    skippedLivePermanentDeny: 0,
     ticks: 0,
     errors: 0,
   };
@@ -550,6 +553,27 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         const liveOscar = resolveLiveOscar();
+        if (liveOscar && cfg.strategyId === 'live-oscar') {
+          if (isMintPermanentlyDeniedLiveOscar(liveOscar.liveCfg, ot.mint)) {
+            stats.skippedLivePermanentDeny += 1;
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: ot.mint,
+              symbol: ot.symbol,
+              reason: 'live_permanent_deny',
+            });
+            journalLiveStrategy?.({
+              kind: 'live_permanent_deny_skip',
+              mint: ot.mint,
+              symbol: ot.symbol,
+              lane: d.lane,
+              source: d.source,
+            });
+            continue;
+          }
+        }
         if (
           liveOscar?.liveCfg.liveMintWhitelistEnabled &&
           !isPaperOscarFamilyStrategyId(cfg.strategyId)
@@ -793,7 +817,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       closedTotal: closed.length,
       solUsd: getSolUsd(),
       btc: getBtcContext(),
-      note: `${cfg.strategyKind} executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_live_mint_whitelist=${stats.skippedLiveMintWhitelist} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
+      note: `${cfg.strategyKind} executor: ticks=${stats.ticks} disc=${stats.discovered} eval=${stats.evaluated} pass=${stats.passed} opened=${stats.opened} skip_safety=${stats.skippedSafety} skip_price_verify=${stats.skippedPriceVerify} skip_live_mint_whitelist=${stats.skippedLiveMintWhitelist} skip_live_permanent_deny=${stats.skippedLivePermanentDeny} skip_price_verify_exit=${trackerStats.skippedPriceVerifyExit} closed=${closed.length} pending_followups=${pendingFollowupsCount()} errors=${stats.errors}`,
       skippedPriceVerify: stats.skippedPriceVerify,
       skippedPriceVerifyExit: trackerStats.skippedPriceVerifyExit,
       holdersResolveStats: holdersStats,
