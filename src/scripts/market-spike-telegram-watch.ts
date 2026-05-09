@@ -11,10 +11,15 @@
  *
  * SPIKE_ALERT_WINDOW_MIN / SPIKE_ALERT_LOOKBACK_SEC оставлены в коде через resolveLookbackSec только для
  * совместимости env; основной триггер — скан пар баров + rolling.
+ *
+ * Отбор «latest» по таблице: до SPIKE_ALERT_MAX_ROWS_PER_TABLE mint с **наиболее свежим** последним снимком
+ * в окне пола (ORDER BY MAX(ts) DESC), не лексикографически по адресу mint.
+ *
+ * SPIKE_ALERT_POLL_INTERVAL_MS > 0 — цикл опроса PG (чаще, чем раз в минуту), чтобы второй минутный бар
+ * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
+ * SPIKE_ALERT_POLL_SEND_DEDUPE_MS (не путать с удалённым часовым cooldown).
  */
 import 'dotenv/config';
-import fs from 'node:fs';
-import path from 'node:path';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db } from '../core/db/client.js';
@@ -75,35 +80,18 @@ const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
-const COOLDOWN_MS = Math.max(0, envNum('SPIKE_ALERT_COOLDOWN_MS', 3_600_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('SPIKE_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('SPIKE_ALERT_DRY_RUN', false);
 
+/** 0 — один проход и exit (только с PM2 autorestart:false + cron_restart). Иначе цикл каждые N мс. */
+const POLL_INTERVAL_MS_RAW = Math.floor(envNum('SPIKE_ALERT_POLL_INTERVAL_MS', 0));
+const POLL_INTERVAL_MS =
+  POLL_INTERVAL_MS_RAW <= 0 ? 0 : Math.max(5000, Math.min(600_000, POLL_INTERVAL_MS_RAW));
+/** Анти-спам при poll: не слать повтор того же события чаще чем раз в N мс (только если POLL > 0). */
+const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('SPIKE_ALERT_POLL_SEND_DEDUPE_MS', 120_000))));
+
 const TG_TOKEN = process.env.SPIKE_ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '';
 const TG_CHAT = process.env.SPIKE_ALERT_TELEGRAM_CHAT_ID?.trim() ?? '';
-
-const STATE_PATH =
-  process.env.SPIKE_ALERT_STATE_PATH?.trim() ||
-  path.join(process.cwd(), 'data', 'market-spike-alert-state.json');
-
-type CooldownState = Record<string, number>;
-
-function loadCooldown(): CooldownState {
-  try {
-    const raw = fs.readFileSync(STATE_PATH, 'utf8');
-    return JSON.parse(raw) as CooldownState;
-  } catch {
-    return {};
-  }
-}
-
-function saveCooldown(st: CooldownState): void {
-  const dir = path.dirname(STATE_PATH);
-  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${STATE_PATH}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify(st, null, 2), 'utf8');
-  fs.renameSync(tmp, STATE_PATH);
-}
 
 function dexLabel(table: DexTable): string {
   return table.replace('_pair_snapshots', '');
@@ -142,8 +130,28 @@ function buildLatestOnlyQuery(table: DexTable): string {
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause =
     MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
+  const snapshotFilters = `
+    AND s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
+    AND COALESCE(s.price_usd, 0) > 0
+    AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}
+    AND (
+      (s.launch_ts IS NOT NULL AND s.launch_ts <= now() - interval '${MIN_AGE_HOURS} hours')
+      OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
+    )
+    ${liqClause}
+    ${volClause}`;
   return `
-WITH latest AS (
+WITH top_mints AS (
+  SELECT s.base_mint
+  FROM ${table} s
+  INNER JOIN tokens t ON t.mint = s.base_mint
+  WHERE true
+    ${snapshotFilters}
+  GROUP BY s.base_mint
+  ORDER BY MAX(s.ts) DESC, s.base_mint ASC
+  LIMIT ${MAX_ROWS}
+),
+latest AS (
   SELECT DISTINCT ON (s.base_mint)
     s.base_mint,
     s.pair_address,
@@ -152,17 +160,10 @@ WITH latest AS (
     s.liquidity_usd AS liq_usd
   FROM ${table} s
   INNER JOIN tokens t ON t.mint = s.base_mint
-  WHERE s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
-    AND COALESCE(s.price_usd, 0) > 0
-    AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}
-    AND (
-      (s.launch_ts IS NOT NULL AND s.launch_ts <= now() - interval '${MIN_AGE_HOURS} hours')
-      OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
-    )
-    ${liqClause}
-    ${volClause}
+  INNER JOIN top_mints m ON m.base_mint = s.base_mint
+  WHERE true
+    ${snapshotFilters}
   ORDER BY s.base_mint, s.ts DESC
-  LIMIT ${MAX_ROWS}
 )
 SELECT
   l.base_mint,
@@ -263,10 +264,6 @@ function analyzeBarsForMint(rawBars: Bar[]): SpikePick | null {
   if (!c1) return c2;
   if (!c2) return c1;
   return Math.abs(c2.pct) > Math.abs(c1.pct) ? c2 : c1;
-}
-
-function cooldownEventKey(mint: string, dir: 'up' | 'down', tsNew: Date): string {
-  return `${mint}|${dir}|${tsNew.toISOString()}`;
 }
 
 /** Как в `src/live/mint-whitelist.ts`. */
@@ -406,14 +403,18 @@ async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> 
   return res.ok;
 }
 
-async function main(): Promise<void> {
-  if (!TG_TOKEN || !TG_CHAT) {
-    console.error(
-      '[market-spike-telegram-watch] Skip: set SPIKE_ALERT_TELEGRAM_BOT_TOKEN and SPIKE_ALERT_TELEGRAM_CHAT_ID (не используйте прод TELEGRAM_* Live Oscar).',
-    );
-    process.exit(0);
-  }
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
+function pruneSendDedupe(map: Map<string, number>, olderThanMs: number): void {
+  const cut = Date.now() - olderThanMs;
+  for (const [k, t] of map) {
+    if (t < cut) map.delete(k);
+  }
+}
+
+async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void> {
   const merged = new Map<string, AlertRow>();
 
   for (const table of SNAPSHOT_TABLES) {
@@ -455,19 +456,12 @@ async function main(): Promise<void> {
     }
   }
 
-  const cooldown = loadCooldown();
-  const now = Date.now();
   let sent = 0;
+  if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+    pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
+  }
 
   for (const [, row] of merged) {
-    const dir: 'up' | 'down' = row.pct >= 0 ? 'up' : 'down';
-    const tsNew = parseTs(row.ts_now as Date | string);
-    const eventKey = cooldownEventKey(row.base_mint, dir, tsNew);
-    if (COOLDOWN_MS > 0) {
-      const last = cooldown[eventKey] ?? 0;
-      if (now - last < COOLDOWN_MS) continue;
-    }
-
     const htmlBody = buildAlertHtml(row);
 
     if (DRY_RUN) {
@@ -475,22 +469,71 @@ async function main(): Promise<void> {
       continue;
     }
 
+    if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+      const tsNew = parseTs(row.ts_now as Date | string);
+      const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
+      const last = sendDedupe.get(dedupeKey) ?? 0;
+      if (Date.now() - last < POLL_SEND_DEDUPE_MS) continue;
+    }
+
     const ok = await sendTelegram(htmlBody, 'HTML');
     if (ok) {
       sent++;
-      if (COOLDOWN_MS > 0) cooldown[eventKey] = now;
+      if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+        const tsNew = parseTs(row.ts_now as Date | string);
+        const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
+        sendDedupe.set(dedupeKey, Date.now());
+      }
     } else {
       console.warn('[market-spike-telegram-watch] Telegram send failed for', row.base_mint.slice(0, 12));
     }
-    await new Promise((r) => setTimeout(r, 200));
+    await sleepMs(200);
   }
 
-  if (COOLDOWN_MS > 0 && sent > 0) saveCooldown(cooldown);
-
   const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
+  const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m${rollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h`,
   );
+}
+
+async function main(): Promise<void> {
+  if (!TG_TOKEN || !TG_CHAT) {
+    console.error(
+      '[market-spike-telegram-watch] Skip: set SPIKE_ALERT_TELEGRAM_BOT_TOKEN and SPIKE_ALERT_TELEGRAM_CHAT_ID (не используйте прод TELEGRAM_* Live Oscar).',
+    );
+    process.exit(0);
+  }
+
+  if (POLL_INTERVAL_MS > 0) {
+    const sendDedupe = new Map<string, number>();
+    console.log(
+      `[market-spike-telegram-watch] poll mode: interval=${POLL_INTERVAL_MS}ms poll_send_dedupe=${POLL_SEND_DEDUPE_MS}ms`,
+    );
+    let stop = false;
+    const onStop = (): void => {
+      stop = true;
+    };
+    process.on('SIGINT', onStop);
+    process.on('SIGTERM', onStop);
+    while (!stop) {
+      try {
+        await runOnePass(sendDedupe);
+      } catch (e) {
+        console.warn('[market-spike-telegram-watch] cycle error', String(e));
+      }
+      let waited = 0;
+      while (waited < POLL_INTERVAL_MS && !stop) {
+        const chunk = Math.min(500, POLL_INTERVAL_MS - waited);
+        await sleepMs(chunk);
+        waited += chunk;
+      }
+    }
+    process.exit(0);
+    return;
+  }
+
+  await runOnePass(null);
 }
 
 main().catch((e) => {
