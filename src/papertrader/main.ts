@@ -51,6 +51,7 @@ import type {
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
 import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
+import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
@@ -324,6 +325,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           _liveDiscoveryDeepAudit: deepAuditFlag,
         });
         if (!d.pass) continue;
+        if (
+          cfg.mintBlacklistEnabled &&
+          cfg.mintBlacklistPath?.trim() &&
+          isMintBlacklisted(cfg.mintBlacklistPath.trim(), d.mint)
+        ) {
+          continue;
+        }
         if (open.has(d.mint)) {
           journalAppend({
             kind: 'eval-skip-open',

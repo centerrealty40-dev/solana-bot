@@ -13,6 +13,7 @@ import {
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
+import { filterSnapshotTaggedByMintBlacklist, isMintBlacklisted } from './mint-blacklist-file.js';
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -204,10 +205,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg.enableMigrationLane ? fetchSnapshotLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
     cfg.enablePostLane ? fetchSnapshotLaneCandidates(cfg, 'post_migration') : Promise.resolve([]),
   ]);
-  const snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
+  let snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
     ...migRows.map((row) => ({ row, lane: 'migration_event' as const })),
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
+  snapshotTagged = filterSnapshotTaggedByMintBlacklist(cfg, snapshotTagged);
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
   }
@@ -415,6 +417,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   if (cfg.discoveryDeepAuditJsonl === true && wl && wl.size > 0) {
     const missEveryMs = cfg.discoveryDeepAuditUniverseMissMinMs;
     for (const mint of wl) {
+      if (
+        cfg.mintBlacklistEnabled &&
+        cfg.mintBlacklistPath?.trim() &&
+        isMintBlacklisted(cfg.mintBlacklistPath.trim(), mint)
+      ) {
+        continue;
+      }
       if (candidateMintKeys.has(mint)) continue;
       if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
       const probe = await fetchLatestPumpswapSnapshotRowForMint(mint);

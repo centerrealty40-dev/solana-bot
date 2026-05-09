@@ -25,6 +25,7 @@ cache/
 data/**
 !data/live/
 !data/live/live-oscar-mint-whitelist.txt
+!data/live/live-oscar-mint-blacklist.txt
 backups/
 *.sqlite
 *.db

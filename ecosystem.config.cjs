@@ -429,6 +429,9 @@ module.exports = {
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
+        /** Ручной blacklist mint — до dip/Jupiter и без открытия позиций (файл в репозитории). */
+        LIVE_MINT_BLACKLIST_ENABLED: '1',
+        LIVE_MINT_BLACKLIST_PATH: path.join(root, 'data/live/live-oscar-mint-blacklist.txt'),
         /**
          * Отдельный бот для TG только по `live_whitelist_miss` и `live_whitelist_consec_loss_drop`.
          * Эти алерты всегда без тихих часов (`skipQuietHours` в коде).

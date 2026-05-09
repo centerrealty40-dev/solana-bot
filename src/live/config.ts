@@ -204,6 +204,12 @@ const LiveOscarConfigSchema = z
     liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
     /**
+     * Ручной blacklist mint: совпадает с paper `mintBlacklistPath` / `LIVE_MINT_BLACKLIST_*` — файл должен существовать при включении.
+     */
+    liveMintBlacklistEnabled: z.boolean().default(false),
+    liveMintBlacklistPath: z.string().min(1).default('data/live/live-oscar-mint-blacklist.txt'),
+
+    /**
      * When true: append `live_discovery_eval` / `live_discovery_skip_open` to LIVE_TRADES_PATH from paper Oscar discovery
      * (live-oscar otherwise drops paper `journalAppend`). Disable with LIVE_DISCOVERY_AUDIT_JSONL=0 if JSONL volume is an issue.
      */
@@ -510,6 +516,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
     })(),
+    liveMintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
+    liveMintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveDiscoveryAuditJsonlEnabled: envBool(process.env.LIVE_DISCOVERY_AUDIT_JSONL, true),
     signalLabEnabled: envBool(process.env.SIGNAL_LAB_ENABLED, false),
     signalLabSamplePct: (() => {
@@ -583,6 +591,15 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       : path.resolve(process.cwd(), cfg.liveMintWhitelistPath.trim());
     if (!fs.existsSync(abs)) {
       throw new Error(`LIVE_MINT_WHITELIST_ENABLED=1 but whitelist file missing: ${abs}`);
+    }
+  }
+
+  if (cfg.liveMintBlacklistEnabled) {
+    const abs = path.isAbsolute(cfg.liveMintBlacklistPath.trim())
+      ? cfg.liveMintBlacklistPath.trim()
+      : path.resolve(process.cwd(), cfg.liveMintBlacklistPath.trim());
+    if (!fs.existsSync(abs)) {
+      throw new Error(`LIVE_MINT_BLACKLIST_ENABLED=1 but blacklist file missing: ${abs}`);
     }
   }
 

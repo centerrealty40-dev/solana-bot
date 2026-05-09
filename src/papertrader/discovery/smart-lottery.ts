@@ -16,6 +16,7 @@ import {
   type HoldersDecisionMeta,
 } from './dip-clones.js';
 import { evaluateSmartLotteryIntelGate } from './smart-lottery-intel.js';
+import { filterSnapshotTaggedByMintBlacklist } from './mint-blacklist-file.js';
 
 const SNAPSHOT_TABLES: Array<{ table: string; source: string }> = [
   { table: 'raydium_pair_snapshots', source: 'raydium' },
@@ -171,10 +172,11 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     cfg.smlotEnableMigrationLane ? fetchSmartLotteryLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
     cfg.smlotEnablePostLane ? fetchSmartLotteryLaneCandidates(cfg, 'post_migration') : Promise.resolve([]),
   ]);
-  const snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
+  let snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
     ...migRows.map((row) => ({ row, lane: 'migration_event' as const })),
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
+  snapshotTagged = filterSnapshotTaggedByMintBlacklist(cfg, snapshotTagged);
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], auditRows: [] };
   }

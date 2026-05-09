@@ -169,6 +169,13 @@ const ConfigSchema = z.object({
   discoveryDeepAuditWhitelistPath: z.string().optional(),
   discoveryDeepAuditUniverseMissMinMs: z.coerce.number().int().min(5_000).max(3_600_000).default(60_000),
 
+  /**
+   * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
+   * Файл: один mint на строку, `#` — комментарии. Env: `LIVE_MINT_BLACKLIST_ENABLED`, `LIVE_MINT_BLACKLIST_PATH`.
+   */
+  mintBlacklistEnabled: z.boolean().default(false),
+  mintBlacklistPath: z.string().min(1).default('data/live/live-oscar-mint-blacklist.txt'),
+
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
   liveExitModeBTrailDrop: z.coerce.number().min(0).max(1).optional(),
@@ -544,6 +551,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 5_000 ? Math.min(n, 3_600_000) : 60_000;
     })(),
+    mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
+    mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),
@@ -791,6 +800,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     throw new Error(`Invalid paper-trader env configuration:\n${issues}`);
   }
   const base = parsed.data;
+  if (base.mintBlacklistEnabled) {
+    const raw = base.mintBlacklistPath.trim();
+    const abs = path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+    if (!fs.existsSync(abs)) {
+      throw new Error(`LIVE_MINT_BLACKLIST_ENABLED=1 but blacklist file missing: ${abs}`);
+    }
+  }
   let discoveryDeepAuditWhitelistMintSet: ReadonlySet<string> | undefined;
   if (base.discoveryDeepAuditJsonl && base.discoveryDeepAuditWhitelistPath?.trim()) {
     const raw = base.discoveryDeepAuditWhitelistPath.trim();
