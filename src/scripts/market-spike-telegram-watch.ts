@@ -7,8 +7,10 @@
  * Детекция: по каждому mint из свежей выборки поднимаем цепочку минутных баров за SPIKE_ALERT_SCAN_MINUTES
  * и ищем **соседнюю** пару баров с |Δ%| ≥ порога (отдельно для роста и пролива:
  * SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT / SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT).
- * Дополнительно — накопление за SPIKE_ALERT_ROLLING_MINUTES по первому/последнему бару (порог
- * SPIKE_ALERT_THRESHOLD_ROLLING_PCT).
+ * Дополнительно — накопление: для каждого целого окна от SPIKE_ALERT_ROLLING_MINUTES до
+ * SPIKE_ALERT_ROLLING_MAX_MINUTES ищем бар-опору «не новее чем W минут назад» и сравниваем с последним
+ * баром; достаточно |Δ%| ≥ SPIKE_ALERT_THRESHOLD_ROLLING_PCT хотя бы для одного W (берётся кандидат
+ * с наибольшим |Δ%|, при равенстве — меньшее W).
  *
  * SPIKE_ALERT_WINDOW_MIN / SPIKE_ALERT_LOOKBACK_SEC оставлены в коде через resolveLookbackSec только для
  * совместимости env; основной триггер — скан пар баров + rolling.
@@ -74,7 +76,17 @@ function resolveLookbackSec(): number {
 }
 
 const LOOKBACK_SEC = resolveLookbackSec();
-const ROLLING_MINUTES = Math.max(0, Math.min(120, Math.floor(envNum('SPIKE_ALERT_ROLLING_MINUTES', 3))));
+/** Нижняя граница длины окна накопления (мин); 0 — выключить накопление целиком. */
+let ROLLING_MINUTES_MIN = Math.max(0, Math.min(120, Math.floor(envNum('SPIKE_ALERT_ROLLING_MINUTES', 3))));
+/** Верхняя граница того же (мин); по умолчанию 10 → окна 3…10 мин включительно. */
+let ROLLING_MINUTES_MAX = Math.max(0, Math.min(120, Math.floor(envNum('SPIKE_ALERT_ROLLING_MAX_MINUTES', 10))));
+if (ROLLING_MINUTES_MIN > ROLLING_MINUTES_MAX) {
+  const t = ROLLING_MINUTES_MIN;
+  ROLLING_MINUTES_MIN = ROLLING_MINUTES_MAX;
+  ROLLING_MINUTES_MAX = t;
+}
+/** Накопление включено, если задан положительный диапазон. */
+const ROLLING_RANGE_ENABLED = ROLLING_MINUTES_MIN > 0 && ROLLING_MINUTES_MAX > 0;
 /** Глубина истории баров для поиска резких скачков между соседними минутами. */
 const SCAN_MINUTES = Math.max(15, Math.min(180, Math.floor(envNum('SPIKE_ALERT_SCAN_MINUTES', 60))));
 
@@ -83,7 +95,10 @@ const LATEST_FLOOR_SEC = Math.max(
   600,
   Math.min(
     3600,
-    Math.max(900, ROLLING_MINUTES > 0 ? ROLLING_MINUTES * 60 + 300 : 900),
+    Math.max(
+      900,
+      ROLLING_RANGE_ENABLED ? ROLLING_MINUTES_MAX * 60 + 300 : 900,
+    ),
   ),
 );
 
@@ -91,7 +106,7 @@ const LATEST_FLOOR_SEC = Math.max(
  * Legacy SPIKE_ALERT_THRESHOLD_PCT — дефолт для порога pump по соседним минутам,
  * если отдельный SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT не задан.
  */
-const THRESHOLD_PCT_LEGACY = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 2.5)));
+const THRESHOLD_PCT_LEGACY = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 5)));
 /** Минутное окно: рост (соседние бары). */
 const THRESHOLD_CONSEC_PUMP_PCT = Math.max(
   0.5,
@@ -100,12 +115,12 @@ const THRESHOLD_CONSEC_PUMP_PCT = Math.max(
 /** Минутное окно: пролив (соседние бары). */
 const THRESHOLD_CONSEC_DUMP_PCT = Math.max(
   0.5,
-  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT', 3)),
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT', 5)),
 );
-/** Накопление за SPIKE_ALERT_ROLLING_MINUTES (первый→последний бар в окне). */
+/** Накопление по окнам SPIKE_ALERT_ROLLING_MINUTES…MAX (последний бар vs опора за W минут). */
 const THRESHOLD_ROLLING_PCT = Math.max(
   0.5,
-  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_ROLLING_PCT', 6)),
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_ROLLING_PCT', 10)),
 );
 
 const SPIKE_THRESHOLD_FLOOR = Math.max(
@@ -188,6 +203,8 @@ type LatestMeta = {
 
 type Bar = { ts: Date; px: number; mcapUsd: number | null };
 
+type SpikeSignalKind = 'consecutive' | 'rolling';
+
 type SpikePick = {
   pct: number;
   anchorPx: number;
@@ -197,6 +214,9 @@ type SpikePick = {
   anchorTs: Date;
   tsNew: Date;
   windowLabel: string;
+  signalKind: SpikeSignalKind;
+  /** Заполнено для signalKind rolling: какое W минут дало этот кандидат. */
+  rollingSpanMinutes?: number;
 };
 
 const ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
@@ -356,31 +376,46 @@ function isOneBarGlitchReversedByNext(bars: Bar[], newerIdx: number): boolean {
   return false;
 }
 
-function pickRollingFromBars(bars: Bar[]): SpikePick | null {
-  if (ROLLING_MINUTES <= 0 || bars.length < 2) return null;
+/** Для W ∈ [ROLLING_MINUTES_MIN … MAX]: опора — последний бар с ts ≤ now−W·60s; сравнение с последним баром ряда. */
+function pickRollingRangeFromBars(bars: Bar[]): SpikePick | null {
+  if (!ROLLING_RANGE_ENABLED || bars.length < 2) return null;
   const newest = bars[bars.length - 1];
-  const cutoffMs = Date.now() - ROLLING_MINUTES * 60_000;
-  let anchor: Bar | null = null;
-  for (let i = bars.length - 1; i >= 0; i--) {
-    if (bars[i].ts.getTime() <= cutoffMs) {
-      anchor = bars[i];
-      break;
+  let best: SpikePick | null = null;
+  for (let w = ROLLING_MINUTES_MIN; w <= ROLLING_MINUTES_MAX; w++) {
+    const cutoffMs = Date.now() - w * 60_000;
+    let anchor: Bar | null = null;
+    for (let i = bars.length - 1; i >= 0; i--) {
+      if (bars[i].ts.getTime() <= cutoffMs) {
+        anchor = bars[i];
+        break;
+      }
+    }
+    if (!anchor || !(anchor.px > 0) || !(newest.px > 0)) continue;
+    if (anchor.ts.getTime() >= newest.ts.getTime()) continue;
+    const pct = (newest.px / anchor.px - 1) * 100;
+    if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_ROLLING_PCT) continue;
+    const pick: SpikePick = {
+      pct,
+      anchorPx: anchor.px,
+      pxNow: newest.px,
+      anchorMcapUsd: anchor.mcapUsd,
+      nowMcapUsd: newest.mcapUsd,
+      anchorTs: anchor.ts,
+      tsNew: newest.ts,
+      windowLabel: `${w} мин накопл., конец ${formatDisplayHm(newest.ts)}`,
+      signalKind: 'rolling',
+      rollingSpanMinutes: w,
+    };
+    if (
+      !best ||
+      Math.abs(pick.pct) > Math.abs(best.pct) ||
+      (Math.abs(pick.pct) === Math.abs(best.pct) &&
+        (best.rollingSpanMinutes == null || w < best.rollingSpanMinutes))
+    ) {
+      best = pick;
     }
   }
-  if (!anchor || !(anchor.px > 0) || !(newest.px > 0)) return null;
-  if (anchor.ts.getTime() >= newest.ts.getTime()) return null;
-  const pct = (newest.px / anchor.px - 1) * 100;
-  if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_ROLLING_PCT) return null;
-  return {
-    pct,
-    anchorPx: anchor.px,
-    pxNow: newest.px,
-    anchorMcapUsd: anchor.mcapUsd,
-    nowMcapUsd: newest.mcapUsd,
-    anchorTs: anchor.ts,
-    tsNew: newest.ts,
-    windowLabel: `~${ROLLING_MINUTES} мин накопл., конец ${formatDisplayHm(newest.ts)}`,
-  };
+  return best;
 }
 
 /** Самая свежая соседняя пара минутных баров с |Δ%| ≥ порога (с конца ряда), не максимум за всю глубину скана. */
@@ -404,6 +439,7 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
       anchorTs: older.ts,
       tsNew: newer.ts,
       windowLabel: `мин. ${formatDisplayHm(older.ts)}→${formatDisplayHm(newer.ts)}`,
+      signalKind: 'consecutive',
     };
   }
   return null;
@@ -412,7 +448,7 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
 function analyzeBarsForMint(rawBars: Bar[]): SpikePick | null {
   const bars = dedupeBarsSorted(rawBars);
   const c1 = pickConsecutiveBarSpike(bars);
-  const c2 = pickRollingFromBars(bars);
+  const c2 = pickRollingRangeFromBars(bars);
   if (!c1) return c2;
   if (!c2) return c1;
   return Math.abs(c2.pct) > Math.abs(c1.pct) ? c2 : c1;
@@ -461,11 +497,18 @@ type AlertRow = LatestMeta & {
   dex: string;
   pct: number;
   windowLabel: string;
+  signalKind: SpikeSignalKind;
+  rollingSpanMinutes?: number;
   anchorPx: number;
   anchorTs: Date | string;
   anchorMcapUsd: number | null;
   nowMcapUsd: number | null;
 };
+
+/** Короткая метка для Telegram: «минутное окно» vs «трёхминутное» (накопление по диапазону минут). */
+function telegramSignalTypeRu(row: AlertRow): string {
+  return row.signalKind === 'consecutive' ? 'минутное окно' : 'трёхминутное';
+}
 
 function buildAlertHtml(row: AlertRow): string {
   const mint = row.base_mint.trim();
@@ -482,7 +525,9 @@ function buildAlertHtml(row: AlertRow): string {
       : `<b>${escapeHtml(sym)}</b>`;
 
   let body =
-    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b> · окно: ${escapeHtml(row.windowLabel)}\n\n` +
+    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>\n` +
+    `тип: <b>${escapeHtml(telegramSignalTypeRu(row))}</b>\n` +
+    `окно: ${escapeHtml(row.windowLabel)}\n\n` +
     `${title}\n` +
     `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
     `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
@@ -502,7 +547,9 @@ function buildAlertPlain(row: AlertRow): string {
   const nameRaw = row.token_name?.trim();
   const title = nameRaw && nameRaw !== sym ? `${sym} (${nameRaw})` : sym;
   let body =
-    `${tag} ${kindWord} ${formatSignedPct(row.pct)} · окно: ${row.windowLabel}\n\n` +
+    `${tag} ${kindWord} ${formatSignedPct(row.pct)}\n` +
+    `тип: ${telegramSignalTypeRu(row)}\n` +
+    `окно: ${row.windowLabel}\n\n` +
     `${title}\n` +
     `${mint}\n` +
     `GMGN: ${gmgnSolTokenUrl(mint)}\n\n` +
@@ -742,6 +789,8 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
         px_now: pick.pxNow,
         ts_now: pick.tsNew,
         windowLabel: pick.windowLabel,
+        signalKind: pick.signalKind,
+        rollingSpanMinutes: pick.rollingSpanMinutes,
         anchorPx: pick.anchorPx,
         anchorTs: pick.anchorTs,
         anchorMcapUsd: pick.anchorMcapUsd,
@@ -793,7 +842,9 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
     await sleepMs(200);
   }
 
-  const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
+  const rollLog = ROLLING_RANGE_ENABLED
+    ? ` rolling=${ROLLING_MINUTES_MIN}-${ROLLING_MINUTES_MAX}m`
+    : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
     `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,

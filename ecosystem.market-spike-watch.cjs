@@ -45,10 +45,11 @@ module.exports = {
         SPIKE_ALERT_SCAN_MINUTES: '60',
         /** Накопленное окно по первому/последнему бару (0 = выкл.). */
         SPIKE_ALERT_ROLLING_MINUTES: '3',
-        SPIKE_ALERT_THRESHOLD_PCT: '2.5',
-        SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT: '2.5',
-        SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT: '3',
-        SPIKE_ALERT_THRESHOLD_ROLLING_PCT: '6',
+        SPIKE_ALERT_ROLLING_MAX_MINUTES: '10',
+        SPIKE_ALERT_THRESHOLD_PCT: '5',
+        SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT: '5',
+        SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT: '5',
+        SPIKE_ALERT_THRESHOLD_ROLLING_PCT: '10',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
         SPIKE_ALERT_MIN_AGE_HOURS: '3',
         /** Верхний предел mint на таблицу; отбор по самым свежим снимкам (MAX(ts)), не по алфавиту mint. */
