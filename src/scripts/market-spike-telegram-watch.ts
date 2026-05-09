@@ -4,16 +4,13 @@
  * Не использует TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID продового Live Oscar.
  * Только SPIKE_ALERT_TELEGRAM_* и только SELECT по таблицам снимков + tokens.
  *
- * Запуск: SPIKE_ALERT_TELEGRAM_BOT_TOKEN=… SPIKE_ALERT_TELEGRAM_CHAT_ID=… npx tsx src/scripts/market-spike-telegram-watch.ts
- * Или PM2: см. ecosystem.market-spike-watch.cjs (отдельный файл — без reload основного ecosystem.config.cjs).
+ * Детекция: по каждому mint из свежей выборки поднимаем цепочку минутных баров за SPIKE_ALERT_SCAN_MINUTES
+ * и ищем любую **соседнюю** пару баров с |Δ%| ≥ порога (пролив между двумя минутами не теряется,
+ * если следующий прогон попал после записи обоих баров в PG). Дополнительно — накопление за
+ * SPIKE_ALERT_ROLLING_MINUTES по первому/последнему бару в окне.
  *
- * Окно сравнения: SPIKE_ALERT_LOOKBACK_SEC (по умолчанию 60). Устаревшее SPIKE_ALERT_WINDOW_MIN (минуты)
- * задаёт то же в секундах, если LOOKBACK_SEC не задан. Коллекторы часто пишут ts с минутным бакетом —
- * фактическая дискретность может быть около минуты даже при lookback 60s.
- *
- * SPIKE_ALERT_ROLLING_MINUTES (>0): дополнительно считаем изменение от последней цены не новее чем N минут назад
- * до текущего снимка (накопленное за ~N минут при минутных барах). Триггер, если краткое ИЛИ накопленное
- * движение по модулю ≥ порога (берём сообщение по большему по модулю).
+ * SPIKE_ALERT_WINDOW_MIN / SPIKE_ALERT_LOOKBACK_SEC оставлены в коде через resolveLookbackSec только для
+ * совместимости env; основной триггер — скан пар баров + rolling.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -45,7 +42,7 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
-/** Сравнение px_now vs последний снимок не новее чем now−LOOKBACK_SEC (без новых HTTP/RPC). */
+/** Legacy env (сек), не участвует в SQL после перехода на скан баров. */
 function resolveLookbackSec(): number {
   const secRaw = process.env.SPIKE_ALERT_LOOKBACK_SEC?.trim();
   if (secRaw) {
@@ -60,14 +57,16 @@ function resolveLookbackSec(): number {
 }
 
 const LOOKBACK_SEC = resolveLookbackSec();
-/** 0 = выкл.; иначе вторая опорная точка: ts <= now() − N минут (накопленное окно). */
 const ROLLING_MINUTES = Math.max(0, Math.min(120, Math.floor(envNum('SPIKE_ALERT_ROLLING_MINUTES', 3))));
-/** Насколько глубоко искать «последний» снимок (сек); запас относительно lookback и rolling. */
+/** Глубина истории баров для поиска резких скачков между соседними минутами. */
+const SCAN_MINUTES = Math.max(15, Math.min(180, Math.floor(envNum('SPIKE_ALERT_SCAN_MINUTES', 60))));
+
+/** Последний снимок mint должен быть не старше этого порога (сек). */
 const LATEST_FLOOR_SEC = Math.max(
-  180,
+  600,
   Math.min(
     3600,
-    Math.max(Math.ceil(LOOKBACK_SEC * 15), ROLLING_MINUTES > 0 ? ROLLING_MINUTES * 60 + 120 : 0),
+    Math.max(900, ROLLING_MINUTES > 0 ? ROLLING_MINUTES * 60 + 300 : 900),
   ),
 );
 
@@ -110,47 +109,39 @@ function dexLabel(table: DexTable): string {
   return table.replace('_pair_snapshots', '');
 }
 
-type CandidateRow = {
+type LatestMeta = {
   base_mint: string;
   pair_address: string;
   px_now: number;
   ts_now: Date | string;
-  px_old: number;
-  ts_old: Date | string;
-  px_old_roll: number | null;
-  ts_old_roll: Date | string | null;
   symbol: string | null;
   token_name: string | null;
   holder_count: number | null;
   liq_usd: number | null;
 };
 
-function buildQuery(table: DexTable): string {
+type Bar = { ts: Date; px: number };
+
+type SpikePick = {
+  pct: number;
+  anchorPx: number;
+  pxNow: number;
+  anchorTs: Date;
+  tsNew: Date;
+  windowLabel: string;
+};
+
+function sqlMintArrayLiteral(mints: string[]): string {
+  const uniq = [...new Set(mints)].filter((m) => /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m.trim()));
+  if (!uniq.length) return 'ARRAY[]::text[]';
+  return `ARRAY[${uniq.map((m) => `'${m.trim().replace(/'/g, "''")}'`).join(',')}]::text[]`;
+}
+
+function buildLatestOnlyQuery(table: DexTable): string {
   const liqClause =
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause =
     MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
-
-  const rollSelect =
-    ROLLING_MINUTES > 0
-      ? `  o_r.price_usd::double precision AS px_old_roll,
-  o_r.ts AS ts_old_roll,`
-      : `  NULL::double precision AS px_old_roll,
-  NULL::timestamptz AS ts_old_roll,`;
-
-  const rollJoin =
-    ROLLING_MINUTES > 0
-      ? `LEFT JOIN LATERAL (
-  SELECT s3.price_usd, s3.ts
-  FROM ${table} s3
-  WHERE s3.base_mint = l.base_mint
-    AND s3.ts <= now() - (${ROLLING_MINUTES} * interval '1 minute')
-    AND COALESCE(s3.price_usd, 0) > 0
-  ORDER BY s3.ts DESC
-  LIMIT 1
-) o_r ON true`
-      : '';
-
   return `
 WITH latest AS (
   SELECT DISTINCT ON (s.base_mint)
@@ -158,7 +149,6 @@ WITH latest AS (
     s.pair_address,
     s.price_usd AS px_now,
     s.ts AS ts_now,
-    s.launch_ts,
     s.liquidity_usd AS liq_usd
   FROM ${table} s
   INNER JOIN tokens t ON t.mint = s.base_mint
@@ -179,64 +169,107 @@ SELECT
   l.pair_address,
   l.px_now::double precision AS px_now,
   l.ts_now,
-  o_s.price_usd::double precision AS px_old,
-  o_s.ts AS ts_old,
-${rollSelect}
   t.symbol,
   t.name AS token_name,
   t.holder_count,
   l.liq_usd::double precision AS liq_usd
 FROM latest l
-INNER JOIN tokens t ON t.mint = l.base_mint
-INNER JOIN LATERAL (
-  SELECT s2.price_usd, s2.ts
-  FROM ${table} s2
-  WHERE s2.base_mint = l.base_mint
-    AND s2.ts <= now() - (${LOOKBACK_SEC} * interval '1 second')
-    AND COALESCE(s2.price_usd, 0) > 0
-  ORDER BY s2.ts DESC
-  LIMIT 1
-) o_s ON true
-${rollJoin}
-WHERE o_s.price_usd IS NOT NULL AND o_s.price_usd > 0
-`;
+INNER JOIN tokens t ON t.mint = l.base_mint`;
 }
 
-function pickPctFromAnchors(row: CandidateRow): {
-  pct: number;
-  anchorPx: number;
-  anchorTs: Date | string;
-  windowLabel: string;
-} | null {
-  const short = (row.px_now / row.px_old - 1) * 100;
-  const roll =
-    row.px_old_roll != null && row.px_old_roll > 0
-      ? (row.px_now / row.px_old_roll - 1) * 100
-      : null;
-
-  const candidates: Array<{ pct: number; anchorPx: number; anchorTs: Date | string; windowLabel: string }> = [];
-  if (Number.isFinite(short)) {
-    candidates.push({
-      pct: short,
-      anchorPx: row.px_old,
-      anchorTs: row.ts_old,
-      windowLabel: LOOKBACK_SEC >= 120 ? `~${Math.round(LOOKBACK_SEC / 60)} мин (кратк.)` : `~${LOOKBACK_SEC}s`,
-    });
-  }
-  if (roll != null && Number.isFinite(roll)) {
-    candidates.push({
-      pct: roll,
-      anchorPx: row.px_old_roll!,
-      anchorTs: row.ts_old_roll!,
-      windowLabel: `~${ROLLING_MINUTES} мин (накопл.)`,
-    });
-  }
-  const passed = candidates.filter((c) => Math.abs(c.pct) >= THRESHOLD_PCT);
-  if (passed.length === 0) return null;
-  return passed.reduce((a, b) => (Math.abs(b.pct) > Math.abs(a.pct) ? b : a));
+function buildBarsQuery(table: DexTable, mintsSql: string): string {
+  return `
+SELECT base_mint::text, ts, price_usd::double precision AS price_usd
+FROM ${table}
+WHERE base_mint = ANY(${mintsSql})
+  AND ts > now() - (${SCAN_MINUTES} * interval '1 minute')
+  AND COALESCE(price_usd, 0) > 0
+ORDER BY base_mint ASC, ts ASC`;
 }
 
-/** Как в `src/live/mint-whitelist.ts` — клиент Telegram делает ссылку кликабельной. */
+function parseTs(v: Date | string): Date {
+  if (v instanceof Date) return v;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? new Date(0) : d;
+}
+
+/** Один ts — одна точка (последняя цена на метку времени). */
+function dedupeBarsSorted(rows: Bar[]): Bar[] {
+  const byMs = new Map<number, Bar>();
+  for (const r of rows) {
+    const ms = r.ts.getTime();
+    byMs.set(ms, r);
+  }
+  return [...byMs.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, b]) => b);
+}
+
+function formatUtcHm(d: Date): string {
+  return d.toISOString().slice(11, 16) + ' UTC';
+}
+
+function pickRollingFromBars(bars: Bar[]): SpikePick | null {
+  if (ROLLING_MINUTES <= 0 || bars.length < 2) return null;
+  const newest = bars[bars.length - 1];
+  const cutoffMs = Date.now() - ROLLING_MINUTES * 60_000;
+  let anchor: Bar | null = null;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    if (bars[i].ts.getTime() <= cutoffMs) {
+      anchor = bars[i];
+      break;
+    }
+  }
+  if (!anchor || !(anchor.px > 0) || !(newest.px > 0)) return null;
+  if (anchor.ts.getTime() >= newest.ts.getTime()) return null;
+  const pct = (newest.px / anchor.px - 1) * 100;
+  if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) return null;
+  return {
+    pct,
+    anchorPx: anchor.px,
+    pxNow: newest.px,
+    anchorTs: anchor.ts,
+    tsNew: newest.ts,
+    windowLabel: `~${ROLLING_MINUTES} мин (накопл.)`,
+  };
+}
+
+function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
+  if (bars.length < 2) return null;
+  let best: SpikePick | null = null;
+  for (let i = 1; i < bars.length; i++) {
+    const older = bars[i - 1];
+    const newer = bars[i];
+    if (!(older.px > 0) || !(newer.px > 0)) continue;
+    const pct = (newer.px / older.px - 1) * 100;
+    if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) continue;
+    const cand: SpikePick = {
+      pct,
+      anchorPx: older.px,
+      pxNow: newer.px,
+      anchorTs: older.ts,
+      tsNew: newer.ts,
+      windowLabel: `мин. ${formatUtcHm(older.ts)}→${formatUtcHm(newer.ts)}`,
+    };
+    if (!best || Math.abs(cand.pct) > Math.abs(best.pct)) best = cand;
+  }
+  return best;
+}
+
+function analyzeBarsForMint(rawBars: Bar[]): SpikePick | null {
+  const bars = dedupeBarsSorted(rawBars);
+  const c1 = pickConsecutiveBarSpike(bars);
+  const c2 = pickRollingFromBars(bars);
+  if (!c1) return c2;
+  if (!c2) return c1;
+  return Math.abs(c2.pct) > Math.abs(c1.pct) ? c2 : c1;
+}
+
+function cooldownEventKey(mint: string, dir: 'up' | 'down', tsNew: Date): string {
+  return `${mint}|${dir}|${tsNew.toISOString()}`;
+}
+
+/** Как в `src/live/mint-whitelist.ts`. */
 function gmgnSolTokenUrl(mint: string): string {
   return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
 }
@@ -249,13 +282,12 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Точное значение расчёта (арифметика скрипта), со знаком. */
 function formatSignedPct(pct: number): string {
   const v = pct.toFixed(2);
   return pct >= 0 ? `+${v}%` : `${v}%`;
 }
 
-type AlertRow = CandidateRow & {
+type AlertRow = LatestMeta & {
   dex: string;
   pct: number;
   windowLabel: string;
@@ -308,24 +340,19 @@ function buildAlertPlain(row: AlertRow): string {
   return body;
 }
 
-async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
-  const q = buildQuery(table);
+async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {
+  const q = buildLatestOnlyQuery(table);
   const r = await db.execute(dsql.raw(q));
   const rows = r as unknown as Record<string, unknown>[];
-  const out: CandidateRow[] = [];
+  const out: LatestMeta[] = [];
   for (const row of rows) {
     const mint = String(row.base_mint ?? '');
     if (!mint) continue;
-    const pr = row.px_old_roll != null && row.px_old_roll !== '' ? Number(row.px_old_roll) : null;
     out.push({
       base_mint: mint,
       pair_address: String(row.pair_address ?? ''),
       px_now: Number(row.px_now),
       ts_now: row.ts_now as Date | string,
-      px_old: Number(row.px_old),
-      ts_old: row.ts_old as Date | string,
-      px_old_roll: pr != null && Number.isFinite(pr) && pr > 0 ? pr : null,
-      ts_old_roll: row.ts_old_roll as Date | string | null,
       symbol: row.symbol != null ? String(row.symbol) : null,
       token_name: row.token_name != null ? String(row.token_name) : null,
       holder_count: row.holder_count != null ? Number(row.holder_count) : null,
@@ -333,6 +360,25 @@ async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
     });
   }
   return out;
+}
+
+async function fetchBarsBatch(table: DexTable, mints: string[]): Promise<Map<string, Bar[]>> {
+  const map = new Map<string, Bar[]>();
+  if (mints.length === 0) return map;
+  const mintsSql = sqlMintArrayLiteral(mints);
+  const q = buildBarsQuery(table, mintsSql);
+  const r = await db.execute(dsql.raw(q));
+  const rows = r as unknown as Record<string, unknown>[];
+  for (const row of rows) {
+    const mint = String(row.base_mint ?? '');
+    const px = Number(row.price_usd);
+    if (!mint || !(px > 0)) continue;
+    const ts = parseTs(row.ts as Date | string);
+    const arr = map.get(mint) ?? [];
+    arr.push({ ts, px });
+    map.set(mint, arr);
+  }
+  return map;
 }
 
 async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> {
@@ -344,20 +390,20 @@ async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> 
     disable_web_page_preview: true,
   };
   if (parseMode) payload.parse_mode = parseMode;
-  const r = await fetch(url, {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!r.ok) {
-    const errBody = await r.text();
+  if (!res.ok) {
+    const errBody = await res.text();
     console.warn(
       '[market-spike-telegram-watch] sendMessage failed',
-      r.status,
+      res.status,
       errBody.slice(0, 400),
     );
   }
-  return r.ok;
+  return res.ok;
 }
 
 async function main(): Promise<void> {
@@ -371,30 +417,41 @@ async function main(): Promise<void> {
   const merged = new Map<string, AlertRow>();
 
   for (const table of SNAPSHOT_TABLES) {
-    let rows: CandidateRow[];
+    let latestRows: LatestMeta[];
     try {
-      rows = await fetchCandidates(table);
+      latestRows = await fetchLatestOnly(table);
     } catch (e) {
-      console.warn(`[market-spike-telegram-watch] ${table} query failed`, String(e));
+      console.warn(`[market-spike-telegram-watch] ${table} latest query failed`, String(e));
       continue;
     }
-    const dex = dexLabel(table);
-    for (const row of rows) {
-      if (!(row.px_now > 0) || !(row.px_old > 0)) continue;
-      const picked = pickPctFromAnchors(row);
-      if (!picked) continue;
+    const mints = latestRows.map((r) => r.base_mint);
+    let barsByMint: Map<string, Bar[]>;
+    try {
+      barsByMint = await fetchBarsBatch(table, mints);
+    } catch (e) {
+      console.warn(`[market-spike-telegram-watch] ${table} bars query failed`, String(e));
+      continue;
+    }
 
-      const prev = merged.get(row.base_mint);
-      if (!prev || Math.abs(picked.pct) > Math.abs(prev.pct)) {
-        merged.set(row.base_mint, {
-          ...row,
-          dex,
-          pct: picked.pct,
-          windowLabel: picked.windowLabel,
-          anchorPx: picked.anchorPx,
-          anchorTs: picked.anchorTs,
-        });
-      }
+    const dex = dexLabel(table);
+    for (const meta of latestRows) {
+      const bars = barsByMint.get(meta.base_mint) ?? [];
+      const pick = analyzeBarsForMint(bars);
+      if (!pick) continue;
+
+      const row: AlertRow = {
+        ...meta,
+        dex,
+        pct: pick.pct,
+        px_now: pick.pxNow,
+        ts_now: pick.tsNew,
+        windowLabel: pick.windowLabel,
+        anchorPx: pick.anchorPx,
+        anchorTs: pick.anchorTs,
+      };
+
+      const prev = merged.get(meta.base_mint);
+      if (!prev || Math.abs(pick.pct) > Math.abs(prev.pct)) merged.set(meta.base_mint, row);
     }
   }
 
@@ -403,10 +460,11 @@ async function main(): Promise<void> {
   let sent = 0;
 
   for (const [, row] of merged) {
-    const dir = row.pct >= 0 ? 'up' : 'down';
-    const key = `${row.base_mint}|${dir}`;
+    const dir: 'up' | 'down' = row.pct >= 0 ? 'up' : 'down';
+    const tsNew = parseTs(row.ts_now as Date | string);
+    const eventKey = cooldownEventKey(row.base_mint, dir, tsNew);
     if (COOLDOWN_MS > 0) {
-      const last = cooldown[key] ?? 0;
+      const last = cooldown[eventKey] ?? 0;
       if (now - last < COOLDOWN_MS) continue;
     }
 
@@ -420,7 +478,7 @@ async function main(): Promise<void> {
     const ok = await sendTelegram(htmlBody, 'HTML');
     if (ok) {
       sent++;
-      if (COOLDOWN_MS > 0) cooldown[key] = now;
+      if (COOLDOWN_MS > 0) cooldown[eventKey] = now;
     } else {
       console.warn('[market-spike-telegram-watch] Telegram send failed for', row.base_mint.slice(0, 12));
     }
@@ -431,7 +489,7 @@ async function main(): Promise<void> {
 
   const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% lookback=${LOOKBACK_SEC}s${rollLog} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h liq>=${MIN_LIQ_USD} vol5m>=${MIN_VOL_5M_USD}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m${rollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h`,
   );
 }
 

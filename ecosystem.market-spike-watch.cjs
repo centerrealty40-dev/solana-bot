@@ -21,15 +21,15 @@ module.exports = {
       exec_mode: 'fork',
       instances: 1,
       autorestart: false,
-      /** Чаще тик — только SELECT к БД; Telegram без изменения коллекторов. */
-      cron_restart: '*/2 * * * *',
+      /** Каждую минуту — только SELECT к БД; ловим пару минутных баров скорее после записи в PG. */
+      cron_restart: '*/1 * * * *',
       merge_logs: true,
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** Окно «сейчас vs не новее N сек назад»; только PG-снимки, без новых RPC/HTTP. */
-        SPIKE_ALERT_LOOKBACK_SEC: '60',
-        /** Накопленное окно: цена сейчас vs снимок не новее N минут назад (0 = выкл.). */
+        /** История баров для поиска резкого шага между соседними минутами (PG только). */
+        SPIKE_ALERT_SCAN_MINUTES: '60',
+        /** Накопленное окно по первому/последнему бару (0 = выкл.). */
         SPIKE_ALERT_ROLLING_MINUTES: '3',
         SPIKE_ALERT_THRESHOLD_PCT: '2.5',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
