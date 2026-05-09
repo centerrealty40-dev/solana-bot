@@ -231,21 +231,10 @@ async function fetchDexscreenerPairs(mint: string): Promise<DexPairRow[]> {
   return out;
 }
 
-async function geckoOhlcvMetaBaseAddress(poolAddress: string, sleepMs: number): Promise<string | null> {
-  const u = new URL(
-    `https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(poolAddress)}/ohlcv/minute`,
-  );
-  u.searchParams.set('aggregate', '1');
-  u.searchParams.set('limit', '1');
-  u.searchParams.set('currency', 'usd');
-  const { ok, json } = await geckoHttpJson(u.toString(), sleepMs);
-  if (!ok) return null;
-  const meta = json.meta as Record<string, unknown> | undefined;
-  const base = meta?.base as Record<string, unknown> | undefined;
-  const addr = String(base?.address ?? '').trim();
-  return addr || null;
-}
-
+/**
+ * Диагностический быстрый выбор пула: без доп. meta-запросов на каждый кандидат
+ * (иначе 92 сделки × много пулов → таймаут SSH). Пулы из `/tokens/{mint}/pools` уже привязаны к mint.
+ */
 async function resolvePoolForMintOnGecko(
   mint: string,
   journalDex: string,
@@ -262,13 +251,7 @@ async function resolvePoolForMintOnGecko(
   const dexPref = geckoPools.filter((p) => journalDexMatchesPool(journalDex, p.dexId));
   let ordered = dexPref.length ? dexPref : geckoPools;
   ordered = [...ordered].sort((a, b) => b.reserveUsd - a.reserveUsd);
-
-  for (const c of ordered.slice(0, 10)) {
-    const metaBase = await geckoOhlcvMetaBaseAddress(c.poolAddress, sleepMs);
-    if (metaBase && metaBase.toLowerCase() === mintLower) {
-      return { poolAddress: c.poolAddress };
-    }
-  }
+  if (ordered[0]?.poolAddress) return { poolAddress: ordered[0].poolAddress };
 
   let rows: DexPairRow[];
   try {
@@ -281,12 +264,8 @@ async function resolvePoolForMintOnGecko(
   const preferred = rows.filter((x) => x.dexId === dexNorm || journalDexMatchesPool(journalDex, x.dexId));
   const cand = preferred.length ? preferred : rows;
   cand.sort((a, b) => b.liquidityUsd - a.liquidityUsd);
-  for (const c of cand.slice(0, 10)) {
-    if (c.baseMint !== mintLower) continue;
-    const metaBase = await geckoOhlcvMetaBaseAddress(c.pairAddress, sleepMs);
-    if (metaBase && metaBase.toLowerCase() === mintLower) {
-      return { poolAddress: c.pairAddress };
-    }
+  for (const c of cand.slice(0, 6)) {
+    if (c.baseMint === mintLower && c.pairAddress) return { poolAddress: c.pairAddress };
   }
   return null;
 }
