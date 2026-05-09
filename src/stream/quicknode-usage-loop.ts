@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { child } from '../core/logger.js';
 import { emitQuickNodeBillingMilestones } from '../core/rpc/quicknode-billing-alerts.js';
 import {
@@ -19,6 +21,39 @@ function isoUtcFromUnixSec(sec?: number): string | null {
 
 let lastTelegramMs = 0;
 let lastCapAlertDayUtc: string | null = null;
+
+/** Строка для Telegram: снимок discovery с процесса live-oscar (`data/live-discovery-health.json`). */
+function appendLiveOscarDiscoveryHealthLine(baseMsg: string): string {
+  const file =
+    process.env.LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH?.trim() ||
+    path.join('data', 'live-discovery-health.json');
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    const j = JSON.parse(raw) as {
+      updatedAt?: string;
+      windowMs?: number;
+      discovered?: number;
+      evaluated?: number;
+      gateFail?: number;
+      opened?: number;
+      discoveryTicks?: number;
+    };
+    const ageMs = j.updatedAt ? Date.now() - new Date(j.updatedAt).getTime() : Number.NaN;
+    /** Снимок пишется на каждом HEALTH heartbeat live-oscar; долго без обновления → процесс/cwd/путь. */
+    const stale = !Number.isFinite(ageMs) || ageMs > 25 * 60_000;
+    const winMs = typeof j.windowMs === 'number' && Number.isFinite(j.windowMs) ? j.windowMs : 30 * 60_000;
+    const wMin = Math.max(1, Math.round(winMs / 60_000));
+    const tag = stale ? `Oscar ${wMin}m (снимок устарел >10m после окна или нет файла)` : `Oscar ${wMin}m`;
+    const cand = j.discovered ?? 0;
+    const ev = j.evaluated ?? 0;
+    const gfs = j.gateFail ?? 0;
+    const op = j.opened ?? 0;
+    const dtx = j.discoveryTicks ?? 0;
+    return `${baseMsg} ${tag}: cand=${cand} eval=${ev} gate_skip=${gfs} opened=${op} disc_ticks=${dtx}.`;
+  } catch {
+    return `${baseMsg} Oscar health: снимок недоступен (live-oscar не пишет ${path.basename(file)} или другой cwd).`;
+  }
+}
 
 /**
  * Периодически опрашивает QuickNode Admin API за текущий UTC-день и пишет кэш
@@ -152,11 +187,14 @@ export function startQuickNodeUsageReporting(): void {
       const recentLine =
         recentParts.length > 0 ? ` Скользящее окно (Admin API): ${recentParts.join('; ')}.` : '';
 
-      const msg =
+      let msg =
         `QuickNode: по биллинг-периоду осталось ${s.credits_remaining.toLocaleString('en-US')} из ${s.limit.toLocaleString('en-US')} кредитов. ` +
         `Израсходовано ${s.credits_used.toLocaleString('en-US')} (${pct}% лимита).` +
         periodLine +
         recentLine;
+      if (process.env.QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH !== '0') {
+        msg = appendLiveOscarDiscoveryHealthLine(msg);
+      }
       const ok = await sendTagged('ALERT', 'quicknode-balance', msg);
       if (ok) lastHourlyBalanceTelegramMs = Date.now();
       log.info(

@@ -65,6 +65,7 @@ import {
   usesPaperOscarSecondLegScaleIn,
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
+import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -311,6 +312,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
+      const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
       for (const d of res.decisions) {
         const deepAuditFlag =
@@ -748,6 +750,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           followupOffsets,
         );
       }
+      recordDiscoveryHealthSample({
+        discovered: res.discovered,
+        evaluated: res.evaluated,
+        passed: res.passed,
+        opened: stats.opened - openedBeforeDiscoveryBatch,
+      });
     } catch (err) {
       stats.errors++;
       logger.warn({ msg: 'discovery tick failed', err: (err as Error).message });

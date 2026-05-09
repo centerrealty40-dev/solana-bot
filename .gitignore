@@ -48,6 +48,7 @@ dump.pm2
 *.bak.*
 *.bak-*
 quicknode-usage.json
+live-discovery-health.json
 sa-grws-budget-state.json
 sa-grws-ticks.jsonl
 sa-grws-pilot-diagnose-report.json

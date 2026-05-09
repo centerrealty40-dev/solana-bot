@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.159] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.159`.
+
+- **Telegram HEALTH `live_oscar_pulse`:** в текст добавлены метрики discovery за скользящее окно (дефолт **30 мин**): **`cand`** (строки снимка SQL), **`eval`** (полный eval без tick-throttle), **`gate_skip`** (`eval − pass` по гейтам на вход), **`opened`** (открытий за тик), **`disc_ticks`** (число циклов discovery в окне). Поле **`ticks`** заменено по смыслу на **`disc_cycles_total`** (все циклы discovery с запуска процесса). Журнал `heartbeat` в live JSONL дополнен теми же счётчиками.
+- **`[ALERT][quicknode-balance]`** (PM2 `live-oscar-dashboard`): опционально дописывается строка Oscar из **`data/live-discovery-health.json`** (пишет live-oscar на каждом heartbeat). Выкл.: **`QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH=0`**. Env live-oscar: **`LIVE_DISCOVERY_HEALTH_WINDOW_MS`**, **`LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.158`**; при необходимости убрать **`QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH`** из ecosystem для дашборда.
+
+---
+
 ## [1.11.158] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.158`.

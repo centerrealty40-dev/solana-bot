@@ -1,6 +1,7 @@
 /**
  * W8.0 Live Oscar — Phase 4: reuse paper Oscar gates + tracker; live JSONL + Jupiter simulate only.
  */
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import pino from 'pino';
@@ -37,9 +38,32 @@ import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import type { OpenTrade } from '../papertrader/types.js';
+import { discoveryHealthSummaryRolling } from '../papertrader/discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 
 const log = pino({ name: 'live-oscar' });
+
+async function writeDiscoveryHealthSnapshotFile(): Promise<void> {
+  const h = discoveryHealthSummaryRolling();
+  const file =
+    process.env.LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH?.trim() ||
+    path.join('data', 'live-discovery-health.json');
+  const dir = path.dirname(file);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    file,
+    JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      windowMs: h.windowMs,
+      discovered: h.discovered,
+      evaluated: h.evaluated,
+      gateFail: h.gateFail,
+      opened: h.opened,
+      discoveryTicks: h.discoveryTicks,
+    }),
+    'utf8',
+  );
+}
 
 /** Skip orphan RECONCILE_ORPHAN right after `entryTs` (RPC / indexer lag vs fresh buys). */
 const LIVE_ORPHAN_RECONCILE_MIN_AGE_MS = 120_000;
@@ -408,6 +432,8 @@ export async function main(): Promise<void> {
       const boot = getLiveReconcileBootSnapshot();
       const qm = boot?.quarantinedMints ?? bootQuarantineMintPrefixes;
       const blockAgeSec = liveReconcileBlockAgeSec();
+      const dh = discoveryHealthSummaryRolling();
+      const dhMin = Math.max(1, Math.round(dh.windowMs / 60_000));
       appendLiveJsonlEvent({
         kind: 'heartbeat',
         uptimeSec: Math.floor(process.uptime()),
@@ -415,7 +441,7 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} ticks=${stats.ticks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note: `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} disc_cycles=${stats.ticks} ${dhMin}m_cand=${dh.discovered} ${dhMin}m_eval=${dh.evaluated} ${dhMin}m_gate_skip=${dh.gateFail} ${dhMin}m_opened=${dh.opened} ${dhMin}m_disc_ticks=${dh.discoveryTicks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
         ...(liveReconcileBlocksNewExposure()
           ? {
               reconcileBlocksNewExposure: true,
@@ -433,21 +459,27 @@ export async function main(): Promise<void> {
         ...(qm?.length ? { quarantinedMints: qm } : {}),
       });
 
+      void writeDiscoveryHealthSnapshotFile().catch((e) =>
+        log.warn({ err: String(e) }, 'live discovery health snapshot write failed'),
+      );
+
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
       if (!tgHeartbeatOff) {
         const tok = process.env.TELEGRAM_BOT_TOKEN?.trim();
         const chat = process.env.TELEGRAM_CHAT_ID?.trim();
         const wlTok = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
         const wlChat = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
+        const wMin = dhMin;
         const text = [
           `uptime=${Math.floor(process.uptime())}s`,
           `open=${openPositions}`,
           `closed=${closedTotal}`,
           `mode=${liveCfg.executionMode}`,
           `strat=${liveCfg.strategyId}`,
-          `ticks=${stats.ticks}`,
+          `${wMin}m cand=${dh.discovered} eval=${dh.evaluated} gate_skip=${dh.gateFail} opened=${dh.opened} disc_ticks=${dh.discoveryTicks}`,
+          `disc_cycles_total=${stats.ticks}`,
           `errors=${stats.errors}`,
-          `opened=${stats.opened}`,
+          `opened_total=${stats.opened}`,
         ].join(' ');
         if (tok && chat) {
           void sendTagged('HEALTH', 'live_oscar_pulse', text, { skipQuietHours: true }).catch((e) =>
