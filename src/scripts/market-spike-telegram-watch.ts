@@ -10,6 +10,10 @@
  * Окно сравнения: SPIKE_ALERT_LOOKBACK_SEC (по умолчанию 60). Устаревшее SPIKE_ALERT_WINDOW_MIN (минуты)
  * задаёт то же в секундах, если LOOKBACK_SEC не задан. Коллекторы часто пишут ts с минутным бакетом —
  * фактическая дискретность может быть около минуты даже при lookback 60s.
+ *
+ * SPIKE_ALERT_ROLLING_MINUTES (>0): дополнительно считаем изменение от последней цены не новее чем N минут назад
+ * до текущего снимка (накопленное за ~N минут при минутных барах). Триггер, если краткое ИЛИ накопленное
+ * движение по модулю ≥ порога (берём сообщение по большему по модулю).
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -56,8 +60,16 @@ function resolveLookbackSec(): number {
 }
 
 const LOOKBACK_SEC = resolveLookbackSec();
-/** Насколько глубоко искать «последний» снимок (сек); запас относительно lookback. */
-const LATEST_FLOOR_SEC = Math.max(180, Math.min(3600, Math.ceil(LOOKBACK_SEC * 15)));
+/** 0 = выкл.; иначе вторая опорная точка: ts <= now() − N минут (накопленное окно). */
+const ROLLING_MINUTES = Math.max(0, Math.min(120, Math.floor(envNum('SPIKE_ALERT_ROLLING_MINUTES', 3))));
+/** Насколько глубоко искать «последний» снимок (сек); запас относительно lookback и rolling. */
+const LATEST_FLOOR_SEC = Math.max(
+  180,
+  Math.min(
+    3600,
+    Math.max(Math.ceil(LOOKBACK_SEC * 15), ROLLING_MINUTES > 0 ? ROLLING_MINUTES * 60 + 120 : 0),
+  ),
+);
 
 const THRESHOLD_PCT = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 2.5)));
 const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
@@ -105,6 +117,8 @@ type CandidateRow = {
   ts_now: Date | string;
   px_old: number;
   ts_old: Date | string;
+  px_old_roll: number | null;
+  ts_old_roll: Date | string | null;
   symbol: string | null;
   holder_count: number | null;
   liq_usd: number | null;
@@ -115,6 +129,27 @@ function buildQuery(table: DexTable): string {
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause =
     MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
+
+  const rollSelect =
+    ROLLING_MINUTES > 0
+      ? `  o_r.price_usd::double precision AS px_old_roll,
+  o_r.ts AS ts_old_roll,`
+      : `  NULL::double precision AS px_old_roll,
+  NULL::timestamptz AS ts_old_roll,`;
+
+  const rollJoin =
+    ROLLING_MINUTES > 0
+      ? `LEFT JOIN LATERAL (
+  SELECT s3.price_usd, s3.ts
+  FROM ${table} s3
+  WHERE s3.base_mint = l.base_mint
+    AND s3.ts <= now() - (${ROLLING_MINUTES} * interval '1 minute')
+    AND COALESCE(s3.price_usd, 0) > 0
+  ORDER BY s3.ts DESC
+  LIMIT 1
+) o_r ON true`
+      : '';
+
   return `
 WITH latest AS (
   SELECT DISTINCT ON (s.base_mint)
@@ -143,8 +178,9 @@ SELECT
   l.pair_address,
   l.px_now::double precision AS px_now,
   l.ts_now,
-  o.price_usd::double precision AS px_old,
-  o.ts AS ts_old,
+  o_s.price_usd::double precision AS px_old,
+  o_s.ts AS ts_old,
+${rollSelect}
   t.symbol,
   t.holder_count,
   l.liq_usd::double precision AS liq_usd
@@ -158,9 +194,44 @@ INNER JOIN LATERAL (
     AND COALESCE(s2.price_usd, 0) > 0
   ORDER BY s2.ts DESC
   LIMIT 1
-) o ON true
-WHERE o.price_usd IS NOT NULL AND o.price_usd > 0
+) o_s ON true
+${rollJoin}
+WHERE o_s.price_usd IS NOT NULL AND o_s.price_usd > 0
 `;
+}
+
+function pickPctFromAnchors(row: CandidateRow): {
+  pct: number;
+  anchorPx: number;
+  anchorTs: Date | string;
+  windowLabel: string;
+} | null {
+  const short = (row.px_now / row.px_old - 1) * 100;
+  const roll =
+    row.px_old_roll != null && row.px_old_roll > 0
+      ? (row.px_now / row.px_old_roll - 1) * 100
+      : null;
+
+  const candidates: Array<{ pct: number; anchorPx: number; anchorTs: Date | string; windowLabel: string }> = [];
+  if (Number.isFinite(short)) {
+    candidates.push({
+      pct: short,
+      anchorPx: row.px_old,
+      anchorTs: row.ts_old,
+      windowLabel: LOOKBACK_SEC >= 120 ? `~${Math.round(LOOKBACK_SEC / 60)} мин (кратк.)` : `~${LOOKBACK_SEC}s`,
+    });
+  }
+  if (roll != null && Number.isFinite(roll)) {
+    candidates.push({
+      pct: roll,
+      anchorPx: row.px_old_roll!,
+      anchorTs: row.ts_old_roll!,
+      windowLabel: `~${ROLLING_MINUTES} мин (накопл.)`,
+    });
+  }
+  const passed = candidates.filter((c) => Math.abs(c.pct) >= THRESHOLD_PCT);
+  if (passed.length === 0) return null;
+  return passed.reduce((a, b) => (Math.abs(b.pct) > Math.abs(a.pct) ? b : a));
 }
 
 async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
@@ -171,6 +242,7 @@ async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
   for (const row of rows) {
     const mint = String(row.base_mint ?? '');
     if (!mint) continue;
+    const pr = row.px_old_roll != null && row.px_old_roll !== '' ? Number(row.px_old_roll) : null;
     out.push({
       base_mint: mint,
       pair_address: String(row.pair_address ?? ''),
@@ -178,6 +250,8 @@ async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
       ts_now: row.ts_now as Date | string,
       px_old: Number(row.px_old),
       ts_old: row.ts_old as Date | string,
+      px_old_roll: pr != null && Number.isFinite(pr) && pr > 0 ? pr : null,
+      ts_old_roll: row.ts_old_roll as Date | string | null,
       symbol: row.symbol != null ? String(row.symbol) : null,
       holder_count: row.holder_count != null ? Number(row.holder_count) : null,
       liq_usd: row.liq_usd != null ? Number(row.liq_usd) : null,
@@ -209,7 +283,10 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const merged = new Map<string, CandidateRow & { dex: string; pct: number }>();
+  const merged = new Map<
+    string,
+    CandidateRow & { dex: string; pct: number; windowLabel: string; anchorPx: number; anchorTs: Date | string }
+  >();
 
   for (const table of SNAPSHOT_TABLES) {
     let rows: CandidateRow[];
@@ -222,12 +299,19 @@ async function main(): Promise<void> {
     const dex = dexLabel(table);
     for (const row of rows) {
       if (!(row.px_now > 0) || !(row.px_old > 0)) continue;
-      const pct = (row.px_now / row.px_old - 1) * 100;
-      if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) continue;
+      const picked = pickPctFromAnchors(row);
+      if (!picked) continue;
 
       const prev = merged.get(row.base_mint);
-      if (!prev || Math.abs(pct) > Math.abs(prev.pct)) {
-        merged.set(row.base_mint, { ...row, dex, pct });
+      if (!prev || Math.abs(picked.pct) > Math.abs(prev.pct)) {
+        merged.set(row.base_mint, {
+          ...row,
+          dex,
+          pct: picked.pct,
+          windowLabel: picked.windowLabel,
+          anchorPx: picked.anchorPx,
+          anchorTs: picked.anchorTs,
+        });
       }
     }
   }
@@ -247,14 +331,13 @@ async function main(): Promise<void> {
     const sym = row.symbol?.trim() || '?';
     const kind = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
     const tag = `[MARKET][${kind}]`;
-    const winLabel = LOOKBACK_SEC >= 120 ? `~${Math.round(LOOKBACK_SEC / 60)} мин` : `~${LOOKBACK_SEC}s`;
     const body =
-      `${tag} ${row.pct >= 0 ? 'Рост' : 'Пролив'} ~${Math.abs(row.pct).toFixed(2)}% за ${winLabel}\n` +
+      `${tag} ${row.pct >= 0 ? 'Рост' : 'Пролив'} ~${Math.abs(row.pct).toFixed(2)}% за ${row.windowLabel}\n` +
       `symbol: ${sym}\n` +
       `mint: ${row.base_mint}\n` +
       `dex: ${row.dex}  pair: ${row.pair_address}\n` +
       `holders: ${row.holder_count ?? '?'}\n` +
-      `px ${row.px_old.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD\n` +
+      `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD\n` +
       (row.liq_usd != null && row.liq_usd > 0 ? `liq ~${Math.round(row.liq_usd)} USD\n` : '');
 
     if (DRY_RUN) {
@@ -274,8 +357,9 @@ async function main(): Promise<void> {
 
   if (COOLDOWN_MS > 0 && sent > 0) saveCooldown(cooldown);
 
+  const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% lookback=${LOOKBACK_SEC}s holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h liq>=${MIN_LIQ_USD} vol5m>=${MIN_VOL_5M_USD}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% lookback=${LOOKBACK_SEC}s${rollLog} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h liq>=${MIN_LIQ_USD} vol5m>=${MIN_VOL_5M_USD}`,
   );
 }
 

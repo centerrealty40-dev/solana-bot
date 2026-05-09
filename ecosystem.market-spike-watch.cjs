@@ -29,6 +29,8 @@ module.exports = {
         NODE_ENV: 'production',
         /** Окно «сейчас vs не новее N сек назад»; только PG-снимки, без новых RPC/HTTP. */
         SPIKE_ALERT_LOOKBACK_SEC: '60',
+        /** Накопленное окно: цена сейчас vs снимок не новее N минут назад (0 = выкл.). */
+        SPIKE_ALERT_ROLLING_MINUTES: '3',
         SPIKE_ALERT_THRESHOLD_PCT: '2.5',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
         SPIKE_ALERT_MIN_AGE_HOURS: '3',
