@@ -438,24 +438,15 @@ async function main(): Promise<void> {
   rows.sort((a, b) => b.sumSim - a.sumSim);
 
   console.log('\n=== sweep results (sorted by sum sim netPnlUsd desc) ===');
+  const w = { rank: 6, label: 22, num: 14 };
   console.log(
-    ['rank', 'label', 'sumSim', 'vsActual', 'meanΔ/jrnl', 'n', 'wins']
-      .map((h) => h.padEnd(14))
-      .join(''),
+    `${'rank'.padEnd(w.rank)}${'label'.padEnd(w.label)}${'sumSim'.padEnd(w.num)}${'vsActual'.padEnd(w.num)}${'meanΔ/jrnl'.padEnd(w.num)}${'n'.padEnd(w.num)}${'wins'.padEnd(w.num)}`,
   );
   let rank = 1;
   for (const r of rows) {
     const vsActual = r.sumSim - actualSum;
     console.log(
-      [
-        String(rank++).padEnd(14),
-        r.label.padEnd(14),
-        r.sumSim.toFixed(4).padEnd(14),
-        vsActual.toFixed(4).padEnd(14),
-        r.meanDeltaVsJournal.toFixed(4).padEnd(14),
-        String(r.n).padEnd(14),
-        String(r.wins).padEnd(14),
-      ].join(''),
+      `${String(rank++).padEnd(w.rank)}${r.label.padEnd(w.label)}${r.sumSim.toFixed(4).padEnd(w.num)}${vsActual.toFixed(4).padEnd(w.num)}${r.meanDeltaVsJournal.toFixed(4).padEnd(w.num)}${String(r.n).padEnd(w.num)}${String(r.wins).padEnd(w.num)}`,
     );
   }
 
