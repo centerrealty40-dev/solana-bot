@@ -5,12 +5,16 @@
  * Только SPIKE_ALERT_TELEGRAM_* и только SELECT по таблицам снимков + tokens.
  *
  * Детекция: по каждому mint из свежей выборки поднимаем цепочку минутных баров за SPIKE_ALERT_SCAN_MINUTES
- * и ищем любую **соседнюю** пару баров с |Δ%| ≥ порога (пролив между двумя минутами не теряется,
- * если следующий прогон попал после записи обоих баров в PG). Дополнительно — накопление за
- * SPIKE_ALERT_ROLLING_MINUTES по первому/последнему бару в окне.
+ * и ищем **соседнюю** пару баров с |Δ%| ≥ порога (отдельно для роста и пролива:
+ * SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT / SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT).
+ * Дополнительно — накопление за SPIKE_ALERT_ROLLING_MINUTES по первому/последнему бару (порог
+ * SPIKE_ALERT_THRESHOLD_ROLLING_PCT).
  *
  * SPIKE_ALERT_WINDOW_MIN / SPIKE_ALERT_LOOKBACK_SEC оставлены в коде через resolveLookbackSec только для
  * совместимости env; основной триггер — скан пар баров + rolling.
+ *
+ * Если в tokens нет symbol/name — перед отправкой в Telegram опционально подтягиваем метаданные с
+ * Dexscreener (SPIKE_ALERT_DEXSCREENER_META) и можем дописать строку в PG (SPIKE_ALERT_UPSERT_TOKEN_META).
  *
  * Отбор «latest» по таблице: до SPIKE_ALERT_MAX_ROWS_PER_TABLE mint с **наиболее свежим** последним снимком
  * в окне пола (ORDER BY MAX(ts) DESC), не лексикографически по адресу mint.
@@ -30,7 +34,7 @@
 import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
-import { db } from '../core/db/client.js';
+import { db, sql as pgSql } from '../core/db/client.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -83,7 +87,32 @@ const LATEST_FLOOR_SEC = Math.max(
   ),
 );
 
-const THRESHOLD_PCT = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 2.5)));
+/**
+ * Legacy SPIKE_ALERT_THRESHOLD_PCT — дефолт для порога pump по соседним минутам,
+ * если отдельный SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT не задан.
+ */
+const THRESHOLD_PCT_LEGACY = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 2.5)));
+/** Минутное окно: рост (соседние бары). */
+const THRESHOLD_CONSEC_PUMP_PCT = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT', THRESHOLD_PCT_LEGACY)),
+);
+/** Минутное окно: пролив (соседние бары). */
+const THRESHOLD_CONSEC_DUMP_PCT = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT', 3)),
+);
+/** Накопление за SPIKE_ALERT_ROLLING_MINUTES (первый→последний бар в окне). */
+const THRESHOLD_ROLLING_PCT = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_ROLLING_PCT', 6)),
+);
+
+const SPIKE_THRESHOLD_FLOOR = Math.max(
+  THRESHOLD_CONSEC_PUMP_PCT,
+  THRESHOLD_CONSEC_DUMP_PCT,
+  THRESHOLD_ROLLING_PCT,
+);
 const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
@@ -110,9 +139,21 @@ const MAX_NEWER_BAR_AGE_MIN = Math.max(
  */
 const LOW_LIQ_GLITCH_THRESHOLD_USD = Math.max(0, envNum('SPIKE_ALERT_LOW_LIQ_GLITCH_THRESHOLD_USD', 5000));
 const LOW_LIQ_MAX_ABS_PCT = Math.max(
-  THRESHOLD_PCT,
+  SPIKE_THRESHOLD_FLOOR,
   Math.min(500, envNum('SPIKE_ALERT_LOW_LIQ_MAX_ABS_PCT', 55)),
 );
+
+/** Достать symbol/name у Dexscreener, если в tokens пусто (кэш на процесс + опционально UPSERT). */
+const DEXSCREENER_META_ENABLED = envBool('SPIKE_ALERT_DEXSCREENER_META', true);
+const UPSERT_TOKEN_META_FROM_DEX = envBool('SPIKE_ALERT_UPSERT_TOKEN_META', true);
+const DEX_META_CHUNK = Math.max(1, Math.min(40, Math.floor(envNum('SPIKE_ALERT_DEXSCREENER_CHUNK', 20))));
+const DEX_META_CACHE_TTL_MS = Math.max(
+  60_000,
+  Math.min(7 * 24 * 3600_000, Math.floor(envNum('SPIKE_ALERT_DEXSCREENER_CACHE_TTL_MS', 24 * 3600_000))),
+);
+
+type DexTokenMeta = { symbol: string | null; name: string | null };
+const dexMetaCache = new Map<string, { meta: DexTokenMeta; at: number }>();
 
 /**
  * Если следующий минутный бар откатывает ≥ доли импульса (разовый выброс в PG) — не считать пару событий.
@@ -329,7 +370,7 @@ function pickRollingFromBars(bars: Bar[]): SpikePick | null {
   if (!anchor || !(anchor.px > 0) || !(newest.px > 0)) return null;
   if (anchor.ts.getTime() >= newest.ts.getTime()) return null;
   const pct = (newest.px / anchor.px - 1) * 100;
-  if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) return null;
+  if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_ROLLING_PCT) return null;
   return {
     pct,
     anchorPx: anchor.px,
@@ -350,7 +391,9 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
     const newer = bars[i];
     if (!(older.px > 0) || !(newer.px > 0)) continue;
     const pct = (newer.px / older.px - 1) * 100;
-    if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) continue;
+    if (!Number.isFinite(pct)) continue;
+    const thrAbs = pct >= 0 ? THRESHOLD_CONSEC_PUMP_PCT : THRESHOLD_CONSEC_DUMP_PCT;
+    if (Math.abs(pct) < thrAbs) continue;
     if (isOneBarGlitchReversedByNext(bars, i)) continue;
     return {
       pct,
@@ -546,6 +589,117 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function tokenMetaLooksMissing(v: string | null | undefined): boolean {
+  const t = v?.trim();
+  return !t || t === '?';
+}
+
+function needsDexMeta(meta: LatestMeta): boolean {
+  return tokenMetaLooksMissing(meta.symbol) || tokenMetaLooksMissing(meta.token_name);
+}
+
+function truncateTokenMetaField(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
+async function fetchDexscreenerTokenMetaForMints(mints: string[]): Promise<Map<string, DexTokenMeta>> {
+  const out = new Map<string, DexTokenMeta>();
+  const now = Date.now();
+  const unique = [...new Set(mints.map((m) => m.trim()).filter((m) => ADDR_RE.test(m)))];
+  const toRequest: string[] = [];
+  for (const m of unique) {
+    const c = dexMetaCache.get(m);
+    if (c && now - c.at < DEX_META_CACHE_TTL_MS) {
+      out.set(m, c.meta);
+    } else {
+      toRequest.push(m);
+    }
+  }
+
+  for (let i = 0; i < toRequest.length; i += DEX_META_CHUNK) {
+    const chunk = toRequest.slice(i, i + DEX_META_CHUNK);
+    const chunkSet = new Set(chunk);
+    let apiOk = false;
+    const fromPairs = new Map<string, DexTokenMeta>();
+    try {
+      const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+      apiOk = r.ok;
+      if (r.ok) {
+        const j = (await r.json()) as {
+          pairs?: { baseToken?: { address?: string; symbol?: string; name?: string } }[];
+        };
+        const firstSeenAddr = new Set<string>();
+        for (const p of j.pairs ?? []) {
+          const addr = String(p.baseToken?.address ?? '').trim();
+          if (!ADDR_RE.test(addr) || firstSeenAddr.has(addr) || !chunkSet.has(addr)) continue;
+          firstSeenAddr.add(addr);
+          const sym = String(p.baseToken?.symbol ?? '').trim() || null;
+          const nam = String(p.baseToken?.name ?? '').trim() || null;
+          fromPairs.set(addr, { symbol: sym, name: nam });
+        }
+      }
+    } catch {
+      apiOk = false;
+    }
+
+    if (apiOk) {
+      for (const m of chunk) {
+        const meta = fromPairs.get(m) ?? { symbol: null, name: null };
+        dexMetaCache.set(m, { meta, at: Date.now() });
+        out.set(m, meta);
+      }
+    }
+
+    if (i + DEX_META_CHUNK < toRequest.length) await sleepMs(350);
+  }
+
+  return out;
+}
+
+async function upsertTokenMetaFromDex(mint: string, meta: DexTokenMeta): Promise<void> {
+  const sym = meta.symbol ? truncateTokenMetaField(meta.symbol, 120) : null;
+  const nam = meta.name ? truncateTokenMetaField(meta.name, 240) : null;
+  if (!sym && !nam) return;
+  try {
+    await pgSql`
+      INSERT INTO tokens (mint, symbol, name, decimals, metadata, updated_at)
+      VALUES (
+        ${mint},
+        ${sym},
+        ${nam},
+        0,
+        ${pgSql.json({ source: 'spike_watch_dexscreener' })},
+        now()
+      )
+      ON CONFLICT (mint) DO UPDATE SET
+        symbol = COALESCE(NULLIF(TRIM(tokens.symbol), ''), EXCLUDED.symbol),
+        name = COALESCE(NULLIF(TRIM(tokens.name), ''), EXCLUDED.name),
+        updated_at = now()
+    `;
+  } catch (e) {
+    console.warn('[market-spike-telegram-watch] token upsert failed', mint.slice(0, 12), String(e));
+  }
+}
+
+async function enrichAlertRowsWithDexMeta(rows: Iterable<AlertRow>): Promise<void> {
+  if (!DEXSCREENER_META_ENABLED) return;
+  const list = [...rows].filter((r) => needsDexMeta(r));
+  if (!list.length) return;
+  const mints = list.map((r) => r.base_mint.trim());
+  const metaByMint = await fetchDexscreenerTokenMetaForMints(mints);
+  for (const row of list) {
+    const m = metaByMint.get(row.base_mint.trim());
+    if (!m) continue;
+    if (m.symbol && tokenMetaLooksMissing(row.symbol)) row.symbol = m.symbol;
+    if (m.name && tokenMetaLooksMissing(row.token_name)) row.token_name = m.name;
+    if (UPSERT_TOKEN_META_FROM_DEX && (m.symbol || m.name)) {
+      await upsertTokenMetaFromDex(row.base_mint.trim(), m);
+    }
+  }
+}
+
 function pruneSendDedupe(map: Map<string, number>, olderThanMs: number): void {
   const cut = Date.now() - olderThanMs;
   for (const [k, t] of map) {
@@ -599,6 +753,12 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
     }
   }
 
+  try {
+    await enrichAlertRowsWithDexMeta(merged.values());
+  } catch (e) {
+    console.warn('[market-spike-telegram-watch] dex meta enrich failed', String(e));
+  }
+
   let sent = 0;
   if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
     pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
@@ -636,7 +796,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
   const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
   );
 }
 

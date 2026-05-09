@@ -46,6 +46,9 @@ module.exports = {
         /** Накопленное окно по первому/последнему бару (0 = выкл.). */
         SPIKE_ALERT_ROLLING_MINUTES: '3',
         SPIKE_ALERT_THRESHOLD_PCT: '2.5',
+        SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT: '2.5',
+        SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT: '3',
+        SPIKE_ALERT_THRESHOLD_ROLLING_PCT: '6',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
         SPIKE_ALERT_MIN_AGE_HOURS: '3',
         /** Верхний предел mint на таблицу; отбор по самым свежим снимкам (MAX(ts)), не по алфавиту mint. */
@@ -62,6 +65,8 @@ module.exports = {
         SPIKE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
         /** Доля отката на следующей минуте (0 = выкл.), чтобы резать одноминутные артефакты PG. */
         SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN: '0.55',
+        SPIKE_ALERT_DEXSCREENER_META: '1',
+        SPIKE_ALERT_UPSERT_TOKEN_META: '1',
       },
     },
   ],
