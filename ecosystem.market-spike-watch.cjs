@@ -54,6 +54,14 @@ module.exports = {
         /** 0 = выкл.; поднимите (напр. 2500), чтобы приблизиться к POST lane по объёму 5m */
         SPIKE_ALERT_MIN_VOL_5M_USD: '0',
         SPIKE_ALERT_DRY_RUN: '0',
+        /** Алерт только если новый бар события не старше N минут. */
+        SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES: '12',
+        /** При liq_usd из снимка ниже порога — не слать |Δ%| выше LOW_LIQ_MAX_ABS_PCT. */
+        SPIKE_ALERT_LOW_LIQ_GLITCH_THRESHOLD_USD: '5000',
+        SPIKE_ALERT_LOW_LIQ_MAX_ABS_PCT: '55',
+        SPIKE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
+        /** Доля отката на следующей минуте (0 = выкл.), чтобы резать одноминутные артефакты PG. */
+        SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN: '0.55',
       },
     },
   ],

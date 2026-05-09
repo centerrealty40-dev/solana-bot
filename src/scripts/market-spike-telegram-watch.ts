@@ -22,6 +22,10 @@
  * Алерт только если «новый» бар события не старше SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES; соседняя пара
  * берётся самая свежая в ряду (не максимум |%| за всю глубину). При очень низкой liq_usd в снимке —
  * потолок |Δ%| (anti-glitch). Время в тексте — SPIKE_ALERT_DISPLAY_TZ (по умолчанию Москва).
+ *
+ * История баров фильтруется по (base_mint, pair_address) из «latest», чтобы не смешивать несколько пулов
+ * одного mint в одной минутной метке. SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN — подавление одноминутного
+ * выброса, если следующий бар откатывает большую долю движения.
  */
 import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
@@ -110,6 +114,15 @@ const LOW_LIQ_MAX_ABS_PCT = Math.max(
   Math.min(500, envNum('SPIKE_ALERT_LOW_LIQ_MAX_ABS_PCT', 55)),
 );
 
+/**
+ * Если следующий минутный бар откатывает ≥ доли импульса (разовый выброс в PG) — не считать пару событий.
+ * 0 = выкл.
+ */
+const GLITCH_NEXT_BAR_RETRACE_MIN = Math.max(
+  0,
+  Math.min(1, envNum('SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN', 0.55)),
+);
+
 const DISPLAY_TZ = process.env.SPIKE_ALERT_DISPLAY_TZ?.trim() || 'Europe/Moscow';
 
 const TG_TOKEN = process.env.SPIKE_ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '';
@@ -145,10 +158,23 @@ type SpikePick = {
   windowLabel: string;
 };
 
-function sqlMintArrayLiteral(mints: string[]): string {
-  const uniq = [...new Set(mints)].filter((m) => /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m.trim()));
-  if (!uniq.length) return 'ARRAY[]::text[]';
-  return `ARRAY[${uniq.map((m) => `'${m.trim().replace(/'/g, "''")}'`).join(',')}]::text[]`;
+const ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+
+/** Кортежи (mint, pair) только для пулов из latest — иначе несколько пар на mint смешиваются в одну минуту. */
+function sqlMintPairInTuples(rows: LatestMeta[]): string | null {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const r of rows) {
+    const mint = r.base_mint.trim();
+    const pair = r.pair_address.trim();
+    if (!ADDR_RE.test(mint) || !ADDR_RE.test(pair)) continue;
+    const key = `${mint}|${pair}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(`('${mint.replace(/'/g, "''")}', '${pair.replace(/'/g, "''")}')`);
+  }
+  if (!parts.length) return null;
+  return parts.join(', ');
 }
 
 function buildLatestOnlyQuery(table: DexTable): string {
@@ -205,12 +231,12 @@ FROM latest l
 INNER JOIN tokens t ON t.mint = l.base_mint`;
 }
 
-function buildBarsQuery(table: DexTable, mintsSql: string): string {
+function buildBarsQuery(table: DexTable, mintPairTuplesSql: string): string {
   return `
 SELECT base_mint::text, ts, price_usd::double precision AS price_usd,
   COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
 FROM ${table}
-WHERE base_mint = ANY(${mintsSql})
+WHERE (base_mint, pair_address) IN (${mintPairTuplesSql})
   AND ts > now() - (${SCAN_MINUTES} * interval '1 minute')
   AND COALESCE(price_usd, 0) > 0
 ORDER BY base_mint ASC, ts ASC`;
@@ -268,6 +294,27 @@ function isPickPlausibleForLiquidity(pick: SpikePick, liqUsd: number | null): bo
   return Math.abs(pick.pct) <= LOW_LIQ_MAX_ABS_PCT;
 }
 
+/** Следующий бар частично отменил скачок — типичный артефакт минутного снимка. */
+function isOneBarGlitchReversedByNext(bars: Bar[], newerIdx: number): boolean {
+  const thr = GLITCH_NEXT_BAR_RETRACE_MIN;
+  if (thr <= 0 || newerIdx + 1 >= bars.length) return false;
+  const o = bars[newerIdx - 1].px;
+  const n = bars[newerIdx].px;
+  const x = bars[newerIdx + 1].px;
+  if (!(o > 0) || !(n > 0) || !(x > 0)) return false;
+  if (n < o && x > n) {
+    const impulse = o - n;
+    const rec = x - n;
+    return impulse > 0 && rec / impulse >= thr;
+  }
+  if (n > o && x < n) {
+    const impulse = n - o;
+    const rec = n - x;
+    return impulse > 0 && rec / impulse >= thr;
+  }
+  return false;
+}
+
 function pickRollingFromBars(bars: Bar[]): SpikePick | null {
   if (ROLLING_MINUTES <= 0 || bars.length < 2) return null;
   const newest = bars[bars.length - 1];
@@ -304,6 +351,7 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
     if (!(older.px > 0) || !(newer.px > 0)) continue;
     const pct = (newer.px / older.px - 1) * 100;
     if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) continue;
+    if (isOneBarGlitchReversedByNext(bars, i)) continue;
     return {
       pct,
       anchorPx: older.px,
@@ -448,11 +496,12 @@ async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {
   return out;
 }
 
-async function fetchBarsBatch(table: DexTable, mints: string[]): Promise<Map<string, Bar[]>> {
+async function fetchBarsBatch(table: DexTable, latestRows: LatestMeta[]): Promise<Map<string, Bar[]>> {
   const map = new Map<string, Bar[]>();
-  if (mints.length === 0) return map;
-  const mintsSql = sqlMintArrayLiteral(mints);
-  const q = buildBarsQuery(table, mintsSql);
+  if (latestRows.length === 0) return map;
+  const tupleSql = sqlMintPairInTuples(latestRows);
+  if (tupleSql === null) return map;
+  const q = buildBarsQuery(table, tupleSql);
   const r = await db.execute(dsql.raw(q));
   const rows = r as unknown as Record<string, unknown>[];
   for (const row of rows) {
@@ -515,10 +564,9 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
       console.warn(`[market-spike-telegram-watch] ${table} latest query failed`, String(e));
       continue;
     }
-    const mints = latestRows.map((r) => r.base_mint);
     let barsByMint: Map<string, Bar[]>;
     try {
-      barsByMint = await fetchBarsBatch(table, mints);
+      barsByMint = await fetchBarsBatch(table, latestRows);
     } catch (e) {
       console.warn(`[market-spike-telegram-watch] ${table} bars query failed`, String(e));
       continue;
@@ -588,7 +636,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
   const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ}`,
   );
 }
 
