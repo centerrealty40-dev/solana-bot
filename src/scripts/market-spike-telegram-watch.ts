@@ -25,6 +25,9 @@
  * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
  * SPIKE_ALERT_POLL_SEND_DEDUPE_MS (не путать с удалённым часовым cooldown).
  *
+ * SPIKE_ALERT_MINT_COOLDOWN_MINUTES — после успешной отправки по mint не слать новые алерты по этому же mint
+ * заданное число минут (карта в памяти процесса; при POLL_INTERVAL_MS=0 и cron между запусками не действует).
+ *
  * Алерт только если «новый» бар события не старше SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES; соседняя пара
  * берётся самая свежая в ряду (не максимум |%| за всю глубину). При очень низкой liq_usd в снимке —
  * потолок |Δ%| (anti-glitch). Время в тексте — SPIKE_ALERT_DISPLAY_TZ (по умолчанию Москва).
@@ -106,7 +109,7 @@ const LATEST_FLOOR_SEC = Math.max(
  * Legacy SPIKE_ALERT_THRESHOLD_PCT — дефолт для порога pump по соседним минутам,
  * если отдельный SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT не задан.
  */
-const THRESHOLD_PCT_LEGACY = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 5)));
+const THRESHOLD_PCT_LEGACY = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 8)));
 /** Минутное окно: рост (соседние бары). */
 const THRESHOLD_CONSEC_PUMP_PCT = Math.max(
   0.5,
@@ -115,7 +118,7 @@ const THRESHOLD_CONSEC_PUMP_PCT = Math.max(
 /** Минутное окно: пролив (соседние бары). */
 const THRESHOLD_CONSEC_DUMP_PCT = Math.max(
   0.5,
-  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT', 5)),
+  Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT', 8)),
 );
 /** Накопление по окнам SPIKE_ALERT_ROLLING_MINUTES…MAX (последний бар vs опора за W минут). */
 const THRESHOLD_ROLLING_PCT = Math.max(
@@ -141,6 +144,13 @@ const POLL_INTERVAL_MS =
   POLL_INTERVAL_MS_RAW <= 0 ? 0 : Math.max(5000, Math.min(600_000, POLL_INTERVAL_MS_RAW));
 /** Анти-спам при poll: не слать повтор того же события чаще чем раз в N мс (только если POLL > 0). */
 const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('SPIKE_ALERT_POLL_SEND_DEDUPE_MS', 120_000))));
+
+/** После успешного алерта по mint — пауза перед любыми новыми алертами по этому mint (мин); 0 = выкл. */
+const MINT_COOLDOWN_MINUTES = Math.max(
+  0,
+  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 10))),
+);
+const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
 
 /** Алерт только если «новый» бар скачка не старше N минут относительно now (отсекает старые движения в окне скана). */
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
@@ -754,7 +764,18 @@ function pruneSendDedupe(map: Map<string, number>, olderThanMs: number): void {
   }
 }
 
-async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void> {
+function pruneMintCooldown(map: Map<string, number>): void {
+  if (MINT_COOLDOWN_MS <= 0) return;
+  const cut = Date.now() - MINT_COOLDOWN_MS * 2;
+  for (const [k, t] of map) {
+    if (t < cut) map.delete(k);
+  }
+}
+
+async function runOnePass(
+  sendDedupe: Map<string, number> | null,
+  mintCooldown: Map<string, number> | null,
+): Promise<void> {
   const merged = new Map<string, AlertRow>();
 
   for (const table of SNAPSHOT_TABLES) {
@@ -812,6 +833,9 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
   if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
     pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
   }
+  if (mintCooldown && MINT_COOLDOWN_MS > 0) {
+    pruneMintCooldown(mintCooldown);
+  }
 
   for (const [, row] of merged) {
     const htmlBody = buildAlertHtml(row);
@@ -828,6 +852,12 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
       if (Date.now() - last < POLL_SEND_DEDUPE_MS) continue;
     }
 
+    const mintKey = row.base_mint.trim();
+    if (mintCooldown && MINT_COOLDOWN_MS > 0) {
+      const lastMint = mintCooldown.get(mintKey) ?? 0;
+      if (Date.now() - lastMint < MINT_COOLDOWN_MS) continue;
+    }
+
     const ok = await sendTelegram(htmlBody, 'HTML');
     if (ok) {
       sent++;
@@ -835,6 +865,9 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
         const tsNew = parseTs(row.ts_now as Date | string);
         const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
         sendDedupe.set(dedupeKey, Date.now());
+      }
+      if (mintCooldown && MINT_COOLDOWN_MS > 0) {
+        mintCooldown.set(mintKey, Date.now());
       }
     } else {
       console.warn('[market-spike-telegram-watch] Telegram send failed for', row.base_mint.slice(0, 12));
@@ -847,7 +880,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
     : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
   );
 }
 
@@ -861,8 +894,9 @@ async function main(): Promise<void> {
 
   if (POLL_INTERVAL_MS > 0) {
     const sendDedupe = new Map<string, number>();
+    const mintCooldown = MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null;
     console.log(
-      `[market-spike-telegram-watch] poll mode: interval=${POLL_INTERVAL_MS}ms poll_send_dedupe=${POLL_SEND_DEDUPE_MS}ms`,
+      `[market-spike-telegram-watch] poll mode: interval=${POLL_INTERVAL_MS}ms poll_send_dedupe=${POLL_SEND_DEDUPE_MS}ms mint_cooldown_min=${MINT_COOLDOWN_MINUTES}`,
     );
     let stop = false;
     const onStop = (): void => {
@@ -872,7 +906,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', onStop);
     while (!stop) {
       try {
-        await runOnePass(sendDedupe);
+        await runOnePass(sendDedupe, mintCooldown);
       } catch (e) {
         console.warn('[market-spike-telegram-watch] cycle error', String(e));
       }
@@ -887,7 +921,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runOnePass(null);
+  await runOnePass(null, MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null);
 }
 
 main().catch((e) => {
