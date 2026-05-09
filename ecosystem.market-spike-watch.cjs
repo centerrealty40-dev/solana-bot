@@ -7,7 +7,7 @@
  *
  *   chmod +x scripts/spike-watch-pm2-entry.sh
  *   pm2 start scripts/spike-watch-pm2-entry.sh --name market-spike-telegram-watch \
- *     --cwd /opt/solana-alpha --interpreter bash --merge-logs --time --autorestart
+ *     --cwd /opt/solana-alpha --interpreter bash --merge-logs --time
  *   pm2 save
  *
  * Блок `apps` ниже оставлен как документация env (дублируется в spike-watch-pm2-entry.sh).
