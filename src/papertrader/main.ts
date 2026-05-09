@@ -96,6 +96,11 @@ export interface PapertraderMainOptions {
     ctx: LivePeriodicSelfHealPaperContext,
   ) => ReturnType<typeof setInterval> | null;
 
+  /**
+   * Live-oscar: override paper `PAPER_HEARTBEAT_INTERVAL_MS` for JSONL + `onOscarHeartbeat` cadence.
+   */
+  heartbeatIntervalMsOverride?: number;
+
   onOscarHeartbeat?: (payload: {
     openPositions: number;
     closedTotal: number;
@@ -808,6 +813,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     followupRunning = false;
   }, cfg.followupTickMs);
 
+  const heartbeatMs =
+    opts?.heartbeatIntervalMsOverride != null &&
+    Number.isFinite(opts.heartbeatIntervalMsOverride) &&
+    opts.heartbeatIntervalMsOverride >= 5000
+      ? Math.floor(opts.heartbeatIntervalMsOverride)
+      : cfg.heartbeatIntervalMs;
+
   const heartbeatTimer = setInterval(() => {
     const holdersStats = cfg.holdersLiveEnabled ? getHoldersResolveStats() : null;
     journalAppend({
@@ -839,7 +851,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       trackerStats: trackerStats.closed,
       holdersResolveStats: holdersStats,
     });
-  }, cfg.heartbeatIntervalMs);
+  }, heartbeatMs);
 
   const statsTimer = setInterval(() => {
     const wins = closed.filter((c) => c.pnlPct > 0).length;

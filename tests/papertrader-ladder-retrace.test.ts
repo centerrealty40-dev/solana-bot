@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ladderRetraceTriggered } from '../src/papertrader/executor/tracker.js';
+import { ladderRetraceTriggeredWithSpec } from '../src/papertrader/executor/tp-ladder-state.js';
 import type { OpenTrade } from '../src/papertrader/types.js';
 import type { TpLadderLevel } from '../src/papertrader/config.js';
 
@@ -62,5 +63,19 @@ describe('ladderRetraceTriggered grid mode', () => {
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid', floor)).toBe(false);
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.026, 'grid', floor)).toBe(false);
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.024, 'grid', floor)).toBe(true);
+  });
+});
+
+describe('ladderRetraceTriggeredWithSpec adaptive', () => {
+  const hitFourth = ot([0.1, 0.2, 0.3, 0.4]);
+  const spec = { kind: 'adaptive' as const, minPeakSortedIdx: 3, extraSkipRungs: 1 };
+
+  it('looser floor after 4th rung: pullback that baseline closes survives wider trail', () => {
+    expect(ladderRetraceTriggered(hitFourth, ladder, 1.29)).toBe(true);
+    expect(ladderRetraceTriggeredWithSpec(hitFourth, ladder, 1.29, 'discrete', 0, spec)).toBe(false);
+  });
+
+  it('still exits when price reaches wider floor', () => {
+    expect(ladderRetraceTriggeredWithSpec(hitFourth, ladder, 1.2, 'discrete', 0, spec)).toBe(true);
   });
 });

@@ -34,9 +34,10 @@ import {
   LADDER_PNL_EPS,
   ladderPnlThresholdMark,
   ladderPnlThresholdTaken,
-  ladderRetraceTriggered,
+  ladderRetraceTriggeredWithSpec,
   ladderStepOrThresholdTaken,
   markLadderStepFired,
+  type LadderRetraceSpec,
 } from '../papertrader/executor/tp-ladder-state.js';
 
 const EMPTY_METRICS: OpenTrade['entryMetrics'] = {
@@ -53,7 +54,7 @@ export interface Anchor {
   p: number;
 }
 
-interface Lifecycle {
+export interface JournalLifecycle {
   mint: string;
   open: Record<string, unknown>;
   close: Record<string, unknown>;
@@ -208,7 +209,7 @@ export function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
   return ot;
 }
 
-function anchorsFromEvents(events: Record<string, unknown>[]): Anchor[] {
+export function anchorsFromJournalEvents(events: Record<string, unknown>[]): Anchor[] {
   const raw: Anchor[] = [];
   for (const e of events) {
     const kind = e.kind as string;
@@ -254,8 +255,10 @@ export function simStep(args: {
   dcaLevels: DcaLevel[];
   tpLadder: TpLadderLevel[];
   peakLog: { lastPersistedPeak: number };
+  ladderRetraceSpec?: LadderRetraceSpec;
 }): SimResult {
-  const { cfg, ot, curMetric, virtualNow, dcaLevels, tpLadder, peakLog } = args;
+  const { cfg, ot, curMetric, virtualNow, dcaLevels, tpLadder, peakLog, ladderRetraceSpec } = args;
+  const retraceSpec: LadderRetraceSpec = ladderRetraceSpec ?? { kind: 'baseline' };
 
   const ageH = (virtualNow - ot.entryTs) / 3_600_000;
 
@@ -408,12 +411,13 @@ export function simStep(args: {
   else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
   else if (
     cfg.trailMode === 'ladder_retrace' &&
-    ladderRetraceTriggered(
+    ladderRetraceTriggeredWithSpec(
       ot,
       tpLadder,
       xAvg,
       tgEff.stepPnl > 0 ? 'grid' : 'discrete',
       tgEff.firstRungRetraceMinPnlPct,
+      retraceSpec,
     )
   )
     exitReason = 'TRAIL';
@@ -464,27 +468,51 @@ function deepCloneOpen(ot: OpenTrade): OpenTrade {
   };
 }
 
+export type CfgAfterDcaPolicy = 'after_first_dca' | 'after_first_non_open_leg';
+
+function openTradeHasPostEntryLegForPolicy(ot: OpenTrade, policy: CfgAfterDcaPolicy): boolean {
+  if (policy === 'after_first_non_open_leg') return ot.legs.some((l) => l.reason !== 'open');
+  return ot.legs.some((l) => l.reason === 'dca');
+}
+
 export function simulateLifecycle(args: {
   baseOt: OpenTrade;
   anchors: Anchor[];
   cfg: PaperTraderConfig;
   /** After any simulated `dca` leg exists, switch exit/grid/trail/timeout to this config (next tick onward). */
   cfgAfterDca?: PaperTraderConfig;
+  /**
+   * When `cfgAfterDca` is set: switch after first **`dca`** leg (default), or after any leg that is not **`open`**
+   * (covers **scale_in** — closer to live Oscar **B** after the second entry leg).
+   */
+  cfgAfterDcaPolicy?: CfgAfterDcaPolicy;
   dcaLevels: DcaLevel[];
   tpLadder: TpLadderLevel[];
   stepMs: number;
+  ladderRetraceSpec?: LadderRetraceSpec;
 }): ClosedTrade | null {
-  const { baseOt, anchors, cfg, cfgAfterDca, dcaLevels, tpLadder, stepMs } = args;
+  const { baseOt, anchors, cfg, cfgAfterDca, cfgAfterDcaPolicy, dcaLevels, tpLadder, stepMs, ladderRetraceSpec } =
+    args;
   const ot = deepCloneOpen(baseOt);
   const peakLog = { lastPersistedPeak: -Infinity };
   let activeCfg = cfg;
   const lastAnchorTs = anchors.length ? anchors[anchors.length - 1].ts : baseOt.entryTs;
+  const postEntryPolicy: CfgAfterDcaPolicy = cfgAfterDcaPolicy ?? 'after_first_dca';
 
   for (let t = ot.entryTs; t <= lastAnchorTs + stepMs; t += stepMs) {
     const curMetric = priceAt(anchors, t);
-    const r = simStep({ cfg: activeCfg, ot, curMetric, virtualNow: t, dcaLevels, tpLadder, peakLog });
+    const r = simStep({
+      cfg: activeCfg,
+      ot,
+      curMetric,
+      virtualNow: t,
+      dcaLevels,
+      tpLadder,
+      peakLog,
+      ladderRetraceSpec,
+    });
     if (r.closed) return r.closed;
-    if (cfgAfterDca && ot.legs.some((l) => l.reason === 'dca')) {
+    if (cfgAfterDca && openTradeHasPostEntryLegForPolicy(ot, postEntryPolicy)) {
       activeCfg = cfgAfterDca;
     }
   }
@@ -524,10 +552,10 @@ export function simulateLifecycle(args: {
   });
 }
 
-async function readLifecycles(jsonlPath: string): Promise<Lifecycle[]> {
+export async function readJournalLifecycles(jsonlPath: string): Promise<JournalLifecycle[]> {
   const rl = readline.createInterface({ input: fs.createReadStream(jsonlPath, { encoding: 'utf8' }), crlfDelay: Infinity });
   const byMint = new Map<string, Record<string, unknown>[]>();
-  const completed: Lifecycle[] = [];
+  const completed: JournalLifecycle[] = [];
 
   for await (const line of rl) {
     const trimmed = line.trim();
@@ -589,7 +617,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let lifecycles = await readLifecycles(jsonlPath);
+  let lifecycles = await readJournalLifecycles(jsonlPath);
   if (Number.isFinite(sinceCloseH) && sinceCloseH > 0) {
     const sinceTs = Date.now() - sinceCloseH * 3_600_000;
     lifecycles = lifecycles.filter((lc) => {
@@ -655,7 +683,7 @@ async function main(): Promise<void> {
   let baseWins = 0;
   const simRows: { dip: number | null; net: number }[] = [];
   for (const lc of lifecycles) {
-    const anchors = anchorsFromEvents(lc.events);
+    const anchors = anchorsFromJournalEvents(lc.events);
     if (anchors.length < 2) continue;
     const baseOt = cloneOpenFromJournal(lc.open);
     const ct = simulateLifecycle({
@@ -740,7 +768,7 @@ async function main(): Promise<void> {
               };
               let sum = 0;
               for (const lc of lifecycles) {
-                const anchors = anchorsFromEvents(lc.events);
+                const anchors = anchorsFromJournalEvents(lc.events);
                 if (anchors.length < 2) continue;
                 const baseOt = cloneOpenFromJournal(lc.open);
                 const ct = simulateLifecycle({

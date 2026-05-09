@@ -44,7 +44,8 @@ const LiveOscarConfigSchema = z
     /** SSOT live journal — must never equal paper Oscar path when both are set. */
     liveTradesPath: z.string().min(1),
     strategyId: z.string().min(1).default('live-oscar'),
-    heartbeatIntervalMs: z.coerce.number().int().min(5000).max(3600_000).default(60_000),
+    /** Live JSONL + Telegram pulse cadence (overrides paper heartbeat when live-oscar runs). Default 30m. */
+    heartbeatIntervalMs: z.coerce.number().int().min(5000).max(7200_000).default(1_800_000),
     /** Optional; if set alongside `liveTradesPath`, paths must differ (collision guard). */
     parityPaperTradesPath: z.string().optional(),
     /** Required when enabled + simulate|live; never loaded by Phase 0 runtime unless enabled. */

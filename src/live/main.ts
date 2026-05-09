@@ -37,6 +37,7 @@ import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import type { OpenTrade } from '../papertrader/types.js';
+import { sendTagged } from '../core/telegram/sender.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -346,6 +347,7 @@ export async function main(): Promise<void> {
     Boolean(liveCfg.walletSecret?.trim());
 
   await paperOscarMain({
+    heartbeatIntervalMsOverride: liveCfg.heartbeatIntervalMs,
     journalAppend: createLiveDiscoveryAuditJournalAppend(liveCfg.liveDiscoveryAuditJsonlEnabled),
     skipPaperJsonlStore: true,
     liveStrategyReplay,
@@ -428,6 +430,27 @@ export async function main(): Promise<void> {
         }),
         ...(qm?.length ? { quarantinedMints: qm } : {}),
       });
+
+      const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
+      if (!tgHeartbeatOff) {
+        const tok = process.env.TELEGRAM_BOT_TOKEN?.trim();
+        const chat = process.env.TELEGRAM_CHAT_ID?.trim();
+        if (tok && chat) {
+          const text = [
+            `uptime=${Math.floor(process.uptime())}s`,
+            `open=${openPositions}`,
+            `closed=${closedTotal}`,
+            `mode=${liveCfg.executionMode}`,
+            `strat=${liveCfg.strategyId}`,
+            `ticks=${stats.ticks}`,
+            `errors=${stats.errors}`,
+            `opened=${stats.opened}`,
+          ].join(' ');
+          void sendTagged('HEALTH', 'live_oscar_pulse', text, { skipQuietHours: true }).catch((e) =>
+            log.warn({ err: String(e) }, 'live heartbeat telegram failed'),
+          );
+        }
+      }
     },
   });
 }

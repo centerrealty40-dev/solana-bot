@@ -453,7 +453,8 @@ module.exports = {
         MTM_SHADOW_SAMPLE_PCT: '100',
         MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow.jsonl'),
         MTM_SHADOW_ALT_FRACTION: '0.58',
-        LIVE_HEARTBEAT_INTERVAL_MS: '60000',
+        /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
+        LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
