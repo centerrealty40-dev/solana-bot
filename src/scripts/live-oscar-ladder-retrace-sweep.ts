@@ -70,8 +70,17 @@ function countTpLadderHits(lc: JournalLifecycle): number {
   return n;
 }
 
+function numUsd(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 function actualNetFromClose(lc: JournalLifecycle): number {
-  return Number((lc.close as { netPnlUsd?: unknown }).netPnlUsd ?? 0);
+  return numUsd((lc.close as { netPnlUsd?: unknown }).netPnlUsd);
 }
 
 function exitReason(lc: JournalLifecycle): string {
@@ -200,12 +209,13 @@ function buildLiveJournalLifecycle(mint: string, buf: Record<string, unknown>[])
   const paperClose: Record<string, unknown> = {
     kind: 'close',
     mint,
-    ts: ct.exitTs,
-    exitTs: ct.exitTs,
-    netPnlUsd: ct.netPnlUsd,
+    ts: numUsd(ct.exitTs) || Number(closeRow.ts ?? 0),
+    exitTs: numUsd(ct.exitTs),
+    netPnlUsd: numUsd(ct.netPnlUsd),
     exitReason: ct.exitReason,
-    theoretical_exit_price: ct.theoretical_exit_price,
-    exitMcUsd: ct.exitMcUsd,
+    theoretical_exit_price: numUsd(ct.theoretical_exit_price),
+    exitMcUsd: numUsd(ct.exitMcUsd),
+    totalProceedsUsd: numUsd(ct.totalProceedsUsd),
   };
   const events = liveBufferToPaperLikeEvents(buf);
   return { mint, open: paperOpen, close: paperClose, events, liveEntrySnap: entrySnap ?? undefined };
@@ -313,7 +323,8 @@ async function main(): Promise<void> {
 
   const absJsonl = path.resolve(jsonlPath);
   const strategyId = arg('--strategy-id') ?? process.env.LIVE_STRATEGY_ID ?? 'live-oscar';
-  const stepMs = Number(arg('--step-ms') ?? 60_000);
+  /** Coarser step = faster sweep (journal anchors are sparse anyway). */
+  const stepMs = Number(arg('--step-ms') ?? 120_000);
   const minTpHits = Number(arg('--min-tp-hits') ?? 3);
   const winnersOnly = flag('--winners-only');
   const trailOnly = flag('--trail-only');
@@ -358,7 +369,13 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const actualSum = lifecycles.reduce((s, lc) => s + actualNetFromClose(lc), 0);
+  const nets = lifecycles.map(actualNetFromClose);
+  if (nets.length) {
+    console.log(
+      `actual netPnlUsd range: ${Math.min(...nets).toFixed(4)} .. ${Math.max(...nets).toFixed(4)} (n=${nets.length})`,
+    );
+  }
+  const actualSum = nets.reduce((s, v) => s + v, 0);
   console.log(`sum actual netPnlUsd (journal closes): ${actualSum.toFixed(4)}`);
 
   const specs = buildSweepMatrix();
