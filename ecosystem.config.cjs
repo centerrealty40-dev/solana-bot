@@ -271,7 +271,7 @@ module.exports = {
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '140000',
-        PAPER_POST_MIN_VOL_5M_USD: '20000',
+        PAPER_POST_MIN_VOL_5M_USD: '10000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
