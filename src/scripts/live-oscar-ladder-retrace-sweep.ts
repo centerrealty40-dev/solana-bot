@@ -433,7 +433,7 @@ async function main(): Promise<void> {
   rows.sort((a, b) => b.sumSim - a.sumSim);
 
   console.log('\n=== sweep results (sorted by sum sim netPnlUsd desc) ===');
-  const w = { rank: 6, label: 22, num: 14 };
+  const w = { rank: 6, label: 38, num: 14 };
   console.log(
     `${'rank'.padEnd(w.rank)}${'label'.padEnd(w.label)}${'sumSim'.padEnd(w.num)}${'vsActual'.padEnd(w.num)}${'meanΔ/jrnl'.padEnd(w.num)}${'n'.padEnd(w.num)}${'wins'.padEnd(w.num)}`,
   );
