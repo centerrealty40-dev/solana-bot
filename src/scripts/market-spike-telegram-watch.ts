@@ -120,6 +120,7 @@ type CandidateRow = {
   px_old_roll: number | null;
   ts_old_roll: Date | string | null;
   symbol: string | null;
+  token_name: string | null;
   holder_count: number | null;
   liq_usd: number | null;
 };
@@ -182,6 +183,7 @@ SELECT
   o_s.ts AS ts_old,
 ${rollSelect}
   t.symbol,
+  t.name AS token_name,
   t.holder_count,
   l.liq_usd::double precision AS liq_usd
 FROM latest l
@@ -234,6 +236,78 @@ function pickPctFromAnchors(row: CandidateRow): {
   return passed.reduce((a, b) => (Math.abs(b.pct) > Math.abs(a.pct) ? b : a));
 }
 
+/** Как в `src/live/mint-whitelist.ts` — клиент Telegram делает ссылку кликабельной. */
+function gmgnSolTokenUrl(mint: string): string {
+  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Точное значение расчёта (арифметика скрипта), со знаком. */
+function formatSignedPct(pct: number): string {
+  const v = pct.toFixed(2);
+  return pct >= 0 ? `+${v}%` : `${v}%`;
+}
+
+type AlertRow = CandidateRow & {
+  dex: string;
+  pct: number;
+  windowLabel: string;
+  anchorPx: number;
+  anchorTs: Date | string;
+};
+
+function buildAlertHtml(row: AlertRow): string {
+  const mint = row.base_mint.trim();
+  const gmgnUrl = gmgnSolTokenUrl(mint);
+  const sym = row.symbol?.trim() || '?';
+  const kindWord = row.pct >= 0 ? 'Рост' : 'Пролив';
+  const kindTag = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
+  const tag = `[MARKET][${kindTag}]`;
+  const pctHuman = formatSignedPct(row.pct);
+  const nameRaw = row.token_name?.trim();
+  const title =
+    nameRaw && nameRaw !== sym
+      ? `<b>${escapeHtml(sym)}</b>\n<i>${escapeHtml(nameRaw)}</i>`
+      : `<b>${escapeHtml(sym)}</b>`;
+
+  let body =
+    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b> · окно: ${escapeHtml(row.windowLabel)}\n\n` +
+    `${title}\n` +
+    `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
+    `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
+    `holders: ${row.holder_count ?? '?'}\n` +
+    `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+  if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  return body;
+}
+
+function buildAlertPlain(row: AlertRow): string {
+  const mint = row.base_mint.trim();
+  const sym = row.symbol?.trim() || '?';
+  const kindWord = row.pct >= 0 ? 'Рост' : 'Пролив';
+  const kindTag = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
+  const tag = `[MARKET][${kindTag}]`;
+  const nameRaw = row.token_name?.trim();
+  const title = nameRaw && nameRaw !== sym ? `${sym} (${nameRaw})` : sym;
+  let body =
+    `${tag} ${kindWord} ${formatSignedPct(row.pct)} · окно: ${row.windowLabel}\n\n` +
+    `${title}\n` +
+    `${mint}\n` +
+    `GMGN: ${gmgnSolTokenUrl(mint)}\n\n` +
+    `dex: ${row.dex} · pair: ${row.pair_address}\n` +
+    `holders: ${row.holder_count ?? '?'}\n` +
+    `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+  if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  return body;
+}
+
 async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
   const q = buildQuery(table);
   const r = await db.execute(dsql.raw(q));
@@ -253,6 +327,7 @@ async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
       px_old_roll: pr != null && Number.isFinite(pr) && pr > 0 ? pr : null,
       ts_old_roll: row.ts_old_roll as Date | string | null,
       symbol: row.symbol != null ? String(row.symbol) : null,
+      token_name: row.token_name != null ? String(row.token_name) : null,
       holder_count: row.holder_count != null ? Number(row.holder_count) : null,
       liq_usd: row.liq_usd != null ? Number(row.liq_usd) : null,
     });
@@ -260,18 +335,28 @@ async function fetchCandidates(table: DexTable): Promise<CandidateRow[]> {
   return out;
 }
 
-async function sendTelegram(text: string): Promise<boolean> {
+async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> {
   if (!TG_TOKEN || !TG_CHAT) return false;
   const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
+  const payload: Record<string, unknown> = {
+    chat_id: TG_CHAT,
+    text,
+    disable_web_page_preview: true,
+  };
+  if (parseMode) payload.parse_mode = parseMode;
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: TG_CHAT,
-      text,
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(payload),
   });
+  if (!r.ok) {
+    const errBody = await r.text();
+    console.warn(
+      '[market-spike-telegram-watch] sendMessage failed',
+      r.status,
+      errBody.slice(0, 400),
+    );
+  }
   return r.ok;
 }
 
@@ -283,10 +368,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const merged = new Map<
-    string,
-    CandidateRow & { dex: string; pct: number; windowLabel: string; anchorPx: number; anchorTs: Date | string }
-  >();
+  const merged = new Map<string, AlertRow>();
 
   for (const table of SNAPSHOT_TABLES) {
     let rows: CandidateRow[];
@@ -328,24 +410,14 @@ async function main(): Promise<void> {
       if (now - last < COOLDOWN_MS) continue;
     }
 
-    const sym = row.symbol?.trim() || '?';
-    const kind = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
-    const tag = `[MARKET][${kind}]`;
-    const body =
-      `${tag} ${row.pct >= 0 ? 'Рост' : 'Пролив'} ~${Math.abs(row.pct).toFixed(2)}% за ${row.windowLabel}\n` +
-      `symbol: ${sym}\n` +
-      `mint: ${row.base_mint}\n` +
-      `dex: ${row.dex}  pair: ${row.pair_address}\n` +
-      `holders: ${row.holder_count ?? '?'}\n` +
-      `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD\n` +
-      (row.liq_usd != null && row.liq_usd > 0 ? `liq ~${Math.round(row.liq_usd)} USD\n` : '');
+    const htmlBody = buildAlertHtml(row);
 
     if (DRY_RUN) {
-      console.log('[DRY_RUN]', body);
+      console.log('[DRY_RUN]', buildAlertPlain(row));
       continue;
     }
 
-    const ok = await sendTelegram(body.trimEnd());
+    const ok = await sendTelegram(htmlBody, 'HTML');
     if (ok) {
       sent++;
       if (COOLDOWN_MS > 0) cooldown[key] = now;
