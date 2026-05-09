@@ -20,6 +20,7 @@
  *
  * Отбор «latest» по таблице: до SPIKE_ALERT_MAX_ROWS_PER_TABLE mint с **наиболее свежим** последним снимком
  * в окне пола (ORDER BY MAX(ts) DESC), не лексикографически по адресу mint.
+ * SPIKE_ALERT_MIN_MARKET_CAP_USD — порог по COALESCE(market_cap_usd, fdv_usd снимка, tokens.fdv_usd).
  *
  * SPIKE_ALERT_POLL_INTERVAL_MS > 0 — цикл опроса PG (чаще, чем раз в минуту), чтобы второй минутный бар
  * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
@@ -135,6 +136,8 @@ const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
+/** Минимум market cap в USD: снимок пары (mcap/fdv) или fallback tokens.fdv_usd; 0 = выкл. */
+const MIN_MARKET_CAP_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_MARKET_CAP_USD', 150_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('SPIKE_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('SPIKE_ALERT_DRY_RUN', false);
 
@@ -253,6 +256,10 @@ function buildLatestOnlyQuery(table: DexTable): string {
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause =
     MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
+  const mcapClause =
+    MIN_MARKET_CAP_USD > 0
+      ? `AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) >= ${MIN_MARKET_CAP_USD}`
+      : '';
   const snapshotFilters = `
     AND s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
     AND COALESCE(s.price_usd, 0) > 0
@@ -262,7 +269,8 @@ function buildLatestOnlyQuery(table: DexTable): string {
       OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
     )
     ${liqClause}
-    ${volClause}`;
+    ${volClause}
+    ${mcapClause}`;
   return `
 WITH top_mints AS (
   SELECT s.base_mint
@@ -880,7 +888,7 @@ async function runOnePass(
     : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
   );
 }
 

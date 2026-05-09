@@ -57,6 +57,7 @@ module.exports = {
         /** Верхний предел mint на таблицу; отбор по самым свежим снимкам (MAX(ts)), не по алфавиту mint. */
         SPIKE_ALERT_MAX_ROWS_PER_TABLE: '800',
         SPIKE_ALERT_MIN_LIQ_USD: '0',
+        SPIKE_ALERT_MIN_MARKET_CAP_USD: '150000',
         /** 0 = выкл.; поднимите (напр. 2500), чтобы приблизиться к POST lane по объёму 5m */
         SPIKE_ALERT_MIN_VOL_5M_USD: '0',
         SPIKE_ALERT_DRY_RUN: '0',
