@@ -176,7 +176,7 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
   if (snapshotTagged.length === 0) {
-    return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
+    return { discovered: 0, evaluated: 0, passed: 0, decisions: [], auditRows: [] };
   }
 
   await warmupSnapshotHolderCounts(cfg, snapshotTagged);
@@ -330,5 +330,5 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     });
   }
 
-  return { discovered: snapshotTagged.length, evaluated, passed, decisions };
+  return { discovered: snapshotTagged.length, evaluated, passed, decisions, auditRows: [] };
 }

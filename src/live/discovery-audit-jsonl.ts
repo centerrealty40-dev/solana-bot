@@ -19,9 +19,25 @@ function normalizeReasons(raw: unknown): string[] {
     const t = x.trim();
     if (!t) continue;
     out.push(t.length <= 400 ? t : t.slice(0, 400));
-    if (out.length >= 24) break;
+    if (out.length >= 40) break;
   }
   return out.length ? out : ['(no_reasons)'];
+}
+
+function reasonsForEval(raw: unknown, passTrue: boolean): string[] {
+  if (passTrue) {
+    if (!Array.isArray(raw)) return [];
+    const out: string[] = [];
+    for (const x of raw) {
+      if (typeof x !== 'string') continue;
+      const t = x.trim();
+      if (!t) continue;
+      out.push(t.length <= 400 ? t : t.slice(0, 400));
+      if (out.length >= 24) break;
+    }
+    return out;
+  }
+  return normalizeReasons(raw);
 }
 
 /** Skip duplicate: `live_whitelist_skip` already records this path. */
@@ -46,16 +62,45 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
     if (!enabled) return;
     const kind = row.kind;
     if (kind === 'eval') {
-      if (row.pass === true) return;
+      const deep = row._liveDiscoveryDeepAudit === true;
+      if (row.pass === true && !deep) return;
       appendLiveJsonlEvent({
         kind: 'live_discovery_eval',
+        pass: Boolean(row.pass),
         mint: trimStr(row.mint, 64) ?? '(missing_mint)',
         symbol: trimStr(row.symbol, 64),
         lane: trimStr(row.lane, 32),
         source: trimStr(row.source, 64),
         ageMin: typeof row.ageMin === 'number' && Number.isFinite(row.ageMin) ? row.ageMin : undefined,
-        reasons: normalizeReasons(row.reasons),
+        reasons: reasonsForEval(row.reasons, row.pass === true),
         entryPath: trimStr(row.entry_path, 120),
+      });
+      return;
+    }
+    if (kind === 'live_discovery_tick_skip') {
+      appendLiveJsonlEvent({
+        kind: 'live_discovery_tick_skip',
+        mint: trimStr(row.mint, 64) ?? '(missing_mint)',
+        symbol: trimStr(row.symbol, 64),
+        lane: trimStr(row.lane, 32),
+        source: trimStr(row.source, 64),
+        reason: trimStr(row.reason, 120) ?? 'unknown',
+        discoveryReevalSec:
+          typeof row.discoveryReevalSec === 'number' && Number.isFinite(row.discoveryReevalSec)
+            ? Math.floor(row.discoveryReevalSec)
+            : undefined,
+      });
+      return;
+    }
+    if (kind === 'live_discovery_universe_miss') {
+      appendLiveJsonlEvent({
+        kind: 'live_discovery_universe_miss',
+        mint: trimStr(row.mint, 64) ?? '(missing_mint)',
+        symbol: trimStr(row.symbol, 64),
+        lane: trimStr(row.lane, 32),
+        source: trimStr(row.source, 64),
+        reasons: normalizeReasons(row.reasons),
+        snapshotHint: trimStr(row.snapshotHint, 1600),
       });
       return;
     }

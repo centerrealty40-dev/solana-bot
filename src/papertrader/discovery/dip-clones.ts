@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
-import { fetchSnapshotLaneCandidates } from './snapshot.js';
+import { fetchLatestPumpswapSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
+import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
 import { evaluateSnapshot } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
@@ -42,6 +43,18 @@ export interface DiscoveryTickResult {
   evaluated: number;
   passed: number;
   decisions: EvalDecision[];
+  /** Live deep audit rows (flushed via `journalAppend` in `papertrader/main`). */
+  auditRows?: Record<string, unknown>[];
+}
+
+const deepAuditLastLogMs = new Map<string, number>();
+
+function allowDeepAuditLog(key: string, minMs: number): boolean {
+  const now = Date.now();
+  const prev = deepAuditLastLogMs.get(key) ?? 0;
+  if (now - prev < minMs) return false;
+  deepAuditLastLogMs.set(key, now);
+  return true;
 }
 
 export const evaluatedAtMap = new Map<string, number>();
@@ -206,6 +219,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const reevalAfterSec = cfg.discoveryReevalSec;
 
   const decisions: EvalDecision[] = [];
+  const auditRows: Record<string, unknown>[] = [];
+  const candidateMintKeys = new Set(snapshotTagged.map((x) => x.row.mint));
   let evaluated = 0;
   let passed = 0;
   let liveHoldersThisTick = 0;
@@ -213,7 +228,30 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
   for (const { row, lane } of snapshotTagged) {
-    if (!shouldEvaluate(row.mint, reevalAfterSec)) continue;
+    const deepWl =
+      cfg.discoveryDeepAuditJsonl === true &&
+      cfg.discoveryDeepAuditWhitelistMintSet &&
+      cfg.discoveryDeepAuditWhitelistMintSet.has(row.mint);
+    if (!shouldEvaluate(row.mint, reevalAfterSec)) {
+      if (
+        deepWl &&
+        allowDeepAuditLog(
+          `${row.mint}:tick_skip`,
+          cfg.discoveryDeepAuditUniverseMissMinMs,
+        )
+      ) {
+        auditRows.push({
+          kind: 'live_discovery_tick_skip',
+          mint: row.mint,
+          symbol: row.symbol,
+          lane,
+          source: row.source,
+          reason: 'reeval_throttle',
+          discoveryReevalSec: reevalAfterSec,
+        });
+      }
+      continue;
+    }
     evaluated++;
 
     const v = evaluateSnapshot(cfg, row, lane);
@@ -373,7 +411,50 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     });
   }
 
-  return { discovered: snapshotTagged.length, evaluated, passed, decisions };
+  const wl = cfg.discoveryDeepAuditWhitelistMintSet;
+  if (cfg.discoveryDeepAuditJsonl === true && wl && wl.size > 0) {
+    const missEveryMs = cfg.discoveryDeepAuditUniverseMissMinMs;
+    for (const mint of wl) {
+      if (candidateMintKeys.has(mint)) continue;
+      if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
+      const probe = await fetchLatestPumpswapSnapshotRowForMint(mint);
+      const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
+      const crowded =
+        probe != null && sqlReasons.length === 0
+          ? explainCrowdedOutOnly(cfg, true)
+          : null;
+      const reasons = crowded ? [...sqlReasons, crowded] : sqlReasons;
+      let snapshotHint: string | undefined;
+      if (probe) {
+        try {
+          snapshotHint = JSON.stringify({
+            ts: probe.ts instanceof Date ? probe.ts.toISOString() : String(probe.ts),
+            price_usd: probe.price_usd,
+            liquidity_usd: probe.liquidity_usd,
+            volume_5m: probe.volume_5m,
+            volume_1h: probe.volume_1h,
+            buys_5m: probe.buys_5m,
+            sells_5m: probe.sells_5m,
+            age_min: probe.age_min,
+            holder_count: probe.holder_count,
+          }).slice(0, 1600);
+        } catch {
+          snapshotHint = undefined;
+        }
+      }
+      auditRows.push({
+        kind: 'live_discovery_universe_miss',
+        mint,
+        symbol,
+        lane: 'post_migration',
+        source: 'pumpswap',
+        reasons,
+        snapshotHint,
+      });
+    }
+  }
+
+  return { discovered: snapshotTagged.length, evaluated, passed, decisions, auditRows };
 }
 
 export function recordEntryTs(mint: string, ts: number): void {

@@ -251,12 +251,36 @@ export const LiveWhitelistSkipSchema = z.object({
 export const LiveDiscoveryEvalSchema = z.object({
   kind: z.literal('live_discovery_eval'),
   mint: z.string().min(1).max(64),
+  /** Present on new writers; omitted on legacy rows (treat as false). */
+  pass: z.boolean().optional(),
   symbol: z.string().max(64).optional(),
   lane: z.string().max(32).optional(),
   source: z.string().max(64).optional(),
   ageMin: z.number().finite().optional(),
-  reasons: z.array(z.string().max(400)).min(1).max(24),
+  reasons: z.array(z.string().max(400)).max(24),
   entryPath: z.string().max(120).optional(),
+});
+
+/** Mint on deep-audit list hit `PAPER_DISCOVERY_REEVAL_SEC` throttle before eval. */
+export const LiveDiscoveryTickSkipSchema = z.object({
+  kind: z.literal('live_discovery_tick_skip'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  reason: z.string().min(1).max(120),
+  discoveryReevalSec: z.number().int().min(5).max(600).optional(),
+});
+
+/** Mint not returned by snapshot candidate SQL (filters, staleness, or crowded-out LIMIT). */
+export const LiveDiscoveryUniverseMissSchema = z.object({
+  kind: z.literal('live_discovery_universe_miss'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  reasons: z.array(z.string().max(400)).min(1).max(40),
+  snapshotHint: z.string().max(1600).optional(),
 });
 
 /** Passed eval but open blocked (safety, impulse, price verify, already_open, etc.). */
@@ -293,6 +317,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LivePostCloseTailSchema,
   LiveWhitelistSkipSchema,
   LiveDiscoveryEvalSchema,
+  LiveDiscoveryTickSkipSchema,
+  LiveDiscoveryUniverseMissSchema,
   LiveDiscoverySkipOpenSchema,
 ]);
 

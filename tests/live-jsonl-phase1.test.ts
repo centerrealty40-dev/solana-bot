@@ -113,12 +113,32 @@ describe('W8.0-p1 live JSONL contract', () => {
       {
         kind: 'live_discovery_eval',
         mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pass: false,
         reasons: ['dip_no_window_pass(test)'],
         symbol: 'ABC',
         lane: 'post',
         source: 'pumpswap',
         ageMin: 2222,
         entryPath: 'post_migration',
+      },
+      {
+        kind: 'live_discovery_eval',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pass: true,
+        reasons: [],
+        symbol: 'OK',
+      },
+      {
+        kind: 'live_discovery_tick_skip',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reason: 'reeval_throttle',
+        discoveryReevalSec: 60,
+      },
+      {
+        kind: 'live_discovery_universe_miss',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reasons: ['volume_5m_0<20000', 'crowded_out_snapshot_candidate_limit_300'],
+        snapshotHint: '{"price_usd":1}',
       },
       {
         kind: 'live_discovery_skip_open',
@@ -218,6 +238,20 @@ describe('W8.0-p1 live JSONL contract', () => {
         reason: 'safety:x',
       }),
     ).toBe(true);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_discovery_tick_skip',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reason: 'reeval_throttle',
+      }),
+    ).toBe(false);
+    expect(
+      liveEventDefaultFsync({
+        kind: 'live_discovery_universe_miss',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        reasons: ['x'],
+      }),
+    ).toBe(false);
   });
 
   it('parses live_reconcile_report (liveSchema envelope 2 at write time)', () => {

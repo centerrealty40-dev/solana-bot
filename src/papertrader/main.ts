@@ -296,11 +296,17 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         cfg.strategyKind === 'dip'
           ? await runDipDiscovery(cfg)
           : await runSmartLotteryDiscovery(cfg);
+      for (const row of res.auditRows ?? []) {
+        journalAppend(row);
+      }
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
       const btc = getBtcContext();
       for (const d of res.decisions) {
+        const deepAuditFlag =
+          cfg.discoveryDeepAuditJsonl === true &&
+          Boolean(cfg.discoveryDeepAuditWhitelistMintSet?.has(d.mint));
         journalAppend({
           kind: 'eval',
           lane: d.lane,
@@ -315,6 +321,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           whale_analysis: d.whale,
           holders_meta: d.holdersMeta ?? null,
           entry_path: d.entryPath,
+          _liveDiscoveryDeepAudit: deepAuditFlag,
         });
         if (!d.pass) continue;
         if (open.has(d.mint)) {

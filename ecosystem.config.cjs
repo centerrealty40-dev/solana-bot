@@ -417,6 +417,11 @@ module.exports = {
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
+        /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
+        LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
+        LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
+        /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
+        LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         /** Разрешённые mint для новых входов; иначе skip + Telegram (см. `LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`). */
         LIVE_MINT_WHITELIST_ENABLED: '1',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),

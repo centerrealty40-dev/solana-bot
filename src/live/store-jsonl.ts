@@ -66,6 +66,10 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return true;
     case 'live_discovery_eval':
       return false;
+    case 'live_discovery_tick_skip':
+      return false;
+    case 'live_discovery_universe_miss':
+      return false;
     case 'live_discovery_skip_open':
       return true;
     default:

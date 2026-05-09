@@ -4,6 +4,10 @@ import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
 
+function sqlQuoteMint(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 const SNAPSHOT_TABLES: Array<{ table: string; source: string }> = [
   { table: 'raydium_pair_snapshots', source: 'raydium' },
   { table: 'meteora_pair_snapshots', source: 'meteora' },
@@ -70,4 +74,55 @@ export async function fetchSnapshotLaneCandidates(
     LIMIT ${cfg.snapshotCandidateLimit}
   `));
   return r as unknown as SnapshotCandidateRow[];
+}
+
+/** Latest pumpswap row for deep-audit / universe-miss (same column shape as lane union). */
+export async function fetchLatestPumpswapSnapshotRowForMint(mint: string): Promise<SnapshotCandidateRow | null> {
+  const m = mint.trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m)) return null;
+  const r = await db.execute(dsql.raw(`
+    SELECT
+      p.base_mint AS mint,
+      COALESCE(tok.symbol, '?') AS symbol,
+      COALESCE(tok.holder_count, 0)::int AS holder_count,
+      EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
+      p.ts,
+      p.launch_ts AS launch_ts,
+      EXTRACT(EPOCH FROM (p.ts - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS age_min,
+      COALESCE(p.price_usd, 0)::float AS price_usd,
+      COALESCE(p.liquidity_usd, 0)::float AS liquidity_usd,
+      COALESCE(p.volume_5m, 0)::float AS volume_5m,
+      COALESCE(p.volume_1h, 0)::float AS volume_1h,
+      COALESCE(p.buys_5m, 0)::int AS buys_5m,
+      COALESCE(p.sells_5m, 0)::int AS sells_5m,
+      COALESCE(p.market_cap_usd, p.fdv_usd, 0)::float AS market_cap_usd,
+      p.pair_address::text AS pair_address,
+      'pumpswap'::text AS source
+    FROM pumpswap_pair_snapshots p
+    LEFT JOIN tokens tok ON tok.mint = p.base_mint
+    WHERE p.base_mint = ${sqlQuoteMint(m)}
+    ORDER BY p.ts DESC
+    LIMIT 1
+  `));
+  const rows = r as unknown as Record<string, unknown>[];
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    mint: String(row.mint ?? ''),
+    symbol: String(row.symbol ?? '?'),
+    holder_count: Number(row.holder_count ?? 0),
+    token_age_min: Number(row.token_age_min ?? 0),
+    ts: row.ts as Date | string,
+    launch_ts: (row.launch_ts as Date | string | null) ?? null,
+    age_min: row.age_min != null ? Number(row.age_min) : null,
+    price_usd: Number(row.price_usd ?? 0),
+    liquidity_usd: Number(row.liquidity_usd ?? 0),
+    volume_5m: Number(row.volume_5m ?? 0),
+    volume_1h: Number(row.volume_1h ?? 0),
+    buys_5m: Number(row.buys_5m ?? 0),
+    sells_5m: Number(row.sells_5m ?? 0),
+    market_cap_usd: row.market_cap_usd != null ? Number(row.market_cap_usd) : null,
+    pair_address: row.pair_address != null ? String(row.pair_address) : null,
+    source: 'pumpswap',
+  };
 }

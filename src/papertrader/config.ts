@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import type { QuoteResilience } from './pricing/jupiter-quote-resilience.js';
 import type { DexId } from './types.js';
@@ -158,6 +160,14 @@ const ConfigSchema = z.object({
    * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT`.
    */
   liveReentryMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(0),
+
+  /**
+   * Live JSONL deep audit for whitelist mints: `live_discovery_eval` includes passes; `live_discovery_universe_miss`
+   * when mint drops out of snapshot SQL; `live_discovery_tick_skip` on re-eval throttle.
+   */
+  discoveryDeepAuditJsonl: z.boolean().default(false),
+  discoveryDeepAuditWhitelistPath: z.string().optional(),
+  discoveryDeepAuditUniverseMissMinMs: z.coerce.number().int().min(5_000).max(3_600_000).default(60_000),
 
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
@@ -434,7 +444,24 @@ const ConfigSchema = z.object({
   };
 });
 
-export type PaperTraderConfig = z.infer<typeof ConfigSchema>;
+export type PaperTraderConfig = z.infer<typeof ConfigSchema> & {
+  discoveryDeepAuditWhitelistMintSet?: ReadonlySet<string>;
+};
+
+function loadMintWhitelistPathToSet(absPath: string): ReadonlySet<string> {
+  const s = new Set<string>();
+  try {
+    if (!fs.existsSync(absPath)) return s;
+    const body = fs.readFileSync(absPath, 'utf-8');
+    for (const line of body.split(/\r?\n/)) {
+      const cut = line.split('#')[0]?.trim();
+      if (cut) s.add(cut);
+    }
+  } catch {
+    /* ignore */
+  }
+  return s;
+}
 
 export function loadPaperTraderConfig(): PaperTraderConfig {
   const parsed = ConfigSchema.safeParse({
@@ -509,6 +536,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLossExitCooldownMinutes: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES,
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
     liveReentryMinDropFromLastExitPct: process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT,
+    discoveryDeepAuditJsonl: envBool(process.env.LIVE_DISCOVERY_DEEP_AUDIT_JSONL, false),
+    discoveryDeepAuditWhitelistPath: process.env.LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH?.trim() || undefined,
+    discoveryDeepAuditUniverseMissMinMs: (() => {
+      const s = process.env.LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS?.trim();
+      if (!s) return 60_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 5_000 ? Math.min(n, 3_600_000) : 60_000;
+    })(),
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),
@@ -755,7 +790,16 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       .join('\n');
     throw new Error(`Invalid paper-trader env configuration:\n${issues}`);
   }
-  return parsed.data;
+  const base = parsed.data;
+  let discoveryDeepAuditWhitelistMintSet: ReadonlySet<string> | undefined;
+  if (base.discoveryDeepAuditJsonl && base.discoveryDeepAuditWhitelistPath?.trim()) {
+    const raw = base.discoveryDeepAuditWhitelistPath.trim();
+    const abs = path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+    discoveryDeepAuditWhitelistMintSet = loadMintWhitelistPathToSet(abs);
+  }
+  return discoveryDeepAuditWhitelistMintSet
+    ? { ...base, discoveryDeepAuditWhitelistMintSet }
+    : base;
 }
 
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';
