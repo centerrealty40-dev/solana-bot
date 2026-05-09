@@ -329,6 +329,13 @@ async function main(): Promise<void> {
   let touchNeither = 0;
   let touchKillOnly = 0;
 
+  let oTouchDcaNotKill = 0;
+  let oTouchDcaNotKillRecovered = 0;
+  let oTouchBoth = 0;
+  let oTouchNeither = 0;
+  let oTouchKillOnly = 0;
+  let ohlcvRows = 0;
+
   for (const c of closes) {
     const legsQ = openScaleLegs(c);
     const entrySec = Math.floor(c.entryTs / 1000);
@@ -373,6 +380,16 @@ async function main(): Promise<void> {
       if (r.recoveredAboveAvg) touchDcaNotKillRecovered++;
     } else if (!r.touchDca && !r.touchKill) touchNeither++;
     else if (!r.touchDca && r.touchKill) touchKillOnly++;
+
+    if (r.barsUsed > 0) {
+      ohlcvRows++;
+      if (r.touchDca && r.touchKill) oTouchBoth++;
+      else if (r.touchDca && !r.touchKill) {
+        oTouchDcaNotKill++;
+        if (r.recoveredAboveAvg) oTouchDcaNotKillRecovered++;
+      } else if (!r.touchDca && !r.touchKill) oTouchNeither++;
+      else if (!r.touchDca && r.touchKill) oTouchKillOnly++;
+    }
 
     if (perTrade) {
       perTradeOut.push({
@@ -424,6 +441,25 @@ async function main(): Promise<void> {
           touchDcaNotKill: closes.length ? +(touchDcaNotKill / closes.length).toFixed(4) : 0,
           touchDcaNotKillAndRecovered:
             closes.length ? +(touchDcaNotKillRecovered / closes.length).toFixed(4) : 0,
+        },
+        amongTradesWithBirdeyeBars_ohlcvRowsGt0: {
+          rows: ohlcvRows,
+          counts: {
+            touchDcaNotKill_noKill8On1mLows: oTouchDcaNotKill,
+            amongThose_recoveredHighGteAvgAfterFirstTouchDca: oTouchDcaNotKillRecovered,
+            touchBothDcaAndKill: oTouchBoth,
+            touchNeither: oTouchNeither,
+            touchKillButNotDca: oTouchKillOnly,
+          },
+          fractionsOfOhlcvRows: {
+            touchDcaNotKill: ohlcvRows ? +(oTouchDcaNotKill / ohlcvRows).toFixed(4) : 0,
+            touchDcaNotKillAndRecovered:
+              ohlcvRows ? +(oTouchDcaNotKillRecovered / ohlcvRows).toFixed(4) : 0,
+            shareRecoveredAmongTouchDcaNotKill:
+              oTouchDcaNotKill > 0
+                ? +(oTouchDcaNotKillRecovered / oTouchDcaNotKill).toFixed(4)
+                : 0,
+          },
         },
         whyNoJournalDcaOftenWinsInPriorBacktest:
           'Журнальные DCA увеличивают размер до более глубоких минусов при том же kill; без них средняя ниже на дампе и модельный полный выход иногда менее отрицательный — это артефакт упрощённой модели без частичных TP.',
