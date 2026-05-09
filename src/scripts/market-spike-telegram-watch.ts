@@ -18,6 +18,10 @@
  * SPIKE_ALERT_POLL_INTERVAL_MS > 0 — цикл опроса PG (чаще, чем раз в минуту), чтобы второй минутный бар
  * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
  * SPIKE_ALERT_POLL_SEND_DEDUPE_MS (не путать с удалённым часовым cooldown).
+ *
+ * Алерт только если «новый» бар события не старше SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES; соседняя пара
+ * берётся самая свежая в ряду (не максимум |%| за всю глубину). При очень низкой liq_usd в снимке —
+ * потолок |Δ%| (anti-glitch). Время в тексте — SPIKE_ALERT_DISPLAY_TZ (по умолчанию Москва).
  */
 import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
@@ -90,6 +94,24 @@ const POLL_INTERVAL_MS =
 /** Анти-спам при poll: не слать повтор того же события чаще чем раз в N мс (только если POLL > 0). */
 const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('SPIKE_ALERT_POLL_SEND_DEDUPE_MS', 120_000))));
 
+/** Алерт только если «новый» бар скачка не старше N минут относительно now (отсекает старые движения в окне скана). */
+const MAX_NEWER_BAR_AGE_MIN = Math.max(
+  1,
+  Math.min(180, Math.floor(envNum('SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES', 12))),
+);
+
+/**
+ * Если известна liq_usd из последнего снимка и она ниже порога — не считать движение выше LOW_LIQ_MAX_ABS_PCT
+ * (тонкий пул / шум котировки price_usd в PG).
+ */
+const LOW_LIQ_GLITCH_THRESHOLD_USD = Math.max(0, envNum('SPIKE_ALERT_LOW_LIQ_GLITCH_THRESHOLD_USD', 5000));
+const LOW_LIQ_MAX_ABS_PCT = Math.max(
+  THRESHOLD_PCT,
+  Math.min(500, envNum('SPIKE_ALERT_LOW_LIQ_MAX_ABS_PCT', 55)),
+);
+
+const DISPLAY_TZ = process.env.SPIKE_ALERT_DISPLAY_TZ?.trim() || 'Europe/Moscow';
+
 const TG_TOKEN = process.env.SPIKE_ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '';
 const TG_CHAT = process.env.SPIKE_ALERT_TELEGRAM_CHAT_ID?.trim() ?? '';
 
@@ -108,12 +130,14 @@ type LatestMeta = {
   liq_usd: number | null;
 };
 
-type Bar = { ts: Date; px: number };
+type Bar = { ts: Date; px: number; mcapUsd: number | null };
 
 type SpikePick = {
   pct: number;
   anchorPx: number;
   pxNow: number;
+  anchorMcapUsd: number | null;
+  nowMcapUsd: number | null;
   anchorTs: Date;
   tsNew: Date;
   windowLabel: string;
@@ -180,7 +204,8 @@ INNER JOIN tokens t ON t.mint = l.base_mint`;
 
 function buildBarsQuery(table: DexTable, mintsSql: string): string {
   return `
-SELECT base_mint::text, ts, price_usd::double precision AS price_usd
+SELECT base_mint::text, ts, price_usd::double precision AS price_usd,
+  COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
 FROM ${table}
 WHERE base_mint = ANY(${mintsSql})
   AND ts > now() - (${SCAN_MINUTES} * interval '1 minute')
@@ -206,8 +231,38 @@ function dedupeBarsSorted(rows: Bar[]): Bar[] {
     .map(([, b]) => b);
 }
 
-function formatUtcHm(d: Date): string {
-  return d.toISOString().slice(11, 16) + ' UTC';
+function parseMcapUsd(row: Record<string, unknown>): number | null {
+  const v = row.mcap_usd;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function formatDisplayHm(d: Date): string {
+  try {
+    const fmt = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: DISPLAY_TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return `${fmt.format(d)} МСК`;
+  } catch {
+    return d.toISOString().slice(11, 16) + ' UTC';
+  }
+}
+
+/** Новый бар события достаточно свежий, чтобы слать алерт (не «архив» из SCAN_MINUTES). */
+function isPickFreshEnough(pick: SpikePick, nowMs: number): boolean {
+  const ageMs = nowMs - pick.tsNew.getTime();
+  return ageMs >= 0 && ageMs <= MAX_NEWER_BAR_AGE_MIN * 60_000;
+}
+
+/** Отсечь подозрительно большие % при очень маленькой ликвидности в снимке pair. */
+function isPickPlausibleForLiquidity(pick: SpikePick, liqUsd: number | null): boolean {
+  if (LOW_LIQ_GLITCH_THRESHOLD_USD <= 0 || LOW_LIQ_MAX_ABS_PCT >= 500) return true;
+  if (liqUsd == null || !(liqUsd > 0) || liqUsd >= LOW_LIQ_GLITCH_THRESHOLD_USD) return true;
+  return Math.abs(pick.pct) <= LOW_LIQ_MAX_ABS_PCT;
 }
 
 function pickRollingFromBars(bars: Bar[]): SpikePick | null {
@@ -229,32 +284,35 @@ function pickRollingFromBars(bars: Bar[]): SpikePick | null {
     pct,
     anchorPx: anchor.px,
     pxNow: newest.px,
+    anchorMcapUsd: anchor.mcapUsd,
+    nowMcapUsd: newest.mcapUsd,
     anchorTs: anchor.ts,
     tsNew: newest.ts,
-    windowLabel: `~${ROLLING_MINUTES} мин (накопл.)`,
+    windowLabel: `~${ROLLING_MINUTES} мин накопл., конец ${formatDisplayHm(newest.ts)}`,
   };
 }
 
+/** Самая свежая соседняя пара минутных баров с |Δ%| ≥ порога (с конца ряда), не максимум за всю глубину скана. */
 function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
   if (bars.length < 2) return null;
-  let best: SpikePick | null = null;
-  for (let i = 1; i < bars.length; i++) {
+  for (let i = bars.length - 1; i >= 1; i--) {
     const older = bars[i - 1];
     const newer = bars[i];
     if (!(older.px > 0) || !(newer.px > 0)) continue;
     const pct = (newer.px / older.px - 1) * 100;
     if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_PCT) continue;
-    const cand: SpikePick = {
+    return {
       pct,
       anchorPx: older.px,
       pxNow: newer.px,
+      anchorMcapUsd: older.mcapUsd,
+      nowMcapUsd: newer.mcapUsd,
       anchorTs: older.ts,
       tsNew: newer.ts,
-      windowLabel: `мин. ${formatUtcHm(older.ts)}→${formatUtcHm(newer.ts)}`,
+      windowLabel: `мин. ${formatDisplayHm(older.ts)}→${formatDisplayHm(newer.ts)}`,
     };
-    if (!best || Math.abs(cand.pct) > Math.abs(best.pct)) best = cand;
   }
-  return best;
+  return null;
 }
 
 function analyzeBarsForMint(rawBars: Bar[]): SpikePick | null {
@@ -284,12 +342,31 @@ function formatSignedPct(pct: number): string {
   return pct >= 0 ? `+${v}%` : `${v}%`;
 }
 
+function formatMarketCapUsd(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '?';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
+  return n.toFixed(0);
+}
+
+function marketCapMessageLine(row: AlertRow): string {
+  const a = row.anchorMcapUsd;
+  const b = row.nowMcapUsd;
+  if (a != null && b != null && a > 0 && b > 0) {
+    return `Market cap ${formatMarketCapUsd(a)} → ${formatMarketCapUsd(b)} USD`;
+  }
+  return `Market cap нет в снимке · px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+}
+
 type AlertRow = LatestMeta & {
   dex: string;
   pct: number;
   windowLabel: string;
   anchorPx: number;
   anchorTs: Date | string;
+  anchorMcapUsd: number | null;
+  nowMcapUsd: number | null;
 };
 
 function buildAlertHtml(row: AlertRow): string {
@@ -312,8 +389,9 @@ function buildAlertHtml(row: AlertRow): string {
     `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
     `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
-    `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+    `${escapeHtml(marketCapMessageLine(row))}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  body += `\n<i>Мин. снимки в PG (Δ% по price_usd) · время МСК</i>`;
   return body;
 }
 
@@ -332,8 +410,9 @@ function buildAlertPlain(row: AlertRow): string {
     `GMGN: ${gmgnSolTokenUrl(mint)}\n\n` +
     `dex: ${row.dex} · pair: ${row.pair_address}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
-    `px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+    `${marketCapMessageLine(row)}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  body += `\nМин. снимки в PG (Δ% по price_usd) · время МСК`;
   return body;
 }
 
@@ -371,8 +450,9 @@ async function fetchBarsBatch(table: DexTable, mints: string[]): Promise<Map<str
     const px = Number(row.price_usd);
     if (!mint || !(px > 0)) continue;
     const ts = parseTs(row.ts as Date | string);
+    const mcapUsd = parseMcapUsd(row);
     const arr = map.get(mint) ?? [];
-    arr.push({ ts, px });
+    arr.push({ ts, px, mcapUsd });
     map.set(mint, arr);
   }
   return map;
@@ -435,10 +515,13 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
     }
 
     const dex = dexLabel(table);
+    const nowMs = Date.now();
     for (const meta of latestRows) {
       const bars = barsByMint.get(meta.base_mint) ?? [];
       const pick = analyzeBarsForMint(bars);
       if (!pick) continue;
+      if (!isPickFreshEnough(pick, nowMs)) continue;
+      if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
 
       const row: AlertRow = {
         ...meta,
@@ -449,6 +532,8 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
         windowLabel: pick.windowLabel,
         anchorPx: pick.anchorPx,
         anchorTs: pick.anchorTs,
+        anchorMcapUsd: pick.anchorMcapUsd,
+        nowMcapUsd: pick.nowMcapUsd,
       };
 
       const prev = merged.get(meta.base_mint);
@@ -493,7 +578,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null): Promise<void>
   const rollLog = ROLLING_MINUTES > 0 ? ` rolling=${ROLLING_MINUTES}m` : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} threshold=±${THRESHOLD_PCT}% scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ}`,
   );
 }
 
