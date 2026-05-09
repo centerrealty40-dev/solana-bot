@@ -76,37 +76,7 @@ export async function fetchSnapshotLaneCandidates(
   return r as unknown as SnapshotCandidateRow[];
 }
 
-/** Latest pumpswap row for deep-audit / universe-miss (same column shape as lane union). */
-export async function fetchLatestPumpswapSnapshotRowForMint(mint: string): Promise<SnapshotCandidateRow | null> {
-  const m = mint.trim();
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m)) return null;
-  const r = await db.execute(dsql.raw(`
-    SELECT
-      p.base_mint AS mint,
-      COALESCE(tok.symbol, '?') AS symbol,
-      COALESCE(tok.holder_count, 0)::int AS holder_count,
-      EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
-      p.ts,
-      p.launch_ts AS launch_ts,
-      EXTRACT(EPOCH FROM (p.ts - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS age_min,
-      COALESCE(p.price_usd, 0)::float AS price_usd,
-      COALESCE(p.liquidity_usd, 0)::float AS liquidity_usd,
-      COALESCE(p.volume_5m, 0)::float AS volume_5m,
-      COALESCE(p.volume_1h, 0)::float AS volume_1h,
-      COALESCE(p.buys_5m, 0)::int AS buys_5m,
-      COALESCE(p.sells_5m, 0)::int AS sells_5m,
-      COALESCE(p.market_cap_usd, p.fdv_usd, 0)::float AS market_cap_usd,
-      p.pair_address::text AS pair_address,
-      'pumpswap'::text AS source
-    FROM pumpswap_pair_snapshots p
-    LEFT JOIN tokens tok ON tok.mint = p.base_mint
-    WHERE p.base_mint = ${sqlQuoteMint(m)}
-    ORDER BY p.ts DESC
-    LIMIT 1
-  `));
-  const rows = r as unknown as Record<string, unknown>[];
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  const row = rows[0];
+function mapSnapshotRow(row: Record<string, unknown>, source: string): SnapshotCandidateRow {
   return {
     mint: String(row.mint ?? ''),
     symbol: String(row.symbol ?? '?'),
@@ -123,6 +93,63 @@ export async function fetchLatestPumpswapSnapshotRowForMint(mint: string): Promi
     sells_5m: Number(row.sells_5m ?? 0),
     market_cap_usd: row.market_cap_usd != null ? Number(row.market_cap_usd) : null,
     pair_address: row.pair_address != null ? String(row.pair_address) : null,
-    source: 'pumpswap',
+    source,
   };
+}
+
+/**
+ * Latest snapshot row for a mint across all collector tables, matching the discovery lane raw union:
+ * only rows with `ts` in the last 30 minutes and `price_usd > 0`; pick newest `ts` among venues.
+ * (Pumpswap-only probe was wrong for migrated pools — stale near-zero rows while Raydium had real liquidity.)
+ */
+export async function fetchLatestCrossVenueSnapshotRowForMint(mint: string): Promise<SnapshotCandidateRow | null> {
+  const m = mint.trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m)) return null;
+  const qm = sqlQuoteMint(m);
+  const unions = SNAPSHOT_TABLES.map(
+    (t) => `
+    SELECT
+      p.base_mint AS mint,
+      COALESCE(tok.symbol, '?') AS symbol,
+      COALESCE(tok.holder_count, 0)::int AS holder_count,
+      EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS token_age_min,
+      p.ts,
+      p.launch_ts AS launch_ts,
+      EXTRACT(EPOCH FROM (p.ts - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 AS age_min,
+      COALESCE(p.price_usd, 0)::float AS price_usd,
+      COALESCE(p.liquidity_usd, 0)::float AS liquidity_usd,
+      COALESCE(p.volume_5m, 0)::float AS volume_5m,
+      COALESCE(p.volume_1h, 0)::float AS volume_1h,
+      COALESCE(p.buys_5m, 0)::int AS buys_5m,
+      COALESCE(p.sells_5m, 0)::int AS sells_5m,
+      COALESCE(p.market_cap_usd, p.fdv_usd, 0)::float AS market_cap_usd,
+      p.pair_address::text AS pair_address,
+      '${t.source}'::text AS source
+    FROM ${t.table} p
+    LEFT JOIN tokens tok ON tok.mint = p.base_mint
+    WHERE p.base_mint = ${qm}
+      AND p.ts >= now() - interval '30 minutes'
+      AND COALESCE(p.price_usd, 0) > 0
+  `,
+  ).join('\nUNION ALL\n');
+
+  const r = await db.execute(dsql.raw(`
+    WITH raw AS (
+      ${unions}
+    ),
+    ranked AS (
+      SELECT *,
+             ROW_NUMBER() OVER (ORDER BY ts DESC) AS rn
+      FROM raw
+    )
+    SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,
+           price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
+           market_cap_usd, pair_address, source
+    FROM ranked
+    WHERE rn = 1
+  `));
+  const rows = r as unknown as Record<string, unknown>[];
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const row = rows[0];
+  return mapSnapshotRow(row, String(row.source ?? '?'));
 }

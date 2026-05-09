@@ -1,6 +1,6 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
-import { fetchLatestPumpswapSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
+import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
 import { evaluateSnapshot } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
@@ -426,7 +426,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
       if (candidateMintKeys.has(mint)) continue;
       if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
-      const probe = await fetchLatestPumpswapSnapshotRowForMint(mint);
+      const probe = await fetchLatestCrossVenueSnapshotRowForMint(mint);
       const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
       const crowded =
         probe != null && sqlReasons.length === 0
@@ -437,6 +437,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (probe) {
         try {
           snapshotHint = JSON.stringify({
+            source: probe.source,
             ts: probe.ts instanceof Date ? probe.ts.toISOString() : String(probe.ts),
             price_usd: probe.price_usd,
             liquidity_usd: probe.liquidity_usd,
@@ -456,7 +457,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         mint,
         symbol,
         lane: 'post_migration',
-        source: 'pumpswap',
+        source: probe?.source ?? 'none',
         reasons,
         snapshotHint,
       });

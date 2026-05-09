@@ -12,14 +12,14 @@ function tsMs(row: SnapshotCandidateRow): number | null {
 }
 
 /**
- * Mirrors `fetchSnapshotLaneCandidates` post_migration WHERE filters (single-row probeswap probe).
+ * Mirrors `fetchSnapshotLaneCandidates` post_migration WHERE filters (probe row from cross-venue snapshot fetch).
  */
 export function explainPostLaneUniverseMiss(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow | null,
 ): { reasons: string[]; symbol?: string } {
   if (!row) {
-    return { reasons: ['no_pumpswap_snapshot_row'] };
+    return { reasons: ['no_snapshot_row_30m_any_venue'] };
   }
   const lc = laneCfg(cfg, 'post_migration');
   const reasons: string[] = [];
