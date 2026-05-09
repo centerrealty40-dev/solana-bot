@@ -355,6 +355,22 @@ async function main(): Promise<void> {
   if (winnersOnly) lifecycles = lifecycles.filter((lc) => actualNetFromClose(lc) > 0);
   if (trailOnly) lifecycles = lifecycles.filter((lc) => exitReason(lc) === 'TRAIL');
 
+  const skipOutliers = !flag('--keep-outliers');
+  const maxAbsNet = Math.max(50_000, cfgSim.positionUsd * 500);
+  if (skipOutliers && lifecycles.length) {
+    const bad = lifecycles.filter((lc) => Math.abs(actualNetFromClose(lc)) > maxAbsNet);
+    if (bad.length) {
+      console.warn(
+        `Dropping ${bad.length} close(s) with |netPnlUsd|>${maxAbsNet} (bad journal math); pass --keep-outliers to retain.`,
+      );
+      for (const lc of bad) {
+        const net = actualNetFromClose(lc);
+        console.warn(`  outlier mint=${String(lc.mint).slice(0, 12)} netPnlUsd=${net}`);
+      }
+      lifecycles = lifecycles.filter((lc) => Math.abs(actualNetFromClose(lc)) <= maxAbsNet);
+    }
+  }
+
   console.log('\n=== live-oscar-ladder-retrace-sweep ===');
   console.log(`journal: ${absJsonl}`);
   console.log(`detected family: ${family}  strategyId filter: ${strategyId}`);
