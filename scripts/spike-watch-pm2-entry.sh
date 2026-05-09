@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Точка входа для PM2: см. ecosystem.market-spike-watch.cjs (PM2 6 на VPS не парсит этот .cjs как ecosystem).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+export NODE_ENV="${NODE_ENV:-production}"
+export SPIKE_ALERT_POLL_INTERVAL_MS="${SPIKE_ALERT_POLL_INTERVAL_MS:-20000}"
+export SPIKE_ALERT_POLL_SEND_DEDUPE_MS="${SPIKE_ALERT_POLL_SEND_DEDUPE_MS:-120000}"
+export SPIKE_ALERT_SCAN_MINUTES="${SPIKE_ALERT_SCAN_MINUTES:-60}"
+export SPIKE_ALERT_ROLLING_MINUTES="${SPIKE_ALERT_ROLLING_MINUTES:-3}"
+export SPIKE_ALERT_THRESHOLD_PCT="${SPIKE_ALERT_THRESHOLD_PCT:-2.5}"
+export SPIKE_ALERT_MIN_HOLDERS="${SPIKE_ALERT_MIN_HOLDERS:-1000}"
+export SPIKE_ALERT_MIN_AGE_HOURS="${SPIKE_ALERT_MIN_AGE_HOURS:-3}"
+export SPIKE_ALERT_MAX_ROWS_PER_TABLE="${SPIKE_ALERT_MAX_ROWS_PER_TABLE:-800}"
+export SPIKE_ALERT_MIN_LIQ_USD="${SPIKE_ALERT_MIN_LIQ_USD:-0}"
+export SPIKE_ALERT_MIN_VOL_5M_USD="${SPIKE_ALERT_MIN_VOL_5M_USD:-0}"
+export SPIKE_ALERT_DRY_RUN="${SPIKE_ALERT_DRY_RUN:-0}"
+
+exec npm run --silent market-spike-telegram-watch

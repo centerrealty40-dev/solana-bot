@@ -2,8 +2,15 @@
  * Отдельный PM2-профиль — не смешивать с ecosystem.config.cjs, чтобы не делать
  * `pm2 reload` всего продакшена при добавлении watch-only задачи.
  *
- * Запуск на VPS (из корня репозитория):
- *   pm2 start ecosystem.market-spike-watch.cjs
+ * Запуск на VPS (из корня репозитория). PM2 6 на хосте воспринимает этот .cjs как обычный скрипт Node,
+ * а не ecosystem — используйте bash-обёртку:
+ *
+ *   chmod +x scripts/spike-watch-pm2-entry.sh
+ *   pm2 start scripts/spike-watch-pm2-entry.sh --name market-spike-telegram-watch \
+ *     --cwd /opt/solana-alpha --interpreter bash --merge-logs --time --autorestart
+ *   pm2 save
+ *
+ * Блок `apps` ниже оставлен как документация env (дублируется в spike-watch-pm2-entry.sh).
  *
  * По умолчанию — долгоживущий процесс с опросом PG каждые SPIKE_ALERT_POLL_INTERVAL_MS (быстрее ловит
  * второй минутный бар). Режим «раз в минуту»: SPIKE_ALERT_POLL_INTERVAL_MS=0, autorestart:false,
