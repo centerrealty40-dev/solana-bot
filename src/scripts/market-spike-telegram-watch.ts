@@ -59,7 +59,7 @@ const LOOKBACK_SEC = resolveLookbackSec();
 /** Насколько глубоко искать «последний» снимок (сек); запас относительно lookback. */
 const LATEST_FLOOR_SEC = Math.max(180, Math.min(3600, Math.ceil(LOOKBACK_SEC * 15)));
 
-const THRESHOLD_PCT = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 5)));
+const THRESHOLD_PCT = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_THRESHOLD_PCT', 2.5)));
 const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));

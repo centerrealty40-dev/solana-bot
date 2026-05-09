@@ -29,7 +29,7 @@ module.exports = {
         NODE_ENV: 'production',
         /** Окно «сейчас vs не новее N сек назад»; только PG-снимки, без новых RPC/HTTP. */
         SPIKE_ALERT_LOOKBACK_SEC: '60',
-        SPIKE_ALERT_THRESHOLD_PCT: '5',
+        SPIKE_ALERT_THRESHOLD_PCT: '2.5',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
         SPIKE_ALERT_MIN_AGE_HOURS: '3',
         /** Кулдаун на один mint и направление (мс); снижает спам при серии снимков */
