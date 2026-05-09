@@ -380,6 +380,36 @@ function argFlag(name: string): boolean {
   return process.argv.includes(name);
 }
 
+/** Повторяющийся флаг `--exclude-mint ADDR` или значение через запятую. */
+function collectMultiArg(flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < process.argv.length - 1; i++) {
+    if (process.argv[i] === flag) {
+      const v = process.argv[i + 1];
+      if (v && !v.startsWith('--')) out.push(v);
+    }
+  }
+  return out.flatMap((x) =>
+    x
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
+/** `--exclude-close mint:exitTsMs` — исключить одну запись закрытия (например битый PnL после ручных продаж). */
+function parseExcludeCloseKeys(): Set<string> {
+  const keys = new Set<string>();
+  for (const raw of collectMultiArg('--exclude-close')) {
+    const idx = raw.lastIndexOf(':');
+    if (idx <= 0) continue;
+    const mint = raw.slice(0, idx).trim();
+    const ts = Number(raw.slice(idx + 1).trim());
+    if (mint && Number.isFinite(ts)) keys.add(`${mint}\t${ts}`);
+  }
+  return keys;
+}
+
 function argNum(name: string, def: number): number {
   const i = process.argv.indexOf(name);
   if (i === -1 || process.argv[i + 1] == null) return def;
@@ -428,7 +458,21 @@ async function main(): Promise<void> {
   const dcaFraction = argNum('--dca-fraction', 0.25);
 
   const grid = buildGrid(fast);
-  const { rows: closes, excludedAbsurd } = await loadCloses(jsonlPath);
+  const { rows: closesRaw, excludedAbsurd } = await loadCloses(jsonlPath);
+  const excludeMints = new Set(collectMultiArg('--exclude-mint'));
+  const excludeCloseKeys = parseExcludeCloseKeys();
+  let excludedManual = 0;
+  const closes = closesRaw.filter((c) => {
+    if (excludeMints.has(c.mint)) {
+      excludedManual++;
+      return false;
+    }
+    if (excludeCloseKeys.has(`${c.mint}\t${c.exitTs}`)) {
+      excludedManual++;
+      return false;
+    }
+    return true;
+  });
   const actualSum = closes.reduce((a, c) => a + c.netPnlUsd, 0);
 
   const byMintDex = new Map<string, CloseRow[]>();
@@ -517,6 +561,7 @@ async function main(): Promise<void> {
           'sim6: одна докупка при триггере к avg (по умолчанию −6%), размер positionUsd*dcaFraction.',
         ],
         closesUsed: closes.length,
+        excludedManualJournalRows: excludedManual,
         excludedJournalRows: excludedAbsurd,
         tradesWithSnapshots: simRows.length,
         missingSnapshotSeriesTrades: missingSeries,

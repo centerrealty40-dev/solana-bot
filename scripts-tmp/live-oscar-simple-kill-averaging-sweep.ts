@@ -383,6 +383,34 @@ function aggregateKill(
   return { sumNetUsd: sum, stoppedCount: stopped, nanCount: nanC };
 }
 
+function collectMultiArg(flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < process.argv.length - 1; i++) {
+    if (process.argv[i] === flag) {
+      const v = process.argv[i + 1];
+      if (v && !v.startsWith('--')) out.push(v);
+    }
+  }
+  return out.flatMap((x) =>
+    x
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
+function parseExcludeCloseKeys(): Set<string> {
+  const keys = new Set<string>();
+  for (const raw of collectMultiArg('--exclude-close')) {
+    const idx = raw.lastIndexOf(':');
+    if (idx <= 0) continue;
+    const mint = raw.slice(0, idx).trim();
+    const ts = Number(raw.slice(idx + 1).trim());
+    if (mint && Number.isFinite(ts)) keys.add(`${mint}\t${ts}`);
+  }
+  return keys;
+}
+
 async function main(): Promise<void> {
   const posArgs = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const jsonlPath =
@@ -393,7 +421,21 @@ async function main(): Promise<void> {
   const killGrid = [5, 8, 10, 12, 15];
   const dcaMinDdGrid = [3, 5, 8, 10, 12, 15];
 
-  const { rows: closes, excludedAbsurd } = await loadCloses(jsonlPath);
+  const { rows: closesRaw, excludedAbsurd } = await loadCloses(jsonlPath);
+  const excludeMints = new Set(collectMultiArg('--exclude-mint'));
+  const excludeCloseKeys = parseExcludeCloseKeys();
+  let excludedManual = 0;
+  const closes = closesRaw.filter((c) => {
+    if (excludeMints.has(c.mint)) {
+      excludedManual++;
+      return false;
+    }
+    if (excludeCloseKeys.has(`${c.mint}\t${c.exitTs}`)) {
+      excludedManual++;
+      return false;
+    }
+    return true;
+  });
   const actualSum = closes.reduce((a, c) => a + c.netPnlUsd, 0);
 
   const byMintDex = new Map<string, CloseRow[]>();
@@ -492,6 +534,7 @@ async function main(): Promise<void> {
           'Фаза 2: без синтетических USD — только фильтрация реальных ног dca по условию «цена ноги ≥ X% ниже средней перед ногой».',
         ],
         closesUsed: closes.length,
+        excludedManualJournalRows: excludedManual,
         excludedJournalRows: excludedAbsurd,
         tradesWithSnapshots: simRows.length,
         missingSnapshotSeriesTrades: missingSeries,
