@@ -128,6 +128,8 @@ type LatestMeta = {
   token_name: string | null;
   holder_count: number | null;
   liq_usd: number | null;
+  /** Fallback для строки Market cap, если в мин. снимках нет mcap/fdv по паре. */
+  token_fdv_usd: number | null;
 };
 
 type Bar = { ts: Date; px: number; mcapUsd: number | null };
@@ -197,7 +199,8 @@ SELECT
   t.symbol,
   t.name AS token_name,
   t.holder_count,
-  l.liq_usd::double precision AS liq_usd
+  l.liq_usd::double precision AS liq_usd,
+  t.fdv_usd::double precision AS token_fdv_usd
 FROM latest l
 INNER JOIN tokens t ON t.mint = l.base_mint`;
 }
@@ -344,10 +347,10 @@ function formatSignedPct(pct: number): string {
 
 function formatMarketCapUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '?';
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
-  return n.toFixed(0);
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
+  return `$${n.toFixed(0)}`;
 }
 
 function marketCapMessageLine(row: AlertRow): string {
@@ -356,7 +359,11 @@ function marketCapMessageLine(row: AlertRow): string {
   if (a != null && b != null && a > 0 && b > 0) {
     return `Market cap ${formatMarketCapUsd(a)} → ${formatMarketCapUsd(b)} USD`;
   }
-  return `Market cap нет в снимке · px ${row.anchorPx.toPrecision(6)} → ${row.px_now.toPrecision(6)} USD`;
+  const fdv = row.token_fdv_usd;
+  if (fdv != null && Number.isFinite(fdv) && fdv > 0) {
+    return `Market cap нет в мин. снимках пары · FDV токена (tokens.fdv_usd) ~${formatMarketCapUsd(fdv)} USD`;
+  }
+  return 'Market cap недоступна в PG для этой пары (снимки без mcap/fdv, tokens.fdv_usd пуст)';
 }
 
 type AlertRow = LatestMeta & {
@@ -424,6 +431,8 @@ async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {
   for (const row of rows) {
     const mint = String(row.base_mint ?? '');
     if (!mint) continue;
+    const fdvRaw = row.token_fdv_usd;
+    const fdvNum = fdvRaw != null ? Number(fdvRaw) : NaN;
     out.push({
       base_mint: mint,
       pair_address: String(row.pair_address ?? ''),
@@ -433,6 +442,7 @@ async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {
       token_name: row.token_name != null ? String(row.token_name) : null,
       holder_count: row.holder_count != null ? Number(row.holder_count) : null,
       liq_usd: row.liq_usd != null ? Number(row.liq_usd) : null,
+      token_fdv_usd: Number.isFinite(fdvNum) && fdvNum > 0 ? fdvNum : null,
     });
   }
   return out;
