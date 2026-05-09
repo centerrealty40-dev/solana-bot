@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.158] — 2026-05-07
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.158`.
+
+- **Live Oscar — режим B (prod PM2 `live-oscar`):** без изменений режима **A**. В **B**: усреднение по **`PAPER_DCA_LEVELS` −4%** (как было); kill **−8%** (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`); лестница TP **+7%** к avg, **20%** остатка за ступень; ключ **`PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS`** убран — на live-oscar в B по-прежнему действует бесконечная сетка через `tpGridEffective`; трейл **`ladder_retrace`** (откат к предыдущей ступени) не менялся. Обновлены описания на дашборде стратегии Live Oscar (`scripts-tmp/dashboard-paper2.html`, подсказки таймлайна в `dashboard-server.ts`).
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.157`** и в ecosystem для **`live-oscar`** вернуть прежние `PAPER_LIVE_EXIT_MODE_B_TP_GRID_*` (**0.05** / **0.50** / при необходимости **`PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS=4`**), затем деплой по NORM §5.2.
+
+---
+
 ## [1.11.157] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.157`.

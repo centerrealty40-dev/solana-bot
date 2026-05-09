@@ -1521,7 +1521,7 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B: только после DCA по `PAPER_DCA_LEVELS` — лестница с крупными долями за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`), kill/trail/timeout из env B; до закрытия не откатывается в A.',
+      'Режим B: после усреднения по `PAPER_DCA_LEVELS` (−4%) или второй ноги (live-oscar + `PAPER_LIVE_EXIT_MODE_AB`). Сетка B: шаг **+7%** к avg, **20%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`), на live-oscar без лимита ступеней; kill **−8%**; trail/timeout из env B; трейл **`ladder_retrace`** — откат к предыдущей ступени. До закрытия не откатывается в A.',
     );
   } else if (evKind === 'open' || evKind === 'scale_in_add') {
     parts.push(

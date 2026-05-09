@@ -307,13 +307,14 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
         /**
-         * Режим B — «после боли» (IDEALIZED §9.2): та же ступень +5% к средней, но продаём большую долю остатка
-         * за ступень и ограничиваем число ступеней — быстрее выйти в зелёный/около нуля.
+         * Режим B: усреднение по `PAPER_DCA_LEVELS` (−4%%); kill −8%% (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`).
+         * Лестница TP: **+7%%** к средней за ступень, **20%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
+         * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
+         * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.
          */
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.05',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.50',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.07',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.20',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
 
         /**
          * Усреднение −4%% от первой ноги (`-4` в parseDcaLevels); доля 0.25 = $150 при $600 — снимает план второй ноги сплита.
