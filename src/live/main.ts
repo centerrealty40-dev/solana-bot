@@ -53,6 +53,8 @@ function loadOptionalInheritEnv(): void {
 }
 
 export async function main(): Promise<void> {
+  /** PM2 не подмешивает `.env` автоматически — подтягиваем секреты/TELEGRAM_* как у остальных сервисов. */
+  dotenv.config({ path: path.resolve(process.cwd(), '.env') });
   loadOptionalInheritEnv();
   const liveCfg = loadLiveOscarConfig();
 
@@ -435,20 +437,30 @@ export async function main(): Promise<void> {
       if (!tgHeartbeatOff) {
         const tok = process.env.TELEGRAM_BOT_TOKEN?.trim();
         const chat = process.env.TELEGRAM_CHAT_ID?.trim();
+        const wlTok = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
+        const wlChat = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
+        const text = [
+          `uptime=${Math.floor(process.uptime())}s`,
+          `open=${openPositions}`,
+          `closed=${closedTotal}`,
+          `mode=${liveCfg.executionMode}`,
+          `strat=${liveCfg.strategyId}`,
+          `ticks=${stats.ticks}`,
+          `errors=${stats.errors}`,
+          `opened=${stats.opened}`,
+        ].join(' ');
         if (tok && chat) {
-          const text = [
-            `uptime=${Math.floor(process.uptime())}s`,
-            `open=${openPositions}`,
-            `closed=${closedTotal}`,
-            `mode=${liveCfg.executionMode}`,
-            `strat=${liveCfg.strategyId}`,
-            `ticks=${stats.ticks}`,
-            `errors=${stats.errors}`,
-            `opened=${stats.opened}`,
-          ].join(' ');
           void sendTagged('HEALTH', 'live_oscar_pulse', text, { skipQuietHours: true }).catch((e) =>
             log.warn({ err: String(e) }, 'live heartbeat telegram failed'),
           );
+        } else if (wlTok && wlChat) {
+          void sendTagged('HEALTH', 'live_oscar_pulse', `${text} via=wl_bot`, {
+            skipQuietHours: true,
+            telegramBotToken: wlTok,
+            telegramChatId: wlChat,
+          }).catch((e) => log.warn({ err: String(e) }, 'live heartbeat telegram (whitelist bot) failed'));
+        } else {
+          log.warn({}, 'live heartbeat telegram skipped: set TELEGRAM_BOT_TOKEN/CHAT_ID or LIVE_MINT_WHITELIST_TELEGRAM_*');
         }
       }
     },

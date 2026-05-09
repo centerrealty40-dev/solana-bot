@@ -278,34 +278,29 @@ async function readLiveOscarJournalLifecycles(jsonlPath: string, strategyId: str
 
 type LabeledSpec = { label: string; spec: LadderRetraceSpec };
 
-/** Peak sorted index 3 = «четвёртая ступень» при 0-based нумерации в отсортированном ладдере. */
+/**
+ * Семантика (grid или discrete):
+ * - **baseline** — пол трейла всегда на пороге «предыдущей ступени» относительно максимума (как сейчас в prod `ladder_retrace`).
+ * - **adaptive** — пока зафиксированы только ступени с индексом пика `< minPeakSortedIdx`, правило то же, что baseline (первые три ступени = индексы 0..2).
+ *   Начиная с `minPeakSortedIdx` (напр. 3 ⇒ после достижения 4-й ступени), пол опускается ещё на **extraSkipRungs** ступеней к безубытку (шире трейл).
+ */
 function buildSweepMatrix(): LabeledSpec[] {
   return [
-    { label: 'baseline', spec: { kind: 'baseline' } },
-    { label: 'from_r4_skip1', spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 1 } },
-    { label: 'from_r5_skip1', spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 1 } },
-    { label: 'from_r6_skip1', spec: { kind: 'adaptive', minPeakSortedIdx: 5, extraSkipRungs: 1 } },
-    { label: 'from_r4_skip2', spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 2 } },
-    { label: 'from_r5_skip2', spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 2 } },
+    { label: '01_baseline_prev_rung', spec: { kind: 'baseline' } },
+    { label: '02_from4_loosen_1', spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 1 } },
+    { label: '03_from4_loosen_2', spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 2 } },
+    { label: '04_from4_loosen_3', spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 3 } },
+    { label: '05_from5_loosen_1', spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 1 } },
+    { label: '06_from5_loosen_2', spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 2 } },
+    { label: '07_from5_loosen_3', spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 3 } },
+    { label: '08_from6_loosen_1', spec: { kind: 'adaptive', minPeakSortedIdx: 5, extraSkipRungs: 1 } },
     {
-      label: 'from_r4_skip1_b075',
-      spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 1, blendWideFrac: 0.75 },
-    },
-    {
-      label: 'from_r4_skip1_b050',
+      label: '09_from4_loosen_1_blend050',
       spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 1, blendWideFrac: 0.5 },
     },
     {
-      label: 'from_r4_skip1_b025',
-      spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 1, blendWideFrac: 0.25 },
-    },
-    {
-      label: 'from_r5_skip1_b050',
-      spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 1, blendWideFrac: 0.5 },
-    },
-    {
-      label: 'from_r5_skip1_b025',
-      spec: { kind: 'adaptive', minPeakSortedIdx: 4, extraSkipRungs: 1, blendWideFrac: 0.25 },
+      label: '10_from4_loosen_2_blend050',
+      spec: { kind: 'adaptive', minPeakSortedIdx: 3, extraSkipRungs: 2, blendWideFrac: 0.5 },
     },
   ];
 }
@@ -323,8 +318,8 @@ async function main(): Promise<void> {
 
   const absJsonl = path.resolve(jsonlPath);
   const strategyId = arg('--strategy-id') ?? process.env.LIVE_STRATEGY_ID ?? 'live-oscar';
-  /** Coarser step = faster sweep (journal anchors are sparse anyway). */
-  const stepMs = Number(arg('--step-ms') ?? 120_000);
+  /** Finer step ⇒ чаще проверяется ladder_retrace между якорями журнала (дороже по CPU). */
+  const stepMs = Number(arg('--step-ms') ?? 60_000);
   const minTpHits = Number(arg('--min-tp-hits') ?? 3);
   const winnersOnly = flag('--winners-only');
   const trailOnly = flag('--trail-only');
@@ -456,6 +451,30 @@ async function main(): Promise<void> {
       `\nBest label by total PnL: ${best.label}  sumSim=${best.sumSim.toFixed(4)}  vs journal sum=${(best.sumSim - actualSum).toFixed(4)}`,
     );
   }
+
+  const baseline = rows.find((r) => r.label.startsWith('01_baseline'));
+  if (baseline) {
+    const tol = 1e-4;
+    const diverge = rows.filter(
+      (r) => r.label !== baseline.label && Math.abs(r.sumSim - baseline.sumSim) > tol,
+    );
+    console.log('\n=== vs baseline (same sum within 1e-4 => identical on this journal + step) ===');
+    if (diverge.length === 0) {
+      console.log(
+        `All scenarios match baseline sumSim=${baseline.sumSim.toFixed(4)} — try smaller --step-ms (e.g. 30000) if you need separation.`,
+      );
+    } else {
+      for (const r of diverge.sort((a, b) => b.sumSim - a.sumSim)) {
+        console.log(
+          `  ${r.label.padEnd(28)} sumSim=${r.sumSim.toFixed(4)} Δvs_baseline=${(r.sumSim - baseline.sumSim).toFixed(4)}`,
+        );
+      }
+    }
+  }
+
+  console.log(
+    '\nLegend: minPeakSortedIdx=3 → loosen only after 4th TP rung hit; extraSkipRungs=N → trail floor N rungs deeper toward breakeven vs default.',
+  );
 }
 
 main().catch((e) => {
