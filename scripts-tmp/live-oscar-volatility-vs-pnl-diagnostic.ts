@@ -1,16 +1,20 @@
 /**
- * Диагностика: предаходная волатильность (Birdeye 1m OHLCV, USD) vs netPnlUsd по закрытым live-сделкам.
+ * Диагностика: предаходная волатильность vs netPnlUsd по закрытым live-сделкам.
  *
- * Окно до входа: [entryTs - preMinutes, entryTs) в секундах UNIX (не включаем минуту входа).
- * Метрики на окне:
- * - vol_logret_1m: выборочное σ лог-доходностей по ценам закрытия подряд (нужно ≥3 свечей с валидным c).
- * - range_pct: (max(high) - min(low)) / median(close) на окне.
+ * Окно до входа: [entryTs - preMinutes, entryTs) — минутные свечи USD, не включаем минуту входа.
+ * Метрики:
+ * - vol_logret_1m: σ лог-доходностей по close подряд
+ * - range_pct: (max(high)-min(low))/median(close)
+ *
+ * Источник цен:
+ * - gecko: GeckoTerminal pool OHLCV (без API-ключа; нужен подбор пула по mint)
+ * - birdeye: Birdeye v3 OHLCV по mint (нужен BIRDEYE_API_KEY)
+ * - auto: birdeye при ключе; при пустом ответе / лимите CU → gecko
  *
  * VPS:
  *   cd /opt/solana-alpha && set -a && . ./.env && set +a && \
- *     npx tsx scripts-tmp/live-oscar-volatility-vs-pnl-diagnostic.ts data/live/pt1-oscar-live.jsonl
- *
- * Флаги: --strategy-id live-oscar --pre-minutes 120 --sleep-ms 320 --limit N
+ *     npx tsx scripts-tmp/live-oscar-volatility-vs-pnl-diagnostic.ts data/live/pt1-oscar-live.jsonl \
+ *       --price-source gecko --sleep-ms 400
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -19,8 +23,11 @@ import path from 'node:path';
 
 const API_KEY = process.env.BIRDEYE_API_KEY?.trim() ?? '';
 
+type PriceSource = 'auto' | 'birdeye' | 'gecko';
+
 interface CloseRow {
   mint: string;
+  dex: string;
   entryTs: number;
   exitTs: number;
   netPnlUsd: number;
@@ -34,6 +41,20 @@ interface Candle {
   h: number;
   l: number;
   c: number;
+}
+
+interface GeckoPoolCand {
+  poolAddress: string;
+  dexId: string;
+  reserveUsd: number;
+}
+
+interface DexPairRow {
+  pairAddress: string;
+  dexId: string;
+  liquidityUsd: number;
+  baseMint: string;
+  quoteMint: string;
 }
 
 function argStr(name: string, def: string): string {
@@ -82,6 +103,8 @@ async function loadCloses(
     if (!ct) continue;
 
     const mint = String(ct.mint ?? '');
+    let dex = String(ct.dex ?? ct.source ?? 'pumpswap').toLowerCase().trim();
+    if (!dex) dex = 'pumpswap';
     const entryTs = Number(ct.entryTs ?? 0);
     const exitTs = Number(ct.exitTs ?? 0);
     const net = ct.netPnlUsd;
@@ -100,19 +123,238 @@ async function loadCloses(
       continue;
     }
 
-    out.push({ mint, entryTs, exitTs, netPnlUsd: net, exitReason, strategyId: sid });
+    out.push({ mint, dex, entryTs, exitTs, netPnlUsd: net, exitReason, strategyId: sid });
   }
 
   return { rows: out, skippedAbsurd };
 }
 
-async function fetchOhlcv1m(params: {
+async function geckoHttpJson(url: string, sleepMs: number): Promise<{ ok: boolean; json: Record<string, unknown> }> {
+  let backoff = Math.max(280, Math.min(sleepMs, 1200));
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await sleep(attempt === 0 ? Math.min(320, backoff) : backoff);
+    const ac = AbortSignal.timeout(28_000);
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: ac });
+    const text = await r.text();
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      backoff = Math.min(45_000, backoff * 2 + 1500);
+      continue;
+    }
+    const st = json.status as Record<string, unknown> | undefined;
+    const code = Number(st?.error_code ?? 0);
+    if (r.status === 429 || code === 429) {
+      backoff = Math.min(90_000, Math.max(5000, backoff * 3));
+      continue;
+    }
+    return { ok: r.ok, json };
+  }
+  return { ok: false, json: {} };
+}
+
+function mintFromGeckoTokenRef(ref: string): string {
+  const s = ref.trim().toLowerCase();
+  return s.startsWith('solana_') ? s.slice('solana_'.length) : s;
+}
+
+function journalDexMatchesPool(journalDex: string, poolDexId: string): boolean {
+  const j = journalDex.toLowerCase().trim();
+  const p = poolDexId.toLowerCase().trim();
+  if (!j || !p) return false;
+  if (p === j || p.startsWith(`${j}-`) || p.startsWith(`${j}_`)) return true;
+  if (j === 'raydium' && p.includes('raydium')) return true;
+  if (j === 'meteora' && p.includes('meteora')) return true;
+  return false;
+}
+
+async function fetchGeckoPoolsForMint(mint: string, sleepMs: number): Promise<GeckoPoolCand[]> {
+  const mintLower = mint.toLowerCase();
+  const out: GeckoPoolCand[] = [];
+  for (let page = 1; page <= 3; page++) {
+    const u = new URL(`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${encodeURIComponent(mint)}/pools`);
+    u.searchParams.set('page', String(page));
+    const { ok, json } = await geckoHttpJson(u.toString(), sleepMs);
+    if (!ok) break;
+    const data = json.data as unknown;
+    if (!Array.isArray(data) || data.length === 0) break;
+    for (const row of data) {
+      const rec = row as Record<string, unknown>;
+      const attrs = rec.attributes as Record<string, unknown> | undefined;
+      const rel = rec.relationships as Record<string, unknown> | undefined;
+      const baseTok = rel?.base_token as Record<string, unknown> | undefined;
+      const baseData = baseTok?.data as Record<string, unknown> | undefined;
+      const baseId = String(baseData?.id ?? '');
+      const dexWrap = rel?.dex as Record<string, unknown> | undefined;
+      const dexData = dexWrap?.data as Record<string, unknown> | undefined;
+      const dexId = String(dexData?.id ?? '').toLowerCase();
+      const addr = String(attrs?.address ?? '').trim();
+      const reserveUsd = Number(String(attrs?.reserve_in_usd ?? '0'));
+      if (!addr || mintFromGeckoTokenRef(baseId) !== mintLower) continue;
+      out.push({
+        poolAddress: addr,
+        dexId,
+        reserveUsd: Number.isFinite(reserveUsd) ? reserveUsd : 0,
+      });
+    }
+  }
+  return out;
+}
+
+async function fetchDexscreenerPairs(mint: string): Promise<DexPairRow[]> {
+  const url = `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json' } });
+  const text = await r.text();
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error(`dexscreener non-json ${r.status}`);
+  }
+  if (!r.ok) throw new Error(`dexscreener ${r.status}`);
+  const pairs = json.pairs as unknown;
+  if (!Array.isArray(pairs)) return [];
+  const mintLower = mint.toLowerCase();
+  const out: DexPairRow[] = [];
+  for (const p of pairs) {
+    const row = p as Record<string, unknown>;
+    const pairAddress = String(row.pairAddress ?? '').trim();
+    const dexId = String(row.dexId ?? '').toLowerCase().trim();
+    const liq = Number((row.liquidity as Record<string, unknown> | undefined)?.usd ?? 0);
+    const baseMint = String((row.baseToken as Record<string, unknown> | undefined)?.address ?? '').toLowerCase();
+    const quoteMint = String((row.quoteToken as Record<string, unknown> | undefined)?.address ?? '').toLowerCase();
+    if (!pairAddress || (!baseMint && !quoteMint)) continue;
+    if (baseMint !== mintLower && quoteMint !== mintLower) continue;
+    out.push({ pairAddress, dexId, liquidityUsd: Number.isFinite(liq) ? liq : 0, baseMint, quoteMint });
+  }
+  return out;
+}
+
+async function geckoOhlcvMetaBaseAddress(poolAddress: string, sleepMs: number): Promise<string | null> {
+  const u = new URL(
+    `https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(poolAddress)}/ohlcv/minute`,
+  );
+  u.searchParams.set('aggregate', '1');
+  u.searchParams.set('limit', '1');
+  u.searchParams.set('currency', 'usd');
+  const { ok, json } = await geckoHttpJson(u.toString(), sleepMs);
+  if (!ok) return null;
+  const meta = json.meta as Record<string, unknown> | undefined;
+  const base = meta?.base as Record<string, unknown> | undefined;
+  const addr = String(base?.address ?? '').trim();
+  return addr || null;
+}
+
+async function resolvePoolForMintOnGecko(
+  mint: string,
+  journalDex: string,
+  sleepMs: number,
+  poolsCache: Map<string, GeckoPoolCand[]>,
+): Promise<{ poolAddress: string } | null> {
+  const mintLower = mint.toLowerCase();
+
+  let geckoPools = poolsCache.get(mintLower);
+  if (!geckoPools) {
+    geckoPools = await fetchGeckoPoolsForMint(mint, sleepMs);
+    poolsCache.set(mintLower, geckoPools);
+  }
+  const dexPref = geckoPools.filter((p) => journalDexMatchesPool(journalDex, p.dexId));
+  let ordered = dexPref.length ? dexPref : geckoPools;
+  ordered = [...ordered].sort((a, b) => b.reserveUsd - a.reserveUsd);
+
+  for (const c of ordered.slice(0, 10)) {
+    const metaBase = await geckoOhlcvMetaBaseAddress(c.poolAddress, sleepMs);
+    if (metaBase && metaBase.toLowerCase() === mintLower) {
+      return { poolAddress: c.poolAddress };
+    }
+  }
+
+  let rows: DexPairRow[];
+  try {
+    rows = await fetchDexscreenerPairs(mint);
+  } catch {
+    return null;
+  }
+  if (!rows.length) return null;
+  const dexNorm = journalDex.toLowerCase().trim();
+  const preferred = rows.filter((x) => x.dexId === dexNorm || journalDexMatchesPool(journalDex, x.dexId));
+  const cand = preferred.length ? preferred : rows;
+  cand.sort((a, b) => b.liquidityUsd - a.liquidityUsd);
+  for (const c of cand.slice(0, 10)) {
+    if (c.baseMint !== mintLower) continue;
+    const metaBase = await geckoOhlcvMetaBaseAddress(c.pairAddress, sleepMs);
+    if (metaBase && metaBase.toLowerCase() === mintLower) {
+      return { poolAddress: c.pairAddress };
+    }
+  }
+  return null;
+}
+
+async function fetchGeckoOhlcvUsdRange(params: {
+  poolAddress: string;
+  timeFromSec: number;
+  timeToSec: number;
+  sleepMs: number;
+  maxPages: number;
+}): Promise<Candle[]> {
+  const seen = new Set<number>();
+  const candles: Candle[] = [];
+  let before = params.timeToSec + 120;
+  const tMin = params.timeFromSec - 60;
+
+  for (let page = 0; page < params.maxPages; page++) {
+    const u = new URL(
+      `https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(params.poolAddress)}/ohlcv/minute`,
+    );
+    u.searchParams.set('aggregate', '1');
+    u.searchParams.set('limit', '1000');
+    u.searchParams.set('currency', 'usd');
+    u.searchParams.set('before_timestamp', String(before));
+
+    const { ok, json } = await geckoHttpJson(u.toString(), params.sleepMs);
+    if (!ok) break;
+    const data = json.data as Record<string, unknown> | undefined;
+    const attrs = data?.attributes as Record<string, unknown> | undefined;
+    const list = attrs?.ohlcv_list as unknown;
+    if (!Array.isArray(list) || list.length === 0) break;
+
+    let oldestTs = Number.POSITIVE_INFINITY;
+    for (const row of list) {
+      if (!Array.isArray(row) || row.length < 4) continue;
+      const unix_time = Number(row[0]);
+      const o = Number(row[1]);
+      const hi = Number(row[2]);
+      const lo = Number(row[3]);
+      const cl = row.length > 4 ? Number(row[4]) : NaN;
+      oldestTs = Math.min(oldestTs, unix_time);
+      if (!Number.isFinite(unix_time) || !Number.isFinite(lo) || !Number.isFinite(hi)) continue;
+      if (unix_time > params.timeToSec + 60 || unix_time < tMin) continue;
+      const c =
+        Number.isFinite(cl) && cl > 0 ? cl : Number.isFinite(o) && o > 0 ? o : (hi + lo) / 2;
+      if (!(c > 0)) continue;
+      const openPx = Number.isFinite(o) && o > 0 ? o : c;
+      if (!seen.has(unix_time)) {
+        seen.add(unix_time);
+        candles.push({ unix_time, o: openPx, h: hi, l: lo, c });
+      }
+    }
+
+    if (!Number.isFinite(oldestTs) || oldestTs <= tMin) break;
+    before = oldestTs - 1;
+    await sleep(params.sleepMs);
+  }
+
+  return candles.sort((a, b) => a.unix_time - b.unix_time);
+}
+
+async function fetchOhlcvBirdeye(params: {
   mint: string;
   timeFromSec: number;
   timeToSec: number;
   sleepMs: number;
-}): Promise<Candle[]> {
-  if (!API_KEY) throw new Error('BIRDEYE_API_KEY missing');
+}): Promise<{ candles: Candle[]; err?: string }> {
+  if (!API_KEY) return { candles: [], err: 'no_birdeye_key' };
   const u = new URL('https://public-api.birdeye.so/defi/v3/ohlcv');
   u.searchParams.set('address', params.mint);
   u.searchParams.set('type', '1m');
@@ -120,8 +362,7 @@ async function fetchOhlcv1m(params: {
   u.searchParams.set('time_from', String(params.timeFromSec));
   u.searchParams.set('time_to', String(params.timeToSec));
 
-  let lastErr: Error | undefined;
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const r = await fetch(u.toString(), {
       headers: {
         'X-API-KEY': API_KEY,
@@ -134,28 +375,27 @@ async function fetchOhlcv1m(params: {
     try {
       json = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      lastErr = new Error(`non-json ${r.status}`);
       await sleep(params.sleepMs * (attempt + 2));
       continue;
+    }
+    const msg = String(json?.message ?? '');
+    if (!json?.success) {
+      if (/compute units|cu limit|usage limit/i.test(msg)) {
+        return { candles: [], err: msg };
+      }
+      return { candles: [], err: msg || 'birdeye success=false' };
     }
     if (r.status === 429 || r.status === 503) {
       await sleep(params.sleepMs * (attempt + 3) * 5);
       continue;
     }
     if (!r.ok) {
-      lastErr = new Error(String(json?.message ?? `${r.status}`));
-      if (r.status >= 500) {
-        await sleep(params.sleepMs * (attempt + 2));
-        continue;
-      }
-      throw lastErr;
-    }
-    if (!json?.success) {
-      throw new Error(String(json?.message ?? 'birdeye success=false'));
+      await sleep(params.sleepMs * (attempt + 2));
+      continue;
     }
     const items = json?.data as { items?: unknown } | undefined;
     const arr = items?.items;
-    if (!Array.isArray(arr)) return [];
+    if (!Array.isArray(arr)) return { candles: [] };
     const candles: Candle[] = [];
     for (const x of arr) {
       const it = x as Record<string, unknown>;
@@ -164,13 +404,7 @@ async function fetchOhlcv1m(params: {
       const h = Number(it.h ?? it.high);
       const l = Number(it.l ?? it.low);
       const c = Number(it.c ?? it.close ?? it.o);
-      if (
-        Number.isFinite(unix_time) &&
-        Number.isFinite(h) &&
-        Number.isFinite(l) &&
-        Number.isFinite(c) &&
-        c > 0
-      ) {
+      if (Number.isFinite(unix_time) && Number.isFinite(h) && Number.isFinite(l) && Number.isFinite(c) && c > 0) {
         candles.push({
           unix_time,
           o: Number.isFinite(o) && o > 0 ? o : c,
@@ -180,9 +414,68 @@ async function fetchOhlcv1m(params: {
         });
       }
     }
-    return candles.sort((a, b) => a.unix_time - b.unix_time);
+    return { candles: candles.sort((a, b) => a.unix_time - b.unix_time) };
   }
-  throw lastErr ?? new Error('fetchOhlcv retries exhausted');
+  return { candles: [], err: 'birdeye_retries' };
+}
+
+async function fetchCandlesForTrade(args: {
+  row: CloseRow;
+  timeFromSec: number;
+  timeToSec: number;
+  sleepMs: number;
+  source: PriceSource;
+  poolsCache: Map<string, GeckoPoolCand[]>;
+}): Promise<{ candles: Candle[]; used: 'birdeye' | 'gecko'; err?: string }> {
+  const { row, timeFromSec, timeToSec, sleepMs, source, poolsCache } = args;
+
+  if (source === 'gecko') {
+    const pool = await resolvePoolForMintOnGecko(row.mint, row.dex, sleepMs, poolsCache);
+    if (!pool) return { candles: [], used: 'gecko', err: 'gecko_pool_unresolved' };
+    const candles = await fetchGeckoOhlcvUsdRange({
+      poolAddress: pool.poolAddress,
+      timeFromSec,
+      timeToSec,
+      sleepMs,
+      maxPages: 8,
+    });
+    return { candles, used: 'gecko' };
+  }
+
+  if (source === 'birdeye') {
+    const { candles, err } = await fetchOhlcvBirdeye({
+      mint: row.mint,
+      timeFromSec,
+      timeToSec,
+      sleepMs,
+    });
+    if (err && !candles.length) return { candles: [], used: 'birdeye', err };
+    return { candles, used: 'birdeye' };
+  }
+
+  /** auto */
+  if (API_KEY) {
+    const b = await fetchOhlcvBirdeye({
+      mint: row.mint,
+      timeFromSec,
+      timeToSec,
+      sleepMs,
+    });
+    if (b.candles.length > 0) return { candles: b.candles, used: 'birdeye' };
+    if (b.err && !/compute units|cu limit|usage limit/i.test(String(b.err))) {
+      /* fall through to gecko */
+    }
+  }
+  const pool = await resolvePoolForMintOnGecko(row.mint, row.dex, sleepMs, poolsCache);
+  if (!pool) return { candles: [], used: 'gecko', err: 'gecko_pool_unresolved_after_birdeye' };
+  const candles = await fetchGeckoOhlcvUsdRange({
+    poolAddress: pool.poolAddress,
+    timeFromSec,
+    timeToSec,
+    sleepMs,
+    maxPages: 8,
+  });
+  return { candles, used: 'gecko' };
 }
 
 function slicePreEntry(candles: Candle[], entryMs: number, preMin: number): Candle[] {
@@ -288,13 +581,19 @@ function quartileMeans(values: number[], pnls: number[]): void {
     const ps = b.rows.map((r) => r.p);
     const sum = ps.reduce((a, x) => a + x, 0);
     const sorted = [...ps].sort((x, y) => x - y);
-    const med = sorted.length % 2
-      ? sorted[(sorted.length - 1) >> 1]!
-      : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2;
+    const med =
+      sorted.length % 2
+        ? sorted[(sorted.length - 1) >> 1]!
+        : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2;
     console.log(
       `${b.label.padEnd(14)} n=${String(b.rows.length).padStart(4)}  sumPnl=${sum.toFixed(2).padStart(10)}  medianPnl=${med.toFixed(4).padStart(10)}`,
     );
   }
+}
+
+function parsePriceSource(s: string): PriceSource {
+  if (s === 'birdeye' || s === 'gecko' || s === 'auto') return s;
+  return 'auto';
 }
 
 async function main(): Promise<void> {
@@ -302,15 +601,16 @@ async function main(): Promise<void> {
   const jsonlPath = path.resolve(jsonlArg ?? 'data/live/pt1-oscar-live.jsonl');
   const strategyId = argStr('--strategy-id', 'live-oscar');
   const preMinutes = argNum('--pre-minutes', 120);
-  const sleepMs = argNum('--sleep-ms', 320);
+  const sleepMs = argNum('--sleep-ms', 400);
   const limit = argNum('--limit', 0);
+  const priceSource = parsePriceSource(argStr('--price-source', 'gecko'));
 
   if (!fs.existsSync(jsonlPath)) {
     console.error('journal missing:', jsonlPath);
     process.exit(1);
   }
-  if (!API_KEY) {
-    console.error('BIRDEYE_API_KEY required in environment (.env)');
+  if (priceSource === 'birdeye' && !API_KEY) {
+    console.error('BIRDEYE_API_KEY required for --price-source birdeye');
     process.exit(1);
   }
 
@@ -322,11 +622,11 @@ async function main(): Promise<void> {
       {
         journal: jsonlPath,
         strategyId,
+        priceSource,
         closesLoaded: allRows.length,
         closesUsed: rows.length,
         skippedAbsurd,
         preEntryMinutes: preMinutes,
-        birdeyeInterval: '1m',
       },
       null,
       2,
@@ -337,12 +637,14 @@ async function main(): Promise<void> {
     volLogret: number | null;
     rangePct: number | null;
     bars: number;
+    priceUsed?: string;
     err?: string;
   };
 
   const diags: RowDiag[] = [];
   let fetchOk = 0;
   let fetchFail = 0;
+  const poolsCache = new Map<string, GeckoPoolCand[]>();
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]!;
@@ -351,23 +653,39 @@ async function main(): Promise<void> {
     const toSec = entrySec + 60;
 
     try {
-      const raw = await fetchOhlcv1m({
-        mint: r.mint,
+      const { candles: raw, used, err } = await fetchCandlesForTrade({
+        row: r,
         timeFromSec: fromSec,
         timeToSec: toSec,
         sleepMs,
+        source: priceSource,
+        poolsCache,
       });
       const pre = slicePreEntry(raw, r.entryTs, preMinutes);
       const closes = pre.map((c) => c.c);
       const vlr = volLogReturns(closes);
       const rp = rangePct(pre);
-      diags.push({
-        ...r,
-        volLogret: vlr,
-        rangePct: rp,
-        bars: pre.length,
-      });
-      fetchOk++;
+      if (vlr == null && pre.length < 3) {
+        fetchFail++;
+        diags.push({
+          ...r,
+          volLogret: null,
+          rangePct: rp,
+          bars: pre.length,
+          priceUsed: used,
+          err: err ?? `insufficient_bars_${pre.length}`,
+        });
+      } else {
+        fetchOk++;
+        diags.push({
+          ...r,
+          volLogret: vlr,
+          rangePct: rp,
+          bars: pre.length,
+          priceUsed: used,
+          ...(err ? { err } : {}),
+        });
+      }
     } catch (e) {
       fetchFail++;
       diags.push({
@@ -386,21 +704,22 @@ async function main(): Promise<void> {
   const vols = withVol.map((d) => d.volLogret!);
   const pnls = withVol.map((d) => d.netPnlUsd);
   const rho = spearman(vols, pnls);
+  const withRange = diags.filter((d) => d.rangePct != null && Number.isFinite(d.rangePct));
   const rhoRange =
-    diags.filter((d) => d.rangePct != null).length >= 3
+    withRange.length >= 3
       ? spearman(
-          diags.filter((d) => d.rangePct != null).map((d) => d.rangePct!),
-          diags.filter((d) => d.rangePct != null).map((d) => d.netPnlUsd),
+          withRange.map((d) => d.rangePct!),
+          withRange.map((d) => d.netPnlUsd),
         )
       : null;
 
-  const sumAllPnls = diags.reduce((s, d) => s + d.netPnlUsd, 0);
+  const sumAllPnls = rows.reduce((s, d) => s + d.netPnlUsd, 0);
 
   console.log('\n=== Aggregate ===');
   console.log(`fetchOk=${fetchOk} fetchFail=${fetchFail} tradesWithVol=${withVol.length}`);
   console.log(`Spearman(vol_logret_pre, netPnlUsd)=${rho == null ? 'n/a' : rho.toFixed(4)}`);
   console.log(`Spearman(range_pct_pre, netPnlUsd)=${rhoRange == null ? 'n/a' : rhoRange.toFixed(4)}`);
-  console.log(`sum netPnlUsd (all used closes)=${sumAllPnls.toFixed(4)}`);
+  console.log(`sum netPnlUsd (cohort used)=${sumAllPnls.toFixed(4)}`);
 
   if (withVol.length >= 8) quartileMeans(vols, pnls);
 
@@ -409,21 +728,27 @@ async function main(): Promise<void> {
   console.log('\n=== Top 5 highest pre-entry vol (logret 1m) ===');
   for (const d of hi) {
     console.log(
-      `${d.mint.slice(0, 8)}… vol=${d.volLogret!.toFixed(6)} range%=${d.rangePct?.toFixed(4) ?? 'n/a'} pnl=${d.netPnlUsd.toFixed(2)} bars=${d.bars}`,
+      `${d.mint.slice(0, 8)}… vol=${d.volLogret!.toFixed(6)} range%=${d.rangePct?.toFixed(4) ?? 'n/a'} pnl=${d.netPnlUsd.toFixed(2)} bars=${d.bars} src=${d.priceUsed ?? '?'}`,
     );
   }
   console.log('\n=== Top 5 lowest pre-entry vol ===');
   for (const d of lo) {
     console.log(
-      `${d.mint.slice(0, 8)}… vol=${d.volLogret!.toFixed(6)} range%=${d.rangePct?.toFixed(4) ?? 'n/a'} pnl=${d.netPnlUsd.toFixed(2)} bars=${d.bars}`,
+      `${d.mint.slice(0, 8)}… vol=${d.volLogret!.toFixed(6)} range%=${d.rangePct?.toFixed(4) ?? 'n/a'} pnl=${d.netPnlUsd.toFixed(2)} bars=${d.bars} src=${d.priceUsed ?? '?'}`,
     );
   }
 
-  if (diags.some((d) => d.err)) {
-    const errs = diags.filter((d) => d.err).length;
-    console.log(`\n(note: ${errs} trades failed OHLCV fetch — see last errors sample)`);
-    const sample = diags.find((d) => d.err);
-    if (sample?.err) console.log('sample err:', sample.err.slice(0, 200));
+  const failed = diags.filter((d) => d.volLogret == null && d.err);
+  if (failed.length) {
+    console.log(`\n(note: ${failed.length} rows missing vol — see err counts)`);
+    const by = new Map<string, number>();
+    for (const d of failed) {
+      const k = (d.err ?? 'unknown').slice(0, 80);
+      by.set(k, (by.get(k) ?? 0) + 1);
+    }
+    for (const [k, v] of [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      console.log(`  ${v}x ${k}`);
+    }
   }
 }
 
