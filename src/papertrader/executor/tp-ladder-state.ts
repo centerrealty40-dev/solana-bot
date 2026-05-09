@@ -150,6 +150,13 @@ export function ladderRetraceTriggeredWithSpec(
   tpGridFirstRungRetraceMinPnlPct: number,
   spec: LadderRetraceSpec,
 ): boolean {
+  /** Require ≥2 partial TP rungs before trail-by-retrace can exit — first rung (~2.5%) alone is too noisy. */
+  const firedPartialSteps =
+    mode === 'grid'
+      ? collectFiredLadderPnls(ot, []).length
+      : collectFiredLadderPnls(ot, tpLadder).length;
+  if (firedPartialSteps < 2) return false;
+
   const floor = ladderRetraceFloorPnlFrac(ot, tpLadder, mode, tpGridFirstRungRetraceMinPnlPct, spec);
   if (floor === null) return false;
   const curPnlFrac = xAvg - 1;

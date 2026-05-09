@@ -519,7 +519,23 @@ async function tryExecuteTpPartialSell(args: {
   const sellFraction = Math.min(1, rawSellFrac);
   const marketSell = curMetric;
   if (!(ot.remainingFraction > 1e-12)) return 'ok';
+  /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
   const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
+  /**
+   * Token amount for Jupiter must match `sellFraction` of *remaining tokens*, not `investedSoldUsd / marketSell`.
+   * Remaining tokens ~ (TI×R) / avgEntryMarket; at profit that is larger than investedSoldUsd/marketSell,
+   * but `remainingFraction` still decrements by (1−sellFraction) → drift vs wallet if we undersell on-chain.
+   */
+  const entryPxForTokenSizing =
+    ot.avgEntryMarket > 1e-18 && Number.isFinite(ot.avgEntryMarket)
+      ? ot.avgEntryMarket
+      : ot.avgEntry > 1e-18 && Number.isFinite(ot.avgEntry)
+        ? ot.avgEntry
+        : marketSell;
+  const tokenSizingUsdForSwap =
+    marketSell > 1e-18 && entryPxForTokenSizing > 1e-18 && Number.isFinite(marketSell)
+      ? investedSoldUsd * (marketSell / entryPxForTokenSizing)
+      : investedSoldUsd;
   const { effectivePrice: modeledEffectiveSell } = applyExitCosts(
     cfg,
     marketSell,
@@ -545,7 +561,7 @@ async function tryExecuteTpPartialSell(args: {
     mint,
     symbol: ot.symbol,
     tokenDecimals: ot.tokenDecimals ?? 6,
-    usdNotional: investedSoldUsd,
+    usdNotional: tokenSizingUsdForSwap,
     snapshotPriceUsd: marketSell,
     context: 'partial_sell',
     journalAppend,
@@ -578,11 +594,11 @@ async function tryExecuteTpPartialSell(args: {
   clearExitPartialDeferForMint(mint);
 
   let sellOut: LiveTokenToSolSellResult = { ok: true };
-  if (livePhase4 && marketSell > 0 && investedSoldUsd > 1e-6) {
+  if (livePhase4 && marketSell > 0 && tokenSizingUsdForSwap > 1e-6) {
     sellOut = await livePhase4.tryTokenToSolSell({
       mint,
       symbol: ot.symbol,
-      usdNotional: investedSoldUsd,
+      usdNotional: tokenSizingUsdForSwap,
       priceUsdPerToken: marketSell,
       decimals: ot.tokenDecimals ?? 6,
       intentKind: 'sell_partial',
@@ -607,7 +623,10 @@ async function tryExecuteTpPartialSell(args: {
     ot.avgEntry > 0
   ) {
     const actualUsd = (Number(sellOut.solProceedsLamports) / 1e9) * spotSol;
-    const tokensSold = investedSoldUsd / ot.avgEntry;
+    const tokensSold =
+      marketSell > 1e-18 && Number.isFinite(marketSell)
+        ? tokenSizingUsdForSwap / marketSell
+        : investedSoldUsd / ot.avgEntry;
     const modeledProceedsFloor = proceedsUsd;
     if (tokensSold > 1e-18 && Number.isFinite(actualUsd)) {
       const chainImplausible =
@@ -1735,7 +1754,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const wasArmed = ot.trailingArmed;
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
-      if (xAvg >= effCfg.trailTriggerX) ot.trailingArmed = true;
+      /**
+       * Peak trailing only after ≥2 partial TP rungs when using TP grid or discrete ladder — avoids full exit
+       * on retrace right after a shallow first rung (~2.5%).
+       */
+      const usesTpSlices = tgEff.stepPnl > 0 || tpLadder.length > 0;
+      const tpSlicesDone = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+      if (xAvg >= effCfg.trailTriggerX && (!usesTpSlices || tpSlicesDone >= 2)) {
+        ot.trailingArmed = true;
+      }
       const ps = peakStateByMint.get(mint) || { lastPersistedPeak: -Infinity };
       if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= ps.lastPersistedPeak + effCfg.peakLogStepPct) {
         ps.lastPersistedPeak = pnlPctVsAvg;
@@ -1958,6 +1985,22 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             continue;
           }
         }
+      }
+    }
+
+    /** Same tick as 2nd partial TP: peak block ran before `partialSells` grew — arm peak trailing if still at ATH. */
+    if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0) {
+      effCfg = cfgEffectiveForOpen(cfg, ot);
+      tgEff = tpGridEffective(ot, effCfg);
+      const xPost = curMetric / ot.avgEntry;
+      const usesTpSlicesPost = tgEff.stepPnl > 0 || tpLadder.length > 0;
+      const tpSlicesDonePost = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+      if (
+        curMetric + 1e-18 >= ot.peakMcUsd &&
+        xPost >= effCfg.trailTriggerX &&
+        (!usesTpSlicesPost || tpSlicesDonePost >= 2)
+      ) {
+        ot.trailingArmed = true;
       }
     }
 

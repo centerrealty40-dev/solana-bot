@@ -23,10 +23,10 @@ describe('ladderRetraceTriggered', () => {
     expect(ladderRetraceTriggered(ot([]), ladder, 1.05)).toBe(false);
   });
 
-  it('after first rung (+10%), breach back to <= 0% PnL triggers', () => {
+  it('after first rung only — ladder retrace disabled (need 2+ partial rungs)', () => {
     expect(ladderRetraceTriggered(ot([0.1]), ladder, 1.05)).toBe(false);
-    expect(ladderRetraceTriggered(ot([0.1]), ladder, 1.0)).toBe(true);
-    expect(ladderRetraceTriggered(ot([0.1]), ladder, 0.99)).toBe(true);
+    expect(ladderRetraceTriggered(ot([0.1]), ladder, 1.0)).toBe(false);
+    expect(ladderRetraceTriggered(ot([0.1]), ladder, 0.99)).toBe(false);
   });
 
   it('after second rung (+20%), dip to <= +10% PnL triggers', () => {
@@ -41,7 +41,7 @@ describe('ladderRetraceTriggered', () => {
       ladderUsedIndices: new Set([0]),
     } as OpenTrade;
     expect(ladderRetraceTriggered(hitFirst, ladder, 1.05)).toBe(false);
-    expect(ladderRetraceTriggered(hitFirst, ladder, 1.0)).toBe(true);
+    expect(ladderRetraceTriggered(hitFirst, ladder, 1.0)).toBe(false);
   });
 });
 
@@ -53,16 +53,16 @@ describe('ladderRetraceTriggered grid mode', () => {
     expect(ladderRetraceTriggered(ot([0.05, 0.1]), [], 1.049, 'grid')).toBe(true);
   });
 
-  it('after first grid rung +5%, breach back to <= 0% triggers', () => {
+  it('after first grid rung only — retrace exit disabled', () => {
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid')).toBe(false);
-    expect(ladderRetraceTriggered(ot([0.05]), [], 1.0, 'grid')).toBe(true);
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.0, 'grid')).toBe(false);
   });
 
-  it('after first grid rung +5%, positive floor exits remainder above breakeven', () => {
+  it('after first grid rung +5%, positive floor — still no exit until 2nd partial', () => {
     const floor = 0.025;
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.06, 'grid', floor)).toBe(false);
     expect(ladderRetraceTriggered(ot([0.05]), [], 1.026, 'grid', floor)).toBe(false);
-    expect(ladderRetraceTriggered(ot([0.05]), [], 1.024, 'grid', floor)).toBe(true);
+    expect(ladderRetraceTriggered(ot([0.05]), [], 1.024, 'grid', floor)).toBe(false);
   });
 });
 
