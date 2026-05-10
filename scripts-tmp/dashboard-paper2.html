@@ -185,7 +185,7 @@
 
     <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе пять колонок Oscar -->
     <section class="dash-desktop-strategy-cols">
-      <template x-for="s in (state.strategies || [])" :key="s.strategyId">
+      <template x-for="(s, idx) in (state.strategies || [])" :key="(s.strategyId || 'row') + ':' + idx">
         <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition select-none min-w-0"
              :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
              @click="selected = s.strategyId">
@@ -825,7 +825,11 @@
         },
         async refresh() {
           try {
-            const j = await fetch('/api/paper2', { credentials: 'include' }).then((r) => r.json());
+            const j = await fetch('/api/paper2', {
+              credentials: 'include',
+              cache: 'no-store',
+              headers: { 'cache-control': 'no-cache' },
+            }).then((r) => r.json());
             this.state = j;
             if (!this.selected && (j.strategies || []).length) {
               const pref = 'live-oscar';
