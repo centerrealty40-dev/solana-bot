@@ -182,27 +182,6 @@ const ConfigSchema = z.object({
   mintBlacklistEnabled: z.boolean().default(false),
   mintBlacklistPath: z.string().min(1).default('data/live/live-oscar-mint-blacklist.txt'),
 
-  /**
-   * Подмешивать mint из JSONL-очереди (проливы из `market-spike-telegram-watch`) в dip-discovery.
-   * Env: `PAPER_TELEGRAM_SPIKE_SIGNAL_*`.
-   */
-  telegramSpikeSignalEnabled: z.boolean().default(false),
-  telegramSpikeSignalQueuePath: z.string().default(''),
-  telegramSpikeSignalMaxAgeMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
-  /**
-   * Mint из spike Telegram queue: если обычный dip не прошёл — вторая попытка с порогами ниже
-   * (`telegramSpikeDipMinDropPct` и т.д.) + опции обхода vol5m/1h / recovery veto / whale trigger.
-   */
-  telegramSpikeRelaxEnabled: z.boolean().default(false),
-  /** Мин. «глубина» dip от high окна (отрицательный %), только для relax-ветки; например −10 для проливов ~10%. */
-  telegramSpikeDipMinDropPct: z.coerce.number().max(0).default(-10),
-  telegramSpikeDipMinImpulsePct: z.coerce.number().nonnegative().default(8),
-  /** Не задано → как у основного `dipMaxDropPct`. */
-  telegramSpikeDipMaxDropPct: z.coerce.number().max(0).optional(),
-  telegramSpikeSkipVol5m1hGuard: z.boolean().default(false),
-  telegramSpikeSkipRecoveryVeto: z.boolean().default(false),
-  telegramSpikeSkipWhaleRequireTrigger: z.boolean().default(false),
-
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
   liveExitModeBTrailDrop: z.coerce.number().min(0).max(1).optional(),
@@ -583,34 +562,6 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     })(),
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
-    telegramSpikeSignalEnabled: envBool(process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_ENABLED, false),
-    telegramSpikeSignalQueuePath: process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_QUEUE_PATH?.trim() ?? '',
-    telegramSpikeSignalMaxAgeMs: (() => {
-      const s = process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_MAX_AGE_MS?.trim();
-      if (!s) return 900_000;
-      const n = Number.parseInt(s, 10);
-      return Number.isFinite(n) ? Math.min(Math.max(n, 60_000), 3_600_000) : 900_000;
-    })(),
-    telegramSpikeRelaxEnabled: envBool(process.env.PAPER_TELEGRAM_SPIKE_RELAX_ENABLED, false),
-    telegramSpikeDipMinDropPct: (() => {
-      const s = process.env.PAPER_TELEGRAM_SPIKE_DIP_MIN_DROP_PCT?.trim();
-      if (!s) return -10;
-      const n = Number(s);
-      return Number.isFinite(n) && n <= 0 ? n : -10;
-    })(),
-    telegramSpikeDipMinImpulsePct: (() => {
-      const s = process.env.PAPER_TELEGRAM_SPIKE_DIP_MIN_IMPULSE_PCT?.trim();
-      if (!s) return 8;
-      const n = Number(s);
-      return Number.isFinite(n) && n >= 0 ? n : 8;
-    })(),
-    telegramSpikeDipMaxDropPct: envOptNum(process.env.PAPER_TELEGRAM_SPIKE_DIP_MAX_DROP_PCT),
-    telegramSpikeSkipVol5m1hGuard: envBool(process.env.PAPER_TELEGRAM_SPIKE_SKIP_VOL5M_1H_GUARD, false),
-    telegramSpikeSkipRecoveryVeto: envBool(process.env.PAPER_TELEGRAM_SPIKE_SKIP_RECOVERY_VETO, false),
-    telegramSpikeSkipWhaleRequireTrigger: envBool(
-      process.env.PAPER_TELEGRAM_SPIKE_SKIP_WHALE_REQUIRE_TRIGGER,
-      false,
-    ),
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),

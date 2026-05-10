@@ -103,7 +103,6 @@ export function evaluateSnapshot(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   lane: Lane,
-  opts?: { skipVol5m1hGuard?: boolean },
 ): { pass: boolean; reasons: string[] } {
   const lc = laneCfg(cfg, lane);
   const reasons: string[] = [];
@@ -119,10 +118,8 @@ export function evaluateSnapshot(
   if (row.sells_5m < lc.MIN_SELLS_5M) reasons.push(`sells5m<${lc.MIN_SELLS_5M}`);
   const bs = row.sells_5m > 0 ? row.buys_5m / row.sells_5m : row.buys_5m;
   if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
-  if (!opts?.skipVol5m1hGuard) {
-    const vh = evaluateVol5m1hGuard(cfg, row);
-    if (!vh.pass) reasons.push(...vh.reasons);
-  }
+  const vh = evaluateVol5m1hGuard(cfg, row);
+  if (!vh.pass) reasons.push(...vh.reasons);
   return { pass: reasons.length === 0, reasons };
 }
 

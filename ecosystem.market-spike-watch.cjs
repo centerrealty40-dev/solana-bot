@@ -75,8 +75,6 @@ module.exports = {
         SPIKE_ALERT_MC_PRICE_MAX_DIVERGENCE_PCT: '8',
         SPIKE_ALERT_DEXSCREENER_META: '1',
         SPIKE_ALERT_UPSERT_TOKEN_META: '1',
-        /** Путь к JSONL для live-oscar-risky (проливы); держите тот же путь, что `PAPER_TELEGRAM_SPIKE_SIGNAL_QUEUE_PATH` у risky. */
-        SPIKE_ALERT_RISKY_ENTRY_QUEUE_PATH: path.join(root, 'data/live/telegram-spike-signals-live-oscar-risky.jsonl'),
       },
     },
   ],

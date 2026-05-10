@@ -86,35 +86,22 @@ export interface DipEvalResult {
   dipLookbackUsedMin: number | null;
 }
 
-/** Перекрытие порогов dip/импульса (напр. «мягкий» вход только для mint из Telegram spike queue). */
-export type DipEvalOverrides = {
-  dipMinDropPct?: number;
-  dipMaxDropPct?: number;
-  dipMinImpulsePct?: number;
-  dipMinAgeMin?: number;
-};
-
 /** Single-window dip math (impulse = range within that same window). */
 export function evaluateDipOneWindow(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: DipContext | null,
-  overrides?: DipEvalOverrides,
 ): Omit<DipEvalResult, 'dipLookbackUsedMin'> {
   const reasons: string[] = [];
-  const minAge = overrides?.dipMinAgeMin ?? cfg.dipMinAgeMin;
-  if ((row.token_age_min ?? 0) < minAge) reasons.push(`dip_age<${minAge}m`);
+  if ((row.token_age_min ?? 0) < cfg.dipMinAgeMin) reasons.push(`dip_age<${cfg.dipMinAgeMin}m`);
   if (!ctx || !(ctx.high_px > 0)) {
     return { reasons: [...reasons, 'dip_ctx_missing'], dipPct: null, impulsePct: null };
   }
   const dipPct = (row.price_usd / ctx.high_px - 1) * 100;
-  const minDrop = overrides?.dipMinDropPct ?? cfg.dipMinDropPct;
-  const maxDrop = overrides?.dipMaxDropPct ?? cfg.dipMaxDropPct;
-  const minImp = overrides?.dipMinImpulsePct ?? cfg.dipMinImpulsePct;
-  if (dipPct > minDrop) reasons.push(`dip_not_deep_enough>${minDrop}%`);
-  if (dipPct < maxDrop) reasons.push(`dip_too_deep<${maxDrop}%`);
+  if (dipPct > cfg.dipMinDropPct) reasons.push(`dip_not_deep_enough>${cfg.dipMinDropPct}%`);
+  if (dipPct < cfg.dipMaxDropPct) reasons.push(`dip_too_deep<${cfg.dipMaxDropPct}%`);
   const impulsePct = ctx.low_px > 0 ? (ctx.high_px / ctx.low_px - 1) * 100 : null;
-  if ((impulsePct ?? 0) < minImp) reasons.push(`impulse<${minImp}%`);
+  if ((impulsePct ?? 0) < cfg.dipMinImpulsePct) reasons.push(`impulse<${cfg.dipMinImpulsePct}%`);
   return { reasons, dipPct, impulsePct };
 }
 
@@ -126,7 +113,6 @@ export function evaluateDip(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctxByWindow?: DipContextByWindows | null,
-  overrides?: DipEvalOverrides,
 ): DipEvalResult {
   if (!ctxByWindow || ctxByWindow.size === 0) {
     return {
@@ -139,7 +125,7 @@ export function evaluateDip(
   const failHints: string[] = [];
   for (const w of cfg.dipLookbackWindowsMin) {
     const ctx = ctxByWindow.get(w);
-    const part = evaluateDipOneWindow(cfg, row, ctx, overrides);
+    const part = evaluateDipOneWindow(cfg, row, ctx);
     if (part.reasons.length === 0) {
       return {
         reasons: [],
