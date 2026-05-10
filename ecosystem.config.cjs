@@ -574,15 +574,12 @@ module.exports = {
         /** Ликв. строго ниже минимума live-oscar (`140000`). */
         PAPER_POST_MAX_LIQ_USD: '139999',
         PAPER_POST_MIN_VOL_5M_USD: '3000',
-        /** vol5m строго ниже минимума live-oscar (`10000`). */
-        PAPER_POST_MAX_VOL_5M_USD: '9999',
+        /** Верхний порог по vol5m/vol1h не задаём — только min + spike-guard (как у paper-oscar-risky по объёмам). */
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '20000',
-        /** Верхняя граница ниже live-oscar (`36000`): часовой объём строго меньше порога основного Oscar. */
-        PAPER_VOL_1H_MAX_USD: '35999',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '1000',
         /** Holders строго ниже live-oscar (`3000`). */
