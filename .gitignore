@@ -26,6 +26,8 @@ data/**
 !data/live/
 !data/live/live-oscar-mint-whitelist.txt
 !data/live/live-oscar-mint-blacklist.txt
+!data/live/live-oscar-risky-mint-whitelist.txt
+!data/live/live-oscar-risky-mint-blacklist.txt
 !data/live/live-oscar-permanent-denylist.seed.txt
 backups/
 *.sqlite

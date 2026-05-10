@@ -104,6 +104,8 @@ const ConfigSchema = z.object({
   // ---- global gate ----
   globalMinTokenAgeMin: z.coerce.number().nonnegative().default(0),
   globalMinHolderCount: z.coerce.number().int().nonnegative().default(0),
+  /** 0 = no cap. Reject candidates when holder_count **exceeds** this (slice below live Oscar higher tier). */
+  globalMaxHolderCount: z.coerce.number().int().nonnegative().default(0),
 
   // ---- snapshot lanes ----
   laneMigMinLiqUsd: z.coerce.number().nonnegative().default(12_000),
@@ -116,6 +118,8 @@ const ConfigSchema = z.object({
   laneMigMaxLiqUsd: z.coerce.number().nonnegative().default(0),
   lanePostMinLiqUsd: z.coerce.number().nonnegative().default(15_000),
   lanePostMinVol5mUsd: z.coerce.number().nonnegative().default(2_500),
+  /** 0 = no cap. Upper bound on pool `volume_5m` for post lane (strictly below live tier when set). */
+  lanePostMaxVol5mUsd: z.coerce.number().nonnegative().default(0),
   lanePostMinBuys5m: z.coerce.number().int().nonnegative().default(16),
   lanePostMinSells5m: z.coerce.number().int().nonnegative().default(10),
   lanePostMinAgeMin: z.coerce.number().nonnegative().default(25),
@@ -133,6 +137,8 @@ const ConfigSchema = z.object({
    */
   vol5m1hGuardEnabled: z.boolean().default(false),
   vol1hMinUsd: z.coerce.number().nonnegative().default(36_000),
+  /** 0 = no cap. When >0, reject rows whose `volume_1h` **exceeds** this (stay strictly below live tier). */
+  vol1hMaxUsd: z.coerce.number().nonnegative().default(0),
   vol5mSpikeMaxMult: z.coerce.number().min(1.01).max(48).default(7),
 
   // ---- dip detector ----
@@ -511,6 +517,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     bcGraduationSol: process.env.PAPER_BC_GRADUATION_SOL,
     globalMinTokenAgeMin: process.env.PAPER_MIN_TOKEN_AGE_MIN,
     globalMinHolderCount: process.env.PAPER_MIN_HOLDER_COUNT,
+    globalMaxHolderCount: process.env.PAPER_GLOBAL_MAX_HOLDER_COUNT,
     laneMigMinLiqUsd: process.env.PAPER_MIG_MIN_LIQ_USD,
     laneMigMinVol5mUsd: process.env.PAPER_MIG_MIN_VOL_5M_USD,
     laneMigMinBuys5m: process.env.PAPER_MIG_MIN_BUYS_5M,
@@ -520,6 +527,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     laneMigMaxLiqUsd: process.env.PAPER_MIG_MAX_LIQ_USD,
     lanePostMinLiqUsd: process.env.PAPER_POST_MIN_LIQ_USD,
     lanePostMinVol5mUsd: process.env.PAPER_POST_MIN_VOL_5M_USD,
+    lanePostMaxVol5mUsd: process.env.PAPER_POST_MAX_VOL_5M_USD,
     lanePostMinBuys5m: process.env.PAPER_POST_MIN_BUYS_5M,
     lanePostMinSells5m: process.env.PAPER_POST_MIN_SELLS_5M,
     lanePostMinAgeMin: process.env.PAPER_POST_MIN_AGE_MIN,
@@ -530,6 +538,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,
     vol5m1hGuardEnabled: envBool(process.env.PAPER_VOL_5M_1H_GUARD_ENABLED, false),
     vol1hMinUsd: process.env.PAPER_VOL_1H_MIN_USD,
+    vol1hMaxUsd: process.env.PAPER_VOL_1H_MAX_USD,
     vol5mSpikeMaxMult: process.env.PAPER_VOL_5M_SPIKE_MAX_MULT,
     dipLookbackMin: process.env.PAPER_DIP_LOOKBACK_MIN,
     dipLookbackWindowsCsv: process.env.PAPER_DIP_LOOKBACK_WINDOWS_MIN ?? '',

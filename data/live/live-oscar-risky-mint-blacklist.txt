@@ -1,0 +1,1 @@
+# Дополнительный blacklist для Live Oscar Risky (опционально).

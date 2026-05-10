@@ -54,6 +54,9 @@ export function explainPostLaneUniverseMiss(
   if (!(v5 >= lc.MIN_VOL_5M_USD)) {
     reasons.push(`volume_5m_${v5.toFixed(0)}<${lc.MIN_VOL_5M_USD}`);
   }
+  if (lc.MAX_VOL_5M_USD > 0 && v5 > lc.MAX_VOL_5M_USD) {
+    reasons.push(`volume_5m_${v5.toFixed(0)}>${lc.MAX_VOL_5M_USD}`);
+  }
 
   const buys = Number(row.buys_5m ?? 0);
   const sells = Number(row.sells_5m ?? 0);

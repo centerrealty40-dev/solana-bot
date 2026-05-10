@@ -1,0 +1,1 @@
+# Live Oscar Risky — разрешённые mint (один base58 на строку). Скопируйте из live-oscar-mint-whitelist.txt или задайте свой список.

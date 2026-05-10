@@ -38,6 +38,9 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     lanePostMinAgeMin: 2880,
     lanePostMaxAgeMin: 0,
     lanePostMaxLiqUsd: 0,
+    lanePostMaxVol5mUsd: 0,
+    vol1hMaxUsd: 0,
+    globalMaxHolderCount: 0,
     laneMigMinLiqUsd: 12_000,
     laneMigMinVol5mUsd: 1800,
     laneMigMinBuys5m: 18,
@@ -66,6 +69,13 @@ describe('evaluateVol5m1hGuard', () => {
     const r = evaluateVol5m1hGuard(cfg, baseRow({ volume_1h: 35_000, volume_5m: 10_000 }));
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('vol1h<'))).toBe(true);
+  });
+
+  it('rejects hour above ceiling when vol1hMaxUsd set', () => {
+    const cfg = baseCfg({ vol1hMaxUsd: 35_999 });
+    const r = evaluateVol5m1hGuard(cfg, baseRow({ volume_1h: 40_000, volume_5m: 8_000 }));
+    expect(r.pass).toBe(false);
+    expect(r.reasons.some((x) => x.startsWith('vol1h>'))).toBe(true);
   });
 
   it('rejects suspicious 5m spike vs hour average', () => {
@@ -99,5 +109,13 @@ describe('evaluateSnapshot integrates guard', () => {
     const v = evaluateSnapshot(cfg, row, 'post_migration');
     expect(v.pass).toBe(false);
     expect(v.reasons.some((x) => x.includes('vol5m_spike'))).toBe(true);
+  });
+
+  it('rejects volume_5m above post lane max when set', () => {
+    const cfg = baseCfg({ lanePostMaxVol5mUsd: 9_999 });
+    const row = baseRow({ volume_5m: 12_000, volume_1h: 120_000, liquidity_usd: 50_000 });
+    const v = evaluateSnapshot(cfg, row, 'post_migration');
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((x) => x.startsWith('vol5m>'))).toBe(true);
   });
 });

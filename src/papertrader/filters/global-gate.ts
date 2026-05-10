@@ -19,5 +19,9 @@ export function globalGate(
   if (!opts.skipHolderCheck && cfg.globalMinHolderCount > 0 && holders < cfg.globalMinHolderCount) {
     reasons.push(`holders<${cfg.globalMinHolderCount}`);
   }
+  const maxH = cfg.globalMaxHolderCount ?? 0;
+  if (!opts.skipHolderCheck && maxH > 0 && holders > maxH) {
+    reasons.push(`holders>${maxH}`);
+  }
   return reasons;
 }

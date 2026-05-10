@@ -3,7 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadPaper2File, finalizeTimelineForApi, type TimelineEvent } from '../scripts-tmp/dashboard-server.js';
+import {
+  loadPaper2File,
+  finalizeTimelineForApi,
+  type TimelineEvent,
+} from '../scripts-tmp/dashboard-server.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +48,70 @@ function assertTimelinesSane(
     }
   }
 }
+
+function timelineEv(
+  partial: Partial<TimelineEvent> & Pick<TimelineEvent, 'ts' | 'kind' | 'label'>,
+): TimelineEvent {
+  return {
+    mcUsd: null,
+    spotPxUsd: null,
+    sizePct: null,
+    pnlPct: null,
+    pnlUsd: null,
+    reason: null,
+    remainingFraction: null,
+    amountUsd: null,
+    ...partial,
+  };
+}
+
+describe('finalizeTimelineForApi — Oscar tiles deferred A/B labels (dashboard only)', () => {
+  it('open/scale-in have no режим until first partial_sell; first TP line gets A', () => {
+    const tl = [
+      timelineEv({
+        ts: 100,
+        kind: 'open',
+        label: 'Open · режим A',
+        contextNote: 'Режим A (IDEALIZED §9.2): плановый.',
+      }),
+      timelineEv({ ts: 200, kind: 'scale_in_add', label: 'Докупка второй ноги входа' }),
+      timelineEv({
+        ts: 300,
+        kind: 'partial_sell',
+        label: 'Лестница TP · шаг 1/2: 15% остатка',
+        reason: 'TP_LADDER',
+      }),
+    ];
+    const out = finalizeTimelineForApi(tl, 'live-oscar');
+    expect(out[0]!.label).toBe('Open');
+    expect(out[0]!.contextNote).toBeUndefined();
+    expect(out[1]!.label).toBe('Докупка второй ноги входа');
+    expect(out[2]!.label.endsWith(' · режим A')).toBe(true);
+  });
+
+  it('after first DCA, partial_sell uses режим B', () => {
+    const tl = [
+      timelineEv({ ts: 1, kind: 'open', label: 'Open · режим A' }),
+      timelineEv({
+        ts: 2,
+        kind: 'dca_add',
+        label: 'DCA · шаг 1/1 · уровень −7% (от первой ноги)',
+        reason: 'dca',
+      }),
+      timelineEv({ ts: 3, kind: 'partial_sell', label: 'Лестница TP · x', reason: 'TP_LADDER' }),
+    ];
+    const out = finalizeTimelineForApi(tl, 'paper-oscar-v21');
+    expect(out[0]!.label).toBe('Open');
+    expect(out[1]!.label.endsWith(' · режим B')).toBe(true);
+    expect(out[2]!.label.endsWith(' · режим B')).toBe(true);
+  });
+
+  it('leaves labels unchanged when strategyId is not an Oscar dashboard tile', () => {
+    const tl = [timelineEv({ ts: 1, kind: 'open', label: 'Open · режим A' })];
+    const out = finalizeTimelineForApi(tl, 'pt1-oscar');
+    expect(out[0]!.label).toBe('Open · режим A');
+  });
+});
 
 describe('loadPaper2File — journals & timelines (TP ladder + DCA)', () => {
   it('returns empty when file is missing', () => {

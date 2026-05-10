@@ -5,6 +5,7 @@ interface LaneCfg {
   MIN_LIQ_USD: number;
   MAX_LIQ_USD: number;
   MIN_VOL_5M_USD: number;
+  MAX_VOL_5M_USD: number;
   MIN_BUYS_5M: number;
   MIN_SELLS_5M: number;
   MIN_AGE_MIN: number;
@@ -18,6 +19,7 @@ export function smartLotteryLaneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg
       MIN_LIQ_USD: cfg.smlotMigMinLiqUsd,
       MAX_LIQ_USD: cfg.smlotMigMaxLiqUsd,
       MIN_VOL_5M_USD: cfg.smlotMigMinVol5mUsd,
+      MAX_VOL_5M_USD: 0,
       MIN_BUYS_5M: cfg.smlotMigMinBuys5m,
       MIN_SELLS_5M: cfg.smlotMigMinSells5m,
       MIN_AGE_MIN: cfg.smlotMigMinAgeMin,
@@ -28,6 +30,7 @@ export function smartLotteryLaneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg
     MIN_LIQ_USD: cfg.smlotPostMinLiqUsd,
     MAX_LIQ_USD: cfg.smlotPostMaxLiqUsd,
     MIN_VOL_5M_USD: cfg.smlotPostMinVol5mUsd,
+    MAX_VOL_5M_USD: 0,
     MIN_BUYS_5M: cfg.smlotPostMinBuys5m,
     MIN_SELLS_5M: cfg.smlotPostMinSells5m,
     MIN_AGE_MIN: cfg.smlotPostMinAgeMin,
@@ -41,6 +44,7 @@ export function laneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg {
       MIN_LIQ_USD: cfg.laneMigMinLiqUsd,
       MAX_LIQ_USD: cfg.laneMigMaxLiqUsd,
       MIN_VOL_5M_USD: cfg.laneMigMinVol5mUsd,
+      MAX_VOL_5M_USD: 0,
       MIN_BUYS_5M: cfg.laneMigMinBuys5m,
       MIN_SELLS_5M: cfg.laneMigMinSells5m,
       MIN_AGE_MIN: cfg.laneMigMinAgeMin,
@@ -51,6 +55,7 @@ export function laneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg {
     MIN_LIQ_USD: cfg.lanePostMinLiqUsd,
     MAX_LIQ_USD: cfg.lanePostMaxLiqUsd,
     MIN_VOL_5M_USD: cfg.lanePostMinVol5mUsd,
+    MAX_VOL_5M_USD: cfg.lanePostMaxVol5mUsd,
     MIN_BUYS_5M: cfg.lanePostMinBuys5m,
     MIN_SELLS_5M: cfg.lanePostMinSells5m,
     MIN_AGE_MIN: cfg.lanePostMinAgeMin,
@@ -75,6 +80,10 @@ export function evaluateVol5m1hGuard(
   }
   if (vol1h < cfg.vol1hMinUsd) {
     return { pass: false, reasons: [`vol1h<${cfg.vol1hMinUsd}`] };
+  }
+  const vol1hMax = cfg.vol1hMaxUsd ?? 0;
+  if (vol1hMax > 0 && vol1h > vol1hMax) {
+    return { pass: false, reasons: [`vol1h>${vol1hMax}`] };
   }
   const baseline5m = vol1h / 12;
   if (!(baseline5m > 0)) {
@@ -102,6 +111,9 @@ export function evaluateSnapshot(
     reasons.push(`liq>${lc.MAX_LIQ_USD}`);
   }
   if (row.volume_5m < lc.MIN_VOL_5M_USD) reasons.push(`vol5m<${lc.MIN_VOL_5M_USD}`);
+  if (lc.MAX_VOL_5M_USD > 0 && row.volume_5m > lc.MAX_VOL_5M_USD) {
+    reasons.push(`vol5m>${lc.MAX_VOL_5M_USD}`);
+  }
   if (row.buys_5m < lc.MIN_BUYS_5M) reasons.push(`buys5m<${lc.MIN_BUYS_5M}`);
   if (row.sells_5m < lc.MIN_SELLS_5M) reasons.push(`sells5m<${lc.MIN_SELLS_5M}`);
   const bs = row.sells_5m > 0 ? row.buys_5m / row.sells_5m : row.buys_5m;
@@ -124,6 +136,9 @@ export function evaluateSnapshotSmartLottery(
     reasons.push(`liq>${lc.MAX_LIQ_USD}`);
   }
   if (row.volume_5m < lc.MIN_VOL_5M_USD) reasons.push(`vol5m<${lc.MIN_VOL_5M_USD}`);
+  if (lc.MAX_VOL_5M_USD > 0 && row.volume_5m > lc.MAX_VOL_5M_USD) {
+    reasons.push(`vol5m>${lc.MAX_VOL_5M_USD}`);
+  }
   if (row.buys_5m < lc.MIN_BUYS_5M) reasons.push(`buys5m<${lc.MIN_BUYS_5M}`);
   if (row.sells_5m < lc.MIN_SELLS_5M) reasons.push(`sells5m<${lc.MIN_SELLS_5M}`);
   const bs = row.sells_5m > 0 ? row.buys_5m / row.sells_5m : row.buys_5m;
