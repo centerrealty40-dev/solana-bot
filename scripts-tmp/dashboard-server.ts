@@ -2856,7 +2856,7 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   };
 }
 
-/** Фиксированный порядок трёх колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
+/** Фиксированный порядок пяти колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
 export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[]): DashboardPaper2StrategyRow[] {
   const byId = new Map(rows.map((r) => [r.strategyId, r]));
   return DASHBOARD_PANEL_ORDER.map((id) => byId.get(id) ?? makeEmptyDashboardStrategyRow(id, '—'));
@@ -2961,12 +2961,36 @@ function pctChangeVsPast(current: number | null, past: number | null): number | 
 
 let cryptoTickerCache: { at: number; payload: CryptoTickerApiPayload } | null = null;
 
-async function fetchWalletSolTickerRow(signal: AbortSignal): Promise<CryptoTickerAssetRow> {
-  const pk = (process.env.LIVE_WALLET_PUBKEY || process.env.HOURLY_WALLET_PUBKEY || '').trim();
+/** Second header wallet (Live Oscar Risky) — same RPC/shape as main `Wallet` tile. */
+const DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY = (
+  process.env.DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY || ''
+).trim();
+
+function emptyWalletRow(id: string, symbol: string): CryptoTickerAssetRow {
+  return {
+    id,
+    symbol,
+    rowKind: 'wallet_sol',
+    priceUsd: null,
+    balanceSol: null,
+    walletPubkeyShort: null,
+    chg30mPct: null,
+    chg1hPct: null,
+    chg4hPct: null,
+    chg12hPct: null,
+  };
+}
+
+async function fetchWalletSolTickerRowForPk(
+  signal: AbortSignal,
+  pubkey: string,
+  label: { id: string; symbol: string },
+): Promise<CryptoTickerAssetRow> {
+  const pk = pubkey.trim();
   const rpc = (process.env.HOURLY_RPC_URL || process.env.SA_RPC_HTTP_URL || process.env.SA_RPC_URL || '').trim();
   const base: CryptoTickerAssetRow = {
-    id: 'wallet_sol',
-    symbol: 'Wallet',
+    id: label.id,
+    symbol: label.symbol,
     rowKind: 'wallet_sol',
     priceUsd: null,
     balanceSol: null,
@@ -3000,6 +3024,22 @@ async function fetchWalletSolTickerRow(signal: AbortSignal): Promise<CryptoTicke
   }
 }
 
+/** Main Live Oscar wallet + optional Live Oscar Risky wallet (papertrader2 header). */
+async function fetchWalletSolTickerRows(signal: AbortSignal): Promise<CryptoTickerAssetRow[]> {
+  const mainPk = (process.env.LIVE_WALLET_PUBKEY || process.env.HOURLY_WALLET_PUBKEY || '').trim();
+  const riskyPk = DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY;
+  const main = await fetchWalletSolTickerRowForPk(signal, mainPk, {
+    id: 'wallet_sol_main',
+    symbol: 'Wallet',
+  });
+  if (!riskyPk) return [main];
+  const risky = await fetchWalletSolTickerRowForPk(signal, riskyPk, {
+    id: 'wallet_sol_risky',
+    symbol: 'Wallet Risky',
+  });
+  return [main, risky];
+}
+
 async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
   const now = Date.now();
   const cached = cryptoTickerCache;
@@ -3022,18 +3062,18 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
     }));
 
   try {
-    const walletRowPromise = fetchWalletSolTickerRow(signal);
+    const walletRowsPromise = fetchWalletSolTickerRows(signal);
 
     const simpleUrl = `${base}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
     const simpleRes = await fetch(simpleUrl, { headers, signal });
     if (!simpleRes.ok) {
       const spot = emptySpotRows();
-      const walletRow = await walletRowPromise;
+      const walletRows = await walletRowsPromise;
       const errPayload: CryptoTickerApiPayload = {
         ok: false,
         updatedAt: now,
         source: 'coingecko',
-        assets: [spot[0]!, walletRow, spot[1]!],
+        assets: [spot[0]!, ...walletRows, spot[1]!],
         error: `simple/price HTTP ${simpleRes.status}`,
       };
       cryptoTickerCache = { at: now, payload: errPayload };
@@ -3053,7 +3093,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
       }
     });
 
-    const [charts, walletRow] = await Promise.all([Promise.all(chartPromises), walletRowPromise]);
+    const [charts, walletRows] = await Promise.all([Promise.all(chartPromises), walletRowsPromise]);
     const chartById = new Map(charts.map((c) => [c.id, c.prices]));
 
     const t30 = now - 30 * 60 * 1000;
@@ -3089,7 +3129,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
       };
     });
 
-    const assets: CryptoTickerAssetRow[] = [spotAssets[0]!, walletRow, spotAssets[1]!];
+    const assets: CryptoTickerAssetRow[] = [spotAssets[0]!, ...walletRows, spotAssets[1]!];
 
     const anyPrice = spotAssets.some((a) => a.priceUsd != null);
     const payload: CryptoTickerApiPayload = {
@@ -3104,28 +3144,17 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const spot = emptySpotRows();
-    let walletRow: CryptoTickerAssetRow;
+    let walletRows: CryptoTickerAssetRow[];
     try {
-      walletRow = await fetchWalletSolTickerRow(signal);
+      walletRows = await fetchWalletSolTickerRows(signal);
     } catch {
-      walletRow = {
-        id: 'wallet_sol',
-        symbol: 'Wallet',
-        rowKind: 'wallet_sol',
-        priceUsd: null,
-        balanceSol: null,
-        walletPubkeyShort: null,
-        chg30mPct: null,
-        chg1hPct: null,
-        chg4hPct: null,
-        chg12hPct: null,
-      };
+      walletRows = [emptyWalletRow('wallet_sol_main', 'Wallet')];
     }
     const errPayload: CryptoTickerApiPayload = {
       ok: false,
       updatedAt: now,
       source: 'coingecko',
-      assets: [spot[0]!, walletRow, spot[1]!],
+      assets: [spot[0]!, ...walletRows, spot[1]!],
       error: msg,
     };
     cryptoTickerCache = { at: now, payload: errPayload };

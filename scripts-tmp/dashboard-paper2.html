@@ -29,6 +29,7 @@
     .pill-ok { background: rgba(16,185,129,.12); color:#34d399; }
     .pill-bad { background: rgba(244,63,94,.12); color:#fb7185; }
     .pill-info { background: rgba(99,102,241,.15); color:#c7d2fe; }
+    .pill-warn { background: rgba(245,158,11,.14); color:#fbbf24; }
     /* Header spot tickers — compact strip */
     .ticker-strip .ticker-card {
       background: rgba(255,255,255,.04);
@@ -42,7 +43,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 4 колонки (Live + Paper Risky + Paper V2.1 + V2.2).
+      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live Oscar + Live Oscar Risky + Paper Risky + V2.1 + V2.2).
     */
     .dash-desktop-summary-cols {
       display: grid;
@@ -343,7 +344,7 @@
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
                     После mcap — сумма ноги (вход/DCA), выручка по лестнице (≈) или объём закрытого куска (−). У ладдера в подписи — шаг K/N из журнала и доля текущего остатка позиции при пороге PnL к средней (после предыдущих частичных продаж остаток меньше); PnL по шагу отдельно не показываем.
-                    У четырёх плиток Oscar (live, Risky, V2.1, V2.2) в подписи события: до первого take profit — только Open (и т.п.), без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA. Докуп второй ноги (scale-in) режим не меняет. При включённом TP-regime под строкой — класс пути до входа; пояснения A/B в блоке под таймлайном показываются с той же логикой.
+                    У пяти плиток Oscar (live, live risky, paper risky, V2.1, V2.2) в подписи события: до первого take profit — только Open (и т.п.), без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA. Докуп второй ноги (scale-in) режим не меняет. При включённом TP-regime под строкой — класс пути до входа; пояснения A/B в блоке под таймлайном показываются с той же логикой.
                   </div>
                   <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
@@ -480,12 +481,12 @@
           '**Плитка 1** на `/papertrader2`. SSOT env: PM2 **`live-oscar`** в `ecosystem.config.cjs` + при необходимости общий `.env` на хосте.\n\n**Актуализация — глубина дипа (только Live Oscar)**\n• **`PAPER_DIP_MIN_DROP_PCT`: −30** (в коде/env отрицательное число = процент просадки **от high** выбранного окна). Раньше на live-oscar было **−15**; бумажные Oscar (**paper-oscar-***) в ecosystem по-прежнему **−15**, если не переопределено на хосте.\n• Окна OR: **`PAPER_DIP_LOOKBACK_WINDOWS_MIN` = 120,360,720** мин; первое подходящее окно по порядку.\n\n**Время жизни монеты на входе (POST-снимок)**\n• Минимальный возраст пула в снимке: **36 ч** (**2160** мин) — `PAPER_POST_MIN_AGE_MIN`.\n• Верхняя граница возраста не задана (`PAPER_POST_MAX_AGE_MIN=0`).\n\n**Журнал и лимиты**\n• Торговый журнал: `data/live/pt1-oscar-live.jsonl` (`LIVE_TRADES_PATH`).\n• **`PAPER_POSITION_USD=600`**, **`LIVE_MAX_POSITION_USD=600`**, **`PAPER_ENTRY_FIRST_LEG_FRACTION=0.75`** (первая нога **$450**, вторая **$150** — scale-in по **`LIVE_ENTRY_SCALE_IN_*`**).\n\n**Вход (POST lane, снимок пула)**\n• Лейны: только POST; ликвидность, объёмы, холдеры, BS, spike — как в блоке **live-oscar** в ecosystem.\n• Recovery veto, киты, impulse, price-verify, sim-audit, liq-watch — те же `PAPER_*`, что в ecosystem для **live-oscar**.\n\n**Ограничение по mint (live)**\n• При **`LIVE_MINT_WHITELIST_ENABLED=1`** покупка только из `LIVE_MINT_WHITELIST_PATH`.\n\n**Выходы**\n• `PAPER_TP_REGIME_ENABLED=0`.\n• **Режим A** (без изменений): `PAPER_TP_GRID_*` — шаг **+5%**, **15%** остатка за ступень; `PAPER_DCA_KILLSTOP` **−8%** к avg; trail **10% / ×1.10**, таймаут **8 ч** (`PAPER_TRAIL_*`, `PAPER_TIMEOUT_HOURS`).\n• **Режим B** (после усреднения по `PAPER_DCA_LEVELS` **−4%** или после второй ноги при `PAPER_LIVE_EXIT_MODE_AB`): kill **−8%** (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`); лестница **`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`** — шаг **+7%**, **20%** остатка за ступень; на live-oscar в B **нет потолка** числа ступеней (`tpGridEffective`); trail/timeout ветки B — env **`PAPER_LIVE_EXIT_MODE_B_*`**; трейл **`ladder_retrace`** — откат к порогу **предыдущей** ступени.',
       },
       'live-oscar-risky': {
-        label: 'Живой Оскар Риск',
+        label: 'Live Oscar Risky',
         tag: 'live',
         oneLiner:
-          'Тот же рантайм, что **Live Oscar**, но **полоса ниже порога основного**: max liq **<$140k**, max vol5m **<$10k**, max vol1h **<$36k**, holders **≤2999** (в дополнение к мягким минимумам). Нотионал **$100**: первая нога **$75**, вторая **$25**; DCA **−4%** по `PAPER_POSITION_USD` → докуп **$25**.',
+          'Реальные сделки (**тот же рантайм**, что **Live Oscar**: Jupiter + отдельный кошелёк). Бумажный слой гейтов: POST **≥6 ч**, ликв. **≥$100k** и **строго <$140k**, vol5m **≥$3k** и **<$10k**, vol1h guard **≥$20k** и **<$36k**, холдеры **≥1000** и **≤2999**; дип от high окна **2h / 6h / 12h** — минимум **−30%**; нотионал **$100** (первая нога **$75**, вторая **$25**, 75%/25%), scale-in и коридор как у основного Oscar (**5 с**, **+1% / −2%** в env risky). Режимы **A/B** по `PAPER_LIVE_EXIT_MODE_AB`. **Mint whitelist** отдельный файл для risky.',
         details:
-          '**Плитка 2** на `/papertrader2`. SSOT: PM2 **`live-oscar-risky`** в `ecosystem.config.cjs`, `npm run live-oscar-risky` → `src/scripts/live-oscar.ts`.\n\n**Журнал:** `data/live/pt1-oscar-live-risky.jsonl`.\n\n**До торговли:** `LIVE_STRATEGY_ENABLED=0`, keypair в `data/live/live-oscar-risky.keypair.json`, **`LIVE_WALLET_PUBKEY`**, whitelist.\n\n**Разделение с live-oscar:** верхние кэпы в env (`PAPER_POST_MAX_LIQ_USD`, `PAPER_POST_MAX_VOL_5M_USD`, `PAPER_VOL_1H_MAX_USD`, `PAPER_GLOBAL_MAX_HOLDER_COUNT`) — не пересекают минимальные пороги основного Oscar.',
+          '**Плитка 2** на `/papertrader2` — оформление и разметка те же, что у **Live Oscar** (один шаблон карточки).\n\nSSOT: PM2 **`live-oscar-risky`** в `ecosystem.config.cjs`, entry `npm run live-oscar-risky` → `src/scripts/live-oscar.ts`.\n\n**Журнал:** `data/live/pt1-oscar-live-risky.jsonl` (`LIVE_TRADES_PATH`).\n\n**Кошелёк:** `data/live/live-oscar-risky.keypair.json`, **`LIVE_WALLET_PUBKEY`** в блоке процесса.\n\n**Разделение с основным Live Oscar:** верхние кэпы (`PAPER_POST_MAX_LIQ_USD`, `PAPER_POST_MAX_VOL_5M_USD`, `PAPER_VOL_1H_MAX_USD`, `PAPER_GLOBAL_MAX_HOLDER_COUNT`) держат risky **ниже** порогов основного Oscar (POST min liq **$140k**, vol5m **$10k**, vol1h **$36k**, holders **3000**).\n\n**Выходы:** как у Live Oscar — `PAPER_TP_REGIME_ENABLED=0`; режим **A/B**, kill, лестница, trail, timeout — см. блок **`live-oscar-risky`** в ecosystem.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

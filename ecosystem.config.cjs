@@ -23,6 +23,8 @@ module.exports = {
         PAPER2_DIR: path.join(root, 'data/paper2'),
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         DASHBOARD_LIVE_OSCAR_RISKY_JSONL: path.join(root, 'data/live/pt1-oscar-live-risky.jsonl'),
+        /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс risky-кошелька (RPC как у основного Wallet). */
+        DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
@@ -524,7 +526,7 @@ module.exports = {
     },
     /**
      * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы + **верхние** пороги строго ниже live (прослойка); нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
-     * Блок **live-oscar** выше не трогать. До кошелька: `LIVE_STRATEGY_ENABLED=0`; файл ключа `data/live/live-oscar-risky.keypair.json` (gitignore); затем `LIVE_WALLET_PUBKEY` и включить стратегию.
+     * Блок **live-oscar** выше не трогать. Ключ: `data/live/live-oscar-risky.keypair.json` (gitignore); **`LIVE_WALLET_PUBKEY`** в env процесса.
      */
     {
       name: 'live-oscar-risky',
@@ -683,7 +685,8 @@ module.exports = {
         PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
-        LIVE_STRATEGY_ENABLED: '0',
+        /** Живая торговля risky Oscar (`0` — только наблюдение / replay-off). */
+        LIVE_STRATEGY_ENABLED: '1',
         LIVE_EXECUTION_MODE: 'live',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar-risky',
@@ -741,7 +744,6 @@ module.exports = {
         LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
         LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
         LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
-        /** Пока стратегия выключена — без второго pulse в TG от этого процесса. */
         LIVE_TELEGRAM_HEARTBEAT: '0',
       },
     },
