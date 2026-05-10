@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { main } from '../live/main.js';
 
-const LAST_FATAL_PATH = path.join(process.cwd(), 'data/live/last-fatal.json');
+const sid = process.env.LIVE_STRATEGY_ID?.trim() || 'live-oscar';
+const LAST_FATAL_PATH = path.join(process.cwd(), 'data/live', `last-fatal-${sid}.json`);
 
 function writeLiveOscarFatal(source: string, err: unknown): void {
   try {
@@ -15,7 +16,7 @@ function writeLiveOscarFatal(source: string, err: unknown): void {
     };
     fs.writeFileSync(LAST_FATAL_PATH, `${JSON.stringify(payload)}\n`, 'utf8');
   } catch (werr) {
-    console.error('live-oscar: failed to write data/live/last-fatal.json', werr);
+    console.error(`live-oscar: failed to write ${LAST_FATAL_PATH}`, werr);
   }
 }
 

@@ -236,19 +236,23 @@ module.exports = {
     {
       name: 'live-oscar',
       cwd: root,
-      script: 'npm',
-      args: 'run --silent live-oscar',
-      interpreter: 'none',
+      /** Прямой `tsx` — один node-процесс под PM2 (как `live-oscar-dashboard`), без гонок `npm run` при reload. */
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/live-oscar.ts',
+      interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,
+      kill_timeout: 15000,
       max_memory_restart: '200M',
       merge_logs: true,
       time: true,
       env: {
         NODE_ENV: 'production',
+        /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
+        LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
          * Paper-слой = паритет с `pt1-oscar` (W7.2 / holders / W7.6 / W7.4).
          * W7.3 priority fee, W7.5 liq-watch, W7.8 sim-audit — **только** этот процесс (на pt1-* выкл.).
@@ -538,19 +542,22 @@ module.exports = {
     {
       name: 'live-oscar-risky',
       cwd: root,
-      script: 'npm',
-      args: 'run --silent live-oscar-risky',
-      interpreter: 'none',
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/live-oscar.ts',
+      interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,
+      kill_timeout: 15000,
       max_memory_restart: '200M',
       merge_logs: true,
       time: true,
       env: {
         NODE_ENV: 'production',
+        /** Отдельно от основного live-oscar — иначе оба процесса перезаписывают один JSON. */
+        LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health-live-oscar-risky.json'),
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar-risky',
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_risky_unused_journal.jsonl'),
