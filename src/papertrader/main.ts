@@ -27,6 +27,8 @@ import {
   recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
 } from './discovery/dip-clones.js';
+import { isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
+import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
 import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
@@ -313,6 +315,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
+      if (cfg.strategyId === 'live-oscar') {
+        const near = res.decisions.filter((d) => !d.pass && isAwaitingDipQualityHold(d.reasons));
+        updateNearReadyDipWatchlist(near.map((d) => ({ mint: d.mint, symbol: d.symbol ?? '?' })));
+      }
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
       for (const d of res.decisions) {

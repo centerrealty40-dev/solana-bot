@@ -58,6 +58,22 @@ export type DiscoveryHealthSummary = {
   discoveryTicks: number;
 };
 
+/** Последний снимок «ждём дип» только для live-oscar (обновляется из `papertrader/main`). */
+export type NearReadyDipItem = { mint: string; symbol: string };
+
+let lastNearReadyDipWatchlist: NearReadyDipItem[] = [];
+
+export function updateNearReadyDipWatchlist(items: NearReadyDipItem[]): void {
+  lastNearReadyDipWatchlist = items.map((x) => ({
+    mint: String(x.mint ?? '').trim(),
+    symbol: String(x.symbol ?? '?').trim() || '?',
+  }));
+}
+
+export function getNearReadyDipWatchlist(): NearReadyDipItem[] {
+  return lastNearReadyDipWatchlist;
+}
+
 export function discoveryHealthSummaryRolling(): DiscoveryHealthSummary {
   const now = Date.now();
   prune(now);

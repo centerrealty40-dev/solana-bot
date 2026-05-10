@@ -51,6 +51,10 @@ export const HeartbeatEventSchema = z.object({
   reconcileBlocksNewExposure: z.boolean().optional(),
   /** Seconds since exposure block was first armed (same stint); omitted when not blocked. */
   reconcileBlockAgeSec: z.number().finite().nonnegative().optional(),
+  /** Сколько mint прошли базовые гейты, но ещё не в подходящем дипе (см. `near-ready-dip-watch.ts`). */
+  nearReadyDipWaitCount: z.number().int().nonnegative().optional(),
+  /** Новые такие mint с прошлого HEALTH-pulse (Telegram). */
+  nearReadyDipNewSinceLastHb: z.number().int().nonnegative().optional(),
 });
 
 /** Ops / diagnostics row (non-fatal); used for orphan verify deferral, reconcile TTL clear, etc. */

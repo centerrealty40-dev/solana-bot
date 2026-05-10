@@ -38,12 +38,30 @@ import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import type { OpenTrade } from '../papertrader/types.js';
-import { discoveryHealthSummaryRolling } from '../papertrader/discovery-health-window.js';
+import {
+  discoveryHealthSummaryRolling,
+  getNearReadyDipWatchlist,
+} from '../papertrader/discovery-health-window.js';
+import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.js';
 import { sendTagged } from '../core/telegram/sender.js';
 
 const log = pino({ name: 'live-oscar' });
 
-async function writeDiscoveryHealthSnapshotFile(): Promise<void> {
+/** Минты из прошлого HEALTH-сообщения (не считаем всё множество «новым» при первом pulse). */
+let prevHbNearReadyMintSet: Set<string> | null = null;
+
+function escapeHtmlPlain(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function writeDiscoveryHealthSnapshotFile(extras?: {
+  nearReadyDipWaitCount?: number;
+  nearReadyDipNewSinceLastHb?: number;
+}): Promise<void> {
   const h = discoveryHealthSummaryRolling();
   const file =
     process.env.LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH?.trim() ||
@@ -60,6 +78,12 @@ async function writeDiscoveryHealthSnapshotFile(): Promise<void> {
       gateFail: h.gateFail,
       opened: h.opened,
       discoveryTicks: h.discoveryTicks,
+      ...(extras?.nearReadyDipWaitCount != null
+        ? { nearReadyDipWaitCount: extras.nearReadyDipWaitCount }
+        : {}),
+      ...(extras?.nearReadyDipNewSinceLastHb != null
+        ? { nearReadyDipNewSinceLastHb: extras.nearReadyDipNewSinceLastHb }
+        : {}),
     }),
     'utf8',
   );
@@ -434,6 +458,35 @@ export async function main(): Promise<void> {
       const blockAgeSec = liveReconcileBlockAgeSec();
       const dh = discoveryHealthSummaryRolling();
       const dhMin = Math.max(1, Math.round(dh.windowMs / 60_000));
+      const legacyDisc =
+        process.env.LIVE_HEARTBEAT_LEGACY_DISC_JSONL?.trim() === '1' ||
+        process.env.LIVE_HEARTBEAT_LEGACY_DISC_TELEGRAM?.trim() === '1';
+
+      const nearListRaw = getNearReadyDipWatchlist();
+      const nearDedup = new Map<string, { mint: string; symbol: string }>();
+      for (const x of nearListRaw) {
+        const m = x.mint.trim();
+        if (!m) continue;
+        if (!nearDedup.has(m)) nearDedup.set(m, { mint: m, symbol: x.symbol || '?' });
+      }
+      const nearList = [...nearDedup.values()];
+      const nearCount = nearList.length;
+      const currNearSet = new Set(nearList.map((x) => x.mint));
+      let newSinceLastHb = 0;
+      let newcomersFull: typeof nearList = [];
+      if (prevHbNearReadyMintSet === null) {
+        prevHbNearReadyMintSet = new Set(currNearSet);
+      } else {
+        newcomersFull = nearList.filter((x) => !prevHbNearReadyMintSet!.has(x.mint));
+        newSinceLastHb = newcomersFull.length;
+        prevHbNearReadyMintSet = new Set(currNearSet);
+      }
+
+      let note = `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} disc_cycles=${stats.ticks} near_ready_dip_wait=${nearCount} near_ready_new_hb=${newSinceLastHb} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`;
+      if (legacyDisc) {
+        note += ` ${dhMin}m_cand=${dh.discovered} ${dhMin}m_eval=${dh.evaluated} ${dhMin}m_gate_skip=${dh.gateFail} ${dhMin}m_opened=${dh.opened} ${dhMin}m_disc_ticks=${dh.discoveryTicks}`;
+      }
+
       appendLiveJsonlEvent({
         kind: 'heartbeat',
         uptimeSec: Math.floor(process.uptime()),
@@ -441,7 +494,9 @@ export async function main(): Promise<void> {
         closedTotal,
         liveStrategyEnabled: liveCfg.strategyEnabled,
         executionMode: liveCfg.executionMode,
-        note: `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} disc_cycles=${stats.ticks} ${dhMin}m_cand=${dh.discovered} ${dhMin}m_eval=${dh.evaluated} ${dhMin}m_gate_skip=${dh.gateFail} ${dhMin}m_opened=${dh.opened} ${dhMin}m_disc_ticks=${dh.discoveryTicks} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`,
+        note,
+        nearReadyDipWaitCount: nearCount,
+        nearReadyDipNewSinceLastHb: newSinceLastHb,
         ...(liveReconcileBlocksNewExposure()
           ? {
               reconcileBlocksNewExposure: true,
@@ -459,9 +514,10 @@ export async function main(): Promise<void> {
         ...(qm?.length ? { quarantinedMints: qm } : {}),
       });
 
-      void writeDiscoveryHealthSnapshotFile().catch((e) =>
-        log.warn({ err: String(e) }, 'live discovery health snapshot write failed'),
-      );
+      void writeDiscoveryHealthSnapshotFile({
+        nearReadyDipWaitCount: nearCount,
+        nearReadyDipNewSinceLastHb: newSinceLastHb,
+      }).catch((e) => log.warn({ err: String(e) }, 'live discovery health snapshot write failed'));
 
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
       if (!tgHeartbeatOff) {
@@ -470,27 +526,63 @@ export async function main(): Promise<void> {
         const wlTok = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
         const wlChat = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
         const wMin = dhMin;
-        const text = [
+        const legacyTg = process.env.LIVE_HEARTBEAT_LEGACY_DISC_TELEGRAM?.trim() === '1';
+        const baseLines = [
           `uptime=${Math.floor(process.uptime())}s`,
           `open=${openPositions}`,
           `closed=${closedTotal}`,
           `mode=${liveCfg.executionMode}`,
           `strat=${liveCfg.strategyId}`,
-          `${wMin}m cand=${dh.discovered} eval=${dh.evaluated} gate_skip=${dh.gateFail} opened=${dh.opened} disc_ticks=${dh.discoveryTicks}`,
+          `near_ready_dip_wait=${nearCount}`,
+          `near_ready_new_since_last_pulse=${newSinceLastHb}`,
           `disc_cycles_total=${stats.ticks}`,
           `errors=${stats.errors}`,
           `opened_total=${stats.opened}`,
-        ].join(' ');
-        if (tok && chat) {
-          void sendTagged('HEALTH', 'live_oscar_pulse', text, { skipQuietHours: true }).catch((e) =>
-            log.warn({ err: String(e) }, 'live heartbeat telegram failed'),
-          );
-        } else if (wlTok && wlChat) {
-          void sendTagged('HEALTH', 'live_oscar_pulse', `${text} via=wl_bot`, {
+        ];
+        if (legacyTg) {
+          baseLines.splice(5, 0, `${wMin}m cand=${dh.discovered} eval=${dh.evaluated} gate_skip=${dh.gateFail} opened=${dh.opened} disc_ticks=${dh.discoveryTicks}`);
+        }
+
+        const rawMax = process.env.LIVE_HEARTBEAT_NEAR_READY_MAX_LINES?.trim();
+        const parsedMax = rawMax ? Number.parseInt(rawMax, 10) : 15;
+        const maxNew = Number.isFinite(parsedMax) ? Math.max(1, Math.min(25, parsedMax)) : 15;
+        const newcomersTg = newcomersFull.slice(0, maxNew);
+        let pulseBody: string;
+        let parseMode: 'HTML' | undefined;
+        if (newcomersTg.length > 0) {
+          parseMode = 'HTML';
+          const linesEscaped = baseLines.map(escapeHtmlPlain).join('\n');
+          const rows = newcomersTg
+            .map((x) => `<b>${escapeHtmlPlain(x.symbol)}</b> ${gmgnMintHrefHtml(x.mint, x.mint)}`)
+            .join('\n');
+          const more =
+            newcomersFull.length > maxNew
+              ? `\n<i>+${newcomersFull.length - maxNew} more</i>`
+              : '';
+          pulseBody = `${linesEscaped}\n\n<b>new_on_horizon</b>\n${rows}${more}`;
+        } else {
+          pulseBody = baseLines.join('\n');
+        }
+
+        const sendPulse = (token: string | undefined, chatId: string | undefined, viaWl: boolean): void => {
+          if (!token || !chatId) return;
+          const out =
+            viaWl && parseMode === 'HTML'
+              ? `${pulseBody}\n<i>via=wl_bot</i>`
+              : viaWl
+                ? `${pulseBody} via=wl_bot`
+                : pulseBody;
+          void sendTagged('HEALTH', 'live_oscar_pulse', out, {
             skipQuietHours: true,
-            telegramBotToken: wlTok,
-            telegramChatId: wlChat,
-          }).catch((e) => log.warn({ err: String(e) }, 'live heartbeat telegram (whitelist bot) failed'));
+            parseMode,
+            ...(viaWl ? { telegramBotToken: token, telegramChatId: chatId } : {}),
+          }).catch((e) => log.warn({ err: String(e) }, 'live heartbeat telegram failed'));
+        };
+
+        if (tok && chat) {
+          sendPulse(tok, chat, false);
+        } else if (wlTok && wlChat) {
+          sendPulse(wlTok, wlChat, true);
         } else {
           log.warn({}, 'live heartbeat telegram skipped: set TELEGRAM_BOT_TOKEN/CHAT_ID or LIVE_MINT_WHITELIST_TELEGRAM_*');
         }

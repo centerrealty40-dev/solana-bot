@@ -37,6 +37,8 @@ function appendLiveOscarDiscoveryHealthLine(baseMsg: string): string {
       gateFail?: number;
       opened?: number;
       discoveryTicks?: number;
+      nearReadyDipWaitCount?: number;
+      nearReadyDipNewSinceLastHb?: number;
     };
     const ageMs = j.updatedAt ? Date.now() - new Date(j.updatedAt).getTime() : Number.NaN;
     /** Снимок пишется на каждом HEALTH heartbeat live-oscar; долго без обновления → процесс/cwd/путь. */
@@ -49,7 +51,13 @@ function appendLiveOscarDiscoveryHealthLine(baseMsg: string): string {
     const gfs = j.gateFail ?? 0;
     const op = j.opened ?? 0;
     const dtx = j.discoveryTicks ?? 0;
-    return `${baseMsg} ${tag}: cand=${cand} eval=${ev} gate_skip=${gfs} opened=${op} disc_ticks=${dtx}.`;
+    const nr = j.nearReadyDipWaitCount;
+    const nrNew = j.nearReadyDipNewSinceLastHb;
+    const nrPart =
+      nr != null && Number.isFinite(nr)
+        ? ` near_ready_dip=${nr}${nrNew != null && Number.isFinite(nrNew) ? ` new_hb=${nrNew}` : ''}`
+        : '';
+    return `${baseMsg} ${tag}: cand=${cand} eval=${ev} gate_skip=${gfs} opened=${op} disc_ticks=${dtx}${nrPart}.`;
   } catch {
     return `${baseMsg} Oscar health: снимок недоступен (live-oscar не пишет ${path.basename(file)} или другой cwd).`;
   }
