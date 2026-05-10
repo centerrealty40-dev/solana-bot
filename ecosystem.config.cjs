@@ -525,7 +525,7 @@ module.exports = {
       },
     },
     /**
-     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы + **верхние** пороги строго ниже live (прослойка); нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
+     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; верхний кап по холдерам ниже основного live; нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
      * Блок **live-oscar** выше не трогать. Ключ: `data/live/live-oscar-risky.keypair.json` (gitignore); **`LIVE_WALLET_PUBKEY`** в env процесса.
      */
     {
@@ -579,6 +579,9 @@ module.exports = {
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '20000',
+        /** Явный `0`: переопределяет возможный `PAPER_VOL_*_MAX_*` из общего `.env` на хосте (иначе снова появляется vol1h>35999 в журнале). */
+        PAPER_VOL_1H_MAX_USD: '0',
+        PAPER_POST_MAX_VOL_5M_USD: '0',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '1000',
         /** Holders строго ниже live-oscar (`3000`). */
