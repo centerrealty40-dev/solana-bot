@@ -173,6 +173,7 @@ async function warmupSnapshotHolderCounts(
   cfg: PaperTraderConfig,
   snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }>,
 ): Promise<void> {
+  if (!cfg.holdersLiveEnabled) return;
   const max = cfg.holdersSnapshotWarmupMax;
   if (!(max > 0)) return;
 
