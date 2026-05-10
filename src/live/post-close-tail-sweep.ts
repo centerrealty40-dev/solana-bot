@@ -13,6 +13,17 @@ import { appendLiveJsonlEvent } from './store-jsonl.js';
 
 const pendingByMint = new Map<string, ReturnType<typeof setTimeout>>();
 
+/**
+ * Сбрасывает отложенный post-close tail sweep для mint (например, новый вход по тому же mint
+ * до срабатывания таймера — иначе `sell_full` снимет уже новую позицию целиком).
+ */
+export function cancelLivePostCloseTailSweepForMint(mint: string): void {
+  const prev = pendingByMint.get(mint);
+  if (prev === undefined) return;
+  clearTimeout(prev);
+  pendingByMint.delete(mint);
+}
+
 export function scheduleLivePostCloseTailSweep(args: {
   liveCfg: LiveOscarConfig | undefined;
   mint: string;

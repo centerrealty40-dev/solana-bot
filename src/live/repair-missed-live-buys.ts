@@ -11,6 +11,7 @@ import type { DexId, Metrics, OpenTrade, PositionLeg } from '../papertrader/type
 import { serializeOpenTrade } from './strategy-snapshot.js';
 import type { LiveOscarConfig } from './config.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
+import { cancelLivePostCloseTailSweepForMint } from './post-close-tail-sweep.js';
 import { entryLegSignaturesFromOpenTradeJson, readLiveJournalLinesBounded } from './replay-strategy-journal.js';
 
 function envBool(v: unknown, defaultVal: boolean): boolean {
@@ -434,6 +435,9 @@ export async function repairMissedLiveBuysFromJournal(args: {
         const snap = serializeOpenTrade(otNew);
         snap.repairedFromTxSignature = c.signature;
         snap.repairedLegSignatures = [c.signature];
+        if (liveCfg.executionMode === 'live') {
+          cancelLivePostCloseTailSweepForMint(c.mint);
+        }
         appendLiveJsonlEvent({
           kind: 'live_position_open',
           mint: c.mint,

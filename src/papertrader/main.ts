@@ -57,6 +57,7 @@ import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-hea
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
+import { cancelLivePostCloseTailSweepForMint } from '../live/post-close-tail-sweep.js';
 import { evaluateMintSafety } from './safety/index.js';
 import { getHoldersResolveStats } from './holders/holders-resolve.js';
 import {
@@ -728,6 +729,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 },
               }
             : {};
+        if (liveOscarForJournal?.liveCfg.executionMode === 'live') {
+          cancelLivePostCloseTailSweepForMint(ot.mint);
+        }
         opts?.journalLiveStrategy?.({
           kind: 'live_position_open',
           mint: ot.mint,

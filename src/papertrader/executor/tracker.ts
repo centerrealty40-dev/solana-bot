@@ -878,9 +878,8 @@ async function closeOpenTradeReconcileOrphan(args: {
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
   hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
-  const pxOrphan =
-    ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 1e-12;
-  scheduleTailAfterLiveClose(liveOscarCfg, mint, ot.symbol, ot.tokenDecimals ?? 6, pxOrphan, ot.source);
+  /** Не планируем post-close tail sweep: закрытие уже из-за рассинхрона с цепью; через `livePostCloseTailSweepDelayMs`
+   * отложенный `sell_full` может снять **новую** позицию по тому же mint (см. отмену при `live_position_open`). */
   peakStateByMint.delete(mint);
   console.log(`[RECONCILE_ORPHAN] ${mint.slice(0, 8)} $${ot.symbol}`);
 }
