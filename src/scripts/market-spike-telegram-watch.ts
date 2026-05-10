@@ -36,6 +36,11 @@
  * История баров фильтруется по (base_mint, pair_address) из «latest», чтобы не смешивать несколько пулов
  * одного mint в одной минутной метке. SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN — подавление одноминутного
  * выброса, если следующий бар откатывает большую долю движения.
+ *
+ * Перекрёстные проверки снимков: SPIKE_ALERT_LIQ_MCAP_SANITY — при крупной ref mcap/fdv требовать,
+ * чтобы liquidity_usd в последнем снимке не была микроскопической относительно капы (иначе битый ряд PG).
+ * SPIKE_ALERT_MC_PRICE_MAX_DIVERGENCE_PCT — если в обоих барах есть mcap_usd, Δ% по mcap должен быть
+ * близок к Δ% по price_usd.
  */
 import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
@@ -190,6 +195,25 @@ const dexMetaCache = new Map<string, { meta: DexTokenMeta; at: number }>();
 const GLITCH_NEXT_BAR_RETRACE_MIN = Math.max(
   0,
   Math.min(1, envNum('SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN', 0.55)),
+);
+
+/** Несостыковка liq_usd «latest» vs ref market cap/fdv из баров/tokens — типичный ложный пролив. */
+const LIQ_MCAP_SANITY_ENABLED = envBool('SPIKE_ALERT_LIQ_MCAP_SANITY', true);
+/** Ниже этого ref (USD) порог liq/mcap не применяем (тонкий рынок / неполные данные). */
+const LIQ_MCAP_REF_MIN_USD = Math.max(
+  0,
+  envNum('SPIKE_ALERT_LIQ_MCAP_REF_MIN_USD', 2_000_000),
+);
+/** Минимум liq_usd / ref_mcap; например 0.002 = 0.2% от капы (у ~$10M mcap liq должно быть десятки+ k). */
+const MIN_LIQ_TO_REF_MCAP_RATIO = Math.max(
+  0,
+  Math.min(0.5, envNum('SPIKE_ALERT_MIN_LIQ_TO_REF_MCAP_RATIO', 0.002)),
+);
+
+/** Допустимый разрыв между Δ% price_usd и Δ% mcap_usd в паре баров (округление, разные поля). */
+const MC_PRICE_MAX_DIVERGENCE_PCT = Math.max(
+  0,
+  Math.min(100, envNum('SPIKE_ALERT_MC_PRICE_MAX_DIVERGENCE_PCT', 8)),
 );
 
 const DISPLAY_TZ = process.env.SPIKE_ALERT_DISPLAY_TZ?.trim() || 'Europe/Moscow';
@@ -371,6 +395,37 @@ function isPickPlausibleForLiquidity(pick: SpikePick, liqUsd: number | null): bo
   if (LOW_LIQ_GLITCH_THRESHOLD_USD <= 0 || LOW_LIQ_MAX_ABS_PCT >= 500) return true;
   if (liqUsd == null || !(liqUsd > 0) || liqUsd >= LOW_LIQ_GLITCH_THRESHOLD_USD) return true;
   return Math.abs(pick.pct) <= LOW_LIQ_MAX_ABS_PCT;
+}
+
+function referenceMcapUsd(meta: LatestMeta, pick: SpikePick): number {
+  const a = pick.anchorMcapUsd ?? 0;
+  const b = pick.nowMcapUsd ?? 0;
+  const f = meta.token_fdv_usd ?? 0;
+  return Math.max(a, b, f);
+}
+
+/**
+ * Ликвидность из последнего снимка должна быть соразмерна капе: иначе price_usd/mcap_usd в барах
+ * часто из одной записи, а liq_usd — из другой или битый парсинг Meteora и т.п.
+ */
+function isPickPlausibleLiqVsMcap(meta: LatestMeta, pick: SpikePick): boolean {
+  if (!LIQ_MCAP_SANITY_ENABLED || MIN_LIQ_TO_REF_MCAP_RATIO <= 0) return true;
+  const ref = referenceMcapUsd(meta, pick);
+  if (!(ref >= LIQ_MCAP_REF_MIN_USD)) return true;
+  const liq = meta.liq_usd;
+  if (liq == null || !(liq > 0)) return false;
+  return liq >= ref * MIN_LIQ_TO_REF_MCAP_RATIO;
+}
+
+/** Соседние бары: движение цены и mcap из тех же строк должны согласоваться. */
+function isPickPriceMcapConsistent(pick: SpikePick): boolean {
+  if (MC_PRICE_MAX_DIVERGENCE_PCT <= 0) return true;
+  const a = pick.anchorMcapUsd;
+  const b = pick.nowMcapUsd;
+  if (a == null || b == null || !(a > 0) || !(b > 0)) return true;
+  const mcapPct = (b / a - 1) * 100;
+  if (!Number.isFinite(mcapPct)) return true;
+  return Math.abs(mcapPct - pick.pct) <= MC_PRICE_MAX_DIVERGENCE_PCT;
 }
 
 /** Следующий бар частично отменил скачок — типичный артефакт минутного снимка. */
@@ -810,6 +865,8 @@ async function runOnePass(
       if (!pick) continue;
       if (!isPickFreshEnough(pick, nowMs)) continue;
       if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
+      if (!isPickPlausibleLiqVsMcap(meta, pick)) continue;
+      if (!isPickPriceMcapConsistent(pick)) continue;
 
       const row: AlertRow = {
         ...meta,
@@ -888,7 +945,7 @@ async function runOnePass(
     : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN}${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
   );
 }
 
