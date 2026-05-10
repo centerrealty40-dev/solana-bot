@@ -1,6 +1,8 @@
+import path from 'node:path';
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
+import { readRecentSpikeDumpMintsFromQueue } from './telegram-spike-signal-queue.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
 import { evaluateSnapshot } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
@@ -200,7 +202,39 @@ async function warmupSnapshotHolderCounts(
   }
 }
 
+async function mergeTelegramSpikeQueueSnapshots(
+  cfg: PaperTraderConfig,
+  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }>,
+  auditRows: Record<string, unknown>[],
+): Promise<Array<{ row: SnapshotCandidateRow; lane: Lane }>> {
+  if (!cfg.telegramSpikeSignalEnabled) return snapshotTagged;
+  const qp = cfg.telegramSpikeSignalQueuePath?.trim();
+  if (!qp) return snapshotTagged;
+  const abs = path.isAbsolute(qp) ? qp : path.resolve(process.cwd(), qp);
+  const mints = readRecentSpikeDumpMintsFromQueue(abs, cfg.telegramSpikeSignalMaxAgeMs);
+  if (mints.length === 0) return snapshotTagged;
+  const keys = new Set(snapshotTagged.map((x) => x.row.mint));
+  const out = [...snapshotTagged];
+  for (const mint of mints) {
+    if (keys.has(mint)) continue;
+    const row = await fetchLatestCrossVenueSnapshotRowForMint(mint);
+    if (!row) continue;
+    keys.add(mint);
+    out.push({ row, lane: 'post_migration' });
+    auditRows.push({
+      kind: 'live_discovery_telegram_spike_queue_inject',
+      mint,
+      symbol: row.symbol,
+      source: row.source,
+      lane: 'post_migration',
+      queuePath: abs,
+    });
+  }
+  return out;
+}
+
 export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<DiscoveryTickResult> {
+  const auditRows: Record<string, unknown>[] = [];
   const [migRows, postRows] = await Promise.all([
     cfg.enableMigrationLane ? fetchSnapshotLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
     cfg.enablePostLane ? fetchSnapshotLaneCandidates(cfg, 'post_migration') : Promise.resolve([]),
@@ -210,8 +244,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
   snapshotTagged = filterSnapshotTaggedByMintBlacklist(cfg, snapshotTagged);
+  snapshotTagged = await mergeTelegramSpikeQueueSnapshots(cfg, snapshotTagged, auditRows);
   if (snapshotTagged.length === 0) {
-    return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
+    return { discovered: 0, evaluated: 0, passed: 0, decisions: [], auditRows };
   }
   const dipMap = await fetchDipContextMap(
     cfg,
@@ -221,7 +256,6 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const reevalAfterSec = cfg.discoveryReevalSec;
 
   const decisions: EvalDecision[] = [];
-  const auditRows: Record<string, unknown>[] = [];
   const candidateMintKeys = new Set(snapshotTagged.map((x) => x.row.mint));
   let evaluated = 0;
   let passed = 0;

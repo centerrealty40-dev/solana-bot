@@ -182,6 +182,14 @@ const ConfigSchema = z.object({
   mintBlacklistEnabled: z.boolean().default(false),
   mintBlacklistPath: z.string().min(1).default('data/live/live-oscar-mint-blacklist.txt'),
 
+  /**
+   * Подмешивать mint из JSONL-очереди (проливы из `market-spike-telegram-watch`) в dip-discovery.
+   * Env: `PAPER_TELEGRAM_SPIKE_SIGNAL_*`.
+   */
+  telegramSpikeSignalEnabled: z.boolean().default(false),
+  telegramSpikeSignalQueuePath: z.string().default(''),
+  telegramSpikeSignalMaxAgeMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
+
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
   liveExitModeBTrailDrop: z.coerce.number().min(0).max(1).optional(),
@@ -562,6 +570,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     })(),
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
+    telegramSpikeSignalEnabled: envBool(process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_ENABLED, false),
+    telegramSpikeSignalQueuePath: process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_QUEUE_PATH?.trim() ?? '',
+    telegramSpikeSignalMaxAgeMs: (() => {
+      const s = process.env.PAPER_TELEGRAM_SPIKE_SIGNAL_MAX_AGE_MS?.trim();
+      if (!s) return 900_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) ? Math.min(Math.max(n, 60_000), 3_600_000) : 900_000;
+    })(),
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),

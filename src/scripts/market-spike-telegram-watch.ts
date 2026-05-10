@@ -43,9 +43,11 @@
  * близок к Δ% по price_usd.
  */
 import 'dotenv/config';
+import path from 'node:path';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db, sql as pgSql } from '../core/db/client.js';
+import { appendSpikeDumpToTelegramSignalQueue } from '../papertrader/discovery/telegram-spike-signal-queue.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -184,6 +186,9 @@ const DEX_META_CACHE_TTL_MS = Math.max(
   60_000,
   Math.min(7 * 24 * 3600_000, Math.floor(envNum('SPIKE_ALERT_DEXSCREENER_CACHE_TTL_MS', 24 * 3600_000))),
 );
+
+/** Если задан — после успешной отправки пролива (`spike_dump`) дописываем mint в JSONL для live-oscar-risky и т.п. */
+const SPIKE_RISKY_ENTRY_QUEUE_PATH = process.env.SPIKE_ALERT_RISKY_ENTRY_QUEUE_PATH?.trim() ?? '';
 
 type DexTokenMeta = { symbol: string | null; name: string | null };
 const dexMetaCache = new Map<string, { meta: DexTokenMeta; at: number }>();
@@ -926,6 +931,16 @@ async function runOnePass(
     const ok = await sendTelegram(htmlBody, 'HTML');
     if (ok) {
       sent++;
+      if (SPIKE_RISKY_ENTRY_QUEUE_PATH && row.pct < 0) {
+        try {
+          appendSpikeDumpToTelegramSignalQueue(
+            path.resolve(process.cwd(), SPIKE_RISKY_ENTRY_QUEUE_PATH),
+            row.base_mint,
+          );
+        } catch (e) {
+          console.warn('[market-spike-telegram-watch] SPIKE_ALERT_RISKY_ENTRY_QUEUE_PATH append failed', String(e));
+        }
+      }
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         const tsNew = parseTs(row.ts_now as Date | string);
         const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;

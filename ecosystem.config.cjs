@@ -558,6 +558,13 @@ module.exports = {
         NODE_ENV: 'production',
         /** Отдельно от основного live-oscar — иначе оба процесса перезаписывают один JSON. */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health-live-oscar-risky.json'),
+        /**
+         * Пролив в TG (`[MARKET][spike_dump]`) → `market-spike-telegram-watch` пишет mint в этот JSONL;
+         * risky подмешивает кандидата в discovery. Вход только если проходят обычные гейты и позиции по mint ещё нет.
+         */
+        PAPER_TELEGRAM_SPIKE_SIGNAL_ENABLED: '1',
+        PAPER_TELEGRAM_SPIKE_SIGNAL_QUEUE_PATH: path.join(root, 'data/live/telegram-spike-signals-live-oscar-risky.jsonl'),
+        PAPER_TELEGRAM_SPIKE_SIGNAL_MAX_AGE_MS: '900000',
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar-risky',
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_risky_unused_journal.jsonl'),
