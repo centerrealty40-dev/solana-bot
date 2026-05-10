@@ -564,8 +564,8 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Паритет live-oscar: $140k min pool liq, buys/sells/BS как live. Дальше — смягчения vol/age/holders. */
-        PAPER_POST_MIN_LIQ_USD: '140000',
+        /** Пост-lane (post_migration): смягчение min pool liq до $100k (live-oscar: $140k). */
+        PAPER_POST_MIN_LIQ_USD: '100000',
         PAPER_POST_MAX_AGE_MIN: '0',
         /** Смягчение: мин. возраст пула 6 ч (live: 36 ч). */
         PAPER_POST_MIN_AGE_MIN: '360',
