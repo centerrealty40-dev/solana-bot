@@ -1,4 +1,2 @@
 # Tracked seed — union с локальным live-oscar-permanent-denylist.txt (на VPS gitignored).
 # Добавляйте сюда mint, которые нельзя покупать снова даже при ошибочном возврате строки в whitelist.
-
-DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2
