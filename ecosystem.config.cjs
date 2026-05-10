@@ -710,8 +710,8 @@ module.exports = {
         MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow-live-oscar-risky.jsonl'),
         MTM_SHADOW_ALT_FRACTION: '0.58',
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
-        /** Явно пусто — не наследовать `LIVE_WALLET_PUBKEY` из общего `.env` (другой кошелёк). Задать после деплоя ключа. */
-        LIVE_WALLET_PUBKEY: '',
+        /** Торговый кошелёк risky (совпадает с `data/live/live-oscar-risky.keypair.json` на VPS). */
+        LIVE_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-risky.keypair.json'),
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
