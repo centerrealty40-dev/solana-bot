@@ -693,9 +693,9 @@ module.exports = {
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live-risky.jsonl'),
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
-        LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-risky-mint-whitelist.txt'),
+        /** Нет allowlist: risky-слой сам ограничен верхними капами liq/vol/holders (ниже основного Live Oscar). */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
-        LIVE_MINT_WHITELIST_ENABLED: '1',
+        LIVE_MINT_WHITELIST_ENABLED: '0',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-risky-mint-whitelist.txt'),
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
