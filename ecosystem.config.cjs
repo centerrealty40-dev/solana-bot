@@ -522,8 +522,9 @@ module.exports = {
       },
     },
     /**
-     * Paper Oscar Risky — бумага; паритет выходов/режимов A–B с **live-oscar** (`PAPER_LIVE_EXIT_MODE_AB` и остальные `PAPER_*` как у live).
-     * Гейты пост-снимка ослаблены как у **paper-oscar-v22**: $100k liq, 1k holders, $10k vol5m, $30k vol1h guard.
+     * Paper Oscar Risky — бумага: тот же paper-слой, что у **live-oscar** (все `PAPER_*` ниже скопированы с процесса `live-oscar` в этом файле).
+     * Затем смягчены только пост-gate пороги для эксперимента: vol 5m $3k, vol 1h guard $20k, мин. возраст пула 6 ч, holders ≥ 1k.
+     * Живой Oscar в этом файле не менять.
      */
     {
       name: 'paper-oscar-risky',
@@ -549,7 +550,7 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        PAPER_POSITION_USD: '120',
+        PAPER_POSITION_USD: '600',
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -563,29 +564,32 @@ module.exports = {
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        PAPER_POST_MIN_AGE_MIN: '2160',
+        /** Паритет live-oscar: $140k min pool liq, buys/sells/BS как live. Дальше — смягчения vol/age/holders. */
+        PAPER_POST_MIN_LIQ_USD: '140000',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /** Ослабление входа — как paper-oscar-v22 (остальные `PAPER_*` как у live-oscar в ecosystem). */
-        PAPER_POST_MIN_LIQ_USD: '100000',
-        PAPER_POST_MIN_VOL_5M_USD: '10000',
+        /** Смягчение: мин. возраст пула 6 ч (live: 36 ч). */
+        PAPER_POST_MIN_AGE_MIN: '360',
+        /** Смягчение: объём 5m (поле volume_5m в снимке), live: $10k. */
+        PAPER_POST_MIN_VOL_5M_USD: '3000',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '30000',
+        /** Смягчение: нижний порог объёма за час (guard), live: $36k. */
+        PAPER_VOL_1H_MIN_USD: '20000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
+        /** Смягчение: holders (live: 3000). */
         PAPER_MIN_HOLDER_COUNT: '1000',
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        PAPER_DIP_MIN_DROP_PCT: '-15',
+        PAPER_DIP_MIN_DROP_PCT: '-30',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',
-        /** Бумага: без кулдауна entry→entry и без post-exit паузы. */
-        PAPER_DIP_COOLDOWN_MIN: '0',
-        PAPER_DIP_COOLDOWN_MIN_SCALP: '0',
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '0',
+        PAPER_DIP_COOLDOWN_MIN: '30',
+        PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -595,16 +599,15 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.07',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.05',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.50',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.025',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS: '4',
-        PAPER_DCA_LEVELS: '',
-        PAPER_DCA_KILLSTOP: '-0.05',
+        PAPER_DCA_LEVELS: '-4:0.25',
+        PAPER_DCA_KILLSTOP: '-0.08',
         PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.15',
+        PAPER_TP_GRID_STEP_PNL: '0.025',
+        PAPER_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
