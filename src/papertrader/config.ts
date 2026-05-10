@@ -189,6 +189,19 @@ const ConfigSchema = z.object({
   telegramSpikeSignalEnabled: z.boolean().default(false),
   telegramSpikeSignalQueuePath: z.string().default(''),
   telegramSpikeSignalMaxAgeMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
+  /**
+   * Mint из spike Telegram queue: если обычный dip не прошёл — вторая попытка с порогами ниже
+   * (`telegramSpikeDipMinDropPct` и т.д.) + опции обхода vol5m/1h / recovery veto / whale trigger.
+   */
+  telegramSpikeRelaxEnabled: z.boolean().default(false),
+  /** Мин. «глубина» dip от high окна (отрицательный %), только для relax-ветки; например −10 для проливов ~10%. */
+  telegramSpikeDipMinDropPct: z.coerce.number().max(0).default(-10),
+  telegramSpikeDipMinImpulsePct: z.coerce.number().nonnegative().default(8),
+  /** Не задано → как у основного `dipMaxDropPct`. */
+  telegramSpikeDipMaxDropPct: z.coerce.number().max(0).optional(),
+  telegramSpikeSkipVol5m1hGuard: z.boolean().default(false),
+  telegramSpikeSkipRecoveryVeto: z.boolean().default(false),
+  telegramSpikeSkipWhaleRequireTrigger: z.boolean().default(false),
 
   /** Live Oscar: A/B — B только после DCA и до закрытия; сплит двумя ногами остаётся A. Paper: false. */
   liveExitModeAbEnabled: z.boolean().default(false),
@@ -578,6 +591,26 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) ? Math.min(Math.max(n, 60_000), 3_600_000) : 900_000;
     })(),
+    telegramSpikeRelaxEnabled: envBool(process.env.PAPER_TELEGRAM_SPIKE_RELAX_ENABLED, false),
+    telegramSpikeDipMinDropPct: (() => {
+      const s = process.env.PAPER_TELEGRAM_SPIKE_DIP_MIN_DROP_PCT?.trim();
+      if (!s) return -10;
+      const n = Number(s);
+      return Number.isFinite(n) && n <= 0 ? n : -10;
+    })(),
+    telegramSpikeDipMinImpulsePct: (() => {
+      const s = process.env.PAPER_TELEGRAM_SPIKE_DIP_MIN_IMPULSE_PCT?.trim();
+      if (!s) return 8;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? n : 8;
+    })(),
+    telegramSpikeDipMaxDropPct: envOptNum(process.env.PAPER_TELEGRAM_SPIKE_DIP_MAX_DROP_PCT),
+    telegramSpikeSkipVol5m1hGuard: envBool(process.env.PAPER_TELEGRAM_SPIKE_SKIP_VOL5M_1H_GUARD, false),
+    telegramSpikeSkipRecoveryVeto: envBool(process.env.PAPER_TELEGRAM_SPIKE_SKIP_RECOVERY_VETO, false),
+    telegramSpikeSkipWhaleRequireTrigger: envBool(
+      process.env.PAPER_TELEGRAM_SPIKE_SKIP_WHALE_REQUIRE_TRIGGER,
+      false,
+    ),
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
     liveExitModeBTrailDrop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP),
     liveExitModeBTrailTriggerX: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X),

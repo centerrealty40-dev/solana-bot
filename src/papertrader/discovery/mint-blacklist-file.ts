@@ -50,8 +50,8 @@ export function isMintBlacklisted(relOrAbsPath: string, mint: string): boolean {
 
 export function filterSnapshotTaggedByMintBlacklist(
   cfg: { mintBlacklistEnabled: boolean; mintBlacklistPath: string },
-  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }>,
-): Array<{ row: SnapshotCandidateRow; lane: Lane }> {
+  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane; telegramSpikeInject?: boolean }>,
+): Array<{ row: SnapshotCandidateRow; lane: Lane; telegramSpikeInject?: boolean }> {
   if (!cfg.mintBlacklistEnabled || !cfg.mintBlacklistPath?.trim()) return snapshotTagged;
   const p = cfg.mintBlacklistPath.trim();
   return snapshotTagged.filter((x) => !isMintBlacklisted(p, x.row.mint));

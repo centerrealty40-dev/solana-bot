@@ -565,6 +565,16 @@ module.exports = {
         PAPER_TELEGRAM_SPIKE_SIGNAL_ENABLED: '1',
         PAPER_TELEGRAM_SPIKE_SIGNAL_QUEUE_PATH: path.join(root, 'data/live/telegram-spike-signals-live-oscar-risky.jsonl'),
         PAPER_TELEGRAM_SPIKE_SIGNAL_MAX_AGE_MS: '900000',
+        /**
+         * Второй проход dip для mint из spike-queue (мягче основного ~-30%): ~-10% пролив + ниже порог импульса;
+         * обход vol5m/1h spike-guard и обязательного whale-trigger (остальные гейты без изменений).
+         */
+        PAPER_TELEGRAM_SPIKE_RELAX_ENABLED: '1',
+        PAPER_TELEGRAM_SPIKE_DIP_MIN_DROP_PCT: '-10',
+        PAPER_TELEGRAM_SPIKE_DIP_MIN_IMPULSE_PCT: '8',
+        PAPER_TELEGRAM_SPIKE_SKIP_VOL5M_1H_GUARD: '1',
+        PAPER_TELEGRAM_SPIKE_SKIP_RECOVERY_VETO: '1',
+        PAPER_TELEGRAM_SPIKE_SKIP_WHALE_REQUIRE_TRIGGER: '1',
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar-risky',
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_risky_unused_journal.jsonl'),

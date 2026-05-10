@@ -37,8 +37,8 @@ export interface EvalDecision {
   features: SnapshotFeatures;
   whale: WhaleAnalysis | null;
   holdersMeta?: HoldersDecisionMeta;
-  /** Как пройден входной гейт цены (если применимо); см. `PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`. */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap';
+  /** Как пройден входной гейт цены (если применимо); см. `PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`; spike queue — relax dip. */
+  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'telegram_spike_relaxed';
 }
 
 export interface DiscoveryTickResult {
@@ -204,9 +204,9 @@ async function warmupSnapshotHolderCounts(
 
 async function mergeTelegramSpikeQueueSnapshots(
   cfg: PaperTraderConfig,
-  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }>,
+  snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane; telegramSpikeInject?: boolean }>,
   auditRows: Record<string, unknown>[],
-): Promise<Array<{ row: SnapshotCandidateRow; lane: Lane }>> {
+): Promise<Array<{ row: SnapshotCandidateRow; lane: Lane; telegramSpikeInject?: boolean }>> {
   if (!cfg.telegramSpikeSignalEnabled) return snapshotTagged;
   const qp = cfg.telegramSpikeSignalQueuePath?.trim();
   if (!qp) return snapshotTagged;
@@ -216,11 +216,23 @@ async function mergeTelegramSpikeQueueSnapshots(
   const keys = new Set(snapshotTagged.map((x) => x.row.mint));
   const out = [...snapshotTagged];
   for (const mint of mints) {
-    if (keys.has(mint)) continue;
+    const idx = out.findIndex((x) => x.row.mint === mint);
+    if (idx >= 0) {
+      out[idx] = { ...out[idx], telegramSpikeInject: true };
+      auditRows.push({
+        kind: 'live_discovery_telegram_spike_queue_tag',
+        mint,
+        symbol: out[idx].row.symbol,
+        lane: out[idx].lane,
+        source: out[idx].row.source,
+        queuePath: abs,
+      });
+      continue;
+    }
     const row = await fetchLatestCrossVenueSnapshotRowForMint(mint);
     if (!row) continue;
     keys.add(mint);
-    out.push({ row, lane: 'post_migration' });
+    out.push({ row, lane: 'post_migration', telegramSpikeInject: true });
     auditRows.push({
       kind: 'live_discovery_telegram_spike_queue_inject',
       mint,
@@ -239,7 +251,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg.enableMigrationLane ? fetchSnapshotLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
     cfg.enablePostLane ? fetchSnapshotLaneCandidates(cfg, 'post_migration') : Promise.resolve([]),
   ]);
-  let snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
+  let snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane; telegramSpikeInject?: boolean }> = [
     ...migRows.map((row) => ({ row, lane: 'migration_event' as const })),
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
@@ -263,7 +275,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const liveHoldersEnabled =
     cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
-  for (const { row, lane } of snapshotTagged) {
+  for (const { row, lane, telegramSpikeInject } of snapshotTagged) {
     const deepWl =
       cfg.discoveryDeepAuditJsonl === true &&
       cfg.discoveryDeepAuditWhitelistMintSet &&
@@ -290,11 +302,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
     evaluated++;
 
-    const v = evaluateSnapshot(cfg, row, lane);
+    const spikeRelax =
+      telegramSpikeInject === true && cfg.telegramSpikeRelaxEnabled === true;
+    const v = evaluateSnapshot(cfg, row, lane, {
+      skipVol5m1hGuard: spikeRelax && cfg.telegramSpikeSkipVol5m1hGuard,
+    });
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersEnabled,
     });
-    const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
+    let dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
@@ -304,6 +320,26 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (recoveryVeto.reasons.length > 0) {
         dipReasonsForGate = recoveryVeto.reasons;
         entryPath = undefined;
+      }
+    } else if (spikeRelax) {
+      const relaxed = evaluateDip(cfg, row, dipMap.get(row.mint), {
+        dipMinDropPct: cfg.telegramSpikeDipMinDropPct,
+        dipMinImpulsePct: cfg.telegramSpikeDipMinImpulsePct,
+        dipMaxDropPct: cfg.telegramSpikeDipMaxDropPct ?? cfg.dipMaxDropPct,
+      });
+      if (relaxed.reasons.length === 0) {
+        dipEval = relaxed;
+        dipReasonsForGate = [];
+        entryPath = 'telegram_spike_relaxed';
+        if (!cfg.telegramSpikeSkipRecoveryVeto) {
+          recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
+          if (recoveryVeto.reasons.length > 0) {
+            dipReasonsForGate = recoveryVeto.reasons;
+            entryPath = undefined;
+          }
+        }
+      } else {
+        dipReasonsForGate = relaxed.reasons;
       }
     } else if (cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
@@ -323,7 +359,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         whaleReasons.push(`creator_dumping_${(whale.creator_dumped_pct * 100).toFixed(0)}%`);
       }
       if (whale.dca_aggressive_present) whaleReasons.push('dca_aggressive_seller');
-      if (cfg.whaleRequireTrigger && !whale.trigger_fired && !whaleReasons.length) {
+      const requireWhaleTrig =
+        cfg.whaleRequireTrigger &&
+        !(telegramSpikeInject === true && cfg.telegramSpikeSkipWhaleRequireTrigger);
+      if (requireWhaleTrig && !whale.trigger_fired && !whaleReasons.length) {
         whaleReasons.push('no_whale_trigger');
       }
     }
