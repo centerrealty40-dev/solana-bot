@@ -3734,11 +3734,17 @@ app.get('/api/paper2/liq-watch-stats', async (req, reply) => {
 });
 
 if (process.env.DASHBOARD_NO_LISTEN !== '1') {
-  app.listen({ port: PORT, host: HOST }).then(() => {
-    console.log(`[dashboard] listening on http://${HOST}:${PORT}`);
-    console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
-    const cp = resolvedOrgCursorPath();
-    console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
-    startQuickNodeUsageReporting();
-  });
+  app
+    .listen({ port: PORT, host: HOST })
+    .then(() => {
+      console.log(`[dashboard] listening on http://${HOST}:${PORT}`);
+      console.log(`[dashboard] reading store from ${path.resolve(STORE_PATH)}`);
+      const cp = resolvedOrgCursorPath();
+      console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
+      startQuickNodeUsageReporting();
+    })
+    .catch((err: unknown) => {
+      console.error('[dashboard] listen failed (port in use or bind error):', err);
+      process.exit(1);
+    });
 }

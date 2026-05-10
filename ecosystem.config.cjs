@@ -7,12 +7,19 @@ module.exports = {
     {
       name: 'live-oscar-dashboard',
       cwd: root,
-      script: 'npm',
-      args: 'run --silent dashboard',
-      interpreter: 'none',
+      /**
+       * Не `npm run dashboard`: PM2 держит PID npm/tsx-обёртки — при `reload` слушатель на PORT может
+       * не успеть освободиться → EADDRINUSE и тысячи рестартов. Прямой запуск tsx CLI = один node-процесс.
+       */
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'scripts-tmp/dashboard-server.ts',
+      interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      kill_timeout: 10000,
       merge_logs: true,
       time: true,
       env: {
