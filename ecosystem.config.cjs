@@ -570,9 +570,8 @@ module.exports = {
         /** Мягче live-oscar: как paper-oscar-risky — мин. возраст пула в снимке 6 ч. */
         PAPER_POST_MIN_AGE_MIN: '360',
         PAPER_POST_MAX_AGE_MIN: '0',
+        /** POST min liq как у `paper-oscar-risky`; верхний порог по liq не задаём. */
         PAPER_POST_MIN_LIQ_USD: '100000',
-        /** Ликв. строго ниже минимума live-oscar (`140000`). */
-        PAPER_POST_MAX_LIQ_USD: '139999',
         PAPER_POST_MIN_VOL_5M_USD: '3000',
         /** Верхний порог по vol5m/vol1h не задаём — только min + spike-guard (как у paper-oscar-risky по объёмам). */
         PAPER_POST_MIN_BUYS_5M: '4',
