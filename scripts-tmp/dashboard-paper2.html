@@ -517,11 +517,16 @@
     }
     function normalizePaper2Payload(raw) {
       if (!raw || typeof raw !== 'object') return raw;
-      const order =
-        Array.isArray(raw.panelOrder) && raw.panelOrder.length > 0
-          ? raw.panelOrder.slice()
-          : OSCAR_PANEL_ORDER_FALLBACK.slice();
-      const byId = new Map((raw.strategies || []).map((s) => [s.strategyId, s]));
+      /**
+       * Never trust `panelOrder.length` from the wire — stale CDN/proxy bundles may still
+       * serve a 4-item array from before `live-oscar-risky`. Tile count must match this list.
+       */
+      const order = OSCAR_PANEL_ORDER_FALLBACK.slice();
+      const byId = new Map(
+        (raw.strategies || [])
+          .filter((s) => s && typeof s.strategyId === 'string')
+          .map((s) => [s.strategyId, s]),
+      );
       const strategies = order.map((id) => byId.get(id) ?? emptyOscarPanel(id));
       const totals = strategies.reduce(
         (acc, s) => {
@@ -903,10 +908,10 @@
         },
         async refresh() {
           try {
-            const j = await fetch('/api/paper2', {
+            const j = await fetch('/api/paper2?t=' + Date.now(), {
               credentials: 'include',
               cache: 'no-store',
-              headers: { 'cache-control': 'no-cache' },
+              headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
             }).then((r) => r.json());
             const normalized = normalizePaper2Payload(j);
             this.state = normalized;

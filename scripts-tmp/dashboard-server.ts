@@ -3544,7 +3544,8 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 });
 
 app.get('/api/paper2', async (_req, reply) => {
-  reply.header('cache-control', 'no-store');
+  reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
+  reply.header('pragma', 'no-cache');
 
   const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
