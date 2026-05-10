@@ -471,6 +471,84 @@
   </main>
 
   <script>
+    /**
+     * Должен совпадать с `DASHBOARD_PANEL_ORDER` в `dashboard-server.ts`.
+     * Если ответ /api/paper2 урезан (прокси/кэш/старый процесс), собираем ровно N плиток по порядку.
+     */
+    const OSCAR_PANEL_ORDER_FALLBACK = [
+      'live-oscar',
+      'live-oscar-risky',
+      'paper-oscar-risky',
+      'paper-oscar-v21',
+      'paper-oscar-v22',
+    ];
+    function emptyOscarPanel(strategyId) {
+      return {
+        strategyId,
+        file: '—',
+        openCount: 0,
+        closedCount: 0,
+        startedAt: Date.now(),
+        lastTs: Date.now(),
+        hoursOfData: 0,
+        sumPnlUsd: 0,
+        realizedPnlUsd: 0,
+        unrealizedPnlUsd: 0,
+        totalPnlUsd: 0,
+        winRate: 0,
+        avgPnl: 0,
+        avgPeak: 0,
+        bestPnlUsd: 0,
+        worstPnlUsd: 0,
+        unrealizedUsd: 0,
+        exits: {},
+        exitsBreakdown: {},
+        evals1h: 0,
+        passed1h: 0,
+        failReasons: [],
+        open: [],
+        recentClosed: [],
+        priorityFeeUsdTotal: 0,
+        priceVerify: null,
+        liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+        liveReconcileBoot: null,
+        liveReconcileReport: null,
+      };
+    }
+    function normalizePaper2Payload(raw) {
+      if (!raw || typeof raw !== 'object') return raw;
+      const order =
+        Array.isArray(raw.panelOrder) && raw.panelOrder.length > 0
+          ? raw.panelOrder.slice()
+          : OSCAR_PANEL_ORDER_FALLBACK.slice();
+      const byId = new Map((raw.strategies || []).map((s) => [s.strategyId, s]));
+      const strategies = order.map((id) => byId.get(id) ?? emptyOscarPanel(id));
+      const totals = strategies.reduce(
+        (acc, s) => {
+          acc.strategies += 1;
+          acc.open += Number(s.openCount || 0);
+          acc.closed += Number(s.closedCount || 0);
+          acc.sumPnlUsd += Number(s.sumPnlUsd || 0);
+          const r = Number(s.realizedPnlUsd ?? s.sumPnlUsd ?? 0);
+          acc.realizedPnlUsd += Number.isFinite(r) ? r : 0;
+          acc.unrealizedPnlUsd += Number(s.unrealizedPnlUsd || 0);
+          const t = Number(s.totalPnlUsd);
+          acc.totalPnlUsd += Number.isFinite(t) ? t : 0;
+          return acc;
+        },
+        {
+          strategies: 0,
+          open: 0,
+          closed: 0,
+          sumPnlUsd: 0,
+          realizedPnlUsd: 0,
+          unrealizedPnlUsd: 0,
+          totalPnlUsd: 0,
+        },
+      );
+      return { ...raw, panelOrder: order, strategies, totals };
+    }
+
     const STRATEGY_META = {
       'live-oscar': {
         label: 'Live Oscar',
@@ -830,11 +908,12 @@
               cache: 'no-store',
               headers: { 'cache-control': 'no-cache' },
             }).then((r) => r.json());
-            this.state = j;
-            if (!this.selected && (j.strategies || []).length) {
+            const normalized = normalizePaper2Payload(j);
+            this.state = normalized;
+            if (!this.selected && (normalized.strategies || []).length) {
               const pref = 'live-oscar';
-              const ids = (j.strategies || []).map((x) => x.strategyId);
-              this.selected = ids.includes(pref) ? pref : j.strategies[0].strategyId;
+              const ids = normalized.strategies.map((x) => x.strategyId);
+              this.selected = ids.includes(pref) ? pref : normalized.strategies[0].strategyId;
             }
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }

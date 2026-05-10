@@ -2864,6 +2864,8 @@ export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[])
 
 app.get('/papertrader2', async (_req, reply) => {
   reply.header('content-type', 'text/html; charset=utf-8');
+  reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
+  reply.header('pragma', 'no-cache');
   return fs.readFileSync(HTML2_PATH, 'utf-8');
 });
 
