@@ -125,6 +125,12 @@ const mcCache = new Map<string, { mc: number; ts: number }>();
 const pumpCoinMarketCache = new Map<string, { market: PumpCoinMarket; ts: number }>();
 const MC_TTL_MS = 30_000;
 
+function normalizePumpSupplyTokens(rawSupply: number): number | null {
+  if (!(rawSupply > 0) || !Number.isFinite(rawSupply)) return null;
+  // pump.fun usually returns SPL atomic supply for 6-decimal tokens (1e12 = 1e6 tokens).
+  return rawSupply >= 1_000_000_000_000 ? rawSupply / 1_000_000 : rawSupply;
+}
+
 async function getPumpCoinMarket(mint: string): Promise<PumpCoinMarket | null> {
   const cached = pumpCoinMarketCache.get(mint);
   if (cached && Date.now() - cached.ts < MC_TTL_MS) return cached.market;
@@ -137,8 +143,7 @@ async function getPumpCoinMarket(mint: string): Promise<PumpCoinMarket | null> {
     const j: any = await r.json();
     const mcUsdRaw = Number(j?.usd_market_cap ?? 0);
     const rawSupply = Number(j?.total_supply ?? j?.total_supply_str ?? 0);
-    const supplyTokens =
-      rawSupply > 1_000_000_000_000 ? rawSupply / 1_000_000 : rawSupply > 0 ? rawSupply : null;
+    const supplyTokens = normalizePumpSupplyTokens(rawSupply);
     const mcUsd = mcUsdRaw > 0 && Number.isFinite(mcUsdRaw) ? mcUsdRaw : null;
     const priceUsd =
       mcUsd != null && supplyTokens != null && supplyTokens > 0 ? mcUsd / supplyTokens : null;
