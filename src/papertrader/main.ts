@@ -28,7 +28,7 @@ import {
   runDipDiscovery,
   type EvalDecision,
 } from './discovery/dip-clones.js';
-import { isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
+import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
 import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
@@ -70,8 +70,17 @@ import {
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 import { recordDiscoveryHealthSample } from './discovery-health-window.js';
+import { sendTagged } from '../core/telegram/sender.js';
 
 const logger = pino({ name: 'papertrader' });
+
+function escapeHtmlPlain(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 export interface PapertraderMainOptions {
   /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
@@ -204,6 +213,39 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     return cfg.strategyId === 'live-oscar' && cfg.liveStagedEntryEnabled;
   }
 
+  function notifyLiveStagedEntrySignal(args: {
+    mint: string;
+    symbol: string;
+  }): void {
+    const token =
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: args.mint }, 'live staged-entry signal telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const symbol = args.symbol?.trim() || '?';
+    const text =
+      `<b>Live Oscar signal</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
+      `Начинаем отсчёт входа: −7% / −14% от цены сигнала`;
+
+    void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: args.mint }, 'live staged-entry signal telegram failed'),
+    );
+  }
+
   function resolveLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
@@ -235,6 +277,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
         expiresAt: signal.expiresAt,
       });
+      notifyLiveStagedEntrySignal({ mint: args.mint, symbol: args.symbol });
     }
 
     const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);
