@@ -336,7 +336,7 @@
                   <div class="text-right max-w-[13rem]">
                     <div class="mono text-base font-bold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
                     <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
-                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет цены (сначала DEX-снимки base/quote, затем журнал, затем Jupiter). Проверьте базу входа в open.</div>
+                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет цены (DEX-снимки, Jupiter, pump.fun mcap/supply, затем журнал). Проверьте базу входа в open.</div>
                     <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
                 </div>
@@ -766,6 +766,7 @@
           }
           if (Number(o?.livePriceUsd || 0) > 0 && o?.livePxProvenance) {
             if (o.livePxProvenance === 'jupiter') return '(Jupiter)';
+            if (o.livePxProvenance === 'pump.fun') return '(pump.fun)';
             if (o.livePxProvenance === 'journal') return '(journal)';
             if (o.livePxProvenance === 'snapshots') return '(DEX)';
           }
@@ -774,6 +775,7 @@
         livePxSourceLabel(o) {
           const p = o?.livePxProvenance;
           if (p === 'jupiter') return 'Цена для PnL: Jupiter';
+          if (p === 'pump.fun') return 'Цена для PnL: pump.fun mcap/supply';
           if (p === 'journal') return 'Цена для PnL: последняя в журнале';
           if (p === 'snapshots') return 'Цена для PnL: DEX-снимки';
           return '';

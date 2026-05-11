@@ -115,12 +115,19 @@ interface ClosedTrade extends OpenTrade {
 // ---------------------------------------------------------
 // market cap cache (pump.fun frontend api)
 // ---------------------------------------------------------
+type PumpCoinMarket = {
+  mcUsd: number | null;
+  priceUsd: number | null;
+  supplyTokens: number | null;
+};
+
 const mcCache = new Map<string, { mc: number; ts: number }>();
+const pumpCoinMarketCache = new Map<string, { market: PumpCoinMarket; ts: number }>();
 const MC_TTL_MS = 30_000;
 
-async function getCurrentMc(mint: string): Promise<number | null> {
-  const cached = mcCache.get(mint);
-  if (cached && Date.now() - cached.ts < MC_TTL_MS) return cached.mc;
+async function getPumpCoinMarket(mint: string): Promise<PumpCoinMarket | null> {
+  const cached = pumpCoinMarketCache.get(mint);
+  if (cached && Date.now() - cached.ts < MC_TTL_MS) return cached.market;
   try {
     const r = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`, {
       headers: { accept: 'application/json' },
@@ -128,13 +135,33 @@ async function getCurrentMc(mint: string): Promise<number | null> {
     });
     if (!r.ok) return null;
     const j: any = await r.json();
-    const mc = Number(j?.usd_market_cap ?? 0);
-    if (mc > 0) {
-      mcCache.set(mint, { mc, ts: Date.now() });
-      return mc;
-    }
+    const mcUsdRaw = Number(j?.usd_market_cap ?? 0);
+    const rawSupply = Number(j?.total_supply ?? j?.total_supply_str ?? 0);
+    const supplyTokens =
+      rawSupply > 1_000_000_000_000 ? rawSupply / 1_000_000 : rawSupply > 0 ? rawSupply : null;
+    const mcUsd = mcUsdRaw > 0 && Number.isFinite(mcUsdRaw) ? mcUsdRaw : null;
+    const priceUsd =
+      mcUsd != null && supplyTokens != null && supplyTokens > 0 ? mcUsd / supplyTokens : null;
+    const market = {
+      mcUsd,
+      priceUsd: priceUsd != null && priceUsd > 0 && Number.isFinite(priceUsd) ? priceUsd : null,
+      supplyTokens,
+    };
+    pumpCoinMarketCache.set(mint, { market, ts: Date.now() });
+    return market.mcUsd != null || market.priceUsd != null ? market : null;
   } catch {
     /* ignore */
+  }
+  return null;
+}
+
+async function getCurrentMc(mint: string): Promise<number | null> {
+  const cached = mcCache.get(mint);
+  if (cached && Date.now() - cached.ts < MC_TTL_MS) return cached.mc;
+  const market = await getPumpCoinMarket(mint);
+  if (market?.mcUsd != null && market.mcUsd > 0) {
+    mcCache.set(mint, { mc: market.mcUsd, ts: Date.now() });
+    return market.mcUsd;
   }
   return null;
 }
@@ -1463,7 +1490,7 @@ export type Paper2ApiEnrichedOpen = {
   hasLiveMc: boolean;
   hasLivePrice: boolean;
   livePriceStale: boolean;
-  livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null;
+  livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | null;
   liveMcProvenance: 'snapshots' | 'pump.fun' | null;
   timeline: TimelineEvent[];
   entryPriorityFeeUsd: number | null;
@@ -3403,7 +3430,7 @@ async function buildPaper2StrategyRowFromLoad(
        * the tracker still uses PG/Jupiter for decisions (misleading «live mcap» / token row).
        */
       let livePx: number | null = null;
-      let livePxProvenance: 'snapshots' | 'jupiter' | 'journal' | null = null;
+      let livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | null = null;
       if (basePx) {
         livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
         if (livePx) livePxProvenance = 'snapshots';
@@ -3415,6 +3442,15 @@ async function buildPaper2StrategyRowFromLoad(
           livePx = jpx;
           livePriceStale = false;
           livePxProvenance = 'jupiter';
+        }
+      }
+      let pumpMarketForOpen: PumpCoinMarket | null = null;
+      if (!livePx && basePx) {
+        pumpMarketForOpen = await getPumpCoinMarket(ot.mint).catch(() => null);
+        if (pumpMarketForOpen?.priceUsd != null && pumpMarketForOpen.priceUsd > 0) {
+          livePx = pumpMarketForOpen.priceUsd;
+          livePriceStale = false;
+          livePxProvenance = 'pump.fun';
         }
       }
       if (!livePx && basePx) {
@@ -3434,6 +3470,12 @@ async function buildPaper2StrategyRowFromLoad(
         ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
       if (entryMcapAtBuyUsd == null) {
         entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
+      }
+      if (entryMcapAtBuyUsd == null && basePx) {
+        pumpMarketForOpen = pumpMarketForOpen ?? (await getPumpCoinMarket(ot.mint).catch(() => null));
+        if (pumpMarketForOpen?.supplyTokens != null && pumpMarketForOpen.supplyTokens > 0) {
+          entryMcapAtBuyUsd = basePx * pumpMarketForOpen.supplyTokens;
+        }
       }
 
       let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
