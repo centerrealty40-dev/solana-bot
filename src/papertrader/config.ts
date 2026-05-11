@@ -220,6 +220,14 @@ const ConfigSchema = z.object({
   dipRecoveryVetoEnabled: z.boolean().default(false),
   dipRecoveryVetoWindowsCsv: z.string().default(''),
   dipRecoveryVetoMaxBouncePct: z.coerce.number().min(0.1).max(500).default(12),
+  /**
+   * Blocks immediate signal entries when a long-window dip candidate has already
+   * recovered back to a recent local high. This covers cases where bounce-from-low
+   * recovery veto is small, but the current price is still an unsafe local high.
+   */
+  dipLocalHighVetoEnabled: z.boolean().default(false),
+  dipLocalHighVetoWindowsCsv: z.string().default(''),
+  dipLocalHighVetoMaxDistancePct: z.coerce.number().min(0).max(50).default(2),
 
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
@@ -459,17 +467,22 @@ const ConfigSchema = z.object({
   smlotBlockClusteredWallets: z.boolean().default(true),
   smlotBlockScamFarmMeta: z.boolean().default(true),
 }).transform((data) => {
-  const { dipLookbackWindowsCsv, dipRecoveryVetoWindowsCsv, ...rest } = data;
+  const { dipLookbackWindowsCsv, dipRecoveryVetoWindowsCsv, dipLocalHighVetoWindowsCsv, ...rest } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
   const dipRecoveryVetoWindowsMin = resolveRecoveryVetoWindows(dipRecoveryVetoWindowsCsv);
+  const dipLocalHighVetoWindowsMin = resolveRecoveryVetoWindows(dipLocalHighVetoWindowsCsv);
   const dipAggregationWindowsMin =
-    rest.dipRecoveryVetoEnabled && dipRecoveryVetoWindowsMin.length > 0
-      ? [...new Set([...dipLookbackWindowsMin, ...dipRecoveryVetoWindowsMin])].sort((a, b) => a - b)
+    (rest.dipRecoveryVetoEnabled && dipRecoveryVetoWindowsMin.length > 0) ||
+    (rest.dipLocalHighVetoEnabled && dipLocalHighVetoWindowsMin.length > 0)
+      ? [...new Set([...dipLookbackWindowsMin, ...dipRecoveryVetoWindowsMin, ...dipLocalHighVetoWindowsMin])].sort(
+          (a, b) => a - b,
+        )
       : dipLookbackWindowsMin;
   return {
     ...rest,
     dipLookbackWindowsMin,
     dipRecoveryVetoWindowsMin,
+    dipLocalHighVetoWindowsMin,
     dipAggregationWindowsMin,
   };
 });
@@ -608,6 +621,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
     dipRecoveryVetoWindowsCsv: process.env.PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN ?? '',
     dipRecoveryVetoMaxBouncePct: process.env.PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT,
+    dipLocalHighVetoEnabled: envBool(process.env.PAPER_DIP_LOCAL_HIGH_VETO_ENABLED, false),
+    dipLocalHighVetoWindowsCsv: process.env.PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN ?? '',
+    dipLocalHighVetoMaxDistancePct: process.env.PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

@@ -321,6 +321,13 @@ module.exports = {
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
         PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+        /** Live Oscar guard: не покупать первую ногу по сигналу, если цена уже у локального high. */
+        PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
+        PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
+        PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
+        /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
+        LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
+        LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
 
         /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
         PAPER_TP_REGIME_ENABLED: '0',

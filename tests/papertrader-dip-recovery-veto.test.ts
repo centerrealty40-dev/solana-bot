@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
-import { evaluateRecoveryVeto } from '../src/papertrader/dip-detector.js';
+import { evaluateLocalHighVeto, evaluateRecoveryVeto } from '../src/papertrader/dip-detector.js';
 import type { DipContextByWindows } from '../src/papertrader/dip-detector.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
@@ -62,6 +62,37 @@ describe('evaluateRecoveryVeto', () => {
   it('allows when bounce below threshold', () => {
     const ctx: DipContextByWindows = new Map([[60, { high_px: 0.1, low_px: 0.088 }]]);
     const r = evaluateRecoveryVeto(base, row(0.09), ctx, 360);
+    expect(r.reasons).toEqual([]);
+  });
+});
+
+describe('evaluateLocalHighVeto', () => {
+  const base = cfg({
+    dipLocalHighVetoEnabled: true,
+    dipLocalHighVetoWindowsMin: [30, 60, 120],
+    dipLocalHighVetoMaxDistancePct: 2,
+  });
+
+  it('disabled → no reasons', () => {
+    const c = cfg({ ...base, dipLocalHighVetoEnabled: false });
+    const ctx: DipContextByWindows = new Map([[60, { high_px: 0.101, low_px: 0.07 }]]);
+    const r = evaluateLocalHighVeto(c, row(0.1), ctx);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('vetoes when price is near a recent local high', () => {
+    const ctx: DipContextByWindows = new Map([
+      [30, { high_px: 0.102, low_px: 0.085 }],
+      [60, { high_px: 0.101, low_px: 0.08 }],
+    ]);
+    const r = evaluateLocalHighVeto(base, row(0.1), ctx);
+    expect(r.reasons.length).toBeGreaterThan(0);
+    expect(r.reasons.some((x) => x.startsWith('local_high_veto_'))).toBe(true);
+  });
+
+  it('allows when price is far enough below recent highs', () => {
+    const ctx: DipContextByWindows = new Map([[60, { high_px: 0.11, low_px: 0.08 }]]);
+    const r = evaluateLocalHighVeto(base, row(0.1), ctx);
     expect(r.reasons).toEqual([]);
   });
 });

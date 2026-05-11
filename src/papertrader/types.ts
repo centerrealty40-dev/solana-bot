@@ -370,6 +370,13 @@ export interface SnapshotFeatures {
     vetoed: boolean;
     veto_reasons: string[];
   };
+  local_high_veto?: {
+    threshold_pct: number;
+    veto_windows_min: number[];
+    distance_from_high_pct: Record<string, number>;
+    vetoed: boolean;
+    veto_reasons: string[];
+  };
 }
 
 export type SellerProfile =

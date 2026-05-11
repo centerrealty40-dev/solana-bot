@@ -7,7 +7,9 @@ import { globalGate } from '../filters/global-gate.js';
 import {
   fetchDipContextMap,
   evaluateDip,
+  evaluateLocalHighVeto,
   evaluateRecoveryVeto,
+  type LocalHighVetoResult,
   type RecoveryVetoResult,
 } from '../dip-detector.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
@@ -134,6 +136,7 @@ function buildFeatures(
   dipLookbackUsedMin: number | null,
   cfg: PaperTraderConfig,
   recoveryVeto: RecoveryVetoResult | undefined,
+  localHighVeto: LocalHighVetoResult | undefined,
 ): SnapshotFeatures {
   const base: SnapshotFeatures = {
     price_usd: +Number(row.price_usd || 0).toFixed(8),
@@ -164,6 +167,17 @@ function buildFeatures(
       ),
       vetoed: recoveryVeto.reasons.length > 0,
       veto_reasons: recoveryVeto.reasons,
+    };
+  }
+  if (cfg.dipLocalHighVetoEnabled && localHighVeto) {
+    base.local_high_veto = {
+      threshold_pct: cfg.dipLocalHighVetoMaxDistancePct,
+      veto_windows_min: cfg.dipLocalHighVetoWindowsMin,
+      distance_from_high_pct: Object.fromEntries(
+        Object.entries(localHighVeto.distanceFromHighPct).map(([k, v]) => [String(k), v]),
+      ),
+      vetoed: localHighVeto.reasons.length > 0,
+      veto_reasons: localHighVeto.reasons,
     };
   }
   return base;
@@ -265,12 +279,19 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
+    let localHighVeto: LocalHighVetoResult | undefined;
     if (dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
       recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
       if (recoveryVeto.reasons.length > 0) {
         dipReasonsForGate = recoveryVeto.reasons;
         entryPath = undefined;
+      } else {
+        localHighVeto = evaluateLocalHighVeto(cfg, row, dipMap.get(row.mint));
+        if (localHighVeto.reasons.length > 0) {
+          dipReasonsForGate = localHighVeto.reasons;
+          entryPath = undefined;
+        }
       }
     } else if (cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
@@ -407,6 +428,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         dipEval.dipLookbackUsedMin,
         cfg,
         recoveryVeto,
+        localHighVeto,
       ),
       whale,
       holdersMeta,

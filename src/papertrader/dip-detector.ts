@@ -149,6 +149,11 @@ export type RecoveryVetoResult = {
   bounces: Record<number, number>;
 };
 
+export type LocalHighVetoResult = {
+  reasons: string[];
+  distanceFromHighPct: Record<number, number>;
+};
+
 export function evaluateRecoveryVeto(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
@@ -182,4 +187,36 @@ export function evaluateRecoveryVeto(
   }
 
   return { reasons, bounces };
+}
+
+export function evaluateLocalHighVeto(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  ctxByWindow: DipContextByWindows | null | undefined,
+): LocalHighVetoResult {
+  const distanceFromHighPct: Record<number, number> = {};
+  if (!cfg.dipLocalHighVetoEnabled || cfg.dipLocalHighVetoWindowsMin.length === 0) {
+    return { reasons: [], distanceFromHighPct };
+  }
+  if (!ctxByWindow || ctxByWindow.size === 0) {
+    return { reasons: [], distanceFromHighPct };
+  }
+  const price = Number(row.price_usd);
+  if (!(price > 0)) {
+    return { reasons: [], distanceFromHighPct };
+  }
+
+  const reasons: string[] = [];
+  const thr = cfg.dipLocalHighVetoMaxDistancePct;
+  for (const v of cfg.dipLocalHighVetoWindowsMin) {
+    const ctx = ctxByWindow.get(v);
+    if (!ctx || !(ctx.high_px > 0)) continue;
+    const distance = Math.max(0, (ctx.high_px / price - 1) * 100);
+    distanceFromHighPct[v] = +distance.toFixed(2);
+    if (distance <= thr) {
+      reasons.push(`local_high_veto_${v}m_dist${distanceFromHighPct[v].toFixed(1)}<=${thr}%`);
+    }
+  }
+
+  return { reasons, distanceFromHighPct };
 }

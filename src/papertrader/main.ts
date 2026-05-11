@@ -96,6 +96,10 @@ function fmtCount(v: number | null | undefined): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
+function isOnlyLocalHighVetoReasons(reasons: string[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => r.startsWith('local_high_veto_'));
+}
+
 export interface PapertraderMainOptions {
   /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
   journalAppend?: (event: Record<string, unknown>) => void;
@@ -228,6 +232,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       expiresAt: number;
     }
   >();
+  const localHighVetoTelegramLastMs = new Map<string, number>();
 
   function liveStagedEntryActive(): boolean {
     return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
@@ -325,6 +330,52 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       telegramChatId: chat,
     }).catch((e) =>
       logger.warn({ err: String(e), mint: args.mint }, 'live-oscar-risky signal telegram failed'),
+    );
+  }
+
+  function notifyLiveOscarLocalHighVetoOnly(d: EvalDecision): void {
+    if (cfg.strategyId !== 'live-oscar') return;
+    if (process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED === '0') return;
+    const cooldownMs = Math.max(0, Number(process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000));
+    const now = Date.now();
+    const prev = localHighVetoTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    localHighVetoTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live local-high veto telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const symbol = d.symbol?.trim() || '?';
+    const text =
+      `<b>Live Oscar local-high veto</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
+      `Статус: покупка пропущена, и это единственная причина — новый local-high veto.\n` +
+      `Причины: <code>${escapeHtmlPlain(d.reasons.join('; '))}</code>\n` +
+      `Price: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.price_usd))}</b>\n` +
+      `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.market_cap_usd))}</b>\n` +
+      `Holders: <b>${escapeHtmlPlain(fmtCount(d.features.holders))}</b>\n` +
+      `Dip window: <b>${escapeHtmlPlain(String(d.features.dip_lookback_min ?? 'n/a'))}m</b>, ` +
+      `dip: <b>${escapeHtmlPlain(d.features.dip_pct == null ? 'n/a' : `${d.features.dip_pct.toFixed(2)}%`)}</b>.`;
+
+    void sendTagged('ADVICE', 'live_oscar_local_high_veto', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live local-high veto telegram failed'),
     );
   }
 
@@ -713,6 +764,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           entry_path: d.entryPath,
           _liveDiscoveryDeepAudit: deepAuditFlag,
         });
+        if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons)) {
+          notifyLiveOscarLocalHighVetoOnly(d);
+        }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;
         if (
