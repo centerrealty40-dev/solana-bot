@@ -543,7 +543,7 @@ module.exports = {
       },
     },
     /**
-     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; без верхних капов по liq/vol/holders; нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
+     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; без верхних капов по liq/vol/holders; нотионал **$200** (ноги **$150+$50**, DCA −3% ещё **$40**).
      * Блок **live-oscar** выше не трогать. Ключ: `data/live/live-oscar-risky.keypair.json` (gitignore); **`LIVE_WALLET_PUBKEY`** в env процесса.
      */
     {
@@ -573,8 +573,8 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** $100 total: первая нога $75, вторая $25 (scale-in). DCA −4%: доля от `PAPER_POSITION_USD` → **$25** при `-4:0.25`. */
-        PAPER_POSITION_USD: '100',
+        /** $200 total: первая нога $150, вторая $50 (scale-in). DCA −3%: доля от `PAPER_POSITION_USD` → **$40** при `-3:0.2`. */
+        PAPER_POSITION_USD: '200',
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -631,12 +631,12 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.16',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.025',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
-        PAPER_DCA_LEVELS: '-4:0.25',
-        PAPER_DCA_KILLSTOP: '-0.08',
+        PAPER_DCA_LEVELS: '-3:0.2',
+        PAPER_DCA_KILLSTOP: '-0.16',
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.025',
         PAPER_TP_GRID_SELL_FRACTION: '0.05',
@@ -748,7 +748,7 @@ module.exports = {
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         LIVE_DEFAULT_SLIPPAGE_BPS: '300',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        LIVE_MAX_POSITION_USD: '100',
+        LIVE_MAX_POSITION_USD: '200',
         LIVE_MAX_OPEN_POSITIONS: '30',
         LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
         LIVE_KILL_AFTER_CONSEC_FAIL: '3',

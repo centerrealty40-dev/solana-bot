@@ -1521,13 +1521,31 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   if (tpRu) parts.push(`Класс пути до входа (TP-regime): ${tpRu} (${String(e.tpRegime)})`);
   const mode = e.liveExitProfileMode;
   const evKind = String(e.kind || '');
+  const strategyId = String(e.strategyId || '');
+  const isLiveOscarRisky = strategyId === 'live-oscar-risky';
+  if (isLiveOscarRisky) {
+    if (mode === 'A') {
+      parts.push(
+        'Режим A (Live Oscar Risky): позиция ещё без DCA; текущие правила выхода — TP-сетка +2.5% к средней, продажа 5% остатка за ступень; kill-stop −16% к текущей средней; trail `ladder_retrace` после TP.',
+      );
+    } else if (mode === 'B') {
+      parts.push(
+        'Режим B (Live Oscar Risky): включён после DCA. DCA: докупка $40 при −3% от цены первой ноги; kill-stop −16% к текущей средней; TP-сетка +2.5% к avg, продажа 5% остатка за ступень; timeout B — 4 ч.',
+      );
+    } else if (evKind === 'open' || evKind === 'scale_in_add') {
+      parts.push(
+        'Вход Live Oscar Risky: после сигнала ждём 10 минут и покупаем только если цена осталась в коридоре −20%…+3% от цены сигнала. План: первая нога 75% лимита ($150 из $200), вторая нога $50 через 5 секунд в коридоре +1%/−2%; DCA ещё не включён.',
+      );
+    }
+    return parts.length ? parts.join('\n') : null;
+  }
   if (mode === 'A') {
     parts.push(
       'Режим A: назначается при первой ступени лестницы TP (live-oscar) или аналогичном профиле; лестница и kill/trail — как в env режима A (`PAPER_TP_GRID_*`, `PAPER_DCA_KILLSTOP`).',
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B: после усреднения по `PAPER_DCA_LEVELS` (−4%) или второй ноги (live-oscar + `PAPER_LIVE_EXIT_MODE_AB`). Сетка B: шаг **+7%** к avg, **20%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`), на live-oscar без лимита ступеней; kill **−8%**; trail/timeout из env B; трейл **`ladder_retrace`** — откат к предыдущей ступени. До закрытия не откатывается в A.',
+      'Режим B: после усреднения по `PAPER_DCA_LEVELS` или второй ноги (live-oscar + `PAPER_LIVE_EXIT_MODE_AB`). Сетка B берётся из `PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`; kill/trail/timeout — из env B; трейл `ladder_retrace` — откат к предыдущей ступени. До закрытия не откатывается в A.',
     );
   } else if (evKind === 'open' || evKind === 'scale_in_add') {
     parts.push(
@@ -1552,6 +1570,8 @@ export function buildTimelineEvent(
   const ts = Number(e.ts ?? 0);
   if (!ts) return null;
   const kind = String(e.kind || '');
+  const strategyId = String(e.strategyId || '');
+  const isLiveOscarRisky = strategyId === 'live-oscar-risky';
   const isMcMetric = metricType === 'mc';
   const marketPrice = Number(e.marketPrice ?? 0);
   /** W7.2+ stamped mcap snapshot on each ledger row — takes precedence. */
@@ -1670,7 +1690,9 @@ export function buildTimelineEvent(
     const isTpGrid = e.tpGrid === true || e.tpGrid === 'true';
     const niceReason =
       reason === 'TP_LADDER'
-        ? isTpGrid
+        ? isLiveOscarRisky && isTpGrid
+          ? 'Продажа по TP-сетке Risky'
+          : isTpGrid
           ? 'Сетка TP (Oscar)'
           : 'Лестница TP'
         : reason.toLowerCase().replace(/_/g, ' ');
@@ -1740,10 +1762,19 @@ export function buildTimelineEvent(
   }
   if (kind === 'close') {
     const exitReason = String(e.exitReason || 'CLOSE');
+    const riskyCloseReason =
+      isLiveOscarRisky && exitReason === 'KILLSTOP'
+        ? 'Закрытие Risky · KILLSTOP: цена дошла до kill-stop −16% к текущей средней'
+        : isLiveOscarRisky && exitReason === 'TRAIL'
+          ? 'Закрытие Risky · TRAIL: откат к предыдущей ступени после TP-сетки'
+          : isLiveOscarRisky && exitReason === 'TIMEOUT'
+            ? 'Закрытие Risky · TIMEOUT: истёк лимит времени позиции'
+            : null;
     const closeLabel =
-      exitReason === 'CAPITAL_ROTATE'
+      riskyCloseReason ??
+      (exitReason === 'CAPITAL_ROTATE'
         ? `Close · CAPITAL_ROTATE — ротация капитала Phase 5 (ожидаемо, не сбой)${liveExitModeLabelSuffix(e)}`
-        : `Close · ${exitReason}${liveExitModeLabelSuffix(e)}`;
+        : `Close · ${exitReason}${liveExitModeLabelSuffix(e)}`);
     const exitMc = Number(e.exitMcUsd ?? 0);
     const exitMarketPrice = Number(e.exit_market_price ?? 0);
     const closeMcFromMetric =
@@ -1866,8 +1897,8 @@ function filterOscarDeferredContextNote(
   if (note == null || note === '') return note;
   const lines = note.split('\n');
   const tpLine = lines.find((l) => l.startsWith('Класс пути до входа')) ?? null;
-  const modeALine = lines.find((l) => l.startsWith('Режим A (IDEALIZED')) ?? null;
-  const modeBLine = lines.find((l) => l.startsWith('Режим B (IDEALIZED')) ?? null;
+  const modeALine = lines.find((l) => l.startsWith('Режим A')) ?? null;
+  const modeBLine = lines.find((l) => l.startsWith('Режим B')) ?? null;
   const parts: string[] = [];
   if (tpLine) parts.push(tpLine);
   if (stage === 'post_tp_pre_dca' && modeALine) parts.push(modeALine);
@@ -2291,6 +2322,9 @@ function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
 export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Load {
   if (!fs.existsSync(filePath)) return emptyLiveOscarPaper2Load();
 
+  const dashboardStrategyId = filePath.toLowerCase().includes('risky') ? 'live-oscar-risky' : 'live-oscar';
+  const isLiveOscarRiskyFile = dashboardStrategyId === 'live-oscar-risky';
+
   const om = new Map<string, Paper2OpenItem>();
   const cl: Paper2ClosedRow[] = [];
   let f = Date.now();
@@ -2460,9 +2494,17 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       liveMeta.set(mint, { metricType, entryRealMcUsd });
 
       const emMc0 = entryRealMcFromLiveOpenTrade(ot);
+      const openLegUsd = Number(legsArr[0]?.sizeUsd ?? 0);
+      const openLabelRu =
+        isLiveOscarRiskyFile && openLegUsd > 0
+          ? `Первая нога входа Risky: $${openLegUsd.toFixed(0)} (75% лимита) после 10-мин recheck`
+          : typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
+            ? o.timelineOpenLabelRu.trim()
+            : undefined;
       const syn: Record<string, unknown> = {
         kind: 'open',
         ts,
+        strategyId: dashboardStrategyId,
         mint,
         symbol: ot.symbol,
         lane: ot.lane,
@@ -2475,9 +2517,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         totalInvestedUsd: ot.totalInvestedUsd,
         metricType,
         ...(emMc0 != null && emMc0 > 0 ? { mcUsdLive: emMc0 } : {}),
-        ...(typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
-          ? { timelineOpenLabelRu: o.timelineOpenLabelRu.trim() }
-          : {}),
+        ...(openLabelRu ? { timelineOpenLabelRu: openLabelRu } : {}),
         ...(typeof ot.tpRegime === 'string' && ot.tpRegime.trim() ? { tpRegime: ot.tpRegime } : {}),
         ...(ot.liveExitProfileMode === 'A' || ot.liveExitProfileMode === 'B'
           ? { liveExitProfileMode: ot.liveExitProfileMode }
@@ -2499,10 +2539,15 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const fracFull = posUsd > 0 && legUsd > 0 ? legUsd / posUsd : 0;
 
       const baseLab =
-        fracFull > 0 ? `Докупка ${Math.round(fracFull * 100)}% позиции` : 'Докупка второй ноги входа';
+        isLiveOscarRiskyFile && legUsd > 0
+          ? `Вторая нога входа Risky: $${legUsd.toFixed(0)} по коридору +1%/−2%`
+          : fracFull > 0
+            ? `Докупка ${Math.round(fracFull * 100)}% позиции`
+            : 'Докупка второй ноги входа';
       const syn: Record<string, unknown> = {
         kind: 'scale_in_add',
         ts,
+        strategyId: dashboardStrategyId,
         mint,
         marketPrice: Number(lastLeg.marketPrice ?? lastLeg.price ?? 0),
         sizeUsd: legUsd,
@@ -2546,18 +2591,29 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         Array.isArray(ot.dcaUsedLevels) && ot.dcaUsedLevels.length > 0 ? ot.dcaUsedLevels.length : 1;
 
       const trig = Number(lastLeg.triggerPct ?? 0);
+      const dcaUsd = Number(lastLeg.sizeUsd ?? 0);
+      const dcaLabelRu =
+        isLiveOscarRiskyFile && dcaUsd > 0
+          ? `DCA Risky: докупка $${dcaUsd.toFixed(0)} при ${(trig * 100).toFixed(0)}% от первой ноги · режим выхода B`
+          : undefined;
       const syn: Record<string, unknown> = {
         kind: 'dca_add',
         ts,
+        strategyId: dashboardStrategyId,
         mint,
         marketPrice: Number(lastLeg.marketPrice ?? lastLeg.price ?? 0),
-        sizeUsd: Number(lastLeg.sizeUsd ?? 0),
+        sizeUsd: dcaUsd,
         triggerPct: trig,
         dcaStepIndex,
         dcaLevelsTotal,
         totalInvestedUsd: ot.totalInvestedUsd,
         mcUsdLive: undefined,
-        ...(ot.liveExitProfileMode === 'B'
+        ...(dcaLabelRu
+          ? {
+              timelineLabelRu: dcaLabelRu,
+              liveExitProfileMode: 'B',
+            }
+          : ot.liveExitProfileMode === 'B'
           ? {
               timelineLabelRu: `DCA шаг ${dcaStepIndex + 1}/${dcaLevelsTotal} (${(trig * 100).toFixed(0)}%) · режим выхода B`,
               liveExitProfileMode: 'B',
@@ -2597,6 +2653,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const syn: Record<string, unknown> = {
         kind: 'partial_sell',
         ts,
+        strategyId: dashboardStrategyId,
         mint,
         marketPrice: Number(ps.marketPrice ?? ps.price ?? 0),
         sellFraction: Number(ps.sellFraction ?? 0),
@@ -2632,6 +2689,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const syn: Record<string, unknown> = {
         kind: 'close',
         ts,
+        strategyId: dashboardStrategyId,
         mint,
         exitTs: ct.exitTs,
         exitMcUsd: ct.exitMcUsd,
