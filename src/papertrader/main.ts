@@ -270,6 +270,45 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     );
   }
 
+  function notifyLiveOscarRiskyEntrySignal(args: {
+    mint: string;
+    symbol: string;
+    marketCapUsd: number | null;
+    holderCount: number | null;
+  }): void {
+    const token =
+      process.env.LIVE_RISKY_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_RISKY_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: args.mint }, 'live-oscar-risky signal telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const symbol = args.symbol?.trim() || '?';
+    const text =
+      `<b>Live Oscar Risky signal</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
+      `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
+      `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
+      `Кандидат прошёл первичные гейты; ждём recheck перед покупкой.`;
+
+    void sendTagged('ADVICE', 'live_oscar_risky_entry_signal', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: args.mint }, 'live-oscar-risky signal telegram failed'),
+    );
+  }
+
   function resolveLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
@@ -497,6 +536,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         signalPriceUsd: next.signalPriceUsd,
         minChangePct: cfg.entryRecheckMinChangePct,
         maxChangePct: cfg.entryRecheckMaxChangePct,
+      });
+      notifyLiveOscarRiskyEntrySignal({
+        mint: d.mint,
+        symbol: d.symbol,
+        marketCapUsd: d.features.market_cap_usd ?? null,
+        holderCount: d.features.holders ?? null,
       });
       return false;
     }
