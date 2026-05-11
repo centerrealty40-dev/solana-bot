@@ -545,7 +545,8 @@ module.exports = {
       },
     },
     /**
-     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; без верхних капов по liq/vol/holders; нотионал **$200** (ноги **$150+$50**, DCA −3% ещё **$40**).
+     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; без whitelist/верхних капов по liq/vol/holders.
+     * Экспериментальный staged-entry: $50 по сигналу, $70 на −6%, $80 на −12%; без Telegram-кандидатов/recheck.
      * Блок **live-oscar** выше не трогать. Ключ: `data/live/live-oscar-risky.keypair.json` (gitignore); **`LIVE_WALLET_PUBKEY`** в env процесса.
      */
     {
@@ -575,9 +576,18 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** $200 total: первая нога $150, вторая $50 (scale-in). DCA −3%: доля от `PAPER_POSITION_USD` → **$40** при `-3:0.2`. */
+        /** $200 total: staged-entry $50 по сигналу, $70 на −6%, $80 на −12%; дополнительных DCA нет. */
         PAPER_POSITION_USD: '200',
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.25',
+        PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '50',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '6',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '70',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '12',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '80',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '18',
+        PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -610,10 +620,10 @@ module.exports = {
         PAPER_MIN_HOLDER_COUNT: '1000',
         /** Верхний cap по holders выключен; оставляем только нижний порог. */
         PAPER_GLOBAL_MAX_HOLDER_COUNT: '0',
-        /** Risky-only: сигнал входа держим 10 мин; вход только если цена в диапазоне [-20%, +3%] от цены сигнала. */
-        PAPER_ENTRY_RECHECK_DELAY_MS: '600000',
-        PAPER_ENTRY_RECHECK_MIN_CHANGE_PCT: '-20',
-        PAPER_ENTRY_RECHECK_MAX_CHANGE_PCT: '3',
+        /** Risky staged-entry покупает первую ногу сразу по сигналу; recheck и Telegram-кандидаты выключены. */
+        PAPER_ENTRY_RECHECK_DELAY_MS: '0',
+        PAPER_ENTRY_RECHECK_MIN_CHANGE_PCT: '-99',
+        PAPER_ENTRY_RECHECK_MAX_CHANGE_PCT: '100',
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-20',
@@ -633,16 +643,16 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.16',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.025',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
-        PAPER_DCA_LEVELS: '-3:0.2',
-        PAPER_DCA_KILLSTOP: '-0.16',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '0',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.03',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.10',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
+        PAPER_DCA_LEVELS: '',
+        PAPER_DCA_KILLSTOP: '0',
         PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.025',
-        PAPER_TP_GRID_SELL_FRACTION: '0.05',
-        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
+        PAPER_TP_GRID_STEP_PNL: '0.03',
+        PAPER_TP_GRID_SELL_FRACTION: '0.10',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
@@ -760,7 +770,7 @@ module.exports = {
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '30',
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
-        LIVE_ENTRY_SCALE_IN_ENABLED: '1',
+        LIVE_ENTRY_SCALE_IN_ENABLED: '0',
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',
         LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT: '2',

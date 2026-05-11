@@ -230,7 +230,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
 
   function liveStagedEntryActive(): boolean {
-    return cfg.strategyId === 'live-oscar' && cfg.liveStagedEntryEnabled;
+    return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
   }
 
   function isSignalMintMissingFromLiveWhitelist(mint: string): boolean {
@@ -366,12 +366,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         thirdDropPct: cfg.liveStagedEntryThirdDropPct,
         expiresAt: signal.expiresAt,
       });
-      notifyLiveStagedEntrySignal({
-        mint: args.mint,
-        symbol: args.symbol,
-        marketCapUsd: signal.signalMarketCapUsd,
-        holderCount: signal.holderCount,
-      });
+      if (cfg.strategyId === 'live-oscar') {
+        notifyLiveStagedEntrySignal({
+          mint: args.mint,
+          symbol: args.symbol,
+          marketCapUsd: signal.signalMarketCapUsd,
+          holderCount: signal.holderCount,
+        });
+      }
     }
 
     const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);
@@ -1153,8 +1155,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
                   killDropPct: cfg.liveStagedEntryKillDropPct,
                   signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
-                  description:
-                    'Покупка live-oscar staged: сигнал фиксирует якорную цену; 40% позиции покупается сразу, доборы 30% на −7% и 30% на −14% доступны только в течение часа; после первого TP доборы не происходят, kill-stop считается от цены сигнала.',
+                  description: `${cfg.strategyId} staged: сигнал фиксирует якорную цену; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} покупается сразу, доборы $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} на −${cfg.liveStagedEntrySecondDropPct}%${
+                    cfg.liveStagedEntryThirdLegUsd > 0
+                      ? ` и $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} на −${cfg.liveStagedEntryThirdDropPct}%`
+                      : ''
+                  } доступны только в течение часа; после первого TP доборы не происходят, kill-stop считается от цены сигнала.`,
                 },
               }
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
