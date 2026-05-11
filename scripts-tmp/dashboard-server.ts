@@ -1514,6 +1514,27 @@ function tpRegimeRu(tp: unknown): string | null {
   return map[raw] ?? raw;
 }
 
+function fmtDropPctRaw(v: number): string {
+  return Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1);
+}
+
+function liveStagedEntryState(e: Record<string, unknown>): Record<string, unknown> | null {
+  const st = e.liveStagedEntry;
+  return st != null && typeof st === 'object' ? (st as Record<string, unknown>) : null;
+}
+
+function liveStagedOpenLabelRu(strategyId: string, e: Record<string, unknown>): string | null {
+  const st = liveStagedEntryState(e);
+  if (!st) return null;
+  const legs = Array.isArray(e.legs) ? (e.legs as Record<string, unknown>[]) : [];
+  const firstLegUsd = Number(st.firstLegUsd ?? legs[0]?.sizeUsd ?? 0);
+  if (!(firstLegUsd > 0)) return null;
+  const firstDropPct = Number(st.firstDropPct ?? 0);
+  const name = strategyId === 'live-oscar-risky' ? 'Первая нога Risky' : 'Первая нога';
+  const trigger = firstDropPct <= 0 ? 'по сигналу' : `на −${fmtDropPctRaw(firstDropPct)}% от сигнала`;
+  return `${name}: $${firstLegUsd.toFixed(0)} ${trigger}`;
+}
+
 /** Контекст для строк таймлайна open/close (paper + live). */
 function timelineContextNoteFromJournal(e: Record<string, unknown>): string | null {
   const parts: string[] = [];
@@ -1522,19 +1543,36 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const mode = e.liveExitProfileMode;
   const evKind = String(e.kind || '');
   const strategyId = String(e.strategyId || '');
+  const isLiveOscar = strategyId === 'live-oscar';
   const isLiveOscarRisky = strategyId === 'live-oscar-risky';
   if (isLiveOscarRisky) {
     if (mode === 'A') {
       parts.push(
-        'Режим A (Live Oscar Risky): позиция ещё без DCA; текущие правила выхода — TP-сетка +2.5% к средней, продажа 5% остатка за ступень; kill-stop −16% к текущей средней; trail `ladder_retrace` после TP.',
+        'Режим A (Live Oscar Risky): позиция ещё без staged-добора; TP-сетка +3% к средней, продажа 10% остатка за ступень; signal kill-stop −18% от первоначального сигнала; trail `ladder_retrace` после TP.',
       );
     } else if (mode === 'B') {
       parts.push(
-        'Режим B (Live Oscar Risky): включён после DCA. DCA: докупка $40 при −3% от цены первой ноги; kill-stop −16% к текущей средней; TP-сетка +2.5% к avg, продажа 5% остатка за ступень; timeout B — 4 ч.',
+        'Режим B (Live Oscar Risky): включён после staged-добора. Доборы: $70 на −6% и $80 на −12% от сигнала, только первый час и до первого TP; TP-сетка +3% к avg, продажа 10% остатка; signal kill-stop −18%; timeout B — 4 ч.',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
-        'Вход Live Oscar Risky: после сигнала ждём 10 минут и покупаем только если цена осталась в коридоре −20%…+3% от цены сигнала. План: первая нога 75% лимита ($150 из $200), вторая нога $50 через 5 секунд в коридоре +1%/−2%; DCA ещё не включён.',
+        'Вход Live Oscar Risky: первая нога $50 покупается сразу по сигналу; 10-мин recheck и Telegram-кандидаты выключены. План доборов: $70 на −6% и $80 на −12% от цены сигнала; whitelist выключен, остаются blacklist/denylist.',
+      );
+    }
+    return parts.length ? parts.join('\n') : null;
+  }
+  if (isLiveOscar) {
+    if (mode === 'B') {
+      parts.push(
+        'Режим B (Live Oscar): включён после staged-добора. Доборы: $300 на −7% и $300 на −14% от сигнала, только первый час и до первого TP; TP-сетка B +2.5% к avg, продажа 5% остатка; signal kill-stop −22%.',
+      );
+    } else if (mode === 'A') {
+      parts.push(
+        'Режим A (Live Oscar): позиция ещё без staged-добора; TP-сетка +2.5% к средней, продажа 5% остатка; signal kill-stop −22% от первоначального сигнала.',
+      );
+    } else if (evKind === 'open' || evKind === 'scale_in_add') {
+      parts.push(
+        'Вход Live Oscar: первая нога $400 покупается по сигналу; доборы $300 на −7% и $300 на −14% доступны только первый час и отменяются после первого TP; дополнительных DCA нет.',
       );
     }
     return parts.length ? parts.join('\n') : null;
@@ -1764,7 +1802,7 @@ export function buildTimelineEvent(
     const exitReason = String(e.exitReason || 'CLOSE');
     const riskyCloseReason =
       isLiveOscarRisky && exitReason === 'KILLSTOP'
-        ? 'Закрытие Risky · KILLSTOP: цена дошла до kill-stop −16% к текущей средней'
+        ? 'Закрытие Risky · KILLSTOP: цена дошла до signal kill-stop −18% от первоначального сигнала'
         : isLiveOscarRisky && exitReason === 'TRAIL'
           ? 'Закрытие Risky · TRAIL: откат к предыдущей ступени после TP-сетки'
           : isLiveOscarRisky && exitReason === 'TIMEOUT'
@@ -2496,11 +2534,14 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const emMc0 = entryRealMcFromLiveOpenTrade(ot);
       const openLegUsd = Number(legsArr[0]?.sizeUsd ?? 0);
       const openLabelRu =
-        isLiveOscarRiskyFile && openLegUsd > 0
-          ? `Первая нога входа Risky: $${openLegUsd.toFixed(0)} (75% лимита) после 10-мин recheck`
+        liveStagedOpenLabelRu(dashboardStrategyId, { ...ot, strategyId: dashboardStrategyId }) ??
+        (isLiveOscarRiskyFile && openLegUsd > 0
+          ? openLegUsd <= 60
+            ? `Первая нога Risky: $${openLegUsd.toFixed(0)} по сигналу`
+            : `Legacy Risky open: $${openLegUsd.toFixed(0)} после recheck`
           : typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
             ? o.timelineOpenLabelRu.trim()
-            : undefined;
+            : undefined);
       const syn: Record<string, unknown> = {
         kind: 'open',
         ts,
@@ -2515,6 +2556,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         entryMarketPrice: legsArr[0] ? legsArr[0].marketPrice ?? ot.entryMcUsd : ot.entryMcUsd,
         legs: ot.legs,
         totalInvestedUsd: ot.totalInvestedUsd,
+        ...(ot.liveStagedEntry != null ? { liveStagedEntry: ot.liveStagedEntry } : {}),
         metricType,
         ...(emMc0 != null && emMc0 > 0 ? { mcUsdLive: emMc0 } : {}),
         ...(openLabelRu ? { timelineOpenLabelRu: openLabelRu } : {}),
@@ -2540,7 +2582,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
       const baseLab =
         isLiveOscarRiskyFile && legUsd > 0
-          ? `Вторая нога входа Risky: $${legUsd.toFixed(0)} по коридору +1%/−2%`
+          ? `Legacy scale-in Risky: $${legUsd.toFixed(0)} по старому коридору +1%/−2%`
           : fracFull > 0
             ? `Докупка ${Math.round(fracFull * 100)}% позиции`
             : 'Докупка второй ноги входа';
@@ -2589,13 +2631,18 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const dcaStepIndex = usedIdx.length ? usedIdx[usedIdx.length - 1]! : Math.max(0, legsArr.length - 2);
       const dcaLevelsTotal =
         Array.isArray(ot.dcaUsedLevels) && ot.dcaUsedLevels.length > 0 ? ot.dcaUsedLevels.length : 1;
+      const journalDcaLabelRu =
+        typeof o.timelineLabelRu === 'string' && o.timelineLabelRu.trim().length
+          ? o.timelineLabelRu.trim()
+          : null;
 
       const trig = Number(lastLeg.triggerPct ?? 0);
       const dcaUsd = Number(lastLeg.sizeUsd ?? 0);
       const dcaLabelRu =
-        isLiveOscarRiskyFile && dcaUsd > 0
+        journalDcaLabelRu ??
+        (isLiveOscarRiskyFile && dcaUsd > 0
           ? `DCA Risky: докупка $${dcaUsd.toFixed(0)} при ${(trig * 100).toFixed(0)}% от первой ноги · режим выхода B`
-          : undefined;
+          : undefined);
       const syn: Record<string, unknown> = {
         kind: 'dca_add',
         ts,
@@ -2608,6 +2655,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         dcaLevelsTotal,
         totalInvestedUsd: ot.totalInvestedUsd,
         mcUsdLive: undefined,
+        ...(ot.liveStagedEntry != null ? { liveStagedEntry: ot.liveStagedEntry } : {}),
         ...(dcaLabelRu
           ? {
               timelineLabelRu: dcaLabelRu,
