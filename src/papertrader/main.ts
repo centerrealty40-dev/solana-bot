@@ -262,18 +262,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       logger.warn({ mint: args.mint }, 'live staged-entry signal telegram skipped: bot token/chat missing');
       return;
     }
+    if (isSignalMintMissingFromLiveWhitelist(args.mint)) {
+      logger.info({ mint: args.mint }, 'live staged-entry signal telegram skipped: mint not in whitelist');
+      return;
+    }
 
     const symbol = args.symbol?.trim() || '?';
-    const whitelistWarning = isSignalMintMissingFromLiveWhitelist(args.mint)
-      ? `\n<b>Важно:</b> Мы начали следить за этой монетой, но её нет в white list.`
-      : '';
     const text =
       `<b>Live Oscar signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Вход: 40% по сигналу; добор 30% на −7% и 30% на −14% в течение часа.${whitelistWarning}`;
+      `Вход: 40% по сигналу; добор 30% на −7% и 30% на −14% в течение часа.`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',
