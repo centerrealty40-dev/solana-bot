@@ -64,9 +64,11 @@ const ConfigSchema = z.object({
   liveStagedEntryEnabled: z.boolean().default(false),
   liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(7),
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
+  liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(24),
   liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
   liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
+  liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   liveStagedEntrySignalTtlMs: z.coerce.number().int().positive().default(60 * 60_000),
   btcMints: z
     .string()
@@ -507,9 +509,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEnabled: envBool(process.env.PAPER_LIVE_STAGED_ENTRY_ENABLED, false),
     liveStagedEntryFirstDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT,
     liveStagedEntrySecondDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT,
+    liveStagedEntryThirdDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT,
     liveStagedEntryKillDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT,
     liveStagedEntryFirstLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD,
     liveStagedEntrySecondLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD,
+    liveStagedEntryThirdLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD,
     liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
     btcMints: process.env.PAPER_BTC_MINTS,
     feeBpsPumpfun: process.env.PAPER_FEE_BPS_PUMPFUN,

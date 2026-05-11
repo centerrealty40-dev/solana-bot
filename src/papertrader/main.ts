@@ -273,7 +273,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Начинаем отсчёт входа: −7% / −14% от цены сигнала${whitelistWarning}`;
+      `Вход: 40% по сигналу; добор 30% на −7% и 30% на −14% в течение часа.${whitelistWarning}`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',
@@ -362,6 +362,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         holderCount: signal.holderCount,
         firstDropPct: cfg.liveStagedEntryFirstDropPct,
         firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
+        secondDropPct: cfg.liveStagedEntrySecondDropPct,
+        thirdDropPct: cfg.liveStagedEntryThirdDropPct,
         expiresAt: signal.expiresAt,
       });
       notifyLiveStagedEntrySignal({
@@ -782,6 +784,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
             secondDropPct: cfg.liveStagedEntrySecondDropPct,
             secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+            ...(cfg.liveStagedEntryThirdLegUsd > 0
+              ? {
+                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+                  thirdLegDone: false,
+                }
+              : {}),
             killDropPct: cfg.liveStagedEntryKillDropPct,
             secondLegDone: false,
           };
@@ -918,6 +927,26 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               entryTs: ot.entryTs,
             });
           }
+        }
+
+        if (liveStagedEntryActive()) {
+          ot.liveStagedEntry = {
+            signalTs: stagedEntrySignal.signalTs,
+            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+            firstDropPct: cfg.liveStagedEntryFirstDropPct,
+            firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
+            secondDropPct: cfg.liveStagedEntrySecondDropPct,
+            secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+            ...(cfg.liveStagedEntryThirdLegUsd > 0
+              ? {
+                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+                  thirdLegDone: false,
+                }
+              : {}),
+            killDropPct: cfg.liveStagedEntryKillDropPct,
+            secondLegDone: ot.liveStagedEntry?.secondLegDone ?? false,
+          };
         }
 
         const pfQuoteOpen = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
@@ -1110,17 +1139,22 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         const liveOpenExtras: Record<string, unknown> =
           liveOscarForJournal && liveStagedEntryActive()
             ? {
-                timelineOpenLabelRu: `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
+                timelineOpenLabelRu:
+                  cfg.liveStagedEntryFirstDropPct <= 0
+                    ? `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу`
+                    : `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
                 liveStagedEntryParams: {
                   signalPriceUsd: ot.liveStagedEntry?.signalPriceUsd,
                   firstDropPct: cfg.liveStagedEntryFirstDropPct,
                   firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
                   secondDropPct: cfg.liveStagedEntrySecondDropPct,
                   secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
                   killDropPct: cfg.liveStagedEntryKillDropPct,
                   signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
                   description:
-                    'Покупка live-oscar теперь staged: сигнал фиксирует якорную цену; первая нога исполняется после падения от сигнала, вторая — как единственное усреднение на более глубоком падении; kill-stop считается от цены сигнала.',
+                    'Покупка live-oscar staged: сигнал фиксирует якорную цену; 40% позиции покупается сразу, доборы 30% на −7% и 30% на −14% доступны только в течение часа; после первого TP доборы не происходят, kill-stop считается от цены сигнала.',
                 },
               }
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9

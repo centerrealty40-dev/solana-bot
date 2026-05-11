@@ -152,6 +152,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       const firstLegUsd = Number(p.firstLegUsd);
       const secondDropPct = Number(p.secondDropPct);
       const secondLegUsd = Number(p.secondLegUsd);
+      const thirdDropPct = Number(p.thirdDropPct);
+      const thirdLegUsd = Number(p.thirdLegUsd);
       const killDropPct = Number(p.killDropPct);
       if (
         Number.isFinite(signalTs) &&
@@ -172,8 +174,12 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           firstLegUsd,
           secondDropPct,
           secondLegUsd,
+          ...(Number.isFinite(thirdDropPct) && Number.isFinite(thirdLegUsd) && thirdLegUsd > 0
+            ? { thirdDropPct, thirdLegUsd }
+            : {}),
           killDropPct,
           secondLegDone: Boolean(p.secondLegDone),
+          thirdLegDone: Boolean(p.thirdLegDone),
         };
       }
     }

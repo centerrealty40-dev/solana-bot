@@ -1806,24 +1806,29 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !liveOscarNoDcaInModeA;
 
     const st = ot.liveStagedEntry;
-    if (
-      st &&
-      !st.secondLegDone &&
-      ot.remainingFraction > 0 &&
-      !liveStagedEntryKillHit(ot, curMetric)
-    ) {
+    if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, curMetric)) {
       const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
-      if (signalDropPct != null && signalDropPct <= -st.secondDropPct) {
-        const addUsd = st.secondLegUsd;
+      const stagedAddWindowOpen = Date.now() <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+      const stagedAddAllowed = stagedAddWindowOpen && ot.partialSells.length === 0;
+      const totalStagedAddLegs = st.thirdLegUsd && st.thirdLegUsd > 0 ? 2 : 1;
+      const tryStagedAddLeg = async (args: {
+        stepIndex: number;
+        legLabelRu: string;
+        addUsd: number;
+        dropPct: number;
+        signalDropPct: number;
+        markDone: () => void;
+      }): Promise<boolean> => {
+        const { stepIndex, legLabelRu, addUsd, dropPct, signalDropPct, markDone } = args;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
-          if (!open.has(mint)) continue;
+          if (!open.has(mint)) return false;
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
             usdNotional: addUsd,
           });
-          if (!dcaBuyRes.ok) continue;
+          if (!dcaBuyRes.ok) return false;
         }
         const marketBuy = curMetric;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
@@ -1833,9 +1838,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           marketPrice: marketBuy,
           sizeUsd: addUsd,
           reason: 'dca',
-          triggerPct: -st.secondDropPct / 100,
+          triggerPct: -dropPct / 100,
         });
-        st.secondLegDone = true;
+        markDone();
         ot.livePendingScaleIn = null;
         ot.liveKillstopBelowStreak = 0;
         ot.totalInvestedUsd += addUsd;
@@ -1843,7 +1848,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.avgEntry = num / ot.totalInvestedUsd;
         const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-        markDcaStepFired(ot, 0, -st.secondDropPct / 100);
+        markDcaStepFired(ot, stepIndex, -dropPct / 100);
         ot.remainingFraction = 1;
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
@@ -1864,16 +1869,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           price: effectiveBuy,
           marketPrice: marketBuy,
           sizeUsd: addUsd,
-          dcaStepIndex: 0,
-          dcaLevelsTotal: 1,
-          triggerPct: -st.secondDropPct / 100,
+          dcaStepIndex: stepIndex,
+          dcaLevelsTotal: totalStagedAddLegs,
+          triggerPct: -dropPct / 100,
           avgEntry: ot.avgEntry,
           avgEntryMarket: ot.avgEntryMarket,
           totalInvestedUsd: ot.totalInvestedUsd,
           legCount: ot.legs.length,
           mcUsdLive: mcUsdLive_dca,
           priorityFee: pfDca,
-          timelineLabelRu: `Вторая нога $${st.secondLegUsd.toFixed(0)} на −${st.secondDropPct}% от сигнала · единственное усреднение · режим выхода B`,
+          timelineLabelRu: `${legLabelRu} $${addUsd.toFixed(0)} на −${dropPct}% от сигнала · добор staged-entry · режим выхода B`,
           liveExitProfileMode: 'B' as const,
           liveStagedEntry: { ...st, signalDropPct: +signalDropPct.toFixed(3) },
         });
@@ -1881,11 +1886,47 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           kind: 'live_position_dca',
           mint,
           openTrade: serializeOpenTrade(ot),
-          timelineLabelRu: `Вторая нога $${st.secondLegUsd.toFixed(0)} на −${st.secondDropPct}% от сигнала`,
+          timelineLabelRu: `${legLabelRu} $${addUsd.toFixed(0)} на −${dropPct}% от сигнала`,
         });
         console.log(
-          `[STAGED_DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} signalDrop=${signalDropPct.toFixed(2)}% avgEff=${ot.avgEntry.toFixed(8)}`,
+          `[STAGED_DCA] ${mint.slice(0, 8)} $${ot.symbol} ${legLabelRu} +$${addUsd.toFixed(0)} signalDrop=${signalDropPct.toFixed(2)}% avgEff=${ot.avgEntry.toFixed(8)}`,
         );
+        return true;
+      };
+
+      if (signalDropPct != null && stagedAddAllowed && !st.secondLegDone && signalDropPct <= -st.secondDropPct) {
+        await tryStagedAddLeg({
+          stepIndex: 0,
+          legLabelRu: 'Вторая нога',
+          addUsd: st.secondLegUsd,
+          dropPct: st.secondDropPct,
+          signalDropPct,
+          markDone: () => {
+            st.secondLegDone = true;
+          },
+        });
+      }
+
+      if (
+        signalDropPct != null &&
+        stagedAddAllowed &&
+        st.secondLegDone &&
+        !st.thirdLegDone &&
+        st.thirdLegUsd != null &&
+        st.thirdLegUsd > 0 &&
+        st.thirdDropPct != null &&
+        signalDropPct <= -st.thirdDropPct
+      ) {
+        await tryStagedAddLeg({
+          stepIndex: 1,
+          legLabelRu: 'Третья нога',
+          addUsd: st.thirdLegUsd,
+          dropPct: st.thirdDropPct,
+          signalDropPct,
+          markDone: () => {
+            st.thirdLegDone = true;
+          },
+        });
       }
     }
 

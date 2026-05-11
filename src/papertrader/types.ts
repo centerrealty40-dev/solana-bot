@@ -177,8 +177,11 @@ export interface LiveStagedEntryState {
   firstLegUsd: number;
   secondDropPct: number;
   secondLegUsd: number;
+  thirdDropPct?: number;
+  thirdLegUsd?: number;
   killDropPct: number;
   secondLegDone?: boolean;
+  thirdLegDone?: boolean;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */
