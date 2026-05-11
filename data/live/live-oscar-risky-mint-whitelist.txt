@@ -34,3 +34,6 @@ HmBdm8vbisABUjkxms6ZUnoaXbfwFM6ymxShWfAENaoi
 8Ki8DpuWNxu9VsS3kQbarsCWMcFGWkzzA8pUPto9zBd5
 # по запросу (повторно в whitelist)
 F5tfztTnE4sYsMhZT5KrFpWvHmYSfJZoRjCuxKPbpump
+# по запросу
+Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump
+orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE

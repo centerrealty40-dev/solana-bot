@@ -233,6 +233,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     return cfg.strategyId === 'live-oscar' && cfg.liveStagedEntryEnabled;
   }
 
+  function isSignalMintMissingFromLiveWhitelist(mint: string): boolean {
+    const liveOscar = resolveLiveOscar();
+    if (!liveOscar?.liveCfg.liveMintWhitelistEnabled) return false;
+    if (isPaperOscarFamilyStrategyId(cfg.strategyId)) return false;
+    try {
+      return !isMintOnLiveWhitelist(liveOscar.liveCfg.liveMintWhitelistPath, mint);
+    } catch (e) {
+      logger.warn({ err: String(e), mint }, 'live signal whitelist lookup failed');
+      return false;
+    }
+  }
+
   function notifyLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
@@ -252,13 +264,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
 
     const symbol = args.symbol?.trim() || '?';
+    const whitelistWarning = isSignalMintMissingFromLiveWhitelist(args.mint)
+      ? `\n<b>Важно:</b> Мы начали следить за этой монетой, но её нет в white list.`
+      : '';
     const text =
       `<b>Live Oscar signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Начинаем отсчёт входа: −7% / −14% от цены сигнала`;
+      `Начинаем отсчёт входа: −7% / −14% от цены сигнала${whitelistWarning}`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',
@@ -291,13 +306,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
 
     const symbol = args.symbol?.trim() || '?';
+    const whitelistWarning = isSignalMintMissingFromLiveWhitelist(args.mint)
+      ? `\n<b>Важно:</b> Мы начали следить за этой монетой, но её нет в white list.`
+      : '';
     const text =
       `<b>Live Oscar Risky signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Кандидат прошёл первичные гейты; ждём recheck перед покупкой.`;
+      `Кандидат прошёл первичные гейты; ждём recheck перед покупкой.${whitelistWarning}`;
 
     void sendTagged('ADVICE', 'live_oscar_risky_entry_signal', text, {
       parseMode: 'HTML',
