@@ -146,6 +146,12 @@ export interface OpenTrade {
    */
   livePendingScaleIn?: LivePendingScaleIn | null;
 
+  /**
+   * Live Oscar staged entry: signal anchor stays fixed while the first/second legs
+   * and kill-stop are evaluated as drops from the original discovery signal price.
+   */
+  liveStagedEntry?: LiveStagedEntryState;
+
   /** TP-grid regime + overrides — заполняется при `PAPER_TP_REGIME_ENABLED` на открытии. */
   tpRegime?: TpRegime;
   tpRegimeFeatures?: TpRegimeFeatures;
@@ -162,6 +168,17 @@ export interface OpenTrade {
    * После пополнения позиции (`legs.length > 1`) выход только при streak ≥ 2; иначе сброс в 0.
    */
   liveKillstopBelowStreak?: number;
+}
+
+export interface LiveStagedEntryState {
+  signalTs: number;
+  signalPriceUsd: number;
+  firstDropPct: number;
+  firstLegUsd: number;
+  secondDropPct: number;
+  secondLegUsd: number;
+  killDropPct: number;
+  secondLegDone?: boolean;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */

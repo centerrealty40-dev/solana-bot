@@ -266,10 +266,16 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Полный нотионал **$600**: первая нога **$450**, вторая **$150** по DCA −4% или исторический сплит; доля первой ноги **0.75**. */
-        PAPER_POSITION_USD: '600',
-        /** Первая нога $450 / $600 = 0.75; вторая $150 — по коридору Jupiter (+1/−2%%) или усреднение −4%% (`PAPER_DCA_LEVELS`). */
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.75',
+        /** Staged-entry: полный нотионал **$1000**; первая нога **$400** на −7% от сигнала, вторая **$600** на −14%. */
+        PAPER_POSITION_USD: '1000',
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.4',
+        PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '7',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '14',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '600',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '24',
+        PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -321,9 +327,9 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.08',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '0',
         /**
-         * Режим B: усреднение по `PAPER_DCA_LEVELS` (−4%%); kill −8%% (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`).
+         * Режим B: включается после staged-второй ноги; signal kill-stop −24%% от исходного сигнала.
          * Лестница TP: **+2.5%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
          * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
          * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.
@@ -333,12 +339,12 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
 
         /**
-         * Усреднение −4%% от первой ноги (`-4` в parseDcaLevels); доля 0.25 = $150 при $600 — снимает план второй ноги сплита.
-         * Доля первой ноги < 1: вторая нога через `LIVE_ENTRY_SCALE_IN_*` (коридор +1/−2%%, опрос вне коридора 30 с).
+         * Дополнительные DCA отключены: вторая staged-нога — единственное усреднение.
+         * Старый 5-секундный `LIVE_ENTRY_SCALE_IN_*` для основного Live Oscar выключен ниже.
          */
-        PAPER_DCA_LEVELS: '-4:0.25',
-        /** Режим A (в т.ч. после сплит-входа, пока не включён B): kill −8%% к avg. */
-        PAPER_DCA_KILLSTOP: '-0.08',
+        PAPER_DCA_LEVELS: '',
+        /** Kill-stop для staged-entry считается отдельной signal-based логикой (`PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT`). */
+        PAPER_DCA_KILLSTOP: '0',
         /**
          * Режим A — «полная лестница»: **+2.5%%** к средней за ступень; **5%%** остатка за ступень;
          * retrace-защита после 1-й ступени (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
@@ -493,7 +499,7 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '600',
+        LIVE_MAX_POSITION_USD: '1000',
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
@@ -517,9 +523,9 @@ module.exports = {
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 
-        /** Вторая нога входа по коридору Jupiter; при `0` и доле первой ноги меньше 1 live-oscar падает при старте. */
-        LIVE_ENTRY_SCALE_IN_ENABLED: '1',
-        /** Минимальная задержка после первой ноги перед проверкой коридора второй ноги. */
+        /** Старый 5-секундный scale-in отключён: staged-entry исполняет вторую ногу по −14% от сигнала. */
+        LIVE_ENTRY_SCALE_IN_ENABLED: '0',
+        /** Legacy-настройки оставлены только для risky/бумажных профилей и не активны при LIVE_ENTRY_SCALE_IN_ENABLED=0. */
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
         /** Коридор второй ноги к якорю первой ноги: до +1% / до −2%; вне коридора — пауза `LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS`. */
         LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT: '1',

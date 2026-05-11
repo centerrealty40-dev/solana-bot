@@ -57,9 +57,17 @@ const ConfigSchema = z.object({
   positionUsd: z.coerce.number().positive().default(100),
   /**
    * Доля **первой** ноги входа от `positionUsd` (1 = как раньше — полная позиция одним свопом).
-   * Live Oscar: при < 1 и `LIVE_ENTRY_SCALE_IN_ENABLED` вторая нога исполняется отдельно в трекере (коридор Jupiter к якорю первой ноги).
+   * Live Oscar legacy scale-in: при < 1 и `LIVE_ENTRY_SCALE_IN_ENABLED` вторая нога исполняется отдельно в трекере.
    */
   entryFirstLegFraction: z.coerce.number().min(0.01).max(1).default(1),
+  /** Live Oscar staged entry: wait for first leg at signal drop, then add second leg at deeper signal drop. */
+  liveStagedEntryEnabled: z.boolean().default(false),
+  liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(7),
+  liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
+  liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(24),
+  liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
+  liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
+  liveStagedEntrySignalTtlMs: z.coerce.number().int().positive().default(60 * 60_000),
   btcMints: z
     .string()
     .default(
@@ -496,6 +504,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     btcContextRefreshMs: process.env.PAPER_BTC_CONTEXT_REFRESH_MS,
     positionUsd: process.env.PAPER_POSITION_USD,
     entryFirstLegFraction: process.env.PAPER_ENTRY_FIRST_LEG_FRACTION,
+    liveStagedEntryEnabled: envBool(process.env.PAPER_LIVE_STAGED_ENTRY_ENABLED, false),
+    liveStagedEntryFirstDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT,
+    liveStagedEntrySecondDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT,
+    liveStagedEntryKillDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT,
+    liveStagedEntryFirstLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD,
+    liveStagedEntrySecondLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD,
+    liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
     btcMints: process.env.PAPER_BTC_MINTS,
     feeBpsPumpfun: process.env.PAPER_FEE_BPS_PUMPFUN,
     feeBpsPumpswap: process.env.PAPER_FEE_BPS_PUMPSWAP,

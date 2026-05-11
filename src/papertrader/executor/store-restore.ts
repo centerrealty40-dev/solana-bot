@@ -143,6 +143,41 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
     if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
 
+    const lsei = rawPayload.liveStagedEntry;
+    if (lsei != null && typeof lsei === 'object') {
+      const p = lsei as Record<string, unknown>;
+      const signalTs = Number(p.signalTs);
+      const signalPriceUsd = Number(p.signalPriceUsd);
+      const firstDropPct = Number(p.firstDropPct);
+      const firstLegUsd = Number(p.firstLegUsd);
+      const secondDropPct = Number(p.secondDropPct);
+      const secondLegUsd = Number(p.secondLegUsd);
+      const killDropPct = Number(p.killDropPct);
+      if (
+        Number.isFinite(signalTs) &&
+        signalTs > 0 &&
+        signalPriceUsd > 0 &&
+        Number.isFinite(firstDropPct) &&
+        Number.isFinite(firstLegUsd) &&
+        firstLegUsd > 0 &&
+        Number.isFinite(secondDropPct) &&
+        Number.isFinite(secondLegUsd) &&
+        secondLegUsd > 0 &&
+        Number.isFinite(killDropPct)
+      ) {
+        ot.liveStagedEntry = {
+          signalTs,
+          signalPriceUsd,
+          firstDropPct,
+          firstLegUsd,
+          secondDropPct,
+          secondLegUsd,
+          killDropPct,
+          secondLegDone: Boolean(p.secondLegDone),
+        };
+      }
+    }
+
     const lpsi = rawPayload.livePendingScaleIn;
     if (lpsi != null && typeof lpsi === 'object') {
       const p = lpsi as Record<string, unknown>;

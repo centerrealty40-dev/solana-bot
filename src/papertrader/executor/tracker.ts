@@ -81,6 +81,19 @@ function paperOscarIdealizedNeutralFull(ot: OpenTrade): boolean {
   );
 }
 
+function liveStagedEntrySignalDropPct(ot: OpenTrade, curMetric: number): number | null {
+  const st = ot.liveStagedEntry;
+  if (!st || !(st.signalPriceUsd > 0) || !(curMetric > 0)) return null;
+  return (curMetric / st.signalPriceUsd - 1) * 100;
+}
+
+function liveStagedEntryKillHit(ot: OpenTrade, curMetric: number): boolean {
+  const st = ot.liveStagedEntry;
+  if (!st || !(st.killDropPct > 0)) return false;
+  const dropPct = liveStagedEntrySignalDropPct(ot, curMetric);
+  return dropPct != null && dropPct <= -st.killDropPct;
+}
+
 function scheduleTailAfterLiveClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   mint: string,
@@ -369,7 +382,12 @@ function buildExitContext(args: {
       triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
       break;
     case 'KILLSTOP':
-      triggerLabel = `DCA killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
+      if (ot.liveStagedEntry) {
+        const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
+        triggerLabel = `Signal killstop −${ot.liveStagedEntry.killDropPct}% (cur ${signalDropPct?.toFixed(1) ?? 'n/a'}% vs signal, full exit)`;
+      } else {
+        triggerLabel = `DCA killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
+      }
       break;
     case 'NO_DATA':
       triggerLabel = `no-data ${cfg.timeoutHours}h (price stream gone — hard close)`;
@@ -1781,10 +1799,95 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
+      !ot.liveStagedEntry &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
       !liveOscarNoDcaInModeA;
+
+    const st = ot.liveStagedEntry;
+    if (
+      st &&
+      !st.secondLegDone &&
+      ot.remainingFraction > 0 &&
+      !liveStagedEntryKillHit(ot, curMetric)
+    ) {
+      const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
+      if (signalDropPct != null && signalDropPct <= -st.secondDropPct) {
+        const addUsd = st.secondLegUsd;
+        let dcaBuyRes: LiveBuyPipelineResult | undefined;
+        if (livePhase4) {
+          if (!open.has(mint)) continue;
+          dcaBuyRes = await livePhase4.trySolToTokenBuy({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: addUsd,
+          });
+          if (!dcaBuyRes.ok) continue;
+        }
+        const marketBuy = curMetric;
+        const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+        ot.legs.push({
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          reason: 'dca',
+          triggerPct: -st.secondDropPct / 100,
+        });
+        st.secondLegDone = true;
+        ot.livePendingScaleIn = null;
+        ot.liveKillstopBelowStreak = 0;
+        ot.totalInvestedUsd += addUsd;
+        const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+        ot.avgEntry = num / ot.totalInvestedUsd;
+        const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+        ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+        markDcaStepFired(ot, 0, -st.secondDropPct / 100);
+        ot.remainingFraction = 1;
+        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
+        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
+        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+        if (livePhase4 && dcaBuyRes) {
+          appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+        }
+        const mcUsdLive_dca = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+        );
+        const pfDca = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        journalAppend({
+          kind: 'dca_add',
+          mint,
+          ts: Date.now(),
+          price: effectiveBuy,
+          marketPrice: marketBuy,
+          sizeUsd: addUsd,
+          dcaStepIndex: 0,
+          dcaLevelsTotal: 1,
+          triggerPct: -st.secondDropPct / 100,
+          avgEntry: ot.avgEntry,
+          avgEntryMarket: ot.avgEntryMarket,
+          totalInvestedUsd: ot.totalInvestedUsd,
+          legCount: ot.legs.length,
+          mcUsdLive: mcUsdLive_dca,
+          priorityFee: pfDca,
+          timelineLabelRu: `Вторая нога $${st.secondLegUsd.toFixed(0)} на −${st.secondDropPct}% от сигнала · единственное усреднение · режим выхода B`,
+          liveExitProfileMode: 'B' as const,
+          liveStagedEntry: { ...st, signalDropPct: +signalDropPct.toFixed(3) },
+        });
+        journalLiveStrategy?.({
+          kind: 'live_position_dca',
+          mint,
+          openTrade: serializeOpenTrade(ot),
+          timelineLabelRu: `Вторая нога $${st.secondLegUsd.toFixed(0)} на −${st.secondDropPct}% от сигнала`,
+        });
+        console.log(
+          `[STAGED_DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} signalDrop=${signalDropPct.toFixed(2)}% avgEff=${ot.avgEntry.toFixed(8)}`,
+        );
+      }
+    }
 
     if (mayDca) {
       for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
@@ -2046,10 +2149,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     let exitReason: ExitReason | null = null;
     if (!(isPaperOscarIdealized && idealizedMute)) {
-      const inKillTerritory = killEff < 0 && pnlPctVsAvg / 100 <= killEff;
+      const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
+      const inKillTerritory =
+        inSignalKillTerritory || (!ot.liveStagedEntry && killEff < 0 && pnlPctVsAvg / 100 <= killEff);
       if (inKillTerritory) {
         const debounceKillAfterReplenish =
-          cfg.strategyId === 'live-oscar' && ot.legs.length > 1;
+          cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKillTerritory;
         if (debounceKillAfterReplenish) {
           const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
           ot.liveKillstopBelowStreak = nextStreak;

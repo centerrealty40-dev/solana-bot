@@ -195,6 +195,70 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
   const closed: ClosedTrade[] =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? [...opts.liveStrategyReplay.closed] : [];
+  const stagedEntrySignals = new Map<
+    string,
+    { signalTs: number; signalPriceUsd: number; expiresAt: number }
+  >();
+
+  function liveStagedEntryActive(): boolean {
+    return cfg.strategyId === 'live-oscar' && cfg.liveStagedEntryEnabled;
+  }
+
+  function resolveLiveStagedEntrySignal(args: {
+    mint: string;
+    symbol: string;
+    lane: string;
+    source?: string;
+    currentPriceUsd: number;
+  }): { ok: true; signalTs: number; signalPriceUsd: number } | { ok: false } {
+    if (!liveStagedEntryActive()) return { ok: true, signalTs: Date.now(), signalPriceUsd: args.currentPriceUsd };
+    const now = Date.now();
+    const existing = stagedEntrySignals.get(args.mint);
+    const signal =
+      existing && existing.expiresAt > now
+        ? existing
+        : {
+            signalTs: now,
+            signalPriceUsd: args.currentPriceUsd,
+            expiresAt: now + cfg.liveStagedEntrySignalTtlMs,
+          };
+    if (!existing || existing.expiresAt <= now) {
+      stagedEntrySignals.set(args.mint, signal);
+      journalLiveStrategy?.({
+        kind: 'live_staged_entry_signal',
+        mint: args.mint,
+        symbol: args.symbol,
+        lane: args.lane,
+        source: args.source,
+        signalPriceUsd: signal.signalPriceUsd,
+        firstDropPct: cfg.liveStagedEntryFirstDropPct,
+        firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
+        expiresAt: signal.expiresAt,
+      });
+    }
+
+    const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);
+    if (args.currentPriceUsd > firstTargetUsd) {
+      journalAppend({
+        kind: 'eval-skip-open',
+        lane: args.lane,
+        source: args.source,
+        mint: args.mint,
+        symbol: args.symbol,
+        reason: `staged_entry_wait_first_leg_${cfg.liveStagedEntryFirstDropPct}%`,
+        stagedEntry: {
+          signalPriceUsd: signal.signalPriceUsd,
+          currentPriceUsd: args.currentPriceUsd,
+          firstTargetUsd,
+          expiresAt: signal.expiresAt,
+        },
+      });
+      return { ok: false };
+    }
+
+    stagedEntrySignals.delete(args.mint);
+    return { ok: true, signalTs: signal.signalTs, signalPriceUsd: signal.signalPriceUsd };
+  }
 
   let liveOscarResolved = false;
   let cachedLiveOscar: LiveOscarRuntimeBundle | undefined;
@@ -532,6 +596,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (cfg.dryRun && !resolveLiveOscar()) continue;
         if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
+        const stagedEntrySignal = resolveLiveStagedEntrySignal({
+          mint: d.mint,
+          symbol: d.symbol,
+          lane: d.lane,
+          source: d.source,
+          currentPriceUsd: d.features.price_usd,
+        });
+        if (!stagedEntrySignal.ok) continue;
 
         const dex = snapshotSourceToDex(d.source);
         const row = {
@@ -559,6 +631,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           dex,
           liquidityUsd: d.features.liq_usd,
         });
+        if (liveStagedEntryActive()) {
+          ot.liveStagedEntry = {
+            signalTs: stagedEntrySignal.signalTs,
+            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+            firstDropPct: cfg.liveStagedEntryFirstDropPct,
+            firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
+            secondDropPct: cfg.liveStagedEntrySecondDropPct,
+            secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+            killDropPct: cfg.liveStagedEntryKillDropPct,
+            secondLegDone: false,
+          };
+        }
 
         const preDyn = cfg.preEntryDynamicsEnabled
           ? await fetchPreEntryDynamics(d.mint, ot.entryTs)
@@ -804,7 +888,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           if (
             liveOscar.liveCfg.liveEntryScaleInEnabled &&
             liveOscar.liveCfg.executionMode === 'live' &&
-            cfg.entryFirstLegFraction < 1 - 1e-9
+            cfg.entryFirstLegFraction < 1 - 1e-9 &&
+            !liveStagedEntryActive()
           ) {
             const secondUsd = cfg.positionUsd * (1 - cfg.entryFirstLegFraction);
             if (secondUsd > 1e-6) {
@@ -880,7 +965,22 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         open.set(ot.mint, ot);
         const liveOscarForJournal = resolveLiveOscar();
         const liveOpenExtras: Record<string, unknown> =
-          liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
+          liveOscarForJournal && liveStagedEntryActive()
+            ? {
+                timelineOpenLabelRu: `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
+                liveStagedEntryParams: {
+                  signalPriceUsd: ot.liveStagedEntry?.signalPriceUsd,
+                  firstDropPct: cfg.liveStagedEntryFirstDropPct,
+                  firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
+                  secondDropPct: cfg.liveStagedEntrySecondDropPct,
+                  secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+                  killDropPct: cfg.liveStagedEntryKillDropPct,
+                  signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
+                  description:
+                    'Покупка live-oscar теперь staged: сигнал фиксирует якорную цену; первая нога исполняется после падения от сигнала, вторая — как единственное усреднение на более глубоком падении; kill-stop считается от цены сигнала.',
+                },
+              }
+            : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
             ? {
                 timelineOpenLabelRu: `Покупка ${Math.round(cfg.entryFirstLegFraction * 100)}% позиции`,
                 liveScaleInParams: {

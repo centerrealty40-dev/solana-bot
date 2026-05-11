@@ -133,10 +133,11 @@ export async function main(): Promise<void> {
     liveCfg.strategyEnabled &&
     liveCfg.executionMode === 'live' &&
     paperBaseline.entryFirstLegFraction < 1 - 1e-9 &&
-    !liveCfg.liveEntryScaleInEnabled
+    !liveCfg.liveEntryScaleInEnabled &&
+    !paperBaseline.liveStagedEntryEnabled
   ) {
     throw new Error(
-      'live-oscar: PAPER_ENTRY_FIRST_LEG_FRACTION < 1 requires LIVE_ENTRY_SCALE_IN_ENABLED=1 (или верните долю первой ноги к 1).',
+      'live-oscar: PAPER_ENTRY_FIRST_LEG_FRACTION < 1 requires LIVE_ENTRY_SCALE_IN_ENABLED=1 or PAPER_LIVE_STAGED_ENTRY_ENABLED=1.',
     );
   }
 
