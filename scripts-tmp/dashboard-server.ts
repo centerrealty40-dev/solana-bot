@@ -127,8 +127,10 @@ const MC_TTL_MS = 30_000;
 
 function normalizePumpSupplyTokens(rawSupply: number): number | null {
   if (!(rawSupply > 0) || !Number.isFinite(rawSupply)) return null;
-  // pump.fun usually returns SPL atomic supply for 6-decimal tokens (1e12 = 1e6 tokens).
-  return rawSupply >= 1_000_000_000_000 ? rawSupply / 1_000_000 : rawSupply;
+  // pump.fun returns SPL atomic supply; migrated tokens may be 6- or 9-decimal.
+  if (rawSupply >= 100_000_000_000_000_000) return rawSupply / 1_000_000_000;
+  if (rawSupply >= 1_000_000_000_000) return rawSupply / 1_000_000;
+  return rawSupply;
 }
 
 async function getPumpCoinMarket(mint: string): Promise<PumpCoinMarket | null> {
