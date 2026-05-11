@@ -537,7 +537,7 @@ module.exports = {
       },
     },
     /**
-     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; верхний кап по холдерам ниже основного live; нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
+     * Live Oscar Risky — тот же код и live-исполнение, что **live-oscar**; мягкие входы; без верхних капов по liq/vol/holders; нотионал **$100** (ноги **$75+$25**, DCA −4% ещё **$25** от нотионала).
      * Блок **live-oscar** выше не трогать. Ключ: `data/live/live-oscar-risky.keypair.json` (gitignore); **`LIVE_WALLET_PUBKEY`** в env процесса.
      */
     {
@@ -585,10 +585,11 @@ module.exports = {
         /** Мягче live-oscar: как paper-oscar-risky — мин. возраст пула в снимке 6 ч. */
         PAPER_POST_MIN_AGE_MIN: '360',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /** POST min liq как у `paper-oscar-risky`; верхний порог по liq не задаём. */
+        /** POST min liq как у `paper-oscar-risky`; верхний порог по liq явно выключен. */
         PAPER_POST_MIN_LIQ_USD: '100000',
+        PAPER_POST_MAX_LIQ_USD: '0',
         PAPER_POST_MIN_VOL_5M_USD: '3000',
-        /** Верхний порог по vol5m/vol1h не задаём — только min + spike-guard (как у paper-oscar-risky по объёмам). */
+        /** Верхний порог по vol5m/vol1h явно выключен — только min + spike-guard (как у paper-oscar-risky по объёмам). */
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
@@ -599,8 +600,12 @@ module.exports = {
         PAPER_POST_MAX_VOL_5M_USD: '0',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         PAPER_MIN_HOLDER_COUNT: '1000',
-        /** Holders строго ниже live-oscar (`3000`). */
-        PAPER_GLOBAL_MAX_HOLDER_COUNT: '2999',
+        /** Верхний cap по holders выключен; оставляем только нижний порог. */
+        PAPER_GLOBAL_MAX_HOLDER_COUNT: '0',
+        /** Risky-only: сигнал входа держим 10 мин; вход только если цена в диапазоне [-20%, +3%] от цены сигнала. */
+        PAPER_ENTRY_RECHECK_DELAY_MS: '600000',
+        PAPER_ENTRY_RECHECK_MIN_CHANGE_PCT: '-20',
+        PAPER_ENTRY_RECHECK_MAX_CHANGE_PCT: '3',
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-30',
@@ -707,7 +712,7 @@ module.exports = {
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live-risky.jsonl'),
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
-        /** Нет allowlist: risky-слой сам ограничен верхними капами liq/vol/holders (ниже основного Live Oscar). */
+        /** Нет allowlist: risky-слой ограничен нижними гейтами и risk-фильтрами; верхние cap по liq/vol/holders выключены. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         LIVE_MINT_WHITELIST_ENABLED: '0',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-risky-mint-whitelist.txt'),
@@ -806,20 +811,24 @@ module.exports = {
         PAPER_ENABLE_POST_LANE: 'true',
         /** Пост-lane (post_migration): смягчение min pool liq до $100k (live-oscar: $140k). */
         PAPER_POST_MIN_LIQ_USD: '100000',
+        PAPER_POST_MAX_LIQ_USD: '0',
         PAPER_POST_MAX_AGE_MIN: '0',
         /** Смягчение: мин. возраст пула 6 ч (live: 36 ч). */
         PAPER_POST_MIN_AGE_MIN: '360',
         /** Смягчение: объём 5m (поле volume_5m в снимке), live: $10k. */
         PAPER_POST_MIN_VOL_5M_USD: '3000',
+        PAPER_POST_MAX_VOL_5M_USD: '0',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** Смягчение: нижний порог объёма за час (guard), live: $36k. */
         PAPER_VOL_1H_MIN_USD: '20000',
+        PAPER_VOL_1H_MAX_USD: '0',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         /** Смягчение: holders (live: 3000). */
         PAPER_MIN_HOLDER_COUNT: '1000',
+        PAPER_GLOBAL_MAX_HOLDER_COUNT: '0',
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
         PAPER_DIP_MIN_DROP_PCT: '-30',

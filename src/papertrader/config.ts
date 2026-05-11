@@ -130,6 +130,13 @@ const ConfigSchema = z.object({
   snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
   discoveryReevalSec: z.coerce.number().int().min(5).max(600).default(60),
+  /**
+   * Live Oscar Risky only: hold a passed entry signal, then re-check the same
+   * discovery gates plus price change vs the original signal before opening.
+   */
+  entryRecheckDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  entryRecheckMinChangePct: z.coerce.number().min(-99).max(10_000).default(-99),
+  entryRecheckMaxChangePct: z.coerce.number().min(-99).max(10_000).default(100),
   snapshotMinBs: z.coerce.number().nonnegative().default(1.0),
   /**
    * Require pair snapshot `volume_5m` to be consistent with `volume_1h` (same row).
@@ -535,6 +542,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMaxLiqUsd: process.env.PAPER_POST_MAX_LIQ_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
+    entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,
+    entryRecheckMinChangePct: process.env.PAPER_ENTRY_RECHECK_MIN_CHANGE_PCT,
+    entryRecheckMaxChangePct: process.env.PAPER_ENTRY_RECHECK_MAX_CHANGE_PCT,
     snapshotMinBs: process.env.PAPER_POST_MIN_BS,
     vol5m1hGuardEnabled: envBool(process.env.PAPER_VOL_5M_1H_GUARD_ENABLED, false),
     vol1hMinUsd: process.env.PAPER_VOL_1H_MIN_USD,

@@ -26,6 +26,7 @@ import {
   recordEntryTs,
   recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
+  type EvalDecision,
 } from './discovery/dip-clones.js';
 import { isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
@@ -255,6 +256,158 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     skippedPriceVerifyExit: 0,
   };
 
+  type PendingEntryRecheck = {
+    mint: string;
+    symbol: string;
+    lane: EvalDecision['lane'];
+    source: string;
+    signalTs: number;
+    dueTs: number;
+    signalPriceUsd: number;
+  };
+
+  const entryRecheckPending = new Map<string, PendingEntryRecheck>();
+  const entryRecheckEnabled = cfg.strategyId === 'live-oscar-risky' && cfg.entryRecheckDelayMs > 0;
+  const entryRecheckStaleMs = Math.max(cfg.entryRecheckDelayMs * 3, cfg.entryRecheckDelayMs + 30 * 60_000);
+
+  function cleanupStaleEntryRechecks(now: number): void {
+    if (!entryRecheckEnabled || entryRecheckPending.size === 0) return;
+    for (const [mint, p] of entryRecheckPending) {
+      if (now - p.dueTs > entryRecheckStaleMs || open.has(mint)) {
+        entryRecheckPending.delete(mint);
+      }
+    }
+  }
+
+  function handleFailedEntryRecheckDecision(d: EvalDecision, now: number): boolean {
+    if (!entryRecheckEnabled) return false;
+    const pending = entryRecheckPending.get(d.mint);
+    if (!pending || now < pending.dueTs) return false;
+    entryRecheckPending.delete(d.mint);
+    journalAppend({
+      kind: 'eval-skip-open',
+      lane: d.lane,
+      source: d.source,
+      mint: d.mint,
+      symbol: d.symbol,
+      reason: 'entry_recheck:gate_failed_after_delay',
+      entryRecheck: {
+        signalTs: pending.signalTs,
+        dueTs: pending.dueTs,
+        delayMs: cfg.entryRecheckDelayMs,
+        signalPriceUsd: pending.signalPriceUsd,
+        recheckPass: false,
+        recheckReasons: d.reasons,
+      },
+    });
+    journalLiveStrategy?.({
+      kind: 'entry_recheck_skip',
+      mint: d.mint,
+      symbol: d.symbol,
+      reason: 'gate_failed_after_delay',
+      recheckReasons: d.reasons,
+    });
+    return true;
+  }
+
+  function handlePassedEntryRecheckDecision(d: EvalDecision, now: number): boolean {
+    if (!entryRecheckEnabled) return true;
+    if (open.has(d.mint)) {
+      entryRecheckPending.delete(d.mint);
+      return false;
+    }
+
+    const currentPriceUsd = Number(d.features.price_usd);
+    const pending = entryRecheckPending.get(d.mint);
+    if (!pending) {
+      if (!(currentPriceUsd > 0)) return false;
+      const next: PendingEntryRecheck = {
+        mint: d.mint,
+        symbol: d.symbol,
+        lane: d.lane,
+        source: d.source,
+        signalTs: now,
+        dueTs: now + cfg.entryRecheckDelayMs,
+        signalPriceUsd: currentPriceUsd,
+      };
+      entryRecheckPending.set(d.mint, next);
+      journalAppend({
+        kind: 'eval-skip-open',
+        lane: d.lane,
+        source: d.source,
+        mint: d.mint,
+        symbol: d.symbol,
+        reason: 'entry_recheck:pending',
+        entryRecheck: {
+          signalTs: next.signalTs,
+          dueTs: next.dueTs,
+          delayMs: cfg.entryRecheckDelayMs,
+          signalPriceUsd: next.signalPriceUsd,
+          minChangePct: cfg.entryRecheckMinChangePct,
+          maxChangePct: cfg.entryRecheckMaxChangePct,
+        },
+      });
+      journalLiveStrategy?.({
+        kind: 'entry_recheck_pending',
+        mint: d.mint,
+        symbol: d.symbol,
+        dueTs: next.dueTs,
+        signalPriceUsd: next.signalPriceUsd,
+        minChangePct: cfg.entryRecheckMinChangePct,
+        maxChangePct: cfg.entryRecheckMaxChangePct,
+      });
+      return false;
+    }
+
+    if (now < pending.dueTs) return false;
+
+    const changePct = pending.signalPriceUsd > 0 ? (currentPriceUsd / pending.signalPriceUsd - 1) * 100 : NaN;
+    const priceOk =
+      Number.isFinite(changePct) &&
+      changePct >= cfg.entryRecheckMinChangePct &&
+      changePct <= cfg.entryRecheckMaxChangePct;
+
+    entryRecheckPending.delete(d.mint);
+    const stamp = {
+      signalTs: pending.signalTs,
+      dueTs: pending.dueTs,
+      delayMs: cfg.entryRecheckDelayMs,
+      signalPriceUsd: pending.signalPriceUsd,
+      recheckPriceUsd: currentPriceUsd,
+      changePct: Number.isFinite(changePct) ? +changePct.toFixed(3) : null,
+      minChangePct: cfg.entryRecheckMinChangePct,
+      maxChangePct: cfg.entryRecheckMaxChangePct,
+    };
+
+    if (!priceOk) {
+      journalAppend({
+        kind: 'eval-skip-open',
+        lane: d.lane,
+        source: d.source,
+        mint: d.mint,
+        symbol: d.symbol,
+        reason: 'entry_recheck:price_out_of_band',
+        entryRecheck: stamp,
+      });
+      journalLiveStrategy?.({
+        kind: 'entry_recheck_skip',
+        mint: d.mint,
+        symbol: d.symbol,
+        reason: 'price_out_of_band',
+        ...stamp,
+      });
+      return false;
+    }
+
+    journalLiveStrategy?.({
+      kind: 'entry_recheck_pass',
+      mint: d.mint,
+      symbol: d.symbol,
+      ...stamp,
+    });
+    return true;
+  }
+
   logger.info({
     msg: 'papertrader executor start',
     strategyId: cfg.strategyId,
@@ -276,6 +429,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     restoredOpen: open.size,
     safetyCheckEnabled: cfg.safetyCheckEnabled,
     priorityFeeEnabled: cfg.priorityFeeEnabled,
+    entryRecheck: entryRecheckEnabled
+      ? {
+          delayMs: cfg.entryRecheckDelayMs,
+          minChangePct: cfg.entryRecheckMinChangePct,
+          maxChangePct: cfg.entryRecheckMaxChangePct,
+        }
+      : { enabled: false },
     holdersLive: cfg.holdersLiveEnabled
       ? {
           enabled: true,
@@ -304,6 +464,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   async function discoveryTick(): Promise<void> {
     stats.ticks++;
     try {
+      const tickNow = Date.now();
+      cleanupStaleEntryRechecks(tickNow);
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
       const res =
         cfg.strategyKind === 'dip'
@@ -341,6 +503,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           entry_path: d.entryPath,
           _liveDiscoveryDeepAudit: deepAuditFlag,
         });
+        if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;
         if (
           cfg.mintBlacklistEnabled &&
@@ -368,6 +531,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           continue;
         }
         if (cfg.dryRun && !resolveLiveOscar()) continue;
+        if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
 
         const dex = snapshotSourceToDex(d.source);
         const row = {
