@@ -742,6 +742,59 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (cfg.dryRun && !resolveLiveOscar()) continue;
         if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
+
+        const liveOscarForEntryGates = resolveLiveOscar();
+        if (liveOscarForEntryGates && cfg.strategyId === 'live-oscar') {
+          if (isMintPermanentlyDeniedLiveOscar(liveOscarForEntryGates.liveCfg, d.mint)) {
+            stats.skippedLivePermanentDeny += 1;
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: 'live_permanent_deny',
+            });
+            journalLiveStrategy?.({
+              kind: 'live_permanent_deny_skip',
+              mint: d.mint,
+              symbol: d.symbol,
+              lane: d.lane,
+              source: d.source,
+            });
+            continue;
+          }
+        }
+        if (
+          liveOscarForEntryGates?.liveCfg.liveMintWhitelistEnabled &&
+          !isPaperOscarFamilyStrategyId(cfg.strategyId)
+        ) {
+          if (!isMintOnLiveWhitelist(liveOscarForEntryGates.liveCfg.liveMintWhitelistPath, d.mint)) {
+            stats.skippedLiveMintWhitelist += 1;
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: 'live_mint_whitelist',
+            });
+            journalLiveStrategy?.({
+              kind: 'live_whitelist_skip',
+              mint: d.mint,
+              symbol: d.symbol,
+              lane: d.lane,
+              source: d.source,
+            });
+            void notifyLiveMintWhitelistSkip(
+              d.symbol,
+              d.mint,
+              liveOscarForEntryGates.liveCfg.liveMintWhitelistNotifyCooldownMs,
+            );
+            continue;
+          }
+        }
+
         const stagedEntrySignal = resolveLiveStagedEntrySignal({
           mint: d.mint,
           symbol: d.symbol,
@@ -989,7 +1042,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           ot.liveExitProfileMode = 'A';
         }
 
-        const liveOscar = resolveLiveOscar();
+        const liveOscar = liveOscarForEntryGates ?? resolveLiveOscar();
         if (liveOscar && cfg.strategyId === 'live-oscar') {
           if (isMintPermanentlyDeniedLiveOscar(liveOscar.liveCfg, ot.mint)) {
             stats.skippedLivePermanentDeny += 1;

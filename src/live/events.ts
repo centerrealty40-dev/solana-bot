@@ -296,6 +296,23 @@ export const LiveDiscoveryUniverseMissSchema = z.object({
   snapshotHint: z.string().max(1600).optional(),
 });
 
+/** Staged-entry anchor accepted for a live mint before the first buy leg is allowed. */
+export const LiveStagedEntrySignalSchema = z.object({
+  kind: z.literal('live_staged_entry_signal'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  signalPriceUsd: z.number().finite(),
+  signalMarketCapUsd: z.number().finite().nullable().optional(),
+  holderCount: z.number().finite().nullable().optional(),
+  firstDropPct: z.number().finite(),
+  firstTargetUsd: z.number().finite(),
+  secondDropPct: z.number().finite(),
+  thirdDropPct: z.number().finite().optional(),
+  expiresAt: z.number().finite(),
+});
+
 /** Passed eval but open blocked (safety, impulse, price verify, already_open, etc.). */
 export const LiveDiscoverySkipOpenSchema = z.object({
   kind: z.literal('live_discovery_skip_open'),
@@ -333,6 +350,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveDiscoveryEvalSchema,
   LiveDiscoveryTickSkipSchema,
   LiveDiscoveryUniverseMissSchema,
+  LiveStagedEntrySignalSchema,
   LiveDiscoverySkipOpenSchema,
 ]);
 
