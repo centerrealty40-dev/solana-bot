@@ -82,6 +82,20 @@ function escapeHtmlPlain(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function fmtUsdCompact(v: number | null | undefined): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 'n/a';
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+function fmtCount(v: number | null | undefined): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 'n/a';
+  return Math.round(n).toLocaleString('en-US');
+}
+
 export interface PapertraderMainOptions {
   /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
   journalAppend?: (event: Record<string, unknown>) => void;
@@ -206,7 +220,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? [...opts.liveStrategyReplay.closed] : [];
   const stagedEntrySignals = new Map<
     string,
-    { signalTs: number; signalPriceUsd: number; expiresAt: number }
+    {
+      signalTs: number;
+      signalPriceUsd: number;
+      signalMarketCapUsd: number | null;
+      holderCount: number | null;
+      expiresAt: number;
+    }
   >();
 
   function liveStagedEntryActive(): boolean {
@@ -216,6 +236,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   function notifyLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
+    marketCapUsd: number | null;
+    holderCount: number | null;
   }): void {
     const token =
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
@@ -234,6 +256,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       `<b>Live Oscar signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
+      `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
+      `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
       `Начинаем отсчёт входа: −7% / −14% от цены сигнала`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
@@ -252,6 +276,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     lane: string;
     source?: string;
     currentPriceUsd: number;
+    marketCapUsd: number | null;
+    holderCount: number | null;
   }): { ok: true; signalTs: number; signalPriceUsd: number } | { ok: false } {
     if (!liveStagedEntryActive()) return { ok: true, signalTs: Date.now(), signalPriceUsd: args.currentPriceUsd };
     const now = Date.now();
@@ -262,6 +288,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         : {
             signalTs: now,
             signalPriceUsd: args.currentPriceUsd,
+            signalMarketCapUsd: args.marketCapUsd,
+            holderCount: args.holderCount,
             expiresAt: now + cfg.liveStagedEntrySignalTtlMs,
           };
     if (!existing || existing.expiresAt <= now) {
@@ -273,11 +301,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         lane: args.lane,
         source: args.source,
         signalPriceUsd: signal.signalPriceUsd,
+        signalMarketCapUsd: signal.signalMarketCapUsd,
+        holderCount: signal.holderCount,
         firstDropPct: cfg.liveStagedEntryFirstDropPct,
         firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
         expiresAt: signal.expiresAt,
       });
-      notifyLiveStagedEntrySignal({ mint: args.mint, symbol: args.symbol });
+      notifyLiveStagedEntrySignal({
+        mint: args.mint,
+        symbol: args.symbol,
+        marketCapUsd: signal.signalMarketCapUsd,
+        holderCount: signal.holderCount,
+      });
     }
 
     const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);
@@ -645,6 +680,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           lane: d.lane,
           source: d.source,
           currentPriceUsd: d.features.price_usd,
+          marketCapUsd: d.features.market_cap_usd ?? null,
+          holderCount: d.features.holders ?? null,
         });
         if (!stagedEntrySignal.ok) continue;
 
