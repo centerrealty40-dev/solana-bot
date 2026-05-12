@@ -286,7 +286,7 @@ module.exports = {
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '160',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '80',
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '23',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '15',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -346,14 +346,14 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
         PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '0',
+        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.055',
         /**
-         * Режим B: включается после staged-добора; signal kill-stop −23%% от исходного сигнала.
-         * Лестница TP: **+2.5%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
+         * Режим B: включается после staged-добора; signal kill-stop **−15%%** от исходного сигнала.
+         * Лестница TP: **+4%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
          * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
          * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.
          */
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.025',
+        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.04',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
 
@@ -362,16 +362,16 @@ module.exports = {
          * Старый 5-секундный `LIVE_ENTRY_SCALE_IN_*` для основного Live Oscar выключен ниже.
          */
         PAPER_DCA_LEVELS: '',
-        /** Kill-stop для staged-entry считается отдельной signal-based логикой (`PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT`). */
-        PAPER_DCA_KILLSTOP: '0',
+        /** После staged-добора: общий kill по усреднённой позиции (доля PnL), зеркалится в режиме B (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`). */
+        PAPER_DCA_KILLSTOP: '-0.055',
         /**
-         * Режим A — «полная лестница»: **+2.5%%** к средней за ступень; **5%%** остатка за ступень;
+         * Режим A — «полная лестница»: **+4%%** к средней за ступень; **5%%** остатка за ступень;
          * retrace-защита после 1-й ступени (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
          */
         PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.025',
+        PAPER_TP_GRID_STEP_PNL: '0.04',
         PAPER_TP_GRID_SELL_FRACTION: '0.05',
-        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.025',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
         PAPER_TRAIL_MODE: 'ladder_retrace',
