@@ -1587,7 +1587,7 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
       );
     } else if (mode === 'B') {
       parts.push(
-        'Режим B (Live Oscar Risky): включён после staged-добора. Доборы: $70 на −6% и $80 на −12% от сигнала, только первый час и до первого TP; TP-сетка +3% к avg, продажа 10% остатка; signal kill-stop −18%; timeout B — 4 ч.',
+        'Режим B (Live Oscar Risky): включён после staged-добора. Доборы: $70 на −6% и $80 на −12% от сигнала, только первый час, пока не сработали оба добора или не накопилось две ступени TP-сетки (TP_LADDER); TP-сетка +3% к avg, продажа 10% остатка; signal kill-stop −18%; timeout B — 4 ч.',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
@@ -1599,7 +1599,7 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   if (isLiveOscar) {
     if (mode === 'B') {
       parts.push(
-        'Режим B (Live Oscar): включён после staged-добора. Доборы: $160 на −7% и $80 на −14% от сигнала, только первый час и до первого TP; TP-сетка B +2.5% к avg, продажа 5% остатка; signal kill-stop −23%.',
+        'Режим B (Live Oscar): включён после staged-добора. Доборы: $160 на −7% и $80 на −14% от сигнала, только первый час; после одной ступени TP-сетки откат вниз всё ещё может исполнить оставшийся добор, после двух ступеней TP-сетки — доборы отключены; TP-сетка B по env; signal kill-stop по env.',
       );
     } else if (mode === 'A') {
       parts.push(
@@ -1607,7 +1607,7 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
-        'Вход Live Oscar: первая нога $560 покупается по сигналу; доборы $160 на −7% и $80 на −14% доступны только первый час и отменяются после первого TP; дополнительных DCA нет.',
+        'Вход Live Oscar: первая нога $560 покупается по сигналу; доборы $160 на −7% и $80 на −14% — в течение часа от сигнала; после двух частичных TP по сетке (TP_LADDER) доборы отключены; после одного такого TP откат вниз может всё ещё добрать оставшуюся ногу; дополнительных DCA нет.',
       );
     }
     return parts.length ? parts.join('\n') : null;

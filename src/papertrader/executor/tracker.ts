@@ -1809,7 +1809,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, curMetric)) {
       const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
       const stagedAddWindowOpen = Date.now() <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
-      const stagedAddAllowed = stagedAddWindowOpen && ot.partialSells.length === 0;
+      /** Staged доборы до −7% / −14%: раньше блокировались после любого partial TP; теперь — до 2-й ступени TP-сетки (`TP_LADDER`), затем запрет. */
+      const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+      const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
       const totalStagedAddLegs = st.thirdLegUsd && st.thirdLegUsd > 0 ? 2 : 1;
       const tryStagedAddLeg = async (args: {
         stepIndex: number;

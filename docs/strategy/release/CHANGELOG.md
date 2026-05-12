@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.161] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.161`.
+
+- **Live Oscar staged-entry:** доборы по −7% / −14% от цены сигнала больше **не блокируются после первого частичного TP**; они запрещаются только после **второй** ступени TP-сетки (`reason === TP_LADDER`). Окно **1 ч** от `signalTs` и флаги `secondLegDone` / `thirdLegDone` без изменений (`tracker.ts`, симулятор `paper2-strategy-backtest.ts`).
+- **PM2:** процесс **`live-oscar-risky`** удалён из `ecosystem.config.cjs` (не стартует при деплое). На уже работающем хосте: **`pm2 delete live-oscar-risky`**.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.160`**; вернуть блок `live-oscar-risky` в `ecosystem.config.cjs` при необходимости; деплой по NORM §5.2.
+
+---
+
 ## [1.11.160] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.160`.

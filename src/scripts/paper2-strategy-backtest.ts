@@ -305,7 +305,8 @@ function simTryLiveStagedEntryAdds(args: {
   const st = ot.liveStagedEntry;
   const signalDropPct = liveStagedEntrySignalDropPctSim(ot, curMetric);
   const stagedAddWindowOpen = virtualNow <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
-  const stagedAddAllowed = stagedAddWindowOpen && ot.partialSells.length === 0;
+  const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+  const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
 
   function pushStagedLeg(stepIndex: number, addUsd: number, dropPct: number): void {
     const marketBuy = curMetric;

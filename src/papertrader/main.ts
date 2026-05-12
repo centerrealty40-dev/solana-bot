@@ -1278,7 +1278,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                     cfg.liveStagedEntryThirdLegUsd > 0
                       ? ` и $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} на −${cfg.liveStagedEntryThirdDropPct}%`
                       : ''
-                  } доступны только в течение часа; после первого TP доборы не происходят, kill-stop считается от цены сигнала.`,
+                  } доступны только в течение часа от сигнала; после второй ступени TP-сетки (TP_LADDER) доборы отключены; после одной ступени откат к −7% / −14% от сигнала по-прежнему может добрать ногу, kill-stop — от цены сигнала.`,
                 },
               }
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
