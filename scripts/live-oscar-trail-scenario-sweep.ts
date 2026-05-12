@@ -5,7 +5,8 @@
  * Использует `simulateLifecycle` / `simStep` из `paper2-strategy-backtest.ts` (тот же порядок,
  * что у трекера, плюс опция `minTpGridPartialsForPeakTrailArm` для arm peak-trail после N частичных TP-grid).
  *
- * Требует `DATABASE_URL` и `PAPER_*` как у live-oscar (загрузка через `loadPaperTraderConfig()`).
+ * Требует `DATABASE_URL`. **`PAPER_*` для симуляции подмешиваются из `ecosystem.config.cjs`**
+ * процесса **`live-oscar`** (или `--risky` → `live-oscar-risky`), чтобы совпасть с PM2, а не только с `.env`.
  *
  * Пример (VPS):
  *   cd /opt/solana-alpha && set -a && . ./.env && set +a && npx tsx scripts/live-oscar-trail-scenario-sweep.ts \
@@ -15,6 +16,8 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { sql as dsql } from 'drizzle-orm';
 import { db } from '../src/core/db/client.js';
 import { loadPaperTraderConfig, parseDcaLevels, parseTpLadder } from '../src/papertrader/config.js';
@@ -27,6 +30,43 @@ import {
   simulateLifecycle,
   type Anchor,
 } from '../src/scripts/paper2-strategy-backtest.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+
+function stringifyEnv(env: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined || v === null) continue;
+    out[k] = typeof v === 'string' ? v : String(v);
+  }
+  return out;
+}
+
+function pm2AppPaperEnv(appName: 'live-oscar' | 'live-oscar-risky'): Record<string, string> {
+  const ecosystem = require(path.join(repoRoot, 'ecosystem.config.cjs')) as {
+    apps: Array<{ name?: string; env?: Record<string, unknown> }>;
+  };
+  const app = ecosystem.apps?.find((a) => a.name === appName);
+  if (!app?.env) throw new Error(`ecosystem.config.cjs: ${appName} env not found`);
+  return stringifyEnv(app.env as Record<string, unknown>);
+}
+
+function withEnvPatch<T>(patch: Record<string, string>, fn: () => T): T {
+  const prev: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    prev[k] = process.env[k];
+    process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k] of Object.entries(patch)) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k]!;
+    }
+  }
+}
 
 function argStr(name: string, def: string): string {
   const i = process.argv.indexOf(name);
@@ -156,11 +196,17 @@ async function main(): Promise<void> {
   const journal = argStr('--journal', 'data/live/pt1-oscar-live.jsonl');
   const horizonH = argNum('--horizon-hours', 48);
   const stepMs = argNum('--step-ms', 60_000);
+  const risky = process.argv.includes('--risky');
+  const appName = risky ? 'live-oscar-risky' : 'live-oscar';
+  const pmEnv = pm2AppPaperEnv(appName);
 
-  const baseCfg = loadPaperTraderConfig();
-  const dcaLevels = parseDcaLevels(process.env.PAPER_DCA_LEVELS);
-  const tpLadder = parseTpLadder(process.env.PAPER_TP_LADDER);
-  const scenarios = buildScenarios(baseCfg.tpGridStepPnl);
+  const { baseCfg, dcaLevels, tpLadder } = withEnvPatch(pmEnv, () => ({
+    baseCfg: loadPaperTraderConfig(),
+    dcaLevels: parseDcaLevels(process.env.PAPER_DCA_LEVELS),
+    tpLadder: parseTpLadder(process.env.PAPER_TP_LADDER),
+  }));
+  const gridStep = baseCfg.tpGridStepPnl > 0 ? baseCfg.tpGridStepPnl : 0.025;
+  const scenarios = buildScenarios(gridStep);
 
   const prep: Array<{ mint: string; baseOt: ReturnType<typeof cloneOpenFromJournal>; anchors: Anchor[] }> = [];
   let skippedOpen = 0;
@@ -268,7 +314,7 @@ async function main(): Promise<void> {
         skippedNoAnchorsOrOpen: skippedOpen,
         horizonHoursPastExit: horizonH,
         stepMs,
-        baseTpGridStepPnl: baseCfg.tpGridStepPnl,
+        pm2PaperEnvApp: appName,
         baseTrailMode: baseCfg.trailMode,
         baseTrailDrop: baseCfg.trailDrop,
         note: 'Peak scenarios use trailMode=peak + trailDrop from peak; ladder_* use ladder_retrace + ladderRetraceSpec. PG path only (collector cadence).',
