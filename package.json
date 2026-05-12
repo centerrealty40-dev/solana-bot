@@ -68,6 +68,7 @@
     "sigseed:run": "tsx src/scripts/sigseed-run.ts",
     "diag:live-wallet-rpc": "tsx scripts/diag-live-wallet-rpc.ts",
     "live:mfe-audit": "tsx scripts/live-oscar-closed-mfe-audit.ts",
+    "live:trail-sweep": "tsx scripts/live-oscar-trail-scenario-sweep.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts",
     "paper2:timeout-slice": "tsx src/scripts/paper2-timeout-slice.ts",

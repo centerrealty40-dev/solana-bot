@@ -256,8 +256,14 @@ export function simStep(args: {
   tpLadder: TpLadderLevel[];
   peakLog: { lastPersistedPeak: number };
   ladderRetraceSpec?: LadderRetraceSpec;
+  /**
+   * `undefined` — прежнее поведение: на новом ATH при `xAvg >= trailTriggerX` сразу `trailingArmed`.
+   * Число — как у live-oscar с TP-grid: arm только если уже есть ≥N частичных TP (`TP_LADDER`), либо нет TP-срезов.
+   */
+  minTpGridPartialsForPeakTrailArm?: number;
 }): SimResult {
-  const { cfg, ot, curMetric, virtualNow, dcaLevels, tpLadder, peakLog, ladderRetraceSpec } = args;
+  const { cfg, ot, curMetric, virtualNow, dcaLevels, tpLadder, peakLog, ladderRetraceSpec, minTpGridPartialsForPeakTrailArm } =
+    args;
   const retraceSpec: LadderRetraceSpec = ladderRetraceSpec ?? { kind: 'baseline' };
 
   const ageH = (virtualNow - ot.entryTs) / 3_600_000;
@@ -289,7 +295,16 @@ export function simStep(args: {
     const wasArmed = ot.trailingArmed;
     ot.peakMcUsd = curMetric;
     ot.peakPnlPct = pnlPctVsAvg;
-    if (xAvg >= cfg.trailTriggerX) ot.trailingArmed = true;
+    const tgArm = tpGridEffective(ot, cfg);
+    const usesTpSlicesArm = tgArm.stepPnl > 0 || tpLadder.length > 0;
+    const tpSlicesDoneArm = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+    if (xAvg >= cfg.trailTriggerX) {
+      if (minTpGridPartialsForPeakTrailArm === undefined) {
+        ot.trailingArmed = true;
+      } else if (!usesTpSlicesArm || tpSlicesDoneArm >= minTpGridPartialsForPeakTrailArm) {
+        ot.trailingArmed = true;
+      }
+    }
     if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= peakLog.lastPersistedPeak + cfg.peakLogStepPct) {
       peakLog.lastPersistedPeak = pnlPctVsAvg;
     }
@@ -490,9 +505,20 @@ export function simulateLifecycle(args: {
   tpLadder: TpLadderLevel[];
   stepMs: number;
   ladderRetraceSpec?: LadderRetraceSpec;
+  minTpGridPartialsForPeakTrailArm?: number;
 }): ClosedTrade | null {
-  const { baseOt, anchors, cfg, cfgAfterDca, cfgAfterDcaPolicy, dcaLevels, tpLadder, stepMs, ladderRetraceSpec } =
-    args;
+  const {
+    baseOt,
+    anchors,
+    cfg,
+    cfgAfterDca,
+    cfgAfterDcaPolicy,
+    dcaLevels,
+    tpLadder,
+    stepMs,
+    ladderRetraceSpec,
+    minTpGridPartialsForPeakTrailArm,
+  } = args;
   const ot = deepCloneOpen(baseOt);
   const peakLog = { lastPersistedPeak: -Infinity };
   let activeCfg = cfg;
@@ -510,6 +536,7 @@ export function simulateLifecycle(args: {
       tpLadder,
       peakLog,
       ladderRetraceSpec,
+      minTpGridPartialsForPeakTrailArm,
     });
     if (r.closed) return r.closed;
     if (cfgAfterDca && openTradeHasPostEntryLegForPolicy(ot, postEntryPolicy)) {
