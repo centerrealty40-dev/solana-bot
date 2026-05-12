@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.163] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.163`.
+
+- **Live mint whitelist:** mint `8J69rbLTzWWgUJziFY8jeu5tDwEPBwUz4pKBMr5rpump` уже был в allowlist; в `live-oscar-mint-whitelist.txt` и зеркале `live-oscar-risky-mint-whitelist.txt` добавлен комментарий к строке для явной трассировки запроса.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.162`** и при необходимости убрать суффикс-комментарий у строки mint; деплой по NORM §5.2.
+
+---
+
 ## [1.11.162] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.162`.
