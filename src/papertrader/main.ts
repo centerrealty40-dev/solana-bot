@@ -274,13 +274,17 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
 
     const symbol = args.symbol?.trim() || '?';
+    const fl = cfg.liveStagedEntryFirstLegUsd;
+    const sl = cfg.liveStagedEntrySecondLegUsd;
+    const sd = cfg.liveStagedEntrySecondDropPct;
+    const kill = cfg.liveStagedEntryKillDropPct;
     const text =
       `<b>Live Oscar signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Вход: $560 (70%) по сигналу; добор $160 (20%) на −7% и $80 (10%) на −14% в течение часа.`;
+      `Вход: $${fl.toFixed(0)} по сигналу; одно усреднение $${sl.toFixed(0)} на −${sd}% от сигнала в течение часа; kill −${kill}% от сигнала.`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',
@@ -1274,11 +1278,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
                   killDropPct: cfg.liveStagedEntryKillDropPct,
                   signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
-                  description: `${cfg.strategyId} staged: сигнал фиксирует якорную цену; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} покупается сразу, доборы $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} на −${cfg.liveStagedEntrySecondDropPct}%${
+                  description: `${cfg.strategyId} staged: сигнал фиксирует якорную цену; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} покупается сразу, одно усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} на −${cfg.liveStagedEntrySecondDropPct}%${
                     cfg.liveStagedEntryThirdLegUsd > 0
                       ? ` и $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} на −${cfg.liveStagedEntryThirdDropPct}%`
                       : ''
-                  } доступны только в течение часа от сигнала; после второй ступени TP-сетки (TP_LADDER) доборы отключены; после одной ступени откат к −7% / −14% от сигнала по-прежнему может добрать ногу, kill-stop — от цены сигнала.`,
+                  } доступны только в течение часа от сигнала; после двух ступеней TP-сетки (TP_LADDER) усреднение отключено; после одной ступени откат вниз может исполнить усреднение на −${cfg.liveStagedEntrySecondDropPct}% от сигнала, если оно ещё не куплено; signal kill-stop −${cfg.liveStagedEntryKillDropPct}% от сигнала.`,
                 },
               }
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9

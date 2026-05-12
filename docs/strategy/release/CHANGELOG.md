@@ -8,11 +8,23 @@
 
 ---
 
+## [1.11.162] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.162`.
+
+- **Live Oscar staged-entry (PM2):** одна вторая нога усреднения на **−6%** от цены сигнала (**$240**), третья нога **выключена** (`THIRD_* = 0`); первая нога **$560**, нотионал **$800**, signal kill **−15%** без изменений. Тексты Telegram/журнала/дашборда выровнены под фактические `cfg.*`.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.161`** и вернуть прежние `PAPER_LIVE_STAGED_ENTRY_*` в `ecosystem.config.cjs`; деплой по NORM §5.2.
+
+---
+
 ## [1.11.161] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.161`.
 
-- **Live Oscar staged-entry:** доборы по −7% / −14% от цены сигнала больше **не блокируются после первого частичного TP**; они запрещаются только после **второй** ступени TP-сетки (`reason === TP_LADDER`). Окно **1 ч** от `signalTs` и флаги `secondLegDone` / `thirdLegDone` без изменений (`tracker.ts`, симулятор `paper2-strategy-backtest.ts`).
+- **Live Oscar staged-entry:** оставшиеся ноги усреднения (пороги по `PAPER_LIVE_STAGED_ENTRY_*`) больше **не блокируются после первого частичного TP**; они запрещаются только после **второй** ступени TP-сетки (`reason === TP_LADDER`). Окно **1 ч** от `signalTs` и флаги `secondLegDone` / `thirdLegDone` без изменений (`tracker.ts`, симулятор `paper2-strategy-backtest.ts`).
 - **PM2:** процесс **`live-oscar-risky`** удалён из `ecosystem.config.cjs` (не стартует при деплое). На уже работающем хосте: **`pm2 delete live-oscar-risky`**.
 
 ### Откат

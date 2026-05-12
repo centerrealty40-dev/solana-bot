@@ -276,16 +276,16 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Staged-entry: полный нотионал; 70% по сигналу, 20% на −7%, 10% на −14% в течение часа. */
+        /** Staged-entry: полный нотионал $800 — первая нога $560 по сигналу, **одно** усреднение $240 на **−6%** от сигнала в течение часа; signal kill **−15%** от сигнала. */
         PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '560',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '160',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '80',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '6',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '240',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '15',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
@@ -358,7 +358,7 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
 
         /**
-         * Дополнительные DCA отключены: staged-доборы −7%%/−14%% — единственное усреднение.
+         * Дополнительные DCA отключены: одно staged-усреднение **−6%** от сигнала.
          * Старый 5-секундный `LIVE_ENTRY_SCALE_IN_*` для основного Live Oscar выключен ниже.
          */
         PAPER_DCA_LEVELS: '',
@@ -561,7 +561,7 @@ module.exports = {
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
 
-        /** Старый 5-секундный scale-in отключён: staged-entry исполняет вторую ногу по −14% от сигнала. */
+        /** Старый 5-секундный scale-in отключён: вторая нога — только через staged-entry (`PAPER_LIVE_STAGED_ENTRY_*`, см. комментарий к `PAPER_POSITION_USD`). */
         LIVE_ENTRY_SCALE_IN_ENABLED: '0',
         /** Legacy-настройки оставлены только для risky/бумажных профилей и не активны при LIVE_ENTRY_SCALE_IN_ENABLED=0. */
         LIVE_ENTRY_SCALE_IN_DELAY_MS: '5000',
