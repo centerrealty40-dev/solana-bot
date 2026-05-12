@@ -70,6 +70,7 @@
     "live:mfe-audit": "tsx scripts/live-oscar-closed-mfe-audit.ts",
     "live:trail-sweep": "tsx scripts/live-oscar-trail-scenario-sweep.ts",
     "live:journal-behavior": "tsx scripts/live-oscar-journal-behavior-report.ts",
+    "live:exit-policy-sweep": "tsx scripts/live-oscar-exit-policy-sweep.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
     "paper2:backtest": "tsx src/scripts/paper2-strategy-backtest.ts",
     "paper2:timeout-slice": "tsx src/scripts/paper2-timeout-slice.ts",

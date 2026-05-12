@@ -30,6 +30,7 @@ import {
   dcaKillstopEffective,
   tpGridEffective,
 } from '../papertrader/executor/tp-grid-effective.js';
+import { cfgEffectiveForOpen } from '../papertrader/cfg-effective-for-open.js';
 import {
   LADDER_PNL_EPS,
   ladderPnlThresholdMark,
@@ -160,13 +161,20 @@ export function oracleFullExitNetPnlUsd(cfg: PaperTraderConfig, ot: OpenTrade, m
   return finalProceeds - ot.totalInvestedUsd;
 }
 
-export function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
-  const legs = open.legs as PositionLeg[] | undefined;
-  const leg0 = legs?.[0];
+export function cloneOpenFromJournal(open: Record<string, unknown>, cfg?: PaperTraderConfig): OpenTrade {
+  const legsRaw = (open.legs as PositionLeg[] | undefined) ?? [];
+  const leg0 = legsRaw[0];
   if (!leg0) throw new Error('open event missing legs[0]');
   const dex = (open.dex as DexId) || 'raydium';
   const entryTs = Number(open.entryTs);
-  const mkt = Number(leg0.marketPrice ?? open.entryMarketPrice ?? open.entryMcUsd ?? leg0.price);
+  const legsAtEntry = legsRaw.filter((l) => Number(l.ts) <= entryTs);
+  const legsInit = legsAtEntry.length > 0 ? legsAtEntry : [leg0];
+  const totalInvestedUsd = legsInit.reduce((s, l) => s + l.sizeUsd, 0);
+  const numPx = legsInit.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+  const numMkt = legsInit.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+  const avgEntry = totalInvestedUsd > 0 ? numPx / totalInvestedUsd : leg0.price;
+  const avgEntryMarket = totalInvestedUsd > 0 ? numMkt / totalInvestedUsd : (leg0.marketPrice ?? leg0.price);
+  const mkt = Number(legsInit[0]!.marketPrice ?? open.entryMarketPrice ?? open.entryMcUsd ?? legsInit[0]!.price);
   const feat = open.features as { pair_address?: unknown; liq_usd?: unknown } | undefined;
   const pairRaw = open.pairAddress ?? feat?.pair_address;
   const pairAddress =
@@ -187,11 +195,11 @@ export function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
     peakMcUsd: mkt,
     peakPnlPct: 0,
     trailingArmed: false,
-    legs: [{ ...leg0, ts: entryTs }],
+    legs: legsInit.map((l) => ({ ...l })),
     partialSells: [],
-    totalInvestedUsd: leg0.sizeUsd,
-    avgEntry: leg0.price,
-    avgEntryMarket: leg0.marketPrice ?? leg0.price,
+    totalInvestedUsd,
+    avgEntry,
+    avgEntryMarket,
     remainingFraction: 1,
     dcaUsedLevels: new Set(),
     dcaUsedIndices: new Set(),
@@ -199,13 +207,40 @@ export function cloneOpenFromJournal(open: Record<string, unknown>): OpenTrade {
     ladderUsedIndices: new Set(),
     pairAddress,
     entryLiqUsd,
+    liveKillstopBelowStreak: 0,
   };
+  if (typeof open.tokenDecimals === 'number' && Number.isFinite(open.tokenDecimals)) {
+    ot.tokenDecimals = open.tokenDecimals;
+  }
   const tpR = open.tpRegime as OpenTrade['tpRegime'] | undefined;
   if (tpR) ot.tpRegime = tpR;
   const tpGo = open.tpGridOverrides as OpenTrade['tpGridOverrides'] | undefined;
   if (tpGo && typeof tpGo === 'object') ot.tpGridOverrides = { ...tpGo };
   const tpRf = open.tpRegimeFeatures as OpenTrade['tpRegimeFeatures'] | undefined;
   if (tpRf && typeof tpRf === 'object') ot.tpRegimeFeatures = { ...tpRf };
+
+  if (cfg?.liveStagedEntryEnabled && cfg.strategyId === 'live-oscar') {
+    const l0 = legsInit[0]!;
+    ot.liveStagedEntry = {
+      signalTs: entryTs,
+      signalPriceUsd: Number(l0.marketPrice ?? l0.price),
+      firstDropPct: cfg.liveStagedEntryFirstDropPct,
+      firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
+      secondDropPct: cfg.liveStagedEntrySecondDropPct,
+      secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+      thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+      thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+      killDropPct: cfg.liveStagedEntryKillDropPct,
+      secondLegDone: false,
+      thirdLegDone: false,
+    };
+  }
+
+  if (!(cfg?.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled)) {
+    const mode = open.liveExitProfileMode as OpenTrade['liveExitProfileMode'] | undefined;
+    if (mode === 'A' || mode === 'B') ot.liveExitProfileMode = mode;
+  }
+
   return ot;
 }
 
@@ -244,6 +279,85 @@ interface SimResult {
   exitReason: ExitReason | 'OPEN' | 'NO_DATA';
 }
 
+function liveStagedEntrySignalDropPctSim(ot: OpenTrade, curMetric: number): number | null {
+  const st = ot.liveStagedEntry;
+  if (!st || !(st.signalPriceUsd > 0) || !(curMetric > 0)) return null;
+  return (curMetric / st.signalPriceUsd - 1) * 100;
+}
+
+function liveStagedEntryKillHitSim(ot: OpenTrade, curMetric: number): boolean {
+  const st = ot.liveStagedEntry;
+  if (!st || !(st.killDropPct > 0)) return false;
+  const d = liveStagedEntrySignalDropPctSim(ot, curMetric);
+  return d != null && d <= -st.killDropPct;
+}
+
+/** Синхронный staged-entry (2–3 ноги) как в `tracker.ts`, без Jupiter. */
+function simTryLiveStagedEntryAdds(args: {
+  cfg: PaperTraderConfig;
+  ot: OpenTrade;
+  curMetric: number;
+  virtualNow: number;
+}): void {
+  const { cfg, ot, curMetric, virtualNow } = args;
+  if (!cfg.liveStagedEntryEnabled || !ot.liveStagedEntry || ot.remainingFraction <= 0) return;
+  if (liveStagedEntryKillHitSim(ot, curMetric)) return;
+  const st = ot.liveStagedEntry;
+  const signalDropPct = liveStagedEntrySignalDropPctSim(ot, curMetric);
+  const stagedAddWindowOpen = virtualNow <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+  const stagedAddAllowed = stagedAddWindowOpen && ot.partialSells.length === 0;
+
+  function pushStagedLeg(stepIndex: number, addUsd: number, dropPct: number): void {
+    const marketBuy = curMetric;
+    const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+    ot.legs.push({
+      ts: virtualNow,
+      price: effectiveBuy,
+      marketPrice: marketBuy,
+      sizeUsd: addUsd,
+      reason: 'dca',
+      triggerPct: -dropPct / 100,
+    });
+    ot.livePendingScaleIn = null;
+    ot.liveKillstopBelowStreak = 0;
+    ot.totalInvestedUsd += addUsd;
+    const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+    ot.avgEntry = num / ot.totalInvestedUsd;
+    const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+    ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+    markDcaStepFired(ot, stepIndex, -dropPct / 100);
+    ot.remainingFraction = 1;
+    if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
+    ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+    const effX = cfgEffectiveForOpen(cfg, ot);
+    ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effX.trailTriggerX;
+    if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+  }
+
+  if (
+    signalDropPct != null &&
+    stagedAddAllowed &&
+    !st.secondLegDone &&
+    signalDropPct <= -st.secondDropPct
+  ) {
+    pushStagedLeg(0, st.secondLegUsd, st.secondDropPct);
+    st.secondLegDone = true;
+  }
+  if (
+    signalDropPct != null &&
+    stagedAddAllowed &&
+    st.secondLegDone &&
+    !st.thirdLegDone &&
+    st.thirdLegUsd != null &&
+    st.thirdLegUsd > 0 &&
+    st.thirdDropPct != null &&
+    signalDropPct <= -st.thirdDropPct
+  ) {
+    pushStagedLeg(1, st.thirdLegUsd, st.thirdDropPct);
+    st.thirdLegDone = true;
+  }
+}
+
 /**
  * One synchronous tracker step — mirrors `tracker.ts` order (minus network / appendEvent).
  */
@@ -265,11 +379,11 @@ export function simStep(args: {
   const { cfg, ot, curMetric, virtualNow, dcaLevels, tpLadder, peakLog, ladderRetraceSpec, minTpGridPartialsForPeakTrailArm } =
     args;
   const retraceSpec: LadderRetraceSpec = ladderRetraceSpec ?? { kind: 'baseline' };
-
+  let effCfg = cfgEffectiveForOpen(cfg, ot);
   const ageH = (virtualNow - ot.entryTs) / 3_600_000;
 
   if (!(curMetric > 0)) {
-    if (ageH > cfg.timeoutHours) {
+    if (ageH > effCfg.timeoutHours) {
       const ct = buildClosedTradeSim({
         cfg,
         ot,
@@ -286,32 +400,33 @@ export function simStep(args: {
 
   const firstPrice = ot.legs[0]?.price || ot.entryMcUsd;
   const dropFromFirstPct = curMetric / firstPrice - 1;
-  /** Snapshot at tick start (matches `tracker.ts` exit gate inputs). */
-  const xAvg = curMetric / ot.avgEntry;
-  const pnlPctVsAvg = (xAvg - 1) * 100;
-  const tgEff = tpGridEffective(ot, cfg);
+  let xAvg = curMetric / ot.avgEntry;
+  let pnlPctVsAvg = (xAvg - 1) * 100;
+  effCfg = cfgEffectiveForOpen(cfg, ot);
+  let tgEff = tpGridEffective(ot, effCfg);
 
   if (curMetric > ot.peakMcUsd) {
     const wasArmed = ot.trailingArmed;
     ot.peakMcUsd = curMetric;
     ot.peakPnlPct = pnlPctVsAvg;
-    const tgArm = tpGridEffective(ot, cfg);
+    const tgArm = tpGridEffective(ot, effCfg);
     const usesTpSlicesArm = tgArm.stepPnl > 0 || tpLadder.length > 0;
     const tpSlicesDoneArm = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
-    if (xAvg >= cfg.trailTriggerX) {
+    if (xAvg >= effCfg.trailTriggerX) {
       if (minTpGridPartialsForPeakTrailArm === undefined) {
         ot.trailingArmed = true;
       } else if (!usesTpSlicesArm || tpSlicesDoneArm >= minTpGridPartialsForPeakTrailArm) {
         ot.trailingArmed = true;
       }
     }
-    if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= peakLog.lastPersistedPeak + cfg.peakLogStepPct) {
+    if ((!wasArmed && ot.trailingArmed) || pnlPctVsAvg >= peakLog.lastPersistedPeak + effCfg.peakLogStepPct) {
       peakLog.lastPersistedPeak = pnlPctVsAvg;
     }
   }
 
-  const killEffBt = dcaKillstopEffective(ot, cfg);
+  let killEffBt = dcaKillstopEffective(ot, effCfg);
   const mayDca =
+    !ot.liveStagedEntry &&
     (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
     (dcaLevels.length > 0 || killEffBt < 0) &&
     ot.remainingFraction > 0;
@@ -321,7 +436,7 @@ export function simStep(args: {
       const lvl = dcaLevels[dcaIdx]!;
       if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
       if (!dcaCrossedDownward(effPrevDrop, dropFromFirstPct, lvl.triggerPct)) continue;
-      const addUsd = cfg.positionUsd * lvl.addFraction;
+      const addUsd = effCfg.positionUsd * lvl.addFraction;
       const marketBuy = curMetric;
       const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
       ot.legs.push({
@@ -341,9 +456,17 @@ export function simStep(args: {
       ot.remainingFraction = 1;
       if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
       ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
-      ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= cfg.trailTriggerX;
+      ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
     }
   }
+
+  simTryLiveStagedEntryAdds({ cfg, ot, curMetric, virtualNow });
+
+  xAvg = curMetric / ot.avgEntry;
+  pnlPctVsAvg = (xAvg - 1) * 100;
+  effCfg = cfgEffectiveForOpen(cfg, ot);
+  tgEff = tpGridEffective(ot, effCfg);
+  killEffBt = dcaKillstopEffective(ot, effCfg);
 
   /** TP grid (+5% steps, etc.) — same order as `tracker.ts`. Partial sizing uses post-DCA `ot`; thresholds use tick-start `xAvg`. */
   if (tgEff.stepPnl > 0 && ot.remainingFraction > 0) {
@@ -358,6 +481,11 @@ export function simStep(args: {
       const threshold = k * step;
       if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
       if (pnlFrac + LADDER_PNL_EPS < threshold) break;
+      if (cfg.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled && ot.liveExitProfileMode == null && k === 1) {
+        ot.liveExitProfileMode = 'A';
+        effCfg = cfgEffectiveForOpen(cfg, ot);
+        tgEff = tpGridEffective(ot, effCfg);
+      }
       const sellFraction = sellFrac;
       const marketSellPx = curMetric;
       const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
@@ -421,24 +549,47 @@ export function simStep(args: {
   }
 
   let exitReason: ExitReason | null = null;
-  if (killEffBt < 0 && pnlPctVsAvg / 100 <= killEffBt) exitReason = 'KILLSTOP';
-  else if (xAvg >= cfg.tpX) exitReason = 'TP';
-  else if (cfg.slX > 0 && xAvg <= cfg.slX) exitReason = 'SL';
-  else if (
-    cfg.trailMode === 'ladder_retrace' &&
-    ladderRetraceTriggeredWithSpec(
-      ot,
-      tpLadder,
-      xAvg,
-      tgEff.stepPnl > 0 ? 'grid' : 'discrete',
-      tgEff.firstRungRetraceMinPnlPct,
-      retraceSpec,
+  const inSignalKill = liveStagedEntryKillHitSim(ot, curMetric);
+  const inKillTerritory =
+    inSignalKill || (!ot.liveStagedEntry && killEffBt < 0 && pnlPctVsAvg / 100 <= killEffBt);
+  if (inKillTerritory) {
+    const debounceKillAfterReplenish =
+      cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKill;
+    if (debounceKillAfterReplenish) {
+      const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
+      ot.liveKillstopBelowStreak = nextStreak;
+      if (nextStreak >= 2) exitReason = 'KILLSTOP';
+    } else {
+      ot.liveKillstopBelowStreak = 0;
+      exitReason = 'KILLSTOP';
+    }
+  } else {
+    ot.liveKillstopBelowStreak = 0;
+  }
+
+  if (!exitReason) {
+    if (xAvg >= effCfg.tpX) exitReason = 'TP';
+    else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
+    else if (
+      effCfg.trailMode === 'ladder_retrace' &&
+      ladderRetraceTriggeredWithSpec(
+        ot,
+        tpLadder,
+        xAvg,
+        tgEff.stepPnl > 0 ? 'grid' : 'discrete',
+        tgEff.firstRungRetraceMinPnlPct,
+        retraceSpec,
+      )
     )
-  )
-    exitReason = 'TRAIL';
-  else if (cfg.trailMode === 'peak' && ot.trailingArmed && curMetric <= ot.peakMcUsd * (1 - cfg.trailDrop))
-    exitReason = 'TRAIL';
-  else if (ageH >= cfg.timeoutHours) exitReason = 'TIMEOUT';
+      exitReason = 'TRAIL';
+    else if (
+      effCfg.trailMode === 'peak' &&
+      ot.trailingArmed &&
+      curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
+    )
+      exitReason = 'TRAIL';
+    else if (ageH >= effCfg.timeoutHours) exitReason = 'TIMEOUT';
+  }
   if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
   if (exitReason) {

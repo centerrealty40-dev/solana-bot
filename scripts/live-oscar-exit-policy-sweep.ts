@@ -1,16 +1,13 @@
 /**
- * Контрфактический перебор **трейла / ladder-retrace** на всех `live_position_close`
- * из live JSONL: одна и та же ценовая траектория из PG (`price_usd`), разные правила выхода.
+ * Live Oscar — широкий контрфакт по **TP-сетке / staged kill / таймауту / трейлу A**
+ * на тех же закрытиях и PG-якорях, что `live-oscar-trail-scenario-sweep.ts`.
  *
- * Использует `simulateLifecycle` / `simStep` из `paper2-strategy-backtest.ts` (тот же порядок,
- * что у трекера, плюс опция `minTpGridPartialsForPeakTrailArm` для arm peak-trail после N частичных TP-grid).
+ * После правок `simStep` учитываются **режим A/B** (`cfgEffectiveForOpen`), **staged-entry доборы**
+ * и **signal kill** vs **DCA kill** + debounce multi-leg — ближе к live, чем ранние симуляции.
  *
- * Требует `DATABASE_URL`. **`PAPER_*` для симуляции подмешиваются из `ecosystem.config.cjs`**
- * процесса **`live-oscar`** (или `--risky` → `live-oscar-risky`), чтобы совпасть с PM2, а не только с `.env`.
+ *   npx tsx scripts/live-oscar-exit-policy-sweep.ts --journal data/live/pt1-oscar-live.jsonl --horizon-hours 24 --step-ms 60000
  *
- * Пример (VPS):
- *   cd /opt/solana-alpha && set -a && . ./.env && set +a && npx tsx scripts/live-oscar-trail-scenario-sweep.ts \
- *     --journal data/live/pt1-oscar-live.jsonl --horizon-hours 48 --step-ms 60000
+ * `--horizon-hours` держите умеренным (12–24), иначе TIMEOUT на хвосте окна раздувает USD.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -22,7 +19,6 @@ import { sql as dsql } from 'drizzle-orm';
 import { db } from '../src/core/db/client.js';
 import { loadPaperTraderConfig, parseDcaLevels, parseTpLadder } from '../src/papertrader/config.js';
 import { sourceSnapshotTable } from '../src/papertrader/dip-detector.js';
-import type { LadderRetraceSpec } from '../src/papertrader/executor/tp-ladder-state.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { ExitReason } from '../src/papertrader/types.js';
 import {
@@ -122,67 +118,50 @@ function mergeCfg(base: PaperTraderConfig, patch: Partial<PaperTraderConfig>): P
   return { ...base, ...patch };
 }
 
-type Scenario = {
-  id: string;
-  cfgPatch: Partial<PaperTraderConfig>;
-  ladderRetraceSpec?: LadderRetraceSpec;
-  minTpGridPartialsForPeakTrailArm?: number;
-};
+type Scenario = { id: string; cfgPatch: Partial<PaperTraderConfig> };
 
-function buildScenarios(gridStep: number): Scenario[] {
-  const fiveStepsDrop = Math.min(0.5, gridStep * 5);
-  const out: Scenario[] = [
-    { id: 'A0_prod_ladder_baseline', cfgPatch: {}, ladderRetraceSpec: { kind: 'baseline' } },
-    {
-      id: 'A1_ladder_adapt_skip1',
-      cfgPatch: {},
-      ladderRetraceSpec: { kind: 'adaptive', minPeakSortedIdx: 2, extraSkipRungs: 1 },
-    },
-    {
-      id: 'A2_ladder_adapt_skip2',
-      cfgPatch: {},
-      ladderRetraceSpec: { kind: 'adaptive', minPeakSortedIdx: 2, extraSkipRungs: 2 },
-    },
-    {
-      id: 'A3_ladder_adapt_skip3',
-      cfgPatch: {},
-      ladderRetraceSpec: { kind: 'adaptive', minPeakSortedIdx: 2, extraSkipRungs: 3 },
-    },
-    {
-      id: 'A4_ladder_adapt_skip5',
-      cfgPatch: {},
-      ladderRetraceSpec: { kind: 'adaptive', minPeakSortedIdx: 2, extraSkipRungs: 5 },
-    },
-  ];
-  const peakDrops = [0.03, 0.05, 0.08, 0.1, 0.125, 0.15, 0.2];
-  for (const td of peakDrops) {
-    out.push({
-      id: `B_peak_drop_${(td * 100).toFixed(1).replace('.', '_')}pct_arm2`,
-      cfgPatch: {
-        trailMode: 'peak',
-        trailDrop: td,
-        trailTriggerX: 1.02,
-      },
-      minTpGridPartialsForPeakTrailArm: 2,
-    });
+/** Синхронно дублируем TP A/B и staged-kill пороги, чтобы сценарий применялся и после переключения в B. */
+function tpAbMirror(patch: Partial<PaperTraderConfig>): Partial<PaperTraderConfig> {
+  const out = { ...patch };
+  if (typeof patch.tpGridStepPnl === 'number') {
+    out.liveExitModeBTpGridStepPnl = patch.tpGridStepPnl;
   }
-  out.push({
-    id: `B_peak_drop_${(fiveStepsDrop * 100).toFixed(1)}pct_eq5gridSteps_arm2`,
-    cfgPatch: {
-      trailMode: 'peak',
-      trailDrop: fiveStepsDrop,
-      trailTriggerX: 1.02,
-    },
-    minTpGridPartialsForPeakTrailArm: 2,
-  });
-  for (const n of [0, 1, 2, 3, 5]) {
-    out.push({
-      id: `C_peak_drop10pct_armAfter${n}TpPartials`,
-      cfgPatch: { trailMode: 'peak', trailDrop: 0.1, trailTriggerX: 1.02 },
-      minTpGridPartialsForPeakTrailArm: n,
-    });
+  if (typeof patch.tpGridSellFraction === 'number') {
+    out.liveExitModeBTpGridSellFraction = patch.tpGridSellFraction;
+  }
+  if (typeof patch.tpGridFirstRungRetraceMinPnlPct === 'number') {
+    out.liveExitModeBTpGridFirstRungRetraceMinPnlPct = patch.tpGridFirstRungRetraceMinPnlPct;
   }
   return out;
+}
+
+function buildScenarios(): Scenario[] {
+  return [
+    { id: 'S0_prod_baseline', cfgPatch: {} },
+    /** Крупнее ступени, меньше срезов — «сидеть в плюсе дольше» */
+    { id: 'S1_tp_step5pct_sell8pct', cfgPatch: tpAbMirror({ tpGridStepPnl: 0.05, tpGridSellFraction: 0.08 }) },
+    { id: 'S2_tp_step7_5pct_sell12pct', cfgPatch: tpAbMirror({ tpGridStepPnl: 0.075, tpGridSellFraction: 0.12 }) },
+    { id: 'S3_tp_step10pct_sell15pct', cfgPatch: tpAbMirror({ tpGridStepPnl: 0.1, tpGridSellFraction: 0.15 }) },
+    /** Мельче сетка — контроль к «копеечным» частичкам */
+    { id: 'S4_tp_step2pct_sell4pct', cfgPatch: tpAbMirror({ tpGridStepPnl: 0.02, tpGridSellFraction: 0.04 }) },
+    /** Жёстче / мягче signal kill (от цены сигнала, staged) */
+    { id: 'S5_kill_signal_18pct', cfgPatch: { liveStagedEntryKillDropPct: 18 } },
+    { id: 'S6_kill_signal_28pct', cfgPatch: { liveStagedEntryKillDropPct: 28 } },
+    { id: 'S7_kill_signal_35pct', cfgPatch: { liveStagedEntryKillDropPct: 35 } },
+    /** Таймауты */
+    { id: 'S8_timeout_A_12h', cfgPatch: { timeoutHours: 12 } },
+    { id: 'S9_timeout_B_3h', cfgPatch: { liveExitModeBTimeoutHours: 3 } },
+    /** Трейл режима A чуть шире */
+    { id: 'S10_trail_A_drop12_trig108', cfgPatch: { trailDrop: 0.12, trailTriggerX: 1.08 } },
+    { id: 'S11_trail_A_drop8_trig105', cfgPatch: { trailDrop: 0.08, trailTriggerX: 1.05 } },
+    /** Трейл B */
+    { id: 'S12_trail_B_drop10', cfgPatch: { liveExitModeBTrailDrop: 0.1 } },
+    { id: 'S13_trail_B_drop15', cfgPatch: { liveExitModeBTrailDrop: 0.15 } },
+    /** Комбо: шире TP + мягче signal kill */
+    { id: 'S14_combo_wideTp_softKill', cfgPatch: tpAbMirror({ tpGridStepPnl: 0.075, tpGridSellFraction: 0.12, liveStagedEntryKillDropPct: 30 }) },
+    /** Комбо: узкий kill + короче B-timeout */
+    { id: 'S15_combo_tightKill_shortBto', cfgPatch: { liveStagedEntryKillDropPct: 18, liveExitModeBTimeoutHours: 3 } },
+  ];
 }
 
 type RowAgg = {
@@ -194,7 +173,7 @@ type RowAgg = {
 
 async function main(): Promise<void> {
   const journal = argStr('--journal', 'data/live/pt1-oscar-live.jsonl');
-  const horizonH = argNum('--horizon-hours', 48);
+  const horizonH = argNum('--horizon-hours', 24);
   const stepMs = argNum('--step-ms', 60_000);
   const risky = process.argv.includes('--risky');
   const appName = risky ? 'live-oscar-risky' : 'live-oscar';
@@ -205,12 +184,17 @@ async function main(): Promise<void> {
     dcaLevels: parseDcaLevels(process.env.PAPER_DCA_LEVELS),
     tpLadder: parseTpLadder(process.env.PAPER_TP_LADDER),
   }));
-  const gridStep = baseCfg.tpGridStepPnl > 0 ? baseCfg.tpGridStepPnl : 0.025;
-  const scenarios = buildScenarios(gridStep);
+  const scenarios = buildScenarios();
 
-  const prep: Array<{ mint: string; baseOt: ReturnType<typeof cloneOpenFromJournal>; anchors: Anchor[] }> = [];
+  const prep: Array<{
+    mint: string;
+    baseOt: ReturnType<typeof cloneOpenFromJournal>;
+    anchors: Anchor[];
+    actualNetUsd: number;
+  }> = [];
   let skippedOpen = 0;
   let skippedBad = 0;
+  let sumActualJournal = 0;
 
   const abs = path.resolve(journal);
   if (!fs.existsSync(abs)) {
@@ -228,6 +212,7 @@ async function main(): Promise<void> {
       continue;
     }
     if (e.kind !== 'live_position_close') continue;
+    if (typeof e.strategyId === 'string' && e.strategyId !== 'live-oscar') continue;
     const ct = e.closedTrade as Record<string, unknown> | undefined;
     if (!ct || typeof ct.mint !== 'string') continue;
     const net = Number(ct.netPnlUsd ?? 0);
@@ -260,7 +245,8 @@ async function main(): Promise<void> {
       skippedOpen++;
       continue;
     }
-    prep.push({ mint: baseOt.mint, baseOt, anchors });
+    sumActualJournal += net;
+    prep.push({ mint: baseOt.mint, baseOt, anchors, actualNetUsd: net });
   }
 
   const agg = new Map<string, RowAgg>();
@@ -278,8 +264,6 @@ async function main(): Promise<void> {
         dcaLevels,
         tpLadder,
         stepMs,
-        ladderRetraceSpec: s.ladderRetraceSpec,
-        minTpGridPartialsForPeakTrailArm: s.minTpGridPartialsForPeakTrailArm,
       });
       const a = agg.get(s.id)!;
       if (!ct) {
@@ -299,28 +283,29 @@ async function main(): Promise<void> {
       scenario: s.id,
       tradesSimulated: a.nSim,
       sumNetPnlUsd: +a.sumNet.toFixed(2),
+      deltaVsActualJournalUsd: +(a.sumNet - sumActualJournal).toFixed(2),
       meanNetPnlUsd: a.nSim ? +(a.sumNet / a.nSim).toFixed(3) : null,
       exitMix: a.exit,
       skippedNullClose: a.skippedAnchors,
     };
   });
 
+  table.sort((a, b) => b.sumNetPnlUsd - a.sumNetPnlUsd);
+
   console.log(
     JSON.stringify(
       {
         journal: abs,
         tradesWithPgPath: prep.length,
+        sumActualClosedNetPnlUsd: +sumActualJournal.toFixed(2),
         skippedCorruptJournal: skippedBad,
         skippedNoAnchorsOrOpen: skippedOpen,
         horizonHoursPastExit: horizonH,
         stepMs,
         pm2PaperEnvApp: appName,
-        baseTpGridStepPnl: baseCfg.tpGridStepPnl,
-        baseTpGridSellFraction: baseCfg.tpGridSellFraction,
-        baseTrailMode: baseCfg.trailMode,
-        baseTrailDrop: baseCfg.trailDrop,
-        note: 'Peak scenarios use trailMode=peak + trailDrop from peak; ladder_* use ladder_retrace + ladderRetraceSpec. PG path only (collector cadence).',
-        results: table.sort((a, b) => (b.sumNetPnlUsd ?? 0) - (a.sumNetPnlUsd ?? 0)),
+        simNote:
+          'Симуляция ближе к live после A/B, staged доборов и signal kill в simStep; сравнивайте deltaVsActualJournalUsd и exitMix. TIMEOUT на длинном horizon раздувает хвост.',
+        rankedScenarios: table,
       },
       null,
       2,
