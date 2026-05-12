@@ -14,6 +14,7 @@ import 'dotenv/config';
  *     --journal data/live/pt1-oscar-live.jsonl --extend-post-exit-hours 12 --tsv-out data/live/mfe-audit.tsv
  *
  * `--max-closes N` — остановиться после N **первых** закрытий в файле (по умолчанию 0 = все закрытия, полный проход JSONL).
+ * В append-only журнале это **самые старые** N закрытий; для «последних» закрытий не задавайте `--max-closes` или срежьте хвост файла в отдельный JSONL.
  */
 import fs from 'node:fs';
 import readline from 'node:readline';
@@ -404,6 +405,7 @@ async function main(): Promise<void> {
   const outRows: OutRow[] = [];
   const mfeMinusClose: number[] = [];
   const byReason = new Map<string, { n: number; sumDiff: number }>();
+  let skippedAggStats = 0;
 
   console.log(
     JSON.stringify(
@@ -456,12 +458,21 @@ async function main(): Promise<void> {
     const mfePctPg = pnlPctFromAvg(r.avgEntry, agg.maxHold);
     const closePct = r.closePnlPct ?? r.pnlPct;
     const diff = mfePctPg != null && Number.isFinite(closePct) ? mfePctPg - closePct : null;
+    const robust =
+      diff != null &&
+      Number.isFinite(diff) &&
+      Math.abs(diff) <= 300 &&
+      agg.samplesHold >= 3;
     if (diff != null && Number.isFinite(diff)) {
-      mfeMinusClose.push(diff);
-      const cur = byReason.get(r.exitReason) ?? { n: 0, sumDiff: 0 };
-      cur.n += 1;
-      cur.sumDiff += diff;
-      byReason.set(r.exitReason, cur);
+      if (robust) {
+        mfeMinusClose.push(diff);
+        const cur = byReason.get(r.exitReason) ?? { n: 0, sumDiff: 0 };
+        cur.n += 1;
+        cur.sumDiff += diff;
+        byReason.set(r.exitReason, cur);
+      } else {
+        skippedAggStats += 1;
+      }
     }
 
     let postExitMaxPct: number | null = null;
@@ -526,6 +537,7 @@ async function main(): Promise<void> {
       {
         summary: {
           closesAnalyzed: outRows.length,
+          skippedFromSummaryLowQuality: skippedAggStats,
           mfeMinusClosePg_medianPct: median(mfeMinusClose),
           mfeMinusClosePg_meanPct: mean(mfeMinusClose),
         },
@@ -535,7 +547,7 @@ async function main(): Promise<void> {
         caveats: [
           'mfePct_pg is limited by collector snapshot cadence (not tick-level).',
           'For metricType mc, uses max(COALESCE(market_cap_usd), COALESCE(fdv_usd)) in snapshots vs avgEntry.',
-          'mfeMinusClose_pg = pgMfe - closePnlPct (rough upside not captured vs exit snapshot accounting).',
+          'Rows used for mean/median: |mfeMinusClose_pg|<=300 and pg_samples_hold>=3 (see skippedFromSummaryLowQuality).',
           'Use --birdeye for finer candle highs on price metric (rate limits; slower).',
         ],
       },
