@@ -1,6 +1,8 @@
 /** VPS `/opt/solana-alpha`: Живой Оскар + дашборд + сборщики снимков (PM2 читает этот файл). */
 const path = require('path');
 const root = __dirname;
+const JUPITER_PRO_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
+const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
 
 /**
  * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
@@ -219,6 +221,7 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
+        JUPITER_QUOTE_API_URL: JUPITER_PRO_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
       },
     },
@@ -419,6 +422,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         /** После N defer pre-exit Jupiter verify по TIMEOUT — один проход без block_on_fail (см. live_exit_verify_defer). */
@@ -428,6 +432,7 @@ module.exports = {
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -492,6 +497,18 @@ module.exports = {
         MTM_SHADOW_SAMPLE_PCT: '100',
         MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow.jsonl'),
         MTM_SHADOW_ALT_FRACTION: '0.58',
+        /**
+         * Shadow dynamic kill-stop (PG `*_pair_snapshots`): пишет `dynamicKillstopShadow` в `openTrade` / `live_position_open`,
+         * но **не** меняет реальные kill/DCA в трекере (только наблюдаемость).
+         */
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED: '1',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS: '14',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT: '6',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_KILL_DROP_PCT: '12',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MAX_KILL_DROP_PCT: '28',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_SUPPORT_CLUSTER_PCT: '3',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES: '2',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
         /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
@@ -500,6 +517,9 @@ module.exports = {
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
+        /** Если pre-send simulation упала уже после успешного Jupiter quote/swap — один свежий quote+swap retry. */
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '1',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '5000',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
@@ -509,6 +529,8 @@ module.exports = {
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         /** Jupiter quote + swap: max execution tolerances (bps). */
         LIVE_DEFAULT_SLIPPAGE_BPS: '300',
+        LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
+        LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         /**
          * Jupiter `/swap/v1/swap`: cap priority fee at **0.0001 SOL** (100_000 lamports) via `priorityLevelWithMaxLamports`.
          * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
@@ -550,9 +572,11 @@ module.exports = {
         LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
-        /** Периодический хвост на кошельке + force-close зависших open (`src/live/periodic-self-heal.ts`). */
+        /** Периодический безопасный self-heal: хвосты кошелька + диагностика stale open (`src/live/periodic-self-heal.ts`). */
         LIVE_PERIODIC_SELF_HEAL_MS: '1800000',
         LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
+        /** `0` по умолчанию: не продавать обычные live open только по возрасту. `1` — ручной opt-in старого PERIODIC_HEAL force-close. */
+        LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED: '0',
         LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
         /** `1` = продавать любые SPL не в open выше min USD (осторожно: скам-airdrops). */
         LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
@@ -711,6 +735,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
@@ -718,6 +743,7 @@ module.exports = {
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -763,6 +789,18 @@ module.exports = {
         MTM_SHADOW_SAMPLE_PCT: '100',
         MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow-live-oscar-risky.jsonl'),
         MTM_SHADOW_ALT_FRACTION: '0.58',
+        /**
+         * Shadow dynamic kill-stop (PG `*_pair_snapshots`): JSONL only; does not change exits yet.
+         * Keep aligned with `live-oscar` defaults unless you intentionally want a different shadow profile.
+         */
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED: '1',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS: '14',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT: '6',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_KILL_DROP_PCT: '12',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MAX_KILL_DROP_PCT: '28',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_SUPPORT_CLUSTER_PCT: '3',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES: '2',
+        PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** Торговый кошелёк risky (совпадает с `data/live/live-oscar-risky.keypair.json` на VPS). */
         LIVE_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
@@ -770,9 +808,14 @@ module.exports = {
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
+        /** Если pre-send simulation упала уже после успешного Jupiter quote/swap — один свежий quote+swap retry. */
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '1',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '5000',
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         LIVE_DEFAULT_SLIPPAGE_BPS: '300',
+        LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
+        LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         LIVE_MAX_POSITION_USD: '200',
         LIVE_MAX_OPEN_POSITIONS: '30',
@@ -793,6 +836,7 @@ module.exports = {
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
         LIVE_PERIODIC_SELF_HEAL_MS: '1800000',
         LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
+        LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED: '0',
         LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
         LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
         LIVE_TELEGRAM_HEARTBEAT: '0',
@@ -934,6 +978,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
@@ -941,6 +986,7 @@ module.exports = {
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -1099,6 +1145,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
@@ -1106,6 +1153,7 @@ module.exports = {
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -1263,6 +1311,7 @@ module.exports = {
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
@@ -1270,6 +1319,7 @@ module.exports = {
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
+        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',

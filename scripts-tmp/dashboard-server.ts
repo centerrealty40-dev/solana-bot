@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
 import postgres from 'postgres';
+import { jupiterJsonHeaders, jupiterPriceV3Url } from '../src/core/jupiter-http.js';
 import { lamportsFromGetBalanceResult, qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
 import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
 import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
@@ -282,8 +283,8 @@ async function getJupiterTokenPriceUsd(mint: string): Promise<number | null> {
   const hit = jupPxCache.get(mint);
   if (hit && Date.now() - hit.ts < JUP_PX_TTL_MS) return hit.px;
   try {
-    const r = await fetch(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(mint)}`, {
-      headers: { accept: 'application/json' },
+    const r = await fetch(jupiterPriceV3Url(mint), {
+      headers: jupiterJsonHeaders(),
       signal: AbortSignal.timeout(5000),
     });
     if (!r.ok) return null;

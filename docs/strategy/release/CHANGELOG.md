@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.160] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.160`.
+
+- **Shadow dynamic kill-stop (PG `*_pair_snapshots`):** на тике открытой позиции считается предлагаемый уровень kill/DCA из почасовых `MIN(price_usd)`; результат пишется в **`OpenTrade.dynamicKillstopShadow`**, live strategy snapshot и восстановление из store (**без изменения реальных выходов**). Env: **`PAPER_DYNAMIC_KILLSTOP_SHADOW_*`**; на **`live-oscar`** / **`live-oscar-risky`** в `ecosystem.config.cjs` включено **`PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED=1`** с дефолтными порогами (откат: **`0`**).
+- **Jupiter:** общий модуль **`src/core/jupiter-http.ts`** — дефолтные URL **`api.jup.ag`**, заголовок **`x-api-key`** при **`JUPITER_API_KEY`**; live/paper quote, sim-audit, price-verify и дашборд выровнены.
+- **Live buy / sim:** короткий ретрай при simulate failure в phase4 (env в ecosystem).
+- **PERIODIC_HEAL / stuck force-close:** продажа live open **только по возрасту** выключена по умолчанию; opt-in через **`LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED=1`** (+ **`LIVE_PERIODIC_STUCK_GRACE_HOURS`**). Значения заданы в ecosystem для **`live-oscar`** и **`live-oscar-risky`**.
+- **Сборка:** несколько черновых `src/scripts/*` (sweep/bruteforce без актуальных экспортов) исключены из `tsconfig.json` → `tsc`/`typecheck`; на PM2-процессы не влияет.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.159`**; на хосте **`PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED=0`**, при необходимости вернуть прежние Jupiter URL/ключи и **`LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED`**; деплой по NORM §5.2.
+
+---
+
 ## [1.11.159] — 2026-05-07
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.159`.

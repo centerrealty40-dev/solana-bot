@@ -38,6 +38,8 @@ import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
 
 let cachedSigner: Keypair | null = null;
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function signer(liveCfg: LiveOscarConfig): Keypair {
   if (!cachedSigner) {
     const s = liveCfg.walletSecret?.trim();
@@ -101,6 +103,10 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
 
 function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['anchorMode'] {
   return liveCfg.executionMode === 'simulate' ? 'simulate' : 'chain';
+}
+
+function isRetryableBuySimError(message: string): boolean {
+  return message.startsWith('sim_failed:') || message.includes('InstructionError');
 }
 
 /** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
@@ -181,122 +187,146 @@ async function runSolToTokenPipeline(
     return { ok: false, anchorMode: mode };
   }
 
-  const solUsd = getSolUsd() ?? 0;
-  const intentId = newLiveIntentId();
   const kp = signer(liveCfg);
   const pk = kp.publicKey.toBase58();
+  const maxAttempts = 1 + liveCfg.liveBuySimRetryAttempts;
 
-  const prep = await liveBuyQuoteAndPrepareSnapshot({
-    cfg: liveCfg,
-    outputMint: args.mint,
-    sizeUsd: args.usdNotional,
-    solUsd,
-    userPublicKey: pk,
-  });
-
-  const quoteSnapshot = prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true };
-
-  appendLiveJsonlEvent({
-    kind: 'execution_attempt',
-    intentId,
-    side: 'buy',
-    mint: args.mint,
-    intendedUsd: args.usdNotional,
-    executionMode: liveCfg.executionMode,
-    quoteSnapshot,
-    targetPriceUsd: null,
-  });
-
-  if (!prep || !prep.swapBuild.ok) {
-    const reason =
-      prep == null ? 'no_quote' : prep.swapBuild.ok === false ? prep.swapBuild.reason : 'swap_build';
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_err',
-      simulated: true,
-      error: { message: reason },
-    });
-    notifyLiveExecutionSimErr();
-    return { ok: false, anchorMode: mode };
-  }
-
-  const snapForAge = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
-  if (liveQuoteExceedsMaxAge(snapForAge, liveCfg.liveQuoteMaxAgeMs)) {
-    const age = snapForAge.quoteAgeMs;
-    const max = liveCfg.liveQuoteMaxAgeMs;
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_err',
-      simulated: true,
-      error: {
-        message:
-          typeof age === 'number' && Number.isFinite(age) && max != null
-            ? `quote_stale:${Math.round(age)}ms>${max}ms`
-            : 'quote_stale:bad_or_missing_quoteAgeMs',
-      },
-    });
-    notifyLiveExecutionSimErr();
-    return { ok: false, anchorMode: mode };
-  }
-
-  const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
-
-  if (liveCfg.executionMode === 'simulate') {
-    const sim = await liveSimulateSignedTransaction({
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const solUsd = getSolUsd() ?? 0;
+    const intentId = newLiveIntentId();
+    const prep = await liveBuyQuoteAndPrepareSnapshot({
       cfg: liveCfg,
-      signedTxSerializedBase64: signedB64,
+      outputMint: args.mint,
+      sizeUsd: args.usdNotional,
+      solUsd,
+      userPublicKey: pk,
     });
 
-    if (!sim.ok) {
+    const quoteSnapshot = {
+      ...(prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true }),
+      buySimRetryAttempt: attempt,
+      buySimRetryMaxAttempts: maxAttempts,
+    };
+
+    appendLiveJsonlEvent({
+      kind: 'execution_attempt',
+      intentId,
+      side: 'buy',
+      mint: args.mint,
+      intendedUsd: args.usdNotional,
+      executionMode: liveCfg.executionMode,
+      quoteSnapshot,
+      targetPriceUsd: null,
+    });
+
+    if (!prep || !prep.swapBuild.ok) {
+      const reason =
+        prep == null ? 'no_quote' : prep.swapBuild.ok === false ? prep.swapBuild.reason : 'swap_build';
       appendLiveJsonlEvent({
         kind: 'execution_result',
         intentId,
         status: 'sim_err',
         simulated: true,
-        unitsConsumed: sim.unitsConsumed ?? null,
-        error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
+        error: { message: reason },
       });
       notifyLiveExecutionSimErr();
-      return { ok: false, anchorMode: 'simulate' };
+      return { ok: false, anchorMode: mode };
     }
 
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_ok',
-      simulated: true,
-      unitsConsumed: sim.unitsConsumed ?? null,
+    const snapForAge = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
+    if (liveQuoteExceedsMaxAge(snapForAge, liveCfg.liveQuoteMaxAgeMs)) {
+      const age = snapForAge.quoteAgeMs;
+      const max = liveCfg.liveQuoteMaxAgeMs;
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        error: {
+          message:
+            typeof age === 'number' && Number.isFinite(age) && max != null
+              ? `quote_stale:${Math.round(age)}ms>${max}ms`
+              : 'quote_stale:bad_or_missing_quoteAgeMs',
+        },
+      });
+      notifyLiveExecutionSimErr();
+      return { ok: false, anchorMode: mode };
+    }
+
+    const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
+
+    if (liveCfg.executionMode === 'simulate') {
+      const sim = await liveSimulateSignedTransaction({
+        cfg: liveCfg,
+        signedTxSerializedBase64: signedB64,
+      });
+
+      if (!sim.ok) {
+        const message = sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '');
+        appendLiveJsonlEvent({
+          kind: 'execution_result',
+          intentId,
+          status: 'sim_err',
+          simulated: true,
+          unitsConsumed: sim.unitsConsumed ?? null,
+          error: { message },
+        });
+        notifyLiveExecutionSimErr();
+        if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
+          await sleep(liveCfg.liveBuySimRetryDelayMs);
+          continue;
+        }
+        return { ok: false, anchorMode: 'simulate' };
+      }
+
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_ok',
+        simulated: true,
+        unitsConsumed: sim.unitsConsumed ?? null,
+      });
+      notifyLiveExecutionSimOk();
+      return { ok: true, anchorMode: 'simulate' };
+    }
+
+    const liveOut = await liveSendSignedSwapPipeline({
+      cfg: liveCfg,
+      signedTxSerializedBase64: signedB64,
     });
-    notifyLiveExecutionSimOk();
-    return { ok: true, anchorMode: 'simulate' };
+    const ok = finalizeLiveSendJsonl(intentId, liveOut);
+    if (liveCfg.executionMode === 'live') {
+      if (ok) {
+        clearLiveBuyCooldown(args.mint);
+      } else if (
+        !liveOut.ok &&
+        liveOut.signature &&
+        liveOut.kind === 'confirm_timeout' &&
+        (args.intentKind === 'buy_open' ||
+          args.intentKind === 'dca_add' ||
+          args.intentKind === 'buy_scale_in')
+      ) {
+        registerAmbiguousLiveBuyCooldown(args.mint);
+      } else {
+        clearLiveBuyCooldown(args.mint);
+      }
+    }
+    if (ok && liveOut.signature) {
+      return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
+    }
+    if (
+      !ok &&
+      !liveOut.ok &&
+      liveOut.kind === 'sim_err' &&
+      attempt < maxAttempts - 1 &&
+      isRetryableBuySimError(liveOut.message)
+    ) {
+      await sleep(liveCfg.liveBuySimRetryDelayMs);
+      continue;
+    }
+    return { ok: false, anchorMode: 'chain' };
   }
 
-  const liveOut = await liveSendSignedSwapPipeline({
-    cfg: liveCfg,
-    signedTxSerializedBase64: signedB64,
-  });
-  const ok = finalizeLiveSendJsonl(intentId, liveOut);
-  if (liveCfg.executionMode === 'live') {
-    if (ok) {
-      clearLiveBuyCooldown(args.mint);
-    } else if (
-      !liveOut.ok &&
-      liveOut.signature &&
-      liveOut.kind === 'confirm_timeout' &&
-      (args.intentKind === 'buy_open' ||
-        args.intentKind === 'dca_add' ||
-        args.intentKind === 'buy_scale_in')
-    ) {
-      registerAmbiguousLiveBuyCooldown(args.mint);
-    } else {
-      clearLiveBuyCooldown(args.mint);
-    }
-  }
-  if (ok && liveOut.signature) {
-    return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
-  }
   return { ok: false, anchorMode: 'chain' };
 }
 

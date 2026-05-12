@@ -1,15 +1,20 @@
 import { fetch } from 'undici';
 import { sql as dsql } from 'drizzle-orm';
+import { jupiterJsonHeaders, jupiterPriceV3Url } from '../core/jupiter-http.js';
 import { db } from '../core/db/client.js';
 import type { PaperTraderConfig } from './config.js';
 import { SOL_MINT } from './config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchJson<T = unknown>(url: string, retries = 2): Promise<T | null> {
+async function fetchJson<T = unknown>(
+  url: string,
+  retries = 2,
+  headers: Record<string, string> = { accept: 'application/json' },
+): Promise<T | null> {
   for (let i = 0; i <= retries; i++) {
     try {
-      const r = await fetch(url, { headers: { accept: 'application/json' } });
+      const r = await fetch(url, { headers });
       if (r.status === 429) {
         await sleep(1500);
         continue;
@@ -33,18 +38,16 @@ type JupiterPriceV3 = Record<string, { usdPrice?: number; price?: number }> & {
 };
 
 export async function refreshSolPrice(): Promise<void> {
-  const j = await fetchJson<JupiterPriceV3>(`https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`);
+  const j = await fetchJson<JupiterPriceV3>(jupiterPriceV3Url(SOL_MINT), 2, jupiterJsonHeaders());
   const px = Number(j?.[SOL_MINT]?.usdPrice ?? j?.data?.[SOL_MINT]?.price ?? 0);
   if (px > 20 && px < 5000) solUsd = px;
 }
 
-/** Best-effort token USD price (Jupiter lite-api); used when DB snapshot price missing. */
+/** Best-effort token USD price (Jupiter API); used when DB snapshot price missing. */
 export async function fetchJupiterTokenUsdPrice(mint: string): Promise<number | null> {
   const id = mint.trim();
   if (!id) return null;
-  const j = await fetchJson<JupiterPriceV3>(
-    `https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(id)}`,
-  );
+  const j = await fetchJson<JupiterPriceV3>(jupiterPriceV3Url(id), 2, jupiterJsonHeaders());
   const row = j?.[id] ?? j?.data?.[id];
   const px = Number(row?.usdPrice ?? row?.price ?? 0);
   return px > 0 && Number.isFinite(px) ? px : null;

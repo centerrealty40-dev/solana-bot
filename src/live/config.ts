@@ -56,7 +56,7 @@ const LiveOscarConfigSchema = z
      */
     liveWalletPubkeyExpected: z.string().min(32).max(64).optional(),
 
-    /** W8.0 Phase 2 — Jupiter lite-api (defaults match public lite-api hosts). */
+    /** W8.0 Phase 2 — Jupiter API (defaults target api.jup.ag and attach JUPITER_API_KEY when set). */
     liveJupiterQuoteUrl: z.string().min(1).optional(),
     liveJupiterSwapUrl: z.string().min(1).optional(),
     liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
@@ -123,6 +123,9 @@ const LiveOscarConfigSchema = z
     liveConfirmTimeoutMs: z.coerce.number().int().min(3000).max(600_000).default(60_000),
     liveSendSkipPreflight: z.boolean().default(false),
     liveSimBeforeSend: z.boolean().default(true),
+    /** Buy pipeline: on transient pre-send simulation failure, rebuild Jupiter quote/swap and retry. */
+    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(3).default(0),
+    liveBuySimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
     liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
     liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
     liveSendCreditsPerCall: z.coerce.number().int().min(10).max(200).default(30),
@@ -151,7 +154,7 @@ const LiveOscarConfigSchema = z
      */
     liveReconcileBlockMaxMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
-    /** 0 = off. Else interval (ms) for periodic tail sweep + stuck-open force exit (live only). */
+    /** 0 = off. Else interval (ms) for periodic tail sweep + stale-open diagnostics (live only). */
     livePeriodicSelfHealMs: z.coerce.number().int().min(0).max(86_400_000).default(1_800_000),
     /** Skip chain-only tail sweep below this estimated USD (spam / dust). */
     livePeriodicSweepMinUsd: z.coerce.number().min(0).max(1_000_000).default(0.25),
@@ -160,7 +163,9 @@ const LiveOscarConfigSchema = z
      * When true, any non-open SPL balance above min USD is sold (airdrops / unknown tokens — higher risk).
      */
     livePeriodicSweepUnknownChainOnly: z.boolean().default(false),
-    /** Hours beyond `timeoutHours` before forcing PERIODIC_HEAL on an open with on-chain balance. */
+    /** Manual opt-in. When false, periodic self-heal never force-closes normal open positions by age. */
+    livePeriodicStuckForceCloseEnabled: z.boolean().default(false),
+    /** Hours beyond `timeoutHours` before forcing PERIODIC_HEAL on an open with on-chain balance (only when enabled). */
     livePeriodicStuckGraceHours: z.coerce.number().min(0).max(168).default(0.5),
 
     /**
@@ -422,6 +427,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveConfirmTimeoutMs: process.env.LIVE_CONFIRM_TIMEOUT_MS,
     liveSendSkipPreflight: envBool(process.env.LIVE_SEND_SKIP_PREFLIGHT, false),
     liveSimBeforeSend: envBool(process.env.LIVE_SIM_BEFORE_SEND, true),
+    liveBuySimRetryAttempts: process.env.LIVE_BUY_SIM_RETRY_ATTEMPTS,
+    liveBuySimRetryDelayMs: process.env.LIVE_BUY_SIM_RETRY_DELAY_MS,
     liveSendMaxRetries: process.env.LIVE_SEND_MAX_RETRIES,
     liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,
@@ -468,6 +475,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       return Number.isFinite(n) && n >= 0 ? n : 0.25;
     })(),
     livePeriodicSweepUnknownChainOnly: envBool(process.env.LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY, false),
+    livePeriodicStuckForceCloseEnabled: envBool(process.env.LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED, false),
     livePeriodicStuckGraceHours: (() => {
       const s = process.env.LIVE_PERIODIC_STUCK_GRACE_HOURS?.trim();
       if (!s) return 0.5;

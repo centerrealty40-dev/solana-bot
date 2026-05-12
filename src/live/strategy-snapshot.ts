@@ -48,6 +48,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.tpRegime ? { tpRegime: ot.tpRegime } : {}),
     ...(ot.tpRegimeFeatures ? { tpRegimeFeatures: { ...ot.tpRegimeFeatures } } : {}),
     ...(ot.tpGridOverrides ? { tpGridOverrides: { ...ot.tpGridOverrides } } : {}),
+    ...(ot.dynamicKillstopShadow ? { dynamicKillstopShadow: { ...ot.dynamicKillstopShadow } } : {}),
     ...(ot.liveExitProfileMode ? { liveExitProfileMode: ot.liveExitProfileMode } : {}),
     ...(typeof ot.liveKillstopBelowStreak === 'number' && ot.liveKillstopBelowStreak > 0
       ? { liveKillstopBelowStreak: ot.liveKillstopBelowStreak }

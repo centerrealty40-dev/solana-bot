@@ -224,7 +224,11 @@ export const LivePeriodicSelfHealReportSchema = z.object({
   kind: z.literal('live_periodic_self_heal'),
   ok: z.boolean(),
   reconcileOk: z.boolean(),
+  /** Stale open positions with on-chain balance observed this tick. */
+  staleOpensObserved: z.number().int().nonnegative().optional(),
   staleOpensForced: z.number().int().nonnegative(),
+  /** Observed stale opens that were intentionally not sold because force-close is disabled. */
+  staleOpensForceCloseDisabled: z.number().int().nonnegative().optional(),
   tailSweepsAttempted: z.number().int().nonnegative(),
   tailSweepsOk: z.number().int().nonnegative(),
   divergentMints: z.array(z.string()).optional(),

@@ -34,13 +34,15 @@ function baseCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
 describe('live Jupiter Phase 2', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    delete process.env.JUPITER_API_KEY;
   });
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.JUPITER_API_KEY;
   });
 
   it('resolveLiveJupiterQuoteUrl uses default', () => {
-    expect(resolveLiveJupiterQuoteUrl(baseCfg())).toContain('lite-api.jup.ag');
+    expect(resolveLiveJupiterQuoteUrl(baseCfg())).toContain('api.jup.ag');
     expect(resolveLiveJupiterSwapUrl(baseCfg())).toContain('/swap/v1/swap');
   });
 
@@ -112,6 +114,34 @@ describe('live Jupiter Phase 2', () => {
     expect(r!.quoteResponse.outputMint).toBe('OutMint');
     expect(r!.quoteSnapshot.provider).toBe('jupiter');
     expect(r!.quoteSnapshot.routeHops).toBe(1);
+  });
+
+  it('liveFetchBuyQuote sends Jupiter API key when configured', async () => {
+    process.env.JUPITER_API_KEY = 'jup_test';
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          inputMint: 'So11111111111111111111111111111111111111112',
+          outputMint: 'OutMint',
+          priceImpactPct: '0.02',
+          routePlan: [{}],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    ) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    await liveFetchBuyQuote({
+      cfg: baseCfg(),
+      outputMint: 'OutMint',
+      sizeUsd: 10,
+      solUsd: 200,
+    });
+
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      accept: 'application/json',
+      'x-api-key': 'jup_test',
+    });
   });
 
   it('liveBuildUnsignedSwapTx parses swap tx', async () => {

@@ -156,6 +156,17 @@ describe('W8.0-p1 live JSONL contract', () => {
         verdictSummary: 'blocked:slip-too-high',
         exitReason: 'TIMEOUT',
       },
+      {
+        kind: 'live_periodic_self_heal',
+        ok: true,
+        reconcileOk: true,
+        staleOpensObserved: 1,
+        staleOpensForced: 0,
+        staleOpensForceCloseDisabled: 1,
+        tailSweepsAttempted: 0,
+        tailSweepsOk: 0,
+        note: 'stale_open_force_close_disabled',
+      },
     ];
     for (const b of bodies) {
       const again = parseLiveEventBody(JSON.parse(JSON.stringify(b)));

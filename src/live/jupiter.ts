@@ -1,25 +1,27 @@
 /**
- * W8.0 Phase 2 — Jupiter lite-api: SOL→token quote + unsigned swap tx (live-oscar).
+ * W8.0 Phase 2 — Jupiter API: SOL→token quote + unsigned swap tx (live-oscar).
  */
 import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { child } from '../core/logger.js';
+import {
+  JUPITER_QUOTE_URL_DEFAULT,
+  JUPITER_SWAP_URL_DEFAULT,
+  jupiterJsonHeaders,
+} from '../core/jupiter-http.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
 
 const log = child('live-jupiter');
 
-const QUOTE_URL_DEFAULT = 'https://lite-api.jup.ag/swap/v1/quote';
-const SWAP_URL_DEFAULT = 'https://lite-api.jup.ag/swap/v1/swap';
-
 export function resolveLiveJupiterQuoteUrl(cfg: LiveOscarConfig): string {
   const u = cfg.liveJupiterQuoteUrl?.trim();
-  return u && u.length > 0 ? u : QUOTE_URL_DEFAULT;
+  return u && u.length > 0 ? u : JUPITER_QUOTE_URL_DEFAULT;
 }
 
 export function resolveLiveJupiterSwapUrl(cfg: LiveOscarConfig): string {
   const u = cfg.liveJupiterSwapUrl?.trim();
-  return u && u.length > 0 ? u : SWAP_URL_DEFAULT;
+  return u && u.length > 0 ? u : JUPITER_SWAP_URL_DEFAULT;
 }
 
 /** POST body for `/swap/v1/swap` (live-oscar). Adds Jupiter priority cap when configured. */
@@ -147,12 +149,23 @@ async function httpGetQuote(
     const resp = await fetch(url.toString(), {
       method: 'GET',
       signal: ac.signal,
-      headers: { accept: 'application/json' },
+      headers: jupiterJsonHeaders(),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      log.debug(
+        { status: resp.status, outputMint, rateLimited: resp.status === 429 },
+        resp.status === 429 ? 'live jupiter quote rate limited' : 'live jupiter quote http error',
+      );
+      return null;
+    }
     const j = (await resp.json()) as unknown;
     return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch {
+  } catch (e) {
+    const aborted = (e as Error)?.name === 'AbortError';
+    log.debug(
+      { outputMint, err: (e as Error)?.message },
+      aborted ? 'live jupiter quote timeout' : 'live jupiter quote fetch fail',
+    );
     return null;
   } finally {
     clearTimeout(tt);
@@ -198,12 +211,7 @@ export async function liveBuildUnsignedSwapTx(args: {
   const buildTimeoutMs = cfg.liveJupiterSwapTimeoutMs;
   const ac = new AbortController();
   const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
-  const key = process.env.JUPITER_API_KEY?.trim();
-  const headers: Record<string, string> = {
-    accept: 'application/json',
-    'content-type': 'application/json',
-  };
-  if (key) headers['x-api-key'] = key;
+  const headers = jupiterJsonHeaders({ 'content-type': 'application/json' });
   try {
     const body = liveJupiterSwapPostBody({ cfg, quoteResponse, userPublicKey });
     const res = await fetch(resolveLiveJupiterSwapUrl(cfg), {
@@ -214,8 +222,11 @@ export async function liveBuildUnsignedSwapTx(args: {
     });
     const txt = await res.text();
     if (!res.ok) {
-      log.debug({ status: res.status, snippet: txt.slice(0, 200) }, 'live jupiter swap http');
-      return { ok: false, reason: 'swap-http' };
+      log.debug(
+        { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
+        res.status === 429 ? 'live jupiter swap rate limited' : 'live jupiter swap http',
+      );
+      return { ok: false, reason: `swap-http-${res.status}` };
     }
     let j: { swapTransaction?: string };
     try {
@@ -294,12 +305,23 @@ async function httpGetSellQuote(
     const resp = await fetch(url.toString(), {
       method: 'GET',
       signal: ac.signal,
-      headers: { accept: 'application/json' },
+      headers: jupiterJsonHeaders(),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      log.debug(
+        { status: resp.status, inputMint, rateLimited: resp.status === 429 },
+        resp.status === 429 ? 'live jupiter sell quote rate limited' : 'live jupiter sell quote http error',
+      );
+      return null;
+    }
     const j = (await resp.json()) as unknown;
     return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch {
+  } catch (e) {
+    const aborted = (e as Error)?.name === 'AbortError';
+    log.debug(
+      { inputMint, err: (e as Error)?.message },
+      aborted ? 'live jupiter sell quote timeout' : 'live jupiter sell quote fetch fail',
+    );
     return null;
   } finally {
     clearTimeout(tt);

@@ -6,17 +6,16 @@ import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { qnCall } from '../../core/rpc/qn-client.js';
 import { child } from '../../core/logger.js';
+import { JUPITER_SWAP_URL_DEFAULT, jupiterJsonHeaders } from '../../core/jupiter-http.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import type { SimAuditStamp } from '../types.js';
 import { fetchJupiterBuyQuoteResponse } from './price-verify.js';
 
 const log = child('sim-audit');
 
-const JUPITER_SWAP_DEFAULT = 'https://lite-api.jup.ag/swap/v1/swap';
-
 function swapApiUrl(): string {
   const v = process.env.PAPER_JUPITER_SWAP_URL?.trim();
-  return v && v.length > 0 ? v : JUPITER_SWAP_DEFAULT;
+  return v && v.length > 0 ? v : JUPITER_SWAP_URL_DEFAULT;
 }
 
 /** Deterministic placeholder user for Jupiter (never used to sign `sendTransaction`). */
@@ -64,12 +63,7 @@ async function jupiterBuildSwapBase64(
 ): Promise<{ ok: true; b64: string } | { ok: false; reason: string }> {
   const ac = new AbortController();
   const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
-  const key = process.env.JUPITER_API_KEY?.trim();
-  const headers: Record<string, string> = {
-    accept: 'application/json',
-    'content-type': 'application/json',
-  };
-  if (key) headers['x-api-key'] = key;
+  const headers = jupiterJsonHeaders({ 'content-type': 'application/json' });
   try {
     const body = {
       quoteResponse,
@@ -86,8 +80,11 @@ async function jupiterBuildSwapBase64(
     });
     const txt = await res.text();
     if (!res.ok) {
-      log.debug({ status: res.status, snippet: txt.slice(0, 200) }, 'jupiter swap build http');
-      return { ok: false, reason: 'swap-http' };
+      log.debug(
+        { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
+        res.status === 429 ? 'jupiter swap build rate limited' : 'jupiter swap build http',
+      );
+      return { ok: false, reason: `swap-http-${res.status}` };
     }
     let j: { swapTransaction?: string };
     try {

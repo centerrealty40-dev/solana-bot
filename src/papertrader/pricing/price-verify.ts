@@ -3,6 +3,7 @@
  * W7.4.1 — optional retries + circuit breaker (`jupiter-quote-resilience.ts`).
  */
 import { child } from '../../core/logger.js';
+import { JUPITER_QUOTE_URL_DEFAULT, jupiterJsonHeaders } from '../../core/jupiter-http.js';
 import type { PaperTraderConfig } from '../config.js';
 import { quoteResilienceFromPaperCfg } from '../config.js';
 import type { PriceVerifyVerdict } from '../types.js';
@@ -20,15 +21,13 @@ const log = child('price-verify');
 
 /**
  * Default Jupiter quote endpoint. Old `quote-api.jup.ag/v6/quote` was DNS-decommissioned
- * in 2025 — see Jupiter Developer Platform migration guide. We use the public lite-api
- * (no API key, ~60 req/min/IP, response shape backwards-compatible with v6: outAmount,
- * priceImpactPct, routePlan are the same field names). Override via PAPER_PRICE_VERIFY_QUOTE_URL.
+ * in 2025; use Jupiter Developer Platform API and attach JUPITER_API_KEY when configured.
+ * Response shape remains compatible for our fields: outAmount, priceImpactPct, routePlan.
+ * Override via PAPER_PRICE_VERIFY_QUOTE_URL.
  */
-const QUOTE_API_BASE_DEFAULT = 'https://lite-api.jup.ag/swap/v1/quote';
-
 export function quoteApiBase(): string {
   const v = process.env.PAPER_PRICE_VERIFY_QUOTE_URL?.trim();
-  return v && v.length > 0 ? v : QUOTE_API_BASE_DEFAULT;
+  return v && v.length > 0 ? v : JUPITER_QUOTE_URL_DEFAULT;
 }
 
 /**
@@ -69,16 +68,27 @@ export async function fetchJupiterBuyQuoteResponse(args: {
       const resp = await fetch(urlStr, {
         method: 'GET',
         signal: ac.signal,
-        headers: { accept: 'application/json' },
+        headers: jupiterJsonHeaders(),
       });
       if (!resp.ok) {
+        log.debug(
+          { status: resp.status, mint, attempt: attempt + 1, rateLimited: resp.status === 429 },
+          resp.status === 429
+            ? 'jupiter raw buy quote rate limited'
+            : 'jupiter raw buy quote http error',
+        );
         okJson = null;
       } else {
         const j = (await resp.json()) as unknown;
         okJson =
           typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
       }
-    } catch {
+    } catch (e) {
+      const aborted = (e as Error)?.name === 'AbortError';
+      log.debug(
+        { mint, attempt: attempt + 1, err: (e as Error)?.message },
+        aborted ? 'jupiter raw buy quote timeout' : 'jupiter raw buy quote fetch fail',
+      );
       okJson = null;
     } finally {
       clearTimeout(tt);
@@ -155,11 +165,16 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
     resp = await fetch(url.toString(), {
       method: 'GET',
       signal: ac.signal,
-      headers: { accept: 'application/json' },
+      headers: jupiterJsonHeaders(),
     });
     elapsed = Date.now() - start;
     if (!resp.ok) {
-      log.debug({ status: resp.status, mint, elapsed }, 'jupiter quote http error (impulse)');
+      log.debug(
+        { status: resp.status, mint, elapsed, rateLimited: resp.status === 429 },
+        resp.status === 429
+          ? 'jupiter quote rate limited (impulse)'
+          : 'jupiter quote http error (impulse)',
+      );
       return { kind: 'skipped', reason: 'http-error', ts };
     }
     txt = await resp.text();
@@ -298,11 +313,14 @@ async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Pro
     resp = await fetch(url.toString(), {
       method: 'GET',
       signal: ac.signal,
-      headers: { accept: 'application/json' },
+      headers: jupiterJsonHeaders(),
     });
     elapsed = Date.now() - start;
     if (!resp.ok) {
-      log.debug({ status: resp.status, mint, elapsed }, 'jupiter sell quote http error');
+      log.debug(
+        { status: resp.status, mint, elapsed, rateLimited: resp.status === 429 },
+        resp.status === 429 ? 'jupiter sell quote rate limited' : 'jupiter sell quote http error',
+      );
       return { kind: 'skipped', reason: 'http-error', ts };
     }
     txt = await resp.text();

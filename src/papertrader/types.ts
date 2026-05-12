@@ -58,6 +58,56 @@ export interface TpRegimeFeatures {
   table: string | null;
 }
 
+export type DynamicKillstopShadowStatus =
+  | 'used'
+  | 'used_min_capped'
+  | 'fallback_disabled'
+  | 'fallback_no_table'
+  | 'fallback_bad_input'
+  | 'fallback_no_history'
+  | 'fallback_low_coverage'
+  | 'fallback_no_support_below_entry'
+  | 'fallback_support_too_far'
+  | 'fallback_query_error';
+
+export interface DynamicKillstopShadow {
+  version: 'dynamic-killstop-shadow-v1';
+  status: DynamicKillstopShadowStatus;
+  recommendedAction: 'use_dynamic' | 'fallback_static';
+  reason: string;
+  ts: number;
+  mint: string;
+  source: string | null;
+  table: string | null;
+  pairAddress: string | null;
+  windowDays: number;
+  entryPriceUsd: number;
+  entryMarketCapUsd: number | null;
+  supportPriceUsd: number | null;
+  supportDistancePct: number | null;
+  clusterTouches: number;
+  rawKillPriceUsd: number | null;
+  rawKillDropPct: number | null;
+  cappedKillPriceUsd: number | null;
+  cappedKillDropPct: number | null;
+  dcaPriceUsd: number | null;
+  dcaDropPct: number | null;
+  params: {
+    bufferPct: number;
+    minKillDropPct: number;
+    maxKillDropPct: number;
+    supportClusterPct: number;
+    minTouches: number;
+    minHourlySamples: number;
+  };
+  coverage: {
+    hourlySamples: number;
+    rawSamples: number;
+    firstTs: string | null;
+    lastTs: string | null;
+  };
+}
+
 export interface PartialSell {
   ts: number;
   /** EFFECTIVE sell price (with sell costs applied). */
@@ -156,6 +206,8 @@ export interface OpenTrade {
   tpRegime?: TpRegime;
   tpRegimeFeatures?: TpRegimeFeatures;
   tpGridOverrides?: TpGridOverrides;
+  /** Shadow-only diagnostic: proposed support-capped dynamic kill/DCA, not used by tracker yet. */
+  dynamicKillstopShadow?: DynamicKillstopShadow;
 
   /**
    * Live Oscar (`PAPER_LIVE_EXIT_MODE_AB`): **A** до первого усреднения (DCA или scale-in), **B** после.

@@ -264,6 +264,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       if (Object.keys(overrides).length > 0) ot.tpGridOverrides = overrides;
     }
 
+    const dk = rawPayload.dynamicKillstopShadow;
+    if (dk != null && typeof dk === 'object') {
+      const d = dk as Record<string, unknown>;
+      if (d.version === 'dynamic-killstop-shadow-v1' && typeof d.status === 'string' && typeof d.reason === 'string') {
+        ot.dynamicKillstopShadow = dk as OpenTrade['dynamicKillstopShadow'];
+      }
+    }
+
     const lep = rawPayload.liveExitProfileMode;
     if (lep === 'A' || lep === 'B') ot.liveExitProfileMode = lep;
 

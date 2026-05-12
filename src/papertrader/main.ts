@@ -17,6 +17,7 @@ import {
 import { startPriorityFeeTicker, stopPriorityFeeTicker, getPriorityFeeUsd } from './pricing/priority-fee.js';
 import { verifyEntryPrice } from './pricing/price-verify.js';
 import { resolveTpRegimeForOpen } from './pricing/tp-regime.js';
+import { computeDynamicKillstopShadowForOpen } from './pricing/dynamic-killstop-shadow.js';
 import { runOpenSimAudit } from './pricing/sim-audit.js';
 import { runImpulseConfirmGate, takeImpulseJupiterReuse } from './pricing/impulse-confirm.js';
 import {
@@ -1084,6 +1085,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         ot.tokenDecimals = tokenDecimals;
 
         await resolveTpRegimeForOpen(cfg, ot);
+        if (cfg.dynamicKillstopShadowEnabled) {
+          try {
+            ot.dynamicKillstopShadow = await computeDynamicKillstopShadowForOpen({ cfg, ot });
+          } catch (e) {
+            logger.warn(
+              { err: (e as Error)?.message ?? String(e), mint: ot.mint },
+              'dynamicKillstopShadow failed',
+            );
+          }
+        }
         /**
          * Live Oscar: режим A/B не ставим на входе — сплит 75%+25% обязателен и не является DCA.
          * A включается трекером при первой ступени TP-сетки; B — при реальном DCA по просадке.

@@ -70,6 +70,18 @@ const ConfigSchema = z.object({
   liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   liveStagedEntrySignalTtlMs: z.coerce.number().int().positive().default(60 * 60_000),
+  /**
+   * Shadow-only: compute a proposed dynamic kill-stop + midpoint DCA from PG `*_pair_snapshots` history.
+   * Does **not** affect tracker exits yet — only stamps `OpenTrade.dynamicKillstopShadow` + JSONL mirror fields.
+   */
+  dynamicKillstopShadowEnabled: z.boolean().default(false),
+  dynamicKillstopShadowWindowDays: z.coerce.number().int().min(1).max(60).default(14),
+  dynamicKillstopShadowBufferPct: z.coerce.number().min(0).max(50).default(6),
+  dynamicKillstopShadowMinKillDropPct: z.coerce.number().min(0).max(95).default(12),
+  dynamicKillstopShadowMaxKillDropPct: z.coerce.number().min(1).max(95).default(28),
+  dynamicKillstopShadowSupportClusterPct: z.coerce.number().min(0.1).max(20).default(3),
+  dynamicKillstopShadowMinTouches: z.coerce.number().int().min(1).max(50).default(2),
+  dynamicKillstopShadowMinHourlySamples: z.coerce.number().int().min(8).max(2000).default(72),
   btcMints: z
     .string()
     .default(
@@ -528,6 +540,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntrySecondLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD,
     liveStagedEntryThirdLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD,
     liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
+    dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),
+    dynamicKillstopShadowWindowDays: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS,
+    dynamicKillstopShadowBufferPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT,
+    dynamicKillstopShadowMinKillDropPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_KILL_DROP_PCT,
+    dynamicKillstopShadowMaxKillDropPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_MAX_KILL_DROP_PCT,
+    dynamicKillstopShadowSupportClusterPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_SUPPORT_CLUSTER_PCT,
+    dynamicKillstopShadowMinTouches: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES,
+    dynamicKillstopShadowMinHourlySamples: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES,
     btcMints: process.env.PAPER_BTC_MINTS,
     feeBpsPumpfun: process.env.PAPER_FEE_BPS_PUMPFUN,
     feeBpsPumpswap: process.env.PAPER_FEE_BPS_PUMPSWAP,

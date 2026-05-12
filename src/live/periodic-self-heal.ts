@@ -1,5 +1,5 @@
 /**
- * Live Oscar — periodic stuck-open force exit + chain-only tail sweeps (live).
+ * Live Oscar — periodic chain-only tail sweeps plus optional stuck-open force exit (live).
  */
 import type { PaperTraderConfig, TpLadderLevel } from '../papertrader/config.js';
 import type { TrackerStats, TrackerArgs } from '../papertrader/executor/tracker.js';
@@ -62,7 +62,9 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
   async function runTick(): Promise<void> {
     if (running || ctx.isTrackerBusy()) return;
     running = true;
+    let staleOpensObserved = 0;
     let staleOpensForced = 0;
+    let staleOpensForceCloseDisabled = 0;
     let tailSweepsAttempted = 0;
     let tailSweepsOk = 0;
     let note: string | undefined;
@@ -78,7 +80,9 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           kind: 'live_periodic_self_heal',
           ok: false,
           reconcileOk: true,
+          staleOpensObserved,
           staleOpensForced,
+          staleOpensForceCloseDisabled,
           tailSweepsAttempted,
           tailSweepsOk,
           note,
@@ -122,7 +126,8 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
       }
 
       const stuckThresholdH = paperCfg.timeoutHours + liveCfg.livePeriodicStuckGraceHours;
-      const liveOscar = ctx.resolveLiveOscar();
+      const forceCloseEnabled = liveCfg.livePeriodicStuckForceCloseEnabled;
+      const liveOscar = forceCloseEnabled ? ctx.resolveLiveOscar() : undefined;
       const phase4 = liveOscar?.tracker;
 
       const openEntries = [...open.entries()];
@@ -131,6 +136,12 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         if (!(ageH >= stuckThresholdH)) continue;
         const bal = chainMap.get(mint);
         if (!bal || bal === 0n) continue;
+        staleOpensObserved++;
+
+        if (!forceCloseEnabled) {
+          staleOpensForceCloseDisabled++;
+          continue;
+        }
 
         const spotExit = await resolveSpotUsdPerToken(
           mint,
@@ -155,13 +166,20 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         if (ok) staleOpensForced++;
       }
 
+      if (staleOpensForceCloseDisabled > 0) {
+        note = 'stale_open_force_close_disabled';
+      }
+
       appendLiveJsonlEvent({
         kind: 'live_periodic_self_heal',
         ok: true,
         reconcileOk: true,
+        staleOpensObserved,
         staleOpensForced,
+        staleOpensForceCloseDisabled,
         tailSweepsAttempted,
         tailSweepsOk,
+        note,
       });
     } catch (e) {
       note = (e as Error)?.message?.slice(0, 400) ?? 'tick_err';
@@ -169,7 +187,9 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         kind: 'live_periodic_self_heal',
         ok: false,
         reconcileOk: true,
+        staleOpensObserved,
         staleOpensForced,
+        staleOpensForceCloseDisabled,
         tailSweepsAttempted,
         tailSweepsOk,
         note,
