@@ -2,6 +2,13 @@
 const path = require('path');
 const root = __dirname;
 
+/**
+ * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
+ * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
+ * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
+ */
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
+
 module.exports = {
   apps: [
     {
@@ -266,8 +273,8 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Staged-entry: полный нотионал **$800**; 70% по сигналу, 20% на −7%, 10% на −14% в течение часа. */
-        PAPER_POSITION_USD: '800',
+        /** Staged-entry: полный нотионал; 70% по сигналу, 20% на −7%, 10% на −14% в течение часа. */
+        PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
@@ -508,7 +515,7 @@ module.exports = {
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: '1000',
+        LIVE_MAX_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
