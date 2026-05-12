@@ -9,6 +9,14 @@
  * Сетка по умолчанию умеренная (~8k комбо). Узже: `--quick`. Своя сетка: списки через запятую
  * (`--tp-steps`, `--tp-sells`, …).
  *
+ * **Уточняющий перебор** вокруг прошлого «якорного» победителя (TP~4%, sell~5%, …):
+ *   --refine
+ *
+ * **Только чувствительность к signal-kill %** (остальное фиксировано — см. `--center-json` или дефолтный центр):
+ *   --only-kill-sensitivity
+ * Дополнительно к основному/ refine-прогону:
+ *   --kill-sensitivity
+ *
  *   npx tsx scripts/live-oscar-closed-maxpnl-gridsearch.ts --journal data/live/pt1-oscar-live.jsonl
  */
 import 'dotenv/config';
@@ -215,6 +223,56 @@ function buildComboGrid(quick: boolean): Combo[] {
   return combos;
 }
 
+/** Узкая сетка вокруг грубого оптимума (см. прошлый прогон `tp40_sf5_…`). */
+function buildRefineGrid(): Combo[] {
+  const tpSteps = [0.032, 0.035, 0.038, 0.04, 0.042, 0.045];
+  const tpSells = [0.042, 0.045, 0.05, 0.055, 0.058];
+  const tpRetrace = [0.016, 0.018, 0.02, 0.022, 0.024];
+  const killSig = [12, 14, 15, 16, 18, 20, 22, 24];
+  const dcaKill = [-0.055, -0.06, -0.065, -0.07];
+  const trailDrop = [0.1, 0.12];
+  const trailTrig = [1.04, 1.06];
+
+  const combos: Combo[] = [];
+  for (const step of tpSteps) {
+    for (const sell of tpSells) {
+      for (const retr of tpRetrace) {
+        for (const ks of killSig) {
+          for (const dk of dcaKill) {
+            for (const td of trailDrop) {
+              for (const tx of trailTrig) {
+                const patch = tpAbMirror({
+                  tpGridStepPnl: step,
+                  tpGridSellFraction: sell,
+                  tpGridFirstRungRetraceMinPnlPct: retr,
+                  liveStagedEntryKillDropPct: ks,
+                  dcaKillstop: dk,
+                  liveExitModeBDcaKillstop: dk,
+                  trailDrop: td,
+                  trailTriggerX: tx,
+                  liveExitModeBTrailDrop: td,
+                  liveExitModeBTrailTriggerX: tx,
+                });
+                const id = [
+                  `R_tp${Math.round(step * 1000)}`,
+                  `sf${Math.round(sell * 1000)}`,
+                  `r${Math.round(retr * 1000)}`,
+                  `sk${Math.round(ks)}`,
+                  `dk${Math.round(-dk * 100)}`,
+                  `td${Math.round(td * 100)}`,
+                  `tx${Math.round(tx * 100)}`,
+                ].join('_');
+                combos.push({ id, patch });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return combos;
+}
+
 type PrepRow = {
   closedTrade: Record<string, unknown>;
   anchors: Anchor[];
@@ -222,6 +280,73 @@ type PrepRow = {
   journalExitTs: number;
   entryTs: number;
 };
+
+type DcaLevelsT = ReturnType<typeof parseDcaLevels>;
+type TpLadderT = ReturnType<typeof parseTpLadder>;
+
+function evalPatchOnPrep(
+  prep: PrepRow[],
+  baseCfg: PaperTraderConfig,
+  patch: Partial<PaperTraderConfig>,
+  dcaLevels: DcaLevelsT,
+  tpLadder: TpLadderT,
+  stepMs: number,
+): { sumNet: number; nOk: number; nSkip: number } {
+  const cfg = mergeCfg(baseCfg, patch);
+  let sumNet = 0;
+  let nOk = 0;
+  let nSkip = 0;
+  for (const row of prep) {
+    const anchorsClipped = clipAnchors(row.anchors, row.entryTs, row.journalExitTs);
+    let baseOt: OpenTrade;
+    try {
+      baseOt = cloneOpenFromJournal(row.closedTrade, cfg);
+    } catch {
+      nSkip++;
+      continue;
+    }
+    const sim = simulateLifecycle({
+      baseOt,
+      anchors: anchorsClipped.length >= 2 ? anchorsClipped : row.anchors,
+      cfg,
+      dcaLevels,
+      tpLadder,
+      stepMs,
+    });
+    if (!sim) {
+      nSkip++;
+      continue;
+    }
+    sumNet += sim.netPnlUsd;
+    nOk++;
+  }
+  return { sumNet, nOk, nSkip };
+}
+
+/** Центр для 1D-sweep kill: грубый победитель прошлого прогона (остальные параметры фикс). */
+function defaultCenterPatch(): Partial<PaperTraderConfig> {
+  return tpAbMirror({
+    tpGridStepPnl: 0.04,
+    tpGridSellFraction: 0.05,
+    tpGridFirstRungRetraceMinPnlPct: 0.02,
+    dcaKillstop: -0.06,
+    liveExitModeBDcaKillstop: -0.06,
+    trailDrop: 0.1,
+    trailTriggerX: 1.04,
+    liveExitModeBTrailDrop: 0.1,
+    liveExitModeBTrailTriggerX: 1.04,
+  });
+}
+
+function loadCenterPatch(): Partial<PaperTraderConfig> {
+  const base = defaultCenterPatch();
+  const i = process.argv.indexOf('--center-json');
+  if (i === -1 || !process.argv[i + 1]) return base;
+  const raw = fs.readFileSync(path.resolve(process.argv[i + 1]!), 'utf8');
+  const j = JSON.parse(raw) as Partial<PaperTraderConfig>;
+  const merged = { ...base, ...j };
+  return { ...merged, ...tpAbMirror(merged) };
+}
 
 async function main(): Promise<void> {
   const t0 = Date.now();
@@ -239,8 +364,22 @@ async function main(): Promise<void> {
     tpLadder: parseTpLadder(process.env.PAPER_TP_LADDER),
   }));
 
-  const combos = buildComboGrid(quick);
-  const combosWithBaseline: Combo[] = [{ id: 'BASELINE_PM2_PATCH_EMPTY', patch: {} }, ...combos];
+  const onlyKillSens = process.argv.includes('--only-kill-sensitivity');
+  const refine = process.argv.includes('--refine');
+  const killSens = process.argv.includes('--kill-sensitivity') || refine || onlyKillSens;
+
+  let combos: Combo[];
+  if (onlyKillSens) {
+    combos = [];
+  } else if (refine) {
+    combos = buildRefineGrid();
+  } else {
+    combos = buildComboGrid(quick);
+  }
+
+  const combosWithBaseline: Combo[] = onlyKillSens
+    ? []
+    : [{ id: 'BASELINE_PM2_PATCH_EMPTY', patch: {} }, ...combos];
 
   const prep: PrepRow[] = [];
   let skippedBad = 0;
@@ -310,43 +449,41 @@ async function main(): Promise<void> {
   const scores: Score[] = [];
 
   for (const c of combosWithBaseline) {
-    let sumNet = 0;
-    let nOk = 0;
-    let nSkip = 0;
-    const cfg = mergeCfg(baseCfg, c.patch);
-    for (const row of prep) {
-      const anchorsClipped = clipAnchors(row.anchors, row.entryTs, row.journalExitTs);
-      let baseOt: OpenTrade;
-      try {
-        baseOt = cloneOpenFromJournal(row.closedTrade, cfg);
-      } catch {
-        nSkip++;
-        continue;
-      }
-      const sim = simulateLifecycle({
-        baseOt,
-        anchors: anchorsClipped.length >= 2 ? anchorsClipped : row.anchors,
-        cfg,
-        dcaLevels,
-        tpLadder,
-        stepMs,
-      });
-      if (!sim) {
-        nSkip++;
-        continue;
-      }
-      sumNet += sim.netPnlUsd;
-      nOk++;
-    }
-    scores.push({ id: c.id, patch: c.patch, sumNet, nOk, nSkip });
+    const r = evalPatchOnPrep(prep, baseCfg, c.patch, dcaLevels, tpLadder, stepMs);
+    scores.push({ id: c.id, patch: c.patch, sumNet: r.sumNet, nOk: r.nOk, nSkip: r.nSkip });
   }
 
   scores.sort((a, b) => b.sumNet - a.sumNet);
-  const elapsedSec = ((Date.now() - t0) / 1000).toFixed(1);
-  const best = scores[0]!;
-  const baseline = scores.find((s) => s.id === 'BASELINE_PM2_PATCH_EMPTY')!;
-  const baselineRank = scores.findIndex((s) => s.id === 'BASELINE_PM2_PATCH_EMPTY') + 1;
+  const bestFromGrid = scores.length ? scores[0]! : null;
+  const baseline = scores.find((s) => s.id === 'BASELINE_PM2_PATCH_EMPTY');
+  const baselineRank = baseline ? scores.findIndex((s) => s.id === 'BASELINE_PM2_PATCH_EMPTY') + 1 : null;
 
+  const killSweepMin = argNum('--kill-sweep-min', 8);
+  const killSweepMax = argNum('--kill-sweep-max', 35);
+  const centerPatch = loadCenterPatch();
+  type KillRowRaw = { killSignalPct: number; sumNet: number; nOk: number };
+  const killRowsRaw: KillRowRaw[] = [];
+  if (killSens || onlyKillSens) {
+    for (let k = killSweepMin; k <= killSweepMax; k++) {
+      const patch = { ...centerPatch, liveStagedEntryKillDropPct: k };
+      const r = evalPatchOnPrep(prep, baseCfg, patch, dcaLevels, tpLadder, stepMs);
+      killRowsRaw.push({ killSignalPct: k, sumNet: r.sumNet, nOk: r.nOk });
+    }
+  }
+  const killSortedByPnl = [...killRowsRaw].sort((a, b) => b.sumNet - a.sumNet);
+  const killCurveByPct = [...killRowsRaw]
+    .sort((a, b) => a.killSignalPct - b.killSignalPct)
+    .map((r) => ({
+      killSignalPct: r.killSignalPct,
+      sumNetPnlUsd: +r.sumNet.toFixed(2),
+      meanNetUsd: r.nOk ? +(r.sumNet / r.nOk).toFixed(4) : null,
+    }));
+  const killBestFrom1d = killSortedByPnl[0];
+  const row15 = killRowsRaw.find((x) => x.killSignalPct === 15);
+  const row22 = killRowsRaw.find((x) => x.killSignalPct === 22);
+
+  const elapsedSec = ((Date.now() - t0) / 1000).toFixed(1);
+  const best = bestFromGrid;
   const top = scores.slice(0, topN).map((s, idx) => ({
     rank: idx + 1,
     id: s.id,
@@ -365,6 +502,12 @@ async function main(): Promise<void> {
       {
         journal: abs,
         pm2PaperEnvApp: appName,
+        mode: {
+          refineGrid: refine,
+          onlyKillSensitivity: onlyKillSens,
+          coarseGrid: !refine && !onlyKillSens,
+          quickPreset: quick,
+        },
         anchorWindow: 'entryTs .. journal exitTs (no post-exit horizon)',
         tradesPrepared: prep.length,
         sumActualClosedNetPnlUsd: +sumActual.toFixed(2),
@@ -372,18 +515,28 @@ async function main(): Promise<void> {
         skippedNoAnchorsOrOpen: skippedOpen,
         totalCombosEvaluated: combosWithBaseline.length,
         combosExcludingBaseline: combos.length,
-        quickPreset: quick,
         elapsedSec: +elapsedSec,
         objective: 'maximize sum(sim.netPnlUsd) over closed trades on PG anchors',
         caveatRu:
-          'Это математический перебор на дискретной сетке и на ценах из Postgres, не гарантия будущего PnL и не тождество реальному исполнению Jupiter.',
-        best: {
-          id: best.id,
-          sumNetPnlUsd: +best.sumNet.toFixed(2),
-          deltaVsActualJournalUsd: +(best.sumNet - sumActual).toFixed(2),
-          params: summarizePatch(best.patch),
-          envHints: patchToEnvHints(best.patch),
-        },
+          'Перебор на дискретной сетке и ценах Postgres; не гарантия будущего PnL и не тождество реальному исполнению Jupiter.',
+        whySimVsJournalRu: [
+          'Параметры «похожи на прод», но симулятор считает PnL по шагам по PG price_usd и своим правилам частичных продаж/трейла — это другой контур, чем фактические свопы и комиссии в журнале.',
+          'Поэтому сумма sim может быть сильно выше или ниже sumActualClosedNetPnlUsd даже при близких порогах: расхождение не в «сломанном переборе», а в несовпадении модели с жизнью.',
+        ],
+        whyKillPctVariesRu: [
+          'В полном грид-сёрче 15% победил в КОМБИНАЦИИ со всеми остальными осями (шаг TP, доля sell, DCA kill, трейл): оптимум многомерный.',
+          'Ваш прошлый «фаворит 22%» мог быть при других зафиксированных параметрах, другом окне якорей (--horizon в других скриптах), другом наборе сделок или одномерном скане только kill.',
+          'Ниже блок killSensitivity: 1D-кривая при фиксированном центре (дефолт — грубый победитель tp0.04/sf0.05/…; переопределить --center-json).',
+        ],
+        bestFromGridSearch: best
+          ? {
+              id: best.id,
+              sumNetPnlUsd: +best.sumNet.toFixed(2),
+              deltaVsActualJournalUsd: +(best.sumNet - sumActual).toFixed(2),
+              params: summarizePatch(best.patch),
+              envHints: patchToEnvHints(best.patch),
+            }
+          : null,
         baselinePm2: baseline
           ? {
               rankAmongAll: baselineRank,
@@ -392,6 +545,33 @@ async function main(): Promise<void> {
             }
           : null,
         topN: top,
+        killSensitivity1d: killRowsRaw.length
+          ? {
+              centerParams: summarizePatch(centerPatch),
+              sweepKillPctFrom: killSweepMin,
+              sweepKillPctTo: killSweepMax,
+              top10BySimSum: killSortedByPnl.slice(0, 10).map((r) => ({
+                killSignalPct: r.killSignalPct,
+                sumNetPnlUsd: +r.sumNet.toFixed(2),
+                meanNetUsd: r.nOk ? +(r.sumNet / r.nOk).toFixed(4) : null,
+              })),
+              curveByKillPctAsc: killCurveByPct,
+              compare15vs22:
+                row15 && row22
+                  ? {
+                      sumAt15: +row15.sumNet.toFixed(2),
+                      sumAt22: +row22.sumNet.toFixed(2),
+                      delta15Minus22: +(row15.sumNet - row22.sumNet).toFixed(2),
+                    }
+                  : null,
+              bestOnThisCenter: killBestFrom1d
+                ? {
+                    killSignalPct: killBestFrom1d.killSignalPct,
+                    sumNetPnlUsd: +killBestFrom1d.sumNet.toFixed(2),
+                  }
+                : null,
+            }
+          : null,
       },
       null,
       2,
