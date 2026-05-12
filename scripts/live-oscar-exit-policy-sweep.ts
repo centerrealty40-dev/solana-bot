@@ -188,7 +188,7 @@ async function main(): Promise<void> {
 
   const prep: Array<{
     mint: string;
-    baseOt: ReturnType<typeof cloneOpenFromJournal>;
+    closedTrade: Record<string, unknown>;
     anchors: Anchor[];
     actualNetUsd: number;
   }> = [];
@@ -226,27 +226,27 @@ async function main(): Promise<void> {
       skippedOpen++;
       continue;
     }
-    let baseOt: ReturnType<typeof cloneOpenFromJournal>;
+    let probeOt: ReturnType<typeof cloneOpenFromJournal>;
     try {
-      baseOt = cloneOpenFromJournal(ct, baseCfg);
+      probeOt = cloneOpenFromJournal(ct, baseCfg);
     } catch {
       skippedOpen++;
       continue;
     }
-    const entryTs = baseOt.entryTs;
+    const entryTs = probeOt.entryTs;
     const exitTs = Number(ct.exitTs ?? 0);
     if (!Number.isFinite(exitTs) || exitTs <= entryTs) {
       skippedOpen++;
       continue;
     }
     const endTs = exitTs + horizonH * 3_600_000;
-    const anchors = await fetchPriceAnchorsPg({ mint: baseOt.mint, source: src, entryTs, endTs });
+    const anchors = await fetchPriceAnchorsPg({ mint: probeOt.mint, source: src, entryTs, endTs });
     if (anchors.length < 2) {
       skippedOpen++;
       continue;
     }
     sumActualJournal += net;
-    prep.push({ mint: baseOt.mint, baseOt, anchors, actualNetUsd: net });
+    prep.push({ mint: probeOt.mint, closedTrade: ct, anchors, actualNetUsd: net });
   }
 
   const agg = new Map<string, RowAgg>();
@@ -257,8 +257,16 @@ async function main(): Promise<void> {
   for (const row of prep) {
     for (const s of scenarios) {
       const cfg = mergeCfg(baseCfg, s.cfgPatch);
+      let baseOt: ReturnType<typeof cloneOpenFromJournal>;
+      try {
+        baseOt = cloneOpenFromJournal(row.closedTrade, cfg);
+      } catch {
+        const a = agg.get(s.id)!;
+        a.skippedAnchors++;
+        continue;
+      }
       const ct = simulateLifecycle({
-        baseOt: row.baseOt,
+        baseOt,
         anchors: row.anchors,
         cfg,
         dcaLevels,
