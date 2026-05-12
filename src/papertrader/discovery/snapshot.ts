@@ -56,23 +56,30 @@ export async function fetchSnapshotLaneCandidates(
     WITH raw AS (
       ${unions}
     ),
+    eligible AS (
+      SELECT *
+      FROM raw
+      WHERE COALESCE(age_min, 0) >= ${lc.MIN_AGE_MIN}
+        ${maxAgeFilter}
+        AND liquidity_usd >= ${lc.MIN_LIQ_USD}
+        ${maxLiqFilter}
+        AND volume_5m >= ${lc.MIN_VOL_5M_USD}
+        ${maxVol5mFilter}
+        AND buys_5m >= ${lc.MIN_BUYS_5M}
+        AND sells_5m >= ${lc.MIN_SELLS_5M}
+    ),
     ranked AS (
       SELECT *,
-             ROW_NUMBER() OVER (PARTITION BY mint ORDER BY ts DESC) AS rn
-      FROM raw
+             ROW_NUMBER() OVER (
+               PARTITION BY mint
+               ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
+             ) AS rn
+      FROM eligible
     )
     SELECT *
     FROM ranked
     WHERE rn = 1
-      AND COALESCE(age_min, 0) >= ${lc.MIN_AGE_MIN}
-      ${maxAgeFilter}
-      AND liquidity_usd >= ${lc.MIN_LIQ_USD}
-      ${maxLiqFilter}
-      AND volume_5m >= ${lc.MIN_VOL_5M_USD}
-      ${maxVol5mFilter}
-      AND buys_5m >= ${lc.MIN_BUYS_5M}
-      AND sells_5m >= ${lc.MIN_SELLS_5M}
-    ORDER BY ts DESC
+    ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
     LIMIT ${cfg.snapshotCandidateLimit}
   `));
   return r as unknown as SnapshotCandidateRow[];
@@ -141,7 +148,9 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(mint: string): Pro
     ),
     ranked AS (
       SELECT *,
-             ROW_NUMBER() OVER (ORDER BY ts DESC) AS rn
+             ROW_NUMBER() OVER (
+               ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
+             ) AS rn
       FROM raw
     )
     SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,

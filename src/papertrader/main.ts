@@ -764,7 +764,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           entry_path: d.entryPath,
           _liveDiscoveryDeepAudit: deepAuditFlag,
         });
-        if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons)) {
+        if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
