@@ -279,7 +279,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Вход: 40% по сигналу; добор 30% на −7% и 30% на −14% в течение часа.`;
+      `Вход: $560 (70%) по сигналу; добор $160 (20%) на −7% и $80 (10%) на −14% в течение часа.`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',

@@ -266,17 +266,17 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Staged-entry: полный нотионал **$1000**; 40% по сигналу, 30% на −7%, 30% на −14% в течение часа. */
-        PAPER_POSITION_USD: '1000',
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.4',
+        /** Staged-entry: полный нотионал **$800**; 70% по сигналу, 20% на −7%, 10% на −14% в течение часа. */
+        PAPER_POSITION_USD: '800',
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '560',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '160',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '22',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '80',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '23',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -338,7 +338,7 @@ module.exports = {
         PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
         PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '0',
         /**
-         * Режим B: включается после staged-добора; signal kill-stop −22%% от исходного сигнала.
+         * Режим B: включается после staged-добора; signal kill-stop −23%% от исходного сигнала.
          * Лестница TP: **+2.5%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
          * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
          * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.

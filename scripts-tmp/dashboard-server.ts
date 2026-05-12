@@ -1598,15 +1598,15 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   if (isLiveOscar) {
     if (mode === 'B') {
       parts.push(
-        'Режим B (Live Oscar): включён после staged-добора. Доборы: $300 на −7% и $300 на −14% от сигнала, только первый час и до первого TP; TP-сетка B +2.5% к avg, продажа 5% остатка; signal kill-stop −22%.',
+        'Режим B (Live Oscar): включён после staged-добора. Доборы: $160 на −7% и $80 на −14% от сигнала, только первый час и до первого TP; TP-сетка B +2.5% к avg, продажа 5% остатка; signal kill-stop −23%.',
       );
     } else if (mode === 'A') {
       parts.push(
-        'Режим A (Live Oscar): позиция ещё без staged-добора; TP-сетка +2.5% к средней, продажа 5% остатка; signal kill-stop −22% от первоначального сигнала.',
+        'Режим A (Live Oscar): позиция ещё без staged-добора; TP-сетка +2.5% к средней, продажа 5% остатка; signal kill-stop −23% от первоначального сигнала.',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
-        'Вход Live Oscar: первая нога $400 покупается по сигналу; доборы $300 на −7% и $300 на −14% доступны только первый час и отменяются после первого TP; дополнительных DCA нет.',
+        'Вход Live Oscar: первая нога $560 покупается по сигналу; доборы $160 на −7% и $80 на −14% доступны только первый час и отменяются после первого TP; дополнительных DCA нет.',
       );
     }
     return parts.length ? parts.join('\n') : null;
