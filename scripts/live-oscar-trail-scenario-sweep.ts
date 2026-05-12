@@ -315,6 +315,8 @@ async function main(): Promise<void> {
         horizonHoursPastExit: horizonH,
         stepMs,
         pm2PaperEnvApp: appName,
+        baseTpGridStepPnl: baseCfg.tpGridStepPnl,
+        baseTpGridSellFraction: baseCfg.tpGridSellFraction,
         baseTrailMode: baseCfg.trailMode,
         baseTrailDrop: baseCfg.trailDrop,
         note: 'Peak scenarios use trailMode=peak + trailDrop from peak; ladder_* use ladder_retrace + ladderRetraceSpec. PG path only (collector cadence).',
