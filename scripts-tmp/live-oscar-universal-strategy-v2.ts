@@ -286,10 +286,12 @@ interface SimParams {
   schema: DcaSchema;
   tp: TpConfig;
   killPct: number; // 0 = off
+  /** slip на покупку, % (например 1.0) */
   slipBuyPct: number;
-  slipSellPct: number;
-  /** REALITY_CHECK: повторяет фактические legs + partials как есть, slip применяет */
-  realityCheck?: boolean;
+  /** slip на продажу при PnL ≥ 0 (TP-лесенка / pure trail в плюсе), % (например 1.0) */
+  slipSellGoodPct: number;
+  /** slip на продажу при PnL < 0 (killstop / forced timeout / trail в минусе), % (например 5.0) */
+  slipSellBadPct: number;
 }
 
 function simulateSession(
@@ -306,7 +308,8 @@ function simulateSession(
 
   const fee = (s.feeBpsPerSide + s.slipBaseBpsPerSide) / 10_000;
   const slipBuy = p.slipBuyPct / 100;
-  const slipSell = p.slipSellPct / 100;
+  const slipSellGood = p.slipSellGoodPct / 100;
+  const slipSellBad = p.slipSellBadPct / 100;
 
   let inv = 0;
   let avg = 0;
@@ -323,9 +326,14 @@ function simulateSession(
     inv += sizeUsd;
     avg = inv / tokens;
   };
+  const dynamicSellSlip = (mktPrice: number): number => {
+    if (!(avg > 0)) return slipSellBad;
+    return mktPrice >= avg ? slipSellGood : slipSellBad;
+  };
   const sellAll = (price: number) => {
     if (!(tokens > 0)) return { proceeds: 0, cost: 0 };
-    const fillPx = price * (1 - slipSell);
+    const slip = dynamicSellSlip(price);
+    const fillPx = price * (1 - slip);
     const gross = tokens * fillPx;
     const feeUsd = gross * fee;
     const proceeds = gross - feeUsd;
@@ -339,7 +347,8 @@ function simulateSession(
     if (!(tokens > 0) || !(frac > 0)) return { proceeds: 0, costShare: 0 };
     const fF = Math.max(0, Math.min(1, frac));
     const sellTokens = tokens * fF;
-    const fillPx = price * (1 - slipSell);
+    const slip = dynamicSellSlip(price);
+    const fillPx = price * (1 - slip);
     const gross = sellTokens * fillPx;
     const feeUsd = gross * fee;
     const proceeds = gross - feeUsd;
@@ -355,10 +364,9 @@ function simulateSession(
     return { proceeds, costShare };
   };
 
-  // план DCA-входов
   type PlannedLeg = { triggerPx: number; sizeUsd: number; ts?: number; price?: number };
   const planned: PlannedLeg[] = [];
-  if (p.realityCheck || p.schema.id === 'real_legs') {
+  if (p.schema.id === 'real_legs') {
     for (const lg of s.legs) {
       if (!(lg.sizeUsd > 0) || !(lg.price > 0)) continue;
       if (lg.reason !== 'open' && lg.reason !== 'scale_in' && lg.reason !== 'dca') continue;
@@ -384,7 +392,6 @@ function simulateSession(
   let pendingScheduledIdx = 1;
   let nextScheduledIdx = 1;
 
-  // лесенка
   const ladderSteps: number[] = [];
   if (p.tp.ladderStep != null && p.tp.ladderMax != null) {
     for (let lvl = p.tp.ladderStep; lvl <= p.tp.ladderMax + 1e-9; lvl += p.tp.ladderStep) {
@@ -392,12 +399,6 @@ function simulateSession(
     }
   }
   const ladderUsed = new Set<number>();
-
-  // REALITY_CHECK: pre-compute partial schedule
-  const realPartialQueue = p.realityCheck
-    ? [...s.partials].sort((a, b) => a.ts - b.ts)
-    : [];
-  let realPartialIdx = 0;
 
   let realizedProceeds = 0;
   let realizedCost = 0;
@@ -414,8 +415,7 @@ function simulateSession(
     const p0 = px[i]!;
     if (p0 > peakPx) peakPx = p0;
 
-    // запланированные входы
-    if (p.realityCheck || p.schema.id === 'real_legs') {
+    if (p.schema.id === 'real_legs') {
       while (pendingScheduledIdx < planned.length && (planned[pendingScheduledIdx]!.ts ?? 0) <= t) {
         const ll = planned[pendingScheduledIdx]!;
         applyBuy(ll.price ?? p0, ll.sizeUsd);
@@ -444,18 +444,7 @@ function simulateSession(
       break;
     }
 
-    if (p.realityCheck) {
-      while (realPartialIdx < realPartialQueue.length && realPartialQueue[realPartialIdx]!.ts <= t) {
-        const ps = realPartialQueue[realPartialIdx]!;
-        if (ps.reason === 'TP_LADDER') {
-          const r = sellFraction(p0, ps.sellFraction);
-          realizedProceeds += r.proceeds;
-          realizedCost += r.costShare;
-          ladderHits++;
-        }
-        realPartialIdx++;
-      }
-    } else if (ladderSteps.length > 0 && p.tp.ladderSellFrac != null) {
+    if (ladderSteps.length > 0 && p.tp.ladderSellFrac != null) {
       for (const stp of ladderSteps) {
         if (ladderUsed.has(stp)) continue;
         if (pnlPct >= stp - 1e-12) {
@@ -550,7 +539,8 @@ async function main(): Promise<void> {
   }
 
   const slipBuy = argNum('--slip-buy', 1.0);
-  const slipSell = argNum('--slip-sell', 5.0);
+  const slipSellGood = argNum('--slip-sell-good', 1.0);
+  const slipSellBad = argNum('--slip-sell-bad', 5.0);
   const top = Math.max(1, argNum('--top', 12));
   const realityCheckOn = argNum('--reality-check', 1) > 0;
 
@@ -601,7 +591,7 @@ async function main(): Promise<void> {
     else snapshotsMiss++;
   }
 
-  // 1) REALITY_CHECK
+  // 1) REALITY_CHECK — без модели, по journal-полям. Должен совпадать с realNetPnl до округлений.
   type RcResult = {
     n: number;
     sumModelNet: number;
@@ -612,22 +602,39 @@ async function main(): Promise<void> {
   if (realityCheckOn) {
     const rc: RcResult = { n: 0, sumModelNet: 0, sumRealNet: 0, diffPerTrade: [] };
     for (const s of sessionsSorted) {
-      const key = `${s.mint}|${s.dex}|${s.entryTs}|${s.exitTs}`;
-      const ser = seriesByKey.get(key);
-      if (!ser || ser.tsMs.length < 2) continue;
-      const r = simulateSession(s, ser, {
-        schema: { id: 'real_legs', legs: [] },
-        tp: { id: 'real_partials' },
-        killPct: 0,
-        slipBuyPct: slipBuy,
-        slipSellPct: slipSell,
-        realityCheck: true,
-      });
-      if (!r || !Number.isFinite(r.netUsd)) continue;
+      let invSpent = 0;
+      let tokensHeld = 0;
+      for (const lg of s.legs) {
+        if (!(lg.sizeUsd > 0) || !(lg.price > 0)) continue;
+        if (lg.reason !== 'open' && lg.reason !== 'scale_in' && lg.reason !== 'dca') continue;
+        invSpent += lg.sizeUsd;
+        tokensHeld += lg.sizeUsd / lg.price;
+      }
+      if (!(invSpent > 0) || !(tokensHeld > 0)) continue;
+      let proceeds = 0;
+      let costSold = 0;
+      for (const ps of s.partials) {
+        if (!(ps.price > 0) || !(ps.sellFraction > 0)) continue;
+        if (ps.reason !== 'TP_LADDER') continue;
+        const sellTokens = tokensHeld * ps.sellFraction;
+        proceeds += sellTokens * ps.price;
+        costSold += invSpent * ps.sellFraction;
+        tokensHeld -= sellTokens;
+        invSpent -= costSold;
+      }
+      if (tokensHeld > 0) {
+        const exitPx = s.effectiveExitPrice;
+        proceeds += tokensHeld * exitPx;
+        costSold += invSpent;
+      }
+      const grossPnl = proceeds - s.totalInvestedUsd;
+      const fees = s.totalInvestedUsd * (s.feeBpsPerSide / 10_000) * 2; // вход+выход по fee
+      const slipBaseUsd = s.totalInvestedUsd * (s.slipBaseBpsPerSide / 10_000) * 2;
+      const modelNet = grossPnl - fees - slipBaseUsd - s.networkFeeUsd;
       rc.n++;
-      rc.sumModelNet += r.netUsd;
+      rc.sumModelNet += modelNet;
       rc.sumRealNet += s.realNetPnlUsd;
-      rc.diffPerTrade.push(r.netUsd - s.realNetPnlUsd);
+      rc.diffPerTrade.push(modelNet - s.realNetPnlUsd);
     }
     realityCheck = rc;
   }
@@ -670,7 +677,8 @@ async function main(): Promise<void> {
         tp: v.tp,
         killPct: v.killPct,
         slipBuyPct: slipBuy,
-        slipSellPct: slipSell,
+        slipSellGoodPct: slipSellGood,
+        slipSellBadPct: slipSellBad,
       });
       if (!r || !Number.isFinite(r.netUsd)) continue;
       agg.n++;
@@ -724,7 +732,8 @@ async function main(): Promise<void> {
         snapshotsLoaded,
         snapshotsMiss,
         slipBuyPct: slipBuy,
-        slipSellPct: slipSell,
+        slipSellGoodPct: slipSellGood,
+        slipSellBadPct: slipSellBad,
         killGrid,
         baselineRealJournal: {
           sumNetUsd: +realSum.toFixed(2),
