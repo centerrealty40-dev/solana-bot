@@ -1930,6 +1930,22 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           },
         });
       }
+
+      /**
+       * Пока `liveStagedEntry` висит на открытой сделке, ветка KILLSTOP использует только signal-kill
+       * (`liveStagedEntryKillHit`), а PnL-kill к средней требует `!ot.liveStagedEntry` — без сброса плана
+       * усреднённая позиция в режиме B могла уходить в минус без срабатывания `PAPER_DCA_KILLSTOP` / mode B kill.
+       * Снимаем план после всех запланированных ног или по TTL сигнала (доборы staged дальше не предлагаются).
+       */
+      {
+        const hasThird = (st.thirdLegUsd ?? 0) > 0;
+        const thirdDone = hasThird ? st.thirdLegDone === true : true;
+        const stagedLegsComplete = st.secondLegDone === true && thirdDone;
+        const ttlExpired = Date.now() > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+        if (stagedLegsComplete || ttlExpired) {
+          ot.liveStagedEntry = undefined;
+        }
+      }
     }
 
     if (mayDca) {
