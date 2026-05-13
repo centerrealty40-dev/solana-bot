@@ -25,7 +25,11 @@ import type {
   LivePhase4BuyOpenContext,
 } from './phase4-types.js';
 import type { DexSource } from '../papertrader/types.js';
-import { notifyLiveExecutionSimErr, notifyLiveExecutionSimOk } from './phase5-state.js';
+import {
+  notifyLiveExecutionSimErr,
+  notifyLiveExecutionSimErrForTerminal,
+  notifyLiveExecutionSimOk,
+} from './phase5-state.js';
 import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
 import { fetchConfirmedSwapSolProceedsLamports } from './swap-tx-sol-proceeds.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
@@ -97,7 +101,10 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
     unitsConsumed: outcome.preSimUnits ?? null,
     error: { message: outcome.message },
   });
-  notifyLiveExecutionSimErr();
+  /** `confirm_timeout` / `send_failed` are operational; do not trip consec-sim global gate (see phase5-state). */
+  if (outcome.kind !== 'confirm_timeout') {
+    notifyLiveExecutionSimErrForTerminal(outcome.message);
+  }
   return false;
 }
 
@@ -229,7 +236,7 @@ async function runSolToTokenPipeline(
         simulated: true,
         error: { message: reason },
       });
-      notifyLiveExecutionSimErr();
+      notifyLiveExecutionSimErrForTerminal(reason);
       return { ok: false, anchorMode: mode };
     }
 
@@ -249,7 +256,11 @@ async function runSolToTokenPipeline(
               : 'quote_stale:bad_or_missing_quoteAgeMs',
         },
       });
-      notifyLiveExecutionSimErr();
+      notifyLiveExecutionSimErrForTerminal(
+        typeof age === 'number' && Number.isFinite(age) && max != null
+          ? `quote_stale:${Math.round(age)}ms>${max}ms`
+          : 'quote_stale:bad_or_missing_quoteAgeMs',
+      );
       return { ok: false, anchorMode: mode };
     }
 
@@ -271,7 +282,7 @@ async function runSolToTokenPipeline(
           unitsConsumed: sim.unitsConsumed ?? null,
           error: { message },
         });
-        notifyLiveExecutionSimErr();
+        notifyLiveExecutionSimErrForTerminal(message);
         if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
           await sleep(liveCfg.liveBuySimRetryDelayMs);
           continue;
@@ -447,7 +458,7 @@ async function runTokenToSolPipeline(
       simulated: true,
       error: { message: reason },
     });
-    notifyLiveExecutionSimErr();
+    notifyLiveExecutionSimErrForTerminal(reason);
     return { ok: false };
   }
 
@@ -467,7 +478,11 @@ async function runTokenToSolPipeline(
             : 'quote_stale:bad_or_missing_quoteAgeMs',
       },
     });
-    notifyLiveExecutionSimErr();
+    notifyLiveExecutionSimErrForTerminal(
+      typeof age === 'number' && Number.isFinite(age) && max != null
+        ? `quote_stale:${Math.round(age)}ms>${max}ms`
+        : 'quote_stale:bad_or_missing_quoteAgeMs',
+    );
     return { ok: false };
   }
 
@@ -482,15 +497,16 @@ async function runTokenToSolPipeline(
     });
 
     if (!sim.ok) {
+      const message = sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '');
       appendLiveJsonlEvent({
         kind: 'execution_result',
         intentId,
         status: 'sim_err',
         simulated: true,
         unitsConsumed: sim.unitsConsumed ?? null,
-        error: { message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '') },
+        error: { message },
       });
-      notifyLiveExecutionSimErr();
+      notifyLiveExecutionSimErrForTerminal(message);
       return { ok: false };
     }
 

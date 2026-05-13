@@ -44,6 +44,7 @@ import {
 } from '../papertrader/discovery-health-window.js';
 import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import { liveConsecSimFailCount } from './phase5-state.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -483,7 +484,8 @@ export async function main(): Promise<void> {
         prevHbNearReadyMintSet = new Set(currNearSet);
       }
 
-      let note = `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} disc_cycles=${stats.ticks} near_ready_dip_wait=${nearCount} near_ready_new_hb=${newSinceLastHb} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`;
+      const simStreak = liveConsecSimFailCount();
+      let note = `W8.0-p7 oscar: opened=${stats.opened} skip_live_wl=${stats.skippedLiveMintWhitelist ?? 0} skip_live_permanent_deny=${stats.skippedLivePermanentDeny ?? 0} disc_cycles=${stats.ticks} near_ready_dip_wait=${nearCount} near_ready_new_hb=${newSinceLastHb} consec_sim_fail=${simStreak} errors=${stats.errors} tracker=${JSON.stringify(trackerClosed)}`;
       if (legacyDisc) {
         note += ` ${dhMin}m_cand=${dh.discovered} ${dhMin}m_eval=${dh.evaluated} ${dhMin}m_gate_skip=${dh.gateFail} ${dhMin}m_opened=${dh.opened} ${dhMin}m_disc_ticks=${dh.discoveryTicks}`;
       }
@@ -513,6 +515,7 @@ export async function main(): Promise<void> {
           journalReplayTruncated: boot.journalTruncated,
         }),
         ...(qm?.length ? { quarantinedMints: qm } : {}),
+        consecSimFailStreak: simStreak,
       });
 
       void writeDiscoveryHealthSnapshotFile({
@@ -536,6 +539,7 @@ export async function main(): Promise<void> {
           `strat=${liveCfg.strategyId}`,
           `near_ready_dip_wait=${nearCount}`,
           `near_ready_new_since_last_pulse=${newSinceLastHb}`,
+          `consec_sim_fail=${simStreak}`,
           `disc_cycles_total=${stats.ticks}`,
           `errors=${stats.errors}`,
           `opened_total=${stats.opened}`,

@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.164] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.164`.
+
+- **Live Phase 5 `consec_sim_fail`:** транзиентные отсутствие котировки и устаревание квоты (`no_quote`, `quote_stale:*`) больше **не увеличивают** streak; `confirm_timeout` при финальной записи `execution_result` — тоже нет; `send_failed` и прочие «жёсткие» отказы идут через `notifyLiveExecutionSimErrForTerminal` (см. `phase5-state.ts`, `phase4-execution.ts`). Это убирает ложные **`risk_block` / `consec_sim_fail`** при нормальной волатильности маршрутов Jupiter.
+- **PM2 `live-oscar`:** **`LIVE_KILL_AFTER_CONSEC_FAIL=0`** (глобальная пауза новых входов по streak выключена; при необходимости жёсткой защиты задайте целое ≥ 1 вручную).
+- **Heartbeat (JSONL + Telegram):** поле **`consecSimFailStreak`** и строка **`consec_sim_fail=`** в `note` / pulse.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.163`**; при необходимости вернуть **`LIVE_KILL_AFTER_CONSEC_FAIL=3`** в `ecosystem.config.cjs`; деплой по NORM §5.2.
+
+---
+
 ## [1.11.163] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.163`.

@@ -545,7 +545,8 @@ module.exports = {
          * Включить прежнее W8.0-p5: LIVE_PHASE5_FREE_SOL_GATE_ENABLED=1 (опц. LIVE_CAPITAL_ROTATE_ENABLED=1).
          */
         LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
-        LIVE_KILL_AFTER_CONSEC_FAIL: '3',
+        /** 0 = never block new buys on sim streak; transient quote misses no longer increment streak (phase4 + phase5-state). */
+        LIVE_KILL_AFTER_CONSEC_FAIL: '0',
         /**
          * Гейты по оценке нативного SOL через getBalance — выкл. (пустая строка ⇒ в коде порог не задаётся).
          * Перекрывает возможные значения из `/opt/solana-alpha/.env` для PM2-процесса.

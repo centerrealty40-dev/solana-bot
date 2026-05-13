@@ -55,6 +55,8 @@ export const HeartbeatEventSchema = z.object({
   nearReadyDipWaitCount: z.number().int().nonnegative().optional(),
   /** Новые такие mint с прошлого HEALTH-pulse (Telegram). */
   nearReadyDipNewSinceLastHb: z.number().int().nonnegative().optional(),
+  /** Phase 5 — подряд «жёстких» sim/send сбоев (см. `LIVE_KILL_AFTER_CONSEC_FAIL`, `phase5-state`). */
+  consecSimFailStreak: z.number().int().nonnegative().optional(),
 });
 
 /** Ops / diagnostics row (non-fatal); used for orphan verify deferral, reconcile TTL clear, etc. */

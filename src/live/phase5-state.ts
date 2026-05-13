@@ -9,6 +9,17 @@ export function notifyLiveExecutionSimErr(): void {
   consecSimFail += 1;
 }
 
+/**
+ * Transient quote / route misses must not trip `LIVE_KILL_AFTER_CONSEC_FAIL` (global new-buy block).
+ * Only count failures that indicate a broken or rejected on-chain simulation path.
+ */
+export function notifyLiveExecutionSimErrForTerminal(message?: string): void {
+  const m = String(message ?? '').trim();
+  if (m === 'no_quote') return;
+  if (m.startsWith('quote_stale')) return;
+  notifyLiveExecutionSimErr();
+}
+
 export function notifyLiveExecutionSimOk(): void {
   consecSimFail = 0;
 }
