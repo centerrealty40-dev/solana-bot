@@ -37,6 +37,17 @@ export interface RestoreState {
   open: Map<string, OpenTrade>;
 }
 
+/**
+ * 1.11.167: безопасный coerce числа из произвольного входа. `Number(undefined)`
+ * возвращает `NaN`, а `JSON.stringify(NaN) === 'null'` → партиал-селлы выглядели
+ * с `sellFraction: null` в JSONL, что ломало downstream-аналитику. `coerceNum0`
+ * приводит к 0 любые `NaN`/`Infinity`/нечисловые значения.
+ */
+function coerceNum0(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function mapPartialSell(p: Record<string, unknown>): PartialSell {
   const solL =
     typeof p.solProceedsLamports === 'string' && /^\d+$/.test(p.solProceedsLamports)
@@ -47,16 +58,17 @@ function mapPartialSell(p: Record<string, unknown>): PartialSell {
     src === 'chain_sol' || src === 'jupiter_quote' || src === 'model'
       ? (src as PartialSell['proceedsUsdSource'])
       : undefined;
+  const priceN = coerceNum0(p.price);
   return {
-    ts: Number(p.ts),
-    price: Number(p.price),
-    marketPrice: Number(p.marketPrice ?? p.price),
-    sellFraction: Number(p.sellFraction),
+    ts: coerceNum0(p.ts),
+    price: priceN,
+    marketPrice: coerceNum0(p.marketPrice ?? priceN),
+    sellFraction: coerceNum0(p.sellFraction),
     reason: (p.reason ?? 'TP_LADDER') as PartialSell['reason'],
-    proceedsUsd: Number(p.proceedsUsd ?? 0),
-    grossProceedsUsd: Number(p.grossProceedsUsd ?? 0),
-    pnlUsd: Number(p.pnlUsd ?? 0),
-    grossPnlUsd: Number(p.grossPnlUsd ?? 0),
+    proceedsUsd: coerceNum0(p.proceedsUsd),
+    grossProceedsUsd: coerceNum0(p.grossProceedsUsd),
+    pnlUsd: coerceNum0(p.pnlUsd),
+    grossPnlUsd: coerceNum0(p.grossPnlUsd),
     ...(solL ? { solProceedsLamports: solL } : {}),
     ...(proceedsUsdSource ? { proceedsUsdSource } : {}),
   };

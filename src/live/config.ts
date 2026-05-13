@@ -123,9 +123,16 @@ const LiveOscarConfigSchema = z
     liveConfirmTimeoutMs: z.coerce.number().int().min(3000).max(600_000).default(60_000),
     liveSendSkipPreflight: z.boolean().default(false),
     liveSimBeforeSend: z.boolean().default(true),
-    /** Buy pipeline: on transient pre-send simulation failure, rebuild Jupiter quote/swap and retry. */
-    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(3).default(0),
+    /**
+     * Buy/sell pipelines: on transient pre-send simulation failure or `confirm_timeout`,
+     * rebuild Jupiter quote/swap and retry. 1.11.167 raised cap 3→10 to enable
+     * persistent retry against Jupiter rejections (sandwich-MEV / volatile pools)
+     * when slippage is tightened.
+     */
+    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(10).default(0),
     liveBuySimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
+    liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(10).default(0),
+    liveSellSimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
     liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
     liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
     liveSendCreditsPerCall: z.coerce.number().int().min(10).max(200).default(30),
@@ -429,6 +436,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimBeforeSend: envBool(process.env.LIVE_SIM_BEFORE_SEND, true),
     liveBuySimRetryAttempts: process.env.LIVE_BUY_SIM_RETRY_ATTEMPTS,
     liveBuySimRetryDelayMs: process.env.LIVE_BUY_SIM_RETRY_DELAY_MS,
+    liveSellSimRetryAttempts: process.env.LIVE_SELL_SIM_RETRY_ATTEMPTS,
+    liveSellSimRetryDelayMs: process.env.LIVE_SELL_SIM_RETRY_DELAY_MS,
     liveSendMaxRetries: process.env.LIVE_SEND_MAX_RETRIES,
     liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,

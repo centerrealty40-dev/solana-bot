@@ -16,6 +16,11 @@ import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
 import { filterSnapshotTaggedByMintBlacklist, isMintBlacklisted } from './mint-blacklist-file.js';
+import {
+  fetchPolicyAPlusContextMap,
+  evaluatePolicyAPlus,
+  type PolicyAPlusFeatures,
+} from './policy-a-plus.js';
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -232,6 +237,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg,
     snapshotTagged.map((x) => x.row),
   );
+  /**
+   * 1.11.167: batch-fetch Policy A+ контекста (один SQL на DEX-таблицу для всех
+   * mints этого тика). Если правила выключены — возвращается пустая карта,
+   * вычисление и блокировка в discovery-loop становятся no-op.
+   */
+  const policyAPlusMap: Map<string, PolicyAPlusFeatures> = await fetchPolicyAPlusContextMap(
+    cfg,
+    snapshotTagged.map((x) => x.row),
+  );
   await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
 
@@ -298,6 +312,23 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (bypass) {
         dipReasonsForGate = [];
         entryPath = 'impulse_pg_snap';
+      }
+    }
+    /**
+     * 1.11.167: Policy A+ применяется ПОСЛЕ того, как dip/recovery/localHigh уже
+     * пропустили кандидата (entryPath != null). Это «второй слой» surgical-фильтров,
+     * вырезающий те 73 из 119 сделок, что на ретро-данных давали Σ −$728. Метрики
+     * (vol_1h, bounce_30m, drop_30m, drop_1h) сохраняются в `features` для KPI и
+     * downstream-анализа независимо от того, заблокирован ли вход.
+     */
+    let policyAPlusFeatures: PolicyAPlusFeatures | undefined;
+    if (entryPath != null && cfg.policyAPlusEnabled) {
+      const ctx = policyAPlusMap.get(row.mint);
+      const evalRes = evaluatePolicyAPlus(cfg, row, ctx);
+      policyAPlusFeatures = evalRes.features;
+      if (evalRes.blocked) {
+        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+        entryPath = undefined;
       }
     }
     const baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
@@ -413,6 +444,41 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const pass = mergedReasons.length === 0;
     if (pass) passed++;
 
+    const decisionFeatures = buildFeatures(
+      row,
+      dipEval.dipPct,
+      dipEval.impulsePct,
+      dipEval.dipLookbackUsedMin,
+      cfg,
+      recoveryVeto,
+      localHighVeto,
+    );
+    /**
+     * 1.11.167: даже если Policy A+ выключен или вход прошёл — всё равно прикрепляем
+     * вычисленные фичи к decision (если есть). Это даёт возможность задним числом
+     * прокрутить альтернативные пороги по journal без необходимости пере-парсить
+     * `*_pair_snapshots`.
+     */
+    if (policyAPlusFeatures != null) {
+      decisionFeatures.policy_a_plus = {
+        enabled: cfg.policyAPlusEnabled,
+        coverageOk: policyAPlusFeatures.coverageOk,
+        bounceFromMin30mPct: policyAPlusFeatures.bounceFromMin30mPct,
+        priceChange30mPct: policyAPlusFeatures.priceChange30mPct,
+        priceChange1hPct: policyAPlusFeatures.priceChange1hPct,
+        vol1hUsd: policyAPlusFeatures.vol1hUsd,
+        min30m: policyAPlusFeatures.min30m,
+        price30mAgo: policyAPlusFeatures.price30mAgo,
+        price1hAgo: policyAPlusFeatures.price1hAgo,
+        pgSnapsCount: policyAPlusFeatures.pgSnapsCount,
+        thresholds: {
+          bounceFromMin30mMaxPct: cfg.policyAPlusBounceFromMin30mMaxPct,
+          priceChange1hMinPct: cfg.policyAPlusPriceChange1hMinPct,
+          priceChange30mMinPct: cfg.policyAPlusPriceChange30mMinPct,
+          vol1hMaxUsd: cfg.policyAPlusVol1hMaxUsd,
+        },
+      };
+    }
     decisions.push({
       lane,
       source: row.source,
@@ -421,15 +487,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       ageMin: +Number(row.age_min ?? 0).toFixed(1),
       pass,
       reasons: mergedReasons,
-      features: buildFeatures(
-        row,
-        dipEval.dipPct,
-        dipEval.impulsePct,
-        dipEval.dipLookbackUsedMin,
-        cfg,
-        recoveryVeto,
-        localHighVeto,
-      ),
+      features: decisionFeatures,
       whale,
       holdersMeta,
       entryPath,

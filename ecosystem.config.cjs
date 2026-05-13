@@ -8,8 +8,12 @@ const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
  * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
  * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
+ *
+ * 1.11.167: notional bumped 800 → 1000 (3-leg DCA $700 / $150 @ −7% / $150 @ −14%
+ * after Policy A+ entry filter cuts trade volume; remaining trades are higher
+ * conviction → larger position with deeper averaging budget).
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '1000';
 
 module.exports = {
   apps: [
@@ -276,17 +280,24 @@ module.exports = {
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Staged-entry: полный нотионал $800 — первая нога $560 по сигналу, **одно** усреднение $240 на **−6%** от сигнала в течение часа; signal kill **−15%** от сигнала. */
+        /**
+         * Staged-entry 1.11.167: полный нотионал **$1000** — три ноги.
+         *  - leg 1: **$700** по сигналу (`FIRST_DROP_PCT=0`)
+         *  - leg 2: **$150** на **−7%** от сигнала (mid-dip)
+         *  - leg 3: **$150** на **−14%** от сигнала (deep-dip)
+         * Signal kill: **−20%** от сигнала (запас 6пп ниже третьей ноги, чтобы leg-3 успел заполниться).
+         * Окно `SIGNAL_TTL_MS` = 1ч; после первого `partial_sell` или после клина mid+deep ноги могут зануляться (см. tracker.ts staged-entry timeout suppression).
+         */
         PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '560',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '6',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '240',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '15',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '700',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '3600000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -335,6 +346,34 @@ module.exports = {
         PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
         PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
         PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
+
+        /**
+         * Policy A+ (1.11.167): четыре «хирургических» правила пропуска кандидатов,
+         * выявленные по корреляционному анализу 119 закрытых сделок Live Oscar.
+         * На исторической выборке оставляет 46/119 трейдов (-61%), повышает win-rate
+         * с 56% до 70% и поднимает Σ PnL с −$70 до **+$658** (см. CHANGELOG 1.11.167).
+         *
+         *   1. `BOUNCE_FROM_MIN_30M_MAX_PCT` — не входить если цена уже отскочила
+         *      более чем на 1% от 30-минутного минимума (мы должны быть «на дне»).
+         *   2. `PRICE_CHANGE_1H_MIN_PCT` — не входить если за последний час падение
+         *      больше чем 20% (вход в свободное падение).
+         *   3. `VOL_1H_MAX_USD` — не входить если 1ч-объём > $1M (хайп / pump-and-dump).
+         *   4. `PRICE_CHANGE_30M_MIN_PCT` — не входить если за последние 30 мин падение
+         *      больше чем 10% (свежий пролив, не успели стабилизироваться).
+         *
+         * Каждое правило независимо отключается флагом `*_ENABLED=0`. Метрики
+         * вычисляются из `*_pair_snapshots` PG: цена now, 30 мин и 1 ч назад,
+         * минимум за последние 30 мин, объём 1 ч (`volume_1h`).
+         */
+        PAPER_POLICY_A_PLUS_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT: '1.0',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_MIN_PCT: '-20',
+        PAPER_POLICY_A_PLUS_VOL_1H_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD: '1000000',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-10',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
@@ -361,13 +400,22 @@ module.exports = {
          */
         PAPER_DCA_KILLSTOP: '-0.20',
         /**
-         * TP-лесенка: шаг **+5%** к средней, **5%** остатка за ступень. Верхний лимит ступеней не задаётся —
-         * `tpGridEffective` даёт бесконечную сетку. Защита от ранних шипов: первая ступень retrace требует
-         * минимального PnL **+3%** к средней (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
+         * TP-лесенка 1.11.167: шаг **+5%** к средней, **восходящий профиль продаж** —
+         *   ступень 1 (+5%) → 10% остатка
+         *   ступень 2 (+10%) → 20% остатка
+         *   ступень 3 (+15%) → 30% остатка
+         *   ступень 4+ (+20%, +25%, ...) → 30% остатка (последнее значение профиля
+         *   тиражируется на все последующие ступени).
+         * Лестница без верхнего лимита (`tpGridEffective` отдаёт `maxRungs=undefined`) —
+         * пока зелёная свечка, не продаём 100%; финальный остаток уходит только по TRAIL.
+         * `PAPER_TP_GRID_SELL_FRACTION` остаётся как fallback на случай отключения профиля.
+         * Защита от ранних шипов: первая ступень retrace требует минимального PnL **+3%**
+         * к средней (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
          */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.05',
+        PAPER_TP_GRID_SELL_FRACTION: '0.10',
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.30,0.30,0.30',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
@@ -516,9 +564,16 @@ module.exports = {
         LIVE_SIM_ENABLED: '1',
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
-        /** Если pre-send simulation упала уже после успешного Jupiter quote/swap — один свежий quote+swap retry. */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '1',
+        /**
+         * 1.11.167: persistent retry на quote+swap для buy и sell — Jupiter может отклонять
+         * квот при волатильности или sandwich-MEV; вместо «одной попытки и сдаёмся» долбимся
+         * до 5 попыток с фиксированной паузой 5с. Отдельные счётчики для buy/sell, чтобы
+         * наблюдать профиль ошибок Jupiter раздельно.
+         */
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '5',
         LIVE_BUY_SIM_RETRY_DELAY_MS: '5000',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '5',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '5000',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
@@ -526,8 +581,13 @@ module.exports = {
          * Circuit breaker price-verify: `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` при необходимости отдельно.
          */
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
-        /** Jupiter quote + swap: max execution tolerances (bps). */
-        LIVE_DEFAULT_SLIPPAGE_BPS: '300',
+        /**
+         * Jupiter quote + swap: max execution tolerance (bps). 1.11.167:
+         * **300 → 100** (3%→1%). Связано с persistent retry: жёсткий слиппедж даст
+         * больше отказов котировки, но retry-петля их прокатает; бенефит — защита
+         * от sandwich-MEV на крупных partial sells (≥$300 одним куском).
+         */
+        LIVE_DEFAULT_SLIPPAGE_BPS: '100',
         LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         /**

@@ -2,18 +2,25 @@ import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 
+export interface TpGridEffective {
+  stepPnl: number;
+  sellFraction: number;
+  /**
+   * 1.11.167: упорядоченный профиль `sellFraction` по ступеням (1-based индекс).
+   * Когда непустой — `sellFractionForStep(k)` возвращает `profile[min(k-1, len-1)]`,
+   * иначе плоский `sellFraction`. Пустой массив → fallback на `sellFraction`.
+   */
+  sellFractionByStep: number[];
+  /** Возвращает `sellFraction` для k-й ступени (k≥1). Универсальный helper. */
+  sellFractionForStep: (kOneBased: number) => number;
+  maxRungs: number | undefined;
+  firstRungRetraceMinPnlPct: number;
+}
+
 /**
  * Per-open overrides for TP grid (regime fork). When `tpGridOverrides` is absent, uses global `cfg`.
  */
-export function tpGridEffective(
-  ot: OpenTrade,
-  cfg: PaperTraderConfig,
-): {
-  stepPnl: number;
-  sellFraction: number;
-  maxRungs: number | undefined;
-  firstRungRetraceMinPnlPct: number;
-} {
+export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEffective {
   const o = ot.tpGridOverrides;
   /** Режим B live — параметры сетки только из cfg (effCfg), без legacy tp-regime overrides на открытии. */
   const ignoreOverrides = cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B';
@@ -22,12 +29,26 @@ export function tpGridEffective(
   /** §5.4 `IDEALIZED_OSCAR_STACK_SPEC_V2` — лестница B без верхней крышки (prod был maxRungs=4). */
   const liveOscarUnlimitedB = cfg.strategyId === 'live-oscar' && ot.liveExitProfileMode === 'B';
   const unlimitedBGrid = paperIdealizedUnlimitedB || liveOscarUnlimitedB;
+  const flatSellFraction = Math.min(
+    1,
+    ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
+  );
+  /** Profile из cfg; per-open override `gridSellFractionByStep` поддерживается опционально. */
+  const profileSrc =
+    !ignoreOverrides && Array.isArray(o?.gridSellFractionByStep) && o!.gridSellFractionByStep!.length > 0
+      ? o!.gridSellFractionByStep!
+      : cfg.tpGridSellFractionByStep ?? [];
+  const sellFractionByStep: number[] = profileSrc.map((x: number) => Math.min(1, Math.max(0, x)));
   return {
     stepPnl: ignoreOverrides ? cfg.tpGridStepPnl : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
-    sellFraction: Math.min(
-      1,
-      ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
-    ),
+    sellFraction: flatSellFraction,
+    sellFractionByStep,
+    sellFractionForStep: (kOneBased: number): number => {
+      if (sellFractionByStep.length === 0) return flatSellFraction;
+      const idx = Math.max(1, Math.floor(kOneBased)) - 1;
+      const clamped = Math.min(idx, sellFractionByStep.length - 1);
+      return sellFractionByStep[clamped] ?? flatSellFraction;
+    },
     maxRungs: unlimitedBGrid
       ? undefined
       : ignoreOverrides

@@ -1265,28 +1265,76 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         const liveOscarForJournal = resolveLiveOscar();
         const liveOpenExtras: Record<string, unknown> =
           liveOscarForJournal && liveStagedEntryActive()
-            ? {
-                timelineOpenLabelRu:
-                  cfg.liveStagedEntryFirstDropPct <= 0
-                    ? `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу`
-                    : `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
-                liveStagedEntryParams: {
-                  signalPriceUsd: ot.liveStagedEntry?.signalPriceUsd,
-                  firstDropPct: cfg.liveStagedEntryFirstDropPct,
-                  firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
-                  secondDropPct: cfg.liveStagedEntrySecondDropPct,
-                  secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
-                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
-                  killDropPct: cfg.liveStagedEntryKillDropPct,
-                  signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
-                  description: `${cfg.strategyId} staged: сигнал фиксирует якорную цену; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} покупается сразу, одно усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} на −${cfg.liveStagedEntrySecondDropPct}%${
-                    cfg.liveStagedEntryThirdLegUsd > 0
-                      ? ` и $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} на −${cfg.liveStagedEntryThirdDropPct}%`
-                      : ''
-                  } доступны только в течение часа от сигнала; после двух ступеней TP-сетки (TP_LADDER) усреднение отключено; после одной ступени откат вниз может исполнить усреднение на −${cfg.liveStagedEntrySecondDropPct}% от сигнала, если оно ещё не куплено; signal kill-stop −${cfg.liveStagedEntryKillDropPct}% от сигнала.`,
-                },
-              }
+            ? (() => {
+                const sigPx = ot.liveStagedEntry?.signalPriceUsd ?? 0;
+                const targetUsd = (dropPct: number): number | null =>
+                  sigPx > 0 ? +(sigPx * (1 - dropPct / 100)).toFixed(8) : null;
+                const totalNotional =
+                  cfg.liveStagedEntryFirstLegUsd +
+                  cfg.liveStagedEntrySecondLegUsd +
+                  cfg.liveStagedEntryThirdLegUsd;
+                const dcaParts: string[] = [];
+                if (cfg.liveStagedEntrySecondLegUsd > 0) {
+                  dcaParts.push(
+                    `$${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} на −${cfg.liveStagedEntrySecondDropPct}%`,
+                  );
+                }
+                if (cfg.liveStagedEntryThirdLegUsd > 0) {
+                  dcaParts.push(
+                    `$${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} на −${cfg.liveStagedEntryThirdDropPct}%`,
+                  );
+                }
+                const description =
+                  `${cfg.strategyId} staged-entry: полный нотионал $${totalNotional.toFixed(0)}. ` +
+                  `Сигнал фиксирует якорную цену сделки; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} ` +
+                  (cfg.liveStagedEntryFirstDropPct <= 0
+                    ? `покупается немедленно (на сигнале). `
+                    : `покупается на −${cfg.liveStagedEntryFirstDropPct}% от сигнала. `) +
+                  (dcaParts.length > 0
+                    ? `DCA-доливки: ${dcaParts.join(' и ')} (доступны только в течение ${(cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)} мин от сигнала). `
+                    : `DCA-доливки выключены. `) +
+                  `После двух ступеней TP-сетки (TP_LADDER) staged-усреднение отключено; ` +
+                  `signal kill-stop срабатывает при падении цены на −${cfg.liveStagedEntryKillDropPct}% от сигнала.`;
+                return {
+                  timelineOpenLabelRu:
+                    cfg.liveStagedEntryFirstDropPct <= 0
+                      ? `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу`
+                      : `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
+                  liveStagedEntryParams: {
+                    signalPriceUsd: sigPx > 0 ? sigPx : null,
+                    firstDropPct: cfg.liveStagedEntryFirstDropPct,
+                    firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
+                    firstTargetUsd: targetUsd(cfg.liveStagedEntryFirstDropPct),
+                    secondDropPct: cfg.liveStagedEntrySecondDropPct,
+                    secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+                    secondTargetUsd:
+                      cfg.liveStagedEntrySecondLegUsd > 0
+                        ? targetUsd(cfg.liveStagedEntrySecondDropPct)
+                        : null,
+                    thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                    thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+                    thirdTargetUsd:
+                      cfg.liveStagedEntryThirdLegUsd > 0
+                        ? targetUsd(cfg.liveStagedEntryThirdDropPct)
+                        : null,
+                    killDropPct: cfg.liveStagedEntryKillDropPct,
+                    killTargetUsd: targetUsd(cfg.liveStagedEntryKillDropPct),
+                    signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
+                    totalNotionalUsd: totalNotional,
+                    /**
+                     * 1.11.167: Policy A+ + TP-grid профиль продаж сохраняются на момент
+                     * открытия в JSONL — каждая сделка несёт свою «формулу» exit'а для
+                     * downstream retro-анализа без необходимости разбирать env-историю.
+                     */
+                    tpGridProfile: cfg.tpGridSellFractionByStep ?? [],
+                    tpGridStepPnl: cfg.tpGridStepPnl,
+                    tpGridFirstRungRetraceMinPnlPct: cfg.tpGridFirstRungRetraceMinPnlPct,
+                    avgKillstopPct: cfg.dcaKillstop,
+                    policyAPlusEnabled: cfg.policyAPlusEnabled,
+                    description,
+                  },
+                };
+              })()
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
             ? {
                 timelineOpenLabelRu: `Покупка ${Math.round(cfg.entryFirstLegFraction * 100)}% позиции`,

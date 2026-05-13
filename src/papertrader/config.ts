@@ -21,6 +21,26 @@ function envOptNum(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/**
+ * 1.11.167: восходящий sellFraction-профиль, заданный CSV (e.g. `0.10,0.20,0.30,0.30,0.30`).
+ * Каждый элемент — доля remainingFraction, которую TP-grid продаёт на k-й ступени
+ * (k=1..); если ступеней больше, чем длина массива — используется последний элемент.
+ * Пустая/невалидная строка → [] (используется плоский tpGridSellFraction).
+ */
+function parseTpGridSellFractionProfile(v: unknown): number[] {
+  if (v === undefined || v === null) return [];
+  const s = String(v).trim();
+  if (!s) return [];
+  const parts = s.split(',').map((p) => Number(p.trim()));
+  const out: number[] = [];
+  for (const n of parts) {
+    if (!Number.isFinite(n)) return [];
+    if (n < 0 || n > 1) return [];
+    out.push(n);
+  }
+  return out;
+}
+
 /** CSV minutes, e.g. `120,360,720`. Empty → `[primaryMin]` only (legacy single-window dip). */
 export function resolveDipLookbackWindows(primaryMin: number, csv: string): number[] {
   const t = csv.trim();
@@ -241,6 +261,26 @@ const ConfigSchema = z.object({
   dipLocalHighVetoWindowsCsv: z.string().default(''),
   dipLocalHighVetoMaxDistancePct: z.coerce.number().min(0).max(50).default(2),
 
+  /**
+   * Policy A+ (1.11.167): «хирургические» правила пропуска кандидатов на вход.
+   * Каждое правило независимо включается флагом `*_ENABLED`. Метрики берутся из
+   * `*_pair_snapshots` PG (см. `discovery/policy-a-plus.ts`).
+   *
+   * Историческая выборка (119 closed live-oscar):
+   *   baseline (no filter): n=119, win=56%, Σ=−$70
+   *   + bounce + drop1h + vol1h: n=63, win=62%, Σ=+$421
+   *   + drop30m: n=46, win=70%, Σ=+$658 (выбранная конфигурация)
+   */
+  policyAPlusEnabled: z.boolean().default(false),
+  policyAPlusBounceFromMin30mEnabled: z.boolean().default(true),
+  policyAPlusBounceFromMin30mMaxPct: z.coerce.number().min(0).max(50).default(1),
+  policyAPlusPriceChange1hEnabled: z.boolean().default(true),
+  policyAPlusPriceChange1hMinPct: z.coerce.number().default(-20),
+  policyAPlusVol1hEnabled: z.boolean().default(true),
+  policyAPlusVol1hMaxUsd: z.coerce.number().nonnegative().default(1_000_000),
+  policyAPlusPriceChange30mEnabled: z.boolean().default(true),
+  policyAPlusPriceChange30mMinPct: z.coerce.number().default(-10),
+
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
   whaleRequireTrigger: z.boolean().default(false),
@@ -293,6 +333,14 @@ const ConfigSchema = z.object({
    */
   tpGridStepPnl: z.coerce.number().nonnegative().default(0),
   tpGridSellFraction: z.coerce.number().min(0).max(1).default(0.2),
+  /**
+   * 1.11.167: восходящий профиль `sellFraction` по индексу ступени (1-based в коде, но
+   * массив 0-based — `[step1, step2, ...]`). Когда массив непустой, `tpGridEffective`
+   * возвращает значение по `min(stepIdx-1, profile.length-1)` — последнее значение
+   * тиражируется на все следующие ступени, что обеспечивает «бесконечный» хвост
+   * лестницы. Пустой массив → fallback на плоский `tpGridSellFraction`.
+   */
+  tpGridSellFractionByStep: z.array(z.number().min(0).max(1)).default([]),
   /**
    * После **первой** срабатывающей ступени TP-grid «предыдущий порог» для retrace был бы 0 (= безубыток к средней).
    * Здесь задаётся **минимальный PnL (доля, напр. 0.025 = +2.5%)**: закрываем остаток, когда нереализованный xAvg-1
@@ -644,6 +692,25 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLocalHighVetoEnabled: envBool(process.env.PAPER_DIP_LOCAL_HIGH_VETO_ENABLED, false),
     dipLocalHighVetoWindowsCsv: process.env.PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN ?? '',
     dipLocalHighVetoMaxDistancePct: process.env.PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT,
+    policyAPlusEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_ENABLED, false),
+    policyAPlusBounceFromMin30mEnabled: envBool(
+      process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED,
+      true,
+    ),
+    policyAPlusBounceFromMin30mMaxPct:
+      process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT,
+    policyAPlusPriceChange1hEnabled: envBool(
+      process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_ENABLED,
+      true,
+    ),
+    policyAPlusPriceChange1hMinPct: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_MIN_PCT,
+    policyAPlusVol1hEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_VOL_1H_ENABLED, true),
+    policyAPlusVol1hMaxUsd: process.env.PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD,
+    policyAPlusPriceChange30mEnabled: envBool(
+      process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED,
+      true,
+    ),
+    policyAPlusPriceChange30mMinPct: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,
@@ -679,6 +746,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     tpLadderSpec: process.env.PAPER_TP_LADDER,
     tpGridStepPnl: process.env.PAPER_TP_GRID_STEP_PNL,
     tpGridSellFraction: process.env.PAPER_TP_GRID_SELL_FRACTION,
+    tpGridSellFractionByStep: parseTpGridSellFractionProfile(process.env.PAPER_TP_GRID_SELL_FRACTION_PROFILE),
     tpGridFirstRungRetraceMinPnlPct: process.env.PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL,
     tpGridMaxRungs: envOptNum(process.env.PAPER_TP_GRID_MAX_RUNGS),
     tpRegimeEnabled: envBool(process.env.PAPER_TP_REGIME_ENABLED, false),

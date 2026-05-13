@@ -1567,7 +1567,23 @@ function liveStagedOpenLabelRu(strategyId: string, e: Record<string, unknown>): 
   const firstDropPct = Number(st.firstDropPct ?? 0);
   const name = strategyId === 'live-oscar-risky' ? 'Первая нога Risky' : 'Первая нога';
   const trigger = firstDropPct <= 0 ? 'по сигналу' : `на −${fmtDropPctRaw(firstDropPct)}% от сигнала`;
-  return `${name}: $${firstLegUsd.toFixed(0)} ${trigger}`;
+  /**
+   * 1.11.167: показываем сразу всю DCA-структуру (если ноги 2-3 заданы), это
+   * критично для оперативного контроля Live Oscar — при наведении на сделку
+   * сразу видны все запланированные доливки и kill-уровень от сигнала.
+   */
+  const params = e.liveStagedEntryParams as Record<string, unknown> | undefined;
+  const planParts: string[] = [];
+  const secondUsd = Number(params?.secondLegUsd ?? 0);
+  const secondDrop = Number(params?.secondDropPct ?? 0);
+  if (secondUsd > 0 && secondDrop > 0) planParts.push(`+$${secondUsd.toFixed(0)}/−${secondDrop}%`);
+  const thirdUsd = Number(params?.thirdLegUsd ?? 0);
+  const thirdDrop = Number(params?.thirdDropPct ?? 0);
+  if (thirdUsd > 0 && thirdDrop > 0) planParts.push(`+$${thirdUsd.toFixed(0)}/−${thirdDrop}%`);
+  const killDrop = Number(params?.killDropPct ?? 0);
+  const killSuffix = killDrop > 0 ? ` · kill −${killDrop}% от сигнала` : '';
+  const planSuffix = planParts.length > 0 ? ` · план DCA: ${planParts.join(', ')}` : '';
+  return `${name}: $${firstLegUsd.toFixed(0)} ${trigger}${planSuffix}${killSuffix}`;
 }
 
 /** Контекст для строк таймлайна open/close (paper + live). */
@@ -1605,11 +1621,11 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
-        'Live Oscar (унифицированный режим выхода): первая нога $560 по сигналу + одно staged-усреднение $240 на −6% (в течение часа). Управление позицией: TP-лесенка шаг +5% к средней, продажа 5% остатка за ступень (бесконечная сетка); trail = `ladder_retrace` (выход всего остатка ниже предпоследней ступени); защита первой ступени retrace = +3%; killstop −20% к средней (страховка от чёрного лебедя); таймаут 8 ч (отключается после первого partial TP/DCA).',
+        'Live Oscar 1.11.167 (унифицированный режим выхода). ВХОД: первая нога $700 по сигналу + DCA-доливки $150 на −7% и $150 на −14% от сигнала (доступны 1ч), полный нотионал $1000. ВЫХОД: TP-лесенка шаг +5% к средней с восходящим профилем продаж — 10% остатка на +5%, 20% на +10%, 30% на +15%, 30% на +20% и далее (бесконечная сетка, последнее значение профиля повторяется). Защита первой ступени retrace = +3% к avg. TRAIL = `ladder_retrace` (закрываем весь остаток, как только цена откатилась ниже предыдущей взятой ступени). Killstop −20% к средней цене (страховка от чёрного лебедя; на ретро-данных отрезает только глубокие просадки и не режет восстанавливающиеся сделки). Таймаут 8 ч (отключается после первого partial TP или DCA). Slippage 1% + persistent retry x5 на quote/swap (Jupiter). Policy A+ entry-фильтр включён: блокирует входы с bounce_30m > 1%, drop_1h < −20%, drop_30m < −10%, vol_1h > $1M.',
       );
     } else {
       parts.push(
-        'Live Oscar (унифицированный режим выхода): TP-лесенка +5%/5%/∞, trail `ladder_retrace`, kill −20% к avg, retrace floor +3%.',
+        'Live Oscar 1.11.167: TP +5% c восходящим профилем 10/20/30/30/30 %, TRAIL `ladder_retrace`, kill −20% к avg, retrace floor +3%, slip 1% + retry x5, Policy A+ on.',
       );
     }
     return parts.length ? parts.join('\n') : null;

@@ -8,6 +8,71 @@
 
 ---
 
+## [1.11.167] — 2026-05-14
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.167`.
+
+Большой пакет «entry + exit tuning» Live Oscar: Policy A+ entry filter, восходящий sellFraction-профиль, 3-leg DCA $700/$150/$150, 1% слиппедж + persistent retry, расширенное логирование. По ретро-выборке 119 закрытых live-oscar сделок: Σ Net **−$70 → +$658**, win-rate 56% → 70%, n=119 → 46 (39% kept).
+
+### Entry — Policy A+ (PG snapshots)
+
+- **Новый фильтр** в `src/papertrader/discovery/policy-a-plus.ts`: 4 независимо-toggleable правила, применяющиеся **после** `evaluateDip + recovery + localHigh`:
+  1. `bounce_from_min_30m_pct > 1%` (цена отскочила от 30-мин минимума → не на дне).
+  2. `price_change_1h_pct < −20%` (вход в свободное падение часа).
+  3. `vol_1h_usd > $1M` (хайп / pump-and-dump хвост).
+  4. `price_change_30m_pct < −10%` (свежий 30-мин пролив, не успели стабилизироваться).
+- **Реализация**: один SQL на DEX-таблицу `*_pair_snapshots` за тик (batch); coverage-проверка → при отсутствии истории фильтр **не блокирует** (safe-skip).
+- **JSONL**: `live_discovery_eval.features.policy_a_plus = { enabled, coverageOk, bounceFromMin30mPct, priceChange30mPct, priceChange1hPct, vol1hUsd, min30m, price30mAgo, price1hAgo, pgSnapsCount, thresholds }` записывается **независимо** от блокировки → ретро-анализ на новые пороги без пере-парсинга PG.
+- **PM2 (`live-oscar`)**: `PAPER_POLICY_A_PLUS_ENABLED=1` + 4 пары `*_ENABLED` / порог.
+- **Тесты**: `tests/papertrader-policy-a-plus.test.ts` (10 кейсов на каждое правило + safe-skip + disabled).
+
+### Entry — staged-entry: 3 ноги $700/$150/$150
+
+- `LIVE_OSCAR_FULL_NOTIONAL_USD: '800' → '1000'`.
+- `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '560' → '700'` (first drop остаётся `0` → leg 1 по сигналу).
+- `PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '6' → '7'`, `_SECOND_LEG_USD: '240' → '150'`.
+- `PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0' → '14'`, `_THIRD_LEG_USD: '0' → '150'`.
+- `PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '15' → '20'` (запас 6пп ниже leg-3, чтобы он успел заполниться).
+- `PAPER_ENTRY_FIRST_LEG_FRACTION='0.7'` остаётся (700/1000 = 0.7).
+- `PAPER_DCA_KILLSTOP=-0.20` (avg-killstop) остаётся; при заполненных 3 ногах = ~−22.7% от signal-цены.
+
+### Exit — восходящий sellFraction-профиль и 1% slippage
+
+- **TP-grid профиль** (новое): `PAPER_TP_GRID_SELL_FRACTION_PROFILE='0.10,0.20,0.30,0.30,0.30'`. На k-й ступени продаём `profile[min(k-1, len-1)]` доли остатка → бесконечный «хвост 30%» после ступени 5. `PAPER_TP_GRID_SELL_FRACTION='0.10'` оставлен как fallback.
+- `PaperTraderConfig.tpGridSellFractionByStep: number[]` + `tpGridEffective().sellFractionForStep(k)`; trader.ts loop теперь передаёт `sellFractionForStep(k)` в `tryExecuteTpPartialSell`.
+- `OpenTrade.tpGridOverrides.gridSellFractionByStep?: number[]` — per-open override (готовность к regime-fork).
+- `PAPER_TP_GRID_STEP_PNL=0.05`, `PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL=0.03`, `PAPER_TRAIL_MODE='ladder_retrace'` — **не трогаем** (1.11.166 параметры).
+
+### Jupiter — slippage 100bps + persistent retry x5 (buy + sell)
+
+- `LIVE_DEFAULT_SLIPPAGE_BPS: '300' → '100'` (3% → 1%) — защита от sandwich-MEV на крупных partial sells.
+- `LIVE_BUY_SIM_RETRY_ATTEMPTS: '1' → '5'` (cap в схеме 3 → 10).
+- **Новое** `liveSellSimRetryAttempts/DelayMs` в `LiveOscarConfig`, ENV: `LIVE_SELL_SIM_RETRY_ATTEMPTS=5`, `LIVE_SELL_SIM_RETRY_DELAY_MS=5000`.
+- `runTokenToSolPipeline` (sell) обёрнут retry-loop: каждое attempt берёт **свежий** Jupiter quote+swap, simulate, send; retry на `sim_failed:*`, `quote_stale`, `no_quote`, `swap_build`. **Никогда** на `confirm_timeout` (tx уже broadcast → риск double-sell). Каждый attempt — отдельная пара `execution_attempt`/`execution_result` с `quoteSnapshot.sellSimRetryAttempt` и `sellSimRetryMaxAttempts` для аудита.
+
+### Bug fixes / cleanup
+
+- **`store-restore.ts:mapPartialSell`**: `Number(undefined) → NaN → JSON 'null'`-баг для `sellFraction`/`price`/`pnlUsd` исправлен через `coerceNum0(v)` (NaN/Infinity/строки → 0).
+- **Dead code A/B legacy** оставлен в `tracker.ts` ради совместимости replay'а исторических `liveExitProfileMode='A'|'B'` сделок (нет преимущества от удаления; следующий релиз).
+
+### JSONL / Dashboard / Logging
+
+- **`live_position_open.liveStagedEntryParams`** теперь содержит: `firstTargetUsd`, `secondTargetUsd`, `thirdTargetUsd`, `killTargetUsd` (расчётные триггер-цены от `signalPriceUsd`), `totalNotionalUsd`, `tpGridProfile`, `tpGridStepPnl`, `tpGridFirstRungRetraceMinPnlPct`, `avgKillstopPct`, `policyAPlusEnabled`, развёрнутый `description` (русский, для retro-аналитики и таймлайна). Это даёт самодостаточный snapshot стратегии в момент open: backtest / re-test не нужно поднимать историю env.
+- **Таймлайн-метка `liveStagedOpenLabelRu`**: «Первая нога $700 по сигналу · план DCA: +$150/−7%, +$150/−14% · kill −20% от сигнала».
+- **Контекстная подсказка** Live Oscar в `dashboard-server.ts` обновлена: одна детальная строка для новых open-сделок с описанием 3-leg ВХОДА, восходящего ВЫХОДА (10/20/30/30/30%), TRAIL `ladder_retrace`, kill −20%, slip 1% + retry x5, Policy A+ on.
+
+### Тесты / Typecheck
+
+- `tests/papertrader-tp-grid-profile.test.ts` — 6 кейсов на профиль (fallback, инфинит-хвост, clamp, per-open override).
+- `tests/papertrader-policy-a-plus.test.ts` — 10 кейсов (4 правила + safe-skip + disabled + индивидуальное отключение).
+- `npm run typecheck` — зелёный; полный `npm test` — 238/238 проходят.
+
+### Откат
+
+- `git checkout sa-alpha-1.11.166`; деплой по NORM §5.2 (`fetch + reset --hard + npm ci + pm2 reload ecosystem.config.cjs --update-env`). После отката: вернётся $800-нотионал staged-entry с одним добором на −6%, плоский 5%/sell-frac TP, slip 300bps без retry sell, без Policy A+.
+
+---
+
 ## [1.11.166] — 2026-05-13
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.166`.

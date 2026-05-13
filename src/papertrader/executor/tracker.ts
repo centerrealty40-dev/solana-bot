@@ -2059,7 +2059,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
-      const sellFrac = Math.min(1, tgEff.sellFraction);
       let maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
       if (tgEff.maxRungs != null && tgEff.maxRungs >= 1) {
         maxK = Math.min(maxK, tgEff.maxRungs);
@@ -2076,12 +2075,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ) {
           ot.liveExitProfileMode = 'A';
         }
+        /**
+         * 1.11.167: восходящий sellFraction-профиль по ступени k. Если профиль не задан
+         * (`sellFractionByStep === []`), возвращается плоский `tpGridSellFraction`. Это
+         * позволяет жирнее фиксировать прибыль на средних ступенях (10-20%), сохраняя
+         * хвост позиции для крупных пампов на дальних ступенях.
+         */
+        const sellFracForStep = Math.min(1, tgEff.sellFractionForStep(k));
         const r = await tryExecuteTpPartialSell({
           mint,
           ot,
           cfg: effCfg,
           curMetric,
-          sellFraction: sellFrac,
+          sellFraction: sellFracForStep,
           ladderStepIndex: k - 1,
           ladderRungsTotal: 0,
           ladderPnlPct: threshold,

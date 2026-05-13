@@ -45,6 +45,13 @@ export type TpRegime = 'unknown' | 'up' | 'down' | 'sideways';
 export interface TpGridOverrides {
   gridStepPnl?: number;
   gridSellFraction?: number;
+  /**
+   * 1.11.167: per-open override восходящего sellFraction-профиля по ступеням
+   * (1-based, см. `PAPER_TP_GRID_SELL_FRACTION_PROFILE`). Когда задан — заменяет
+   * глобальный `tpGridSellFractionByStep` для этой позиции; когда не задан —
+   * используется глобальный из cfg, иначе плоский `gridSellFraction`.
+   */
+  gridSellFractionByStep?: number[];
   gridMaxRungs?: number;
   gridFirstRungRetraceMinPnlPct?: number;
   /** Regime fork: override `PAPER_DCA_KILLSTOP` for this open (negative fraction). */
@@ -428,6 +435,29 @@ export interface SnapshotFeatures {
     distance_from_high_pct: Record<string, number>;
     vetoed: boolean;
     veto_reasons: string[];
+  };
+  /**
+   * 1.11.167: вычисленные метрики Policy A+ для retro-анализа. Прикрепляются к
+   * decision независимо от того, заблокирован ли вход (если фильтр выключен —
+   * блок `enabled: false`, `coverageOk: false` и метрики могут быть null).
+   */
+  policy_a_plus?: {
+    enabled: boolean;
+    coverageOk: boolean;
+    bounceFromMin30mPct: number | null;
+    priceChange30mPct: number | null;
+    priceChange1hPct: number | null;
+    vol1hUsd: number | null;
+    min30m: number | null;
+    price30mAgo: number | null;
+    price1hAgo: number | null;
+    pgSnapsCount: number;
+    thresholds: {
+      bounceFromMin30mMaxPct: number;
+      priceChange1hMinPct: number;
+      priceChange30mMinPct: number;
+      vol1hMaxUsd: number;
+    };
   };
 }
 

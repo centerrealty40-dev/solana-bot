@@ -116,6 +116,25 @@ function isRetryableBuySimError(message: string): boolean {
   return message.startsWith('sim_failed:') || message.includes('InstructionError');
 }
 
+/**
+ * Sell pipeline retry: similar to buy retry but never retries `confirm_timeout`
+ * (we already broadcast the swap; a retry would risk double-sell). All transient
+ * pre-broadcast failures (`no_quote`, `swap_build`, `quote_stale`, `sim_failed`)
+ * are retryable. Tightened slippage (1.11.167) means Jupiter rejects more quotes;
+ * persistent retry pushes the order through eventually.
+ */
+function isRetryableSellSimError(message: string): boolean {
+  if (!message) return false;
+  if (message.startsWith('confirm_timeout')) return false;
+  return (
+    message.startsWith('sim_failed:') ||
+    message.includes('InstructionError') ||
+    message.startsWith('quote_stale') ||
+    message === 'no_quote' ||
+    message === 'swap_build'
+  );
+}
+
 /** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
 async function estimateLiveWalletMintHoldingUsd(args: {
   liveCfg: LiveOscarConfig;
@@ -420,119 +439,185 @@ async function runTokenToSolPipeline(
     }
   }
 
-  const solUsd = getSolUsd() ?? 0;
-  const intentId = newLiveIntentId();
   const kp = signer(liveCfg);
   const pk = kp.publicKey.toBase58();
+  const sellMaxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
 
-  const prep = await liveSellQuoteAndPrepareSnapshot({
-    cfg: liveCfg,
-    inputMint: args.mint,
-    tokenAmountRaw: raw,
-    solUsd,
-    userPublicKey: pk,
-  });
-
-  const quoteSnapshot = prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true };
-
-  appendLiveJsonlEvent({
-    kind: 'execution_attempt',
-    intentId,
-    side: 'sell',
-    mint: args.mint,
-    intendedUsd: args.usdNotional,
-    intendedAmountAtomic: raw,
-    sellAmountSource,
-    executionMode: liveCfg.executionMode,
-    quoteSnapshot,
-    targetPriceUsd: args.priceUsdPerToken,
-  });
-
-  if (!prep || !prep.swapBuild.ok) {
-    const reason =
-      prep == null ? 'no_quote' : prep.swapBuild.ok === false ? prep.swapBuild.reason : 'swap_build';
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_err',
-      simulated: true,
-      error: { message: reason },
-    });
-    notifyLiveExecutionSimErrForTerminal(reason);
-    return { ok: false };
-  }
-
-  const snapForAgeSell = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
-  if (liveQuoteExceedsMaxAge(snapForAgeSell, liveCfg.liveQuoteMaxAgeMs)) {
-    const age = snapForAgeSell.quoteAgeMs;
-    const max = liveCfg.liveQuoteMaxAgeMs;
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_err',
-      simulated: true,
-      error: {
-        message:
-          typeof age === 'number' && Number.isFinite(age) && max != null
-            ? `quote_stale:${Math.round(age)}ms>${max}ms`
-            : 'quote_stale:bad_or_missing_quoteAgeMs',
-      },
-    });
-    notifyLiveExecutionSimErrForTerminal(
-      typeof age === 'number' && Number.isFinite(age) && max != null
-        ? `quote_stale:${Math.round(age)}ms>${max}ms`
-        : 'quote_stale:bad_or_missing_quoteAgeMs',
-    );
-    return { ok: false };
-  }
-
-  const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
-
-  const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
-
-  if (liveCfg.executionMode === 'simulate') {
-    const sim = await liveSimulateSignedTransaction({
+  /**
+   * Persistent retry envelope for sell pipeline (1.11.167):
+   * Wraps fresh Jupiter quote + swap build + simulate + send for each attempt.
+   * Retries on transient pre-broadcast failures only — never on `confirm_timeout`
+   * (already-broadcast tx; retry would risk double-sell). Each attempt emits its
+   * own `execution_attempt`/`execution_result` pair so the JSONL keeps full audit
+   * of how many tries it took to push through tightened slippage (`isRetryableSellSimError`).
+   */
+  let lastResult: LiveTokenToSolPipelineResult = { ok: false };
+  for (let attempt = 0; attempt < sellMaxAttempts; attempt++) {
+    const solUsd = getSolUsd() ?? 0;
+    const intentId = newLiveIntentId();
+    const prep = await liveSellQuoteAndPrepareSnapshot({
       cfg: liveCfg,
-      signedTxSerializedBase64: signedB64,
+      inputMint: args.mint,
+      tokenAmountRaw: raw,
+      solUsd,
+      userPublicKey: pk,
     });
 
-    if (!sim.ok) {
-      const message = sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '');
+    const quoteSnapshot = {
+      ...(prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true }),
+      sellSimRetryAttempt: attempt,
+      sellSimRetryMaxAttempts: sellMaxAttempts,
+    };
+
+    appendLiveJsonlEvent({
+      kind: 'execution_attempt',
+      intentId,
+      side: 'sell',
+      mint: args.mint,
+      intendedUsd: args.usdNotional,
+      intendedAmountAtomic: raw,
+      sellAmountSource,
+      executionMode: liveCfg.executionMode,
+      quoteSnapshot,
+      targetPriceUsd: args.priceUsdPerToken,
+    });
+
+    if (!prep || !prep.swapBuild.ok) {
+      const reason =
+        prep == null ? 'no_quote' : prep.swapBuild.ok === false ? prep.swapBuild.reason : 'swap_build';
       appendLiveJsonlEvent({
         kind: 'execution_result',
         intentId,
         status: 'sim_err',
         simulated: true,
-        unitsConsumed: sim.unitsConsumed ?? null,
-        error: { message },
+        error: { message: reason },
       });
-      notifyLiveExecutionSimErrForTerminal(message);
+      notifyLiveExecutionSimErrForTerminal(reason);
+      if (attempt < sellMaxAttempts - 1 && isRetryableSellSimError(reason)) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
       return { ok: false };
     }
 
-    appendLiveJsonlEvent({
-      kind: 'execution_result',
-      intentId,
-      status: 'sim_ok',
-      simulated: true,
-      unitsConsumed: sim.unitsConsumed ?? null,
+    const snapForAgeSell = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
+    if (liveQuoteExceedsMaxAge(snapForAgeSell, liveCfg.liveQuoteMaxAgeMs)) {
+      const age = snapForAgeSell.quoteAgeMs;
+      const max = liveCfg.liveQuoteMaxAgeMs;
+      const staleMsg =
+        typeof age === 'number' && Number.isFinite(age) && max != null
+          ? `quote_stale:${Math.round(age)}ms>${max}ms`
+          : 'quote_stale:bad_or_missing_quoteAgeMs';
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        error: { message: staleMsg },
+      });
+      notifyLiveExecutionSimErrForTerminal(staleMsg);
+      if (attempt < sellMaxAttempts - 1) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
+      return { ok: false };
+    }
+
+    const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
+    const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
+
+    if (liveCfg.executionMode === 'simulate') {
+      const sim = await liveSimulateSignedTransaction({
+        cfg: liveCfg,
+        signedTxSerializedBase64: signedB64,
+      });
+
+      if (!sim.ok) {
+        const message = sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '');
+        appendLiveJsonlEvent({
+          kind: 'execution_result',
+          intentId,
+          status: 'sim_err',
+          simulated: true,
+          unitsConsumed: sim.unitsConsumed ?? null,
+          error: { message },
+        });
+        notifyLiveExecutionSimErrForTerminal(message);
+        if (attempt < sellMaxAttempts - 1 && isRetryableSellSimError(message)) {
+          await sleep(liveCfg.liveSellSimRetryDelayMs);
+          continue;
+        }
+        return { ok: false };
+      }
+
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_ok',
+        simulated: true,
+        unitsConsumed: sim.unitsConsumed ?? null,
+      });
+      notifyLiveExecutionSimOk();
+      return {
+        ok: true,
+        wsolOutLamports: wsolOut ?? undefined,
+        solProceedsSource: wsolOut != null && wsolOut > 0n ? 'jupiter_quote' : undefined,
+      };
+    }
+
+    const liveOut = await liveSendSignedSwapPipeline({
+      cfg: liveCfg,
+      signedTxSerializedBase64: signedB64,
     });
-    notifyLiveExecutionSimOk();
+    const ok = finalizeLiveSendJsonl(intentId, liveOut);
+    if (liveCfg.executionMode === 'live' && ok) {
+      clearLiveBuyCooldown(args.mint);
+    }
+
+    /**
+     * Sell broadcast outcome:
+     *  - `ok=true` → confirmed swap, return; do not retry.
+     *  - `ok=false && sim_err && retryable` → retry with fresh quote.
+     *  - `confirm_timeout` (broadcast already in-flight) → never retry; stop loop.
+     *  - other terminal failures → stop loop.
+     */
+    if (ok && liveOut.ok && liveOut.signature) {
+      lastResult = await finalizeSellOutcome(liveCfg, args, pk, wsolOut, liveOut);
+      return lastResult;
+    }
+    if (
+      !ok &&
+      !liveOut.ok &&
+      liveOut.kind === 'sim_err' &&
+      attempt < sellMaxAttempts - 1 &&
+      isRetryableSellSimError(liveOut.message)
+    ) {
+      await sleep(liveCfg.liveSellSimRetryDelayMs);
+      continue;
+    }
     return {
-      ok: true,
-      wsolOutLamports: wsolOut ?? undefined,
-      solProceedsSource: wsolOut != null && wsolOut > 0n ? 'jupiter_quote' : undefined,
+      ok,
+      wsolOutLamports: undefined,
+      solProceedsSource: undefined,
+      txSignature: liveOut.ok ? liveOut.signature : liveOut.signature ?? undefined,
     };
   }
 
-  const liveOut = await liveSendSignedSwapPipeline({
-    cfg: liveCfg,
-    signedTxSerializedBase64: signedB64,
-  });
-  const ok = finalizeLiveSendJsonl(intentId, liveOut);
-  if (liveCfg.executionMode === 'live' && ok) {
-    clearLiveBuyCooldown(args.mint);
-  }
+  return lastResult;
+}
+
+/**
+ * Extracted confirmed-sell post-processing (was inlined in runTokenToSolPipeline before
+ * the retry-loop refactor). Resolves SOL proceeds with the chain-vs-quote heuristic.
+ */
+async function finalizeSellOutcome(
+  liveCfg: LiveOscarConfig,
+  args: { mint: string; intentKind: 'sell_partial' | 'sell_full' },
+  pk: string,
+  wsolOut: bigint | null,
+  liveOut: { ok: true; signature: string } | { ok: false; signature?: string | null; kind: string; message: string },
+): Promise<LiveTokenToSolPipelineResult> {
+  const ok = liveOut.ok;
 
   let outLamports: bigint | undefined;
   let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
