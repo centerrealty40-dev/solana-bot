@@ -306,7 +306,7 @@ function simulateSession(
   const firstPrice = px[startIdx]!;
   if (!(firstPrice > 0)) return null;
 
-  const fee = (s.feeBpsPerSide + s.slipBaseBpsPerSide) / 10_000;
+  const fee = s.feeBpsPerSide / 10_000;
   const slipBuy = p.slipBuyPct / 100;
   const slipSellGood = p.slipSellGoodPct / 100;
   const slipSellBad = p.slipSellBadPct / 100;
@@ -628,9 +628,8 @@ async function main(): Promise<void> {
         costSold += invSpent;
       }
       const grossPnl = proceeds - s.totalInvestedUsd;
-      const fees = s.totalInvestedUsd * (s.feeBpsPerSide / 10_000) * 2; // вход+выход по fee
-      const slipBaseUsd = s.totalInvestedUsd * (s.slipBaseBpsPerSide / 10_000) * 2;
-      const modelNet = grossPnl - fees - slipBaseUsd - s.networkFeeUsd;
+      const fees = s.totalInvestedUsd * (s.feeBpsPerSide / 10_000) * 2;
+      const modelNet = grossPnl - fees - s.networkFeeUsd;
       rc.n++;
       rc.sumModelNet += modelNet;
       rc.sumRealNet += s.realNetPnlUsd;
