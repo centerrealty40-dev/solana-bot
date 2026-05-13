@@ -487,14 +487,14 @@ module.exports = {
         /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
         LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
         /**
-         * Shadow diagnostics — только JSONL (+ блок в hourly-report); не меняет решения по сделкам.
-         * Jupiter/RPC нагрузка растёт при SAMPLE_PCT=100; при лимитах снизить SAMPLE_PCT или выставить ALT-доли в 0.
+         * Shadow diagnostics (signal-lab + mtm-shadow): JSONL + опциональные отчёты; не влияет на торговые решения.
+         * В PM2 выключено — снижает фоновые запросы к Jupiter lite-api; торговый путь (verify/трекер) без изменений.
          */
-        SIGNAL_LAB_ENABLED: '1',
+        SIGNAL_LAB_ENABLED: '0',
         SIGNAL_LAB_SAMPLE_PCT: '100',
         SIGNAL_LAB_PATH: path.join(root, 'data/live/signal-lab.jsonl'),
         SIGNAL_LAB_ALT_PROBE_FRACTION: '0.55',
-        MTM_SHADOW_ENABLED: '1',
+        MTM_SHADOW_ENABLED: '0',
         MTM_SHADOW_SAMPLE_PCT: '100',
         MTM_SHADOW_PATH: path.join(root, 'data/live/mtm-shadow.jsonl'),
         MTM_SHADOW_ALT_FRACTION: '0.58',
