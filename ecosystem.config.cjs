@@ -339,44 +339,42 @@ module.exports = {
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
 
-        /** Live: без tp-regime классов на входе; режимы A/B по IDEALIZED_OSCAR_STACK_SPEC §8.2–§9.2. */
+        /** Live: без tp-regime классов на входе. Унифицированный профиль выхода (без A/B) — см. CHANGELOG 2026-05-13 + IDEALIZED_OSCAR_STACK_SPEC_V2 §1. */
         PAPER_TP_REGIME_ENABLED: '0',
-        /** Режим A/B: A до усреднения по `PAPER_DCA_LEVELS` или до первого TP; B после DCA — держим B до закрытия; env `PAPER_LIVE_EXIT_MODE_B_*`. */
-        PAPER_LIVE_EXIT_MODE_AB: '1',
-        PAPER_LIVE_EXIT_MODE_B_TRAIL_DROP: '0.12',
-        PAPER_LIVE_EXIT_MODE_B_TRAIL_TRIGGER_X: '1.06',
-        PAPER_LIVE_EXIT_MODE_B_TIMEOUT_HOURS: '4',
-        PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP: '-0.055',
         /**
-         * Режим B: включается после staged-добора; signal kill-stop **−15%%** от исходного сигнала.
-         * Лестница TP: **+4%%** к средней за ступень, **5%%** остатка за ступень (`PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).
-         * Верхний лимит ступеней не задаём — для **live-oscar** в режиме B `tpGridEffective` даёт бесконечную сетку.
-         * Трейл **`ladder_retrace`** без изменений: при откате — к порогу предыдущей ступени.
+         * Унификация A/B: единый профиль выхода. Раньше держали `PAPER_LIVE_EXIT_MODE_AB=1` с дублирующими
+         * `PAPER_LIVE_EXIT_MODE_B_*`. На бэктесте (122 закрытых live-oscar сделки, retro-grid с честным slip)
+         * эта пара режимов дала ровно ту же экономику, что и единый профиль с теми же базовыми `PAPER_*`,
+         * но усложняла дашборд и таймлайн. Подробности — в `scripts-tmp/live-oscar-universal-strategy-v2.ts`.
          */
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_STEP_PNL: '0.04',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_SELL_FRACTION: '0.05',
-        PAPER_LIVE_EXIT_MODE_B_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
+        PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Дополнительные DCA отключены: одно staged-усреднение **−6%** от сигнала.
-         * Старый 5-секундный `LIVE_ENTRY_SCALE_IN_*` для основного Live Oscar выключен ниже.
+         * Дополнительные DCA отключены: одно staged-усреднение **−6%** от сигнала
+         * (см. `PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT`).
          */
         PAPER_DCA_LEVELS: '',
-        /** После staged-добора: общий kill по усреднённой позиции (доля PnL), зеркалится в режиме B (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`). */
-        PAPER_DCA_KILLSTOP: '-0.055',
         /**
-         * Режим A — «полная лестница»: **+4%%** к средней за ступень; **5%%** остатка за ступень;
-         * retrace-защита после 1-й ступени (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
+         * Killstop −20% к усреднённой позиции. На retro-grid kill в зоне (-15..-12)% сжигал плюсовые сделки
+         * с временной просадкой, которые после восстанавливались к ступеням TP; kill ≥ −20% даёт
+         * страховку от чёрного лебедя без подрезания нормальных просадок (см. retro-grid в README).
+         */
+        PAPER_DCA_KILLSTOP: '-0.20',
+        /**
+         * TP-лесенка: шаг **+5%** к средней, **5%** остатка за ступень. Верхний лимит ступеней не задаётся —
+         * `tpGridEffective` даёт бесконечную сетку. Защита от ранних шипов: первая ступень retrace требует
+         * минимального PnL **+3%** к средней (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
          */
         PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.04',
+        PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.05',
-        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.02',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
+        /** Trail = retrace к предыдущей взятой ступени (после ≥2 ступеней). `PAPER_TRAIL_DROP` не используется при `ladder_retrace`. */
         PAPER_TRAIL_MODE: 'ladder_retrace',
         PAPER_TRAIL_DROP: '0.10',
-        PAPER_TRAIL_TRIGGER_X: '1.10',
+        PAPER_TRAIL_TRIGGER_X: '1.05',
         /** Live Oscar — тайм-аут 8 ч; в трекере отключён после первого partial TP или DCA (см. tracker `timeoutSuppressedByProgress`). */
         PAPER_TIMEOUT_HOURS: '8',
         PAPER_PEAK_LOG_STEP_PCT: '1',

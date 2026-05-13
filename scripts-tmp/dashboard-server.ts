@@ -1597,17 +1597,19 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
     return parts.length ? parts.join('\n') : null;
   }
   if (isLiveOscar) {
-    if (mode === 'B') {
+    if (mode === 'B' || mode === 'A') {
       parts.push(
-        'Режим B (Live Oscar): включён после staged-усреднения. Одно усреднение $240 на −6% от сигнала, только первый час; после двух ступеней TP-сетки усреднение отключено; после одной ступени откат вниз может исполнить −6%, если нога ещё не куплена; TP-сетка B по env; signal kill по env.',
-      );
-    } else if (mode === 'A') {
-      parts.push(
-        'Режим A (Live Oscar): позиция ещё без staged-добора; TP-сетка +2.5% к средней, продажа 5% остатка; signal kill-stop −23% от первоначального сигнала.',
+        'Режим выхода ' +
+          mode +
+          ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия унифицирована (один режим выхода).',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add') {
       parts.push(
-        'Вход Live Oscar: первая нога $560 по сигналу; одно усреднение $240 на −6% от сигнала — в течение часа; после двух частичных TP (TP_LADDER) усреднение отключено; после одного TP откат вниз может исполнить −6%, если нога ещё не куплена; kill от сигнала по env; дополнительных DCA нет.',
+        'Live Oscar (унифицированный режим выхода): первая нога $560 по сигналу + одно staged-усреднение $240 на −6% (в течение часа). Управление позицией: TP-лесенка шаг +5% к средней, продажа 5% остатка за ступень (бесконечная сетка); trail = `ladder_retrace` (выход всего остатка ниже предпоследней ступени); защита первой ступени retrace = +3%; killstop −20% к средней (страховка от чёрного лебедя); таймаут 8 ч (отключается после первого partial TP/DCA).',
+      );
+    } else {
+      parts.push(
+        'Live Oscar (унифицированный режим выхода): TP-лесенка +5%/5%/∞, trail `ladder_retrace`, kill −20% к avg, retrace floor +3%.',
       );
     }
     return parts.length ? parts.join('\n') : null;
@@ -1618,11 +1620,11 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
     );
   } else if (mode === 'B') {
     parts.push(
-      'Режим B: после усреднения по `PAPER_DCA_LEVELS` или второй ноги (live-oscar + `PAPER_LIVE_EXIT_MODE_AB`). Сетка B берётся из `PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`; kill/trail/timeout — из env B; трейл `ladder_retrace` — откат к предыдущей ступени. До закрытия не откатывается в A.',
+      'Режим B: после усреднения по `PAPER_DCA_LEVELS` или второй ноги. Сетка B берётся из `PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`; kill/trail/timeout — из env B; трейл `ladder_retrace` — откат к предыдущей ступени. До закрытия не откатывается в A. Применимо к Paper Oscar V2.x и Live Oscar Risky; для основного Live Oscar A/B унифицированы (один режим).',
     );
   } else if (evKind === 'open' || evKind === 'scale_in_add') {
     parts.push(
-      'Режим выхода A/B не назначен: двухногий вход 75%+25% — плановый сплит (не DCA). B включается после DCA по просадке; A — при первой ступени TP.',
+      'Режим выхода A/B не назначен: либо стратегия с унифицированным профилем (основной Live Oscar), либо двухногий плановый сплит без DCA по просадке.',
     );
   }
   return parts.length ? parts.join('\n') : null;
