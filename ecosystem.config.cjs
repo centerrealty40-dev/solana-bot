@@ -70,7 +70,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
@@ -88,7 +88,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
@@ -106,7 +106,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
@@ -126,7 +126,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
@@ -145,7 +145,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
@@ -235,7 +235,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {
