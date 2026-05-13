@@ -652,6 +652,7 @@ async function main(): Promise<void> {
     schemaId: string;
     tpId: string;
     killPct: number;
+    subset: string;
     n: number;
     sumNet: number;
     meanNet: number;
@@ -663,10 +664,19 @@ async function main(): Promise<void> {
     sharpeLike: number;
   };
   const rows: Row[] = [];
+  const sessionFilters: Array<{ id: string; pred: (s: SessionRow) => boolean }> = [
+    { id: 'all', pred: () => true },
+    { id: 'peakPos2_5', pred: (s) => s.realPeakPnlPct >= 2.5 },
+    { id: 'realLoss', pred: (s) => s.realNetPnlUsd < 0 },
+  ];
 
   for (const v of variants) {
-    const agg: AggValue = { n: 0, sumNet: 0, wins: 0, losses: 0, pnls: [] };
-    const ordered: number[] = [];
+    const aggBy: Record<string, AggValue> = {};
+    const orderedBy: Record<string, number[]> = {};
+    for (const f of sessionFilters) {
+      aggBy[f.id] = { n: 0, sumNet: 0, wins: 0, losses: 0, pnls: [] };
+      orderedBy[f.id] = [];
+    }
     for (const s of sessionsSorted) {
       const key = `${s.mint}|${s.dex}|${s.entryTs}|${s.exitTs}`;
       const ser = seriesByKey.get(key);
@@ -680,48 +690,63 @@ async function main(): Promise<void> {
         slipSellBadPct: slipSellBad,
       });
       if (!r || !Number.isFinite(r.netUsd)) continue;
-      agg.n++;
-      agg.sumNet += r.netUsd;
-      if (r.netUsd > 0) agg.wins++;
-      else if (r.netUsd < 0) agg.losses++;
-      agg.pnls.push(r.netUsd);
-      ordered.push(r.netUsd);
+      for (const f of sessionFilters) {
+        if (!f.pred(s)) continue;
+        const a = aggBy[f.id]!;
+        a.n++;
+        a.sumNet += r.netUsd;
+        if (r.netUsd > 0) a.wins++;
+        else if (r.netUsd < 0) a.losses++;
+        a.pnls.push(r.netUsd);
+        orderedBy[f.id]!.push(r.netUsd);
+      }
     }
-    if (agg.n === 0) continue;
-    const mean = agg.sumNet / agg.n;
-    const std =
-      agg.pnls.length > 1
-        ? Math.sqrt(agg.pnls.reduce((s, x) => s + (x - mean) ** 2, 0) / (agg.pnls.length - 1))
-        : 0;
-    rows.push({
-      schemaId: v.schema.id,
-      tpId: v.tp.id,
-      killPct: v.killPct,
-      n: agg.n,
-      sumNet: +agg.sumNet.toFixed(2),
-      meanNet: +mean.toFixed(4),
-      medianNet: +median(agg.pnls).toFixed(4),
-      p10: +quantile(agg.pnls, 0.1).toFixed(4),
-      p90: +quantile(agg.pnls, 0.9).toFixed(4),
-      winRate: +(agg.wins / agg.n).toFixed(4),
-      mdd: +maxDrawdownEquity(ordered).toFixed(2),
-      sharpeLike: +(std > 0 ? mean / std : 0).toFixed(4),
-    });
+    for (const f of sessionFilters) {
+      const agg = aggBy[f.id]!;
+      if (agg.n === 0) continue;
+      const mean = agg.sumNet / agg.n;
+      const std =
+        agg.pnls.length > 1
+          ? Math.sqrt(agg.pnls.reduce((s, x) => s + (x - mean) ** 2, 0) / (agg.pnls.length - 1))
+          : 0;
+      rows.push({
+        schemaId: v.schema.id,
+        tpId: v.tp.id,
+        killPct: v.killPct,
+        subset: f.id,
+        n: agg.n,
+        sumNet: +agg.sumNet.toFixed(2),
+        meanNet: +mean.toFixed(4),
+        medianNet: +median(agg.pnls).toFixed(4),
+        p10: +quantile(agg.pnls, 0.1).toFixed(4),
+        p90: +quantile(agg.pnls, 0.9).toFixed(4),
+        winRate: +(agg.wins / agg.n).toFixed(4),
+        mdd: +maxDrawdownEquity(orderedBy[f.id]!).toFixed(2),
+        sharpeLike: +(std > 0 ? mean / std : 0).toFixed(4),
+      });
+    }
   }
   rows.sort((a, b) => b.sumNet - a.sumNet);
 
   const realSum = sessionsSorted.reduce((s, r) => s + r.realNetPnlUsd, 0);
   const realWins = sessionsSorted.filter((r) => r.realNetPnlUsd > 0).length;
 
-  // топы по разным TP-режимам
   const isLadder = (id: string) => id.startsWith('lad_');
   const isTrail = (id: string) => id.startsWith('trail_only_');
-  const topLadder = rows.filter((r) => isLadder(r.tpId)).slice(0, top);
-  const topPureTrail = rows.filter((r) => isTrail(r.tpId)).slice(0, top);
 
-  // лучший по Sharpe, лучший по MDD, лучший по win rate
-  const bySharpe = [...rows].sort((a, b) => b.sharpeLike - a.sharpeLike).slice(0, top);
-  const byMdd = [...rows].sort((a, b) => a.mdd - b.mdd).slice(0, top);
+  const allRows = rows.filter((r) => r.subset === 'all');
+  const peakPosRows = rows.filter((r) => r.subset === 'peakPos2_5');
+  const lossRowsAll = rows.filter((r) => r.subset === 'realLoss');
+
+  const topLadder = allRows.filter((r) => isLadder(r.tpId)).slice(0, top);
+  const topPureTrail = allRows.filter((r) => isTrail(r.tpId)).slice(0, top);
+  const topPeakPos = peakPosRows.slice(0, top);
+  const topPeakPosLadder = peakPosRows.filter((r) => isLadder(r.tpId)).slice(0, top);
+  const topPeakPosTrail = peakPosRows.filter((r) => isTrail(r.tpId)).slice(0, top);
+  const topLossOnly = lossRowsAll.slice(0, top);
+
+  const bySharpe = [...allRows].sort((a, b) => b.sharpeLike - a.sharpeLike).slice(0, top);
+  const byMdd = [...allRows].sort((a, b) => a.mdd - b.mdd).slice(0, top);
 
   console.log(
     JSON.stringify(
@@ -752,10 +777,14 @@ async function main(): Promise<void> {
               note: 'sumModelNet ≈ sumRealNet → модель калибрована.',
             }
           : null,
-        topLadderByTotal: topLadder,
-        topPureTrailByTotal: topPureTrail,
-        topBySharpeLike: bySharpe,
-        topByMinMdd: byMdd,
+        topLadderByTotal_allSessions: topLadder,
+        topPureTrailByTotal_allSessions: topPureTrail,
+        topBySharpeLike_allSessions: bySharpe,
+        topByMinMdd_allSessions: byMdd,
+        topPeakPos2_5_byTotal_allTpModes: topPeakPos,
+        topPeakPos2_5_LadderOnly: topPeakPosLadder,
+        topPeakPos2_5_TrailOnly: topPeakPosTrail,
+        topLossSessionsOnly_byTotal: topLossOnly,
         notes: [
           'TP ladder: ступени каждые 5% к avg, sellFrac = доля остатка за ступень, max — потолок.',
           'pure_trail: без лесенки; выход всего остатка при price ≤ peakPx*(1 - trail%).',
