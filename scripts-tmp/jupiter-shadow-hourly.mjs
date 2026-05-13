@@ -1,7 +1,8 @@
 /**
  * Jupiter shadow — почасовая сводка (fired by cron `0 * * * *`):
- * читает signal-lab.jsonl + mtm-shadow.jsonl за `JUPITER_SHADOW_HOURLY_WINDOW_MS` (default 1h)
- * и при **наличии ошибок** шлёт одно сообщение в Telegram. При ошибок 0 — по умолчанию не шлём (см. `JUPITER_SHADOW_HOURLY_SEND_IF_ZERO_ERRORS=1`).
+ * читает signal-lab.jsonl + mtm-shadow.jsonl за `JUPITER_SHADOW_HOURLY_WINDOW_MS` (default 1h).
+ * Telegram `[REPORT|ALERT][jupiter-shadow]` — только при **`JUPITER_SHADOW_HOURLY_TELEGRAM=1`** (по умолчанию выкл.;
+ * иначе только JSON-строка в stdout / лог cron). При ошибок 0 — по умолчанию не шлём в TG (см. `JUPITER_SHADOW_HOURLY_SEND_IF_ZERO_ERRORS=1`).
  * ALERT при доле ошибок ≥ порога, иначе REPORT (можно силой ALERT через `JUPITER_SHADOW_HOURLY_FORCE_ALERT=1`).
  *
  * Источник: только локальные JSONL (Jupiter lite-api / shadow). НЕ дергает QuickNode.
@@ -21,6 +22,8 @@ const FORCE_ALERT = String(process.env.JUPITER_SHADOW_HOURLY_FORCE_ALERT || '').
 /** `1` — как раньше: слать почасовой REPORT даже при 0 ошибок. По умолчанию не шлём, если ошибок нет. */
 const SEND_IF_ZERO_ERRORS =
   String(process.env.JUPITER_SHADOW_HOURLY_SEND_IF_ZERO_ERRORS || '').trim() === '1';
+/** `1` — слать сводку в Telegram; иначе только лог в stdout (cron-файл). */
+const SEND_TELEGRAM = String(process.env.JUPITER_SHADOW_HOURLY_TELEGRAM || '').trim() === '1';
 
 const SIGNAL_PATH =
   process.env.SHADOW_WATCH_SIGNAL_PATH || path.join(ROOT, 'data', 'live', 'signal-lab.jsonl');
@@ -137,6 +140,24 @@ async function main() {
   const sigMedBps = median(sig.bps);
   const mtmMedBps = median(mtm.bps);
 
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      category,
+      total,
+      errs,
+      ratio: +ratio.toFixed(4),
+      sendTelegram: SEND_TELEGRAM,
+      signalLab: { total: sig.total, errs: sig.errs, medWallMs: sigMedWall, medBps: sigMedBps },
+      mtmShadow: { total: mtm.total, errs: mtm.errs, medWallMsAlt: mtmMedWall, medBpsPrimaryAlt: mtmMedBps },
+      uniqueMints: sig.mints.size + mtm.mints.size,
+    }),
+  );
+
+  if (!SEND_TELEGRAM) {
+    return;
+  }
+
   const lines = [];
   lines.push(
     `Jupiter (lite-api, бесплатный канал): за ${Math.round(WINDOW_MS / 60000)}m событий ${total}, ошибок ${errs} (${fmt(ratio)}). Уник. mint: ${sig.mints.size + mtm.mints.size}.`,
@@ -152,7 +173,6 @@ async function main() {
   );
 
   const text = lines.join('\n');
-  console.log(JSON.stringify({ ts: new Date().toISOString(), category, total, errs, ratio: +ratio.toFixed(4) }));
   const ok = await sendTelegramTagged(category, 'jupiter-shadow', text);
   if (!ok) {
     console.error('telegram send failed (token/chat missing or quiet-hours for non-ALERT)');

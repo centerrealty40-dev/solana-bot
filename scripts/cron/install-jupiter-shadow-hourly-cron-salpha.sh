@@ -27,7 +27,7 @@ cat >>"$TMP" <<EOF
 # JUPITER_SHADOW_HOURLY_BEGIN
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
-$SCHEDULE cd $ROOT && SOLANA_ALPHA_ROOT=$ROOT node scripts-tmp/jupiter-shadow-hourly.mjs >> $ROOT/data/logs/jupiter-shadow-hourly.log 2>&1
+$SCHEDULE cd $ROOT && SOLANA_ALPHA_ROOT=$ROOT JUPITER_SHADOW_HOURLY_TELEGRAM=0 node scripts-tmp/jupiter-shadow-hourly.mjs >> $ROOT/data/logs/jupiter-shadow-hourly.log 2>&1
 # JUPITER_SHADOW_HOURLY_END
 EOF
 
