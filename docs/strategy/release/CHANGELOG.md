@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.165] — 2026-05-13
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.165`.
+
+- **`live_whitelist_miss` (Telegram ADVICE):** дефолтный кулдаун **per mint 5 мин** (`LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS`, было `0`); в текст добавлена строка **`market_cap (snapshot)`** из discovery-фич, чтобы при редких повторах видеть динамику капы. Защита от **двух параллельных** отправок по одному mint на одном тике (`inFlight` + прежний `last` по успешному `sendTagged`).
+- **PM2 `live-oscar`:** в `ecosystem.config.cjs` выставлено **`300000`** явно.
+
+### Откат
+
+- **`git checkout sa-alpha-1.11.164`**; при необходимости **`LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS=0`** для прежнего поведения; деплой по NORM §5.2.
+
+---
+
 ## [1.11.164] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.164`.

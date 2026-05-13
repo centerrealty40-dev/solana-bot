@@ -473,7 +473,8 @@ module.exports = {
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
-        LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '0',
+        /** Per-mint: не чаще одного `live_whitelist_miss` в N мс (дефолт в коде 5 мин). `0` = без лимита. */
+        LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '300000',
         /** Ручной blacklist mint — до dip/Jupiter и без открытия позиций (файл в репозитории). */
         LIVE_MINT_BLACKLIST_ENABLED: '1',
         LIVE_MINT_BLACKLIST_PATH: path.join(root, 'data/live/live-oscar-mint-blacklist.txt'),

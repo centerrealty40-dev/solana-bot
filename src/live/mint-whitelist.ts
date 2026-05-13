@@ -20,12 +20,23 @@ function gmgnSolTokenUrl(mint: string): string {
   return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
 }
 
-function whitelistAlertTextMiss(sym: string, mint: string): string {
+function fmtMcUsdPlain(v: number | null | undefined): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 'n/a';
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+function whitelistAlertTextMiss(sym: string, mint: string, marketCapUsd: number | null | undefined): string {
   const url = gmgnSolTokenUrl(mint);
+  const mc = fmtMcUsdPlain(marketCapUsd);
   return (
     `Кандидат прошёл гейты, но mint не в whitelist — покупка пропущена.\n` +
     `symbol: ${sym}\n` +
     `mint: ${mint}\n` +
+    `market_cap (snapshot): ${mc}\n` +
     `GMGN: ${url}`
   );
 }
@@ -45,6 +56,8 @@ let cachedMtimeMs = 0;
 let cachedSet = new Set<string>();
 
 const lastTelegramByMint = new Map<string, number>();
+/** Сериализует параллельные вызовы по одному mint, пока `sendTagged` в полёте (иначе два тика — два TG). */
+const inFlightWhitelistMissByMint = new Set<string>();
 
 function whitelistSkipTelegramCategory(): TelegramCategory {
   const s = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY?.trim().toUpperCase();
@@ -91,6 +104,8 @@ export function clearLiveMintWhitelistCache(): void {
   cachedAbsPath = '';
   cachedMtimeMs = 0;
   cachedSet = new Set();
+  lastTelegramByMint.clear();
+  inFlightWhitelistMissByMint.clear();
 }
 
 export function loadLiveMintWhitelistSet(absPath: string): Set<string> {
@@ -110,24 +125,37 @@ export function isMintOnLiveWhitelist(relOrAbsPath: string, mint: string): boole
   return set.has(mint.trim());
 }
 
-export function notifyLiveMintWhitelistSkip(symbol: string, mint: string, cooldownMs: number): void {
+export function notifyLiveMintWhitelistSkip(
+  symbol: string,
+  mint: string,
+  cooldownMs: number,
+  marketCapUsd?: number | null,
+): void {
   const key = mint.trim();
   if (!key) return;
-  const sym = symbol?.trim() || '?';
+  const sym = symbol.trim() || '?';
   void (async () => {
     const now = Date.now();
     if (cooldownMs > 0) {
       const last = lastTelegramByMint.get(key) ?? 0;
       if (now - last < cooldownMs) return;
+      if (inFlightWhitelistMissByMint.has(key)) return;
+      inFlightWhitelistMissByMint.add(key);
     }
-    const ok = await sendTagged(
-      whitelistSkipTelegramCategory(),
-      'live_whitelist_miss',
-      whitelistAlertTextMiss(sym, key),
-      whitelistAlertsTelegramOpts(),
-    );
-    log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
-    if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
+    try {
+      const ok = await sendTagged(
+        whitelistSkipTelegramCategory(),
+        'live_whitelist_miss',
+        whitelistAlertTextMiss(sym, key, marketCapUsd),
+        whitelistAlertsTelegramOpts(),
+      );
+      log.info({ mint: key, symbol: sym, ok }, 'live_whitelist_miss telegram');
+      if (cooldownMs > 0 && ok) lastTelegramByMint.set(key, Date.now());
+    } catch (e) {
+      log.warn({ err: String(e), mint: key }, 'live_whitelist_miss telegram failed');
+    } finally {
+      if (cooldownMs > 0) inFlightWhitelistMissByMint.delete(key);
+    }
   })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_miss telegram failed'));
 }
 

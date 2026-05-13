@@ -206,8 +206,8 @@ const LiveOscarConfigSchema = z
     liveMintWhitelistEnabled: z.boolean().default(false),
     /** Путь к файлу: один mint (base58) на строку, строки `#…` — комментарии. Относительный путь — от `process.cwd()`. */
     liveMintWhitelistPath: z.string().min(1).default('data/live/live-oscar-mint-whitelist.txt'),
-    /** Между повторными Telegram по одному и тому же mint (мс). `0` = каждый проход гейтов может отправить снова. */
-    liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+    /** Между повторными Telegram по одному и тому же mint (мс). `0` = без кулдауна. Дефолт **5 мин** — не спамить ADVICE. */
+    liveMintWhitelistNotifyCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
 
     /**
      * Необратимый запрет на SOL→token для mint (объединение seed из репозитория + локальный файл на VPS).
@@ -534,10 +534,10 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveMintWhitelistPath: process.env.LIVE_MINT_WHITELIST_PATH?.trim() || 'data/live/live-oscar-mint-whitelist.txt',
     liveMintWhitelistNotifyCooldownMs: (() => {
       const s = process.env.LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS?.trim();
-      if (!s) return 0;
       if (s === '0') return 0;
+      if (!s) return 300_000;
       const n = Number.parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 300_000;
     })(),
     livePermanentDenylistDisabled: envBool(process.env.LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED, false),
     livePermanentDenylistLocalPath:

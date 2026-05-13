@@ -849,6 +849,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               d.symbol,
               d.mint,
               liveOscarForEntryGates.liveCfg.liveMintWhitelistNotifyCooldownMs,
+              d.features.market_cap_usd,
             );
             continue;
           }
@@ -1158,6 +1159,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ot.symbol,
               ot.mint,
               liveOscar.liveCfg.liveMintWhitelistNotifyCooldownMs,
+              d.features.market_cap_usd,
             );
             continue;
           }
