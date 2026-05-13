@@ -76,6 +76,7 @@
     "live:maxpnl-gridsearch": "tsx scripts/live-oscar-closed-maxpnl-gridsearch.ts",
     "live:killstop-golden-sweep": "tsx scripts-tmp/live-oscar-killstop-golden-sweep.ts",
     "live:retrace-pnl-vs-prev-fill": "tsx scripts-tmp/live-oscar-retrace-pnl-vs-prev-fill.ts",
+    "live:universal-strategy-grid": "tsx scripts-tmp/live-oscar-universal-strategy-grid.ts",
     "live:per-trade-oracle": "tsx scripts/live-oscar-per-trade-oracle.ts",
     "live:entry-exit-sweep": "tsx scripts/live-oscar-entry-gate-with-fixed-exits-sweep.ts",
     "qn:smoke": "tsx src/scripts/qn-smoke.ts",
