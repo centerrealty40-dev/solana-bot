@@ -8,6 +8,67 @@
 
 ---
 
+## [1.11.168] — 2026-05-14
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.168`.
+
+Хотфикс exit-профиля 1.11.167 после первой live-сделки $ASTEROID (peak +28.3%, exit +11.88%, Net PnL +$83.19 при теоретических +$122 → leakage $39.30 = 4.78%). Анализ leakage показал две корневые причины:
+
+1. **TRAIL-close съел $22.11 (56% потерь)** — закрывали 25% позиции одним sell-куском с price-impact 11% в тонком Meteora-пуле.
+2. **TP-партиалы накопительно $17.20** — по ступеням 1.78% → 3.74% (доллары растут на пампе при том же пуле).
+
+Sandwich-MEV не обнаружен: priceImpactPct в Jupiter-quote стабильно 1-3% (depth-impact самого пула, не атака). Network/priority fee $0.0032 — копейки. Persistent retry x5 из 1.11.167 уже спас 2 ступени ($268 без него ушёл бы в нули).
+
+### Решение — агрессивный скальп-профиль
+
+`PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.30,0.30,0.30' → '0.10,0.30,0.50,0.70,0.70'`
+
+Накопленные доли проданной позиции:
+
+| ступень | sellFrac | продано на ступени | накоплено |
+|---------|----------|--------------------|-----------|
+| +5%  | 10% | 10.0% | **10.0%** |
+| +10% | 30% | 27.0% | **37.0%** |
+| +15% | 50% | 31.5% | **68.5%** |
+| +20% | 70% | 22.1% | **90.6%** |
+| +25% | 70% | 6.6%  | **97.2%** |
+| TRAIL | — | 2.8% | 100% |
+
+К ступени 5 продано **97.2% позиции** → хвост 2.8% уходит по TRAIL без заметного price-impact (leakage с $22 до ~$0.10 на типичной сделке). Мотив: на retro 119 закрытых live-oscar-сделок 64% winners пиковали в зоне +5..+15% — именно там должны фиксировать **большие куски** (50% на +15%), а не полагаться на TRAIL для редких пампов 2x+.
+
+Симуляция на $ASTEROID: с новым профилем Net PnL ≈ +$103-107 (vs +$83.19 факт), leakage ≈$15-18 (vs $39.30).
+
+### Slippage 100bps → 50bps + persistent retry x10
+
+Эмуляция ручной торговли в jup.ag UI («тугой слиппедж + долбим до победы»):
+
+- `LIVE_DEFAULT_SLIPPAGE_BPS: '100' → '50'` (1% → 0.5%).
+- `LIVE_BUY_SIM_RETRY_ATTEMPTS: '5' → '10'`, `LIVE_SELL_SIM_RETRY_ATTEMPTS: '5' → '10'`.
+- `LIVE_BUY/SELL_SIM_RETRY_DELAY_MS: '5000' → '3000'` (быстрее, общая retry-петля укладывается в ~30 с).
+- `src/live/config.ts`: schema cap retry max 10 → 15 (запас на случай ещё более тугого слиппеджа).
+
+На $ASTEROID retry уже работал (TP5 прошёл с 3-й попытки, TRAIL-close с 2-й). При 50bps Jupiter будет чаще отказывать quote → больше итераций retry, но мы принципиально не отдаём боту > 0.5% между quote и swap. Price-impact пула (отдельная штука, не настраивается) лечится только меньшим размером sell-куска — именно это делает новый sellFraction-профиль.
+
+Priority fee — без изменений (`LIVE_JUPITER_PRIORITY_MAX_SOL=0.0001 SOL ≈ $0.014`); фактический network cost $0.003 на сделку, оптимизировать нечего.
+
+### Расширенное логирование leakage для retro-аналитики
+
+- `LiveTokenToSolPipelineResult.priceImpactPct` + `retryAttempts` — извлекаются из Jupiter quote.
+- `LiveTokenToSolSellResult` (phase4-types) тоже несёт эти поля — passthrough к tracker'у.
+- `PartialSell.priceImpactPct` (0..1) + `slipRealizedPct` (% deviation effective vs market) — записываются в JSONL `live_position_partial_sell` и в финальный `live_position_close.closedTrade.partialSells[]`. Раньше было только в `execution_attempt`, требовалось cross-reference по времени.
+- `store-restore.ts.mapPartialSell`: pass-through новых полей при restore.
+
+### Тесты / Verify
+
+- `tests/papertrader-tp-grid-profile.test.ts`: новый кейс «aggressive 1.11.168 profile cumulative» с проверкой накопленных долей (10/37/68.5/90.55/97.165%).
+- `npm run typecheck`: green; `npm test`: 239/239 pass.
+
+### Откат
+
+- `git checkout sa-alpha-1.11.167`; деплой по NORM §5.2 (`fetch + reset --hard + npm ci + pm2 reload ecosystem.config.cjs --update-env`). После отката: вернётся профиль 0.10/0.20/0.30/0.30/0.30, slippage 100bps, retry x5, partialSells без priceImpactPct/slipRealizedPct.
+
+---
+
 ## [1.11.167] — 2026-05-14
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.167`.

@@ -36,6 +36,13 @@ export type LiveTokenToSolSellResult = {
   solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
   /** Подпись подтверждённой сделки (live), для оффлайн-аудита PnL по цепочке. */
   txSignature?: string | null;
+  /**
+   * 1.11.168: priceImpactPct из Jupiter quote (0..1, не %). Tracker использует
+   * для записи в `partialSells[].priceImpactPct` — позволяет ретро считать leakage.
+   */
+  priceImpactPct?: number;
+  /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
+  retryAttempts?: number;
 };
 
 export interface LiveOscarPhase4Tracker {

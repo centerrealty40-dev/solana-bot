@@ -136,6 +136,19 @@ export interface PartialSell {
   proceedsUsdSource?: 'chain_sol' | 'jupiter_quote' | 'model';
   /** Live: подпись подтверждённого partial sell (Jupiter), для сверки с RPC. */
   exitTxSignature?: string;
+  /**
+   * 1.11.168: priceImpactPct из Jupiter quote того attempt, что прошёл (0..1, не %).
+   * Сохраняется в JSONL для retro-аналитики leakage без необходимости сопоставлять
+   * `partialSells[]` с `execution_attempt` по времени. На тонком пуле impact 2-3%
+   * объясняет основную разницу между market_price и effective_price.
+   */
+  priceImpactPct?: number;
+  /**
+   * 1.11.168: фактический slippage между snapshot/marketPrice и effective sell-price
+   * в процентах (positive = потеряли). Удобно: `(marketPrice - price) / marketPrice * 100`.
+   * Дублируется здесь чтобы dashboard не пересчитывал на лету.
+   */
+  slipRealizedPct?: number;
 }
 
 export interface OpenTrade {

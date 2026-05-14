@@ -59,6 +59,13 @@ function mapPartialSell(p: Record<string, unknown>): PartialSell {
       ? (src as PartialSell['proceedsUsdSource'])
       : undefined;
   const priceN = coerceNum0(p.price);
+  /** 1.11.168: optional retro-leakage поля — pass-through если есть. */
+  const piRaw = p.priceImpactPct;
+  const piNum = typeof piRaw === 'number' ? piRaw : Number(piRaw);
+  const priceImpactPct = Number.isFinite(piNum) && piNum >= 0 && piNum <= 1 ? piNum : undefined;
+  const slipRaw = p.slipRealizedPct;
+  const slipNum = typeof slipRaw === 'number' ? slipRaw : Number(slipRaw);
+  const slipRealizedPct = Number.isFinite(slipNum) ? slipNum : undefined;
   return {
     ts: coerceNum0(p.ts),
     price: priceN,
@@ -71,6 +78,8 @@ function mapPartialSell(p: Record<string, unknown>): PartialSell {
     grossPnlUsd: coerceNum0(p.grossPnlUsd),
     ...(solL ? { solProceedsLamports: solL } : {}),
     ...(proceedsUsdSource ? { proceedsUsdSource } : {}),
+    ...(priceImpactPct != null ? { priceImpactPct } : {}),
+    ...(slipRealizedPct != null ? { slipRealizedPct } : {}),
   };
 }
 

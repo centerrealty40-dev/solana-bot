@@ -366,6 +366,13 @@ export type LiveTokenToSolPipelineResult = {
   /** Откуда взяты lamports для учёта partial/full sell. */
   solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
   txSignature?: string | null;
+  /**
+   * 1.11.168: priceImpactPct из последней Jupiter-котировки (которая прошла) — 0..1, не %.
+   * Прокидывается до tracker.ts для записи в `partialSells[].priceImpactPct`.
+   */
+  priceImpactPct?: number;
+  /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
+  retryAttempts?: number;
 };
 
 async function runTokenToSolPipeline(
@@ -524,6 +531,21 @@ async function runTokenToSolPipeline(
     }
 
     const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
+    /**
+     * 1.11.168: pull priceImpactPct from Jupiter quote response — Jupiter returns
+     * it as a string fraction (e.g. "0.029" = 2.9% pool depth eaten), independent
+     * of `slippageBps`. Surfaced through pipeline so tracker can attach it to
+     * `partialSells[].priceImpactPct` for retro leakage analytics.
+     */
+    const qResp = prep.quoteResponse as Record<string, unknown> | undefined;
+    const priceImpactPctRaw = qResp?.priceImpactPct;
+    const priceImpactPct =
+      priceImpactPctRaw == null
+        ? undefined
+        : (() => {
+            const n = Number(priceImpactPctRaw);
+            return Number.isFinite(n) && n >= 0 && n <= 1 ? n : undefined;
+          })();
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
 
     if (liveCfg.executionMode === 'simulate') {
@@ -562,6 +584,8 @@ async function runTokenToSolPipeline(
         ok: true,
         wsolOutLamports: wsolOut ?? undefined,
         solProceedsSource: wsolOut != null && wsolOut > 0n ? 'jupiter_quote' : undefined,
+        priceImpactPct,
+        retryAttempts: attempt,
       };
     }
 
@@ -583,6 +607,8 @@ async function runTokenToSolPipeline(
      */
     if (ok && liveOut.ok && liveOut.signature) {
       lastResult = await finalizeSellOutcome(liveCfg, args, pk, wsolOut, liveOut);
+      lastResult.priceImpactPct = priceImpactPct;
+      lastResult.retryAttempts = attempt;
       return lastResult;
     }
     if (
@@ -600,6 +626,8 @@ async function runTokenToSolPipeline(
       wsolOutLamports: undefined,
       solProceedsSource: undefined,
       txSignature: liveOut.ok ? liveOut.signature : liveOut.signature ?? undefined,
+      priceImpactPct,
+      retryAttempts: attempt,
     };
   }
 
@@ -751,6 +779,8 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
         solProceedsLamports: r.wsolOutLamports,
         solProceedsSource: r.solProceedsSource,
         txSignature: r.txSignature,
+        priceImpactPct: r.priceImpactPct,
+        retryAttempts: r.retryAttempts,
       }));
     },
   };

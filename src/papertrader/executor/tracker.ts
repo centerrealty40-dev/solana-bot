@@ -682,6 +682,20 @@ async function tryExecuteTpPartialSell(args: {
   const exitTxSig =
     typeof sellOut.txSignature === 'string' && sellOut.txSignature.length > 16 ? sellOut.txSignature : undefined;
 
+  /**
+   * 1.11.168: stamp Jupiter priceImpactPct (если live tracker отдал) и фактический
+   * realized slippage (% deviation effective vs market price). Позволяет ретро
+   * посчитать leakage без cross-reference с execution_attempt JSONL.
+   */
+  const priceImpactPctFromQuote =
+    sellOut.priceImpactPct != null && Number.isFinite(sellOut.priceImpactPct)
+      ? Math.max(0, Math.min(1, sellOut.priceImpactPct))
+      : undefined;
+  const slipRealizedPct =
+    marketSell > 0 && effectiveSell > 0
+      ? +(((marketSell - effectiveSell) / marketSell) * 100).toFixed(4)
+      : undefined;
+
   const ps: PartialSell = {
     ts: Date.now(),
     price: effectiveSell,
@@ -695,6 +709,8 @@ async function tryExecuteTpPartialSell(args: {
     ...(solProceedsLamports ? { solProceedsLamports } : {}),
     proceedsUsdSource,
     ...(exitTxSig ? { exitTxSignature: exitTxSig } : {}),
+    ...(priceImpactPctFromQuote != null ? { priceImpactPct: priceImpactPctFromQuote } : {}),
+    ...(slipRealizedPct != null ? { slipRealizedPct } : {}),
   };
   ot.partialSells.push(ps);
   ot.remainingFraction *= 1 - sellFraction;

@@ -400,22 +400,29 @@ module.exports = {
          */
         PAPER_DCA_KILLSTOP: '-0.20',
         /**
-         * TP-лесенка 1.11.167: шаг **+5%** к средней, **восходящий профиль продаж** —
-         *   ступень 1 (+5%) → 10% остатка
-         *   ступень 2 (+10%) → 20% остатка
-         *   ступень 3 (+15%) → 30% остатка
-         *   ступень 4+ (+20%, +25%, ...) → 30% остатка (последнее значение профиля
+         * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
+         *   ступень 1 (+5%)  → 10% остатка
+         *   ступень 2 (+10%) → 30% остатка
+         *   ступень 3 (+15%) → 50% остатка
+         *   ступень 4 (+20%) → 70% остатка
+         *   ступень 5+ (+25%, +30%, ...) → 70% остатка (последнее значение профиля
          *   тиражируется на все последующие ступени).
-         * Лестница без верхнего лимита (`tpGridEffective` отдаёт `maxRungs=undefined`) —
-         * пока зелёная свечка, не продаём 100%; финальный остаток уходит только по TRAIL.
-         * `PAPER_TP_GRID_SELL_FRACTION` остаётся как fallback на случай отключения профиля.
+         * Накопленные доли позиции:
+         *   step1 = 10.0%, step2 = 37.0%, step3 = 68.5%, step4 = 90.6%, step5 = 97.2%.
+         * К ступени 5 продано 97.2% позиции → хвост ~2.8% уходит по TRAIL без
+         * заметного price-impact, что закрывает главный leakage 1.11.167 (на $ASTEROID
+         * TRAIL close съел $22 из $39 общей утечки потому что закрывали 25% позиции
+         * одним sell-куском в тонком Meteora-пуле). Идея — фиксируем основной пик 5-15%
+         * (где сидят ~64% наших winners по retro-выборке) большими долями, не полагаясь
+         * на TRAIL для крупных пампов.
+         * Лестница без верхнего лимита; `PAPER_TP_GRID_SELL_FRACTION` остаётся fallback.
          * Защита от ранних шипов: первая ступень retrace требует минимального PnL **+3%**
          * к средней (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
          */
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.10',
-        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.30,0.30,0.30',
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.30,0.50,0.70,0.70',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
@@ -565,15 +572,17 @@ module.exports = {
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.167: persistent retry на quote+swap для buy и sell — Jupiter может отклонять
-         * квот при волатильности или sandwich-MEV; вместо «одной попытки и сдаёмся» долбимся
-         * до 5 попыток с фиксированной паузой 5с. Отдельные счётчики для buy/sell, чтобы
-         * наблюдать профиль ошибок Jupiter раздельно.
+         * 1.11.168: persistent retry x10 на quote+swap для buy и sell с тугим slippage
+         * 50bps. Эмулирует ручную торговлю в jup.ag UI — выставляем минимальный
+         * допустимый slippage и долбим запросы до победы; Jupiter сам выберет момент
+         * когда пул стабилен. Пауза 3с между попытками (быстрее чем 5с в 1.11.167),
+         * чтобы общая retry-петля укладывалась в 30 с — за это время цена редко уйдёт
+         * ниже взятой ступени TP-лесенки.
          */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '5',
-        LIVE_BUY_SIM_RETRY_DELAY_MS: '5000',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '5',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '5000',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '10',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '3000',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '3000',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
@@ -582,12 +591,15 @@ module.exports = {
          */
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         /**
-         * Jupiter quote + swap: max execution tolerance (bps). 1.11.167:
-         * **300 → 100** (3%→1%). Связано с persistent retry: жёсткий слиппедж даст
-         * больше отказов котировки, но retry-петля их прокатает; бенефит — защита
-         * от sandwich-MEV на крупных partial sells (≥$300 одним куском).
+         * Jupiter quote + swap: max execution tolerance (bps). 1.11.168:
+         * **100 → 50** (1% → 0.5%). Жёсткий слиппедж = больше rejection'ов
+         * Jupiter quote, но persistent retry x10 их прокатает. Бенефит — мы
+         * принципиально не отдаём боту больше 0.5% между quote и swap; всё
+         * что выше — это price-impact самого пула (видно в `priceImpactPct`,
+         * не настраивается, лечится только меньшим размером ордера → см.
+         * новый sellFraction-профиль 1.11.168).
          */
-        LIVE_DEFAULT_SLIPPAGE_BPS: '100',
+        LIVE_DEFAULT_SLIPPAGE_BPS: '50',
         LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
         LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         /**

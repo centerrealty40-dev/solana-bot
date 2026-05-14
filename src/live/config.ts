@@ -125,13 +125,14 @@ const LiveOscarConfigSchema = z
     liveSimBeforeSend: z.boolean().default(true),
     /**
      * Buy/sell pipelines: on transient pre-send simulation failure or `confirm_timeout`,
-     * rebuild Jupiter quote/swap and retry. 1.11.167 raised cap 3→10 to enable
-     * persistent retry against Jupiter rejections (sandwich-MEV / volatile pools)
-     * when slippage is tightened.
+     * rebuild Jupiter quote/swap and retry. 1.11.168 raised cap 10→15 to enable
+     * persistent retry against tight slippage (50bps) — emulates jup.ag UI manual
+     * pattern «retry until pool settles». Caller-side delay is also configurable
+     * (250ms..30s), default 5000ms in config; PM2 sets 3000ms in 1.11.168.
      */
-    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(10).default(0),
+    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
     liveBuySimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
-    liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(10).default(0),
+    liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
     liveSellSimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
     liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
     liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
