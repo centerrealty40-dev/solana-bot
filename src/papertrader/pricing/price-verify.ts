@@ -3,7 +3,7 @@
  * W7.4.1 — optional retries + circuit breaker (`jupiter-quote-resilience.ts`).
  */
 import { child } from '../../core/logger.js';
-import { JUPITER_QUOTE_URL_DEFAULT, jupiterJsonHeaders } from '../../core/jupiter-http.js';
+import { JUPITER_QUOTE_URL_DEFAULT, fetchJupiterSwapQuoteGetJson, jupiterJsonHeaders } from '../../core/jupiter-http.js';
 import type { PaperTraderConfig } from '../config.js';
 import { quoteResilienceFromPaperCfg } from '../config.js';
 import type { PriceVerifyVerdict } from '../types.js';
@@ -61,37 +61,21 @@ export async function fetchJupiterBuyQuoteResponse(args: {
   const urlStr = url.toString();
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const ac = new AbortController();
-    const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
     let okJson: Record<string, unknown> | null = null;
     try {
-      const resp = await fetch(urlStr, {
-        method: 'GET',
-        signal: ac.signal,
-        headers: jupiterJsonHeaders(),
+      okJson = await fetchJupiterSwapQuoteGetJson({
+        url: urlStr,
+        timeoutMs,
       });
-      if (!resp.ok) {
-        log.debug(
-          { status: resp.status, mint, attempt: attempt + 1, rateLimited: resp.status === 429 },
-          resp.status === 429
-            ? 'jupiter raw buy quote rate limited'
-            : 'jupiter raw buy quote http error',
-        );
-        okJson = null;
-      } else {
-        const j = (await resp.json()) as unknown;
-        okJson =
-          typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+      if (!okJson) {
+        log.debug({ mint, attempt: attempt + 1 }, 'jupiter raw buy quote empty or http error');
       }
     } catch (e) {
-      const aborted = (e as Error)?.name === 'AbortError';
       log.debug(
         { mint, attempt: attempt + 1, err: (e as Error)?.message },
-        aborted ? 'jupiter raw buy quote timeout' : 'jupiter raw buy quote fetch fail',
+        'jupiter raw buy quote fetch threw',
       );
       okJson = null;
-    } finally {
-      clearTimeout(tt);
     }
 
     if (okJson) {

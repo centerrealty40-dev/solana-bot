@@ -278,13 +278,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     const sl = cfg.liveStagedEntrySecondLegUsd;
     const sd = cfg.liveStagedEntrySecondDropPct;
     const kill = cfg.liveStagedEntryKillDropPct;
+    const ttlMin = (cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0);
+    const firstLegExplain =
+      cfg.liveStagedEntryFirstDropPct <= 0
+        ? `Первая нога <b>$${fl.toFixed(0)}</b> — при цене ≤ цены сигнала (как только гейты и котировка пропустят сделку).`
+        : `Первая нога <b>$${fl.toFixed(0)}</b> — <b>только после −${cfg.liveStagedEntryFirstDropPct}%</b> от цены сигнала. Сообщение приходит при появлении кандидата; покупка идёт на откате в течение <b>${ttlMin} мин</b>.`;
+    const secondLine =
+      sl > 0
+        ? `Усреднение <b>$${sl.toFixed(0)}</b> на <b>−${sd}%</b> от цены сигнала (в окне DCA).`
+        : '';
     const text =
       `<b>Live Oscar signal</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(args.mint, args.mint)}\n` +
       `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(args.marketCapUsd))}</b>\n` +
       `Holders: <b>${escapeHtmlPlain(fmtCount(args.holderCount))}</b>\n` +
-      `Вход: $${fl.toFixed(0)} по сигналу; одно усреднение $${sl.toFixed(0)} на −${sd}% от сигнала в течение часа; kill −${kill}% от сигнала.`;
+      `${firstLegExplain}\n` +
+      (secondLine ? `${secondLine}\n` : '') +
+      `Kill-stop: <b>−${kill}%</b> от цены сигнала.`;
 
     void sendTagged('ADVICE', 'live_oscar_staged_signal', text, {
       parseMode: 'HTML',

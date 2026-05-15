@@ -271,9 +271,15 @@ const LiveOscarConfigSchema = z
     /**
      * Трекер live: если Jupiter SOL→token MTM выше последнего PG `price_usd` более чем на этот %,
      * на тике для TP / peak / trail берём snapshot (защита от «призрачного» pump на микро-маршруте).
-     * `0` = выключить (как до патча: приоритет Jupiter, если `jupiterSaneVsEntry`).
+     * `0` = выключить (приоритет Jupiter, если `jupiterSaneVsEntry`).
      */
     liveTrackerJupiterMaxPremiumOverSnapshotPct: z.coerce.number().min(0).max(200).default(6),
+
+    /**
+     * Пауза (мс) между открытыми mint в тике трекера после Jupiter MTM — снижает burst на API.
+     * При Jupiter Pro (~10 RPS) можно **50–100**; `0` = без паузы.
+     */
+    liveTrackerInterMintDelayMs: z.coerce.number().int().min(0).max(10_000).default(120),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -600,6 +606,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 6;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(200, n) : 6;
+    })(),
+    liveTrackerInterMintDelayMs: (() => {
+      const s = process.env.LIVE_TRACKER_INTER_MINT_DELAY_MS?.trim();
+      if (s === '0') return 0;
+      if (!s) return 120;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(10_000, n) : 120;
     })(),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();

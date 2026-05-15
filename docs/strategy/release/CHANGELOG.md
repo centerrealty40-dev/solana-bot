@@ -8,32 +8,17 @@
 
 ---
 
-## [1.11.171] — 2026-05-12
-
-**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.171`.
-
-### Live Oscar — MTM против «призрачного» роста Jupiter
-
-- **Проблема:** на открытой позиции трекер брал цену преимущественно из **малого SOL→token Jupiter quote**; при расхождении с **PG `price_usd`** логировалось предупреждение, но **лестница TP / peak / trail** всё равно считались по Jupiter. На тонком маршруте микро-нотация иногда давала заметно завышенную цену → ложные частичные TP и ранний выход.
-- **Исправление:** если Jupiter выше последнего snapshot более чем на **`LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT`** (дефолт **6**; **`0`** = прежнее поведение), на этом тике **MTM = snapshot**. Telegram: `live-jupiter-tracker-mtm-snap-clamp` (throttle как у остальных трекер-алертов).
-- **Код:** `src/live/mtm-snapshot-guard.ts`, правка `src/papertrader/executor/tracker.ts`, конфиг `src/live/config.ts`, алерт `src/core/telegram/jupiter-alerts.ts`, тесты `tests/live-mtm-snapshot-guard.test.ts`, комментарий в `.env.example`.
-
-**Откат:** `git revert` коммита; при необходимости на VPS `LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT=0` до следующего деплоя.
-
----
-
-## [1.11.170] — 2026-05-15
+## [1.11.170] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.170`.
 
-### Pump-then-retrace Telegram watch (отдельный процесс)
+### Jupiter Pro — устойчивость quote + трекер + staged Telegram
 
-- Скрипт `src/scripts/market-pump-retrace-alert-watch.ts`: по минутным PG-снимкам (те же пять таблиц DEX, что у spike) ищет паттерн «рост от дна ≥ 6% → пик = максимум на сегменте → откат от пика ≥ 10%» при фильтре mcap ≥ $1.5M в выборке latest; Telegram через префикс env `RETRACE_ALERT_*` (отдельный бот и канал, не `TELEGRAM_*` и не `SPIKE_ALERT_*`).
-- `npm run retrace-alert-watch`; PM2: `ecosystem.retrace-alert-watch.cjs`, `scripts/retrace-alert-pm2-entry.sh` (аналогично spike-watch: старт через bash-обёртку).
-- Экспорт `findPumpRetraceFromBars` + unit-тесты `tests/market-pump-retrace-alert.test.ts`.
-- Блок переменных в `.env.example`.
+- **GET `/swap/v1/quote`:** общий helper `fetchJupiterSwapQuoteGetJson` в `src/core/jupiter-http.ts` — повтор при **HTTP 429** с backoff и учётом `Retry-After`; env `JUPITER_QUOTE_429_MAX_RETRIES` (дефолт **3**, `0` = без повторов), `JUPITER_QUOTE_429_INITIAL_BACKOFF_MS` (дефолт **100**). Подключено в `src/live/jupiter.ts` и `src/papertrader/pricing/price-verify.ts`.
+- **Live tracker:** `LIVE_TRACKER_INTER_MINT_DELAY_MS` (дефолт **120**, `0` = без паузы) — пауза между mint после Jupiter MTM; для ~10 RPS можно **50–80**. Порог `LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT` (дефолт **6**, `0` = выкл.) — MTM-guard против «призрачного» pump на buy-probe (`src/live/mtm-snapshot-guard.ts`).
+- **Staged entry Telegram:** текст `live_oscar_staged_signal` явно объясняет, что при `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT > 0` первая нога ждёт отката от цены сигнала (раньше формулировка «по сигналу» вводила в заблуждение).
 
-**Откат:** `git revert` коммита 1.11.170; на VPS остановить/удалить процесс `retrace-alert-watch` при необходимости; `pm2 save`.
+**Откат:** `git revert` коммита; при необходимости `JUPITER_QUOTE_429_MAX_RETRIES=0`, вернуть `LIVE_TRACKER_INTER_MINT_DELAY_MS` к прежнему.
 
 ---
 

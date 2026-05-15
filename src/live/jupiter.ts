@@ -7,6 +7,7 @@ import { child } from '../core/logger.js';
 import {
   JUPITER_QUOTE_URL_DEFAULT,
   JUPITER_SWAP_URL_DEFAULT,
+  fetchJupiterSwapQuoteGetJson,
   jupiterJsonHeaders,
 } from '../core/jupiter-http.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
@@ -143,33 +144,11 @@ async function httpGetQuote(
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
-  try {
-    const resp = await fetch(url.toString(), {
-      method: 'GET',
-      signal: ac.signal,
-      headers: jupiterJsonHeaders(),
-    });
-    if (!resp.ok) {
-      log.debug(
-        { status: resp.status, outputMint, rateLimited: resp.status === 429 },
-        resp.status === 429 ? 'live jupiter quote rate limited' : 'live jupiter quote http error',
-      );
-      return null;
-    }
-    const j = (await resp.json()) as unknown;
-    return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    log.debug(
-      { outputMint, err: (e as Error)?.message },
-      aborted ? 'live jupiter quote timeout' : 'live jupiter quote fetch fail',
-    );
-    return null;
-  } finally {
-    clearTimeout(tt);
-  }
+  const j = await fetchJupiterSwapQuoteGetJson({
+    url: url.toString(),
+    timeoutMs,
+  });
+  return j;
 }
 
 /**
@@ -299,33 +278,10 @@ async function httpGetSellQuote(
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
-  try {
-    const resp = await fetch(url.toString(), {
-      method: 'GET',
-      signal: ac.signal,
-      headers: jupiterJsonHeaders(),
-    });
-    if (!resp.ok) {
-      log.debug(
-        { status: resp.status, inputMint, rateLimited: resp.status === 429 },
-        resp.status === 429 ? 'live jupiter sell quote rate limited' : 'live jupiter sell quote http error',
-      );
-      return null;
-    }
-    const j = (await resp.json()) as unknown;
-    return typeof j === 'object' && j != null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    log.debug(
-      { inputMint, err: (e as Error)?.message },
-      aborted ? 'live jupiter sell quote timeout' : 'live jupiter sell quote fetch fail',
-    );
-    return null;
-  } finally {
-    clearTimeout(tt);
-  }
+  return fetchJupiterSwapQuoteGetJson({
+    url: url.toString(),
+    timeoutMs,
+  });
 }
 
 /** Token → SOL quote + optional unsigned swap (W8.0-p4 sells / exits). */

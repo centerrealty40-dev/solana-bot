@@ -301,4 +301,25 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     delete process.env.MTM_SHADOW_ALT_FRACTION;
     delete process.env.SIGNAL_LAB_PATH;
   });
+
+  it('parses live tracker Jupiter MTM guard and inter-mint delay env', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT;
+    delete process.env.LIVE_TRACKER_INTER_MINT_DELAY_MS;
+
+    const d = loadLiveOscarConfig();
+    expect(d.liveTrackerJupiterMaxPremiumOverSnapshotPct).toBe(6);
+    expect(d.liveTrackerInterMintDelayMs).toBe(120);
+
+    process.env.LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT = '0';
+    process.env.LIVE_TRACKER_INTER_MINT_DELAY_MS = '55';
+    const e = loadLiveOscarConfig();
+    expect(e.liveTrackerJupiterMaxPremiumOverSnapshotPct).toBe(0);
+    expect(e.liveTrackerInterMintDelayMs).toBe(55);
+  });
 });

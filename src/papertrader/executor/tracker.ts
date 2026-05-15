@@ -1471,7 +1471,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    await sleep(120);
+    await sleep(liveOscarCfg?.liveTrackerInterMintDelayMs ?? 120);
 
     if (curMetric > 0) {
       ot.lastObservedPriceUsd = curMetric;
