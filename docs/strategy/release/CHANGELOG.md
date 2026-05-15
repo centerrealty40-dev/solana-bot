@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.173] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.173`.
+
+### Live Oscar — staged-entry после первой ступени TP
+
+- **`tracker.ts`:** доборы 2-й/3-й ноги к якорю сигнала не ограничиваются только `signalTs + PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS`, если уже есть **одна** partial `TP_LADDER` и остаются незаполненные staged-ноги; план `liveStagedEntry` снимается также при **второй** partial `TP_LADDER` или по TTL, когда это продление не действует.
+- **`paper2-strategy-backtest.ts`:** та же логика окна и явный сброс плана staged-entry (паритет с live).
+
+**Откат:** `git revert` коммита с этим номером версии; деплой `v2` как обычно (`git reset --hard origin/v2`, `npm ci`, `pm2 reload ecosystem.config.cjs --update-env`).
+
+---
+
 ## [1.11.172] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.172`.
