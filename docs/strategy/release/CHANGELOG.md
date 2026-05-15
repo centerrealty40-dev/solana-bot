@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.181] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.181`.
+
+### Market watch Telegram — два канала по умолчанию
+
+- **Spike** (`market-spike-telegram-watch`, tier по mcap и минутные/rolling окна): дефолтный **`SPIKE_ALERT_TELEGRAM_CHAT_ID=-1003633176769`** в `ecosystem.config.cjs`, `ecosystem.market-spike-watch.cjs`, `scripts/spike-watch-pm2-entry.sh`.
+- **Pullback + Retrace** (блоки 1–2–3): дефолтный **`PULLBACK_ALERT_TELEGRAM_CHAT_ID` / `RETRACE_ALERT_TELEGRAM_CHAT_ID=-1003504887486`** в `ecosystem.market-pullback-watch.cjs`, `ecosystem.retrace-alert-watch.cjs` и соответствующих entry-скриптах.
+- **`.env.example`:** пояснение, что каналы не смешивать; переопределение через `.env` при необходимости.
+
+**Откат:** `git revert`; на VPS при «залипшем» старом chat id в дампе PM2 — `pm2 delete` + старт из актуального ecosystem/entry или явные значения в `.env`, затем `pm2 restart` / `pm2 save`.
+
+---
+
 ## [1.11.180] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.180`.

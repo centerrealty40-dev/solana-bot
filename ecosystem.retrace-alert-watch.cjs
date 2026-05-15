@@ -9,6 +9,7 @@
  *
  * Блок `apps` ниже — документация env (дублируется в scripts/retrace-alert-pm2-entry.sh).
  * Секреты только в `.env` хоста: RETRACE_ALERT_TELEGRAM_* (никогда не коммитить).
+ * Чат по умолчанию — тот же, что и pullback (блоки 1–2–3), не канал spike-tiered.
  */
 const path = require('path');
 const root = __dirname;
@@ -42,6 +43,7 @@ module.exports = {
         RETRACE_ALERT_HOLDER_NULL_SOFT: '1',
         RETRACE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
         RETRACE_ALERT_DRY_RUN: '0',
+        RETRACE_ALERT_TELEGRAM_CHAT_ID: '-1003504887486',
       },
     },
   ],

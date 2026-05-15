@@ -1197,6 +1197,9 @@ module.exports = {
     /**
      * Spike-алерты в Telegram (PG). Раньше стартовали отдельно; включено в общий ecosystem,
      * чтобы `pm2 start ecosystem.config.cjs` не терял процесс. Секреты — только в `.env` хоста.
+     *
+     * Канал по умолчанию: tiered mcap / минутные и rolling окна (`SPIKE_ALERT_TELEGRAM_CHAT_ID`).
+     * Алерты с блоками 1–2–3 (pullback / retrace) — другой канал, см. ecosystem.market-pullback-watch.cjs и ecosystem.retrace-alert-watch.cjs.
      */
     {
       name: 'market-spike-telegram-watch',
@@ -1259,6 +1262,8 @@ module.exports = {
         SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE: '1',
         SPIKE_ALERT_AUDIT_DB_ENABLED: '1',
         SPIKE_ALERT_AUDIT_LOG_SKIPS: '0',
+        /** Канал «окна + tier по mcap» (не смешивать с pullback/retrace 1–2–3). */
+        SPIKE_ALERT_TELEGRAM_CHAT_ID: '-1003633176769',
       },
     },
   ],

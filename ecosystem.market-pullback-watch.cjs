@@ -10,6 +10,7 @@
  *   pm2 save
  *
  * Секреты только в `.env` хоста: `PULLBACK_ALERT_TELEGRAM_BOT_TOKEN`, `PULLBACK_ALERT_TELEGRAM_CHAT_ID`.
+ * По умолчанию чат — канал «локальный лой/хай/просадка» (вместе с retrace), не канал spike-tiered.
  */
 const path = require('path');
 const root = __dirname;
@@ -45,6 +46,8 @@ module.exports = {
         PULLBACK_ALERT_DRY_RUN: '0',
         PULLBACK_ALERT_MAX_NEWER_BAR_AGE_MINUTES: '25',
         PULLBACK_ALERT_DISPLAY_TZ: 'Europe/Moscow',
+        /** Канал блоков 1–2–3 (не spike tiered). */
+        PULLBACK_ALERT_TELEGRAM_CHAT_ID: '-1003504887486',
       },
     },
   ],
