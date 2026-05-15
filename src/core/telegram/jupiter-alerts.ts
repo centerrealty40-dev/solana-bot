@@ -109,7 +109,7 @@ export async function notifyLiveTrackerSnapshotJupiterDivergence(args: {
   await sendTagged('ALERT', 'live-jupiter-tracker-diverge', lines.join('\n'));
 }
 
-/** Трекер live: Jupiter buy-probe заметно выше PG snapshot — MTM на этом тике по snapshot (анти-призрак). */
+/** Трекер live: Jupiter buy-probe заметно расходится с PG snapshot — MTM на этом тике по snapshot (симметричная полоса). */
 export async function notifyLiveTrackerJupiterMtmClampedToSnapshot(args: {
   strategyId: string;
   mint: string;
@@ -118,24 +118,36 @@ export async function notifyLiveTrackerJupiterMtmClampedToSnapshot(args: {
   jupiterPx: number;
   probeUsd: number;
   maxPremiumPct: number;
+  /** `high` — Jupiter выше полосы; `low` — ниже (занижение котировки). */
+  bandClamp?: 'high' | 'low';
 }): Promise<void> {
   if (!TRACKER_ON) return;
-  const key = `clamp:${args.mint}`;
+  const dir = args.bandClamp ?? 'high';
+  const key = `clamp:${args.mint}:${dir}`;
   if (shouldThrottle(key, throttleDefaultMs)) return;
 
   const prem = args.snapshotPx > 0 ? ((args.jupiterPx / args.snapshotPx - 1) * 100).toFixed(2) : 'n/a';
+  const reason =
+    dir === 'low'
+      ? 'Причина: Jupiter SOL→token probe заметно ниже последнего PG price_usd; TP/peak/trail на этом тике считаются по snapshot (симметричная полоса — иначе лестница TP могла бы не срабатывать при заниженном Jupiter).'
+      : 'Причина: Jupiter SOL→token probe сильно выше последнего PG price_usd; TP/peak/trail на этом тике считаются по snapshot (защита от ложного роста на тонком маршруте).';
+  const hint =
+    dir === 'low'
+      ? 'Что делать: сверить график/DEX и маршрут; при частых срабатываниях поднять LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT (полоса симметрична) или временно поставить 0 (отключить полосу).'
+      : 'Что делать: сверить график/DEX; при частых срабатываниях поднять LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT или временно поставить 0 (старое поведение).';
   const lines = [
     'severity=ACTION  investigate_product=YES',
     '',
-    'Причина: Jupiter SOL→token probe сильно выше последнего PG price_usd; TP/peak/trail на этом тике считаются по snapshot (защита от ложного роста на тонком маршруте).',
-    'Что делать: сверить график/DEX; при частых срабатываниях поднять LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT или временно поставить 0 (старое поведение).',
+    reason,
+    hint,
     '',
     `strategyId=${args.strategyId}`,
     `symbol=${args.symbol}`,
     `mint=${args.mint}`,
+    `bandClamp=${dir}`,
     `snapshotUsd=${args.snapshotPx.toFixed(10)}`,
     `jupiterUsd=${args.jupiterPx.toFixed(10)}`,
-    `jupiterPremiumVsSnapshotPct=${prem}`,
+    `jupiterVsSnapshotPct=${prem}`,
     `maxPremiumPctConfigured=${args.maxPremiumPct}`,
     `probeUsd=${args.probeUsd.toFixed(4)}`,
     `tsUtc=${new Date().toISOString()}`,

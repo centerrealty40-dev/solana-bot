@@ -48,7 +48,7 @@ import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-w
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
-import { liveTrackerMtmUsdPreferSnapshotOnUpwardGhost } from '../../live/mtm-snapshot-guard.js';
+import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -1375,24 +1375,39 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 !(anchorPx > 0) || divergeVsAnchor <= 2 || jpx >= anchorPx - 1e-18;
               if (jupiterSaneVsEntry) {
                 const maxPrem = liveOscarCfg.liveTrackerJupiterMaxPremiumOverSnapshotPct;
-                const { useUsd: mtmPick, clampedFromJupiter } = liveTrackerMtmUsdPreferSnapshotOnUpwardGhost({
+                const { useUsd: mtmPick, clampedFromJupiter, bandClamp } = liveTrackerMtmUsdSnapJupiterSymmetricBand({
                   snapPx,
                   jupiterPx: jpx,
                   maxPremiumOverSnapshotPct: maxPrem,
                 });
                 curMetric = mtmPick;
                 if (clampedFromJupiter) {
-                  log.warn(
-                    {
-                      mint: mint.slice(0, 8),
-                      symbol: ot.symbol,
-                      snapshotPx: snapPx,
-                      jupiterPx: jpx,
-                      maxPremiumPct: maxPrem,
-                      jupiterPremiumVsSnapPct: snapPx > 0 ? +(((jpx / snapPx - 1) * 100).toFixed(2)) : null,
-                    },
-                    'live tracker: Jupiter buy-probe above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
-                  );
+                  const premPct = snapPx > 0 ? +(((jpx / snapPx - 1) * 100).toFixed(2)) : null;
+                  if (bandClamp === 'low') {
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
+                        symbol: ot.symbol,
+                        snapshotPx: snapPx,
+                        jupiterPx: jpx,
+                        maxPremiumPct: maxPrem,
+                        jupiterDiscountVsSnapPct: premPct,
+                      },
+                      'live tracker: Jupiter buy-probe below snapshot discount floor; using PG snapshot for MTM (symmetric band)',
+                    );
+                  } else {
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
+                        symbol: ot.symbol,
+                        snapshotPx: snapPx,
+                        jupiterPx: jpx,
+                        maxPremiumPct: maxPrem,
+                        jupiterPremiumVsSnapPct: premPct,
+                      },
+                      'live tracker: Jupiter buy-probe above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
+                    );
+                  }
                   void notifyLiveTrackerJupiterMtmClampedToSnapshot({
                     strategyId: cfg.strategyId,
                     mint,
@@ -1401,11 +1416,37 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                     jupiterPx: jpx,
                     probeUsd,
                     maxPremiumPct: maxPrem,
+                    bandClamp: bandClamp === 'low' ? 'low' : 'high',
                   });
                 } else {
                   const divergeVsSnap =
                     snapPx > 0 ? Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18) : Number.POSITIVE_INFINITY;
-                  if (snapPx > 0 && divergeVsSnap > 0.035) {
+                  /** Same 3.5% gate as legacy divergence log: when Jupiter is *below* snapshot here, TP ladder was stuck. */
+                  const jupiterPessimisticVsSnap =
+                    snapPx > 0 && jpx > 0 && jpx < snapPx - 1e-18 && divergeVsSnap > 0.035;
+                  if (jupiterPessimisticVsSnap) {
+                    curMetric = snapPx;
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
+                        symbol: ot.symbol,
+                        snapshotPx: snapPx,
+                        jupiterPx: jpx,
+                        divergePct: +(divergeVsSnap * 100).toFixed(2),
+                      },
+                      'live tracker: Jupiter below snapshot past diverge gate; using PG snapshot for MTM (TP ladder parity)',
+                    );
+                    void notifyLiveTrackerJupiterMtmClampedToSnapshot({
+                      strategyId: cfg.strategyId,
+                      mint,
+                      symbol: ot.symbol,
+                      snapshotPx: snapPx,
+                      jupiterPx: jpx,
+                      probeUsd,
+                      maxPremiumPct: maxPrem,
+                      bandClamp: 'low',
+                    });
+                  } else if (snapPx > 0 && divergeVsSnap > 0.035) {
                     log.warn(
                       {
                         mint: mint.slice(0, 8),
