@@ -8,7 +8,7 @@
 
 ---
 
-## [1.11.171] — 2026-05-12
+## [1.11.171] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.171`.
 
@@ -17,7 +17,13 @@
 - **`PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT`:** zod-дефолт в `papertrader/config.ts` с **7 → 0**, чтобы без env совпадать с прод-профилем (первая нога сразу; докупки на −7% / −14% задаются второй/третьей ступенью). Комментарии уточнены.
 - **Jupiter:** в docstring подчёркнуто, что **`JUPITER_API_KEY`** — это **ваш** ключ из кабинета Developer (заголовок `x-api-key`); код не генерирует отдельный Pro-ключ.
 
-**Откат:** `git revert`; при необходимости явно задать `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT` в `.env`.
+### Market pullback Telegram watch (отдельный процесс / отдельный бот)
+
+- Новый скрипт `src/scripts/market-pullback-telegram-watch.ts`: по минутным барам из тех же PG-снапшотов ищет **рост от якоря до пика** ≥ `PULLBACK_ALERT_MIN_RISE_PCT` (по умолчанию **6%**) и **текущую цену** (последний бар) не менее чем на **10%** ниже пика окна (`PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT`). Фильтр капы: `PULLBACK_ALERT_MIN_MARKET_CAP_USD` (по умолчанию **$1.5M**), отдельные `PULLBACK_ALERT_TELEGRAM_*` (не `SPIKE_ALERT_*`, не Live Oscar).
+- PM2: `ecosystem.market-pullback-watch.cjs`, `scripts/pullback-watch-pm2-entry.sh`; npm-скрипт `market-pullback-telegram-watch`.
+- Тесты: `tests/market-pullback-telegram-watch.test.ts` (чистая геометрия баров).
+
+**Откат:** `git revert` коммита; при необходимости явно задать `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT` в `.env`; для watch — `pm2 delete market-pullback-telegram-watch` или не стартовать процесс.
 
 ---
 
