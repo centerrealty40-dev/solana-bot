@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.170] — 2026-05-15
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.170`.
+
+### Pump-then-retrace Telegram watch (отдельный процесс)
+
+- Скрипт `src/scripts/market-pump-retrace-alert-watch.ts`: по минутным PG-снимкам (те же пять таблиц DEX, что у spike) ищет паттерн «рост от дна ≥ 6% → пик = максимум на сегменте → откат от пика ≥ 10%» при фильтре mcap ≥ $1.5M в выборке latest; Telegram через префикс env `RETRACE_ALERT_*` (отдельный бот и канал, не `TELEGRAM_*` и не `SPIKE_ALERT_*`).
+- `npm run retrace-alert-watch`; PM2: `ecosystem.retrace-alert-watch.cjs`, `scripts/retrace-alert-pm2-entry.sh` (аналогично spike-watch: старт через bash-обёртку).
+- Экспорт `findPumpRetraceFromBars` + unit-тесты `tests/market-pump-retrace-alert.test.ts`.
+- Блок переменных в `.env.example`.
+
+**Откат:** `git revert` коммита 1.11.170; на VPS остановить/удалить процесс `retrace-alert-watch` при необходимости; `pm2 save`.
+
+---
+
 ## [1.11.169] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.169`.
