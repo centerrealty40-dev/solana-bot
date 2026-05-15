@@ -9,6 +9,7 @@
  * - `LIVE_JUPITER_TRACKER_TELEGRAM=0` — выкл. алерты трекера (fallback PG / расхождение с Jupiter).
  * - `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` — выкл. алерт при открытии circuit breaker (price-verify).
  * - `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS` — мин. интервал между одинаковыми алертами по одному mint (default 300000).
+ * - `live-jupiter-tracker-mtm-snap-clamp` — Jupiter buy-probe сильно выше PG snapshot; MTM на тике переведён на snapshot.
  * Дополнительно можно задать `TELEGRAM_COOLDOWN_ALERT_<SUBTAG>_MS` для sendTagged (см. sender.ts).
  */
 import { sendTagged } from './sender.js';
@@ -106,6 +107,40 @@ export async function notifyLiveTrackerSnapshotJupiterDivergence(args: {
   lines.push(`tsUtc=${new Date().toISOString()}`);
 
   await sendTagged('ALERT', 'live-jupiter-tracker-diverge', lines.join('\n'));
+}
+
+/** Трекер live: Jupiter buy-probe заметно выше PG snapshot — MTM на этом тике по snapshot (анти-призрак). */
+export async function notifyLiveTrackerJupiterMtmClampedToSnapshot(args: {
+  strategyId: string;
+  mint: string;
+  symbol: string;
+  snapshotPx: number;
+  jupiterPx: number;
+  probeUsd: number;
+  maxPremiumPct: number;
+}): Promise<void> {
+  if (!TRACKER_ON) return;
+  const key = `clamp:${args.mint}`;
+  if (shouldThrottle(key, throttleDefaultMs)) return;
+
+  const prem = args.snapshotPx > 0 ? ((args.jupiterPx / args.snapshotPx - 1) * 100).toFixed(2) : 'n/a';
+  const lines = [
+    'severity=ACTION  investigate_product=YES',
+    '',
+    'Причина: Jupiter SOL→token probe сильно выше последнего PG price_usd; TP/peak/trail на этом тике считаются по snapshot (защита от ложного роста на тонком маршруте).',
+    'Что делать: сверить график/DEX; при частых срабатываниях поднять LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT или временно поставить 0 (старое поведение).',
+    '',
+    `strategyId=${args.strategyId}`,
+    `symbol=${args.symbol}`,
+    `mint=${args.mint}`,
+    `snapshotUsd=${args.snapshotPx.toFixed(10)}`,
+    `jupiterUsd=${args.jupiterPx.toFixed(10)}`,
+    `jupiterPremiumVsSnapshotPct=${prem}`,
+    `maxPremiumPctConfigured=${args.maxPremiumPct}`,
+    `probeUsd=${args.probeUsd.toFixed(4)}`,
+    `tsUtc=${new Date().toISOString()}`,
+  ];
+  await sendTagged('ALERT', 'live-jupiter-tracker-mtm-snap-clamp', lines.join('\n'));
 }
 
 /** Price-verify: sliding-window circuit breaker открылся (много transport-fail по Jupiter). */

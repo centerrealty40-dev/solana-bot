@@ -267,6 +267,13 @@ const LiveOscarConfigSchema = z
     mtmShadowPath: z.string().min(1).default('data/live/mtm-shadow.jsonl'),
     /** Размер alt-probe относительно основного probe USD (например `0.58`); `0` = выключено. */
     mtmShadowAltFraction: z.coerce.number().min(0).max(1).default(0),
+
+    /**
+     * Трекер live: если Jupiter SOL→token MTM выше последнего PG `price_usd` более чем на этот %,
+     * на тике для TP / peak / trail берём snapshot (защита от «призрачного» pump на микро-маршруте).
+     * `0` = выключить (как до патча: приоритет Jupiter, если `jupiterSaneVsEntry`).
+     */
+    liveTrackerJupiterMaxPremiumOverSnapshotPct: z.coerce.number().min(0).max(200).default(6),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -586,6 +593,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s || s === '0') return 0;
       const n = Number(s);
       return Number.isFinite(n) && n > 0 ? Math.min(1, n) : 0;
+    })(),
+    liveTrackerJupiterMaxPremiumOverSnapshotPct: (() => {
+      const s = process.env.LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT?.trim();
+      if (s === '0') return 0;
+      if (!s) return 6;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(200, n) : 6;
     })(),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();

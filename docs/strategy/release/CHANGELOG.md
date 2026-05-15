@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.171] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.171`.
+
+### Live Oscar — MTM против «призрачного» роста Jupiter
+
+- **Проблема:** на открытой позиции трекер брал цену преимущественно из **малого SOL→token Jupiter quote**; при расхождении с **PG `price_usd`** логировалось предупреждение, но **лестница TP / peak / trail** всё равно считались по Jupiter. На тонком маршруте микро-нотация иногда давала заметно завышенную цену → ложные частичные TP и ранний выход.
+- **Исправление:** если Jupiter выше последнего snapshot более чем на **`LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT`** (дефолт **6**; **`0`** = прежнее поведение), на этом тике **MTM = snapshot**. Telegram: `live-jupiter-tracker-mtm-snap-clamp` (throttle как у остальных трекер-алертов).
+- **Код:** `src/live/mtm-snapshot-guard.ts`, правка `src/papertrader/executor/tracker.ts`, конфиг `src/live/config.ts`, алерт `src/core/telegram/jupiter-alerts.ts`, тесты `tests/live-mtm-snapshot-guard.test.ts`, комментарий в `.env.example`.
+
+**Откат:** `git revert` коммита; при необходимости на VPS `LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT=0` до следующего деплоя.
+
+---
+
 ## [1.11.170] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.170`.

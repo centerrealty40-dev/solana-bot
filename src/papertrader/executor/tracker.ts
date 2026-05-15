@@ -48,10 +48,12 @@ import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-w
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
+import { liveTrackerMtmUsdPreferSnapshotOnUpwardGhost } from '../../live/mtm-snapshot-guard.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
   notifyLiveTrackerJupiterFallback,
+  notifyLiveTrackerJupiterMtmClampedToSnapshot,
   notifyLiveTrackerSnapshotJupiterDivergence,
 } from '../../core/telegram/jupiter-alerts.js';
 
@@ -1372,35 +1374,64 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               const jupiterSaneVsEntry =
                 !(anchorPx > 0) || divergeVsAnchor <= 2 || jpx >= anchorPx - 1e-18;
               if (jupiterSaneVsEntry) {
-                curMetric = jpx;
-                const divergeVsSnap =
-                  snapPx > 0 ? Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18) : Number.POSITIVE_INFINITY;
-                if (snapPx > 0 && divergeVsSnap > 0.035) {
+                const maxPrem = liveOscarCfg.liveTrackerJupiterMaxPremiumOverSnapshotPct;
+                const { useUsd: mtmPick, clampedFromJupiter } = liveTrackerMtmUsdPreferSnapshotOnUpwardGhost({
+                  snapPx,
+                  jupiterPx: jpx,
+                  maxPremiumOverSnapshotPct: maxPrem,
+                });
+                curMetric = mtmPick;
+                if (clampedFromJupiter) {
                   log.warn(
                     {
                       mint: mint.slice(0, 8),
                       symbol: ot.symbol,
                       snapshotPx: snapPx,
                       jupiterPx: jpx,
-                      divergePct: +(divergeVsSnap * 100).toFixed(2),
+                      maxPremiumPct: maxPrem,
+                      jupiterPremiumVsSnapPct: snapPx > 0 ? +(((jpx / snapPx - 1) * 100).toFixed(2)) : null,
                     },
-                    'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
+                    'live tracker: Jupiter buy-probe above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
                   );
-                  void notifyLiveTrackerSnapshotJupiterDivergence({
+                  void notifyLiveTrackerJupiterMtmClampedToSnapshot({
                     strategyId: cfg.strategyId,
                     mint,
                     symbol: ot.symbol,
                     snapshotPx: snapPx,
                     jupiterPx: jpx,
-                    divergePct: divergeVsSnap * 100,
                     probeUsd,
-                    avgEntryMarket: ot.avgEntryMarket,
+                    maxPremiumPct: maxPrem,
                   });
-                } else if (!(snapPx > 0)) {
-                  log.warn(
-                    { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
-                    'live tracker: PG price missing; using Jupiter MTM',
-                  );
+                } else {
+                  const divergeVsSnap =
+                    snapPx > 0 ? Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18) : Number.POSITIVE_INFINITY;
+                  if (snapPx > 0 && divergeVsSnap > 0.035) {
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
+                        symbol: ot.symbol,
+                        snapshotPx: snapPx,
+                        jupiterPx: jpx,
+                        divergePct: +(divergeVsSnap * 100).toFixed(2),
+                      },
+                      'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
+                    );
+                    void notifyLiveTrackerSnapshotJupiterDivergence({
+                      strategyId: cfg.strategyId,
+                      mint,
+                      symbol: ot.symbol,
+                      snapshotPx: snapPx,
+                      jupiterPx: jpx,
+                      divergePct: divergeVsSnap * 100,
+                      probeUsd,
+                      avgEntryMarket: ot.avgEntryMarket,
+                    });
+                  } else if (!(snapPx > 0)) {
+                    log.warn(
+                      { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
+                      'live tracker: PG price missing; using Jupiter MTM',
+                    );
+                  }
                 }
               } else {
                 log.warn(
