@@ -1903,9 +1903,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const st = ot.liveStagedEntry;
     if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, curMetric)) {
       const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
-      const stagedAddWindowOpen = Date.now() <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
       /** Staged доборы до якоря сигнала: раньше блокировались после любого partial TP; теперь — до 2-й ступени TP-сетки (`TP_LADDER`), затем запрет. */
       const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+      const hasThird = (st.thirdLegUsd ?? 0) > 0;
+      const thirdDone = hasThird ? st.thirdLegDone === true : true;
+      const pendingStagedLegs = !st.secondLegDone || !thirdDone;
+      const timeWindowOpen = Date.now() <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+      /** После первой partial TP (пока вторая не взята): откат к −N%% к цене сигнала может случиться позже TTL сигнала — окно доборов не закрываем только по времени. */
+      const stagedAddWindowOpen =
+        timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
       const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
       const totalStagedAddLegs = st.thirdLegUsd && st.thirdLegUsd > 0 ? 2 : 1;
       const tryStagedAddLeg = async (args: {
@@ -2030,14 +2036,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
        * Пока `liveStagedEntry` висит на открытой сделке, ветка KILLSTOP использует только signal-kill
        * (`liveStagedEntryKillHit`), а PnL-kill к средней требует `!ot.liveStagedEntry` — без сброса плана
        * усреднённая позиция в режиме B могла уходить в минус без срабатывания `PAPER_DCA_KILLSTOP` / mode B kill.
-       * Снимаем план после всех запланированных ног или по TTL сигнала (доборы staged дальше не предлагаются).
+       * Снимаем план после всех запланированных ног, при ≥2 partial `TP_LADDER`, или по TTL сигнала, если
+       * доборы уже не продлеваются (см. `stagedAddWindowOpen` / `ttlPreservesStagedPlan`).
        */
       {
-        const hasThird = (st.thirdLegUsd ?? 0) > 0;
-        const thirdDone = hasThird ? st.thirdLegDone === true : true;
         const stagedLegsComplete = st.secondLegDone === true && thirdDone;
         const ttlExpired = Date.now() > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
-        if (stagedLegsComplete || ttlExpired) {
+        const ttlPreservesStagedPlan =
+          tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
+        if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {
           ot.liveStagedEntry = undefined;
         }
       }

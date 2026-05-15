@@ -304,8 +304,13 @@ function simTryLiveStagedEntryAdds(args: {
   if (liveStagedEntryKillHitSim(ot, curMetric)) return;
   const st = ot.liveStagedEntry;
   const signalDropPct = liveStagedEntrySignalDropPctSim(ot, curMetric);
-  const stagedAddWindowOpen = virtualNow <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
   const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
+  const hasThird = (st.thirdLegUsd ?? 0) > 0;
+  const thirdDone = hasThird ? st.thirdLegDone === true : true;
+  const pendingStagedLegs = !st.secondLegDone || !thirdDone;
+  const timeWindowOpen = virtualNow <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+  const stagedAddWindowOpen =
+    timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
   const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
 
   function pushStagedLeg(stepIndex: number, addUsd: number, dropPct: number): void {
@@ -356,6 +361,14 @@ function simTryLiveStagedEntryAdds(args: {
   ) {
     pushStagedLeg(1, st.thirdLegUsd, st.thirdDropPct);
     st.thirdLegDone = true;
+  }
+
+  const stagedLegsComplete = st.secondLegDone === true && thirdDone;
+  const ttlExpired = virtualNow > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+  const ttlPreservesStagedPlan =
+    tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
+  if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {
+    ot.liveStagedEntry = undefined;
   }
 }
 
