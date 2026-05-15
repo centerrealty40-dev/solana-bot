@@ -7,11 +7,16 @@ let detectRiseThenRetraceFromBars: (
   minRisePct: number,
   minRetraceFromPeakPct: number,
 ) => import('../src/scripts/market-pullback-telegram-watch.js').PullbackPick | null;
+let detectLocalHighRetraceFromBars: (
+  bars: Bar[],
+  minRetraceFromPeakPct: number,
+) => import('../src/scripts/market-pullback-telegram-watch.js').PullbackPick | null;
 
 beforeAll(async () => {
   process.env.PULLBACK_ALERT_SKIP_MAIN = '1';
   const mod = await import('../src/scripts/market-pullback-telegram-watch.js');
   detectRiseThenRetraceFromBars = mod.detectRiseThenRetraceFromBars;
+  detectLocalHighRetraceFromBars = mod.detectLocalHighRetraceFromBars;
 });
 
 function bar(tsMin: number, px: number): Bar {
@@ -34,6 +39,7 @@ describe('detectRiseThenRetraceFromBars', () => {
     const bars = [bar(0, 1), bar(1, 1.08), bar(2, 1.08 * 0.89)];
     const p = detectRiseThenRetraceFromBars(bars, 6, 10);
     expect(p).not.toBeNull();
+    expect(p!.signalMode).toBe('rise_then_retrace');
     expect(p!.risePct).toBeGreaterThanOrEqual(6 - 1e-6);
     expect(p!.retraceFromPeakPct).toBeGreaterThanOrEqual(10 - 1e-6);
   });
@@ -42,6 +48,30 @@ describe('detectRiseThenRetraceFromBars', () => {
     const bars = [bar(0, 1), bar(1, 1.1), bar(2, 1.1), bar(3, 1.1 * 0.85)];
     const p = detectRiseThenRetraceFromBars(bars, 6, 10);
     expect(p).not.toBeNull();
+    expect(p!.signalMode).toBe('rise_then_retrace');
     expect(p!.peakTs.getTime()).toBe(bars[2].ts.getTime());
+  });
+});
+
+describe('detectLocalHighRetraceFromBars', () => {
+  it('fires on retrace from window peak without prior rise requirement (monotonic down)', () => {
+    const bars = [bar(0, 1.2), bar(1, 1.15), bar(2, 1.0)];
+    const p = detectLocalHighRetraceFromBars(bars, 10);
+    expect(p).not.toBeNull();
+    expect(p!.signalMode).toBe('local_high_retrace');
+    expect(p!.retraceFromPeakPct).toBeGreaterThanOrEqual(10 - 1e-6);
+  });
+
+  it('returns null when rise_then would fail but local_high only checks retrace', () => {
+    const bars = [bar(0, 1), bar(1, 1.02), bar(2, 1.02 * 0.88)];
+    expect(detectRiseThenRetraceFromBars(bars, 6, 10)).toBeNull();
+    const p = detectLocalHighRetraceFromBars(bars, 10);
+    expect(p).not.toBeNull();
+    expect(p!.signalMode).toBe('local_high_retrace');
+  });
+
+  it('returns null when still at peak', () => {
+    const bars = [bar(0, 1), bar(1, 1.07), bar(2, 1.12)];
+    expect(detectLocalHighRetraceFromBars(bars, 6)).toBeNull();
   });
 });

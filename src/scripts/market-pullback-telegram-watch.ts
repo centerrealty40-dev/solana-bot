@@ -1,14 +1,16 @@
 /**
- * Watch-only: по минутным барам DEX в Postgres ищем **рост от якоря до пика** ≥ PULLBACK_ALERT_MIN_RISE_PCT
- * и **текущую цену** (последний бар) не выше пика миньше чем на PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT
- * (откат от пика окна). Отдельный Telegram-бот (`PULLBACK_ALERT_TELEGRAM_*`), не Live Oscar / не spike-watch.
+ * Watch-only (второй Telegram-канал): отдельный бот (`PULLBACK_ALERT_TELEGRAM_*`), не spike-watch, не Live Oscar.
  *
- * Пик в окне — глобальный максимум `price_usd` за `PULLBACK_ALERT_SCAN_MINUTES`; индекс пика — последняя
- * точка максимума (правый хвост плато). Якорь — минимум цены на отрезке от начала окна до пика включительно.
+ * Режимы (`PULLBACK_ALERT_SIGNAL_MODE`):
+ * - **`local_high_retrace`** (рекомендуется для «после локального хая»): в окне `PULLBACK_ALERT_SCAN_MINUTES`
+ *   ищем **пик** (глобальный max `price_usd`, правый хвост плато), затем сравниваем **последний бар** с пиком;
+ *   алерт при откате ≥ `PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT` **без** требования предварительного роста
+ *   от якоря (никаких «оценок за 10 минут» в смысле spike rolling — только PG-бары в lookback).
+ * - **`rise_then_retrace`**: прежняя логика — рост якорь→пик ≥ `PULLBACK_ALERT_MIN_RISE_PCT` и откат от пика.
  *
  * Env: см. `ecosystem.market-pullback-watch.cjs`. Секреты только в `.env` на хосте.
  *
- * Тесты: `detectRiseThenRetraceFromBars` экспортируется; автозапуск main подавляется `PULLBACK_ALERT_SKIP_MAIN=1`.
+ * Тесты: `detectRiseThenRetraceFromBars`, `detectLocalHighRetraceFromBars`; автозапуск main подавляется `PULLBACK_ALERT_SKIP_MAIN=1`.
  */
 import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
@@ -38,7 +40,17 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
-const SCAN_MINUTES = Math.max(15, Math.min(180, Math.floor(envNum('PULLBACK_ALERT_SCAN_MINUTES', 90))));
+const SIGNAL_MODE_RAW = (process.env.PULLBACK_ALERT_SIGNAL_MODE ?? 'rise_then_retrace').trim().toLowerCase();
+const SIGNAL_MODE: 'rise_then_retrace' | 'local_high_retrace' =
+  SIGNAL_MODE_RAW === 'local_high' || SIGNAL_MODE_RAW === 'local_high_retrace'
+    ? 'local_high_retrace'
+    : 'rise_then_retrace';
+
+const SCAN_MINUTES_CAP = SIGNAL_MODE === 'local_high_retrace' ? 1440 : 180;
+const SCAN_MINUTES = Math.max(
+  15,
+  Math.min(SCAN_MINUTES_CAP, Math.floor(envNum('PULLBACK_ALERT_SCAN_MINUTES', SIGNAL_MODE === 'local_high_retrace' ? 360 : 90))),
+);
 
 const LATEST_FLOOR_SEC = Math.max(
   600,
@@ -100,6 +112,7 @@ type LatestMeta = {
 export type Bar = { ts: Date; px: number; mcapUsd: number | null };
 
 export type PullbackPick = {
+  signalMode: 'rise_then_retrace' | 'local_high_retrace';
   risePct: number;
   retraceFromPeakPct: number;
   anchorPx: number;
@@ -276,6 +289,64 @@ export function detectRiseThenRetraceFromBars(
   if (retraceFromPeakPct + 1e-6 < minRetraceFromPeakPct) return null;
 
   return {
+    signalMode: 'rise_then_retrace',
+    risePct,
+    retraceFromPeakPct,
+    anchorPx,
+    peakPx,
+    lastPx,
+    anchorTs,
+    peakTs: b[peakIdx].ts,
+    lastTs,
+  };
+}
+
+/**
+ * Только «локальный хай» в окне: пик = max цены (правый хвост плато); откат = пик → последний бар.
+ * Нет фильтра по предварительному росту от минимума до пика.
+ */
+export function detectLocalHighRetraceFromBars(
+  bars: Bar[],
+  minRetraceFromPeakPct: number,
+): PullbackPick | null {
+  const b = dedupeBarsSorted(bars);
+  if (b.length < 2) return null;
+
+  let peakPx = b[0].px;
+  let peakIdx = 0;
+  const eps = (px: number) => Math.max(1e-12, Math.abs(px) * 1e-12);
+  for (let i = 1; i < b.length; i++) {
+    if (b[i].px > peakPx + eps(peakPx)) {
+      peakPx = b[i].px;
+      peakIdx = i;
+    } else if (Math.abs(b[i].px - peakPx) <= eps(peakPx)) {
+      peakIdx = i;
+    }
+  }
+  if (!(peakPx > 0) || !Number.isFinite(peakPx)) return null;
+
+  let anchorPx = b[0].px;
+  let anchorTs = b[0].ts;
+  for (let i = 0; i <= peakIdx; i++) {
+    if (b[i].px < anchorPx) {
+      anchorPx = b[i].px;
+      anchorTs = b[i].ts;
+    }
+  }
+
+  const last = b[b.length - 1];
+  const lastPx = last.px;
+  const lastTs = last.ts;
+
+  if (!(peakPx > 0) || !(lastPx > 0)) return null;
+
+  const retraceFromPeakPct = ((peakPx - lastPx) / peakPx) * 100;
+  if (retraceFromPeakPct + 1e-6 < minRetraceFromPeakPct) return null;
+
+  const risePct = anchorPx > 0 && peakPx > anchorPx ? ((peakPx - anchorPx) / anchorPx) * 100 : 0;
+
+  return {
+    signalMode: 'local_high_retrace',
     risePct,
     retraceFromPeakPct,
     anchorPx,
@@ -421,13 +492,24 @@ function buildAlertHtml(args: {
     refMcap > 0
       ? `$${(refMcap / 1e6).toFixed(2)}M`
       : 'n/a';
+  const riseLine =
+    pick.signalMode === 'local_high_retrace'
+      ? pick.risePct > 1e-6
+        ? `Предварительный рост (min→peak, справочно): <b>${formatPct(pick.risePct)}</b> · Откат peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b>`
+        : `Откат от пика окна peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b> <i>(без порога по росту до пика)</i>`
+      : `Rise (anchor→peak): <b>${formatPct(pick.risePct)}</b> · Retrace from peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b>`;
+  const modeLine =
+    pick.signalMode === 'local_high_retrace'
+      ? `Режим: <b>local_high_retrace</b> · lookback <b>${SCAN_MINUTES}m</b>`
+      : `Режим: <b>rise_then_retrace</b> · lookback <b>${SCAN_MINUTES}m</b>`;
   return [
     `<b>[MARKET][pullback]</b> <code>${escapeHtml(dex)}</code>`,
+    modeLine,
     `<b>${sym}</b>${name ? ` — ${name}` : ''}`,
     `Mint: <code>${escapeHtml(meta.base_mint)}</code> (${escapeHtml(mintShort)})`,
     `Pair: <code>${escapeHtml(meta.pair_address)}</code>`,
-    `Rise (anchor→peak): <b>${formatPct(pick.risePct)}</b> · Retrace from peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b>`,
-    `Anchor ${formatTsInTz(pick.anchorTs)} · Peak ${formatTsInTz(pick.peakTs)} · Last ${formatTsInTz(pick.lastTs)}`,
+    riseLine,
+    `Low before peak ${formatTsInTz(pick.anchorTs)} · Peak ${formatTsInTz(pick.peakTs)} · Last ${formatTsInTz(pick.lastTs)}`,
     `Ref mcap/fdv ≈ ${escapeHtml(mcapStr)} · holders ${escapeHtml(holders)}`,
   ].join('\n');
 }
@@ -445,7 +527,10 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
     for (const meta of latest) {
       const key = barsMapKey(meta.base_mint, meta.pair_address);
       const rawBars = barsByKey.get(key) ?? [];
-      const pick = detectRiseThenRetraceFromBars(rawBars, MIN_RISE_PCT, MIN_RETRACE_PCT);
+      const pick =
+        SIGNAL_MODE === 'local_high_retrace'
+          ? detectLocalHighRetraceFromBars(rawBars, MIN_RETRACE_PCT)
+          : detectRiseThenRetraceFromBars(rawBars, MIN_RISE_PCT, MIN_RETRACE_PCT);
       if (!pick) {
         skipped++;
         continue;
@@ -507,8 +592,10 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
     }
   }
 
+  const riseLog =
+    SIGNAL_MODE === 'local_high_retrace' ? `retrace>=${MIN_RETRACE_PCT}%` : `rise>=${MIN_RISE_PCT}% retrace>=${MIN_RETRACE_PCT}%`;
   console.log(
-    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} rise>=${MIN_RISE_PCT}% retrace>=${MIN_RETRACE_PCT}% minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m cooldown=${MINT_COOLDOWN_MINUTES}m`,
+    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m cooldown=${MINT_COOLDOWN_MINUTES}m`,
   );
 }
 
@@ -525,7 +612,7 @@ async function main(): Promise<void> {
     const sendDedupe = new Map<string, number>();
     const mintCooldown = new Map<string, number>();
     console.log(
-      `[market-pullback-telegram-watch] poll interval=${POLL_INTERVAL_MS}ms dedupe=${POLL_SEND_DEDUPE_MS}ms`,
+      `[market-pullback-telegram-watch] poll interval=${POLL_INTERVAL_MS}ms dedupe=${POLL_SEND_DEDUPE_MS}ms signal_mode=${SIGNAL_MODE} scan=${SCAN_MINUTES}m`,
     );
     let stop = false;
     const onStop = (): void => {

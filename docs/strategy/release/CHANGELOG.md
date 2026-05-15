@@ -8,16 +8,17 @@
 
 ---
 
-## [1.11.173] — 2026-05-12
+## [1.11.174] — 2026-05-15
 
-**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.173`.
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.174`.
 
-### Live Oscar — staged-entry после первой ступени TP
+### Market pullback Telegram watch — режим «локальный хай» (второй канал)
 
-- **`tracker.ts`:** доборы 2-й/3-й ноги к якорю сигнала не ограничиваются только `signalTs + PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS`, если уже есть **одна** partial `TP_LADDER` и остаются незаполненные staged-ноги; план `liveStagedEntry` снимается также при **второй** partial `TP_LADDER` или по TTL, когда это продление не действует.
-- **`paper2-strategy-backtest.ts`:** та же логика окна и явный сброс плана staged-entry (паритет с live).
+- **`PULLBACK_ALERT_SIGNAL_MODE`:** `local_high_retrace` — пик = max `price_usd` в lookback `PULLBACK_ALERT_SCAN_MINUTES` (до **1440** мин), откат считается **от пика к последнему бару**, **без** обязательного роста якорь→пик (`MIN_RISE_PCT` в этом режиме не используется). `rise_then_retrace` — прежнее поведение (по умолчанию в коде, если env не задан).
+- **`detectLocalHighRetraceFromBars`**, поле **`PullbackPick.signalMode`**, текст алерта и лог цикла учитывают режим.
+- **`ecosystem.market-pullback-watch.cjs`:** для отдельного канала выставлены `local_high_retrace`, `SCAN_MINUTES=360`, `MIN_RETRACE_FROM_PEAK_PCT=6` (порог отката от пика настраивается env).
 
-**Откат:** `git revert` коммита с этим номером версии; деплой `v2` как обычно (`git reset --hard origin/v2`, `npm ci`, `pm2 reload ecosystem.config.cjs --update-env`).
+**Откат:** `git revert`; при необходимости вернуть в PM2 прежние `PULLBACK_ALERT_*` или `rise_then_retrace`.
 
 ---
 

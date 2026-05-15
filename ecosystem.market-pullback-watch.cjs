@@ -1,5 +1,6 @@
 /**
- * Отдельный PM2-профиль для «рост → откат от пика» (не spike-watch, не Live Oscar).
+ * Отдельный PM2-профиль для второго Telegram-канала: **локальный хай** в lookback-окне PG-баров
+ * и откат от пика до последней котировки (без порога «рост от якоря» и без rolling spike 10m).
  *
  * Запуск на VPS (из корня репозитория):
  *
@@ -28,12 +29,12 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
+        PULLBACK_ALERT_SIGNAL_MODE: 'local_high_retrace',
         PULLBACK_ALERT_POLL_INTERVAL_MS: '20000',
         PULLBACK_ALERT_POLL_SEND_DEDUPE_MS: '120000',
         PULLBACK_ALERT_MINT_COOLDOWN_MINUTES: '30',
-        PULLBACK_ALERT_SCAN_MINUTES: '90',
-        PULLBACK_ALERT_MIN_RISE_PCT: '6',
-        PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '10',
+        PULLBACK_ALERT_SCAN_MINUTES: '360',
+        PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '6',
         PULLBACK_ALERT_MIN_HOLDERS: '1000',
         PULLBACK_ALERT_HOLDER_NULL_SOFT: '1',
         PULLBACK_ALERT_MIN_AGE_HOURS: '3',
