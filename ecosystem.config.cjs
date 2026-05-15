@@ -1,6 +1,15 @@
 /** VPS `/opt/solana-alpha`: Живой Оскар + дашборд + сборщики снимков (PM2 читает этот файл). */
 const path = require('path');
 const root = __dirname;
+require('dotenv').config({ path: path.join(root, '.env') });
+/** Проброс в `env` каждого PM2-приложения, чтобы ключ был в `process.env` даже если дочерний процесс не подхватил `.env` так, как ожидается. */
+const JUPITER_API_KEY_PM2 = (process.env.JUPITER_API_KEY || '').trim();
+const PM2_JUPITER_KEY_ENV = JUPITER_API_KEY_PM2 ? { JUPITER_API_KEY: JUPITER_API_KEY_PM2 } : {};
+if (!JUPITER_API_KEY_PM2) {
+  console.warn(
+    '[ecosystem.config.cjs] JUPITER_API_KEY пуст в .env при разборе конфига — в merged env не попадёт Pro-ключ (проверьте файл на VPS и `pm2 reload`).',
+  );
+}
 const JUPITER_PRO_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
 
@@ -36,6 +45,7 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         HOST: '0.0.0.0',
         PORT: '3008',
         /** Должен совпадать с `isOrganizerPaperStorePath` в dashboard-server (имя `organizer-paper.jsonl`). */
@@ -224,9 +234,12 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
         JUPITER_QUOTE_API_URL: JUPITER_PRO_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
+        /** Было 1250 по умолчанию в watcher — чаще quote в рамках Pro, с паузой между mint в цикле. */
+        JUPITER_WATCHER_REQUEST_DELAY_MS: '650',
       },
     },
     {
@@ -264,6 +277,7 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
@@ -487,6 +501,8 @@ module.exports = {
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
+        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
 
@@ -604,9 +620,15 @@ module.exports = {
         LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         /**
          * Jupiter `/swap/v1/swap`: cap priority fee at **0.0001 SOL** (100_000 lamports) via `priorityLevelWithMaxLamports`.
-         * Optional override: `LIVE_JUPITER_SWAP_PRIORITY_LEVEL` = medium | high | veryHigh (default medium).
+         * `veryHigh` — максимально агрессивный приоритет в рамках cap (дороже по приоритет-фии).
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
+        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
+        /**
+         * Пауза между mint после Jupiter MTM (см. `LIVE_TRACKER_INTER_MINT_DELAY_MS`): 60 ms — ближе к ~10 RPS.
+         * Полный снятие паузы: `0` (не задаём здесь без мониторинга 429).
+         */
+        LIVE_TRACKER_INTER_MINT_DELAY_MS: '60',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
         LIVE_MAX_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         LIVE_MAX_OPEN_POSITIONS: '30',
@@ -675,6 +697,7 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'paper-oscar-risky',
@@ -801,6 +824,8 @@ module.exports = {
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
+        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
@@ -846,6 +871,7 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'paper-oscar-v21',
@@ -968,6 +994,8 @@ module.exports = {
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
+        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
@@ -1012,6 +1040,7 @@ module.exports = {
       merge_logs: true,
       time: true,
       env: {
+        ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'paper-oscar-v22',
@@ -1134,6 +1163,8 @@ module.exports = {
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
+        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',

@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.172] — 2026-05-15
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.172`.
+
+### PM2 + Jupiter Pro (квоты и ключ)
+
+- **`ecosystem.config.cjs`:** в начале файла `require('dotenv').config({ path: <repo>/.env') }` — при `pm2 start|reload ecosystem.config.cjs` ключ и прочие переменные из `.env` доступны при сборке блока `env`.
+- **`PM2_JUPITER_KEY_ENV`:** во все процессы, которые ходят в Jupiter API (`live-oscar-dashboard`, `sa-jupiter`, `live-oscar`, `paper-oscar-risky`, `paper-oscar-v21`, `paper-oscar-v22`), в `env` мержится **`JUPITER_API_KEY`** из `.env` (если ключ задан). Если ключа нет — одноразовый `console.warn` при разборе конфига.
+- **`live-oscar` + все `PAPER_SIM_USE_JUPITER_BUILD=1` в ecosystem (live + три paper-oscar):** `JUPITER_QUOTE_429_MAX_RETRIES=5`, `JUPITER_QUOTE_429_INITIAL_BACKOFF_MS=150`.
+- **`sa-jupiter`:** `JUPITER_WATCHER_REQUEST_DELAY_MS=650` (быстрее дефолта 1250 в `jupiter-route-watcher.mjs`).
+
+**Откат:** `git revert` коммита; при необходимости удалить новые ключи из `env` в ecosystem или вернуть прежние строковые значения.
+
+---
+
 ## [1.11.171] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.171`.
