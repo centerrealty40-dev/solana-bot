@@ -1,8 +1,10 @@
 /**
  * Отдельный watch-only бот: резкий рост/пролив по снимкам DEX в Postgres → Telegram.
  *
- * Не использует TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID продового Live Oscar.
- * Только SPIKE_ALERT_TELEGRAM_* и только SELECT по таблицам снимков + tokens.
+ * Не использует TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID продового Live Oscar — только
+ * SPIKE_ALERT_TELEGRAM_* и отдельный rate-limit Telegram. Запросы к PG те же пулы, что и у
+ * коллектора, но нагрузка ограничена циклом SPIKE_ALERT_POLL_INTERVAL_MS и лимитом строк;
+ * Live Oscar на это не завязан.
  *
  * Детекция: по каждому mint из свежей выборки поднимаем цепочку минутных баров за SPIKE_ALERT_SCAN_MINUTES
  * и ищем **соседнюю** пару баров с |Δ%| ≥ порога (отдельно для роста и пролива:
@@ -26,8 +28,10 @@
  * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
  * SPIKE_ALERT_POLL_SEND_DEDUPE_MS (не путать с удалённым часовым cooldown).
  *
- * SPIKE_ALERT_MINT_COOLDOWN_MINUTES — после успешной отправки по mint не слать новые алерты по этому же mint
- * заданное число минут (карта в памяти процесса; при POLL_INTERVAL_MS=0 и cron между запусками не действует).
+ * SPIKE_ALERT_MINT_COOLDOWN_MINUTES — после успешной отправки по mint пауза; эскалация может
+ * слать [UPDATE] при усилении пролива (см. SPIKE_ALERT_ESCALATE_*).
+ *
+ * Диагностика без Telegram: `npm run market-spike-telegram-watch -- --diagnose-mint <mint> [--at ISO]`
  *
  * Алерт только если «новый» бар события не старше SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES; соседняя пара
  * берётся самая свежая в ряду (не максимум |%| за всю глубину). При очень низкой liq_usd в снимке —
@@ -137,7 +141,121 @@ const SPIKE_THRESHOLD_FLOOR = Math.max(
   THRESHOLD_CONSEC_DUMP_PCT,
   THRESHOLD_ROLLING_PCT,
 );
+
+/**
+ * Tier-фильтр по market cap: единый минимум для PUMP (рост) + три ступени для DUMP (пролив).
+ * Используется ВМЕСТО плоских THRESHOLD_*_CONSEC_PCT/ROLLING_PCT, когда SPIKE_ALERT_TIERED_BY_MCAP=1.
+ *
+ * Зачем: на капе $1.5–3M пролив 8% — это шум; на капе $7M+ ждать 15% — пропуск. Каскад снижает порог
+ * для крупных капов и поднимает для мелких. Pump в любой капе считаем интересным только от 30%.
+ *
+ * Логика финального решения:
+ *   ref_mcap = nowMcap ?? anchorMcap ?? token_fdv ?? 0
+ *   if pct >= 0:                                       минимум = SPIKE_ALERT_PUMP_MIN_PCT
+ *   elif ref_mcap >= SPIKE_ALERT_DUMP_TIER3_MCAP_USD:  минимум = SPIKE_ALERT_DUMP_TIER3_MIN_PCT
+ *   elif ref_mcap >= SPIKE_ALERT_DUMP_TIER2_MCAP_USD:  минимум = SPIKE_ALERT_DUMP_TIER2_MIN_PCT
+ *   elif ref_mcap >= SPIKE_ALERT_DUMP_TIER1_MCAP_USD:  минимум = SPIKE_ALERT_DUMP_TIER1_MIN_PCT
+ *   else:                                              отбрасываем (микрокап)
+ *
+ * Когда SPIKE_ALERT_TIERED_BY_MCAP=0 — поведение прежнее (плоские THRESHOLD_*).
+ */
+/** По умолчанию включён tier-каскад (см. ecosystem.market-spike-watch.cjs). */
+const TIERED_BY_MCAP = envBool('SPIKE_ALERT_TIERED_BY_MCAP', true);
+const PUMP_MIN_PCT = Math.max(0.5, Math.min(500, envNum('SPIKE_ALERT_PUMP_MIN_PCT', 30)));
+const DUMP_TIER1_MCAP = Math.max(0, envNum('SPIKE_ALERT_DUMP_TIER1_MCAP_USD', 1_500_000));
+/**
+ * Tier-пороги для DUMP делятся на signalKind:
+ *  - `_CONSEC` — соседние минутные бары (резкий шаг);
+ *  - `_ROLLING` — диапазон ROLLING_MINUTES_MIN…MAX (накопление за W мин).
+ * Если `_ROLLING` не задан явно — берётся `_CONSEC` (legacy совместимость).
+ */
+const DUMP_TIER1_MIN_PCT_CONSEC = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER1_MIN_PCT', 14)));
+const DUMP_TIER1_MIN_PCT_ROLLING = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER1_MIN_PCT_ROLLING', 15)),
+);
+const DUMP_TIER2_MCAP = Math.max(0, envNum('SPIKE_ALERT_DUMP_TIER2_MCAP_USD', 3_000_000));
+const DUMP_TIER2_MIN_PCT_CONSEC = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER2_MIN_PCT', 11)));
+const DUMP_TIER2_MIN_PCT_ROLLING = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER2_MIN_PCT_ROLLING', 12)),
+);
+const DUMP_TIER3_MCAP = Math.max(0, envNum('SPIKE_ALERT_DUMP_TIER3_MCAP_USD', 7_000_000));
+const DUMP_TIER3_MIN_PCT_CONSEC = Math.max(0.5, Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER3_MIN_PCT', 8)));
+const DUMP_TIER3_MIN_PCT_ROLLING = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING', 10)),
+);
+
+/**
+ * Минимально интересный |Δ%|, который ВООБЩЕ пропускаем через детекторы pickConsecutive/pickRolling.
+ * Финальное решение принимается в outer фильтре по tier-логике.
+ * Когда TIERED_BY_MCAP=1 — берём минимум из всех tier-порогов (consec и rolling), но не меньше 5%,
+ * чтобы не плодить шум.
+ */
+const PICK_PCT_FLOOR = TIERED_BY_MCAP
+  ? Math.max(
+      5,
+      Math.min(
+        DUMP_TIER1_MIN_PCT_CONSEC,
+        DUMP_TIER2_MIN_PCT_CONSEC,
+        DUMP_TIER3_MIN_PCT_CONSEC,
+        DUMP_TIER1_MIN_PCT_ROLLING,
+        DUMP_TIER2_MIN_PCT_ROLLING,
+        DUMP_TIER3_MIN_PCT_ROLLING,
+        PUMP_MIN_PCT,
+      ),
+    )
+  : Math.min(THRESHOLD_CONSEC_PUMP_PCT, THRESHOLD_CONSEC_DUMP_PCT, THRESHOLD_ROLLING_PCT);
+
+/**
+ * Эскалация: если в течение mint cooldown пролив усилился, шлём повторный [UPDATE]-алерт.
+ *  - `ENABLED` — включить (по умолчанию on);
+ *  - `DELTA_PCT` — повторный алерт, если |new pct| - |prev pct| ≥ DELTA_PCT (даже если tier тот же);
+ *  - `MIN_GAP_SEC` — минимальный интервал между [SENT]/[UPDATE] по одному mint;
+ *  - `MAX_PER_MINT` — максимум апдейтов за один период жизни алерта (после обнуляется через MINT_COOLDOWN_MS*2);
+ *  - `TIER_CHANGE_FORCES_UPDATE` — при переходе в более жёсткий tier шлём апдейт даже если delta ниже DELTA_PCT.
+ */
+const ESCALATE_ENABLED = envBool('SPIKE_ALERT_ESCALATE_ENABLED', true);
+const ESCALATE_DELTA_PCT = Math.max(
+  0.5,
+  Math.min(80, envNum('SPIKE_ALERT_ESCALATE_DELTA_PCT', 5)),
+);
+const ESCALATE_MIN_GAP_SEC = Math.max(
+  10,
+  Math.min(3600, Math.floor(envNum('SPIKE_ALERT_ESCALATE_MIN_GAP_SEC', 60))),
+);
+const ESCALATE_MAX_PER_MINT = Math.max(
+  0,
+  Math.min(10, Math.floor(envNum('SPIKE_ALERT_ESCALATE_MAX_PER_MINT', 3))),
+);
+const ESCALATE_TIER_CHANGE_FORCES_UPDATE = envBool(
+  'SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE',
+  true,
+);
+
+/**
+ * Аудит решений в PG-таблицу `market_spike_events`.
+ * При старте делается `CREATE TABLE IF NOT EXISTS`. Если PG отказал (нет прав или сетевая ошибка) —
+ * graceful fallback: пишем только в stdout, отправка алертов не страдает.
+ */
+const AUDIT_DB_ENABLED = envBool('SPIKE_ALERT_AUDIT_DB_ENABLED', true);
+/** Писать ли в БД skip-события (false → только sent/update/miss/skip-важные). */
+const AUDIT_LOG_SKIPS = envBool('SPIKE_ALERT_AUDIT_LOG_SKIPS', false);
+
+/** Если пройден PICK_PCT_FLOOR, но не tier-минимум — записать в лог как [MISS] (для retro-анализа). */
+const LOG_MISS_BY_FILTER = envBool('SPIKE_ALERT_LOG_MISS_BY_FILTER', true);
+
 const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
+/**
+ * Если SPIKE_ALERT_HOLDER_NULL_SOFT=1: токены с tokens.holder_count IS NULL пропускаются дальше
+ * (фильтр holders применяется только к токенам, у которых holder_count известен и < MIN_HOLDERS).
+ *
+ * Зачем: token-meta collector не успевает наполнять holder_count для свежих pump-токенов;
+ * жёсткий COALESCE(holder_count, 0) >= 1000 ранее отбрасывал даже легитимные токены с большим объёмом.
+ * NULL-soft режим даёт другим фильтрам (mcap, age, sanity) шанс отработать.
+ */
+const HOLDER_NULL_SOFT = envBool('SPIKE_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
@@ -156,14 +274,14 @@ const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('S
 /** После успешного алерта по mint — пауза перед любыми новыми алертами по этому mint (мин); 0 = выкл. */
 const MINT_COOLDOWN_MINUTES = Math.max(
   0,
-  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 10))),
+  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 5))),
 );
 const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
 
 /** Алерт только если «новый» бар скачка не старше N минут относительно now (отсекает старые движения в окне скана). */
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
   1,
-  Math.min(180, Math.floor(envNum('SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES', 12))),
+  Math.min(180, Math.floor(envNum('SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES', 20))),
 );
 
 /**
@@ -284,10 +402,14 @@ function buildLatestOnlyQuery(table: DexTable): string {
     MIN_MARKET_CAP_USD > 0
       ? `AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) >= ${MIN_MARKET_CAP_USD}`
       : '';
+  // Holders: при HOLDER_NULL_SOFT=1 NULL значения пропускаем (фильтрация только если holder_count известен).
+  const holdersClause = HOLDER_NULL_SOFT
+    ? `AND (t.holder_count IS NULL OR t.holder_count >= ${MIN_HOLDERS})`
+    : `AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}`;
   const snapshotFilters = `
     AND s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
     AND COALESCE(s.price_usd, 0) > 0
-    AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}
+    ${holdersClause}
     AND (
       (s.launch_ts IS NOT NULL AND s.launch_ts <= now() - interval '${MIN_AGE_HOURS} hours')
       OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
@@ -307,7 +429,10 @@ WITH top_mints AS (
   LIMIT ${MAX_ROWS}
 ),
 latest AS (
-  SELECT DISTINCT ON (s.base_mint)
+  -- DISTINCT ON (base_mint, pair_address): берём последний снимок по КАЖДОЙ паре mint.
+  -- Так анализ ниже видит все пулы одного mint — резкий бар на pumpswap не теряется
+  -- из-за того что свежее у meteora (или наоборот). Кэп от MAX_ROWS уже применён в top_mints.
+  SELECT DISTINCT ON (s.base_mint, s.pair_address)
     s.base_mint,
     s.pair_address,
     s.price_usd AS px_now,
@@ -318,7 +443,7 @@ latest AS (
   INNER JOIN top_mints m ON m.base_mint = s.base_mint
   WHERE true
     ${snapshotFilters}
-  ORDER BY s.base_mint, s.ts DESC
+  ORDER BY s.base_mint, s.pair_address, s.ts DESC
 )
 SELECT
   l.base_mint,
@@ -336,13 +461,18 @@ INNER JOIN tokens t ON t.mint = l.base_mint`;
 
 function buildBarsQuery(table: DexTable, mintPairTuplesSql: string): string {
   return `
-SELECT base_mint::text, ts, price_usd::double precision AS price_usd,
+SELECT base_mint::text, pair_address::text, ts, price_usd::double precision AS price_usd,
   COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
 FROM ${table}
 WHERE (base_mint, pair_address) IN (${mintPairTuplesSql})
   AND ts > now() - (${SCAN_MINUTES} * interval '1 minute')
   AND COALESCE(price_usd, 0) > 0
-ORDER BY base_mint ASC, ts ASC`;
+ORDER BY base_mint ASC, pair_address ASC, ts ASC`;
+}
+
+/** Ключ для bars-map: `${mint}|${pair}`. */
+function barsMapKey(mint: string, pair: string): string {
+  return `${mint}|${pair}`;
 }
 
 function parseTs(v: Date | string): Date {
@@ -405,6 +535,55 @@ function referenceMcapUsd(meta: LatestMeta, pick: SpikePick): number {
 }
 
 /**
+ * Возвращает минимальный |Δ%| для алерта по tier-логике (по market cap).
+ * Возвращает null, если кандидат должен быть отброшен (микрокап, не интересен).
+ *
+ * Пороги отдельные для consec и rolling:
+ *   tier3 (mcap≥$7M): consec=8%, rolling=10%
+ *   tier2 (mcap≥$3M): consec=11%, rolling=12%
+ *   tier1 (mcap≥$1.5M): consec=14%, rolling=15%
+ * Только для TIERED_BY_MCAP=1; иначе зовётся унаследованный флоу.
+ */
+export function tierRequiredMinAbsPct(
+  refMcap: number,
+  isPump: boolean,
+  signalKind: SpikeSignalKind = 'consecutive',
+): number | null {
+  if (isPump) return PUMP_MIN_PCT;
+  if (refMcap >= DUMP_TIER3_MCAP) {
+    return signalKind === 'rolling' ? DUMP_TIER3_MIN_PCT_ROLLING : DUMP_TIER3_MIN_PCT_CONSEC;
+  }
+  if (refMcap >= DUMP_TIER2_MCAP) {
+    return signalKind === 'rolling' ? DUMP_TIER2_MIN_PCT_ROLLING : DUMP_TIER2_MIN_PCT_CONSEC;
+  }
+  if (refMcap >= DUMP_TIER1_MCAP) {
+    return signalKind === 'rolling' ? DUMP_TIER1_MIN_PCT_ROLLING : DUMP_TIER1_MIN_PCT_CONSEC;
+  }
+  return null;
+}
+
+/** Числовая ступень: 3 (самая «мягкая», крупная капа), 2, 1, 0 (микрокап). Используется для эскалации. */
+export function tierRank(refMcap: number): 0 | 1 | 2 | 3 {
+  if (refMcap >= DUMP_TIER3_MCAP) return 3;
+  if (refMcap >= DUMP_TIER2_MCAP) return 2;
+  if (refMcap >= DUMP_TIER1_MCAP) return 1;
+  return 0;
+}
+
+export function tierLabel(refMcap: number): string {
+  switch (tierRank(refMcap)) {
+    case 3:
+      return 'tier3(7M+)';
+    case 2:
+      return 'tier2(3-7M)';
+    case 1:
+      return 'tier1(1.5-3M)';
+    default:
+      return 'sub-tier(<1.5M)';
+  }
+}
+
+/**
  * Ликвидность из последнего снимка должна быть соразмерна капе: иначе price_usd/mcap_usd в барах
  * часто из одной записи, а liq_usd — из другой или битый парсинг Meteora и т.п.
  */
@@ -450,12 +629,14 @@ function isOneBarGlitchReversedByNext(bars: Bar[], newerIdx: number): boolean {
 }
 
 /** Для W ∈ [ROLLING_MINUTES_MIN … MAX]: опора — последний бар с ts ≤ now−W·60s; сравнение с последним баром ряда. */
-function pickRollingRangeFromBars(bars: Bar[]): SpikePick | null {
+function pickRollingRangeFromBars(bars: Bar[], nowMs: number = Date.now()): SpikePick | null {
   if (!ROLLING_RANGE_ENABLED || bars.length < 2) return null;
   const newest = bars[bars.length - 1];
+  // В tiered-режиме порог отбора кандидатов = PICK_PCT_FLOOR; финальное решение — outer tier-фильтр.
+  const rollingMinAbs = TIERED_BY_MCAP ? PICK_PCT_FLOOR : THRESHOLD_ROLLING_PCT;
   let best: SpikePick | null = null;
   for (let w = ROLLING_MINUTES_MIN; w <= ROLLING_MINUTES_MAX; w++) {
-    const cutoffMs = Date.now() - w * 60_000;
+    const cutoffMs = nowMs - w * 60_000;
     let anchor: Bar | null = null;
     for (let i = bars.length - 1; i >= 0; i--) {
       if (bars[i].ts.getTime() <= cutoffMs) {
@@ -466,7 +647,7 @@ function pickRollingRangeFromBars(bars: Bar[]): SpikePick | null {
     if (!anchor || !(anchor.px > 0) || !(newest.px > 0)) continue;
     if (anchor.ts.getTime() >= newest.ts.getTime()) continue;
     const pct = (newest.px / anchor.px - 1) * 100;
-    if (!Number.isFinite(pct) || Math.abs(pct) < THRESHOLD_ROLLING_PCT) continue;
+    if (!Number.isFinite(pct) || Math.abs(pct) < rollingMinAbs) continue;
     const pick: SpikePick = {
       pct,
       anchorPx: anchor.px,
@@ -500,7 +681,12 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
     if (!(older.px > 0) || !(newer.px > 0)) continue;
     const pct = (newer.px / older.px - 1) * 100;
     if (!Number.isFinite(pct)) continue;
-    const thrAbs = pct >= 0 ? THRESHOLD_CONSEC_PUMP_PCT : THRESHOLD_CONSEC_DUMP_PCT;
+    // В tiered-режиме отбираем по floor — финальное решение в outer tier-фильтре.
+    const thrAbs = TIERED_BY_MCAP
+      ? PICK_PCT_FLOOR
+      : pct >= 0
+        ? THRESHOLD_CONSEC_PUMP_PCT
+        : THRESHOLD_CONSEC_DUMP_PCT;
     if (Math.abs(pct) < thrAbs) continue;
     if (isOneBarGlitchReversedByNext(bars, i)) continue;
     return {
@@ -518,10 +704,10 @@ function pickConsecutiveBarSpike(bars: Bar[]): SpikePick | null {
   return null;
 }
 
-function analyzeBarsForMint(rawBars: Bar[]): SpikePick | null {
+function analyzeBarsForMint(rawBars: Bar[], nowMs: number = Date.now()): SpikePick | null {
   const bars = dedupeBarsSorted(rawBars);
   const c1 = pickConsecutiveBarSpike(bars);
-  const c2 = pickRollingRangeFromBars(bars);
+  const c2 = pickRollingRangeFromBars(bars, nowMs);
   if (!c1) return c2;
   if (!c2) return c1;
   return Math.abs(c2.pct) > Math.abs(c1.pct) ? c2 : c1;
@@ -576,6 +762,15 @@ type AlertRow = LatestMeta & {
   anchorTs: Date | string;
   anchorMcapUsd: number | null;
   nowMcapUsd: number | null;
+  /** Заполняются перед фильтрами эскалации/тайра — для аудита и сообщения. */
+  refMcapUsd?: number;
+  tierName?: string;
+  /** Если true — это [UPDATE]-апдейт по уже отосланному mint (внутри cooldown). */
+  isUpdate?: boolean;
+  /** Заполняется при isUpdate=true; мы передаём это в текст алерта и в БД. */
+  prevPct?: number;
+  prevTierName?: string;
+  prevSentAtMs?: number;
 };
 
 /** Короткая метка для Telegram: «минутное окно» vs «трёхминутное» (накопление по диапазону минут). */
@@ -583,13 +778,32 @@ function telegramSignalTypeRu(row: AlertRow): string {
   return row.signalKind === 'consecutive' ? 'минутное окно' : 'трёхминутное';
 }
 
+/** Тег сигнала для фильтрации в чате: мгновенный шаг между минутами vs накопление. */
+function telegramSignalBracket(row: AlertRow): string {
+  return row.signalKind === 'consecutive' ? '[INSTANT]' : '[ROLLING]';
+}
+
+function alertKindTag(row: AlertRow): { tag: string; kindWord: string } {
+  const bracket = telegramSignalBracket(row);
+  if (row.isUpdate) {
+    const sub = row.pct >= 0 ? 'spike_pump_update' : 'spike_dump_update';
+    return {
+      tag: `${bracket}[MARKET][${sub}]`,
+      kindWord: row.pct >= 0 ? 'Рост (UPDATE)' : 'Пролив (UPDATE)',
+    };
+  }
+  const sub = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
+  return {
+    tag: `${bracket}[MARKET][${sub}]`,
+    kindWord: row.pct >= 0 ? 'Рост' : 'Пролив',
+  };
+}
+
 function buildAlertHtml(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const gmgnUrl = gmgnSolTokenUrl(mint);
   const sym = row.symbol?.trim() || '?';
-  const kindWord = row.pct >= 0 ? 'Рост' : 'Пролив';
-  const kindTag = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
-  const tag = `[MARKET][${kindTag}]`;
+  const { tag, kindWord } = alertKindTag(row);
   const pctHuman = formatSignedPct(row.pct);
   const nameRaw = row.token_name?.trim();
   const title =
@@ -597,9 +811,15 @@ function buildAlertHtml(row: AlertRow): string {
       ? `<b>${escapeHtml(sym)}</b>\n<i>${escapeHtml(nameRaw)}</i>`
       : `<b>${escapeHtml(sym)}</b>`;
 
+  const escalationLine =
+    row.isUpdate && typeof row.prevPct === 'number'
+      ? `\nэскалация: ${escapeHtml(formatSignedPct(row.prevPct))} → <b>${escapeHtml(pctHuman)}</b>`
+      : '';
+  const tierLine = row.tierName ? `\ntier: ${escapeHtml(row.tierName)}` : '';
+
   let body =
-    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>\n` +
-    `тип: <b>${escapeHtml(telegramSignalTypeRu(row))}</b>\n` +
+    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>${escalationLine}\n` +
+    `тип: <b>${escapeHtml(telegramSignalTypeRu(row))}</b>${tierLine}\n` +
     `окно: ${escapeHtml(row.windowLabel)}\n\n` +
     `${title}\n` +
     `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
@@ -614,14 +834,17 @@ function buildAlertHtml(row: AlertRow): string {
 function buildAlertPlain(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const sym = row.symbol?.trim() || '?';
-  const kindWord = row.pct >= 0 ? 'Рост' : 'Пролив';
-  const kindTag = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
-  const tag = `[MARKET][${kindTag}]`;
+  const { tag, kindWord } = alertKindTag(row);
   const nameRaw = row.token_name?.trim();
   const title = nameRaw && nameRaw !== sym ? `${sym} (${nameRaw})` : sym;
+  const escalationLine =
+    row.isUpdate && typeof row.prevPct === 'number'
+      ? `\nэскалация: ${formatSignedPct(row.prevPct)} → ${formatSignedPct(row.pct)}`
+      : '';
+  const tierLine = row.tierName ? `\ntier: ${row.tierName}` : '';
   let body =
-    `${tag} ${kindWord} ${formatSignedPct(row.pct)}\n` +
-    `тип: ${telegramSignalTypeRu(row)}\n` +
+    `${tag} ${kindWord} ${formatSignedPct(row.pct)}${escalationLine}\n` +
+    `тип: ${telegramSignalTypeRu(row)}${tierLine}\n` +
     `окно: ${row.windowLabel}\n\n` +
     `${title}\n` +
     `${mint}\n` +
@@ -659,7 +882,10 @@ async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {
   return out;
 }
 
-async function fetchBarsBatch(table: DexTable, latestRows: LatestMeta[]): Promise<Map<string, Bar[]>> {
+async function fetchBarsBatch(
+  table: DexTable,
+  latestRows: LatestMeta[],
+): Promise<Map<string, Bar[]>> {
   const map = new Map<string, Bar[]>();
   if (latestRows.length === 0) return map;
   const tupleSql = sqlMintPairInTuples(latestRows);
@@ -669,19 +895,23 @@ async function fetchBarsBatch(table: DexTable, latestRows: LatestMeta[]): Promis
   const rows = r as unknown as Record<string, unknown>[];
   for (const row of rows) {
     const mint = String(row.base_mint ?? '');
+    const pair = String(row.pair_address ?? '');
     const px = Number(row.price_usd);
-    if (!mint || !(px > 0)) continue;
+    if (!mint || !pair || !(px > 0)) continue;
     const ts = parseTs(row.ts as Date | string);
     const mcapUsd = parseMcapUsd(row);
-    const arr = map.get(mint) ?? [];
+    const key = barsMapKey(mint, pair);
+    const arr = map.get(key) ?? [];
     arr.push({ ts, px, mcapUsd });
-    map.set(mint, arr);
+    map.set(key, arr);
   }
   return map;
 }
 
-async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> {
-  if (!TG_TOKEN || !TG_CHAT) return false;
+type SendTelegramResult = { ok: boolean; messageId: number | null };
+
+async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<SendTelegramResult> {
+  if (!TG_TOKEN || !TG_CHAT) return { ok: false, messageId: null };
   const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
   const payload: Record<string, unknown> = {
     chat_id: TG_CHAT,
@@ -701,8 +931,16 @@ async function sendTelegram(text: string, parseMode?: 'HTML'): Promise<boolean> 
       res.status,
       errBody.slice(0, 400),
     );
+    return { ok: false, messageId: null };
   }
-  return res.ok;
+  let messageId: number | null = null;
+  try {
+    const j = (await res.json()) as { result?: { message_id?: number } };
+    if (j.result?.message_id != null) messageId = Number(j.result.message_id);
+  } catch {
+    messageId = null;
+  }
+  return { ok: true, messageId };
 }
 
 function sleepMs(ms: number): Promise<void> {
@@ -782,15 +1020,20 @@ async function upsertTokenMetaFromDex(mint: string, meta: DexTokenMeta): Promise
   const sym = meta.symbol ? truncateTokenMetaField(meta.symbol, 120) : null;
   const nam = meta.name ? truncateTokenMetaField(meta.name, 240) : null;
   if (!sym && !nam) return;
+  // Раньше тут было pgSql.json({ source: 'spike_watch_dexscreener' }) — оно возвращало объект,
+  // который драйвер пытался передать как plain string. Это приводило к TypeError ERR_INVALID_ARG_TYPE
+  // («Received an instance of Object») и шуму каждые 20 сек в error.log. В этом UPSERT мы всё равно
+  // не трогаем поле metadata — только symbol/name. Если в `tokens` для нового mint ничего нет,
+  // запись будет создана с metadata=NULL (поле допускает NULL). Это безопасно для остального продукта,
+  // т.к. этим UPSERT в `tokens` пишет только spike-watch для обогащения symbol/name из Dexscreener.
   try {
     await pgSql`
-      INSERT INTO tokens (mint, symbol, name, decimals, metadata, updated_at)
+      INSERT INTO tokens (mint, symbol, name, decimals, updated_at)
       VALUES (
         ${mint},
         ${sym},
         ${nam},
         0,
-        ${pgSql.json({ source: 'spike_watch_dexscreener' })},
         now()
       )
       ON CONFLICT (mint) DO UPDATE SET
@@ -799,7 +1042,11 @@ async function upsertTokenMetaFromDex(mint: string, meta: DexTokenMeta): Promise
         updated_at = now()
     `;
   } catch (e) {
-    console.warn('[market-spike-telegram-watch] token upsert failed', mint.slice(0, 12), String(e));
+    console.warn(
+      '[market-spike-telegram-watch] token upsert failed',
+      mint.slice(0, 12),
+      String(e),
+    );
   }
 }
 
@@ -827,19 +1074,312 @@ function pruneSendDedupe(map: Map<string, number>, olderThanMs: number): void {
   }
 }
 
-function pruneMintCooldown(map: Map<string, number>): void {
-  if (MINT_COOLDOWN_MS <= 0) return;
-  const cut = Date.now() - MINT_COOLDOWN_MS * 2;
-  for (const [k, t] of map) {
-    if (t < cut) map.delete(k);
+// ────────────────────────────────────────────────────────────────────────────────
+// Эскалация: state в RAM + чистая функция-арбитр (тестируемая отдельно).
+// ────────────────────────────────────────────────────────────────────────────────
+
+export type MintEscalationState = {
+  /** |pct| последнего отправленного алерта (sent или update). */
+  lastSentAbsPct: number;
+  /** Знак (true=pump,false=dump) последнего алерта. Эскалация только в ту же сторону. */
+  lastWasPump: boolean;
+  /** Tier-rank на момент последнего алерта. */
+  lastTierRank: 0 | 1 | 2 | 3;
+  /** Последний lastTierRank — для лога. */
+  lastTierName: string;
+  /** epoch ms последнего алерта. */
+  lastSentAtMs: number;
+  /** Сколько UPDATE-алертов было после первого SENT (без учёта первого). */
+  updatesSent: number;
+};
+
+export type EscalationDecision =
+  | {
+      kind: 'first';
+      reason: 'no_prev_state' | 'cooldown_expired';
+    }
+  | {
+      kind: 'update';
+      reason: 'tier_change' | 'delta_pct';
+    }
+  | {
+      kind: 'skip';
+      reason:
+        | 'cooldown_no_escalation'
+        | 'gap_too_small'
+        | 'max_updates_reached'
+        | 'wrong_side'
+        | 'pct_below_prev';
+    };
+
+/**
+ * Принимает решение о посылке/пропуске алерта по mint в рамках эскалации.
+ * - Если prev state нет — отправляем как «first».
+ * - Если cooldown истёк — отправляем как «first» (это де-факто новый алерт).
+ * - Если внутри cooldown:
+ *   - Только в ту же сторону (pump/dump);
+ *   - tier стал жёстче (rank упал) и `tier_change_forces_update`=true → update;
+ *   - |pct| - |prev| ≥ ESCALATE_DELTA_PCT и прошло ≥ ESCALATE_MIN_GAP_SEC → update;
+ *   - Иначе skip (с конкретной причиной).
+ */
+export function decideEscalation(args: {
+  prev: MintEscalationState | null;
+  candidatePct: number;
+  candidateTierRank: 0 | 1 | 2 | 3;
+  nowMs: number;
+  cooldownMs: number;
+  escalateEnabled: boolean;
+  escalateDeltaPct: number;
+  escalateMinGapSec: number;
+  escalateMaxPerMint: number;
+  tierChangeForcesUpdate: boolean;
+}): EscalationDecision {
+  const {
+    prev,
+    candidatePct,
+    candidateTierRank,
+    nowMs,
+    cooldownMs,
+    escalateEnabled,
+    escalateDeltaPct,
+    escalateMinGapSec,
+    escalateMaxPerMint,
+    tierChangeForcesUpdate,
+  } = args;
+
+  if (!prev) return { kind: 'first', reason: 'no_prev_state' };
+
+  const sinceMs = nowMs - prev.lastSentAtMs;
+  if (cooldownMs > 0 && sinceMs >= cooldownMs) {
+    return { kind: 'first', reason: 'cooldown_expired' };
   }
+  // Cooldown ещё активен — здесь только эскалация может отправить.
+  if (!escalateEnabled) return { kind: 'skip', reason: 'cooldown_no_escalation' };
+
+  const isPump = candidatePct >= 0;
+  if (isPump !== prev.lastWasPump) return { kind: 'skip', reason: 'wrong_side' };
+
+  const absNew = Math.abs(candidatePct);
+  const absPrev = prev.lastSentAbsPct;
+  if (absNew <= absPrev) return { kind: 'skip', reason: 'pct_below_prev' };
+
+  if (escalateMaxPerMint > 0 && prev.updatesSent >= escalateMaxPerMint) {
+    return { kind: 'skip', reason: 'max_updates_reached' };
+  }
+  if (sinceMs < escalateMinGapSec * 1000) {
+    return { kind: 'skip', reason: 'gap_too_small' };
+  }
+
+  // tier стал жёстче? (для дампа — rank уменьшился; pump — обычно не происходит)
+  const tierTighter = !isPump && candidateTierRank < prev.lastTierRank;
+  if (tierTighter && tierChangeForcesUpdate) {
+    return { kind: 'update', reason: 'tier_change' };
+  }
+
+  if (absNew - absPrev >= escalateDeltaPct) {
+    return { kind: 'update', reason: 'delta_pct' };
+  }
+  return { kind: 'skip', reason: 'cooldown_no_escalation' };
+}
+
+function pruneMintEscalationState(map: Map<string, MintEscalationState>): void {
+  // Чистим записи старше двух MINT_COOLDOWN_MS (или 30 мин при cooldown=0).
+  const ttl = MINT_COOLDOWN_MS > 0 ? MINT_COOLDOWN_MS * 2 : 30 * 60_000;
+  const cut = Date.now() - ttl;
+  for (const [k, v] of map) {
+    if (v.lastSentAtMs < cut) map.delete(k);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Аудит: stdout-лог + опциональная запись в PG (graceful fallback).
+// ────────────────────────────────────────────────────────────────────────────────
+
+type SpikeEventStatus = 'sent' | 'update' | 'skip' | 'miss';
+
+type SpikeEventRecord = {
+  status: SpikeEventStatus;
+  mint: string;
+  pair_address: string;
+  dex: string;
+  pct: number;
+  signal_kind: SpikeSignalKind;
+  rolling_span_minutes: number | null;
+  anchor_px: number;
+  now_px: number;
+  anchor_ts: Date;
+  ts_new: Date;
+  anchor_mcap_usd: number | null;
+  now_mcap_usd: number | null;
+  ref_mcap_usd: number | null;
+  tier_name: string | null;
+  liq_usd: number | null;
+  symbol: string | null;
+  token_name: string | null;
+  skip_reason: string | null;
+  prev_pct: number | null;
+  prev_sent_at_ms: number | null;
+  telegram_msg_id: number | null;
+};
+
+let auditTableReady: 'unknown' | 'ok' | 'failed' = 'unknown';
+
+async function ensureAuditTable(): Promise<void> {
+  if (!AUDIT_DB_ENABLED) {
+    auditTableReady = 'failed';
+    return;
+  }
+  if (auditTableReady === 'ok' || auditTableReady === 'failed') return;
+  try {
+    await db.execute(
+      dsql.raw(`
+CREATE TABLE IF NOT EXISTS market_spike_events (
+  id              BIGSERIAL PRIMARY KEY,
+  ts_event        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  mint            TEXT NOT NULL,
+  pair_address    TEXT NOT NULL,
+  dex             TEXT NOT NULL,
+  pct             DOUBLE PRECISION NOT NULL,
+  signal_kind     TEXT NOT NULL,
+  rolling_span_minutes SMALLINT,
+  anchor_px       DOUBLE PRECISION NOT NULL,
+  now_px          DOUBLE PRECISION NOT NULL,
+  anchor_ts       TIMESTAMPTZ NOT NULL,
+  ts_new          TIMESTAMPTZ NOT NULL,
+  anchor_mcap_usd DOUBLE PRECISION,
+  now_mcap_usd    DOUBLE PRECISION,
+  ref_mcap_usd    DOUBLE PRECISION,
+  tier_name       TEXT,
+  liq_usd         DOUBLE PRECISION,
+  symbol          TEXT,
+  token_name      TEXT,
+  status          TEXT NOT NULL,
+  skip_reason     TEXT,
+  prev_pct        DOUBLE PRECISION,
+  prev_sent_at    TIMESTAMPTZ,
+  telegram_msg_id BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_market_spike_events_mint_ts ON market_spike_events (mint, ts_event DESC);
+CREATE INDEX IF NOT EXISTS idx_market_spike_events_ts ON market_spike_events (ts_event DESC);
+CREATE INDEX IF NOT EXISTS idx_market_spike_events_status_ts ON market_spike_events (status, ts_event DESC);
+`),
+    );
+    auditTableReady = 'ok';
+    console.log('[market-spike-telegram-watch] audit table market_spike_events ready');
+  } catch (e) {
+    auditTableReady = 'failed';
+    console.warn(
+      '[market-spike-telegram-watch] audit table CREATE failed (graceful, продолжаем без БД-аудита):',
+      String(e).slice(0, 300),
+    );
+  }
+}
+
+async function recordSpikeEvent(rec: SpikeEventRecord): Promise<void> {
+  // stdout: компактная строка для grep-расследований.
+  const refMcapStr = rec.ref_mcap_usd != null ? formatMarketCapUsd(rec.ref_mcap_usd) : '?';
+  const tag = `[market-spike][${rec.status.toUpperCase()}]`;
+  const fields = [
+    `dex=${rec.dex}`,
+    `mint=${rec.mint.slice(0, 12)}`,
+    `pair=${rec.pair_address.slice(0, 8)}`,
+    `pct=${rec.pct.toFixed(2)}`,
+    `signal=${rec.signal_kind}${
+      rec.rolling_span_minutes ? `(${rec.rolling_span_minutes}m)` : ''
+    }`,
+    `tier=${rec.tier_name ?? '?'}`,
+    `ref_mcap=${refMcapStr}`,
+    `ts_new=${rec.ts_new.toISOString()}`,
+  ];
+  if (rec.skip_reason) fields.push(`reason=${rec.skip_reason}`);
+  if (rec.prev_pct != null) fields.push(`prev_pct=${rec.prev_pct.toFixed(2)}`);
+  if (rec.telegram_msg_id != null) fields.push(`tg_msg=${rec.telegram_msg_id}`);
+  if (rec.symbol) fields.push(`sym=${rec.symbol}`);
+  console.log(`${tag} ${fields.join(' ')}`);
+
+  if (auditTableReady !== 'ok') return;
+  if (rec.status === 'skip' && !AUDIT_LOG_SKIPS) return;
+  try {
+    await pgSql`
+      INSERT INTO market_spike_events (
+        mint, pair_address, dex, pct, signal_kind, rolling_span_minutes,
+        anchor_px, now_px, anchor_ts, ts_new,
+        anchor_mcap_usd, now_mcap_usd, ref_mcap_usd, tier_name,
+        liq_usd, symbol, token_name, status, skip_reason,
+        prev_pct, prev_sent_at, telegram_msg_id
+      ) VALUES (
+        ${rec.mint},
+        ${rec.pair_address},
+        ${rec.dex},
+        ${rec.pct},
+        ${rec.signal_kind},
+        ${rec.rolling_span_minutes},
+        ${rec.anchor_px},
+        ${rec.now_px},
+        ${rec.anchor_ts},
+        ${rec.ts_new},
+        ${rec.anchor_mcap_usd},
+        ${rec.now_mcap_usd},
+        ${rec.ref_mcap_usd},
+        ${rec.tier_name},
+        ${rec.liq_usd},
+        ${rec.symbol},
+        ${rec.token_name},
+        ${rec.status},
+        ${rec.skip_reason},
+        ${rec.prev_pct},
+        ${rec.prev_sent_at_ms != null ? new Date(rec.prev_sent_at_ms) : null},
+        ${rec.telegram_msg_id}
+      )
+    `;
+  } catch (e) {
+    console.warn(
+      '[market-spike-telegram-watch] audit insert failed (graceful):',
+      String(e).slice(0, 300),
+    );
+    auditTableReady = 'failed';
+  }
+}
+
+function recordToEvent(
+  status: SpikeEventStatus,
+  row: AlertRow,
+  extra: { skipReason?: string; tgMsgId?: number | null } = {},
+): SpikeEventRecord {
+  return {
+    status,
+    mint: row.base_mint,
+    pair_address: row.pair_address,
+    dex: row.dex,
+    pct: row.pct,
+    signal_kind: row.signalKind,
+    rolling_span_minutes: row.rollingSpanMinutes ?? null,
+    anchor_px: row.anchorPx,
+    now_px: row.px_now,
+    anchor_ts: parseTs(row.anchorTs as Date | string),
+    ts_new: parseTs(row.ts_now as Date | string),
+    anchor_mcap_usd: row.anchorMcapUsd,
+    now_mcap_usd: row.nowMcapUsd,
+    ref_mcap_usd: row.refMcapUsd ?? null,
+    tier_name: row.tierName ?? null,
+    liq_usd: row.liq_usd,
+    symbol: row.symbol,
+    token_name: row.token_name,
+    skip_reason: extra.skipReason ?? null,
+    prev_pct: row.prevPct ?? null,
+    prev_sent_at_ms: row.prevSentAtMs ?? null,
+    telegram_msg_id: extra.tgMsgId ?? null,
+  };
 }
 
 async function runOnePass(
   sendDedupe: Map<string, number> | null,
-  mintCooldown: Map<string, number> | null,
+  mintEscState: Map<string, MintEscalationState>,
 ): Promise<void> {
+  // merged: per-mint лучший pick по abs|pct| среди ВСЕХ пар всех DEX-таблиц.
   const merged = new Map<string, AlertRow>();
+  // tier-MISS: записываем для retro-анализа (только если LOG_MISS_BY_FILTER=1).
+  const missEvents: SpikeEventRecord[] = [];
 
   for (const table of SNAPSHOT_TABLES) {
     let latestRows: LatestMeta[];
@@ -849,9 +1389,9 @@ async function runOnePass(
       console.warn(`[market-spike-telegram-watch] ${table} latest query failed`, String(e));
       continue;
     }
-    let barsByMint: Map<string, Bar[]>;
+    let barsByMintPair: Map<string, Bar[]>;
     try {
-      barsByMint = await fetchBarsBatch(table, latestRows);
+      barsByMintPair = await fetchBarsBatch(table, latestRows);
     } catch (e) {
       console.warn(`[market-spike-telegram-watch] ${table} bars query failed`, String(e));
       continue;
@@ -860,13 +1400,71 @@ async function runOnePass(
     const dex = dexLabel(table);
     const nowMs = Date.now();
     for (const meta of latestRows) {
-      const bars = barsByMint.get(meta.base_mint) ?? [];
+      // Multi-pair: bars берём по конкретной паре (mint+pair), а не по mint целиком.
+      const bars = barsByMintPair.get(barsMapKey(meta.base_mint, meta.pair_address)) ?? [];
       const pick = analyzeBarsForMint(bars);
       if (!pick) continue;
       if (!isPickFreshEnough(pick, nowMs)) continue;
       if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
       if (!isPickPlausibleLiqVsMcap(meta, pick)) continue;
       if (!isPickPriceMcapConsistent(pick)) continue;
+
+      const refMcap = referenceMcapUsd(meta, pick);
+      const tierName = tierLabel(refMcap);
+      const isPump = pick.pct >= 0;
+
+      // Tier-фильтр по market cap. Финальное решение «слать или нет» при TIERED_BY_MCAP=1.
+      if (TIERED_BY_MCAP) {
+        const required = tierRequiredMinAbsPct(refMcap, isPump, pick.signalKind);
+        if (required == null) {
+          if (LOG_MISS_BY_FILTER) {
+            const missRow: AlertRow = {
+              ...meta,
+              dex,
+              pct: pick.pct,
+              px_now: pick.pxNow,
+              ts_now: pick.tsNew,
+              windowLabel: pick.windowLabel,
+              signalKind: pick.signalKind,
+              rollingSpanMinutes: pick.rollingSpanMinutes,
+              anchorPx: pick.anchorPx,
+              anchorTs: pick.anchorTs,
+              anchorMcapUsd: pick.anchorMcapUsd,
+              nowMcapUsd: pick.nowMcapUsd,
+              refMcapUsd: refMcap,
+              tierName,
+            };
+            missEvents.push(recordToEvent('miss', missRow, { skipReason: 'below_tier1' }));
+          }
+          continue;
+        }
+        if (Math.abs(pick.pct) < required) {
+          if (LOG_MISS_BY_FILTER) {
+            const missRow: AlertRow = {
+              ...meta,
+              dex,
+              pct: pick.pct,
+              px_now: pick.pxNow,
+              ts_now: pick.tsNew,
+              windowLabel: pick.windowLabel,
+              signalKind: pick.signalKind,
+              rollingSpanMinutes: pick.rollingSpanMinutes,
+              anchorPx: pick.anchorPx,
+              anchorTs: pick.anchorTs,
+              anchorMcapUsd: pick.anchorMcapUsd,
+              nowMcapUsd: pick.nowMcapUsd,
+              refMcapUsd: refMcap,
+              tierName,
+            };
+            missEvents.push(
+              recordToEvent('miss', missRow, {
+                skipReason: `tier_below_${pick.signalKind}_required_${required}`,
+              }),
+            );
+          }
+          continue;
+        }
+      }
 
       const row: AlertRow = {
         ...meta,
@@ -881,11 +1479,18 @@ async function runOnePass(
         anchorTs: pick.anchorTs,
         anchorMcapUsd: pick.anchorMcapUsd,
         nowMcapUsd: pick.nowMcapUsd,
+        refMcapUsd: refMcap,
+        tierName,
       };
 
       const prev = merged.get(meta.base_mint);
       if (!prev || Math.abs(pick.pct) > Math.abs(prev.pct)) merged.set(meta.base_mint, row);
     }
+  }
+
+  // Логируем tier-MISS-события один раз за проход (после слияния).
+  for (const ev of missEvents) {
+    await recordSpikeEvent(ev);
   }
 
   try {
@@ -894,48 +1499,122 @@ async function runOnePass(
     console.warn('[market-spike-telegram-watch] dex meta enrich failed', String(e));
   }
 
-  let sent = 0;
+  let sentFirst = 0;
+  let sentUpdate = 0;
+  let skipped = 0;
   if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
     pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
   }
-  if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-    pruneMintCooldown(mintCooldown);
-  }
+  pruneMintEscalationState(mintEscState);
 
   for (const [, row] of merged) {
-    const htmlBody = buildAlertHtml(row);
+    const mintKey = row.base_mint.trim();
+    const nowMs = Date.now();
 
-    if (DRY_RUN) {
-      console.log('[DRY_RUN]', buildAlertPlain(row));
-      continue;
-    }
-
+    // POLL_SEND_DEDUPE — защита от повторной отправки одного и того же бар-события (mint+dex+ts_new+side).
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
       const tsNew = parseTs(row.ts_now as Date | string);
       const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
       const last = sendDedupe.get(dedupeKey) ?? 0;
-      if (Date.now() - last < POLL_SEND_DEDUPE_MS) continue;
+      if (nowMs - last < POLL_SEND_DEDUPE_MS) {
+        skipped++;
+        await recordSpikeEvent(recordToEvent('skip', row, { skipReason: 'poll_send_dedupe' }));
+        continue;
+      }
     }
 
-    const mintKey = row.base_mint.trim();
-    if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-      const lastMint = mintCooldown.get(mintKey) ?? 0;
-      if (Date.now() - lastMint < MINT_COOLDOWN_MS) continue;
+    // Эскалация / cooldown решаются вместе.
+    const prevState = mintEscState.get(mintKey) ?? null;
+    const refMcap = row.refMcapUsd ?? referenceMcapUsd(row, {
+      pct: row.pct,
+      anchorPx: row.anchorPx,
+      pxNow: row.px_now,
+      anchorMcapUsd: row.anchorMcapUsd,
+      nowMcapUsd: row.nowMcapUsd,
+      anchorTs: parseTs(row.anchorTs as Date | string),
+      tsNew: parseTs(row.ts_now as Date | string),
+      windowLabel: row.windowLabel,
+      signalKind: row.signalKind,
+      rollingSpanMinutes: row.rollingSpanMinutes,
+    });
+    const candidateTierRank = tierRank(refMcap);
+
+    const decision = decideEscalation({
+      prev: prevState,
+      candidatePct: row.pct,
+      candidateTierRank,
+      nowMs,
+      cooldownMs: MINT_COOLDOWN_MS,
+      escalateEnabled: ESCALATE_ENABLED,
+      escalateDeltaPct: ESCALATE_DELTA_PCT,
+      escalateMinGapSec: ESCALATE_MIN_GAP_SEC,
+      escalateMaxPerMint: ESCALATE_MAX_PER_MINT,
+      tierChangeForcesUpdate: ESCALATE_TIER_CHANGE_FORCES_UPDATE,
+    });
+
+    if (decision.kind === 'skip') {
+      skipped++;
+      await recordSpikeEvent(recordToEvent('skip', row, { skipReason: decision.reason }));
+      continue;
     }
 
-    const ok = await sendTelegram(htmlBody, 'HTML');
-    if (ok) {
-      sent++;
+    if (decision.kind === 'update' && prevState) {
+      row.isUpdate = true;
+      row.prevPct = prevState.lastSentAbsPct * (prevState.lastWasPump ? 1 : -1);
+      row.prevTierName = prevState.lastTierName;
+      row.prevSentAtMs = prevState.lastSentAtMs;
+    }
+
+    if (DRY_RUN) {
+      console.log('[DRY_RUN]', buildAlertPlain(row));
+      // В DRY_RUN тоже фиксируем решение в стейте, чтобы эскалация работала корректно при отладке.
+      mintEscState.set(mintKey, {
+        lastSentAbsPct: Math.abs(row.pct),
+        lastWasPump: row.pct >= 0,
+        lastTierRank: candidateTierRank,
+        lastTierName: row.tierName ?? tierLabel(refMcap),
+        lastSentAtMs: nowMs,
+        updatesSent: decision.kind === 'update' ? (prevState?.updatesSent ?? 0) + 1 : 0,
+      });
+      if (decision.kind === 'update') sentUpdate++;
+      else sentFirst++;
+      await recordSpikeEvent(
+        recordToEvent(decision.kind === 'update' ? 'update' : 'sent', row, {
+          tgMsgId: null,
+        }),
+      );
+      continue;
+    }
+
+    const htmlBody = buildAlertHtml(row);
+    const tg = await sendTelegram(htmlBody, 'HTML');
+    if (tg.ok) {
+      if (decision.kind === 'update') sentUpdate++;
+      else sentFirst++;
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         const tsNew = parseTs(row.ts_now as Date | string);
         const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
         sendDedupe.set(dedupeKey, Date.now());
       }
-      if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-        mintCooldown.set(mintKey, Date.now());
-      }
+      mintEscState.set(mintKey, {
+        lastSentAbsPct: Math.abs(row.pct),
+        lastWasPump: row.pct >= 0,
+        lastTierRank: candidateTierRank,
+        lastTierName: row.tierName ?? tierLabel(refMcap),
+        lastSentAtMs: Date.now(),
+        updatesSent: decision.kind === 'update' ? (prevState?.updatesSent ?? 0) + 1 : 0,
+      });
+      await recordSpikeEvent(
+        recordToEvent(decision.kind === 'update' ? 'update' : 'sent', row, {
+          tgMsgId: tg.messageId,
+        }),
+      );
     } else {
-      console.warn('[market-spike-telegram-watch] Telegram send failed for', row.base_mint.slice(0, 12));
+      console.warn(
+        '[market-spike-telegram-watch] Telegram send failed for',
+        row.base_mint.slice(0, 12),
+      );
+      await recordSpikeEvent(recordToEvent('skip', row, { skipReason: 'tg_send_failed' }));
     }
     await sleepMs(200);
   }
@@ -944,12 +1623,190 @@ async function runOnePass(
     ? ` rolling=${ROLLING_MINUTES_MIN}-${ROLLING_MINUTES_MAX}m`
     : ' rolling=off';
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
+  const tieredLog = TIERED_BY_MCAP
+    ? ` tier_dump_consec=${DUMP_TIER3_MIN_PCT_CONSEC}/${DUMP_TIER2_MIN_PCT_CONSEC}/${DUMP_TIER1_MIN_PCT_CONSEC}% tier_dump_rolling=${DUMP_TIER3_MIN_PCT_ROLLING}/${DUMP_TIER2_MIN_PCT_ROLLING}/${DUMP_TIER1_MIN_PCT_ROLLING}% pump_min=${PUMP_MIN_PCT}%`
+    : ` thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}%`;
+  const escLog = ESCALATE_ENABLED
+    ? ` esc=on(delta=${ESCALATE_DELTA_PCT}% gap=${ESCALATE_MIN_GAP_SEC}s max=${ESCALATE_MAX_PER_MINT})`
+    : ' esc=off';
+  const auditLog = AUDIT_DB_ENABLED ? ` audit=db(${auditTableReady})` : ' audit=stdout';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sent} thr_consec_pump=${THRESHOLD_CONSEC_PUMP_PCT}% thr_consec_dump=${THRESHOLD_CONSEC_DUMP_PCT}% thr_rolling=${THRESHOLD_ROLLING_PCT}% mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sentFirst} updates=${sentUpdate} skipped=${skipped}${tieredLog}${escLog} mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}${auditLog}`,
   );
 }
 
+function parseDiagnoseArgs(): { mint: string; atIso: string | null } | null {
+  const argv = process.argv.slice(2);
+  let mint: string | null = null;
+  let atIso: string | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--diagnose-mint' || a === '--diagnose') {
+      mint = argv[++i]?.trim() ?? null;
+      continue;
+    }
+    if (a.startsWith('--diagnose-mint=')) {
+      mint = a.slice('--diagnose-mint='.length).trim() || null;
+      continue;
+    }
+    if (a === '--at') {
+      atIso = argv[++i]?.trim() ?? null;
+      continue;
+    }
+    if (a.startsWith('--at=')) {
+      atIso = a.slice('--at='.length).trim() || null;
+    }
+  }
+  if (!mint || !ADDR_RE.test(mint)) return null;
+  return { mint, atIso };
+}
+
+/**
+ * Одноразовая диагностика по mint: бары из PG до метки `--at` (или текущего времени),
+ * pick, tier-порог, sanity-фильтры. Не шлёт Telegram, не трогает `SPIKE_ALERT_TELEGRAM_*`.
+ *
+ * Запуск: `npm run market-spike-telegram-watch -- --diagnose-mint <mint> [--at 2026-05-14T13:37:00Z]`
+ */
+async function runDiagnoseMint(mint: string, atIso: string | null): Promise<void> {
+  const at = atIso ? new Date(atIso) : new Date();
+  if (Number.isNaN(at.getTime())) {
+    console.error('[diagnose] invalid --at, use ISO-8601, e.g. 2026-05-14T13:37:00Z');
+    process.exit(1);
+  }
+  const nowMs = at.getTime();
+  const mintEsc = mint.replace(/'/g, "''");
+  const atIsoSql = at.toISOString();
+
+  console.log(
+    `[diagnose] mint=${mint} at=${atIsoSql} scan=${SCAN_MINUTES}m tiered=${TIERED_BY_MCAP ? '1' : '0'}`,
+  );
+
+  for (const table of SNAPSHOT_TABLES) {
+    const dex = dexLabel(table);
+    const pairsR = await db.execute(
+      dsql.raw(`
+      SELECT DISTINCT pair_address::text AS pair_address
+      FROM ${table}
+      WHERE base_mint = '${mintEsc}'
+        AND ts <= '${atIsoSql}'::timestamptz
+        AND ts > '${atIsoSql}'::timestamptz - interval '14 days'
+      LIMIT 40
+    `),
+    );
+    const prow = pairsR as unknown as Record<string, unknown>[];
+    const pairs = prow.map((r) => String(r.pair_address ?? '')).filter((p) => ADDR_RE.test(p));
+    if (!pairs.length) {
+      console.log(`[diagnose] ${dex}: no pairs in PG window`);
+      continue;
+    }
+    for (const pair of pairs) {
+      const pairEsc = pair.replace(/'/g, "''");
+      const metaR = await db.execute(
+        dsql.raw(`
+        SELECT price_usd::double precision AS px_now, ts AS ts_now,
+               liquidity_usd::double precision AS liq_usd,
+               symbol::text, name::text AS token_name, holder_count::int AS holder_count,
+               fdv_usd::double precision AS token_fdv_usd
+        FROM ${table} s
+        LEFT JOIN tokens t ON t.mint = s.base_mint
+        WHERE s.base_mint = '${mintEsc}' AND s.pair_address = '${pairEsc}'
+          AND s.ts <= '${atIsoSql}'::timestamptz
+        ORDER BY s.ts DESC
+        LIMIT 1
+      `),
+      );
+      const mrows = metaR as unknown as Record<string, unknown>[];
+      const mr = mrows[0];
+      const meta: LatestMeta = mr
+        ? {
+            base_mint: mint,
+            pair_address: pair,
+            px_now: Number(mr.px_now),
+            ts_now: mr.ts_now as Date | string,
+            symbol: mr.symbol != null ? String(mr.symbol) : null,
+            token_name: mr.token_name != null ? String(mr.token_name) : null,
+            holder_count: mr.holder_count != null ? Number(mr.holder_count) : null,
+            liq_usd: mr.liq_usd != null ? Number(mr.liq_usd) : null,
+            token_fdv_usd:
+              mr.token_fdv_usd != null && Number.isFinite(Number(mr.token_fdv_usd))
+                ? Number(mr.token_fdv_usd)
+                : null,
+          }
+        : {
+            base_mint: mint,
+            pair_address: pair,
+            px_now: 0,
+            ts_now: at,
+            symbol: null,
+            token_name: null,
+            holder_count: null,
+            liq_usd: null,
+            token_fdv_usd: null,
+          };
+
+      const barR = await db.execute(
+        dsql.raw(`
+        SELECT ts, price_usd::double precision AS price_usd,
+          COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
+        FROM ${table}
+        WHERE base_mint = '${mintEsc}' AND pair_address = '${pairEsc}'
+          AND ts > '${atIsoSql}'::timestamptz - (${SCAN_MINUTES} * interval '1 minute')
+          AND ts <= '${atIsoSql}'::timestamptz
+          AND COALESCE(price_usd, 0) > 0
+        ORDER BY ts ASC
+      `),
+      );
+      const rows = barR as unknown as Record<string, unknown>[];
+      const rawBars: Bar[] = [];
+      for (const row of rows) {
+        rawBars.push({
+          ts: parseTs(row.ts as Date | string),
+          px: Number(row.price_usd),
+          mcapUsd: parseMcapUsd(row),
+        });
+      }
+      const pick = analyzeBarsForMint(rawBars, nowMs);
+      const pickStr = pick
+        ? `${formatSignedPct(pick.pct)} ${pick.signalKind} ${pick.windowLabel}`
+        : '(нет сигнала по барам)';
+      console.log(`[diagnose] ${dex} pair=${pair} bars=${rawBars.length} → ${pickStr}`);
+      if (!pick) continue;
+
+      const fresh = isPickFreshEnough(pick, nowMs);
+      const liqPl = isPickPlausibleForLiquidity(pick, meta.liq_usd);
+      const liqMc = isPickPlausibleLiqVsMcap(meta, pick);
+      const mcDiv = isPickPriceMcapConsistent(pick);
+      console.log(
+        `  filters: fresh=${fresh} lowLiqPlausible=${liqPl} liqMcapSanity=${liqMc} mcPriceDivOk=${mcDiv}`,
+      );
+
+      const refMcap = referenceMcapUsd(meta, pick);
+      if (TIERED_BY_MCAP) {
+        const isPump = pick.pct >= 0;
+        const req = tierRequiredMinAbsPct(refMcap, isPump, pick.signalKind);
+        const passTier = req != null && Math.abs(pick.pct) >= req;
+        console.log(
+          `  tier: ref_mcap≈${formatMarketCapUsd(refMcap)} ${tierLabel(refMcap)} required=${req == null ? 'reject' : `${req}%`} pass=${passTier}`,
+        );
+      }
+    }
+  }
+  console.log('[diagnose] done');
+}
+
 async function main(): Promise<void> {
+  const diag = parseDiagnoseArgs();
+  if (diag) {
+    try {
+      await runDiagnoseMint(diag.mint, diag.atIso);
+    } catch (e) {
+      console.error('[diagnose] fatal', e);
+      process.exit(1);
+    }
+    process.exit(0);
+    return;
+  }
+
   if (!TG_TOKEN || !TG_CHAT) {
     console.error(
       '[market-spike-telegram-watch] Skip: set SPIKE_ALERT_TELEGRAM_BOT_TOKEN and SPIKE_ALERT_TELEGRAM_CHAT_ID (не используйте прод TELEGRAM_* Live Oscar).',
@@ -957,11 +1814,13 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  await ensureAuditTable();
+
   if (POLL_INTERVAL_MS > 0) {
     const sendDedupe = new Map<string, number>();
-    const mintCooldown = MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null;
+    const mintEscState = new Map<string, MintEscalationState>();
     console.log(
-      `[market-spike-telegram-watch] poll mode: interval=${POLL_INTERVAL_MS}ms poll_send_dedupe=${POLL_SEND_DEDUPE_MS}ms mint_cooldown_min=${MINT_COOLDOWN_MINUTES}`,
+      `[market-spike-telegram-watch] poll mode: interval=${POLL_INTERVAL_MS}ms poll_send_dedupe=${POLL_SEND_DEDUPE_MS}ms mint_cooldown_min=${MINT_COOLDOWN_MINUTES} esc=${ESCALATE_ENABLED ? `on(delta=${ESCALATE_DELTA_PCT}% gap=${ESCALATE_MIN_GAP_SEC}s max=${ESCALATE_MAX_PER_MINT})` : 'off'} audit_db=${AUDIT_DB_ENABLED ? auditTableReady : 'off'}`,
     );
     let stop = false;
     const onStop = (): void => {
@@ -971,7 +1830,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', onStop);
     while (!stop) {
       try {
-        await runOnePass(sendDedupe, mintCooldown);
+        await runOnePass(sendDedupe, mintEscState);
       } catch (e) {
         console.warn('[market-spike-telegram-watch] cycle error', String(e));
       }
@@ -986,10 +1845,17 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runOnePass(null, MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null);
+  await runOnePass(null, new Map<string, MintEscalationState>());
 }
 
-main().catch((e) => {
-  console.error('[market-spike-telegram-watch] fatal', e);
-  process.exit(1);
-});
+/**
+ * Скрипт запускается напрямую (`npm run market-spike-telegram-watch`). Когда модуль импортируется
+ * из тестов (vitest), мы не должны автоматически коннектиться к PG/Telegram — иначе тесты
+ * непредсказуемо ломаются. Защита: env `SPIKE_ALERT_SKIP_MAIN=1` подавляет автозапуск.
+ */
+if (process.env.SPIKE_ALERT_SKIP_MAIN !== '1') {
+  main().catch((e) => {
+    console.error('[market-spike-telegram-watch] fatal', e);
+    process.exit(1);
+  });
+}

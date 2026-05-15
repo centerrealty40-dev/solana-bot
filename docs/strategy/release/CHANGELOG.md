@@ -8,6 +8,26 @@
 
 ---
 
+## [1.11.169] — 2026-05-15
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.169`.
+
+### Market spike Telegram watch (отдельный процесс / отдельный бот)
+
+- **Tier по market cap (включено по умолчанию):** tier3 (mcap ≥ $7M) dump consec/rolling 8%/10%; tier2 (≥ $3M) 11%/12%; tier1 (≥ $1.5M) 14%/15%; pump ≥ 30%; ниже $1.5M ref — отброс.
+- **Несколько пар на mint:** последний снимок по каждой `(mint, pair)` внутри top_mints; выбор лучшего сигнала по `abs(pct)` при слиянии по mint.
+- **Эскалация [UPDATE]:** внутри `SPIKE_ALERT_MINT_COOLDOWN_MINUTES` повторное сообщение при росте |pct| на `ESCALATE_DELTA_PCT`, смене tier в сторону жёстче (dump), с лимитом `ESCALATE_MAX_PER_MINT` и минимальным интервалом `ESCALATE_MIN_GAP_SEC`.
+- **Теги в Telegram:** `[INSTANT]` / `[ROLLING]` + `[MARKET][spike_*]`; исправлен сброс счётчика апдейтов после нового «первого» алерта.
+- **Аудит:** stdout `[market-spike][SENT|…]` + опциональный INSERT в `market_spike_events` (миграция `0023_market_spike_events.sql`; при старте скрипта остаётся `CREATE TABLE IF NOT EXISTS` как fallback).
+- **CLI:** `npm run market-spike-telegram-watch -- --diagnose-mint <mint> [--at ISO-8601]` — разбор баров и фильтров без отправки в Telegram.
+- **Конфиг PM2** (`ecosystem.market-spike-watch.cjs`, `scripts/spike-watch-pm2-entry.sh`): cooldown 5 мин, `MAX_NEWER_BAR_AGE` 20 мин, `POLL_SEND_DEDUPE` 60 с, tier/escalate/audit env.
+
+**Live Oscar:** код и `ecosystem.config.cjs` стратегии **не менялись**; отдельные `SPIKE_ALERT_TELEGRAM_*` и отдельный лимит Telegram API. Нагрузка на PG — те же read-only запросы к снапшотам с интервалом опроса; при деплое достаточно `pm2 reload market-spike-telegram-watch` (без полного `pm2 reload ecosystem`).
+
+**Откат:** `git revert` коммита 1.11.169; на VPS `git reset --hard` к предыдущему SHA; `pm2 reload market-spike-telegram-watch`. Таблица `market_spike_events` может остаться (не влияет на торговлю).
+
+---
+
 ## [1.11.168] — 2026-05-14
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.168`.

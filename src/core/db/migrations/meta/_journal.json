@@ -162,6 +162,13 @@
       "when": 1780200000000,
       "tag": "0022_dip_bot_intel",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0023_market_spike_events",
+      "breakpoints": true
     }
   ]
 }
