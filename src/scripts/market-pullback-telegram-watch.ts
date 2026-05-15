@@ -65,7 +65,7 @@ const HOLDER_NULL_SOFT = envBool('PULLBACK_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('PULLBACK_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_5M_USD', 0));
-const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 1_500_000));
+const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 2_000_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('PULLBACK_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('PULLBACK_ALERT_DRY_RUN', false);
 
@@ -505,6 +505,11 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   return Math.max(fromBar, fdv);
 }
 
+/** Как в `market-spike-telegram-watch.ts`. */
+function gmgnSolTokenUrl(mint: string): string {
+  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
+}
+
 function buildAlertHtml(args: {
   dex: string;
   meta: LatestMeta;
@@ -512,6 +517,8 @@ function buildAlertHtml(args: {
   refMcap: number;
 }): string {
   const { dex, meta, pick, refMcap } = args;
+  const mint = meta.base_mint.trim();
+  const gmgnUrl = gmgnSolTokenUrl(mint);
   const sym = escapeHtml((meta.symbol ?? '?').trim() || '?');
   const name = escapeHtml((meta.token_name ?? '').trim());
   const mintShort = `${meta.base_mint.slice(0, 6)}…${meta.base_mint.slice(-4)}`;
@@ -543,8 +550,8 @@ function buildAlertHtml(args: {
     modeHint,
     '',
     `<b>${sym}</b>${name ? ` — ${name}` : ''}`,
-    `Mint: <code>${escapeHtml(meta.base_mint)}</code> (${escapeHtml(mintShort)})`,
-    `Pair: <code>${escapeHtml(meta.pair_address)}</code>`,
+    `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
+    `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
     '',
     line1,
     '',

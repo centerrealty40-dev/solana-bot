@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.177] — 2026-05-15
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.177`.
+
+### Market pullback / spike Telegram — отбор ≥$2M, GMGN без pair в тексте
+
+- **Мин. капа по умолчанию $2M:** `PULLBACK_ALERT_MIN_MARKET_CAP_USD` и `SPIKE_ALERT_MIN_MARKET_CAP_USD` (код + `ecosystem*.cjs` + entry-скрипты + `.env.example` для spike).
+- **Pullback:** в алерт добавлена ссылка **GMGN** на mint; строка **pair** из сообщения убрана.
+- **Spike:** в HTML — ссылка **GMGN** и mint; строка **pair** убрана; в plain — `GMGN: URL` и mint, без pair.
+
+**Откат:** `git revert`; при необходимости вернуть env `*_MIN_MARKET_CAP_USD=1500000`.
+
+---
+
 ## [1.11.176] — 2026-05-15
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.176`.

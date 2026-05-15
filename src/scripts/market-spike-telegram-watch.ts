@@ -22,7 +22,7 @@
  *
  * Отбор «latest» по таблице: до SPIKE_ALERT_MAX_ROWS_PER_TABLE mint с **наиболее свежим** последним снимком
  * в окне пола (ORDER BY MAX(ts) DESC), не лексикографически по адресу mint.
- * SPIKE_ALERT_MIN_MARKET_CAP_USD — порог по COALESCE(market_cap_usd, fdv_usd снимка, tokens.fdv_usd).
+ * SPIKE_ALERT_MIN_MARKET_CAP_USD — порог по COALESCE(market_cap_usd, fdv_usd снимка, tokens.fdv_usd); по умолчанию **$2M**.
  *
  * SPIKE_ALERT_POLL_INTERVAL_MS > 0 — цикл опроса PG (чаще, чем раз в минуту), чтобы второй минутный бар
  * успевал попасть в БД между проверками. При опросе включена короткая дедупликация отправок
@@ -260,7 +260,7 @@ const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
 /** Минимум market cap в USD: снимок пары (mcap/fdv) или fallback tokens.fdv_usd; 0 = выкл. */
-const MIN_MARKET_CAP_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_MARKET_CAP_USD', 1_500_000));
+const MIN_MARKET_CAP_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_MARKET_CAP_USD', 2_000_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('SPIKE_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('SPIKE_ALERT_DRY_RUN', false);
 
@@ -887,9 +887,9 @@ function buildAlertHtml(row: AlertRow): string {
     `тип: <b>${escapeHtml(telegramSignalTypeRu(row))}</b>${tierLine}\n` +
     `окно: ${escapeHtml(row.windowLabel)}\n\n` +
     `${title}\n` +
-    `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
+    `<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n\n` +
     `${spikeTelegramHierarchyHtml(row)}\n\n` +
-    `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
+    `dex: ${escapeHtml(row.dex)}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
     `${escapeHtml(marketCapMessageLine(row))}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
@@ -913,10 +913,10 @@ function buildAlertPlain(row: AlertRow): string {
     `тип: ${telegramSignalTypeRu(row)}${tierLine}\n` +
     `окно: ${row.windowLabel}\n\n` +
     `${title}\n` +
-    `${mint}\n` +
-    `GMGN: ${gmgnSolTokenUrl(mint)}\n\n` +
+    `GMGN: ${gmgnSolTokenUrl(mint)}\n` +
+    `${mint}\n\n` +
     `${spikeTelegramHierarchyPlain(row)}\n\n` +
-    `dex: ${row.dex} · pair: ${row.pair_address}\n` +
+    `dex: ${row.dex}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
     `${marketCapMessageLine(row)}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
