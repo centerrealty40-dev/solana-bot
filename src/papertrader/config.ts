@@ -80,9 +80,13 @@ const ConfigSchema = z.object({
    * Live Oscar legacy scale-in: при < 1 и `LIVE_ENTRY_SCALE_IN_ENABLED` вторая нога исполняется отдельно в трекере.
    */
   entryFirstLegFraction: z.coerce.number().min(0.01).max(1).default(1),
-  /** Live Oscar staged entry: wait for first leg at signal drop, then add second leg at deeper signal drop. */
+  /** Live Oscar staged entry: optional signal anchor + timed add-on legs vs signal price (see `liveStagedEntry*`). */
   liveStagedEntryEnabled: z.boolean().default(false),
-  liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(7),
+  /**
+   * % drawdown **from signal price** required before the **first cash leg** opens (`0` = first leg at current price ≤ anchor).
+   * Add-on legs use `liveStagedEntrySecondDropPct` / `Third`. Prod PM2 sets `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT=0` (immediate first leg, DCA at −7% / −14%).
+   */
+  liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(24),

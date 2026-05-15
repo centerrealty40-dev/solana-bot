@@ -40,7 +40,8 @@ async function sleepMs(ms: number): Promise<void> {
 /**
  * GET JSON for Jupiter `/swap/v1/quote` (and same-shape sell quotes).
  * Retries on **HTTP 429** with exponential backoff and optional `Retry-After` (seconds).
- * Tuned for Developer Platform Pro bursts; set `JUPITER_QUOTE_429_MAX_RETRIES=0` to disable.
+ * Uses `jupiterJsonHeaders()` → **`JUPITER_API_KEY`** from your Jupiter Developer account as **`x-api-key`** (Pro limits apply to that key; the app never mints a new key).
+ * Tuned for Developer Platform bursts; set `JUPITER_QUOTE_429_MAX_RETRIES=0` to disable.
  */
 export async function fetchJupiterSwapQuoteGetJson(args: {
   url: string;

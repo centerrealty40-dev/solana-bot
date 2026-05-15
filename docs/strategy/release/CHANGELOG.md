@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.171] — 2026-05-12
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.171`.
+
+### Staged entry — дефолт первой ноги
+
+- **`PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT`:** zod-дефолт в `papertrader/config.ts` с **7 → 0**, чтобы без env совпадать с прод-профилем (первая нога сразу; докупки на −7% / −14% задаются второй/третьей ступенью). Комментарии уточнены.
+- **Jupiter:** в docstring подчёркнуто, что **`JUPITER_API_KEY`** — это **ваш** ключ из кабинета Developer (заголовок `x-api-key`); код не генерирует отдельный Pro-ключ.
+
+**Откат:** `git revert`; при необходимости явно задать `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT` в `.env`.
+
+---
+
 ## [1.11.170] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.170`.
@@ -16,7 +29,7 @@
 
 - **GET `/swap/v1/quote`:** общий helper `fetchJupiterSwapQuoteGetJson` в `src/core/jupiter-http.ts` — повтор при **HTTP 429** с backoff и учётом `Retry-After`; env `JUPITER_QUOTE_429_MAX_RETRIES` (дефолт **3**, `0` = без повторов), `JUPITER_QUOTE_429_INITIAL_BACKOFF_MS` (дефолт **100**). Подключено в `src/live/jupiter.ts` и `src/papertrader/pricing/price-verify.ts`.
 - **Live tracker:** `LIVE_TRACKER_INTER_MINT_DELAY_MS` (дефолт **120**, `0` = без паузы) — пауза между mint после Jupiter MTM; для ~10 RPS можно **50–80**. Порог `LIVE_TRACKER_JUPITER_MAX_PREMIUM_OVER_SNAPSHOT_PCT` (дефолт **6**, `0` = выкл.) — MTM-guard против «призрачного» pump на buy-probe (`src/live/mtm-snapshot-guard.ts`).
-- **Staged entry Telegram:** текст `live_oscar_staged_signal` явно объясняет, что при `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT > 0` первая нога ждёт отката от цены сигнала (раньше формулировка «по сигналу» вводила в заблуждение).
+- **Staged entry Telegram:** если `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT > 0`, текст поясняет ожидание отката перед первой ногой; при **`0`** (как в `ecosystem` live-oscar) — формулировка «сразу по цене сигнала».
 
 **Откат:** `git revert` коммита; при необходимости `JUPITER_QUOTE_429_MAX_RETRIES=0`, вернуть `LIVE_TRACKER_INTER_MINT_DELAY_MS` к прежнему.
 

@@ -56,7 +56,7 @@ const LiveOscarConfigSchema = z
      */
     liveWalletPubkeyExpected: z.string().min(32).max(64).optional(),
 
-    /** W8.0 Phase 2 — Jupiter API (defaults target api.jup.ag and attach JUPITER_API_KEY when set). */
+    /** W8.0 Phase 2 — Jupiter API (defaults `api.jup.ag`; sends existing `JUPITER_API_KEY` as `x-api-key` when set — same key from Jupiter Developer dashboard, no separate “Pro key” in code). */
     liveJupiterQuoteUrl: z.string().min(1).optional(),
     liveJupiterSwapUrl: z.string().min(1).optional(),
     liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
