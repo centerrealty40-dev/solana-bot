@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.179] — 2026-05-15
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.179`.
+
+### Live Oscar — частичный выход у безубытка после первой TP
+
+- После **≥1** частичной фиксации с причиной **`TP_LADDER`** (TP-сетка или дискретная лестница), если цена относительно **средней эффективной** (`avgEntry`) снова **≤ безубытка** (`xAvg ≤ 1`), **один раз** за сделку продаётся настраиваемая **доля остатка** (по умолчанию **50%**). Лестница TP не помечается как «ещё одна ступень»; **`ladder_retrace`**, staged-доборы и остальные выходы **не менялись**.
+- **`PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED`**, **`PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION`** — в `config.ts` + **`.env.example`**; в **`ecosystem.config.cjs`** для процесса **`live-oscar`** включено `1` / `0.5`.
+- Журнал: причина частичного выхода **`BREAKEVEN_TRIM`**; снапшот открытой позиции: **`liveBreakevenTrimDone`** (`strategy-snapshot` + replay `store-restore`).
+- **Дашборд** (`scripts-tmp/dashboard-server.ts`): подпись таймлайна для `BREAKEVEN_TRIM`.
+
+**Откат:** `git revert`; на VPS выставить `PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED=0` (или убрать из ecosystem) и `pm2 reload ecosystem.config.cjs --update-env`. Открытые позиции с уже выставленным `liveBreakevenTrimDone` при откате кода без revert журнала могут потребовать ручной сверки.
+
+---
+
 ## [1.11.178] — 2026-05-12
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.178`.

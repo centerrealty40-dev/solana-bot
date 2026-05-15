@@ -301,6 +301,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveKillstopBelowStreak = Math.min(255, Math.floor(lkbs));
     }
 
+    if (Boolean(rawPayload.liveBreakevenTrimDone)) {
+      ot.liveBreakevenTrimDone = true;
+    }
+
     const dlap = rawPayload.dcaLastEvalPnlVsAvgFrac;
     if (typeof dlap === 'number' && Number.isFinite(dlap)) {
       ot.dcaLastEvalPnlVsAvgFrac = dlap;
@@ -333,6 +337,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   const lp = Number(raw.ladderPnlPct ?? NaN);
   if (reason === 'TP_LADDER' && Number.isFinite(lp)) {
     ladderRememberLevel(ot.ladderUsedLevels, lp);
+  }
+  if (reason === 'BREAKEVEN_TRIM') {
+    ot.liveBreakevenTrimDone = true;
   }
 }
 

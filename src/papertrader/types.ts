@@ -122,7 +122,7 @@ export interface PartialSell {
   marketPrice: number;
   /** Fraction of REMAINING position sold (0..1). */
   sellFraction: number;
-  reason: 'TP_LADDER' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL';
+  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL';
   proceedsUsd: number;
   grossProceedsUsd: number;
   pnlUsd: number;
@@ -240,6 +240,11 @@ export interface OpenTrade {
    * После пополнения позиции (`legs.length > 1`) выход только при streak ≥ 2; иначе сброс в 0.
    */
   liveKillstopBelowStreak?: number;
+
+  /**
+   * Live Oscar: после частичного выхода «у безубытка» после первой TP (`BREAKEVEN_TRIM`) — не повторять.
+   */
+  liveBreakevenTrimDone?: boolean;
 }
 
 export interface LiveStagedEntryState {

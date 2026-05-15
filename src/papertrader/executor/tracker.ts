@@ -517,6 +517,9 @@ async function tryExecuteTpPartialSell(args: {
   stats: TrackerStats;
   markLadder: () => void;
   logLabelPct: string;
+  /** Default `TP_LADDER`; use `BREAKEVEN_TRIM` for Live Oscar post-first-TP breakeven peel. */
+  partialReason?: PartialSell['reason'];
+  timelineLabelRu?: string;
 }): Promise<TpPartialSellResult> {
   const {
     mint,
@@ -535,7 +538,10 @@ async function tryExecuteTpPartialSell(args: {
     stats,
     markLadder,
     logLabelPct,
+    partialReason: partialReasonArg,
+    timelineLabelRu,
   } = args;
+  const partialReason: PartialSell['reason'] = partialReasonArg ?? 'TP_LADDER';
   const sellFraction = Math.min(1, rawSellFrac);
   const marketSell = curMetric;
   if (!(ot.remainingFraction > 1e-12)) return 'ok';
@@ -703,7 +709,7 @@ async function tryExecuteTpPartialSell(args: {
     price: effectiveSell,
     marketPrice: marketSell,
     sellFraction,
-    reason: 'TP_LADDER',
+    reason: partialReason,
     proceedsUsd,
     grossProceedsUsd,
     pnlUsd,
@@ -753,7 +759,7 @@ async function tryExecuteTpPartialSell(args: {
     ladderStepIndex,
     ladderRungsTotal,
     ladderPnlPct,
-    reason: 'TP_LADDER',
+    reason: partialReason,
     proceedsUsd,
     grossProceedsUsd,
     pnlUsd,
@@ -768,6 +774,9 @@ async function tryExecuteTpPartialSell(args: {
     ...(exitTxSig ? { exitTxSignature: exitTxSig } : {}),
     ...(cfg.liveExitModeAbEnabled && ot.liveExitProfileMode
       ? { liveExitProfileMode: ot.liveExitProfileMode }
+      : {}),
+    ...(typeof timelineLabelRu === 'string' && timelineLabelRu.trim().length > 0
+      ? { timelineLabelRu: timelineLabelRu.trim() }
       : {}),
   });
   journalLiveStrategy?.({
@@ -2254,6 +2263,51 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             continue;
           }
         }
+      }
+    }
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    effCfg = cfgEffectiveForOpen(cfg, ot);
+
+    /** Live Oscar: после первой `TP_LADDER` — при возврате к средней (≤ безубытка) один раз снять настраиваемую долю остатка. */
+    if (
+      cfg.strategyId === 'live-oscar' &&
+      cfg.liveOscarBreakevenTrimAfterFirstTpEnabled &&
+      !ot.liveBreakevenTrimDone &&
+      ot.partialSells.some((p) => p.reason === 'TP_LADDER') &&
+      ot.avgEntry > 0 &&
+      curMetric > 0 &&
+      ot.remainingFraction > 1e-9 &&
+      xAvg <= 1 + LADDER_PNL_EPS
+    ) {
+      const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarBreakevenTrimFraction));
+      const rBe = await tryExecuteTpPartialSell({
+        mint,
+        ot,
+        cfg: effCfg,
+        curMetric,
+        sellFraction: trimFrac,
+        ladderStepIndex: 0,
+        ladderRungsTotal: 0,
+        ladderPnlPct: 0,
+        tpGrid: false,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+        markLadder: () => {},
+        logLabelPct: `breakeven-trim-${(trimFrac * 100).toFixed(0)}pct-after-first-tp`,
+        partialReason: 'BREAKEVEN_TRIM',
+        timelineLabelRu:
+          'Live Oscar · после 1-й фиксации TP откат к средней цене входа — частичная продажа ' +
+          `${(trimFrac * 100).toFixed(0)}% остатка`,
+      });
+      if (rBe === 'ok') {
+        ot.liveBreakevenTrimDone = true;
       }
     }
 

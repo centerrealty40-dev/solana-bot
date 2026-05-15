@@ -53,6 +53,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(typeof ot.liveKillstopBelowStreak === 'number' && ot.liveKillstopBelowStreak > 0
       ? { liveKillstopBelowStreak: ot.liveKillstopBelowStreak }
       : {}),
+    ...(ot.liveBreakevenTrimDone ? { liveBreakevenTrimDone: true } : {}),
   };
 }
 

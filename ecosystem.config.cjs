@@ -446,6 +446,9 @@ module.exports = {
         PAPER_TRAIL_TRIGGER_X: '1.05',
         /** Live Oscar — тайм-аут 48 ч (двое суток); в трекере отключён после первого partial TP или DCA (см. tracker `timeoutSuppressedByProgress`). */
         PAPER_TIMEOUT_HOURS: '48',
+        /** После ≥1 частичной TP-сетки: при откате к средней цене входа (xAvg≤1) один раз продать долю остатка (по умолчанию 50%). */
+        PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '1',
+        PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',

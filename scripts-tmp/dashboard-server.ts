@@ -1784,9 +1784,11 @@ export function buildTimelineEvent(
         ? isLiveOscarRisky && isTpGrid
           ? 'Продажа по TP-сетке Risky'
           : isTpGrid
-          ? 'Сетка TP (Oscar)'
-          : 'Лестница TP'
-        : reason.toLowerCase().replace(/_/g, ' ');
+            ? 'Сетка TP (Oscar)'
+            : 'Лестница TP'
+        : reason === 'BREAKEVEN_TRIM'
+          ? 'Частичный выход у безубытка (после 1-й TP)'
+          : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
     const proceedsUsd = Number(e.proceedsUsd ?? 0);
     const ladderPctPlain =

@@ -325,6 +325,14 @@ const ConfigSchema = z.object({
   trailMode: z.enum(['peak', 'ladder_retrace']).default('peak'),
   timeoutHours: z.coerce.number().positive().default(12),
 
+  /**
+   * Live Oscar only (`strategyId === live-oscar`): after at least one `TP_LADDER` partial,
+   * if price returns to weighted avg (xAvg ≤ 1), sell this fraction of **remaining** once.
+   * Env: `PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED`, `PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION`.
+   */
+  liveOscarBreakevenTrimAfterFirstTpEnabled: z.boolean().default(false),
+  liveOscarBreakevenTrimFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
+
   dcaLevelsSpec: z.string().default(''),
   dcaKillstop: z.coerce.number().default(0),
 
@@ -745,6 +753,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     trailTriggerX: process.env.PAPER_TRAIL_TRIGGER_X,
     trailMode: process.env.PAPER_TRAIL_MODE === 'ladder_retrace' ? 'ladder_retrace' : 'peak',
     timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
+    liveOscarBreakevenTrimAfterFirstTpEnabled: envBool(
+      process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED,
+      false,
+    ),
+    liveOscarBreakevenTrimFraction: process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION,
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,
     tpLadderSpec: process.env.PAPER_TP_LADDER,
