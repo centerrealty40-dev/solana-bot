@@ -41,7 +41,7 @@ function envBool(name: string, fallback: boolean): boolean {
 const SCAN_MINUTES = Math.max(30, Math.min(240, Math.floor(envNum('RETRACE_ALERT_SCAN_MINUTES', 120))));
 const LATEST_FLOOR_SEC = Math.max(600, Math.min(3600, SCAN_MINUTES * 60 + 300));
 
-const MIN_MCAP_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_MCAP_USD', 1_500_000));
+const MIN_MCAP_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_MCAP_USD', 2_000_000));
 const MIN_PUMP_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_PUMP_PCT', 6)));
 const MIN_RETRACE_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT', 10)));
 
@@ -328,8 +328,8 @@ function buildAlertHtml(row: AlertRowWithTs): string {
     `рост от дна: <b>${escapeHtml(formatSignedPct(p.pumpPct))}</b> · откат от пика: <b>${escapeHtml(formatSignedPct(-p.retracePct))}</b>\n` +
     `дно ${formatDisplayHm(row.rawBarsViTs)} → пик ${formatDisplayHm(row.rawBarsJTs)} → текущий минимум после пика ${formatDisplayHm(row.rawBarsKTs)}\n\n` +
     `${title}\n` +
-    `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
-    `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
+    `<code>${escapeHtml(mint)}</code> (<a href="${escapeHtml(gmgnUrl)}">GMGN</a>)\n\n` +
+    `dex: ${escapeHtml(row.dex)}\n` +
     `mcap filter: ≥ $${(MIN_MCAP_USD / 1e6).toFixed(2)}M (снимок/FDV в отборе latest)\n` +
     `<i>Мин. бары PG · ${DISPLAY_TZ}</i>`;
 
