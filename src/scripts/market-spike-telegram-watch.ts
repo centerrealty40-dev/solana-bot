@@ -799,6 +799,71 @@ function alertKindTag(row: AlertRow): { tag: string; kindWord: string } {
   };
 }
 
+/** Дата и время в зоне `DISPLAY_TZ` (по умолчанию Москва), с явной меткой МСК. */
+function formatTsMskFull(d: Date | string): string {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d);
+  try {
+    return (
+      new Intl.DateTimeFormat('ru-RU', {
+        timeZone: DISPLAY_TZ,
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      }).format(dt) + ' · МСК'
+    );
+  } catch {
+    return dt.toISOString();
+  }
+}
+
+function formatPxUsdSpike(px: number): string {
+  if (!(px > 0) || !Number.isFinite(px)) return 'n/a';
+  if (px >= 1) return px.toFixed(6);
+  return px.toPrecision(6);
+}
+
+function formatMcapHierarchy(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return 'n/a';
+  return formatMarketCapUsd(n);
+}
+
+function spikeTelegramHierarchyHtml(row: AlertRow): string {
+  const dump = row.pct < 0;
+  const lowTs = dump ? row.ts_now : row.anchorTs;
+  const lowMcap = dump ? row.nowMcapUsd : row.anchorMcapUsd;
+  const lowPx = dump ? row.px_now : row.anchorPx;
+  const highTs = dump ? row.anchorTs : row.ts_now;
+  const highMcap = dump ? row.anchorMcapUsd : row.nowMcapUsd;
+  const highPx = dump ? row.anchorPx : row.px_now;
+  const line = (num: string, titleRu: string, ts: Date | string, mcap: number | null, px: number) =>
+    `<b>${num} ${escapeHtml(titleRu)}</b>\n` +
+    `${escapeHtml(formatTsMskFull(ts))} · mcap <b>${escapeHtml(formatMcapHierarchy(mcap))}</b> · price_usd <code>${escapeHtml(formatPxUsdSpike(px))}</code>`;
+  const thirdTitle = dump ? 'Пролив от хая' : 'Импульс от лоя';
+  const refM = row.refMcapUsd ?? row.nowMcapUsd ?? row.anchorMcapUsd;
+  const pctH = escapeHtml(formatSignedPct(row.pct));
+  const line3 =
+    `<b>3. ${escapeHtml(thirdTitle)}</b>\n` +
+    `${escapeHtml(formatTsMskFull(row.ts_now))} · mcap <b>${escapeHtml(formatMcapHierarchy(refM))}</b> · <b>${pctH}</b> по цене (окно: ${escapeHtml(row.windowLabel)})`;
+  return [line('1.', 'Локальный лой', lowTs, lowMcap, lowPx), '', line('2.', 'Локальный хай', highTs, highMcap, highPx), '', line3].join('\n');
+}
+
+function spikeTelegramHierarchyPlain(row: AlertRow): string {
+  const dump = row.pct < 0;
+  const lowTs = dump ? row.ts_now : row.anchorTs;
+  const lowMcap = dump ? row.nowMcapUsd : row.anchorMcapUsd;
+  const lowPx = dump ? row.px_now : row.anchorPx;
+  const highTs = dump ? row.anchorTs : row.ts_now;
+  const highMcap = dump ? row.anchorMcapUsd : row.nowMcapUsd;
+  const highPx = dump ? row.anchorPx : row.px_now;
+  const line = (num: string, titleRu: string, ts: Date | string, mcap: number | null, px: number) =>
+    `${num} ${titleRu}\n${formatTsMskFull(ts)} · mcap ${formatMcapHierarchy(mcap)} · price_usd ${formatPxUsdSpike(px)}`;
+  const thirdTitle = dump ? 'Пролив от хая' : 'Импульс от лоя';
+  const refM = row.refMcapUsd ?? row.nowMcapUsd ?? row.anchorMcapUsd;
+  const line3 =
+    `3. ${thirdTitle}\n${formatTsMskFull(row.ts_now)} · mcap ${formatMcapHierarchy(refM)} · ${formatSignedPct(row.pct)} по цене (окно: ${row.windowLabel})`;
+  return [line('1.', 'Локальный лой', lowTs, lowMcap, lowPx), '', line('2.', 'Локальный хай', highTs, highMcap, highPx), '', line3].join('\n');
+}
+
 function buildAlertHtml(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const gmgnUrl = gmgnSolTokenUrl(mint);
@@ -823,11 +888,12 @@ function buildAlertHtml(row: AlertRow): string {
     `окно: ${escapeHtml(row.windowLabel)}\n\n` +
     `${title}\n` +
     `<a href="${gmgnUrl}">${escapeHtml(mint)}</a>\n\n` +
+    `${spikeTelegramHierarchyHtml(row)}\n\n` +
     `dex: ${escapeHtml(row.dex)} · pair: ${escapeHtml(row.pair_address)}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
     `${escapeHtml(marketCapMessageLine(row))}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
-  body += `\n<i>Мин. снимки в PG (Δ% по price_usd) · время МСК</i>`;
+  body += `\n<i>Мин. снимки в PG (Δ% по price_usd)</i>`;
   return body;
 }
 
@@ -849,11 +915,12 @@ function buildAlertPlain(row: AlertRow): string {
     `${title}\n` +
     `${mint}\n` +
     `GMGN: ${gmgnSolTokenUrl(mint)}\n\n` +
+    `${spikeTelegramHierarchyPlain(row)}\n\n` +
     `dex: ${row.dex} · pair: ${row.pair_address}\n` +
     `holders: ${row.holder_count ?? '?'}\n` +
     `${marketCapMessageLine(row)}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
-  body += `\nМин. снимки в PG (Δ% по price_usd) · время МСК`;
+  body += `\nМин. снимки в PG (Δ% по price_usd)`;
   return body;
 }
 

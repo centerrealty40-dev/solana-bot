@@ -121,6 +121,10 @@ export type PullbackPick = {
   anchorTs: Date;
   peakTs: Date;
   lastTs: Date;
+  /** Заполняется в `enrichPullbackPickMcap` из баров PG. */
+  anchorMcapUsd?: number | null;
+  peakMcapUsd?: number | null;
+  lastMcapUsd?: number | null;
 };
 
 const ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
@@ -233,6 +237,17 @@ function dedupeBarsSorted(rows: Bar[]): Bar[] {
   return [...byMs.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, b]) => b);
+}
+
+function enrichPullbackPickMcap(pick: PullbackPick, rawBars: Bar[]): PullbackPick {
+  const b = dedupeBarsSorted(rawBars);
+  const mAt = (d: Date) => b.find((x) => x.ts.getTime() === d.getTime())?.mcapUsd ?? null;
+  return {
+    ...pick,
+    anchorMcapUsd: mAt(pick.anchorTs),
+    peakMcapUsd: mAt(pick.peakTs),
+    lastMcapUsd: mAt(pick.lastTs),
+  };
 }
 
 function parseMcapUsd(row: Record<string, unknown>): number | null {
@@ -458,14 +473,30 @@ function formatPct(x: number): string {
 
 function formatTsInTz(d: Date): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      timeZone: DISPLAY_TZ,
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    }).format(d);
+    return (
+      new Intl.DateTimeFormat('ru-RU', {
+        timeZone: DISPLAY_TZ,
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      }).format(d) + ' · МСК'
+    );
   } catch {
     return d.toISOString();
   }
+}
+
+function formatMcapUsdShort(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return 'n/a';
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
+  return `$${n.toFixed(0)}`;
+}
+
+function formatPxUsd(px: number): string {
+  if (!(px > 0) || !Number.isFinite(px)) return 'n/a';
+  if (px >= 1) return px.toFixed(6);
+  return px.toPrecision(6);
 }
 
 function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
@@ -488,29 +519,40 @@ function buildAlertHtml(args: {
     meta.holder_count != null && Number.isFinite(meta.holder_count)
       ? String(meta.holder_count)
       : 'n/a';
-  const mcapStr =
-    refMcap > 0
-      ? `$${(refMcap / 1e6).toFixed(2)}M`
-      : 'n/a';
-  const riseLine =
+  const refMcapStr = refMcap > 0 ? formatMcapUsdShort(refMcap) : 'n/a';
+  const aM = pick.anchorMcapUsd ?? null;
+  const pM = pick.peakMcapUsd ?? null;
+  const lM = pick.lastMcapUsd ?? null;
+
+  const line1 =
+    `<b>1. Локальный лой</b> (min до пика в окне)\n` +
+    `${escapeHtml(formatTsInTz(pick.anchorTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(aM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.anchorPx))}</code>`;
+  const line2 =
+    `<b>2. Локальный хай</b> (max в окне)\n` +
+    `${escapeHtml(formatTsInTz(pick.peakTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(pM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.peakPx))}</code>`;
+  const line3 =
+    `<b>3. Просадка от хая</b>\n` +
+    `${escapeHtml(formatTsInTz(pick.lastTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(lM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.lastPx))}</code> · <b>−${escapeHtml(pick.retraceFromPeakPct.toFixed(2))}%</b> от пика`;
+  const modeHint =
     pick.signalMode === 'local_high_retrace'
-      ? pick.risePct > 1e-6
-        ? `Предварительный рост (min→peak, справочно): <b>${formatPct(pick.risePct)}</b> · Откат peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b>`
-        : `Откат от пика окна peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b> <i>(без порога по росту до пика)</i>`
-      : `Rise (anchor→peak): <b>${formatPct(pick.risePct)}</b> · Retrace from peak→now: <b>${formatPct(-pick.retraceFromPeakPct)}</b>`;
-  const modeLine =
-    pick.signalMode === 'local_high_retrace'
-      ? `Режим: <b>local_high_retrace</b> · lookback <b>${SCAN_MINUTES}m</b>`
-      : `Режим: <b>rise_then_retrace</b> · lookback <b>${SCAN_MINUTES}m</b>`;
+      ? `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>local_high_retrace</b> (без порога роста до пика)`
+      : `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>rise_then_retrace</b> · рост до пика <b>${escapeHtml(formatPct(pick.risePct))}</b>`;
+
   return [
     `<b>[MARKET][pullback]</b> <code>${escapeHtml(dex)}</code>`,
-    modeLine,
+    modeHint,
+    '',
     `<b>${sym}</b>${name ? ` — ${name}` : ''}`,
     `Mint: <code>${escapeHtml(meta.base_mint)}</code> (${escapeHtml(mintShort)})`,
     `Pair: <code>${escapeHtml(meta.pair_address)}</code>`,
-    riseLine,
-    `Low before peak ${formatTsInTz(pick.anchorTs)} · Peak ${formatTsInTz(pick.peakTs)} · Last ${formatTsInTz(pick.lastTs)}`,
-    `Ref mcap/fdv ≈ ${escapeHtml(mcapStr)} · holders ${escapeHtml(holders)}`,
+    '',
+    line1,
+    '',
+    line2,
+    '',
+    line3,
+    '',
+    `Ref mcap/fdv (текущая оценка) ≈ <b>${escapeHtml(refMcapStr)}</b> · holders ${escapeHtml(holders)}`,
   ].join('\n');
 }
 
@@ -527,14 +569,15 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
     for (const meta of latest) {
       const key = barsMapKey(meta.base_mint, meta.pair_address);
       const rawBars = barsByKey.get(key) ?? [];
-      const pick =
+      const pickRaw =
         SIGNAL_MODE === 'local_high_retrace'
           ? detectLocalHighRetraceFromBars(rawBars, MIN_RETRACE_PCT)
           : detectRiseThenRetraceFromBars(rawBars, MIN_RISE_PCT, MIN_RETRACE_PCT);
-      if (!pick) {
+      if (!pickRaw) {
         skipped++;
         continue;
       }
+      const pick = enrichPullbackPickMcap(pickRaw, rawBars);
 
       const lastMs = pick.lastTs.getTime();
       if (nowMs - lastMs > maxBarAgeMs) {
