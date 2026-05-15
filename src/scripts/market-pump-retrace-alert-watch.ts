@@ -285,23 +285,43 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function formatDisplayHm(d: Date): string {
-  try {
-    const fmt = new Intl.DateTimeFormat('ru-RU', {
-      timeZone: DISPLAY_TZ,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    return `${fmt.format(d)} МСК`;
-  } catch {
-    return d.toISOString().slice(11, 16) + ' UTC';
-  }
-}
-
 function formatSignedPct(pct: number): string {
   const v = pct.toFixed(2);
   return pct >= 0 ? `+${v}%` : `${v}%`;
+}
+
+function formatTsInTz(d: Date): string {
+  try {
+    return (
+      new Intl.DateTimeFormat('ru-RU', {
+        timeZone: DISPLAY_TZ,
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      }).format(d) + ' · МСК'
+    );
+  } catch {
+    return d.toISOString();
+  }
+}
+
+function formatMcapUsdShort(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return 'n/a';
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
+  return `$${n.toFixed(0)}`;
+}
+
+function formatPxUsd(px: number): string {
+  if (!(px > 0) || !Number.isFinite(px)) return 'n/a';
+  if (px >= 1) return px.toFixed(6);
+  return px.toPrecision(6);
+}
+
+function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
+  const fromBar = lastBarMcap != null && lastBarMcap > 0 ? lastBarMcap : 0;
+  const fdv = meta.token_fdv_usd != null && meta.token_fdv_usd > 0 ? meta.token_fdv_usd : 0;
+  return Math.max(fromBar, fdv);
 }
 
 type AlertRowWithTs = LatestMeta & {
@@ -310,33 +330,58 @@ type AlertRowWithTs = LatestMeta & {
   rawBarsViTs: Date;
   rawBarsJTs: Date;
   rawBarsKTs: Date;
+  valleyMcapUsd: number | null;
+  peakMcapUsd: number | null;
+  troughMcapUsd: number | null;
+  refMcap: number;
 };
 
 function buildAlertHtml(row: AlertRowWithTs): string {
   const mint = row.base_mint.trim();
   const p = row.pick;
-  const sym = row.symbol?.trim() || '?';
-  const nameRaw = row.token_name?.trim();
-  const title =
-    nameRaw && nameRaw !== sym
-      ? `<b>${escapeHtml(sym)}</b>\n<i>${escapeHtml(nameRaw)}</i>`
-      : `<b>${escapeHtml(sym)}</b>`;
+  const symRaw = (row.symbol ?? '?').trim() || '?';
+  const nameRaw = (row.token_name ?? '').trim();
+  const sym = escapeHtml(symRaw);
+  const name = escapeHtml(nameRaw);
   const gmgnUrl = gmgnSolTokenUrl(mint);
+  const mintShort = `${row.base_mint.slice(0, 6)}…${row.base_mint.slice(-4)}`;
+  const holders =
+    row.holder_count != null && Number.isFinite(row.holder_count) ? String(row.holder_count) : 'n/a';
+  const refMcapStr = row.refMcap > 0 ? formatMcapUsdShort(row.refMcap) : 'n/a';
 
-  const body =
-    `[RETRACE][pump_then_pullback] рост ≥${MIN_PUMP_PCT}% и откат от пика ≥${MIN_RETRACE_PCT}%\n` +
-    `рост от дна: <b>${escapeHtml(formatSignedPct(p.pumpPct))}</b> · откат от пика: <b>${escapeHtml(formatSignedPct(-p.retracePct))}</b>\n` +
-    `дно ${formatDisplayHm(row.rawBarsViTs)} → пик ${formatDisplayHm(row.rawBarsJTs)} → текущий минимум после пика ${formatDisplayHm(row.rawBarsKTs)}\n\n` +
-    `${title}\n` +
-    `<code>${escapeHtml(mint)}</code> (<a href="${escapeHtml(gmgnUrl)}">GMGN</a>)\n\n` +
-    `dex: ${escapeHtml(row.dex)}\n` +
-    `mcap filter: ≥ $${(MIN_MCAP_USD / 1e6).toFixed(2)}M (снимок/FDV в отборе latest)\n` +
-    `<i>Мин. бары PG · ${DISPLAY_TZ}</i>`;
+  const modeLine =
+    `lookback <b>${SCAN_MINUTES}</b> мин · рост ≥<b>${MIN_PUMP_PCT}%</b> и откат от пика ≥<b>${MIN_RETRACE_PCT}%</b> · факт: рост от дна <b>${escapeHtml(formatSignedPct(p.pumpPct))}</b> · откат <b>${escapeHtml(formatSignedPct(-p.retracePct))}</b>`;
 
-  return body;
+  const line1 =
+    `<b>1. Локальный лой</b> (min до пика в окне)\n` +
+    `${escapeHtml(formatTsInTz(row.rawBarsViTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.valleyMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.valleyPx))}</code>`;
+  const line2 =
+    `<b>2. Локальный хай</b> (max в окне)\n` +
+    `${escapeHtml(formatTsInTz(row.rawBarsJTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.peakMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.peakPx))}</code>`;
+  const line3 =
+    `<b>3. Просадка от хая</b>\n` +
+    `${escapeHtml(formatTsInTz(row.rawBarsKTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.troughMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.troughPx))}</code> · <b>−${escapeHtml(p.retracePct.toFixed(2))}%</b> от пика`;
+
+  return [
+    `<b>[RETRACE][pump_then_pullback]</b> <code>${escapeHtml(row.dex)}</code>`,
+    modeLine,
+    '',
+    `<b>${sym}</b>${name && nameRaw !== symRaw ? ` — ${name}` : ''}`,
+    `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
+    `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
+    '',
+    line1,
+    '',
+    line2,
+    '',
+    line3,
+    '',
+    `Ref mcap/fdv (текущая оценка) ≈ <b>${escapeHtml(refMcapStr)}</b> · holders ${escapeHtml(holders)}`,
+  ].join('\n');
 }
 
 function buildRowWithTs(meta: LatestMeta, dex: string, bars: Bar[], pick: PumpRetracePick): AlertRowWithTs {
+  const lastBar = bars[bars.length - 1];
   return {
     ...meta,
     dex,
@@ -344,6 +389,10 @@ function buildRowWithTs(meta: LatestMeta, dex: string, bars: Bar[], pick: PumpRe
     rawBarsViTs: bars[pick.vi].ts,
     rawBarsJTs: bars[pick.j].ts,
     rawBarsKTs: bars[pick.k].ts,
+    valleyMcapUsd: bars[pick.vi].mcapUsd ?? null,
+    peakMcapUsd: bars[pick.j].mcapUsd ?? null,
+    troughMcapUsd: bars[pick.k].mcapUsd ?? null,
+    refMcap: refMcapUsd(meta, lastBar?.mcapUsd ?? null),
   };
 }
 
