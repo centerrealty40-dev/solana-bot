@@ -74,6 +74,43 @@ describe('tierRequiredMinAbsPct — раздельные пороги consec и 
   });
 });
 
+describe('isDuplicateOngoingSpike — не повторять ту же ногу пампа/пролива', () => {
+  const prevPump = {
+    lastWasPump: true,
+    lastSentAnchorTsMs: 1_700_000_000_000,
+  };
+
+  it('та же сторона, опора уползла вперёд (rolling) → дубликат', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    expect(
+      mod.isDuplicateOngoingSpike(prevPump, {
+        pct: 40,
+        anchorTs: new Date(1_700_000_060_000),
+      }),
+    ).toBe(true);
+  });
+
+  it('новая нога: опора сдвинулась назад ≥ slack → не дубликат', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    expect(
+      mod.isDuplicateOngoingSpike(prevPump, {
+        pct: 35,
+        anchorTs: new Date(1_699_999_700_000),
+      }),
+    ).toBe(false);
+  });
+
+  it('смена стороны → не дубликат', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    expect(
+      mod.isDuplicateOngoingSpike(prevPump, {
+        pct: -12,
+        anchorTs: new Date(1_700_000_060_000),
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('decideEscalation — повторный [UPDATE]-алерт при усилении пролива', () => {
   const baseArgs = {
     nowMs: 1_700_000_000_000,
@@ -106,6 +143,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 6 * 60_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 6 * 60_000,
         updatesSent: 0,
       },
       candidatePct: -12,
@@ -124,6 +162,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       candidatePct: -16,
@@ -143,6 +182,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 3,
         lastTierName: 'tier3',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       // tier3→tier2 (rank 3→2): tier стал жёстче, дельта только 2 п.п.
@@ -163,6 +203,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 30_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 30_000,
         updatesSent: 0,
       },
       candidatePct: -16,
@@ -182,6 +223,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 1,
         lastTierName: 'tier1',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 3, // уже 3 апдейта
       },
       candidatePct: -22,
@@ -201,6 +243,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 1,
         lastTierName: 'tier1',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       candidatePct: -10,
@@ -220,6 +263,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       candidatePct: -20,
@@ -240,6 +284,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       candidatePct: -20,
@@ -259,6 +304,7 @@ describe('decideEscalation — повторный [UPDATE]-алерт при у�
         lastTierRank: 2,
         lastTierName: 'tier2',
         lastSentAtMs: baseArgs.nowMs - 90_000,
+        lastSentAnchorTsMs: baseArgs.nowMs - 90_000,
         updatesSent: 0,
       },
       candidatePct: -12, // дельта 3 п.п. < 5

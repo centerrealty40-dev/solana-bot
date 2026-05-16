@@ -274,9 +274,15 @@ const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('S
 /** После успешного алерта по mint — пауза перед любыми новыми алертами по этому mint (мин); 0 = выкл. */
 const MINT_COOLDOWN_MINUTES = Math.max(
   0,
-  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 60))),
+  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 5))),
 );
 const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
+
+/** Опора «сдвинулась назад» ≥ N сек — считаем новым пампом/проливом (не повтор того же движения). */
+const LEG_ANCHOR_SLACK_MS = Math.max(
+  0,
+  Math.min(3600, Math.floor(envNum('SPIKE_ALERT_LEG_ANCHOR_SLACK_SEC', 120))) * 1000,
+);
 
 /** Алерт только если «новый» бар скачка не старше N минут относительно now (отсекает старые движения в окне скана). */
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
@@ -1073,14 +1079,44 @@ export type MintEscalationState = {
   lastTierName: string;
   /** epoch ms последнего алерта. */
   lastSentAtMs: number;
+  /** ts опоры (дно/хай) последнего отправленного алерта — для антидубля «той же ноги». */
+  lastSentAnchorTsMs: number;
   /** Сколько UPDATE-алертов было после первого SENT (без учёта первого). */
   updatesSent: number;
 };
 
+/**
+ * Тот же памп/пролив, что уже сообщали: та же сторона и опора не «откатилась» назад
+ * (при rolling-окне опора только уползает вперёд — это продолжение, не новое событие).
+ */
+export function isDuplicateOngoingSpike(
+  prev: Pick<MintEscalationState, 'lastWasPump' | 'lastSentAnchorTsMs'> | null,
+  candidate: { pct: number; anchorTs: Date },
+): boolean {
+  if (!prev) return false;
+  const isPump = candidate.pct >= 0;
+  if (isPump !== prev.lastWasPump) return false;
+  const prevAnchor = prev.lastSentAnchorTsMs;
+  if (prevAnchor == null || !Number.isFinite(prevAnchor)) return false;
+  const anchorMs = candidate.anchorTs.getTime();
+  if (anchorMs < prevAnchor - LEG_ANCHOR_SLACK_MS) return false;
+  return true;
+}
+
+export function spikeAlertEventDedupeKey(row: {
+  base_mint: string;
+  dex: string;
+  anchorTs: Date | string;
+  pct: number;
+}): string {
+  const anchorTs = parseTs(row.anchorTs as Date | string);
+  return `${row.base_mint.trim()}|${row.dex}|${anchorTs.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
+}
+
 export type EscalationDecision =
   | {
       kind: 'first';
-      reason: 'no_prev_state' | 'cooldown_expired';
+      reason: 'no_prev_state' | 'cooldown_expired' | 'new_move_leg';
     }
   | {
       kind: 'update';
@@ -1503,10 +1539,18 @@ async function runOnePass(
       continue;
     }
 
-    // POLL_SEND_DEDUPE — защита от повторной отправки одного и того же бар-события (mint+dex+ts_new+side).
+    const prevState = mintEscState.get(mintKey) ?? null;
+    const anchorTs = parseTs(row.anchorTs as Date | string);
+
+    if (isDuplicateOngoingSpike(prevState, { pct: row.pct, anchorTs })) {
+      skipped++;
+      await recordSpikeEvent(recordToEvent('skip', row, { skipReason: 'same_spike_leg' }));
+      continue;
+    }
+
+    // POLL_SEND_DEDUPE — тот же ключ, что и «нога» (mint+dex+anchor+side), не ts_new.
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-      const tsNew = parseTs(row.ts_now as Date | string);
-      const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
+      const dedupeKey = spikeAlertEventDedupeKey(row);
       const last = sendDedupe.get(dedupeKey) ?? 0;
       if (nowMs - last < POLL_SEND_DEDUPE_MS) {
         skipped++;
@@ -1515,8 +1559,7 @@ async function runOnePass(
       }
     }
 
-    // Эскалация / cooldown решаются вместе.
-    const prevState = mintEscState.get(mintKey) ?? null;
+    // Эскалация / cooldown (cooldown не блокирует новую ногу — см. bypass ниже).
     const refMcap = row.refMcapUsd ?? referenceMcapUsd(row, {
       pct: row.pct,
       anchorPx: row.anchorPx,
@@ -1531,7 +1574,7 @@ async function runOnePass(
     });
     const candidateTierRank = tierRank(refMcap);
 
-    const decision = decideEscalation({
+    let decision = decideEscalation({
       prev: prevState,
       candidatePct: row.pct,
       candidateTierRank,
@@ -1543,6 +1586,14 @@ async function runOnePass(
       escalateMaxPerMint: ESCALATE_MAX_PER_MINT,
       tierChangeForcesUpdate: ESCALATE_TIER_CHANGE_FORCES_UPDATE,
     });
+
+    if (
+      decision.kind === 'skip' &&
+      decision.reason === 'cooldown_no_escalation' &&
+      !isDuplicateOngoingSpike(prevState, { pct: row.pct, anchorTs })
+    ) {
+      decision = { kind: 'first', reason: 'new_move_leg' };
+    }
 
     if (decision.kind === 'skip') {
       skipped++;
@@ -1566,6 +1617,7 @@ async function runOnePass(
         lastTierRank: candidateTierRank,
         lastTierName: row.tierName ?? tierLabel(refMcap),
         lastSentAtMs: nowMs,
+        lastSentAnchorTsMs: anchorTs.getTime(),
         updatesSent: decision.kind === 'update' ? (prevState?.updatesSent ?? 0) + 1 : 0,
       });
       if (decision.kind === 'update') sentUpdate++;
@@ -1584,9 +1636,7 @@ async function runOnePass(
       if (decision.kind === 'update') sentUpdate++;
       else sentFirst++;
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-        const tsNew = parseTs(row.ts_now as Date | string);
-        const dedupeKey = `${row.base_mint}|${row.dex}|${tsNew.toISOString()}|${row.pct >= 0 ? 'u' : 'd'}`;
-        sendDedupe.set(dedupeKey, Date.now());
+        sendDedupe.set(spikeAlertEventDedupeKey(row), Date.now());
       }
       mintEscState.set(mintKey, {
         lastSentAbsPct: Math.abs(row.pct),
@@ -1594,6 +1644,7 @@ async function runOnePass(
         lastTierRank: candidateTierRank,
         lastTierName: row.tierName ?? tierLabel(refMcap),
         lastSentAtMs: Date.now(),
+        lastSentAnchorTsMs: anchorTs.getTime(),
         updatesSent: decision.kind === 'update' ? (prevState?.updatesSent ?? 0) + 1 : 0,
       });
       await recordSpikeEvent(

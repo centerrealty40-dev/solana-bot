@@ -58,11 +58,17 @@ const POLL_SEND_DEDUPE_MS = Math.max(
   Math.min(3_600_000, Math.floor(envNum('RETRACE_ALERT_POLL_SEND_DEDUPE_MS', 120_000))),
 );
 
-const MINT_COOLDOWN_MINUTES = Math.max(
-  0,
-  Math.min(24 * 60, Math.floor(envNum('RETRACE_ALERT_MINT_COOLDOWN_MINUTES', 60))),
-);
-const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
+export function isDuplicateOngoingRetrace(
+  lastSentPeakMs: number | undefined,
+  peakTs: Date,
+): boolean {
+  if (lastSentPeakMs == null) return false;
+  return lastSentPeakMs === peakTs.getTime();
+}
+
+export function retraceAlertEventDedupeKey(mint: string, dex: string, peakTs: Date, valleyTs: Date): string {
+  return `${mint.trim()}|${dex}|${peakTs.toISOString()}|${valleyTs.toISOString()}`;
+}
 
 const MAX_EVENT_AGE_MIN = Math.max(
   1,
@@ -493,17 +499,9 @@ function pruneSendDedupe(map: Map<string, number>, olderThanMs: number): void {
   }
 }
 
-function pruneMintCooldown(map: Map<string, number>): void {
-  if (MINT_COOLDOWN_MS <= 0) return;
-  const cut = Date.now() - MINT_COOLDOWN_MS * 2;
-  for (const [k, t] of map) {
-    if (t < cut) map.delete(k);
-  }
-}
-
 async function runOnePass(
   sendDedupe: Map<string, number> | null,
-  mintCooldown: Map<string, number> | null,
+  lastSentPeakMsByMint: Map<string, number>,
 ): Promise<void> {
   const merged = new Map<string, AlertRowWithTs>();
 
@@ -549,10 +547,6 @@ async function runOnePass(
   if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
     pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
   }
-  if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-    pruneMintCooldown(mintCooldown);
-  }
-
   for (const [, row] of merged) {
     const html = buildAlertHtml(row);
     if (DRY_RUN) {
@@ -560,17 +554,18 @@ async function runOnePass(
       continue;
     }
 
+    const mintKey = row.base_mint.trim();
+    if (isDuplicateOngoingRetrace(lastSentPeakMsByMint.get(mintKey), row.rawBarsJTs)) continue;
+
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-      const kTs = row.rawBarsKTs.toISOString();
-      const dedupeKey = `${row.base_mint}|${row.dex}|${kTs}`;
+      const dedupeKey = retraceAlertEventDedupeKey(
+        row.base_mint,
+        row.dex,
+        row.rawBarsJTs,
+        row.rawBarsViTs,
+      );
       const last = sendDedupe.get(dedupeKey) ?? 0;
       if (Date.now() - last < POLL_SEND_DEDUPE_MS) continue;
-    }
-
-    const mintKey = row.base_mint.trim();
-    if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-      const lastMint = mintCooldown.get(mintKey) ?? 0;
-      if (Date.now() - lastMint < MINT_COOLDOWN_MS) continue;
     }
 
     if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
@@ -578,11 +573,12 @@ async function runOnePass(
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
       sent++;
+      lastSentPeakMsByMint.set(mintKey, row.rawBarsJTs.getTime());
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-        sendDedupe.set(`${row.base_mint}|${row.dex}|${row.rawBarsKTs.toISOString()}`, Date.now());
-      }
-      if (mintCooldown && MINT_COOLDOWN_MS > 0) {
-        mintCooldown.set(mintKey, Date.now());
+        sendDedupe.set(
+          retraceAlertEventDedupeKey(row.base_mint, row.dex, row.rawBarsJTs, row.rawBarsViTs),
+          Date.now(),
+        );
       }
     }
     await sleepMs(200);
@@ -590,7 +586,7 @@ async function runOnePass(
 
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m cooldownMin=${MINT_COOLDOWN_MINUTES}${pollLog}`,
+    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m peakDedupe=on${pollLog}`,
   );
 }
 
@@ -604,7 +600,7 @@ async function main(): Promise<void> {
 
   if (POLL_INTERVAL_MS > 0) {
     const sendDedupe = new Map<string, number>();
-    const mintCooldown = MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null;
+    const lastSentPeakMsByMint = new Map<string, number>();
     console.log(
       `[retrace-alert-watch] poll mode interval=${POLL_INTERVAL_MS}ms dedupe=${POLL_SEND_DEDUPE_MS}ms`,
     );
@@ -616,7 +612,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', onStop);
     while (!stop) {
       try {
-        await runOnePass(sendDedupe, mintCooldown);
+        await runOnePass(sendDedupe, lastSentPeakMsByMint);
       } catch (e) {
         console.warn('[retrace-alert-watch] cycle error', String(e));
       }
@@ -631,7 +627,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runOnePass(null, MINT_COOLDOWN_MS > 0 ? new Map<string, number>() : null);
+  await runOnePass(null, new Map<string, number>());
 }
 
 if (process.env.RETRACE_ALERT_SKIP_MAIN !== '1') {

@@ -77,11 +77,22 @@ const POLL_SEND_DEDUPE_MS = Math.max(
   Math.min(3_600_000, Math.floor(envNum('PULLBACK_ALERT_POLL_SEND_DEDUPE_MS', 120_000))),
 );
 
-const MINT_COOLDOWN_MINUTES = Math.max(
-  0,
-  Math.min(24 * 60, Math.floor(envNum('PULLBACK_ALERT_MINT_COOLDOWN_MINUTES', 60))),
-);
-const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
+/** Уже слали откат с этого пика (mint+pair) — не дублировать при углублении отката. */
+export function isDuplicateOngoingPullback(
+  lastSentPeakMs: number | undefined,
+  peakTs: Date,
+): boolean {
+  if (lastSentPeakMs == null) return false;
+  return lastSentPeakMs === peakTs.getTime();
+}
+
+export function pullbackAlertEventDedupeKey(
+  mint: string,
+  pair: string,
+  peakTs: Date,
+): string {
+  return `${mint.trim()}|${pair.trim()}|${peakTs.toISOString()}`;
+}
 
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
   1,
@@ -577,7 +588,10 @@ function buildAlertHtml(args: {
   ].join('\n');
 }
 
-async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: Map<string, number>): Promise<void> {
+async function runOnePass(
+  sendDedupe: Map<string, number> | null,
+  lastSentPeakMsByKey: Map<string, number>,
+): Promise<void> {
   const nowMs = Date.now();
   const maxBarAgeMs = MAX_NEWER_BAR_AGE_MIN * 60_000;
   let sent = 0;
@@ -607,8 +621,8 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
       }
 
       const cdKey = key;
-      const lastCd = mintCooldown.get(cdKey) ?? 0;
-      if (MINT_COOLDOWN_MS > 0 && nowMs - lastCd < MINT_COOLDOWN_MS) {
+      const peakMs = pick.peakTs.getTime();
+      if (isDuplicateOngoingPullback(lastSentPeakMsByKey.get(cdKey), pick.peakTs)) {
         skipped++;
         continue;
       }
@@ -626,7 +640,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
       }
 
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-        const dedupeKey = `${key}|${pick.peakTs.toISOString()}|${pick.lastTs.toISOString()}`;
+        const dedupeKey = pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs);
         const lastSend = sendDedupe.get(dedupeKey) ?? 0;
         if (nowMs - lastSend < POLL_SEND_DEDUPE_MS) {
           skipped++;
@@ -637,10 +651,12 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
       const html = buildAlertHtml({ dex, meta, pick, refMcap: refM });
       if (DRY_RUN) {
         console.log('[PULLBACK_DRY_RUN]', meta.base_mint.slice(0, 8), pick.risePct, pick.retraceFromPeakPct);
-        mintCooldown.set(cdKey, nowMs);
+        lastSentPeakMsByKey.set(cdKey, peakMs);
         if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-          const dedupeKey = `${key}|${pick.peakTs.toISOString()}|${pick.lastTs.toISOString()}`;
-          sendDedupe.set(dedupeKey, nowMs);
+          sendDedupe.set(
+            pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs),
+            nowMs,
+          );
         }
         sent++;
         continue;
@@ -649,10 +665,12 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
       const tg = await sendTelegram(html, 'HTML');
       if (tg.ok) {
         sent++;
-        mintCooldown.set(cdKey, nowMs);
+        lastSentPeakMsByKey.set(cdKey, peakMs);
         if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-          const dedupeKey = `${key}|${pick.peakTs.toISOString()}|${pick.lastTs.toISOString()}`;
-          sendDedupe.set(dedupeKey, nowMs);
+          sendDedupe.set(
+            pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs),
+            nowMs,
+          );
         }
         await sleepMs(200);
       } else {
@@ -664,7 +682,7 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
   const riseLog =
     SIGNAL_MODE === 'local_high_retrace' ? `retrace>=${MIN_RETRACE_PCT}%` : `rise>=${MIN_RISE_PCT}% retrace>=${MIN_RETRACE_PCT}%`;
   console.log(
-    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m cooldown=${MINT_COOLDOWN_MINUTES}m`,
+    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m peakDedupe=on`,
   );
 }
 
@@ -679,7 +697,7 @@ async function main(): Promise<void> {
 
   if (POLL_INTERVAL_MS > 0) {
     const sendDedupe = new Map<string, number>();
-    const mintCooldown = new Map<string, number>();
+    const lastSentPeakMsByKey = new Map<string, number>();
     console.log(
       `[market-pullback-telegram-watch] poll interval=${POLL_INTERVAL_MS}ms dedupe=${POLL_SEND_DEDUPE_MS}ms signal_mode=${SIGNAL_MODE} scan=${SCAN_MINUTES}m`,
     );
@@ -691,7 +709,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', onStop);
     while (!stop) {
       try {
-        await runOnePass(sendDedupe, mintCooldown);
+        await runOnePass(sendDedupe, lastSentPeakMsByKey);
       } catch (e) {
         console.warn('[market-pullback-telegram-watch] cycle error', String(e));
       }
