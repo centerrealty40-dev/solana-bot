@@ -44,12 +44,7 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
   if (cfg.strategyId !== 'live-oscar') return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     ot.liveExitPolicyId = 'wave_b_v1';
-    ot.tpGridOverrides = {
-      ...ot.tpGridOverrides,
-      gridStepPnl: WAVE_B_V1_TP_GRID.gridStepPnl,
-      gridSellFractionByStep: [...WAVE_B_V1_TP_GRID.gridSellFractionByStep],
-      gridFirstRungRetraceMinPnlPct: WAVE_B_V1_TP_GRID.gridFirstRungRetraceMinPnlPct,
-    };
+    applyWaveBGridOverrides(ot);
     ot.liveWaveTrailAnchorPnlFrac = 0;
     ot.liveWaveTrailLevelsTaken = [];
     ot.liveWavePeakPnlFrac = 0;
@@ -88,6 +83,62 @@ export function ensureLiveOscarExitPolicyPinned(ot: OpenTrade, cfg?: PaperTrader
       gridFirstRungRetraceMinPnlPct: LEGACY_LIVE_OSCAR_TP_GRID.gridFirstRungRetraceMinPnlPct,
     };
   }
+}
+
+function applyWaveBGridOverrides(ot: OpenTrade): void {
+  ot.tpGridOverrides = {
+    ...ot.tpGridOverrides,
+    gridStepPnl: WAVE_B_V1_TP_GRID.gridStepPnl,
+    gridSellFractionByStep: [...WAVE_B_V1_TP_GRID.gridSellFractionByStep],
+    gridFirstRungRetraceMinPnlPct: WAVE_B_V1_TP_GRID.gridFirstRungRetraceMinPnlPct,
+  };
+}
+
+/**
+ * Upgrade in-flight `legacy_grid` open to wave B (keeps `remainingFraction`, partials, `ladderUsedLevels`).
+ * `ladderUsedIndices` cleared — grid mode uses PnL thresholds in `ladderUsedLevels`.
+ */
+export function migrateLegacyOpenToWaveB(ot: OpenTrade, pnlFrac?: number): boolean {
+  if (isWaveBExitPolicy(ot)) return false;
+  const wasLegacy = ot.liveExitPolicyId == null || ot.liveExitPolicyId === 'legacy_grid';
+  if (!wasLegacy) return false;
+
+  ot.liveExitPolicyId = 'wave_b_v1';
+  applyWaveBGridOverrides(ot);
+  ot.ladderUsedIndices.clear();
+
+  const peakFromOt =
+    typeof ot.peakPnlPct === 'number' && Number.isFinite(ot.peakPnlPct) ? ot.peakPnlPct / 100 : 0;
+  const peak = Math.max(peakFromOt, pnlFrac ?? 0, ot.liveWavePeakPnlFrac ?? 0);
+  ot.liveWavePeakPnlFrac = peak;
+  ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, peak);
+  ot.liveWaveTrailLevelsTaken = ot.liveWaveTrailLevelsTaken ?? [];
+
+  if (peak + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) {
+    ot.trailingArmed = true;
+  }
+  console.log(
+    `[EXIT_POLICY] ${(ot.mint ?? '?').slice(0, 8)} $${ot.symbol ?? '?'} legacy_grid → wave_b_v1 remain=${(ot.remainingFraction * 100).toFixed(1)}% partials=${ot.partialSells.length} peakPnL=${(peak * 100).toFixed(1)}%`,
+  );
+  return true;
+}
+
+/**
+ * Tracker boot/tick: wave B env on → migrate open legacy; off → pin prod legacy grid.
+ */
+/** @returns true if policy/grid changed this tick (caller should refresh `cfgEffectiveForOpen`). */
+export function resolveLiveOscarExitPolicyForTick(
+  ot: OpenTrade,
+  cfg: PaperTraderConfig,
+  pnlFrac?: number,
+): boolean {
+  if (cfg.strategyId !== 'live-oscar') return false;
+  if (isWaveBExitPolicy(ot)) return false;
+  if (cfg.liveOscarExitPolicyWaveBEnabled) {
+    return migrateLegacyOpenToWaveB(ot, pnlFrac);
+  }
+  ensureLiveOscarExitPolicyPinned(ot, cfg);
+  return false;
 }
 
 /** Variant B: on new PnL high, re-enable TP rungs below peak and reset trail descent. */

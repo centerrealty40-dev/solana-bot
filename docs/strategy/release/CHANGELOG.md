@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.186] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.186`.
+
+### Live Oscar — wave B на уже открытой позиции
+
+- При `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1` первая обработка тиком переводит `legacy_grid` → `wave_b_v1` (остаток, partials, `ladderUsedLevels` сохраняются).
+- Лог: `[EXIT_POLICY] … legacy_grid → wave_b_v1`.
+
+**Откат:** `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=0` + reload (новые тики снова pin legacy; уже мигрированная сделка останется wave до закрытия — при откате закрыть вручную или дождаться exit).
+
+---
+
 ## [1.11.185] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.185`.

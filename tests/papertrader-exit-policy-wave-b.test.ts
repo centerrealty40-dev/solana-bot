@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   ensureLiveOscarExitPolicyPinned,
   isWaveBExitPolicy,
+  migrateLegacyOpenToWaveB,
+  resolveLiveOscarExitPolicyForTick,
   stampLiveOscarExitPolicyOnOpen,
   waveBOnNewHigh,
   WAVE_B_V1_TP_GRID,
@@ -64,6 +66,21 @@ describe('exit-policy-wave-b', () => {
     const eff = tpGridEffective(ot, cfg({ tpGridStepPnl: 0.025, tpGridSellFractionByStep: [0, 0.1, 0.2] }));
     expect(eff.stepPnl).toBe(0.05);
     expect(eff.sellFractionForStep(2)).toBeCloseTo(0.3);
+  });
+
+  it('migrates legacy open to wave_b when flag enabled', () => {
+    const ot = baseOt();
+    ot.liveExitPolicyId = 'legacy_grid';
+    ot.tpGridOverrides = { gridStepPnl: 0.05, gridSellFractionByStep: [0.1, 0.3, 0.5, 0.7, 0.7] };
+    ot.partialSells = [{ reason: 'TP_LADDER' } as OpenTrade['partialSells'][0]];
+    ot.remainingFraction = 0.5;
+    ot.peakPnlPct = 12;
+    expect(resolveLiveOscarExitPolicyForTick(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }), 0.12)).toBe(
+      true,
+    );
+    expect(isWaveBExitPolicy(ot)).toBe(true);
+    expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
+    expect(migrateLegacyOpenToWaveB(ot)).toBe(false);
   });
 
   it('wave B uniform profile cumulative at +20%', () => {

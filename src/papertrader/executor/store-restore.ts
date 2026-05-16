@@ -336,7 +336,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.dcaLastEvalPnlVsAvgFrac = dlap;
     }
 
-    ensureLiveOscarExitPolicyPinned(ot);
+    /** Wave migration runs on first tracker tick when `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1`. */
+    if (lepi !== 'wave_b_v1') {
+      ensureLiveOscarExitPolicyPinned(ot);
+    }
 
     return ot;
   } catch {

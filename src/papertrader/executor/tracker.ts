@@ -38,8 +38,8 @@ import {
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
 import { dcaKillstopEffective, tpGridEffective, type TpGridEffective } from './tp-grid-effective.js';
 import {
-  ensureLiveOscarExitPolicyPinned,
   isWaveBExitPolicy,
+  resolveLiveOscarExitPolicyForTick,
   waveBOnNewHigh,
   waveBTrailLevelTaken,
   waveBMarkTrailLevelTaken,
@@ -1326,7 +1326,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   for (const mint of mints) {
     const ot = open.get(mint);
     if (!ot) continue;
-    ensureLiveOscarExitPolicyPinned(ot, cfg);
+    resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
@@ -1937,6 +1937,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (ot.avgEntry > 0) {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
+      if (resolveLiveOscarExitPolicyForTick(ot, cfg, xAvg - 1)) {
+        effCfg = cfgEffectiveForOpen(cfg, ot);
+      }
     }
 
     const idealizedMute = isPaperOscarIdealized && paperOscarIdealizedExitMute(ot);
