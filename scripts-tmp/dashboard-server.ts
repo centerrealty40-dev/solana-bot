@@ -22,6 +22,12 @@ import postgres from 'postgres';
 import { jupiterJsonHeaders, jupiterPriceV3Url } from '../src/core/jupiter-http.js';
 import { lamportsFromGetBalanceResult, qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
 import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
+import {
+  legTimelineLabelFromLeg,
+  liveOscarEntryContextNoteLegacy,
+  liveOscarEntryContextNoteV2,
+  liveStagedOpenLabelFromState,
+} from '../src/papertrader/executor/live-staged-entry-labels.js';
 import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1559,31 +1565,7 @@ function liveStagedEntryState(e: Record<string, unknown>): Record<string, unknow
 }
 
 function liveStagedOpenLabelRu(strategyId: string, e: Record<string, unknown>): string | null {
-  const st = liveStagedEntryState(e);
-  if (!st) return null;
-  const legs = Array.isArray(e.legs) ? (e.legs as Record<string, unknown>[]) : [];
-  const firstLegUsd = Number(st.firstLegUsd ?? legs[0]?.sizeUsd ?? 0);
-  if (!(firstLegUsd > 0)) return null;
-  const firstDropPct = Number(st.firstDropPct ?? 0);
-  const name = strategyId === 'live-oscar-risky' ? 'Первая нога Risky' : 'Первая нога';
-  const trigger = firstDropPct <= 0 ? 'по сигналу' : `на −${fmtDropPctRaw(firstDropPct)}% от сигнала`;
-  /**
-   * 1.11.167: показываем сразу всю DCA-структуру (если ноги 2-3 заданы), это
-   * критично для оперативного контроля Live Oscar — при наведении на сделку
-   * сразу видны все запланированные доливки и kill-уровень от сигнала.
-   */
-  const params = e.liveStagedEntryParams as Record<string, unknown> | undefined;
-  const planParts: string[] = [];
-  const secondUsd = Number(params?.secondLegUsd ?? 0);
-  const secondDrop = Number(params?.secondDropPct ?? 0);
-  if (secondUsd > 0 && secondDrop > 0) planParts.push(`+$${secondUsd.toFixed(0)}/−${secondDrop}%`);
-  const thirdUsd = Number(params?.thirdLegUsd ?? 0);
-  const thirdDrop = Number(params?.thirdDropPct ?? 0);
-  if (thirdUsd > 0 && thirdDrop > 0) planParts.push(`+$${thirdUsd.toFixed(0)}/−${thirdDrop}%`);
-  const killDrop = Number(params?.killDropPct ?? 0);
-  const killSuffix = killDrop > 0 ? ` · kill −${killDrop}% от сигнала` : '';
-  const planSuffix = planParts.length > 0 ? ` · план DCA: ${planParts.join(', ')}` : '';
-  return `${name}: $${firstLegUsd.toFixed(0)} ${trigger}${planSuffix}${killSuffix}`;
+  return liveStagedOpenLabelFromState(strategyId, e);
 }
 
 /** Контекст для строк таймлайна open/close (paper + live). */
@@ -1619,13 +1601,19 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
           mode +
           ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия унифицирована (один режим выхода).',
       );
-    } else if (evKind === 'open' || evKind === 'scale_in_add') {
-      parts.push(
-        'Live Oscar 1.11.168 (агрессивный скальп-профиль). ВХОД: первая нога $700 по сигналу + DCA-доливки $150 на −7% и $150 на −14% от сигнала (доступны 1ч), полный нотионал $1000. ВЫХОД: TP-лесенка шаг +5% к средней c агрессивным профилем продаж — 10% остатка на +5%, 30% на +10%, 50% на +15%, 70% на +20%, 70% на +25%+ (последнее значение тиражируется на бесконечный хвост). Накопленные доли позиции: 10%, 37%, 68.5%, 90.6%, 97.2% — к ступени 5 продано почти всё, хвост 2.8% уходит по TRAIL без price-impact. Защита первой ступени retrace = +3% к avg. TRAIL = `ladder_retrace` (откат ниже взятой ступени). Killstop −20% к avg. Таймаут 8 ч (отключается после первого partial TP). Slippage **0.5%** (50 bps) + persistent retry **x10** с шагом 3 с — эмуляция ручной торговли в jup.ag UI: тугой слиппедж + долбим до победы. Policy A+ entry-фильтр включён: bounce_30m > 1%, drop_1h < −20%, drop_30m < −10%, vol_1h > $1M.',
-      );
+    } else if (evKind === 'open' || evKind === 'scale_in_add' || evKind === 'entry_split_add') {
+      const st = liveStagedEntryState(e);
+      parts.push(st?.entrySplitV2 === true ? liveOscarEntryContextNoteV2() : liveOscarEntryContextNoteLegacy());
+    } else if (
+      evKind === 'dca_add' ||
+      evKind === 'staged_avg_add' ||
+      evKind === 'entry_split_add'
+    ) {
+      const st = liveStagedEntryState(e);
+      if (st?.entrySplitV2 === true) parts.push(liveOscarEntryContextNoteV2());
     } else {
       parts.push(
-        'Live Oscar 1.11.168: TP +5% c агрессивным профилем 10/30/50/70/70 %, TRAIL `ladder_retrace`, kill −20%, slip 0.5% + retry x10, Policy A+ on.',
+        'Live Oscar: TP-сетка, TRAIL `ladder_retrace`, kill −20% к средней, slip 0.5% + retry ×10.',
       );
     }
     return parts.length ? parts.join('\n') : null;
@@ -1735,6 +1723,31 @@ export function buildTimelineEvent(
       remainingFraction: null,
       amountUsd: sizeUsd > 0 ? sizeUsd : null,
       ...(ctxScale ? { contextNote: ctxScale } : {}),
+    };
+  }
+  if (kind === 'entry_split_add' || kind === 'staged_avg_add') {
+    const sizeUsd = Number(e.sizeUsd ?? e.size_usd ?? 0);
+    const ru =
+      typeof e.timelineLabelRu === 'string' && e.timelineLabelRu.trim().length
+        ? String(e.timelineLabelRu).trim()
+        : kind === 'entry_split_add'
+          ? 'Покупка · 2-я нога сплита входа'
+          : 'Усреднение staged';
+    const ctx = timelineContextNoteFromJournal(e);
+    const timelineKind = kind === 'entry_split_add' ? 'scale_in_add' : 'dca_add';
+    return {
+      ts,
+      kind: timelineKind,
+      label: ru,
+      mcUsd: liveMc(),
+      spotPxUsd: spotPxFromMetric(),
+      sizePct: null,
+      pnlPct: null,
+      pnlUsd: null,
+      reason: kind === 'entry_split_add' ? 'entry_split' : 'staged_avg',
+      remainingFraction: null,
+      amountUsd: sizeUsd > 0 ? sizeUsd : null,
+      ...(ctx ? { contextNote: ctx } : {}),
     };
   }
   if (kind === 'dca_add') {
@@ -2192,7 +2205,7 @@ export function loadPaper2File(filePath: string): {
         o.peakPnlPct = Math.max(o.peakPnlPct, Number(e.peakPnlPct ?? 0));
         o.trailingArmed = o.trailingArmed || Boolean(e.trailingArmed);
       }
-    } else if (e.kind === 'dca_add') {
+    } else if (e.kind === 'dca_add' || e.kind === 'entry_split_add' || e.kind === 'staged_avg_add') {
       const o = om.get(mint);
       if (o) {
         const tiu = Number(e.totalInvestedUsd ?? 0);
@@ -2693,13 +2706,21 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
       const trig = Number(lastLeg.triggerPct ?? 0);
       const dcaUsd = Number(lastLeg.sizeUsd ?? 0);
+      const legReason = String(lastLeg.reason ?? '');
       const dcaLabelRu =
         journalDcaLabelRu ??
+        legTimelineLabelFromLeg(lastLeg, ot) ??
         (isLiveOscarRiskyFile && dcaUsd > 0
           ? `DCA Risky: докупка $${dcaUsd.toFixed(0)} при ${(trig * 100).toFixed(0)}% от первой ноги · режим выхода B`
           : undefined);
+      const synKind =
+        legReason === 'entry_split'
+          ? 'entry_split_add'
+          : legReason === 'staged_avg'
+            ? 'staged_avg_add'
+            : 'dca_add';
       const syn: Record<string, unknown> = {
-        kind: 'dca_add',
+        kind: synKind,
         ts,
         strategyId: dashboardStrategyId,
         mint,
@@ -2714,7 +2735,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         ...(dcaLabelRu
           ? {
               timelineLabelRu: dcaLabelRu,
-              liveExitProfileMode: 'B',
+              ...(legReason === 'staged_avg' || legReason === 'dca' || ot.liveExitProfileMode === 'B'
+                ? { liveExitProfileMode: 'B' as const }
+                : {}),
             }
           : ot.liveExitProfileMode === 'B'
           ? {

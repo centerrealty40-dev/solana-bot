@@ -19,6 +19,10 @@ import {
   stagedAvgSecondEligible,
   usesLegacyStagedAdds,
 } from './live-staged-entry-gates.js';
+import {
+  entrySplitLeg2TimelineLabel,
+  stagedAvgTimelineLabel,
+} from './live-staged-entry-labels.js';
 
 type JournalFn = (event: Record<string, unknown>) => void;
 
@@ -103,7 +107,7 @@ async function pushBuyLeg(args: {
     liveExitProfileMode: 'B' as const,
   });
   journalLiveStrategy?.({
-    kind: reason === 'entry_split' ? 'live_entry_split' : 'live_staged_avg',
+    kind: 'live_position_dca',
     mint,
     openTrade: serializeOpenTrade(ot),
     timelineLabelRu,
@@ -148,7 +152,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
           livePhase4: args.livePhase4,
           journalAppend: args.journalAppend,
           journalLiveStrategy: args.journalLiveStrategy,
-          timelineLabelRu: `Сплит входа (не усреднение): 2-я нога $${usd.toFixed(0)} · цена ${ch.toFixed(2)}% к якорю 1-й ноги`,
+          timelineLabelRu: entrySplitLeg2TimelineLabel(usd, ch),
           logTag: 'ENTRY_SPLIT',
         });
         if (ok) st.entrySplitLeg2Done = true;
@@ -180,7 +184,13 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       livePhase4: args.livePhase4,
       journalAppend: args.journalAppend,
       journalLiveStrategy: args.journalLiveStrategy,
-      timelineLabelRu: `Усреднение staged (не сплит): $${avg1Usd.toFixed(0)} при ${signalDropPct.toFixed(2)}% от сигнала (зона −${drop7}%…−${drop14 ?? 14}%)`,
+      timelineLabelRu: stagedAvgTimelineLabel({
+        which: 1,
+        usd: avg1Usd,
+        signalDropPct,
+        drop7,
+        drop14: drop14 ?? 14,
+      }),
       logTag: 'STAGED_AVG_1',
     });
     if (ok) {
@@ -207,7 +217,13 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       livePhase4: args.livePhase4,
       journalAppend: args.journalAppend,
       journalLiveStrategy: args.journalLiveStrategy,
-      timelineLabelRu: `Усреднение staged (не сплит): $${avg2Usd.toFixed(0)} при ${signalDropPct.toFixed(2)}% от сигнала (≤ −${drop14}%)`,
+      timelineLabelRu: stagedAvgTimelineLabel({
+        which: 2,
+        usd: avg2Usd,
+        signalDropPct,
+        drop7: drop7,
+        drop14,
+      }),
       logTag: 'STAGED_AVG_2',
     });
     if (ok) {

@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.191] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.191`.
+
+### Таймлайн Live Oscar — сплит vs усреднение + whitelist
+
+- Подписи open/close/dca: **1-я/2-я нога сплита входа**, **1-е/2-е усреднение** (не путать с DCA и не с «$700 legacy»).
+- Live JSONL: `live_position_dca` + `timelineLabelRu` для ног сплита и staged-avg (вместо невалидных `live_entry_split`).
+- Дашборд: replay `entry_split_add` / `staged_avg_add`, контекст v2 entry-split.
+- Whitelist: `61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump`, `6qdzMx4c9rL2X3Ns3SwZ8uEo4zReDPjdXpAEmpo7pump`.
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env` на VPS.
+
+---
+
 ## [1.11.190] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.190`.

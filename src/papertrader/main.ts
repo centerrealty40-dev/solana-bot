@@ -36,7 +36,12 @@ import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
-import { buildLiveStagedEntryState, markEntrySplitLeg1Filled } from './executor/live-staged-entry-gates.js';
+import {
+  buildLiveStagedEntryState,
+  markEntrySplitLeg1Filled,
+  stagedEntryPlanInvestedCapUsd,
+} from './executor/live-staged-entry-gates.js';
+import { liveStagedOpenLabelRuFromCfg } from './executor/live-staged-entry-labels.js';
 import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
@@ -1265,10 +1270,50 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 const sigPx = ot.liveStagedEntry?.signalPriceUsd ?? 0;
                 const targetUsd = (dropPct: number): number | null =>
                   sigPx > 0 ? +(sigPx * (1 - dropPct / 100)).toFixed(8) : null;
-                const totalNotional =
-                  cfg.liveStagedEntryFirstLegUsd +
-                  cfg.liveStagedEntrySecondLegUsd +
-                  cfg.liveStagedEntryThirdLegUsd;
+                const v2Split = cfg.liveStagedEntryEntrySplitLegUsd > 0;
+                const totalNotional = v2Split
+                  ? stagedEntryPlanInvestedCapUsd(cfg)
+                  : cfg.liveStagedEntryFirstLegUsd +
+                    cfg.liveStagedEntrySecondLegUsd +
+                    cfg.liveStagedEntryThirdLegUsd;
+                const sharedParams = {
+                  signalPriceUsd: sigPx > 0 ? sigPx : null,
+                  entrySplitV2: v2Split,
+                  killDropPct: cfg.liveStagedEntryKillDropPct,
+                  killTargetUsd: targetUsd(cfg.liveStagedEntryKillDropPct),
+                  signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
+                  totalNotionalUsd: totalNotional,
+                  tpGridProfile: cfg.tpGridSellFractionByStep ?? [],
+                  tpGridStepPnl: cfg.tpGridStepPnl,
+                  tpGridFirstRungRetraceMinPnlPct: cfg.tpGridFirstRungRetraceMinPnlPct,
+                  liveExitPolicyId: ot.liveExitPolicyId ?? 'legacy_grid',
+                  avgKillstopPct: cfg.dcaKillstop,
+                  policyAPlusEnabled: cfg.policyAPlusEnabled,
+                };
+                if (v2Split) {
+                  const leg1 = cfg.liveStagedEntryEntrySplitLegUsd;
+                  const description =
+                    `${cfg.strategyId} entry-split v2: нотионал до $${totalNotional.toFixed(0)}. ` +
+                    `1-я нога сплита ${leg1.toFixed(0)} USD по сигналу; 2-я нога сплита ${leg1.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
+                    `1-е усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} при −${cfg.liveStagedEntrySecondDropPct}%…−${cfg.liveStagedEntryThirdDropPct}% от сигнала (≥${(cfg.liveStagedEntryAvgCooldownMs / 60_000).toFixed(0)} мин). ` +
+                    `2-е усреднение $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} при ≤−${cfg.liveStagedEntryThirdDropPct}% (≥${(cfg.liveStagedEntryAvgSecondCooldownMs / 60_000).toFixed(0)} мин после 1-го).`;
+                  return {
+                    timelineOpenLabelRu: liveStagedOpenLabelRuFromCfg(cfg),
+                    liveStagedEntryParams: {
+                      ...sharedParams,
+                      firstLegUsd: leg1,
+                      entrySplitLegUsd: leg1,
+                      entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
+                      entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
+                      entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
+                      avgSecondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+                      avgSecondDropPct: cfg.liveStagedEntrySecondDropPct,
+                      avgThirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+                      avgThirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                      description,
+                    },
+                  };
+                }
                 const dcaParts: string[] = [];
                 if (cfg.liveStagedEntrySecondLegUsd > 0) {
                   dcaParts.push(
@@ -1281,23 +1326,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   );
                 }
                 const description =
-                  `${cfg.strategyId} staged-entry: полный нотионал $${totalNotional.toFixed(0)}. ` +
-                  `Сигнал фиксирует якорную цену сделки; первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} ` +
-                  (cfg.liveStagedEntryFirstDropPct <= 0
-                    ? `покупается немедленно (на сигнале). `
-                    : `покупается на −${cfg.liveStagedEntryFirstDropPct}% от сигнала. `) +
+                  `${cfg.strategyId} staged-entry (legacy): полный нотионал $${totalNotional.toFixed(0)}. ` +
+                  `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу; ` +
                   (dcaParts.length > 0
-                    ? `DCA-доливки: ${dcaParts.join(' и ')} (доступны только в течение ${(cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)} мин от сигнала). `
-                    : `DCA-доливки выключены. `) +
-                  `После двух ступеней TP-сетки (TP_LADDER) staged-усреднение отключено; ` +
-                  `signal kill-stop срабатывает при падении цены на −${cfg.liveStagedEntryKillDropPct}% от сигнала.`;
+                    ? `DCA: ${dcaParts.join(' и ')} (${(cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)} мин). `
+                    : '') +
+                  `kill −${cfg.liveStagedEntryKillDropPct}% от сигнала.`;
                 return {
                   timelineOpenLabelRu:
                     cfg.liveStagedEntryFirstDropPct <= 0
                       ? `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу`
                       : `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} на −${cfg.liveStagedEntryFirstDropPct}% от сигнала`,
                   liveStagedEntryParams: {
-                    signalPriceUsd: sigPx > 0 ? sigPx : null,
+                    ...sharedParams,
                     firstDropPct: cfg.liveStagedEntryFirstDropPct,
                     firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
                     firstTargetUsd: targetUsd(cfg.liveStagedEntryFirstDropPct),
@@ -1313,21 +1354,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                       cfg.liveStagedEntryThirdLegUsd > 0
                         ? targetUsd(cfg.liveStagedEntryThirdDropPct)
                         : null,
-                    killDropPct: cfg.liveStagedEntryKillDropPct,
-                    killTargetUsd: targetUsd(cfg.liveStagedEntryKillDropPct),
-                    signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
-                    totalNotionalUsd: totalNotional,
-                    /**
-                     * 1.11.167: Policy A+ + TP-grid профиль продаж сохраняются на момент
-                     * открытия в JSONL — каждая сделка несёт свою «формулу» exit'а для
-                     * downstream retro-анализа без необходимости разбирать env-историю.
-                     */
-                    tpGridProfile: cfg.tpGridSellFractionByStep ?? [],
-                    tpGridStepPnl: cfg.tpGridStepPnl,
-                    tpGridFirstRungRetraceMinPnlPct: cfg.tpGridFirstRungRetraceMinPnlPct,
-                    liveExitPolicyId: ot.liveExitPolicyId ?? 'legacy_grid',
-                    avgKillstopPct: cfg.dcaKillstop,
-                    policyAPlusEnabled: cfg.policyAPlusEnabled,
                     description,
                   },
                 };
