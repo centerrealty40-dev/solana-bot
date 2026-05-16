@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.185] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.185`.
+
+### Live Oscar — включить wave B для новых сделок (prod)
+
+- `ecosystem.config.cjs` (`live-oscar`): `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1`, trail step sell **30%**.
+- Текущие открытые позиции без `liveExitPolicyId` остаются на **legacy_grid** (см. 1.11.184).
+
+**Откат:** `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.184] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.184`.
