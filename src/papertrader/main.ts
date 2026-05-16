@@ -36,6 +36,7 @@ import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
+import { buildLiveStagedEntryState, markEntrySplitLeg1Filled } from './executor/live-staged-entry-gates.js';
 import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
 import { followupTick, schedulePendingFollowups, pendingFollowupsCount } from './executor/followup.js';
@@ -275,18 +276,20 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
 
     const symbol = args.symbol?.trim() || '?';
-    const fl = cfg.liveStagedEntryFirstLegUsd;
+    const splitUsd = cfg.liveStagedEntryEntrySplitLegUsd;
     const sl = cfg.liveStagedEntrySecondLegUsd;
     const sd = cfg.liveStagedEntrySecondDropPct;
+    const td = cfg.liveStagedEntryThirdDropPct;
+    const tl = cfg.liveStagedEntryThirdLegUsd;
     const kill = cfg.liveStagedEntryKillDropPct;
     const ttlMin = (cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0);
     const firstLegExplain =
       cfg.liveStagedEntryFirstDropPct <= 0
-        ? `Первая нога <b>$${fl.toFixed(0)}</b> — при цене ≤ цены сигнала (как только гейты и котировка пропустят сделку).`
-        : `Первая нога <b>$${fl.toFixed(0)}</b> — <b>только после −${cfg.liveStagedEntryFirstDropPct}%</b> от цены сигнала. Сообщение приходит при появлении кандидата; покупка идёт на откате в течение <b>${ttlMin} мин</b>.`;
+        ? `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> сразу, затем <b>$${splitUsd.toFixed(0)}</b> через 10 с, если цена в коридоре +3% / −10% к 1-й ноге.`
+        : `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала (TTL <b>${ttlMin} мин</b>).`;
     const secondLine =
       sl > 0
-        ? `Усреднение <b>$${sl.toFixed(0)}</b> на <b>−${sd}%</b> от цены сигнала (в окне DCA).`
+        ? `Усреднение staged (не сплит): <b>$${sl.toFixed(0)}</b> на −${sd}% и <b>$${tl.toFixed(0)}</b> на −${td}% — не раньше 3 и 5 мин после предыдущей ноги.`
         : '';
     const text =
       `<b>Live Oscar signal</b>\n` +
@@ -897,31 +900,21 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           token_age_min: d.features.token_age_min,
           pair_address: d.features.pair_address ?? null,
         };
+        const stagedSplitUsd = liveStagedEntryActive() ? cfg.liveStagedEntryEntrySplitLegUsd : undefined;
         let ot = makeOpenTradeFromEntry({
           cfg,
           row,
           lane: d.lane,
           dex,
           liquidityUsd: d.features.liq_usd,
+          ...(stagedSplitUsd != null && stagedSplitUsd > 0 ? { firstLegUsdOverride: stagedSplitUsd } : {}),
         });
         if (liveStagedEntryActive()) {
-          ot.liveStagedEntry = {
+          ot.liveStagedEntry = buildLiveStagedEntryState(cfg, {
             signalTs: stagedEntrySignal.signalTs,
             signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-            firstDropPct: cfg.liveStagedEntryFirstDropPct,
-            firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
-            secondDropPct: cfg.liveStagedEntrySecondDropPct,
-            secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
-            ...(cfg.liveStagedEntryThirdLegUsd > 0
-              ? {
-                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
-                  thirdLegDone: false,
-                }
-              : {}),
-            killDropPct: cfg.liveStagedEntryKillDropPct,
-            secondLegDone: false,
-          };
+          });
+          markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
         }
 
         const preDyn = cfg.preEntryDynamicsEnabled
@@ -1046,6 +1039,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             priceVerify.jupiterPriceUsd > 0
           ) {
             const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd, pair_address: row.pair_address };
+            const stagedSplitUsd = cfg.liveStagedEntryEntrySplitLegUsd;
             ot = makeOpenTradeFromEntry({
               cfg,
               row: rowJ,
@@ -1053,28 +1047,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               dex,
               liquidityUsd: d.features.liq_usd,
               entryTs: ot.entryTs,
+              firstLegUsdOverride: stagedSplitUsd,
             });
+            if (liveStagedEntryActive()) {
+              ot.liveStagedEntry = buildLiveStagedEntryState(cfg, {
+                signalTs: stagedEntrySignal.signalTs,
+                signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+              });
+              markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
+            }
           }
-        }
-
-        if (liveStagedEntryActive()) {
-          ot.liveStagedEntry = {
-            signalTs: stagedEntrySignal.signalTs,
-            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-            firstDropPct: cfg.liveStagedEntryFirstDropPct,
-            firstLegUsd: cfg.liveStagedEntryFirstLegUsd,
-            secondDropPct: cfg.liveStagedEntrySecondDropPct,
-            secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
-            ...(cfg.liveStagedEntryThirdLegUsd > 0
-              ? {
-                  thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-                  thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
-                  thirdLegDone: false,
-                }
-              : {}),
-            killDropPct: cfg.liveStagedEntryKillDropPct,
-            secondLegDone: ot.liveStagedEntry?.secondLegDone ?? false,
-          };
         }
 
         const pfQuoteOpen = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);

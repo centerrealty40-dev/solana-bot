@@ -18,11 +18,9 @@ const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
  * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
  *
- * 1.11.167: notional bumped 800 → 1000 (3-leg DCA $700 / $150 @ −7% / $150 @ −14%
- * after Policy A+ entry filter cuts trade volume; remaining trades are higher
- * conviction → larger position with deeper averaging budget).
+ * 1.11.188: $500+$500 entry split + $150 @ −7% + $150 @ −14% staged avg = $1300 cap.
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '1000';
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '1300';
 
 module.exports = {
   apps: [
@@ -295,18 +293,21 @@ module.exports = {
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry 1.11.167: полный нотионал **$1000** — три ноги.
-         *  - leg 1: **$700** по сигналу (`FIRST_DROP_PCT=0`)
-         *  - leg 2: **$150** на **−7%** от сигнала (mid-dip)
-         *  - leg 3: **$150** на **−14%** от сигнала (deep-dip)
-         * Signal kill: **−20%** от сигнала (запас 6пп ниже третьей ноги, чтобы leg-3 успел заполниться).
-         * Окно `SIGNAL_TTL_MS` = 1ч; после первого `partial_sell` или после клина mid+deep ноги могут зануляться (см. tracker.ts staged-entry timeout suppression).
+         * Staged-entry 1.11.188: сплит входа **$500+$500** (10 с, +3%/−10% к 1-й ноге, не усреднение);
+         * усреднение staged **$150 @ −7%** (≥3 мин после 1-й ноги сплита, только если drop в (−7%, −14%])
+         * и **$150 @ −14%** (≥5 мин после первого усреднения).
          */
         PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '700',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
+        PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
+        PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',

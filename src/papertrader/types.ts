@@ -33,7 +33,7 @@ export interface PositionLeg {
   marketPrice: number;
   /** Money we paid for this leg (paper) — reduces our paper bank. */
   sizeUsd: number;
-  reason: 'open' | 'dca' | 'scale_in';
+  reason: 'open' | 'dca' | 'scale_in' | 'entry_split' | 'staged_avg';
   /** For dca: trigger percentage that fired (e.g. -0.07, -0.15). */
   triggerPct?: number;
 }
@@ -264,12 +264,35 @@ export interface LiveStagedEntryState {
   signalTs: number;
   signalPriceUsd: number;
   firstDropPct: number;
+  /** Entry split leg size (USD); legacy field name kept for JSONL. */
   firstLegUsd: number;
+  killDropPct: number;
+  /**
+   * v2: entry = 2× split (anti book impact), then optional staged averaging at −7% / −14%.
+   * Legacy rows omit `entrySplitV2` — tracker keeps old immediate add-on legs vs signal.
+   */
+  entrySplitV2?: boolean;
+  entrySplitLegUsd?: number;
+  entrySplitDelayMs?: number;
+  entrySplitMaxUpPct?: number;
+  entrySplitMaxDownPct?: number;
+  entrySplitAnchorUsd?: number;
+  entrySplitLeg1Ts?: number;
+  entrySplitLeg2Done?: boolean;
+  avgSecondDropPct?: number;
+  avgSecondLegUsd?: number;
+  avgThirdDropPct?: number;
+  avgThirdLegUsd?: number;
+  avgFirstCooldownMs?: number;
+  avgSecondCooldownMs?: number;
+  avgFirstLegDone?: boolean;
+  avgSecondLegDone?: boolean;
+  avgFirstLegTs?: number;
+  /** Legacy / mirror: staged averaging (−7%) — same as `avgFirstLegDone` on v2. */
   secondDropPct: number;
   secondLegUsd: number;
   thirdDropPct?: number;
   thirdLegUsd?: number;
-  killDropPct: number;
   secondLegDone?: boolean;
   thirdLegDone?: boolean;
 }

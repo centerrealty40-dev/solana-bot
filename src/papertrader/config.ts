@@ -94,6 +94,15 @@ const ConfigSchema = z.object({
   liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   liveStagedEntrySignalTtlMs: z.coerce.number().int().positive().default(60 * 60_000),
+  /** Entry split (NOT averaging): second cash leg after delay if price within band vs leg-1 anchor. */
+  liveStagedEntryEntrySplitLegUsd: z.coerce.number().positive().default(500),
+  liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
+  liveStagedEntryEntrySplitMaxUpPct: z.coerce.number().min(0).max(50).default(3),
+  liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
+  /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
+  liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
+  /** Min ms after first staged avg before second avg (−14%). */
+  liveStagedEntryAvgSecondCooldownMs: z.coerce.number().int().nonnegative().default(300_000),
   /**
    * Shadow-only: compute a proposed dynamic kill-stop + midpoint DCA from PG `*_pair_snapshots` history.
    * Does **not** affect tracker exits yet — only stamps `OpenTrade.dynamicKillstopShadow` + JSONL mirror fields.
@@ -608,6 +617,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntrySecondLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD,
     liveStagedEntryThirdLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD,
     liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
+    liveStagedEntryEntrySplitLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD,
+    liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
+    liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
+    liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
+    liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
+    liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),
     dynamicKillstopShadowWindowDays: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS,
     dynamicKillstopShadowBufferPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT,

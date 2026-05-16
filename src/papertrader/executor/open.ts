@@ -19,11 +19,16 @@ export interface MakeOpenArgs {
   liquidityUsd: number | null | undefined;
   /** W7.4 — reuse entry timestamp when rebuilding OpenTrade after Jupiter price override. */
   entryTs?: number;
+  /** Overrides `positionUsd * entryFirstLegFraction` (e.g. staged entry split leg 1). */
+  firstLegUsdOverride?: number;
 }
 
 export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
-  const { cfg, row, lane, dex, liquidityUsd, entryTs: fixedEntryTs } = args;
-  const sizeUsd = cfg.positionUsd * cfg.entryFirstLegFraction;
+  const { cfg, row, lane, dex, liquidityUsd, entryTs: fixedEntryTs, firstLegUsdOverride } = args;
+  const sizeUsd =
+    firstLegUsdOverride != null && firstLegUsdOverride > 0
+      ? firstLegUsdOverride
+      : cfg.positionUsd * cfg.entryFirstLegFraction;
   const marketPrice = Number(row.price_usd);
   const { effectivePrice } = applyEntryCosts(cfg, marketPrice, dex, sizeUsd, liquidityUsd ?? row.liquidity_usd);
   const ts = fixedEntryTs ?? Date.now();

@@ -56,6 +56,7 @@ import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-sn
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-whitelist.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
+import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
@@ -1995,6 +1996,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     const st = ot.liveStagedEntry;
     if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, curMetric)) {
+      if (st.entrySplitV2) {
+        await tryLiveStagedEntryV2TrackerStep({
+          cfg,
+          ot,
+          mint,
+          curMetric,
+          livePhase4,
+          journalAppend,
+          journalLiveStrategy,
+        });
+      }
       const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
       /** Staged доборы до якоря сигнала: раньше блокировались после любого partial TP; теперь — до 2-й ступени TP-сетки (`TP_LADDER`), затем запрет. */
       const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
@@ -2090,39 +2102,41 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         return true;
       };
 
-      if (signalDropPct != null && stagedAddAllowed && !st.secondLegDone && signalDropPct <= -st.secondDropPct) {
-        await tryStagedAddLeg({
-          stepIndex: 0,
-          legLabelRu: 'Вторая нога',
-          addUsd: st.secondLegUsd,
-          dropPct: st.secondDropPct,
-          signalDropPct,
-          markDone: () => {
-            st.secondLegDone = true;
-          },
-        });
-      }
+      if (usesLegacyStagedAdds(st)) {
+        if (signalDropPct != null && stagedAddAllowed && !st.secondLegDone && signalDropPct <= -st.secondDropPct) {
+          await tryStagedAddLeg({
+            stepIndex: 0,
+            legLabelRu: 'Усреднение staged (legacy)',
+            addUsd: st.secondLegUsd,
+            dropPct: st.secondDropPct,
+            signalDropPct,
+            markDone: () => {
+              st.secondLegDone = true;
+            },
+          });
+        }
 
-      if (
-        signalDropPct != null &&
-        stagedAddAllowed &&
-        st.secondLegDone &&
-        !st.thirdLegDone &&
-        st.thirdLegUsd != null &&
-        st.thirdLegUsd > 0 &&
-        st.thirdDropPct != null &&
-        signalDropPct <= -st.thirdDropPct
-      ) {
-        await tryStagedAddLeg({
-          stepIndex: 1,
-          legLabelRu: 'Третья нога',
-          addUsd: st.thirdLegUsd,
-          dropPct: st.thirdDropPct,
-          signalDropPct,
-          markDone: () => {
-            st.thirdLegDone = true;
-          },
-        });
+        if (
+          signalDropPct != null &&
+          stagedAddAllowed &&
+          st.secondLegDone &&
+          !st.thirdLegDone &&
+          st.thirdLegUsd != null &&
+          st.thirdLegUsd > 0 &&
+          st.thirdDropPct != null &&
+          signalDropPct <= -st.thirdDropPct
+        ) {
+          await tryStagedAddLeg({
+            stepIndex: 1,
+            legLabelRu: 'Усреднение staged (legacy)',
+            addUsd: st.thirdLegUsd,
+            dropPct: st.thirdDropPct,
+            signalDropPct,
+            markDone: () => {
+              st.thirdLegDone = true;
+            },
+          });
+        }
       }
 
       /**
@@ -2133,7 +2147,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
        * доборы уже не продлеваются (см. `stagedAddWindowOpen` / `ttlPreservesStagedPlan`).
        */
       {
-        const stagedLegsComplete = st.secondLegDone === true && thirdDone;
+        const v2AvgDone =
+          st.entrySplitV2 === true
+            ? (st.avgThirdLegUsd != null && st.avgThirdLegUsd > 0
+                ? st.avgSecondLegDone === true
+                : st.avgFirstLegDone === true) &&
+              st.entrySplitLeg2Done === true
+            : false;
+        const stagedLegsComplete = st.entrySplitV2 ? v2AvgDone : st.secondLegDone === true && thirdDone;
         const ttlExpired = Date.now() > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
         const ttlPreservesStagedPlan =
           tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;

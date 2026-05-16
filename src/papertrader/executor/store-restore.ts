@@ -205,6 +205,27 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
           killDropPct,
           secondLegDone: Boolean(p.secondLegDone),
           thirdLegDone: Boolean(p.thirdLegDone),
+          ...(p.entrySplitV2 === true
+            ? {
+                entrySplitV2: true,
+                entrySplitLegUsd: Number(p.entrySplitLegUsd) || firstLegUsd,
+                entrySplitDelayMs: Number(p.entrySplitDelayMs) || 10_000,
+                entrySplitMaxUpPct: Number(p.entrySplitMaxUpPct) || 3,
+                entrySplitMaxDownPct: Number(p.entrySplitMaxDownPct) || 10,
+                entrySplitAnchorUsd: Number(p.entrySplitAnchorUsd) || signalPriceUsd,
+                entrySplitLeg1Ts: Number(p.entrySplitLeg1Ts) || signalTs,
+                entrySplitLeg2Done: Boolean(p.entrySplitLeg2Done),
+                avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
+                avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
+                avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,
+                avgThirdLegUsd: Number.isFinite(thirdLegUsd) ? thirdLegUsd : undefined,
+                avgFirstCooldownMs: Number(p.avgFirstCooldownMs) || 180_000,
+                avgSecondCooldownMs: Number(p.avgSecondCooldownMs) || 300_000,
+                avgFirstLegDone: Boolean(p.avgFirstLegDone ?? p.secondLegDone),
+                avgSecondLegDone: Boolean(p.avgSecondLegDone ?? p.thirdLegDone),
+                avgFirstLegTs: Number.isFinite(Number(p.avgFirstLegTs)) ? Number(p.avgFirstLegTs) : undefined,
+              }
+            : {}),
         };
       }
     }
