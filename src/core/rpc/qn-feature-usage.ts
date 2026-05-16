@@ -71,8 +71,15 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   impulse_confirm: 5_000_000,
 };
 
+/** `QN_FEATURE_BUDGET_DISABLED=1` or per-feature env `<= 0` → no monthly cap (metering still written to JSON). */
+export function qnFeatureBudgetUnlimited(): boolean {
+  return process.env.QN_FEATURE_BUDGET_DISABLED?.trim() === '1';
+}
+
 export function qnFeatureBudgetMonth(f: QnFeature): number {
+  if (qnFeatureBudgetUnlimited()) return Number.MAX_SAFE_INTEGER;
   const raw = Number(process.env[BUDGET_ENV[f]] ?? DEFAULT_BUDGET[f]);
+  if (Number.isFinite(raw) && raw <= 0) return Number.MAX_SAFE_INTEGER;
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_BUDGET[f];
 }
 

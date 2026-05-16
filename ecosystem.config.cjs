@@ -337,7 +337,8 @@ module.exports = {
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
-        PAPER_MIN_HOLDER_COUNT: '3000',
+        /** `0` — без порога по holders в globalGate / dip-clones (код не трогаем). */
+        PAPER_MIN_HOLDER_COUNT: '0',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -486,10 +487,18 @@ module.exports = {
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
         PAPER_HOLDERS_ON_FAIL: 'db_fallback',
         PAPER_HOLDERS_DB_WRITEBACK: '1',
-        /** Прогрев `tokens.holder_count` для до N кандидатов с нулём в SQL до основного eval (см. dip-clones). */
-        PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '12',
+        /** Прогрев `tokens.holder_count` — `0` выкл. */
+        PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '0',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
-        QN_FEATURE_BUDGET_HOLDERS: '10000000',
+        /** Внутренние месячные капы QN отключены — лимит только в кабинете QuickNode. */
+        QN_FEATURE_BUDGET_DISABLED: '1',
+        QN_FEATURE_BUDGET_HOLDERS: '0',
+        QN_FEATURE_BUDGET_PRI_FEE: '0',
+        QN_FEATURE_BUDGET_SAFETY: '0',
+        QN_FEATURE_BUDGET_PRICE_VERIFY: '0',
+        QN_FEATURE_BUDGET_SIM: '0',
+        QN_FEATURE_BUDGET_LIVE_SEND: '0',
+        QN_FEATURE_BUDGET_LIQ_WATCH: '0',
 
         PAPER_PRICE_VERIFY_ENABLED: '1',
         PAPER_PRICE_VERIFY_BLOCK_ON_FAIL: '1',
@@ -513,14 +522,14 @@ module.exports = {
         JUPITER_QUOTE_429_MAX_RETRIES: '5',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
-        PAPER_SIM_STRICT_BUDGET: '1',
+        PAPER_SIM_STRICT_BUDGET: '0',
 
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '12',
         PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
-        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '5000000',
-        IMPULSE_QN_ROLLING_MAX_CREDITS: '1000000',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '0',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '0',
 
         PAPER_LIQ_WATCH_ENABLED: '1',
         PAPER_LIQ_WATCH_FORCE_CLOSE: '1',

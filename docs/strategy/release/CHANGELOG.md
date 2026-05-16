@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.188] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.188`.
+
+### Live Oscar — без внутренних капов QN и без гейта holders
+
+- **`QN_FEATURE_BUDGET_DISABLED=1`** на `live-oscar`: месячные ведра `pri_fee` / `holders` / `sim` и др. не режут RPC (учёт в `data/qn-feature-usage.json` остаётся).
+- **`PAPER_MIN_HOLDER_COUNT=0`**, **`PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX=0`** — проверка и прогрев holders выключены через env.
+- **`PAPER_SIM_STRICT_BUDGET=0`**, **`IMPULSE_QN_ROLLING_MAX_CREDITS=0`** — сняты смежные внутренние лимиты sim / impulse QN.
+
+**Откат:** revert; в ecosystem для `live-oscar` вернуть `PAPER_MIN_HOLDER_COUNT=3000`, убрать `QN_FEATURE_BUDGET_DISABLED`, восстановить прежние `QN_FEATURE_BUDGET_*`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.187] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.187`.

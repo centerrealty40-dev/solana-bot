@@ -21,6 +21,7 @@ function killPath(): string {
 
 export function impulseRollingMaxCredits(): number {
   const raw = Number(process.env.IMPULSE_QN_ROLLING_MAX_CREDITS ?? 1_000_000);
+  if (Number.isFinite(raw) && raw <= 0) return Number.MAX_SAFE_INTEGER;
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1_000_000;
 }
 
