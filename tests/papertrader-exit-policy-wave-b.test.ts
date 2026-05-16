@@ -80,6 +80,7 @@ describe('exit-policy-wave-b', () => {
     );
     expect(isWaveBExitPolicy(ot)).toBe(true);
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15]);
     expect(migrateLegacyOpenToWaveB(ot)).toBe(false);
   });
 
@@ -91,6 +92,9 @@ describe('exit-policy-wave-b', () => {
     for (let k = 1; k <= 8; k++) {
       remain *= 1 - eff.sellFractionForStep(k);
     }
-    expect(remain).toBeCloseTo(0.2359, 3);
+    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.25);
+    expect(eff.sellFractionForStep(8)).toBeCloseTo(0.25);
+    expect(remain).toBeCloseTo(0.2136, 3);
   });
 });

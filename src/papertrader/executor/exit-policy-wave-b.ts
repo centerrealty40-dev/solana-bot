@@ -15,10 +15,12 @@ export const LEGACY_LIVE_OSCAR_TP_GRID = {
   gridFirstRungRetraceMinPnlPct: 0.03,
 } as const;
 
-/** Wave B v1: +2.5% zero TP, +5% 10%, then 20% per +2.5% step. */
+/**
+ * Wave B v1: +2.5% / +5% — no TP; +7.5% → 10% remainder; +10%…+20% → 25% each; tail 15%.
+ */
 export const WAVE_B_V1_TP_GRID = {
   gridStepPnl: 0.025,
-  gridSellFractionByStep: [0, 0.1, 0.2],
+  gridSellFractionByStep: [0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15],
   gridFirstRungRetraceMinPnlPct: 0,
 } as const;
 
