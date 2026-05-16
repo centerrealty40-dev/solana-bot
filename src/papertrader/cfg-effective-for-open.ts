@@ -5,8 +5,24 @@
  */
 import type { PaperTraderConfig } from './config.js';
 import type { OpenTrade } from './types.js';
+import {
+  isWaveBExitPolicy,
+  WAVE_B_ARM_MIN_PNL_FRAC,
+  WAVE_B_V1_TP_GRID,
+} from './executor/exit-policy-wave-b.js';
 
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
+  if (isWaveBExitPolicy(ot)) {
+    return {
+      ...cfg,
+      trailMode: 'stepped_grid',
+      trailTriggerX: 1 + WAVE_B_ARM_MIN_PNL_FRAC,
+      tpGridStepPnl: WAVE_B_V1_TP_GRID.gridStepPnl,
+      tpGridSellFractionByStep: [...WAVE_B_V1_TP_GRID.gridSellFractionByStep],
+      tpGridFirstRungRetraceMinPnlPct: WAVE_B_V1_TP_GRID.gridFirstRungRetraceMinPnlPct,
+      liveOscarBreakevenTrimAfterFirstTpEnabled: false,
+    };
+  }
   if (!cfg.liveExitModeAbEnabled || ot.liveExitProfileMode !== 'B') return cfg;
   const p: Partial<PaperTraderConfig> = {};
   if (cfg.liveExitModeBTrailDrop != null) p.trailDrop = cfg.liveExitModeBTrailDrop;

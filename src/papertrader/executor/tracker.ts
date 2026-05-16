@@ -36,7 +36,17 @@ import {
   markLadderStepFired,
 } from './tp-ladder-state.js';
 import { dcaCrossedDownward, dcaEffPrev, dcaStepOrTriggerTaken, markDcaStepFired } from './dca-state.js';
-import { dcaKillstopEffective, tpGridEffective } from './tp-grid-effective.js';
+import { dcaKillstopEffective, tpGridEffective, type TpGridEffective } from './tp-grid-effective.js';
+import {
+  ensureLiveOscarExitPolicyPinned,
+  isWaveBExitPolicy,
+  waveBOnNewHigh,
+  waveBTrailLevelTaken,
+  waveBMarkTrailLevelTaken,
+  waveBTrailLevelsFromAnchor,
+  waveBTrailSellFraction,
+  WAVE_B_ARM_MIN_PNL_FRAC,
+} from './exit-policy-wave-b.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
@@ -545,6 +555,10 @@ async function tryExecuteTpPartialSell(args: {
   const sellFraction = Math.min(1, rawSellFrac);
   const marketSell = curMetric;
   if (!(ot.remainingFraction > 1e-12)) return 'ok';
+  if (sellFraction <= 1e-12) {
+    markLadder();
+    return 'ok';
+  }
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
   const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
   /**
@@ -788,6 +802,66 @@ async function tryExecuteTpPartialSell(args: {
     `[${logLabelPct}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
   );
   return 'ok';
+}
+
+/** Wave B: partial trail sells on −stepPnl descents from `liveWaveTrailAnchorPnlFrac`. */
+async function tryWaveBTrailPartialSells(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  tgEff: TpGridEffective;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    tgEff,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (!isWaveBExitPolicy(ot) || !ot.trailingArmed || !(tgEff.stepPnl > 0)) return;
+  const pnlFrac = xAvg - 1;
+  const anchor = ot.liveWaveTrailAnchorPnlFrac ?? pnlFrac;
+  if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return;
+  const trailFrac = waveBTrailSellFraction(cfg);
+  const levels = waveBTrailLevelsFromAnchor(anchor, tgEff.stepPnl);
+  for (const level of levels) {
+    if (pnlFrac > level + LADDER_PNL_EPS) continue;
+    if (waveBTrailLevelTaken(ot, level)) continue;
+    const r = await tryExecuteTpPartialSell({
+      mint,
+      ot,
+      cfg,
+      curMetric,
+      sellFraction: trailFrac,
+      ladderStepIndex: 0,
+      ladderRungsTotal: 0,
+      ladderPnlPct: level,
+      tpGrid: true,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+      markLadder: () => waveBMarkTrailLevelTaken(ot, level),
+      logLabelPct: `TRAILstep@${(level * 100).toFixed(1)}%`,
+      partialReason: 'TRAIL_STEP',
+      timelineLabelRu: `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая · ${(trailFrac * 100).toFixed(0)}% остатка`,
+    });
+    if (r === 'abort_mint' || r === 'defer_next') break;
+  }
 }
 
 function hookLiveWhitelistAfterFullClose(
@@ -1252,6 +1326,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   for (const mint of mints) {
     const ot = open.get(mint);
     if (!ot) continue;
+    ensureLiveOscarExitPolicyPinned(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
@@ -1695,7 +1770,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (!(curMetric > 0)) {
-      if (ageH >= effCfg.timeoutHours) {
+      if (ageH >= effCfg.timeoutHours && !isWaveBExitPolicy(ot)) {
         const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
@@ -1873,6 +1948,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
+      const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
+      if (isWaveBExitPolicy(ot)) {
+        waveBOnNewHigh(ot, pnlFracPeak, tgEff.stepPnl);
+      }
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
       /**
@@ -1881,7 +1960,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
        */
       const usesTpSlices = tgEff.stepPnl > 0 || tpLadder.length > 0;
       const tpSlicesDone = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
-      if (xAvg >= effCfg.trailTriggerX && (!usesTpSlices || tpSlicesDone >= 2)) {
+      if (isWaveBExitPolicy(ot)) {
+        if (pnlFracPeak + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) ot.trailingArmed = true;
+      } else if (xAvg >= effCfg.trailTriggerX && (!usesTpSlices || tpSlicesDone >= 2)) {
         ot.trailingArmed = true;
       }
       const ps = peakStateByMint.get(mint) || { lastPersistedPeak: -Infinity };
@@ -2276,6 +2357,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       cfg.strategyId === 'live-oscar' &&
       cfg.liveOscarBreakevenTrimAfterFirstTpEnabled &&
+      !isWaveBExitPolicy(ot) &&
       !ot.liveBreakevenTrimDone &&
       ot.partialSells.some((p) => p.reason === 'TP_LADDER') &&
       ot.avgEntry > 0 &&
@@ -2318,7 +2400,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const xPost = curMetric / ot.avgEntry;
       const usesTpSlicesPost = tgEff.stepPnl > 0 || tpLadder.length > 0;
       const tpSlicesDonePost = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
-      if (
+      const pnlFracPost = xPost - 1;
+      if (isWaveBExitPolicy(ot)) {
+        if (curMetric + 1e-18 >= ot.peakMcUsd && pnlFracPost + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) {
+          ot.trailingArmed = true;
+        }
+      } else if (
         curMetric + 1e-18 >= ot.peakMcUsd &&
         xPost >= effCfg.trailTriggerX &&
         (!usesTpSlicesPost || tpSlicesDonePost >= 2)
@@ -2326,6 +2413,23 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.trailingArmed = true;
       }
     }
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+    }
+    await tryWaveBTrailPartialSells({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      tgEff,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
 
     /**
      * Вторая нога (25%) — в конце тика: на этом же проходе уже обработаны DCA и partial TP.
@@ -2398,6 +2502,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
         else if (
           effCfg.trailMode === 'ladder_retrace' &&
+          !isWaveBExitPolicy(ot) &&
           ladderRetraceTriggered(
             ot,
             tpLadder,
@@ -2415,7 +2520,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           exitReason = 'TRAIL';
       }
     }
-    if (!exitReason && ageH >= effCfg.timeoutHours && !timeoutSuppressedByProgress(ot)) exitReason = 'TIMEOUT';
+    if (
+      !exitReason &&
+      !isWaveBExitPolicy(ot) &&
+      ageH >= effCfg.timeoutHours &&
+      !timeoutSuppressedByProgress(ot)
+    )
+      exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
     if (exitReason) {
