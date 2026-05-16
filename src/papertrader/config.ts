@@ -322,8 +322,16 @@ const ConfigSchema = z.object({
    * peak — классический трейл от peakMcUsd после trailTriggerX.
    * ladder_retrace — если уже были продажи по TP-ladder и PnL откатился до предыдущей ступени ладдера (или ниже), закрыть весь остаток (reason TRAIL).
    */
-  trailMode: z.enum(['peak', 'ladder_retrace']).default('peak'),
+  trailMode: z.enum(['peak', 'ladder_retrace', 'stepped_grid']).default('peak'),
   timeoutHours: z.coerce.number().positive().default(12),
+
+  /**
+   * Live Oscar: enable wave-B exit policy for **new** opens only (`liveExitPolicyId=wave_b_v1`).
+   * Restored opens without policy id stay on `legacy_grid` with pinned prod grid overrides.
+   */
+  liveOscarExitPolicyWaveBEnabled: z.boolean().default(false),
+  /** Fraction of remainder per trail step under wave B (default 0.30). */
+  liveOscarExitPolicyWaveBTrailSellFraction: z.coerce.number().min(0.01).max(1).default(0.3),
 
   /**
    * Live Oscar only (`strategyId === live-oscar`): after at least one `TP_LADDER` partial,
@@ -751,7 +759,15 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     slX: process.env.PAPER_SL_X,
     trailDrop: process.env.PAPER_TRAIL_DROP,
     trailTriggerX: process.env.PAPER_TRAIL_TRIGGER_X,
-    trailMode: process.env.PAPER_TRAIL_MODE === 'ladder_retrace' ? 'ladder_retrace' : 'peak',
+    trailMode: (() => {
+      const m = process.env.PAPER_TRAIL_MODE;
+      if (m === 'ladder_retrace') return 'ladder_retrace' as const;
+      if (m === 'stepped_grid') return 'stepped_grid' as const;
+      return 'peak' as const;
+    })(),
+    liveOscarExitPolicyWaveBEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B, false),
+    liveOscarExitPolicyWaveBTrailSellFraction:
+      process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION,
     timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
     liveOscarBreakevenTrimAfterFirstTpEnabled: envBool(
       process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED,

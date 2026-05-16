@@ -34,6 +34,7 @@ import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
 import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
+import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
@@ -1272,6 +1273,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           }
         }
 
+        if (cfg.strategyId === 'live-oscar') stampLiveOscarExitPolicyOnOpen(ot, cfg);
+
         open.set(ot.mint, ot);
         const liveOscarForJournal = resolveLiveOscar();
         const liveOpenExtras: Record<string, unknown> =
@@ -1340,6 +1343,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                     tpGridProfile: cfg.tpGridSellFractionByStep ?? [],
                     tpGridStepPnl: cfg.tpGridStepPnl,
                     tpGridFirstRungRetraceMinPnlPct: cfg.tpGridFirstRungRetraceMinPnlPct,
+                    liveExitPolicyId: ot.liveExitPolicyId ?? 'legacy_grid',
                     avgKillstopPct: cfg.dcaKillstop,
                     policyAPlusEnabled: cfg.policyAPlusEnabled,
                     description,

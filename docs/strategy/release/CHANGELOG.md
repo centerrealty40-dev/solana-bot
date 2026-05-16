@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.184] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.184`.
+
+### Live Oscar — политика выхода «wave B» (поэтапно, безопасно для открытых позиций)
+
+- **`liveExitPolicyId`** на сделке: `legacy_grid` (текущая сетка + `ladder_retrace`) или `wave_b_v1` (сетка 2.5%, stepped trail, без TIMEOUT).
+- **Restore / открытые позиции без policy id** → автоматически `legacy_grid` с **закреплённым** prod-профилем `0.05` / `0.10,0.30,0.50,0.70,0.70` в `tpGridOverrides` (не подхватывают новый env после деплоя).
+- **Wave B** (флаг `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1` только для **новых** open): TP `0/10/20%`, trail partial **30%** каждые −2.5% от хая с arm **+7.5%**, повтор TP после нового хая, `TRAIL_STEP` partial, полный `ladder_retrace` и TIMEOUT отключены для wave.
+- Env: `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B`, `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION`, `PAPER_TRAIL_MODE=stepped_grid` (для wave через effective cfg).
+
+**Откат:** `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=0`; `git revert`; `pm2 reload live-oscar`. Открытые wave-сделки до revert сохраняют policy id в JSONL.
+
+---
+
 ## [1.11.183] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.183`.

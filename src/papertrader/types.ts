@@ -122,7 +122,7 @@ export interface PartialSell {
   marketPrice: number;
   /** Fraction of REMAINING position sold (0..1). */
   sellFraction: number;
-  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL';
+  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL_STEP' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL';
   proceedsUsd: number;
   grossProceedsUsd: number;
   pnlUsd: number;
@@ -245,6 +245,19 @@ export interface OpenTrade {
    * Live Oscar: после частичного выхода «у безубытка» после первой TP (`BREAKEVEN_TRIM`) — не повторять.
    */
   liveBreakevenTrimDone?: boolean;
+
+  /**
+   * Live Oscar — политика выхода, зафиксированная при open/restore.
+   * `legacy_grid` — ladder_retrace + prod grid snapshot; `wave_b_v1` — wave TP + stepped trail.
+   */
+  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1';
+
+  /** Wave B: last peak PnL fraction (vs avg) for wave reset. */
+  liveWavePeakPnlFrac?: number;
+  /** Wave B: trail anchor (local high PnL fraction). */
+  liveWaveTrailAnchorPnlFrac?: number;
+  /** Wave B: trail partial levels already fired (PnL fraction keys). */
+  liveWaveTrailLevelsTaken?: number[];
 }
 
 export interface LiveStagedEntryState {
@@ -327,7 +340,7 @@ export interface ExitContext {
   cfgSnapshot: {
     tpX: number;
     slX: number;
-    trailMode: 'ladder_retrace' | 'peak';
+    trailMode: 'ladder_retrace' | 'peak' | 'stepped_grid';
     trailDrop: number;
     trailTriggerX: number;
     timeoutHours: number;

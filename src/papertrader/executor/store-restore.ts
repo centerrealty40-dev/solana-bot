@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
+import {
+  ensureLiveOscarExitPolicyPinned,
+  waveBMarkTrailLevelTaken,
+} from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
@@ -273,6 +277,12 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       if (g.gridSellFraction != null && Number.isFinite(Number(g.gridSellFraction))) {
         overrides.gridSellFraction = Number(g.gridSellFraction);
       }
+      if (Array.isArray(g.gridSellFractionByStep) && g.gridSellFractionByStep.length > 0) {
+        overrides.gridSellFractionByStep = g.gridSellFractionByStep
+          .map((x) => Number(x))
+          .filter((x) => Number.isFinite(x))
+          .map((x) => Math.min(1, Math.max(0, x)));
+      }
       if (g.gridMaxRungs != null && Number.isFinite(Number(g.gridMaxRungs))) {
         overrides.gridMaxRungs = Math.floor(Number(g.gridMaxRungs));
       }
@@ -305,10 +315,28 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveBreakevenTrimDone = true;
     }
 
+    const lepi = rawPayload.liveExitPolicyId;
+    if (lepi === 'legacy_grid' || lepi === 'wave_b_v1') ot.liveExitPolicyId = lepi;
+
+    const lwp = rawPayload.liveWavePeakPnlFrac;
+    if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;
+
+    const lwa = rawPayload.liveWaveTrailAnchorPnlFrac;
+    if (typeof lwa === 'number' && Number.isFinite(lwa)) ot.liveWaveTrailAnchorPnlFrac = lwa;
+
+    const lwt = rawPayload.liveWaveTrailLevelsTaken;
+    if (Array.isArray(lwt)) {
+      ot.liveWaveTrailLevelsTaken = lwt
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x));
+    }
+
     const dlap = rawPayload.dcaLastEvalPnlVsAvgFrac;
     if (typeof dlap === 'number' && Number.isFinite(dlap)) {
       ot.dcaLastEvalPnlVsAvgFrac = dlap;
     }
+
+    ensureLiveOscarExitPolicyPinned(ot);
 
     return ot;
   } catch {
@@ -340,6 +368,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'BREAKEVEN_TRIM') {
     ot.liveBreakevenTrimDone = true;
+  }
+  if (reason === 'TRAIL_STEP' && Number.isFinite(lp)) {
+    waveBMarkTrailLevelTaken(ot, lp);
   }
 }
 

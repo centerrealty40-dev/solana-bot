@@ -22,8 +22,14 @@ export interface TpGridEffective {
  */
 export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEffective {
   const o = ot.tpGridOverrides;
-  /** Режим B live — параметры сетки только из cfg (effCfg), без legacy tp-regime overrides на открытии. */
-  const ignoreOverrides = cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B';
+  /**
+   * Режим B live — параметры сетки только из cfg (effCfg), без legacy tp-regime overrides на открытии.
+   * Исключение: политика выхода зафиксирована на сделке (`liveExitPolicyId`) — всегда читаем `tpGridOverrides`.
+   */
+  const exitPolicyPinned =
+    ot.liveExitPolicyId === 'legacy_grid' || ot.liveExitPolicyId === 'wave_b_v1';
+  const ignoreOverrides =
+    cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B' && !exitPolicyPinned;
   const paperIdealizedUnlimitedB =
     isPaperOscarIdealizedStackStrategyId(cfg.strategyId) && ot.liveExitProfileMode === 'B';
   /** §5.4 `IDEALIZED_OSCAR_STACK_SPEC_V2` — лестница B без верхней крышки (prod был maxRungs=4). */
