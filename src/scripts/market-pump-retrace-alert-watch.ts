@@ -324,6 +324,20 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   return Math.max(fromBar, fdv);
 }
 
+/** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1.5M, не слать. */
+function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
+  if (!(mcapUsd >= 1_500_000)) return null;
+  if (mcapUsd < 4_000_000) return 17;
+  if (mcapUsd < 8_000_000) return 13;
+  return 9;
+}
+
+function passesRetraceTierByRefMcap(mcapUsd: number, retraceFromPeakPct: number): boolean {
+  const minPct = minRetracePctByRefMcapUsd(mcapUsd);
+  if (minPct == null) return false;
+  return retraceFromPeakPct + 1e-6 >= minPct;
+}
+
 type AlertRowWithTs = LatestMeta & {
   dex: string;
   pick: PumpRetracePick;
@@ -558,6 +572,8 @@ async function runOnePass(
       const lastMint = mintCooldown.get(mintKey) ?? 0;
       if (Date.now() - lastMint < MINT_COOLDOWN_MS) continue;
     }
+
+    if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
 
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {

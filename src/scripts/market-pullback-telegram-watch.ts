@@ -505,6 +505,20 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   return Math.max(fromBar, fdv);
 }
 
+/** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1.5M, не слать. */
+function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
+  if (!(mcapUsd >= 1_500_000)) return null;
+  if (mcapUsd < 4_000_000) return 17;
+  if (mcapUsd < 8_000_000) return 13;
+  return 9;
+}
+
+function passesRetraceTierByRefMcap(mcapUsd: number, retraceFromPeakPct: number): boolean {
+  const minPct = minRetracePctByRefMcapUsd(mcapUsd);
+  if (minPct == null) return false;
+  return retraceFromPeakPct + 1e-6 >= minPct;
+}
+
 /** Как в `market-spike-telegram-watch.ts`. */
 function gmgnSolTokenUrl(mint: string): string {
   return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
@@ -602,6 +616,11 @@ async function runOnePass(sendDedupe: Map<string, number> | null, mintCooldown: 
       const lastBar = dedupeBarsSorted(rawBars).at(-1);
       const refM = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
       if (MIN_MARKET_CAP_USD > 0 && refM + 1 < MIN_MARKET_CAP_USD) {
+        skipped++;
+        continue;
+      }
+
+      if (!passesRetraceTierByRefMcap(refM, pick.retraceFromPeakPct)) {
         skipped++;
         continue;
       }

@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.182] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.182`.
+
+### Канал pullback/retrace — tier пролива по mcap
+
+- Перед отправкой в Telegram: ref mcap **$1.5M–$4M** → пролив **≥17%**; **$4M–$8M** → **≥13%**; **≥$8M** → **≥9%**; ниже **$1.5M** — не слать (`market-pullback-telegram-watch`, `market-pump-retrace-alert-watch`).
+
+**Откат:** `git revert`; `pm2 restart market-pullback-telegram-watch retrace-alert-watch`.
+
+---
+
 ## [1.11.181] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.181`.
