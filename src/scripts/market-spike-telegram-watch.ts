@@ -739,6 +739,22 @@ function formatMarketCapUsd(n: number): string {
   return `$${n.toFixed(0)}`;
 }
 
+/** Blacklist spike-канала tiered: Orka / Orca (не слать в Telegram). */
+const SPIKE_TELEGRAM_BLACKLIST_MINTS = new Set<string>([
+  'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
+]);
+
+function isSpikeTelegramBlacklisted(
+  mint: string,
+  symbol: string | null | undefined,
+  tokenName: string | null | undefined,
+): boolean {
+  if (SPIKE_TELEGRAM_BLACKLIST_MINTS.has(mint.trim())) return true;
+  if ((symbol ?? '').trim().toUpperCase() === 'ORKA') return true;
+  if ((tokenName ?? '').trim().toLowerCase() === 'orka') return true;
+  return false;
+}
+
 type AlertRow = LatestMeta & {
   dex: string;
   pct: number;
@@ -1368,6 +1384,8 @@ async function runOnePass(
     const dex = dexLabel(table);
     const nowMs = Date.now();
     for (const meta of latestRows) {
+      if (isSpikeTelegramBlacklisted(meta.base_mint, meta.symbol, meta.token_name)) continue;
+
       // Multi-pair: bars берём по конкретной паре (mint+pair), а не по mint целиком.
       const bars = barsByMintPair.get(barsMapKey(meta.base_mint, meta.pair_address)) ?? [];
       const pick = analyzeBarsForMint(bars);
@@ -1478,6 +1496,12 @@ async function runOnePass(
   for (const [, row] of merged) {
     const mintKey = row.base_mint.trim();
     const nowMs = Date.now();
+
+    if (isSpikeTelegramBlacklisted(row.base_mint, row.symbol, row.token_name)) {
+      skipped++;
+      await recordSpikeEvent(recordToEvent('skip', row, { skipReason: 'mint_blacklist' }));
+      continue;
+    }
 
     // POLL_SEND_DEDUPE — защита от повторной отправки одного и того же бар-события (mint+dex+ts_new+side).
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
