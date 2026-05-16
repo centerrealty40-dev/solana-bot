@@ -74,6 +74,48 @@ describe('tierRequiredMinAbsPct — раздельные пороги consec и 
   });
 });
 
+describe('isRollingPickAnchoredAtExtreme — rolling только от экстремума окна', () => {
+  const bars: { ts: Date; px: number; mcapUsd: null }[] = [
+    { ts: new Date('2026-05-16T10:00:00Z'), px: 1.0, mcapUsd: null },
+    { ts: new Date('2026-05-16T10:01:00Z'), px: 1.2, mcapUsd: null },
+    { ts: new Date('2026-05-16T10:02:00Z'), px: 0.9, mcapUsd: null },
+  ];
+
+  it('пролив: опора не на хае окна → отбрасываем', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    const pick = {
+      pct: -25,
+      anchorPx: 1.0,
+      pxNow: 0.9,
+      anchorMcapUsd: null,
+      nowMcapUsd: null,
+      anchorTs: bars[0].ts,
+      tsNew: bars[2].ts,
+      windowLabel: '3m',
+      signalKind: 'rolling' as const,
+      rollingSpanMinutes: 3,
+    };
+    expect(mod.isRollingPickAnchoredAtExtreme(bars, pick)).toBe(false);
+  });
+
+  it('пролив: опора на хае окна → пропускаем', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    const pick = {
+      pct: -25,
+      anchorPx: 1.2,
+      pxNow: 0.9,
+      anchorMcapUsd: null,
+      nowMcapUsd: null,
+      anchorTs: bars[1].ts,
+      tsNew: bars[2].ts,
+      windowLabel: '2m',
+      signalKind: 'rolling' as const,
+      rollingSpanMinutes: 2,
+    };
+    expect(mod.isRollingPickAnchoredAtExtreme(bars, pick)).toBe(true);
+  });
+});
+
 describe('isDuplicateOngoingSpike — не повторять ту же ногу пампа/пролива', () => {
   const prevPump = {
     lastWasPump: true,

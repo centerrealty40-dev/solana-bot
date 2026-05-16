@@ -507,17 +507,36 @@ function parseMcapUsd(row: Record<string, unknown>): number | null {
 }
 
 function formatDisplayHm(d: Date): string {
+  return formatDisplayDt(d, false);
+}
+
+/** Дата и время в SPIKE_ALERT_DISPLAY_TZ (по умолчанию Москва). */
+export function formatDisplayDt(d: Date, withDate = true): string {
   try {
     const fmt = new Intl.DateTimeFormat('ru-RU', {
       timeZone: DISPLAY_TZ,
+      ...(withDate ? { day: '2-digit', month: '2-digit' } : {}),
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     });
-    return `${fmt.format(d)} МСК`;
+    return `${fmt.format(d).replace(',', '')} МСК`;
   } catch {
-    return d.toISOString().slice(11, 16) + ' UTC';
+    return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   }
+}
+
+function formatPriceUsd(px: number): string {
+  if (!Number.isFinite(px) || px <= 0) return '?';
+  if (px >= 1) return `$${px.toFixed(4)}`;
+  if (px >= 0.0001) return `$${px.toFixed(6)}`;
+  return `$${px.toExponential(3)}`;
+}
+
+export function mcapChangePct(anchorMcapUsd: number | null, nowMcapUsd: number | null): number | null {
+  if (anchorMcapUsd == null || nowMcapUsd == null || !(anchorMcapUsd > 0)) return null;
+  const pct = (nowMcapUsd / anchorMcapUsd - 1) * 100;
+  return Number.isFinite(pct) ? pct : null;
 }
 
 /** Новый бар события достаточно свежий, чтобы слать алерт (не «архив» из SCAN_MINUTES). */
@@ -605,12 +624,41 @@ function isPickPlausibleLiqVsMcap(meta: LatestMeta, pick: SpikePick): boolean {
 /** Соседние бары: движение цены и mcap из тех же строк должны согласоваться. */
 function isPickPriceMcapConsistent(pick: SpikePick): boolean {
   if (MC_PRICE_MAX_DIVERGENCE_PCT <= 0) return true;
-  const a = pick.anchorMcapUsd;
-  const b = pick.nowMcapUsd;
-  if (a == null || b == null || !(a > 0) || !(b > 0)) return true;
-  const mcapPct = (b / a - 1) * 100;
-  if (!Number.isFinite(mcapPct)) return true;
+  const mcapPct = mcapChangePct(pick.anchorMcapUsd, pick.nowMcapUsd);
+  if (mcapPct == null) return true;
   return Math.abs(mcapPct - pick.pct) <= MC_PRICE_MAX_DIVERGENCE_PCT;
+}
+
+/** mcap и цена не должны расходиться по знаку (ложный пролив/памп в PG). */
+export function isPickMcapSignAligned(pick: SpikePick): boolean {
+  const mcapPct = mcapChangePct(pick.anchorMcapUsd, pick.nowMcapUsd);
+  if (mcapPct == null) return true;
+  if (Math.abs(mcapPct) < 1) return true;
+  return (pick.pct >= 0) === (mcapPct >= 0);
+}
+
+/**
+ * Rolling: пролив только от локального хая окна, памп — от локального лоя.
+ * Иначе «-19%» может быть сравнением с серединой волны, а не с пиком.
+ */
+export function isRollingPickAnchoredAtExtreme(bars: Bar[], pick: SpikePick): boolean {
+  if (!ROLLING_RANGE_ENABLED || pick.signalKind !== 'rolling') return true;
+  const startMs = pick.anchorTs.getTime();
+  const endMs = pick.tsNew.getTime();
+  if (endMs <= startMs) return true;
+  let minPx = Infinity;
+  let maxPx = 0;
+  for (const b of bars) {
+    const t = b.ts.getTime();
+    if (t < startMs || t > endMs) continue;
+    if (b.px > maxPx) maxPx = b.px;
+    if (b.px < minPx) minPx = b.px;
+  }
+  if (!(maxPx > 0) || !Number.isFinite(minPx)) return true;
+  const tol = 1e-4;
+  if (pick.pct < 0) return pick.anchorPx >= maxPx * (1 - tol);
+  if (pick.pct > 0) return pick.anchorPx <= minPx * (1 + tol);
+  return true;
 }
 
 /** Следующий бар частично отменил скачок — типичный артефакт минутного снимка. */
@@ -797,6 +845,13 @@ function alertKindTag(row: AlertRow): { tag: string; kindWord: string } {
   };
 }
 
+function spikeSignalExplain(row: AlertRow): string {
+  if (row.signalKind === 'rolling' && row.rollingSpanMinutes != null) {
+    return `rolling ${row.rollingSpanMinutes} мин (${escapeHtml(row.windowLabel)})`;
+  }
+  return `2 мин. бара подряд (${escapeHtml(row.windowLabel)})`;
+}
+
 function buildAlertHtml(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const gmgnUrl = gmgnSolTokenUrl(mint);
@@ -809,15 +864,34 @@ function buildAlertHtml(row: AlertRow): string {
       ? `<b>${escapeHtml(sym)}</b>\n<i>${escapeHtml(nameRaw)}</i>`
       : `<b>${escapeHtml(sym)}</b>`;
 
+  const anchorTs = parseTs(row.anchorTs as Date | string);
+  const endTs = parseTs(row.ts_now as Date | string);
+  const mcapPct = mcapChangePct(row.anchorMcapUsd, row.nowMcapUsd);
+  const mcapFrom =
+    row.anchorMcapUsd != null && row.anchorMcapUsd > 0
+      ? formatMarketCapUsd(row.anchorMcapUsd)
+      : '?';
+  const mcapTo =
+    row.nowMcapUsd != null && row.nowMcapUsd > 0 ? formatMarketCapUsd(row.nowMcapUsd) : '?';
+  const mcapPctHuman = mcapPct != null ? formatSignedPct(mcapPct) : '?';
+
   const escalationLine =
     row.isUpdate && typeof row.prevPct === 'number'
       ? `\nэскалация: ${escapeHtml(formatSignedPct(row.prevPct))} → <b>${escapeHtml(pctHuman)}</b>`
       : '';
   const tierLine = row.tierName ? `tier: ${escapeHtml(row.tierName)}\n` : '';
 
+  const calcBlock = [
+    `<i>${escapeHtml(spikeSignalExplain(row))} · ${escapeHtml(row.dex)}</i>`,
+    `Δ <b>цена</b> ${escapeHtml(pctHuman)}: ${escapeHtml(formatPriceUsd(row.anchorPx))} → ${escapeHtml(formatPriceUsd(row.px_now))}`,
+    `  ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}`,
+    `Δ <b>mcap</b> ${escapeHtml(mcapPctHuman)}: ${escapeHtml(mcapFrom)} → ${escapeHtml(mcapTo)}`,
+  ].join('\n');
+
   let body =
     `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>${escalationLine}\n` +
     tierLine +
+    `\n${calcBlock}\n` +
     `\n${title}\n` +
     `<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n` +
     `holders: ${row.holder_count ?? '?'}`;
@@ -1430,6 +1504,8 @@ async function runOnePass(
       if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
       if (!isPickPlausibleLiqVsMcap(meta, pick)) continue;
       if (!isPickPriceMcapConsistent(pick)) continue;
+      if (!isPickMcapSignAligned(pick)) continue;
+      if (!isRollingPickAnchoredAtExtreme(bars, pick)) continue;
 
       const refMcap = referenceMcapUsd(meta, pick);
       const tierName = tierLabel(refMcap);
