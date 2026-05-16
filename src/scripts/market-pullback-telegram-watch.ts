@@ -62,7 +62,7 @@ const MIN_RETRACE_PCT = Math.max(0.5, Math.min(99, envNum('PULLBACK_ALERT_MIN_RE
 
 const MIN_HOLDERS = Math.max(0, envNum('PULLBACK_ALERT_MIN_HOLDERS', 1000));
 const HOLDER_NULL_SOFT = envBool('PULLBACK_ALERT_HOLDER_NULL_SOFT', true);
-const MIN_AGE_HOURS = Math.max(0, envNum('PULLBACK_ALERT_MIN_AGE_HOURS', 3));
+const MIN_AGE_HOURS = Math.max(0, envNum('PULLBACK_ALERT_MIN_AGE_HOURS', 8));
 const MIN_LIQ_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_5M_USD', 0));
 const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 2_000_000));
@@ -79,7 +79,7 @@ const POLL_SEND_DEDUPE_MS = Math.max(
 
 const MINT_COOLDOWN_MINUTES = Math.max(
   0,
-  Math.min(24 * 60, Math.floor(envNum('PULLBACK_ALERT_MINT_COOLDOWN_MINUTES', 30))),
+  Math.min(24 * 60, Math.floor(envNum('PULLBACK_ALERT_MINT_COOLDOWN_MINUTES', 60))),
 );
 const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
 

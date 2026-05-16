@@ -216,7 +216,7 @@ const PICK_PCT_FLOOR = TIERED_BY_MCAP
  *  - `MAX_PER_MINT` — максимум апдейтов за один период жизни алерта (после обнуляется через MINT_COOLDOWN_MS*2);
  *  - `TIER_CHANGE_FORCES_UPDATE` — при переходе в более жёсткий tier шлём апдейт даже если delta ниже DELTA_PCT.
  */
-const ESCALATE_ENABLED = envBool('SPIKE_ALERT_ESCALATE_ENABLED', true);
+const ESCALATE_ENABLED = envBool('SPIKE_ALERT_ESCALATE_ENABLED', false);
 const ESCALATE_DELTA_PCT = Math.max(
   0.5,
   Math.min(80, envNum('SPIKE_ALERT_ESCALATE_DELTA_PCT', 5)),
@@ -256,7 +256,7 @@ const MIN_HOLDERS = Math.max(0, envNum('SPIKE_ALERT_MIN_HOLDERS', 1000));
  * NULL-soft режим даёт другим фильтрам (mcap, age, sanity) шанс отработать.
  */
 const HOLDER_NULL_SOFT = envBool('SPIKE_ALERT_HOLDER_NULL_SOFT', true);
-const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 3));
+const MIN_AGE_HOURS = Math.max(0, envNum('SPIKE_ALERT_MIN_AGE_HOURS', 8));
 const MIN_LIQ_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('SPIKE_ALERT_MIN_VOL_5M_USD', 0));
 /** Минимум market cap в USD: снимок пары (mcap/fdv) или fallback tokens.fdv_usd; 0 = выкл. */
@@ -274,7 +274,7 @@ const POLL_SEND_DEDUPE_MS = Math.max(0, Math.min(3_600_000, Math.floor(envNum('S
 /** После успешного алерта по mint — пауза перед любыми новыми алертами по этому mint (мин); 0 = выкл. */
 const MINT_COOLDOWN_MINUTES = Math.max(
   0,
-  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 5))),
+  Math.min(24 * 60, Math.floor(envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 60))),
 );
 const MINT_COOLDOWN_MS = MINT_COOLDOWN_MINUTES * 60_000;
 

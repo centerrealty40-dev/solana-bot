@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.189] — 2026-05-16
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.189`.
+
+### Telegram spike / pullback / retrace — возраст токена и антиспам
+
+- Минимальный возраст монеты для алертов: **8 ч** (`*_MIN_AGE_HOURS`) во всех трёх watcher’ах.
+- Spike: **cooldown 60 мин** по mint (было 5 мин — повторные `[spike_pump]` каждые 5 мин); эскалация **[UPDATE] выключена** — одно сообщение на всплеск/пролив в окне cooldown.
+- Pullback / retrace: cooldown по mint **60 мин** (было 30).
+
+**Откат:** revert env в ecosystem и entry-скриптах; `pm2 reload market-spike-telegram-watch market-pullback-telegram-watch retrace-alert-watch --update-env`.
+
+---
+
 ## [1.11.188] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.188`.

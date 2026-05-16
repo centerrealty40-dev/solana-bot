@@ -45,7 +45,7 @@ module.exports = {
          * Пауза перед новым алертом по тому же mint после успешной отправки (мин).
          * Эскалация (см. ниже) пробивает cooldown при значимом усилении пролива.
          */
-        SPIKE_ALERT_MINT_COOLDOWN_MINUTES: '5',
+        SPIKE_ALERT_MINT_COOLDOWN_MINUTES: '60',
         /** История баров для поиска резкого шага между соседними минутами (PG только). */
         SPIKE_ALERT_SCAN_MINUTES: '60',
         /** Накопленное окно по первому/последнему бару (0 = выкл.). */
@@ -57,7 +57,7 @@ module.exports = {
         SPIKE_ALERT_THRESHOLD_ROLLING_PCT: '10',
         SPIKE_ALERT_MIN_HOLDERS: '1000',
         SPIKE_ALERT_HOLDER_NULL_SOFT: '1',
-        SPIKE_ALERT_MIN_AGE_HOURS: '3',
+        SPIKE_ALERT_MIN_AGE_HOURS: '8',
         /** Верхний предел mint на таблицу; отбор по самым свежим снимкам (MAX(ts)), не по алфавиту mint. */
         SPIKE_ALERT_MAX_ROWS_PER_TABLE: '800',
         SPIKE_ALERT_MIN_LIQ_USD: '0',
@@ -105,7 +105,7 @@ module.exports = {
          * — MAX_PER_MINT=3: не больше трёх UPDATE-апдейтов в одном цикле жизни алерта;
          * — TIER_CHANGE_FORCES_UPDATE=1: при переходе в более жёсткий tier шлём апдейт даже при меньшей дельте.
          */
-        SPIKE_ALERT_ESCALATE_ENABLED: '1',
+        SPIKE_ALERT_ESCALATE_ENABLED: '0',
         SPIKE_ALERT_ESCALATE_DELTA_PCT: '5',
         SPIKE_ALERT_ESCALATE_MIN_GAP_SEC: '60',
         SPIKE_ALERT_ESCALATE_MAX_PER_MINT: '3',
