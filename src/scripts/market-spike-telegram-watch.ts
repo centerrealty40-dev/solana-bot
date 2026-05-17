@@ -852,17 +852,23 @@ function spikeSignalExplain(row: AlertRow): string {
   return `2 мин. бара подряд (${escapeHtml(row.windowLabel)})`;
 }
 
+function tokenHeadlineHtml(symbol: string | null | undefined, tokenName: string | null | undefined): string {
+  const sym = (symbol ?? '').trim() || '?';
+  const nameRaw = (tokenName ?? '').trim();
+  if (sym !== '?' && nameRaw && nameRaw.toUpperCase() !== sym.toUpperCase()) {
+    return `<b>${escapeHtml(sym)}</b> — <i>${escapeHtml(nameRaw)}</i>`;
+  }
+  if (sym !== '?') return `<b>${escapeHtml(sym)}</b>`;
+  if (nameRaw) return `<b>${escapeHtml(nameRaw)}</b>`;
+  return '<b>?</b>';
+}
+
 function buildAlertHtml(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const gmgnUrl = gmgnSolTokenUrl(mint);
-  const sym = row.symbol?.trim() || '?';
   const { tag, kindWord } = alertKindTag(row);
   const pctHuman = formatSignedPct(row.pct);
-  const nameRaw = row.token_name?.trim();
-  const title =
-    nameRaw && nameRaw !== sym
-      ? `<b>${escapeHtml(sym)}</b>\n<i>${escapeHtml(nameRaw)}</i>`
-      : `<b>${escapeHtml(sym)}</b>`;
+  const headline = tokenHeadlineHtml(row.symbol, row.token_name);
 
   const anchorTs = parseTs(row.anchorTs as Date | string);
   const endTs = parseTs(row.ts_now as Date | string);
@@ -889,11 +895,11 @@ function buildAlertHtml(row: AlertRow): string {
   ].join('\n');
 
   let body =
+    `${headline}\n` +
     `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>${escalationLine}\n` +
     tierLine +
     `\n${calcBlock}\n` +
-    `\n${title}\n` +
-    `<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n` +
+    `\n<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n` +
     `holders: ${row.holder_count ?? '?'}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
   return body;
@@ -904,17 +910,22 @@ function buildAlertPlain(row: AlertRow): string {
   const sym = row.symbol?.trim() || '?';
   const { tag, kindWord } = alertKindTag(row);
   const nameRaw = row.token_name?.trim();
-  const title = nameRaw && nameRaw !== sym ? `${sym} (${nameRaw})` : sym;
+  const headline =
+    sym !== '?' && nameRaw && nameRaw.toUpperCase() !== sym.toUpperCase()
+      ? `${sym} (${nameRaw})`
+      : sym !== '?'
+        ? sym
+        : nameRaw || '?';
   const escalationLine =
     row.isUpdate && typeof row.prevPct === 'number'
       ? `\nэскалация: ${formatSignedPct(row.prevPct)} → ${formatSignedPct(row.pct)}`
       : '';
   const tierLine = row.tierName ? `tier: ${row.tierName}\n` : '';
   let body =
+    `${headline}\n` +
     `${tag} ${kindWord} ${formatSignedPct(row.pct)}${escalationLine}\n` +
     tierLine +
-    `\n${title}\n` +
-    `GMGN: ${gmgnSolTokenUrl(mint)}\n` +
+    `\nGMGN: ${gmgnSolTokenUrl(mint)}\n` +
     `${mint}\n` +
     `holders: ${row.holder_count ?? '?'}`;
   if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;

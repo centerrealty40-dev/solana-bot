@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.199] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.199`.
+
+### Telegram market alerts — тикер в начале сообщения
+
+- Spike, pullback и retrace: первая строка — **symbol** (при отсутствии — name).
+
+**Откат:** revert; перезапуск `market-spike-telegram-watch`, `market-pullback-telegram-watch`, `retrace-alert-watch`.
+
+---
+
 ## [1.11.198] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.198`.

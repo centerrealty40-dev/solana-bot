@@ -386,11 +386,20 @@ function buildAlertHtml(row: AlertRowWithTs): string {
     `<b>3. Просадка от хая</b>\n` +
     `${escapeHtml(formatTsInTz(row.rawBarsKTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.troughMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.troughPx))}</code> · <b>−${escapeHtml(p.retracePct.toFixed(2))}%</b> от пика`;
 
+  const headline =
+    symRaw !== '?' && name && nameRaw.toUpperCase() !== symRaw.toUpperCase()
+      ? `<b>${sym}</b> — ${name}`
+      : symRaw !== '?'
+        ? `<b>${sym}</b>`
+        : name
+          ? `<b>${name}</b>`
+          : '<b>?</b>';
+
   return [
+    headline,
     `<b>[RETRACE][pump_then_pullback]</b> <code>${escapeHtml(row.dex)}</code>`,
     modeLine,
     '',
-    `<b>${sym}</b>${name && nameRaw !== symRaw ? ` — ${name}` : ''}`,
     `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
     `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
     '',

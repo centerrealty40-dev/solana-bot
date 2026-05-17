@@ -570,11 +570,20 @@ function buildAlertHtml(args: {
       ? `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>local_high_retrace</b> (без порога роста до пика)`
       : `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>rise_then_retrace</b> · рост до пика <b>${escapeHtml(formatPct(pick.risePct))}</b>`;
 
+  const headline =
+    sym !== '?' && name && name.toUpperCase() !== sym.toUpperCase()
+      ? `<b>${sym}</b> — ${name}`
+      : sym !== '?'
+        ? `<b>${sym}</b>`
+        : name
+          ? `<b>${name}</b>`
+          : '<b>?</b>';
+
   return [
+    headline,
     `<b>[MARKET][pullback]</b> <code>${escapeHtml(dex)}</code>`,
     modeHint,
     '',
-    `<b>${sym}</b>${name ? ` — ${name}` : ''}`,
     `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
     `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
     '',
