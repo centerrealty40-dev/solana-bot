@@ -41,9 +41,10 @@ import {
   isWaveBExitPolicy,
   resolveLiveOscarExitPolicyForTick,
   waveBOnNewHigh,
-  waveBTrailLevelTaken,
   waveBMarkTrailLevelTaken,
-  waveBTrailLevelsFromAnchor,
+  clampLiveTrackerMtmForExit,
+  waveBRecoverPhantomPeakIfNeeded,
+  waveBNextTrailLevelToFire,
   waveBTrailSellFraction,
   WAVE_B_ARM_MIN_PNL_FRAC,
 } from './exit-policy-wave-b.js';
@@ -734,6 +735,12 @@ async function tryExecuteTpPartialSell(args: {
     ...(exitTxSig ? { exitTxSignature: exitTxSig } : {}),
     ...(priceImpactPctFromQuote != null ? { priceImpactPct: priceImpactPctFromQuote } : {}),
     ...(slipRealizedPct != null ? { slipRealizedPct } : {}),
+    ...(partialReason === 'TRAIL_STEP' && Number.isFinite(ladderPnlPct)
+      ? { trailLevelPnlFrac: ladderPnlPct }
+      : {}),
+    ...(typeof timelineLabelRu === 'string' && timelineLabelRu.trim().length > 0
+      ? { timelineLabelRu: timelineLabelRu.trim() }
+      : {}),
   };
   ot.partialSells.push(ps);
   ot.remainingFraction *= 1 - sellFraction;
@@ -836,33 +843,30 @@ async function tryWaveBTrailPartialSells(args: {
   const pnlFrac = xAvg - 1;
   const anchor = ot.liveWaveTrailAnchorPnlFrac ?? pnlFrac;
   if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return;
+  const level = waveBNextTrailLevelToFire(anchor, tgEff.stepPnl, pnlFrac, ot.liveWaveTrailLevelsTaken ?? []);
+  if (level == null) return;
   const trailFrac = waveBTrailSellFraction(cfg);
-  const levels = waveBTrailLevelsFromAnchor(anchor, tgEff.stepPnl);
-  for (const level of levels) {
-    if (pnlFrac > level + LADDER_PNL_EPS) continue;
-    if (waveBTrailLevelTaken(ot, level)) continue;
-    const r = await tryExecuteTpPartialSell({
-      mint,
-      ot,
-      cfg,
-      curMetric,
-      sellFraction: trailFrac,
-      ladderStepIndex: 0,
-      ladderRungsTotal: 0,
-      ladderPnlPct: level,
-      tpGrid: true,
-      journalAppend,
-      journalLiveStrategy,
-      livePhase4,
-      liveOscarCfg,
-      stats,
-      markLadder: () => waveBMarkTrailLevelTaken(ot, level),
-      logLabelPct: `TRAILstep@${(level * 100).toFixed(1)}%`,
-      partialReason: 'TRAIL_STEP',
-      timelineLabelRu: `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая · ${(trailFrac * 100).toFixed(0)}% остатка`,
-    });
-    if (r === 'abort_mint' || r === 'defer_next') break;
-  }
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction: trailFrac,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: level,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => waveBMarkTrailLevelTaken(ot, level),
+    logLabelPct: `TRAILstep@${(level * 100).toFixed(1)}%`,
+    partialReason: 'TRAIL_STEP',
+    timelineLabelRu: `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая (+${(level * 100).toFixed(1)}% PnL) · ${(trailFrac * 100).toFixed(0)}% остатка`,
+  });
+  void r;
 }
 
 function hookLiveWhitelistAfterFullClose(
@@ -1606,8 +1610,41 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     await sleep(liveOscarCfg?.liveTrackerInterMintDelayMs ?? 120);
 
+    if (curMetric > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot))) {
+      const rawMtm = curMetric;
+      const exitMtm = clampLiveTrackerMtmForExit(ot, rawMtm);
+      if (exitMtm > 0 && Math.abs(exitMtm - rawMtm) / Math.max(rawMtm, 1e-18) > 0.002) {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            rawMtmUsd: +rawMtm.toFixed(8),
+            exitMtmUsd: +exitMtm.toFixed(8),
+          },
+          'live tracker: MTM tick jump clamped for exit decisions (ghost quote guard)',
+        );
+      }
+      curMetric = exitMtm > 0 ? exitMtm : curMetric;
+    }
+
     if (curMetric > 0) {
       ot.lastObservedPriceUsd = curMetric;
+    }
+
+    if (ot.avgEntry > 0 && isWaveBExitPolicy(ot)) {
+      const pnlFracTick = curMetric / ot.avgEntry - 1;
+      const anchorBefore = ot.liveWaveTrailAnchorPnlFrac ?? 0;
+      if (waveBRecoverPhantomPeakIfNeeded(ot, pnlFracTick)) {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            pnlPct: +(pnlFracTick * 100).toFixed(2),
+            anchorPctBefore: +(anchorBefore * 100).toFixed(2),
+          },
+          'live tracker: wave B phantom peak disarmed (ghost MTM had armed trail)',
+        );
+      }
     }
 
     const ageH = (Date.now() - ot.entryTs) / 3_600_000;

@@ -1801,7 +1801,9 @@ export function buildTimelineEvent(
             : 'Лестница TP'
         : reason === 'BREAKEVEN_TRIM'
           ? 'Частичный выход у безубытка (после 1-й TP)'
-          : reason.toLowerCase().replace(/_/g, ' ');
+          : reason === 'TRAIL_STEP'
+            ? 'Wave B · trail от хая'
+            : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
     const proceedsUsd = Number(e.proceedsUsd ?? 0);
     const ladderPctPlain =
@@ -1819,14 +1821,21 @@ export function buildTimelineEvent(
           ? `шаг ${Math.floor(stepIdxRaw) + 1}/${Math.floor(rungsTotal)}`
           : `шаг ${Math.floor(stepIdxRaw) + 1}`
         : '';
+    const journalPartialLabel =
+      typeof e.timelineLabelRu === 'string' && e.timelineLabelRu.trim().length
+        ? String(e.timelineLabelRu).trim()
+        : null;
     const basePartialLabel =
-      isTpGrid && stepLabel
-        ? `${niceReason} · ${stepLabel}: ${sellPct}% от остатка`
-        : stepLabel && ladderPctPlain
-          ? `${niceReason} · ${stepLabel}: ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
-          : ladderPctPlain
-            ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
-            : `${niceReason} · ${sellPct}% остатка`;
+      journalPartialLabel ??
+      (reason === 'TRAIL_STEP'
+        ? `${niceReason} · ${sellPct}% остатка`
+        : isTpGrid && stepLabel
+          ? `${niceReason} · ${stepLabel}: ${sellPct}% от остатка`
+          : stepLabel && ladderPctPlain
+            ? `${niceReason} · ${stepLabel}: ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+            : ladderPctPlain
+              ? `${niceReason} · ${sellPct}% остатка при +${ladderPctPlain} к среднему (порог ладдера)`
+              : `${niceReason} · ${sellPct}% остатка`);
     const label = `${basePartialLabel}${liveExitModeLabelSuffix(e)}`;
     const ctxPartial = timelineContextNoteFromJournal(e);
     return {
@@ -2769,12 +2778,25 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const partials = Array.isArray(ot.partialSells) ? (ot.partialSells as Record<string, unknown>[]) : [];
       const ps = partials[partials.length - 1];
       if (!ps) continue;
+      const psReason = String(ps.reason ?? 'partial_sell');
       const ladderUsed = Array.isArray(ot.ladderUsedIndices) ? (ot.ladderUsedIndices as number[]) : [];
       const stepIdx = ladderUsed.length ? ladderUsed[ladderUsed.length - 1]! : 0;
       const lvlArr = Array.isArray(ot.ladderUsedLevels) ? (ot.ladderUsedLevels as number[]) : [];
       const ladderRungsTotal = lvlArr.length > 0 ? lvlArr.length : 2;
       const ladderPnlPctRaw =
-        lvlArr.length > stepIdx ? lvlArr[stepIdx] : lvlArr.length ? lvlArr[lvlArr.length - 1] : 0;
+        psReason === 'TRAIL_STEP'
+          ? Number(ps.ladderPnlPct ?? ps.trailLevelPnlFrac ?? 0)
+          : lvlArr.length > stepIdx
+            ? lvlArr[stepIdx]
+            : lvlArr.length
+              ? lvlArr[lvlArr.length - 1]
+              : 0;
+      const psTimelineLabel =
+        typeof ps.timelineLabelRu === 'string' && ps.timelineLabelRu.trim().length
+          ? ps.timelineLabelRu.trim()
+          : typeof o.timelineLabelRu === 'string' && o.timelineLabelRu.trim().length
+            ? o.timelineLabelRu.trim()
+            : undefined;
 
       const syn: Record<string, unknown> = {
         kind: 'partial_sell',
@@ -2786,7 +2808,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         ladderStepIndex: stepIdx,
         ladderRungsTotal,
         ladderPnlPct: Number(ladderPnlPctRaw ?? 0),
-        reason: String(ps.reason ?? 'partial_sell'),
+        reason: psReason,
+        ...(psReason === 'TRAIL_STEP' ? { tpGrid: false } : {}),
+        ...(psTimelineLabel ? { timelineLabelRu: psTimelineLabel } : {}),
         proceedsUsd: Number(ps.proceedsUsd ?? 0),
         pnlUsd: Number(ps.pnlUsd ?? 0),
         remainingFraction: Number(ot.remainingFraction ?? 0),

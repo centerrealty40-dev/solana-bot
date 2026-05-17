@@ -6,8 +6,12 @@ import {
   resolveLiveOscarExitPolicyForTick,
   stampLiveOscarExitPolicyOnOpen,
   waveBOnNewHigh,
+  clampLiveTrackerMtmForExit,
+  waveBNextTrailLevelToFire,
+  waveBRecoverPhantomPeakIfNeeded,
   WAVE_B_V1_TP_GRID,
   LEGACY_LIVE_OSCAR_TP_GRID,
+  WAVE_B_MTM_MAX_TICK_JUMP_FRAC,
 } from '../src/papertrader/executor/exit-policy-wave-b.js';
 import { tpGridEffective } from '../src/papertrader/executor/tp-grid-effective.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
@@ -82,6 +86,35 @@ describe('exit-policy-wave-b', () => {
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
     expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15]);
     expect(migrateLegacyOpenToWaveB(ot)).toBe(false);
+  });
+
+  it('clampLiveTrackerMtmForExit limits single-tick upside spike', () => {
+    const ot = {
+      lastObservedPriceUsd: 0.114,
+      avgEntry: 0.114,
+    } as OpenTrade;
+    const clamped = clampLiveTrackerMtmForExit(ot, 0.2026);
+    expect(clamped).toBeCloseTo(0.114 * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC), 6);
+  });
+
+  it('waveBRecoverPhantomPeakIfNeeded disarms armed trail when PnL below arm and no trail sells yet', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      trailingArmed: true,
+      liveWaveTrailAnchorPnlFrac: 0.76,
+      liveWavePeakPnlFrac: 0.76,
+      liveWaveTrailLevelsTaken: [0.735],
+      partialSells: [],
+    } as unknown as OpenTrade;
+    expect(waveBRecoverPhantomPeakIfNeeded(ot, -0.02)).toBe(true);
+    expect(ot.trailingArmed).toBe(false);
+    expect(ot.liveWaveTrailLevelsTaken).toEqual([]);
+  });
+
+  it('waveBNextTrailLevelToFire returns one level and skips underwater PnL', () => {
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, -0.02, [])).toBe(null);
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.73, [])).toBeCloseTo(0.735, 6);
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.7, [0.735])).toBeCloseTo(0.71, 6);
   });
 
   it('wave B uniform profile cumulative at +20%', () => {

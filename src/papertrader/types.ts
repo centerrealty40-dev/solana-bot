@@ -149,6 +149,10 @@ export interface PartialSell {
    * Дублируется здесь чтобы dashboard не пересчитывал на лету.
    */
   slipRealizedPct?: number;
+  /** Wave B `TRAIL_STEP`: PnL fraction threshold (0..1) for this rung. */
+  trailLevelPnlFrac?: number;
+  /** Russian dashboard label when set at sell time. */
+  timelineLabelRu?: string;
 }
 
 export interface OpenTrade {

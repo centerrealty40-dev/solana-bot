@@ -26,6 +26,58 @@ export const WAVE_B_V1_TP_GRID = {
 
 export const WAVE_B_ARM_MIN_PNL_FRAC = 0.075;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.3;
+/** Max single-tick MTM jump vs last observed price for peak / trail / TP (anti ghost-quote). */
+export const WAVE_B_MTM_MAX_TICK_JUMP_FRAC = 0.12;
+
+/**
+ * Clamp tradable MTM used for exit decisions when Jupiter/PG spikes in one tick (thin-route ghost).
+ * Uses prior `lastObservedPriceUsd` (or entry) — call before updating last observed for the tick.
+ */
+export function clampLiveTrackerMtmForExit(ot: OpenTrade, curMetricUsd: number): number {
+  if (!(curMetricUsd > 0)) return curMetricUsd;
+  const prev =
+    ot.lastObservedPriceUsd ??
+    (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
+  if (!(prev > 0)) return curMetricUsd;
+  const maxUp = prev * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC);
+  const minDown = prev * (1 - WAVE_B_MTM_MAX_TICK_JUMP_FRAC);
+  if (curMetricUsd > maxUp) return maxUp;
+  if (curMetricUsd < minDown) return minDown;
+  return curMetricUsd;
+}
+
+/**
+ * Open restored with ghost peak (arm + anchor ≫ real PnL, no TRAIL_STEP yet): disarm before next tick sells.
+ */
+export function waveBRecoverPhantomPeakIfNeeded(ot: OpenTrade, pnlFrac: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !ot.trailingArmed) return false;
+  const anchor = ot.liveWaveTrailAnchorPnlFrac ?? 0;
+  if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC + 0.02) return false;
+  if (pnlFrac + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) return false;
+  if ((ot.partialSells ?? []).some((p) => p.reason === 'TRAIL_STEP')) return false;
+  ot.liveWavePeakPnlFrac = Math.max(0, pnlFrac);
+  ot.liveWaveTrailAnchorPnlFrac = Math.max(0, pnlFrac);
+  ot.liveWaveTrailLevelsTaken = [];
+  ot.trailingArmed = false;
+  return true;
+}
+
+/** First untaken trail rung at or below current PnL (one partial per tracker tick). */
+export function waveBNextTrailLevelToFire(
+  anchorPnlFrac: number,
+  stepPnl: number,
+  pnlFrac: number,
+  taken: readonly number[],
+): number | null {
+  if (!(stepPnl > 0) || !Number.isFinite(anchorPnlFrac)) return null;
+  if (pnlFrac + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return null;
+  for (const level of waveBTrailLevelsFromAnchor(anchorPnlFrac, stepPnl)) {
+    if (pnlFrac > level + LADDER_PNL_EPS) return null;
+    if (taken.some((x) => Math.abs(x - waveBTrailLevelKey(level)) <= LADDER_PNL_EPS)) continue;
+    return level;
+  }
+  return null;
+}
 
 export function isWaveBExitPolicy(ot: OpenTrade): boolean {
   return ot.liveExitPolicyId === 'wave_b_v1';
