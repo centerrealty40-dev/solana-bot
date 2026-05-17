@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.198] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.198`.
+
+### Live Oscar — duplicate 2-я нога сплита после PM2 reload
+
+- `reconcileEntrySplitV2FromLegs`: при restore/тике, если в `legs[]` уже есть `entry_split`, выставляется `entrySplitLeg2Done=true` (не повторять $500 при той же цене).
+- То же для `staged_avg` → `avgFirstLegDone` / `avgSecondLegDone`.
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.197] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.197`.

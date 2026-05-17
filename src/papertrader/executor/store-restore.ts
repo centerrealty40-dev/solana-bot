@@ -6,6 +6,7 @@ import {
   waveBMarkTrailLevelTaken,
 } from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
+import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -361,6 +362,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (lepi !== 'wave_b_v1') {
       ensureLiveOscarExitPolicyPinned(ot);
     }
+
+    reconcileEntrySplitV2FromLegs(ot);
 
     return ot;
   } catch {

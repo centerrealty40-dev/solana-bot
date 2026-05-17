@@ -116,3 +116,32 @@ export function markEntrySplitLeg1Filled(st: LiveStagedEntryState, ot: OpenTrade
   st.entrySplitLeg1Ts = leg?.ts ?? Date.now();
   st.entrySplitAnchorUsd = leg?.marketPrice ?? st.signalPriceUsd;
 }
+
+/**
+ * Journal restore / PM2 reload may leave `entrySplitLeg2Done=false` while `legs[]` already
+ * contains `entry_split` — prevents duplicate $500 "2-я нога" at flat price.
+ */
+export function reconcileEntrySplitV2FromLegs(ot: OpenTrade): void {
+  const st = ot.liveStagedEntry;
+  if (!st?.entrySplitV2) return;
+
+  const splitLegs = ot.legs.filter((l) => l.reason === 'entry_split');
+  if (splitLegs.length > 0) {
+    st.entrySplitLeg2Done = true;
+    const anchorFromOpen = ot.legs.find((l) => l.reason === 'open')?.marketPrice;
+    if (!((st.entrySplitAnchorUsd ?? 0) > 0)) {
+      st.entrySplitAnchorUsd = anchorFromOpen ?? st.signalPriceUsd;
+    }
+  }
+
+  const avgLegs = ot.legs.filter((l) => l.reason === 'staged_avg');
+  if (avgLegs.length >= 1) {
+    st.avgFirstLegDone = true;
+    st.avgFirstLegTs = avgLegs[0]!.ts;
+    st.secondLegDone = true;
+  }
+  if (avgLegs.length >= 2) {
+    st.avgSecondLegDone = true;
+    st.thirdLegDone = true;
+  }
+}

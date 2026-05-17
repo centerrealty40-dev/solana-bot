@@ -17,6 +17,7 @@ import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
+  reconcileEntrySplitV2FromLegs,
   usesLegacyStagedAdds,
 } from './live-staged-entry-gates.js';
 import {
@@ -127,6 +128,8 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
 }): Promise<void> {
   const st = args.ot.liveStagedEntry;
   if (!st?.entrySplitV2 || args.ot.remainingFraction <= 0) return;
+
+  reconcileEntrySplitV2FromLegs(args.ot);
 
   const { curMetric } = args;
   const now = Date.now();
