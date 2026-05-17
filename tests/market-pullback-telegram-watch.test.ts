@@ -51,6 +51,22 @@ describe('detectRiseThenRetraceFromBars', () => {
     expect(p!.signalMode).toBe('rise_then_retrace');
     expect(p!.peakTs.getTime()).toBe(bars[2].ts.getTime());
   });
+
+  it('берёт последний хай ноги, а не более ранний глобальный max в окне', () => {
+    const bars = [
+      bar(0, 1.0),
+      bar(1, 1.2),
+      bar(2, 1.05),
+      bar(3, 1.0),
+      bar(4, 1.1),
+      bar(5, 0.9),
+    ];
+    const p = detectRiseThenRetraceFromBars(bars, 6, 10);
+    expect(p).not.toBeNull();
+    expect(p!.peakTs.getTime()).toBe(bars[4].ts.getTime());
+    expect(p!.peakPx).toBeCloseTo(1.1, 6);
+    expect(p!.retraceFromPeakPct).toBeGreaterThanOrEqual(10 - 1e-6);
+  });
 });
 
 describe('detectLocalHighRetraceFromBars', () => {

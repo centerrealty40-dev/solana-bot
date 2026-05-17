@@ -3,7 +3,7 @@
  *
  * Режимы (`PULLBACK_ALERT_SIGNAL_MODE`):
  * - **`local_high_retrace`** (рекомендуется для «после локального хая»): в окне `PULLBACK_ALERT_SCAN_MINUTES`
- *   ищем **пик** (глобальный max `price_usd`, правый хвост плато), затем сравниваем **последний бар** с пиком;
+ *   ищем **последний пик ноги** (max `price_usd` на [пик..последний бар], правый хвост плато), затем откат к последнему бару;
  *   алерт при откате ≥ `PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT` **без** требования предварительного роста
  *   от якоря (никаких «оценок за 10 минут» в смысле spike rolling — только PG-бары в lookback).
  * - **`rise_then_retrace`**: прежняя логика — рост якорь→пик ≥ `PULLBACK_ALERT_MIN_RISE_PCT` и откат от пика.
@@ -268,120 +268,118 @@ function parseMcapUsd(row: Record<string, unknown>): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function epsPx(px: number): number {
+  return Math.max(1e-12, Math.abs(px) * 1e-12);
+}
+
+/** Пик j — максимум на отрезке [j..k] (текущая нога), не глобальный max за всё окно. */
+function isPeakOnTailSegment(b: Bar[], j: number, k: number): boolean {
+  const peakPx = b[j].px;
+  const eps = epsPx(peakPx);
+  for (let t = j; t <= k; t++) {
+    if (b[t].px > peakPx + eps) return false;
+  }
+  return true;
+}
+
+function rightmostPeakIdxOnTail(b: Bar[], j: number, k: number): number {
+  const peakPx = b[j].px;
+  const eps = epsPx(peakPx);
+  let peakIdx = j;
+  for (let t = j; t <= k; t++) {
+    if (Math.abs(b[t].px - peakPx) <= eps) peakIdx = t;
+  }
+  return peakIdx;
+}
+
 /**
- * Пик — последняя точка глобального максимума цены в окне; якорь — минимум до пика; откат считается
- * от пика до **последнего бара** (текущая котировка должна быть в откате, а не только исторический минимум).
+ * Последний (правый) пик перед последним баром: max на [j..k], откат j→k.
+ * minRisePct = null — без порога роста (local_high_retrace).
+ */
+function detectLatestLegRetraceFromBars(
+  bars: Bar[],
+  minRetraceFromPeakPct: number,
+  minRisePct: number | null,
+  signalMode: PullbackPick['signalMode'],
+): PullbackPick | null {
+  const b = dedupeBarsSorted(bars);
+  const n = b.length;
+  if (n < 2) return null;
+
+  const k = n - 1;
+  const last = b[k];
+  const lastPx = last.px;
+  const lastTs = last.ts;
+  if (!(lastPx > 0)) return null;
+
+  for (let j = k - 1; j >= 0; j--) {
+    if (!isPeakOnTailSegment(b, j, k)) continue;
+
+    const peakIdx = rightmostPeakIdxOnTail(b, j, k);
+    const peakPx = b[peakIdx].px;
+    if (!(peakPx > lastPx)) continue;
+
+    const retraceFromPeakPct = ((peakPx - lastPx) / peakPx) * 100;
+    if (retraceFromPeakPct + 1e-6 < minRetraceFromPeakPct) continue;
+
+    let anchorPx = b[0].px;
+    let anchorTs = b[0].ts;
+    for (let i = 0; i <= peakIdx; i++) {
+      if (b[i].px < anchorPx) {
+        anchorPx = b[i].px;
+        anchorTs = b[i].ts;
+      }
+    }
+
+    const risePct =
+      anchorPx > 0 && peakPx > anchorPx ? ((peakPx - anchorPx) / anchorPx) * 100 : 0;
+    if (minRisePct != null && risePct + 1e-6 < minRisePct) continue;
+
+    return {
+      signalMode,
+      risePct,
+      retraceFromPeakPct,
+      anchorPx,
+      peakPx,
+      lastPx,
+      anchorTs,
+      peakTs: b[peakIdx].ts,
+      lastTs,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Пик — последний локальный хай перед откатом (max на [пик..последний бар]), не старый глобальный max окна.
  */
 export function detectRiseThenRetraceFromBars(
   bars: Bar[],
   minRisePct: number,
   minRetraceFromPeakPct: number,
 ): PullbackPick | null {
-  const b = dedupeBarsSorted(bars);
-  if (b.length < 2) return null;
-
-  let peakPx = b[0].px;
-  let peakIdx = 0;
-  const eps = (px: number) => Math.max(1e-12, Math.abs(px) * 1e-12);
-  for (let i = 1; i < b.length; i++) {
-    if (b[i].px > peakPx + eps(peakPx)) {
-      peakPx = b[i].px;
-      peakIdx = i;
-    } else if (Math.abs(b[i].px - peakPx) <= eps(peakPx)) {
-      peakIdx = i;
-    }
-  }
-  if (!(peakPx > 0) || !Number.isFinite(peakPx)) return null;
-
-  let anchorPx = b[0].px;
-  let anchorTs = b[0].ts;
-  for (let i = 0; i <= peakIdx; i++) {
-    if (b[i].px < anchorPx) {
-      anchorPx = b[i].px;
-      anchorTs = b[i].ts;
-    }
-  }
-
-  const last = b[b.length - 1];
-  const lastPx = last.px;
-  const lastTs = last.ts;
-
-  if (!(anchorPx > 0) || !(peakPx > anchorPx)) return null;
-
-  const risePct = ((peakPx - anchorPx) / anchorPx) * 100;
-  if (risePct + 1e-6 < minRisePct) return null;
-
-  const retraceFromPeakPct = ((peakPx - lastPx) / peakPx) * 100;
-  if (retraceFromPeakPct + 1e-6 < minRetraceFromPeakPct) return null;
-
-  return {
-    signalMode: 'rise_then_retrace',
-    risePct,
-    retraceFromPeakPct,
-    anchorPx,
-    peakPx,
-    lastPx,
-    anchorTs,
-    peakTs: b[peakIdx].ts,
-    lastTs,
-  };
+  return detectLatestLegRetraceFromBars(
+    bars,
+    minRetraceFromPeakPct,
+    minRisePct,
+    'rise_then_retrace',
+  );
 }
 
 /**
- * Только «локальный хай» в окне: пик = max цены (правый хвост плато); откат = пик → последний бар.
- * Нет фильтра по предварительному росту от минимума до пика.
+ * То же определение пика, без порога роста от дна до пика.
  */
 export function detectLocalHighRetraceFromBars(
   bars: Bar[],
   minRetraceFromPeakPct: number,
 ): PullbackPick | null {
-  const b = dedupeBarsSorted(bars);
-  if (b.length < 2) return null;
-
-  let peakPx = b[0].px;
-  let peakIdx = 0;
-  const eps = (px: number) => Math.max(1e-12, Math.abs(px) * 1e-12);
-  for (let i = 1; i < b.length; i++) {
-    if (b[i].px > peakPx + eps(peakPx)) {
-      peakPx = b[i].px;
-      peakIdx = i;
-    } else if (Math.abs(b[i].px - peakPx) <= eps(peakPx)) {
-      peakIdx = i;
-    }
-  }
-  if (!(peakPx > 0) || !Number.isFinite(peakPx)) return null;
-
-  let anchorPx = b[0].px;
-  let anchorTs = b[0].ts;
-  for (let i = 0; i <= peakIdx; i++) {
-    if (b[i].px < anchorPx) {
-      anchorPx = b[i].px;
-      anchorTs = b[i].ts;
-    }
-  }
-
-  const last = b[b.length - 1];
-  const lastPx = last.px;
-  const lastTs = last.ts;
-
-  if (!(peakPx > 0) || !(lastPx > 0)) return null;
-
-  const retraceFromPeakPct = ((peakPx - lastPx) / peakPx) * 100;
-  if (retraceFromPeakPct + 1e-6 < minRetraceFromPeakPct) return null;
-
-  const risePct = anchorPx > 0 && peakPx > anchorPx ? ((peakPx - anchorPx) / anchorPx) * 100 : 0;
-
-  return {
-    signalMode: 'local_high_retrace',
-    risePct,
-    retraceFromPeakPct,
-    anchorPx,
-    peakPx,
-    lastPx,
-    anchorTs,
-    peakTs: b[peakIdx].ts,
-    lastTs,
-  };
+  return detectLatestLegRetraceFromBars(
+    bars,
+    minRetraceFromPeakPct,
+    null,
+    'local_high_retrace',
+  );
 }
 
 async function fetchLatestForTable(table: DexTable): Promise<LatestMeta[]> {

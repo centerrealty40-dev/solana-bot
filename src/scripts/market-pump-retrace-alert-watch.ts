@@ -271,11 +271,11 @@ export function findPumpRetraceFromBars(
       const pumpPct = (peakPx / valley - 1) * 100;
       if (pumpPct < minPumpPct - 1e-9) continue;
 
-      let maxOnSegment = b[vi].px;
-      for (let t = vi; t <= k; t++) {
-        maxOnSegment = Math.max(maxOnSegment, b[t].px);
+      let maxOnTail = peakPx;
+      for (let t = j; t <= k; t++) {
+        maxOnTail = Math.max(maxOnTail, b[t].px);
       }
-      if (Math.abs(maxOnSegment - peakPx) > 1e-9 * Math.max(peakPx, 1e-12)) continue;
+      if (Math.abs(maxOnTail - peakPx) > 1e-9 * Math.max(peakPx, 1e-12)) continue;
 
       return { vi, j, k, valleyPx: valley, peakPx, troughPx, pumpPct, retracePct };
     }
