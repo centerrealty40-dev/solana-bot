@@ -45,6 +45,7 @@ import {
 import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
+import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -522,6 +523,8 @@ export async function main(): Promise<void> {
         nearReadyDipWaitCount: nearCount,
         nearReadyDipNewSinceLastHb: newSinceLastHb,
       }).catch((e) => log.warn({ err: String(e) }, 'live discovery health snapshot write failed'));
+
+      tickLiveBtcGateTelegram(liveCfg);
 
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
       if (!tgHeartbeatOff) {

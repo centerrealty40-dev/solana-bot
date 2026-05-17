@@ -2,7 +2,9 @@
  * W8.0 Phase 5 — §3.3 risk + §3.4 capital gates before Phase 4 adapter (simulate).
  */
 import type { OpenTrade } from '../papertrader/types.js';
-import { getBtcContext, getSolUsd } from '../papertrader/pricing.js';
+import { getSolUsd } from '../papertrader/pricing.js';
+import { resolveLiveBtcGateStatus } from './btc-gate.js';
+import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
 import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import { liveFetchBuyQuote } from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
@@ -224,31 +226,19 @@ export async function phase5AllowIncreaseExposure(args: {
   }
 
   if (liveCfg.executionMode === 'live' && isNewPosition) {
-    if (liveCfg.liveBtcGateEnabled) {
-      const btc = getBtcContext();
-      const staleMs = liveCfg.liveBtcGateMaxStaleMs;
-      const ts = btc.updated_ts;
-      const fresh = typeof ts === 'number' && ts > 0 && Date.now() - ts <= staleMs;
-      if (fresh) {
-        const d1 = liveCfg.liveBtcBlockNewBuys1hDrawdownPct;
-        const d4 = liveCfg.liveBtcBlockNewBuys4hDrawdownPct;
-        if (btc.ret1h_pct != null && btc.ret1h_pct <= -d1) {
-          appendLiveJsonlEvent({
-            kind: 'risk_block',
-            limit: 'btc_dump_1h',
-            detail: { ret1h_pct: btc.ret1h_pct, blockAtDrawdownPct: d1 },
-          });
-          return false;
-        }
-        if (btc.ret4h_pct != null && btc.ret4h_pct <= -d4) {
-          appendLiveJsonlEvent({
-            kind: 'risk_block',
-            limit: 'btc_dump_4h',
-            detail: { ret4h_pct: btc.ret4h_pct, blockAtDrawdownPct: d4 },
-          });
-          return false;
-        }
-      }
+    const btcGate = resolveLiveBtcGateStatus(liveCfg);
+    tickLiveBtcGateTelegram(liveCfg);
+    if (btcGate.kind === 'blocked') {
+      appendLiveJsonlEvent({
+        kind: 'risk_block',
+        limit: btcGate.limit,
+        detail: {
+          ret1h_pct: btcGate.ret1h_pct,
+          ret4h_pct: btcGate.ret4h_pct,
+          blockAtDrawdownPct: btcGate.blockAtDrawdownPct,
+        },
+      });
+      return false;
     }
 
     const minEq = liveCfg.liveMinWalletSolEquityUsd;

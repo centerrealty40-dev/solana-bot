@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.200] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.200`.
+
+### Live Oscar — Telegram при BTC gate (новые buy_open)
+
+- При переходе в блок **`btc_dump_1h` / `btc_dump_4h`**: `[ADVICE][live_btc_gate_block]` в канал **`LIVE_MINT_WHITELIST_TELEGRAM_*`** (тот же, что дайвы / whitelist miss).
+- При снятии блока: **`live_btc_gate_clear`**. Edge-trigger (без спама на каждый skip).
+- Выключение: **`LIVE_BTC_GATE_TELEGRAM_ENABLED=0`**.
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.199] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.199`.
