@@ -16,6 +16,10 @@ import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db } from '../core/db/client.js';
+import {
+  isRetracePullbackChannelDuplicate,
+  recordRetracePullbackChannelSent,
+} from './market-retrace-pullback-channel-dedupe.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -77,7 +81,7 @@ const POLL_SEND_DEDUPE_MS = Math.max(
   Math.min(3_600_000, Math.floor(envNum('PULLBACK_ALERT_POLL_SEND_DEDUPE_MS', 120_000))),
 );
 
-/** Уже слали откат с этого пика (mint+pair) — не дублировать при углублении отката. */
+/** Уже слали откат с этого пика по mint (любая пара DEX) — не дублировать при углублении. */
 export function isDuplicateOngoingPullback(
   lastSentPeakMs: number | undefined,
   peakTs: Date,
@@ -86,12 +90,9 @@ export function isDuplicateOngoingPullback(
   return lastSentPeakMs === peakTs.getTime();
 }
 
-export function pullbackAlertEventDedupeKey(
-  mint: string,
-  pair: string,
-  peakTs: Date,
-): string {
-  return `${mint.trim()}|${pair.trim()}|${peakTs.toISOString()}`;
+export function pullbackAlertEventDedupeKey(mint: string, peakTs: Date): string {
+  const peakMin = Math.floor(peakTs.getTime() / 60_000);
+  return `${mint.trim()}|${peakMin}`;
 }
 
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
@@ -588,14 +589,22 @@ function buildAlertHtml(args: {
   ].join('\n');
 }
 
+type PullbackCandidate = {
+  dex: string;
+  meta: LatestMeta;
+  pick: PullbackPick;
+  refM: number;
+};
+
 async function runOnePass(
   sendDedupe: Map<string, number> | null,
-  lastSentPeakMsByKey: Map<string, number>,
+  lastSentPeakMsByMint: Map<string, number>,
 ): Promise<void> {
   const nowMs = Date.now();
   const maxBarAgeMs = MAX_NEWER_BAR_AGE_MIN * 60_000;
   let sent = 0;
   let skipped = 0;
+  const byMint = new Map<string, PullbackCandidate>();
 
   for (const table of SNAPSHOT_TABLES) {
     const dex = dexLabel(table);
@@ -620,13 +629,6 @@ async function runOnePass(
         continue;
       }
 
-      const cdKey = key;
-      const peakMs = pick.peakTs.getTime();
-      if (isDuplicateOngoingPullback(lastSentPeakMsByKey.get(cdKey), pick.peakTs)) {
-        skipped++;
-        continue;
-      }
-
       const lastBar = dedupeBarsSorted(rawBars).at(-1);
       const refM = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
       if (MIN_MARKET_CAP_USD > 0 && refM + 1 < MIN_MARKET_CAP_USD) {
@@ -639,50 +641,70 @@ async function runOnePass(
         continue;
       }
 
-      if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-        const dedupeKey = pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs);
-        const lastSend = sendDedupe.get(dedupeKey) ?? 0;
-        if (nowMs - lastSend < POLL_SEND_DEDUPE_MS) {
-          skipped++;
-          continue;
-        }
+      const mint = meta.base_mint.trim();
+      const cand: PullbackCandidate = { dex, meta, pick, refM };
+      const prev = byMint.get(mint);
+      if (
+        !prev ||
+        pick.retraceFromPeakPct > prev.pick.retraceFromPeakPct ||
+        (Math.abs(pick.retraceFromPeakPct - prev.pick.retraceFromPeakPct) < 1e-9 &&
+          pick.lastTs.getTime() > prev.pick.lastTs.getTime())
+      ) {
+        byMint.set(mint, cand);
       }
+    }
+  }
 
-      const html = buildAlertHtml({ dex, meta, pick, refMcap: refM });
-      if (DRY_RUN) {
-        console.log('[PULLBACK_DRY_RUN]', meta.base_mint.slice(0, 8), pick.risePct, pick.retraceFromPeakPct);
-        lastSentPeakMsByKey.set(cdKey, peakMs);
-        if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-          sendDedupe.set(
-            pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs),
-            nowMs,
-          );
-        }
-        sent++;
+  for (const [mint, { dex, meta, pick, refM }] of byMint) {
+    const peakMs = pick.peakTs.getTime();
+    if (isDuplicateOngoingPullback(lastSentPeakMsByMint.get(mint), pick.peakTs)) {
+      skipped++;
+      continue;
+    }
+    if (await isRetracePullbackChannelDuplicate(mint, pick.peakTs)) {
+      skipped++;
+      continue;
+    }
+
+    if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+      const dedupeKey = pullbackAlertEventDedupeKey(mint, pick.peakTs);
+      const lastSend = sendDedupe.get(dedupeKey) ?? 0;
+      if (nowMs - lastSend < POLL_SEND_DEDUPE_MS) {
+        skipped++;
         continue;
       }
+    }
 
-      const tg = await sendTelegram(html, 'HTML');
-      if (tg.ok) {
-        sent++;
-        lastSentPeakMsByKey.set(cdKey, peakMs);
-        if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-          sendDedupe.set(
-            pullbackAlertEventDedupeKey(meta.base_mint, meta.pair_address, pick.peakTs),
-            nowMs,
-          );
-        }
-        await sleepMs(200);
-      } else {
-        skipped++;
+    const html = buildAlertHtml({ dex, meta, pick, refMcap: refM });
+    if (DRY_RUN) {
+      console.log('[PULLBACK_DRY_RUN]', mint.slice(0, 8), pick.risePct, pick.retraceFromPeakPct);
+      lastSentPeakMsByMint.set(mint, peakMs);
+      await recordRetracePullbackChannelSent(mint, pick.peakTs, 'pullback');
+      if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+        sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);
       }
+      sent++;
+      continue;
+    }
+
+    const tg = await sendTelegram(html, 'HTML');
+    if (tg.ok) {
+      sent++;
+      lastSentPeakMsByMint.set(mint, peakMs);
+      await recordRetracePullbackChannelSent(mint, pick.peakTs, 'pullback');
+      if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
+        sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);
+      }
+      await sleepMs(200);
+    } else {
+      skipped++;
     }
   }
 
   const riseLog =
     SIGNAL_MODE === 'local_high_retrace' ? `retrace>=${MIN_RETRACE_PCT}%` : `rise>=${MIN_RISE_PCT}% retrace>=${MIN_RETRACE_PCT}%`;
   console.log(
-    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m peakDedupe=on`,
+    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m mintPeakDedupe=on channelDedupe=on`,
   );
 }
 
@@ -697,7 +719,7 @@ async function main(): Promise<void> {
 
   if (POLL_INTERVAL_MS > 0) {
     const sendDedupe = new Map<string, number>();
-    const lastSentPeakMsByKey = new Map<string, number>();
+    const lastSentPeakMsByMint = new Map<string, number>();
     console.log(
       `[market-pullback-telegram-watch] poll interval=${POLL_INTERVAL_MS}ms dedupe=${POLL_SEND_DEDUPE_MS}ms signal_mode=${SIGNAL_MODE} scan=${SCAN_MINUTES}m`,
     );
@@ -709,7 +731,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', onStop);
     while (!stop) {
       try {
-        await runOnePass(sendDedupe, lastSentPeakMsByKey);
+        await runOnePass(sendDedupe, lastSentPeakMsByMint);
       } catch (e) {
         console.warn('[market-pullback-telegram-watch] cycle error', String(e));
       }

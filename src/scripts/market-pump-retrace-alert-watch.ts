@@ -14,6 +14,10 @@ import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db } from '../core/db/client.js';
+import {
+  isRetracePullbackChannelDuplicate,
+  recordRetracePullbackChannelSent,
+} from './market-retrace-pullback-channel-dedupe.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -66,8 +70,9 @@ export function isDuplicateOngoingRetrace(
   return lastSentPeakMs === peakTs.getTime();
 }
 
-export function retraceAlertEventDedupeKey(mint: string, dex: string, peakTs: Date, valleyTs: Date): string {
-  return `${mint.trim()}|${dex}|${peakTs.toISOString()}|${valleyTs.toISOString()}`;
+export function retraceAlertEventDedupeKey(mint: string, peakTs: Date): string {
+  const peakMin = Math.floor(peakTs.getTime() / 60_000);
+  return `${mint.trim()}|${peakMin}`;
 }
 
 const MAX_EVENT_AGE_MIN = Math.max(
@@ -555,15 +560,12 @@ async function runOnePass(
     }
 
     const mintKey = row.base_mint.trim();
-    if (isDuplicateOngoingRetrace(lastSentPeakMsByMint.get(mintKey), row.rawBarsJTs)) continue;
+    const peakTs = row.rawBarsJTs;
+    if (isDuplicateOngoingRetrace(lastSentPeakMsByMint.get(mintKey), peakTs)) continue;
+    if (await isRetracePullbackChannelDuplicate(mintKey, peakTs)) continue;
 
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-      const dedupeKey = retraceAlertEventDedupeKey(
-        row.base_mint,
-        row.dex,
-        row.rawBarsJTs,
-        row.rawBarsViTs,
-      );
+      const dedupeKey = retraceAlertEventDedupeKey(row.base_mint, peakTs);
       const last = sendDedupe.get(dedupeKey) ?? 0;
       if (Date.now() - last < POLL_SEND_DEDUPE_MS) continue;
     }
@@ -573,12 +575,10 @@ async function runOnePass(
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
       sent++;
-      lastSentPeakMsByMint.set(mintKey, row.rawBarsJTs.getTime());
+      lastSentPeakMsByMint.set(mintKey, peakTs.getTime());
+      await recordRetracePullbackChannelSent(mintKey, peakTs, 'retrace');
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
-        sendDedupe.set(
-          retraceAlertEventDedupeKey(row.base_mint, row.dex, row.rawBarsJTs, row.rawBarsViTs),
-          Date.now(),
-        );
+        sendDedupe.set(retraceAlertEventDedupeKey(row.base_mint, peakTs), Date.now());
       }
     }
     await sleepMs(200);
@@ -586,7 +586,7 @@ async function runOnePass(
 
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m peakDedupe=on${pollLog}`,
+    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m mintPeakDedupe=on channelDedupe=on${pollLog}`,
   );
 }
 

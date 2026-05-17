@@ -21,6 +21,20 @@
 
 ---
 
+## [1.11.194] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.194`.
+
+### Канал pullback/retrace (XMarkt Finances) — один алерт на откат
+
+- Дедуп по **mint + минута пика** (не по DEX-паре): meteora и pumpswap не дублируют.
+- Общий файл `data/live/telegram-retrace-pullback-dedupe.json` между `market-pullback-telegram-watch` и `retrace-alert-watch` — не шлём и [MARKET][pullback], и [RETRACE] на одно событие.
+- Pullback: один проход, лучший кандидат на mint за цикл.
+
+**Откат:** revert; перезапуск pullback + retrace entry-скриптов на VPS.
+
+---
+
 ## [1.11.192] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.192`.
