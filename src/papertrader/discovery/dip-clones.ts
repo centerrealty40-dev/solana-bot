@@ -21,6 +21,7 @@ import {
   evaluatePolicyAPlus,
   type PolicyAPlusFeatures,
 } from './policy-a-plus.js';
+import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -230,6 +231,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
   ];
   snapshotTagged = filterSnapshotTaggedByMintBlacklist(cfg, snapshotTagged);
+  const wlInjected = await injectWhitelistDiscoveryCandidates(cfg, snapshotTagged);
+  if (wlInjected.length > 0) {
+    snapshotTagged = [...snapshotTagged, ...wlInjected];
+  }
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
   }

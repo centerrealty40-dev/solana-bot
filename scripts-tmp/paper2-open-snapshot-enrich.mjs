@@ -10,6 +10,7 @@ import path from 'node:path';
 
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
 const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
+const DEFAULT_WHITELIST_PATH = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'live-oscar-mint-whitelist.txt');
 const TOKEN_CHUNK = 10;
 const DS_DELAY_MS = 350;
 
@@ -94,6 +95,28 @@ export function loadLiveOscarOpenMintsSync() {
   return out;
 }
 
+/** Tracked mint allowlist — same file as `LIVE_MINT_WHITELIST_PATH` on live-oscar. */
+export function loadLiveOscarWhitelistMintsSync() {
+  if (process.env.PAPER2_SNAPSHOT_WHITELIST === '0') return [];
+  const fp =
+    process.env.LIVE_MINT_WHITELIST_PATH?.trim() ||
+    process.env.LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH?.trim() ||
+    DEFAULT_WHITELIST_PATH;
+  if (!fp || !fs.existsSync(fp)) return [];
+  let buf;
+  try {
+    buf = fs.readFileSync(fp, 'utf-8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const ln of buf.split('\n')) {
+    const s = ln.split('#')[0].trim();
+    if (isPlausibleMint(s)) out.push(s);
+  }
+  return out;
+}
+
 function mintsTouchedByRows(rows) {
   const s = new Set();
   for (const r of rows) {
@@ -129,10 +152,13 @@ export async function mergePaper2OpenMintSnapshots({
   if (process.env.PAPER2_SNAPSHOT_OPENS === '0') return rows;
   const dir = paper2Dir || process.env.PAPER2_DIR || DEFAULT_PAPER2_DIR;
   let openMints;
+  let whitelistMintCount = 0;
   try {
     const paper = loadPaper2OpenMintsSync(dir);
     const live = loadLiveOscarOpenMintsSync();
-    openMints = [...new Set([...paper, ...live])];
+    const whitelist = loadLiveOscarWhitelistMintsSync();
+    whitelistMintCount = whitelist.length;
+    openMints = [...new Set([...paper, ...live, ...whitelist])];
   } catch (e) {
     if (log) log('warn', 'paper2/live open mints load failed', { error: String(e), component });
     return rows;
@@ -182,6 +208,7 @@ export async function mergePaper2OpenMintSnapshots({
     log('info', 'paper2/live open mint snapshots merged', {
       component,
       openMintCount: openMints.length,
+      whitelistMintCount,
       missingFromPrimaryTick: missing.length,
       extraPairsThisDex: extra.length,
       rowCountAfterMerge: merged.length,

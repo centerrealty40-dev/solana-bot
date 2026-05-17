@@ -111,9 +111,16 @@ function mapSnapshotRow(row: Record<string, unknown>, source: string): SnapshotC
  * only rows with `ts` in the last 30 minutes and `price_usd > 0`; pick newest `ts` among venues.
  * (Pumpswap-only probe was wrong for migrated pools — stale near-zero rows while Raydium had real liquidity.)
  */
-export async function fetchLatestCrossVenueSnapshotRowForMint(mint: string): Promise<SnapshotCandidateRow | null> {
+export async function fetchLatestCrossVenueSnapshotRowForMint(
+  mint: string,
+  opts?: { lookbackMinutes?: number },
+): Promise<SnapshotCandidateRow | null> {
   const m = mint.trim();
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m)) return null;
+  const lookbackMin =
+    opts?.lookbackMinutes != null && Number.isFinite(opts.lookbackMinutes) && opts.lookbackMinutes > 0
+      ? Math.floor(opts.lookbackMinutes)
+      : 30;
   const qm = sqlQuoteMint(m);
   const unions = SNAPSHOT_TABLES.map(
     (t) => `
@@ -137,7 +144,7 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(mint: string): Pro
     FROM ${t.table} p
     LEFT JOIN tokens tok ON tok.mint = p.base_mint
     WHERE p.base_mint = ${qm}
-      AND p.ts >= now() - interval '30 minutes'
+      AND p.ts >= now() - interval '${lookbackMin} minutes'
       AND COALESCE(p.price_usd, 0) > 0
   `,
   ).join('\nUNION ALL\n');

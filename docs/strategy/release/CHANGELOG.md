@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.193] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.193`.
+
+### 24/7 — whitelist всегда в PG и discovery
+
+- **Коллекторы** (`paper2-open-snapshot-enrich.mjs`): все mint из `live-oscar-mint-whitelist.txt` подмешиваются в DexScreener token-fetch (как open-позиции), снапшоты пишутся в `*_pair_snapshots`.
+- **Discovery** (`injectWhitelistDiscoveryCandidates`): mint из WL, выбитые из топ-300 SQL, всё равно получают полный `live_discovery_eval` (lookback PG 60m, env `PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN`).
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.192] — 2026-05-16
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.192`.

@@ -236,6 +236,8 @@ const ConfigSchema = z.object({
   discoveryDeepAuditJsonl: z.boolean().default(false),
   discoveryDeepAuditWhitelistPath: z.string().optional(),
   discoveryDeepAuditUniverseMissMinMs: z.coerce.number().int().min(5_000).max(3_600_000).default(60_000),
+  /** PG lookback for whitelist mint probe (`injectWhitelistDiscoveryCandidates`). */
+  whitelistSnapshotLookbackMin: z.coerce.number().int().min(30).max(240).default(60),
 
   /**
    * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
@@ -705,6 +707,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 5_000 ? Math.min(n, 3_600_000) : 60_000;
     })(),
+    whitelistSnapshotLookbackMin: process.env.PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),

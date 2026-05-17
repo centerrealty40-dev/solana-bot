@@ -553,6 +553,8 @@ module.exports = {
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
+        /** Whitelist mint PG probe + collector DexScreener enrich lookback alignment. */
+        PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         /** Разрешённые mint для новых входов; иначе skip + Telegram (см. `LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`). */
