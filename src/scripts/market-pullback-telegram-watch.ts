@@ -17,8 +17,8 @@ import { sql as dsql } from 'drizzle-orm';
 
 import { db } from '../core/db/client.js';
 import {
-  isRetracePullbackChannelDuplicate,
-  recordRetracePullbackChannelSent,
+  retracePullbackChannelEventKey,
+  reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
 
 const SNAPSHOT_TABLES = [
@@ -91,8 +91,7 @@ export function isDuplicateOngoingPullback(
 }
 
 export function pullbackAlertEventDedupeKey(mint: string, peakTs: Date): string {
-  const peakMin = Math.floor(peakTs.getTime() / 60_000);
-  return `${mint.trim()}|${peakMin}`;
+  return retracePullbackChannelEventKey(mint, peakTs);
 }
 
 const MAX_NEWER_BAR_AGE_MIN = Math.max(
@@ -661,11 +660,6 @@ async function runOnePass(
       skipped++;
       continue;
     }
-    if (await isRetracePullbackChannelDuplicate(mint, pick.peakTs)) {
-      skipped++;
-      continue;
-    }
-
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
       const dedupeKey = pullbackAlertEventDedupeKey(mint, pick.peakTs);
       const lastSend = sendDedupe.get(dedupeKey) ?? 0;
@@ -675,11 +669,15 @@ async function runOnePass(
       }
     }
 
+    if (!reserveRetracePullbackChannelSlot(mint, pick.peakTs, 'pullback')) {
+      skipped++;
+      continue;
+    }
+
     const html = buildAlertHtml({ dex, meta, pick, refMcap: refM });
     if (DRY_RUN) {
       console.log('[PULLBACK_DRY_RUN]', mint.slice(0, 8), pick.risePct, pick.retraceFromPeakPct);
       lastSentPeakMsByMint.set(mint, peakMs);
-      await recordRetracePullbackChannelSent(mint, pick.peakTs, 'pullback');
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);
       }
@@ -691,7 +689,6 @@ async function runOnePass(
     if (tg.ok) {
       sent++;
       lastSentPeakMsByMint.set(mint, peakMs);
-      await recordRetracePullbackChannelSent(mint, pick.peakTs, 'pullback');
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);
       }

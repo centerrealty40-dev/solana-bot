@@ -15,8 +15,8 @@ import { sql as dsql } from 'drizzle-orm';
 
 import { db } from '../core/db/client.js';
 import {
-  isRetracePullbackChannelDuplicate,
-  recordRetracePullbackChannelSent,
+  retracePullbackChannelEventKey,
+  reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
 
 const SNAPSHOT_TABLES = [
@@ -71,8 +71,7 @@ export function isDuplicateOngoingRetrace(
 }
 
 export function retraceAlertEventDedupeKey(mint: string, peakTs: Date): string {
-  const peakMin = Math.floor(peakTs.getTime() / 60_000);
-  return `${mint.trim()}|${peakMin}`;
+  return retracePullbackChannelEventKey(mint, peakTs);
 }
 
 const MAX_EVENT_AGE_MIN = Math.max(
@@ -562,7 +561,6 @@ async function runOnePass(
     const mintKey = row.base_mint.trim();
     const peakTs = row.rawBarsJTs;
     if (isDuplicateOngoingRetrace(lastSentPeakMsByMint.get(mintKey), peakTs)) continue;
-    if (await isRetracePullbackChannelDuplicate(mintKey, peakTs)) continue;
 
     if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
       const dedupeKey = retraceAlertEventDedupeKey(row.base_mint, peakTs);
@@ -571,12 +569,12 @@ async function runOnePass(
     }
 
     if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
+    if (!reserveRetracePullbackChannelSlot(mintKey, peakTs, 'retrace')) continue;
 
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
       sent++;
       lastSentPeakMsByMint.set(mintKey, peakTs.getTime());
-      await recordRetracePullbackChannelSent(mintKey, peakTs, 'retrace');
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(retraceAlertEventDedupeKey(row.base_mint, peakTs), Date.now());
       }

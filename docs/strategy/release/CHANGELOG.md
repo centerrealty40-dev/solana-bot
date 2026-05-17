@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.197] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.197`.
+
+### Канал pullback/retrace — один алерт на откат (meteora + pumpswap)
+
+- Дедуп по **mint + 15‑мин bucket пика** (пик 14:37 и 14:38 = одно событие).
+- Атомарный `reserveRetracePullbackChannelSlot` под file-lock — нет гонки между pullback и retrace PM2.
+
+**Откат:** revert; перезапуск pullback + retrace entry-скриптов.
+
+---
+
 ## [1.11.196] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.196`.
