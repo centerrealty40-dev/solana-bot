@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.196] — 2026-05-17
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.196`.
+
+### Live Oscar whitelist — TROLL
+
+- `5UUH9RTDiSpq6HKS6bp4NdU9PNJpXRXuiw6ShBTBhgH2` (TROLL) в `live-oscar-mint-whitelist.txt` и risky-whitelist; на VPS снят с `live-oscar-permanent-denylist.txt` (после авто-drop по consec-loss).
+
+**Откат:** убрать mint из whitelist; при необходимости вернуть строку в local denylist.
+
+---
+
 ## [1.11.193] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.193`.
