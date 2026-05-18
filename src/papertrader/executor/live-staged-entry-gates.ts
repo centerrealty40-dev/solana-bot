@@ -1,6 +1,39 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
 
+/** `liveStagedEntrySignalTtlMs === 0` — no time limit on staged plan / signal anchor. */
+export function liveStagedEntrySignalTtlEnabled(
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>,
+): boolean {
+  return cfg.liveStagedEntrySignalTtlMs > 0;
+}
+
+export function liveStagedEntrySignalTimeWindowOpen(
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>,
+  signalTs: number,
+  nowMs: number,
+): boolean {
+  if (!liveStagedEntrySignalTtlEnabled(cfg)) return true;
+  return nowMs <= signalTs + cfg.liveStagedEntrySignalTtlMs;
+}
+
+export function liveStagedEntrySignalTtlExpired(
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>,
+  signalTs: number,
+  nowMs: number,
+): boolean {
+  if (!liveStagedEntrySignalTtlEnabled(cfg)) return false;
+  return nowMs > signalTs + cfg.liveStagedEntrySignalTtlMs;
+}
+
+export function liveStagedEntrySignalExpiresAt(
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>,
+  signalTs: number,
+): number {
+  if (!liveStagedEntrySignalTtlEnabled(cfg)) return Number.MAX_SAFE_INTEGER;
+  return signalTs + cfg.liveStagedEntrySignalTtlMs;
+}
+
 /** % change from anchor: +3 max, −10 min (inclusive). */
 export function entrySplitBandOk(changePctFromAnchor: number, maxUpPct: number, maxDownPct: number): boolean {
   return changePctFromAnchor <= maxUpPct && changePctFromAnchor >= -maxDownPct;

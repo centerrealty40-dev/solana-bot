@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   entrySplitBandOk,
+  liveStagedEntrySignalTimeWindowOpen,
+  liveStagedEntrySignalTtlExpired,
   reconcileEntrySplitV2FromLegs,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
+import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { LiveStagedEntryState, OpenTrade } from '../src/papertrader/types.js';
 
 function baseSt(): LiveStagedEntryState {
@@ -26,6 +29,26 @@ function baseSt(): LiveStagedEntryState {
     avgSecondCooldownMs: 300_000,
   };
 }
+
+const ttlCfg = (ttlMs: number) =>
+  ({ liveStagedEntrySignalTtlMs: ttlMs }) as Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>;
+
+describe('liveStagedEntrySignalTtl', () => {
+  it('ttl 0 never expires and window stays open', () => {
+    const cfg = ttlCfg(0);
+    const signalTs = 1_000_000;
+    const far = signalTs + 365 * 24 * 3600_000;
+    expect(liveStagedEntrySignalTtlExpired(cfg, signalTs, far)).toBe(false);
+    expect(liveStagedEntrySignalTimeWindowOpen(cfg, signalTs, far)).toBe(true);
+  });
+
+  it('positive ttl closes window after deadline', () => {
+    const cfg = ttlCfg(60_000);
+    const signalTs = 1_000_000;
+    expect(liveStagedEntrySignalTimeWindowOpen(cfg, signalTs, signalTs + 59_000)).toBe(true);
+    expect(liveStagedEntrySignalTtlExpired(cfg, signalTs, signalTs + 61_000)).toBe(true);
+  });
+});
 
 describe('entrySplitBandOk', () => {
   it('allows +3% and -10%', () => {

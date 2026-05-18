@@ -27,6 +27,10 @@ import {
   markDcaStepFired,
 } from '../papertrader/executor/dca-state.js';
 import {
+  liveStagedEntrySignalTimeWindowOpen,
+  liveStagedEntrySignalTtlExpired,
+} from '../papertrader/executor/live-staged-entry-gates.js';
+import {
   dcaKillstopEffective,
   tpGridEffective,
 } from '../papertrader/executor/tp-grid-effective.js';
@@ -308,7 +312,7 @@ function simTryLiveStagedEntryAdds(args: {
   const hasThird = (st.thirdLegUsd ?? 0) > 0;
   const thirdDone = hasThird ? st.thirdLegDone === true : true;
   const pendingStagedLegs = !st.secondLegDone || !thirdDone;
-  const timeWindowOpen = virtualNow <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+  const timeWindowOpen = liveStagedEntrySignalTimeWindowOpen(cfg, st.signalTs, virtualNow);
   const stagedAddWindowOpen =
     timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
   const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
@@ -364,7 +368,7 @@ function simTryLiveStagedEntryAdds(args: {
   }
 
   const stagedLegsComplete = st.secondLegDone === true && thirdDone;
-  const ttlExpired = virtualNow > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+  const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, virtualNow);
   const ttlPreservesStagedPlan =
     tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
   if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {

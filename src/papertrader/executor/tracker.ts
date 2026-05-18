@@ -59,6 +59,10 @@ import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-sn
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
 import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-whitelist.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
+import {
+  liveStagedEntrySignalTimeWindowOpen,
+  liveStagedEntrySignalTtlExpired,
+} from './live-staged-entry-gates.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
@@ -2058,7 +2062,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const hasThird = (st.thirdLegUsd ?? 0) > 0;
       const thirdDone = hasThird ? st.thirdLegDone === true : true;
       const pendingStagedLegs = !st.secondLegDone || !thirdDone;
-      const timeWindowOpen = Date.now() <= st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+      const timeWindowOpen = liveStagedEntrySignalTimeWindowOpen(cfg, st.signalTs, Date.now());
       /** После первой partial TP (пока вторая не взята): откат к −N%% к цене сигнала может случиться позже TTL сигнала — окно доборов не закрываем только по времени. */
       const stagedAddWindowOpen =
         timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
@@ -2200,7 +2204,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               st.entrySplitLeg2Done === true
             : false;
         const stagedLegsComplete = st.entrySplitV2 ? v2AvgDone : st.secondLegDone === true && thirdDone;
-        const ttlExpired = Date.now() > st.signalTs + cfg.liveStagedEntrySignalTtlMs;
+        const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, Date.now());
         const ttlPreservesStagedPlan =
           tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
         if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {

@@ -38,6 +38,8 @@ import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import {
   buildLiveStagedEntryState,
+  liveStagedEntrySignalExpiresAt,
+  liveStagedEntrySignalTtlEnabled,
   markEntrySplitLeg1Filled,
   stagedEntryPlanInvestedCapUsd,
 } from './executor/live-staged-entry-gates.js';
@@ -287,11 +289,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     const td = cfg.liveStagedEntryThirdDropPct;
     const tl = cfg.liveStagedEntryThirdLegUsd;
     const kill = cfg.liveStagedEntryKillDropPct;
-    const ttlMin = (cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0);
+    const ttlMin = liveStagedEntrySignalTtlEnabled(cfg)
+      ? (cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)
+      : null;
     const firstLegExplain =
       cfg.liveStagedEntryFirstDropPct <= 0
         ? `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> сразу, затем <b>$${splitUsd.toFixed(0)}</b> через 10 с, если цена в коридоре +3% / −10% к 1-й ноге.`
-        : `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала (TTL <b>${ttlMin} мин</b>).`;
+        : ttlMin != null
+          ? `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала (TTL <b>${ttlMin} мин</b>).`
+          : `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала.`;
     const secondLine =
       sl > 0
         ? `Усреднение staged (не сплит): <b>$${sl.toFixed(0)}</b> на −${sd}% и <b>$${tl.toFixed(0)}</b> на −${td}% — не раньше 3 и 5 мин после предыдущей ноги.`
@@ -424,7 +430,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             signalPriceUsd: args.currentPriceUsd,
             signalMarketCapUsd: args.marketCapUsd,
             holderCount: args.holderCount,
-            expiresAt: now + cfg.liveStagedEntrySignalTtlMs,
+            expiresAt: liveStagedEntrySignalExpiresAt(cfg, now),
           };
     if (!existing || existing.expiresAt <= now) {
       stagedEntrySignals.set(args.mint, signal);
@@ -1329,7 +1335,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   `${cfg.strategyId} staged-entry (legacy): полный нотионал $${totalNotional.toFixed(0)}. ` +
                   `Первая нога $${cfg.liveStagedEntryFirstLegUsd.toFixed(0)} по сигналу; ` +
                   (dcaParts.length > 0
-                    ? `DCA: ${dcaParts.join(' и ')} (${(cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)} мин). `
+                    ? liveStagedEntrySignalTtlEnabled(cfg)
+                      ? `DCA: ${dcaParts.join(' и ')} (${(cfg.liveStagedEntrySignalTtlMs / 60_000).toFixed(0)} мин). `
+                      : `DCA: ${dcaParts.join(' и ')}. `
                     : '') +
                   `kill −${cfg.liveStagedEntryKillDropPct}% от сигнала.`;
                 return {
