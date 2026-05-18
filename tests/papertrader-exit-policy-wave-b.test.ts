@@ -16,6 +16,11 @@ import {
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
   waveBRemainderValueNetUsd,
   waveBTrailSellFractionForRemainder,
+  waveBDefensiveTrailActive,
+  waveBBreakevenExitEligible,
+  waveBMaybeResetTpImpulse,
+  WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
+  WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC,
 } from '../src/papertrader/executor/exit-policy-wave-b.js';
 import { tpGridEffective } from '../src/papertrader/executor/tp-grid-effective.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
@@ -59,7 +64,7 @@ describe('exit-policy-wave-b', () => {
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(WAVE_B_V1_TP_GRID.gridStepPnl);
   });
 
-  it('waveBOnNewHigh resets trail only — TP ladder marks are one-shot', () => {
+  it('waveBOnNewHigh resets trail only — TP ladder marks stay until impulse reset', () => {
     const ot = baseOt();
     ot.liveExitPolicyId = 'wave_b_v1';
     ot.liveWaveTrailLevelsTaken = [0.1];
@@ -107,9 +112,9 @@ describe('exit-policy-wave-b', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
       trailingArmed: true,
-      liveWaveTrailAnchorPnlFrac: 0.76,
-      liveWavePeakPnlFrac: 0.76,
-      liveWaveTrailLevelsTaken: [0.735],
+      liveWaveTrailAnchorPnlFrac: 0.13,
+      liveWavePeakPnlFrac: 0.13,
+      liveWaveTrailLevelsTaken: [0.105],
       partialSells: [],
     } as unknown as OpenTrade;
     expect(waveBRecoverPhantomPeakIfNeeded(ot, -0.02)).toBe(true);
@@ -142,10 +147,60 @@ describe('exit-policy-wave-b', () => {
     expect(waveBTrailSellFractionForRemainder(waveBRemainderValueNetUsd(ot, 1.2), cfg())).toBe(1);
   });
 
-  it('waveBNextTrailLevelToFire returns one level and skips underwater PnL', () => {
-    expect(waveBNextTrailLevelToFire(0.76, 0.025, -0.02, [])).toBe(null);
-    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.73, [])).toBeCloseTo(0.735, 6);
-    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.7, [0.735])).toBeCloseTo(0.71, 6);
+  it('waveBNextTrailLevelToFire legacy floor at +7.5% when not defensive', () => {
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, -0.02, [], false)).toBe(null);
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.73, [], false)).toBeCloseTo(0.735, 6);
+    expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.7, [0.735], false)).toBeCloseTo(0.71, 6);
+  });
+
+  it('waveBNextTrailLevelToFire defensive mode allows trail below +7.5%', () => {
+    expect(waveBNextTrailLevelToFire(0.11, 0.025, 0.03, [], true)).toBeCloseTo(0.085, 6);
+    expect(waveBNextTrailLevelToFire(0.11, 0.025, -0.01, [0.085], true)).toBeCloseTo(0.06, 6);
+  });
+
+  it('waveBDefensiveTrailActive at +10% ladder mark', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set([3]),
+    } as unknown as OpenTrade;
+    expect(waveBDefensiveTrailActive(ot, 0.025)).toBe(true);
+    const ot2 = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.075]),
+      ladderUsedIndices: new Set([2]),
+    } as unknown as OpenTrade;
+    expect(waveBDefensiveTrailActive(ot2, 0.025)).toBe(false);
+  });
+
+  it('waveBBreakevenExitEligible requires +7.5% not +5%', () => {
+    const otLow = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.05]),
+      ladderUsedIndices: new Set([1]),
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otLow, 0.025)).toBe(false);
+    const otOk = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.075]),
+      ladderUsedIndices: new Set([2]),
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otOk, 0.025)).toBe(true);
+  });
+
+  it('waveBMaybeResetTpImpulse clears rungs above +2.5% after deep pullback', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
+      ladderUsedIndices: new Set([0, 1, 2, 3]),
+    } as unknown as OpenTrade;
+    expect(waveBMaybeResetTpImpulse(ot, 0.02, 0.025)).toBe(true);
+    expect(ot.ladderUsedLevels.has(0.025)).toBe(true);
+    expect(ot.ladderUsedLevels.has(0.05)).toBe(false);
+    expect(ot.ladderUsedLevels.has(0.075)).toBe(false);
+    expect(ot.ladderUsedLevels.has(0.1)).toBe(false);
+    expect(ot.ladderUsedIndices.has(1)).toBe(false);
+    expect(ot.ladderUsedIndices.has(3)).toBe(false);
   });
 
   it('wave B two-phase profile cumulative through +15%', () => {
@@ -161,5 +216,10 @@ describe('exit-policy-wave-b', () => {
     expect(eff.sellFractionForStep(4)).toBeCloseTo(0.1);
     expect(eff.sellFractionForStep(6)).toBeCloseTo(0.1);
     expect(remain).toBeCloseTo(0.625, 3);
+  });
+
+  it('defensive arm threshold is +10%', () => {
+    expect(WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC).toBe(0.1);
+    expect(WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC).toBe(0.075);
   });
 });

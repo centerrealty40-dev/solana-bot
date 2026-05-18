@@ -46,7 +46,10 @@ import {
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
   waveBRemainderValueNetUsd,
-  WAVE_B_ARM_MIN_PNL_FRAC,
+  waveBDefensiveTrailActive,
+  waveBBreakevenExitEligible,
+  waveBMaybeResetTpImpulse,
+  WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
 import { child } from '../../core/logger.js';
@@ -399,6 +402,9 @@ function buildExitContext(args: {
       break;
     case 'TIMEOUT':
       triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
+      break;
+    case 'BREAKEVEN_EXIT':
+      triggerLabel = `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
       break;
     case 'KILLSTOP':
       if (ot.liveStagedEntry) {
@@ -844,14 +850,23 @@ async function tryWaveBTrailPartialSells(args: {
     liveOscarCfg,
     stats,
   } = args;
-  if (!isWaveBExitPolicy(ot) || !ot.trailingArmed || !(tgEff.stepPnl > 0)) return;
+  if (!isWaveBExitPolicy(ot) || !(tgEff.stepPnl > 0)) return;
+  const defensive = waveBDefensiveTrailActive(ot, tgEff.stepPnl);
+  if (!defensive) return;
+  if (!ot.trailingArmed) ot.trailingArmed = true;
   const pnlFrac = xAvg - 1;
   const peakFrac = ot.liveWavePeakPnlFrac ?? pnlFrac;
   /** Pullback phase only — at/new ATH TP grid runs; trail resumes after `waveBOnNewHigh` on the next peak. */
   if (pnlFrac >= peakFrac - LADDER_PNL_EPS) return;
   const anchor = ot.liveWaveTrailAnchorPnlFrac ?? pnlFrac;
-  if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return;
-  const level = waveBNextTrailLevelToFire(anchor, tgEff.stepPnl, pnlFrac, ot.liveWaveTrailLevelsTaken ?? []);
+  if (anchor + LADDER_PNL_EPS < WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) return;
+  const level = waveBNextTrailLevelToFire(
+    anchor,
+    tgEff.stepPnl,
+    pnlFrac,
+    ot.liveWaveTrailLevelsTaken ?? [],
+    true,
+  );
   if (level == null) return;
   const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
   const sellFraction = waveBTrailSellFractionForRemainder(remainingValueNet, cfg);
@@ -2016,7 +2031,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const usesTpSlices = tgEff.stepPnl > 0 || tpLadder.length > 0;
       const tpSlicesDone = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       if (isWaveBExitPolicy(ot)) {
-        if (pnlFracPeak + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) ot.trailingArmed = true;
+        if (pnlFracPeak + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) ot.trailingArmed = true;
       } else if (xAvg >= effCfg.trailTriggerX && (!usesTpSlices || tpSlicesDone >= 2)) {
         ot.trailingArmed = true;
       }
@@ -2326,6 +2341,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
+      if (isWaveBExitPolicy(ot)) {
+        waveBMaybeResetTpImpulse(ot, pnlFrac, step);
+      }
       let maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
       if (tgEff.maxRungs != null && tgEff.maxRungs >= 1) {
         maxK = Math.min(maxK, tgEff.maxRungs);
@@ -2481,7 +2499,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const tpSlicesDonePost = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       const pnlFracPost = xPost - 1;
       if (isWaveBExitPolicy(ot)) {
-        if (curMetric + 1e-18 >= ot.peakMcUsd && pnlFracPost + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) {
+        if (curMetric + 1e-18 >= ot.peakMcUsd && pnlFracPost + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) {
           ot.trailingArmed = true;
         }
       } else if (
@@ -2577,7 +2595,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       if (!exitReason) {
-        if (xAvg >= effCfg.tpX) exitReason = 'TP';
+        if (
+          isWaveBExitPolicy(ot) &&
+          waveBBreakevenExitEligible(ot, tgEff.stepPnl) &&
+          ot.avgEntry > 0 &&
+          pnlPctVsAvg <= 0
+        ) {
+          exitReason = 'BREAKEVEN_EXIT';
+        } else if (xAvg >= effCfg.tpX) exitReason = 'TP';
         else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
         else if (
           effCfg.trailMode === 'ladder_retrace' &&

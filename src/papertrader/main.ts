@@ -534,6 +534,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       TIMEOUT: 0,
       NO_DATA: 0,
       KILLSTOP: 0,
+      BREAKEVEN_EXIT: 0,
       LIQ_DRAIN: 0,
       RECONCILE_ORPHAN: 0,
       PERIODIC_HEAL: 0,

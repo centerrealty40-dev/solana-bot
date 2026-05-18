@@ -19,7 +19,8 @@ export const LEGACY_LIVE_OSCAR_TP_GRID = {
  * Wave B v1 two-phase TP (step 2.5% vs avg entry):
  *   Phase 1 — +2.5% / +5% / +7.5%: 5% of remainder each.
  *   Phase 2 — +10% and above: 10% of remainder per rung (2.5% steps, unlimited).
- * Trail (after arm at +7.5%): each −2.5% from peak anchor → 20% of remainder; paused at ATH (TP resumes).
+ * Defensive trail (after +10% TP or peak): each −2.5% from peak anchor → 20% of remainder (no +7.5% floor).
+ * Breakeven full exit at ≤0% avg PnL only if TP ≥+7.5% was taken. TP rungs above +2.5% reset after deep pullback.
  */
 export const WAVE_B_V1_TP_GRID = {
   gridStepPnl: 0.025,
@@ -34,7 +35,14 @@ export function waveBSellFractionForStep(kOneBased: number): number {
   return 0;
 }
 
-export const WAVE_B_ARM_MIN_PNL_FRAC = 0.075;
+/** Min TP rung taken to allow breakeven full exit (vs staged avg only below this). */
+export const WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC = 0.075;
+/** Defensive trail arms when peak or highest TP rung ≥ this (+10%). */
+export const WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC = 0.1;
+/** After TP ≥+7.5%, pullback to ≤+2.5% re-opens TP rungs above +2.5% on the next rally. */
+export const WAVE_B_TP_IMPULSE_RESET_PNL_FRAC = 0.025;
+/** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +10%. */
+export const WAVE_B_ARM_MIN_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
 /** Wave B trail: if remainder notional is below this, sell 100% in one partial (no 30% dust). */
 export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
@@ -64,8 +72,8 @@ export function clampLiveTrackerMtmForExit(ot: OpenTrade, curMetricUsd: number):
 export function waveBRecoverPhantomPeakIfNeeded(ot: OpenTrade, pnlFrac: number): boolean {
   if (!isWaveBExitPolicy(ot) || !ot.trailingArmed) return false;
   const anchor = ot.liveWaveTrailAnchorPnlFrac ?? 0;
-  if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC + 0.02) return false;
-  if (pnlFrac + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) return false;
+  if (anchor + LADDER_PNL_EPS < WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC + 0.02) return false;
+  if (pnlFrac + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) return false;
   if ((ot.partialSells ?? []).some((p) => p.reason === 'TRAIL_STEP')) return false;
   ot.liveWavePeakPnlFrac = Math.max(0, pnlFrac);
   ot.liveWaveTrailAnchorPnlFrac = Math.max(0, pnlFrac);
@@ -74,15 +82,76 @@ export function waveBRecoverPhantomPeakIfNeeded(ot: OpenTrade, pnlFrac: number):
   return true;
 }
 
+/** Highest TP grid threshold (PnL frac) already marked on this open. */
+export function waveBHighestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
+  let max = 0;
+  if (stepPnl > 0) {
+    for (const idx of ot.ladderUsedIndices) {
+      const t = (idx + 1) * stepPnl;
+      if (t > max) max = t;
+    }
+  }
+  for (const u of ot.ladderUsedLevels) {
+    if (Number.isFinite(u) && u > max) max = u;
+  }
+  const peak = ot.liveWavePeakPnlFrac ?? 0;
+  if (peak > max) max = peak;
+  return max;
+}
+
+/** Defensive trail: peak or TP ladder reached ≥ +10%. */
+export function waveBDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot)) return false;
+  return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC;
+}
+
+/** Full exit at avg breakeven allowed only after TP rung ≥ +7.5%. */
+export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot)) return false;
+  return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
+}
+
+/**
+ * Deep pullback after ≥+7.5% TP: unmark grid rungs above +2.5% so +5% / +7.5% / +10% can fire again on rally.
+ * @returns true if any marks were cleared this tick
+ */
+export function waveBMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;
+  const highest = waveBHighestTpGridThresholdTaken(ot, stepPnl);
+  if (highest + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC) return false;
+  if (pnlFrac > WAVE_B_TP_IMPULSE_RESET_PNL_FRAC + LADDER_PNL_EPS) return false;
+  const floor = WAVE_B_TP_IMPULSE_RESET_PNL_FRAC;
+  let changed = false;
+  for (const u of [...ot.ladderUsedLevels]) {
+    if (u > floor + LADDER_PNL_EPS) {
+      ot.ladderUsedLevels.delete(u);
+      changed = true;
+    }
+  }
+  for (const idx of [...ot.ladderUsedIndices]) {
+    const t = (idx + 1) * stepPnl;
+    if (t > floor + LADDER_PNL_EPS) {
+      ot.ladderUsedIndices.delete(idx);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /** First untaken trail rung at or below current PnL (one partial per tracker tick). */
 export function waveBNextTrailLevelToFire(
   anchorPnlFrac: number,
   stepPnl: number,
   pnlFrac: number,
   taken: readonly number[],
+  defensiveMode = false,
 ): number | null {
   if (!(stepPnl > 0) || !Number.isFinite(anchorPnlFrac)) return null;
-  if (pnlFrac + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return null;
+  if (
+    !defensiveMode &&
+    pnlFrac + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC
+  )
+    return null;
   for (const level of waveBTrailLevelsFromAnchor(anchorPnlFrac, stepPnl)) {
     if (pnlFrac > level + LADDER_PNL_EPS) return null;
     if (taken.some((x) => Math.abs(x - waveBTrailLevelKey(level)) <= LADDER_PNL_EPS)) continue;
@@ -197,7 +266,7 @@ export function migrateLegacyOpenToWaveB(ot: OpenTrade, pnlFrac?: number): boole
   ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, peak);
   ot.liveWaveTrailLevelsTaken = ot.liveWaveTrailLevelsTaken ?? [];
 
-  if (peak + LADDER_PNL_EPS >= WAVE_B_ARM_MIN_PNL_FRAC) {
+  if (peak + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) {
     ot.trailingArmed = true;
   }
   console.log(

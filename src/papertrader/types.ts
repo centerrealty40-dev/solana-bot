@@ -7,6 +7,8 @@ export type ExitReason =
   | 'TIMEOUT'
   | 'NO_DATA'
   | 'KILLSTOP'
+  /** Wave B: full exit at ≤0% avg after TP ≥+7.5% (no staged add path). */
+  | 'BREAKEVEN_EXIT'
   | 'LIQ_DRAIN'
   /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
   | 'RECONCILE_ORPHAN'

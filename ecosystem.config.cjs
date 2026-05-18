@@ -312,7 +312,7 @@ module.exports = {
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '150',
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '23',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '25',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -415,7 +415,7 @@ module.exports = {
          * с временной просадкой, которые после восстанавливались к ступеням TP; kill ≥ −20% даёт
          * страховку от чёрного лебедя без подрезания нормальных просадок (см. retro-grid в README).
          */
-        PAPER_DCA_KILLSTOP: '-0.20',
+        PAPER_DCA_KILLSTOP: '-0.25',
         /**
          * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
          *   ступень 1 (+5%)  → 10% остатка

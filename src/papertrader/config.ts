@@ -89,7 +89,7 @@ const ConfigSchema = z.object({
   liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
-  liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(24),
+  liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
   liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
   liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),

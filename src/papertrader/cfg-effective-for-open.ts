@@ -7,7 +7,7 @@ import type { PaperTraderConfig } from './config.js';
 import type { OpenTrade } from './types.js';
 import {
   isWaveBExitPolicy,
-  WAVE_B_ARM_MIN_PNL_FRAC,
+  WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_V1_TP_GRID,
 } from './executor/exit-policy-wave-b.js';
 
@@ -16,7 +16,7 @@ export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): Pape
     return {
       ...cfg,
       trailMode: 'stepped_grid',
-      trailTriggerX: 1 + WAVE_B_ARM_MIN_PNL_FRAC,
+      trailTriggerX: 1 + WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
       tpGridStepPnl: WAVE_B_V1_TP_GRID.gridStepPnl,
       tpGridSellFractionByStep: [...WAVE_B_V1_TP_GRID.gridSellFractionByStep],
       tpGridFirstRungRetraceMinPnlPct: WAVE_B_V1_TP_GRID.gridFirstRungRetraceMinPnlPct,
