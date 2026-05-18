@@ -12,6 +12,9 @@ import {
   WAVE_B_V1_TP_GRID,
   LEGACY_LIVE_OSCAR_TP_GRID,
   WAVE_B_MTM_MAX_TICK_JUMP_FRAC,
+  WAVE_B_TRAIL_FLUSH_REMAIN_USD,
+  waveBRemainderValueNetUsd,
+  waveBTrailSellFractionForRemainder,
 } from '../src/papertrader/executor/exit-policy-wave-b.js';
 import { tpGridEffective } from '../src/papertrader/executor/tp-grid-effective.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
@@ -109,6 +112,24 @@ describe('exit-policy-wave-b', () => {
     expect(waveBRecoverPhantomPeakIfNeeded(ot, -0.02)).toBe(true);
     expect(ot.trailingArmed).toBe(false);
     expect(ot.liveWaveTrailLevelsTaken).toEqual([]);
+  });
+
+  it('waveBTrailSellFractionForRemainder flushes full remainder below $100', () => {
+    const c = cfg();
+    expect(waveBTrailSellFractionForRemainder(99.99, c)).toBe(1);
+    expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.3);
+    expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.3);
+    expect(WAVE_B_TRAIL_FLUSH_REMAIN_USD).toBe(100);
+  });
+
+  it('waveBRemainderValueNetUsd scales with remainingFraction and price', () => {
+    const ot = {
+      totalInvestedUsd: 1000,
+      remainingFraction: 0.08,
+      avgEntry: 1,
+    } as OpenTrade;
+    expect(waveBRemainderValueNetUsd(ot, 1.2)).toBeCloseTo(96, 1);
+    expect(waveBTrailSellFractionForRemainder(waveBRemainderValueNetUsd(ot, 1.2), cfg())).toBe(1);
   });
 
   it('waveBNextTrailLevelToFire returns one level and skips underwater PnL', () => {

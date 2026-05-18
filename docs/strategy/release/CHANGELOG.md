@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.201] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.201`.
+
+### Live Oscar Wave B — trail flush остатка &lt; $100
+
+- При срабатывании `TRAIL_STEP`, если остаток позиции **&lt; $100** (modeled net), продаётся **100%** хвоста одним partial, а не 30%.
+- Константа `WAVE_B_TRAIL_FLUSH_REMAIN_USD`; лог `TRAIL_FLUSH_remain<100$`.
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.200] — 2026-05-17
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.200`.

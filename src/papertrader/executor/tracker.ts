@@ -45,8 +45,10 @@ import {
   clampLiveTrackerMtmForExit,
   waveBRecoverPhantomPeakIfNeeded,
   waveBNextTrailLevelToFire,
-  waveBTrailSellFraction,
+  waveBTrailSellFractionForRemainder,
+  waveBRemainderValueNetUsd,
   WAVE_B_ARM_MIN_PNL_FRAC,
+  WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
@@ -845,13 +847,15 @@ async function tryWaveBTrailPartialSells(args: {
   if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return;
   const level = waveBNextTrailLevelToFire(anchor, tgEff.stepPnl, pnlFrac, ot.liveWaveTrailLevelsTaken ?? []);
   if (level == null) return;
-  const trailFrac = waveBTrailSellFraction(cfg);
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBTrailSellFractionForRemainder(remainingValueNet, cfg);
+  const trailFlush = sellFraction >= 1 - 1e-12;
   const r = await tryExecuteTpPartialSell({
     mint,
     ot,
     cfg,
     curMetric,
-    sellFraction: trailFrac,
+    sellFraction,
     ladderStepIndex: 0,
     ladderRungsTotal: 0,
     ladderPnlPct: level,
@@ -862,9 +866,13 @@ async function tryWaveBTrailPartialSells(args: {
     liveOscarCfg,
     stats,
     markLadder: () => waveBMarkTrailLevelTaken(ot, level),
-    logLabelPct: `TRAILstep@${(level * 100).toFixed(1)}%`,
+    logLabelPct: trailFlush
+      ? `TRAIL_FLUSH_remain<${WAVE_B_TRAIL_FLUSH_REMAIN_USD}$`
+      : `TRAILstep@${(level * 100).toFixed(1)}%`,
     partialReason: 'TRAIL_STEP',
-    timelineLabelRu: `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая (+${(level * 100).toFixed(1)}% PnL) · ${(trailFrac * 100).toFixed(0)}% остатка`,
+    timelineLabelRu: trailFlush
+      ? `Live Oscar wave B · trail: остаток < $${WAVE_B_TRAIL_FLUSH_REMAIN_USD} — полное закрытие хвоста (+${(level * 100).toFixed(1)}% PnL)`
+      : `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая (+${(level * 100).toFixed(1)}% PnL) · ${(sellFraction * 100).toFixed(0)}% остатка`,
   });
   void r;
 }
