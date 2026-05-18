@@ -22,8 +22,16 @@ const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
  */
 const LIVE_OSCAR_FULL_NOTIONAL_USD = '1300';
 
-module.exports = {
-  apps: [
+/**
+ * Paper-only PM2 (`paper-oscar-risky`, `paper-oscar-v21`, `paper-oscar-v22`).
+ * Prod VPS: **off** — только live-oscar (+ инфра/дашборд). Конфиги в файле сохранены.
+ * Включить снова: `PM2_PAPER_OSCAR_APPS_ENABLED=1` перед `pm2 reload ecosystem.config.cjs`.
+ */
+const PM2_PAPER_OSCAR_APP_NAMES = new Set(['paper-oscar-risky', 'paper-oscar-v21', 'paper-oscar-v22']);
+const PM2_PAPER_OSCAR_APPS_ENABLED =
+  process.env.PM2_PAPER_OSCAR_APPS_ENABLED === '1' || process.env.PM2_PAPER_OSCAR_APPS_ENABLED === 'true';
+
+const PM2_APPS = [
     {
       name: 'live-oscar-dashboard',
       cwd: root,
@@ -707,7 +715,8 @@ module.exports = {
       },
     },
     /**
-     * Живой Oscar Risky — **снят с PM2** (не стартует при `pm2 reload ecosystem.config.cjs`). На хосте: `pm2 delete live-oscar-risky` если процесс ещё есть.
+     * Paper Oscar Risky — **не в PM2**, пока `PM2_PAPER_OSCAR_APPS_ENABLED` не `1` (см. конец файла).
+     * Бумага: отдельный JSONL; **live-oscar** не трогаем.
      * Paper Oscar Risky — бумага: тот же paper-слой, что у **live-oscar** (все `PAPER_*` ниже скопированы с процесса `live-oscar` в этом файле).
      * Затем смягчены только пост-gate пороги для эксперимента: vol 5m $3k, vol 1h guard $20k, мин. возраст пула 6 ч, holders ≥ 1k.
      * Живой Oscar в этом файле не менять.
@@ -883,7 +892,7 @@ module.exports = {
       },
     },
     /**
-     * Paper Oscar IDEALIZED V2.1 — те же гейты входа/данные, что live-oscar paper-слой; выходы по §1–§7 `IDEALIZED_OSCAR_STACK_SPEC_V2.md` v2.1.
+     * Paper Oscar IDEALIZED V2.1 — **не в PM2** без `PM2_PAPER_OSCAR_APPS_ENABLED=1`.
      * Полный паритет `PAPER_*` с процессом **live-oscar** задаётся общим `.env` на хосте; здесь — отличия id/журнал/kill B/кэш priority fee + scale-in для второй ноги.
      */
     {
@@ -1053,7 +1062,7 @@ module.exports = {
       },
     },
     /**
-     * Paper Oscar V2.2 — тот же движок выходов, что **paper-oscar-v21** (IDEALIZED V2.1); более рискованный вход (ниже пороги ликвидности / холдеров / объёмов).
+     * Paper Oscar V2.2 — **не в PM2** без `PM2_PAPER_OSCAR_APPS_ENABLED=1`.
      */
     {
       name: 'paper-oscar-v22',
@@ -1293,5 +1302,10 @@ module.exports = {
         SPIKE_ALERT_TELEGRAM_CHAT_ID: '-1003633176769',
       },
     },
-  ],
+];
+
+module.exports = {
+  apps: PM2_APPS.filter(
+    (app) => PM2_PAPER_OSCAR_APPS_ENABLED || !PM2_PAPER_OSCAR_APP_NAMES.has(app.name),
+  ),
 };

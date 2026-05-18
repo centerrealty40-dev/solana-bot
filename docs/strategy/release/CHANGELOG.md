@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.211] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.211`.
+
+### PM2 prod — только live-oscar (бумажные процессы выключены)
+
+- `paper-oscar-risky`, `paper-oscar-v21`, `paper-oscar-v22` **не попадают** в `pm2 reload`, пока не задан `PM2_PAPER_OSCAR_APPS_ENABLED=1`.
+- Конфиги процессов **сохранены** в `ecosystem.config.cjs`; **live-oscar**, дашборд, коллекторы — без изменений.
+
+**Откат:** `PM2_PAPER_OSCAR_APPS_ENABLED=1` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.210] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.210`.
