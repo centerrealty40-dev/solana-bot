@@ -579,7 +579,7 @@ async function tryExecuteTpPartialSell(args: {
   }
   const remainUsdForFlush = waveBRemainderValueNetUsd(ot, marketSell);
   let sellFraction = Math.min(1, rawSellFrac);
-  if (isWaveBExitPolicy(ot)) {
+  if (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot)) {
     sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg);
   }
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */

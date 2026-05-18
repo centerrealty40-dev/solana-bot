@@ -182,15 +182,21 @@ export function waveBRemainderValueNetUsd(ot: OpenTrade, marketPriceUsd: number)
   return ot.totalInvestedUsd * ot.remainingFraction * (marketPriceUsd / entryPx);
 }
 
-/** TP/trail: flush full remainder when notional is below `WAVE_B_TRAIL_FLUSH_REMAIN_USD`. */
+/**
+ * TP/trail: полное закрытие, если остаток ≤ порога или после частичной продажи осталось бы < порога
+ * (иначе — серия мелких TP по 5–10% при хвосте ~$110–130).
+ */
 export function waveBAdjustSellFractionForRemainder(
   remainingValueNetUsd: number,
   requestedFraction: number,
   _cfg?: PaperTraderConfig,
 ): number {
   if (!(requestedFraction > 1e-12)) return 0;
-  if (remainingValueNetUsd + 1e-9 < WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
-  return Math.min(1, requestedFraction);
+  if (remainingValueNetUsd <= WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
+  const frac = Math.min(1, requestedFraction);
+  const afterRemainUsd = remainingValueNetUsd * (1 - frac);
+  if (afterRemainUsd < WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
+  return frac;
 }
 
 /** Trail sell fraction; full exit when remainder notional is below flush threshold. */

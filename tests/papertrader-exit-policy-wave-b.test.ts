@@ -130,10 +130,10 @@ describe('exit-policy-wave-b', () => {
     expect(waveBSellFractionForStep(20)).toBe(0.1);
   });
 
-  it('waveBTrailSellFractionForRemainder flushes full remainder below $100', () => {
+  it('waveBTrailSellFractionForRemainder flushes full remainder at or below $100', () => {
     const c = cfg();
     expect(waveBTrailSellFractionForRemainder(99.99, c)).toBe(1);
-    expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.2);
+    expect(waveBTrailSellFractionForRemainder(100, c)).toBe(1);
     expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.2);
     expect(WAVE_B_TRAIL_FLUSH_REMAIN_USD).toBe(100);
   });
@@ -145,6 +145,9 @@ describe('exit-policy-wave-b', () => {
     expect(waveBAdjustSellFractionForRemainder(150, 0.05, c)).toBeCloseTo(0.05);
     expect(waveBAdjustSellFractionForRemainder(150, 0.2, c)).toBeCloseTo(0.2);
     expect(waveBAdjustSellFractionForRemainder(99, 0, c)).toBe(0);
+    /** Buttcoin-style tail: ~$111 × 10% would leave <$100 — sell 100% now. */
+    expect(waveBAdjustSellFractionForRemainder(111, 0.1, c)).toBe(1);
+    expect(waveBAdjustSellFractionForRemainder(123, 0.1, c)).toBeCloseTo(0.1);
   });
 
   it('waveBRemainderValueNetUsd scales with remainingFraction and price', () => {
