@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.203] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.203`.
+
+### Live Oscar Policy A+ — порог отскока от 30m low 1% → 2.5%
+
+- `PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT=2.5` в `ecosystem.config.cjs` (`live-oscar`).
+
+**Откат:** `1.0` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.202] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.202`.

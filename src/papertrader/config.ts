@@ -289,7 +289,7 @@ const ConfigSchema = z.object({
    */
   policyAPlusEnabled: z.boolean().default(false),
   policyAPlusBounceFromMin30mEnabled: z.boolean().default(true),
-  policyAPlusBounceFromMin30mMaxPct: z.coerce.number().min(0).max(50).default(1),
+  policyAPlusBounceFromMin30mMaxPct: z.coerce.number().min(0).max(50).default(2.5),
   policyAPlusPriceChange1hEnabled: z.boolean().default(true),
   policyAPlusPriceChange1hMinPct: z.coerce.number().default(-20),
   policyAPlusVol1hEnabled: z.boolean().default(true),

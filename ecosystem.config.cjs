@@ -370,7 +370,7 @@ module.exports = {
          * с 56% до 70% и поднимает Σ PnL с −$70 до **+$658** (см. CHANGELOG 1.11.167).
          *
          *   1. `BOUNCE_FROM_MIN_30M_MAX_PCT` — не входить если цена уже отскочила
-         *      более чем на 1% от 30-минутного минимума (мы должны быть «на дне»).
+         *      более чем на 2.5% от 30-минутного минимума (мы должны быть «на дне»).
          *   2. `PRICE_CHANGE_1H_MIN_PCT` — не входить если за последний час падение
          *      больше чем 20% (вход в свободное падение).
          *   3. `VOL_1H_MAX_USD` — не входить если 1ч-объём > $1M (хайп / pump-and-dump).
@@ -383,7 +383,7 @@ module.exports = {
          */
         PAPER_POLICY_A_PLUS_ENABLED: '1',
         PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED: '1',
-        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT: '1.0',
+        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT: '2.5',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_ENABLED: '1',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_MIN_PCT: '-20',
         PAPER_POLICY_A_PLUS_VOL_1H_ENABLED: '1',

@@ -12,7 +12,7 @@ function cfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     policyAPlusEnabled: true,
     policyAPlusBounceFromMin30mEnabled: true,
-    policyAPlusBounceFromMin30mMaxPct: 1.0,
+    policyAPlusBounceFromMin30mMaxPct: 2.5,
     policyAPlusPriceChange1hEnabled: true,
     policyAPlusPriceChange1hMinPct: -20,
     policyAPlusVol1hEnabled: true,
@@ -34,7 +34,7 @@ function row(overrides: Partial<SnapshotCandidateRow> = {}): SnapshotCandidateRo
   } as unknown as SnapshotCandidateRow;
 }
 
-describe('Policy A+ rule 1: bounce_from_min_30m_pct > 1%', () => {
+describe('Policy A+ rule 1: bounce_from_min_30m_pct > 2.5%', () => {
   it('blocks when bounce > threshold', () => {
     const ctx = {
       min30m: 0.95,
@@ -47,7 +47,7 @@ describe('Policy A+ rule 1: bounce_from_min_30m_pct > 1%', () => {
       pgSnapsCount: 10,
       coverageOk: true,
     };
-    /** current 1.0, min 0.95 → bounce = 5.26%, > 1% → block */
+    /** current 1.0, min 0.95 → bounce = 5.26%, > 2.5% → block */
     const res = evaluatePolicyAPlus(cfg(), row(), ctx);
     expect(res.blocked).toBe(true);
     expect(res.blockedReasons[0]).toContain('bounce_from_min_30m');
@@ -65,9 +65,26 @@ describe('Policy A+ rule 1: bounce_from_min_30m_pct > 1%', () => {
       pgSnapsCount: 10,
       coverageOk: true,
     };
-    /** bounce = 0.1% < 1% → pass */
+    /** bounce = 0.1% < 2.5% → pass */
     const res = evaluatePolicyAPlus(cfg(), row(), ctx);
     expect(res.blocked).toBe(false);
+  });
+
+  it('passes when bounce is between 1% and 2.5%', () => {
+    const ctx = {
+      min30m: 0.98,
+      price30mAgo: 1.0,
+      price1hAgo: 1.0,
+      bounceFromMin30mPct: null,
+      priceChange30mPct: -5,
+      priceChange1hPct: -5,
+      vol1hUsd: null,
+      pgSnapsCount: 10,
+      coverageOk: true,
+    };
+    /** bounce ≈ 2.04% — old 1% threshold blocked; 2.5% passes rule 1 */
+    const res = evaluatePolicyAPlus(cfg(), row({ price_usd: 1.0 }), ctx);
+    expect(res.blockedReasons.some((r) => r.includes('bounce_from_min_30m'))).toBe(false);
   });
 });
 

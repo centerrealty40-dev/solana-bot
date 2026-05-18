@@ -7,7 +7,7 @@
  * win-rate 56% → 70% while keeping 46/119 of the trades (39% kept rate).
  *
  * Rules (block entry when):
- *  1. `bounce_from_min_30m_pct` > `cfg.policyAPlusBounceFromMin30mMaxPct`
+ *  1. `bounce_from_min_30m_pct` > `cfg.policyAPlusBounceFromMin30mMaxPct` (prod 2.5%)
  *     — coin already bounced more than X% off its 30-min low (we are not on the dip).
  *  2. `price_change_1h_pct` < `cfg.policyAPlusPriceChange1hMinPct`
  *     — coin in deep 1h freefall (entering a knife).
