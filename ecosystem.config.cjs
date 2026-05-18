@@ -558,8 +558,12 @@ module.exports = {
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
-        /** Разрешённые mint для новых входов; иначе skip + Telegram (см. `LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY`). */
-        LIVE_MINT_WHITELIST_ENABLED: '1',
+        /** `0` — входы без whitelist; убыточные закрытия → локальный permanent denylist + TG. */
+        LIVE_MINT_WHITELIST_ENABLED: '0',
+        /** `0` — не слать ADVICE `live_oscar_staged_signal`. */
+        LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED: '0',
+        /** `0` — не слать ADVICE `live_oscar_local_high_veto`. */
+        LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',

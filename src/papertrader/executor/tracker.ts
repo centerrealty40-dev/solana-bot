@@ -60,7 +60,10 @@ import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
-import { onLiveOscarFullCloseUpdateWhitelistLossStreak } from '../../live/mint-whitelist.js';
+import {
+  onLiveOscarFullCloseNegativeTradeDenylist,
+  onLiveOscarFullCloseUpdateWhitelistLossStreak,
+} from '../../live/mint-whitelist.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import {
   liveStagedEntrySignalTimeWindowOpen,
@@ -911,6 +914,13 @@ function hookLiveWhitelistAfterFullClose(
   netPnlUsd: number,
 ): void {
   onLiveOscarFullCloseUpdateWhitelistLossStreak({
+    liveOscarCfg,
+    strategyId: cfg.strategyId,
+    mint,
+    symbol,
+    netPnlUsd,
+  });
+  onLiveOscarFullCloseNegativeTradeDenylist({
     liveOscarCfg,
     strategyId: cfg.strategyId,
     mint,

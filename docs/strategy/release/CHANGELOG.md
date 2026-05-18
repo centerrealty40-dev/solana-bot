@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.209] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.209`.
+
+### Live Oscar — вход без whitelist, denylist после убытка, тише Telegram
+
+- **`LIVE_MINT_WHITELIST_ENABLED=0`:** новые входы не требуют whitelist; **permanent denylist** и **blacklist** по-прежнему блокируют.
+- После **любого** убыточного полного закрытия live → mint в **локальный permanent denylist** + Telegram `live_negative_trade_deny` (ALERT-канал whitelist-бота).
+- Выключены ADVICE: **`live_oscar_staged_signal`**, **`live_oscar_local_high_veto`**.
+
+**Откат:** `WHITELIST_ENABLED=1`; убрать env `STAGED_ENTRY`/`LOCAL_HIGH` или поставить `=1`; revert denylist hook.
+
+---
+
 ## [1.11.208] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.208`.

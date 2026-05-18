@@ -120,6 +120,8 @@ export function appendMintToPermanentDenylistLocal(
     | 'livePermanentDenylistSeedPath'
   >,
   mint: string,
+  /** Short reason for the `# auto:` comment (e.g. `negative_trade`, `whitelist_consec_loss`). */
+  reason = 'excluded from whitelist',
 ): boolean {
   if (cfg.livePermanentDenylistDisabled) return false;
   const key = mint.trim();
@@ -133,7 +135,7 @@ export function appendMintToPermanentDenylistLocal(
   if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
 
   const stamp = new Date().toISOString();
-  const line = `${key}  # auto: excluded from whitelist ${stamp}\n`;
+  const line = `${key}  # auto: ${reason} ${stamp}\n`;
   const prefix = fs.existsSync(abs) && fs.statSync(abs).size > 0 ? '\n' : '';
   fs.appendFileSync(abs, `${prefix}${line}`, 'utf8');
   invalidateLivePermanentDenylistCache();

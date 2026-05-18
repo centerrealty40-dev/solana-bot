@@ -266,6 +266,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     marketCapUsd: number | null;
     holderCount: number | null;
   }): void {
+    if (process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED === '0') return;
     const token =
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
