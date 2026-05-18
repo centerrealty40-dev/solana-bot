@@ -295,6 +295,8 @@ const ConfigSchema = z.object({
   policyAPlusVol1hEnabled: z.boolean().default(true),
   policyAPlusVol1hMaxUsd: z.coerce.number().nonnegative().default(1_000_000),
   policyAPlusPriceChange30mEnabled: z.boolean().default(true),
+  /** Lookback for short-window knife rule (was 30m; prod 15m via `PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN`). */
+  policyAPlusPriceChangeWindowMin: z.coerce.number().int().min(5).max(120).default(15),
   policyAPlusPriceChange30mMinPct: z.coerce.number().default(-10),
 
   // ---- whale analysis ----
@@ -749,6 +751,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED,
       true,
     ),
+    policyAPlusPriceChangeWindowMin: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN,
     policyAPlusPriceChange30mMinPct: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),

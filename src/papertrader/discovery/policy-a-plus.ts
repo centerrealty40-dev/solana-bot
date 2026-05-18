@@ -13,8 +13,8 @@
  *     — coin in deep 1h freefall (entering a knife).
  *  3. `vol_1h_usd` > `cfg.policyAPlusVol1hMaxUsd`
  *     — abnormally hot coin (likely pump-and-dump tail).
- *  4. `price_change_30m_pct` < `cfg.policyAPlusPriceChange30mMinPct`
- *     — coin in fresh 30m freefall (no time to stabilise).
+ *  4. `price_change_*m_pct` < `cfg.policyAPlusPriceChange30mMinPct` over `policyAPlusPriceChangeWindowMin`
+ *     — coin in fresh short-window freefall (prod 15m, was 30m).
  *
  * Each metric also flows into `live_discovery_eval.policyAPlusFeatures` for later
  * retro analysis. Only PG snapshots in the same DEX table as the candidate are used;
@@ -37,7 +37,7 @@ export interface PolicyAPlusFeatures {
   price1hAgo: number | null;
   /** % отскока от min30m: (current - min) / min × 100. */
   bounceFromMin30mPct: number | null;
-  /** % изменения цены за 30 мин: (current - price30mAgo) / price30mAgo × 100. */
+  /** % изменения цены за `policyAPlusPriceChangeWindowMin` (PG anchor in price30mAgo). */
   priceChange30mPct: number | null;
   /** % изменения цены за 1 час: (current - price1hAgo) / price1hAgo × 100. */
   priceChange1hPct: number | null;
@@ -71,6 +71,12 @@ function sqlQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/** PG anchor window for short knife rule: avg price in [now−(W+2)m, now−(W−2)m]. */
+function policyAPlusShortWindowBounds(windowMin: number): { window: number; agoLoMin: number; agoHiMin: number } {
+  const window = Math.max(5, Math.min(120, Math.round(windowMin)));
+  return { window, agoLoMin: window + 2, agoHiMin: Math.max(1, window - 2) };
+}
+
 /**
  * Batch-fetch policy-A+ метрик для всех кандидатов (один SQL на DEX-таблицу).
  * Окно сканирования — 65 мин (немного шире 1ч чтобы поймать 1h proxy).
@@ -96,18 +102,18 @@ export async function fetchPolicyAPlusContextMap(
     const uniq = [...new Set(mintsRaw)];
     if (uniq.length === 0) continue;
     const mintsSql = uniq.map(sqlQuote).join(',');
+    const { agoLoMin, agoHiMin } = policyAPlusShortWindowBounds(cfg.policyAPlusPriceChangeWindowMin);
     /**
      * Используем `MIN`/`AVG` с фильтрами по `ts` интервалам — это даёт честный
-     * batch-aggregate без window-function (быстрее на больших таблицах). Цена
-     * "30 мин назад" приближается средним по узкому окну [-32m, -28m]; 1ч —
-     * аналогично [-62m, -58m]. Если в окне <2 точек — функция вернёт NULL,
-     * features.coverageOk будет false и правила не сработают (safe-skip).
+     * batch-aggregate без window-function (быстрее на больших таблицах). Short-knife
+     * anchor: avg в [now−(W+2)m, now−(W−2)m] (prod W=15); 1ч — [-62m, -58m].
+     * Если в окне <2 точек — функция вернёт NULL, coverageOk=false (safe-skip).
      */
     const r = await db.execute(dsql.raw(`
       SELECT
         base_mint AS mint,
         MIN(NULLIF(COALESCE(price_usd, 0), 0)) FILTER (WHERE ts >= now() - interval '30 minutes' AND COALESCE(price_usd, 0) > 0)::float AS min_30m,
-        AVG(NULLIF(COALESCE(price_usd, 0), 0)) FILTER (WHERE ts >= now() - interval '32 minutes' AND ts <= now() - interval '28 minutes' AND COALESCE(price_usd, 0) > 0)::float AS price_30m_ago,
+        AVG(NULLIF(COALESCE(price_usd, 0), 0)) FILTER (WHERE ts >= now() - interval '${agoLoMin} minutes' AND ts <= now() - interval '${agoHiMin} minutes' AND COALESCE(price_usd, 0) > 0)::float AS price_30m_ago,
         AVG(NULLIF(COALESCE(price_usd, 0), 0)) FILTER (WHERE ts >= now() - interval '62 minutes' AND ts <= now() - interval '58 minutes' AND COALESCE(price_usd, 0) > 0)::float AS price_1h_ago,
         COUNT(*) FILTER (WHERE ts >= now() - interval '65 minutes')::int AS snaps_count
       FROM ${table}
@@ -202,8 +208,9 @@ export function evaluatePolicyAPlus(
     features.priceChange30mPct != null &&
     features.priceChange30mPct < cfg.policyAPlusPriceChange30mMinPct
   ) {
+    const w = policyAPlusShortWindowBounds(cfg.policyAPlusPriceChangeWindowMin).window;
     blockedReasons.push(
-      `policy_a_plus:price_change_30m=${features.priceChange30mPct.toFixed(2)}%<${cfg.policyAPlusPriceChange30mMinPct}%`,
+      `policy_a_plus:price_change_${w}m=${features.priceChange30mPct.toFixed(2)}%<${cfg.policyAPlusPriceChange30mMinPct}%`,
     );
   }
 

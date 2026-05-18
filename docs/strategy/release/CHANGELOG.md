@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.204] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.204`.
+
+### Live Oscar Policy A+ — окно «ножа» 30m → 15m
+
+- `PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN=15`: правило свежего пролива сравнивает цену с якорем **~15 мин назад** (было 30). Порог −10% без изменений.
+- В `live_discovery_eval` причина: `policy_a_plus:price_change_15m=…`.
+
+**Откат:** `30` или revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.203] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.203`.

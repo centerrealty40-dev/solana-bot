@@ -513,6 +513,7 @@ export interface SnapshotFeatures {
     thresholds: {
       bounceFromMin30mMaxPct: number;
       priceChange1hMinPct: number;
+      priceChangeWindowMin: number;
       priceChange30mMinPct: number;
       vol1hMaxUsd: number;
     };

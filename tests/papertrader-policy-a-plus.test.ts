@@ -18,6 +18,7 @@ function cfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     policyAPlusVol1hEnabled: true,
     policyAPlusVol1hMaxUsd: 1_000_000,
     policyAPlusPriceChange30mEnabled: true,
+    policyAPlusPriceChangeWindowMin: 15,
     policyAPlusPriceChange30mMinPct: -10,
     ...overrides,
   } as unknown as PaperTraderConfig;
@@ -143,8 +144,8 @@ describe('Policy A+ rule 3: vol_1h_usd > $1M', () => {
   });
 });
 
-describe('Policy A+ rule 4: price_change_30m_pct < −10%', () => {
-  it('blocks when fresh 30m freefall > 10%', () => {
+describe('Policy A+ rule 4: short-window price change < −10%', () => {
+  it('blocks when fresh freefall > 10% (15m window)', () => {
     const ctx = {
       min30m: 1.0,
       price30mAgo: 1.2,
@@ -159,7 +160,7 @@ describe('Policy A+ rule 4: price_change_30m_pct < −10%', () => {
     /** 1.0 vs 1.2 → −16.6% < −10% → block */
     const res = evaluatePolicyAPlus(cfg(), row(), ctx);
     expect(res.blocked).toBe(true);
-    expect(res.blockedReasons.some((r) => r.includes('price_change_30m'))).toBe(true);
+    expect(res.blockedReasons.some((r) => r.includes('price_change_15m'))).toBe(true);
   });
 });
 

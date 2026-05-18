@@ -479,6 +479,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         thresholds: {
           bounceFromMin30mMaxPct: cfg.policyAPlusBounceFromMin30mMaxPct,
           priceChange1hMinPct: cfg.policyAPlusPriceChange1hMinPct,
+          priceChangeWindowMin: cfg.policyAPlusPriceChangeWindowMin,
           priceChange30mMinPct: cfg.policyAPlusPriceChange30mMinPct,
           vol1hMaxUsd: cfg.policyAPlusVol1hMaxUsd,
         },

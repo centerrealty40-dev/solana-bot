@@ -374,8 +374,8 @@ module.exports = {
          *   2. `PRICE_CHANGE_1H_MIN_PCT` — не входить если за последний час падение
          *      больше чем 20% (вход в свободное падение).
          *   3. `VOL_1H_MAX_USD` — не входить если 1ч-объём > $1M (хайп / pump-and-dump).
-         *   4. `PRICE_CHANGE_30M_MIN_PCT` — не входить если за последние 30 мин падение
-         *      больше чем 10% (свежий пролив, не успели стабилизироваться).
+         *   4. `PRICE_CHANGE_30M_MIN_PCT` + `PRICE_CHANGE_WINDOW_MIN` — не входить если за
+         *      последние 15 мин (было 30) падение больше чем 10%.
          *
          * Каждое правило независимо отключается флагом `*_ENABLED=0`. Метрики
          * вычисляются из `*_pair_snapshots` PG: цена now, 30 мин и 1 ч назад,
@@ -389,6 +389,7 @@ module.exports = {
         PAPER_POLICY_A_PLUS_VOL_1H_ENABLED: '1',
         PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD: '1000000',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED: '1',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN: '15',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-10',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
