@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.213] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.213`.
+
+### Канал pullback/retrace (−1003504887486) — мин. капа $1M
+
+- `PULLBACK_ALERT_MIN_MARKET_CAP_USD` и `RETRACE_ALERT_MIN_MCAP_USD`: дефолт **1_000_000** (было $2M).
+- Tier пролива от пика: порог ref mcap **$1M** (было $1.5M).
+
+**Откат:** env `*_MIN_*_USD=2000000` + restart pullback/retrace entry.
+
+---
+
 ## [1.11.212] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.212`.

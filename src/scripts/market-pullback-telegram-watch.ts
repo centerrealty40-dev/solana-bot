@@ -69,7 +69,7 @@ const HOLDER_NULL_SOFT = envBool('PULLBACK_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('PULLBACK_ALERT_MIN_AGE_HOURS', 8));
 const MIN_LIQ_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_5M_USD', 0));
-const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 2_000_000));
+const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 1_000_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('PULLBACK_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('PULLBACK_ALERT_DRY_RUN', false);
 
@@ -514,9 +514,9 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   return Math.max(fromBar, fdv);
 }
 
-/** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1.5M, не слать. */
+/** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1M, не слать. */
 function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
-  if (!(mcapUsd >= 1_500_000)) return null;
+  if (!(mcapUsd >= 1_000_000)) return null;
   if (mcapUsd < 4_000_000) return 17;
   if (mcapUsd < 8_000_000) return 13;
   return 9;

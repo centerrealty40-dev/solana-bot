@@ -45,7 +45,7 @@ function envBool(name: string, fallback: boolean): boolean {
 const SCAN_MINUTES = Math.max(30, Math.min(240, Math.floor(envNum('RETRACE_ALERT_SCAN_MINUTES', 120))));
 const LATEST_FLOOR_SEC = Math.max(600, Math.min(3600, SCAN_MINUTES * 60 + 300));
 
-const MIN_MCAP_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_MCAP_USD', 2_000_000));
+const MIN_MCAP_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_MCAP_USD', 1_000_000));
 const MIN_PUMP_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_PUMP_PCT', 6)));
 const MIN_RETRACE_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT', 10)));
 
@@ -336,7 +336,7 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
 
 /** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1.5M, не слать. */
 function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
-  if (!(mcapUsd >= 1_500_000)) return null;
+  if (!(mcapUsd >= 1_000_000)) return null;
   if (mcapUsd < 4_000_000) return 17;
   if (mcapUsd < 8_000_000) return 13;
   return 9;
