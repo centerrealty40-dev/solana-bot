@@ -846,6 +846,9 @@ async function tryWaveBTrailPartialSells(args: {
   } = args;
   if (!isWaveBExitPolicy(ot) || !ot.trailingArmed || !(tgEff.stepPnl > 0)) return;
   const pnlFrac = xAvg - 1;
+  const peakFrac = ot.liveWavePeakPnlFrac ?? pnlFrac;
+  /** Pullback phase only — at/new ATH TP grid runs; trail resumes after `waveBOnNewHigh` on the next peak. */
+  if (pnlFrac >= peakFrac - LADDER_PNL_EPS) return;
   const anchor = ot.liveWaveTrailAnchorPnlFrac ?? pnlFrac;
   if (anchor + LADDER_PNL_EPS < WAVE_B_ARM_MIN_PNL_FRAC) return;
   const level = waveBNextTrailLevelToFire(anchor, tgEff.stepPnl, pnlFrac, ot.liveWaveTrailLevelsTaken ?? []);

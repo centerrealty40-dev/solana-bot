@@ -16,16 +16,26 @@ export const LEGACY_LIVE_OSCAR_TP_GRID = {
 } as const;
 
 /**
- * Wave B v1: +2.5% / +5% — no TP; +7.5% → 10% remainder; +10%…+20% → 25% each; tail 15%.
+ * Wave B v1 two-phase TP (step 2.5% vs avg entry):
+ *   Phase 1 — +2.5% / +5% / +7.5%: 5% of remainder each.
+ *   Phase 2 — +10% and above: 10% of remainder per rung (2.5% steps, unlimited).
+ * Trail (after arm at +7.5%): each −2.5% from peak anchor → 20% of remainder; paused at ATH (TP resumes).
  */
 export const WAVE_B_V1_TP_GRID = {
   gridStepPnl: 0.025,
-  gridSellFractionByStep: [0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15],
+  gridSellFractionByStep: [0.05, 0.05, 0.05, 0.1],
   gridFirstRungRetraceMinPnlPct: 0,
 } as const;
 
+/** Sell fraction of remainder for TP grid step k (1-based). */
+export function waveBSellFractionForStep(kOneBased: number): number {
+  if (kOneBased >= 1 && kOneBased <= 3) return 0.05;
+  if (kOneBased >= 4) return 0.1;
+  return 0;
+}
+
 export const WAVE_B_ARM_MIN_PNL_FRAC = 0.075;
-export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.3;
+export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
 /** Wave B trail: if remainder notional is below this, sell 100% in one partial (no 30% dust). */
 export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
 /** Max single-tick MTM jump vs last observed price for peak / trail / TP (anti ghost-quote). */

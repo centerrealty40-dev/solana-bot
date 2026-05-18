@@ -10,6 +10,7 @@ import {
   waveBNextTrailLevelToFire,
   waveBRecoverPhantomPeakIfNeeded,
   WAVE_B_V1_TP_GRID,
+  waveBSellFractionForStep,
   LEGACY_LIVE_OSCAR_TP_GRID,
   WAVE_B_MTM_MAX_TICK_JUMP_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
@@ -89,7 +90,7 @@ describe('exit-policy-wave-b', () => {
     );
     expect(isWaveBExitPolicy(ot)).toBe(true);
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
-    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15]);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0.05, 0.05, 0.05, 0.1]);
     expect(migrateLegacyOpenToWaveB(ot)).toBe(false);
   });
 
@@ -116,11 +117,18 @@ describe('exit-policy-wave-b', () => {
     expect(ot.liveWaveTrailLevelsTaken).toEqual([]);
   });
 
+  it('waveBSellFractionForStep uses 5% then 10% phases', () => {
+    expect(waveBSellFractionForStep(1)).toBe(0.05);
+    expect(waveBSellFractionForStep(3)).toBe(0.05);
+    expect(waveBSellFractionForStep(4)).toBe(0.1);
+    expect(waveBSellFractionForStep(20)).toBe(0.1);
+  });
+
   it('waveBTrailSellFractionForRemainder flushes full remainder below $100', () => {
     const c = cfg();
     expect(waveBTrailSellFractionForRemainder(99.99, c)).toBe(1);
-    expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.3);
-    expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.3);
+    expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.2);
+    expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.2);
     expect(WAVE_B_TRAIL_FLUSH_REMAIN_USD).toBe(100);
   });
 
@@ -140,17 +148,18 @@ describe('exit-policy-wave-b', () => {
     expect(waveBNextTrailLevelToFire(0.76, 0.025, 0.7, [0.735])).toBeCloseTo(0.71, 6);
   });
 
-  it('wave B uniform profile cumulative at +20%', () => {
+  it('wave B two-phase profile cumulative through +15%', () => {
     const ot = baseOt();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     const eff = tpGridEffective(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     let remain = 1;
-    for (let k = 1; k <= 8; k++) {
+    for (let k = 1; k <= 6; k++) {
       remain *= 1 - eff.sellFractionForStep(k);
     }
-    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.1);
-    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.25);
-    expect(eff.sellFractionForStep(8)).toBeCloseTo(0.25);
-    expect(remain).toBeCloseTo(0.2136, 3);
+    expect(eff.sellFractionForStep(1)).toBeCloseTo(0.05);
+    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.05);
+    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(6)).toBeCloseTo(0.1);
+    expect(remain).toBeCloseTo(0.625, 3);
   });
 });

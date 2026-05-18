@@ -457,7 +457,7 @@ module.exports = {
          * без policy id → `legacy_grid` + закреплённый prod-профиль в tpGridOverrides.
          */
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
-        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.30',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
