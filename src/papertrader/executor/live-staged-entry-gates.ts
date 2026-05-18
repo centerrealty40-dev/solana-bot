@@ -85,17 +85,36 @@ export function stagedAvgSecondEligible(args: {
   return signalDropPct <= -drop14;
 }
 
-export function buildLiveStagedEntryState(cfg: PaperTraderConfig, signal: {
-  signalTs: number;
-  signalPriceUsd: number;
-}): LiveStagedEntryState {
+export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
+  return (
+    (st.avgSecondLegUsd ?? st.secondLegUsd) > 0 || ((st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0) > 0)
+  );
+}
+
+export function buildLiveStagedEntryState(
+  cfg: PaperTraderConfig,
+  signal: {
+    signalTs: number;
+    signalPriceUsd: number;
+  },
+  options?: { firstMintProbe?: boolean; firstMintKillDropPct?: number },
+): LiveStagedEntryState {
+  const firstMintProbe = options?.firstMintProbe === true;
   const splitLeg = cfg.liveStagedEntryEntrySplitLegUsd;
+  const killDropPct = firstMintProbe
+    ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
+    : cfg.liveStagedEntryKillDropPct;
+  const avgSecondUsd = firstMintProbe ? 0 : cfg.liveStagedEntrySecondLegUsd;
+  const avgThirdUsd = firstMintProbe ? 0 : cfg.liveStagedEntryThirdLegUsd;
+  const avgSecondDrop = firstMintProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
+  const avgThirdDrop = firstMintProbe ? 0 : cfg.liveStagedEntryThirdDropPct;
   return {
     signalTs: signal.signalTs,
     signalPriceUsd: signal.signalPriceUsd,
     firstDropPct: cfg.liveStagedEntryFirstDropPct,
     firstLegUsd: splitLeg,
-    killDropPct: cfg.liveStagedEntryKillDropPct,
+    killDropPct,
+    ...(firstMintProbe ? { mintFirstProbe: true } : {}),
     entrySplitV2: true,
     entrySplitLegUsd: splitLeg,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
@@ -104,25 +123,25 @@ export function buildLiveStagedEntryState(cfg: PaperTraderConfig, signal: {
     entrySplitLeg1Ts: signal.signalTs,
     entrySplitAnchorUsd: signal.signalPriceUsd,
     entrySplitLeg2Done: false,
-    avgSecondDropPct: cfg.liveStagedEntrySecondDropPct,
-    avgSecondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+    avgSecondDropPct: avgSecondDrop,
+    avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
     avgSecondCooldownMs: cfg.liveStagedEntryAvgSecondCooldownMs,
     avgFirstLegDone: false,
     avgSecondLegDone: false,
-    ...(cfg.liveStagedEntryThirdLegUsd > 0
+    ...(avgThirdUsd > 0
       ? {
-          avgThirdDropPct: cfg.liveStagedEntryThirdDropPct,
-          avgThirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+          avgThirdDropPct: avgThirdDrop,
+          avgThirdLegUsd: avgThirdUsd,
         }
       : {}),
-    secondDropPct: cfg.liveStagedEntrySecondDropPct,
-    secondLegUsd: cfg.liveStagedEntrySecondLegUsd,
+    secondDropPct: avgSecondDrop,
+    secondLegUsd: avgSecondUsd,
     secondLegDone: false,
-    ...(cfg.liveStagedEntryThirdLegUsd > 0
+    ...(avgThirdUsd > 0
       ? {
-          thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-          thirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
+          thirdDropPct: avgThirdDrop,
+          thirdLegUsd: avgThirdUsd,
           thirdLegDone: false,
         }
       : {}),

@@ -18,6 +18,7 @@ import {
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
   reconcileEntrySplitV2FromLegs,
+  stagedAveragingConfigured,
   usesLegacyStagedAdds,
 } from './live-staged-entry-gates.js';
 import {
@@ -165,6 +166,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
 
   const signalDropPct = signalDropPctFromState(st, curMetric);
   if (signalDropPct == null) return;
+  if (st.mintFirstProbe === true || !stagedAveragingConfigured(st)) return;
 
   const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
   const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;

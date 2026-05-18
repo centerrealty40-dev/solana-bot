@@ -264,6 +264,11 @@ export interface OpenTrade {
   liveWaveTrailAnchorPnlFrac?: number;
   /** Wave B: trail partial levels already fired (PnL fraction keys). */
   liveWaveTrailLevelsTaken?: number[];
+
+  /** Live Oscar — открытие в режиме «первый раз по mint» (жёсткий kill, без усреднения). */
+  liveMintFirstProbe?: boolean;
+  /** Signal-kill % зафиксирован при open (обычно 7 для first-probe). */
+  liveMintFirstProbeKillDropPct?: number;
 }
 
 export interface LiveStagedEntryState {
@@ -301,6 +306,8 @@ export interface LiveStagedEntryState {
   thirdLegUsd?: number;
   secondLegDone?: boolean;
   thirdLegDone?: boolean;
+  /** Первый live-вход по mint: без staged avg, kill `killDropPct` обычно 7. */
+  mintFirstProbe?: boolean;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */

@@ -181,6 +181,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       const thirdDropPct = Number(p.thirdDropPct);
       const thirdLegUsd = Number(p.thirdLegUsd);
       const killDropPct = Number(p.killDropPct);
+      const isV2EntrySplit = p.entrySplitV2 === true;
+      const secondLegUsdOk =
+        Number.isFinite(secondLegUsd) && (isV2EntrySplit ? secondLegUsd >= 0 : secondLegUsd > 0);
       if (
         Number.isFinite(signalTs) &&
         signalTs > 0 &&
@@ -189,8 +192,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
         Number.isFinite(firstLegUsd) &&
         firstLegUsd > 0 &&
         Number.isFinite(secondDropPct) &&
-        Number.isFinite(secondLegUsd) &&
-        secondLegUsd > 0 &&
+        secondLegUsdOk &&
         Number.isFinite(killDropPct)
       ) {
         ot.liveStagedEntry = {
@@ -204,6 +206,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
             ? { thirdDropPct, thirdLegUsd }
             : {}),
           killDropPct,
+          ...(p.mintFirstProbe === true ? { mintFirstProbe: true } : {}),
           secondLegDone: Boolean(p.secondLegDone),
           thirdLegDone: Boolean(p.thirdLegDone),
           ...(p.entrySplitV2 === true
@@ -228,6 +231,11 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
               }
             : {}),
         };
+        if (rawPayload.liveMintFirstProbe === true || p.mintFirstProbe === true) {
+          ot.liveMintFirstProbe = true;
+          const k = Number(rawPayload.liveMintFirstProbeKillDropPct ?? p.killDropPct);
+          if (Number.isFinite(k) && k > 0) ot.liveMintFirstProbeKillDropPct = k;
+        }
       }
     }
 

@@ -232,6 +232,14 @@ const LiveOscarConfigSchema = z
       .default('data/live/live-oscar-permanent-denylist.seed.txt'),
 
     /**
+     * Первый live-вход по mint (ещё нет в `liveMintGraduatedPath`): kill −7% от сигнала, без усреднения −7/−14;
+     * убыток → denylist; прибыльное закрытие → graduated.
+     */
+    liveMintFirstProbeEnabled: z.boolean().default(true),
+    liveMintFirstProbeKillDropPct: z.coerce.number().min(1).max(50).default(7),
+    liveMintGraduatedPath: z.string().min(1).default('data/live/live-oscar-mint-graduated.txt'),
+
+    /**
      * Ручной blacklist mint: совпадает с paper `mintBlacklistPath` / `LIVE_MINT_BLACKLIST_*` — файл должен существовать при включении.
      */
     liveMintBlacklistEnabled: z.boolean().default(false),
@@ -569,6 +577,15 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     livePermanentDenylistSeedPath:
       process.env.LIVE_OSCAR_PERMANENT_DENYLIST_SEED_PATH?.trim() ||
       'data/live/live-oscar-permanent-denylist.seed.txt',
+    liveMintFirstProbeEnabled: envBool(process.env.LIVE_MINT_FIRST_PROBE_ENABLED, true),
+    liveMintFirstProbeKillDropPct: (() => {
+      const s = process.env.LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT?.trim();
+      if (!s) return 7;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(50, n) : 7;
+    })(),
+    liveMintGraduatedPath:
+      process.env.LIVE_MINT_GRADUATED_PATH?.trim() || 'data/live/live-oscar-mint-graduated.txt',
     liveMintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     liveMintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveDiscoveryAuditJsonlEnabled: envBool(process.env.LIVE_DISCOVERY_AUDIT_JSONL, true),

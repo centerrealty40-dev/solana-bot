@@ -43,6 +43,10 @@ import {
   markEntrySplitLeg1Filled,
   stagedEntryPlanInvestedCapUsd,
 } from './executor/live-staged-entry-gates.js';
+import {
+  liveMintFirstProbeKillDropPct,
+  shouldUseLiveMintFirstProbe,
+} from '../live/mint-first-probe.js';
 import { liveStagedOpenLabelRuFromCfg } from './executor/live-staged-entry-labels.js';
 import { fetchPreEntryDynamics } from './executor/dynamics.js';
 import { fetchContextSwaps } from './executor/context-swaps.js';
@@ -246,6 +250,27 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function liveStagedEntryActive(): boolean {
     return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
+  }
+
+  function attachLiveStagedEntryPlan(
+    ot: OpenTrade,
+    mint: string,
+    signal: { signalTs: number; signalPriceUsd: number },
+  ): void {
+    if (!liveStagedEntryActive()) return;
+    const liveCfg = resolveLiveOscar()?.liveCfg;
+    const firstMintProbe =
+      cfg.strategyId === 'live-oscar' && liveCfg != null && shouldUseLiveMintFirstProbe(liveCfg, mint);
+    const firstMintKillDropPct = firstMintProbe ? liveMintFirstProbeKillDropPct(liveCfg!) : undefined;
+    ot.liveStagedEntry = buildLiveStagedEntryState(cfg, signal, {
+      firstMintProbe,
+      firstMintKillDropPct,
+    });
+    if (firstMintProbe) {
+      ot.liveMintFirstProbe = true;
+      ot.liveMintFirstProbeKillDropPct = firstMintKillDropPct ?? 7;
+    }
+    markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
   }
 
   function isSignalMintMissingFromLiveWhitelist(mint: string): boolean {
@@ -922,13 +947,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           liquidityUsd: d.features.liq_usd,
           ...(stagedSplitUsd != null && stagedSplitUsd > 0 ? { firstLegUsdOverride: stagedSplitUsd } : {}),
         });
-        if (liveStagedEntryActive()) {
-          ot.liveStagedEntry = buildLiveStagedEntryState(cfg, {
-            signalTs: stagedEntrySignal.signalTs,
-            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-          });
-          markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
-        }
+        attachLiveStagedEntryPlan(ot, d.mint, {
+          signalTs: stagedEntrySignal.signalTs,
+          signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+        });
 
         const preDyn = cfg.preEntryDynamicsEnabled
           ? await fetchPreEntryDynamics(d.mint, ot.entryTs)
@@ -1062,13 +1084,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               entryTs: ot.entryTs,
               firstLegUsdOverride: stagedSplitUsd,
             });
-            if (liveStagedEntryActive()) {
-              ot.liveStagedEntry = buildLiveStagedEntryState(cfg, {
-                signalTs: stagedEntrySignal.signalTs,
-                signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-              });
-              markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
-            }
+            attachLiveStagedEntryPlan(ot, ot.mint, {
+              signalTs: stagedEntrySignal.signalTs,
+              signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+            });
           }
         }
 
@@ -1279,16 +1298,23 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 const targetUsd = (dropPct: number): number | null =>
                   sigPx > 0 ? +(sigPx * (1 - dropPct / 100)).toFixed(8) : null;
                 const v2Split = cfg.liveStagedEntryEntrySplitLegUsd > 0;
-                const totalNotional = v2Split
-                  ? stagedEntryPlanInvestedCapUsd(cfg)
-                  : cfg.liveStagedEntryFirstLegUsd +
-                    cfg.liveStagedEntrySecondLegUsd +
-                    cfg.liveStagedEntryThirdLegUsd;
+                const firstProbe = ot.liveMintFirstProbe === true;
+                const killDropPct = firstProbe
+                  ? (ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct ?? 7)
+                  : cfg.liveStagedEntryKillDropPct;
+                const totalNotional = firstProbe
+                  ? cfg.liveStagedEntryEntrySplitLegUsd * 2
+                  : v2Split
+                    ? stagedEntryPlanInvestedCapUsd(cfg)
+                    : cfg.liveStagedEntryFirstLegUsd +
+                      cfg.liveStagedEntrySecondLegUsd +
+                      cfg.liveStagedEntryThirdLegUsd;
                 const sharedParams = {
                   signalPriceUsd: sigPx > 0 ? sigPx : null,
                   entrySplitV2: v2Split,
-                  killDropPct: cfg.liveStagedEntryKillDropPct,
-                  killTargetUsd: targetUsd(cfg.liveStagedEntryKillDropPct),
+                  ...(firstProbe ? { mintFirstProbe: true } : {}),
+                  killDropPct,
+                  killTargetUsd: targetUsd(killDropPct),
                   signalTtlMs: cfg.liveStagedEntrySignalTtlMs,
                   totalNotionalUsd: totalNotional,
                   tpGridProfile: cfg.tpGridSellFractionByStep ?? [],
@@ -1300,13 +1326,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 };
                 if (v2Split) {
                   const leg1 = cfg.liveStagedEntryEntrySplitLegUsd;
-                  const description =
-                    `${cfg.strategyId} entry-split v2: нотионал до $${totalNotional.toFixed(0)}. ` +
-                    `1-я нога сплита ${leg1.toFixed(0)} USD по сигналу; 2-я нога сплита ${leg1.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
-                    `1-е усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} при −${cfg.liveStagedEntrySecondDropPct}%…−${cfg.liveStagedEntryThirdDropPct}% от сигнала (≥${(cfg.liveStagedEntryAvgCooldownMs / 60_000).toFixed(0)} мин). ` +
-                    `2-е усреднение $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} при ≤−${cfg.liveStagedEntryThirdDropPct}% (≥${(cfg.liveStagedEntryAvgSecondCooldownMs / 60_000).toFixed(0)} мин после 1-го).`;
+                  const description = firstProbe
+                    ? `${cfg.strategyId} first-mint-probe: split ${leg1.toFixed(0)}+${leg1.toFixed(0)} USD, kill −${killDropPct}% от сигнала, без усреднения; при убытке → denylist, при прибыли → обычный режим.`
+                    : `${cfg.strategyId} entry-split v2: нотионал до $${totalNotional.toFixed(0)}. ` +
+                      `1-я нога сплита ${leg1.toFixed(0)} USD по сигналу; 2-я нога сплита ${leg1.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
+                      `1-е усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} при −${cfg.liveStagedEntrySecondDropPct}%…−${cfg.liveStagedEntryThirdDropPct}% от сигнала (≥${(cfg.liveStagedEntryAvgCooldownMs / 60_000).toFixed(0)} мин). ` +
+                      `2-е усреднение $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} при ≤−${cfg.liveStagedEntryThirdDropPct}% (≥${(cfg.liveStagedEntryAvgSecondCooldownMs / 60_000).toFixed(0)} мин после 1-го).`;
                   return {
-                    timelineOpenLabelRu: liveStagedOpenLabelRuFromCfg(cfg),
+                    timelineOpenLabelRu: firstProbe
+                      ? `Первый live-вход: split $${leg1.toFixed(0)}+$${leg1.toFixed(0)}, kill −${killDropPct}%`
+                      : liveStagedOpenLabelRuFromCfg(cfg),
                     liveStagedEntryParams: {
                       ...sharedParams,
                       firstLegUsd: leg1,
@@ -1314,10 +1343,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                       entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
                       entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
                       entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
-                      avgSecondLegUsd: cfg.liveStagedEntrySecondLegUsd,
-                      avgSecondDropPct: cfg.liveStagedEntrySecondDropPct,
-                      avgThirdLegUsd: cfg.liveStagedEntryThirdLegUsd,
-                      avgThirdDropPct: cfg.liveStagedEntryThirdDropPct,
+                      avgSecondLegUsd: firstProbe ? 0 : cfg.liveStagedEntrySecondLegUsd,
+                      avgSecondDropPct: firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct,
+                      avgThirdLegUsd: firstProbe ? 0 : cfg.liveStagedEntryThirdLegUsd,
+                      avgThirdDropPct: firstProbe ? 0 : cfg.liveStagedEntryThirdDropPct,
                       description,
                     },
                   };

@@ -29,6 +29,8 @@ data/**
 !data/live/live-oscar-risky-mint-whitelist.txt
 !data/live/live-oscar-risky-mint-blacklist.txt
 !data/live/live-oscar-permanent-denylist.seed.txt
+# Runtime graduated mints (first-probe → profitable close); VPS-local, not in Git.
+data/live/live-oscar-mint-graduated.txt
 backups/
 *.sqlite
 *.db

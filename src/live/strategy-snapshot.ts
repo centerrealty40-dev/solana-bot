@@ -65,6 +65,11 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.liveWaveTrailLevelsTaken != null && ot.liveWaveTrailLevelsTaken.length > 0
       ? { liveWaveTrailLevelsTaken: [...ot.liveWaveTrailLevelsTaken] }
       : {}),
+    ...(ot.liveMintFirstProbe ? { liveMintFirstProbe: true } : {}),
+    ...(typeof ot.liveMintFirstProbeKillDropPct === 'number' &&
+    Number.isFinite(ot.liveMintFirstProbeKillDropPct)
+      ? { liveMintFirstProbeKillDropPct: ot.liveMintFirstProbeKillDropPct }
+      : {}),
   };
 }
 

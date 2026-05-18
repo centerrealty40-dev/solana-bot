@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.212] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.212`.
+
+### Live Oscar — первый вход по mint: kill −7%, без усреднения, denylist при убытке
+
+- Mint **без** записи в `live-oscar-mint-graduated.txt`: split **$500+$500**, signal-kill **−7%** (env `LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT`), **без** доборов −7%/−14%.
+- Убыточное полное закрытие → **permanent denylist** + Telegram `live_first_mint_probe_deny`.
+- Прибыльное полное закрытие → mint в **graduated**; следующие входы — стандартная prod-логика (−7/−14, kill −25%).
+
+**Откат:** `LIVE_MINT_FIRST_PROBE_ENABLED=0` + `pm2 reload`; удалить graduated/deny строки при необходимости.
+
+---
+
 ## [1.11.211] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.211`.

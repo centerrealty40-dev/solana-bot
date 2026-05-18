@@ -574,6 +574,13 @@ const PM2_APPS = [
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
+        /**
+         * Первый live-вход по mint: split 500+500, kill −7% от сигнала, без усреднения −7/−14;
+         * убыток → denylist; прибыльное закрытие → `live-oscar-mint-graduated.txt`.
+         */
+        LIVE_MINT_FIRST_PROBE_ENABLED: '1',
+        LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '7',
+        LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-mint-graduated.txt'),
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',

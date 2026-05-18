@@ -64,6 +64,8 @@ import {
   onLiveOscarFullCloseNegativeTradeDenylist,
   onLiveOscarFullCloseUpdateWhitelistLossStreak,
 } from '../../live/mint-whitelist.js';
+import { onLiveOscarFirstMintProbeFullClose } from '../../live/mint-first-probe.js';
+import { stagedAveragingConfigured } from './live-staged-entry-gates.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import {
   liveStagedEntrySignalTimeWindowOpen,
@@ -912,6 +914,8 @@ function hookLiveWhitelistAfterFullClose(
   mint: string,
   symbol: string,
   netPnlUsd: number,
+  liveMintFirstProbe?: boolean,
+  firstMintKillDropPct?: number,
 ): void {
   onLiveOscarFullCloseUpdateWhitelistLossStreak({
     liveOscarCfg,
@@ -919,6 +923,15 @@ function hookLiveWhitelistAfterFullClose(
     mint,
     symbol,
     netPnlUsd,
+  });
+  onLiveOscarFirstMintProbeFullClose({
+    liveOscarCfg,
+    strategyId: cfg.strategyId,
+    mint,
+    symbol,
+    netPnlUsd,
+    liveMintFirstProbe: liveMintFirstProbe === true,
+    killDropPct: firstMintKillDropPct,
   });
   onLiveOscarFullCloseNegativeTradeDenylist({
     liveOscarCfg,
@@ -1045,7 +1058,15 @@ async function closeOpenTradeReconcileOrphan(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+  hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
   /** Не планируем post-close tail sweep: закрытие уже из-за рассинхрона с цепью; через `livePostCloseTailSweepDelayMs`
    * отложенный `sell_full` может снять **новую** позицию по тому же mint (см. отмену при `live_position_open`). */
   peakStateByMint.delete(mint);
@@ -1164,7 +1185,15 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+  hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1302,7 +1331,15 @@ export async function trackerForceFullExitLive(args: {
     closedTrade: serializeClosedTrade(ct),
   });
   recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-  hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+  hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
     mint,
@@ -1819,7 +1856,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           closedTrade: serializeClosedTrade(ct),
         });
         recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-        hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+        hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
         scheduleTailAfterLiveClose(
           liveOscarCfg,
           mint,
@@ -1903,7 +1948,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           closedTrade: serializeClosedTrade(ct),
         });
         recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-        hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+        hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
       }
@@ -2183,7 +2236,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         return true;
       };
 
-      if (usesLegacyStagedAdds(st)) {
+      if (usesLegacyStagedAdds(st) && st.mintFirstProbe !== true) {
         if (signalDropPct != null && stagedAddAllowed && !st.secondLegDone && signalDropPct <= -st.secondDropPct) {
           await tryStagedAddLeg({
             stepIndex: 0,
@@ -2230,10 +2283,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       {
         const v2AvgDone =
           st.entrySplitV2 === true
-            ? (st.avgThirdLegUsd != null && st.avgThirdLegUsd > 0
-                ? st.avgSecondLegDone === true
-                : st.avgFirstLegDone === true) &&
-              st.entrySplitLeg2Done === true
+            ? st.entrySplitLeg2Done === true &&
+              (!stagedAveragingConfigured(st) ||
+                (st.avgThirdLegUsd != null && st.avgThirdLegUsd > 0
+                  ? st.avgSecondLegDone === true
+                  : st.avgFirstLegDone === true))
             : false;
         const stagedLegsComplete = st.entrySplitV2 ? v2AvgDone : st.secondLegDone === true && thirdDone;
         const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, Date.now());
@@ -2779,7 +2833,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         closedTrade: serializeClosedTrade(ct),
       });
       recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
-      hookLiveWhitelistAfterFullClose(liveOscarCfg, cfg, mint, ot.symbol, ct.netPnlUsd);
+      hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+  );
       scheduleTailAfterLiveClose(
         liveOscarCfg,
         mint,
