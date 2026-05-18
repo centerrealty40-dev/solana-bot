@@ -45,6 +45,7 @@ import {
   waveBRecoverPhantomPeakIfNeeded,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
+  waveBAdjustSellFractionForRemainder,
   waveBRemainderValueNetUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
@@ -565,12 +566,16 @@ async function tryExecuteTpPartialSell(args: {
     timelineLabelRu,
   } = args;
   const partialReason: PartialSell['reason'] = partialReasonArg ?? 'TP_LADDER';
-  const sellFraction = Math.min(1, rawSellFrac);
   const marketSell = curMetric;
   if (!(ot.remainingFraction > 1e-12)) return 'ok';
-  if (sellFraction <= 1e-12) {
+  if (rawSellFrac <= 1e-12) {
     markLadder();
     return 'ok';
+  }
+  const remainUsdForFlush = waveBRemainderValueNetUsd(ot, marketSell);
+  let sellFraction = Math.min(1, rawSellFrac);
+  if (isWaveBExitPolicy(ot)) {
+    sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg);
   }
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
   const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;

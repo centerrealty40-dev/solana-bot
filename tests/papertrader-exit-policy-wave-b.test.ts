@@ -16,6 +16,7 @@ import {
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
   waveBRemainderValueNetUsd,
   waveBTrailSellFractionForRemainder,
+  waveBAdjustSellFractionForRemainder,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
   waveBMaybeResetTpImpulse,
@@ -135,6 +136,15 @@ describe('exit-policy-wave-b', () => {
     expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.2);
     expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.2);
     expect(WAVE_B_TRAIL_FLUSH_REMAIN_USD).toBe(100);
+  });
+
+  it('waveBAdjustSellFractionForRemainder flushes TP and trail below $100', () => {
+    const c = cfg();
+    expect(waveBAdjustSellFractionForRemainder(80, 0.05, c)).toBe(1);
+    expect(waveBAdjustSellFractionForRemainder(80, 0.2, c)).toBe(1);
+    expect(waveBAdjustSellFractionForRemainder(150, 0.05, c)).toBeCloseTo(0.05);
+    expect(waveBAdjustSellFractionForRemainder(150, 0.2, c)).toBeCloseTo(0.2);
+    expect(waveBAdjustSellFractionForRemainder(99, 0, c)).toBe(0);
   });
 
   it('waveBRemainderValueNetUsd scales with remainingFraction and price', () => {

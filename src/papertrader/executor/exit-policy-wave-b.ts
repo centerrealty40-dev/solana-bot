@@ -44,7 +44,7 @@ export const WAVE_B_TP_IMPULSE_RESET_PNL_FRAC = 0.025;
 /** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +10%. */
 export const WAVE_B_ARM_MIN_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
-/** Wave B trail: if remainder notional is below this, sell 100% in one partial (no 30% dust). */
+/** Wave B: if modeled remainder notional is below this, any TP/trail partial sells 100% (no dust). */
 export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
 /** Max single-tick MTM jump vs last observed price for peak / trail / TP (anti ghost-quote). */
 export const WAVE_B_MTM_MAX_TICK_JUMP_FRAC = 0.12;
@@ -182,13 +182,27 @@ export function waveBRemainderValueNetUsd(ot: OpenTrade, marketPriceUsd: number)
   return ot.totalInvestedUsd * ot.remainingFraction * (marketPriceUsd / entryPx);
 }
 
-/** Trail sell fraction; full exit when remainder notional is below `WAVE_B_TRAIL_FLUSH_REMAIN_USD`. */
+/** TP/trail: flush full remainder when notional is below `WAVE_B_TRAIL_FLUSH_REMAIN_USD`. */
+export function waveBAdjustSellFractionForRemainder(
+  remainingValueNetUsd: number,
+  requestedFraction: number,
+  _cfg?: PaperTraderConfig,
+): number {
+  if (!(requestedFraction > 1e-12)) return 0;
+  if (remainingValueNetUsd + 1e-9 < WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
+  return Math.min(1, requestedFraction);
+}
+
+/** Trail sell fraction; full exit when remainder notional is below flush threshold. */
 export function waveBTrailSellFractionForRemainder(
   remainingValueNetUsd: number,
   cfg: PaperTraderConfig,
 ): number {
-  if (remainingValueNetUsd + 1e-9 < WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
-  return waveBTrailSellFraction(cfg);
+  return waveBAdjustSellFractionForRemainder(
+    remainingValueNetUsd,
+    waveBTrailSellFraction(cfg),
+    cfg,
+  );
 }
 
 /** Stamp policy on first open (before journal). */

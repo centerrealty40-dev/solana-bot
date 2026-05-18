@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.208] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.208`.
+
+### Wave B — flush остатка &lt;$100 на всех partial (TP + trail)
+
+- В `tryExecuteTpPartialSell`: если modeled remainder **&lt; $100**, `sellFraction=1` для Wave B (не только trail).
+- Общая функция `waveBAdjustSellFractionForRemainder`.
+
+**Откат:** revert `1.11.208`; `pm2 reload --update-env`.
+
+---
+
 ## [1.11.207] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.207`.
