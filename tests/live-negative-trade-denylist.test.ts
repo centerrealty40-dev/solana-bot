@@ -7,7 +7,10 @@ import {
   isMintPermanentlyDeniedLiveOscar,
   loadPermanentDenylistCombined,
 } from '../src/live/mint-permanent-denylist.js';
-import { onLiveOscarFullCloseNegativeTradeDenylist } from '../src/live/mint-whitelist.js';
+import {
+  negativeTradeDenyMinLossUsd,
+  onLiveOscarFullCloseNegativeTradeDenylist,
+} from '../src/live/mint-whitelist.js';
 import type { LiveOscarConfig } from '../src/live/config.js';
 
 function tmpDir(): string {
@@ -28,7 +31,11 @@ describe('live negative trade denylist', () => {
     clearLivePermanentDenylistCacheForTests();
   });
 
-  it('appends mint to local denylist on negative close', () => {
+  it('default min loss threshold is $150', () => {
+    expect(negativeTradeDenyMinLossUsd()).toBe(150);
+  });
+
+  it('appends mint when loss exceeds $150', () => {
     const dir = tmpDir();
     dirs.push(dir);
     const localPath = path.join(dir, 'deny-local.txt');
@@ -47,7 +54,7 @@ describe('live negative trade denylist', () => {
       strategyId: 'live-oscar',
       mint: 'MintNeg1111111111111111111111111111111111111',
       symbol: 'NEG',
-      netPnlUsd: -12.5,
+      netPnlUsd: -151,
     });
 
     const set = loadPermanentDenylistCombined(cfg);
@@ -64,6 +71,32 @@ describe('live negative trade denylist', () => {
       netPnlUsd: -5,
     });
     expect(fs.readFileSync(localPath, 'utf8').match(/MintNeg/g)?.length).toBe(1);
+  });
+
+  it('skips denylist when loss is below $150', () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    const localPath = path.join(dir, 'deny-local.txt');
+    const seedPath = path.join(dir, 'deny-seed.txt');
+    fs.writeFileSync(localPath, '', 'utf8');
+    fs.writeFileSync(seedPath, '', 'utf8');
+
+    const cfg = {
+      livePermanentDenylistDisabled: false,
+      livePermanentDenylistLocalPath: localPath,
+      livePermanentDenylistSeedPath: seedPath,
+      executionMode: 'live',
+    } as LiveOscarConfig;
+
+    onLiveOscarFullCloseNegativeTradeDenylist({
+      liveOscarCfg: cfg,
+      strategyId: 'live-oscar',
+      mint: 'MintSmall111111111111111111111111111111111111',
+      symbol: 'SML',
+      netPnlUsd: -50,
+    });
+
+    expect(loadPermanentDenylistCombined(cfg).size).toBe(0);
   });
 
   it('ignores profitable close', () => {

@@ -308,6 +308,14 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
   })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_whitelist_consec_loss_drop telegram failed'));
 }
 
+/** Denylist only when net PnL ≤ −this USD (e.g. −$151). Smaller losses keep trading. Env: `LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD`. */
+export function negativeTradeDenyMinLossUsd(): number {
+  const s = process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD?.trim();
+  if (s == null || s === '') return 150;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : 150;
+}
+
 function negativeTradeDenyTelegramEnabled(): boolean {
   const s = process.env.LIVE_NEGATIVE_TRADE_DENY_TELEGRAM_ENABLED?.trim();
   if (s === '0' || s === 'false') return false;
@@ -335,8 +343,8 @@ function negativeTradeDenyAlertText(args: {
 }
 
 /**
- * После любого убыточного полного закрытия live-oscar: mint в локальный permanent denylist
- * (не зависит от whitelist). Telegram — только при первом добавлении mint в список.
+ * После убыточного полного закрытия live-oscar с net PnL ≤ −`negativeTradeDenyMinLossUsd()` (дефолт $150):
+ * mint в локальный permanent denylist (не зависит от whitelist). Telegram — только при первом добавлении.
  */
 export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
   liveOscarCfg: LiveOscarConfig | undefined;
@@ -349,7 +357,16 @@ export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
   const key = mint.trim();
   if (!key || !liveOscarCfg) return;
   if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
-  if (!(netPnlUsd < 0)) return;
+  const minLossUsd = negativeTradeDenyMinLossUsd();
+  if (!(netPnlUsd < 0) || netPnlUsd > -minLossUsd) {
+    if (netPnlUsd < 0) {
+      log.info(
+        { mint: key, netPnlUsd, minLossUsd },
+        'live negative trade denylist: loss below threshold, keep trading',
+      );
+    }
+    return;
+  }
 
   const added = appendMintToPermanentDenylistLocal(
     liveOscarCfg,

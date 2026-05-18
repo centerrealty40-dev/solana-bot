@@ -564,6 +564,8 @@ module.exports = {
         LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED: '0',
         /** `0` — не слать ADVICE `live_oscar_local_high_veto`. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
+        /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
+        LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
