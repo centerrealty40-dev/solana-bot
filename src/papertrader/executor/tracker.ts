@@ -30,7 +30,6 @@ import {
   collectFiredLadderPnls,
   ladderRetraceTriggered,
   ladderPnlThresholdMark,
-  ladderPnlThresholdTaken,
   ladderStepOrThresholdTaken,
   LADDER_PNL_EPS,
   markLadderStepFired,
@@ -2330,7 +2329,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
       for (let k = 1; k <= maxK; k++) {
         const threshold = k * step;
-        if (ladderPnlThresholdTaken(ot.ladderUsedLevels, threshold)) continue;
+        if (ladderStepOrThresholdTaken(ot, k - 1, threshold)) continue;
         if (pnlFrac + LADDER_PNL_EPS < threshold) break;
         if (
           cfg.strategyId === 'live-oscar' &&
@@ -2362,13 +2361,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           livePhase4,
           liveOscarCfg,
           stats,
-          markLadder: () => ladderPnlThresholdMark(ot.ladderUsedLevels, threshold),
+          markLadder: () => markLadderStepFired(ot, k - 1, threshold),
           logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
         });
         if (r === 'abort_mint') {
           break;
         }
         if (r === 'defer_next') {
+          break;
+        }
+        /** Wave B: at most one cash partial per tick — spreads ladder across price steps, not one MTM print. */
+        if (isWaveBExitPolicy(ot) && sellFracForStep > 1e-12) {
           break;
         }
       }

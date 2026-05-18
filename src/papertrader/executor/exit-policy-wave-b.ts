@@ -214,22 +214,13 @@ export function resolveLiveOscarExitPolicyForTick(
   return false;
 }
 
-/** Variant B: on new PnL high, re-enable TP rungs below peak and reset trail descent. */
-export function waveBOnNewHigh(ot: OpenTrade, pnlFrac: number, stepPnl: number): void {
-  if (!(stepPnl > 0)) return;
+/** Variant B: on new PnL high, reset trail descent only — TP grid rungs stay one-shot (no re-arm spam). */
+export function waveBOnNewHigh(ot: OpenTrade, pnlFrac: number, _stepPnl: number): void {
   const prev = ot.liveWavePeakPnlFrac ?? -Infinity;
   if (pnlFrac <= prev + LADDER_PNL_EPS) return;
   ot.liveWavePeakPnlFrac = pnlFrac;
   ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, pnlFrac);
   ot.liveWaveTrailLevelsTaken = [];
-
-  for (const t of [...ot.ladderUsedLevels]) {
-    if (t < pnlFrac - LADDER_PNL_EPS) ot.ladderUsedLevels.delete(t);
-  }
-  for (const idx of [...ot.ladderUsedIndices]) {
-    const th = (idx + 1) * stepPnl;
-    if (th < pnlFrac - LADDER_PNL_EPS) ot.ladderUsedIndices.delete(idx);
-  }
 }
 
 export function waveBTrailLevelKey(levelPnlFrac: number): number {

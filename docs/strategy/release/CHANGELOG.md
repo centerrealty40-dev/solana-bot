@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.205] — 2026-05-18
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.205`.
+
+### Live Oscar Wave B — one-shot TP ladder (fix re-arm spam)
+
+- `waveBOnNewHigh` больше **не снимает** `ladderUsedLevels` / `ladderUsedIndices` на новом хае — ступени TP не перепродаются на той же цене.
+- TP grid: **не больше одной** cash-partial с `sellFraction>0` за тик (Wave B); нулевые ступени (+2.5% / +5%) по-прежнему только помечаются.
+
+**Откат:** revert; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.204] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.204`.

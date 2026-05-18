@@ -58,13 +58,15 @@ describe('exit-policy-wave-b', () => {
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(WAVE_B_V1_TP_GRID.gridStepPnl);
   });
 
-  it('waveBOnNewHigh clears ladder levels below new peak', () => {
+  it('waveBOnNewHigh resets trail only — TP ladder marks are one-shot', () => {
     const ot = baseOt();
     ot.liveExitPolicyId = 'wave_b_v1';
+    ot.liveWaveTrailLevelsTaken = [0.1];
     waveBOnNewHigh(ot, 0.15, 0.025);
-    expect(ot.ladderUsedLevels.has(0.05)).toBe(false);
-    expect(ot.ladderUsedLevels.has(0.075)).toBe(false);
+    expect(ot.ladderUsedLevels.has(0.05)).toBe(true);
+    expect(ot.ladderUsedLevels.has(0.075)).toBe(true);
     expect(ot.liveWaveTrailLevelsTaken).toEqual([]);
+    expect(ot.liveWavePeakPnlFrac).toBeCloseTo(0.15);
   });
 
   it('tpGridEffective respects pinned legacy overrides in mode B', () => {
