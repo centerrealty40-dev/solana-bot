@@ -413,6 +413,23 @@ const PM2_APPS = [
         PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD: '8000',
         PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN: '6',
         PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD: '2500',
+        /**
+         * Volume Ephemeral guard (1.11.219): блокирует монеты с объёмом, сжатым
+         * в узкое почасовое окно (разовый burst — паттерн GOAT).
+         */
+        PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '1',
+        PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS: '24',
+        PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD: '8000',
+        PAPER_VOLUME_EPHEMERAL_MAX_ACTIVE_HOURS: '4',
+        PAPER_VOLUME_EPHEMERAL_MIN_PEAK_VOL5M_USD: '20000',
+        PAPER_VOLUME_EPHEMERAL_MIN_HOURS_WITH_DATA: '2',
+        PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER: '2',
+        PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED: '1',
+        PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO: '0.3',
+        /** TG: блок volume ephemeral guard — подозрительный разовый всплеск объёма. */
+        LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED: '1',
+        LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID: '-1003878024799',
+        LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS: '1800000',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',

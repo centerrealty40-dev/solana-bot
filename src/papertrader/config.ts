@@ -321,6 +321,28 @@ const ConfigSchema = z.object({
   /** vol5m at or below this counts as "dead" minute in baseline dead-fraction metric. */
   volumeSybilDeadVol5mUsd: z.coerce.number().nonnegative().default(2_500),
 
+  /**
+   * Volume Ephemeral guard (1.11.219): block when hourly vol5m is concentrated in a
+   * narrow window (one-shot burst pattern — e.g. GOAT 3h / 24h).
+   */
+  volumeEphemeralGuardEnabled: z.boolean().default(false),
+  /** Lookback for hourly concentration (12–48h). */
+  volumeEphemeralLookbackHours: z.coerce.number().int().min(12).max(48).default(24),
+  /** Hour counts as "active" when max vol5m in that hour >= this (USD). */
+  volumeEphemeralMinActiveHourVol5mUsd: z.coerce.number().nonnegative().default(8_000),
+  /** Block when active hours in lookback <= this. */
+  volumeEphemeralMaxActiveHours: z.coerce.number().int().min(1).max(12).default(4),
+  /** Require peak hourly vol5m >= this to treat as significant burst. */
+  volumeEphemeralMinPeakVol5mUsd: z.coerce.number().nonnegative().default(20_000),
+  /** Min distinct hours with PG data before rule applies. */
+  volumeEphemeralMinHoursWithData: z.coerce.number().int().min(1).max(48).default(2),
+  /** Extra hours slack: block when hoursWithData <= maxActiveHours + buffer. */
+  volumeEphemeralSparseHoursBuffer: z.coerce.number().int().min(0).max(12).default(2),
+  /** Also block tail when current vol5m is a small fraction of peak after narrow burst. */
+  volumeEphemeralTailBlockEnabled: z.boolean().default(true),
+  /** Tail block when current/peak <= this ratio (0–1). */
+  volumeEphemeralTailMaxPeakRatio: z.coerce.number().min(0.01).max(1).default(0.3),
+
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
   whaleRequireTrigger: z.boolean().default(false),
@@ -784,6 +806,15 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeSybilMinRecentVol5mUsd: process.env.PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD,
     volumeSybilSpikeRatioMin: process.env.PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN,
     volumeSybilDeadVol5mUsd: process.env.PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD,
+    volumeEphemeralGuardEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED, false),
+    volumeEphemeralLookbackHours: process.env.PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS,
+    volumeEphemeralMinActiveHourVol5mUsd: process.env.PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD,
+    volumeEphemeralMaxActiveHours: process.env.PAPER_VOLUME_EPHEMERAL_MAX_ACTIVE_HOURS,
+    volumeEphemeralMinPeakVol5mUsd: process.env.PAPER_VOLUME_EPHEMERAL_MIN_PEAK_VOL5M_USD,
+    volumeEphemeralMinHoursWithData: process.env.PAPER_VOLUME_EPHEMERAL_MIN_HOURS_WITH_DATA,
+    volumeEphemeralSparseHoursBuffer: process.env.PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER,
+    volumeEphemeralTailBlockEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED, true),
+    volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

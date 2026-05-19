@@ -119,6 +119,10 @@ function isOnlyLocalHighVetoReasons(reasons: string[]): boolean {
   return reasons.length > 0 && reasons.every((r) => r.startsWith('local_high_veto_'));
 }
 
+function hasVolumeEphemeralBlockReason(reasons: string[]): boolean {
+  return reasons.some((r) => r.startsWith('volume_ephemeral:'));
+}
+
 export interface PapertraderMainOptions {
   /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
   journalAppend?: (event: Record<string, unknown>) => void;
@@ -252,6 +256,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   >();
   const localHighVetoTelegramLastMs = new Map<string, number>();
+  const volumeEphemeralTelegramLastMs = new Map<string, number>();
 
   function liveStagedEntryActive(): boolean {
     return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
@@ -446,8 +451,61 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
-    }).catch((e) =>
+    }    ).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live local-high veto telegram failed'),
+    );
+  }
+
+  function notifyLiveOscarVolumeEphemeralGuard(d: EvalDecision): void {
+    if (cfg.strategyId !== 'live-oscar') return;
+    if (process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+    );
+    const now = Date.now();
+    const prev = volumeEphemeralTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    volumeEphemeralTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live volume-ephemeral telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const ve = d.features.volume_ephemeral;
+    const symbol = d.symbol?.trim() || '?';
+    const ephemeralReasons = d.reasons.filter((r) => r.startsWith('volume_ephemeral:'));
+    const text =
+      `<b>Live Oscar — подозрительный всплеск объёма</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
+      `Статус: покупка пропущена — объём сжат в узкое окно (разовый burst).\n` +
+      `Причины: <code>${escapeHtmlPlain(ephemeralReasons.join('; '))}</code>\n` +
+      `Активных часов: <b>${escapeHtmlPlain(String(ve?.activeHours ?? 'n/a'))}</b> / ` +
+      `<b>${escapeHtmlPlain(String(ve?.hoursWithData ?? 'n/a'))}</b> с данными за ` +
+      `<b>${escapeHtmlPlain(String(ve?.lookbackHours ?? 'n/a'))}h</b>\n` +
+      `Пик vol5m (час): <b>${escapeHtmlPlain(fmtUsdCompact(ve?.peakHourVol5mUsd))}</b>, ` +
+      `сейчас vol5m: <b>${escapeHtmlPlain(fmtUsdCompact(ve?.currentVol5mUsd ?? d.features.vol5m_usd))}</b>\n` +
+      `Price: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.price_usd))}</b>\n` +
+      `Market cap: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.market_cap_usd))}</b>`;
+
+    void sendTagged('ADVICE', 'live_oscar_volume_ephemeral', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live volume-ephemeral telegram failed'),
     );
   }
 
@@ -847,6 +905,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         });
         if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
+        }
+        if (!d.pass && hasVolumeEphemeralBlockReason(d.reasons) && !open.has(d.mint)) {
+          notifyLiveOscarVolumeEphemeralGuard(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;

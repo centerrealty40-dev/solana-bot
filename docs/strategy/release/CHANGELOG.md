@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.219] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.219`.
+
+### Live Oscar discovery — Volume Ephemeral guard (узкий burst объёма)
+
+- Новый фильтр `volume-ephemeral-guard`: почасовой max `volume_5m` за **24h**; блок, если активных часов ≤4, пик ≥$20k, история разреженная (паттерн GOAT).
+- Доп. tail-rule: текущий vol5m ≤30% от пикового часа при узком окне.
+- Telegram `-1003878024799` при срабатывании (`LIVE_VOLUME_EPHEMERAL_TELEGRAM_*`, cooldown 30m).
+
+**Откат:** `PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED=0` + `LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.218] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.218`.

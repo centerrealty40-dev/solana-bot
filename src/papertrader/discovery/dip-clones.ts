@@ -26,6 +26,11 @@ import {
   evaluateVolumeSybilGuard,
   type VolumeSybilFeatures,
 } from './volume-sybil-guard.js';
+import {
+  fetchVolumeEphemeralContextMap,
+  evaluateVolumeEphemeralGuard,
+  type VolumeEphemeralFeatures,
+} from './volume-ephemeral-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 
 export interface HoldersDecisionMeta {
@@ -260,6 +265,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg,
     snapshotTagged.map((x) => x.row),
   );
+  const volumeEphemeralMap: Map<string, VolumeEphemeralFeatures> =
+    await fetchVolumeEphemeralContextMap(
+      cfg,
+      snapshotTagged.map((x) => x.row),
+    );
   await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
 
@@ -349,6 +359,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (entryPath != null && cfg.volumeSybilGuardEnabled) {
       const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
       volumeSybilFeatures = evalRes.features;
+      if (evalRes.blocked) {
+        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+        entryPath = undefined;
+      }
+    }
+    let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
+    if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
+      const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint));
+      volumeEphemeralFeatures = evalRes.features;
       if (evalRes.blocked) {
         dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
         entryPath = undefined;
@@ -524,6 +543,27 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           minRecentVol5mUsd: cfg.volumeSybilMinRecentVol5mUsd,
           spikeRatioMin: cfg.volumeSybilSpikeRatioMin,
           deadVol5mUsd: cfg.volumeSybilDeadVol5mUsd,
+        },
+      };
+    }
+    if (volumeEphemeralFeatures != null) {
+      decisionFeatures.volume_ephemeral = {
+        enabled: cfg.volumeEphemeralGuardEnabled,
+        coverageOk: volumeEphemeralFeatures.coverageOk,
+        lookbackHours: volumeEphemeralFeatures.lookbackHours,
+        hoursWithData: volumeEphemeralFeatures.hoursWithData,
+        activeHours: volumeEphemeralFeatures.activeHours,
+        peakHourVol5mUsd: volumeEphemeralFeatures.peakHourVol5mUsd,
+        currentVol5mUsd: volumeEphemeralFeatures.currentVol5mUsd,
+        peakToCurrentRatio: volumeEphemeralFeatures.peakToCurrentRatio,
+        thresholds: {
+          minActiveHourVol5mUsd: cfg.volumeEphemeralMinActiveHourVol5mUsd,
+          maxActiveHours: cfg.volumeEphemeralMaxActiveHours,
+          minPeakVol5mUsd: cfg.volumeEphemeralMinPeakVol5mUsd,
+          minHoursWithData: cfg.volumeEphemeralMinHoursWithData,
+          sparseHoursBuffer: cfg.volumeEphemeralSparseHoursBuffer,
+          tailBlockEnabled: cfg.volumeEphemeralTailBlockEnabled,
+          tailMaxPeakRatio: cfg.volumeEphemeralTailMaxPeakRatio,
         },
       };
     }

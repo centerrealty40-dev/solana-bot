@@ -550,6 +550,26 @@ export interface SnapshotFeatures {
       deadVol5mUsd: number;
     };
   };
+  /** 1.11.219: narrow-window hourly volume burst metrics (retro / audit). */
+  volume_ephemeral?: {
+    enabled: boolean;
+    coverageOk: boolean;
+    lookbackHours: number;
+    hoursWithData: number;
+    activeHours: number;
+    peakHourVol5mUsd: number | null;
+    currentVol5mUsd: number | null;
+    peakToCurrentRatio: number | null;
+    thresholds: {
+      minActiveHourVol5mUsd: number;
+      maxActiveHours: number;
+      minPeakVol5mUsd: number;
+      minHoursWithData: number;
+      sparseHoursBuffer: number;
+      tailBlockEnabled: boolean;
+      tailMaxPeakRatio: number;
+    };
+  };
 }
 
 export type SellerProfile =
