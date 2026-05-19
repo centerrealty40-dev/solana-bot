@@ -1,16 +1,7 @@
 /**
- * Отдельный PM2-профиль для второго Telegram-канала: **локальный хай** в lookback-окне PG-баров
- * и откат от пика до последней котировки (без порога «рост от якоря» и без rolling spike 10m).
- *
- * Запуск на VPS (из корня репозитория):
- *
- *   chmod +x scripts/pullback-watch-pm2-entry.sh
- *   pm2 start scripts/pullback-watch-pm2-entry.sh --name market-pullback-telegram-watch \
- *     --cwd /opt/solana-alpha --interpreter bash --merge-logs --time
- *   pm2 save
- *
- * Секреты только в `.env` хоста: `PULLBACK_ALERT_TELEGRAM_BOT_TOKEN`, `PULLBACK_ALERT_TELEGRAM_CHAT_ID`.
- * По умолчанию чат — канал «локальный лой/хай/просадка» (вместе с retrace), не канал spike-tiered.
+ * Документация env для `market-pullback-telegram-watch`.
+ * Канонический PM2-профиль: `ecosystem.config.cjs` (apps `market-pullback-telegram-watch`).
+ * Этот файл — справочник; на VPS не стартуй отдельно, только `pm2 reload ecosystem.config.cjs`.
  */
 const path = require('path');
 const root = __dirname;

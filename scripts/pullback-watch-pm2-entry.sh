@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Точка входа для PM2: см. ecosystem.market-pullback-watch.cjs
+# Устар.: канон — ecosystem.config.cjs (`market-pullback-telegram-watch`). Скрипт оставлен для ручного dev.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

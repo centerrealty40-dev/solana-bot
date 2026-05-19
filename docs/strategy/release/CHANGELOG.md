@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.223] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.223`.
+
+### PM2 — pullback + retrace в `ecosystem.config.cjs`
+
+- **`market-pullback-telegram-watch`** и **`retrace-alert-watch`** в общем ecosystem (как spike); env + `OPERATOR_TELEGRAM_CHAT_ID`.
+- Отдельные bash entry и `ecosystem.market-*-watch.cjs` — только справочник env.
+
+**Откат:** удалить apps из `ecosystem.config.cjs`; вернуть `pm2 start scripts/*-pm2-entry.sh`.
+
+---
+
 ## [1.11.222] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.222`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PM2 entry: см. ecosystem.retrace-alert-watch.cjs
+# Устар.: канон — ecosystem.config.cjs (`retrace-alert-watch`). Скрипт оставлен для ручного dev.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

@@ -1,15 +1,7 @@
 /**
- * Отдельный PM2-профиль — не смешивать с ecosystem.config.cjs.
- * PM2 на хосте воспринимает этот .cjs как обычный скрипт Node, а не ecosystem — используйте bash-обёртку:
- *
- *   chmod +x scripts/retrace-alert-pm2-entry.sh
- *   pm2 start scripts/retrace-alert-pm2-entry.sh --name retrace-alert-watch \
- *     --cwd /opt/solana-alpha --interpreter bash --merge-logs --time
- *   pm2 save
- *
- * Блок `apps` ниже — документация env (дублируется в scripts/retrace-alert-pm2-entry.sh).
- * Секреты только в `.env` хоста: RETRACE_ALERT_TELEGRAM_* (никогда не коммитить).
- * Чат по умолчанию — тот же, что и pullback (блоки 1–2–3), не канал spike-tiered.
+ * Документация env для `retrace-alert-watch`.
+ * Канонический PM2-профиль: `ecosystem.config.cjs` (apps `retrace-alert-watch`).
+ * Этот файл — справочник; на VPS не стартуй отдельно, только `pm2 reload ecosystem.config.cjs`.
  */
 const path = require('path');
 const root = __dirname;
