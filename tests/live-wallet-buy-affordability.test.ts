@@ -3,8 +3,8 @@ import {
   estimateLamportsForBuyUsd,
   isInsufficientFundsSimError,
   isLiveBuyDiscoveryTelegramSuppressed,
-  markLiveWalletInsufficientForBuy,
   requiredLamportsForBuyQuote,
+  resetLiveBuyTelegramSuppressTick,
 } from '../src/live/wallet-buy-affordability.js';
 
 describe('isInsufficientFundsSimError', () => {
@@ -35,9 +35,9 @@ describe('lamports helpers', () => {
   });
 });
 
-describe('telegram suppress flag', () => {
-  it('marks and reads suppress window', () => {
-    markLiveWalletInsufficientForBuy(120_000);
-    expect(isLiveBuyDiscoveryTelegramSuppressed()).toBe(true);
+describe('telegram suppress tick flag', () => {
+  it('resets each tick without cross-tick cooldown', () => {
+    resetLiveBuyTelegramSuppressTick();
+    expect(isLiveBuyDiscoveryTelegramSuppressed()).toBe(false);
   });
 });

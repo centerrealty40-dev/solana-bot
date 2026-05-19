@@ -36,7 +36,6 @@ import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import {
   isInsufficientFundsSimError,
   liveWalletCanAffordLamports,
-  markLiveWalletInsufficientForBuy,
   requiredLamportsForBuyQuote,
 } from './wallet-buy-affordability.js';
 import {
@@ -284,7 +283,6 @@ async function runSolToTokenPipeline(
               requiredLamports: String(need),
             }).slice(0, 500),
           });
-          markLiveWalletInsufficientForBuy();
           return { ok: false, anchorMode: mode };
         }
       }
@@ -333,9 +331,6 @@ async function runSolToTokenPipeline(
           error: { message },
         });
         notifyLiveExecutionSimErrForTerminal(message);
-        if (isInsufficientFundsSimError(message)) {
-          markLiveWalletInsufficientForBuy();
-        }
         if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
           await sleep(liveCfg.liveBuySimRetryDelayMs);
           continue;
@@ -377,9 +372,6 @@ async function runSolToTokenPipeline(
     }
     if (ok && liveOut.signature) {
       return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
-    }
-    if (!ok && !liveOut.ok && liveOut.kind === 'sim_err' && isInsufficientFundsSimError(liveOut.message ?? '')) {
-      markLiveWalletInsufficientForBuy();
     }
     if (
       !ok &&

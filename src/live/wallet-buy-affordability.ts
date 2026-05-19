@@ -91,22 +91,7 @@ export async function liveWalletCanAffordBuyUsd(
   return liveWalletCanAffordLamports(cfg, required);
 }
 
-/** After InsufficientFunds sim — suppress coin discovery TG for a while. */
-let suppressDiscoveryTelegramUntilMs = 0;
-
-const DEFAULT_SUPPRESS_MS = 30 * 60_000;
-
-export function markLiveWalletInsufficientForBuy(durationMs = DEFAULT_SUPPRESS_MS): void {
-  suppressDiscoveryTelegramUntilMs = Math.max(
-    suppressDiscoveryTelegramUntilMs,
-    Date.now() + Math.max(60_000, durationMs),
-  );
-}
-
-export function isLiveWalletBuyTelegramSuppressed(): boolean {
-  return Date.now() < suppressDiscoveryTelegramUntilMs;
-}
-
+/** Per discovery/heartbeat tick only — no cooldown after a failed buy. */
 let tickDiscoveryTelegramSuppressed = false;
 
 export function resetLiveBuyTelegramSuppressTick(): void {
@@ -114,7 +99,7 @@ export function resetLiveBuyTelegramSuppressTick(): void {
 }
 
 export function isLiveBuyDiscoveryTelegramSuppressed(): boolean {
-  return tickDiscoveryTelegramSuppressed || isLiveWalletBuyTelegramSuppressed();
+  return tickDiscoveryTelegramSuppressed;
 }
 
 export function liveDiscoveryTgSuppressOnInsufficientSolEnabled(): boolean {
@@ -123,14 +108,13 @@ export function liveDiscoveryTgSuppressOnInsufficientSolEnabled(): boolean {
   return true;
 }
 
-/** Call once per discovery tick (live-oscar) before any discovery Telegram. */
+/** Fresh wallet check each tick; does not block later buy attempts when SOL frees up. */
 export async function refreshLiveBuyTelegramSuppressForTick(
   cfg: LiveOscarConfig,
   buyLegUsd: number,
 ): Promise<void> {
-  tickDiscoveryTelegramSuppressed = isLiveWalletBuyTelegramSuppressed();
+  tickDiscoveryTelegramSuppressed = false;
   if (!liveDiscoveryTgSuppressOnInsufficientSolEnabled()) return;
-  if (tickDiscoveryTelegramSuppressed) return;
   if (cfg.executionMode !== 'live') return;
   const r = await liveWalletCanAffordBuyUsd(cfg, buyLegUsd);
   if (!r.ok) tickDiscoveryTelegramSuppressed = true;
