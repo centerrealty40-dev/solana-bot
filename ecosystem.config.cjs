@@ -13,8 +13,12 @@ if (!JUPITER_API_KEY_PM2) {
 const JUPITER_PRO_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
 
-/** Единый операторский Telegram-канал: health, ALERT, ADVICE, dips/pumps/retrace. */
+/** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
+/** Spike tiered pump/dump watch — отдельный бот, отдельный канал. */
+const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
+/** Pullback + retrace (блоки 1–2–3) — отдельный бот, общий dips-канал. */
+const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
 /**
  * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
@@ -1316,8 +1320,8 @@ const PM2_APPS = [
       },
     },
     /**
-     * Spike / pullback / retrace — Telegram PG watches; секреты только в `.env` хоста.
-     * Канал по умолчанию: `OPERATOR_TELEGRAM_CHAT_ID`.
+     * Три канала: advice (`OPERATOR_*`), pumps (`SPIKE_*`), dips (`PULLBACK_*` / `RETRACE_*`).
+     * Секреты ботов — только в `.env` хоста.
      */
     {
       name: 'market-spike-telegram-watch',
@@ -1380,7 +1384,7 @@ const PM2_APPS = [
         SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE: '1',
         SPIKE_ALERT_AUDIT_DB_ENABLED: '1',
         SPIKE_ALERT_AUDIT_LOG_SKIPS: '0',
-        SPIKE_ALERT_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        SPIKE_ALERT_TELEGRAM_CHAT_ID: SPIKE_TELEGRAM_CHAT_ID,
       },
     },
     {
@@ -1396,7 +1400,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        PULLBACK_ALERT_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        PULLBACK_ALERT_TELEGRAM_CHAT_ID: DIPS_TELEGRAM_CHAT_ID,
         PULLBACK_ALERT_POLL_INTERVAL_MS: '20000',
         PULLBACK_ALERT_POLL_SEND_DEDUPE_MS: '120000',
         RETRACE_PULLBACK_CHANNEL_DEDUPE_PEAK_BUCKET_MIN: '15',
@@ -1429,7 +1433,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        RETRACE_ALERT_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        RETRACE_ALERT_TELEGRAM_CHAT_ID: DIPS_TELEGRAM_CHAT_ID,
         RETRACE_ALERT_POLL_INTERVAL_MS: '20000',
         RETRACE_ALERT_POLL_SEND_DEDUPE_MS: '120000',
         RETRACE_PULLBACK_CHANNEL_DEDUPE_PEAK_BUCKET_MIN: '15',
