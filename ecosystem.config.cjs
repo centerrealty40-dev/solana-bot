@@ -401,6 +401,18 @@ const PM2_APPS = [
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED: '1',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN: '15',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-10',
+        /**
+         * Volume Sybil guard (1.11.216): блокирует dead→spike→dead wash-паттерн
+         * по истории `volume_5m` в PG snapshots (lookback 6h, recent 45m).
+         */
+        PAPER_VOLUME_SYBIL_GUARD_ENABLED: '1',
+        PAPER_VOLUME_SYBIL_LOOKBACK_HOURS: '6',
+        PAPER_VOLUME_SYBIL_RECENT_MINUTES: '45',
+        PAPER_VOLUME_SYBIL_BASELINE_P10_MAX_USD: '3000',
+        PAPER_VOLUME_SYBIL_MIN_BASELINE_SAMPLES: '25',
+        PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD: '8000',
+        PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN: '6',
+        PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD: '2500',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',

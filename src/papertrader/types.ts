@@ -527,6 +527,29 @@ export interface SnapshotFeatures {
       vol1hMaxUsd: number;
     };
   };
+  /** 1.11.216: dead→spike volume sybil pattern metrics (retro / audit). */
+  volume_sybil?: {
+    enabled: boolean;
+    coverageOk: boolean;
+    lookbackHours: number;
+    recentMinutes: number;
+    baselineSampleCount: number;
+    baselineDeadCount: number;
+    baselineDeadFraction: number | null;
+    baselineP10Vol5mUsd: number | null;
+    baselineP50Vol5mUsd: number | null;
+    recentMaxVol5mUsd: number | null;
+    currentVol5mUsd: number | null;
+    effectiveRecentVol5mUsd: number | null;
+    spikeRatio: number | null;
+    thresholds: {
+      baselineP10MaxUsd: number;
+      minBaselineSamples: number;
+      minRecentVol5mUsd: number;
+      spikeRatioMin: number;
+      deadVol5mUsd: number;
+    };
+  };
 }
 
 export type SellerProfile =

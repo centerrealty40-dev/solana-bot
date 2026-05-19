@@ -21,6 +21,11 @@ import {
   evaluatePolicyAPlus,
   type PolicyAPlusFeatures,
 } from './policy-a-plus.js';
+import {
+  fetchVolumeSybilContextMap,
+  evaluateVolumeSybilGuard,
+  type VolumeSybilFeatures,
+} from './volume-sybil-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 
 export interface HoldersDecisionMeta {
@@ -251,6 +256,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     cfg,
     snapshotTagged.map((x) => x.row),
   );
+  const volumeSybilMap: Map<string, VolumeSybilFeatures> = await fetchVolumeSybilContextMap(
+    cfg,
+    snapshotTagged.map((x) => x.row),
+  );
   await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
 
@@ -331,6 +340,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const ctx = policyAPlusMap.get(row.mint);
       const evalRes = evaluatePolicyAPlus(cfg, row, ctx);
       policyAPlusFeatures = evalRes.features;
+      if (evalRes.blocked) {
+        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+        entryPath = undefined;
+      }
+    }
+    let volumeSybilFeatures: VolumeSybilFeatures | undefined;
+    if (entryPath != null && cfg.volumeSybilGuardEnabled) {
+      const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
+      volumeSybilFeatures = evalRes.features;
       if (evalRes.blocked) {
         dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
         entryPath = undefined;
@@ -482,6 +500,30 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           priceChangeWindowMin: cfg.policyAPlusPriceChangeWindowMin,
           priceChange30mMinPct: cfg.policyAPlusPriceChange30mMinPct,
           vol1hMaxUsd: cfg.policyAPlusVol1hMaxUsd,
+        },
+      };
+    }
+    if (volumeSybilFeatures != null) {
+      decisionFeatures.volume_sybil = {
+        enabled: cfg.volumeSybilGuardEnabled,
+        coverageOk: volumeSybilFeatures.coverageOk,
+        lookbackHours: volumeSybilFeatures.lookbackHours,
+        recentMinutes: volumeSybilFeatures.recentMinutes,
+        baselineSampleCount: volumeSybilFeatures.baselineSampleCount,
+        baselineDeadCount: volumeSybilFeatures.baselineDeadCount,
+        baselineDeadFraction: volumeSybilFeatures.baselineDeadFraction,
+        baselineP10Vol5mUsd: volumeSybilFeatures.baselineP10Vol5mUsd,
+        baselineP50Vol5mUsd: volumeSybilFeatures.baselineP50Vol5mUsd,
+        recentMaxVol5mUsd: volumeSybilFeatures.recentMaxVol5mUsd,
+        currentVol5mUsd: volumeSybilFeatures.currentVol5mUsd,
+        effectiveRecentVol5mUsd: volumeSybilFeatures.effectiveRecentVol5mUsd,
+        spikeRatio: volumeSybilFeatures.spikeRatio,
+        thresholds: {
+          baselineP10MaxUsd: cfg.volumeSybilBaselineP10MaxUsd,
+          minBaselineSamples: cfg.volumeSybilMinBaselineSamples,
+          minRecentVol5mUsd: cfg.volumeSybilMinRecentVol5mUsd,
+          spikeRatioMin: cfg.volumeSybilSpikeRatioMin,
+          deadVol5mUsd: cfg.volumeSybilDeadVol5mUsd,
         },
       };
     }

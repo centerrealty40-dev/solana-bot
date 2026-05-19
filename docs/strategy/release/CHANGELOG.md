@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.216] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.216`.
+
+### Live Oscar discovery — Volume Sybil guard (dead → spike → dead)
+
+- Новый фильтр `volume-sybil-guard`: смотрит **6 ч** истории `volume_5m` в PG snapshots, baseline p10 vs recent max (45 мин + текущий ряд).
+- Блокирует wash/sybil-паттерн «тишина → резкий всплеск с нуля → снова тишина» (как SCAM).
+- Env на `live-oscar`: `PAPER_VOLUME_SYBIL_GUARD_ENABLED=1`, lookback 6h, spike ratio ≥6×, baseline p10 ≤$3k.
+
+**Откат:** `PAPER_VOLUME_SYBIL_GUARD_ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.215] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.215`.

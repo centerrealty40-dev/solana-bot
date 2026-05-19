@@ -301,6 +301,26 @@ const ConfigSchema = z.object({
   policyAPlusPriceChangeWindowMin: z.coerce.number().int().min(5).max(120).default(15),
   policyAPlusPriceChange30mMinPct: z.coerce.number().default(-10),
 
+  /**
+   * Volume Sybil guard (1.11.216): block dead→spike→dead wash volume pattern.
+   * Compares recent max vol5m vs baseline p10 over lookback window in PG snapshots.
+   */
+  volumeSybilGuardEnabled: z.boolean().default(false),
+  /** Hours of history for baseline quietness (3–12). */
+  volumeSybilLookbackHours: z.coerce.number().int().min(3).max(12).default(6),
+  /** Recent minutes excluded from baseline; spike measured here + current row. */
+  volumeSybilRecentMinutes: z.coerce.number().int().min(15).max(180).default(45),
+  /** Baseline p10 vol5m at or below this = "dead" market (USD). */
+  volumeSybilBaselineP10MaxUsd: z.coerce.number().nonnegative().default(3_000),
+  /** Min PG samples in baseline window before rule applies. */
+  volumeSybilMinBaselineSamples: z.coerce.number().int().min(5).max(500).default(25),
+  /** Recent effective vol5m must reach this to count as spike (USD). */
+  volumeSybilMinRecentVol5mUsd: z.coerce.number().nonnegative().default(8_000),
+  /** Block when effectiveRecent / max(baselineP10, 100) >= this ratio. */
+  volumeSybilSpikeRatioMin: z.coerce.number().min(2).max(100).default(6),
+  /** vol5m at or below this counts as "dead" minute in baseline dead-fraction metric. */
+  volumeSybilDeadVol5mUsd: z.coerce.number().nonnegative().default(2_500),
+
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
   whaleRequireTrigger: z.boolean().default(false),
@@ -756,6 +776,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     ),
     policyAPlusPriceChangeWindowMin: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN,
     policyAPlusPriceChange30mMinPct: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT,
+    volumeSybilGuardEnabled: envBool(process.env.PAPER_VOLUME_SYBIL_GUARD_ENABLED, false),
+    volumeSybilLookbackHours: process.env.PAPER_VOLUME_SYBIL_LOOKBACK_HOURS,
+    volumeSybilRecentMinutes: process.env.PAPER_VOLUME_SYBIL_RECENT_MINUTES,
+    volumeSybilBaselineP10MaxUsd: process.env.PAPER_VOLUME_SYBIL_BASELINE_P10_MAX_USD,
+    volumeSybilMinBaselineSamples: process.env.PAPER_VOLUME_SYBIL_MIN_BASELINE_SAMPLES,
+    volumeSybilMinRecentVol5mUsd: process.env.PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD,
+    volumeSybilSpikeRatioMin: process.env.PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN,
+    volumeSybilDeadVol5mUsd: process.env.PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,
