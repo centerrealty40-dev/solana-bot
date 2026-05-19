@@ -85,6 +85,11 @@ import {
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import {
+  isLiveBuyDiscoveryTelegramSuppressed,
+  refreshLiveBuyTelegramSuppressForTick,
+  resetLiveBuyTelegramSuppressTick,
+} from '../live/wallet-buy-affordability.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -285,6 +290,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
+  function liveOscarDiscoveryBuyLegUsd(): number {
+    if (liveStagedEntryActive() && cfg.liveStagedEntryEntrySplitLegUsd > 0) {
+      return cfg.liveStagedEntryEntrySplitLegUsd;
+    }
+    return cfg.positionUsd * cfg.entryFirstLegFraction;
+  }
+
   function notifyLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
@@ -292,6 +304,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     holderCount: number | null;
   }): void {
     if (process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const token =
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
@@ -354,6 +367,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     marketCapUsd: number | null;
     holderCount: number | null;
   }): void {
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const token =
       process.env.LIVE_RISKY_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
@@ -393,6 +407,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   function notifyLiveOscarLocalHighVetoOnly(d: EvalDecision): void {
     if (cfg.strategyId !== 'live-oscar') return;
     if (process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const cooldownMs = Math.max(0, Number(process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000));
     const now = Date.now();
     const prev = localHighVetoTelegramLastMs.get(d.mint) ?? 0;
@@ -785,6 +800,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     try {
       const tickNow = Date.now();
       cleanupStaleEntryRechecks(tickNow);
+      resetLiveBuyTelegramSuppressTick();
+      const liveOscarForTg = resolveLiveOscar();
+      if (cfg.strategyId === 'live-oscar' && liveOscarForTg?.liveCfg.executionMode === 'live') {
+        await refreshLiveBuyTelegramSuppressForTick(
+          liveOscarForTg.liveCfg,
+          liveOscarDiscoveryBuyLegUsd(),
+        );
+      }
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
       const res =
         cfg.strategyKind === 'dip'

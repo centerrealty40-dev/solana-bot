@@ -584,6 +584,8 @@ const PM2_APPS = [
         LIVE_MINT_WHITELIST_ENABLED: '0',
         /** `0` — не слать ADVICE `live_oscar_staged_signal`. */
         LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED: '0',
+        /** Suppress dips-channel coin TG when wallet SOL cannot fund buy_open leg. */
+        LIVE_DISCOVERY_TG_SUPPRESS_ON_INSUFFICIENT_SOL: '1',
         /** `0` — не слать ADVICE `live_oscar_local_high_veto`. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */

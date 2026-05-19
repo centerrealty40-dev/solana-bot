@@ -34,6 +34,12 @@ import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phas
 import { fetchConfirmedSwapSolProceedsLamports } from './swap-tx-sol-proceeds.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import {
+  isInsufficientFundsSimError,
+  liveWalletCanAffordLamports,
+  markLiveWalletInsufficientForBuy,
+  requiredLamportsForBuyQuote,
+} from './wallet-buy-affordability.js';
+import {
   clearLiveBuyCooldown,
   isMintBlockedForAmbiguousLiveBuy,
   registerAmbiguousLiveBuyCooldown,
@@ -113,6 +119,7 @@ function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['an
 }
 
 function isRetryableBuySimError(message: string): boolean {
+  if (isInsufficientFundsSimError(message)) return false;
   return message.startsWith('sim_failed:') || message.includes('InstructionError');
 }
 
@@ -259,6 +266,30 @@ async function runSolToTokenPipeline(
       return { ok: false, anchorMode: mode };
     }
 
+    if (liveCfg.executionMode === 'live' && attempt === 0) {
+      const quoteInRaw = (prep.quoteSnapshot as Record<string, unknown> | undefined)?.quoteInAmount;
+      if (typeof quoteInRaw === 'string' && /^\d+$/.test(quoteInRaw)) {
+        const need = requiredLamportsForBuyQuote(
+          BigInt(quoteInRaw),
+          liveCfg.liveFreeSolBufferLamports,
+        );
+        const afford = await liveWalletCanAffordLamports(liveCfg, need);
+        if (!afford.ok) {
+          appendLiveJsonlEvent({
+            kind: 'execution_skip',
+            reason: 'insufficient_wallet_sol_for_buy',
+            detail: JSON.stringify({
+              mint: args.mint.slice(0, 12),
+              lamports: afford.lamports != null ? String(afford.lamports) : null,
+              requiredLamports: String(need),
+            }).slice(0, 500),
+          });
+          markLiveWalletInsufficientForBuy();
+          return { ok: false, anchorMode: mode };
+        }
+      }
+    }
+
     const snapForAge = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
     if (liveQuoteExceedsMaxAge(snapForAge, liveCfg.liveQuoteMaxAgeMs)) {
       const age = snapForAge.quoteAgeMs;
@@ -302,6 +333,9 @@ async function runSolToTokenPipeline(
           error: { message },
         });
         notifyLiveExecutionSimErrForTerminal(message);
+        if (isInsufficientFundsSimError(message)) {
+          markLiveWalletInsufficientForBuy();
+        }
         if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
           await sleep(liveCfg.liveBuySimRetryDelayMs);
           continue;
@@ -343,6 +377,9 @@ async function runSolToTokenPipeline(
     }
     if (ok && liveOut.signature) {
       return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
+    }
+    if (!ok && !liveOut.ok && liveOut.kind === 'sim_err' && isInsufficientFundsSimError(liveOut.message ?? '')) {
+      markLiveWalletInsufficientForBuy();
     }
     if (
       !ok &&

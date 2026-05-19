@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.217] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.217`.
+
+### Live Oscar — без Telegram о монетах при нехватке SOL на покупку
+
+- Проверка баланса кошелька vs Jupiter `quoteInAmount` перед `buy_open`; `execution_skip` `insufficient_wallet_sol_for_buy` без 11 retry на `Custom:1`.
+- Канал `-1003878024799`: не шлём discovery TG (staged signal, local-high veto, risky, whitelist miss, `new_on_horizon` в pulse), если SOL не хватает на первую ногу ($500).
+- После InsufficientFunds sim — suppress discovery TG 30 мин (`LIVE_DISCOVERY_TG_SUPPRESS_ON_INSUFFICIENT_SOL`, дефолт on).
+
+**Откат:** revert; `LIVE_DISCOVERY_TG_SUPPRESS_ON_INSUFFICIENT_SOL=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.216] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.216`.

@@ -46,6 +46,11 @@ import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.
 import { sendTagged } from '../core/telegram/sender.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
 import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
+import {
+  isLiveBuyDiscoveryTelegramSuppressed,
+  refreshLiveBuyTelegramSuppressForTick,
+} from './wallet-buy-affordability.js';
+import type { PaperTraderConfig } from '../papertrader/config.js';
 
 const log = pino({ name: 'live-oscar' });
 
@@ -58,6 +63,16 @@ function escapeHtmlPlain(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function liveOscarDiscoveryBuyLegUsd(paperCfg: PaperTraderConfig): number {
+  if (
+    paperCfg.liveStagedEntryEnabled &&
+    paperCfg.liveStagedEntryEntrySplitLegUsd > 0
+  ) {
+    return paperCfg.liveStagedEntryEntrySplitLegUsd;
+  }
+  return paperCfg.positionUsd * paperCfg.entryFirstLegFraction;
 }
 
 async function writeDiscoveryHealthSnapshotFile(extras?: {
@@ -528,6 +543,15 @@ export async function main(): Promise<void> {
 
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
       if (!tgHeartbeatOff) {
+        void (async () => {
+          if (liveCfg.executionMode === 'live') {
+            await refreshLiveBuyTelegramSuppressForTick(
+              liveCfg,
+              liveOscarDiscoveryBuyLegUsd(paperBaseline),
+            );
+          }
+          const suppressCoinTg = isLiveBuyDiscoveryTelegramSuppressed();
+
         const tok = process.env.TELEGRAM_BOT_TOKEN?.trim();
         const chat = process.env.TELEGRAM_CHAT_ID?.trim();
         const wlTok = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
@@ -554,7 +578,7 @@ export async function main(): Promise<void> {
         const rawMax = process.env.LIVE_HEARTBEAT_NEAR_READY_MAX_LINES?.trim();
         const parsedMax = rawMax ? Number.parseInt(rawMax, 10) : 15;
         const maxNew = Number.isFinite(parsedMax) ? Math.max(1, Math.min(25, parsedMax)) : 15;
-        const newcomersTg = newcomersFull.slice(0, maxNew);
+        const newcomersTg = suppressCoinTg ? [] : newcomersFull.slice(0, maxNew);
         let pulseBody: string;
         let parseMode: 'HTML' | undefined;
         if (newcomersTg.length > 0) {
@@ -594,6 +618,7 @@ export async function main(): Promise<void> {
         } else {
           log.warn({}, 'live heartbeat telegram skipped: set TELEGRAM_BOT_TOKEN/CHAT_ID or LIVE_MINT_WHITELIST_TELEGRAM_*');
         }
+        })().catch((e) => log.warn({ err: String(e) }, 'live heartbeat telegram failed'));
       }
     },
   });

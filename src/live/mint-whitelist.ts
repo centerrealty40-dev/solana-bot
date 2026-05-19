@@ -15,6 +15,7 @@ import {
   appendMintToPermanentDenylistLocal,
   resolveLivePermanentDenylistLocalPath,
 } from './mint-permanent-denylist.js';
+import { isLiveBuyDiscoveryTelegramSuppressed } from './wallet-buy-affordability.js';
 
 const log = child('live-mint-whitelist');
 
@@ -134,6 +135,7 @@ export function notifyLiveMintWhitelistSkip(
   cooldownMs: number,
   marketCapUsd?: number | null,
 ): void {
+  if (isLiveBuyDiscoveryTelegramSuppressed()) return;
   const key = mint.trim();
   if (!key) return;
   const sym = symbol.trim() || '?';
