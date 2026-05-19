@@ -124,6 +124,7 @@ async function tick(pool) {
 
   if (!stale && wasStale) {
     st.stale = false;
+    st.lastRecoveryAt = Date.now();
     saveState(st);
     if (!DRY_RUN) await sendTagged('ALERT', 'snapshot_stale', buildRecoveryBody(rows));
   }

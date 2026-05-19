@@ -343,6 +343,27 @@ const ConfigSchema = z.object({
   /** Tail block when current/peak <= this ratio (0–1). */
   volumeEphemeralTailMaxPeakRatio: z.coerce.number().min(0.01).max(1).default(0.3),
 
+  /**
+   * PG data coverage guard (1.11.222): block when minute-bar history is gapped or
+   * too thin to trust volume sybil/ephemeral guards; Telegram ADVICE on near-entry skip.
+   */
+  pgDataCoverageGuardEnabled: z.boolean().default(false),
+  pgDataCoverageLookbackHours: z.coerce.number().int().min(6).max(48).default(24),
+  /** Min share of lookback hours with PG data for this mint (ephemeral window). */
+  pgDataCoverageMinHourRatio: z.coerce.number().min(0.1).max(1).default(0.5),
+  /** Stricter hour ratio while within strict-after-recovery window. */
+  pgDataCoverageStrictMinHourRatio: z.coerce.number().min(0.1).max(1).default(0.75),
+  /** Min share of full hours with ≥N minute bars across dex tables (system gap detector). */
+  pgDataCoverageMinSystemHourRatio: z.coerce.number().min(0.1).max(1).default(0.7),
+  /** Hour counts as covered when it has at least this many distinct minute bars. */
+  pgDataCoverageMinMinutesPerHour: z.coerce.number().int().min(10).max(59).default(45),
+  /** Block when largest gap between consecutive mint minute bars exceeds this. */
+  pgDataCoverageMaxGapMinutes: z.coerce.number().int().min(5).max(720).default(30),
+  /** Block all entries while any dex snapshot table is stale right now. */
+  pgDataCoverageBlockOnPgStale: z.boolean().default(true),
+  /** After PG recovery, use strict min hour ratio for this many hours. */
+  pgDataCoverageStrictAfterRecoveryHours: z.coerce.number().int().min(0).max(72).default(24),
+
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
   whaleRequireTrigger: z.boolean().default(false),
@@ -815,6 +836,15 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralSparseHoursBuffer: process.env.PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER,
     volumeEphemeralTailBlockEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED, true),
     volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
+    pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
+    pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
+    pgDataCoverageMinHourRatio: process.env.PAPER_PG_DATA_COVERAGE_MIN_HOUR_RATIO,
+    pgDataCoverageStrictMinHourRatio: process.env.PAPER_PG_DATA_COVERAGE_STRICT_MIN_HOUR_RATIO,
+    pgDataCoverageMinSystemHourRatio: process.env.PAPER_PG_DATA_COVERAGE_MIN_SYSTEM_HOUR_RATIO,
+    pgDataCoverageMinMinutesPerHour: process.env.PAPER_PG_DATA_COVERAGE_MIN_MINUTES_PER_HOUR,
+    pgDataCoverageMaxGapMinutes: process.env.PAPER_PG_DATA_COVERAGE_MAX_GAP_MINUTES,
+    pgDataCoverageBlockOnPgStale: envBool(process.env.PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE, true),
+    pgDataCoverageStrictAfterRecoveryHours: process.env.PAPER_PG_DATA_COVERAGE_STRICT_AFTER_RECOVERY_HOURS,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

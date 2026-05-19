@@ -31,6 +31,12 @@ import {
   evaluateVolumeEphemeralGuard,
   type VolumeEphemeralFeatures,
 } from './volume-ephemeral-guard.js';
+import {
+  fetchGlobalPgCoverageState,
+  fetchMintPgCoverageMap,
+  evaluatePgDataCoverageGuard,
+  type MintPgCoverageFeatures,
+} from './pg-data-coverage-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 
 export interface HoldersDecisionMeta {
@@ -270,6 +276,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       cfg,
       snapshotTagged.map((x) => x.row),
     );
+  const globalPgCoverage = await fetchGlobalPgCoverageState(cfg);
+  const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
+    cfg,
+    snapshotTagged.map((x) => x.row),
+    globalPgCoverage,
+  );
   await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
 
@@ -356,6 +368,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
     }
     let volumeSybilFeatures: VolumeSybilFeatures | undefined;
+    let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
+    if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
+      const evalRes = evaluatePgDataCoverageGuard(
+        cfg,
+        row,
+        mintPgCoverageMap.get(row.mint),
+        globalPgCoverage,
+        true,
+      );
+      pgDataCoverageFeatures = evalRes.features;
+      if (evalRes.blocked) {
+        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+        entryPath = undefined;
+      }
+    }
     if (entryPath != null && cfg.volumeSybilGuardEnabled) {
       const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
       volumeSybilFeatures = evalRes.features;
@@ -564,6 +591,32 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           sparseHoursBuffer: cfg.volumeEphemeralSparseHoursBuffer,
           tailBlockEnabled: cfg.volumeEphemeralTailBlockEnabled,
           tailMaxPeakRatio: cfg.volumeEphemeralTailMaxPeakRatio,
+        },
+      };
+    }
+    if (pgDataCoverageFeatures != null) {
+      decisionFeatures.pg_data_coverage = {
+        enabled: cfg.pgDataCoverageGuardEnabled,
+        nearEntry: pgDataCoverageFeatures.nearEntry,
+        lookbackHours: pgDataCoverageFeatures.lookbackHours,
+        minuteSamples: pgDataCoverageFeatures.minuteSamples,
+        hoursWithData: pgDataCoverageFeatures.hoursWithData,
+        hourCoverageRatio: pgDataCoverageFeatures.hourCoverageRatio,
+        maxGapMinutes: pgDataCoverageFeatures.maxGapMinutes,
+        sybilBaselineSamples: pgDataCoverageFeatures.sybilBaselineSamples,
+        sybilCoverageOk: pgDataCoverageFeatures.sybilCoverageOk,
+        ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
+        global: {
+          pgStaleNow: globalPgCoverage.pgStaleNow,
+          systemHourRatio: globalPgCoverage.systemHourRatio,
+          strictRecoveryActive: globalPgCoverage.strictRecoveryActive,
+          hoursSinceLastRecovery: globalPgCoverage.hoursSinceLastRecovery,
+        },
+        thresholds: {
+          minHourRatio: cfg.pgDataCoverageMinHourRatio,
+          strictMinHourRatio: cfg.pgDataCoverageStrictMinHourRatio,
+          minSystemHourRatio: cfg.pgDataCoverageMinSystemHourRatio,
+          maxGapMinutes: cfg.pgDataCoverageMaxGapMinutes,
         },
       };
     }

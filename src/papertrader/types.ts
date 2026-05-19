@@ -570,6 +570,31 @@ export interface SnapshotFeatures {
       tailMaxPeakRatio: number;
     };
   };
+  /** 1.11.222: PG minute-bar coverage / gap metrics for volume guard trust. */
+  pg_data_coverage?: {
+    enabled: boolean;
+    nearEntry: boolean;
+    lookbackHours: number;
+    minuteSamples: number;
+    hoursWithData: number;
+    hourCoverageRatio: number | null;
+    maxGapMinutes: number | null;
+    sybilBaselineSamples: number;
+    sybilCoverageOk: boolean;
+    ephemeralCoverageOk: boolean;
+    global: {
+      pgStaleNow: boolean;
+      systemHourRatio: number | null;
+      strictRecoveryActive: boolean;
+      hoursSinceLastRecovery: number | null;
+    };
+    thresholds: {
+      minHourRatio: number;
+      strictMinHourRatio: number;
+      minSystemHourRatio: number;
+      maxGapMinutes: number;
+    };
+  };
 }
 
 export type SellerProfile =

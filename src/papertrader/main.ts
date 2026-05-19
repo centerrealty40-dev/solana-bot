@@ -123,6 +123,10 @@ function hasVolumeEphemeralBlockReason(reasons: string[]): boolean {
   return reasons.some((r) => r.startsWith('volume_ephemeral:'));
 }
 
+function hasDataCoverageBlockReason(reasons: string[]): boolean {
+  return reasons.some((r) => r.startsWith('data_coverage:'));
+}
+
 export interface PapertraderMainOptions {
   /** Default: paper JSONL `appendEvent`. Live-oscar mirrors discovery audit rows via `discovery-audit-jsonl.ts`. */
   journalAppend?: (event: Record<string, unknown>) => void;
@@ -257,6 +261,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
   const localHighVetoTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
+  const dataCoverageTelegramLastMs = new Map<string, number>();
 
   function liveStagedEntryActive(): boolean {
     return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
@@ -504,8 +509,76 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
-    }).catch((e) =>
+    }    ).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live volume-ephemeral telegram failed'),
+    );
+  }
+
+  function notifyLiveOscarDataCoverageSkip(d: EvalDecision): void {
+    if (cfg.strategyId !== 'live-oscar') return;
+    if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    if (!d.features.pg_data_coverage?.nearEntry) return;
+
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+    );
+    const now = Date.now();
+    const prev = dataCoverageTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    dataCoverageTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live pg-data-coverage telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const cov = d.features.pg_data_coverage;
+    const symbol = d.symbol?.trim() || '?';
+    const coverageReasons = d.reasons.filter((r) => r.startsWith('data_coverage:'));
+    const hourPct =
+      cov?.hourCoverageRatio != null ? `${(cov.hourCoverageRatio * 100).toFixed(0)}%` : 'n/a';
+    const sysPct =
+      cov?.global.systemHourRatio != null
+        ? `${(cov.global.systemHourRatio * 100).toFixed(0)}%`
+        : 'n/a';
+    const recoveryNote = cov?.global.strictRecoveryActive
+      ? `\nРежим: строгий после восстановления PG (${cov.global.hoursSinceLastRecovery?.toFixed(1) ?? '?'} ч назад).`
+      : '';
+
+    const text =
+      `<b>Live Oscar — покупка пропущена (дыра / неполные PG-данные)</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
+      `Статус: кандидат прошёл dip-гейты, но объём нельзя проверить — PG-история неполная.\n` +
+      `Причины: <code>${escapeHtmlPlain(coverageReasons.join('; '))}</code>\n` +
+      `PG mint: <b>${escapeHtmlPlain(String(cov?.hoursWithData ?? 'n/a'))}h</b> / ` +
+      `<b>${escapeHtmlPlain(String(cov?.lookbackHours ?? 'n/a'))}h</b> ` +
+      `(покрытие ${escapeHtmlPlain(hourPct)}), ` +
+      `max gap: <b>${escapeHtmlPlain(cov?.maxGapMinutes != null ? `${Math.round(cov.maxGapMinutes)}m` : 'n/a')}</b>, ` +
+      `sybil samples: <b>${escapeHtmlPlain(String(cov?.sybilBaselineSamples ?? 'n/a'))}</b>\n` +
+      `Система PG: hour_ratio=${escapeHtmlPlain(sysPct)}, stale_now=${escapeHtmlPlain(String(cov?.global.pgStaleNow ?? false))}` +
+      recoveryNote +
+      `\nPrice: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.price_usd))}</b>, ` +
+      `vol5m: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.vol5m_usd))}</b>, ` +
+      `mcap: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.market_cap_usd))}</b>`;
+
+    void sendTagged('ADVICE', 'live_oscar_pg_data_coverage', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live pg-data-coverage telegram failed'),
     );
   }
 
@@ -908,6 +981,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (!d.pass && hasVolumeEphemeralBlockReason(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarVolumeEphemeralGuard(d);
+        }
+        if (!d.pass && hasDataCoverageBlockReason(d.reasons) && !open.has(d.mint)) {
+          notifyLiveOscarDataCoverageSkip(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;

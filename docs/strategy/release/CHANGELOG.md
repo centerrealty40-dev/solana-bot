@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.222] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.222`.
+
+### Live Oscar — PG data coverage guard (auto skip + Telegram)
+
+- **`PAPER_PG_DATA_COVERAGE_GUARD_ENABLED=1`:** блокирует near-entry, если PG minute history gapped/тонкая — volume sybil/ephemeral нельзя доверять.
+- Проверки: PG stale now, system hour ratio, mint max gap, insufficient sybil/ephemeral samples; strict min hour ratio 24h после recovery PG.
+- **ADVICE `live_oscar_pg_data_coverage`** → `-1003878024799` при skip кандидата из‑за неполных данных.
+- `snapshot-freshness-watch` пишет **`lastRecoveryAt`** в state для strict window.
+
+**Откат:** `PAPER_PG_DATA_COVERAGE_GUARD_ENABLED=0` + `LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED=0`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.221] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.221`.
