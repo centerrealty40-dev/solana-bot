@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.221] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.221`.
+
+### Observability — единый Telegram-канал оператора
+
+- Все дефолтные **`TELEGRAM_CHAT_ID`**, **`SPIKE_*`**, **`PULLBACK_*`**, **`RETRACE_*`** и discovery ADVICE → **`-1003878024799`** (`OPERATOR_TELEGRAM_CHAT_ID` в `ecosystem.config.cjs`).
+- Health pulse, snapshot stale, collector silence, hourly report, dips/pumps/retrace — один канал.
+
+**Откат:** вернуть прежние chat id в `.env` / ecosystem; `pm2 reload --update-env`.
+
+---
+
 ## [1.11.220] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.220`.

@@ -43,7 +43,7 @@ module.exports = {
         RETRACE_ALERT_HOLDER_NULL_SOFT: '1',
         RETRACE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
         RETRACE_ALERT_DRY_RUN: '0',
-        RETRACE_ALERT_TELEGRAM_CHAT_ID: '-1003504887486',
+        RETRACE_ALERT_TELEGRAM_CHAT_ID: '-1003878024799',
       },
     },
   ],

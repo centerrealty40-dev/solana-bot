@@ -13,6 +13,9 @@ if (!JUPITER_API_KEY_PM2) {
 const JUPITER_PRO_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
 
+/** Единый операторский Telegram-канал: health, ALERT, ADVICE, dips/pumps/retrace. */
+const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
+
 /**
  * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
@@ -220,7 +223,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** TELEGRAM_* из .env. [ALERT][dex_collectors] — 429, тики, сеть, tick failed, fatal, log silence. */
+        /** [ALERT][dex_collectors] — 429, тики, сеть, tick failed, fatal, log silence. */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_WATCH_POLL_MS: '15000',
         COLLECTOR_WATCH_TELEGRAM: '1',
         COLLECTOR_WATCH_SILENCE_MAX_MS: '480000',
@@ -242,6 +246,7 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         /** [ALERT][snapshot_stale] при age PG snapshots > SNAPSHOT_FRESHNESS_MAX_AGE_SEC. */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         SNAPSHOT_FRESHNESS_POLL_MS: '300000',
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
@@ -449,7 +454,7 @@ const PM2_APPS = [
         PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO: '0.3',
         /** TG: блок volume ephemeral guard — подозрительный разовый всплеск объёма. */
         LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED: '1',
-        LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID: '-1003878024799',
+        LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS: '1800000',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
@@ -649,7 +654,7 @@ const PM2_APPS = [
          * Эти алерты всегда без тихих часов (`skipQuietHours` в коде).
          */
         LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN: '8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30',
-        LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID: '-1003878024799',
+        LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
         LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
         /**
@@ -677,6 +682,7 @@ const PM2_APPS = [
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES: '2',
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
         /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
@@ -1297,8 +1303,8 @@ const PM2_APPS = [
      * Spike-алерты в Telegram (PG). Раньше стартовали отдельно; включено в общий ecosystem,
      * чтобы `pm2 start ecosystem.config.cjs` не терял процесс. Секреты — только в `.env` хоста.
      *
-     * Канал по умолчанию: tiered mcap / минутные и rolling окна (`SPIKE_ALERT_TELEGRAM_CHAT_ID`).
-     * Алерты с блоками 1–2–3 (pullback / retrace) — другой канал, см. ecosystem.market-pullback-watch.cjs и ecosystem.retrace-alert-watch.cjs.
+     * Канал по умолчанию: `OPERATOR_TELEGRAM_CHAT_ID` (`SPIKE_ALERT_TELEGRAM_CHAT_ID`).
+     * Pullback/retrace — тот же канал, см. ecosystem.market-pullback-watch.cjs и ecosystem.retrace-alert-watch.cjs.
      */
     {
       name: 'market-spike-telegram-watch',
@@ -1361,8 +1367,7 @@ const PM2_APPS = [
         SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE: '1',
         SPIKE_ALERT_AUDIT_DB_ENABLED: '1',
         SPIKE_ALERT_AUDIT_LOG_SKIPS: '0',
-        /** Канал «окна + tier по mcap» (не смешивать с pullback/retrace 1–2–3). */
-        SPIKE_ALERT_TELEGRAM_CHAT_ID: '-1003633176769',
+        SPIKE_ALERT_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
       },
     },
 ];

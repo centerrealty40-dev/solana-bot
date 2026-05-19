@@ -46,8 +46,7 @@ module.exports = {
         PULLBACK_ALERT_DRY_RUN: '0',
         PULLBACK_ALERT_MAX_NEWER_BAR_AGE_MINUTES: '25',
         PULLBACK_ALERT_DISPLAY_TZ: 'Europe/Moscow',
-        /** Канал блоков 1–2–3 (не spike tiered). */
-        PULLBACK_ALERT_TELEGRAM_CHAT_ID: '-1003504887486',
+        PULLBACK_ALERT_TELEGRAM_CHAT_ID: '-1003878024799',
       },
     },
   ],
