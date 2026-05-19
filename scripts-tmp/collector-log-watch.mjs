@@ -14,6 +14,7 @@
  *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
  *   TELEGRAM_COOLDOWN_ALERT_DEX_COLLECTORS_MS — опционально, второй слой в sendTagged
  *   COLLECTOR_WATCH_TELEGRAM — `0` не вызывает sendTagged (логи PM2 без изменений).
+ *   COLLECTOR_WATCH_SILENCE_MAX_MS — нет «tick completed» и mtime лога старше порога → ALERT (default 480000 = 8 min).
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -36,6 +37,7 @@ const ERR_SNIP = Number(process.env.COLLECTOR_WATCH_ERR_SNIP || 280);
 const COLLECTOR_WATCH_TELEGRAM = !['0', 'false', 'no'].includes(
   String(process.env.COLLECTOR_WATCH_TELEGRAM ?? '1').toLowerCase(),
 );
+const SILENCE_MAX_MS = Number(process.env.COLLECTOR_WATCH_SILENCE_MAX_MS || 480_000);
 
 function defaultLogFiles() {
   const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), '.pm2');
@@ -75,7 +77,7 @@ function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
   } catch {
-    return { offsets: {}, throttle: {}, skipTs: {}, lastSpikeN: {} };
+    return { offsets: {}, throttle: {}, skipTs: {}, lastSpikeN: {}, lastTickCompletedAt: {}, silenceAlerted: {} };
   }
 }
 
@@ -143,6 +145,13 @@ function recordSkip(state, collector, batch) {
 
 function dispatchLine(coll, obj, state, batch) {
   const msg = obj.msg;
+  if (msg === 'tick completed') {
+    if (!state.lastTickCompletedAt) state.lastTickCompletedAt = {};
+    const parsed = obj.ts ? Date.parse(String(obj.ts)) : NaN;
+    state.lastTickCompletedAt[coll] = Number.isFinite(parsed) ? parsed : Date.now();
+    if (state.silenceAlerted?.[coll]) state.silenceAlerted[coll] = false;
+    return;
+  }
   if (msg === 'request retry scheduled' && obj.status === 429) {
     batch.http429.push({ collector: coll, obj });
     return;
@@ -323,6 +332,55 @@ function scanFile(absPath, state, batch) {
   }
 }
 
+async function checkCollectorSilence(state, paths) {
+  if (!state.lastTickCompletedAt) state.lastTickCompletedAt = {};
+  if (!state.silenceAlerted) state.silenceAlerted = {};
+  const now = Date.now();
+  const staleLines = [];
+  const recoveryLines = [];
+
+  for (const p of paths) {
+    const abs = path.resolve(p);
+    const coll = collectorKey(abs);
+    let lastActivity = state.lastTickCompletedAt[coll] ?? 0;
+    if (fs.existsSync(abs)) {
+      const mtime = fs.statSync(abs).mtimeMs;
+      if (mtime > lastActivity) lastActivity = mtime;
+    }
+    if (!(lastActivity > 0)) continue;
+
+    const silent = now - lastActivity > SILENCE_MAX_MS;
+    const wasAlerted = state.silenceAlerted[coll] === true;
+    const silentMin = Math.round((now - lastActivity) / 60_000);
+
+    if (silent && !wasAlerted) {
+      state.silenceAlerted[coll] = true;
+      staleLines.push(
+        `• ${coll}: нет tick completed ~${silentMin} мин (PM2 может быть online, но лог/ингest мёртв)`,
+      );
+    } else if (!silent && wasAlerted) {
+      state.silenceAlerted[coll] = false;
+      recoveryLines.push(`• ${coll}: тики снова идут`);
+    }
+  }
+
+  if (staleLines.length) {
+    saveState(state);
+    const body = [
+      `🚨 DEX-коллектор(ы) молчат >${Math.round(SILENCE_MAX_MS / 60_000)} мин:`,
+      ...staleLines,
+      'Действие: pm2 restart sa-pumpswap sa-raydium sa-orca sa-meteora sa-moonshot',
+    ].join('\n');
+    if (COLLECTOR_WATCH_TELEGRAM) await sendTagged('ALERT', 'dex_collectors', body);
+  }
+  if (recoveryLines.length) {
+    saveState(state);
+    if (COLLECTOR_WATCH_TELEGRAM) {
+      await sendTagged('ALERT', 'dex_collectors', `✅ DEX-коллекторы восстановили тики:\n${recoveryLines.join('\n')}`);
+    }
+  }
+}
+
 async function tick() {
   const paths = logPaths();
   const state = loadState();
@@ -330,6 +388,8 @@ async function tick() {
   if (!state.throttle) state.throttle = {};
   if (!state.skipTs) state.skipTs = {};
   if (!state.lastSpikeN) state.lastSpikeN = {};
+  if (!state.lastTickCompletedAt) state.lastTickCompletedAt = {};
+  if (!state.silenceAlerted) state.silenceAlerted = {};
 
   const batch = emptyBatch();
   for (const p of paths) {
@@ -341,6 +401,7 @@ async function tick() {
   }
 
   await flushUnifiedAlert(state, batch);
+  await checkCollectorSilence(state, paths);
 
   const now = Date.now();
   for (const p of paths) {
@@ -363,6 +424,7 @@ async function main() {
       throttleRoutineSkipMs: THROTTLE_SKIP_MS,
       skipWindowMin: SKIP_WINDOW_MS / 60000,
       skipSpikeMin: SKIP_SPIKE_MIN,
+      silenceMaxMin: SILENCE_MAX_MS / 60000,
     }),
   );
 

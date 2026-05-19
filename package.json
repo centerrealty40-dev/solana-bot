@@ -54,6 +54,7 @@
     "paper2:post-mortem": "node scripts-tmp/post-mortem-paper-v1.mjs",
     "collector:http-budget": "node scripts-tmp/collector-http-budget.mjs",
     "collector:log-watch": "node scripts-tmp/collector-log-watch.mjs",
+    "collector:snapshot-freshness-watch": "node scripts-tmp/snapshot-freshness-watch.mjs",
     "collector:profile-once": "node scripts-tmp/collector-profile-once.mjs",
     "sa-grws-collector": "node scripts-tmp/sa-grws-collector.mjs",
     "sa-grws-analytics": "node scripts-tmp/sa-grws-analytics.mjs",

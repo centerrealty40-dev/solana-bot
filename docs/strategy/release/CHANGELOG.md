@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.220] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.220`.
+
+### Observability — PG snapshot freshness + collector silence alerts
+
+- **`[HEALTH][live_oscar_pulse]`:** всегда `cand/eval/gate_skip` за окно discovery + `snap_worst_age_min` по dex; при stale PG — **`[ALERT][snapshot_stale]`** на heartbeat.
+- **PM2 `sa-snapshot-freshness-watch`:** опрос PG каждые 5 мин, transition **`[ALERT][snapshot_stale]`** / recovery.
+- **`sa-collector-watch`:** **`COLLECTOR_WATCH_TELEGRAM=1`**, детект «нет tick completed / mtime лога» > 8 мин → **`[ALERT][dex_collectors]`**.
+- Env: **`SNAPSHOT_FRESHNESS_MAX_AGE_SEC=600`**, **`COLLECTOR_WATCH_SILENCE_MAX_MS=480000`**.
+
+**Откат:** `pm2 delete sa-snapshot-freshness-watch`; `COLLECTOR_WATCH_TELEGRAM=0`; убрать snapshot lines из pulse (revert); `SNAPSHOT_FRESHNESS_MAX_AGE_SEC` не задавать.
+
+---
+
 ## [1.11.219] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.219`.

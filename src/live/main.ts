@@ -47,6 +47,13 @@ import { sendTagged } from '../core/telegram/sender.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
 import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
 import {
+  buildSnapshotStaleAlertBody,
+  fetchDexSnapshotFreshness,
+  formatSnapshotFreshnessPulseLine,
+  snapshotMaxAgeSecFromEnv,
+  snapshotsAnyStale,
+} from '../ingestion/pair-snapshot-freshness.js';
+import {
   isLiveBuyDiscoveryTelegramSuppressed,
   refreshLiveBuyTelegramSuppressForTick,
 } from './wallet-buy-affordability.js';
@@ -558,6 +565,20 @@ export async function main(): Promise<void> {
         const wlChat = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
         const wMin = dhMin;
         const legacyTg = process.env.LIVE_HEARTBEAT_LEGACY_DISC_TELEGRAM?.trim() === '1';
+        const snapMaxSec = snapshotMaxAgeSecFromEnv();
+        let snapPulseLine = 'snap_worst_age_min=?';
+        try {
+          const snapRows = await fetchDexSnapshotFreshness(snapMaxSec);
+          snapPulseLine = formatSnapshotFreshnessPulseLine(snapRows);
+          if (snapshotsAnyStale(snapRows, snapMaxSec)) {
+            void sendTagged('ALERT', 'snapshot_stale', buildSnapshotStaleAlertBody(snapRows, snapMaxSec), {
+              skipQuietHours: true,
+            }).catch((e) => log.warn({ err: String(e) }, 'snapshot stale alert telegram failed'));
+          }
+        } catch (e) {
+          snapPulseLine = 'snap_worst_age_min=err';
+          log.warn({ err: String(e) }, 'snapshot freshness check failed');
+        }
         const baseLines = [
           `uptime=${Math.floor(process.uptime())}s`,
           `open=${openPositions}`,
@@ -568,11 +589,13 @@ export async function main(): Promise<void> {
           `near_ready_new_since_last_pulse=${newSinceLastHb}`,
           `consec_sim_fail=${simStreak}`,
           `disc_cycles_total=${stats.ticks}`,
+          `${wMin}m cand=${dh.discovered} eval=${dh.evaluated} gate_skip=${dh.gateFail} opened_win=${dh.opened}`,
+          snapPulseLine,
           `errors=${stats.errors}`,
           `opened_total=${stats.opened}`,
         ];
         if (legacyTg) {
-          baseLines.splice(5, 0, `${wMin}m cand=${dh.discovered} eval=${dh.evaluated} gate_skip=${dh.gateFail} opened=${dh.opened} disc_ticks=${dh.discoveryTicks}`);
+          baseLines.splice(9, 0, `${wMin}m disc_ticks=${dh.discoveryTicks}`);
         }
 
         const rawMax = process.env.LIVE_HEARTBEAT_NEAR_READY_MAX_LINES?.trim();

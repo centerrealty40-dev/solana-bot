@@ -220,10 +220,31 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** TELEGRAM_* из .env. Один чат: [ALERT][dex_collectors] — 429, тики, сеть, tick failed, fatal. */
+        /** TELEGRAM_* из .env. [ALERT][dex_collectors] — 429, тики, сеть, tick failed, fatal, log silence. */
         COLLECTOR_WATCH_POLL_MS: '15000',
-        /** `0` — не слать dex_collectors в Telegram (логи PM2 остаются). */
-        COLLECTOR_WATCH_TELEGRAM: '0',
+        COLLECTOR_WATCH_TELEGRAM: '1',
+        COLLECTOR_WATCH_SILENCE_MAX_MS: '480000',
+      },
+    },
+    {
+      name: 'sa-snapshot-freshness-watch',
+      cwd: root,
+      script: 'scripts-tmp/snapshot-freshness-watch.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '120M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** [ALERT][snapshot_stale] при age PG snapshots > SNAPSHOT_FRESHNESS_MAX_AGE_SEC. */
+        SNAPSHOT_FRESHNESS_POLL_MS: '300000',
+        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
+        SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
       },
     },
     {
@@ -657,6 +678,8 @@ const PM2_APPS = [
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
         /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
+        /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
+        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
