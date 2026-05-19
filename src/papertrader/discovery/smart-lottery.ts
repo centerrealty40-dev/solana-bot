@@ -79,6 +79,10 @@ export async function fetchSmartLotteryLaneCandidates(
 
   const maxAgeFilter = lc.MAX_AGE_MIN > 0 ? `AND COALESCE(age_min, 0) <= ${lc.MAX_AGE_MIN}` : '';
   const maxLiqFilter = lc.MAX_LIQ_USD > 0 ? `AND liquidity_usd <= ${lc.MAX_LIQ_USD}` : '';
+  const minMcapFilter =
+    cfg.discoveryMinMarketCapUsd > 0
+      ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
+      : '';
   const limit =
     cfg.smlotSnapshotCandidateLimit > 0 ? cfg.smlotSnapshotCandidateLimit : cfg.snapshotCandidateLimit;
 
@@ -101,6 +105,7 @@ export async function fetchSmartLotteryLaneCandidates(
       AND volume_5m >= ${lc.MIN_VOL_5M_USD}
       AND buys_5m >= ${lc.MIN_BUYS_5M}
       AND sells_5m >= ${lc.MIN_SELLS_5M}
+      ${minMcapFilter}
     ORDER BY ts DESC
     LIMIT ${limit}
   `));

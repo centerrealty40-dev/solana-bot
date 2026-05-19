@@ -182,6 +182,8 @@ const ConfigSchema = z.object({
   lanePostMaxAgeMin: z.coerce.number().nonnegative().default(180),
   /** 0 = no cap. Upper bound on pool USD liquidity for post lane snapshot SQL + evaluateSnapshot. */
   lanePostMaxLiqUsd: z.coerce.number().nonnegative().default(0),
+  /** 0 = off. Min COALESCE(market_cap_usd, fdv_usd) on discovery snapshot row before buy eval. */
+  discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
   snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
@@ -680,6 +682,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMinAgeMin: process.env.PAPER_POST_MIN_AGE_MIN,
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
     lanePostMaxLiqUsd: process.env.PAPER_POST_MAX_LIQ_USD,
+    discoveryMinMarketCapUsd: process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,

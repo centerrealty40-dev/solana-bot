@@ -67,6 +67,14 @@ export function explainPostLaneUniverseMiss(
     reasons.push(`sells_5m_${sells}<${lc.MIN_SELLS_5M}`);
   }
 
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap > 0) {
+    const refMcap = Number(row.market_cap_usd ?? 0);
+    if (!(refMcap >= minMcap)) {
+      reasons.push(`market_cap_usd_${refMcap.toFixed(0)}<${minMcap}`);
+    }
+  }
+
   return { reasons, symbol: row.symbol };
 }
 

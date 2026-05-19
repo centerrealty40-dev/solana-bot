@@ -118,4 +118,19 @@ describe('evaluateSnapshot integrates guard', () => {
     expect(v.pass).toBe(false);
     expect(v.reasons.some((x) => x.startsWith('vol5m>'))).toBe(true);
   });
+
+  it('rejects ref mcap below discoveryMinMarketCapUsd when set', () => {
+    const cfg = baseCfg({ discoveryMinMarketCapUsd: 3_000_000 });
+    const row = baseRow({ market_cap_usd: 1_200_000 });
+    const v = evaluateSnapshot(cfg, row, 'post_migration');
+    expect(v.pass).toBe(false);
+    expect(v.reasons).toContain('mcap<3000000');
+  });
+
+  it('passes ref mcap at or above discoveryMinMarketCapUsd', () => {
+    const cfg = baseCfg({ discoveryMinMarketCapUsd: 3_000_000 });
+    const row = baseRow({ market_cap_usd: 3_500_000 });
+    const v = evaluateSnapshot(cfg, row, 'post_migration');
+    expect(v.reasons.some((x) => x.startsWith('mcap<'))).toBe(false);
+  });
 });

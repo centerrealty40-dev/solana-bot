@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.215] — 2026-05-19
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.215`.
+
+### Live Oscar discovery — мин. market cap $3M на покупку
+
+- `PAPER_DISCOVERY_MIN_MARKET_CAP_USD=3000000`: SQL universe + `evaluateSnapshot` (ref mcap = COALESCE mcap/fdv снимка).
+- Блокирует micro-cap вроде SCAM (~$1.1M mcap при liq $160k+).
+
+**Откат:** env `PAPER_DISCOVERY_MIN_MARKET_CAP_USD=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.214] — 2026-05-18
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.214`.

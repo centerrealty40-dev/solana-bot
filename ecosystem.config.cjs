@@ -343,6 +343,8 @@ const PM2_APPS = [
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
+        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy. */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',

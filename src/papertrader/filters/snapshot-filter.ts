@@ -12,6 +12,12 @@ interface LaneCfg {
   MAX_AGE_MIN: number;
 }
 
+/** Ref mcap from snapshot row (SQL already COALESCE market_cap_usd, fdv_usd). */
+export function snapshotRefMarketCapUsd(row: SnapshotCandidateRow): number {
+  const n = Number(row.market_cap_usd ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** Smart Lottery paper strategy — separate snapshot thresholds from dip Oscar lanes. */
 export function smartLotteryLaneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg {
   if (lane === 'migration_event') {
@@ -120,6 +126,11 @@ export function evaluateSnapshot(
   if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
   const vh = evaluateVol5m1hGuard(cfg, row);
   if (!vh.pass) reasons.push(...vh.reasons);
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap > 0) {
+    const refMcap = snapshotRefMarketCapUsd(row);
+    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
+  }
   return { pass: reasons.length === 0, reasons };
 }
 
@@ -145,5 +156,10 @@ export function evaluateSnapshotSmartLottery(
   if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
   const vh = evaluateVol5m1hGuard(cfg, row);
   if (!vh.pass) reasons.push(...vh.reasons);
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap > 0) {
+    const refMcap = snapshotRefMarketCapUsd(row);
+    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
+  }
   return { pass: reasons.length === 0, reasons };
 }
