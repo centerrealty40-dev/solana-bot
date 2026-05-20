@@ -41,8 +41,6 @@
     "src/scripts/live-oscar-tp-ladder-schedule-bruteforce.ts",
     "src/scripts/live-oscar-tp-rung-histogram.ts",
     "src/scripts/live-oscar-user-hand-pnl-model.ts",
-    "src/scripts/live-oscar-user-hand-pnl-sweep.ts",
-    "src/scripts/paper2-dca-ladder-counterfactual.ts",
-    "src/scripts/paper2-mode-a-ladder-all-trades.ts"
+    "src/scripts/live-oscar-user-hand-pnl-sweep.ts"
   ]
 }
