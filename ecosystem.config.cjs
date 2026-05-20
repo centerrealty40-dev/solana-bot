@@ -86,7 +86,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -104,7 +104,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -122,7 +122,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -142,7 +142,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -161,7 +161,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -277,7 +277,7 @@ const PM2_APPS = [
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {
@@ -593,7 +593,7 @@ const PM2_APPS = [
          * Anti-stale: `STALE_VOL_RATIO_MAX=0.5` режет TripleT-подобные случаи, где
          * vol_1h уже сильно ниже среднего часа за сутки.
          */
-        PAPER_RUNNER_MODE_ENABLED: '1',
+        PAPER_RUNNER_MODE_ENABLED: '0',
         PAPER_RUNNER_MIN_PG_SAMPLES_24H: '36',
         PAPER_RUNNER_MIN_VOL_1H_USD: '80000',
         PAPER_RUNNER_MIN_VOL_12H_USD: '400000',
