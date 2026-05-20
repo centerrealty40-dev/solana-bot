@@ -13,9 +13,68 @@ const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', '
 const DEFAULT_WHITELIST_PATH = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'live-oscar-mint-whitelist.txt');
 const TOKEN_CHUNK = 10;
 const DS_DELAY_MS = 350;
+/**
+ * Stream-read chunk size (~256 KB). Keeps memory constant regardless of file
+ * size, which matters because the live JSONL grows past 300MB and previous
+ * `readFileSync` of 5 collectors × 1 tick/min was producing ≈1.5GB heap churn,
+ * blowing past pm2 max_memory_restart and looping crashes every ~30s.
+ */
+const STREAM_CHUNK_BYTES = 256 * 1024;
+/**
+ * In-process cache TTL for parsed open-mint sets. With 1-min collector tick
+ * cycles, 30s TTL means each collector parses a 300MB JSONL at most twice
+ * per minute instead of every tick. Set to `0` to disable caching.
+ */
+const OPEN_MINTS_CACHE_TTL_MS = Number(process.env.PAPER2_OPEN_MINTS_CACHE_TTL_MS || 30_000);
+
+const _openMintsCache = new Map(); // key -> { ts, mtimeMs, size, value }
 
 function isPlausibleMint(m) {
   return typeof m === 'string' && m.length >= 32 && m.length <= 64;
+}
+
+/**
+ * Stream a file line-by-line via `fs.readSync` with a fixed-size buffer. Calls
+ * `onLine(line)` for each parsed line (without the trailing `\n`). Memory is
+ * bounded by the buffer size + the longest single line, never the file size.
+ */
+function streamLinesSync(fp, onLine) {
+  const fd = fs.openSync(fp, 'r');
+  try {
+    const buf = Buffer.alloc(STREAM_CHUNK_BYTES);
+    let leftover = '';
+    let bytesRead;
+    while ((bytesRead = fs.readSync(fd, buf, 0, STREAM_CHUNK_BYTES, null)) > 0) {
+      const text = leftover + buf.toString('utf-8', 0, bytesRead);
+      const lines = text.split('\n');
+      leftover = lines.pop() ?? '';
+      for (const ln of lines) {
+        if (ln) onLine(ln);
+      }
+    }
+    if (leftover) onLine(leftover);
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+function getCachedOrCompute(cacheKey, fp, computeFn) {
+  if (OPEN_MINTS_CACHE_TTL_MS <= 0) return computeFn();
+  let stat;
+  try { stat = fs.statSync(fp); } catch { return computeFn(); }
+  const cached = _openMintsCache.get(cacheKey);
+  const now = Date.now();
+  if (
+    cached &&
+    cached.mtimeMs === stat.mtimeMs &&
+    cached.size === stat.size &&
+    (now - cached.ts) < OPEN_MINTS_CACHE_TTL_MS
+  ) {
+    return cached.value;
+  }
+  const value = computeFn();
+  _openMintsCache.set(cacheKey, { ts: now, mtimeMs: stat.mtimeMs, size: stat.size, value });
+  return value;
 }
 
 /** Replay each strategy jsonl like store-restore: open adds mint, close removes. */
@@ -32,29 +91,26 @@ export function loadPaper2OpenMintsSync(paper2Dir) {
   for (const f of files) {
     if (!f.endsWith('.jsonl')) continue;
     const fp = path.join(dir, f);
-    let buf;
-    try {
-      buf = fs.readFileSync(fp, 'utf-8');
-    } catch {
-      continue;
-    }
-    const open = new Map();
-    for (const ln of buf.split('\n')) {
-      if (!ln.trim()) continue;
+    const cached = getCachedOrCompute(`paper2:${fp}`, fp, () => {
+      const open = new Map();
       try {
-        const e = JSON.parse(ln);
-        if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
-          open.set(e.mint, true);
-        } else if (e.kind === 'close' && e.mint) {
-          open.delete(e.mint);
-        }
-      } catch {
-        /* ignore bad line */
-      }
-    }
-    for (const m of open.keys()) {
-      if (isPlausibleMint(m)) out.add(m);
-    }
+        streamLinesSync(fp, (ln) => {
+          if (!ln.trim()) return;
+          try {
+            const e = JSON.parse(ln);
+            if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
+              open.set(e.mint, true);
+            } else if (e.kind === 'close' && e.mint) {
+              open.delete(e.mint);
+            }
+          } catch { /* ignore bad line */ }
+        });
+      } catch { /* ignore file errors */ }
+      const arr = [];
+      for (const m of open.keys()) if (isPlausibleMint(m)) arr.push(m);
+      return arr;
+    });
+    for (const m of cached) out.add(m);
   }
   return [...out];
 }
@@ -64,35 +120,29 @@ export function loadLiveOscarOpenMintsSync() {
   if (process.env.PAPER2_SNAPSHOT_LIVE_OPENS === '0') return [];
   const fp = process.env.LIVE_TRADES_PATH || process.env.PAPER2_SNAPSHOT_LIVE_JSONL || DEFAULT_LIVE_JSONL;
   if (!fp || !fs.existsSync(fp)) return [];
-  let buf;
-  try {
-    buf = fs.readFileSync(fp, 'utf-8');
-  } catch {
-    return [];
-  }
-  const open = new Map();
-  for (const ln of buf.split('\n')) {
-    if (!ln.trim()) continue;
+  return getCachedOrCompute(`live:${fp}`, fp, () => {
+    const open = new Map();
     try {
-      const e = JSON.parse(ln);
-      if (e.channel && e.channel !== 'live') continue;
-      const mint = e.mint;
-      if (!mint || typeof mint !== 'string') continue;
-      const k = e.kind;
-      if (k === 'live_position_open' || k === 'live_position_scale_in' || k === 'live_position_dca') {
-        open.set(mint, true);
-      } else if (k === 'live_position_close') {
-        open.delete(mint);
-      }
-    } catch {
-      /* ignore bad line */
-    }
-  }
-  const out = [];
-  for (const m of open.keys()) {
-    if (isPlausibleMint(m)) out.push(m);
-  }
-  return out;
+      streamLinesSync(fp, (ln) => {
+        if (!ln.trim()) return;
+        try {
+          const e = JSON.parse(ln);
+          if (e.channel && e.channel !== 'live') return;
+          const mint = e.mint;
+          if (!mint || typeof mint !== 'string') return;
+          const k = e.kind;
+          if (k === 'live_position_open' || k === 'live_position_scale_in' || k === 'live_position_dca') {
+            open.set(mint, true);
+          } else if (k === 'live_position_close') {
+            open.delete(mint);
+          }
+        } catch { /* ignore bad line */ }
+      });
+    } catch { /* ignore file errors */ }
+    const out = [];
+    for (const m of open.keys()) if (isPlausibleMint(m)) out.push(m);
+    return out;
+  });
 }
 
 /** Tracked mint allowlist — same file as `LIVE_MINT_WHITELIST_PATH` on live-oscar. */
