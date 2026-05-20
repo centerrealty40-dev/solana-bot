@@ -349,20 +349,29 @@ const ConfigSchema = z.object({
    */
   pgDataCoverageGuardEnabled: z.boolean().default(false),
   pgDataCoverageLookbackHours: z.coerce.number().int().min(6).max(48).default(24),
-  /** Min share of lookback hours with PG data for this mint (ephemeral window). */
+  /** Recent window (hours) for mint coverage / gap checks; sybil uses its own lookback. */
+  pgDataCoverageRecentHours: z.coerce.number().int().min(3).max(24).default(6),
+  /** Min distinct hours with PG minute bars in the recent window. */
+  pgDataCoverageMinRecentHoursWithData: z.coerce.number().int().min(1).max(24).default(4),
+  /** Min share of lookback hours with PG data for this mint (legacy; recent window preferred). */
   pgDataCoverageMinHourRatio: z.coerce.number().min(0.1).max(1).default(0.5),
   /** Stricter hour ratio while within strict-after-recovery window. */
   pgDataCoverageStrictMinHourRatio: z.coerce.number().min(0.1).max(1).default(0.75),
-  /** Min share of full hours with ≥N minute bars across dex tables (system gap detector). */
-  pgDataCoverageMinSystemHourRatio: z.coerce.number().min(0.1).max(1).default(0.7),
+  /** Min share of full hours with ≥N minute bars across dex tables (full tier; 0 = off). */
+  pgDataCoverageMinSystemHourRatio: z.coerce.number().min(0).max(1).default(0.7),
   /** Hour counts as covered when it has at least this many distinct minute bars. */
   pgDataCoverageMinMinutesPerHour: z.coerce.number().int().min(10).max(59).default(45),
   /** Block when largest gap between consecutive mint minute bars exceeds this. */
   pgDataCoverageMaxGapMinutes: z.coerce.number().int().min(5).max(720).default(30),
   /** Block all entries while any dex snapshot table is stale right now. */
   pgDataCoverageBlockOnPgStale: z.boolean().default(true),
-  /** After PG recovery, use strict min hour ratio for this many hours. */
+  /** After PG recovery, use strict min hour ratio for this many hours (full tier when auto-escalate). */
   pgDataCoverageStrictAfterRecoveryHours: z.coerce.number().int().min(0).max(72).default(24),
+  /**
+   * When true: after PG outage automatically use recent-window checks; restore full 24h
+   * system ratio + strict recovery when metrics healthy (no manual env toggle).
+   */
+  pgDataCoverageAutoEscalate: z.boolean().default(true),
 
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
@@ -838,6 +847,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
     pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
     pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
+    pgDataCoverageRecentHours: process.env.PAPER_PG_DATA_COVERAGE_RECENT_HOURS,
+    pgDataCoverageMinRecentHoursWithData: process.env.PAPER_PG_DATA_COVERAGE_MIN_RECENT_HOURS_WITH_DATA,
     pgDataCoverageMinHourRatio: process.env.PAPER_PG_DATA_COVERAGE_MIN_HOUR_RATIO,
     pgDataCoverageStrictMinHourRatio: process.env.PAPER_PG_DATA_COVERAGE_STRICT_MIN_HOUR_RATIO,
     pgDataCoverageMinSystemHourRatio: process.env.PAPER_PG_DATA_COVERAGE_MIN_SYSTEM_HOUR_RATIO,
@@ -845,6 +856,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     pgDataCoverageMaxGapMinutes: process.env.PAPER_PG_DATA_COVERAGE_MAX_GAP_MINUTES,
     pgDataCoverageBlockOnPgStale: envBool(process.env.PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE, true),
     pgDataCoverageStrictAfterRecoveryHours: process.env.PAPER_PG_DATA_COVERAGE_STRICT_AFTER_RECOVERY_HOURS,
+    pgDataCoverageAutoEscalate: envBool(process.env.PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE, true),
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

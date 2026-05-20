@@ -8,6 +8,52 @@
 
 ---
 
+## [1.11.227] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.227`.
+
+### PG coverage guard — auto-escalate (relaxed ↔ full без ручного env)
+
+- **`PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE=1`**: во время дыры PG / низкого system ratio / первых 24h после recovery — **упрощённый** режим (recent 6h); когда PG здоров — автоматически **полный** 24h tier (system ratio 70%, strict recovery, full mint history + gap).
+- Канонические пороги в env (`MIN_SYSTEM_HOUR_RATIO=0.7`, `STRICT_AFTER_RECOVERY_HOURS=24`) — не нужно вручную ставить 0 после outage.
+- Режим пишется в `data/snapshot-freshness-watch-state.json` (`pgCoverageMode`); ADVICE Telegram при переключении (`live_oscar_pg_coverage_mode`).
+
+**Откат:** `PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE=0` + вручную `MIN_SYSTEM_HOUR_RATIO=0` / `STRICT_AFTER_RECOVERY_HOURS=0` как в 1.11.226.
+
+---
+
+## [1.11.226] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.226`.
+
+### PG coverage guard — recent window (6h), не блокировать из‑за вчерашней 24h дыры
+
+- Mint/gap/ephemeral coverage: **последние 6h** (`PAPER_PG_DATA_COVERAGE_RECENT_HOURS`), min **4** часа с данными.
+- **24h system hour ratio выключен** по умолчанию на live-oscar (`MIN_SYSTEM_HOUR_RATIO=0`).
+- **Strict-after-recovery выключен** (`STRICT_AFTER_RECOVERY_HOURS=0`) — sybil guard (6h) остаётся основной защитой от dead→spike.
+- Gap check только в **recent** окне, не по 24h истории с вчерашним outage.
+
+**Откат:** `MIN_SYSTEM_HOUR_RATIO=0.7`, `STRICT_AFTER_RECOVERY_HOURS=24`, убрать `RECENT_HOURS` + reload.
+
+---
+
+## [1.11.225] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.225`.
+
+### Discovery — min mcap на первом пороге; меньше спама в Telegram
+
+- **Deep-audit whitelist inject:** mint с `COALESCE(mcap, fdv) < PAPER_DISCOVERY_MIN_MARKET_CAP_USD` больше **не впрыскиваются** в eval (как SQL lane).
+- **`entryPath` / coverage / sybil / ephemeral:** только после **snapshot + global** pass — не тратим PG-запросы на sub-mcap кандидатов.
+- **Universe-miss audit:** sub-mcap whitelist mint — **без** минутного `live_discovery_eval` / probe spam.
+- **Telegram coverage ADVICE:** только если **единственный** блокер — `data_coverage:*` (не при `mcap<`, `liq<`, …).
+- **near-ready pulse:** `mcap<` — hard block.
+- **Whitelist:** удалён BABYTROLL (`6qdzMx4…`).
+
+**Откат:** `git revert` коммита 1.11.225; вернуть mint в `live-oscar-mint-whitelist.txt` при необходимости.
+
+---
+
 ## [1.11.224] — 2026-05-19
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.224`.

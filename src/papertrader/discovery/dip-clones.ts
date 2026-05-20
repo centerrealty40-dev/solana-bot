@@ -2,7 +2,7 @@ import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
-import { evaluateSnapshot } from '../filters/snapshot-filter.js';
+import { evaluateSnapshot, passesDiscoveryMinMarketCap } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
   fetchDipContextMap,
@@ -70,6 +70,8 @@ export interface DiscoveryTickResult {
   decisions: EvalDecision[];
   /** Live deep audit rows (flushed via `journalAppend` in `papertrader/main`). */
   auditRows?: Record<string, unknown>[];
+  /** PG coverage guard mode flip this tick (for ADVICE Telegram). */
+  pgCoverageModeChanged?: 'full' | 'relaxed' | null;
 }
 
 const deepAuditLastLogMs = new Map<string, number>();
@@ -325,12 +327,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersEnabled,
     });
+    const snapshotGatePass = v.pass && globalReasons.length === 0;
     const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
     let localHighVeto: LocalHighVetoResult | undefined;
-    if (dipEval.reasons.length === 0) {
+    if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
       recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
       if (recoveryVeto.reasons.length > 0) {
@@ -343,7 +346,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           entryPath = undefined;
         }
       }
-    } else if (cfg.entryImpulsePgBypassesDip) {
+    } else if (snapshotGatePass && cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
       if (bypass) {
         dipReasonsForGate = [];
@@ -599,10 +602,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         enabled: cfg.pgDataCoverageGuardEnabled,
         nearEntry: pgDataCoverageFeatures.nearEntry,
         lookbackHours: pgDataCoverageFeatures.lookbackHours,
+        recentHours: pgDataCoverageFeatures.recentHours,
         minuteSamples: pgDataCoverageFeatures.minuteSamples,
         hoursWithData: pgDataCoverageFeatures.hoursWithData,
+        recentHoursWithData: pgDataCoverageFeatures.recentHoursWithData,
         hourCoverageRatio: pgDataCoverageFeatures.hourCoverageRatio,
-        maxGapMinutes: pgDataCoverageFeatures.maxGapMinutes,
+        recentHourCoverageRatio: pgDataCoverageFeatures.recentHourCoverageRatio,
+        maxGapMinutes: pgDataCoverageFeatures.recentMaxGapMinutes,
         sybilBaselineSamples: pgDataCoverageFeatures.sybilBaselineSamples,
         sybilCoverageOk: pgDataCoverageFeatures.sybilCoverageOk,
         ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
@@ -611,11 +617,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           systemHourRatio: globalPgCoverage.systemHourRatio,
           strictRecoveryActive: globalPgCoverage.strictRecoveryActive,
           hoursSinceLastRecovery: globalPgCoverage.hoursSinceLastRecovery,
+          coverageMode: globalPgCoverage.coverageMode,
         },
         thresholds: {
           minHourRatio: cfg.pgDataCoverageMinHourRatio,
           strictMinHourRatio: cfg.pgDataCoverageStrictMinHourRatio,
           minSystemHourRatio: cfg.pgDataCoverageMinSystemHourRatio,
+          minRecentHoursWithData: cfg.pgDataCoverageMinRecentHoursWithData,
           maxGapMinutes: cfg.pgDataCoverageMaxGapMinutes,
         },
       };
@@ -649,6 +657,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (candidateMintKeys.has(mint)) continue;
       if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
       const probe = await fetchLatestCrossVenueSnapshotRowForMint(mint);
+      if (probe && !passesDiscoveryMinMarketCap(cfg, probe)) continue;
       const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
       const crowded =
         probe != null && sqlReasons.length === 0
@@ -686,7 +695,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
   }
 
-  return { discovered: snapshotTagged.length, evaluated, passed, decisions, auditRows };
+  return {
+    discovered: snapshotTagged.length,
+    evaluated,
+    passed,
+    decisions,
+    auditRows,
+    pgCoverageModeChanged: globalPgCoverage.coverageModeChanged,
+  };
 }
 
 export function recordEntryTs(mint: string, ts: number): void {

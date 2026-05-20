@@ -1,4 +1,5 @@
 import type { PaperTraderConfig } from '../config.js';
+import { passesDiscoveryMinMarketCap } from '../filters/snapshot-filter.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint } from './snapshot.js';
 
@@ -12,6 +13,7 @@ function whitelistLookbackMinutes(cfg: PaperTraderConfig): number {
 /**
  * Whitelist mints must be evaluated even when crowded out of SQL `snapshotCandidateLimit`.
  * Probe PG (wider lookback than main lane) and append rows for full dip/policy eval.
+ * Sub-threshold mcap (`PAPER_DISCOVERY_MIN_MARKET_CAP_USD`) is never injected — same as SQL lane filter.
  */
 export async function injectWhitelistDiscoveryCandidates(
   cfg: PaperTraderConfig,
@@ -27,6 +29,7 @@ export async function injectWhitelistDiscoveryCandidates(
     if (have.has(mint)) continue;
     const row = await fetchLatestCrossVenueSnapshotRowForMint(mint, { lookbackMinutes: lookbackMin });
     if (!row) continue;
+    if (!passesDiscoveryMinMarketCap(cfg, row)) continue;
     added.push({ row, lane });
     have.add(mint);
   }

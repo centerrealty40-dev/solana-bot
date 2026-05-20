@@ -123,8 +123,10 @@ function hasVolumeEphemeralBlockReason(reasons: string[]): boolean {
   return reasons.some((r) => r.startsWith('volume_ephemeral:'));
 }
 
-function hasDataCoverageBlockReason(reasons: string[]): boolean {
-  return reasons.some((r) => r.startsWith('data_coverage:'));
+/** True when coverage guard is the sole blocker (snapshot/dip/volume gates already passed). */
+function isOnlyDataCoverageBlock(reasons: string[]): boolean {
+  if (reasons.length === 0) return false;
+  return reasons.every((r) => r.startsWith('data_coverage:'));
 }
 
 export interface PapertraderMainOptions {
@@ -553,18 +555,20 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         : 'n/a';
     const recoveryNote = cov?.global.strictRecoveryActive
       ? `\nРежим: строгий после восстановления PG (${cov.global.hoursSinceLastRecovery?.toFixed(1) ?? '?'} ч назад).`
-      : '';
+      : cov?.global.coverageMode === 'relaxed'
+        ? '\nРежим PG coverage: упрощённый (recent window) — дыра или восстановление PG.'
+        : '';
 
     const text =
       `<b>Live Oscar — покупка пропущена (дыра / неполные PG-данные)</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
-      `Статус: кандидат прошёл dip-гейты, но объём нельзя проверить — PG-история неполная.\n` +
+      `Статус: snapshot и dip-гейты пройдены; покупка пропущена — PG-история неполная для проверки объёма.\n` +
       `Причины: <code>${escapeHtmlPlain(coverageReasons.join('; '))}</code>\n` +
-      `PG mint: <b>${escapeHtmlPlain(String(cov?.hoursWithData ?? 'n/a'))}h</b> / ` +
-      `<b>${escapeHtmlPlain(String(cov?.lookbackHours ?? 'n/a'))}h</b> ` +
-      `(покрытие ${escapeHtmlPlain(hourPct)}), ` +
-      `max gap: <b>${escapeHtmlPlain(cov?.maxGapMinutes != null ? `${Math.round(cov.maxGapMinutes)}m` : 'n/a')}</b>, ` +
+      `PG mint (recent ${escapeHtmlPlain(String(cov?.recentHours ?? cov?.lookbackHours ?? 'n/a'))}h): ` +
+      `<b>${escapeHtmlPlain(String(cov?.recentHoursWithData ?? cov?.hoursWithData ?? 'n/a'))}h</b> ` +
+      `(покрытие ${escapeHtmlPlain(cov?.recentHourCoverageRatio != null ? `${(cov.recentHourCoverageRatio * 100).toFixed(0)}%` : hourPct)}), ` +
+      `max gap (recent): <b>${escapeHtmlPlain(cov?.maxGapMinutes != null ? `${Math.round(cov.maxGapMinutes)}m` : 'n/a')}</b>, ` +
       `sybil samples: <b>${escapeHtmlPlain(String(cov?.sybilBaselineSamples ?? 'n/a'))}</b>\n` +
       `Система PG: hour_ratio=${escapeHtmlPlain(sysPct)}, stale_now=${escapeHtmlPlain(String(cov?.global.pgStaleNow ?? false))}` +
       recoveryNote +
@@ -577,8 +581,39 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
-    }).catch((e) =>
+    }    ).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live pg-data-coverage telegram failed'),
+    );
+  }
+
+  function notifyLiveOscarPgCoverageModeChange(mode: 'full' | 'relaxed'): void {
+    if (cfg.strategyId !== 'live-oscar') return;
+    if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
+
+    const token =
+      process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) return;
+
+    const text =
+      mode === 'full'
+        ? `<b>Live Oscar — PG coverage: полный режим</b>\n` +
+          `24h system ratio, strict-after-recovery и полная mint-история снова активны. Покупки проходят только при здоровом PG.`
+        : `<b>Live Oscar — PG coverage: упрощённый режим</b>\n` +
+          `PG дыра или восстановление — проверки по recent window (6h). Полный режим включится автоматически, когда PG стабилен.`;
+
+    void sendTagged('ADVICE', 'live_oscar_pg_coverage_mode', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mode }, 'live pg-coverage-mode telegram failed'),
     );
   }
 
@@ -950,6 +985,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
+      if (cfg.strategyId === 'live-oscar' && res.pgCoverageModeChanged) {
+        notifyLiveOscarPgCoverageModeChange(res.pgCoverageModeChanged);
+      }
       if (cfg.strategyId === 'live-oscar') {
         const near = res.decisions.filter((d) => !d.pass && isAwaitingDipQualityHold(d.reasons));
         updateNearReadyDipWatchlist(near.map((d) => ({ mint: d.mint, symbol: d.symbol ?? '?' })));
@@ -982,7 +1020,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!d.pass && hasVolumeEphemeralBlockReason(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarVolumeEphemeralGuard(d);
         }
-        if (!d.pass && hasDataCoverageBlockReason(d.reasons) && !open.has(d.mint)) {
+        if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;

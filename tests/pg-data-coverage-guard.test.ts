@@ -4,6 +4,7 @@ import {
   evaluatePgDataCoverageGuard,
   type GlobalPgCoverageState,
   type MintPgCoverageFeatures,
+  resolvePgCoverageRelaxedMode,
 } from '../src/papertrader/discovery/pg-data-coverage-guard.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
@@ -33,6 +34,8 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     pgDataCoverageGuardEnabled: true,
     pgDataCoverageLookbackHours: 24,
+    pgDataCoverageRecentHours: 6,
+    pgDataCoverageMinRecentHoursWithData: 4,
     pgDataCoverageMinHourRatio: 0.5,
     pgDataCoverageStrictMinHourRatio: 0.75,
     pgDataCoverageMinSystemHourRatio: 0.7,
@@ -40,6 +43,7 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     pgDataCoverageMaxGapMinutes: 30,
     pgDataCoverageBlockOnPgStale: true,
     pgDataCoverageStrictAfterRecoveryHours: 24,
+    pgDataCoverageAutoEscalate: true,
     volumeSybilGuardEnabled: true,
     volumeSybilMinBaselineSamples: 25,
     volumeEphemeralGuardEnabled: true,
@@ -52,10 +56,13 @@ function globalState(over: Partial<GlobalPgCoverageState> = {}): GlobalPgCoverag
   return {
     pgStaleNow: false,
     worstAgeSec: 60,
-    systemHourRatio: 0.95,
+    systemHourRatio: 0.85,
     strictRecoveryActive: false,
     hoursSinceLastRecovery: null,
     lookbackHours: 24,
+    recentHours: 6,
+    coverageMode: 'full',
+    coverageModeChanged: null,
     ...over,
   };
 }
@@ -63,10 +70,14 @@ function globalState(over: Partial<GlobalPgCoverageState> = {}): GlobalPgCoverag
 function mintCtx(over: Partial<MintPgCoverageFeatures> = {}): MintPgCoverageFeatures {
   return {
     lookbackHours: 24,
+    recentHours: 6,
     minuteSamples: 400,
-    hoursWithData: 14,
-    hourCoverageRatio: 14 / 24,
+    hoursWithData: 20,
+    recentHoursWithData: 5,
+    hourCoverageRatio: 20 / 24,
+    recentHourCoverageRatio: 5 / 6,
     maxGapMinutes: 5,
+    recentMaxGapMinutes: 5,
     sybilBaselineSamples: 40,
     sybilCoverageOk: true,
     ephemeralCoverageOk: true,
@@ -74,6 +85,61 @@ function mintCtx(over: Partial<MintPgCoverageFeatures> = {}): MintPgCoverageFeat
     ...over,
   };
 }
+
+describe('resolvePgCoverageRelaxedMode', () => {
+  it('returns relaxed when PG is stale', () => {
+    expect(
+      resolvePgCoverageRelaxedMode(baseCfg(), {
+        pgStaleNow: true,
+        systemHourRatio: 0.9,
+        hoursSinceLastRecovery: 48,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns relaxed within strict-after-recovery window', () => {
+    expect(
+      resolvePgCoverageRelaxedMode(baseCfg(), {
+        pgStaleNow: false,
+        systemHourRatio: 0.9,
+        hoursSinceLastRecovery: 6,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns relaxed when system hour ratio is low', () => {
+    expect(
+      resolvePgCoverageRelaxedMode(baseCfg(), {
+        pgStaleNow: false,
+        systemHourRatio: 0.45,
+        hoursSinceLastRecovery: 48,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns full when all metrics healthy', () => {
+    expect(
+      resolvePgCoverageRelaxedMode(baseCfg(), {
+        pgStaleNow: false,
+        systemHourRatio: 0.85,
+        hoursSinceLastRecovery: 48,
+      }),
+    ).toBe(false);
+  });
+
+  it('manual relaxed when auto-escalate off and full tier env disabled', () => {
+    expect(
+      resolvePgCoverageRelaxedMode(
+        baseCfg({
+          pgDataCoverageAutoEscalate: false,
+          pgDataCoverageMinSystemHourRatio: 0,
+          pgDataCoverageStrictAfterRecoveryHours: 0,
+        }),
+        { pgStaleNow: false, systemHourRatio: 0.3, hoursSinceLastRecovery: 0 },
+      ),
+    ).toBe(true);
+  });
+});
 
 describe('evaluatePgDataCoverageGuard', () => {
   it('returns not blocked when guard disabled', () => {
@@ -99,12 +165,23 @@ describe('evaluatePgDataCoverageGuard', () => {
     expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
   });
 
-  it('blocks when system hour ratio is low (global gap)', () => {
+  it('ignores low system hour ratio in relaxed mode', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg(),
       baseRow(),
       mintCtx(),
-      globalState({ systemHourRatio: 0.4 }),
+      globalState({ coverageMode: 'relaxed', systemHourRatio: 0.4 }),
+      true,
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('blocks when system hour ratio is low in full mode', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow(),
+      mintCtx(),
+      globalState({ coverageMode: 'full', systemHourRatio: 0.4 }),
       true,
     );
     expect(r.blocked).toBe(true);
@@ -113,18 +190,30 @@ describe('evaluatePgDataCoverageGuard', () => {
     );
   });
 
-  it('blocks when mint hour coverage is insufficient for ephemeral guard', () => {
+  it('blocks when recent hour coverage is insufficient in relaxed mode', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg(),
       baseRow(),
-      mintCtx({ hoursWithData: 3, hourCoverageRatio: 3 / 24 }),
-      globalState(),
+      mintCtx({ recentHoursWithData: 2, recentHourCoverageRatio: 2 / 6 }),
+      globalState({ coverageMode: 'relaxed' }),
       true,
     );
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:ephemeral_pg_insufficient'))).toBe(
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:recent_pg_insufficient'))).toBe(
       true,
     );
+  });
+
+  it('blocks when full lookback coverage is insufficient in full mode', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow(),
+      mintCtx({ hoursWithData: 8, hourCoverageRatio: 8 / 24 }),
+      globalState({ coverageMode: 'full' }),
+      true,
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_insufficient'))).toBe(true);
   });
 
   it('blocks when sybil baseline samples are insufficient', () => {
@@ -141,39 +230,42 @@ describe('evaluatePgDataCoverageGuard', () => {
     );
   });
 
-  it('blocks when mint history has a large gap', () => {
+  it('blocks when recent mint history has a large gap in relaxed mode', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageMaxGapMinutes: 30 }),
+      baseRow(),
+      mintCtx({ recentMaxGapMinutes: 180 }),
+      globalState({ coverageMode: 'relaxed' }),
+      true,
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_recent_history'))).toBe(
+      true,
+    );
+  });
+
+  it('blocks when full mint history has a large gap in full mode', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg({ pgDataCoverageMaxGapMinutes: 30 }),
       baseRow(),
       mintCtx({ maxGapMinutes: 180 }),
-      globalState(),
+      globalState({ coverageMode: 'full' }),
       true,
     );
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_mint_history'))).toBe(
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_history'))).toBe(
       true,
     );
   });
 
-  it('passes when coverage is sufficient', () => {
+  it('passes in relaxed mode when recent coverage is sufficient despite bad 24h system ratio', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg(),
       baseRow(),
       mintCtx(),
-      globalState(),
+      globalState({ coverageMode: 'relaxed', systemHourRatio: 0.35 }),
       true,
     );
     expect(r.blocked).toBe(false);
-  });
-
-  it('uses stricter hour ratio during recovery window', () => {
-    const r = evaluatePgDataCoverageGuard(
-      baseCfg({ pgDataCoverageStrictMinHourRatio: 0.75 }),
-      baseRow(),
-      mintCtx({ hoursWithData: 14, hourCoverageRatio: 14 / 24 }),
-      globalState({ strictRecoveryActive: true, hoursSinceLastRecovery: 2 }),
-      true,
-    );
-    expect(r.blocked).toBe(true);
   });
 });

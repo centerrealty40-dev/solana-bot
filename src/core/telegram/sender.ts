@@ -15,6 +15,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { child } from '../logger.js';
+import {
+  resolveOperatorTelegramBotToken,
+  resolveOperatorTelegramChatId,
+} from './resolve-operator-telegram.js';
 
 const log = child('telegram-sender');
 
@@ -95,8 +99,12 @@ export async function sendTagged(
   text: string,
   opts: SendOpts = {},
 ): Promise<boolean> {
-  const token = (opts.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN)?.trim();
-  const chat = (opts.telegramChatId ?? process.env.TELEGRAM_CHAT_ID)?.trim();
+  const token = (
+    opts.telegramBotToken ?? resolveOperatorTelegramBotToken('TELEGRAM_BOT_TOKEN')
+  )?.trim();
+  const chat = (
+    opts.telegramChatId ?? resolveOperatorTelegramChatId(process.env.TELEGRAM_CHAT_ID)
+  )?.trim();
   if (!token || !chat) {
     log.warn('TELEGRAM_BOT_TOKEN/CHAT_ID missing; sendTagged skipped');
     return false;

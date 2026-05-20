@@ -18,6 +18,13 @@ export function snapshotRefMarketCapUsd(row: SnapshotCandidateRow): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** Discovery min mcap gate (`PAPER_DISCOVERY_MIN_MARKET_CAP_USD`; 0 = off). */
+export function passesDiscoveryMinMarketCap(cfg: PaperTraderConfig, row: SnapshotCandidateRow): boolean {
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap <= 0) return true;
+  return snapshotRefMarketCapUsd(row) + 1e-9 >= minMcap;
+}
+
 /** Smart Lottery paper strategy — separate snapshot thresholds from dip Oscar lanes. */
 export function smartLotteryLaneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg {
   if (lane === 'migration_event') {

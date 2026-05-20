@@ -575,9 +575,12 @@ export interface SnapshotFeatures {
     enabled: boolean;
     nearEntry: boolean;
     lookbackHours: number;
+    recentHours?: number;
     minuteSamples: number;
     hoursWithData: number;
+    recentHoursWithData?: number;
     hourCoverageRatio: number | null;
+    recentHourCoverageRatio?: number | null;
     maxGapMinutes: number | null;
     sybilBaselineSamples: number;
     sybilCoverageOk: boolean;
@@ -587,11 +590,13 @@ export interface SnapshotFeatures {
       systemHourRatio: number | null;
       strictRecoveryActive: boolean;
       hoursSinceLastRecovery: number | null;
+      coverageMode?: 'relaxed' | 'full';
     };
     thresholds: {
       minHourRatio: number;
       strictMinHourRatio: number;
       minSystemHourRatio: number;
+      minRecentHoursWithData?: number;
       maxGapMinutes: number;
     };
   };

@@ -13,6 +13,9 @@ function isHardQualityOrRiskBlock(reason: string): boolean {
   return (
     r.startsWith('liq<') ||
     r.startsWith('vol5m<') ||
+    r.startsWith('mcap<') ||
+    r.startsWith('mcap>') ||
+    r.includes('market_cap_usd_') ||
     r.startsWith('buys5m<') ||
     r.startsWith('sells5m<') ||
     r.startsWith('bs<') ||
