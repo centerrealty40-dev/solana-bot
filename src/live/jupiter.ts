@@ -153,26 +153,31 @@ async function httpGetQuote(
 
 /**
  * Fetch SOL→token quote from Jupiter; returns raw `quoteResponse` + normalized `quoteSnapshot` (§5).
+ *
+ * 1.11.230 — `slippageBpsOverride` (optional) позволяет адаптивно поднимать slippage на retry'ях
+ * в phase4-execution, не меняя глобальный `cfg.liveDefaultSlippageBps`.
  */
 export async function liveFetchBuyQuote(args: {
   cfg: LiveOscarConfig;
   outputMint: string;
   sizeUsd: number;
   solUsd: number;
+  slippageBpsOverride?: number;
 }): Promise<{ quoteResponse: Record<string, unknown>; quoteSnapshot: Record<string, unknown> } | null> {
   const { cfg, outputMint, sizeUsd, solUsd } = args;
+  const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
   const t0 = Date.now();
   const quoteResponse = await httpGetQuote(resolveLiveJupiterQuoteUrl(cfg), {
     outputMint,
     sizeUsd,
     solUsd,
-    slippageBps: cfg.liveDefaultSlippageBps,
+    slippageBps,
     timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
   });
   const quoteAgeMs = Date.now() - t0;
   if (!quoteResponse) return null;
   const quoteSnapshot = liveQuoteSnapshotFromResponse(quoteResponse, {
-    slippageBps: cfg.liveDefaultSlippageBps,
+    slippageBps,
     quoteAgeMs,
   });
   return { quoteResponse, quoteSnapshot };
@@ -234,6 +239,8 @@ export async function liveBuyQuoteAndPrepareSnapshot(args: {
   sizeUsd: number;
   solUsd: number;
   userPublicKey: string;
+  /** 1.11.230 — адаптивный slippage для retry'ев под Jupiter Pro. */
+  slippageBpsOverride?: number;
 }): Promise<{
   quoteResponse: Record<string, unknown>;
   quoteSnapshot: Record<string, unknown>;
@@ -250,8 +257,9 @@ export async function liveBuyQuoteAndPrepareSnapshot(args: {
 
   const age =
     typeof fetched.quoteSnapshot.quoteAgeMs === 'number' ? fetched.quoteSnapshot.quoteAgeMs : 0;
+  const slippageBps = args.slippageBpsOverride ?? args.cfg.liveDefaultSlippageBps;
   const quoteSnapshot = liveQuoteSnapshotFromResponse(fetched.quoteResponse, {
-    slippageBps: args.cfg.liveDefaultSlippageBps,
+    slippageBps,
     quoteAgeMs: age,
     swapBuildOk: swapBuild.ok,
     swapTxBase64Len: swapBuild.ok ? swapBuild.b64.length : undefined,
@@ -284,13 +292,17 @@ async function httpGetSellQuote(
   });
 }
 
-/** Token → SOL quote + optional unsigned swap (W8.0-p4 sells / exits). */
+/**
+ * Token → SOL quote + optional unsigned swap (W8.0-p4 sells / exits).
+ * 1.11.230 — `slippageBpsOverride` для адаптивного bump'а в retry-цикле.
+ */
 export async function liveSellQuoteAndPrepareSnapshot(args: {
   cfg: LiveOscarConfig;
   inputMint: string;
   tokenAmountRaw: string;
   solUsd: number;
   userPublicKey: string;
+  slippageBpsOverride?: number;
 }): Promise<{
   quoteResponse: Record<string, unknown>;
   quoteSnapshot: Record<string, unknown>;
@@ -298,11 +310,12 @@ export async function liveSellQuoteAndPrepareSnapshot(args: {
 } | null> {
   const { cfg, inputMint, tokenAmountRaw, solUsd, userPublicKey } = args;
   if (!(solUsd > 0) || !tokenAmountRaw || tokenAmountRaw === '0') return null;
+  const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
   const t0 = Date.now();
   const quoteResponse = await httpGetSellQuote(resolveLiveJupiterQuoteUrl(cfg), {
     inputMint,
     amountRaw: tokenAmountRaw,
-    slippageBps: cfg.liveDefaultSlippageBps,
+    slippageBps,
     timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
   });
   const quoteAgeMs = Date.now() - t0;
@@ -315,7 +328,7 @@ export async function liveSellQuoteAndPrepareSnapshot(args: {
   });
 
   const quoteSnapshot = liveQuoteSnapshotFromResponse(quoteResponse, {
-    slippageBps: cfg.liveDefaultSlippageBps,
+    slippageBps,
     quoteAgeMs,
     swapBuildOk: swapBuild.ok,
     swapTxBase64Len: swapBuild.ok ? swapBuild.b64.length : undefined,

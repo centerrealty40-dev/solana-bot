@@ -1459,7 +1459,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               ? snapPx
               : 0;
       const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
-      const probeUsd = Math.max(5, Math.min(45, remUsd * 0.12));
+      /**
+       * 1.11.230 — больше размер MTM probe = меньше price-impact distortion на тонких маршрутах.
+       * Jupiter Pro оплачен; нагрузка на quote-endpoint не критична. Раньше: [5..45] @12% remUsd.
+       * Теперь: [`liveTrackerMtmProbeMinUsd`..`liveTrackerMtmProbeMaxUsd`] @`liveTrackerMtmProbeFraction`.
+       * По умолчанию: [20..200] @10% — для $1000 позиции probe = $100 (vs $45 раньше).
+       */
+      const probeUsd = Math.max(
+        liveOscarCfg.liveTrackerMtmProbeMinUsd,
+        Math.min(liveOscarCfg.liveTrackerMtmProbeMaxUsd, remUsd * liveOscarCfg.liveTrackerMtmProbeFraction),
+      );
       const snapshotPxForAlerts = snapPx > 0 ? snapPx : anchorPx;
 
       if (!(solUsd > 0)) {

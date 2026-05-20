@@ -12,6 +12,7 @@ import { createLiveDiscoveryAuditJournalAppend } from './discovery-audit-jsonl.j
 import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 import { configureSignalLabStore } from './signal-lab.js';
 import { configureMtmShadowStore } from './mtm-shadow.js';
+import { configureStagedAddSimCooldown } from './staged-add-sim-cooldown.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
@@ -151,6 +152,10 @@ export async function main(): Promise<void> {
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
   configureSignalLabStore({ storePath: liveCfg.signalLabPath, strategyId: liveCfg.strategyId });
   configureMtmShadowStore({ storePath: liveCfg.mtmShadowPath, strategyId: liveCfg.strategyId });
+  configureStagedAddSimCooldown({
+    streakThreshold: liveCfg.liveStagedAddSimErrThreshold,
+    cooldownMs: liveCfg.liveStagedAddSimErrCooldownMs,
+  });
   const paperBaseline = loadPaperTraderConfig();
 
   if (

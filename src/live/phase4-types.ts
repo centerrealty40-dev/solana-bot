@@ -6,11 +6,32 @@ import type { LiveOscarConfig } from './config.js';
 /** W8.0-p7.1 — outcome of SOL→token pipeline (live anchor vs simulate). */
 export type LiveBuyAnchorMode = 'chain' | 'simulate';
 
+/**
+ * Terminal failure class for live SOL→token pipeline (1.11.230+).
+ * Used by callers (staged add cooldown, retry policies) to react to specific failure modes
+ * instead of treating every `ok: false` the same way.
+ */
+export type LiveBuyTerminalKind =
+  | 'sim_err'
+  | 'confirm_timeout'
+  | 'send_failed'
+  | 'chain_err'
+  | 'no_quote'
+  | 'swap_build'
+  | 'quote_stale'
+  | 'insufficient_funds'
+  | 'gate'
+  | 'other';
+
 export interface LiveBuyPipelineResult {
   ok: boolean;
   anchorMode: LiveBuyAnchorMode;
   /** Populated when `anchorMode === 'chain'` and swap landed on-chain. */
   confirmedBuyTxSignature?: string | null;
+  /** Terminal failure class (set only when `ok === false`). */
+  terminalKind?: LiveBuyTerminalKind;
+  /** Optional short message tail for diagnostics (≤200 chars). */
+  terminalMessage?: string;
 }
 
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */

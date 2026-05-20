@@ -22,7 +22,12 @@ function jupiterQuote429MaxRetries(): number {
   if (s === '0') return 0;
   if (!s) return 3;
   const n = Number.parseInt(s, 10);
-  return Number.isFinite(n) && n >= 0 ? Math.min(8, n) : 3;
+  /**
+   * 1.11.230 — cap поднят 8 → 12: у нас оплачен Jupiter Pro, и при 429 от Free-эндпоинта
+   * мы хотим максимально использовать выкупленную RPS-квоту; backoff экспоненциальный с
+   * `JUPITER_QUOTE_429_INITIAL_BACKOFF_MS`, потолок одного wait — 15 с (Retry-After honoured).
+   */
+  return Number.isFinite(n) && n >= 0 ? Math.min(12, n) : 3;
 }
 
 function jupiterQuote429InitialBackoffMs(): number {

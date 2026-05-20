@@ -132,8 +132,38 @@ const LiveOscarConfigSchema = z
      */
     liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
     liveBuySimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
+    /**
+     * 1.11.228 — кэп ретраев для «slippage class» sim_err (Custom:1 / 0x1771 / явное «slippage»):
+     * после N таких подряд на одном intent выходим из retry-цикла, чтобы не сжигать кредиты
+     * на одинаковых маршрутах. Когда `null/undefined`, кэп не применяется (fallback на legacy).
+     */
+    liveBuySimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(2),
     liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
     liveSellSimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
+    /** То же, но для продаж — exits должны проходить, поэтому кэп выше. */
+    liveSellSimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(5),
+    /**
+     * 1.11.228 — на каждый retry в slippage-классе bump'аем `slippageBps` на эту величину,
+     * чтобы дать Jupiter Pro шанс собрать маршрут с другим acceptable impact. 0 = выкл.
+     */
+    liveSimSlippageRetryBumpBps: z.coerce.number().int().min(0).max(500).default(50),
+    /** Hard cap для адаптивного bump'а (включая базовый `liveDefaultSlippageBps`). */
+    liveSimSlippageRetryMaxBps: z.coerce.number().int().min(10).max(5000).default(300),
+    /**
+     * 1.11.228 — staged-add cooldown: после N подряд `sim_err` на одну (mint, intentKind)
+     * следующая попытка staged_avg / entry_split / dca_add блокируется на `LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS`.
+     */
+    liveStagedAddSimErrThreshold: z.coerce.number().int().min(1).max(20).default(3),
+    liveStagedAddSimErrCooldownMs: z.coerce.number().int().min(60_000).max(6 * 60 * 60_000).default(30 * 60_000),
+    /**
+     * 1.11.230 — настройка размера MTM probe (live tracker → Jupiter buy-quote для price-verify).
+     * Чем больше probe, тем меньше распределяется на dust-маршрутах и тем точнее USD-цена.
+     * Cap'ом ограничиваем экспозицию к 1 неудачному квоту (если Jupiter возвращает мусор).
+     * Min ⇒ нижний пол для сверх-маленьких позиций; max ⇒ верхний предел.
+     */
+    liveTrackerMtmProbeMinUsd: z.coerce.number().min(1).max(500).default(20),
+    liveTrackerMtmProbeMaxUsd: z.coerce.number().min(5).max(2000).default(200),
+    liveTrackerMtmProbeFraction: z.coerce.number().min(0.01).max(1).default(0.1),
     liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
     liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
     liveSendCreditsPerCall: z.coerce.number().int().min(10).max(200).default(30),
@@ -458,8 +488,17 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimBeforeSend: envBool(process.env.LIVE_SIM_BEFORE_SEND, true),
     liveBuySimRetryAttempts: process.env.LIVE_BUY_SIM_RETRY_ATTEMPTS,
     liveBuySimRetryDelayMs: process.env.LIVE_BUY_SIM_RETRY_DELAY_MS,
+    liveBuySimSlippageRetryAttempts: process.env.LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS,
     liveSellSimRetryAttempts: process.env.LIVE_SELL_SIM_RETRY_ATTEMPTS,
     liveSellSimRetryDelayMs: process.env.LIVE_SELL_SIM_RETRY_DELAY_MS,
+    liveSellSimSlippageRetryAttempts: process.env.LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS,
+    liveSimSlippageRetryBumpBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS,
+    liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
+    liveStagedAddSimErrThreshold: process.env.LIVE_STAGED_ADD_SIM_ERR_THRESHOLD,
+    liveStagedAddSimErrCooldownMs: process.env.LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS,
+    liveTrackerMtmProbeMinUsd: process.env.LIVE_TRACKER_MTM_PROBE_MIN_USD,
+    liveTrackerMtmProbeMaxUsd: process.env.LIVE_TRACKER_MTM_PROBE_MAX_USD,
+    liveTrackerMtmProbeFraction: process.env.LIVE_TRACKER_MTM_PROBE_FRACTION,
     liveSendMaxRetries: process.env.LIVE_SEND_MAX_RETRIES,
     liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,

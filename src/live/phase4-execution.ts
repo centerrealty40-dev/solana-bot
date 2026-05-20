@@ -44,6 +44,13 @@ import {
   registerAmbiguousLiveBuyCooldown,
 } from './pending-buy-cooldown.js';
 import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
+import {
+  isStagedAddCooldownActive,
+  recordStagedAddOutcome,
+  stagedAddCooldownRemainingMs,
+  type StagedAddIntentKind,
+} from './staged-add-sim-cooldown.js';
+import type { LiveBuyTerminalKind } from './phase4-types.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -141,6 +148,57 @@ function isRetryableSellSimError(message: string): boolean {
   );
 }
 
+/**
+ * 1.11.230 — «slippage class» sim_err.
+ *
+ * Сюда попадают ошибки, которые повторами с тем же slippageBps НЕ исправить:
+ *   - `"Custom":1` в `InstructionError` (Jupiter swap-инструкция: маршрут вернул slippage/cl-pool error);
+ *   - `0x1771` = 6001 = Jupiter v6 `SlippageToleranceExceeded`;
+ *   - явный текст `Slippage` / `Slippage tolerance exceeded` (на случай альтернативного формата).
+ *
+ * Когда ловим такую — поднимаем slippageBps на следующий retry (adaptive bump для Jupiter Pro)
+ * и кэпим число попыток отдельным env, чтобы не сжигать кредиты на одинаковых маршрутах.
+ */
+export function isSlippageClassSimError(message: string): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  /**
+   * `slippage` matches Jupiter v6 «Slippage tolerance exceeded», `slippage_pool_full`,
+   * любые сообщения, где явно упомянут slippage. Все наблюдаемые не-slippage коды
+   * Jupiter (`InsufficientFunds*`, `AccountNotFound`, `confirm_timeout`,
+   * `send_failed:429`) этого слова не содержат.
+   */
+  if (m.includes('slippage')) return true;
+  if (m.includes('0x1771')) return true;
+  if (m.includes('"custom":1}') || m.includes('"custom": 1}')) return true;
+  return false;
+}
+
+/** Один общий helper bump'а под cap. */
+function nextSlippageBps(args: {
+  cfg: LiveOscarConfig;
+  currentBps: number;
+  bump: number;
+  attempt: number;
+}): number {
+  const wanted = args.currentBps + args.bump;
+  return Math.min(args.cfg.liveSimSlippageRetryMaxBps, Math.max(args.currentBps, wanted));
+}
+
+/** Терминальная классификация ошибки pipeline для surface'а наружу (cooldown / metrics). */
+function terminalKindFromMessage(message: string): LiveBuyTerminalKind {
+  if (!message) return 'other';
+  if (message.startsWith('confirm_timeout')) return 'confirm_timeout';
+  if (message.startsWith('send_failed') || message === 'send_failed_no_signature') return 'send_failed';
+  if (message.startsWith('chain_err')) return 'chain_err';
+  if (message.startsWith('quote_stale')) return 'quote_stale';
+  if (message === 'no_quote') return 'no_quote';
+  if (message.startsWith('swap_')) return 'swap_build';
+  if (isInsufficientFundsSimError(message)) return 'insufficient_funds';
+  if (message.startsWith('sim_failed:') || message.includes('InstructionError')) return 'sim_err';
+  return 'other';
+}
+
 /** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
 async function estimateLiveWalletMintHoldingUsd(args: {
   liveCfg: LiveOscarConfig;
@@ -181,17 +239,46 @@ async function runSolToTokenPipeline(
   },
 ): Promise<LiveBuyPipelineResult> {
   const mode = pipelineAnchorMode(liveCfg);
-  if (!liveCfg.strategyEnabled) return { ok: false, anchorMode: mode };
+  const intentKindForCooldown: StagedAddIntentKind = args.intentKind;
+  /** Локальный helper-обёртка: запись в cooldown + сборка стандартного `LiveBuyPipelineResult`. */
+  const failure = (
+    cooldownKind: 'sim_err' | 'other',
+    terminalKind: LiveBuyTerminalKind,
+    message: string,
+  ): LiveBuyPipelineResult => {
+    recordStagedAddOutcome({
+      mint: args.mint,
+      intentKind: intentKindForCooldown,
+      kind: cooldownKind,
+      terminalMessage: message,
+    });
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind,
+      terminalMessage: message.slice(0, 200),
+    };
+  };
+  const success = (result: LiveBuyPipelineResult): LiveBuyPipelineResult => {
+    recordStagedAddOutcome({
+      mint: args.mint,
+      intentKind: intentKindForCooldown,
+      kind: 'success',
+    });
+    return result;
+  };
+
+  if (!liveCfg.strategyEnabled) return { ok: false, anchorMode: mode, terminalKind: 'gate' };
   if (liveCfg.executionMode === 'dry_run') {
     appendLiveJsonlEvent({
       kind: 'execution_skip',
       reason: `dry_run:${args.intentKind}`,
       detail: args.mint.slice(0, 8),
     });
-    return { ok: false, anchorMode: mode };
+    return { ok: false, anchorMode: mode, terminalKind: 'gate', terminalMessage: 'dry_run' };
   }
   if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') {
-    return { ok: false, anchorMode: mode };
+    return { ok: false, anchorMode: mode, terminalKind: 'gate' };
   }
 
   if (
@@ -203,7 +290,12 @@ async function runSolToTokenPipeline(
       reason: `live_permanent_deny:${args.intentKind}`,
       detail: args.mint.slice(0, 12),
     });
-    return { ok: false, anchorMode: mode };
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: 'live_permanent_deny',
+    };
   }
 
   if (
@@ -216,12 +308,43 @@ async function runSolToTokenPipeline(
       reason: `live_ambiguous_buy_cooldown:${args.intentKind}`,
       detail: args.mint.slice(0, 12),
     });
-    return { ok: false, anchorMode: mode };
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: 'live_ambiguous_buy_cooldown',
+    };
+  }
+
+  /** 1.11.230 — Staged-add cooldown: блокируем повторный заход в pipeline, если для (mint,intentKind) накопилась серия sim_err. */
+  if (isStagedAddCooldownActive({ mint: args.mint, intentKind: intentKindForCooldown })) {
+    const remaining = stagedAddCooldownRemainingMs({
+      mint: args.mint,
+      intentKind: intentKindForCooldown,
+    });
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_staged_add_cooldown:${args.intentKind}`,
+      detail: JSON.stringify({
+        mint: args.mint.slice(0, 12),
+        remainingMs: remaining,
+      }).slice(0, 200),
+    });
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: `staged_add_cooldown:${Math.round(remaining / 1000)}s`,
+    };
   }
 
   const kp = signer(liveCfg);
   const pk = kp.publicKey.toBase58();
   const maxAttempts = 1 + liveCfg.liveBuySimRetryAttempts;
+  const slippageBumpBps = liveCfg.liveSimSlippageRetryBumpBps;
+  const slippageCap = 1 + liveCfg.liveBuySimSlippageRetryAttempts;
+  let slippageClassAttempts = 0;
+  let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const solUsd = getSolUsd() ?? 0;
@@ -232,6 +355,7 @@ async function runSolToTokenPipeline(
       sizeUsd: args.usdNotional,
       solUsd,
       userPublicKey: pk,
+      slippageBpsOverride: currentSlippageBps,
     });
 
     const quoteSnapshot = {
@@ -262,7 +386,8 @@ async function runSolToTokenPipeline(
         error: { message: reason },
       });
       notifyLiveExecutionSimErrForTerminal(reason);
-      return { ok: false, anchorMode: mode };
+      const tk = reason === 'no_quote' ? 'no_quote' : 'swap_build';
+      return failure('other', tk, reason);
     }
 
     if (liveCfg.executionMode === 'live' && attempt === 0) {
@@ -283,7 +408,7 @@ async function runSolToTokenPipeline(
               requiredLamports: String(need),
             }).slice(0, 500),
           });
-          return { ok: false, anchorMode: mode };
+          return failure('other', 'insufficient_funds', 'insufficient_wallet_sol_for_buy');
         }
       }
     }
@@ -292,24 +417,19 @@ async function runSolToTokenPipeline(
     if (liveQuoteExceedsMaxAge(snapForAge, liveCfg.liveQuoteMaxAgeMs)) {
       const age = snapForAge.quoteAgeMs;
       const max = liveCfg.liveQuoteMaxAgeMs;
+      const staleMsg =
+        typeof age === 'number' && Number.isFinite(age) && max != null
+          ? `quote_stale:${Math.round(age)}ms>${max}ms`
+          : 'quote_stale:bad_or_missing_quoteAgeMs';
       appendLiveJsonlEvent({
         kind: 'execution_result',
         intentId,
         status: 'sim_err',
         simulated: true,
-        error: {
-          message:
-            typeof age === 'number' && Number.isFinite(age) && max != null
-              ? `quote_stale:${Math.round(age)}ms>${max}ms`
-              : 'quote_stale:bad_or_missing_quoteAgeMs',
-        },
+        error: { message: staleMsg },
       });
-      notifyLiveExecutionSimErrForTerminal(
-        typeof age === 'number' && Number.isFinite(age) && max != null
-          ? `quote_stale:${Math.round(age)}ms>${max}ms`
-          : 'quote_stale:bad_or_missing_quoteAgeMs',
-      );
-      return { ok: false, anchorMode: mode };
+      notifyLiveExecutionSimErrForTerminal(staleMsg);
+      return failure('other', 'quote_stale', staleMsg);
     }
 
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
@@ -329,13 +449,29 @@ async function runSolToTokenPipeline(
           simulated: true,
           unitsConsumed: sim.unitsConsumed ?? null,
           error: { message },
+          slippageBps: currentSlippageBps,
         });
         notifyLiveExecutionSimErrForTerminal(message);
-        if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
+        const isSlippage = isSlippageClassSimError(message);
+        if (isSlippage) {
+          slippageClassAttempts += 1;
+          currentSlippageBps = nextSlippageBps({
+            cfg: liveCfg,
+            currentBps: currentSlippageBps,
+            bump: slippageBumpBps,
+            attempt,
+          });
+        }
+        const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
+        if (
+          !slippageBail &&
+          attempt < maxAttempts - 1 &&
+          isRetryableBuySimError(message)
+        ) {
           await sleep(liveCfg.liveBuySimRetryDelayMs);
           continue;
         }
-        return { ok: false, anchorMode: 'simulate' };
+        return failure('sim_err', 'sim_err', message);
       }
 
       appendLiveJsonlEvent({
@@ -346,7 +482,7 @@ async function runSolToTokenPipeline(
         unitsConsumed: sim.unitsConsumed ?? null,
       });
       notifyLiveExecutionSimOk();
-      return { ok: true, anchorMode: 'simulate' };
+      return success({ ok: true, anchorMode: 'simulate' });
     }
 
     const liveOut = await liveSendSignedSwapPipeline({
@@ -371,22 +507,39 @@ async function runSolToTokenPipeline(
       }
     }
     if (ok && liveOut.signature) {
-      return { ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature };
+      return success({ ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature });
     }
     if (
       !ok &&
       !liveOut.ok &&
       liveOut.kind === 'sim_err' &&
-      attempt < maxAttempts - 1 &&
       isRetryableBuySimError(liveOut.message)
     ) {
-      await sleep(liveCfg.liveBuySimRetryDelayMs);
-      continue;
+      const isSlippage = isSlippageClassSimError(liveOut.message);
+      if (isSlippage) {
+        slippageClassAttempts += 1;
+        currentSlippageBps = nextSlippageBps({
+          cfg: liveCfg,
+          currentBps: currentSlippageBps,
+          bump: slippageBumpBps,
+          attempt,
+        });
+      }
+      const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
+      if (!slippageBail && attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
     }
-    return { ok: false, anchorMode: 'chain' };
+    if (!liveOut.ok) {
+      const tk = terminalKindFromMessage(liveOut.message);
+      const cooldownKind = tk === 'sim_err' ? 'sim_err' : 'other';
+      return failure(cooldownKind, tk, liveOut.message);
+    }
+    return failure('other', 'other', 'unknown_terminal');
   }
 
-  return { ok: false, anchorMode: 'chain' };
+  return failure('other', 'other', 'retries_exhausted');
 }
 
 export type LiveTokenToSolPipelineResult = {
@@ -478,6 +631,10 @@ async function runTokenToSolPipeline(
   const kp = signer(liveCfg);
   const pk = kp.publicKey.toBase58();
   const sellMaxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
+  const sellSlippageBumpBps = liveCfg.liveSimSlippageRetryBumpBps;
+  const sellSlippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
+  let sellSlippageClassAttempts = 0;
+  let sellCurrentSlippageBps = liveCfg.liveDefaultSlippageBps;
 
   /**
    * Persistent retry envelope for sell pipeline (1.11.167):
@@ -486,6 +643,9 @@ async function runTokenToSolPipeline(
    * (already-broadcast tx; retry would risk double-sell). Each attempt emits its
    * own `execution_attempt`/`execution_result` pair so the JSONL keeps full audit
    * of how many tries it took to push through tightened slippage (`isRetryableSellSimError`).
+   *
+   * 1.11.230 — на slippage-class sim_err bump'аем slippageBps на следующий retry
+   * (под Jupiter Pro) и кэпим число slippage-ретраев отдельно от общих.
    */
   let lastResult: LiveTokenToSolPipelineResult = { ok: false };
   for (let attempt = 0; attempt < sellMaxAttempts; attempt++) {
@@ -497,6 +657,7 @@ async function runTokenToSolPipeline(
       tokenAmountRaw: raw,
       solUsd,
       userPublicKey: pk,
+      slippageBpsOverride: sellCurrentSlippageBps,
     });
 
     const quoteSnapshot = {
@@ -592,9 +753,25 @@ async function runTokenToSolPipeline(
           simulated: true,
           unitsConsumed: sim.unitsConsumed ?? null,
           error: { message },
+          slippageBps: sellCurrentSlippageBps,
         });
         notifyLiveExecutionSimErrForTerminal(message);
-        if (attempt < sellMaxAttempts - 1 && isRetryableSellSimError(message)) {
+        const isSlippage = isSlippageClassSimError(message);
+        if (isSlippage) {
+          sellSlippageClassAttempts += 1;
+          sellCurrentSlippageBps = nextSlippageBps({
+            cfg: liveCfg,
+            currentBps: sellCurrentSlippageBps,
+            bump: sellSlippageBumpBps,
+            attempt,
+          });
+        }
+        const slippageBail = isSlippage && sellSlippageClassAttempts >= sellSlippageCap;
+        if (
+          !slippageBail &&
+          attempt < sellMaxAttempts - 1 &&
+          isRetryableSellSimError(message)
+        ) {
           await sleep(liveCfg.liveSellSimRetryDelayMs);
           continue;
         }
@@ -630,7 +807,7 @@ async function runTokenToSolPipeline(
     /**
      * Sell broadcast outcome:
      *  - `ok=true` → confirmed swap, return; do not retry.
-     *  - `ok=false && sim_err && retryable` → retry with fresh quote.
+     *  - `ok=false && sim_err && retryable` → retry with fresh quote (с bump'ом slippage для slippage-class).
      *  - `confirm_timeout` (broadcast already in-flight) → never retry; stop loop.
      *  - other terminal failures → stop loop.
      */
@@ -644,11 +821,23 @@ async function runTokenToSolPipeline(
       !ok &&
       !liveOut.ok &&
       liveOut.kind === 'sim_err' &&
-      attempt < sellMaxAttempts - 1 &&
       isRetryableSellSimError(liveOut.message)
     ) {
-      await sleep(liveCfg.liveSellSimRetryDelayMs);
-      continue;
+      const isSlippage = isSlippageClassSimError(liveOut.message);
+      if (isSlippage) {
+        sellSlippageClassAttempts += 1;
+        sellCurrentSlippageBps = nextSlippageBps({
+          cfg: liveCfg,
+          currentBps: sellCurrentSlippageBps,
+          bump: sellSlippageBumpBps,
+          attempt,
+        });
+      }
+      const slippageBail = isSlippage && sellSlippageClassAttempts >= sellSlippageCap;
+      if (!slippageBail && attempt < sellMaxAttempts - 1) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
     }
     return {
       ok,

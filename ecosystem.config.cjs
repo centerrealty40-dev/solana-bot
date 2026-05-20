@@ -610,7 +610,12 @@ const PM2_APPS = [
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
-        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        /**
+         * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
+         * Free-эндпоинт даёт <1 RPS, Pro — 50+ RPS, поэтому 429 от **`/quote`** изредка приходит даже на Pro;
+         * экспоненциальный backoff (150 → 270 → 486 ms…) уверенно прокатывает их.
+         */
+        JUPITER_QUOTE_429_MAX_RETRIES: '8',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '0',
@@ -728,6 +733,50 @@ const PM2_APPS = [
         LIVE_BUY_SIM_RETRY_DELAY_MS: '3000',
         LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
         LIVE_SELL_SIM_RETRY_DELAY_MS: '3000',
+        /**
+         * 1.11.230 — Smart retry classification (A.2).
+         *
+         * Если внутри общего retry-envelope (10 попыток для buy / sell) Jupiter возвращает
+         * **slippage class** `sim_err` (`InstructionError[*,{"Custom":1}]`, `0x1771`,
+         * текст «Slippage tolerance exceeded»), мы:
+         *   1) считаем slippage-class attempts ОТДЕЛЬНО от общего счётчика;
+         *   2) бампим `slippageBps` на `LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS` каждый retry,
+         *      капируем на `LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS` (даём Jupiter Pro собрать
+         *      route с приемлемым price impact на разных пулах);
+         *   3) кэпируем по `LIVE_*_SIM_SLIPPAGE_RETRY_ATTEMPTS` — если уже несколько раз
+         *      подряд получили slippage-class на тот же intent, дальнейшие повторы
+         *      бесполезны (route стабилен, пул просто не выдаёт нужный fill).
+         *
+         * Buy: 3 попытки (50 → 100 → 150 bps) — потеряем меньше QN-кредитов на
+         * глухих маршрутах, чем при 11 одинаковых сим-фейлах. Sell: 6 попыток
+         * (50 → 100 → 150 → 200 → 250 → 300 bps) — выходить надо обязательно,
+         * адаптивный slippage помогает протолкнуть TP/SL в просадке.
+         */
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '2',
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '5',
+        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50',
+        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '300',
+        /**
+         * 1.11.230 — Staged-add sim_err cooldown (A.1).
+         *
+         * После `LIVE_STAGED_ADD_SIM_ERR_THRESHOLD` подряд идущих `sim_err`
+         * на одну `(mint, intentKind)` следующая попытка `staged_avg` /
+         * `entry_split` / `dca_add` (а также `buy_open`) блокируется на
+         * `LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS` мс. Это останавливает «петли»,
+         * когда tracker каждые 30с заходит в pipeline на застрявший mint
+         * и сжигает кредиты QN на 11 одинаковых симуляциях. Cooldown сбрасывается
+         * на первый же успешный заход в pipeline.
+         */
+        LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '3',
+        LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '1800000',
+        /**
+         * 1.11.230 — Jupiter Pro: больше MTM probe (size = max(MIN, min(MAX, remUsd * FRACTION))).
+         * Точная цена в tracker → tighter TP/SL. Раньше: [5..45] @12% (тонкая по большим позициям).
+         * Сейчас: [20..200] @10% — на $1000 позиции probe = $100 (vs $45 раньше).
+         */
+        LIVE_TRACKER_MTM_PROBE_MIN_USD: '20',
+        LIVE_TRACKER_MTM_PROBE_MAX_USD: '200',
+        LIVE_TRACKER_MTM_PROBE_FRACTION: '0.10',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
@@ -956,7 +1005,12 @@ const PM2_APPS = [
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
-        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        /**
+         * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
+         * Free-эндпоинт даёт <1 RPS, Pro — 50+ RPS, поэтому 429 от **`/quote`** изредка приходит даже на Pro;
+         * экспоненциальный backoff (150 → 270 → 486 ms…) уверенно прокатывает их.
+         */
+        JUPITER_QUOTE_429_MAX_RETRIES: '8',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -1126,7 +1180,12 @@ const PM2_APPS = [
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
-        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        /**
+         * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
+         * Free-эндпоинт даёт <1 RPS, Pro — 50+ RPS, поэтому 429 от **`/quote`** изредка приходит даже на Pro;
+         * экспоненциальный backoff (150 → 270 → 486 ms…) уверенно прокатывает их.
+         */
+        JUPITER_QUOTE_429_MAX_RETRIES: '8',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',
@@ -1295,7 +1354,12 @@ const PM2_APPS = [
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
         PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
-        JUPITER_QUOTE_429_MAX_RETRIES: '5',
+        /**
+         * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
+         * Free-эндпоинт даёт <1 RPS, Pro — 50+ RPS, поэтому 429 от **`/quote`** изредка приходит даже на Pro;
+         * экспоненциальный backoff (150 → 270 → 486 ms…) уверенно прокатывает их.
+         */
+        JUPITER_QUOTE_429_MAX_RETRIES: '8',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '1',

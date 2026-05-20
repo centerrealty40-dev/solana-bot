@@ -149,6 +149,24 @@ async function pollUntilConfirmed(args: {
 > {
   const { cfg, signature, deadlineMs } = args;
   const pollTimeout = Math.min(8000, Math.max(2000, cfg.liveConfirmTimeoutMs));
+  /**
+   * 1.11.230 — exponential backoff для `getSignatureStatuses`. Раньше:
+   * фиксированные 450 ms между poll → 60 s deadline ≈ **133 QN-вызова**. Tx обычно
+   * подтверждается за 1-3 s (processed) / 5-10 s (confirmed). Лишние 100+ вызовов
+   * после 5 s = пустая трата QN-кредитов на «ещё не finalized» статус.
+   *
+   * Новая лестница: 250, 350, 500, 700, 1000, 1500, 2000 ms (cap). Для 60 s deadline
+   * это ≈ 35 poll'ов — в 4× меньше QN-кредитов. Если tx уже finalized, ответ придёт
+   * за один-два tick'а. Если confirmation timeout — fallback на `getTransaction`
+   * (см. tryRecoverConfirmedViaGetTransaction).
+   */
+  const BACKOFF_MS = [250, 350, 500, 700, 1000, 1500, 2000] as const;
+  let pollIdx = 0;
+  const nextDelay = (): number => {
+    const ms = BACKOFF_MS[Math.min(pollIdx, BACKOFF_MS.length - 1)];
+    pollIdx += 1;
+    return ms;
+  };
 
   while (Date.now() < deadlineMs) {
     const res = await qnCall<unknown>(
@@ -161,13 +179,13 @@ async function pollUntilConfirmed(args: {
     );
 
     if (!res.ok) {
-      await sleep(450);
+      await sleep(nextDelay());
       continue;
     }
 
     const row = firstSignatureStatus(res.value);
     if (row == null) {
-      await sleep(450);
+      await sleep(nextDelay());
       continue;
     }
 
@@ -182,7 +200,7 @@ async function pollUntilConfirmed(args: {
       return { ok: true, slot };
     }
 
-    await sleep(450);
+    await sleep(nextDelay());
   }
 
   return { ok: false, kind: 'confirm_timeout', message: 'confirm_timeout' };

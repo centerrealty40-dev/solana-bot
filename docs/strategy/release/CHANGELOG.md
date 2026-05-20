@@ -8,6 +8,60 @@
 
 ---
 
+## [1.11.230] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.230`.
+
+### Live Oscar — staged-add sim_err cooldown + smart slippage retry + Jupiter Pro tuning
+
+**Фон.** Аналитика журнала за 7 дней: 3 161 execution_attempt → **89.6 % завершились `sim_err`** (2 832 шт.), причём 80 % шума делали 6 mint'ов (Cm6fNnMk 720, BCdwQBAn 430, CcLd8HTA 410, SPCX 360, TripleT 340, HfMbPyDdZH 280) — staged_avg / entry_split на этих mint'ах раз за разом упирался в Jupiter `InstructionError[*,{Custom:1}]` (route/slippage), и 11 retry-попыток впустую сжигали QN-кредиты + блокировали диск­авери. См. `solana-alpha/scripts-tmp/_analytics_probe.mjs`.
+
+#### A.1 — staged-add sim_err cooldown (`src/live/staged-add-sim-cooldown.ts`)
+
+- Новый per-(mint, intentKind) счётчик подряд идущих `sim_err`. При достижении `LIVE_STAGED_ADD_SIM_ERR_THRESHOLD` (default **3**) — заход в `runSolToTokenPipeline` блокируется на `LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS` (default **30 мин**); событие `live_staged_add_cooldown` ложится в JSONL.
+- Reset на любой не-sim_err исход (success / confirm_timeout / send_failed / gate / quote_stale).
+- Применяется к `buy_open`, `dca_add`, `buy_scale_in` — выкатывает все loop'ы из tracker / discovery / staged-entry.
+
+#### A.2 — smart retry classification (slippage = bail fast)
+
+- Распознаём «slippage class» `sim_err`: `"Custom":1}`, `0x1771`, явный `slippage` в тексте (`isSlippageClassSimError`).
+- На slippage-class:
+  - bump `slippageBps` на `LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS` (default **50**) каждый retry, cap = `LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS` (default **300**) — Jupiter Pro собирает route с приемлемым impact на разных пулах.
+  - кэп slippage-retry: buy = **3 попытки** (50 → 100 → 150 bps), sell = **6 попыток** (50 → 100 → … → 300 bps). Sell кэп выше: exits должны проходить даже в просадке.
+- Non-slippage retry-логика не меняется.
+- В `execution_result` для sim_err теперь пишется `slippageBps` — увидим в логе, на каком пороге Jupiter в итоге сдался.
+
+#### Jupiter Pro — увеличиваем загрузку (live trading quality)
+
+- **MTM probe**: `[5..45 USD] @12 %` → `[20..200 USD] @10 %` (env `LIVE_TRACKER_MTM_PROBE_MIN_USD` / `_MAX_USD` / `_FRACTION`). Для $1000 позиции probe = $100 (vs $45), точнее USD-цена → tighter TP/SL.
+- **`JUPITER_QUOTE_429_MAX_RETRIES`**: 5 → **8** (cap внутри `jupiter-http.ts` поднят 8 → 12). Backoff-лестница: 150 → 270 → 486 → … (Retry-After honoured).
+
+#### QN — экспоненциальный backoff `getSignatureStatuses`
+
+- Раньше: фиксированные **450 ms** между poll → 60 s deadline ≈ **133 QN-вызова**.
+- Теперь: лестница `250, 350, 500, 700, 1000, 1500, 2000 ms` (cap) → **≈35 poll'ов** для того же deadline (×4 меньше QN-кредитов). Tx обычно подтверждается за 1-3 s, дополнительные «ещё не finalized» poll'ы после 5 s — пустая трата. Fallback на `getTransaction` (`tryRecoverConfirmedViaGetTransaction`) при истечении остаётся.
+
+#### PG coverage (A.4 verification)
+
+- Проверка живого VPS: `data/snapshot-freshness-watch-state.json` показывает `pgCoverageMode: "relaxed"`, `lastRecoveryAt` 15.7 ч назад. Это **корректное** поведение auto-escalate: `STRICT_AFTER_RECOVERY_HOURS=24` → ещё ≈ 8 ч до перехода в `full`. В последний час `data_coverage:*` блокировок 0 — глобальная проверка проходит на всех mint'ах.
+- Артефакт: `strictRecoveryActive` (`pg-data-coverage-guard.ts:238-243`) — мёртвая ветка под auto-escalate; не блокер, остаётся как follow-up.
+
+#### Dip discovery threshold tuning (A.3 — propose only, не реализовано)
+
+Из 87 826 evaluations за 48 ч: pass = 144 (0.16 %), fail = 87 682. `dip_no_window_pass` блокирует 94 % всех fail'ов (`dip_not_deep_enough >-20%` на 120m/360m/720m). Идеи на потом (без кода): (1) добавить 30m/60m окно с менее строгим dip (-10 %); (2) адаптивный dip-порог под mcap (mid-cap -15 %, large-cap -25 %); (3) volume-weighted dip; (4) часовой пояс / market session. Текущие пороги уместны для бокового рынка, обновим когда нужно вход на ралли.
+
+#### Tests
+
+- `tests/staged-add-sim-cooldown.test.ts` (8) — threshold, isolation per-key, success reset, cooldown expiry.
+- `tests/phase4-slippage-classifier.test.ts` (5) — Custom:1, 0x1771, text «Slippage», negative cases.
+- Все 382 теста проекта проходят.
+
+**Откат:** `git revert` коммита 1.11.230 + `pm2 reload live-oscar`. Окно cooldown в RAM сбрасывается на рестарте (in-memory, не персистится). На VPS остаются накопленные JSONL события `live_staged_add_cooldown` — не блокируют ничего, можно игнорировать.
+
+**Влияние на работу.** Stuck mint'ы (Cm6fNnMk, BCdwQBAn, CcLd8HTA, SPCX, TripleT, HANTA) перестанут раз в 30 с уходить в pipeline и сжигать кредиты QN/Jupiter. По grobой оценке: 2 540 ненужных retry за 7 дней → не более 6 × 3 = 18 за тот же период. Освобождение QN-кредитов на полезные действия + чище execution_result для аналитики.
+
+---
+
 ## [1.11.229] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.229`.
