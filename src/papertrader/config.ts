@@ -591,7 +591,8 @@ const ConfigSchema = z.object({
   holdersUseQnAddon: z.boolean().default(false),
   holdersTtlMs: z.coerce.number().int().min(5_000).max(15 * 60_000).default(90_000),
   holdersNegTtlMs: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
-  holdersMaxPerTick: z.coerce.number().int().min(1).max(200).default(10),
+  /** 1.11.232: разрешили 0 — когда `PAPER_HOLDERS_LIVE_ENABLED=0` нет смысла требовать ≥1. */
+  holdersMaxPerTick: z.coerce.number().int().min(0).max(200).default(10),
   holdersTimeoutMs: z.coerce.number().int().min(1_000).max(15_000).default(4000),
   holdersIncludeToken2022: z.boolean().default(true),
   holdersExcludeOwners: z
