@@ -117,13 +117,44 @@ export function loadLiveOscarWhitelistMintsSync() {
   return out;
 }
 
-function mintsTouchedByRows(rows) {
+/** Discovery / dip eval keys on `base_mint` — quote-only presence must not skip enrich. */
+function mintsWithBaseSnapshot(rows) {
   const s = new Set();
   for (const r of rows) {
     if (r?.base_mint) s.add(r.base_mint);
-    if (r?.quote_mint) s.add(r.quote_mint);
   }
   return s;
+}
+
+async function fetchDexPairsForMintChunk({
+  chunk,
+  bucketTs,
+  fetchJsonWithRetry,
+  normalizeDexPair,
+  extra,
+  log,
+  component,
+  retryTag,
+}) {
+  const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
+  try {
+    const json = await fetchJsonWithRetry(url, {}, retryTag);
+    const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
+    for (const p of pairs) {
+      const row = normalizeDexPair(p, bucketTs);
+      if (row) extra.push(row);
+    }
+    return { ok: true, pairs: pairs.length };
+  } catch (e) {
+    if (log) {
+      log('warn', 'dexscreener tokens fetch failed', {
+        error: String(e),
+        chunkSize: chunk.length,
+        component,
+      });
+    }
+    return { ok: false, pairs: 0 };
+  }
 }
 
 /**
@@ -153,11 +184,13 @@ export async function mergePaper2OpenMintSnapshots({
   const dir = paper2Dir || process.env.PAPER2_DIR || DEFAULT_PAPER2_DIR;
   let openMints;
   let whitelistMintCount = 0;
+  let whitelistSet = new Set();
   try {
     const paper = loadPaper2OpenMintsSync(dir);
     const live = loadLiveOscarOpenMintsSync();
     const whitelist = loadLiveOscarWhitelistMintsSync();
     whitelistMintCount = whitelist.length;
+    whitelistSet = new Set(whitelist);
     openMints = [...new Set([...paper, ...live, ...whitelist])];
   } catch (e) {
     if (log) log('warn', 'paper2/live open mints load failed', { error: String(e), component });
@@ -165,32 +198,52 @@ export async function mergePaper2OpenMintSnapshots({
   }
   if (openMints.length === 0) return rows;
 
-  const covered = mintsTouchedByRows(rows);
+  const covered = mintsWithBaseSnapshot(rows);
   const missing = openMints.filter((m) => !covered.has(m));
   if (missing.length === 0) return rows;
 
+  const missingWhitelist = missing.filter((m) => whitelistSet.has(m));
+  const missingBatch = missing.filter((m) => !whitelistSet.has(m));
+
   const extra = [];
-  for (let i = 0; i < missing.length; i += TOKEN_CHUNK) {
-    const chunk = missing.slice(i, i + TOKEN_CHUNK);
-    const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
-    try {
-      const json = await fetchJsonWithRetry(url, {}, 'dexscreener-tokens');
-      const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
-      for (const p of pairs) {
-        const row = normalizeDexPair(p, bucketTs);
-        if (row) extra.push(row);
-      }
-    } catch (e) {
-      if (log) {
-        log('warn', 'dexscreener tokens fetch failed', {
-          error: String(e),
-          chunkSize: chunk.length,
-          component,
-        });
-      }
-    }
+  let whitelistSingleFetchOk = 0;
+
+  for (let i = 0; i < missingBatch.length; i += TOKEN_CHUNK) {
+    const chunk = missingBatch.slice(i, i + TOKEN_CHUNK);
+    await fetchDexPairsForMintChunk({
+      chunk,
+      bucketTs,
+      fetchJsonWithRetry,
+      normalizeDexPair,
+      extra,
+      log,
+      component,
+      retryTag: 'dexscreener-tokens',
+    });
     await sleep(DS_DELAY_MS);
   }
+
+  /**
+   * DexScreener `/tokens/{m1,m2,…}` truncates pairs for later mints in the URL (observed: 4-mint chunk
+   * returns 30 pairs but omits trailing whitelist runner). Whitelist mints always get a solo fetch.
+   */
+  for (const mint of missingWhitelist) {
+    const res = await fetchDexPairsForMintChunk({
+      chunk: [mint],
+      bucketTs,
+      fetchJsonWithRetry,
+      normalizeDexPair,
+      extra,
+      log,
+      component,
+      retryTag: 'dexscreener-token-solo',
+    });
+    if (res.ok && res.pairs > 0) whitelistSingleFetchOk += 1;
+    await sleep(DS_DELAY_MS);
+  }
+
+  const coveredAfterExtra = mintsWithBaseSnapshot(extra);
+  const stillMissingWl = missingWhitelist.filter((m) => !coveredAfterExtra.has(m));
 
   if (extra.length === 0) {
     if (log) {
@@ -198,6 +251,8 @@ export async function mergePaper2OpenMintSnapshots({
         component,
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
+        missingWhitelist: missingWhitelist.length,
+        stillMissingWhitelist: stillMissingWl.length,
       });
     }
     return rows;
@@ -210,6 +265,9 @@ export async function mergePaper2OpenMintSnapshots({
       openMintCount: openMints.length,
       whitelistMintCount,
       missingFromPrimaryTick: missing.length,
+      missingWhitelist: missingWhitelist.length,
+      whitelistSingleFetchOk,
+      stillMissingWhitelist: stillMissingWl.length,
       extraPairsThisDex: extra.length,
       rowCountAfterMerge: merged.length,
     });

@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.229] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.229`.
+
+### Collectors — whitelist mint PG snapshots (DexScreener batch truncation)
+
+- **`paper2-open-snapshot-enrich.mjs`:** mint из `live-oscar-mint-whitelist.txt` больше **не** идут только в batch `GET /dex/tokens/{m1,…,m10}` — DexScreener обрезает ответ и **теряет хвост списка** (например TOES `6ehEc…` в chunk из 4 mint: 30 пар, 0 с нужным base).
+- Whitelist missing → **solo** `GET /dex/tokens/{mint}` на каждый mint; open/paper missing — batch по 10 как раньше.
+- «Уже есть снимок» считается только по **`base_mint`** в строке (quote-only в trending больше не блокирует enrich).
+
+**Откат:** `git revert` коммита 1.11.229 + `pm2 reload` всех `sa-*` collectors и `live-oscar`.
+
+---
+
 ## [1.11.228] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.228`.
