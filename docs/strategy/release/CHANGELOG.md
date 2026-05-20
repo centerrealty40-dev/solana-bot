@@ -8,6 +8,104 @@
 
 ---
 
+## [1.11.234] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.234`.
+
+### Fix: anti-chase guard — abort buy при retry chase
+
+**Фон.** Тот же VIRL-инцидент 20 мая 22:23 мск, продолжение.
+
+Журнал VIRL (`BiywH8Eq2CbGhwMHKwCnfTiccWJwN7r1Q4Qn9hsypump`):
+
+| Событие | ts (мск) | signal_price | mcap |
+|---|---|---|---|
+| `live_staged_entry_signal` | 22:20:49 | $0.003368 | $3.37M |
+| 4× `execution_attempt` (fail) | 22:20:50 – 22:20:59 | — | — |
+| **`live_staged_entry_signal`** (новый) | 22:21:58 | **$0.003609** | **$3.61M** |
+| 3× `execution_attempt` (fail) | 22:21:59 – 22:22:06 | — | — |
+| `live_staged_entry_signal` | 22:22:58 | $0.003609 | — |
+| `execution_attempt` (success) | 22:22:59 | — | — |
+| `live_position_open` | 22:22:59 | realized $0.003647 | (+1.05% от signal) |
+
+Между signal'ом #1 ($0.003368) и signal'ом #2 ($0.003609) цена ушла **+7.2%**. Это значит мы догоняли уже разогнавшуюся цену. Внутри одного pipeline-вызова retry chase был ~+1%, но между decision'ами — +7%.
+
+Защиты не было: protector'ы (recovery/policy/A+) на тот момент **полностью** обходились runner-путём (фикс в 1.11.233). Anti-chase в pipeline вообще не существовал.
+
+После закрытия позиции (`BREAKEVEN_EXIT, -12.91%, exit mcap ≈ $3.14M`) сразу включились:
+- `policy_a_plus:price_change_1h=-24.46%<-20%` (через 5 минут после exit'а)
+- `recovery_veto_30m_bounce19.3>=12%` (через 8 минут)
+
+То есть **defaults policy_a_plus и recovery_veto были корректно настроены**, но **не применялись** к runner-пути до 1.11.233.
+
+### Изменения
+
+**`src/live/jupiter.ts` — anti-chase helpers:**
+
+```typescript
+export function tokensPerInLamportFromQuote(quoteResponse): number | null
+// outAmount / inAmount → относительная метрика цены без знания decimals/solUsd.
+// Чем меньше, тем выше цена.
+
+export function isBuyQuoteChasingAnchor({
+  anchorTokensPerLamport, currentTokensPerLamport, maxChasePct
+}): { chased: boolean; chasePct: number | null }
+// chasePct = (anchor / current - 1) * 100
+// chased=true, если цена выросла больше чем на maxChasePct % от anchor.
+```
+
+**`src/live/phase4-execution.ts` — интеграция в `runSolToTokenPipeline`:**
+
+- Перед retry-loop: `let anchorTokensPerLamport: number | null = null`
+- Внутри loop, после `priceImpactCheck`:
+  1. Считаем `currentTokensPerLamport`
+  2. Если anchor пуст и current валиден — фиксируем anchor (первый успешный quote)
+  3. Иначе, если `liveBuyMaxChasePct > 0` и есть оба значения, вызываем `isBuyQuoteChasingAnchor`
+  4. При `chased=true` — terminal `chase_aborted`, запись `execution_result.error.message = chase_aborted:buy:X.XX%>+Y.YY%(attempt=N)`, выход из pipeline
+
+**`src/live/phase4-types.ts`:** Добавлен `'chase_aborted'` в `LiveBuyTerminalKind`.
+
+**`src/live/config.ts`:**
+
+```typescript
+liveBuyMaxChasePct: z.coerce.number().min(0).max(50).default(0),
+// env LIVE_BUY_MAX_CHASE_PCT, в %
+```
+
+**`ecosystem.config.cjs`:**
+
+```
+LIVE_BUY_MAX_CHASE_PCT='3'    // 3% — нормальный intra-retry drift пропускаем, реальный chase блокируем
+```
+
+### Семантика
+
+`chase_aborted` НЕ записывается в `staged-add-sim-cooldown` как `sim_err` (он идёт через `failure('other', ...)`, не через slippage-class). Это значит после chase-abort'а **на следующем discovery-tick'е** mint опять оценится, и если signal-price пересоздался на свежей цене (и протектор пропустил) — войдём заново. Если же протектор (recovery/local-high) триггерится — пропустим. Это правильное поведение: догонять не надо, но и блокировать монету надолго после legitimate retry-failure тоже не стоит.
+
+### Что НЕ вошло в этот релиз (вынесено в 1.11.235)
+
+- **Stale-exit guard для runner-позиций.** Защита на стороне tracker'а: для open trades с `entryPath='runner'` отслеживать затухание `vol_1h` / `bs_1h` и форсировать ранний exit. Требует расширения `OpenTrade`, integration с PG context в трекере и проработки гейтов — отдельный релиз с обкаткой.
+
+### Тесты
+
+- `tests/jupiter-anti-chase.test.ts` — **12 unit-tests:**
+  - `tokensPerInLamportFromQuote` parses string/numeric/missing
+  - `isBuyQuoteChasingAnchor`: off (`maxChasePct=0`), null inputs, chase detected, below limit, downward price (negative chase), boundary tests
+  - Integration: VIRL-подобный сценарий (140e9→133e9 outAmount, +5.26% chase) → blocked@3%
+- Все 437 unit-tests проходят (включая 12 новых).
+
+### Откат
+
+```bash
+git revert <commit-sha>
+git tag -d sa-alpha-1.11.234
+# либо: env LIVE_BUY_MAX_CHASE_PCT=0 (отключить guard без отката кода)
+```
+
+Откат через `LIVE_BUY_MAX_CHASE_PCT=0` без code-changes — самый дешёвый: anti-chase станет no-op, остальной поведение pipeline'а не меняется.
+
+---
+
 ## [1.11.233] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.233`.

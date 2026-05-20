@@ -171,6 +171,23 @@ const LiveOscarConfigSchema = z
     liveSellMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
 
     /**
+     * 1.11.234 — Anti-chase guard для buy-pipeline.
+     *
+     * Внутри одного `runSolToTokenPipeline` фиксируем `tokensPerLamport`
+     * первого валидного quote (anchor). Если на последующих retry'ях quote
+     * ушёл по цене ВЫШЕ anchor больше чем на `liveBuyMaxChasePct` %, abort
+     * (terminal kind `chase_aborted`). Это предотвращает залёт в позицию
+     * по уже разогнанной цене — на следующем discovery-tick'е либо decision
+     * пере-снимется на новой цене, либо recovery-veto / local-high-veto
+     * заблокируют вход.
+     *
+     * Значение в **процентах**. `0` отключает проверку.
+     * Рекомендованный default 3% — позволяет нормальный intra-retry drift,
+     * но блочит реальный chase.
+     */
+    liveBuyMaxChasePct: z.coerce.number().min(0).max(50).default(0),
+
+    /**
      * 1.11.231 — TTL для cache `getTokenAccountsByOwner` (live wallet SPL balances).
      * `0` (default) = off (backward-compat). Включаем `15000` (15s) — обычно
      * безопасно, потому что после buy/sell мы явно вызываем `invalidateLiveWalletSplBalanceCache()`.
@@ -548,6 +565,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
     liveBuyMaxPriceImpactPct: process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT,
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
+    liveBuyMaxChasePct: process.env.LIVE_BUY_MAX_CHASE_PCT,
     liveWalletSplBalanceCacheTtlMs: process.env.LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS,
     liveStagedAddSimErrThreshold: process.env.LIVE_STAGED_ADD_SIM_ERR_THRESHOLD,
     liveStagedAddSimErrCooldownMs: process.env.LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS,

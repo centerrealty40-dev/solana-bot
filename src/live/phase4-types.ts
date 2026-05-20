@@ -20,6 +20,13 @@ export type LiveBuyTerminalKind =
   | 'swap_build'
   | 'quote_stale'
   | 'route_too_impactful'
+  /**
+   * 1.11.234 — anti-chase guard: между retry-итерациями buy-pipeline quote
+   * ушёл по цене существенно выше anchor (первый успешный quote того же
+   * pipeline-вызова). Чейзить не стоит — на следующий tick discovery либо
+   * сделает свежий decision на актуальной цене, либо recovery-veto заблокирует.
+   */
+  | 'chase_aborted'
   | 'insufficient_funds'
   | 'gate'
   | 'other';

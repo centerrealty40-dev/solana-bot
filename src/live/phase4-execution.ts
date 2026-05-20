@@ -8,10 +8,12 @@ import {
   getSolUsd,
 } from '../papertrader/pricing.js';
 import {
+  isBuyQuoteChasingAnchor,
   isQuotePriceImpactTooHigh,
   liveBuyQuoteAndPrepareSnapshot,
   liveQuoteExceedsMaxAge,
   liveSellQuoteAndPrepareSnapshot,
+  tokensPerInLamportFromQuote,
 } from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
@@ -362,6 +364,13 @@ async function runSolToTokenPipeline(
   const slippageCap = 1 + liveCfg.liveBuySimSlippageRetryAttempts;
   let slippageClassAttempts = 0;
   let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  /**
+   * 1.11.234 — Anti-chase anchor: фиксируем `tokensPerLamport` первого валидного
+   * quote в этом pipeline-вызове. Если на последующих retry'ях quote ушёл по
+   * цене вверх (tokensPerLamport упал) больше чем на `liveBuyMaxChasePct` % —
+   * abort. Не догоняем уже разогнанную цену.
+   */
+  let anchorTokensPerLamport: number | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const solUsd = getSolUsd() ?? 0;
@@ -467,6 +476,43 @@ async function runSolToTokenPipeline(
       });
       notifyLiveExecutionSimErrForTerminal(message);
       return failure('other', 'route_too_impactful', message);
+    }
+
+    /**
+     * 1.11.234 — Anti-chase guard.
+     * Считаем `tokensPerLamport` для текущего quote. Первый успешный quote этого
+     * pipeline-вызова становится anchor'ом; на последующих retry'ях, если quote
+     * ушёл по цене выше anchor больше чем на `liveBuyMaxChasePct` %, abort.
+     * Это защита от ситуации «retry'или, пока цена ушла» (например, VIRL 22:23
+     * 20-May-2026 — между signal'ами цена ушла на +7%; внутри pipeline догнать
+     * её было нельзя без нарушения risk-budget).
+     */
+    const currentTokensPerLamport = tokensPerInLamportFromQuote(prep.quoteResponse);
+    if (anchorTokensPerLamport == null && currentTokensPerLamport != null) {
+      anchorTokensPerLamport = currentTokensPerLamport;
+    } else if (
+      anchorTokensPerLamport != null &&
+      currentTokensPerLamport != null &&
+      liveCfg.liveBuyMaxChasePct > 0
+    ) {
+      const chase = isBuyQuoteChasingAnchor({
+        anchorTokensPerLamport,
+        currentTokensPerLamport,
+        maxChasePct: liveCfg.liveBuyMaxChasePct,
+      });
+      if (chase.chased && chase.chasePct != null) {
+        const message = `chase_aborted:buy:${chase.chasePct.toFixed(2)}%>+${liveCfg.liveBuyMaxChasePct}%(attempt=${attempt})`;
+        appendLiveJsonlEvent({
+          kind: 'execution_result',
+          intentId,
+          status: 'sim_err',
+          simulated: true,
+          error: { message },
+          slippageBps: currentSlippageBps,
+        });
+        notifyLiveExecutionSimErrForTerminal(message);
+        return failure('other', 'chase_aborted', message);
+      }
     }
 
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);

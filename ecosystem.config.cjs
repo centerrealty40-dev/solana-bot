@@ -654,6 +654,22 @@ const PM2_APPS = [
         LIVE_SELL_MAX_PRICE_IMPACT_PCT: '0',
 
         /**
+         * 1.11.234 — Anti-chase guard для buy-pipeline.
+         *
+         * Когда retry'и происходят с лагом, цена может уйти. Если внутри одного
+         * `runSolToTokenPipeline` quote ушёл по цене ВЫШЕ anchor (первого quote
+         * этого вызова) больше чем на `LIVE_BUY_MAX_CHASE_PCT` %, abort.
+         * На следующем discovery-tick'е либо decision пере-снимется на свежей
+         * цене, либо recovery-veto / local-high-veto заблокируют entry.
+         *
+         * Default 3% — позволяет нормальный intra-retry drift (~1-1.5%), но
+         * блокирует реальный chase (когда цена реально ушла на 3%+ за пару
+         * секунд между retry'ями).
+         * `0` — выключить проверку.
+         */
+        LIVE_BUY_MAX_CHASE_PCT: '3',
+
+        /**
          * 1.11.231 — TTL для кэша `getTokenAccountsByOwner` (баланс SPL-кошелька).
          * После каждого confirmed buy/sell кэш явно инвалидируется. Между ними он
          * безопасно живёт 15s — устраняет 5-10× избыточных `getTokenAccountsByOwner` calls/min.

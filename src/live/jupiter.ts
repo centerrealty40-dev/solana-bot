@@ -152,6 +152,75 @@ export function isQuotePriceImpactTooHigh(
 }
 
 /**
+ * 1.11.234 — Anti-chase helper.
+ *
+ * Возвращает `outAmount / inAmount` (tokens-per-SOL-lamport) из Jupiter quote.
+ * Никаких decimals/solUsd не нужно: это **относительная** метрика, идеально
+ * подходит для сравнения двух quote'ов одного и того же mint'а внутри одного
+ * pipeline-вызова. Чем меньше `tokensPerLamport`, тем выше цена.
+ *
+ * Возвращает `null`, если `inAmount`/`outAmount` отсутствуют или не парсятся.
+ */
+export function tokensPerInLamportFromQuote(
+  quoteResponse: Record<string, unknown> | undefined | null,
+): number | null {
+  if (!quoteResponse) return null;
+  const inRaw = quoteResponse.inAmount;
+  const outRaw = quoteResponse.outAmount;
+  const inStr =
+    typeof inRaw === 'string' && /^\d+$/.test(inRaw)
+      ? inRaw
+      : typeof inRaw === 'number' && Number.isFinite(inRaw) && inRaw >= 0
+        ? String(Math.floor(inRaw))
+        : null;
+  const outStr =
+    typeof outRaw === 'string' && /^\d+$/.test(outRaw)
+      ? outRaw
+      : typeof outRaw === 'number' && Number.isFinite(outRaw) && outRaw >= 0
+        ? String(Math.floor(outRaw))
+        : null;
+  if (inStr == null || outStr == null) return null;
+  const inN = Number(inStr);
+  const outN = Number(outStr);
+  if (!(inN > 0) || !(outN > 0)) return null;
+  return outN / inN;
+}
+
+/**
+ * 1.11.234 — Anti-chase guard.
+ *
+ * Сравнивает `tokensPerLamport` текущего quote с `anchor` (первый успешный
+ * quote того же pipeline-вызова). Если **цена выросла** (т.е. `tokensPerLamport`
+ * **упало**) на > `maxChasePct` %, считаем что нас «гонят» — abort, чтобы
+ * не залетать в позицию по уже разогнанной цене.
+ *
+ * `chasePct` = `(anchorTokensPerLamport / currentTokensPerLamport - 1) * 100`
+ *  - 0% — ничего не изменилось,
+ *  - >0% — цена выше anchor (chase),
+ *  - <0% — цена ниже anchor (нам выгоднее, не блокируем).
+ *
+ * `maxChasePct <= 0` → проверка отключена.
+ */
+export function isBuyQuoteChasingAnchor(args: {
+  anchorTokensPerLamport: number | null;
+  currentTokensPerLamport: number | null;
+  maxChasePct: number;
+}): { chased: boolean; chasePct: number | null } {
+  const { anchorTokensPerLamport, currentTokensPerLamport, maxChasePct } = args;
+  if (!(maxChasePct > 0)) return { chased: false, chasePct: null };
+  if (
+    anchorTokensPerLamport == null ||
+    currentTokensPerLamport == null ||
+    !(anchorTokensPerLamport > 0) ||
+    !(currentTokensPerLamport > 0)
+  ) {
+    return { chased: false, chasePct: null };
+  }
+  const chasePct = (anchorTokensPerLamport / currentTokensPerLamport - 1) * 100;
+  return { chased: chasePct > maxChasePct, chasePct };
+}
+
+/**
  * W8.0 parent §10 — when `maxAgeMs` is set (>0), swap is blocked if `quoteAgeMs` is missing, invalid, or exceeds the limit.
  */
 export function liveQuoteExceedsMaxAge(
