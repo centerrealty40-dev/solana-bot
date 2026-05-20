@@ -19,6 +19,7 @@ export type LiveBuyTerminalKind =
   | 'no_quote'
   | 'swap_build'
   | 'quote_stale'
+  | 'route_too_impactful'
   | 'insufficient_funds'
   | 'gate'
   | 'other';

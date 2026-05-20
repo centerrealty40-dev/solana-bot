@@ -256,60 +256,44 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
   }
-  const dipMap = await fetchDipContextMap(
-    cfg,
-    snapshotTagged.map((x) => x.row),
-  );
+
   /**
-   * 1.11.167: batch-fetch Policy A+ контекста (один SQL на DEX-таблицу для всех
-   * mints этого тика). Если правила выключены — возвращается пустая карта,
-   * вычисление и блокировка в discovery-loop становятся no-op.
+   * 1.11.231 — throttle ПЕРЕД PG fan-out.
+   *
+   * Раньше PG-контексты (`dipMap`, `policyAPlusMap`, `volumeSybilMap`,
+   * `volumeEphemeralMap`, `mintPgCoverageMap`) фетчились для ВСЕХ кандидатов из snapshot,
+   * включая те, по которым `shouldEvaluate` отказал бы из-за `discoveryReevalSec`-throttle.
+   * Это рандомно увеличивало PG-нагрузку на discovery-tick'е в 2-4×.
+   *
+   * Теперь:
+   *   1) считаем `allowedThisTick` для каждого mint'а ОДИН раз (фиксирует last-eval timestamp),
+   *   2) fan-out PG-контексты только для allowed,
+   *   3) loop пишет throttled-аудит для deepWl-mint'ов отдельной фазой.
+   *
+   * `evaluatedAtMap` мутируется при `shouldEvaluate==true` — поведение throttle сохранено.
    */
-  const policyAPlusMap: Map<string, PolicyAPlusFeatures> = await fetchPolicyAPlusContextMap(
-    cfg,
-    snapshotTagged.map((x) => x.row),
-  );
-  const volumeSybilMap: Map<string, VolumeSybilFeatures> = await fetchVolumeSybilContextMap(
-    cfg,
-    snapshotTagged.map((x) => x.row),
-  );
-  const volumeEphemeralMap: Map<string, VolumeEphemeralFeatures> =
-    await fetchVolumeEphemeralContextMap(
-      cfg,
-      snapshotTagged.map((x) => x.row),
-    );
-  const globalPgCoverage = await fetchGlobalPgCoverageState(cfg);
-  const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
-    cfg,
-    snapshotTagged.map((x) => x.row),
-    globalPgCoverage,
-  );
-  await warmupSnapshotHolderCounts(cfg, snapshotTagged);
   const reevalAfterSec = cfg.discoveryReevalSec;
+  const allowedFlag = new Map<string, boolean>();
+  for (const { row } of snapshotTagged) {
+    if (allowedFlag.has(row.mint)) continue;
+    allowedFlag.set(row.mint, shouldEvaluate(row.mint, reevalAfterSec));
+  }
+  const allowedSnapshotTagged = snapshotTagged.filter(({ row }) => allowedFlag.get(row.mint) === true);
 
-  const decisions: EvalDecision[] = [];
-  const auditRows: Record<string, unknown>[] = [];
-  const candidateMintKeys = new Set(snapshotTagged.map((x) => x.row.mint));
-  let evaluated = 0;
-  let passed = 0;
-  let liveHoldersThisTick = 0;
-  const liveHoldersEnabled =
-    cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
-
-  for (const { row, lane } of snapshotTagged) {
-    const deepWl =
-      cfg.discoveryDeepAuditJsonl === true &&
-      cfg.discoveryDeepAuditWhitelistMintSet &&
-      cfg.discoveryDeepAuditWhitelistMintSet.has(row.mint);
-    if (!shouldEvaluate(row.mint, reevalAfterSec)) {
-      if (
-        deepWl &&
-        allowDeepAuditLog(
-          `${row.mint}:tick_skip`,
-          cfg.discoveryDeepAuditUniverseMissMinMs,
-        )
-      ) {
-        auditRows.push({
+  if (allowedSnapshotTagged.length === 0) {
+    /** Все mint'ы на throttle — пишем только deep-аудит для whitelist'а и выходим без fan-out. */
+    const auditRowsThrottle: Record<string, unknown>[] = [];
+    const wl = cfg.discoveryDeepAuditWhitelistMintSet;
+    if (cfg.discoveryDeepAuditJsonl === true && wl && wl.size > 0) {
+      for (const { row, lane } of snapshotTagged) {
+        if (!wl.has(row.mint)) continue;
+        if (
+          !allowDeepAuditLog(
+            `${row.mint}:tick_skip`,
+            cfg.discoveryDeepAuditUniverseMissMinMs,
+          )
+        ) continue;
+        auditRowsThrottle.push({
           kind: 'live_discovery_tick_skip',
           mint: row.mint,
           symbol: row.symbol,
@@ -319,13 +303,89 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           discoveryReevalSec: reevalAfterSec,
         });
       }
-      continue;
     }
+    return {
+      discovered: snapshotTagged.length,
+      evaluated: 0,
+      passed: 0,
+      decisions: [],
+      auditRows: auditRowsThrottle.length > 0 ? auditRowsThrottle : undefined,
+    };
+  }
+
+  /**
+   * 1.11.231 — параллелизация PG fan-out через `Promise.all`.
+   *
+   * Раньше все 5 контекстов запрашивались строго последовательно (await за await), что давало
+   * до ~1 s latency на тик discovery. Запросы не зависят друг от друга (читают разные таблицы),
+   * поэтому безопасно параллелить. `mintPgCoverageMap` зависит от `globalPgCoverage`, поэтому
+   * остаётся вторым шагом.
+   *
+   * Full CTE-консолидация (один SQL вместо 5) — это отдельный рефакторинг с риском регрессии
+   * и оставлена в backlog'е (см. `proposals/PG_FAN_OUT_CTE.md`).
+   */
+  const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
+  const [dipMap, policyAPlusMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage] = await Promise.all([
+    fetchDipContextMap(cfg, rowsForCtx),
+    fetchPolicyAPlusContextMap(cfg, rowsForCtx),
+    fetchVolumeSybilContextMap(cfg, rowsForCtx),
+    fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
+    fetchGlobalPgCoverageState(cfg),
+  ]);
+  const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
+    cfg,
+    rowsForCtx,
+    globalPgCoverage,
+  );
+  await warmupSnapshotHolderCounts(cfg, allowedSnapshotTagged);
+
+  const decisions: EvalDecision[] = [];
+  const auditRows: Record<string, unknown>[] = [];
+  const candidateMintKeys = new Set(snapshotTagged.map((x) => x.row.mint));
+  let evaluated = 0;
+  let passed = 0;
+  let liveHoldersThisTick = 0;
+  /**
+   * 1.11.231 — два режима:
+   *   - `liveHoldersForObservability`: запрашиваем точное число холдеров через QN add-on / GPA
+   *     для всех passed-кандидатов (cheapPass=true), чтобы видеть real holders в journal даже
+   *     когда minHolderCount=0 и гейт не блокирует.
+   *   - `liveHoldersForGate`: применяем порог `globalMinHolderCount` только если он > 0.
+   */
+  const liveHoldersForObservability = cfg.holdersLiveEnabled;
+  const liveHoldersForGate =
+    cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
+
+  /** 1.11.231 — throttled deep-аудит для whitelist'а (mint'ы, отсечённые до fan-out). */
+  const wlForThrottle = cfg.discoveryDeepAuditWhitelistMintSet;
+  if (cfg.discoveryDeepAuditJsonl === true && wlForThrottle && wlForThrottle.size > 0) {
+    for (const { row, lane } of snapshotTagged) {
+      if (allowedFlag.get(row.mint) === true) continue;
+      if (!wlForThrottle.has(row.mint)) continue;
+      if (
+        !allowDeepAuditLog(
+          `${row.mint}:tick_skip`,
+          cfg.discoveryDeepAuditUniverseMissMinMs,
+        )
+      ) continue;
+      auditRows.push({
+        kind: 'live_discovery_tick_skip',
+        mint: row.mint,
+        symbol: row.symbol,
+        lane,
+        source: row.source,
+        reason: 'reeval_throttle',
+        discoveryReevalSec: reevalAfterSec,
+      });
+    }
+  }
+
+  for (const { row, lane } of allowedSnapshotTagged) {
     evaluated++;
 
     const v = evaluateSnapshot(cfg, row, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
-      skipHolderCheck: liveHoldersEnabled,
+      skipHolderCheck: liveHoldersForGate,
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
     const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
@@ -459,7 +519,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let holdersMeta: HoldersDecisionMeta | undefined;
     const holderReasons: string[] = [];
 
-    if (liveHoldersEnabled && cheapPass) {
+    if (liveHoldersForObservability && cheapPass) {
       const dbHolders = Number(row.holder_count ?? 0);
       if (liveHoldersThisTick >= cfg.holdersMaxPerTick) {
         holdersMeta = {
@@ -470,11 +530,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           holders_fail_reason: 'budget_per_tick',
           holders_used_for_gate: dbHolders,
         };
-        if (cfg.holdersOnFail === 'block') {
-          holderReasons.push('holders_unknown:budget_per_tick');
-        } else if (cfg.holdersOnFail === 'db_fallback') {
-          if (dbHolders < cfg.globalMinHolderCount) {
-            holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+        if (liveHoldersForGate) {
+          if (cfg.holdersOnFail === 'block') {
+            holderReasons.push('holders_unknown:budget_per_tick');
+          } else if (cfg.holdersOnFail === 'db_fallback') {
+            if (dbHolders < cfg.globalMinHolderCount) {
+              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+            }
           }
         }
       } else {
@@ -488,7 +550,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             holders_age_ms: r.ageMs,
             holders_used_for_gate: r.count,
           };
-          if (r.count < cfg.globalMinHolderCount) {
+          if (liveHoldersForGate && r.count < cfg.globalMinHolderCount) {
             holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
           }
         } else {
@@ -500,12 +562,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             holders_fail_reason: r.reason,
             holders_used_for_gate: dbHolders,
           };
-          if (cfg.holdersOnFail === 'block') {
-            holderReasons.push(`holders_unknown:${r.reason}`);
-          } else if (cfg.holdersOnFail === 'db_fallback') {
-            holdersMeta.holders_source = 'db';
-            if (dbHolders < cfg.globalMinHolderCount) {
-              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+          if (liveHoldersForGate) {
+            if (cfg.holdersOnFail === 'block') {
+              holderReasons.push(`holders_unknown:${r.reason}`);
+            } else if (cfg.holdersOnFail === 'db_fallback') {
+              holdersMeta.holders_source = 'db';
+              if (dbHolders < cfg.globalMinHolderCount) {
+                holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+              }
             }
           }
         }

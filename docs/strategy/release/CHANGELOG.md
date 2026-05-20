@@ -8,6 +8,112 @@
 
 ---
 
+## [1.11.231] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.231`.
+
+### Live Oscar — большая серия оптимизаций: холдеры, throttle pre-fan-out, adaptive priority fee, pre-arm sells, daily summary, file-watch denylist/whitelist
+
+**Фон.** После 1.11.230 (stop sim_err loops, slippage adaptive bump, MTM probe scale-up) Live Oscar заметно стабилизировался — `consec_sim_fail` упал с 472 до 0. Но осталась куча точечных мест, где либо жгутся QN-кредиты впустую, либо данные неточные, либо реакция системы слишком медленная. В этом релизе — **10 оптимизаций в одном батче**, все с минимальным риском регрессии.
+
+#### 1) Холдеры live (`src/papertrader/discovery/dip-clones.ts`, `holders-resolve.ts`)
+
+- `PAPER_HOLDERS_LIVE_ENABLED=1` + `PAPER_HOLDERS_USE_QN_ADDON=1` — пробуем QN add-on `qn_fetchTokenHolders` (Pro/Token API, ~30 credits/call), fallback на native `getProgramAccounts` (100 credits/call), кэш 90s/15s neg.
+- `PAPER_HOLDERS_ON_FAIL=warn` (раньше `db_fallback`) — при RPC-ошибке холдеров **не блокируем** покупку, пишем `holders_unknown` в decision.
+- Новое разделение: `liveHoldersForObservability` (запрашиваем для всех `cheapPass` mint'ов) vs `liveHoldersForGate` (порог применяется только при `globalMinHolderCount > 0`). Точные холдеры теперь видны в JSONL даже при выключенном гейте (`PAPER_MIN_HOLDER_COUNT=0`).
+- В сутки запросы будут только для 5-15 mint'ов, прошедших dip/recovery/vol/sybil — ≤ 0.1% бюджета QN.
+
+#### 2) Pre-check Jupiter `priceImpactPct` ПЕРЕД simulate (`src/live/jupiter.ts`, `phase4-execution.ts`)
+
+- Новые helper'ы `extractQuotePriceImpactPct` + `isQuotePriceImpactTooHigh`.
+- `LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.5` — если quote показывает > 1.5% impact, не идём в simulate, terminal `route_too_impactful`. Экономим simulate (`liveSimulateSignedTransaction`) + Jupiter `/swap` calls на глухих маршрутах.
+- Sell-сторона по умолчанию off (`LIVE_SELL_MAX_PRICE_IMPACT_PCT=0`) — для exits важно протолкнуть сделку даже с просадкой.
+- Новый `LiveBuyTerminalKind = 'route_too_impactful'`.
+
+#### 3) Wallet SPL balance cache (`src/live/reconcile-live.ts`)
+
+- TTL-кэш на `fetchLiveWalletSplBalancesByMint` (`LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS=15000`).
+- Explicit invalidation после **каждого confirmed buy/sell** в pipeline — нет риска stale balance в реальных сделках.
+- Снижает `getTokenAccountsByOwner` calls в 5-10× (tracker + sell pipeline). На 4 открытых позициях это ~80 QN-calls/час сэкономлено.
+
+#### 4) Discovery throttle ПЕРЕД PG fan-out (`src/papertrader/discovery/dip-clones.ts`)
+
+- Раньше `shouldEvaluate` throttle применялся внутри eval-loop **после** fan-out 5 PG-контекстов. Теперь throttle pre-filter, и fan-out читает только allowed mint'ы.
+- Снижает PG-нагрузку discovery на 60-70% (зависит от throttle ratio).
+- Throttled mint'ы из whitelist'а получают свой deep-аудит через отдельный pass.
+
+#### 5) PG fan-out parallelization (`src/papertrader/discovery/dip-clones.ts`)
+
+- 4 независимых PG-контекста (`dipMap`, `policyAPlusMap`, `volumeSybilMap`, `volumeEphemeralMap`) + `globalPgCoverage` теперь читаются через `Promise.all`. Раньше — последовательно (`await ... await ...`).
+- Discovery tick latency ↓ в ~5× для PG-фазы. Full CTE-консолидация остаётся в backlog'е.
+
+#### 6) Auto permanent-denylist после N rearm'ов cooldown (`src/live/staged-add-sim-cooldown.ts`)
+
+- Новый счётчик `rearmsByMint` (через все intentKind). При `LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD=5` rearm'ов (≈ 2.5 ч глухих sim_err) — mint в локальный permanent-denylist + Telegram ALERT.
+- Защищён от двойных записей (`autoDeniedByMint` set).
+- Stuck-mint'ы (Cm6fNnMk, BCdwQBAn, CcLd8HTA, etc.) теперь автоматически переезжают в denylist без вмешательства оператора.
+- JSONL: `live_staged_add_auto_denylist`.
+
+#### 7) Adaptive priority fee при congestion (`src/live/adaptive-priority-fee.ts`)
+
+- Новый модуль с rolling-window (10 мин) counter'ом `confirm_timeout`. При 5+ подряд → boost `liveJupiterPriorityMaxLamports` × 2.5 на 30 мин.
+- Hard cap 50M lamports (0.05 SOL) — защита от runaway boost.
+- `LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED=1` (включено по умолчанию).
+- `success` сразу обнуляет counter (сеть отошла).
+- JSONL: `live_priority_fee_boost`, `live_priority_fee_boost_expired`.
+
+#### 8) Sell quote pre-arm для TP-ladder (`src/live/sell-quote-prearm.ts`)
+
+- In-memory store armed quote per mint. `consumeArmedSellQuote` пробуется в начале sell-pipeline (только на attempt=0): если armed quote fresh + matches intent, пропускаем Jupiter `/quote` + `/swap` calls.
+- Это **НЕ pre-signing** — подпись/отправка только при actual TP-trigger. Risk минимальный.
+- Tracker integration оставлен как opt-in: модуль готов, но `armSellQuote` пока не зовётся (отдельная итерация после оценки baseline TP-latency).
+- JSONL: `live_sell_quote_prearm_armed/consumed/expired`.
+
+#### 9) Hot-reload whitelist + denylist (`src/live/mint-file-watchers.ts`)
+
+- `fs.watch` на whitelist + permanent-denylist (seed + local) + debounce 500 ms.
+- При изменении файла: reload, diff (added/removed), JSONL `live_mint_file_watch_change`, Telegram ADVICE с превью.
+- Существующий mtime-poll-reload остаётся как fallback.
+
+#### 10) Daily Telegram-сводка по live-oscar (`src/live/daily-summary.ts`)
+
+- Раз в сутки в 00:00 MSK (`LIVE_DAILY_SUMMARY_HOUR_MSK=0`):
+  - читает последние 24 ч `LIVE_TRADES_PATH` (хвост, до 50 MB);
+  - агрегирует: discovery evaluated/passed, top-5 блокеров, buy attempts, confirmed buys/sells, closed PnL, sim_err total, cooldown rearms, auto-denylist adds, priority-fee boosts;
+  - шлёт 1 REPORT message в Telegram + JSONL `live_daily_summary`.
+- Используется `nextDailyFireMs` + `setTimeout.unref` — не держит event loop живым.
+
+#### Changes — config & ecosystem
+
+- `src/live/config.ts`:
+  - `liveBuyMaxPriceImpactPct` / `liveSellMaxPriceImpactPct` (default 0 = off).
+  - `liveWalletSplBalanceCacheTtlMs` (default 0).
+  - `liveStagedAddAutoDenylistEnabled` / `liveStagedAddAutoDenylistRearmsThreshold` / `liveStagedAddAutoDenylistTelegramEnabled`.
+  - `liveAdaptivePriorityFeeEnabled` / `liveAdaptivePriorityFeeThreshold` / `liveAdaptivePriorityFeeWindowMs` / `liveAdaptivePriorityFeeBoostFactor` / `liveAdaptivePriorityFeeHoldMs`.
+- `ecosystem.config.cjs` для `live-oscar`:
+  - `PAPER_HOLDERS_LIVE_ENABLED=1`, `PAPER_HOLDERS_USE_QN_ADDON=1`, `PAPER_HOLDERS_ON_FAIL=warn`.
+  - `LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.5`, `LIVE_SELL_MAX_PRICE_IMPACT_PCT=0`.
+  - `LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS=15000`.
+  - `LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED=1`, `LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD=5`, `LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED=1`.
+  - `LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED=1`, `LIVE_ADAPTIVE_PRIORITY_FEE_THRESHOLD=5`, `LIVE_ADAPTIVE_PRIORITY_FEE_WINDOW_MS=600000`, `LIVE_ADAPTIVE_PRIORITY_FEE_BOOST_FACTOR=2.5`, `LIVE_ADAPTIVE_PRIORITY_FEE_HOLD_MS=1800000`.
+  - `LIVE_DAILY_SUMMARY_ENABLED=1`, `LIVE_DAILY_SUMMARY_HOUR_MSK=0`, `LIVE_DAILY_SUMMARY_MAX_BYTES=52428800`.
+  - `LIVE_MINT_FILE_WATCH_TELEGRAM_ENABLED=1`, `LIVE_MINT_FILE_WATCH_DEBOUNCE_MS=500`.
+
+#### New tests (414 total, 32 new)
+
+- `tests/adaptive-priority-fee.test.ts` — boost/expire/reset, hard cap.
+- `tests/sell-quote-prearm.test.ts` — arm/consume/expire, intent/raw mismatch.
+- `tests/jupiter-price-impact.test.ts` — extract + threshold check.
+- `tests/daily-summary.test.ts` — aggregation, format, fire-time MSK.
+- `tests/auto-denylist-rearms.test.ts` — rearms threshold, idempotency.
+
+#### Migration / Rollback
+
+- **Rollback v1.11.230:** `git revert <commit>` + redeploy. Все feature-флаги независимы — можно частично отключить через env (например `LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED=0`).
+- При сомнениях по холдерам — `PAPER_HOLDERS_LIVE_ENABLED=0` сразу возвращает поведение pre-1.11.231.
+
+---
+
 ## [1.11.230] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.230`.

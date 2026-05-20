@@ -11,6 +11,7 @@ import {
   jupiterJsonHeaders,
 } from '../core/jupiter-http.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
+import { adaptivePriorityMaxLamports } from './adaptive-priority-fee.js';
 import type { LiveOscarConfig } from './config.js';
 
 const log = child('live-jupiter');
@@ -39,8 +40,10 @@ export function liveJupiterSwapPostBody(args: {
     dynamicComputeUnitLimit: false,
     asLegacyTransaction: false,
   };
-  const maxLp = cfg.liveJupiterPriorityMaxLamports;
-  if (typeof maxLp === 'number' && maxLp >= 1) {
+  const baseLp = cfg.liveJupiterPriorityMaxLamports;
+  if (typeof baseLp === 'number' && baseLp >= 1) {
+    /** 1.11.231 — при congestion boost'аем priority fee автоматически (см. `adaptive-priority-fee.ts`). */
+    const maxLp = adaptivePriorityMaxLamports(baseLp);
     body.prioritizationFeeLamports = {
       priorityLevelWithMaxLamports: {
         priorityLevel: cfg.liveJupiterSwapPriorityLevel,
@@ -109,6 +112,43 @@ export function liveQuoteSnapshotFromResponse(
   if (args.swapTxBase64Len !== undefined) snap.swapTxBase64Len = args.swapTxBase64Len;
   if (args.swapBuildReason !== undefined) snap.swapBuildReason = args.swapBuildReason;
   return snap;
+}
+
+/**
+ * 1.11.231 — извлечь `priceImpactPct` из Jupiter quote как **process** (0..1+):
+ *   `"priceImpactPct": "0.012"` → `0.012` (т.е. 1.2%)
+ *   Возвращает `null`, если поле отсутствует или нечисловое.
+ */
+export function extractQuotePriceImpactPct(
+  quoteResponse: Record<string, unknown> | undefined | null,
+): number | null {
+  if (!quoteResponse) return null;
+  const raw = quoteResponse.priceImpactPct;
+  if (raw == null) return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+/**
+ * 1.11.231 — quote price-impact pre-check.
+ *
+ * `limitPct` — порог в %. Например `limitPct=0.5` означает «блочить при impact > 0.5%».
+ * `priceImpactPct` от Jupiter — это процент в виде 0..1 (например `0.0123` = 1.23%).
+ *
+ * Сравниваем `pct = rawPriceImpact * 100`.
+ * Возвращает `{ blocked: true, pct }` если выше порога.
+ * Возвращает `{ blocked: false, pct }` если ниже / null / выкл (`limitPct<=0`).
+ */
+export function isQuotePriceImpactTooHigh(
+  quoteResponse: Record<string, unknown> | undefined | null,
+  limitPct: number,
+): { blocked: boolean; pct: number | null } {
+  if (!(limitPct > 0)) return { blocked: false, pct: extractQuotePriceImpactPct(quoteResponse) };
+  const raw = extractQuotePriceImpactPct(quoteResponse);
+  if (raw == null) return { blocked: false, pct: null };
+  const pct = raw * 100;
+  return { blocked: pct > limitPct, pct };
 }
 
 /**

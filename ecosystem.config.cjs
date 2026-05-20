@@ -568,17 +568,23 @@ const PM2_APPS = [
         PAPER_DIP_DCA_AGGR_MIN_SELLS_24H: '6',
         PAPER_DIP_DCA_AGGR_MAX_INTERVAL_MIN: '15',
 
-        /** Off: live GPA/addon holders (W7.6) не используются — порог по `holder_count` из SQL-снимка коллекторов (`globalGate`). */
-        PAPER_HOLDERS_LIVE_ENABLED: '0',
-        PAPER_HOLDERS_USE_QN_ADDON: '0',
+        /**
+         * 1.11.231 — holders live re-enabled с QN add-on **fallback'ом на GPA**.
+         *   - `USE_QN_ADDON=1` пробует `qn_fetchTokenHolders` (Pro/Token API). При `addon_unsupported` → GPA.
+         *   - `ON_FAIL=warn` означает: при RPC-ошибке холдеров **не блокируем** покупку — пишем `holders_unknown` в decision, но даём войти. Раньше было `db_fallback` (использовался устаревший snapshot `holder_count`).
+         *   - холдеры запрашиваются ТОЛЬКО для кандидатов, прошедших dip/recovery/vol/sybil (cheapPass=true).
+         *     Это ~5 уникальных mint'ов в сутки → ~250-500 RPC-calls/мес — копейки от Pro tier.
+         *   - `SNAPSHOT_WARMUP_MAX=0` (как раньше) — не прогреваем holders для всех snapshot rows.
+         */
+        PAPER_HOLDERS_LIVE_ENABLED: '1',
+        PAPER_HOLDERS_USE_QN_ADDON: '1',
         PAPER_HOLDERS_TTL_MS: '90000',
         PAPER_HOLDERS_NEG_TTL_MS: '15000',
         PAPER_HOLDERS_MAX_PER_TICK: '10',
         PAPER_HOLDERS_TIMEOUT_MS: '4000',
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
-        PAPER_HOLDERS_ON_FAIL: 'db_fallback',
+        PAPER_HOLDERS_ON_FAIL: 'warn',
         PAPER_HOLDERS_DB_WRITEBACK: '1',
-        /** Прогрев `tokens.holder_count` — `0` выкл. */
         PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '0',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
         /** Внутренние месячные капы QN отключены — лимит только в кабинете QuickNode. */
@@ -617,6 +623,23 @@ const PM2_APPS = [
          */
         JUPITER_QUOTE_429_MAX_RETRIES: '8',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
+
+        /**
+         * 1.11.231 — pre-check Jupiter `priceImpactPct` ПЕРЕД simulate.
+         * Если impact > порога, не идём в simulate — экономим QN credits + simulate time.
+         *   `LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.5` → блочить buy при impact > 1.5%.
+         *   `LIVE_SELL_MAX_PRICE_IMPACT_PCT=0` (off) — для выходов важно протолкнуть даже при высоком impact.
+         */
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '1.5',
+        LIVE_SELL_MAX_PRICE_IMPACT_PCT: '0',
+
+        /**
+         * 1.11.231 — TTL для кэша `getTokenAccountsByOwner` (баланс SPL-кошелька).
+         * После каждого confirmed buy/sell кэш явно инвалидируется. Между ними он
+         * безопасно живёт 15s — устраняет 5-10× избыточных `getTokenAccountsByOwner` calls/min.
+         */
+        LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS: '15000',
+
         PAPER_SIM_CREDS_PER_CALL: '30',
         PAPER_SIM_STRICT_BUDGET: '0',
 
@@ -769,6 +792,44 @@ const PM2_APPS = [
          */
         LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '3',
         LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '1800000',
+        /**
+         * 1.11.231 — после `LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD` cooldown-rearm'ов
+         * на одном mint (через любой intentKind) — автоматически в permanent-denylist.
+         *   5 rearm'ов × 30 мин cooldown = ~2.5+ часа подряд глухих sim_err. Точно глухой маршрут.
+         *   Telegram ALERT при срабатывании. Для отмены — удалить строку из permanent-denylist.txt вручную.
+         */
+        LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED: '1',
+        LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD: '5',
+        LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED: '1',
+
+        /**
+         * 1.11.231 — adaptive Jupiter priority fee при congestion.
+         *
+         * Если получили 5+ confirm_timeout подряд за 10 минут — boost'аем
+         * `liveJupiterPriorityMaxLamports` × 2.5 и держим 30 минут. Потом обратно.
+         * Спасает от того, что наши tx залипают в очереди валидаторов при congestion.
+         */
+        LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED: '1',
+        LIVE_ADAPTIVE_PRIORITY_FEE_THRESHOLD: '5',
+        LIVE_ADAPTIVE_PRIORITY_FEE_WINDOW_MS: '600000',
+        LIVE_ADAPTIVE_PRIORITY_FEE_BOOST_FACTOR: '2.5',
+        LIVE_ADAPTIVE_PRIORITY_FEE_HOLD_MS: '1800000',
+
+        /**
+         * 1.11.231 — Daily Telegram-сводка по live-oscar (см. `daily-summary.ts`).
+         *   Запускается раз в сутки в 00:00 MSK (`HOUR_MSK=0`), читает JSONL за 24 ч,
+         *   шлёт 1 message с discovery funnel + buy/sell + sim_err + cooldown rearms.
+         */
+        LIVE_DAILY_SUMMARY_ENABLED: '1',
+        LIVE_DAILY_SUMMARY_HOUR_MSK: '0',
+        LIVE_DAILY_SUMMARY_MAX_BYTES: '52428800',
+
+        /**
+         * 1.11.231 — file-watch для whitelist + permanent-denylist:
+         * реактивное (fs.watch) обновление + Telegram-уведомление с diff (+added, -removed).
+         */
+        LIVE_MINT_FILE_WATCH_TELEGRAM_ENABLED: '1',
+        LIVE_MINT_FILE_WATCH_DEBOUNCE_MS: '500',
         /**
          * 1.11.230 — Jupiter Pro: больше MTM probe (size = max(MIN, min(MAX, remUsd * FRACTION))).
          * Точная цена в tracker → tighter TP/SL. Раньше: [5..45] @12% (тонкая по большим позициям).

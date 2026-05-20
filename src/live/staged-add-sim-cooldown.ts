@@ -16,6 +16,9 @@
 
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { child } from '../core/logger.js';
+import { appendMintToPermanentDenylistLocal } from './mint-permanent-denylist.js';
+import type { LiveOscarConfig } from './config.js';
+import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('staged-add-sim-cooldown');
 
@@ -39,13 +42,39 @@ interface StagedAddCooldownConfig {
   streakThreshold: number;
   /** Длительность cooldown в мс (по умолчанию 30 мин). */
   cooldownMs: number;
+  /** Сколько раз cooldown должен arm'нуться (по mint, через все intentKind) перед автоматическим добавлением в permanent-denylist. `0` = выкл. */
+  autoDenylistRearmsThreshold: number;
+  /** Включён ли вообще auto-denylist. */
+  autoDenylistEnabled: boolean;
+  /** Включён ли Telegram alert при auto-denylist. */
+  autoDenylistTelegramEnabled: boolean;
 }
 
 const store = new Map<string, Entry>();
-let cfg: StagedAddCooldownConfig = { streakThreshold: 3, cooldownMs: 30 * 60 * 1000 };
+/** Сколько раз cooldown сработал для конкретного mint (через все intentKind). */
+const rearmsByMint = new Map<string, number>();
+/** Уже добавленные в auto-denylist mint'ы — чтобы не пытаться повторно. */
+const autoDeniedByMint = new Set<string>();
 
-export function configureStagedAddSimCooldown(c: StagedAddCooldownConfig): void {
+let cfg: StagedAddCooldownConfig = {
+  streakThreshold: 3,
+  cooldownMs: 30 * 60 * 1000,
+  autoDenylistRearmsThreshold: 5,
+  autoDenylistEnabled: true,
+  autoDenylistTelegramEnabled: true,
+};
+/**
+ * Опциональная ссылка на `liveCfg` — нужна для `appendMintToPermanentDenylistLocal`.
+ * Если не задана — auto-denylist no-op, лог-предупреждение.
+ */
+let liveCfgRef: LiveOscarConfig | null = null;
+
+export function configureStagedAddSimCooldown(
+  c: StagedAddCooldownConfig,
+  liveCfg?: LiveOscarConfig,
+): void {
   cfg = { ...c };
+  if (liveCfg) liveCfgRef = liveCfg;
 }
 
 function key(mint: string, intentKind: StagedAddIntentKind): string {
@@ -126,12 +155,16 @@ export function recordStagedAddOutcome(args: {
 
   if (entry.streak >= cfg.streakThreshold && entry.cooldownUntilMs <= now) {
     entry.cooldownUntilMs = now + cfg.cooldownMs;
+    /** Учитываем rearm только если это новый cooldown (а не продолжение старого). */
+    const rearmsNext = (rearmsByMint.get(args.mint) ?? 0) + 1;
+    rearmsByMint.set(args.mint, rearmsNext);
     log.warn(
       {
         mint: args.mint.slice(0, 12),
         intentKind: args.intentKind,
         streak: entry.streak,
         cooldownUntil: new Date(entry.cooldownUntilMs).toISOString(),
+        rearms: rearmsNext,
         sample: (args.terminalMessage ?? '').slice(0, 160),
       },
       'staged-add sim_err cooldown ARMED',
@@ -141,16 +174,72 @@ export function recordStagedAddOutcome(args: {
       mint: args.mint,
       intentKind: args.intentKind,
       streak: entry.streak,
+      rearms: rearmsNext,
       cooldownMs: cfg.cooldownMs,
       cooldownUntilMs: entry.cooldownUntilMs,
       sampleMessage: (args.terminalMessage ?? '').slice(0, 200),
     });
+
+    /**
+     * 1.11.231 — auto-permanent-denylist по числу cooldown-rearm'ов.
+     * Если `rearmsByMint[mint] >= autoDenylistRearmsThreshold` и mint ещё не в denylist'е —
+     * добавляем в локальный permanent-denylist и шлём ALERT в Telegram.
+     */
+    if (
+      cfg.autoDenylistEnabled &&
+      cfg.autoDenylistRearmsThreshold > 0 &&
+      rearmsNext >= cfg.autoDenylistRearmsThreshold &&
+      !autoDeniedByMint.has(args.mint)
+    ) {
+      autoDeniedByMint.add(args.mint);
+      if (liveCfgRef) {
+        const added = appendMintToPermanentDenylistLocal(
+          liveCfgRef,
+          args.mint,
+          `staged_add_cooldown_rearms=${rearmsNext}`,
+        );
+        log.warn(
+          {
+            mint: args.mint.slice(0, 12),
+            rearms: rearmsNext,
+            denylistAdded: added,
+          },
+          'staged-add auto-denylist ARMED',
+        );
+        appendLiveJsonlEvent({
+          kind: 'live_staged_add_auto_denylist',
+          mint: args.mint,
+          rearms: rearmsNext,
+          rearmsThreshold: cfg.autoDenylistRearmsThreshold,
+          denylistAdded: added,
+        });
+        if (added && cfg.autoDenylistTelegramEnabled) {
+          const text =
+            `Mint автоматически в permanent denylist по серии sim_err cooldown.\n` +
+            `mint: ${args.mint}\n` +
+            `rearms: ${rearmsNext} (порог: ${cfg.autoDenylistRearmsThreshold})\n` +
+            `последняя ошибка: ${(args.terminalMessage ?? '').slice(0, 200)}\n` +
+            `Чтобы снова разрешить — удалите строку с этим mint из data/live/live-oscar-permanent-denylist.txt`;
+          void sendTagged('ALERT', 'live_staged_add_auto_denylist', text, { skipQuietHours: true }).catch(
+            (e) => log.warn({ err: String(e) }, 'auto-denylist telegram failed'),
+          );
+        }
+      } else {
+        log.warn(
+          { mint: args.mint.slice(0, 12), rearms: rearmsNext },
+          'auto-denylist threshold reached but liveCfgRef missing',
+        );
+      }
+    }
   }
 }
 
 /** Только для тестов — обнулить все cooldown. */
 export function _resetStagedAddCooldownForTests(): void {
   store.clear();
+  rearmsByMint.clear();
+  autoDeniedByMint.clear();
+  liveCfgRef = null;
 }
 
 /** Только для тестов / диагностики — снэпшот текущих counters. */

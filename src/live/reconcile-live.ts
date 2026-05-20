@@ -92,11 +92,45 @@ async function fetchWalletTokenRawByMint(
   return merged;
 }
 
+/**
+ * 1.11.231 — TTL-cache для `fetchLiveWalletSplBalancesByMint`.
+ *
+ * Раньше каждый sell + tracker-tick запрашивал `getTokenAccountsByOwner` × 2 (SPL + Token-2022) =
+ * ~120 credits на call. При активных позициях это 5-10 calls/min без причины — после прошлого
+ * вызова баланс изменился только тогда, когда мы сами что-то купили/продали. Кэш с TTL
+ * `LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS` (default 0 = off для backward-compat) урезает это в 5-10×.
+ *
+ * Инвалидация:
+ *   - явно: после buy/sell в pipeline вызываем `invalidateLiveWalletSplBalanceCache()`.
+ *   - неявно: TTL.
+ */
+let cachedBalances: Map<string, bigint> | null = null;
+let cachedBalancesTs = 0;
+
+export function invalidateLiveWalletSplBalanceCache(): void {
+  cachedBalances = null;
+  cachedBalancesTs = 0;
+}
+
+/** Test helper. */
+export function _clearLiveWalletSplBalanceCacheForTests(): void {
+  invalidateLiveWalletSplBalanceCache();
+}
+
 /** SPL Token + Token-2022 balances per mint (raw atoms). Used by live sells to avoid USD-math dust tails. */
 export async function fetchLiveWalletSplBalancesByMint(
   cfg: LiveOscarConfig,
 ): Promise<Map<string, bigint> | null> {
-  return fetchWalletTokenRawByMint(cfg, 'confirmed');
+  const ttlMs = Math.max(0, cfg.liveWalletSplBalanceCacheTtlMs ?? 0);
+  if (ttlMs > 0 && cachedBalances && Date.now() - cachedBalancesTs < ttlMs) {
+    return cachedBalances;
+  }
+  const fresh = await fetchWalletTokenRawByMint(cfg, 'confirmed');
+  if (fresh && ttlMs > 0) {
+    cachedBalances = fresh;
+    cachedBalancesTs = Date.now();
+  }
+  return fresh;
 }
 
 /** Tests / diagnostics: parse `getTokenAccountsByOwner` `result` after unwrap. */

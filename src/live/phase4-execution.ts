@@ -8,6 +8,7 @@ import {
   getSolUsd,
 } from '../papertrader/pricing.js';
 import {
+  isQuotePriceImpactTooHigh,
   liveBuyQuoteAndPrepareSnapshot,
   liveQuoteExceedsMaxAge,
   liveSellQuoteAndPrepareSnapshot,
@@ -32,7 +33,10 @@ import {
 } from './phase5-state.js';
 import { liveSendSignedSwapPipeline, type LiveSendPipelineOutcome } from './phase6-send.js';
 import { fetchConfirmedSwapSolProceedsLamports } from './swap-tx-sol-proceeds.js';
-import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
+import {
+  fetchLiveWalletSplBalancesByMint,
+  invalidateLiveWalletSplBalanceCache,
+} from './reconcile-live.js';
 import {
   isInsufficientFundsSimError,
   liveWalletCanAffordLamports,
@@ -50,6 +54,11 @@ import {
   stagedAddCooldownRemainingMs,
   type StagedAddIntentKind,
 } from './staged-add-sim-cooldown.js';
+import { recordSendOutcome as recordPriorityFeeOutcome } from './adaptive-priority-fee.js';
+import {
+  clearArmedSellQuote,
+  consumeArmedSellQuote,
+} from './sell-quote-prearm.js';
 import type { LiveBuyTerminalKind } from './phase4-types.js';
 
 let cachedSigner: Keypair | null = null;
@@ -90,6 +99,7 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
       slot: outcome.slot,
     });
     notifyLiveExecutionSimOk();
+    recordPriorityFeeOutcome({ kind: 'success' });
     return true;
   }
   if (outcome.kind === 'sim_err') {
@@ -102,6 +112,7 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
       error: { message: outcome.message },
     });
     notifyLiveExecutionSimErr();
+    recordPriorityFeeOutcome({ kind: 'sim_err' });
     return false;
   }
   appendLiveJsonlEvent({
@@ -116,6 +127,12 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
   /** `confirm_timeout` / `send_failed` are operational; do not trip consec-sim global gate (see phase5-state). */
   if (outcome.kind !== 'confirm_timeout') {
     notifyLiveExecutionSimErrForTerminal(outcome.message);
+  }
+  /** 1.11.231 — adaptive priority fee: учитываем confirm_timeout + send_failed для congestion sense. */
+  if (outcome.kind === 'confirm_timeout') {
+    recordPriorityFeeOutcome({ kind: 'confirm_timeout' });
+  } else if (outcome.kind === 'send_failed') {
+    recordPriorityFeeOutcome({ kind: 'send_failed' });
   }
   return false;
 }
@@ -432,6 +449,26 @@ async function runSolToTokenPipeline(
       return failure('other', 'quote_stale', staleMsg);
     }
 
+    /**
+     * 1.11.231 — pre-check Jupiter `priceImpactPct` before simulate.
+     * Если impact > порога, не идём в simulate (сэкономили QN credits + Jupiter sim time).
+     * Terminal `route_too_impactful` — не retry'ится: на следующем tick'е quote свежий и его пере-проверим.
+     */
+    const impactCheck = isQuotePriceImpactTooHigh(prep.quoteResponse, liveCfg.liveBuyMaxPriceImpactPct);
+    if (impactCheck.blocked && impactCheck.pct != null) {
+      const message = `route_too_impactful:buy:${impactCheck.pct.toFixed(2)}%>${liveCfg.liveBuyMaxPriceImpactPct}%`;
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        error: { message },
+        slippageBps: currentSlippageBps,
+      });
+      notifyLiveExecutionSimErrForTerminal(message);
+      return failure('other', 'route_too_impactful', message);
+    }
+
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
 
     if (liveCfg.executionMode === 'simulate') {
@@ -493,6 +530,8 @@ async function runSolToTokenPipeline(
     if (liveCfg.executionMode === 'live') {
       if (ok) {
         clearLiveBuyCooldown(args.mint);
+        /** 1.11.231 — после успешного buy баланс кошелька изменился; инвалидируем cache. */
+        invalidateLiveWalletSplBalanceCache();
       } else if (
         !liveOut.ok &&
         liveOut.signature &&
@@ -651,14 +690,38 @@ async function runTokenToSolPipeline(
   for (let attempt = 0; attempt < sellMaxAttempts; attempt++) {
     const solUsd = getSolUsd() ?? 0;
     const intentId = newLiveIntentId();
-    const prep = await liveSellQuoteAndPrepareSnapshot({
-      cfg: liveCfg,
-      inputMint: args.mint,
-      tokenAmountRaw: raw,
-      solUsd,
-      userPublicKey: pk,
-      slippageBpsOverride: sellCurrentSlippageBps,
-    });
+    /**
+     * 1.11.231 — попытка использовать pre-armed sell quote (TP-ladder accelerator).
+     * Только на первом attempt (на retry'ях fresh quote всегда нужен).
+     */
+    let prep: Awaited<ReturnType<typeof liveSellQuoteAndPrepareSnapshot>> | null = null;
+    let usedPrearmed = false;
+    if (attempt === 0) {
+      const armed = consumeArmedSellQuote({
+        mint: args.mint,
+        intentKind: args.intentKind,
+        tokenAmountRaw: raw,
+      });
+      if (armed) {
+        prep = {
+          quoteResponse: armed.quoteResponse,
+          quoteSnapshot: { ...armed.quoteSnapshot, prearmed: true },
+          swapBuild: { ok: true, b64: armed.swapBuildB64 },
+        };
+        usedPrearmed = true;
+      }
+    }
+    if (!prep) {
+      prep = await liveSellQuoteAndPrepareSnapshot({
+        cfg: liveCfg,
+        inputMint: args.mint,
+        tokenAmountRaw: raw,
+        solUsd,
+        userPublicKey: pk,
+        slippageBpsOverride: sellCurrentSlippageBps,
+      });
+    }
+    void usedPrearmed; /** 1.11.231 — для diagnostic only, лог уже в `consumeArmedSellQuote`. */
 
     const quoteSnapshot = {
       ...(prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true }),
@@ -713,6 +776,32 @@ async function runTokenToSolPipeline(
         error: { message: staleMsg },
       });
       notifyLiveExecutionSimErrForTerminal(staleMsg);
+      if (attempt < sellMaxAttempts - 1) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
+      return { ok: false };
+    }
+
+    /**
+     * 1.11.231 — sell-side price-impact pre-check. По дефолту off (0%), для exits важнее
+     * протолкнуть сделку даже при глубоком impact. Включать осторожно и со sigma >2%.
+     */
+    const sellImpactCheck = isQuotePriceImpactTooHigh(
+      prep.quoteResponse,
+      liveCfg.liveSellMaxPriceImpactPct,
+    );
+    if (sellImpactCheck.blocked && sellImpactCheck.pct != null) {
+      const message = `route_too_impactful:sell:${sellImpactCheck.pct.toFixed(2)}%>${liveCfg.liveSellMaxPriceImpactPct}%`;
+      appendLiveJsonlEvent({
+        kind: 'execution_result',
+        intentId,
+        status: 'sim_err',
+        simulated: true,
+        error: { message },
+        slippageBps: sellCurrentSlippageBps,
+      });
+      notifyLiveExecutionSimErrForTerminal(message);
       if (attempt < sellMaxAttempts - 1) {
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
@@ -812,6 +901,9 @@ async function runTokenToSolPipeline(
      *  - other terminal failures → stop loop.
      */
     if (ok && liveOut.ok && liveOut.signature) {
+      /** 1.11.231 — sell успешен → инвалидируем кэш SPL-балансов + чистим armed quote. */
+      invalidateLiveWalletSplBalanceCache();
+      clearArmedSellQuote(args.mint);
       lastResult = await finalizeSellOutcome(liveCfg, args, pk, wsolOut, liveOut);
       lastResult.priceImpactPct = priceImpactPct;
       lastResult.retryAttempts = attempt;

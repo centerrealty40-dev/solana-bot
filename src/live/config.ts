@@ -150,11 +150,63 @@ const LiveOscarConfigSchema = z
     /** Hard cap для адаптивного bump'а (включая базовый `liveDefaultSlippageBps`). */
     liveSimSlippageRetryMaxBps: z.coerce.number().int().min(10).max(5000).default(300),
     /**
+     * 1.11.231 — pre-check Jupiter `priceImpactPct` ПЕРЕД simulate.
+     *
+     * Если quote вернул impact > порога, не идём ни в swap-build, ни в simulate — сразу
+     * `route_too_impactful`. Это бесплатно режет 50-70% sim_err от глухих маршрутов,
+     * экономя QN-кредиты + Jupiter `/swap` calls.
+     *
+     * Buy default: `0` (off — даём legacy слой возможность работать).
+     * Sell default: `0` (off — для выходов важно успешно продать даже на хреновом маршруте).
+     *
+     * Включить:
+     *   LIVE_BUY_MAX_PRICE_IMPACT_PCT=0.5  → блочить buy при impact > 0.5%
+     *   LIVE_SELL_MAX_PRICE_IMPACT_PCT=2.0 → блочить sell при impact > 2%
+     *
+     * `priceImpactPct` от Jupiter — это **процент** (например `0.0123` = 1.23%, не 1.23 * 100).
+     * Это видно в коде `quoteResponse.priceImpactPct` — Jupiter v6 даёт число от 0 до 1+.
+     * Поэтому сравниваем `n * 100 > limitPct`.
+     */
+    liveBuyMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
+    liveSellMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
+
+    /**
+     * 1.11.231 — TTL для cache `getTokenAccountsByOwner` (live wallet SPL balances).
+     * `0` (default) = off (backward-compat). Включаем `15000` (15s) — обычно
+     * безопасно, потому что после buy/sell мы явно вызываем `invalidateLiveWalletSplBalanceCache()`.
+     */
+    liveWalletSplBalanceCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(0),
+    /**
      * 1.11.228 — staged-add cooldown: после N подряд `sim_err` на одну (mint, intentKind)
      * следующая попытка staged_avg / entry_split / dca_add блокируется на `LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS`.
      */
     liveStagedAddSimErrThreshold: z.coerce.number().int().min(1).max(20).default(3),
     liveStagedAddSimErrCooldownMs: z.coerce.number().int().min(60_000).max(6 * 60 * 60_000).default(30 * 60_000),
+    /**
+     * 1.11.231 — auto-permanent-denylist по числу cooldown-rearm'ов на mint.
+     *
+     * Если для одного mint cooldown сработал N раз (через любой intentKind: buy_open/dca_add/buy_scale_in),
+     * mint автоматически добавляется в локальный permanent-denylist (`live-oscar-permanent-denylist.txt`).
+     * 5 rearm'ов с 30-минутным cooldown это ~2.5 часа подряд глухих sim_err — практически точно глухой маршрут.
+     *
+     * 0 = выкл (только ручной denylist). Telegram ALERT при срабатывании.
+     */
+    liveStagedAddAutoDenylistEnabled: z.boolean().default(true),
+    liveStagedAddAutoDenylistRearmsThreshold: z.coerce.number().int().min(0).max(50).default(5),
+    liveStagedAddAutoDenylistTelegramEnabled: z.boolean().default(true),
+
+    /**
+     * 1.11.231 — adaptive Jupiter priority fee при congestion.
+     *
+     * При `N` подряд `confirm_timeout` за `windowMs` → boost'аем `liveJupiterPriorityMaxLamports`
+     * на `factor` × и держим `holdMs`. Это спасает от тех редких случаев когда сеть забита и
+     * наши transactions залипают в очереди валидаторов.
+     */
+    liveAdaptivePriorityFeeEnabled: z.boolean().default(false),
+    liveAdaptivePriorityFeeThreshold: z.coerce.number().int().min(1).max(50).default(5),
+    liveAdaptivePriorityFeeWindowMs: z.coerce.number().int().min(60_000).max(60 * 60_000).default(10 * 60_000),
+    liveAdaptivePriorityFeeBoostFactor: z.coerce.number().min(1).max(20).default(2.5),
+    liveAdaptivePriorityFeeHoldMs: z.coerce.number().int().min(60_000).max(6 * 60 * 60_000).default(30 * 60_000),
     /**
      * 1.11.230 — настройка размера MTM probe (live tracker → Jupiter buy-quote для price-verify).
      * Чем больше probe, тем меньше распределяется на dust-маршрутах и тем точнее USD-цена.
@@ -494,8 +546,19 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSellSimSlippageRetryAttempts: process.env.LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS,
     liveSimSlippageRetryBumpBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS,
     liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
+    liveBuyMaxPriceImpactPct: process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT,
+    liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
+    liveWalletSplBalanceCacheTtlMs: process.env.LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS,
     liveStagedAddSimErrThreshold: process.env.LIVE_STAGED_ADD_SIM_ERR_THRESHOLD,
     liveStagedAddSimErrCooldownMs: process.env.LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS,
+    liveStagedAddAutoDenylistEnabled: envBool(process.env.LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED, true),
+    liveStagedAddAutoDenylistRearmsThreshold: process.env.LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD,
+    liveStagedAddAutoDenylistTelegramEnabled: envBool(process.env.LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED, true),
+    liveAdaptivePriorityFeeEnabled: envBool(process.env.LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED, false),
+    liveAdaptivePriorityFeeThreshold: process.env.LIVE_ADAPTIVE_PRIORITY_FEE_THRESHOLD,
+    liveAdaptivePriorityFeeWindowMs: process.env.LIVE_ADAPTIVE_PRIORITY_FEE_WINDOW_MS,
+    liveAdaptivePriorityFeeBoostFactor: process.env.LIVE_ADAPTIVE_PRIORITY_FEE_BOOST_FACTOR,
+    liveAdaptivePriorityFeeHoldMs: process.env.LIVE_ADAPTIVE_PRIORITY_FEE_HOLD_MS,
     liveTrackerMtmProbeMinUsd: process.env.LIVE_TRACKER_MTM_PROBE_MIN_USD,
     liveTrackerMtmProbeMaxUsd: process.env.LIVE_TRACKER_MTM_PROBE_MAX_USD,
     liveTrackerMtmProbeFraction: process.env.LIVE_TRACKER_MTM_PROBE_FRACTION,

@@ -13,6 +13,9 @@ import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 import { configureSignalLabStore } from './signal-lab.js';
 import { configureMtmShadowStore } from './mtm-shadow.js';
 import { configureStagedAddSimCooldown } from './staged-add-sim-cooldown.js';
+import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
+import { initMintFileWatchers } from './mint-file-watchers.js';
+import { startLiveDailySummary } from './daily-summary.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
@@ -152,10 +155,27 @@ export async function main(): Promise<void> {
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
   configureSignalLabStore({ storePath: liveCfg.signalLabPath, strategyId: liveCfg.strategyId });
   configureMtmShadowStore({ storePath: liveCfg.mtmShadowPath, strategyId: liveCfg.strategyId });
-  configureStagedAddSimCooldown({
-    streakThreshold: liveCfg.liveStagedAddSimErrThreshold,
-    cooldownMs: liveCfg.liveStagedAddSimErrCooldownMs,
+  configureStagedAddSimCooldown(
+    {
+      streakThreshold: liveCfg.liveStagedAddSimErrThreshold,
+      cooldownMs: liveCfg.liveStagedAddSimErrCooldownMs,
+      autoDenylistEnabled: liveCfg.liveStagedAddAutoDenylistEnabled,
+      autoDenylistRearmsThreshold: liveCfg.liveStagedAddAutoDenylistRearmsThreshold,
+      autoDenylistTelegramEnabled: liveCfg.liveStagedAddAutoDenylistTelegramEnabled,
+    },
+    liveCfg,
+  );
+  configureAdaptivePriorityFee({
+    enabled: liveCfg.liveAdaptivePriorityFeeEnabled,
+    threshold: liveCfg.liveAdaptivePriorityFeeThreshold,
+    windowMs: liveCfg.liveAdaptivePriorityFeeWindowMs,
+    boostFactor: liveCfg.liveAdaptivePriorityFeeBoostFactor,
+    holdMs: liveCfg.liveAdaptivePriorityFeeHoldMs,
   });
+  /** 1.11.231 — реактивный hot-reload whitelist + denylist (mtime-poll работал и раньше). */
+  initMintFileWatchers(liveCfg);
+  /** 1.11.231 — Daily Telegram-сводка по live-oscar. */
+  startLiveDailySummary(liveCfg);
   const paperBaseline = loadPaperTraderConfig();
 
   if (
