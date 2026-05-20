@@ -38,6 +38,11 @@ import {
   type MintPgCoverageFeatures,
 } from './pg-data-coverage-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
+import {
+  fetchRunnerContextMap,
+  evaluateRunner,
+  type RunnerWindowFeatures,
+} from './runner-mode.js';
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -59,8 +64,13 @@ export interface EvalDecision {
   features: SnapshotFeatures;
   whale: WhaleAnalysis | null;
   holdersMeta?: HoldersDecisionMeta;
-  /** Как пройден входной гейт цены (если применимо); см. `PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`. */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap';
+  /**
+   * Как пройден входной гейт цены (если применимо):
+   *  - `dip_windows`     — классический dip-фильтр + recovery/localHigh/policyA+
+   *  - `impulse_pg_snap` — bypass через PG-snap impulse confirm (`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`)
+   *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
+   */
+  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner';
 }
 
 export interface DiscoveryTickResult {
@@ -325,13 +335,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
    * и оставлена в backlog'е (см. `proposals/PG_FAN_OUT_CTE.md`).
    */
   const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
-  const [dipMap, policyAPlusMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage] = await Promise.all([
-    fetchDipContextMap(cfg, rowsForCtx),
-    fetchPolicyAPlusContextMap(cfg, rowsForCtx),
-    fetchVolumeSybilContextMap(cfg, rowsForCtx),
-    fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
-    fetchGlobalPgCoverageState(cfg),
-  ]);
+  const [dipMap, policyAPlusMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
+    await Promise.all([
+      fetchDipContextMap(cfg, rowsForCtx),
+      fetchPolicyAPlusContextMap(cfg, rowsForCtx),
+      fetchVolumeSybilContextMap(cfg, rowsForCtx),
+      fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
+      fetchGlobalPgCoverageState(cfg),
+      fetchRunnerContextMap(cfg, rowsForCtx),
+    ]);
   const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
     cfg,
     rowsForCtx,
@@ -463,7 +475,39 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath = undefined;
       }
     }
-    const baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
+
+    /**
+     * 1.11.232 — Runner Mode параллельный путь.
+     *
+     * Если ни dip_windows, ни impulse_pg_snap не дали entryPath (классические гейты
+     * заблокировали), мы пробуем оценить кандидата по 1h/12h/24h velocity / buy-flow /
+     * liq стабильности. Этот путь не зависит от dip-окон, snapshot-floor (`vol5m<10k`,
+     * `bs<0.98`, `liq<140k`) и не требует свежести pool.
+     *
+     * Когда runner проходит — он перекрывает snapshot/dip reasons (обнуляет baseReasons),
+     * но НЕ освобождает от cooldown/whale-checks/permanent denylist/whitelist —
+     * это всё нижеследующие слои.
+     */
+    let runnerFeatures: RunnerWindowFeatures | undefined;
+    let runnerReasons: string[] = [];
+    if (cfg.runnerModeEnabled && entryPath == null) {
+      const runnerEval = evaluateRunner(cfg, row, runnerMap.get(row.mint));
+      runnerFeatures = runnerEval.features;
+      if (runnerEval.pass) {
+        entryPath = 'runner';
+      } else {
+        runnerReasons = runnerEval.reasons;
+      }
+    }
+
+    /**
+     * baseReasons: для dip-пути — стандартный набор (snapshot + global + dip windows).
+     * Для runner-пути — пусто: snapshot floor обходится, потому что 5-минутный snapshot
+     * не репрезентативен для оценки магнита интереса; вместо этого runner проверил
+     * собственный набор окон 1h/12h/24h.
+     */
+    const baseReasons =
+      entryPath === 'runner' ? [] : [...v.reasons, ...globalReasons, ...dipReasonsForGate];
     const baseDipPass = baseReasons.length === 0;
 
     let whale: WhaleAnalysis | null = null;
@@ -576,8 +620,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
     }
 
-    const mergedReasons = [...preHoldersReasons, ...holderReasons];
-    const pass = mergedReasons.length === 0;
+    /**
+     * 1.11.232: если runner не прошёл и dip не прошёл — добавляем runnerReasons в
+     * eval reasons для диагностики (видно почему runner-путь не сработал, например
+     * `runner_vol1h<80000` или `runner_stale_vol1h<0.5x_of_avg(0.32x)`). Если хотя бы
+     * один из путей дал pass — reasons остаются пусты.
+     */
+    const reasonsWithRunner =
+      entryPath == null && runnerReasons.length > 0
+        ? [...preHoldersReasons, ...holderReasons, ...runnerReasons]
+        : [...preHoldersReasons, ...holderReasons];
+    const mergedReasons = reasonsWithRunner;
+    const pass = preHoldersReasons.length === 0 && holderReasons.length === 0;
     if (pass) passed++;
 
     const decisionFeatures = buildFeatures(
@@ -689,6 +743,44 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           minSystemHourRatio: cfg.pgDataCoverageMinSystemHourRatio,
           minRecentHoursWithData: cfg.pgDataCoverageMinRecentHoursWithData,
           maxGapMinutes: cfg.pgDataCoverageMaxGapMinutes,
+        },
+      };
+    }
+    if (runnerFeatures != null) {
+      // 1.11.232: Runner Mode features (всегда прикрепляем, если посчитаны).
+      decisionFeatures.runner = {
+        enabled: cfg.runnerModeEnabled,
+        coverageOk: runnerFeatures.coverageOk,
+        pgSamples24h: runnerFeatures.pgSamples24h,
+        vol1hUsd: runnerFeatures.vol1hUsd,
+        vol12hUsd: runnerFeatures.vol12hUsd,
+        vol24hUsd: runnerFeatures.vol24hUsd,
+        vol1hAvg24hUsd: runnerFeatures.vol1hAvg24hUsd,
+        vol1hVelocity: runnerFeatures.vol1hVelocity,
+        bs1h: Number.isFinite(runnerFeatures.bs1h ?? NaN) ? runnerFeatures.bs1h : null,
+        bs12h: Number.isFinite(runnerFeatures.bs12h ?? NaN) ? runnerFeatures.bs12h : null,
+        vol5mPeak1hUsd: runnerFeatures.vol5mPeak1hUsd,
+        liqNowUsd: runnerFeatures.liqNowUsd,
+        liqP25_24hUsd: runnerFeatures.liqP25_24hUsd,
+        liqP50_24hUsd: runnerFeatures.liqP50_24hUsd,
+        mcapNowUsd: runnerFeatures.mcapNowUsd,
+        mcapMax24hUsd: runnerFeatures.mcapMax24hUsd,
+        priceNowUsd: runnerFeatures.priceNowUsd,
+        priceMax24hUsd: runnerFeatures.priceMax24hUsd,
+        thresholds: {
+          minVol1hUsd: cfg.runnerMinVol1hUsd,
+          minVol12hUsd: cfg.runnerMinVol12hUsd,
+          velocityMinX: cfg.runnerVelocityMinX,
+          minVol5mPeak1hUsd: cfg.runnerMinVol5mPeak1hUsd,
+          bs1hMin: cfg.runnerBs1hMin,
+          bs12hMin: cfg.runnerBs12hMin,
+          liqVsP25Min: cfg.runnerLiqVsP25Min,
+          priceHoldMin: cfg.runnerPriceHoldMin,
+          minMcapUsd: cfg.runnerMinMcapUsd,
+          maxMcapUsd: cfg.runnerMaxMcapUsd,
+          minLiqUsd: cfg.runnerMinLiqUsd,
+          staleVolRatioMax: cfg.runnerStaleVolRatioMax,
+          minPgSamples24h: cfg.runnerMinPgSamples24h,
         },
       };
     }

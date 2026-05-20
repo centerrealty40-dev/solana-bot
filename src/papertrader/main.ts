@@ -1620,6 +1620,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         opts?.journalLiveStrategy?.({
           kind: 'live_position_open',
           mint: ot.mint,
+          entryPath: d.entryPath ?? null,
+          runnerFeatures: d.entryPath === 'runner' ? (d.features?.runner ?? null) : null,
           openTrade: serializeOpenTrade(ot),
           ...liveOpenExtras,
         });

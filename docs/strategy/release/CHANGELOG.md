@@ -8,6 +8,111 @@
 
 ---
 
+## [1.11.232] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.232`.
+
+### Live Oscar — Runner Mode (параллельный путь discovery «магнит открытого интереса»), холдеры отключены
+
+**Фон.** Аналитика показала: за прошлые сутки наш dip-фильтр **видел** трёх свежих раннеров (A1/WORLDCUP, TOESCOIN, MANIFEST/BC, плюс HENRY/DEGEN/ATTENTION в скринере), но **никогда не пускал**. Главный блок — `dip_not_deep_enough>-20%` (на A1: 1321 из 2330 evals). Наша discovery построена вокруг идеи «купить откат -20% за 120/360/720 минут» — но свежий раннер в фазе разгона таких откатов просто не делает, и в итоге мы валимся в тухлые монеты типа TripleT (85 дней, sells>buys, peak vol $30k vs $50–96k у свежих), где dip-сетап формально нашёлся.
+
+Параллельно — холдеры, которые после v1.11.231 показывали 0 событий live-резолва в журнале, превратились в источник ложных блоков `holders<3000` для всех свежих pump.fun токенов (где `tokens.holder_count=NULL` → 0 → авто-блок). Пользователь явно отказался от холдеров как ненадёжного сигнала: «не нужен нам никакой holder count, не умеешь считать — забудь».
+
+**Решение — два больших куска:**
+
+#### 1) Runner Mode — параллельный путь к dip-windows (`src/papertrader/discovery/runner-mode.ts`, `dip-clones.ts`)
+
+Новый discovery-путь, который оценивает кандидата не по dip-окнам, а по **динамике открытого интереса** (поток объёма, чистый buy-flow, ликвидность) за окна 1ч/12ч/24ч. Работает рядом с dip-фильтром, не заменяет его: если хотя бы один из путей даёт `pass=true`, кандидат проходит. Никаких ограничений по возрасту (3-месячная монета со «вторым разгоном» — такой же магнит), никаких холдеров.
+
+**PG fan-out:** один SQL UNION ALL по 5 DEX-таблицам за 24ч, агрегация через `FILTER (WHERE ts >= NOW() - INTERVAL '…')`. Один tick — один запрос на все candidate-mints. Внутри `Promise.all` рядом с dip/policy/sybil/ephemeral/coverage контекстами.
+
+**Параметры (defaults в `ecosystem.config.cjs`):**
+
+| env | default | назначение |
+|---|---|---|
+| `PAPER_RUNNER_MODE_ENABLED` | `1` | вкл/выкл рядом с dip-путём |
+| `PAPER_RUNNER_MIN_PG_SAMPLES_24H` | `36` | минимум PG-строк за 24ч для доверия velocity |
+| `PAPER_RUNNER_MIN_VOL_1H_USD` | `80000` | минимум часового объёма ($) |
+| `PAPER_RUNNER_MIN_VOL_12H_USD` | `400000` | минимум 12-часового объёма ($) |
+| `PAPER_RUNNER_VELOCITY_MIN_X` | `1.5` | `vol_1h / (vol_24h/24)` — последний час в 1.5× выше среднего часа за сутки |
+| `PAPER_RUNNER_MIN_VOL_5M_PEAK_1H_USD` | `20000` | пиковый 5-мин объём за час (bursty flow) |
+| `PAPER_RUNNER_BS_1H_MIN` | `0.95` | buys/sells за 1ч |
+| `PAPER_RUNNER_BS_12H_MIN` | `1.0` | buys/sells за 12ч — кумулятивный buy-side тренд |
+| `PAPER_RUNNER_LIQ_VS_P25_MIN` | `0.85` | `liq_now ≥ 0.85 × liq_p25_24h` — ликва не утекла |
+| `PAPER_RUNNER_PRICE_HOLD_MIN` | `0.6` | `price_now / price_max_24h ≥ 0.6` — не -40% от 24h-пика |
+| `PAPER_RUNNER_MIN_MCAP_USD` | `1000000` | пыль не интересна |
+| `PAPER_RUNNER_MAX_MCAP_USD` | `30000000` | upside остался |
+| `PAPER_RUNNER_MIN_LIQ_USD` | `80000` | базовый liq-floor |
+| `PAPER_RUNNER_STALE_VOL_RATIO_MAX` | `0.5` | **TripleT-test**: если `vol_1h < (vol_24h/24) × 0.5` — внимание утекает, runner отказ |
+
+**Интеграция в discovery loop:** после dip/recovery/localHigh/policyA+/sybil/ephemeral/coverage, если ни `dip_windows`, ни `impulse_pg_snap` не дали `entryPath`, оценивается `evaluateRunner(cfg, row, ctx)`. При `pass=true`:
+
+- `entryPath='runner'`
+- `baseReasons=[]` (обходим snapshot-floor `vol5m<10k`, `bs<0.98`, `liq<140k` — это пороги single-tick view, не репрезентативные для оценки магнита интереса; вместо них runner проверяет собственные окна 1h/12h/24h)
+- **НЕ обходим** cooldown / whale / permanent denylist / whitelist — это работает дальше как обычно.
+
+Runner features прикреплены к `decisionFeatures.runner` всегда, когда мод включён — даже когда runner не прошёл, мы видим в JSONL все аггрегаты для пост-аналитики и тюнинга порогов.
+
+Если runner не прошёл и dip тоже не прошёл, `runnerReasons` (например `runner_vol1h<80000`, `runner_stale_vol1h<0.5x_of_avg(0.32x)`) дополняют `eval.reasons` для диагностики.
+
+**Telegram-ивент `live_position_open` (`src/papertrader/main.ts`, `src/live/events.ts`):**
+
+- Добавлены поля `entryPath` (`dip_windows`/`impulse_pg_snap`/`runner`/`null`) и `runnerFeatures` (только когда вход через runner) — будет видно прямо в нотификации, каким путём зашли.
+- Z-schema `LivePositionOpenSchema` расширена.
+
+**Тесты (`tests/runner-mode.test.ts`, 11 кейсов, все проходят):**
+
+- A1/WORLDCUP, MANIFEST — pass, реальные PG-данные за 20 мая.
+- TripleT — fail по `runner_bs1h<` / `runner_bs12h<` / `runner_velocity<`.
+- Declining attention — fail по `runner_stale_vol1h<`.
+- Liq drained, mcap<min, mcap>max — каждый кейс блокирует отдельной причиной.
+- 3-месячный токен со свежим импульсом — pass (нет age-фильтра).
+- summariseRunnerPass — компактная читаемая строка для Telegram.
+- Disabled mode + coverage skip.
+
+#### 2) Холдеры выключены полностью (`ecosystem.config.cjs`)
+
+```
+PAPER_HOLDERS_LIVE_ENABLED: '0'   (было '1')
+PAPER_HOLDERS_USE_QN_ADDON:  '0'   (было '1')
+PAPER_HOLDERS_MAX_PER_TICK:  '0'   (было '10')
+PAPER_HOLDERS_DB_WRITEBACK:  '0'   (было '1')
+```
+
+Все pipeline-вызовы становятся no-op (`holdersLiveEnabled=false` → `liveHoldersForObservability=false`, warmup не вызывается, evaluator не пишет `holders<…`).
+
+Это устраняет регресс: для всех свежих pump.fun mint'ов `tokens.holder_count=NULL` → 0 → авто-блок `holders<3000`. Был **корневой** причиной, по которой A1 получил 1371 reasons блока за 2330 evals в `holders<3000`.
+
+#### Что НЕ вошло в этот релиз (вынесено в 1.11.233)
+
+- **Stale-exit guard на tracker'е**: при затухании vol_1h / buy-flow на уже открытой позиции — продавать агрессивнее (сдвиг TP-уровней). Это требует изменений в tracker, и совмещать с новой логикой входа рискованно. Дождёмся, что runner-mode даст наблюдаемые покупки, потом подключим stale-exit отдельно.
+- **Отдельный sizing для runner** (`LIVE_RUNNER_BUY_SOL_BASE`). Пока runner использует тот же sizing, что и dip; решим по факту наблюдения.
+
+### Файлы
+
+- **NEW**: `src/papertrader/discovery/runner-mode.ts` — модуль (фетчер + evaluator + summariser).
+- **NEW**: `tests/runner-mode.test.ts` — 11 unit-тестов.
+- **MOD**: `src/papertrader/discovery/dip-clones.ts` — runner-context в `Promise.all`, runner-eval параллельно dip-windows, features в `decisionFeatures.runner`.
+- **MOD**: `src/papertrader/config.ts` — 14 новых полей `runner*` + env-маппинг `PAPER_RUNNER_*`.
+- **MOD**: `src/papertrader/types.ts` — `SnapshotFeatures.runner` (полный набор аггрегатов и порогов).
+- **MOD**: `src/papertrader/main.ts` — `entryPath` + `runnerFeatures` в `live_position_open`.
+- **MOD**: `src/live/events.ts` — Z-schema `LivePositionOpenSchema` расширена.
+- **MOD**: `ecosystem.config.cjs` — холдеры выключены, добавлены 14 `PAPER_RUNNER_*` env vars.
+- **MOD**: `docs/strategy/release/VERSION` → `1.11.232`.
+
+### Откат
+
+`git revert <commit>` или ручной набор env:
+
+```
+PAPER_RUNNER_MODE_ENABLED=0
+PAPER_HOLDERS_LIVE_ENABLED=1   # если хотите вернуть холдеры
+```
+
+Затем `pm2 reload ecosystem.config.cjs --update-env`. Код модуля runner-mode.ts остаётся в дереве (мертвый при `RUNNER_MODE_ENABLED=0`) — это даёт возможность включить обратно одним env без redeploy.
+
+---
+
 ## [1.11.231] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.231`.

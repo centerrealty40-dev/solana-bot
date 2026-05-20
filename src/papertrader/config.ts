@@ -302,6 +302,51 @@ const ConfigSchema = z.object({
   policyAPlusPriceChange30mMinPct: z.coerce.number().default(-10),
 
   /**
+   * Runner Mode (1.11.232) — параллельный к dip-windows путь discovery.
+   *
+   * Идея: поток retail-внимания мигрирует с одного раннера на другой, и наша
+   * задача — успевать на тот, к которому сейчас приклеилось внимание (объём,
+   * чистый buy-flow, ликвидность), а не на dip старого. Этот режим **не заменяет**
+   * dip-фильтр: оба пути работают параллельно, при `pass` любого срабатывает вход.
+   *
+   * Никаких holder-проверок, никаких age-ограничений: монета 3-месячной давности
+   * со вторым взлётом — точно такой же runner.
+   *
+   * Anti-stale: `runnerStaleVolRatioMax` режет TripleT-подобные случаи, где
+   * vol_1h меньше, чем средний час за сутки × X (внимание утекает).
+   */
+  runnerModeEnabled: z.boolean().default(false),
+  /** Min PG-строк за 24ч для надёжной оценки velocity. Меньше = coverage skip. */
+  runnerMinPgSamples24h: z.coerce.number().int().min(0).default(36),
+  /** Объём за 1ч (USD) — минимум, чтобы вообще считать «есть интерес сейчас». */
+  runnerMinVol1hUsd: z.coerce.number().nonnegative().default(80_000),
+  /** Объём за 12ч (USD). */
+  runnerMinVol12hUsd: z.coerce.number().nonnegative().default(400_000),
+  /** vol_1h / (vol_24h/24) — часовая velocity (1.5 = в 1.5× выше средней). */
+  runnerVelocityMinX: z.coerce.number().nonnegative().default(1.5),
+  /** Максимальный 5-мин объём за час должен быть ≥ X (USD), чтобы поймать bursty flow. */
+  runnerMinVol5mPeak1hUsd: z.coerce.number().nonnegative().default(20_000),
+  /** Buys/Sells за 1ч — нижний порог давления покупок. */
+  runnerBs1hMin: z.coerce.number().nonnegative().default(0.95),
+  /** Buys/Sells за 12ч — кумулятивный buy-side тренд. */
+  runnerBs12hMin: z.coerce.number().nonnegative().default(1.0),
+  /** liq_now должен быть ≥ X × liq_p25_24h (ликва не утекла). */
+  runnerLiqVsP25Min: z.coerce.number().nonnegative().default(0.85),
+  /** price_now / price_max_24h — не дальше Y от 24-часового пика (0.6 = -40% макс.). */
+  runnerPriceHoldMin: z.coerce.number().nonnegative().default(0.6),
+  /** mcap min/max — оставшийся upside и не пыль. */
+  runnerMinMcapUsd: z.coerce.number().nonnegative().default(1_000_000),
+  runnerMaxMcapUsd: z.coerce.number().nonnegative().default(30_000_000),
+  /** Min liq на момент входа (USD). */
+  runnerMinLiqUsd: z.coerce.number().nonnegative().default(80_000),
+  /**
+   * Anti-stale: если vol_1h < (vol_24h/24) × X, значит внимание утекает —
+   * runner отказ даже при выполненных floor'ах. X<1.0 (default 0.5 — час сейчас
+   * вдвое ниже среднего часа за сутки → не runner, а угасание).
+   */
+  runnerStaleVolRatioMax: z.coerce.number().nonnegative().default(0.5),
+
+  /**
    * Volume Sybil guard (1.11.216): block dead→spike→dead wash volume pattern.
    * Compares recent max vol5m vs baseline p10 over lookback window in PG snapshots.
    */
@@ -828,6 +873,20 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     ),
     policyAPlusPriceChangeWindowMin: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN,
     policyAPlusPriceChange30mMinPct: process.env.PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT,
+    runnerModeEnabled: envBool(process.env.PAPER_RUNNER_MODE_ENABLED, false),
+    runnerMinPgSamples24h: process.env.PAPER_RUNNER_MIN_PG_SAMPLES_24H,
+    runnerMinVol1hUsd: process.env.PAPER_RUNNER_MIN_VOL_1H_USD,
+    runnerMinVol12hUsd: process.env.PAPER_RUNNER_MIN_VOL_12H_USD,
+    runnerVelocityMinX: process.env.PAPER_RUNNER_VELOCITY_MIN_X,
+    runnerMinVol5mPeak1hUsd: process.env.PAPER_RUNNER_MIN_VOL_5M_PEAK_1H_USD,
+    runnerBs1hMin: process.env.PAPER_RUNNER_BS_1H_MIN,
+    runnerBs12hMin: process.env.PAPER_RUNNER_BS_12H_MIN,
+    runnerLiqVsP25Min: process.env.PAPER_RUNNER_LIQ_VS_P25_MIN,
+    runnerPriceHoldMin: process.env.PAPER_RUNNER_PRICE_HOLD_MIN,
+    runnerMinMcapUsd: process.env.PAPER_RUNNER_MIN_MCAP_USD,
+    runnerMaxMcapUsd: process.env.PAPER_RUNNER_MAX_MCAP_USD,
+    runnerMinLiqUsd: process.env.PAPER_RUNNER_MIN_LIQ_USD,
+    runnerStaleVolRatioMax: process.env.PAPER_RUNNER_STALE_VOL_RATIO_MAX,
     volumeSybilGuardEnabled: envBool(process.env.PAPER_VOLUME_SYBIL_GUARD_ENABLED, false),
     volumeSybilLookbackHours: process.env.PAPER_VOLUME_SYBIL_LOOKBACK_HOURS,
     volumeSybilRecentMinutes: process.env.PAPER_VOLUME_SYBIL_RECENT_MINUTES,

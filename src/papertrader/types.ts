@@ -600,6 +600,48 @@ export interface SnapshotFeatures {
       maxGapMinutes: number;
     };
   };
+  /**
+   * 1.11.232: Runner Mode features (Open Interest Magnet).
+   *
+   * Аггрегаты vol/buys/sells/liq/mcap/price по окнам 1ч/12ч/24ч, посчитанные на PG
+   * минутных снапшотах. Заполняются всегда, когда `runnerModeEnabled=true`, независимо
+   * от итогового решения — это даёт возможность задним числом крутить пороги.
+   */
+  runner?: {
+    enabled: boolean;
+    coverageOk: boolean;
+    pgSamples24h: number;
+    vol1hUsd: number;
+    vol12hUsd: number;
+    vol24hUsd: number;
+    vol1hAvg24hUsd: number;
+    vol1hVelocity: number | null;
+    bs1h: number | null;
+    bs12h: number | null;
+    vol5mPeak1hUsd: number;
+    liqNowUsd: number;
+    liqP25_24hUsd: number | null;
+    liqP50_24hUsd: number | null;
+    mcapNowUsd: number;
+    mcapMax24hUsd: number | null;
+    priceNowUsd: number;
+    priceMax24hUsd: number | null;
+    thresholds: {
+      minVol1hUsd: number;
+      minVol12hUsd: number;
+      velocityMinX: number;
+      minVol5mPeak1hUsd: number;
+      bs1hMin: number;
+      bs12hMin: number;
+      liqVsP25Min: number;
+      priceHoldMin: number;
+      minMcapUsd: number;
+      maxMcapUsd: number;
+      minLiqUsd: number;
+      staleVolRatioMax: number;
+      minPgSamples24h: number;
+    };
+  };
 }
 
 export type SellerProfile =

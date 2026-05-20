@@ -131,6 +131,10 @@ export const LivePositionOpenSchema = z.object({
   /** Явная подпись для таймлайна дашборда (двухногий вход). */
   timelineOpenLabelRu: z.string().max(512).optional(),
   liveScaleInParams: z.record(z.string(), z.unknown()).optional(),
+  /** 1.11.232: какой discovery-путь привёл к открытию (dip_windows/impulse_pg_snap/runner). */
+  entryPath: z.union([z.string(), z.null()]).optional(),
+  /** 1.11.232: runner features snapshot (если entryPath='runner'). */
+  runnerFeatures: z.unknown().nullable().optional(),
 });
 
 export const LivePositionScaleInSchema = z.object({
