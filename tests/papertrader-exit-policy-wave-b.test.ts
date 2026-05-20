@@ -10,7 +10,11 @@ import {
   waveBNextTrailLevelToFire,
   waveBRecoverPhantomPeakIfNeeded,
   WAVE_B_V1_TP_GRID,
+  WAVE_B_V1_TP_GRID_NO_AVG,
+  hasAveragingLeg,
+  refreshWaveBGridOverrides,
   waveBSellFractionForStep,
+  waveBTpGridProfileFor,
   LEGACY_LIVE_OSCAR_TP_GRID,
   WAVE_B_MTM_MAX_TICK_JUMP_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
@@ -44,7 +48,14 @@ function baseOt(): OpenTrade {
     ladderUsedLevels: new Set([0.05, 0.075]),
     ladderUsedIndices: new Set([1, 2]),
     tpGridOverrides: undefined,
+    legs: [{ reason: 'open' } as OpenTrade['legs'][number]],
   } as unknown as OpenTrade;
+}
+
+function baseOtWithAveraging(): OpenTrade {
+  const ot = baseOt();
+  ot.legs.push({ reason: 'staged_avg' } as OpenTrade['legs'][number]);
+  return ot;
 }
 
 describe('exit-policy-wave-b', () => {
@@ -58,11 +69,22 @@ describe('exit-policy-wave-b', () => {
     ]);
   });
 
-  it('stamps wave_b on open when flag enabled', () => {
+  it('stamps wave_b on open when flag enabled (no-avg profile by default)', () => {
     const ot = baseOt();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     expect(isWaveBExitPolicy(ot)).toBe(true);
-    expect(ot.tpGridOverrides?.gridStepPnl).toBe(WAVE_B_V1_TP_GRID.gridStepPnl);
+    expect(ot.tpGridOverrides?.gridStepPnl).toBe(WAVE_B_V1_TP_GRID_NO_AVG.gridStepPnl);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
+    ]);
+  });
+
+  it('stamps averaging-branch profile when open already has staged_avg leg', () => {
+    const ot = baseOtWithAveraging();
+    stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID.gridSellFractionByStep,
+    ]);
   });
 
   it('waveBOnNewHigh resets trail only — TP ladder marks stay until impulse reset', () => {
@@ -84,7 +106,7 @@ describe('exit-policy-wave-b', () => {
     expect(eff.sellFractionForStep(2)).toBeCloseTo(0.3);
   });
 
-  it('migrates legacy open to wave_b when flag enabled', () => {
+  it('migrates legacy open to wave_b — no-avg profile when no averaging legs', () => {
     const ot = baseOt();
     ot.liveExitPolicyId = 'legacy_grid';
     ot.tpGridOverrides = { gridStepPnl: 0.05, gridSellFractionByStep: [0.1, 0.3, 0.5, 0.7, 0.7] };
@@ -96,8 +118,25 @@ describe('exit-policy-wave-b', () => {
     );
     expect(isWaveBExitPolicy(ot)).toBe(true);
     expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
-    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0.05, 0.05, 0.05, 0.1]);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
+    ]);
     expect(migrateLegacyOpenToWaveB(ot)).toBe(false);
+  });
+
+  it('migrates legacy open to wave_b — averaging profile when ≥1 dca/staged_avg leg', () => {
+    const ot = baseOtWithAveraging();
+    ot.liveExitPolicyId = 'legacy_grid';
+    ot.tpGridOverrides = { gridStepPnl: 0.05, gridSellFractionByStep: [0.1, 0.3, 0.5, 0.7, 0.7] };
+    ot.partialSells = [{ reason: 'TP_LADDER' } as OpenTrade['partialSells'][0]];
+    ot.remainingFraction = 0.5;
+    ot.peakPnlPct = 12;
+    expect(resolveLiveOscarExitPolicyForTick(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }), 0.12)).toBe(
+      true,
+    );
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID.gridSellFractionByStep,
+    ]);
   });
 
   it('clampLiveTrackerMtmForExit limits single-tick upside spike', () => {
@@ -216,9 +255,24 @@ describe('exit-policy-wave-b', () => {
     expect(ot.ladderUsedIndices.has(3)).toBe(false);
   });
 
-  it('wave B two-phase profile cumulative through +15%', () => {
+  it('wave B no-avg profile: silent at +2.5%/+5%, first sell 10% at +7.5%', () => {
     const ot = baseOt();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    expect(hasAveragingLeg(ot)).toBe(false);
+    const eff = tpGridEffective(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    expect(eff.stepPnl).toBe(0.025);
+    expect(eff.sellFractionForStep(1)).toBe(0);
+    expect(eff.sellFractionForStep(2)).toBe(0);
+    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.25);
+    expect(eff.sellFractionForStep(9)).toBeCloseTo(0.15);
+    expect(eff.sellFractionForStep(20)).toBeCloseTo(0.15);
+  });
+
+  it('wave B averaging profile: sells from +2.5% (5%/5%/5%/10%+)', () => {
+    const ot = baseOtWithAveraging();
+    stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    expect(hasAveragingLeg(ot)).toBe(true);
     const eff = tpGridEffective(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     let remain = 1;
     for (let k = 1; k <= 6; k++) {
@@ -229,6 +283,41 @@ describe('exit-policy-wave-b', () => {
     expect(eff.sellFractionForStep(4)).toBeCloseTo(0.1);
     expect(eff.sellFractionForStep(6)).toBeCloseTo(0.1);
     expect(remain).toBeCloseTo(0.625, 3);
+  });
+
+  it('tpGridEffective flips wave B fork at runtime when staged_avg appended (no restamp needed)', () => {
+    const ot = baseOt();
+    stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    const c = cfg({ liveOscarExitPolicyWaveBEnabled: true });
+    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBe(0);
+    ot.legs.push({ reason: 'staged_avg' } as OpenTrade['legs'][number]);
+    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBeCloseTo(0.05);
+    expect(tpGridEffective(ot, c).sellFractionForStep(3)).toBeCloseTo(0.05);
+  });
+
+  it('refreshWaveBGridOverrides updates stamped overrides after averaging leg', () => {
+    const ot = baseOt();
+    stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
+    ]);
+    ot.legs.push({ reason: 'staged_avg' } as OpenTrade['legs'][number]);
+    refreshWaveBGridOverrides(ot);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID.gridSellFractionByStep,
+    ]);
+  });
+
+  it('hasAveragingLeg ignores entry split / scale-in legs', () => {
+    const ot = baseOt();
+    ot.legs.push({ reason: 'entry_split' } as OpenTrade['legs'][number]);
+    ot.legs.push({ reason: 'scale_in' } as OpenTrade['legs'][number]);
+    expect(hasAveragingLeg(ot)).toBe(false);
+    expect(waveBTpGridProfileFor(ot).gridSellFractionByStep).toEqual([
+      ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
+    ]);
+    ot.legs.push({ reason: 'dca' } as OpenTrade['legs'][number]);
+    expect(hasAveragingLeg(ot)).toBe(true);
   });
 
   it('defensive arm threshold is +10%', () => {

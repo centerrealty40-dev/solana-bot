@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
+import { isWaveBExitPolicy, waveBTpGridProfileFor } from './exit-policy-wave-b.js';
 
 export interface TpGridEffective {
   stepPnl: number;
@@ -39,14 +40,30 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
     1,
     ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),
   );
+  /**
+   * Wave B (1.11.228): grid profile is selected at runtime from the live `legs` state, so
+   * stored `tpGridOverrides` from earlier code versions never override the averaging-aware fork.
+   * - No averaging legs → `WAVE_B_V1_TP_GRID_NO_AVG` (first active rung +7.5%).
+   * - ≥1 `staged_avg`/`dca` leg → `WAVE_B_V1_TP_GRID` (rungs from +2.5%).
+   */
+  const waveBProfile = isWaveBExitPolicy(ot) ? waveBTpGridProfileFor(ot) : null;
   /** Profile из cfg; per-open override `gridSellFractionByStep` поддерживается опционально. */
-  const profileSrc =
-    !ignoreOverrides && Array.isArray(o?.gridSellFractionByStep) && o!.gridSellFractionByStep!.length > 0
-      ? o!.gridSellFractionByStep!
-      : cfg.tpGridSellFractionByStep ?? [];
+  const profileSrc: readonly number[] =
+    waveBProfile != null
+      ? waveBProfile.gridSellFractionByStep
+      : !ignoreOverrides &&
+          Array.isArray(o?.gridSellFractionByStep) &&
+          o!.gridSellFractionByStep!.length > 0
+        ? o!.gridSellFractionByStep!
+        : (cfg.tpGridSellFractionByStep ?? []);
   const sellFractionByStep: number[] = profileSrc.map((x: number) => Math.min(1, Math.max(0, x)));
   return {
-    stepPnl: ignoreOverrides ? cfg.tpGridStepPnl : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
+    stepPnl:
+      waveBProfile != null
+        ? waveBProfile.gridStepPnl
+        : ignoreOverrides
+          ? cfg.tpGridStepPnl
+          : (o?.gridStepPnl ?? cfg.tpGridStepPnl),
     sellFraction: flatSellFraction,
     sellFractionByStep,
     sellFractionForStep: (kOneBased: number): number => {
@@ -60,9 +77,12 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
       : ignoreOverrides
         ? cfg.tpGridMaxRungs
         : (o?.gridMaxRungs ?? cfg.tpGridMaxRungs),
-    firstRungRetraceMinPnlPct: ignoreOverrides
-      ? cfg.tpGridFirstRungRetraceMinPnlPct
-      : (o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct),
+    firstRungRetraceMinPnlPct:
+      waveBProfile != null
+        ? waveBProfile.gridFirstRungRetraceMinPnlPct
+        : ignoreOverrides
+          ? cfg.tpGridFirstRungRetraceMinPnlPct
+          : (o?.gridFirstRungRetraceMinPnlPct ?? cfg.tpGridFirstRungRetraceMinPnlPct),
   };
 }
 

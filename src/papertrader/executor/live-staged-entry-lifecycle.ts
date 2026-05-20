@@ -25,6 +25,7 @@ import {
   entrySplitLeg2TimelineLabel,
   stagedAvgTimelineLabel,
 } from './live-staged-entry-labels.js';
+import { refreshWaveBGridOverrides } from './exit-policy-wave-b.js';
 
 type JournalFn = (event: Record<string, unknown>) => void;
 
@@ -75,6 +76,7 @@ async function pushBuyLeg(args: {
     reason,
     triggerPct,
   });
+  if (reason === 'staged_avg') refreshWaveBGridOverrides(ot);
   ot.livePendingScaleIn = null;
   ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += addUsd;
