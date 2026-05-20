@@ -8,6 +8,58 @@
 
 ---
 
+## [1.11.233] — 2026-05-20
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.233`.
+
+### Fix: recovery-veto + local-high-veto + policyA+ теперь работают и для runner-пути
+
+**Фон.** В 1.11.232 Runner Mode был добавлен как параллельный путь discovery, но **полностью обходил protector-фильтры** (recovery-veto, local-high-veto, policyA+, sybil, ephemeral, pg-coverage). Эти protectors были рассчитаны только внутри dip-блока, и runner-путь обходил их вместе со снэп-флором.
+
+**Инцидент VIRL ($Biyw…) 20 мая 22:23 мск:**
+- Runner-сигнал на $0.003609, velocity=1.69x
+- 8 неудачных execution_attempts за 130 секунд (Jupiter sim/quote retries)
+- Купили на 8-й попытке по $0.003647 = **+1.05% slippage от signal**
+- Recovery-veto должен был сработать (классический догон отскока), но не сработал, потому что runner-путь не дёргал его
+- Через 2.5 минуты позиция в пике +9.14%, сработал TP_LADDER на 10% (+$3.60), затем откат
+
+Пользователь верно заметил: «после отскоков у нас же была фича рекавери вето». Она есть. Я её ошибочно отключил для runner.
+
+### Изменения
+
+**`src/papertrader/discovery/dip-clones.ts` — реструктуризация цикла:**
+
+- Раньше: recovery-veto / local-high-veto / policyA+ / sybil / ephemeral / pg-coverage применялись ВНУТРИ `if (snapshotGatePass && dipEval.reasons.length === 0)`. То есть только когда dip-фильтр уже прошёл.
+- Теперь: единый блок protector-checks **после** определения entryPath любым путём (`dip_windows` / `impulse_pg_snap` / `runner`). Если любой protector блокирует — `entryPath=undefined`, причины уходят в reasons.
+
+Логика прохода для runner:
+1. dip не прошёл (`dip_no_window_pass`) → entryPath остаётся undefined
+2. `evaluateRunner` дал pass → `entryPath = 'runner'`
+3. **НОВОЕ:** `evaluateRecoveryVeto` → если триггерится, `entryPath = undefined`
+4. **НОВОЕ:** `evaluateLocalHighVeto` → то же
+5. **НОВОЕ:** `evaluatePolicyAPlus` (если включён) → то же
+6. **НОВОЕ:** `evaluatePgDataCoverageGuard` → то же
+7. **НОВОЕ:** `evaluateVolumeSybilGuard` → то же
+8. **НОВОЕ:** `evaluateVolumeEphemeralGuard` → то же
+
+Runner по-прежнему **обходит** `evaluateSnapshot` (snapshot-floor `vol5m<10k`, `bs<0.98`, `liq<140k`) — это правильно, потому что 5-минутный snapshot не репрезентативен для оценки магнита интереса. Но protector-фильтры (которые работают на исторических данных) теперь применяются ко всем путям одинаково.
+
+### Что НЕ вошло (вынес в 1.11.234)
+
+- **Anti-chase guard:** если за время retries Jupiter quote'ов цена ушла от signal > X%, abort buy. В случае VIRL мы догнали +1% за 130s execution_attempts. Защита `entrySplitMaxUpPct=3` сейчас работает только для leg2 (вторая нога split'а), не для leg1.
+- **Stale-exit guard на tracker** (как обещано в 1.11.232).
+
+### Файлы
+
+- **MOD:** `src/papertrader/discovery/dip-clones.ts` — единый protector-блок для всех путей.
+- **MOD:** `docs/strategy/release/VERSION` → `1.11.233`.
+
+### Откат
+
+`git revert <commit>` или вернуть `dip-clones.ts` к предыдущей версии. Runner-фильтр (env-флаг `PAPER_RUNNER_MODE_ENABLED`) при этом продолжит работать, но без protector-защиты. Не рекомендую.
+
+---
+
 ## [1.11.232] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.232`.

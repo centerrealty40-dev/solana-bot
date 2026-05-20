@@ -407,72 +407,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let localHighVeto: LocalHighVetoResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
-      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
-      if (recoveryVeto.reasons.length > 0) {
-        dipReasonsForGate = recoveryVeto.reasons;
-        entryPath = undefined;
-      } else {
-        localHighVeto = evaluateLocalHighVeto(cfg, row, dipMap.get(row.mint));
-        if (localHighVeto.reasons.length > 0) {
-          dipReasonsForGate = localHighVeto.reasons;
-          entryPath = undefined;
-        }
-      }
     } else if (snapshotGatePass && cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
       if (bypass) {
         dipReasonsForGate = [];
         entryPath = 'impulse_pg_snap';
-      }
-    }
-    /**
-     * 1.11.167: Policy A+ применяется ПОСЛЕ того, как dip/recovery/localHigh уже
-     * пропустили кандидата (entryPath != null). Это «второй слой» surgical-фильтров,
-     * вырезающий те 73 из 119 сделок, что на ретро-данных давали Σ −$728. Метрики
-     * (vol_1h, bounce_30m, drop_30m, drop_1h) сохраняются в `features` для KPI и
-     * downstream-анализа независимо от того, заблокирован ли вход.
-     */
-    let policyAPlusFeatures: PolicyAPlusFeatures | undefined;
-    if (entryPath != null && cfg.policyAPlusEnabled) {
-      const ctx = policyAPlusMap.get(row.mint);
-      const evalRes = evaluatePolicyAPlus(cfg, row, ctx);
-      policyAPlusFeatures = evalRes.features;
-      if (evalRes.blocked) {
-        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
-        entryPath = undefined;
-      }
-    }
-    let volumeSybilFeatures: VolumeSybilFeatures | undefined;
-    let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
-    if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
-      const evalRes = evaluatePgDataCoverageGuard(
-        cfg,
-        row,
-        mintPgCoverageMap.get(row.mint),
-        globalPgCoverage,
-        true,
-      );
-      pgDataCoverageFeatures = evalRes.features;
-      if (evalRes.blocked) {
-        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
-        entryPath = undefined;
-      }
-    }
-    if (entryPath != null && cfg.volumeSybilGuardEnabled) {
-      const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
-      volumeSybilFeatures = evalRes.features;
-      if (evalRes.blocked) {
-        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
-        entryPath = undefined;
-      }
-    }
-    let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
-    if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
-      const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint));
-      volumeEphemeralFeatures = evalRes.features;
-      if (evalRes.blocked) {
-        dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
-        entryPath = undefined;
       }
     }
 
@@ -484,9 +423,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      * liq стабильности. Этот путь не зависит от dip-окон, snapshot-floor (`vol5m<10k`,
      * `bs<0.98`, `liq<140k`) и не требует свежести pool.
      *
-     * Когда runner проходит — он перекрывает snapshot/dip reasons (обнуляет baseReasons),
-     * но НЕ освобождает от cooldown/whale-checks/permanent denylist/whitelist —
-     * это всё нижеследующие слои.
+     * 1.11.233: важное уточнение — runner НЕ освобождает от protector-фильтров
+     * (recovery-veto / local-high-veto / policyA+ / sybil / ephemeral / pg-coverage),
+     * которые применяются ниже единым блоком. Иначе можно купить «магнит интереса»
+     * прямо на отскоке после пролива (как было с VIRL 20 мая — купили в +1% от signal
+     * без recovery-veto проверки).
      */
     let runnerFeatures: RunnerWindowFeatures | undefined;
     let runnerReasons: string[] = [];
@@ -501,13 +442,90 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
 
     /**
-     * baseReasons: для dip-пути — стандартный набор (snapshot + global + dip windows).
-     * Для runner-пути — пусто: snapshot floor обходится, потому что 5-минутный snapshot
-     * не репрезентативен для оценки магнита интереса; вместо этого runner проверил
-     * собственный набор окон 1h/12h/24h.
+     * 1.11.233 — единый блок protector-фильтров для ВСЕХ путей (dip / impulse_pg_snap / runner).
+     *
+     * Раньше recovery-veto / local-high-veto / policyA+ / sybil / ephemeral / pg-coverage
+     * применялись только внутри dip-блока, и runner полностью обходил эти проверки.
+     * Это привело к покупке VIRL (Biyw…) 20 мая на +1% от signal без recovery-veto.
+     *
+     * Теперь protectors прогоняются ОДИН РАЗ после определения entryPath любым путём.
+     * Если хотя бы один заблокировал — `entryPath=undefined`, причины уходят в
+     * `dipReasonsForGate` для journal/Telegram (название поля историческое; reasons
+     * могут быть и от runner-пути).
      */
-    const baseReasons =
-      entryPath === 'runner' ? [] : [...v.reasons, ...globalReasons, ...dipReasonsForGate];
+    let policyAPlusFeatures: PolicyAPlusFeatures | undefined;
+    let volumeSybilFeatures: VolumeSybilFeatures | undefined;
+    let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
+    let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
+    if (entryPath != null) {
+      // Recovery veto + Local-high veto (раньше были только для dip_windows).
+      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
+      if (recoveryVeto.reasons.length > 0) {
+        dipReasonsForGate = [...dipReasonsForGate, ...recoveryVeto.reasons];
+        entryPath = undefined;
+      } else {
+        localHighVeto = evaluateLocalHighVeto(cfg, row, dipMap.get(row.mint));
+        if (localHighVeto.reasons.length > 0) {
+          dipReasonsForGate = [...dipReasonsForGate, ...localHighVeto.reasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.policyAPlusEnabled) {
+        const ctx = policyAPlusMap.get(row.mint);
+        const evalRes = evaluatePolicyAPlus(cfg, row, ctx);
+        policyAPlusFeatures = evalRes.features;
+        if (evalRes.blocked) {
+          dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
+        const evalRes = evaluatePgDataCoverageGuard(
+          cfg,
+          row,
+          mintPgCoverageMap.get(row.mint),
+          globalPgCoverage,
+          true,
+        );
+        pgDataCoverageFeatures = evalRes.features;
+        if (evalRes.blocked) {
+          dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.volumeSybilGuardEnabled) {
+        const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
+        volumeSybilFeatures = evalRes.features;
+        if (evalRes.blocked) {
+          dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
+        const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint));
+        volumeEphemeralFeatures = evalRes.features;
+        if (evalRes.blocked) {
+          dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+          entryPath = undefined;
+        }
+      }
+    }
+
+    /**
+     * baseReasons:
+     *  - dip_windows / impulse_pg_snap: стандартный набор (snapshot + global + dipReasonsForGate).
+     *  - runner: snapshot/global floor НЕ применяются (мы пришли мимо них), но
+     *    protector-reasons (recovery-veto и т.п.) идут в reasons как и для dip.
+     *  - не прошли: всё пусто (нечего блокировать).
+     */
+    let baseReasons: string[];
+    if (entryPath === 'runner') {
+      baseReasons = [...dipReasonsForGate]; // protector-reasons после runner-passed (если есть)
+    } else if (entryPath != null) {
+      baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
+    } else {
+      baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
+    }
     const baseDipPass = baseReasons.length === 0;
 
     let whale: WhaleAnalysis | null = null;
