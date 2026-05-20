@@ -83,8 +83,6 @@ const PM2_APPS = [
         /** В конец `[ALERT][quicknode-balance]` — метрики discovery за окно из `data/live-discovery-health.json` (live-oscar). */
         QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH: '1',
         QUICKNODE_BILLING_MILESTONES: '0',
-        /** Дублирующая страховка в sender: один и тот же subtag не чаще 1 ч даже при двух процессах / перезапусках. */
-        TELEGRAM_COOLDOWN_ALERT_QUICKNODE_BALANCE_MS: '3600000',
       },
     },
     {
@@ -576,17 +574,48 @@ const PM2_APPS = [
          *     Это ~5 уникальных mint'ов в сутки → ~250-500 RPC-calls/мес — копейки от Pro tier.
          *   - `SNAPSHOT_WARMUP_MAX=0` (как раньше) — не прогреваем holders для всех snapshot rows.
          */
-        PAPER_HOLDERS_LIVE_ENABLED: '1',
-        PAPER_HOLDERS_USE_QN_ADDON: '1',
+        /**
+         * 1.11.232 — holders ВЫКЛЮЧЕНЫ полностью.
+         * Решение пользователя: «не нужен нам никакой holder count» — этот сигнал
+         * неточный (live-резолв давал n/a, GPA дорогой и шумный), решения принимаются
+         * по ликвидности/объёмам/буй-флоу. Все pipeline-вызовы становятся no-op.
+         */
+        PAPER_HOLDERS_LIVE_ENABLED: '0',
+        PAPER_HOLDERS_USE_QN_ADDON: '0',
         PAPER_HOLDERS_TTL_MS: '90000',
         PAPER_HOLDERS_NEG_TTL_MS: '15000',
-        PAPER_HOLDERS_MAX_PER_TICK: '10',
+        PAPER_HOLDERS_MAX_PER_TICK: '0',
         PAPER_HOLDERS_TIMEOUT_MS: '4000',
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
         PAPER_HOLDERS_ON_FAIL: 'warn',
-        PAPER_HOLDERS_DB_WRITEBACK: '1',
+        PAPER_HOLDERS_DB_WRITEBACK: '0',
         PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '0',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
+        /**
+         * 1.11.232 — Runner Mode (параллельный путь к dip-windows).
+         *
+         * Включает обнаружение «магнитов открытого интереса» по 1ч/12ч/24ч динамике
+         * объёма / buy-flow / ликвидности. Работает рядом с dip-фильтром, не заменяя его:
+         * dip-логика продолжает ловить настоящие проливы, runner ловит свежие импульсы
+         * (новые pump.fun, а также «отыграть второй раз» старые монеты).
+         *
+         * Anti-stale: `STALE_VOL_RATIO_MAX=0.5` режет TripleT-подобные случаи, где
+         * vol_1h уже сильно ниже среднего часа за сутки.
+         */
+        PAPER_RUNNER_MODE_ENABLED: '1',
+        PAPER_RUNNER_MIN_PG_SAMPLES_24H: '36',
+        PAPER_RUNNER_MIN_VOL_1H_USD: '80000',
+        PAPER_RUNNER_MIN_VOL_12H_USD: '400000',
+        PAPER_RUNNER_VELOCITY_MIN_X: '1.5',
+        PAPER_RUNNER_MIN_VOL_5M_PEAK_1H_USD: '20000',
+        PAPER_RUNNER_BS_1H_MIN: '0.95',
+        PAPER_RUNNER_BS_12H_MIN: '1.0',
+        PAPER_RUNNER_LIQ_VS_P25_MIN: '0.85',
+        PAPER_RUNNER_PRICE_HOLD_MIN: '0.6',
+        PAPER_RUNNER_MIN_MCAP_USD: '1000000',
+        PAPER_RUNNER_MAX_MCAP_USD: '30000000',
+        PAPER_RUNNER_MIN_LIQ_USD: '80000',
+        PAPER_RUNNER_STALE_VOL_RATIO_MAX: '0.5',
         /** Внутренние месячные капы QN отключены — лимит только в кабинете QuickNode. */
         QN_FEATURE_BUDGET_DISABLED: '1',
         QN_FEATURE_BUDGET_HOLDERS: '0',
@@ -1533,7 +1562,6 @@ const PM2_APPS = [
         PULLBACK_ALERT_POLL_INTERVAL_MS: '20000',
         PULLBACK_ALERT_POLL_SEND_DEDUPE_MS: '120000',
         RETRACE_PULLBACK_CHANNEL_DEDUPE_PEAK_BUCKET_MIN: '15',
-        PULLBACK_ALERT_MINT_COOLDOWN_MINUTES: '30',
         PULLBACK_ALERT_SCAN_MINUTES: '90',
         PULLBACK_ALERT_MIN_RISE_PCT: '6',
         PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '10',
@@ -1566,7 +1594,6 @@ const PM2_APPS = [
         RETRACE_ALERT_POLL_INTERVAL_MS: '20000',
         RETRACE_ALERT_POLL_SEND_DEDUPE_MS: '120000',
         RETRACE_PULLBACK_CHANNEL_DEDUPE_PEAK_BUCKET_MIN: '15',
-        RETRACE_ALERT_MINT_COOLDOWN_MINUTES: '30',
         RETRACE_ALERT_SCAN_MINUTES: '120',
         RETRACE_ALERT_MIN_MCAP_USD: '1000000',
         RETRACE_ALERT_MIN_PUMP_PCT: '6',
