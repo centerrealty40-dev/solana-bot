@@ -214,6 +214,28 @@ const ConfigSchema = z.object({
   dipMaxDropPct: z.coerce.number().default(-45),
   dipMinImpulsePct: z.coerce.number().default(20),
   dipMinAgeMin: z.coerce.number().nonnegative().default(25),
+
+  /**
+   * Post-crash fast path (1.11.250): after vol-spike + sharp drop in lookback window,
+   * allow entry vs crash peak once stabilized (flat plateau), without waiting for 12h dip.
+   */
+  postCrashFastPathEnabled: z.boolean().default(false),
+  /** PG window to find crash peak + spike (minutes). */
+  postCrashFastPathLookbackMin: z.coerce.number().int().min(30).max(720).default(180),
+  postCrashFastPathMinPgSamples: z.coerce.number().int().min(0).default(8),
+  postCrashFastPathMinDropPct: z.coerce.number().default(-16),
+  postCrashFastPathMaxDropPct: z.coerce.number().default(-50),
+  /** Min vol5m/(vol1h/12) seen in lookback — confirms there was a crash spike. */
+  postCrashFastPathMinVolSpikeMult: z.coerce.number().min(1.5).max(48).default(5),
+  /** Wait at least N minutes after crash peak before entry (knife cooldown). */
+  postCrashFastPathStabilizeMin: z.coerce.number().int().min(5).max(120).default(25),
+  /** Crash must be younger than this (minutes); older → normal dip windows only. */
+  postCrashFastPathMaxAgeMin: z.coerce.number().int().min(30).max(720).default(240),
+  /** Block if price still falling: 15m change below this (e.g. −8%). */
+  postCrashFastPathMaxKnife15mPct: z.coerce.number().default(-8),
+  /** Skip local-high-veto on post-crash entries (flat at crash floor). */
+  postCrashFastPathBypassLocalHighVeto: z.boolean().default(true),
+
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
   /** После **любого** полного закрытия позиции по mint — пауза повторного входа в тот же mint (часы). 0 = выкл., если заданы минуты. */
@@ -294,6 +316,23 @@ const ConfigSchema = z.object({
   dipLocalHighVetoEnabled: z.boolean().default(false),
   dipLocalHighVetoWindowsCsv: z.string().default(''),
   dipLocalHighVetoMaxDistancePct: z.coerce.number().min(0).max(50).default(2),
+
+  /**
+   * Trend structure veto (1.11.249): блокирует вход в «протухшие раннеры» —
+   * монеты без обновления high за N дней и/или в структурном даунтренде.
+   */
+  trendStructureVetoEnabled: z.boolean().default(false),
+  trendVetoLookbackDays: z.coerce.number().int().min(7).max(30).default(14),
+  trendVetoMinPgSamples: z.coerce.number().int().min(0).default(36),
+  trendVetoNoHighBreakEnabled: z.boolean().default(true),
+  /** Rule 1: last touch of lookback peak ≥ this many days ago → veto. */
+  trendVetoMinDaysSinceHighBreak: z.coerce.number().min(1).max(30).default(7),
+  trendVetoDeclineEnabled: z.boolean().default(true),
+  /** Rule 2: price_now / high_lookback below this AND slope7d ≤ max → veto. */
+  trendVetoMaxPxVsHigh14d: z.coerce.number().min(0.1).max(1).default(0.75),
+  trendVetoMaxSlope7dPct: z.coerce.number().min(-99).max(99).default(0),
+  /** Peak touch tolerance (%): bar within this % of lookback high counts as «touch». */
+  trendVetoPeakTouchTolerancePct: z.coerce.number().min(0).max(10).default(1),
 
   /**
    * Policy A+ (1.11.167): «хирургические» правила пропуска кандидатов на вход.
@@ -837,6 +876,19 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipMaxDropPct: process.env.PAPER_DIP_MAX_DROP_PCT,
     dipMinImpulsePct: process.env.PAPER_DIP_MIN_IMPULSE_PCT,
     dipMinAgeMin: process.env.PAPER_DIP_MIN_AGE_MIN,
+    postCrashFastPathEnabled: envBool(process.env.PAPER_POST_CRASH_FAST_PATH_ENABLED, false),
+    postCrashFastPathLookbackMin: process.env.PAPER_POST_CRASH_FAST_PATH_LOOKBACK_MIN,
+    postCrashFastPathMinPgSamples: process.env.PAPER_POST_CRASH_FAST_PATH_MIN_PG_SAMPLES,
+    postCrashFastPathMinDropPct: process.env.PAPER_POST_CRASH_FAST_PATH_MIN_DROP_PCT,
+    postCrashFastPathMaxDropPct: process.env.PAPER_POST_CRASH_FAST_PATH_MAX_DROP_PCT,
+    postCrashFastPathMinVolSpikeMult: process.env.PAPER_POST_CRASH_FAST_PATH_MIN_VOL_SPIKE_MULT,
+    postCrashFastPathStabilizeMin: process.env.PAPER_POST_CRASH_FAST_PATH_STABILIZE_MIN,
+    postCrashFastPathMaxAgeMin: process.env.PAPER_POST_CRASH_FAST_PATH_MAX_AGE_MIN,
+    postCrashFastPathMaxKnife15mPct: process.env.PAPER_POST_CRASH_FAST_PATH_MAX_KNIFE_15M_PCT,
+    postCrashFastPathBypassLocalHighVeto: envBool(
+      process.env.PAPER_POST_CRASH_FAST_PATH_BYPASS_LOCAL_HIGH_VETO,
+      true,
+    ),
     dipCooldownMinDefault: process.env.PAPER_DIP_COOLDOWN_MIN,
     dipCooldownMinScalp: process.env.PAPER_DIP_COOLDOWN_MIN_SCALP,
     dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,
@@ -886,6 +938,15 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLocalHighVetoEnabled: envBool(process.env.PAPER_DIP_LOCAL_HIGH_VETO_ENABLED, false),
     dipLocalHighVetoWindowsCsv: process.env.PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN ?? '',
     dipLocalHighVetoMaxDistancePct: process.env.PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT,
+    trendStructureVetoEnabled: envBool(process.env.PAPER_TREND_STRUCTURE_VETO_ENABLED, false),
+    trendVetoLookbackDays: process.env.PAPER_TREND_VETO_LOOKBACK_DAYS,
+    trendVetoMinPgSamples: process.env.PAPER_TREND_VETO_MIN_PG_SAMPLES,
+    trendVetoNoHighBreakEnabled: envBool(process.env.PAPER_TREND_VETO_NO_HIGH_BREAK_ENABLED, true),
+    trendVetoMinDaysSinceHighBreak: process.env.PAPER_TREND_VETO_MIN_DAYS_SINCE_HIGH_BREAK,
+    trendVetoDeclineEnabled: envBool(process.env.PAPER_TREND_VETO_DECLINE_ENABLED, true),
+    trendVetoMaxPxVsHigh14d: process.env.PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D,
+    trendVetoMaxSlope7dPct: process.env.PAPER_TREND_VETO_MAX_SLOPE_7D_PCT,
+    trendVetoPeakTouchTolerancePct: process.env.PAPER_TREND_VETO_PEAK_TOUCH_TOLERANCE_PCT,
     policyAPlusEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_ENABLED, false),
     policyAPlusBounceFromMin30mEnabled: envBool(
       process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED,

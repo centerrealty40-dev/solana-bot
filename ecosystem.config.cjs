@@ -392,6 +392,27 @@ const PM2_APPS = [
         PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
         PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
         PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
+        /** Trend structure veto — stale runner / multi-day downtrend (1.11.249). Off until backtest OK. */
+        PAPER_TREND_STRUCTURE_VETO_ENABLED: '0',
+        PAPER_TREND_VETO_LOOKBACK_DAYS: '14',
+        PAPER_TREND_VETO_MIN_PG_SAMPLES: '36',
+        PAPER_TREND_VETO_NO_HIGH_BREAK_ENABLED: '1',
+        PAPER_TREND_VETO_MIN_DAYS_SINCE_HIGH_BREAK: '7',
+        PAPER_TREND_VETO_DECLINE_ENABLED: '1',
+        PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D: '0.75',
+        PAPER_TREND_VETO_MAX_SLOPE_7D_PCT: '0',
+        PAPER_TREND_VETO_PEAK_TOUCH_TOLERANCE_PCT: '1',
+        /** Post-crash fast path — entry vs crash peak after spike+drop (swarms-class). */
+        PAPER_POST_CRASH_FAST_PATH_ENABLED: '1',
+        PAPER_POST_CRASH_FAST_PATH_LOOKBACK_MIN: '180',
+        PAPER_POST_CRASH_FAST_PATH_MIN_PG_SAMPLES: '8',
+        PAPER_POST_CRASH_FAST_PATH_MIN_DROP_PCT: '-16',
+        PAPER_POST_CRASH_FAST_PATH_MAX_DROP_PCT: '-50',
+        PAPER_POST_CRASH_FAST_PATH_MIN_VOL_SPIKE_MULT: '5',
+        PAPER_POST_CRASH_FAST_PATH_STABILIZE_MIN: '25',
+        PAPER_POST_CRASH_FAST_PATH_MAX_AGE_MIN: '240',
+        PAPER_POST_CRASH_FAST_PATH_MAX_KNIFE_15M_PCT: '-8',
+        PAPER_POST_CRASH_FAST_PATH_BYPASS_LOCAL_HIGH_VETO: '1',
 
         /**
          * Policy A+ (1.11.167): четыре «хирургических» правила пропуска кандидатов,

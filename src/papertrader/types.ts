@@ -167,6 +167,8 @@ export interface OpenTrade {
   entryTs: number;
   /** First-leg EFFECTIVE entry price (kept for back-compat). */
   entryMcUsd: number;
+  /** USD circulating market cap at entry (from discovery snapshot, not per-token price). */
+  entryMarketCapUsd: number | null;
   entryMetrics: Metrics;
   peakMcUsd: number;
   peakPnlPct: number;
@@ -508,6 +510,46 @@ export interface SnapshotFeatures {
     distance_from_high_pct: Record<string, number>;
     vetoed: boolean;
     veto_reasons: string[];
+  };
+  /** 1.11.249: multi-day trend / stale-runner structure veto (retro / audit). */
+  trend_structure_veto?: {
+    enabled: boolean;
+    coverageOk: boolean;
+    lookbackDays: number;
+    highLookbackUsd: number | null;
+    daysSinceHighBreak: number | null;
+    price7dAgoUsd: number | null;
+    slope7dPct: number | null;
+    pxVsHighLookback: number | null;
+    pgSnapsCount: number;
+    vetoed: boolean;
+    veto_reasons: string[];
+    thresholds: {
+      minDaysSinceHighBreak: number;
+      maxPxVsHighLookback: number;
+      maxSlope7dPct: number;
+    };
+  };
+  post_crash_fast?: {
+    enabled: boolean;
+    pass: boolean;
+    coverageOk: boolean;
+    lookbackMin: number;
+    peakPx: number | null;
+    minutesSincePeak: number | null;
+    dropFromPeakPct: number | null;
+    maxVol5mSpikeRatio: number | null;
+    priceChange15mPct: number | null;
+    pgSnapsCount: number;
+    reasons: string[];
+    thresholds: {
+      minDropPct: number;
+      maxDropPct: number;
+      minVolSpikeMult: number;
+      stabilizeMin: number;
+      maxAgeMin: number;
+      maxKnife15mPct: number;
+    };
   };
   /**
    * 1.11.167: вычисленные метрики Policy A+ для retro-анализа. Прикрепляются к

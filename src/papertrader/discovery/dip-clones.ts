@@ -22,6 +22,17 @@ import {
   type PolicyAPlusFeatures,
 } from './policy-a-plus.js';
 import {
+  fetchPostCrashContextMap,
+  evaluatePostCrashFastPath,
+  shouldBypassLocalHighVetoForPostCrash,
+  type PostCrashFastPathResult,
+} from './post-crash-fast-path.js';
+import {
+  fetchTrendStructureContextMap,
+  evaluateTrendStructureVeto,
+  type TrendStructureVetoResult,
+} from './trend-structure-veto.js';
+import {
   fetchVolumeSybilContextMap,
   evaluateVolumeSybilGuard,
   type VolumeSybilFeatures,
@@ -73,7 +84,7 @@ export interface EvalDecision {
    *  - `impulse_pg_snap` — bypass через PG-snap impulse confirm (`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`)
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
    */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner';
+  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast';
 }
 
 export interface DiscoveryTickResult {
@@ -188,6 +199,7 @@ function buildFeatures(
   cfg: PaperTraderConfig,
   recoveryVeto: RecoveryVetoResult | undefined,
   localHighVeto: LocalHighVetoResult | undefined,
+  trendStructureVeto: TrendStructureVetoResult | undefined,
   perWindowDipPct: Record<number, number> | undefined,
 ): SnapshotFeatures {
   const base: SnapshotFeatures = {
@@ -233,6 +245,27 @@ function buildFeatures(
       ),
       vetoed: localHighVeto.reasons.length > 0,
       veto_reasons: localHighVeto.reasons,
+    };
+  }
+  if (cfg.trendStructureVetoEnabled && trendStructureVeto) {
+    const f = trendStructureVeto.features;
+    base.trend_structure_veto = {
+      enabled: true,
+      coverageOk: f.coverageOk,
+      lookbackDays: f.lookbackDays,
+      highLookbackUsd: f.highLookbackUsd,
+      daysSinceHighBreak: f.daysSinceHighBreak,
+      price7dAgoUsd: f.price7dAgoUsd,
+      slope7dPct: f.slope7dPct,
+      pxVsHighLookback: f.pxVsHighLookback,
+      pgSnapsCount: f.pgSnapsCount,
+      vetoed: trendStructureVeto.reasons.length > 0,
+      veto_reasons: trendStructureVeto.reasons,
+      thresholds: {
+        minDaysSinceHighBreak: cfg.trendVetoMinDaysSinceHighBreak,
+        maxPxVsHighLookback: cfg.trendVetoMaxPxVsHigh14d,
+        maxSlope7dPct: cfg.trendVetoMaxSlope7dPct,
+      },
     };
   }
   return base;
@@ -362,10 +395,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   );
 
   const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
-  const [dipMap, policyAPlusMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
+  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),
       fetchPolicyAPlusContextMap(cfg, rowsForCtx),
+      fetchTrendStructureContextMap(cfg, rowsForCtx),
+      fetchPostCrashContextMap(cfg, rowsForCtx),
       fetchVolumeSybilContextMap(cfg, rowsForCtx),
       fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
       fetchGlobalPgCoverageState(cfg),
@@ -436,8 +471,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
     let localHighVeto: LocalHighVetoResult | undefined;
+    let trendStructureVeto: TrendStructureVetoResult | undefined;
+    let postCrashFastPath: PostCrashFastPathResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
+    } else if (snapshotGatePass && cfg.postCrashFastPathEnabled) {
+      postCrashFastPath = evaluatePostCrashFastPath(cfg, row, postCrashMap.get(row.mint));
+      if (postCrashFastPath.pass) {
+        dipReasonsForGate = [];
+        entryPath = 'post_crash_fast';
+      } else if (postCrashFastPath.reasons.length > 0) {
+        dipReasonsForGate = [...dipReasonsForGate, ...postCrashFastPath.reasons];
+      }
     } else if (snapshotGatePass && cfg.entryImpulsePgBypassesDip) {
       const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
       if (bypass) {
@@ -489,15 +534,30 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
     let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
     if (entryPath != null) {
-      // Recovery veto + Local-high veto (раньше были только для dip_windows).
-      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipEval.dipLookbackUsedMin);
+      const dipLookbackForRecovery =
+        entryPath === 'post_crash_fast'
+          ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
+          : dipEval.dipLookbackUsedMin;
+      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipLookbackForRecovery);
       if (recoveryVeto.reasons.length > 0) {
         dipReasonsForGate = [...dipReasonsForGate, ...recoveryVeto.reasons];
         entryPath = undefined;
       } else {
         localHighVeto = evaluateLocalHighVeto(cfg, row, dipMap.get(row.mint));
-        if (localHighVeto.reasons.length > 0) {
+        const skipLocalHigh = shouldBypassLocalHighVetoForPostCrash(cfg, postCrashFastPath, entryPath);
+        if (!skipLocalHigh && localHighVeto.reasons.length > 0) {
           dipReasonsForGate = [...dipReasonsForGate, ...localHighVeto.reasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.trendStructureVetoEnabled) {
+        trendStructureVeto = evaluateTrendStructureVeto(
+          cfg,
+          row,
+          trendStructureMap.get(row.mint),
+        );
+        if (trendStructureVeto.reasons.length > 0) {
+          dipReasonsForGate = [...dipReasonsForGate, ...trendStructureVeto.reasons];
           entryPath = undefined;
         }
       }
@@ -683,14 +743,24 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const pass = preHoldersReasons.length === 0 && holderReasons.length === 0;
     if (pass) passed++;
 
+    const reportDipPct =
+      entryPath === 'post_crash_fast'
+        ? (postCrashFastPath?.features.dropFromPeakPct ?? dipEval.dipPct)
+        : dipEval.dipPct;
+    const reportDipLookback =
+      entryPath === 'post_crash_fast'
+        ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
+        : dipEval.dipLookbackUsedMin;
+
     const decisionFeatures = buildFeatures(
       row,
-      dipEval.dipPct,
+      reportDipPct,
       dipEval.impulsePct,
-      dipEval.dipLookbackUsedMin,
+      reportDipLookback,
       cfg,
       recoveryVeto,
       localHighVeto,
+      trendStructureVeto,
       dipEval.perWindowDipPct,
     );
     /**
@@ -699,6 +769,30 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      * прокрутить альтернативные пороги по journal без необходимости пере-парсить
      * `*_pair_snapshots`.
      */
+    if (postCrashFastPath != null) {
+      const f = postCrashFastPath.features;
+      decisionFeatures.post_crash_fast = {
+        enabled: cfg.postCrashFastPathEnabled,
+        pass: postCrashFastPath.pass,
+        coverageOk: f.coverageOk,
+        lookbackMin: f.lookbackMin,
+        peakPx: f.peakPx,
+        minutesSincePeak: f.minutesSincePeak,
+        dropFromPeakPct: f.dropFromPeakPct,
+        maxVol5mSpikeRatio: f.maxVol5mSpikeRatio,
+        priceChange15mPct: f.priceChange15mPct,
+        pgSnapsCount: f.pgSnapsCount,
+        reasons: postCrashFastPath.reasons,
+        thresholds: {
+          minDropPct: cfg.postCrashFastPathMinDropPct,
+          maxDropPct: cfg.postCrashFastPathMaxDropPct,
+          minVolSpikeMult: cfg.postCrashFastPathMinVolSpikeMult,
+          stabilizeMin: cfg.postCrashFastPathStabilizeMin,
+          maxAgeMin: cfg.postCrashFastPathMaxAgeMin,
+          maxKnife15mPct: cfg.postCrashFastPathMaxKnife15mPct,
+        },
+      };
+    }
     if (policyAPlusFeatures != null) {
       decisionFeatures.policy_a_plus = {
         enabled: cfg.policyAPlusEnabled,

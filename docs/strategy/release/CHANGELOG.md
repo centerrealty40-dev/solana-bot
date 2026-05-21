@@ -8,6 +8,36 @@
 
 ---
 
+## [1.11.250] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.250`.
+
+### Add: post-crash fast path entry (`post_crash_fast`)
+
+После **vol-spike + резкого падения** в окне lookback (default 180m) — вход по **crash peak**, не дожидаясь 12h dip. Стабилизация: ≥25m после пика, 15m knife ≤−8%, drop −16…−50% от peak. **Local-high-veto bypass** на этом пути.
+
+**Prod env:** `PAPER_POST_CRASH_FAST_PATH_ENABLED=1` (+ `PAPER_POST_CRASH_*` пороги в `ecosystem.config.cjs`).
+
+**Откат:** `PAPER_POST_CRASH_FAST_PATH_ENABLED=0` → NORM §5 deploy.
+
+---
+
+## [1.11.249] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.249`.
+
+### Add: trend structure veto (stale runner protector)
+
+**Новый protector** `trend-structure-veto.ts` — два независимых правила:
+- **No high break:** последнее касание high за lookback (14d) ≥ **7** дней назад → skip.
+- **Structural decline:** `price / high_14d < 75%` **и** 7d slope ≤ **0%** → skip.
+
+**Prod env:** `PAPER_TREND_STRUCTURE_VETO_ENABLED=0` (выкл до backtest); пороги в `PAPER_TREND_VETO_*`.
+
+**Откат:** `PAPER_TREND_STRUCTURE_VETO_ENABLED=0` или revert коммита.
+
+---
+
 ## [1.11.248] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.248`.
