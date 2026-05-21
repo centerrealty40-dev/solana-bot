@@ -18,6 +18,14 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
+import {
+  buildMintCanonicalPoolMap,
+  groupCanonicalRowsByTable,
+} from './market-snapshot-canonical-pool.js';
+import {
+  isMatureTokenMicroValleyArtifact,
+  isRetraceContradictedByLatestSnapshot,
+} from './market-retrace-sanity.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -81,6 +89,9 @@ const MAX_EVENT_AGE_MIN = Math.max(
 
 const DRY_RUN = envBool('RETRACE_ALERT_DRY_RUN', false);
 const DISPLAY_TZ = process.env.RETRACE_ALERT_DISPLAY_TZ?.trim() || 'Europe/Moscow';
+
+/** Детекция только на пуле с max liq (как spike-watch) — не смешивать dead meteora с pumpswap. */
+const CANONICAL_POOL_BY_MAX_LIQ = envBool('RETRACE_ALERT_CANONICAL_POOL_BY_MAX_LIQ', true);
 
 const TG_TOKEN = process.env.RETRACE_ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '';
 const TG_CHAT = process.env.RETRACE_ALERT_TELEGRAM_CHAT_ID?.trim() ?? '';
@@ -281,6 +292,33 @@ export function findPumpRetraceFromBars(
     }
   }
   return null;
+}
+
+/** Проверка pick на битые PG-бары (не фильтр «не хочу слать проливы»). */
+export function isPumpRetracePickDataGlitch(
+  pick: PumpRetracePick,
+  meta: LatestMeta,
+  bars: Bar[],
+  refMcapUsd: number,
+): boolean {
+  const valleyMcap = bars[pick.vi]?.mcapUsd ?? null;
+  const peakMcap = bars[pick.j]?.mcapUsd ?? null;
+  if (
+    isMatureTokenMicroValleyArtifact(valleyMcap, peakMcap, refMcapUsd, pick.pumpPct)
+  ) {
+    return true;
+  }
+  if (
+    isRetraceContradictedByLatestSnapshot(
+      pick.peakPx,
+      pick.troughPx,
+      meta.px_now,
+      pick.retracePct,
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function gmgnSolTokenUrl(mint: string): string {
@@ -517,33 +555,45 @@ async function runOnePass(
   lastSentPeakMsByMint: Map<string, number>,
 ): Promise<void> {
   const merged = new Map<string, AlertRowWithTs>();
+  const tableLatest: { table: DexTable; rows: LatestMeta[] }[] = [];
 
   for (const table of SNAPSHOT_TABLES) {
-    let latestRows: LatestMeta[];
     try {
-      latestRows = await fetchLatestOnly(table);
+      const latestRows = await fetchLatestOnly(table);
+      tableLatest.push({ table, rows: latestRows });
     } catch (e) {
       console.warn(`[retrace-alert-watch] ${table} latest query failed`, String(e));
-      continue;
     }
+  }
+
+  const rowsByTable = CANONICAL_POOL_BY_MAX_LIQ
+    ? groupCanonicalRowsByTable(buildMintCanonicalPoolMap(tableLatest))
+    : new Map(
+        tableLatest.map(({ table, rows }) => [table, rows] as const),
+      );
+
+  for (const [table, analyzeRows] of rowsByTable) {
+    const dexTable = table as DexTable;
     let barsByKey: Map<string, Bar[]>;
     try {
-      barsByKey = await fetchBarsBatch(table, latestRows);
+      barsByKey = await fetchBarsBatch(dexTable, analyzeRows);
     } catch (e) {
       console.warn(`[retrace-alert-watch] ${table} bars query failed`, String(e));
       continue;
     }
 
-    const dex = dexLabel(table);
+    const dex = dexLabel(dexTable);
     const nowMs = Date.now();
 
-    for (const meta of latestRows) {
+    for (const meta of analyzeRows) {
       const raw = barsByKey.get(barsMapKey(meta.base_mint, meta.pair_address)) ?? [];
       const pick = findPumpRetraceFromBars(raw, MIN_PUMP_PCT, MIN_RETRACE_PCT, nowMs, MAX_EVENT_AGE_MIN);
       if (!pick) continue;
 
       const bars = dedupeBarsSorted(raw);
       const row = buildRowWithTs(meta, dex, bars, pick);
+      if (isPumpRetracePickDataGlitch(pick, meta, bars, row.refMcap)) continue;
+
       const prev = merged.get(meta.base_mint);
       if (
         !prev ||
@@ -593,7 +643,7 @@ async function runOnePass(
 
   const pollLog = POLL_INTERVAL_MS > 0 ? ` poll=${POLL_INTERVAL_MS}ms` : ' poll=off(cron)';
   console.log(
-    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m mintPeakDedupe=on channelDedupe=on${pollLog}`,
+    `[retrace-alert-watch] done candidates=${merged.size} sent=${sent} mcap>=${MIN_MCAP_USD} pump>=${MIN_PUMP_PCT}% retrace>=${MIN_RETRACE_PCT}% scan=${SCAN_MINUTES}m eventAge<=${MAX_EVENT_AGE_MIN}m canonicalPool=${CANONICAL_POOL_BY_MAX_LIQ ? 'max_liq' : 'all_pairs'} mintPeakDedupe=on channelDedupe=on${pollLog}`,
   );
 }
 

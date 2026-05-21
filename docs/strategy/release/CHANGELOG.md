@@ -8,6 +8,36 @@
 
 ---
 
+## [1.11.241] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.241`.
+
+### Fix: ложный [RETRACE] −100% (TOES) — canonical pool + sanity, проливы не режем
+
+**Фон.** TOESCOIN (TOES): алерт `[RETRACE][pump_then_pullback]` с ростом +563996% и «проливом −100%» — артефакт **dead Meteora pool** ($1.28k→$7M→$104), монета на месте ~$7M. Spike-watch уже чинили в 1.11.240; **retrace-alert-watch** и **pullback-watch** — нет.
+
+### Изменения
+
+**`src/scripts/market-pump-retrace-alert-watch.ts`**, **`market-pullback-telegram-watch.ts`:**
+
+- `RETRACE/PULLBACK_ALERT_CANONICAL_POOL_BY_MAX_LIQ=1`: детекция только на пуле с **max liq** (как spike-watch).
+- Sanity (`market-retrace-sanity.ts`): отсекаем **битые PG-бары**, не реальные проливы:
+  - micro-valley ($1k) + million-% pump при ref mcap ≥$1M;
+  - заявленный −100%, но `px_now` на том же пуле всё ещё у пика.
+
+**`src/scripts/market-snapshot-canonical-pool.ts`** — общий выбор canonical pool.
+
+**Тесты:** `market-retrace-sanity.test.ts`, кейс TOES в `market-pump-retrace-alert.test.ts`.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.240 -- src/scripts/market-pump-retrace-alert-watch.ts src/scripts/market-pullback-telegram-watch.ts src/scripts/market-snapshot-canonical-pool.ts src/scripts/market-retrace-sanity.ts tests/market-retrace-sanity.test.ts tests/market-pump-retrace-alert.test.ts ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm ci && pm2 reload ecosystem.config.cjs --only retrace-alert-watch,market-pullback-telegram-watch --update-env
+```
+
+---
+
 ## [1.11.240] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.240`.

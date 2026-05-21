@@ -20,6 +20,14 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
+import {
+  buildMintCanonicalPoolMap,
+  groupCanonicalRowsByTable,
+} from './market-snapshot-canonical-pool.js';
+import {
+  isMatureTokenMicroValleyArtifact,
+  isRetraceContradictedByLatestSnapshot,
+} from './market-retrace-sanity.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -72,6 +80,9 @@ const MIN_VOL_5M_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_5M_USD', 0));
 const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 1_000_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('PULLBACK_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('PULLBACK_ALERT_DRY_RUN', false);
+
+/** Детекция только на пуле с max liq — не dead meteora vs pumpswap. */
+const CANONICAL_POOL_BY_MAX_LIQ = envBool('PULLBACK_ALERT_CANONICAL_POOL_BY_MAX_LIQ', true);
 
 const POLL_INTERVAL_MS_RAW = Math.floor(envNum('PULLBACK_ALERT_POLL_INTERVAL_MS', 20_000));
 const POLL_INTERVAL_MS =
@@ -602,6 +613,30 @@ type PullbackCandidate = {
   refM: number;
 };
 
+function isPullbackPickDataGlitch(pick: PullbackPick, meta: LatestMeta, refMcapUsd: number): boolean {
+  if (
+    isMatureTokenMicroValleyArtifact(
+      pick.anchorMcapUsd ?? null,
+      pick.peakMcapUsd ?? null,
+      refMcapUsd,
+      pick.risePct,
+    )
+  ) {
+    return true;
+  }
+  if (
+    isRetraceContradictedByLatestSnapshot(
+      pick.peakPx,
+      pick.lastPx,
+      meta.px_now,
+      pick.retraceFromPeakPct,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 async function runOnePass(
   sendDedupe: Map<string, number> | null,
   lastSentPeakMsByMint: Map<string, number>,
@@ -611,12 +646,33 @@ async function runOnePass(
   let sent = 0;
   let skipped = 0;
   const byMint = new Map<string, PullbackCandidate>();
+  const tableLatest: { table: DexTable; rows: LatestMeta[] }[] = [];
 
   for (const table of SNAPSHOT_TABLES) {
-    const dex = dexLabel(table);
-    const latest = await fetchLatestForTable(table);
-    const barsByKey = await fetchBarsBatch(table, latest);
-    for (const meta of latest) {
+    try {
+      const latest = await fetchLatestForTable(table);
+      tableLatest.push({ table, rows: latest });
+    } catch (e) {
+      console.warn(`[market-pullback-telegram-watch] ${table} latest query failed`, String(e));
+    }
+  }
+
+  const rowsByTable = CANONICAL_POOL_BY_MAX_LIQ
+    ? groupCanonicalRowsByTable(buildMintCanonicalPoolMap(tableLatest))
+    : new Map(tableLatest.map(({ table, rows }) => [table, rows] as const));
+
+  for (const [table, analyzeRows] of rowsByTable) {
+    const dexTable = table as DexTable;
+    const dex = dexLabel(dexTable);
+    let barsByKey: Map<string, Bar[]>;
+    try {
+      barsByKey = await fetchBarsBatch(dexTable, analyzeRows);
+    } catch (e) {
+      console.warn(`[market-pullback-telegram-watch] ${table} bars query failed`, String(e));
+      continue;
+    }
+
+    for (const meta of analyzeRows) {
       const key = barsMapKey(meta.base_mint, meta.pair_address);
       const rawBars = barsByKey.get(key) ?? [];
       const pickRaw =
@@ -638,6 +694,11 @@ async function runOnePass(
       const lastBar = dedupeBarsSorted(rawBars).at(-1);
       const refM = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
       if (MIN_MARKET_CAP_USD > 0 && refM + 1 < MIN_MARKET_CAP_USD) {
+        skipped++;
+        continue;
+      }
+
+      if (isPullbackPickDataGlitch(pick, meta, refM)) {
         skipped++;
         continue;
       }

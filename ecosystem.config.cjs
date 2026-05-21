@@ -1071,6 +1071,7 @@ const PM2_APPS = [
         PULLBACK_ALERT_DRY_RUN: '0',
         PULLBACK_ALERT_MAX_NEWER_BAR_AGE_MINUTES: '25',
         PULLBACK_ALERT_DISPLAY_TZ: 'Europe/Moscow',
+        PULLBACK_ALERT_CANONICAL_POOL_BY_MAX_LIQ: '1',
       },
     },
     {
@@ -1100,6 +1101,7 @@ const PM2_APPS = [
         RETRACE_ALERT_MIN_HOLDERS: '0',
         RETRACE_ALERT_HOLDER_NULL_SOFT: '1',
         RETRACE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
+        RETRACE_ALERT_CANONICAL_POOL_BY_MAX_LIQ: '1',
         RETRACE_ALERT_DRY_RUN: '0',
       },
     },
