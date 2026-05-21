@@ -8,6 +8,45 @@
 
 ---
 
+## [1.11.244] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.244`.
+
+### Feature: priority dip-watch tier (24/7, без ops-whitelist)
+
+**Проблема:** тихие проливы (MANIFEST −17% при vol5m=$7k) выпадали из SQL discovery pool; eval прекращался на 1–2 часа. RPC/Jupiter были куплены, но не использовались для мониторинга dip между PG ticks.
+
+**Код (`src/papertrader/discovery/`):**
+
+- `priority-discovery-registry.ts` — open positions + near-ready + recent eval (180m)
+- `priority-discovery-inject.ts` — inject в discovery в обход `snapshotCandidateLimit` / vol5m SQL floor
+- `priority-dip-price-refresh.ts` — Jupiter spot refresh для priority mint'ов каждый eval-tick
+- `discovery-eval-throttle.ts` — shared eval throttle cache
+- `evaluateSnapshotPriorityTier()` — liq/mcap/vol1h/bs без vol5m/buys/sells floor
+
+**Prod env (`ecosystem.config.cjs`, live-oscar + collectors):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `LIVE_MINT_WHITELIST_ENABLED` | `0` | `0` (без изменений — вход без whitelist) |
+| `PAPER_POST_MIN_VOL_5M_USD` | $10k | **$2500** |
+| `PAPER_SNAPSHOT_CANDIDATE_LIMIT` | 300 (default) | **500** |
+| `PAPER_DISCOVERY_REEVAL_SEC` | 60 (default) | **30** |
+| `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC` | — | **15** |
+| Collectors `*_INTERVAL_MS` | 60s | **30s** |
+| `PAPER_LIQ_WATCH_RPC_FALLBACK` | `0` | **`1`** |
+| `PAPER_IMPULSE_RPC_MAX_PER_MIN` | 30 | **60** |
+| `IMPULSE_QN_ROLLING_MAX_CREDITS` | 0 | **200000** |
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.243 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md src/papertrader/
+pm2 reload ecosystem.config.cjs --update-env
+```
+
+---
+
 ## [1.11.243] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.243`.

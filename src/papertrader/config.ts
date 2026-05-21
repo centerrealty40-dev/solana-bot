@@ -243,6 +243,20 @@ const ConfigSchema = z.object({
   whitelistSnapshotLookbackMin: z.coerce.number().int().min(30).max(240).default(60),
 
   /**
+   * Priority discovery tier (1.11.244): 24/7 dip-watch без ops-whitelist.
+   * Open positions + near-ready + недавно eval'нутые mint'ы инжектятся в discovery
+   * в обход SQL vol5m floor / snapshotCandidateLimit; Jupiter refresh между PG ticks.
+   */
+  priorityDiscoveryEnabled: z.boolean().default(true),
+  priorityDiscoveryReevalSec: z.coerce.number().int().min(5).max(120).default(15),
+  priorityDiscoveryLookbackMin: z.coerce.number().int().min(30).max(240).default(120),
+  /** Держать mint в priority tier N минут после последнего full eval. */
+  priorityDiscoveryRecentEvalMin: z.coerce.number().int().min(30).max(720).default(180),
+  priorityDiscoveryMaxMints: z.coerce.number().int().min(10).max(500).default(200),
+  priorityDiscoveryJupiterRefreshEnabled: z.boolean().default(true),
+  priorityDiscoveryJupiterRefreshMaxPerTick: z.coerce.number().int().min(1).max(50).default(20),
+
+  /**
    * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
    * Файл: один mint на строку, `#` — комментарии. Env: `LIVE_MINT_BLACKLIST_ENABLED`, `LIVE_MINT_BLACKLIST_PATH`.
    */
@@ -832,6 +846,17 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       return Number.isFinite(n) && n >= 5_000 ? Math.min(n, 3_600_000) : 60_000;
     })(),
     whitelistSnapshotLookbackMin: process.env.PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN,
+    priorityDiscoveryEnabled: envBool(process.env.PAPER_PRIORITY_DISCOVERY_ENABLED, true),
+    priorityDiscoveryReevalSec: process.env.PAPER_PRIORITY_DISCOVERY_REEVAL_SEC,
+    priorityDiscoveryLookbackMin: process.env.PAPER_PRIORITY_DISCOVERY_LOOKBACK_MIN,
+    priorityDiscoveryRecentEvalMin: process.env.PAPER_PRIORITY_DISCOVERY_RECENT_EVAL_MIN,
+    priorityDiscoveryMaxMints: process.env.PAPER_PRIORITY_DISCOVERY_MAX_MINTS,
+    priorityDiscoveryJupiterRefreshEnabled: envBool(
+      process.env.PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH,
+      true,
+    ),
+    priorityDiscoveryJupiterRefreshMaxPerTick:
+      process.env.PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),

@@ -154,7 +154,8 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
     const kind = row.kind;
     if (kind === 'eval') {
       const deep = row._liveDiscoveryDeepAudit === true;
-      if (row.pass === true && !deep) return;
+      const priority = row._priorityDiscovery === true;
+      if (row.pass === true && !deep && !priority) return;
       const tele = extractEvalTelemetry(row);
       appendLiveJsonlEvent({
         kind: 'live_discovery_eval',

@@ -2,7 +2,7 @@ import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
-import { evaluateSnapshot, passesDiscoveryMinMarketCap } from '../filters/snapshot-filter.js';
+import { evaluateSnapshot, passesDiscoveryMinMarketCap, evaluateSnapshotPriorityTier } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
   fetchDipContextMap,
@@ -38,6 +38,9 @@ import {
   type MintPgCoverageFeatures,
 } from './pg-data-coverage-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
+import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
+import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
+import { shouldEvaluateMint } from './discovery-eval-throttle.js';
 import {
   fetchRunnerContextMap,
   evaluateRunner,
@@ -82,6 +85,8 @@ export interface DiscoveryTickResult {
   auditRows?: Record<string, unknown>[];
   /** PG coverage guard mode flip this tick (for ADVICE Telegram). */
   pgCoverageModeChanged?: 'full' | 'relaxed' | null;
+  /** Priority tier mint set this tick (open + near-ready + recent eval + SQL pool). */
+  priorityMintSet?: Set<string>;
 }
 
 const deepAuditLastLogMs = new Map<string, number>();
@@ -94,7 +99,7 @@ function allowDeepAuditLog(key: string, minMs: number): boolean {
   return true;
 }
 
-export const evaluatedAtMap = new Map<string, number>();
+export { evaluatedAtMap } from './discovery-eval-throttle.js';
 export const lastEntryTsByMintMap = new Map<string, number>();
 /** Последний `exitTs` полного закрытия по mint (ms) — пауза перед повторным входом в тот же mint. */
 export const lastPostExitBuyCooldownTsByMintMap = new Map<string, number>();
@@ -156,11 +161,23 @@ export function recordPostExitBuyCooldownIfApplicable(
   if (exitTsMs >= prev) lastPostExitBuyCooldownTsByMintMap.set(mint, exitTsMs);
 }
 
-function shouldEvaluate(mint: string, reevalAfterSec: number): boolean {
-  const last = evaluatedAtMap.get(mint) || 0;
-  if (Date.now() - last < reevalAfterSec * 1000) return false;
-  evaluatedAtMap.set(mint, Date.now());
-  return true;
+function resolveDiscoveryReevalSec(
+  cfg: PaperTraderConfig,
+  mint: string,
+  priorityMintSet: ReadonlySet<string>,
+): number {
+  if (cfg.priorityDiscoveryEnabled && priorityMintSet.has(mint)) {
+    return cfg.priorityDiscoveryReevalSec;
+  }
+  return cfg.discoveryReevalSec;
+}
+
+function shouldEvaluate(
+  mint: string,
+  priorityMintSet: ReadonlySet<string>,
+  cfg: PaperTraderConfig,
+): boolean {
+  return shouldEvaluateMint(mint, resolveDiscoveryReevalSec(cfg, mint, priorityMintSet));
 }
 
 function buildFeatures(
@@ -267,8 +284,16 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   if (wlInjected.length > 0) {
     snapshotTagged = [...snapshotTagged, ...wlInjected];
   }
+  const { injected: priorityInjected, priorityMintSet } = await injectPriorityDiscoveryCandidates(
+    cfg,
+    snapshotTagged,
+  );
+  for (const { row } of snapshotTagged) priorityMintSet.add(row.mint);
+  if (priorityInjected.length > 0) {
+    snapshotTagged = [...snapshotTagged, ...priorityInjected];
+  }
   if (snapshotTagged.length === 0) {
-    return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
+    return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
   }
 
   /**
@@ -290,17 +315,19 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const allowedFlag = new Map<string, boolean>();
   for (const { row } of snapshotTagged) {
     if (allowedFlag.has(row.mint)) continue;
-    allowedFlag.set(row.mint, shouldEvaluate(row.mint, reevalAfterSec));
+    allowedFlag.set(row.mint, shouldEvaluate(row.mint, priorityMintSet, cfg));
   }
   const allowedSnapshotTagged = snapshotTagged.filter(({ row }) => allowedFlag.get(row.mint) === true);
 
   if (allowedSnapshotTagged.length === 0) {
-    /** Все mint'ы на throttle — пишем только deep-аудит для whitelist'а и выходим без fan-out. */
+    /** Все mint'ы на throttle — пишем deep-аудит для whitelist + priority tier. */
     const auditRowsThrottle: Record<string, unknown>[] = [];
     const wl = cfg.discoveryDeepAuditWhitelistMintSet;
-    if (cfg.discoveryDeepAuditJsonl === true && wl && wl.size > 0) {
+    const auditMintSet = new Set<string>([...priorityMintSet]);
+    if (wl) for (const m of wl) auditMintSet.add(m);
+    if (cfg.discoveryDeepAuditJsonl === true && auditMintSet.size > 0) {
       for (const { row, lane } of snapshotTagged) {
-        if (!wl.has(row.mint)) continue;
+        if (!auditMintSet.has(row.mint)) continue;
         if (
           !allowDeepAuditLog(
             `${row.mint}:tick_skip`,
@@ -324,20 +351,16 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       passed: 0,
       decisions: [],
       auditRows: auditRowsThrottle.length > 0 ? auditRowsThrottle : undefined,
+      priorityMintSet,
     };
   }
 
-  /**
-   * 1.11.231 — параллелизация PG fan-out через `Promise.all`.
-   *
-   * Раньше все 5 контекстов запрашивались строго последовательно (await за await), что давало
-   * до ~1 s latency на тик discovery. Запросы не зависят друг от друга (читают разные таблицы),
-   * поэтому безопасно параллелить. `mintPgCoverageMap` зависит от `globalPgCoverage`, поэтому
-   * остаётся вторым шагом.
-   *
-   * Full CTE-консолидация (один SQL вместо 5) — это отдельный рефакторинг с риском регрессии
-   * и оставлена в backlog'е (см. `proposals/PG_FAN_OUT_CTE.md`).
-   */
+  await refreshPriorityMintPricesFromJupiter(
+    cfg,
+    allowedSnapshotTagged.map((x) => x.row),
+    priorityMintSet,
+  );
+
   const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
   const [dipMap, policyAPlusMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
@@ -372,12 +395,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const liveHoldersForGate =
     cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
-  /** 1.11.231 — throttled deep-аудит для whitelist'а (mint'ы, отсечённые до fan-out). */
+  /** Throttled deep-аудит для whitelist + priority tier. */
   const wlForThrottle = cfg.discoveryDeepAuditWhitelistMintSet;
-  if (cfg.discoveryDeepAuditJsonl === true && wlForThrottle && wlForThrottle.size > 0) {
+  const throttleAuditMints = new Set<string>([...priorityMintSet]);
+  if (wlForThrottle) for (const m of wlForThrottle) throttleAuditMints.add(m);
+  if (cfg.discoveryDeepAuditJsonl === true && throttleAuditMints.size > 0) {
     for (const { row, lane } of snapshotTagged) {
       if (allowedFlag.get(row.mint) === true) continue;
-      if (!wlForThrottle.has(row.mint)) continue;
+      if (!throttleAuditMints.has(row.mint)) continue;
       if (
         !allowDeepAuditLog(
           `${row.mint}:tick_skip`,
@@ -391,7 +416,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         lane,
         source: row.source,
         reason: 'reeval_throttle',
-        discoveryReevalSec: reevalAfterSec,
+        discoveryReevalSec: resolveDiscoveryReevalSec(cfg, row.mint, priorityMintSet),
       });
     }
   }
@@ -399,7 +424,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   for (const { row, lane } of allowedSnapshotTagged) {
     evaluated++;
 
-    const v = evaluateSnapshot(cfg, row, lane);
+    const v = priorityMintSet.has(row.mint)
+      ? evaluateSnapshotPriorityTier(cfg, row, lane)
+      : evaluateSnapshot(cfg, row, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersForGate,
     });
@@ -823,9 +850,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   }
 
   const wl = cfg.discoveryDeepAuditWhitelistMintSet;
-  if (cfg.discoveryDeepAuditJsonl === true && wl && wl.size > 0) {
+  const universeMissMints = new Set<string>([...priorityMintSet]);
+  if (wl) for (const m of wl) universeMissMints.add(m);
+  if (cfg.discoveryDeepAuditJsonl === true && universeMissMints.size > 0) {
     const missEveryMs = cfg.discoveryDeepAuditUniverseMissMinMs;
-    for (const mint of wl) {
+    for (const mint of universeMissMints) {
       if (
         cfg.mintBlacklistEnabled &&
         cfg.mintBlacklistPath?.trim() &&
@@ -881,6 +910,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     decisions,
     auditRows,
     pgCoverageModeChanged: globalPgCoverage.coverageModeChanged,
+    priorityMintSet,
   };
 }
 

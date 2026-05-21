@@ -141,6 +141,35 @@ export function evaluateSnapshot(
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * Priority dip-watch tier: liq/mcap/vol1h/bs без vol5m/buys/sells floor — ловим тихие проливы.
+ */
+export function evaluateSnapshotPriorityTier(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  lane: Lane,
+): { pass: boolean; reasons: string[] } {
+  const lc = laneCfg(cfg, lane);
+  const reasons: string[] = [];
+  if (row.liquidity_usd < lc.MIN_LIQ_USD) reasons.push(`liq<${lc.MIN_LIQ_USD}`);
+  if (lc.MAX_LIQ_USD > 0 && row.liquidity_usd > lc.MAX_LIQ_USD) {
+    reasons.push(`liq>${lc.MAX_LIQ_USD}`);
+  }
+  const bs = row.sells_5m > 0 ? row.buys_5m / row.sells_5m : row.buys_5m;
+  if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
+  const vol1h = Number(row.volume_1h ?? 0);
+  if (cfg.vol5m1hGuardEnabled) {
+    if (!Number.isFinite(vol1h) || vol1h <= 0) reasons.push('vol1h_missing');
+    else if (vol1h < cfg.vol1hMinUsd) reasons.push(`vol1h<${cfg.vol1hMinUsd}`);
+  }
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap > 0) {
+    const refMcap = snapshotRefMarketCapUsd(row);
+    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
 /** Snapshot lane gate for `smart_lottery` — uses `smartLotteryLaneCfg`, shared BS + vol5m/1h guard. */
 export function evaluateSnapshotSmartLottery(
   cfg: PaperTraderConfig,

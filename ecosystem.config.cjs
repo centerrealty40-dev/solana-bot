@@ -91,6 +91,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        RAYDIUM_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
@@ -98,10 +99,6 @@ const PM2_APPS = [
       name: 'sa-meteora',
       cwd: root,
       script: 'scripts-tmp/meteora-collector.mjs',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
       max_memory_restart: '1024M',
@@ -109,11 +106,9 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        METEORA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
-    },
-    {
-      name: 'sa-orca',
       cwd: root,
       script: 'scripts-tmp/orca-collector.mjs',
       interpreter: 'node',
@@ -127,8 +122,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** Explicit 60s — PM2 may retain removed keys across reload; override stale dump. */
-        ORCA_COLLECTOR_INTERVAL_MS: '60000',
+        /** 1.11.244: 30s PG snapshots for dip-watch (was 60s). */
+        ORCA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
@@ -147,7 +142,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        MOONSHOT_COLLECTOR_INTERVAL_MS: '60000',
+        MOONSHOT_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
@@ -166,11 +161,9 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
-    },
-    {
-      name: 'sa-wallet-orchestrator',
       cwd: root,
       script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
       args: '--daemon',
@@ -316,6 +309,10 @@ const PM2_APPS = [
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
         PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
+        PAPER_DISCOVERY_REEVAL_SEC: '30',
+        /** 1.11.244: шире SQL-пул при малом числе активных монет. */
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '500',
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
@@ -358,7 +355,8 @@ const PM2_APPS = [
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         PAPER_POST_MIN_LIQ_USD: '140000',
-        PAPER_POST_MIN_VOL_5M_USD: '10000',
+        /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
+        PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
@@ -703,9 +701,9 @@ const PM2_APPS = [
         PAPER_IMPULSE_CONFIRM_ENABLED: '1',
         PAPER_IMPULSE_DIP_POLICY: 'parallel_and',
         PAPER_IMPULSE_PG_MIN_DROP_PCT: '12',
-        PAPER_IMPULSE_RPC_MAX_PER_MIN: '30',
-        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '0',
-        IMPULSE_QN_ROLLING_MAX_CREDITS: '0',
+        PAPER_IMPULSE_RPC_MAX_PER_MIN: '60',
+        QN_FEATURE_BUDGET_IMPULSE_CONFIRM: '50000',
+        IMPULSE_QN_ROLLING_MAX_CREDITS: '200000',
 
         PAPER_LIQ_WATCH_ENABLED: '1',
         PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
@@ -713,7 +711,7 @@ const PM2_APPS = [
         PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
         PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
         PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
-        PAPER_LIQ_WATCH_RPC_FALLBACK: '0',
+        PAPER_LIQ_WATCH_RPC_FALLBACK: '1',
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
 
@@ -728,7 +726,14 @@ const PM2_APPS = [
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
-        /** Whitelist mint PG probe + collector DexScreener enrich lookback alignment. */
+        /** 1.11.244 — priority dip-watch tier (open + near-ready + recent eval + SQL pool). Whitelist entry off (`LIVE_MINT_WHITELIST_ENABLED=0`). */
+        PAPER_PRIORITY_DISCOVERY_ENABLED: '1',
+        PAPER_PRIORITY_DISCOVERY_REEVAL_SEC: '15',
+        PAPER_PRIORITY_DISCOVERY_LOOKBACK_MIN: '120',
+        PAPER_PRIORITY_DISCOVERY_RECENT_EVAL_MIN: '180',
+        PAPER_PRIORITY_DISCOVERY_MAX_MINTS: '200',
+        PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH: '1',
+        PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '25',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',

@@ -30,6 +30,7 @@ import {
   type EvalDecision,
 } from './discovery/dip-clones.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
+import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
 import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
@@ -975,6 +976,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         );
       }
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
+      syncPriorityOpenMints(open.keys());
       const res =
         cfg.strategyKind === 'dip'
           ? await runDipDiscovery(cfg)
@@ -995,9 +997,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
       for (const d of res.decisions) {
+        const priorityFlag = res.priorityMintSet?.has(d.mint) ?? false;
         const deepAuditFlag =
           cfg.discoveryDeepAuditJsonl === true &&
-          Boolean(cfg.discoveryDeepAuditWhitelistMintSet?.has(d.mint));
+          (priorityFlag || Boolean(cfg.discoveryDeepAuditWhitelistMintSet?.has(d.mint)));
         journalAppend({
           kind: 'eval',
           lane: d.lane,
@@ -1013,6 +1016,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           holders_meta: d.holdersMeta ?? null,
           entry_path: d.entryPath,
           _liveDiscoveryDeepAudit: deepAuditFlag,
+          _priorityDiscovery: priorityFlag,
         });
         if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
