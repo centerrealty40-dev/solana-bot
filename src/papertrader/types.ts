@@ -554,6 +554,8 @@ export interface SnapshotFeatures {
       minRecentVol5mUsd: number;
       spikeRatioMin: number;
       deadVol5mUsd: number;
+      minDeadFraction: number;
+      vol1hAliveExemptUsd: number;
     };
   };
   /** 1.11.219: narrow-window hourly volume burst metrics (retro / audit). */

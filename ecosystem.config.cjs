@@ -433,6 +433,9 @@ const PM2_APPS = [
         PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD: '8000',
         PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN: '6',
         PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD: '2500',
+        /** 1.11.245: p10 alone ловил живые монеты (MANIFEST); нужны dead_frac + p50 + vol1h exempt. */
+        PAPER_VOLUME_SYBIL_MIN_DEAD_FRACTION: '0.55',
+        PAPER_VOLUME_SYBIL_VOL1H_ALIVE_EXEMPT_USD: '36000',
         /**
          * Volume Ephemeral guard (1.11.219): блокирует монеты с объёмом, сжатым
          * в узкое почасовое окно (разовый burst — паттерн GOAT).
@@ -734,6 +737,8 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_MAX_MINTS: '200',
         PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH: '1',
         PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '25',
+        /** 1.11.245: priority tier BS 0.85 (global POST_MIN_BS остаётся 0.98). */
+        PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.85',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',

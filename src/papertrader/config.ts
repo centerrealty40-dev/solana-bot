@@ -255,6 +255,8 @@ const ConfigSchema = z.object({
   priorityDiscoveryMaxMints: z.coerce.number().int().min(10).max(500).default(200),
   priorityDiscoveryJupiterRefreshEnabled: z.boolean().default(true),
   priorityDiscoveryJupiterRefreshMaxPerTick: z.coerce.number().int().min(1).max(50).default(20),
+  /** Relaxed BS floor for priority dip-watch tier (default 0.85 vs global 0.98). */
+  priorityDiscoveryMinBs: z.coerce.number().nonnegative().default(0.85),
 
   /**
    * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
@@ -379,6 +381,10 @@ const ConfigSchema = z.object({
   volumeSybilSpikeRatioMin: z.coerce.number().min(2).max(100).default(6),
   /** vol5m at or below this counts as "dead" minute in baseline dead-fraction metric. */
   volumeSybilDeadVol5mUsd: z.coerce.number().nonnegative().default(2_500),
+  /** Baseline dead-fraction must reach this for "quiet/dead" classification (0–1). */
+  volumeSybilMinDeadFraction: z.coerce.number().min(0).max(1).default(0.55),
+  /** Skip sybil block when snapshot vol1h >= this (alive market, not wash dead→spike). */
+  volumeSybilVol1hAliveExemptUsd: z.coerce.number().nonnegative().default(36_000),
 
   /**
    * Volume Ephemeral guard (1.11.219): block when hourly vol5m is concentrated in a
@@ -857,6 +863,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     ),
     priorityDiscoveryJupiterRefreshMaxPerTick:
       process.env.PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK,
+    priorityDiscoveryMinBs: process.env.PAPER_PRIORITY_DISCOVERY_MIN_BS,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
@@ -921,6 +928,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeSybilMinRecentVol5mUsd: process.env.PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD,
     volumeSybilSpikeRatioMin: process.env.PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN,
     volumeSybilDeadVol5mUsd: process.env.PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD,
+    volumeSybilMinDeadFraction: process.env.PAPER_VOLUME_SYBIL_MIN_DEAD_FRACTION,
+    volumeSybilVol1hAliveExemptUsd: process.env.PAPER_VOLUME_SYBIL_VOL1H_ALIVE_EXEMPT_USD,
     volumeEphemeralGuardEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED, false),
     volumeEphemeralLookbackHours: process.env.PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS,
     volumeEphemeralMinActiveHourVol5mUsd: process.env.PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD,

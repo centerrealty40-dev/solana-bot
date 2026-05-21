@@ -8,6 +8,24 @@
 
 ---
 
+## [1.11.245] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.245`.
+
+### Fix: volume sybil guard false-positive on live coins (MANIFEST)
+
+**Причина:** guard считал baseline «мёртвым» только по `p10 vol5m ≤ $3000`. У живых монет с высоким `vol1h` p10 остаётся низким (тихие 5m-бакеты между импульсами), а на дампе recent vol5m даёт 15× spike → ложный `volume_sybil`.
+
+**Код:** `volume-sybil-guard.ts` — «мёртвый» baseline только при **p10 + dead_fraction ≥ 55% + p50 ≤ dead**; exempt при `vol1h ≥ $36k`.
+
+**Priority tier:** `evaluateSnapshotPriorityTier()` — отдельный BS floor **`PAPER_PRIORITY_DISCOVERY_MIN_BS=0.85`** (global POST_MIN_BS 0.98 без изменений).
+
+**Prod env:** `PAPER_VOLUME_SYBIL_MIN_DEAD_FRACTION`, `PAPER_VOLUME_SYBIL_VOL1H_ALIVE_EXEMPT_USD`, `PAPER_PRIORITY_DISCOVERY_MIN_BS`.
+
+**Откат:** `git checkout sa-alpha-1.11.244` → NORM §5 deploy; вернуть env-ключи sybil/priority BS.
+
+---
+
 ## [1.11.244] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.244`.

@@ -741,6 +741,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           minRecentVol5mUsd: cfg.volumeSybilMinRecentVol5mUsd,
           spikeRatioMin: cfg.volumeSybilSpikeRatioMin,
           deadVol5mUsd: cfg.volumeSybilDeadVol5mUsd,
+          minDeadFraction: cfg.volumeSybilMinDeadFraction,
+          vol1hAliveExemptUsd: cfg.volumeSybilVol1hAliveExemptUsd,
         },
       };
     }

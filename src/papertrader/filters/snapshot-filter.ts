@@ -156,7 +156,7 @@ export function evaluateSnapshotPriorityTier(
     reasons.push(`liq>${lc.MAX_LIQ_USD}`);
   }
   const bs = row.sells_5m > 0 ? row.buys_5m / row.sells_5m : row.buys_5m;
-  if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
+  if (bs < cfg.priorityDiscoveryMinBs) reasons.push(`bs<${cfg.priorityDiscoveryMinBs}`);
   const vol1h = Number(row.volume_1h ?? 0);
   if (cfg.vol5m1hGuardEnabled) {
     if (!Number.isFinite(vol1h) || vol1h <= 0) reasons.push('vol1h_missing');

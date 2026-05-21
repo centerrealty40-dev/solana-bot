@@ -5,7 +5,9 @@
  * "dead" baseline — typical wash/sybil liquidity burst pattern (dead → spike → dead).
  *
  * Lookback window (default 6h) excludes the recent window (default 45m). Baseline
- * quietness is measured via p10 of `volume_5m`; spike via max recent vol5m vs baseline.
+ * "dead" requires low p10 AND high dead-fraction AND low p50 — not p10 alone (live
+ * coins like MANIFEST have low p10 from quiet 5m buckets but high vol1h / median vol).
+ * Spike via max recent vol5m vs baseline p10. High vol1h => alive market exempt.
  * Missing PG history => safe-skip (do not block), same as Policy A+.
  */
 
@@ -194,7 +196,18 @@ export function evaluateVolumeSybilGuard(
     return { blocked: false, blockedReasons, features };
   }
 
-  const quietBaseline = baselineP10 <= cfg.volumeSybilBaselineP10MaxUsd;
+  const vol1h = Number(row.volume_1h ?? 0);
+  if (Number.isFinite(vol1h) && vol1h >= cfg.volumeSybilVol1hAliveExemptUsd) {
+    return { blocked: false, blockedReasons, features };
+  }
+
+  const deadFrac = baseCtx.baselineDeadFraction ?? 0;
+  const baselineP50 = baseCtx.baselineP50Vol5mUsd;
+  const lowP10 = baselineP10 <= cfg.volumeSybilBaselineP10MaxUsd;
+  const mostlyDead = deadFrac >= cfg.volumeSybilMinDeadFraction;
+  const lowMedian =
+    baselineP50 != null && baselineP50 <= cfg.volumeSybilDeadVol5mUsd;
+  const quietBaseline = lowP10 && mostlyDead && lowMedian;
   const activeSpike = effectiveRecent >= cfg.volumeSybilMinRecentVol5mUsd;
   const sharpSpike = spikeRatio >= cfg.volumeSybilSpikeRatioMin;
 

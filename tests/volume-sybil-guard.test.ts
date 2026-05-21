@@ -38,6 +38,8 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     volumeSybilMinRecentVol5mUsd: 8_000,
     volumeSybilSpikeRatioMin: 6,
     volumeSybilDeadVol5mUsd: 2_500,
+    volumeSybilMinDeadFraction: 0.55,
+    volumeSybilVol1hAliveExemptUsd: 36_000,
     ...over,
   } as PaperTraderConfig;
 }
@@ -78,12 +80,46 @@ describe('evaluateVolumeSybilGuard', () => {
   it('blocks SCAM-like dead baseline + sharp vol5m spike', () => {
     const r = evaluateVolumeSybilGuard(
       baseCfg(),
-      baseRow({ volume_5m: 18_362 }),
-      ctx({ baselineP10Vol5mUsd: 800, recentMaxVol5mUsd: 18_362 }),
+      baseRow({ volume_5m: 18_362, volume_1h: 5_000 }),
+      ctx({
+        baselineP10Vol5mUsd: 800,
+        baselineP50Vol5mUsd: 2_000,
+        baselineDeadFraction: 0.67,
+        recentMaxVol5mUsd: 18_362,
+      }),
     );
     expect(r.blocked).toBe(true);
     expect(r.blockedReasons.some((x) => x.startsWith('volume_sybil:'))).toBe(true);
     expect(r.features.spikeRatio).toBeGreaterThanOrEqual(6);
+  });
+
+  it('passes live coin with low p10 but high vol1h and moderate dead fraction (MANIFEST-like)', () => {
+    const r = evaluateVolumeSybilGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 20_359, volume_1h: 103_191 }),
+      ctx({
+        baselineP10Vol5mUsd: 1_343,
+        baselineP50Vol5mUsd: 2_834,
+        baselineDeadFraction: 0.43,
+        recentMaxVol5mUsd: 20_359,
+      }),
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.features.spikeRatio).toBeGreaterThanOrEqual(6);
+  });
+
+  it('passes when vol1h alone proves market is alive', () => {
+    const r = evaluateVolumeSybilGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 18_000, volume_1h: 80_000 }),
+      ctx({
+        baselineP10Vol5mUsd: 800,
+        baselineP50Vol5mUsd: 2_000,
+        baselineDeadFraction: 0.67,
+        recentMaxVol5mUsd: 18_000,
+      }),
+    );
+    expect(r.blocked).toBe(false);
   });
 
   it('passes gradual interest — elevated baseline p10, moderate ratio', () => {
@@ -113,8 +149,13 @@ describe('evaluateVolumeSybilGuard', () => {
   it('uses max(current row, recent PG max) for spike detection', () => {
     const r = evaluateVolumeSybilGuard(
       baseCfg(),
-      baseRow({ volume_5m: 12_000 }),
-      ctx({ baselineP10Vol5mUsd: 1_000, recentMaxVol5mUsd: 4_000 }),
+      baseRow({ volume_5m: 12_000, volume_1h: 4_000 }),
+      ctx({
+        baselineP10Vol5mUsd: 1_000,
+        baselineP50Vol5mUsd: 2_000,
+        baselineDeadFraction: 0.67,
+        recentMaxVol5mUsd: 4_000,
+      }),
     );
     expect(r.features.effectiveRecentVol5mUsd).toBe(12_000);
     expect(r.blocked).toBe(true);
