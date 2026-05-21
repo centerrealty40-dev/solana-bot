@@ -25,9 +25,9 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
  * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
  *
- * 1.11.188: $500+$500 entry split + $150 @ −7% + $150 @ −14% staged avg = $1300 cap.
+ * 1.11.243: $250+$250 entry split + $150 @ −7% + $150 @ −14% staged avg = $800 cap.
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '1300';
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
 
 const PM2_APPS = [
     {
@@ -320,7 +320,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry 1.11.188: сплит входа **$500+$500** (10 с, +3%/−10% к 1-й ноге, не усреднение);
+         * Staged-entry 1.11.243: сплит входа **$250+$250** (10 с, +3%/−10% к 1-й ноге, не усреднение);
          * усреднение staged **$150 @ −7%** (≥3 мин после 1-й ноги сплита, только если drop в (−7%, −14%])
          * и **$150 @ −14%** (≥5 мин после первого усреднения).
          */
@@ -328,13 +328,13 @@ const PM2_APPS = [
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '250',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '250',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
@@ -362,8 +362,8 @@ const PM2_APPS = [
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy. */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
+        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy. 1.11.243: $3M → $2M. */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
@@ -743,7 +743,7 @@ const PM2_APPS = [
         /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
         /**
-         * Первый live-вход по mint: split 500+500, kill −7% от сигнала, без усреднения −7/−14;
+         * Первый live-вход по mint: split 250+250, kill −7% от сигнала, без усреднения −7/−14;
          * убыток → denylist; прибыльное закрытие → `live-oscar-mint-graduated.txt`.
          */
         LIVE_MINT_FIRST_PROBE_ENABLED: '1',

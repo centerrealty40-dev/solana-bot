@@ -8,6 +8,34 @@
 
 ---
 
+## [1.11.243] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.243`.
+
+### Tune: staged entry $250+$250, mcap floor $2M
+
+**Изменения в `ecosystem.config.cjs` (live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD` | $500 | **$250** |
+| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` | $500 | **$250** |
+| `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD` | $150 | $150 (без изменений) |
+| `PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD` | $150 | $150 (без изменений) |
+| `LIVE_OSCAR_FULL_NOTIONAL_USD` / `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` | $1300 | **$800** |
+| `PAPER_DISCOVERY_MIN_MARKET_CAP_USD` | $3M | **$2M** |
+
+Усреднение (−7% / −14%, $150+$150, cooldowns, kill −25%) **не менялось**.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.242 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+---
+
 ## [1.11.242] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.242`.
