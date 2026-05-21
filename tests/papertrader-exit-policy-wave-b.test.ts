@@ -117,7 +117,7 @@ describe('exit-policy-wave-b', () => {
       true,
     );
     expect(isWaveBExitPolicy(ot)).toBe(true);
-    expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.025);
+    expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.05);
     expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
       ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
     ]);
@@ -162,11 +162,11 @@ describe('exit-policy-wave-b', () => {
     expect(ot.liveWaveTrailLevelsTaken).toEqual([]);
   });
 
-  it('waveBSellFractionForStep uses 5% then 10% phases', () => {
-    expect(waveBSellFractionForStep(1)).toBe(0.05);
-    expect(waveBSellFractionForStep(3)).toBe(0.05);
-    expect(waveBSellFractionForStep(4)).toBe(0.1);
+  it('waveBSellFractionForStep is flat 10% per rung', () => {
+    expect(waveBSellFractionForStep(1)).toBe(0.1);
+    expect(waveBSellFractionForStep(3)).toBe(0.1);
     expect(waveBSellFractionForStep(20)).toBe(0.1);
+    expect(waveBSellFractionForStep(0)).toBe(0);
   });
 
   it('waveBTrailSellFractionForRemainder flushes full remainder at or below $100', () => {
@@ -255,21 +255,18 @@ describe('exit-policy-wave-b', () => {
     expect(ot.ladderUsedIndices.has(3)).toBe(false);
   });
 
-  it('wave B no-avg profile: silent at +2.5%/+5%, first sell 10% at +7.5%', () => {
+  it('wave B no-avg profile: 10% per +5% rung', () => {
     const ot = baseOt();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     expect(hasAveragingLeg(ot)).toBe(false);
     const eff = tpGridEffective(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
-    expect(eff.stepPnl).toBe(0.025);
-    expect(eff.sellFractionForStep(1)).toBe(0);
-    expect(eff.sellFractionForStep(2)).toBe(0);
-    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.1);
-    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.25);
-    expect(eff.sellFractionForStep(9)).toBeCloseTo(0.15);
-    expect(eff.sellFractionForStep(20)).toBeCloseTo(0.15);
+    expect(eff.stepPnl).toBe(0.05);
+    expect(eff.sellFractionForStep(1)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(2)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(20)).toBeCloseTo(0.1);
   });
 
-  it('wave B averaging profile: sells from +2.5% (5%/5%/5%/10%+)', () => {
+  it('wave B averaging profile: 10% per +2.5% rung', () => {
     const ot = baseOtWithAveraging();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     expect(hasAveragingLeg(ot)).toBe(true);
@@ -278,21 +275,23 @@ describe('exit-policy-wave-b', () => {
     for (let k = 1; k <= 6; k++) {
       remain *= 1 - eff.sellFractionForStep(k);
     }
-    expect(eff.sellFractionForStep(1)).toBeCloseTo(0.05);
-    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.05);
-    expect(eff.sellFractionForStep(4)).toBeCloseTo(0.1);
+    expect(eff.stepPnl).toBe(0.025);
+    expect(eff.sellFractionForStep(1)).toBeCloseTo(0.1);
+    expect(eff.sellFractionForStep(3)).toBeCloseTo(0.1);
     expect(eff.sellFractionForStep(6)).toBeCloseTo(0.1);
-    expect(remain).toBeCloseTo(0.625, 3);
+    expect(remain).toBeCloseTo(0.531441, 3);
   });
 
   it('tpGridEffective flips wave B fork at runtime when staged_avg appended (no restamp needed)', () => {
     const ot = baseOt();
     stampLiveOscarExitPolicyOnOpen(ot, cfg({ liveOscarExitPolicyWaveBEnabled: true }));
     const c = cfg({ liveOscarExitPolicyWaveBEnabled: true });
-    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBe(0);
+    expect(tpGridEffective(ot, c).stepPnl).toBe(0.05);
+    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBeCloseTo(0.1);
     ot.legs.push({ reason: 'staged_avg' } as OpenTrade['legs'][number]);
-    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBeCloseTo(0.05);
-    expect(tpGridEffective(ot, c).sellFractionForStep(3)).toBeCloseTo(0.05);
+    expect(tpGridEffective(ot, c).stepPnl).toBe(0.025);
+    expect(tpGridEffective(ot, c).sellFractionForStep(1)).toBeCloseTo(0.1);
+    expect(tpGridEffective(ot, c).sellFractionForStep(3)).toBeCloseTo(0.1);
   });
 
   it('refreshWaveBGridOverrides updates stamped overrides after averaging leg', () => {

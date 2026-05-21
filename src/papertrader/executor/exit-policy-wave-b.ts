@@ -17,26 +17,24 @@ export const LEGACY_LIVE_OSCAR_TP_GRID = {
 
 /**
  * Wave B v1 — averaging branch (≥1 `staged_avg`/`dca` leg).
- * Phase 1 — +2.5% / +5% / +7.5%: 5% of remainder each.
- * Phase 2 — +10% and above: 10% per rung (2.5% steps, unlimited).
+ * Each +2.5% rung → 10% of remainder (unlimited ladder).
  * Defensive trail (after +10% TP or peak): each −2.5% from peak anchor → 20% of remainder.
  * Breakeven full exit at ≤0% avg PnL only after TP ≥+7.5% taken. TP rungs above +2.5% reset after deep pullback.
  */
 export const WAVE_B_V1_TP_GRID = {
   gridStepPnl: 0.025,
-  gridSellFractionByStep: [0.05, 0.05, 0.05, 0.1],
+  gridSellFractionByStep: [0.1],
   gridFirstRungRetraceMinPnlPct: 0,
 } as const;
 
 /**
  * Wave B v1 — default branch (no `staged_avg`/`dca` legs yet, entry split via `scale_in`/`entry_split` ignored).
- * Phase 1 — +2.5% / +5%: silent (no sell), +7.5%: 10% of remainder.
- * Phase 2 — +10%…+20% each rung 25% of remainder, +22.5% 15%, beyond — 25% per 2.5% step (unlimited).
+ * Each +5% rung → 10% of remainder (unlimited ladder).
  * Same defensive trail / breakeven gating as averaging branch.
  */
 export const WAVE_B_V1_TP_GRID_NO_AVG = {
-  gridStepPnl: 0.025,
-  gridSellFractionByStep: [0, 0, 0.1, 0.25, 0.25, 0.25, 0.25, 0.25, 0.15],
+  gridStepPnl: 0.05,
+  gridSellFractionByStep: [0.1],
   gridFirstRungRetraceMinPnlPct: 0,
 } as const;
 
@@ -57,11 +55,9 @@ export function waveBTpGridProfileFor(ot: OpenTrade): {
   return hasAveragingLeg(ot) ? WAVE_B_V1_TP_GRID : WAVE_B_V1_TP_GRID_NO_AVG;
 }
 
-/** Sell fraction of remainder for averaging-branch TP grid step k (1-based). */
+/** Sell fraction of remainder for wave B TP grid step k (1-based) — flat 10% per rung. */
 export function waveBSellFractionForStep(kOneBased: number): number {
-  if (kOneBased >= 1 && kOneBased <= 3) return 0.05;
-  if (kOneBased >= 4) return 0.1;
-  return 0;
+  return kOneBased >= 1 ? 0.1 : 0;
 }
 
 /** Min TP rung taken to allow breakeven full exit (vs staged avg only below this). */
