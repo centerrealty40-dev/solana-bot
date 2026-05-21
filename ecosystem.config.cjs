@@ -501,7 +501,7 @@ const PM2_APPS = [
         /**
          * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
          *   ступень 1 (+5%)  → 10% остатка
-         *   ступень 2 (+10%) → 30% остатка
+         *   ступень 2 (+10%) → 20% остатка
          *   ступень 3 (+15%) → 50% остатка
          *   ступень 4 (+20%) → 70% остатка
          *   ступень 5+ (+25%, +30%, ...) → 70% остатка (последнее значение профиля
@@ -521,7 +521,7 @@ const PM2_APPS = [
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.10',
-        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.30,0.50,0.70,0.70',
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.50,0.70,0.70',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
