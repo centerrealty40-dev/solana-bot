@@ -8,6 +8,35 @@
 
 ---
 
+## [1.11.240] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.240`.
+
+### Fix: spike-watch — детекция на каноническом пуле, не skip проливов
+
+**Фон.** 1.11.239 отсекала «мёртвые» пулы фильтрами — это могло терять реальные проливы/пампы и выглядело как «задача решена skip'ом». Нужно **ловить** движения, а не молча отбрасывать.
+
+### Изменения
+
+**`src/scripts/market-spike-telegram-watch.ts`:**
+
+- **`SPIKE_ALERT_CANONICAL_POOL_BY_MAX_LIQ=1`** (default): pump/dump детектируется **только на пуле с max liq** по mint среди всех DEX-таблиц.
+- Ложный Goblin +95% на `CK71…` ($38K) больше не анализируется — вместо этого бары pumpswap ($553K).
+- **Реальные проливы и пампы** на ликвидном пуле проходят через прежний tier-каскад без доп. skip-фильтров.
+- Убраны skip-фильтры `MIN_LIQ_SHARE_OF_MINT_MAX` / `STALE_ZERO_VOL_JUMP_PCT` из пайплайна.
+- `primary_pair` refresh сохранён.
+
+**Env:** заменены `SPIKE_ALERT_MIN_LIQ_SHARE_*` / `STALE_ZERO_VOL_*` на `SPIKE_ALERT_CANONICAL_POOL_BY_MAX_LIQ`.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.239 -- src/scripts/market-spike-telegram-watch.ts ecosystem.config.cjs ecosystem.market-spike-watch.cjs scripts/spike-watch-pm2-entry.sh tests/market-spike-pool-quality.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm ci && pm2 reload ecosystem.config.cjs --only market-spike-telegram-watch --update-env
+```
+
+---
+
 ## [1.11.239] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.239`.

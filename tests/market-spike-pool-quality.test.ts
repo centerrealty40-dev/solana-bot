@@ -2,67 +2,57 @@ import { describe, it, expect, beforeAll } from 'vitest';
 
 beforeAll(() => {
   process.env.SPIKE_ALERT_SKIP_MAIN = '1';
-  process.env.SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX = '0.1';
-  process.env.SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT = '30';
+  process.env.SPIKE_ALERT_CANONICAL_POOL_BY_MAX_LIQ = '1';
   process.env.SPIKE_ALERT_TELEGRAM_BOT_TOKEN = '';
   process.env.SPIKE_ALERT_TELEGRAM_CHAT_ID = '';
 });
 
-describe('market-spike pool quality filters', () => {
-  it('isDeadPoolVsMintMaxLiq — Goblin-like dead meteora pool', async () => {
+function meta(mint: string, pair: string, liq: number) {
+  return {
+    base_mint: mint,
+    pair_address: pair,
+    px_now: 0.01,
+    ts_now: new Date(),
+    symbol: 'TEST',
+    token_name: 'Test',
+    holder_count: 5000,
+    liq_usd: liq,
+    token_fdv_usd: 5_000_000,
+  };
+}
+
+describe('canonical pool selection (max liq)', () => {
+  it('Goblin-like: picks pumpswap over dead meteora — dead pool never analyzed', async () => {
     const mod = await import('../src/scripts/market-spike-telegram-watch.js');
-    expect(mod.isDeadPoolVsMintMaxLiq(38_000, 553_000, 0.1)).toBe(true);
-    expect(mod.isDeadPoolVsMintMaxLiq(387_000, 553_000, 0.1)).toBe(false);
-    expect(mod.isDeadPoolVsMintMaxLiq(60_000, 553_000, 0.1)).toBe(false);
+    const map = mod.buildMintCanonicalPoolMap([
+      {
+        table: 'meteora_pair_snapshots',
+        rows: [meta('GoblinMint', 'CK71dead', 38_000)],
+      },
+      {
+        table: 'pumpswap_pair_snapshots',
+        rows: [meta('GoblinMint', 'LivePump', 553_000)],
+      },
+    ]);
+    const entry = map.get('GoblinMint');
+    expect(entry?.meta.pair_address).toBe('LivePump');
+    expect(entry?.table).toBe('pumpswap_pair_snapshots');
+    expect(entry?.liq).toBe(553_000);
   });
 
-  it('isDeadPoolVsMintMaxLiq — disabled when share=0', async () => {
+  it('real dump on best pool is still the detection source', async () => {
     const mod = await import('../src/scripts/market-spike-telegram-watch.js');
-    expect(mod.isDeadPoolVsMintMaxLiq(38_000, 553_000, 0)).toBe(false);
-  });
-
-  it('isStaleZeroVolPriceJump — anchor bar vol5m=0 and big jump', async () => {
-    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
-    const t0 = new Date('2026-05-21T06:08:00Z');
-    const t1 = new Date('2026-05-21T06:09:00Z');
-    const bars = [
-      { ts: t0, px: 0.007219, mcapUsd: 13_000_000, vol5m: 0 },
-      { ts: t1, px: 0.01411, mcapUsd: 13_500_000, vol5m: 1200 },
-    ];
-    const pick = {
-      pct: 95.46,
-      anchorPx: 0.007219,
-      pxNow: 0.01411,
-      anchorMcapUsd: 13_000_000,
-      nowMcapUsd: 13_500_000,
-      anchorTs: t0,
-      tsNew: t1,
-      windowLabel: 'test',
-      signalKind: 'consecutive' as const,
-    };
-    expect(mod.isStaleZeroVolPriceJump(bars, pick, 30)).toBe(true);
-  });
-
-  it('isStaleZeroVolPriceJump — anchor had volume → pass', async () => {
-    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
-    const t0 = new Date('2026-05-21T06:08:00Z');
-    const t1 = new Date('2026-05-21T06:09:00Z');
-    const bars = [
-      { ts: t0, px: 0.007219, mcapUsd: 13_000_000, vol5m: 5000 },
-      { ts: t1, px: 0.01411, mcapUsd: 13_500_000, vol5m: 1200 },
-    ];
-    const pick = {
-      pct: 95.46,
-      anchorPx: 0.007219,
-      pxNow: 0.01411,
-      anchorMcapUsd: 13_000_000,
-      nowMcapUsd: 13_500_000,
-      anchorTs: t0,
-      tsNew: t1,
-      windowLabel: 'test',
-      signalKind: 'consecutive' as const,
-    };
-    expect(mod.isStaleZeroVolPriceJump(bars, pick, 30)).toBe(false);
+    const map = mod.buildMintCanonicalPoolMap([
+      {
+        table: 'raydium_pair_snapshots',
+        rows: [meta('DumpMint', 'RayPair', 400_000)],
+      },
+      {
+        table: 'meteora_pair_snapshots',
+        rows: [meta('DumpMint', 'MetPair', 120_000)],
+      },
+    ]);
+    expect(map.get('DumpMint')?.meta.pair_address).toBe('RayPair');
   });
 
   it('buildMintMaxLiqFromLatestRows — max across pairs', async () => {

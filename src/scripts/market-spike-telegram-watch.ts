@@ -322,22 +322,11 @@ const GLITCH_NEXT_BAR_RETRACE_MIN = Math.max(
 );
 
 /**
- * Пул «мёртвый» относительно других пулов того же mint: liq < MIN_LIQ_SHARE_OF_MINT_MAX × max liq по mint.
- * Отсекает ложные +95% на CK71… когда pumpswap/meteora держат сотни k USD.
+ * Канонический пул mint = max liquidity_usd среди всех свежих пар всех DEX-таблиц.
+ * Детекция pump/dump идёт только по нему — ложные скачки на мёртвых пулах не анализируются,
+ * реальные проливы/пампы на ликвидном пуле не теряются.
  */
-const MIN_LIQ_SHARE_OF_MINT_MAX = Math.max(
-  0,
-  Math.min(1, envNum('SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX', 0.1)),
-);
-
-/**
- * Якорный бар с vol_5m=0 и |Δ%| ≥ порога — типичный stale price_usd на заброшенном пуле.
- * 0 = выкл.
- */
-const STALE_ZERO_VOL_JUMP_PCT = Math.max(
-  0,
-  Math.min(500, envNum('SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT', 30)),
-);
+const CANONICAL_POOL_BY_MAX_LIQ = envBool('SPIKE_ALERT_CANONICAL_POOL_BY_MAX_LIQ', true);
 
 /** Обновлять tokens.primary_pair / liquidity_usd на пул с max liq среди свежих снимков (раз за проход). */
 const PRIMARY_PAIR_REFRESH_ENABLED = envBool('SPIKE_ALERT_PRIMARY_PAIR_REFRESH', true);
@@ -567,11 +556,11 @@ function isPickFreshEnough(pick: SpikePick, nowMs: number): boolean {
   return ageMs >= 0 && ageMs <= MAX_NEWER_BAR_AGE_MIN * 60_000;
 }
 
-/** Пул с liq существенно ниже лучшего пула того же mint — не слать алерт с этого pair. */
+/** Пул с liq существенно ниже лучшего пула того же mint (legacy helper для diagnose). */
 export function isDeadPoolVsMintMaxLiq(
   pairLiqUsd: number | null,
   mintMaxLiqUsd: number | null,
-  minShareOfMax: number = MIN_LIQ_SHARE_OF_MINT_MAX,
+  minShareOfMax = 0.1,
 ): boolean {
   if (minShareOfMax <= 0) return false;
   const pairLiq = pairLiqUsd ?? 0;
@@ -580,26 +569,28 @@ export function isDeadPoolVsMintMaxLiq(
   return pairLiq < maxLiq * minShareOfMax;
 }
 
-/** Якорный бар без объёма 5m и резкий скачок — stale котировка на заброшенном пуле. */
-export function isStaleZeroVolPriceJump(
-  bars: Bar[],
-  pick: SpikePick,
-  thresholdPct: number = STALE_ZERO_VOL_JUMP_PCT,
-): boolean {
-  if (thresholdPct <= 0) return false;
-  if (Math.abs(pick.pct) < thresholdPct) return false;
-  const anchorMs = pick.anchorTs.getTime();
-  let anchorBar: Bar | null = null;
-  for (const b of bars) {
-    if (b.ts.getTime() === anchorMs) {
-      anchorBar = b;
-      break;
+export type CanonicalPoolEntry = {
+  table: DexTable;
+  meta: LatestMeta;
+  liq: number;
+};
+
+/** Канонический пул mint — max liq среди всех пар всех таблиц (источник цены для pump/dump). */
+export function buildMintCanonicalPoolMap(
+  tableLatest: Array<{ table: DexTable; rows: LatestMeta[] }>,
+): Map<string, CanonicalPoolEntry> {
+  const out = new Map<string, CanonicalPoolEntry>();
+  for (const { table, rows } of tableLatest) {
+    for (const meta of rows) {
+      const liq = meta.liq_usd ?? 0;
+      if (!(liq > 0)) continue;
+      const prev = out.get(meta.base_mint);
+      if (!prev || liq > prev.liq) {
+        out.set(meta.base_mint, { table, meta, liq });
+      }
     }
   }
-  if (!anchorBar) return false;
-  const vol = anchorBar.vol5m;
-  if (vol == null) return false;
-  return vol <= 0;
+  return out;
 }
 
 export function buildMintMaxLiqFromLatestRows(
@@ -1601,32 +1592,48 @@ async function runOnePass(
   const merged = new Map<string, AlertRow>();
   // tier-MISS: записываем для retro-анализа (только если LOG_MISS_BY_FILTER=1).
   const missEvents: SpikeEventRecord[] = [];
-  const mintMaxLiq = new Map<string, number>();
-  const mintBestPool = new Map<string, MintBestPool>();
   const tableLatest: { table: DexTable; rows: LatestMeta[] }[] = [];
 
   for (const table of SNAPSHOT_TABLES) {
     try {
       const latestRows = await fetchLatestOnly(table);
       tableLatest.push({ table, rows: latestRows });
-      for (const meta of latestRows) {
-        const liq = meta.liq_usd ?? 0;
-        if (!(liq > 0)) continue;
-        const prev = mintMaxLiq.get(meta.base_mint) ?? 0;
-        if (liq > prev) {
-          mintMaxLiq.set(meta.base_mint, liq);
-          mintBestPool.set(meta.base_mint, { pair: meta.pair_address, liq });
-        }
-      }
     } catch (e) {
       console.warn(`[market-spike-telegram-watch] ${table} latest query failed`, String(e));
     }
   }
 
-  for (const { table, rows: latestRows } of tableLatest) {
+  const mintCanonical = CANONICAL_POOL_BY_MAX_LIQ
+    ? buildMintCanonicalPoolMap(tableLatest)
+    : null;
+  const mintBestPool = new Map<string, MintBestPool>();
+  const rowsByTable = new Map<DexTable, LatestMeta[]>();
+
+  if (mintCanonical) {
+    for (const [mint, entry] of mintCanonical) {
+      mintBestPool.set(mint, { pair: entry.meta.pair_address, liq: entry.liq });
+      const arr = rowsByTable.get(entry.table) ?? [];
+      arr.push(entry.meta);
+      rowsByTable.set(entry.table, arr);
+    }
+  } else {
+    for (const { table, rows } of tableLatest) {
+      rowsByTable.set(table, rows);
+      for (const meta of rows) {
+        const liq = meta.liq_usd ?? 0;
+        if (!(liq > 0)) continue;
+        const prev = mintBestPool.get(meta.base_mint);
+        if (!prev || liq > prev.liq) {
+          mintBestPool.set(meta.base_mint, { pair: meta.pair_address, liq });
+        }
+      }
+    }
+  }
+
+  for (const [table, analyzeRows] of rowsByTable) {
     let barsByMintPair: Map<string, Bar[]>;
     try {
-      barsByMintPair = await fetchBarsBatch(table, latestRows);
+      barsByMintPair = await fetchBarsBatch(table, analyzeRows);
     } catch (e) {
       console.warn(`[market-spike-telegram-watch] ${table} bars query failed`, String(e));
       continue;
@@ -1634,18 +1641,13 @@ async function runOnePass(
 
     const dex = dexLabel(table);
     const nowMs = Date.now();
-    for (const meta of latestRows) {
+    for (const meta of analyzeRows) {
       if (isSpikeTelegramBlacklisted(meta.base_mint, meta.symbol, meta.token_name)) continue;
 
-      const mintMax = mintMaxLiq.get(meta.base_mint) ?? null;
-      if (isDeadPoolVsMintMaxLiq(meta.liq_usd, mintMax)) continue;
-
-      // Multi-pair: bars берём по конкретной паре (mint+pair), а не по mint целиком.
       const bars = barsByMintPair.get(barsMapKey(meta.base_mint, meta.pair_address)) ?? [];
       const pick = analyzeBarsForMint(bars);
       if (!pick) continue;
       if (!isPickFreshEnough(pick, nowMs)) continue;
-      if (isStaleZeroVolPriceJump(bars, pick)) continue;
       if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
       if (!isPickPlausibleLiqVsMcap(meta, pick)) continue;
       if (!isPickPriceMcapConsistent(pick)) continue;
@@ -1724,7 +1726,7 @@ async function runOnePass(
         nowMcapUsd: pick.nowMcapUsd,
         refMcapUsd: refMcap,
         tierName,
-        best_pool_liq_usd: mintMax ?? meta.liq_usd,
+        best_pool_liq_usd: meta.liq_usd,
       };
 
       const prev = merged.get(meta.base_mint);
@@ -1907,7 +1909,7 @@ async function runOnePass(
     : ' esc=off';
   const auditLog = AUDIT_DB_ENABLED ? ` audit=db(${auditTableReady})` : ' audit=stdout';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sentFirst} updates=${sentUpdate} skipped=${skipped}${tieredLog}${escLog} mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m deadPoolShareMin=${MIN_LIQ_SHARE_OF_MINT_MAX} staleZeroVolJump>=${STALE_ZERO_VOL_JUMP_PCT}% primaryPairRefresh=${PRIMARY_PAIR_REFRESH_ENABLED ? 'on' : 'off'} lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}${auditLog}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sentFirst} updates=${sentUpdate} skipped=${skipped}${tieredLog}${escLog} mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m canonicalPool=${CANONICAL_POOL_BY_MAX_LIQ ? 'max_liq' : 'all_pairs'} primaryPairRefresh=${PRIMARY_PAIR_REFRESH_ENABLED ? 'on' : 'off'} lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}${auditLog}`,
   );
 }
 
@@ -2053,12 +2055,11 @@ async function runDiagnoseMint(mint: string, atIso: string | null): Promise<void
       if (!pick) continue;
 
       const fresh = isPickFreshEnough(pick, nowMs);
-      const staleJump = isStaleZeroVolPriceJump(rawBars, pick);
       const liqPl = isPickPlausibleForLiquidity(pick, meta.liq_usd);
       const liqMc = isPickPlausibleLiqVsMcap(meta, pick);
       const mcDiv = isPickPriceMcapConsistent(pick);
       console.log(
-        `  filters: fresh=${fresh} staleZeroVolJump=${staleJump} lowLiqPlausible=${liqPl} liqMcapSanity=${liqMc} mcPriceDivOk=${mcDiv}`,
+        `  filters: fresh=${fresh} lowLiqPlausible=${liqPl} liqMcapSanity=${liqMc} mcPriceDivOk=${mcDiv}`,
       );
 
       const refMcap = referenceMcapUsd(meta, pick);
