@@ -670,6 +670,24 @@ const PM2_APPS = [
         LIVE_BUY_MAX_CHASE_PCT: '3',
 
         /**
+         * 1.11.235 — Telegram heartbeat: слать `[HEALTH][live_oscar_pulse]` сообщения
+         * только когда есть отклонения. Пользователь жаловался: "не надо мне присылать,
+         * нужно только сообщения, когда есть проблемы".
+         *
+         * Что считается отклонением (триггерит pulse):
+         *   - `stats.errors > 0` (runtime errors в дискавери/трекере)
+         *   - `consec_sim_fail > 0` (streak неудачных симуляций — QN/Jupiter проблема)
+         *   - `snapshot stale` (PG-снимки отстают от now() > порога)
+         *
+         * `snapshot_stale` ALERT — отправляется ВСЕГДА отдельным каналом
+         * (он не зависит от этого флага, это диагностика реальной PG-проблемы).
+         *
+         * `0` (или не задано) — старое поведение, слать pulse каждые ~10 минут.
+         * `1` — silent при нормальной работе.
+         */
+        LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT: '1',
+
+        /**
          * 1.11.231 — TTL для кэша `getTokenAccountsByOwner` (баланс SPL-кошелька).
          * После каждого confirmed buy/sell кэш явно инвалидируется. Между ними он
          * безопасно живёт 15s — устраняет 5-10× избыточных `getTokenAccountsByOwner` calls/min.

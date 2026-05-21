@@ -8,6 +8,47 @@
 
 ---
 
+## [1.11.235] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.235`.
+
+### Fix: silent health-pulse в Telegram при нормальной работе
+
+**Фон.** Пользователь сообщил 21 мая 09:19 МСК:
+
+> «`[HEALTH][live_oscar_pulse]` uptime=7227s open=2 closed=24 mode=live strat=live-oscar ... errors=0 opened_total=0 — вот такие сообщения не надо мне присылать. Мне нужно прислать только сообщения, когда есть проблемы.»
+
+Health-pulse приходил каждые ~10 минут с полной выкладкой счётчиков, даже когда никаких отклонений нет. Это шум в Telegram.
+
+### Изменения
+
+**`src/live/main.ts`:**
+
+- Добавлен новый env-флаг `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT`.
+- `snapshot_stale` ALERT теперь шлётся в любом случае (вынесен ДО проверки на skip pulse).
+- При флаге `=1`, pulse шлётся **только** когда хотя бы одно из:
+  - `stats.errors > 0` (runtime errors в дискавери/трекере)
+  - `simStreak > 0` (consec_sim_fail streak — Jupiter/QN деградация)
+  - `snapshot stale` (PG-снимки отстают)
+- В остальных случаях pulse **silent**.
+- Старый kill-switch `LIVE_TELEGRAM_HEARTBEAT=0` сохраняет поведение (полностью выключить heartbeat вместе с `snapshot_stale` alert'ом — не рекомендуется).
+
+**`ecosystem.config.cjs`:**
+
+```javascript
+LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT: '1',
+```
+
+### Откат
+
+```bash
+env LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=0
+pm2 restart ecosystem.config.cjs --only live-oscar --update-env
+# pulse каждый interval вернётся
+```
+
+---
+
 ## [1.11.234] — 2026-05-20
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.234`.

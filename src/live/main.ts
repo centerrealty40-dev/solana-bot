@@ -574,6 +574,18 @@ export async function main(): Promise<void> {
       tickLiveBtcGateTelegram(liveCfg);
 
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
+      /**
+       * 1.11.235 — отдельный switch: слать health-pulse в Telegram **только когда
+       * есть отклонения** (`stats.errors > 0` / `simStreak > 0` / `snapshot stale`).
+       * При нормальном состоянии — silent. `snapshot_stale` ALERT отправляется
+       * независимо от этого флага (это диагностика реальной PG-проблемы).
+       *
+       * Включается env `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=1`.
+       * Полностью отключить heartbeat (включая alerts) можно как раньше:
+       * `LIVE_TELEGRAM_HEARTBEAT=0`.
+       */
+      const tgPulseOnlyOnAlert =
+        process.env.LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT?.trim() === '1';
       if (!tgHeartbeatOff) {
         void (async () => {
           if (liveCfg.executionMode === 'live') {
@@ -592,10 +604,12 @@ export async function main(): Promise<void> {
         const legacyTg = process.env.LIVE_HEARTBEAT_LEGACY_DISC_TELEGRAM?.trim() === '1';
         const snapMaxSec = snapshotMaxAgeSecFromEnv();
         let snapPulseLine = 'snap_worst_age_min=?';
+        let snapStale = false;
         try {
           const snapRows = await fetchDexSnapshotFreshness(snapMaxSec);
           snapPulseLine = formatSnapshotFreshnessPulseLine(snapRows);
-          if (snapshotsAnyStale(snapRows, snapMaxSec)) {
+          snapStale = snapshotsAnyStale(snapRows, snapMaxSec);
+          if (snapStale) {
             void sendTagged('ALERT', 'snapshot_stale', buildSnapshotStaleAlertBody(snapRows, snapMaxSec), {
               skipQuietHours: true,
             }).catch((e) => log.warn({ err: String(e) }, 'snapshot stale alert telegram failed'));
@@ -603,6 +617,15 @@ export async function main(): Promise<void> {
         } catch (e) {
           snapPulseLine = 'snap_worst_age_min=err';
           log.warn({ err: String(e) }, 'snapshot freshness check failed');
+        }
+
+        /**
+         * 1.11.235 — при `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=1` отправляем pulse
+         * только если что-то ненормально. Иначе тихо выходим (alert уже выше отправлен).
+         */
+        const hasIncident = stats.errors > 0 || simStreak > 0 || snapStale;
+        if (tgPulseOnlyOnAlert && !hasIncident) {
+          return;
         }
         const baseLines = [
           `uptime=${Math.floor(process.uptime())}s`,
