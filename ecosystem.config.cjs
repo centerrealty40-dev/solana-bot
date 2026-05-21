@@ -372,8 +372,11 @@ const PM2_APPS = [
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        /** Live Oscar only: мин. глубина просадки цены от high выбранного окна (OR 120/360/720 мин). Значение −20 в env = −20%. */
-        PAPER_DIP_MIN_DROP_PCT: '-20',
+        /** Live Oscar only: мин. глубина просадки цены от high выбранного окна (OR 120/360/720 мин). Значение −16 в env = −16%.
+         *  1.11.242: смягчили с −20% до −16% по итогам 14d PnL grid backtest:
+         *  −20% → −16% даёт +41% больше сделок (2405 → 3382), +39% net PnL ($13 266 → $18 508 за 14d, $15/trade),
+         *  WR практически не меняется (83% → 82%). См. `docs/strategy/refactor/DIP_CANON_GRID_14D.md`. */
+        PAPER_DIP_MIN_DROP_PCT: '-16',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         PAPER_DIP_MIN_AGE_MIN: '0',

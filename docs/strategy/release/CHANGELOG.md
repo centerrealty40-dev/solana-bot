@@ -8,6 +8,84 @@
 
 ---
 
+## [1.11.242] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.242`.
+
+### Tune: Live Oscar dip canon `−20%` → `−16%` (×1.4 PnL по 14d backtest)
+
+**Фон.** 14-дневный PnL grid backtest (`docs/strategy/refactor/DIP_CANON_GRID_14D.md`):
+прогон по сетке `dip%∈{16,18,20}` × `vol1h$∈{15k,25k,36k}` с **реальным prod env**
+(Wave B v1, TP-grid, killstop −25%, trail ladder_retrace, holders off).
+337 уникальных mint'ов, 1134 пар, 4.48M снапшотов, симуляция через `simulateLifecycle`.
+
+**Открытие**: текущая prod-конфигурация (`−20%` + `$36k`) — **самая консервативная
+из 9 квадрантов**, даёт всего 2405 сделок и net $13 266 за 14d. Смягчение порога
+дипа до `−16%` при том же `vol1h $36k` даёт **3382 сделок и net $18 508**
+(+41% trades, +39% PnL, ROI 36.77 % → 36.48 % — практически не меняется,
+WR 83 % → 82 %).
+
+**Параллельно проверили killstop sweep** (`docs/strategy/refactor/KILLSTOP_TRAIL_SWEEP_7D.md`):
+текущий `−25%` близок к оптимуму, расширение до `−30%` даёт +$120/неделю — не значимо.
+**Trail в режиме `ladder_retrace` не крутится** — `PAPER_TRAIL_DROP` не используется.
+В этом коммите killstop/trail **не трогаем**.
+
+### Изменения
+
+**`ecosystem.config.cjs` (один параметр):**
+
+```diff
+- PAPER_DIP_MIN_DROP_PCT: '-20',
++ PAPER_DIP_MIN_DROP_PCT: '-16',
+```
+
+**`docs/strategy/release/VERSION`**: `1.11.241` → `1.11.242`.
+
+**`docs/strategy/refactor/DIP_CANON_GRID_14D.md`** + `KILLSTOP_TRAIL_SWEEP_7D.md` —
+полные таблицы и методология бэктестов.
+
+### Ожидаемый эффект на проде (по 14d backtest, $15/trade)
+
+| Метрика | Текущая prod (−20%) | После (−16%) | Δ |
+|---|---|---|---|
+| Сделок | 2 405 | 3 382 | +41% |
+| Net PnL | $13 266 | $18 508 | +39% |
+| ROI % | 36.77% | 36.48% | плоско |
+| WR | 83% | 82% | −1 п.п. (в шуме) |
+| TIMEOUT/TRAIL | 368/1840 | 611/2537 | те же пропорции |
+
+### Контекст: 6 «защитных фильтров» практически не режут
+
+В новой телеметрии `live_discovery_eval` (1.11.237) видно: за 24h из 44 452 случаев
+`dip_not_deep_enough>-20%` recovery_veto / local_high / Policy A+ / volume_sybil
+суммарно режут ~200 кандидатов (≈0.5%). То есть **главное узкое горлышко именно
+в `-20%` пороге дипа, а не в protector'ах**. Их крутить смысла нет.
+
+### Caveats
+
+- Costs (slippage 1–3% + priority fee) не моделировались — реальный ROI после
+  costs снизится на 5–10 п.п., но **относительный ranking ячеек устойчив**.
+- Backtest показывает 0 KILLSTOP exits против 45 в реальном журнале за 5d —
+  расхождение simulator'а, не блокер для решения.
+- Окно 14 дней — короткое. Через 7-14 дней после деплоя — ре-валидация на
+  свежих данных + сравнение реального журнала против baseline.
+
+### Откат
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git checkout sa-alpha-1.11.241 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md && pm2 reload ecosystem.config.cjs --only live-oscar --update-env'"
+```
+
+или одной правкой обратно:
+
+```bash
+# в ecosystem.config.cjs:
+# PAPER_DIP_MIN_DROP_PCT: '-16'  →  '-20'
+# далее: pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+---
+
 ## [1.11.241] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.241`.
