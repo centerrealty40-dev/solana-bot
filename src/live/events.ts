@@ -283,6 +283,28 @@ export const LiveDiscoveryEvalSchema = z.object({
   ageMin: z.number().finite().optional(),
   reasons: z.array(z.string().max(400)).max(24),
   entryPath: z.string().max(120).optional(),
+  /**
+   * Numeric telemetry pulled from `EvalDecision.features` (1.11.234 — telemetry-A).
+   * Lets retro tools ("how close to dip threshold") work without re-querying PG.
+   * All optional: legacy rows and writers without features keep working.
+   */
+  priceUsd: z.number().finite().nullable().optional(),
+  liqUsd: z.number().finite().nullable().optional(),
+  marketCapUsd: z.number().finite().nullable().optional(),
+  vol1hUsd: z.number().finite().nullable().optional(),
+  vol5mUsd: z.number().finite().nullable().optional(),
+  buySellRatio5m: z.number().finite().nullable().optional(),
+  /** Final dipPct of the window that passed; null when no window passed. */
+  dipPct: z.number().finite().nullable().optional(),
+  dipLookbackMin: z.number().finite().nullable().optional(),
+  /** Per-window dip% snapshot (e.g. {"120": -5.36, "360": -18.43, "720": -18.43}). Always present when ctx existed. */
+  dipPctByWindow: z.record(z.string(), z.number().finite()).optional(),
+  /** Min distance from local-high across configured windows (closest-to-high in pct, e.g. -0.5 means 0.5% below). */
+  localHighDistMinPct: z.number().finite().nullable().optional(),
+  /** Policy A+ pre-filter metrics, when computed. */
+  priceChange30mPct: z.number().finite().nullable().optional(),
+  priceChange1hPct: z.number().finite().nullable().optional(),
+  bounceFromMin30mPct: z.number().finite().nullable().optional(),
 });
 
 /** Mint on deep-audit list hit `PAPER_DISCOVERY_REEVAL_SEC` throttle before eval. */

@@ -171,6 +171,7 @@ function buildFeatures(
   cfg: PaperTraderConfig,
   recoveryVeto: RecoveryVetoResult | undefined,
   localHighVeto: LocalHighVetoResult | undefined,
+  perWindowDipPct: Record<number, number> | undefined,
 ): SnapshotFeatures {
   const base: SnapshotFeatures = {
     price_usd: +Number(row.price_usd || 0).toFixed(8),
@@ -191,6 +192,9 @@ function buildFeatures(
         ? +Number(row.market_cap_usd).toFixed(2)
         : null,
   };
+  if (perWindowDipPct && Object.keys(perWindowDipPct).length > 0) {
+    base.dip_pct_by_window = perWindowDipPct;
+  }
   if (cfg.dipRecoveryVetoEnabled && recoveryVeto) {
     base.recovery_veto = {
       threshold_pct: cfg.dipRecoveryVetoMaxBouncePct,
@@ -660,6 +664,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       cfg,
       recoveryVeto,
       localHighVeto,
+      dipEval.perWindowDipPct,
     );
     /**
      * 1.11.167: даже если Policy A+ выключен или вход прошёл — всё равно прикрепляем

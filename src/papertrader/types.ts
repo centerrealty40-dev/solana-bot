@@ -486,6 +486,12 @@ export interface SnapshotFeatures {
   impulse_pct: number | null;
   /** Lookback window (minutes) that satisfied the dip OR-gate; null if eval failed or legacy rows. */
   dip_lookback_min: number | null;
+  /**
+   * Per-window dip% (last_price/high - 1) for every configured lookback window with ctx data.
+   * Always populated when DipContext exists, regardless of pass/fail. Empty record if no PG ctx.
+   * Use to see "how far we were from −20% threshold" in retro telemetry.
+   */
+  dip_pct_by_window?: Record<number, number>;
   /** Pool-reported mcap (or FDV coalesced in SQL) at discovery row — stamped into jsonl for dashboards. */
   market_cap_usd: number | null;
   recovery_veto?: {

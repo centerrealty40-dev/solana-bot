@@ -84,6 +84,12 @@ export interface DipEvalResult {
   impulsePct: number | null;
   /** Window (minutes) whose high/low satisfied the dip gate; null if none passed. */
   dipLookbackUsedMin: number | null;
+  /**
+   * Per-window dip% (last_price/high - 1) for every configured window where ctx existed.
+   * Always populated regardless of pass/fail — for retro telemetry: "how close were we to threshold".
+   * Empty object if no ctx at all.
+   */
+  perWindowDipPct: Record<number, number>;
 }
 
 /** Single-window dip math (impulse = range within that same window). */
@@ -91,7 +97,7 @@ export function evaluateDipOneWindow(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: DipContext | null,
-): Omit<DipEvalResult, 'dipLookbackUsedMin'> {
+): Omit<DipEvalResult, 'dipLookbackUsedMin' | 'perWindowDipPct'> {
   const reasons: string[] = [];
   if ((row.token_age_min ?? 0) < cfg.dipMinAgeMin) reasons.push(`dip_age<${cfg.dipMinAgeMin}m`);
   if (!ctx || !(ctx.high_px > 0)) {
@@ -120,18 +126,22 @@ export function evaluateDip(
       dipPct: null,
       impulsePct: null,
       dipLookbackUsedMin: null,
+      perWindowDipPct: {},
     };
   }
   const failHints: string[] = [];
+  const perWindowDipPct: Record<number, number> = {};
   for (const w of cfg.dipLookbackWindowsMin) {
     const ctx = ctxByWindow.get(w);
     const part = evaluateDipOneWindow(cfg, row, ctx);
+    if (part.dipPct !== null) perWindowDipPct[w] = +part.dipPct.toFixed(2);
     if (part.reasons.length === 0) {
       return {
         reasons: [],
         dipPct: part.dipPct,
         impulsePct: part.impulsePct,
         dipLookbackUsedMin: w,
+        perWindowDipPct,
       };
     }
     failHints.push(`${w}m:${part.reasons[0]}`);
@@ -141,6 +151,7 @@ export function evaluateDip(
     dipPct: null,
     impulsePct: null,
     dipLookbackUsedMin: null,
+    perWindowDipPct,
   };
 }
 
