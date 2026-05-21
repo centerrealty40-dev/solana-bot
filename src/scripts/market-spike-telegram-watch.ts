@@ -321,6 +321,27 @@ const GLITCH_NEXT_BAR_RETRACE_MIN = Math.max(
   Math.min(1, envNum('SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN', 0.55)),
 );
 
+/**
+ * Пул «мёртвый» относительно других пулов того же mint: liq < MIN_LIQ_SHARE_OF_MINT_MAX × max liq по mint.
+ * Отсекает ложные +95% на CK71… когда pumpswap/meteora держат сотни k USD.
+ */
+const MIN_LIQ_SHARE_OF_MINT_MAX = Math.max(
+  0,
+  Math.min(1, envNum('SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX', 0.1)),
+);
+
+/**
+ * Якорный бар с vol_5m=0 и |Δ%| ≥ порога — типичный stale price_usd на заброшенном пуле.
+ * 0 = выкл.
+ */
+const STALE_ZERO_VOL_JUMP_PCT = Math.max(
+  0,
+  Math.min(500, envNum('SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT', 30)),
+);
+
+/** Обновлять tokens.primary_pair / liquidity_usd на пул с max liq среди свежих снимков (раз за проход). */
+const PRIMARY_PAIR_REFRESH_ENABLED = envBool('SPIKE_ALERT_PRIMARY_PAIR_REFRESH', true);
+
 /** Несостыковка liq_usd «latest» vs ref market cap/fdv из баров/tokens — типичный ложный пролив. */
 const LIQ_MCAP_SANITY_ENABLED = envBool('SPIKE_ALERT_LIQ_MCAP_SANITY', true);
 /** Ниже этого ref (USD) порог liq/mcap не применяем (тонкий рынок / неполные данные). */
@@ -362,7 +383,7 @@ type LatestMeta = {
   token_fdv_usd: number | null;
 };
 
-type Bar = { ts: Date; px: number; mcapUsd: number | null };
+type Bar = { ts: Date; px: number; mcapUsd: number | null; vol5m: number | null };
 
 type SpikeSignalKind = 'consecutive' | 'rolling';
 
@@ -468,7 +489,8 @@ INNER JOIN tokens t ON t.mint = l.base_mint`;
 function buildBarsQuery(table: DexTable, mintPairTuplesSql: string): string {
   return `
 SELECT base_mint::text, pair_address::text, ts, price_usd::double precision AS price_usd,
-  COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
+  COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd,
+  COALESCE(volume_5m, 0)::double precision AS vol_5m
 FROM ${table}
 WHERE (base_mint, pair_address) IN (${mintPairTuplesSql})
   AND ts > now() - (${SCAN_MINUTES} * interval '1 minute')
@@ -543,6 +565,54 @@ export function mcapChangePct(anchorMcapUsd: number | null, nowMcapUsd: number |
 function isPickFreshEnough(pick: SpikePick, nowMs: number): boolean {
   const ageMs = nowMs - pick.tsNew.getTime();
   return ageMs >= 0 && ageMs <= MAX_NEWER_BAR_AGE_MIN * 60_000;
+}
+
+/** Пул с liq существенно ниже лучшего пула того же mint — не слать алерт с этого pair. */
+export function isDeadPoolVsMintMaxLiq(
+  pairLiqUsd: number | null,
+  mintMaxLiqUsd: number | null,
+  minShareOfMax: number = MIN_LIQ_SHARE_OF_MINT_MAX,
+): boolean {
+  if (minShareOfMax <= 0) return false;
+  const pairLiq = pairLiqUsd ?? 0;
+  const maxLiq = mintMaxLiqUsd ?? 0;
+  if (!(maxLiq > 0) || !(pairLiq > 0)) return false;
+  return pairLiq < maxLiq * minShareOfMax;
+}
+
+/** Якорный бар без объёма 5m и резкий скачок — stale котировка на заброшенном пуле. */
+export function isStaleZeroVolPriceJump(
+  bars: Bar[],
+  pick: SpikePick,
+  thresholdPct: number = STALE_ZERO_VOL_JUMP_PCT,
+): boolean {
+  if (thresholdPct <= 0) return false;
+  if (Math.abs(pick.pct) < thresholdPct) return false;
+  const anchorMs = pick.anchorTs.getTime();
+  let anchorBar: Bar | null = null;
+  for (const b of bars) {
+    if (b.ts.getTime() === anchorMs) {
+      anchorBar = b;
+      break;
+    }
+  }
+  if (!anchorBar) return false;
+  const vol = anchorBar.vol5m;
+  if (vol == null) return false;
+  return vol <= 0;
+}
+
+export function buildMintMaxLiqFromLatestRows(
+  rows: Array<{ base_mint: string; liq_usd: number | null }>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of rows) {
+    const liq = row.liq_usd ?? 0;
+    if (!(liq > 0)) continue;
+    const prev = out.get(row.base_mint) ?? 0;
+    if (liq > prev) out.set(row.base_mint, liq);
+  }
+  return out;
 }
 
 /** Отсечь подозрительно большие % при очень маленькой ликвидности в снимке pair. */
@@ -819,6 +889,8 @@ type AlertRow = LatestMeta & {
   anchorTs: Date | string;
   anchorMcapUsd: number | null;
   nowMcapUsd: number | null;
+  /** Max liq среди всех свежих пулов mint (для текста алерта, не triggering pair). */
+  best_pool_liq_usd?: number | null;
   /** Заполняются перед фильтрами эскалации/тайра — для аудита и сообщения. */
   refMcapUsd?: number;
   tierName?: string;
@@ -901,7 +973,8 @@ function buildAlertHtml(row: AlertRow): string {
     `\n${calcBlock}\n` +
     `\n<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n` +
     `holders: ${row.holder_count ?? '?'}`;
-  if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  const displayLiq = row.best_pool_liq_usd ?? row.liq_usd;
+  if (displayLiq != null && displayLiq > 0) body += `\nliq ~${Math.round(displayLiq)} USD`;
   return body;
 }
 
@@ -928,7 +1001,8 @@ function buildAlertPlain(row: AlertRow): string {
     `\nGMGN: ${gmgnSolTokenUrl(mint)}\n` +
     `${mint}\n` +
     `holders: ${row.holder_count ?? '?'}`;
-  if (row.liq_usd != null && row.liq_usd > 0) body += `\nliq ~${Math.round(row.liq_usd)} USD`;
+  const displayLiq = row.best_pool_liq_usd ?? row.liq_usd;
+  if (displayLiq != null && displayLiq > 0) body += `\nliq ~${Math.round(displayLiq)} USD`;
   return body;
 }
 
@@ -975,9 +1049,12 @@ async function fetchBarsBatch(
     if (!mint || !pair || !(px > 0)) continue;
     const ts = parseTs(row.ts as Date | string);
     const mcapUsd = parseMcapUsd(row);
+    const volRaw = row.vol_5m;
+    const volNum = volRaw != null ? Number(volRaw) : NaN;
+    const vol5m = Number.isFinite(volNum) ? volNum : null;
     const key = barsMapKey(mint, pair);
     const arr = map.get(key) ?? [];
-    arr.push({ ts, px, mcapUsd });
+    arr.push({ ts, px, mcapUsd, vol5m });
     map.set(key, arr);
   }
   return map;
@@ -1477,6 +1554,45 @@ function recordToEvent(
   };
 }
 
+type MintBestPool = { pair: string; liq: number };
+
+/** Синхронизирует tokens.primary_pair / liquidity_usd с пулом max liq из свежих снимков. */
+async function refreshTokensPrimaryPairs(mintBestPool: Map<string, MintBestPool>): Promise<number> {
+  if (mintBestPool.size === 0) return 0;
+  let updated = 0;
+  const CHUNK = 40;
+  const entries = [...mintBestPool.entries()];
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const chunk = entries.slice(i, i + CHUNK);
+    for (const [mint, best] of chunk) {
+      const m = mint.trim();
+      const pair = best.pair.trim();
+      if (!ADDR_RE.test(m) || !ADDR_RE.test(pair) || !(best.liq > 0)) continue;
+      try {
+        const r = await pgSql`
+          UPDATE tokens
+          SET primary_pair = ${pair},
+              liquidity_usd = ${best.liq},
+              updated_at = now()
+          WHERE mint = ${m}
+            AND (
+              primary_pair IS DISTINCT FROM ${pair}
+              OR liquidity_usd IS DISTINCT FROM ${best.liq}
+            )
+        `;
+        const n = Number((r as { count?: number }).count ?? 0);
+        if (n > 0) updated += n;
+      } catch (e) {
+        console.warn(
+          `[market-spike-telegram-watch] primary_pair update failed mint=${m.slice(0, 8)}…`,
+          String(e).slice(0, 200),
+        );
+      }
+    }
+  }
+  return updated;
+}
+
 async function runOnePass(
   sendDedupe: Map<string, number> | null,
   mintEscState: Map<string, MintEscalationState>,
@@ -1485,15 +1601,29 @@ async function runOnePass(
   const merged = new Map<string, AlertRow>();
   // tier-MISS: записываем для retro-анализа (только если LOG_MISS_BY_FILTER=1).
   const missEvents: SpikeEventRecord[] = [];
+  const mintMaxLiq = new Map<string, number>();
+  const mintBestPool = new Map<string, MintBestPool>();
+  const tableLatest: { table: DexTable; rows: LatestMeta[] }[] = [];
 
   for (const table of SNAPSHOT_TABLES) {
-    let latestRows: LatestMeta[];
     try {
-      latestRows = await fetchLatestOnly(table);
+      const latestRows = await fetchLatestOnly(table);
+      tableLatest.push({ table, rows: latestRows });
+      for (const meta of latestRows) {
+        const liq = meta.liq_usd ?? 0;
+        if (!(liq > 0)) continue;
+        const prev = mintMaxLiq.get(meta.base_mint) ?? 0;
+        if (liq > prev) {
+          mintMaxLiq.set(meta.base_mint, liq);
+          mintBestPool.set(meta.base_mint, { pair: meta.pair_address, liq });
+        }
+      }
     } catch (e) {
       console.warn(`[market-spike-telegram-watch] ${table} latest query failed`, String(e));
-      continue;
     }
+  }
+
+  for (const { table, rows: latestRows } of tableLatest) {
     let barsByMintPair: Map<string, Bar[]>;
     try {
       barsByMintPair = await fetchBarsBatch(table, latestRows);
@@ -1507,11 +1637,15 @@ async function runOnePass(
     for (const meta of latestRows) {
       if (isSpikeTelegramBlacklisted(meta.base_mint, meta.symbol, meta.token_name)) continue;
 
+      const mintMax = mintMaxLiq.get(meta.base_mint) ?? null;
+      if (isDeadPoolVsMintMaxLiq(meta.liq_usd, mintMax)) continue;
+
       // Multi-pair: bars берём по конкретной паре (mint+pair), а не по mint целиком.
       const bars = barsByMintPair.get(barsMapKey(meta.base_mint, meta.pair_address)) ?? [];
       const pick = analyzeBarsForMint(bars);
       if (!pick) continue;
       if (!isPickFreshEnough(pick, nowMs)) continue;
+      if (isStaleZeroVolPriceJump(bars, pick)) continue;
       if (!isPickPlausibleForLiquidity(pick, meta.liq_usd)) continue;
       if (!isPickPlausibleLiqVsMcap(meta, pick)) continue;
       if (!isPickPriceMcapConsistent(pick)) continue;
@@ -1590,10 +1724,22 @@ async function runOnePass(
         nowMcapUsd: pick.nowMcapUsd,
         refMcapUsd: refMcap,
         tierName,
+        best_pool_liq_usd: mintMax ?? meta.liq_usd,
       };
 
       const prev = merged.get(meta.base_mint);
       if (!prev || Math.abs(pick.pct) > Math.abs(prev.pct)) merged.set(meta.base_mint, row);
+    }
+  }
+
+  if (PRIMARY_PAIR_REFRESH_ENABLED && mintBestPool.size > 0) {
+    try {
+      const n = await refreshTokensPrimaryPairs(mintBestPool);
+      if (n > 0) {
+        console.log(`[market-spike-telegram-watch] primary_pair refresh updated=${n}`);
+      }
+    } catch (e) {
+      console.warn('[market-spike-telegram-watch] primary_pair refresh failed', String(e));
     }
   }
 
@@ -1761,7 +1907,7 @@ async function runOnePass(
     : ' esc=off';
   const auditLog = AUDIT_DB_ENABLED ? ` audit=db(${auditTableReady})` : ' audit=stdout';
   console.log(
-    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sentFirst} updates=${sentUpdate} skipped=${skipped}${tieredLog}${escLog} mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}${auditLog}`,
+    `[market-spike-telegram-watch] done candidates=${merged.size} sent=${sentFirst} updates=${sentUpdate} skipped=${skipped}${tieredLog}${escLog} mintCooldownMin=${MINT_COOLDOWN_MINUTES} minMcapUSD=${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m newer<=${MAX_NEWER_BAR_AGE_MIN}m deadPoolShareMin=${MIN_LIQ_SHARE_OF_MINT_MAX} staleZeroVolJump>=${STALE_ZERO_VOL_JUMP_PCT}% primaryPairRefresh=${PRIMARY_PAIR_REFRESH_ENABLED ? 'on' : 'off'} lowLiq<${LOW_LIQ_GLITCH_THRESHOLD_USD}USD_maxAbs=${LOW_LIQ_MAX_ABS_PCT}% glitchNextRetrace=${GLITCH_NEXT_BAR_RETRACE_MIN} liqMcapSanity=${LIQ_MCAP_SANITY_ENABLED ? `ref>=${LIQ_MCAP_REF_MIN_USD}USD ratio>=${MIN_LIQ_TO_REF_MCAP_RATIO}` : 'off'} mcPxDiv<=${MC_PRICE_MAX_DIVERGENCE_PCT}%${rollLog}${pollLog} legacy_lookback_sec=${LOOKBACK_SEC} holders>=${MIN_HOLDERS} age>=${MIN_AGE_HOURS}h tz=${DISPLAY_TZ} dexMeta=${DEXSCREENER_META_ENABLED ? 'on' : 'off'}${auditLog}`,
   );
 }
 
@@ -1877,7 +2023,8 @@ async function runDiagnoseMint(mint: string, atIso: string | null): Promise<void
       const barR = await db.execute(
         dsql.raw(`
         SELECT ts, price_usd::double precision AS price_usd,
-          COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd
+          COALESCE(market_cap_usd, fdv_usd)::double precision AS mcap_usd,
+          COALESCE(volume_5m, 0)::double precision AS vol_5m
         FROM ${table}
         WHERE base_mint = '${mintEsc}' AND pair_address = '${pairEsc}'
           AND ts > '${atIsoSql}'::timestamptz - (${SCAN_MINUTES} * interval '1 minute')
@@ -1889,10 +2036,13 @@ async function runDiagnoseMint(mint: string, atIso: string | null): Promise<void
       const rows = barR as unknown as Record<string, unknown>[];
       const rawBars: Bar[] = [];
       for (const row of rows) {
+        const volRaw = row.vol_5m;
+        const volNum = volRaw != null ? Number(volRaw) : NaN;
         rawBars.push({
           ts: parseTs(row.ts as Date | string),
           px: Number(row.price_usd),
           mcapUsd: parseMcapUsd(row),
+          vol5m: Number.isFinite(volNum) ? volNum : null,
         });
       }
       const pick = analyzeBarsForMint(rawBars, nowMs);
@@ -1903,11 +2053,12 @@ async function runDiagnoseMint(mint: string, atIso: string | null): Promise<void
       if (!pick) continue;
 
       const fresh = isPickFreshEnough(pick, nowMs);
+      const staleJump = isStaleZeroVolPriceJump(rawBars, pick);
       const liqPl = isPickPlausibleForLiquidity(pick, meta.liq_usd);
       const liqMc = isPickPlausibleLiqVsMcap(meta, pick);
       const mcDiv = isPickPriceMcapConsistent(pick);
       console.log(
-        `  filters: fresh=${fresh} lowLiqPlausible=${liqPl} liqMcapSanity=${liqMc} mcPriceDivOk=${mcDiv}`,
+        `  filters: fresh=${fresh} staleZeroVolJump=${staleJump} lowLiqPlausible=${liqPl} liqMcapSanity=${liqMc} mcPriceDivOk=${mcDiv}`,
       );
 
       const refMcap = referenceMcapUsd(meta, pick);

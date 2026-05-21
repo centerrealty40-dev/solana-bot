@@ -73,6 +73,9 @@ module.exports = {
         SPIKE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
         /** Доля отката на следующей минуте (0 = выкл.), чтобы резать одноминутные артефакты PG. */
         SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN: '0.55',
+        SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX: '0.1',
+        SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT: '30',
+        SPIKE_ALERT_PRIMARY_PAIR_REFRESH: '1',
         SPIKE_ALERT_LIQ_MCAP_SANITY: '1',
         SPIKE_ALERT_LIQ_MCAP_REF_MIN_USD: '2000000',
         SPIKE_ALERT_MIN_LIQ_TO_REF_MCAP_RATIO: '0.002',

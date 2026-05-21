@@ -357,6 +357,32 @@ export const LiveDiscoverySkipOpenSchema = z.object({
   detail: z.string().max(2000).optional(),
 });
 
+/** Daily Telegram summary tick (1.11.231+); appended to live JSONL for audit. */
+export const LiveDailySummarySchema = z.object({
+  kind: z.literal('live_daily_summary'),
+  fromMs: z.number().finite(),
+  toMs: z.number().finite(),
+  evals: z.number().int().nonnegative(),
+  passes: z.number().int().nonnegative(),
+  buyAttempts: z.number().int().nonnegative(),
+  buyConfirmed: z.number().int().nonnegative(),
+  sellConfirmed: z.number().int().nonnegative(),
+  closedPositions: z.number().int().nonnegative(),
+  netPnlUsd: z.number().finite(),
+  simErrCount: z.number().int().nonnegative(),
+  stagedCooldownRearms: z.number().int().nonnegative(),
+  autoDenylistAdds: z.number().int().nonnegative(),
+  priorityFeeBoosts: z.number().int().nonnegative(),
+  topBlockers: z
+    .array(
+      z.object({
+        reason: z.string().max(200),
+        count: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -385,6 +411,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveDiscoveryUniverseMissSchema,
   LiveStagedEntrySignalSchema,
   LiveDiscoverySkipOpenSchema,
+  LiveDailySummarySchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

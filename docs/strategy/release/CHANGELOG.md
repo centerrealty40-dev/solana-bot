@@ -8,6 +8,42 @@
 
 ---
 
+## [1.11.239] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.239`.
+
+### Fix: ложные spike-алерты на мёртвых пулах + JSONL daily_summary + primary_pair refresh
+
+**Фон.** Алерт `[spike_pump] +95.46%` по Goblin пришёл с dead Meteora pool `CK71NMuP` (liq ~$38K, vol=0), тогда как pumpswap/meteora держали $387K–553K. Live Oscar стратегию не меняем.
+
+### Изменения
+
+**`src/scripts/market-spike-telegram-watch.ts`:**
+
+- Фильтр **dead pool**: не слать алерт, если `liq_usd` пула < `SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX` (default 10%) от max liq по mint среди всех DEX-таблиц.
+- Фильтр **stale price jump**: якорный бар с `vol_5m=0` и |Δ%| ≥ `SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT` (default 30%) — skip.
+- В Telegram показывается **liq лучшего пула** mint (`best_pool_liq_usd`), не triggering dead pair.
+- **`SPIKE_ALERT_PRIMARY_PAIR_REFRESH=1`**: раз за проход обновляет `tokens.primary_pair` и `liquidity_usd` на пул с max liq.
+
+**`src/live/events.ts`:**
+
+- Добавлен `LiveDailySummarySchema` в `LiveEventBodySchema` — устраняет `Invalid discriminator value` для `live_daily_summary` в PM2 error log.
+
+**`ecosystem.config.cjs` / `ecosystem.market-spike-watch.cjs`:**
+
+- Новые env: `SPIKE_ALERT_MIN_LIQ_SHARE_OF_MINT_MAX`, `SPIKE_ALERT_STALE_ZERO_VOL_JUMP_PCT`, `SPIKE_ALERT_PRIMARY_PAIR_REFRESH`.
+
+**Тесты:** `tests/market-spike-pool-quality.test.ts`.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.238 -- src/scripts/market-spike-telegram-watch.ts src/live/events.ts ecosystem.config.cjs ecosystem.market-spike-watch.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm ci && pm2 reload ecosystem.config.cjs --update-env
+```
+
+---
+
 ## [1.11.238] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.238`.
