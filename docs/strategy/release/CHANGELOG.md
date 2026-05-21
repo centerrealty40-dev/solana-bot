@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.247] — 2026-05-21
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.247`.
+
+### Tune: staged entry split $300+$300 (was $250+$250)
+
+**Prod env (`live-oscar`):** `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` и `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD` **300**; полный cap **`LIVE_OSCAR_FULL_NOTIONAL_USD` / `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` → $900** ($300+$300+$150+$150). Усреднения −7%/−14% без изменений.
+
+**Откат:** split **250**, cap **800** → NORM §5 deploy.
+
+---
+
 ## [1.11.246] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.246`.
