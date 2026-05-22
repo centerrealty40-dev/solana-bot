@@ -537,13 +537,6 @@ export function formatDisplayDt(d: Date, withDate = true): string {
   }
 }
 
-function formatPriceUsd(px: number): string {
-  if (!Number.isFinite(px) || px <= 0) return '?';
-  if (px >= 1) return `$${px.toFixed(4)}`;
-  if (px >= 0.0001) return `$${px.toFixed(6)}`;
-  return `$${px.toExponential(3)}`;
-}
-
 export function mcapChangePct(anchorMcapUsd: number | null, nowMcapUsd: number | null): number | null {
   if (anchorMcapUsd == null || nowMcapUsd == null || !(anchorMcapUsd > 0)) return null;
   const pct = (nowMcapUsd / anchorMcapUsd - 1) * 100;
@@ -908,13 +901,6 @@ function alertKindTag(row: AlertRow): { tag: string; kindWord: string } {
   };
 }
 
-function spikeSignalExplain(row: AlertRow): string {
-  if (row.signalKind === 'rolling' && row.rollingSpanMinutes != null) {
-    return `rolling ${row.rollingSpanMinutes} мин (${escapeHtml(row.windowLabel)})`;
-  }
-  return `2 мин. бара подряд (${escapeHtml(row.windowLabel)})`;
-}
-
 function tokenHeadlineHtml(symbol: string | null | undefined, tokenName: string | null | undefined): string {
   const sym = (symbol ?? '').trim() || '?';
   const nameRaw = (tokenName ?? '').trim();
@@ -926,10 +912,10 @@ function tokenHeadlineHtml(symbol: string | null | undefined, tokenName: string 
   return '<b>?</b>';
 }
 
-function buildAlertHtml(row: AlertRow): string {
-  const mint = row.base_mint.trim();
-  const gmgnUrl = gmgnSolTokenUrl(mint);
-  const { tag, kindWord } = alertKindTag(row);
+/** Компактный Telegram-текст spike-алерта (HTML + plain). */
+export function buildAlertHtml(row: AlertRow): string {
+  const gmgnUrl = gmgnSolTokenUrl(row.base_mint.trim());
+  const { kindWord } = alertKindTag(row);
   const pctHuman = formatSignedPct(row.pct);
   const headline = tokenHeadlineHtml(row.symbol, row.token_name);
 
@@ -944,57 +930,43 @@ function buildAlertHtml(row: AlertRow): string {
     row.nowMcapUsd != null && row.nowMcapUsd > 0 ? formatMarketCapUsd(row.nowMcapUsd) : '?';
   const mcapPctHuman = mcapPct != null ? formatSignedPct(mcapPct) : '?';
 
-  const escalationLine =
-    row.isUpdate && typeof row.prevPct === 'number'
-      ? `\nэскалация: ${escapeHtml(formatSignedPct(row.prevPct))} → <b>${escapeHtml(pctHuman)}</b>`
-      : '';
-  const tierLine = row.tierName ? `tier: ${escapeHtml(row.tierName)}\n` : '';
-
-  const calcBlock = [
-    `<i>${escapeHtml(spikeSignalExplain(row))} · ${escapeHtml(row.dex)}</i>`,
-    `Δ <b>цена</b> ${escapeHtml(pctHuman)}: ${escapeHtml(formatPriceUsd(row.anchorPx))} → ${escapeHtml(formatPriceUsd(row.px_now))}`,
-    `  ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}`,
-    `Δ <b>mcap</b> ${escapeHtml(mcapPctHuman)}: ${escapeHtml(mcapFrom)} → ${escapeHtml(mcapTo)}`,
-  ].join('\n');
-
-  let body =
-    `${headline}\n` +
-    `${tag} ${kindWord} <b>${escapeHtml(pctHuman)}</b>${escalationLine}\n` +
-    tierLine +
-    `\n${calcBlock}\n` +
-    `\n<a href="${gmgnUrl}">GMGN</a> · <code>${escapeHtml(mint)}</code>\n` +
-    `holders: ${row.holder_count ?? '?'}`;
-  const displayLiq = row.best_pool_liq_usd ?? row.liq_usd;
-  if (displayLiq != null && displayLiq > 0) body += `\nliq ~${Math.round(displayLiq)} USD`;
-  return body;
+  return (
+    `${headline} ${escapeHtml(kindWord)} <b>${escapeHtml(pctHuman)}</b>\n` +
+    ` ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}\n` +
+    `Δ mcap ${escapeHtml(mcapPctHuman)}: ${escapeHtml(mcapFrom)} → ${escapeHtml(mcapTo)}\n` +
+    `<a href="${gmgnUrl}">GMGN</a>`
+  );
 }
 
-function buildAlertPlain(row: AlertRow): string {
+export function buildAlertPlain(row: AlertRow): string {
   const mint = row.base_mint.trim();
   const sym = row.symbol?.trim() || '?';
-  const { tag, kindWord } = alertKindTag(row);
+  const { kindWord } = alertKindTag(row);
   const nameRaw = row.token_name?.trim();
   const headline =
     sym !== '?' && nameRaw && nameRaw.toUpperCase() !== sym.toUpperCase()
-      ? `${sym} (${nameRaw})`
+      ? `${sym} — ${nameRaw}`
       : sym !== '?'
         ? sym
         : nameRaw || '?';
-  const escalationLine =
-    row.isUpdate && typeof row.prevPct === 'number'
-      ? `\nэскалация: ${formatSignedPct(row.prevPct)} → ${formatSignedPct(row.pct)}`
-      : '';
-  const tierLine = row.tierName ? `tier: ${row.tierName}\n` : '';
-  let body =
-    `${headline}\n` +
-    `${tag} ${kindWord} ${formatSignedPct(row.pct)}${escalationLine}\n` +
-    tierLine +
-    `\nGMGN: ${gmgnSolTokenUrl(mint)}\n` +
-    `${mint}\n` +
-    `holders: ${row.holder_count ?? '?'}`;
-  const displayLiq = row.best_pool_liq_usd ?? row.liq_usd;
-  if (displayLiq != null && displayLiq > 0) body += `\nliq ~${Math.round(displayLiq)} USD`;
-  return body;
+
+  const anchorTs = parseTs(row.anchorTs as Date | string);
+  const endTs = parseTs(row.ts_now as Date | string);
+  const mcapPct = mcapChangePct(row.anchorMcapUsd, row.nowMcapUsd);
+  const mcapFrom =
+    row.anchorMcapUsd != null && row.anchorMcapUsd > 0
+      ? formatMarketCapUsd(row.anchorMcapUsd)
+      : '?';
+  const mcapTo =
+    row.nowMcapUsd != null && row.nowMcapUsd > 0 ? formatMarketCapUsd(row.nowMcapUsd) : '?';
+  const mcapPctHuman = mcapPct != null ? formatSignedPct(mcapPct) : '?';
+
+  return (
+    `${headline} ${kindWord} ${formatSignedPct(row.pct)}\n` +
+    ` ${formatDisplayDt(anchorTs)} → ${formatDisplayDt(endTs)}\n` +
+    `Δ mcap ${mcapPctHuman}: ${mcapFrom} → ${mcapTo}\n` +
+    `GMGN (${gmgnSolTokenUrl(mint)})`
+  );
 }
 
 async function fetchLatestOnly(table: DexTable): Promise<LatestMeta[]> {

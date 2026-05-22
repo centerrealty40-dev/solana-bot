@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.256] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.256`.
+
+### Spike Telegram — компактный формат алерта
+
+- **`market-spike-telegram-watch`:** сообщения pump/dump — 4 строки: заголовок + «Пролив/Рост» + Δ%, окно времени, Δ mcap, ссылка GMGN.
+- Убраны из текста: `[spike_*]` tag, tier, dex/бары, Δ цены, mint, holders, liq.
+
+**Откат:** NORM §5 deploy предыдущего SHA; `pm2 restart market-spike-telegram-watch --update-env`.
+
+---
+
 ## [1.11.251] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.251`.
