@@ -29,7 +29,7 @@
  * SPIKE_ALERT_POLL_SEND_DEDUPE_MS (не путать с удалённым часовым cooldown).
  *
  * SPIKE_ALERT_MINT_COOLDOWN_MINUTES — после успешной отправки по mint пауза; эскалация может
- * слать [UPDATE] при усилении пролива (см. SPIKE_ALERT_ESCALATE_*).
+ * слать follow-up «Вот уже N%» при усилении пролива/роста (см. SPIKE_ALERT_ESCALATE_*).
  *
  * Диагностика без Telegram: `npm run market-spike-telegram-watch -- --diagnose-mint <mint> [--at ISO]`
  *
@@ -209,14 +209,14 @@ const PICK_PCT_FLOOR = TIERED_BY_MCAP
   : Math.min(THRESHOLD_CONSEC_PUMP_PCT, THRESHOLD_CONSEC_DUMP_PCT, THRESHOLD_ROLLING_PCT);
 
 /**
- * Эскалация: если в течение mint cooldown пролив усилился, шлём повторный [UPDATE]-алерт.
+ * Эскалация: если в течение mint cooldown пролив/рост усилился, шлём follow-up «Вот уже N%».
  *  - `ENABLED` — включить (по умолчанию on);
  *  - `DELTA_PCT` — повторный алерт, если |new pct| - |prev pct| ≥ DELTA_PCT (даже если tier тот же);
  *  - `MIN_GAP_SEC` — минимальный интервал между [SENT]/[UPDATE] по одному mint;
  *  - `MAX_PER_MINT` — максимум апдейтов за один период жизни алерта (после обнуляется через MINT_COOLDOWN_MS*2);
  *  - `TIER_CHANGE_FORCES_UPDATE` — при переходе в более жёсткий tier шлём апдейт даже если delta ниже DELTA_PCT.
  */
-const ESCALATE_ENABLED = envBool('SPIKE_ALERT_ESCALATE_ENABLED', false);
+const ESCALATE_ENABLED = envBool('SPIKE_ALERT_ESCALATE_ENABLED', true);
 const ESCALATE_DELTA_PCT = Math.max(
   0.5,
   Math.min(80, envNum('SPIKE_ALERT_ESCALATE_DELTA_PCT', 5)),
@@ -227,7 +227,7 @@ const ESCALATE_MIN_GAP_SEC = Math.max(
 );
 const ESCALATE_MAX_PER_MINT = Math.max(
   0,
-  Math.min(10, Math.floor(envNum('SPIKE_ALERT_ESCALATE_MAX_PER_MINT', 3))),
+  Math.min(20, Math.floor(envNum('SPIKE_ALERT_ESCALATE_MAX_PER_MINT', 8))),
 );
 const ESCALATE_TIER_CHANGE_FORCES_UPDATE = envBool(
   'SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE',
@@ -891,13 +891,49 @@ function alertKindTag(row: AlertRow): { tag: string; kindWord: string } {
     const sub = row.pct >= 0 ? 'spike_pump_update' : 'spike_dump_update';
     return {
       tag: `[${sub}]`,
-      kindWord: row.pct >= 0 ? 'Рост (UPDATE)' : 'Пролив (UPDATE)',
+      kindWord: row.pct >= 0 ? 'Рост' : 'Пролив',
     };
   }
   const sub = row.pct >= 0 ? 'spike_pump' : 'spike_dump';
   return {
     tag: `[${sub}]`,
     kindWord: row.pct >= 0 ? 'Рост' : 'Пролив',
+  };
+}
+
+/** «Вот уже 15%» — follow-up когда |pct| вырос на ≥ ESCALATE_DELTA_PCT от прошлого алерта. */
+export function formatEscalationAlreadyLabel(pct: number): string {
+  const abs = Math.abs(pct);
+  if (!Number.isFinite(abs)) return 'Вот уже ?%';
+  const rounded = Math.round(abs * 100) / 100;
+  const n = rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(2);
+  return pct >= 0 ? `Вот уже +${n}%` : `Вот уже ${n}%`;
+}
+
+function alertTitleLine(row: AlertRow): { html: string; plain: string } {
+  const headlineHtml = tokenHeadlineHtml(row.symbol, row.token_name);
+  const sym = row.symbol?.trim() || '?';
+  const nameRaw = row.token_name?.trim();
+  const headlinePlain =
+    sym !== '?' && nameRaw && nameRaw.toUpperCase() !== sym.toUpperCase()
+      ? `${sym} — ${nameRaw}`
+      : sym !== '?'
+        ? sym
+        : nameRaw || '?';
+
+  if (row.isUpdate) {
+    const already = formatEscalationAlreadyLabel(row.pct);
+    return {
+      html: `${headlineHtml} · ${escapeHtml(already)}`,
+      plain: `${headlinePlain} · ${already}`,
+    };
+  }
+
+  const { kindWord } = alertKindTag(row);
+  const pctHuman = formatSignedPct(row.pct);
+  return {
+    html: `${headlineHtml} ${escapeHtml(kindWord)} <b>${escapeHtml(pctHuman)}</b>`,
+    plain: `${headlinePlain} ${kindWord} ${pctHuman}`,
   };
 }
 
@@ -915,9 +951,7 @@ function tokenHeadlineHtml(symbol: string | null | undefined, tokenName: string 
 /** Компактный Telegram-текст spike-алерта (HTML + plain). */
 export function buildAlertHtml(row: AlertRow): string {
   const gmgnUrl = gmgnSolTokenUrl(row.base_mint.trim());
-  const { kindWord } = alertKindTag(row);
-  const pctHuman = formatSignedPct(row.pct);
-  const headline = tokenHeadlineHtml(row.symbol, row.token_name);
+  const title = alertTitleLine(row);
 
   const anchorTs = parseTs(row.anchorTs as Date | string);
   const endTs = parseTs(row.ts_now as Date | string);
@@ -931,7 +965,7 @@ export function buildAlertHtml(row: AlertRow): string {
   const mcapPctHuman = mcapPct != null ? formatSignedPct(mcapPct) : '?';
 
   return (
-    `${headline} ${escapeHtml(kindWord)} <b>${escapeHtml(pctHuman)}</b>\n` +
+    `${title.html}\n` +
     ` ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}\n` +
     `Δ mcap ${escapeHtml(mcapPctHuman)}: ${escapeHtml(mcapFrom)} → ${escapeHtml(mcapTo)}\n` +
     `<a href="${gmgnUrl}">GMGN</a>`
@@ -940,15 +974,7 @@ export function buildAlertHtml(row: AlertRow): string {
 
 export function buildAlertPlain(row: AlertRow): string {
   const mint = row.base_mint.trim();
-  const sym = row.symbol?.trim() || '?';
-  const { kindWord } = alertKindTag(row);
-  const nameRaw = row.token_name?.trim();
-  const headline =
-    sym !== '?' && nameRaw && nameRaw.toUpperCase() !== sym.toUpperCase()
-      ? `${sym} — ${nameRaw}`
-      : sym !== '?'
-        ? sym
-        : nameRaw || '?';
+  const title = alertTitleLine(row);
 
   const anchorTs = parseTs(row.anchorTs as Date | string);
   const endTs = parseTs(row.ts_now as Date | string);
@@ -962,7 +988,7 @@ export function buildAlertPlain(row: AlertRow): string {
   const mcapPctHuman = mcapPct != null ? formatSignedPct(mcapPct) : '?';
 
   return (
-    `${headline} ${kindWord} ${formatSignedPct(row.pct)}\n` +
+    `${title.plain}\n` +
     ` ${formatDisplayDt(anchorTs)} → ${formatDisplayDt(endTs)}\n` +
     `Δ mcap ${mcapPctHuman}: ${mcapFrom} → ${mcapTo}\n` +
     `GMGN (${gmgnSolTokenUrl(mint)})`

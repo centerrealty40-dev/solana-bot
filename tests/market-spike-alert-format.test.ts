@@ -49,4 +49,32 @@ describe('market-spike alert format — compact Telegram', () => {
     expect(html).not.toContain('tier:');
     expect(html).not.toContain('holders');
   });
+
+  it('update: «Вот уже N%» follow-up после первого алерта', async () => {
+    const mod = await import('../src/scripts/market-spike-telegram-watch.js');
+    const row = {
+      base_mint: '6ehEcTMCc85aNF4x9CWx8HuvWGhxQtvKdhKVf2HDpump',
+      symbol: 'TOESCOIN',
+      token_name: 'TOES',
+      dex: 'pumpswap',
+      pct: -15,
+      windowLabel: 'мин. 19:35 МСК→19:36 МСК',
+      signalKind: 'consecutive' as const,
+      anchorPx: 0.00959,
+      anchorTs: new Date('2026-05-22T16:32:00.000Z'),
+      anchorMcapUsd: 9_590_000,
+      nowMcapUsd: 8_150_000,
+      px_now: 0.00815,
+      ts_now: new Date('2026-05-22T16:36:00.000Z'),
+      pair_address: 'pair',
+      isUpdate: true,
+      prevPct: -10,
+    };
+
+    expect(mod.formatEscalationAlreadyLabel(-15)).toBe('Вот уже 15%');
+    const plain = mod.buildAlertPlain(row);
+    expect(plain).toContain('TOESCOIN — TOES · Вот уже 15%');
+    expect(plain).not.toContain('Пролив (UPDATE)');
+    expect(plain).not.toContain('[spike_dump');
+  });
 });

@@ -8,6 +8,19 @@
 
 ---
 
+## [1.11.260] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.260`.
+
+### Spike Telegram — эскалация «Вот уже N%»
+
+- **`market-spike-telegram-watch`:** включена эскалация по умолчанию (`SPIKE_ALERT_ESCALATE_ENABLED=1`): если пролив/рост усилился ещё на ≥5 п.п. внутри mint cooldown — follow-up «Вот уже 15%», «Вот уже 20%»… (до 8 апдейтов, gap ≥60 с).
+- Формат follow-up: та же компактная раскладка, первая строка `SYMBOL — NAME · Вот уже N%`.
+
+**Откат:** `SPIKE_ALERT_ESCALATE_ENABLED=0` + NORM §5 deploy; `pm2 restart market-spike-telegram-watch --update-env`.
+
+---
+
 ## [1.11.256] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.256`.
