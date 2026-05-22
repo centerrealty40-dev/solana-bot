@@ -25,5 +25,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Import graph (tracked sources)
+        run: npm run check:imports
+
       - name: Release hygiene (INDEX ↔ tree, VERSION format)
         run: npm run check:hygiene

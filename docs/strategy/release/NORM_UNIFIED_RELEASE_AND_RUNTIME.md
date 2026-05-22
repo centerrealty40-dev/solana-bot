@@ -97,6 +97,10 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 Зафиксировать: **`git rev-parse HEAD`**, **`git status -sb`**.
 
+**Обязательно после PM2 reload:** `bash scripts/release/post-deploy-smoke.sh` (read-only: PM2 online, нет `ERR_MODULE_NOT_FOUND`, discovery пишет `live_discovery_eval`). Без зелёного smoke — **не считать деплой успешным**.
+
+**Деплой только если** GitHub Actions job **`hygiene`** на целевом SHA **зелёный** (см. [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md)).
+
 ### 5.3 PM2
 
 Под **`salpha`**; при смене env — **`--update-env`** и по политике **`pm2 flush`**; после изменения списка приложений — **`pm2 save`**.
@@ -126,18 +130,21 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 | SSOT, replay JSONL, риски | [`docs/strategy/release/RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) |
 | Параллельные агенты | [`docs/strategy/release/PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) |
 | CI hygiene | [`scripts/check-release-hygiene.mjs`](../../../scripts/check-release-hygiene.mjs) |
+| Git hooks / smoke | [`scripts/release/install-git-hooks.sh`](../../../scripts/release/install-git-hooks.sh), [`scripts/release/post-deploy-smoke.sh`](../../../scripts/release/post-deploy-smoke.sh), [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md) |
 | Платформа и агенты | [`docs/platform/BOUNDARIES.md`](../../platform/BOUNDARIES.md), [`docs/agents/AGENT_BOOTSTRAP.md`](../../agents/AGENT_BOOTSTRAP.md) |
 
 ---
 
 ## 8. Чеклист интегратора
 
+- [ ] **`bash scripts/release/install-git-hooks.sh`** установлен на машине, с которой пушите (pre-commit / pre-push gates).
 - [ ] **`git fetch`**, **`v2`** выровнена с **`origin/v2`** перед bump.
-- [ ] **`npm run typecheck`** выполнен **локально** на том же наборе файлов, что уйдёт в push (совпадает с CI).
-- [ ] Нет **расщеплённого API**: типы / продюсеры / потребители контракта попали в **`v2` одним потоком** (§4.2, I9 в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)).
+- [ ] **`npm run verify`** (или минимум **`npm run typecheck`** + **`npm run check:imports`**) на том же наборе файлов, что уйдёт в push.
+- [ ] Нет **расщеплённого API**: типы / продюсеры / потребители контракта попали в **`v2` одним потоком** (§4.2, I9 в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)); **`check-staged-imports`** не ругается на untracked deps.
 - [ ] **`npm run check:hygiene:integration`** зелёный перед merge в **`v2`**.
-- [ ] Push в **`v2`**, CI зелёный.
+- [ ] Push в **`v2`**, CI job **`hygiene`** зелёный на SHA.
 - [ ] Деплой §5.2; зафиксированы SHA и **`git status`**.
+- [ ] **`bash scripts/release/post-deploy-smoke.sh`** на VPS после reload.
 - [ ] На сервере после обновления дерева — **`npm run typecheck`** (или полный §5.2), затем PM2 с **`--update-env`** / **`pm2 flush`** по политике процесса.
 - [ ] Нет рутинного **`scp`** tracked-кода на VPS-клон.
 
@@ -147,6 +154,7 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 | Дата | Версия продукта | Суть |
 |------|-----------------|------|
+| 2026-05-22 | 1.11.253 | Git hooks (staged imports + typecheck), CI `check:imports`, post-deploy smoke, branch protection doc. |
 | 2026-05-04 | 1.11.62 | §4.2 — атомарность изменений TypeScript/контрактов модулей; совпадение с CI; VPS и откат; §8 — расширенный чеклист интегратора (в т.ч. против ошибки `LiveBuyIncreaseDeny` / `increaseDeny`). |
 | 2026-05-04 | 1.11.52 | §6 — канон платформы/`agents`/`.cursor` в репозитории; синхронизация с деревом Ideas. |
 | 2026-05-04 | 1.11.51 | §4.1 — рекомендуемая branch protection на **`v2`**, CI, запрет force-push; роли при merge. |
