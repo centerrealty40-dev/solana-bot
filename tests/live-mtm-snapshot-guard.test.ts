@@ -5,7 +5,7 @@ import {
 } from '../src/live/mtm-snapshot-guard.js';
 
 describe('liveTrackerMtmUsdSnapJupiterSymmetricBand', () => {
-  it('uses Jupiter when within symmetric band vs snapshot', () => {
+  it('uses min(snapshot,Jupiter) when Jupiter is above snapshot but within band', () => {
     const snap = 0.005821;
     const jup = snap * 1.04; // +4%
     const r = liveTrackerMtmUsdSnapJupiterSymmetricBand({
@@ -13,9 +13,9 @@ describe('liveTrackerMtmUsdSnapJupiterSymmetricBand', () => {
       jupiterPx: jup,
       maxPremiumOverSnapshotPct: 6,
     });
-    expect(r.clampedFromJupiter).toBe(false);
+    expect(r.clampedFromJupiter).toBe(true);
     expect(r.bandClamp).toBe(null);
-    expect(r.useUsd).toBeCloseTo(jup, 12);
+    expect(r.useUsd).toBeCloseTo(snap, 12);
   });
 
   it('clamps to snapshot when Jupiter exceeds upper cap (BULL-style ghost ~+13%)', () => {
@@ -31,10 +31,9 @@ describe('liveTrackerMtmUsdSnapJupiterSymmetricBand', () => {
     expect(r.useUsd).toBe(snap);
   });
 
-  it('clamps to snapshot when Jupiter is below symmetric discount floor (snap / (1+p%))', () => {
-    const snap = 0.01448;
-    const floor = snap / 1.06; // ~0.013660 — strictly below this triggers low clamp at p=6
-    const jup = floor * 0.998;
+  it('uses Jupiter when below symmetric discount floor (stale high PG snapshot)', () => {
+    const snap = 0.00569;
+    const jup = 0.00527;
     const r = liveTrackerMtmUsdSnapJupiterSymmetricBand({
       snapPx: snap,
       jupiterPx: jup,
@@ -42,7 +41,21 @@ describe('liveTrackerMtmUsdSnapJupiterSymmetricBand', () => {
     });
     expect(r.clampedFromJupiter).toBe(true);
     expect(r.bandClamp).toBe('low');
-    expect(r.useUsd).toBe(snap);
+    expect(r.useUsd).toBe(jup);
+  });
+
+  it('USDUC regression: stale snapshot must not imply +8% TP when Jupiter is flat at entry', () => {
+    const avgEntry = 0.0052646;
+    const snap = 0.00569;
+    const jup = 0.00527;
+    const r = liveTrackerMtmUsdSnapJupiterSymmetricBand({
+      snapPx: snap,
+      jupiterPx: jup,
+      maxPremiumOverSnapshotPct: 6,
+    });
+    expect(r.useUsd).toBe(jup);
+    const pnlFrac = r.useUsd / avgEntry - 1;
+    expect(pnlFrac).toBeLessThan(0.05);
   });
 
   it('disabled when max premium is 0', () => {
