@@ -277,6 +277,10 @@ const ConfigSchema = z.object({
   priorityDiscoveryMaxMints: z.coerce.number().int().min(10).max(500).default(200),
   priorityDiscoveryJupiterRefreshEnabled: z.boolean().default(true),
   priorityDiscoveryJupiterRefreshMaxPerTick: z.coerce.number().int().min(1).max(50).default(20),
+  /** Near-miss dip: Jupiter refresh когда PG dip на gapPct выше порога (minute bucket отстаёт). */
+  priorityDiscoveryNearMissJupiterRefreshEnabled: z.boolean().default(true),
+  priorityDiscoveryNearMissJupiterGapPct: z.coerce.number().min(0.5).max(12).default(4),
+  priorityDiscoveryNearMissJupiterRefreshMaxPerTick: z.coerce.number().int().min(0).max(50).default(15),
   /** Relaxed BS floor for priority dip-watch tier (default 0.85 vs global 0.98). */
   priorityDiscoveryMinBs: z.coerce.number().nonnegative().default(0.85),
 
@@ -915,6 +919,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     ),
     priorityDiscoveryJupiterRefreshMaxPerTick:
       process.env.PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK,
+    priorityDiscoveryNearMissJupiterRefreshEnabled: envBool(
+      process.env.PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH,
+      true,
+    ),
+    priorityDiscoveryNearMissJupiterGapPct:
+      process.env.PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_GAP_PCT,
+    priorityDiscoveryNearMissJupiterRefreshMaxPerTick:
+      process.env.PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK,
     priorityDiscoveryMinBs: process.env.PAPER_PRIORITY_DISCOVERY_MIN_BS,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',

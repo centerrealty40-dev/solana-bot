@@ -1440,6 +1440,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
     let curMetric = snapPx > 0 ? snapPx : 0;
+    let entrySplitJupiterPx: number | undefined;
 
     /**
      * Live: MTM для TP / trail / SL — в первую очередь Jupiter tradable (SOL→token quote), а не PG `price_usd`
@@ -1517,6 +1518,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 reason: 'jupiter-price-null',
               });
             } else {
+              entrySplitJupiterPx = jpx;
               const fittedDec = fit!.decimalsUsed;
               if (fittedDec !== hintDec && ot.tokenDecimals !== fittedDec) {
                 log.warn(
@@ -2145,6 +2147,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot,
           mint,
           curMetric,
+          entrySplitMetricUsd: entrySplitJupiterPx,
           livePhase4,
           journalAppend,
           journalLiveStrategy,

@@ -51,6 +51,7 @@ import {
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
+import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
 import { shouldEvaluateMint } from './discovery-eval-throttle.js';
 import {
   fetchRunnerContextMap,
@@ -388,11 +389,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     };
   }
 
-  await refreshPriorityMintPricesFromJupiter(
-    cfg,
-    allowedSnapshotTagged.map((x) => x.row),
-    priorityMintSet,
-  );
+  await refreshPriorityMintPricesFromJupiter(cfg, allowedSnapshotTagged.map((x) => x.row), priorityMintSet);
 
   const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
   const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
@@ -406,6 +403,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       fetchGlobalPgCoverageState(cfg),
       fetchRunnerContextMap(cfg, rowsForCtx),
     ]);
+  await refreshNearMissDipPricesFromJupiter(cfg, rowsForCtx, dipMap, priorityMintSet);
   const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
     cfg,
     rowsForCtx,

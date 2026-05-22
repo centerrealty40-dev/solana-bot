@@ -125,6 +125,8 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   ot: OpenTrade;
   mint: string;
   curMetric: number;
+  /** Tradable Jupiter buy price for entry-split corridor; MTM may use PG snapshot instead. */
+  entrySplitMetricUsd?: number;
   livePhase4?: LiveOscarPhase4Tracker;
   journalAppend: JournalFn;
   journalLiveStrategy?: JournalFn;
@@ -135,6 +137,10 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   reconcileEntrySplitV2FromLegs(args.ot);
 
   const { curMetric } = args;
+  const entrySplitPx =
+    args.entrySplitMetricUsd != null && args.entrySplitMetricUsd > 0
+      ? args.entrySplitMetricUsd
+      : curMetric;
   const now = Date.now();
   const anchor = st.entrySplitAnchorUsd ?? st.signalPriceUsd;
 
@@ -142,7 +148,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
     const leg1Ts = st.entrySplitLeg1Ts ?? st.signalTs;
     const delay = st.entrySplitDelayMs ?? 10_000;
     if (now >= leg1Ts + delay) {
-      const ch = pctFromAnchor(anchor, curMetric);
+      const ch = pctFromAnchor(anchor, entrySplitPx);
       const maxUp = st.entrySplitMaxUpPct ?? 3;
       const maxDown = st.entrySplitMaxDownPct ?? 10;
       if (ch != null && entrySplitBandOk(ch, maxUp, maxDown)) {
@@ -152,7 +158,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
           ot: args.ot,
           mint: args.mint,
           addUsd: usd,
-          marketBuy: curMetric,
+          marketBuy: entrySplitPx,
           reason: 'entry_split',
           triggerPct: ch / 100,
           livePhase4: args.livePhase4,

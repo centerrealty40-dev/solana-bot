@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.251] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.251`.
+
+### Jupiter Pro P0 — entry split corridor + near-miss dip refresh
+
+- **Entry split 2-я нога:** коридор +3%…−10% считается по **Jupiter tradable** (`entrySplitMetricUsd`), MTM/TP/trail по-прежнему на PG-guarded `curMetric`.
+- **Near-miss dip refresh:** после PG `dipMap` — Jupiter quote для mint'ов с dip в `(dipMin, dipMin+4%]`; только если tradable **ниже** PG и не пробивает `dipMaxDropPct`.
+- Модули: `jupiter-spot-refresh.ts`, `near-miss-dip-jupiter-refresh.ts`; replay: `scripts-tmp/backtest-jupiter-p0-replay.mjs`.
+
+**Prod env:** `PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH=1`, `PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_GAP_PCT=4`, `PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK=15`.
+
+**Откат:** `PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH=0` + revert entry-split Jupiter metric; NORM §5 deploy.
+
+---
+
 ## [1.11.250] — 2026-05-21
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.250`.
