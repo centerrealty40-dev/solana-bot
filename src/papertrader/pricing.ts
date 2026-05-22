@@ -4,6 +4,11 @@ import { jupiterJsonHeaders, jupiterPriceV3Url } from '../core/jupiter-http.js';
 import { db } from '../core/db/client.js';
 import type { PaperTraderConfig } from './config.js';
 import { SOL_MINT } from './config.js';
+import {
+  medianSupplyFromRows,
+  pickBestSnapshotMcapRow,
+  type SnapshotMcapRow,
+} from './pricing/mcap-snapshot.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -134,33 +139,79 @@ export async function fetchLatestSnapshotPrice(
 // Live USD market cap (W7.2): snapshot tables → pump.fun, RAM cache.
 // ---------------------------------------------------------
 
+const DEX_SNAPSHOT_SOURCES = [
+  'raydium',
+  'meteora',
+  'orca',
+  'moonshot',
+  'pumpswap',
+] as const;
+
+export type DexSnapshotSource = (typeof DEX_SNAPSHOT_SOURCES)[number];
+
+function dexSnapshotTables(source?: DexSnapshotSource): string[] {
+  if (source) return [`${source}_pair_snapshots`];
+  return DEX_SNAPSHOT_SOURCES.map((s) => `${s}_pair_snapshots`);
+}
+
+function parseSnapshotMcapRows(
+  raw: Array<{ price_usd: number | string | null; market_cap_usd: number | string | null; fdv_usd: number | string | null }>,
+): SnapshotMcapRow[] {
+  const out: SnapshotMcapRow[] = [];
+  for (const row of raw) {
+    const priceUsd = Number(row.price_usd ?? 0);
+    const marketCapUsd = Number(row.market_cap_usd ?? row.fdv_usd ?? 0);
+    if (priceUsd > 0 && marketCapUsd > 0) out.push({ priceUsd, marketCapUsd });
+  }
+  return out;
+}
+
+async function fetchSnapshotMcapRowsFromTable(
+  table: string,
+  mint: string,
+  beforeEpochSec?: number,
+  limit = 12,
+): Promise<SnapshotMcapRow[]> {
+  const safeMint = mint.replace(/'/g, "''");
+  const beforeSql =
+    beforeEpochSec != null && Number.isFinite(beforeEpochSec) && beforeEpochSec > 0
+      ? `AND extract(epoch from ts) <= ${Math.floor(beforeEpochSec)}`
+      : '';
+  const r = await db.execute(dsql.raw(`
+    SELECT price_usd, market_cap_usd, fdv_usd
+    FROM ${table}
+    WHERE (base_mint = '${safeMint}' OR quote_mint = '${safeMint}')
+      ${beforeSql}
+      AND price_usd IS NOT NULL AND price_usd > 0
+      AND (COALESCE(market_cap_usd, 0) > 0 OR COALESCE(fdv_usd, 0) > 0)
+    ORDER BY ts DESC
+    LIMIT ${Math.max(1, Math.min(limit, 24))}
+  `));
+  return parseSnapshotMcapRows(
+    r as unknown as Array<{
+      price_usd: number | string | null;
+      market_cap_usd: number | string | null;
+      fdv_usd: number | string | null;
+    }>,
+  );
+}
+
 export async function fetchLatestSnapshotMcap(
   mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
+  source?: DexSnapshotSource,
+  beforeEpochSec?: number,
 ): Promise<number | null> {
-  const tables: string[] = source
-    ? [`${source}_pair_snapshots`]
-    : [
-        'raydium_pair_snapshots',
-        'meteora_pair_snapshots',
-        'orca_pair_snapshots',
-        'moonshot_pair_snapshots',
-        'pumpswap_pair_snapshots',
-      ];
-  const safeMint = mint.replace(/'/g, "''");
+  const tables = dexSnapshotTables(source);
+  const primary = tables[0];
+  const refSupply =
+    primary != null
+      ? medianSupplyFromRows(await fetchSnapshotMcapRowsFromTable(primary, mint, beforeEpochSec, 24))
+      : null;
+
   for (const t of tables) {
-    const r = await db.execute(dsql.raw(`
-      SELECT market_cap_usd, fdv_usd
-      FROM ${t}
-      WHERE base_mint = '${safeMint}'
-      ORDER BY ts DESC
-      LIMIT 1
-    `));
-    const rows = r as unknown as Array<{ market_cap_usd: number | string | null; fdv_usd: number | string | null }>;
-    const mc = Number(rows[0]?.market_cap_usd ?? 0);
-    if (mc > 0) return mc;
-    const fdv = Number(rows[0]?.fdv_usd ?? 0);
-    if (fdv > 0) return fdv;
+    const rows = await fetchSnapshotMcapRowsFromTable(t, mint, beforeEpochSec, 12);
+    const best = pickBestSnapshotMcapRow(rows, refSupply);
+    if (best != null) return best.marketCapUsd;
   }
   return null;
 }
@@ -178,7 +229,7 @@ function liveMcTtlMs(): number {
  */
 export async function getLiveMcUsd(
   mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
+  source?: DexSnapshotSource,
 ): Promise<number | null> {
   const cached = _liveMcCache.get(mint);
   if (cached && Date.now() - cached.ts < liveMcTtlMs()) return cached.mc > 0 ? cached.mc : null;
@@ -188,7 +239,8 @@ export async function getLiveMcUsd(
   } catch {
     /* best-effort */
   }
-  if (mc == null || !(mc > 0)) {
+  /** Post-migration pools: PG circulating mcap beats pump.fun FDV (~1B supply). */
+  if ((mc == null || !(mc > 0)) && !source) {
     try {
       const p = await fetchPumpfunMc(mint);
       if (p && p.mc > 0) mc = p.mc;

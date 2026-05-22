@@ -195,6 +195,7 @@ export function cloneOpenFromJournal(open: Record<string, unknown>, cfg?: PaperT
     dex,
     entryTs,
     entryMcUsd: Number(open.entryMcUsd ?? leg0.price),
+    entryMarketCapUsd: null,
     entryMetrics: EMPTY_METRICS,
     peakMcUsd: mkt,
     peakPnlPct: 0,

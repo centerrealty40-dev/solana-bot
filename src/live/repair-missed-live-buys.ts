@@ -168,6 +168,7 @@ function buildOpenFromBuyRepair(args: {
     dex: args.dex,
     entryTs: args.blockTimeMs,
     entryMcUsd: marketPrice,
+    entryMarketCapUsd: null,
     entryMetrics: emptyMetrics(),
     peakMcUsd: marketPrice,
     peakPnlPct: 0,

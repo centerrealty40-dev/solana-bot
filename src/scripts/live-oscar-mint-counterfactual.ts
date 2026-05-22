@@ -103,6 +103,7 @@ function buildOpenFirstLeg(args: {
     dex,
     entryTs,
     entryMcUsd: effectivePrice,
+    entryMarketCapUsd: null,
     entryMetrics: EMPTY_METRICS,
     peakMcUsd: marketPx,
     peakPnlPct: 0,

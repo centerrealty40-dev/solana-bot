@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { DexId, Lane, Metrics, OpenTrade, PositionLeg, SnapshotCandidateRow } from '../types.js';
 import { applyEntryCosts } from '../costs.js';
+import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 
 const EMPTY_METRICS: Metrics = {
   uniqueBuyers: 0,
@@ -30,6 +31,10 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
       ? firstLegUsdOverride
       : cfg.positionUsd * cfg.entryFirstLegFraction;
   const marketPrice = Number(row.price_usd);
+  const entryMarketCapUsd = (() => {
+    const mc = snapshotRefMarketCapUsd(row);
+    return mc > 0 ? +mc.toFixed(2) : null;
+  })();
   const { effectivePrice } = applyEntryCosts(cfg, marketPrice, dex, sizeUsd, liquidityUsd ?? row.liquidity_usd);
   const ts = fixedEntryTs ?? Date.now();
   const firstLeg: PositionLeg = {
@@ -48,6 +53,7 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
     dex,
     entryTs: ts,
     entryMcUsd: effectivePrice,
+    entryMarketCapUsd,
     entryMetrics: EMPTY_METRICS,
     peakMcUsd: effectivePrice,
     peakPnlPct: 0,

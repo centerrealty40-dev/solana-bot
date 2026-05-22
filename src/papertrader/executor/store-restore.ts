@@ -107,6 +107,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       dex: (o.dex ?? 'raydium') as OpenTrade['dex'],
       entryTs: Number(o.entryTs ?? Date.now()),
       entryMcUsd: Number(o.entryMcUsd ?? 0),
+      entryMarketCapUsd:
+        typeof o.entryMarketCapUsd === 'number' && Number(o.entryMarketCapUsd) > 0
+          ? Number(o.entryMarketCapUsd)
+          : null,
       entryMetrics: o.entryMetrics ?? {
         uniqueBuyers: 0,
         uniqueSellers: 0,
