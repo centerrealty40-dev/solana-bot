@@ -10,11 +10,12 @@
 
 ## [1.11.263] — 2026-05-22
 
-**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.263`.
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.263`.  
+**Git SHA (интеграция):** `f247308`.
 
 ### Tune: Live Oscar entry floor — liq $400k + mcap $5M
 
-**Фон.** Journal counterfactual на закрытиях с `live_discovery_eval`: **2d** (26 closes) — losses чаще `liq<400k` (13/16) и `mcap<5M` (9/16); **14d** (102 closes, 91 с eval) — F1+F2 блокирует **36/39 losses (−$2145)** vs **47/52 wins (+$1963)** → kept net **+$38** vs факт **−$726** (F2 alone **+$106**).
+**Фон.** Journal counterfactual на закрытиях с `live_discovery_eval` (`pt1-oscar-live.jsonl`): **2d** (26 closes) — losses чаще `liq<400k` (13/16) и `mcap<5M` (9/16); **14d** (102 closes, 91 с eval) — liq≥$400k **и** mcap≥$5M блокирует **36/39 losses (−$2145)** vs **47/52 wins (+$1963)** → kept net **+$38** vs факт **−$726**.
 
 **Prod env (`ecosystem.config.cjs`, live-oscar):**
 
@@ -23,14 +24,69 @@
 | `PAPER_POST_MIN_LIQ_USD` | $140k | **$400k** |
 | `PAPER_DISCOVERY_MIN_MARKET_CAP_USD` | $2M | **$5M** |
 
-Priority tier (`evaluateSnapshotPriorityTier`) использует те же пороги через `lanePostMinLiqUsd` + `discoveryMinMarketCapUsd`.
+Priority tier (`evaluateSnapshotPriorityTier`) и SQL lane используют те же пороги (`lanePostMinLiqUsd`, `discoveryMinMarketCapUsd`). Eval-reasons: `liq<400000`, `mcap<5000000`.
 
-**Откат:**
+### Деплой (NORM §5)
 
 ```bash
-# PAPER_POST_MIN_LIQ_USD: '400000' → '140000'
-# PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '5000000' → '2000000'
-pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.262 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+# NORM §5 на VPS: git fetch origin v2 && git reset --hard <SHA-1.11.262> && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+---
+
+## [1.11.262] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.262`.  
+**Git SHA (интеграция):** `43cfee2`.
+
+### Fix: Wave B breakeven — только после реального TP rung ≥ +7.5%
+
+**Проблема.** После 1.11.261 MTM стал честным; в позиции оставался ghost `liveWavePeakPnlFrac` от stale snapshot → `BREAKEVEN_EXIT` на WOJAK/USDUC/LOL без исполненного partial TP (каскад продаж ~19:24 UTC 22 мая).
+
+**Код:**
+
+- `src/papertrader/executor/exit-policy-wave-b.ts` — `waveBBreakevenExitEligible()` смотрит `waveBExecutedTpGridThresholdTaken()` (ladder marks), не MTM peak.
+- `tests/papertrader-exit-policy-wave-b.test.ts` — регрессия ghost peak vs executed rung.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.261 -- src/papertrader/executor/exit-policy-wave-b.ts tests/papertrader-exit-policy-wave-b.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy предыдущего SHA; pm2 reload live-oscar --update-env
+```
+
+---
+
+## [1.11.261] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.261`.  
+**Git SHA (интеграция):** `ca0e675`.
+
+### Fix: conservative exit MTM при stale-high PG snapshot
+
+**Проблема.** USDUC: PG snapshot ~$0.00569 vs Jupiter ~$0.00524 → phantom +8% MTM → ложный partial TP +5% при фактически flat exit.
+
+**Код:**
+
+- `src/live/mtm-snapshot-guard.ts` — новый guard: Jupiter ниже stale high → MTM = Jupiter; in-band → `min(snapshot, Jupiter)`.
+- `src/papertrader/executor/tracker.ts` — убран override «Jupiter ниже snapshot → всё равно snapshot».
+- `tests/live-mtm-snapshot-guard.test.ts`.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.260 -- src/live/mtm-snapshot-guard.ts src/papertrader/executor/tracker.ts tests/live-mtm-snapshot-guard.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy предыдущего SHA; pm2 reload live-oscar --update-env
 ```
 
 ---
