@@ -15,11 +15,15 @@ export function repoRelativePosix(fromAbs, spec) {
 
 export function collectRelativeImportSpecs(sourceText) {
   const specs = new Set();
-  for (const re of [IMPORT_FROM_RE, IMPORT_SIDE_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(sourceText)) !== null) {
-      if (m[1]) specs.add(m[1]);
+  for (const line of sourceText.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('import') && !trimmed.startsWith('export')) continue;
+    for (const re of [IMPORT_FROM_RE, IMPORT_SIDE_RE]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(trimmed)) !== null) {
+        if (m[1]) specs.add(m[1]);
+      }
     }
   }
   return [...specs];

@@ -29,6 +29,11 @@ import {
   liveStagedOpenLabelFromState,
 } from '../src/papertrader/executor/live-staged-entry-labels.js';
 import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
+import {
+  fetchLatestSnapshotMcap,
+  type DexSnapshotSource,
+} from '../src/papertrader/pricing.js';
+import { iterJsonlLines } from './jsonl-line-reader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -321,59 +326,56 @@ function exitMcapFromCloseTimelineEvent(tl: TimelineEvent[]): number | null {
   return n > 0 && Number.isFinite(n) ? n : null;
 }
 
+function dexSourceFromTradeSource(source: string | null | undefined): DexSnapshotSource | undefined {
+  const s = (source || '').toLowerCase();
+  if (s === 'raydium' || s === 'meteora' || s === 'orca' || s === 'moonshot' || s === 'pumpswap') {
+    return s;
+  }
+  return undefined;
+}
+
 async function resolveEntryMcapAtBuyUsd(
   mint: string,
   entryTs: number,
   timelineSorted: TimelineEvent[],
+  source?: string | null,
 ): Promise<number | null> {
   const fromTl = entryMcapFromOpenTimelineEvent(timelineSorted);
   if (fromTl != null) return fromTl;
-  if (entryTs > 0) return await getDexMcapNearestBefore(mint, entryTs).catch(() => null);
+  if (entryTs > 0) {
+    const dexSrc = dexSourceFromTradeSource(source);
+    return await fetchLatestSnapshotMcap(
+      mint,
+      dexSrc,
+      Math.floor(entryTs / 1000),
+    ).catch(() => null);
+  }
   return null;
 }
 
-async function getDexLiveMc(mint: string): Promise<number | null> {
-  const cached = dexMcCache.get(mint);
+async function getDexLiveMc(mint: string, source?: string | null): Promise<number | null> {
+  const dexSrc = dexSourceFromTradeSource(source);
+  const cacheKey = `${mint}|${dexSrc ?? 'any'}`;
+  const cached = dexMcCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < DEX_MC_TTL_MS) return cached.mc;
-  const mq = sqlMintQuoted(mint);
-  if (!mq) return null;
-  let sql: ReturnType<typeof postgres>;
-  try {
-    sql = pgPool();
-  } catch {
-    return null;
-  }
-  // Same window as spot reads — collectors can be sparse on illiquid pools.
-  const subqueries = DEX_SNAPSHOT_TABLES.map(
-    (t) => `
-      SELECT ts, market_cap_usd, fdv_usd FROM ${t}
-      WHERE ${sqlMintPoolMatch(mq)} AND ts >= now() - interval '7 days'
-        AND (COALESCE(market_cap_usd, 0) > 0 OR COALESCE(fdv_usd, 0) > 0)
-      ORDER BY ts DESC LIMIT 1
-    `,
-  ).join(' UNION ALL ');
-  try {
-    const rows = await sql.unsafe(
-      `SELECT ts, market_cap_usd, fdv_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
-    );
-    if (!rows.length) return null;
-    const mc = Number(rows[0].market_cap_usd ?? rows[0].fdv_usd ?? 0);
-    if (mc > 0) {
-      dexMcCache.set(mint, { mc, ts: Date.now() });
-      return mc;
-    }
-  } catch {
-    /* table may be missing in some envs — silently ignore */
+  const mc = await fetchLatestSnapshotMcap(mint, dexSrc).catch(() => null);
+  if (mc != null && mc > 0) {
+    dexMcCache.set(cacheKey, { mc, ts: Date.now() });
+    return mc;
   }
   return null;
 }
 
 /** Per-(mint, event-second) cache for timeline mcap back-fill only. */
 const timelineEventMcapCache = new Map<string, number | null | undefined>();
-function getDexMcapNearestBeforeCached(mint: string, beforeMs: number): Promise<number | null> {
-  const k = `${mint}\t${Math.floor(beforeMs / 1000)}`;
+function getDexMcapNearestBeforeCached(
+  mint: string,
+  beforeMs: number,
+  source?: string | null,
+): Promise<number | null> {
+  const k = `${mint}\t${Math.floor(beforeMs / 1000)}\t${source ?? ''}`;
   if (timelineEventMcapCache.has(k)) return Promise.resolve(timelineEventMcapCache.get(k) ?? null);
-  return getDexMcapNearestBefore(mint, beforeMs)
+  return getDexMcapNearestBefore(mint, beforeMs, source)
     .then((v) => {
       timelineEventMcapCache.set(k, v);
       return v;
@@ -384,36 +386,13 @@ function getDexMcapNearestBeforeCached(mint: string, beforeMs: number): Promise<
     });
 }
 
-async function getDexMcapNearestBefore(mint: string, beforeMs: number): Promise<number | null> {
-  const mq = sqlMintQuoted(mint);
-  if (!mq) return null;
-  const epochSec = Math.floor(beforeMs / 1000);
-  if (!Number.isFinite(epochSec) || epochSec <= 0) return null;
-  let sql: ReturnType<typeof postgres>;
-  try {
-    sql = pgPool();
-  } catch {
-    return null;
-  }
-  const subqueries = DEX_SNAPSHOT_TABLES.map(
-    (t) => `
-      SELECT ts, market_cap_usd, fdv_usd FROM ${t}
-      WHERE ${sqlMintPoolMatch(mq)}
-        AND extract(epoch from ts) <= ${epochSec}
-        AND (COALESCE(market_cap_usd, 0) > 0 OR COALESCE(fdv_usd, 0) > 0)
-      ORDER BY ts DESC LIMIT 1
-    `,
-  ).join(' UNION ALL ');
-  try {
-    const rows = await sql.unsafe(
-      `SELECT ts, market_cap_usd, fdv_usd FROM (${subqueries}) sub ORDER BY ts DESC LIMIT 1`,
-    );
-    if (!rows.length) return null;
-    const mc = Number(rows[0].market_cap_usd ?? rows[0].fdv_usd ?? 0);
-    return mc > 0 ? mc : null;
-  } catch {
-    return null;
-  }
+async function getDexMcapNearestBefore(
+  mint: string,
+  beforeMs: number,
+  source?: string | null,
+): Promise<number | null> {
+  const dexSrc = dexSourceFromTradeSource(source);
+  return fetchLatestSnapshotMcap(mint, dexSrc, Math.floor(beforeMs / 1000)).catch(() => null);
 }
 
 /**
@@ -443,6 +422,7 @@ export function filterSpuriousDcaOpenDuplicate(timeline: TimelineEvent[]): Timel
 export async function enrichTimelineMcapGaps(
   mint: string,
   timeline: TimelineEvent[],
+  source?: string | null,
   maxEvents = 32,
 ): Promise<TimelineEvent[]> {
   if (!mint?.trim()) return timeline;
@@ -450,7 +430,7 @@ export async function enrichTimelineMcapGaps(
   const head = await Promise.all(
     timeline.slice(0, n).map(async (ev) => {
       if (Number(ev.mcUsd) > 0) return ev;
-      const mc = await getDexMcapNearestBeforeCached(mint, ev.ts);
+      const mc = await getDexMcapNearestBeforeCached(mint, ev.ts, source);
       if (mc != null && mc > 0) return { ...ev, mcUsd: mc };
       return ev;
     }),
@@ -485,10 +465,11 @@ async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null 
   return t0 && t0 !== '?' ? t0 : '?';
 }
 
-async function getCurrentMcAny(mint: string): Promise<number | null> {
-  const pump = await getCurrentMc(mint);
-  if (pump != null) return pump;
-  return await getDexLiveMc(mint);
+async function getCurrentMcAny(mint: string, source?: string | null): Promise<number | null> {
+  const dex = await getDexLiveMc(mint, source);
+  if (dex != null) return dex;
+  if (dexSourceFromTradeSource(source)) return null;
+  return await getCurrentMc(mint);
 }
 
 /** Latest token USD spot price from DEX snapshots (AMM strategies use metricType=price). */
@@ -1334,8 +1315,7 @@ function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
     return { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null };
   }
   const cutoff = Date.now() - windowMs;
-  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
-  for (const ln of lines) {
+  for (const ln of iterJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
@@ -1398,8 +1378,7 @@ function priceVerifyStatsEndpointSlice(filePath: string, windowMs: number): {
     };
   }
   const cutoff = Date.now() - windowMs;
-  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
-  for (const ln of lines) {
+  for (const ln of iterJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
@@ -2094,7 +2073,6 @@ export function loadPaper2File(filePath: string): {
       openTimelines: new Map(),
     };
   }
-  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
   const om = new Map<string, Paper2OpenItem>();
   const cl: Paper2ClosedRow[] = [];
   let f = Date.now();
@@ -2121,7 +2099,7 @@ export function loadPaper2File(filePath: string): {
     }
   >();
 
-  for (const ln of lines) {
+  for (const ln of iterJsonlLines(filePath)) {
     let e: Record<string, unknown>;
     try {
       e = JSON.parse(ln) as Record<string, unknown>;
@@ -2315,6 +2293,8 @@ export type LiveOscarPaper2Load = Paper2FileLoad & {
 };
 
 function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | null {
+  const stamped = Number(ot.entryMarketCapUsd ?? 0);
+  if (Number.isFinite(stamped) && stamped > 0) return stamped;
   const em = ot.entryMetrics as Record<string, unknown> | undefined;
   if (!em || typeof em !== 'object') return null;
   const mc = Number(em.market_cap_usd ?? em.fdv_usd ?? 0);
@@ -2481,16 +2461,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
     return { ...ev, txSignature: sig };
   };
 
-  let raw: string;
   try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return emptyLiveOscarPaper2Load();
-  }
-
-  for (const line of raw.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
+    for (const line of iterJsonlLines(filePath)) {
+      const t = line;
     let o: Record<string, unknown>;
     try {
       o = JSON.parse(t) as Record<string, unknown>;
@@ -2870,6 +2843,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       liveMeta.delete(mint);
       liveTimelines.delete(mint);
     }
+    }
+  } catch {
+    return emptyLiveOscarPaper2Load();
   }
 
   const failReasons = [...failReasonsCount.entries()]
@@ -3394,7 +3370,12 @@ async function buildPaper2StrategyRowFromLoad(
         const timelineRaw = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
         const timelineSorted = timelineRaw.slice().sort((a, b) => a.ts - b.ts);
         const entryTs = Number(c.entryTs ?? 0);
-        const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(String(c.mint), entryTs, timelineSorted);
+        const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(
+          String(c.mint),
+          entryTs,
+          timelineSorted,
+          c.source != null ? String(c.source) : null,
+        );
         const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
         const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
         const exitPriorityFeeUsd =
@@ -3410,7 +3391,11 @@ async function buildPaper2StrategyRowFromLoad(
         ) {
           tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
         }
-        tlOut = await enrichTimelineMcapGaps(String(c.mint), tlOut);
+        tlOut = await enrichTimelineMcapGaps(
+          String(c.mint),
+          tlOut,
+          c.source != null ? String(c.source) : null,
+        );
         tlOut = finalizeTimelineForApi(tlOut, sid);
         const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
         const entryPriceVerifySlipPct =
@@ -3473,12 +3458,14 @@ async function buildPaper2StrategyRowFromLoad(
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
       const isMcMetric = ot.metricType === 'mc';
       /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
-      const liveMcForPnl = isMcMetric ? await getCurrentMcAny(ot.mint).catch(() => null) : null;
+      const liveMcForPnl = isMcMetric
+        ? await getCurrentMcAny(ot.mint, ot.source).catch(() => null)
+        : null;
       /** DEX snapshots often have mcap even for price-tracked (post-migration) pools — show in UI. */
       const dexMcDisplay =
         liveMcForPnl != null && liveMcForPnl > 0
           ? null
-          : await getDexLiveMc(ot.mint).catch(() => null);
+          : await getDexLiveMc(ot.mint, ot.source).catch(() => null);
       let displayLiveMc: number | null =
         liveMcForPnl != null && liveMcForPnl > 0
           ? liveMcForPnl
@@ -3488,7 +3475,7 @@ async function buildPaper2StrategyRowFromLoad(
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
       if (displayLiveMc != null && displayLiveMc > 0) {
         liveMcProvenance = 'snapshots';
-      } else {
+      } else if (!dexSourceFromTradeSource(ot.source)) {
         const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
         if (pumpOnly != null && pumpOnly > 0) {
           displayLiveMc = pumpOnly;
@@ -3544,13 +3531,12 @@ async function buildPaper2StrategyRowFromLoad(
       let entryMcapAtBuyUsd =
         ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
       if (entryMcapAtBuyUsd == null) {
-        entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(ot.mint, ot.entryTs, timelineSorted);
-      }
-      if (entryMcapAtBuyUsd == null && basePx) {
-        pumpMarketForOpen = pumpMarketForOpen ?? (await getPumpCoinMarket(ot.mint).catch(() => null));
-        if (pumpMarketForOpen?.supplyTokens != null && pumpMarketForOpen.supplyTokens > 0) {
-          entryMcapAtBuyUsd = basePx * pumpMarketForOpen.supplyTokens;
-        }
+        entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(
+          ot.mint,
+          ot.entryTs,
+          timelineSorted,
+          ot.source,
+        );
       }
 
       let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
@@ -3564,7 +3550,7 @@ async function buildPaper2StrategyRowFromLoad(
       ) {
         timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
       }
-      timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut);
+      timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut, ot.source);
       timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
       const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
@@ -3908,8 +3894,7 @@ function aggregateLiqWatchEndpointSlice(filePath: string, windowMs: number): {
     };
   }
   const cutoff = Date.now() - windowMs;
-  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
-  for (const ln of lines) {
+  for (const ln of iterJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
