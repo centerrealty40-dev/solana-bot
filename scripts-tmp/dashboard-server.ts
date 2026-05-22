@@ -49,30 +49,9 @@ function* dashboardJsonlLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, DASHBOARD_JSONL_TAIL_BYTES, DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES);
 }
 
-type Paper2ApiCache = { key: string; expiresAt: number; payload: unknown };
+type Paper2ApiCache = { expiresAt: number; payload: unknown };
 let paper2ApiCache: Paper2ApiCache | null = null;
 let paper2ApiBuild: Promise<unknown> | null = null;
-
-function paper2CacheKey(): string {
-  const paths = [
-    DASHBOARD_LIVE_OSCAR_JSONL,
-    DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
-    DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
-    DASHBOARD_PAPER_OSCAR_V21_JSONL,
-    DASHBOARD_PAPER_OSCAR_V22_JSONL,
-  ];
-  return paths
-    .map((p) => {
-      try {
-        const st = fs.statSync(p);
-        // Journal append bumps mtime every few seconds; size is enough to detect rotation/truncation.
-        return `${p}:${st.size}`;
-      } catch {
-        return `${p}:missing`;
-      }
-    })
-    .join('|');
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3879,15 +3858,14 @@ async function buildPaper2ApiPayload() {
 }
 
 async function getPaper2ApiPayloadCached(): Promise<unknown> {
-  const key = paper2CacheKey();
   const now = Date.now();
-  if (paper2ApiCache && paper2ApiCache.key === key && paper2ApiCache.expiresAt > now) {
+  if (paper2ApiCache && paper2ApiCache.expiresAt > now) {
     return paper2ApiCache.payload;
   }
   if (paper2ApiBuild) return paper2ApiBuild;
   paper2ApiBuild = buildPaper2ApiPayload()
     .then((payload) => {
-      paper2ApiCache = { key, expiresAt: Date.now() + DASHBOARD_PAPER2_CACHE_MS, payload };
+      paper2ApiCache = { expiresAt: Date.now() + DASHBOARD_PAPER2_CACHE_MS, payload };
       return payload;
     })
     .finally(() => {
