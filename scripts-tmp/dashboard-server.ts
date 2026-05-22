@@ -65,7 +65,8 @@ function paper2CacheKey(): string {
     .map((p) => {
       try {
         const st = fs.statSync(p);
-        return `${p}:${st.size}:${st.mtimeMs}`;
+        // Journal append bumps mtime every few seconds; size is enough to detect rotation/truncation.
+        return `${p}:${st.size}`;
       } catch {
         return `${p}:missing`;
       }
