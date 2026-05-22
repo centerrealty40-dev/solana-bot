@@ -354,14 +354,16 @@ const PM2_APPS = [
         /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '140000',
+        /** 1.11.263: $140k → $400k — live journal 2d: 81% losses had liq<400k at entry eval. */
+        PAPER_POST_MIN_LIQ_USD: '400000',
         /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy. 1.11.243: $3M → $2M. */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
+        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy.
+         *  1.11.263: $2M → $5M — live journal 2d/14d: losses skew mcap<5M (WR 29% vs 56% on mcap≥5M). */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '5000000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',

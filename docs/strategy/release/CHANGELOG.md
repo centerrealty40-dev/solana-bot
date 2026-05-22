@@ -8,6 +8,33 @@
 
 ---
 
+## [1.11.263] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.263`.
+
+### Tune: Live Oscar entry floor — liq $400k + mcap $5M
+
+**Фон.** Journal counterfactual на закрытиях с `live_discovery_eval`: **2d** (26 closes) — losses чаще `liq<400k` (13/16) и `mcap<5M` (9/16); **14d** (102 closes, 91 с eval) — F1+F2 блокирует **36/39 losses (−$2145)** vs **47/52 wins (+$1963)** → kept net **+$38** vs факт **−$726** (F2 alone **+$106**).
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `PAPER_POST_MIN_LIQ_USD` | $140k | **$400k** |
+| `PAPER_DISCOVERY_MIN_MARKET_CAP_USD` | $2M | **$5M** |
+
+Priority tier (`evaluateSnapshotPriorityTier`) использует те же пороги через `lanePostMinLiqUsd` + `discoveryMinMarketCapUsd`.
+
+**Откат:**
+
+```bash
+# PAPER_POST_MIN_LIQ_USD: '400000' → '140000'
+# PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '5000000' → '2000000'
+pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+---
+
 ## [1.11.260] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.260`.
