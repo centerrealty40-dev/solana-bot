@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { iterJsonlLines } from '../scripts-tmp/jsonl-line-reader.js';
+import { iterJsonlLines, iterJsonlTailLines } from '../scripts-tmp/jsonl-line-reader.js';
 
 let tmpDir: string | null = null;
 afterEach(() => {
@@ -24,5 +24,22 @@ describe('iterJsonlLines', () => {
     expect(lines.length).toBe(5000);
     expect(JSON.parse(lines[0]!).i).toBe(0);
     expect(JSON.parse(lines.at(-1)!).i).toBe(4999);
+  });
+});
+
+describe('iterJsonlTailLines', () => {
+  it('reads only trailing bytes and skips the first partial line', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonl-tail-'));
+    const fp = path.join(tmpDir, 'tail.jsonl');
+    const head = Array.from({ length: 100 }, (_, i) => JSON.stringify({ i, zone: 'head' }));
+    const tail = Array.from({ length: 50 }, (_, i) => JSON.stringify({ i: i + 1000, zone: 'tail' }));
+    fs.writeFileSync(fp, `${head.join('\n')}\n${tail.join('\n')}\n`, 'utf8');
+
+    const tailBytes = Buffer.byteLength(`${tail.join('\n')}\n`, 'utf8');
+    const allLines = [...iterJsonlLines(fp)];
+    const tailOnly = [...iterJsonlTailLines(fp, tailBytes + 64)];
+    expect(tailOnly.length).toBeLessThan(allLines.length);
+    expect(tailOnly.length).toBeGreaterThanOrEqual(tail.length - 2);
+    expect(JSON.parse(tailOnly.at(-1)!).zone).toBe('tail');
   });
 });

@@ -33,7 +33,45 @@ import {
   fetchLatestSnapshotMcap,
   type DexSnapshotSource,
 } from '../src/papertrader/pricing.js';
-import { iterJsonlLines } from './jsonl-line-reader.js';
+import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
+
+/** Tail replay for huge live journals (align with LIVE_REPLAY_MAX_FILE_BYTES default 200MB). */
+const DASHBOARD_JSONL_TAIL_BYTES = Number(
+  process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024,
+);
+/** Files at or below this size are scanned fully; larger files use tail-only replay. */
+const DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES = Number(
+  process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024,
+);
+const DASHBOARD_PAPER2_CACHE_MS = Number(process.env.DASHBOARD_PAPER2_CACHE_MS ?? 45_000);
+
+function* dashboardJsonlLines(filePath: string): Generator<string> {
+  yield* iterJsonlLinesBounded(filePath, DASHBOARD_JSONL_TAIL_BYTES, DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES);
+}
+
+type Paper2ApiCache = { key: string; expiresAt: number; payload: unknown };
+let paper2ApiCache: Paper2ApiCache | null = null;
+let paper2ApiBuild: Promise<unknown> | null = null;
+
+function paper2CacheKey(): string {
+  const paths = [
+    DASHBOARD_LIVE_OSCAR_JSONL,
+    DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
+    DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
+    DASHBOARD_PAPER_OSCAR_V21_JSONL,
+    DASHBOARD_PAPER_OSCAR_V22_JSONL,
+  ];
+  return paths
+    .map((p) => {
+      try {
+        const st = fs.statSync(p);
+        return `${p}:${st.size}:${st.mtimeMs}`;
+      } catch {
+        return `${p}:missing`;
+      }
+    })
+    .join('|');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1315,7 +1353,7 @@ function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
     return { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null };
   }
   const cutoff = Date.now() - windowMs;
-  for (const ln of iterJsonlLines(filePath)) {
+  for (const ln of dashboardJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
@@ -1378,7 +1416,7 @@ function priceVerifyStatsEndpointSlice(filePath: string, windowMs: number): {
     };
   }
   const cutoff = Date.now() - windowMs;
-  for (const ln of iterJsonlLines(filePath)) {
+  for (const ln of dashboardJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
@@ -2099,7 +2137,7 @@ export function loadPaper2File(filePath: string): {
     }
   >();
 
-  for (const ln of iterJsonlLines(filePath)) {
+  for (const ln of dashboardJsonlLines(filePath)) {
     let e: Record<string, unknown>;
     try {
       e = JSON.parse(ln) as Record<string, unknown>;
@@ -2462,7 +2500,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
   };
 
   try {
-    for (const line of iterJsonlLines(filePath)) {
+    for (const line of dashboardJsonlLines(filePath)) {
       const t = line;
     let o: Record<string, unknown>;
     try {
@@ -3752,10 +3790,7 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
   return fetchCryptoTickerPayload();
 });
 
-app.get('/api/paper2', async (_req, reply) => {
-  reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
-  reply.header('pragma', 'no-cache');
-
+async function buildPaper2ApiPayload() {
   const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const liveRow = await buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
@@ -3840,6 +3875,30 @@ app.get('/api/paper2', async (_req, reply) => {
     totals,
     strategies: merged,
   };
+}
+
+async function getPaper2ApiPayloadCached(): Promise<unknown> {
+  const key = paper2CacheKey();
+  const now = Date.now();
+  if (paper2ApiCache && paper2ApiCache.key === key && paper2ApiCache.expiresAt > now) {
+    return paper2ApiCache.payload;
+  }
+  if (paper2ApiBuild) return paper2ApiBuild;
+  paper2ApiBuild = buildPaper2ApiPayload()
+    .then((payload) => {
+      paper2ApiCache = { key, expiresAt: Date.now() + DASHBOARD_PAPER2_CACHE_MS, payload };
+      return payload;
+    })
+    .finally(() => {
+      paper2ApiBuild = null;
+    });
+  return paper2ApiBuild;
+}
+
+app.get('/api/paper2', async (_req, reply) => {
+  reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
+  reply.header('pragma', 'no-cache');
+  return getPaper2ApiPayloadCached();
 });
 
 app.get('/api/paper2/price-verify-stats', async (req, reply) => {
@@ -3894,7 +3953,7 @@ function aggregateLiqWatchEndpointSlice(filePath: string, windowMs: number): {
     };
   }
   const cutoff = Date.now() - windowMs;
-  for (const ln of iterJsonlLines(filePath)) {
+  for (const ln of dashboardJsonlLines(filePath)) {
     let ev: Record<string, unknown>;
     try {
       ev = JSON.parse(ln) as Record<string, unknown>;
