@@ -107,8 +107,16 @@ export function waveBRecoverPhantomPeakIfNeeded(ot: OpenTrade, pnlFrac: number):
   return true;
 }
 
-/** Highest TP grid threshold (PnL frac) already marked on this open. */
+/** Highest TP grid threshold (PnL frac) already marked on this open (includes MTM peak for trail). */
 export function waveBHighestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
+  let max = waveBExecutedTpGridThresholdTaken(ot, stepPnl);
+  const peak = ot.liveWavePeakPnlFrac ?? 0;
+  if (peak > max) max = peak;
+  return max;
+}
+
+/** TP rungs actually taken via partial sells — excludes MTM-only `liveWavePeakPnlFrac`. */
+export function waveBExecutedTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
   let max = 0;
   if (stepPnl > 0) {
     for (const idx of ot.ladderUsedIndices) {
@@ -119,8 +127,6 @@ export function waveBHighestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number)
   for (const u of ot.ladderUsedLevels) {
     if (Number.isFinite(u) && u > max) max = u;
   }
-  const peak = ot.liveWavePeakPnlFrac ?? 0;
-  if (peak > max) max = peak;
   return max;
 }
 
@@ -130,10 +136,10 @@ export function waveBDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boole
   return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC;
 }
 
-/** Full exit at avg breakeven allowed only after TP rung ≥ +7.5%. */
+/** Full exit at avg breakeven allowed only after an executed TP rung ≥ +7.5%. */
 export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot)) return false;
-  return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
+  return waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 }
 
 /**

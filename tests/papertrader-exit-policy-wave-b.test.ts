@@ -225,17 +225,24 @@ describe('exit-policy-wave-b', () => {
     expect(waveBDefensiveTrailActive(ot2, 0.025)).toBe(false);
   });
 
-  it('waveBBreakevenExitEligible requires +7.5% not +5%', () => {
+  it('waveBBreakevenExitEligible requires executed +7.5% rung, not MTM peak alone', () => {
     const otLow = {
       liveExitPolicyId: 'wave_b_v1',
       ladderUsedLevels: new Set([0.05]),
-      ladderUsedIndices: new Set([1]),
+      ladderUsedIndices: new Set([0]),
     } as unknown as OpenTrade;
-    expect(waveBBreakevenExitEligible(otLow, 0.025)).toBe(false);
+    expect(waveBBreakevenExitEligible(otLow, 0.05)).toBe(false);
+    const otGhostPeak = {
+      liveExitPolicyId: 'wave_b_v1',
+      liveWavePeakPnlFrac: 0.098,
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set<number>(),
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otGhostPeak, 0.05)).toBe(false);
     const otOk = {
       liveExitPolicyId: 'wave_b_v1',
       ladderUsedLevels: new Set([0.075]),
-      ladderUsedIndices: new Set([2]),
+      ladderUsedIndices: new Set([1]),
     } as unknown as OpenTrade;
     expect(waveBBreakevenExitEligible(otOk, 0.025)).toBe(true);
   });
