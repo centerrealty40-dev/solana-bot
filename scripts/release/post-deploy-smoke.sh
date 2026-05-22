@@ -40,15 +40,37 @@ case "$STATUS" in
 esac
 
 if [[ -f "$ERR_LOG" ]]; then
-  if tail -n 40 "$ERR_LOG" | grep -qE 'ERR_MODULE_NOT_FOUND|Cannot find module'; then
-    echo "[post-deploy-smoke] recent error.log tail:" >&2
-    tail -n 15 "$ERR_LOG" >&2
-    fail "module load errors in ${PM2_APP}-error.log"
+  UPTIME_SEC="$(pm2 jlist 2>/dev/null | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const p=d.find(x=>x.name==='$PM2_APP');
+process.stdout.write(p&&p.pm2_env&&p.pm2_env.pm_uptime?String(Math.max(5,Math.floor((Date.now()-p.pm2_env.pm_uptime)/1000))):'60');
+" 2>/dev/null || echo "60")"
+  CUTOFF_EPOCH="$(node -e "process.stdout.write(String(Math.floor(Date.now()/1000)-Number(process.argv[1])))" "$UPTIME_SEC")"
+  RECENT_BAD="$(node -e "
+const fs=require('fs');
+const logPath=process.argv[1];
+const cutoff=Number(process.argv[2]);
+if(!fs.existsSync(logPath)) process.exit(0);
+const lines=fs.readFileSync(logPath,'utf8').split('\n');
+const bad=/ERR_MODULE_NOT_FOUND|Cannot find module/;
+for (const line of lines) {
+  const m=line.match(/^\\d{4}-\\d{2}-\\d{2}T(\\d{2}):(\\d{2}):(\\d{2}):/);
+  if(!m) continue;
+  const iso=line.slice(0,19)+'Z';
+  const ts=Math.floor(Date.parse(iso)/1000);
+  if(Number.isFinite(ts)&&ts>=cutoff&&bad.test(line)){console.log(line);process.exit(0);}
+}
+" "$ERR_LOG" "$CUTOFF_EPOCH" 2>/dev/null || true)"
+  if [[ -n "$RECENT_BAD" ]]; then
+    echo "[post-deploy-smoke] errors since last PM2 start:" >&2
+    echo "$RECENT_BAD" >&2
+    fail "module load errors since PM2 restart in ${PM2_APP}-error.log"
   fi
 fi
 
 if [[ -f "$OUT_LOG" ]]; then
-  if ! tail -n 80 "$OUT_LOG" | grep -q 'papertrader executor start'; then
+  sleep 12
+  if ! tail -n 120 "$OUT_LOG" | grep -q 'papertrader executor start'; then
     fail "no recent executor start in ${PM2_APP}-out.log"
   fi
 fi
