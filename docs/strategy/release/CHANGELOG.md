@@ -10,7 +10,7 @@
 
 ## [1.11.267] — 2026-05-23
 
-**Git SHA (интеграция):** `18bf27f`.
+**Git SHA (интеграция):** `eb681fc`.
 
 ### Tune: hybrid re-entry time fallback 30m → 20m after loss exit
 
