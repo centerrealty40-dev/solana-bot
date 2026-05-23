@@ -239,6 +239,20 @@ npm run typecheck
 
 ---
 
+## [1.11.268] — 2026-05-23
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.268`.
+
+### Discovery — канонический пул по max liq (метрики)
+
+- **`snapshot.ts`:** выбор строки снимка на mint — `liquidity_usd DESC` (канонический пул), не «самый свежий ts» на мёртвом Meteora/Pumpswap.
+- **`snapshot-canonical-pick.ts`:** общий pick + dedupe после inject whitelist/priority.
+- Исправляет кейс pippin: Raydium ~$3.7M вместо Meteora ~$32k в `live_discovery_eval`.
+
+**Откат:** NORM §5 deploy предыдущего SHA; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.260] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.260`.

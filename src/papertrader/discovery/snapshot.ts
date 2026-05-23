@@ -3,6 +3,13 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
+import { CANONICAL_SNAPSHOT_ROW_ORDER_SQL } from './snapshot-canonical-pick.js';
+
+export {
+  pickCanonicalSnapshotRow,
+  dedupeSnapshotTaggedByMintCanonical,
+  CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
+} from './snapshot-canonical-pick.js';
 
 function sqlQuoteMint(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -77,14 +84,14 @@ export async function fetchSnapshotLaneCandidates(
       SELECT *,
              ROW_NUMBER() OVER (
                PARTITION BY mint
-               ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
+               ORDER BY ${CANONICAL_SNAPSHOT_ROW_ORDER_SQL}
              ) AS rn
       FROM eligible
     )
     SELECT *
     FROM ranked
     WHERE rn = 1
-    ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
+    ORDER BY ${CANONICAL_SNAPSHOT_ROW_ORDER_SQL}
     LIMIT ${cfg.snapshotCandidateLimit}
   `));
   return r as unknown as SnapshotCandidateRow[];
@@ -112,9 +119,8 @@ function mapSnapshotRow(row: Record<string, unknown>, source: string): SnapshotC
 }
 
 /**
- * Latest snapshot row for a mint across all collector tables, matching the discovery lane raw union:
- * only rows with `ts` in the last 30 minutes and `price_usd > 0`; pick newest `ts` among venues.
- * (Pumpswap-only probe was wrong for migrated pools — stale near-zero rows while Raydium had real liquidity.)
+ * Latest snapshot row for a mint across all collector tables (last N minutes, price > 0).
+ * Канонический пул = max `liquidity_usd` среди свежих пар всех DEX (не «самый новый ts» на мёртвом пуле).
  */
 export async function fetchLatestCrossVenueSnapshotRowForMint(
   mint: string,
@@ -161,7 +167,7 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
     ranked AS (
       SELECT *,
              ROW_NUMBER() OVER (
-               ORDER BY ts DESC, liquidity_usd DESC, volume_5m DESC, market_cap_usd DESC
+               ORDER BY ${CANONICAL_SNAPSHOT_ROW_ORDER_SQL}
              ) AS rn
       FROM raw
     )
