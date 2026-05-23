@@ -192,6 +192,11 @@ export function onLiveOscarFirstMintProbeFullClose(args: {
 
   if (!(netPnlUsd < 0)) return;
 
+  if (!liveOscarCfg.liveFirstMintProbeDenyOnLossEnabled) {
+    log.debug({ mint: key, netPnlUsd }, 'live first mint probe deny on loss disabled (stub preserved)');
+    return;
+  }
+
   const killPct = args.killDropPct ?? liveMintFirstProbeKillDropPct(liveOscarCfg);
   const added = appendMintToPermanentDenylistLocal(
     liveOscarCfg,

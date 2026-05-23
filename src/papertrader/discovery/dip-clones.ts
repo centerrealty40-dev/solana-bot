@@ -142,12 +142,81 @@ export function recordAfterFullCloseForMintRepeatGate(
   recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px);
 }
 
+export function isLiveReentryHybridGateEnabled(cfg: PaperTraderConfig): boolean {
+  return cfg.liveReentryMinDropFromLastExitPct > 0 && cfg.liveReentryMaxWaitMinutes > 0;
+}
+
+/** Hybrid: allow re-entry after maxWait **or** when price ≤ lastExit×(1−drop%). */
+export function appendLiveReentryHybridGateReasons(
+  cfg: PaperTraderConfig,
+  mint: string,
+  snapshotPriceUsd: number,
+  out: string[],
+  nowMs = Date.now(),
+): void {
+  const dropPct = cfg.liveReentryMinDropFromLastExitPct;
+  const maxWaitMin = cfg.liveReentryMaxWaitMinutes;
+  if (!(dropPct > 0) || !(maxWaitMin > 0)) return;
+
+  const snap = lastExitMarketSnapshotByMintMap.get(mint);
+  if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
+
+  const elapsedMs = nowMs - snap.exitTs;
+  if (elapsedMs >= maxWaitMin * 60_000) return;
+
+  const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
+  if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
+    const leftMin = Math.max(0, (maxWaitMin * 60_000 - elapsedMs) / 60_000);
+    out.push(
+      `reentry_hybrid_wait_dip${dropPct}pct_or_${maxWaitMin}m(left_dip=${(maxAllowed).toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)} timer=${leftMin.toFixed(1)}m)`,
+    );
+  }
+}
+
+function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: string, out: string[]): void {
+  if (!cfg.dipLossExitCooldownEnabled) return;
+  const lossMin = cfg.dipLossExitCooldownMinutes;
+  const lossH = cfg.dipLossExitCooldownHours;
+  const lastExit = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (lastExit <= 0) return;
+
+  let resumeAt = 0;
+  let label = '';
+  if (Number(lossMin) > 0) {
+    resumeAt = lastExit + lossMin * 60_000;
+    label = `${lossMin}m`;
+  } else if (Number(lossH) > 0) {
+    resumeAt = lastExit + lossH * 3_600_000;
+    label = `${lossH}h`;
+  }
+  if (resumeAt > 0 && Date.now() < resumeAt) {
+    const leftMin = (resumeAt - Date.now()) / 60_000;
+    out.push(`post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+  }
+}
+
+/** Post-exit re-entry gate: hybrid dip+timer или legacy cooldown + price gap. */
+export function appendPostExitReentryGateReasons(
+  cfg: PaperTraderConfig,
+  mint: string,
+  snapshotPriceUsd: number,
+  out: string[],
+): void {
+  if (isLiveReentryHybridGateEnabled(cfg)) {
+    appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
+    return;
+  }
+  appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
+  appendLiveReentryPriceGapReasons(cfg, mint, snapshotPriceUsd, out);
+}
+
 export function appendLiveReentryPriceGapReasons(
   cfg: PaperTraderConfig,
   mint: string,
   snapshotPriceUsd: number,
   out: string[],
 ): void {
+  if (isLiveReentryHybridGateEnabled(cfg)) return;
   const pct = cfg.liveReentryMinDropFromLastExitPct;
   if (!(Number(pct) > 0)) return;
   const snap = lastExitMarketSnapshotByMintMap.get(mint);
@@ -641,7 +710,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
     }
 
-    if (cfg.dipLossExitCooldownEnabled) {
+    if (!isLiveReentryHybridGateEnabled(cfg) && cfg.dipLossExitCooldownEnabled) {
       const lossMin = cfg.dipLossExitCooldownMinutes;
       const lossH = cfg.dipLossExitCooldownHours;
       const lastExit = lastPostExitBuyCooldownTsByMintMap.get(row.mint) ?? 0;
@@ -662,7 +731,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
     }
 
-    appendLiveReentryPriceGapReasons(cfg, row.mint, row.price_usd, cooldownReasons);
+    appendPostExitReentryGateReasons(cfg, row.mint, row.price_usd, cooldownReasons);
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
     const cheapPass = preHoldersReasons.length === 0;

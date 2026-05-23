@@ -8,9 +8,53 @@
 
 ---
 
+## [1.11.265] — 2026-05-23
+
+**Git SHA (интеграция):** _pending deploy_.
+
+### Tune: kill −5% + hybrid re-entry (dip −12% OR 30m); denylist off
+
+**Фон.** 7d backtest на PG + journal: после KILLSTOP −5% deny-list «сжигает» узкий пул (~10 fresh mint); лучший re-entry — **−12% от last exit** или **fallback 30 min** (runner без deep dip).
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `PAPER_DCA_KILLSTOP` | −25% | **−5%** |
+| `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` | 0 | **12** |
+| `LIVE_REENTRY_MAX_WAIT_MINUTES` | — | **30** (новый) |
+| `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED` | true | **false** (заменён hybrid gate) |
+| `LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED` | 0 | **1** |
+| `LIVE_NEGATIVE_TRADE_DENY_ENABLED` | — | **0** (stub в коде) |
+| `LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED` | — | **0** |
+| `LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED` | 1 | **0** |
+| `LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES` | 2 | **0** |
+| `LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT` | 7 | **5** |
+
+**Код:** hybrid gate `appendLiveReentryHybridGateReasons` / `appendPostExitReentryGateReasons` (`dip-clones.ts`); флаги deny в `live/config.ts`, `mint-whitelist.ts`, `mint-first-probe.ts`; тест `tests/live-reentry-hybrid-gate.test.ts`.
+
+**VPS (ручное):** `live-oscar-permanent-denylist.txt` очищен (backup `*.bak-pre-hybrid`).
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.264 -- ecosystem.config.cjs src/papertrader/config.ts src/papertrader/discovery/dip-clones.ts src/papertrader/discovery/smart-lottery.ts src/live/config.ts src/live/mint-whitelist.ts src/live/mint-first-probe.ts tests/live-reentry-hybrid-gate.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md .env.example
+npm run typecheck
+# NORM §5 deploy SHA 1.11.264; восстановить denylist из *.bak-pre-hybrid при необходимости
+```
+
+---
+
 ## [1.11.264] — 2026-05-23
 
-**Git SHA (интеграция):** `ea96a38`.
+**Git SHA (интеграция):** `c7f1887`.
 
 ### Tune: Wave B TP ladder — escalating sell (5%/10%/15%/… per +2.5% rung)
 

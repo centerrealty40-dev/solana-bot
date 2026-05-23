@@ -7,8 +7,9 @@ import { globalGate } from '../filters/global-gate.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import {
-  appendLiveReentryPriceGapReasons,
+  appendPostExitReentryGateReasons,
   evaluatedAtMap,
+  isLiveReentryHybridGateEnabled,
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
   type DiscoveryTickResult,
@@ -231,7 +232,7 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
       );
     }
 
-    if (cfg.dipLossExitCooldownEnabled) {
+    if (!isLiveReentryHybridGateEnabled(cfg) && cfg.dipLossExitCooldownEnabled) {
       const lossMin = cfg.dipLossExitCooldownMinutes;
       const lossH = cfg.dipLossExitCooldownHours;
       const lastExit = lastPostExitBuyCooldownTsByMintMap.get(row.mint) ?? 0;
@@ -252,7 +253,7 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
       }
     }
 
-    appendLiveReentryPriceGapReasons(cfg, row.mint, row.price_usd, cooldownReasons);
+    appendPostExitReentryGateReasons(cfg, row.mint, row.price_usd, cooldownReasons);
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
     const cheapPass = preHoldersReasons.length === 0;

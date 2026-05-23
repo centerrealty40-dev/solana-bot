@@ -382,10 +382,16 @@ const PM2_APPS = [
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** После **любого** полного закрытия по mint — 10m пауза повторного входа (имена env исторически `LOSS_`). */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
+        /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 30m). */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
+        /**
+         * Hybrid re-entry после полного выхода (в т.ч. KILLSTOP −5%): повторный вход если
+         * цена ≤ last_exit×(1−12%) **или** прошло 30 мин (что раньше). Не deny-list.
+         */
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
+        LIVE_REENTRY_MAX_WAIT_MINUTES: '30',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -516,11 +522,9 @@ const PM2_APPS = [
          */
         PAPER_DCA_LEVELS: '',
         /**
-         * Killstop −20% к усреднённой позиции. На retro-grid kill в зоне (-15..-12)% сжигал плюсовые сделки
-         * с временной просадкой, которые после восстанавливались к ступеням TP; kill ≥ −20% даёт
-         * страховку от чёрного лебедя без подрезания нормальных просадок (см. retro-grid в README).
+         * Killstop −5% к усреднённой позиции (wave B + escalating TP). Re-entry — hybrid dip12/30m, не deny.
          */
-        PAPER_DCA_KILLSTOP: '-0.25',
+        PAPER_DCA_KILLSTOP: '-0.05',
         /**
          * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
          *   ступень 1 (+5%)  → 10% остатка
@@ -769,8 +773,14 @@ const PM2_APPS = [
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
-        /** `0` — входы без whitelist; убыточные закрытия → локальный permanent denylist + TG. */
+        /** `0` — входы без whitelist; permanent denylist отключён (см. LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED). */
         LIVE_MINT_WHITELIST_ENABLED: '0',
+        /** Permanent denylist: проверка и автодопись выкл.; код/файлы — заготовка на будущее. */
+        LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '1',
+        /** Не добавлять mint в denylist после убыточного закрытия (stub в коде сохранён). */
+        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '0',
+        /** First-mint-probe: не deny при убытке (stub сохранён). */
+        LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED: '0',
         /** `0` — не слать ADVICE `live_oscar_staged_signal`. */
         LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED: '0',
         /** Suppress dips-channel coin TG when wallet SOL cannot fund buy_open leg. */
@@ -780,11 +790,11 @@ const PM2_APPS = [
         /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
         /**
-         * Первый live-вход по mint: split 300+300, kill −7% от сигнала, без усреднения −7/−14;
-         * убыток → denylist; прибыльное закрытие → `live-oscar-mint-graduated.txt`.
+         * Первый live-вход по mint: split 300+300, kill −5% от сигнала; без deny при убытке.
+         * Прибыльное закрытие → `live-oscar-mint-graduated.txt`.
          */
         LIVE_MINT_FIRST_PROBE_ENABLED: '1',
-        LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '7',
+        LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '5',
         LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-mint-graduated.txt'),
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
@@ -801,8 +811,8 @@ const PM2_APPS = [
          */
         LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN: '8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30',
         LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
-        LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
+        /** После N подряд убытков — удаление из whitelist; `0` = выкл (denylist тоже выкл). */
+        LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '0',
         /**
          * Shadow diagnostics (signal-lab + mtm-shadow): JSONL + опциональные отчёты; не влияет на торговые решения.
          * В PM2 выключено — снижает фоновые запросы к Jupiter lite-api; торговый путь (verify/трекер) без изменений.
@@ -887,12 +897,9 @@ const PM2_APPS = [
         LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '3',
         LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '1800000',
         /**
-         * 1.11.231 — после `LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD` cooldown-rearm'ов
-         * на одном mint (через любой intentKind) — автоматически в permanent-denylist.
-         *   5 rearm'ов × 30 мин cooldown = ~2.5+ часа подряд глухих sim_err. Точно глухой маршрут.
-         *   Telegram ALERT при срабатывании. Для отмены — удалить строку из permanent-denylist.txt вручную.
+         * 1.11.231 — после N cooldown-rearm'ов auto-denylist. `0` = выкл (заготовка в коде).
          */
-        LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED: '1',
+        LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED: '0',
         LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD: '5',
         LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED: '1',
 

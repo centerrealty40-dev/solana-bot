@@ -329,6 +329,15 @@ const LiveOscarConfigSchema = z
       .string()
       .min(1)
       .default('data/live/live-oscar-permanent-denylist.seed.txt'),
+    /**
+     * Авто-denylist после убыточного полного закрытия (`onLiveOscarFullCloseNegativeTradeDenylist`).
+     * `0` — заготовка в коде остаётся, допись в файл не выполняется.
+     */
+    liveNegativeTradeDenyEnabled: z.boolean().default(true),
+    /**
+     * First-mint-probe: убыток → permanent denylist. `0` — только graduated на профите.
+     */
+    liveFirstMintProbeDenyOnLossEnabled: z.boolean().default(true),
 
     /**
      * Первый live-вход по mint (ещё нет в `liveMintGraduatedPath`): kill −7% от сигнала, без усреднения −7/−14;
@@ -697,6 +706,11 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     livePermanentDenylistSeedPath:
       process.env.LIVE_OSCAR_PERMANENT_DENYLIST_SEED_PATH?.trim() ||
       'data/live/live-oscar-permanent-denylist.seed.txt',
+    liveNegativeTradeDenyEnabled: envBool(process.env.LIVE_NEGATIVE_TRADE_DENY_ENABLED, true),
+    liveFirstMintProbeDenyOnLossEnabled: envBool(
+      process.env.LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED,
+      true,
+    ),
     liveMintFirstProbeEnabled: envBool(process.env.LIVE_MINT_FIRST_PROBE_ENABLED, true),
     liveMintFirstProbeKillDropPct: (() => {
       const s = process.env.LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT?.trim();
