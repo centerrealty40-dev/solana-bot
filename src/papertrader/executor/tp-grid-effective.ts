@@ -28,7 +28,9 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
    * Исключение: политика выхода зафиксирована на сделке (`liveExitPolicyId`) — всегда читаем `tpGridOverrides`.
    */
   const exitPolicyPinned =
-    ot.liveExitPolicyId === 'legacy_grid' || ot.liveExitPolicyId === 'wave_b_v1';
+    ot.liveExitPolicyId === 'legacy_grid' ||
+    ot.liveExitPolicyId === 'wave_b_v1' ||
+    ot.liveExitPolicyId === 'variant_a_v1';
   const ignoreOverrides =
     cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B' && !exitPolicyPinned;
   const paperIdealizedUnlimitedB =

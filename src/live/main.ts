@@ -13,6 +13,7 @@ import { appendLiveJsonlEvent, configureLiveStore } from './store-jsonl.js';
 import { configureSignalLabStore } from './signal-lab.js';
 import { configureMtmShadowStore } from './mtm-shadow.js';
 import { configureStagedAddSimCooldown } from './staged-add-sim-cooldown.js';
+import { configureMintTimedLossCooldown } from './mint-timed-loss-cooldown.js';
 import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
 import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
@@ -165,6 +166,7 @@ export async function main(): Promise<void> {
     },
     liveCfg,
   );
+  configureMintTimedLossCooldown(liveCfg);
   configureAdaptivePriorityFee({
     enabled: liveCfg.liveAdaptivePriorityFeeEnabled,
     threshold: liveCfg.liveAdaptivePriorityFeeThreshold,
@@ -198,10 +200,10 @@ export async function main(): Promise<void> {
     if (
       maxUsd != null &&
       Number.isFinite(maxUsd) &&
-      Math.abs(paperBaseline.positionUsd - maxUsd) > 1e-6
+      paperBaseline.positionUsd > maxUsd + 1e-6
     ) {
       throw new Error(
-        `live-oscar: PAPER_POSITION_USD (${paperBaseline.positionUsd}) must equal LIVE_MAX_POSITION_USD (${maxUsd}). Fix env / LIVE_INHERIT_ENV_FILE (see ecosystem live-oscar).`,
+        `live-oscar: PAPER_POSITION_USD (${paperBaseline.positionUsd}) exceeds LIVE_MAX_POSITION_USD (${maxUsd}). Fix env / LIVE_INHERIT_ENV_FILE (see ecosystem live-oscar).`,
       );
     }
   }

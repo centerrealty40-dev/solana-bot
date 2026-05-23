@@ -256,9 +256,25 @@ export interface OpenTrade {
 
   /**
    * Live Oscar — политика выхода, зафиксированная при open/restore.
-   * `legacy_grid` — ladder_retrace + prod grid snapshot; `wave_b_v1` — wave TP + stepped trail.
+   * `legacy_grid` — ladder_retrace + prod grid snapshot; `wave_b_v1` — wave TP + stepped trail;
+   * `variant_a_v1` — discrete TP + moon50 + peak trail + smart48 (no price kill).
    */
-  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1';
+  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1';
+
+  /** Variant A: peak PnL fraction (vs avg) on remainder for trail / salvage24. */
+  liveVariantARemainderPeakPnlFrac?: number;
+  liveVariantATrailArmed?: boolean;
+  liveVariantASmart48Extended?: boolean;
+  liveVariantASalvage24Checked?: boolean;
+  liveVariantAH48Checked?: boolean;
+  /** Set on close path for journal / mint cooldown. */
+  liveVariantAExitTag?:
+    | 'salvage24'
+    | 'h48_loss'
+    | 'horizon48'
+    | 'horizon96'
+    | 'moon50'
+    | 'trail';
 
   /** Wave B: last peak PnL fraction (vs avg) for wave reset. */
   liveWavePeakPnlFrac?: number;

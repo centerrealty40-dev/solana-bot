@@ -348,6 +348,13 @@ const LiveOscarConfigSchema = z
     liveMintGraduatedPath: z.string().min(1).default('data/live/live-oscar-mint-graduated.txt'),
 
     /**
+     * Variant A timed loss exit (salvage24 / h48_loss): block re-entry on same mint for N ms.
+     * Env: `LIVE_MINT_TIMED_LOSS_COOLDOWN_ENABLED`, `LIVE_MINT_TIMED_LOSS_COOLDOWN_MS` (default 24h).
+     */
+    liveMintTimedLossCooldownEnabled: z.boolean().default(false),
+    liveMintTimedLossCooldownMs: z.coerce.number().int().min(0).max(7 * 24 * 3_600_000).default(86_400_000),
+
+    /**
      * Ручной blacklist mint: совпадает с paper `mintBlacklistPath` / `LIVE_MINT_BLACKLIST_*` — файл должен существовать при включении.
      */
     liveMintBlacklistEnabled: z.boolean().default(false),
@@ -720,6 +727,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
     liveMintGraduatedPath:
       process.env.LIVE_MINT_GRADUATED_PATH?.trim() || 'data/live/live-oscar-mint-graduated.txt',
+    liveMintTimedLossCooldownEnabled: envBool(process.env.LIVE_MINT_TIMED_LOSS_COOLDOWN_ENABLED, false),
+    liveMintTimedLossCooldownMs: (() => {
+      const s = process.env.LIVE_MINT_TIMED_LOSS_COOLDOWN_MS?.trim();
+      if (!s) return 86_400_000;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 86_400_000;
+    })(),
     liveMintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     liveMintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveDiscoveryAuditJsonlEnabled: envBool(process.env.LIVE_DISCOVERY_AUDIT_JSONL, true),

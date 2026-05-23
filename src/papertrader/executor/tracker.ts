@@ -53,6 +53,15 @@ import {
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
+import {
+  isVariantAExitPolicy,
+  variantAUpdateRemainderPeak,
+  variantAMoonExitTriggered,
+  variantATrailFullExitTriggered,
+  variantAEvalTimedExit,
+  variantAExitTagLabel,
+} from './exit-policy-variant-a.js';
+import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
@@ -380,6 +389,10 @@ function buildExitContext(args: {
   let triggerLabel = exitReason as string;
   switch (exitReason) {
     case 'TP': {
+      if (isVariantAExitPolicy(ot) && ot.liveVariantAExitTag === 'moon50') {
+        triggerLabel = variantAExitTagLabel('moon50') ?? 'Variant A · moon +50%';
+        break;
+      }
       if (ot.remainingFraction <= 1e-6 && tpLadderHits > 0) {
         triggerLabel =
           cfg.tpGridStepPnl > 0
@@ -396,6 +409,10 @@ function buildExitContext(args: {
       triggerLabel = `SL xAvg≤${cfg.slX.toFixed(2)} (cur ${xAvg.toFixed(2)}x)`;
       break;
     case 'TRAIL':
+      if (isVariantAExitPolicy(ot) && ot.liveVariantAExitTag === 'trail') {
+        triggerLabel = variantAExitTagLabel('trail') ?? 'Variant A · trail';
+        break;
+      }
       if (cfg.trailMode === 'ladder_retrace') {
         triggerLabel =
           cfg.tpGridStepPnl > 0
@@ -407,7 +424,11 @@ function buildExitContext(args: {
       }
       break;
     case 'TIMEOUT':
-      triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
+      if (isVariantAExitPolicy(ot) && ot.liveVariantAExitTag) {
+        triggerLabel = variantAExitTagLabel(ot.liveVariantAExitTag) ?? `Variant A · ${ot.liveVariantAExitTag}`;
+      } else {
+        triggerLabel = `TIMEOUT ${cfg.timeoutHours}h${ot.trailingArmed ? ' (trail was armed)' : ' (trail NEVER armed; need ' + cfg.trailTriggerX.toFixed(2) + 'x)'}`;
+      }
       break;
     case 'BREAKEVEN_EXIT':
       triggerLabel = `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
@@ -916,6 +937,7 @@ function hookLiveWhitelistAfterFullClose(
   netPnlUsd: number,
   liveMintFirstProbe?: boolean,
   firstMintKillDropPct?: number,
+  variantAExitTag?: OpenTrade['liveVariantAExitTag'],
 ): void {
   onLiveOscarFullCloseUpdateWhitelistLossStreak({
     liveOscarCfg,
@@ -940,6 +962,7 @@ function hookLiveWhitelistAfterFullClose(
     symbol,
     netPnlUsd,
   });
+  recordMintTimedLossCooldown(mint, variantAExitTag);
 }
 
 async function closeOpenTradeReconcileOrphan(args: {
@@ -1066,6 +1089,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
   /** Не планируем post-close tail sweep: закрытие уже из-за рассинхрона с цепью; через `livePostCloseTailSweepDelayMs`
    * отложенный `sell_full` может снять **новую** позицию по тому же mint (см. отмену при `live_position_open`). */
@@ -1193,6 +1217,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -1339,6 +1364,7 @@ export async function trackerForceFullExitLive(args: {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -1696,7 +1722,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     await sleep(liveOscarCfg?.liveTrackerInterMintDelayMs ?? 120);
 
-    if (curMetric > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot))) {
+    if (curMetric > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
       const rawMtm = curMetric;
       const exitMtm = clampLiveTrackerMtmForExit(ot, rawMtm);
       if (exitMtm > 0 && Math.abs(exitMtm - rawMtm) / Math.max(rawMtm, 1e-18) > 0.002) {
@@ -1869,6 +1895,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
         scheduleTailAfterLiveClose(
           liveOscarCfg,
@@ -1902,7 +1929,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (!(curMetric > 0)) {
-      if (ageH >= effCfg.timeoutHours && !isWaveBExitPolicy(ot)) {
+      if (ageH >= effCfg.timeoutHours && !isWaveBExitPolicy(ot) && !isVariantAExitPolicy(ot)) {
         const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
@@ -1961,6 +1988,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -2094,6 +2122,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
       if (isWaveBExitPolicy(ot)) {
         waveBOnNewHigh(ot, pnlFracPeak, tgEff.stepPnl);
+      } else if (isVariantAExitPolicy(ot)) {
+        variantAUpdateRemainderPeak(ot, pnlFracPeak, cfg);
       }
       ot.peakMcUsd = curMetric;
       ot.peakPnlPct = pnlPctVsAvg;
@@ -2320,6 +2350,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const currDropMetric = usePnlVsAvgForDca ? curMetric / ot.avgEntry - 1 : dropFromFirstPct;
         if (!dcaCrossedDownward(effPrevDrop, currDropMetric, lvl.triggerPct)) continue;
         const addUsd = cfg.positionUsd * lvl.addFraction;
+        if (
+          liveOscarCfg?.liveMaxPositionUsd != null &&
+          ot.totalInvestedUsd + addUsd > liveOscarCfg.liveMaxPositionUsd + 1e-6
+        ) {
+          continue;
+        }
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
           if (!open.has(mint)) continue;
@@ -2530,6 +2566,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       cfg.strategyId === 'live-oscar' &&
       cfg.liveOscarBreakevenTrimAfterFirstTpEnabled &&
       !isWaveBExitPolicy(ot) &&
+      !isVariantAExitPolicy(ot) &&
       !ot.liveBreakevenTrimDone &&
       ot.partialSells.some((p) => p.reason === 'TP_LADDER') &&
       ot.avgEntry > 0 &&
@@ -2603,6 +2640,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       stats,
     });
 
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+
+    /** Variant A: update remainder peak every tick (not only new ATH). */
+    if (isVariantAExitPolicy(ot) && ot.avgEntry > 0) {
+      variantAUpdateRemainderPeak(ot, pnlPctVsAvg / 100, cfg);
+    }
+
     /**
      * Вторая нога (25%) — в конце тика: на этом же проходе уже обработаны DCA и partial TP.
      * Если сработало усреднение или частичный TP — pending снят выше, до сюда не доходим (вторая нога не нужна).
@@ -2646,9 +2693,27 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     let exitReason: ExitReason | null = null;
     if (!(isPaperOscarIdealized && idealizedMute)) {
+      if (isVariantAExitPolicy(ot) && ot.avgEntry > 0) {
+        const pnlFracVa = pnlPctVsAvg / 100;
+        if (variantAMoonExitTriggered(ot, effCfg, pnlFracVa)) {
+          ot.liveVariantAExitTag = 'moon50';
+          exitReason = 'TP';
+        } else {
+          const timedTag = variantAEvalTimedExit(ot, effCfg, pnlFracVa, ageH);
+          if (timedTag) {
+            ot.liveVariantAExitTag = timedTag;
+            exitReason = 'TIMEOUT';
+          } else if (variantATrailFullExitTriggered(ot, effCfg, pnlFracVa)) {
+            ot.liveVariantAExitTag = 'trail';
+            exitReason = 'TRAIL';
+          }
+        }
+      }
+
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
       const inKillTerritory =
-        inSignalKillTerritory || (!ot.liveStagedEntry && killEff < 0 && pnlPctVsAvg / 100 <= killEff);
+        !isVariantAExitPolicy(ot) &&
+        (inSignalKillTerritory || (!ot.liveStagedEntry && killEff < 0 && pnlPctVsAvg / 100 <= killEff));
       if (inKillTerritory) {
         const debounceKillAfterReplenish =
           cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKillTerritory;
@@ -2682,6 +2747,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         else if (
           effCfg.trailMode === 'ladder_retrace' &&
           !isWaveBExitPolicy(ot) &&
+          !isVariantAExitPolicy(ot) &&
           ladderRetraceTriggered(
             ot,
             tpLadder,
@@ -2702,6 +2768,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       !exitReason &&
       !isWaveBExitPolicy(ot) &&
+      !isVariantAExitPolicy(ot) &&
       ageH >= effCfg.timeoutHours &&
       !timeoutSuppressedByProgress(ot)
     )
@@ -2847,6 +2914,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ct.netPnlUsd,
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
   );
       scheduleTailAfterLiveClose(
         liveOscarCfg,

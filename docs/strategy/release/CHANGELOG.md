@@ -8,6 +8,43 @@
 
 ---
 
+## [1.11.269] — 2026-05-21
+
+### Feature: Live Oscar Variant A exit stack + DCA cap $1200
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Entry | $400+$400 staged split (`PAPER_POSITION_USD=800`) |
+| Max cap | `LIVE_MAX_POSITION_USD=1200` (DCA −10%/−20% × $200) |
+| DCA | `PAPER_DCA_LEVELS=-10:0.25,-20:0.25` |
+| Kill | `PAPER_DCA_KILLSTOP=0` (no price kill) |
+| TP | Discrete ladder `0.05:0.25,…,0.30:0.15`; grid off |
+| Exit policy | `PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1`; wave B off for **new** opens |
+| Moon / trail | +50% full exit; trail arm +35%, retrace 12% |
+| Timed | Salvage24; smart48 (loss @48h, winners to 96h) |
+| Min liq | `PAPER_POST_MIN_LIQ_USD=300000` |
+| Re-entry | `LIVE_MINT_TIMED_LOSS_COOLDOWN_*` 24h after salvage24/h48_loss |
+
+**Code:** `exit-policy-variant-a.ts`, tracker integration, `mint-timed-loss-cooldown.ts`, notional boot allows entry < max.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD && git status -sb'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.268 -- ecosystem.config.cjs src/papertrader/executor/exit-policy-variant-a.ts src/live/mint-timed-loss-cooldown.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+# + revert tracker/types/config edits; NORM §5 deploy 1.11.268
+```
+
+---
+
 ## [1.11.267] — 2026-05-23
 
 **Git SHA (интеграция):** `eb681fc`.

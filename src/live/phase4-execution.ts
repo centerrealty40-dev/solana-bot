@@ -51,6 +51,10 @@ import {
 } from './pending-buy-cooldown.js';
 import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
 import {
+  isMintTimedLossCooldownActive,
+  mintTimedLossCooldownRemainingMs,
+} from './mint-timed-loss-cooldown.js';
+import {
   isStagedAddCooldownActive,
   recordStagedAddOutcome,
   stagedAddCooldownRemainingMs,
@@ -314,6 +318,28 @@ async function runSolToTokenPipeline(
       anchorMode: mode,
       terminalKind: 'gate',
       terminalMessage: 'live_permanent_deny',
+    };
+  }
+
+  if (
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
+    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add' || args.intentKind === 'buy_scale_in') &&
+    isMintTimedLossCooldownActive(liveCfg, args.mint)
+  ) {
+    const remaining = mintTimedLossCooldownRemainingMs(args.mint);
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_mint_timed_loss_cooldown:${args.intentKind}`,
+      detail: JSON.stringify({
+        mint: args.mint.slice(0, 12),
+        remainingMs: remaining,
+      }).slice(0, 200),
+    });
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: `mint_timed_loss_cooldown:${Math.round(remaining / 1000)}s`,
     };
   }
 

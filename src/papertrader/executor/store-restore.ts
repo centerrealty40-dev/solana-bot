@@ -350,7 +350,16 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
 
     const lepi = rawPayload.liveExitPolicyId;
-    if (lepi === 'legacy_grid' || lepi === 'wave_b_v1') ot.liveExitPolicyId = lepi;
+    if (lepi === 'legacy_grid' || lepi === 'wave_b_v1' || lepi === 'variant_a_v1') {
+      ot.liveExitPolicyId = lepi;
+    }
+
+    const lvrp = rawPayload.liveVariantARemainderPeakPnlFrac;
+    if (typeof lvrp === 'number' && Number.isFinite(lvrp)) ot.liveVariantARemainderPeakPnlFrac = lvrp;
+    if (Boolean(rawPayload.liveVariantATrailArmed)) ot.liveVariantATrailArmed = true;
+    if (Boolean(rawPayload.liveVariantASmart48Extended)) ot.liveVariantASmart48Extended = true;
+    if (Boolean(rawPayload.liveVariantASalvage24Checked)) ot.liveVariantASalvage24Checked = true;
+    if (Boolean(rawPayload.liveVariantAH48Checked)) ot.liveVariantAH48Checked = true;
 
     const lwp = rawPayload.liveWavePeakPnlFrac;
     if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;
@@ -371,7 +380,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
 
     /** Wave migration runs on first tracker tick when `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1`. */
-    if (lepi !== 'wave_b_v1') {
+    if (lepi !== 'wave_b_v1' && lepi !== 'variant_a_v1') {
       ensureLiveOscarExitPolicyPinned(ot);
     }
 
