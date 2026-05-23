@@ -10,7 +10,7 @@
 
 ## [1.11.264] — 2026-05-23
 
-**Git SHA (интеграция):** `d9d3f23`.
+**Git SHA (интеграция):** `ea96a38`.
 
 ### Tune: Wave B TP ladder — escalating sell (5%/10%/15%/… per +2.5% rung)
 
