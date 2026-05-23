@@ -10,9 +10,7 @@
 
 ## [1.11.266] — 2026-05-23
 
-**Git SHA (интеграция):** _pending deploy_.
-
-### Tune: entry split $400+$400 only ($800 cap); avg legs off
+**Git SHA (интеграция):** `628c33b`.
 
 **Prod env (`ecosystem.config.cjs`, live-oscar):**
 
