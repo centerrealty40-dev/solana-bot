@@ -8,6 +8,42 @@
 
 ---
 
+## [1.11.266] — 2026-05-23
+
+**Git SHA (интеграция):** _pending deploy_.
+
+### Tune: entry split $400+$400 only ($800 cap); avg legs off
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было (1.11.265) | Стало |
+|---|---|---|
+| `LIVE_OSCAR_FULL_NOTIONAL_USD` / `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` | $900 | **$800** |
+| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` | $300 | **$400** |
+| `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD` | $300 | **$400** |
+| `PAPER_ENTRY_FIRST_LEG_FRACTION` | 0.7 | **0.5** |
+| `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD` | $150 | **0** (усреднение −7% выкл.) |
+| `PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD` | $150 | **0** (усреднение −14% выкл.) |
+
+**Код:** `liveStagedEntrySecondLegUsd` zod → `nonnegative()` (0 = без avg-ног).
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.265 -- ecosystem.config.cjs src/papertrader/config.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy SHA 1.11.265
+```
+
+---
+
 ## [1.11.265] — 2026-05-23
 
 **Git SHA (интеграция):** `f9382b1`.

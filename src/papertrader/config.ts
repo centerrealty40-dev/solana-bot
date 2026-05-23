@@ -91,7 +91,7 @@ const ConfigSchema = z.object({
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
   liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
-  liveStagedEntrySecondLegUsd: z.coerce.number().positive().default(600),
+  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(600),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),

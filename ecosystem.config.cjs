@@ -25,9 +25,9 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
  * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
  *
- * 1.11.247: $300+$300 entry split + $150 @ −7% + $150 @ −14% staged avg = $900 cap.
+ * 1.11.266: entry split **$400+$400** only (no −7%/−14% avg legs) = $800 cap.
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '900';
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
 
 const PM2_APPS = [
     {
@@ -317,25 +317,23 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry 1.11.247: сплит входа **$300+$300** (10 с, +3%/−10% к 1-й ноге, не усреднение);
-         * усреднение staged **$150 @ −7%** (≥3 мин после 1-й ноги сплита, только если drop в (−7%, −14%])
-         * и **$150 @ −14%** (≥5 мин после первого усреднения).
+         * Staged-entry 1.11.266: сплит входа **$400+$400** (10 с, +3%/−10% к 1-й ноге); усреднения −7%/−14% выкл.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '25',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
