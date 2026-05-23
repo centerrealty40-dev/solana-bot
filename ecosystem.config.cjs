@@ -22,9 +22,9 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
 /**
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
- * Boot fails if `PAPER_POSITION_USD` > `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
+ * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * 1.11.269 Variant A: entry split **$400+$400** = $800; DCA −10%/−20% × $200 → max **$1200**/mint.
+ * 1.11.269 Variant A: entry split 400+400 USD = 800; DCA -10%/-20% x 200 USD; max 1200 USD per mint.
  */
 const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '800';
 const LIVE_OSCAR_MAX_POSITION_USD = '1200';
