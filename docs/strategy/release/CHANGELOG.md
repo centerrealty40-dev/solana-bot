@@ -12,6 +12,8 @@
 
 **Git SHA (интеграция):** `628c33b`.
 
+### Tune: entry split $400+$400 only ($800 cap); avg legs off
+
 **Prod env (`ecosystem.config.cjs`, live-oscar):**
 
 | Параметр | Было (1.11.265) | Стало |
