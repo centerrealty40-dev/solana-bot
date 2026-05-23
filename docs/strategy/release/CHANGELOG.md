@@ -8,6 +8,32 @@
 
 ---
 
+## [1.11.272] — 2026-05-21
+
+### Revert prod exit: Variant A v2 hybrid (max-profit backtest winner)
+
+**Context:** PG backtest on 64 closes / 14d / liq ≥ $300k: v3 scratch **+$528** vs v2 hybrid **+$2 104** (same cohort, `scripts-tmp/live-oscar-v3-vs-v2-backtest.ts`).
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Exit policy | **New opens → `variant_a_v2`** again (in-flight `variant_a_v3` / v1 / wave B unchanged) |
+| TP | Infinite +5% grid, **10%** of remainder per rung |
+| Trail | Partial stepped trail (20% remainder, −5% from peak); arms @ **+10%** |
+| DCA | After any DCA leg → TP rungs reset on new avg |
+| Re-arm | After ≥+10% taken, drop to ≤+2.5% → rungs above +2.5% fire again |
+| Timed | salvage24 + h48 **loss @ breakeven**; `SMART48=0` |
+| Removed from prod | v3 discrete ladder, flush @ 0%, scratch gap tail, mint scratch re-entry |
+
+**Code:** `stampVariantAOnOpen` → v2; `liveOscarHybridStrategyNoteRu()`; dashboard copy v2.
+
+### Откат
+
+Revert to `1.11.271` (v3 scratch env + stamp v3); redeploy NORM §5.
+
+---
+
 ## [1.11.271] — 2026-05-21
 
 ### Feature: Live Oscar Variant A v3 — scratch-harvest exit + price re-entry

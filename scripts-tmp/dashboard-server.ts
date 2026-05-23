@@ -29,6 +29,7 @@ import {
   liveStagedOpenLabelFromState,
 } from '../src/papertrader/executor/live-staged-entry-labels.js';
 import {
+  liveOscarHybridStrategyNoteRu,
   liveOscarScratchStrategyNoteRu,
   variantAExitTagLabel,
   type VariantAExitTag,
@@ -1571,7 +1572,12 @@ function liveStagedOpenLabelRu(strategyId: string, e: Record<string, unknown>): 
   return liveStagedOpenLabelFromState(strategyId, e);
 }
 
-/** Контекст Variant A v3 scratch для таймлайна live-oscar. */
+/** Контекст Variant A v2 hybrid (prod) для таймлайна live-oscar. */
+function liveOscarHybridTimelineNote(): string {
+  return liveOscarHybridStrategyNoteRu();
+}
+
+/** Контекст Variant A v3 scratch (in-flight) для таймлайна live-oscar. */
 function liveOscarScratchTimelineNote(): string {
   const tail = Number(process.env.PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT ?? 0.03);
   return liveOscarScratchStrategyNoteRu({
@@ -1619,16 +1625,18 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   if (isLiveOscar) {
     const exitPolicyId = liveOscarExitPolicyIdFromJournal(e);
     const scratchV3 = exitPolicyId === 'variant_a_v3';
+    const hybridV2 = exitPolicyId === 'variant_a_v2' || exitPolicyId === '';
     if (mode === 'B' || mode === 'A') {
       parts.push(
         'Режим выхода ' +
           mode +
-          ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия — Variant A v3 scratch-harvest.',
+          ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия — Variant A v2 hybrid.',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add' || evKind === 'entry_split_add') {
       const st = liveStagedEntryState(e);
       parts.push(st?.entrySplitV2 === true ? liveOscarEntryContextNoteV2() : liveOscarEntryContextNoteLegacy());
-      if (scratchV3 || st?.entrySplitV2 === true) parts.push(liveOscarScratchTimelineNote());
+      if (scratchV3) parts.push(liveOscarScratchTimelineNote());
+      else if (hybridV2 || st?.entrySplitV2 === true) parts.push(liveOscarHybridTimelineNote());
     } else if (
       evKind === 'dca_add' ||
       evKind === 'staged_avg_add' ||
@@ -1637,18 +1645,20 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
       const st = liveStagedEntryState(e);
       if (st?.entrySplitV2 === true) {
         parts.push(liveOscarEntryContextNoteV2());
-        parts.push(liveOscarScratchTimelineNote());
+        parts.push(scratchV3 ? liveOscarScratchTimelineNote() : liveOscarHybridTimelineNote());
       }
     } else if (
       evKind === 'partial_sell' &&
       (String(e.reason) === 'SCRATCH_FLUSH0' || String(e.reason) === 'SCRATCH_GAP_FLUSH')
     ) {
       parts.push(liveOscarScratchTimelineNote());
-    } else if (scratchV3 || evKind === 'close') {
+    } else if (scratchV3) {
       parts.push(liveOscarScratchTimelineNote());
+    } else if (hybridV2 || evKind === 'close') {
+      parts.push(liveOscarHybridTimelineNote());
     } else {
       parts.push(
-        'Live Oscar: Variant A v3 scratch-harvest — см. описание стратегии на плитке.',
+        'Live Oscar: Variant A v2 hybrid — см. описание стратегии на плитке.',
       );
     }
     return parts.length ? parts.join('\n') : null;

@@ -1,8 +1,8 @@
 /**
  * Live Oscar exit policy «Variant A»
  * - v1 legacy: discrete TP + moon50 + full trail + smart48/96h
- * - v2 hybrid: infinite +5% grid, partial trail @+10% (superseded for new opens)
- * - v3 scratch: harvest +5%→30%, ladder up, flush @0% avg, gap tail −3%, no DCA after TP
+ * - v2 hybrid: infinite +5% grid, partial trail @+10% (prod for new opens)
+ * - v3 scratch: harvest +5%→30%, ladder up, flush @0% avg, gap tail −3% (in-flight only)
  */
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
@@ -218,14 +218,7 @@ export function variantAScratchUpdatePeak(ot: OpenTrade, pnlFrac: number): void 
 /** Stamp policy on first open (before journal). Returns true when Variant A was applied. */
 export function stampVariantAOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): boolean {
   if (!isVariantAExitPolicyEnabled(cfg)) return false;
-  ot.liveExitPolicyId = VARIANT_A_V3_POLICY_ID;
-  ot.tpGridOverrides = {
-    ...ot.tpGridOverrides,
-    gridStepPnl: 0,
-    gridSellFraction: 0,
-    gridSellFractionByStep: [],
-    gridFirstRungRetraceMinPnlPct: 0,
-  };
+  ot.liveExitPolicyId = VARIANT_A_V2_POLICY_ID;
   ot.liveVariantAScratchHadTp = false;
   ot.liveVariantAScratchPrevPnlFrac = 0;
   ot.liveVariantAScratchPeakPnlFrac = 0;
@@ -331,19 +324,28 @@ export function variantAExitTagLabel(tag: VariantAExitTag | undefined): string |
   }
 }
 
+export function liveOscarHybridStrategyNoteRu(): string {
+  return (
+    'Live Oscar · Variant A v2 hybrid (prod):\n' +
+    '• Вход: $800 ($400+$400 split), DCA −10%/−20% × $200, cap $1200, liq ≥ $300k.\n' +
+    '• TP: бесконечная сетка +5% к avg, sell 10% остатка за ступень.\n' +
+    '• Re-arm: после ≥+10% taken, откат ≤+2.5% → ступени выше +2.5% снова доступны.\n' +
+    '• После DCA: все TP-ступени сбрасываются (новый avg).\n' +
+    '• Trail: partial stepped −5% от хая, sell 20% остатка; arm @+10%.\n' +
+    '• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n' +
+    '• Timed loss без TP: 24h block по mint.'
+  );
+}
+
 export function liveOscarScratchStrategyNoteRu(cfg: PaperTraderConfig): string {
   const tail = (variantAScratchGapTailPnlFrac(cfg) * 100).toFixed(0);
   return (
-    'Live Oscar · Variant A v3 scratch-harvest (prod):\n' +
-    '• Вход: $800 ($400+$400 split), DCA −10%/−20% × $200 до первого TP, cap $1200, liq ≥ $300k.\n' +
+    'Live Oscar · Variant A v3 scratch-harvest (in-flight):\n' +
     '• TP ladder (vs avg): +5%→30%, +10%→15%, +15%→15%, +20%→10%, +25%→10%, +30%→10% остатка.\n' +
     '• После любого TP: DCA запрещён.\n' +
     '• Откат к avg (0%): продажа 100% остатка (scratch flush).\n' +
     `• Gap через 0%: flush у avg при ≤−${tail}% от avg.\n` +
-    '• Хвост < $100: полное закрытие (dust).\n' +
-    '• Timed: salvage24 + h48 loss только если TP не было.\n' +
-    '• Re-entry в тот же mint: цена ≤ lastExit × 90% (без таймера) + обычные entry gates.\n' +
-    '• Timed loss (salvage/h48 без TP): 24h block по mint.'
+    '• Хвост < $100: dust flush. Timed loss только без TP.'
   );
 }
 

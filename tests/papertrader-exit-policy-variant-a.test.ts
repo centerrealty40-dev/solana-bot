@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { OpenTrade } from '../src/papertrader/types.js';
 import {
+  VARIANT_A_V2_POLICY_ID,
   VARIANT_A_V3_POLICY_ID,
+  isVariantAHybridExitPolicy,
   isVariantAScratchExitPolicy,
   isVariantALegacyV1ExitPolicy,
   stampVariantAOnOpen,
@@ -65,19 +67,32 @@ function ot(): OpenTrade {
   };
 }
 
-describe('exit-policy-variant-a v3 scratch', () => {
-  it('stamps variant_a_v3 on open when enabled (over wave B)', () => {
+function stampV3Scratch(trade: OpenTrade, c: PaperTraderConfig): void {
+  stampVariantAOnOpen(trade, c);
+  trade.liveExitPolicyId = VARIANT_A_V3_POLICY_ID;
+  trade.tpGridOverrides = {
+    ...trade.tpGridOverrides,
+    gridStepPnl: 0,
+    gridSellFraction: 0,
+    gridSellFractionByStep: [],
+    gridFirstRungRetraceMinPnlPct: 0,
+  };
+}
+
+describe('exit-policy-variant-a v2 hybrid prod', () => {
+  it('stamps variant_a_v2 on open when enabled (over wave B)', () => {
     const trade = ot();
     stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    expect(trade.liveExitPolicyId).toBe(VARIANT_A_V3_POLICY_ID);
-    expect(isVariantAScratchExitPolicy(trade)).toBe(true);
-    expect(trade.tpGridOverrides?.gridStepPnl).toBe(0);
-    expect(trade.liveVariantAScratchHadTp).toBe(false);
+    expect(trade.liveExitPolicyId).toBe(VARIANT_A_V2_POLICY_ID);
+    expect(isVariantAHybridExitPolicy(trade)).toBe(true);
+    expect(isVariantAScratchExitPolicy(trade)).toBe(false);
   });
+});
 
+describe('exit-policy-variant-a v3 scratch', () => {
   it('flush @0% after TP crossing', () => {
     const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
+    stampV3Scratch(trade, cfg());
     trade.partialSells.push({
       ts: Date.now(),
       price: 1.05,
@@ -99,7 +114,7 @@ describe('exit-policy-variant-a v3 scratch', () => {
 
   it('gap flush when PG skips through 0 to −3%', () => {
     const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
+    stampV3Scratch(trade, cfg());
     trade.partialSells.push({
       ts: Date.now(),
       price: 1.05,
@@ -119,9 +134,9 @@ describe('exit-policy-variant-a v3 scratch', () => {
     }
   });
 
-  it('h48 loss at 48h when still negative and no TP; skipped after TP', () => {
+  it('h48 loss at 48h when still negative and no TP; skipped after TP for scratch', () => {
     const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
+    stampV3Scratch(trade, cfg());
     trade.liveVariantASalvage24Checked = true;
     expect(variantAEvalTimedExit(trade, cfg(), -0.05, 48)).toBe('h48_loss');
     trade.partialSells.push({
@@ -141,7 +156,7 @@ describe('exit-policy-variant-a v3 scratch', () => {
 
   it('salvage24 at 24h when peak < 5% and pnl <= 0', () => {
     const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
+    stampV3Scratch(trade, cfg());
     trade.liveVariantAScratchPeakPnlFrac = 0.02;
     const tag = variantAEvalTimedExit(trade, cfg(), -0.01, 24);
     expect(tag).toBe('salvage24');

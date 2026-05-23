@@ -522,12 +522,12 @@ const PM2_APPS = [
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
-         * Variant A v3 scratch-harvest (1.11.271): discrete TP ladder, flush @0% avg after TP,
-         * gap tail −3%, no DCA after TP, price re-entry −10%. In-flight v1/v2/wave_b unchanged.
+         * Variant A v2 hybrid (1.11.272): infinite +5% TP grid, 10% remainder per rung,
+         * partial trail @+10%, DCA resets TP rungs. In-flight v3 scratch / v1 / wave_b unchanged.
          */
-        PAPER_TP_LADDER: '0.05:0.30,0.10:0.15,0.15:0.15,0.20:0.10,0.25:0.10,0.30:0.10',
-        PAPER_TP_GRID_STEP_PNL: '0',
-        PAPER_TP_GRID_SELL_FRACTION: '0',
+        PAPER_TP_LADDER: '',
+        PAPER_TP_GRID_STEP_PNL: '0.05',
+        PAPER_TP_GRID_SELL_FRACTION: '0.10',
         PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0',
         PAPER_TP_X: '100',
@@ -535,20 +535,18 @@ const PM2_APPS = [
         PAPER_TRAIL_MODE: 'peak',
         PAPER_TRAIL_DROP: '0.12',
         PAPER_TRAIL_TRIGGER_X: '1.35',
-        /** salvage24 + h48 loss only when no TP taken; no 96h / moon / v2 grid trail. */
+        /** salvage24 + h48 loss; smart48 off — no forced 96h on winners. */
         PAPER_TIMEOUT_HOURS: '48',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
-        /** Wave B off — Variant A v3 scratch for new opens. In-flight v1/v2/wave_b/legacy unchanged. */
+        /** Wave B off — Variant A v2 hybrid for new opens. In-flight v3/v1/wave_b/legacy unchanged. */
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
         PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED: '0',
-        PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT: '0.03',
-        LIVE_MINT_SCRATCH_REENTRY_ENABLED: '1',
-        LIVE_MINT_SCRATCH_REENTRY_DROP_PCT: '0.10',
+        LIVE_MINT_SCRATCH_REENTRY_ENABLED: '0',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
