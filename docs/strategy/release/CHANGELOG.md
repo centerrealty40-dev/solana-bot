@@ -10,7 +10,7 @@
 
 ## [1.11.265] — 2026-05-23
 
-**Git SHA (интеграция):** _pending deploy_.
+**Git SHA (интеграция):** `f9382b1`.
 
 ### Tune: kill −5% + hybrid re-entry (dip −12% OR 30m); denylist off
 
