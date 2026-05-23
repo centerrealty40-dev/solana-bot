@@ -28,6 +28,12 @@ import {
   liveOscarEntryContextNoteV2,
   liveStagedOpenLabelFromState,
 } from '../src/papertrader/executor/live-staged-entry-labels.js';
+import {
+  liveOscarScratchStrategyNoteRu,
+  variantAExitTagLabel,
+  type VariantAExitTag,
+} from '../src/papertrader/executor/exit-policy-variant-a.js';
+import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import { startQuickNodeUsageReporting } from '../src/stream/quicknode-usage-loop.js';
 import {
   fetchLatestSnapshotMcap,
@@ -1565,6 +1571,25 @@ function liveStagedOpenLabelRu(strategyId: string, e: Record<string, unknown>): 
   return liveStagedOpenLabelFromState(strategyId, e);
 }
 
+/** Контекст Variant A v3 scratch для таймлайна live-oscar. */
+function liveOscarScratchTimelineNote(): string {
+  const tail = Number(process.env.PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT ?? 0.03);
+  return liveOscarScratchStrategyNoteRu({
+    liveOscarVariantAScratchGapTailPct: tail,
+  } as PaperTraderConfig);
+}
+
+function liveOscarExitPolicyIdFromJournal(e: Record<string, unknown>): string {
+  const direct = e.liveExitPolicyId;
+  if (typeof direct === 'string' && direct.length) return direct;
+  const ot = e.openTrade;
+  if (ot != null && typeof ot === 'object') {
+    const id = (ot as Record<string, unknown>).liveExitPolicyId;
+    if (typeof id === 'string' && id.length) return id;
+  }
+  return '';
+}
+
 /** Контекст для строк таймлайна open/close (paper + live). */
 function timelineContextNoteFromJournal(e: Record<string, unknown>): string | null {
   const parts: string[] = [];
@@ -1592,25 +1617,38 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
     return parts.length ? parts.join('\n') : null;
   }
   if (isLiveOscar) {
+    const exitPolicyId = liveOscarExitPolicyIdFromJournal(e);
+    const scratchV3 = exitPolicyId === 'variant_a_v3';
     if (mode === 'B' || mode === 'A') {
       parts.push(
         'Режим выхода ' +
           mode +
-          ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия унифицирована (один режим выхода).',
+          ' (Live Oscar, legacy): сделка велась под историческими параметрами A/B. Текущая стратегия — Variant A v3 scratch-harvest.',
       );
     } else if (evKind === 'open' || evKind === 'scale_in_add' || evKind === 'entry_split_add') {
       const st = liveStagedEntryState(e);
       parts.push(st?.entrySplitV2 === true ? liveOscarEntryContextNoteV2() : liveOscarEntryContextNoteLegacy());
+      if (scratchV3 || st?.entrySplitV2 === true) parts.push(liveOscarScratchTimelineNote());
     } else if (
       evKind === 'dca_add' ||
       evKind === 'staged_avg_add' ||
       evKind === 'entry_split_add'
     ) {
       const st = liveStagedEntryState(e);
-      if (st?.entrySplitV2 === true) parts.push(liveOscarEntryContextNoteV2());
+      if (st?.entrySplitV2 === true) {
+        parts.push(liveOscarEntryContextNoteV2());
+        parts.push(liveOscarScratchTimelineNote());
+      }
+    } else if (
+      evKind === 'partial_sell' &&
+      (String(e.reason) === 'SCRATCH_FLUSH0' || String(e.reason) === 'SCRATCH_GAP_FLUSH')
+    ) {
+      parts.push(liveOscarScratchTimelineNote());
+    } else if (scratchV3 || evKind === 'close') {
+      parts.push(liveOscarScratchTimelineNote());
     } else {
       parts.push(
-        'Live Oscar: TP-сетка, TRAIL `ladder_retrace`, kill −20% к средней, slip 0.5% + retry ×10.',
+        'Live Oscar: Variant A v3 scratch-harvest — см. описание стратегии на плитке.',
       );
     }
     return parts.length ? parts.join('\n') : null;
@@ -1798,7 +1836,11 @@ export function buildTimelineEvent(
             : 'Лестница TP'
         : reason === 'BREAKEVEN_TRIM'
           ? 'Частичный выход у безубытка (после 1-й TP)'
-          : reason === 'TRAIL_STEP'
+          : reason === 'SCRATCH_FLUSH0'
+            ? 'Live Oscar scratch · flush 100% @ avg после TP'
+            : reason === 'SCRATCH_GAP_FLUSH'
+              ? 'Live Oscar scratch · gap flush @ avg (пропуск 0% в данных)'
+              : reason === 'TRAIL_STEP'
             ? 'Wave B · trail от хая'
             : reason.toLowerCase().replace(/_/g, ' ');
     const pnlUsd = Number(e.pnlUsd ?? 0);
@@ -1874,6 +1916,11 @@ export function buildTimelineEvent(
   }
   if (kind === 'close') {
     const exitReason = String(e.exitReason || 'CLOSE');
+    const vaTag = e.liveVariantAExitTag;
+    const vaTagLabel =
+      typeof vaTag === 'string' && vaTag.length
+        ? variantAExitTagLabel(vaTag as VariantAExitTag)
+        : null;
     const riskyCloseReason =
       isLiveOscarRisky && exitReason === 'KILLSTOP'
         ? 'Закрытие Risky · KILLSTOP: цена дошла до signal kill-stop −18% от первоначального сигнала'
@@ -1883,6 +1930,7 @@ export function buildTimelineEvent(
             ? 'Закрытие Risky · TIMEOUT: истёк лимит времени позиции'
             : null;
     const closeLabel =
+      vaTagLabel ??
       riskyCloseReason ??
       (exitReason === 'CAPITAL_ROTATE'
         ? `Close · CAPITAL_ROTATE — ротация капитала Phase 5 (ожидаемо, не сбой)${liveExitModeLabelSuffix(e)}`

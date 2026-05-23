@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { OpenTrade } from '../src/papertrader/types.js';
 import {
-  isVariantAExitPolicy,
+  VARIANT_A_V3_POLICY_ID,
+  isVariantAScratchExitPolicy,
+  isVariantALegacyV1ExitPolicy,
   stampVariantAOnOpen,
   variantAEvalTimedExit,
+  variantAScratchEvalFlush,
+  variantAScratchHadTp,
   variantAMoonExitTriggered,
   variantATrailFullExitTriggered,
 } from '../src/papertrader/executor/exit-policy-variant-a.js';
@@ -18,8 +22,8 @@ function cfg(partial: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     timeoutHours: 48,
     liveOscarVariantASalvage24Enabled: true,
     liveOscarVariantASalvage24MinPeakPct: 5,
-    liveOscarVariantASmart48Enabled: true,
-    liveOscarVariantAMaxHorizonHours: 96,
+    liveOscarVariantASmart48Enabled: false,
+    liveOscarVariantAScratchGapTailPct: 0.03,
     liveOscarVariantAMoonTargetPct: 0.5,
     liveOscarVariantATrailArmPct: 0.35,
     liveOscarVariantATrailRetracePct: 0.12,
@@ -61,54 +65,97 @@ function ot(): OpenTrade {
   };
 }
 
-describe('exit-policy-variant-a', () => {
-  it('stamps variant_a on open when enabled (over wave B)', () => {
+describe('exit-policy-variant-a v3 scratch', () => {
+  it('stamps variant_a_v3 on open when enabled (over wave B)', () => {
     const trade = ot();
     stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    expect(trade.liveExitPolicyId).toBe('variant_a_v1');
-    expect(isVariantAExitPolicy(trade)).toBe(true);
+    expect(trade.liveExitPolicyId).toBe(VARIANT_A_V3_POLICY_ID);
+    expect(isVariantAScratchExitPolicy(trade)).toBe(true);
     expect(trade.tpGridOverrides?.gridStepPnl).toBe(0);
+    expect(trade.liveVariantAScratchHadTp).toBe(false);
   });
 
-  it('moon exit at +50%', () => {
+  it('flush @0% after TP crossing', () => {
     const trade = ot();
     stampVariantAOnOpen(trade, cfg());
-    expect(variantAMoonExitTriggered(trade, cfg(), 0.51)).toBe(true);
-    expect(variantAMoonExitTriggered(trade, cfg(), 0.49)).toBe(false);
+    trade.partialSells.push({
+      ts: Date.now(),
+      price: 1.05,
+      marketPrice: 1.05,
+      sellFraction: 0.3,
+      proceedsUsd: 100,
+      grossProceedsUsd: 100,
+      pnlUsd: 10,
+      grossPnlUsd: 10,
+      reason: 'TP_LADDER',
+    });
+    expect(variantAScratchHadTp(trade)).toBe(true);
+    const flush = variantAScratchEvalFlush(trade, cfg(), 0, 0.06);
+    expect(flush.kind).toBe('flush_all');
+    if (flush.kind === 'flush_all') {
+      expect(flush.tag).toBe('scratch_flush0');
+    }
   });
 
-  it('trail full exit after arm + retrace', () => {
+  it('gap flush when PG skips through 0 to −3%', () => {
     const trade = ot();
     stampVariantAOnOpen(trade, cfg());
-    trade.liveVariantATrailArmed = true;
-    trade.liveVariantARemainderPeakPnlFrac = 0.4;
-    expect(variantATrailFullExitTriggered(trade, cfg(), 0.27)).toBe(true);
-    expect(variantATrailFullExitTriggered(trade, cfg(), 0.29)).toBe(false);
+    trade.partialSells.push({
+      ts: Date.now(),
+      price: 1.05,
+      marketPrice: 1.05,
+      sellFraction: 0.3,
+      proceedsUsd: 100,
+      grossProceedsUsd: 100,
+      pnlUsd: 10,
+      grossPnlUsd: 10,
+      reason: 'TP_LADDER',
+    });
+    const flush = variantAScratchEvalFlush(trade, cfg(), -0.03, 0.04);
+    expect(flush.kind).toBe('flush_all');
+    if (flush.kind === 'flush_all') {
+      expect(flush.tag).toBe('scratch_gap_flush');
+      expect(flush.useAvgPrice).toBe(true);
+    }
+  });
+
+  it('h48 loss at 48h when still negative and no TP; skipped after TP', () => {
+    const trade = ot();
+    stampVariantAOnOpen(trade, cfg());
+    trade.liveVariantASalvage24Checked = true;
+    expect(variantAEvalTimedExit(trade, cfg(), -0.05, 48)).toBe('h48_loss');
+    trade.partialSells.push({
+      ts: Date.now(),
+      price: 1.05,
+      marketPrice: 1.05,
+      sellFraction: 0.3,
+      proceedsUsd: 100,
+      grossProceedsUsd: 100,
+      pnlUsd: 10,
+      grossPnlUsd: 10,
+      reason: 'TP_LADDER',
+    });
+    trade.liveVariantAH48Checked = false;
+    expect(variantAEvalTimedExit(trade, cfg(), -0.05, 48)).toBe(null);
   });
 
   it('salvage24 at 24h when peak < 5% and pnl <= 0', () => {
     const trade = ot();
     stampVariantAOnOpen(trade, cfg());
-    trade.liveVariantARemainderPeakPnlFrac = 0.02;
+    trade.liveVariantAScratchPeakPnlFrac = 0.02;
     const tag = variantAEvalTimedExit(trade, cfg(), -0.01, 24);
     expect(tag).toBe('salvage24');
   });
+});
 
-  it('h48_loss at 48h when still negative', () => {
+describe('exit-policy-variant-a v1 legacy', () => {
+  it('moon and full trail apply only to v1', () => {
     const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
-    trade.liveVariantASalvage24Checked = true;
-    const tag = variantAEvalTimedExit(trade, cfg(), -0.05, 48);
-    expect(tag).toBe('h48_loss');
-  });
-
-  it('smart48 extends winners to 96h', () => {
-    const trade = ot();
-    stampVariantAOnOpen(trade, cfg());
-    trade.liveVariantASalvage24Checked = true;
-    const at48 = variantAEvalTimedExit(trade, cfg(), 0.08, 48);
-    expect(at48).toBe(null);
-    expect(trade.liveVariantASmart48Extended).toBe(true);
-    expect(variantAEvalTimedExit(trade, cfg(), 0.06, 96)).toBe('horizon96');
+    trade.liveExitPolicyId = 'variant_a_v1';
+    trade.liveVariantATrailArmed = true;
+    trade.liveVariantARemainderPeakPnlFrac = 0.4;
+    expect(variantAMoonExitTriggered(trade, cfg(), 0.51)).toBe(true);
+    expect(variantATrailFullExitTriggered(trade, cfg(), 0.27)).toBe(true);
+    expect(isVariantALegacyV1ExitPolicy(trade)).toBe(true);
   });
 });

@@ -522,35 +522,33 @@ const PM2_APPS = [
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
-         * Variant A discrete TP ladder (PnL fraction vs avg : sell fraction of remainder):
-         *   +5%→25%, +10%→25%, +20%→20%, +30%→15%; moon +50% + peak trail in tracker.
+         * Variant A v3 scratch-harvest (1.11.271): discrete TP ladder, flush @0% avg after TP,
+         * gap tail −3%, no DCA after TP, price re-entry −10%. In-flight v1/v2/wave_b unchanged.
          */
-        PAPER_TP_LADDER: '0.05:0.25,0.10:0.25,0.20:0.20,0.30:0.15',
+        PAPER_TP_LADDER: '0.05:0.30,0.10:0.15,0.15:0.15,0.20:0.10,0.25:0.10,0.30:0.10',
         PAPER_TP_GRID_STEP_PNL: '0',
-        PAPER_TP_GRID_SELL_FRACTION: '0.10',
-        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.50,0.70,0.70',
-        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
+        PAPER_TP_GRID_SELL_FRACTION: '0',
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
-        /** Trail = retrace к предыдущей взятой ступени (после ≥2 ступеней). `PAPER_TRAIL_DROP` не используется при `ladder_retrace`. */
         PAPER_TRAIL_MODE: 'peak',
         PAPER_TRAIL_DROP: '0.12',
         PAPER_TRAIL_TRIGGER_X: '1.35',
-        /** Smart48: minus @48h → exit; plus @48h → hold to 96h (Variant A tracker). */
+        /** salvage24 + h48 loss only when no TP taken; no 96h / moon / v2 grid trail. */
         PAPER_TIMEOUT_HOURS: '48',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
-        /** Wave B off — Variant A for new opens. In-flight wave_b/legacy positions unchanged. */
+        /** Wave B off — Variant A v3 scratch for new opens. In-flight v1/v2/wave_b/legacy unchanged. */
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '1',
-        PAPER_LIVE_OSCAR_VARIANT_A_MOON_TARGET_PCT: '0.50',
-        PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_ARM_PCT: '0.35',
-        PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_RETRACE_PCT: '0.12',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
-        PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED: '1',
-        PAPER_LIVE_OSCAR_VARIANT_A_MAX_HORIZON_HOURS: '96',
+        PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED: '0',
+        PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT: '0.03',
+        LIVE_MINT_SCRATCH_REENTRY_ENABLED: '1',
+        LIVE_MINT_SCRATCH_REENTRY_DROP_PCT: '0.10',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',

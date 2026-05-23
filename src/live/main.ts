@@ -14,6 +14,7 @@ import { configureSignalLabStore } from './signal-lab.js';
 import { configureMtmShadowStore } from './mtm-shadow.js';
 import { configureStagedAddSimCooldown } from './staged-add-sim-cooldown.js';
 import { configureMintTimedLossCooldown } from './mint-timed-loss-cooldown.js';
+import { configureMintScratchReentry } from './mint-scratch-reentry.js';
 import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
 import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
@@ -167,6 +168,7 @@ export async function main(): Promise<void> {
     liveCfg,
   );
   configureMintTimedLossCooldown(liveCfg);
+  configureMintScratchReentry(liveCfg);
   configureAdaptivePriorityFee({
     enabled: liveCfg.liveAdaptivePriorityFeeEnabled,
     threshold: liveCfg.liveAdaptivePriorityFeeThreshold,

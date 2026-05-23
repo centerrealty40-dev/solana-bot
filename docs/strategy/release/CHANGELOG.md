@@ -8,6 +8,57 @@
 
 ---
 
+## [1.11.271] — 2026-05-21
+
+### Feature: Live Oscar Variant A v3 — scratch-harvest exit + price re-entry
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Exit policy | New opens → `variant_a_v3` (in-flight v1/v2/wave B/legacy unchanged) |
+| TP | Discrete ladder vs avg: +5%→30%, +10%→15%, +15%→15%, +20/25/30%→10% remainder |
+| After TP | DCA forbidden; pullback to 0% avg → 100% flush (`scratch_flush0`) |
+| Gap | PG gap through 0% → flush at avg when PnL ≤ −3% (`scratch_gap_flush`) |
+| Dust | Remainder < $100 → full flush |
+| Timed | salvage24 + h48 **loss only if no TP**; no 96h / moon / v2 grid trail |
+| Re-entry | Same mint when price ≤ lastExit × 90% (no time cooldown) |
+| Timed loss block | 24h mint block after salvage24/h48_loss (unchanged) |
+
+**Dashboard:** `STRATEGY_META` + timeline context for scratch on open/partial/close.
+
+**Code:** `exit-policy-variant-a.ts` (v3), `mint-scratch-reentry.ts`, tracker flush wiring, phase4 buy gate, store-restore v3 fields.
+
+### Откат
+
+Revert to `1.11.270` env block (v2 infinite grid + partial trail) and prior `exit-policy-variant-a.ts`; redeploy NORM §5.
+
+---
+
+## [1.11.270] — 2026-05-21
+
+### Feature: Live Oscar Variant A v2 — infinite TP grid + partial trail @+10%
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Exit policy | New opens → `variant_a_v2` (in-flight `variant_a_v1` / wave B unchanged) |
+| TP | Infinite +5% grid, 10% of remainder per rung |
+| Trail | Partial stepped trail (20% remainder, −5% from peak); arms at **+10%**, not +35% |
+| DCA | After any DCA leg → **all TP rungs reset** (re-fire from +5% on new avg) |
+| Pullback | After ≥+10% taken, drop to ≤+2.5% → re-arm rungs above +2.5% |
+| Timed | salvage24 + h48 **loss only**; `SMART48=0` — no forced 96h on winners |
+| Removed | Moon +50% full exit, +35% full retrace trail, discrete TP ladder |
+
+**Code:** `exit-policy-variant-a.ts` (v2), tracker partial-trail wiring, `tp-grid-effective` unlimited grid.
+
+### Откат
+
+Revert to `1.11.269` env block (discrete ladder, smart48, moon/trail full exit) and prior `exit-policy-variant-a.ts`; redeploy NORM §5.
+
+---
+
 ## [1.11.269] — 2026-05-21
 
 ### Feature: Live Oscar Variant A exit stack + DCA cap $1200

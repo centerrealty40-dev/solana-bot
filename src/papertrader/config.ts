@@ -548,6 +548,8 @@ const ConfigSchema = z.object({
   liveOscarVariantASalvage24MinPeakPct: z.coerce.number().min(0).max(50).default(5),
   liveOscarVariantASmart48Enabled: z.boolean().default(true),
   liveOscarVariantAMaxHorizonHours: z.coerce.number().positive().default(96),
+  /** v3 scratch: gap-through-0 flush when PnL ≤ −this vs avg (default 3%). */
+  liveOscarVariantAScratchGapTailPct: z.coerce.number().min(0.01).max(0.2).default(0.03),
 
   /**
    * Live Oscar only (`strategyId === live-oscar`): after at least one `TP_LADDER` partial,
@@ -1090,6 +1092,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarVariantASalvage24MinPeakPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT,
     liveOscarVariantASmart48Enabled: envBool(process.env.PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED, true),
     liveOscarVariantAMaxHorizonHours: process.env.PAPER_LIVE_OSCAR_VARIANT_A_MAX_HORIZON_HOURS,
+    liveOscarVariantAScratchGapTailPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT,
     timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
     liveOscarBreakevenTrimAfterFirstTpEnabled: envBool(
       process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED,

@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
+import { isVariantAHybridExitPolicy } from './exit-policy-variant-a.js';
 import { isWaveBExitPolicy, waveBTpGridProfileFor } from './exit-policy-wave-b.js';
 
 export interface TpGridEffective {
@@ -30,14 +31,17 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
   const exitPolicyPinned =
     ot.liveExitPolicyId === 'legacy_grid' ||
     ot.liveExitPolicyId === 'wave_b_v1' ||
-    ot.liveExitPolicyId === 'variant_a_v1';
+    ot.liveExitPolicyId === 'variant_a_v1' ||
+    ot.liveExitPolicyId === 'variant_a_v2';
   const ignoreOverrides =
     cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B' && !exitPolicyPinned;
   const paperIdealizedUnlimitedB =
     isPaperOscarIdealizedStackStrategyId(cfg.strategyId) && ot.liveExitProfileMode === 'B';
   /** §5.4 `IDEALIZED_OSCAR_STACK_SPEC_V2` — лестница B без верхней крышки (prod был maxRungs=4). */
   const liveOscarUnlimitedB = cfg.strategyId === 'live-oscar' && ot.liveExitProfileMode === 'B';
-  const unlimitedBGrid = paperIdealizedUnlimitedB || liveOscarUnlimitedB;
+  const variantAHybridUnlimited =
+    cfg.strategyId === 'live-oscar' && isVariantAHybridExitPolicy(ot);
+  const unlimitedBGrid = paperIdealizedUnlimitedB || liveOscarUnlimitedB || variantAHybridUnlimited;
   const flatSellFraction = Math.min(
     1,
     ignoreOverrides ? cfg.tpGridSellFraction : (o?.gridSellFraction ?? cfg.tpGridSellFraction),

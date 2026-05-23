@@ -55,13 +55,27 @@ import {
 } from './exit-policy-wave-b.js';
 import {
   isVariantAExitPolicy,
+  isVariantALegacyV1ExitPolicy,
+  isVariantAHybridExitPolicy,
+  isVariantAScratchExitPolicy,
+  isPartialGridTrailExitPolicy,
   variantAUpdateRemainderPeak,
   variantAMoonExitTriggered,
   variantATrailFullExitTriggered,
   variantAEvalTimedExit,
   variantAExitTagLabel,
+  variantAHybridDefensiveTrailActive,
+  variantAHybridMaybeResetTpImpulse,
+  variantAHybridResetTpGridOnDca,
+  variantAScratchEvalFlush,
+  variantAScratchHadTp,
+  variantAScratchMarkTpTaken,
+  variantAScratchUpdatePeak,
+  variantAScratchTpTimelineLabelRu,
+  variantAScratchDustFlushRemainUsd,
 } from './exit-policy-variant-a.js';
 import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown.js';
+import { recordMintScratchReentry } from '../../live/mint-scratch-reentry.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
@@ -881,8 +895,10 @@ async function tryWaveBTrailPartialSells(args: {
     liveOscarCfg,
     stats,
   } = args;
-  if (!isWaveBExitPolicy(ot) || !(tgEff.stepPnl > 0)) return;
-  const defensive = waveBDefensiveTrailActive(ot, tgEff.stepPnl);
+  if (!isPartialGridTrailExitPolicy(ot) || !(tgEff.stepPnl > 0)) return;
+  const defensive = isVariantAHybridExitPolicy(ot)
+    ? variantAHybridDefensiveTrailActive(ot, tgEff.stepPnl)
+    : waveBDefensiveTrailActive(ot, tgEff.stepPnl);
   if (!defensive) return;
   if (!ot.trailingArmed) ot.trailingArmed = true;
   const pnlFrac = xAvg - 1;
@@ -929,6 +945,86 @@ async function tryWaveBTrailPartialSells(args: {
   void r;
 }
 
+/** Variant A v3: scratch flush @0% avg (or gap @ avg) after ≥1 TP; dust flush <$100. */
+async function tryVariantAScratchPartialFlush(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const { mint, ot, cfg, curMetric, xAvg, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
+    args;
+  if (!isVariantAScratchExitPolicy(ot) || ot.remainingFraction <= 1e-9) return;
+
+  const pnlFrac = xAvg - 1;
+  const prev = ot.liveVariantAScratchPrevPnlFrac ?? pnlFrac;
+  variantAScratchUpdatePeak(ot, pnlFrac);
+
+  if (variantAScratchHadTp(ot) && !ot.liveVariantAScratchFlushedAtZero) {
+    const flush = variantAScratchEvalFlush(ot, cfg, pnlFrac, prev);
+    if (flush.kind === 'flush_all') {
+      const mtm = flush.useAvgPrice && ot.avgEntry > 0 ? ot.avgEntry : curMetric;
+      ot.liveVariantAExitTag = flush.tag;
+      ot.liveVariantAScratchFlushedAtZero = true;
+      const partialReason = flush.tag === 'scratch_gap_flush' ? 'SCRATCH_GAP_FLUSH' : 'SCRATCH_FLUSH0';
+      await tryExecuteTpPartialSell({
+        mint,
+        ot,
+        cfg,
+        curMetric: mtm,
+        sellFraction: 1,
+        ladderStepIndex: 0,
+        ladderRungsTotal: 0,
+        ladderPnlPct: flush.useAvgPrice ? 0 : pnlFrac,
+        tpGrid: false,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+        markLadder: () => {},
+        logLabelPct: flush.tag,
+        partialReason,
+        timelineLabelRu: flush.timelineLabelRu,
+      });
+    }
+  }
+
+  ot.liveVariantAScratchPrevPnlFrac = pnlFrac;
+
+  if (ot.remainingFraction <= 1e-9) return;
+  const invRem = ot.totalInvestedUsd * ot.remainingFraction;
+  const remUsd = invRem * (curMetric / ot.avgEntry);
+  if (remUsd > 0 && remUsd < variantAScratchDustFlushRemainUsd()) {
+    await tryExecuteTpPartialSell({
+      mint,
+      ot,
+      cfg,
+      curMetric,
+      sellFraction: 1,
+      ladderStepIndex: 0,
+      ladderRungsTotal: 0,
+      ladderPnlPct: pnlFrac,
+      tpGrid: false,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+      markLadder: () => {},
+      logLabelPct: 'SCRATCH_DUST_FLUSH',
+      partialReason: 'SCRATCH_FLUSH0',
+      timelineLabelRu: `Live Oscar scratch · остаток < $${variantAScratchDustFlushRemainUsd()} — полное закрытие хвоста`,
+    });
+  }
+}
+
 function hookLiveWhitelistAfterFullClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   cfg: PaperTraderConfig,
@@ -938,6 +1034,8 @@ function hookLiveWhitelistAfterFullClose(
   liveMintFirstProbe?: boolean,
   firstMintKillDropPct?: number,
   variantAExitTag?: OpenTrade['liveVariantAExitTag'],
+  ot?: OpenTrade,
+  exitRefPriceUsd?: number,
 ): void {
   onLiveOscarFullCloseUpdateWhitelistLossStreak({
     liveOscarCfg,
@@ -963,6 +1061,9 @@ function hookLiveWhitelistAfterFullClose(
     netPnlUsd,
   });
   recordMintTimedLossCooldown(mint, variantAExitTag);
+  if (ot && isVariantAScratchExitPolicy(ot) && exitRefPriceUsd != null && exitRefPriceUsd > 0) {
+    recordMintScratchReentry(mint, exitRefPriceUsd);
+  }
 }
 
 async function closeOpenTradeReconcileOrphan(args: {
@@ -1090,6 +1191,8 @@ async function closeOpenTradeReconcileOrphan(args: {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
   /** Не планируем post-close tail sweep: закрытие уже из-за рассинхрона с цепью; через `livePostCloseTailSweepDelayMs`
    * отложенный `sell_full` может снять **новую** позицию по тому же mint (см. отмену при `live_position_open`). */
@@ -1218,6 +1321,8 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -1365,6 +1470,8 @@ export async function trackerForceFullExitLive(args: {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -1743,7 +1850,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.lastObservedPriceUsd = curMetric;
     }
 
-    if (ot.avgEntry > 0 && isWaveBExitPolicy(ot)) {
+    if (ot.avgEntry > 0 && isPartialGridTrailExitPolicy(ot)) {
       const pnlFracTick = curMetric / ot.avgEntry - 1;
       const anchorBefore = ot.liveWaveTrailAnchorPnlFrac ?? 0;
       if (waveBRecoverPhantomPeakIfNeeded(ot, pnlFracTick)) {
@@ -1896,6 +2003,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
         scheduleTailAfterLiveClose(
           liveOscarCfg,
@@ -1989,6 +2098,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -2120,9 +2231,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
       const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
-      if (isWaveBExitPolicy(ot)) {
+      if (isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) {
         waveBOnNewHigh(ot, pnlFracPeak, tgEff.stepPnl);
-      } else if (isVariantAExitPolicy(ot)) {
+      } else if (isVariantALegacyV1ExitPolicy(ot)) {
         variantAUpdateRemainderPeak(ot, pnlFracPeak, cfg);
       }
       ot.peakMcUsd = curMetric;
@@ -2133,7 +2244,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
        */
       const usesTpSlices = tgEff.stepPnl > 0 || tpLadder.length > 0;
       const tpSlicesDone = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
-      if (isWaveBExitPolicy(ot)) {
+      if (isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) {
         if (pnlFracPeak + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) ot.trailingArmed = true;
       } else if (xAvg >= effCfg.trailTriggerX && (!usesTpSlices || tpSlicesDone >= 2)) {
         ot.trailingArmed = true;
@@ -2158,7 +2269,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       !ot.liveStagedEntry &&
-      (tgEff.stepPnl <= 0 || ot.partialSells.length === 0) &&
+      (tgEff.stepPnl <= 0 || ot.partialSells.length === 0 || isVariantAHybridExitPolicy(ot)) &&
+      !(isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
       !liveOscarNoDcaInModeA;
@@ -2227,6 +2339,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numM / ot.totalInvestedUsd;
         markDcaStepFired(ot, stepIndex, -dropPct / 100);
+        variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
@@ -2385,6 +2498,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numM / ot.totalInvestedUsd;
         markDcaStepFired(ot, dcaIdx, lvl.triggerPct);
+        variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
@@ -2454,6 +2568,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const step = tgEff.stepPnl;
       if (isWaveBExitPolicy(ot)) {
         waveBMaybeResetTpImpulse(ot, pnlFrac, step);
+      } else if (isVariantAHybridExitPolicy(ot)) {
+        variantAHybridMaybeResetTpImpulse(ot, pnlFrac, step);
       }
       let maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
       if (tgEff.maxRungs != null && tgEff.maxRungs >= 1) {
@@ -2503,7 +2619,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           break;
         }
         /** Wave B: at most one cash partial per tick — spreads ladder across price steps, not one MTM print. */
-        if (isWaveBExitPolicy(ot) && sellFracForStep > 1e-12) {
+        if ((isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) && sellFracForStep > 1e-12) {
           break;
         }
       }
@@ -2512,6 +2628,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       !(isPaperOscarIdealized && idealizedMute) &&
       !skipTpGridLiveOscarNeutral &&
+      !isVariantAHybridExitPolicy(ot) &&
       tpLadder.length > 0 &&
       ot.remainingFraction > 0
     ) {
@@ -2544,12 +2661,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             stats,
             markLadder: () => markLadderStepFired(ot, stepIdx, lvl.pnlPct),
             logLabelPct: `TP+${(lvl.pnlPct * 100).toFixed(0)}%`,
+            ...(isVariantAScratchExitPolicy(ot)
+              ? { timelineLabelRu: variantAScratchTpTimelineLabelRu(lvl.pnlPct, lvl.sellFraction) }
+              : {}),
           });
           if (r === 'abort_mint') {
             continue;
           }
           if (r === 'defer_next') {
             continue;
+          }
+          if (r === 'ok' && isVariantAScratchExitPolicy(ot)) {
+            variantAScratchMarkTpTaken(ot);
           }
         }
       }
@@ -2610,7 +2733,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const usesTpSlicesPost = tgEff.stepPnl > 0 || tpLadder.length > 0;
       const tpSlicesDonePost = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       const pnlFracPost = xPost - 1;
-      if (isWaveBExitPolicy(ot)) {
+      if (isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) {
         if (curMetric + 1e-18 >= ot.peakMcUsd && pnlFracPost + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) {
           ot.trailingArmed = true;
         }
@@ -2644,9 +2767,26 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
     }
+    await tryVariantAScratchPartialFlush({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
 
-    /** Variant A: update remainder peak every tick (not only new ATH). */
-    if (isVariantAExitPolicy(ot) && ot.avgEntry > 0) {
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+
+    /** Variant A v1: remainder peak for legacy moon/trail. */
+    if (isVariantALegacyV1ExitPolicy(ot) && ot.avgEntry > 0) {
       variantAUpdateRemainderPeak(ot, pnlPctVsAvg / 100, cfg);
     }
 
@@ -2693,7 +2833,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     let exitReason: ExitReason | null = null;
     if (!(isPaperOscarIdealized && idealizedMute)) {
-      if (isVariantAExitPolicy(ot) && ot.avgEntry > 0) {
+      if (isVariantALegacyV1ExitPolicy(ot) && ot.avgEntry > 0) {
         const pnlFracVa = pnlPctVsAvg / 100;
         if (variantAMoonExitTriggered(ot, effCfg, pnlFracVa)) {
           ot.liveVariantAExitTag = 'moon50';
@@ -2707,6 +2847,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             ot.liveVariantAExitTag = 'trail';
             exitReason = 'TRAIL';
           }
+        }
+      } else if (isVariantAHybridExitPolicy(ot) && ot.avgEntry > 0) {
+        const timedTag = variantAEvalTimedExit(ot, effCfg, pnlPctVsAvg / 100, ageH);
+        if (timedTag) {
+          ot.liveVariantAExitTag = timedTag;
+          exitReason = 'TIMEOUT';
+        }
+      } else if (isVariantAScratchExitPolicy(ot) && ot.avgEntry > 0) {
+        const timedTag = variantAEvalTimedExit(ot, effCfg, pnlPctVsAvg / 100, ageH);
+        if (timedTag) {
+          ot.liveVariantAExitTag = timedTag;
+          exitReason = 'TIMEOUT';
         }
       }
 
@@ -2915,6 +3067,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveMintFirstProbe === true,
     ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
     ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
   );
       scheduleTailAfterLiveClose(
         liveOscarCfg,

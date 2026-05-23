@@ -355,6 +355,12 @@ const LiveOscarConfigSchema = z
     liveMintTimedLossCooldownMs: z.coerce.number().int().min(0).max(7 * 24 * 3_600_000).default(86_400_000),
 
     /**
+     * Variant A v3 scratch: re-entry when price ≤ lastExitRef × (1 − dropPct). No time cooldown.
+     */
+    liveMintScratchReentryEnabled: z.boolean().default(false),
+    liveMintScratchReentryDropPct: z.coerce.number().min(0.01).max(0.5).default(0.1),
+
+    /**
      * Ручной blacklist mint: совпадает с paper `mintBlacklistPath` / `LIVE_MINT_BLACKLIST_*` — файл должен существовать при включении.
      */
     liveMintBlacklistEnabled: z.boolean().default(false),
@@ -733,6 +739,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 86_400_000;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 86_400_000;
+    })(),
+    liveMintScratchReentryEnabled: envBool(process.env.LIVE_MINT_SCRATCH_REENTRY_ENABLED, false),
+    liveMintScratchReentryDropPct: (() => {
+      const s = process.env.LIVE_MINT_SCRATCH_REENTRY_DROP_PCT?.trim();
+      if (!s) return 0.1;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(0.5, n) : 0.1;
     })(),
     liveMintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     liveMintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
