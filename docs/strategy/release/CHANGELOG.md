@@ -8,6 +8,43 @@
 
 ---
 
+## [1.11.264] — 2026-05-23
+
+**Git SHA (интеграция):** `d9d3f23`.
+
+### Tune: Wave B TP ladder — escalating sell (5%/10%/15%/… per +2.5% rung)
+
+**Изменение.** Для всех `wave_b_v1` open (обе ветки — с усреднением и без):
+
+| PnL rung | Продажа остатка |
+|---|---|
+| +2.5% | 5% |
+| +5% | 10% |
+| +7.5% | 15% |
+| +10% | 20% |
+| … | +5% за ступень, cap 100% |
+
+Trail 20%, breakeven gating, defensive trail, **flush остатка &lt;$100** (TP и trail) — без изменений (`waveBAdjustSellFractionForRemainder`, `WAVE_B_TRAIL_FLUSH_REMAIN_USD=100`).
+
+**Код:** `exit-policy-wave-b.ts`, `tp-grid-effective.ts`, `tests/papertrader-exit-policy-wave-b.test.ts`.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.263 -- src/papertrader/executor/exit-policy-wave-b.ts src/papertrader/executor/tp-grid-effective.ts tests/papertrader-exit-policy-wave-b.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy SHA 1.11.263
+```
+
+---
+
 ## [1.11.263] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.263`.  
