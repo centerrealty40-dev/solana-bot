@@ -380,16 +380,16 @@ const PM2_APPS = [
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 30m). */
+        /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 20m). */
         PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         /**
          * Hybrid re-entry после полного выхода (в т.ч. KILLSTOP −5%): повторный вход если
-         * цена ≤ last_exit×(1−12%) **или** прошло 30 мин (что раньше). Не deny-list.
+         * цена ≤ last_exit×(1−12%) **или** прошло 20 мин (что раньше). Не deny-list.
          */
         LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
-        LIVE_REENTRY_MAX_WAIT_MINUTES: '30',
+        LIVE_REENTRY_MAX_WAIT_MINUTES: '20',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -520,7 +520,7 @@ const PM2_APPS = [
          */
         PAPER_DCA_LEVELS: '',
         /**
-         * Killstop −5% к усреднённой позиции (wave B + escalating TP). Re-entry — hybrid dip12/30m, не deny.
+         * Killstop −5% к усреднённой позиции (wave B + escalating TP). Re-entry — hybrid dip12/20m, не deny.
          */
         PAPER_DCA_KILLSTOP: '-0.05',
         /**

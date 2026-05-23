@@ -8,9 +8,42 @@
 
 ---
 
+## [1.11.267] — 2026-05-23
+
+**Git SHA (интеграция):** `18bf27f`.
+
+### Tune: hybrid re-entry time fallback 30m → 20m after loss exit
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `LIVE_REENTRY_MAX_WAIT_MINUTES` | 30 | **20** |
+
+После убыточного закрытия (в т.ч. KILLSTOP): повторный вход по тому же mint — если цена не просела **−12%** от last exit, разрешён через **20 мин** (было 30). Dip-порог **12%** без изменений.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.266 -- ecosystem.config.cjs .env.example tests/live-reentry-hybrid-gate.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy SHA 1.11.266
+```
+
+---
+
 ## [1.11.266] — 2026-05-23
 
 **Git SHA (интеграция):** `628c33b`.
+
+### Tune: entry split $400+$400 only ($800 cap); avg legs off
 
 **Prod env (`ecosystem.config.cjs`, live-oscar):**
 
