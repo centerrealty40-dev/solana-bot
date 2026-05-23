@@ -101,16 +101,16 @@ module.exports = {
         SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING: '10',
         SPIKE_ALERT_LOG_MISS_BY_FILTER: '1',
         /**
-         * Эскалация: повторный [UPDATE]-алерт при усилении пролива внутри cooldown.
-         * — DELTA_PCT=5: новый алерт если |new pct| - |prev pct| ≥ 5 п.п.;
+         * Эскалация: follow-up «Вот уже N%» при усилении пролива/роста внутри cooldown.
+         * — DELTA_PCT=5: новый алерт если |new pct| - |prev pct| ≥ 5 п.п. (10→15→20…);
          * — MIN_GAP_SEC=60: между алертами по одному mint минимум 60 секунд;
-         * — MAX_PER_MINT=3: не больше трёх UPDATE-апдейтов в одном цикле жизни алерта;
+         * — MAX_PER_MINT=8: до восьми follow-up на одну «ногу»;
          * — TIER_CHANGE_FORCES_UPDATE=1: при переходе в более жёсткий tier шлём апдейт даже при меньшей дельте.
          */
-        SPIKE_ALERT_ESCALATE_ENABLED: '0',
+        SPIKE_ALERT_ESCALATE_ENABLED: '1',
         SPIKE_ALERT_ESCALATE_DELTA_PCT: '5',
         SPIKE_ALERT_ESCALATE_MIN_GAP_SEC: '60',
-        SPIKE_ALERT_ESCALATE_MAX_PER_MINT: '3',
+        SPIKE_ALERT_ESCALATE_MAX_PER_MINT: '8',
         SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE: '1',
         /**
          * Аудит решений: пишем sent/update/miss/skip в PG-таблицу `market_spike_events`

@@ -359,6 +359,10 @@ export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
   const key = mint.trim();
   if (!key || !liveOscarCfg) return;
   if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
+  if (!liveOscarCfg.liveNegativeTradeDenyEnabled) {
+    log.debug({ mint: key, netPnlUsd }, 'live negative trade denylist disabled (stub preserved)');
+    return;
+  }
   const minLossUsd = negativeTradeDenyMinLossUsd();
   if (!(netPnlUsd < 0) || netPnlUsd > -minLossUsd) {
     if (netPnlUsd < 0) {

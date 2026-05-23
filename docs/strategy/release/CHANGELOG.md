@@ -8,6 +8,230 @@
 
 ---
 
+## [1.11.266] — 2026-05-23
+
+**Git SHA (интеграция):** `628c33b`.
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было (1.11.265) | Стало |
+|---|---|---|
+| `LIVE_OSCAR_FULL_NOTIONAL_USD` / `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` | $900 | **$800** |
+| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` | $300 | **$400** |
+| `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD` | $300 | **$400** |
+| `PAPER_ENTRY_FIRST_LEG_FRACTION` | 0.7 | **0.5** |
+| `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD` | $150 | **0** (усреднение −7% выкл.) |
+| `PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD` | $150 | **0** (усреднение −14% выкл.) |
+
+**Код:** `liveStagedEntrySecondLegUsd` zod → `nonnegative()` (0 = без avg-ног).
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.265 -- ecosystem.config.cjs src/papertrader/config.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy SHA 1.11.265
+```
+
+---
+
+## [1.11.265] — 2026-05-23
+
+**Git SHA (интеграция):** `f9382b1`.
+
+### Tune: kill −5% + hybrid re-entry (dip −12% OR 30m); denylist off
+
+**Фон.** 7d backtest на PG + journal: после KILLSTOP −5% deny-list «сжигает» узкий пул (~10 fresh mint); лучший re-entry — **−12% от last exit** или **fallback 30 min** (runner без deep dip).
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `PAPER_DCA_KILLSTOP` | −25% | **−5%** |
+| `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` | 0 | **12** |
+| `LIVE_REENTRY_MAX_WAIT_MINUTES` | — | **30** (новый) |
+| `PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED` | true | **false** (заменён hybrid gate) |
+| `LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED` | 0 | **1** |
+| `LIVE_NEGATIVE_TRADE_DENY_ENABLED` | — | **0** (stub в коде) |
+| `LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED` | — | **0** |
+| `LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED` | 1 | **0** |
+| `LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES` | 2 | **0** |
+| `LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT` | 7 | **5** |
+
+**Код:** hybrid gate `appendLiveReentryHybridGateReasons` / `appendPostExitReentryGateReasons` (`dip-clones.ts`); флаги deny в `live/config.ts`, `mint-whitelist.ts`, `mint-first-probe.ts`; тест `tests/live-reentry-hybrid-gate.test.ts`.
+
+**VPS (ручное):** `live-oscar-permanent-denylist.txt` очищен (backup `*.bak-pre-hybrid`).
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.264 -- ecosystem.config.cjs src/papertrader/config.ts src/papertrader/discovery/dip-clones.ts src/papertrader/discovery/smart-lottery.ts src/live/config.ts src/live/mint-whitelist.ts src/live/mint-first-probe.ts tests/live-reentry-hybrid-gate.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md .env.example
+npm run typecheck
+# NORM §5 deploy SHA 1.11.264; восстановить denylist из *.bak-pre-hybrid при необходимости
+```
+
+---
+
+## [1.11.264] — 2026-05-23
+
+**Git SHA (интеграция):** `c7f1887`.
+
+### Tune: Wave B TP ladder — escalating sell (5%/10%/15%/… per +2.5% rung)
+
+**Изменение.** Для всех `wave_b_v1` open (обе ветки — с усреднением и без):
+
+| PnL rung | Продажа остатка |
+|---|---|
+| +2.5% | 5% |
+| +5% | 10% |
+| +7.5% | 15% |
+| +10% | 20% |
+| … | +5% за ступень, cap 100% |
+
+Trail 20%, breakeven gating, defensive trail, **flush остатка &lt;$100** (TP и trail) — без изменений (`waveBAdjustSellFractionForRemainder`, `WAVE_B_TRAIL_FLUSH_REMAIN_USD=100`).
+
+**Код:** `exit-policy-wave-b.ts`, `tp-grid-effective.ts`, `tests/papertrader-exit-policy-wave-b.test.ts`.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.263 -- src/papertrader/executor/exit-policy-wave-b.ts src/papertrader/executor/tp-grid-effective.ts tests/papertrader-exit-policy-wave-b.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy SHA 1.11.263
+```
+
+---
+
+## [1.11.263] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.263`.  
+**Git SHA (интеграция):** `f247308`.
+
+### Tune: Live Oscar entry floor — liq $400k + mcap $5M
+
+**Фон.** Journal counterfactual на закрытиях с `live_discovery_eval` (`pt1-oscar-live.jsonl`): **2d** (26 closes) — losses чаще `liq<400k` (13/16) и `mcap<5M` (9/16); **14d** (102 closes, 91 с eval) — liq≥$400k **и** mcap≥$5M блокирует **36/39 losses (−$2145)** vs **47/52 wins (+$1963)** → kept net **+$38** vs факт **−$726**.
+
+**Prod env (`ecosystem.config.cjs`, live-oscar):**
+
+| Параметр | Было | Стало |
+|---|---|---|
+| `PAPER_POST_MIN_LIQ_USD` | $140k | **$400k** |
+| `PAPER_DISCOVERY_MIN_MARKET_CAP_USD` | $2M | **$5M** |
+
+Priority tier (`evaluateSnapshotPriorityTier`) и SQL lane используют те же пороги (`lanePostMinLiqUsd`, `discoveryMinMarketCapUsd`). Eval-reasons: `liq<400000`, `mcap<5000000`.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.262 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+# NORM §5 на VPS: git fetch origin v2 && git reset --hard <SHA-1.11.262> && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+---
+
+## [1.11.262] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.262`.  
+**Git SHA (интеграция):** `43cfee2`.
+
+### Fix: Wave B breakeven — только после реального TP rung ≥ +7.5%
+
+**Проблема.** После 1.11.261 MTM стал честным; в позиции оставался ghost `liveWavePeakPnlFrac` от stale snapshot → `BREAKEVEN_EXIT` на WOJAK/USDUC/LOL без исполненного partial TP (каскад продаж ~19:24 UTC 22 мая).
+
+**Код:**
+
+- `src/papertrader/executor/exit-policy-wave-b.ts` — `waveBBreakevenExitEligible()` смотрит `waveBExecutedTpGridThresholdTaken()` (ladder marks), не MTM peak.
+- `tests/papertrader-exit-policy-wave-b.test.ts` — регрессия ghost peak vs executed rung.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.261 -- src/papertrader/executor/exit-policy-wave-b.ts tests/papertrader-exit-policy-wave-b.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy предыдущего SHA; pm2 reload live-oscar --update-env
+```
+
+---
+
+## [1.11.261] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.261`.  
+**Git SHA (интеграция):** `ca0e675`.
+
+### Fix: conservative exit MTM при stale-high PG snapshot
+
+**Проблема.** USDUC: PG snapshot ~$0.00569 vs Jupiter ~$0.00524 → phantom +8% MTM → ложный partial TP +5% при фактически flat exit.
+
+**Код:**
+
+- `src/live/mtm-snapshot-guard.ts` — новый guard: Jupiter ниже stale high → MTM = Jupiter; in-band → `min(snapshot, Jupiter)`.
+- `src/papertrader/executor/tracker.ts` — убран override «Jupiter ниже snapshot → всё равно snapshot».
+- `tests/live-mtm-snapshot-guard.test.ts`.
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.260 -- src/live/mtm-snapshot-guard.ts src/papertrader/executor/tracker.ts tests/live-mtm-snapshot-guard.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+npm run typecheck
+# NORM §5 deploy предыдущего SHA; pm2 reload live-oscar --update-env
+```
+
+---
+
+## [1.11.260] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.260`.
+
+### Spike Telegram — эскалация «Вот уже N%»
+
+- **`market-spike-telegram-watch`:** включена эскалация по умолчанию (`SPIKE_ALERT_ESCALATE_ENABLED=1`): если пролив/рост усилился ещё на ≥5 п.п. внутри mint cooldown — follow-up «Вот уже 15%», «Вот уже 20%»… (до 8 апдейтов, gap ≥60 с).
+- Формат follow-up: та же компактная раскладка, первая строка `SYMBOL — NAME · Вот уже N%`.
+
+**Откат:** `SPIKE_ALERT_ESCALATE_ENABLED=0` + NORM §5 deploy; `pm2 restart market-spike-telegram-watch --update-env`.
+
+---
+
+## [1.11.256] — 2026-05-22
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.256`.
+
+### Spike Telegram — компактный формат алерта
+
+- **`market-spike-telegram-watch`:** сообщения pump/dump — 4 строки: заголовок + «Пролив/Рост» + Δ%, окно времени, Δ mcap, ссылка GMGN.
+- Убраны из текста: `[spike_*]` tag, tier, dex/бары, Δ цены, mint, holders, liq.
+
+**Откат:** NORM §5 deploy предыдущего SHA; `pm2 restart market-spike-telegram-watch --update-env`.
+
+---
+
 ## [1.11.251] — 2026-05-22
 
 **Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.251`.

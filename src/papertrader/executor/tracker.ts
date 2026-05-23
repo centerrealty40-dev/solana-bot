@@ -1573,8 +1573,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                         jupiterPx: jpx,
                         maxPremiumPct: maxPrem,
                         jupiterDiscountVsSnapPct: premPct,
+                        mtmUsd: mtmPick,
                       },
-                      'live tracker: Jupiter buy-probe below snapshot discount floor; using PG snapshot for MTM (symmetric band)',
+                      'live tracker: Jupiter below snapshot band; using Jupiter MTM (stale snapshot guard)',
                     );
                   } else {
                     log.warn(
@@ -1585,6 +1586,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                         jupiterPx: jpx,
                         maxPremiumPct: maxPrem,
                         jupiterPremiumVsSnapPct: premPct,
+                        mtmUsd: mtmPick,
                       },
                       'live tracker: Jupiter buy-probe above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
                     );
@@ -1599,42 +1601,34 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                     maxPremiumPct: maxPrem,
                     bandClamp: bandClamp === 'low' ? 'low' : 'high',
                   });
-                } else {
-                  const divergeVsSnap =
-                    snapPx > 0 ? Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18) : Number.POSITIVE_INFINITY;
-                  /**
-                   * Buy-route Jupiter can sit *below* PG `price_usd` by only 2–3% (below the old 3.5% log gate) and
-                   * still suppress TP vs avg: e.g. snapshot already clears +5% to `avgEntry` while Jupiter does not.
-                   * Whenever Jupiter is below snapshot, prefer snapshot for MTM; keep the loud divergence log/telegram
-                   * only for material gaps.
-                   */
-                  if (snapPx > 0 && jpx > 0 && jpx < snapPx - 1e-18) {
-                    curMetric = snapPx;
-                    if (divergeVsSnap > 0.015) {
-                      log.warn(
-                        {
-                          mint: mint.slice(0, 8),
-                          symbol: ot.symbol,
-                          snapshotPx: snapPx,
-                          jupiterPx: jpx,
-                          divergePct: +(divergeVsSnap * 100).toFixed(2),
-                        },
-                        'live tracker: Jupiter buy-probe below PG snapshot; using snapshot for MTM (downside mark)',
-                      );
-                    }
-                    if (divergeVsSnap > 0.035) {
-                      void notifyLiveTrackerJupiterMtmClampedToSnapshot({
-                        strategyId: cfg.strategyId,
-                        mint,
+                } else if (snapPx > 0 && jpx > 0 && jpx < snapPx - 1e-18) {
+                  const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
+                  if (divergeVsSnap > 0.035) {
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
                         symbol: ot.symbol,
                         snapshotPx: snapPx,
                         jupiterPx: jpx,
-                        probeUsd,
-                        maxPremiumPct: maxPrem,
-                        bandClamp: 'low',
-                      });
-                    }
-                  } else if (snapPx > 0 && divergeVsSnap > 0.035) {
+                        divergePct: +(divergeVsSnap * 100).toFixed(2),
+                        mtmUsd: mtmPick,
+                      },
+                      'live tracker: PG snapshot above Jupiter; MTM uses min(snapshot,Jupiter) for exits',
+                    );
+                    void notifyLiveTrackerJupiterMtmClampedToSnapshot({
+                      strategyId: cfg.strategyId,
+                      mint,
+                      symbol: ot.symbol,
+                      snapshotPx: snapPx,
+                      jupiterPx: jpx,
+                      probeUsd,
+                      maxPremiumPct: maxPrem,
+                      bandClamp: 'low',
+                    });
+                  }
+                } else if (snapPx > 0) {
+                  const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
+                  if (divergeVsSnap > 0.035 && jpx > snapPx + 1e-18) {
                     log.warn(
                       {
                         mint: mint.slice(0, 8),
@@ -1643,7 +1637,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                         jupiterPx: jpx,
                         divergePct: +(divergeVsSnap * 100).toFixed(2),
                       },
-                      'live tracker: PG snapshot vs Jupiter tradable price; using Jupiter for decisions',
+                      'live tracker: PG snapshot vs Jupiter tradable price; using conservative MTM for decisions',
                     );
                     void notifyLiveTrackerSnapshotJupiterDivergence({
                       strategyId: cfg.strategyId,
@@ -1655,12 +1649,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                       probeUsd,
                       avgEntryMarket: ot.avgEntryMarket,
                     });
-                  } else if (!(snapPx > 0)) {
-                    log.warn(
-                      { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
-                      'live tracker: PG price missing; using Jupiter MTM',
-                    );
                   }
+                } else {
+                  log.warn(
+                    { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
+                    'live tracker: PG price missing; using Jupiter MTM',
+                  );
                 }
               } else {
                 log.warn(

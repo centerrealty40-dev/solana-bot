@@ -25,9 +25,9 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
  * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
  *
- * 1.11.247: $300+$300 entry split + $150 @ −7% + $150 @ −14% staged avg = $900 cap.
+ * 1.11.266: entry split **$400+$400** only (no −7%/−14% avg legs) = $800 cap.
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '900';
+const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
 
 const PM2_APPS = [
     {
@@ -317,25 +317,23 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry 1.11.247: сплит входа **$300+$300** (10 с, +3%/−10% к 1-й ноге, не усреднение);
-         * усреднение staged **$150 @ −7%** (≥3 мин после 1-й ноги сплита, только если drop в (−7%, −14%])
-         * и **$150 @ −14%** (≥5 мин после первого усреднения).
+         * Staged-entry 1.11.266: сплит входа **$400+$400** (10 с, +3%/−10% к 1-й ноге); усреднения −7%/−14% выкл.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
-        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.7',
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '150',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '25',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
@@ -354,14 +352,16 @@ const PM2_APPS = [
         /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
-        PAPER_POST_MIN_LIQ_USD: '140000',
+        /** 1.11.263: $140k → $400k — live journal 2d: 81% losses had liq<400k at entry eval. */
+        PAPER_POST_MIN_LIQ_USD: '400000',
         /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy. 1.11.243: $3M → $2M. */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
+        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy.
+         *  1.11.263: $2M → $5M — live journal 2d/14d: losses skew mcap<5M (WR 29% vs 56% on mcap≥5M). */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '5000000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
@@ -380,10 +380,16 @@ const PM2_APPS = [
         PAPER_DIP_MIN_AGE_MIN: '0',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** После **любого** полного закрытия по mint — 10m пауза повторного входа (имена env исторически `LOSS_`). */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
+        /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 30m). */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
+        /**
+         * Hybrid re-entry после полного выхода (в т.ч. KILLSTOP −5%): повторный вход если
+         * цена ≤ last_exit×(1−12%) **или** прошло 30 мин (что раньше). Не deny-list.
+         */
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
+        LIVE_REENTRY_MAX_WAIT_MINUTES: '30',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -514,11 +520,9 @@ const PM2_APPS = [
          */
         PAPER_DCA_LEVELS: '',
         /**
-         * Killstop −20% к усреднённой позиции. На retro-grid kill в зоне (-15..-12)% сжигал плюсовые сделки
-         * с временной просадкой, которые после восстанавливались к ступеням TP; kill ≥ −20% даёт
-         * страховку от чёрного лебедя без подрезания нормальных просадок (см. retro-grid в README).
+         * Killstop −5% к усреднённой позиции (wave B + escalating TP). Re-entry — hybrid dip12/30m, не deny.
          */
-        PAPER_DCA_KILLSTOP: '-0.25',
+        PAPER_DCA_KILLSTOP: '-0.05',
         /**
          * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
          *   ступень 1 (+5%)  → 10% остатка
@@ -767,8 +771,14 @@ const PM2_APPS = [
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
-        /** `0` — входы без whitelist; убыточные закрытия → локальный permanent denylist + TG. */
+        /** `0` — входы без whitelist; permanent denylist отключён (см. LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED). */
         LIVE_MINT_WHITELIST_ENABLED: '0',
+        /** Permanent denylist: проверка и автодопись выкл.; код/файлы — заготовка на будущее. */
+        LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '1',
+        /** Не добавлять mint в denylist после убыточного закрытия (stub в коде сохранён). */
+        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '0',
+        /** First-mint-probe: не deny при убытке (stub сохранён). */
+        LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED: '0',
         /** `0` — не слать ADVICE `live_oscar_staged_signal`. */
         LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED: '0',
         /** Suppress dips-channel coin TG when wallet SOL cannot fund buy_open leg. */
@@ -778,11 +788,11 @@ const PM2_APPS = [
         /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
         /**
-         * Первый live-вход по mint: split 300+300, kill −7% от сигнала, без усреднения −7/−14;
-         * убыток → denylist; прибыльное закрытие → `live-oscar-mint-graduated.txt`.
+         * Первый live-вход по mint: split 300+300, kill −5% от сигнала; без deny при убытке.
+         * Прибыльное закрытие → `live-oscar-mint-graduated.txt`.
          */
         LIVE_MINT_FIRST_PROBE_ENABLED: '1',
-        LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '7',
+        LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '5',
         LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-mint-graduated.txt'),
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
@@ -799,8 +809,8 @@ const PM2_APPS = [
          */
         LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN: '8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30',
         LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        /** После N подряд убыточных полных закрытий по mint — удаление из whitelist + Telegram (`mint-whitelist.ts`). `0` = выкл. */
-        LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '2',
+        /** После N подряд убытков — удаление из whitelist; `0` = выкл (denylist тоже выкл). */
+        LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES: '0',
         /**
          * Shadow diagnostics (signal-lab + mtm-shadow): JSONL + опциональные отчёты; не влияет на торговые решения.
          * В PM2 выключено — снижает фоновые запросы к Jupiter lite-api; торговый путь (verify/трекер) без изменений.
@@ -885,12 +895,9 @@ const PM2_APPS = [
         LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '3',
         LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '1800000',
         /**
-         * 1.11.231 — после `LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD` cooldown-rearm'ов
-         * на одном mint (через любой intentKind) — автоматически в permanent-denylist.
-         *   5 rearm'ов × 30 мин cooldown = ~2.5+ часа подряд глухих sim_err. Точно глухой маршрут.
-         *   Telegram ALERT при срабатывании. Для отмены — удалить строку из permanent-denylist.txt вручную.
+         * 1.11.231 — после N cooldown-rearm'ов auto-denylist. `0` = выкл (заготовка в коде).
          */
-        LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED: '1',
+        LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED: '0',
         LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD: '5',
         LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED: '1',
 
@@ -1069,10 +1076,10 @@ const PM2_APPS = [
         SPIKE_ALERT_DUMP_TIER3_MIN_PCT: '8',
         SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING: '10',
         SPIKE_ALERT_LOG_MISS_BY_FILTER: '1',
-        SPIKE_ALERT_ESCALATE_ENABLED: '0',
+        SPIKE_ALERT_ESCALATE_ENABLED: '1',
         SPIKE_ALERT_ESCALATE_DELTA_PCT: '5',
         SPIKE_ALERT_ESCALATE_MIN_GAP_SEC: '60',
-        SPIKE_ALERT_ESCALATE_MAX_PER_MINT: '3',
+        SPIKE_ALERT_ESCALATE_MAX_PER_MINT: '8',
         SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE: '1',
         SPIKE_ALERT_AUDIT_DB_ENABLED: '1',
         SPIKE_ALERT_AUDIT_LOG_SKIPS: '0',

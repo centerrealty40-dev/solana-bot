@@ -1,10 +1,12 @@
 /**
- * Live tracker: Jupiter SOL→token buy-probe can diverge from the latest PG `price_usd`.
- * - **Up:** thin route / micro-notional can imply a much **higher** USD/token than the pool snapshot
- *   (false pump for TP). When above `maxPremiumOverSnapshotPct`, trust the snapshot.
- * - **Down:** the same probe can sit **below** the snapshot (stale route, partial fill math, illiquidity).
- *   When below the symmetric **floor** (`snap / (1+p%)`), trust the snapshot so TP / peak / trail
- *   are not permanently blocked while the pool snapshot already shows the rung.
+ * Live tracker exit MTM from Jupiter SOL→token buy-probe vs latest PG `price_usd`.
+ *
+ * Goal: conservative tradable mark for TP / peak / trail — never mark above what Jupiter
+ * can support, and never trust a lone Jupiter spike above snapshot (thin-route ghost pump).
+ *
+ * - **Up (ghost pump):** Jupiter ≫ snapshot → cap at snapshot.
+ * - **Down (stale high snapshot):** Jupiter ≪ snapshot → trust Jupiter (USDUC-class bug).
+ * - **In band:** min(snapshot, Jupiter) — sell-side conservative.
  */
 export function liveTrackerMtmUsdSnapJupiterSymmetricBand(args: {
   snapPx: number;
@@ -23,9 +25,10 @@ export function liveTrackerMtmUsdSnapJupiterSymmetricBand(args: {
     return { useUsd: snapPx, clampedFromJupiter: true, bandClamp: 'high' };
   }
   if (jupiterPx < snapPx / capMult) {
-    return { useUsd: snapPx, clampedFromJupiter: true, bandClamp: 'low' };
+    return { useUsd: jupiterPx, clampedFromJupiter: true, bandClamp: 'low' };
   }
-  return { useUsd: jupiterPx, clampedFromJupiter: false, bandClamp: null };
+  const conservative = Math.min(snapPx, jupiterPx);
+  return { useUsd: conservative, clampedFromJupiter: conservative !== jupiterPx, bandClamp: null };
 }
 
 /** @deprecated Use {@link liveTrackerMtmUsdSnapJupiterSymmetricBand} (same behavior; name was upward-only). */

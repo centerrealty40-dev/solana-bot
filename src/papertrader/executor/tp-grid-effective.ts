@@ -43,8 +43,7 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
   /**
    * Wave B (1.11.228): grid profile is selected at runtime from the live `legs` state, so
    * stored `tpGridOverrides` from earlier code versions never override the averaging-aware fork.
-   * - No averaging legs → `WAVE_B_V1_TP_GRID_NO_AVG` (+5% steps, 10% per rung).
-   * - ≥1 `staged_avg`/`dca` leg → `WAVE_B_V1_TP_GRID` (+2.5% steps, 10% per rung).
+   * - Both branches: +2.5% steps, escalating sell (5%/10%/15%/… of remainder per rung).
    */
   const waveBProfile = isWaveBExitPolicy(ot) ? waveBTpGridProfileFor(ot) : null;
   /** Profile из cfg; per-open override `gridSellFractionByStep` поддерживается опционально. */
