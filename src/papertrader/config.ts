@@ -530,10 +530,26 @@ const ConfigSchema = z.object({
   /**
    * Live Oscar: enable wave-B exit policy for **new** opens only (`liveExitPolicyId=wave_b_v1`).
    * Restored opens without policy id stay on `legacy_grid` with pinned prod grid overrides.
+   * Mutually exclusive with Variant A (`PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1`).
    */
   liveOscarExitPolicyWaveBEnabled: z.boolean().default(false),
   /** Fraction of remainder per trail step under wave B (default 0.30). */
   liveOscarExitPolicyWaveBTrailSellFraction: z.coerce.number().min(0.01).max(1).default(0.3),
+
+  /**
+   * Live Oscar Variant A (v1): discrete TP ladder + moon +50% + peak retrace trail + smart48/salvage24.
+   * Env: `PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1` (disables wave B for new opens).
+   */
+  liveOscarExitPolicyVariantAEnabled: z.boolean().default(false),
+  liveOscarVariantAMoonTargetPct: z.coerce.number().min(0.05).max(5).default(0.5),
+  liveOscarVariantATrailArmPct: z.coerce.number().min(0.05).max(5).default(0.35),
+  liveOscarVariantATrailRetracePct: z.coerce.number().min(0.01).max(0.5).default(0.12),
+  liveOscarVariantASalvage24Enabled: z.boolean().default(true),
+  liveOscarVariantASalvage24MinPeakPct: z.coerce.number().min(0).max(50).default(5),
+  liveOscarVariantASmart48Enabled: z.boolean().default(true),
+  liveOscarVariantAMaxHorizonHours: z.coerce.number().positive().default(96),
+  /** v3 scratch: gap-through-0 flush when PnL ≤ −this vs avg (default 3%). */
+  liveOscarVariantAScratchGapTailPct: z.coerce.number().min(0.01).max(0.2).default(0.03),
 
   /**
    * Live Oscar only (`strategyId === live-oscar`): after at least one `TP_LADDER` partial,
@@ -1068,6 +1084,15 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarExitPolicyWaveBEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B, false),
     liveOscarExitPolicyWaveBTrailSellFraction:
       process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION,
+    liveOscarExitPolicyVariantAEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A, false),
+    liveOscarVariantAMoonTargetPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_MOON_TARGET_PCT,
+    liveOscarVariantATrailArmPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_ARM_PCT,
+    liveOscarVariantATrailRetracePct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_RETRACE_PCT,
+    liveOscarVariantASalvage24Enabled: envBool(process.env.PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED, true),
+    liveOscarVariantASalvage24MinPeakPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT,
+    liveOscarVariantASmart48Enabled: envBool(process.env.PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED, true),
+    liveOscarVariantAMaxHorizonHours: process.env.PAPER_LIVE_OSCAR_VARIANT_A_MAX_HORIZON_HOURS,
+    liveOscarVariantAScratchGapTailPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT,
     timeoutHours: process.env.PAPER_TIMEOUT_HOURS,
     liveOscarBreakevenTrimAfterFirstTpEnabled: envBool(
       process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED,

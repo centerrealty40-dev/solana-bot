@@ -124,7 +124,7 @@ export interface PartialSell {
   marketPrice: number;
   /** Fraction of REMAINING position sold (0..1). */
   sellFraction: number;
-  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL_STEP' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL';
+  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL_STEP' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL' | 'SCRATCH_FLUSH0' | 'SCRATCH_GAP_FLUSH';
   proceedsUsd: number;
   grossProceedsUsd: number;
   pnlUsd: number;
@@ -256,9 +256,34 @@ export interface OpenTrade {
 
   /**
    * Live Oscar — политика выхода, зафиксированная при open/restore.
-   * `legacy_grid` — ladder_retrace + prod grid snapshot; `wave_b_v1` — wave TP + stepped trail.
+   * `legacy_grid` — ladder_retrace + prod grid snapshot; `wave_b_v1` — wave TP + stepped trail;
+   * `variant_a_v1` — legacy discrete TP + moon50 + full trail + smart48/96h.
+   * `variant_a_v2` — infinite +5% TP grid, partial trail from +10%, DCA resets rungs.
+   * `variant_a_v3` — scratch harvest: +5%→30%, flush @0% avg, no DCA after TP, price re-entry −10%.
    */
-  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1';
+  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3';
+  /** v3: at least one TP partial taken — blocks DCA and timed exits. */
+  liveVariantAScratchHadTp?: boolean;
+  liveVariantAScratchPrevPnlFrac?: number;
+  liveVariantAScratchPeakPnlFrac?: number;
+  liveVariantAScratchFlushedAtZero?: boolean;
+
+  /** Variant A: peak PnL fraction (vs avg) on remainder for trail / salvage24. */
+  liveVariantARemainderPeakPnlFrac?: number;
+  liveVariantATrailArmed?: boolean;
+  liveVariantASmart48Extended?: boolean;
+  liveVariantASalvage24Checked?: boolean;
+  liveVariantAH48Checked?: boolean;
+  /** Set on close path for journal / mint cooldown. */
+  liveVariantAExitTag?:
+    | 'salvage24'
+    | 'h48_loss'
+    | 'horizon48'
+    | 'horizon96'
+    | 'moon50'
+    | 'trail'
+    | 'scratch_flush0'
+    | 'scratch_gap_flush';
 
   /** Wave B: last peak PnL fraction (vs avg) for wave reset. */
   liveWavePeakPnlFrac?: number;

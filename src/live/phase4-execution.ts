@@ -51,6 +51,15 @@ import {
 } from './pending-buy-cooldown.js';
 import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
 import {
+  isMintTimedLossCooldownActive,
+  mintTimedLossCooldownRemainingMs,
+} from './mint-timed-loss-cooldown.js';
+import {
+  isMintScratchReentryBlocked,
+  mintScratchReentryRefPrice,
+  mintScratchReentryThresholdPrice,
+} from './mint-scratch-reentry.js';
+import {
   isStagedAddCooldownActive,
   recordStagedAddOutcome,
   stagedAddCooldownRemainingMs,
@@ -314,6 +323,28 @@ async function runSolToTokenPipeline(
       anchorMode: mode,
       terminalKind: 'gate',
       terminalMessage: 'live_permanent_deny',
+    };
+  }
+
+  if (
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
+    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add' || args.intentKind === 'buy_scale_in') &&
+    isMintTimedLossCooldownActive(liveCfg, args.mint)
+  ) {
+    const remaining = mintTimedLossCooldownRemainingMs(args.mint);
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_mint_timed_loss_cooldown:${args.intentKind}`,
+      detail: JSON.stringify({
+        mint: args.mint.slice(0, 12),
+        remainingMs: remaining,
+      }).slice(0, 200),
+    });
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: `mint_timed_loss_cooldown:${Math.round(remaining / 1000)}s`,
     };
   }
 
@@ -1104,6 +1135,36 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
           });
           return { ok: false, anchorMode: mode };
         }
+      }
+
+      const signalPx = ctx.snapshotEntryPriceUsd;
+      if (
+        ctx.liveCfg.liveMintScratchReentryEnabled &&
+        (ctx.liveCfg.executionMode === 'live' || ctx.liveCfg.executionMode === 'simulate') &&
+        isMintScratchReentryBlocked(ctx.liveCfg, ctx.ot.mint, signalPx)
+      ) {
+        const ref = mintScratchReentryRefPrice(ctx.ot.mint);
+        const threshold = mintScratchReentryThresholdPrice(
+          ctx.ot.mint,
+          ctx.liveCfg.liveMintScratchReentryDropPct,
+        );
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'live_mint_scratch_reentry_price',
+          detail: JSON.stringify({
+            mint: ctx.ot.mint.slice(0, 12),
+            candidatePriceUsd: signalPx,
+            lastExitRefPriceUsd: ref,
+            reentryThresholdUsd: threshold,
+            dropPct: ctx.liveCfg.liveMintScratchReentryDropPct,
+          }).slice(0, 400),
+        });
+        return {
+          ok: false,
+          anchorMode: mode,
+          terminalKind: 'gate',
+          terminalMessage: 'mint_scratch_reentry_price',
+        };
       }
 
       const firstUsd =

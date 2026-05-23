@@ -8,6 +8,94 @@
 
 ---
 
+## [1.11.271] — 2026-05-21
+
+### Feature: Live Oscar Variant A v3 — scratch-harvest exit + price re-entry
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Exit policy | New opens → `variant_a_v3` (in-flight v1/v2/wave B/legacy unchanged) |
+| TP | Discrete ladder vs avg: +5%→30%, +10%→15%, +15%→15%, +20/25/30%→10% remainder |
+| After TP | DCA forbidden; pullback to 0% avg → 100% flush (`scratch_flush0`) |
+| Gap | PG gap through 0% → flush at avg when PnL ≤ −3% (`scratch_gap_flush`) |
+| Dust | Remainder < $100 → full flush |
+| Timed | salvage24 + h48 **loss only if no TP**; no 96h / moon / v2 grid trail |
+| Re-entry | Same mint when price ≤ lastExit × 90% (no time cooldown) |
+| Timed loss block | 24h mint block after salvage24/h48_loss (unchanged) |
+
+**Dashboard:** `STRATEGY_META` + timeline context for scratch on open/partial/close.
+
+**Code:** `exit-policy-variant-a.ts` (v3), `mint-scratch-reentry.ts`, tracker flush wiring, phase4 buy gate, store-restore v3 fields.
+
+### Откат
+
+Revert to `1.11.270` env block (v2 infinite grid + partial trail) and prior `exit-policy-variant-a.ts`; redeploy NORM §5.
+
+---
+
+## [1.11.270] — 2026-05-21
+
+### Feature: Live Oscar Variant A v2 — infinite TP grid + partial trail @+10%
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Exit policy | New opens → `variant_a_v2` (in-flight `variant_a_v1` / wave B unchanged) |
+| TP | Infinite +5% grid, 10% of remainder per rung |
+| Trail | Partial stepped trail (20% remainder, −5% from peak); arms at **+10%**, not +35% |
+| DCA | After any DCA leg → **all TP rungs reset** (re-fire from +5% on new avg) |
+| Pullback | After ≥+10% taken, drop to ≤+2.5% → re-arm rungs above +2.5% |
+| Timed | salvage24 + h48 **loss only**; `SMART48=0` — no forced 96h on winners |
+| Removed | Moon +50% full exit, +35% full retrace trail, discrete TP ladder |
+
+**Code:** `exit-policy-variant-a.ts` (v2), tracker partial-trail wiring, `tp-grid-effective` unlimited grid.
+
+### Откат
+
+Revert to `1.11.269` env block (discrete ladder, smart48, moon/trail full exit) and prior `exit-policy-variant-a.ts`; redeploy NORM §5.
+
+---
+
+## [1.11.269] — 2026-05-21
+
+### Feature: Live Oscar Variant A exit stack + DCA cap $1200
+
+**Prod (`live-oscar`, `ecosystem.config.cjs`):**
+
+| Area | Change |
+|---|---|
+| Entry | $400+$400 staged split (`PAPER_POSITION_USD=800`) |
+| Max cap | `LIVE_MAX_POSITION_USD=1200` (DCA −10%/−20% × $200) |
+| DCA | `PAPER_DCA_LEVELS=-10:0.25,-20:0.25` |
+| Kill | `PAPER_DCA_KILLSTOP=0` (no price kill) |
+| TP | Discrete ladder `0.05:0.25,…,0.30:0.15`; grid off |
+| Exit policy | `PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1`; wave B off for **new** opens |
+| Moon / trail | +50% full exit; trail arm +35%, retrace 12% |
+| Timed | Salvage24; smart48 (loss @48h, winners to 96h) |
+| Min liq | `PAPER_POST_MIN_LIQ_USD=300000` |
+| Re-entry | `LIVE_MINT_TIMED_LOSS_COOLDOWN_*` 24h after salvage24/h48_loss |
+
+**Code:** `exit-policy-variant-a.ts`, tracker integration, `mint-timed-loss-cooldown.ts`, notional boot allows entry < max.
+
+### Деплой (NORM §5)
+
+```bash
+ssh -i c:/Users/cente/.ssh/botadmin_187_auto root@187.124.38.242 \
+  "sudo -u salpha -H bash -lc 'cd /opt/solana-alpha && git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --only live-oscar --update-env && git rev-parse HEAD && git status -sb'"
+```
+
+### Откат
+
+```bash
+git checkout sa-alpha-1.11.268 -- ecosystem.config.cjs src/papertrader/executor/exit-policy-variant-a.ts src/live/mint-timed-loss-cooldown.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md
+# + revert tracker/types/config edits; NORM §5 deploy 1.11.268
+```
+
+---
+
 ## [1.11.267] — 2026-05-23
 
 **Git SHA (интеграция):** `eb681fc`.
@@ -236,6 +324,20 @@ git checkout sa-alpha-1.11.260 -- src/live/mtm-snapshot-guard.ts src/papertrader
 npm run typecheck
 # NORM §5 deploy предыдущего SHA; pm2 reload live-oscar --update-env
 ```
+
+---
+
+## [1.11.268] — 2026-05-23
+
+**Git-тег продукта (рекомендуемый):** `sa-alpha-1.11.268`.
+
+### Discovery — канонический пул по max liq (метрики)
+
+- **`snapshot.ts`:** выбор строки снимка на mint — `liquidity_usd DESC` (канонический пул), не «самый свежий ts» на мёртвом Meteora/Pumpswap.
+- **`snapshot-canonical-pick.ts`:** общий pick + dedupe после inject whitelist/priority.
+- Исправляет кейс pippin: Raydium ~$3.7M вместо Meteora ~$32k в `live_discovery_eval`.
+
+**Откат:** NORM §5 deploy предыдущего SHA; `pm2 reload live-oscar --update-env`.
 
 ---
 

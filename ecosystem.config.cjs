@@ -21,13 +21,13 @@ const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
 const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
 /**
- * live-oscar (`name: live-oscar`): full notional for paper ticket and live cap.
- * Must equal sum of staged legs (`PAPER_LIVE_STAGED_ENTRY_*_USD`); boot fails if
- * `PAPER_POSITION_USD` ≠ `LIVE_MAX_POSITION_USD` (see `src/live/main.ts`).
+ * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
+ * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * 1.11.266: entry split **$400+$400** only (no −7%/−14% avg legs) = $800 cap.
+ * 1.11.269 Variant A: entry split 400+400 USD = 800; DCA -10%/-20% x 200 USD; max 1200 USD per mint.
  */
-const LIVE_OSCAR_FULL_NOTIONAL_USD = '800';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '800';
+const LIVE_OSCAR_MAX_POSITION_USD = '1200';
 
 const PM2_APPS = [
     {
@@ -319,7 +319,7 @@ const PM2_APPS = [
         /**
          * Staged-entry 1.11.266: сплит входа **$400+$400** (10 с, +3%/−10% к 1-й ноге); усреднения −7%/−14% выкл.
          */
-        PAPER_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
+        PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
@@ -353,7 +353,7 @@ const PM2_APPS = [
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
         /** 1.11.263: $140k → $400k — live journal 2d: 81% losses had liq<400k at entry eval. */
-        PAPER_POST_MIN_LIQ_USD: '400000',
+        PAPER_POST_MIN_LIQ_USD: '300000',
         /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
@@ -515,56 +515,40 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Дополнительные DCA отключены: одно staged-усреднение **−6%** от сигнала
-         * (см. `PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT`).
+         * Variant A (1.11.269): DCA −10% / −20% от первой ноги, по $200 (0.25 × $800 base).
+         * Max invested $800 + $200 + $200 = $1200 (`LIVE_MAX_POSITION_USD`).
          */
-        PAPER_DCA_LEVELS: '',
+        PAPER_DCA_LEVELS: '-10:0.25,-20:0.25',
+        /** No price kill — timed loss exits only (salvage24 / h48_loss). */
+        PAPER_DCA_KILLSTOP: '0',
         /**
-         * Killstop −5% к усреднённой позиции (wave B + escalating TP). Re-entry — hybrid dip12/20m, не deny.
+         * Variant A v3 scratch-harvest (1.11.271): discrete TP ladder, flush @0% avg after TP,
+         * gap tail −3%, no DCA after TP, price re-entry −10%. In-flight v1/v2/wave_b unchanged.
          */
-        PAPER_DCA_KILLSTOP: '-0.05',
-        /**
-         * TP-лесенка 1.11.168: шаг **+5%** к средней, **агрессивный скальп-профиль** —
-         *   ступень 1 (+5%)  → 10% остатка
-         *   ступень 2 (+10%) → 20% остатка
-         *   ступень 3 (+15%) → 50% остатка
-         *   ступень 4 (+20%) → 70% остатка
-         *   ступень 5+ (+25%, +30%, ...) → 70% остатка (последнее значение профиля
-         *   тиражируется на все последующие ступени).
-         * Накопленные доли позиции:
-         *   step1 = 10.0%, step2 = 37.0%, step3 = 68.5%, step4 = 90.6%, step5 = 97.2%.
-         * К ступени 5 продано 97.2% позиции → хвост ~2.8% уходит по TRAIL без
-         * заметного price-impact, что закрывает главный leakage 1.11.167 (на $ASTEROID
-         * TRAIL close съел $22 из $39 общей утечки потому что закрывали 25% позиции
-         * одним sell-куском в тонком Meteora-пуле). Идея — фиксируем основной пик 5-15%
-         * (где сидят ~64% наших winners по retro-выборке) большими долями, не полагаясь
-         * на TRAIL для крупных пампов.
-         * Лестница без верхнего лимита; `PAPER_TP_GRID_SELL_FRACTION` остаётся fallback.
-         * Защита от ранних шипов: первая ступень retrace требует минимального PnL **+3%**
-         * к средней (`PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL`).
-         */
-        PAPER_TP_LADDER: '',
-        PAPER_TP_GRID_STEP_PNL: '0.05',
-        PAPER_TP_GRID_SELL_FRACTION: '0.10',
-        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0.10,0.20,0.50,0.70,0.70',
-        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0.03',
+        PAPER_TP_LADDER: '0.05:0.30,0.10:0.15,0.15:0.15,0.20:0.10,0.25:0.10,0.30:0.10',
+        PAPER_TP_GRID_STEP_PNL: '0',
+        PAPER_TP_GRID_SELL_FRACTION: '0',
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0',
+        PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
-        /** Trail = retrace к предыдущей взятой ступени (после ≥2 ступеней). `PAPER_TRAIL_DROP` не используется при `ladder_retrace`. */
-        PAPER_TRAIL_MODE: 'ladder_retrace',
-        PAPER_TRAIL_DROP: '0.10',
-        PAPER_TRAIL_TRIGGER_X: '1.05',
-        /** Live Oscar — тайм-аут 48 ч (двое суток); в трекере отключён после первого partial TP или DCA (см. tracker `timeoutSuppressedByProgress`). */
+        PAPER_TRAIL_MODE: 'peak',
+        PAPER_TRAIL_DROP: '0.12',
+        PAPER_TRAIL_TRIGGER_X: '1.35',
+        /** salvage24 + h48 loss only when no TP taken; no 96h / moon / v2 grid trail. */
         PAPER_TIMEOUT_HOURS: '48',
-        /** После ≥1 частичной TP-сетки: при откате к средней цене входа (xAvg≤1) один раз продать долю остатка (по умолчанию 50%). */
-        PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '1',
+        PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
-        /**
-         * Wave B exit для **новых** open (`liveExitPolicyId=wave_b_v1`). Открытые до деплоя
-         * без policy id → `legacy_grid` + закреплённый prod-профиль в tpGridOverrides.
-         */
-        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
+        /** Wave B off — Variant A v3 scratch for new opens. In-flight v1/v2/wave_b/legacy unchanged. */
+        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '1',
+        PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
+        PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
+        PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED: '0',
+        PAPER_LIVE_OSCAR_VARIANT_A_SCRATCH_GAP_TAIL_PCT: '0.03',
+        LIVE_MINT_SCRATCH_REENTRY_ENABLED: '1',
+        LIVE_MINT_SCRATCH_REENTRY_DROP_PCT: '0.10',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
         PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
@@ -777,6 +761,9 @@ const PM2_APPS = [
         LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '1',
         /** Не добавлять mint в denylist после убыточного закрытия (stub в коде сохранён). */
         LIVE_NEGATIVE_TRADE_DENY_ENABLED: '0',
+        /** Variant A: 24h mint block after salvage24 / h48_loss (not permanent denylist). */
+        LIVE_MINT_TIMED_LOSS_COOLDOWN_ENABLED: '1',
+        LIVE_MINT_TIMED_LOSS_COOLDOWN_MS: String(24 * 3600 * 1000),
         /** First-mint-probe: не deny при убытке (stub сохранён). */
         LIVE_FIRST_MINT_PROBE_DENY_ON_LOSS_ENABLED: '0',
         /** `0` — не слать ADVICE `live_oscar_staged_signal`. */
@@ -968,7 +955,7 @@ const PM2_APPS = [
          */
         LIVE_TRACKER_INTER_MINT_DELAY_MS: '60',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
-        LIVE_MAX_POSITION_USD: LIVE_OSCAR_FULL_NOTIONAL_USD,
+        LIVE_MAX_POSITION_USD: LIVE_OSCAR_MAX_POSITION_USD,
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
