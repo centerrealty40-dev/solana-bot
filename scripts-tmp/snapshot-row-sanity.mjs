@@ -1,11 +1,14 @@
 /**
  * Drop ghost price/mcap spikes before PG upsert (LAYOFF-like DexScreener/Gecko glitches).
- * Compares tick to the previous minute bar for the same pair.
+ * Uses in-process prev-bar cache (no extra PG read per tick).
  */
 
 const MIN_PREV_MCAP = 500_000;
 const MAX_PX_JUMP = 50;
 const MAX_MCAP_JUMP = 50;
+
+/** @type {Map<string, Map<string, object>>} */
+const prevByTable = new Map();
 
 /**
  * @param {object} row
@@ -39,29 +42,19 @@ export function sanitizeSnapshotRow(row, prev) {
   };
 }
 
-/**
- * @param {import('pg').Pool} pool
- * @param {string} table
- * @param {string[]} pairAddresses
- * @returns {Promise<Map<string, object>>}
- */
-export async function fetchPrevSnapshotByPair(pool, table, pairAddresses) {
-  const uniq = [...new Set(pairAddresses.filter(Boolean))];
-  const out = new Map();
-  if (uniq.length === 0) return out;
-
-  const res = await pool.query(
-    `SELECT DISTINCT ON (pair_address)
-       pair_address, price_usd, market_cap_usd, fdv_usd, ts
-     FROM ${table}
-     WHERE pair_address = ANY($1::text[])
-     ORDER BY pair_address, ts DESC`,
-    [uniq],
-  );
-  for (const row of res.rows) {
-    out.set(row.pair_address, row);
+/** @param {object} row */
+function rememberRow(table, row) {
+  if (!row?.pair_address) return;
+  let cache = prevByTable.get(table);
+  if (!cache) {
+    cache = new Map();
+    prevByTable.set(table, cache);
   }
-  return out;
+  cache.set(row.pair_address, {
+    price_usd: row.price_usd,
+    market_cap_usd: row.market_cap_usd,
+    fdv_usd: row.fdv_usd,
+  });
 }
 
 /**
@@ -71,11 +64,14 @@ export async function fetchPrevSnapshotByPair(pool, table, pairAddresses) {
  * @returns {Promise<object[]>}
  */
 export async function sanitizeSnapshotRows(pool, table, rows) {
+  void pool;
   if (rows.length === 0) return rows;
-  const prevMap = await fetchPrevSnapshotByPair(
-    pool,
-    table,
-    rows.map((r) => r.pair_address),
-  );
-  return rows.map((r) => sanitizeSnapshotRow(r, prevMap.get(r.pair_address)));
+  let cache = prevByTable.get(table);
+  if (!cache) {
+    cache = new Map();
+    prevByTable.set(table, cache);
+  }
+  const out = rows.map((r) => sanitizeSnapshotRow(r, cache.get(r.pair_address)));
+  for (const r of out) rememberRow(table, r);
+  return out;
 }

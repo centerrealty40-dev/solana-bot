@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.280] — 2026-05-24
+
+### Hotfix: collector sanity without PG read (restore 1m ticks)
+
+**Context:** `fetchPrevSnapshotByPair` on 400+ pairs/tick slowed collectors to 3–10 min; dips/live discovery starved.
+
+**Change:** In-memory prev-bar cache per collector process — same spike filter, zero extra PG query.
+
+**Rollback:** `git revert`; `pm2 reload` sa-* collectors.
+
+---
+
 ## [1.11.279] — 2026-05-24
 
 ### Collectors: block ghost price/mcap spikes at PG write
