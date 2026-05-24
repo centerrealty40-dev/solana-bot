@@ -93,12 +93,17 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         RAYDIUM_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        PAPER2_SNAPSHOT_OPENS: '0',
       },
     },
     {
       name: 'sa-meteora',
       cwd: root,
       script: 'scripts-tmp/meteora-collector.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
       max_memory_restart: '1024M',
@@ -108,7 +113,12 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        /** 1.11.283 hotfix: skip 40+ DexScreener fetches/tick until PG catches up. */
+        PAPER2_SNAPSHOT_OPENS: '0',
       },
+    },
+    {
+      name: 'sa-orca',
       cwd: root,
       script: 'scripts-tmp/orca-collector.mjs',
       interpreter: 'node',
@@ -125,6 +135,7 @@ const PM2_APPS = [
         /** 1.11.244: 30s PG snapshots for dip-watch (was 60s). */
         ORCA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        PAPER2_SNAPSHOT_OPENS: '0',
       },
     },
     {
@@ -144,6 +155,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        PAPER2_SNAPSHOT_OPENS: '0',
       },
     },
     {
@@ -163,7 +175,11 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        PAPER2_SNAPSHOT_OPENS: '0',
       },
+    },
+    {
+      name: 'sa-wallet-orchestrator',
       cwd: root,
       script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
       args: '--daemon',
