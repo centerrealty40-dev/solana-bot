@@ -8,6 +8,54 @@
 
 ---
 
+## [1.11.278] — 2026-05-24
+
+### Dips/retrace alerts: block ghost mcap bars + Jupiter fast-path sanity
+
+**Context:** LAYOFF и др. — PG minute bar с price $1.38 + mcap $1.34B (битый collector); Jupiter fast-path слал dips с `mcap n/a` и -99% на ghost quotes.
+
+**Change:**
+- `isImpossibleMinuteBarSpike` — отсекает LAYOFF-like (peak px >> ref на mcap≥$1M).
+- `resolveBarMcapUsd` — display mcap из price-scale, не сырой fdv бара.
+- Pullback/retrace PG watchers: glitch filter + sane mcap в алерте.
+- Jupiter spot-watch dips: требует ref mcap/px; skip ghost spike; Dex mcap fallback.
+
+**Rollback:** `git revert`; `pm2 reload` dips watchers + priority-jupiter-spot-watch.
+
+---
+
+## [1.11.277] — 2026-05-21
+
+### Live Oscar TP grid: ghost-clamp bypass + boot/DCA MTM baseline reset
+
+**Context:** WORLDCUP (`33eum82L…`) — после pm2 restart `lastObservedPriceUsd` из journal ($0.005481) занижал exit-MTM; partial TP +5% не срабатывал при snapshot уже в плюсе.
+
+**Change:**
+- Journal replay boot: **не восстанавливаем** `lastObservedPriceUsd` (свежий baseline с avg/snapshot).
+- После **DCA** — `resetMtmObservedBaseline` к текущей market price.
+- Ghost clamp: **bypass**, если raw PnL ≥ первая ступень TP grid (обычно +5%).
+- Diag `live tracker: TP grid skipped (ghost clamp vs raw snapshot)` с avgEntry, pnlFrac, maxK, raw/exit MTM.
+
+**Rollback:** `git revert`; `pm2 reload live-oscar`.
+
+---
+
+## [1.11.276] — 2026-05-21
+
+### Price read optim A–D: PG 10s snapshots, DexScreener fallback, canonical pool refresh, rolling near-miss
+
+**Context:** medium-term latency items after 1.11.275 — sub-minute audit trail, price gaps when Jupiter null, fresher `tokens.primary_pair`, wider near-miss universe.
+
+**Change:**
+- **A** — `priority_mint_spot_snapshots` (migration 0024) + upsert each fast-watch tick (`priority-mint-spot-snapshot-pg.ts`).
+- **B** — DexScreener spot fallback when Jupiter v3/quote missing (`dexscreener-spot-price.ts`).
+- **C** — `tokens.primary_pair` refresh every 5s for fast-watch universe from DEX snapshot tables (`market-canonical-pool-refresh.ts`).
+- **D** — near-miss spike mints: consecutive **and** rolling windows (`priority-jupiter-spot-near-miss.ts`).
+
+**Rollback:** `git revert`; `pm2 reload market-priority-jupiter-spot-watch`; migration table optional to keep.
+
+---
+
 ## [1.11.275] — 2026-05-24
 
 ### Price read optim: Jupiter quote on hot mints, near-miss universe, 30s collectors, reeval 10s

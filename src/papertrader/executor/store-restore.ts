@@ -155,10 +155,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
         o.pairAddress != null && String(o.pairAddress).trim() ? String(o.pairAddress) : null,
       entryLiqUsd:
         typeof o.entryLiqUsd === 'number' && Number(o.entryLiqUsd) > 0 ? Number(o.entryLiqUsd) : null,
-      lastObservedPriceUsd:
-        typeof o.lastObservedPriceUsd === 'number' && Number(o.lastObservedPriceUsd) > 0
-          ? Number(o.lastObservedPriceUsd)
-          : undefined,
+      lastObservedPriceUsd: undefined,
     };
     const rawPayload = o as unknown as Record<string, unknown>;
     const mergedSigs = entryLegSignaturesFromRestorePayload(rawPayload);
