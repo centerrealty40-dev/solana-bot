@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.277] — 2026-05-21
+
+### Live Oscar TP grid: ghost-clamp bypass + boot/DCA MTM baseline reset
+
+**Context:** WORLDCUP (`33eum82L…`) — после pm2 restart `lastObservedPriceUsd` из journal ($0.005481) занижал exit-MTM; partial TP +5% не срабатывал при snapshot уже в плюсе.
+
+**Change:**
+- Journal replay boot: **не восстанавливаем** `lastObservedPriceUsd` (свежий baseline с avg/snapshot).
+- После **DCA** — `resetMtmObservedBaseline` к текущей market price.
+- Ghost clamp: **bypass**, если raw PnL ≥ первая ступень TP grid (обычно +5%).
+- Diag `live tracker: TP grid skipped (ghost clamp vs raw snapshot)` с avgEntry, pnlFrac, maxK, raw/exit MTM.
+
+**Rollback:** `git revert`; `pm2 reload live-oscar`.
+
+---
+
 ## [1.11.276] — 2026-05-21
 
 ### Price read optim A–D: PG 10s snapshots, DexScreener fallback, canonical pool refresh, rolling near-miss
