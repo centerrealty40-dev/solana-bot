@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.279] — 2026-05-24
+
+### Collectors: block ghost price/mcap spikes at PG write
+
+**Context:** LAYOFF — DexScreener/Gecko отдавали price $1.38 + mcap $1.34B; битые бары попадали в PG до фильтра алертов.
+
+**Change:** `snapshot-row-sanity.mjs` — перед upsert сравниваем с prev bar; при 50× jump на mcap≥$500k подставляем prev px/mcap. Подключено во все 5 DEX collectors.
+
+**Rollback:** `git revert`; `pm2 reload` sa-* collectors.
+
+---
+
 ## [1.11.278] — 2026-05-24
 
 ### Dips/retrace alerts: block ghost mcap bars + Jupiter fast-path sanity
