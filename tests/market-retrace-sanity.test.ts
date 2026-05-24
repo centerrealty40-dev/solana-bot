@@ -8,6 +8,7 @@ import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
   isImpossibleMinuteBarSpike,
+  isJupiterGhostSpikeMove,
   resolveBarMcapUsd,
   isBarMcapPlausible,
 } from '../src/scripts/market-retrace-sanity.js';
@@ -31,6 +32,30 @@ describe('market-retrace-sanity', () => {
 
   it('LAYOFF-like: $1.38 peak px vs $0.001363 ref on $1.32M mcap — impossible spike', () => {
     expect(isImpossibleMinuteBarSpike(1.38, 0.001363, 1_320_000, 99.9)).toBe(true);
+  });
+
+  it('Jupiter ghost spike: +99419% from micro anchor without ref mcap', () => {
+    expect(
+      isJupiterGhostSpikeMove({
+        anchorPx: 1e-9,
+        nowPx: 0.001,
+        refPx: 0,
+        refMcap: 0,
+        pct: 99_419,
+      }),
+    ).toBe(true);
+  });
+
+  it('real +35% pump on $3M token with sane px — not ghost', () => {
+    expect(
+      isJupiterGhostSpikeMove({
+        anchorPx: 0.001,
+        nowPx: 0.00135,
+        refPx: 0.0013,
+        refMcap: 3_000_000,
+        pct: 35,
+      }),
+    ).toBe(false);
   });
 
   it('resolveBarMcapUsd prefers ref when bar px is ghost spike (LAYOFF)', () => {

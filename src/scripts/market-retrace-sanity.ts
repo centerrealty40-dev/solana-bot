@@ -49,6 +49,32 @@ export function resolveBarMcapUsd(args: {
 }
 
 /**
+ * Jupiter 10s fast-path spike: ghost quote (micro anchor → +50000% pump, or peak >> ref dump).
+ */
+export function isJupiterGhostSpikeMove(args: {
+  anchorPx: number;
+  nowPx: number;
+  refPx: number;
+  refMcap: number;
+  pct: number;
+}): boolean {
+  const { anchorPx, nowPx, refPx, refMcap, pct } = args;
+  if (!(refMcap >= 1_000_000) || !(refPx > 0)) return true;
+  if (Math.abs(pct) > 200) return true;
+  if (anchorPx > 0) {
+    const anchorVsRef = anchorPx / refPx;
+    if (anchorVsRef > 50 || anchorVsRef < 0.02) return true;
+  }
+  if (nowPx > 0) {
+    const nowVsRef = nowPx / refPx;
+    if (nowVsRef > 50 || nowVsRef < 0.02) return true;
+  }
+  const peakPx = Math.max(anchorPx, nowPx);
+  if (isImpossibleMinuteBarSpike(peakPx, refPx, refMcap, Math.abs(pct))) return true;
+  return false;
+}
+
+/**
  * Minute-bar peak price orders of magnitude above ref on mcap≥$1M token — collector/Jupiter ghost (LAYOFF-like).
  */
 export function isImpossibleMinuteBarSpike(

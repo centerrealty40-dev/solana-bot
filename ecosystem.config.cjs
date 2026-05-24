@@ -1168,7 +1168,7 @@ const PM2_APPS = [
         MARKET_CANONICAL_POOL_REFRESH_ENABLED: '1',
         MARKET_CANONICAL_POOL_REFRESH_INTERVAL_MS: '5000',
         MARKET_CANONICAL_POOL_REFRESH_MAX_ROWS: '250',
-        PRIORITY_JUPITER_SPOT_SPIKE_TELEGRAM: '1',
+        PRIORITY_JUPITER_SPOT_SPIKE_TELEGRAM: '0',
         PRIORITY_JUPITER_SPOT_DIPS_TELEGRAM: '1',
         PRIORITY_JUPITER_SPOT_CACHE_PATH: path.join(root, 'data/live/priority-jupiter-spot-cache.json'),
         PRIORITY_JUPITER_SPOT_MINTS_PATH: path.join(root, 'data/live/priority-jupiter-spot-mints.json'),

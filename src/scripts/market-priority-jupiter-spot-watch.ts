@@ -27,7 +27,7 @@ import {
   wasMarketFastAlertRecent,
   marketFastAlertDedupeWindowMs,
 } from './market-fast-alert-shared-dedupe.js';
-import { isImpossibleMinuteBarSpike } from './market-retrace-sanity.js';
+import { isImpossibleMinuteBarSpike, isJupiterGhostSpikeMove } from './market-retrace-sanity.js';
 import {
   readPriorityJupiterSpotMintHeartbeat,
   writePriorityJupiterSpotCache,
@@ -327,40 +327,70 @@ async function runTick(): Promise<void> {
 
     const spike = detectJupiterSpikeMove(samples, refMcap || mcapNow || 0, detectCfg);
     if (spike && SPIKE_ENABLED && SPIKE_TG_TOKEN && SPIKE_TG_CHAT) {
-      const cooldownMs = Math.max(60_000, envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 5) * 60_000);
-      const last = lastSpikeSentMs.get(mint) ?? 0;
-      if (nowMs - last >= cooldownMs && !(await wasMarketFastAlertRecent(mint, 'spike'))) {
-        const anchorMcap = scaleMcap(refMcap, refPx, spike.anchorPx);
-        const nowMcap = scaleMcap(refMcap, refPx, spike.nowPx);
-        process.env.SPIKE_ALERT_SKIP_MAIN = '1';
-        const { buildAlertHtml } = await import('./market-spike-telegram-watch.js');
-        const html = buildAlertHtml({
-          base_mint: mint,
-          pair_address: '',
-          px_now: spike.nowPx,
-          ts_now: new Date(spike.nowTsMs),
-          symbol: meta?.symbol ?? null,
-          token_name: meta?.token_name ?? null,
-          holder_count: meta?.holderCount ?? null,
-          liq_usd: meta?.liqUsd ?? null,
-          token_fdv_usd: refMcap > 0 ? refMcap : null,
-          dex: 'jupiter-spot',
-          pct: spike.pct,
-          windowLabel: spike.signalKind === 'rolling' ? `rolling ${spike.rollingSpanMinutes ?? '?'}m` : 'fast ~60s',
-          signalKind: spike.signalKind,
-          rollingSpanMinutes: spike.rollingSpanMinutes,
+      const refPxSanity = refPx > 0 ? refPx : spike.nowPx;
+      const anchorMcap = scaleMcap(refMcap, refPxSanity, spike.anchorPx);
+      const nowMcap = scaleMcap(refMcap, refPxSanity, spike.nowPx);
+      const spikeBlocked =
+        refMcap < MIN_MCAP ||
+        !(refPxSanity > 0) ||
+        !(anchorMcap != null && anchorMcap > 0) ||
+        !(nowMcap != null && nowMcap > 0) ||
+        isJupiterGhostSpikeMove({
           anchorPx: spike.anchorPx,
-          anchorTs: new Date(spike.anchorTsMs),
-          anchorMcapUsd: anchorMcap,
-          nowMcapUsd: nowMcap,
+          nowPx: spike.nowPx,
+          refPx: refPxSanity,
+          refMcap,
+          pct: spike.pct,
         });
-        if (DRY_RUN) {
-          console.log('[PRIORITY_JUPITER_SPIKE_DRY]', mint.slice(0, 8), spike.pct.toFixed(2));
-        } else {
-          const ok = await sendTelegram(SPIKE_TG_TOKEN, SPIKE_TG_CHAT, html);
-          if (ok) {
-            lastSpikeSentMs.set(mint, nowMs);
-            await recordMarketFastAlert(mint, 'spike', spike.pct);
+      if (spikeBlocked) {
+        console.warn(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            component: 'priority-jupiter-spot-watch',
+            msg: 'spike skip ghost or missing ref/mcap',
+            mint: mint.slice(0, 8),
+            pct: +spike.pct.toFixed(2),
+            refMcap,
+            refPx: refPxSanity,
+            anchorPx: spike.anchorPx,
+            nowPx: spike.nowPx,
+          }),
+        );
+      } else {
+        const cooldownMs = Math.max(60_000, envNum('SPIKE_ALERT_MINT_COOLDOWN_MINUTES', 5) * 60_000);
+        const last = lastSpikeSentMs.get(mint) ?? 0;
+        if (nowMs - last >= cooldownMs && !(await wasMarketFastAlertRecent(mint, 'spike'))) {
+          process.env.SPIKE_ALERT_SKIP_MAIN = '1';
+          const { buildAlertHtml } = await import('./market-spike-telegram-watch.js');
+          const html = buildAlertHtml({
+            base_mint: mint,
+            pair_address: '',
+            px_now: spike.nowPx,
+            ts_now: new Date(spike.nowTsMs),
+            symbol: meta?.symbol ?? null,
+            token_name: meta?.token_name ?? null,
+            holder_count: meta?.holderCount ?? null,
+            liq_usd: meta?.liqUsd ?? null,
+            token_fdv_usd: refMcap > 0 ? refMcap : null,
+            dex: 'jupiter-spot',
+            pct: spike.pct,
+            windowLabel: spike.signalKind === 'rolling' ? `rolling ${spike.rollingSpanMinutes ?? '?'}m` : 'fast ~60s',
+            signalKind: spike.signalKind,
+            rollingSpanMinutes: spike.rollingSpanMinutes,
+            anchorPx: spike.anchorPx,
+            anchorTs: new Date(spike.anchorTsMs),
+            anchorMcapUsd: anchorMcap,
+            nowMcapUsd: nowMcap,
+          });
+          if (DRY_RUN) {
+            console.log('[PRIORITY_JUPITER_SPIKE_DRY]', mint.slice(0, 8), spike.pct.toFixed(2));
+          } else {
+            const ok = await sendTelegram(SPIKE_TG_TOKEN, SPIKE_TG_CHAT, html);
+            if (ok) {
+              lastSpikeSentMs.set(mint, nowMs);
+              await recordMarketFastAlert(mint, 'spike', spike.pct);
+              console.log('[priority-jupiter-spot-watch] spike sent', mint.slice(0, 8), spike.pct.toFixed(2));
+            }
           }
         }
       }
