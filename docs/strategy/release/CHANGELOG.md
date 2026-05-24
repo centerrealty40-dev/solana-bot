@@ -8,6 +8,52 @@
 
 ---
 
+## [1.11.275] — 2026-05-24
+
+### Price read optim: Jupiter quote on hot mints, near-miss universe, 30s collectors, reeval 10s
+
+**Context:** follow-up to 1.11.274 — точнее и раньше цена на hot mints + шире fast-watch universe.
+
+**Change:**
+- Hot mints (heartbeat + whitelist): **Jupiter buy quote** поверх Price v3 (`priority-jupiter-spot-prices.ts`).
+- **Near-miss spike mints** из PG (в пределах 3% от tier-порога) добавляются в fast-watch universe.
+- DEX collectors default interval **30s** (совпадает с prod ecosystem).
+- `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`: **15 → 10** для priority tier Live Oscar.
+
+**Rollback:** `git revert`; `pm2 reload` live-oscar + priority-jupiter-spot-watch + collectors.
+
+---
+
+## [1.11.274] — 2026-05-21
+
+### Faster market alerts: poll 10s, collector catch-up, Jupiter Pro spot fast-path
+
+**Context:** минутные PG-бары + poll 20s давали ~1–2 мин задержки (Telegram + Live Oscar discovery). Jupiter Pro уже есть — используем Price v3 между minute buckets.
+
+**Change:**
+- Spike / pullback / retrace poll **10s** (`SPIKE_ALERT_POLL_INTERVAL_MS`, `PULLBACK_*`, `RETRACE_*`).
+- DEX collectors: **catch-up queue** для пропущенных minute buckets при долгом tick (`collector-tick-queue.mjs`).
+- Новый PM2 **`market-priority-jupiter-spot-watch`**: Jupiter Price v3 каждые 10s → spike + dips Telegram + `data/live/priority-jupiter-spot-cache.json`.
+- Live Oscar: читает spot cache + пишет `priority-jupiter-spot-mints.json` heartbeat; PG-watchers не дублируют fast-alerts (shared dedupe).
+
+**Rollback:** `git revert`; `pm2 delete market-priority-jupiter-spot-watch`; `pm2 reload` spike/pullback/retrace/live-oscar + collectors; вернуть poll 20s в `ecosystem.config.cjs`.
+
+---
+
+## [1.11.273] — 2026-05-21
+
+### Dips Telegram: compact pullback/retrace alerts
+
+**Context:** канал Dips (`-1003504887486`) — короткий формат алертов как у spike: символ, откат %, GMGN, две строки mcap (пик → просадка), ref mcap.
+
+**Change:**
+- `market-dips-compact-telegram-format.ts` — общий builder;
+- `market-pullback-telegram-watch.ts`, `market-pump-retrace-alert-watch.ts` — убраны mint/dex/holders/price_usd/3 блока «лой–хай–просадка».
+
+**Rollback:** `git revert` коммита; `pm2 reload` `market-pullback-telegram-watch` + `retrace-alert-watch`.
+
+---
+
 ## [1.11.272] — 2026-05-21
 
 ### Revert prod exit: Variant A v2 hybrid (max-profit backtest winner)

@@ -52,6 +52,8 @@ import {
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
+import { applyPriorityJupiterSpotCacheToRows } from './apply-priority-jupiter-spot-cache.js';
+import { writePriorityJupiterSpotMintHeartbeat } from './priority-jupiter-spot-cache.js';
 import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
 import { shouldEvaluateMint } from './discovery-eval-throttle.js';
 import {
@@ -397,6 +399,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     snapshotTagged = [...snapshotTagged, ...priorityInjected];
   }
   snapshotTagged = dedupeSnapshotTaggedByMintCanonical(snapshotTagged);
+  void writePriorityJupiterSpotMintHeartbeat(priorityMintSet).catch(() => {});
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
   }
@@ -460,6 +463,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     };
   }
 
+  await applyPriorityJupiterSpotCacheToRows(cfg, allowedSnapshotTagged.map((x) => x.row), priorityMintSet);
   await refreshPriorityMintPricesFromJupiter(cfg, allowedSnapshotTagged.map((x) => x.row), priorityMintSet);
 
   const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);

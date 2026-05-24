@@ -101,3 +101,56 @@ export function jupiterPriceV3Url(id: string): string {
   url.searchParams.set('ids', id);
   return url.toString();
 }
+
+type JupiterPriceV3Row = { usdPrice?: number; price?: number };
+
+function parseJupiterPriceV3Row(row: JupiterPriceV3Row | undefined): number | null {
+  const px = Number(row?.usdPrice ?? row?.price ?? 0);
+  return px > 0 && Number.isFinite(px) ? px : null;
+}
+
+/**
+ * Batch Jupiter Price API v3 (Pro key via `jupiterJsonHeaders`).
+ * Chunks large mint lists to stay within URL limits.
+ */
+export async function fetchJupiterPriceV3Batch(
+  mints: string[],
+  timeoutMs = 8000,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const uniq = [...new Set(mints.map((m) => m.trim()).filter((m) => m.length >= 32))];
+  if (uniq.length === 0) return out;
+
+  const chunkSize = Math.max(1, Math.min(50, Number(process.env.JUPITER_PRICE_V3_BATCH_SIZE ?? 40) || 40));
+
+  for (let i = 0; i < uniq.length; i += chunkSize) {
+    const chunk = uniq.slice(i, i + chunkSize);
+    const url = new URL(JUPITER_PRICE_V3_URL_DEFAULT);
+    url.searchParams.set('ids', chunk.join(','));
+
+    const ac = new AbortController();
+    const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
+    try {
+      const resp = await fetch(url.toString(), {
+        method: 'GET',
+        signal: ac.signal,
+        headers: jupiterJsonHeaders(),
+      });
+      if (!resp.ok) continue;
+      const raw = (await resp.json()) as Record<string, JupiterPriceV3Row> & {
+        data?: Record<string, JupiterPriceV3Row>;
+      };
+      for (const mint of chunk) {
+        const row = raw?.[mint] ?? raw?.data?.[mint];
+        const px = parseJupiterPriceV3Row(row);
+        if (px != null) out.set(mint, px);
+      }
+    } catch {
+      /* ignore chunk */
+    } finally {
+      clearTimeout(tt);
+    }
+  }
+
+  return out;
+}

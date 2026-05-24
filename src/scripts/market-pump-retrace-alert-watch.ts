@@ -18,10 +18,12 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
+import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
 } from './market-snapshot-canonical-pool.js';
+import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format.js';
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
@@ -321,51 +323,6 @@ export function isPumpRetracePickDataGlitch(
   return false;
 }
 
-function gmgnSolTokenUrl(mint: string): string {
-  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function formatSignedPct(pct: number): string {
-  const v = pct.toFixed(2);
-  return pct >= 0 ? `+${v}%` : `${v}%`;
-}
-
-function formatTsInTz(d: Date): string {
-  try {
-    return (
-      new Intl.DateTimeFormat('ru-RU', {
-        timeZone: DISPLAY_TZ,
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      }).format(d) + ' · МСК'
-    );
-  } catch {
-    return d.toISOString();
-  }
-}
-
-function formatMcapUsdShort(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return 'n/a';
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
-  return `$${n.toFixed(0)}`;
-}
-
-function formatPxUsd(px: number): string {
-  if (!(px > 0) || !Number.isFinite(px)) return 'n/a';
-  if (px >= 1) return px.toFixed(6);
-  return px.toPrecision(6);
-}
-
 function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   const fromBar = lastBarMcap != null && lastBarMcap > 0 ? lastBarMcap : 0;
   const fdv = meta.token_fdv_usd != null && meta.token_fdv_usd > 0 ? meta.token_fdv_usd : 0;
@@ -399,56 +356,19 @@ type AlertRowWithTs = LatestMeta & {
 };
 
 function buildAlertHtml(row: AlertRowWithTs): string {
-  const mint = row.base_mint.trim();
   const p = row.pick;
-  const symRaw = (row.symbol ?? '?').trim() || '?';
-  const nameRaw = (row.token_name ?? '').trim();
-  const sym = escapeHtml(symRaw);
-  const name = escapeHtml(nameRaw);
-  const gmgnUrl = gmgnSolTokenUrl(mint);
-  const mintShort = `${row.base_mint.slice(0, 6)}…${row.base_mint.slice(-4)}`;
-  const holders =
-    row.holder_count != null && Number.isFinite(row.holder_count) ? String(row.holder_count) : 'n/a';
-  const refMcapStr = row.refMcap > 0 ? formatMcapUsdShort(row.refMcap) : 'n/a';
-
-  const modeLine =
-    `lookback <b>${SCAN_MINUTES}</b> мин · рост ≥<b>${MIN_PUMP_PCT}%</b> и откат от пика ≥<b>${MIN_RETRACE_PCT}%</b> · факт: рост от дна <b>${escapeHtml(formatSignedPct(p.pumpPct))}</b> · откат <b>${escapeHtml(formatSignedPct(-p.retracePct))}</b>`;
-
-  const line1 =
-    `<b>1. Локальный лой</b> (min до пика в окне)\n` +
-    `${escapeHtml(formatTsInTz(row.rawBarsViTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.valleyMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.valleyPx))}</code>`;
-  const line2 =
-    `<b>2. Локальный хай</b> (max в окне)\n` +
-    `${escapeHtml(formatTsInTz(row.rawBarsJTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.peakMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.peakPx))}</code>`;
-  const line3 =
-    `<b>3. Просадка от хая</b>\n` +
-    `${escapeHtml(formatTsInTz(row.rawBarsKTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(row.troughMcapUsd))}</b> · price_usd <code>${escapeHtml(formatPxUsd(p.troughPx))}</code> · <b>−${escapeHtml(p.retracePct.toFixed(2))}%</b> от пика`;
-
-  const headline =
-    symRaw !== '?' && name && nameRaw.toUpperCase() !== symRaw.toUpperCase()
-      ? `<b>${sym}</b> — ${name}`
-      : symRaw !== '?'
-        ? `<b>${sym}</b>`
-        : name
-          ? `<b>${name}</b>`
-          : '<b>?</b>';
-
-  return [
-    headline,
-    `<b>[RETRACE][pump_then_pullback]</b> <code>${escapeHtml(row.dex)}</code>`,
-    modeLine,
-    '',
-    `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
-    `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
-    '',
-    line1,
-    '',
-    line2,
-    '',
-    line3,
-    '',
-    `Ref mcap/fdv (текущая оценка) ≈ <b>${escapeHtml(refMcapStr)}</b> · holders ${escapeHtml(holders)}`,
-  ].join('\n');
+  return buildDipsCompactAlertHtml({
+    mint: row.base_mint.trim(),
+    symbol: row.symbol,
+    token_name: row.token_name,
+    retraceFromPeakPct: p.retracePct,
+    peakTs: row.rawBarsJTs,
+    peakMcapUsd: row.peakMcapUsd,
+    troughTs: row.rawBarsKTs,
+    troughMcapUsd: row.troughMcapUsd,
+    refMcap: row.refMcap,
+    displayTz: DISPLAY_TZ,
+  });
 }
 
 function buildRowWithTs(meta: LatestMeta, dex: string, bars: Bar[], pick: PumpRetracePick): AlertRowWithTs {
@@ -629,6 +549,8 @@ async function runOnePass(
 
     if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
     if (!reserveRetracePullbackChannelSlot(mintKey, peakTs, 'retrace')) continue;
+
+    if (await wasMarketFastAlertRecent(mintKey, 'dips')) continue;
 
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
