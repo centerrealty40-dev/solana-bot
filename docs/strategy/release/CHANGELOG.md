@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.280] — 2026-05-24
+
+### PG data coverage guard — source-scoped stale + relaxed mint trust
+
+**Context:** RICH — dip прошёл, mint PG recent 117%, но вход заблокирован global `pg_stale_now` из‑за stale orca/moonshot, не pumpswap. Relaxed mode ослаблял mint checks, global stale hard-block отменял смысл auto-escalate.
+
+**Change:**
+- Stale block только по **DEX source кандидата**, не worst-of-all-tables.
+- **Relaxed mode** + mint recent coverage OK → не блокировать по source stale.
+- Reason: `data_coverage:pg_stale_source=…`.
+
+**Rollback:** `git revert`; `pm2 reload live-oscar`.
+
+---
+
 ## [1.11.279] — 2026-05-24
 
 ### Collectors: block ghost price/mcap spikes at PG write

@@ -5,6 +5,7 @@ import {
   type GlobalPgCoverageState,
   type MintPgCoverageFeatures,
   resolvePgCoverageRelaxedMode,
+  type SourceSnapshotFreshness,
 } from '../src/papertrader/discovery/pg-data-coverage-guard.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
@@ -52,10 +53,28 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   } as PaperTraderConfig;
 }
 
+function defaultFreshnessBySource(
+  over: Partial<Record<string, Partial<SourceSnapshotFreshness>>> = {},
+): Record<string, SourceSnapshotFreshness> {
+  const base: Record<string, SourceSnapshotFreshness> = {
+    pumpswap: { ok: true, ageSec: 60 },
+    raydium: { ok: true, ageSec: 60 },
+    meteora: { ok: true, ageSec: 60 },
+    orca: { ok: true, ageSec: 60 },
+    moonshot: { ok: true, ageSec: 60 },
+  };
+  for (const [k, v] of Object.entries(over)) {
+    base[k] = { ...base[k], ...v };
+  }
+  return base;
+}
+
 function globalState(over: Partial<GlobalPgCoverageState> = {}): GlobalPgCoverageState {
+  const { freshnessBySource: freshnessOverride, ...rest } = over;
   return {
     pgStaleNow: false,
     worstAgeSec: 60,
+    freshnessBySource: freshnessOverride ?? defaultFreshnessBySource(),
     systemHourRatio: 0.85,
     strictRecoveryActive: false,
     hoursSinceLastRecovery: null,
@@ -63,7 +82,7 @@ function globalState(over: Partial<GlobalPgCoverageState> = {}): GlobalPgCoverag
     recentHours: 6,
     coverageMode: 'full',
     coverageModeChanged: null,
-    ...over,
+    ...rest,
   };
 }
 
@@ -153,16 +172,86 @@ describe('evaluatePgDataCoverageGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('blocks when PG is stale now', () => {
+  it('blocks when candidate source table is stale in full mode', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg(),
-      baseRow(),
+      baseRow({ source: 'raydium' }),
       mintCtx(),
-      globalState({ pgStaleNow: true, worstAgeSec: 900 }),
+      globalState({
+        coverageMode: 'full',
+        pgStaleNow: true,
+        worstAgeSec: 900,
+        freshnessBySource: defaultFreshnessBySource({
+          raydium: { ok: false, ageSec: 900 },
+        }),
+      }),
       true,
     );
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_source'))).toBe(true);
+  });
+
+  it('does not block pumpswap mint when only unrelated DEX tables are stale', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx(),
+      globalState({
+        coverageMode: 'full',
+        pgStaleNow: true,
+        worstAgeSec: 900,
+        freshnessBySource: defaultFreshnessBySource({
+          pumpswap: { ok: true, ageSec: 45 },
+          raydium: { ok: false, ageSec: 900 },
+          orca: { ok: false, ageSec: 800 },
+          moonshot: { ok: false, ageSec: 700 },
+        }),
+      }),
+      true,
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('does not block on source stale in relaxed mode when mint recent coverage is sufficient', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx(),
+      globalState({
+        coverageMode: 'relaxed',
+        pgStaleNow: true,
+        worstAgeSec: 670,
+        freshnessBySource: defaultFreshnessBySource({
+          pumpswap: { ok: false, ageSec: 670 },
+        }),
+      }),
+      true,
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('still blocks on source stale in relaxed mode when mint recent coverage is thin', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx({ recentHoursWithData: 2, recentHourCoverageRatio: 2 / 6 }),
+      globalState({
+        coverageMode: 'relaxed',
+        pgStaleNow: true,
+        freshnessBySource: defaultFreshnessBySource({
+          pumpswap: { ok: false, ageSec: 670 },
+        }),
+      }),
+      true,
+    );
+    expect(r.blocked).toBe(true);
+    expect(
+      r.blockedReasons.some(
+        (x) =>
+          x.startsWith('data_coverage:pg_stale_source') ||
+          x.startsWith('data_coverage:recent_pg_insufficient'),
+      ),
+    ).toBe(true);
   });
 
   it('ignores low system hour ratio in relaxed mode', () => {

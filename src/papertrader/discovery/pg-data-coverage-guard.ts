@@ -1,9 +1,14 @@
 /**
- * PG data coverage guard (1.11.222, recent-window 1.11.226, auto-escalate 1.11.227).
+ * PG data coverage guard (1.11.222, recent-window 1.11.226, auto-escalate 1.11.227,
+ * source-scoped stale 1.11.280).
  *
  * When `pgDataCoverageAutoEscalate` is on, uses **relaxed** recent-window checks during PG
  * outage/recovery; restores **full** 24h system ratio + strict recovery + full mint history
  * automatically when metrics are healthy again.
+ *
+ * Stale block uses the **candidate's DEX source** only (not worst-of-all-tables). In relaxed
+ * mode, proven mint recent coverage skips stale — auto-escalate trusts per-mint recent history
+ * when the system is degraded.
  */
 
 import fs from 'node:fs';
@@ -21,9 +26,17 @@ import { sourceSnapshotTable } from '../dip-detector.js';
 
 export type PgCoverageMode = 'relaxed' | 'full';
 
+export type SourceSnapshotFreshness = {
+  ok: boolean;
+  ageSec: number | null;
+};
+
 export interface GlobalPgCoverageState {
+  /** Any DEX snapshot table over max age — telemetry / relaxed-mode trigger. */
   pgStaleNow: boolean;
   worstAgeSec: number | null;
+  /** Per-source freshness (entry guard uses candidate source only). */
+  freshnessBySource: Readonly<Record<string, SourceSnapshotFreshness>>;
   systemHourRatio: number | null;
   strictRecoveryActive: boolean;
   hoursSinceLastRecovery: number | null;
@@ -164,12 +177,48 @@ function effectiveMinHourRatio(cfg: PaperTraderConfig, strictRecoveryActive: boo
   return Math.max(cfg.pgDataCoverageMinHourRatio, cfg.pgDataCoverageStrictMinHourRatio);
 }
 
+/** Stale check scoped to the mint candidate's snapshot table (not unrelated DEX collectors). */
+export function resolveCandidateSourceStale(
+  global: GlobalPgCoverageState,
+  source: string,
+): { source: string; stale: boolean; ageSec: number | null } {
+  const key = source.trim().toLowerCase();
+  const row = global.freshnessBySource[key];
+  if (row == null) {
+    return { source: key || 'unknown', stale: true, ageSec: null };
+  }
+  return { source: key, stale: !row.ok, ageSec: row.ageSec };
+}
+
+function mintRelaxedRecentCoverageOk(
+  cfg: PaperTraderConfig,
+  mintCtx: MintPgCoverageFeatures | undefined,
+  minHourRatio: number,
+): boolean {
+  if (mintCtx == null || mintCtx.minuteSamples <= 0) return false;
+  const recentHourRatio = mintCtx.recentHourCoverageRatio ?? 0;
+  if (mintCtx.recentHoursWithData < cfg.pgDataCoverageMinRecentHoursWithData) return false;
+  if (cfg.volumeEphemeralGuardEnabled && recentHourRatio < minHourRatio) return false;
+  if (
+    mintCtx.recentMaxGapMinutes != null &&
+    mintCtx.recentMaxGapMinutes > cfg.pgDataCoverageMaxGapMinutes
+  ) {
+    return false;
+  }
+  if (cfg.volumeSybilGuardEnabled && !mintCtx.sybilCoverageOk) return false;
+  return true;
+}
+
 /** Once per discovery tick — global PG health for coverage decisions. */
 export async function fetchGlobalPgCoverageState(cfg: PaperTraderConfig): Promise<GlobalPgCoverageState> {
   const lookbackHours = clampLookbackHours(cfg.pgDataCoverageLookbackHours);
   const recentHours = clampRecentHours(cfg.pgDataCoverageRecentHours, lookbackHours);
   const maxAgeSec = snapshotMaxAgeSecFromEnv();
   const freshness = await fetchDexSnapshotFreshness(maxAgeSec);
+  const freshnessBySource: Record<string, SourceSnapshotFreshness> = {};
+  for (const r of freshness) {
+    freshnessBySource[r.source] = { ok: r.ok, ageSec: r.ageSec };
+  }
   const pgStaleNow = freshness.some((r) => !r.ok);
   let worstAgeSec: number | null = null;
   for (const r of freshness) {
@@ -245,6 +294,7 @@ export async function fetchGlobalPgCoverageState(cfg: PaperTraderConfig): Promis
   return {
     pgStaleNow,
     worstAgeSec,
+    freshnessBySource,
     systemHourRatio,
     strictRecoveryActive,
     hoursSinceLastRecovery,
@@ -414,7 +464,7 @@ export async function fetchMintPgCoverageMap(
 /** Block entry when PG history is too thin or gapped to trust volume guards. */
 export function evaluatePgDataCoverageGuard(
   cfg: PaperTraderConfig,
-  _row: SnapshotCandidateRow,
+  row: SnapshotCandidateRow,
   ctx: MintPgCoverageFeatures | undefined,
   global: GlobalPgCoverageState,
   nearEntry: boolean,
@@ -437,11 +487,17 @@ export function evaluatePgDataCoverageGuard(
   const recentHours = global.recentHours;
   const lookbackHours = global.lookbackHours;
   const minRecentHours = cfg.pgDataCoverageMinRecentHoursWithData;
+  const mintCtx = ctx;
 
-  if (cfg.pgDataCoverageBlockOnPgStale && global.pgStaleNow) {
-    blockedReasons.push(
-      `data_coverage:pg_stale_now_worst_age_sec=${global.worstAgeSec ?? 'null'}`,
-    );
+  const candidateStale = resolveCandidateSourceStale(global, row.source);
+  if (cfg.pgDataCoverageBlockOnPgStale && candidateStale.stale) {
+    const skipStaleInRelaxed =
+      relaxed && mintRelaxedRecentCoverageOk(cfg, mintCtx, minHourRatio);
+    if (!skipStaleInRelaxed) {
+      blockedReasons.push(
+        `data_coverage:pg_stale_source=${candidateStale.source}_age_sec=${candidateStale.ageSec ?? 'null'}`,
+      );
+    }
   }
 
   if (
@@ -455,7 +511,6 @@ export function evaluatePgDataCoverageGuard(
     );
   }
 
-  const mintCtx = ctx;
   if (mintCtx == null || mintCtx.minuteSamples <= 0) {
     if (cfg.volumeSybilGuardEnabled || cfg.volumeEphemeralGuardEnabled) {
       blockedReasons.push('data_coverage:no_pg_history_for_mint');
