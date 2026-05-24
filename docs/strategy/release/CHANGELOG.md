@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.273-stable] — 2026-05-24 (rollback tip)
+
+### Rollback: revert cascade 1.11.274–1.11.284 → restore pre-ROUTER-incident prod
+
+**Context:** After ROUTER spike alert (~12:55 MSK 24.05) a chain of “speed/ghost” hotfixes (1.11.274–284) broke collectors, alerts, and live-oscar. User requested restore to last known-good state.
+
+**Change:** Branch tip reset to **`dedbb9a`** (1.11.273). Removed Jupiter fast-path watcher, collector sanity PG/cache layers, canonical-pool 360m, PM2 collector splits from tip.
+
+**Prod deploy:** `git reset --hard dedbb9a && npm ci && pm2 delete market-priority-jupiter-spot-watch; pm2 reload ecosystem.config.cjs --update-env`
+
+**Rollback:** re-apply desired commits from 1.11.274+ individually after review.
+
+---
+
 ## [1.11.273] — 2026-05-21
 
 ### Dips Telegram: compact pullback/retrace alerts
