@@ -27,6 +27,7 @@ import {
   wasMarketFastAlertRecent,
   marketFastAlertDedupeWindowMs,
 } from './market-fast-alert-shared-dedupe.js';
+import { isImpossibleMinuteBarSpike } from './market-retrace-sanity.js';
 import {
   readPriorityJupiterSpotMintHeartbeat,
   writePriorityJupiterSpotCache,
@@ -294,8 +295,12 @@ async function runTick(): Promise<void> {
     pushSample(mint, px, nowMs);
 
     const meta = metaMap.get(mint);
-    const refPx = meta?.refPx && meta.refPx > 0 ? meta.refPx : px;
-    const refMcap = meta?.refMcapUsd && meta.refMcapUsd > 0 ? meta.refMcapUsd : 0;
+    let refMcap = meta?.refMcapUsd && meta.refMcapUsd > 0 ? meta.refMcapUsd : 0;
+    let refPx = meta?.refPx && meta.refPx > 0 ? meta.refPx : 0;
+    if (spot?.marketCapUsd != null && spot.marketCapUsd > 0 && refMcap <= 0) {
+      refMcap = spot.marketCapUsd;
+    }
+    if (refPx <= 0 && px > 0) refPx = px;
     const mcapNow = scaleMcap(refMcap, refPx, px);
 
     const entry: PriorityJupiterSpotEntry = {
@@ -384,8 +389,45 @@ async function runTick(): Promise<void> {
     const peakTs = new Date(dipsPick.peakTsMs);
     if (!reserveRetracePullbackChannelSlot(mint, peakTs, retrace ? 'retrace' : 'pullback')) continue;
 
-    const peakMcap = scaleMcap(refMcap, refPx, dipsPick.peakPx);
-    const troughMcap = scaleMcap(refMcap, refPx, dipsPick.troughPx);
+    const refPxSanity = refPx > 0 ? refPx : dipsPick.troughPx;
+    if (refMcap < MIN_MCAP || !(refPxSanity > 0)) {
+      console.warn(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          component: 'priority-jupiter-spot-watch',
+          msg: 'dips skip missing ref mcap/px',
+          mint: mint.slice(0, 8),
+          refMcap,
+          refPx: refPxSanity,
+        }),
+      );
+      continue;
+    }
+    if (
+      isImpossibleMinuteBarSpike(
+        dipsPick.peakPx,
+        refPxSanity,
+        refMcap,
+        dipsPick.retraceFromPeakPct,
+      )
+    ) {
+      console.warn(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          component: 'priority-jupiter-spot-watch',
+          msg: 'dips skip impossible minute spike (ghost bar)',
+          mint: mint.slice(0, 8),
+          peakPx: dipsPick.peakPx,
+          refPx: refPxSanity,
+          refMcap,
+          retracePct: +dipsPick.retraceFromPeakPct.toFixed(2),
+        }),
+      );
+      continue;
+    }
+
+    const peakMcap = scaleMcap(refMcap, refPxSanity, dipsPick.peakPx);
+    const troughMcap = scaleMcap(refMcap, refPxSanity, dipsPick.troughPx);
     const refForAlert = refMcap || peakMcap || troughMcap || 0;
 
     const html = buildDipsCompactAlertHtml({

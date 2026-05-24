@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.278] — 2026-05-24
+
+### Dips/retrace alerts: block ghost mcap bars + Jupiter fast-path sanity
+
+**Context:** LAYOFF и др. — PG minute bar с price $1.38 + mcap $1.34B (битый collector); Jupiter fast-path слал dips с `mcap n/a` и -99% на ghost quotes.
+
+**Change:**
+- `isImpossibleMinuteBarSpike` — отсекает LAYOFF-like (peak px >> ref на mcap≥$1M).
+- `resolveBarMcapUsd` — display mcap из price-scale, не сырой fdv бара.
+- Pullback/retrace PG watchers: glitch filter + sane mcap в алерте.
+- Jupiter spot-watch dips: требует ref mcap/px; skip ghost spike; Dex mcap fallback.
+
+**Rollback:** `git revert`; `pm2 reload` dips watchers + priority-jupiter-spot-watch.
+
+---
+
 ## [1.11.277] — 2026-05-21
 
 ### Live Oscar TP grid: ghost-clamp bypass + boot/DCA MTM baseline reset

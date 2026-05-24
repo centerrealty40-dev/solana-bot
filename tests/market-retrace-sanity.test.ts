@@ -7,6 +7,9 @@ import {
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
+  isImpossibleMinuteBarSpike,
+  resolveBarMcapUsd,
+  isBarMcapPlausible,
 } from '../src/scripts/market-retrace-sanity.js';
 
 describe('market-retrace-sanity', () => {
@@ -24,6 +27,21 @@ describe('market-retrace-sanity', () => {
 
   it('real -15% confirmed by latest px', () => {
     expect(isRetraceContradictedByLatestSnapshot(1.0, 0.85, 0.86, 15)).toBe(false);
+  });
+
+  it('LAYOFF-like: $1.38 peak px vs $0.001363 ref on $1.32M mcap — impossible spike', () => {
+    expect(isImpossibleMinuteBarSpike(1.38, 0.001363, 1_320_000, 99.9)).toBe(true);
+  });
+
+  it('resolveBarMcapUsd prefers ref when bar px is ghost spike (LAYOFF)', () => {
+    const resolved = resolveBarMcapUsd({
+      barPxUsd: 1.38,
+      barMcapUsd: 1_335_794_214,
+      refMcapUsd: 1_320_000,
+      refPxUsd: 0.001363,
+    });
+    expect(resolved).toBe(1_320_000);
+    expect(isBarMcapPlausible(1_335_794_214, 1.38, 1_320_000, 0.001363)).toBe(false);
   });
 });
 
