@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.281] — 2026-05-24
+
+### Hotfix: block Jupiter fast-path ghost spikes in XMarkt World
+
+**Context:** `+99419%` / `-99.9%` with `mcap ?` from `priority-jupiter-spot-watch` Jupiter spike path (10s quotes, no PG ref).
+
+**Change:** `isJupiterGhostSpikeMove`; spike send requires ref mcap/px + sane scaled mcaps; `PRIORITY_JUPITER_SPOT_SPIKE_TELEGRAM=0` until PG-backed spike is reliable.
+
+**Rollback:** revert; `pm2 reload market-priority-jupiter-spot-watch --update-env`.
+
+---
+
 ## [1.11.280] — 2026-05-24
 
 ### Hotfix: collector sanity without PG read (restore 1m ticks)
