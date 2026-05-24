@@ -2,6 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { createCollectorTickRunner } from './collector-tick-queue.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
+import { sanitizeSnapshotRows } from './snapshot-row-sanity.mjs';
 
 const { Pool } = pg;
 
@@ -258,6 +259,7 @@ function dedupByPairAddress(rows) {
 
 async function upsertSnapshots(rows) {
   if (rows.length === 0) return 0;
+  rows = await sanitizeSnapshotRows(pool, 'raydium_pair_snapshots', rows);
 
   const values = [];
   const params = [];
