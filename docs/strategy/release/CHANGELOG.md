@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.282] — 2026-05-24
+
+### Restore alerts: re-enable filtered Jupiter spike + fix PM2 spike watcher
+
+**Context:** 1.11.281 disabled fast spike entirely; `market-spike-telegram-watch` stuck `errored` after PM2 reload (stale shell entry).
+
+**Change:** `PRIORITY_JUPITER_SPOT_SPIKE_TELEGRAM=1` again (ghost filters from 1.11.281 remain). Ops: recreate spike watcher from `ecosystem.config.cjs`.
+
+**Rollback:** set spike telegram `0`; `pm2 delete/start market-spike-telegram-watch`.
+
+---
+
 ## [1.11.281] — 2026-05-24
 
 ### Hotfix: block Jupiter fast-path ghost spikes in XMarkt World
