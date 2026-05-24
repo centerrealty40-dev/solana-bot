@@ -5,7 +5,7 @@ import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs'
 
 const { Pool } = pg;
 
-const INTERVAL_MS = Number(process.env.MOONSHOT_COLLECTOR_INTERVAL_MS || 60_000);
+const INTERVAL_MS = Number(process.env.MOONSHOT_COLLECTOR_INTERVAL_MS || 30_000);
 const MAX_RETRIES = Number(process.env.MOONSHOT_COLLECTOR_MAX_RETRIES || 4);
 const REQUEST_TIMEOUT_MS = Number(process.env.MOONSHOT_COLLECTOR_TIMEOUT_MS || 15_000);
 const DEX_SEARCH_TERMS = (process.env.MOONSHOT_DEX_SEARCH_TERMS || 'moonshot,moonshot solana,moonshot token')

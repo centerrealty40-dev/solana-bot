@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.275] — 2026-05-24
+
+### Price read optim: Jupiter quote on hot mints, near-miss universe, 30s collectors, reeval 10s
+
+**Context:** follow-up to 1.11.274 — точнее и раньше цена на hot mints + шире fast-watch universe.
+
+**Change:**
+- Hot mints (heartbeat + whitelist): **Jupiter buy quote** поверх Price v3 (`priority-jupiter-spot-prices.ts`).
+- **Near-miss spike mints** из PG (в пределах 3% от tier-порога) добавляются в fast-watch universe.
+- DEX collectors default interval **30s** (совпадает с prod ecosystem).
+- `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`: **15 → 10** для priority tier Live Oscar.
+
+**Rollback:** `git revert`; `pm2 reload` live-oscar + priority-jupiter-spot-watch + collectors.
+
+---
+
 ## [1.11.274] — 2026-05-21
 
 ### Faster market alerts: poll 10s, collector catch-up, Jupiter Pro spot fast-path

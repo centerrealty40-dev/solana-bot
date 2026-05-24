@@ -10,10 +10,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { sql as dsql } from 'drizzle-orm';
 
-import { fetchJupiterPriceV3Batch } from '../core/jupiter-http.js';
 import { db } from '../core/db/client.js';
-import { buildAlertHtml } from './market-spike-telegram-watch.js';
 import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format.js';
+import { fetchPrioritySpotPrices } from './priority-jupiter-spot-prices.js';
+import { loadPgNearMissSpikeMints } from './priority-jupiter-spot-near-miss.js';
 import {
   recordMarketFastAlert,
   wasMarketFastAlertRecent,
@@ -196,24 +196,27 @@ async function loadMintMetaMap(mints: string[]): Promise<Map<string, MintMeta>> 
   return out;
 }
 
-async function buildMintUniverse(): Promise<string[]> {
-  const [heartbeat, whitelist, pgTop] = await Promise.all([
+async function buildMintUniverse(): Promise<{ mints: string[]; hotMintSet: Set<string> }> {
+  const nearMissLimit = Math.max(0, Math.min(40, Math.floor(envNum('PRIORITY_JUPITER_SPOT_NEAR_MISS_MAX', 25))));
+  const [heartbeat, whitelist, pgTop, nearMiss] = await Promise.all([
     readPriorityJupiterSpotMintHeartbeat(),
     readWhitelistMints(),
     loadPgTopMints(MAX_MINTS),
+    nearMissLimit > 0 ? loadPgNearMissSpikeMints(nearMissLimit) : Promise.resolve([]),
   ]);
+  const hotMintSet = new Set<string>([...heartbeat, ...whitelist]);
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const src of [heartbeat, whitelist, pgTop]) {
+  for (const src of [heartbeat, whitelist, nearMiss, pgTop]) {
     for (const m of src) {
       const k = m.trim();
       if (k.length < 32 || seen.has(k)) continue;
       seen.add(k);
       out.push(k);
-      if (out.length >= MAX_MINTS) return out;
+      if (out.length >= MAX_MINTS) return { mints: out, hotMintSet };
     }
   }
-  return out;
+  return { mints: out, hotMintSet };
 }
 
 async function sendTelegram(
@@ -242,20 +245,34 @@ async function sendTelegram(
 }
 
 async function runTick(): Promise<void> {
-  const mints = await buildMintUniverse();
+  const { mints, hotMintSet } = await buildMintUniverse();
   if (mints.length === 0) return;
 
-  const [prices, metaMap] = await Promise.all([
-    fetchJupiterPriceV3Batch(mints, envNum('PRIORITY_JUPITER_SPOT_TIMEOUT_MS', 8000)),
-    loadMintMetaMap(mints),
-  ]);
+  const metaMap = await loadMintMetaMap(mints);
+  const snapshotPxByMint = new Map<string, number>();
+  for (const mint of mints) {
+    const refPx = metaMap.get(mint)?.refPx;
+    if (refPx != null && refPx > 0) snapshotPxByMint.set(mint, refPx);
+  }
+
+  const prices = await fetchPrioritySpotPrices({
+    mints,
+    hotMintSet,
+    snapshotPxByMint,
+    timeoutMs: envNum('PRIORITY_JUPITER_SPOT_TIMEOUT_MS', 8000),
+  });
 
   const nowMs = Date.now();
   const cache: PriorityJupiterSpotCache = { updatedAt: new Date(nowMs).toISOString(), entries: {} };
+  let quoteCount = 0;
+  let v3Count = 0;
 
   for (const mint of mints) {
-    const px = prices.get(mint);
-    if (!(px != null && px > 0)) continue;
+    const spot = prices.get(mint);
+    if (!spot || !(spot.priceUsd > 0)) continue;
+    const px = spot.priceUsd;
+    if (spot.source === 'jupiter_quote') quoteCount += 1;
+    else v3Count += 1;
     pushSample(mint, px, nowMs);
 
     const meta = metaMap.get(mint);
@@ -268,7 +285,7 @@ async function runTick(): Promise<void> {
       priceUsd: px,
       mcapUsd: mcapNow,
       tsMs: nowMs,
-      source: 'jupiter_v3',
+      source: spot.source,
     };
     cache.entries[mint] = entry;
 
@@ -282,6 +299,8 @@ async function runTick(): Promise<void> {
       if (nowMs - last >= cooldownMs && !(await wasMarketFastAlertRecent(mint, 'spike'))) {
         const anchorMcap = scaleMcap(refMcap, refPx, spike.anchorPx);
         const nowMcap = scaleMcap(refMcap, refPx, spike.nowPx);
+        process.env.SPIKE_ALERT_SKIP_MAIN = '1';
+        const { buildAlertHtml } = await import('./market-spike-telegram-watch.js');
         const html = buildAlertHtml({
           base_mint: mint,
           pair_address: '',
@@ -373,6 +392,20 @@ async function runTick(): Promise<void> {
   }
 
   await writePriorityJupiterSpotCache(cache);
+  if (quoteCount + v3Count > 0) {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        component: 'priority-jupiter-spot-watch',
+        msg: 'tick',
+        mints: mints.length,
+        hot: hotMintSet.size,
+        priced: quoteCount + v3Count,
+        quote: quoteCount,
+        v3: v3Count,
+      }),
+    );
+  }
 }
 
 async function main(): Promise<void> {

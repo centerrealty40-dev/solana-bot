@@ -12,7 +12,7 @@ export type PriorityJupiterSpotEntry = {
   priceUsd: number;
   mcapUsd: number | null;
   tsMs: number;
-  source: 'jupiter_v3';
+  source: 'jupiter_v3' | 'jupiter_quote';
 };
 
 export type PriorityJupiterSpotCache = {
