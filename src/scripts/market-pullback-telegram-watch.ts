@@ -24,6 +24,7 @@ import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
 } from './market-snapshot-canonical-pool.js';
+import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format.js';
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
@@ -479,46 +480,6 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function formatPct(x: number): string {
-  return `${x >= 0 ? '+' : ''}${x.toFixed(2)}%`;
-}
-
-function formatTsInTz(d: Date): string {
-  try {
-    return (
-      new Intl.DateTimeFormat('ru-RU', {
-        timeZone: DISPLAY_TZ,
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      }).format(d) + ' · МСК'
-    );
-  } catch {
-    return d.toISOString();
-  }
-}
-
-function formatMcapUsdShort(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return 'n/a';
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
-  return `$${n.toFixed(0)}`;
-}
-
-function formatPxUsd(px: number): string {
-  if (!(px > 0) || !Number.isFinite(px)) return 'n/a';
-  if (px >= 1) return px.toFixed(6);
-  return px.toPrecision(6);
-}
-
 function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
   const fromBar = lastBarMcap != null && lastBarMcap > 0 ? lastBarMcap : 0;
   const fdv = meta.token_fdv_usd != null && meta.token_fdv_usd > 0 ? meta.token_fdv_usd : 0;
@@ -539,71 +500,25 @@ function passesRetraceTierByRefMcap(mcapUsd: number, retraceFromPeakPct: number)
   return retraceFromPeakPct + 1e-6 >= minPct;
 }
 
-/** Как в `market-spike-telegram-watch.ts`. */
-function gmgnSolTokenUrl(mint: string): string {
-  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
-}
-
 function buildAlertHtml(args: {
   dex: string;
   meta: LatestMeta;
   pick: PullbackPick;
   refMcap: number;
 }): string {
-  const { dex, meta, pick, refMcap } = args;
-  const mint = meta.base_mint.trim();
-  const gmgnUrl = gmgnSolTokenUrl(mint);
-  const sym = escapeHtml((meta.symbol ?? '?').trim() || '?');
-  const name = escapeHtml((meta.token_name ?? '').trim());
-  const mintShort = `${meta.base_mint.slice(0, 6)}…${meta.base_mint.slice(-4)}`;
-  const holders =
-    meta.holder_count != null && Number.isFinite(meta.holder_count)
-      ? String(meta.holder_count)
-      : 'n/a';
-  const refMcapStr = refMcap > 0 ? formatMcapUsdShort(refMcap) : 'n/a';
-  const aM = pick.anchorMcapUsd ?? null;
-  const pM = pick.peakMcapUsd ?? null;
-  const lM = pick.lastMcapUsd ?? null;
-
-  const line1 =
-    `<b>1. Локальный лой</b> (min до пика в окне)\n` +
-    `${escapeHtml(formatTsInTz(pick.anchorTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(aM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.anchorPx))}</code>`;
-  const line2 =
-    `<b>2. Локальный хай</b> (max в окне)\n` +
-    `${escapeHtml(formatTsInTz(pick.peakTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(pM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.peakPx))}</code>`;
-  const line3 =
-    `<b>3. Просадка от хая</b>\n` +
-    `${escapeHtml(formatTsInTz(pick.lastTs))} · mcap <b>${escapeHtml(formatMcapUsdShort(lM))}</b> · price_usd <code>${escapeHtml(formatPxUsd(pick.lastPx))}</code> · <b>−${escapeHtml(pick.retraceFromPeakPct.toFixed(2))}%</b> от пика`;
-  const modeHint =
-    pick.signalMode === 'local_high_retrace'
-      ? `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>local_high_retrace</b> (без порога роста до пика)`
-      : `lookback <b>${SCAN_MINUTES}</b> мин · режим <b>rise_then_retrace</b> · рост до пика <b>${escapeHtml(formatPct(pick.risePct))}</b>`;
-
-  const headline =
-    sym !== '?' && name && name.toUpperCase() !== sym.toUpperCase()
-      ? `<b>${sym}</b> — ${name}`
-      : sym !== '?'
-        ? `<b>${sym}</b>`
-        : name
-          ? `<b>${name}</b>`
-          : '<b>?</b>';
-
-  return [
-    headline,
-    `<b>[MARKET][pullback]</b> <code>${escapeHtml(dex)}</code>`,
-    modeHint,
-    '',
-    `Mint: <code>${escapeHtml(mint)}</code> (${escapeHtml(mintShort)})`,
-    `<a href="${escapeHtml(gmgnUrl)}">GMGN</a>`,
-    '',
-    line1,
-    '',
-    line2,
-    '',
-    line3,
-    '',
-    `Ref mcap/fdv (текущая оценка) ≈ <b>${escapeHtml(refMcapStr)}</b> · holders ${escapeHtml(holders)}`,
-  ].join('\n');
+  const { meta, pick, refMcap } = args;
+  return buildDipsCompactAlertHtml({
+    mint: meta.base_mint.trim(),
+    symbol: meta.symbol,
+    token_name: meta.token_name,
+    retraceFromPeakPct: pick.retraceFromPeakPct,
+    peakTs: pick.peakTs,
+    peakMcapUsd: pick.peakMcapUsd,
+    troughTs: pick.lastTs,
+    troughMcapUsd: pick.lastMcapUsd,
+    refMcap,
+    displayTz: DISPLAY_TZ,
+  });
 }
 
 type PullbackCandidate = {

@@ -8,6 +8,20 @@
 
 ---
 
+## [1.11.273] — 2026-05-21
+
+### Dips Telegram: compact pullback/retrace alerts
+
+**Context:** канал Dips (`-1003504887486`) — короткий формат алертов как у spike: символ, откат %, GMGN, две строки mcap (пик → просадка), ref mcap.
+
+**Change:**
+- `market-dips-compact-telegram-format.ts` — общий builder;
+- `market-pullback-telegram-watch.ts`, `market-pump-retrace-alert-watch.ts` — убраны mint/dex/holders/price_usd/3 блока «лой–хай–просадка».
+
+**Rollback:** `git revert` коммита; `pm2 reload` `market-pullback-telegram-watch` + `retrace-alert-watch`.
+
+---
+
 ## [1.11.272] — 2026-05-21
 
 ### Revert prod exit: Variant A v2 hybrid (max-profit backtest winner)
