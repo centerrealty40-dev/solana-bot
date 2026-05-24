@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.284] — 2026-05-24
+
+### Discovery: canonical pool max-liq over extended lookback (WORLDCUP/orca ghost)
+
+**Context:** Fresh $5k orca row beat stale pumpswap $285k when collectors lagged — eval showed `liq<300000` on wrong venue.
+
+**Change:** Extended canonical lookback (default 360m); merge fresh quote on canonical pair; fix `tokens.primary_pair` refresh to max liq not latest ts; priority inject lookback 360m.
+
+**Rollback:** revert; `pm2 reload live-oscar`.
+
+---
+
 ## [1.11.283] — 2026-05-24
 
 ### Hotfix: fix corrupted PM2 collector entries (stale PG snapshots)
