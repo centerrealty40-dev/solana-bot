@@ -50,6 +50,7 @@ import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db, sql as pgSql } from '../core/db/client.js';
+import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -1839,6 +1840,15 @@ async function runOnePass(
       row.prevPct = prevState.lastSentAbsPct * (prevState.lastWasPump ? 1 : -1);
       row.prevTierName = prevState.lastTierName;
       row.prevSentAtMs = prevState.lastSentAtMs;
+    }
+
+    if (
+      decision.kind !== 'update' &&
+      (await wasMarketFastAlertRecent(mintKey, 'spike'))
+    ) {
+      skipped++;
+      await recordSpikeEvent(recordToEvent('skip', row, { skipReason: 'fast_jupiter_dedupe' }));
+      continue;
     }
 
     if (DRY_RUN) {

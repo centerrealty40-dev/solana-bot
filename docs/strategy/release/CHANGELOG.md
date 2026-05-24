@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.274] — 2026-05-21
+
+### Faster market alerts: poll 10s, collector catch-up, Jupiter Pro spot fast-path
+
+**Context:** минутные PG-бары + poll 20s давали ~1–2 мин задержки (Telegram + Live Oscar discovery). Jupiter Pro уже есть — используем Price v3 между minute buckets.
+
+**Change:**
+- Spike / pullback / retrace poll **10s** (`SPIKE_ALERT_POLL_INTERVAL_MS`, `PULLBACK_*`, `RETRACE_*`).
+- DEX collectors: **catch-up queue** для пропущенных minute buckets при долгом tick (`collector-tick-queue.mjs`).
+- Новый PM2 **`market-priority-jupiter-spot-watch`**: Jupiter Price v3 каждые 10s → spike + dips Telegram + `data/live/priority-jupiter-spot-cache.json`.
+- Live Oscar: читает spot cache + пишет `priority-jupiter-spot-mints.json` heartbeat; PG-watchers не дублируют fast-alerts (shared dedupe).
+
+**Rollback:** `git revert`; `pm2 delete market-priority-jupiter-spot-watch`; `pm2 reload` spike/pullback/retrace/live-oscar + collectors; вернуть poll 20s в `ecosystem.config.cjs`.
+
+---
+
 ## [1.11.273] — 2026-05-21
 
 ### Dips Telegram: compact pullback/retrace alerts

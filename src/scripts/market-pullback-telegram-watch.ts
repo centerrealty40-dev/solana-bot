@@ -20,6 +20,7 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
+import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
@@ -653,6 +654,11 @@ async function runOnePass(
     }
 
     if (!reserveRetracePullbackChannelSlot(mint, pick.peakTs, 'pullback')) {
+      skipped++;
+      continue;
+    }
+
+    if (await wasMarketFastAlertRecent(mint, 'dips')) {
       skipped++;
       continue;
     }

@@ -18,6 +18,7 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
+import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
@@ -548,6 +549,8 @@ async function runOnePass(
 
     if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
     if (!reserveRetracePullbackChannelSlot(mintKey, peakTs, 'retrace')) continue;
+
+    if (await wasMarketFastAlertRecent(mintKey, 'dips')) continue;
 
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
