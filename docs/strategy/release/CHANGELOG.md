@@ -8,6 +8,18 @@
 
 ---
 
+## [1.11.283] — 2026-05-24
+
+### Hotfix: fix corrupted PM2 collector entries (stale PG snapshots)
+
+**Context:** `sa-meteora`/`sa-orca` and `sa-pumpswap`/`sa-wallet-orchestrator` were merged in one object each — PM2 reload ran wrong scripts; ticks 10+ min, `snapshot_stale` alerts.
+
+**Change:** Split `sa-orca` and `sa-wallet-orchestrator`; complete `sa-meteora` PM2 fields; `PAPER2_SNAPSHOT_OPENS=0` on collectors until PG catches up.
+
+**Rollback:** revert ecosystem; `pm2 delete/start` collectors from config.
+
+---
+
 ## [1.11.282] — 2026-05-24
 
 ### Restore alerts: re-enable filtered Jupiter spike + fix PM2 spike watcher
