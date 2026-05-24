@@ -1,12 +1,10 @@
 import 'dotenv/config';
 import pg from 'pg';
-import { createCollectorTickRunner } from './collector-tick-queue.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
-import { sanitizeSnapshotRows } from './snapshot-row-sanity.mjs';
 
 const { Pool } = pg;
 
-const INTERVAL_MS = Number(process.env.PUMPSWAP_COLLECTOR_INTERVAL_MS || 30_000);
+const INTERVAL_MS = Number(process.env.PUMPSWAP_COLLECTOR_INTERVAL_MS || 60_000);
 const MAX_RETRIES = Number(process.env.PUMPSWAP_COLLECTOR_MAX_RETRIES || 4);
 const REQUEST_TIMEOUT_MS = Number(process.env.PUMPSWAP_COLLECTOR_TIMEOUT_MS || 15_000);
 const DEX_SEARCH_TERMS = (process.env.PUMPSWAP_DEX_SEARCH_TERMS || 'pumpswap,pump swap,pump.fun solana')
@@ -28,6 +26,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+let isTickRunning = false;
 let isShuttingDown = false;
 let ticksTotal = 0;
 let rowsUpsertedTotal = 0;
@@ -268,7 +267,6 @@ async function fetchFromGecko(bucketTs, endpoint, retryTag) {
 
 async function upsertSnapshots(rows) {
   if (rows.length === 0) return 0;
-  rows = await sanitizeSnapshotRows(pool, 'pumpswap_pair_snapshots', rows);
 
   const values = [];
   const params = [];
@@ -320,9 +318,9 @@ async function upsertSnapshots(rows) {
   return rows.length;
 }
 
-async function collectOneTick(forcedBucketTs = null) {
+async function collectOneTick() {
   const tickStartedAt = Date.now();
-  const bucketTs = forcedBucketTs ?? getMinuteBucketUtc();
+  const bucketTs = getMinuteBucketUtc();
   let rows = [];
   let sourceUsed = 'dexscreener';
 
@@ -383,11 +381,18 @@ async function collectOneTick(forcedBucketTs = null) {
   }
 }
 
-const { runTickGuarded } = createCollectorTickRunner({
-  log,
-  runCollectForBucket: collectOneTick,
-  getMinuteBucketUtc,
-});
+async function runTickGuarded() {
+  if (isTickRunning) {
+    log('warn', 'skipping tick, previous run still active');
+    return;
+  }
+  isTickRunning = true;
+  try {
+    await collectOneTick();
+  } finally {
+    isTickRunning = false;
+  }
+}
 
 async function shutdown(signal) {
   if (isShuttingDown) return;

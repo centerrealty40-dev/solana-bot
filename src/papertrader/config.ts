@@ -277,7 +277,7 @@ const ConfigSchema = z.object({
    */
   priorityDiscoveryEnabled: z.boolean().default(true),
   priorityDiscoveryReevalSec: z.coerce.number().int().min(5).max(120).default(15),
-  priorityDiscoveryLookbackMin: z.coerce.number().int().min(30).max(1440).default(360),
+  priorityDiscoveryLookbackMin: z.coerce.number().int().min(30).max(240).default(120),
   /** Держать mint в priority tier N минут после последнего full eval. */
   priorityDiscoveryRecentEvalMin: z.coerce.number().int().min(30).max(720).default(180),
   priorityDiscoveryMaxMints: z.coerce.number().int().min(10).max(500).default(200),

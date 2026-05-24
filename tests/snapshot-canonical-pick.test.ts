@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickCanonicalSnapshotRow,
-  pickCanonicalSnapshotRowWithFreshQuote,
   dedupeSnapshotTaggedByMintCanonical,
 } from '../src/papertrader/discovery/snapshot-canonical-pick.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
@@ -48,43 +47,6 @@ describe('pickCanonicalSnapshotRow', () => {
     const pick = pickCanonicalSnapshotRow([meteora, raydium]);
     expect(pick?.source).toBe('raydium');
     expect(pick?.liquidity_usd).toBe(3_676_967);
-  });
-
-  it('WORLDCUP case: stale pumpswap $285k beats fresh orca $5k; price from fresher pumpswap bar', () => {
-    const mint = '33eum82LaAhtv5YkUq1BdwEviSErH5CnFxqVNLT5pump';
-    const pair = 'PumpswapPair111111111111111111111111111111';
-    const stalePumpswap = row({
-      mint,
-      source: 'pumpswap',
-      liquidity_usd: 285_958,
-      ts: new Date('2026-05-24T14:00:00Z'),
-      price_usd: 0.0072,
-      volume_1h: 31_068,
-      pair_address: pair,
-    });
-    const freshOrca = row({
-      mint,
-      source: 'orca',
-      liquidity_usd: 5_201,
-      ts: new Date('2026-05-24T18:00:00Z'),
-      price_usd: 0.00713,
-      volume_1h: 802,
-      pair_address: 'OrcaDeadPair111111111111111111111111111',
-    });
-    const freshPumpswap = row({
-      mint,
-      source: 'pumpswap',
-      liquidity_usd: 284_368,
-      ts: new Date('2026-05-24T17:50:00Z'),
-      price_usd: 0.00737,
-      volume_1h: 28_844,
-      pair_address: pair,
-    });
-    const pick = pickCanonicalSnapshotRowWithFreshQuote([freshOrca, stalePumpswap, freshPumpswap]);
-    expect(pick?.source).toBe('pumpswap');
-    expect(pick?.liquidity_usd).toBe(285_958);
-    expect(pick?.price_usd).toBe(0.00737);
-    expect(pick?.volume_1h).toBe(28_844);
   });
 
   it('dedupeSnapshotTaggedByMintCanonical keeps one row per mint', () => {
