@@ -49,7 +49,7 @@ function buildLatestOnlyQuery(table: string, mintFilter: string[] | null, maxRow
     WHERE ts > NOW() - INTERVAL '90 minutes'
       AND liquidity_usd > 0
       ${mintClause}
-    ORDER BY base_mint, ts DESC, liquidity_usd DESC NULLS LAST
+    ORDER BY base_mint, liquidity_usd DESC NULLS LAST, ts DESC
     LIMIT ${maxRows}
   `;
 }

@@ -3,12 +3,14 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
-import { CANONICAL_SNAPSHOT_ROW_ORDER_SQL } from './snapshot-canonical-pick.js';
+import { CANONICAL_SNAPSHOT_ROW_ORDER_SQL, canonicalPoolLookbackMinutes } from './snapshot-canonical-pick.js';
 
 export {
   pickCanonicalSnapshotRow,
+  pickCanonicalSnapshotRowWithFreshQuote,
   dedupeSnapshotTaggedByMintCanonical,
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
+  canonicalPoolLookbackMinutes,
 } from './snapshot-canonical-pick.js';
 
 function sqlQuoteMint(value: string): string {
@@ -131,7 +133,7 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
   const lookbackMin =
     opts?.lookbackMinutes != null && Number.isFinite(opts.lookbackMinutes) && opts.lookbackMinutes > 0
       ? Math.floor(opts.lookbackMinutes)
-      : 30;
+      : canonicalPoolLookbackMinutes();
   const qm = sqlQuoteMint(m);
   const unions = SNAPSHOT_TABLES.map(
     (t) => `
@@ -164,21 +166,51 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
     WITH raw AS (
       ${unions}
     ),
-    ranked AS (
+    canonical AS (
       SELECT *,
              ROW_NUMBER() OVER (
                ORDER BY ${CANONICAL_SNAPSHOT_ROW_ORDER_SQL}
-             ) AS rn
+             ) AS rn_canon
       FROM raw
+    ),
+    best AS (
+      SELECT * FROM canonical WHERE rn_canon = 1
+    ),
+    fresh AS (
+      SELECT r.*,
+             ROW_NUMBER() OVER (ORDER BY r.ts DESC) AS rn_fresh
+      FROM raw r
+      INNER JOIN best b ON r.pair_address = b.pair_address
     )
-    SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,
-           price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
-           market_cap_usd, pair_address, source
-    FROM ranked
-    WHERE rn = 1
+    SELECT
+      b.mint,
+      b.symbol,
+      b.holder_count,
+      b.token_age_min,
+      COALESCE(f.ts, b.ts) AS ts,
+      b.launch_ts,
+      b.age_min,
+      COALESCE(f.price_usd, b.price_usd) AS price_usd,
+      b.price_usd AS ref_price_usd,
+      b.liquidity_usd,
+      COALESCE(f.volume_5m, b.volume_5m) AS volume_5m,
+      COALESCE(f.volume_1h, b.volume_1h) AS volume_1h,
+      COALESCE(f.buys_5m, b.buys_5m) AS buys_5m,
+      COALESCE(f.sells_5m, b.sells_5m) AS sells_5m,
+      b.market_cap_usd,
+      b.pair_address,
+      b.source
+    FROM best b
+    LEFT JOIN fresh f ON f.rn_fresh = 1
   `));
   const rows = r as unknown as Record<string, unknown>[];
   if (!Array.isArray(rows) || rows.length === 0) return null;
   const row = rows[0];
-  return mapSnapshotRow(row, String(row.source ?? '?'));
+  const mapped = mapSnapshotRow(row, String(row.source ?? '?'));
+  const refPx = Number(row.ref_price_usd ?? mapped.price_usd ?? 0);
+  const px = mapped.price_usd;
+  if (refPx > 0 && px > 0 && mapped.market_cap_usd != null && mapped.market_cap_usd > 0 && px !== refPx) {
+    mapped.market_cap_usd = mapped.market_cap_usd * (px / refPx);
+  }
+  return mapped;
 }
