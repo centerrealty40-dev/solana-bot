@@ -148,20 +148,6 @@ describe('exit-policy-wave-b', () => {
     expect(clamped).toBeCloseTo(0.114 * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC), 6);
   });
 
-  it('clampLiveTrackerMtmForExit bypasses upside clamp when raw PnL ≥ TP grid step', () => {
-    const ot = {
-      lastObservedPriceUsd: 0.005481,
-      avgEntry: 0.006553,
-      avgEntryMarket: 0.006553,
-    } as OpenTrade;
-    const raw = 0.007066;
-    const clamped = clampLiveTrackerMtmForExit(ot, raw, {
-      bypassTpGridIfAboveStep: 0.05,
-      avgEntry: 0.006553,
-    });
-    expect(clamped).toBe(raw);
-  });
-
   it('waveBRecoverPhantomPeakIfNeeded disarms armed trail when PnL below arm and no trail sells yet', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',

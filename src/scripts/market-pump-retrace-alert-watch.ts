@@ -18,7 +18,6 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
-import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
@@ -27,8 +26,6 @@ import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
-  isImpossibleMinuteBarSpike,
-  resolveBarMcapUsd,
 } from './market-retrace-sanity.js';
 
 const SNAPSHOT_TABLES = [
@@ -322,16 +319,6 @@ export function isPumpRetracePickDataGlitch(
   ) {
     return true;
   }
-  if (
-    isImpossibleMinuteBarSpike(
-      pick.peakPx,
-      meta.px_now > 0 ? meta.px_now : pick.troughPx,
-      refMcapUsd,
-      pick.retracePct,
-    )
-  ) {
-    return true;
-  }
   return false;
 }
 
@@ -385,18 +372,6 @@ function buildAlertHtml(row: AlertRowWithTs): string {
 
 function buildRowWithTs(meta: LatestMeta, dex: string, bars: Bar[], pick: PumpRetracePick): AlertRowWithTs {
   const lastBar = bars[bars.length - 1];
-  const refMcap = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
-  const refPx = meta.px_now > 0 ? meta.px_now : (lastBar?.px ?? 0);
-  const barMcap = (idx: number) => {
-    const bar = bars[idx];
-    if (!bar) return null;
-    return resolveBarMcapUsd({
-      barPxUsd: bar.px,
-      barMcapUsd: bar.mcapUsd,
-      refMcapUsd: refMcap,
-      refPxUsd: refPx,
-    });
-  };
   return {
     ...meta,
     dex,
@@ -404,10 +379,10 @@ function buildRowWithTs(meta: LatestMeta, dex: string, bars: Bar[], pick: PumpRe
     rawBarsViTs: bars[pick.vi].ts,
     rawBarsJTs: bars[pick.j].ts,
     rawBarsKTs: bars[pick.k].ts,
-    valleyMcapUsd: barMcap(pick.vi),
-    peakMcapUsd: barMcap(pick.j),
-    troughMcapUsd: barMcap(pick.k),
-    refMcap,
+    valleyMcapUsd: bars[pick.vi].mcapUsd ?? null,
+    peakMcapUsd: bars[pick.j].mcapUsd ?? null,
+    troughMcapUsd: bars[pick.k].mcapUsd ?? null,
+    refMcap: refMcapUsd(meta, lastBar?.mcapUsd ?? null),
   };
 }
 
@@ -573,8 +548,6 @@ async function runOnePass(
 
     if (!passesRetraceTierByRefMcap(row.refMcap, row.pick.retracePct)) continue;
     if (!reserveRetracePullbackChannelSlot(mintKey, peakTs, 'retrace')) continue;
-
-    if (await wasMarketFastAlertRecent(mintKey, 'dips')) continue;
 
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {

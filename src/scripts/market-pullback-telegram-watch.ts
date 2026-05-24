@@ -20,7 +20,6 @@ import {
   retracePullbackChannelEventKey,
   reserveRetracePullbackChannelSlot,
 } from './market-retrace-pullback-channel-dedupe.js';
-import { wasMarketFastAlertRecent } from './market-fast-alert-shared-dedupe.js';
 import {
   buildMintCanonicalPoolMap,
   groupCanonicalRowsByTable,
@@ -29,8 +28,6 @@ import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
-  isImpossibleMinuteBarSpike,
-  resolveBarMcapUsd,
 } from './market-retrace-sanity.js';
 
 const SNAPSHOT_TABLES = [
@@ -265,23 +262,9 @@ function dedupeBarsSorted(rows: Bar[]): Bar[] {
     .map(([, b]) => b);
 }
 
-function enrichPullbackPickMcap(
-  pick: PullbackPick,
-  rawBars: Bar[],
-  refMcapUsd: number,
-  refPxUsd: number,
-): PullbackPick {
+function enrichPullbackPickMcap(pick: PullbackPick, rawBars: Bar[]): PullbackPick {
   const b = dedupeBarsSorted(rawBars);
-  const mAt = (d: Date) => {
-    const bar = b.find((x) => x.ts.getTime() === d.getTime());
-    if (!bar) return null;
-    return resolveBarMcapUsd({
-      barPxUsd: bar.px,
-      barMcapUsd: bar.mcapUsd,
-      refMcapUsd,
-      refPxUsd,
-    });
-  };
+  const mAt = (d: Date) => b.find((x) => x.ts.getTime() === d.getTime())?.mcapUsd ?? null;
   return {
     ...pick,
     anchorMcapUsd: mAt(pick.anchorTs),
@@ -566,16 +549,6 @@ function isPullbackPickDataGlitch(pick: PullbackPick, meta: LatestMeta, refMcapU
   ) {
     return true;
   }
-  if (
-    isImpossibleMinuteBarSpike(
-      pick.peakPx,
-      meta.px_now > 0 ? meta.px_now : pick.lastPx,
-      refMcapUsd,
-      pick.retraceFromPeakPct,
-    )
-  ) {
-    return true;
-  }
   return false;
 }
 
@@ -625,10 +598,7 @@ async function runOnePass(
         skipped++;
         continue;
       }
-      const lastBar = dedupeBarsSorted(rawBars).at(-1);
-      const refM = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
-      const refPx = meta.px_now > 0 ? meta.px_now : (lastBar?.px ?? 0);
-      const pick = enrichPullbackPickMcap(pickRaw, rawBars, refM, refPx);
+      const pick = enrichPullbackPickMcap(pickRaw, rawBars);
 
       const lastMs = pick.lastTs.getTime();
       if (nowMs - lastMs > maxBarAgeMs) {
@@ -636,6 +606,8 @@ async function runOnePass(
         continue;
       }
 
+      const lastBar = dedupeBarsSorted(rawBars).at(-1);
+      const refM = refMcapUsd(meta, lastBar?.mcapUsd ?? null);
       if (MIN_MARKET_CAP_USD > 0 && refM + 1 < MIN_MARKET_CAP_USD) {
         skipped++;
         continue;
@@ -681,11 +653,6 @@ async function runOnePass(
     }
 
     if (!reserveRetracePullbackChannelSlot(mint, pick.peakTs, 'pullback')) {
-      skipped++;
-      continue;
-    }
-
-    if (await wasMarketFastAlertRecent(mint, 'dips')) {
       skipped++;
       continue;
     }

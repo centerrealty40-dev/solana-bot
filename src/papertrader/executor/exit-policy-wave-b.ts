@@ -88,30 +88,12 @@ export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
 /** Max single-tick MTM jump vs last observed price for peak / trail / TP (anti ghost-quote). */
 export const WAVE_B_MTM_MAX_TICK_JUMP_FRAC = 0.12;
 
-export type ClampLiveTrackerMtmOpts = {
-  /** When raw PnL ≥ this grid step vs avg, skip upside clamp (TP grid must see real price). */
-  bypassTpGridIfAboveStep?: number;
-  avgEntry?: number;
-};
-
 /**
  * Clamp tradable MTM used for exit decisions when Jupiter/PG spikes in one tick (thin-route ghost).
  * Uses prior `lastObservedPriceUsd` (or entry) — call before updating last observed for the tick.
  */
-export function clampLiveTrackerMtmForExit(
-  ot: OpenTrade,
-  curMetricUsd: number,
-  opts?: ClampLiveTrackerMtmOpts,
-): number {
+export function clampLiveTrackerMtmForExit(ot: OpenTrade, curMetricUsd: number): number {
   if (!(curMetricUsd > 0)) return curMetricUsd;
-  const avgEntry =
-    opts?.avgEntry ??
-    (ot.avgEntry > 0 ? ot.avgEntry : ot.avgEntryMarket > 0 ? ot.avgEntryMarket : 0);
-  const tpStep = opts?.bypassTpGridIfAboveStep;
-  if (tpStep != null && tpStep > 0 && avgEntry > 0) {
-    const rawPnlFrac = curMetricUsd / avgEntry - 1;
-    if (rawPnlFrac + LADDER_PNL_EPS >= tpStep) return curMetricUsd;
-  }
   const prev =
     ot.lastObservedPriceUsd ??
     (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
@@ -121,12 +103,6 @@ export function clampLiveTrackerMtmForExit(
   if (curMetricUsd > maxUp) return maxUp;
   if (curMetricUsd < minDown) return minDown;
   return curMetricUsd;
-}
-
-/** Reset ghost-clamp baseline after boot replay or DCA (avg / market moved). */
-export function resetMtmObservedBaseline(ot: OpenTrade, marketPriceUsd: number): void {
-  if (marketPriceUsd > 0) ot.lastObservedPriceUsd = marketPriceUsd;
-  else ot.lastObservedPriceUsd = undefined;
 }
 
 /**

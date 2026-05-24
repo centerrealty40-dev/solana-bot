@@ -42,7 +42,6 @@ import {
   waveBOnNewHigh,
   waveBMarkTrailLevelTaken,
   clampLiveTrackerMtmForExit,
-  resetMtmObservedBaseline,
   waveBRecoverPhantomPeakIfNeeded,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
@@ -1828,28 +1827,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
-    let rawMtmForExit: number | null = null;
-
     await sleep(liveOscarCfg?.liveTrackerInterMintDelayMs ?? 120);
 
     if (curMetric > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
-      rawMtmForExit = curMetric;
-      const tpStepClamp = tpGridEffective(ot, effCfg).stepPnl;
-      const avgForClamp = ot.avgEntry > 0 ? ot.avgEntry : ot.avgEntryMarket;
-      const exitMtm = clampLiveTrackerMtmForExit(ot, rawMtmForExit, {
-        bypassTpGridIfAboveStep: tpStepClamp > 0 ? tpStepClamp : undefined,
-        avgEntry: avgForClamp > 0 ? avgForClamp : undefined,
-      });
-      if (exitMtm > 0 && Math.abs(exitMtm - rawMtmForExit) / Math.max(rawMtmForExit, 1e-18) > 0.002) {
+      const rawMtm = curMetric;
+      const exitMtm = clampLiveTrackerMtmForExit(ot, rawMtm);
+      if (exitMtm > 0 && Math.abs(exitMtm - rawMtm) / Math.max(rawMtm, 1e-18) > 0.002) {
         log.warn(
           {
             mint: mint.slice(0, 8),
             symbol: ot.symbol,
-            rawMtmUsd: +rawMtmForExit.toFixed(8),
+            rawMtmUsd: +rawMtm.toFixed(8),
             exitMtmUsd: +exitMtm.toFixed(8),
-            avgEntry: avgForClamp > 0 ? +avgForClamp.toFixed(8) : null,
-            lastObservedBefore: ot.lastObservedPriceUsd ?? null,
-            tpGridStep: tpStepClamp > 0 ? tpStepClamp : null,
           },
           'live tracker: MTM tick jump clamped for exit decisions (ghost quote guard)',
         );
@@ -2144,7 +2133,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.avgEntry = numB / ot.totalInvestedUsd;
         const numMB = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numMB / ot.totalInvestedUsd;
-        resetMtmObservedBaseline(ot, marketBuy);
         ot.remainingFraction = 1;
         ot.liveExitProfileMode = 'B';
         effCfg = cfgEffectiveForOpen(cfg, ot);
@@ -2350,7 +2338,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.avgEntry = num / ot.totalInvestedUsd;
         const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-        resetMtmObservedBaseline(ot, marketBuy);
         markDcaStepFired(ot, stepIndex, -dropPct / 100);
         variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
@@ -2510,7 +2497,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.avgEntry = num / ot.totalInvestedUsd;
         const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
         ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-        resetMtmObservedBaseline(ot, marketBuy);
         markDcaStepFired(ot, dcaIdx, lvl.triggerPct);
         variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
@@ -2588,31 +2574,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       let maxK = Math.floor((pnlFrac + LADDER_PNL_EPS) / step);
       if (tgEff.maxRungs != null && tgEff.maxRungs >= 1) {
         maxK = Math.min(maxK, tgEff.maxRungs);
-      }
-      const rawPnlFrac =
-        rawMtmForExit != null && ot.avgEntry > 0 ? rawMtmForExit / ot.avgEntry - 1 : pnlFrac;
-      if (
-        maxK < 1 &&
-        step > 0 &&
-        ot.avgEntry > 0 &&
-        rawPnlFrac + LADDER_PNL_EPS >= step &&
-        pnlFrac + LADDER_PNL_EPS < step
-      ) {
-        log.warn(
-          {
-            mint: mint.slice(0, 8),
-            symbol: ot.symbol,
-            avgEntry: +ot.avgEntry.toFixed(8),
-            pnlFracExit: +pnlFrac.toFixed(6),
-            pnlFracRaw: +rawPnlFrac.toFixed(6),
-            maxK,
-            rawMtmUsd: rawMtmForExit != null ? +rawMtmForExit.toFixed(8) : null,
-            exitMtmUsd: +curMetric.toFixed(8),
-            tpGridStep: step,
-            lastObservedBefore: ot.lastObservedPriceUsd ?? null,
-          },
-          'live tracker: TP grid skipped (ghost clamp vs raw snapshot)',
-        );
       }
       for (let k = 1; k <= maxK; k++) {
         const threshold = k * step;
