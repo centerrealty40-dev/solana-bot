@@ -210,7 +210,10 @@ async function buildMintUniverse(): Promise<{ mints: string[]; hotMintSet: Set<s
   const [heartbeat, whitelist, pgTop, nearMiss] = await Promise.all([
     readPriorityJupiterSpotMintHeartbeat(),
     readWhitelistMints(),
-    loadPgTopMints(MAX_MINTS),
+    loadPgTopMints(MAX_MINTS).catch((err) => {
+      console.warn('[priority-jupiter-spot-watch] pg top mints failed', err);
+      return [] as string[];
+    }),
     nearMissLimit > 0 ? loadPgNearMissSpikeMints(nearMissLimit) : Promise.resolve([]),
   ]);
   const hotMintSet = new Set<string>([...heartbeat, ...whitelist]);
@@ -257,7 +260,10 @@ async function runTick(): Promise<void> {
   const { mints, hotMintSet } = await buildMintUniverse();
   if (mints.length === 0) return;
 
-  const metaMap = await loadMintMetaMap(mints);
+  const metaMap = await loadMintMetaMap(mints).catch((err) => {
+    console.warn('[priority-jupiter-spot-watch] mint meta load failed', err);
+    return new Map<string, MintMeta>();
+  });
   const snapshotPxByMint = new Map<string, number>();
   for (const mint of mints) {
     const refPx = metaMap.get(mint)?.refPx;
@@ -450,7 +456,9 @@ async function main(): Promise<void> {
     }),
   );
 
-  await runTick();
+  await runTick().catch((err) => {
+    console.error('[priority-jupiter-spot-watch] initial tick error', err);
+  });
   setInterval(() => {
     void runTick().catch((err) => {
       console.error('[priority-jupiter-spot-watch] tick error', err);

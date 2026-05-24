@@ -60,14 +60,15 @@ export function nearMissFromRollingBars(bars: Bar[], gapPct: number, rollingMin:
 }
 
 async function loadRecentBarsByMint(minMcap: number, maxMints: number): Promise<Map<string, Bar[]>> {
+  const windowMin = Math.max(10, Math.min(45, Math.floor(envNum('PRIORITY_JUPITER_SPOT_NEAR_MISS_WINDOW_MIN', 25))));
   const q = `
     WITH snap AS (
       SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd
       FROM (
-        SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM meteora_pair_snapshots WHERE ts > NOW() - INTERVAL '45 minutes'
-        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM raydium_pair_snapshots WHERE ts > NOW() - INTERVAL '45 minutes'
-        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM orca_pair_snapshots WHERE ts > NOW() - INTERVAL '45 minutes'
-        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM pumpswap_pair_snapshots WHERE ts > NOW() - INTERVAL '45 minutes'
+        SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM meteora_pair_snapshots WHERE ts > NOW() - INTERVAL '${windowMin} minutes'
+        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM raydium_pair_snapshots WHERE ts > NOW() - INTERVAL '${windowMin} minutes'
+        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM orca_pair_snapshots WHERE ts > NOW() - INTERVAL '${windowMin} minutes'
+        UNION ALL SELECT base_mint, ts, price_usd, market_cap_usd, fdv_usd FROM pumpswap_pair_snapshots WHERE ts > NOW() - INTERVAL '${windowMin} minutes'
       ) u
       WHERE price_usd > 0
     ),
@@ -105,6 +106,7 @@ async function loadRecentBarsByMint(minMcap: number, maxMints: number): Promise<
  * Mints within gap of spike tier (consecutive and/or rolling windows).
  */
 export async function loadPgNearMissSpikeMints(limit: number): Promise<string[]> {
+  try {
   const gapPct = Math.max(0.5, Math.min(8, envNum('PRIORITY_JUPITER_SPOT_NEAR_MISS_GAP_PCT', 3)));
   const minMcap = Math.max(0, envNum('PRIORITY_JUPITER_SPOT_MIN_MCAP_USD', 2_000_000));
   const lim = Math.max(5, Math.min(80, limit));
@@ -112,7 +114,7 @@ export async function loadPgNearMissSpikeMints(limit: number): Promise<string[]>
   const rollingMin = Math.max(1, Math.floor(envNum('SPIKE_ALERT_ROLLING_MINUTES', 3)));
   const rollingMax = Math.max(rollingMin, Math.floor(envNum('SPIKE_ALERT_ROLLING_MAX_MINUTES', 10)));
 
-  const barsByMint = await loadRecentBarsByMint(minMcap, lim * 4);
+  const barsByMint = await loadRecentBarsByMint(minMcap, lim * 2);
   const scored: Array<{ mint: string; refMcap: number }> = [];
 
   for (const [mint, bars] of barsByMint) {
@@ -124,4 +126,8 @@ export async function loadPgNearMissSpikeMints(limit: number): Promise<string[]>
 
   scored.sort((a, b) => b.refMcap - a.refMcap);
   return scored.slice(0, lim).map((x) => x.mint);
+  } catch (err) {
+    console.warn('[priority-jupiter-spot-near-miss] pg near-miss query failed', err);
+    return [];
+  }
 }

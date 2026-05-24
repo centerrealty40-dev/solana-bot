@@ -87,6 +87,7 @@ async function refreshTokensPrimaryPairs(mintBestPool: Map<string, { pair: strin
  */
 export async function refreshCanonicalPoolsForMints(mints: string[]): Promise<number> {
   if (!envBool('MARKET_CANONICAL_POOL_REFRESH_ENABLED', true)) return 0;
+  try {
   const filter = mints.map((m) => m.trim()).filter((m) => ADDR_RE.test(m));
   if (filter.length === 0) return 0;
 
@@ -110,6 +111,10 @@ export async function refreshCanonicalPoolsForMints(mints: string[]): Promise<nu
     mintBestPool.set(mint, { pair: entry.meta.pair_address, liq: entry.liq });
   }
   return refreshTokensPrimaryPairs(mintBestPool);
+  } catch (err) {
+    console.warn('[market-canonical-pool-refresh] failed', err);
+    return 0;
+  }
 }
 
 export function canonicalPoolRefreshIntervalMs(): number {
