@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.276] — 2026-05-21
+
+### Price read optim A–D: PG 10s snapshots, DexScreener fallback, canonical pool refresh, rolling near-miss
+
+**Context:** medium-term latency items after 1.11.275 — sub-minute audit trail, price gaps when Jupiter null, fresher `tokens.primary_pair`, wider near-miss universe.
+
+**Change:**
+- **A** — `priority_mint_spot_snapshots` (migration 0024) + upsert each fast-watch tick (`priority-mint-spot-snapshot-pg.ts`).
+- **B** — DexScreener spot fallback when Jupiter v3/quote missing (`dexscreener-spot-price.ts`).
+- **C** — `tokens.primary_pair` refresh every 5s for fast-watch universe from DEX snapshot tables (`market-canonical-pool-refresh.ts`).
+- **D** — near-miss spike mints: consecutive **and** rolling windows (`priority-jupiter-spot-near-miss.ts`).
+
+**Rollback:** `git revert`; `pm2 reload market-priority-jupiter-spot-watch`; migration table optional to keep.
+
+---
+
 ## [1.11.275] — 2026-05-24
 
 ### Price read optim: Jupiter quote on hot mints, near-miss universe, 30s collectors, reeval 10s

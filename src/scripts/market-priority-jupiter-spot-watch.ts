@@ -15,6 +15,14 @@ import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format
 import { fetchPrioritySpotPrices } from './priority-jupiter-spot-prices.js';
 import { loadPgNearMissSpikeMints } from './priority-jupiter-spot-near-miss.js';
 import {
+  upsertPriorityMintSpotSnapshots,
+  type PriorityMintSpotSnapshotRow,
+} from './priority-mint-spot-snapshot-pg.js';
+import {
+  canonicalPoolRefreshIntervalMs,
+  refreshCanonicalPoolsForMints,
+} from './market-canonical-pool-refresh.js';
+import {
   recordMarketFastAlert,
   wasMarketFastAlertRecent,
   marketFastAlertDedupeWindowMs,
@@ -86,6 +94,7 @@ const detectCfg = loadJupiterSpotDetectConfigFromEnv();
 const priceHistory = new Map<string, JupiterPriceSample[]>();
 const lastSpikeSentMs = new Map<string, number>();
 const lastDipsPeakMs = new Map<string, number>();
+let lastUniverseMints: string[] = [];
 
 function pruneSamples(mint: string): void {
   const arr = priceHistory.get(mint);
@@ -266,12 +275,15 @@ async function runTick(): Promise<void> {
   const cache: PriorityJupiterSpotCache = { updatedAt: new Date(nowMs).toISOString(), entries: {} };
   let quoteCount = 0;
   let v3Count = 0;
+  let dexCount = 0;
+  const pgRows: PriorityMintSpotSnapshotRow[] = [];
 
   for (const mint of mints) {
     const spot = prices.get(mint);
     if (!spot || !(spot.priceUsd > 0)) continue;
     const px = spot.priceUsd;
     if (spot.source === 'jupiter_quote') quoteCount += 1;
+    else if (spot.source === 'dexscreener') dexCount += 1;
     else v3Count += 1;
     pushSample(mint, px, nowMs);
 
@@ -288,6 +300,16 @@ async function runTick(): Promise<void> {
       source: spot.source,
     };
     cache.entries[mint] = entry;
+
+    pgRows.push({
+      mint,
+      pairAddress: spot.pairAddress ?? null,
+      priceUsd: px,
+      marketCapUsd: (mcapNow ?? 0) > 0 ? mcapNow : null,
+      liquidityUsd: spot.liquidityUsd ?? meta?.liqUsd ?? null,
+      source: spot.source,
+      tsMs: nowMs,
+    });
 
     const samples = priceHistory.get(mint) ?? [];
     if (samples.length < 2) continue;
@@ -392,7 +414,11 @@ async function runTick(): Promise<void> {
   }
 
   await writePriorityJupiterSpotCache(cache);
-  if (quoteCount + v3Count > 0) {
+  lastUniverseMints = mints;
+  void upsertPriorityMintSpotSnapshots(pgRows).catch((err) => {
+    console.warn('[priority-jupiter-spot-watch] pg snapshot upsert error', err);
+  });
+  if (quoteCount + v3Count + dexCount > 0) {
     console.log(
       JSON.stringify({
         ts: new Date().toISOString(),
@@ -400,9 +426,11 @@ async function runTick(): Promise<void> {
         msg: 'tick',
         mints: mints.length,
         hot: hotMintSet.size,
-        priced: quoteCount + v3Count,
+        priced: quoteCount + v3Count + dexCount,
         quote: quoteCount,
         v3: v3Count,
+        dex: dexCount,
+        pgRows: pgRows.length,
       }),
     );
   }
@@ -428,6 +456,30 @@ async function main(): Promise<void> {
       console.error('[priority-jupiter-spot-watch] tick error', err);
     });
   }, POLL_MS);
+
+  if (envBool('MARKET_CANONICAL_POOL_REFRESH_ENABLED', true)) {
+    const poolMs = canonicalPoolRefreshIntervalMs();
+    setInterval(() => {
+      if (lastUniverseMints.length === 0) return;
+      void refreshCanonicalPoolsForMints(lastUniverseMints)
+        .then((n) => {
+          if (n > 0) {
+            console.log(
+              JSON.stringify({
+                ts: new Date().toISOString(),
+                component: 'priority-jupiter-spot-watch',
+                msg: 'canonical-pool-refresh',
+                updated: n,
+                mints: lastUniverseMints.length,
+              }),
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('[priority-jupiter-spot-watch] canonical pool refresh error', err);
+        });
+    }, poolMs);
+  }
 }
 
 if (process.env.PRIORITY_JUPITER_SPOT_SKIP_MAIN !== '1') {
