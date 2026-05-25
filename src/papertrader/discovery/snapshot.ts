@@ -3,12 +3,16 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
-import { CANONICAL_SNAPSHOT_ROW_ORDER_SQL } from './snapshot-canonical-pick.js';
+import {
+  CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
+  CANONICAL_VOLUME_ROW_ORDER_SQL,
+} from './snapshot-canonical-pick.js';
 
 export {
   pickCanonicalSnapshotRow,
   dedupeSnapshotTaggedByMintCanonical,
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
+  CANONICAL_VOLUME_ROW_ORDER_SQL,
 } from './snapshot-canonical-pick.js';
 
 function sqlQuoteMint(value: string): string {
@@ -124,15 +128,44 @@ function mapSnapshotRow(row: Record<string, unknown>, source: string): SnapshotC
  */
 export async function fetchLatestCrossVenueSnapshotRowForMint(
   mint: string,
-  opts?: { lookbackMinutes?: number },
+  opts?: { lookbackMinutes?: number; canonicalByVolume?: boolean },
 ): Promise<SnapshotCandidateRow | null> {
   const m = mint.trim();
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m)) return null;
+  const map = await fetchCrossVenueSnapshotRowsByVolumeCanonical(
+    { volumeLeaderSnapshotLookbackMin: opts?.lookbackMinutes ?? 30 } as PaperTraderConfig,
+    [m],
+    { canonicalByVolume: opts?.canonicalByVolume === true, lookbackMinutes: opts?.lookbackMinutes },
+  );
+  return map.get(m) ?? null;
+}
+
+/**
+ * Batch: latest row per mint across venues. Volume tier uses max volume_1h pair; default max liq.
+ */
+export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
+  cfg: PaperTraderConfig,
+  mints: readonly string[],
+  opts?: { canonicalByVolume?: boolean; lookbackMinutes?: number },
+): Promise<Map<string, SnapshotCandidateRow>> {
+  const out = new Map<string, SnapshotCandidateRow>();
+  const valid = mints
+    .map((m) => m.trim())
+    .filter((m) => /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(m));
+  if (valid.length === 0) return out;
+
   const lookbackMin =
     opts?.lookbackMinutes != null && Number.isFinite(opts.lookbackMinutes) && opts.lookbackMinutes > 0
       ? Math.floor(opts.lookbackMinutes)
-      : 30;
-  const qm = sqlQuoteMint(m);
+      : Math.max(5, Math.min(240, cfg.volumeLeaderSnapshotLookbackMin ?? 30));
+
+  const orderSql =
+    opts?.canonicalByVolume === true
+      ? CANONICAL_VOLUME_ROW_ORDER_SQL
+      : CANONICAL_SNAPSHOT_ROW_ORDER_SQL;
+
+  const mintList = valid.map((m) => sqlQuoteMint(m)).join(', ');
+
   const unions = SNAPSHOT_TABLES.map(
     (t) => `
     SELECT
@@ -154,7 +187,7 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
       '${t.source}'::text AS source
     FROM ${t.table} p
     LEFT JOIN tokens tok ON tok.mint = p.base_mint
-    WHERE p.base_mint = ${qm}
+    WHERE p.base_mint IN (${mintList})
       AND p.ts >= now() - interval '${lookbackMin} minutes'
       AND COALESCE(p.price_usd, 0) > 0
   `,
@@ -167,7 +200,8 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
     ranked AS (
       SELECT *,
              ROW_NUMBER() OVER (
-               ORDER BY ${CANONICAL_SNAPSHOT_ROW_ORDER_SQL}
+               PARTITION BY mint
+               ORDER BY ${orderSql}
              ) AS rn
       FROM raw
     )
@@ -178,7 +212,11 @@ export async function fetchLatestCrossVenueSnapshotRowForMint(
     WHERE rn = 1
   `));
   const rows = r as unknown as Record<string, unknown>[];
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  const row = rows[0];
-  return mapSnapshotRow(row, String(row.source ?? '?'));
+  if (!Array.isArray(rows)) return out;
+  for (const row of rows) {
+    const mint = String(row.mint ?? '');
+    if (!mint) continue;
+    out.set(mint, mapSnapshotRow(row, String(row.source ?? '?')));
+  }
+  return out;
 }

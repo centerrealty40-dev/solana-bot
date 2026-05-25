@@ -51,6 +51,7 @@ import {
 } from './pg-data-coverage-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
+import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
 import { shouldEvaluateMint } from './discovery-eval-throttle.js';
@@ -247,7 +248,11 @@ function resolveDiscoveryReevalSec(
   cfg: PaperTraderConfig,
   mint: string,
   priorityMintSet: ReadonlySet<string>,
+  volumeLeaderMintSet: ReadonlySet<string>,
 ): number {
+  if (cfg.volumeLeaderEnabled && volumeLeaderMintSet.has(mint)) {
+    return cfg.volumeLeaderReevalSec;
+  }
   if (cfg.priorityDiscoveryEnabled && priorityMintSet.has(mint)) {
     return cfg.priorityDiscoveryReevalSec;
   }
@@ -257,9 +262,13 @@ function resolveDiscoveryReevalSec(
 function shouldEvaluate(
   mint: string,
   priorityMintSet: ReadonlySet<string>,
+  volumeLeaderMintSet: ReadonlySet<string>,
   cfg: PaperTraderConfig,
 ): boolean {
-  return shouldEvaluateMint(mint, resolveDiscoveryReevalSec(cfg, mint, priorityMintSet));
+  return shouldEvaluateMint(
+    mint,
+    resolveDiscoveryReevalSec(cfg, mint, priorityMintSet, volumeLeaderMintSet),
+  );
 }
 
 function buildFeatures(
@@ -396,7 +405,17 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   if (priorityInjected.length > 0) {
     snapshotTagged = [...snapshotTagged, ...priorityInjected];
   }
-  snapshotTagged = dedupeSnapshotTaggedByMintCanonical(snapshotTagged);
+  const { injected: volumeInjected, volumeLeaderMintSet } = await injectVolumeLeaderCandidates(
+    cfg,
+    snapshotTagged,
+  );
+  if (volumeInjected.length > 0) {
+    snapshotTagged = [...snapshotTagged, ...volumeInjected];
+  }
+  for (const m of volumeLeaderMintSet) priorityMintSet.add(m);
+  snapshotTagged = dedupeSnapshotTaggedByMintCanonical(snapshotTagged, {
+    volumeLeaderMints: volumeLeaderMintSet,
+  });
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
   }
@@ -420,7 +439,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const allowedFlag = new Map<string, boolean>();
   for (const { row } of snapshotTagged) {
     if (allowedFlag.has(row.mint)) continue;
-    allowedFlag.set(row.mint, shouldEvaluate(row.mint, priorityMintSet, cfg));
+    allowedFlag.set(
+      row.mint,
+      shouldEvaluate(row.mint, priorityMintSet, volumeLeaderMintSet, cfg),
+    );
   }
   const allowedSnapshotTagged = snapshotTagged.filter(({ row }) => allowedFlag.get(row.mint) === true);
 
@@ -520,7 +542,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         lane,
         source: row.source,
         reason: 'reeval_throttle',
-        discoveryReevalSec: resolveDiscoveryReevalSec(cfg, row.mint, priorityMintSet),
+        discoveryReevalSec: resolveDiscoveryReevalSec(cfg, row.mint, priorityMintSet, volumeLeaderMintSet),
       });
     }
   }

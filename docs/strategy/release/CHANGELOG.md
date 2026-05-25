@@ -8,6 +8,36 @@
 
 ---
 
+## [1.11.274] — 2026-05-25
+
+### Discovery: Volume Leader tier (structural)
+
+**Context:** SQL pool ranks by max liq, not volume; high-volume mints (e.g. RICH) fall out of universe after mcap dip or wrong canonical pool.
+
+**Change:**
+- `volume-leader-query.ts` — top-N mints by peak `volume_1h` (24h, cross-DEX), cached 60s.
+- `volume-leader-inject.ts` — guaranteed inject + eval every 15s; canonical pair = **max volume_1h**, not max liq.
+- `pickCanonicalByVolumeRow` + dedupe override for volume-leader mints.
+- Env: `PAPER_VOLUME_LEADER_ENABLED`, `TOP_N=50`, `REEVAL_SEC=15`.
+
+**Rollback:** `PAPER_VOLUME_LEADER_ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.273-stable] — 2026-05-24
+
+### Rollback: revert 1.11.274–1.11.284 (restore pre-incident prod)
+
+**Context:** After ROUTER spike (~12:55 MSK 24.05) hotfixes 1.11.274–284 broke collectors, alerts, live-oscar. Restore last known-good **`dedbb9a`**.
+
+**Change:** Revert tree to 1.11.273; remove Jupiter fast-path watcher, collector sanity layers, canonical 360m, PM2 splits from tip.
+
+**Prod:** `git reset --hard dedbb9a && npm ci && pm2 delete market-priority-jupiter-spot-watch; pm2 reload ecosystem.config.cjs --update-env`
+
+**Rollback:** re-apply individual commits from 1.11.274+ after review.
+
+---
+
 ## [1.11.273] — 2026-05-21
 
 ### Dips Telegram: compact pullback/retrace alerts
