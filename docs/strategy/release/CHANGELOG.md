@@ -8,6 +8,16 @@
 
 ---
 
+## [1.11.277] — 2026-05-25
+
+### Tune: discovery min mcap $5M → $3M
+
+`PAPER_DISCOVERY_MIN_MARKET_CAP_USD=3000000` для live-oscar (SQL pool + eval gate `mcap<3000000`).
+
+**Rollback:** вернуть `5000000` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.276] — 2026-05-25
 
 ### Discovery: Volume Leader Jupiter cross-check (Step 3)
