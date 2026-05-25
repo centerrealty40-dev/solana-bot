@@ -54,6 +54,7 @@ import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
+import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
 import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
 import { shouldEvaluateMint } from './discovery-eval-throttle.js';
 import {
@@ -484,9 +485,17 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     };
   }
 
-  await refreshPriorityMintPricesFromJupiter(cfg, allowedSnapshotTagged.map((x) => x.row), priorityMintSet);
+  const evalRows = allowedSnapshotTagged.map((x) => x.row);
+  const { refreshedMints: volumeLeaderJupiterRefreshed } =
+    await crossCheckVolumeLeaderSnapshotsFromJupiter(cfg, evalRows, volumeLeaderMintSet);
+  await refreshPriorityMintPricesFromJupiter(
+    cfg,
+    evalRows,
+    priorityMintSet,
+    volumeLeaderJupiterRefreshed,
+  );
 
-  const rowsForCtx = allowedSnapshotTagged.map((x) => x.row);
+  const rowsForCtx = evalRows;
   const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),

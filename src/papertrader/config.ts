@@ -312,6 +312,15 @@ const ConfigSchema = z.object({
   discoverySnapshotSanityZeroLiqMaxMcapUsd: z.coerce.number().nonnegative().default(500_000),
 
   /**
+   * Volume-leader Jupiter cross-check (1.11.276): tradable quote vs PG price/mcap перед eval.
+   * Rollback: `PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED=0`.
+   */
+  volumeLeaderJupiterCrossCheckEnabled: z.boolean().default(true),
+  volumeLeaderJupiterCrossCheckMaxPerTick: z.coerce.number().int().min(1).max(50).default(20),
+  volumeLeaderJupiterCrossCheckMaxDivergencePct: z.coerce.number().min(1).max(100).default(35),
+  volumeLeaderJupiterCrossCheckMinDivergencePct: z.coerce.number().min(0).max(20).default(0.5),
+
+  /**
    * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
    * Файл: один mint на строку, `#` — комментарии. Env: `LIVE_MINT_BLACKLIST_ENABLED`, `LIVE_MINT_BLACKLIST_PATH`.
    */
@@ -986,6 +995,16 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_DISCOVERY_SNAPSHOT_SANITY_MIN_LIQ_SHARE_OF_MINT_MAX,
     discoverySnapshotSanityZeroLiqMaxMcapUsd:
       process.env.PAPER_DISCOVERY_SNAPSHOT_SANITY_ZERO_LIQ_MAX_MCAP_USD,
+    volumeLeaderJupiterCrossCheckEnabled: envBool(
+      process.env.PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED,
+      true,
+    ),
+    volumeLeaderJupiterCrossCheckMaxPerTick:
+      process.env.PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK,
+    volumeLeaderJupiterCrossCheckMaxDivergencePct:
+      process.env.PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT,
+    volumeLeaderJupiterCrossCheckMinDivergencePct:
+      process.env.PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MIN_DIVERGENCE_PCT,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),
