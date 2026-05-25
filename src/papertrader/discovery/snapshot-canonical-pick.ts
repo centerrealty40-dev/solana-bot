@@ -1,4 +1,8 @@
 import type { SnapshotCandidateRow } from '../types.js';
+import {
+  filterSaneDiscoverySnapshotRows,
+  type DiscoverySnapshotSanityCfg,
+} from './snapshot-row-sanity.js';
 
 /** SQL tie-break для канонического пула mint: max liq, затем свежесть. */
 export const CANONICAL_SNAPSHOT_ROW_ORDER_SQL =
@@ -72,9 +76,19 @@ export function pickCanonicalByVolumeRow(
 
 export function dedupeSnapshotTaggedByMintCanonical<T extends { row: SnapshotCandidateRow }>(
   tagged: T[],
-  opts?: { volumeLeaderMints?: ReadonlySet<string> },
+  opts?: {
+    volumeLeaderMints?: ReadonlySet<string>;
+    sanityCfg?: DiscoverySnapshotSanityCfg;
+  },
 ): T[] {
   const volSet = opts?.volumeLeaderMints;
+  const sanity = opts?.sanityCfg ?? {
+    enabled: false,
+    refMcapMinUsd: 0,
+    minLiqToRefMcapRatio: 0,
+    minLiqShareOfMintMax: 0,
+    zeroLiqMaxMcapUsd: 0,
+  };
   const groups = new Map<string, T[]>();
   for (const item of tagged) {
     const arr = groups.get(item.row.mint) ?? [];
@@ -83,7 +97,11 @@ export function dedupeSnapshotTaggedByMintCanonical<T extends { row: SnapshotCan
   }
   const out: T[] = [];
   for (const [mint, group] of groups) {
-    const rows = group.map((g) => g.row);
+    const rows = filterSaneDiscoverySnapshotRows(
+      group.map((g) => g.row),
+      sanity,
+    );
+    if (rows.length === 0) continue;
     const pick =
       volSet?.has(mint) === true
         ? pickCanonicalByVolumeRow(rows)

@@ -5,8 +5,12 @@ import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
 import {
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
-  CANONICAL_VOLUME_ROW_ORDER_SQL,
 } from './snapshot-canonical-pick.js';
+import {
+  buildDiscoverySnapshotSanitySqlClause,
+  discoverySnapshotSanityCfg,
+  pickCanonicalSnapshotRowsByMint,
+} from './snapshot-row-sanity.js';
 
 export {
   pickCanonicalSnapshotRow,
@@ -66,14 +70,22 @@ export async function fetchSnapshotLaneCandidates(
     cfg.discoveryMinMarketCapUsd > 0
       ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
+  const sanitySql = buildDiscoverySnapshotSanitySqlClause(cfg);
 
   const r = await db.execute(dsql.raw(`
     WITH raw AS (
       ${unions}
     ),
-    eligible AS (
-      SELECT *
+    with_max AS (
+      SELECT *,
+             MAX(liquidity_usd) OVER (PARTITION BY mint) AS mint_max_liq
       FROM raw
+    ),
+    eligible AS (
+      SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,
+             price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
+             market_cap_usd, pair_address, source
+      FROM with_max
       WHERE COALESCE(age_min, 0) >= ${lc.MIN_AGE_MIN}
         ${maxAgeFilter}
         AND liquidity_usd >= ${lc.MIN_LIQ_USD}
@@ -83,6 +95,7 @@ export async function fetchSnapshotLaneCandidates(
         AND buys_5m >= ${lc.MIN_BUYS_5M}
         AND sells_5m >= ${lc.MIN_SELLS_5M}
         ${minMcapFilter}
+        ${sanitySql}
     ),
     ranked AS (
       SELECT *,
@@ -159,11 +172,6 @@ export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
       ? Math.floor(opts.lookbackMinutes)
       : Math.max(5, Math.min(240, cfg.volumeLeaderSnapshotLookbackMin ?? 30));
 
-  const orderSql =
-    opts?.canonicalByVolume === true
-      ? CANONICAL_VOLUME_ROW_ORDER_SQL
-      : CANONICAL_SNAPSHOT_ROW_ORDER_SQL;
-
   const mintList = valid.map((m) => sqlQuoteMint(m)).join(', ');
 
   const unions = SNAPSHOT_TABLES.map(
@@ -197,26 +205,31 @@ export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
     WITH raw AS (
       ${unions}
     ),
-    ranked AS (
-      SELECT *,
-             ROW_NUMBER() OVER (
-               PARTITION BY mint
-               ORDER BY ${orderSql}
-             ) AS rn
+    latest_per_pair AS (
+      SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,
+             price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
+             market_cap_usd, pair_address, source,
+             ROW_NUMBER() OVER (PARTITION BY mint, pair_address ORDER BY ts DESC) AS rn
       FROM raw
     )
     SELECT mint, symbol, holder_count, token_age_min, ts, launch_ts, age_min,
            price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
            market_cap_usd, pair_address, source
-    FROM ranked
+    FROM latest_per_pair
     WHERE rn = 1
   `));
   const rows = r as unknown as Record<string, unknown>[];
   if (!Array.isArray(rows)) return out;
+  const mapped: SnapshotCandidateRow[] = [];
   for (const row of rows) {
     const mint = String(row.mint ?? '');
     if (!mint) continue;
-    out.set(mint, mapSnapshotRow(row, String(row.source ?? '?')));
+    mapped.push(mapSnapshotRow(row, String(row.source ?? '?')));
   }
+  const sanity = discoverySnapshotSanityCfg(cfg);
+  const picked = pickCanonicalSnapshotRowsByMint(mapped, sanity, {
+    canonicalByVolume: opts?.canonicalByVolume === true,
+  });
+  for (const [mint, row] of picked) out.set(mint, row);
   return out;
 }
