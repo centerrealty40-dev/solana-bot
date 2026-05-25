@@ -291,6 +291,17 @@ const ConfigSchema = z.object({
   priorityDiscoveryMinBs: z.coerce.number().nonnegative().default(0.85),
 
   /**
+   * Volume-leader tier (1.11.274): top-N mints by peak volume_1h за lookback — guaranteed dip-eval,
+   * каноническая пара = max volume (не max liq). Eval-gates (liq/mcap/dip) без изменений.
+   */
+  volumeLeaderEnabled: z.boolean().default(false),
+  volumeLeaderTopN: z.coerce.number().int().min(5).max(100).default(50),
+  volumeLeaderReevalSec: z.coerce.number().int().min(5).max(120).default(15),
+  volumeLeaderLookbackHours: z.coerce.number().int().min(1).max(48).default(24),
+  volumeLeaderQueryCacheSec: z.coerce.number().int().min(15).max(600).default(60),
+  volumeLeaderSnapshotLookbackMin: z.coerce.number().int().min(5).max(120).default(30),
+
+  /**
    * Исключить mint из discovery до тяжёлой работы (dip/Jupiter и т.д.) и не открывать по ним позиции.
    * Файл: один mint на строку, `#` — комментарии. Env: `LIVE_MINT_BLACKLIST_ENABLED`, `LIVE_MINT_BLACKLIST_PATH`.
    */
@@ -951,6 +962,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     priorityDiscoveryNearMissJupiterRefreshMaxPerTick:
       process.env.PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK,
     priorityDiscoveryMinBs: process.env.PAPER_PRIORITY_DISCOVERY_MIN_BS,
+    volumeLeaderEnabled: envBool(process.env.PAPER_VOLUME_LEADER_ENABLED, false),
+    volumeLeaderTopN: process.env.PAPER_VOLUME_LEADER_TOP_N,
+    volumeLeaderReevalSec: process.env.PAPER_VOLUME_LEADER_REEVAL_SEC,
+    volumeLeaderLookbackHours: process.env.PAPER_VOLUME_LEADER_LOOKBACK_HOURS,
+    volumeLeaderQueryCacheSec: process.env.PAPER_VOLUME_LEADER_QUERY_CACHE_SEC,
+    volumeLeaderSnapshotLookbackMin: process.env.PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN,
     mintBlacklistEnabled: envBool(process.env.LIVE_MINT_BLACKLIST_ENABLED, false),
     mintBlacklistPath: process.env.LIVE_MINT_BLACKLIST_PATH?.trim() || 'data/live/live-oscar-mint-blacklist.txt',
     liveExitModeAbEnabled: envBool(process.env.PAPER_LIVE_EXIT_MODE_AB, false),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickCanonicalSnapshotRow,
+  pickCanonicalByVolumeRow,
   dedupeSnapshotTaggedByMintCanonical,
 } from '../src/papertrader/discovery/snapshot-canonical-pick.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
@@ -58,5 +59,43 @@ describe('pickCanonicalSnapshotRow', () => {
     expect(tagged).toHaveLength(1);
     expect(tagged[0]?.row.source).toBe('raydium');
     expect(tagged[0]?.row.liquidity_usd).toBe(2_000_000);
+  });
+
+  it('volume tier dedupe picks max volume_1h pool', () => {
+    const mint = 'Mint222222222222222222222222222222222222222';
+    const lowVolHighLiq = row({
+      mint,
+      source: 'raydium',
+      liquidity_usd: 500_000,
+      volume_1h: 20_000,
+      pair_address: 'deadPool',
+    });
+    const highVol = row({
+      mint,
+      source: 'pumpswap',
+      liquidity_usd: 180_000,
+      volume_1h: 350_000,
+      pair_address: 'livePool',
+    });
+    const tagged = dedupeSnapshotTaggedByMintCanonical(
+      [
+        { row: lowVolHighLiq, lane: 'post_migration' },
+        { row: highVol, lane: 'post_migration' },
+      ],
+      { volumeLeaderMints: new Set([mint]) },
+    );
+    expect(tagged).toHaveLength(1);
+    expect(tagged[0]?.row.source).toBe('pumpswap');
+    expect(tagged[0]?.row.volume_1h).toBe(350_000);
+  });
+
+  it('pickCanonicalByVolumeRow prefers volume over liq', () => {
+    const mint = 'Mint333333333333333333333333333333333333333';
+    const pick = pickCanonicalByVolumeRow([
+      row({ mint, liquidity_usd: 400_000, volume_1h: 10_000 }),
+      row({ mint, liquidity_usd: 200_000, volume_1h: 300_000, source: 'pumpswap' }),
+    ]);
+    expect(pick?.volume_1h).toBe(300_000);
+    expect(pick?.source).toBe('pumpswap');
   });
 });
