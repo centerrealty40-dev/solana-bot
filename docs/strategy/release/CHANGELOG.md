@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.276] — 2026-05-25
+
+### Discovery: Volume Leader Jupiter cross-check (Step 3)
+
+**Context:** Volume tier mints могут иметь PG price/mcap с «не того» пула; priority Jupiter refresh делит budget с сотнями mint'ов.
+
+**Change:**
+- `volume-leader-jupiter-crosscheck.ts` — отдельный budget (20/tick) Jupiter quote для volume-leader mints.
+- Корректирует in-memory price/mcap при расхождении PG vs tradable (0.5–35%).
+- Priority refresh пропускает mint'ы, уже обновлённые cross-check'ом.
+
+**Rollback:** `PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.275] — 2026-05-25
 
 ### Discovery: snapshot liq/mcap sanity (Step 2)

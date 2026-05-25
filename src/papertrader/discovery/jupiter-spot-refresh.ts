@@ -19,6 +19,13 @@ export type JupiterSpotRefreshOptions = {
   onlyIfLowerThanSnapshot?: boolean;
   /** Per-row guard after quote; return false to skip applying price. */
   acceptPrice?: (row: SnapshotCandidateRow, jupiterPx: number, snapshotPx: number) => boolean;
+  /** Skip `priorityDiscoveryJupiterRefreshEnabled` gate (volume-leader cross-check tier). */
+  bypassPriorityJupiterGate?: boolean;
+  /** Skip apply when |Δ%| below this (noise). 0 = off. */
+  minApplyDivergencePct?: number;
+  /** Skip apply when |Δ%| above this (wild PG/Jupiter mismatch). */
+  maxApplyDivergencePct?: number;
+  onApplied?: (row: SnapshotCandidateRow) => void;
 };
 
 function defaultAccept(): boolean {
@@ -36,7 +43,10 @@ export async function refreshRowsPricesFromJupiter(
   options?: JupiterSpotRefreshOptions,
 ): Promise<JupiterSpotRefreshResult> {
   const result: JupiterSpotRefreshResult = { refreshed: 0, skipped: 0, errors: 0 };
-  if (!cfg.priorityDiscoveryJupiterRefreshEnabled || maxPerTick <= 0 || rows.length === 0) {
+  const jupiterGateOk = options?.bypassPriorityJupiterGate
+    ? true
+    : cfg.priorityDiscoveryJupiterRefreshEnabled;
+  if (!jupiterGateOk || maxPerTick <= 0 || rows.length === 0) {
     result.skipped += rows.filter(mintFilter).length;
     return result;
   }
@@ -87,6 +97,18 @@ export async function refreshRowsPricesFromJupiter(
         continue;
       }
 
+      const divPct = (Math.abs(jpx - snapPx) / snapPx) * 100;
+      const minDiv = options?.minApplyDivergencePct ?? 0;
+      const maxDiv = options?.maxApplyDivergencePct;
+      if (minDiv > 0 && divPct + 1e-12 < minDiv) {
+        result.skipped += 1;
+        continue;
+      }
+      if (maxDiv != null && maxDiv > 0 && divPct > maxDiv + 1e-12) {
+        result.skipped += 1;
+        continue;
+      }
+
       const accept = options?.acceptPrice ?? defaultAccept;
       if (!accept(row, jpx, snapPx)) {
         result.skipped += 1;
@@ -100,6 +122,7 @@ export async function refreshRowsPricesFromJupiter(
         if (scaled != null && scaled > 0) row.market_cap_usd = scaled;
       }
       result.refreshed += 1;
+      options?.onApplied?.(row);
     } catch {
       result.errors += 1;
     }

@@ -15,6 +15,7 @@ export async function refreshPriorityMintPricesFromJupiter(
   cfg: PaperTraderConfig,
   rows: SnapshotCandidateRow[],
   priorityMintSet: ReadonlySet<string>,
+  skipMints: ReadonlySet<string> = new Set(),
 ): Promise<PriorityPriceRefreshResult> {
   if (!cfg.priorityDiscoveryEnabled || !cfg.priorityDiscoveryJupiterRefreshEnabled) {
     return { refreshed: 0, skipped: 0, errors: 0 };
@@ -24,7 +25,7 @@ export async function refreshPriorityMintPricesFromJupiter(
   return refreshRowsPricesFromJupiter(
     cfg,
     rows,
-    (row) => priorityMintSet.has(row.mint),
+    (row) => priorityMintSet.has(row.mint) && !skipMints.has(row.mint),
     cfg.priorityDiscoveryJupiterRefreshMaxPerTick,
   );
 }
