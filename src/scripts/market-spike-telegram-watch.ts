@@ -50,6 +50,7 @@ import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db, sql as pgSql } from '../core/db/client.js';
+import { isTelegramMarketAlertMintBlocked } from './telegram-alert-mint-blacklist.js';
 
 const SNAPSHOT_TABLES = [
   'raydium_pair_snapshots',
@@ -847,17 +848,12 @@ function formatMarketCapUsd(n: number): string {
   return `$${n.toFixed(0)}`;
 }
 
-/** Blacklist spike-канала tiered: Orka / Orca (не слать в Telegram). */
-const SPIKE_TELEGRAM_BLACKLIST_MINTS = new Set<string>([
-  'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
-]);
-
 function isSpikeTelegramBlacklisted(
   mint: string,
   symbol: string | null | undefined,
   tokenName: string | null | undefined,
 ): boolean {
-  if (SPIKE_TELEGRAM_BLACKLIST_MINTS.has(mint.trim())) return true;
+  if (isTelegramMarketAlertMintBlocked(mint)) return true;
   if ((symbol ?? '').trim().toUpperCase() === 'ORKA') return true;
   if ((tokenName ?? '').trim().toLowerCase() === 'orka') return true;
   return false;

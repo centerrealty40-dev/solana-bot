@@ -8,6 +8,16 @@
 
 ---
 
+## [1.11.278] — 2026-05-25
+
+### Fix: Telegram blacklist ORCA mint (spike + dips)
+
+`orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE` — общий `telegram-alert-mint-blacklist.ts`; pullback/retrace больше не шлют алерты (spike уже блокировал mint).
+
+**Rollback:** revert commit; `pm2 reload ecosystem.config.cjs --update-env` для spike/pullback/retrace watchers.
+
+---
+
 ## [1.11.277] — 2026-05-25
 
 ### Tune: discovery min mcap $5M → $3M
