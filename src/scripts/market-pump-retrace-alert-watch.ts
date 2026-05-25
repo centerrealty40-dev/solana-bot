@@ -23,6 +23,7 @@ import {
   groupCanonicalRowsByTable,
 } from './market-snapshot-canonical-pool.js';
 import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format.js';
+import { isTelegramMarketAlertMintBlocked } from './telegram-alert-mint-blacklist.js';
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
@@ -530,6 +531,8 @@ async function runOnePass(
     pruneSendDedupe(sendDedupe, POLL_SEND_DEDUPE_MS * 3);
   }
   for (const [, row] of merged) {
+    if (isTelegramMarketAlertMintBlocked(row.base_mint)) continue;
+
     const html = buildAlertHtml(row);
     if (DRY_RUN) {
       console.log('[DRY_RUN]', html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());

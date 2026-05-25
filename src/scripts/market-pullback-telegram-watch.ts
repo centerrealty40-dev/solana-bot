@@ -25,6 +25,7 @@ import {
   groupCanonicalRowsByTable,
 } from './market-snapshot-canonical-pool.js';
 import { buildDipsCompactAlertHtml } from './market-dips-compact-telegram-format.js';
+import { isTelegramMarketAlertMintBlocked } from './telegram-alert-mint-blacklist.js';
 import {
   isMatureTokenMicroValleyArtifact,
   isRetraceContradictedByLatestSnapshot,
@@ -638,6 +639,10 @@ async function runOnePass(
   }
 
   for (const [mint, { dex, meta, pick, refM }] of byMint) {
+    if (isTelegramMarketAlertMintBlocked(mint)) {
+      skipped++;
+      continue;
+    }
     const peakMs = pick.peakTs.getTime();
     if (isDuplicateOngoingPullback(lastSentPeakMsByMint.get(mint), pick.peakTs)) {
       skipped++;
