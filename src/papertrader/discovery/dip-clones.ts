@@ -2,6 +2,7 @@ import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
+import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
 import { evaluateSnapshot, passesDiscoveryMinMarketCap, evaluateSnapshotPriorityTier } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
@@ -415,6 +416,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   for (const m of volumeLeaderMintSet) priorityMintSet.add(m);
   snapshotTagged = dedupeSnapshotTaggedByMintCanonical(snapshotTagged, {
     volumeLeaderMints: volumeLeaderMintSet,
+    sanityCfg: discoverySnapshotSanityCfg(cfg),
   });
   if (snapshotTagged.length === 0) {
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };

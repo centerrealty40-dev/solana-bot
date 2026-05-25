@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.275] — 2026-05-25
+
+### Discovery: snapshot liq/mcap sanity (Step 2)
+
+**Context:** ~17% eval blocks from `liq<300k` on bad PG snapshots (liq≈0 at high mcap, dead pools).
+
+**Change:**
+- `snapshot-row-sanity.ts` — reject liq≈0 + high mcap, liq/mcap ratio mismatch, dead pool (<10% mint max liq).
+- Applied in SQL lane pool, cross-venue inject fetch, and dedupe before canonical pick.
+- Env: `PAPER_DISCOVERY_SNAPSHOT_SANITY_*` (default on).
+
+**Rollback:** `PAPER_DISCOVERY_SNAPSHOT_SANITY_ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.274] — 2026-05-25
 
 ### Discovery: Volume Leader tier (structural)
