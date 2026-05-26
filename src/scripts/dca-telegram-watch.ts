@@ -16,6 +16,7 @@ type WatchState = {
   lastByWallet: Record<string, string>;
   lastByProgram: Record<string, string>;
   seenSignatures: Record<string, number>;
+  knownOrderIds: Record<string, number>;
   discoveredWallets: Record<string, number>;
   buySeries: Record<
     string,
@@ -36,8 +37,18 @@ function loadEnv(): void {
   }
 }
 
+/** Official Jupiter recurring-DCA program (network-wide new opens). */
+const JUPITER_DCA_PROGRAM = 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
+
 const WATCH_PROGRAMS = new Set([
+  JUPITER_DCA_PROGRAM,
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+  'proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u',
+  'DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH',
+]);
+
+/** Non-Jupiter bot-style DCA executors (seed vault + order_id pattern). */
+const BOT_DCA_PROGRAMS = new Set([
   'proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u',
   'DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH',
 ]);
@@ -77,14 +88,17 @@ function tgChatId(): string {
 }
 
 function wallets(): string[] {
-  const csv =
-    process.env.DCA_WATCH_WALLETS?.trim() ||
-    'trfb53BmkHNeoqaa3REgqnrbwUZqAFYdjTkivkJ6aWg,G5ZGRWwFRYUi5PL1fXXTktfdysRxTaYeDeoG4UM5jMba';
+  const csv = process.env.DCA_WATCH_WALLETS?.trim() || '';
+  if (!csv) return [];
   return Array.from(new Set(csv.split(',').map((s) => s.trim()).filter(Boolean)));
 }
 
 function discoveryEnabled(): boolean {
-  return process.env.DCA_WATCH_DISCOVERY_ENABLED === '1';
+  return process.env.DCA_WATCH_DISCOVERY_ENABLED !== '0';
+}
+
+function defaultDiscoveryPrograms(): string[] {
+  return [JUPITER_DCA_PROGRAM, ...BOT_DCA_PROGRAMS];
 }
 
 function maxDiscoveredWallets(): number {
@@ -93,9 +107,7 @@ function maxDiscoveredWallets(): number {
 }
 
 function discoveryPrograms(): string[] {
-  const csv =
-    process.env.DCA_WATCH_DISCOVERY_PROGRAMS?.trim() ||
-    'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4,proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u,DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH';
+  const csv = process.env.DCA_WATCH_DISCOVERY_PROGRAMS?.trim() || defaultDiscoveryPrograms().join(',');
   return Array.from(new Set(csv.split(',').map((s) => s.trim()).filter(Boolean)));
 }
 
@@ -128,6 +140,7 @@ function readState(): WatchState {
         lastByWallet: parsed.lastByWallet || {},
         lastByProgram: parsed.lastByProgram || {},
         seenSignatures: parsed.seenSignatures || {},
+        knownOrderIds: parsed.knownOrderIds || {},
         discoveredWallets: parsed.discoveredWallets || {},
         buySeries: parsed.buySeries || {},
       };
@@ -135,7 +148,7 @@ function readState(): WatchState {
   } catch {
     // ignore
   }
-  return { lastByWallet: {}, lastByProgram: {}, seenSignatures: {}, discoveredWallets: {}, buySeries: {} };
+  return { lastByWallet: {}, lastByProgram: {}, seenSignatures: {}, knownOrderIds: {}, discoveredWallets: {}, buySeries: {} };
 }
 
 function writeState(next: WatchState): void {
@@ -151,12 +164,16 @@ function gcState(st: WatchState): void {
   const now = Date.now();
   const sigCutoff = now - seenSigTtlMs();
   const walletCutoff = now - discoveredWalletTtlMs();
+  const orderCutoff = now - 30 * 24 * 3600 * 1000;
 
   for (const [sig, ts] of Object.entries(st.seenSignatures)) {
     if (!Number.isFinite(ts) || ts < sigCutoff) delete st.seenSignatures[sig];
   }
   for (const [w, ts] of Object.entries(st.discoveredWallets)) {
     if (!Number.isFinite(ts) || ts < walletCutoff) delete st.discoveredWallets[w];
+  }
+  for (const [orderId, ts] of Object.entries(st.knownOrderIds || {})) {
+    if (!Number.isFinite(ts) || ts < orderCutoff) delete st.knownOrderIds[orderId];
   }
 }
 
@@ -209,6 +226,7 @@ function extractAmountInOut(logs: string): { amountInRaw: string; amountOutRaw: 
 
 type Classified = {
   kind: 'BUY_EXEC' | 'SETUP' | 'CLOSE' | 'OTHER';
+  setupSource?: 'jupiter_dca' | 'bot_dca';
   programs: string[];
   orderId: string;
   amountInRaw: string;
@@ -234,13 +252,46 @@ function txLogs(tx: any): { logs: string; logsLower: string } {
   return { logs, logsLower: logs.toLowerCase() };
 }
 
-function isDcaSetup(tx: any, logsLower: string): boolean {
+function txProgramIds(tx: any): string[] {
+  const instructions = tx?.transaction?.message?.instructions || [];
+  const ids: string[] = [];
+  for (const ins of instructions) {
+    const pid = ins?.programId || ins?.program;
+    if (typeof pid === 'string' && !ids.includes(pid)) ids.push(pid);
+  }
+  return ids;
+}
+
+function isJupiterDcaOpen(logsLower: string): boolean {
+  return logsLower.includes('instruction: opendca');
+}
+
+function isJupiterDcaClose(logsLower: string): boolean {
+  return logsLower.includes('instruction: closedca');
+}
+
+function isJupiterDcaFill(logsLower: string): boolean {
+  return logsLower.includes('instruction: initiateflashfill') || logsLower.includes('instruction: fulfillflashfill');
+}
+
+function isBotDcaSetupWallet(tx: any): boolean {
   const types = instructionTypes(tx);
   const hasSeedVault = types.includes('createAccountWithSeed');
   const hasSyncNative = types.includes('syncNative');
-  const hasOrder = logsLower.includes('order_id:');
-  // Real DCA open = seed vault + WSOL sync; order_id is a strong extra signal.
-  return hasSeedVault && hasSyncNative && (hasOrder || types.includes('createIdempotent'));
+  return hasSeedVault && hasSyncNative;
+}
+
+function isBotDcaSetupOnProgram(tx: any, logsLower: string): boolean {
+  const programIds = txProgramIds(tx);
+  if (!programIds.some((p) => BOT_DCA_PROGRAMS.has(p))) return false;
+  return isBotDcaSetupWallet(tx) && logsLower.includes('order_id:');
+}
+
+function rememberOrderId(st: WatchState, orderId: string): boolean {
+  if (!orderId) return false;
+  if (st.knownOrderIds[orderId]) return false;
+  st.knownOrderIds[orderId] = Date.now();
+  return true;
 }
 
 function isDcaBuyExec(logsLower: string, orderId: string): boolean {
@@ -253,7 +304,7 @@ function isDcaClose(tx: any, logsLower: string, orderId: string): boolean {
   return types.includes('closeAccount') && Boolean(orderId || logsLower.includes('order_id:'));
 }
 
-function classifyTx(tx: any): Classified {
+function classifyTx(tx: any, opts?: { walletScoped?: boolean }): Classified {
   const instructions = tx?.transaction?.message?.instructions || [];
   const { logs, logsLower } = txLogs(tx);
 
@@ -276,10 +327,28 @@ function classifyTx(tx: any): Classified {
     walletTokenDelta: mintInfo?.delta,
   };
 
-  if (isDcaSetup(tx, logsLower)) return { kind: 'SETUP', ...base };
+  if (isJupiterDcaOpen(logsLower)) {
+    return { kind: 'SETUP', setupSource: 'jupiter_dca', ...base };
+  }
+  if (isBotDcaSetupOnProgram(tx, logsLower)) {
+    return { kind: 'SETUP', setupSource: 'bot_dca', ...base };
+  }
+  if (opts?.walletScoped && isBotDcaSetupWallet(tx)) {
+    return { kind: 'SETUP', setupSource: 'bot_dca', ...base };
+  }
+  if (isJupiterDcaFill(logsLower)) return { kind: 'OTHER', ...base };
   if (isDcaBuyExec(logsLower, orderId)) return { kind: 'BUY_EXEC', ...base };
+  if (isJupiterDcaClose(logsLower)) return { kind: 'CLOSE', ...base };
   if (isDcaClose(tx, logsLower, orderId)) return { kind: 'CLOSE', ...base };
   return { kind: 'OTHER', ...base };
+}
+
+function classifyProgramTx(program: string, tx: any, st: WatchState): Classified {
+  const cls = classifyTx(tx);
+  if (cls.kind === 'SETUP') return cls;
+  if (cls.kind !== 'BUY_EXEC' || !cls.orderId || !BOT_DCA_PROGRAMS.has(program)) return cls;
+  if (!rememberOrderId(st, cls.orderId)) return { ...cls, kind: 'OTHER' };
+  return { ...cls, kind: 'SETUP', setupSource: 'bot_dca' };
 }
 
 function shouldAlert(kind: Classified['kind'], wallet: string): boolean {
@@ -548,6 +617,46 @@ function buildBuyStyleAlert(
   ].join('\n');
 }
 
+function buildSetupStyleAlert(
+  wallet: string,
+  rowSig: string,
+  cls: Classified,
+  dex: DexInfo | null,
+  tsIso: string,
+): string {
+  const ca = cls.mint || 'unknown';
+  const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
+  const depositUsd = estimateBuyUsd(cls.amountInRaw, dex);
+  const source =
+    cls.setupSource === 'jupiter_dca' ? 'Jupiter DCA (OpenDcaV2)' : cls.setupSource === 'bot_dca' ? 'Bot DCA vault' : 'DCA';
+  const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
+
+  return [
+    `🟡 NEW DCA OPEN — ${symbol}`,
+    '',
+    `Source: ${source}`,
+    `Deposit est.: ${fmtMoney(depositUsd)}`,
+    `Scores: 👍`,
+    '',
+    `MC: ${fmtMoney(dex?.marketCap || 0)} → LQ: ${fmtMoney(dex?.liquidityUsd || 0)}`,
+    `V24h: ${fmtMoney(dex?.volume24h || 0)} → V1h: ${fmtMoney(dex?.volume1h || 0)}`,
+    `Price: ${dex?.priceUsd ? `$${dex.priceUsd.toFixed(6)}` : 'n/a'}`,
+    '',
+    `Futures: ${buildFuturesLinks(symbol)}`,
+    '',
+    `Trade bots: ${ca !== 'unknown' ? buildTradeBotsLinks(ca) : 'n/a'}`,
+    '',
+    `CA: ${ca}`,
+    `#${ca !== 'unknown' ? shortTag(ca) : 'unknown'}`,
+    '',
+    `User: ${wallet}`,
+    `#${shortTag(wallet)}`,
+    '',
+    `Observed: ${period}`,
+    `Tx: https://solscan.io/tx/${rowSig}`,
+  ].join('\n');
+}
+
 function activeWallets(_st: WatchState): string[] {
   // Poll only explicit watchlist wallets. Discovery alerts on SETUP via program stream.
   return wallets();
@@ -568,10 +677,11 @@ async function handleTransaction(
   wallet: string,
   row: SignatureRow,
   tx: any,
+  opts?: { walletScoped?: boolean },
 ): Promise<void> {
   if (isSeen(st, row.signature)) return;
 
-  const cls = classifyTx(tx);
+  const cls = classifyTx(tx, { walletScoped: opts?.walletScoped });
   if (cls.kind === 'OTHER') {
     markSeen(st, row.signature);
     return;
@@ -589,6 +699,9 @@ async function handleTransaction(
   if (cls.kind === 'BUY_EXEC') {
     const dex = await fetchDexInfo(cls.mint);
     alertText = buildBuyStyleAlert(st, wallet, row.signature, cls, dex, ts);
+  } else if (cls.kind === 'SETUP') {
+    const dex = await fetchDexInfo(cls.mint);
+    alertText = buildSetupStyleAlert(wallet, row.signature, cls, dex, ts);
   } else {
     const programTag = cls.programs.length > 0 ? cls.programs.map(shortAddr).join(',') : 'none';
     const parts = [
@@ -641,7 +754,7 @@ async function processWallet(wallet: string, st: WatchState): Promise<void> {
     );
     if (!tx) continue;
 
-    await handleTransaction(st, wallet, row, tx);
+    await handleTransaction(st, wallet, row, tx, { walletScoped: true });
     await sleep(150);
   }
 }
@@ -676,8 +789,12 @@ async function processProgram(program: string, st: WatchState): Promise<void> {
       6,
     );
     if (!tx) continue;
-    const cls = classifyTx(tx);
+    const cls = classifyProgramTx(program, tx, st);
     if (cls.kind !== 'SETUP') {
+      markSeen(st, row.signature);
+      continue;
+    }
+    if (cls.setupSource === 'jupiter_dca' && cls.orderId && !rememberOrderId(st, cls.orderId)) {
       markSeen(st, row.signature);
       continue;
     }
@@ -721,7 +838,12 @@ async function main(): Promise<void> {
   writeState(st);
   if (once) return;
 
-  console.log('[dca-watch] started', { wallets: wallets().length, pollMs: pollMs() });
+  console.log('[dca-watch] started', {
+    mode: discoveryEnabled() ? 'network-discovery' : 'wallet-only',
+    discoveryPrograms: discoveryPrograms().length,
+    optionalWallets: wallets().length,
+    pollMs: pollMs(),
+  });
   while (true) {
     await sleep(pollMs());
     await cycle(st);
