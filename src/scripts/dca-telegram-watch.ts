@@ -42,7 +42,7 @@ const WATCH_PROGRAMS = new Set([
   'DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH',
 ]);
 
-const BUY_MARKERS = ['buyexactquotein', 'swaptob', 'order_id:'];
+const EXPLICIT_WALLETS = () => new Set(wallets());
 
 function rpcUrl(): string {
   return (
@@ -84,7 +84,12 @@ function wallets(): string[] {
 }
 
 function discoveryEnabled(): boolean {
-  return process.env.DCA_WATCH_DISCOVERY_ENABLED !== '0';
+  return process.env.DCA_WATCH_DISCOVERY_ENABLED === '1';
+}
+
+function maxDiscoveredWallets(): number {
+  const n = Number(process.env.DCA_WATCH_MAX_DISCOVERED_WALLETS || 50);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 50;
 }
 
 function discoveryPrograms(): string[] {
@@ -213,11 +218,44 @@ type Classified = {
   walletTokenDelta?: number;
 };
 
-function classifyTx(tx: any): Classified {
+function instructionTypes(tx: any): string[] {
   const instructions = tx?.transaction?.message?.instructions || [];
+  const types: string[] = [];
+  for (const ins of instructions) {
+    const t = ins?.parsed?.type;
+    if (typeof t === 'string' && !types.includes(t)) types.push(t);
+  }
+  return types;
+}
+
+function txLogs(tx: any): { logs: string; logsLower: string } {
   const logsArr = tx?.meta?.logMessages || [];
   const logs = Array.isArray(logsArr) ? logsArr.join('\n') : '';
-  const logsLower = logs.toLowerCase();
+  return { logs, logsLower: logs.toLowerCase() };
+}
+
+function isDcaSetup(tx: any, logsLower: string): boolean {
+  const types = instructionTypes(tx);
+  const hasSeedVault = types.includes('createAccountWithSeed');
+  const hasSyncNative = types.includes('syncNative');
+  const hasOrder = logsLower.includes('order_id:');
+  // Real DCA open = seed vault + WSOL sync; order_id is a strong extra signal.
+  return hasSeedVault && hasSyncNative && (hasOrder || types.includes('createIdempotent'));
+}
+
+function isDcaBuyExec(logsLower: string, orderId: string): boolean {
+  // Regular Jupiter swaps often log order_id/SwapTob; DCA buy cycles use BuyExactQuoteIn + order_id.
+  return Boolean(orderId) && logsLower.includes('buyexactquotein');
+}
+
+function isDcaClose(tx: any, logsLower: string, orderId: string): boolean {
+  const types = instructionTypes(tx);
+  return types.includes('closeAccount') && Boolean(orderId || logsLower.includes('order_id:'));
+}
+
+function classifyTx(tx: any): Classified {
+  const instructions = tx?.transaction?.message?.instructions || [];
+  const { logs, logsLower } = txLogs(tx);
 
   const programs: string[] = [];
   for (const ins of instructions) {
@@ -225,31 +263,36 @@ function classifyTx(tx: any): Classified {
     if (typeof pid === 'string' && WATCH_PROGRAMS.has(pid) && !programs.includes(pid)) programs.push(pid);
   }
 
-  const hasBuy = BUY_MARKERS.some((m) => logsLower.includes(m));
-  const hasSetup = instructions.some((ins: any) =>
-    ['createAccountWithSeed', 'createIdempotent', 'syncNative'].includes(ins?.parsed?.type),
-  );
-  const hasClose = instructions.some((ins: any) => ins?.parsed?.type === 'closeAccount');
-
   const { amountInRaw, amountOutRaw } = extractAmountInOut(logs);
   const orderId = extractOrderId(logs);
   const mintInfo = detectWalletMintDelta(tx);
+  const base = {
+    programs,
+    orderId,
+    amountInRaw,
+    amountOutRaw,
+    blockTime: tx?.blockTime,
+    mint: mintInfo?.mint,
+    walletTokenDelta: mintInfo?.delta,
+  };
 
-  if (hasBuy) {
-    return {
-      kind: 'BUY_EXEC',
-      programs,
-      orderId,
-      amountInRaw,
-      amountOutRaw,
-      blockTime: tx?.blockTime,
-      mint: mintInfo?.mint,
-      walletTokenDelta: mintInfo?.delta,
-    };
-  }
-  if (hasSetup) return { kind: 'SETUP', programs, orderId, amountInRaw, amountOutRaw, blockTime: tx?.blockTime, mint: mintInfo?.mint };
-  if (hasClose) return { kind: 'CLOSE', programs, orderId, amountInRaw, amountOutRaw, blockTime: tx?.blockTime, mint: mintInfo?.mint };
-  return { kind: 'OTHER', programs, orderId, amountInRaw, amountOutRaw, blockTime: tx?.blockTime, mint: mintInfo?.mint };
+  if (isDcaSetup(tx, logsLower)) return { kind: 'SETUP', ...base };
+  if (isDcaBuyExec(logsLower, orderId)) return { kind: 'BUY_EXEC', ...base };
+  if (isDcaClose(tx, logsLower, orderId)) return { kind: 'CLOSE', ...base };
+  return { kind: 'OTHER', ...base };
+}
+
+function shouldAlert(kind: Classified['kind'], wallet: string): boolean {
+  if (kind === 'OTHER') return false;
+  if (kind === 'SETUP') return true;
+  return EXPLICIT_WALLETS().has(wallet);
+}
+
+function registerDiscoveredWallet(st: WatchState, wallet: string): void {
+  if (EXPLICIT_WALLETS().has(wallet)) return;
+  const keys = Object.keys(st.discoveredWallets);
+  if (keys.length >= maxDiscoveredWallets() && !(wallet in st.discoveredWallets)) return;
+  st.discoveredWallets[wallet] = Date.now();
 }
 
 function shortAddr(v: string): string {
@@ -505,14 +548,9 @@ function buildBuyStyleAlert(
   ].join('\n');
 }
 
-function activeWallets(st: WatchState): string[] {
-  const base = wallets();
-  const now = Date.now();
-  const ttl = discoveredWalletTtlMs();
-  const dyn = Object.entries(st.discoveredWallets)
-    .filter(([, ts]) => Number.isFinite(ts) && now - ts <= ttl)
-    .map(([w]) => w);
-  return Array.from(new Set([...base, ...dyn]));
+function activeWallets(_st: WatchState): string[] {
+  // Poll only explicit watchlist wallets. Discovery alerts on SETUP via program stream.
+  return wallets();
 }
 
 function extractSignerWallet(tx: any): string | null {
@@ -535,6 +573,10 @@ async function handleTransaction(
 
   const cls = classifyTx(tx);
   if (cls.kind === 'OTHER') {
+    markSeen(st, row.signature);
+    return;
+  }
+  if (!shouldAlert(cls.kind, wallet)) {
     markSeen(st, row.signature);
     return;
   }
@@ -634,11 +676,19 @@ async function processProgram(program: string, st: WatchState): Promise<void> {
       6,
     );
     if (!tx) continue;
+    const cls = classifyTx(tx);
+    if (cls.kind !== 'SETUP') {
+      markSeen(st, row.signature);
+      continue;
+    }
     const signer = extractSignerWallet(tx);
-    if (!signer) continue;
-    st.discoveredWallets[signer] = Date.now();
+    if (!signer) {
+      markSeen(st, row.signature);
+      continue;
+    }
+    registerDiscoveredWallet(st, signer);
     await handleTransaction(st, signer, row, tx);
-    await sleep(120);
+    await sleep(250);
   }
 }
 
