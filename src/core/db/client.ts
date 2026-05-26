@@ -16,6 +16,7 @@ const queryClient = postgres(config.databaseUrl, {
 });
 
 export const db = drizzle(queryClient, { schema });
+/** Drizzle DB handle + inferred transaction callback argument type. */
 export type DB = typeof db;
 export { schema };
 export const sql = queryClient;

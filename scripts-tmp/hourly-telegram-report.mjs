@@ -5,46 +5,194 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const STORE_PATH = process.env.PAPER_TRADES_PATH || '/opt/solana-alpha/data/paper-trades.jsonl';
-const PAPER2_DIR = process.env.PAPER2_DIR || '/opt/solana-alpha/data/paper2';
+const ROOT = process.env.SOLANA_ALPHA_ROOT || '/opt/solana-alpha';
+const PAPER2_DIR = process.env.PAPER2_DIR || path.join(ROOT, 'data/paper2');
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const POSITION_USD = Number(process.env.POSITION_USD || 100);
 const COVERAGE_HOURS = Number(process.env.HOURLY_COVERAGE_HOURS || 1);
-const TOP_N = Number(process.env.HOURLY_TOP_N || 4);
+/** Свежесть ингеста `swaps` в Health (по max(created_at)); контур backfill/sigseed — не near-tip по block_time. */
+const HEALTH_SWAPS_INGEST_MAX_MIN = Number(process.env.HOURLY_HEALTH_SWAPS_INGEST_MAX_MIN || 30);
 const DETAIL_MODE = process.env.HOURLY_DETAIL === '1';
+/** W6.13 P0.2 — одна строка сводки ledger в телеграм-отчёте (требует PG_URL). */
+const APPEND_QN_LEDGER = process.env.HOURLY_APPEND_QN_LEDGER === '1';
+/** W6.12 S06 / W6.10 — блок детектива (bot-теги, узкие теги, очередь backfill). Только SQL; выкл: HOURLY_APPEND_DETECTIVE_INTEL=0 */
+const APPEND_DETECTIVE_INTEL = process.env.HOURLY_APPEND_DETECTIVE_INTEL !== '0';
+/** MTM shadow — сводка второго Jupiter-probe по `mtm-shadow.jsonl`; выкл: HOURLY_APPEND_MTM_SHADOW=0 */
+const APPEND_MTM_SHADOW = process.env.HOURLY_APPEND_MTM_SHADOW !== '0';
+const MTM_SHADOW_JSONL =
+  process.env.HOURLY_MTM_SHADOW_JSONL ||
+  path.join(ROOT, 'data/live/mtm-shadow.jsonl');
+
+const LIVE_JSONL =
+  process.env.HOURLY_LIVE_JSONL ||
+  process.env.LIVE_TRADES_PATH ||
+  path.join(ROOT, 'data/live/pt1-oscar-live.jsonl');
+const OSCAR_EVAL_JSONL =
+  process.env.HOURLY_OSCAR_EVAL_JSONL || path.join(PAPER2_DIR, 'pt1-oscar.jsonl');
+const LIVE_STRATEGY_ID = process.env.HOURLY_LIVE_STRATEGY_ID || 'live-oscar';
+/** Включить явно: `TELEGRAM_HOURLY_REPORT_ENABLED=1`. По умолчанию — без отправки (меньше шума в чате). */
+const HOURLY_TELEGRAM_ENABLED = ['1', 'true', 'yes'].includes(
+  String(process.env.TELEGRAM_HOURLY_REPORT_ENABLED ?? '0').toLowerCase(),
+);
+
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 const HOUR_MS = 60 * 60 * 1000;
 const now = Date.now();
 const since = now - HOUR_MS;
 
-function shortMint(m) {
-  if (!m || m.length < 10) return m || '-';
-  return `${m.slice(0, 4)}...${m.slice(-4)}`;
+const POSITION_KINDS = new Set([
+  'live_position_open',
+  'live_position_dca',
+  'live_position_partial_sell',
+  'live_position_close',
+]);
+
+function lineMatchesLiveChannel(row) {
+  const ch = row.channel;
+  return ch === undefined || ch === null || ch === 'live';
 }
-function gmgnUrl(m) { return `https://gmgn.ai/sol/token/${m}`; }
-function fmtPct(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : ''}${x.toFixed(0)}%`; }
-function fmtUsd(v) { const x = Number(v || 0); return `${x >= 0 ? '+' : ''}$${x.toFixed(0)}`; }
+
+function strategyMatches(row) {
+  const sid = row.strategyId != null ? String(row.strategyId) : '';
+  return sid === '' || sid === LIVE_STRATEGY_ID;
+}
+
+/** Replay live_position_* state + PnL aggregates (aligned with live replay semantics). */
+function summarizeLiveOscarFromJournal(events) {
+  const batch = [];
+  for (let lineIdx = 0; lineIdx < events.length; lineIdx++) {
+    const row = events[lineIdx];
+    if (!row || typeof row !== 'object') continue;
+    const kind = row.kind != null ? String(row.kind) : '';
+    if (!POSITION_KINDS.has(kind)) continue;
+    if (!strategyMatches(row)) continue;
+    if (!lineMatchesLiveChannel(row)) continue;
+    const mint = row.mint != null ? String(row.mint) : '';
+    if (!mint) continue;
+    const tsRaw = row.ts;
+    const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
+    batch.push({ ts, lineIdx, kind, mint, row });
+  }
+  batch.sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.lineIdx - b.lineIdx));
+
+  const openByMint = new Map();
+  let realizedClosedUsd = 0;
+  let opensLastHour = 0;
+
+  for (const { ts, kind, mint, row } of batch) {
+    if (ts >= since && kind === 'live_position_open') opensLastHour += 1;
+
+    if (kind === 'live_position_open' || kind === 'live_position_dca' || kind === 'live_position_partial_sell') {
+      const ot = row.openTrade;
+      if (typeof ot === 'object' && ot !== null) openByMint.set(mint, ot);
+      continue;
+    }
+    if (kind === 'live_position_close') {
+      const ct = row.closedTrade;
+      realizedClosedUsd += Number(ct?.netPnlUsd ?? 0);
+      openByMint.delete(mint);
+    }
+  }
+
+  let realizedPartialsOpenUsd = 0;
+  let unrealizedUsd = 0;
+  for (const ot of openByMint.values()) {
+    const partials = Array.isArray(ot.partialSells) ? ot.partialSells : [];
+    for (const p of partials) {
+      realizedPartialsOpenUsd += Number(p?.pnlUsd ?? 0);
+    }
+    const inv = Number(ot.totalInvestedUsd ?? 0) * Number(ot.remainingFraction ?? 1);
+    const px = Number(ot.lastObservedPriceUsd ?? 0);
+    const avg = Number(ot.avgEntry ?? 0);
+    if (inv > 0 && px > 0 && avg > 0) {
+      const markVal = inv * (px / avg);
+      unrealizedUsd += markVal - inv;
+    }
+  }
+
+  const realizedTotalUsd = realizedClosedUsd + realizedPartialsOpenUsd;
+  const totalPnlUsd = realizedTotalUsd + unrealizedUsd;
+
+  return {
+    openNow: openByMint.size,
+    opensLastHour,
+    realizedTotalUsd,
+    unrealizedUsd,
+    totalPnlUsd,
+  };
+}
 
 function parseJsonl(p) {
   if (!fs.existsSync(p)) return [];
   const lines = fs.readFileSync(p, 'utf8').split('\n').filter(Boolean);
   const out = [];
   for (const ln of lines) {
-    try { out.push(JSON.parse(ln)); } catch {}
+    try {
+      out.push(JSON.parse(ln));
+    } catch {
+      /* skip */
+    }
   }
   return out;
 }
 
-function listStores() {
-  const stores = [];
-  if (fs.existsSync(STORE_PATH)) stores.push({ strategyId: process.env.PAPER_STRATEGY_ID || 'paper_v1', file: STORE_PATH });
-  if (fs.existsSync(PAPER2_DIR)) {
-    for (const f of fs.readdirSync(PAPER2_DIR).filter((x) => x.endsWith('.jsonl')).sort()) {
-      stores.push({ strategyId: path.basename(f, '.jsonl'), file: path.join(PAPER2_DIR, f) });
+function countEvalPassPaper(events, sinceMs) {
+  let lastResetTs = 0;
+  for (const e of events) {
+    if (e.kind === 'reset') lastResetTs = Math.max(lastResetTs, e.ts || 0);
+  }
+  const scoped = events.filter((e) => (e.ts || 0) >= lastResetTs);
+  const hourly = scoped.filter((e) => (e.ts || 0) >= sinceMs && e.kind === 'eval');
+  const passed = hourly.filter((e) => !!e.pass).length;
+  return { evals: hourly.length, passed };
+}
+
+function summarizeMtmShadowHourly(events, sinceMs, strategyIdFilter) {
+  let n = 0;
+  let errs = 0;
+  let disagree = 0;
+  let widePa = 0;
+  const mints = new Set();
+  const bpsList = [];
+  for (const e of events) {
+    if ((e.ts || 0) < sinceMs) continue;
+    if (e.channel !== 'mtm_shadow') continue;
+    if (e.kind !== 'mtm_shadow_probe') continue;
+    const sid = e.strategyId != null ? String(e.strategyId) : '';
+    if (strategyIdFilter && sid && sid !== strategyIdFilter) continue;
+    const p = e.payload;
+    if (!p || typeof p !== 'object') continue;
+    n += 1;
+    if (p.mint) mints.add(String(p.mint));
+    if (p.errorAlt) errs += 1;
+    if (p.priceDisagreement) disagree += 1;
+    const bps = Number(p.divergePrimaryVsAltBps);
+    if (Number.isFinite(bps)) {
+      bpsList.push(bps);
+      if (bps > 150) widePa += 1;
     }
   }
-  return stores;
+  bpsList.sort((a, b) => a - b);
+  const medianBps = bpsList.length ? bpsList[Math.floor(bpsList.length / 2)] : null;
+  return { n, mints: mints.size, errs, disagree, widePa, medianBps };
+}
+
+function aggregateExecutionFailures(events, sinceMs) {
+  const buckets = new Map();
+  for (const e of events) {
+    if (e.kind !== 'execution_result') continue;
+    if ((e.ts || 0) < sinceMs) continue;
+    const st = String(e.status || '');
+    if (st !== 'failed' && st !== 'sim_err') continue;
+    const msg =
+      st === 'sim_err'
+        ? String(e.error?.message || e.detail || 'sim_err').trim() || 'sim_err'
+        : String(e.error?.message || e.message || 'failed').trim() || 'failed';
+    const key = `${st}: ${msg.slice(0, 140)}`;
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+  }
+  return buckets;
 }
 
 async function sendTelegram(text) {
@@ -54,71 +202,25 @@ async function sendTelegram(text) {
   }
   const { sendTagged } = await import('../scripts/lib/telegram.mjs');
   await sendTagged('REPORT', 'strategies', text);
-  return;
-  // eslint-disable-next-line no-unreachable
-  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Telegram ${r.status}: ${body.slice(0, 200)}`);
-  }
-}
-
-function summarizeStrategy(events, strategyId) {
-  const byMintOpen = new Map();
-  let lastResetTs = 0;
-  for (const e of events) if (e.kind === 'reset') lastResetTs = Math.max(lastResetTs, e.ts || 0);
-  const scoped = events.filter((e) => (e.ts || 0) >= lastResetTs);
-
-  for (const e of scoped) {
-    if (e.kind === 'open') byMintOpen.set(e.mint, e);
-    if (e.kind === 'close') byMintOpen.delete(e.mint);
-  }
-
-  const hourly = scoped.filter((e) => (e.ts || 0) >= since);
-  const evals = hourly.filter((e) => e.kind === 'eval');
-  const opens = hourly.filter((e) => e.kind === 'open');
-  const closes = hourly.filter((e) => e.kind === 'close');
-  const passed = evals.filter((e) => !!e.pass).length;
-  const wins = closes.filter((e) => Number(e.pnlPct || 0) > 0).length;
-  const realizedUsd = closes.reduce((s, e) => s + (POSITION_USD * Number(e.pnlPct || 0)) / 100, 0);
-
-  return {
-    strategyId,
-    evals: evals.length,
-    passed,
-    opens: opens.length,
-    closes: closes.length,
-    wins,
-    realizedUsd,
-    openCount: byMintOpen.size,
-    closesArr: closes.map((c) => ({
-      symbol: c.symbol || '-',
-      mint: c.mint,
-      lane: c.lane || 'legacy',
-      reason: c.exitReason || '-',
-      pnlPct: Number(c.pnlPct || 0),
-      pnlUsd: (POSITION_USD * Number(c.pnlPct || 0)) / 100,
-      strategyId,
-    })),
-  };
 }
 
 const HEALTH_CHECKS = [
   { source: 'pump (tokens)', table: 'tokens', tsCol: 'first_seen_at', maxAgeMin: 5 },
-  { source: 'swaps', table: 'swaps', tsCol: 'block_time', maxAgeMin: 5 },
+  /** Вторичное поле chainTsCol — только диагностика (on-chain время последней строки); OK считается по ингесту. */
+  {
+    source: 'swaps',
+    table: 'swaps',
+    tsCol: 'created_at',
+    maxAgeMin: HEALTH_SWAPS_INGEST_MAX_MIN,
+    chainTsCol: 'block_time',
+  },
   { source: 'raydium', table: 'raydium_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'meteora', table: 'meteora_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'orca', table: 'orca_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'moonshot', table: 'moonshot_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
+  { source: 'pumpswap', table: 'pumpswap_pair_snapshots', tsCol: 'ts', maxAgeMin: 5 },
   { source: 'jupiter', table: 'jupiter_route_snapshots', tsCol: 'ts', maxAgeMin: 5 },
-  { source: 'rpc_features', table: 'rpc_features', tsCol: 'feature_ts', maxAgeMin: 15 },
   { source: 'direct_lp', table: 'direct_lp_events', tsCol: 'ts', maxAgeMin: 240 },
-  { source: 'coverage_events', table: 'coverage_events', tsCol: 'updated_at', maxAgeMin: 75 },
 ];
 
 async function fetchHealth(pool) {
@@ -128,14 +230,41 @@ async function fetchHealth(pool) {
     const out = [];
     for (const h of HEALTH_CHECKS) {
       try {
+        let chainAgeSec = null;
+        if ('chainTsCol' in h && h.chainTsCol) {
+          const rc = await client.query(
+            `SELECT EXTRACT(EPOCH FROM (now() - MAX(${h.chainTsCol})))::int AS age_sec FROM ${h.table}`,
+          );
+          const cRaw = rc.rows[0]?.age_sec;
+          chainAgeSec = cRaw == null ? null : Number(cRaw);
+        }
         const r = await client.query(
-          `SELECT MAX(${h.tsCol}) AS ts, EXTRACT(EPOCH FROM (now() - MAX(${h.tsCol})))::int AS age_sec FROM ${h.table}`
+          `SELECT MAX(${h.tsCol}) AS ts, EXTRACT(EPOCH FROM (now() - MAX(${h.tsCol})))::int AS age_sec FROM ${h.table}`,
         );
-        const ageSec = Number(r.rows[0]?.age_sec ?? 0);
-        const ok = ageSec >= 0 && ageSec <= h.maxAgeMin * 60;
-        out.push({ source: h.source, ageSec, maxAgeSec: h.maxAgeMin * 60, ok });
+        const tsMax = r.rows[0]?.ts;
+        const rawAge = r.rows[0]?.age_sec;
+        const ageSec = rawAge == null ? null : Number(rawAge);
+        const ok =
+          tsMax != null &&
+          ageSec != null &&
+          Number.isFinite(ageSec) &&
+          ageSec >= 0 &&
+          ageSec <= h.maxAgeMin * 60;
+        out.push({
+          source: h.source,
+          ageSec,
+          maxAgeSec: h.maxAgeMin * 60,
+          ok,
+          ...(typeof chainAgeSec === 'number' && Number.isFinite(chainAgeSec) ? { chainAgeSec } : {}),
+        });
       } catch (err) {
-        out.push({ source: h.source, ageSec: null, maxAgeSec: h.maxAgeMin * 60, ok: false, error: String(err?.message || err) });
+        out.push({
+          source: h.source,
+          ageSec: null,
+          maxAgeSec: h.maxAgeMin * 60,
+          ok: false,
+          error: String(err?.message || err),
+        });
       }
     }
     return out;
@@ -144,8 +273,149 @@ async function fetchHealth(pool) {
   }
 }
 
+const ORCH_WALLET_LANES = ['pumpswap', 'raydium', 'meteora', 'orca', 'moonshot'];
+
+/** Новые строки `wallets` от коллектора-оркестратора за окно HOURLY_COVERAGE_HOURS (по metadata.seed_lane). */
+const NARROW_TAGS_FOR_INTEL = ['mev_bot', 'bot_farm_boss', 'bot_farm_distributor', 'sniper'];
+
+/** Сводка bot-bucket / wallet_backfill для часового TG (без RPC). */
+async function fetchDetectiveIntelSummary(pool) {
+  if (!pool) return null;
+  const client = await pool.connect();
+  try {
+    const reg = await client.query(`SELECT to_regclass('public.wallet_tags') AS wt, to_regclass('public.wallet_backfill_queue') AS q`);
+    const hasWt = Boolean(reg.rows[0]?.wt);
+    const hasQ = Boolean(reg.rows[0]?.q);
+    if (!hasWt && !hasQ) {
+      return { ok: true, empty: true, note: 'нет таблиц wallet_tags / wallet_backfill_queue' };
+    }
+
+    let botRows1h = null;
+    let botWallets1h = null;
+    let botRowsTotal = null;
+    let botWalletsTotal = null;
+    let lastBotAddedAt = null;
+    let narrowRowsTotal = null;
+    let narrowWalletsTotal = null;
+    const queueByStatus = {};
+
+    if (hasWt) {
+      const r1 = await client.query(
+        `SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag = 'bot' AND added_at >= now() - interval '1 hour'`,
+      );
+      botRows1h = Number(r1.rows[0]?.c ?? 0);
+
+      const r2 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag = 'bot' AND added_at >= now() - interval '1 hour'`,
+      );
+      botWallets1h = Number(r2.rows[0]?.c ?? 0);
+
+      const r3 = await client.query(`SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag = 'bot'`);
+      botRowsTotal = Number(r3.rows[0]?.c ?? 0);
+
+      const r4 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag = 'bot'`,
+      );
+      botWalletsTotal = Number(r4.rows[0]?.c ?? 0);
+
+      const r5 = await client.query(`SELECT MAX(added_at) AS ts FROM wallet_tags WHERE tag = 'bot'`);
+      lastBotAddedAt = r5.rows[0]?.ts ? String(r5.rows[0].ts) : null;
+
+      const nt = NARROW_TAGS_FOR_INTEL.map((t) => `'${t.replace(/'/g, "''")}'`).join(', ');
+      const r6 = await client.query(
+        `SELECT COUNT(*)::bigint AS c FROM wallet_tags WHERE tag IN (${nt})`,
+      );
+      narrowRowsTotal = Number(r6.rows[0]?.c ?? 0);
+
+      const r7 = await client.query(
+        `SELECT COUNT(DISTINCT wallet)::bigint AS c FROM wallet_tags WHERE tag IN (${nt})`,
+      );
+      narrowWalletsTotal = Number(r7.rows[0]?.c ?? 0);
+    }
+
+    let errorSamples = [];
+    if (hasQ) {
+      const qs = await client.query(
+        `SELECT status, COUNT(*)::int AS n FROM wallet_backfill_queue GROUP BY status ORDER BY status`,
+      );
+      for (const row of qs.rows) {
+        queueByStatus[String(row.status)] = Number(row.n ?? 0);
+      }
+
+      const qe = await client.query(
+        `SELECT COALESCE(left(error_message, 96), '(empty)') AS msg, COUNT(*)::int AS n
+         FROM wallet_backfill_queue
+         WHERE status = 'error' AND error_message IS NOT NULL AND length(trim(error_message)) > 0
+         GROUP BY 1 ORDER BY n DESC LIMIT 4`,
+      );
+      errorSamples = qe.rows.map((row) => ({ msg: String(row.msg), n: Number(row.n ?? 0) }));
+    }
+
+    return {
+      ok: true,
+      botRows1h,
+      botWallets1h,
+      botRowsTotal,
+      botWalletsTotal,
+      lastBotAddedAt,
+      narrowRowsTotal,
+      narrowWalletsTotal,
+      queueByStatus,
+      errorSamples,
+    };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  } finally {
+    client.release();
+  }
+}
+
+async function fetchOrchestratorWalletInserts(pool) {
+  const base = { pumpswap: 0, raydium: 0, meteora: 0, orca: 0, moonshot: 0, other: 0, total: 0 };
+  if (!pool) return base;
+  const hours = Number.isFinite(COVERAGE_HOURS) && COVERAGE_HOURS > 0 ? Math.min(168, Math.floor(COVERAGE_HOURS)) : 1;
+  const client = await pool.connect();
+  try {
+    const reg = await client.query(`SELECT to_regclass('public.wallets') AS t`);
+    if (!reg.rows[0]?.t) return base;
+
+    const r = await client.query(
+      `SELECT COALESCE(metadata->>'seed_lane', '(unknown)') AS lane, COUNT(*)::int AS cnt
+       FROM wallets
+       WHERE first_seen_at >= now() - ($1::int * interval '1 hour')
+         AND (
+           metadata->>'collector_id' = 'sa-wallet-orch'
+           OR COALESCE(metadata->>'gecko_multi_seed', '') IN ('true', '1')
+         )
+       GROUP BY 1`,
+      [hours],
+    );
+
+    const out = { ...base };
+    for (const row of r.rows) {
+      const lane = String(row.lane || '').toLowerCase();
+      const cnt = Number(row.cnt || 0);
+      if (ORCH_WALLET_LANES.includes(lane)) out[lane] = cnt;
+      else out.other += cnt;
+    }
+    out.total = ORCH_WALLET_LANES.reduce((s, l) => s + out[l], 0) + out.other;
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
 async function fetchCoverage(pool) {
-  const cov = { pump: 0, raydium: 0, meteora: 0, orca: 0, moonshot: 0, jupiter: 0, total: 0 };
+  const cov = {
+    pump: 0,
+    raydium: 0,
+    meteora: 0,
+    orca: 0,
+    moonshot: 0,
+    pumpswap: 0,
+    jupiter: 0,
+    total: 0,
+  };
   if (!pool) return cov;
   const client = await pool.connect();
   try {
@@ -154,19 +424,48 @@ async function fetchCoverage(pool) {
       return Boolean(r.rows[0]?.t);
     }
 
-    const checks = ['tokens', 'raydium_pair_snapshots', 'meteora_pair_snapshots', 'orca_pair_snapshots', 'moonshot_pair_snapshots', 'jupiter_route_snapshots'];
+    const checks = [
+      'tokens',
+      'raydium_pair_snapshots',
+      'meteora_pair_snapshots',
+      'orca_pair_snapshots',
+      'moonshot_pair_snapshots',
+      'pumpswap_pair_snapshots',
+      'jupiter_route_snapshots',
+    ];
     const exists = {};
     for (const t of checks) exists[t] = await tableExists(t);
 
     const unions = [];
     if (exists.tokens) {
-      unions.push(`SELECT mint::text AS mint, 'pump'::text AS source FROM tokens WHERE first_seen_at >= now() - (${COVERAGE_HOURS}::int * interval '1 hour') AND metadata->>'source' IN ('pumpportal','moonshot','bonk')`);
+      unions.push(
+        `SELECT mint::text AS mint, 'pump'::text AS source FROM tokens WHERE first_seen_at >= now() - (${COVERAGE_HOURS}::int * interval '1 hour') AND metadata->>'source' IN ('pumpportal','moonshot','bonk')`,
+      );
     }
-    if (exists.raydium_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'raydium'::text AS source FROM raydium_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.meteora_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'meteora'::text AS source FROM meteora_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.orca_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'orca'::text AS source FROM orca_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.moonshot_pair_snapshots) unions.push(`SELECT DISTINCT base_mint::text AS mint, 'moonshot'::text AS source FROM moonshot_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
-    if (exists.jupiter_route_snapshots) unions.push(`SELECT DISTINCT mint::text AS mint, 'jupiter'::text AS source FROM jupiter_route_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`);
+    if (exists.raydium_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'raydium'::text AS source FROM raydium_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.meteora_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'meteora'::text AS source FROM meteora_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.orca_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'orca'::text AS source FROM orca_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.moonshot_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'moonshot'::text AS source FROM moonshot_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.pumpswap_pair_snapshots)
+      unions.push(
+        `SELECT DISTINCT base_mint::text AS mint, 'pumpswap'::text AS source FROM pumpswap_pair_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
+    if (exists.jupiter_route_snapshots)
+      unions.push(
+        `SELECT DISTINCT mint::text AS mint, 'jupiter'::text AS source FROM jupiter_route_snapshots WHERE ts >= now() - (${COVERAGE_HOURS}::int * interval '1 hour')`,
+      );
     if (!unions.length) return cov;
 
     const r = await client.query(`
@@ -193,108 +492,366 @@ function fmtAge(sec) {
   if (!Number.isFinite(x)) return 'n/a';
   if (x < 60) return `${x}s`;
   const m = Math.round(x / 60);
-  if (m < 90) return `${m}m`;
+  if (m < 120) return `${m}m`;
   const h = Math.round(m / 60);
   return `${h}h`;
 }
 
-function compactReport(strats, coverage, health) {
-  const totalEval = strats.reduce((s, x) => s + x.evals, 0);
-  const totalPass = strats.reduce((s, x) => s + x.passed, 0);
-  const totalOpens = strats.reduce((s, x) => s + x.opens, 0);
-  const totalCloses = strats.reduce((s, x) => s + x.closes, 0);
-  const totalWins = strats.reduce((s, x) => s + x.wins, 0);
-  const totalReal = strats.reduce((s, x) => s + x.realizedUsd, 0);
-  const totalOpen = strats.reduce((s, x) => s + x.openCount, 0);
+/** Human-readable max staleness label, e.g. max 5m / max 4h */
+function fmtMaxAgeLabel(maxAgeSec) {
+  const m = maxAgeSec / 60;
+  if (m >= 60 && m % 60 === 0) return `max ${m / 60}h`;
+  return `max ${Math.round(m)}m`;
+}
 
-  const allCloses = strats.flatMap((s) => s.closesArr);
-  const winners = [...allCloses].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, TOP_N);
-  const losers = [...allCloses].sort((a, b) => a.pnlPct - b.pnlPct).slice(0, TOP_N);
+function fmtUsdSigned(v) {
+  const x = Number(v || 0);
+  const sign = x >= 0 ? '+' : '';
+  return `${sign}$${x.toFixed(2)}`;
+}
 
+async function rpcJson(rpcUrl, method, params) {
+  const r = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j.error) throw new Error(j.error.message || String(j.error));
+  return j.result;
+}
+
+/** QuickNode / Solana JSON-RPC: legacy flat lamports or `{ context, value }`. */
+function lamportsFromGetBalanceResult(result) {
+  if (typeof result === 'number' && Number.isFinite(result)) return result;
+  if (typeof result === 'string' && /^\d+$/.test(result)) return Number(result);
+  if (result && typeof result === 'object' && 'value' in result) {
+    return lamportsFromGetBalanceResult(result.value);
+  }
+  return NaN;
+}
+
+async function fetchWalletBalances(rpcUrl, ownerPubkey) {
+  const raw = await rpcJson(rpcUrl, 'getBalance', [ownerPubkey]);
+  const lamports = lamportsFromGetBalanceResult(raw);
+  const sol = Number.isFinite(lamports) ? lamports / 1e9 : NaN;
+  let usdc = null;
+  try {
+    const tok = await rpcJson(rpcUrl, 'getTokenAccountsByOwner', [
+      ownerPubkey,
+      { mint: USDC_MINT },
+      { encoding: 'jsonParsed' },
+    ]);
+    let sum = 0;
+    for (const { account } of tok.value || []) {
+      const ui = account?.data?.parsed?.info?.tokenAmount?.uiAmount;
+      if (typeof ui === 'number' && Number.isFinite(ui)) sum += ui;
+    }
+    usdc = sum;
+  } catch {
+    usdc = null;
+  }
+  return { sol, usdc };
+}
+
+async function fetchQnLedgerSummary(pool) {
+  const { qnGlobalReadSnapshot, qnGlobalDailyCapCredits } = await import('./sa-qn-global-budget-lib.mjs');
+  const snap = await qnGlobalReadSnapshot(pool);
+  const capEnv = qnGlobalDailyCapCredits();
+  const bc = snap.byComponent && typeof snap.byComponent === 'object' ? snap.byComponent : {};
+  const top = Object.entries(bc)
+    .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))
+    .slice(0, 8)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+  const line = `UTC ${snap.usageDate}: used ${snap.creditsUsed}/${capEnv}, remaining ${snap.creditsRemaining}${top ? ` | ${top}` : ''}`;
+  return line.slice(0, 480);
+}
+
+function buildHourlyReport({
+  coverage,
+  orchWallets,
+  detectiveIntel,
+  health,
+  live,
+  mtmShadow,
+  evalAgg,
+  failBuckets,
+  wallet,
+  walletNote,
+  qnLedgerLine,
+}) {
   const lines = [];
-  lines.push(`Hourly summary · last 60m`);
-  lines.push(`Strategies: ${strats.length} | Eval: ${totalEval} (pass ${totalPass}) | Open: ${totalOpen}`);
-  lines.push(`Closed: ${totalCloses} (wins ${totalWins}) | Real: ${fmtUsd(totalReal)}`);
-  lines.push('');
+  lines.push(`Hourly report · UTC ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
 
-  lines.push('By strategy (real $):');
-  const sortedStrats = [...strats].sort((a, b) => b.realizedUsd - a.realizedUsd);
-  for (const s of sortedStrats) {
-    lines.push(`- ${s.strategyId}: ${fmtUsd(s.realizedUsd)} | open=${s.openCount} close=${s.closes} wins=${s.wins}`);
-  }
   lines.push('');
-
-  lines.push('Best closes (1h):');
-  if (!winners.length) lines.push('- none');
-  for (const w of winners) {
-    lines.push(`- ${w.symbol} ${w.reason} ${fmtPct(w.pnlPct)} ${fmtUsd(w.pnlUsd)} [${w.strategyId}] ${gmgnUrl(w.mint)}`);
-  }
-  lines.push('');
-
-  lines.push('Worst closes (1h):');
-  if (!losers.length) lines.push('- none');
-  for (const l of losers) {
-    lines.push(`- ${l.symbol} ${l.reason} ${fmtPct(l.pnlPct)} ${fmtUsd(l.pnlUsd)} [${l.strategyId}] ${gmgnUrl(l.mint)}`);
-  }
-  lines.push('');
-
   lines.push(`Coverage (last ${COVERAGE_HOURS}h, unique mints):`);
   if (!coverage || !coverage.total) {
-    lines.push('- no data');
+    lines.push('- total: 0 (no DB / no data)');
   } else {
     lines.push(`- total: ${coverage.total}`);
-    for (const k of ['pump', 'raydium', 'meteora', 'orca', 'moonshot', 'jupiter']) {
+    for (const k of [
+      'pump',
+      'pumpswap', // HOTFIX: show in hourly Telegram; deploy hourly-telegram-report.mjs to VPS with next batch
+      'raydium',
+      'meteora',
+      'orca',
+      'moonshot',
+      'jupiter',
+    ]) {
       lines.push(`- ${k}: ${coverage[k] || 0}`);
     }
   }
 
-  if (health && health.length) {
-    lines.push('');
-    lines.push('Health (data freshness):');
-    const stale = health.filter((h) => !h.ok);
-    if (!stale.length) {
-      lines.push('- all sources OK');
+  lines.push('');
+  lines.push(`Оркестратор кошельков (новые строки wallets за ${COVERAGE_HOURS}h, по seed_lane):`);
+  if (orchWallets == null) {
+    lines.push('- (нет PG / ошибка выборки)');
+  } else {
+    lines.push(`- всего: ${orchWallets.total}`);
+    for (const k of ORCH_WALLET_LANES) {
+      lines.push(`- ${k}: ${orchWallets[k] ?? 0}`);
     }
+    if (orchWallets.other > 0) lines.push(`- прочие/неизв. lane: ${orchWallets.other}`);
+  }
+
+  lines.push('');
+  lines.push('Детектив · bot-bucket / backfill (PG-only, см. HOURLY_APPEND_DETECTIVE_INTEL)');
+  lines.push(
+    '- Cron (UTC): enqueue 03:10; pilot 03:25 и 15:17; intel:bot-bucket 04:12; scam-farm:detect 04:15 — install-detective-data-plane-salpha.sh',
+  );
+  if (!detectiveIntel) {
+    lines.push('- (нет PG или блок выключен HOURLY_APPEND_DETECTIVE_INTEL=0)');
+  } else if (detectiveIntel.empty) {
+    lines.push(`- ${detectiveIntel.note || 'нет таблиц'}`);
+  } else if (detectiveIntel.ok === false) {
+    lines.push(`- ошибка выборки: ${String(detectiveIntel.error || '').slice(0, 200)}`);
+  } else {
+    lines.push(
+      `- Тег bot за последний час: ${detectiveIntel.botRows1h ?? 'n/a'} строк, ${detectiveIntel.botWallets1h ?? 'n/a'} уник. кошельков`,
+    );
+    lines.push(
+      `- Всего с тегом bot: ${detectiveIntel.botWalletsTotal ?? 'n/a'} кошельков (${detectiveIntel.botRowsTotal ?? 'n/a'} строк tag×source)`,
+    );
+    lines.push(
+      `- Узкие теги (${NARROW_TAGS_FOR_INTEL.join(', ')}): ${detectiveIntel.narrowRowsTotal ?? 'n/a'} строк, ${detectiveIntel.narrowWalletsTotal ?? 'n/a'} уник. кошельков`,
+    );
+    lines.push(
+      `- Последняя запись bot (added_at): ${detectiveIntel.lastBotAddedAt ? detectiveIntel.lastBotAddedAt.slice(0, 19) : 'н/д'}`,
+    );
+    const q = detectiveIntel.queueByStatus || {};
+    lines.push(
+      `- Очередь wallet_backfill: pending ${q.pending ?? 0}, running ${q.running ?? 0}, done ${q.done ?? 0}, error ${q.error ?? 0}`,
+    );
+    const errs = detectiveIntel.errorSamples || [];
+    if (!errs.length) {
+      lines.push('- Ошибки очереди (топ): нет классифицированных error_message');
+    } else {
+      lines.push('- Ошибки очереди (топ по частоте):');
+      for (const { msg, n } of errs) {
+        lines.push(`  · ×${n}: ${msg}`);
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('QuickNode global ledger (sa_qn_global_daily):');
+  if (!qnLedgerLine) {
+    lines.push(`- (нет данных или выключено; HOURLY_APPEND_QN_LEDGER=1 + DATABASE_URL)`);
+  } else {
+    lines.push(`- ${qnLedgerLine}`);
+  }
+
+  lines.push('');
+  lines.push('Health (data freshness):');
+  if (!health || !health.length) {
+    lines.push('- (no DB connection)');
+  } else {
     for (const h of health) {
       const tag = h.ok ? 'OK' : 'STALE';
       const ageStr = h.ageSec === null ? 'n/a' : fmtAge(h.ageSec);
-      lines.push(`- ${h.source}: ${tag} ${ageStr} (max ${fmtAge(h.maxAgeSec)})`);
+      const maxL = fmtMaxAgeLabel(h.maxAgeSec);
+      const err = h.error ? ` err=${h.error.slice(0, 80)}` : '';
+      const hasChain = typeof h.chainAgeSec === 'number' && Number.isFinite(h.chainAgeSec);
+      if (hasChain) {
+        lines.push(
+          `- ${h.source}: ${tag} ingest ${ageStr} (${maxL}) · chain_lag ${fmtAge(h.chainAgeSec)} (max block_time)${err}`,
+        );
+      } else {
+        lines.push(`- ${h.source}: ${tag} ${ageStr} (${maxL})${err}`);
+      }
     }
   }
 
-  return lines.join('\n').slice(0, 3900);
+  lines.push('');
+  lines.push('Live Oscar');
+  lines.push(`- Открытых позиций (сейчас): ${live.openNow}`);
+  lines.push(`- Новых открытий за час: ${live.opensLastHour}`);
+  lines.push(`- Реализованный PnL (кумулятивно): ${fmtUsdSigned(live.realizedTotalUsd)}`);
+  lines.push(
+    `- Нереализованный PnL (mark, lastObservedPriceUsd): ${fmtUsdSigned(live.unrealizedUsd)}`,
+  );
+  lines.push(`- Суммарный PnL: ${fmtUsdSigned(live.totalPnlUsd)}`);
+
+  if (mtmShadow && APPEND_MTM_SHADOW) {
+    lines.push('');
+    lines.push('MTM shadow (фон, второй Jupiter-probe на открытых позициях, за час)');
+    lines.push(`- событий: ${mtmShadow.n}, уник. mint: ${mtmShadow.mints}`);
+    lines.push(
+      `- медиана |primary−alt| bps: ${mtmShadow.medianBps != null ? mtmShadow.medianBps : 'н/д'}`,
+    );
+    lines.push(
+      `- primary↔alt >150 bps: ${mtmShadow.widePa}, priceDisagreement: ${mtmShadow.disagree}, ошибки alt-quote: ${mtmShadow.errs}`,
+    );
+    lines.push(`- JSONL: ${mtmShadow.pathNote || '—'}`);
+  }
+
+  lines.push('');
+  lines.push(`Eval: ${evalAgg.evals} pass ${evalAgg.passed}`);
+
+  lines.push('');
+  lines.push('Кошелёк');
+  if (walletNote) lines.push(`- ${walletNote}`);
+  if (wallet) {
+    const solLine =
+      typeof wallet.sol === 'number' && Number.isFinite(wallet.sol)
+        ? wallet.sol.toFixed(4)
+        : 'n/a';
+    lines.push(`- SOL: ${solLine}`);
+    lines.push(`- USDC: ${wallet.usdc != null ? wallet.usdc.toFixed(2) : 'n/a'}`);
+  }
+
+  lines.push('');
+  const failTotal = [...failBuckets.values()].reduce((a, b) => a + b, 0);
+  lines.push(`Неуспешные исполнения (за час, failed + sim_err): ${failTotal}`);
+  if (!failBuckets.size) {
+    lines.push('- нет');
+  } else {
+    const sorted = [...failBuckets.entries()].sort((a, b) => b[1] - a[1]);
+    for (const [reason, n] of sorted) {
+      lines.push(`- ${reason} — ${n}`);
+    }
+  }
+
+  return lines.join('\n').slice(0, 4050);
+}
+
+function listStoresDebug() {
+  const STORE_PATH = process.env.PAPER_TRADES_PATH || path.join(ROOT, 'data/paper-trades.jsonl');
+  const stores = [];
+  if (fs.existsSync(STORE_PATH))
+    stores.push({ strategyId: process.env.PAPER_STRATEGY_ID || 'paper_v1', file: STORE_PATH });
+  if (fs.existsSync(PAPER2_DIR)) {
+    for (const f of fs.readdirSync(PAPER2_DIR).filter((x) => x.endsWith('.jsonl')).sort()) {
+      stores.push({ strategyId: path.basename(f, '.jsonl'), file: path.join(PAPER2_DIR, f) });
+    }
+  }
+  return stores;
 }
 
 async function main() {
-  const stores = listStores();
-  if (!stores.length) throw new Error('No paper stores found');
+  if (!HOURLY_TELEGRAM_ENABLED) {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        msg: 'hourly telegram report disabled (TELEGRAM_HOURLY_REPORT_ENABLED)',
+      }),
+    );
+    return;
+  }
 
-  const strats = stores.map((s) => summarizeStrategy(parseJsonl(s.file), s.strategyId));
+  const liveEvents = parseJsonl(LIVE_JSONL);
+  const live = summarizeLiveOscarFromJournal(liveEvents);
+  const failBuckets = aggregateExecutionFailures(liveEvents, since);
 
-  let coverage = null;
-  let health = [];
-  let pool = null;
-  if (process.env.DATABASE_URL) {
+  let mtmShadow = null;
+  if (APPEND_MTM_SHADOW) {
+    const mtmEvents = parseJsonl(MTM_SHADOW_JSONL);
+    mtmShadow = {
+      ...summarizeMtmShadowHourly(mtmEvents, since, LIVE_STRATEGY_ID),
+      pathNote: MTM_SHADOW_JSONL,
+    };
+  }
+
+  const evalEvents = fs.existsSync(OSCAR_EVAL_JSONL) ? parseJsonl(OSCAR_EVAL_JSONL) : [];
+  const evalAgg = countEvalPassPaper(evalEvents, since);
+
+  const rpcUrl =
+    process.env.HOURLY_RPC_URL ||
+    process.env.SA_RPC_HTTP_URL ||
+    process.env.SA_RPC_URL ||
+    process.env.QUICKNODE_HTTP_URL ||
+    process.env.HELIUS_RPC_URL ||
+    '';
+  const walletPk = process.env.HOURLY_WALLET_PUBKEY || process.env.LIVE_WALLET_PUBKEY || '';
+
+  let wallet = null;
+  let walletNote = '';
+  if (!rpcUrl) {
+    walletNote =
+      'RPC не задан (HOURLY_RPC_URL / SA_RPC_HTTP_URL / SA_RPC_URL / QUICKNODE_HTTP_URL)';
+  } else if (!walletPk) {
+    walletNote = 'Публичный ключ не задан (LIVE_WALLET_PUBKEY / HOURLY_WALLET_PUBKEY)';
+  } else {
     try {
-      pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      coverage = await fetchCoverage(pool);
-      health = await fetchHealth(pool);
+      wallet = await fetchWalletBalances(rpcUrl, walletPk);
     } catch (e) {
-      console.warn('coverage/health failed:', e?.message || e);
-    } finally {
-      try { await pool?.end(); } catch {}
+      walletNote = `RPC ошибка: ${(e && e.message) || e}`;
     }
   }
 
-  const text = compactReport(strats, coverage, health);
+  let coverage = null;
+  let orchWallets = null;
+  let detectiveIntel = null;
+  let health = [];
+  let qnLedgerLine = null;
+  let pool = null;
+  const PG_URL = process.env.SA_PG_DSN || process.env.DATABASE_URL;
+  if (PG_URL) {
+    try {
+      pool = new Pool({ connectionString: PG_URL });
+      coverage = await fetchCoverage(pool);
+      orchWallets = await fetchOrchestratorWalletInserts(pool);
+      if (APPEND_DETECTIVE_INTEL) {
+        detectiveIntel = await fetchDetectiveIntelSummary(pool);
+      }
+      health = await fetchHealth(pool);
+      if (APPEND_QN_LEDGER) {
+        qnLedgerLine = await fetchQnLedgerSummary(pool);
+      }
+    } catch (e) {
+      console.warn('coverage/health failed:', e?.message || e);
+    } finally {
+      try {
+        await pool?.end();
+      } catch {
+        /* noop */
+      }
+    }
+  }
+
+  const text = buildHourlyReport({
+    coverage,
+    orchWallets,
+    detectiveIntel,
+    health,
+    live,
+    mtmShadow,
+    evalAgg,
+    failBuckets,
+    wallet,
+    walletNote,
+    qnLedgerLine,
+  });
+
   await sendTelegram(text);
-  console.log('sent', { strategies: strats.length, len: text.length });
+  console.log('sent', { len: text.length, liveJsonl: LIVE_JSONL });
 
   if (DETAIL_MODE) {
-    const detailed = stores
+    const detailed = listStoresDebug()
       .map((s) => `- ${s.strategyId}: ${s.file}`)
       .join('\n');
-    console.log('stores:\n' + detailed);
+    console.log('paper stores (debug):\n' + detailed);
   }
 }
 

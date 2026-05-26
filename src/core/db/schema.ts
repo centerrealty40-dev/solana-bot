@@ -1,3 +1,8 @@
+// solana-alpha v2 schema (post-W2 slim).
+// Активные домены: scam-farm-detective (tokens/wallets/swaps/money_flows/scam_farm_candidates),
+// wallet-atlas reference (entity_wallets/wallet_tags/wallet_clusters), programs catalog.
+// Streaming/strategy-таблицы будут добавлены отдельной миграцией в W3+.
+
 import {
   pgTable,
   text,
@@ -98,227 +103,7 @@ export const swaps = pgTable(
     walletTimeIdx: index('swaps_wallet_time_idx').on(t.wallet, t.blockTime),
     baseTimeIdx: index('swaps_base_time_idx').on(t.baseMint, t.blockTime),
     timeIdx: index('swaps_time_idx').on(t.blockTime),
-  }),
-);
-
-/**
- * Periodic snapshots of OHLCV-ish price/volume per token.
- * Used for hypothesis market context and survivorship analysis.
- */
-export const priceSamples = pgTable(
-  'price_samples',
-  {
-    mint: varchar('mint', { length: 64 }).notNull(),
-    ts: timestamp('ts', { withTimezone: true }).notNull(),
-    priceUsd: doublePrecision('price_usd').notNull(),
-    volumeUsd5m: doublePrecision('volume_usd_5m').notNull(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.mint, t.ts] }),
-    timeIdx: index('price_samples_time_idx').on(t.ts),
-  }),
-);
-
-/**
- * Holder snapshots — we record holder count over time to compute velocity / anomaly.
- */
-export const holderSnapshots = pgTable(
-  'holder_snapshots',
-  {
-    mint: varchar('mint', { length: 64 }).notNull(),
-    ts: timestamp('ts', { withTimezone: true }).notNull(),
-    holderCount: integer('holder_count').notNull(),
-    /** count of unique wallets that bought in the last 1h */
-    newBuyers1h: integer('new_buyers_1h'),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.mint, t.ts] }),
-  }),
-);
-
-/**
- * Rolling per-wallet metrics computed by the scoring engine.
- * One row per wallet, overwritten on each compute pass.
- */
-export const walletScores = pgTable(
-  'wallet_scores',
-  {
-    wallet: varchar('wallet', { length: 64 }).primaryKey(),
-    earlyEntryScore: doublePrecision('early_entry_score').notNull().default(0),
-    realizedPnl30d: doublePrecision('realized_pnl_30d').notNull().default(0),
-    unrealizedPnl: doublePrecision('unrealized_pnl').notNull().default(0),
-    holdingAvgMinutes: doublePrecision('holding_avg_minutes').notNull().default(0),
-    sellInTranchesRatio: doublePrecision('sell_in_tranches_ratio').notNull().default(0),
-    fundingOriginAgeDays: doublePrecision('funding_origin_age_days').notNull().default(0),
-    clusterId: varchar('cluster_id', { length: 64 }),
-    consistencyScore: doublePrecision('consistency_score').notNull().default(0),
-    /** total trade count last 30d (used to gate noisy wallets) */
-    tradeCount30d: integer('trade_count_30d').notNull().default(0),
-    /** distinct tokens traded last 30d */
-    distinctTokens30d: integer('distinct_tokens_30d').notNull().default(0),
-    /** winrate (closed positions only) last 30d */
-    winrate30d: doublePrecision('winrate_30d').notNull().default(0),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pnlIdx: index('wallet_scores_pnl_idx').on(t.realizedPnl30d),
-    eeIdx: index('wallet_scores_ee_idx').on(t.earlyEntryScore),
-    clusterIdx: index('wallet_scores_cluster_idx').on(t.clusterId),
-  }),
-);
-
-/**
- * Signals raised by hypotheses. One row per (hypothesis, signal time, mint).
- * Includes both signals that became positions and the ones that were filtered by risk.
- */
-export const signals = pgTable(
-  'signals',
-  {
-    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-    hypothesisId: varchar('hypothesis_id', { length: 32 }).notNull(),
-    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
-    baseMint: varchar('base_mint', { length: 64 }).notNull(),
-    side: varchar('side', { length: 4 }).notNull(),
-    sizeUsd: doublePrecision('size_usd').notNull(),
-    reason: text('reason').notNull(),
-    meta: jsonb('meta').$type<Record<string, unknown>>().notNull().default({}),
-    /** whether the runner approved this and a position was opened */
-    accepted: boolean('accepted').notNull().default(false),
-    rejectReason: text('reject_reason'),
-  },
-  (t) => ({
-    hypoTsIdx: index('signals_hypo_ts_idx').on(t.hypothesisId, t.ts),
-    mintIdx: index('signals_mint_idx').on(t.baseMint),
-  }),
-);
-
-/**
- * Open or closed positions, one row per opened position.
- * Trades (fills) are stored separately with foreign key to positions.id.
- */
-export const positions = pgTable(
-  'positions',
-  {
-    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-    hypothesisId: varchar('hypothesis_id', { length: 32 }).notNull(),
-    mode: varchar('mode', { length: 8 }).notNull(),
-    baseMint: varchar('base_mint', { length: 64 }).notNull(),
-    quoteMint: varchar('quote_mint', { length: 64 }).notNull(),
-    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
-    /** initial USD size (notional) */
-    sizeUsd: doublePrecision('size_usd').notNull(),
-    /** weighted average entry price */
-    entryPriceUsd: doublePrecision('entry_price_usd').notNull(),
-    /** weighted average exit price */
-    exitPriceUsd: doublePrecision('exit_price_usd'),
-    /** raw base tokens currently held */
-    baseAmountRaw: bigint('base_amount_raw', { mode: 'bigint' }).notNull().default(0n),
-    /** realized PnL in USD (closed portion) */
-    realizedPnlUsd: doublePrecision('realized_pnl_usd').notNull().default(0),
-    /** total fees + slippage paid in USD */
-    costUsd: doublePrecision('cost_usd').notNull().default(0),
-    status: varchar('status', { length: 12 }).notNull().default('open'),
-    closeReason: text('close_reason'),
-    /** opaque payload from the spawning signal */
-    signalMeta: jsonb('signal_meta').$type<Record<string, unknown>>().notNull().default({}),
-  },
-  (t) => ({
-    hypoStatusIdx: index('positions_hypo_status_idx').on(t.hypothesisId, t.status),
-    openedIdx: index('positions_opened_idx').on(t.openedAt),
-    mintIdx: index('positions_mint_idx').on(t.baseMint),
-  }),
-);
-
-/**
- * Individual fills — entry, partial exits, final exit. Both paper and live.
- */
-export const trades = pgTable(
-  'trades',
-  {
-    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-    positionId: bigint('position_id', { mode: 'bigint' })
-      .notNull()
-      .references(() => positions.id, { onDelete: 'cascade' }),
-    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
-    side: varchar('side', { length: 4 }).notNull(),
-    baseAmountRaw: bigint('base_amount_raw', { mode: 'bigint' }).notNull(),
-    quoteAmountRaw: bigint('quote_amount_raw', { mode: 'bigint' }).notNull(),
-    priceUsd: doublePrecision('price_usd').notNull(),
-    slippageBps: doublePrecision('slippage_bps').notNull().default(0),
-    feeUsd: doublePrecision('fee_usd').notNull().default(0),
-    /** null for paper, signature for live */
-    signature: varchar('signature', { length: 96 }),
-  },
-  (t) => ({
-    posIdx: index('trades_pos_idx').on(t.positionId),
-    tsIdx: index('trades_ts_idx').on(t.ts),
-  }),
-);
-
-/**
- * Manually maintained whitelist of "seed" wallets we copy from in H1.
- * Populated via CLI / dashboard.
- */
-export const watchlistWallets = pgTable(
-  'watchlist_wallets',
-  {
-    wallet: varchar('wallet', { length: 64 }).primaryKey(),
-    source: varchar('source', { length: 24 }).notNull(),
-    addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-    note: text('note'),
-  },
-);
-
-/**
- * Append-only ledger of every outbound Helius API call.
- *
- * Used by the `heliusGuard` circuit breaker:
- *   - count today's calls -> compare against daily budget
- *   - count this-month calls -> compare against monthly budget
- *
- * Keeping it append-only (no aggregation) makes audits trivial after an incident
- * like the 2026-04 program-subscription burn.
- */
-export const heliusUsage = pgTable(
-  'helius_usage',
-  {
-    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
-    /** logical bucket ('webhook_register', 'wallet_history', 'rpc_call', etc.) */
-    kind: varchar('kind', { length: 32 }).notNull(),
-    /** estimated credits this call consumed; webhook-register is ~1, history page is ~100 */
-    creditsEstimate: integer('credits_estimate').notNull().default(1),
-    /** http status returned (or 0 if call short-circuited by guard) */
-    statusCode: integer('status_code').notNull().default(0),
-    /** short note for debugging — wallet, endpoint, error message head */
-    note: text('note'),
-  },
-  (t) => ({
-    tsIdx: index('helius_usage_ts_idx').on(t.ts),
-    kindTsIdx: index('helius_usage_kind_ts_idx').on(t.kind, t.ts),
-  }),
-);
-
-/**
- * First-N attribution table for the copy-trader.
- *
- * The first watchlist wallet that buys a brand new mint registers itself here
- * and gets a paper position; subsequent buys by other watchlist wallets are
- * dropped as follow-the-leader noise.
- */
-export const copySeenMints = pgTable(
-  'copy_seen_mints',
-  {
-    mint: varchar('mint', { length: 64 }).primaryKey(),
-    firstWallet: varchar('first_wallet', { length: 64 }).notNull(),
-    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
-    firstSignature: varchar('first_signature', { length: 96 }),
-  },
-  (t) => ({
-    firstWalletIdx: index('copy_seen_mints_first_wallet_idx').on(t.firstWallet),
-    firstSeenIdx: index('copy_seen_mints_first_seen_idx').on(t.firstSeenAt),
+    createdAtIdx: index('swaps_created_at_idx').on(t.createdAt),
   }),
 );
 
@@ -557,6 +342,52 @@ export const scamFarmCandidates = pgTable(
   }),
 );
 
+/** W6.14 — graph phase B: merged “farm” groups + treasury linkage (tags use separate `source`). */
+export const scamFarmMetaClusters = pgTable(
+  'scam_farm_meta_clusters',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull().unique(),
+    label: text('label'),
+    confidence: integer('confidence').notNull().default(50),
+    detectionReason: jsonb('detection_reason').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    updatedIdx: index('scam_farm_meta_clusters_updated_idx').on(t.updatedAt),
+  }),
+);
+
+export const scamFarmMetaClusterMembers = pgTable(
+  'scam_farm_meta_cluster_members',
+  {
+    metaClusterId: bigint('meta_cluster_id', { mode: 'number' })
+      .notNull()
+      .references(() => scamFarmMetaClusters.id, { onDelete: 'cascade' }),
+    wallet: varchar('wallet', { length: 64 }).notNull(),
+    role: varchar('role', { length: 24 }).notNull().default('unknown'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.metaClusterId, t.wallet] }),
+    walletIdx: index('scam_farm_meta_cluster_members_wallet_idx').on(t.wallet),
+  }),
+);
+
+export const scamFarmMetaClusterCandidates = pgTable(
+  'scam_farm_meta_cluster_candidates',
+  {
+    metaClusterId: bigint('meta_cluster_id', { mode: 'number' })
+      .notNull()
+      .references(() => scamFarmMetaClusters.id, { onDelete: 'cascade' }),
+    candidateId: varchar('candidate_id', { length: 64 }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.metaClusterId, t.candidateId] }),
+    candIdx: index('scam_farm_meta_cluster_candidates_cand_idx').on(t.candidateId),
+  }),
+);
+
 /**
  * On-chain programs / protocols catalog.
  *
@@ -609,109 +440,202 @@ export const programs = pgTable(
 );
 
 /**
- * Sanctum LST arb observations.
- *
- * Sample (every N seconds) the true par-value of each LST from Sanctum's
- * extra-api AND the actual market price on Jupiter. The delta is the arb
- * opportunity. Used during the discovery phase to size the edge before
- * we wire up an executor.
+ * Raw `logsSubscribe` notifications (W3+). Append-only; dedupe on (signature, program_id).
  */
-export const sanctumSnapshots = pgTable(
-  'sanctum_snapshots',
-  {
-    id: bigint('id', { mode: 'number' })
-      .primaryKey()
-      .generatedAlwaysAsIdentity(),
-    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
-
-    lstSymbol: varchar('lst_symbol', { length: 16 }).notNull(),
-    lstMint: varchar('lst_mint', { length: 64 }).notNull(),
-
-    /** Sample size in SOL-equivalent (e.g., 10, 100, 1000). */
-    sizeSol: doublePrecision('size_sol').notNull(),
-
-    /** True par-value: 1 LST = X SOL (Sanctum extra-api /v1/sol-value/current). */
-    sanctumSolValue: doublePrecision('sanctum_sol_value').notNull(),
-    /** Market value: 1 LST = X SOL on Jupiter (best route, includes hop fees). */
-    jupiterSolPerLst: doublePrecision('jupiter_sol_per_lst').notNull(),
-    /** Jupiter's reported price impact pct for this size. */
-    jupiterPriceImpactPct: doublePrecision('jupiter_price_impact_pct'),
-
-    /** ((jupiter / sanctum) - 1) * 100 — negative = LST below par (arb!). */
-    arbPct: doublePrecision('arb_pct').notNull(),
-    /** Gross profit in SOL terms if executed at this snapshot (no fees). */
-    arbSolGross: doublePrecision('arb_sol_gross').notNull(),
-
-    meta: jsonb('meta').$type<Record<string, unknown>>().default({}),
-  },
-  (t) => ({
-    tsIdx: index('sanctum_snapshots_ts_idx').on(t.ts),
-    lstIdx: index('sanctum_snapshots_lst_idx').on(t.lstMint),
-    arbIdx: index('sanctum_snapshots_arb_idx').on(t.arbPct),
-  }),
-);
-
 /**
- * Paper-trader virtual positions for the coordinated-rings strategy.
- *
- * Each row = one virtual $10 position opened when our ring-detector fires
- * AND all filters pass (liquidity, age, honeypot, vol survival). We then
- * simulate a staircase exit:
- *   - +100% (2x)  → sell 50% (recover stake, keep skin in the game)
- *   - +400% (5x)  → sell another 30%
- *   - 20% moon-bag exits on trailing stop -50% from peak OR 7-day timeout
- *   - Hard stop-loss at -60% from entry
- *
- * NO real money is touched. We track quotes from Dexscreener every N seconds
- * and update remaining_fraction / realized_pnl_usd accordingly.
+ * Parser ingest cursor — one row per subscribed program_id (W4 sa-parser).
  */
-export const paperTrades = pgTable(
-  'paper_trades',
+/** sa-atlas / future atlas jobs — cursor over tail of `swaps`. */
+export const atlasCursor = pgTable('atlas_cursor', {
+  name: varchar('name', { length: 48 }).primaryKey(),
+  lastSwapId: bigint('last_swap_id', { mode: 'bigint' }).notNull(),
+  lastProcessedAt: timestamp('last_processed_at', { withTimezone: true }).notNull().defaultNow(),
+  stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
+});
+
+export const parserCursor = pgTable('parser_cursor', {
+  programId: varchar('program_id', { length: 64 }).primaryKey(),
+  lastEventId: bigint('last_event_id', { mode: 'bigint' }).notNull(),
+  lastSignature: varchar('last_signature', { length: 96 }),
+  lastSlot: bigint('last_slot', { mode: 'number' }),
+  lastProcessedAt: timestamp('last_processed_at', { withTimezone: true }).notNull().defaultNow(),
+  stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
+});
+
+export const streamEvents = pgTable(
+  'stream_events',
   {
     id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-    mint: varchar('mint', { length: 64 }).notNull(),
-    poolAddress: varchar('pool_address', { length: 64 }),
-
-    alertTs: timestamp('alert_ts', { withTimezone: true }).notNull(),
-    entryTs: timestamp('entry_ts', { withTimezone: true }).notNull(),
-    entryPriceUsd: doublePrecision('entry_price_usd').notNull(),
-    entrySizeUsd: doublePrecision('entry_size_usd').notNull(),
-
-    alertMeta: jsonb('alert_meta').$type<Record<string, unknown>>().notNull().default({}),
-    filterResults: jsonb('filter_results').$type<Record<string, unknown>>().notNull().default({}),
-
-    remainingFraction: doublePrecision('remaining_fraction').notNull().default(1.0),
-    realizedPnlUsd: doublePrecision('realized_pnl_usd').notNull().default(0),
-    maxPriceSeenUsd: doublePrecision('max_price_seen_usd').notNull(),
-    lastPriceUsd: doublePrecision('last_price_usd').notNull(),
-    lastCheckTs: timestamp('last_check_ts', { withTimezone: true }).notNull().defaultNow(),
-
-    status: varchar('status', { length: 24 }).notNull().default('open'),
-    exitEvents: jsonb('exit_events').$type<unknown[]>().notNull().default([]),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
+    signature: varchar('signature', { length: 96 }).notNull(),
+    slot: bigint('slot', { mode: 'number' }).notNull(),
+    programId: varchar('program_id', { length: 64 }).notNull(),
+    kind: varchar('kind', { length: 16 }).notNull().default('log'),
+    err: jsonb('err').$type<unknown>(),
+    logCount: integer('log_count').notNull().default(0),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    observedSlot: bigint('observed_slot', { mode: 'number' }),
   },
   (t) => ({
-    statusIdx: index('paper_trades_status_idx').on(t.status),
-    mintIdx: index('paper_trades_mint_idx').on(t.mint),
-    entryIdx: index('paper_trades_entry_idx').on(t.entryTs),
-    mintEntryUq: uniqueIndex('paper_trades_mint_entry_uq').on(t.mint, t.entryTs),
+    sigProgramUq: uniqueIndex('stream_events_sig_program_uq').on(t.signature, t.programId),
+    receivedIdx: index('stream_events_received_idx').on(t.receivedAt),
+    progRcvIdx: index('stream_events_program_received_idx').on(t.programId, t.receivedAt),
+    slotIdx: index('stream_events_slot_idx').on(t.slot),
+  }),
+);
+
+/* =====================================================================
+ * W6.0 — DEX snapshots, jupiter routes, direct-LP events.
+ * Read by: paper-trader (POST/MIGRATION lanes), direct-lp-detector.
+ * Written by: per-DEX collectors (W6.1).
+ * ===================================================================== */
+
+const pairSnapshotColumns = () => ({
+  ts: timestamp('ts', { withTimezone: true }).notNull(),
+  source: text('source').notNull(),
+  pairAddress: text('pair_address').notNull(),
+  baseMint: text('base_mint').notNull(),
+  quoteMint: text('quote_mint').notNull(),
+  priceUsd: doublePrecision('price_usd'),
+  liquidityUsd: doublePrecision('liquidity_usd'),
+  volume5m: doublePrecision('volume_5m'),
+  volume1h: doublePrecision('volume_1h'),
+  buys5m: integer('buys_5m'),
+  sells5m: integer('sells_5m'),
+  fdvUsd: doublePrecision('fdv_usd'),
+  marketCapUsd: doublePrecision('market_cap_usd'),
+  launchTs: timestamp('launch_ts', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const raydiumPairSnapshots = pgTable(
+  'raydium_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('raydium_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('raydium_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('raydium_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const meteoraPairSnapshots = pgTable(
+  'meteora_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('meteora_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('meteora_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('meteora_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const orcaPairSnapshots = pgTable(
+  'orca_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('orca_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('orca_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('orca_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const moonshotPairSnapshots = pgTable(
+  'moonshot_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('moonshot_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('moonshot_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('moonshot_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const pumpswapPairSnapshots = pgTable(
+  'pumpswap_pair_snapshots',
+  pairSnapshotColumns(),
+  (t) => ({
+    pairTsUq: uniqueIndex('pumpswap_pair_snapshots_pair_ts_uq').on(t.pairAddress, t.ts),
+    baseTsIdx: index('pumpswap_pair_snapshots_base_ts_idx').on(t.baseMint, t.ts),
+    tsIdx: index('pumpswap_pair_snapshots_ts_idx').on(t.ts),
+  }),
+);
+
+export const jupiterRouteSnapshots = pgTable(
+  'jupiter_route_snapshots',
+  {
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    mint: text('mint').notNull(),
+    routeable: boolean('routeable').notNull(),
+    bestOutUsd: doublePrecision('best_out_usd'),
+    estimatedSlippageBps: doublePrecision('estimated_slippage_bps'),
+    quoteInUsd: doublePrecision('quote_in_usd'),
+    hops: integer('hops'),
+    venue: text('venue'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    mintTsUq: uniqueIndex('jupiter_route_snapshots_mint_ts_uq').on(t.mint, t.ts),
+    tsIdx: index('jupiter_route_snapshots_ts_idx').on(t.ts),
+    mintIdx: index('jupiter_route_snapshots_mint_idx').on(t.mint),
+  }),
+);
+
+export const directLpEvents = pgTable(
+  'direct_lp_events',
+  {
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    source: text('source').notNull(),
+    pairAddress: text('pair_address').notNull(),
+    baseMint: text('base_mint').notNull(),
+    quoteMint: text('quote_mint').notNull(),
+    dex: text('dex').notNull(),
+    firstPriceUsd: doublePrecision('first_price_usd'),
+    firstLiquidityUsd: doublePrecision('first_liquidity_usd'),
+    launchInferredTs: timestamp('launch_inferred_ts', { withTimezone: true }),
+    confidence: doublePrecision('confidence'),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniq: uniqueIndex('direct_lp_events_uq').on(t.baseMint, t.pairAddress, t.ts),
+    baseIdx: index('direct_lp_events_base_idx').on(t.baseMint),
+    tsIdx: index('direct_lp_events_ts_idx').on(t.ts),
   }),
 );
 
 /**
- * Daily PnL snapshots per hypothesis, used for kill-switch and dashboard.
+ * Wallet Intel policy outcomes (W6.9 / W6.11): BLOCK_TRADE, SMART_TIER_*, UNKNOWN.
+ * Versioned by product semver in rule_set_version.
  */
-export const dailyPnl = pgTable(
-  'daily_pnl',
+export const walletIntelDecisions = pgTable(
+  'wallet_intel_decisions',
   {
-    hypothesisId: varchar('hypothesis_id', { length: 32 }).notNull(),
-    day: varchar('day', { length: 10 }).notNull(),
-    mode: varchar('mode', { length: 8 }).notNull(),
-    realizedPnlUsd: doublePrecision('realized_pnl_usd').notNull().default(0),
-    tradesCount: integer('trades_count').notNull().default(0),
-    winsCount: integer('wins_count').notNull().default(0),
+    walletAddress: varchar('wallet_address', { length: 64 }).notNull(),
+    ruleSetVersion: text('rule_set_version').notNull(),
+    decision: varchar('decision', { length: 32 }).notNull(),
+    score: doublePrecision('score').notNull().default(0),
+    reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+    sources: jsonb('sources').$type<Record<string, unknown>>().notNull().default({}),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.hypothesisId, t.day, t.mode] }),
+    pk: primaryKey({ columns: [t.walletAddress, t.ruleSetVersion] }),
+    decisionVerIdx: index('wallet_intel_decisions_decision_version_idx').on(t.decision, t.ruleSetVersion),
+    computedIdx: index('wallet_intel_decisions_computed_at_idx').on(t.computedAt),
+  }),
+);
+
+export const walletIntelRuns = pgTable(
+  'wallet_intel_runs',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    ruleSetVersion: text('rule_set_version').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+    status: varchar('status', { length: 16 }).notNull().default('ok'),
+    error: text('error'),
+  },
+  (t) => ({
+    startedIdx: index('wallet_intel_runs_started_idx').on(t.startedAt),
   }),
 );

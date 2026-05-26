@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -13,7 +14,6 @@ const DEX_SEARCH_TERMS = (process.env.RAYDIUM_DEX_SEARCH_TERMS || 'raydium,solan
 const GECKO_TRENDING_PAGES = Number(process.env.RAYDIUM_GECKO_TRENDING_PAGES || 2);
 const SHORTLIST_MIN_LIQ_USD = Number(process.env.RAYDIUM_SHORTLIST_MIN_LIQ_USD || 20_000);
 const SHORTLIST_MIN_VOL5M_USD = Number(process.env.RAYDIUM_SHORTLIST_MIN_VOL5M_USD || 2_000);
-const RPC_FEATURES = ['holders', 'largest_accounts', 'authorities', 'tx_burst'];
 const ONCE = process.argv.includes('--once');
 
 if (!process.env.DATABASE_URL) {
@@ -307,35 +307,6 @@ async function upsertSnapshots(rows) {
   return rows.length;
 }
 
-function shortlistMints(rows) {
-  const mints = new Set();
-  for (const row of rows) {
-    const liq = Number(row.liquidity_usd ?? 0);
-    const vol5m = Number(row.volume_5m ?? 0);
-    if (liq >= SHORTLIST_MIN_LIQ_USD && vol5m >= SHORTLIST_MIN_VOL5M_USD) {
-      mints.add(row.base_mint);
-    }
-  }
-  return [...mints];
-}
-
-async function enqueueRpcTasks(shortlistedMints) {
-  if (shortlistedMints.length === 0) return 0;
-  let enqueued = 0;
-  for (const mint of shortlistedMints) {
-    for (const feature of RPC_FEATURES) {
-      const res = await pool.query(
-        `INSERT INTO rpc_tasks (mint, feature_type, priority, not_before)
-         VALUES ($1, $2, 50, NOW())
-         ON CONFLICT DO NOTHING`,
-        [mint, feature],
-      );
-      enqueued += Number(res.rowCount ?? 0);
-    }
-  }
-  return enqueued;
-}
-
 async function collectOneTick() {
   const tickStartedAt = Date.now();
   const bucketTs = getMinuteBucketUtc();
@@ -349,10 +320,23 @@ async function collectOneTick() {
       rows = await fetchFromGeckoTrending(bucketTs);
     }
 
+    rows = await mergePaper2OpenMintSnapshots({
+      rows,
+      bucketTs,
+      fetchJsonWithRetry,
+      sleep,
+      normalizeDexPair: (p, bt) => {
+        if (p?.chainId !== 'solana') return null;
+        if (String(p?.dexId || '').toLowerCase() !== 'raydium') return null;
+        return normalizeDexScreenerPair(p, bt);
+      },
+      dedupByPairAddress,
+      log,
+      component: 'raydium-collector',
+    });
+
     const written = await upsertSnapshots(rows);
     await upsertTokensMeta(rows, pool).catch(() => {});
-    const shortlistedMints = shortlistMints(rows);
-    const rpcTasksEnqueued = await enqueueRpcTasks(shortlistedMints);
     ticksTotal += 1;
     rowsCollectedTotal += rows.length;
     rowsUpsertedTotal += written;
@@ -362,8 +346,6 @@ async function collectOneTick() {
       bucketTs: bucketTs.toISOString(),
       collected: rows.length,
       upserted: written,
-      shortlistedMints: shortlistedMints.length,
-      rpcTasksEnqueued,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
       rowsUpsertedTotal,

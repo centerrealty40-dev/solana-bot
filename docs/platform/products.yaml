@@ -1,0 +1,192 @@
+# Multi-Product Platform — Single Source of Truth
+#
+# This file is machine-readable and consumed by:
+#   - docs/platform/generate-registry.mjs  (regenerates PRODUCT_REGISTRY.md)
+#   - scripts/platform/check-boundaries.sh (cross-product change guard)
+#   - scripts/platform/health-check.sh     (per-product freshness monitor)
+#
+# Editing rules:
+#   - Any edit MUST be accompanied by a CHANGELOG entry and VERSION bump.
+#   - Adding a new product = MINOR bump (e.g. 1.1.0 -> 1.2.0).
+#   - Removing/renaming env_prefix or db_schema = MAJOR bump.
+#   - After saving, run: node docs/platform/generate-registry.mjs
+#
+# Field reference:
+#   product_key         unique snake_case key, used everywhere as identifier
+#   product_name        human-readable name for docs and UI
+#   owner               who is responsible for the product
+#   status              planned | in-development | active | deprecated
+#   db_schema           PostgreSQL schema name (must match role grants)
+#   env_prefix          list of allowed env var prefixes (uppercase, with _)
+#   systemd_prefix      prefix for all systemd units owned by this product
+#   site_routes         list of frontend route prefixes (Next.js paths)
+#   repo_dirs           list of top-level workspace dirs owned by this product
+#   data_dirs           list of filesystem paths where this product writes data
+#   shared_dependencies list of platform components this product reads from
+#   health              optional: how the platform health checker probes freshness
+#                         file: relative path to a freshness-bearing file
+#                         max_age_min: max age before alert fires
+#                         http: optional URL to GET; expects HTTP 200
+#   notes               free-form
+#
+# When in doubt, copy from an existing entry.
+
+platform_version: "1.5.2"
+
+products:
+
+  - product_key: meteora
+    product_name: Meteora Analytics
+    owner: center team
+    status: active
+    db_schema: meteora
+    env_prefix:
+      - METEORA_
+    systemd_prefix: hl-meteora-
+    site_routes:
+      - /
+      - /pool
+      - /methodology
+      - /positions
+      - /paper-portfolio
+    repo_dirs:
+      - meteora-dash
+      - meteora-lp
+    data_dirs:
+      - /srv/meteora-dash/shared/data
+      - /var/lib/meteora_dash
+    shared_dependencies:
+      - core ingestion
+      - core entities
+    health:
+      file: /var/lib/meteora_dash/paper-heartbeat
+      max_age_min: 15
+      http: https://medioko.com/api/pools/top
+    notes: |
+      Main serious analytics surface (DLMM pools). Includes:
+      (1) hourly ranking refresh of top pools (writes shared/data/latest.json),
+      (2) /paper-portfolio: $10k paper allocation across top-5 by composite
+          score, daily UTC-midnight rebalance, recompute every 5 min via
+          meteora-dash-paper-trader.
+
+  - product_key: funding_lab
+    product_name: Funding Lab / Anti-Funding
+    owner: center team
+    status: active
+    db_schema: funding_lab
+    env_prefix:
+      - FUNDING_
+      - HL_FUND_
+    systemd_prefix: hl-funding-
+    site_routes:
+      - /funding
+      - /strategy
+    repo_dirs:
+      - hyperliquid-edge
+      - meteora-dash/app/funding
+      - meteora-dash/app/strategy
+      - meteora-dash/lib/storage/funding.ts
+      - meteora-dash/scripts/refresh-mode-leaderboard.ts
+    data_dirs:
+      - /opt/hl-research/data/funding
+    shared_dependencies:
+      - core ingestion
+      - signal engine
+    health:
+      file: /opt/hl-research/data/funding/paper/funding_pipeline_report.json
+      max_age_min: 90
+      http: https://medioko.com/funding
+    notes: Paper mode matrix enabled. Mode leaderboard cached every 5 min.
+
+  - product_key: whale_edge
+    product_name: Whale Edge
+    owner: center team
+    status: active
+    db_schema: whale_edge
+    env_prefix:
+      - WHALE_
+    systemd_prefix: hl-whale-
+    site_routes:
+      - /whale
+    repo_dirs:
+      - whale-edge
+      - meteora-dash/app/whale
+      - meteora-dash/lib/storage/whale.ts
+    data_dirs:
+      - /opt/whale-edge
+      - /var/lib/whale_edge
+    shared_dependencies:
+      - core ingestion
+      - wallet labels
+    health:
+      file: /var/lib/whale_edge/heartbeat
+      max_age_min: 5
+      http: https://medioko.com/whale
+    notes: |
+      Paper-trader (04_paper_trader) mirrors NET DIRECTION of curated
+      Hyperliquid wallets into a fixed-budget virtual portfolio. NEVER
+      places real orders. Reads /opt/hl-research/data/stream/trades/
+      <COIN>/*.jsonl strictly READ-ONLY via O_RDONLY (systemd
+      ReadOnlyPaths=/opt/hl-research). Daily 08_discover refreshes the
+      watchlist on a 7-day rolling window with quality filters.
+      Public site route /whale shows redacted positions/PnL/roster.
+      See whale-edge/PRODUCT_SCOPE.md for per-product details.
+
+  - product_key: edge_lab
+    product_name: Edge Lab (Cross-Venue Research)
+    owner: center team
+    status: active
+    db_schema: edge_lab
+    env_prefix:
+      - LEADLAG_
+      - LAB_
+    systemd_prefix: edge-leadlag-
+    site_routes:
+      - /lead-lag
+    repo_dirs:
+      - edge-lab
+      - meteora-dash/app/lead-lag
+      - meteora-dash/lib/storage/leadlag.ts
+    data_dirs:
+      - /opt/edge-lab
+      - /var/lib/edge_lab
+    shared_dependencies:
+      - core ingestion
+    health:
+      file: /var/lib/edge_lab/leadlag-heartbeat
+      max_age_min: 5
+      http: https://medioko.com/lead-lag
+    notes: |
+      Cross-venue research lab (Hyperliquid + dYdX v4). First active
+      surface: HL→dYdX lead-lag PAPER trader (10_paper_leadlag) with
+      $10,000 virtual capital that polls public quote endpoints at
+      ~1Hz and writes state/equity/events to /opt/edge-lab/out/leadlag.
+      NEVER places real orders — no SDKs imported, systemd
+      IPAddressAllow restricted to api.hyperliquid.xyz +
+      indexer.dydx.trade. Daily 11_leadlag_report computes rolling
+      24h/72h/7d analytics and (optionally) verifies the live engine
+      against historical mids parquet. Public site route /lead-lag in
+      meteora-dash exposes a redacted live snapshot. Schema edge_lab
+      reserved; not provisioned (filesystem-only for MVP).
+
+  - product_key: smart_money
+    product_name: Smart Money Solana
+    owner: center team
+    status: planned
+    db_schema: smart_money
+    env_prefix:
+      - SMARTMONEY_
+    systemd_prefix: hl-smartmoney-
+    site_routes:
+      - /smart-money
+    repo_dirs: []
+    data_dirs: []
+    shared_dependencies:
+      - core ingestion
+      - wallet labels
+    health: null
+    notes: Future product slot.
+
+# Reserved schemas/prefixes (not products themselves):
+#   core              shared normalized entities and reference tables
+#   role_*_rw         per-product DB roles (see DB_TOPOLOGY.md)

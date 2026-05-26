@@ -31,5 +31,16 @@
     }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "src/scripts/live-oscar-mint-counterfactual.ts",
+    "src/scripts/live-oscar-tp-grid-fraction-sweep.ts",
+    "src/scripts/live-oscar-tp-grid-step-sweep.ts",
+    "src/scripts/live-oscar-tp-ladder-schedule-bruteforce.ts",
+    "src/scripts/live-oscar-tp-rung-histogram.ts",
+    "src/scripts/live-oscar-user-hand-pnl-model.ts",
+    "src/scripts/live-oscar-user-hand-pnl-sweep.ts"
+  ]
 }

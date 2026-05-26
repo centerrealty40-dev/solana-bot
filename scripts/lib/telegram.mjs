@@ -5,6 +5,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
+
+function resolveOperatorChatId(explicit) {
+  return (
+    explicit?.trim() ||
+    process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim() ||
+    process.env.TELEGRAM_CHAT_ID?.trim() ||
+    OPERATOR_TELEGRAM_CHAT_ID
+  );
+}
+
+function resolveOperatorBotToken() {
+  const chat = resolveOperatorChatId();
+  const wl = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
+  const main = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (chat === OPERATOR_TELEGRAM_CHAT_ID || chat === process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim()) {
+    return wl || main || '';
+  }
+  return main || wl || '';
+}
+
 function statePath() {
   return process.env.TELEGRAM_COOLDOWN_PATH || path.join('data', 'telegram-cooldown.json');
 }
@@ -57,8 +78,8 @@ function chunk(text, max = 3800) {
 }
 
 export async function sendTagged(category, subtag, text, opts = {}) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const token = opts.telegramBotToken?.trim() || resolveOperatorBotToken();
+  const chat = opts.telegramChatId?.trim() || resolveOperatorChatId();
   if (!token || !chat) return false;
   const tag = `[${category}][${subtag}]`;
   const tagKey = `${category}.${subtag}`.toLowerCase();

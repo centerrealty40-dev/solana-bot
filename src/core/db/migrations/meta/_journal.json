@@ -57,6 +57,118 @@
       "when": 1778000000000,
       "tag": "0007_scam_farm_candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779000000000,
+      "tag": "0008_drop_legacy_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779100000000,
+      "tag": "0009_stream_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779200000000,
+      "tag": "0010_parser_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779300000000,
+      "tag": "0011_atlas_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779400000000,
+      "tag": "0012_dex_pair_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779400000001,
+      "tag": "0013_jupiter_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779400000002,
+      "tag": "0014_direct_lp_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779500000000,
+      "tag": "0015_pumpswap_pair_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0016_wallet_intel",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779700000000,
+      "tag": "0017_sa_qn_global_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0018_wallet_backfill_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1779900000000,
+      "tag": "0019_signatures_seed_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0020_sa_qn_global_daily_detective_alert",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780100000000,
+      "tag": "0021_scam_farm_meta_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780200000000,
+      "tag": "0022_dip_bot_intel",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0023_market_spike_events",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@
  * тихими часами для не-`ALERT` категорий.
  *
  * Категории: HEALTH | REPORT | ADVICE | ALERT.
- *   HEALTH/REPORT/ADVICE подчиняются TELEGRAM_QUIET_FROM..TO (часы UTC).
+ *   HEALTH/REPORT/ADVICE подчиняются TELEGRAM_QUIET_FROM..TO (часы UTC), кроме вызовов с `skipQuietHours`.
  *   ALERT всегда проходит.
  *
  * Cooldown: env `TELEGRAM_COOLDOWN_<CATEGORY>_<SUBTAG>_MS` (uppercase, dot→_) — ms.
@@ -15,6 +15,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { child } from '../logger.js';
+import {
+  resolveOperatorTelegramBotToken,
+  resolveOperatorTelegramChatId,
+} from './resolve-operator-telegram.js';
 
 const log = child('telegram-sender');
 
@@ -78,6 +82,12 @@ function chunk(text: string, max = 3800): string[] {
 interface SendOpts {
   parseMode?: 'Markdown' | 'HTML';
   disablePreview?: boolean;
+  /** Если задано — не использовать `TELEGRAM_BOT_TOKEN` (отдельный бот / канал). */
+  telegramBotToken?: string;
+  /** Если задано — не использовать `TELEGRAM_CHAT_ID`. */
+  telegramChatId?: string;
+  /** Игнорировать `TELEGRAM_QUIET_FROM` / `TELEGRAM_QUIET_TO` (отправлять и для ADVICE/REPORT/HEALTH). */
+  skipQuietHours?: boolean;
 }
 
 /**
@@ -89,8 +99,12 @@ export async function sendTagged(
   text: string,
   opts: SendOpts = {},
 ): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const token = (
+    opts.telegramBotToken ?? resolveOperatorTelegramBotToken('TELEGRAM_BOT_TOKEN')
+  )?.trim();
+  const chat = (
+    opts.telegramChatId ?? resolveOperatorTelegramChatId(process.env.TELEGRAM_CHAT_ID)
+  )?.trim();
   if (!token || !chat) {
     log.warn('TELEGRAM_BOT_TOKEN/CHAT_ID missing; sendTagged skipped');
     return false;
@@ -98,7 +112,7 @@ export async function sendTagged(
   const tag = `[${category}][${subtag}]`;
   const tagKey = `${category}.${subtag}`.toLowerCase();
 
-  if (category !== 'ALERT' && inQuietHours()) {
+  if (category !== 'ALERT' && !opts.skipQuietHours && inQuietHours()) {
     log.debug({ tag }, 'suppressed by quiet hours');
     return false;
   }
@@ -111,8 +125,6 @@ export async function sendTagged(
       log.debug({ tag, cd }, 'suppressed by cooldown');
       return false;
     }
-    st[tagKey] = Date.now();
-    writeState(st);
   }
 
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -138,5 +150,12 @@ export async function sendTagged(
       log.warn({ err: String(e) }, 'telegram send failed');
     }
   }
+
+  if (cd > 0 && ok) {
+    const st = readState();
+    st[tagKey] = Date.now();
+    writeState(st);
+  }
+
   return ok;
 }

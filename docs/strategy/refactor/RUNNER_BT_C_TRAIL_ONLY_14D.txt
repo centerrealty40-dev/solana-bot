@@ -1,0 +1,379 @@
+=== TEST C: TRAIL-only (peak-based), 14d, A+ both ===
+# Runner-canon backtest
+# Window: last 14 days, step 30min, cooldown 30min, hold ≤48h
+# Notional per trade: $500
+# Runner thresholds (from env): vol1h≥$80000, vol12h≥$400000, velocity≥1.5x, bs1h≥0.95, bs12h≥1, mcap [$1000000,$30000000], liq≥$80000, priceHold≥0.6, staleVolRatioMax=0.5
+# Policy A+ (env): enabled=true, bounceMax=2.5%, vol1hMax=$1000000
+# active mints (≥36 5min-rows in window): 663
+# tick 50 (7.3%) — 63 candidates so far
+# tick 100 (14.7%) — 135 candidates so far
+# tick 150 (22.2%) — 203 candidates so far
+# tick 200 (29.6%) — 270 candidates so far
+# tick 250 (37.1%) — 377 candidates so far
+# tick 300 (44.5%) — 489 candidates so far
+# tick 350 (51.9%) — 577 candidates so far
+# tick 400 (59.4%) — 643 candidates so far
+# tick 450 (66.8%) — 732 candidates so far
+# tick 500 (74.2%) — 805 candidates so far
+# tick 550 (81.7%) — 872 candidates so far
+# tick 600 (89.1%) — 946 candidates so far
+# tick 650 (96.6%) — 980 candidates so far
+
+# Total runner-pass candidates (cooldown applied): 1007
+# Candidates (without A+): 1007
+# Candidates (with A+):    279
+# [off] simulated 25/1007
+# [off] simulated 50/1007
+# [off] simulated 75/1007
+# [off] simulated 100/1007
+# [off] simulated 125/1007
+# [off] simulated 150/1007
+# [off] simulated 175/1007
+# [off] simulated 200/1007
+# [off] simulated 225/1007
+# [off] simulated 250/1007
+# [off] simulated 275/1007
+# [off] simulated 300/1007
+# [off] simulated 325/1007
+# [off] simulated 350/1007
+# [off] simulated 375/1007
+# [off] simulated 400/1007
+# [off] simulated 425/1007
+# [off] simulated 450/1007
+# [off] simulated 475/1007
+# [off] simulated 500/1007
+# [off] simulated 525/1007
+# [off] simulated 550/1007
+# [off] simulated 575/1007
+# [off] simulated 600/1007
+# [off] simulated 625/1007
+# [off] simulated 650/1007
+# [off] simulated 675/1007
+# [off] simulated 700/1007
+# [off] simulated 725/1007
+# [off] simulated 750/1007
+# [off] simulated 775/1007
+# [off] simulated 800/1007
+# [off] simulated 825/1007
+# [off] simulated 850/1007
+# [off] simulated 875/1007
+# [off] simulated 900/1007
+# [off] simulated 925/1007
+# [off] simulated 950/1007
+# [off] simulated 975/1007
+# [off] simulated 1000/1007
+# [on] simulated 25/279
+# [on] simulated 50/279
+# [on] simulated 75/279
+# [on] simulated 100/279
+# [on] simulated 125/279
+# [on] simulated 150/279
+# [on] simulated 175/279
+# [on] simulated 200/279
+# [on] simulated 225/279
+# [on] simulated 250/279
+# [on] simulated 275/279
+
+----------------------------------------
+
+## Runner-only, NO Policy A+ (1007 pass)
+- candidates simulated: 1007
+- $invested: $503500
+- net PnL: $-9262.06
+- ROI: -1.84%
+- avg per trade: $-9.20
+- wins / losses / win-rate: 310 / 697 / 31%
+- peak ≥+5% in 624 of 1007 (62%)
+- exit reasons: TRAIL:590 TIMEOUT:285 KILLSTOP:132
+
+## Runner + Policy A+ (279 pass)
+- candidates simulated: 279
+- $invested: $139500
+- net PnL: $-2923.86
+- ROI: -2.10%
+- avg per trade: $-10.48
+- wins / losses / win-rate: 45 / 234 / 16%
+- peak ≥+5% in 77 of 279 (28%)
+- exit reasons: TIMEOUT:204 TRAIL:64 KILLSTOP:11
+
+## Per-trade detail (with A+)
+entryTs              source     mint                                          dur(m)   peak%    pnl%    netPnl$   tp/dca  exitReason
+2026-05-06 23:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 00:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 04:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-07 04:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-07 06:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 06:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 10:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 10:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 12:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +5.1%    +1.8%     $9.17     0/0  TIMEOUT
+2026-05-07 15:31  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     1615    +0.4%    -5.7%   $-28.72     0/0  TIMEOUT
+2026-05-07 17:01  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     1525    +1.7%    -4.3%   $-21.28     0/0  TIMEOUT
+2026-05-07 17:31  meteora   4UeLCRqARmfb6e6KQijtiktqqXUxbfk6jZng7DhuBAGS      310   +36.0%   +21.5%   $107.38     0/0  TRAIL
+2026-05-07 20:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 21:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-07 21:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 00:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 02:01  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      1768   +40.7%   +24.5%   $122.26     0/0  TRAIL
+2026-05-08 02:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      1738   +38.9%   +22.9%   $114.43     0/0  TRAIL
+2026-05-08 03:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 03:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 03:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 03:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 07:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 07:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 07:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 08:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 08:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 09:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +7.0%    +1.7%     $8.60     0/0  TIMEOUT
+2026-05-08 11:01  raydium   HhJpBhRRn4g56VsyLuT8DL5Bv31HkXqsrahTTUCZeZg4       92   +15.7%    +2.9%    $14.46     0/0  TRAIL
+2026-05-08 12:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 13:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-08 13:31  raydium   63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9     2384   +74.2%   +55.6%   $277.78     0/0  TRAIL
+2026-05-08 13:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-08 14:01  raydium   DACYVx34V5aQaehN3MZGYxPfoyQYHZSnFAFw3T2Vbonk     1702    +3.6%   -29.9%  $-149.44     0/0  KILLSTOP
+2026-05-08 16:31  pumpswap  AVA8YuCsD2YgUSpdv3Hb2cjpdf8XAhGwyXmchxwopump       48    +6.7%    -6.4%   $-31.78     0/0  TRAIL
+2026-05-08 19:31  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +5.0%    +3.3%    $16.52     0/0  TIMEOUT
+2026-05-08 20:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +5.7%    +3.5%    $17.42     0/0  TIMEOUT
+2026-05-09 02:31  meteora   mEgrNoQWAwn3Zphto3vrCV5oxfSNqFCZTJKSQeDa3ko       558    +3.8%   -31.7%  $-158.65     0/0  KILLSTOP
+2026-05-09 04:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 05:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 05:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 05:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 07:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 08:01  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu       372   +17.4%    +4.6%    $23.24     0/0  TRAIL
+2026-05-09 08:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 08:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 09:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 10:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 10:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 10:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 12:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 13:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-09 15:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-09 21:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-10 03:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      728   +30.4%   +14.2%    $70.89     0/0  TRAIL
+2026-05-10 08:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      428   +48.8%   +30.2%   $151.20     0/0  TRAIL
+2026-05-10 14:01  raydium   zGh48JtNHVBb5evgoZLXwgPD2Qu4MhkWdJLGDAupump      1256   +18.4%    +5.6%    $28.09     0/0  TRAIL
+2026-05-10 19:01  meteora   BFgdzMkTPdKKJeTipv2njtDEwhKxkgFueJQfJGt1jups      126    +9.9%    -1.9%    $-9.50     0/0  TRAIL
+2026-05-10 19:01  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu       912   +41.1%   +25.8%   $128.99     0/0  TRAIL
+2026-05-10 19:31  meteora   BFgdzMkTPdKKJeTipv2njtDEwhKxkgFueJQfJGt1jups       96    +6.7%    -4.7%   $-23.74     0/0  TRAIL
+2026-05-10 20:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-10 21:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump      826   +58.8%    +4.4%    $21.97     0/0  TRAIL
+2026-05-10 21:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-10 21:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-10 21:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-10 21:31  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump      796   +57.2%    +3.3%    $16.63     0/0  TRAIL
+2026-05-10 21:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-10 21:31  orca      oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp       288   +31.5%   +15.1%    $75.40     0/0  TRAIL
+2026-05-10 21:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-10 22:01  orca      oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp       258   +32.7%   +16.1%    $80.54     0/0  TRAIL
+2026-05-11 00:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 00:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-11 00:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 01:01  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu       552   +29.5%   +15.5%    $77.47     0/0  TRAIL
+2026-05-11 01:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu       522   +30.1%   +16.1%    $80.29     0/0  TRAIL
+2026-05-11 02:31  meteora   oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp       694    +5.1%    -6.4%   $-31.97     0/0  TRAIL
+2026-05-11 03:01  orca      oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp      2720    +3.4%   -26.2%  $-131.20     0/0  KILLSTOP
+2026-05-11 03:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-11 04:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 04:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 04:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-11 04:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 04:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 06:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu       222   +16.2%    +3.7%    $18.35     0/0  TRAIL
+2026-05-11 06:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-11 07:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 10:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 10:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-11 10:31  raydium   8Ki8DpuWNxu9VsS3kQbarsCWMcFGWkzzA8pUPto9zBd5      704    +0.7%   -27.7%  $-138.49     0/0  KILLSTOP
+2026-05-11 10:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 11:01  raydium   8Ki8DpuWNxu9VsS3kQbarsCWMcFGWkzzA8pUPto9zBd5      674    +1.3%   -27.0%  $-134.88     0/0  KILLSTOP
+2026-05-11 12:01  raydium   8Ki8DpuWNxu9VsS3kQbarsCWMcFGWkzzA8pUPto9zBd5      388    +6.5%    -6.9%   $-34.56     0/0  TRAIL
+2026-05-11 13:01  pumpswap  GvV7sFu6FHJsSVXfpG7xqFnWar3c7YkcC74rqe7Bpump       72    +6.1%    -7.5%   $-37.52     0/0  TRAIL
+2026-05-11 15:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      927    +3.1%    -4.6%   $-23.11     0/0  TIMEOUT
+2026-05-11 16:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      897    +3.3%    -4.4%   $-22.24     0/0  TIMEOUT
+2026-05-11 16:01  pumpswap  Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump      350    +5.3%    -6.7%   $-33.46     0/0  TRAIL
+2026-05-11 17:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump      184    +6.9%    -4.7%   $-23.53     0/0  TRAIL
+2026-05-11 17:31  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump      154    +7.5%    -4.2%   $-20.85     0/0  TRAIL
+2026-05-11 19:31  pumpswap  Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump     1140    +4.6%   -18.8%   $-94.00     0/0  TIMEOUT
+2026-05-11 20:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      657    +0.3%    -5.5%   $-27.56     0/0  TIMEOUT
+2026-05-11 20:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2648    +0.8%   -25.7%  $-128.75     0/0  KILLSTOP
+2026-05-11 21:31  raydium   8Ki8DpuWNxu9VsS3kQbarsCWMcFGWkzzA8pUPto9zBd5     1858   +12.5%    +0.1%     $0.62     0/0  TRAIL
+2026-05-11 21:31  pumpswap  Hh3oTaqDCKKfdBgsQEvxp9sUwyNf8x9qmKqEMLBWpump     1115    +1.0%   -17.6%   $-87.98     0/0  TIMEOUT
+2026-05-11 22:31  pumpswap  Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump      196    +5.5%    -6.6%   $-33.09     0/0  TRAIL
+2026-05-11 23:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-11 23:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 01:01  raydium   HtTYHz1Kf3rrQo6AqDLmss7gq5WrkWAaXn3tupUZbonk      822   +38.6%   +19.4%    $96.95     0/0  TRAIL
+2026-05-12 01:31  raydium   HtTYHz1Kf3rrQo6AqDLmss7gq5WrkWAaXn3tupUZbonk      792   +39.7%   +20.3%   $101.74     0/0  TRAIL
+2026-05-12 02:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 02:31  pumpswap  Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump      720    +1.4%   -11.0%   $-54.75     0/0  TIMEOUT
+2026-05-12 03:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      1154    +2.3%    -5.6%   $-28.24     0/0  TIMEOUT
+2026-05-12 05:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 06:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 09:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 10:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 11:31  meteora   J8PSdNP3QewKq2Z1JJJFDMaqF7KcaiJhR7gbr5KZpump      220    +9.1%    -2.9%   $-14.35     0/0  TRAIL
+2026-05-12 12:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 12:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 12:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 13:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 13:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 13:31  orca      3dQTr7ror2QPKQ3GbBCokJUmjErGg8kTJzdnYjNfvi3Z     2880    +4.3%    -0.2%    $-1.13     0/0  TIMEOUT
+2026-05-12 15:01  pumpswap  4bCcwHAANr5dntJQmmZVqre6kxggchiuJRYiybBVpump      910    +5.7%    -5.8%   $-28.82     0/0  TRAIL
+2026-05-12 15:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 15:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      2880    +1.4%   -21.0%  $-104.86     0/0  TIMEOUT
+2026-05-12 16:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-12 16:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +4.7%    -8.0%   $-40.16     0/0  TIMEOUT
+2026-05-12 16:31  raydium   5SVG3T9CNQsm2kEwzbRq6hASqh1oGfjqTtLXYUibpump     1830    +0.7%   -25.8%  $-128.91     0/0  KILLSTOP
+2026-05-12 16:31  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +3.4%    -7.0%   $-34.92     0/0  TIMEOUT
+2026-05-12 16:31  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      2880    +4.6%   -10.8%   $-53.91     0/0  TIMEOUT
+2026-05-12 17:01  raydium   5SVG3T9CNQsm2kEwzbRq6hASqh1oGfjqTtLXYUibpump     1386    +0.0%   -25.6%  $-128.19     0/0  KILLSTOP
+2026-05-12 17:01  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +3.6%    -6.9%   $-34.58     0/0  TIMEOUT
+2026-05-12 17:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump      946    +9.4%    -3.5%   $-17.56     0/0  TRAIL
+2026-05-12 17:01  raydium   PAYmo6moDF3Ro3X6bU2jwe2UdBnBhv8YjLgL1j4DxGu      1430    +5.7%    -5.6%   $-27.86     0/0  TRAIL
+2026-05-12 18:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 18:31  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump      856   +12.3%    -0.9%    $-4.63     0/0  TRAIL
+2026-05-12 20:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 21:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 22:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-12 23:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-13 03:31  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +0.8%    -7.5%   $-37.34     0/0  TIMEOUT
+2026-05-13 04:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +1.3%    -7.0%   $-35.22     0/0  TIMEOUT
+2026-05-13 06:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-13 08:01  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     2880    +2.6%    -4.8%   $-24.04     0/0  TIMEOUT
+2026-05-13 09:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +2.0%    -8.1%   $-40.39     0/0  TIMEOUT
+2026-05-13 09:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-13 09:31  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +1.5%    -8.5%   $-42.73     0/0  TIMEOUT
+2026-05-13 12:31  raydium   DKu9kykSfbN5LBfFXtNNDPaX35o4Fv6vJ9FKk7pZpump     1044    +1.1%   -13.0%   $-64.91     0/0  TIMEOUT
+2026-05-13 12:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-13 13:01  raydium   DKu9kykSfbN5LBfFXtNNDPaX35o4Fv6vJ9FKk7pZpump     1014    +0.0%   -13.5%   $-67.72     0/0  TIMEOUT
+2026-05-13 13:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-13 13:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-13 13:31  meteora   C29ebrgYjYoJPMGPnPSGY1q3mMGk4iDSqnQeQQA7moon     2880    +4.1%    -8.4%   $-42.16     0/0  TIMEOUT
+2026-05-13 13:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-13 14:01  pumpswap  61Wj56QgGyyB966T7YsMzEAKRLcMvJpDbPzjkrCZc4Bi      209   +12.2%   +10.7%    $53.40     0/0  TIMEOUT
+2026-05-13 14:31  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +0.8%    -7.2%   $-36.23     0/0  TIMEOUT
+2026-05-13 15:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +1.2%    -6.5%   $-32.52     0/0  TIMEOUT
+2026-05-13 18:31  meteora   C4j1kRxLhWzHCDEffhJQtEnfR7B1PKRhQHpmWpFzAUSA      284    +5.0%    -6.9%   $-34.25     0/0  TRAIL
+2026-05-13 18:31  raydium   HtTYHz1Kf3rrQo6AqDLmss7gq5WrkWAaXn3tupUZbonk     2865    +3.0%    -3.9%   $-19.60     0/0  TIMEOUT
+2026-05-13 20:01  pumpswap  32CdQdBUxbCsLy5AUHWmyidfwhgGUr9N573NBUrDpump     1460   +20.1%    +6.9%    $34.36     0/0  TRAIL
+2026-05-13 21:31  raydium   6AJcP7wuLwmRYLBNbi825wgguaPsWzPBEHcHndpRpump     2880    +4.2%   -15.8%   $-79.25     0/0  TIMEOUT
+2026-05-13 22:01  raydium   6AJcP7wuLwmRYLBNbi825wgguaPsWzPBEHcHndpRpump     2880    +3.9%   -16.0%   $-80.20     0/0  TIMEOUT
+2026-05-14 01:01  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     2190   +11.5%    -0.9%    $-4.65     0/0  TRAIL
+2026-05-14 01:31  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     2160   +11.4%    -1.0%    $-4.97     0/0  TRAIL
+2026-05-14 05:01  raydium   6AJcP7wuLwmRYLBNbi825wgguaPsWzPBEHcHndpRpump     2880    +1.5%   -11.0%   $-54.90     0/0  TIMEOUT
+2026-05-14 11:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 11:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     1360   +20.4%    +6.1%    $30.37     0/0  TRAIL
+2026-05-14 11:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 13:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 13:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 16:31  orca      oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp      2880   +12.6%    +7.0%    $35.07     0/0  TIMEOUT
+2026-05-14 17:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +0.7%   -13.0%   $-64.76     0/0  TIMEOUT
+2026-05-14 18:01  meteora   WCoRVxGcpiwE6EvtDjXHJq6Kcn4nWT9Ubt1PrJHNAzM       189    +0.5%    -0.7%    $-3.50     0/0  TIMEOUT
+2026-05-14 18:31  meteora   WCoRVxGcpiwE6EvtDjXHJq6Kcn4nWT9Ubt1PrJHNAzM       159    +0.6%    -0.6%    $-2.83     0/0  TIMEOUT
+2026-05-14 20:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 20:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-14 21:01  meteora   WCoRVxGcpiwE6EvtDjXHJq6Kcn4nWT9Ubt1PrJHNAzM         9    +0.1%    -0.6%    $-3.17     0/0  TIMEOUT
+2026-05-14 22:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-15 01:01  raydium   8x5VqbHA8D7NkD52uNuS5nnt3PwA8pLD34ymskeSo2Wn      744    +9.3%    -2.9%   $-14.36     0/0  TRAIL
+2026-05-15 06:01  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-15 06:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN      2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-15 08:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.6%   -24.6%  $-123.19     0/0  TIMEOUT
+2026-05-15 09:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.3%   -24.0%  $-119.80     0/0  TIMEOUT
+2026-05-15 12:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-15 12:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.2%   -20.1%  $-100.31     0/0  TIMEOUT
+2026-05-15 14:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.0%   -11.5%   $-57.32     0/0  TIMEOUT
+2026-05-15 14:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-15 14:31  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +7.4%    +5.1%    $25.45     0/0  TIMEOUT
+2026-05-15 14:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-15 15:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      202   +12.1%    +0.0%     $0.10     0/0  TRAIL
+2026-05-15 16:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      142    +7.8%    -3.8%   $-19.10     0/0  TRAIL
+2026-05-15 20:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +8.6%    +3.8%    $18.76     0/0  TIMEOUT
+2026-05-15 20:31  raydium   6yjNqPzTSanBWSa6dxVEgTjePXBrZ2FoHLDQwYwEsyM6     1742    +1.2%    -5.4%   $-26.91     0/0  TIMEOUT
+2026-05-16 01:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-16 01:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-16 03:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      252    +7.7%    -4.4%   $-22.21     0/0  TRAIL
+2026-05-16 04:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC     2880    +3.6%   -17.7%   $-88.34     0/0  TIMEOUT
+2026-05-16 05:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-16 06:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-16 07:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +2.4%    -4.3%   $-21.69     0/0  TIMEOUT
+2026-05-16 07:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +4.9%   -13.1%   $-65.68     0/0  TIMEOUT
+2026-05-16 08:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2216    +7.7%    -4.5%   $-22.33     0/0  TRAIL
+2026-05-16 08:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-16 08:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2186    +5.9%    -6.1%   $-30.43     0/0  TRAIL
+2026-05-16 08:31  pumpswap  E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump        52    +7.5%    -4.7%   $-23.67     0/0  TRAIL
+2026-05-16 08:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2880    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-16 20:31  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +3.9%    -0.9%    $-4.37     0/0  TIMEOUT
+2026-05-16 21:01  raydium   HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump     2880    +4.1%    -0.3%    $-1.27     0/0  TIMEOUT
+2026-05-16 22:01  pumpswap  CGEDT9QZDvvH5GmVkWJH2BXiMJqMJySC9ihWyr7Spump     2406    +1.7%   -26.7%  $-133.50     0/0  KILLSTOP
+2026-05-16 22:31  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +0.6%    -8.9%   $-44.59     0/0  TIMEOUT
+2026-05-16 22:31  pumpswap  CGEDT9QZDvvH5GmVkWJH2BXiMJqMJySC9ihWyr7Spump     2354    +1.4%   -25.7%  $-128.72     0/0  KILLSTOP
+2026-05-16 23:01  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +0.7%    -9.2%   $-46.18     0/0  TIMEOUT
+2026-05-17 02:31  meteora   1zJX5gRnjLgmTpq5sVwkq69mNDQkCemqoasyjaPW6jm      2880    +1.6%   -11.4%   $-57.19     0/0  TIMEOUT
+2026-05-17 03:01  pumpswap  E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump        68   +15.4%    +2.6%    $12.94     0/0  TRAIL
+2026-05-17 06:01  raydium   Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump     2880    +1.9%    -3.7%   $-18.60     0/0  TIMEOUT
+2026-05-17 13:01  raydium   HfMbPyDdZH6QMaDDUokjYCkHxzjoGBMpgaUvpLWGbF5p      474   +21.9%    +7.7%    $38.74     0/0  TRAIL
+2026-05-17 14:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2478    +1.1%    -8.7%   $-43.62     0/0  TIMEOUT
+2026-05-17 15:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2448    +1.8%    -8.1%   $-40.52     0/0  TIMEOUT
+2026-05-17 17:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2298    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-17 18:01  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2268    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-17 18:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2268    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-17 18:31  raydium   sokhCSmzutMPPuNcxG1j6gYLowgiM8mswjJu8FBYm5r      2238    +0.5%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-17 19:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2178    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-17 20:01  meteora   3KHMZhpthXuiCcgfTv7vVu9PpEz64KAEURFwi6Lopump     1236   +32.6%   +18.0%    $90.04     0/0  TRAIL
+2026-05-17 20:31  raydium   HfMbPyDdZH6QMaDDUokjYCkHxzjoGBMpgaUvpLWGbF5p     1652    +0.0%   -39.4%  $-196.83     0/0  KILLSTOP
+2026-05-17 21:31  raydium   74SBV4zDXxTRgv1pEMoECskKBkZHc2yGPnc7GYVepump      678    +1.2%    -0.4%    $-2.14     0/0  TIMEOUT
+2026-05-17 21:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.8%   -13.1%   $-65.74     0/0  TIMEOUT
+2026-05-17 22:01  raydium   74SBV4zDXxTRgv1pEMoECskKBkZHc2yGPnc7GYVepump      648    +1.2%    -0.4%    $-2.14     0/0  TIMEOUT
+2026-05-17 22:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +0.4%   -15.7%   $-78.44     0/0  TIMEOUT
+2026-05-17 22:31  raydium   74SBV4zDXxTRgv1pEMoECskKBkZHc2yGPnc7GYVepump      618    +1.8%    +0.1%     $0.71     0/0  TIMEOUT
+2026-05-17 23:01  raydium   74SBV4zDXxTRgv1pEMoECskKBkZHc2yGPnc7GYVepump      588    +1.5%    -0.2%    $-0.92     0/0  TIMEOUT
+2026-05-18 00:01  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +5.0%    -1.1%    $-5.45     0/0  TIMEOUT
+2026-05-18 00:31  raydium   A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump     2880    +6.9%    -0.1%    $-0.53     0/0  TIMEOUT
+2026-05-18 00:31  raydium   Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump     2872   +11.0%    -1.1%    $-5.58     0/0  TRAIL
+2026-05-18 02:31  meteora   3KHMZhpthXuiCcgfTv7vVu9PpEz64KAEURFwi6Lopump      326    +6.1%    -5.2%   $-25.98     0/0  TRAIL
+2026-05-18 04:01  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +3.9%   -14.0%   $-69.75     0/0  TIMEOUT
+2026-05-18 04:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2880    +3.3%   -14.5%   $-72.73     0/0  TIMEOUT
+2026-05-18 10:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 11:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 12:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 13:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 14:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 15:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.2%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 16:31  pumpswap  BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump       52   +29.8%   +15.4%    $76.88     0/0  TRAIL
+2026-05-18 16:31  pumpswap  Bb4jR951QtVjeFAYFLBYXDSMKjbTDroCLPbFLdd7pump      170    +9.0%    -3.0%   $-14.95     0/0  TRAIL
+2026-05-18 16:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2876    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 17:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 21:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2880    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-18 21:01  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2880    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 21:31  orca      3dQTr7ror2QPKQ3GbBCokJUmjErGg8kTJzdnYjNfvi3Z     2877    +1.0%    -2.3%   $-11.40     0/0  TIMEOUT
+2026-05-18 21:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2877    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-18 21:31  raydium   sosd5Q3DutGxMEaukBDmkPgsapMQz59jNjGWmhYcdTQ      2877    +0.0%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-18 22:01  orca      3dQTr7ror2QPKQ3GbBCokJUmjErGg8kTJzdnYjNfvi3Z     2880    +0.0%    -3.0%   $-14.93     0/0  TIMEOUT
+2026-05-18 23:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2822    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-18 23:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC     1752   +10.5%    -1.4%    $-7.11     0/0  TRAIL
+2026-05-18 23:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     2792    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-19 00:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC     1722   +11.2%    -0.8%    $-4.02     0/0  TRAIL
+2026-05-19 00:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC     1692   +11.1%    -0.9%    $-4.41     0/0  TRAIL
+2026-05-19 02:31  pumpswap  BiywH8Eq2CbGhwMHKwCnfTiccWJwN7r1Q4Qn9hsypump       72   +20.9%    +3.6%    $17.96     0/0  TRAIL
+2026-05-19 04:31  pumpswap  CcLd8HTAKLWtQHatqPwBQjtuCA72FNB9E1ckRTEzpump      968   +11.1%    -0.9%    $-4.34     0/0  TRAIL
+2026-05-19 07:31  raydium   DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2     2312    +1.8%    -6.1%   $-30.66     0/0  TIMEOUT
+2026-05-19 23:31  meteora   HmBdm8vbisABUjkxms6ZUnoaXbfwFM6ymxShWfAENaoi      874   +29.6%   +15.7%    $78.49     0/0  TRAIL
+2026-05-20 02:01  pumpswap  BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump      522   +29.4%   +15.4%    $76.91     0/0  TRAIL
+2026-05-20 03:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC       72    +5.1%    -6.3%   $-31.26     0/0  TRAIL
+2026-05-20 04:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC       54    +9.6%    -3.6%   $-17.87     0/0  TRAIL
+2026-05-20 05:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo     1022    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 05:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo      992    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 05:31  raydium   SooEj828BSjtgTecBRkqBJ4oquc713yyFZqbCawawoN       992    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 06:01  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      962   +11.8%    +6.1%    $30.70     0/0  TIMEOUT
+2026-05-20 06:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      932   +12.9%    +7.1%    $35.71     0/0  TIMEOUT
+2026-05-20 08:31  raydium   Cy1GS2FqefgaMbi45UunrUzin1rfEmTUYnomddzBpump      812    +3.7%    -0.7%    $-3.75     0/0  TIMEOUT
+2026-05-20 09:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo      752    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 10:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo      722    +0.1%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 11:31  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo      632    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 12:01  raydium   DWCj1WhLQouv7WgfzLM4V1K3AQadZr4re6gSbLdD7Ppo      602    +0.0%    -0.8%    $-3.75     0/0  TIMEOUT
+2026-05-20 13:31  raydium   5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxRhdK8PSWmrRC      512    +6.0%    +0.6%     $3.16     0/0  TIMEOUT
+2026-05-20 15:01  meteora   33eum82LaAhtv5YkUq1BdwEviSErH5CnFxqVNLT5pump      136   +16.8%    +3.5%    $17.62     0/0  TRAIL
+2026-05-20 16:01  pumpswap  3TYgKwkE2Y3rxdw9osLRSpxpXmSC1C1oo19W9KHspump      362   +10.7%    +9.3%    $46.40     0/0  TIMEOUT
+2026-05-20 20:01  orca      oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp       122    +1.3%    +0.3%     $1.32     0/0  TIMEOUT

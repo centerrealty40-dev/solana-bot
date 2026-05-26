@@ -78,33 +78,6 @@ async function tableExists(tableName) {
   return Boolean(res.rows[0]?.table_name);
 }
 
-async function ensureSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS direct_lp_events (
-      ts timestamptz,
-      source text,
-      pair_address text,
-      base_mint text,
-      quote_mint text,
-      dex text,
-      first_price_usd double precision,
-      first_liquidity_usd double precision,
-      launch_inferred_ts timestamptz,
-      confidence double precision,
-      reason text,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS direct_lp_events_base_pair_ts_uq
-      ON direct_lp_events (base_mint, pair_address, ts);
-  `);
-  await pool.query('CREATE INDEX IF NOT EXISTS direct_lp_events_ts_idx ON direct_lp_events (ts DESC)');
-  await pool.query('CREATE INDEX IF NOT EXISTS direct_lp_events_base_mint_idx ON direct_lp_events (base_mint)');
-  await pool.query('CREATE INDEX IF NOT EXISTS direct_lp_events_pair_address_idx ON direct_lp_events (pair_address)');
-  await pool.query('CREATE INDEX IF NOT EXISTS direct_lp_events_dex_idx ON direct_lp_events (dex)');
-}
-
 function snapshotSelect(tableName, dex, hasLaunchTs) {
   return `
     SELECT
@@ -136,6 +109,12 @@ async function buildCandidateSql() {
   if (await tableExists('orca_pair_snapshots')) {
     snapshotSources.push(snapshotSelect('orca_pair_snapshots', 'orca', true));
   }
+  if (await tableExists('moonshot_pair_snapshots')) {
+    snapshotSources.push(snapshotSelect('moonshot_pair_snapshots', 'moonshot', true));
+  }
+  if (await tableExists('pumpswap_pair_snapshots')) {
+    snapshotSources.push(snapshotSelect('pumpswap_pair_snapshots', 'pumpswap', true));
+  }
   if (snapshotSources.length === 0) return null;
 
   const hasTokens = await tableExists('tokens');
@@ -160,17 +139,17 @@ async function buildCandidateSql() {
   const launchSources = [];
   if (hasTokens) {
     launchSources.push(`
-      SELECT mint AS base_mint, MIN(first_seen_at) AS launch_ts, 'tokens:pumpportal' AS launch_source
+      SELECT mint AS base_mint, MIN(first_seen_at) AS launch_ts, 'tokens:pumpfun' AS launch_source
       FROM tokens
-      WHERE metadata->>'source' = 'pumpportal'
+      WHERE mint IN (SELECT DISTINCT base_mint FROM swaps WHERE dex = 'pumpfun')
       GROUP BY mint
     `);
   }
   if (hasSwaps) {
     launchSources.push(`
-      SELECT base_mint, MIN(block_time) AS launch_ts, 'swaps:pumpportal' AS launch_source
+      SELECT base_mint, MIN(block_time) AS launch_ts, 'swaps:pumpfun' AS launch_source
       FROM swaps
-      WHERE source = 'pumpportal'
+      WHERE dex = 'pumpfun'
       GROUP BY base_mint
     `);
   }
@@ -275,8 +254,8 @@ async function buildCandidateSql() {
       ) AS confidence,
       concat_ws(
         '; ',
-        'new dex pair without pumpportal launch evidence',
-        CASE WHEN token_first_seen_at IS NULL THEN 'mint absent from tokens before detector' ELSE 'mint already in tokens from non-pumpportal source' END,
+        'new dex pair without pumpfun launch evidence',
+        CASE WHEN token_first_seen_at IS NULL THEN 'mint absent from tokens before detector' ELSE 'mint already in tokens from non-pumpfun source' END,
         CASE WHEN ABS(EXTRACT(EPOCH FROM (first_pair_snapshot_ts - first_base_snapshot_ts))) <= 120 THEN 'base mint first appeared in snapshots with this pair' ELSE NULL END,
         'first_pair_snapshot_ts=' || first_pair_snapshot_ts::text,
         'first_base_snapshot_ts=' || first_base_snapshot_ts::text
@@ -477,7 +456,6 @@ async function shutdown(signal) {
 }
 
 async function main() {
-  await ensureSchema();
   log('info', 'detector start', {
     intervalMs: INTERVAL_MS,
     freshLookbackMinutes: FRESH_LOOKBACK_MINUTES,

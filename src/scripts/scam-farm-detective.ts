@@ -1,56 +1,30 @@
-/**
- * Scam-farm / orchestrated-ring detector (DB-first, review → confirm → Wallet Atlas).
- *
- * Env (see .env.example):
- *   SCAM_FARM_DRY_RUN=1              default: no DB writes to candidates; atlas still dry inside write fn
- *   SCAM_FARM_WRITE_ATLAS=0          set 1 on server after review
- *   SCAM_FARM_LOOKBACK_DAYS=14
- *   SCAM_FARM_FUNDING_WINDOW_SEC=300
- *   SCAM_FARM_STRONG_SCORE=80
- *   SCAM_FARM_CONFIRM_WRITE_SCORE=75
- *   SCAM_FARM_ENABLE_RPC=0
- *   SCAM_FARM_RPC_BUDGET=20
- *   SOLANA_RPC_HTTP_URL=             QuickNode/JSON-RPC https (with ENABLE_RPC); never commit key
- *   SCAM_FARM_LOG_PATH=data/logs/scam-farm-detective.log
- *   SCAM_FARM_UPDATE_PRIMARY=0
- *
- * Scheduler (server, user salpha):
- *   every 4h: cron zero minutes, every 4 hours (see SCAM_FARM_CRON in .env.example);
- *   cd /opt/solana-alpha and SCAM_FARM_DRY_RUN=0 npm run scam-farm:detect
- *   or PM2: npm run scam-farm:loop (node-cron, same env in ecosystem)
- */
 import 'dotenv/config';
-import cron from 'node-cron';
 import { runScamFarmDetectivePass } from '../intel/scam-farm-detective/run-detective.js';
-import { loadScamFarmConfig } from '../intel/scam-farm-detective/config.js';
-import { child } from '../core/logger.js';
 
-const log = child('scam-farm-detective-cli');
-
-const useLoop = process.argv.includes('--loop');
-
-async function one(): Promise<void> {
-  try {
-    const m = await runScamFarmDetectivePass();
-    log.info(m, 'done');
-  } catch (e) {
-    log.error({ err: String(e) }, 'run failed');
-    process.exit(1);
-  }
+function hasHelpFlag(): boolean {
+  return process.argv.includes('--help') || process.argv.includes('-h');
 }
 
-if (!useLoop) {
-  void one().then(() => process.exit(0));
-} else {
-  const expr = process.env.SCAM_FARM_CRON ?? '0 */4 * * *';
-  if (!cron.validate(expr)) {
-    log.error({ expr }, 'invalid SCAM_FARM_CRON');
+if (hasHelpFlag()) {
+  console.log(`scam-farm-detective — SQL + optional RPC + Atlas write
+
+Env (см. SCAM_FARM_* в .env.example):
+  SCAM_FARM_DRY_RUN=0|1   (default 1)
+  SCAM_FARM_WRITE_ATLAS=0|1
+  SCAM_FARM_ENABLE_RPC=0|1  + SOLANA_RPC_HTTP_URL / QUICKNODE_HTTP_URL
+  SCAM_FARM_MAX_SQL_ROWS, SCAM_FARM_LOOKBACK_DAYS, …
+
+Runs one full pass (sync_fund / rug_cohort / orchestrate_split → scam_farm_candidates).
+`);
+  process.exit(0);
+}
+
+runScamFarmDetectivePass()
+  .then((m) => {
+    console.log(JSON.stringify({ ok: true, metrics: m }));
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error(JSON.stringify({ ok: false, error: String(err?.message || err) }));
     process.exit(1);
-  }
-  loadScamFarmConfig();
-  void one();
-  cron.schedule(expr, () => {
-    void one();
   });
-  log.info({ expr }, 'scam-farm-detective scheduler started');
-}

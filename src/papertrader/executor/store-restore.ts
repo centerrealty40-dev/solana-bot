@@ -1,0 +1,539 @@
+import fs from 'node:fs';
+import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
+import { markFollowupCompleted } from './followup.js';
+import {
+  ensureLiveOscarExitPolicyPinned,
+  waveBMarkTrailLevelTaken,
+} from './exit-policy-wave-b.js';
+import { ladderPnlThresholdMark } from './tp-ladder-state.js';
+import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
+
+function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
+  ladderPnlThresholdMark(used, pnlPct);
+}
+
+/** Mirror `entryLegSignaturesFromOpenTradeJson` (live replay) — avoid importing live/replay (cycle). */
+function entryLegSignaturesFromRestorePayload(raw: Record<string, unknown>): string[] {
+  const el = raw.entryLegSignatures;
+  const out: string[] = [];
+  if (Array.isArray(el)) {
+    for (const x of el) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  if (out.length > 0) return out;
+  const legacyPrimary = raw.repairedFromTxSignature;
+  if (typeof legacyPrimary === 'string' && legacyPrimary.length >= 32) out.push(legacyPrimary);
+  const legs = raw.repairedLegSignatures;
+  if (Array.isArray(legs)) {
+    for (const x of legs) {
+      if (typeof x === 'string' && x.length >= 32) out.push(x);
+    }
+  }
+  return out;
+}
+
+export interface RestoreState {
+  evaluatedAt: Map<string, number>;
+  lastEntryTsByMint: Map<string, number>;
+  /** Последний убыточный exit по mint (replay журнала). */
+  /** Max `exitTs` (ms) per mint after a full `close` — used for post-exit buy cooldown. */
+  lastPostExitBuyCooldownTsByMint: Map<string, number>;
+  open: Map<string, OpenTrade>;
+}
+
+/**
+ * 1.11.167: безопасный coerce числа из произвольного входа. `Number(undefined)`
+ * возвращает `NaN`, а `JSON.stringify(NaN) === 'null'` → партиал-селлы выглядели
+ * с `sellFraction: null` в JSONL, что ломало downstream-аналитику. `coerceNum0`
+ * приводит к 0 любые `NaN`/`Infinity`/нечисловые значения.
+ */
+function coerceNum0(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function mapPartialSell(p: Record<string, unknown>): PartialSell {
+  const solL =
+    typeof p.solProceedsLamports === 'string' && /^\d+$/.test(p.solProceedsLamports)
+      ? p.solProceedsLamports
+      : undefined;
+  const src = p.proceedsUsdSource;
+  const proceedsUsdSource =
+    src === 'chain_sol' || src === 'jupiter_quote' || src === 'model'
+      ? (src as PartialSell['proceedsUsdSource'])
+      : undefined;
+  const priceN = coerceNum0(p.price);
+  /** 1.11.168: optional retro-leakage поля — pass-through если есть. */
+  const piRaw = p.priceImpactPct;
+  const piNum = typeof piRaw === 'number' ? piRaw : Number(piRaw);
+  const priceImpactPct = Number.isFinite(piNum) && piNum >= 0 && piNum <= 1 ? piNum : undefined;
+  const slipRaw = p.slipRealizedPct;
+  const slipNum = typeof slipRaw === 'number' ? slipRaw : Number(slipRaw);
+  const slipRealizedPct = Number.isFinite(slipNum) ? slipNum : undefined;
+  return {
+    ts: coerceNum0(p.ts),
+    price: priceN,
+    marketPrice: coerceNum0(p.marketPrice ?? priceN),
+    sellFraction: coerceNum0(p.sellFraction),
+    reason: (p.reason ?? 'TP_LADDER') as PartialSell['reason'],
+    proceedsUsd: coerceNum0(p.proceedsUsd),
+    grossProceedsUsd: coerceNum0(p.grossProceedsUsd),
+    pnlUsd: coerceNum0(p.pnlUsd),
+    grossPnlUsd: coerceNum0(p.grossPnlUsd),
+    ...(solL ? { solProceedsLamports: solL } : {}),
+    ...(proceedsUsdSource ? { proceedsUsdSource } : {}),
+    ...(priceImpactPct != null ? { priceImpactPct } : {}),
+    ...(slipRealizedPct != null ? { slipRealizedPct } : {}),
+  };
+}
+
+/** JSON snapshot → `OpenTrade` (paper JSONL `open` rows + Phase 7 live mirror events). */
+export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string }): OpenTrade | null {
+  try {
+    const rawPartials = Array.isArray(o.partialSells) ? o.partialSells : [];
+    const partialSells: PartialSell[] = rawPartials.map((p) =>
+      mapPartialSell(
+        typeof p === 'object' && p !== null ? (p as unknown as Record<string, unknown>) : {},
+      ),
+    );
+
+    const ot: OpenTrade = {
+      mint: o.mint,
+      symbol: o.symbol ?? '?',
+      lane: (o.lane ?? 'post_migration') as OpenTrade['lane'],
+      source: o.source,
+      metricType: (o.metricType ?? 'price') as OpenTrade['metricType'],
+      dex: (o.dex ?? 'raydium') as OpenTrade['dex'],
+      entryTs: Number(o.entryTs ?? Date.now()),
+      entryMcUsd: Number(o.entryMcUsd ?? 0),
+      entryMarketCapUsd:
+        typeof o.entryMarketCapUsd === 'number' && Number(o.entryMarketCapUsd) > 0
+          ? Number(o.entryMarketCapUsd)
+          : null,
+      entryMetrics: o.entryMetrics ?? {
+        uniqueBuyers: 0,
+        uniqueSellers: 0,
+        sumBuySol: 0,
+        sumSellSol: 0,
+        topBuyerShare: 0,
+        bcProgress: 0,
+      },
+      peakMcUsd: Number(o.peakMcUsd ?? o.entryMcUsd ?? 0),
+      peakPnlPct: Number(o.peakPnlPct ?? 0),
+      trailingArmed: Boolean(o.trailingArmed ?? false),
+      legs: Array.isArray(o.legs)
+        ? o.legs.map((l) => ({
+            ts: Number(l.ts),
+            price: Number(l.price),
+            marketPrice: Number(l.marketPrice ?? l.price),
+            sizeUsd: Number(l.sizeUsd),
+            reason: (l.reason ?? 'open') as 'open' | 'dca' | 'scale_in',
+            triggerPct: l.triggerPct,
+          }))
+        : [],
+      partialSells,
+      totalInvestedUsd: Number(o.totalInvestedUsd ?? 0),
+      avgEntry: Number(o.avgEntry ?? o.entryMcUsd ?? 0),
+      avgEntryMarket: Number(o.avgEntryMarket ?? o.entryMcUsd ?? 0),
+      remainingFraction: Number(o.remainingFraction ?? 1),
+      dcaUsedLevels: new Set<number>(Array.isArray(o.dcaUsedLevels) ? (o.dcaUsedLevels as number[]) : []),
+      dcaUsedIndices: new Set<number>(
+        Array.isArray((o as unknown as { dcaUsedIndices?: number[] }).dcaUsedIndices)
+          ? (o as unknown as { dcaUsedIndices: number[] }).dcaUsedIndices
+          : [],
+      ),
+      ladderUsedLevels: new Set<number>(
+        Array.isArray(o.ladderUsedLevels) ? (o.ladderUsedLevels as number[]) : [],
+      ),
+      ladderUsedIndices: new Set<number>(
+        Array.isArray((o as unknown as { ladderUsedIndices?: number[] }).ladderUsedIndices)
+          ? (o as unknown as { ladderUsedIndices: number[] }).ladderUsedIndices
+          : [],
+      ),
+      pairAddress:
+        o.pairAddress != null && String(o.pairAddress).trim() ? String(o.pairAddress) : null,
+      entryLiqUsd:
+        typeof o.entryLiqUsd === 'number' && Number(o.entryLiqUsd) > 0 ? Number(o.entryLiqUsd) : null,
+      lastObservedPriceUsd:
+        typeof o.lastObservedPriceUsd === 'number' && Number(o.lastObservedPriceUsd) > 0
+          ? Number(o.lastObservedPriceUsd)
+          : undefined,
+    };
+    const rawPayload = o as unknown as Record<string, unknown>;
+    const mergedSigs = entryLegSignaturesFromRestorePayload(rawPayload);
+    if (mergedSigs.length > 0) {
+      ot.entryLegSignatures = mergedSigs;
+    }
+    const lam = (o as unknown as { liveAnchorMode?: unknown }).liveAnchorMode;
+    if (lam === 'chain' || lam === 'simulate') {
+      ot.liveAnchorMode = lam;
+    } else if (!ot.liveAnchorMode && mergedSigs.length > 0) {
+      ot.liveAnchorMode = 'chain';
+    }
+    if (!ot.totalInvestedUsd) ot.totalInvestedUsd = ot.legs.reduce((s, l) => s + l.sizeUsd, 0);
+
+    const lsei = rawPayload.liveStagedEntry;
+    if (lsei != null && typeof lsei === 'object') {
+      const p = lsei as Record<string, unknown>;
+      const signalTs = Number(p.signalTs);
+      const signalPriceUsd = Number(p.signalPriceUsd);
+      const firstDropPct = Number(p.firstDropPct);
+      const firstLegUsd = Number(p.firstLegUsd);
+      const secondDropPct = Number(p.secondDropPct);
+      const secondLegUsd = Number(p.secondLegUsd);
+      const thirdDropPct = Number(p.thirdDropPct);
+      const thirdLegUsd = Number(p.thirdLegUsd);
+      const killDropPct = Number(p.killDropPct);
+      const isV2EntrySplit = p.entrySplitV2 === true;
+      const secondLegUsdOk =
+        Number.isFinite(secondLegUsd) && (isV2EntrySplit ? secondLegUsd >= 0 : secondLegUsd > 0);
+      if (
+        Number.isFinite(signalTs) &&
+        signalTs > 0 &&
+        signalPriceUsd > 0 &&
+        Number.isFinite(firstDropPct) &&
+        Number.isFinite(firstLegUsd) &&
+        firstLegUsd > 0 &&
+        Number.isFinite(secondDropPct) &&
+        secondLegUsdOk &&
+        Number.isFinite(killDropPct)
+      ) {
+        ot.liveStagedEntry = {
+          signalTs,
+          signalPriceUsd,
+          firstDropPct,
+          firstLegUsd,
+          secondDropPct,
+          secondLegUsd,
+          ...(Number.isFinite(thirdDropPct) && Number.isFinite(thirdLegUsd) && thirdLegUsd > 0
+            ? { thirdDropPct, thirdLegUsd }
+            : {}),
+          killDropPct,
+          ...(p.mintFirstProbe === true ? { mintFirstProbe: true } : {}),
+          secondLegDone: Boolean(p.secondLegDone),
+          thirdLegDone: Boolean(p.thirdLegDone),
+          ...(p.entrySplitV2 === true
+            ? {
+                entrySplitV2: true,
+                entrySplitLegUsd: Number(p.entrySplitLegUsd) || firstLegUsd,
+                entrySplitDelayMs: Number(p.entrySplitDelayMs) || 10_000,
+                entrySplitMaxUpPct: Number(p.entrySplitMaxUpPct) || 3,
+                entrySplitMaxDownPct: Number(p.entrySplitMaxDownPct) || 10,
+                entrySplitAnchorUsd: Number(p.entrySplitAnchorUsd) || signalPriceUsd,
+                entrySplitLeg1Ts: Number(p.entrySplitLeg1Ts) || signalTs,
+                entrySplitLeg2Done: Boolean(p.entrySplitLeg2Done),
+                avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
+                avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
+                avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,
+                avgThirdLegUsd: Number.isFinite(thirdLegUsd) ? thirdLegUsd : undefined,
+                avgFirstCooldownMs: Number(p.avgFirstCooldownMs) || 180_000,
+                avgSecondCooldownMs: Number(p.avgSecondCooldownMs) || 300_000,
+                avgFirstLegDone: Boolean(p.avgFirstLegDone ?? p.secondLegDone),
+                avgSecondLegDone: Boolean(p.avgSecondLegDone ?? p.thirdLegDone),
+                avgFirstLegTs: Number.isFinite(Number(p.avgFirstLegTs)) ? Number(p.avgFirstLegTs) : undefined,
+              }
+            : {}),
+        };
+        if (rawPayload.liveMintFirstProbe === true || p.mintFirstProbe === true) {
+          ot.liveMintFirstProbe = true;
+          const k = Number(rawPayload.liveMintFirstProbeKillDropPct ?? p.killDropPct);
+          if (Number.isFinite(k) && k > 0) ot.liveMintFirstProbeKillDropPct = k;
+        }
+      }
+    }
+
+    const lpsi = rawPayload.livePendingScaleIn;
+    if (lpsi != null && typeof lpsi === 'object') {
+      const p = lpsi as Record<string, unknown>;
+      const anchorMarketUsd = Number(p.anchorMarketUsd);
+      const secondLegUsd = Number(p.secondLegUsd);
+      const executeAfterTs = Number(p.executeAfterTs);
+      const legacySym = Number(p.corridorPct);
+      const upRaw = Number(p.corridorUpPct);
+      const downRaw = Number(p.corridorDownPct);
+      let corridorUpPct: number;
+      let corridorDownPct: number;
+      if (Number.isFinite(upRaw) && upRaw > 0 && Number.isFinite(downRaw) && downRaw > 0) {
+        corridorUpPct = upRaw;
+        corridorDownPct = downRaw;
+      } else if (Number.isFinite(legacySym) && legacySym > 0) {
+        corridorUpPct = legacySym;
+        corridorDownPct = legacySym;
+      } else {
+        corridorUpPct = 0;
+        corridorDownPct = 0;
+      }
+      const maxSwapAttempts = Number(p.maxSwapAttempts);
+      if (
+        anchorMarketUsd > 0 &&
+        secondLegUsd > 0 &&
+        Number.isFinite(executeAfterTs) &&
+        corridorUpPct > 0 &&
+        corridorDownPct > 0 &&
+        Number.isFinite(maxSwapAttempts) &&
+        maxSwapAttempts >= 1
+      ) {
+        ot.livePendingScaleIn = {
+          anchorMarketUsd,
+          secondLegUsd,
+          executeAfterTs,
+          corridorUpPct,
+          corridorDownPct,
+          maxSwapAttempts: Math.floor(maxSwapAttempts),
+          swapAttempts: Math.max(0, Math.floor(Number(p.swapAttempts ?? 0))),
+          nextAttemptAfterTs: Math.max(0, Number(p.nextAttemptAfterTs ?? 0)),
+        };
+      }
+    }
+
+    const tpReg = rawPayload.tpRegime;
+    if (tpReg === 'unknown' || tpReg === 'up' || tpReg === 'down' || tpReg === 'sideways') {
+      ot.tpRegime = tpReg;
+    }
+    const tpFeat = rawPayload.tpRegimeFeatures;
+    if (tpFeat != null && typeof tpFeat === 'object') {
+      const f = tpFeat as Record<string, unknown>;
+      ot.tpRegimeFeatures = {
+        netMovePct: Number(f.netMovePct ?? 0),
+        rangePct: Number(f.rangePct ?? 0),
+        sampleCount: Number(f.sampleCount ?? 0),
+        table: f.table != null && String(f.table).trim() ? String(f.table) : null,
+      };
+    }
+    const tpOv = rawPayload.tpGridOverrides;
+    if (tpOv != null && typeof tpOv === 'object') {
+      const g = tpOv as Record<string, unknown>;
+      const overrides: NonNullable<OpenTrade['tpGridOverrides']> = {};
+      if (g.gridStepPnl != null && Number.isFinite(Number(g.gridStepPnl))) {
+        overrides.gridStepPnl = Number(g.gridStepPnl);
+      }
+      if (g.gridSellFraction != null && Number.isFinite(Number(g.gridSellFraction))) {
+        overrides.gridSellFraction = Number(g.gridSellFraction);
+      }
+      if (Array.isArray(g.gridSellFractionByStep) && g.gridSellFractionByStep.length > 0) {
+        overrides.gridSellFractionByStep = g.gridSellFractionByStep
+          .map((x) => Number(x))
+          .filter((x) => Number.isFinite(x))
+          .map((x) => Math.min(1, Math.max(0, x)));
+      }
+      if (g.gridMaxRungs != null && Number.isFinite(Number(g.gridMaxRungs))) {
+        overrides.gridMaxRungs = Math.floor(Number(g.gridMaxRungs));
+      }
+      if (
+        g.gridFirstRungRetraceMinPnlPct != null &&
+        Number.isFinite(Number(g.gridFirstRungRetraceMinPnlPct))
+      ) {
+        overrides.gridFirstRungRetraceMinPnlPct = Number(g.gridFirstRungRetraceMinPnlPct);
+      }
+      if (Object.keys(overrides).length > 0) ot.tpGridOverrides = overrides;
+    }
+
+    const dk = rawPayload.dynamicKillstopShadow;
+    if (dk != null && typeof dk === 'object') {
+      const d = dk as Record<string, unknown>;
+      if (d.version === 'dynamic-killstop-shadow-v1' && typeof d.status === 'string' && typeof d.reason === 'string') {
+        ot.dynamicKillstopShadow = dk as OpenTrade['dynamicKillstopShadow'];
+      }
+    }
+
+    const lep = rawPayload.liveExitProfileMode;
+    if (lep === 'A' || lep === 'B') ot.liveExitProfileMode = lep;
+
+    const lkbs = rawPayload.liveKillstopBelowStreak;
+    if (typeof lkbs === 'number' && Number.isFinite(lkbs) && lkbs >= 1) {
+      ot.liveKillstopBelowStreak = Math.min(255, Math.floor(lkbs));
+    }
+
+    if (Boolean(rawPayload.liveBreakevenTrimDone)) {
+      ot.liveBreakevenTrimDone = true;
+    }
+
+    const lepi = rawPayload.liveExitPolicyId;
+    if (
+      lepi === 'legacy_grid' ||
+      lepi === 'wave_b_v1' ||
+      lepi === 'variant_a_v1' ||
+      lepi === 'variant_a_v2' ||
+      lepi === 'variant_a_v3'
+    ) {
+      ot.liveExitPolicyId = lepi;
+    }
+
+    if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
+    if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;
+    const lvsp = rawPayload.liveVariantAScratchPrevPnlFrac;
+    if (typeof lvsp === 'number' && Number.isFinite(lvsp)) ot.liveVariantAScratchPrevPnlFrac = lvsp;
+    const lvsk = rawPayload.liveVariantAScratchPeakPnlFrac;
+    if (typeof lvsk === 'number' && Number.isFinite(lvsk)) ot.liveVariantAScratchPeakPnlFrac = lvsk;
+
+    const lvrp = rawPayload.liveVariantARemainderPeakPnlFrac;
+    if (typeof lvrp === 'number' && Number.isFinite(lvrp)) ot.liveVariantARemainderPeakPnlFrac = lvrp;
+    if (Boolean(rawPayload.liveVariantATrailArmed)) ot.liveVariantATrailArmed = true;
+    if (Boolean(rawPayload.liveVariantASmart48Extended)) ot.liveVariantASmart48Extended = true;
+    if (Boolean(rawPayload.liveVariantASalvage24Checked)) ot.liveVariantASalvage24Checked = true;
+    if (Boolean(rawPayload.liveVariantAH48Checked)) ot.liveVariantAH48Checked = true;
+
+    const lwp = rawPayload.liveWavePeakPnlFrac;
+    if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;
+
+    const lwa = rawPayload.liveWaveTrailAnchorPnlFrac;
+    if (typeof lwa === 'number' && Number.isFinite(lwa)) ot.liveWaveTrailAnchorPnlFrac = lwa;
+
+    const lwt = rawPayload.liveWaveTrailLevelsTaken;
+    if (Array.isArray(lwt)) {
+      ot.liveWaveTrailLevelsTaken = lwt
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x));
+    }
+
+    const dlap = rawPayload.dcaLastEvalPnlVsAvgFrac;
+    if (typeof dlap === 'number' && Number.isFinite(dlap)) {
+      ot.dcaLastEvalPnlVsAvgFrac = dlap;
+    }
+
+    /** Wave migration runs on first tracker tick when `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1`. */
+    if (lepi !== 'wave_b_v1' && lepi !== 'variant_a_v1' && lepi !== 'variant_a_v2' && lepi !== 'variant_a_v3') {
+      ensureLiveOscarExitPolicyPinned(ot);
+    }
+
+    reconcileEntrySplitV2FromLegs(ot);
+
+    return ot;
+  } catch {
+    return null;
+  }
+}
+
+function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unknown>): void {
+  const mint = raw.mint != null ? String(raw.mint) : '';
+  if (!mint) return;
+  const ot = state.open.get(mint);
+  if (!ot) return;
+
+  ot.partialSells.push(mapPartialSell(raw));
+
+  const sf = Number(raw.sellFraction ?? 0);
+  if (sf > 0 && sf <= 1 && Number.isFinite(sf)) {
+    ot.remainingFraction *= 1 - sf;
+  }
+
+  const reason = String(raw.reason ?? '');
+  const stepIdx = Number(raw.ladderStepIndex ?? NaN);
+  if (reason === 'TP_LADDER' && Number.isFinite(stepIdx) && stepIdx >= 0) {
+    ot.ladderUsedIndices.add(Math.floor(stepIdx));
+  }
+  const lp = Number(raw.ladderPnlPct ?? NaN);
+  if (reason === 'TP_LADDER' && Number.isFinite(lp)) {
+    ladderRememberLevel(ot.ladderUsedLevels, lp);
+  }
+  if (reason === 'BREAKEVEN_TRIM') {
+    ot.liveBreakevenTrimDone = true;
+  }
+  if (reason === 'TRAIL_STEP' && Number.isFinite(lp)) {
+    waveBMarkTrailLevelTaken(ot, lp);
+  }
+}
+
+function applyDcaAddLedgerLine(state: RestoreState, raw: Record<string, unknown>): void {
+  const mint = raw.mint != null ? String(raw.mint) : '';
+  if (!mint) return;
+  const ot = state.open.get(mint);
+  if (!ot) return;
+
+  const ts = Number(raw.ts ?? Date.now());
+  const price = Number(raw.price ?? 0);
+  const marketPrice = Number(raw.marketPrice ?? raw.price ?? 0);
+  const sizeUsd = Number(raw.sizeUsd ?? 0);
+  if (!(sizeUsd > 0)) return;
+
+  const leg: PositionLeg = {
+    ts,
+    price: price > 0 ? price : marketPrice,
+    marketPrice: marketPrice > 0 ? marketPrice : price,
+    sizeUsd,
+    reason: 'dca',
+    triggerPct:
+      raw.triggerPct !== undefined && raw.triggerPct !== null ? Number(raw.triggerPct) : undefined,
+  };
+  ot.legs.push(leg);
+
+  const trig = leg.triggerPct;
+  if (trig !== undefined && Number.isFinite(trig)) {
+    ladderRememberLevel(ot.dcaUsedLevels, trig);
+  }
+  const stepIdx = Number(raw.dcaStepIndex ?? NaN);
+  if (Number.isFinite(stepIdx) && stepIdx >= 0) {
+    ot.dcaUsedIndices.add(Math.floor(stepIdx));
+  }
+
+  if (typeof raw.totalInvestedUsd === 'number' && raw.totalInvestedUsd > 0) {
+    ot.totalInvestedUsd = raw.totalInvestedUsd;
+  } else {
+    ot.totalInvestedUsd += sizeUsd;
+  }
+  if (typeof raw.avgEntry === 'number' && raw.avgEntry > 0) ot.avgEntry = raw.avgEntry;
+  if (typeof raw.avgEntryMarket === 'number' && raw.avgEntryMarket > 0) {
+    ot.avgEntryMarket = raw.avgEntryMarket;
+  }
+  ot.remainingFraction = 1;
+}
+
+export function loadStore(storePath: string): RestoreState {
+  const state: RestoreState = {
+    evaluatedAt: new Map(),
+    lastEntryTsByMint: new Map(),
+    lastPostExitBuyCooldownTsByMint: new Map(),
+    open: new Map(),
+  };
+  if (!fs.existsSync(storePath)) return state;
+  const lines = fs.readFileSync(storePath, 'utf-8').split('\n').filter(Boolean);
+  for (const ln of lines) {
+    try {
+      const e = JSON.parse(ln) as {
+        kind?: string;
+        mint?: string;
+        ts?: number;
+        entryTs?: number;
+        offsetMin?: number;
+      };
+      if (e.kind === 'eval' && e.mint) {
+        const ts = Number(e.ts || 0);
+        const prev = state.evaluatedAt.get(e.mint) || 0;
+        if (ts > prev) state.evaluatedAt.set(e.mint, ts);
+      }
+      if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
+        const ot = restoreOpenTradeFromJson(e as Partial<OpenTrade> & { mint: string });
+        if (ot) state.open.set(e.mint, ot);
+        const prev = state.lastEntryTsByMint.get(e.mint) || 0;
+        if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);
+      }
+      if (e.kind === 'partial_sell' && e.mint) {
+        applyPartialSellLedgerLine(state, e as unknown as Record<string, unknown>);
+      }
+      if (e.kind === 'dca_add' && e.mint) {
+        applyDcaAddLedgerLine(state, e as unknown as Record<string, unknown>);
+      }
+      if (e.kind === 'close' && e.mint) {
+        const rawClose = e as Record<string, unknown>;
+        const exitTs = Number(rawClose.exitTs ?? rawClose.ts ?? 0);
+        if (exitTs > 0) {
+          const prev = state.lastPostExitBuyCooldownTsByMint.get(e.mint) ?? 0;
+          if (exitTs >= prev) state.lastPostExitBuyCooldownTsByMint.set(e.mint, exitTs);
+        }
+        state.open.delete(e.mint);
+      }
+      if (
+        e.kind === 'followup_snapshot' &&
+        e.mint &&
+        typeof e.entryTs === 'number' &&
+        typeof e.offsetMin === 'number'
+      ) {
+        markFollowupCompleted(e.mint, e.entryTs, e.offsetMin);
+      }
+    } catch {
+      // ignore corrupt line
+    }
+  }
+  return state;
+}

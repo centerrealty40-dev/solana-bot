@@ -1,178 +1,88 @@
-# VPS deployment guide (Ubuntu 22.04 / 24.04)
+# solana-alpha — production VPS (v2 slim)
 
-Stack:
+Single-product server for **solana-alpha** after W1/W2: one HTTP dashboard, Postgres, optional Redis, Caddy TLS, daily DB backup to Cloudflare R2.
 
-- **VPS** (KVM, 2 vCPU, 2 GB RAM minimum) — Hetzner CPX11, OVH VPS Starter, etc.
-- **Postgres** on Neon free tier (10 GB) — keeps data alive even if VPS dies
-- **Node.js 20.x** + pm2 process manager
-- **Caddy** for HTTPS termination + Let's Encrypt auto-cert
-- **Domain/subdomain** pointing to the VPS public IP
+## Host
 
-Total monthly cost: **$5–6** (just the VPS).
+| Item | Value |
+|------|--------|
+| VPS IPv4 | `187.124.38.242` |
+| OS | Ubuntu LTS (amd64) |
+| Approx cost | ~$5/mo tier |
 
-## 1. Prerequisites
+## Users & paths
 
-- A fresh Ubuntu 22.04 or 24.04 VPS with root SSH access
-- A subdomain A record pointing at the VPS public IP (e.g. `solana-bot.example.com -> 1.2.3.4`)
-- A Neon project URL — sign up at https://neon.tech, create a project, copy the `postgresql://...` connection string
-- A Helius API key — sign up at https://helius.dev (free tier, 1M credits/mo)
+| Item | Value |
+|------|--------|
+| App UNIX user | `salpha` (PM2, repo, data under `/home/salpha` or `/opt/solana-alpha`) |
+| App directory | `/opt/solana-alpha` |
+| Dashboard JSONL | `/opt/solana-alpha/data/paper2/organizer-paper.jsonl` |
 
-## 2. One-shot bootstrap
+Bootstrap from scratch: scripts under `deploy/v2-bootstrap/` (`01-base-stack.sh`, `02-finish-node-caddy-ufw.sh`, `03-salpha-db-repo-dashboard.sh`).
 
-SSH into the VPS as root and run:
+## Postgres
+
+| Item | Value |
+|------|--------|
+| Database | `solana_alpha` |
+| Role | `salpha` (password in `.env`, **never commit**) |
+| DSN | Set as `DATABASE_URL` or `SA_PG_DSN` in `/opt/solana-alpha/.env` |
+
+Migrations: `npm run db:migrate` (from repo root, loads `src/core/db/migrations/`).
+
+## Reverse proxy & TLS
+
+| Item | Value |
+|------|--------|
+| Public domain | `etonne-moi.com` |
+| Caddy | Terminates HTTPS, reverse-proxies to `127.0.0.1:3008` |
+
+## PM2
+
+| Item | Value |
+|------|--------|
+| Config file | `/opt/solana-alpha/ecosystem.config.cjs` |
+| Process | `dashboard-organizer-paper` → `npm run --silent dashboard` |
+| Logs | `/home/salpha/.pm2/logs/dashboard-organizer-paper-*.log` |
+
+Commands (always as `salpha`, with `HOME=/home/salpha`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/centerrealty40-dev/solana-bot/main/deploy/setup-vps.sh -o setup.sh
-sudo bash setup.sh
-```
-
-This installs Node 20, pm2, Caddy, configures UFW (firewall: SSH + 80 + 443 only), creates the `salpha` user and the `/opt/solana-alpha` directory, enables fail2ban.
-
-## 3. Clone and configure the app
-
-```bash
-sudo -iu salpha
 cd /opt/solana-alpha
-git clone https://github.com/centerrealty40-dev/solana-bot.git .
-cp .env.example .env
-nano .env
-```
-
-Fill at minimum:
-
-```
-DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require
-REDIS_URL=redis://localhost:6379         # OR an Upstash free URL — Redis is only used by BullMQ cron, optional in MVP
-HELIUS_API_KEY=...
-HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=...
-HELIUS_WEBHOOK_URL=https://solana-bot.your-domain.com/webhooks/helius
-HELIUS_WEBHOOK_AUTH=any-long-random-string-here-keep-secret
-EXECUTOR_MODE=paper
-```
-
-> **Important:** keep `EXECUTOR_MODE=paper` until at least one hypothesis passes the gate.
-
-If you don't want to set up Redis right now: leave `REDIS_URL=redis://localhost:6379` — the runner uses node-cron in-process and only needs Redis if you later add BullMQ background jobs.
-
-## 4. Install deps and apply schema
-
-```bash
-npm ci
-npm run db:migrate
-npm run views:install
-```
-
-This creates all tables in your Neon DB and installs Grafana-friendly SQL views.
-
-## 5. Start the four services with pm2
-
-```bash
 pm2 start ecosystem.config.cjs
 pm2 save
-exit                     # back to root
+pm2 list
 ```
 
-Enable pm2 to autostart on boot:
+## Cron / backups
+
+Daily atlas DB backup to R2 at **04:00 UTC** (crontab user `salpha`): `scripts-tmp/backup-db-r2-api.sh`. Env for R2 lives in `.env` (same keys as `.env.example`).
+
+## Deploy / update (operator)
 
 ```bash
-env PATH=$PATH:/usr/bin pm2 startup systemd -u salpha --hp /home/salpha
-# pm2 prints a long command — run it
+sudo -u salpha -H bash -lc '
+  cd /opt/solana-alpha &&
+  git fetch origin &&
+  git reset --hard origin/v2 &&
+  npm install --omit=dev &&
+  npm run db:migrate &&
+  pm2 delete all 2>/dev/null || true
+  pm2 start ecosystem.config.cjs &&
+  pm2 save
+'
 ```
 
-## 6. Configure Caddy for HTTPS
+(`npm ci --omit=dev` may fail on some hosts with optional-dep lockfile skew; `npm install --omit=dev` is the supported fallback.)
 
-Replace `YOUR_DOMAIN` in the Caddyfile with your real subdomain:
+Smoke:
 
 ```bash
-sed -i 's/YOUR_DOMAIN/solana-bot.your-domain.com/g' /opt/solana-alpha/deploy/Caddyfile
-cp /opt/solana-alpha/deploy/Caddyfile /etc/caddy/Caddyfile
-systemctl reload caddy
+curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3008/
+curl -sS -o /dev/null -w "%{http_code}\n" https://etonne-moi.com/
 ```
 
-Verify HTTPS works (Let's Encrypt cert is fetched automatically on first request):
+## Docs
 
-```bash
-curl -i https://solana-bot.your-domain.com/health
-# expect: {"ok":true,"ts":"...","mode":"paper"}
-```
-
-## 7. Verify Helius webhook is registered
-
-The API server registers/updates the Helius webhook on startup. Check pm2 logs:
-
-```bash
-pm2 logs sa-api --lines 50
-# look for: "updated helius webhook" or "created helius webhook"
-```
-
-You can also see the webhook in your Helius dashboard at https://dashboard.helius.dev/webhooks.
-
-## 8. Watch data flow in
-
-After ~10–30 minutes, swaps should be flowing. Quick sanity checks:
-
-```bash
-psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM swaps;"
-psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM tokens;"
-pm2 logs sa-runner --lines 100
-```
-
-## 9. After ~24h: kick off scoring
-
-The hourly cron starts automatically, but you can trigger an initial pass:
-
-```bash
-sudo -iu salpha
-cd /opt/solana-alpha
-npm run scores:compute
-```
-
-## 10. Updates
-
-To pull a new version after pushing changes to GitHub:
-
-```bash
-sudo -iu salpha
-cd /opt/solana-alpha
-bash deploy/update.sh
-```
-
-Zero-downtime reload via `pm2 reload`.
-
-## Useful commands
-
-```bash
-pm2 status
-pm2 logs                  # all services
-pm2 logs sa-runner        # one service
-pm2 restart sa-runner
-pm2 monit                 # live CPU/memory dashboard
-
-systemctl status caddy
-journalctl -u caddy -f
-
-# DB inspection
-psql "$DATABASE_URL" -c "SELECT hypothesis_id, status, COUNT(*) FROM positions GROUP BY hypothesis_id, status ORDER BY 1,2;"
-psql "$DATABASE_URL" -c "SELECT * FROM v_hypothesis_lifetime;"
-psql "$DATABASE_URL" -c "SELECT * FROM v_top_wallets LIMIT 20;"
-```
-
-## Going live (Stage 5 only)
-
-Do **not** flip to live until:
-
-1. At least one hypothesis has 100+ closed paper trades AND `npm run hypothesis:evaluate -- <id>` reports READY.
-2. The `live-executor.ts` Stage 5 implementation is finished (currently stub).
-3. You have a fresh hot wallet keypair file at a path referenced by `WALLET_KEYPAIR_PATH`, funded with $200–500 USDC.
-4. You've set up Telegram bot + chat id for trade alerts.
-
-Then:
-
-```bash
-nano .env
-# EXECUTOR_MODE=live
-# WALLET_KEYPAIR_PATH=/home/salpha/wallet.keypair.json
-# TELEGRAM_BOT_TOKEN=...
-# TELEGRAM_CHAT_ID=...
-pm2 restart sa-runner
-```
+- Runtime notes and troubleshooting: `deploy/RUNTIME.md`.
+- Do **not** commit `.env`, `.env.hourly`, or `_vps-backup-*` snapshots.

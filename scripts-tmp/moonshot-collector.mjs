@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -14,8 +15,6 @@ const GECKO_TRENDING_PAGES = Number(process.env.MOONSHOT_GECKO_TRENDING_PAGES ||
 const GECKO_NEW_POOLS_PAGES = Number(process.env.MOONSHOT_GECKO_NEW_POOLS_PAGES || 2);
 const SHORTLIST_MIN_LIQ_USD = Number(process.env.MOONSHOT_SHORTLIST_MIN_LIQ_USD || 20_000);
 const SHORTLIST_MIN_VOL5M_USD = Number(process.env.MOONSHOT_SHORTLIST_MIN_VOL5M_USD || 2_000);
-const RPC_TASK_PRIORITY = Number(process.env.MOONSHOT_RPC_TASK_PRIORITY || 50);
-const RPC_FEATURES = ['holders', 'largest_accounts', 'authorities', 'tx_burst'];
 const ONCE = process.argv.includes('--once');
 
 if (!process.env.DATABASE_URL) {
@@ -105,7 +104,7 @@ function normalizeDexScreenerPair(pair, bucketTs) {
   const txnsM5 = pair?.txns?.m5 ?? {};
   return {
     ts: bucketTs,
-    source: 'dexscreener',
+    source: 'moonshot',
     pair_address: pairAddress,
     base_mint: baseMint,
     quote_mint: quoteMint,
@@ -144,7 +143,7 @@ function normalizeGeckoPool(poolData, bucketTs) {
   const tx5m = attrs?.transactions?.m5 ?? {};
   return {
     ts: bucketTs,
-    source: 'geckoterminal',
+    source: 'moonshot',
     pair_address: pairAddress,
     base_mint: baseMint,
     quote_mint: quoteMint,
@@ -319,35 +318,6 @@ async function upsertSnapshots(rows) {
   return rows.length;
 }
 
-function shortlistMints(rows) {
-  const mints = new Set();
-  for (const row of rows) {
-    const liq = Number(row.liquidity_usd ?? 0);
-    const vol5m = Number(row.volume_5m ?? 0);
-    if (liq >= SHORTLIST_MIN_LIQ_USD && vol5m >= SHORTLIST_MIN_VOL5M_USD) {
-      mints.add(row.base_mint);
-    }
-  }
-  return [...mints];
-}
-
-async function enqueueRpcTasks(shortlistedMints) {
-  if (shortlistedMints.length === 0) return 0;
-  let enqueued = 0;
-  for (const mint of shortlistedMints) {
-    for (const feature of RPC_FEATURES) {
-      const res = await pool.query(
-        `INSERT INTO rpc_tasks (mint, feature_type, priority, not_before)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT DO NOTHING`,
-        [mint, feature, RPC_TASK_PRIORITY],
-      );
-      enqueued += Number(res.rowCount ?? 0);
-    }
-  }
-  return enqueued;
-}
-
 async function collectOneTick() {
   const tickStartedAt = Date.now();
   const bucketTs = getMinuteBucketUtc();
@@ -373,9 +343,18 @@ async function collectOneTick() {
       );
     }
 
+    rows = await mergePaper2OpenMintSnapshots({
+      rows,
+      bucketTs,
+      fetchJsonWithRetry,
+      sleep,
+      normalizeDexPair: normalizeDexScreenerPair,
+      dedupByPairAddress,
+      log,
+      component: 'moonshot-collector',
+    });
+
     const written = await upsertSnapshots(rows);
-    const shortlistedMints = shortlistMints(rows);
-    const rpcTasksEnqueued = await enqueueRpcTasks(shortlistedMints);
     ticksTotal += 1;
     rowsCollectedTotal += rows.length;
     rowsUpsertedTotal += written;
@@ -385,8 +364,6 @@ async function collectOneTick() {
       bucketTs: bucketTs.toISOString(),
       collected: rows.length,
       upserted: written,
-      shortlistedMints: shortlistedMints.length,
-      rpcTasksEnqueued,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
       rowsCollectedTotal,
@@ -441,7 +418,6 @@ async function main() {
     geckoNewPoolsPages: GECKO_NEW_POOLS_PAGES,
     shortlistMinLiqUsd: SHORTLIST_MIN_LIQ_USD,
     shortlistMinVol5mUsd: SHORTLIST_MIN_VOL5M_USD,
-    rpcTaskPriority: RPC_TASK_PRIORITY,
   });
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

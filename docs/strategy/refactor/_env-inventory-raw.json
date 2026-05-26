@@ -1,0 +1,6196 @@
+{
+  "stats": {
+    "total": 439,
+    "orphans": 3,
+    "multiValue": 0,
+    "multiProcess": 5,
+    "ok": 431
+  },
+  "env": [
+    {
+      "key": "PULLBACK_ALERT_MINT_COOLDOWN_MINUTES",
+      "status": "ORPHAN",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": []
+    },
+    {
+      "key": "RETRACE_ALERT_MINT_COOLDOWN_MINUTES",
+      "status": "ORPHAN",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": []
+    },
+    {
+      "key": "TELEGRAM_COOLDOWN_ALERT_QUICKNODE_BALANCE_MS",
+      "status": "ORPHAN",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3600000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": []
+    },
+    {
+      "key": "LIVE_TRADES_PATH",
+      "status": "MULTI_PROCESS",
+      "processes": [
+        "sa-raydium",
+        "sa-meteora",
+        "sa-orca",
+        "sa-moonshot",
+        "sa-pumpswap",
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\pt1-oscar-live.j",
+      "filesUsingSrcCount": 12,
+      "filesUsingNonSrcCount": 6,
+      "filesSrcSample": [
+        "src/intel/dip-bot-intel.ts",
+        "src/live/config.ts",
+        "src/live/daily-summary.ts"
+      ]
+    },
+    {
+      "key": "NODE_ENV",
+      "status": "MULTI_PROCESS",
+      "processes": [
+        "sa-raydium",
+        "sa-meteora",
+        "sa-orca",
+        "sa-moonshot",
+        "sa-pumpswap",
+        "sa-wallet-orchestrator",
+        "sa-collector-watch",
+        "sa-snapshot-freshness-watch",
+        "sa-jupiter",
+        "sa-direct-lp",
+        "live-oscar",
+        "market-spike-telegram-watch",
+        "market-pullback-telegram-watch",
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "production",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/core/logger.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_PULLBACK_CHANNEL_DEDUPE_PEAK_BUCKET_MIN",
+      "status": "MULTI_PROCESS",
+      "processes": [
+        "market-pullback-telegram-watch",
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-retrace-pullback-channel-dedupe.ts"
+      ]
+    },
+    {
+      "key": "SNAPSHOT_FRESHNESS_MAX_AGE_SEC",
+      "status": "MULTI_PROCESS",
+      "processes": [
+        "sa-snapshot-freshness-watch",
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "600",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/ingestion/pair-snapshot-freshness.ts"
+      ]
+    },
+    {
+      "key": "TELEGRAM_CHAT_ID",
+      "status": "MULTI_PROCESS",
+      "processes": [
+        "sa-collector-watch",
+        "sa-snapshot-freshness-watch",
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003878024799",
+      "filesUsingSrcCount": 11,
+      "filesUsingNonSrcCount": 9,
+      "filesSrcSample": [
+        "src/core/config.ts",
+        "src/core/telegram/resolve-operator-telegram.ts",
+        "src/core/telegram/sender.ts"
+      ]
+    },
+    {
+      "key": "COLLECTOR_WATCH_POLL_MS",
+      "status": "OK",
+      "processes": [
+        "sa-collector-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "COLLECTOR_WATCH_SILENCE_MAX_MS",
+      "status": "OK",
+      "processes": [
+        "sa-collector-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "480000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "COLLECTOR_WATCH_TELEGRAM",
+      "status": "OK",
+      "processes": [
+        "sa-collector-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_LIVE_OSCAR_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\pt1-oscar-live.j",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_LIVE_OSCAR_RISKY_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\pt1-oscar-live-r",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_PAPER_OSCAR_RISKY_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2\\paper-oscar-ri",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_PAPER_OSCAR_V21_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2\\paper-oscar-v2",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DASHBOARD_PAPER_OSCAR_V22_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2\\paper-oscar-v2",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "DIRECT_LP_ENQUEUE_RPC",
+      "status": "OK",
+      "processes": [
+        "sa-direct-lp"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "HOST",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.0.0.0",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/core/config.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "IMPULSE_QN_ROLLING_MAX_CREDITS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/pricing/impulse-qn-rolling.ts"
+      ]
+    },
+    {
+      "key": "JUPITER_QUOTE_429_INITIAL_BACKOFF_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "150",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/jupiter-http.ts"
+      ]
+    },
+    {
+      "key": "JUPITER_QUOTE_429_MAX_RETRIES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/jupiter-http.ts"
+      ]
+    },
+    {
+      "key": "JUPITER_QUOTE_API_URL",
+      "status": "OK",
+      "processes": [
+        "sa-jupiter"
+      ],
+      "distinctValues": 1,
+      "valueSample": "https://api.jup.ag/swap/v1/quote",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "JUPITER_WATCHER_ENQUEUE_RPC",
+      "status": "OK",
+      "processes": [
+        "sa-jupiter"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "JUPITER_WATCHER_REQUEST_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "sa-jupiter"
+      ],
+      "distinctValues": 1,
+      "valueSample": "650",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "LIVE_ADAPTIVE_PRIORITY_FEE_BOOST_FACTOR",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2.5",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/adaptive-priority-fee.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/adaptive-priority-fee.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ADAPTIVE_PRIORITY_FEE_HOLD_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/adaptive-priority-fee.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ADAPTIVE_PRIORITY_FEE_THRESHOLD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/adaptive-priority-fee.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ADAPTIVE_PRIORITY_FEE_WINDOW_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "600000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/adaptive-priority-fee.ts",
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BTC_GATE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BTC_GATE_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/btc-gate-telegram.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BUY_MAX_PRICE_IMPACT_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1.5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BUY_SIM_RETRY_ATTEMPTS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BUY_SIM_RETRY_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DAILY_SUMMARY_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/daily-summary.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DAILY_SUMMARY_HOUR_MSK",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/daily-summary.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DAILY_SUMMARY_MAX_BYTES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "52428800",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/daily-summary.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DEFAULT_SLIPPAGE_BPS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "50",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_AUDIT_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_DEEP_AUDIT_JSONL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\live-oscar-mint-",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live-discovery-health",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/main.ts",
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "LIVE_DISCOVERY_TG_SUPPRESS_ON_INSUFFICIENT_SOL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/wallet-buy-affordability.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_CORRIDOR_DOWN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_CORRIDOR_UP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_OUT_OF_CORRIDOR_POLL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/executor/paper-scale-in-env.ts"
+      ]
+    },
+    {
+      "key": "LIVE_EXECUTION_MODE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "live",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/phase3-self-test.ts"
+      ]
+    },
+    {
+      "key": "LIVE_HEARTBEAT_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_JUPITER_PRIORITY_MAX_SOL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.0001",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_JUPITER_QUOTE_URL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "https://api.jup.ag/swap/v1/quote",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_JUPITER_SWAP_PRIORITY_LEVEL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "veryHigh",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_JUPITER_SWAP_URL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "https://api.jup.ag/swap/v1/swap",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_JUPITER_TRACKER_TELEGRAM",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/telegram/jupiter-alerts.ts"
+      ]
+    },
+    {
+      "key": "LIVE_KILL_AFTER_CONSEC_FAIL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 3,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/events.ts",
+        "src/live/phase5-state.ts"
+      ]
+    },
+    {
+      "key": "LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MAX_OPEN_POSITIONS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MAX_POSITION_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1300",
+      "filesUsingSrcCount": 3,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts",
+        "src/live/phase5-runtime.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MIN_WALLET_SOL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MIN_WALLET_SOL_EQUITY_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_BLACKLIST_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_BLACKLIST_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\live-oscar-mint-",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_FILE_WATCH_DEBOUNCE_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/mint-file-watchers.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_FILE_WATCH_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/mint-file-watchers.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_FIRST_PROBE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "7",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_GRADUATED_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\live-oscar-mint-",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/events.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "300000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\live-oscar-mint-",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_REMOVE_AFTER_CONSEC_LOSSES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/mint-whitelist.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8617384935:AAEjPboG6mfzcZd_DXS5o6bUXrQicZZEz30",
+      "filesUsingSrcCount": 6,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": [
+        "src/core/telegram/resolve-operator-telegram.ts",
+        "src/live/btc-gate-telegram.ts",
+        "src/live/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "ADVICE",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/btc-gate-telegram.ts",
+        "src/live/config.ts",
+        "src/live/mint-first-probe.ts"
+      ]
+    },
+    {
+      "key": "LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003878024799",
+      "filesUsingSrcCount": 6,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": [
+        "src/core/telegram/resolve-operator-telegram.ts",
+        "src/live/btc-gate-telegram.ts",
+        "src/live/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "150",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/mint-whitelist.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PERIODIC_SELF_HEAL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PERIODIC_STUCK_GRACE_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PERIODIC_SWEEP_MIN_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.25",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003878024799",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PG_DATA_COVERAGE_TELEGRAM_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_PHASE5_FREE_SOL_GATE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_QUOTE_MAX_AGE_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_RECONCILE_BLOCK_MAX_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SELL_MAX_PRICE_IMPACT_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SELL_SIM_RETRY_ATTEMPTS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SELL_SIM_RETRY_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SIM_CREDITS_PER_CALL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SIM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/phase3-self-test.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "50",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "300",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SIM_TIMEOUT_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ADD_AUTO_DENYLIST_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ADD_AUTO_DENYLIST_REARMS_THRESHOLD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ADD_SIM_ERR_THRESHOLD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STRATEGY_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STRATEGY_ID",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "live-oscar",
+      "filesUsingSrcCount": 10,
+      "filesUsingNonSrcCount": 3,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-tp-grid-fraction-sweep.ts"
+      ]
+    },
+    {
+      "key": "LIVE_STRATEGY_PROFILE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "oscar",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_TRACKER_INTER_MINT_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_TRACKER_MTM_PROBE_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_TRACKER_MTM_PROBE_MAX_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "200",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_TRACKER_MTM_PROBE_MIN_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003878024799",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1800000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_WALLET_PUBKEY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 5,
+      "filesSrcSample": [
+        "src/intel/dip-bot-intel.ts",
+        "src/live/config.ts",
+        "src/live/main.ts"
+      ]
+    },
+    {
+      "key": "LIVE_WALLET_SECRET",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\live-oscar-micro",
+      "filesUsingSrcCount": 6,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts",
+        "src/live/phase3-self-test.ts"
+      ]
+    },
+    {
+      "key": "LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/reconcile-live.ts"
+      ]
+    },
+    {
+      "key": "MOONSHOT_COLLECTOR_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "sa-moonshot"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": []
+    },
+    {
+      "key": "MTM_SHADOW_ALT_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.58",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "MTM_SHADOW_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "MTM_SHADOW_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\mtm-shadow.jsonl",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "MTM_SHADOW_SAMPLE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "100",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "ORCA_COLLECTOR_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "sa-orca"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": []
+    },
+    {
+      "key": "PAPER_DCA_KILLSTOP",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-0.25",
+      "filesUsingSrcCount": 5,
+      "filesUsingNonSrcCount": 3,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/executor/tracker.ts",
+        "src/papertrader/types.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DCA_LEVELS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "",
+      "filesUsingSrcCount": 21,
+      "filesUsingNonSrcCount": 7,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/executor/live-staged-entry-lifecycle.ts",
+        "src/papertrader/types.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_BLOCK_CREATOR_DUMP",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_CAPITULATION_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.7",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_COOLDOWN_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/paper2-counterfactual-gates.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_COOLDOWN_MIN_SCALP",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_CREATOR_DUMP_LOOKBACK_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_CREATOR_DUMP_MAX_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_CREATOR_DUMP_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.05",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_DCA_AGGR_MAX_INTERVAL_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_DCA_AGGR_MIN_SELLS_24H",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_DCA_PRED_MIN_CHUNK_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_DCA_PRED_MIN_INTERVAL_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_DCA_PRED_MIN_SELLS_24H",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_GROUP_DUMP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.4",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_GROUP_MIN_SELLERS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_GROUP_SELL_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LARGE_SELL_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOCAL_HIGH_VETO_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30,60,120",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOOKBACK_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOOKBACK_WINDOWS_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120,360,720",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "true",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_MAX_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-50",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_MIN_AGE_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_MIN_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_MIN_IMPULSE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_RECENT_LOOKBACK_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_RECOVERY_VETO_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30,60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_REQUIRE_WHALE_TRIGGER",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_WHALE_ANALYSIS_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DIP_WHALE_SILENCE_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DISCOVERY_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DISCOVERY_MIN_MARKET_CAP_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000000",
+      "filesUsingSrcCount": 3,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/discovery/whitelist-discovery-inject.ts",
+        "src/papertrader/filters/snapshot-filter.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DRY_RUN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "false",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_MAX_KILL_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "28",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "72",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_KILL_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_SUPPORT_CLUSTER_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "14",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_ENABLE_LAUNCHPAD_LANE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "false",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_ENABLE_MIGRATION_LANE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "false",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_ENABLE_POST_LANE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "true",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_ENTRY_FIRST_LEG_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.7",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_FOLLOWUP_TICK_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HEARTBEAT_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30000",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/main.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_DB_WRITEBACK",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_GPA_CREDITS_PER_CALL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "100",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_INCLUDE_TOKEN2022",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_LIVE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_MAX_PER_TICK",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_NEG_TTL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_ON_FAIL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "warn",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_TIMEOUT_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_TTL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "90000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_HOLDERS_USE_QN_ADDON",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_IMPULSE_CONFIRM_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_IMPULSE_DIP_POLICY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "parallel_and",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_IMPULSE_PG_MIN_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_IMPULSE_RPC_MAX_PER_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_JUPITER_SWAP_URL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "https://api.jup.ag/swap/v1/swap",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/pricing/sim-audit.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_DRAIN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "35",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_FORCE_CLOSE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_MIN_AGE_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_RPC_FALLBACK",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIQ_WATCH_STAMP_ON_TRACK",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_EXIT_MODE_AB",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/types.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_MCAP_TTL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/pricing.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/executor/store-restore.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "180000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "300000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/main.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "25",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "7",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "150",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "14",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "150",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_MIN_HOLDER_COUNT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PEAK_LOG_STEP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_GUARD_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "24",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_MAX_GAP_MINUTES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_MIN_HOUR_RATIO",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_MIN_MINUTES_PER_HOUR",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "45",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_MIN_RECENT_HOURS_WITH_DATA",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_MIN_SYSTEM_HOUR_RATIO",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.7",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_RECENT_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_STRICT_AFTER_RECOVERY_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "24",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PG_DATA_COVERAGE_STRICT_MIN_HOUR_RATIO",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.75",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2.5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_VOL_1H_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POSITION_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1300",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/live/main.ts",
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MAX_AGE_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_AGE_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2160",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_BS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.98",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_BUYS_5M",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_LIQ_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "140000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_SELLS_5M",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_POST_MIN_VOL_5M_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_BLOCK_ON_FAIL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_EXIT_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8.0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_MAX_SLIP_BPS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "400",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_MAX_SLIP_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4.0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_QUOTE_URL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "https://api.jup.ag/swap/v1/quote",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/pricing/price-verify.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_TIMEOUT_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRICE_VERIFY_USE_JUPITER_PRICE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_CACHE_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\priority-fee-cache-li",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/pricing/priority-fee.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_MAX_AGE_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "600000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_PERCENTILE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "p75",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_RPC_TIMEOUT_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_TARGET_CU",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "200000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_PRIORITY_FEE_TICKER_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SAFETY_CHECK_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_AUDIT_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_BUILD_TIMEOUT_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_CREDS_PER_CALL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_MAX_WALL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_SAMPLE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_STRICT_BUDGET",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SIM_USE_JUPITER_BUILD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_SL_X",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_STRATEGY_ID",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "live-oscar",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/paper2-universe-strategy-matrix.ts"
+      ]
+    },
+    {
+      "key": "PAPER_STRATEGY_KIND",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "dip",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TIMEOUT_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "48",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.03",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_GRID_SELL_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.10",
+      "filesUsingSrcCount": 5,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/types.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_GRID_SELL_FRACTION_PROFILE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.10,0.30,0.50,0.70,0.70",
+      "filesUsingSrcCount": 2,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/types.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_GRID_STEP_PNL",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.05",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_LADDER",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "",
+      "filesUsingSrcCount": 19,
+      "filesUsingNonSrcCount": 6,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/types.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_REGIME_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 3,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/papertrader/types.ts",
+        "src/scripts/paper2-universe-strategy-matrix.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TP_X",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "100",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TRACK_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TRADES_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2\\_live_oscar_un",
+      "filesUsingSrcCount": 3,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": [
+        "src/live/config.ts",
+        "src/papertrader/config.ts",
+        "src/scripts/live-slippage-report.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TRAIL_DROP",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.10",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TRAIL_MODE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "ladder_retrace",
+      "filesUsingSrcCount": 5,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_TRAIL_TRIGGER_X",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1.05",
+      "filesUsingSrcCount": 4,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/papertrader/config.ts",
+        "src/scripts/live-oscar-ladder-retrace-sweep.ts",
+        "src/scripts/live-oscar-mint-counterfactual.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOL_1H_MIN_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "36000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOL_5M_1H_GUARD_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOL_5M_SPIKE_MAX_MULT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "7",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "24",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_MAX_ACTIVE_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_MIN_HOURS_WITH_DATA",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_MIN_PEAK_VOL5M_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_BASELINE_P10_MAX_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2500",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_GUARD_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_LOOKBACK_HOURS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_MIN_BASELINE_SAMPLES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "25",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_MIN_RECENT_VOL5M_USD",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_RECENT_MINUTES",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "45",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_VOLUME_SYBIL_SPIKE_RATIO_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/papertrader/config.ts"
+      ]
+    },
+    {
+      "key": "PAPER2_DIR",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 7,
+      "filesSrcSample": []
+    },
+    {
+      "key": "PORT",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3008",
+      "filesUsingSrcCount": 12,
+      "filesUsingNonSrcCount": 6,
+      "filesSrcSample": [
+        "src/core/config.ts",
+        "src/core/known-addresses.ts",
+        "src/core/telegram/sender.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_DISPLAY_TZ",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "Europe/Moscow",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_DRY_RUN",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_HOLDER_NULL_SOFT",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MAX_NEWER_BAR_AGE_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "25",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MAX_ROWS_PER_TABLE",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "800",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_AGE_HOURS",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_HOLDERS",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_LIQ_USD",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_MARKET_CAP_USD",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_RISE_PCT",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_MIN_VOL_5M_USD",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_POLL_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_POLL_SEND_DEDUPE_MS",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_SCAN_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "90",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "PULLBACK_ALERT_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "market-pullback-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003504887486",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pullback-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_DISABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_HOLDERS",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_IMPULSE_CONFIRM",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_LIQ_WATCH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_LIVE_SEND",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_PRI_FEE",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_PRICE_VERIFY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_SAFETY",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QN_FEATURE_BUDGET_SIM",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": [
+        "src/core/rpc/qn-feature-usage.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_BILLING_MILESTONES",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/core/rpc/quicknode-billing-alerts.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_HOURLY_RECENT_MINUTES_LIST",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10,30,60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_HOURLY_REMAINING_TELEGRAM",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_HOURLY_REMAINING_TELEGRAM_MS",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3600000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "QUICKNODE_USAGE_TELEGRAM",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/stream/quicknode-usage-loop.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_DISPLAY_TZ",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "Europe/Moscow",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_DRY_RUN",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_HOLDER_NULL_SOFT",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MAX_EVENT_AGE_MINUTES",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MAX_ROWS_PER_TABLE",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "800",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MIN_AGE_HOURS",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MIN_HOLDERS",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MIN_MCAP_USD",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MIN_PUMP_PCT",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "6",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_POLL_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_POLL_SEND_DEDUPE_MS",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_SCAN_MINUTES",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "120",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "RETRACE_ALERT_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "retrace-alert-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003504887486",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-pump-retrace-alert-watch.ts"
+      ]
+    },
+    {
+      "key": "SA_BACKFILL_MAX_CREDITS_PER_DAY",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "500000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "24",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_GECKO_HTTP_PER_DAY",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "40000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_POOLS_PER_JOB",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2200000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 2,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_RPC_PER_JOB",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1200",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_RPC_PER_POOL",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "180",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_MAX_TX_FETCHES_PER_POOL",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "18",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_RPC_SLEEP_MS",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "220",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_SCHEDULER_TICK_MS",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_ORCH_SIG_PAGES_MAX",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SA_QN_GLOBAL_CREDITS_PER_DAY",
+      "status": "OK",
+      "processes": [
+        "sa-wallet-orchestrator"
+      ],
+      "distinctValues": 1,
+      "valueSample": "4000000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SIGNAL_LAB_ALT_PROBE_FRACTION",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.55",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "SIGNAL_LAB_ENABLED",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "SIGNAL_LAB_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\live\\signal-lab.jsonl",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "SIGNAL_LAB_SAMPLE_PCT",
+      "status": "OK",
+      "processes": [
+        "live-oscar"
+      ],
+      "distinctValues": 1,
+      "valueSample": "100",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/live/config.ts"
+      ]
+    },
+    {
+      "key": "SNAPSHOT_FRESHNESS_POLL_MS",
+      "status": "OK",
+      "processes": [
+        "sa-snapshot-freshness-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "300000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS",
+      "status": "OK",
+      "processes": [
+        "sa-snapshot-freshness-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3600000",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 1,
+      "filesSrcSample": []
+    },
+    {
+      "key": "SPIKE_ALERT_AUDIT_DB_ENABLED",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_AUDIT_LOG_SKIPS",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DEXSCREENER_META",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DISPLAY_TZ",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "Europe/Moscow",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DRY_RUN",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER1_MCAP_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1500000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER1_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "14",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER1_MIN_PCT_ROLLING",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "15",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER2_MCAP_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER2_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "11",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER2_MIN_PCT_ROLLING",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "12",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER3_MCAP_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "7000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER3_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ESCALATE_DELTA_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ESCALATE_ENABLED",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ESCALATE_MAX_PER_MINT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ESCALATE_MIN_GAP_SEC",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ESCALATE_TIER_CHANGE_FORCES_UPDATE",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_GLITCH_NEXT_BAR_RETRACE_MIN",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.55",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_HOLDER_NULL_SOFT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_LIQ_MCAP_REF_MIN_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_LIQ_MCAP_SANITY",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_LOG_MISS_BY_FILTER",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_LOW_LIQ_GLITCH_THRESHOLD_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_LOW_LIQ_MAX_ABS_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "55",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MAX_NEWER_BAR_AGE_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MAX_ROWS_PER_TABLE",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "800",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MC_PRICE_MAX_DIVERGENCE_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_AGE_HOURS",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_HOLDERS",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_LIQ_TO_REF_MCAP_RATIO",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0.002",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_LIQ_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_MARKET_CAP_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "2000000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MIN_VOL_5M_USD",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "0",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_MINT_COOLDOWN_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "5",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_POLL_INTERVAL_MS",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "20000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_POLL_SEND_DEDUPE_MS",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60000",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_PUMP_MIN_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "30",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ROLLING_MAX_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_ROLLING_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "3",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_SCAN_MINUTES",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "60",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_TELEGRAM_CHAT_ID",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "-1003633176769",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_THRESHOLD_DUMP_CONSEC_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_THRESHOLD_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_THRESHOLD_PUMP_CONSEC_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "8",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_THRESHOLD_ROLLING_PCT",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "10",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_TIERED_BY_MCAP",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "SPIKE_ALERT_UPSERT_TOKEN_META",
+      "status": "OK",
+      "processes": [
+        "market-spike-telegram-watch"
+      ],
+      "distinctValues": 1,
+      "valueSample": "1",
+      "filesUsingSrcCount": 1,
+      "filesUsingNonSrcCount": 0,
+      "filesSrcSample": [
+        "src/scripts/market-spike-telegram-watch.ts"
+      ]
+    },
+    {
+      "key": "STORE_PATH",
+      "status": "OK",
+      "processes": [
+        "live-oscar-dashboard"
+      ],
+      "distinctValues": 1,
+      "valueSample": "C:\\Users\\cente\\Ideas\\solana-alpha\\data\\paper2\\organizer-pape",
+      "filesUsingSrcCount": 0,
+      "filesUsingNonSrcCount": 3,
+      "filesSrcSample": []
+    }
+  ]
+}

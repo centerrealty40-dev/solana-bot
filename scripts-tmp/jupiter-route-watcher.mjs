@@ -88,32 +88,6 @@ function isRateLimitError(error) {
   return String(error?.message || error).includes('status=429');
 }
 
-async function ensureSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS jupiter_route_snapshots (
-      ts timestamptz NOT NULL,
-      source text NOT NULL,
-      mint text NOT NULL,
-      routeable boolean NOT NULL,
-      best_out_usd double precision,
-      estimated_slippage_bps double precision,
-      quote_in_usd double precision,
-      hops int,
-      venue text,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS jupiter_route_snapshots_mint_ts_uq
-      ON jupiter_route_snapshots (mint, ts);
-  `);
-  await pool.query('CREATE INDEX IF NOT EXISTS jupiter_route_snapshots_ts_idx ON jupiter_route_snapshots (ts)');
-  await pool.query('CREATE INDEX IF NOT EXISTS jupiter_route_snapshots_mint_idx ON jupiter_route_snapshots (mint)');
-  await pool.query(
-    'CREATE INDEX IF NOT EXISTS jupiter_route_snapshots_routeable_idx ON jupiter_route_snapshots (routeable)',
-  );
-}
-
 async function tableExists(tableName) {
   const res = await pool.query('SELECT to_regclass($1) AS table_name', [`public.${tableName}`]);
   return Boolean(res.rows[0]?.table_name);
@@ -157,6 +131,7 @@ async function buildCandidateSources() {
     'meteora_pair_snapshots',
     'orca_pair_snapshots',
     'moonshot_pair_snapshots',
+    'pumpswap_pair_snapshots',
   ]) {
     if (!(await tableExists(tableName))) continue;
     const source = tableName.replace('_pair_snapshots', '');
@@ -482,7 +457,6 @@ async function shutdown(signal) {
 }
 
 async function main() {
-  await ensureSchema();
   log('info', 'watcher start', {
     intervalMs: INTERVAL_MS,
     lookbackHours: LOOKBACK_HOURS,
