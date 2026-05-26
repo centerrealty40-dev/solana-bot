@@ -99,18 +99,6 @@ const PM2_APPS = [
       name: 'sa-meteora',
       cwd: root,
       script: 'scripts-tmp/meteora-collector.mjs',
-      max_restarts: 50,
-      restart_delay: 5000,
-      max_memory_restart: '1024M',
-      merge_logs: true,
-      time: true,
-      env: {
-        NODE_ENV: 'production',
-        METEORA_COLLECTOR_INTERVAL_MS: '30000',
-        LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
-      },
-      cwd: root,
-      script: 'scripts-tmp/orca-collector.mjs',
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
@@ -122,11 +110,11 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** 1.11.244: 30s PG snapshots for dip-watch (was 60s). */
-        ORCA_COLLECTOR_INTERVAL_MS: '30000',
+        METEORA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
     },
+    // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
     {
       name: 'sa-moonshot',
       cwd: root,
@@ -164,6 +152,9 @@ const PM2_APPS = [
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
+    },
+    {
+      name: 'sa-wallet-orchestrator',
       cwd: root,
       script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
       args: '--daemon',
