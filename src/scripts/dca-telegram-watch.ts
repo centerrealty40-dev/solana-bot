@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
+import bs58 from 'bs58';
 
 type JsonRpcResponse<T> = {
   result?: T;
@@ -39,6 +40,19 @@ function loadEnv(): void {
 
 /** Official Jupiter recurring-DCA program (network-wide new opens). */
 const JUPITER_DCA_PROGRAM = 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
+const OPEN_DCA_V2_DISC = Buffer.from('8e772b6da2340bb1', 'hex');
+
+type DcaOpenPlan = {
+  inputMint: string;
+  outputMint: string;
+  inAmountRaw: bigint;
+  inAmountPerCycleRaw: bigint;
+  cycleFrequencySec: number;
+  cycles: number;
+  cycleUsd: number;
+  totalUsd: number;
+  etaSec: number;
+};
 
 const WATCH_PROGRAMS = new Set([
   JUPITER_DCA_PROGRAM,
@@ -333,7 +347,13 @@ function classifyTx(tx: any, opts?: { walletScoped?: boolean }): Classified {
   };
 
   if (isJupiterDcaOpen(logsLower)) {
-    return { kind: 'SETUP', setupSource: 'jupiter_dca', ...base };
+    const plan = parseJupiterOpenDcaV2(tx, null);
+    return {
+      kind: 'SETUP',
+      setupSource: 'jupiter_dca',
+      ...base,
+      mint: plan?.outputMint || base.mint,
+    };
   }
   if (isBotDcaSetupOnProgram(tx, logsLower)) {
     return { kind: 'SETUP', setupSource: 'bot_dca', ...base };
@@ -513,6 +533,11 @@ function fmtPct(v: number): string {
   return `${v.toFixed(3)}%`;
 }
 
+function fmtPctSigned(v: number): string {
+  if (!Number.isFinite(v)) return 'n/a';
+  return `${v > 0 ? '+' : ''}${v.toFixed(3)}%`;
+}
+
 function fmtDuration(totalSec: number): string {
   if (!Number.isFinite(totalSec) || totalSec <= 0) return 'n/a';
   const sec = Math.floor(totalSec % 60);
@@ -632,6 +657,88 @@ function estimateSetupDepositUsd(tx: any, wallet: string, cls: Classified, dex: 
   return estimateBuyUsd(cls.amountInRaw, dex);
 }
 
+function readU64LE(buf: Buffer, off: number): bigint {
+  let v = 0n;
+  for (let i = 0; i < 8; i++) v |= BigInt(buf[off + i] ?? 0) << BigInt(8 * i);
+  return v;
+}
+
+function instructionAccounts(ins: any, tx: any): string[] {
+  const keys = tx?.transaction?.message?.accountKeys || [];
+  const raw = ins?.accounts;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (entry?.pubkey) return String(entry.pubkey);
+      const idx = Number(entry);
+      if (Number.isInteger(idx) && keys[idx]) return String(keys[idx]?.pubkey || keys[idx]);
+      return '';
+    })
+    .filter(Boolean);
+}
+
+function mintRawToUsd(raw: bigint, mint: string, dex: DexInfo | null): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (mint === USDC_MINT || mint === USDT_MINT) return n / 1e6;
+  if (mint === SOL_MINT) return (n / 1e9) * solUsdPrice(dex);
+  return 0;
+}
+
+function parseJupiterOpenDcaV2(tx: any, dex: DexInfo | null): DcaOpenPlan | null {
+  const instructions = tx?.transaction?.message?.instructions || [];
+  for (const ins of instructions) {
+    const pid = ins?.programId || ins?.program;
+    if (pid !== JUPITER_DCA_PROGRAM) continue;
+    const dataB58 = ins?.data;
+    if (typeof dataB58 !== 'string' || !dataB58) continue;
+    let data: Buffer;
+    try {
+      data = Buffer.from(bs58.decode(dataB58));
+    } catch {
+      continue;
+    }
+    if (data.length < 40 || !data.subarray(0, 8).equals(OPEN_DCA_V2_DISC)) continue;
+
+    const inAmountRaw = readU64LE(data, 16);
+    const inAmountPerCycleRaw = readU64LE(data, 24);
+    const cycleFrequencySec = Number(readU64LE(data, 32));
+    if (inAmountPerCycleRaw <= 0n || !Number.isFinite(cycleFrequencySec) || cycleFrequencySec <= 0) continue;
+
+    const accounts = instructionAccounts(ins, tx);
+    const inputMint = accounts[3] || '';
+    const outputMint = accounts[4] || '';
+    if (!outputMint) continue;
+
+    const cycles = Math.max(1, Number(inAmountRaw / inAmountPerCycleRaw));
+    const cycleUsd = mintRawToUsd(inAmountPerCycleRaw, inputMint, dex);
+    const totalUsd = mintRawToUsd(inAmountRaw, inputMint, dex) || cycleUsd * cycles;
+    return {
+      inputMint,
+      outputMint,
+      inAmountRaw,
+      inAmountPerCycleRaw,
+      cycleFrequencySec,
+      cycles,
+      cycleUsd,
+      totalUsd,
+      etaSec: cycleFrequencySec * cycles,
+    };
+  }
+  return null;
+}
+
+function computePriceImpactEst(
+  cycleUsd: number,
+  cycles: number,
+  liqUsd: number,
+): { perCyclePct: number; totalPct: number } {
+  if (!(cycleUsd > 0 && cycles > 0 && liqUsd > 0)) return { perCyclePct: NaN, totalPct: NaN };
+  const perCyclePct = (cycleUsd / liqUsd) * 100;
+  return { perCyclePct, totalPct: perCyclePct * cycles };
+}
+
 function buildBuyStyleAlert(
   st: WatchState,
   wallet: string,
@@ -644,8 +751,9 @@ function buildBuyStyleAlert(
   const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
   const buyUsd = estimateBuyUsd(cls.amountInRaw, dex);
   const liq = dex?.liquidityUsd || 0;
-  const impact = liq > 0 && buyUsd > 0 ? (buyUsd / liq) * 100 : NaN;
-  const perCycle = Number.isFinite(impact) ? impact / 100 : NaN;
+  const targetCycles = Number(process.env.DCA_WATCH_TARGET_CYCLES || 100);
+  const perCyclePct = liq > 0 && buyUsd > 0 ? (buyUsd / liq) * 100 : NaN;
+  const totalPct = Number.isFinite(perCyclePct) ? perCyclePct * targetCycles : NaN;
   const vi1h = dex && dex.volume24h > 0 ? (dex.volume1h / dex.volume24h) * 100 * 24 : NaN;
 
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
@@ -662,7 +770,6 @@ function buildBuyStyleAlert(
 
   const observedFreqSec =
     cycles >= 2 ? Math.max(1, Math.floor((lastTsMs - firstTsMs) / 1000 / (cycles - 1))) : Number.NaN;
-  const targetCycles = Number(process.env.DCA_WATCH_TARGET_CYCLES || 100);
   const etaSec = Number.isFinite(observedFreqSec) && targetCycles > cycles ? (targetCycles - cycles) * observedFreqSec : Number.NaN;
 
   return [
@@ -671,7 +778,7 @@ function buildBuyStyleAlert(
     `Frequency: ${fmtMoney(buyUsd)} every ${Number.isFinite(observedFreqSec) ? observedFreqSec : 'n/a'} seconds (${cycles} cycles${order !== 'n/a' ? `, order ${escapeHtml(order)}` : ''})`,
     `ETA: ${fmtDuration(etaSec)}`,
     `Scores: 👍`,
-    `Potential price change: ${fmtPct(impact)} (${fmtPct(perCycle)} per cycle)`,
+    `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
     '',
     `MC: ${fmtMoney(dex?.marketCap || 0)} → LQ: ${fmtMoney(dex?.liquidityUsd || 0)}`,
     `V24h: ${fmtMoney(dex?.volume24h || 0)} → V1h: ${fmtMoney(dex?.volume1h || 0)} → VI1h: ${fmtPct(vi1h)}`,
@@ -700,6 +807,7 @@ function buildSetupStyleAlert(
   dex: DexInfo | null,
   tsIso: string,
   depositUsd: number,
+  plan: DcaOpenPlan | null,
 ): string {
   const ca = cls.mint || 'unknown';
   const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
@@ -707,11 +815,23 @@ function buildSetupStyleAlert(
     cls.setupSource === 'jupiter_dca' ? 'Jupiter DCA (OpenDcaV2)' : cls.setupSource === 'bot_dca' ? 'Bot DCA vault' : 'DCA';
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
 
-  return [
+  const lines = [
     `🟡 NEW DCA OPEN — ${escapeHtml(symbol)}`,
     '',
     `Source: ${escapeHtml(source)}`,
     `Deposit est.: ${fmtMoney(depositUsd)}`,
+  ];
+
+  if (plan && plan.cycleUsd > 0 && plan.cycles > 0) {
+    const { perCyclePct, totalPct } = computePriceImpactEst(plan.cycleUsd, plan.cycles, dex?.liquidityUsd || 0);
+    lines.push(
+      `Frequency: ${fmtMoney(plan.cycleUsd)} every ${plan.cycleFrequencySec} seconds (${plan.cycles} cycles)`,
+      `ETA: ${fmtDuration(plan.etaSec)}`,
+      `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
+    );
+  }
+
+  lines.push(
     `Scores: 👍`,
     '',
     `MC: ${fmtMoney(dex?.marketCap || 0)} → LQ: ${fmtMoney(dex?.liquidityUsd || 0)}`,
@@ -730,7 +850,9 @@ function buildSetupStyleAlert(
     '',
     `Observed: ${escapeHtml(period)}`,
     `Tx: ${buildSolscanLink(rowSig)}`,
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 function activeWallets(_st: WatchState): string[] {
@@ -770,10 +892,14 @@ async function handleTransaction(
   const minSetupUsd = setupMinUsd();
   let setupDex: DexInfo | null = null;
   let setupDepositUsd = 0;
+  let setupPlan: DcaOpenPlan | null = null;
   if (cls.kind === 'SETUP') {
-    setupDex = await fetchDexInfo(cls.mint);
+    const planPreview = cls.setupSource === 'jupiter_dca' ? parseJupiterOpenDcaV2(tx, null) : null;
+    setupDex = await fetchDexInfo(planPreview?.outputMint || cls.mint);
+    setupPlan = cls.setupSource === 'jupiter_dca' ? parseJupiterOpenDcaV2(tx, setupDex) : null;
     setupDepositUsd = estimateSetupDepositUsd(tx, wallet, cls, setupDex);
-    if (minSetupUsd > 0 && setupDepositUsd < minSetupUsd) {
+    const filterUsd = Math.max(setupDepositUsd, setupPlan?.totalUsd || 0);
+    if (minSetupUsd > 0 && filterUsd < minSetupUsd) {
       markSeen(st, row.signature);
       return;
     }
@@ -788,7 +914,7 @@ async function handleTransaction(
     const dex = await fetchDexInfo(cls.mint);
     alertText = buildBuyStyleAlert(st, wallet, row.signature, cls, dex, ts);
   } else if (cls.kind === 'SETUP') {
-    alertText = buildSetupStyleAlert(wallet, row.signature, cls, setupDex, ts, setupDepositUsd);
+    alertText = buildSetupStyleAlert(wallet, row.signature, cls, setupDex, ts, setupDepositUsd, setupPlan);
   } else {
     const programTag = cls.programs.length > 0 ? cls.programs.map(shortAddr).join(',') : 'none';
     const parts = [
