@@ -40,6 +40,7 @@ module.exports = {
         // Per-watcher telegram override; if empty, watcher falls back to TELEGRAM_* env
         DCA_WATCH_TELEGRAM_BOT_TOKEN: process.env.DCA_WATCH_TELEGRAM_BOT_TOKEN || '',
         DCA_WATCH_TELEGRAM_CHAT_ID: process.env.DCA_WATCH_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '',
+        DCA_WATCH_SETUP_MIN_USD: process.env.DCA_WATCH_SETUP_MIN_USD || '500',
       },
     },
   ],
