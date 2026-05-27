@@ -172,6 +172,16 @@ export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
       ? Math.floor(opts.lookbackMinutes)
       : Math.max(5, Math.min(240, cfg.volumeLeaderSnapshotLookbackMin ?? 30));
 
+  const minTokenAgeMin = Math.max(
+    cfg.lanePostMinAgeMin ?? 0,
+    cfg.dipMinAgeMin ?? 0,
+    cfg.globalMinTokenAgeMin ?? 0,
+  );
+  const minTokenAgeSql =
+    minTokenAgeMin > 0
+      ? `AND EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 >= ${minTokenAgeMin}`
+      : '';
+
   const mintList = valid.map((m) => sqlQuoteMint(m)).join(', ');
 
   const unions = SNAPSHOT_TABLES.map(
@@ -198,6 +208,7 @@ export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
     WHERE p.base_mint IN (${mintList})
       AND p.ts >= now() - interval '${lookbackMin} minutes'
       AND COALESCE(p.price_usd, 0) > 0
+      ${minTokenAgeSql}
   `,
   ).join('\nUNION ALL\n');
 

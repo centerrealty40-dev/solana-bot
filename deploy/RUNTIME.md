@@ -8,6 +8,8 @@
 
 **RPC / очередь:** если `rpc_tasks` раздута (сотни тысяч `queued`), новые DEX-коллекторы поднимаются с `**RAYDIUM_ENQUEUE_RPC` / `METEORA_ENQUEUE_RPC` / `ORCA_ENQUEUE_RPC` = `0`** — они всё равно пишут `*_pair_snapshots` для `enqueue-seed-signatures`, но не добавляют задачи в `rpc_tasks`. Включить `=1` после просадки очереди.
 
+**Solana JSON-RPC (live-oscar / paper):** основной endpoint — **QuickNode** (`SA_RPC_HTTP_URL` / `QUICKNODE_HTTP_URL` в `/opt/solana-alpha/.env`). **Helius** — запасной: в `.env` задать `HELIUS_API_KEY` (или полный `HELIUS_RPC_URL`), не удаляя QuickNode; в ecosystem для `live-oscar` — `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`. При блоке локального счётчика QuickNode (`qn-client` → `reason: budget`) тот же метод уходит на Helius. Проверка: `curl -s -X POST "$SA_RPC_HTTP_URL" -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}'` и аналогично для Helius URL.
+
 ---
 
 ## 1. PM2 — манифест в git

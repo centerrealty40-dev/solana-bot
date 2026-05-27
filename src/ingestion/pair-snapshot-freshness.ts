@@ -1,5 +1,6 @@
 /**
  * Freshness of minute bars in dex `*_pair_snapshots` tables — discovery + alert watchers depend on this.
+ * sa-orca collector removed 2026-05-26 (runaway CPU); orca table is not monitored.
  */
 import { db } from '../core/db/client.js';
 import { sql as dsql } from 'drizzle-orm';
@@ -8,9 +9,15 @@ export const DEX_PAIR_SNAPSHOT_TABLES = [
   { source: 'pumpswap', table: 'pumpswap_pair_snapshots' },
   { source: 'raydium', table: 'raydium_pair_snapshots' },
   { source: 'meteora', table: 'meteora_pair_snapshots' },
-  { source: 'orca', table: 'orca_pair_snapshots' },
   { source: 'moonshot', table: 'moonshot_pair_snapshots' },
 ] as const;
+
+export function activeDexPairSnapshotTables(): ReadonlyArray<{
+  source: string;
+  table: string;
+}> {
+  return DEX_PAIR_SNAPSHOT_TABLES;
+}
 
 export type DexSnapshotFreshness = {
   source: string;
@@ -30,7 +37,7 @@ export async function fetchDexSnapshotFreshness(
   maxAgeSec = snapshotMaxAgeSecFromEnv(),
 ): Promise<DexSnapshotFreshness[]> {
   const out: DexSnapshotFreshness[] = [];
-  for (const { source, table } of DEX_PAIR_SNAPSHOT_TABLES) {
+  for (const { source, table } of activeDexPairSnapshotTables()) {
     try {
       const r = await db.execute(dsql.raw(`
         SELECT MAX(ts) AS ts,
@@ -92,7 +99,7 @@ export function buildSnapshotStaleAlertBody(
   const maxMin = Math.round(maxAgeSec / 60);
   const lines = [
     `🚨 PG snapshots STALE (порог ${maxMin} мин) — discovery и TG-алерты слепы.`,
-    'Проверьте: pm2 logs sa-pumpswap / sa-raydium; pm2 restart sa-pumpswap sa-raydium sa-orca sa-meteora sa-moonshot',
+    'Проверьте: pm2 logs sa-pumpswap / sa-raydium; pm2 restart sa-pumpswap sa-raydium sa-meteora sa-moonshot',
   ];
   for (const r of rows) {
     const ageMin =

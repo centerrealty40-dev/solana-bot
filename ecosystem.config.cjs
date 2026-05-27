@@ -239,6 +239,8 @@ const PM2_APPS = [
         SNAPSHOT_FRESHNESS_POLL_MS: '300000',
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
+        /** sa-orca off — do not treat stale orca_pair_snapshots as prod incident. */
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
       },
     },
     {
@@ -300,6 +302,8 @@ const PM2_APPS = [
       env: {
         ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
+        /** QuickNode primary; при исчерпании локального QN/feature cap — тот же RPC-метод на Helius (.env: HELIUS_API_KEY). */
+        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
@@ -355,8 +359,8 @@ const PM2_APPS = [
         /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /** 1.11.263: $140k → $400k — live journal 2d: 81% losses had liq<400k at entry eval. */
-        PAPER_POST_MIN_LIQ_USD: '300000',
+        /** Min liq post-lane / discovery ($30k). */
+        PAPER_POST_MIN_LIQ_USD: '30000',
         /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
@@ -373,14 +377,15 @@ const PM2_APPS = [
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
-        /** Live Oscar only: мин. глубина просадки цены от high выбранного окна (OR 120/360/720 мин). Значение −16 в env = −16%.
-         *  1.11.242: смягчили с −20% до −16% по итогам 14d PnL grid backtest:
-         *  −20% → −16% даёт +41% больше сделок (2405 → 3382), +39% net PnL ($13 266 → $18 508 за 14d, $15/trade),
-         *  WR практически не меняется (83% → 82%). См. `docs/strategy/refactor/DIP_CANON_GRID_14D.md`. */
-        PAPER_DIP_MIN_DROP_PCT: '-16',
+        /** Live Oscar only: мин. глубина просадки от high окна (OR 120/360/720 мин). −20 = −20%.
+         *  1.11.283: возврат к −20% — меньше входов (было −16 с 1.11.242). */
+        PAPER_DIP_MIN_DROP_PCT: '-20',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
-        PAPER_DIP_MIN_AGE_MIN: '0',
+        /** 1.11.283: паритет с PAPER_POST_MIN_AGE_MIN (36 ч). Было 0 — volume-leader inject обходил post SQL age. */
+        PAPER_DIP_MIN_AGE_MIN: '2160',
+        /** Глобальный gate discovery/dip: возраст токена (мин), не только age_min пула. */
+        PAPER_MIN_TOKEN_AGE_MIN: '2160',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
         /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 20m). */
@@ -415,7 +420,7 @@ const PM2_APPS = [
         PAPER_POST_CRASH_FAST_PATH_ENABLED: '1',
         PAPER_POST_CRASH_FAST_PATH_LOOKBACK_MIN: '180',
         PAPER_POST_CRASH_FAST_PATH_MIN_PG_SAMPLES: '8',
-        PAPER_POST_CRASH_FAST_PATH_MIN_DROP_PCT: '-16',
+        PAPER_POST_CRASH_FAST_PATH_MIN_DROP_PCT: '-20',
         PAPER_POST_CRASH_FAST_PATH_MAX_DROP_PCT: '-50',
         PAPER_POST_CRASH_FAST_PATH_MIN_VOL_SPIKE_MULT: '5',
         PAPER_POST_CRASH_FAST_PATH_STABILIZE_MIN: '25',
@@ -759,6 +764,7 @@ const PM2_APPS = [
         PAPER_VOLUME_LEADER_REEVAL_SEC: '15',
         PAPER_VOLUME_LEADER_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_LEADER_QUERY_CACHE_SEC: '60',
+        /** 1.11.283: откат 90→30m + меньше top-N — реже inject молодых раннеров. */
         PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN: '30',
         /** 1.11.275 — Snapshot sanity: dead pool / liq≈0 at high mcap before canonical pick. */
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ENABLED: '1',
@@ -847,6 +853,7 @@ const PM2_APPS = [
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',

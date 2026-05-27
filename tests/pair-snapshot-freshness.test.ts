@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activeDexPairSnapshotTables,
   buildSnapshotStaleAlertBody,
   formatSnapshotFreshnessPulseLine,
   snapshotsAnyStale,
@@ -18,6 +19,12 @@ function row(source: string, ageSec: number | null, ok: boolean): DexSnapshotFre
 }
 
 describe('pair-snapshot-freshness', () => {
+  it('activeDexPairSnapshotTables excludes orca (collector off)', () => {
+    const sources = activeDexPairSnapshotTables().map((t) => t.source);
+    expect(sources).not.toContain('orca');
+    expect(sources).toEqual(['pumpswap', 'raydium', 'meteora', 'moonshot']);
+  });
+
   it('worstSnapshotAgeSec picks max', () => {
     const rows = [row('pumpswap', 120, true), row('raydium', 900, false)];
     expect(worstSnapshotAgeSec(rows)).toBe(900);
@@ -38,5 +45,6 @@ describe('pair-snapshot-freshness', () => {
     const body = buildSnapshotStaleAlertBody([row('pumpswap', 800, false)], 600);
     expect(body).toContain('STALE');
     expect(body).toContain('pumpswap');
+    expect(body).not.toContain('sa-orca');
   });
 });

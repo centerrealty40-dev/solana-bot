@@ -77,6 +77,28 @@
 
 ---
 
+## 0.3 RPC: QuickNode (основной) + Helius (запасной)
+
+| Роль | Переменные | Примечание |
+|------|------------|------------|
+| **Primary** | `SA_RPC_HTTP_URL` и/или `QUICKNODE_HTTP_URL` | Не удалять при добавлении Helius; все `qnCall` сначала идут сюда и учитываются в `data/quicknode-usage.json`. |
+| **Fallback** | `HELIUS_API_KEY` или `HELIUS_RPC_URL` | Только в **VPS `.env`**, не коммитить ключ. |
+| **Включение** | `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1` | В `ecosystem.config.cjs` для **`live-oscar`** (дефолт в коде — вкл.; `=0` отключает). |
+
+При исчерпании локального QN/feature cap (`qn-client` → `reason: budget`) тот же JSON-RPC повторяется на Helius. Admin API QuickNode и `[ALERT][quicknode-balance]` не меняются.
+
+**Проверка после правки `.env`:**
+
+```bash
+cd /opt/solana-alpha
+grep -E '^(SA_RPC_HTTP_URL|QUICKNODE_HTTP_URL|HELIUS_|SOLANA_RPC_HELIUS)' .env
+pm2 reload ecosystem.config.cjs --only live-oscar --update-env
+```
+
+**Откат fallback:** `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=0` + reload; Helius-строки в `.env` можно оставить.
+
+---
+
 ## 1. Политика журнал ↔ цепь (канон)
 
 1. **Восстановление `open` / `closed`** делается только из **`live_position_*`** строк в **`LIVE_TRADES_PATH`** (путь **A** в спеки). События **`execution_attempt` / `execution_result`** в v1 **не** участвуют в replay позиций.
