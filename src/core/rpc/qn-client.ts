@@ -15,6 +15,7 @@ import {
 import {
   heliusRpcFallbackEnabled,
   heliusRpcUrlFromEnv,
+  isHeliusRpcEndpoint,
   resolveSolanaRpcUrl,
 } from './resolve-solana-rpc-url.js';
 
@@ -174,6 +175,10 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
   }
   const cost = defaultCreditsPerCall(opts);
   const timeoutMs = opts.timeoutMs ?? 8000;
+  if (isHeliusRpcEndpoint(url)) {
+    log.debug({ method, feature: opts.feature }, 'qn rpc: Helius endpoint (no QuickNode meter)');
+    return postJsonRpc<T>(url, method, params, timeoutMs, null);
+  }
   const reserved = await reserveAll(opts.feature, cost);
   if (!reserved) {
     const heliusUrl = heliusRpcUrlFromEnv();
@@ -223,6 +228,17 @@ export async function qnBatchCall<T>(
   const per = defaultCreditsPerCall(opts);
   const cost = items.length * per;
   const timeoutMs = opts.timeoutMs ?? 8000;
+  if (isHeliusRpcEndpoint(url)) {
+    log.debug({ n: items.length, feature: opts.feature }, 'qn batch: Helius endpoint (no QuickNode meter)');
+    const results: QnRpcResult<T>[] = [];
+    for (const it of items) {
+      results.push(await postJsonRpc<T>(url, it.method, it.params, timeoutMs, null));
+      if (!results[results.length - 1]!.ok) break;
+    }
+    const failed = results.find((r) => !r.ok);
+    if (failed && !failed.ok) return failed;
+    return { ok: true, value: results.map((r) => (r as { ok: true; value: T }).value) };
+  }
   const reserved = await reserveAll(opts.feature, cost);
   if (!reserved) {
     const heliusUrl = heliusRpcUrlFromEnv();

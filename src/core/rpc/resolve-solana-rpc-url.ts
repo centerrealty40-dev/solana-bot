@@ -38,3 +38,23 @@ export function resolveSolanaRpcUrl(opts?: {
 export function heliusRpcFallbackEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED !== '0';
 }
+
+/** Live Oscar / send+sim: billable RPC on Helius while QuickNode URL stays in .env for ingest. */
+export function heliusRpcPreferEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SOLANA_RPC_HELIUS_PREFER === '1';
+}
+
+export function isHeliusRpcEndpoint(url: string): boolean {
+  return /helius-rpc\.com/i.test(url);
+}
+
+/** `LIVE_RPC_HTTP_URL` or Helius when `SOLANA_RPC_HELIUS_PREFER=1`. */
+export function liveOscarRpcHttpUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const explicit = env.LIVE_RPC_HTTP_URL?.trim();
+  if (explicit) return explicit;
+  if (heliusRpcPreferEnabled(env)) {
+    const h = heliusRpcUrlFromEnv(env);
+    if (h) return h;
+  }
+  return undefined;
+}

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { liveOscarRpcHttpUrlFromEnv } from '../core/rpc/resolve-solana-rpc-url.js';
 
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 const ProfileSchema = z.enum(['oscar']);
@@ -606,7 +607,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,
     liveSendRpcTimeoutMs: process.env.LIVE_SEND_RPC_TIMEOUT_MS,
-    liveRpcHttpUrl: process.env.LIVE_RPC_HTTP_URL?.trim() || undefined,
+    liveRpcHttpUrl: liveOscarRpcHttpUrlFromEnv(),
 
     liveReplayOnBoot: envBool(process.env.LIVE_REPLAY_ON_BOOT, true),
     liveReplayTailLines: optionalPositiveIntEnv('LIVE_REPLAY_TAIL_LINES'),

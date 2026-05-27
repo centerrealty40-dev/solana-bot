@@ -302,8 +302,9 @@ const PM2_APPS = [
       env: {
         ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
-        /** QuickNode primary; при исчерпании локального QN/feature cap — тот же RPC-метод на Helius (.env: HELIUS_API_KEY). */
+        /** QuickNode primary для ingest; live send/sim/balance → Helius (.env HELIUS_*). Fallback при QN budget — см. qn-client. */
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        SOLANA_RPC_HELIUS_PREFER: '1',
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**

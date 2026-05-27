@@ -71,6 +71,7 @@ export async function liveSimulateSignedTransaction(args: {
       feature: 'sim',
       creditsPerCall: cfg.liveSimCreditsPerCall,
       timeoutMs: cfg.liveSimTimeoutMs,
+      httpUrl: cfg.liveRpcHttpUrl,
     },
   );
 
