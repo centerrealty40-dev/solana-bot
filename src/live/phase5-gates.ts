@@ -129,6 +129,7 @@ async function rpcWalletSolLamports(cfg: LiveOscarConfig): Promise<bigint | null
     feature: 'sim',
     creditsPerCall: cfg.liveSimCreditsPerCall,
     timeoutMs: cfg.liveSimTimeoutMs,
+    httpUrl: cfg.liveRpcHttpUrl,
   });
   if (!res.ok) return null;
   return lamportsFromGetBalanceResult(res.value);

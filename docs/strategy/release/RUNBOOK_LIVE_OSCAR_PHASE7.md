@@ -83,9 +83,10 @@
 |------|------------|------------|
 | **Primary** | `SA_RPC_HTTP_URL` и/или `QUICKNODE_HTTP_URL` | Не удалять при добавлении Helius; все `qnCall` сначала идут сюда и учитываются в `data/quicknode-usage.json`. |
 | **Fallback** | `HELIUS_API_KEY` или `HELIUS_RPC_URL` | Только в **VPS `.env`**, не коммитить ключ. |
-| **Включение** | `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1` | В `ecosystem.config.cjs` для **`live-oscar`** (дефолт в коде — вкл.; `=0` отключает). |
+| **Live trading RPC** | `SOLANA_RPC_HELIUS_PREFER=1` | Send / simulate / confirm / live `getBalance` → **Helius** (кредиты в дашборде Helius). QuickNode URL в `.env` не удалять — ingest/holders. |
+| **Budget fallback** | `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1` | Если локальный QN meter режет вызов — повтор на Helius. |
 
-При исчерпании локального QN/feature cap (`qn-client` → `reason: budget`) тот же JSON-RPC повторяется на Helius. Admin API QuickNode и `[ALERT][quicknode-balance]` не меняются.
+Без **`SOLANA_RPC_HELIUS_PREFER=1`** Helius часто **0 usage**: у `live-oscar` отключены feature-cap (`QN_FEATURE_BUDGET_DISABLED`), QN RPC ещё отвечает — fallback не срабатывает.
 
 **Проверка после правки `.env`:**
 

@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.285] — 2026-05-27
+
+### Fix: live-oscar billable RPC on Helius (`SOLANA_RPC_HELIUS_PREFER`)
+
+**Контекст:** Helius dashboard 0 credits при активных buy/sell — fallback срабатывал только при локальном QN budget block; у live-oscar caps выключены, все `qnCall` шли на QuickNode.
+
+| Env | Эффект |
+|-----|--------|
+| `SOLANA_RPC_HELIUS_PREFER=1` | `liveRpcHttpUrl` → Helius; send/simulate/confirm/balance без QN meter |
+| `SA_RPC_HTTP_URL` | Без изменений (discovery, holders, ingest) |
+
+**Откат:** `SOLANA_RPC_HELIUS_PREFER=0`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.284] — 2026-05-27
 
 ### Ops: Helius RPC fallback (QuickNode остаётся primary)
