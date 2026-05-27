@@ -8,6 +8,26 @@
 
 ---
 
+## [1.11.281] — 2026-05-26
+
+### Fix: discovery pin for collector PG ingest (MANIFEST blind gap)
+
+`live-oscar` writes `data/live/discovery-collector-pin-mints.txt` (SQL + priority tier, cap 200). DEX collectors solo-fetch DexScreener for those mints when missing from trending tick. **Not** a trading whitelist (`LIVE_MINT_WHITELIST_ENABLED` unchanged).
+
+**Rollback:** revert; `PAPER2_SNAPSHOT_DISCOVERY_PIN=0`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.280] — 2026-05-26
+
+### Fix: snapshot_stale false positive after sa-orca disabled
+
+`snapshot-freshness-watch` and `collector-log-watch` no longer treat **orca** as required: default `SNAPSHOT_FRESHNESS_SKIP_SOURCES=orca`; alert action text drops `sa-orca` restart (runaway CPU since 2025-05-24).
+
+**Rollback:** revert commit; `pm2 reload ecosystem.config.cjs --update-env`; set `SNAPSHOT_FRESHNESS_SKIP_SOURCES=` empty and re-add orca to TABLES if orca collector re-enabled.
+
+---
+
 ## [1.11.279] — 2026-05-26
 
 ### Fix: ecosystem PM2 collectors (orca off, meteora/pumpswap/orchestrator split)

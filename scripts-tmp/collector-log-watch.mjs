@@ -42,7 +42,7 @@ const SILENCE_MAX_MS = Number(process.env.COLLECTOR_WATCH_SILENCE_MAX_MS || 480_
 function defaultLogFiles() {
   const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), '.pm2');
   const logsDir = path.join(pm2Home, 'logs');
-  return ['orca', 'moonshot', 'raydium', 'meteora', 'pumpswap'].map((n) =>
+  return ['moonshot', 'raydium', 'meteora', 'pumpswap'].map((n) =>
     path.join(logsDir, `sa-${n}-out.log`),
   );
 }
@@ -369,7 +369,7 @@ async function checkCollectorSilence(state, paths) {
     const body = [
       `🚨 DEX-коллектор(ы) молчат >${Math.round(SILENCE_MAX_MS / 60_000)} мин:`,
       ...staleLines,
-      'Действие: pm2 restart sa-pumpswap sa-raydium sa-orca sa-meteora sa-moonshot',
+      'Действие: pm2 restart sa-pumpswap sa-raydium sa-meteora sa-moonshot',
     ].join('\n');
     if (COLLECTOR_WATCH_TELEGRAM) await sendTagged('ALERT', 'dex_collectors', body);
   }

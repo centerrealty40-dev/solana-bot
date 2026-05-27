@@ -29,6 +29,14 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '800';
 const LIVE_OSCAR_MAX_POSITION_USD = '1200';
 
+/** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
+const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
+const DISCOVERY_COLLECTOR_PIN_ENV = {
+  PAPER2_SNAPSHOT_DISCOVERY_PIN: '1',
+  PAPER2_SNAPSHOT_DISCOVERY_PIN_PATH: DISCOVERY_COLLECTOR_PIN_PATH,
+  PAPER2_SNAPSHOT_DISCOVERY_PIN_MAX: '200',
+};
+
 const PM2_APPS = [
     {
       name: 'live-oscar-dashboard',
@@ -93,6 +101,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         RAYDIUM_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
     {
@@ -112,6 +121,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -132,6 +142,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
     {
@@ -151,6 +162,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
     {
@@ -760,6 +772,7 @@ const PM2_APPS = [
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT: '35',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MIN_DIVERGENCE_PCT: '0.5',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
+        ...DISCOVERY_COLLECTOR_PIN_ENV,
         /** Минимальный интервал (мс) между повторными `universe_miss` / `tick_skip` по одному mint. */
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         /** `0` — входы без whitelist; permanent denylist отключён (см. LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED). */

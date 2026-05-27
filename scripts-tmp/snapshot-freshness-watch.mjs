@@ -19,13 +19,21 @@ const DRY_RUN = ['1', 'true', 'yes'].includes(
   String(process.env.SNAPSHOT_FRESHNESS_DRY_RUN ?? '0').toLowerCase(),
 );
 
-const TABLES = [
+/** sa-orca off since 1.11.279 (runaway CPU); live-oscar uses pumpswap lane. */
+const ALL_TABLES = [
   { source: 'pumpswap', table: 'pumpswap_pair_snapshots' },
   { source: 'raydium', table: 'raydium_pair_snapshots' },
   { source: 'meteora', table: 'meteora_pair_snapshots' },
   { source: 'orca', table: 'orca_pair_snapshots' },
   { source: 'moonshot', table: 'moonshot_pair_snapshots' },
 ];
+const SKIP_SOURCES = new Set(
+  String(process.env.SNAPSHOT_FRESHNESS_SKIP_SOURCES ?? 'orca')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+const TABLES = ALL_TABLES.filter(({ source }) => !SKIP_SOURCES.has(source));
 
 function loadState() {
   try {
@@ -64,7 +72,7 @@ function buildStaleBody(rows) {
   const maxMin = Math.round(MAX_AGE_SEC / 60);
   const lines = [
     `🚨 PG snapshots STALE (порог ${maxMin} мин) — discovery и TG dips/pumps слепы.`,
-    'Действие: pm2 restart sa-pumpswap sa-raydium sa-orca sa-meteora sa-moonshot',
+    'Действие: pm2 restart sa-pumpswap sa-raydium sa-meteora sa-moonshot',
   ];
   for (const r of rows) {
     const ageMin = r.ageSec != null ? Math.round(r.ageSec / 60) : '?';

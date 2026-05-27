@@ -11,6 +11,11 @@ import path from 'node:path';
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
 const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
 const DEFAULT_WHITELIST_PATH = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'live-oscar-mint-whitelist.txt');
+const DEFAULT_DISCOVERY_PIN_PATH = path.join(
+  path.dirname(DEFAULT_PAPER2_DIR),
+  'live',
+  'discovery-collector-pin-mints.txt',
+);
 const TOKEN_CHUNK = 10;
 const DS_DELAY_MS = 350;
 /**
@@ -167,6 +172,27 @@ export function loadLiveOscarWhitelistMintsSync() {
   return out;
 }
 
+/** Mint'ы из live-oscar discovery SQL + priority tier (`discovery-collector-pin.mints`). */
+export function loadDiscoveryCollectorPinMintsSync() {
+  if (['0', 'false', 'no'].includes(String(process.env.PAPER2_SNAPSHOT_DISCOVERY_PIN ?? '1').toLowerCase())) {
+    return [];
+  }
+  const fp = process.env.PAPER2_SNAPSHOT_DISCOVERY_PIN_PATH?.trim() || DEFAULT_DISCOVERY_PIN_PATH;
+  if (!fp || !fs.existsSync(fp)) return [];
+  let buf;
+  try {
+    buf = fs.readFileSync(fp, 'utf-8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const ln of buf.split('\n')) {
+    const s = ln.split('#')[0].trim();
+    if (isPlausibleMint(s)) out.push(s);
+  }
+  return out;
+}
+
 /** Discovery / dip eval keys on `base_mint` — quote-only presence must not skip enrich. */
 function mintsWithBaseSnapshot(rows) {
   const s = new Set();
@@ -234,14 +260,17 @@ export async function mergePaper2OpenMintSnapshots({
   const dir = paper2Dir || process.env.PAPER2_DIR || DEFAULT_PAPER2_DIR;
   let openMints;
   let whitelistMintCount = 0;
-  let whitelistSet = new Set();
+  let discoveryPinMintCount = 0;
+  let soloFetchSet = new Set();
   try {
     const paper = loadPaper2OpenMintsSync(dir);
     const live = loadLiveOscarOpenMintsSync();
     const whitelist = loadLiveOscarWhitelistMintsSync();
+    const discoveryPin = loadDiscoveryCollectorPinMintsSync();
     whitelistMintCount = whitelist.length;
-    whitelistSet = new Set(whitelist);
-    openMints = [...new Set([...paper, ...live, ...whitelist])];
+    discoveryPinMintCount = discoveryPin.length;
+    soloFetchSet = new Set([...whitelist, ...discoveryPin]);
+    openMints = [...new Set([...paper, ...live, ...whitelist, ...discoveryPin])];
   } catch (e) {
     if (log) log('warn', 'paper2/live open mints load failed', { error: String(e), component });
     return rows;
@@ -252,8 +281,8 @@ export async function mergePaper2OpenMintSnapshots({
   const missing = openMints.filter((m) => !covered.has(m));
   if (missing.length === 0) return rows;
 
-  const missingWhitelist = missing.filter((m) => whitelistSet.has(m));
-  const missingBatch = missing.filter((m) => !whitelistSet.has(m));
+  const missingSolo = missing.filter((m) => soloFetchSet.has(m));
+  const missingBatch = missing.filter((m) => !soloFetchSet.has(m));
 
   const extra = [];
   let whitelistSingleFetchOk = 0;
@@ -277,7 +306,7 @@ export async function mergePaper2OpenMintSnapshots({
    * DexScreener `/tokens/{m1,m2,…}` truncates pairs for later mints in the URL (observed: 4-mint chunk
    * returns 30 pairs but omits trailing whitelist runner). Whitelist mints always get a solo fetch.
    */
-  for (const mint of missingWhitelist) {
+  for (const mint of missingSolo) {
     const res = await fetchDexPairsForMintChunk({
       chunk: [mint],
       bucketTs,
@@ -293,7 +322,7 @@ export async function mergePaper2OpenMintSnapshots({
   }
 
   const coveredAfterExtra = mintsWithBaseSnapshot(extra);
-  const stillMissingWl = missingWhitelist.filter((m) => !coveredAfterExtra.has(m));
+  const stillMissingSolo = missingSolo.filter((m) => !coveredAfterExtra.has(m));
 
   if (extra.length === 0) {
     if (log) {
@@ -301,8 +330,8 @@ export async function mergePaper2OpenMintSnapshots({
         component,
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
-        missingWhitelist: missingWhitelist.length,
-        stillMissingWhitelist: stillMissingWl.length,
+        missingSoloFetch: missingSolo.length,
+        stillMissingSoloFetch: stillMissingSolo.length,
       });
     }
     return rows;
@@ -314,10 +343,11 @@ export async function mergePaper2OpenMintSnapshots({
       component,
       openMintCount: openMints.length,
       whitelistMintCount,
+      discoveryPinMintCount,
       missingFromPrimaryTick: missing.length,
-      missingWhitelist: missingWhitelist.length,
-      whitelistSingleFetchOk,
-      stillMissingWhitelist: stillMissingWl.length,
+      missingSoloFetch: missingSolo.length,
+      soloFetchOk: whitelistSingleFetchOk,
+      stillMissingSoloFetch: stillMissingSolo.length,
       extraPairsThisDex: extra.length,
       rowCountAfterMerge: merged.length,
     });
