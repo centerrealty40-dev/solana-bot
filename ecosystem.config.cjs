@@ -357,8 +357,8 @@ const PM2_APPS = [
         /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
         PAPER_POST_MIN_AGE_MIN: '2160',
         PAPER_POST_MAX_AGE_MIN: '0',
-        /** 1.11.263: $140k → $400k — live journal 2d: 81% losses had liq<400k at entry eval. */
-        PAPER_POST_MIN_LIQ_USD: '300000',
+        /** 1.11.282: $300k → $30k — volume-leader runners often liq $30–80k; см. runner coverage audit 2026-05-27. */
+        PAPER_POST_MIN_LIQ_USD: '30000',
         /** 1.11.244: $10k vol5m отрезал тихие проливы (MANIFEST −17% при v5m=$7k). Код-default 2500. */
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
@@ -757,11 +757,12 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.85',
         /** 1.11.274 — Volume Leader tier: top-N by 24h peak vol_1h, canonical pool = max volume. */
         PAPER_VOLUME_LEADER_ENABLED: '1',
-        PAPER_VOLUME_LEADER_TOP_N: '50',
+        PAPER_VOLUME_LEADER_TOP_N: '80',
         PAPER_VOLUME_LEADER_REEVAL_SEC: '15',
         PAPER_VOLUME_LEADER_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_LEADER_QUERY_CACHE_SEC: '60',
-        PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN: '30',
+        /** 1.11.282: 30→90m — top vol mints often miss `no_snapshot_row_30m` on inject. */
+        PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN: '90',
         /** 1.11.275 — Snapshot sanity: dead pool / liq≈0 at high mcap before canonical pick. */
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ENABLED: '1',
         PAPER_DISCOVERY_SNAPSHOT_SANITY_REF_MCAP_MIN_USD: '2000000',

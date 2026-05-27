@@ -8,6 +8,22 @@
 
 ---
 
+## [1.11.282] — 2026-05-27
+
+### Tune: Live Oscar runner coverage (volume leader + min liq)
+
+**Контекст:** runner coverage audit — top vol mints видны в PG, но часть не inject’илась (`no_snapshot_row_30m`), а топ по vol отсекались `liq<300000`.
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN` | 30 | **90** |
+| `PAPER_VOLUME_LEADER_TOP_N` | 50 | **80** |
+| `PAPER_POST_MIN_LIQ_USD` | 300000 | **30000** |
+
+**Откат:** `git checkout sa-alpha-1.11.281 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.281] — 2026-05-26
 
 ### Fix: discovery pin for collector PG ingest (MANIFEST blind gap)
