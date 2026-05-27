@@ -146,6 +146,16 @@ function setupMinUsd(): number {
   return Number.isFinite(n) && n >= 0 ? n : 500;
 }
 
+function defaultCycleSec(): number {
+  const n = Number(process.env.DCA_WATCH_DEFAULT_CYCLE_SEC || 120);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 120;
+}
+
+function defaultTargetCycles(): number {
+  const n = Number(process.env.DCA_WATCH_TARGET_CYCLES || 100);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -707,8 +717,7 @@ function parseJupiterOpenDcaV2(tx: any, dex: DexInfo | null): DcaOpenPlan | null
     if (inAmountPerCycleRaw <= 0n || !Number.isFinite(cycleFrequencySec) || cycleFrequencySec <= 0) continue;
 
     const accounts = instructionAccounts(ins, tx);
-    const inputMint = accounts[3] || '';
-    const outputMint = accounts[4] || '';
+    const { inputMint, outputMint } = findMintPairFromAccounts(accounts);
     if (!outputMint) continue;
 
     const cycles = Math.max(1, Number(inAmountRaw / inAmountPerCycleRaw));
@@ -727,6 +736,73 @@ function parseJupiterOpenDcaV2(tx: any, dex: DexInfo | null): DcaOpenPlan | null
     };
   }
   return null;
+}
+
+function findMintPairFromAccounts(accounts: string[]): { inputMint: string; outputMint: string } {
+  const skip = new Set([
+    '11111111111111111111111111111111',
+    'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+    'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+    'ComputeBudget111111111111111111111111111111',
+    JUPITER_DCA_PROGRAM,
+    'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    'proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u',
+    'DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH',
+  ]);
+  const mints = accounts.filter((a) => a.length >= 32 && a.length <= 44 && !skip.has(a));
+  const inputMint = mints.find((m) => m === SOL_MINT || m === USDC_MINT || m === USDT_MINT) || mints[0] || '';
+  const outputMint =
+    mints.find((m) => m !== inputMint && m !== SOL_MINT && m !== USDC_MINT && m !== USDT_MINT) ||
+    mints.find((m) => m !== inputMint) ||
+    '';
+  return { inputMint, outputMint };
+}
+
+function parseFallbackSetupPlan(depositUsd: number, cls: Classified, dex: DexInfo | null): DcaOpenPlan | null {
+  const freq = defaultCycleSec();
+  const buyUsd = estimateBuyUsd(cls.amountInRaw, dex);
+  let cycleUsd = buyUsd;
+  let cycles = defaultTargetCycles();
+
+  if (cycleUsd > 0 && depositUsd > 0) {
+    cycles = Math.max(1, Math.round(depositUsd / cycleUsd));
+  } else if (depositUsd > 0) {
+    cycles = defaultTargetCycles();
+    cycleUsd = depositUsd / cycles;
+  } else if (cycleUsd > 0) {
+    cycles = defaultTargetCycles();
+  } else {
+    return null;
+  }
+
+  if (!(cycleUsd > 0 && cycles > 0)) return null;
+  const totalUsd = cycleUsd * cycles;
+  return {
+    inputMint: '',
+    outputMint: cls.mint || '',
+    inAmountRaw: 0n,
+    inAmountPerCycleRaw: 0n,
+    cycleFrequencySec: freq,
+    cycles,
+    cycleUsd,
+    totalUsd,
+    etaSec: freq * cycles,
+  };
+}
+
+function resolveSetupPlan(
+  tx: any,
+  cls: Classified,
+  dex: DexInfo | null,
+  depositUsd: number,
+): DcaOpenPlan | null {
+  const jup = parseJupiterOpenDcaV2(tx, dex);
+  if (jup && jup.cycleUsd > 0 && jup.cycles > 0) return jup;
+  if (jup && jup.cycles > 0 && jup.cycleFrequencySec > 0) {
+    const cycleUsd = jup.totalUsd > 0 ? jup.totalUsd / jup.cycles : depositUsd / jup.cycles;
+    if (cycleUsd > 0) return { ...jup, cycleUsd, totalUsd: cycleUsd * jup.cycles };
+  }
+  return parseFallbackSetupPlan(depositUsd, cls, dex);
 }
 
 function computePriceImpactEst(
@@ -751,9 +827,9 @@ function buildBuyStyleAlert(
   const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
   const buyUsd = estimateBuyUsd(cls.amountInRaw, dex);
   const liq = dex?.liquidityUsd || 0;
-  const targetCycles = Number(process.env.DCA_WATCH_TARGET_CYCLES || 100);
+  const targetCycles = defaultTargetCycles();
+  const defaultFreq = defaultCycleSec();
   const perCyclePct = liq > 0 && buyUsd > 0 ? (buyUsd / liq) * 100 : NaN;
-  const totalPct = Number.isFinite(perCyclePct) ? perCyclePct * targetCycles : NaN;
   const vi1h = dex && dex.volume24h > 0 ? (dex.volume1h / dex.volume24h) * 100 * 24 : NaN;
 
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
@@ -770,12 +846,19 @@ function buildBuyStyleAlert(
 
   const observedFreqSec =
     cycles >= 2 ? Math.max(1, Math.floor((lastTsMs - firstTsMs) / 1000 / (cycles - 1))) : Number.NaN;
-  const etaSec = Number.isFinite(observedFreqSec) && targetCycles > cycles ? (targetCycles - cycles) * observedFreqSec : Number.NaN;
+  const displayFreqSec = Number.isFinite(observedFreqSec) ? observedFreqSec : defaultFreq;
+  const displayCycles = Number.isFinite(observedFreqSec) ? cycles : targetCycles;
+  const etaSec = Number.isFinite(observedFreqSec)
+    ? targetCycles > cycles
+      ? (targetCycles - cycles) * observedFreqSec
+      : Number.NaN
+    : defaultFreq * targetCycles;
+  const totalPct = Number.isFinite(perCyclePct) ? perCyclePct * displayCycles : NaN;
 
   return [
     `${fmtMoney(buyUsd)} buying ${escapeHtml(symbol)} 🟩`,
     '',
-    `Frequency: ${fmtMoney(buyUsd)} every ${Number.isFinite(observedFreqSec) ? observedFreqSec : 'n/a'} seconds (${cycles} cycles${order !== 'n/a' ? `, order ${escapeHtml(order)}` : ''})`,
+    `Frequency: ${fmtMoney(buyUsd)} every ${displayFreqSec} seconds (${displayCycles} cycles${order !== 'n/a' ? `, order ${escapeHtml(order)}` : ''})`,
     `ETA: ${fmtDuration(etaSec)}`,
     `Scores: 👍`,
     `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
@@ -822,10 +905,11 @@ function buildSetupStyleAlert(
     `Deposit est.: ${fmtMoney(depositUsd)}`,
   ];
 
-  if (plan && plan.cycleUsd > 0 && plan.cycles > 0) {
-    const { perCyclePct, totalPct } = computePriceImpactEst(plan.cycleUsd, plan.cycles, dex?.liquidityUsd || 0);
+  if (plan && plan.cycles > 0 && plan.cycleFrequencySec > 0) {
+    const cycleUsd = plan.cycleUsd > 0 ? plan.cycleUsd : plan.totalUsd / plan.cycles;
+    const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, plan.cycles, dex?.liquidityUsd || 0);
     lines.push(
-      `Frequency: ${fmtMoney(plan.cycleUsd)} every ${plan.cycleFrequencySec} seconds (${plan.cycles} cycles)`,
+      `Frequency: ${fmtMoney(cycleUsd)} every ${plan.cycleFrequencySec} seconds (${plan.cycles} cycles)`,
       `ETA: ${fmtDuration(plan.etaSec)}`,
       `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
     );
@@ -894,10 +978,10 @@ async function handleTransaction(
   let setupDepositUsd = 0;
   let setupPlan: DcaOpenPlan | null = null;
   if (cls.kind === 'SETUP') {
-    const planPreview = cls.setupSource === 'jupiter_dca' ? parseJupiterOpenDcaV2(tx, null) : null;
+    const planPreview = parseJupiterOpenDcaV2(tx, null);
     setupDex = await fetchDexInfo(planPreview?.outputMint || cls.mint);
-    setupPlan = cls.setupSource === 'jupiter_dca' ? parseJupiterOpenDcaV2(tx, setupDex) : null;
     setupDepositUsd = estimateSetupDepositUsd(tx, wallet, cls, setupDex);
+    setupPlan = resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
     const filterUsd = Math.max(setupDepositUsd, setupPlan?.totalUsd || 0);
     if (minSetupUsd > 0 && filterUsd < minSetupUsd) {
       markSeen(st, row.signature);

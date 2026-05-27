@@ -41,6 +41,8 @@ module.exports = {
         DCA_WATCH_TELEGRAM_BOT_TOKEN: process.env.DCA_WATCH_TELEGRAM_BOT_TOKEN || '',
         DCA_WATCH_TELEGRAM_CHAT_ID: process.env.DCA_WATCH_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '',
         DCA_WATCH_SETUP_MIN_USD: process.env.DCA_WATCH_SETUP_MIN_USD || '500',
+        DCA_WATCH_DEFAULT_CYCLE_SEC: process.env.DCA_WATCH_DEFAULT_CYCLE_SEC || '120',
+        DCA_WATCH_TARGET_CYCLES: process.env.DCA_WATCH_TARGET_CYCLES || '100',
       },
     },
   ],
