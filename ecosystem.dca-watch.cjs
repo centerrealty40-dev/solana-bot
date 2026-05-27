@@ -36,6 +36,8 @@ module.exports = {
         DCA_WATCH_RPC_URL: process.env.DCA_WATCH_RPC_URL || process.env.SA_RPC_HTTP_URL || '',
         DCA_WATCH_POLL_INTERVAL_MS: process.env.DCA_WATCH_POLL_INTERVAL_MS || '20000',
         DCA_WATCH_SIGNATURE_LIMIT: process.env.DCA_WATCH_SIGNATURE_LIMIT || '20',
+        DCA_WATCH_DISCOVERY_SIGNATURE_LIMIT: process.env.DCA_WATCH_DISCOVERY_SIGNATURE_LIMIT || '100',
+        DCA_WATCH_DISCOVERY_MAX_PAGES: process.env.DCA_WATCH_DISCOVERY_MAX_PAGES || '10',
         DCA_WATCH_STATE_PATH: process.env.DCA_WATCH_STATE_PATH || path.join(root, 'data/dca-watch-state.json'),
         // Per-watcher telegram override; if empty, watcher falls back to TELEGRAM_* env
         DCA_WATCH_TELEGRAM_BOT_TOKEN: process.env.DCA_WATCH_TELEGRAM_BOT_TOKEN || '',

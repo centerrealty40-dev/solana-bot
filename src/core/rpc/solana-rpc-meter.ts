@@ -10,6 +10,7 @@ import path from 'node:path';
 import { child } from '../logger.js';
 import { sendTagged } from '../telegram/sender.js';
 import { readProviderDailyCache } from './quicknode-provider-usage.js';
+import { primarySolanaRpcUrlFromEnv } from './resolve-solana-rpc-url.js';
 
 const log = child('solana-rpc-meter');
 
@@ -34,13 +35,9 @@ function usagePath(): string {
   return process.env.QUICKNODE_USAGE_PATH || path.join('data', 'quicknode-usage.json');
 }
 
+/** QuickNode-first HTTPS URL (Helius is not chosen here — see `resolve-solana-rpc-url`). */
 export function defaultSolanaRpcUrl(): string {
-  const u =
-    process.env.SOLANA_RPC_HTTP_URL ||
-    process.env.QUICKNODE_HTTP_URL ||
-    process.env.ALCHEMY_HTTP_URL ||
-    '';
-  return u.trim();
+  return primarySolanaRpcUrlFromEnv();
 }
 
 type UsageState = {

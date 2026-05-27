@@ -1,33 +1,12 @@
 import { z } from 'zod';
-import { child } from '../core/logger.js';
+import { resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 
-const log = child('parser-config');
-
-/** Same RPC resolution as sa-stream — reuse env chain without importing WS deps. */
+/** Same RPC resolution as sa-stream — QuickNode-first, Helius only if primary unset. */
 function pickRpcHttpUrl(): string {
-  const direct = process.env.SA_RPC_HTTP_URL?.trim();
-  if (direct) return direct;
-
-  const qn = process.env.QUICKNODE_HTTP_URL?.trim();
-  if (qn) {
-    log.warn('SA_RPC_HTTP_URL missing — using QUICKNODE_HTTP_URL');
-    return qn;
-  }
-
-  const sol = process.env.SOLANA_RPC_HTTP_URL?.trim();
-  if (sol) {
-    log.warn('SA_RPC_HTTP_URL missing — using SOLANA_RPC_HTTP_URL');
-    return sol;
-  }
-
-  const helius = process.env.HELIUS_RPC_URL?.trim();
-  if (helius) {
-    log.warn('SA_RPC_HTTP_URL missing — using HELIUS_RPC_URL fallback');
-    return helius;
-  }
-
+  const url = resolveSolanaRpcUrl();
+  if (url) return url;
   throw new Error(
-    'Need SA_RPC_HTTP_URL, or QUICKNODE_HTTP_URL, or SOLANA_RPC_HTTP_URL, or HELIUS_RPC_URL for sa-parser',
+    'Need SA_RPC_HTTP_URL, QUICKNODE_HTTP_URL, SOLANA_RPC_HTTP_URL, or HELIUS_RPC_URL / HELIUS_API_KEY for sa-parser',
   );
 }
 

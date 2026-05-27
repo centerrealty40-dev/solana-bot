@@ -12,6 +12,11 @@ import {
   reserveQnFeatureCredits,
   qnFeatureBudgetMonth,
 } from './qn-feature-usage.js';
+import {
+  heliusRpcFallbackEnabled,
+  heliusRpcUrlFromEnv,
+  resolveSolanaRpcUrl,
+} from './resolve-solana-rpc-url.js';
 
 const log = child('qn-client');
 
@@ -50,13 +55,8 @@ type JsonRpcResp = {
   error?: { code?: number; message?: string };
 };
 
-function rpcUrl(): string {
-  return (process.env.SA_RPC_HTTP_URL || '').trim();
-}
-
 function resolveRpcUrl(httpUrlOverride?: string): string {
-  const o = httpUrlOverride?.trim();
-  return o && o.length > 0 ? o : rpcUrl();
+  return resolveSolanaRpcUrl({ httpUrlOverride });
 }
 
 function defaultCreditsPerCall(opts: QnCallOpts): number {
@@ -119,21 +119,14 @@ async function releaseAll(feature: QnFeature, cost: number): Promise<void> {
   await releaseQnFeatureCredits(feature, cost);
 }
 
-export async function qnCall<T>(method: string, params: unknown[], opts: QnCallOpts): Promise<QnRpcResult<T>> {
-  const url = resolveRpcUrl(opts.httpUrl);
-  if (!url) {
-    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing (or empty LIVE_RPC_HTTP_URL)' };
-  }
-  const cost = defaultCreditsPerCall(opts);
-  const timeoutMs = opts.timeoutMs ?? 8000;
-  const reserved = await reserveAll(opts.feature, cost);
-  if (!reserved) {
-    return { ok: false, reason: 'budget' };
-  }
-
+async function postJsonRpc<T>(
+  url: string,
+  method: string,
+  params: unknown[],
+  timeoutMs: number,
+  releaseOnTransportError: (() => Promise<void>) | null,
+): Promise<QnRpcResult<T>> {
   const body: JsonRpcSingle = { jsonrpc: '2.0', id: nextId(), method, params };
-  log.debug({ method, feature: opts.feature, cost }, 'qn rpc request');
-
   const ac = new AbortController();
   const to = setTimeout(() => ac.abort(), timeoutMs);
   try {
@@ -145,11 +138,11 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
     });
     clearTimeout(to);
     if (res.status === 429) {
-      await releaseAll(opts.feature, cost);
+      if (releaseOnTransportError) await releaseOnTransportError();
       return { ok: false, reason: 'rate', status: res.status, message: 'Too Many Requests' };
     }
     if (!res.ok) {
-      await releaseAll(opts.feature, cost);
+      if (releaseOnTransportError) await releaseOnTransportError();
       const t = await res.text().catch(() => '');
       return { ok: false, reason: 'http', status: res.status, message: t.slice(0, 500) || res.statusText };
     }
@@ -164,7 +157,7 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
     return { ok: true, value: j.result as T };
   } catch (e) {
     clearTimeout(to);
-    await releaseAll(opts.feature, cost);
+    if (releaseOnTransportError) await releaseOnTransportError();
     const name = e instanceof Error ? e.name : '';
     const isAbort = name === 'AbortError' || (e instanceof Error && e.message.includes('aborted'));
     if (isAbort) {
@@ -172,6 +165,27 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
     }
     return { ok: false, reason: 'http', message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+export async function qnCall<T>(method: string, params: unknown[], opts: QnCallOpts): Promise<QnRpcResult<T>> {
+  const url = resolveRpcUrl(opts.httpUrl);
+  if (!url) {
+    return { ok: false, reason: 'http', message: 'SA_RPC_HTTP_URL missing (or empty LIVE_RPC_HTTP_URL)' };
+  }
+  const cost = defaultCreditsPerCall(opts);
+  const timeoutMs = opts.timeoutMs ?? 8000;
+  const reserved = await reserveAll(opts.feature, cost);
+  if (!reserved) {
+    const heliusUrl = heliusRpcUrlFromEnv();
+    if (heliusRpcFallbackEnabled() && heliusUrl && heliusUrl !== url) {
+      log.warn({ method, feature: opts.feature }, 'qn rpc: QuickNode budget blocked — retry via Helius fallback');
+      return postJsonRpc<T>(heliusUrl, method, params, timeoutMs, null);
+    }
+    return { ok: false, reason: 'budget' };
+  }
+
+  log.debug({ method, feature: opts.feature, cost }, 'qn rpc request');
+  return postJsonRpc<T>(url, method, params, timeoutMs, () => releaseAll(opts.feature, cost));
 }
 
 /**
@@ -211,6 +225,18 @@ export async function qnBatchCall<T>(
   const timeoutMs = opts.timeoutMs ?? 8000;
   const reserved = await reserveAll(opts.feature, cost);
   if (!reserved) {
+    const heliusUrl = heliusRpcUrlFromEnv();
+    if (heliusRpcFallbackEnabled() && heliusUrl && heliusUrl !== url) {
+      log.warn({ n: items.length, feature: opts.feature }, 'qn batch: QuickNode budget blocked — Helius fallback');
+      const results: QnRpcResult<T>[] = [];
+      for (const it of items) {
+        results.push(await postJsonRpc<T>(heliusUrl, it.method, it.params, timeoutMs, null));
+        if (!results[results.length - 1]!.ok) break;
+      }
+      const failed = results.find((r) => !r.ok);
+      if (failed && !failed.ok) return failed;
+      return { ok: true, value: results.map((r) => (r as { ok: true; value: T }).value) };
+    }
     return { ok: false, reason: 'budget' };
   }
 

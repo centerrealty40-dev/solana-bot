@@ -1,7 +1,5 @@
 import { z } from 'zod';
-import { child } from '../core/logger.js';
-
-const log = child('stream-config');
+import { resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 
 function httpToWsUrl(httpUrl: string): string {
   if (httpUrl.startsWith('https://')) return `wss://${httpUrl.slice('https://'.length)}`;
@@ -10,23 +8,10 @@ function httpToWsUrl(httpUrl: string): string {
 }
 
 function pickRpcHttpUrl(): string {
-  const direct = process.env.SA_RPC_HTTP_URL?.trim();
-  if (direct) return direct;
-
-  const qn = process.env.QUICKNODE_HTTP_URL?.trim();
-  if (qn) {
-    log.warn('SA_RPC_HTTP_URL missing — using QUICKNODE_HTTP_URL');
-    return qn;
-  }
-
-  const helius = process.env.HELIUS_RPC_URL?.trim();
-  if (helius) {
-    log.warn('SA_RPC_HTTP_URL missing — using HELIUS_RPC_URL fallback');
-    return helius;
-  }
-
+  const url = resolveSolanaRpcUrl();
+  if (url) return url;
   throw new Error(
-    'Need SA_RPC_HTTP_URL, or QUICKNODE_HTTP_URL, or HELIUS_RPC_URL for sa-stream HTTP RPC base',
+    'Need SA_RPC_HTTP_URL, QUICKNODE_HTTP_URL, SOLANA_RPC_HTTP_URL, or HELIUS_RPC_URL / HELIUS_API_KEY for sa-stream',
   );
 }
 

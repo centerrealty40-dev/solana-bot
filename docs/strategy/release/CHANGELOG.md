@@ -8,6 +8,48 @@
 
 ---
 
+## [1.11.284] — 2026-05-27
+
+### Ops: Helius RPC fallback (QuickNode остаётся primary)
+
+**Контекст:** биллинг QuickNode может исчерпать месячный пул; локальный `solana-rpc-meter` / `qn-feature` режет `qnCall` с `reason: budget`. Live Oscar должен продолжать simulate/send/balance через запасной RPC.
+
+| Компонент | Поведение |
+|-----------|-----------|
+| Primary | `SA_RPC_HTTP_URL` → `QUICKNODE_HTTP_URL` → `SOLANA_RPC_HTTP_URL` (без замены QuickNode в `.env`) |
+| Fallback | `HELIUS_RPC_URL` или `HELIUS_API_KEY`; `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1` на `live-oscar` |
+| `qn-client` | При `budget` после reserve — повтор того же JSON-RPC на Helius (без списания QN meter) |
+
+**Документация:** `.env.example`, `deploy/RUNTIME.md`, `RUNBOOK_LIVE_OSCAR_PHASE7.md` §0.3.
+
+**VPS:** в `/opt/solana-alpha/.env` добавить `HELIUS_API_KEY=…` (секрет не в git); `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+**Откат:** `git checkout sa-alpha-1.11.283 -- src/core/rpc/ ecosystem.config.cjs .env.example deploy/RUNTIME.md docs/strategy/release/`; убрать Helius из `.env`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.283] — 2026-05-27
+
+### Tune: stricter Live Oscar entry gates (36h age + −20% dip, fewer injects)
+
+**Контекст:** покупки монет &lt;36h жизни — volume-leader inject не фильтровал `token_age_min`; `PAPER_DIP_MIN_AGE_MIN=0` пропускал dip; после 1.11.282 слишком много входов.
+
+| Параметр | Было (1.11.282) | Стало |
+|----------|-----------------|-------|
+| `PAPER_DIP_MIN_DROP_PCT` | −16 | **−20** |
+| `PAPER_DIP_MIN_AGE_MIN` | 0 | **2160** (36 ч) |
+| `PAPER_MIN_TOKEN_AGE_MIN` | (не задан) | **2160** |
+| `PAPER_POST_CRASH_FAST_PATH_MIN_DROP_PCT` | −16 | **−20** |
+| `PAPER_POST_MIN_LIQ_USD` | 30000 | **300000** |
+| `PAPER_VOLUME_LEADER_TOP_N` | 80 | **50** |
+| `PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN` | 90 | **30** |
+
+**Код:** `fetchCrossVenueSnapshotRowsByVolumeCanonical` — SQL-фильтр `token_age_min` для volume-leader inject.
+
+**Откат:** `git checkout sa-alpha-1.11.282 -- ecosystem.config.cjs src/papertrader/discovery/snapshot.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.282] — 2026-05-27
 
 ### Tune: Live Oscar runner coverage (volume leader + min liq)

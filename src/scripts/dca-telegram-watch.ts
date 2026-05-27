@@ -126,9 +126,15 @@ function discoveryPrograms(): string[] {
 }
 
 function discoverySigLimit(): number {
-  const n = Number(process.env.DCA_WATCH_DISCOVERY_SIGNATURE_LIMIT || 25);
-  if (!Number.isFinite(n)) return 25;
+  const n = Number(process.env.DCA_WATCH_DISCOVERY_SIGNATURE_LIMIT || 100);
+  if (!Number.isFinite(n)) return 100;
   return Math.max(10, Math.min(100, Math.floor(n)));
+}
+
+function discoveryMaxPages(): number {
+  const n = Number(process.env.DCA_WATCH_DISCOVERY_MAX_PAGES || 10);
+  if (!Number.isFinite(n)) return 10;
+  return Math.max(1, Math.min(20, Math.floor(n)));
 }
 
 function discoveredWalletTtlMs(): number {
@@ -431,7 +437,7 @@ function kindEmoji(kind: Classified['kind']): string {
   return '⚪';
 }
 
-async function sendTelegramAlert(text: string): Promise<void> {
+async function sendTelegramAlert(text: string): Promise<boolean> {
   const token = tgToken();
   const chatId = tgChatId();
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -441,19 +447,30 @@ async function sendTelegramAlert(text: string): Promise<void> {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
   };
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return true;
       const body = await res.text().catch(() => '');
+      if (res.status === 429) {
+        const retrySec = Number(body.match(/retry after (\d+)/i)?.[1] || 15);
+        console.warn('[dca-watch] telegram 429, retry after', retrySec, 's');
+        await sleep(Math.min(retrySec * 1000 + 500, 60_000));
+        continue;
+      }
       console.warn('[dca-watch] telegram non-2xx', res.status, body.slice(0, 300));
+      return false;
+    } catch (e) {
+      console.warn('[dca-watch] telegram send failed', e instanceof Error ? e.message : String(e));
+      await sleep(2000);
     }
-  } catch (e) {
-    console.warn('[dca-watch] telegram send failed', e instanceof Error ? e.message : String(e));
   }
+  return false;
 }
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -603,6 +620,15 @@ function escapeHtml(s: string): string {
 
 function tgLink(label: string, href: string): string {
   return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+}
+
+function gmgnSolTokenUrl(mint: string): string {
+  return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
+}
+
+function setupHeadlineSymbol(symbol: string, ca: string): string {
+  if (ca !== 'unknown' && ca.length > 20) return tgLink(symbol, gmgnSolTokenUrl(ca));
+  return escapeHtml(symbol);
 }
 
 function buildFuturesLinks(symbol: string): string {
@@ -941,7 +967,7 @@ function buildSetupStyleAlert(
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
 
   const lines = [
-    `🟡 NEW DCA OPEN — ${escapeHtml(symbol)}`,
+    `🟡 NEW DCA OPEN — ${setupHeadlineSymbol(symbol, ca)}`,
     '',
     `Source: ${escapeHtml(source)}`,
     `Deposit est.: ${fmtMoney(depositUsd)}`,
@@ -1025,6 +1051,13 @@ async function handleTransaction(
     setupDepositUsd = estimateSetupDepositUsd(tx, wallet, cls, setupDex);
     setupPlan = resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
     if (!setupPassesCycleInterestFilter(setupPlan)) {
+      const cycleUsd = setupPlan ? planCycleUsd(setupPlan) : 0;
+      console.log('[dca-watch] skip SETUP cycle_filter', {
+        sig: row.signature.slice(0, 12),
+        cycleUsd: cycleUsd > 0 ? Math.round(cycleUsd) : 0,
+        cycles: setupPlan?.cycles || 0,
+        source: cls.setupSource || 'unknown',
+      });
       markSeen(st, row.signature);
       return;
     }
@@ -1061,8 +1094,13 @@ async function handleTransaction(
     parts.push(buildSolscanLink(row.signature));
     alertText = parts.join('\n');
   }
-  await sendTelegramAlert(alertText);
-  markSeen(st, row.signature);
+  const sent = await sendTelegramAlert(alertText);
+  if (sent) {
+    console.log('[dca-watch] alert sent', { kind: cls.kind, sig: row.signature.slice(0, 12), wallet: shortAddr(wallet) });
+    markSeen(st, row.signature);
+  } else {
+    console.warn('[dca-watch] alert NOT sent (will retry)', { kind: cls.kind, sig: row.signature.slice(0, 12) });
+  }
 }
 
 async function processWallet(wallet: string, st: WatchState): Promise<void> {
@@ -1102,26 +1140,54 @@ async function processWallet(wallet: string, st: WatchState): Promise<void> {
   }
 }
 
+async function fetchProgramSignatureBatch(
+  program: string,
+  prevSeen: string | undefined,
+): Promise<{ latest: string | undefined; newRows: SignatureRow[]; cursorGap: boolean }> {
+  const pageLimit = discoverySigLimit();
+  const newRows: SignatureRow[] = [];
+  let latest: string | undefined;
+  let before: string | undefined;
+  let cursorGap = false;
+
+  for (let page = 0; page < discoveryMaxPages(); page++) {
+    const opts: Record<string, unknown> = { limit: pageLimit };
+    if (before) opts.before = before;
+    const rows = (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [program, opts], 5)) || [];
+    if (rows.length === 0) break;
+    if (!latest) latest = rows[0]?.signature;
+
+    for (const row of rows) {
+      if (prevSeen && row.signature === prevSeen) {
+        return { latest, newRows, cursorGap: false };
+      }
+      newRows.push(row);
+    }
+
+    if (rows.length < pageLimit) break;
+    before = rows[rows.length - 1]?.signature;
+  }
+
+  if (prevSeen && newRows.length > 0) {
+    cursorGap = true;
+    console.warn('[dca-watch] program cursor gap', { program: shortAddr(program), missedWindow: newRows.length });
+  }
+  return { latest, newRows, cursorGap };
+}
+
 async function processProgram(program: string, st: WatchState): Promise<void> {
-  const rows =
-    (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [program, { limit: discoverySigLimit() }], 5)) || [];
-  if (rows.length === 0) return;
-
-  const latest = rows[0]?.signature;
-  if (!latest) return;
-
   const prevSeen = st.lastByProgram[program];
-  if (!prevSeen) {
-    st.lastByProgram[program] = latest;
+  const { latest, newRows, cursorGap } = await fetchProgramSignatureBatch(program, prevSeen);
+  if (!latest || newRows.length === 0) {
+    if (!prevSeen) st.lastByProgram[program] = latest || prevSeen;
     return;
   }
 
-  const newRows: SignatureRow[] = [];
-  for (const row of rows) {
-    if (row.signature === prevSeen) break;
-    newRows.push(row);
-  }
   st.lastByProgram[program] = latest;
+  if (cursorGap) {
+    // Avoid re-alerting a huge backlog; only scan recent SETUP candidates.
+    newRows.splice(0, Math.max(0, newRows.length - discoverySigLimit()));
+  }
 
   newRows.reverse();
   for (const row of newRows) {
@@ -1193,6 +1259,8 @@ async function main(): Promise<void> {
       largeMaxCycles: cycleTierSmallMinCycles() - 1,
     },
     pollMs: pollMs(),
+    discoverySigLimit: discoverySigLimit(),
+    discoveryMaxPages: discoveryMaxPages(),
   });
   while (true) {
     await sleep(pollMs());
