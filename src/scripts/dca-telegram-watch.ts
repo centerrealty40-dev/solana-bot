@@ -142,8 +142,28 @@ function seenSigTtlMs(): number {
 }
 
 function setupMinUsd(): number {
-  const n = Number(process.env.DCA_WATCH_SETUP_MIN_USD ?? 500);
-  return Number.isFinite(n) && n >= 0 ? n : 500;
+  const n = Number(process.env.DCA_WATCH_SETUP_MIN_USD ?? 0);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function cycleTierSmallUsd(): number {
+  const n = Number(process.env.DCA_WATCH_CYCLE_TIER_SMALL_USD ?? 200);
+  return Number.isFinite(n) && n > 0 ? n : 200;
+}
+
+function cycleTierSmallMinCycles(): number {
+  const n = Number(process.env.DCA_WATCH_CYCLE_TIER_SMALL_MIN_CYCLES ?? 5);
+  return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 5;
+}
+
+function cycleTierLargeUsd(): number {
+  const n = Number(process.env.DCA_WATCH_CYCLE_TIER_LARGE_USD ?? 2000);
+  return Number.isFinite(n) && n > 0 ? n : 2000;
+}
+
+function cycleTierLargeMinCycles(): number {
+  const n = Number(process.env.DCA_WATCH_CYCLE_TIER_LARGE_MIN_CYCLES ?? 2);
+  return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 2;
 }
 
 function defaultCycleSec(): number {
@@ -805,6 +825,28 @@ function resolveSetupPlan(
   return parseFallbackSetupPlan(depositUsd, cls, dex);
 }
 
+function planCycleUsd(plan: DcaOpenPlan): number {
+  if (plan.cycleUsd > 0) return plan.cycleUsd;
+  if (plan.cycles > 0 && plan.totalUsd > 0) return plan.totalUsd / plan.cycles;
+  return 0;
+}
+
+/** Alert if ≥5 cycles at ≥$200/cycle, or 2–4 cycles at ≥$2000/cycle. */
+function setupPassesCycleInterestFilter(plan: DcaOpenPlan | null): boolean {
+  if (!plan || plan.cycles < cycleTierLargeMinCycles()) return false;
+  const cycleUsd = planCycleUsd(plan);
+  if (!(cycleUsd > 0)) return false;
+
+  const smallUsd = cycleTierSmallUsd();
+  const smallMinCycles = cycleTierSmallMinCycles();
+  const largeUsd = cycleTierLargeUsd();
+  const largeMinCycles = cycleTierLargeMinCycles();
+
+  if (cycleUsd >= smallUsd && plan.cycles >= smallMinCycles) return true;
+  if (cycleUsd >= largeUsd && plan.cycles >= largeMinCycles && plan.cycles < smallMinCycles) return true;
+  return false;
+}
+
 function computePriceImpactEst(
   cycleUsd: number,
   cycles: number,
@@ -982,6 +1024,10 @@ async function handleTransaction(
     setupDex = await fetchDexInfo(planPreview?.outputMint || cls.mint);
     setupDepositUsd = estimateSetupDepositUsd(tx, wallet, cls, setupDex);
     setupPlan = resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
+    if (!setupPassesCycleInterestFilter(setupPlan)) {
+      markSeen(st, row.signature);
+      return;
+    }
     const filterUsd = Math.max(setupDepositUsd, setupPlan?.totalUsd || 0);
     if (minSetupUsd > 0 && filterUsd < minSetupUsd) {
       markSeen(st, row.signature);
@@ -1139,7 +1185,13 @@ async function main(): Promise<void> {
     mode: discoveryEnabled() ? 'network-discovery' : 'wallet-only',
     discoveryPrograms: discoveryPrograms().length,
     optionalWallets: wallets().length,
-    setupMinUsd: setupMinUsd(),
+    cycleFilter: {
+      smallUsd: cycleTierSmallUsd(),
+      smallMinCycles: cycleTierSmallMinCycles(),
+      largeUsd: cycleTierLargeUsd(),
+      largeMinCycles: cycleTierLargeMinCycles(),
+      largeMaxCycles: cycleTierSmallMinCycles() - 1,
+    },
     pollMs: pollMs(),
   });
   while (true) {
