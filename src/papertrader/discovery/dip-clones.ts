@@ -51,6 +51,7 @@ import {
   type MintPgCoverageFeatures,
 } from './pg-data-coverage-guard.js';
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
+import { writeDiscoveryCollectorPinMints } from './discovery-collector-pin.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
@@ -62,6 +63,15 @@ import {
   evaluateRunner,
   type RunnerWindowFeatures,
 } from './runner-mode.js';
+
+function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: ReadonlySet<string>): void {
+  if (cfg.strategyId !== 'live-oscar') return;
+  try {
+    writeDiscoveryCollectorPinMints(priorityMintSet);
+  } catch {
+    /* non-fatal — collectors keep last pin file */
+  }
+}
 
 export interface HoldersDecisionMeta {
   holders_db: number;
@@ -420,6 +430,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     sanityCfg: discoverySnapshotSanityCfg(cfg),
   });
   if (snapshotTagged.length === 0) {
+    syncDiscoveryCollectorPin(cfg, priorityMintSet);
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
   }
 
@@ -475,6 +486,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         });
       }
     }
+    syncDiscoveryCollectorPin(cfg, priorityMintSet);
     return {
       discovered: snapshotTagged.length,
       evaluated: 0,
@@ -1101,6 +1113,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
   }
 
+  syncDiscoveryCollectorPin(cfg, priorityMintSet);
   return {
     discovered: snapshotTagged.length,
     evaluated,
