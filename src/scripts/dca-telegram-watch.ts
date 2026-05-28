@@ -476,6 +476,17 @@ async function sendTelegramAlert(text: string): Promise<boolean> {
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const STABLE_MINTS = new Set([SOL_MINT, USDC_MINT, USDT_MINT]);
+
+/** OpenDcaV2 account layout: [3]=inputMint, [4]=outputMint (Jupiter DCA program). */
+const OPEN_DCA_V2_INPUT_MINT_IDX = 3;
+const OPEN_DCA_V2_OUTPUT_MINT_IDX = 4;
+
+const KNOWN_MINT_META: Record<string, { symbol: string; name: string }> = {
+  [SOL_MINT]: { symbol: 'SOL', name: 'Solana' },
+  [USDC_MINT]: { symbol: 'USDC', name: 'USD Coin' },
+  [USDT_MINT]: { symbol: 'USDT', name: 'Tether USD' },
+};
 
 function detectWalletMintDelta(tx: any): { mint: string; delta: number } | null {
   const meta = tx?.meta || {};
@@ -524,46 +535,93 @@ function toNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function looksLikeMintAddress(v: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
+}
+
+function pickDexPairForMint(pairs: any[], mint: string): any | null {
+  let best: any = null;
+  let bestLiq = 0;
+  for (const p of pairs) {
+    const base = String(p?.baseToken?.address || '');
+    const quote = String(p?.quoteToken?.address || '');
+    if (base !== mint && quote !== mint) continue;
+    const liq = toNum(p?.liquidity?.usd);
+    if (liq >= bestLiq) {
+      best = p;
+      bestLiq = liq;
+    }
+  }
+  return best;
+}
+
+function dexInfoFromPair(pair: any, mint: string): DexInfo {
+  const base = pair?.baseToken || {};
+  const quote = pair?.quoteToken || {};
+  const token = String(base.address || '') === mint ? base : quote;
+  const known = KNOWN_MINT_META[mint];
+  const symbolRaw = String(token?.symbol || known?.symbol || '').trim();
+  const nameRaw = String(token?.name || known?.name || '').trim();
+  return {
+    symbol: symbolRaw ? symbolRaw.toUpperCase() : known?.symbol || '',
+    name: nameRaw || known?.name || '',
+    priceUsd: toNum(pair?.priceUsd),
+    marketCap: toNum(pair?.marketCap || pair?.fdv),
+    liquidityUsd: toNum(pair?.liquidity?.usd),
+    volume24h: toNum(pair?.volume?.h24),
+    volume1h: toNum(pair?.volume?.h1),
+  };
+}
+
+function dexInfoFromKnownMint(mint: string): DexInfo | null {
+  const known = KNOWN_MINT_META[mint];
+  if (!known) return null;
+  return {
+    symbol: known.symbol,
+    name: known.name,
+    priceUsd: mint === SOL_MINT ? solUsdPrice(null) : 1,
+    marketCap: 0,
+    liquidityUsd: 0,
+    volume24h: 0,
+    volume1h: 0,
+  };
+}
+
 async function fetchDexInfo(mint?: string): Promise<DexInfo | null> {
-  if (!mint) return null;
+  if (!mint || !looksLikeMintAddress(mint)) return null;
   const now = Date.now();
   const cached = dexCache.get(mint);
   if (cached && now - cached.at < 90_000) return cached.val;
+
+  const knownOnly = dexInfoFromKnownMint(mint);
   try {
-    const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+    const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`, {
+      signal: AbortSignal.timeout(12_000),
+    });
     if (!r.ok) {
-      dexCache.set(mint, { at: now, val: null });
-      return null;
+      const fallback = knownOnly;
+      dexCache.set(mint, { at: now, val: fallback });
+      return fallback;
     }
     const j = (await r.json()) as { pairs?: any[] };
     const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
-    if (pairs.length === 0) {
-      dexCache.set(mint, { at: now, val: null });
-      return null;
+    const best = pickDexPairForMint(pairs, mint);
+    if (!best) {
+      const fallback = knownOnly;
+      dexCache.set(mint, { at: now, val: fallback });
+      return fallback;
     }
-    let best = pairs[0];
-    let bestLiq = toNum(best?.liquidity?.usd);
-    for (const p of pairs) {
-      const liq = toNum(p?.liquidity?.usd);
-      if (liq > bestLiq) {
-        best = p;
-        bestLiq = liq;
-      }
+    const info = dexInfoFromPair(best, mint);
+    if (!info.symbol && knownOnly) {
+      info.symbol = knownOnly.symbol;
+      info.name = info.name || knownOnly.name;
     }
-    const info: DexInfo = {
-      symbol: String(best?.baseToken?.symbol || '').toUpperCase() || mint.slice(0, 6),
-      name: String(best?.baseToken?.name || ''),
-      priceUsd: toNum(best?.priceUsd),
-      marketCap: toNum(best?.marketCap || best?.fdv),
-      liquidityUsd: toNum(best?.liquidity?.usd),
-      volume24h: toNum(best?.volume?.h24),
-      volume1h: toNum(best?.volume?.h1),
-    };
     dexCache.set(mint, { at: now, val: info });
     return info;
   } catch {
-    dexCache.set(mint, { at: now, val: null });
-    return null;
+    const fallback = knownOnly;
+    dexCache.set(mint, { at: now, val: fallback });
+    return fallback;
   }
 }
 
@@ -626,9 +684,19 @@ function gmgnSolTokenUrl(mint: string): string {
   return `https://gmgn.ai/sol/token/${encodeURIComponent(mint.trim())}`;
 }
 
-function setupHeadlineSymbol(symbol: string, ca: string): string {
-  if (ca !== 'unknown' && ca.length > 20) return tgLink(symbol, gmgnSolTokenUrl(ca));
-  return escapeHtml(symbol);
+function tokenHeadlineLabel(dex: DexInfo | null, mint: string): string {
+  const sym = (dex?.symbol || KNOWN_MINT_META[mint]?.symbol || '').trim();
+  const name = (dex?.name || KNOWN_MINT_META[mint]?.name || '').trim();
+  if (sym && name && name.toUpperCase() !== sym.toUpperCase()) return `${sym} — ${name}`;
+  if (sym) return sym;
+  if (name) return name;
+  return shortAddr(mint);
+}
+
+function setupHeadlineHtml(dex: DexInfo | null, mint: string): string {
+  const label = tokenHeadlineLabel(dex, mint);
+  if (looksLikeMintAddress(mint)) return tgLink(label, gmgnSolTokenUrl(mint));
+  return escapeHtml(label);
 }
 
 function buildFuturesLinks(symbol: string): string {
@@ -763,8 +831,8 @@ function parseJupiterOpenDcaV2(tx: any, dex: DexInfo | null): DcaOpenPlan | null
     if (inAmountPerCycleRaw <= 0n || !Number.isFinite(cycleFrequencySec) || cycleFrequencySec <= 0) continue;
 
     const accounts = instructionAccounts(ins, tx);
-    const { inputMint, outputMint } = findMintPairFromAccounts(accounts);
-    if (!outputMint) continue;
+    const { inputMint, outputMint } = parseOpenDcaV2Mints(accounts);
+    if (!outputMint || !looksLikeMintAddress(outputMint)) continue;
 
     const cycles = Math.max(1, Number(inAmountRaw / inAmountPerCycleRaw));
     const cycleUsd = mintRawToUsd(inAmountPerCycleRaw, inputMint, dex);
@@ -784,24 +852,18 @@ function parseJupiterOpenDcaV2(tx: any, dex: DexInfo | null): DcaOpenPlan | null
   return null;
 }
 
-function findMintPairFromAccounts(accounts: string[]): { inputMint: string; outputMint: string } {
-  const skip = new Set([
-    '11111111111111111111111111111111',
-    'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-    'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
-    'ComputeBudget111111111111111111111111111111',
-    JUPITER_DCA_PROGRAM,
-    'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
-    'proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u',
-    'DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH',
-  ]);
-  const mints = accounts.filter((a) => a.length >= 32 && a.length <= 44 && !skip.has(a));
-  const inputMint = mints.find((m) => m === SOL_MINT || m === USDC_MINT || m === USDT_MINT) || mints[0] || '';
-  const outputMint =
-    mints.find((m) => m !== inputMint && m !== SOL_MINT && m !== USDC_MINT && m !== USDT_MINT) ||
-    mints.find((m) => m !== inputMint) ||
-    '';
+function parseOpenDcaV2Mints(accounts: string[]): { inputMint: string; outputMint: string } {
+  const inputMint = accounts[OPEN_DCA_V2_INPUT_MINT_IDX] || '';
+  const outputMint = accounts[OPEN_DCA_V2_OUTPUT_MINT_IDX] || '';
   return { inputMint, outputMint };
+}
+
+/** Prefer output mint from OpenDcaV2; never use signer wallet as token CA. */
+function resolveAlertMint(cls: Classified, plan: DcaOpenPlan | null): string {
+  if (plan?.outputMint && looksLikeMintAddress(plan.outputMint)) return plan.outputMint;
+  if (cls.mint && looksLikeMintAddress(cls.mint) && !STABLE_MINTS.has(cls.mint)) return cls.mint;
+  if (cls.mint && looksLikeMintAddress(cls.mint) && STABLE_MINTS.has(cls.mint)) return cls.mint;
+  return cls.mint || 'unknown';
 }
 
 function parseFallbackSetupPlan(depositUsd: number, cls: Classified, dex: DexInfo | null): DcaOpenPlan | null {
@@ -891,8 +953,8 @@ function buildBuyStyleAlert(
   dex: DexInfo | null,
   tsIso: string,
 ): string {
-  const ca = cls.mint || 'unknown';
-  const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
+  const ca = resolveAlertMint(cls, null);
+  const symbol = dex?.symbol || KNOWN_MINT_META[ca]?.symbol || (ca !== 'unknown' ? shortAddr(ca) : 'TOKEN');
   const buyUsd = estimateBuyUsd(cls.amountInRaw, dex);
   const liq = dex?.liquidityUsd || 0;
   const targetCycles = defaultTargetCycles();
@@ -960,14 +1022,14 @@ function buildSetupStyleAlert(
   depositUsd: number,
   plan: DcaOpenPlan | null,
 ): string {
-  const ca = cls.mint || 'unknown';
-  const symbol = dex?.symbol || (ca !== 'unknown' ? ca.slice(0, 6) : 'TOKEN');
+  const ca = resolveAlertMint(cls, plan);
+  const symbol = dex?.symbol || KNOWN_MINT_META[ca]?.symbol || (ca !== 'unknown' ? shortAddr(ca) : 'TOKEN');
   const source =
     cls.setupSource === 'jupiter_dca' ? 'Jupiter DCA (OpenDcaV2)' : cls.setupSource === 'bot_dca' ? 'Bot DCA vault' : 'DCA';
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
 
   const lines = [
-    `🟡 NEW DCA OPEN — ${setupHeadlineSymbol(symbol, ca)}`,
+    `🟡 NEW DCA OPEN — ${setupHeadlineHtml(dex, ca)}`,
     '',
     `Source: ${escapeHtml(source)}`,
     `Deposit est.: ${fmtMoney(depositUsd)}`,
@@ -1047,7 +1109,8 @@ async function handleTransaction(
   let setupPlan: DcaOpenPlan | null = null;
   if (cls.kind === 'SETUP') {
     const planPreview = parseJupiterOpenDcaV2(tx, null);
-    setupDex = await fetchDexInfo(planPreview?.outputMint || cls.mint);
+    const alertMint = planPreview?.outputMint || resolveAlertMint(cls, planPreview);
+    setupDex = await fetchDexInfo(alertMint);
     setupDepositUsd = estimateSetupDepositUsd(tx, wallet, cls, setupDex);
     setupPlan = resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
     if (!setupPassesCycleInterestFilter(setupPlan)) {
@@ -1074,7 +1137,7 @@ async function handleTransaction(
 
   let alertText = '';
   if (cls.kind === 'BUY_EXEC') {
-    const dex = await fetchDexInfo(cls.mint);
+    const dex = await fetchDexInfo(resolveAlertMint(cls, null));
     alertText = buildBuyStyleAlert(st, wallet, row.signature, cls, dex, ts);
   } else if (cls.kind === 'SETUP') {
     alertText = buildSetupStyleAlert(wallet, row.signature, cls, setupDex, ts, setupDepositUsd, setupPlan);
