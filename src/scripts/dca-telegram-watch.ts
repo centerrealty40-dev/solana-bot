@@ -2,6 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import bs58 from 'bs58';
+import {
+  ensureDcaOperatorTables,
+  fetchDcaOperatorStats,
+  formatOperatorTrustLine,
+  recordDcaClose,
+  recordDcaFill,
+  recordDcaOpen,
+} from './dca-operator-tracker.js';
 
 type JsonRpcResponse<T> = {
   result?: T;
@@ -28,20 +36,25 @@ type WatchState = {
       totalUsd: number;
     }
   >;
-  /** Alt pipeline: orderAccount|mint|executor → recurring Jupiter swap DCA (e.g. gasBid + FkiKC). */
+  /**
+   * Alt pipeline: keyed by `tokenRecipient|mint` (the stable buyer vault that accumulates the coin,
+   * e.g. En9UYdeQ|prelode). The keeper (gasBid) signs but only pays fees; SOL is debited from a
+   * funding vault. We only alert after observing a real repeated series.
+   */
   swapExecSeries: Record<
     string,
     {
-      orderAccount: string;
-      executor: string;
-      mint: string;
       tokenRecipient: string;
+      mint: string;
+      executor: string;
+      solVault: string;
       firstTsMs: number;
       lastTsMs: number;
       cycles: number;
       totalUsd: number;
       lastCycleUsd: number;
       freqSec: number;
+      tsHistory: number[];
       alerted: boolean;
     }
   >;
@@ -141,8 +154,8 @@ function swapExecPipelineEnabled(): boolean {
 }
 
 function swapExecMinCycleUsd(): number {
-  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLE_USD ?? 100);
-  return Number.isFinite(n) && n > 0 ? n : 100;
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLE_USD ?? 50);
+  return Number.isFinite(n) && n > 0 ? n : 50;
 }
 
 function swapExecDefaultFreqSec(): number {
@@ -150,9 +163,28 @@ function swapExecDefaultFreqSec(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
 }
 
+/** Projection-only: estimated total cycles a DCA might run (NOT used to inflate observed deposit). */
 function swapExecEstCycles(): number {
   const n = Number(process.env.DCA_WATCH_SWAP_EXEC_EST_CYCLES ?? 60);
   return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 60;
+}
+
+/** Minimum REAL observed cycles (same recipient+mint) before we alert. */
+function swapExecMinCycles(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLES ?? 4);
+  return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 4;
+}
+
+/** Minimum observed accumulated USD across the series before alerting. */
+function swapExecMinTotalUsd(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_TOTAL_USD ?? 200);
+  return Number.isFinite(n) && n > 0 ? n : 200;
+}
+
+/** Reject series whose observed median cadence is slower than this (sec) — DCA buys are frequent. */
+function swapExecMaxFreqSec(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MAX_FREQ_SEC ?? 900);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 900;
 }
 
 function maxDiscoveredWallets(): number {
@@ -391,85 +423,140 @@ function isJupiterSwapRoute(logsLower: string): boolean {
   return logsLower.includes('instruction: route') || logsLower.includes('sharedaccountsroute');
 }
 
-const KNOWN_ONCHAIN_PROGRAMS = new Set([
-  JUPITER_DCA_PROGRAM,
-  JUPITER_SWAP_PROGRAM,
-  '11111111111111111111111111111111',
-  'ComputeBudget111111111111111111111111111111',
-  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
-  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
-  ...BOT_DCA_PROGRAMS,
-]);
-
 function txAccountKeys(tx: any): string[] {
   return (tx?.transaction?.message?.accountKeys || []).map((k: any) =>
     typeof k === 'string' ? k : String(k?.pubkey || ''),
   );
 }
 
-function parseMemeTokenBuy(tx: any): { mint: string; recipient: string; tokenQty: number } | null {
+/** Per-account net SOL (lamport) deltas for the tx. */
+function lamportDeltas(tx: any): { pubkey: string; deltaSol: number }[] {
+  const keys = txAccountKeys(tx);
+  const pre = tx?.meta?.preBalances || [];
+  const post = tx?.meta?.postBalances || [];
+  return keys.map((pubkey, i) => ({
+    pubkey,
+    deltaSol: (Number(post[i] || 0) - Number(pre[i] || 0)) / 1_000_000_000,
+  }));
+}
+
+/** Net token delta per owner+mint. */
+function tokenDeltaRows(tx: any): { owner: string; mint: string; delta: number }[] {
+  const keys = txAccountKeys(tx);
   const pre = tx?.meta?.preTokenBalances || [];
   const post = tx?.meta?.postTokenBalances || [];
-  const keys = txAccountKeys(tx);
-  const preMap = new Map<string, number>();
+  const map = new Map<string, { owner: string; mint: string; delta: number }>();
   for (const b of pre) {
     const owner = String(b?.owner || keys[b?.accountIndex] || '');
     const mint = String(b?.mint || '');
-    preMap.set(`${owner}|${mint}`, Number(b?.uiTokenAmount?.uiAmount || 0));
+    if (!owner || !mint) continue;
+    const k = `${owner}|${mint}`;
+    map.set(k, { owner, mint, delta: -Number(b?.uiTokenAmount?.uiAmount || 0) });
   }
-  let best: { mint: string; recipient: string; tokenQty: number } | null = null;
   for (const b of post) {
     const owner = String(b?.owner || keys[b?.accountIndex] || '');
     const mint = String(b?.mint || '');
-    if (!mint || STABLE_MINTS.has(mint)) continue;
-    const before = preMap.get(`${owner}|${mint}`) || 0;
-    const delta = Number(b?.uiTokenAmount?.uiAmount || 0) - before;
-    if (delta <= 0) continue;
-    if (!best || delta > best.tokenQty) best = { mint, recipient: owner, tokenQty: delta };
+    if (!owner || !mint) continue;
+    const k = `${owner}|${mint}`;
+    const cur = map.get(k);
+    if (cur) cur.delta += Number(b?.uiTokenAmount?.uiAmount || 0);
+    else map.set(k, { owner, mint, delta: Number(b?.uiTokenAmount?.uiAmount || 0) });
   }
-  return best;
+  return [...map.values()];
 }
 
-function pickSwapExecOrderAccount(tx: any, signer: string, tokenRecipient: string): string | null {
-  const mintsInTx = new Set<string>();
-  for (const b of tx?.meta?.postTokenBalances || []) {
-    if (b?.mint) mintsInTx.add(String(b.mint));
+export type SwapExecBuy = {
+  mint: string;
+  recipient: string;
+  solVault: string;
+  cycleSol: number;
+  cycleUsd: number;
+  signerIsKeeper: boolean;
+};
+
+/**
+ * Identify a real "buy of a meme coin" inside a Jupiter route:
+ *  - a non-stable mint with a POSITIVE delta to some owner (the buyer/recipient vault)
+ *    AND a NEGATIVE delta of the same mint elsewhere (the AMM pool counterparty) — this proves
+ *    a genuine swap output, not just any token movement;
+ *  - the cycle cost = the largest SOL outflow in the tx (the funding vault), or stable-coin outflow.
+ * Returns null if the tx is not a clean single-coin accumulation.
+ */
+function analyzeSwapExecBuy(tx: any, signer: string, dex: DexInfo | null): SwapExecBuy | null {
+  const rows = tokenDeltaRows(tx);
+  const byMint = new Map<string, { pos: { owner: string; delta: number }[]; neg: number }>();
+  for (const r of rows) {
+    if (!r.mint || STABLE_MINTS.has(r.mint) || !looksLikeMintAddress(r.mint)) continue;
+    const e = byMint.get(r.mint) || { pos: [], neg: 0 };
+    if (r.delta > 0) e.pos.push({ owner: r.owner, delta: r.delta });
+    else if (r.delta < 0) e.neg += -r.delta;
+    byMint.set(r.mint, e);
   }
-  for (const k of txAccountKeys(tx)) {
-    if (!k || k.length < 32 || k.length > 44) continue;
-    if (k === signer || k === tokenRecipient) continue;
-    if (KNOWN_ONCHAIN_PROGRAMS.has(k) || mintsInTx.has(k)) continue;
-    return k;
+
+  // Candidate buy: mint with both a positive recipient and a negative (pool) counterparty.
+  let best: { mint: string; recipient: string; qty: number } | null = null;
+  for (const [mint, e] of byMint.entries()) {
+    if (e.neg <= 0 || e.pos.length === 0) continue;
+    const top = e.pos.sort((a, b) => b.delta - a.delta)[0];
+    if (!top) continue;
+    if (!best || top.delta > best.qty) best = { mint, recipient: top.owner, qty: top.delta };
   }
-  return null;
+  if (!best) return null;
+
+  // Funding side: the largest SOL outflow account (vault). For keeper DCAs the signer only pays fee.
+  const lam = lamportDeltas(tx).sort((a, b) => a.deltaSol - b.deltaSol);
+  const vault = lam[0];
+  const cycleSol = vault && vault.deltaSol < 0 ? -vault.deltaSol : 0;
+
+  let cycleUsd = 0;
+  let solVault = vault?.pubkey || '';
+  if (cycleSol > 0.0005) {
+    cycleUsd = cycleSol * solUsdPrice(dex);
+  } else {
+    // Stable-coin funded DCA: sum negative stable deltas (USDC/USDT leaving a vault).
+    let stableOut = 0;
+    for (const r of rows) {
+      if (r.delta < 0 && (r.mint === USDC_MINT || r.mint === USDT_MINT)) stableOut += -r.delta;
+    }
+    cycleUsd = stableOut;
+  }
+
+  const signerDelta = lamportDeltas(tx).find((l) => l.pubkey === signer)?.deltaSol ?? 0;
+  const signerIsKeeper = Math.abs(signerDelta) < 0.01;
+
+  return {
+    mint: best.mint,
+    recipient: best.recipient,
+    solVault,
+    cycleSol,
+    cycleUsd,
+    signerIsKeeper,
+  };
 }
 
-function estimateSignerSpendUsd(tx: any, signer: string, dex: DexInfo | null): number {
-  const keys = txAccountKeys(tx);
-  const idx = keys.indexOf(signer);
-  if (idx >= 0) {
-    const pre = Number(tx?.meta?.preBalances?.[idx] || 0);
-    const post = Number(tx?.meta?.postBalances?.[idx] || 0);
-    const fee = Number(tx?.meta?.fee || 0);
-    const solOut = (pre - post - fee) / 1_000_000_000;
-    if (solOut > 0.00001) return solOut * solUsdPrice(dex);
-  }
-  const fromStable = extractSignerDepositUsd(tx, signer, dex);
-  if (fromStable > 0) return fromStable;
-  const { logs } = txLogs(tx);
-  return estimateBuyUsd(extractAmountInOut(logs).amountInRaw, dex);
+function swapExecSeriesKey(tokenRecipient: string, mint: string): string {
+  return `${tokenRecipient}|${mint}`;
 }
 
-function swapExecSeriesKey(orderAccount: string, mint: string, executor: string): string {
-  return `${orderAccount}|${mint}|${executor}`;
+function medianFreqSec(tsHistory: number[]): number {
+  if (tsHistory.length < 2) return 0;
+  const sorted = [...tsHistory].sort((a, b) => a - b);
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) gaps.push((sorted[i] - sorted[i - 1]) / 1000);
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const m = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+  return Math.max(1, Math.floor(m));
 }
 
+/** Honest plan from OBSERVED cycles only (no fabricated 60-cycle projection). */
 function planFromSwapExecSeries(series: WatchState['swapExecSeries'][string]): DcaOpenPlan {
-  const cycleUsd = series.lastCycleUsd;
-  const cycles = Math.max(series.cycles, swapExecEstCycles());
-  const freq = series.freqSec > 0 ? series.freqSec : swapExecDefaultFreqSec();
-  const totalUsd = Math.max(series.totalUsd, cycleUsd * cycles);
+  const cycles = Math.max(1, series.cycles);
+  const cycleUsd = cycles > 0 ? series.totalUsd / cycles : series.lastCycleUsd;
+  const freq = series.freqSec > 0 ? series.freqSec : medianFreqSec(series.tsHistory) || swapExecDefaultFreqSec();
+  const spanSec = series.tsHistory.length >= 2
+    ? Math.max(1, Math.floor((series.lastTsMs - series.firstTsMs) / 1000))
+    : freq;
   return {
     inputMint: SOL_MINT,
     outputMint: series.mint,
@@ -478,9 +565,19 @@ function planFromSwapExecSeries(series: WatchState['swapExecSeries'][string]): D
     cycleFrequencySec: freq,
     cycles,
     cycleUsd,
-    totalUsd,
-    etaSec: freq * cycles,
+    totalUsd: series.totalUsd,
+    etaSec: spanSec,
   };
+}
+
+/** Dedicated gate for the alt pipeline: a REAL repeated, frequent, non-dust accumulation. */
+function swapExecSeriesQualifies(series: WatchState['swapExecSeries'][string]): boolean {
+  if (series.cycles < swapExecMinCycles()) return false;
+  if (series.lastCycleUsd < swapExecMinCycleUsd()) return false;
+  if (series.totalUsd < swapExecMinTotalUsd()) return false;
+  const freq = series.freqSec > 0 ? series.freqSec : medianFreqSec(series.tsHistory);
+  if (freq > 0 && freq > swapExecMaxFreqSec()) return false;
+  return true;
 }
 
 async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Promise<boolean> {
@@ -493,46 +590,52 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     return true;
   }
 
-  const buy = parseMemeTokenBuy(tx);
-  if (!buy) {
+  // Resolve the meme buy by matching a positive recipient delta against a pool counterparty.
+  const buy = analyzeSwapExecBuy(tx, signer, null);
+  if (!buy || !looksLikeMintAddress(buy.mint)) {
     markSeen(st, row.signature);
     return true;
   }
 
+  // Price the cycle with the live SOL price for this coin's quote.
   const dex = await fetchDexInfo(buy.mint);
-  const cycleUsd = estimateSignerSpendUsd(tx, signer, dex);
-  if (cycleUsd < swapExecMinCycleUsd()) {
-    console.log('[dca-watch] skip swap_exec min_cycle', {
-      sig: row.signature.slice(0, 12),
-      cycleUsd: Math.round(cycleUsd),
-      mint: buy.mint.slice(0, 8),
-    });
+  const cycleUsd = buy.cycleSol > 0.0005 ? buy.cycleSol * solUsdPrice(dex) : buy.cycleUsd;
+  if (cycleUsd <= 0) {
     markSeen(st, row.signature);
     return true;
   }
 
-  const orderAccount = pickSwapExecOrderAccount(tx, signer, buy.recipient) || buy.recipient;
   const tsMs = row.blockTime ? row.blockTime * 1000 : Date.now();
-  const sKey = swapExecSeriesKey(orderAccount, buy.mint, signer);
+  // Stable key = the buyer vault that ACTUALLY accumulates this coin + the mint.
+  const sKey = swapExecSeriesKey(buy.recipient, buy.mint);
   const prev = st.swapExecSeries[sKey];
   const cycles = (prev?.cycles || 0) + 1;
   const firstTsMs = prev?.firstTsMs ?? tsMs;
-  const freqSec =
-    cycles >= 2 ? Math.max(1, Math.floor((tsMs - firstTsMs) / 1000 / (cycles - 1))) : swapExecDefaultFreqSec();
+  const tsHistory = [...(prev?.tsHistory || []), tsMs].slice(-50);
+  const freqSec = medianFreqSec(tsHistory);
 
   st.swapExecSeries[sKey] = {
-    orderAccount,
-    executor: signer,
-    mint: buy.mint,
     tokenRecipient: buy.recipient,
+    mint: buy.mint,
+    executor: signer,
+    solVault: buy.solVault || prev?.solVault || '',
     firstTsMs,
     lastTsMs: tsMs,
     cycles,
     totalUsd: (prev?.totalUsd || 0) + cycleUsd,
     lastCycleUsd: cycleUsd,
     freqSec,
+    tsHistory,
     alerted: prev?.alerted ?? false,
   };
+
+  await recordDcaFill({
+    operatorWallet: buy.recipient,
+    mint: buy.mint,
+    seriesKey: sKey,
+    fillUsd: cycleUsd,
+    eventTsMs: tsMs,
+  });
 
   const series = st.swapExecSeries[sKey];
   if (series.alerted) {
@@ -540,18 +643,22 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     return true;
   }
 
-  const plan = planFromSwapExecSeries(st.swapExecSeries[sKey]);
-  if (!setupPassesCycleInterestFilter(plan)) {
-    console.log('[dca-watch] skip SETUP cycle_filter', {
+  // Only alert after a REAL repeated, frequent, non-dust series (no single-swap projection).
+  if (!swapExecSeriesQualifies(series)) {
+    console.log('[dca-watch] swap_exec building series', {
       sig: row.signature.slice(0, 12),
+      mint: buy.mint.slice(0, 8),
+      recipient: shortAddr(buy.recipient),
+      cycles: series.cycles,
       cycleUsd: Math.round(cycleUsd),
-      totalUsd: Math.round(plan.totalUsd),
-      cycles: plan.cycles,
-      source: 'swap_exec_dca',
+      totalUsd: Math.round(series.totalUsd),
+      freqSec: series.freqSec,
     });
     markSeen(st, row.signature);
     return true;
   }
+
+  const plan = planFromSwapExecSeries(series);
 
   const cls: Classified = {
     kind: 'SETUP',
@@ -564,19 +671,35 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     mint: buy.mint,
     swapExec: {
       executor: signer,
-      orderAccount,
+      orderAccount: buy.solVault || buy.recipient,
       tokenRecipient: buy.recipient,
     },
   };
 
-  registerDiscoveredWallet(st, orderAccount);
+  registerDiscoveredWallet(st, buy.recipient);
   registerDiscoveredWallet(st, signer);
-  const sent = await handleTransaction(st, orderAccount, row, tx, {
+  // Track the buyer vault (the real accumulator), not the shared keeper.
+  const sent = await handleTransaction(st, buy.recipient, row, tx, {
     classified: cls,
     setupPlan: plan,
     setupDepositUsd: plan.totalUsd,
   });
-  if (sent) st.swapExecSeries[sKey].alerted = true;
+  if (sent) {
+    st.swapExecSeries[sKey].alerted = true;
+    const s = st.swapExecSeries[sKey];
+    await recordDcaOpen({
+      operatorWallet: buy.recipient,
+      mint: buy.mint,
+      source: 'swap_exec_dca',
+      openSig: row.signature,
+      openTsMs: s.firstTsMs,
+      plannedCycles: s.cycles,
+      plannedCycleUsd: s.totalUsd / Math.max(1, s.cycles),
+      plannedTotalUsd: s.totalUsd,
+      cycleFreqSec: s.freqSec,
+      seriesKey: sKey,
+    });
+  }
   return true;
 }
 
@@ -915,10 +1038,6 @@ function fmtGmt(tsMs: number): string {
   return `${da} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(mo) - 1]} ${y} ${hh}:${mm}:${ss} GMT`;
 }
 
-function shortTag(v: string): string {
-  return v.length > 10 ? v.slice(-10) : v;
-}
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -929,6 +1048,17 @@ function escapeHtml(s: string): string {
 
 function tgLink(label: string, href: string): string {
   return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+}
+
+/** Tap-to-copy in Telegram (tg://copy). */
+function tgCopyLink(label: string, copyText: string): string {
+  return tgLink(label, `tg://copy?text=${encodeURIComponent(copyText)}`);
+}
+
+function addrCopyLine(label: string, address: string): string {
+  if (!address || address === 'unknown' || address === 'n/a') return `${label}: n/a`;
+  const display = address.length > 16 ? shortAddr(address) : address;
+  return `${label}: ${tgCopyLink(display, address)}`;
 }
 
 function gmgnSolTokenUrl(mint: string): string {
@@ -975,8 +1105,21 @@ function buildSolscanLink(sig: string): string {
   return tgLink('Solscan', `https://solscan.io/tx/${sig}`);
 }
 
+/** Live SOL/USD, refreshed each poll cycle; falls back to env/static when unavailable. */
+let liveSolUsd = 0;
+
+async function refreshSolUsd(): Promise<void> {
+  try {
+    const info = await fetchDexInfo(SOL_MINT);
+    if (info && info.priceUsd > 0) liveSolUsd = info.priceUsd;
+  } catch {
+    /* keep previous / fallback */
+  }
+}
+
 function solUsdPrice(dex: DexInfo | null): number {
   if (dex?.symbol === 'SOL' && dex.priceUsd > 0) return dex.priceUsd;
+  if (liveSolUsd > 0) return liveSolUsd;
   const n = Number(process.env.DCA_WATCH_SOL_USD || 165);
   return Number.isFinite(n) && n > 0 ? n : 165;
 }
@@ -1259,11 +1402,9 @@ function buildBuyStyleAlert(
     '',
     `Trade bots: ${ca !== 'unknown' ? buildTradeBotsLinks(ca) : 'n/a'}`,
     '',
-    `CA: ${escapeHtml(ca)}`,
-    `#${ca !== 'unknown' ? escapeHtml(shortTag(ca)) : 'unknown'}`,
+    addrCopyLine('CA', ca),
     '',
-    `User: ${escapeHtml(wallet)}`,
-    `#${escapeHtml(shortTag(wallet))}`,
+    addrCopyLine('User', wallet),
     '',
     `Period: ${escapeHtml(fmtGmt(firstTsMs))} - ${escapeHtml(fmtGmt(lastTsMs))}`,
     `Observed: ${escapeHtml(period)}`,
@@ -1279,16 +1420,18 @@ function buildSetupStyleAlert(
   tsIso: string,
   depositUsd: number,
   plan: DcaOpenPlan | null,
+  operatorTrustLine: string | null,
 ): string {
   const ca = resolveAlertMint(cls, plan);
   const symbol = dex?.symbol || KNOWN_MINT_META[ca]?.symbol || (ca !== 'unknown' ? shortAddr(ca) : 'TOKEN');
+  const isSwapExec = cls.setupSource === 'swap_exec_dca';
   const source =
     cls.setupSource === 'jupiter_dca'
       ? 'Jupiter DCA (OpenDcaV2)'
       : cls.setupSource === 'bot_dca'
         ? 'Bot DCA vault'
-        : cls.setupSource === 'swap_exec_dca'
-          ? '⚡ Alt pipeline — Jupiter swap executor (NOT OpenDcaV2 / NOT JD keeper)'
+        : isSwapExec
+          ? '⚡ Alt pipeline — Jupiter keeper DCA (NOT OpenDcaV2)'
           : 'DCA';
   const period = tsIso.replace('T', ' ').replace('Z', ' GMT');
 
@@ -1296,26 +1439,52 @@ function buildSetupStyleAlert(
     `🟡 NEW DCA OPEN — ${setupHeadlineHtml(dex, ca)}`,
     '',
     `Source: ${escapeHtml(source)}`,
-    `Deposit est.: ${fmtMoney(depositUsd)}`,
   ];
 
-  if (cls.setupSource === 'swap_exec_dca' && cls.swapExec) {
+  if (isSwapExec && cls.swapExec && plan) {
+    const cyc = plan.cycles;
+    const cycleUsd = plan.cycleUsd > 0 ? plan.cycleUsd : plan.totalUsd / Math.max(1, cyc);
+    const freq = plan.cycleFrequencySec;
+    const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, cyc, dex?.liquidityUsd || 0);
     lines.push(
-      `Pipeline: <code>swap_exec_dca</code>`,
-      `Order account (Solscan): ${escapeHtml(shortAddr(cls.swapExec.orderAccount))}`,
-      `Executor signer: ${escapeHtml(shortAddr(cls.swapExec.executor))}`,
-      `Token vault: ${escapeHtml(shortAddr(cls.swapExec.tokenRecipient))}`,
+      `Pipeline: <code>swap_exec_dca</code> (keeper-signed Jupiter route)`,
+      '',
+      `OBSERVED (real, on-chain):`,
+      `• ${cyc} buys × ~${fmtMoney(cycleUsd)} every ~${freq}s`,
+      `• Accumulated so far: ${fmtMoney(plan.totalUsd)} over ${fmtDuration(plan.etaSec)}`,
+      `• Price impact so far: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
+      '',
+      addrCopyLine('Buyer vault (accumulates coin)', cls.swapExec.tokenRecipient),
+      addrCopyLine('SOL funding vault', cls.swapExec.orderAccount),
+      addrCopyLine('Executor / keeper (signs)', cls.swapExec.executor),
     );
+    // Projection is clearly separated and labelled as an estimate, never as deposit fact.
+    const projCycles = swapExecEstCycles();
+    if (projCycles > cyc) {
+      lines.push(
+        '',
+        `<i>Projection if it keeps this pace (${projCycles} cycles est.): ` +
+          `${fmtMoney(cycleUsd * projCycles)} total, ${fmtPctSigned(perCyclePct * projCycles)} impact</i>`,
+      );
+    }
+  } else {
+    lines.push(`Deposit est.: ${fmtMoney(depositUsd)}`);
+    if (plan && plan.cycles > 0 && plan.cycleFrequencySec > 0) {
+      const cycleUsd = plan.cycleUsd > 0 ? plan.cycleUsd : plan.totalUsd / plan.cycles;
+      const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, plan.cycles, dex?.liquidityUsd || 0);
+      lines.push(
+        `Frequency: ${fmtMoney(cycleUsd)} every ${plan.cycleFrequencySec} seconds (${plan.cycles} cycles)`,
+        `ETA: ${fmtDuration(plan.etaSec)}`,
+        `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
+      );
+    }
   }
 
-  if (plan && plan.cycles > 0 && plan.cycleFrequencySec > 0) {
-    const cycleUsd = plan.cycleUsd > 0 ? plan.cycleUsd : plan.totalUsd / plan.cycles;
-    const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, plan.cycles, dex?.liquidityUsd || 0);
-    lines.push(
-      `Frequency: ${fmtMoney(cycleUsd)} every ${plan.cycleFrequencySec} seconds (${plan.cycles} cycles)`,
-      `ETA: ${fmtDuration(plan.etaSec)}`,
-      `Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
-    );
+  if (operatorTrustLine) {
+    lines.push('', operatorTrustLine);
+  }
+  if (isSwapExec) {
+    lines.push('<i>Tap address to copy</i>');
   }
 
   lines.push(
@@ -1329,19 +1498,12 @@ function buildSetupStyleAlert(
     '',
     `Trade bots: ${ca !== 'unknown' ? buildTradeBotsLinks(ca) : 'n/a'}`,
     '',
-    `CA: ${escapeHtml(ca)}`,
-    `#${ca !== 'unknown' ? escapeHtml(shortTag(ca)) : 'unknown'}`,
-    '',
-    `User: ${escapeHtml(wallet)}`,
-    `#${escapeHtml(shortTag(wallet))}`,
+    addrCopyLine('CA', ca),
   );
 
-  if (cls.setupSource === 'swap_exec_dca' && cls.swapExec) {
-    lines.push(
-      '',
-      `Executor: ${escapeHtml(cls.swapExec.executor)}`,
-      `#${escapeHtml(shortTag(cls.swapExec.executor))}`,
-    );
+  // For swap_exec the buyer vault + keeper are already shown above; avoid a misleading "User" line.
+  if (!isSwapExec) {
+    lines.push('', addrCopyLine('User', wallet));
   }
 
   lines.push(
@@ -1366,6 +1528,84 @@ function extractSignerWallet(tx: any): string | null {
     if (signer && pubkey.length > 20) return pubkey;
   }
   return null;
+}
+
+function resolveOperatorWallet(cls: Classified, wallet: string): string {
+  if (cls.setupSource === 'swap_exec_dca' && cls.swapExec?.executor) return cls.swapExec.executor;
+  return wallet;
+}
+
+function swapExecSeriesKeyFromCls(cls: Classified, mint: string): string | undefined {
+  if (!cls.swapExec) return undefined;
+  return `${cls.swapExec.tokenRecipient}|${mint}`;
+}
+
+async function ingestDcaOperatorEvent(
+  cls: Classified,
+  row: SignatureRow,
+  wallet: string,
+  plan: DcaOpenPlan | null,
+  extras?: { seriesKey?: string; fillUsd?: number },
+): Promise<void> {
+  const operator = resolveOperatorWallet(cls, wallet);
+  if (!operator) return;
+  const tsMs = row.blockTime ? row.blockTime * 1000 : Date.now();
+  const mint = resolveAlertMint(cls, plan);
+  const source = cls.setupSource || 'unknown';
+
+  if (cls.kind === 'SETUP' && plan && looksLikeMintAddress(mint)) {
+    await recordDcaOpen({
+      operatorWallet: operator,
+      mint,
+      source,
+      openSig: row.signature,
+      openTsMs: tsMs,
+      plannedCycles: plan.cycles,
+      plannedCycleUsd: planCycleUsd(plan),
+      plannedTotalUsd: plan.totalUsd,
+      cycleFreqSec: plan.cycleFrequencySec,
+      orderId: cls.orderId || undefined,
+      seriesKey: extras?.seriesKey || swapExecSeriesKeyFromCls(cls, mint),
+    });
+    return;
+  }
+
+  if (cls.kind === 'BUY_EXEC') {
+    await recordDcaFill({
+      operatorWallet: operator,
+      mint: looksLikeMintAddress(mint) ? mint : cls.mint,
+      orderId: cls.orderId || undefined,
+      seriesKey: extras?.seriesKey,
+      fillUsd: extras?.fillUsd ?? estimateBuyUsd(cls.amountInRaw, null),
+      eventTsMs: tsMs,
+    });
+    return;
+  }
+
+  if (cls.kind === 'CLOSE') {
+    await recordDcaClose({
+      operatorWallet: operator,
+      mint: looksLikeMintAddress(mint) ? mint : cls.mint,
+      orderId: cls.orderId || undefined,
+      seriesKey: extras?.seriesKey,
+      closeSig: row.signature,
+      eventTsMs: tsMs,
+    });
+  }
+}
+
+async function trackProgramOperatorTx(tx: any, row: SignatureRow): Promise<void> {
+  const rawCls = classifyTx(tx);
+  if (rawCls.kind === 'OTHER') return;
+  const signer = extractSignerWallet(tx);
+  if (!signer) return;
+
+  let plan: DcaOpenPlan | null = null;
+  if (rawCls.kind === 'SETUP') {
+    plan = parseJupiterOpenDcaV2(tx, null);
+    if (!plan) plan = resolveSetupPlan(tx, rawCls, null, 0);
+  }
+  await ingestDcaOperatorEvent(rawCls, row, signer, plan);
 }
 
 async function handleTransaction(
@@ -1414,7 +1654,16 @@ async function handleTransaction(
       markSeen(st, row.signature);
       return false;
     }
+    if (cls.setupSource !== 'swap_exec_dca') {
+      await ingestDcaOperatorEvent(cls, row, wallet, setupPlan);
+    }
+  } else if (cls.kind === 'BUY_EXEC' || cls.kind === 'CLOSE') {
+    await ingestDcaOperatorEvent(cls, row, wallet, null);
   }
+
+  const operatorWallet = resolveOperatorWallet(cls, wallet);
+  const operatorStats =
+    cls.kind === 'SETUP' ? formatOperatorTrustLine(await fetchDcaOperatorStats(operatorWallet)) : null;
 
   const ts = cls.blockTime
     ? new Date(cls.blockTime * 1000).toISOString().replace('T', ' ').replace('.000Z', 'Z')
@@ -1425,20 +1674,29 @@ async function handleTransaction(
     const dex = await fetchDexInfo(resolveAlertMint(cls, null));
     alertText = buildBuyStyleAlert(st, wallet, row.signature, cls, dex, ts);
   } else if (cls.kind === 'SETUP') {
-    alertText = buildSetupStyleAlert(wallet, row.signature, cls, setupDex, ts, setupDepositUsd, setupPlan);
+    alertText = buildSetupStyleAlert(
+      wallet,
+      row.signature,
+      cls,
+      setupDex,
+      ts,
+      setupDepositUsd,
+      setupPlan,
+      operatorStats,
+    );
   } else {
     const programTag = cls.programs.length > 0 ? cls.programs.map(shortAddr).join(',') : 'none';
     const parts = [
       `${kindEmoji(cls.kind)} DCA ${cls.kind}`,
-      `wallet: ${escapeHtml(shortAddr(wallet))}`,
+      addrCopyLine('wallet', wallet),
       `time: ${escapeHtml(ts)}`,
-      `sig: ${escapeHtml(row.signature)}`,
+      addrCopyLine('sig', row.signature),
       `programs: ${escapeHtml(programTag)}`,
     ];
-    if (cls.orderId) parts.push(`order_id: ${escapeHtml(cls.orderId)}`);
+    if (cls.orderId) parts.push(`order_id: ${tgCopyLink(cls.orderId, cls.orderId)}`);
     if (cls.amountInRaw) parts.push(`amount_in_raw: ${escapeHtml(cls.amountInRaw)}`);
     if (cls.amountOutRaw) parts.push(`amount_out_raw: ${escapeHtml(cls.amountOutRaw)}`);
-    if (cls.mint) parts.push(`mint: ${escapeHtml(cls.mint)}`);
+    if (cls.mint) parts.push(addrCopyLine('mint', cls.mint));
     parts.push(buildSolscanLink(row.signature));
     alertText = parts.join('\n');
   }
@@ -1553,6 +1811,11 @@ async function processProgram(program: string, st: WatchState): Promise<void> {
     );
     if (!tx) continue;
 
+    const skipGenericTrack = program === JUPITER_SWAP_PROGRAM && swapExecPipelineEnabled();
+    if (!skipGenericTrack) {
+      await trackProgramOperatorTx(tx, row);
+    }
+
     if (program === JUPITER_SWAP_PROGRAM && swapExecPipelineEnabled()) {
       const handled = await processSwapExecTx(st, row, tx);
       if (handled) {
@@ -1583,6 +1846,7 @@ async function processProgram(program: string, st: WatchState): Promise<void> {
 
 async function cycle(st: WatchState): Promise<void> {
   gcState(st);
+  await refreshSolUsd();
   if (discoveryEnabled()) {
     for (const p of discoveryPrograms()) {
       await processProgram(p, st);
@@ -1605,6 +1869,7 @@ async function main(): Promise<void> {
   }
 
   const once = process.argv.includes('--once');
+  await ensureDcaOperatorTables();
   const st = readState();
   await cycle(st);
   writeState(st);
