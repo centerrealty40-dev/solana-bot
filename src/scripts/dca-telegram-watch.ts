@@ -267,16 +267,21 @@ function cycleTierLargeMinCycles(): number {
   return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 2;
 }
 
-/**
- * Alert any setup whose observed deposit/funding is at least this many USD,
- * regardless of how many cycles are detectable at setup time. For the alt
- * (Jupiter keeper / swap_exec) pipeline the planned cycle count is unknown at
- * the funding tx, so cycle-tier rules would otherwise block large deposits.
- * Set to 0 to disable the deposit-size bypass.
- */
-function setupDepositAlertUsd(): number {
-  const n = Number(process.env.DCA_WATCH_SETUP_DEPOSIT_ALERT_USD ?? 2000);
-  return Number.isFinite(n) && n >= 0 ? n : 2000;
+/** Observed-series alerting (shared-keeper pipeline with no per-order deposit). */
+function swapExecObservedEnabled(): boolean {
+  return process.env.DCA_WATCH_SWAP_EXEC_OBSERVED_ENABLED !== '0';
+}
+
+/** Minimum executed cycles before an unconfirmed (observed) series may alert. */
+function swapExecObservedMinCycles(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_OBSERVED_MIN_CYCLES ?? 6);
+  return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 6;
+}
+
+/** Minimum USD spent per cycle for an observed series to alert. */
+function swapExecObservedMinCycleUsd(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_OBSERVED_MIN_CYCLE_USD ?? 400);
+  return Number.isFinite(n) && n > 0 ? n : 400;
 }
 
 function defaultCycleSec(): number {
@@ -810,6 +815,30 @@ async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo |
   return info;
 }
 
+/**
+ * Anti-garbage gate for the shared-keeper pipeline, where there is no per-order
+ * seed-vault deposit to confirm. Alert on a strong OBSERVED accumulation series:
+ *   - at least N executed cycles (default 6),
+ *   - at least $X spent per cycle (default 400),
+ *   - a measurable, consistent fill cadence,
+ *   - a real, non-stable target coin that has live DEX liquidity.
+ * This excludes dust/spam loops ($0–2/cycle) and pool/MM noise (no real coin / no liquidity).
+ */
+function observedSeriesQualifies(
+  series: WatchState['swapExecSeries'][string],
+  cycleUsd: number,
+  dex: DexInfo | null,
+): boolean {
+  if (!swapExecObservedEnabled()) return false;
+  if ((series.cycles || 0) < swapExecObservedMinCycles()) return false;
+  if (!(cycleUsd >= swapExecObservedMinCycleUsd())) return false;
+  if (!series.freqSec || series.freqSec <= 0) return false;
+  const mint = series.mint || '';
+  if (!looksLikeMintAddress(mint) || STABLE_MINTS.has(mint)) return false;
+  if (!dex || !((dex.liquidityUsd || 0) > 0)) return false;
+  return true;
+}
+
 async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Promise<boolean> {
   const { logsLower } = txLogs(tx);
   if (!isJupiterSwapRoute(logsLower)) return false;
@@ -913,10 +942,34 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     }
   }
 
-  // Alert ONLY when the on-chain funded open is confirmed (real seed-vault DCA). We no longer
-  // alert on a bare "N recurring buys" heuristic — that matched pools/sells and produced garbage.
+  // Two ways to alert:
+  //  • CONFIRMED: a real per-order seed-vault deposit was found on-chain (rich message
+  //    with the funded deposit + planned cycle count). Rare but highest quality.
+  //  • OBSERVED: shared-keeper pipeline with no per-order deposit — alert on a strong
+  //    recurring accumulation series (>=N cycles x >=$X each, consistent cadence, real
+  //    coin with liquidity). This is how the dominant pipeline is actually caught.
   const openConfirmed = !!series.openConfirmed && (series.depositUsd ?? 0) > 0;
-  if (!openConfirmed) {
+  if (openConfirmed) {
+    // Apply the user's 3-part filter (total > $1k, per-cycle >= $200, >= 3 cycles) to confirmed opens.
+    const gate = swapExecGate(series.depositUsd ?? 0, series.lastCycleUsd || cycleUsd, series.plannedCycles ?? series.cycles);
+    if (gate !== 'pass' && gate !== 'no_cycle_data') {
+      console.log('[dca-watch] swap_exec filtered out', {
+        sig: row.signature.slice(0, 12),
+        mint: buy.mint.slice(0, 8),
+        gate,
+        depositUsd: Math.round(series.depositUsd ?? 0),
+        cycleUsd: Math.round(series.lastCycleUsd || cycleUsd),
+        plannedCycles: series.plannedCycles ?? series.cycles,
+      });
+      series.cadenceSent = true; // stop re-evaluating a disqualified order
+      markSeen(st, row.signature);
+      return true;
+    }
+    if (gate === 'no_cycle_data') {
+      markSeen(st, row.signature);
+      return true;
+    }
+  } else if (!observedSeriesQualifies(series, series.lastCycleUsd || cycleUsd, dex)) {
     console.log('[dca-watch] swap_exec tracking (no confirmed open)', {
       sig: row.signature.slice(0, 12),
       mint: buy.mint.slice(0, 8),
@@ -925,26 +978,6 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
       cycleUsd: Math.round(cycleUsd),
       openResolved: series.openResolved,
     });
-    markSeen(st, row.signature);
-    return true;
-  }
-
-  // Apply the user's 3-part filter (total > $1k, per-cycle >= $200, >= 3 cycles) to stream opens too.
-  const gate = swapExecGate(series.depositUsd ?? 0, series.lastCycleUsd || cycleUsd, series.plannedCycles ?? series.cycles);
-  if (gate !== 'pass' && gate !== 'no_cycle_data') {
-    console.log('[dca-watch] swap_exec filtered out', {
-      sig: row.signature.slice(0, 12),
-      mint: buy.mint.slice(0, 8),
-      gate,
-      depositUsd: Math.round(series.depositUsd ?? 0),
-      cycleUsd: Math.round(series.lastCycleUsd || cycleUsd),
-      plannedCycles: series.plannedCycles ?? series.cycles,
-    });
-    series.cadenceSent = true; // stop re-evaluating a disqualified order
-    markSeen(st, row.signature);
-    return true;
-  }
-  if (gate === 'no_cycle_data') {
     markSeen(st, row.signature);
     return true;
   }
@@ -1616,19 +1649,8 @@ function planCycleUsd(plan: DcaOpenPlan): number {
   return 0;
 }
 
-/**
- * Alert if the observed deposit is large enough on its own (≥ setupDepositAlertUsd,
- * cycle count unknown is fine), or ≥5 cycles at ≥$200/cycle, or 2–4 cycles with
- * ≥$2000 total deposit.
- */
-function setupPassesCycleInterestFilter(plan: DcaOpenPlan | null, depositUsd = 0): boolean {
-  // Deposit-size bypass: for the alt pipeline the planned cycle count is not
-  // knowable at the funding tx, so a sizeable deposit alerts immediately and
-  // cadence/cycles get filled in later from observed fills.
-  const depUsd = Math.max(depositUsd || 0, plan?.totalUsd || 0);
-  const depAlert = setupDepositAlertUsd();
-  if (depAlert > 0 && depUsd >= depAlert) return true;
-
+/** Alert if ≥5 cycles at ≥$200/cycle, or 2–4 cycles with ≥$2000 total deposit. */
+function setupPassesCycleInterestFilter(plan: DcaOpenPlan | null): boolean {
   if (!plan || plan.cycles < cycleTierLargeMinCycles()) return false;
   const cycleUsd = planCycleUsd(plan);
   const totalUsd = plan.totalUsd > 0 ? plan.totalUsd : cycleUsd * plan.cycles;
@@ -2220,7 +2242,7 @@ async function handleTransaction(
     setupDex = await fetchDexInfo(alertMint);
     setupDepositUsd = opts?.setupDepositUsd ?? estimateSetupDepositUsd(tx, wallet, cls, setupDex);
     setupPlan = opts?.setupPlan ?? resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
-    if (!setupPassesCycleInterestFilter(setupPlan, setupDepositUsd)) {
+    if (!setupPassesCycleInterestFilter(setupPlan)) {
       const cycleUsd = setupPlan ? planCycleUsd(setupPlan) : 0;
       console.log('[dca-watch] skip SETUP cycle_filter', {
         sig: row.signature.slice(0, 12),
@@ -2477,7 +2499,11 @@ async function main(): Promise<void> {
       largeUsd: cycleTierLargeUsd(),
       largeMinCycles: cycleTierLargeMinCycles(),
       largeMaxCycles: cycleTierSmallMinCycles() - 1,
-      depositAlertUsd: setupDepositAlertUsd(),
+    },
+    observedSeries: {
+      enabled: swapExecObservedEnabled(),
+      minCycles: swapExecObservedMinCycles(),
+      minCycleUsd: swapExecObservedMinCycleUsd(),
     },
     pollMs: pollMs(),
     discoverySigLimit: discoverySigLimit(),
