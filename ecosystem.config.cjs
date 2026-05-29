@@ -1165,6 +1165,50 @@ const PM2_APPS = [
         RETRACE_ALERT_DRY_RUN: '0',
       },
     },
+    /**
+     * Stealth copy-trader — отдельный процесс, журнал и (в live) кошелёк.
+     * Не импортирует live-oscar; env-блок без LIVE_* / PAPER_* / whitelist Oscar.
+     */
+    {
+      name: 'copy-trader',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/copy-trader.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        NODE_ENV: 'production',
+        COPY_TRADER_STRICT_ISOLATION: '1',
+        /** Исполнение: бывший live-oscar-risky (Phantom base58 или JSON в этом файле на VPS). */
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-risky.keypair.json'),
+        COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
+        COPY_TRADER_USE_RISKY_WALLET: '1',
+        /** Лидер: адрес в файле (не execution wallet). */
+        COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
+        COPY_TRADER_EXECUTION_MODE: 'live',
+        COPY_TRADER_POSITION_USD: '50',
+        COPY_TRADER_ADD_POSITION_USD: '15',
+        COPY_TRADER_MAX_POSITION_USD: '95',
+        COPY_TRADER_MAX_ADDS_PER_MINT: '3',
+        COPY_TRADER_BUY_DELAY_MS: '120000',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '3',
+        COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0.005',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '20000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '30000',
+        COPY_TRADER_POLL_INTERVAL_MS: '12000',
+        COPY_TRADER_SLIPPAGE_BPS: '400',
+        COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
+        COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        COPY_TRADER_TELEGRAM_ENABLED: '0',
+      },
+    },
 ];
 
 module.exports = {

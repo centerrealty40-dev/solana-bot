@@ -82,7 +82,9 @@
     "wallet-intel:doctor": "tsx src/scripts/wallet-intel-doctor.ts",
     "wallet-intel:policy": "tsx src/scripts/wallet-intel-policy.ts",
     "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",
-    "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts"
+    "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts",
+    "copy-trader": "tsx src/scripts/copy-trader.ts",
+    "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

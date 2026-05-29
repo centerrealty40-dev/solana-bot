@@ -350,6 +350,31 @@ function tryDecodeAllowlistedRouteForWallet(
 }
 
 /**
+ * Decode a single wallet's swap in an allowlisted DEX tx (for copy-trader / wallet watch).
+ */
+export function decodeAllowlistedDexSwapForWallet(
+  tx: TxJsonParsed | null | undefined,
+  wallet: string,
+  solUsd: number,
+): SwapInsert | null {
+  if (!tx || tx.meta?.err != null) return null;
+  if (!txTouchesAllowlistedSwapProgram(tx)) return null;
+
+  const sig = tx.transaction?.signatures?.[0];
+  if (!sig || typeof sig !== 'string') return null;
+
+  const slot = typeof tx.slot === 'number' && Number.isFinite(tx.slot) ? tx.slot : null;
+  if (slot === null) return null;
+
+  const bt = tx.blockTime;
+  if (typeof bt !== 'number' || !Number.isFinite(bt)) return null;
+
+  const ids = programIdsInvokedInTx(tx);
+  const dexLabel = inferDex(ids);
+  return tryDecodeAllowlistedRouteForWallet(wallet, tx, sig, slot, bt, solUsd, dexLabel);
+}
+
+/**
  * Prefer exact pump.fun decode; else decode allowlisted DEX routes by balance deltas.
  */
 export function decodeAllowlistedDexSwapInserts(
