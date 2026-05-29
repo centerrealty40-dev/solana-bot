@@ -267,6 +267,18 @@ function cycleTierLargeMinCycles(): number {
   return Number.isFinite(n) && n >= 2 ? Math.floor(n) : 2;
 }
 
+/**
+ * Alert any setup whose observed deposit/funding is at least this many USD,
+ * regardless of how many cycles are detectable at setup time. For the alt
+ * (Jupiter keeper / swap_exec) pipeline the planned cycle count is unknown at
+ * the funding tx, so cycle-tier rules would otherwise block large deposits.
+ * Set to 0 to disable the deposit-size bypass.
+ */
+function setupDepositAlertUsd(): number {
+  const n = Number(process.env.DCA_WATCH_SETUP_DEPOSIT_ALERT_USD ?? 2000);
+  return Number.isFinite(n) && n >= 0 ? n : 2000;
+}
+
 function defaultCycleSec(): number {
   const n = Number(process.env.DCA_WATCH_DEFAULT_CYCLE_SEC || 120);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 120;
@@ -1604,8 +1616,19 @@ function planCycleUsd(plan: DcaOpenPlan): number {
   return 0;
 }
 
-/** Alert if ≥5 cycles at ≥$200/cycle, or 2–4 cycles with ≥$2000 total deposit. */
-function setupPassesCycleInterestFilter(plan: DcaOpenPlan | null): boolean {
+/**
+ * Alert if the observed deposit is large enough on its own (≥ setupDepositAlertUsd,
+ * cycle count unknown is fine), or ≥5 cycles at ≥$200/cycle, or 2–4 cycles with
+ * ≥$2000 total deposit.
+ */
+function setupPassesCycleInterestFilter(plan: DcaOpenPlan | null, depositUsd = 0): boolean {
+  // Deposit-size bypass: for the alt pipeline the planned cycle count is not
+  // knowable at the funding tx, so a sizeable deposit alerts immediately and
+  // cadence/cycles get filled in later from observed fills.
+  const depUsd = Math.max(depositUsd || 0, plan?.totalUsd || 0);
+  const depAlert = setupDepositAlertUsd();
+  if (depAlert > 0 && depUsd >= depAlert) return true;
+
   if (!plan || plan.cycles < cycleTierLargeMinCycles()) return false;
   const cycleUsd = planCycleUsd(plan);
   const totalUsd = plan.totalUsd > 0 ? plan.totalUsd : cycleUsd * plan.cycles;
@@ -2197,7 +2220,7 @@ async function handleTransaction(
     setupDex = await fetchDexInfo(alertMint);
     setupDepositUsd = opts?.setupDepositUsd ?? estimateSetupDepositUsd(tx, wallet, cls, setupDex);
     setupPlan = opts?.setupPlan ?? resolveSetupPlan(tx, cls, setupDex, setupDepositUsd);
-    if (!setupPassesCycleInterestFilter(setupPlan)) {
+    if (!setupPassesCycleInterestFilter(setupPlan, setupDepositUsd)) {
       const cycleUsd = setupPlan ? planCycleUsd(setupPlan) : 0;
       console.log('[dca-watch] skip SETUP cycle_filter', {
         sig: row.signature.slice(0, 12),
@@ -2454,6 +2477,7 @@ async function main(): Promise<void> {
       largeUsd: cycleTierLargeUsd(),
       largeMinCycles: cycleTierLargeMinCycles(),
       largeMaxCycles: cycleTierSmallMinCycles() - 1,
+      depositAlertUsd: setupDepositAlertUsd(),
     },
     pollMs: pollMs(),
     discoverySigLimit: discoverySigLimit(),
