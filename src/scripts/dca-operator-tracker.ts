@@ -171,16 +171,17 @@ async function recomputeOperatorStats(wallet: string): Promise<void> {
 
 async function touchOperator(wallet: string, tsMs: number, opensDelta = 0, fillsDelta = 0, plannedCyclesDelta = 0): Promise<void> {
   if (tablesReady !== 'ok') return;
-  const ts = new Date(tsMs);
+  // postgres.js cannot bind a JS Date; pass epoch seconds and cast with to_timestamp().
+  const tsSec = Math.floor(tsMs / 1000);
   await pgSql`
     INSERT INTO dca_operators (wallet, opens_total, fills_total, planned_cycles_total, first_seen_ts, last_event_ts)
-    VALUES (${wallet}, ${opensDelta}, ${fillsDelta}, ${plannedCyclesDelta}, ${ts}, ${ts})
+    VALUES (${wallet}, ${opensDelta}, ${fillsDelta}, ${plannedCyclesDelta}, to_timestamp(${tsSec}), to_timestamp(${tsSec}))
     ON CONFLICT (wallet) DO UPDATE SET
       opens_total = dca_operators.opens_total + ${opensDelta},
       fills_total = dca_operators.fills_total + ${fillsDelta},
       planned_cycles_total = dca_operators.planned_cycles_total + ${plannedCyclesDelta},
-      first_seen_ts = COALESCE(dca_operators.first_seen_ts, ${ts}),
-      last_event_ts = GREATEST(COALESCE(dca_operators.last_event_ts, ${ts}), ${ts}),
+      first_seen_ts = COALESCE(dca_operators.first_seen_ts, to_timestamp(${tsSec})),
+      last_event_ts = GREATEST(COALESCE(dca_operators.last_event_ts, to_timestamp(${tsSec})), to_timestamp(${tsSec})),
       updated_at = now()
   `;
 }
@@ -189,7 +190,7 @@ export async function recordDcaOpen(input: DcaTrackOpenInput): Promise<void> {
   if (!trackingEnabled() || tablesReady !== 'ok') return;
   const orderId = input.orderId?.trim() || null;
   const seriesKey = input.seriesKey?.trim() || null;
-  const openTs = new Date(input.openTsMs);
+  const openSec = Math.floor(input.openTsMs / 1000);
   const planned = Math.max(1, Math.floor(input.plannedCycles || 1));
 
   try {
@@ -223,7 +224,7 @@ export async function recordDcaOpen(input: DcaTrackOpenInput): Promise<void> {
       ) VALUES (
         ${input.operatorWallet}, ${orderId}, ${seriesKey}, ${input.mint}, ${input.source}, 'open',
         ${planned}, ${input.plannedCycleUsd}, ${input.plannedTotalUsd}, ${input.cycleFreqSec ?? null},
-        ${input.openSig}, ${openTs}
+        ${input.openSig}, to_timestamp(${openSec})
       )
     `;
     await touchOperator(input.operatorWallet, input.openTsMs, 1, 0, planned);
@@ -316,7 +317,7 @@ export async function recordDcaClose(input: DcaTrackCloseInput): Promise<void> {
     const early =
       planned >= minPlannedCyclesForEarly() && ratio < earlyCloseMaxRatio();
     const status = ratio >= 0.95 ? 'complete' : 'closed';
-    const closeTs = new Date(input.eventTsMs);
+    const closeSec = Math.floor(input.eventTsMs / 1000);
 
     await pgSql`
       UPDATE dca_operator_orders SET
@@ -324,7 +325,7 @@ export async function recordDcaClose(input: DcaTrackCloseInput): Promise<void> {
         completion_ratio = ${ratio},
         early_close = ${early},
         close_sig = ${input.closeSig},
-        close_ts = ${closeTs},
+        close_ts = to_timestamp(${closeSec}),
         updated_at = now()
       WHERE id = ${order.id}
     `;
@@ -332,7 +333,7 @@ export async function recordDcaClose(input: DcaTrackCloseInput): Promise<void> {
     await pgSql`
       UPDATE dca_operators SET
         completed_cycles_total = completed_cycles_total + ${fills},
-        last_event_ts = GREATEST(COALESCE(last_event_ts, ${closeTs}), ${closeTs}),
+        last_event_ts = GREATEST(COALESCE(last_event_ts, to_timestamp(${closeSec})), to_timestamp(${closeSec})),
         updated_at = now()
       WHERE wallet = ${input.operatorWallet}
     `;
