@@ -165,9 +165,38 @@ function swapExecPipelineEnabled(): boolean {
   return process.env.DCA_WATCH_SWAP_EXEC_ENABLED !== '0';
 }
 
+/** Alert filter: minimum USD spent per cycle. */
 function swapExecMinCycleUsd(): number {
-  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLE_USD ?? 50);
-  return Number.isFinite(n) && n > 0 ? n : 50;
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLE_USD ?? 200);
+  return Number.isFinite(n) && n > 0 ? n : 200;
+}
+
+/** Alert filter: minimum total order size (deposit) in USD. */
+function swapExecMinTotalUsd(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_TOTAL_USD ?? 1000);
+  return Number.isFinite(n) && n > 0 ? n : 1000;
+}
+
+/** Alert filter: minimum number of planned cycles. */
+function swapExecMinCycles(): number {
+  const n = Number(process.env.DCA_WATCH_SWAP_EXEC_MIN_CYCLES ?? 3);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
+}
+
+type SwapExecGate = 'pass' | 'too_small_total' | 'too_small_cycle' | 'too_few_cycles' | 'no_cycle_data';
+
+/**
+ * The 3-part alert filter requested by the user:
+ *   total order > min total (default $1,000), per-cycle >= min cycle (default $200),
+ *   planned cycles >= min cycles (default 3). Returns 'no_cycle_data' when the per-cycle
+ *   size is not yet known (no fills) so the caller can keep the open pending instead of dropping it.
+ */
+function swapExecGate(depositUsd: number, cycleUsd: number, plannedCycles: number): SwapExecGate {
+  if (depositUsd < swapExecMinTotalUsd()) return 'too_small_total';
+  if (cycleUsd <= 0) return 'no_cycle_data';
+  if (cycleUsd < swapExecMinCycleUsd()) return 'too_small_cycle';
+  if (plannedCycles < swapExecMinCycles()) return 'too_few_cycles';
+  return 'pass';
 }
 
 function swapExecDefaultFreqSec(): number {
@@ -884,6 +913,26 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
       cycleUsd: Math.round(cycleUsd),
       openResolved: series.openResolved,
     });
+    markSeen(st, row.signature);
+    return true;
+  }
+
+  // Apply the user's 3-part filter (total > $1k, per-cycle >= $200, >= 3 cycles) to stream opens too.
+  const gate = swapExecGate(series.depositUsd ?? 0, series.lastCycleUsd || cycleUsd, series.plannedCycles ?? series.cycles);
+  if (gate !== 'pass' && gate !== 'no_cycle_data') {
+    console.log('[dca-watch] swap_exec filtered out', {
+      sig: row.signature.slice(0, 12),
+      mint: buy.mint.slice(0, 8),
+      gate,
+      depositUsd: Math.round(series.depositUsd ?? 0),
+      cycleUsd: Math.round(series.lastCycleUsd || cycleUsd),
+      plannedCycles: series.plannedCycles ?? series.cycles,
+    });
+    series.cadenceSent = true; // stop re-evaluating a disqualified order
+    markSeen(st, row.signature);
+    return true;
+  }
+  if (gate === 'no_cycle_data') {
     markSeen(st, row.signature);
     return true;
   }
@@ -1790,55 +1839,149 @@ function activeWallets(_st: WatchState): string[] {
   return wallets();
 }
 
-function buildCadenceUpdateAlert(
-  s: WatchState['swapExecSeries'][string],
-  dex: DexInfo | null,
-  cycleUsd: number,
-  freqSec: number,
-  plannedCycles: number,
-): string {
-  const ca = s.mint;
-  const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, plannedCycles, dex?.liquidityUsd || 0);
-  const remaining = Math.max(0, plannedCycles - s.cycles);
-  const etaSec = freqSec > 0 ? freqSec * remaining : 0;
-  const lines = [
-    `📊 DCA BUYS STARTED — ${setupHeadlineHtml(dex, ca)}`,
-    '',
-    `Follow-up for an open we flagged earlier — the keeper has begun executing.`,
-    `Pipeline: <code>swap_exec_dca</code> (keeper-signed Jupiter route)`,
-    '',
-    `• Deposit: ${(s.depositSol ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} SOL (~${fmtMoney(s.depositUsd ?? 0)})`,
-    `• Buys ~${fmtMoney(cycleUsd)} per cycle every ~${freqSec}s`,
-    `• Plan: ~${plannedCycles} cycles total · executed so far: ${s.cycles}${etaSec > 0 ? ` · ETA ${fmtDuration(etaSec)}` : ''}`,
-    `• Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
-    `• Initiating tx: ${s.openSig ? buildSolscanLink(s.openSig) : 'n/a'}`,
-    '',
-    addrCopyLine('Buyer (opener)', s.buyer || ''),
-    addrCopyLine('SOL funding vault', s.solVault),
-    addrCopyLine('Executor / operator (signs)', s.executor),
-  ];
-  if (dex) {
-    lines.push(
-      '',
-      `MC: ${fmtMoney(dex.marketCap)} → LQ: ${fmtMoney(dex.liquidityUsd)}`,
-      `Price: ${dex.priceUsd > 0 ? `$${dex.priceUsd.toPrecision(4)}` : 'n/a'}`,
-    );
+type SwapExecOpenFacts = {
+  buyer: string;
+  vault: string;
+  orderPda: string;
+  mint: string;
+  operator: string;
+  depositSol: number;
+  openSig: string;
+  openTsMs: number;
+  cycleSol: number; // 0 when no fills have executed yet
+  fillsDone: number;
+  medianFreqSec: number;
+};
+
+/**
+ * Single entry point that applies the alert filter (total > $1k, per-cycle >= $200, >= 3 cycles),
+ * records the open to the operator-honesty DB (BEFORE fetching stats, so the user-history line
+ * counts this open), sends the alert, and persists the series. Returns the gate result so callers
+ * can keep an open "pending" (no cycle data yet) or drop it (disqualified).
+ */
+async function emitSwapExecOpenAlert(st: WatchState, f: SwapExecOpenFacts): Promise<SwapExecGate | 'sent' | 'dup'> {
+  const sKey = swapExecSeriesKey(f.vault, f.mint);
+  if (st.swapExecSeries[sKey]?.alerted) return 'dup';
+
+  const dex = await fetchDexInfo(f.mint);
+  const solPx = solUsdPrice(dex);
+  const depositUsd = f.depositSol * solPx;
+  const cycleUsd = f.cycleSol > 0 ? f.cycleSol * solPx : 0;
+  const freqSec = f.medianFreqSec || 0;
+  const plannedCycles = cycleUsd > 0 ? Math.max(f.fillsDone, Math.round(depositUsd / cycleUsd)) : 0;
+
+  const baseSeries = {
+    tokenRecipient: f.buyer,
+    mint: f.mint,
+    executor: f.operator,
+    solVault: f.vault,
+    firstTsMs: f.openTsMs,
+    lastTsMs: f.openTsMs,
+    cycles: f.fillsDone,
+    totalUsd: cycleUsd * f.fillsDone,
+    lastCycleUsd: cycleUsd,
+    freqSec,
+    tsHistory: [] as number[],
+    openResolved: true,
+    openConfirmed: true,
+    openSig: f.openSig,
+    orderPda: f.orderPda,
+    buyer: f.buyer,
+    depositSol: f.depositSol,
+    depositUsd,
+    plannedCycles: plannedCycles || undefined,
+    openTsMs: f.openTsMs,
+  };
+
+  const gate = swapExecGate(depositUsd, cycleUsd, plannedCycles);
+  if (gate !== 'pass') {
+    // Pending = deposit qualifies but no fills to size cycles yet → keep re-polling.
+    // Disqualified = will never qualify (too small / too few cycles) → tombstone so we stop.
+    const pending = gate === 'no_cycle_data';
+    st.swapExecSeries[sKey] = { ...baseSeries, alerted: false, cadenceSent: !pending };
+    return gate;
   }
-  if (looksLikeMintAddress(ca)) lines.push('', addrCopyLine('CA', ca));
-  return lines.join('\n');
+
+  const etaSec = freqSec > 0 && plannedCycles > 0 ? freqSec * Math.max(0, plannedCycles - f.fillsDone) : 0;
+
+  // Record the open first so the user-history line includes this very open.
+  await recordDcaOpen({
+    operatorWallet: f.buyer,
+    mint: f.mint,
+    source: 'swap_exec_dca',
+    openSig: f.openSig,
+    openTsMs: f.openTsMs,
+    plannedCycles,
+    plannedCycleUsd: cycleUsd,
+    plannedTotalUsd: depositUsd,
+    cycleFreqSec: freqSec,
+    seriesKey: sKey,
+  });
+  registerDiscoveredWallet(st, f.buyer);
+  const operatorStats = formatOperatorTrustLine(await fetchDcaOperatorStats(f.buyer));
+
+  const cls: Classified = {
+    kind: 'SETUP',
+    setupSource: 'swap_exec_dca',
+    programs: [],
+    orderId: '',
+    amountInRaw: '',
+    amountOutRaw: '',
+    blockTime: Math.floor(f.openTsMs / 1000),
+    mint: f.mint,
+    swapExec: {
+      executor: f.operator,
+      orderAccount: f.vault,
+      tokenRecipient: f.buyer,
+      openConfirmed: true,
+      openSig: f.openSig,
+      orderPda: f.orderPda,
+      buyer: f.buyer,
+      depositSol: f.depositSol,
+      depositUsd,
+      plannedCycles: plannedCycles || undefined,
+    },
+  };
+  const plan: DcaOpenPlan = {
+    inputMint: SOL_MINT,
+    outputMint: f.mint,
+    inAmountRaw: 0n,
+    inAmountPerCycleRaw: 0n,
+    cycleFrequencySec: freqSec,
+    cycles: f.fillsDone,
+    cycleUsd,
+    totalUsd: depositUsd,
+    etaSec,
+  };
+  const ts = new Date(f.openTsMs).toISOString().replace('T', ' ').replace('.000Z', 'Z');
+  const text = buildSetupStyleAlert(f.buyer, f.openSig, cls, dex, ts, depositUsd, plan, operatorStats);
+  const sent = await sendTelegramAlert(text);
+
+  st.swapExecSeries[sKey] = { ...baseSeries, alerted: sent, cadenceSent: true };
+  if (sent) {
+    console.log('[dca-watch] alert sent', {
+      kind: 'OPEN',
+      source: 'swap_exec_open',
+      sig: f.openSig.slice(0, 12),
+      depositUsd: Math.round(depositUsd),
+      cycleUsd: Math.round(cycleUsd),
+      plannedCycles,
+    });
+  }
+  return sent ? 'sent' : 'pass';
 }
 
 /**
- * For opens we alerted before any fills existed (cadence unknown at open), re-inspect the funding
- * vault each cycle; once the keeper has executed >=2 fills, send ONE follow-up with the real cadence,
- * per-cycle size, planned cycles, ETA and price-impact. Gives up after a few hours.
+ * Re-inspect opens we flagged as "pending" (deposit qualified but no fills yet to size the cycles).
+ * Once the keeper has executed fills and the order clears the filter, the qualified alert is sent.
+ * Gives up after a few hours.
  */
 async function enrichPendingOpens(st: WatchState): Promise<void> {
   const now = Date.now();
   const maxAgeMs = 6 * 3600 * 1000;
   let budget = 4;
   for (const s of Object.values(st.swapExecSeries)) {
-    if (!s.openConfirmed || !s.alerted || s.cadenceSent) continue;
+    if (!s.openConfirmed || s.alerted || s.cadenceSent) continue;
     if (!s.solVault || s.solVault.length < 32) continue;
     if (s.openTsMs && now - s.openTsMs > maxAgeMs) {
       s.cadenceSent = true; // give up: too old, stop re-polling
@@ -1848,34 +1991,21 @@ async function enrichPendingOpens(st: WatchState): Promise<void> {
 
     const samp = await sampleVaultFills(s.solVault);
     await sleep(120);
-    if (!samp || samp.fillCount < 2 || samp.cycleSol <= 0 || samp.medianFreqSec <= 0) continue;
+    if (!samp) continue;
 
-    const dex = await fetchDexInfo(s.mint);
-    const solPx = solUsdPrice(dex);
-    const cycleUsd = samp.cycleSol * solPx;
-    if (cycleUsd <= 0) continue;
-    const freqSec = samp.medianFreqSec;
-    const plannedCycles = Math.max(samp.fillCount, Math.round((s.depositUsd || 0) / cycleUsd));
-
-    s.cycles = samp.fillCount;
-    s.freqSec = freqSec;
-    s.lastCycleUsd = cycleUsd;
-    s.totalUsd = cycleUsd * samp.fillCount;
-    s.plannedCycles = plannedCycles;
-
-    const text = buildCadenceUpdateAlert(s, dex, cycleUsd, freqSec, plannedCycles);
-    const sent = await sendTelegramAlert(text);
-    if (sent) {
-      s.cadenceSent = true;
-      console.log('[dca-watch] cadence update sent', {
-        mint: s.mint.slice(0, 8),
-        vault: shortAddr(s.solVault),
-        cycleUsd: Math.round(cycleUsd),
-        freqSec,
-        plannedCycles,
-        executed: samp.fillCount,
-      });
-    }
+    await emitSwapExecOpenAlert(st, {
+      buyer: s.buyer || s.tokenRecipient,
+      vault: s.solVault,
+      orderPda: s.orderPda || '',
+      mint: s.mint,
+      operator: s.executor,
+      depositSol: s.depositSol || 0,
+      openSig: s.openSig || '',
+      openTsMs: s.openTsMs || s.firstTsMs,
+      cycleSol: samp.cycleSol,
+      fillsDone: samp.fillCount,
+      medianFreqSec: samp.medianFreqSec,
+    });
   }
 }
 
@@ -1915,99 +2045,22 @@ async function processOperatorOpens(operator: string, st: WatchState): Promise<v
     }
 
     const tsMs = row.blockTime ? row.blockTime * 1000 : Date.now();
-    const dex = await fetchDexInfo(open.targetMint);
-    const solPx = solUsdPrice(dex);
-    const depositUsd = open.depositSol * solPx;
+    // Measure cadence + per-cycle size from any fills already executed on this vault.
+    const samp = await sampleVaultFills(open.vault);
 
-    // Measure the real cadence + per-cycle size from fills already executed on this vault.
-    const vaultInfo = await resolveSwapExecOpen(open.vault);
-    const cycleUsd = vaultInfo && vaultInfo.cycleSol > 0 ? vaultInfo.cycleSol * solPx : 0;
-    const freqSec = vaultInfo?.medianFreqSec || 0;
-    const fillsDone = vaultInfo?.fillCount || 0;
-    const plannedCycles = cycleUsd > 0 ? Math.max(fillsDone, Math.round(depositUsd / cycleUsd)) : 0;
-    const etaSec = freqSec > 0 && plannedCycles > 0 ? freqSec * Math.max(0, plannedCycles - fillsDone) : 0;
-
-    const cls: Classified = {
-      kind: 'SETUP',
-      setupSource: 'swap_exec_dca',
-      programs: [],
-      orderId: '',
-      amountInRaw: '',
-      amountOutRaw: '',
-      blockTime: row.blockTime,
+    await emitSwapExecOpenAlert(st, {
+      buyer: open.buyer,
+      vault: open.vault,
+      orderPda: open.orderPda,
       mint: open.targetMint,
-      swapExec: {
-        executor: operator,
-        orderAccount: open.vault,
-        tokenRecipient: open.buyer,
-        openConfirmed: true,
-        openSig: row.signature,
-        orderPda: open.orderPda,
-        buyer: open.buyer,
-        depositSol: open.depositSol,
-        depositUsd,
-        plannedCycles: plannedCycles || undefined,
-      },
-    };
-    const plan: DcaOpenPlan = {
-      inputMint: SOL_MINT,
-      outputMint: open.targetMint,
-      inAmountRaw: 0n,
-      inAmountPerCycleRaw: 0n,
-      cycleFrequencySec: freqSec,
-      cycles: fillsDone,
-      cycleUsd,
-      totalUsd: depositUsd,
-      etaSec,
-    };
-    const ts = row.blockTime
-      ? new Date(row.blockTime * 1000).toISOString().replace('T', ' ').replace('.000Z', 'Z')
-      : 'n/a';
-    const operatorStats = formatOperatorTrustLine(await fetchDcaOperatorStats(open.buyer));
-    const text = buildSetupStyleAlert(open.buyer, row.signature, cls, dex, ts, depositUsd, plan, operatorStats);
-
-    const sent = await sendTelegramAlert(text);
-    if (sent) {
-      st.swapExecSeries[sKey] = {
-        tokenRecipient: open.buyer,
-        mint: open.targetMint,
-        executor: operator,
-        solVault: open.vault,
-        firstTsMs: tsMs,
-        lastTsMs: tsMs,
-        cycles: fillsDone,
-        totalUsd: cycleUsd * fillsDone,
-        lastCycleUsd: cycleUsd,
-        freqSec,
-        tsHistory: [],
-        alerted: true,
-        openResolved: true,
-        openConfirmed: true,
-        openSig: row.signature,
-        orderPda: open.orderPda,
-        buyer: open.buyer,
-        depositSol: open.depositSol,
-        depositUsd,
-        plannedCycles: plannedCycles || undefined,
-        openTsMs: tsMs,
-        // If we already showed a real cadence at open, no follow-up is needed; else it stays pending.
-        cadenceSent: fillsDone >= 2 && freqSec > 0 && cycleUsd > 0,
-      };
-      registerDiscoveredWallet(st, open.buyer);
-      await recordDcaOpen({
-        operatorWallet: open.buyer,
-        mint: open.targetMint,
-        source: 'swap_exec_dca',
-        openSig: row.signature,
-        openTsMs: tsMs,
-        plannedCycles,
-        plannedCycleUsd: cycleUsd,
-        plannedTotalUsd: depositUsd,
-        cycleFreqSec: freqSec,
-        seriesKey: sKey,
-      });
-      console.log('[dca-watch] alert sent', { kind: 'OPEN', source: 'operator_open', sig: row.signature.slice(0, 12) });
-    }
+      operator,
+      depositSol: open.depositSol,
+      openSig: row.signature,
+      openTsMs: tsMs,
+      cycleSol: samp?.cycleSol || 0,
+      fillsDone: samp?.fillCount || 0,
+      medianFreqSec: samp?.medianFreqSec || 0,
+    });
     markSeen(st, row.signature);
   }
 
