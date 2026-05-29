@@ -14,6 +14,7 @@ export type BuyExecutionResult = {
   ok: boolean;
   priceUsd: number;
   signature?: string;
+  tokenRaw?: string;
   reason?: string;
 };
 
@@ -22,6 +23,7 @@ export type SellExecutionResult = {
   priceUsd: number;
   signature?: string;
   pnlPct?: number;
+  tokenRawRemaining?: string;
   reason?: string;
 };
 
@@ -38,6 +40,10 @@ export async function executeCopyBuy(args: {
   const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature } = args;
 
   if (cfg.executionMode === 'paper' || cfg.executionMode === 'dry_run') {
+    const tokenRaw =
+      priceUsd > 0
+        ? BigInt(Math.floor((sizeUsd / priceUsd) * 1_000_000)).toString()
+        : undefined;
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',
       mode: cfg.executionMode,
@@ -47,11 +53,13 @@ export async function executeCopyBuy(args: {
       priceUsd,
       eval: evalResult,
       leaderSignature,
+      tokenRaw: tokenRaw ?? null,
       simulated: true,
     });
     return {
       ok: true,
       priceUsd,
+      tokenRaw,
       signature: cfg.executionMode === 'paper' ? `paper_${Date.now()}` : undefined,
     };
   }
@@ -67,6 +75,7 @@ export async function executeCopyBuy(args: {
       priceUsd: live.priceUsd || priceUsd,
       eval: evalResult,
       leaderSignature,
+      tokenRaw: live.tokenRaw ?? null,
       txSignature: live.signature ?? null,
       ok: live.ok,
       reason: live.reason ?? null,
@@ -75,6 +84,7 @@ export async function executeCopyBuy(args: {
       ok: live.ok,
       priceUsd: live.priceUsd || priceUsd,
       signature: live.signature,
+      tokenRaw: live.tokenRaw,
       reason: live.reason,
     };
   }
@@ -89,10 +99,21 @@ export async function executeCopySell(args: {
   entryPriceUsd: number;
   exitPriceUsd: number;
   sizeUsd: number;
+  fraction: number;
   leaderSignature: string;
   sellDelayMs: number;
 }): Promise<SellExecutionResult> {
-  const { cfg, mint, symbol, entryPriceUsd, exitPriceUsd, sizeUsd, leaderSignature, sellDelayMs } = args;
+  const {
+    cfg,
+    mint,
+    symbol,
+    entryPriceUsd,
+    exitPriceUsd,
+    sizeUsd,
+    fraction,
+    leaderSignature,
+    sellDelayMs,
+  } = args;
   const pnlPct = entryPriceUsd > 0 ? ((exitPriceUsd / entryPriceUsd - 1) * 100) : 0;
 
   if (cfg.executionMode === 'paper' || cfg.executionMode === 'dry_run') {
@@ -102,6 +123,7 @@ export async function executeCopySell(args: {
       mint,
       symbol,
       sizeUsd,
+      sellFraction: fraction,
       entryPriceUsd,
       exitPriceUsd,
       pnlPct: +pnlPct.toFixed(2),
@@ -118,7 +140,7 @@ export async function executeCopySell(args: {
   }
 
   if (cfg.executionMode === 'live') {
-    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature });
+    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature, fraction });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;
     appendJsonl(cfg.journalPath, {
@@ -127,6 +149,7 @@ export async function executeCopySell(args: {
       mint,
       symbol,
       sizeUsd,
+      sellFraction: fraction,
       entryPriceUsd,
       exitPriceUsd: exitPx,
       pnlPct: +livePnl.toFixed(2),
@@ -141,6 +164,7 @@ export async function executeCopySell(args: {
       priceUsd: exitPx,
       pnlPct: livePnl,
       signature: live.signature,
+      tokenRawRemaining: live.tokenRawRemaining,
       reason: live.reason,
     };
   }

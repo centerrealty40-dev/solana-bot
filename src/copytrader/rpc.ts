@@ -64,3 +64,26 @@ export async function fetchParsedTransaction(rpcUrl: string, signature: string):
     6,
   );
 }
+
+export async function fetchWalletMintBalanceRaw(
+  rpcUrl: string,
+  wallet: string,
+  mint: string,
+): Promise<bigint> {
+  const rows = await rpcCall<{ value?: unknown[] }>(
+    rpcUrl,
+    'getTokenAccountsByOwner',
+    [wallet, { mint }, { encoding: 'jsonParsed' }],
+    5,
+  );
+  const value = rows?.value ?? [];
+  let total = 0n;
+  for (const row of value) {
+    if (!row || typeof row !== 'object') continue;
+    const account = (row as { account?: { data?: { parsed?: { info?: { tokenAmount?: { amount?: string } } } } } })
+      .account;
+    const amt = account?.data?.parsed?.info?.tokenAmount?.amount;
+    if (typeof amt === 'string' && /^\d+$/.test(amt)) total += BigInt(amt);
+  }
+  return total;
+}

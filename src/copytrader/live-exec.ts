@@ -12,6 +12,7 @@ import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
+import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -73,7 +74,7 @@ export async function executeLiveCopyBuy(args: {
   sizeUsd: number;
   kind: 'entry' | 'add';
   leaderSignature: string;
-}): Promise<{ ok: boolean; priceUsd: number; signature?: string; reason?: string }> {
+}): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRaw?: string; reason?: string }> {
   const { cfg, mint, symbol, sizeUsd, kind, leaderSignature } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
@@ -114,7 +115,7 @@ export async function executeLiveCopyBuy(args: {
     quoteSnapshot: quote.quoteSnapshot,
   });
 
-  return { ok: sent.ok, priceUsd, signature: sent.signature, reason: sent.reason };
+  return { ok: sent.ok, priceUsd, signature: sent.signature, tokenRaw: outRaw != null ? String(outRaw) : undefined, reason: sent.reason };
 }
 
 export async function executeLiveCopySell(args: {
@@ -122,8 +123,9 @@ export async function executeLiveCopySell(args: {
   mint: string;
   symbol: string;
   leaderSignature: string;
-}): Promise<{ ok: boolean; priceUsd: number; signature?: string; pnlPct?: number; reason?: string }> {
-  const { cfg, mint, symbol, leaderSignature } = args;
+  fraction: number;
+}): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRawRemaining?: string; reason?: string }> {
+  const { cfg, mint, symbol, leaderSignature, fraction } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -133,10 +135,16 @@ export async function executeLiveCopySell(args: {
     return { ok: false, priceUsd: 0, reason: 'no_token_balance' };
   }
 
+  const totalRaw = BigInt(tokenRaw);
+  const sellRaw = isFullCloseFraction(fraction) ? totalRaw : scaleTokenRaw(totalRaw, fraction);
+  if (sellRaw <= 0n) {
+    return { ok: false, priceUsd: 0, reason: 'sell_amount_zero' };
+  }
+
   const prep = await liveSellQuoteAndPrepareSnapshot({
     cfg: liveCfg,
     inputMint: mint,
-    tokenAmountRaw: tokenRaw,
+    tokenAmountRaw: sellRaw.toString(),
     solUsd,
     userPublicKey: userPk,
   });
@@ -156,9 +164,18 @@ export async function executeLiveCopySell(args: {
     mint,
     symbol,
     leaderSignature,
-    tokenAmountRaw: tokenRaw,
+    sellFraction: fraction,
+    tokenAmountRaw: sellRaw.toString(),
     quoteSnapshot: prep.quoteSnapshot,
   });
 
-  return { ok: sent.ok, priceUsd: exitPriceUsd, signature: sent.signature, reason: sent.reason };
+  const remaining = totalRaw > sellRaw ? (totalRaw - sellRaw).toString() : '0';
+
+  return {
+    ok: sent.ok,
+    priceUsd: exitPriceUsd,
+    signature: sent.signature,
+    tokenRawRemaining: remaining,
+    reason: sent.reason,
+  };
 }

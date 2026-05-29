@@ -8,6 +8,66 @@
 
 ---
 
+## [1.11.286] — 2026-05-29
+
+### Feat: copy-trader — stealth mirror лидера (PM2, live risky wallet)
+
+**Контекст:** отдельный процесс `copy-trader` копирует сделки лидера (`498SWf…` / `data/copytrader/target-wallet.txt`) на кошелёк `live-oscar-risky` (`HoFKB…`), **изолирован** от `live-oscar`.
+
+| Поведение | Значение |
+|-----------|----------|
+| Первый вход | фикс **$50** (`COPY_TRADER_POSITION_USD`) |
+| Усреднение | **пропорционально** лидеру: add = наш notional × (купил_лидер / был_у_лидера) |
+| Продажа | **тот же %** позиции, что продал лидер (partial + full) |
+| Задержка buy | **2 мин** (`COPY_TRADER_BUY_DELAY_MS=120000`) |
+| Задержка sell | 20–30 с (stealth jitter) |
+| Price gate | ≤ leader + 2% на момент исполнения buy |
+
+**Код:** `src/copytrader/*`, `src/scripts/copy-trader.ts`, `src/parser/allowlisted-dex-swap.ts`, PM2 `copy-trader` в `ecosystem.config.cjs`, тесты `tests/copytrader/*`.
+
+**State:** `data/copytrader/state.json` (+ `leaderLedger` per mint), journal `data/copytrader/journal.jsonl`.
+
+**Git-тег:** `sa-alpha-1.11.286`
+
+**VPS (после merge в `v2` или с ветки `feature/copy-trader-stealth`):**
+
+```bash
+cd /opt/solana-alpha
+git fetch origin feature/copy-trader-stealth   # или v2 после merge
+git reset --hard <SHA>
+npm ci
+pm2 start ecosystem.config.cjs --only copy-trader --update-env   # первый запуск
+# или: pm2 reload ecosystem.config.cjs --only copy-trader --update-env
+pm2 save
+bash scripts/release/post-deploy-smoke.sh
+```
+
+Убедиться: `data/copytrader/target-wallet.txt`, `data/live/live-oscar-risky.keypair.json` (chmod 600).
+
+**Откат (полный — выключить copy-trader, вернуть дерево до релиза):**
+
+```bash
+pm2 stop copy-trader
+pm2 delete copy-trader
+pm2 save
+git fetch origin v2
+git reset --hard sa-alpha-1.11.285   # или SHA до merge copy-trader
+npm ci
+pm2 reload ecosystem.config.cjs --update-env
+```
+
+**Откат (частичный — только логика copy-trader, процесс оставить на старой версии модуля):**
+
+```bash
+git checkout sa-alpha-1.11.285 -- src/copytrader/ src/scripts/copy-trader.ts src/scripts/copy-trader-doctor.ts src/parser/allowlisted-dex-swap.ts tests/copytrader/ ecosystem.config.cjs
+npm ci
+pm2 reload ecosystem.config.cjs --only copy-trader --update-env
+```
+
+Journal/state copy-trader (`data/copytrader/*`) при откате можно сохранить или удалить — на `live-oscar` не влияет.
+
+---
+
 ## [1.11.285] — 2026-05-27
 
 ### Fix: live-oscar billable RPC on Helius (`SOLANA_RPC_HELIUS_PREFER`)

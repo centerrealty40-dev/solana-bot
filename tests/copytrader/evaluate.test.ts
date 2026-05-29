@@ -18,6 +18,8 @@ const baseCfg: CopyTraderConfig = {
   addPositionUsd: 15,
   maxPositionUsd: 95,
   maxAddsPerMint: 3,
+  minProportionalAddUsd: 3,
+  minProportionalSellFraction: 0.005,
   buyPriceMaxPremiumPct: 2,
   minLeaderBuyUsd: 50,
   minLiquidityUsd: 15_000,

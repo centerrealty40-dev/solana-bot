@@ -9,10 +9,17 @@ export type CopyPosition = {
   entryPriceUsd: number;
   /** Total notional deployed (entry + adds). */
   sizeUsd: number;
+  /** Token balance raw string (live fills / paper estimate). */
+  tokenRaw?: string;
   addCount: number;
   leaderWallet: string;
   leaderEntrySig: string;
   ourEntrySig?: string;
+};
+
+export type LeaderMintLedger = {
+  /** Estimated leader token balance from observed swaps (+ RPC bootstrap). */
+  tokenRaw: string;
 };
 
 export type PendingBuy = {
@@ -21,6 +28,8 @@ export type PendingBuy = {
   symbol: string;
   kind: 'entry' | 'add';
   sizeUsd: number;
+  /** Leader add size / pre-buy holdings when kind=add. */
+  leaderAddFraction?: number;
   leaderSignature: string;
   leaderPriceUsd: number;
   leaderBuyUsd: number;
@@ -35,8 +44,9 @@ export type PendingSell = {
   leaderSignature: string;
   leaderSellTs: number;
   dueTs: number;
-  /** Fraction of position to close (1 = full). */
+  /** Fraction of our position to close (1 = full). */
   fraction: number;
+  leaderSellFraction?: number;
 };
 
 export type CopyTraderState = {
@@ -45,6 +55,7 @@ export type CopyTraderState = {
   pendingBuys: PendingBuy[];
   pendingSells: PendingSell[];
   positions: Record<string, CopyPosition>;
+  leaderLedger: Record<string, LeaderMintLedger>;
 };
 
 export function emptyCopyTraderState(): CopyTraderState {
@@ -53,6 +64,7 @@ export function emptyCopyTraderState(): CopyTraderState {
     pendingBuys: [],
     pendingSells: [],
     positions: {},
+    leaderLedger: {},
   };
 }
 
@@ -74,6 +86,8 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         symbol: p.symbol,
         kind: p.kind === 'add' ? 'add' : 'entry',
         sizeUsd: typeof p.sizeUsd === 'number' && p.sizeUsd > 0 ? p.sizeUsd : 0,
+        leaderAddFraction:
+          typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
         leaderSignature: p.leaderSignature,
         leaderPriceUsd: p.leaderPriceUsd,
         leaderBuyUsd: p.leaderBuyUsd,
@@ -81,12 +95,28 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         dueTs: p.dueTs,
       }),
     );
+    const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(
+      (p): PendingSell => ({
+        id: p.id,
+        mint: p.mint,
+        symbol: p.symbol,
+        leaderSignature: p.leaderSignature,
+        leaderSellTs: p.leaderSellTs,
+        dueTs: p.dueTs,
+        fraction: typeof p.fraction === 'number' && p.fraction > 0 ? Math.min(1, p.fraction) : 1,
+        leaderSellFraction:
+          typeof p.leaderSellFraction === 'number' && p.leaderSellFraction > 0
+            ? Math.min(1, p.leaderSellFraction)
+            : undefined,
+      }),
+    );
     return {
       lastSignature: parsed.lastSignature,
       seenSignatures: parsed.seenSignatures ?? {},
       pendingBuys,
-      pendingSells: Array.isArray(parsed.pendingSells) ? parsed.pendingSells : [],
+      pendingSells,
       positions,
+      leaderLedger: parsed.leaderLedger ?? {},
     };
   } catch {
     return emptyCopyTraderState();
@@ -124,12 +154,13 @@ export function positionRoomUsd(cfg: { maxPositionUsd: number }, pos: CopyPositi
   return Math.max(0, cfg.maxPositionUsd - pos.sizeUsd);
 }
 
-export function canScheduleAdd(
-  cfg: { addPositionUsd: number; maxPositionUsd: number; maxAddsPerMint: number },
+export function canScheduleProportionalAdd(
+  cfg: { minProportionalAddUsd: number; maxPositionUsd: number },
   pos: CopyPosition,
+  addUsd: number,
 ): boolean {
-  if (pos.addCount >= cfg.maxAddsPerMint) return false;
-  return positionRoomUsd(cfg, pos) >= cfg.addPositionUsd;
+  if (!(addUsd >= cfg.minProportionalAddUsd)) return false;
+  return positionRoomUsd(cfg, pos) >= addUsd;
 }
 
 export function newId(prefix: string): string {
