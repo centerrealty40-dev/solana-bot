@@ -66,6 +66,8 @@ type WatchState = {
       depositUsd?: number;
       plannedCycles?: number;
       openTsMs?: number;
+      /** A bare-open alert was sent without cadence; a follow-up cadence update is still pending. */
+      cadenceSent?: boolean;
     }
   >;
 };
@@ -680,17 +682,25 @@ function detectDcaOpen(tx: any): DcaOpenDetect | null {
  * which is the initiating DCA open. Extract the real deposit, target coin, order PDA and buyer.
  * Returns null when the vault's first tx is not a recognizable open (graceful).
  */
-async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo | null> {
-  if (!solVault || solVault.length < 32) return null;
-  if (swapExecOpenCache.has(solVault)) return swapExecOpenCache.get(solVault) ?? null;
+type VaultFillSample = {
+  sigs: SignatureRow[];
+  oldest: SignatureRow;
+  newest: SignatureRow;
+  fillCount: number;
+  medianFreqSec: number;
+  cycleSol: number;
+  targetMint: string;
+};
 
-  // A dedicated per-order WSOL vault has a small history (deposit + N fills). One page suffices;
-  // if it returns a full page the account is "hot" (shared/whale) and not a per-DCA vault → bail.
-  const all = (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [solVault, { limit: 1000 }], 5)) || [];
-  if (all.length === 0 || all.length >= 1000) {
-    swapExecOpenCache.set(solVault, null);
-    return null;
-  }
+/**
+ * Inspect a per-order WSOL funding vault (uncached): count executed fills, measure the
+ * fill-to-fill cadence (excludes open→first-fill latency) and sample the SOL spent per cycle
+ * from the most recent fill. Returns null when the account is empty or "hot" (shared/whale).
+ */
+async function sampleVaultFills(vault: string): Promise<VaultFillSample | null> {
+  if (!vault || vault.length < 32) return null;
+  const all = (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [vault, { limit: 1000 }], 5)) || [];
+  if (all.length === 0 || all.length >= 1000) return null;
 
   // Cadence = median gap between FILLS only (exclude the open→first-fill setup latency). Needs >=2 fills.
   const times = all.map((r) => Number(r.blockTime || 0)).filter((t) => t > 0).sort((a, b) => a - b);
@@ -701,21 +711,10 @@ async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo |
   const medianFreqSec = gaps.length ? Math.max(1, Math.floor(gaps[Math.floor(gaps.length / 2)])) : 0;
 
   const oldest = all[all.length - 1];
-  const tx = await rpcCall<any>(
-    'getTransaction',
-    [oldest.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
-    5,
-  );
-  const open = tx ? detectDcaOpen(tx) : null;
-  if (!open || open.vault !== solVault) {
-    swapExecOpenCache.set(solVault, null);
-    return null;
-  }
-
-  // Sample the SOL spent per cycle from the most recent executed fill (newest sig that is not the open).
-  let cycleSol = 0;
   const newest = all[0];
-  if (newest && newest.signature !== oldest.signature) {
+  let cycleSol = 0;
+  let targetMint = '';
+  if (newest.signature !== oldest.signature) {
     const fillTx = await rpcCall<any>(
       'getTransaction',
       [newest.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
@@ -724,20 +723,47 @@ async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo |
     const fillSigner = fillTx ? extractSignerWallet(fillTx) : null;
     if (fillTx && fillSigner) {
       const buy = analyzeSwapExecBuy(fillTx, fillSigner, null);
-      if (buy && buy.mint === open.targetMint && buy.cycleSol > 0) cycleSol = buy.cycleSol;
+      if (buy && buy.cycleSol > 0) {
+        cycleSol = buy.cycleSol;
+        targetMint = buy.mint;
+      }
     }
   }
 
+  return { sigs: all, oldest, newest, fillCount: Math.max(0, all.length - 1), medianFreqSec, cycleSol, targetMint };
+}
+
+async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo | null> {
+  if (!solVault || solVault.length < 32) return null;
+  if (swapExecOpenCache.has(solVault)) return swapExecOpenCache.get(solVault) ?? null;
+
+  const samp = await sampleVaultFills(solVault);
+  if (!samp) {
+    swapExecOpenCache.set(solVault, null);
+    return null;
+  }
+
+  const tx = await rpcCall<any>(
+    'getTransaction',
+    [samp.oldest.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+    5,
+  );
+  const open = tx ? detectDcaOpen(tx) : null;
+  if (!open || open.vault !== solVault) {
+    swapExecOpenCache.set(solVault, null);
+    return null;
+  }
+
   const info: SwapExecOpenInfo = {
-    openSig: oldest.signature,
-    openTsMs: Number(oldest.blockTime || 0) * 1000,
+    openSig: samp.oldest.signature,
+    openTsMs: Number(samp.oldest.blockTime || 0) * 1000,
     depositSol: open.depositSol,
     targetMint: open.targetMint || '',
     orderPda: open.orderPda || '',
     buyer: open.buyer,
-    fillCount: Math.max(0, all.length - 1),
-    medianFreqSec,
-    cycleSol,
+    fillCount: samp.fillCount,
+    medianFreqSec: samp.medianFreqSec,
+    cycleSol: samp.cycleSol,
   };
   swapExecOpenCache.set(solVault, info);
   return info;
@@ -807,6 +833,7 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     depositUsd: prev?.depositUsd,
     plannedCycles: prev?.plannedCycles,
     openTsMs: prev?.openTsMs,
+    cadenceSent: prev?.cadenceSent,
   };
 
   await recordDcaFill({
@@ -1763,6 +1790,95 @@ function activeWallets(_st: WatchState): string[] {
   return wallets();
 }
 
+function buildCadenceUpdateAlert(
+  s: WatchState['swapExecSeries'][string],
+  dex: DexInfo | null,
+  cycleUsd: number,
+  freqSec: number,
+  plannedCycles: number,
+): string {
+  const ca = s.mint;
+  const { perCyclePct, totalPct } = computePriceImpactEst(cycleUsd, plannedCycles, dex?.liquidityUsd || 0);
+  const remaining = Math.max(0, plannedCycles - s.cycles);
+  const etaSec = freqSec > 0 ? freqSec * remaining : 0;
+  const lines = [
+    `📊 DCA BUYS STARTED — ${setupHeadlineHtml(dex, ca)}`,
+    '',
+    `Follow-up for an open we flagged earlier — the keeper has begun executing.`,
+    `Pipeline: <code>swap_exec_dca</code> (keeper-signed Jupiter route)`,
+    '',
+    `• Deposit: ${(s.depositSol ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} SOL (~${fmtMoney(s.depositUsd ?? 0)})`,
+    `• Buys ~${fmtMoney(cycleUsd)} per cycle every ~${freqSec}s`,
+    `• Plan: ~${plannedCycles} cycles total · executed so far: ${s.cycles}${etaSec > 0 ? ` · ETA ${fmtDuration(etaSec)}` : ''}`,
+    `• Potential price change: ${fmtPctSigned(totalPct)} (${fmtPctSigned(perCyclePct)} per cycle)`,
+    `• Initiating tx: ${s.openSig ? buildSolscanLink(s.openSig) : 'n/a'}`,
+    '',
+    addrCopyLine('Buyer (opener)', s.buyer || ''),
+    addrCopyLine('SOL funding vault', s.solVault),
+    addrCopyLine('Executor / operator (signs)', s.executor),
+  ];
+  if (dex) {
+    lines.push(
+      '',
+      `MC: ${fmtMoney(dex.marketCap)} → LQ: ${fmtMoney(dex.liquidityUsd)}`,
+      `Price: ${dex.priceUsd > 0 ? `$${dex.priceUsd.toPrecision(4)}` : 'n/a'}`,
+    );
+  }
+  if (looksLikeMintAddress(ca)) lines.push('', addrCopyLine('CA', ca));
+  return lines.join('\n');
+}
+
+/**
+ * For opens we alerted before any fills existed (cadence unknown at open), re-inspect the funding
+ * vault each cycle; once the keeper has executed >=2 fills, send ONE follow-up with the real cadence,
+ * per-cycle size, planned cycles, ETA and price-impact. Gives up after a few hours.
+ */
+async function enrichPendingOpens(st: WatchState): Promise<void> {
+  const now = Date.now();
+  const maxAgeMs = 6 * 3600 * 1000;
+  let budget = 4;
+  for (const s of Object.values(st.swapExecSeries)) {
+    if (!s.openConfirmed || !s.alerted || s.cadenceSent) continue;
+    if (!s.solVault || s.solVault.length < 32) continue;
+    if (s.openTsMs && now - s.openTsMs > maxAgeMs) {
+      s.cadenceSent = true; // give up: too old, stop re-polling
+      continue;
+    }
+    if (budget-- <= 0) break;
+
+    const samp = await sampleVaultFills(s.solVault);
+    await sleep(120);
+    if (!samp || samp.fillCount < 2 || samp.cycleSol <= 0 || samp.medianFreqSec <= 0) continue;
+
+    const dex = await fetchDexInfo(s.mint);
+    const solPx = solUsdPrice(dex);
+    const cycleUsd = samp.cycleSol * solPx;
+    if (cycleUsd <= 0) continue;
+    const freqSec = samp.medianFreqSec;
+    const plannedCycles = Math.max(samp.fillCount, Math.round((s.depositUsd || 0) / cycleUsd));
+
+    s.cycles = samp.fillCount;
+    s.freqSec = freqSec;
+    s.lastCycleUsd = cycleUsd;
+    s.totalUsd = cycleUsd * samp.fillCount;
+    s.plannedCycles = plannedCycles;
+
+    const text = buildCadenceUpdateAlert(s, dex, cycleUsd, freqSec, plannedCycles);
+    const sent = await sendTelegramAlert(text);
+    if (sent) {
+      s.cadenceSent = true;
+      console.log('[dca-watch] cadence update sent', {
+        mint: s.mint.slice(0, 8),
+        vault: shortAddr(s.solVault),
+        cycleUsd: Math.round(cycleUsd),
+        freqSec,
+        plannedCycles,
+        executed: samp.fillCount,
+      });
+    }
+  }
+}
+
 /**
  * Poll bot operator co-signer feeds (e.g. trfb53) to catch DCA OPENS in real time.
  * DCA opens never touch the Jupiter swap program (only System/Token/ATA), so they are invisible
@@ -1874,6 +1990,8 @@ async function processOperatorOpens(operator: string, st: WatchState): Promise<v
         depositUsd,
         plannedCycles: plannedCycles || undefined,
         openTsMs: tsMs,
+        // If we already showed a real cadence at open, no follow-up is needed; else it stays pending.
+        cadenceSent: fillsDone >= 2 && freqSec > 0 && cycleUsd > 0,
       };
       registerDiscoveredWallet(st, open.buyer);
       await recordDcaOpen({
@@ -2228,6 +2346,7 @@ async function cycle(st: WatchState): Promise<void> {
       await processOperatorOpens(op, st);
       await sleep(120);
     }
+    await enrichPendingOpens(st);
   }
   if (discoveryEnabled()) {
     for (const p of discoveryPrograms()) {
