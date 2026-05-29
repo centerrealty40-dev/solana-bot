@@ -169,6 +169,13 @@
       "when": 1780300000000,
       "tag": "0023_market_spike_events",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780400000000,
+      "tag": "0024_dca_operator_track",
+      "breakpoints": true
     }
   ]
 }
