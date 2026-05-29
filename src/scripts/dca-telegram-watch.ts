@@ -637,18 +637,10 @@ async function resolveSwapExecOpen(solVault: string): Promise<SwapExecOpenInfo |
   if (!solVault || solVault.length < 32) return null;
   if (swapExecOpenCache.has(solVault)) return swapExecOpenCache.get(solVault) ?? null;
 
-  const all: SignatureRow[] = [];
-  let before: string | undefined;
-  for (let page = 0; page < 6; page++) {
-    const opts: Record<string, unknown> = { limit: 1000 };
-    if (before) opts.before = before;
-    const rows = (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [solVault, opts], 5)) || [];
-    if (rows.length === 0) break;
-    all.push(...rows);
-    before = rows[rows.length - 1]?.signature;
-    if (rows.length < 1000) break;
-  }
-  if (all.length === 0) {
+  // A dedicated per-order WSOL vault has a small history (deposit + N fills). One page suffices;
+  // if it returns a full page the account is "hot" (shared/whale) and not a per-DCA vault → bail.
+  const all = (await rpcCall<SignatureRow[]>('getSignaturesForAddress', [solVault, { limit: 1000 }], 5)) || [];
+  if (all.length === 0 || all.length >= 1000) {
     swapExecOpenCache.set(solVault, null);
     return null;
   }
