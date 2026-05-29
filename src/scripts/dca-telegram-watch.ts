@@ -936,6 +936,11 @@ async function processSwapExecTx(st: WatchState, row: SignatureRow, tx: any): Pr
     markSeen(st, row.signature);
     return true;
   }
+  // Defer until cadence is measurable so the alert always carries frequency + ETA.
+  if (!series.freqSec || series.freqSec <= 0) {
+    markSeen(st, row.signature);
+    return true;
+  }
 
   const plan = planFromSwapExecSeries(series);
 
@@ -1902,7 +1907,15 @@ async function emitSwapExecOpenAlert(st: WatchState, f: SwapExecOpenFacts): Prom
     return gate;
   }
 
-  const etaSec = freqSec > 0 && plannedCycles > 0 ? freqSec * Math.max(0, plannedCycles - f.fillsDone) : 0;
+  // Size qualifies, but with a single fill we can't measure cadence (needs >=2 gaps) and thus
+  // can't show frequency/ETA. Hold as pending so EVERY alert we send has cycle size + cadence +
+  // ETA + price impact filled in — never a bare "cadence pending" message.
+  if (freqSec <= 0) {
+    st.swapExecSeries[sKey] = { ...baseSeries, alerted: false, cadenceSent: false };
+    return 'no_cycle_data';
+  }
+
+  const etaSec = plannedCycles > 0 ? freqSec * Math.max(0, plannedCycles - f.fillsDone) : 0;
 
   // Record the open first so the user-history line includes this very open.
   await recordDcaOpen({
