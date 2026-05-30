@@ -3,6 +3,7 @@ import {
   cancelPendingBuysForMint,
   computeRetryUntilTs,
   isPendingBuyExpired,
+  leaderHoldingsShrunkSinceSignal,
   removePendingBuyById,
   shouldLogBuyDefer,
 } from '../../src/copytrader/pending-buy-retry.js';
@@ -55,5 +56,19 @@ describe('pending buy retry helpers', () => {
     const removed = removePendingBuyById(state, 'pb2');
     expect(removed?.id).toBe('pb2');
     expect(state.pendingBuys).toHaveLength(1);
+  });
+
+  it('detects leader sell after signal buy', () => {
+    expect(leaderHoldingsShrunkSinceSignal(1_000_000n, 800_000n)).toBe(true);
+    expect(leaderHoldingsShrunkSinceSignal(1_000_000n, 1_000_000n)).toBe(false);
+    expect(leaderHoldingsShrunkSinceSignal(1_000_000n, 1_200_000n)).toBe(false);
+    expect(leaderHoldingsShrunkSinceSignal(0n, 0n)).toBe(false);
+  });
+
+  it('cancels all pending buys for mint', () => {
+    const state = { pendingBuys: [pb(), pb({ id: 'pb2', kind: 'add' })] };
+    const removed = cancelPendingBuysForMint(state, pb().mint, 'any');
+    expect(removed).toHaveLength(2);
+    expect(state.pendingBuys).toHaveLength(0);
   });
 });
