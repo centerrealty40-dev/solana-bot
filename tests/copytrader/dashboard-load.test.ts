@@ -10,45 +10,62 @@ afterEach(() => {
   tmpDir = null;
 });
 
+const LEADER_BUY_SIG = 'LeaderBuy111111111111111111111111111111111111111111111111111111111111';
+const LEADER_SELL_SIG = 'LeaderSell11111111111111111111111111111111111111111111111111111111111';
+const OUR_BUY_SIG = 'sigBuy1111111111111111111111111111111111111111111111111111111111111111';
+const OUR_SELL_SIG = 'sigSell111111111111111111111111111111111111111111111111111111111111111';
+
 describe('loadCopyTraderJsonlForDashboard', () => {
-  it('parses successful buy/sell round and failed buy', () => {
+  it('parses successful buy/sell round and failed buy with leader-order cycles', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dash-'));
     const journal = path.join(tmpDir, 'journal.jsonl');
     const state = path.join(tmpDir, 'state.json');
     const base = Date.now() - 600_000;
+    const mint = 'Mint1111111111111111111111111111111111111';
     fs.writeFileSync(
       journal,
       [
         JSON.stringify({
           ts: base,
           kind: 'leader_buy_scheduled',
-          mint: 'Mint1111111111111111111111111111111111111',
+          mint,
           symbol: 'TST',
           sizeUsd: 50,
           leaderPriceUsd: 0.001,
+          leaderSignature: LEADER_BUY_SIG,
         }),
         JSON.stringify({
           ts: base + 120_000,
           kind: 'copy_buy',
           mode: 'live',
-          mint: 'Mint1111111111111111111111111111111111111',
+          mint,
           symbol: 'TST',
           sizeUsd: 50,
           priceUsd: 0.0011,
           ok: true,
-          txSignature: 'sigBuy1111111111111111111111111111111111111111111111111111111111111111',
+          leaderSignature: LEADER_BUY_SIG,
+          txSignature: OUR_BUY_SIG,
+        }),
+        JSON.stringify({
+          ts: base + 240_000,
+          kind: 'leader_sell_scheduled',
+          mint,
+          symbol: 'TST',
+          leaderSellFraction: 1,
+          leaderSignature: LEADER_SELL_SIG,
         }),
         JSON.stringify({
           ts: base + 300_000,
           kind: 'copy_sell',
           mode: 'live',
-          mint: 'Mint1111111111111111111111111111111111111',
+          mint,
           symbol: 'TST',
           sizeUsd: 50,
           entryPriceUsd: 0.0011,
           exitPriceUsd: 0.0012,
           ok: true,
-          txSignature: 'sigSell111111111111111111111111111111111111111111111111111111111111111',
+          leaderSignature: LEADER_SELL_SIG,
+          txSignature: OUR_SELL_SIG,
         }),
         JSON.stringify({
           ts: base + 400_000,
@@ -78,5 +95,60 @@ describe('loadCopyTraderJsonlForDashboard', () => {
     expect(r.copyTrader.sellsOk).toBe(1);
     expect(r.copyTrader.pendingBuys).toBe(1);
     expect(r.failReasons.some((x) => x.reason.includes('sim_failed'))).toBe(true);
+
+    expect(r.copyTrader.cycles.length).toBeGreaterThanOrEqual(1);
+    const closedCycle = r.copyTrader.cycles.find((c) => c.mint === mint);
+    expect(closedCycle?.status).toBe('closed');
+    expect(closedCycle?.leaderEntry.sig).toBe(LEADER_BUY_SIG);
+    expect(closedCycle?.leaderExit?.sig).toBe(LEADER_SELL_SIG);
+    expect(closedCycle?.ourEntry?.sig).toBe(OUR_BUY_SIG);
+    expect(closedCycle?.ourExit?.sig).toBe(OUR_SELL_SIG);
+
+    const tl = r.closed[0]!.__timeline as Array<{ leaderTxSignature?: string; ourTxSignature?: string }>;
+    const openEv = tl.find((e) => e.ourTxSignature === OUR_BUY_SIG);
+    expect(openEv?.leaderTxSignature).toBe(LEADER_BUY_SIG);
+    const closeEv = tl.find((e) => e.ourTxSignature === OUR_SELL_SIG);
+    expect(closeEv?.leaderTxSignature).toBe(LEADER_SELL_SIG);
+  });
+
+  it('corrects legacy live sell that stored proceeds as exitPriceUsd', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dash-'));
+    const journal = path.join(tmpDir, 'journal.jsonl');
+    const base = Date.now() - 600_000;
+    const mint = 'Mint3333333333333333333333333333333333333';
+    fs.writeFileSync(
+      journal,
+      [
+        JSON.stringify({
+          ts: base,
+          kind: 'copy_buy',
+          mode: 'live',
+          mint,
+          symbol: 'WCUP',
+          sizeUsd: 50,
+          priceUsd: 0.005,
+          ok: true,
+          txSignature: 'sigBuy3333333333333333333333333333333333333333333333333333333333333333',
+        }),
+        JSON.stringify({
+          ts: base + 300_000,
+          kind: 'copy_sell',
+          mode: 'live',
+          mint,
+          symbol: 'WCUP',
+          sizeUsd: 50,
+          entryPriceUsd: 0.005,
+          exitPriceUsd: 49.5,
+          ok: true,
+          txSignature: 'sigSell333333333333333333333333333333333333333333333333333333333333333',
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const r = loadCopyTraderJsonlForDashboard(journal);
+    expect(r.closed.length).toBe(1);
+    expect(r.closed[0]!.pnlPct).toBe(-1);
+    expect(r.closed[0]!.pnlUsd).toBe(-0.5);
   });
 });

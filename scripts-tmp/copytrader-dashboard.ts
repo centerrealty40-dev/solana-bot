@@ -6,6 +6,40 @@ import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
 const FULL_SCAN_MAX = Number(process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024);
 
+export type CopyTraderCycleRow = {
+  cycleId: string;
+  mint: string;
+  symbol: string;
+  startedTs: number;
+  closedTs?: number;
+  status:
+    | 'pending_our_buy'
+    | 'open'
+    | 'pending_our_sell'
+    | 'closed'
+    | 'missed'
+    | 'leader_only';
+  leaderEntry: { sig: string; ts: number; sizeUsd: number; priceUsd: number | null };
+  leaderExit?: { sig: string; ts: number; sellFraction: number | null };
+  ourEntry?: {
+    ok: boolean;
+    ts: number;
+    sig: string | null;
+    sizeUsd: number;
+    failReason: string | null;
+  };
+  ourExit?: {
+    ok: boolean;
+    ts: number;
+    sig: string | null;
+    sizeUsd: number;
+    pnlUsd: number | null;
+    pnlPct: number | null;
+    failReason: string | null;
+  };
+  buyAttempts: number;
+};
+
 export type CopyTraderDashboardStats = {
   pendingBuys: number;
   pendingSells: number;
@@ -15,6 +49,7 @@ export type CopyTraderDashboardStats = {
   sellsFail: number;
   leaderSignals1h: number;
   ourFills1h: number;
+  cycles: CopyTraderCycleRow[];
 };
 
 export type CopyTraderDashboardLoad = {
@@ -38,7 +73,10 @@ type PosState = {
   remainingUsd: number;
   avgEntryPx: number;
   remainingFraction: number;
+  leaderEntrySig: string;
 };
+
+type ActiveCycle = CopyTraderCycleRow;
 
 function* journalLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, TAIL_BYTES, FULL_SCAN_MAX);
@@ -56,16 +94,39 @@ function emptyLoad(): CopyTraderDashboardLoad {
     passed1h: 0,
     failReasons: [],
     openTimelines: new Map(),
-    copyTrader: {
-      pendingBuys: 0,
-      pendingSells: 0,
-      buysOk: 0,
-      buysFail: 0,
-      sellsOk: 0,
-      sellsFail: 0,
-      leaderSignals1h: 0,
-      ourFills1h: 0,
-    },
+    copyTrader: emptyStats(),
+  };
+}
+
+function emptyStats(): CopyTraderDashboardStats {
+  return {
+    pendingBuys: 0,
+    pendingSells: 0,
+    buysOk: 0,
+    buysFail: 0,
+    sellsOk: 0,
+    sellsFail: 0,
+    leaderSignals1h: 0,
+    ourFills1h: 0,
+    cycles: [],
+  };
+}
+
+function leaderSig(ev: Record<string, unknown>): string | null {
+  const s = ev.leaderSignature;
+  return typeof s === 'string' && s.length >= 64 ? s : null;
+}
+
+function ourSig(ev: Record<string, unknown>): string | null {
+  const s = ev.txSignature;
+  return typeof s === 'string' && s.length >= 64 ? s : null;
+}
+
+function txFields(leader: string | null, ours: string | null): Partial<TimelineEvent> {
+  return {
+    leaderTxSignature: leader,
+    ourTxSignature: ours,
+    txSignature: leader ?? ours ?? null,
   };
 }
 
@@ -87,14 +148,26 @@ function pushNote(
     reason: extra.reason ?? null,
     remainingFraction: null,
     amountUsd: extra.amountUsd ?? null,
-    txSignature: extra.txSignature ?? null,
     contextNote: extra.contextNote ?? null,
+    leaderTxSignature: extra.leaderTxSignature ?? null,
+    ourTxSignature: extra.ourTxSignature ?? null,
+    txSignature: extra.txSignature ?? extra.leaderTxSignature ?? extra.ourTxSignature ?? null,
   });
 }
 
+/** Legacy journal rows stored USD proceeds in exitPriceUsd instead of token price. */
+function normalizeExitPrice(entryPx: number, exitPx: number, sizeUsd: number): number {
+  if (!(entryPx > 0) || !(exitPx > 0) || !(sizeUsd > 0)) return exitPx;
+  if (exitPx > entryPx * 10 && exitPx >= sizeUsd * 0.25) {
+    return entryPx * (exitPx / sizeUsd);
+  }
+  return exitPx;
+}
+
 function sanePnl(entryPx: number, exitPx: number, soldUsd: number): { pnlPct: number; pnlUsd: number } {
-  if (!(entryPx > 0) || !(exitPx > 0) || !(soldUsd > 0)) return { pnlPct: 0, pnlUsd: 0 };
-  const rawPct = ((exitPx / entryPx) - 1) * 100;
+  const px = normalizeExitPrice(entryPx, exitPx, soldUsd);
+  if (!(entryPx > 0) || !(px > 0) || !(soldUsd > 0)) return { pnlPct: 0, pnlUsd: 0 };
+  const rawPct = ((px / entryPx) - 1) * 100;
   const pnlPct = Math.max(-99.9, Math.min(500, rawPct));
   const pnlUsd = (soldUsd * pnlPct) / 100;
   return { pnlPct: +pnlPct.toFixed(2), pnlUsd: +pnlUsd.toFixed(2) };
@@ -121,6 +194,11 @@ function readStateCounts(statePath: string | undefined): { pendingBuys: number; 
   }
 }
 
+function finalizeCycle(cycle: ActiveCycle, cycles: CopyTraderCycleRow[]): void {
+  if (cycles.some((c) => c.cycleId === cycle.cycleId)) return;
+  cycles.push({ ...cycle });
+}
+
 /** Parse `data/copytrader/journal.jsonl` (+ optional state.json) for `/api/paper2` copy-trader panel. */
 export function loadCopyTraderJsonlForDashboard(
   journalPath: string,
@@ -135,16 +213,9 @@ export function loadCopyTraderJsonlForDashboard(
   let evals1h = 0;
   let passed1h = 0;
 
-  const stats: CopyTraderDashboardStats = {
-    pendingBuys: 0,
-    pendingSells: 0,
-    buysOk: 0,
-    buysFail: 0,
-    sellsOk: 0,
-    sellsFail: 0,
-    leaderSignals1h: 0,
-    ourFills1h: 0,
-  };
+  const stats = emptyStats();
+  const cyclesOut: CopyTraderCycleRow[] = [];
+  const activeCycleByMint = new Map<string, ActiveCycle>();
 
   const openMap = new Map<string, Paper2OpenItem>();
   const posState = new Map<string, PosState>();
@@ -158,6 +229,31 @@ export function loadCopyTraderJsonlForDashboard(
       timelines.set(mint, row);
     }
     return row;
+  };
+
+  const getCycle = (mint: string): ActiveCycle | undefined => activeCycleByMint.get(mint);
+
+  const startEntryCycle = (
+    mint: string,
+    symbol: string,
+    ts: number,
+    sig: string,
+    sizeUsd: number,
+    priceUsd: number | null,
+  ): ActiveCycle => {
+    const prev = activeCycleByMint.get(mint);
+    if (prev && prev.status !== 'closed') finalizeCycle(prev, cyclesOut);
+    const cycle: ActiveCycle = {
+      cycleId: `cy_${ts}_${mint.slice(0, 8)}`,
+      mint,
+      symbol,
+      startedTs: ts,
+      status: 'pending_our_buy',
+      leaderEntry: { sig, ts, sizeUsd, priceUsd },
+      buyAttempts: 0,
+    };
+    activeCycleByMint.set(mint, cycle);
+    return cycle;
   };
 
   const openItemFromPos = (p: PosState): Paper2OpenItem => ({
@@ -200,6 +296,7 @@ export function loadCopyTraderJsonlForDashboard(
       pnlUsd,
       netPnlUsd: pnlUsd,
       durationMin: Math.max(0, Math.round((exitTs - p.entryTs) / 60_000)),
+      leaderEntrySig: p.leaderEntrySig,
       __timeline: tl,
     });
     posState.delete(mint);
@@ -223,23 +320,47 @@ export function loadCopyTraderJsonlForDashboard(
     const mint = typeof ev.mint === 'string' ? ev.mint : '';
     const symbol = typeof ev.symbol === 'string' ? ev.symbol : mint.slice(0, 6);
     const tl = mint ? tlFor(mint) : [];
+    const lSig = leaderSig(ev);
 
-    if (kind === 'leader_buy_scheduled' || kind === 'leader_add_scheduled') {
+    if (kind === 'leader_buy_scheduled') {
       const sizeUsd = Number(ev.sizeUsd ?? 0);
-      const isAdd = kind === 'leader_add_scheduled';
       if (ts >= since1h) stats.leaderSignals1h += 1;
-      pushNote(tl, ts, isAdd ? `Leader add · queue $${sizeUsd}` : `Leader buy · queue $${sizeUsd}`, {
+      if (lSig) {
+        startEntryCycle(mint, symbol, ts, lSig, sizeUsd, Number(ev.leaderPriceUsd ?? 0) || null);
+      }
+      pushNote(tl, ts, `Leader buy · queue $${sizeUsd}`, {
         spotPxUsd: Number(ev.leaderPriceUsd ?? 0) || null,
         amountUsd: sizeUsd > 0 ? sizeUsd : null,
-        contextNote: typeof ev.leaderSignature === 'string' ? `leader tx ${ev.leaderSignature.slice(0, 8)}…` : null,
+        ...txFields(lSig, null),
+        contextNote: 'Ордер лидера — Solscan ниже',
+      });
+      continue;
+    }
+
+    if (kind === 'leader_add_scheduled') {
+      const sizeUsd = Number(ev.sizeUsd ?? 0);
+      if (ts >= since1h) stats.leaderSignals1h += 1;
+      pushNote(tl, ts, `Leader add · queue $${sizeUsd}`, {
+        spotPxUsd: Number(ev.leaderPriceUsd ?? 0) || null,
+        amountUsd: sizeUsd > 0 ? sizeUsd : null,
+        ...txFields(lSig, null),
+        contextNote: 'Добор лидера — Solscan ниже',
       });
       continue;
     }
 
     if (kind === 'leader_sell_scheduled') {
       const frac = Number(ev.leaderSellFraction ?? ev.ourSellFraction ?? 0);
+      const cycle = getCycle(mint);
+      if (cycle && lSig) {
+        cycle.leaderExit = { sig: lSig, ts, sellFraction: Number.isFinite(frac) ? frac : null };
+        if (cycle.ourEntry?.ok) cycle.status = 'pending_our_sell';
+        else cycle.status = 'leader_only';
+      }
       pushNote(tl, ts, `Leader sell · mirror ${(frac * 100).toFixed(0)}% queued`, {
         spotPxUsd: Number(ev.leaderPriceUsd ?? 0) || null,
+        ...txFields(lSig, null),
+        contextNote: 'Выход лидера — Solscan ниже',
       });
       continue;
     }
@@ -250,8 +371,11 @@ export function loadCopyTraderJsonlForDashboard(
       const reasons = Array.isArray(evalObj?.reasons) ? evalObj!.reasons!.map(String) : [];
       const reason = reasons[0] ?? String(ev.reason ?? kind);
       bumpFail(failReasonsCount, reason);
+      const cycle = getCycle(mint);
+      if (cycle) cycle.buyAttempts += 1;
       pushNote(tl, ts, `${kind === 'add_deferred' ? 'Add' : 'Buy'} deferred · ${reason}`, {
         spotPxUsd: Number(ev.currentPriceUsd ?? 0) || null,
+        ...txFields(lSig ?? cycle?.leaderEntry.sig ?? null, null),
       });
       continue;
     }
@@ -259,7 +383,16 @@ export function loadCopyTraderJsonlForDashboard(
     if (kind === 'buy_cancelled' || kind === 'add_cancelled' || kind === 'buy_expired' || kind === 'add_expired') {
       const reason = String(ev.reason ?? kind);
       bumpFail(failReasonsCount, reason);
-      pushNote(tl, ts, `${kind.replace(/_/g, ' ')} · ${reason}`);
+      const cycle = getCycle(mint);
+      if (cycle && kind.startsWith('buy') && !cycle.ourEntry?.ok) {
+        cycle.status = 'missed';
+        cycle.closedTs = ts;
+        finalizeCycle(cycle, cyclesOut);
+        activeCycleByMint.delete(mint);
+      }
+      pushNote(tl, ts, `${kind.replace(/_/g, ' ')} · ${reason}`, {
+        ...txFields(lSig ?? cycle?.leaderEntry.sig ?? null, null),
+      });
       continue;
     }
 
@@ -267,17 +400,27 @@ export function loadCopyTraderJsonlForDashboard(
       const sizeUsd = Number(ev.sizeUsd ?? 0);
       const priceUsd = Number(ev.priceUsd ?? 0);
       const ok = ev.ok === true;
-      const txSig = typeof ev.txSignature === 'string' ? ev.txSignature : null;
+      const oSig = ourSig(ev);
       const isAdd = kind === 'copy_add';
+      let cycle = getCycle(mint);
+      if (!cycle && lSig && !isAdd) {
+        cycle = startEntryCycle(mint, symbol, ts, lSig, sizeUsd, priceUsd > 0 ? priceUsd : null);
+      }
 
       if (ts >= since1h) {
         evals1h += 1;
         if (ok) passed1h += 1;
       }
 
+      const leaderRef = lSig ?? cycle?.leaderEntry.sig ?? null;
+
       if (ok) {
         stats.buysOk += 1;
         if (ts >= since1h) stats.ourFills1h += 1;
+        if (cycle) {
+          cycle.ourEntry = { ok: true, ts, sig: oSig, sizeUsd, failReason: null };
+          cycle.status = 'open';
+        }
 
         if (isAdd && posState.has(mint)) {
           const p = posState.get(mint)!;
@@ -301,7 +444,7 @@ export function loadCopyTraderJsonlForDashboard(
             reason: null,
             remainingFraction: p.remainingFraction,
             amountUsd: sizeUsd,
-            txSignature: txSig,
+            ...txFields(leaderRef, oSig),
           });
           openMap.set(mint, openItemFromPos(p));
         } else {
@@ -317,12 +460,13 @@ export function loadCopyTraderJsonlForDashboard(
             remainingUsd: sizeUsd,
             avgEntryPx: priceUsd,
             remainingFraction: 1,
+            leaderEntrySig: leaderRef ?? '',
           };
           posState.set(mint, p);
           tl.push({
             ts,
             kind: 'open',
-            label: `Entry buy $${sizeUsd} · OK`,
+            label: `Our entry buy $${sizeUsd} · OK`,
             mcUsd: null,
             spotPxUsd: priceUsd > 0 ? priceUsd : null,
             sizePct: null,
@@ -331,7 +475,8 @@ export function loadCopyTraderJsonlForDashboard(
             reason: null,
             remainingFraction: 1,
             amountUsd: sizeUsd,
-            txSignature: txSig,
+            ...txFields(leaderRef, oSig),
+            contextNote: oSig ? 'Наш tx — ссылка «Our tx»' : null,
           });
           openMap.set(mint, openItemFromPos(p));
         }
@@ -339,10 +484,14 @@ export function loadCopyTraderJsonlForDashboard(
         stats.buysFail += 1;
         const reason = String(ev.reason ?? 'execution_failed');
         bumpFail(failReasonsCount, reason);
+        if (cycle) {
+          cycle.buyAttempts += 1;
+          cycle.ourEntry = { ok: false, ts, sig: oSig, sizeUsd, failReason: reason };
+        }
         pushNote(tl, ts, `${isAdd ? 'Add' : 'Buy'} FAILED · $${sizeUsd} · ${reason}`, {
           spotPxUsd: priceUsd > 0 ? priceUsd : null,
           amountUsd: sizeUsd > 0 ? sizeUsd : null,
-          txSignature: txSig,
+          ...txFields(leaderRef, oSig),
         });
       }
       continue;
@@ -351,14 +500,17 @@ export function loadCopyTraderJsonlForDashboard(
     if (kind === 'copy_sell') {
       const sizeUsd = Number(ev.sizeUsd ?? 0);
       const entryPx = Number(ev.entryPriceUsd ?? 0);
-      const exitPx = Number(ev.exitPriceUsd ?? 0);
+      let exitPx = Number(ev.exitPriceUsd ?? 0);
       const ok = ev.ok === true;
-      const txSig = typeof ev.txSignature === 'string' ? ev.txSignature : null;
+      const oSig = ourSig(ev);
       const p = posState.get(mint);
+      const cycle = getCycle(mint);
+      const leaderRef = lSig ?? cycle?.leaderExit?.sig ?? cycle?.leaderEntry.sig ?? null;
 
       if (ok) {
         stats.sellsOk += 1;
         if (ts >= since1h) stats.ourFills1h += 1;
+        exitPx = normalizeExitPrice(entryPx || p?.avgEntryPx || 0, exitPx, sizeUsd);
         const { pnlPct, pnlUsd } = sanePnl(entryPx || p?.avgEntryPx || 0, exitPx, sizeUsd);
         const soldFrac =
           p && p.remainingUsd > 0 ? Math.min(1, sizeUsd / p.remainingUsd) : 1;
@@ -367,7 +519,7 @@ export function loadCopyTraderJsonlForDashboard(
         tl.push({
           ts,
           kind: isFull ? 'close' : 'partial_sell',
-          label: isFull ? `Exit sell $${sizeUsd} · OK` : `Partial sell $${sizeUsd} · OK`,
+          label: isFull ? `Our exit sell $${sizeUsd} · OK` : `Our partial sell $${sizeUsd} · OK`,
           mcUsd: null,
           spotPxUsd: exitPx > 0 ? exitPx : null,
           sizePct: soldFrac * 100,
@@ -376,15 +528,34 @@ export function loadCopyTraderJsonlForDashboard(
           reason: null,
           remainingFraction: p ? Math.max(0, p.remainingFraction * (1 - soldFrac)) : 0,
           amountUsd: sizeUsd,
-          txSignature: txSig,
+          ...txFields(leaderRef, oSig),
         });
+
+        if (cycle) {
+          cycle.ourExit = {
+            ok: true,
+            ts,
+            sig: oSig,
+            sizeUsd,
+            pnlUsd,
+            pnlPct,
+            failReason: null,
+          };
+        }
 
         if (p) {
           p.remainingUsd = Math.max(0, p.remainingUsd - sizeUsd);
           p.remainingFraction = isFull ? 0 : Math.max(0, p.remainingFraction * (1 - soldFrac));
           if (isFull || p.remainingUsd < 0.5) {
+            if (cycle) {
+              cycle.status = 'closed';
+              cycle.closedTs = ts;
+              finalizeCycle(cycle, cyclesOut);
+              activeCycleByMint.delete(mint);
+            }
             closePosition(mint, ts, pnlUsd >= 0 ? 'TP' : 'SL', pnlPct, pnlUsd);
           } else {
+            if (cycle) cycle.status = 'open';
             openMap.set(mint, openItemFromPos(p));
           }
         }
@@ -392,10 +563,21 @@ export function loadCopyTraderJsonlForDashboard(
         stats.sellsFail += 1;
         const reason = String(ev.reason ?? 'sell_failed');
         bumpFail(failReasonsCount, reason);
+        if (cycle) {
+          cycle.ourExit = {
+            ok: false,
+            ts,
+            sig: oSig,
+            sizeUsd,
+            pnlUsd: null,
+            pnlPct: null,
+            failReason: reason,
+          };
+        }
         pushNote(tl, ts, `Sell FAILED · $${sizeUsd} · ${reason}`, {
           spotPxUsd: exitPx > 0 ? exitPx : null,
           amountUsd: sizeUsd > 0 ? sizeUsd : null,
-          txSignature: txSig,
+          ...txFields(leaderRef, oSig),
         });
       }
       continue;
@@ -404,18 +586,26 @@ export function loadCopyTraderJsonlForDashboard(
     if (kind === 'entry' || kind === 'execution_result') {
       const side = String(ev.side ?? '');
       const status = String(ev.status ?? '');
-      const txSig = typeof ev.txSignature === 'string' ? ev.txSignature : null;
+      const oSig = ourSig(ev);
+      const cycle = getCycle(mint);
       if (side === 'buy' && status && status !== 'confirmed') {
-        pushNote(tl, ts, `Buy tx ${status}${ev.error ? ` · ${String(ev.error).slice(0, 80)}` : ''}`, {
-          txSignature: txSig,
+        pushNote(tl, ts, `Our buy tx ${status}${ev.error ? ` · ${String(ev.error).slice(0, 80)}` : ''}`, {
+          ...txFields(cycle?.leaderEntry.sig ?? lSig, oSig),
         });
       }
     }
   }
 
+  for (const cycle of activeCycleByMint.values()) {
+    finalizeCycle(cycle, cyclesOut);
+  }
+
+  cyclesOut.sort((a, b) => b.startedTs - a.startedTs);
+
   const stateCounts = readStateCounts(statePath);
   stats.pendingBuys = stateCounts.pendingBuys;
   stats.pendingSells = stateCounts.pendingSells;
+  stats.cycles = cyclesOut.slice(0, 40);
 
   const failReasons = [...failReasonsCount.entries()]
     .map(([reason, count]) => ({ reason, count }))

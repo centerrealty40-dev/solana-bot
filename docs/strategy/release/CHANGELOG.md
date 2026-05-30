@@ -10,6 +10,26 @@
 
 ---
 
+## [1.11.290] — 2026-05-28
+
+### Feat: Copy Trader dashboard — cycles + Solscan on leader orders
+
+**Контекст:** на плитке Copy Trader нужно видеть полные циклы (leader buy → our mirror → leader sell → our exit) и ссылки Solscan на **ордер лидера**, а не только на наш swap.
+
+| Поведение | Было | Стало |
+|-----------|------|-------|
+| Solscan в timeline | одна ссылка на **наш** `txSignature` | **Leader order** (`leaderSignature`) + **Our tx** (если был fill) |
+| Циклы | нет | секция **Copy cycles** с leader buy/sell и статусом |
+| `copy_sell` journal | `exitPriceUsd` = USD proceeds (баг) | per-token price в `live-exec.ts`; dashboard нормализует legacy rows |
+
+**Код:** `scripts-tmp/copytrader-dashboard.ts`, `dashboard-server.ts`, `dashboard-paper2.html`, `src/copytrader/live-exec.ts`, `tests/copytrader/dashboard-load.test.ts`.
+
+**Git-тег:** `sa-alpha-1.11.290`
+
+**Откат:** `git checkout sa-alpha-1.11.289 -- scripts-tmp/copytrader-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html src/copytrader/live-exec.ts tests/copytrader/dashboard-load.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard,copy-trader --update-env`.
+
+---
+
 ## [1.11.289] — 2026-05-30
 
 ### Feat: papertrader2 — Copy Trader panel (replaces Live Oscar Risky)

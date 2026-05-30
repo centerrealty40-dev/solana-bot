@@ -1482,6 +1482,10 @@ export type TimelineEvent = {
   amountUsd: number | null;
   /** Set when live journal correlates an on-chain swap (`execution_result.txSignature`). */
   txSignature?: string | null;
+  /** Copy-trader: leader order tx (primary Solscan link). */
+  leaderTxSignature?: string | null;
+  /** Copy-trader: our mirror execution tx. */
+  ourTxSignature?: string | null;
   /** Доп. строки: TP-regime (paper), режим выхода A/B (live) — см. IDEALIZED_OSCAR_STACK_SPEC. */
   contextNote?: string | null;
 };
