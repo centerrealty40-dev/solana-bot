@@ -157,7 +157,10 @@ export async function executeLiveCopySell(args: {
 
   const outRaw = prep.quoteResponse.outAmount;
   const outLamports = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-  const exitPriceUsd = outLamports > 0 ? (outLamports / 1e9) * solUsd : 0;
+  const proceedsUsd = outLamports > 0 ? (outLamports / 1e9) * solUsd : 0;
+  // Per-token exit price (same 6-decimal assumption as executeLiveCopyBuy), not total proceeds.
+  const tokensSold = Number(sellRaw) / 1e6;
+  const exitPriceUsd = tokensSold > 0 && proceedsUsd > 0 ? proceedsUsd / tokensSold : 0;
 
   const sent = await sendSwap(cfg, prep.swapBuild.b64, {
     side: 'sell',
