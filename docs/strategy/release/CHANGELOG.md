@@ -10,6 +10,24 @@
 
 ---
 
+## [1.11.291] — 2026-05-28
+
+### Fix: Copy Trader dashboard — stale cycles vs open positions
+
+**Контекст:** после закрытия SHIKOKU/WORLDCUP в «Copy cycles» оставались строки `pending_our_buy` (лидер перезаходил, мы skip) — выглядело как дубль с Recent closes и «висящая» позиция.
+
+| Поведение | Было | Стало |
+|-----------|------|-------|
+| Циклы после `buy_skipped` + новый leader buy | `pending_our_buy` навсегда | **`missed`**, не показываются без очереди в state |
+| Список cycles | все leader buy подряд | **compact**: closed + только mint из `pendingBuys` |
+| Open positions | journal-only | без изменений — **open=[]** когда продано (как в state) |
+
+**Git-тег:** `sa-alpha-1.11.291`
+
+**Откат:** `git checkout sa-alpha-1.11.290 -- scripts-tmp/copytrader-dashboard.ts scripts-tmp/dashboard-paper2.html tests/copytrader/dashboard-load.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+---
+
 ## [1.11.290] — 2026-05-28
 
 ### Feat: Copy Trader dashboard — cycles + Solscan on leader orders

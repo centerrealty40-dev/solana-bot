@@ -300,6 +300,7 @@
 
       <div x-show="selected === 'copy-trader' && (selectedRow()?.copyTrader?.cycles || []).length" class="mt-6">
         <h3 class="text-lg font-bold text-white mb-3">Copy cycles · ордера лидера</h3>
+        <p class="text-xs text-slate-400 mb-3 leading-snug">Только реальные циклы: закрытые сделки и очередь buy/sell из state. Пропущенные сигналы лидера (buy_skipped без очереди) здесь не показываются — см. Recent closes / timeline.</p>
         <div class="space-y-3 text-sm">
           <template x-for="cy in (selectedRow()?.copyTrader?.cycles || [])" :key="cy.cycleId">
             <div class="card rounded-lg p-4 border border-white/10">
