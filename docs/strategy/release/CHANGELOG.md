@@ -8,6 +8,8 @@
 
 ---
 
+---
+
 ## [1.11.288] — 2026-05-30
 
 ### Feat: copy-trader — stop buy retries when leader starts exiting
