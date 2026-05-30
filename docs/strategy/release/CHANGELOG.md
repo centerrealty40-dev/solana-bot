@@ -8,6 +8,27 @@
 
 ---
 
+## [1.11.287] — 2026-05-30
+
+### Feat: copy-trader — retry pending buys until gates pass
+
+**Контекст:** после 2‑мин задержки одна неудачная проверка price gate (`buy_skipped`) навсегда снимала очередь — WORLDCUP и др. пропускались, хотя цена могла вернуться в допуск.
+
+| Поведение | Было | Стало |
+|-----------|------|-------|
+| Eval/exec fail после `dueTs` | `buy_skipped`, очередь удалена | `buy_deferred`, **retry каждые ~2s** |
+| Окно retry | — | **2 ч** после первой попытки (`COPY_TRADER_BUY_RETRY_WINDOW_MS=7200000`) |
+| Лидер полностью вышел | — | pending entry **отменяется** (`buy_cancelled`) |
+| Истёк retry window | — | `buy_expired` |
+
+**Код:** `src/copytrader/pending-buy-retry.ts`, `main.ts`, `state.ts`, `config.ts`.
+
+**Git-тег:** `sa-alpha-1.11.287`
+
+**Откат:** `git checkout sa-alpha-1.11.286 -- src/copytrader/ ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `npm ci`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.286] — 2026-05-29
 
 ### Feat: copy-trader — stealth mirror лидера (PM2, live risky wallet)

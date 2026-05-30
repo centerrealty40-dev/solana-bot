@@ -35,6 +35,9 @@ export type PendingBuy = {
   leaderBuyUsd: number;
   leaderBuyTs: number;
   dueTs: number;
+  /** Keep retrying eval/exec until this ts (after dueTs). */
+  retryUntilTs: number;
+  lastDeferLogTs?: number;
 };
 
 export type PendingSell = {
@@ -93,6 +96,11 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         leaderBuyUsd: p.leaderBuyUsd,
         leaderBuyTs: p.leaderBuyTs,
         dueTs: p.dueTs,
+        retryUntilTs:
+          typeof p.retryUntilTs === 'number' && p.retryUntilTs > 0
+            ? p.retryUntilTs
+            : p.dueTs + 3_600_000,
+        lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
       }),
     );
     const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(

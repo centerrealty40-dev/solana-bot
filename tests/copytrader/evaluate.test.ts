@@ -12,6 +12,8 @@ const baseCfg: CopyTraderConfig = {
   signatureLimit: 25,
   tickIntervalMs: 2000,
   buyDelayMs: 600_000,
+  buyRetryWindowMs: 7_200_000,
+  buyRetryDeferLogMs: 60_000,
   sellDelayMinMs: 20_000,
   sellDelayMaxMs: 30_000,
   positionUsd: 50,
