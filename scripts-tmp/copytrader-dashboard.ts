@@ -178,20 +178,64 @@ function bumpFail(map: Map<string, number>, reason: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
 
-function readStateCounts(statePath: string | undefined): { pendingBuys: number; pendingSells: number } {
-  if (!statePath || !fs.existsSync(statePath)) return { pendingBuys: 0, pendingSells: 0 };
+function readStateCounts(statePath: string | undefined): {
+  pendingBuys: number;
+  pendingSells: number;
+  pendingBuyMints: Set<string>;
+} {
+  if (!statePath || !fs.existsSync(statePath)) {
+    return { pendingBuys: 0, pendingSells: 0, pendingBuyMints: new Set() };
+  }
   try {
     const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as {
-      pendingBuys?: unknown[];
+      pendingBuys?: Array<{ mint?: string }>;
       pendingSells?: unknown[];
     };
+    const pendingBuys = Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : [];
+    const pendingBuyMints = new Set(
+      pendingBuys.map((p) => (typeof p.mint === 'string' ? p.mint : '')).filter(Boolean),
+    );
     return {
-      pendingBuys: Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys.length : 0,
+      pendingBuys: pendingBuys.length,
       pendingSells: Array.isArray(parsed.pendingSells) ? parsed.pendingSells.length : 0,
+      pendingBuyMints,
     };
   } catch {
-    return { pendingBuys: 0, pendingSells: 0 };
+    return { pendingBuys: 0, pendingSells: 0, pendingBuyMints: new Set() };
   }
+}
+
+/** Drop stale leader-only cycles; keep closed trades and truly pending queue rows. */
+export function compactCopyTraderCyclesForDashboard(
+  cycles: CopyTraderCycleRow[],
+  pendingBuyMints: Set<string>,
+): CopyTraderCycleRow[] {
+  const sorted = [...cycles].sort((a, b) => b.startedTs - a.startedTs);
+  const closedMintSeen = new Set<string>();
+  const out: CopyTraderCycleRow[] = [];
+  for (const c of sorted) {
+    if (c.status === 'closed' && c.ourEntry?.ok) {
+      if (closedMintSeen.has(c.mint)) continue;
+      closedMintSeen.add(c.mint);
+      out.push(c);
+      continue;
+    }
+    if (c.status === 'open' || c.status === 'pending_our_sell') {
+      out.push(c);
+      continue;
+    }
+    if (c.status === 'pending_our_buy' && pendingBuyMints.has(c.mint)) {
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+function abandonPendingCycle(cycle: ActiveCycle, ts: number): void {
+  if (cycle.ourEntry?.ok) return;
+  if (cycle.status === 'closed') return;
+  cycle.status = 'missed';
+  cycle.closedTs = ts;
 }
 
 function finalizeCycle(cycle: ActiveCycle, cycles: CopyTraderCycleRow[]): void {
@@ -242,7 +286,11 @@ export function loadCopyTraderJsonlForDashboard(
     priceUsd: number | null,
   ): ActiveCycle => {
     const prev = activeCycleByMint.get(mint);
-    if (prev && prev.status !== 'closed') finalizeCycle(prev, cyclesOut);
+    if (prev && prev.status !== 'closed') {
+      abandonPendingCycle(prev, ts);
+      finalizeCycle(prev, cyclesOut);
+      activeCycleByMint.delete(mint);
+    }
     const cycle: ActiveCycle = {
       cycleId: `cy_${ts}_${mint.slice(0, 8)}`,
       mint,
@@ -558,6 +606,30 @@ export function loadCopyTraderJsonlForDashboard(
             if (cycle) cycle.status = 'open';
             openMap.set(mint, openItemFromPos(p));
           }
+        } else {
+          openMap.delete(mint);
+          const sym = typeof ev.symbol === 'string' ? ev.symbol : mint.slice(0, 6);
+          const entryTs =
+            typeof cycle?.ourEntry?.ts === 'number' ? cycle.ourEntry.ts : ts - 60_000;
+          closed.push({
+            mint,
+            symbol: sym,
+            entryTs,
+            exitTs: ts,
+            exitReason: pnlUsd >= 0 ? 'TP' : 'SL',
+            pnlPct,
+            pnlUsd,
+            netPnlUsd: pnlUsd,
+            durationMin: Math.max(0, Math.round((ts - entryTs) / 60_000)),
+            leaderEntrySig: cycle?.leaderEntry.sig ?? leaderRef ?? '',
+            __timeline: tl.slice(),
+          });
+          if (cycle) {
+            cycle.status = 'closed';
+            cycle.closedTs = ts;
+            finalizeCycle(cycle, cyclesOut);
+            activeCycleByMint.delete(mint);
+          }
         }
       } else {
         stats.sellsFail += 1;
@@ -597,6 +669,7 @@ export function loadCopyTraderJsonlForDashboard(
   }
 
   for (const cycle of activeCycleByMint.values()) {
+    abandonPendingCycle(cycle, lastTs || Date.now());
     finalizeCycle(cycle, cyclesOut);
   }
 
@@ -605,7 +678,7 @@ export function loadCopyTraderJsonlForDashboard(
   const stateCounts = readStateCounts(statePath);
   stats.pendingBuys = stateCounts.pendingBuys;
   stats.pendingSells = stateCounts.pendingSells;
-  stats.cycles = cyclesOut.slice(0, 40);
+  stats.cycles = compactCopyTraderCyclesForDashboard(cyclesOut, stateCounts.pendingBuyMints).slice(0, 40);
 
   const failReasons = [...failReasonsCount.entries()]
     .map(([reason, count]) => ({ reason, count }))
