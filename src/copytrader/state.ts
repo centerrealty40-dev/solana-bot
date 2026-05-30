@@ -35,6 +35,8 @@ export type PendingBuy = {
   leaderBuyUsd: number;
   leaderBuyTs: number;
   dueTs: number;
+  /** Leader token balance right after the signal buy (detect later sells). */
+  leaderHoldingsRawAtSignal?: string;
   /** Keep retrying eval/exec until this ts (after dueTs). */
   retryUntilTs: number;
   lastDeferLogTs?: number;
@@ -96,6 +98,8 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         leaderBuyUsd: p.leaderBuyUsd,
         leaderBuyTs: p.leaderBuyTs,
         dueTs: p.dueTs,
+        leaderHoldingsRawAtSignal:
+          typeof p.leaderHoldingsRawAtSignal === 'string' ? p.leaderHoldingsRawAtSignal : undefined,
         retryUntilTs:
           typeof p.retryUntilTs === 'number' && p.retryUntilTs > 0
             ? p.retryUntilTs

@@ -40,3 +40,8 @@ export function cancelPendingBuysForMint(
   });
   return removed;
 }
+
+/** Leader sold (partial or full) since we queued the buy. */
+export function leaderHoldingsShrunkSinceSignal(signalRaw: bigint, ledgerNow: bigint): boolean {
+  return signalRaw > 0n && ledgerNow < signalRaw;
+}

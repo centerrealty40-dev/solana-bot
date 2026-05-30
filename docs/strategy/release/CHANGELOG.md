@@ -8,6 +8,27 @@
 
 ---
 
+---
+
+## [1.11.288] — 2026-05-30
+
+### Feat: copy-trader — stop buy retries when leader starts exiting
+
+**Контекст:** pending entry/add продолжали retry после того, как лидер уже начал фиксировать прибыль или убыток (частичная продажа). Покупка «в хвост» выхода лидера нежелательна.
+
+| Поведение | Было | Стало |
+|-----------|------|-------|
+| Лидер продал ≥ min sell fraction | pending entry отменялся только при **полном** выходе без нашей позиции | **entry + add** снимаются с очереди (`leader_started_exit`) |
+| Retry loop | до gate pass / expiry | + проверка `leaderHoldingsRawAtSignal` vs ledger — если баланс лидера **уменьшился**, buy/add **отменяется** |
+
+**Код:** `src/copytrader/main.ts`, `pending-buy-retry.ts`, `state.ts`.
+
+**Git-тег:** `sa-alpha-1.11.288`
+
+**Откат:** `git checkout sa-alpha-1.11.287 -- src/copytrader/ docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `npm ci`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.287] — 2026-05-30
 
 ### Feat: copy-trader — retry pending buys until gates pass

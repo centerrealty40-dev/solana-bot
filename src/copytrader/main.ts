@@ -12,6 +12,7 @@ import {
   leaderPreBalanceRaw,
 } from './leader-ledger.js';
 import {
+  absRawAmount,
   isFullCloseFraction,
   leaderAddFraction,
   leaderSellFraction,
@@ -24,6 +25,7 @@ import {
   cancelPendingBuysForMint,
   findPendingBuy,
   isPendingBuyExpired,
+  leaderHoldingsShrunkSinceSignal,
   removePendingBuyById,
   shouldLogBuyDefer,
   computeRetryUntilTs,
@@ -161,6 +163,7 @@ async function onLeaderBuy(
       kind: 'add',
       sizeUsd: ourAddUsd,
       leaderAddFraction: addFrac,
+      preLeaderRaw,
       swap,
       row,
     });
@@ -193,6 +196,7 @@ async function onLeaderBuy(
     symbol,
     kind: 'entry',
     sizeUsd: cfg.positionUsd,
+    preLeaderRaw,
     swap,
     row,
   });
@@ -207,12 +211,14 @@ async function schedulePendingBuy(
     kind: 'entry' | 'add';
     sizeUsd: number;
     leaderAddFraction?: number;
+    preLeaderRaw: bigint;
     swap: SwapInsert;
     row: SignatureRow;
   },
 ): Promise<void> {
-  const { mint, symbol, kind, sizeUsd, leaderAddFraction, swap, row } = args;
+  const { mint, symbol, kind, sizeUsd, leaderAddFraction, preLeaderRaw, swap, row } = args;
   const dueTs = Date.now() + cfg.buyDelayMs;
+  const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
     id: newId('pb'),
     mint,
@@ -225,6 +231,7 @@ async function schedulePendingBuy(
     leaderBuyUsd: swap.amountUsd,
     leaderBuyTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
     dueTs,
+    leaderHoldingsRawAtSignal,
     retryUntilTs: computeRetryUntilTs(dueTs, cfg.buyRetryWindowMs),
   };
   state.pendingBuys.push(pending);
@@ -276,22 +283,6 @@ async function onLeaderSell(
   const pos = state.positions[mint];
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
 
-  if (!pos) {
-    if (isFullCloseFraction(sellFrac)) {
-      const cancelled = cancelPendingBuysForMint(state, mint, 'entry');
-      for (const c of cancelled) {
-        appendCopyEvent(cfg, {
-          kind: 'buy_cancelled',
-          reason: 'leader_full_exit',
-          mint,
-          symbol: c.symbol,
-          leaderSignature: c.leaderSignature,
-        });
-      }
-    }
-    return;
-  }
-
   if (sellFrac < cfg.minProportionalSellFraction) {
     appendCopyEvent(cfg, {
       kind: 'leader_sell_ignored',
@@ -302,6 +293,20 @@ async function onLeaderSell(
     });
     return;
   }
+
+  const cancelledBuys = cancelPendingBuysForMint(state, mint, 'any');
+  for (const c of cancelledBuys) {
+    appendCopyEvent(cfg, {
+      kind: c.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+      reason: 'leader_started_exit',
+      mint,
+      symbol: c.symbol,
+      leaderSignature: c.leaderSignature,
+      leaderSellFraction: sellFrac,
+    });
+  }
+
+  if (!pos) return;
 
   const delayMs = randomSellDelayMs(cfg);
   const pending: PendingSell = {
@@ -394,6 +399,24 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'proportional_add_cap', mint: pending.mint });
       continue;
+    }
+
+    if (pending.leaderHoldingsRawAtSignal) {
+      const signalRaw = BigInt(pending.leaderHoldingsRawAtSignal);
+      const ledgerNow = leaderPreBalanceRaw(state, pending.mint);
+      if (leaderHoldingsShrunkSinceSignal(signalRaw, ledgerNow)) {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+          reason: 'leader_started_exit',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          leaderHoldingsRawAtSignal: pending.leaderHoldingsRawAtSignal,
+          leaderHoldingsRawNow: ledgerNow.toString(),
+        });
+        continue;
+      }
     }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
