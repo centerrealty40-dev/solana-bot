@@ -64,8 +64,10 @@ const PM2_APPS = [
         STORE_PATH: path.join(root, 'data/paper2/organizer-paper.jsonl'),
         PAPER2_DIR: path.join(root, 'data/paper2'),
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
-        DASHBOARD_LIVE_OSCAR_RISKY_JSONL: path.join(root, 'data/live/pt1-oscar-live-risky.jsonl'),
-        /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс risky-кошелька (RPC как у основного Wallet). */
+        DASHBOARD_COPY_TRADER_JSONL: path.join(root, 'data/copytrader/journal.jsonl'),
+        DASHBOARD_COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
+        DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),

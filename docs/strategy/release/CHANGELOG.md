@@ -10,6 +10,26 @@
 
 ---
 
+## [1.11.289] — 2026-05-30
+
+### Feat: papertrader2 — Copy Trader panel (replaces Live Oscar Risky)
+
+**Контекст:** на `/papertrader2` вторая плитка показывала устаревший Live Oscar Risky; execution wallet теперь занят PM2 `copy-trader`.
+
+| Поведение | Было | Стало |
+|-----------|------|-------|
+| Плитка 2 | Live Oscar Risky (старый jsonl) | **Copy Trader** — `data/copytrader/journal.jsonl` |
+| Метрики | Oscar exits / reconcile | **buys OK/fail**, **sells OK/fail**, pending queue, timeline с Solscan |
+| Header wallet | Wallet Risky | **Copy Trader** (тот же `HoFKB…`) |
+
+**Код:** `scripts-tmp/copytrader-dashboard.ts`, `dashboard-server.ts`, `dashboard-paper2.html`, `ecosystem.config.cjs`.
+
+**Git-тег:** `sa-alpha-1.11.289`
+
+**Откат:** `git checkout sa-alpha-1.11.288 -- scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html scripts-tmp/copytrader-dashboard.ts ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+---
+
 ## [1.11.288] — 2026-05-30
 
 ### Feat: copy-trader — stop buy retries when leader starts exiting
