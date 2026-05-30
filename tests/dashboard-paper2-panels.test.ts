@@ -50,11 +50,11 @@ function row(id: string, total: number): DashboardPaper2StrategyRow {
 }
 
 describe('mergeDashboardStrategyPanels', () => {
-  it('orders Live → Live Risky → Paper Risky → V2.1 → V2.2 regardless of input order', () => {
+  it('orders Live → Copy Trader → Paper Risky → V2.1 → V2.2 regardless of input order', () => {
     const merged = mergeDashboardStrategyPanels([
       row('paper-oscar-v22', 99),
       row('live-oscar', 50),
-      row('live-oscar-risky', 11),
+      row('copy-trader', 11),
       row('paper-oscar-risky', 7),
       row('paper-oscar-v21', 42),
     ]);

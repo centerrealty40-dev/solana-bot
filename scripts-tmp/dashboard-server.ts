@@ -41,6 +41,7 @@ import {
   type DexSnapshotSource,
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
+import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 
 /** Tail replay for huge live journals (align with LIVE_REPLAY_MAX_FILE_BYTES default 200MB). */
 const DASHBOARD_JSONL_TAIL_BYTES = Number(
@@ -86,10 +87,15 @@ const PAPER2_DIR = process.env.PAPER2_DIR ?? '/opt/solana-alpha/data/paper2';
 const DASHBOARD_LIVE_OSCAR_JSONL =
   process.env.DASHBOARD_LIVE_OSCAR_JSONL?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'live', 'pt1-oscar-live.jsonl');
-/** Live Oscar Risky — второй live-журнал (`live-oscar-risky`); панель сразу после Live Oscar. */
-const DASHBOARD_LIVE_OSCAR_RISKY_JSONL =
-  process.env.DASHBOARD_LIVE_OSCAR_RISKY_JSONL?.trim() ||
-  path.resolve(PAPER2_DIR, '..', 'live', 'pt1-oscar-live-risky.jsonl');
+/** Copy-trader journal — панель вместо Live Oscar Risky на `/papertrader2`. */
+const DASHBOARD_COPY_TRADER_JSONL =
+  process.env.DASHBOARD_COPY_TRADER_JSONL?.trim() ||
+  path.resolve(PAPER2_DIR, '..', 'copytrader', 'journal.jsonl');
+const DASHBOARD_COPY_TRADER_STATE_PATH =
+  process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
+  path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+/** @deprecated alias — тот же execution wallet (Copy Trader). */
+const DASHBOARD_LIVE_OSCAR_RISKY_JSONL = DASHBOARD_COPY_TRADER_JSONL;
 /** Paper Oscar IDEALIZED V2.1 — отдельный jsonl; панель рядом с live на `/papertrader2`. */
 const DASHBOARD_PAPER_OSCAR_V21_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_V21_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-v21.jsonl');
@@ -110,7 +116,7 @@ const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
 function dashboardOscarPanelJsonlFiles(): string[] {
   const out: string[] = [];
   if (fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_JSONL);
-  if (fs.existsSync(DASHBOARD_LIVE_OSCAR_RISKY_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_RISKY_JSONL);
+  if (fs.existsSync(DASHBOARD_COPY_TRADER_JSONL)) out.push(DASHBOARD_COPY_TRADER_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_RISKY_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V22_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V22_JSONL);
@@ -1265,10 +1271,10 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки Oscar на `/papertrader2`: live → live risky → бумажный Risky → IDEALIZED v2.1 → v2.2. */
+/** Плитки Oscar на `/papertrader2`: live → copy-trader → бумажный Risky → IDEALIZED v2.1 → v2.2. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
-  'live-oscar-risky',
+  'copy-trader',
   'paper-oscar-risky',
   'paper-oscar-v21',
   'paper-oscar-v22',
@@ -1324,6 +1330,8 @@ export type DashboardPaper2StrategyRow = {
     txAnchorMissing?: number;
     txAnchorRpcErrors?: number;
   };
+  /** Copy-trader execution counters + pending queue (panel 2). */
+  copyTrader?: CopyTraderDashboardStats;
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -3223,9 +3231,11 @@ function pctChangeVsPast(current: number | null, past: number | null): number | 
 
 let cryptoTickerCache: { at: number; payload: CryptoTickerApiPayload } | null = null;
 
-/** Second header wallet (Live Oscar Risky) — same RPC/shape as main `Wallet` tile. */
+/** Second header wallet (Copy Trader / former Live Oscar Risky) — same RPC/shape as main `Wallet` tile. */
 const DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY = (
-  process.env.DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY || ''
+  process.env.DASHBOARD_COPY_TRADER_WALLET_PUBKEY ||
+  process.env.DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY ||
+  ''
 ).trim();
 
 function emptyWalletRow(id: string, symbol: string): CryptoTickerAssetRow {
@@ -3297,7 +3307,7 @@ async function fetchWalletSolTickerRows(signal: AbortSignal): Promise<CryptoTick
   if (!riskyPk) return [main];
   const risky = await fetchWalletSolTickerRowForPk(signal, riskyPk, {
     id: 'wallet_sol_risky',
-    symbol: 'Wallet Risky',
+    symbol: 'Copy Trader',
   });
   return [main, risky];
 }
@@ -3427,7 +3437,7 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
 async function buildPaper2StrategyRowFromLoad(
   fp: string,
   sid: string,
-  loaded: Paper2FileLoad,
+  loaded: Paper2FileLoad & { copyTrader?: CopyTraderDashboardStats },
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
 ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
   const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
@@ -3797,6 +3807,7 @@ async function buildPaper2StrategyRowFromLoad(
     priceVerify,
     liqDrain,
     ...(hb?.reconcileExtras ?? {}),
+    ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
   };
 }
 
@@ -3836,22 +3847,15 @@ async function buildPaper2ApiPayload() {
     hbClosed,
     reconcileExtras: liveExtras,
   });
-  const llRisky = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_RISKY_JSONL);
-  const {
-    hbOpen: hbOpenR,
-    hbClosed: hbClosedR,
-    liveExtras: liveExtrasR,
-    ...liveLoadedRisky
-  } = llRisky;
-  const liveRiskyRow = await buildPaper2StrategyRowFromLoad(
-    DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
-    'live-oscar-risky',
-    liveLoadedRisky,
-    {
-      hbOpen: hbOpenR,
-      hbClosed: hbClosedR,
-      reconcileExtras: liveExtrasR,
-    },
+  const ctLoad = loadCopyTraderJsonlForDashboard(
+    DASHBOARD_COPY_TRADER_JSONL,
+    DASHBOARD_COPY_TRADER_STATE_PATH,
+  );
+  const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
+  const copyTraderRow = await buildPaper2StrategyRowFromLoad(
+    DASHBOARD_COPY_TRADER_JSONL,
+    'copy-trader',
+    { ...copyLoaded, copyTrader: copyTraderStats },
   );
   const paperRiskyLoad = loadPaper2File(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
   const paperRiskyRow = await buildPaper2StrategyRowFromLoad(
@@ -3873,7 +3877,7 @@ async function buildPaper2ApiPayload() {
   );
   const merged = mergeDashboardStrategyPanels([
     liveRow,
-    liveRiskyRow,
+    copyTraderRow,
     paperRiskyRow,
     paperV21Row,
     paperV22Row,

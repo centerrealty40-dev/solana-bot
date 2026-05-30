@@ -43,7 +43,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live Oscar + Live Oscar Risky + Paper Risky + V2.1 + V2.2).
+      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live Oscar + Copy Trader + Paper Risky + V2.1 + V2.2).
     */
     .dash-desktop-summary-cols {
       display: grid;
@@ -230,18 +230,21 @@
           </div>
 
           <div class="mt-4 text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-1 items-center">
-            <span class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
-            <span class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
+            <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
+            <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
             <span class="text-slate-400 ml-1" x-show="s.priceVerify"
                   x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
                           + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
             <span class="text-slate-400 ml-1"
                   x-text="'liq_drain ' + (s.liqDrain?.exits ?? 0) + ' exits · '
                           + (s.liqDrain?.avgDropPct != null ? s.liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
-            <span x-show="(s.strategyId === 'live-oscar' || s.strategyId === 'live-oscar-risky') && s.liveReconcileBoot?.status" class="pill shrink-0"
+            <span x-show="(s.strategyId === 'live-oscar') && s.liveReconcileBoot?.status" class="pill shrink-0"
                   :class="s.liveReconcileBoot?.status === 'ok' ? 'pill-ok' : (s.liveReconcileBoot?.status === 'skipped' ? 'pill-info' : 'pill-warn')"
                   x-text="'reconcile boot: ' + (s.liveReconcileBoot?.status || '')"></span>
-            <span x-show="(s.strategyId === 'live-oscar' || s.strategyId === 'live-oscar-risky') && s.liveReconcileReport && (s.liveReconcileReport.txAnchorMissing || s.liveReconcileReport.txAnchorRpcErrors)"
+            <span x-show="(s.strategyId === 'live-oscar') && s.liveReconcileReport && (s.liveReconcileReport.txAnchorMissing || s.liveReconcileReport.txAnchorRpcErrors)"
                   class="pill pill-warn shrink-0"
                   x-text="'tx anchor Δ ' + (s.liveReconcileReport?.txAnchorMissing || 0) + ' miss · ' + (s.liveReconcileReport?.txAnchorRpcErrors || 0) + ' rpc'"></span>
           </div>
@@ -273,6 +276,25 @@
           <span class="text-slate-400 ml-2"
                 x-text="'liq_drain ' + (selectedRow()?.liqDrain?.exits ?? 0) + ' exits · '
                         + (selectedRow()?.liqDrain?.avgDropPct != null ? selectedRow().liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
+        </div>
+      </div>
+
+      <div x-show="selectedRow()?.copyTrader" class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mono">
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Buys OK / fail</div>
+          <div class="stat-num mt-1 text-emerald-400" x-text="(selectedRow()?.copyTrader?.buysOk || 0) + ' / ' + (selectedRow()?.copyTrader?.buysFail || 0)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Sells OK / fail</div>
+          <div class="stat-num mt-1 text-sky-300" x-text="(selectedRow()?.copyTrader?.sellsOk || 0) + ' / ' + (selectedRow()?.copyTrader?.sellsFail || 0)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Pending queue</div>
+          <div class="stat-num mt-1 text-slate-100" x-text="(selectedRow()?.copyTrader?.pendingBuys || 0) + ' buy · ' + (selectedRow()?.copyTrader?.pendingSells || 0) + ' sell'"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Fills 1h</div>
+          <div class="stat-num mt-1 text-violet-300" x-text="(selectedRow()?.copyTrader?.ourFills1h || 0) + ' / ' + (selectedRow()?.copyTrader?.leaderSignals1h || 0) + ' signals'"></div>
         </div>
       </div>
 
@@ -477,7 +499,7 @@
      */
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
-      'live-oscar-risky',
+      'copy-trader',
       'paper-oscar-risky',
       'paper-oscar-v21',
       'paper-oscar-v22',
@@ -563,13 +585,13 @@
         details:
           '**Плитка 1** · PM2 **`live-oscar`** · SSOT: `ecosystem.config.cjs`.\n\n**Вход (prod v2)**\n• Сплит: **$400** по сигналу + **$400** через 10 с (коридор цены к 1-й ноге).\n• **DCA** `−10% / −20%` от первой ноги, по **$200** каждая → max **$1200** (`LIVE_MAX_POSITION_USD`).\n• POST: liq **≥$300k**, vol5m **≥$20k**, vol1h **≥$36k**, holders **≥3000**, dip **−20%** от high (2h/6h/12h OR).\n• Signal kill **−25%** от цены сигнала.\n• Timed loss (salvage24 / h48 без TP) → **24h block** по mint.\n\n**Выход hybrid (`variant_a_v2`)**\n• TP grid: каждые **+5%** к avg → **10%** остатка (re-arm после отката ≤+2.5% если взято ≥+10%).\n• После **DCA** — сброс TP-ступеней на новом avg.\n• Trail: partial **−5%** от хая, **20%** остатка за шаг; arm @ **+10%**.\n• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n• **In-flight** v3 scratch / v1 / wave B — без смены политики.\n\n**Журнал:** `data/live/pt1-oscar-live.jsonl`.',
       },
-      'live-oscar-risky': {
-        label: 'Live Oscar Risky',
+      'copy-trader': {
+        label: 'Copy Trader',
         tag: 'live',
         oneLiner:
-          'Реальные сделки (**тот же рантайм**, что **Live Oscar**: Jupiter + отдельный кошелёк), но без whitelist и с мягкими входными гейтами. Нотионал **$200**: **$50 по сигналу**, **$70 на −6%**, **$80 на −12%** от сигнала; доборы только 1 час, правило TP-сетки как у основного Live Oscar (до двух ступеней TP_LADDER). TP-сетка **+3% / 10% остатка**, signal kill-stop **−18%**. POST ≥6 ч, liq ≥$100k, vol5m ≥$3k, vol1h ≥$20k, holders ≥1000; верхние cap выключены.',
+          'Stealth mirror лидера: entry $50, add/sell пропорционально, delay 2 min + retry 2 h. Кошелёк HoFKB… (бывший Live Oscar Risky).',
         details:
-          '**Плитка 2** — профиль *Live Oscar Risky*; **живой PM2-процесс `live-oscar-risky` снят** из `ecosystem.config.cjs` (не поднимается деплоем). Исторически: тот же `src/scripts/live-oscar.ts`, отдельный кошелёк.\n\n**Журнал:** `data/live/pt1-oscar-live-risky.jsonl` (`LIVE_TRADES_PATH`).\n**Кошелёк:** `data/live/live-oscar-risky.keypair.json`.\n\n**Вход после сигнала**\n• `PAPER_ENTRY_RECHECK_DELAY_MS=0`: 10-минутный recheck выключен, первая нога покупается сразу по сигналу.\n• Telegram-кандидаты для risky больше не нужны: нет состояния «ждём recheck перед покупкой».\n• `PAPER_LIVE_STAGED_ENTRY_ENABLED=1`: сигнал фиксирует якорную цену.\n\n**Размер позиции и staged-доборы**\n• `PAPER_POSITION_USD=200`, `LIVE_MAX_POSITION_USD=200`.\n• Первая нога: `PAPER_ENTRY_FIRST_LEG_FRACTION=0.25` → **$50 по сигналу**.\n• Вторая нога: **$70** на **−6%** от цены сигнала.\n• Третья нога: **$80** на **−12%** от цены сигнала.\n• `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=3600000`: доборы доступны только первый час; после **двух** ступеней TP-сетки (`TP_LADDER`) дальнейшие доборы отключаются (как у основного Live Oscar).\n• Старый 5-секундный scale-in выключен (`LIVE_ENTRY_SCALE_IN_ENABLED=0`).\n\n**DCA и kill-stop**\n• `PAPER_DCA_LEVELS` пустой: staged-доборы −6%/−12% — единственное усреднение.\n• `PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT=18`: полный выход при **−18% от цены первоначального сигнала**.\n• `PAPER_DCA_KILLSTOP=0`: обычный kill к средней для risky-staged не используется.\n\n**TP / trail / timeout**\n• `PAPER_TP_REGIME_ENABLED=0`.\n• TP-сетка: шаг **+3%** к средней, продажа **10% остатка** за ступень (`PAPER_TP_GRID_STEP_PNL=0.03`, `PAPER_TP_GRID_SELL_FRACTION=0.10`; режим B — такие же `PAPER_LIVE_EXIT_MODE_B_TP_GRID_*`).\n• Trail: `ladder_retrace` — закрываемся при откате к предыдущей ступени TP.\n• Timeout: **8 ч** до staged-добора, **4 ч** в режиме B после добора.\n\n**Discovery-gates**\n• POST only; min age **6 ч** (`PAPER_POST_MIN_AGE_MIN=360`).\n• Ликвидность **≥$100k**, vol5m **≥$3k**, vol1h guard **≥$20k**, holders **≥1000**.\n• Верхние потолки по **liq / vol / holders** выключены (`PAPER_POST_MAX_LIQ_USD=0`, `PAPER_POST_MAX_VOL_5M_USD=0`, `PAPER_VOL_1H_MAX_USD=0`, `PAPER_GLOBAL_MAX_HOLDER_COUNT=0`).\n• Mint allowlist выключен; blacklist/denylist остаются включены как защитный слой.',
+          'PM2 copy-trader · journal data/copytrader/journal.jsonl · state data/copytrader/state.json · лидер data/copytrader/target-wallet.txt. Дашборд: buys/sells OK vs fail, pending queue, timeline с Solscan.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
