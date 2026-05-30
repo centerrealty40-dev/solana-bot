@@ -21,6 +21,14 @@ import {
 } from './proportional.js';
 import { fetchParsedTransaction, fetchWalletMintBalanceRaw, fetchWalletSignatures, type SignatureRow } from './rpc.js';
 import {
+  cancelPendingBuysForMint,
+  findPendingBuy,
+  isPendingBuyExpired,
+  removePendingBuyById,
+  shouldLogBuyDefer,
+  computeRetryUntilTs,
+} from './pending-buy-retry.js';
+import {
   canScheduleProportionalAdd,
   gcSeenSignatures,
   hasPendingBuyForMint,
@@ -217,6 +225,7 @@ async function schedulePendingBuy(
     leaderBuyUsd: swap.amountUsd,
     leaderBuyTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
     dueTs,
+    retryUntilTs: computeRetryUntilTs(dueTs, cfg.buyRetryWindowMs),
   };
   state.pendingBuys.push(pending);
 
@@ -230,6 +239,7 @@ async function schedulePendingBuy(
     leaderAddFraction: leaderAddFraction ?? null,
     buyDueTs: dueTs,
     buyDelayMs: cfg.buyDelayMs,
+    retryUntilTs: pending.retryUntilTs,
     sizeUsd,
   });
 
@@ -248,8 +258,8 @@ async function schedulePendingBuy(
       priceUsd: swap.priceUsd,
       detail:
         kind === 'add'
-          ? `Add $${sizeUsd}${pct} queued ~${delayMin} min if price holds`
-          : `Buy $${sizeUsd} queued ~${delayMin} min if price holds`,
+          ? `Add $${sizeUsd}${pct} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`
+          : `Buy $${sizeUsd} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`,
     }),
   );
 }
@@ -264,9 +274,24 @@ async function onLeaderSell(
 ): Promise<void> {
   const mint = swap.baseMint;
   const pos = state.positions[mint];
-  if (!pos) return;
-
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
+
+  if (!pos) {
+    if (isFullCloseFraction(sellFrac)) {
+      const cancelled = cancelPendingBuysForMint(state, mint, 'entry');
+      for (const c of cancelled) {
+        appendCopyEvent(cfg, {
+          kind: 'buy_cancelled',
+          reason: 'leader_full_exit',
+          mint,
+          symbol: c.symbol,
+          leaderSignature: c.leaderSignature,
+        });
+      }
+    }
+    return;
+  }
+
   if (sellFrac < cfg.minProportionalSellFraction) {
     appendCopyEvent(cfg, {
       kind: 'leader_sell_ignored',
@@ -322,23 +347,52 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
   if (due.length === 0) return;
 
   for (const pending of due) {
-    state.pendingBuys = state.pendingBuys.filter((p) => p.id !== pending.id);
+    if (isPendingBuyExpired(pending, now)) {
+      removePendingBuyById(state, pending.id);
+      appendCopyEvent(cfg, {
+        kind: pending.kind === 'add' ? 'add_expired' : 'buy_expired',
+        mint: pending.mint,
+        symbol: pending.symbol,
+        leaderSignature: pending.leaderSignature,
+        retryUntilTs: pending.retryUntilTs,
+      });
+      continue;
+    }
+
     const existing = state.positions[pending.mint];
 
     if (pending.kind === 'entry') {
-      if (existing) continue;
+      if (existing) {
+        removePendingBuyById(state, pending.id);
+        continue;
+      }
       if (openPositionsCount(state) >= cfg.maxOpenPositions) {
-        appendCopyEvent(cfg, { kind: 'buy_skipped', reason: 'max_open_positions', mint: pending.mint });
+        if (noteBuyDefer(state, pending.id, now, cfg)) {
+          appendCopyEvent(cfg, {
+            kind: 'buy_deferred',
+            reason: 'max_open_positions',
+            mint: pending.mint,
+            retryUntilTs: pending.retryUntilTs,
+          });
+        }
         continue;
       }
     } else if (!existing) {
-      appendCopyEvent(cfg, { kind: 'buy_skipped', reason: 'no_open_position_for_add', mint: pending.mint });
+      removePendingBuyById(state, pending.id);
+      appendCopyEvent(cfg, {
+        kind: 'add_cancelled',
+        reason: 'no_open_position_for_add',
+        mint: pending.mint,
+        leaderSignature: pending.leaderSignature,
+      });
       continue;
     } else if (existing.addCount >= cfg.maxAddsPerMint) {
-      appendCopyEvent(cfg, { kind: 'buy_skipped', reason: 'max_adds', mint: pending.mint });
+      removePendingBuyById(state, pending.id);
+      appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'max_adds', mint: pending.mint });
       continue;
     } else if (!canScheduleProportionalAdd(cfg, existing, pending.sizeUsd)) {
-      appendCopyEvent(cfg, { kind: 'buy_skipped', reason: 'proportional_add_cap', mint: pending.mint });
+      removePendingBuyById(state, pending.id);
+      appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'proportional_add_cap', mint: pending.mint });
       continue;
     }
 
@@ -354,26 +408,32 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     });
 
     if (!evalResult.pass) {
-      appendCopyEvent(cfg, {
-        kind: pending.kind === 'add' ? 'add_skipped' : 'buy_skipped',
-        mint: pending.mint,
-        symbol: pending.symbol,
-        leaderSignature: pending.leaderSignature,
-        leaderPriceUsd: pending.leaderPriceUsd,
-        currentPriceUsd: currentPrice,
-        eval: evalResult,
-      });
-      await notifyCopyTraderTelegram(
-        cfg,
-        fmtCopyAlert({
-          action: 'skip',
+      const deferNote = noteBuyDefer(state, pending.id, now, cfg);
+      if (deferNote) {
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
           mint: pending.mint,
           symbol: pending.symbol,
-          wallet: cfg.targetWallet,
-          priceUsd: currentPrice,
-          detail: evalResult.reasons.join(', '),
-        }),
-      );
+          leaderSignature: pending.leaderSignature,
+          leaderPriceUsd: pending.leaderPriceUsd,
+          currentPriceUsd: currentPrice,
+          eval: evalResult,
+          retryUntilTs: pending.retryUntilTs,
+        });
+        if (deferNote === 'first') {
+          await notifyCopyTraderTelegram(
+            cfg,
+            fmtCopyAlert({
+              action: 'skip',
+              mint: pending.mint,
+              symbol: pending.symbol,
+              wallet: cfg.targetWallet,
+              priceUsd: currentPrice,
+              detail: `${evalResult.reasons.join(', ')} · retrying until gate pass`,
+            }),
+          );
+        }
+      }
       continue;
     }
 
@@ -387,7 +447,21 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       evalResult,
       leaderSignature: pending.leaderSignature,
     });
-    if (!exec.ok) continue;
+    if (!exec.ok) {
+      if (noteBuyDefer(state, pending.id, now, cfg)) {
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          reason: exec.reason ?? 'execution_failed',
+          retryUntilTs: pending.retryUntilTs,
+        });
+      }
+      continue;
+    }
+
+    removePendingBuyById(state, pending.id);
 
     const tokenRaw =
       exec.tokenRaw ??
@@ -442,6 +516,15 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     );
     await sleep(150);
   }
+}
+
+function noteBuyDefer(state: CopyTraderState, pendingId: string, nowMs: number, cfg: CopyTraderConfig): 'first' | 'repeat' | null {
+  const row = findPendingBuy(state, pendingId);
+  if (!row) return null;
+  if (!shouldLogBuyDefer(row, nowMs, cfg.buyRetryDeferLogMs)) return null;
+  const first = !row.lastDeferLogTs;
+  row.lastDeferLogTs = nowMs;
+  return first ? 'first' : 'repeat';
 }
 
 export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
@@ -519,6 +602,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     addUsd: cfg.addPositionUsd,
     maxPositionUsd: cfg.maxPositionUsd,
     buyDelayMin: Math.round(cfg.buyDelayMs / 60_000),
+    buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
     isolated: true,
   });
