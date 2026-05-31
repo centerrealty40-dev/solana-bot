@@ -10,6 +10,22 @@
 
 ---
 
+## [1.11.293] — 2026-05-28
+
+### Tune: Live Oscar priority discovery BS 0.75
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `PAPER_PRIORITY_DISCOVERY_MIN_BS` | 0.85 | **0.75** |
+
+`PAPER_POST_MIN_BS` (0.98) и TP-grid (Variant A v2) **без изменений**.
+
+**Git-тег:** `sa-alpha-1.11.293`
+
+**Откат:** `git checkout sa-alpha-1.11.292 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.292] — 2026-05-28
 
 ### Tune: copy-trader sizing $100 entry / $30 add cap
