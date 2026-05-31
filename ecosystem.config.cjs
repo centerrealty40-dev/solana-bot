@@ -24,10 +24,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * 1.11.269 Variant A: entry split 400+400 USD = 800; DCA -10%/-20% x 200 USD; max 1200 USD per mint.
+ * Variant A: entry split $750+$750 = $1500; DCA −10%/−20% × $400; max $2300 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '800';
-const LIVE_OSCAR_MAX_POSITION_USD = '1200';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1500';
+const LIVE_OSCAR_MAX_POSITION_USD = '2300';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -327,19 +327,19 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry 1.11.266: сплит входа **$400+$400** (10 с, +3%/−10% к 1-й ноге); усреднения −7%/−14% выкл.
+         * Staged-entry: сплит **$750+$750** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $400.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '750',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '750',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
@@ -526,10 +526,10 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Variant A (1.11.269): DCA −10% / −20% от первой ноги, по $200 (0.25 × $800 base).
-         * Max invested $800 + $200 + $200 = $1200 (`LIVE_MAX_POSITION_USD`).
+         * Variant A: DCA −10% / −20% от первой ноги, по $400 (~0.266667 × $1500 `PAPER_POSITION_USD`).
+         * Max invested $1500 + $400 + $400 = $2300 (`LIVE_MAX_POSITION_USD`).
          */
-        PAPER_DCA_LEVELS: '-10:0.25,-20:0.25',
+        PAPER_DCA_LEVELS: '-10:0.266667,-20:0.266667',
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
@@ -1195,9 +1195,9 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '50',
-        COPY_TRADER_ADD_POSITION_USD: '15',
-        COPY_TRADER_MAX_POSITION_USD: '95',
+        COPY_TRADER_POSITION_USD: '100',
+        COPY_TRADER_ADD_POSITION_USD: '30',
+        COPY_TRADER_MAX_POSITION_USD: '190',
         COPY_TRADER_MAX_ADDS_PER_MINT: '3',
         COPY_TRADER_BUY_DELAY_MS: '120000',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',

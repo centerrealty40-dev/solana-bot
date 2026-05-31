@@ -142,7 +142,7 @@ async function onLeaderBuy(
     const ourAddUsd = ourAddUsdFromLeaderAdd({
       ourSizeUsd: existing.sizeUsd,
       addFraction: addFrac,
-      maxRoomUsd: positionRoomUsd(cfg, existing),
+      maxRoomUsd: Math.min(positionRoomUsd(cfg, existing), cfg.addPositionUsd),
       minAddUsd: cfg.minProportionalAddUsd,
     });
     if (!canScheduleProportionalAdd(cfg, existing, ourAddUsd)) {
