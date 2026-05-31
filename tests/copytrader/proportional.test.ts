@@ -52,6 +52,17 @@ describe('ourAddUsdFromLeaderAdd', () => {
     ).toBe(10);
   });
 
+  it('caps proportional add at configured add leg (e.g. $30 on $100 entry)', () => {
+    expect(
+      ourAddUsdFromLeaderAdd({
+        ourSizeUsd: 100,
+        addFraction: 0.5,
+        maxRoomUsd: 30,
+        minAddUsd: 3,
+      }),
+    ).toBe(30);
+  });
+
   it('skips tiny adds below minimum', () => {
     expect(
       ourAddUsdFromLeaderAdd({

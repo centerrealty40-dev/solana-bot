@@ -10,6 +10,24 @@
 
 ---
 
+## [1.11.292] — 2026-05-28
+
+### Tune: copy-trader sizing $100 entry / $30 add cap
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `COPY_TRADER_POSITION_USD` | 50 | **100** |
+| `COPY_TRADER_ADD_POSITION_USD` | 15 (только лог) | **30** — потолок одного усреднения |
+| `COPY_TRADER_MAX_POSITION_USD` | 95 | **190** (100 + 3×30) |
+
+Пропорциональный add лидера ограничен `min(room, ADD_POSITION_USD)`.
+
+**Git-тег:** `sa-alpha-1.11.292`
+
+**Откат:** `git checkout sa-alpha-1.11.291 -- ecosystem.config.cjs src/copytrader/config.ts src/copytrader/main.ts .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.291] — 2026-05-28
 
 ### Fix: Copy Trader dashboard — stale cycles vs open positions
