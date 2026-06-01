@@ -12,6 +12,25 @@
 
 ---
 
+## [1.11.296] — 2026-06-01
+
+### Tune: copy-trader $300 entry, proportional mirror for adds/sells
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `COPY_TRADER_POSITION_USD` | 100 | **300** |
+| Adds | cap $30/add | **пропорционально лидеру** (доля стека × наш размер, до `MAX`) |
+| `COPY_TRADER_MAX_POSITION_USD` | 190 | **3000** |
+| `COPY_TRADER_MIN_PROPORTIONAL_ADD_USD` | 3 | **9** |
+
+Продажи по-прежнему зеркалят долю лидера; первый вход фикс $300.
+
+**Git-тег:** `sa-alpha-1.11.296`
+
+**Откат:** `git checkout sa-alpha-1.11.295 -- ecosystem.config.cjs src/copytrader/main.ts src/copytrader/config.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.295] — 2026-06-01
 
 ### Fix: Live Oscar v2 harvest — только когорта +5% без +10%, TP grid не блокируется
