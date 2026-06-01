@@ -759,8 +759,8 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH: '1',
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_GAP_PCT: '4',
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK: '15',
-        /** 1.11.245: priority tier BS 0.85 (global POST_MIN_BS остаётся 0.98). */
-        PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.85',
+        /** Priority tier BS 0.75 (global POST_MIN_BS остаётся 0.98). */
+        PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.75',
         /** 1.11.274 — Volume Leader tier: top-N by 24h peak vol_1h, canonical pool = max volume. */
         PAPER_VOLUME_LEADER_ENABLED: '1',
         PAPER_VOLUME_LEADER_TOP_N: '50',

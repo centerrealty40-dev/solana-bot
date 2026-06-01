@@ -10,19 +10,37 @@
 
 ---
 
-## [1.11.293] — 2026-06-01
+---
+
+## [1.11.294] — 2026-06-01
 
 ### Fix: copy-trader poll RPC (Helius instead of broken QuickNode SSL)
 
-Copy-trader used `SA_RPC_HTTP_URL` (QuickNode) for leader wallet polling; on VPS QuickNode HTTPS fails with TLS alert → `getSignaturesForAddress` returned empty silently and journal froze for ~10h.
+Copy-trader used `SA_RPC_HTTP_URL` (QuickNode) for leader wallet polling; on VPS QuickNode HTTPS fails with TLS alert → `getSignaturesForAddress` returned empty silently and journal froze for ~10h while leader made new buys.
 
 - `loadCopyTraderConfig`: `COPY_TRADER_RPC_URL` → `liveOscarRpcHttpUrlFromEnv()` (Helius when `SOLANA_RPC_HELIUS_PREFER=1`) → `resolveSolanaRpcUrl()`.
 - Poll logs `[copy-trader] poll: getSignaturesForAddress failed` at most 1×/min when RPC errors (vs empty wallet).
 - PM2 `copy-trader`: `SOLANA_RPC_HELIUS_PREFER=1`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`.
 
-**Git-тег:** `sa-alpha-1.11.293`
+**Git-тег:** `sa-alpha-1.11.294`
 
 **Откат:** revert commit; `pm2 reload copy-trader --update-env`; or set `COPY_TRADER_RPC_URL` to a working endpoint.
+
+---
+
+## [1.11.293] — 2026-05-28
+
+### Tune: Live Oscar priority discovery BS 0.75
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `PAPER_PRIORITY_DISCOVERY_MIN_BS` | 0.85 | **0.75** |
+
+`PAPER_POST_MIN_BS` (0.98) и TP-grid (Variant A v2) **без изменений**.
+
+**Git-тег:** `sa-alpha-1.11.293`
+
+**Откат:** `git checkout sa-alpha-1.11.292 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
 
 ---
 
