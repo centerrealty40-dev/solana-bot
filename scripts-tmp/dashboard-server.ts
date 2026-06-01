@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { fetch } from 'undici';
 import postgres from 'postgres';
 import { jupiterJsonHeaders, jupiterPriceV3Url } from '../src/core/jupiter-http.js';
-import { lamportsFromGetBalanceResult, qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
+import { lamportsFromGetBalanceResult, qnCall, qnUsageSnapshot } from '../src/core/rpc/qn-client.js';
+import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../src/core/rpc/resolve-solana-rpc-url.js';
 import { buildPriorityFeeMonitorApiPayload } from '../src/papertrader/pricing/priority-fee.js';
 import {
   legTimelineLabelFromLeg,
@@ -3263,7 +3264,6 @@ async function fetchWalletSolTickerRowForPk(
   label: { id: string; symbol: string },
 ): Promise<CryptoTickerAssetRow> {
   const pk = pubkey.trim();
-  const rpc = (process.env.HOURLY_RPC_URL || process.env.SA_RPC_HTTP_URL || process.env.SA_RPC_URL || '').trim();
   const base: CryptoTickerAssetRow = {
     id: label.id,
     symbol: label.symbol,
@@ -3276,22 +3276,22 @@ async function fetchWalletSolTickerRowForPk(
     chg4hPct: null,
     chg12hPct: null,
   };
-  if (!pk || !rpc) return base;
+  const httpUrl =
+    liveOscarRpcHttpUrlFromEnv() ||
+    (process.env.HOURLY_RPC_URL || '').trim() ||
+    resolveSolanaRpcUrl() ||
+    undefined;
+  if (!pk || !httpUrl) return base;
   try {
-    const res = await fetch(rpc, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getBalance',
-        params: [pk, { commitment: 'confirmed' }],
-      }),
-      signal,
+    void signal;
+    const out = await qnCall<unknown>('getBalance', [pk, { commitment: 'confirmed' }], {
+      feature: 'sim',
+      timeoutMs: 12_000,
+      httpUrl,
+      creditsPerCall: 1,
     });
-    const j = (await res.json()) as { result?: unknown; error?: { message?: string } };
-    if (j.error) return { ...base, balanceSol: null };
-    const lamports = lamportsFromGetBalanceResult(j.result);
+    if (!out.ok) return base;
+    const lamports = lamportsFromGetBalanceResult(out.value);
     if (lamports == null) return base;
     const sol = Number(lamports) / 1e9;
     return { ...base, balanceSol: Number.isFinite(sol) ? sol : null };
