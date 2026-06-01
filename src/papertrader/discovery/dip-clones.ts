@@ -19,6 +19,11 @@ import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
 import { filterSnapshotTaggedByMintBlacklist, isMintBlacklisted } from './mint-blacklist-file.js';
 import {
+  appendMintScratchReentryGateReasons,
+  isMintScratchReentryAwaitingPriceDropForDiscovery,
+  isMintScratchReentryEntryReadyForDiscovery,
+} from '../../live/mint-scratch-reentry.js';
+import {
   fetchPolicyAPlusContextMap,
   evaluatePolicyAPlus,
   type PolicyAPlusFeatures,
@@ -98,8 +103,9 @@ export interface EvalDecision {
    *  - `dip_windows`     — классический dip-фильтр + recovery/localHigh/policyA+
    *  - `impulse_pg_snap` — bypass через PG-snap impulse confirm (`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`)
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
+   *  - `harvest_reentry` — после harvest exit: цена ≤ ref×(1−5%), dip-окна не требуются
    */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast';
+  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast' | 'harvest_reentry';
 }
 
 export interface DiscoveryTickResult {
@@ -216,6 +222,7 @@ export function appendPostExitReentryGateReasons(
   snapshotPriceUsd: number,
   out: string[],
 ): void {
+  appendMintScratchReentryGateReasons(mint, snapshotPriceUsd, out);
   if (isLiveReentryHybridGateEnabled(cfg)) {
     appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
     return;
@@ -587,7 +594,19 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let localHighVeto: LocalHighVetoResult | undefined;
     let trendStructureVeto: TrendStructureVetoResult | undefined;
     let postCrashFastPath: PostCrashFastPathResult | undefined;
-    if (snapshotGatePass && dipEval.reasons.length === 0) {
+
+    const harvestReentryReady =
+      snapshotGatePass && isMintScratchReentryEntryReadyForDiscovery(row.mint, row.price_usd);
+    const harvestReentryAwaiting =
+      snapshotGatePass && isMintScratchReentryAwaitingPriceDropForDiscovery(row.mint, row.price_usd);
+
+    if (harvestReentryReady) {
+      dipReasonsForGate = [];
+      entryPath = 'harvest_reentry';
+    } else if (harvestReentryAwaiting) {
+      dipReasonsForGate = ['mint_scratch_reentry_await_exit_minus_5pct'];
+      entryPath = undefined;
+    } else if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
     } else if (snapshotGatePass && cfg.postCrashFastPathEnabled) {
       postCrashFastPath = evaluatePostCrashFastPath(cfg, row, postCrashMap.get(row.mint));
@@ -621,7 +640,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      */
     let runnerFeatures: RunnerWindowFeatures | undefined;
     let runnerReasons: string[] = [];
-    if (cfg.runnerModeEnabled && entryPath == null) {
+    if (cfg.runnerModeEnabled && entryPath == null && !harvestReentryAwaiting) {
       const runnerEval = evaluateRunner(cfg, row, runnerMap.get(row.mint));
       runnerFeatures = runnerEval.features;
       if (runnerEval.pass) {
@@ -647,7 +666,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let volumeSybilFeatures: VolumeSybilFeatures | undefined;
     let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
     let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
-    if (entryPath != null) {
+    if (entryPath != null && entryPath !== 'harvest_reentry') {
       const dipLookbackForRecovery =
         entryPath === 'post_crash_fast'
           ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
@@ -726,6 +745,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let baseReasons: string[];
     if (entryPath === 'runner') {
       baseReasons = [...dipReasonsForGate]; // protector-reasons после runner-passed (если есть)
+    } else if (entryPath === 'harvest_reentry') {
+      baseReasons = [...v.reasons, ...globalReasons];
     } else if (entryPath != null) {
       baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
     } else {

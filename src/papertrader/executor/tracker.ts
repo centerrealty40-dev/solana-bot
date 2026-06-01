@@ -65,8 +65,16 @@ import {
   variantAEvalTimedExit,
   variantAExitTagLabel,
   variantAHybridDefensiveTrailActive,
+  variantAHybridEvalHarvest,
+  variantAHybridHarvestActive,
+  variantAHybridHarvestReentryRefPriceUsd,
+  variantAHybridMarkTp5Taken,
   variantAHybridMaybeResetTpImpulse,
   variantAHybridResetTpGridOnDca,
+  variantAHybridTp5Taken,
+  VARIANT_A_V2_HARVEST_HALF_PNL_FRAC,
+  VARIANT_A_V2_HARVEST_TP5_PNL_FRAC,
+  VARIANT_A_V2_TP_GRID_STEP_PNL,
   variantAScratchEvalFlush,
   variantAScratchHadTp,
   variantAScratchMarkTpTaken,
@@ -1025,6 +1033,81 @@ async function tryVariantAScratchPartialFlush(args: {
   }
 }
 
+/** Variant A v2: after +5% TP — 50% @+2.5%, remainder @ avg; blocks downside / DCA. */
+async function tryVariantAHybridHarvestPartialExit(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const { mint, ot, cfg, curMetric, xAvg, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
+    args;
+  if (!isVariantAHybridExitPolicy(ot) || ot.remainingFraction <= 1e-9) return;
+  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL)) return;
+
+  const pnlFrac = xAvg - 1;
+  const prev = ot.liveVariantAHybridHarvestPrevPnlFrac ?? pnlFrac;
+  const action = variantAHybridEvalHarvest(ot, cfg, pnlFrac, prev);
+  ot.liveVariantAHybridHarvestPrevPnlFrac = pnlFrac;
+
+  if (action.kind === 'sell_half') {
+    const r = await tryExecuteTpPartialSell({
+      mint,
+      ot,
+      cfg,
+      curMetric,
+      sellFraction: action.sellFraction,
+      ladderStepIndex: 0,
+      ladderRungsTotal: 0,
+      ladderPnlPct: VARIANT_A_V2_HARVEST_HALF_PNL_FRAC,
+      tpGrid: false,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+      markLadder: () => {},
+      logLabelPct: 'HYBRID_HARVEST_HALF+2.5%',
+      partialReason: 'HYBRID_HARVEST_HALF',
+      timelineLabelRu: action.timelineLabelRu,
+    });
+    if (r === 'ok') ot.liveVariantAHybridHarvestHalfDone = true;
+    return;
+  }
+
+  if (action.kind === 'flush_all') {
+    const mtm = action.useAvgPrice && ot.avgEntry > 0 ? ot.avgEntry : curMetric;
+    ot.liveVariantAExitTag = action.tag;
+    ot.liveVariantAHybridHarvestComplete = true;
+    await tryExecuteTpPartialSell({
+      mint,
+      ot,
+      cfg,
+      curMetric: mtm,
+      sellFraction: 1,
+      ladderStepIndex: 0,
+      ladderRungsTotal: 0,
+      ladderPnlPct: action.useAvgPrice ? 0 : pnlFrac,
+      tpGrid: false,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+      markLadder: () => {},
+      logLabelPct: action.tag,
+      partialReason: action.tag === 'hybrid_harvest_gap_flush' ? 'HYBRID_HARVEST_GAP' : 'HYBRID_HARVEST_FLUSH0',
+      timelineLabelRu: action.timelineLabelRu,
+    });
+  }
+}
+
 function hookLiveWhitelistAfterFullClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   cfg: PaperTraderConfig,
@@ -1063,6 +1146,10 @@ function hookLiveWhitelistAfterFullClose(
   recordMintTimedLossCooldown(mint, variantAExitTag);
   if (ot && isVariantAScratchExitPolicy(ot) && exitRefPriceUsd != null && exitRefPriceUsd > 0) {
     recordMintScratchReentry(mint, exitRefPriceUsd);
+  }
+  const hybridRef = ot ? variantAHybridHarvestReentryRefPriceUsd(ot) : null;
+  if (hybridRef != null && hybridRef > 0) {
+    recordMintScratchReentry(mint, hybridRef);
   }
 }
 
@@ -2266,10 +2353,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     /** Усреднение до второй ноги сплита допустимо (−6%% к первой ноге снимает план второй ноги — см. `entry-scale-in.ts`). */
     const liveOscarNoDcaInModeA = liveOscarAb && ot.liveExitProfileMode === 'A';
 
+    const hybridHarvestActive = variantAHybridHarvestActive(ot, tgEff.stepPnl);
+
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       !ot.liveStagedEntry &&
-      (tgEff.stepPnl <= 0 || ot.partialSells.length === 0 || isVariantAHybridExitPolicy(ot)) &&
+      !hybridHarvestActive &&
+      (tgEff.stepPnl <= 0 ||
+        ot.partialSells.length === 0 ||
+        (isVariantAHybridExitPolicy(ot) && !variantAHybridTp5Taken(ot, tgEff.stepPnl))) &&
       !(isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) &&
       (dcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
@@ -2562,7 +2654,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !(isPaperOscarIdealized && idealizedMute) &&
       !skipTpGridLiveOscarNeutral &&
       tgEff.stepPnl > 0 &&
-      ot.remainingFraction > 0
+      ot.remainingFraction > 0 &&
+      !hybridHarvestActive
     ) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
@@ -2617,6 +2710,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
         if (r === 'defer_next') {
           break;
+        }
+        if (
+          isVariantAHybridExitPolicy(ot) &&
+          r === 'ok' &&
+          threshold + LADDER_PNL_EPS >= VARIANT_A_V2_HARVEST_TP5_PNL_FRAC
+        ) {
+          variantAHybridMarkTp5Taken(ot);
         }
         /** Wave B: at most one cash partial per tick — spreads ladder across price steps, not one MTM print. */
         if ((isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) && sellFracForStep > 1e-12) {
@@ -2767,6 +2867,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
     }
+    await tryVariantAHybridHarvestPartialExit({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
+
     await tryVariantAScratchPartialFlush({
       mint,
       ot,
