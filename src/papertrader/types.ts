@@ -280,8 +280,10 @@ export interface OpenTrade {
   liveVariantAScratchPeakPnlFrac?: number;
   liveVariantAScratchFlushedAtZero?: boolean;
 
-  /** v2 hybrid: +5% grid TP taken → harvest exit path (no DCA/trail/downside). */
+  /** v2 hybrid: +5% grid TP taken; harvest only if never reached +10% (see exit-policy). */
   liveVariantAHybridTp5Taken?: boolean;
+  /** v2 hybrid: PnL vs avg reached +10% → normal grid/trail, not harvest. */
+  liveVariantAHybridEverReachedPlus10?: boolean;
   liveVariantAHybridHarvestHalfDone?: boolean;
   liveVariantAHybridHarvestComplete?: boolean;
   liveVariantAHybridHarvestPrevPnlFrac?: number;

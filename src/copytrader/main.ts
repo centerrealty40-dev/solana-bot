@@ -153,7 +153,7 @@ async function onLeaderBuy(
     const ourAddUsd = ourAddUsdFromLeaderAdd({
       ourSizeUsd: existing.sizeUsd,
       addFraction: addFrac,
-      maxRoomUsd: Math.min(positionRoomUsd(cfg, existing), cfg.addPositionUsd),
+      maxRoomUsd: positionRoomUsd(cfg, existing),
       minAddUsd: cfg.minProportionalAddUsd,
     });
     if (!canScheduleProportionalAdd(cfg, existing, ourAddUsd)) {
@@ -633,7 +633,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
-    addUsd: cfg.addPositionUsd,
+    addMirror: 'proportional_to_leader',
     maxPositionUsd: cfg.maxPositionUsd,
     buyDelayMin: Math.round(cfg.buyDelayMs / 60_000),
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),

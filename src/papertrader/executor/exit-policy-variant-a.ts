@@ -40,7 +40,10 @@ export const VARIANT_A_V2_TRAIL_ARM_PNL_FRAC = 0.1;
 export const VARIANT_A_V2_TP_REARM_FLOOR_PNL_FRAC = 0.025;
 export const VARIANT_A_V2_TP_REARM_MIN_TAKEN_PNL_FRAC = 0.1;
 
-/** After first +5% grid TP: exit 50% at +2.5%, remainder at avg; no DCA/trail/downside. */
+/**
+ * Harvest cohort: took +5% rung but never +10% → 50% @+2.5%, flush @avg.
+ * If price reaches +10%, same path as pre-harvest prod (grid + defensive trail).
+ */
 export const VARIANT_A_V2_HARVEST_TP5_PNL_FRAC = 0.05;
 export const VARIANT_A_V2_HARVEST_HALF_PNL_FRAC = 0.025;
 
@@ -156,13 +159,11 @@ function highestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
 
 export function variantAHybridDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boolean {
   if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (variantAHybridHarvestActive(ot, stepPnl)) return false;
-  return highestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC;
+  return variantAHybridEverReachedPlus10(ot, stepPnl);
 }
 
 export function variantAHybridMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
   if (!isVariantAHybridExitPolicy(ot) || !(stepPnl > 0)) return false;
-  if (variantAHybridHarvestActive(ot, stepPnl)) return false;
   const highest = highestTpGridThresholdTaken(ot, stepPnl);
   if (highest + LADDER_PNL_EPS < VARIANT_A_V2_TP_REARM_MIN_TAKEN_PNL_FRAC) return false;
   if (pnlFrac > VARIANT_A_V2_TP_REARM_FLOOR_PNL_FRAC + LADDER_PNL_EPS) return false;
@@ -186,7 +187,6 @@ export function variantAHybridMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number
 
 export function variantAHybridResetTpGridOnDca(ot: OpenTrade): boolean {
   if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL)) return false;
   if (ot.ladderUsedIndices.size === 0 && ot.ladderUsedLevels.size === 0) return false;
   ot.ladderUsedIndices.clear();
   ot.ladderUsedLevels.clear();
@@ -213,11 +213,45 @@ export function variantAHybridMarkTp5Taken(ot: OpenTrade): void {
   ot.liveVariantAHybridTp5Taken = true;
 }
 
-/** Post +5% TP: no further grid/trail/DCA — two-step harvest exit only. */
-export function variantAHybridHarvestActive(ot: OpenTrade, stepPnl: number): boolean {
+export function variantAHybridEverReachedPlus10(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isVariantAHybridExitPolicy(ot)) return false;
+  if (ot.liveVariantAHybridEverReachedPlus10) return true;
+  if (hybridPeakPnlFrac(ot) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC) return true;
+  if (highestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC) return true;
+  return false;
+}
+
+/** Call each tick when PnL vs avg is known (live tracker + sim). */
+export function variantAHybridNoteReachedPlus10(ot: OpenTrade, _pnlFrac: number, stepPnl: number): void {
+  if (!isVariantAHybridExitPolicy(ot)) return;
+  if (variantAHybridEverReachedPlus10(ot, stepPnl)) {
+    ot.liveVariantAHybridEverReachedPlus10 = true;
+  }
+}
+
+/** Peak saw +5% but never +10% — harvest cohort only (grid/trail unchanged if +10% later). */
+export function variantAHybridHarvestCohort(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isVariantAHybridExitPolicy(ot)) return false;
+  if (variantAHybridEverReachedPlus10(ot, stepPnl)) return false;
+  return hybridPeakPnlFrac(ot) + LADDER_PNL_EPS >= VARIANT_A_V2_HARVEST_TP5_PNL_FRAC;
+}
+
+/**
+ * Harvest exits fire on pullback: peak was +5..+10%, now PnL ≤ +5% (half @+2.5%, flush @0%).
+ * Does not block TP grid or trail — those keep running until +10% arms the normal path.
+ */
+export function variantAHybridHarvestActive(
+  ot: OpenTrade,
+  stepPnl: number,
+  pnlFrac?: number,
+): boolean {
   if (!isVariantAHybridExitPolicy(ot)) return false;
   if (ot.liveVariantAHybridHarvestComplete) return false;
-  return variantAHybridTp5Taken(ot, stepPnl);
+  if (!variantAHybridHarvestCohort(ot, stepPnl)) return false;
+  if (pnlFrac != null && pnlFrac > VARIANT_A_V2_HARVEST_TP5_PNL_FRAC + LADDER_PNL_EPS) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -230,7 +264,7 @@ export function variantAHybridEvalHarvest(
   pnlFrac: number,
   prevPnlFrac: number,
 ): VariantAHybridHarvestAction {
-  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL)) return { kind: 'none' };
+  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL, pnlFrac)) return { kind: 'none' };
   if (ot.liveVariantAHybridHarvestComplete) return { kind: 'none' };
 
   const halfAt = VARIANT_A_V2_HARVEST_HALF_PNL_FRAC;
@@ -376,11 +410,7 @@ export function variantAEvalTimedExit(
 ): VariantAExitTag | null {
   if (!isVariantAExitPolicy(ot)) return null;
   if (isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) return null;
-  if (
-    isVariantAHybridExitPolicy(ot) &&
-    (variantAHybridTp5Taken(ot, VARIANT_A_V2_TP_GRID_STEP_PNL) ||
-      ot.partialSells.some((p) => p.reason === 'TP_LADDER'))
-  ) {
+  if (isVariantAHybridExitPolicy(ot) && variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL, pnlFrac)) {
     return null;
   }
 

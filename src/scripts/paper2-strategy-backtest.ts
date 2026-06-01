@@ -96,7 +96,7 @@ function totalProceedsGross(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.grossProceedsUsd || 0), 0);
 }
 
-function buildClosedTradeSim(args: {
+export function buildClosedTradeSim(args: {
   cfg: PaperTraderConfig;
   ot: OpenTrade;
   marketSell: number;

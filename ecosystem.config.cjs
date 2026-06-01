@@ -69,6 +69,9 @@ const PM2_APPS = [
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
+        /** Wallet tiles: same RPC chain as live-oscar (Helius when QN TLS/meter blocks). */
+        LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+        SOLANA_RPC_HELIUS_PREFER: '1',
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
@@ -1197,14 +1200,14 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '100',
-        COPY_TRADER_ADD_POSITION_USD: '30',
-        COPY_TRADER_MAX_POSITION_USD: '190',
+        COPY_TRADER_POSITION_USD: '300',
+        /** Adds: proportional to leader stack (no fixed $ cap; room = MAX − position). */
+        COPY_TRADER_MAX_POSITION_USD: '3000',
         COPY_TRADER_MAX_ADDS_PER_MINT: '3',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '9',
         COPY_TRADER_BUY_DELAY_MS: '120000',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '3',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0.005',
         COPY_TRADER_SELL_DELAY_MIN_MS: '20000',
         COPY_TRADER_SELL_DELAY_MAX_MS: '30000',
