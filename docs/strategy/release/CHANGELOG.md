@@ -12,6 +12,29 @@
 
 ---
 
+## [1.11.295] — 2026-06-01
+
+### Fix: Live Oscar v2 harvest — только когорта +5% без +10%, TP grid не блокируется
+
+**Проблема:** после PR #52 harvest включался сразу после mark +5% и отключал TP-сетку/trail даже когда цена доходила до +10%.
+
+**Поведение (минимальное):**
+
+| Условие | Действие |
+|---------|----------|
+| Пик ≥ +5%, никогда не было +10%, откат к +2.5% | Продать 50% остатка |
+| Та же когорта, откат к 0% vs avg | Закрыть остаток |
+| После полного harvest-exit | Re-entry при −5% от avg (как было) |
+| Дошли до +10% | Обычные grid + defensive trail, **без** harvest |
+
+**Код:** `variantAHybridHarvestCohort` / `variantAHybridHarvestActive` (pullback ≤ +5%), снята блокировка TP grid в `tracker.ts`, A/B скрипт `scripts-tmp/live-oscar-harvest-ab-14d.ts` (честное сравнение: один `PROFILE=0`, закрытые сделки журнала).
+
+**Git-тег:** `sa-alpha-1.11.295`
+
+**Откат:** `git checkout sa-alpha-1.11.294 -- src/papertrader/executor/exit-policy-variant-a.ts src/papertrader/executor/tracker.ts src/papertrader/types.ts tests/papertrader-exit-policy-variant-a.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 restart live-oscar`.
+
+---
+
 ## [1.11.294] — 2026-06-01
 
 ### Fix: copy-trader poll RPC (Helius instead of broken QuickNode SSL)

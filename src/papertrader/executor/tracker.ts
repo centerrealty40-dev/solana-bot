@@ -69,11 +69,13 @@ import {
   variantAHybridHarvestActive,
   variantAHybridHarvestReentryRefPriceUsd,
   variantAHybridMarkTp5Taken,
+  variantAHybridNoteReachedPlus10,
   variantAHybridMaybeResetTpImpulse,
   variantAHybridResetTpGridOnDca,
   variantAHybridTp5Taken,
   VARIANT_A_V2_HARVEST_HALF_PNL_FRAC,
   VARIANT_A_V2_HARVEST_TP5_PNL_FRAC,
+  VARIANT_A_V2_TRAIL_ARM_PNL_FRAC,
   VARIANT_A_V2_TP_GRID_STEP_PNL,
   variantAScratchEvalFlush,
   variantAScratchHadTp,
@@ -904,12 +906,12 @@ async function tryWaveBTrailPartialSells(args: {
     stats,
   } = args;
   if (!isPartialGridTrailExitPolicy(ot) || !(tgEff.stepPnl > 0)) return;
+  const pnlFrac = xAvg - 1;
   const defensive = isVariantAHybridExitPolicy(ot)
     ? variantAHybridDefensiveTrailActive(ot, tgEff.stepPnl)
     : waveBDefensiveTrailActive(ot, tgEff.stepPnl);
   if (!defensive) return;
   if (!ot.trailingArmed) ot.trailingArmed = true;
-  const pnlFrac = xAvg - 1;
   const peakFrac = ot.liveWavePeakPnlFrac ?? pnlFrac;
   /** Pullback phase only — at/new ATH TP grid runs; trail resumes after `waveBOnNewHigh` on the next peak. */
   if (pnlFrac >= peakFrac - LADDER_PNL_EPS) return;
@@ -1049,9 +1051,8 @@ async function tryVariantAHybridHarvestPartialExit(args: {
   const { mint, ot, cfg, curMetric, xAvg, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
     args;
   if (!isVariantAHybridExitPolicy(ot) || ot.remainingFraction <= 1e-9) return;
-  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL)) return;
-
   const pnlFrac = xAvg - 1;
+  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL, pnlFrac)) return;
   const prev = ot.liveVariantAHybridHarvestPrevPnlFrac ?? pnlFrac;
   const action = variantAHybridEvalHarvest(ot, cfg, pnlFrac, prev);
   ot.liveVariantAHybridHarvestPrevPnlFrac = pnlFrac;
@@ -2320,6 +2321,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
       if (isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) {
         waveBOnNewHigh(ot, pnlFracPeak, tgEff.stepPnl);
+        if (isVariantAHybridExitPolicy(ot)) {
+          variantAHybridNoteReachedPlus10(ot, pnlFracPeak, tgEff.stepPnl);
+        }
       } else if (isVariantALegacyV1ExitPolicy(ot)) {
         variantAUpdateRemainderPeak(ot, pnlFracPeak, cfg);
       }
@@ -2353,7 +2357,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     /** Усреднение до второй ноги сплита допустимо (−6%% к первой ноге снимает план второй ноги — см. `entry-scale-in.ts`). */
     const liveOscarNoDcaInModeA = liveOscarAb && ot.liveExitProfileMode === 'A';
 
-    const hybridHarvestActive = variantAHybridHarvestActive(ot, tgEff.stepPnl);
+    const pnlFracTick = ot.avgEntry > 0 ? xAvg - 1 : 0;
+    if (isVariantAHybridExitPolicy(ot)) {
+      variantAHybridNoteReachedPlus10(ot, pnlFracTick, tgEff.stepPnl);
+    }
+    const hybridHarvestActive = variantAHybridHarvestActive(ot, tgEff.stepPnl, pnlFracTick);
 
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
@@ -2654,8 +2662,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !(isPaperOscarIdealized && idealizedMute) &&
       !skipTpGridLiveOscarNeutral &&
       tgEff.stepPnl > 0 &&
-      ot.remainingFraction > 0 &&
-      !hybridHarvestActive
+      ot.remainingFraction > 0
     ) {
       const pnlFrac = xAvg - 1;
       const step = tgEff.stepPnl;
@@ -2711,12 +2718,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (r === 'defer_next') {
           break;
         }
-        if (
-          isVariantAHybridExitPolicy(ot) &&
-          r === 'ok' &&
-          threshold + LADDER_PNL_EPS >= VARIANT_A_V2_HARVEST_TP5_PNL_FRAC
-        ) {
-          variantAHybridMarkTp5Taken(ot);
+        if (isVariantAHybridExitPolicy(ot) && r === 'ok') {
+          if (threshold + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC) {
+            variantAHybridNoteReachedPlus10(ot, pnlFrac, tgEff.stepPnl);
+          }
+          if (threshold + LADDER_PNL_EPS >= VARIANT_A_V2_HARVEST_TP5_PNL_FRAC) {
+            variantAHybridMarkTp5Taken(ot);
+          }
         }
         /** Wave B: at most one cash partial per tick — spreads ladder across price steps, not one MTM print. */
         if ((isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) && sellFracForStep > 1e-12) {
