@@ -73,23 +73,6 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.liveVariantASmart48Extended ? { liveVariantASmart48Extended: true } : {}),
     ...(ot.liveVariantASalvage24Checked ? { liveVariantASalvage24Checked: true } : {}),
     ...(ot.liveVariantAH48Checked ? { liveVariantAH48Checked: true } : {}),
-    ...(ot.liveVariantAScratchHadTp ? { liveVariantAScratchHadTp: true } : {}),
-    ...(ot.liveVariantAScratchFlushedAtZero ? { liveVariantAScratchFlushedAtZero: true } : {}),
-    ...(typeof ot.liveVariantAScratchPrevPnlFrac === 'number' &&
-    Number.isFinite(ot.liveVariantAScratchPrevPnlFrac)
-      ? { liveVariantAScratchPrevPnlFrac: ot.liveVariantAScratchPrevPnlFrac }
-      : {}),
-    ...(typeof ot.liveVariantAScratchPeakPnlFrac === 'number' &&
-    Number.isFinite(ot.liveVariantAScratchPeakPnlFrac)
-      ? { liveVariantAScratchPeakPnlFrac: ot.liveVariantAScratchPeakPnlFrac }
-      : {}),
-    ...(ot.liveVariantAHybridTp5Taken ? { liveVariantAHybridTp5Taken: true } : {}),
-    ...(ot.liveVariantAHybridHarvestHalfDone ? { liveVariantAHybridHarvestHalfDone: true } : {}),
-    ...(ot.liveVariantAHybridHarvestComplete ? { liveVariantAHybridHarvestComplete: true } : {}),
-    ...(typeof ot.liveVariantAHybridHarvestPrevPnlFrac === 'number' &&
-    Number.isFinite(ot.liveVariantAHybridHarvestPrevPnlFrac)
-      ? { liveVariantAHybridHarvestPrevPnlFrac: ot.liveVariantAHybridHarvestPrevPnlFrac }
-      : {}),
     ...(ot.liveMintFirstProbe ? { liveMintFirstProbe: true } : {}),
     ...(typeof ot.liveMintFirstProbeKillDropPct === 'number' &&
     Number.isFinite(ot.liveMintFirstProbeKillDropPct)

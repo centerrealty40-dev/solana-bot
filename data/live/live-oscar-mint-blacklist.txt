@@ -1,3 +1,4 @@
 # Manual mint blacklist — one base58 mint per line; excluded from discovery evaluation and buys.
 # Lines starting with # are comments.
 2bpT3ksMdwdZ6DuHyq3FDUr7HDwvZ5DRZoT1fUPALJaH
+E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump  # SPCX — liq-drain / по запросу

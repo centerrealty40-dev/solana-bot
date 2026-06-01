@@ -13,12 +13,6 @@ import {
   variantAScratchHadTp,
   variantAMoonExitTriggered,
   variantATrailFullExitTriggered,
-  variantAHybridEvalHarvest,
-  variantAHybridHarvestActive,
-  variantAHybridNoteReachedPlus10,
-  variantAHybridMarkTp5Taken,
-  variantAHybridDefensiveTrailActive,
-  variantAEvalTimedExit,
 } from '../src/papertrader/executor/exit-policy-variant-a.js';
 import { stampLiveOscarExitPolicyOnOpen } from '../src/papertrader/executor/exit-policy-wave-b.js';
 
@@ -92,46 +86,6 @@ describe('exit-policy-variant-a v2 hybrid prod', () => {
     expect(trade.liveExitPolicyId).toBe(VARIANT_A_V2_POLICY_ID);
     expect(isVariantAHybridExitPolicy(trade)).toBe(true);
     expect(isVariantAScratchExitPolicy(trade)).toBe(false);
-  });
-
-  it('after peak +5% without +10%: half @+2.5%, flush @0%, no trail', () => {
-    const trade = ot();
-    stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    trade.liveWavePeakPnlFrac = 0.06;
-    expect(variantAHybridHarvestActive(trade, 0.05, 0.04)).toBe(true);
-    expect(variantAHybridDefensiveTrailActive(trade, 0.05)).toBe(false);
-    const half = variantAHybridEvalHarvest(trade, cfg(), 0.02, 0.06);
-    expect(half.kind).toBe('sell_half');
-    trade.liveVariantAHybridHarvestHalfDone = true;
-    const flush = variantAHybridEvalHarvest(trade, cfg(), 0, 0.02);
-    expect(flush.kind).toBe('flush_all');
-    if (flush.kind === 'flush_all') expect(flush.tag).toBe('hybrid_harvest_flush0');
-  });
-
-  it('+10% after +5% disables harvest (grid/trail path)', () => {
-    const trade = ot();
-    stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    variantAHybridMarkTp5Taken(trade);
-    trade.liveWavePeakPnlFrac = 0.12;
-    variantAHybridNoteReachedPlus10(trade, 0.12, 0.05);
-    expect(variantAHybridHarvestActive(trade, 0.05, 0.08)).toBe(false);
-    expect(variantAHybridDefensiveTrailActive(trade, 0.05)).toBe(true);
-  });
-
-  it('harvest armed only on pullback at or below +5% without +10%', () => {
-    const trade = ot();
-    stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    trade.liveWavePeakPnlFrac = 0.07;
-    expect(variantAHybridHarvestActive(trade, 0.05, 0.08)).toBe(false);
-    expect(variantAHybridHarvestActive(trade, 0.05, 0.04)).toBe(true);
-  });
-
-  it('timed salvage/h48 skipped during harvest pullback cohort', () => {
-    const trade = ot();
-    stampLiveOscarExitPolicyOnOpen(trade, cfg());
-    trade.liveWavePeakPnlFrac = 0.06;
-    trade.liveVariantASalvage24Checked = false;
-    expect(variantAEvalTimedExit(trade, cfg(), -0.05, 48)).toBe(null);
   });
 });
 

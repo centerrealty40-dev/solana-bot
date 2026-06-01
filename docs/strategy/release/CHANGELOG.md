@@ -14,6 +14,22 @@
 
 ---
 
+## [1.11.298] — 2026-05-27
+
+### Revert: PR #52 v2 hybrid harvest + harvest scratch re-entry (полный откат)
+
+**Причина:** неудачный эксперимент; откат «1.11.296» в чате снял только env-отключение, PR #52 остался в коде и на VPS.
+
+**Убрано:** `HYBRID_HARVEST_*` partials, harvest lock после TP +5%, `harvest_reentry` в dip-clones, `LIVE_MINT_SCRATCH_REENTRY` (снова `0`).
+
+**Восстановлено:** variant_a_v2 grid + defensive trail @+10% без harvest-ветки (состояние до `556458e`).
+
+**Git-тег:** `sa-alpha-1.11.298`
+
+**Откат:** `git checkout sa-alpha-1.11.297 -- .`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.297] — 2026-06-01
 
 ### Tune: copy-trader buy delay 30s, price gate +3%

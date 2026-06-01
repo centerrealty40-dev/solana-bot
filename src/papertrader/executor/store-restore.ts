@@ -362,11 +362,6 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
     if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;
-    if (Boolean(rawPayload.liveVariantAHybridTp5Taken)) ot.liveVariantAHybridTp5Taken = true;
-    if (Boolean(rawPayload.liveVariantAHybridHarvestHalfDone)) ot.liveVariantAHybridHarvestHalfDone = true;
-    if (Boolean(rawPayload.liveVariantAHybridHarvestComplete)) ot.liveVariantAHybridHarvestComplete = true;
-    const lvhpp = rawPayload.liveVariantAHybridHarvestPrevPnlFrac;
-    if (typeof lvhpp === 'number' && Number.isFinite(lvhpp)) ot.liveVariantAHybridHarvestPrevPnlFrac = lvhpp;
     const lvsp = rawPayload.liveVariantAScratchPrevPnlFrac;
     if (typeof lvsp === 'number' && Number.isFinite(lvsp)) ot.liveVariantAScratchPrevPnlFrac = lvsp;
     const lvsk = rawPayload.liveVariantAScratchPeakPnlFrac;

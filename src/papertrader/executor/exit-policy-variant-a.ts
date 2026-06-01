@@ -16,9 +16,7 @@ export type VariantAExitTag =
   | 'moon50'
   | 'trail'
   | 'scratch_flush0'
-  | 'scratch_gap_flush'
-  | 'hybrid_harvest_flush0'
-  | 'hybrid_harvest_gap_flush';
+  | 'scratch_gap_flush';
 
 export const VARIANT_A_V1_POLICY_ID = 'variant_a_v1';
 export const VARIANT_A_V2_POLICY_ID = 'variant_a_v2';
@@ -39,27 +37,6 @@ export const VARIANT_A_V2_TP_SELL_FRAC = 0.1;
 export const VARIANT_A_V2_TRAIL_ARM_PNL_FRAC = 0.1;
 export const VARIANT_A_V2_TP_REARM_FLOOR_PNL_FRAC = 0.025;
 export const VARIANT_A_V2_TP_REARM_MIN_TAKEN_PNL_FRAC = 0.1;
-
-/**
- * Harvest cohort: took +5% rung but never +10% → 50% @+2.5%, flush @avg.
- * If price reaches +10%, same path as pre-harvest prod (grid + defensive trail).
- */
-export const VARIANT_A_V2_HARVEST_TP5_PNL_FRAC = 0.05;
-export const VARIANT_A_V2_HARVEST_HALF_PNL_FRAC = 0.025;
-
-export type VariantAHybridHarvestAction =
-  | { kind: 'none' }
-  | {
-      kind: 'sell_half';
-      sellFraction: number;
-      timelineLabelRu: string;
-    }
-  | {
-      kind: 'flush_all';
-      useAvgPrice: boolean;
-      tag: 'hybrid_harvest_flush0' | 'hybrid_harvest_gap_flush';
-      timelineLabelRu: string;
-    };
 
 export const VARIANT_A_DEFAULT_MOON_TARGET_PNL_FRAC = 0.5;
 export const VARIANT_A_DEFAULT_TRAIL_ARM_PNL_FRAC = 0.35;
@@ -159,7 +136,7 @@ function highestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
 
 export function variantAHybridDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boolean {
   if (!isVariantAHybridExitPolicy(ot)) return false;
-  return variantAHybridEverReachedPlus10(ot, stepPnl);
+  return highestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC;
 }
 
 export function variantAHybridMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
@@ -191,123 +168,6 @@ export function variantAHybridResetTpGridOnDca(ot: OpenTrade): boolean {
   ot.ladderUsedIndices.clear();
   ot.ladderUsedLevels.clear();
   return true;
-}
-
-/** True when +5% grid TP rung was taken (or explicitly flagged on open). */
-export function variantAHybridTp5Taken(ot: OpenTrade, stepPnl: number): boolean {
-  if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (ot.liveVariantAHybridTp5Taken) return true;
-  const thresh = VARIANT_A_V2_HARVEST_TP5_PNL_FRAC;
-  if (stepPnl > 0) {
-    const idx = Math.round(thresh / stepPnl) - 1;
-    if (idx >= 0 && ot.ladderUsedIndices.has(idx)) return true;
-  }
-  for (const u of ot.ladderUsedLevels) {
-    if (Math.abs(u - thresh) <= LADDER_PNL_EPS) return true;
-  }
-  return false;
-}
-
-export function variantAHybridMarkTp5Taken(ot: OpenTrade): void {
-  if (!isVariantAHybridExitPolicy(ot)) return;
-  ot.liveVariantAHybridTp5Taken = true;
-}
-
-export function variantAHybridEverReachedPlus10(ot: OpenTrade, stepPnl: number): boolean {
-  if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (ot.liveVariantAHybridEverReachedPlus10) return true;
-  if (hybridPeakPnlFrac(ot) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC) return true;
-  if (highestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= VARIANT_A_V2_TRAIL_ARM_PNL_FRAC) return true;
-  return false;
-}
-
-/** Call each tick when PnL vs avg is known (live tracker + sim). */
-export function variantAHybridNoteReachedPlus10(ot: OpenTrade, _pnlFrac: number, stepPnl: number): void {
-  if (!isVariantAHybridExitPolicy(ot)) return;
-  if (variantAHybridEverReachedPlus10(ot, stepPnl)) {
-    ot.liveVariantAHybridEverReachedPlus10 = true;
-  }
-}
-
-/** Peak saw +5% but never +10% — harvest cohort only (grid/trail unchanged if +10% later). */
-export function variantAHybridHarvestCohort(ot: OpenTrade, stepPnl: number): boolean {
-  if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (variantAHybridEverReachedPlus10(ot, stepPnl)) return false;
-  return hybridPeakPnlFrac(ot) + LADDER_PNL_EPS >= VARIANT_A_V2_HARVEST_TP5_PNL_FRAC;
-}
-
-/**
- * Harvest exits fire on pullback: peak was +5..+10%, now PnL ≤ +5% (half @+2.5%, flush @0%).
- * Does not block TP grid or trail — those keep running until +10% arms the normal path.
- */
-export function variantAHybridHarvestActive(
-  ot: OpenTrade,
-  stepPnl: number,
-  pnlFrac?: number,
-): boolean {
-  if (!isVariantAHybridExitPolicy(ot)) return false;
-  if (ot.liveVariantAHybridHarvestComplete) return false;
-  if (!variantAHybridHarvestCohort(ot, stepPnl)) return false;
-  if (pnlFrac != null && pnlFrac > VARIANT_A_V2_HARVEST_TP5_PNL_FRAC + LADDER_PNL_EPS) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * After +5% TP: sell 50% of remainder at ≤+2.5%; flush 100% at ≤0% avg (gap-aware).
- * Does not allow holding through negative PnL vs avg.
- */
-export function variantAHybridEvalHarvest(
-  ot: OpenTrade,
-  cfg: PaperTraderConfig,
-  pnlFrac: number,
-  prevPnlFrac: number,
-): VariantAHybridHarvestAction {
-  if (!variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL, pnlFrac)) return { kind: 'none' };
-  if (ot.liveVariantAHybridHarvestComplete) return { kind: 'none' };
-
-  const halfAt = VARIANT_A_V2_HARVEST_HALF_PNL_FRAC;
-  const tail = variantAScratchGapTailPnlFrac(cfg);
-
-  if (!ot.liveVariantAHybridHarvestHalfDone && pnlFrac <= halfAt + LADDER_PNL_EPS) {
-    return {
-      kind: 'sell_half',
-      sellFraction: 0.5,
-      timelineLabelRu:
-        'Live Oscar v2 hybrid · после TP +5% фиксация 50% остатка на +2.5% (без ухода в минус)',
-    };
-  }
-
-  const crossedZero = prevPnlFrac > LADDER_PNL_EPS && pnlFrac <= LADDER_PNL_EPS;
-  const atOrBelowTail = pnlFrac <= -tail + LADDER_PNL_EPS;
-
-  if (atOrBelowTail && prevPnlFrac > LADDER_PNL_EPS) {
-    return {
-      kind: 'flush_all',
-      useAvgPrice: true,
-      tag: 'hybrid_harvest_gap_flush',
-      timelineLabelRu:
-        `Live Oscar v2 hybrid · пропуск 0% — полное закрытие у avg (gap ≤ −${(tail * 100).toFixed(0)}% от avg)`,
-    };
-  }
-
-  if (crossedZero || pnlFrac <= LADDER_PNL_EPS) {
-    return {
-      kind: 'flush_all',
-      useAvgPrice: false,
-      tag: 'hybrid_harvest_flush0',
-      timelineLabelRu:
-        'Live Oscar v2 hybrid · после TP +5% закрытие остатка у avg (0%) — без DCA и усреднения',
-    };
-  }
-
-  return { kind: 'none' };
-}
-
-export function variantAHybridHarvestReentryRefPriceUsd(ot: OpenTrade): number | null {
-  if (!isVariantAHybridExitPolicy(ot) || !ot.liveVariantAHybridHarvestComplete) return null;
-  return ot.avgEntry > 1e-18 && Number.isFinite(ot.avgEntry) ? ot.avgEntry : null;
 }
 
 /**
@@ -369,10 +229,6 @@ export function stampVariantAOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): bool
   ot.liveVariantASalvage24Checked = false;
   ot.liveVariantAH48Checked = false;
   ot.liveVariantAExitTag = undefined;
-  ot.liveVariantAHybridTp5Taken = false;
-  ot.liveVariantAHybridHarvestHalfDone = false;
-  ot.liveVariantAHybridHarvestComplete = false;
-  ot.liveVariantAHybridHarvestPrevPnlFrac = 0;
   return true;
 }
 
@@ -410,9 +266,7 @@ export function variantAEvalTimedExit(
 ): VariantAExitTag | null {
   if (!isVariantAExitPolicy(ot)) return null;
   if (isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) return null;
-  if (isVariantAHybridExitPolicy(ot) && variantAHybridHarvestActive(ot, VARIANT_A_V2_TP_GRID_STEP_PNL, pnlFrac)) {
-    return null;
-  }
+  if (isVariantAHybridExitPolicy(ot) && ot.partialSells.some((p) => p.reason === 'TP_LADDER')) return null;
 
   const peakPct = hybridPeakPnlFrac(ot) * 100;
 
@@ -457,10 +311,6 @@ export function variantAExitTagLabel(tag: VariantAExitTag | undefined): string |
       return 'Variant A scratch · flush 100% @ avg после TP';
     case 'scratch_gap_flush':
       return 'Variant A scratch · gap flush @ avg (≤ −3% от avg)';
-    case 'hybrid_harvest_flush0':
-      return 'Variant A v2 hybrid · harvest flush 100% @ avg после TP +5%';
-    case 'hybrid_harvest_gap_flush':
-      return 'Variant A v2 hybrid · harvest gap flush @ avg';
     case 'horizon48':
       return 'Variant A · horizon @48h';
     case 'horizon96':
@@ -477,10 +327,13 @@ export function variantAExitTagLabel(tag: VariantAExitTag | undefined): string |
 export function liveOscarHybridStrategyNoteRu(): string {
   return (
     'Live Oscar · Variant A v2 hybrid (prod):\n' +
-    '• Вход: $750+$750 split; DCA −10%/−20% до первого TP +5%.\n' +
-    '• TP +5%: 10% остатка, затем harvest — 50% на +2.5%, остаток @ avg (без минуса/DCA/trail).\n' +
-    '• Re-entry: цена ≤ ref×(1−5%), ref = avg выхода; остальные гейты (BS, объём) без изменений.\n' +
-    '• До TP +5%: сетка/trail/timed salvage24/h48 как раньше (trail с +10%).'
+    '• Вход: $800 ($400+$400 split), DCA −10%/−20% × $200, cap $1200, liq ≥ $300k.\n' +
+    '• TP: бесконечная сетка +5% к avg, sell 10% остатка за ступень.\n' +
+    '• Re-arm: после ≥+10% taken, откат ≤+2.5% → ступени выше +2.5% снова доступны.\n' +
+    '• После DCA: все TP-ступени сбрасываются (новый avg).\n' +
+    '• Trail: partial stepped −5% от хая, sell 20% остатка; arm @+10%.\n' +
+    '• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n' +
+    '• Timed loss без TP: 24h block по mint.'
   );
 }
 
