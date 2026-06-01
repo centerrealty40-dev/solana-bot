@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import type { LiveOscarConfig } from '../src/live/config.js';
 import {
   configureMintScratchReentry,
+  isMintScratchReentryAwaitingPriceDrop,
+  isMintScratchReentryAwaitingPriceDropForDiscovery,
   isMintScratchReentryBlocked,
+  isMintScratchReentryEntryReady,
+  isMintScratchReentryEntryReadyForDiscovery,
   mintScratchReentryRefPrice,
   mintScratchReentryThresholdPrice,
   recordMintScratchReentry,
@@ -34,5 +38,15 @@ describe('mint-scratch-reentry', () => {
   it('no block when disabled or no prior exit ref', () => {
     expect(isMintScratchReentryBlocked(liveCfg(false), 'mintA', 1.5)).toBe(false);
     expect(isMintScratchReentryBlocked(liveCfg(), 'mintB', 1.5)).toBe(false);
+  });
+
+  it('entry ready vs awaiting drop for discovery dip bypass', () => {
+    recordMintScratchReentry('mintA', 1.0);
+    const c = liveCfg();
+    expect(isMintScratchReentryEntryReady(c, 'mintA', 0.9)).toBe(true);
+    expect(isMintScratchReentryAwaitingPriceDrop(c, 'mintA', 0.9)).toBe(false);
+    expect(isMintScratchReentryAwaitingPriceDrop(c, 'mintA', 0.95)).toBe(true);
+    expect(isMintScratchReentryEntryReadyForDiscovery('mintA', 0.9)).toBe(true);
+    expect(isMintScratchReentryAwaitingPriceDropForDiscovery('mintA', 0.95)).toBe(true);
   });
 });

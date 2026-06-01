@@ -13,6 +13,11 @@ import {
   variantAScratchHadTp,
   variantAMoonExitTriggered,
   variantATrailFullExitTriggered,
+  variantAHybridEvalHarvest,
+  variantAHybridHarvestActive,
+  variantAHybridMarkTp5Taken,
+  variantAHybridDefensiveTrailActive,
+  variantAEvalTimedExit,
 } from '../src/papertrader/executor/exit-policy-variant-a.js';
 import { stampLiveOscarExitPolicyOnOpen } from '../src/papertrader/executor/exit-policy-wave-b.js';
 
@@ -86,6 +91,28 @@ describe('exit-policy-variant-a v2 hybrid prod', () => {
     expect(trade.liveExitPolicyId).toBe(VARIANT_A_V2_POLICY_ID);
     expect(isVariantAHybridExitPolicy(trade)).toBe(true);
     expect(isVariantAScratchExitPolicy(trade)).toBe(false);
+  });
+
+  it('after TP +5% arms harvest: half @+2.5%, flush @0%, no trail', () => {
+    const trade = ot();
+    stampLiveOscarExitPolicyOnOpen(trade, cfg());
+    variantAHybridMarkTp5Taken(trade);
+    expect(variantAHybridHarvestActive(trade, 0.05)).toBe(true);
+    expect(variantAHybridDefensiveTrailActive(trade, 0.05)).toBe(false);
+    const half = variantAHybridEvalHarvest(trade, cfg(), 0.02, 0.06);
+    expect(half.kind).toBe('sell_half');
+    trade.liveVariantAHybridHarvestHalfDone = true;
+    const flush = variantAHybridEvalHarvest(trade, cfg(), 0, 0.02);
+    expect(flush.kind).toBe('flush_all');
+    if (flush.kind === 'flush_all') expect(flush.tag).toBe('hybrid_harvest_flush0');
+  });
+
+  it('timed salvage/h48 skipped after TP +5% on hybrid', () => {
+    const trade = ot();
+    stampLiveOscarExitPolicyOnOpen(trade, cfg());
+    variantAHybridMarkTp5Taken(trade);
+    trade.liveVariantASalvage24Checked = false;
+    expect(variantAEvalTimedExit(trade, cfg(), -0.05, 48)).toBe(null);
   });
 });
 

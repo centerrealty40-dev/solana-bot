@@ -356,7 +356,7 @@ const LiveOscarConfigSchema = z
     liveMintTimedLossCooldownMs: z.coerce.number().int().min(0).max(7 * 24 * 3_600_000).default(86_400_000),
 
     /**
-     * Variant A v3 scratch: re-entry when price ≤ lastExitRef × (1 − dropPct). No time cooldown.
+     * Harvest/scratch re-entry: price ≤ lastExitRef × (1 − dropPct). v2 ref = avg; v3 = exit px. No time cooldown.
      */
     liveMintScratchReentryEnabled: z.boolean().default(false),
     liveMintScratchReentryDropPct: z.coerce.number().min(0.01).max(0.5).default(0.1),

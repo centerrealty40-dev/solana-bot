@@ -1,6 +1,7 @@
 /**
- * Live Oscar Variant A v3 — price-based mint re-entry after scratch exit (no time cooldown).
+ * Live Oscar — price-based mint re-entry after harvest/scratch exit (no time cooldown).
  * Re-entry allowed when candidate price ≤ lastExitRef × (1 − dropPct).
+ * v2 hybrid: ref = avg entry after TP +5% harvest; v3 scratch: ref = last exit price.
  */
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
@@ -62,7 +63,65 @@ export function mintScratchReentryThresholdPrice(mint: string, dropPct: number):
   return ref * (1 - dropPct);
 }
 
-/** Test helper — reset in-memory map. */
+/** Mint has a harvest/scratch exit ref and candidate price is at or below ref×(1−drop). */
+export function isMintScratchReentryEntryReady(
+  liveCfg: LiveOscarConfig,
+  mint: string,
+  candidatePriceUsd: number,
+): boolean {
+  if (!liveCfg.liveMintScratchReentryEnabled) return false;
+  const ref = mintScratchReentryRefPrice(mint);
+  if (ref == null || !(candidatePriceUsd > 0)) return false;
+  return !isMintScratchReentryBlocked(liveCfg, mint, candidatePriceUsd);
+}
+
+/** Ref set but price still above re-entry threshold — block normal dip entry until drop. */
+export function isMintScratchReentryAwaitingPriceDrop(
+  liveCfg: LiveOscarConfig,
+  mint: string,
+  candidatePriceUsd: number,
+): boolean {
+  if (!liveCfg.liveMintScratchReentryEnabled) return false;
+  const ref = mintScratchReentryRefPrice(mint);
+  if (ref == null || !(candidatePriceUsd > 0)) return false;
+  return isMintScratchReentryBlocked(liveCfg, mint, candidatePriceUsd);
+}
+
+function scratchReentryCfg(): LiveOscarConfig | null {
+  return cfgRef;
+}
+
+/** Discovery: entry ready using module cfg from `configureMintScratchReentry`. */
+export function isMintScratchReentryEntryReadyForDiscovery(mint: string, candidatePriceUsd: number): boolean {
+  const cfg = scratchReentryCfg();
+  return cfg != null && isMintScratchReentryEntryReady(cfg, mint, candidatePriceUsd);
+}
+
+export function isMintScratchReentryAwaitingPriceDropForDiscovery(
+  mint: string,
+  candidatePriceUsd: number,
+): boolean {
+  const cfg = scratchReentryCfg();
+  return cfg != null && isMintScratchReentryAwaitingPriceDrop(cfg, mint, candidatePriceUsd);
+}
+
+/** Discovery / paper: append gate reason when price is above re-entry threshold. */
+export function appendMintScratchReentryGateReasons(
+  mint: string,
+  candidatePriceUsd: number,
+  out: string[],
+): void {
+  const cfg = cfgRef;
+  if (!cfg?.liveMintScratchReentryEnabled) return;
+  if (!isMintScratchReentryBlocked(cfg, mint, candidatePriceUsd)) return;
+  const ref = mintScratchReentryRefPrice(mint);
+  const drop = cfg.liveMintScratchReentryDropPct;
+  const threshold = ref != null ? ref * (1 - drop) : null;
+  out.push(
+    `mint_scratch_reentry_price(ref=${ref?.toFixed(8) ?? '?'} need<=${threshold?.toFixed(8) ?? '?'} snap=${candidatePriceUsd.toFixed(8)} drop=${(drop * 100).toFixed(0)}%)`,
+  );
+}
+
 export function resetMintScratchReentryForTests(): void {
   lastExitRefPriceUsdByMint.clear();
 }
