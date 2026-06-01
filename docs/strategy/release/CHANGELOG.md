@@ -10,6 +10,22 @@
 
 ---
 
+## [1.11.293] — 2026-06-01
+
+### Fix: copy-trader poll RPC (Helius instead of broken QuickNode SSL)
+
+Copy-trader used `SA_RPC_HTTP_URL` (QuickNode) for leader wallet polling; on VPS QuickNode HTTPS fails with TLS alert → `getSignaturesForAddress` returned empty silently and journal froze for ~10h.
+
+- `loadCopyTraderConfig`: `COPY_TRADER_RPC_URL` → `liveOscarRpcHttpUrlFromEnv()` (Helius when `SOLANA_RPC_HELIUS_PREFER=1`) → `resolveSolanaRpcUrl()`.
+- Poll logs `[copy-trader] poll: getSignaturesForAddress failed` at most 1×/min when RPC errors (vs empty wallet).
+- PM2 `copy-trader`: `SOLANA_RPC_HELIUS_PREFER=1`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`.
+
+**Git-тег:** `sa-alpha-1.11.293`
+
+**Откат:** revert commit; `pm2 reload copy-trader --update-env`; or set `COPY_TRADER_RPC_URL` to a working endpoint.
+
+---
+
 ## [1.11.292] — 2026-05-28
 
 ### Tune: copy-trader sizing $100 entry / $30 add cap

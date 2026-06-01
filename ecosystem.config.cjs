@@ -1211,6 +1211,9 @@ const PM2_APPS = [
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
+        /** Poll + parse leader txs on Helius (QuickNode SSL/budget issues on VPS). */
+        SOLANA_RPC_HELIUS_PREFER: '1',
+        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
       },
     },
 ];

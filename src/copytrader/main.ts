@@ -48,6 +48,9 @@ import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papert
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+let lastPollRpcFailLogMs = 0;
+const POLL_RPC_FAIL_LOG_MS = 60_000;
+
 function randomSellDelayMs(cfg: CopyTraderConfig): number {
   const span = cfg.sellDelayMaxMs - cfg.sellDelayMinMs;
   if (span <= 0) return cfg.sellDelayMinMs;
@@ -67,7 +70,15 @@ async function resolveCurrentPrice(mint: string, dexPrice: number): Promise<numb
 }
 
 export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
-  const rows = await fetchWalletSignatures(cfg.rpcUrl, cfg.targetWallet, cfg.signatureLimit);
+  const { rows, rpcFailed } = await fetchWalletSignatures(cfg.rpcUrl, cfg.targetWallet, cfg.signatureLimit);
+  if (rpcFailed) {
+    const now = Date.now();
+    if (now - lastPollRpcFailLogMs >= POLL_RPC_FAIL_LOG_MS) {
+      lastPollRpcFailLogMs = now;
+      console.warn('[copy-trader] poll: getSignaturesForAddress failed (RPC unreachable or error)');
+    }
+    return;
+  }
   if (rows.length === 0) return;
 
   const latest = rows[0]!.signature;
