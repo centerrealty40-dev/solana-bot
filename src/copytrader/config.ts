@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import { assertCopyTraderIsolation } from './isolation.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
@@ -74,8 +75,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
   }
   const rpcUrl =
     process.env.COPY_TRADER_RPC_URL?.trim() ||
-    process.env.SA_RPC_HTTP_URL?.trim() ||
-    process.env.SA_RPC_URL?.trim() ||
+    liveOscarRpcHttpUrlFromEnv() ||
+    resolveSolanaRpcUrl() ||
     '';
 
   const sellMin = Number(process.env.COPY_TRADER_SELL_DELAY_MIN_MS ?? 20_000);

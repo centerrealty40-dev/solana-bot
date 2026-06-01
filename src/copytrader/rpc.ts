@@ -41,19 +41,26 @@ export async function rpcCall<T>(
   return null;
 }
 
+export type WalletSignaturesResult = {
+  rows: SignatureRow[];
+  /** True when RPC failed after retries (distinct from an empty wallet history). */
+  rpcFailed: boolean;
+};
+
 export async function fetchWalletSignatures(
   rpcUrl: string,
   wallet: string,
   limit: number,
-): Promise<SignatureRow[]> {
-  const rows =
-    (await rpcCall<SignatureRow[]>(
-      rpcUrl,
-      'getSignaturesForAddress',
-      [wallet, { limit }],
-      5,
-    )) ?? [];
-  return rows.filter((r) => r && typeof r.signature === 'string' && !r.err);
+): Promise<WalletSignaturesResult> {
+  const raw = await rpcCall<SignatureRow[]>(
+    rpcUrl,
+    'getSignaturesForAddress',
+    [wallet, { limit }],
+    5,
+  );
+  if (raw === null) return { rows: [], rpcFailed: true };
+  const rows = raw.filter((r) => r && typeof r.signature === 'string' && !r.err);
+  return { rows, rpcFailed: false };
 }
 
 export async function fetchParsedTransaction(rpcUrl: string, signature: string): Promise<unknown | null> {
