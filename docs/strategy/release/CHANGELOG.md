@@ -12,6 +12,21 @@
 
 ---
 
+## [1.11.297] — 2026-06-01
+
+### Tune: copy-trader buy delay 30s, price gate +3%
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `COPY_TRADER_BUY_DELAY_MS` | 120000 (2 мин) | **30000 (30 сек)** |
+| `COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT` | 2 | **3** |
+
+**Git-тег:** `sa-alpha-1.11.297`
+
+**Откат:** `git checkout sa-alpha-1.11.296 -- ecosystem.config.cjs src/copytrader/config.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.296] — 2026-06-01
 
 ### Tune: copy-trader $300 entry, proportional mirror for adds/sells
