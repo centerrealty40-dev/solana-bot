@@ -28,6 +28,18 @@
 
 ---
 
+## [1.11.301] — 2026-06-02
+
+### Tune: Live Oscar max position $3000 per mint
+
+`LIVE_MAX_POSITION_USD` **2300 → 3000** — второй DCA (−20%, +$400) возможен после первого ($1900 invested).
+
+**Git-тег:** `sa-alpha-1.11.301`
+
+**Откат:** `git checkout sa-alpha-1.11.300 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.300] — 2026-06-02
 
 ### Fix: Live Oscar v2 TP grid — `PROFILE=0` ломал продажи на +5%/+10%

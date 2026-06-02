@@ -24,10 +24,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Variant A: entry split $750+$750 = $1500; DCA −10%/−20% × $400; max $2300 per mint.
+ * Variant A: entry split $750+$750 = $1500; DCA −10%/−20% × $400; max $3000 per mint.
  */
 const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1500';
-const LIVE_OSCAR_MAX_POSITION_USD = '2300';
+const LIVE_OSCAR_MAX_POSITION_USD = '3000';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -530,7 +530,7 @@ const PM2_APPS = [
 
         /**
          * Variant A: DCA −10% / −20% от первой ноги, по $400 (~0.266667 × $1500 `PAPER_POSITION_USD`).
-         * Max invested $1500 + $400 + $400 = $2300 (`LIVE_MAX_POSITION_USD`).
+         * Max invested $1500 + $400 + $400 = $2300 ladder; cap $3000 (`LIVE_MAX_POSITION_USD`).
          */
         PAPER_DCA_LEVELS: '-10:0.266667,-20:0.266667',
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
