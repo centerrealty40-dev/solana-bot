@@ -28,6 +28,20 @@
 
 ---
 
+## [1.11.300] — 2026-06-02
+
+### Fix: Live Oscar v2 TP grid — `PROFILE=0` ломал продажи на +5%/+10%
+
+**Проблема:** `PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0'` парсится как массив `[0]` → **0%** остатка на всех ступенях сетки. На +10% не было первого TP (10% остатка), только trail на откате.
+
+**Исправление:** профиль **пустой** → flat `PAPER_TP_GRID_SELL_FRACTION=0.10` на каждой ступени, как в 1.11.270.
+
+**Git-тег:** `sa-alpha-1.11.300`
+
+**Откат:** `git checkout sa-alpha-1.11.299 -- ecosystem.config.cjs docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.298] — 2026-05-27
 
 ### Revert: PR #52 v2 hybrid harvest + harvest scratch re-entry (полный откат)

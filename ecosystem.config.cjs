@@ -542,7 +542,8 @@ const PM2_APPS = [
         PAPER_TP_LADDER: '',
         PAPER_TP_GRID_STEP_PNL: '0.05',
         PAPER_TP_GRID_SELL_FRACTION: '0.10',
-        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '0',
+        /** Пусто = 10% остатка на каждой ступени (+5%, +10%, …). НЕ ставить `'0'` — парсер даёт [0] = 0% sell. */
+        PAPER_TP_GRID_SELL_FRACTION_PROFILE: '',
         PAPER_TP_GRID_FIRST_RUNG_RETRACE_MIN_PNL: '0',
         PAPER_TP_X: '100',
         PAPER_SL_X: '0',
