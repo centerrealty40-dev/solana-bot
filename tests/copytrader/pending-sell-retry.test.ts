@@ -11,6 +11,10 @@ describe('isSellRetryableError', () => {
     ).toBe(true);
   });
 
+  it('retries confirm_timeout', () => {
+    expect(isSellRetryableError('confirm_timeout')).toBe(true);
+  });
+
   it('does not retry missing balance', () => {
     expect(isSellRetryableError('no_token_balance')).toBe(false);
   });

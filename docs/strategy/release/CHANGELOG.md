@@ -28,6 +28,18 @@
 
 ---
 
+## [1.11.302] — 2026-06-02
+
+### Fix: copy-trader retry sells on confirm_timeout (RKC-class)
+
+Расширен `isSellRetryableError`: кроме slippage (`0x1771`) повторяются **`confirm_timeout`** и transient `send_failed` (429/timeout) — та же очередь 6 с / 2 ч.
+
+**Git-тег:** `sa-alpha-1.11.302`
+
+**Откат:** revert; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.301] — 2026-06-02
 
 ### Tune: Live Oscar max position $3000 per mint

@@ -11,10 +11,14 @@ export function shouldLogSellDefer(pending: PendingSell, nowMs: number, interval
   return nowMs - last >= intervalMs;
 }
 
-/** Slippage-class failures: retry with same bps until window ends or fill confirms. */
+/** Transient sell failures: retry with same bps until window ends or fill confirms. */
 export function isSellRetryableError(reason: string | undefined): boolean {
   if (!reason) return false;
-  return isSlippageClassSimError(reason);
+  if (isSlippageClassSimError(reason)) return true;
+  const m = reason.toLowerCase();
+  if (m.includes('confirm_timeout')) return true;
+  if (m.includes('send_failed') && (m.includes('429') || m.includes('timeout'))) return true;
+  return false;
 }
 
 export function findPendingSell(state: { pendingSells: PendingSell[] }, id: string): PendingSell | undefined {
