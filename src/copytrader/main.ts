@@ -31,6 +31,13 @@ import {
   computeRetryUntilTs,
 } from './pending-buy-retry.js';
 import {
+  findPendingSell,
+  isPendingSellExpired,
+  isSellRetryableError,
+  removePendingSellById,
+  shouldLogSellDefer,
+} from './pending-sell-retry.js';
+import {
   canScheduleProportionalAdd,
   gcSeenSignatures,
   hasPendingBuyForMint,
@@ -320,15 +327,17 @@ async function onLeaderSell(
   if (!pos) return;
 
   const delayMs = randomSellDelayMs(cfg);
+  const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {
     id: newId('ps'),
     mint,
     symbol,
     leaderSignature: row.signature,
     leaderSellTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
-    dueTs: Date.now() + delayMs,
+    dueTs,
     fraction: sellFrac,
     leaderSellFraction: sellFrac,
+    retryUntilTs: computeRetryUntilTs(dueTs, cfg.sellRetryWindowMs),
   };
   state.pendingSells.push(pending);
 
@@ -567,13 +576,15 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
   if (due.length === 0) return;
 
   for (const pending of due) {
-    state.pendingSells = state.pendingSells.filter((p) => p.id !== pending.id);
     const pos = state.positions[pending.mint];
-    if (!pos) continue;
+    if (!pos) {
+      removePendingSellById(state, pending.id);
+      continue;
+    }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const exitPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
-    const sellDelayMs = Math.max(0, pending.dueTs - pending.leaderSellTs);
+    const sellDelayMs = Math.max(0, now - pending.leaderSellTs);
     const sellUsd = pos.sizeUsd * pending.fraction;
 
     const exec = await executeCopySell({
@@ -589,6 +600,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     });
 
     if (exec.ok) {
+      removePendingSellById(state, pending.id);
       if (isFullCloseFraction(pending.fraction)) {
         delete state.positions[pending.mint];
       } else {
@@ -619,7 +631,43 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
           detail: `Sold ${(pending.fraction * 100).toFixed(0)}% · PnL ${exec.pnlPct != null ? `${exec.pnlPct >= 0 ? '+' : ''}${exec.pnlPct.toFixed(1)}%` : 'n/a'} · delay ${Math.round(sellDelayMs / 1000)}s`,
         }),
       );
+      await sleep(150);
+      continue;
     }
+
+    const retryable = isSellRetryableError(exec.reason);
+    if (retryable && !isPendingSellExpired(pending, now)) {
+      const row = findPendingSell(state, pending.id);
+      if (row) {
+        row.dueTs = now + cfg.sellRetryIntervalMs;
+        if (shouldLogSellDefer(row, now, cfg.sellRetryDeferLogMs)) {
+          row.lastDeferLogTs = now;
+          appendCopyEvent(cfg, {
+            kind: 'sell_deferred',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            sellFraction: pending.fraction,
+            reason: exec.reason ?? 'slippage',
+            retryUntilTs: row.retryUntilTs,
+            nextAttemptTs: row.dueTs,
+          });
+        }
+      }
+      await sleep(150);
+      continue;
+    }
+
+    removePendingSellById(state, pending.id);
+    appendCopyEvent(cfg, {
+      kind: retryable && isPendingSellExpired(pending, now) ? 'sell_expired' : 'sell_failed',
+      mint: pending.mint,
+      symbol: pending.symbol,
+      leaderSignature: pending.leaderSignature,
+      sellFraction: pending.fraction,
+      reason: exec.reason ?? 'unknown',
+      retryUntilTs: pending.retryUntilTs,
+    });
     await sleep(150);
   }
 }
@@ -637,6 +685,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     maxPositionUsd: cfg.maxPositionUsd,
     buyDelayMin: Math.round(cfg.buyDelayMs / 60_000),
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
+    sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
+    sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
     isolated: true,
   });
