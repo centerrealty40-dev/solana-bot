@@ -52,6 +52,9 @@ export type PendingSell = {
   /** Fraction of our position to close (1 = full). */
   fraction: number;
   leaderSellFraction?: number;
+  /** Keep retrying slippage-class sell errors until this ts. */
+  retryUntilTs: number;
+  lastDeferLogTs?: number;
 };
 
 export type CopyTraderState = {
@@ -120,6 +123,11 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof p.leaderSellFraction === 'number' && p.leaderSellFraction > 0
             ? Math.min(1, p.leaderSellFraction)
             : undefined,
+        retryUntilTs:
+          typeof p.retryUntilTs === 'number' && p.retryUntilTs > 0
+            ? p.retryUntilTs
+            : p.dueTs + 3_600_000,
+        lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
       }),
     );
     return {

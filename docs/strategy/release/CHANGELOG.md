@@ -14,6 +14,20 @@
 
 ---
 
+## [1.11.299] — 2026-06-02
+
+### Fix: copy-trader retry sells on slippage (0x1771) until fill
+
+При slippage-class ошибке продажа остаётся в очереди: повтор каждые **6 с** до **2 ч** (`COPY_TRADER_SELL_RETRY_*`), без ожидания следующей продажи лидера; slippage bps **не** поднимается.
+
+Журнал: `sell_deferred`, `sell_expired`, `sell_failed`.
+
+**Git-тег:** `sa-alpha-1.11.299`
+
+**Откат:** revert; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.298] — 2026-05-27
 
 ### Revert: PR #52 v2 hybrid harvest + harvest scratch re-entry (полный откат)
@@ -30,8 +44,6 @@
 
 ---
 
-=======
->>>>>>> origin/v2
 ## [1.11.297] — 2026-06-01
 
 ### Tune: copy-trader buy delay 30s, price gate +3%
