@@ -45,6 +45,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.liveAnchorMode ? { liveAnchorMode: ot.liveAnchorMode } : {}),
     ...(ot.livePendingScaleIn != null ? { livePendingScaleIn: { ...ot.livePendingScaleIn } } : {}),
     ...(ot.liveStagedEntry != null ? { liveStagedEntry: { ...ot.liveStagedEntry } } : {}),
+    ...(ot.liveOscarMcapTier === 'low' ? { liveOscarMcapTier: 'low' } : {}),
     ...(ot.tpRegime ? { tpRegime: ot.tpRegime } : {}),
     ...(ot.tpRegimeFeatures ? { tpRegimeFeatures: { ...ot.tpRegimeFeatures } } : {}),
     ...(ot.tpGridOverrides ? { tpGridOverrides: { ...ot.tpGridOverrides } } : {}),

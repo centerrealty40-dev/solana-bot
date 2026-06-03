@@ -372,9 +372,17 @@ const PM2_APPS = [
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        /** Discovery: min ref mcap COALESCE(market_cap_usd, fdv_usd) before dip eval / buy.
-         *  1.11.277: $5M → $3M. 1.11.263: $2M → $5M — losses skew mcap<5M. */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
+        /** Discovery SQL pool: от $1.3M (двухфазный Oscar); prod-гейты для mcap > $3M без изменений. */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
+        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, 2×$400, DCA $300/ступень. */
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
+        PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '400',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '800',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.375,-20:0.375',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',

@@ -14,6 +14,24 @@
 
 ---
 
+## [1.11.306] — 2026-06-03
+
+### Feat: Live Oscar — двухфазный mcap (узкий коридор $1.3M–$3M)
+
+| Зона mcap | Вход | Размер |
+|-----------|------|--------|
+| **$1.3M–$3M** | dip ≤ **−30%**, vol1h ≥ **$75k**, остальные post-гейты как prod | 2×**$400**, DCA **$300**/ступень (−10/−20) |
+| **> $3M** | **без изменений** (dip −20%, vol1h $36k, 2×$750, DCA $400) | как было |
+
+- SQL-пул discovery: min mcap **$1.3M** (`PAPER_DISCOVERY_MIN_MARKET_CAP_USD`).
+- Выходы (TP grid, trail, Variant A v2) — **общие** для обеих фаз.
+
+**Код:** `live-oscar-mcap-tier.ts`, `dip-clones.ts`, `main.ts`, `live-staged-entry-gates.ts`, `tracker.ts`, `ecosystem.config.cjs`.
+
+**Откат:** `PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED=0`, `PAPER_DISCOVERY_MIN_MARKET_CAP_USD=3000000`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.305] — 2026-06-03
 
 ### Feat: copy-trader — $600 entry, proportional adds/sells unchanged

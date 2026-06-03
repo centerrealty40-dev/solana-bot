@@ -1,4 +1,9 @@
 import type { PaperTraderConfig } from '../config.js';
+import {
+  liveOscarTierStagedSplitLegUsd,
+  resolveLiveOscarMcapTier,
+  type LiveOscarMcapTier,
+} from '../live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
 
 /** `liveStagedEntrySignalTtlMs === 0` — no time limit on staged plan / signal anchor. */
@@ -97,10 +102,18 @@ export function buildLiveStagedEntryState(
     signalTs: number;
     signalPriceUsd: number;
   },
-  options?: { firstMintProbe?: boolean; firstMintKillDropPct?: number },
+  options?: {
+    firstMintProbe?: boolean;
+    firstMintKillDropPct?: number;
+    marketCapUsd?: number | null;
+  },
 ): LiveStagedEntryState {
+  const tier =
+    options?.marketCapUsd != null && Number(options.marketCapUsd) > 0
+      ? resolveLiveOscarMcapTier(cfg, Number(options.marketCapUsd))
+      : ('prod' as LiveOscarMcapTier);
   const firstMintProbe = options?.firstMintProbe === true;
-  const splitLeg = cfg.liveStagedEntryEntrySplitLegUsd;
+  const splitLeg = liveOscarTierStagedSplitLegUsd(cfg, tier === 'low' ? 'low' : 'prod');
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;

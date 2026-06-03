@@ -184,6 +184,15 @@ const ConfigSchema = z.object({
   lanePostMaxLiqUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Min COALESCE(market_cap_usd, fdv_usd) on discovery snapshot row before buy eval. */
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
+  /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); >$3M = prod без изменений. */
+  liveOscarLowMcapLaneEnabled: z.boolean().default(false),
+  liveOscarLowMcapMinUsd: z.coerce.number().nonnegative().default(1_300_000),
+  liveOscarLowMcapMaxUsd: z.coerce.number().nonnegative().default(3_000_000),
+  liveOscarLowMcapDipMinDropPct: z.coerce.number().default(-30),
+  liveOscarLowMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
+  liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
+  liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(800),
+  liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
   snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
@@ -922,6 +931,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
     lanePostMaxLiqUsd: process.env.PAPER_POST_MAX_LIQ_USD,
     discoveryMinMarketCapUsd: process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD,
+    liveOscarLowMcapLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED, false),
+    liveOscarLowMcapMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD,
+    liveOscarLowMcapMaxUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD,
+    liveOscarLowMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT,
+    liveOscarLowMcapVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD,
+    liveOscarLowMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD,
+    liveOscarLowMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD,
+    liveOscarLowMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,

@@ -1,4 +1,6 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
+import { parseDcaLevels } from '../config.js';
+import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import { recordAfterFullCloseForMintRepeatGate } from '../discovery/dip-clones.js';
 import type {
@@ -1596,6 +1598,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!ot) continue;
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
+    const tradeDcaLevels =
+      ot.liveOscarMcapTier === 'low'
+        ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, 'low'))
+        : dcaLevels;
+    if (ot.liveOscarMcapTier === 'low') {
+      effCfg = { ...effCfg, positionUsd: cfg.liveOscarLowMcapPositionUsd };
+    }
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
     if (
@@ -2322,7 +2331,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !ot.liveStagedEntry &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0 || isVariantAHybridExitPolicy(ot)) &&
       !(isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) &&
-      (dcaLevels.length > 0 || killEff < 0) &&
+      (tradeDcaLevels.length > 0 || killEff < 0) &&
       ot.remainingFraction > 0 &&
       !liveOscarNoDcaInModeA;
 
@@ -2500,8 +2509,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (mayDca) {
-      for (let dcaIdx = 0; dcaIdx < dcaLevels.length; dcaIdx++) {
-        const lvl = dcaLevels[dcaIdx]!;
+      for (let dcaIdx = 0; dcaIdx < tradeDcaLevels.length; dcaIdx++) {
+        const lvl = tradeDcaLevels[dcaIdx]!;
         if (dcaStepOrTriggerTaken(ot, dcaIdx, lvl.triggerPct)) continue;
         /** §2 V2: в нейтрали после сплита триггер DCA — просадка к `avgEntry`; после назначения B — классика vs первая нога. */
         const usePnlVsAvgForDca =
@@ -2571,7 +2580,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           marketPrice: marketBuy,
           sizeUsd: addUsd,
           dcaStepIndex: dcaIdx,
-          dcaLevelsTotal: dcaLevels.length,
+          dcaLevelsTotal: tradeDcaLevels.length,
           triggerPct: lvl.triggerPct,
           avgEntry: ot.avgEntry,
           avgEntryMarket: ot.avgEntryMarket,
@@ -2581,7 +2590,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           priorityFee: pfDca,
           ...(cfg.liveExitModeAbEnabled
             ? {
-                timelineLabelRu: `DCA шаг ${dcaIdx + 1}/${dcaLevels.length} (${(lvl.triggerPct * 100).toFixed(0)}%) · режим выхода B`,
+                timelineLabelRu: `DCA шаг ${dcaIdx + 1}/${tradeDcaLevels.length} (${(lvl.triggerPct * 100).toFixed(0)}%) · режим выхода B`,
                 liveExitProfileMode: 'B' as const,
               }
             : {}),
@@ -2592,7 +2601,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           openTrade: serializeOpenTrade(ot),
         });
         console.log(
-          `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% step=${dcaIdx + 1}/${dcaLevels.length} avgEff=${ot.avgEntry.toFixed(8)}`,
+          `[DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @trigger=${(lvl.triggerPct * 100).toFixed(0)}% step=${dcaIdx + 1}/${tradeDcaLevels.length} avgEff=${ot.avgEntry.toFixed(8)}`,
         );
       }
     }

@@ -53,6 +53,13 @@ import {
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { writeDiscoveryCollectorPinMints } from './discovery-collector-pin.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
+import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
+import {
+  isLiveOscarTwoPhaseMcap,
+  liveOscarTierEntryConfig,
+  resolveLiveOscarMcapTier,
+  type LiveOscarMcapTier,
+} from '../live-oscar-mcap-tier.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
@@ -100,6 +107,8 @@ export interface EvalDecision {
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
    */
   entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast';
+  /** `low` = узкий коридор $1.3M–$3M; `prod` = mcap > $3M (текущий prod). */
+  liveOscarMcapTier?: 'low' | 'prod';
 }
 
 export interface DiscoveryTickResult {
@@ -573,14 +582,36 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   for (const { row, lane } of allowedSnapshotTagged) {
     evaluated++;
 
+    const refMcap = snapshotRefMarketCapUsd(row);
+    const oscarTier: LiveOscarMcapTier = isLiveOscarTwoPhaseMcap(cfg)
+      ? resolveLiveOscarMcapTier(cfg, refMcap)
+      : 'prod';
+    if (oscarTier === 'below') {
+      const belowReasons = [`mcap<${cfg.liveOscarLowMcapMinUsd}`];
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin: +Number(row.age_min ?? 0).toFixed(1),
+        pass: false,
+        reasons: belowReasons,
+        features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        whale: null,
+      });
+      continue;
+    }
+    const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
+    const journalTier: 'low' | 'prod' = oscarTier === 'low' ? 'low' : 'prod';
+
     const v = priorityMintSet.has(row.mint)
-      ? evaluateSnapshotPriorityTier(cfg, row, lane)
-      : evaluateSnapshot(cfg, row, lane);
+      ? evaluateSnapshotPriorityTier(tierCfg, row, lane)
+      : evaluateSnapshot(tierCfg, row, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersForGate,
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
-    const dipEval = evaluateDip(cfg, row, dipMap.get(row.mint));
+    const dipEval = evaluateDip(tierCfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
@@ -590,7 +621,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
     } else if (snapshotGatePass && cfg.postCrashFastPathEnabled) {
-      postCrashFastPath = evaluatePostCrashFastPath(cfg, row, postCrashMap.get(row.mint));
+      postCrashFastPath = evaluatePostCrashFastPath(tierCfg, row, postCrashMap.get(row.mint));
       if (postCrashFastPath.pass) {
         dipReasonsForGate = [];
         entryPath = 'post_crash_fast';
@@ -1044,6 +1075,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         },
       };
     }
+    if (isLiveOscarTwoPhaseMcap(cfg)) {
+      decisionFeatures.live_oscar_mcap_tier = journalTier;
+    }
     decisions.push({
       lane,
       source: row.source,
@@ -1056,6 +1090,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       whale,
       holdersMeta,
       entryPath,
+      ...(isLiveOscarTwoPhaseMcap(cfg) ? { liveOscarMcapTier: journalTier } : {}),
     });
   }
 

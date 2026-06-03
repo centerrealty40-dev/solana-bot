@@ -1,3 +1,4 @@
 # Manual mint blacklist — one base58 mint per line; excluded from discovery evaluation and buys.
 # Lines starting with # are comments.
 2bpT3ksMdwdZ6DuHyq3FDUr7HDwvZ5DRZoT1fUPALJaH
+pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
