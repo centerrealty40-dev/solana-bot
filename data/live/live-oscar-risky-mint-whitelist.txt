@@ -48,3 +48,4 @@ Aw5SxKyYhXFdZj2BHCqs11UaV5ohwpFQjauB9jFhpump
 61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump
 6qdzMx4c9rL2X3Ns3SwZ8uEo4zReDPjdXpAEmpo7pump
 6ehEcTMCc85aNF4x9CWx8HuvWGhxQtvKdhKVf2HDpump  # по запросу — короткий возраст пула, inject в discovery
+E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump  # SPCX — по запросу (возврат в whitelist)
