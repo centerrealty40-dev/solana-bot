@@ -372,7 +372,10 @@ const PM2_APPS = [
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.98',
-        /** Discovery SQL pool: от $1.3M (двухфазный Oscar); prod-гейты для mcap > $3M без изменений. */
+        /**
+         * Discovery SQL pool: от $1.3M (коридор low-lane). Prod-входы — mcap ≥ $3M (tier prod).
+         * Не путать с low-only: $1.3M–$3M используют отдельные dip/vol (см. PAPER_LIVE_OSCAR_LOW_*).
+         */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
         /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, 2×$400, DCA $300/ступень. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',

@@ -53,7 +53,8 @@ describe('live-oscar-mcap-tier', () => {
     const cfg = loadPaperTraderConfig();
     expect(resolveLiveOscarMcapTier(cfg, 1_200_000)).toBe('below');
     expect(resolveLiveOscarMcapTier(cfg, 1_300_000)).toBe('low');
-    expect(resolveLiveOscarMcapTier(cfg, 3_000_000)).toBe('low');
+    expect(resolveLiveOscarMcapTier(cfg, 2_999_999)).toBe('low');
+    expect(resolveLiveOscarMcapTier(cfg, 3_000_000)).toBe('prod');
     expect(resolveLiveOscarMcapTier(cfg, 3_000_001)).toBe('prod');
   });
 

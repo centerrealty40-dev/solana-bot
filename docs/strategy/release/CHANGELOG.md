@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.307] — 2026-06-03
+
+### Fix: Live Oscar mcap tier — $3M снова prod, SQL mcap с fdv
+
+- **Регресс 1.11.306:** при mcap **ровно $3M** монета попадала в **low** (−30% / vol1h $75k) вместо **prod** (−20% / $36k) — основной коридор Oscar «замолкал» на границе.
+- SQL discovery: `COALESCE(market_cap_usd, fdv_usd, 0)` в фильтре min mcap (как в SELECT), чтобы не отбрасывать пары с fdv-only.
+
+**Откат:** cherry-pick revert или вернуть `<=` в `resolveLiveOscarMcapTier` (не рекомендуется).
+
+---
+
 ## [1.11.306] — 2026-06-03
 
 ### Feat: Live Oscar — двухфазный mcap (узкий коридор $1.3M–$3M)
