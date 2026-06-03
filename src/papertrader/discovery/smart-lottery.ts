@@ -82,7 +82,7 @@ export async function fetchSmartLotteryLaneCandidates(
   const maxLiqFilter = lc.MAX_LIQ_USD > 0 ? `AND liquidity_usd <= ${lc.MAX_LIQ_USD}` : '';
   const minMcapFilter =
     cfg.discoveryMinMarketCapUsd > 0
-      ? `AND COALESCE(market_cap_usd, fdv_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
+      ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
   const limit =
     cfg.smlotSnapshotCandidateLimit > 0 ? cfg.smlotSnapshotCandidateLimit : cfg.snapshotCandidateLimit;

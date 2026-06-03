@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.308] — 2026-06-03
+
+### Fix: discovery SQL — min mcap filter (регресс 1.11.307)
+
+- В CTE `eligible` колонки `fdv_usd` нет (fdv уже в `market_cap_usd` из SELECT) — фильтр `COALESCE(market_cap_usd, fdv_usd, 0)` ломал **каждый** discovery tick (`column "fdv_usd" does not exist`), входы = 0.
+- Исправлено: `COALESCE(market_cap_usd, 0) >= min` в `snapshot.ts` и `smart-lottery.ts`.
+
+**Откат:** revert commit 1.11.308 (не рекомендуется — discovery снова падает).
+
+---
+
 ## [1.11.307] — 2026-06-03
 
 ### Fix: Live Oscar mcap tier — $3M снова prod, SQL mcap с fdv
