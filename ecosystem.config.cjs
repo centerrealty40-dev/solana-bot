@@ -554,6 +554,8 @@ const PM2_APPS = [
         PAPER_TIMEOUT_HOURS: '48',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
+        /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
+        PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
         /** Wave B off — Variant A v2 hybrid for new opens. In-flight v3/v1/wave_b/legacy unchanged. */
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',

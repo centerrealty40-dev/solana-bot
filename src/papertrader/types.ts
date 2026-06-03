@@ -124,7 +124,17 @@ export interface PartialSell {
   marketPrice: number;
   /** Fraction of REMAINING position sold (0..1). */
   sellFraction: number;
-  reason: 'TP_LADDER' | 'BREAKEVEN_TRIM' | 'TRAIL_STEP' | 'TRAIL' | 'TIMEOUT' | 'KILLSTOP' | 'SL' | 'SCRATCH_FLUSH0' | 'SCRATCH_GAP_FLUSH';
+  reason:
+    | 'TP_LADDER'
+    | 'BREAKEVEN_TRIM'
+    | 'TRAIL_STEP'
+    | 'TRAIL'
+    | 'TIMEOUT'
+    | 'KILLSTOP'
+    | 'SL'
+    | 'SCRATCH_FLUSH0'
+    | 'SCRATCH_GAP_FLUSH'
+    | 'THIN_VOL_FLUSH';
   proceedsUsd: number;
   grossProceedsUsd: number;
   pnlUsd: number;
@@ -253,6 +263,13 @@ export interface OpenTrade {
    * Live Oscar: после частичного выхода «у безубытка» после первой TP (`BREAKEVEN_TRIM`) — не повторять.
    */
   liveBreakevenTrimDone?: boolean;
+
+  /** Variant A v2 thin-volume flush: `volume_5m` at entry (PG snapshot). */
+  liveThinVolEntryVol5mUsd?: number;
+  /** Consecutive tracker ticks with thin-volume condition after first TP. */
+  liveThinVolStreak?: number;
+  /** Thin-volume remainder flush executed this cycle. */
+  liveThinVolFlushDone?: boolean;
 
   /**
    * Live Oscar — политика выхода, зафиксированная при open/restore.

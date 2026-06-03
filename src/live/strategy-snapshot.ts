@@ -54,6 +54,13 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveKillstopBelowStreak: ot.liveKillstopBelowStreak }
       : {}),
     ...(ot.liveBreakevenTrimDone ? { liveBreakevenTrimDone: true } : {}),
+    ...(typeof ot.liveThinVolEntryVol5mUsd === 'number' && Number.isFinite(ot.liveThinVolEntryVol5mUsd)
+      ? { liveThinVolEntryVol5mUsd: ot.liveThinVolEntryVol5mUsd }
+      : {}),
+    ...(typeof ot.liveThinVolStreak === 'number' && Number.isFinite(ot.liveThinVolStreak)
+      ? { liveThinVolStreak: ot.liveThinVolStreak }
+      : {}),
+    ...(ot.liveThinVolFlushDone ? { liveThinVolFlushDone: true } : {}),
     ...(ot.liveExitPolicyId ? { liveExitPolicyId: ot.liveExitPolicyId } : {}),
     ...(typeof ot.liveWavePeakPnlFrac === 'number' && Number.isFinite(ot.liveWavePeakPnlFrac)
       ? { liveWavePeakPnlFrac: ot.liveWavePeakPnlFrac }

@@ -589,6 +589,12 @@ const ConfigSchema = z.object({
   liveOscarBreakevenTrimAfterFirstTpEnabled: z.boolean().default(false),
   liveOscarBreakevenTrimFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
 
+  /**
+   * Variant A v2: after ≥1 TP, thin market (vol5m) + peak/current PnL gates → flush remainder.
+   * Env: `PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED`.
+   */
+  liveOscarThinVolExitEnabled: z.boolean().default(false),
+
   dcaLevelsSpec: z.string().default(''),
   dcaKillstop: z.coerce.number().default(0),
 
@@ -1153,6 +1159,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       false,
     ),
     liveOscarBreakevenTrimFraction: process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION,
+    liveOscarThinVolExitEnabled: envBool(process.env.PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED, false),
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,
     tpLadderSpec: process.env.PAPER_TP_LADDER,

@@ -74,6 +74,8 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
       typeof row.liquidity_usd === 'number' && Number(row.liquidity_usd) > 0
         ? Number(row.liquidity_usd)
         : null,
+    liveThinVolEntryVol5mUsd:
+      typeof row.volume_5m === 'number' && Number(row.volume_5m) > 0 ? Number(row.volume_5m) : undefined,
   };
 }
 

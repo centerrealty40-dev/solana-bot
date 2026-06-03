@@ -348,6 +348,11 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveBreakevenTrimDone)) {
       ot.liveBreakevenTrimDone = true;
     }
+    const ltve = rawPayload.liveThinVolEntryVol5mUsd;
+    if (typeof ltve === 'number' && Number.isFinite(ltve) && ltve > 0) ot.liveThinVolEntryVol5mUsd = ltve;
+    const ltvs = rawPayload.liveThinVolStreak;
+    if (typeof ltvs === 'number' && Number.isFinite(ltvs) && ltvs >= 0) ot.liveThinVolStreak = ltvs;
+    if (Boolean(rawPayload.liveThinVolFlushDone)) ot.liveThinVolFlushDone = true;
 
     const lepi = rawPayload.liveExitPolicyId;
     if (
