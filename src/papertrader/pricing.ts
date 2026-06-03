@@ -106,35 +106,6 @@ export async function fetchPumpfunMc(mint: string): Promise<{ mc: number; ath: n
   return { mc: Number(j.usd_market_cap ?? 0), ath: Number(j.ath_market_cap ?? 0) };
 }
 
-export async function fetchLatestSnapshotPrice(
-  mint: string,
-  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
-): Promise<number | null> {
-  const tables: string[] = source
-    ? [`${source}_pair_snapshots`]
-    : [
-        'raydium_pair_snapshots',
-        'meteora_pair_snapshots',
-        'orca_pair_snapshots',
-        'moonshot_pair_snapshots',
-        'pumpswap_pair_snapshots',
-      ];
-  const safeMint = mint.replace(/'/g, "''");
-  for (const t of tables) {
-    const r = await db.execute(dsql.raw(`
-      SELECT price_usd
-      FROM ${t}
-      WHERE base_mint = '${safeMint}'
-      ORDER BY ts DESC
-      LIMIT 1
-    `));
-    const rows = r as unknown as Array<{ price_usd: number | string }>;
-    const px = Number(rows[0]?.price_usd ?? 0);
-    if (px > 0) return px;
-  }
-  return null;
-}
-
 // ---------------------------------------------------------
 // Live USD market cap (W7.2): snapshot tables → pump.fun, RAM cache.
 // ---------------------------------------------------------
@@ -152,6 +123,43 @@ export type DexSnapshotSource = (typeof DEX_SNAPSHOT_SOURCES)[number];
 function dexSnapshotTables(source?: DexSnapshotSource): string[] {
   if (source) return [`${source}_pair_snapshots`];
   return DEX_SNAPSHOT_SOURCES.map((s) => `${s}_pair_snapshots`);
+}
+
+export type LatestSnapshotQuote = {
+  priceUsd: number | null;
+  volume5mUsd: number | null;
+};
+
+export async function fetchLatestSnapshotQuote(
+  mint: string,
+  source?: DexSnapshotSource,
+): Promise<LatestSnapshotQuote> {
+  const tables = dexSnapshotTables(source);
+  const safeMint = mint.replace(/'/g, "''");
+  for (const t of tables) {
+    const r = await db.execute(dsql.raw(`
+      SELECT price_usd, COALESCE(volume_5m, 0)::float AS volume_5m
+      FROM ${t}
+      WHERE base_mint = '${safeMint}'
+      ORDER BY ts DESC
+      LIMIT 1
+    `));
+    const rows = r as unknown as Array<{ price_usd: number | string; volume_5m: number | string }>;
+    const px = Number(rows[0]?.price_usd ?? 0);
+    const v5 = Number(rows[0]?.volume_5m ?? 0);
+    if (px > 0) {
+      return { priceUsd: px, volume5mUsd: v5 > 0 ? v5 : null };
+    }
+  }
+  return { priceUsd: null, volume5mUsd: null };
+}
+
+export async function fetchLatestSnapshotPrice(
+  mint: string,
+  source?: 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap',
+): Promise<number | null> {
+  const q = await fetchLatestSnapshotQuote(mint, source);
+  return q.priceUsd;
 }
 
 function parseSnapshotMcapRows(

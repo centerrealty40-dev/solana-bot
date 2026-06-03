@@ -14,6 +14,26 @@
 
 ---
 
+## [1.11.304] — 2026-06-03
+
+### Feat: Live Oscar — thin-volume flush after first TP (Variant A v2)
+
+После **первого partial TP**, если рынок «высох» по PG (`vol5m < $20k` и `< 50%` от vol5m на входе) **2 тика подряд**, и по **Jupiter MTM** уже был **пик ≥ +8%**, сейчас **≥ +2.5%** — бот **продаёт весь остаток** (`THIN_VOL_FLUSH`). Цель: не сидеть в мёртвом объёме после фиксации (SQUIRE-class), без агрессивного `vol5m<20k + PnL≥+5%` (режет луны).
+
+| Параметр | Значение |
+|----------|----------|
+| Env | `PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED=1` |
+| Политика | только `variant_a_v2` (новые и in-flight v2) |
+| Partial reason | `THIN_VOL_FLUSH` |
+
+**Код:** `exit-policy-variant-a.ts`, `tracker.ts`, `pricing.ts` (`fetchLatestSnapshotQuote`), `open.ts`, `config.ts`, `strategy-snapshot.ts`, `store-restore.ts`, `ecosystem.config.cjs`.
+
+**Git-тег:** `sa-alpha-1.11.304`
+
+**Откат:** `PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.303] — 2026-06-02
 
 ### Ops: SPCX обратно в whitelist, снят с blacklist

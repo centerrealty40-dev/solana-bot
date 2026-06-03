@@ -11,7 +11,7 @@ import type {
   PositionLeg,
   PriceVerifyVerdict,
 } from '../types.js';
-import { fetchLatestSnapshotPrice, getLiveMcUsd, getSolUsd } from '../pricing.js';
+import { fetchLatestSnapshotQuote, getLiveMcUsd, getSolUsd } from '../pricing.js';
 import { verifyExitPrice } from '../pricing/price-verify.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
@@ -73,6 +73,7 @@ import {
   variantAScratchUpdatePeak,
   variantAScratchTpTimelineLabelRu,
   variantAScratchDustFlushRemainUsd,
+  variantAHybridThinVolFlushReady,
 } from './exit-policy-variant-a.js';
 import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown.js';
 import { recordMintScratchReentry } from '../../live/mint-scratch-reentry.js';
@@ -1025,6 +1026,54 @@ async function tryVariantAScratchPartialFlush(args: {
   }
 }
 
+/** Variant A v2: thin market after first TP → flush remainder (`thin_combo_peak`). */
+async function tryVariantAHybridThinVolFlush(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  vol5mUsd: number | null;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const { mint, ot, cfg, curMetric, xAvg, vol5mUsd, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
+    args;
+  if (!isVariantAHybridExitPolicy(ot) || ot.remainingFraction <= 1e-9) return;
+  const pnlFrac = xAvg - 1;
+  if (!variantAHybridThinVolFlushReady(ot, cfg, pnlFrac, vol5mUsd)) return;
+
+  ot.liveThinVolFlushDone = true;
+  const v5 = vol5mUsd ?? 0;
+  const entryV5 = ot.liveThinVolEntryVol5mUsd ?? 0;
+  await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction: 1,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {},
+    logLabelPct: `thin-vol-flush+${(pnlFrac * 100).toFixed(1)}%`,
+    partialReason: 'THIN_VOL_FLUSH',
+    timelineLabelRu:
+      'Live Oscar · после TP объём высох (vol5m < $20k и <50% от входа, 2 тика) — ' +
+      `пик ≥ +8%, сейчас +${(pnlFrac * 100).toFixed(1)}% — полное закрытие остатка ` +
+      `(vol5m=$${Math.round(v5).toLocaleString()}, entry vol5m=$${Math.round(entryV5).toLocaleString()})`,
+  });
+}
+
 function hookLiveWhitelistAfterFullClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   cfg: PaperTraderConfig,
@@ -1563,12 +1612,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     let snapPx = 0;
+    let snapVol5m: number | null = null;
     try {
-      const raw = await fetchLatestSnapshotPrice(
+      const quote = await fetchLatestSnapshotQuote(
         mint,
         ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
       );
-      snapPx = Number(raw ?? 0);
+      snapPx = Number(quote.priceUsd ?? 0);
+      snapVol5m = quote.volume5mUsd;
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
@@ -2773,6 +2824,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       cfg: effCfg,
       curMetric,
       xAvg,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    await tryVariantAHybridThinVolFlush({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      vol5mUsd: snapVol5m,
       journalAppend,
       journalLiveStrategy,
       livePhase4,

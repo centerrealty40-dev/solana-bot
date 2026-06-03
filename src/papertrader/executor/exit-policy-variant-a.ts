@@ -38,6 +38,13 @@ export const VARIANT_A_V2_TRAIL_ARM_PNL_FRAC = 0.1;
 export const VARIANT_A_V2_TP_REARM_FLOOR_PNL_FRAC = 0.025;
 export const VARIANT_A_V2_TP_REARM_MIN_TAKEN_PNL_FRAC = 0.1;
 
+/** Thin-market flush after first TP (14d backtest `thin_combo_peak`). */
+export const VARIANT_A_V2_THIN_VOL_V5_MAX_USD = 20_000;
+export const VARIANT_A_V2_THIN_VOL_ENTRY_RATIO = 0.5;
+export const VARIANT_A_V2_THIN_VOL_PEAK_MIN_FRAC = 0.08;
+export const VARIANT_A_V2_THIN_VOL_CUR_MIN_FRAC = 0.025;
+export const VARIANT_A_V2_THIN_VOL_CONSEC_TICKS = 2;
+
 export const VARIANT_A_DEFAULT_MOON_TARGET_PNL_FRAC = 0.5;
 export const VARIANT_A_DEFAULT_TRAIL_ARM_PNL_FRAC = 0.35;
 export const VARIANT_A_DEFAULT_TRAIL_RETRACE_PNL_FRAC = 0.12;
@@ -89,6 +96,46 @@ export function variantAScratchGapTailPnlFrac(cfg: PaperTraderConfig): number {
 export function variantAScratchHadTp(ot: OpenTrade): boolean {
   if (ot.liveVariantAScratchHadTp) return true;
   return ot.partialSells.some((p) => p.reason === 'TP_LADDER');
+}
+
+export function variantAHybridHadTp(ot: OpenTrade): boolean {
+  return ot.partialSells.some((p) => p.reason === 'TP_LADDER');
+}
+
+/** Step tick: vol5m thin vs entry; updates `liveThinVolStreak`. */
+export function variantAHybridThinVolStep(ot: OpenTrade, vol5mUsd: number | null): boolean {
+  if (!(vol5mUsd != null && vol5mUsd >= 0)) return false;
+  const entryV5 = ot.liveThinVolEntryVol5mUsd ?? 0;
+  if (vol5mUsd >= VARIANT_A_V2_THIN_VOL_V5_MAX_USD) return false;
+  if (entryV5 > 0 && vol5mUsd >= entryV5 * VARIANT_A_V2_THIN_VOL_ENTRY_RATIO) return false;
+  return true;
+}
+
+/** After ≥1 TP: thin vol streak + peak/current PnL (Jupiter MTM `pnlFrac`) → flush remainder. */
+export function variantAHybridThinVolFlushReady(
+  ot: OpenTrade,
+  cfg: PaperTraderConfig,
+  pnlFrac: number,
+  vol5mUsd: number | null,
+): boolean {
+  if (!cfg.liveOscarThinVolExitEnabled) return false;
+  if (!isVariantAHybridExitPolicy(ot)) return false;
+  if (ot.liveThinVolFlushDone) return false;
+  if (ot.remainingFraction <= 1e-9) return false;
+  if (!variantAHybridHadTp(ot)) return false;
+
+  if (variantAHybridThinVolStep(ot, vol5mUsd)) {
+    ot.liveThinVolStreak = (ot.liveThinVolStreak ?? 0) + 1;
+  } else {
+    ot.liveThinVolStreak = 0;
+  }
+  if ((ot.liveThinVolStreak ?? 0) < VARIANT_A_V2_THIN_VOL_CONSEC_TICKS) return false;
+
+  const peak = Math.max(ot.liveWavePeakPnlFrac ?? -Infinity, pnlFrac);
+  return (
+    peak + LADDER_PNL_EPS >= VARIANT_A_V2_THIN_VOL_PEAK_MIN_FRAC &&
+    pnlFrac + LADDER_PNL_EPS >= VARIANT_A_V2_THIN_VOL_CUR_MIN_FRAC
+  );
 }
 
 export function variantAScratchMarkTpTaken(ot: OpenTrade): void {
@@ -229,6 +276,8 @@ export function stampVariantAOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): bool
   ot.liveVariantASalvage24Checked = false;
   ot.liveVariantAH48Checked = false;
   ot.liveVariantAExitTag = undefined;
+  ot.liveThinVolStreak = 0;
+  ot.liveThinVolFlushDone = false;
   return true;
 }
 
