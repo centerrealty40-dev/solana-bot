@@ -364,6 +364,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     ) {
       ot.liveExitPolicyId = lepi;
     }
+    const lomt = rawPayload.liveOscarMcapTier;
+    if (lomt === 'low' || lomt === 'prod') ot.liveOscarMcapTier = lomt;
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
     if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;

@@ -36,6 +36,7 @@ import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
+import { liveOscarTierStagedSplitLegUsd } from './live-oscar-mcap-tier.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import {
   buildLiveStagedEntryState,
@@ -274,15 +275,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     ot: OpenTrade,
     mint: string,
     signal: { signalTs: number; signalPriceUsd: number },
+    marketCapUsd: number | null,
+    liveOscarMcapTier?: 'low' | 'prod',
   ): void {
     if (!liveStagedEntryActive()) return;
     const liveCfg = resolveLiveOscar()?.liveCfg;
     const firstMintProbe =
       cfg.strategyId === 'live-oscar' && liveCfg != null && shouldUseLiveMintFirstProbe(liveCfg, mint);
     const firstMintKillDropPct = firstMintProbe ? liveMintFirstProbeKillDropPct(liveCfg!) : undefined;
+    if (liveOscarMcapTier === 'low') ot.liveOscarMcapTier = 'low';
     ot.liveStagedEntry = buildLiveStagedEntryState(cfg, signal, {
       firstMintProbe,
       firstMintKillDropPct,
+      marketCapUsd,
     });
     if (firstMintProbe) {
       ot.liveMintFirstProbe = true;
@@ -303,9 +308,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  function liveOscarDiscoveryBuyLegUsd(): number {
-    if (liveStagedEntryActive() && cfg.liveStagedEntryEntrySplitLegUsd > 0) {
-      return cfg.liveStagedEntryEntrySplitLegUsd;
+  function liveOscarDiscoveryBuyLegUsd(tier?: 'low' | 'prod'): number {
+    if (liveStagedEntryActive()) {
+      const leg =
+        tier === 'low'
+          ? liveOscarTierStagedSplitLegUsd(cfg, 'low')
+          : cfg.liveStagedEntryEntrySplitLegUsd;
+      if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
   }
@@ -1140,7 +1149,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           token_age_min: d.features.token_age_min,
           pair_address: d.features.pair_address ?? null,
         };
-        const stagedSplitUsd = liveStagedEntryActive() ? cfg.liveStagedEntryEntrySplitLegUsd : undefined;
+        const stagedSplitUsd = liveStagedEntryActive()
+          ? liveOscarDiscoveryBuyLegUsd(d.liveOscarMcapTier)
+          : undefined;
         let ot = makeOpenTradeFromEntry({
           cfg,
           row,
@@ -1149,10 +1160,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           liquidityUsd: d.features.liq_usd,
           ...(stagedSplitUsd != null && stagedSplitUsd > 0 ? { firstLegUsdOverride: stagedSplitUsd } : {}),
         });
-        attachLiveStagedEntryPlan(ot, d.mint, {
-          signalTs: stagedEntrySignal.signalTs,
-          signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-        });
+        attachLiveStagedEntryPlan(
+          ot,
+          d.mint,
+          {
+            signalTs: stagedEntrySignal.signalTs,
+            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+          },
+          d.features.market_cap_usd,
+          d.liveOscarMcapTier,
+        );
 
         const preDyn = cfg.preEntryDynamicsEnabled
           ? await fetchPreEntryDynamics(d.mint, ot.entryTs)
@@ -1276,7 +1293,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             priceVerify.jupiterPriceUsd > 0
           ) {
             const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd, pair_address: row.pair_address };
-            const stagedSplitUsd = cfg.liveStagedEntryEntrySplitLegUsd;
+            const stagedSplitUsd = liveOscarDiscoveryBuyLegUsd(d.liveOscarMcapTier);
             ot = makeOpenTradeFromEntry({
               cfg,
               row: rowJ,
@@ -1286,10 +1303,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               entryTs: ot.entryTs,
               firstLegUsdOverride: stagedSplitUsd,
             });
-            attachLiveStagedEntryPlan(ot, ot.mint, {
-              signalTs: stagedEntrySignal.signalTs,
-              signalPriceUsd: stagedEntrySignal.signalPriceUsd,
-            });
+            attachLiveStagedEntryPlan(
+              ot,
+              ot.mint,
+              {
+                signalTs: stagedEntrySignal.signalTs,
+                signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+              },
+              d.features.market_cap_usd,
+              d.liveOscarMcapTier,
+            );
           }
         }
 
