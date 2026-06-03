@@ -66,9 +66,10 @@ export async function fetchSnapshotLaneCandidates(
   const maxAgeFilter = lc.MAX_AGE_MIN > 0 ? `AND COALESCE(age_min, 0) <= ${lc.MAX_AGE_MIN}` : '';
   const maxLiqFilter = lc.MAX_LIQ_USD > 0 ? `AND liquidity_usd <= ${lc.MAX_LIQ_USD}` : '';
   const maxVol5mFilter = lc.MAX_VOL_5M_USD > 0 ? `AND volume_5m <= ${lc.MAX_VOL_5M_USD}` : '';
+  /** `market_cap_usd` in raw already COALESCE(mcap, fdv) from pair row — do not reference `fdv_usd` here. */
   const minMcapFilter =
     cfg.discoveryMinMarketCapUsd > 0
-      ? `AND COALESCE(market_cap_usd, fdv_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
+      ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
   const sanitySql = buildDiscoverySnapshotSanitySqlClause(cfg);
 
