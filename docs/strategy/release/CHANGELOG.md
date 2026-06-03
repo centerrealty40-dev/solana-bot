@@ -14,6 +14,18 @@
 
 ---
 
+## [1.11.303] — 2026-06-02
+
+### Ops: SPCX обратно в whitelist, снят с blacklist
+
+`E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump` (SPCX): добавлен в `live-oscar-mint-whitelist.txt` и risky-зеркало; удалён из `live-oscar-mint-blacklist.txt` и risky-blacklist.
+
+**Git-тег:** `sa-alpha-1.11.303`
+
+**Откат:** убрать mint из whitelist; при необходимости вернуть строку в blacklist; на VPS проверить `live-oscar-permanent-denylist.txt`.
+
+---
+
 ## [1.11.299] — 2026-06-02
 
 ### Fix: copy-trader retry sells on slippage (0x1771) until fill
