@@ -68,7 +68,7 @@ export async function fetchSnapshotLaneCandidates(
   const maxVol5mFilter = lc.MAX_VOL_5M_USD > 0 ? `AND volume_5m <= ${lc.MAX_VOL_5M_USD}` : '';
   const minMcapFilter =
     cfg.discoveryMinMarketCapUsd > 0
-      ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
+      ? `AND COALESCE(market_cap_usd, fdv_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
   const sanitySql = buildDiscoverySnapshotSanitySqlClause(cfg);
 

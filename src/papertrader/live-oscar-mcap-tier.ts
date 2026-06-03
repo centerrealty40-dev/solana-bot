@@ -16,7 +16,8 @@ export function resolveLiveOscarMcapTier(cfg: PaperTraderConfig, mcapUsd: number
     return 'prod';
   }
   if (mcap + 1e-9 < cfg.liveOscarLowMcapMinUsd) return 'below';
-  if (mcap <= cfg.liveOscarLowMcapMaxUsd) return 'low';
+  /** $3M ровно — prod (как до 1.11.306 при SQL min $3M); low только $1.3M ≤ mcap < $3M. */
+  if (mcap + 1e-9 < cfg.liveOscarLowMcapMaxUsd) return 'low';
   return 'prod';
 }
 
