@@ -14,6 +14,26 @@
 
 ---
 
+## [1.11.305] — 2026-06-03
+
+### Feat: copy-trader — $600 entry, proportional adds/sells unchanged
+
+| Параметр | Было | Стало |
+|----------|------|-------|
+| `COPY_TRADER_POSITION_USD` | 300 | **600** |
+| `COPY_TRADER_MAX_POSITION_USD` | 3000 | **6000** (10× entry) |
+| `COPY_TRADER_MIN_PROPORTIONAL_ADD_USD` | 9 | **18** (~3% entry) |
+
+Первый вход — фикс **$600**. Добавки: `ourAddUsd = ourSizeUsd × (leaderBuy / leaderPreBalance)`. Продажи: доля нашего кошелька = `leaderSell / leaderPreBalance` на каждой tx лидера.
+
+**Код:** `ecosystem.config.cjs`, `src/copytrader/config.ts` (defaults).
+
+**Git-тег:** `sa-alpha-1.11.305`
+
+**Откат:** `COPY_TRADER_POSITION_USD=300`, `COPY_TRADER_MAX_POSITION_USD=3000`, `COPY_TRADER_MIN_PROPORTIONAL_ADD_USD=9`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.304] — 2026-06-03
 
 ### Feat: Live Oscar — thin-volume flush after first TP (Variant A v2)

@@ -1201,11 +1201,11 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '300',
+        COPY_TRADER_POSITION_USD: '600',
         /** Adds: proportional to leader stack (no fixed $ cap; room = MAX − position). */
-        COPY_TRADER_MAX_POSITION_USD: '3000',
+        COPY_TRADER_MAX_POSITION_USD: '6000',
         COPY_TRADER_MAX_ADDS_PER_MINT: '3',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '9',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '18',
         COPY_TRADER_BUY_DELAY_MS: '30000',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
