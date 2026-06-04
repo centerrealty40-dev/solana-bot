@@ -1,3 +1,4 @@
+import { formatUserRatingLineRu, type UserTwapRating } from './user-rating.js';
 import type { NormalizedTwapSignal } from './types.js';
 
 export function shortAddress(addr: string): string {
@@ -65,7 +66,10 @@ function sideVerbRu(side: NormalizedTwapSignal['side']): string {
   return side === 'buy' ? 'покупка' : 'продажа';
 }
 
-export function buildTwapStartMessage(sig: NormalizedTwapSignal, opts?: { mexcUrl?: string | null }): string {
+export function buildTwapStartMessage(
+  sig: NormalizedTwapSignal,
+  opts?: { mexcUrl?: string | null; userRating?: UserTwapRating | null },
+): string {
   const sym = sig.displaySymbol;
   const mexcLine = opts?.mexcUrl ? ` (${opts.mexcUrl})` : '';
   const volLine =
@@ -79,6 +83,7 @@ export function buildTwapStartMessage(sig: NormalizedTwapSignal, opts?: { mexcUr
     `Цена: ${formatUsdPrice(sig.midPx)}`,
     volLine,
     `Субъект: <code>${sig.user}</code> ${shortAddress(sig.user)}`,
+    opts?.userRating ? formatUserRatingLineRu(opts.userRating) : '',
     `Создан в: ${formatUtcTime(sig.startedAtMs)}`,
     '',
     `🔗 <a href="${explorerTxUrl(sig.hash)}">Explorer</a> · <a href="${hypurrscanAddressUrl(sig.user)}">Hypurrscan</a>`,
@@ -98,7 +103,11 @@ export type TwapEndDetails = {
   priceChangePct: number | null;
 };
 
-export function buildTwapEndMessage(sig: NormalizedTwapSignal, end: TwapEndDetails): string {
+export function buildTwapEndMessage(
+  sig: NormalizedTwapSignal,
+  end: TwapEndDetails,
+  opts?: { userRating?: UserTwapRating | null },
+): string {
   const statusLabel = endStatusLabelRu(end.status);
   const icon = endIcon(end.status);
   const pctLine =
@@ -117,6 +126,7 @@ export function buildTwapEndMessage(sig: NormalizedTwapSignal, end: TwapEndDetai
     pctLine,
     twapIdLine,
     `Субъект: <code>${sig.user}</code>`,
+    opts?.userRating ? formatUserRatingLineRu(opts.userRating) : '',
     priceLines,
     '',
     `🔗 <a href="${explorerTxUrl(sig.hash)}">Explorer</a> · <a href="${hypurrscanAddressUrl(sig.user)}">Hypurrscan</a>`,

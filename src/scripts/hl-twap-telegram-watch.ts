@@ -41,7 +41,8 @@ import {
   openPaperTrade,
   paperJournalPath,
 } from '../hyperliquid/twap/paper-trader.js';
-import type { NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
+import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
+import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
 
 function envNum(name: string, fallback: number): number {
   const v = process.env[name]?.trim();
@@ -70,6 +71,18 @@ const TG_CHAT = process.env.HL_TWAP_TELEGRAM_CHAT_ID?.trim() ?? '';
 const AUDIT_PATH =
   process.env.HL_TWAP_AUDIT_JSONL?.trim() ||
   path.join(process.cwd(), 'data', 'hl-twap', 'signals.jsonl');
+const RATING_CACHE_MS = Math.max(60_000, envNum('HL_TWAP_USER_RATING_CACHE_MS', 300_000));
+
+const ratingCache = new Map<string, { at: number; rating: UserTwapRating }>();
+
+async function userRatingCached(user: string, feedRows: HypurrscanTwapRow[]): Promise<UserTwapRating> {
+  const key = user.toLowerCase();
+  const hit = ratingCache.get(key);
+  if (hit && Date.now() - hit.at < RATING_CACHE_MS) return hit.rating;
+  const rating = await resolveUserTwapRating(user, feedRows);
+  ratingCache.set(key, { at: Date.now(), rating });
+  return rating;
+}
 
 async function assertTelegramBot(): Promise<void> {
   if (DRY_RUN || !TG_TOKEN) return;
@@ -120,9 +133,10 @@ function appendAudit(event: string, payload: unknown): void {
   }
 }
 
-async function announceStart(sig: NormalizedTwapSignal): Promise<void> {
+async function announceStart(sig: NormalizedTwapSignal, feedRows: HypurrscanTwapRow[]): Promise<void> {
   const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
-  const html = buildTwapStartMessage(sig, { mexcUrl: mexc });
+  const userRating = await userRatingCached(sig.user, feedRows);
+  const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating });
   appendAudit('twap_start', sig);
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
@@ -134,9 +148,11 @@ async function announceStart(sig: NormalizedTwapSignal): Promise<void> {
 async function announceEnd(
   sig: NormalizedTwapSignal,
   endedStatus: string,
+  feedRows: HypurrscanTwapRow[],
 ): Promise<void> {
   const end = await enrichEndFromTwapHistory(sig, endedStatus);
-  const html = buildTwapEndMessage(sig, end);
+  const userRating = await userRatingCached(sig.user, feedRows);
+  const html = buildTwapEndMessage(sig, end, { userRating });
   appendAudit('twap_end', { sig, end });
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN end:\n', html.replace(/<[^>]+>/g, ''));
@@ -161,7 +177,7 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
       `[hl-twap] NEW ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}…`,
     );
     if (PAPER_ENABLED) openPaperTrade(sig);
-    await announceStart(sig);
+    await announceStart(sig, rows);
   }
 
   if (NOTIFY_ENDED) {
@@ -174,7 +190,7 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
           closePaperTrade(signal, px, `twap_${endedStatus}`);
         }
       }
-      await announceEnd(signal, endedStatus);
+      await announceEnd(signal, endedStatus, rows);
     }
   }
 }

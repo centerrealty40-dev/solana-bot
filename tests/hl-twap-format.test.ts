@@ -6,6 +6,7 @@ import {
   formatUsdCompact,
   mexcFuturesUrl,
 } from '../src/hyperliquid/twap/format-telegram.js';
+import type { UserTwapRating } from '../src/hyperliquid/twap/user-rating.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
 function sampleSig(overrides: Partial<NormalizedTwapSignal> = {}): NormalizedTwapSignal {
@@ -52,5 +53,17 @@ describe('hl-twap format', () => {
     expect(html).toContain('HYPE');
     expect(html).toContain('mexc.com');
     expect(html).toContain('0x0422d8308870ba079decd8cc27f1268296196873');
+  });
+
+  it('includes user rating line', () => {
+    const rating: UserTwapRating = {
+      endedTotal: 10,
+      cancelCount: 2,
+      finishedCount: 8,
+      cancelPct: 20,
+    };
+    const html = buildTwapStartMessage(sampleSig(), { userRating: rating });
+    expect(html).toContain('Рейтинг');
+    expect(html).toContain('20%');
   });
 });
