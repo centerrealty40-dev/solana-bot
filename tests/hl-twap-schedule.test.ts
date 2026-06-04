@@ -19,7 +19,10 @@ describe('hl-twap schedule', () => {
     expect(s.cycleCount).toBe(180);
     expect(s.sizePerCycle).toBeCloseTo(50, 5);
     expect(s.notionalPerCycleUsd).toBeCloseTo(50 * 65, 0);
+    expect(s.firstCycleOpenMs).toBe(startedAtMs + 30_000);
+    expect(s.paperOpenAtMs).toBe(s.firstCycleOpenMs);
     expect(s.lastCycleEtaMs).toBe(startedAtMs + 90 * 60_000);
+    expect(s.paperCloseAtMs).toBe(startedAtMs + 90 * 60_000 - 30_000);
     expect(s.sliceIntervalSec).toBe(HL_TWAP_SLICE_INTERVAL_SEC);
   });
 
@@ -36,8 +39,9 @@ describe('hl-twap schedule', () => {
     const lines = formatTwapScheduleLines(sig, schedule, (v) => `$${v.toFixed(0)}`);
     expect(lines[0]).toMatch(/Первый цикл \(МСК\):/);
     expect(lines[1]).toMatch(/ETA последнего цикла \(МСК\):/);
-    expect(lines[2]).toContain('Циклов: 10');
-    expect(lines[2]).toContain('рандом');
-    expect(lines[3]).toContain('HYPE');
+    expect(lines[2]).toMatch(/Бумага: вход/);
+    expect(lines[3]).toContain('Циклов: 10');
+    expect(lines[3]).toContain('рандом');
+    expect(lines[4]).toContain('HYPE');
   });
 });

@@ -2,13 +2,17 @@ import fs from 'node:fs';
 
 import { loadHyperliquidMarketCache } from './hyperliquid-meta.js';
 import {
+  buildPaperPositionTimeline,
   exitPxForOpen,
   loadPaperOpensFromJournal,
+  loadPendingSchedules,
   paperJournalPath,
+  paperNotionalUsd,
   unrealizedUsd,
   type HlTwapPaperClose,
   type HlTwapPaperOpen,
 } from './paper-trader.js';
+import { computeTwapSchedule, formatMoscowDateTime } from './twap-schedule.js';
 
 type JournalClose = {
   kind: 'close';
@@ -32,10 +36,15 @@ type JournalOpen = {
   impactPct: number | null;
   whaleUser: string;
   minutes: number;
+  paperOpenAtMs: number;
+  paperCloseAtMs: number;
+  twapStartMs: number;
 };
 
 export type HlTwapDashboardExtras = {
   watchMinImpactPct: number;
+  paperNotionalUsd: number;
+  pendingSchedules: number;
   signalsFeedUrl: string;
   telegramConfigured: boolean;
 };
@@ -47,9 +56,9 @@ function readJournal(filePath: string): { opens: JournalOpen[]; closes: JournalC
   for (const ln of fs.readFileSync(filePath, 'utf8').split('\n')) {
     if (!ln.trim()) continue;
     try {
-      const ev = JSON.parse(ln) as JournalOpen | JournalClose;
-      if (ev.kind === 'open') opens.push(ev);
-      if (ev.kind === 'close') closes.push(ev);
+      const ev = JSON.parse(ln) as { kind?: string };
+      if (ev.kind === 'open') opens.push(ev as JournalOpen);
+      if (ev.kind === 'close') closes.push(ev as JournalClose);
     } catch {
       /* skip */
     }
@@ -74,6 +83,9 @@ function enrichClose(
     impactPct: o.impactPct,
     whaleUser: o.whaleUser,
     minutes: o.minutes,
+    paperOpenAtMs: o.paperOpenAtMs,
+    paperCloseAtMs: o.paperCloseAtMs,
+    twapStartMs: o.twapStartMs,
     exitTs: c.ts,
     exitPx: c.exitPx,
     pnlUsd: c.pnlUsd,
@@ -82,50 +94,41 @@ function enrichClose(
   };
 }
 
-/** Dashboard `/api/paper2` strategy row (subset used by hl-twap tile). */
-export type HlTwapPaperDashboardRow = {
-  strategyId: string;
-  file: string;
-  openCount: number;
-  closedCount: number;
-  startedAt: number;
-  lastTs: number;
-  hoursOfData: number;
-  sumPnlUsd: number;
-  realizedPnlUsd: number;
-  unrealizedPnlUsd: number;
-  totalPnlUsd: number;
-  winRate: number;
-  avgPnl: number;
-  avgPeak: number;
-  bestPnlUsd: number;
-  worstPnlUsd: number;
-  unrealizedUsd: number;
-  exits: Record<string, number>;
-  exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }>;
-  evals1h: number;
-  passed1h: number;
-  failReasons: Array<{ reason: string; count: number }>;
-  open: unknown[];
-  recentClosed: unknown[];
-  priorityFeeUsdTotal: number;
-  priceVerify: {
-    okCount: number;
-    blockedCount: number;
-    skippedCount: number;
-    avgSlipPct: number | null;
-    p90SlipPct: number | null;
-  };
-  liqDrain: { exits: number; avgDropPct: number | null; p90DropPct: number | null };
-  hlTwap: HlTwapDashboardExtras;
-};
+function closedTimeline(c: HlTwapPaperClose): Array<{ ts: string; kind: string; label: string; reason?: string }> {
+  const dir = c.side === 'buy' ? 'LONG' : 'SHORT';
+  return [
+    {
+      ts: new Date(c.twapStartMs).toISOString(),
+      kind: 'strategy_note',
+      label: `Telegram OPEN · whale TWAP ${dir}`,
+    },
+    {
+      ts: new Date(c.paperOpenAtMs).toISOString(),
+      kind: 'open',
+      label: `Paper ${dir} $${c.notionalUsd.toFixed(0)} @ ${c.entryPx.toFixed(4)}`,
+      reason: 'after_cycle_1',
+    },
+    {
+      ts: new Date(c.paperCloseAtMs).toISOString(),
+      kind: 'strategy_note',
+      label: `Плановый выход (МСК ${formatMoscowDateTime(c.paperCloseAtMs)})`,
+    },
+    {
+      ts: new Date(c.exitTs).toISOString(),
+      kind: 'close',
+      label: `Closed @ ${c.exitPx.toFixed(4)} · ${c.pnlUsd >= 0 ? '+' : ''}${c.pnlUsd.toFixed(2)} USD (${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct.toFixed(2)}%)`,
+      reason: c.exitReason,
+    },
+  ];
+}
 
 /** Build dashboard row for tile 3 (`hl-twap-paper`). */
 export async function buildHlTwapPaperDashboardRow(
   filePath = paperJournalPath(),
-): Promise<HlTwapPaperDashboardRow> {
+): Promise<Record<string, unknown>> {
   const journal = readJournal(filePath);
   const openMap = loadPaperOpensFromJournal(filePath);
+  const pending = loadPendingSchedules(filePath);
   let cache = null as Awaited<ReturnType<typeof loadHyperliquidMarketCache>> | null;
   try {
     cache = await loadHyperliquidMarketCache();
@@ -150,7 +153,13 @@ export async function buildHlTwapPaperDashboardRow(
     const dir = o.side === 'buy' ? 1 : -1;
     const pnlPct = markPx > 0 ? dir * ((markPx - o.entryPx) / o.entryPx) * 100 : 0;
     unrealizedTotal += pnlUsd;
-    const ageMin = (now - o.entryTs) / 60_000;
+    const sched = computeTwapSchedule({
+      size: 0,
+      minutes: o.minutes,
+      randomize: false,
+      midPx: o.entryPx,
+      startedAtMs: o.twapStartMs,
+    });
     return {
       mint: o.hash,
       symbol: o.displaySymbol,
@@ -162,16 +171,22 @@ export async function buildHlTwapPaperDashboardRow(
       whaleUser: o.whaleUser,
       minutes: o.minutes,
       notionalUsd: o.notionalUsd,
-      ageMin,
+      ageMin: (now - o.entryTs) / 60_000,
       pnlPct,
       pnlUsd,
       remainingCostBasisUsd: o.notionalUsd,
-      timeline: [
-        {
-          ts: new Date(o.entryTs).toISOString(),
-          label: `TWAP ${o.side === 'buy' ? 'buy' : 'sell'} · impact ${o.impactPct != null ? o.impactPct.toFixed(2) : '?'}%`,
-        },
-      ],
+      paperCloseAtMs: o.paperCloseAtMs,
+      timeline: buildPaperPositionTimeline(o, markPx, pnlUsd).concat(
+        now < o.paperCloseAtMs
+          ? [
+              {
+                ts: new Date(o.paperCloseAtMs).toISOString(),
+                kind: 'strategy_note',
+                label: `ETA выход · ${sched.cycleCount} циклов TWAP`,
+              },
+            ]
+          : [],
+      ),
     };
   });
 
@@ -184,8 +199,23 @@ export async function buildHlTwapPaperDashboardRow(
         ? Math.min(...journal.closes.map((c) => c.ts))
         : now;
 
+  const exitsBreakdown: Record<string, { count: number; sumPct: number; sumUsd: number; avgPct: number }> =
+    {};
+  for (const c of closedEnriched) {
+    const key = c.exitReason.replace(/^twap_/, '').toUpperCase() || 'OTHER';
+    const slot = exitsBreakdown[key] ?? { count: 0, sumPct: 0, sumUsd: 0, avgPct: 0 };
+    slot.count += 1;
+    slot.sumPct += c.pnlPct;
+    slot.sumUsd += c.pnlUsd;
+    exitsBreakdown[key] = slot;
+  }
+  for (const k of Object.keys(exitsBreakdown)) {
+    const s = exitsBreakdown[k]!;
+    s.avgPct = s.count ? s.sumPct / s.count : 0;
+  }
+
   const recentClosed = closedEnriched
-    .slice(-30)
+    .slice(-40)
     .reverse()
     .map((c) => ({
       mint: c.hash,
@@ -193,11 +223,16 @@ export async function buildHlTwapPaperDashboardRow(
       side: c.side,
       entryTs: c.entryTs,
       exitTs: c.exitTs,
+      entryPx: c.entryPx,
+      exitPx: c.exitPx,
       pnlPct: c.pnlPct,
       pnlUsd: c.pnlUsd,
       exitReason: c.exitReason,
       impactPct: c.impactPct,
       whaleUser: c.whaleUser,
+      notionalUsd: c.notionalUsd,
+      durationMin: (c.exitTs - c.entryTs) / 60_000,
+      timeline: closedTimeline(c),
     }));
 
   const minImpact = Number(process.env.HL_TWAP_MIN_VOLUME_SHARE_PCT ?? 1);
@@ -220,8 +255,8 @@ export async function buildHlTwapPaperDashboardRow(
     bestPnlUsd: closedEnriched.length ? Math.max(...closedEnriched.map((c) => c.pnlUsd)) : 0,
     worstPnlUsd: closedEnriched.length ? Math.min(...closedEnriched.map((c) => c.pnlUsd)) : 0,
     unrealizedUsd: unrealizedTotal,
-    exits: { TWAP_END: closedEnriched.length },
-    exitsBreakdown: {},
+    exits: Object.fromEntries(Object.entries(exitsBreakdown).map(([k, v]) => [k, v.count])),
+    exitsBreakdown,
     evals1h: 0,
     passed1h: 0,
     failReasons: [],
@@ -238,6 +273,8 @@ export async function buildHlTwapPaperDashboardRow(
     liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
     hlTwap: {
       watchMinImpactPct: Number.isFinite(minImpact) ? minImpact : 1,
+      paperNotionalUsd: paperNotionalUsd(),
+      pendingSchedules: pending.size,
       signalsFeedUrl: 'https://api.hypurrscan.io/twap/*',
       telegramConfigured: Boolean(
         process.env.HL_TWAP_TELEGRAM_BOT_TOKEN?.trim() && process.env.HL_TWAP_TELEGRAM_CHAT_ID?.trim(),

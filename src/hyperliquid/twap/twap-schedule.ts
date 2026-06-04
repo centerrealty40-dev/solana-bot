@@ -8,8 +8,16 @@ export type TwapSchedule = {
   sliceIntervalSec: number;
   sizePerCycle: number;
   notionalPerCycleUsd: number;
+  /** TWAP L1 / alert time (≈ старт). */
+  twapStartMs: number;
+  /** Первый 30s-слайс (МСК в алерте). */
   firstCycleOpenMs: number;
+  /** ETA конца TWAP. */
   lastCycleEtaMs: number;
+  /** Бумага: вход после 1-го цикла. */
+  paperOpenAtMs: number;
+  /** Бумага: выход перед последним циклом. */
+  paperCloseAtMs: number;
   randomize: boolean;
 };
 
@@ -21,16 +29,23 @@ export function computeTwapSchedule(sig: Pick<
   const cycleCount = minutes * (60 / HL_TWAP_SLICE_INTERVAL_SEC);
   const sizePerCycle = sig.size / cycleCount;
   const notionalPerCycleUsd = sig.midPx > 0 ? sizePerCycle * sig.midPx : 0;
-  const firstCycleOpenMs = sig.startedAtMs;
-  const lastCycleEtaMs = sig.startedAtMs + minutes * 60_000;
+  const twapStartMs = sig.startedAtMs;
+  const sliceMs = HL_TWAP_SLICE_INTERVAL_SEC * 1000;
+  const firstCycleOpenMs = twapStartMs + sliceMs;
+  const lastCycleEtaMs = twapStartMs + minutes * 60_000;
+  const paperOpenAtMs = firstCycleOpenMs;
+  const paperCloseAtMs = Math.max(paperOpenAtMs + sliceMs, lastCycleEtaMs - sliceMs);
 
   return {
     cycleCount,
     sliceIntervalSec: HL_TWAP_SLICE_INTERVAL_SEC,
     sizePerCycle,
     notionalPerCycleUsd,
+    twapStartMs,
     firstCycleOpenMs,
     lastCycleEtaMs,
+    paperOpenAtMs,
+    paperCloseAtMs,
     randomize: sig.randomize,
   };
 }
@@ -75,6 +90,7 @@ export function formatTwapScheduleLines(
   return [
     `Первый цикл (МСК): ${formatMoscowDateTime(schedule.firstCycleOpenMs)}`,
     `ETA последнего цикла (МСК): ${formatMoscowDateTime(schedule.lastCycleEtaMs)}`,
+    `Бумага: вход ${formatMoscowDateTime(schedule.paperOpenAtMs)} · выход ${formatMoscowDateTime(schedule.paperCloseAtMs)}`,
     `Циклов: ${schedule.cycleCount} (${intervalNote})`,
     `За цикл: ${formatTokenAmount(schedule.sizePerCycle)} ${sig.displaySymbol}${perCycleUsd}`,
   ];

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
-import { resolveTwapMarket } from './hyperliquid-meta.js';
+import { computeTwapSchedule, formatMoscowDateTime } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
 export type HlTwapPaperOpen = {
@@ -16,6 +16,9 @@ export type HlTwapPaperOpen = {
   impactPct: number | null;
   whaleUser: string;
   minutes: number;
+  paperOpenAtMs: number;
+  paperCloseAtMs: number;
+  twapStartMs: number;
 };
 
 export type HlTwapPaperClose = HlTwapPaperOpen & {
@@ -25,6 +28,23 @@ export type HlTwapPaperClose = HlTwapPaperOpen & {
   pnlPct: number;
   exitReason: string;
 };
+
+type JournalSchedule = {
+  kind: 'schedule';
+  ts: number;
+  hash: string;
+  openAtMs: number;
+  closeAtMs: number;
+  twapStartMs: number;
+  coin: string;
+  displaySymbol: string;
+  side: TwapSide;
+  whaleUser: string;
+  minutes: number;
+  impactPct: number | null;
+};
+
+type JournalScheduleCancel = { kind: 'schedule_cancel'; ts: number; hash: string; reason: string };
 
 type JournalOpen = {
   kind: 'open';
@@ -38,6 +58,9 @@ type JournalOpen = {
   impactPct: number | null;
   whaleUser: string;
   minutes: number;
+  paperOpenAtMs: number;
+  paperCloseAtMs: number;
+  twapStartMs: number;
 };
 
 type JournalClose = {
@@ -49,6 +72,8 @@ type JournalClose = {
   pnlPct: number;
   exitReason: string;
 };
+
+type JournalRow = JournalSchedule | JournalScheduleCancel | JournalOpen | JournalClose;
 
 export function paperJournalPath(): string {
   return (
@@ -62,18 +87,23 @@ export function paperNotionalUsd(): number {
   return Number.isFinite(v) && v > 0 ? v : 1000;
 }
 
+function readJournal(filePath: string): JournalRow[] {
+  if (!fs.existsSync(filePath)) return [];
+  const rows: JournalRow[] = [];
+  for (const ln of fs.readFileSync(filePath, 'utf8').split('\n')) {
+    if (!ln.trim()) continue;
+    try {
+      rows.push(JSON.parse(ln) as JournalRow);
+    } catch {
+      /* skip */
+    }
+  }
+  return rows;
+}
+
 export function loadPaperOpensFromJournal(filePath: string): Map<string, HlTwapPaperOpen> {
   const opens = new Map<string, HlTwapPaperOpen>();
-  if (!fs.existsSync(filePath)) return opens;
-  const text = fs.readFileSync(filePath, 'utf8');
-  for (const ln of text.split('\n')) {
-    if (!ln.trim()) continue;
-    let ev: JournalOpen | JournalClose;
-    try {
-      ev = JSON.parse(ln) as JournalOpen | JournalClose;
-    } catch {
-      continue;
-    }
+  for (const ev of readJournal(filePath)) {
     if (ev.kind === 'open') {
       opens.set(ev.hash, {
         hash: ev.hash,
@@ -86,6 +116,9 @@ export function loadPaperOpensFromJournal(filePath: string): Map<string, HlTwapP
         impactPct: ev.impactPct,
         whaleUser: ev.whaleUser,
         minutes: ev.minutes,
+        paperOpenAtMs: ev.paperOpenAtMs,
+        paperCloseAtMs: ev.paperCloseAtMs,
+        twapStartMs: ev.twapStartMs,
       });
     } else if (ev.kind === 'close') {
       opens.delete(ev.hash);
@@ -94,40 +127,98 @@ export function loadPaperOpensFromJournal(filePath: string): Map<string, HlTwapP
   return opens;
 }
 
-export function appendPaperJournal(filePath: string, row: JournalOpen | JournalClose): void {
+export function loadPendingSchedules(filePath: string): Map<string, JournalSchedule> {
+  const cancelled = new Set<string>();
+  const opened = new Set<string>();
+  const pending = new Map<string, JournalSchedule>();
+
+  for (const ev of readJournal(filePath)) {
+    if (ev.kind === 'schedule_cancel') cancelled.add(ev.hash);
+    if (ev.kind === 'open' || ev.kind === 'close') opened.add(ev.hash);
+    if (ev.kind === 'schedule') pending.set(ev.hash, ev);
+  }
+  for (const h of cancelled) pending.delete(h);
+  for (const h of opened) pending.delete(h);
+  return pending;
+}
+
+export function appendPaperJournal(filePath: string, row: JournalRow): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`, 'utf8');
 }
 
-export function openPaperTrade(sig: NormalizedTwapSignal): HlTwapPaperOpen | null {
+/** После успешного Telegram OPEN — планируем бумагу на 2-й слайс / до предпоследнего. */
+export function schedulePaperTrade(sig: NormalizedTwapSignal): void {
   const filePath = paperJournalPath();
-  const existing = loadPaperOpensFromJournal(filePath);
-  if (existing.has(sig.hash)) return null;
+  const opens = loadPaperOpensFromJournal(filePath);
+  const pending = loadPendingSchedules(filePath);
+  if (opens.has(sig.hash) || pending.has(sig.hash)) return;
 
-  const notionalUsd = paperNotionalUsd();
-  const entryPx = sig.midPx > 0 ? sig.midPx : 0;
-  if (entryPx <= 0) return null;
-
-  const open: HlTwapPaperOpen = {
+  const sched = computeTwapSchedule(sig);
+  const row: JournalSchedule = {
+    kind: 'schedule',
+    ts: Date.now(),
     hash: sig.hash,
+    openAtMs: sched.paperOpenAtMs,
+    closeAtMs: sched.paperCloseAtMs,
+    twapStartMs: sched.twapStartMs,
     coin: sig.coin,
     displaySymbol: sig.displaySymbol,
     side: sig.side,
+    whaleUser: sig.user,
+    minutes: sig.minutes,
+    impactPct: sig.volumeSharePct,
+  };
+  appendPaperJournal(filePath, row);
+}
+
+function cancelSchedule(filePath: string, hash: string, reason: string): void {
+  const pending = loadPendingSchedules(filePath);
+  if (!pending.has(hash)) return;
+  appendPaperJournal(filePath, { kind: 'schedule_cancel', ts: Date.now(), hash, reason });
+}
+
+function executePaperOpen(sched: JournalSchedule, entryPx: number): HlTwapPaperOpen | null {
+  const filePath = paperJournalPath();
+  if (entryPx <= 0) return null;
+  const notionalUsd = paperNotionalUsd();
+  const open: HlTwapPaperOpen = {
+    hash: sched.hash,
+    coin: sched.coin,
+    displaySymbol: sched.displaySymbol,
+    side: sched.side,
     entryTs: Date.now(),
     entryPx,
     notionalUsd,
-    impactPct: sig.volumeSharePct,
-    whaleUser: sig.user,
-    minutes: sig.minutes,
+    impactPct: sched.impactPct,
+    whaleUser: sched.whaleUser,
+    minutes: sched.minutes,
+    paperOpenAtMs: sched.openAtMs,
+    paperCloseAtMs: sched.closeAtMs,
+    twapStartMs: sched.twapStartMs,
   };
-
-  const row: JournalOpen = { kind: 'open', ts: open.entryTs, ...open };
+  const row: JournalOpen = {
+    kind: 'open',
+    ts: open.entryTs,
+    hash: open.hash,
+    coin: open.coin,
+    displaySymbol: open.displaySymbol,
+    side: open.side,
+    entryPx: open.entryPx,
+    notionalUsd: open.notionalUsd,
+    impactPct: open.impactPct,
+    whaleUser: open.whaleUser,
+    minutes: open.minutes,
+    paperOpenAtMs: open.paperOpenAtMs,
+    paperCloseAtMs: open.paperCloseAtMs,
+    twapStartMs: open.twapStartMs,
+  };
   appendPaperJournal(filePath, row);
   return open;
 }
 
 export function closePaperTrade(
-  sig: NormalizedTwapSignal,
+  sig: Pick<NormalizedTwapSignal, 'hash' | 'displaySymbol'>,
   exitPx: number,
   exitReason: string,
 ): HlTwapPaperClose | null {
@@ -153,6 +244,43 @@ export function closePaperTrade(
   return { ...pos, exitTs: Date.now(), exitPx, pnlUsd, pnlPct, exitReason };
 }
 
+/** Таймеры: открыть/закрыть по циклам; без лимита позиций. */
+export async function processPaperTrades(cache: HyperliquidMarketCache): Promise<void> {
+  const filePath = paperJournalPath();
+  const now = Date.now();
+  const pending = loadPendingSchedules(filePath);
+  for (const sched of pending.values()) {
+    if (now >= sched.openAtMs) {
+      const px = markPxForCoin(sched.coin, cache) || markPxForSymbol(sched.displaySymbol, cache);
+      if (px > 0) executePaperOpen(sched, px);
+    }
+  }
+
+  const opens = loadPaperOpensFromJournal(filePath);
+  for (const pos of opens.values()) {
+    if (now >= pos.paperCloseAtMs) {
+      const px = exitPxForOpen(pos, cache);
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'before_last_cycle');
+    }
+  }
+}
+
+/** TWAP завершился раньше планового close — закрыть бумагу или снять schedule. */
+export function handlePaperOnTwapEnd(
+  sig: NormalizedTwapSignal,
+  cache: HyperliquidMarketCache,
+  endedStatus: string,
+): void {
+  const filePath = paperJournalPath();
+  const opens = loadPaperOpensFromJournal(filePath);
+  if (opens.has(sig.hash)) {
+    const px = exitPxForOpen(opens.get(sig.hash)!, cache);
+    closePaperTrade(sig, px, `twap_${endedStatus}`);
+    return;
+  }
+  cancelSchedule(filePath, sig.hash, `twap_${endedStatus}_before_open`);
+}
+
 export function markPxForCoin(coin: string, cache: HyperliquidMarketCache): number {
   const direct = cache.mids.get(coin);
   if (direct != null && direct > 0) return direct;
@@ -160,18 +288,52 @@ export function markPxForCoin(coin: string, cache: HyperliquidMarketCache): numb
   return cache.mids.get(stripped) ?? 0;
 }
 
+function markPxForSymbol(symbol: string, cache: HyperliquidMarketCache): number {
+  return cache.mids.get(symbol) ?? 0;
+}
+
 export function exitPxForOpen(open: HlTwapPaperOpen, cache: HyperliquidMarketCache): number {
   const fromMids = markPxForCoin(open.coin, cache);
   if (fromMids > 0) return fromMids;
-  const market = resolveTwapMarket(
-    open.coin.startsWith('asset:') ? Number(open.coin.split(':')[1]) : 0,
-    cache,
-  );
-  return market.midPx > 0 ? market.midPx : open.entryPx;
+  const fromSym = markPxForSymbol(open.displaySymbol, cache);
+  if (fromSym > 0) return fromSym;
+  return open.entryPx;
 }
 
 export function unrealizedUsd(open: HlTwapPaperOpen, markPx: number): number {
   const dir = open.side === 'buy' ? 1 : -1;
   const pnlPct = dir * ((markPx - open.entryPx) / open.entryPx) * 100;
   return (pnlPct / 100) * open.notionalUsd;
+}
+
+export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, pnlUsd: number): Array<{
+  ts: string;
+  kind: string;
+  label: string;
+  reason?: string;
+}> {
+  const dir = o.side === 'buy' ? 'LONG' : 'SHORT';
+  return [
+    {
+      ts: new Date(o.twapStartMs).toISOString(),
+      kind: 'strategy_note',
+      label: `Telegram OPEN · whale TWAP ${dir}`,
+    },
+    {
+      ts: new Date(o.paperOpenAtMs).toISOString(),
+      kind: 'open',
+      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла)`,
+      reason: 'after_cycle_1',
+    },
+    {
+      ts: new Date(o.paperCloseAtMs).toISOString(),
+      kind: 'strategy_note',
+      label: `Плановый выход перед последним циклом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+    },
+    {
+      ts: new Date().toISOString(),
+      kind: 'strategy_note',
+      label: `Mark ${markPx.toFixed(4)} · uPnL ${pnlUsd >= 0 ? '+' : ''}${pnlUsd.toFixed(2)} USD`,
+    },
+  ];
 }

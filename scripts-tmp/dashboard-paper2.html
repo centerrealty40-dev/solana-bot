@@ -43,7 +43,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live Oscar + Copy Trader + Paper Risky + V2.1 + V2.2).
+      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live + Copy + HL TWAP Paper + V2.1 + V2.2).
     */
     .dash-desktop-summary-cols {
       display: grid;
@@ -143,6 +143,7 @@
 
         <div class="text-sm text-slate-300 shrink-0 lg:text-right flex flex-col lg:items-end gap-1">
           <div><span class="text-slate-500">updated</span> <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
+          <div class="text-[10px] mono text-violet-300/90" x-show="state.dashboardBuildId" x-text="'build ' + (state.dashboardBuildId || '')"></div>
           <div class="text-[10px] text-slate-600 leading-tight" x-show="crypto.updatedAt">
             Spot: CoinGecko · Wallet: RPC<span class="mono text-slate-500" x-text="cryptoTickerStamp"></span>
           </div>
@@ -233,12 +234,15 @@
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
-            <span class="text-slate-400 ml-1" x-show="s.priceVerify"
+            <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-info mr-1">impact ≥<span x-text="s.hlTwap.watchMinImpactPct"></span>%</span>
+            <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-ok mr-1">$<span x-text="s.hlTwap.paperNotionalUsd || 1000"></span>/pos</span>
+            <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-warn">sched: <span x-text="s.hlTwap.pendingSchedules || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'hl-twap-paper'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'hl-twap-paper'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span class="text-slate-400 ml-1" x-show="s.strategyId !== 'hl-twap-paper' && s.priceVerify"
                   x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
                           + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
-            <span class="text-slate-400 ml-1"
+            <span class="text-slate-400 ml-1" x-show="s.strategyId !== 'hl-twap-paper'"
                   x-text="'liq_drain ' + (s.liqDrain?.exits ?? 0) + ' exits · '
                           + (s.liqDrain?.avgDropPct != null ? s.liqDrain.avgDropPct.toFixed(1) + '% avg drop' : 'n/a')"></span>
             <span x-show="(s.strategyId === 'live-oscar') && s.liveReconcileBoot?.status" class="pill shrink-0"
@@ -298,6 +302,25 @@
         </div>
       </div>
 
+      <div x-show="selected === 'hl-twap-paper' && selectedRow()?.hlTwap" class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mono">
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Paper size</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="'$' + (selectedRow()?.hlTwap?.paperNotionalUsd || 1000)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Min impact</div>
+          <div class="stat-num mt-1 text-slate-100" x-text="(selectedRow()?.hlTwap?.watchMinImpactPct || 1) + '%'"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Pending entry</div>
+          <div class="stat-num mt-1 text-amber-200" x-text="selectedRow()?.hlTwap?.pendingSchedules || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Telegram</div>
+          <div class="stat-num mt-1" :class="selectedRow()?.hlTwap?.telegramConfigured ? 'text-emerald-400' : 'text-rose-400'" x-text="selectedRow()?.hlTwap?.telegramConfigured ? 'OK' : 'OFF'"></div>
+        </div>
+      </div>
+
       <div x-show="selected === 'copy-trader' && (selectedRow()?.copyTrader?.cycles || []).length" class="mt-6">
         <h3 class="text-lg font-bold text-white mb-3">Copy cycles · ордера лидера</h3>
         <p class="text-xs text-slate-400 mb-3 leading-snug">Только реальные циклы: закрытые сделки и очередь buy/sell из state. Пропущенные сигналы лидера (buy_skipped без очереди) здесь не показываются — см. Recent closes / timeline.</p>
@@ -343,7 +366,21 @@
         </div>
       </div>
 
-      <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader'">
+      <div class="dash-exits-single-row mono mt-4 text-sm flex flex-wrap gap-3" x-show="selected === 'hl-twap-paper' && hlTwapExitKeys().length">
+        <template x-for="r in hlTwapExitKeys()" :key="'hl-ex-' + r">
+          <div class="dash-exit-chip shrink-0">
+            <div class="label-caps" x-text="r"></div>
+            <div class="exit-chip-val">
+              <span class="text-slate-100" x-text="(selectedRow()?.exitsBreakdown?.[r]?.count) || 0"></span>
+              <span class="text-slate-500" x-show="selectedRow()?.exitsBreakdown?.[r]?.count"> · </span>
+              <span x-show="selectedRow()?.exitsBreakdown?.[r]?.count" :class="(selectedRow()?.exitsBreakdown?.[r]?.sumUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+                    x-text="fmtUsdSigned(selectedRow()?.exitsBreakdown?.[r]?.sumUsd)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader' && selected !== 'hl-twap-paper'">
         <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA','LIQ_DRAIN','RECONCILE_ORPHAN','PERIODIC_HEAL','CAPITAL_ROTATE']" :key="r">
           <div class="dash-exit-chip shrink-0">
             <div class="label-caps" x-text="r"></div>
@@ -357,9 +394,13 @@
         </template>
       </div>
 
+      <div class="mono text-xs text-slate-400 mb-2" x-show="selected === 'hl-twap-paper'">
+        Журнал: <span class="text-slate-200" x-text="selectedRow()?.file || 'data/hl-twap/paper.jsonl'"></span>
+      </div>
+
       <div class="grid md:grid-cols-2 gap-6 lg:gap-8 mt-6">
         <div>
-          <h3 class="text-lg font-bold text-white mb-3">Open positions</h3>
+          <h3 class="text-lg font-bold text-white mb-3" x-text="selected === 'hl-twap-paper' ? 'Open paper (после 1-го цикла)' : 'Open positions'"></h3>
           <div class="space-y-2 text-base">
             <template x-for="o in (selectedRow()?.open || [])" :key="o.mint + o.entryTs">
               <div class="border-b border-white/5 pb-1">
@@ -368,14 +409,31 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
-                      <a :href="gmgn(o.mint)" target="_blank" @click.stop
+                      <a :href="positionHref(selected, o.mint)" target="_blank" @click.stop
                          class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      <span class="pill pill-info text-xs ml-1" x-show="selected === 'hl-twap-paper'" x-text="hlTwapSideLabel(o.side)"></span>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
-                      <span class="text-sky-200 text-sm font-semibold mono ml-2"
+                      <span class="text-sky-200 text-sm font-semibold mono ml-2" x-show="selected !== 'hl-twap-paper'"
                             x-text="'остаток ' + fmtUsd(o.remainingCostBasisUsd ?? 0)"></span>
-                      <span class="text-slate-500 text-xs ml-1 align-middle">база</span>
+                      <span class="text-sky-200 text-sm font-semibold mono ml-2" x-show="selected === 'hl-twap-paper'"
+                            x-text="'$' + (o.notionalUsd || 1000) + ' paper'"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="selected === 'hl-twap-paper'">
+                      <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry</span>
+                      <span class="font-semibold mono text-sky-200" x-text="(o.entryPx || 0).toFixed(4)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">mark</span>
+                      <span class="font-semibold mono text-slate-200" x-text="(o.markPx || o.entryPx || 0).toFixed(4)"></span>
+                      <span class="text-slate-600" x-show="o.impactPct != null">·</span>
+                      <span class="text-slate-400" x-show="o.impactPct != null">impact</span>
+                      <span class="font-semibold mono text-violet-300" x-show="o.impactPct != null" x-text="(o.impactPct || 0).toFixed(2) + '%'"></span>
+                      <span class="text-slate-600" x-show="o.paperCloseAtMs">·</span>
+                      <span class="text-slate-400" x-show="o.paperCloseAtMs">exit ETA</span>
+                      <span class="font-semibold mono text-amber-200/90 text-xs" x-show="o.paperCloseAtMs" x-text="fmtTimelineTs(o.paperCloseAtMs)"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="selected !== 'hl-twap-paper'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">live mcap</span>
@@ -409,9 +467,12 @@
                 </div>
                 <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
-                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Для Live Oscar: первая нога по сигналу, **одно** усреднение на **−6%** от цены сигнала в течение часа (сумма ног = $800); после двух частичных TP по сетке усреднение отключено (после одной — откат вниз может всё ещё исполнить −6%, если нога не куплена). Живой Oscar Risky с PM2 снят; бумажный Risky — отдельная плитка.
-                    У пяти плиток Oscar (live, live risky, paper risky, V2.1, V2.2) в подписи события: до первого take profit — только входные события, без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA/staged-добора. Под строкой события показывается понятное пояснение активного правила.
+                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight" x-show="selected === 'hl-twap-paper'">
+                    HL TWAP Paper: Telegram OPEN → бумага после 1-го 30s-цикла ($1 000) → плановый выход перед последним циклом. Mark / uPnL обновляются с HL mid.
+                  </div>
+                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight" x-show="selected !== 'hl-twap-paper'">
+                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Для Live Oscar: первая нога по сигналу, **одно** усреднение на **−6%** от цены сигнала в течение часа (сумма ног = $800); после двух частичных TP по сетке усреднение отключено (после одной — откат вниз может всё ещё исполнить −6%, если нога не куплена).
+                    У плиток Oscar в подписи события: до первого take profit — только входные события, без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA/staged-добора. Под строкой события показывается понятное пояснение активного правила.
                   </div>
                   <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
@@ -455,7 +516,7 @@
         </div>
 
         <div>
-          <h3 class="text-lg font-bold text-white mb-3">Recent closes</h3>
+          <h3 class="text-lg font-bold text-white mb-3" x-text="selected === 'hl-twap-paper' ? 'Closed · журнал' : 'Recent closes'"></h3>
           <div class="space-y-2 text-base">
             <template x-for="c in (selectedRow()?.recentClosed || [])" :key="c.mint + c.exitTs">
               <div class="border-b border-white/5 pb-1">
@@ -464,18 +525,30 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
-                      <a :href="gmgn(c.mint)" target="_blank" @click.stop
+                      <a :href="positionHref(selected, c.mint)" target="_blank" @click.stop
                          class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      <span class="pill pill-info text-xs ml-1" x-show="selected === 'hl-twap-paper'" x-text="hlTwapSideLabel(c.side)"></span>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm" x-show="selected !== 'hl-twap-paper'">
                       <span class="pill shrink-0 text-xs"
                             :class="exitReasonPillClass(c)"
                             x-text="c.exitReason"></span>
                       <span class="text-slate-300" x-text="exitReasonHeadline(c)"></span>
                     </div>
-                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-text="exitReasonDetail(c)"></div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug">
+                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-show="selected !== 'hl-twap-paper'" x-text="exitReasonDetail(c)"></div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="selected === 'hl-twap-paper'">
+                      <span class="pill shrink-0 text-xs pill-warn" x-text="c.exitReason || 'close'"></span>
+                      <span class="text-slate-400">hold</span>
+                      <span class="font-semibold mono text-slate-200" x-text="Math.round(c.durationMin || 0) + 'm'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry → exit</span>
+                      <span class="font-semibold mono text-sky-200" x-text="(c.entryPx || 0).toFixed(4) + ' → ' + (c.exitPx || 0).toFixed(4)"></span>
+                      <span class="text-slate-600" x-show="c.impactPct != null">·</span>
+                      <span class="text-slate-400" x-show="c.impactPct != null">impact</span>
+                      <span class="font-semibold mono text-violet-300" x-show="c.impactPct != null" x-text="(c.impactPct || 0).toFixed(2) + '%'"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="selected !== 'hl-twap-paper'">
                       <span class="text-slate-400">mcap at buy</span>
                       <span class="font-semibold mono" :class="closedEntryMcapOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryMcapOk(c) ? fmtUsd(c.entryMcapAtBuyUsd) : 'n/a'"></span>
                       <span class="text-slate-600">·</span>
@@ -495,8 +568,11 @@
                 </div>
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-sky-500/55 pl-4 py-2 space-y-2">
-                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Live Oscar signal kill-stop подписывается как полный выход от первоначального сигнала: −22% для Live Oscar, −18% для Live Oscar Risky.
+                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight" x-show="selected === 'hl-twap-paper'">
+                    Закрытые сделки из `data/hl-twap/paper.jsonl`: schedule → open (после 1-го цикла) → close (план или twap ended/cancel).
+                  </div>
+                  <div class="text-[11px] text-slate-500 mb-1.5 leading-tight" x-show="selected !== 'hl-twap-paper'">
+                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Live Oscar signal kill-stop подписывается как полный выход от первоначального сигнала: −22% для Live Oscar.
                     Та же логика подписей A/B, что и у открытых позиций. TP-regime (если включён) — отдельной строкой; A/B в подписи и в пояснении — только после первого TP или первого DCA/staged-добора.
                   </div>
                   <template x-for="(ev, i) in (c.timeline || [])" :key="(ev.ts || '') + '-' + i">
@@ -561,7 +637,7 @@
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
       'copy-trader',
-      'paper-oscar-risky',
+      'hl-twap-paper',
       'paper-oscar-v21',
       'paper-oscar-v22',
     ];
@@ -596,6 +672,7 @@
         liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
         liveReconcileBoot: null,
         liveReconcileReport: null,
+        hlTwap: null,
       };
     }
     function normalizePaper2Payload(raw) {
@@ -654,13 +731,13 @@
         details:
           'PM2 copy-trader · journal data/copytrader/journal.jsonl · state data/copytrader/state.json · лидер data/copytrader/target-wallet.txt. Дашборд: циклы copy (leader buy/sell → our mirror), Solscan на ордер лидера, отдельно наш tx.',
       },
-      'paper-oscar-risky': {
-        label: 'Paper Oscar Risky',
-        tag: 'paper',
+      'hl-twap-paper': {
+        label: 'HL TWAP Paper',
+        tag: 'hl-twap',
         oneLiner:
-          'Бумага; **те же выходы и паритет `PAPER_*` с live-oscar**, но **мягче пост-gate пороги**: POST **6 ч**, liq **$100k**, vol5m **$3k**, vol1h guard **$20k**, holders **≥1000**. Две ноги и scale-in как у live. **Mint whitelist не используется**.',
+          'Бумага **$1 000** без лимита позиций: копируем только TWAP из Telegram (impact ≥1%). Вход **после 1-го цикла** (~30 с), выход **перед последним** циклом. Журнал `data/hl-twap/paper.jsonl`.',
         details:
-          '**Плитка 3** на `/papertrader2`. PM2 **`paper-oscar-risky`**, `npm run paper-oscar-risky`, журнал `data/paper2/paper-oscar-risky.jsonl`.\nПроцесс **papertrader**; конфиг live-oscar и код **`src/live/**` не задействованы как отдельный рантайм.\n\n**POST-снимок (как в ecosystem для paper-oscar-risky)**\n• Мин. возраст пула **360** мин (**6 ч**); ликв. **≥$100k**; vol5m **≥$3k**; vol1h guard **≥$20k**; holders **≥1000**.\n\n**Совпадает с Live Oscar по выходам и большинству `PAPER_*`** — см. блок **paper-oscar-risky** в `ecosystem.config.cjs`.\n\n**Две ноги (бумага)**\n`PAPER_POSITION_USD=600` в ecosystem для этого процесса; scale-in env скопированы с live для паритета методологии.',
+          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`**.\n\n**Сигнал**\nHypurrScan `twap/*` → фильтр impact ≥ `HL_TWAP_MIN_VOLUME_SHARE_PCT` (сейчас **1%**) → пост в Telegram → только тогда бумага.\n\n**Бумажная позиция**\n• Нота **$1 000** (`HL_TWAP_PAPER_NOTIONAL_USD`), без cap по числу открытых.\n• Long на buy-TWAP кита, short на sell-TWAP.\n• Открытие: **после первого 30s-слайса** (второй тик TWAP).\n• Закрытие: **за 30s до конца** TWAP или при досрочном ended/cancel.\n\n**Журнал**\n`data/hl-twap/paper.jsonl` — schedule / open / close; на дашборде realized + unrealized PnL, таймлайны, closed.',
       },
       'paper-oscar-v21': {
         label: 'Paper Oscar V2.1',
@@ -1046,6 +1123,24 @@
         },
         short(m) { return m ? (m.slice(0, 6) + '…' + m.slice(-4)) : '-'; },
         gmgn(m) { return `https://gmgn.ai/sol/token/${m}`; },
+        hypurrscanTwap(hash) {
+          if (!hash) return '#';
+          return 'https://hypurrscan.io/twap/' + encodeURIComponent(hash);
+        },
+        positionHref(strategyId, mint) {
+          if (strategyId === 'hl-twap-paper') return this.hypurrscanTwap(mint);
+          return this.gmgn(mint);
+        },
+        hlTwapSideLabel(side) {
+          if (side === 'buy') return 'LONG';
+          if (side === 'sell') return 'SHORT';
+          return side || '?';
+        },
+        hlTwapExitKeys() {
+          const eb = this.selectedRow()?.exitsBreakdown;
+          if (!eb || typeof eb !== 'object') return [];
+          return Object.keys(eb).sort();
+        },
         /** Emerald / rose by sign; slate when n/a (matches fmtPct “—”). */
         signedPctColor(v) {
           if (v == null || v === '' || Number.isNaN(Number(v))) return 'text-slate-300';
