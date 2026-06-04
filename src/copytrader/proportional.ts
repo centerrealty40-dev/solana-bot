@@ -33,7 +33,7 @@ export function ourAddUsdFromLeaderAdd(args: {
   if (!(ourSizeUsd > 0) || !(addFraction > 0) || !(maxRoomUsd > 0)) return 0;
   const raw = ourSizeUsd * addFraction;
   const capped = Math.min(raw, maxRoomUsd);
-  if (capped < minAddUsd) return 0;
+  if (minAddUsd > 0 && capped < minAddUsd) return 0;
   return Math.round(capped * 100) / 100;
 }
 

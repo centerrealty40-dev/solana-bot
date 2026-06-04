@@ -50,6 +50,7 @@ import {
   type PendingBuy,
   type PendingSell,
 } from './state.js';
+import { closePositionForMint, reconcileGhostPositions } from './position-reconcile.js';
 import { fmtCopyAlert, notifyCopyTraderTelegram } from './telegram.js';
 import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 
@@ -146,7 +147,7 @@ async function onLeaderBuy(
 
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
-    if (existing.addCount >= cfg.maxAddsPerMint) {
+    if (cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
       appendCopyEvent(cfg, {
         kind: 'leader_add_ignored',
         reason: 'max_adds',
@@ -199,7 +200,7 @@ async function onLeaderBuy(
     });
     return;
   }
-  if (openPositionsCount(state) >= cfg.maxOpenPositions) {
+  if (cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
     appendCopyEvent(cfg, {
       kind: 'leader_buy_ignored',
       reason: 'max_open_positions',
@@ -301,7 +302,7 @@ async function onLeaderSell(
   const pos = state.positions[mint];
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
 
-  if (sellFrac < cfg.minProportionalSellFraction) {
+  if (cfg.minProportionalSellFraction > 0 && sellFrac < cfg.minProportionalSellFraction) {
     appendCopyEvent(cfg, {
       kind: 'leader_sell_ignored',
       reason: 'sell_fraction_too_small',
@@ -391,7 +392,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         removePendingBuyById(state, pending.id);
         continue;
       }
-      if (openPositionsCount(state) >= cfg.maxOpenPositions) {
+      if (cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
         if (noteBuyDefer(state, pending.id, now, cfg)) {
           appendCopyEvent(cfg, {
             kind: 'buy_deferred',
@@ -411,7 +412,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         leaderSignature: pending.leaderSignature,
       });
       continue;
-    } else if (existing.addCount >= cfg.maxAddsPerMint) {
+    } else if (cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'max_adds', mint: pending.mint });
       continue;
@@ -659,13 +660,17 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     }
 
     removePendingSellById(state, pending.id);
+    const failReason = exec.reason ?? 'unknown';
+    if (failReason.includes('no_token_balance')) {
+      closePositionForMint(cfg, state, pending.mint, failReason);
+    }
     appendCopyEvent(cfg, {
       kind: retryable && isPendingSellExpired(pending, now) ? 'sell_expired' : 'sell_failed',
       mint: pending.mint,
       symbol: pending.symbol,
       leaderSignature: pending.leaderSignature,
       sellFraction: pending.fraction,
-      reason: exec.reason ?? 'unknown',
+      reason: failReason,
       retryUntilTs: pending.retryUntilTs,
     });
     await sleep(150);
@@ -676,13 +681,26 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   const state = readCopyTraderState(cfg.statePath);
   let lastPoll = 0;
   let lastSolRefresh = 0;
+  let lastReconcile = 0;
+
+  try {
+    const cleared = await reconcileGhostPositions(cfg, state);
+    if (cleared > 0) {
+      writeCopyTraderState(cfg.statePath, state);
+      console.log('[copy-trader] startup: cleared ghost positions', cleared);
+    }
+  } catch (err) {
+    console.warn('[copy-trader] startup reconcile error', (err as Error).message);
+  }
 
   console.log('[copy-trader] started', {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
     addMirror: 'proportional_to_leader',
-    maxPositionUsd: cfg.maxPositionUsd,
+    maxPositionUsd: cfg.maxPositionUsd > 0 ? cfg.maxPositionUsd : 'unlimited',
+    maxAddsPerMint: cfg.maxAddsPerMint > 0 ? cfg.maxAddsPerMint : 'unlimited',
+    maxOpenPositions: cfg.maxOpenPositions > 0 ? cfg.maxOpenPositions : 'unlimited',
     buyDelayMin: Math.round(cfg.buyDelayMs / 60_000),
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
@@ -707,6 +725,16 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         console.warn('[copy-trader] poll error', (err as Error).message);
       }
       lastPoll = now;
+    }
+
+    if (now - lastReconcile >= 60_000) {
+      try {
+        const cleared = await reconcileGhostPositions(cfg, state);
+        if (cleared > 0) console.log('[copy-trader] cleared ghost positions', cleared);
+      } catch (err) {
+        console.warn('[copy-trader] reconcile error', (err as Error).message);
+      }
+      lastReconcile = now;
     }
 
     try {
