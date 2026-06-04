@@ -3543,10 +3543,11 @@ async function buildPaper2StrategyRowFromLoad(
   // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
   // future jsonl row has a misclassified baseline.
   const PNL_PCT_CLAMP = 100_000; // 1000x
+  const isCopyTraderPanel = sid === 'copy-trader';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
-      const isMcMetric = ot.metricType === 'mc';
+      const isMcMetric = !isCopyTraderPanel && ot.metricType === 'mc';
       /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
       const liveMcForPnl = isMcMetric
         ? await getCurrentMcAny(ot.mint, ot.source).catch(() => null)
@@ -3651,7 +3652,14 @@ async function buildPaper2StrategyRowFromLoad(
       let pnlPct: number | null = null;
       let pnlUsd: number | null = null;
 
+      const remainingCostBasisUsd =
+        ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction ?? 1) : 0;
+
       const investedFor = (): number => {
+        if (isCopyTraderPanel) {
+          const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : ot.totalInvestedUsd;
+          return basis > 0 && basis <= 50_000 ? basis : POSITION_USD_DEFAULT;
+        }
         const investedRaw = ot.totalInvestedUsd;
         return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
       };
@@ -3690,8 +3698,11 @@ async function buildPaper2StrategyRowFromLoad(
       /**
        * mc-strategies prefer mcap, price-strategies prefer price; in either case fall
        * through to the other so we always render a number when either signal is alive.
+       * Copy-trader: price only — mcap fallback compares ~$0.001 entry to ~$500k mcap → bogus PnL.
        */
-      if (isMcMetric) {
+      if (isCopyTraderPanel) {
+        tryByPrice();
+      } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
       } else {
         if (!tryByPrice()) tryByMcap();
@@ -3708,9 +3719,6 @@ async function buildPaper2StrategyRowFromLoad(
         Number.isFinite(currentLiqUsdVal)
           ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
           : null;
-
-      const remainingCostBasisUsd =
-        ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction) : 0;
 
       return {
         mint: ot.mint,

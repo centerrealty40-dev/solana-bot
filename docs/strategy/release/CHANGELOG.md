@@ -14,6 +14,18 @@
 
 ---
 
+## [1.11.311] — 2026-06-04
+
+### Fix: copy-trader dashboard PnL (no bogus $100k+ unrealized)
+
+- Open PnL: **price-only** for copy-trader (disable mcap fallback that compared token price ~$0.001 to live mcap ~$500k).
+- Cost basis for unrealized: **remaining** notional (`totalInvested × remainingFraction`).
+- Closed/timeline: prefer **`pnlPct` from journal** on `copy_sell` rows.
+
+**Откат:** revert `scripts-tmp/copytrader-dashboard.ts` + `dashboard-server.ts`; `pm2 reload live-oscar-dashboard`.
+
+---
+
 ## [1.11.310] — 2026-06-04
 
 ### Feat: copy-trader — no add/position caps; auto-clear ghost state
