@@ -43,6 +43,7 @@ type JournalOpen = {
 
 export type HlTwapDashboardExtras = {
   watchMinImpactPct: number;
+  watchBuyOnly: boolean;
   paperNotionalUsd: number;
   pendingSchedules: number;
   signalsFeedUrl: string;
@@ -236,6 +237,8 @@ export async function buildHlTwapPaperDashboardRow(
     }));
 
   const minImpact = Number(process.env.HL_TWAP_MIN_VOLUME_SHARE_PCT ?? 1);
+  const buyOnlyEnv = process.env.HL_TWAP_BUY_ONLY?.trim();
+  const watchBuyOnly = buyOnlyEnv == null || buyOnlyEnv === '' || buyOnlyEnv === '1' || buyOnlyEnv.toLowerCase() === 'true';
 
   return {
     strategyId: 'hl-twap-paper',
@@ -273,6 +276,7 @@ export async function buildHlTwapPaperDashboardRow(
     liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
     hlTwap: {
       watchMinImpactPct: Number.isFinite(minImpact) ? minImpact : 1,
+      watchBuyOnly,
       paperNotionalUsd: paperNotionalUsd(),
       pendingSchedules: pending.size,
       signalsFeedUrl: 'https://api.hypurrscan.io/twap/*',

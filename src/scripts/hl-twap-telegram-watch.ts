@@ -1,5 +1,5 @@
 /**
- * Hyperliquid TWAP → Telegram. Единственный фильтр: price impact (% от 24h perp volume).
+ * Hyperliquid TWAP → Telegram. Фильтры: только покупка монеты (bid TWAP) + price impact (% 24h perp vol).
  *
  * Data source: HypurrScan L1 indexer `GET https://api.hypurrscan.io/twap/*`
  *
@@ -9,6 +9,7 @@
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID
  * - HL_TWAP_POLL_INTERVAL_MS=5000
  * - HL_TWAP_MIN_VOLUME_SHARE_PCT=1 — price impact (notional / dayNtlVlm × 100)
+ * - HL_TWAP_BUY_ONLY=1 — только 🟩 покупка монеты; 🟥 продажа в стейблы игнорируется
  * - HL_TWAP_PAPER_NOTIONAL_USD=1000 — бумажная нота на сигнал (плитка 3 дашборда)
  * - HL_TWAP_NOTIFY_ENDED=1
  * - HL_TWAP_META_REFRESH_MS=120000
@@ -36,11 +37,9 @@ import { loadHyperliquidMarketCache, type HyperliquidMarketCache } from '../hype
 import { normalizeHypurrscanRow } from '../hyperliquid/twap/normalize.js';
 import { enrichEndFromTwapHistory } from '../hyperliquid/twap/twap-history.js';
 import {
-  closePaperTrade,
-  exitPxForOpen,
-  loadPaperOpensFromJournal,
-  openPaperTrade,
-  paperJournalPath,
+  handlePaperOnTwapEnd,
+  processPaperTrades,
+  schedulePaperTrade,
 } from '../hyperliquid/twap/paper-trader.js';
 import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
@@ -61,6 +60,7 @@ function envBool(name: string, defaultOn: boolean): boolean {
 const POLL_MS = Math.max(2000, envNum('HL_TWAP_POLL_INTERVAL_MS', 5000));
 const META_REFRESH_MS = Math.max(30_000, envNum('HL_TWAP_META_REFRESH_MS', 120_000));
 const MIN_VOLUME_SHARE_PCT = Math.max(0, envNum('HL_TWAP_MIN_VOLUME_SHARE_PCT', 1));
+const BUY_ONLY = envBool('HL_TWAP_BUY_ONLY', true);
 const PAPER_ENABLED = envBool('HL_TWAP_PAPER_ENABLED', true);
 const NOTIFY_ENDED = envBool('HL_TWAP_NOTIFY_ENDED', true);
 const DRY_RUN = envBool('HL_TWAP_DRY_RUN', false);
@@ -143,10 +143,14 @@ async function announceStart(sig: NormalizedTwapSignal, feedRows: HypurrscanTwap
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
     markTwapOpenedNotified(watchState, sig.hash);
+    if (PAPER_ENABLED) schedulePaperTrade(sig);
     return;
   }
   const ok = await sendTelegram(html);
-  if (ok) markTwapOpenedNotified(watchState, sig.hash);
+  if (ok) {
+    markTwapOpenedNotified(watchState, sig.hash);
+    if (PAPER_ENABLED) schedulePaperTrade(sig);
+  }
 }
 
 async function announceEnd(
@@ -171,27 +175,22 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
     rows,
     (row) => normalizeHypurrscanRow(row, cache),
     watchState,
-    { minVolumeSharePct: MIN_VOLUME_SHARE_PCT },
+    { minVolumeSharePct: MIN_VOLUME_SHARE_PCT, buyOnly: BUY_ONLY },
   );
 
   for (const sig of newSignals) {
     console.log(
       `[hl-twap] NEW ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}…`,
     );
-    if (PAPER_ENABLED) openPaperTrade(sig);
     await announceStart(sig, rows);
   }
+
+  if (PAPER_ENABLED) await processPaperTrades(cache);
 
   if (NOTIFY_ENDED) {
     for (const { signal, endedStatus } of endedSignals) {
       console.log(`[hl-twap] END ${signal.displaySymbol} ${endedStatus} ${signal.hash.slice(0, 12)}…`);
-      if (PAPER_ENABLED) {
-        const opens = loadPaperOpensFromJournal(paperJournalPath());
-        if (opens.has(signal.hash)) {
-          const px = exitPxForOpen(opens.get(signal.hash)!, cache);
-          closePaperTrade(signal, px, `twap_${endedStatus}`);
-        }
-      }
+      if (PAPER_ENABLED) handlePaperOnTwapEnd(signal, cache, endedStatus);
       await announceEnd(signal, endedStatus, rows);
     }
   }
@@ -208,7 +207,7 @@ async function main(): Promise<void> {
   await assertTelegramBot();
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_VOLUME_SHARE_PCT}% paper=${PAPER_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_VOLUME_SHARE_PCT}% buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   let cache = await loadHyperliquidMarketCache();
@@ -219,7 +218,7 @@ async function main(): Promise<void> {
     rows0,
     (row) => normalizeHypurrscanRow(row, cache),
     watchState,
-    { minVolumeSharePct: MIN_VOLUME_SHARE_PCT },
+    { minVolumeSharePct: MIN_VOLUME_SHARE_PCT, buyOnly: BUY_ONLY },
   );
   console.log(`[hl-twap-telegram-watch] seeded ${seeded} active TWAP(s) (no retro alerts)`);
 

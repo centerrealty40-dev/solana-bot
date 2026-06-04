@@ -234,6 +234,7 @@
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
+            <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-ok mr-1">buy only</span>
             <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-info mr-1">impact ≥<span x-text="s.hlTwap.watchMinImpactPct"></span>%</span>
             <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-ok mr-1">$<span x-text="s.hlTwap.paperNotionalUsd || 1000"></span>/pos</span>
             <span x-show="s.strategyId === 'hl-twap-paper' && s.hlTwap" class="pill pill-warn">sched: <span x-text="s.hlTwap.pendingSchedules || 0"></span></span>
@@ -735,9 +736,9 @@
         label: 'HL TWAP Paper',
         tag: 'hl-twap',
         oneLiner:
-          'Бумага **$1 000** без лимита позиций: копируем только TWAP из Telegram (impact ≥1%). Вход **после 1-го цикла** (~30 с), выход **перед последним** циклом. Журнал `data/hl-twap/paper.jsonl`.',
+          'Бумага **$1 000** без лимита: только **покупка монеты** (🟩 bid TWAP, impact ≥1%). Продажа в стейблы (🟥) — без алертов. Вход после 1-го цикла, выход перед последним.',
         details:
-          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`**.\n\n**Сигнал**\nHypurrScan `twap/*` → фильтр impact ≥ `HL_TWAP_MIN_VOLUME_SHARE_PCT` (сейчас **1%**) → пост в Telegram → только тогда бумага.\n\n**Бумажная позиция**\n• Нота **$1 000** (`HL_TWAP_PAPER_NOTIONAL_USD`), без cap по числу открытых.\n• Long на buy-TWAP кита, short на sell-TWAP.\n• Открытие: **после первого 30s-слайса** (второй тик TWAP).\n• Закрытие: **за 30s до конца** TWAP или при досрочном ended/cancel.\n\n**Журнал**\n`data/hl-twap/paper.jsonl` — schedule / open / close; на дашборде realized + unrealized PnL, таймлайны, closed.',
+          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`**.\n\n**Сигнал**\nHypurrScan `twap/*` → только **покупка монеты** (`HL_TWAP_BUY_ONLY=1`, bid / `tw.b=true`) → impact ≥ **1%** → Telegram → бумага.\n🟥 **Продажа** монеты (ask TWAP, выход в стейблы) — **игнорируется** (как AERO sell 4h).\n\n**Бумажная позиция**\n• Нота **$1 000**, без cap.\n• Только **LONG** (кит набирает монету).\n• Открытие после **1-го 30s-слайса**; закрытие **за 30s до конца** TWAP.\n\n**Журнал** `data/hl-twap/paper.jsonl` — schedule / open / close; PnL и таймлайны на дашборде.',
       },
       'paper-oscar-v21': {
         label: 'Paper Oscar V2.1',

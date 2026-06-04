@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTwapWatchState, detectTwapChanges } from '../src/hyperliquid/twap/detect.js';
+import { createTwapWatchState, detectTwapChanges, passesTwapFilters } from '../src/hyperliquid/twap/detect.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
 const row: HypurrscanTwapRow = {
@@ -49,5 +49,11 @@ describe('hl-twap impact filter', () => {
     const state = createTwapWatchState();
     const r = detectTwapChanges([row], () => norm(1.2, 10_000), state, { minVolumeSharePct: 1 });
     expect(r.newSignals).toHaveLength(1);
+  });
+
+  it('rejects sell even above impact threshold', () => {
+    const sig = { ...norm(4.41, 1_970_000), side: 'sell' as const };
+    expect(passesTwapFilters(sig, { minVolumeSharePct: 1 })).toBe(false);
+    expect(passesTwapFilters(sig, { minVolumeSharePct: 1, buyOnly: false })).toBe(true);
   });
 });

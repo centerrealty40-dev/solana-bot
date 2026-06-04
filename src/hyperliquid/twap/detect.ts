@@ -29,12 +29,18 @@ export type TwapDetectResult = {
   endedSignals: Array<{ signal: NormalizedTwapSignal; endedStatus: string }>;
 };
 
-/** Compare HypurrScan feed snapshot to local state. Единственный порог — price impact (% of 24h perp volume). */
+export type TwapFilterOpts = {
+  minVolumeSharePct: number;
+  /** Default true: только покупка монеты (bid TWAP), без продажи в стейблы. */
+  buyOnly?: boolean;
+};
+
+/** Compare HypurrScan feed snapshot to local state. */
 export function detectTwapChanges(
   rows: HypurrscanTwapRow[],
   normalize: (row: HypurrscanTwapRow) => NormalizedTwapSignal | null,
   state: TwapWatchState,
-  opts: { minVolumeSharePct: number },
+  opts: TwapFilterOpts,
 ): TwapDetectResult {
   const newSignals: NormalizedTwapSignal[] = [];
   const endedSignals: Array<{ signal: NormalizedTwapSignal; endedStatus: string }> = [];
@@ -53,7 +59,7 @@ export function detectTwapChanges(
       state.activeByHash.delete(sig.hash);
       if (!state.openedNotifiedHashes.has(sig.hash)) continue;
       const base = tracked ?? sig;
-      if (passesTwapFilters(base, opts.minVolumeSharePct)) {
+      if (passesTwapFilters(base, opts)) {
         endedSignals.push({ signal: base, endedStatus: sig.ended });
       }
       continue;
@@ -64,7 +70,7 @@ export function detectTwapChanges(
       continue;
     }
 
-    if (!passesTwapFilters(sig, opts.minVolumeSharePct)) continue;
+    if (!passesTwapFilters(sig, opts)) continue;
 
     state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
@@ -81,9 +87,11 @@ export function detectTwapChanges(
   return { newSignals, endedSignals };
 }
 
-export function passesTwapFilters(sig: NormalizedTwapSignal, minVolumeSharePct: number): boolean {
-  if (minVolumeSharePct <= 0) return true;
-  return sig.volumeSharePct != null && sig.volumeSharePct >= minVolumeSharePct;
+export function passesTwapFilters(sig: NormalizedTwapSignal, opts: TwapFilterOpts): boolean {
+  const buyOnly = opts.buyOnly !== false;
+  if (buyOnly && sig.side !== 'buy') return false;
+  if (opts.minVolumeSharePct <= 0) return true;
+  return sig.volumeSharePct != null && sig.volumeSharePct >= opts.minVolumeSharePct;
 }
 
 /** Mark active TWAPs already in feed as seen — no Telegram burst on first poll after deploy. */
@@ -91,13 +99,13 @@ export function seedTwapWatchState(
   rows: HypurrscanTwapRow[],
   normalize: (row: HypurrscanTwapRow) => NormalizedTwapSignal | null,
   state: TwapWatchState,
-  opts: { minVolumeSharePct: number },
+  opts: TwapFilterOpts,
 ): number {
   let n = 0;
   for (const row of rows) {
     const sig = normalize(row);
     if (!sig || sig.ended) continue;
-    if (!passesTwapFilters(sig, opts.minVolumeSharePct)) continue;
+    if (!passesTwapFilters(sig, opts)) continue;
     state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
     n++;

@@ -44,7 +44,17 @@ function norm(row: HypurrscanTwapRow, impactPct: number): NormalizedTwapSignal {
 }
 
 describe('hl-twap detect', () => {
-  it('only filters by price impact', () => {
+  it('blocks sell TWAP when buyOnly (default)', () => {
+    const state = createTwapWatchState();
+    const sell = (r: HypurrscanTwapRow, impactPct: number): NormalizedTwapSignal => ({
+      ...norm(r, impactPct),
+      side: 'sell',
+    });
+    const r = detectTwapChanges([baseRow], (row) => sell(row, 2), state, { minVolumeSharePct: 1 });
+    expect(r.newSignals).toHaveLength(0);
+  });
+
+  it('filters by price impact on buy TWAP', () => {
     const state = createTwapWatchState();
     const r1 = detectTwapChanges([baseRow], (r) => norm(r, 0.5), state, { minVolumeSharePct: 1 });
     expect(r1.newSignals).toHaveLength(0);
