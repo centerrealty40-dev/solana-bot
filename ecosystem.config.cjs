@@ -745,13 +745,30 @@ const PM2_APPS = [
 
         PAPER_LIQ_WATCH_ENABLED: '1',
         PAPER_LIQ_WATCH_FORCE_CLOSE: '1',
-        PAPER_LIQ_WATCH_DRAIN_PCT: '35',
+        PAPER_LIQ_WATCH_DRAIN_PCT: '25',
         PAPER_LIQ_WATCH_MIN_AGE_MIN: '1',
         PAPER_LIQ_WATCH_CONSECUTIVE_FAILURES: '2',
         PAPER_LIQ_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
         PAPER_LIQ_WATCH_RPC_FALLBACK: '1',
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+
+        /**
+         * 1.11.309 — flash crash kill (aggressive): velocity + post-fill guard; blocks DCA after trigger.
+         * Fractions negative in env (e.g. -0.06 = −6%%). Not a static avg stop.
+         */
+        PAPER_FLASH_CRASH_KILL_ENABLED: '1',
+        PAPER_FLASH_CRASH_KILL_DROP_30S_PCT: '-0.06',
+        PAPER_FLASH_CRASH_KILL_DROP_60S_PCT: '-0.08',
+        PAPER_FLASH_CRASH_KILL_DROP_180S_PCT: '-0.12',
+        PAPER_FLASH_CRASH_KILL_POST_DCA_WARN_PCT: '-0.05',
+        PAPER_FLASH_CRASH_KILL_POST_DCA_FULL_PCT: '-0.07',
+        PAPER_FLASH_CRASH_KILL_POST_DCA_WARN_WINDOW_MS: '120000',
+        PAPER_FLASH_CRASH_KILL_POST_DCA_FULL_WINDOW_MS: '180000',
+        PAPER_FLASH_CRASH_KILL_QUOTE_DISCOUNT_PCT: '0.08',
+        PAPER_FLASH_CRASH_KILL_QUOTE_DROP_60S_PCT: '-0.05',
+        PAPER_FLASH_CRASH_KILL_PARTIAL_SELL_FRACTION: '0.75',
+        PAPER_FLASH_CRASH_KILL_DCA_BLOCK_MS: '300000',
 
         /** W8.0 §9 rollout — шаг 3: `live` + микролимиты §3.3 (sendTransaction + confirm); см. RUNBOOK §0.2 и [`W8.0_live_oscar_trading_bot.md`](docs/strategy/specs/W8.0_live_oscar_trading_bot.md) §9. */
         LIVE_STRATEGY_ENABLED: '1',

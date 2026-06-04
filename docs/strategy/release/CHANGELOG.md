@@ -14,6 +14,18 @@
 
 ---
 
+## [1.11.309] — 2026-06-04
+
+### Risk: live-oscar flash-crash kill (aggressive) + LIQ_DRAIN 25%
+
+- **Flash crash kill** (`PAPER_FLASH_CRASH_KILL_*`): velocity exits (−6%/30s, −8%/60s, −12%/3m), post-fill guard after last buy leg (−5%/2m → 75% partial, −7%/3m → full), quote divergence gate; DCA blocked 5m after trigger. Journal reason `FLASH_CRASH_KILL`.
+- **LIQ_DRAIN:** `PAPER_LIQ_WATCH_DRAIN_PCT` **35 → 25** (раньше выход при просадке ликвидности от entry).
+- Blacklist: GACHA mint `DnnmrZnCTqQn7bYbVAiWdJLreqrhg7HaSTkmhtzu8THy`.
+
+**Откат:** `git revert` коммита 1.11.309; на VPS `git reset --hard` на предыдущий SHA + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.308] — 2026-06-03
 
 ### Fix: discovery SQL — min mcap filter (регресс 1.11.307)

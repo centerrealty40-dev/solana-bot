@@ -6,6 +6,7 @@ import { getSolUsd, getLiveMcUsd } from '../pricing.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import { jupiterQuoteBuyPriceUsd } from '../pricing/price-verify.js';
 import { applyEntryCosts } from '../costs.js';
+import { stampFlashKillLastBuyLeg } from './flash-crash-kill.js';
 import type { OpenTrade } from '../types.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { readPaperOscarScaleInEnv } from './paper-scale-in-env.js';
@@ -185,6 +186,7 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
     sizeUsd: addUsd,
     reason: 'scale_in',
   });
+  stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
   if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);

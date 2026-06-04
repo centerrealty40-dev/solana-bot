@@ -716,6 +716,23 @@ const ConfigSchema = z.object({
   liqWatchStampOnAllClose: z.boolean().default(true),
   liqWatchStampOnTrack: z.boolean().default(false),
 
+  /**
+   * Flash crash kill — velocity / post-fill drawdown (live-oscar). Fractions are negative (e.g. -0.06 = −6%).
+   * Env: `PAPER_FLASH_CRASH_KILL_*`.
+   */
+  flashCrashKillEnabled: z.boolean().default(false),
+  flashCrashKillDrop30sPct: z.coerce.number().max(0).min(-0.99).default(-0.06),
+  flashCrashKillDrop60sPct: z.coerce.number().max(0).min(-0.99).default(-0.08),
+  flashCrashKillDrop180sPct: z.coerce.number().max(0).min(-0.99).default(-0.12),
+  flashCrashKillPostDcaWarnPct: z.coerce.number().max(0).min(-0.99).default(-0.05),
+  flashCrashKillPostDcaFullPct: z.coerce.number().max(0).min(-0.99).default(-0.07),
+  flashCrashKillPostDcaWarnWindowMs: z.coerce.number().int().min(30_000).max(600_000).default(120_000),
+  flashCrashKillPostDcaFullWindowMs: z.coerce.number().int().min(60_000).max(900_000).default(180_000),
+  flashCrashKillQuoteMaxDiscountPct: z.coerce.number().min(0).max(0.5).default(0.08),
+  flashCrashKillQuoteDrop60sPct: z.coerce.number().max(0).min(-0.99).default(-0.05),
+  flashCrashKillPartialSellFraction: z.coerce.number().min(0.1).max(1).default(0.75),
+  flashCrashKillDcaBlockMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
+
   /** Live SPL holder-count resolver via QuickNode. */
   holdersLiveEnabled: z.boolean().default(false),
   holdersUseQnAddon: z.boolean().default(false),
@@ -1254,6 +1271,18 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liqWatchRpcFallback: process.env.PAPER_LIQ_WATCH_RPC_FALLBACK === '1',
     liqWatchStampOnAllClose: process.env.PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE !== '0',
     liqWatchStampOnTrack: process.env.PAPER_LIQ_WATCH_STAMP_ON_TRACK === '1',
+    flashCrashKillEnabled: process.env.PAPER_FLASH_CRASH_KILL_ENABLED === '1',
+    flashCrashKillDrop30sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_30S_PCT,
+    flashCrashKillDrop60sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_60S_PCT,
+    flashCrashKillDrop180sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_180S_PCT,
+    flashCrashKillPostDcaWarnPct: process.env.PAPER_FLASH_CRASH_KILL_POST_DCA_WARN_PCT,
+    flashCrashKillPostDcaFullPct: process.env.PAPER_FLASH_CRASH_KILL_POST_DCA_FULL_PCT,
+    flashCrashKillPostDcaWarnWindowMs: process.env.PAPER_FLASH_CRASH_KILL_POST_DCA_WARN_WINDOW_MS,
+    flashCrashKillPostDcaFullWindowMs: process.env.PAPER_FLASH_CRASH_KILL_POST_DCA_FULL_WINDOW_MS,
+    flashCrashKillQuoteMaxDiscountPct: process.env.PAPER_FLASH_CRASH_KILL_QUOTE_DISCOUNT_PCT,
+    flashCrashKillQuoteDrop60sPct: process.env.PAPER_FLASH_CRASH_KILL_QUOTE_DROP_60S_PCT,
+    flashCrashKillPartialSellFraction: process.env.PAPER_FLASH_CRASH_KILL_PARTIAL_SELL_FRACTION,
+    flashCrashKillDcaBlockMs: process.env.PAPER_FLASH_CRASH_KILL_DCA_BLOCK_MS,
     holdersLiveEnabled: envBool(process.env.PAPER_HOLDERS_LIVE_ENABLED, false),
     holdersUseQnAddon: envBool(process.env.PAPER_HOLDERS_USE_QN_ADDON, false),
     holdersTtlMs: process.env.PAPER_HOLDERS_TTL_MS,

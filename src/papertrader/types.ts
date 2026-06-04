@@ -10,6 +10,7 @@ export type ExitReason =
   /** Wave B: full exit at ≤0% avg after TP ≥+7.5% (no staged add path). */
   | 'BREAKEVEN_EXIT'
   | 'LIQ_DRAIN'
+  | 'FLASH_CRASH_KILL'
   /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
   | 'RECONCILE_ORPHAN'
   /** Live periodic job: force full exit + chain-sized sell, skipping exit price-verify defer loop. */
@@ -134,7 +135,8 @@ export interface PartialSell {
     | 'SL'
     | 'SCRATCH_FLUSH0'
     | 'SCRATCH_GAP_FLUSH'
-    | 'THIN_VOL_FLUSH';
+    | 'THIN_VOL_FLUSH'
+    | 'FLASH_CRASH_KILL';
   proceedsUsd: number;
   grossProceedsUsd: number;
   pnlUsd: number;
@@ -219,6 +221,16 @@ export interface OpenTrade {
   liqWatchLastDropPct?: number | null;
   /** W7.5 — last good snapshot price from tracker (for emergency LIQ_DRAIN exit). */
   lastObservedPriceUsd?: number | null;
+  /** Flash-kill ring buffer (min(Jupiter, snapshot) MTM samples). */
+  flashKillPriceRing?: Array<{ ts: number; px: number }>;
+  /** Last buy leg market price for post-fill velocity guard. */
+  liveFlashLastBuyLegMarketPx?: number;
+  liveFlashLastBuyLegTs?: number;
+  /** Block DCA until this timestamp after a flash-kill event. */
+  liveFlashDcaBlockedUntilTs?: number;
+  /** Last tick quote inputs for flash divergence gate. */
+  liveFlashLastSnapshotPx?: number | null;
+  liveFlashLastJupiterPx?: number | null;
   /** W8.0-p4 — SPL decimals for Jupiter sizing (live-oscar); optional on paper restore. */
   tokenDecimals?: number | null;
   /**
