@@ -275,6 +275,7 @@ export function closePaperForWhaleSellReversal(
   const user = sig.user.toLowerCase();
   let closed = 0;
   for (const pos of opens.values()) {
+    if (pos.side !== 'buy') continue;
     if (pos.whaleUser.toLowerCase() !== user || pos.coin !== sig.coin) continue;
     const px = exitPxForOpen(pos, cache);
     if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'whale_sell_reversal')) {
@@ -341,8 +342,8 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperOpenAtMs, o.entryTs),
       kind: 'open',
-      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла)`,
-      reason: 'after_cycle_1',
+      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла${o.side === 'sell' ? ', разворот' : ''})`,
+      reason: o.side === 'sell' ? 'reversal_after_buy' : 'after_cycle_1',
     },
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),

@@ -148,27 +148,27 @@ async function announceStart(
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
     markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) {
-      if (sig.side === 'buy') schedulePaperTrade(sig);
-      else closePaperOnSellReversal(sig, cache);
-    }
+    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig, cache);
     return;
   }
   const ok = await sendTelegram(html);
   if (ok) {
     markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) {
-      if (sig.side === 'buy') schedulePaperTrade(sig);
-      else closePaperOnSellReversal(sig, cache);
-    }
+    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig, cache);
   }
 }
 
-function closePaperOnSellReversal(sig: NormalizedTwapSignal, cache: HyperliquidMarketCache): void {
+/** Buy → LONG в журнале; sell-разворот → закрыть LONG того же кита+монеты и открыть SHORT TWAP. */
+function schedulePaperAfterTelegramOpen(sig: NormalizedTwapSignal, cache: HyperliquidMarketCache): void {
+  if (sig.side === 'buy') {
+    schedulePaperTrade(sig);
+    return;
+  }
   const n = closePaperForWhaleSellReversal(sig, cache);
   if (n > 0) {
     console.log(`[hl-twap] paper closed ${n} long(s) on whale sell reversal ${sig.displaySymbol}`);
   }
+  schedulePaperTrade(sig);
 }
 
 async function announceEnd(

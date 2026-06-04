@@ -1283,7 +1283,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'paper-oscar-v22',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-04-hl-twap-p7';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-04-hl-twap-p8';
 
 export const DASHBOARD_STRATEGY_LABELS: Record<string, string> = {
   'live-oscar': 'Live Oscar',
