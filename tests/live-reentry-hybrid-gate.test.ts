@@ -12,7 +12,7 @@ const MINT = 'TestMint1111111111111111111111111111111111';
 
 function hybridCfg(): PaperTraderConfig {
   return {
-    liveReentryMinDropFromLastExitPct: 12,
+    liveReentryMinDropFromLastExitPct: 20,
     liveReentryMaxWaitMinutes: 20,
   } as PaperTraderConfig;
 }
@@ -29,23 +29,23 @@ describe('live re-entry hybrid gate', () => {
     ).toBe(false);
   });
 
-  it('blocks before 20m when price above -12% from last exit', () => {
+  it('blocks before 20m when price above -20% from last exit', () => {
     const exitTs = Date.now() - 10 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
     const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.95, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_hybrid_wait_dip12pct_or_20m'))).toBe(true);
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
+    expect(reasons.some((r) => r.startsWith('reentry_hybrid_wait_dip20pct_or_20m'))).toBe(true);
   });
 
-  it('allows dip re-entry before 20m when price hit -12%', () => {
+  it('allows dip re-entry before 20m when price hit -20%', () => {
     const exitTs = Date.now() - 10 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
     const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.87, reasons, Date.now());
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.79, reasons, Date.now());
     expect(reasons).toHaveLength(0);
   });
 
-  it('allows time fallback after 20m even above -12% (runner case)', () => {
+  it('allows time fallback after 20m even above -20% (runner case)', () => {
     const exitTs = Date.now() - 21 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
     const reasons: string[] = [];
