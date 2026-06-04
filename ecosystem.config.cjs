@@ -1256,6 +1256,35 @@ const PM2_APPS = [
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
       },
     },
+    /**
+     * Hyperliquid TWAP alerts — HypurrScan `twap/*`.
+     * Токен/чат: HL_TWAP_TELEGRAM_* в `.env` (отдельный канал, не Live Oscar).
+     */
+    {
+      name: 'hl-twap-telegram-watch',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent hl-twap-telegram-watch',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        HL_TWAP_POLL_INTERVAL_MS: '5000',
+        HL_TWAP_MIN_VOLUME_SHARE_PCT: '1',
+        HL_TWAP_TELEGRAM_CHAT_ID: '-1003852228620',
+        /** Токен бота — только в `.env` (HL_TWAP_TELEGRAM_BOT_TOKEN), не в git. */
+        HL_TWAP_NOTIFY_ENDED: '1',
+        HL_TWAP_META_REFRESH_MS: '120000',
+        HL_TWAP_MEXC_LINKS: '1',
+        HL_TWAP_PAPER_ENABLED: '1',
+        HL_TWAP_PAPER_NOTIONAL_USD: '1000',
+        HL_TWAP_DRY_RUN: '0',
+      },
+    },
 ];
 
 module.exports = {
