@@ -73,7 +73,26 @@ export function detectTwapChanges(
   return { newSignals, endedSignals };
 }
 
-function passesTwapFilters(sig: NormalizedTwapSignal, minVolumeSharePct: number): boolean {
+export function passesTwapFilters(sig: NormalizedTwapSignal, minVolumeSharePct: number): boolean {
   if (minVolumeSharePct <= 0) return true;
   return sig.volumeSharePct != null && sig.volumeSharePct >= minVolumeSharePct;
+}
+
+/** Mark active TWAPs already in feed as seen — no Telegram burst on first poll after deploy. */
+export function seedTwapWatchState(
+  rows: HypurrscanTwapRow[],
+  normalize: (row: HypurrscanTwapRow) => NormalizedTwapSignal | null,
+  state: TwapWatchState,
+  opts: { minVolumeSharePct: number },
+): number {
+  let n = 0;
+  for (const row of rows) {
+    const sig = normalize(row);
+    if (!sig || sig.ended) continue;
+    if (!passesTwapFilters(sig, opts.minVolumeSharePct)) continue;
+    state.announcedHashes.add(sig.hash);
+    state.activeByHash.set(sig.hash, sig);
+    n++;
+  }
+  return n;
 }

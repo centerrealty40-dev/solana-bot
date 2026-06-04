@@ -20,7 +20,11 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { detectTwapChanges, createTwapWatchState } from '../hyperliquid/twap/detect.js';
+import {
+  detectTwapChanges,
+  createTwapWatchState,
+  seedTwapWatchState,
+} from '../hyperliquid/twap/detect.js';
 import {
   buildTwapEndMessage,
   buildTwapStartMessage,
@@ -66,6 +70,19 @@ const TG_CHAT = process.env.HL_TWAP_TELEGRAM_CHAT_ID?.trim() ?? '';
 const AUDIT_PATH =
   process.env.HL_TWAP_AUDIT_JSONL?.trim() ||
   path.join(process.cwd(), 'data', 'hl-twap', 'signals.jsonl');
+
+async function assertTelegramBot(): Promise<void> {
+  if (DRY_RUN || !TG_TOKEN) return;
+  const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getMe`);
+  const body = (await res.json()) as { ok?: boolean; description?: string };
+  if (!body.ok) {
+    console.error(
+      '[hl-twap-telegram-watch] Invalid HL_TWAP_TELEGRAM_BOT_TOKEN (getMe failed):',
+      body.description ?? res.status,
+    );
+    process.exit(1);
+  }
+}
 
 async function sendTelegram(html: string): Promise<boolean> {
   if (!TG_TOKEN || !TG_CHAT) {
@@ -170,12 +187,23 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  await assertTelegramBot();
+
   console.log(
     `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_VOLUME_SHARE_PCT}% paper=${PAPER_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   let cache = await loadHyperliquidMarketCache();
   let cacheAt = Date.now();
+
+  const rows0 = await fetchHypurrscanTwapFeed();
+  const seeded = seedTwapWatchState(
+    rows0,
+    (row) => normalizeHypurrscanRow(row, cache),
+    watchState,
+    { minVolumeSharePct: MIN_VOLUME_SHARE_PCT },
+  );
+  console.log(`[hl-twap-telegram-watch] seeded ${seeded} active TWAP(s) (no retro alerts)`);
 
   const loop = async (): Promise<void> => {
     if (Date.now() - cacheAt >= META_REFRESH_MS) {
