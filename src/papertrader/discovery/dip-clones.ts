@@ -4,7 +4,12 @@ import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } 
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
 import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
 import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
-import { evaluateSnapshot, passesDiscoveryMinMarketCap, evaluateSnapshotPriorityTier } from '../filters/snapshot-filter.js';
+import {
+  evaluateSnapshot,
+  passesDiscoveryMinMarketCap,
+  passesDiscoveryMaxMarketCap,
+  evaluateSnapshotPriorityTier,
+} from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
   fetchDipContextMap,
@@ -53,6 +58,7 @@ import {
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { writeDiscoveryCollectorPinMints } from './discovery-collector-pin.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
+import { getPriorityOpenMints } from './priority-discovery-registry.js';
 import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 import {
   isLiveOscarTwoPhaseMcap,
@@ -438,6 +444,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     volumeLeaderMints: volumeLeaderMintSet,
     sanityCfg: discoverySnapshotSanityCfg(cfg),
   });
+  if ((cfg.discoveryMaxMarketCapUsd ?? 0) > 0) {
+    const openMcapExempt = getPriorityOpenMints();
+    snapshotTagged = snapshotTagged.filter(({ row }) =>
+      passesDiscoveryMaxMarketCap(cfg, row, openMcapExempt),
+    );
+  }
   if (snapshotTagged.length === 0) {
     syncDiscoveryCollectorPin(cfg, priorityMintSet);
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };

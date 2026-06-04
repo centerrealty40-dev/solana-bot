@@ -1,5 +1,8 @@
 import type { PaperTraderConfig } from '../config.js';
-import { passesDiscoveryMinMarketCap } from '../filters/snapshot-filter.js';
+import {
+  passesDiscoveryMaxMarketCap,
+  passesDiscoveryMinMarketCap,
+} from '../filters/snapshot-filter.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { isMintBlacklisted } from './mint-blacklist-file.js';
 import { fetchLatestCrossVenueSnapshotRowForMint } from './snapshot.js';
@@ -33,6 +36,7 @@ export async function injectWhitelistDiscoveryCandidates(
     const row = await fetchLatestCrossVenueSnapshotRowForMint(mint, { lookbackMinutes: lookbackMin });
     if (!row) continue;
     if (!passesDiscoveryMinMarketCap(cfg, row)) continue;
+    if (!passesDiscoveryMaxMarketCap(cfg, row)) continue;
     added.push({ row, lane });
     have.add(mint);
   }

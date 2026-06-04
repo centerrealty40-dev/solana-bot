@@ -377,6 +377,8 @@ const PM2_APPS = [
          * Не путать с low-only: $1.3M–$3M используют отдельные dip/vol (см. PAPER_LIVE_OSCAR_LOW_*).
          */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
+        /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
+        PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
         /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, 2×$400, DCA $300/ступень. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',

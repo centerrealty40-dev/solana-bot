@@ -84,6 +84,10 @@ export async function fetchSmartLotteryLaneCandidates(
     cfg.discoveryMinMarketCapUsd > 0
       ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
+  const maxMcapFilter =
+    cfg.discoveryMaxMarketCapUsd > 0
+      ? `AND COALESCE(market_cap_usd, 0) <= ${cfg.discoveryMaxMarketCapUsd}`
+      : '';
   const limit =
     cfg.smlotSnapshotCandidateLimit > 0 ? cfg.smlotSnapshotCandidateLimit : cfg.snapshotCandidateLimit;
 
@@ -107,6 +111,7 @@ export async function fetchSmartLotteryLaneCandidates(
       AND buys_5m >= ${lc.MIN_BUYS_5M}
       AND sells_5m >= ${lc.MIN_SELLS_5M}
       ${minMcapFilter}
+      ${maxMcapFilter}
     ORDER BY ts DESC
     LIMIT ${limit}
   `));
