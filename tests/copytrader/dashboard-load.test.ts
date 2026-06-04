@@ -251,4 +251,45 @@ describe('loadCopyTraderJsonlForDashboard', () => {
     expect(r.closed[0]!.pnlPct).toBe(-1);
     expect(r.closed[0]!.pnlUsd).toBe(-0.5);
   });
+
+  it('uses journal pnlPct on copy_sell when present', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dash-'));
+    const journal = path.join(tmpDir, 'journal.jsonl');
+    const base = Date.now() - 600_000;
+    const mint = 'Mint4444444444444444444444444444444444444';
+    fs.writeFileSync(
+      journal,
+      [
+        JSON.stringify({
+          ts: base,
+          kind: 'copy_buy',
+          mode: 'live',
+          mint,
+          symbol: 'HENRY',
+          sizeUsd: 600,
+          priceUsd: 0.0014,
+          ok: true,
+          txSignature: 'sigBuy4444444444444444444444444444444444444444444444444444444444444444',
+        }),
+        JSON.stringify({
+          ts: base + 300_000,
+          kind: 'copy_sell',
+          mode: 'live',
+          mint,
+          symbol: 'HENRY',
+          sizeUsd: 600,
+          entryPriceUsd: 0.0014,
+          exitPriceUsd: 0.00135,
+          pnlPct: -3.57,
+          ok: true,
+          txSignature: 'sigSell444444444444444444444444444444444444444444444444444444444444444',
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const r = loadCopyTraderJsonlForDashboard(journal);
+    expect(r.closed[0]!.pnlPct).toBe(-3.57);
+    expect(r.closed[0]!.pnlUsd).toBe(-21.42);
+  });
 });

@@ -173,6 +173,22 @@ function sanePnl(entryPx: number, exitPx: number, soldUsd: number): { pnlPct: nu
   return { pnlPct: +pnlPct.toFixed(2), pnlUsd: +pnlUsd.toFixed(2) };
 }
 
+/** Prefer journal pnlPct from copy-trader executor; fallback to price inference. */
+function pnlFromCopySellEvent(
+  ev: Record<string, unknown>,
+  entryPx: number,
+  exitPx: number,
+  soldUsd: number,
+): { pnlPct: number; pnlUsd: number } {
+  const journalPct = Number(ev.pnlPct);
+  if (ev.ok === true && Number.isFinite(journalPct) && soldUsd > 0) {
+    const pnlPct = Math.max(-99.9, Math.min(500, journalPct));
+    const pnlUsd = (soldUsd * pnlPct) / 100;
+    return { pnlPct: +pnlPct.toFixed(2), pnlUsd: +pnlUsd.toFixed(2) };
+  }
+  return sanePnl(entryPx, exitPx, soldUsd);
+}
+
 function bumpFail(map: Map<string, number>, reason: string): void {
   const key = reason.trim() || 'unknown';
   map.set(key, (map.get(key) ?? 0) + 1);
@@ -558,8 +574,8 @@ export function loadCopyTraderJsonlForDashboard(
       if (ok) {
         stats.sellsOk += 1;
         if (ts >= since1h) stats.ourFills1h += 1;
-        exitPx = normalizeExitPrice(entryPx || p?.avgEntryPx || 0, exitPx, sizeUsd);
-        const { pnlPct, pnlUsd } = sanePnl(entryPx || p?.avgEntryPx || 0, exitPx, sizeUsd);
+        const entryPxUse = entryPx || p?.avgEntryPx || 0;
+        const { pnlPct, pnlUsd } = pnlFromCopySellEvent(ev, entryPxUse, exitPx, sizeUsd);
         const soldFrac =
           p && p.remainingUsd > 0 ? Math.min(1, sizeUsd / p.remainingUsd) : 1;
         const isFull = !p || soldFrac >= 0.999 || sizeUsd >= (p?.remainingUsd ?? sizeUsd) * 0.999;
