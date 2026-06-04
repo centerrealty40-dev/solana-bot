@@ -186,9 +186,9 @@
     <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе пять колонок Oscar -->
     <section class="dash-desktop-strategy-cols">
       <template x-for="(s, idx) in (state.strategies || [])" :key="(s.strategyId || 'row') + ':' + idx">
-        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition select-none min-w-0"
+        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer select-none min-w-0"
              :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
-             @click="selected = s.strategyId">
+             @click="selectStrategy(s.strategyId)">
           <div class="flex items-center justify-between gap-2">
             <div class="text-lg font-bold text-white" x-text="describe(s.strategyId).label"></div>
             <span class="pill pill-info shrink-0" x-text="describe(s.strategyId).tag"></span>
@@ -413,7 +413,7 @@
                     После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Для Live Oscar: первая нога по сигналу, **одно** усреднение на **−6%** от цены сигнала в течение часа (сумма ног = $800); после двух частичных TP по сетке усреднение отключено (после одной — откат вниз может всё ещё исполнить −6%, если нога не куплена). Живой Oscar Risky с PM2 снят; бумажный Risky — отдельная плитка.
                     У пяти плиток Oscar (live, live risky, paper risky, V2.1, V2.2) в подписи события: до первого take profit — только входные события, без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA/staged-добора. Под строкой события показывается понятное пояснение активного правила.
                   </div>
-                  <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
+                  <template x-for="(ev, i) in timelineUi(o.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
                       <div class="flex-1 min-w-0">
@@ -499,7 +499,7 @@
                     После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Live Oscar signal kill-stop подписывается как полный выход от первоначального сигнала: −22% для Live Oscar, −18% для Live Oscar Risky.
                     Та же логика подписей A/B, что и у открытых позиций. TP-regime (если включён) — отдельной строкой; A/B в подписи и в пояснении — только после первого TP или первого DCA/staged-добора.
                   </div>
-                  <template x-for="(ev, i) in (c.timeline || [])" :key="(ev.ts || '') + '-' + i">
+                  <template x-for="(ev, i) in timelineUi(c.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
                       <div class="flex-1 min-w-0">
@@ -752,8 +752,25 @@
         crypto: { ok: false, updatedAt: 0, source: 'coingecko', assets: [] },
         cryptoTickerStamp: '',
         selected: null,
+        rowCache: null,
+        /** Cap timeline DOM per position — full count still shown in header. */
+        timelineUiMax: 30,
         updatedAt: '—',
         expanded: {},
+        selectStrategy(id) {
+          if (this.selected === id) return;
+          this.selected = id;
+          this.syncRowCache();
+        },
+        syncRowCache() {
+          this.rowCache =
+            (this.state.strategies || []).find((s) => s.strategyId === this.selected) || null;
+        },
+        timelineUi(events) {
+          const arr = events || [];
+          const max = this.timelineUiMax;
+          return arr.length > max ? arr.slice(arr.length - max) : arr;
+        },
         toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
         isExpanded(key) { return !!this.expanded[key]; },
         fmtTimelineTs(ts) {
@@ -1026,10 +1043,11 @@
               const ids = normalized.strategies.map((x) => x.strategyId);
               this.selected = ids.includes(pref) ? pref : normalized.strategies[0].strategyId;
             }
+            this.syncRowCache();
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }
         },
-        selectedRow() { return (this.state.strategies || []).find((s) => s.strategyId === this.selected) || null; },
+        selectedRow() { return this.rowCache; },
         describe(id) {
           const m = STRATEGY_META[id] || {};
           const details = m.details || m.description || '';
