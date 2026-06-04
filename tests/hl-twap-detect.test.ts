@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTwapWatchState, detectTwapChanges } from '../src/hyperliquid/twap/detect.js';
+import {
+  createTwapWatchState,
+  detectTwapChanges,
+  markTwapOpenedNotified,
+  seedTwapWatchState,
+} from '../src/hyperliquid/twap/detect.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
 const baseRow: HypurrscanTwapRow = {
@@ -49,13 +54,22 @@ describe('hl-twap detect', () => {
     expect(r2.newSignals).toHaveLength(1);
   });
 
-  it('emits end once', () => {
+  it('emits end once after open was notified', () => {
     const state = createTwapWatchState();
     detectTwapChanges([baseRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
+    markTwapOpenedNotified(state, baseRow.hash);
     const endedRow = { ...baseRow, ended: 'finished' };
     const r1 = detectTwapChanges([endedRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
     expect(r1.endedSignals).toHaveLength(1);
     const r2 = detectTwapChanges([endedRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
     expect(r2.endedSignals).toHaveLength(0);
+  });
+
+  it('skips end when open was never notified (e.g. seed only)', () => {
+    const state = createTwapWatchState();
+    seedTwapWatchState([baseRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
+    const endedRow = { ...baseRow, ended: 'error' };
+    const r = detectTwapChanges([endedRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
+    expect(r.endedSignals).toHaveLength(0);
   });
 });

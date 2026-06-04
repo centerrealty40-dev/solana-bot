@@ -23,6 +23,7 @@ import path from 'node:path';
 import {
   detectTwapChanges,
   createTwapWatchState,
+  markTwapOpenedNotified,
   seedTwapWatchState,
 } from '../hyperliquid/twap/detect.js';
 import {
@@ -74,6 +75,7 @@ const AUDIT_PATH =
 const RATING_CACHE_MS = Math.max(60_000, envNum('HL_TWAP_USER_RATING_CACHE_MS', 300_000));
 
 const ratingCache = new Map<string, { at: number; rating: UserTwapRating }>();
+const watchState = createTwapWatchState();
 
 async function userRatingCached(user: string, feedRows: HypurrscanTwapRow[]): Promise<UserTwapRating> {
   const key = user.toLowerCase();
@@ -140,9 +142,11 @@ async function announceStart(sig: NormalizedTwapSignal, feedRows: HypurrscanTwap
   appendAudit('twap_start', sig);
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
+    markTwapOpenedNotified(watchState, sig.hash);
     return;
   }
-  await sendTelegram(html);
+  const ok = await sendTelegram(html);
+  if (ok) markTwapOpenedNotified(watchState, sig.hash);
 }
 
 async function announceEnd(
@@ -160,8 +164,6 @@ async function announceEnd(
   }
   await sendTelegram(html);
 }
-
-const watchState = createTwapWatchState();
 
 async function runPass(cache: HyperliquidMarketCache): Promise<void> {
   const rows = await fetchHypurrscanTwapFeed();

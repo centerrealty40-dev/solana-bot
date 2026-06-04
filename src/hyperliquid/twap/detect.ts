@@ -1,8 +1,10 @@
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from './types.js';
 
 export type TwapWatchState = {
-  /** Hashes we already announced as new TWAP. */
-  announcedHashes: Set<string>;
+  /** Open alert already sent to Telegram (required before end/cancel alert). */
+  openedNotifiedHashes: Set<string>;
+  /** Seen opens: seeded or new this session — suppress duplicate NEW only. */
+  seenOpenHashes: Set<string>;
   /** Active TWAP hashes (no ended yet). */
   activeByHash: Map<string, NormalizedTwapSignal>;
   /** Ended notifications already sent. */
@@ -11,10 +13,15 @@ export type TwapWatchState = {
 
 export function createTwapWatchState(): TwapWatchState {
   return {
-    announcedHashes: new Set(),
+    openedNotifiedHashes: new Set(),
+    seenOpenHashes: new Set(),
     activeByHash: new Map(),
     endedAnnounced: new Set(),
   };
+}
+
+export function markTwapOpenedNotified(state: TwapWatchState, hash: string): void {
+  state.openedNotifiedHashes.add(hash);
 }
 
 export type TwapDetectResult = {
@@ -41,24 +48,25 @@ export function detectTwapChanges(
 
     if (sig.ended) {
       if (state.endedAnnounced.has(sig.hash)) continue;
-      const prev = state.activeByHash.get(sig.hash);
-      const base = prev ?? sig;
+      state.endedAnnounced.add(sig.hash);
+      const tracked = state.activeByHash.get(sig.hash);
+      state.activeByHash.delete(sig.hash);
+      if (!state.openedNotifiedHashes.has(sig.hash)) continue;
+      const base = tracked ?? sig;
       if (passesTwapFilters(base, opts.minVolumeSharePct)) {
         endedSignals.push({ signal: base, endedStatus: sig.ended });
       }
-      state.endedAnnounced.add(sig.hash);
-      state.activeByHash.delete(sig.hash);
       continue;
     }
 
-    if (state.announcedHashes.has(sig.hash)) {
+    if (state.seenOpenHashes.has(sig.hash)) {
       state.activeByHash.set(sig.hash, sig);
       continue;
     }
 
     if (!passesTwapFilters(sig, opts.minVolumeSharePct)) continue;
 
-    state.announcedHashes.add(sig.hash);
+    state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
     newSignals.push(sig);
   }
@@ -90,7 +98,7 @@ export function seedTwapWatchState(
     const sig = normalize(row);
     if (!sig || sig.ended) continue;
     if (!passesTwapFilters(sig, opts.minVolumeSharePct)) continue;
-    state.announcedHashes.add(sig.hash);
+    state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
     n++;
   }
