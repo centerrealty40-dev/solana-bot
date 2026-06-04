@@ -1,4 +1,5 @@
 import { formatUserRatingLineRu, type UserTwapRating } from './user-rating.js';
+import { computeTwapSchedule, formatTwapScheduleLines } from './twap-schedule.js';
 import type { NormalizedTwapSignal } from './types.js';
 
 export function shortAddress(addr: string): string {
@@ -77,14 +78,17 @@ export function buildTwapStartMessage(
       ? `Объем: ${formatUsdCompact(sig.dayNtlVlmUsd)} (${formatPctShare(sig.volumeSharePct)})`
       : `Объем: n/a`;
 
+  const schedule = computeTwapSchedule(sig);
+  const scheduleLines = formatTwapScheduleLines(sig, schedule, formatUsdCompact);
+
   const lines = [
     `${sideEmoji(sig.side)} ${formatUsdCompact(sig.notionalUsd)} ${sideVerbRu(sig.side)} <b>${escapeHtml(sym)}</b>${mexcLine} в течении ${formatDurationRu(sig.minutes)}`,
     '',
     `Цена: ${formatUsdPrice(sig.midPx)}`,
     volLine,
+    ...scheduleLines,
     `Субъект: <code>${sig.user}</code> ${shortAddress(sig.user)}`,
     opts?.userRating ? formatUserRatingLineRu(opts.userRating) : '',
-    `Создан в: ${formatUtcTime(sig.startedAtMs)}`,
     '',
     `🔗 <a href="${explorerTxUrl(sig.hash)}">Explorer</a> · <a href="${hypurrscanAddressUrl(sig.user)}">Hypurrscan</a>`,
   ];
