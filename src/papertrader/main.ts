@@ -753,6 +753,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       KILLSTOP: 0,
       BREAKEVEN_EXIT: 0,
       LIQ_DRAIN: 0,
+      FLASH_CRASH_KILL: 0,
       RECONCILE_ORPHAN: 0,
       PERIODIC_HEAL: 0,
       CAPITAL_ROTATE: 0,

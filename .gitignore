@@ -109,3 +109,6 @@ scripts-tmp/patch-graph-env-vps.sh
 scripts-tmp/run-bot-*.sh
 scripts-tmp/run-swaps-diag.sh
 scripts-tmp/vps-dip-bot-bootstrap-run.sh
+
+# Local parallel git worktree clone (not shipped with product)
+solana-alpha-v2-bs/

@@ -26,6 +26,7 @@ import {
   stagedAvgTimelineLabel,
 } from './live-staged-entry-labels.js';
 import { refreshWaveBGridOverrides } from './exit-policy-wave-b.js';
+import { stampFlashKillLastBuyLeg } from './flash-crash-kill.js';
 
 type JournalFn = (event: Record<string, unknown>) => void;
 
@@ -76,6 +77,7 @@ async function pushBuyLeg(args: {
     reason,
     triggerPct,
   });
+  stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
   if (reason === 'staged_avg') refreshWaveBGridOverrides(ot);
   ot.livePendingScaleIn = null;
   ot.liveKillstopBelowStreak = 0;

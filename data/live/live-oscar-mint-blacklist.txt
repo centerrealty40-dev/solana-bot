@@ -2,3 +2,4 @@
 # Lines starting with # are comments.
 2bpT3ksMdwdZ6DuHyq3FDUr7HDwvZ5DRZoT1fUPALJaH
 pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn
+DnnmrZnCTqQn7bYbVAiWdJLreqrhg7HaSTkmhtzu8THy  # manual 2026-05-27

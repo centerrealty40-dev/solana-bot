@@ -94,6 +94,13 @@ import { onLiveOscarFirstMintProbeFullClose } from '../../live/mint-first-probe.
 import { stagedAveragingConfigured } from './live-staged-entry-gates.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import {
+  appendFlashKillPriceSample,
+  evaluateFlashCrashKill,
+  isFlashKillDcaBlocked,
+  markFlashKillDcaBlocked,
+  stampFlashKillLastBuyLeg,
+} from './flash-crash-kill.js';
+import {
   liveStagedEntrySignalTimeWindowOpen,
   liveStagedEntrySignalTtlExpired,
 } from './live-staged-entry-gates.js';
@@ -468,6 +475,9 @@ function buildExitContext(args: {
       } else {
         triggerLabel = `liq drain (no detail)`;
       }
+      break;
+    case 'FLASH_CRASH_KILL':
+      triggerLabel = `Flash crash kill (velocity / post-fill guard)`;
       break;
     case 'RECONCILE_ORPHAN':
       triggerLabel = `reconcile orphan (в журнале позиция ещё open, на кошельке 0 токенов по mint)`;
@@ -1755,6 +1765,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                   maxPremiumOverSnapshotPct: maxPrem,
                 });
                 curMetric = mtmPick;
+                ot.liveFlashLastSnapshotPx = snapPx;
+                ot.liveFlashLastJupiterPx = jpx;
                 if (clampedFromJupiter) {
                   const premPct = snapPx > 0 ? +(((jpx / snapPx - 1) * 100).toFixed(2)) : null;
                   if (bandClamp === 'low') {
@@ -1908,6 +1920,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (curMetric > 0) {
       ot.lastObservedPriceUsd = curMetric;
+      if (cfg.flashCrashKillEnabled && cfg.strategyId === 'live-oscar') {
+        appendFlashKillPriceSample(ot, Date.now(), curMetric);
+      }
     }
 
     if (ot.avgEntry > 0 && isPartialGridTrailExitPolicy(ot)) {
@@ -2188,6 +2203,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           reason: 'dca',
           triggerPct: armBFrac,
         });
+        stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
         ot.totalInvestedUsd += addUsd;
         const numB = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
         ot.avgEntry = numB / ot.totalInvestedUsd;
@@ -2329,6 +2345,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       !ot.liveStagedEntry &&
+      !isFlashKillDcaBlocked(cfg, ot, Date.now()) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0 || isVariantAHybridExitPolicy(ot)) &&
       !(isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) &&
       (tradeDcaLevels.length > 0 || killEff < 0) &&
@@ -2390,6 +2407,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           reason: 'dca',
           triggerPct: -dropPct / 100,
         });
+        stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
         markDone();
         ot.livePendingScaleIn = null;
         ot.liveKillstopBelowStreak = 0;
@@ -2551,6 +2569,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           reason: 'dca',
           triggerPct: lvl.triggerPct,
         });
+        stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
         if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
         ot.totalInvestedUsd += addUsd;
         const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
@@ -2910,7 +2929,53 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     killEff = dcaKillstopEffective(ot, effCfg);
 
     let exitReason: ExitReason | null = null;
-    if (!(isPaperOscarIdealized && idealizedMute)) {
+
+    if (
+      cfg.flashCrashKillEnabled &&
+      cfg.strategyId === 'live-oscar' &&
+      ot.avgEntry > 0 &&
+      curMetric > 0 &&
+      ot.remainingFraction > 1e-6
+    ) {
+      const flashNow = Date.now();
+      const flash = evaluateFlashCrashKill(cfg, ot, flashNow, curMetric, {
+        jupiterPx: ot.liveFlashLastJupiterPx,
+        snapshotPx: ot.liveFlashLastSnapshotPx,
+      });
+      if (flash.kind === 'partial') {
+        markFlashKillDcaBlocked(ot, cfg, flashNow);
+        const flashPartial = await tryExecuteTpPartialSell({
+          mint,
+          ot,
+          cfg,
+          curMetric,
+          sellFraction: flash.sellFraction,
+          ladderStepIndex: -1,
+          ladderRungsTotal: 0,
+          ladderPnlPct: pnlPctVsAvg,
+          tpGrid: false,
+          journalAppend,
+          journalLiveStrategy,
+          livePhase4,
+          liveOscarCfg,
+          stats,
+          markLadder: () => {},
+          logLabelPct: flash.trigger,
+          partialReason: 'FLASH_CRASH_KILL',
+          timelineLabelRu: `Flash-килл: ${flash.trigger} · продажа ${(flash.sellFraction * 100).toFixed(0)}% остатка`,
+        });
+        if (flashPartial === 'abort_mint') continue;
+        console.log(
+          `[FLASH_KILL_PARTIAL] ${mint.slice(0, 8)} $${ot.symbol} sold=${(flash.sellFraction * 100).toFixed(0)}% ${flash.trigger}`,
+        );
+      } else if (flash.kind === 'full') {
+        markFlashKillDcaBlocked(ot, cfg, flashNow);
+        exitReason = 'FLASH_CRASH_KILL';
+        console.log(`[FLASH_KILL] ${mint.slice(0, 8)} $${ot.symbol} ${flash.trigger}`);
+      }
+    }
+
+    if (!exitReason && !(isPaperOscarIdealized && idealizedMute)) {
       if (isVariantALegacyV1ExitPolicy(ot) && ot.avgEntry > 0) {
         const pnlFracVa = pnlPctVsAvg / 100;
         if (variantAMoonExitTriggered(ot, effCfg, pnlFracVa)) {

@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { DexId, Lane, Metrics, OpenTrade, PositionLeg, SnapshotCandidateRow } from '../types.js';
 import { applyEntryCosts } from '../costs.js';
+import { stampFlashKillLastBuyLeg } from './flash-crash-kill.js';
 import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 
 const EMPTY_METRICS: Metrics = {
@@ -44,7 +45,7 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
     sizeUsd,
     reason: 'open',
   };
-  return {
+  const ot: OpenTrade = {
     mint: row.mint,
     symbol: row.symbol,
     lane,
@@ -77,6 +78,8 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
     liveThinVolEntryVol5mUsd:
       typeof row.volume_5m === 'number' && Number(row.volume_5m) > 0 ? Number(row.volume_5m) : undefined,
   };
+  stampFlashKillLastBuyLeg(ot, marketPrice, ts);
+  return ot;
 }
 
 export function snapshotSourceToDex(source: string): DexId {

@@ -219,6 +219,7 @@ export const LiveExitVerifyDeferSchema = z.object({
       'NO_DATA',
       'KILLSTOP',
       'LIQ_DRAIN',
+      'FLASH_CRASH_KILL',
       'RECONCILE_ORPHAN',
       'PERIODIC_HEAL',
       'CAPITAL_ROTATE',
