@@ -14,6 +14,24 @@
 
 ---
 
+## [1.11.310] — 2026-06-04
+
+### Feat: copy-trader — no add/position caps; auto-clear ghost state
+
+| Env `0` | = unlimited |
+|---------|-------------|
+| `COPY_TRADER_MAX_ADDS_PER_MINT` | 0 |
+| `COPY_TRADER_MAX_OPEN_POSITIONS` | 0 |
+| `COPY_TRADER_MAX_POSITION_USD` | 0 |
+| `COPY_TRADER_MIN_PROPORTIONAL_*` | 0 |
+
+- RPC reconcile: drop `state.positions[mint]` when execution wallet balance = 0 (`position_closed_wallet_empty`).
+- `no_token_balance` on sell → close position in state (no ghost retries).
+
+**Откат:** restore caps (adds=3, max pos $6000, open=5); `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.309] — 2026-06-04
 
 ### Risk: live-oscar flash-crash kill (aggressive) + LIQ_DRAIN 25%

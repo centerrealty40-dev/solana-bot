@@ -34,3 +34,13 @@ export function removePendingSellById(
   const [removed] = state.pendingSells.splice(idx, 1);
   return removed;
 }
+
+export function cancelPendingSellsForMint(state: { pendingSells: PendingSell[] }, mint: string): PendingSell[] {
+  const removed: PendingSell[] = [];
+  state.pendingSells = state.pendingSells.filter((p) => {
+    if (p.mint !== mint) return true;
+    removed.push(p);
+    return false;
+  });
+  return removed;
+}

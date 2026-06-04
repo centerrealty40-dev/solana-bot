@@ -171,6 +171,7 @@ export function hasPendingSellForMint(state: CopyTraderState, mint: string): boo
 }
 
 export function positionRoomUsd(cfg: { maxPositionUsd: number }, pos: CopyPosition): number {
+  if (!(cfg.maxPositionUsd > 0)) return Number.MAX_SAFE_INTEGER;
   return Math.max(0, cfg.maxPositionUsd - pos.sizeUsd);
 }
 
@@ -179,7 +180,8 @@ export function canScheduleProportionalAdd(
   pos: CopyPosition,
   addUsd: number,
 ): boolean {
-  if (!(addUsd >= cfg.minProportionalAddUsd)) return false;
+  if (!(addUsd > 0)) return false;
+  if (cfg.minProportionalAddUsd > 0 && addUsd < cfg.minProportionalAddUsd) return false;
   return positionRoomUsd(cfg, pos) >= addUsd;
 }
 
