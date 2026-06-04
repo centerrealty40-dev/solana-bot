@@ -187,9 +187,9 @@
     <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе пять колонок Oscar -->
     <section class="dash-desktop-strategy-cols">
       <template x-for="(s, idx) in (state.strategies || [])" :key="(s.strategyId || 'row') + ':' + idx">
-        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer transition select-none min-w-0"
+        <div class="card rounded-xl p-5 lg:p-6 cursor-pointer select-none min-w-0"
              :class="selected === s.strategyId ? 'ring-2 ring-violet-500/70 shadow-lg shadow-violet-950/20' : 'hover:bg-white/[0.06]'"
-             @click="selected = s.strategyId">
+             @click="selectStrategy(s.strategyId)">
           <div class="flex items-center justify-between gap-2">
             <div class="text-lg font-bold text-white" x-text="describe(s.strategyId).label"></div>
             <span class="pill pill-info shrink-0" x-text="describe(s.strategyId).tag"></span>
@@ -401,7 +401,7 @@
 
       <div class="grid md:grid-cols-2 gap-6 lg:gap-8 mt-6">
         <div>
-          <h3 class="text-lg font-bold text-white mb-3" x-text="selected === 'hl-twap-paper' ? 'Open paper (после 1-го цикла)' : 'Open positions'"></h3>
+          <h3 class="text-lg font-bold text-white mb-3" x-text="selected === 'hl-twap-paper' ? 'Open paper · LONG / SHORT (после 1-го цикла)' : 'Open positions'"></h3>
           <div class="space-y-2 text-base">
             <template x-for="o in (selectedRow()?.open || [])" :key="o.mint + o.entryTs">
               <div class="border-b border-white/5 pb-1">
@@ -475,7 +475,7 @@
                     После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Для Live Oscar: первая нога по сигналу, **одно** усреднение на **−6%** от цены сигнала в течение часа (сумма ног = $800); после двух частичных TP по сетке усреднение отключено (после одной — откат вниз может всё ещё исполнить −6%, если нога не куплена).
                     У плиток Oscar в подписи события: до первого take profit — только входные события, без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA/staged-добора. Под строкой события показывается понятное пояснение активного правила.
                   </div>
-                  <template x-for="(ev, i) in (o.timeline || [])" :key="(ev.ts || '') + '-' + i">
+                  <template x-for="(ev, i) in timelineUi(o.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
                       <div class="flex-1 min-w-0">
@@ -576,7 +576,7 @@
                     После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Live Oscar signal kill-stop подписывается как полный выход от первоначального сигнала: −22% для Live Oscar.
                     Та же логика подписей A/B, что и у открытых позиций. TP-regime (если включён) — отдельной строкой; A/B в подписи и в пояснении — только после первого TP или первого DCA/staged-добора.
                   </div>
-                  <template x-for="(ev, i) in (c.timeline || [])" :key="(ev.ts || '') + '-' + i">
+                  <template x-for="(ev, i) in timelineUi(c.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
                       <span class="timeline-ts text-slate-400 shrink-0 font-medium tracking-tight" x-text="fmtTimelineTs(ev.ts)"></span>
                       <div class="flex-1 min-w-0">
@@ -736,9 +736,9 @@
         label: 'HL TWAP Paper',
         tag: 'hl-twap',
         oneLiner:
-          'Бумага **$1 000**: 🟩 покупка монеты (impact ≥1%); 🟥 продажа — **только разворот** (если мы уже слали buy OPEN тому же киту по той же монете).',
+          'Бумага **$1 000**: LONG на 🟩 покупку; SHORT на 🟥 разворот (после нашего buy OPEN того же кита+монеты).',
         details:
-          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`**.\n\n**Сигнал**\n• 🟩 **Покупка** монеты (bid TWAP) → impact ≥ **1%** → Telegram → бумажный LONG.\n• 🟥 **Продажа** — **только** если ранее был наш OPEN по **buy** TWAP **того же кита** и **той же монеты** (разворот режет long-логику). Случайная продажа (AERO sell без нашего buy) — **молчим**.\n\n**Бумага**\n• LONG только на buy; при sell-развороте — **досрочное закрытие** long (`whale_sell_reversal`), без short.\n• $1 000, вход после 1-го цикла, выход перед последним.\n\n**Журнал** `data/hl-twap/paper.jsonl`.',
+          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`**.\n\n**Сигнал**\n• 🟩 **Покупка** (bid TWAP) → impact ≥ **1%** → Telegram → бумажный **LONG**.\n• 🟥 **Продажа** — только **разворот**: тот же кит уже получал наш buy OPEN по этой монете. Иначе в Telegram и бумаге — тишина.\n\n**Бумага**\n• Buy → schedule/open **LONG** после 1-го цикла.\n• Sell-разворот → закрыть открытые **LONG** (`whale_sell_reversal`) + schedule/open **SHORT** на этом sell-TWAP.\n• $1 000, выход перед последним циклом.\n\n**Журнал** `data/hl-twap/paper.jsonl` — open/close с side buy|sell.',
       },
       'paper-oscar-v21': {
         label: 'Paper Oscar V2.1',
@@ -830,8 +830,25 @@
         crypto: { ok: false, updatedAt: 0, source: 'coingecko', assets: [] },
         cryptoTickerStamp: '',
         selected: null,
+        rowCache: null,
+        /** Cap timeline DOM per position — full count still shown in header. */
+        timelineUiMax: 30,
         updatedAt: '—',
         expanded: {},
+        selectStrategy(id) {
+          if (this.selected === id) return;
+          this.selected = id;
+          this.syncRowCache();
+        },
+        syncRowCache() {
+          this.rowCache =
+            (this.state.strategies || []).find((s) => s.strategyId === this.selected) || null;
+        },
+        timelineUi(events) {
+          const arr = events || [];
+          const max = this.timelineUiMax;
+          return arr.length > max ? arr.slice(arr.length - max) : arr;
+        },
         toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
         isExpanded(key) { return !!this.expanded[key]; },
         fmtTimelineTs(ts) {
@@ -1113,10 +1130,11 @@
               const ids = normalized.strategies.map((x) => x.strategyId);
               this.selected = ids.includes(pref) ? pref : normalized.strategies[0].strategyId;
             }
+            this.syncRowCache();
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }
         },
-        selectedRow() { return (this.state.strategies || []).find((s) => s.strategyId === this.selected) || null; },
+        selectedRow() { return this.rowCache; },
         describe(id) {
           const m = STRATEGY_META[id] || {};
           const details = m.details || m.description || '';
