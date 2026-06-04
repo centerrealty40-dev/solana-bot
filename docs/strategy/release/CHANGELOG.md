@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.312] — 2026-06-05
+
+### Discovery: exclude mcap > $50M from pool and eval
+
+- `PAPER_DISCOVERY_MAX_MARKET_CAP_USD: 50000000` — SQL snapshot, inject tiers, dip eval skip PG on large caps.
+- Open positions remain on discovery pin (exempt) so exits/tracker keep working.
+
+**Откат:** unset `PAPER_DISCOVERY_MAX_MARKET_CAP_USD` or set `0`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.311] — 2026-06-04
 
 ### Fix: copy-trader dashboard PnL (no bogus $100k+ unrealized)

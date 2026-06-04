@@ -1,5 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
+import { passesDiscoveryMaxMarketCap } from '../filters/snapshot-filter.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
+import { getPriorityOpenMints } from './priority-discovery-registry.js';
 import { fetchCrossVenueSnapshotRowsByVolumeCanonical } from './snapshot.js';
 import { fetchVolumeLeaderMints } from './volume-leader-query.js';
 
@@ -25,10 +27,12 @@ export async function injectVolumeLeaderCandidates(
   });
   const injected: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [];
   const lane: Lane = 'post_migration';
+  const openMcapExempt = getPriorityOpenMints();
 
   for (const mint of leaderMints) {
     const row = rowsByMint.get(mint);
     if (!row) continue;
+    if (!passesDiscoveryMaxMarketCap(cfg, row, openMcapExempt)) continue;
     injected.push({ row, lane });
   }
 

@@ -184,6 +184,8 @@ const ConfigSchema = z.object({
   lanePostMaxLiqUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Min COALESCE(market_cap_usd, fdv_usd) on discovery snapshot row before buy eval. */
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
+  /** 0 = off. Max ref mcap on discovery snapshot — excludes large caps from SQL pool and eval (saves PG/CPU). */
+  discoveryMaxMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); >$3M = prod без изменений. */
   liveOscarLowMcapLaneEnabled: z.boolean().default(false),
   liveOscarLowMcapMinUsd: z.coerce.number().nonnegative().default(1_300_000),
@@ -948,6 +950,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     lanePostMaxAgeMin: process.env.PAPER_POST_MAX_AGE_MIN,
     lanePostMaxLiqUsd: process.env.PAPER_POST_MAX_LIQ_USD,
     discoveryMinMarketCapUsd: process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD,
+    discoveryMaxMarketCapUsd: process.env.PAPER_DISCOVERY_MAX_MARKET_CAP_USD,
     liveOscarLowMcapLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED, false),
     liveOscarLowMcapMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD,
     liveOscarLowMcapMaxUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD,

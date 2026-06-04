@@ -1,8 +1,14 @@
 import type { PaperTraderConfig } from '../config.js';
-import { passesDiscoveryMinMarketCap } from '../filters/snapshot-filter.js';
+import {
+  passesDiscoveryMaxMarketCap,
+  passesDiscoveryMinMarketCap,
+} from '../filters/snapshot-filter.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { fetchLatestCrossVenueSnapshotRowForMint } from './snapshot.js';
-import { buildPriorityDiscoveryMintSet } from './priority-discovery-registry.js';
+import {
+  buildPriorityDiscoveryMintSet,
+  getPriorityOpenMints,
+} from './priority-discovery-registry.js';
 
 /**
  * Priority tier: mint'ы вне SQL top-N / vol5m floor всё равно получают полный dip-eval.
@@ -24,12 +30,14 @@ export async function injectPriorityDiscoveryCandidates(
   const lookbackMin = cfg.priorityDiscoveryLookbackMin;
   const lane: Lane = 'post_migration';
   const injected: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [];
+  const openMcapExempt = getPriorityOpenMints();
 
   for (const mint of priorityMintSet) {
     if (have.has(mint)) continue;
     const row = await fetchLatestCrossVenueSnapshotRowForMint(mint, { lookbackMinutes: lookbackMin });
     if (!row) continue;
     if (!passesDiscoveryMinMarketCap(cfg, row)) continue;
+    if (!passesDiscoveryMaxMarketCap(cfg, row, openMcapExempt)) continue;
     injected.push({ row, lane });
     have.add(mint);
   }

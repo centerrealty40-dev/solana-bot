@@ -71,6 +71,10 @@ export async function fetchSnapshotLaneCandidates(
     cfg.discoveryMinMarketCapUsd > 0
       ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
       : '';
+  const maxMcapFilter =
+    cfg.discoveryMaxMarketCapUsd > 0
+      ? `AND COALESCE(market_cap_usd, 0) <= ${cfg.discoveryMaxMarketCapUsd}`
+      : '';
   const sanitySql = buildDiscoverySnapshotSanitySqlClause(cfg);
 
   const r = await db.execute(dsql.raw(`
@@ -96,6 +100,7 @@ export async function fetchSnapshotLaneCandidates(
         AND buys_5m >= ${lc.MIN_BUYS_5M}
         AND sells_5m >= ${lc.MIN_SELLS_5M}
         ${minMcapFilter}
+        ${maxMcapFilter}
         ${sanitySql}
     ),
     ranked AS (

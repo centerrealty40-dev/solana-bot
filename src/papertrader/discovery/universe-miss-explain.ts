@@ -68,11 +68,13 @@ export function explainPostLaneUniverseMiss(
   }
 
   const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
-  if (minMcap > 0) {
-    const refMcap = Number(row.market_cap_usd ?? 0);
-    if (!(refMcap >= minMcap)) {
-      reasons.push(`market_cap_usd_${refMcap.toFixed(0)}<${minMcap}`);
-    }
+  const maxMcap = cfg.discoveryMaxMarketCapUsd ?? 0;
+  const refMcap = Number(row.market_cap_usd ?? 0);
+  if (minMcap > 0 && !(refMcap >= minMcap)) {
+    reasons.push(`market_cap_usd_${refMcap.toFixed(0)}<${minMcap}`);
+  }
+  if (maxMcap > 0 && refMcap > maxMcap) {
+    reasons.push(`market_cap_usd_${refMcap.toFixed(0)}>${maxMcap}`);
   }
 
   return { reasons, symbol: row.symbol };

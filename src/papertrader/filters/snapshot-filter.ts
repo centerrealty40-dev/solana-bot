@@ -25,6 +25,30 @@ export function passesDiscoveryMinMarketCap(cfg: PaperTraderConfig, row: Snapsho
   return snapshotRefMarketCapUsd(row) + 1e-9 >= minMcap;
 }
 
+/** Discovery max mcap gate (`PAPER_DISCOVERY_MAX_MARKET_CAP_USD`; 0 = off). */
+export function passesDiscoveryMaxMarketCap(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  exemptMints?: ReadonlySet<string>,
+): boolean {
+  const maxMcap = cfg.discoveryMaxMarketCapUsd ?? 0;
+  if (maxMcap <= 0) return true;
+  if (exemptMints?.has(row.mint)) return true;
+  return snapshotRefMarketCapUsd(row) <= maxMcap + 1e-9;
+}
+
+export function appendDiscoveryMcapGateReasons(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  reasons: string[],
+): void {
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  const maxMcap = cfg.discoveryMaxMarketCapUsd ?? 0;
+  const refMcap = snapshotRefMarketCapUsd(row);
+  if (minMcap > 0 && refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
+  if (maxMcap > 0 && refMcap > maxMcap + 1e-9) reasons.push(`mcap>${maxMcap}`);
+}
+
 /** Smart Lottery paper strategy — separate snapshot thresholds from dip Oscar lanes. */
 export function smartLotteryLaneCfg(cfg: PaperTraderConfig, lane: Lane): LaneCfg {
   if (lane === 'migration_event') {
@@ -133,11 +157,7 @@ export function evaluateSnapshot(
   if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
   const vh = evaluateVol5m1hGuard(cfg, row);
   if (!vh.pass) reasons.push(...vh.reasons);
-  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
-  if (minMcap > 0) {
-    const refMcap = snapshotRefMarketCapUsd(row);
-    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
-  }
+  appendDiscoveryMcapGateReasons(cfg, row, reasons);
   return { pass: reasons.length === 0, reasons };
 }
 
@@ -162,11 +182,7 @@ export function evaluateSnapshotPriorityTier(
     if (!Number.isFinite(vol1h) || vol1h <= 0) reasons.push('vol1h_missing');
     else if (vol1h < cfg.vol1hMinUsd) reasons.push(`vol1h<${cfg.vol1hMinUsd}`);
   }
-  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
-  if (minMcap > 0) {
-    const refMcap = snapshotRefMarketCapUsd(row);
-    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
-  }
+  appendDiscoveryMcapGateReasons(cfg, row, reasons);
   return { pass: reasons.length === 0, reasons };
 }
 
@@ -192,10 +208,6 @@ export function evaluateSnapshotSmartLottery(
   if (bs < cfg.snapshotMinBs) reasons.push(`bs<${cfg.snapshotMinBs}`);
   const vh = evaluateVol5m1hGuard(cfg, row);
   if (!vh.pass) reasons.push(...vh.reasons);
-  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
-  if (minMcap > 0) {
-    const refMcap = snapshotRefMarketCapUsd(row);
-    if (refMcap + 1e-9 < minMcap) reasons.push(`mcap<${minMcap}`);
-  }
+  appendDiscoveryMcapGateReasons(cfg, row, reasons);
   return { pass: reasons.length === 0, reasons };
 }
