@@ -31,6 +31,7 @@
     "live-oscar-risky": "tsx src/scripts/live-oscar.ts",
     "live:ladder-retrace-sweep": "tsx src/scripts/live-oscar-ladder-retrace-sweep.ts",
     "live:tp-grid-fraction-sweep": "tsx src/scripts/live-oscar-tp-grid-fraction-sweep.ts",
+    "hl-twap-telegram-watch": "tsx src/scripts/hl-twap-telegram-watch.ts",
     "market-spike-telegram-watch": "tsx src/scripts/market-spike-telegram-watch.ts",
     "market-pullback-telegram-watch": "tsx src/scripts/market-pullback-telegram-watch.ts",
     "retrace-alert-watch": "tsx src/scripts/market-pump-retrace-alert-watch.ts",

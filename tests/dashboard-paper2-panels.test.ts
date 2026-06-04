@@ -4,6 +4,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   DASHBOARD_PANEL_ORDER,
+  DASHBOARD_PAPER2_BUILD_ID,
+  DASHBOARD_STRATEGY_LABELS,
   aggregateLiveOscarJsonlForDashboard,
   mergeDashboardStrategyPanels,
   type DashboardPaper2StrategyRow,
@@ -50,12 +52,12 @@ function row(id: string, total: number): DashboardPaper2StrategyRow {
 }
 
 describe('mergeDashboardStrategyPanels', () => {
-  it('orders Live → Copy Trader → Paper Risky → V2.1 → V2.2 regardless of input order', () => {
+  it('orders Live → Copy Trader → HL TWAP → V2.1 → V2.2 regardless of input order', () => {
     const merged = mergeDashboardStrategyPanels([
       row('paper-oscar-v22', 99),
       row('live-oscar', 50),
       row('copy-trader', 11),
-      row('paper-oscar-risky', 7),
+      row('hl-twap-paper', 7),
       row('paper-oscar-v21', 42),
     ]);
     expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
@@ -64,6 +66,8 @@ describe('mergeDashboardStrategyPanels', () => {
     expect(merged[2]!.totalPnlUsd).toBe(7);
     expect(merged[3]!.totalPnlUsd).toBe(42);
     expect(merged[4]!.totalPnlUsd).toBe(99);
+    expect(DASHBOARD_STRATEGY_LABELS['hl-twap-paper']).toBe('HL TWAP Paper');
+    expect(DASHBOARD_PAPER2_BUILD_ID).toContain('hl-twap');
   });
 
   it('fills missing strategies with empty placeholders', () => {
