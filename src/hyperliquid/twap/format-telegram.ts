@@ -81,8 +81,14 @@ export function buildTwapStartMessage(
   const schedule = computeTwapSchedule(sig);
   const scheduleLines = formatTwapScheduleLines(sig, schedule, formatUsdCompact);
 
+  const reversalLine =
+    sig.side === 'sell'
+      ? '⚠️ <b>Разворот</b>: у этого кита уже был TWAP на покупку этой монеты — продажа режет нашу long-логику (impact).'
+      : '';
+
   const lines = [
     `${sideEmoji(sig.side)} ${formatUsdCompact(sig.notionalUsd)} ${sideVerbRu(sig.side)} <b>${escapeHtml(sym)}</b>${mexcLine} в течении ${formatDurationRu(sig.minutes)}`,
+    reversalLine,
     '',
     `Цена: ${formatUsdPrice(sig.midPx)}`,
     volLine,
@@ -91,7 +97,7 @@ export function buildTwapStartMessage(
     opts?.userRating ? formatUserRatingLineRu(opts.userRating) : '',
     '',
     `🔗 <a href="${explorerTxUrl(sig.hash)}">Explorer</a> · <a href="${hypurrscanAddressUrl(sig.user)}">Hypurrscan</a>`,
-  ];
+  ].filter((l) => l.length > 0);
   return lines.join('\n');
 }
 

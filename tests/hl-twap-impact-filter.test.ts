@@ -51,9 +51,12 @@ describe('hl-twap impact filter', () => {
     expect(r.newSignals).toHaveLength(1);
   });
 
-  it('rejects sell even above impact threshold', () => {
+  it('rejects sell without prior buy OPEN; allows after buy key', () => {
     const sig = { ...norm(4.41, 1_970_000), side: 'sell' as const };
-    expect(passesTwapFilters(sig, { minVolumeSharePct: 1 })).toBe(false);
+    const state = createTwapWatchState();
+    expect(passesTwapFilters(sig, { minVolumeSharePct: 1 }, state)).toBe(false);
+    state.buyNotifiedByWhaleCoin.add(`${sig.user.toLowerCase()}:${sig.coin}`);
+    expect(passesTwapFilters(sig, { minVolumeSharePct: 1 }, state)).toBe(true);
     expect(passesTwapFilters(sig, { minVolumeSharePct: 1, buyOnly: false })).toBe(true);
   });
 });

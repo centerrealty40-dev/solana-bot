@@ -1275,7 +1275,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         HL_TWAP_POLL_INTERVAL_MS: '5000',
         HL_TWAP_MIN_VOLUME_SHARE_PCT: '1',
-        /** Только bid TWAP (покупка монеты); ask / «продажа» в стейблы — без алертов и бумаги. */
+        /** Покупки — всегда (impact); продажа — только разворот после нашего buy OPEN (тот же кит+монета). */
         HL_TWAP_BUY_ONLY: '1',
         HL_TWAP_TELEGRAM_CHAT_ID: '-1003852228620',
         /** Токен бота — только в `.env` (HL_TWAP_TELEGRAM_BOT_TOKEN), не в git. */

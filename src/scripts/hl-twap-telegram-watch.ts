@@ -9,7 +9,7 @@
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID
  * - HL_TWAP_POLL_INTERVAL_MS=5000
  * - HL_TWAP_MIN_VOLUME_SHARE_PCT=1 — price impact (notional / dayNtlVlm × 100)
- * - HL_TWAP_BUY_ONLY=1 — только 🟩 покупка монеты; 🟥 продажа в стейблы игнорируется
+ * - HL_TWAP_BUY_ONLY=1 — 🟩 покупки всегда (impact); 🟥 продажа только если ранее слали buy OPEN тому же киту по той же монете
  * - HL_TWAP_PAPER_NOTIONAL_USD=1000 — бумажная нота на сигнал (плитка 3 дашборда)
  * - HL_TWAP_NOTIFY_ENDED=1
  * - HL_TWAP_META_REFRESH_MS=120000
@@ -37,6 +37,7 @@ import { loadHyperliquidMarketCache, type HyperliquidMarketCache } from '../hype
 import { normalizeHypurrscanRow } from '../hyperliquid/twap/normalize.js';
 import { enrichEndFromTwapHistory } from '../hyperliquid/twap/twap-history.js';
 import {
+  closePaperForWhaleSellReversal,
   handlePaperOnTwapEnd,
   processPaperTrades,
   schedulePaperTrade,
@@ -135,21 +136,38 @@ function appendAudit(event: string, payload: unknown): void {
   }
 }
 
-async function announceStart(sig: NormalizedTwapSignal, feedRows: HypurrscanTwapRow[]): Promise<void> {
+async function announceStart(
+  sig: NormalizedTwapSignal,
+  feedRows: HypurrscanTwapRow[],
+  cache: HyperliquidMarketCache,
+): Promise<void> {
   const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
   const userRating = await userRatingCached(sig.user, feedRows);
   const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating });
   appendAudit('twap_start', sig);
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
-    markTwapOpenedNotified(watchState, sig.hash);
-    if (PAPER_ENABLED) schedulePaperTrade(sig);
+    markTwapOpenedNotified(watchState, sig);
+    if (PAPER_ENABLED) {
+      if (sig.side === 'buy') schedulePaperTrade(sig);
+      else closePaperOnSellReversal(sig, cache);
+    }
     return;
   }
   const ok = await sendTelegram(html);
   if (ok) {
-    markTwapOpenedNotified(watchState, sig.hash);
-    if (PAPER_ENABLED) schedulePaperTrade(sig);
+    markTwapOpenedNotified(watchState, sig);
+    if (PAPER_ENABLED) {
+      if (sig.side === 'buy') schedulePaperTrade(sig);
+      else closePaperOnSellReversal(sig, cache);
+    }
+  }
+}
+
+function closePaperOnSellReversal(sig: NormalizedTwapSignal, cache: HyperliquidMarketCache): void {
+  const n = closePaperForWhaleSellReversal(sig, cache);
+  if (n > 0) {
+    console.log(`[hl-twap] paper closed ${n} long(s) on whale sell reversal ${sig.displaySymbol}`);
   }
 }
 
@@ -182,7 +200,7 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
     console.log(
       `[hl-twap] NEW ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}…`,
     );
-    await announceStart(sig, rows);
+    await announceStart(sig, rows, cache);
   }
 
   if (PAPER_ENABLED) await processPaperTrades(cache);

@@ -5,6 +5,7 @@ import {
   detectTwapChanges,
   markTwapOpenedNotified,
   seedTwapWatchState,
+  whaleCoinKey,
 } from '../src/hyperliquid/twap/detect.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
@@ -44,7 +45,7 @@ function norm(row: HypurrscanTwapRow, impactPct: number): NormalizedTwapSignal {
 }
 
 describe('hl-twap detect', () => {
-  it('blocks sell TWAP when buyOnly (default)', () => {
+  it('blocks sell TWAP without prior buy OPEN from us', () => {
     const state = createTwapWatchState();
     const sell = (r: HypurrscanTwapRow, impactPct: number): NormalizedTwapSignal => ({
       ...norm(r, impactPct),
@@ -52,6 +53,24 @@ describe('hl-twap detect', () => {
     });
     const r = detectTwapChanges([baseRow], (row) => sell(row, 2), state, { minVolumeSharePct: 1 });
     expect(r.newSignals).toHaveLength(0);
+  });
+
+  it('allows sell TWAP after buy OPEN was notified for same whale+coin', () => {
+    const state = createTwapWatchState();
+    const buy = norm(baseRow, 2);
+    detectTwapChanges([baseRow], () => buy, state, { minVolumeSharePct: 1 });
+    markTwapOpenedNotified(state, buy);
+
+    const sellRow = { ...baseRow, hash: '0x2' };
+    const sell = (r: HypurrscanTwapRow, impactPct: number): NormalizedTwapSignal => ({
+      ...norm(r, impactPct),
+      hash: r.hash,
+      side: 'sell',
+    });
+    const r = detectTwapChanges([sellRow], (row) => sell(row, 2), state, { minVolumeSharePct: 1 });
+    expect(r.newSignals).toHaveLength(1);
+    expect(r.newSignals[0]!.side).toBe('sell');
+    expect(state.buyNotifiedByWhaleCoin.has(whaleCoinKey(buy))).toBe(true);
   });
 
   it('filters by price impact on buy TWAP', () => {
@@ -67,7 +86,7 @@ describe('hl-twap detect', () => {
   it('emits end once after open was notified', () => {
     const state = createTwapWatchState();
     detectTwapChanges([baseRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
-    markTwapOpenedNotified(state, baseRow.hash);
+    markTwapOpenedNotified(state, norm(baseRow, 2));
     const endedRow = { ...baseRow, ended: 'finished' };
     const r1 = detectTwapChanges([endedRow], (r) => norm(r, 2), state, { minVolumeSharePct: 1 });
     expect(r1.endedSignals).toHaveLength(1);

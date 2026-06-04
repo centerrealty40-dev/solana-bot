@@ -3,6 +3,11 @@ import type { HypurrscanTwapRow, NormalizedTwapSignal } from './types.js';
 export type TwapWatchState = {
   /** Open alert already sent to Telegram (required before end/cancel alert). */
   openedNotifiedHashes: Set<string>;
+  /**
+   * Кит+монета: мы уже слали OPEN по buy-TWAP (тот же user+coin).
+   * Sell-TWAP алертим только при наличии ключа — разворот против нашей long-логики.
+   */
+  buyNotifiedByWhaleCoin: Set<string>;
   /** Seen opens: seeded or new this session — suppress duplicate NEW only. */
   seenOpenHashes: Set<string>;
   /** Active TWAP hashes (no ended yet). */
@@ -11,17 +16,25 @@ export type TwapWatchState = {
   endedAnnounced: Set<string>;
 };
 
+export function whaleCoinKey(sig: Pick<NormalizedTwapSignal, 'user' | 'coin'>): string {
+  return `${sig.user.toLowerCase()}:${sig.coin}`;
+}
+
 export function createTwapWatchState(): TwapWatchState {
   return {
     openedNotifiedHashes: new Set(),
+    buyNotifiedByWhaleCoin: new Set(),
     seenOpenHashes: new Set(),
     activeByHash: new Map(),
     endedAnnounced: new Set(),
   };
 }
 
-export function markTwapOpenedNotified(state: TwapWatchState, hash: string): void {
-  state.openedNotifiedHashes.add(hash);
+export function markTwapOpenedNotified(state: TwapWatchState, sig: NormalizedTwapSignal): void {
+  state.openedNotifiedHashes.add(sig.hash);
+  if (sig.side === 'buy') {
+    state.buyNotifiedByWhaleCoin.add(whaleCoinKey(sig));
+  }
 }
 
 export type TwapDetectResult = {
@@ -31,7 +44,10 @@ export type TwapDetectResult = {
 
 export type TwapFilterOpts = {
   minVolumeSharePct: number;
-  /** Default true: только покупка монеты (bid TWAP), без продажи в стейблы. */
+  /**
+   * Default true: sell-TWAP только если ранее слали buy OPEN тому же киту по той же монете.
+   * Обычные продажи в стейблы без нашего buy — игнорируются.
+   */
   buyOnly?: boolean;
 };
 
@@ -59,7 +75,7 @@ export function detectTwapChanges(
       state.activeByHash.delete(sig.hash);
       if (!state.openedNotifiedHashes.has(sig.hash)) continue;
       const base = tracked ?? sig;
-      if (passesTwapFilters(base, opts)) {
+      if (passesTwapFilters(base, opts, state)) {
         endedSignals.push({ signal: base, endedStatus: sig.ended });
       }
       continue;
@@ -70,7 +86,7 @@ export function detectTwapChanges(
       continue;
     }
 
-    if (!passesTwapFilters(sig, opts)) continue;
+    if (!passesTwapFilters(sig, opts, state)) continue;
 
     state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
@@ -87,9 +103,15 @@ export function detectTwapChanges(
   return { newSignals, endedSignals };
 }
 
-export function passesTwapFilters(sig: NormalizedTwapSignal, opts: TwapFilterOpts): boolean {
+export function passesTwapFilters(
+  sig: NormalizedTwapSignal,
+  opts: TwapFilterOpts,
+  state?: TwapWatchState,
+): boolean {
   const buyOnly = opts.buyOnly !== false;
-  if (buyOnly && sig.side !== 'buy') return false;
+  if (buyOnly && sig.side === 'sell') {
+    if (!state?.buyNotifiedByWhaleCoin.has(whaleCoinKey(sig))) return false;
+  }
   if (opts.minVolumeSharePct <= 0) return true;
   return sig.volumeSharePct != null && sig.volumeSharePct >= opts.minVolumeSharePct;
 }
@@ -105,7 +127,7 @@ export function seedTwapWatchState(
   for (const row of rows) {
     const sig = normalize(row);
     if (!sig || sig.ended) continue;
-    if (!passesTwapFilters(sig, opts)) continue;
+    if (!passesTwapFilters(sig, opts, state)) continue;
     state.seenOpenHashes.add(sig.hash);
     state.activeByHash.set(sig.hash, sig);
     n++;

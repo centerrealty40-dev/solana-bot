@@ -265,6 +265,25 @@ export async function processPaperTrades(cache: HyperliquidMarketCache): Promise
   }
 }
 
+/** Sell-TWAP того же кита по той же монете — закрыть все бумажные long по этой паре. */
+export function closePaperForWhaleSellReversal(
+  sig: Pick<NormalizedTwapSignal, 'user' | 'coin' | 'displaySymbol'>,
+  cache: HyperliquidMarketCache,
+): number {
+  const filePath = paperJournalPath();
+  const opens = loadPaperOpensFromJournal(filePath);
+  const user = sig.user.toLowerCase();
+  let closed = 0;
+  for (const pos of opens.values()) {
+    if (pos.whaleUser.toLowerCase() !== user || pos.coin !== sig.coin) continue;
+    const px = exitPxForOpen(pos, cache);
+    if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'whale_sell_reversal')) {
+      closed += 1;
+    }
+  }
+  return closed;
+}
+
 /** TWAP завершился раньше планового close — закрыть бумагу или снять schedule. */
 export function handlePaperOnTwapEnd(
   sig: NormalizedTwapSignal,
