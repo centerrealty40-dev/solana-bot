@@ -411,9 +411,9 @@ const PM2_APPS = [
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         /**
          * Hybrid re-entry после полного выхода (в т.ч. KILLSTOP −5%): повторный вход если
-         * цена ≤ last_exit×(1−12%) **или** прошло 20 мин (что раньше). Не deny-list.
+         * цена ≤ last_exit×(1−20%) **или** прошло 20 мин (что раньше). Не deny-list.
          */
-        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '20',
         LIVE_REENTRY_MAX_WAIT_MINUTES: '20',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
