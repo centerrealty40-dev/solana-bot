@@ -12,7 +12,7 @@ import {
   type HlTwapPaperClose,
   type HlTwapPaperOpen,
 } from './paper-trader.js';
-import { computeTwapSchedule, formatMoscowDateTime } from './twap-schedule.js';
+import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 
 type JournalClose = {
   kind: 'close';
@@ -73,20 +73,24 @@ function enrichClose(
 ): HlTwapPaperClose | null {
   const o = openByHash.get(c.hash);
   if (!o) return null;
+  const entryTs = Number.isFinite(o.ts) ? o.ts : 0;
+  const twapStartMs = Number.isFinite(o.twapStartMs) ? o.twapStartMs : entryTs;
+  const paperOpenAtMs = Number.isFinite(o.paperOpenAtMs) ? o.paperOpenAtMs : entryTs;
+  const paperCloseAtMs = Number.isFinite(o.paperCloseAtMs) ? o.paperCloseAtMs : entryTs;
   return {
     hash: c.hash,
     coin: o.coin,
     displaySymbol: o.displaySymbol,
     side: o.side,
-    entryTs: o.ts,
+    entryTs,
     entryPx: o.entryPx,
     notionalUsd: o.notionalUsd,
     impactPct: o.impactPct,
     whaleUser: o.whaleUser,
     minutes: o.minutes,
-    paperOpenAtMs: o.paperOpenAtMs,
-    paperCloseAtMs: o.paperCloseAtMs,
-    twapStartMs: o.twapStartMs,
+    paperOpenAtMs,
+    paperCloseAtMs,
+    twapStartMs,
     exitTs: c.ts,
     exitPx: c.exitPx,
     pnlUsd: c.pnlUsd,
@@ -99,23 +103,23 @@ function closedTimeline(c: HlTwapPaperClose): Array<{ ts: string; kind: string; 
   const dir = c.side === 'buy' ? 'LONG' : 'SHORT';
   return [
     {
-      ts: new Date(c.twapStartMs).toISOString(),
+      ts: timelineIso(c.twapStartMs, c.entryTs),
       kind: 'strategy_note',
       label: `Telegram OPEN · whale TWAP ${dir}`,
     },
     {
-      ts: new Date(c.paperOpenAtMs).toISOString(),
+      ts: timelineIso(c.paperOpenAtMs, c.entryTs),
       kind: 'open',
       label: `Paper ${dir} $${c.notionalUsd.toFixed(0)} @ ${c.entryPx.toFixed(4)}`,
       reason: 'after_cycle_1',
     },
     {
-      ts: new Date(c.paperCloseAtMs).toISOString(),
+      ts: timelineIso(c.paperCloseAtMs, c.entryTs),
       kind: 'strategy_note',
       label: `Плановый выход (МСК ${formatMoscowDateTime(c.paperCloseAtMs)})`,
     },
     {
-      ts: new Date(c.exitTs).toISOString(),
+      ts: timelineIso(c.exitTs, c.entryTs),
       kind: 'close',
       label: `Closed @ ${c.exitPx.toFixed(4)} · ${c.pnlUsd >= 0 ? '+' : ''}${c.pnlUsd.toFixed(2)} USD (${c.pnlPct >= 0 ? '+' : ''}${c.pnlPct.toFixed(2)}%)`,
       reason: c.exitReason,
@@ -154,12 +158,14 @@ export async function buildHlTwapPaperDashboardRow(
     const dir = o.side === 'buy' ? 1 : -1;
     const pnlPct = markPx > 0 ? dir * ((markPx - o.entryPx) / o.entryPx) * 100 : 0;
     unrealizedTotal += pnlUsd;
+    const twapStartMs = Number.isFinite(o.twapStartMs) ? o.twapStartMs : o.entryTs;
+    const paperCloseAtMs = Number.isFinite(o.paperCloseAtMs) ? o.paperCloseAtMs : o.entryTs;
     const sched = computeTwapSchedule({
       size: 0,
-      minutes: o.minutes,
+      minutes: Math.max(1, o.minutes || 1),
       randomize: false,
-      midPx: o.entryPx,
-      startedAtMs: o.twapStartMs,
+      midPx: o.entryPx > 0 ? o.entryPx : 1,
+      startedAtMs: twapStartMs,
     });
     return {
       mint: o.hash,
@@ -176,12 +182,12 @@ export async function buildHlTwapPaperDashboardRow(
       pnlPct,
       pnlUsd,
       remainingCostBasisUsd: o.notionalUsd,
-      paperCloseAtMs: o.paperCloseAtMs,
+      paperCloseAtMs,
       timeline: buildPaperPositionTimeline(o, markPx, pnlUsd).concat(
-        now < o.paperCloseAtMs
+        Number.isFinite(paperCloseAtMs) && now < paperCloseAtMs
           ? [
               {
-                ts: new Date(o.paperCloseAtMs).toISOString(),
+                ts: timelineIso(paperCloseAtMs, o.entryTs),
                 kind: 'strategy_note',
                 label: `ETA выход · ${sched.cycleCount} циклов TWAP`,
               },

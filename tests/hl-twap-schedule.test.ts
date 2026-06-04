@@ -4,9 +4,15 @@ import {
   computeTwapSchedule,
   formatTwapScheduleLines,
   HL_TWAP_SLICE_INTERVAL_SEC,
+  timelineIso,
 } from '../src/hyperliquid/twap/twap-schedule.js';
 
 describe('hl-twap schedule', () => {
+  it('timelineIso does not throw on invalid ms', () => {
+    expect(() => timelineIso(undefined)).not.toThrow();
+    expect(timelineIso(1_700_000_000_000)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   it('uses 30s slices: 90 min → 180 cycles', () => {
     const startedAtMs = Date.UTC(2026, 5, 4, 11, 25, 40);
     const s = computeTwapSchedule({

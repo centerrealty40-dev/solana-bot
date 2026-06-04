@@ -52,11 +52,22 @@ export function computeTwapSchedule(sig: Pick<
 
 const DEFAULT_DISPLAY_TZ = 'Europe/Moscow';
 
+/** ISO для таймлайна дашборда — не бросает RangeError на битых ts из журнала. */
+export function timelineIso(ms: unknown, fallbackMs = 0): string {
+  const n = Number(ms);
+  const use = Number.isFinite(n) ? n : fallbackMs;
+  const d = new Date(use);
+  if (Number.isNaN(d.getTime())) return new Date(fallbackMs).toISOString();
+  return d.toISOString();
+}
+
 export function formatMoscowDateTime(
   ms: number,
   tz = process.env.HL_TWAP_DISPLAY_TZ?.trim() || DEFAULT_DISPLAY_TZ,
 ): string {
   if (!Number.isFinite(ms)) return '?';
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '?';
   return new Intl.DateTimeFormat('ru-RU', {
     timeZone: tz,
     day: '2-digit',
@@ -66,7 +77,7 @@ export function formatMoscowDateTime(
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  }).format(new Date(ms));
+  }).format(d);
 }
 
 export function formatTokenAmount(n: number): string {

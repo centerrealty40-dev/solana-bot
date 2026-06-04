@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
-import { computeTwapSchedule, formatMoscowDateTime } from './twap-schedule.js';
+import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
 export type HlTwapPaperOpen = {
@@ -334,18 +334,18 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
   const dir = o.side === 'buy' ? 'LONG' : 'SHORT';
   return [
     {
-      ts: new Date(o.twapStartMs).toISOString(),
+      ts: timelineIso(o.twapStartMs, o.entryTs),
       kind: 'strategy_note',
       label: `Telegram OPEN · whale TWAP ${dir}`,
     },
     {
-      ts: new Date(o.paperOpenAtMs).toISOString(),
+      ts: timelineIso(o.paperOpenAtMs, o.entryTs),
       kind: 'open',
       label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла)`,
       reason: 'after_cycle_1',
     },
     {
-      ts: new Date(o.paperCloseAtMs).toISOString(),
+      ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
       label: `Плановый выход перед последним циклом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },

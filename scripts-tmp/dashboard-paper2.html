@@ -1092,11 +1092,20 @@
         },
         async refresh() {
           try {
-            const j = await fetch('/api/paper2?t=' + Date.now(), {
+            const r = await fetch('/api/paper2?t=' + Date.now(), {
               credentials: 'include',
               cache: 'no-store',
               headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
-            }).then((r) => r.json());
+            });
+            if (!r.ok) {
+              console.error('[paper2] API', r.status, await r.text().catch(() => ''));
+              return;
+            }
+            const j = await r.json();
+            if (!Array.isArray(j?.strategies) && !j?.panelOrder) {
+              console.error('[paper2] unexpected payload', j);
+              return;
+            }
             const normalized = normalizePaper2Payload(j);
             this.state = normalized;
             if (!this.selected && (normalized.strategies || []).length) {

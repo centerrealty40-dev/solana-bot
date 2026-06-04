@@ -1283,7 +1283,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'paper-oscar-v22',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-04-hl-twap-p6';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-04-hl-twap-p7';
 
 export const DASHBOARD_STRATEGY_LABELS: Record<string, string> = {
   'live-oscar': 'Live Oscar',
@@ -3883,7 +3883,16 @@ async function buildPaper2ApiPayload() {
     'copy-trader',
     { ...copyLoaded, copyTrader: copyTraderStats },
   );
-  const hlTwapRow = (await buildHlTwapPaperDashboardRow()) as DashboardPaper2StrategyRow;
+  let hlTwapRow: DashboardPaper2StrategyRow;
+  try {
+    hlTwapRow = (await buildHlTwapPaperDashboardRow()) as DashboardPaper2StrategyRow;
+  } catch (e) {
+    console.warn('[dashboard] hl-twap-paper row build failed:', e);
+    hlTwapRow = makeEmptyDashboardStrategyRow(
+      'hl-twap-paper',
+      path.join(process.cwd(), 'data', 'hl-twap', 'paper.jsonl'),
+    );
+  }
   const paperV21Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   const paperV21Row = await buildPaper2StrategyRowFromLoad(
     DASHBOARD_PAPER_OSCAR_V21_JSONL,
