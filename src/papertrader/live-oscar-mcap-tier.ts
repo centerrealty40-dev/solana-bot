@@ -21,18 +21,28 @@ export function resolveLiveOscarMcapTier(cfg: PaperTraderConfig, mcapUsd: number
   return 'prod';
 }
 
-/** Пороги входа (dip / vol1h / post-crash min drop) для tier; prod = без изменений. */
+/** Пороги входа (dip / vol1h / post-crash min drop) по mcap-tier; low $1.3–3M, prod ≥$3M. */
 export function liveOscarTierEntryConfig(
   cfg: PaperTraderConfig,
   tier: LiveOscarMcapTier,
 ): PaperTraderConfig {
-  if (tier !== 'low') return cfg;
-  return {
-    ...cfg,
-    dipMinDropPct: cfg.liveOscarLowMcapDipMinDropPct,
-    vol1hMinUsd: cfg.liveOscarLowMcapVol1hMinUsd,
-    postCrashFastPathMinDropPct: cfg.liveOscarLowMcapDipMinDropPct,
-  };
+  if (tier === 'low') {
+    return {
+      ...cfg,
+      dipMinDropPct: cfg.liveOscarLowMcapDipMinDropPct,
+      vol1hMinUsd: cfg.liveOscarLowMcapVol1hMinUsd,
+      postCrashFastPathMinDropPct: cfg.liveOscarLowMcapDipMinDropPct,
+    };
+  }
+  if (tier === 'prod' && isLiveOscarTwoPhaseMcap(cfg)) {
+    return {
+      ...cfg,
+      dipMinDropPct: cfg.liveOscarProdMcapDipMinDropPct,
+      vol1hMinUsd: cfg.liveOscarProdMcapVol1hMinUsd,
+      postCrashFastPathMinDropPct: cfg.liveOscarProdMcapDipMinDropPct,
+    };
+  }
+  return cfg;
 }
 
 export function liveOscarTierStagedSplitLegUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
