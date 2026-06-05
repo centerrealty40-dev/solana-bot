@@ -186,12 +186,15 @@ const ConfigSchema = z.object({
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Max ref mcap on discovery snapshot — excludes large caps from SQL pool and eval (saves PG/CPU). */
   discoveryMaxMarketCapUsd: z.coerce.number().nonnegative().default(0),
-  /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); >$3M = prod без изменений. */
+  /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); ≥$3M = prod tier. */
   liveOscarLowMcapLaneEnabled: z.boolean().default(false),
   liveOscarLowMcapMinUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarLowMcapMaxUsd: z.coerce.number().nonnegative().default(3_000_000),
   liveOscarLowMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarLowMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
+  /** Prod tier (mcap ≥ maxUsd): near-miss runner corridor — dip −18%, vol1h ≥$25k. */
+  liveOscarProdMcapDipMinDropPct: z.coerce.number().default(-18),
+  liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(25_000),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
   liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(800),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
@@ -963,6 +966,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarLowMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD,
     liveOscarLowMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD,
     liveOscarLowMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS,
+    liveOscarProdMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT,
+    liveOscarProdMcapVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,
