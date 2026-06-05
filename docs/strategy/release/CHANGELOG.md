@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.318] — 2026-06-05
+
+### Live: Telegram ALERT при блоке/снятии BTC gate
+
+- Edge-trigger в канал `LIVE_MINT_WHITELIST_TELEGRAM_*`: **приостановка buy_open** при падении BTC и **возобновление стратегии** при снятии gate.
+- Категория **`ALERT`** (`LIVE_BTC_GATE_TELEGRAM_CATEGORY`); запись `risk_note` в journal (`live_btc_gate_block` / `live_btc_gate_clear`).
+
+**Откат:** `LIVE_BTC_GATE_TELEGRAM_ENABLED=0`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.317] — 2026-06-05
 
 ### Live Oscar prod tier (mcap ≥ $3M): relaxed dip/vol for near-miss runners

@@ -5,6 +5,7 @@ import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
 import { resolveLiveBtcGateStatus, type LiveBtcGateStatus } from './btc-gate.js';
+import { appendLiveJsonlEvent } from './store-jsonl.js';
 
 const log = child('live-btc-gate-telegram');
 
@@ -23,7 +24,7 @@ function btcGateTelegramCategory(): TelegramCategory {
   if (s === 'ALERT' || s === 'REPORT' || s === 'ADVICE' || s === 'HEALTH') return s;
   const wl = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY?.trim().toUpperCase();
   if (wl === 'ALERT' || wl === 'REPORT' || wl === 'ADVICE' || wl === 'HEALTH') return wl;
-  return 'ADVICE';
+  return 'ALERT';
 }
 
 /** Same bot/chat as `live_whitelist_miss` (dips channel) unless overridden. */
@@ -79,19 +80,52 @@ function blockReasonLabel(limit: Extract<LiveBtcGateStatus, { kind: 'blocked' }>
 
 function blockAlertText(status: Extract<LiveBtcGateStatus, { kind: 'blocked' }>): string {
   return (
-    `Новые позиции (buy_open) не открываются: Bitcoin в просадке.\n` +
-    `Причина: ${blockReasonLabel(status.limit)} (Binance BTCUSDT, порог −${status.blockAtDrawdownPct}%).\n` +
+    `Live Oscar: покупки новых монет (buy_open) приостановлены из-за падения Bitcoin.\n` +
+    `Триггер: ${blockReasonLabel(status.limit)} (Binance BTCUSDT, порог −${status.blockAtDrawdownPct}%).\n` +
     `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)} | ret24h: ${fmtPct(status.ret24h_pct)} | ret72h: ${fmtPct(status.ret72h_pct)} | от пика 72ч: ${fmtPct(status.retPeak72hDrawdown_pct)}\n` +
-    `Вторая нога сплита и staged-усреднение по уже открытым mint — не блокируются этим гейтом.\n` +
-    `Снимется автоматически, когда метрики снова выше порогов (обновление ~каждые 5 мин).`
+    `Discovery и оценка кандидатов продолжаются; блокируется только открытие новых позиций.\n` +
+    `DCA и вторая нога сплита по уже открытым mint не блокируются.\n` +
+    `Сообщение о возобновлении придёт, когда BTC снова выше порогов.`
   );
 }
 
 function clearAlertText(status: Extract<LiveBtcGateStatus, { kind: 'ok' }>): string {
   return (
-    `BTC gate снят — снова можно открывать новые позиции (buy_open).\n` +
+    `Live Oscar: стратегия возобновила оценку и покупки новых монет — препятствий со стороны Bitcoin больше нет.\n` +
     `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)} | ret24h: ${fmtPct(status.ret24h_pct)} | ret72h: ${fmtPct(status.ret72h_pct)} | от пика 72ч: ${fmtPct(status.retPeak72hDrawdown_pct)}`
   );
+}
+
+function journalBtcGateTelegram(
+  tag: 'live_btc_gate_block' | 'live_btc_gate_clear',
+  status: LiveBtcGateStatus,
+  telegramOk: boolean,
+): void {
+  if (status.kind !== 'blocked' && status.kind !== 'ok') return;
+  appendLiveJsonlEvent({
+    kind: 'risk_note',
+    reason: tag,
+    detail: {
+      telegramOk,
+      ...(status.kind === 'blocked'
+        ? {
+            limit: status.limit,
+            blockAtDrawdownPct: status.blockAtDrawdownPct,
+            ret1h_pct: status.ret1h_pct,
+            ret4h_pct: status.ret4h_pct,
+            ret24h_pct: status.ret24h_pct,
+            ret72h_pct: status.ret72h_pct,
+            retPeak72hDrawdown_pct: status.retPeak72hDrawdown_pct,
+          }
+        : {
+            ret1h_pct: status.ret1h_pct,
+            ret4h_pct: status.ret4h_pct,
+            ret24h_pct: status.ret24h_pct,
+            ret72h_pct: status.ret72h_pct,
+            retPeak72hDrawdown_pct: status.retPeak72hDrawdown_pct,
+          }),
+    },
+  });
 }
 
 /** Edge-triggered Telegram; safe to call every heartbeat / buy attempt. */
@@ -118,6 +152,7 @@ export function tickLiveBtcGateTelegram(liveCfg: LiveOscarConfig): void {
           opts,
         );
         log.info({ limit: status.limit, ok }, 'live_btc_gate_block telegram');
+        journalBtcGateTelegram('live_btc_gate_block', status, ok);
         if (ok) lastTelegramPhase = 'blocked';
       } catch (e) {
         log.warn({ err: String(e) }, 'live_btc_gate_block telegram failed');
@@ -139,6 +174,7 @@ export function tickLiveBtcGateTelegram(liveCfg: LiveOscarConfig): void {
           opts,
         );
         log.info({ ok }, 'live_btc_gate_clear telegram');
+        journalBtcGateTelegram('live_btc_gate_clear', status, ok);
         if (ok) lastTelegramPhase = 'ok';
       } catch (e) {
         log.warn({ err: String(e) }, 'live_btc_gate_clear telegram failed');

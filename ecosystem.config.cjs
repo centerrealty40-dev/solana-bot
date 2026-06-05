@@ -1055,6 +1055,7 @@ const PM2_APPS = [
         LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '6',
         /** Telegram в канал дайвов (`LIVE_MINT_WHITELIST_TELEGRAM_*`): блок/снятие BTC gate. `0` = выкл. */
         LIVE_BTC_GATE_TELEGRAM_ENABLED: '1',
+        LIVE_BTC_GATE_TELEGRAM_CATEGORY: 'ALERT',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
