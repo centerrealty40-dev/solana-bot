@@ -388,6 +388,9 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '150',
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '300',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.333333,-20:0.333333',
+        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
+        PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
+        PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',

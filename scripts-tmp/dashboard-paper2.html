@@ -43,7 +43,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — до 5 карточек в ряд; плитки стратегий — 5 колонок (Live Oscar + Copy Trader + Paper Risky + V2.1 + V2.2).
+      Сводка сверху — до 6 карточек в ряд; плитки стратегий — 6 колонок (Live Oscar + Copy Trader + Paper Risky + DCA Live + V2.1 + V2.2).
     */
     .dash-desktop-summary-cols {
       display: grid;
@@ -52,7 +52,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-summary-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 1.5rem;
       }
     }
@@ -63,7 +63,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 1.5rem;
       }
     }
@@ -142,7 +142,10 @@
         </div>
 
         <div class="text-sm text-slate-300 shrink-0 lg:text-right flex flex-col lg:items-end gap-1">
-          <div><span class="text-slate-500">updated</span> <span class="mono text-slate-100" x-text="updatedAt">—</span></div>
+          <div><span class="text-slate-500">updated</span> <span class="mono text-slate-100" x-text="updatedAt">—</span>
+            <span class="text-amber-300/90 text-xs ml-2" x-show="refreshing" x-cloak>· обновление…</span>
+          </div>
+          <div class="text-[10px] mono text-violet-300/90" x-show="state.dashboardBuildId" x-text="'build ' + (state.dashboardBuildId || '')"></div>
           <div class="text-[10px] text-slate-600 leading-tight" x-show="crypto.updatedAt">
             Spot: CoinGecko · Wallet: RPC<span class="mono text-slate-500" x-text="cryptoTickerStamp"></span>
           </div>
@@ -250,7 +253,7 @@
           </div>
         </div>
       </template>
-      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 col-span-full lg:col-span-5">
+      <div x-show="!(state.strategies || []).length" class="card rounded-xl p-8 text-center text-slate-400 col-span-full lg:col-span-6">
         No strategies yet — collectors warming up.
       </div>
     </section>
@@ -562,6 +565,7 @@
       'live-oscar',
       'copy-trader',
       'paper-oscar-risky',
+      'dca-live',
       'paper-oscar-v21',
       'paper-oscar-v22',
     ];
@@ -662,13 +666,21 @@
         details:
           '**Плитка 3** на `/papertrader2`. PM2 **`paper-oscar-risky`**, `npm run paper-oscar-risky`, журнал `data/paper2/paper-oscar-risky.jsonl`.\nПроцесс **papertrader**; конфиг live-oscar и код **`src/live/**` не задействованы как отдельный рантайм.\n\n**POST-снимок (как в ecosystem для paper-oscar-risky)**\n• Мин. возраст пула **360** мин (**6 ч**); ликв. **≥$100k**; vol5m **≥$3k**; vol1h guard **≥$20k**; holders **≥1000**.\n\n**Совпадает с Live Oscar по выходам и большинству `PAPER_*`** — см. блок **paper-oscar-risky** в `ecosystem.config.cjs`.\n\n**Две ноги (бумага)**\n`PAPER_POSITION_USD=600` в ecosystem для этого процесса; scale-in env скопированы с live для паритета методологии.',
       },
+      'dca-live': {
+        label: 'DCA Live',
+        tag: 'live',
+        oneLiner:
+          'Frontrun keeper-DCA: вход $100 до 1-го цикла, avg-down −5% × $20, TP +5% / 20% остатка, фильтр impact ≥3%. PM2 **dcafr-live**.',
+        details:
+          '**Плитка 4** · PM2 **`dcafr-live`** · репо **dca-frontrun** · SSOT: `ecosystem.config.cjs` блок dcafr-live.\n\n**Сигнал**\n• Источники: Jupiter DCA / bot_dca / swap_exec (канал ViralFlow).\n• Мин. est. price impact **3%** (`DCALIVE_MIN_GAIN_PCT`).\n• Вход до **N** циклов keeper (prod: **0** = до cycle 1).\n\n**Позиция**\n• Entry **$100** · avg-down **$20** каждые **−5%** от якоря.\n• TP-сетка: **+5%** → продажа **20%** остатка (повтор).\n• Early cancel / exit перед финалом — см. `dcalive/engine.ts`.\n\n**Журнал / UI**\n• PG: `dcalive_positions`, `dcalive_fills`.\n• JSONL: `data/dcalive-trades.jsonl` (blocked/sim).\n• Таймлайн как у Live Oscar: open → DCA → partial TP → close + пояснения.',
+      },
       'paper-oscar-v21': {
         label: 'Paper Oscar V2.1',
         tag: 'paper',
         oneLiner:
           'Бумага; **вход по гейтам как у Live Oscar** ($200k / $20k vol5m / $36k vol1h / ≥3000 holders). **Выходы — IDEALIZED V2.1** (−4% → докуп 20% и режим B, +5% к avg → A; kill B **−8%**; сетка B без лимита ступеней). **Live mint whitelist не используется**.',
         details:
-          '**Плитка 4** на `/papertrader2`. PM2 **`paper-oscar-v21`**, `npm run paper-oscar-v21`, журнал `data/paper2/paper-oscar-v21.jsonl`.\nПоведение выходов: `docs/strategy/specs/IDEALIZED_OSCAR_STACK_SPEC_V2.md` v2.1.\n\n**Изменение — время жизни монеты на входе (POST-снимок)**\n• Минимальный возраст пула в снимке: было **48 ч** (**2880** мин), стало **36 ч** (**2160** мин) — **`PAPER_POST_MIN_AGE_MIN`** (как у остальных трёх плиток Oscar).\n• Верхняя граница возраста в снимке не задана (`PAPER_POST_MAX_AGE_MIN=0`).\n\n**Вход — как у Live Oscar в ecosystem (жёстче, чем V2.2/Risky)**\n• POST ≥36 ч (**2160** мин), ликв. ≥ **$200 000** `PAPER_POST_MIN_LIQ_USD`, vol5m ≥ **$20 000**, vol1h guard ≥ **$36 000** `PAPER_VOL_1H_MIN_USD`, холдеры ≥ **3000**.\n• Остальные условия снимка (4/3 сделок, BS 0.98, spike 7×, дип, recovery veto, verify, sim, liq-watch) — см. блок **paper-oscar-v21** в `ecosystem.config.cjs`.\n\n**Позиция**\n$120, 75% + 25%, scale-in по **`LIVE_ENTRY_SCALE_IN_*`**.\n\n**Выходы — только у V2.1 (IDEALIZED)**\nНейтральная фаза после двух ног; переключение в B после **−4%** к avg с докупом **20%** нотионала; в A после **+5%** к avg; kill B **−8%** (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`); сетка B без потолка ступеней (в отличие от live/Risky с макс. 4). `PAPER_TP_REGIME_ENABLED=0`.\n\n**Сравнение с V2.2**\nV2.2 **мягче** liq/holders/vol5m, но **строже** `PAPER_VOL_1H_MIN_USD` (**$60k** vs **$36k**). Поэтому V2.2 может взять монету, которую V2.1 не берёт из‑за **низкого часового объёма**; наоборот V2.1 может брать при vol1h между $36k и $60k, если остальные гейты жёстче у V2.1.',
+          '**Плитка 5** на `/papertrader2`. PM2 **`paper-oscar-v21`**, `npm run paper-oscar-v21`, журнал `data/paper2/paper-oscar-v21.jsonl`.\nПоведение выходов: `docs/strategy/specs/IDEALIZED_OSCAR_STACK_SPEC_V2.md` v2.1.\n\n**Изменение — время жизни монеты на входе (POST-снимок)**\n• Минимальный возраст пула в снимке: было **48 ч** (**2880** мин), стало **36 ч** (**2160** мин) — **`PAPER_POST_MIN_AGE_MIN`** (как у остальных трёх плиток Oscar).\n• Верхняя граница возраста в снимке не задана (`PAPER_POST_MAX_AGE_MIN=0`).\n\n**Вход — как у Live Oscar в ecosystem (жёстче, чем V2.2/Risky)**\n• POST ≥36 ч (**2160** мин), ликв. ≥ **$200 000** `PAPER_POST_MIN_LIQ_USD`, vol5m ≥ **$20 000**, vol1h guard ≥ **$36 000** `PAPER_VOL_1H_MIN_USD`, холдеры ≥ **3000**.\n• Остальные условия снимка (4/3 сделок, BS 0.98, spike 7×, дип, recovery veto, verify, sim, liq-watch) — см. блок **paper-oscar-v21** в `ecosystem.config.cjs`.\n\n**Позиция**\n$120, 75% + 25%, scale-in по **`LIVE_ENTRY_SCALE_IN_*`**.\n\n**Выходы — только у V2.1 (IDEALIZED)**\nНейтральная фаза после двух ног; переключение в B после **−4%** к avg с докупом **20%** нотионала; в A после **+5%** к avg; kill B **−8%** (`PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP`); сетка B без потолка ступеней (в отличие от live/Risky с макс. 4). `PAPER_TP_REGIME_ENABLED=0`.\n\n**Сравнение с V2.2**\nV2.2 **мягче** liq/holders/vol5m, но **строже** `PAPER_VOL_1H_MIN_USD` (**$60k** vs **$36k**). Поэтому V2.2 может взять монету, которую V2.1 не берёт из‑за **низкого часового объёма**; наоборот V2.1 может брать при vol1h между $36k и $60k, если остальные гейты жёстче у V2.1.',
       },
       'paper-oscar-v22': {
         label: 'Paper Oscar V2.2',
@@ -676,7 +688,7 @@
         oneLiner:
           'Бумага; **те же IDEALIZED V2.1 выходы**, что V2.1. Вход **мягче** по liq/holders/vol5m, но **строже по vol1h ($60k)**. **Live mint whitelist не используется**.',
         details:
-          '**Плитка 5** на `/papertrader2`. PM2 **`paper-oscar-v22`**, `npm run paper-oscar-v22`, журнал `data/paper2/paper-oscar-v22.jsonl`.\nКод и логика выходов — как **Paper Oscar V2.1** (IDEALIZED v2.1).\n\n**Изменение — время жизни монеты на входе (POST-снимок)**\n• Минимальный возраст пула в снимке: было **48 ч** (**2880** мин), стало **36 ч** (**2160** мин) — **`PAPER_POST_MIN_AGE_MIN`** (как у остальных трёх плиток Oscar).\n• Верхняя граница возраста в снимке не задана (`PAPER_POST_MAX_AGE_MIN=0`).\n\n**Пороги входа (отличия от V2.1)**\n• Ликв. ≥ **$100 000** · холдеры ≥ **1000** · vol5m ≥ **$10 000** — мягче, чем у V2.1.\n• Часовой guard **`PAPER_VOL_1H_MIN_USD` = $60 000** — **строже**, чем у V2.1 (**$36 000**).\n\nОстальное (POST **36 ч** / **2160** мин, 4/3, BS, spike, дип, verify, sim, liq-watch, позиция $120, scale-in) — как у **paper-oscar-v21** в ecosystem, если не переопределено на хосте.',
+          '**Плитка 6** на `/papertrader2`. PM2 **`paper-oscar-v22`**, `npm run paper-oscar-v22`, журнал `data/paper2/paper-oscar-v22.jsonl`.\nКод и логика выходов — как **Paper Oscar V2.1** (IDEALIZED v2.1).\n\n**Изменение — время жизни монеты на входе (POST-снимок)**\n• Минимальный возраст пула в снимке: было **48 ч** (**2880** мин), стало **36 ч** (**2160** мин) — **`PAPER_POST_MIN_AGE_MIN`** (как у остальных трёх плиток Oscar).\n• Верхняя граница возраста в снимке не задана (`PAPER_POST_MAX_AGE_MIN=0`).\n\n**Пороги входа (отличия от V2.1)**\n• Ликв. ≥ **$100 000** · холдеры ≥ **1000** · vol5m ≥ **$10 000** — мягче, чем у V2.1.\n• Часовой guard **`PAPER_VOL_1H_MIN_USD` = $60 000** — **строже**, чем у V2.1 (**$36 000**).\n\nОстальное (POST **36 ч** / **2160** мин, 4/3, BS, spike, дип, verify, sim, liq-watch, позиция $120, scale-in) — как у **paper-oscar-v21** в ecosystem, если не переопределено на хосте.',
       },
       pt1_smart_lottery: {
         label: 'Smart Lottery',
@@ -756,6 +768,7 @@
         /** Cap timeline DOM per position — full count still shown in header. */
         timelineUiMax: 30,
         updatedAt: '—',
+        refreshing: false,
         expanded: {},
         selectStrategy(id) {
           if (this.selected === id) return;
@@ -1031,11 +1044,13 @@
         },
         async refresh() {
           try {
-            const j = await fetch('/api/paper2?t=' + Date.now(), {
+            this.refreshing = true;
+            const r = await fetch('/api/paper2?t=' + Date.now(), {
               credentials: 'include',
               cache: 'no-store',
               headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
-            }).then((r) => r.json());
+            });
+            const j = await r.json();
             const normalized = normalizePaper2Payload(j);
             this.state = normalized;
             if (!this.selected && (normalized.strategies || []).length) {
@@ -1046,6 +1061,7 @@
             this.syncRowCache();
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }
+          finally { this.refreshing = false; }
         },
         selectedRow() { return this.rowCache; },
         describe(id) {
