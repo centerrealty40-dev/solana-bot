@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.318] — 2026-05-28
+
+### Fix: copy-trader ghost clears + wallet-based mirror sells
+
+- **Ghost reconcile:** 5‑min grace after entry + retry RPC before clearing state (false `wallet_balance_zero` right after buy).
+- **Mirror sells/buys:** proportional % from execution-wallet SPL balance; leader sells scheduled even without state row.
+
+**Откат:** revert `src/copytrader/main.ts`, `position-reconcile.ts`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.317] — 2026-06-05
 
 ### Live Oscar prod tier (mcap ≥ $3M): relaxed dip/vol for near-miss runners
