@@ -43,7 +43,31 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
-import { loadDcaliveForDashboard } from './dcalive-dashboard.js';
+
+/** Empty paper2 load when optional panel loader fails. */
+function emptyPaper2FileLoad(): Paper2FileLoad {
+  return {
+    open: [],
+    closed: [],
+    firstTs: Date.now(),
+    lastTs: Date.now(),
+    resetTs: 0,
+    evals1h: 0,
+    passed1h: 0,
+    failReasons: [],
+    openTimelines: new Map<string, TimelineEvent[]>(),
+  };
+}
+
+async function loadDcaliveDashboardSafe(jsonlPath: string): Promise<Paper2FileLoad> {
+  try {
+    const mod = await import('./dcalive-dashboard.js');
+    return await mod.loadDcaliveForDashboard(pgPool(), jsonlPath);
+  } catch (e) {
+    console.warn('[dashboard] dca-live unavailable', String(e).slice(0, 200));
+    return emptyPaper2FileLoad();
+  }
+}
 
 /** Tail replay for huge live journals (align with LIVE_REPLAY_MAX_FILE_BYTES default 200MB). */
 const DASHBOARD_JSONL_TAIL_BYTES = Number(
@@ -1312,7 +1336,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'paper-oscar-v22',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-05-dash-perf-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-05-dash-perf-v2';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3906,20 +3930,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   const paperV21Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   const paperV22Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V22_JSONL);
 
-  const dcaLiveLoadP = loadDcaliveForDashboard(pgPool(), DASHBOARD_DCA_LIVE_JSONL).catch((e) => {
-    console.warn('[dashboard] dca-live load failed', String(e).slice(0, 160));
-    return {
-      open: [],
-      closed: [],
-      firstTs: Date.now(),
-      lastTs: Date.now(),
-      resetTs: 0,
-      evals1h: 0,
-      passed1h: 0,
-      failReasons: [],
-      openTimelines: new Map<string, TimelineEvent[]>(),
-    } satisfies Paper2FileLoad;
-  });
+  const dcaLiveLoadP = loadDcaliveDashboardSafe(DASHBOARD_DCA_LIVE_JSONL);
 
   const dcaLiveRowP = dcaLiveLoadP.then((load) =>
     buildPaper2StrategyRowFromLoad(DASHBOARD_DCA_LIVE_JSONL, 'dca-live', load),
