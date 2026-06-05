@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.317] — 2026-06-05
+
+### Live Oscar prod tier (mcap ≥ $3M): relaxed dip/vol for near-miss runners
+
+- **Prod phase only** (`mcap ≥ PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD`): dip **−18%**, vol1h **≥ $25k** (`PAPER_LIVE_OSCAR_PROD_MCAP_*`).
+- **Low tier $1.3M–$3M** без изменений: dip **−30%**, vol1h **≥ $75k**.
+
+**Откат:** unset `PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT` / `VOL_1H_MIN_USD` or restore `−20` / `36000`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.316] — 2026-06-05
 
 ### Live: CARDS denylist + BTC gate level 2
