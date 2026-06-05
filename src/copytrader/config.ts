@@ -30,8 +30,11 @@ const CopyTraderConfigSchema = z.object({
   sellRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
   sellRetryIntervalMs: z.coerce.number().int().min(1_000).max(600_000).default(6_000),
   sellRetryDeferLogMs: z.coerce.number().int().min(5_000).max(3_600_000).default(30_000),
-  sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(20_000),
-  sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
+  /** Fast mirror delay for leader add + partial sell (default 5–10 s). */
+  mirrorActionDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(5_000),
+  mirrorActionDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(10_000),
+  sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(5_000),
+  sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(10_000),
   positionUsd: z.coerce.number().positive().max(100_000).default(600),
   addPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   maxPositionUsd: z.coerce.number().min(0).max(500_000).default(0),
@@ -39,6 +42,10 @@ const CopyTraderConfigSchema = z.object({
   minProportionalAddUsd: z.coerce.number().min(0).max(100_000).default(0),
   minProportionalSellFraction: z.coerce.number().min(0).max(1).default(0),
   buyPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(3),
+  /** Skip add mirror when price is more than this % above leader signal. */
+  addMaxPremiumPct: z.coerce.number().min(0).max(50).default(5),
+  /** Skip partial sell mirror when price is more than this % below leader signal. */
+  partialSellMaxDrawdownPct: z.coerce.number().min(0).max(50).default(5),
   minLeaderBuyUsd: z.coerce.number().min(0).max(1_000_000).default(50),
   minLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(15_000),
   minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
@@ -84,12 +91,19 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     resolveSolanaRpcUrl() ||
     '';
 
-  const sellMin = Number(process.env.COPY_TRADER_SELL_DELAY_MIN_MS ?? 20_000);
-  const sellMax = Number(process.env.COPY_TRADER_SELL_DELAY_MAX_MS ?? 30_000);
-  const sellDelayMinMs = Number.isFinite(sellMin) ? Math.max(0, Math.floor(sellMin)) : 20_000;
+  const mirrorMin = Number(process.env.COPY_TRADER_MIRROR_DELAY_MIN_MS ?? 5_000);
+  const mirrorMax = Number(process.env.COPY_TRADER_MIRROR_DELAY_MAX_MS ?? 10_000);
+  const mirrorActionDelayMinMs = Number.isFinite(mirrorMin) ? Math.max(0, Math.floor(mirrorMin)) : 5_000;
+  const mirrorActionDelayMaxMs = Number.isFinite(mirrorMax)
+    ? Math.max(mirrorActionDelayMinMs, Math.floor(mirrorMax))
+    : Math.max(mirrorActionDelayMinMs, 10_000);
+
+  const sellMin = Number(process.env.COPY_TRADER_SELL_DELAY_MIN_MS ?? mirrorActionDelayMinMs);
+  const sellMax = Number(process.env.COPY_TRADER_SELL_DELAY_MAX_MS ?? mirrorActionDelayMaxMs);
+  const sellDelayMinMs = Number.isFinite(sellMin) ? Math.max(0, Math.floor(sellMin)) : mirrorActionDelayMinMs;
   const sellDelayMaxMs = Number.isFinite(sellMax)
     ? Math.max(sellDelayMinMs, Math.floor(sellMax))
-    : Math.max(sellDelayMinMs, 30_000);
+    : Math.max(sellDelayMinMs, mirrorActionDelayMaxMs);
 
   const raw = {
     targetWallet,
@@ -110,6 +124,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellRetryWindowMs: process.env.COPY_TRADER_SELL_RETRY_WINDOW_MS,
     sellRetryIntervalMs: process.env.COPY_TRADER_SELL_RETRY_INTERVAL_MS,
     sellRetryDeferLogMs: process.env.COPY_TRADER_SELL_RETRY_DEFER_LOG_MS,
+    mirrorActionDelayMinMs,
+    mirrorActionDelayMaxMs,
     sellDelayMinMs,
     sellDelayMaxMs,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,
@@ -119,6 +135,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minProportionalAddUsd: process.env.COPY_TRADER_MIN_PROPORTIONAL_ADD_USD,
     minProportionalSellFraction: process.env.COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION,
     buyPriceMaxPremiumPct: process.env.COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT,
+    addMaxPremiumPct: process.env.COPY_TRADER_ADD_MAX_PREMIUM_PCT,
+    partialSellMaxDrawdownPct: process.env.COPY_TRADER_PARTIAL_SELL_MAX_DRAWDOWN_PCT,
     minLeaderBuyUsd: process.env.COPY_TRADER_MIN_LEADER_BUY_USD,
     minLiquidityUsd: process.env.COPY_TRADER_MIN_LIQUIDITY_USD,
     minMarketCapUsd: process.env.COPY_TRADER_MIN_MCAP_USD,

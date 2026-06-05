@@ -52,6 +52,8 @@ export type PendingSell = {
   /** Fraction of our position to close (1 = full). */
   fraction: number;
   leaderSellFraction?: number;
+  /** Leader token price at sell signal (partial sell price gate). */
+  leaderPriceUsd?: number;
   /** Keep retrying slippage-class sell errors until this ts. */
   retryUntilTs: number;
   lastDeferLogTs?: number;
@@ -126,6 +128,8 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof p.leaderSellFraction === 'number' && p.leaderSellFraction > 0
             ? Math.min(1, p.leaderSellFraction)
             : undefined,
+        leaderPriceUsd:
+          typeof p.leaderPriceUsd === 'number' && p.leaderPriceUsd > 0 ? p.leaderPriceUsd : undefined,
         retryUntilTs:
           typeof p.retryUntilTs === 'number' && p.retryUntilTs > 0
             ? p.retryUntilTs

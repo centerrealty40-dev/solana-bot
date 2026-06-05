@@ -1,16 +1,11 @@
 import type { CopyTraderConfig } from './config.js';
 import { appendCopyEvent } from './executor.js';
+import { randomMirrorActionDelayMs } from './mirror-delays.js';
 import { cancelPendingSellsForMint } from './pending-sell-retry.js';
 import { computeRetryUntilTs } from './pending-buy-retry.js';
 import { isFullCloseFraction } from './proportional.js';
 import { newId, type CopyTraderState, type PendingSell } from './state.js';
 import type { CoalescedSell } from './exit-coalesce.js';
-
-export function randomSellDelayMs(cfg: CopyTraderConfig): number {
-  const min = Math.max(0, cfg.sellDelayMinMs);
-  const max = Math.max(min, cfg.sellDelayMaxMs);
-  return min + Math.floor(Math.random() * (max - min + 1));
-}
 
 export type ScheduleSellArgs = {
   cfg: CopyTraderConfig;
@@ -21,6 +16,7 @@ export type ScheduleSellArgs = {
   leaderSellTs: number;
   fraction: number;
   leaderSellFraction: number;
+  leaderPriceUsd: number;
   coalesce?: CoalescedSell;
   sweepReason?: string;
 };
@@ -35,6 +31,7 @@ export function schedulePendingSell(args: ScheduleSellArgs): PendingSell {
     leaderSellTs,
     fraction,
     leaderSellFraction,
+    leaderPriceUsd,
     coalesce,
     sweepReason,
   } = args;
@@ -56,7 +53,7 @@ export function schedulePendingSell(args: ScheduleSellArgs): PendingSell {
     }
   }
 
-  const delayMs = randomSellDelayMs(cfg);
+  const delayMs = randomMirrorActionDelayMs(cfg);
   const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {
     id: newId('ps'),
@@ -67,6 +64,7 @@ export function schedulePendingSell(args: ScheduleSellArgs): PendingSell {
     dueTs,
     fraction,
     leaderSellFraction,
+    leaderPriceUsd: leaderPriceUsd > 0 ? leaderPriceUsd : undefined,
     retryUntilTs: computeRetryUntilTs(dueTs, cfg.sellRetryWindowMs),
   };
   state.pendingSells.push(pending);
@@ -77,6 +75,7 @@ export function schedulePendingSell(args: ScheduleSellArgs): PendingSell {
     symbol,
     leaderSignature,
     leaderSellFraction,
+    leaderPriceUsd: leaderPriceUsd > 0 ? leaderPriceUsd : null,
     ourSellFraction: fraction,
     sellDueTs: pending.dueTs,
     sellDelayMs: delayMs,

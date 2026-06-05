@@ -14,6 +14,19 @@
 
 ---
 
+## [1.11.324] — 2026-05-28
+
+### Fix: copy-trader mirror timing + price gates (add / partial sell)
+
+- **Entry buy:** без изменений — `COPY_TRADER_BUY_DELAY_MS` (~30 с) + price gate `BUY_PRICE_MAX_PREMIUM_PCT` (3%).
+- **Add + partial sell:** случайная задержка **5–10 с** (`COPY_TRADER_MIRROR_DELAY_*`) вместо 20–30 с.
+- **Add gate:** не докупать, если цена уже **> +5%** от цены лидера на сигнале (`COPY_TRADER_ADD_MAX_PREMIUM_PCT`).
+- **Partial sell gate:** не продавать частично, если цена уже **< −5%** от цены лидера (`COPY_TRADER_PARTIAL_SELL_MAX_DRAWDOWN_PCT`); полный выход (coalesce / sweep) — без этого gate.
+
+**Откат:** `git revert`; ecosystem вернуть `SELL_DELAY_*` 20000/30000, убрать `MIRROR_DELAY_*` / `ADD_MAX_PREMIUM_PCT` / `PARTIAL_SELL_MAX_DRAWDOWN_PCT`; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.322] — 2026-06-05
 
 ### Fix: copy-trader exit coalesce + leader-flat sweep

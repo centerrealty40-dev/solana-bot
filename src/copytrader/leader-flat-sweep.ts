@@ -33,6 +33,7 @@ export async function sweepLeaderZeroHoldings(cfg: CopyTraderConfig, state: Copy
       leaderSellTs: Date.now(),
       fraction: 1,
       leaderSellFraction: 1,
+      leaderPriceUsd: 0,
       sweepReason: 'leader_ledger_zero',
     });
     scheduled += 1;

@@ -5,6 +5,8 @@ import type { SwapInsert } from '../parser/pumpfun.js';
 import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyEntry } from './evaluate.js';
+import { entryBuyDelayMs, randomMirrorActionDelayMs } from './mirror-delays.js';
+import { evaluateCopyAdd, partialSellPriceBelowLeaderFloor } from './mirror-price-gates.js';
 import { resolveCopyBuySizeUsd } from './buy-affordability.js';
 import { coalescedMirrorSellFraction } from './exit-coalesce.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
@@ -17,6 +19,7 @@ import {
 import {
   absRawAmount,
   leaderAddFraction,
+  isFullCloseFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
 } from './proportional.js';
@@ -257,7 +260,8 @@ async function schedulePendingBuy(
   },
 ): Promise<void> {
   const { mint, symbol, kind, sizeUsd, leaderAddFraction, preLeaderRaw, swap, row } = args;
-  const dueTs = Date.now() + cfg.buyDelayMs;
+  const delayMs = kind === 'add' ? randomMirrorActionDelayMs(cfg) : entryBuyDelayMs(cfg);
+  const dueTs = Date.now() + delayMs;
   const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
     id: newId('pb'),
@@ -285,16 +289,19 @@ async function schedulePendingBuy(
     leaderBuyUsd: swap.amountUsd,
     leaderAddFraction: leaderAddFraction ?? null,
     buyDueTs: dueTs,
-    buyDelayMs: cfg.buyDelayMs,
+    buyDelayMs: delayMs,
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
   });
 
-  const delayMin = Math.max(1, Math.round(cfg.buyDelayMs / 60_000));
   const pct =
     kind === 'add' && leaderAddFraction != null
       ? ` · ${(leaderAddFraction * 100).toFixed(0)}% of our stack`
       : '';
+  const delayLabel =
+    kind === 'add'
+      ? `~${Math.round(delayMs / 1000)}s`
+      : `~${Math.max(1, Math.round(delayMs / 60_000))} min`;
   await notifyCopyTraderTelegram(
     cfg,
     fmtCopyAlert({
@@ -305,8 +312,8 @@ async function schedulePendingBuy(
       priceUsd: swap.priceUsd,
       detail:
         kind === 'add'
-          ? `Add $${sizeUsd}${pct} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`
-          : `Buy $${sizeUsd} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`,
+          ? `Add $${sizeUsd}${pct} queued ${delayLabel}, skip if price >+${cfg.addMaxPremiumPct}%`
+          : `Buy $${sizeUsd} queued ${delayLabel}, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`,
     }),
   );
 }
@@ -376,6 +383,7 @@ async function onLeaderSell(
     leaderSellTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
     fraction: ourFrac,
     leaderSellFraction: sellFrac,
+    leaderPriceUsd: swap.priceUsd,
     coalesce: coalesced.coalesced ? coalesced : undefined,
   });
 
@@ -480,14 +488,24 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
-    const evalResult = evaluateCopyEntry(cfg, {
-      mint: pending.mint,
-      leaderPriceUsd: pending.leaderPriceUsd,
-      leaderBuyUsd: pending.leaderBuyUsd,
-      currentPriceUsd: currentPrice,
-      dex,
-      nowMs: now,
-    });
+    const evalResult =
+      pending.kind === 'add'
+        ? evaluateCopyAdd(cfg, {
+            mint: pending.mint,
+            leaderPriceUsd: pending.leaderPriceUsd,
+            leaderBuyUsd: pending.leaderBuyUsd,
+            currentPriceUsd: currentPrice,
+            dex,
+            nowMs: now,
+          })
+        : evaluateCopyEntry(cfg, {
+            mint: pending.mint,
+            leaderPriceUsd: pending.leaderPriceUsd,
+            leaderBuyUsd: pending.leaderBuyUsd,
+            currentPriceUsd: currentPrice,
+            dex,
+            nowMs: now,
+          });
 
     if (!evalResult.pass) {
       const deferNote = noteBuyDefer(state, pending.id, now, cfg);
@@ -703,6 +721,35 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     const sellUsd =
       walletNotional > 0 ? walletNotional * pending.fraction : pos.sizeUsd * pending.fraction;
 
+    const leaderPx = pending.leaderPriceUsd ?? 0;
+    if (
+      !isFullCloseFraction(pending.fraction) &&
+      leaderPx > 0 &&
+      partialSellPriceBelowLeaderFloor(leaderPx, exitPrice, cfg.partialSellMaxDrawdownPct)
+    ) {
+      const row = findPendingSell(state, pending.id);
+      if (row) {
+        row.dueTs = now + cfg.sellRetryIntervalMs;
+        if (shouldLogSellDefer(row, now, cfg.sellRetryDeferLogMs)) {
+          row.lastDeferLogTs = now;
+          appendCopyEvent(cfg, {
+            kind: 'sell_deferred',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            sellFraction: pending.fraction,
+            reason: `partial_sell_price_too_low leader=${leaderPx.toExponential(4)} current=${exitPrice.toExponential(4)} max_drawdown_pct=${cfg.partialSellMaxDrawdownPct}`,
+            leaderPriceUsd: leaderPx,
+            currentPriceUsd: exitPrice,
+            retryUntilTs: row.retryUntilTs,
+            nextAttemptTs: row.dueTs,
+          });
+        }
+      }
+      await sleep(150);
+      continue;
+    }
+
     const exec = await executeCopySell({
       cfg,
       mint: pending.mint,
@@ -813,7 +860,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
-    sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
+    mirrorActionDelaySec: `${Math.round(cfg.mirrorActionDelayMinMs / 1000)}-${Math.round(cfg.mirrorActionDelayMaxMs / 1000)}`,
+    addMaxPremiumPct: cfg.addMaxPremiumPct,
+    partialSellMaxDrawdownPct: cfg.partialSellMaxDrawdownPct,
     isolated: true,
   });
 
