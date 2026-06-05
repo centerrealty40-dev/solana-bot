@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.319] — 2026-06-05
+
+### Live: BTC gate — только сильная просадка; THREE в denylist
+
+- **BTC gate** (`buy_open`): отключены слабые окна **1h / 4h / 24h** (`LIVE_BTC_BLOCK_* = 0`); активны только **72h −6%** и **от пика 72h −6%**.
+- **THREE** (`FeMbDoX7…pump`): permanent denylist seed + `live-oscar-mint-blacklist.txt`.
+
+**Откат:** восстановить `LIVE_BTC_BLOCK_1H/4H/24H` в ecosystem; убрать mint из denylist/blacklist; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.318] — 2026-05-28
 
 ### Fix: copy-trader ghost clears + wallet-based mirror sells

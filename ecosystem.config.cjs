@@ -1047,10 +1047,10 @@ const PM2_APPS = [
         LIVE_MIN_WALLET_SOL_EQUITY_USD: '',
         /** Live-only: не открывать новые позиции при «просадке» BTC (Binance 1h/4h/24h/72h); `0` = выкл. см. `LIVE_BTC_GATE_ENABLED`. */
         LIVE_BTC_GATE_ENABLED: '1',
-        /** Level-2 BTC gate: 1h/4h/24h/72h + drawdown от пика 72h (п.п.; `0` = выкл. для конкретного окна). */
-        LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '1',
-        LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '2.5',
-        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '2',
+        /** BTC gate (buy_open): только сильная просадка — 72h и от пика 72h; 1h/4h/24h = 0 (выкл.). */
+        LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '0',
+        LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '0',
+        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '0',
         LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '6',
         LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '6',
         /** Telegram в канал дайвов (`LIVE_MINT_WHITELIST_TELEGRAM_*`): блок/снятие BTC gate. `0` = выкл. */

@@ -100,12 +100,12 @@ const LiveOscarConfigSchema = z
     liveBtcGateEnabled: z.boolean().default(true),
     /** Skip BTC gate if `getBtcContext().updated_ts` older than this (ms). */
     liveBtcGateMaxStaleMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
-    /** Block when `ret1h_pct ≤ −this` (percent points). Level-2 default 1%. */
-    liveBtcBlockNewBuys1hDrawdownPct: z.coerce.number().min(0).max(50).default(1),
-    /** Block when `ret4h_pct ≤ −this` (percent points). Level-2 default 2.5%. */
-    liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(2.5),
-    /** Block when `ret24h_pct ≤ −this` (percent points). Level-2 default 2%. `0` = off. */
-    liveBtcBlockNewBuys24hDrawdownPct: z.coerce.number().min(0).max(50).default(2),
+    /** Block when `ret1h_pct ≤ −this` (percent points). `0` = off (default). */
+    liveBtcBlockNewBuys1hDrawdownPct: z.coerce.number().min(0).max(50).default(0),
+    /** Block when `ret4h_pct ≤ −this` (percent points). `0` = off (default). */
+    liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(0),
+    /** Block when `ret24h_pct ≤ −this` (percent points). `0` = off (default). */
+    liveBtcBlockNewBuys24hDrawdownPct: z.coerce.number().min(0).max(50).default(0),
     /** Block when `ret72h_pct ≤ −this` (percent points). Level-2 default 6%. `0` = off. */
     liveBtcBlockNewBuys72hDrawdownPct: z.coerce.number().min(0).max(50).default(6),
     /** Block when drawdown from 72h peak ≤ −this (percent points). Level-2 default 6%. `0` = off. */
@@ -588,21 +588,21 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
     liveBtcBlockNewBuys1hDrawdownPct: (() => {
       const s = process.env.LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT?.trim();
-      if (!s) return 1;
+      if (!s) return 0;
       const n = Number(s);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 1;
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
     liveBtcBlockNewBuys4hDrawdownPct: (() => {
       const s = process.env.LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT?.trim();
-      if (!s) return 2.5;
+      if (!s) return 0;
       const n = Number(s);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 2.5;
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
     liveBtcBlockNewBuys24hDrawdownPct: (() => {
       const s = process.env.LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT?.trim();
-      if (!s) return 2;
+      if (!s) return 0;
       const n = Number(s);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 2;
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
     liveBtcBlockNewBuys72hDrawdownPct: (() => {
       const s = process.env.LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT?.trim();
