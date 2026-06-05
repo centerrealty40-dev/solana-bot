@@ -67,7 +67,6 @@ import {
   type LiveOscarMcapTier,
 } from '../live-oscar-mcap-tier.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
-import { appendMintLossReentryCooldownReason } from '../../live/mint-loss-reentry-cooldown.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
 import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
@@ -285,7 +284,6 @@ export function appendPostExitReentryGateReasons(
   snapshotPriceUsd: number,
   out: string[],
 ): void {
-  appendMintLossReentryCooldownReason(mint, out);
   if (isLiveReentryHybridGateEnabled(cfg)) {
     appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
     return;

@@ -14,6 +14,30 @@
 
 ---
 
+## [1.11.314] — 2026-05-28
+
+### Copy-trader: $800 entry + wallet balance as source of truth
+
+- **`COPY_TRADER_POSITION_USD`**: первый вход **600 → 800** (default + `ecosystem.config.cjs`).
+- **Пропорциональные докупки и зеркальные продажи** считают долю от **фактического** SPL-баланса execution-кошелька (ручные buy/sell учитываются).
+- После buy/sell state **`sizeUsd` / `tokenRaw`** синхронизируется с RPC; продажа лидера ставится в очередь даже без строки в state, если на кошельке есть токены.
+
+**Откат:** `COPY_TRADER_POSITION_USD=600`; revert `src/copytrader/main.ts`, `position-reconcile.ts`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
+## [1.11.314] — 2026-06-05
+
+### Live: loss exit → permanent denylist; sizing 2×$350 + DCA $150
+
+- **`LIVE_NEGATIVE_TRADE_DENY_ENABLED=1`**, **`LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED=0`**: любой убыточный полный выход → mint в `live-oscar-permanent-denylist.txt` (вместо 6h cooldown).
+- **`LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED=0`** — cooldown снят.
+- Entry split **$350+$350** (`PAPER_POSITION_USD=700`); DCA **$150** на ступень (`PAPER_DCA_LEVELS` 0.214286); cap **`LIVE_MAX_POSITION_USD=1000`**.
+
+**Откат:** `LIVE_NEGATIVE_TRADE_DENY_ENABLED=0`, `LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED=1`; restore $1500/$400 sizing; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.313] — 2026-06-05
 
 ### Live: falling-knife re-entry protection (loss cooldown + stricter hybrid)
