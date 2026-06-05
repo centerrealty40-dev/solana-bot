@@ -26,20 +26,6 @@ export function evaluateCopyEntry(cfg: CopyTraderConfig, input: EvalInput): Eval
     score += 1;
   }
 
-  if (!(input.leaderPriceUsd > 0) || !(input.currentPriceUsd > 0)) {
-    reasons.push('missing_price');
-  } else {
-    const maxAllowed = input.leaderPriceUsd * (1 + cfg.buyPriceMaxPremiumPct / 100);
-    if (input.currentPriceUsd > maxAllowed) {
-      reasons.push(
-        `price_too_high current=${input.currentPriceUsd.toExponential(4)} max=${maxAllowed.toExponential(4)}`,
-      );
-    } else {
-      score += 2;
-      if (input.currentPriceUsd <= input.leaderPriceUsd) score += 1;
-    }
-  }
-
   const dex = input.dex;
   if (!dex) {
     reasons.push('no_dex_data');

@@ -13,6 +13,7 @@ import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
 import { quoteAffordabilityForBuy } from './buy-affordability.js';
+import { buyQuoteGateReason, partialSellQuoteGateReason } from './mirror-price-gates.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 
 let cachedSigner: Keypair | null = null;
@@ -75,8 +76,9 @@ export async function executeLiveCopyBuy(args: {
   sizeUsd: number;
   kind: 'entry' | 'add';
   leaderSignature: string;
+  leaderPriceUsd: number;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRaw?: string; reason?: string }> {
-  const { cfg, mint, symbol, sizeUsd, kind, leaderSignature } = args;
+  const { cfg, mint, symbol, sizeUsd, kind, leaderSignature, leaderPriceUsd } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -106,20 +108,25 @@ export async function executeLiveCopyBuy(args: {
     }
   }
 
+  const outRaw = quote.quoteResponse.outAmount;
+  const inRaw = quote.quoteResponse.inAmount;
+  const outN = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
+  const inN = typeof inRaw === 'string' ? Number(inRaw) : Number(inRaw ?? 0);
+  const priceUsd = outN > 0 && inN > 0 ? (inN / 1e9) * solUsd / (outN / 1e6) : 0;
+
+  const gateReason = buyQuoteGateReason(cfg, kind, leaderPriceUsd, priceUsd);
+  if (gateReason) {
+    return { ok: false, priceUsd, reason: gateReason };
+  }
+
   const build = await liveBuildUnsignedSwapTx({
     cfg: liveCfg,
     quoteResponse: quote.quoteResponse,
     userPublicKey: userPk,
   });
   if (!build.ok) {
-    return { ok: false, priceUsd: 0, reason: build.reason };
+    return { ok: false, priceUsd, reason: build.reason };
   }
-
-  const outRaw = quote.quoteResponse.outAmount;
-  const inRaw = quote.quoteResponse.inAmount;
-  const outN = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-  const inN = typeof inRaw === 'string' ? Number(inRaw) : Number(inRaw ?? 0);
-  const priceUsd = outN > 0 && inN > 0 ? (inN / 1e9) * solUsd / (outN / 1e6) : 0;
 
   const sent = await sendSwap(cfg, build.b64, {
     side: 'buy',
@@ -140,9 +147,10 @@ export async function executeLiveCopySell(args: {
   symbol: string;
   leaderSignature: string;
   fraction: number;
+  leaderPriceUsd: number;
   slippageBps?: number;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRawRemaining?: string; reason?: string }> {
-  const { cfg, mint, symbol, leaderSignature, fraction, slippageBps } = args;
+  const { cfg, mint, symbol, leaderSignature, fraction, leaderPriceUsd, slippageBps } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -179,6 +187,13 @@ export async function executeLiveCopySell(args: {
   // Per-token exit price (same 6-decimal assumption as executeLiveCopyBuy), not total proceeds.
   const tokensSold = Number(sellRaw) / 1e6;
   const exitPriceUsd = tokensSold > 0 && proceedsUsd > 0 ? proceedsUsd / tokensSold : 0;
+
+  if (!isFullCloseFraction(fraction) && leaderPriceUsd > 0) {
+    const gateReason = partialSellQuoteGateReason(cfg, leaderPriceUsd, exitPriceUsd);
+    if (gateReason) {
+      return { ok: false, priceUsd: exitPriceUsd, reason: gateReason };
+    }
+  }
 
   const sent = await sendSwap(cfg, prep.swapBuild.b64, {
     side: 'sell',

@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { CopyTraderConfig } from './config.js';
 import type { EvalResult } from './evaluate.js';
 import { executeLiveCopyBuy, executeLiveCopySell } from './live-exec.js';
+import { buyQuoteGateReason, isQuoteGateDeferReason, partialSellQuoteGateReason } from './mirror-price-gates.js';
+import { isFullCloseFraction } from './proportional.js';
 
 function appendJsonl(journalPath: string, event: Record<string, unknown>): void {
   const dir = path.dirname(journalPath);
@@ -36,10 +38,15 @@ export async function executeCopyBuy(args: {
   kind: 'entry' | 'add';
   evalResult: EvalResult;
   leaderSignature: string;
+  leaderPriceUsd: number;
 }): Promise<BuyExecutionResult> {
-  const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature } = args;
+  const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature, leaderPriceUsd } = args;
 
   if (cfg.executionMode === 'paper' || cfg.executionMode === 'dry_run') {
+    const quoteGate = buyQuoteGateReason(cfg, kind, leaderPriceUsd, priceUsd);
+    if (quoteGate) {
+      return { ok: false, priceUsd, reason: quoteGate };
+    }
     const tokenRaw =
       priceUsd > 0
         ? BigInt(Math.floor((sizeUsd / priceUsd) * 1_000_000)).toString()
@@ -65,7 +72,7 @@ export async function executeCopyBuy(args: {
   }
 
   if (cfg.executionMode === 'live') {
-    const live = await executeLiveCopyBuy({ cfg, mint, symbol, sizeUsd, kind, leaderSignature });
+    const live = await executeLiveCopyBuy({ cfg, mint, symbol, sizeUsd, kind, leaderSignature, leaderPriceUsd });
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',
       mode: 'live',
@@ -101,6 +108,7 @@ export async function executeCopySell(args: {
   sizeUsd: number;
   fraction: number;
   leaderSignature: string;
+  leaderPriceUsd: number;
   sellDelayMs: number;
   slippageBps?: number;
 }): Promise<SellExecutionResult> {
@@ -113,12 +121,19 @@ export async function executeCopySell(args: {
     sizeUsd,
     fraction,
     leaderSignature,
+    leaderPriceUsd,
     sellDelayMs,
     slippageBps,
   } = args;
   const pnlPct = entryPriceUsd > 0 ? ((exitPriceUsd / entryPriceUsd - 1) * 100) : 0;
 
   if (cfg.executionMode === 'paper' || cfg.executionMode === 'dry_run') {
+    if (!isFullCloseFraction(fraction) && leaderPriceUsd > 0) {
+      const sellGate = partialSellQuoteGateReason(cfg, leaderPriceUsd, exitPriceUsd);
+      if (sellGate) {
+        return { ok: false, priceUsd: exitPriceUsd, reason: sellGate };
+      }
+    }
     appendJsonl(cfg.journalPath, {
       kind: 'copy_sell',
       mode: cfg.executionMode,
@@ -142,7 +157,15 @@ export async function executeCopySell(args: {
   }
 
   if (cfg.executionMode === 'live') {
-    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature, fraction, slippageBps });
+    const live = await executeLiveCopySell({
+      cfg,
+      mint,
+      symbol,
+      leaderSignature,
+      fraction,
+      leaderPriceUsd,
+      slippageBps,
+    });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;
     appendJsonl(cfg.journalPath, {
@@ -177,3 +200,5 @@ export async function executeCopySell(args: {
 export function appendCopyEvent(cfg: CopyTraderConfig, event: Record<string, unknown>): void {
   appendJsonl(cfg.journalPath, event);
 }
+
+export { isQuoteGateDeferReason };

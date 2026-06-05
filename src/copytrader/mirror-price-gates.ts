@@ -20,7 +20,46 @@ export function partialSellPriceBelowLeaderFloor(
   return currentPriceUsd < leaderPriceUsd * (1 - maxDrawdownPct / 100);
 }
 
-/** Add mirror: skip averaging when price already ran +N% above leader signal. */
+/** Gate on Jupiter quote price right before send (not stale Dex). */
+export function buyQuoteGateReason(
+  cfg: CopyTraderConfig,
+  kind: 'entry' | 'add',
+  leaderPriceUsd: number,
+  quotePriceUsd: number,
+): string | null {
+  if (!(leaderPriceUsd > 0) || !(quotePriceUsd > 0)) return 'quote_missing_price';
+  const maxPct = kind === 'add' ? cfg.addMaxPremiumPct : cfg.buyPriceMaxPremiumPct;
+  const prefix = kind === 'add' ? 'quote_add_price_too_high' : 'quote_entry_price_too_high';
+  if (addPriceAboveLeaderCap(leaderPriceUsd, quotePriceUsd, maxPct)) {
+    const max = leaderPriceUsd * (1 + maxPct / 100);
+    return `${prefix} quote=${quotePriceUsd.toExponential(4)} leader=${leaderPriceUsd.toExponential(4)} max=${max.toExponential(4)}`;
+  }
+  return null;
+}
+
+export function partialSellQuoteGateReason(
+  cfg: CopyTraderConfig,
+  leaderPriceUsd: number,
+  quotePriceUsd: number,
+): string | null {
+  if (!(leaderPriceUsd > 0) || !(quotePriceUsd > 0)) return null;
+  if (partialSellPriceBelowLeaderFloor(leaderPriceUsd, quotePriceUsd, cfg.partialSellMaxDrawdownPct)) {
+    return `quote_partial_sell_price_too_low quote=${quotePriceUsd.toExponential(4)} leader=${leaderPriceUsd.toExponential(4)}`;
+  }
+  return null;
+}
+
+export function isQuoteGateDeferReason(reason: string | undefined): boolean {
+  if (!reason) return false;
+  return (
+    reason.startsWith('quote_entry_price_too_high') ||
+    reason.startsWith('quote_add_price_too_high') ||
+    reason.startsWith('quote_partial_sell_price_too_low') ||
+    reason === 'quote_missing_price'
+  );
+}
+
+/** Add mirror: liquidity / leader size only; price gate runs on Jupiter quote. */
 export function evaluateCopyAdd(
   cfg: CopyTraderConfig,
   input: {
@@ -39,16 +78,6 @@ export function evaluateCopyAdd(
     reasons.push(`leader_buy_usd=${input.leaderBuyUsd.toFixed(0)}<min=${cfg.minLeaderBuyUsd}`);
   } else {
     score += 1;
-  }
-
-  if (!(input.leaderPriceUsd > 0) || !(input.currentPriceUsd > 0)) {
-    reasons.push('missing_price');
-  } else if (addPriceAboveLeaderCap(input.leaderPriceUsd, input.currentPriceUsd, cfg.addMaxPremiumPct)) {
-    reasons.push(
-      `add_price_too_high current=${input.currentPriceUsd.toExponential(4)} max=${(input.leaderPriceUsd * (1 + cfg.addMaxPremiumPct / 100)).toExponential(4)}`,
-    );
-  } else {
-    score += 2;
   }
 
   const dex = input.dex;

@@ -6,10 +6,10 @@ import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyEntry } from './evaluate.js';
 import { entryBuyDelayMs, randomMirrorActionDelayMs } from './mirror-delays.js';
-import { evaluateCopyAdd, partialSellPriceBelowLeaderFloor } from './mirror-price-gates.js';
+import { evaluateCopyAdd } from './mirror-price-gates.js';
 import { resolveCopyBuySizeUsd } from './buy-affordability.js';
 import { coalescedMirrorSellFraction } from './exit-coalesce.js';
-import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
+import { appendCopyEvent, executeCopyBuy, executeCopySell, isQuoteGateDeferReason } from './executor.js';
 import { sweepLeaderZeroHoldings } from './leader-flat-sweep.js';
 import {
   applyLeaderSwapToLedger,
@@ -19,7 +19,6 @@ import {
 import {
   absRawAmount,
   leaderAddFraction,
-  isFullCloseFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
 } from './proportional.js';
@@ -586,7 +585,9 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       kind: pending.kind,
       evalResult,
       leaderSignature: pending.leaderSignature,
+      leaderPriceUsd: pending.leaderPriceUsd,
     });
+    const fillPrice = exec.priceUsd > 0 ? exec.priceUsd : currentPrice;
     if (!exec.ok) {
       if (noteBuyDefer(state, pending.id, now, cfg)) {
         appendCopyEvent(cfg, {
@@ -613,14 +614,14 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
               ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
               : undefined);
       const sizeUsd =
-        walletBal > 0n && currentPrice > 0
-          ? walletNotionalUsdFromRaw(walletBal, currentPrice)
+        walletBal > 0n && fillPrice > 0
+          ? walletNotionalUsdFromRaw(walletBal, fillPrice)
           : pending.sizeUsd;
       state.positions[pending.mint] = {
         mint: pending.mint,
         symbol: pending.symbol,
         entryTs: Date.now(),
-        entryPriceUsd: currentPrice,
+        entryPriceUsd: fillPrice,
         sizeUsd,
         tokenRaw,
         addCount: 0,
@@ -631,20 +632,20 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     } else {
       const prev = existing;
       const newAvg =
-        prev.sizeUsd > 0 && currentPrice > 0
-          ? (prev.entryPriceUsd * prev.sizeUsd + currentPrice * pending.sizeUsd) /
+        prev.sizeUsd > 0 && fillPrice > 0
+          ? (prev.entryPriceUsd * prev.sizeUsd + fillPrice * pending.sizeUsd) /
             (prev.sizeUsd + pending.sizeUsd)
-          : currentPrice;
+          : fillPrice;
       if (walletBal > 0n) {
-        syncPositionFromWallet(prev, walletBal, currentPrice);
+        syncPositionFromWallet(prev, walletBal, fillPrice);
         prev.entryPriceUsd = newAvg;
         prev.addCount = prev.addCount + 1;
         prev.ourEntrySig = exec.signature;
       } else {
         const tokenRaw =
           exec.tokenRaw ??
-          (currentPrice > 0
-            ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
+          (fillPrice > 0
+            ? BigInt(Math.floor((pending.sizeUsd / fillPrice) * 1_000_000)).toString()
             : undefined);
         const newSize = prev.sizeUsd + pending.sizeUsd;
         const prevRaw = prev.tokenRaw ? BigInt(prev.tokenRaw) : 0n;
@@ -667,11 +668,11 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         mint: pending.mint,
         symbol: pending.symbol,
         wallet: cfg.targetWallet,
-        priceUsd: currentPrice,
+        priceUsd: fillPrice,
         detail:
           pending.kind === 'add' && pending.leaderAddFraction != null
-            ? `Add $${pending.sizeUsd} (${(pending.leaderAddFraction * 100).toFixed(0)}% stack) · score ${evalResult.score}`
-            : `${pending.kind === 'add' ? 'Add' : 'Entry'} $${pending.sizeUsd} · score ${evalResult.score}`,
+            ? `Add $${pending.sizeUsd} (${(pending.leaderAddFraction * 100).toFixed(0)}% stack) · fill $${fillPrice.toPrecision(4)} · score ${evalResult.score}`
+            : `${pending.kind === 'add' ? 'Add' : 'Entry'} $${pending.sizeUsd} · fill $${fillPrice.toPrecision(4)} · score ${evalResult.score}`,
       }),
     );
     await sleep(150);
@@ -722,11 +723,42 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
       walletNotional > 0 ? walletNotional * pending.fraction : pos.sizeUsd * pending.fraction;
 
     const leaderPx = pending.leaderPriceUsd ?? 0;
-    if (
-      !isFullCloseFraction(pending.fraction) &&
-      leaderPx > 0 &&
-      partialSellPriceBelowLeaderFloor(leaderPx, exitPrice, cfg.partialSellMaxDrawdownPct)
-    ) {
+
+    const exec = await executeCopySell({
+      cfg,
+      mint: pending.mint,
+      symbol: pending.symbol,
+      entryPriceUsd: pos.entryPriceUsd,
+      exitPriceUsd: exitPrice,
+      sizeUsd: sellUsd,
+      fraction: pending.fraction,
+      leaderSignature: pending.leaderSignature,
+      leaderPriceUsd: leaderPx,
+      sellDelayMs,
+      slippageBps: pending.slippageBps,
+    });
+    const fillExit = exec.priceUsd > 0 ? exec.priceUsd : exitPrice;
+
+    if (exec.ok) {
+      removePendingSellById(state, pending.id);
+      await refreshPositionFromWallet(cfg, state, pending.mint, fillExit);
+
+      await notifyCopyTraderTelegram(
+        cfg,
+        fmtCopyAlert({
+          action: 'our_sell',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          wallet: cfg.targetWallet,
+          priceUsd: fillExit,
+          detail: `Sold ${(pending.fraction * 100).toFixed(0)}% · fill $${fillExit.toPrecision(4)} · PnL ${exec.pnlPct != null ? `${exec.pnlPct >= 0 ? '+' : ''}${exec.pnlPct.toFixed(1)}%` : 'n/a'} · delay ${Math.round(sellDelayMs / 1000)}s`,
+        }),
+      );
+      await sleep(150);
+      continue;
+    }
+
+    if (isQuoteGateDeferReason(exec.reason) && !isPendingSellExpired(pending, now)) {
       const row = findPendingSell(state, pending.id);
       if (row) {
         row.dueTs = now + cfg.sellRetryIntervalMs;
@@ -738,46 +770,14 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
             symbol: pending.symbol,
             leaderSignature: pending.leaderSignature,
             sellFraction: pending.fraction,
-            reason: `partial_sell_price_too_low leader=${leaderPx.toExponential(4)} current=${exitPrice.toExponential(4)} max_drawdown_pct=${cfg.partialSellMaxDrawdownPct}`,
-            leaderPriceUsd: leaderPx,
-            currentPriceUsd: exitPrice,
+            reason: exec.reason ?? 'quote_gate',
+            leaderPriceUsd: leaderPx > 0 ? leaderPx : undefined,
+            currentPriceUsd: fillExit,
             retryUntilTs: row.retryUntilTs,
             nextAttemptTs: row.dueTs,
           });
         }
       }
-      await sleep(150);
-      continue;
-    }
-
-    const exec = await executeCopySell({
-      cfg,
-      mint: pending.mint,
-      symbol: pending.symbol,
-      entryPriceUsd: pos.entryPriceUsd,
-      exitPriceUsd: exitPrice,
-      sizeUsd: sellUsd,
-      fraction: pending.fraction,
-      leaderSignature: pending.leaderSignature,
-      sellDelayMs,
-      slippageBps: pending.slippageBps,
-    });
-
-    if (exec.ok) {
-      removePendingSellById(state, pending.id);
-      await refreshPositionFromWallet(cfg, state, pending.mint, exitPrice);
-
-      await notifyCopyTraderTelegram(
-        cfg,
-        fmtCopyAlert({
-          action: 'our_sell',
-          mint: pending.mint,
-          symbol: pending.symbol,
-          wallet: cfg.targetWallet,
-          priceUsd: exitPrice,
-          detail: `Sold ${(pending.fraction * 100).toFixed(0)}% · PnL ${exec.pnlPct != null ? `${exec.pnlPct >= 0 ? '+' : ''}${exec.pnlPct.toFixed(1)}%` : 'n/a'} · delay ${Math.round(sellDelayMs / 1000)}s`,
-        }),
-      );
       await sleep(150);
       continue;
     }

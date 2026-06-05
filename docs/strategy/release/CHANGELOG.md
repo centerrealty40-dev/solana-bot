@@ -14,6 +14,18 @@
 
 ---
 
+## [1.11.327] — 2026-05-28
+
+### Fix: copy-trader price gates on Jupiter quote (not stale Dex)
+
+- **Buy/add:** price gate по **эффективной цене Jupiter-квоты** перед отправкой tx (`quote_entry_price_too_high` / `quote_add_price_too_high`), не по Dex.
+- **Partial sell:** gate по **sell-квоте** Jupiter (`quote_partial_sell_price_too_low`); полный выход без gate.
+- Dex eval — только liquidity/mcap/min leader buy.
+
+**Откат:** `git revert`; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.325] — 2026-06-05
 
 **Тег:** `sa-alpha-1.11.325`
