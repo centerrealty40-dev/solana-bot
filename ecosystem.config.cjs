@@ -417,6 +417,15 @@ const PM2_APPS = [
          */
         LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '20',
         LIVE_REENTRY_MAX_WAIT_MINUTES: '20',
+        /** После убыточного / stress-выхода: только dip ≥30%, без timer-fallback (falling-knife). */
+        LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '30',
+        LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS: '1',
+        /** Cooldown на повторный buy по mint после loss / FLASH_CRASH_KILL (6h; 2 loss за 24h → 24h). */
+        LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED: '1',
+        LIVE_MINT_LOSS_REENTRY_COOLDOWN_MS: String(6 * 3600 * 1000),
+        LIVE_MINT_LOSS_REENTRY_STREAK_WINDOW_MS: String(24 * 3600 * 1000),
+        LIVE_MINT_LOSS_REENTRY_STREAK_MAX: '2',
+        LIVE_MINT_LOSS_REENTRY_STREAK_COOLDOWN_MS: String(24 * 3600 * 1000),
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
