@@ -270,6 +270,10 @@ const ConfigSchema = z.object({
    * Env: `LIVE_REENTRY_MAX_WAIT_MINUTES`. `0` = только price-gap без time fallback.
    */
   liveReentryMaxWaitMinutes: z.coerce.number().nonnegative().max(24 * 60).default(0),
+  /** After loss/stress exit: min drop % from last exit (overrides hybrid drop when stricter). */
+  liveReentryLossMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(30),
+  /** After loss/stress exit: disable hybrid timer-only re-entry (must meet drop gate). */
+  liveReentryHybridDisableTimerAfterLoss: z.boolean().default(true),
 
   /**
    * Live JSONL deep audit for whitelist mints: `live_discovery_eval` includes passes; `live_discovery_universe_miss`
@@ -995,6 +999,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
     liveReentryMinDropFromLastExitPct: process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT,
     liveReentryMaxWaitMinutes: process.env.LIVE_REENTRY_MAX_WAIT_MINUTES,
+    liveReentryLossMinDropFromLastExitPct: process.env.LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT,
+    liveReentryHybridDisableTimerAfterLoss: envBool(
+      process.env.LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS,
+      true,
+    ),
     discoveryDeepAuditJsonl: envBool(process.env.LIVE_DISCOVERY_DEEP_AUDIT_JSONL, false),
     discoveryDeepAuditWhitelistPath: process.env.LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH?.trim() || undefined,
     discoveryDeepAuditUniverseMissMinMs: (() => {

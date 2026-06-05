@@ -14,6 +14,18 @@
 
 ---
 
+## [1.11.313] — 2026-06-05
+
+### Live: falling-knife re-entry protection (loss cooldown + stricter hybrid)
+
+- **`LIVE_MINT_LOSS_REENTRY_COOLDOWN_*`**: after loss or stress exit (`FLASH_CRASH_KILL`, `SL`, …) block `buy_open` on same mint for 6h; 2 losses in 24h → 24h cooldown.
+- **`LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT`**: after loss, hybrid re-entry requires ≥30% dip from last exit (not 20%).
+- **`LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS`**: after loss, no 20m timer fallback — price dip only.
+
+**Откат:** set `LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED=0`; restore prior hybrid env; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.312] — 2026-06-05
 
 ### Discovery: exclude mcap > $50M from pool and eval

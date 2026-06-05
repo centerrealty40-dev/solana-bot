@@ -2,7 +2,8 @@ import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
-import { recordAfterFullCloseForMintRepeatGate } from '../discovery/dip-clones.js';
+import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
+import { recordMintLossReentryCooldown } from '../../live/mint-loss-reentry-cooldown.js';
 import type {
   ClosedTrade,
   DexSource,
@@ -1097,6 +1098,8 @@ function hookLiveWhitelistAfterFullClose(
   variantAExitTag?: OpenTrade['liveVariantAExitTag'],
   ot?: OpenTrade,
   exitRefPriceUsd?: number,
+  exitReason?: string,
+  exitTsMs?: number,
 ): void {
   onLiveOscarFullCloseUpdateWhitelistLossStreak({
     liveOscarCfg,
@@ -1124,6 +1127,14 @@ function hookLiveWhitelistAfterFullClose(
   recordMintTimedLossCooldown(mint, variantAExitTag);
   if (ot && isVariantAScratchExitPolicy(ot) && exitRefPriceUsd != null && exitRefPriceUsd > 0) {
     recordMintScratchReentry(mint, exitRefPriceUsd);
+  }
+  if (liveOscarCfg && exitTsMs != null && exitTsMs > 0) {
+    recordMintLossReentryCooldown({
+      mint,
+      exitReason,
+      netPnlUsd,
+      exitTsMs,
+    });
   }
 }
 
@@ -1242,7 +1253,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1254,6 +1265,8 @@ async function closeOpenTradeReconcileOrphan(args: {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
   /** Не планируем post-close tail sweep: закрытие уже из-за рассинхрона с цепью; через `livePostCloseTailSweepDelayMs`
    * отложенный `sell_full` может снять **новую** позицию по тому же mint (см. отмену при `live_position_open`). */
@@ -1372,7 +1385,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1384,6 +1397,8 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -1521,7 +1536,7 @@ export async function trackerForceFullExitLive(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1533,6 +1548,8 @@ export async function trackerForceFullExitLive(args: {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
   scheduleTailAfterLiveClose(
     liveOscarCfg,
@@ -2068,7 +2085,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -2080,6 +2097,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
         scheduleTailAfterLiveClose(
           liveOscarCfg,
@@ -2163,7 +2182,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -2175,6 +2194,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
         peakStateByMint.delete(mint);
         console.log(`[NO_DATA] ${mint.slice(0, 8)} $${ot.symbol}`);
@@ -3200,7 +3221,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         closedTrade: serializeClosedTrade(ct),
       });
-      recordAfterFullCloseForMintRepeatGate(cfg, mint, ct.exitTs, ct.theoretical_exit_price, ct.effective_exit_price);
+      recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
       hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -3212,6 +3233,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     ot.liveVariantAExitTag,
     ot,
     ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    ct.exitReason,
+    ct.exitTs,
   );
       scheduleTailAfterLiveClose(
         liveOscarCfg,

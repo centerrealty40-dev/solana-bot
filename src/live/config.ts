@@ -356,6 +356,31 @@ const LiveOscarConfigSchema = z
     liveMintTimedLossCooldownMs: z.coerce.number().int().min(0).max(7 * 24 * 3_600_000).default(86_400_000),
 
     /**
+     * After loss or stress exit (flash-crash / SL / …): hard block re-entry on same mint.
+     * Env: `LIVE_MINT_LOSS_REENTRY_COOLDOWN_*`.
+     */
+    liveMintLossReentryCooldownEnabled: z.boolean().default(true),
+    liveMintLossReentryCooldownMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(7 * 24 * 3_600_000)
+      .default(6 * 3_600_000),
+    liveMintLossReentryStreakWindowMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(7 * 24 * 3_600_000)
+      .default(24 * 3_600_000),
+    liveMintLossReentryStreakMax: z.coerce.number().int().min(2).max(10).default(2),
+    liveMintLossReentryStreakCooldownMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(7 * 24 * 3_600_000)
+      .default(24 * 3_600_000),
+
+    /**
      * Variant A v3 scratch: re-entry when price ≤ lastExitRef × (1 − dropPct). No time cooldown.
      */
     liveMintScratchReentryEnabled: z.boolean().default(false),
@@ -740,6 +765,31 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 86_400_000;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 86_400_000;
+    })(),
+    liveMintLossReentryCooldownEnabled: envBool(process.env.LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED, true),
+    liveMintLossReentryCooldownMs: (() => {
+      const s = process.env.LIVE_MINT_LOSS_REENTRY_COOLDOWN_MS?.trim();
+      if (!s) return 6 * 3_600_000;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 6 * 3_600_000;
+    })(),
+    liveMintLossReentryStreakWindowMs: (() => {
+      const s = process.env.LIVE_MINT_LOSS_REENTRY_STREAK_WINDOW_MS?.trim();
+      if (!s) return 24 * 3_600_000;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 24 * 3_600_000;
+    })(),
+    liveMintLossReentryStreakMax: (() => {
+      const s = process.env.LIVE_MINT_LOSS_REENTRY_STREAK_MAX?.trim();
+      if (!s) return 2;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 2 ? Math.min(10, n) : 2;
+    })(),
+    liveMintLossReentryStreakCooldownMs: (() => {
+      const s = process.env.LIVE_MINT_LOSS_REENTRY_STREAK_COOLDOWN_MS?.trim();
+      if (!s) return 24 * 3_600_000;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(7 * 24 * 3_600_000, Math.floor(n)) : 24 * 3_600_000;
     })(),
     liveMintScratchReentryEnabled: envBool(process.env.LIVE_MINT_SCRATCH_REENTRY_ENABLED, false),
     liveMintScratchReentryDropPct: (() => {

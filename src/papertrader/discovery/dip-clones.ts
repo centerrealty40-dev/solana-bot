@@ -67,6 +67,7 @@ import {
   type LiveOscarMcapTier,
 } from '../live-oscar-mcap-tier.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
+import { appendMintLossReentryCooldownReason } from '../../live/mint-loss-reentry-cooldown.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
 import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
@@ -145,16 +146,33 @@ export const lastEntryTsByMintMap = new Map<string, number>();
 /** Последний `exitTs` полного закрытия по mint (ms) — пауза перед повторным входом в тот же mint. */
 export const lastPostExitBuyCooldownTsByMintMap = new Map<string, number>();
 
-/** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
-export const lastExitMarketSnapshotByMintMap = new Map<string, { exitTs: number; marketUsd: number }>();
+export type LastExitMarketSnapshot = {
+  exitTs: number;
+  marketUsd: number;
+  netPnlUsd?: number;
+  exitReason?: string;
+};
 
-export function recordLastExitMarketSnapshotAfterClose(mint: string, exitTsMs: number, marketUsd: number): void {
+/** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
+export const lastExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
+
+export function recordLastExitMarketSnapshotAfterClose(
+  mint: string,
+  exitTsMs: number,
+  marketUsd: number,
+  meta?: { netPnlUsd?: number; exitReason?: string },
+): void {
   if (!(exitTsMs > 0)) return;
   const px = Number(marketUsd);
   if (!(px > 0)) return;
   const prev = lastExitMarketSnapshotByMintMap.get(mint);
   if (!prev || exitTsMs >= prev.exitTs) {
-    lastExitMarketSnapshotByMintMap.set(mint, { exitTs: exitTsMs, marketUsd: px });
+    lastExitMarketSnapshotByMintMap.set(mint, {
+      exitTs: exitTsMs,
+      marketUsd: px,
+      netPnlUsd: meta?.netPnlUsd,
+      exitReason: meta?.exitReason,
+    });
   }
 }
 
@@ -165,14 +183,35 @@ export function recordAfterFullCloseForMintRepeatGate(
   exitTsMs: number,
   theoreticalExitUsd: number,
   effectiveExitUsd: number,
+  meta?: { netPnlUsd?: number; exitReason?: string },
 ): void {
   recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs);
   const px = theoreticalExitUsd > 0 ? theoreticalExitUsd : effectiveExitUsd;
-  recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px);
+  recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px, meta);
+}
+
+export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
+  cfg: PaperTraderConfig,
+  ct: { mint: string; exitTs: number; theoretical_exit_price: number; effective_exit_price: number; netPnlUsd: number; exitReason: string },
+): void {
+  recordAfterFullCloseForMintRepeatGate(
+    cfg,
+    ct.mint,
+    ct.exitTs,
+    ct.theoretical_exit_price,
+    ct.effective_exit_price,
+    { netPnlUsd: ct.netPnlUsd, exitReason: ct.exitReason },
+  );
 }
 
 export function isLiveReentryHybridGateEnabled(cfg: PaperTraderConfig): boolean {
   return cfg.liveReentryMinDropFromLastExitPct > 0 && cfg.liveReentryMaxWaitMinutes > 0;
+}
+
+function lastExitWasLossOrStress(snap: LastExitMarketSnapshot): boolean {
+  if ((snap.netPnlUsd ?? 0) < 0) return true;
+  const r = snap.exitReason ?? '';
+  return r === 'FLASH_CRASH_KILL' || r === 'SL' || r === 'KILLSTOP' || r === 'LIQ_DRAIN';
 }
 
 /** Hybrid: allow re-entry after maxWait **or** when price ≤ lastExit×(1−drop%). */
@@ -183,21 +222,36 @@ export function appendLiveReentryHybridGateReasons(
   out: string[],
   nowMs = Date.now(),
 ): void {
-  const dropPct = cfg.liveReentryMinDropFromLastExitPct;
+  const baseDropPct = cfg.liveReentryMinDropFromLastExitPct;
   const maxWaitMin = cfg.liveReentryMaxWaitMinutes;
-  if (!(dropPct > 0) || !(maxWaitMin > 0)) return;
+  if (!(baseDropPct > 0) || !(maxWaitMin > 0)) return;
 
   const snap = lastExitMarketSnapshotByMintMap.get(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
 
+  const lossExit = lastExitWasLossOrStress(snap);
+  const dropPct =
+    lossExit && cfg.liveReentryLossMinDropFromLastExitPct > 0
+      ? Math.max(baseDropPct, cfg.liveReentryLossMinDropFromLastExitPct)
+      : baseDropPct;
+
   const elapsedMs = nowMs - snap.exitTs;
-  if (elapsedMs >= maxWaitMin * 60_000) return;
+  const timerOk =
+    !lossExit || !cfg.liveReentryHybridDisableTimerAfterLoss
+      ? elapsedMs >= maxWaitMin * 60_000
+      : false;
+  if (timerOk) return;
 
   const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
-    const leftMin = Math.max(0, (maxWaitMin * 60_000 - elapsedMs) / 60_000);
+    const leftMin =
+      lossExit && cfg.liveReentryHybridDisableTimerAfterLoss
+        ? 0
+        : Math.max(0, (maxWaitMin * 60_000 - elapsedMs) / 60_000);
+    const suffix =
+      lossExit && cfg.liveReentryHybridDisableTimerAfterLoss ? '_loss_no_timer' : '';
     out.push(
-      `reentry_hybrid_wait_dip${dropPct}pct_or_${maxWaitMin}m(left_dip=${(maxAllowed).toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)} timer=${leftMin.toFixed(1)}m)`,
+      `reentry_hybrid_wait_dip${dropPct}pct_or_${maxWaitMin}m${suffix}(left_dip=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)} timer=${leftMin.toFixed(1)}m)`,
     );
   }
 }
@@ -231,6 +285,7 @@ export function appendPostExitReentryGateReasons(
   snapshotPriceUsd: number,
   out: string[],
 ): void {
+  appendMintLossReentryCooldownReason(mint, out);
   if (isLiveReentryHybridGateEnabled(cfg)) {
     appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
     return;

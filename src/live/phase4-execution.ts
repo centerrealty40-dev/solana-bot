@@ -55,6 +55,10 @@ import {
   mintTimedLossCooldownRemainingMs,
 } from './mint-timed-loss-cooldown.js';
 import {
+  isMintLossReentryCooldownActive,
+  mintLossReentryCooldownRemainingMs,
+} from './mint-loss-reentry-cooldown.js';
+import {
   isMintScratchReentryBlocked,
   mintScratchReentryRefPrice,
   mintScratchReentryThresholdPrice,
@@ -345,6 +349,28 @@ async function runSolToTokenPipeline(
       anchorMode: mode,
       terminalKind: 'gate',
       terminalMessage: `mint_timed_loss_cooldown:${Math.round(remaining / 1000)}s`,
+    };
+  }
+
+  if (
+    (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
+    (args.intentKind === 'buy_open' || args.intentKind === 'dca_add' || args.intentKind === 'buy_scale_in') &&
+    isMintLossReentryCooldownActive(liveCfg, args.mint)
+  ) {
+    const remaining = mintLossReentryCooldownRemainingMs(args.mint);
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: `live_mint_loss_reentry_cooldown:${args.intentKind}`,
+      detail: JSON.stringify({
+        mint: args.mint.slice(0, 12),
+        remainingMs: remaining,
+      }).slice(0, 200),
+    });
+    return {
+      ok: false,
+      anchorMode: mode,
+      terminalKind: 'gate',
+      terminalMessage: `mint_loss_reentry_cooldown:${Math.round(remaining / 1000)}s`,
     };
   }
 
