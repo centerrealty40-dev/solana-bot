@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.321] — 2026-06-05
+
+### Live: LOA в whitelist; Telegram перед denylist/blacklist
+
+- **LOA** (`EhHyfjR…pump`) возвращён в `live-oscar-mint-whitelist.txt`; снят с VPS local denylist.
+- **ALERT** в Telegram **перед** записью в permanent denylist / mint blacklist (`live_mint_denylist_add` / `live_mint_blacklist_add`); env `LIVE_MINT_LIST_CHANGE_TELEGRAM_*`.
+
+**Откат:** убрать mint из whitelist; `LIVE_MINT_LIST_CHANGE_TELEGRAM_ENABLED=0`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.320] — 2026-06-05
 
 ### Live: BTC gate — ужесточённые пороги (не выкл. окна)

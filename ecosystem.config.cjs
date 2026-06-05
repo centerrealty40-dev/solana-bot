@@ -75,6 +75,11 @@ const PM2_APPS = [
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
+        HL_TWAP_DASHBOARD_JSONL: path.join(root, 'data/hl-twap/live.jsonl'),
+        HL_TWAP_MIN_VOLUME_SHARE_PCT: '3',
+        /** Dashboard: lite enrichment (no per-mint PG/Jupiter storm on every refresh). */
+        DASHBOARD_ENRICH_MODE: 'lite',
+        DASHBOARD_PAPER2_CACHE_MS: '120000',
         /**
          * QuickNode Admin API → Telegram:
          * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — не чаще 1×/ч `[ALERT][quicknode-balance]` (интервал ≥1h в коде + cooldown ниже).
@@ -857,6 +862,12 @@ const PM2_APPS = [
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** `ADVICE` — не ALERT (тише: учитываются тихие часы `TELEGRAM_QUIET_*`). При желании: `ALERT`. */
         LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY: 'ADVICE',
+        /** ALERT перед добавлением mint в denylist/blacklist. `0` = выкл. */
+        LIVE_MINT_LIST_CHANGE_TELEGRAM_ENABLED: '1',
+        LIVE_MINT_LIST_CHANGE_TELEGRAM_CATEGORY: 'ALERT',
+        /** ALERT перед добавлением mint в denylist/blacklist (тот же бот/чат что whitelist). */
+        LIVE_MINT_LIST_CHANGE_TELEGRAM_ENABLED: '1',
+        LIVE_MINT_LIST_CHANGE_TELEGRAM_CATEGORY: 'ALERT',
         /** `0` — каждый новый проход гейтов снова шлёт TG по этому mint (без кулдауна). */
         /** Per-mint: не чаще одного `live_whitelist_miss` в N мс (дефолт в коде 5 мин). `0` = без лимита. */
         LIVE_MINT_WHITELIST_NOTIFY_COOLDOWN_MS: '300000',
@@ -1270,6 +1281,36 @@ const PM2_APPS = [
         /** Poll + parse leader txs on Helius (QuickNode SSL/budget issues on VPS). */
         SOLANA_RPC_HELIUS_PREFER: '1',
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+      },
+    },
+    {
+      name: 'hl-twap-telegram-watch',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent hl-twap-telegram-watch',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        HL_TWAP_POLL_INTERVAL_MS: '5000',
+        /** Новые Telegram + paper только impact ≥3%; открытые paper (<3%) дорабатывают до close. */
+        HL_TWAP_MIN_VOLUME_SHARE_PCT: '3',
+        HL_TWAP_BUY_ONLY: '0',
+        HL_TWAP_TELEGRAM_CHAT_ID: '-1003852228620',
+        HL_TWAP_NOTIFY_ENDED: '1',
+        HL_TWAP_META_REFRESH_MS: '120000',
+        HL_TWAP_MEXC_LINKS: '1',
+        HL_TWAP_PAPER_ENABLED: '0',
+        HL_TWAP_PAPER_NOTIONAL_USD: '1000',
+        HL_TWAP_DRY_RUN: '0',
+        /** Live bot: dry-run by default — no wallet key; real orders need HL_TWAP_LIVE_DRY_RUN=0 + key */
+        HL_TWAP_LIVE_ENABLED: '1',
+        HL_TWAP_LIVE_DRY_RUN: '1',
+        HL_TWAP_LIVE_NOTIONAL_USD: '100',
       },
     },
 ];

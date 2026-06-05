@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
+import { fireMintListChangeTelegramBefore } from './mint-list-change-telegram.js';
 
 const log = child('live-permanent-denylist');
 
@@ -122,6 +123,7 @@ export function appendMintToPermanentDenylistLocal(
   mint: string,
   /** Short reason for the `# auto:` comment (e.g. `negative_trade`, `whitelist_consec_loss`). */
   reason = 'excluded from whitelist',
+  opts?: { symbol?: string; skipListChangeTelegram?: boolean },
 ): boolean {
   if (cfg.livePermanentDenylistDisabled) return false;
   const key = mint.trim();
@@ -131,6 +133,15 @@ export function appendMintToPermanentDenylistLocal(
   if (combined.has(key)) return false;
 
   const abs = resolveLivePermanentDenylistLocalPath(cfg.livePermanentDenylistLocalPath);
+  if (!opts?.skipListChangeTelegram) {
+    fireMintListChangeTelegramBefore({
+      kind: 'denylist',
+      mint: key,
+      symbol: opts?.symbol,
+      reason,
+      targetPath: abs,
+    });
+  }
   const dir = path.dirname(abs);
   if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
 

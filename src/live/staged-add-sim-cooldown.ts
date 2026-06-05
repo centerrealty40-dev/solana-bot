@@ -18,7 +18,6 @@ import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { child } from '../core/logger.js';
 import { appendMintToPermanentDenylistLocal } from './mint-permanent-denylist.js';
 import type { LiveOscarConfig } from './config.js';
-import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('staged-add-sim-cooldown');
 
@@ -197,6 +196,9 @@ export function recordStagedAddOutcome(args: {
           liveCfgRef,
           args.mint,
           `staged_add_cooldown_rearms=${rearmsNext}`,
+          {
+            skipListChangeTelegram: !cfg.autoDenylistTelegramEnabled,
+          },
         );
         log.warn(
           {
@@ -213,17 +215,6 @@ export function recordStagedAddOutcome(args: {
           rearmsThreshold: cfg.autoDenylistRearmsThreshold,
           denylistAdded: added,
         });
-        if (added && cfg.autoDenylistTelegramEnabled) {
-          const text =
-            `Mint автоматически в permanent denylist по серии sim_err cooldown.\n` +
-            `mint: ${args.mint}\n` +
-            `rearms: ${rearmsNext} (порог: ${cfg.autoDenylistRearmsThreshold})\n` +
-            `последняя ошибка: ${(args.terminalMessage ?? '').slice(0, 200)}\n` +
-            `Чтобы снова разрешить — удалите строку с этим mint из data/live/live-oscar-permanent-denylist.txt`;
-          void sendTagged('ALERT', 'live_staged_add_auto_denylist', text, { skipQuietHours: true }).catch(
-            (e) => log.warn({ err: String(e) }, 'auto-denylist telegram failed'),
-          );
-        }
       } else {
         log.warn(
           { mint: args.mint.slice(0, 12), rearms: rearmsNext },

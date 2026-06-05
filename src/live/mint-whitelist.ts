@@ -13,7 +13,6 @@ import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
 import {
   appendMintToPermanentDenylistLocal,
-  resolveLivePermanentDenylistLocalPath,
 } from './mint-permanent-denylist.js';
 import { isLiveBuyDiscoveryTelegramSuppressed } from './wallet-buy-affordability.js';
 
@@ -291,7 +290,7 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
   writeConsecLossStreaks(streaks);
 
   if (removed) {
-    appendMintToPermanentDenylistLocal(liveOscarCfg, key, 'whitelist_consec_loss');
+    appendMintToPermanentDenylistLocal(liveOscarCfg, key, 'whitelist_consec_loss', { symbol: sym });
   }
 
   if (!removed) {
@@ -324,29 +323,9 @@ function negativeTradeDenyTelegramEnabled(): boolean {
   return true;
 }
 
-function negativeTradeDenyAlertText(args: {
-  symbol: string;
-  mint: string;
-  netPnlUsd: number;
-  denylistPath: string;
-}): string {
-  const url = gmgnSolTokenUrl(args.mint);
-  const pnl = args.netPnlUsd;
-  const pnlStr = Number.isFinite(pnl) ? `$${pnl.toFixed(2)}` : 'n/a';
-  return (
-    `Монета больше не будет покупаться: было убыточное закрытие live.\n` +
-    `symbol: ${args.symbol}\n` +
-    `mint: ${args.mint}\n` +
-    `net PnL: ${pnlStr}\n` +
-    `Добавлено в permanent denylist (локальный файл): ${args.denylistPath}\n` +
-    `Чтобы снова разрешить вход — удалите строку с этим mint из файла вручную.\n` +
-    `GMGN: ${url}`
-  );
-}
-
 /**
  * После убыточного полного закрытия live-oscar с net PnL ≤ −`negativeTradeDenyMinLossUsd()` (дефолт $150):
- * mint в локальный permanent denylist (не зависит от whitelist). Telegram — только при первом добавлении.
+ * mint в локальный permanent denylist (не зависит от whitelist). Telegram — перед записью в файл.
  */
 export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
   liveOscarCfg: LiveOscarConfig | undefined;
@@ -374,29 +353,16 @@ export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
     return;
   }
 
+  const sym = symbol?.trim() || '?';
   const added = appendMintToPermanentDenylistLocal(
     liveOscarCfg,
     key,
     `negative_trade net=${netPnlUsd.toFixed(2)}`,
+    { symbol: sym, skipListChangeTelegram: !negativeTradeDenyTelegramEnabled() },
   );
   if (!added) {
     log.info({ mint: key }, 'live negative trade denylist: already listed');
-    return;
   }
-
-  if (!negativeTradeDenyTelegramEnabled()) return;
-
-  const sym = symbol?.trim() || '?';
-  const denyPath = resolveLivePermanentDenylistLocalPath(liveOscarCfg.livePermanentDenylistLocalPath);
-  void (async () => {
-    const ok = await sendTagged(
-      whitelistDropTelegramCategory(),
-      'live_negative_trade_deny',
-      negativeTradeDenyAlertText({ symbol: sym, mint: key, netPnlUsd, denylistPath: denyPath }),
-      whitelistAlertsTelegramOpts(),
-    );
-    log.info({ mint: key, symbol: sym, ok }, 'live_negative_trade_deny telegram');
-  })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_negative_trade_deny telegram failed'));
 }
 
 /** Только для тестов / ручного сброса счётчиков. */

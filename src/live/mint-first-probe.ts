@@ -7,40 +7,9 @@ import path from 'node:path';
 
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
-import {
-  appendMintToPermanentDenylistLocal,
-  resolveLivePermanentDenylistLocalPath,
-} from './mint-permanent-denylist.js';
-import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
+import { appendMintToPermanentDenylistLocal } from './mint-permanent-denylist.js';
 
 const log = child('live-mint-first-probe');
-
-function gmgnSolTokenUrl(mint: string): string {
-  return `https://gmgn.ai/sol/token/${mint}`;
-}
-
-function firstProbeDenyTelegramCategory(): TelegramCategory {
-  const s = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CATEGORY?.trim().toUpperCase();
-  if (s === 'ALERT' || s === 'REPORT' || s === 'ADVICE' || s === 'HEALTH') return s;
-  return 'ALERT';
-}
-
-function firstProbeDenyTelegramOpts(): {
-  telegramBotToken?: string;
-  telegramChatId?: string;
-  skipQuietHours: boolean;
-} {
-  const telegramBotToken = process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim();
-  const telegramChatId = process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim();
-  const o: {
-    telegramBotToken?: string;
-    telegramChatId?: string;
-    skipQuietHours: boolean;
-  } = { skipQuietHours: true };
-  if (telegramBotToken) o.telegramBotToken = telegramBotToken;
-  if (telegramChatId) o.telegramChatId = telegramChatId;
-  return o;
-}
 
 export function liveMintFirstProbeEnabled(cfg: Pick<LiveOscarConfig, 'liveMintFirstProbeEnabled'>): boolean {
   return cfg.liveMintFirstProbeEnabled;
@@ -146,26 +115,6 @@ function firstProbeLossDenyTelegramEnabled(): boolean {
   return true;
 }
 
-function firstProbeLossAlertText(args: {
-  symbol: string;
-  mint: string;
-  netPnlUsd: number;
-  denylistPath: string;
-  killDropPct: number;
-}): string {
-  const url = gmgnSolTokenUrl(args.mint);
-  const pnlStr = Number.isFinite(args.netPnlUsd) ? `$${args.netPnlUsd.toFixed(2)}` : 'n/a';
-  return (
-    `Первый live-вход по монете — убыток, mint в denylist (без усреднения, kill −${args.killDropPct}% от сигнала).\n` +
-    `symbol: ${args.symbol}\n` +
-    `mint: ${args.mint}\n` +
-    `net PnL: ${pnlStr}\n` +
-    `Файл: ${args.denylistPath}\n` +
-    `После прибыльного закрытия монета переходит в обычный режим (без этой защиты).\n` +
-    `GMGN: ${url}`
-  );
-}
-
 /**
  * После полного закрытия live-oscar, открытого в режиме first-probe.
  */
@@ -198,33 +147,14 @@ export function onLiveOscarFirstMintProbeFullClose(args: {
   }
 
   const killPct = args.killDropPct ?? liveMintFirstProbeKillDropPct(liveOscarCfg);
+  const sym = symbol?.trim() || '?';
   const added = appendMintToPermanentDenylistLocal(
     liveOscarCfg,
     key,
     `first_mint_probe_loss net=${netPnlUsd.toFixed(2)} kill=${killPct}%`,
+    { symbol: sym, skipListChangeTelegram: !firstProbeLossDenyTelegramEnabled() },
   );
   if (!added) {
     log.info({ mint: key }, 'live first mint probe denylist: already listed');
-    return;
   }
-
-  if (!firstProbeLossDenyTelegramEnabled()) return;
-
-  const sym = symbol?.trim() || '?';
-  const denyPath = resolveLivePermanentDenylistLocalPath(liveOscarCfg.livePermanentDenylistLocalPath);
-  void (async () => {
-    const ok = await sendTagged(
-      firstProbeDenyTelegramCategory(),
-      'live_first_mint_probe_deny',
-      firstProbeLossAlertText({
-        symbol: sym,
-        mint: key,
-        netPnlUsd,
-        denylistPath: denyPath,
-        killDropPct: killPct,
-      }),
-      firstProbeDenyTelegramOpts(),
-    );
-    log.info({ mint: key, symbol: sym, ok }, 'live_first_mint_probe_deny telegram');
-  })().catch((e) => log.warn({ err: String(e), mint: key }, 'live_first_mint_probe_deny telegram failed'));
 }
