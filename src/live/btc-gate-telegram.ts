@@ -60,25 +60,37 @@ function statusToPhase(status: LiveBtcGateStatus): TelegramPhase {
   return 'disabled';
 }
 
+function blockReasonLabel(limit: Extract<LiveBtcGateStatus, { kind: 'blocked' }>['limit']): string {
+  switch (limit) {
+    case 'btc_dump_1h':
+      return 'просадка за 1ч';
+    case 'btc_dump_4h':
+      return 'просадка за 4ч';
+    case 'btc_dump_24h':
+      return 'просадка за 24ч';
+    case 'btc_dump_72h':
+      return 'просадка за 72ч';
+    case 'btc_dump_peak_72h':
+      return 'просадка от пика 72ч';
+    default:
+      return limit;
+  }
+}
+
 function blockAlertText(status: Extract<LiveBtcGateStatus, { kind: 'blocked' }>): string {
-  const window =
-    status.limit === 'btc_dump_1h'
-      ? `1 час (порог −${status.blockAtDrawdownPct}%)`
-      : `4 часа (порог −${status.blockAtDrawdownPct}%)`;
   return (
     `Новые позиции (buy_open) не открываются: Bitcoin в просадке.\n` +
-    `Причина: ${status.limit === 'btc_dump_1h' ? 'просадка за 1ч' : 'просадка за 4ч'} (Binance BTCUSDT).\n` +
-    `Окно: ${window}\n` +
-    `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)}\n` +
+    `Причина: ${blockReasonLabel(status.limit)} (Binance BTCUSDT, порог −${status.blockAtDrawdownPct}%).\n` +
+    `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)} | ret24h: ${fmtPct(status.ret24h_pct)} | ret72h: ${fmtPct(status.ret72h_pct)} | от пика 72ч: ${fmtPct(status.retPeak72hDrawdown_pct)}\n` +
     `Вторая нога сплита и staged-усреднение по уже открытым mint — не блокируются этим гейтом.\n` +
-    `Снимется автоматически, когда ret1h/ret4h снова выше порогов (обновление ~каждые 5 мин).`
+    `Снимется автоматически, когда метрики снова выше порогов (обновление ~каждые 5 мин).`
   );
 }
 
 function clearAlertText(status: Extract<LiveBtcGateStatus, { kind: 'ok' }>): string {
   return (
     `BTC gate снят — снова можно открывать новые позиции (buy_open).\n` +
-    `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)}`
+    `BTC ret1h: ${fmtPct(status.ret1h_pct)} | ret4h: ${fmtPct(status.ret4h_pct)} | ret24h: ${fmtPct(status.ret24h_pct)} | ret72h: ${fmtPct(status.ret72h_pct)} | от пика 72ч: ${fmtPct(status.retPeak72hDrawdown_pct)}`
   );
 }
 

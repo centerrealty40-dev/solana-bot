@@ -60,16 +60,36 @@ export async function fetchJupiterTokenUsdPrice(mint: string): Promise<number | 
 
 let btcRet1hPct: number | null = null;
 let btcRet4hPct: number | null = null;
+let btcRet24hPct: number | null = null;
+let btcRet72hPct: number | null = null;
+let btcRetPeak72hDrawdownPct: number | null = null;
 let btcLastUpdateTs = 0;
 
-export function getBtcContext(): {
+export type BtcContextSnapshot = {
   ret1h_pct: number | null;
   ret4h_pct: number | null;
+  ret24h_pct: number | null;
+  ret72h_pct: number | null;
+  retPeak72hDrawdown_pct: number | null;
   updated_ts: number | null;
-} {
+};
+
+function clearBtcContext(): void {
+  btcRet1hPct = null;
+  btcRet4hPct = null;
+  btcRet24hPct = null;
+  btcRet72hPct = null;
+  btcRetPeak72hDrawdownPct = null;
+}
+
+export function getBtcContext(): BtcContextSnapshot {
   return {
     ret1h_pct: btcRet1hPct !== null ? +btcRet1hPct.toFixed(2) : null,
     ret4h_pct: btcRet4hPct !== null ? +btcRet4hPct.toFixed(2) : null,
+    ret24h_pct: btcRet24hPct !== null ? +btcRet24hPct.toFixed(2) : null,
+    ret72h_pct: btcRet72hPct !== null ? +btcRet72hPct.toFixed(2) : null,
+    retPeak72hDrawdown_pct:
+      btcRetPeak72hDrawdownPct !== null ? +btcRetPeak72hDrawdownPct.toFixed(2) : null,
     updated_ts: btcLastUpdateTs || null,
   };
 }
@@ -77,24 +97,29 @@ export function getBtcContext(): {
 export async function refreshBtcContext(_cfg: PaperTraderConfig): Promise<void> {
   void _cfg;
   const j = await fetchJson<unknown[][]>(
-    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=5',
+    'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=73',
   );
-  if (!j || !Array.isArray(j) || j.length < 5) {
-    btcRet1hPct = null;
-    btcRet4hPct = null;
+  if (!j || !Array.isArray(j) || j.length < 73) {
+    clearBtcContext();
     return;
   }
   const closes = j.map((row) => Number(row[4])).filter((x) => Number.isFinite(x) && x > 0);
-  if (closes.length < 5) {
-    btcRet1hPct = null;
-    btcRet4hPct = null;
+  const highs = j.map((row) => Number(row[2])).filter((x) => Number.isFinite(x) && x > 0);
+  if (closes.length < 73 || highs.length < 73) {
+    clearBtcContext();
     return;
   }
   const last = closes[closes.length - 1];
   const oneAgo = closes[closes.length - 2];
   const fourAgo = closes[closes.length - 5];
+  const twentyFourAgo = closes[closes.length - 25];
+  const seventyTwoAgo = closes[0];
+  const peak72h = Math.max(...highs);
   btcRet1hPct = oneAgo > 0 ? (last / oneAgo - 1) * 100 : null;
   btcRet4hPct = fourAgo > 0 ? (last / fourAgo - 1) * 100 : null;
+  btcRet24hPct = twentyFourAgo > 0 ? (last / twentyFourAgo - 1) * 100 : null;
+  btcRet72hPct = seventyTwoAgo > 0 ? (last / seventyTwoAgo - 1) * 100 : null;
+  btcRetPeak72hDrawdownPct = peak72h > 0 ? (last / peak72h - 1) * 100 : null;
   btcLastUpdateTs = Date.now();
 }
 

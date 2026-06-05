@@ -1,2 +1,4 @@
 # Tracked seed — union с локальным live-oscar-permanent-denylist.txt (на VPS gitignored).
 # Добавляйте сюда mint, которые нельзя покупать снова даже при ошибочном возврате строки в whitelist.
+# CARDS — вне целевого mcap-коридора, повторные нежелательные re-entry (2026-06-05).
+CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp
