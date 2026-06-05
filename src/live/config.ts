@@ -268,8 +268,8 @@ const LiveOscarConfigSchema = z
      */
     liveReconcileBlockMaxMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
-    /** 0 = off. Else interval (ms) for periodic tail sweep + stale-open diagnostics (live only). */
-    livePeriodicSelfHealMs: z.coerce.number().int().min(0).max(86_400_000).default(1_800_000),
+    /** 0 = off. Else interval (ms) for periodic stale-open diagnostics (live only; no tail sweeps). */
+    livePeriodicSelfHealMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Skip chain-only tail sweep below this estimated USD (spam / dust). */
     livePeriodicSweepMinUsd: z.coerce.number().min(0).max(1_000_000).default(0.25),
     /**
@@ -293,6 +293,10 @@ const LiveOscarConfigSchema = z
      * remains on the wallet, run **`sell_full`** (chain-sized) to clear dust tails.
      */
     livePostCloseTailSweepDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
+    /** How many post-close tail checks to run (first after delay, then retries). `0` = off. */
+    livePostCloseTailSweepMaxAttempts: z.coerce.number().int().min(0).max(10).default(3),
+    /** Ms between post-close tail retries after the first delayed check. */
+    livePostCloseTailSweepRetryMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
     /** Floor USD notional hint for Jupiter when estimating microscopic tails (actual sell uses on-chain raw). */
     livePostCloseTailSweepMinUsd: z.coerce.number().min(0).max(1000).default(0.05),
 
@@ -686,10 +690,9 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
 
     livePeriodicSelfHealMs: (() => {
       const s = process.env.LIVE_PERIODIC_SELF_HEAL_MS?.trim();
-      if (s === '0') return 0;
-      if (!s) return 1_800_000;
+      if (!s || s === '0') return 0;
       const n = Number.parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 1_800_000;
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 86_400_000) : 0;
     })(),
     livePeriodicSweepMinUsd: (() => {
       const s = process.env.LIVE_PERIODIC_SWEEP_MIN_USD?.trim();
@@ -717,6 +720,20 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (s === '0') return 0;
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n > 0 ? Math.min(n, 3_600_000) : 60_000;
+    })(),
+    livePostCloseTailSweepMaxAttempts: (() => {
+      const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS?.trim();
+      if (!s) return 3;
+      if (s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 10) : 3;
+    })(),
+    livePostCloseTailSweepRetryMs: (() => {
+      const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_RETRY_MS?.trim();
+      if (!s) return 30_000;
+      if (s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 600_000) : 30_000;
     })(),
     livePostCloseTailSweepMinUsd: (() => {
       const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MIN_USD?.trim();

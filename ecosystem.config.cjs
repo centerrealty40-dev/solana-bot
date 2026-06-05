@@ -87,6 +87,10 @@ const PM2_APPS = [
         /** В конец `[ALERT][quicknode-balance]` — метрики discovery за окно из `data/live-discovery-health.json` (live-oscar). */
         QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH: '1',
         QUICKNODE_BILLING_MILESTONES: '0',
+        /** Быстрая сборка paper2: live-oscar full enrich, остальные lite. */
+        DASHBOARD_ENRICH_MODE: 'lite',
+        HL_TWAP_DASHBOARD_JSONL: path.join(root, 'data/hl-twap/live.jsonl'),
+        HL_TWAP_DASHBOARD_SOURCE: 'live',
       },
     },
     {
@@ -1061,6 +1065,10 @@ const PM2_APPS = [
         LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '30',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
+        /** Сколько раз проверить хвост после close (1-я — после delay, дальше retry). */
+        LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS: '3',
+        /** Пауза между повторными проверками хвоста (мс). */
+        LIVE_POST_CLOSE_TAIL_SWEEP_RETRY_MS: '30000',
 
         /** Старый 5-секундный scale-in отключён: вторая нога — только через staged-entry (`PAPER_LIVE_STAGED_ENTRY_*`, см. комментарий к `PAPER_POSITION_USD`). */
         LIVE_ENTRY_SCALE_IN_ENABLED: '0',
@@ -1073,8 +1081,8 @@ const PM2_APPS = [
         LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
-        /** Периодический безопасный self-heal: хвосты кошелька + диагностика stale open (`src/live/periodic-self-heal.ts`). */
-        LIVE_PERIODIC_SELF_HEAL_MS: '1800000',
+        /** Периодический self-heal: только диагностика stale open (хвосты — только post-close, см. выше). 0 = выкл. */
+        LIVE_PERIODIC_SELF_HEAL_MS: '0',
         LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
         /** `0` по умолчанию: не продавать обычные live open только по возрасту. `1` — ручной opt-in старого PERIODIC_HEAL force-close. */
         LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED: '0',
@@ -1218,7 +1226,42 @@ const PM2_APPS = [
       },
     },
     /**
-     * Stealth copy-trader — отдельный процесс, журнал и (в live) кошелёк.
+     * Hyperliquid TWAP alerts + live bot (HypurrScan twap/*).
+     * HL_TWAP_LIVE_DRY_RUN и HL_TWAP_LIVE_PRIVATE_KEY — только в `.env` (не в PM2 env).
+     */
+    {
+      name: 'hl-twap-telegram-watch',
+      cwd: root,
+      script: 'npm',
+      args: 'run --silent hl-twap-telegram-watch',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        HL_TWAP_POLL_INTERVAL_MS: '5000',
+        HL_TWAP_META_REFRESH_MS: '120000',
+        HL_TWAP_MIN_VOLUME_SHARE_PCT: '3',
+        HL_TWAP_BUY_ONLY: '0',
+        HL_TWAP_PAPER_ENABLED: '0',
+        HL_TWAP_DRY_RUN: '0',
+        HL_TWAP_NOTIFY_ENDED: '1',
+        HL_TWAP_MEXC_LINKS: '1',
+        HL_TWAP_TELEGRAM_CHAT_ID: '-1003852228620',
+        HL_TWAP_LIVE_ENABLED: '1',
+        HL_TWAP_LIVE_NOTIONAL_USD: '100',
+        HL_TWAP_LIVE_MIN_IMPACT_PCT: '3',
+        HL_TWAP_LIVE_LADDER_STEP_PCT: '3',
+        HL_TWAP_LIVE_LADDER_SLICE_PCT: '10',
+      },
+    },
+    /**
+     * Stealth copy-trader — отдельный процесс, журнал и (in live) кошелёк.
      * Не импортирует live-oscar; env-блок без LIVE_* / PAPER_* / whitelist Oscar.
      */
     {

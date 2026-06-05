@@ -126,6 +126,25 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(120_000);
   });
 
+  it('parses post-close tail sweep retry settings', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS;
+    delete process.env.LIVE_POST_CLOSE_TAIL_SWEEP_RETRY_MS;
+
+    expect(loadLiveOscarConfig().livePostCloseTailSweepMaxAttempts).toBe(3);
+    expect(loadLiveOscarConfig().livePostCloseTailSweepRetryMs).toBe(30_000);
+
+    process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS = '0';
+    expect(loadLiveOscarConfig().livePostCloseTailSweepMaxAttempts).toBe(0);
+    process.env.LIVE_POST_CLOSE_TAIL_SWEEP_RETRY_MS = '45000';
+    expect(loadLiveOscarConfig().livePostCloseTailSweepRetryMs).toBe(45_000);
+  });
+
   it('parses LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', () => {
     process.env.LIVE_STRATEGY_ENABLED = '0';
     process.env.LIVE_EXECUTION_MODE = 'dry_run';

@@ -84,10 +84,12 @@
     "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",
     "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts",
     "copy-trader": "tsx src/scripts/copy-trader.ts",
-    "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts"
+    "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts",
+    "hl-twap-telegram-watch": "tsx src/scripts/hl-twap-telegram-watch.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
+    "@nktkas/hyperliquid": "^0.32.2",
     "@solana/web3.js": "^1.95.0",
     "bs58": "^4.0.1",
     "bullmq": "^5.30.0",
@@ -107,6 +109,7 @@
     "postgres": "^3.4.4",
     "tsx": "^4.19.2",
     "undici": "^7.0.0",
+    "viem": "^2.52.2",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },

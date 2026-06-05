@@ -1,17 +1,16 @@
 /**
- * Live Oscar — periodic chain-only tail sweeps plus optional stuck-open force exit (live).
+ * Live Oscar — periodic stale-open diagnostics plus optional stuck-open force exit (live).
+ * Tail sweeps after close are handled only by `post-close-tail-sweep.ts` (short retry window).
  */
 import type { PaperTraderConfig, TpLadderLevel } from '../papertrader/config.js';
 import type { TrackerStats, TrackerArgs } from '../papertrader/executor/tracker.js';
 import { trackerForceFullExitLive } from '../papertrader/executor/tracker.js';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
-import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import {
   fetchJupiterTokenUsdPrice,
   fetchLatestSnapshotPrice,
 } from '../papertrader/pricing.js';
 import type { LiveOscarConfig } from './config.js';
-import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import type { LiveOscarRuntimeBundle } from './phase4-types.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
@@ -32,14 +31,6 @@ export interface LivePeriodicSelfHealFactoryContext {
 
 /** Passed from papertrader; `live/main` merges `liveCfg` before calling `startLivePeriodicSelfHeal`. */
 export type LivePeriodicSelfHealPaperContext = Omit<LivePeriodicSelfHealFactoryContext, 'liveCfg'>;
-
-function lastClosedForMint(closed: ClosedTrade[], mint: string): ClosedTrade | undefined {
-  for (let i = closed.length - 1; i >= 0; i--) {
-    const c = closed[i];
-    if (c?.mint === mint) return c;
-  }
-  return undefined;
-}
 
 /** USD **за 1 токен** (spot). Не путать с `getLiveMcUsd` — там market cap для метаданных. */
 async function resolveSpotUsdPerToken(
@@ -65,8 +56,6 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
     let staleOpensObserved = 0;
     let staleOpensForced = 0;
     let staleOpensForceCloseDisabled = 0;
-    let tailSweepsAttempted = 0;
-    let tailSweepsOk = 0;
     let note: string | undefined;
 
     try {
@@ -83,46 +72,11 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           staleOpensObserved,
           staleOpensForced,
           staleOpensForceCloseDisabled,
-          tailSweepsAttempted,
-          tailSweepsOk,
+          tailSweepsAttempted: 0,
+          tailSweepsOk: 0,
           note,
         });
         return;
-      }
-
-      const closedMintSeen = new Set(closed.map((c) => c.mint));
-      const minUsd = liveCfg.livePeriodicSweepMinUsd;
-      const allowUnknown = liveCfg.livePeriodicSweepUnknownChainOnly;
-
-      for (const [mint, rawBal] of chainMap) {
-        if (mint === WRAPPED_SOL_MINT || rawBal === 0n) continue;
-        if (open.has(mint)) continue;
-
-        const knownFromClosed = closedMintSeen.has(mint);
-        if (!allowUnknown && !knownFromClosed) continue;
-
-        const ref = lastClosedForMint(closed, mint);
-        const dec = ref?.tokenDecimals ?? 6;
-        const spotUsd = await resolveSpotUsdPerToken(
-          mint,
-          ref?.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
-        );
-        if (typeof spotUsd !== 'number' || !Number.isFinite(spotUsd) || spotUsd <= 0) continue;
-        const tokens = Number(rawBal) / 10 ** dec;
-        const estUsd = tokens * spotUsd;
-        if (!(estUsd >= minUsd)) continue;
-
-        tailSweepsAttempted++;
-        const sym = ref?.symbol ?? mint.slice(0, 8);
-        const res = await executeLiveTokenToSolPipeline(liveCfg, {
-          mint,
-          symbol: sym,
-          usdNotional: Math.max(estUsd, minUsd),
-          priceUsdPerToken: spotUsd,
-          decimals: dec,
-          intentKind: 'sell_full',
-        });
-        if (res.ok) tailSweepsOk++;
       }
 
       const stuckThresholdH = paperCfg.timeoutHours + liveCfg.livePeriodicStuckGraceHours;
@@ -177,8 +131,8 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         staleOpensObserved,
         staleOpensForced,
         staleOpensForceCloseDisabled,
-        tailSweepsAttempted,
-        tailSweepsOk,
+        tailSweepsAttempted: 0,
+        tailSweepsOk: 0,
         note,
       });
     } catch (e) {
@@ -190,8 +144,8 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         staleOpensObserved,
         staleOpensForced,
         staleOpensForceCloseDisabled,
-        tailSweepsAttempted,
-        tailSweepsOk,
+        tailSweepsAttempted: 0,
+        tailSweepsOk: 0,
         note,
       });
     } finally {

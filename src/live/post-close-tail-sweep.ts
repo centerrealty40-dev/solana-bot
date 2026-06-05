@@ -1,5 +1,6 @@
 /**
- * After a full live close (`live_position_close`), optionally wait and sell any SPL dust left on the wallet.
+ * After a full live close (`live_position_close`), wait briefly and sell any SPL dust left on the wallet.
+ * Retries a few times within ~2 minutes, then stops — no long-running periodic sweeps.
  */
 import {
   fetchJupiterTokenUsdPrice,
@@ -11,7 +12,16 @@ import type { LiveOscarConfig } from './config.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 
-const pendingByMint = new Map<string, ReturnType<typeof setTimeout>>();
+type PendingTailSweep = {
+  timers: ReturnType<typeof setTimeout>[];
+};
+
+const pendingByMint = new Map<string, PendingTailSweep>();
+
+function clearPendingTailSweep(pending: PendingTailSweep): void {
+  for (const t of pending.timers) clearTimeout(t);
+  pending.timers.length = 0;
+}
 
 /**
  * Сбрасывает отложенный post-close tail sweep для mint (например, новый вход по тому же mint
@@ -20,8 +30,56 @@ const pendingByMint = new Map<string, ReturnType<typeof setTimeout>>();
 export function cancelLivePostCloseTailSweepForMint(mint: string): void {
   const prev = pendingByMint.get(mint);
   if (prev === undefined) return;
-  clearTimeout(prev);
+  clearPendingTailSweep(prev);
   pendingByMint.delete(mint);
+}
+
+function scheduleTailSweepAttempt(args: {
+  liveCfg: LiveOscarConfig;
+  mint: string;
+  symbol: string;
+  decimals: number;
+  hintPriceUsdPerToken: number;
+  dexSource?: string;
+  attempt: number;
+  delayMs: number;
+}): void {
+  const { mint, attempt, delayMs } = args;
+  let pending = pendingByMint.get(mint);
+  if (!pending) {
+    pending = { timers: [] };
+    pendingByMint.set(mint, pending);
+  }
+
+  const handle = setTimeout(() => {
+    const idx = pending!.timers.indexOf(handle);
+    if (idx >= 0) pending!.timers.splice(idx, 1);
+    void runLivePostCloseTailSweep({
+      ...args,
+      onDone: (shouldRetry) => {
+        if (!shouldRetry) {
+          if (pending && pending.timers.length === 0) pendingByMint.delete(mint);
+          return;
+        }
+        const maxAttempts = args.liveCfg.livePostCloseTailSweepMaxAttempts;
+        if (attempt >= maxAttempts) {
+          if (pending && pending.timers.length === 0) pendingByMint.delete(mint);
+          return;
+        }
+        const retryMs = args.liveCfg.livePostCloseTailSweepRetryMs;
+        if (!(retryMs > 0)) {
+          if (pending && pending.timers.length === 0) pendingByMint.delete(mint);
+          return;
+        }
+        scheduleTailSweepAttempt({
+          ...args,
+          attempt: attempt + 1,
+          delayMs: retryMs,
+        });
+      },
+    });
+  }, delayMs);
+  pending.timers.push(handle);
 }
 
 export function scheduleLivePostCloseTailSweep(args: {
@@ -38,23 +96,21 @@ export function scheduleLivePostCloseTailSweep(args: {
   const delayMs = liveCfg.livePostCloseTailSweepDelayMs;
   if (!(delayMs > 0)) return;
   if (!liveCfg.strategyEnabled || liveCfg.executionMode !== 'live') return;
+  if (!(liveCfg.livePostCloseTailSweepMaxAttempts > 0)) return;
 
   const mint = args.mint;
-  const prev = pendingByMint.get(mint);
-  if (prev !== undefined) clearTimeout(prev);
+  cancelLivePostCloseTailSweepForMint(mint);
 
-  const handle = setTimeout(() => {
-    pendingByMint.delete(mint);
-    void runLivePostCloseTailSweep({
-      liveCfg,
-      mint,
-      symbol: args.symbol,
-      decimals: args.decimals,
-      hintPriceUsdPerToken: args.priceUsdPerToken,
-      dexSource: args.dexSource,
-    });
-  }, delayMs);
-  pendingByMint.set(mint, handle);
+  scheduleTailSweepAttempt({
+    liveCfg,
+    mint,
+    symbol: args.symbol,
+    decimals: args.decimals,
+    hintPriceUsdPerToken: args.priceUsdPerToken,
+    dexSource: args.dexSource,
+    attempt: 1,
+    delayMs,
+  });
 }
 
 async function runLivePostCloseTailSweep(args: {
@@ -64,8 +120,10 @@ async function runLivePostCloseTailSweep(args: {
   decimals: number;
   hintPriceUsdPerToken: number;
   dexSource?: string;
+  attempt: number;
+  onDone: (shouldRetry: boolean) => void;
 }): Promise<void> {
-  const { liveCfg, mint, symbol } = args;
+  const { liveCfg, mint, symbol, attempt } = args;
   const dec = Math.min(24, Math.max(0, Math.floor(args.decimals)));
 
   try {
@@ -75,8 +133,9 @@ async function runLivePostCloseTailSweep(args: {
         kind: 'live_post_close_tail',
         mint,
         ok: false,
-        note: 'spl_balance_rpc_null',
+        note: `spl_balance_rpc_null attempt=${attempt}`,
       });
+      args.onDone(true);
       return;
     }
     const raw = chain.get(mint) ?? 0n;
@@ -85,8 +144,9 @@ async function runLivePostCloseTailSweep(args: {
         kind: 'live_post_close_tail',
         mint,
         ok: true,
-        note: 'zero_balance',
+        note: `zero_balance attempt=${attempt}`,
       });
+      args.onDone(false);
       return;
     }
 
@@ -107,9 +167,10 @@ async function runLivePostCloseTailSweep(args: {
         kind: 'live_post_close_tail',
         mint,
         ok: false,
-        note: 'no_price',
+        note: `no_price attempt=${attempt}`,
         rawAtoms: raw.toString(),
       });
+      args.onDone(true);
       return;
     }
 
@@ -131,16 +192,18 @@ async function runLivePostCloseTailSweep(args: {
       kind: 'live_post_close_tail',
       mint,
       ok: res.ok,
-      note: res.ok ? 'sweep_ok' : 'sweep_failed',
+      note: res.ok ? `sweep_ok attempt=${attempt}` : `sweep_failed attempt=${attempt}`,
       rawAtoms: raw.toString(),
       estUsd: +estUsd.toFixed(8),
     });
+    args.onDone(true);
   } catch (e) {
     appendLiveJsonlEvent({
       kind: 'live_post_close_tail',
       mint,
       ok: false,
-      note: (e as Error)?.message?.slice(0, 200) ?? 'tail_err',
+      note: `${(e as Error)?.message?.slice(0, 180) ?? 'tail_err'} attempt=${attempt}`,
     });
+    args.onDone(true);
   }
 }

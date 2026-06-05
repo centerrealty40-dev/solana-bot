@@ -14,6 +14,30 @@
 
 ---
 
+## [1.11.325] — 2026-06-05
+
+**Тег:** `sa-alpha-1.11.325`
+
+### Feat: Hyperliquid TWAP — watch, live perp bot, dashboard tile 3
+
+- **Watch:** `hl-twap-telegram-watch` (PM2) — HypurrScan `twap/*`, фильтр **price impact ≥ 3%** (`dayNtlVlm`), long+short; whale-алерты в Telegram (`HL_TWAP_TELEGRAM_*`, chat `-1003852228620`).
+- **Live bot:** perp на Hyperliquid — **$100**/сигнал, вход после 1-го слайса / выход перед последним; лестница **±3% от avg entry**, slice **10%** от начальной ноты; журнал `data/hl-twap/live.jsonl`.
+- **Безопасность live:** `HL_TWAP_LIVE_DRY_RUN` и `HL_TWAP_LIVE_PRIVATE_KEY` — **только `.env`** (не PM2 env); без ключа или при `DRY_RUN=1` — симуляция, без `/exchange`.
+- **Telegram сделок:** отдельный бот/канал `HL_TWAP_LIVE_TRADES_TELEGRAM_*` — краткие open/close + PnL (whale-канал не трогаем).
+- **Dashboard** `/papertrader2`: плитка **HL TWAP** (3-я), цены вместо mcap, timeline из `live.jsonl`; Basic Auth + sessionStorage.
+- **Зависимости:** `@nktkas/hyperliquid`, `viem`. Док: `docs/platform/hl-twap-live-architecture.md`. Тесты: `tests/hl-twap-*.test.ts`.
+
+### Live: post-close tail sweep (код релиза 1.11.323)
+
+- **Post-close tail:** 3 проверки хвоста после `live_position_close` (`LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS`, `RETRY_MS`).
+- **Periodic self-heal:** без продажи хвостов по `closed[]`; `LIVE_PERIODIC_SELF_HEAL_MS=0` в ecosystem.
+
+**Деплой kvm2:** `git fetch && git checkout sa-alpha-1.11.325 && npm ci && pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch,live-oscar-dashboard,live-oscar --update-env` (секреты HL/live — в `.env` на сервере).
+
+**Откат:** `git checkout sa-alpha-1.11.324 -- ecosystem.config.cjs package.json package-lock.json src/hyperliquid src/scripts/hl-twap-telegram-watch.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html src/live/post-close-tail-sweep.ts src/live/periodic-self-heal.ts src/live/config.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md tests/hl-twap-*.test.ts tests/live-post-close-tail-sweep.test.ts tests/live-oscar-config.test.ts .env.example docs/platform/hl-twap-live-architecture.md`; `npm ci`; `pm2 delete hl-twap-telegram-watch 2>/dev/null; pm2 reload ecosystem.config.cjs --only live-oscar-dashboard,live-oscar --update-env`.
+
+---
+
 ## [1.11.324] — 2026-05-28
 
 ### Fix: copy-trader mirror timing + price gates (add / partial sell)
@@ -24,6 +48,17 @@
 - **Partial sell gate:** не продавать частично, если цена уже **< −5%** от цены лидера (`COPY_TRADER_PARTIAL_SELL_MAX_DRAWDOWN_PCT`); полный выход (coalesce / sweep) — без этого gate.
 
 **Откат:** `git revert`; ecosystem вернуть `SELL_DELAY_*` 20000/30000, убрать `MIRROR_DELAY_*` / `ADD_MAX_PREMIUM_PCT` / `PARTIAL_SELL_MAX_DRAWDOWN_PCT`; `pm2 reload copy-trader --update-env`.
+
+---
+
+## [1.11.323] — 2026-05-27
+
+### Live: хвосты только сразу после продажи (без недельного periodic sweep)
+
+- **Post-close tail:** после `live_position_close` — **3 проверки** (~60 с, +30 с, +30 с): если остаток на кошельке — `sell_full`, при `zero_balance` — стоп. Env: `LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS`, `LIVE_POST_CLOSE_TAIL_SWEEP_RETRY_MS`.
+- **Periodic self-heal:** убрана продажа хвостов по закрытым mint из `closed[]` (именно это продало LOA в 19:30 без активной позиции). `LIVE_PERIODIC_SELF_HEAL_MS=0` в ecosystem — periodic выкл.; при включении — только диагностика stale open.
+
+**Откат:** `git revert`; ecosystem `LIVE_PERIODIC_SELF_HEAL_MS=1800000`, убрать `LIVE_POST_CLOSE_TAIL_SWEEP_MAX_ATTEMPTS` / `RETRY_MS`; `pm2 reload live-oscar --update-env`.
 
 ---
 
