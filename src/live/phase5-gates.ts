@@ -236,6 +236,9 @@ export async function phase5AllowIncreaseExposure(args: {
         detail: {
           ret1h_pct: btcGate.ret1h_pct,
           ret4h_pct: btcGate.ret4h_pct,
+          ret24h_pct: btcGate.ret24h_pct,
+          ret72h_pct: btcGate.ret72h_pct,
+          retPeak72hDrawdown_pct: btcGate.retPeak72hDrawdown_pct,
           blockAtDrawdownPct: btcGate.blockAtDrawdownPct,
         },
       });

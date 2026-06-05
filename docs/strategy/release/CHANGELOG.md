@@ -14,6 +14,17 @@
 
 ---
 
+## [1.11.316] — 2026-06-05
+
+### Live: CARDS denylist + BTC gate level 2
+
+- **CARDS** (`CARDSccUMFKo…`) в `live-oscar-permanent-denylist.seed.txt` — permanent block повторных входов.
+- **BTC gate level 2** (`buy_open` only): пороги **1h −1%**, **4h −2.5%**, **24h −2%**, **72h −6%**, **от пика 72h −6%** (Binance 1h klines, 73 свечи). Env: `LIVE_BTC_BLOCK_*_DRAWDOWN_PCT`.
+
+**Откат:** убрать CARDS из seed; вернуть level-1 пороги (`1H=2.5`, `4H=5`, `24H/72H/PEAK=0`); `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.314] — 2026-05-28
 
 ### Copy-trader: $800 entry + wallet balance as source of truth

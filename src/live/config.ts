@@ -100,10 +100,16 @@ const LiveOscarConfigSchema = z
     liveBtcGateEnabled: z.boolean().default(true),
     /** Skip BTC gate if `getBtcContext().updated_ts` older than this (ms). */
     liveBtcGateMaxStaleMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
-    /** Block when `ret1h_pct ≤ −this` (percent points). ~2–3% catches sharp hourly dumps without noise. */
-    liveBtcBlockNewBuys1hDrawdownPct: z.coerce.number().min(0).max(50).default(2.5),
-    /** Block when `ret4h_pct ≤ −this` (percent points). ~5% aligns with risk-off sessions. */
-    liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(5),
+    /** Block when `ret1h_pct ≤ −this` (percent points). Level-2 default 1%. */
+    liveBtcBlockNewBuys1hDrawdownPct: z.coerce.number().min(0).max(50).default(1),
+    /** Block when `ret4h_pct ≤ −this` (percent points). Level-2 default 2.5%. */
+    liveBtcBlockNewBuys4hDrawdownPct: z.coerce.number().min(0).max(50).default(2.5),
+    /** Block when `ret24h_pct ≤ −this` (percent points). Level-2 default 2%. `0` = off. */
+    liveBtcBlockNewBuys24hDrawdownPct: z.coerce.number().min(0).max(50).default(2),
+    /** Block when `ret72h_pct ≤ −this` (percent points). Level-2 default 6%. `0` = off. */
+    liveBtcBlockNewBuys72hDrawdownPct: z.coerce.number().min(0).max(50).default(6),
+    /** Block when drawdown from 72h peak ≤ −this (percent points). Level-2 default 6%. `0` = off. */
+    liveBtcBlockNewBuysPeak72hDrawdownPct: z.coerce.number().min(0).max(50).default(6),
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     /**
@@ -582,15 +588,33 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
     liveBtcBlockNewBuys1hDrawdownPct: (() => {
       const s = process.env.LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT?.trim();
+      if (!s) return 1;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 1;
+    })(),
+    liveBtcBlockNewBuys4hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT?.trim();
       if (!s) return 2.5;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 2.5;
     })(),
-    liveBtcBlockNewBuys4hDrawdownPct: (() => {
-      const s = process.env.LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT?.trim();
-      if (!s) return 5;
+    liveBtcBlockNewBuys24hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT?.trim();
+      if (!s) return 2;
       const n = Number(s);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 5;
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 2;
+    })(),
+    liveBtcBlockNewBuys72hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT?.trim();
+      if (!s) return 6;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 6;
+    })(),
+    liveBtcBlockNewBuysPeak72hDrawdownPct: (() => {
+      const s = process.env.LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT?.trim();
+      if (!s) return 6;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 6;
     })(),
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
