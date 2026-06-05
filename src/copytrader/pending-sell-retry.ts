@@ -11,14 +11,28 @@ export function shouldLogSellDefer(pending: PendingSell, nowMs: number, interval
   return nowMs - last >= intervalMs;
 }
 
-/** Transient sell failures: retry with same bps until window ends or fill confirms. */
+/** Transient sell failures: retry with bumped slippage until window ends or fill confirms. */
 export function isSellRetryableError(reason: string | undefined): boolean {
   if (!reason) return false;
   if (isSlippageClassSimError(reason)) return true;
   const m = reason.toLowerCase();
   if (m.includes('confirm_timeout')) return true;
   if (m.includes('send_failed') && (m.includes('429') || m.includes('timeout'))) return true;
+  if (m.includes('sim_failed') || m.includes('sim_err')) return true;
+  if (m.includes('rpc_error') && m.includes('simulation failed')) return true;
+  if (m.includes('custom":6024') || m.includes('custom\':6024')) return true;
   return false;
+}
+
+export function nextSellSlippageBps(args: {
+  baseBps: number;
+  currentBps: number | undefined;
+  bumpBps: number;
+  maxBps: number;
+}): number {
+  const { baseBps, currentBps, bumpBps, maxBps } = args;
+  const next = (currentBps ?? baseBps) + bumpBps;
+  return Math.min(maxBps, Math.max(baseBps, next));
 }
 
 export function findPendingSell(state: { pendingSells: PendingSell[] }, id: string): PendingSell | undefined {

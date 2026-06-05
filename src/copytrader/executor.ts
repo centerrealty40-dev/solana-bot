@@ -102,6 +102,7 @@ export async function executeCopySell(args: {
   fraction: number;
   leaderSignature: string;
   sellDelayMs: number;
+  slippageBps?: number;
 }): Promise<SellExecutionResult> {
   const {
     cfg,
@@ -113,6 +114,7 @@ export async function executeCopySell(args: {
     fraction,
     leaderSignature,
     sellDelayMs,
+    slippageBps,
   } = args;
   const pnlPct = entryPriceUsd > 0 ? ((exitPriceUsd / entryPriceUsd - 1) * 100) : 0;
 
@@ -140,7 +142,7 @@ export async function executeCopySell(args: {
   }
 
   if (cfg.executionMode === 'live') {
-    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature, fraction });
+    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature, fraction, slippageBps });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;
     appendJsonl(cfg.journalPath, {

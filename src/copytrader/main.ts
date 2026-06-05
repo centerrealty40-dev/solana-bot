@@ -5,7 +5,10 @@ import type { SwapInsert } from '../parser/pumpfun.js';
 import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyEntry } from './evaluate.js';
+import { resolveCopyBuySizeUsd } from './buy-affordability.js';
+import { coalescedMirrorSellFraction } from './exit-coalesce.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
+import { sweepLeaderZeroHoldings } from './leader-flat-sweep.js';
 import {
   applyLeaderSwapToLedger,
   bootstrapLeaderPreSellBalance,
@@ -31,9 +34,11 @@ import {
   findPendingSell,
   isPendingSellExpired,
   isSellRetryableError,
+  nextSellSlippageBps,
   removePendingSellById,
   shouldLogSellDefer,
 } from './pending-sell-retry.js';
+import { schedulePendingSell } from './pending-sell-schedule.js';
 import {
   canScheduleProportionalAdd,
   gcSeenSignatures,
@@ -45,7 +50,6 @@ import {
   writeCopyTraderState,
   type CopyTraderState,
   type PendingBuy,
-  type PendingSell,
 } from './state.js';
 import {
   closePositionForMint,
@@ -63,12 +67,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 let lastPollRpcFailLogMs = 0;
 const POLL_RPC_FAIL_LOG_MS = 60_000;
-
-function randomSellDelayMs(cfg: CopyTraderConfig): number {
-  const span = cfg.sellDelayMaxMs - cfg.sellDelayMinMs;
-  if (span <= 0) return cfg.sellDelayMinMs;
-  return cfg.sellDelayMinMs + Math.floor(Math.random() * (span + 1));
-}
 
 function decodeSwapForWallet(tx: TxJsonParsed, wallet: string, solUsd: number): SwapInsert | null {
   const pf = decodePumpfunSwap(tx, PUMP_FUN_PROGRAM_ID, solUsd).find((s) => s.wallet === wallet);
@@ -367,31 +365,18 @@ async function onLeaderSell(
     syncPositionFromWallet(tracked, walletBal, swap.priceUsd);
   }
 
-  const delayMs = randomSellDelayMs(cfg);
-  const dueTs = Date.now() + delayMs;
-  const pending: PendingSell = {
-    id: newId('ps'),
+  const coalesced = coalescedMirrorSellFraction(sellFrac, preLeaderRaw, swap.baseAmountRaw);
+  const ourFrac = coalesced.fraction;
+  const pending = schedulePendingSell({
+    cfg,
+    state,
     mint,
     symbol,
     leaderSignature: row.signature,
     leaderSellTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
-    dueTs,
-    fraction: sellFrac,
+    fraction: ourFrac,
     leaderSellFraction: sellFrac,
-    retryUntilTs: computeRetryUntilTs(dueTs, cfg.sellRetryWindowMs),
-  };
-  state.pendingSells.push(pending);
-
-  appendCopyEvent(cfg, {
-    kind: 'leader_sell_scheduled',
-    mint,
-    symbol,
-    leaderSignature: row.signature,
-    leaderPriceUsd: swap.priceUsd,
-    leaderSellFraction: sellFrac,
-    ourSellFraction: sellFrac,
-    sellDueTs: pending.dueTs,
-    sellDelayMs: delayMs,
+    coalesce: coalesced.coalesced ? coalesced : undefined,
   });
 
   await notifyCopyTraderTelegram(
@@ -402,7 +387,9 @@ async function onLeaderSell(
       symbol,
       wallet: cfg.targetWallet,
       priceUsd: swap.priceUsd,
-      detail: `Our ${(sellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
+      detail: coalesced.coalesced
+        ? `Full exit queued (~${Math.round((pending.dueTs - Date.now()) / 1000)}s) — leader flat`
+        : `Our ${(ourFrac * 100).toFixed(0)}% sell in ~${Math.round((pending.dueTs - Date.now()) / 1000)}s`,
     }),
   );
 }
@@ -532,12 +519,52 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       continue;
     }
 
+    let buySizeUsd = pending.sizeUsd;
+    if (cfg.executionMode === 'live') {
+      const afford = await resolveCopyBuySizeUsd({
+        cfg,
+        kind: pending.kind,
+        sizeUsd: pending.sizeUsd,
+      });
+      if (!afford.ok) {
+        const deferNote = noteBuyDefer(state, pending.id, now, cfg);
+        if (deferNote) {
+          appendCopyEvent(cfg, {
+            kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            reason: afford.reason,
+            sizeUsd: pending.sizeUsd,
+            walletSolLamports: afford.lamports != null ? String(afford.lamports) : null,
+            requiredSolLamports: afford.requiredLamports != null ? String(afford.requiredLamports) : null,
+            retryUntilTs: pending.retryUntilTs,
+          });
+        }
+        continue;
+      }
+      if (afford.scaled && afford.sizeUsd !== pending.sizeUsd) {
+        appendCopyEvent(cfg, {
+          kind: 'buy_scaled_for_sol',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          requestedUsd: pending.sizeUsd,
+          sizeUsd: afford.sizeUsd,
+          walletSolLamports: afford.lamports != null ? String(afford.lamports) : null,
+          requiredSolLamports: afford.requiredLamports != null ? String(afford.requiredLamports) : null,
+        });
+        pending.sizeUsd = afford.sizeUsd;
+      }
+      buySizeUsd = pending.sizeUsd;
+    }
+
     const exec = await executeCopyBuy({
       cfg,
       mint: pending.mint,
       symbol: pending.symbol,
       priceUsd: currentPrice,
-      sizeUsd: pending.sizeUsd,
+      sizeUsd: buySizeUsd,
       kind: pending.kind,
       evalResult,
       leaderSignature: pending.leaderSignature,
@@ -686,6 +713,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
       fraction: pending.fraction,
       leaderSignature: pending.leaderSignature,
       sellDelayMs,
+      slippageBps: pending.slippageBps,
     });
 
     if (exec.ok) {
@@ -711,6 +739,13 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     if (retryable && !isPendingSellExpired(pending, now)) {
       const row = findPendingSell(state, pending.id);
       if (row) {
+        row.sellAttempt = (row.sellAttempt ?? 0) + 1;
+        row.slippageBps = nextSellSlippageBps({
+          baseBps: cfg.slippageBps,
+          currentBps: row.slippageBps,
+          bumpBps: cfg.sellSlippageBumpBps,
+          maxBps: cfg.sellSlippageMaxBps,
+        });
         row.dueTs = now + cfg.sellRetryIntervalMs;
         if (shouldLogSellDefer(row, now, cfg.sellRetryDeferLogMs)) {
           row.lastDeferLogTs = now;
@@ -721,6 +756,8 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
             leaderSignature: pending.leaderSignature,
             sellFraction: pending.fraction,
             reason: exec.reason ?? 'slippage',
+            slippageBps: row.slippageBps,
+            sellAttempt: row.sellAttempt,
             retryUntilTs: row.retryUntilTs,
             nextAttemptTs: row.dueTs,
           });
@@ -809,6 +846,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     }
 
     try {
+      await sweepLeaderZeroHoldings(cfg, state);
       await processPendingBuys(cfg, state);
       await processPendingSells(cfg, state);
       writeCopyTraderState(cfg.statePath, state);

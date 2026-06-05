@@ -12,6 +12,7 @@ import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
+import { quoteAffordabilityForBuy } from './buy-affordability.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 
 let cachedSigner: Keypair | null = null;
@@ -90,6 +91,21 @@ export async function executeLiveCopyBuy(args: {
     return { ok: false, priceUsd: 0, reason: 'jupiter_buy_quote_failed' };
   }
 
+  const quoteInRaw = quote.quoteResponse.inAmount;
+  if (typeof quoteInRaw === 'string' && /^\d+$/.test(quoteInRaw)) {
+    const afford = await quoteAffordabilityForBuy({ cfg, quoteInLamports: BigInt(quoteInRaw) });
+    if (!afford.ok) {
+      return {
+        ok: false,
+        priceUsd: 0,
+        reason:
+          afford.reason === 'insufficient_wallet_sol'
+            ? 'insufficient_wallet_sol'
+            : 'wallet_balance_rpc',
+      };
+    }
+  }
+
   const build = await liveBuildUnsignedSwapTx({
     cfg: liveCfg,
     quoteResponse: quote.quoteResponse,
@@ -124,8 +140,9 @@ export async function executeLiveCopySell(args: {
   symbol: string;
   leaderSignature: string;
   fraction: number;
+  slippageBps?: number;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRawRemaining?: string; reason?: string }> {
-  const { cfg, mint, symbol, leaderSignature, fraction } = args;
+  const { cfg, mint, symbol, leaderSignature, fraction, slippageBps } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -147,6 +164,7 @@ export async function executeLiveCopySell(args: {
     tokenAmountRaw: sellRaw.toString(),
     solUsd,
     userPublicKey: userPk,
+    slippageBpsOverride: slippageBps,
   });
   if (!prep) {
     return { ok: false, priceUsd: 0, reason: 'jupiter_sell_quote_failed' };

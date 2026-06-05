@@ -46,6 +46,8 @@ const CopyTraderConfigSchema = z.object({
   minPairAgeHours: z.coerce.number().min(0).max(8760).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(400),
+  sellSlippageBumpBps: z.coerce.number().int().min(0).max(500).default(100),
+  sellSlippageMaxBps: z.coerce.number().int().min(100).max(5000).default(2000),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   telegramBotToken: z.string().optional(),
@@ -124,6 +126,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minPairAgeHours: process.env.COPY_TRADER_MIN_PAIR_AGE_HOURS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
+    sellSlippageBumpBps: process.env.COPY_TRADER_SELL_SLIPPAGE_BUMP_BPS,
+    sellSlippageMaxBps: process.env.COPY_TRADER_SELL_SLIPPAGE_MAX_BPS,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),
     walletPubkeyExpected: process.env.COPY_TRADER_WALLET_PUBKEY?.trim() || undefined,
     telegramBotToken:

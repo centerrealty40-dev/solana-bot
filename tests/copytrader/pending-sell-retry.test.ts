@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isSellRetryableError } from '../../src/copytrader/pending-sell-retry.js';
-import { isPendingSellExpired } from '../../src/copytrader/pending-sell-retry.js';
+import {
+  isPendingSellExpired,
+  isSellRetryableError,
+  nextSellSlippageBps,
+} from '../../src/copytrader/pending-sell-retry.js';
 
 describe('isSellRetryableError', () => {
   it('retries Jupiter 0x1771 slippage', () => {
@@ -15,8 +18,35 @@ describe('isSellRetryableError', () => {
     expect(isSellRetryableError('confirm_timeout')).toBe(true);
   });
 
+  it('retries Jupiter Custom:6024 sim_failed', () => {
+    expect(
+      isSellRetryableError('sim_failed:{"InstructionError":[3,{"Custom":6024}]}'),
+    ).toBe(true);
+  });
+
   it('does not retry missing balance', () => {
     expect(isSellRetryableError('no_token_balance')).toBe(false);
+  });
+});
+
+describe('nextSellSlippageBps', () => {
+  it('bumps slippage on each retry up to max', () => {
+    expect(
+      nextSellSlippageBps({
+        baseBps: 400,
+        currentBps: undefined,
+        bumpBps: 100,
+        maxBps: 2000,
+      }),
+    ).toBe(500);
+    expect(
+      nextSellSlippageBps({
+        baseBps: 400,
+        currentBps: 500,
+        bumpBps: 100,
+        maxBps: 2000,
+      }),
+    ).toBe(600);
   });
 });
 
