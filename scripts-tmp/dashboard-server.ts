@@ -44,6 +44,31 @@ import {
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 
+/** Empty paper2 load when optional panel loader fails. */
+function emptyPaper2FileLoad(): Paper2FileLoad {
+  return {
+    open: [],
+    closed: [],
+    firstTs: Date.now(),
+    lastTs: Date.now(),
+    resetTs: 0,
+    evals1h: 0,
+    passed1h: 0,
+    failReasons: [],
+    openTimelines: new Map<string, TimelineEvent[]>(),
+  };
+}
+
+async function loadDcaliveDashboardSafe(jsonlPath: string): Promise<Paper2FileLoad> {
+  try {
+    const mod = await import('./dcalive-dashboard.js');
+    return await mod.loadDcaliveForDashboard(pgPool(), jsonlPath);
+  } catch (e) {
+    console.warn('[dashboard] dca-live unavailable', String(e).slice(0, 200));
+    return emptyPaper2FileLoad();
+  }
+}
+
 /** Tail replay for huge live journals (align with LIVE_REPLAY_MAX_FILE_BYTES default 200MB). */
 const DASHBOARD_JSONL_TAIL_BYTES = Number(
   process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024,
@@ -53,14 +78,39 @@ const DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES = Number(
   process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024,
 );
 const DASHBOARD_PAPER2_CACHE_MS = Number(process.env.DASHBOARD_PAPER2_CACHE_MS ?? 45_000);
+/** Serve last good payload while rebuilding (avoid 5min browser wait on cache miss mid-build). */
+const DASHBOARD_PAPER2_STALE_SERVE_MS = Number(
+  process.env.DASHBOARD_PAPER2_STALE_SERVE_MS ?? 30 * 60_000,
+);
+
+function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
+  return sid === 'live-oscar' ? 'full' : 'lite';
+}
+
+type Paper2ApiCache = { expiresAt: number; builtAt: number; payload: unknown };
+let paper2ApiCache: Paper2ApiCache | null = null;
+let paper2ApiBuild: Promise<unknown> | null = null;
+
+function startPaper2ApiBuild(): Promise<unknown> {
+  if (paper2ApiBuild) return paper2ApiBuild;
+  paper2ApiBuild = buildPaper2ApiPayload()
+    .then((payload) => {
+      paper2ApiCache = {
+        expiresAt: Date.now() + DASHBOARD_PAPER2_CACHE_MS,
+        builtAt: Date.now(),
+        payload,
+      };
+      return payload;
+    })
+    .finally(() => {
+      paper2ApiBuild = null;
+    });
+  return paper2ApiBuild;
+}
 
 function* dashboardJsonlLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, DASHBOARD_JSONL_TAIL_BYTES, DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES);
 }
-
-type Paper2ApiCache = { expiresAt: number; payload: unknown };
-let paper2ApiCache: Paper2ApiCache | null = null;
-let paper2ApiBuild: Promise<unknown> | null = null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,6 +156,10 @@ const DASHBOARD_PAPER_OSCAR_V22_JSONL =
 /** Paper Oscar Risky — бумажный паритет live-осскара по выходам; гейты входа как v2.2. */
 const DASHBOARD_PAPER_OSCAR_RISKY_JSONL =
   process.env.DASHBOARD_PAPER_OSCAR_RISKY_JSONL?.trim() || path.join(PAPER2_DIR, 'paper-oscar-risky.jsonl');
+/** DCA Live (dcafr-live) — PG + optional JSONL on dca-frontrun host. */
+const DASHBOARD_DCA_LIVE_JSONL =
+  process.env.DASHBOARD_DCA_LIVE_JSONL?.trim() ||
+  '/home/dcabot/dca-frontrun/data/dcalive-trades.jsonl';
 const HTML2_PATH = path.join(__dirname, 'dashboard-paper2.html');
 const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
 /** Paper Smart Lottery JSONL — excluded from `/api/paper2` scan; own `/api/smart-lottery`. */
@@ -1272,14 +1326,17 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки Oscar на `/papertrader2`: live → copy-trader → бумажный Risky → IDEALIZED v2.1 → v2.2. */
+/** Плитки Oscar на `/papertrader2`: live → copy-trader → paper risky → DCA live → V2.1 → V2.2. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'copy-trader',
   'paper-oscar-risky',
+  'dca-live',
   'paper-oscar-v21',
   'paper-oscar-v22',
 ] as const;
+
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-05-dash-perf-v2';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3129,7 +3186,7 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   };
 }
 
-/** Фиксированный порядок пяти колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
+/** Фиксированный порядок шести колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
 export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[]): DashboardPaper2StrategyRow[] {
   const byId = new Map(rows.map((r) => [r.strategyId, r]));
   return DASHBOARD_PANEL_ORDER.map((id) => byId.get(id) ?? makeEmptyDashboardStrategyRow(id, '—'));
@@ -3445,11 +3502,12 @@ async function buildPaper2StrategyRowFromLoad(
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
 ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
   const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
+  const enrichMode = paper2EnrichModeForSid(sid);
   const m = paper2Metrics(closed);
   const startedAt = resetTs || firstTs;
   const closedWithUsd = (
     await Promise.all(
-      closed.map(async (c) => {
+      closed.slice(0, enrichMode === 'lite' ? 12 : 20).map(async (c) => {
         const pnlPct = Number(c.pnlPct ?? 0);
         const netUsd = c.netPnlUsd;
         const pnlUsd =
@@ -3460,12 +3518,15 @@ async function buildPaper2StrategyRowFromLoad(
         const timelineRaw = Array.isArray(c.__timeline) ? (c.__timeline as TimelineEvent[]) : [];
         const timelineSorted = timelineRaw.slice().sort((a, b) => a.ts - b.ts);
         const entryTs = Number(c.entryTs ?? 0);
-        const entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(
-          String(c.mint),
-          entryTs,
-          timelineSorted,
-          c.source != null ? String(c.source) : null,
-        );
+        const entryMcapAtBuyUsd =
+          enrichMode === 'lite'
+            ? entryMcapFromOpenTimelineEvent(timelineSorted)
+            : await resolveEntryMcapAtBuyUsd(
+                String(c.mint),
+                entryTs,
+                timelineSorted,
+                c.source != null ? String(c.source) : null,
+              );
         const exitMcapUsd = exitMcapFromCloseTimelineEvent(timelineSorted);
         const exitPfUsd = Number((c as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
         const exitPriorityFeeUsd =
@@ -3481,13 +3542,18 @@ async function buildPaper2StrategyRowFromLoad(
         ) {
           tlOut[0] = { ...tlOut[0], mcUsd: entryMcapAtBuyUsd };
         }
-        tlOut = await enrichTimelineMcapGaps(
-          String(c.mint),
-          tlOut,
-          c.source != null ? String(c.source) : null,
-        );
+        if (enrichMode === 'full') {
+          tlOut = await enrichTimelineMcapGaps(
+            String(c.mint),
+            tlOut,
+            c.source != null ? String(c.source) : null,
+          );
+        }
         tlOut = finalizeTimelineForApi(tlOut, sid);
-        const closedDisplaySymbol = await resolveTokenSymbolForUi(String(c.mint), c.symbol);
+        const closedDisplaySymbol =
+          enrichMode === 'lite' && c.symbol && String(c.symbol).trim() && c.symbol !== '?'
+            ? String(c.symbol).slice(0, 32)
+            : await resolveTokenSymbolForUi(String(c.mint), c.symbol);
         const entryPriceVerifySlipPct =
           typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
         const entryPriceVerifyImpactPct =
@@ -3548,70 +3614,63 @@ async function buildPaper2StrategyRowFromLoad(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
       const isMcMetric = !isCopyTraderPanel && ot.metricType === 'mc';
-      /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
-      const liveMcForPnl = isMcMetric
-        ? await getCurrentMcAny(ot.mint, ot.source).catch(() => null)
-        : null;
-      /** DEX snapshots often have mcap even for price-tracked (post-migration) pools — show in UI. */
-      const dexMcDisplay =
-        liveMcForPnl != null && liveMcForPnl > 0
-          ? null
-          : await getDexLiveMc(ot.mint, ot.source).catch(() => null);
-      let displayLiveMc: number | null =
-        liveMcForPnl != null && liveMcForPnl > 0
-          ? liveMcForPnl
-          : dexMcDisplay != null && dexMcDisplay > 0
-            ? dexMcDisplay
-            : null;
+      let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
-      if (displayLiveMc != null && displayLiveMc > 0) {
-        liveMcProvenance = 'snapshots';
-      } else if (!dexSourceFromTradeSource(ot.source)) {
-        const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
-        if (pumpOnly != null && pumpOnly > 0) {
-          displayLiveMc = pumpOnly;
-          liveMcProvenance = 'pump.fun';
+      if (enrichMode === 'full' && isMcMetric) {
+        /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
+        const liveMcForPnl = await getCurrentMcAny(ot.mint, ot.source).catch(() => null);
+        const dexMcDisplay =
+          liveMcForPnl != null && liveMcForPnl > 0
+            ? null
+            : await getDexLiveMc(ot.mint, ot.source).catch(() => null);
+        displayLiveMc =
+          liveMcForPnl != null && liveMcForPnl > 0
+            ? liveMcForPnl
+            : dexMcDisplay != null && dexMcDisplay > 0
+              ? dexMcDisplay
+              : null;
+        if (displayLiveMc != null && displayLiveMc > 0) {
+          liveMcProvenance = 'snapshots';
+        } else if (!dexSourceFromTradeSource(ot.source)) {
+          const pumpOnly = await getCurrentMc(ot.mint).catch(() => null);
+          if (pumpOnly != null && pumpOnly > 0) {
+            displayLiveMc = pumpOnly;
+            liveMcProvenance = 'pump.fun';
+          }
         }
       }
       const hasLiveMc = displayLiveMc != null;
 
       const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
-      /**
-       * Snapshots → Jupiter → journal spot.
-       * Journal fallback must stay last: after partial TP the last timeline spot is the sell print,
-       * not the current market — using it before Jupiter made UI PnL match «stuck at last TP» while
-       * the tracker still uses PG/Jupiter for decisions (misleading «live mcap» / token row).
-       */
       let livePx: number | null = null;
       let livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | null = null;
-      if (basePx) {
-        livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
-        if (livePx) livePxProvenance = 'snapshots';
-      }
       let livePriceStale = false;
-      if (!livePx && basePx) {
-        const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
-        if (jpx != null && jpx > 0) {
-          livePx = jpx;
-          livePriceStale = false;
-          livePxProvenance = 'jupiter';
+      if (basePx) {
+        if (enrichMode === 'full') {
+          livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
+          if (livePx) livePxProvenance = 'snapshots';
         }
-      }
-      let pumpMarketForOpen: PumpCoinMarket | null = null;
-      if (!livePx && basePx) {
-        pumpMarketForOpen = await getPumpCoinMarket(ot.mint).catch(() => null);
-        if (pumpMarketForOpen?.priceUsd != null && pumpMarketForOpen.priceUsd > 0) {
-          livePx = pumpMarketForOpen.priceUsd;
-          livePriceStale = false;
-          livePxProvenance = 'pump.fun';
+        if (!livePx) {
+          const jpx = await getJupiterTokenPriceUsd(ot.mint).catch(() => null);
+          if (jpx != null && jpx > 0) {
+            livePx = jpx;
+            livePxProvenance = 'jupiter';
+          }
         }
-      }
-      if (!livePx && basePx) {
-        const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
-        if (st != null) {
-          livePx = st;
-          livePriceStale = true;
-          livePxProvenance = 'journal';
+        if (!livePx && enrichMode === 'full') {
+          const pumpMarketForOpen = await getPumpCoinMarket(ot.mint).catch(() => null);
+          if (pumpMarketForOpen?.priceUsd != null && pumpMarketForOpen.priceUsd > 0) {
+            livePx = pumpMarketForOpen.priceUsd;
+            livePxProvenance = 'pump.fun';
+          }
+        }
+        if (!livePx) {
+          const st = latestTimelineSpotUsd(timelineSorted, TIMELINE_SPOT_FALLBACK_MAX_AGE_MS);
+          if (st != null) {
+            livePx = st;
+            livePriceStale = enrichMode === 'lite';
+            livePxProvenance = 'journal';
+          }
         }
       }
       const hasLivePrice = livePx != null && livePx > 0;
@@ -3621,13 +3680,16 @@ async function buildPaper2StrategyRowFromLoad(
 
       let entryMcapAtBuyUsd =
         ot.entryRealMcUsd != null && ot.entryRealMcUsd > 0 ? ot.entryRealMcUsd : null;
-      if (entryMcapAtBuyUsd == null) {
+      if (entryMcapAtBuyUsd == null && enrichMode === 'full') {
         entryMcapAtBuyUsd = await resolveEntryMcapAtBuyUsd(
           ot.mint,
           ot.entryTs,
           timelineSorted,
           ot.source,
         );
+      }
+      if (entryMcapAtBuyUsd == null && enrichMode === 'lite') {
+        entryMcapAtBuyUsd = entryMcapFromOpenTimelineEvent(timelineSorted);
       }
 
       let timelineOut = timelineSorted.map((ev: TimelineEvent) => ({ ...ev }));
@@ -3641,10 +3703,15 @@ async function buildPaper2StrategyRowFromLoad(
       ) {
         timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
       }
-      timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut, ot.source);
+      if (enrichMode === 'full') {
+        timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut, ot.source);
+      }
       timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
-      const displaySymbol = await resolveTokenSymbolForUi(ot.mint, ot.symbol);
+      const displaySymbol =
+        enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
+          ? String(ot.symbol).slice(0, 32)
+          : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
       const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
       const livePriceUsd = hasLivePrice ? livePx : null;
@@ -3851,46 +3918,49 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
   return fetchCryptoTickerPayload();
 });
 
-async function buildPaper2ApiPayload() {
+async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
-  const liveRow = await buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
-    hbOpen,
-    hbClosed,
-    reconcileExtras: liveExtras,
-  });
   const ctLoad = loadCopyTraderJsonlForDashboard(
     DASHBOARD_COPY_TRADER_JSONL,
     DASHBOARD_COPY_TRADER_STATE_PATH,
   );
   const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
-  const copyTraderRow = await buildPaper2StrategyRowFromLoad(
-    DASHBOARD_COPY_TRADER_JSONL,
-    'copy-trader',
-    { ...copyLoaded, copyTrader: copyTraderStats },
-  );
   const paperRiskyLoad = loadPaper2File(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
-  const paperRiskyRow = await buildPaper2StrategyRowFromLoad(
-    DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
-    'paper-oscar-risky',
-    paperRiskyLoad,
-  );
   const paperV21Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V21_JSONL);
-  const paperV21Row = await buildPaper2StrategyRowFromLoad(
-    DASHBOARD_PAPER_OSCAR_V21_JSONL,
-    'paper-oscar-v21',
-    paperV21Load,
-  );
   const paperV22Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V22_JSONL);
-  const paperV22Row = await buildPaper2StrategyRowFromLoad(
-    DASHBOARD_PAPER_OSCAR_V22_JSONL,
-    'paper-oscar-v22',
-    paperV22Load,
+
+  const dcaLiveLoadP = loadDcaliveDashboardSafe(DASHBOARD_DCA_LIVE_JSONL);
+
+  const dcaLiveRowP = dcaLiveLoadP.then((load) =>
+    buildPaper2StrategyRowFromLoad(DASHBOARD_DCA_LIVE_JSONL, 'dca-live', load),
   );
+
+  const [liveRow, copyTraderRow, paperRiskyRow, dcaLiveRow, paperV21Row, paperV22Row] =
+    await Promise.all([
+      buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
+        hbOpen,
+        hbClosed,
+        reconcileExtras: liveExtras,
+      }),
+      buildPaper2StrategyRowFromLoad(DASHBOARD_COPY_TRADER_JSONL, 'copy-trader', {
+        ...copyLoaded,
+        copyTrader: copyTraderStats,
+      }),
+      buildPaper2StrategyRowFromLoad(
+        DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
+        'paper-oscar-risky',
+        paperRiskyLoad,
+      ),
+      dcaLiveRowP,
+      buildPaper2StrategyRowFromLoad(DASHBOARD_PAPER_OSCAR_V21_JSONL, 'paper-oscar-v21', paperV21Load),
+      buildPaper2StrategyRowFromLoad(DASHBOARD_PAPER_OSCAR_V22_JSONL, 'paper-oscar-v22', paperV22Load),
+    ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow,
     copyTraderRow,
     paperRiskyRow,
+    dcaLiveRow,
     paperV21Row,
     paperV22Row,
   ]);
@@ -3919,10 +3989,12 @@ async function buildPaper2ApiPayload() {
 
   return {
     now: Date.now(),
+    dashboardBuildId: DASHBOARD_PAPER2_BUILD_ID,
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
     paperOscarRiskyJsonl: DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
+    dcaLiveJsonl: DASHBOARD_DCA_LIVE_JSONL,
     paperOscarV21Jsonl: DASHBOARD_PAPER_OSCAR_V21_JSONL,
     paperOscarV22Jsonl: DASHBOARD_PAPER_OSCAR_V22_JSONL,
     panelOrder: DASHBOARD_PANEL_ORDER,
@@ -3931,27 +4003,33 @@ async function buildPaper2ApiPayload() {
   };
 }
 
-async function getPaper2ApiPayloadCached(): Promise<unknown> {
+async function getPaper2ApiPayloadCached(): Promise<{ payload: unknown; stale: boolean; building: boolean }> {
   const now = Date.now();
-  if (paper2ApiCache && paper2ApiCache.expiresAt > now) {
-    return paper2ApiCache.payload;
+  const hit = paper2ApiCache;
+  if (hit) {
+    const fresh = hit.expiresAt > now;
+    const staleAge = now - hit.builtAt;
+    const staleOk = staleAge <= DASHBOARD_PAPER2_STALE_SERVE_MS;
+    if (!fresh && staleOk && !paper2ApiBuild) {
+      startPaper2ApiBuild().catch((e) => {
+        console.warn('[dashboard] paper2 background refresh failed', String(e).slice(0, 200));
+      });
+    }
+    if (fresh || staleOk) {
+      return { payload: hit.payload, stale: !fresh, building: !!paper2ApiBuild };
+    }
   }
-  if (paper2ApiBuild) return paper2ApiBuild;
-  paper2ApiBuild = buildPaper2ApiPayload()
-    .then((payload) => {
-      paper2ApiCache = { expiresAt: Date.now() + DASHBOARD_PAPER2_CACHE_MS, payload };
-      return payload;
-    })
-    .finally(() => {
-      paper2ApiBuild = null;
-    });
-  return paper2ApiBuild;
+  const payload = await startPaper2ApiBuild();
+  return { payload, stale: false, building: false };
 }
 
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
   reply.header('pragma', 'no-cache');
-  return getPaper2ApiPayloadCached();
+  const { payload, stale, building } = await getPaper2ApiPayloadCached();
+  if (stale) reply.header('x-dashboard-stale', '1');
+  if (building) reply.header('x-dashboard-refreshing', '1');
+  return payload;
 });
 
 app.get('/api/paper2/price-verify-stats', async (req, reply) => {
