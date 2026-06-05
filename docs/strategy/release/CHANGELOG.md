@@ -26,6 +26,16 @@
 
 ---
 
+## [1.11.315] — 2026-06-05
+
+### Live: sizing 2×$150 entry + DCA $100
+
+- `PAPER_POSITION_USD=300` (split $150+$150); `PAPER_DCA_LEVELS` → $100/step; `LIVE_MAX_POSITION_USD=500`.
+
+**Откат:** restore 1.11.314 sizing in `ecosystem.config.cjs`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.314] — 2026-06-05
 
 ### Live: loss exit → permanent denylist; sizing 2×$350 + DCA $150
