@@ -97,9 +97,9 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     const c = loadLiveOscarConfig();
     expect(c.liveBtcGateEnabled).toBe(true);
     expect(c.liveBtcGateMaxStaleMs).toBe(900_000);
-    expect(c.liveBtcBlockNewBuys1hDrawdownPct).toBe(0);
-    expect(c.liveBtcBlockNewBuys4hDrawdownPct).toBe(0);
-    expect(c.liveBtcBlockNewBuys24hDrawdownPct).toBe(0);
+    expect(c.liveBtcBlockNewBuys1hDrawdownPct).toBe(3);
+    expect(c.liveBtcBlockNewBuys4hDrawdownPct).toBe(4);
+    expect(c.liveBtcBlockNewBuys24hDrawdownPct).toBe(5);
     expect(c.liveBtcBlockNewBuys72hDrawdownPct).toBe(6);
     expect(c.liveBtcBlockNewBuysPeak72hDrawdownPct).toBe(6);
     expect(c.liveMinWalletSolEquityUsd).toBeUndefined();

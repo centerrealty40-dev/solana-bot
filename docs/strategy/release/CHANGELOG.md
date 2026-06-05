@@ -14,14 +14,23 @@
 
 ---
 
+## [1.11.320] — 2026-06-05
+
+### Live: BTC gate — ужесточённые пороги (не выкл. окна)
+
+- **BTC gate** (`buy_open`): **1h −3%**, **4h −4%**, **24h −5%**, **72h −6%**, **от пика 72h −6%** (было 1 / 2.5 / 2 / 6 / 6 — слабый −2% за сутки больше не режет).
+
+**Откат:** `LIVE_BTC_BLOCK_*` в ecosystem на прежние значения; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.319] — 2026-06-05
 
-### Live: BTC gate — только сильная просадка; THREE в denylist
+### Live: THREE в denylist
 
-- **BTC gate** (`buy_open`): отключены слабые окна **1h / 4h / 24h** (`LIVE_BTC_BLOCK_* = 0`); активны только **72h −6%** и **от пика 72h −6%**.
 - **THREE** (`FeMbDoX7…pump`): permanent denylist seed + `live-oscar-mint-blacklist.txt`.
 
-**Откат:** восстановить `LIVE_BTC_BLOCK_1H/4H/24H` в ecosystem; убрать mint из denylist/blacklist; `pm2 reload live-oscar --update-env`.
+**Откат:** убрать mint из denylist/blacklist; `pm2 reload live-oscar --update-env`.
 
 ---
 
