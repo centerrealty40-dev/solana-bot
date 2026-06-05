@@ -24,10 +24,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Variant A: entry split $750+$750 = $1500; DCA −10%/−20% × $400; max $3000 per mint.
+ * Variant A: entry split $350+$350 = $700; DCA −10%/−20% × $150; max $1000 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1500';
-const LIVE_OSCAR_MAX_POSITION_USD = '3000';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '700';
+const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -330,19 +330,19 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$750+$750** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $400.
+         * Staged-entry: сплит **$350+$350** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $150.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '750',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '350',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '750',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '350',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
@@ -385,9 +385,9 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '400',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '800',
-        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.375,-20:0.375',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '350',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '700',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.214286,-20:0.214286',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
@@ -420,12 +420,8 @@ const PM2_APPS = [
         /** После убыточного / stress-выхода: только dip ≥30%, без timer-fallback (falling-knife). */
         LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '30',
         LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS: '1',
-        /** Cooldown на повторный buy по mint после loss / FLASH_CRASH_KILL (6h; 2 loss за 24h → 24h). */
-        LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED: '1',
-        LIVE_MINT_LOSS_REENTRY_COOLDOWN_MS: String(6 * 3600 * 1000),
-        LIVE_MINT_LOSS_REENTRY_STREAK_WINDOW_MS: String(24 * 3600 * 1000),
-        LIVE_MINT_LOSS_REENTRY_STREAK_MAX: '2',
-        LIVE_MINT_LOSS_REENTRY_STREAK_COOLDOWN_MS: String(24 * 3600 * 1000),
+        /** Loss re-entry cooldown выкл. — вместо него permanent denylist (`LIVE_NEGATIVE_TRADE_DENY_*`). */
+        LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED: '0',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -551,10 +547,10 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Variant A: DCA −10% / −20% от первой ноги, по $400 (~0.266667 × $1500 `PAPER_POSITION_USD`).
-         * Max invested $1500 + $400 + $400 = $2300 ladder; cap $3000 (`LIVE_MAX_POSITION_USD`).
+         * Variant A: DCA −10% / −20% от первой ноги, по $150 (~0.214286 × $700 `PAPER_POSITION_USD`).
+         * Max invested $700 + $150 + $150 = $1000 ladder; cap $1000 (`LIVE_MAX_POSITION_USD`).
          */
-        PAPER_DCA_LEVELS: '-10:0.266667,-20:0.266667',
+        PAPER_DCA_LEVELS: '-10:0.214286,-20:0.214286',
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
@@ -831,10 +827,10 @@ const PM2_APPS = [
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         /** `0` — входы без whitelist; permanent denylist отключён (см. LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED). */
         LIVE_MINT_WHITELIST_ENABLED: '0',
-        /** Permanent denylist: проверка и автодопись выкл.; код/файлы — заготовка на будущее. */
-        LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '1',
-        /** Не добавлять mint в denylist после убыточного закрытия (stub в коде сохранён). */
-        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '0',
+        /** Permanent denylist: блок повторных входов + автодопись после убыточного закрытия. */
+        LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '0',
+        /** Любой убыточный полный выход → mint в permanent denylist (не cooldown). */
+        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '1',
         /** Variant A: 24h mint block after salvage24 / h48_loss (not permanent denylist). */
         LIVE_MINT_TIMED_LOSS_COOLDOWN_ENABLED: '1',
         LIVE_MINT_TIMED_LOSS_COOLDOWN_MS: String(24 * 3600 * 1000),
@@ -846,8 +842,8 @@ const PM2_APPS = [
         LIVE_DISCOVERY_TG_SUPPRESS_ON_INSUFFICIENT_SOL: '1',
         /** `0` — не слать ADVICE `live_oscar_local_high_veto`. */
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
-        /** В denylist только если net PnL закрытия ≤ −$150 (меньшие убытки — торгуем дальше). */
-        LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '150',
+        /** Любой net PnL < 0 при закрытии → denylist (`0` = без порога в USD). */
+        LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '0',
         /**
          * Первый live-вход по mint: split 300+300, kill −5% от сигнала; без deny при убытке.
          * Прибыльное закрытие → `live-oscar-mint-graduated.txt`.
@@ -1240,7 +1236,7 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '600',
+        COPY_TRADER_POSITION_USD: '800',
         /** 0 = unlimited (proportional adds/sells only; no cap rows in state). */
         COPY_TRADER_MAX_POSITION_USD: '0',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',

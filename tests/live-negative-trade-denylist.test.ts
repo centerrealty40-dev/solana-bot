@@ -46,6 +46,7 @@ describe('live negative trade denylist', () => {
       livePermanentDenylistDisabled: false,
       livePermanentDenylistLocalPath: localPath,
       livePermanentDenylistSeedPath: seedPath,
+      liveNegativeTradeDenyEnabled: true,
       executionMode: 'live',
     } as LiveOscarConfig;
 
@@ -73,7 +74,44 @@ describe('live negative trade denylist', () => {
     expect(fs.readFileSync(localPath, 'utf8').match(/MintNeg/g)?.length).toBe(1);
   });
 
+  it('appends mint on any loss when LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD=0', () => {
+    const prev = process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD;
+    process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD = '0';
+    try {
+      const dir = tmpDir();
+      dirs.push(dir);
+      const localPath = path.join(dir, 'deny-local.txt');
+      const seedPath = path.join(dir, 'deny-seed.txt');
+      fs.writeFileSync(seedPath, '# empty\n', 'utf8');
+
+      const cfg = {
+        livePermanentDenylistDisabled: false,
+        livePermanentDenylistLocalPath: localPath,
+        livePermanentDenylistSeedPath: seedPath,
+        liveNegativeTradeDenyEnabled: true,
+        executionMode: 'live',
+      } as LiveOscarConfig;
+
+      onLiveOscarFullCloseNegativeTradeDenylist({
+        liveOscarCfg: cfg,
+        strategyId: 'live-oscar',
+        mint: 'MintTinyLoss1111111111111111111111111111111',
+        symbol: 'TINY',
+        netPnlUsd: -0.5,
+      });
+
+      expect(isMintPermanentlyDeniedLiveOscar(cfg, 'MintTinyLoss1111111111111111111111111111111')).toBe(
+        true,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD;
+      else process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD = prev;
+    }
+  });
+
   it('skips denylist when loss is below $150', () => {
+    const prev = process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD;
+    process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD = '150';
     const dir = tmpDir();
     dirs.push(dir);
     const localPath = path.join(dir, 'deny-local.txt');
@@ -85,6 +123,7 @@ describe('live negative trade denylist', () => {
       livePermanentDenylistDisabled: false,
       livePermanentDenylistLocalPath: localPath,
       livePermanentDenylistSeedPath: seedPath,
+      liveNegativeTradeDenyEnabled: true,
       executionMode: 'live',
     } as LiveOscarConfig;
 
@@ -97,6 +136,8 @@ describe('live negative trade denylist', () => {
     });
 
     expect(loadPermanentDenylistCombined(cfg).size).toBe(0);
+    if (prev === undefined) delete process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD;
+    else process.env.LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD = prev;
   });
 
   it('ignores profitable close', () => {
