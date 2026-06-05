@@ -55,6 +55,9 @@ export type PendingSell = {
   /** Keep retrying slippage-class sell errors until this ts. */
   retryUntilTs: number;
   lastDeferLogTs?: number;
+  /** Adaptive Jupiter slippage on sell retries. */
+  slippageBps?: number;
+  sellAttempt?: number;
 };
 
 export type CopyTraderState = {
@@ -128,6 +131,9 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
             ? p.retryUntilTs
             : p.dueTs + 3_600_000,
         lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
+        slippageBps:
+          typeof p.slippageBps === 'number' && p.slippageBps > 0 ? Math.min(5000, p.slippageBps) : undefined,
+        sellAttempt: typeof p.sellAttempt === 'number' && p.sellAttempt >= 0 ? p.sellAttempt : undefined,
       }),
     );
     return {

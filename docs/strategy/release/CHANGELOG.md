@@ -14,6 +14,19 @@
 
 ---
 
+## [1.11.322] — 2026-06-05
+
+### Fix: copy-trader exit coalesce + leader-flat sweep
+
+- **Exit coalesce:** при полном выходе лидера (или когда его ledger → 0) отменяем pending partial sells и ставим **один** sell 100% остатка кошелька.
+- **Leader-flat sweep:** если `leaderLedger.tokenRaw = 0`, а на execution-кошельке ещё есть токены — автоматически очередь full exit.
+- **Sell retry:** `sim_failed` / `Custom:6024` / `0x1771` ретраятся с **bump slippage** до `COPY_TRADER_SELL_SLIPPAGE_MAX_BPS`.
+- **Buy SOL cap:** масштабирование add/entry под доступный SOL + `insufficient_wallet_sol` вместо бесконечного `Custom:1`.
+
+**Откат:** `git revert` merge SHA; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.320] — 2026-06-05
 
 ### Live: BTC gate — ужесточённые пороги (не выкл. окна)
