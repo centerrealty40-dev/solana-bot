@@ -84,7 +84,8 @@
     "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",
     "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts",
     "copy-trader": "tsx src/scripts/copy-trader.ts",
-    "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts"
+    "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts",
+    "hl-twap-telegram-watch": "tsx src/scripts/hl-twap-telegram-watch.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
