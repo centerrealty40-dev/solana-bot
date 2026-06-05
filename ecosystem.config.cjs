@@ -24,10 +24,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Variant A: entry split $350+$350 = $700; DCA −10%/−20% × $150; max $1000 per mint.
+ * Variant A: entry split $150+$150 = $300; DCA −10%/−20% × $100; max $500 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '700';
-const LIVE_OSCAR_MAX_POSITION_USD = '1000';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '300';
+const LIVE_OSCAR_MAX_POSITION_USD = '500';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -330,19 +330,19 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$350+$350** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $150.
+         * Staged-entry: сплит **$150+$150** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $100.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '350',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '150',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '350',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '150',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
@@ -385,9 +385,9 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '350',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '700',
-        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.214286,-20:0.214286',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '150',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.333333,-20:0.333333',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         PAPER_VOL_1H_MIN_USD: '36000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
@@ -547,10 +547,10 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Variant A: DCA −10% / −20% от первой ноги, по $150 (~0.214286 × $700 `PAPER_POSITION_USD`).
-         * Max invested $700 + $150 + $150 = $1000 ladder; cap $1000 (`LIVE_MAX_POSITION_USD`).
+         * Variant A: DCA −10% / −20% от первой ноги, по $100 (~0.333333 × $300 `PAPER_POSITION_USD`).
+         * Max invested $300 + $100 + $100 = $500 ladder; cap $500 (`LIVE_MAX_POSITION_USD`).
          */
-        PAPER_DCA_LEVELS: '-10:0.214286,-20:0.214286',
+        PAPER_DCA_LEVELS: '-10:0.333333,-20:0.333333',
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
