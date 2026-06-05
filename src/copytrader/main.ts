@@ -13,12 +13,9 @@ import {
 } from './leader-ledger.js';
 import {
   absRawAmount,
-  isFullCloseFraction,
   leaderAddFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
-  reduceUsdAfterPartialSell,
-  scaleTokenRaw,
 } from './proportional.js';
 import { fetchParsedTransaction, fetchWalletMintBalanceRaw, fetchWalletSignatures, type SignatureRow } from './rpc.js';
 import {
@@ -50,7 +47,15 @@ import {
   type PendingBuy,
   type PendingSell,
 } from './state.js';
-import { closePositionForMint, reconcileGhostPositions } from './position-reconcile.js';
+import {
+  closePositionForMint,
+  ensurePositionFromWallet,
+  fetchExecutionWalletBalanceRaw,
+  reconcileGhostPositions,
+  refreshPositionFromWallet,
+  syncPositionFromWallet,
+  walletNotionalUsdFromRaw,
+} from './position-reconcile.js';
 import { fmtCopyAlert, notifyCopyTraderTelegram } from './telegram.js';
 import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 
@@ -143,7 +148,21 @@ async function onLeaderBuy(
   preLeaderRaw: bigint,
 ): Promise<void> {
   const mint = swap.baseMint;
-  const existing = state.positions[mint];
+  const priceUsd = swap.priceUsd;
+  let existing = state.positions[mint];
+  const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
+
+  if (!existing && walletBal > 0n && preLeaderRaw > 0n) {
+    existing = ensurePositionFromWallet(state, {
+      mint,
+      symbol,
+      tokenRaw: walletBal,
+      priceUsd,
+      leaderWallet: cfg.targetWallet,
+    });
+  } else if (existing && walletBal > 0n) {
+    syncPositionFromWallet(existing, walletBal, priceUsd);
+  }
 
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
@@ -158,8 +177,12 @@ async function onLeaderBuy(
       return;
     }
     const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
+    const ourStackUsd =
+      walletBal > 0n && priceUsd > 0
+        ? walletNotionalUsdFromRaw(walletBal, priceUsd)
+        : existing.sizeUsd;
     const ourAddUsd = ourAddUsdFromLeaderAdd({
-      ourSizeUsd: existing.sizeUsd,
+      ourSizeUsd: ourStackUsd,
       addFraction: addFrac,
       maxRoomUsd: positionRoomUsd(cfg, existing),
       minAddUsd: cfg.minProportionalAddUsd,
@@ -325,7 +348,24 @@ async function onLeaderSell(
     });
   }
 
-  if (!pos) return;
+  const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
+  if (walletBal === 0n) {
+    if (pos) closePositionForMint(cfg, state, mint, 'wallet_empty_on_leader_sell');
+    return;
+  }
+
+  let tracked = pos;
+  if (!tracked) {
+    tracked = ensurePositionFromWallet(state, {
+      mint,
+      symbol,
+      tokenRaw: walletBal,
+      priceUsd: swap.priceUsd,
+      leaderWallet: cfg.targetWallet,
+    });
+  } else {
+    syncPositionFromWallet(tracked, walletBal, swap.priceUsd);
+  }
 
   const delayMs = randomSellDelayMs(cfg);
   const dueTs = Date.now() + delayMs;
@@ -385,7 +425,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       continue;
     }
 
-    const existing = state.positions[pending.mint];
+    let existing = state.positions[pending.mint];
 
     if (pending.kind === 'entry') {
       if (existing) {
@@ -404,14 +444,25 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         continue;
       }
     } else if (!existing) {
-      removePendingBuyById(state, pending.id);
-      appendCopyEvent(cfg, {
-        kind: 'add_cancelled',
-        reason: 'no_open_position_for_add',
-        mint: pending.mint,
-        leaderSignature: pending.leaderSignature,
-      });
-      continue;
+      const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
+      if (walletBal > 0n) {
+        existing = ensurePositionFromWallet(state, {
+          mint: pending.mint,
+          symbol: pending.symbol,
+          tokenRaw: walletBal,
+          priceUsd: pending.leaderPriceUsd,
+          leaderWallet: cfg.targetWallet,
+        });
+      } else {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: 'add_cancelled',
+          reason: 'no_open_position_for_add',
+          mint: pending.mint,
+          leaderSignature: pending.leaderSignature,
+        });
+        continue;
+      }
     } else if (cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'max_adds', mint: pending.mint });
@@ -507,19 +558,25 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     removePendingBuyById(state, pending.id);
 
-    const tokenRaw =
-      exec.tokenRaw ??
-      (currentPrice > 0
-        ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
-        : undefined);
-
+    const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
     if (pending.kind === 'entry' || !existing) {
+      const tokenRaw =
+        walletBal > 0n
+          ? walletBal.toString()
+          : exec.tokenRaw ??
+            (currentPrice > 0
+              ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
+              : undefined);
+      const sizeUsd =
+        walletBal > 0n && currentPrice > 0
+          ? walletNotionalUsdFromRaw(walletBal, currentPrice)
+          : pending.sizeUsd;
       state.positions[pending.mint] = {
         mint: pending.mint,
         symbol: pending.symbol,
         entryTs: Date.now(),
         entryPriceUsd: currentPrice,
-        sizeUsd: pending.sizeUsd,
+        sizeUsd,
         tokenRaw,
         addCount: 0,
         leaderWallet: cfg.targetWallet,
@@ -528,20 +585,34 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       };
     } else {
       const prev = existing;
-      const newSize = prev.sizeUsd + pending.sizeUsd;
       const newAvg =
-        newSize > 0
-          ? (prev.entryPriceUsd * prev.sizeUsd + currentPrice * pending.sizeUsd) / newSize
+        prev.sizeUsd > 0 && currentPrice > 0
+          ? (prev.entryPriceUsd * prev.sizeUsd + currentPrice * pending.sizeUsd) /
+            (prev.sizeUsd + pending.sizeUsd)
           : currentPrice;
-      const prevRaw = prev.tokenRaw ? BigInt(prev.tokenRaw) : 0n;
-      const addRaw = tokenRaw ? BigInt(tokenRaw) : 0n;
-      state.positions[pending.mint] = {
-        ...prev,
-        entryPriceUsd: newAvg,
-        sizeUsd: newSize,
-        tokenRaw: (prevRaw + addRaw).toString(),
-        addCount: prev.addCount + 1,
-      };
+      if (walletBal > 0n) {
+        syncPositionFromWallet(prev, walletBal, currentPrice);
+        prev.entryPriceUsd = newAvg;
+        prev.addCount = prev.addCount + 1;
+        prev.ourEntrySig = exec.signature;
+      } else {
+        const tokenRaw =
+          exec.tokenRaw ??
+          (currentPrice > 0
+            ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
+            : undefined);
+        const newSize = prev.sizeUsd + pending.sizeUsd;
+        const prevRaw = prev.tokenRaw ? BigInt(prev.tokenRaw) : 0n;
+        const addRaw = tokenRaw ? BigInt(tokenRaw) : 0n;
+        state.positions[pending.mint] = {
+          ...prev,
+          entryPriceUsd: newAvg,
+          sizeUsd: newSize,
+          tokenRaw: (prevRaw + addRaw).toString(),
+          addCount: prev.addCount + 1,
+          ourEntrySig: exec.signature,
+        };
+      }
     }
 
     await notifyCopyTraderTelegram(
@@ -577,16 +648,33 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
   if (due.length === 0) return;
 
   for (const pending of due) {
-    const pos = state.positions[pending.mint];
-    if (!pos) {
-      removePendingSellById(state, pending.id);
-      continue;
-    }
+    let pos = state.positions[pending.mint];
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const exitPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
+    const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
+    if (walletBal === 0n) {
+      removePendingSellById(state, pending.id);
+      if (pos) closePositionForMint(cfg, state, pending.mint, 'no_token_balance');
+      continue;
+    }
+
+    if (!pos) {
+      pos = ensurePositionFromWallet(state, {
+        mint: pending.mint,
+        symbol: pending.symbol,
+        tokenRaw: walletBal,
+        priceUsd: exitPrice,
+        leaderWallet: cfg.targetWallet,
+      });
+    } else {
+      syncPositionFromWallet(pos, walletBal, exitPrice);
+    }
+
     const sellDelayMs = Math.max(0, now - pending.leaderSellTs);
-    const sellUsd = pos.sizeUsd * pending.fraction;
+    const walletNotional = walletNotionalUsdFromRaw(walletBal, exitPrice);
+    const sellUsd =
+      walletNotional > 0 ? walletNotional * pending.fraction : pos.sizeUsd * pending.fraction;
 
     const exec = await executeCopySell({
       cfg,
@@ -602,24 +690,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
 
     if (exec.ok) {
       removePendingSellById(state, pending.id);
-      if (isFullCloseFraction(pending.fraction)) {
-        delete state.positions[pending.mint];
-      } else {
-        const remainUsd = reduceUsdAfterPartialSell(pos.sizeUsd, pending.fraction);
-        let remainRaw = pos.tokenRaw;
-        if (pos.tokenRaw) {
-          const soldRaw = scaleTokenRaw(BigInt(pos.tokenRaw), pending.fraction);
-          const left = BigInt(pos.tokenRaw) - soldRaw;
-          remainRaw = left > 0n ? left.toString() : '0';
-        } else if (exec.tokenRawRemaining) {
-          remainRaw = exec.tokenRawRemaining;
-        }
-        state.positions[pending.mint] = {
-          ...pos,
-          sizeUsd: remainUsd,
-          tokenRaw: remainRaw,
-        };
-      }
+      await refreshPositionFromWallet(cfg, state, pending.mint, exitPrice);
 
       await notifyCopyTraderTelegram(
         cfg,
