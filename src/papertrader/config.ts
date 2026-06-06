@@ -277,6 +277,11 @@ const ConfigSchema = z.object({
   liveReentryLossMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(30),
   /** After loss/stress exit: disable hybrid timer-only re-entry (must meet drop gate). */
   liveReentryHybridDisableTimerAfterLoss: z.boolean().default(true),
+  /**
+   * Re-entry price gate (last exit −N%) действует только N ч после выхода; `0` = без лимита по времени.
+   * Env: `LIVE_REENTRY_GATE_MAX_AGE_HOURS`.
+   */
+  liveReentryGateMaxAgeHours: z.coerce.number().min(0).max(168).default(4),
 
   /**
    * Live JSONL deep audit for whitelist mints: `live_discovery_eval` includes passes; `live_discovery_universe_miss`
@@ -1009,6 +1014,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS,
       true,
     ),
+    liveReentryGateMaxAgeHours: (() => {
+      const s = process.env.LIVE_REENTRY_GATE_MAX_AGE_HOURS?.trim();
+      if (!s) return 4;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 168) : 4;
+    })(),
     discoveryDeepAuditJsonl: envBool(process.env.LIVE_DISCOVERY_DEEP_AUDIT_JSONL, false),
     discoveryDeepAuditWhitelistPath: process.env.LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH?.trim() || undefined,
     discoveryDeepAuditUniverseMissMinMs: (() => {

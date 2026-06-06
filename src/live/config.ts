@@ -110,6 +110,13 @@ const LiveOscarConfigSchema = z
     liveBtcBlockNewBuys72hDrawdownPct: z.coerce.number().min(0).max(50).default(6),
     /** Block when drawdown from 72h peak ≤ −this (percent points). Level-2 default 6%. `0` = off. */
     liveBtcBlockNewBuysPeak72hDrawdownPct: z.coerce.number().min(0).max(50).default(6),
+    /**
+     * Recovery: when `ret1h_pct ≥ liveBtcRecoveryMinRet1hPct`, skip 24h/72h/peak gates — только 1h+4h.
+     * Чтобы не сидеть в cash, пока BTC отскакивает, хотя 72h/24h ещё в минусе.
+     */
+    liveBtcRecoverySkipLongWindowsEnabled: z.boolean().default(true),
+    /** Минимальный ret1h (%) для recovery short-circuit. Default `0` = час в плюсе. */
+    liveBtcRecoveryMinRet1hPct: z.coerce.number().min(-20).max(20).default(0),
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     /**
@@ -615,6 +622,16 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 6;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 6;
+    })(),
+    liveBtcRecoverySkipLongWindowsEnabled: envBool(
+      process.env.LIVE_BTC_RECOVERY_SKIP_LONG_WINDOWS,
+      true,
+    ),
+    liveBtcRecoveryMinRet1hPct: (() => {
+      const s = process.env.LIVE_BTC_RECOVERY_MIN_RET_1H_PCT?.trim();
+      if (!s) return 0;
+      const n = Number(s);
+      return Number.isFinite(n) ? Math.min(20, Math.max(-20, n)) : 0;
     })(),
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,

@@ -71,18 +71,27 @@ export function resolveLiveBtcGateStatus(liveCfg: LiveOscarConfig): LiveBtcGateS
   if (d4 > 0 && metrics.ret4h_pct != null && metrics.ret4h_pct <= -d4) {
     return blocked('btc_dump_4h', d4, metrics);
   }
-  if (d24 > 0 && metrics.ret24h_pct != null && metrics.ret24h_pct <= -d24) {
-    return blocked('btc_dump_24h', d24, metrics);
+
+  const recoveryActive =
+    liveCfg.liveBtcRecoverySkipLongWindowsEnabled &&
+    metrics.ret1h_pct != null &&
+    metrics.ret1h_pct >= liveCfg.liveBtcRecoveryMinRet1hPct;
+
+  if (!recoveryActive) {
+    if (d24 > 0 && metrics.ret24h_pct != null && metrics.ret24h_pct <= -d24) {
+      return blocked('btc_dump_24h', d24, metrics);
+    }
+    if (d72 > 0 && metrics.ret72h_pct != null && metrics.ret72h_pct <= -d72) {
+      return blocked('btc_dump_72h', d72, metrics);
+    }
+    if (
+      dPeak > 0 &&
+      metrics.retPeak72hDrawdown_pct != null &&
+      metrics.retPeak72hDrawdown_pct <= -dPeak
+    ) {
+      return blocked('btc_dump_peak_72h', dPeak, metrics);
+    }
   }
-  if (d72 > 0 && metrics.ret72h_pct != null && metrics.ret72h_pct <= -d72) {
-    return blocked('btc_dump_72h', d72, metrics);
-  }
-  if (
-    dPeak > 0 &&
-    metrics.retPeak72hDrawdown_pct != null &&
-    metrics.retPeak72hDrawdown_pct <= -dPeak
-  ) {
-    return blocked('btc_dump_peak_72h', dPeak, metrics);
-  }
+
   return { kind: 'ok', ...metrics };
 }
