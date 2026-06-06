@@ -25,7 +25,7 @@ vi.mock('../src/core/telegram/sender.js', () => ({
 
 import { sendTagged } from '../src/core/telegram/sender.js';
 
-function liveCfg(): LiveOscarConfig {
+function liveCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
   return {
     executionMode: 'live',
     liveBtcGateEnabled: true,
@@ -35,6 +35,9 @@ function liveCfg(): LiveOscarConfig {
     liveBtcBlockNewBuys24hDrawdownPct: 2,
     liveBtcBlockNewBuys72hDrawdownPct: 6,
     liveBtcBlockNewBuysPeak72hDrawdownPct: 6,
+    liveBtcRecoverySkipLongWindowsEnabled: true,
+    liveBtcRecoveryMinRet1hPct: 0,
+    ...over,
   } as LiveOscarConfig;
 }
 
@@ -72,6 +75,7 @@ describe('live btc gate', () => {
   });
 
   it('blocks new buys when ret24h below threshold', () => {
+    pricing.btc.ret1h_pct = -0.2;
     pricing.btc.ret24h_pct = -3;
     const s = resolveLiveBtcGateStatus(liveCfg());
     expect(s.kind).toBe('blocked');
@@ -79,10 +83,29 @@ describe('live btc gate', () => {
   });
 
   it('blocks new buys when drawdown from 72h peak exceeds threshold', () => {
+    pricing.btc.ret1h_pct = -0.5;
     pricing.btc.retPeak72hDrawdown_pct = -7;
     const s = resolveLiveBtcGateStatus(liveCfg());
     expect(s.kind).toBe('blocked');
     if (s.kind === 'blocked') expect(s.limit).toBe('btc_dump_peak_72h');
+  });
+
+  it('skips 24h/72h/peak gates when 1h is green (recovery short-circuit)', () => {
+    pricing.btc.ret1h_pct = 0.5;
+    pricing.btc.ret4h_pct = -0.5;
+    pricing.btc.ret24h_pct = -4;
+    pricing.btc.ret72h_pct = -10;
+    pricing.btc.retPeak72hDrawdown_pct = -11;
+    const s = resolveLiveBtcGateStatus(liveCfg());
+    expect(s.kind).toBe('ok');
+  });
+
+  it('still blocks on 24h when 1h is red and recovery is active', () => {
+    pricing.btc.ret1h_pct = -0.2;
+    pricing.btc.ret24h_pct = -3;
+    const s = resolveLiveBtcGateStatus(liveCfg());
+    expect(s.kind).toBe('blocked');
+    if (s.kind === 'blocked') expect(s.limit).toBe('btc_dump_24h');
   });
 
   it('sends telegram on transition to blocked', async () => {

@@ -347,8 +347,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
-        /** 99 = signal-kill off (не путать с PAPER_TIMEOUT_HOURS 48h). */
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '99',
+        /** 0 = signal-kill off (не путать с PAPER_TIMEOUT_HOURS 48h). */
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -416,12 +416,14 @@ const PM2_APPS = [
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         /**
-         * Hybrid re-entry после полного выхода (в т.ч. KILLSTOP −5%): повторный вход если
-         * цена ≤ last_exit×(1−20%) **или** прошло 20 мин (что раньше). Не deny-list.
+         * Re-entry после полного выхода: только если цена ≤ last_exit×(1−12%).
+         * `LIVE_REENTRY_GATE_MAX_AGE_HOURS` — после N ч гейт снимается (без timer-fallback).
          */
-        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '20',
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
+        /** >0 включает price-only re-entry path (timer bypass убран в коде). */
         LIVE_REENTRY_MAX_WAIT_MINUTES: '20',
-        /** После убыточного / stress-выхода: только dip ≥30%, без timer-fallback (falling-knife). */
+        LIVE_REENTRY_GATE_MAX_AGE_HOURS: '4',
+        /** После убыточного / stress-выхода: dip ≥30% от last exit. */
         LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '30',
         LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS: '1',
         /** Loss re-entry cooldown выкл. — вместо него permanent denylist (`LIVE_NEGATIVE_TRADE_DENY_*`). */
@@ -1052,8 +1054,12 @@ const PM2_APPS = [
         LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '1',
         LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '2.5',
         LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '2',
-        LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '6',
-        LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '6',
+        /** 72h/peak выкл. — не блокировать buy_open из‑за давней просадки при отскоке на 1h/4h. */
+        LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '0',
+        LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '0',
+        /** ret1h ≥ 0 → только 1h+4h; 24h не режет покупки на отскоке. */
+        LIVE_BTC_RECOVERY_SKIP_LONG_WINDOWS: '1',
+        LIVE_BTC_RECOVERY_MIN_RET_1H_PCT: '0',
         /** Telegram в канал дайвов (`LIVE_MINT_WHITELIST_TELEGRAM_*`): блок/снятие BTC gate. `0` = выкл. */
         LIVE_BTC_GATE_TELEGRAM_ENABLED: '1',
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */

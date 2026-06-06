@@ -14,6 +14,22 @@
 
 ---
 
+## [1.11.335] — 2026-05-27
+
+**Тег:** `sa-alpha-1.11.335`
+
+### Fix: live-oscar crash + re-entry 4h + BTC recovery + signal-kill off
+
+| Область | Изменение |
+|---|---|
+| Signal-kill | `PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: 0` (было `99` — валидатор max 95, процесс падал) |
+| Re-entry | dip **−12%**, гейт **4 ч** (`LIVE_REENTRY_GATE_MAX_AGE_HOURS`), без timer-fallback |
+| BTC gate | **72h/peak выкл.**; при `ret1h ≥ 0` — только 1h+4h (`LIVE_BTC_RECOVERY_*`) |
+
+**Откат:** revert commit; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.334] — 2026-05-27
 
 **Тег:** `sa-alpha-1.11.334`

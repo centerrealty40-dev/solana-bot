@@ -213,7 +213,17 @@ function lastExitWasLossOrStress(snap: LastExitMarketSnapshot): boolean {
   return r === 'FLASH_CRASH_KILL' || r === 'SL' || r === 'KILLSTOP' || r === 'LIQ_DRAIN';
 }
 
-/** Hybrid: allow re-entry after maxWait **or** when price ≤ lastExit×(1−drop%). */
+function isLiveReentryGateExpired(
+  cfg: PaperTraderConfig,
+  snap: LastExitMarketSnapshot,
+  nowMs: number,
+): boolean {
+  const maxAgeH = cfg.liveReentryGateMaxAgeHours;
+  if (!(maxAgeH > 0)) return false;
+  return nowMs - snap.exitTs > maxAgeH * 3_600_000;
+}
+
+/** Re-entry only when price ≤ lastExit×(1−drop%). No timer-only bypass at/above exit. */
 export function appendLiveReentryHybridGateReasons(
   cfg: PaperTraderConfig,
   mint: string,
@@ -227,6 +237,7 @@ export function appendLiveReentryHybridGateReasons(
 
   const snap = lastExitMarketSnapshotByMintMap.get(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
+  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
 
   const lossExit = lastExitWasLossOrStress(snap);
   const dropPct =
@@ -234,23 +245,11 @@ export function appendLiveReentryHybridGateReasons(
       ? Math.max(baseDropPct, cfg.liveReentryLossMinDropFromLastExitPct)
       : baseDropPct;
 
-  const elapsedMs = nowMs - snap.exitTs;
-  const timerOk =
-    !lossExit || !cfg.liveReentryHybridDisableTimerAfterLoss
-      ? elapsedMs >= maxWaitMin * 60_000
-      : false;
-  if (timerOk) return;
-
   const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
-    const leftMin =
-      lossExit && cfg.liveReentryHybridDisableTimerAfterLoss
-        ? 0
-        : Math.max(0, (maxWaitMin * 60_000 - elapsedMs) / 60_000);
-    const suffix =
-      lossExit && cfg.liveReentryHybridDisableTimerAfterLoss ? '_loss_no_timer' : '';
+    const suffix = lossExit ? '_loss' : '';
     out.push(
-      `reentry_hybrid_wait_dip${dropPct}pct_or_${maxWaitMin}m${suffix}(left_dip=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)} timer=${leftMin.toFixed(1)}m)`,
+      `reentry_wait_dip${dropPct}pct${suffix}(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
     );
   }
 }
@@ -297,12 +296,14 @@ export function appendLiveReentryPriceGapReasons(
   mint: string,
   snapshotPriceUsd: number,
   out: string[],
+  nowMs = Date.now(),
 ): void {
   if (isLiveReentryHybridGateEnabled(cfg)) return;
   const pct = cfg.liveReentryMinDropFromLastExitPct;
   if (!(Number(pct) > 0)) return;
   const snap = lastExitMarketSnapshotByMintMap.get(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
+  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
   const maxAllowed = snap.marketUsd * (1 - pct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
     out.push(

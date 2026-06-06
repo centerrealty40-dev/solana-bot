@@ -16,6 +16,7 @@ function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfi
     liveReentryMaxWaitMinutes: 20,
     liveReentryLossMinDropFromLastExitPct: 30,
     liveReentryHybridDisableTimerAfterLoss: true,
+    liveReentryGateMaxAgeHours: 4,
     ...overrides,
   } as PaperTraderConfig;
 }
@@ -32,15 +33,15 @@ describe('live re-entry hybrid gate', () => {
     ).toBe(false);
   });
 
-  it('blocks before 20m when price above -20% from last exit', () => {
+  it('blocks when price above -20% from last exit', () => {
     const exitTs = Date.now() - 10 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_hybrid_wait_dip20pct_or_20m'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip20pct'))).toBe(true);
   });
 
-  it('allows dip re-entry before 20m when price hit -20%', () => {
+  it('allows dip re-entry when price hit -20%', () => {
     const exitTs = Date.now() - 10 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
     const reasons: string[] = [];
@@ -48,15 +49,15 @@ describe('live re-entry hybrid gate', () => {
     expect(reasons).toHaveLength(0);
   });
 
-  it('allows time fallback after 20m even above -20% (runner case)', () => {
+  it('blocks same-price re-entry after 20m (no timer fallback)', () => {
     const exitTs = Date.now() - 21 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: 50, exitReason: 'TRAIL' });
     const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasons, Date.now());
-    expect(reasons).toHaveLength(0);
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.0, reasons, Date.now());
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
   });
 
-  it('after loss: no timer fallback after 20m (falling knife)', () => {
+  it('after loss: still requires dip after 20m', () => {
     const exitTs = Date.now() - 25 * 60_000;
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
       netPnlUsd: -22,
@@ -64,7 +65,15 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
-    expect(reasons.some((r) => r.includes('_loss_no_timer'))).toBe(true);
+    expect(reasons.some((r) => r.includes('_loss'))).toBe(true);
+  });
+
+  it('expires re-entry gate after max age hours', () => {
+    const exitTs = Date.now() - 5 * 3_600_000;
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: 50, exitReason: 'TP' });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasons, Date.now());
+    expect(reasons).toHaveLength(0);
   });
 
   it('after loss: requires 30% dip not 20%', () => {
@@ -72,7 +81,7 @@ describe('live re-entry hybrid gate', () => {
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: -10, exitReason: 'SL' });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.75, reasons, Date.now());
-    expect(reasons.some((r) => r.includes('dip30pct'))).toBe(true);
+    expect(reasons.some((r) => r.includes('dip30pct') || r.includes('dip30pct_loss'))).toBe(true);
     const ok: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.69, ok, Date.now());
     expect(ok).toHaveLength(0);
