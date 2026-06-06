@@ -16,6 +16,22 @@
 
 ---
 
+## [1.11.331] — 2026-06-06
+
+**Тег:** `sa-alpha-1.11.331`
+
+### Fix: HL TWAP live ladder — TP/DCA по margin ROE при leverage
+
+- Лестница ±3% / slice 10% считала пороги по **движению цены**, а UI Hyperliquid при 5x показывает **ROE маржи** (~×5). DCA/TP не срабатывали, пока цена не проходила −15% (при ожидаемых −3% ROE).
+- **`nextLadderAction`:** effective move = price% × `entryLeverage`; live-trader передаёт `pos.entryLeverage`.
+- Док: `hl-twap-live-architecture.md` — шаги в **margin ROE**.
+
+**Деплой kvm2:** `git fetch && git checkout sa-alpha-1.11.331 && pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+**Откат:** `git checkout sa-alpha-1.11.330 -- src/hyperliquid/twap/live/position-ladder.ts src/hyperliquid/twap/live/live-trader.ts tests/hl-twap-live-ladder.test.ts docs/platform/hl-twap-live-architecture.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.330] — 2026-06-06
 
 **Тег:** `sa-alpha-1.11.330`

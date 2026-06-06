@@ -20,7 +20,8 @@ export function sliceNotionalUsd(initialNotionalUsd: number, cfg: LadderConfig):
   return initialNotionalUsd * (cfg.slicePctOfInitial / 100);
 }
 
-/** Next ladder action at current mark, or null if no threshold crossed. */
+/** Next ladder action at current mark, or null if no threshold crossed.
+ *  `leverage` scales price move to approximate margin ROE (price% × leverage). */
 export function nextLadderAction(
   side: TwapSide,
   markPx: number,
@@ -30,10 +31,12 @@ export function nextLadderAction(
   tpLevelsTaken: number,
   dcaLevelsTaken: number,
   cfg: LadderConfig,
+  leverage = 1,
 ): LadderAction | null {
   if (markPx <= 0 || entryAnchorPx <= 0 || initialNotionalUsd <= 0) return null;
 
-  const move = favorableMovePct(side, markPx, entryAnchorPx);
+  const lev = Math.max(1, leverage);
+  const move = favorableMovePct(side, markPx, entryAnchorPx) * lev;
   const slice = sliceNotionalUsd(initialNotionalUsd, cfg);
 
   const nextTpThreshold = (tpLevelsTaken + 1) * cfg.stepPct;

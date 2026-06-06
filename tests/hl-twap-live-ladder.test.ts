@@ -57,4 +57,31 @@ describe('hl-twap live ladder', () => {
     const avg = avgEntryAfterAdd(100, 100, 10, 110);
     expect(avg).toBeCloseTo(100.909, 2);
   });
+
+  it('at 5x leverage DCA triggers on margin ROE not raw price', () => {
+    // −2.4% price × 5 = −12% margin ROE → L1..L3 (−3/−6/−9), not L4 (−12)
+    expect(nextLadderAction('sell', 102.4, 100, 500, 500, 0, 0, cfg, 5)).toEqual({
+      kind: 'add',
+      level: 1,
+      notionalUsd: 50,
+    });
+    // −2% price × 5 = −10% ROE → only L1+L2 if L0 taken
+    expect(nextLadderAction('sell', 102, 100, 500, 500, 0, 0, cfg, 5)).toEqual({
+      kind: 'add',
+      level: 1,
+      notionalUsd: 50,
+    });
+    expect(nextLadderAction('sell', 102, 100, 500, 550, 0, 1, cfg, 5)).toEqual({
+      kind: 'add',
+      level: 2,
+      notionalUsd: 50,
+    });
+    expect(nextLadderAction('sell', 102, 100, 500, 600, 0, 2, cfg, 5)).toEqual({
+      kind: 'add',
+      level: 3,
+      notionalUsd: 50,
+    });
+    // −1.7% × 5 = −8.5% ROE — below L3 (−9%) after two DCAs
+    expect(nextLadderAction('sell', 101.7, 100, 500, 600, 0, 2, cfg, 5)).toBeNull();
+  });
 });

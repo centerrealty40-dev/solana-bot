@@ -28,14 +28,14 @@ Reuses `computeTwapSchedule()` from paper trading:
 
 Notional: **$100 margin** per signal (`HL_TWAP_LIVE_NOTIONAL_USD`) × leverage → gross position (e.g. $500 at 5x).
 
-## In-position ladder (±3% from **average entry**)
+## In-position ladder (±3% margin ROE from **average entry**)
 
-Reference price = **current average entry** (`avgEntryPx`). After each DCA the average moves, so +3% TP is reached sooner in price terms than vs the first fill alone.
+Reference price = **current average entry** (`avgEntryPx`). Step % applies to **margin ROE** ≈ price move × `entryLeverage` (at 5x, −3% ROE ≈ −0.6% price). After each DCA the average moves, so +3% TP is reached sooner in price terms than vs the first fill alone.
 
 | Trigger | Action | Size |
 |---------|--------|------|
-| +3%, +6%, +9%… vs **avg** | Take profit | 10% of **initial** notional each level |
-| −3%, −6%, −9%… vs **avg** | Add / DCA | 10% of **initial** notional each level |
+| +3%, +6%, +9%… **margin ROE** vs **avg** | Take profit | 10% of **initial** gross notional each level |
+| −3%, −6%, −9%… **margin ROE** vs **avg** | Add / DCA | 10% of **initial** gross notional each level |
 
 Partial TP does not change avg on HL (size down only); DCA updates avg via weighted fill price.
 

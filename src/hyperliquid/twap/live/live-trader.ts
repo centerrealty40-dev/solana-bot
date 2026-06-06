@@ -262,6 +262,7 @@ export async function processLiveLadders(
         pos.tpLevelsTaken,
         pos.dcaLevelsTaken,
         lcfg,
+        pos.entryLeverage,
       );
 
       while (action) {
@@ -337,6 +338,7 @@ export async function processLiveLadders(
           pos.tpLevelsTaken,
           pos.dcaLevelsTaken,
           lcfg,
+          pos.entryLeverage,
         );
       }
     } catch (e) {
