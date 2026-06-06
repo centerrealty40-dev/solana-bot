@@ -43,6 +43,7 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
+import { buildHlTwapPaperDashboardRow } from '../src/hyperliquid/twap/dashboard-aggregate.js';
 
 /** Empty paper2 load when optional panel loader fails. */
 function emptyPaper2FileLoad(): Paper2FileLoad {
@@ -84,6 +85,9 @@ const DASHBOARD_PAPER2_STALE_SERVE_MS = Number(
 );
 
 function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
+  const mode = (process.env.DASHBOARD_ENRICH_MODE || 'lite').trim().toLowerCase();
+  if (mode === 'full') return 'full';
+  if (mode === 'lite') return 'lite';
   return sid === 'live-oscar' ? 'full' : 'lite';
 }
 
@@ -804,6 +808,7 @@ const BASIC_PASS = (process.env.DASHBOARD_BASIC_PASSWORD || '').trim();
 const BASIC_REALM = process.env.DASHBOARD_BASIC_REALM || 'Solana Alpha Dashboard';
 const BASIC_AUTH_ENABLED = BASIC_USER.length > 0 && BASIC_PASS.length > 0;
 const BASIC_AUTH_BYPASS = new Set<string>(['/api/health']);
+const BASIC_AUTH_HTML_PATHS = new Set(['/', '/papertrader2', '/smart-lottery', '/SmartLottery']);
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a, 'utf8');
@@ -914,6 +919,7 @@ if (BASIC_AUTH_ENABLED) {
   app.addHook('onRequest', async (req, reply) => {
     const url = (req.raw.url || '/').split('?')[0];
     if (BASIC_AUTH_BYPASS.has(url)) return;
+    if (req.method === 'GET' && BASIC_AUTH_HTML_PATHS.has(url)) return;
 
     const cookies = parseCookieHeader(req.headers.cookie as string | undefined);
     const sessionTok = cookies[DASH_SESSION_COOKIE];
@@ -1326,17 +1332,14 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки Oscar на `/papertrader2`: live → copy-trader → paper risky → DCA live → V2.1 → V2.2. */
+/** Плитки `/papertrader2`: Live Oscar · Copy Trader · HL TWAP dry-run. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'copy-trader',
-  'paper-oscar-risky',
-  'dca-live',
-  'paper-oscar-v21',
-  'paper-oscar-v22',
+  'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-05-dash-perf-v2';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-05-dash-deploy-v2';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3186,7 +3189,7 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   };
 }
 
-/** Фиксированный порядок шести колонок Oscar (см. `DASHBOARD_PANEL_ORDER`). */
+/** Фиксированный порядок трёх плиток (см. `DASHBOARD_PANEL_ORDER`). */
 export function mergeDashboardStrategyPanels(rows: DashboardPaper2StrategyRow[]): DashboardPaper2StrategyRow[] {
   const byId = new Map(rows.map((r) => [r.strategyId, r]));
   return DASHBOARD_PANEL_ORDER.map((id) => byId.get(id) ?? makeEmptyDashboardStrategyRow(id, '—'));
@@ -3795,6 +3798,8 @@ async function buildPaper2StrategyRowFromLoad(
         entryRealMcUsd: ot.entryRealMcUsd,
         entryMcapAtBuyUsd,
         baselinePriceUsd: ot.baselinePriceUsd,
+        entryPx: basePx,
+        markPx: hasLivePrice ? livePx : basePx,
         metricType: ot.metricType,
         openedAtIso: ot.openedAtIso,
         lane: ot.lane,
@@ -3926,43 +3931,32 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     DASHBOARD_COPY_TRADER_STATE_PATH,
   );
   const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
-  const paperRiskyLoad = loadPaper2File(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
-  const paperV21Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V21_JSONL);
-  const paperV22Load = loadPaper2File(DASHBOARD_PAPER_OSCAR_V22_JSONL);
 
-  const dcaLiveLoadP = loadDcaliveDashboardSafe(DASHBOARD_DCA_LIVE_JSONL);
+  const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
+    hbOpen,
+    hbClosed,
+    reconcileExtras: liveExtras,
+  }).catch((e) => {
+    console.warn('[dashboard] live-oscar panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('live-oscar', DASHBOARD_LIVE_OSCAR_JSONL);
+  });
+  const copyRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_COPY_TRADER_JSONL, 'copy-trader', {
+    ...copyLoaded,
+    copyTrader: copyTraderStats,
+  }).catch((e) => {
+    console.warn('[dashboard] copy-trader panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('copy-trader', DASHBOARD_COPY_TRADER_JSONL);
+  });
+  const hlTwapRowP = buildHlTwapPaperDashboardRow().catch((e) => {
+    console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('hl-twap-paper', 'data/hl-twap/live.jsonl');
+  });
 
-  const dcaLiveRowP = dcaLiveLoadP.then((load) =>
-    buildPaper2StrategyRowFromLoad(DASHBOARD_DCA_LIVE_JSONL, 'dca-live', load),
-  );
-
-  const [liveRow, copyTraderRow, paperRiskyRow, dcaLiveRow, paperV21Row, paperV22Row] =
-    await Promise.all([
-      buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
-        hbOpen,
-        hbClosed,
-        reconcileExtras: liveExtras,
-      }),
-      buildPaper2StrategyRowFromLoad(DASHBOARD_COPY_TRADER_JSONL, 'copy-trader', {
-        ...copyLoaded,
-        copyTrader: copyTraderStats,
-      }),
-      buildPaper2StrategyRowFromLoad(
-        DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
-        'paper-oscar-risky',
-        paperRiskyLoad,
-      ),
-      dcaLiveRowP,
-      buildPaper2StrategyRowFromLoad(DASHBOARD_PAPER_OSCAR_V21_JSONL, 'paper-oscar-v21', paperV21Load),
-      buildPaper2StrategyRowFromLoad(DASHBOARD_PAPER_OSCAR_V22_JSONL, 'paper-oscar-v22', paperV22Load),
-    ]);
+  const [liveRow, copyTraderRow, hlTwapRow] = await Promise.all([liveRowP, copyRowP, hlTwapRowP]);
   const merged = mergeDashboardStrategyPanels([
-    liveRow,
-    copyTraderRow,
-    paperRiskyRow,
-    dcaLiveRow,
-    paperV21Row,
-    paperV22Row,
+    liveRow as DashboardPaper2StrategyRow,
+    copyTraderRow as DashboardPaper2StrategyRow,
+    hlTwapRow as DashboardPaper2StrategyRow,
   ]);
 
   const totals = merged.reduce(
@@ -3993,10 +3987,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
-    paperOscarRiskyJsonl: DASHBOARD_PAPER_OSCAR_RISKY_JSONL,
-    dcaLiveJsonl: DASHBOARD_DCA_LIVE_JSONL,
-    paperOscarV21Jsonl: DASHBOARD_PAPER_OSCAR_V21_JSONL,
-    paperOscarV22Jsonl: DASHBOARD_PAPER_OSCAR_V22_JSONL,
+    hlTwapLiveJsonl: process.env.HL_TWAP_DASHBOARD_JSONL?.trim() || 'data/hl-twap/live.jsonl',
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,

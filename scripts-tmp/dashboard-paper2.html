@@ -43,7 +43,7 @@
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
       Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — до 6 карточек в ряд; плитки стратегий — 6 колонок (Live Oscar + Copy Trader + Paper Risky + DCA Live + V2.1 + V2.2).
+      Сводка сверху — 3 карточки; плитки: Live Oscar · Copy Trader · HL TWAP.
     */
     .dash-desktop-summary-cols {
       display: grid;
@@ -52,7 +52,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-summary-cols {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1.5rem;
       }
     }
@@ -63,7 +63,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1.5rem;
       }
     }
@@ -97,9 +97,44 @@
       font-variant-numeric: tabular-nums;
       font-feature-settings: 'tnum';
     }
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 15, 28, 0.92);
+      backdrop-filter: blur(6px);
+    }
+    .login-card {
+      width: min(100%, 22rem);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+    }
   </style>
 </head>
 <body x-data="paperBoard()" x-init="boot()" class="min-h-screen">
+  <div x-show="authNeeded" x-cloak class="login-overlay">
+    <form class="login-card space-y-4" @submit.prevent="submitLogin()">
+      <div>
+        <h2 class="text-xl font-bold text-white">Вход в дашборд</h2>
+        <p class="mt-1 text-sm text-slate-400">Логин и пароль из DASHBOARD_BASIC_* на сервере.</p>
+      </div>
+      <label class="block space-y-1">
+        <span class="label-caps">Логин</span>
+        <input type="text" autocomplete="username" x-model="authUser" class="w-full rounded-lg bg-slate-900/80 border border-slate-700 px-3 py-2 text-white" required />
+      </label>
+      <label class="block space-y-1">
+        <span class="label-caps">Пароль</span>
+        <input type="password" autocomplete="current-password" x-model="authPass" class="w-full rounded-lg bg-slate-900/80 border border-slate-700 px-3 py-2 text-white" required />
+      </label>
+      <p x-show="authError" x-text="authError" class="text-sm text-rose-400"></p>
+      <button type="submit" class="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 font-semibold text-white" :disabled="authPending" x-text="authPending ? 'Проверка…' : 'Войти'"></button>
+    </form>
+  </div>
   <!-- Full viewport width on large screens (remove side gutters from max-width cap). -->
   <main class="w-full max-w-none mx-auto px-3 sm:px-6 lg:px-10 py-6 space-y-7">
     <header class="flex flex-col gap-3 lg:gap-2">
@@ -346,6 +381,33 @@
         </div>
       </div>
 
+      <div x-show="selected === 'hl-twap-paper' && selectedRow()?.hlTwap" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm mono">
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Paper size</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="fmtUsd(selectedRow()?.hlTwap?.paperNotionalUsd || 100)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Min impact</div>
+          <div class="stat-num mt-1 text-slate-100" x-text="(selectedRow()?.hlTwap?.watchMinImpactPct || 3) + '%'"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Open LONG</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="selectedRow()?.hlTwap?.openLongCount || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Open SHORT</div>
+          <div class="stat-num mt-1 text-rose-300" x-text="selectedRow()?.hlTwap?.openShortCount || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Pending entry</div>
+          <div class="stat-num mt-1 text-amber-200" x-text="selectedRow()?.hlTwap?.pendingSchedules || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Mode</div>
+          <div class="stat-num mt-1 text-sky-300" x-text="selectedRow()?.hlTwap?.liveDryRun ? 'dry-run' : 'live'"></div>
+        </div>
+      </div>
+
       <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader'">
         <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA','LIQ_DRAIN','RECONCILE_ORPHAN','PERIODIC_HEAL','CAPITAL_ROTATE']" :key="r">
           <div class="dash-exit-chip shrink-0">
@@ -371,26 +433,53 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
-                      <a :href="gmgn(o.mint)" target="_blank" @click.stop
-                         class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      <template x-if="!isHlTwap()">
+                        <a :href="gmgn(o.mint)" target="_blank" @click.stop
+                           class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                      </template>
+                      <template x-if="isHlTwap()">
+                        <a :href="(o.hlTwap && o.hlTwap.hyperliquidUrl) || '#'" target="_blank" @click.stop
+                           class="text-amber-300 text-base font-semibold hover:underline" x-text="o.symbol || o.coin || '?'"></a>
+                        <span class="pill ml-2 text-xs" :class="hlSideClass(o.hlTwap?.sideLabel)" x-text="o.hlTwap?.sideLabel || (o.side === 'buy' ? 'LONG' : 'SHORT')"></span>
+                      </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
                       <span class="text-sky-200 text-sm font-semibold mono ml-2"
                             x-text="'остаток ' + fmtUsd(o.remainingCostBasisUsd ?? 0)"></span>
                       <span class="text-slate-500 text-xs ml-1 align-middle">база</span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug">
+                    <div x-show="isHlTwap() && o.hlTwap" class="mt-1.5 text-xs text-slate-300 leading-snug max-w-3xl" x-text="o.hlTwap.entryReasonShort"></div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="isHlTwap()">
+                      <span class="text-slate-400">вход</span>
+                      <span class="font-semibold mono text-sky-200" x-text="fmtTimelineTs(o.hlTwap?.entryAtMs || o.entryTs)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry px</span>
+                      <span class="font-semibold mono text-sky-200" x-text="'$' + fmtHlPx(o.entryPx)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">mark</span>
+                      <span class="font-semibold mono text-emerald-300" x-text="'$' + fmtHlPx(o.markPx || o.livePriceUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">impact</span>
+                      <span class="font-semibold mono text-violet-200" x-text="o.impactPct != null ? o.impactPct.toFixed(2) + '%' : 'n/a'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">TWAP</span>
+                      <span class="font-semibold mono text-slate-200" x-text="(o.hlTwap?.cycleCount || '?') + '×' + (o.hlTwap?.sliceIntervalSec || 30) + 's · ' + (o.minutes || o.hlTwap?.twapMinutes || '?') + 'm'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">депозит</span>
+                      <span class="font-semibold mono text-slate-100" x-text="fmtUsd(o.hlTwap?.initialNotionalUsd || o.notionalUsd)"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap()">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
                       <span class="text-slate-600">·</span>
-                      <span class="text-slate-400">live mcap</span>
+                      <span class="text-slate-400">цена</span>
                       <span class="font-semibold mono"
-                            :class="liveMcapHeaderClass(o)"
-                            x-text="liveMcapHeaderText(o)"></span>
-                      <span class="text-slate-500 text-xs" x-text="liveMcSourceLabel(o)"></span>
+                            :class="livePxHeaderClass(o)"
+                            x-text="livePxHeaderText(o)"></span>
+                      <span class="text-slate-500 text-xs" x-text="livePxSourceShort(o)"></span>
                       <span class="text-slate-600">·</span>
-                      <span class="text-slate-400">at buy</span>
+                      <span class="text-slate-400">entry px</span>
                       <span class="font-semibold mono"
-                            :class="entryMcapOk(o) ? 'text-sky-200' : 'text-slate-500'"
-                            x-text="entryMcapOk(o) ? fmtUsd(o.entryMcapAtBuyUsd) : 'n/a'"></span>
+                            :class="entryPxOk(o) ? 'text-sky-200' : 'text-slate-500'"
+                            x-text="entryPxLabel(o)"></span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">entry slip</span>
                       <span class="font-semibold mono"
@@ -406,15 +495,14 @@
                   <div class="text-right max-w-[13rem]">
                     <div class="mono text-base font-bold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
                     <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
-                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет цены (DEX-снимки, Jupiter, pump.fun mcap/supply, затем журнал). Проверьте базу входа в open.</div>
+                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет live-цены (DEX, Jupiter, журнал). Проверьте entry px в open.</div>
                     <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded(o.mint + ':' + o.entryTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Для Live Oscar: первая нога по сигналу, **одно** усреднение на **−6%** от цены сигнала в течение часа (сумма ног = $800); после двух частичных TP по сетке усреднение отключено (после одной — откат вниз может всё ещё исполнить −6%, если нога не куплена). Живой Oscar Risky с PM2 снят; бумажный Risky — отдельная плитка.
-                    У пяти плиток Oscar (live, live risky, paper risky, V2.1, V2.2) в подписи события: до первого take profit — только входные события, без «режим A/B»; «режим A» с первой ступени TP; «режим B» с первого DCA/staged-добора. Под строкой события показывается понятное пояснение активного правила.
+                    После цены/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−).
                   </div>
                   <template x-for="(ev, i) in timelineUi(o.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
@@ -423,7 +511,7 @@
                         <div :class="timelineColor(ev)">
                           <span class="font-medium" x-text="ev.label"></span>
                           <span class="text-slate-500"> · </span>
-                          <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
+                          <span class="text-slate-300" x-text="timelinePriceLine(ev)"></span>
                           <span x-show="timelineUsdTail(ev)">
                             <span class="text-slate-500"> · </span>
                             <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
@@ -467,23 +555,44 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
-                      <a :href="gmgn(c.mint)" target="_blank" @click.stop
-                         class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      <template x-if="!isHlTwap()">
+                        <a :href="gmgn(c.mint)" target="_blank" @click.stop
+                           class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                      </template>
+                      <template x-if="isHlTwap()">
+                        <a :href="(c.hlTwap && c.hlTwap.hyperliquidUrl) || '#'" target="_blank" @click.stop
+                           class="text-sky-300 text-base font-semibold hover:underline" x-text="c.symbol || c.coin || '?'"></a>
+                        <span class="pill ml-2 text-xs" :class="hlSideClass(c.hlTwap?.sideLabel)" x-text="c.hlTwap?.sideLabel || (c.side === 'buy' ? 'LONG' : 'SHORT')"></span>
+                      </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm">
+                    <div x-show="isHlTwap() && c.hlTwap" class="mt-1 text-xs text-slate-300" x-text="(c.hlTwap.entryReasonShort || '') + (c.hlTwap.exitReasonShort ? ' → ' + c.hlTwap.exitReasonShort : '')"></div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm" x-show="!isHlTwap()">
                       <span class="pill shrink-0 text-xs"
                             :class="exitReasonPillClass(c)"
                             x-text="c.exitReason"></span>
                       <span class="text-slate-300" x-text="exitReasonHeadline(c)"></span>
                     </div>
-                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-text="exitReasonDetail(c)"></div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug">
-                      <span class="text-slate-400">mcap at buy</span>
-                      <span class="font-semibold mono" :class="closedEntryMcapOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryMcapOk(c) ? fmtUsd(c.entryMcapAtBuyUsd) : 'n/a'"></span>
+                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-show="!isHlTwap()" x-text="exitReasonDetail(c)"></div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="isHlTwap()">
+                      <span class="pill shrink-0 text-xs"
+                            :class="exitReasonPillClass(c)"
+                            x-text="c.exitReason"></span>
+                      <span class="text-slate-400">entry px</span>
+                      <span class="font-semibold mono text-sky-200" x-text="'$' + fmtHlPx(c.entryPx)"></span>
                       <span class="text-slate-600">·</span>
-                      <span class="text-slate-400">at close</span>
-                      <span class="font-semibold mono" :class="closedExitMcapOk(c) ? 'text-slate-200' : 'text-slate-500'" x-text="closedExitMcapOk(c) ? fmtUsd(c.exitMcapUsd) : 'n/a'"></span>
+                      <span class="text-slate-400">exit px</span>
+                      <span class="font-semibold mono text-slate-200" x-text="'$' + fmtHlPx(c.exitPx || c.livePriceUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">impact</span>
+                      <span class="font-semibold mono text-violet-200" x-text="c.impactPct != null ? c.impactPct.toFixed(2) + '%' : 'n/a'"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="!isHlTwap()">
+                      <span class="text-slate-400">entry px</span>
+                      <span class="font-semibold mono" :class="closedEntryPxOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryPxLabel(c)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">exit px</span>
+                      <span class="font-semibold mono" :class="closedExitPxOk(c) ? 'text-slate-200' : 'text-slate-500'" x-text="closedExitPxLabel(c)"></span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">entry slip</span>
                       <span class="font-semibold mono"
@@ -499,8 +608,7 @@
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-sky-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
-                    После mcap/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−). Live Oscar signal kill-stop подписывается как полный выход от первоначального сигнала: −22% для Live Oscar, −18% для Live Oscar Risky.
-                    Та же логика подписей A/B, что и у открытых позиций. TP-regime (если включён) — отдельной строкой; A/B в подписи и в пояснении — только после первого TP или первого DCA/staged-добора.
+                    После цены/token — сумма ноги, выручка TP-сетки (≈) или объём закрытого остатка (−).
                   </div>
                   <template x-for="(ev, i) in timelineUi(c.timeline)" :key="(ev.ts || '') + '-' + i">
                     <div class="flex items-start gap-3 leading-snug">
@@ -509,7 +617,7 @@
                         <div :class="timelineColor(ev)">
                           <span class="font-medium" x-text="ev.label"></span>
                           <span class="text-slate-500"> · </span>
-                          <span class="text-slate-300" x-text="timelineMarketLine(ev)"></span>
+                          <span class="text-slate-300" x-text="timelinePriceLine(ev)"></span>
                           <span x-show="timelineUsdTail(ev)">
                             <span class="text-slate-500"> · </span>
                             <span class="font-semibold text-slate-200 tabular-nums" x-text="timelineUsdTail(ev)"></span>
@@ -564,10 +672,7 @@
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
       'copy-trader',
-      'paper-oscar-risky',
-      'dca-live',
-      'paper-oscar-v21',
-      'paper-oscar-v22',
+      'hl-twap-paper',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -603,7 +708,13 @@
       };
     }
     function normalizePaper2Payload(raw) {
-      if (!raw || typeof raw !== 'object') return raw;
+      if (!raw || typeof raw !== 'object') return { strategies: [], totals: {}, panelOrder: OSCAR_PANEL_ORDER_FALLBACK.slice() };
+      if (raw.ok === false) {
+        const err = raw.error || 'request_failed';
+        if (err === 'unauthorized') {
+          return { strategies: [], totals: {}, panelOrder: [], unauthorized: true, apiError: err };
+        }
+      }
       /**
        * Never trust `panelOrder.length` from the wire — stale CDN/proxy bundles may still
        * serve a 4-item array from before `live-oscar-risky`. Tile count must match this list.
@@ -657,6 +768,14 @@
           'Stealth mirror лидера: entry $100, add до $30 (пропорционально лидеру), delay 2 min + retry 2 h. Кошелёк HoFKB… (бывший Live Oscar Risky).',
         details:
           'PM2 copy-trader · journal data/copytrader/journal.jsonl · state data/copytrader/state.json · лидер data/copytrader/target-wallet.txt. Дашборд: циклы copy (leader buy/sell → our mirror), Solscan на ордер лидера, отдельно наш tx.',
+      },
+      'hl-twap-paper': {
+        label: 'HL TWAP Dry-run',
+        tag: 'dry-run',
+        oneLiner:
+          'Hyperliquid whale TWAP: вход после 1-го цикла, выход перед последним. **$100**/позиция, impact **≥3%**, лестница ±3% от **средней** (TP/DCA 10%).',
+        details:
+          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
@@ -769,7 +888,75 @@
         timelineUiMax: 30,
         updatedAt: '—',
         refreshing: false,
+        authNeeded: false,
+        authUser: '',
+        authPass: '',
+        authError: '',
+        authPending: false,
         expanded: {},
+        authHeaders() {
+          const stored = sessionStorage.getItem('dashAuth');
+          if (stored) return { Authorization: 'Basic ' + stored };
+          if (this.authUser && this.authPass) {
+            return { Authorization: 'Basic ' + btoa(this.authUser + ':' + this.authPass) };
+          }
+          return {};
+        },
+        loadStoredAuth() {
+          const stored = sessionStorage.getItem('dashAuth');
+          if (!stored) return;
+          try {
+            const decoded = atob(stored);
+            const i = decoded.indexOf(':');
+            if (i > 0) {
+              this.authUser = decoded.slice(0, i);
+              this.authPass = decoded.slice(i + 1);
+            }
+          } catch (_) {
+            sessionStorage.removeItem('dashAuth');
+          }
+        },
+        async submitLogin() {
+          this.authPending = true;
+          this.authError = '';
+          try {
+            const r = await fetch('/api/paper2?t=' + Date.now(), {
+              credentials: 'include',
+              cache: 'no-store',
+              headers: {
+                ...this.authHeaders(),
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
+              },
+            });
+            const j = await r.json();
+            if (r.status === 401 || j?.error === 'unauthorized' || j?.unauthorized) {
+              this.authNeeded = true;
+              this.authError = 'Неверный логин или пароль';
+              sessionStorage.removeItem('dashAuth');
+              return;
+            }
+            if (this.authUser && this.authPass) {
+              sessionStorage.setItem('dashAuth', btoa(this.authUser + ':' + this.authPass));
+            }
+            this.authNeeded = false;
+            const normalized = normalizePaper2Payload(j);
+            this.state = normalized;
+            if (!this.selected && (normalized.strategies || []).length) {
+              const pref = 'live-oscar';
+              const ids = normalized.strategies.map((x) => x.strategyId);
+              this.selected = ids.includes(pref) ? pref : normalized.strategies[0].strategyId;
+            }
+            this.syncRowCache();
+            this.updatedAt = new Date().toLocaleTimeString();
+            await this.refreshCrypto();
+          } catch (e) {
+            console.error(e);
+            this.authError = 'Ошибка сети — попробуйте снова';
+          } finally {
+            this.authPending = false;
+          }
+        },
         selectStrategy(id) {
           if (this.selected === id) return;
           this.selected = id;
@@ -787,8 +974,12 @@
         toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
         isExpanded(key) { return !!this.expanded[key]; },
         fmtTimelineTs(ts) {
-          if (!ts) return '—';
-          const d = new Date(Number(ts));
+          if (ts == null || ts === '') return '—';
+          let d;
+          if (typeof ts === 'number' && Number.isFinite(ts)) d = new Date(ts);
+          else if (typeof ts === 'string' && /^\d+$/.test(ts)) d = new Date(Number(ts));
+          else d = new Date(ts);
+          if (Number.isNaN(d.getTime())) return '—';
           const dd = String(d.getDate()).padStart(2, '0');
           const mm = String(d.getMonth() + 1).padStart(2, '0');
           const hh = String(d.getHours()).padStart(2, '0');
@@ -796,31 +987,50 @@
           const ss = String(d.getSeconds()).padStart(2, '0');
           return `${dd}.${mm}, ${hh}:${mi}:${ss}`;
         },
-        /** Spot token USD for UI when mcap missing (same decimals as timeline). */
+        isHlTwap() { return this.selected === 'hl-twap-paper'; },
+        fmtHlPx(px) {
+          const n = Number(px);
+          if (!(n > 0)) return 'n/a';
+          if (n >= 100) return n.toFixed(2);
+          if (n >= 1) return n.toFixed(4);
+          return n.toFixed(6);
+        },
+        hlSideClass(sideLabel) {
+          return sideLabel === 'SHORT' ? 'pill-warn' : 'pill-ok';
+        },
+        /** Spot/perp USD price formatting (never mcap). */
         formatTokenUsdPx(p) {
           const s = Number(p || 0);
           if (!(s > 0)) return '';
+          if (s >= 100) return s.toFixed(2);
           if (s >= 0.01) return s.toFixed(4);
           return s.toFixed(6);
         },
-        liveMcapHeaderText(o) {
-          if (o?.hasLiveMc && Number(o.currentMcUsd) > 0) return this.fmtUsd(o.currentMcUsd);
-          const px = this.formatTokenUsdPx(o?.livePriceUsd);
-          if (px) return `token $${px}`;
+        pxLabel(p) {
+          const px = this.formatTokenUsdPx(p);
+          return px ? `$${px}` : 'n/a';
+        },
+        livePxHeaderText(o) {
+          const px = Number(o?.livePriceUsd ?? o?.markPx ?? 0);
+          if (px > 0) return this.pxLabel(px);
           return 'n/a';
         },
-        liveMcapHeaderClass(o) {
-          if (o?.hasLiveMc && Number(o.currentMcUsd) > 0) return 'text-emerald-300';
-          const px = Number(o?.livePriceUsd || 0);
-          if (px > 0) return 'text-sky-300';
-          return 'text-rose-400';
+        livePxHeaderClass(o) {
+          const px = Number(o?.livePriceUsd ?? o?.markPx ?? 0);
+          return px > 0 ? 'text-emerald-300' : 'text-rose-400';
         },
-        timelineMarketLine(ev) {
-          const m = Number(ev.mcUsd || 0);
-          if (m > 0) return `mcap ${this.fmtUsd(m)}`;
-          const px = this.formatTokenUsdPx(ev.spotPxUsd);
-          if (px) return `token $${px}`;
-          return 'mcap n/a';
+        entryPxOk(o) {
+          const px = Number(o?.baselinePriceUsd ?? o?.entryPx ?? 0);
+          return Number.isFinite(px) && px > 0;
+        },
+        entryPxLabel(o) {
+          if (!this.entryPxOk(o)) return 'n/a';
+          return this.pxLabel(o.baselinePriceUsd ?? o.entryPx);
+        },
+        timelinePriceLine(ev) {
+          const px = Number(ev?.spotPxUsd ?? ev?.markPx ?? ev?.entryPx ?? ev?.exitPx ?? 0);
+          if (px > 0) return `px ${this.pxLabel(px)}`;
+          return 'px n/a';
         },
         normalizeTimelineLabelForUsdParse(s) {
           return String(s || '')
@@ -858,7 +1068,7 @@
           if (xu) return Number(xu[1]);
           return null;
         },
-        /** USD tail after mcap: open/DCA plain, ladder ≈proceeds, close −cost slice. */
+        /** USD tail after price: open/DCA plain, ladder ≈proceeds, close −cost slice. */
         timelineUsdTail(ev) {
           const a = this.timelineUsdAmount(ev);
           if (!(a > 0)) return '';
@@ -867,28 +1077,18 @@
           if (ev.kind === 'close') return '−' + u;
           return u;
         },
-        entryMcapOk(o) {
-          const x = Number(o?.entryMcapAtBuyUsd ?? 0);
-          return Number.isFinite(x) && x > 0;
-        },
-        liveMcSourceLabel(o) {
-          if (o?.hasLiveMc) {
-            if (o.liveMcProvenance === 'pump.fun') return '(pump.fun)';
-            if (o.liveMcProvenance === 'snapshots') return '(DEX)';
-            return '';
-          }
-          if (Number(o?.livePriceUsd || 0) > 0 && o?.livePxProvenance) {
-            if (o.livePxProvenance === 'jupiter') return '(Jupiter)';
-            if (o.livePxProvenance === 'pump.fun') return '(pump.fun)';
-            if (o.livePxProvenance === 'journal') return '(journal)';
-            if (o.livePxProvenance === 'snapshots') return '(DEX)';
-          }
+        livePxSourceShort(o) {
+          const p = o?.livePxProvenance;
+          if (p === 'jupiter') return '(Jupiter)';
+          if (p === 'hyperliquid') return '(HL)';
+          if (p === 'journal') return '(journal)';
+          if (p === 'snapshots') return '(DEX)';
           return '';
         },
         livePxSourceLabel(o) {
           const p = o?.livePxProvenance;
           if (p === 'jupiter') return 'Цена для PnL: Jupiter';
-          if (p === 'pump.fun') return 'Цена для PnL: pump.fun mcap/supply';
+          if (p === 'hyperliquid') return 'Цена для PnL: Hyperliquid mark';
           if (p === 'journal') return 'Цена для PnL: последняя в журнале';
           if (p === 'snapshots') return 'Цена для PnL: DEX-снимки';
           return '';
@@ -973,13 +1173,21 @@
           }
           return bits.join(' · ');
         },
-        closedEntryMcapOk(c) {
-          const x = Number(c?.entryMcapAtBuyUsd ?? 0);
-          return Number.isFinite(x) && x > 0;
+        closedEntryPxOk(c) {
+          const px = Number(c?.baselinePriceUsd ?? c?.entryPx ?? 0);
+          return Number.isFinite(px) && px > 0;
         },
-        closedExitMcapOk(c) {
-          const x = Number(c?.exitMcapUsd ?? 0);
-          return Number.isFinite(x) && x > 0;
+        closedExitPxOk(c) {
+          const px = Number(c?.exitPx ?? c?.livePriceUsd ?? 0);
+          return Number.isFinite(px) && px > 0;
+        },
+        closedEntryPxLabel(c) {
+          if (!this.closedEntryPxOk(c)) return 'n/a';
+          return this.pxLabel(c.baselinePriceUsd ?? c.entryPx);
+        },
+        closedExitPxLabel(c) {
+          if (!this.closedExitPxOk(c)) return 'n/a';
+          return this.pxLabel(c.exitPx ?? c.livePriceUsd);
         },
         timelineColor(ev) {
           if (!ev) return 'text-slate-300';
@@ -1024,16 +1232,18 @@
           return m[status] || status;
         },
         async boot() {
+          this.loadStoredAuth();
           await this.refresh();
-          this.refreshCrypto();
-          setInterval(() => this.refresh(), 15000);
-          setInterval(() => this.refreshCrypto(), 60000);
+          if (!this.authNeeded) this.refreshCrypto();
+          setInterval(() => { if (!this.authNeeded) this.refresh(); }, 15000);
+          setInterval(() => { if (!this.authNeeded) this.refreshCrypto(); }, 60000);
         },
         async refreshCrypto() {
           try {
-            const j = await fetch('/api/paper2/crypto-ticker', { credentials: 'include' }).then((r) =>
-              r.json(),
-            );
+            const j = await fetch('/api/paper2/crypto-ticker', {
+              credentials: 'include',
+              headers: this.authHeaders(),
+            }).then((r) => r.json());
             this.crypto = j;
             const u = Number(j.updatedAt);
             this.cryptoTickerStamp =
@@ -1048,9 +1258,20 @@
             const r = await fetch('/api/paper2?t=' + Date.now(), {
               credentials: 'include',
               cache: 'no-store',
-              headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+              headers: {
+                ...this.authHeaders(),
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
+              },
             });
             const j = await r.json();
+            if (r.status === 401 || j?.error === 'unauthorized' || j?.unauthorized) {
+              this.authNeeded = true;
+              this.state = { strategies: [], totals: {} };
+              this.rowCache = null;
+              return;
+            }
+            this.authNeeded = false;
             const normalized = normalizePaper2Payload(j);
             this.state = normalized;
             if (!this.selected && (normalized.strategies || []).length) {

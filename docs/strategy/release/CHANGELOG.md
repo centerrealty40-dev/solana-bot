@@ -14,6 +14,19 @@
 
 ---
 
+## [1.11.337] — 2026-05-27
+
+**Тег:** `sa-alpha-1.11.337`
+
+### Fix: dashboard `/papertrader2` — вернуть 3 плитки
+
+- **Плитки:** Live Oscar · Copy Trader · HL TWAP (было 6: + paper risky, DCA live, V2.1, V2.2).
+- Восстановлены `dashboard-server.ts`, `dashboard-paper2.html`, `src/hyperliquid/twap/dashboard-aggregate.ts`.
+
+**Откат:** revert commit; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+---
+
 ## [1.11.336] — 2026-05-27
 
 **Тег:** `sa-alpha-1.11.336`
