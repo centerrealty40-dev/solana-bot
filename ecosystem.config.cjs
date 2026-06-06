@@ -1080,8 +1080,8 @@ const PM2_APPS = [
         LIVE_ENTRY_SCALE_IN_MAX_SWAP_ATTEMPTS: '8',
         LIVE_ENTRY_SCALE_IN_RETRY_BACKOFF_MS: '2000',
 
-        /** Периодический безопасный self-heal: хвосты кошелька + диагностика stale open (`src/live/periodic-self-heal.ts`). */
-        LIVE_PERIODIC_SELF_HEAL_MS: '1800000',
+        /** Периодический self-heal выкл.: хвосты только один раз после close (`LIVE_POST_CLOSE_TAIL_SWEEP_*`). */
+        LIVE_PERIODIC_SELF_HEAL_MS: '0',
         LIVE_PERIODIC_SWEEP_MIN_USD: '0.25',
         /** `0` по умолчанию: не продавать обычные live open только по возрасту. `1` — ручной opt-in старого PERIODIC_HEAL force-close. */
         LIVE_PERIODIC_STUCK_FORCE_CLOSE_ENABLED: '0',
