@@ -14,6 +14,19 @@
 
 ---
 
+## [1.11.338] — 2026-05-27
+
+**Тег:** `sa-alpha-1.11.338`
+
+### Live Oscar: post-close tail only — periodic self-heal off
+
+- **`LIVE_PERIODIC_SELF_HEAL_MS: 0`** — больше нет повторных проверок хвостов каждые 30 мин по mint из `closed[]`.
+- Остаётся **одна** проверка после `live_position_close` через **`LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS`** (60 с): баланс → `sell_full` → стоп.
+
+**Откат:** `LIVE_PERIODIC_SELF_HEAL_MS=1800000`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.337] — 2026-05-27
 
 **Тег:** `sa-alpha-1.11.337`
