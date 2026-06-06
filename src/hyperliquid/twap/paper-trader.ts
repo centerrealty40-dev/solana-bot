@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
+import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
 import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
@@ -147,19 +148,26 @@ export function appendPaperJournal(filePath: string, row: JournalRow): void {
   fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`, 'utf8');
 }
 
-/** После успешного Telegram OPEN — планируем бумагу на 2-й слайс / до предпоследнего. */
-export function schedulePaperTrade(sig: NormalizedTwapSignal): void {
+/** После успешного Telegram OPEN — планируем бумагу по entry plan (%/h + defer). */
+export function schedulePaperTrade(
+  sig: NormalizedTwapSignal,
+  watchState: ActiveTwapLookup,
+  minHourPct: number,
+): void {
   const filePath = paperJournalPath();
   const opens = loadPaperOpensFromJournal(filePath);
   const pending = loadPendingSchedules(filePath);
   if (opens.has(sig.hash) || pending.has(sig.hash)) return;
+
+  const plan = computeCoinEntryPlan(sig, watchState, minHourPct);
+  if (!plan.allow) return;
 
   const sched = computeTwapSchedule(sig);
   const row: JournalSchedule = {
     kind: 'schedule',
     ts: Date.now(),
     hash: sig.hash,
-    openAtMs: sched.paperOpenAtMs,
+    openAtMs: plan.openAtMs,
     closeAtMs: sched.paperCloseAtMs,
     twapStartMs: sched.twapStartMs,
     coin: sig.coin,

@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildHlTwapPaperDashboardRow } from '../src/hyperliquid/twap/dashboard-aggregate.js';
+import {
+  buildHlTwapPaperDashboardRow,
+  hlTwapDashboardJsonlPath,
+} from '../src/hyperliquid/twap/dashboard-aggregate.js';
 
 let tmpDir: string | null = null;
 afterEach(() => {
@@ -60,5 +63,57 @@ describe('buildHlTwapPaperDashboardRow', () => {
     const closed = (row.recentClosed as { pnlUsd: number; timeline: unknown[] }[])[0];
     expect(closed?.pnlUsd).toBe(50);
     expect((closed?.timeline as unknown[])?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('aggregates live journal (avgEntryPx format)', async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-live-dash-'));
+    const fp = path.join(tmpDir, 'live.jsonl');
+    const t0 = Date.UTC(2026, 5, 5, 10, 0, 0);
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          kind: 'open',
+          ts: t0 + 60_000,
+          hash: 'livehash1',
+          coin: 'ONDO',
+          displaySymbol: 'ONDO',
+          side: 'sell',
+          entryAnchorPx: 0.32,
+          avgEntryPx: 0.322,
+          initialNotionalUsd: 500,
+          currentNotionalUsd: 500,
+          impactPct: 3,
+          whaleUser: '0xwhale',
+          minutes: 60,
+          liveOpenAtMs: t0 + 55_000,
+          liveCloseAtMs: t0 + 3_600_000,
+          twapStartMs: t0,
+          tpLevelsTaken: 0,
+          dcaLevelsTaken: 0,
+        }),
+        JSON.stringify({
+          kind: 'close',
+          ts: t0 + 120_000,
+          hash: 'livehash1',
+          exitPx: 0.321,
+          pnlUsd: 1.5,
+          pnlPct: 0.3,
+          exitReason: 'impact_edge_lost',
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const row = await buildHlTwapPaperDashboardRow(fp);
+    expect(row.closedCount).toBe(1);
+    expect(row.openCount).toBe(0);
+    expect(row.realizedPnlUsd).toBe(1.5);
+    const closed = (row.recentClosed as { hlTwap?: { exitReasonShort?: string } }[])[0];
+    expect(closed?.hlTwap?.exitReasonShort).toBe('impact edge lost');
+  });
+
+  it('defaults dashboard jsonl path to live.jsonl', () => {
+    expect(hlTwapDashboardJsonlPath()).toContain('live.jsonl');
   });
 });

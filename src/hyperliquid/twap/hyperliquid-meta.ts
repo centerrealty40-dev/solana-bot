@@ -103,6 +103,57 @@ export function resolveTwapMarket(assetId: number, cache: HyperliquidMarketCache
   return { coin, displaySymbol, isSpot, assetId, midPx, dayNtlVlmUsd };
 }
 
+export type HlExchangePosition = {
+  coin: string;
+  displaySymbol: string;
+  side: 'buy' | 'sell';
+  size: number;
+  entryPx: number;
+  notionalUsd: number;
+  unrealizedPnlUsd: number;
+};
+
+/** Live perp positions from Hyperliquid clearinghouse (source of truth for wallet). */
+export async function fetchHlClearinghousePositions(user: string): Promise<HlExchangePosition[]> {
+  const st = await postInfo<{
+    assetPositions?: Array<{ position?: Record<string, string | number> }>;
+  }>({ type: 'clearinghouseState', user });
+  const out: HlExchangePosition[] = [];
+  for (const row of st.assetPositions ?? []) {
+    const p = row.position ?? {};
+    const szi = num(p.szi) ?? 0;
+    if (Math.abs(szi) <= 0) continue;
+    const coin = String(p.coin ?? '');
+    if (!coin) continue;
+    const entryPx = num(p.entryPx) ?? 0;
+    const notionalUsd = num(p.positionValue) ?? 0;
+    const unrealizedPnlUsd = num(p.unrealizedPnl) ?? 0;
+    out.push({
+      coin,
+      displaySymbol: displaySymbolFromCoin(coin),
+      side: szi > 0 ? 'buy' : 'sell',
+      size: Math.abs(szi),
+      entryPx,
+      notionalUsd,
+      unrealizedPnlUsd,
+    });
+  }
+  out.sort((a, b) => b.notionalUsd - a.notionalUsd);
+  return out;
+}
+
+/** Signed perp size (base units) for one coin; 0 if flat. */
+export async function fetchHlPerpPositionSzi(user: string, coin: string): Promise<number> {
+  const st = await postInfo<{
+    assetPositions?: Array<{ position?: Record<string, string | number> }>;
+  }>({ type: 'clearinghouseState', user });
+  for (const row of st.assetPositions ?? []) {
+    const p = row.position ?? {};
+    if (String(p.coin ?? '') === coin) return num(p.szi) ?? 0;
+  }
+  return 0;
+}
+
 /** Strip HIP-3 dex prefix and spot @index for human-readable tickers. */
 export function displaySymbolFromCoin(coin: string): string {
   const c = coin.trim();
