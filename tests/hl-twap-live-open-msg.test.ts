@@ -53,6 +53,8 @@ describe('live trade open telegram', () => {
     });
     const msg = buildLiveTradeOpenMessage(pos, loadHlTwapLiveConfig(), state);
     expect(msg).toContain('REZ SHORT');
+    expect(msg).toContain('вместе с китом');
+    expect(msg).toContain('sell TWAP');
     expect(msg).toContain('$500');
     expect(msg).toContain('маржа $100');
     expect(msg).toContain('5x');

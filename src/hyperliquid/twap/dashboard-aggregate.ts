@@ -115,8 +115,8 @@ function closedTimeline(c: HlTwapPaperClose): Array<{ ts: string; kind: string; 
     {
       ts: timelineIso(c.paperOpenAtMs, c.entryTs),
       kind: 'open',
-      label: `Paper ${dir} $${c.notionalUsd.toFixed(0)} @ ${c.entryPx.toFixed(4)}${c.side === 'sell' ? ' (разворот)' : ''}`,
-      reason: c.side === 'sell' ? 'reversal_after_buy' : 'after_cycle_1',
+      label: `Paper ${dir} $${c.notionalUsd.toFixed(0)} @ ${c.entryPx.toFixed(4)} (${c.side === 'buy' ? 'buy TWAP' : 'sell TWAP'} кита)`,
+      reason: 'after_cycle_1',
     },
     {
       ts: timelineIso(c.paperCloseAtMs, c.entryTs),

@@ -386,8 +386,8 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperOpenAtMs, o.entryTs),
       kind: 'open',
-      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла${o.side === 'sell' ? ', разворот' : ''})`,
-      reason: o.side === 'sell' ? 'reversal_after_buy' : 'after_cycle_1',
+      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла · ${o.side === 'buy' ? 'buy TWAP' : 'sell TWAP'} кита)`,
+      reason: 'after_cycle_1',
     },
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),

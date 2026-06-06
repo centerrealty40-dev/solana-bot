@@ -1,17 +1,17 @@
 /**
- * Hyperliquid TWAP → Telegram. Фильтры: только покупка монеты (bid TWAP) + price impact (% 24h perp vol).
+ * Hyperliquid TWAP → Telegram + optional paper/live perp bot.
  *
- * Data source: HypurrScan L1 indexer `GET https://api.hypurrscan.io/twap/*`
+ * Стратегия: **следуем за китом** (buy TWAP → LONG, sell TWAP → SHORT). Перекрёстные TWAP — фильтр, не разворот.
+ * Документация: docs/platform/hl-twap.md
  *
- * Pricing / impact: Hyperliquid `meta`, `spotMeta`, `allMids`, `metaAndAssetCtxs` (dayNtlVlm).
+ * Data source: HypurrScan `GET https://api.hypurrscan.io/twap/*`
  *
  * Env (separate bot — do not reuse Live Oscar TELEGRAM_*):
- * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID
- * - HL_TWAP_POLL_INTERVAL_MS=5000
- * - HL_TWAP_MIN_VOLUME_SHARE_PCT=3 — новые алерты/бумага только impact ≥3%; уже открытые paper позиции дорабатывают до close
- * - HL_TWAP_BUY_ONLY=0 — (legacy) sell только после buy OPEN; по умолчанию long+short с net-impact
+ * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID — whale alerts
+ * - HL_TWAP_MIN_VOLUME_SHARE_PCT=3 — impact для алертов/detect
+ * - HL_TWAP_BUY_ONLY=0 — long+short (legacy: sell только после buy OPEN)
  * - HL_TWAP_PAPER_NOTIONAL_USD=1000 — бумажная нота на сигнал (плитка 3 дашборда)
- * - HL_TWAP_LIVE_ENABLED=0 — live TWAP bot ($100, ±3% ladder); см. docs/platform/hl-twap-live-architecture.md
+ * - HL_TWAP_LIVE_ENABLED=0 — live bot; см. docs/platform/hl-twap.md
  * - HL_TWAP_LIVE_DRY_RUN=1 — simulate orders until HL_TWAP_LIVE_PRIVATE_KEY set
  * - HL_TWAP_LIVE_TRADES_TELEGRAM_BOT_TOKEN / HL_TWAP_LIVE_TRADES_TELEGRAM_CHAT_ID — краткие open/close (отдельно от whale-алертов)
  * - HL_TWAP_NOTIFY_ENDED=1

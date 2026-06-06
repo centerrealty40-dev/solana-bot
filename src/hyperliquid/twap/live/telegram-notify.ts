@@ -121,7 +121,8 @@ export function buildLiveTradeOpenMessage(
       ? `Кит TWAP: ${formatUsdCompact(pos.whaleNotionalUsd)} · ${whaleSched.cycleCount} циклов · ${formatDurationRu(pos.minutes)} · impact ${formatPctShare(pos.impactPct)}`
       : `Кит TWAP: ${whaleSched.cycleCount} циклов · ${formatDurationRu(pos.minutes)} · impact ${formatPctShare(pos.impactPct)}`;
 
-  const lines = [`🟢 Открыли ${sym} ${dir} · ${ourLine}`, '', whaleLine];
+  const whaleSide = pos.side === 'buy' ? 'buy TWAP' : 'sell TWAP';
+  const lines = [`🟢 Открыли ${sym} ${dir} · вместе с китом (${whaleSide}) · ${ourLine}`, '', whaleLine];
 
   if (watchState) {
     const onCoin = activeTwapsForCoin(watchState, pos.coin);

@@ -211,14 +211,27 @@ export async function processLiveTrades(
   const pending = loadPendingLiveSchedules(filePath);
 
   for (const sched of pending.values()) {
-    if (now >= sched.openAtMs) {
-      try {
-        const px =
-          markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
-        await executeLiveOpen(sched, px, cfg, client, watchState);
-      } catch (e) {
-        console.warn(`[hl-twap-live] open failed ${sched.displaySymbol}`, String(e));
+    if (now < sched.openAtMs) continue;
+    try {
+      if (watchState) {
+        const sig = watchState.activeByHash.get(sched.hash);
+        if (!sig) {
+          cancelSchedule(filePath, sched.hash, 'twap_gone_before_open');
+          console.log(`[hl-twap-live] cancel open ${sched.displaySymbol}: twap gone`);
+          continue;
+        }
+        const plan = computeCoinEntryPlan(sig, watchState, cfg.minImpactPct);
+        if (!plan.allow) {
+          cancelSchedule(filePath, sched.hash, `open_blocked_${plan.reason}`);
+          console.log(`[hl-twap-live] cancel open ${sched.displaySymbol}: ${plan.reason}`);
+          continue;
+        }
       }
+      const px =
+        markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
+      await executeLiveOpen(sched, px, cfg, client, watchState);
+    } catch (e) {
+      console.warn(`[hl-twap-live] open failed ${sched.displaySymbol}`, String(e));
     }
   }
 

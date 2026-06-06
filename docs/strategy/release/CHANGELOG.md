@@ -16,6 +16,37 @@
 
 ---
 
+---
+
+## [1.11.333] — 2026-06-06
+
+**Тег:** `sa-alpha-1.11.333`
+
+### Docs + fix: HL TWAP — направление follow, единая документация, re-check перед open
+
+- **Док:** единый `docs/platform/hl-twap.md` (стратегия, follow buy→LONG / sell→SHORT, тайминг, leverage, ladder, FAQ); architecture — техническое приложение.
+- **UI:** убраны устаревшие подписи «разворот» (paper/dashboard); live TG: «вместе с китом (buy/sell TWAP)».
+- **Live:** перед `executeLiveOpen` — TWAP ещё в фиде + повторный `computeCoinEntryPlan`.
+- **Audit:** `scripts-tmp/_hl_trade_direction_audit.mjs` — проверка side vs price move по журналу.
+
+**Откат:** `git checkout sa-alpha-1.11.331 -- docs/platform/hl-twap.md docs/platform/hl-twap-live-architecture.md src/hyperliquid/twap/live/live-trader.ts src/hyperliquid/twap/live/telegram-notify.ts src/hyperliquid/twap/paper-trader.ts src/hyperliquid/twap/dashboard-aggregate.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-live-open-msg.test.ts`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.332] — 2026-06-06
+
+### Live Oscar: sizing — сплит $150+$150, DCA ×$100
+
+| Параметр | Стало |
+|---|---|
+| Entry split (2 ноги) | **$150 + $150** |
+| DCA −10% / −20% | **$100** |
+| Max на mint | **$500** |
+
+**Откат:** `LIVE_OSCAR_ENTRY_NOTIONAL_USD=600`, `LIVE_OSCAR_MAX_POSITION_USD=1000`, split legs `300`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.331] — 2026-06-06
 
 **Тег:** `sa-alpha-1.11.331`
