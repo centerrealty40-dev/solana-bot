@@ -14,6 +14,27 @@
 
 ---
 
+## [1.11.334] — 2026-05-27
+
+**Тег:** `sa-alpha-1.11.334`
+
+### Live Oscar: Wave B + entry soften + signal-kill off
+
+| Параметр | Было | Стало |
+|---|---|---|
+| Exit policy | Variant A v2 | **Wave B v1** (`WAVE_B=1`, `VARIANT_A=0`) |
+| `PAPER_POST_MIN_BS` | 0.98 | **0.95** |
+| `PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT` | −10% | **−7%** |
+| `PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT` | 25 (signal-kill) | **99** (выкл) |
+
+**Контекст:** PG-replay 30d — Wave B > Variant A; signal-kill −25% от цены сигнала давал ранние `KILLSTOP` (не timeout 48h). BS/knife — смягчение entry-фильтров по sweep.
+
+**Деплой:** `git fetch origin v2 && git reset --hard origin/v2 && npm ci && pm2 reload ecosystem.config.cjs --update-env` (от `salpha` в `/opt/solana-alpha`).
+
+**Откат:** `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=0`, `PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1`, `PAPER_POST_MIN_BS=0.98`, `PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT=-10`, `PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT=25`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.318] — 2026-05-28
 
 ### Fix: copy-trader ghost clears + wallet-based mirror sells

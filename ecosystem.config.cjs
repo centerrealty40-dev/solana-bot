@@ -347,7 +347,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '25',
+        /** 99 = signal-kill off (не путать с PAPER_TIMEOUT_HOURS 48h). */
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '99',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -371,7 +372,7 @@ const PM2_APPS = [
         PAPER_POST_MIN_VOL_5M_USD: '2500',
         PAPER_POST_MIN_BUYS_5M: '4',
         PAPER_POST_MIN_SELLS_5M: '3',
-        PAPER_POST_MIN_BS: '0.98',
+        PAPER_POST_MIN_BS: '0.95',
         /**
          * Discovery SQL pool: от $1.3M (коридор low-lane). Prod-входы — mcap ≥ $3M (tier prod).
          * Не путать с low-only: $1.3M–$3M используют отдельные dip/vol (см. PAPER_LIVE_OSCAR_LOW_*).
@@ -482,7 +483,7 @@ const PM2_APPS = [
         PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD: '1000000',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED: '1',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN: '15',
-        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-10',
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-7',
         /**
          * Volume Sybil guard (1.11.216): блокирует dead→spike→dead wash-паттерн
          * по истории `volume_5m` в PG snapshots (lookback 6h, recent 45m).
@@ -550,7 +551,7 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * Variant A: DCA −10% / −20% от первой ноги, по $100 (~0.333333 × $300 `PAPER_POSITION_USD`).
+         * Variant A: DCA −10% / −20%, по $100 (~0.333333 × $300 `PAPER_POSITION_USD`).
          * Max invested $300 + $100 + $100 = $500 ladder; cap $500 (`LIVE_MAX_POSITION_USD`).
          */
         PAPER_DCA_LEVELS: '-10:0.333333,-20:0.333333',
@@ -577,10 +578,10 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
         /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
         PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
-        /** Wave B off — Variant A v2 hybrid for new opens. In-flight v3/v1/wave_b/legacy unchanged. */
-        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '0',
+        /** Wave B on for new opens — escalating TP ladder (+2.5% steps). Variant A off. */
+        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
-        PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '1',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
         PAPER_LIVE_OSCAR_VARIANT_A_SMART48_ENABLED: '0',
