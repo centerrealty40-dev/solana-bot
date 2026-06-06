@@ -1,4 +1,16 @@
-import { formatUsdPrice } from '../format-telegram.js';
+import {
+  activeTwapsForCoin,
+  aggregateCoinImpacts,
+  type ActiveTwapLookup,
+} from '../coin-twap-analysis.js';
+import {
+  formatDurationRu,
+  formatPctShare,
+  formatUsdCompact,
+  formatUsdPrice,
+} from '../format-telegram.js';
+import { computeTwapSchedule, formatMoscowDateTime } from '../twap-schedule.js';
+import type { NormalizedTwapSignal } from '../types.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
 
@@ -47,6 +59,8 @@ function sideLabel(side: 'buy' | 'sell'): string {
 
 function closeReasonRu(reason: string): string {
   if (reason === 'before_last_cycle') return 'таймер TWAP';
+  if (reason === 'impact_edge_lost') return 'перекрёстный TWAP съел edge';
+  if (reason.endsWith('_reconciled')) return 'позиция уже закрыта на бирже';
   if (reason.startsWith('twap_')) return reason.replace(/^twap_/, 'TWAP ').replace(/_/g, ' ');
   return reason;
 }
@@ -55,19 +69,90 @@ function pnlSign(v: number): string {
   return v >= 0 ? '+' : '';
 }
 
+function twapLine(sig: NormalizedTwapSignal): string {
+  const sched = computeTwapSchedule(sig);
+  const side = sideLabel(sig.side);
+  const dur = formatDurationRu(sig.minutes);
+  const impact = formatPctShare(sig.volumeSharePct);
+  const eta = formatMoscowDateTime(sched.lastCycleEtaMs);
+  return `${side} ${formatUsdCompact(sig.notionalUsd)} · ${sched.cycleCount} циклов · ${dur} · impact ${impact} · до ${eta}`;
+}
+
+/** Текст уведомления об открытии live-позиции. */
+export function buildLiveTradeOpenMessage(
+  pos: HlTwapLiveOpen,
+  _cfg: HlTwapLiveConfig,
+  watchState?: ActiveTwapLookup | null,
+): string {
+  const sym = pos.displaySymbol;
+  const dir = sideLabel(pos.side);
+  const px = formatUsdPrice(pos.avgEntryPx);
+  const margin = pos.marginUsd ?? pos.initialNotionalUsd;
+  const lev = pos.entryLeverage ?? 1;
+  const gross = pos.initialNotionalUsd;
+  const ourLine =
+    lev > 1
+      ? `наша позиция ${formatUsdCompact(gross)} (маржа ${formatUsdCompact(margin)} · ${lev}x) @ ${px}`
+      : `наша позиция ${formatUsdCompact(gross)} @ ${px}`;
+
+  const whaleSig: NormalizedTwapSignal = {
+    hash: pos.hash,
+    twapId: null,
+    user: pos.whaleUser,
+    side: pos.side,
+    coin: pos.coin,
+    displaySymbol: pos.displaySymbol,
+    isSpot: false,
+    size: pos.whaleSize ?? 0,
+    minutes: pos.minutes,
+    randomize: false,
+    reduceOnly: false,
+    notionalUsd: pos.whaleNotionalUsd ?? 0,
+    midPx: pos.avgEntryPx,
+    dayNtlVlmUsd: null,
+    volumeSharePct: pos.impactPct,
+    startedAtMs: pos.twapStartMs,
+    block: 0,
+    ended: null,
+  };
+  const whaleSched = computeTwapSchedule(whaleSig);
+  const whaleLine =
+    pos.whaleNotionalUsd != null && pos.whaleNotionalUsd > 0
+      ? `Кит TWAP: ${formatUsdCompact(pos.whaleNotionalUsd)} · ${whaleSched.cycleCount} циклов · ${formatDurationRu(pos.minutes)} · impact ${formatPctShare(pos.impactPct)}`
+      : `Кит TWAP: ${whaleSched.cycleCount} циклов · ${formatDurationRu(pos.minutes)} · impact ${formatPctShare(pos.impactPct)}`;
+
+  const lines = [`🟢 Открыли ${sym} ${dir} · ${ourLine}`, '', whaleLine];
+
+  if (watchState) {
+    const onCoin = activeTwapsForCoin(watchState, pos.coin);
+    const others = onCoin.filter((t) => t.hash !== pos.hash);
+    const { buyPct, sellPct } = aggregateCoinImpacts(onCoin);
+    const delta = Math.abs(buyPct - sellPct);
+    lines.push(
+      `Перекрёст: long ${formatPctShare(buyPct)} / short ${formatPctShare(sellPct)} (Δ ${formatPctShare(delta)})`,
+    );
+    if (others.length === 0) {
+      lines.push('Другие TWAP на монете: нет');
+    } else {
+      lines.push(`Другие TWAP на монете (${others.length}):`);
+      for (const t of others) {
+        lines.push(`  · ${twapLine(t)}`);
+      }
+    }
+  }
+
+  lines.push('', `Выход по таймеру: ${formatMoscowDateTime(pos.liveCloseAtMs)}`);
+  return lines.join('\n');
+}
+
 /** Краткое уведомление об открытии live-позиции (отдельный канал, не whale-алерты). */
 export async function notifyLiveTradeOpen(
   pos: HlTwapLiveOpen,
   cfg: HlTwapLiveConfig,
+  watchState?: ActiveTwapLookup | null,
 ): Promise<void> {
   if (cfg.mode !== 'live') return;
-  const sym = pos.displaySymbol;
-  const dir = sideLabel(pos.side);
-  const px = formatUsdPrice(pos.avgEntryPx);
-  const notional = pos.initialNotionalUsd.toFixed(0);
-  await sendLiveTradesTelegram(
-    `🟢 Открыли ${sym} ${dir} $${notional} @ ${px}`,
-  );
+  await sendLiveTradesTelegram(buildLiveTradeOpenMessage(pos, cfg, watchState));
 }
 
 /** Краткое уведомление о закрытии live-позиции с PnL. */

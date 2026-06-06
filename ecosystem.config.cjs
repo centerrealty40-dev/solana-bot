@@ -1258,6 +1258,7 @@ const PM2_APPS = [
         HL_TWAP_LIVE_MIN_IMPACT_PCT: '3',
         HL_TWAP_LIVE_LADDER_STEP_PCT: '3',
         HL_TWAP_LIVE_LADDER_SLICE_PCT: '10',
+        HL_TWAP_LIVE_LEVERAGE: '5',
       },
     },
     /**

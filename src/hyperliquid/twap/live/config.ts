@@ -5,7 +5,7 @@ export type HlTwapLiveConfig = {
   mode: HlTwapLiveMode;
   /** Hyperliquid wallet private key (0x…). Required when mode=live. */
   privateKey: string | null;
-  /** Initial notional per TWAP signal (USD). */
+  /** Margin (collateral) per TWAP signal (USD). Position size = margin × leverage. */
   notionalUsd: number;
   /** Min TWAP impact % for new entries (same as watch filter). */
   minImpactPct: number;

@@ -1,5 +1,7 @@
 import { formatUserRatingLineRu, type UserTwapRating } from './user-rating.js';
-import { computeTwapSchedule, formatTwapScheduleLines } from './twap-schedule.js';
+import { computeTwapSchedule, formatMoscowDateTime, formatTwapScheduleLines } from './twap-schedule.js';
+import type { CoinEntryPlan } from './coin-twap-analysis.js';
+import { telegramMessageLink } from './coin-twap-analysis.js';
 import type { NormalizedTwapSignal } from './types.js';
 
 export function shortAddress(addr: string): string {
@@ -67,9 +69,41 @@ function sideVerbRu(side: NormalizedTwapSignal['side']): string {
   return side === 'buy' ? 'покупка' : 'продажа';
 }
 
+export type TwapCrossingNoteOpts = {
+  opposingTwaps: NormalizedTwapSignal[];
+  plan: CoinEntryPlan;
+  messageLinks: Map<string, number>;
+  telegramChatId: string;
+};
+
+export function buildCrossingNote(opts: TwapCrossingNoteOpts): string | null {
+  if (opts.opposingTwaps.length === 0) return null;
+  const lines = opts.opposingTwaps.map((t) => {
+    const msgId = opts.messageLinks.get(t.hash);
+    const href = msgId
+      ? telegramMessageLink(opts.telegramChatId, msgId)
+      : explorerTxUrl(t.hash);
+    const label = msgId ? 'сообщение в канале' : 'Explorer';
+    const side = t.side === 'buy' ? 'LONG' : 'SHORT';
+    const end = formatMoscowDateTime(computeTwapSchedule(t).lastCycleEtaMs);
+    return `• ${side} ${formatPctShare(t.volumeSharePct)} · до ${end} · <a href="${href}">${label}</a>`;
+  });
+  const agg = `long ${formatPctShare(opts.plan.buyPct)} / short ${formatPctShare(opts.plan.sellPct)}`;
+  const delta =
+    opts.plan.diffPct != null ? ` (Δ ${formatPctShare(opts.plan.diffPct)})` : '';
+  const waitLine = opts.plan.waitForOppositeEndsMs
+    ? `\n⏳ Бумага/live: вход не раньше ${formatMoscowDateTime(opts.plan.openAtMs)} (ждём закрытия противоположных TWAP).`
+    : '';
+  return `⚠️ <b>Перекрёстные TWAP</b>: ${agg}${delta}\n${lines.join('\n')}${waitLine}`;
+}
+
 export function buildTwapStartMessage(
   sig: NormalizedTwapSignal,
-  opts?: { mexcUrl?: string | null; userRating?: UserTwapRating | null },
+  opts?: {
+    mexcUrl?: string | null;
+    userRating?: UserTwapRating | null;
+    crossingNote?: string | null;
+  },
 ): string {
   const sym = sig.displaySymbol;
   const mexcLine = opts?.mexcUrl ? ` (${opts.mexcUrl})` : '';
@@ -81,14 +115,9 @@ export function buildTwapStartMessage(
   const schedule = computeTwapSchedule(sig);
   const scheduleLines = formatTwapScheduleLines(sig, schedule, formatUsdCompact);
 
-  const reversalLine =
-    sig.side === 'sell'
-      ? '⚠️ <b>Разворот</b>: у этого кита уже был TWAP на покупку этой монеты — продажа режет нашу long-логику (impact).'
-      : '';
-
   const lines = [
     `${sideEmoji(sig.side)} ${formatUsdCompact(sig.notionalUsd)} ${sideVerbRu(sig.side)} <b>${escapeHtml(sym)}</b>${mexcLine} в течении ${formatDurationRu(sig.minutes)}`,
-    reversalLine,
+    opts?.crossingNote ?? '',
     '',
     `Цена: ${formatUsdPrice(sig.midPx)}`,
     volLine,

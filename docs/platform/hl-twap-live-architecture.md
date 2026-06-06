@@ -26,7 +26,7 @@ Reuses `computeTwapSchedule()` from paper trading:
 | **Close** | Before last slice |
 | **Cancel** | Full close (or drop pending schedule) |
 
-Notional: **$100** per signal (`HL_TWAP_LIVE_NOTIONAL_USD`).
+Notional: **$100 margin** per signal (`HL_TWAP_LIVE_NOTIONAL_USD`) × leverage → gross position (e.g. $500 at 5x).
 
 ## In-position ladder (±3% from **average entry**)
 
@@ -39,12 +39,12 @@ Reference price = **current average entry** (`avgEntryPx`). After each DCA the a
 
 Partial TP does not change avg on HL (size down only); DCA updates avg via weighted fill price.
 
-## One position per coin
+## One position per TWAP signal
 
-- Never hold **long and short** on the same coin.
-- New TWAP on coin with open position → **skip** (same side) or **hold** (opposite side).
-- Opposite TWAP: if \|our impact − opposite impact\| **> 3%** → stay in current side (dominant impact).
-- New entries require impact **≥ 3%** and passing `crossingImpactDecision` when both sides active.
+- Each qualifying TWAP (`hash`) → separate live position at `HL_TWAP_LIVE_NOTIONAL_USD` (default $100).
+- Same coin, **same side**: multiple TWAPs stack (independent schedules / closes).
+- Same coin, **opposite side**: blocked while any position is open (perps net long+short).
+- Opposite TWAP that removes net edge (≤3%) → close **all** open positions on that coin for the losing side.
 
 ## Module layout
 
@@ -68,11 +68,11 @@ src/hyperliquid/twap/live/
 | `HL_TWAP_LIVE_ENABLED` | `0` | Turn on live path in watch |
 | `HL_TWAP_LIVE_DRY_RUN` | `1` | Simulate orders (no key needed) |
 | `HL_TWAP_LIVE_PRIVATE_KEY` | — | EVM key for HL wallet |
-| `HL_TWAP_LIVE_NOTIONAL_USD` | `100` | Initial size per TWAP |
+| `HL_TWAP_LIVE_NOTIONAL_USD` | `100` | Margin (collateral) per TWAP; gross size = margin × leverage |
 | `HL_TWAP_LIVE_MIN_IMPACT_PCT` | `3` | Min impact for new entries |
 | `HL_TWAP_LIVE_LADDER_STEP_PCT` | `3` | TP/DCA step |
 | `HL_TWAP_LIVE_LADDER_SLICE_PCT` | `10` | Slice size (% of initial) |
-| `HL_TWAP_LIVE_LEVERAGE` | `5` | Cross leverage per asset |
+| `HL_TWAP_LIVE_LEVERAGE` | `5` | Cross leverage per asset (capped to HL max per coin, e.g. REZ 3x → $300 from $100 margin) |
 | `HL_TWAP_LIVE_TESTNET` | `0` | Use HL testnet |
 | `HL_TWAP_LIVE_JSONL` | `data/hl-twap/live.jsonl` | Journal path |
 

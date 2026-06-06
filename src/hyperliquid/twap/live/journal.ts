@@ -17,6 +17,8 @@ export type JournalSchedule = {
   whaleUser: string;
   minutes: number;
   impactPct: number | null;
+  whaleNotionalUsd: number | null;
+  whaleSize: number | null;
 };
 
 type JournalScheduleCancel = { kind: 'schedule_cancel'; ts: number; hash: string; reason: string };
@@ -32,6 +34,8 @@ type JournalOpen = {
   avgEntryPx: number;
   initialNotionalUsd: number;
   currentNotionalUsd: number;
+  marginUsd?: number;
+  entryLeverage?: number;
   impactPct: number | null;
   whaleUser: string;
   minutes: number;
@@ -40,6 +44,8 @@ type JournalOpen = {
   twapStartMs: number;
   tpLevelsTaken: number;
   dcaLevelsTaken: number;
+  whaleNotionalUsd?: number | null;
+  whaleSize?: number | null;
 };
 
 type JournalTp = {
@@ -131,6 +137,8 @@ export function loadLiveOpensFromJournal(filePath: string): Map<string, HlTwapLi
         avgEntryPx: ev.avgEntryPx,
         initialNotionalUsd: ev.initialNotionalUsd,
         currentNotionalUsd: ev.currentNotionalUsd,
+        marginUsd: ev.marginUsd ?? ev.initialNotionalUsd,
+        entryLeverage: ev.entryLeverage ?? 1,
         impactPct: ev.impactPct,
         whaleUser: ev.whaleUser,
         minutes: ev.minutes,
@@ -139,6 +147,8 @@ export function loadLiveOpensFromJournal(filePath: string): Map<string, HlTwapLi
         twapStartMs: ev.twapStartMs,
         tpLevelsTaken: ev.tpLevelsTaken,
         dcaLevelsTaken: ev.dcaLevelsTaken,
+        whaleNotionalUsd: ev.whaleNotionalUsd ?? null,
+        whaleSize: ev.whaleSize ?? null,
       });
     } else if (ev.kind === 'tp') {
       const pos = opens.get(ev.hash);
@@ -193,6 +203,8 @@ export function journalOpenRow(pos: HlTwapLiveOpen): JournalOpen {
     avgEntryPx: pos.avgEntryPx,
     initialNotionalUsd: pos.initialNotionalUsd,
     currentNotionalUsd: pos.currentNotionalUsd,
+    marginUsd: pos.marginUsd,
+    entryLeverage: pos.entryLeverage,
     impactPct: pos.impactPct,
     whaleUser: pos.whaleUser,
     minutes: pos.minutes,
@@ -201,6 +213,8 @@ export function journalOpenRow(pos: HlTwapLiveOpen): JournalOpen {
     twapStartMs: pos.twapStartMs,
     tpLevelsTaken: pos.tpLevelsTaken,
     dcaLevelsTaken: pos.dcaLevelsTaken,
+    whaleNotionalUsd: pos.whaleNotionalUsd,
+    whaleSize: pos.whaleSize,
   };
 }
 

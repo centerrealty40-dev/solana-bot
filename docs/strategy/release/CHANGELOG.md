@@ -14,6 +14,52 @@
 
 ---
 
+---
+
+## [1.11.330] — 2026-06-06
+
+**Тег:** `sa-alpha-1.11.330`
+
+### Feat: HL TWAP live — перекрёстные TWAP, 5x sizing, rich Telegram, multi-position
+
+- **Entry logic:** вход по **перекрёстным TWAP на монете** (aggregate buy/sell impact, Δ > min), не «разворот» одного кита; отложенный вход, если мешает встречный TWAP; выход при `impact_edge_lost`.
+- **Leverage / sizing:** `HL_TWAP_LIVE_NOTIONAL_USD` = **маржа** ($100); gross = margin × `HL_TWAP_LIVE_LEVERAGE` (5x → ~$500, REZ max 3x → ~$300); `updateLeverage` per coin.
+- **Multi-position:** несколько позиций **одна монета + одна сторона** — отдельная $100-маржа на каждый TWAP hash; opposite side блокируется.
+- **Telegram open:** развёрнутое сообщение — whale TWAP ($, циклы, impact), перекрёстные TWAP, ETA выхода; канал `HL_TWAP_LIVE_TRADES_TELEGRAM_*`.
+- **Close / reconcile:** закрытие по таймеру или исчезновению whale TWAP; reconcile если на HL уже flat; per-position try/catch.
+- **Модуль:** `coin-twap-analysis.ts`; тесты `hl-twap-coin-analysis`, `hl-twap-coin-exposure`, `hl-twap-live-open-msg`.
+
+**Деплой kvm2:** `git fetch && git checkout sa-alpha-1.11.330 && npm ci && pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env` (ключ HL — только `.env`, не PM2 dump).
+
+**Откат:** `git checkout sa-alpha-1.11.325 -- src/hyperliquid/twap src/scripts/hl-twap-telegram-watch.ts docs/platform/hl-twap-live-architecture.md tests/hl-twap-*.test.ts ecosystem.config.cjs .env.example docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `npm ci`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.329] — 2026-06-06
+
+### Fix: re-entry — только ниже last exit (без timer-fallback)
+
+- Убран **timer-fallback** (20 мин → можно купить по той же цене). Повторный вход **только** если цена ≤ last_exit×(1−12%); после loss/stress — −30%.
+- Boot replay: восстановление `lastExit` с **PnL и exitReason** (loss-gate не сбрасывался в profit-path).
+
+**Откат:** revert + `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT=20`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.328] — 2026-06-06
+
+### Live Oscar: sizing — сплит $300+$300, DCA ×$200
+
+| Параметр | Было | Стало |
+|---|---|---|
+| Entry split (2 ноги) | $150 + $150 | **$300 + $300** |
+| DCA −10% / −20% | $100 | **$200** |
+| Max на mint | $500 | **$1000** |
+
+**Откат:** `LIVE_OSCAR_ENTRY_NOTIONAL_USD=300`, `LIVE_OSCAR_MAX_POSITION_USD=500`, split legs `150`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.327] — 2026-05-28
 
 ### Fix: copy-trader price gates on Jupiter quote (not stale Dex)

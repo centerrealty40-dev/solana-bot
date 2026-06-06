@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { TwapWatchState } from './detect.js';
+import { computeCoinEntryPlan } from './coin-twap-analysis.js';
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
 import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
@@ -147,19 +149,22 @@ export function appendPaperJournal(filePath: string, row: JournalRow): void {
   fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`, 'utf8');
 }
 
-/** После успешного Telegram OPEN — планируем бумагу на 2-й слайс / до предпоследнего. */
-export function schedulePaperTrade(sig: NormalizedTwapSignal): void {
+/** После успешного Telegram OPEN — планируем бумагу (с учётом перекрёстных TWAP на монете). */
+export function schedulePaperTrade(sig: NormalizedTwapSignal, watchState: TwapWatchState, minImpactPct: number): void {
   const filePath = paperJournalPath();
   const opens = loadPaperOpensFromJournal(filePath);
   const pending = loadPendingSchedules(filePath);
   if (opens.has(sig.hash) || pending.has(sig.hash)) return;
+
+  const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
+  if (!plan.allow) return;
 
   const sched = computeTwapSchedule(sig);
   const row: JournalSchedule = {
     kind: 'schedule',
     ts: Date.now(),
     hash: sig.hash,
-    openAtMs: sched.paperOpenAtMs,
+    openAtMs: plan.openAtMs,
     closeAtMs: sched.paperCloseAtMs,
     twapStartMs: sched.twapStartMs,
     coin: sig.coin,
@@ -265,7 +270,26 @@ export async function processPaperTrades(cache: HyperliquidMarketCache): Promise
   }
 }
 
-/** Sell-TWAP того же кита по той же монете — закрыть все бумажные long по этой паре. */
+/** Закрыть бумагу на монете, если перекрёстные TWAP сняли net edge. */
+export function closePaperForImpactLoss(
+  coin: string,
+  side: 'buy' | 'sell',
+  cache: HyperliquidMarketCache,
+): number {
+  const filePath = paperJournalPath();
+  const opens = loadPaperOpensFromJournal(filePath);
+  let closed = 0;
+  for (const pos of opens.values()) {
+    if (pos.coin !== coin || pos.side !== side) continue;
+    const px = exitPxForOpen(pos, cache);
+    if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost')) {
+      closed += 1;
+    }
+  }
+  return closed;
+}
+
+/** @deprecated whale-specific reversal — use impact-based close */
 export function closePaperForWhaleSellReversal(
   sig: Pick<NormalizedTwapSignal, 'user' | 'coin' | 'displaySymbol'>,
   cache: HyperliquidMarketCache,

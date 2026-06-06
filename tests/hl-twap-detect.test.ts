@@ -81,10 +81,11 @@ describe('hl-twap detect', () => {
     expect(r.newSignals[0]!.side).toBe('sell');
   });
 
-  it('crossingImpactDecision requires both sides ≥ min and diff > min', () => {
+  it('crossingImpactDecision requires diff > min and dominant >= min', () => {
     expect(crossingImpactDecision(3, 2, 1)).toEqual({ allow: false, dominant: null, diffPct: 1 });
     expect(crossingImpactDecision(4, 2, 1)).toEqual({ allow: true, dominant: 'buy', diffPct: 2 });
     expect(crossingImpactDecision(2, 4.5, 1)).toEqual({ allow: true, dominant: 'sell', diffPct: 2.5 });
+    expect(crossingImpactDecision(0, 5, 3)).toEqual({ allow: true, dominant: 'sell', diffPct: 5 });
   });
 
   it('legacy buyOnly blocks sell without buy OPEN', () => {

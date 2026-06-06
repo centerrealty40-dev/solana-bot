@@ -31,6 +31,12 @@ import {
   seedTwapWatchState,
 } from '../hyperliquid/twap/detect.js';
 import {
+  computeCoinEntryPlan,
+  opposingActiveTwapsForCoin,
+  shouldCloseForImpactLoss,
+} from '../hyperliquid/twap/coin-twap-analysis.js';
+import {
+  buildCrossingNote,
   buildTwapEndMessage,
   buildTwapStartMessage,
   mexcFuturesUrl,
@@ -40,9 +46,10 @@ import { loadHyperliquidMarketCache, type HyperliquidMarketCache } from '../hype
 import { normalizeHypurrscanRow } from '../hyperliquid/twap/normalize.js';
 import { enrichEndFromTwapHistory } from '../hyperliquid/twap/twap-history.js';
 import {
-  closePaperForWhaleBuyReversal,
-  closePaperForWhaleSellReversal,
+  closePaperTrade,
   handlePaperOnTwapEnd,
+  loadPaperOpensFromJournal,
+  paperJournalPath,
   processPaperTrades,
   schedulePaperTrade,
 } from '../hyperliquid/twap/paper-trader.js';
@@ -53,7 +60,9 @@ import {
   processLiveLadders,
   processLiveTrades,
   scheduleLiveTrade,
+  closeLiveTrade,
 } from '../hyperliquid/twap/live/live-trader.js';
+import { loadLiveOpensFromJournal } from '../hyperliquid/twap/live/journal.js';
 import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
 
@@ -115,10 +124,10 @@ async function assertTelegramBot(): Promise<void> {
   }
 }
 
-async function sendTelegram(html: string): Promise<boolean> {
+async function sendTelegram(html: string): Promise<number | null> {
   if (!TG_TOKEN || !TG_CHAT) {
     console.warn('[hl-twap-telegram-watch] Telegram not configured');
-    return false;
+    return null;
   }
   const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
   const res = await fetch(url, {
@@ -133,9 +142,10 @@ async function sendTelegram(html: string): Promise<boolean> {
   });
   if (!res.ok) {
     console.warn('[hl-twap-telegram-watch] send failed', res.status, (await res.text()).slice(0, 300));
-    return false;
+    return null;
   }
-  return true;
+  const body = (await res.json()) as { ok?: boolean; result?: { message_id?: number } };
+  return body.result?.message_id ?? null;
 }
 
 function appendAudit(event: string, payload: unknown): void {
@@ -154,23 +164,32 @@ function appendAudit(event: string, payload: unknown): void {
 async function announceStart(
   sig: NormalizedTwapSignal,
   feedRows: HypurrscanTwapRow[],
-  cache: HyperliquidMarketCache,
+  _cache: HyperliquidMarketCache,
 ): Promise<void> {
   const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
   const userRating = await userRatingCached(sig.user, feedRows);
-  const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating });
-  appendAudit('twap_start', sig);
+  const plan = computeCoinEntryPlan(sig, watchState, MIN_VOLUME_SHARE_PCT);
+  const opposing = opposingActiveTwapsForCoin(watchState, sig);
+  const crossingNote = buildCrossingNote({
+    opposingTwaps: opposing,
+    plan,
+    messageLinks: watchState.telegramMessageByHash,
+    telegramChatId: TG_CHAT,
+  });
+  const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating, crossingNote });
+  appendAudit('twap_start', { sig, plan });
   if (DRY_RUN) {
     console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
     markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig, cache);
+    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
     if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
     return;
   }
-  const ok = await sendTelegram(html);
-  if (ok) {
+  const messageId = await sendTelegram(html);
+  if (messageId != null) {
+    watchState.telegramMessageByHash.set(sig.hash, messageId);
     markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig, cache);
+    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
     if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
   }
 }
@@ -185,21 +204,32 @@ function scheduleLiveAfterTelegramOpen(sig: NormalizedTwapSignal): void {
   }
 }
 
-/** Buy → LONG; sell → SHORT; перекрёст — закрыть противоположные бумаги кита+монеты. */
-function schedulePaperAfterTelegramOpen(sig: NormalizedTwapSignal, cache: HyperliquidMarketCache): void {
-  if (sig.side === 'buy') {
-    const n = closePaperForWhaleBuyReversal(sig, cache);
-    if (n > 0) {
-      console.log(`[hl-twap] paper closed ${n} short(s) on whale buy reversal ${sig.displaySymbol}`);
+function schedulePaperAfterTelegramOpen(sig: NormalizedTwapSignal): void {
+  schedulePaperTrade(sig, watchState, MIN_VOLUME_SHARE_PCT);
+}
+
+async function closePositionsForImpactLoss(cache: HyperliquidMarketCache): Promise<void> {
+  if (PAPER_ENABLED) {
+    const opens = loadPaperOpensFromJournal(paperJournalPath());
+    for (const pos of [...opens.values()]) {
+      if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_VOLUME_SHARE_PCT)) continue;
+      const px = cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.entryPx;
+      if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost')) {
+        console.log(`[hl-twap] paper closed ${pos.displaySymbol} impact edge lost`);
+      }
     }
-    schedulePaperTrade(sig);
-    return;
   }
-  const n = closePaperForWhaleSellReversal(sig, cache);
-  if (n > 0) {
-    console.log(`[hl-twap] paper closed ${n} long(s) on whale sell reversal ${sig.displaySymbol}`);
+  if (LIVE_ENABLED && liveExchange) {
+    const opens = loadLiveOpensFromJournal(LIVE_CFG.journalPath);
+    for (const pos of opens.values()) {
+      if (shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_VOLUME_SHARE_PCT)) {
+        const px =
+          cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.avgEntryPx;
+        await closeLiveTrade(pos.hash, px, 'impact_edge_lost', LIVE_CFG, liveExchange);
+        console.log(`[hl-twap-live] closed ${pos.displaySymbol} impact edge lost`);
+      }
+    }
   }
-  schedulePaperTrade(sig);
 }
 
 async function announceEnd(
@@ -234,9 +264,11 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
     await announceStart(sig, rows, cache);
   }
 
+  await closePositionsForImpactLoss(cache);
+
   if (PAPER_ENABLED) await processPaperTrades(cache);
   if (LIVE_ENABLED && liveExchange) {
-    await processLiveTrades(cache, LIVE_CFG, liveExchange);
+    await processLiveTrades(cache, LIVE_CFG, liveExchange, watchState);
     await processLiveLadders(cache, LIVE_CFG, liveExchange);
   }
 
@@ -265,7 +297,7 @@ async function main(): Promise<void> {
   if (LIVE_ENABLED) {
     liveExchange = await createHlTwapExchangeClient(LIVE_CFG);
     console.log(
-      `[hl-twap-live] enabled mode=${liveExchange.mode} notional=$${LIVE_CFG.notionalUsd} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}%`,
+      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}%`,
     );
   }
 

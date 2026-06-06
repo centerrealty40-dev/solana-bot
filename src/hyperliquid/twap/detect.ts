@@ -1,4 +1,9 @@
+import { aggregateCoinImpacts, activeTwapsForCoin, crossingImpactDecision } from './coin-twap-analysis.js';
+import type { CrossingImpactDecision } from './coin-twap-analysis.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal, TwapSide } from './types.js';
+
+export { crossingImpactDecision };
+export type { CrossingImpactDecision };
 
 export type TwapWatchState = {
   /** Open alert already sent to Telegram (required before end/cancel alert). */
@@ -11,6 +16,8 @@ export type TwapWatchState = {
   activeByHash: Map<string, NormalizedTwapSignal>;
   /** Ended notifications already sent. */
   endedAnnounced: Set<string>;
+  /** Telegram message_id for start alerts — link crossing TWAPs. */
+  telegramMessageByHash: Map<string, number>;
 };
 
 export function whaleCoinKey(sig: Pick<NormalizedTwapSignal, 'user' | 'coin'>): string {
@@ -24,6 +31,7 @@ export function createTwapWatchState(): TwapWatchState {
     seenOpenHashes: new Set(),
     activeByHash: new Map(),
     endedAnnounced: new Set(),
+    telegramMessageByHash: new Map(),
   };
 }
 
@@ -63,45 +71,6 @@ export function oppositeActiveTwap(
   return null;
 }
 
-export type CrossingImpactDecision = {
-  allow: boolean;
-  dominant: TwapSide | null;
-  diffPct: number | null;
-};
-
-/**
- * Перекрёстные TWAP: long и short impact каждый ≥ min; |buy − sell| > min → доминирующая сторона.
- */
-export function crossingImpactDecision(
-  buyPct: number | null | undefined,
-  sellPct: number | null | undefined,
-  minPct: number,
-): CrossingImpactDecision {
-  if (minPct <= 0) {
-    const dominant =
-      buyPct != null && sellPct != null
-        ? buyPct > sellPct
-          ? 'buy'
-          : sellPct > buyPct
-            ? 'sell'
-            : null
-        : null;
-    return { allow: true, dominant, diffPct: null };
-  }
-  if (buyPct == null || sellPct == null) {
-    return { allow: false, dominant: null, diffPct: null };
-  }
-  if (buyPct < minPct || sellPct < minPct) {
-    return { allow: false, dominant: null, diffPct: Math.abs(buyPct - sellPct) };
-  }
-  const diffPct = Math.abs(buyPct - sellPct);
-  if (diffPct <= minPct) {
-    return { allow: false, dominant: null, diffPct };
-  }
-  const dominant: TwapSide = buyPct > sellPct ? 'buy' : 'sell';
-  return { allow: true, dominant, diffPct };
-}
-
 export function passesTwapFilters(
   sig: NormalizedTwapSignal,
   opts: TwapFilterOpts,
@@ -119,11 +88,13 @@ export function passesTwapFilters(
     return true;
   }
 
-  const opposite = state ? oppositeActiveTwap(state, sig) : null;
-  if (!opposite) return true;
+  if (!state) return true;
 
-  const buyPct = sig.side === 'buy' ? sig.volumeSharePct : opposite.volumeSharePct;
-  const sellPct = sig.side === 'sell' ? sig.volumeSharePct : opposite.volumeSharePct;
+  const activeOnCoin = activeTwapsForCoin(state, sig.coin);
+  const twaps = activeOnCoin.some((t) => t.hash === sig.hash)
+    ? activeOnCoin
+    : [...activeOnCoin, sig];
+  const { buyPct, sellPct } = aggregateCoinImpacts(twaps);
   const { allow, dominant } = crossingImpactDecision(buyPct, sellPct, min);
   if (!allow || !dominant) return false;
   return sig.side === dominant;

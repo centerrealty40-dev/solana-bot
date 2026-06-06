@@ -1,4 +1,4 @@
-import { ExchangeClient, HttpTransport } from '@nktkas/hyperliquid';
+import { ExchangeClient, HttpTransport, InfoClient } from '@nktkas/hyperliquid';
 import { formatPrice, formatSize, SymbolConverter } from '@nktkas/hyperliquid/utils';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -11,6 +11,7 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
 
   private exchange!: ExchangeClient;
   private converter!: SymbolConverter;
+  private maxLeverageByCoin = new Map<string, number>();
   private leverageSet = new Set<string>();
 
   constructor(private readonly cfg: HlTwapLiveConfig) {
@@ -28,6 +29,26 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     );
     this.exchange = new ExchangeClient({ transport, wallet });
     this.converter = await SymbolConverter.create({ transport });
+
+    const info = new InfoClient({ transport });
+    const meta = await info.meta({});
+    for (const asset of meta.universe) {
+      if (asset.name && asset.maxLeverage > 0) {
+        this.maxLeverageByCoin.set(asset.name, asset.maxLeverage);
+      }
+    }
+  }
+
+  private leverageForCoin(coin: string): number {
+    const max = this.maxLeverageByCoin.get(coin);
+    const requested = this.cfg.leverage;
+    if (max == null) return requested;
+    return Math.min(requested, max);
+  }
+
+  /** Gross position USD for a new open (margin × effective leverage). */
+  private openPositionNotionalUsd(coin: string, marginUsd: number): number {
+    return marginUsd * this.leverageForCoin(coin);
   }
 
   async marketOrder(params: MarketOrderParams): Promise<OrderFillResult> {
@@ -41,18 +62,31 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     }
 
     if (!this.leverageSet.has(params.coin)) {
+      const leverage = this.leverageForCoin(params.coin);
       await this.exchange.updateLeverage({
         asset: assetId,
         isCross: true,
-        leverage: this.cfg.leverage,
+        leverage,
       });
       this.leverageSet.add(params.coin);
+      const max = this.maxLeverageByCoin.get(params.coin);
+      if (max != null && leverage < this.cfg.leverage) {
+        console.log(
+          `[hl-twap-live] leverage ${params.displaySymbol} ${leverage}x (HL max ${max}x, requested ${this.cfg.leverage}x)`,
+        );
+      }
     }
 
     const isBuy = params.side === 'buy';
+    const leverage = this.leverageForCoin(params.coin);
+    const marginUsd = params.intent === 'open' ? params.notionalUsd : undefined;
+    const orderUsd =
+      params.intent === 'open'
+        ? this.openPositionNotionalUsd(params.coin, params.notionalUsd)
+        : params.notionalUsd;
     const aggressivePx =
       params.markPx * (1 + (isBuy ? this.cfg.slippageTolerance : -this.cfg.slippageTolerance));
-    const sizeBase = params.notionalUsd / params.markPx;
+    const sizeBase = orderUsd / params.markPx;
     const p = formatPrice(aggressivePx, szDecimals);
     const s = formatSize(sizeBase, szDecimals);
 
@@ -74,7 +108,7 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     const row = journalOrderRow(params.intent, {
       coin: params.coin,
       side: params.side,
-      notionalUsd: params.notionalUsd,
+      notionalUsd: orderUsd,
       markPx: params.markPx,
       reduceOnly: params.reduceOnly,
       mode: 'live',
@@ -83,11 +117,19 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     });
     appendLiveJournal(this.cfg.journalPath, row);
 
+    const levNote =
+      params.intent === 'open' ? ` margin $${params.notionalUsd.toFixed(0)} · ${leverage}x` : '';
     console.log(
-      `[hl-twap-live] order ${params.side} ${params.displaySymbol} $${params.notionalUsd.toFixed(2)} status=${JSON.stringify(result?.status ?? result).slice(0, 120)}`,
+      `[hl-twap-live] order ${params.side} ${params.displaySymbol} $${orderUsd.toFixed(2)}${levNote} status=${JSON.stringify(result?.status ?? result).slice(0, 120)}`,
     );
 
-    return { fillPx, sizeBase, notionalUsd: params.notionalUsd };
+    return {
+      fillPx,
+      sizeBase,
+      notionalUsd: orderUsd,
+      marginUsd,
+      leverage: params.intent === 'open' ? leverage : undefined,
+    };
   }
 }
 

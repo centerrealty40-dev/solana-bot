@@ -1,13 +1,10 @@
 import type { TwapWatchState } from '../detect.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
+import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
 import { markPxForCoin } from '../paper-trader.js';
 import { computeTwapSchedule } from '../twap-schedule.js';
 import type { NormalizedTwapSignal } from '../types.js';
-import {
-  canScheduleLiveEntry,
-  indexOpensByCoin,
-  oppositeActiveTwapForCoin,
-} from './coin-exposure.js';
+import { canScheduleLiveEntry } from './coin-exposure.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
 import {
@@ -54,27 +51,19 @@ export function scheduleLiveTrade(
     return { scheduled: false, reason: 'already_tracked' };
   }
 
-  const openByCoin = indexOpensByCoin(opens);
-  const opposite = oppositeActiveTwapForCoin(watchState, sig);
-  const decision = canScheduleLiveEntry(
-    sig.coin,
-    sig.side,
-    sig.volumeSharePct,
-    openByCoin,
-    opposite,
-    cfg.minImpactPct,
-  );
+  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct);
   if (!decision.allow) {
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
   }
 
+  const plan = computeCoinEntryPlan(sig, watchState, cfg.minImpactPct);
   const sched = computeTwapSchedule(sig);
   appendLiveJournal(
     filePath,
     journalScheduleRow({
       hash: sig.hash,
-      openAtMs: sched.paperOpenAtMs,
+      openAtMs: decision.openAtMs ?? plan.openAtMs,
       closeAtMs: sched.paperCloseAtMs,
       twapStartMs: sched.twapStartMs,
       coin: sig.coin,
@@ -83,6 +72,8 @@ export function scheduleLiveTrade(
       whaleUser: sig.user,
       minutes: sig.minutes,
       impactPct: sig.volumeSharePct,
+      whaleNotionalUsd: sig.notionalUsd,
+      whaleSize: sig.size,
     }),
   );
   return { scheduled: true, reason: 'ok' };
@@ -93,14 +84,15 @@ async function executeLiveOpen(
   entryPx: number,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
 ): Promise<HlTwapLiveOpen | null> {
   if (entryPx <= 0) return null;
-  const notionalUsd = cfg.notionalUsd;
+  const marginUsd = cfg.notionalUsd;
   const fill = await client.marketOrder({
     coin: sched.coin,
     displaySymbol: sched.displaySymbol,
     side: sched.side,
-    notionalUsd,
+    notionalUsd: marginUsd,
     markPx: entryPx,
     reduceOnly: false,
     intent: 'open',
@@ -114,8 +106,10 @@ async function executeLiveOpen(
     entryTs: Date.now(),
     entryAnchorPx: fill.fillPx,
     avgEntryPx: fill.fillPx,
-    initialNotionalUsd: notionalUsd,
-    currentNotionalUsd: notionalUsd,
+    initialNotionalUsd: fill.notionalUsd,
+    currentNotionalUsd: fill.notionalUsd,
+    marginUsd: fill.marginUsd ?? marginUsd,
+    entryLeverage: fill.leverage ?? cfg.leverage,
     impactPct: sched.impactPct,
     whaleUser: sched.whaleUser,
     minutes: sched.minutes,
@@ -124,9 +118,11 @@ async function executeLiveOpen(
     twapStartMs: sched.twapStartMs,
     tpLevelsTaken: 0,
     dcaLevelsTaken: 0,
+    whaleNotionalUsd: sched.whaleNotionalUsd,
+    whaleSize: sched.whaleSize,
   };
   appendLiveJournal(cfg.journalPath, journalOpenRow(pos));
-  await notifyLiveTradeOpen(pos, cfg);
+  await notifyLiveTradeOpen(pos, cfg, watchState);
   return pos;
 }
 
@@ -144,15 +140,28 @@ export async function closeLiveTrade(
   if (!pos || exitPx <= 0) return null;
 
   const closeSide = pos.side === 'buy' ? 'sell' : 'buy';
-  await client.marketOrder({
-    coin: pos.coin,
-    displaySymbol: pos.displaySymbol,
-    side: closeSide,
-    notionalUsd: pos.currentNotionalUsd,
-    markPx: exitPx,
-    reduceOnly: true,
-    intent: 'close',
-  });
+  let orderOk = false;
+  try {
+    await client.marketOrder({
+      coin: pos.coin,
+      displaySymbol: pos.displaySymbol,
+      side: closeSide,
+      notionalUsd: pos.currentNotionalUsd,
+      markPx: exitPx,
+      reduceOnly: true,
+      intent: 'close',
+    });
+    orderOk = true;
+  } catch (e) {
+    const msg = String(e);
+    if (/reduce only|would increase position|position/i.test(msg)) {
+      console.warn(
+        `[hl-twap-live] close ${pos.displaySymbol} exchange flat or mismatch — journal reconcile (${exitReason})`,
+      );
+    } else {
+      throw e;
+    }
+  }
 
   const dir = pos.side === 'buy' ? 1 : -1;
   const pnlPct = dir * ((exitPx - pos.avgEntryPx) / pos.avgEntryPx) * 100;
@@ -165,14 +174,21 @@ export async function closeLiveTrade(
     exitPx,
     pnlUsd,
     pnlPct,
-    exitReason,
+    exitReason: orderOk ? exitReason : `${exitReason}_reconciled`,
   });
 
   if (cache) {
     /* cache unused but keeps API symmetric with paper */
   }
 
-  const closed: HlTwapLiveClose = { ...pos, exitTs: Date.now(), exitPx, pnlUsd, pnlPct, exitReason };
+  const closed: HlTwapLiveClose = {
+    ...pos,
+    exitTs: Date.now(),
+    exitPx,
+    pnlUsd,
+    pnlPct,
+    exitReason: orderOk ? exitReason : `${exitReason}_reconciled`,
+  };
   await notifyLiveTradeClose(closed, cfg);
   return closed;
 }
@@ -188,6 +204,7 @@ export async function processLiveTrades(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
 ): Promise<void> {
   const filePath = cfg.journalPath;
   const now = Date.now();
@@ -195,17 +212,28 @@ export async function processLiveTrades(
 
   for (const sched of pending.values()) {
     if (now >= sched.openAtMs) {
-      const px =
-        markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
-      await executeLiveOpen(sched, px, cfg, client);
+      try {
+        const px =
+          markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
+        await executeLiveOpen(sched, px, cfg, client, watchState);
+      } catch (e) {
+        console.warn(`[hl-twap-live] open failed ${sched.displaySymbol}`, String(e));
+      }
     }
   }
 
   const opens = loadLiveOpensFromJournal(filePath);
   for (const pos of opens.values()) {
-    if (now >= pos.liveCloseAtMs) {
+    const whaleEnded = watchState ? !watchState.activeByHash.has(pos.hash) : false;
+    const timerDue = now >= pos.liveCloseAtMs;
+    if (!timerDue && !whaleEnded) continue;
+    try {
       const px = exitPxForOpen(pos, cache);
-      await closeLiveTrade(pos.hash, px, 'before_last_cycle', cfg, client);
+      const reason = whaleEnded && !timerDue ? 'twap_ended_feed' : 'before_last_cycle';
+      await closeLiveTrade(pos.hash, px, reason, cfg, client);
+      console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
+    } catch (e) {
+      console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
     }
   }
 }
@@ -224,82 +252,8 @@ export async function processLiveLadders(
     const markPx = exitPxForOpen(pos, cache);
     if (markPx <= 0) continue;
 
-    let action = nextLadderAction(
-      pos.side,
-      markPx,
-      pos.avgEntryPx,
-      pos.initialNotionalUsd,
-      pos.currentNotionalUsd,
-      pos.tpLevelsTaken,
-      pos.dcaLevelsTaken,
-      lcfg,
-    );
-
-    while (action) {
-      if (action.kind === 'take_profit') {
-        const closeSide = pos.side === 'buy' ? 'sell' : 'buy';
-        const fill = await client.marketOrder({
-          coin: pos.coin,
-          displaySymbol: pos.displaySymbol,
-          side: closeSide,
-          notionalUsd: action.notionalUsd,
-          markPx,
-          reduceOnly: true,
-          intent: 'tp',
-        });
-        const newNotional = Math.max(0, pos.currentNotionalUsd - action.notionalUsd);
-        pos.currentNotionalUsd = newNotional;
-        pos.tpLevelsTaken = action.level;
-        appendLiveJournal(
-          filePath,
-          journalTpRow(
-            pos.hash,
-            action.level,
-            action.notionalUsd,
-            fill.fillPx,
-            newNotional,
-            pos.tpLevelsTaken,
-          ),
-        );
-        console.log(
-          `[hl-twap-live] TP L${action.level} ${pos.displaySymbol} -$${action.notionalUsd.toFixed(0)} uPnL=${unrealizedUsd(pos.side, pos.avgEntryPx, pos.currentNotionalUsd, markPx).toFixed(2)}`,
-        );
-      } else {
-        const fill = await client.marketOrder({
-          coin: pos.coin,
-          displaySymbol: pos.displaySymbol,
-          side: pos.side,
-          notionalUsd: action.notionalUsd,
-          markPx,
-          reduceOnly: false,
-          intent: 'dca',
-        });
-        pos.avgEntryPx = avgEntryAfterAdd(
-          pos.avgEntryPx,
-          pos.currentNotionalUsd,
-          action.notionalUsd,
-          fill.fillPx,
-        );
-        pos.currentNotionalUsd += action.notionalUsd;
-        pos.dcaLevelsTaken = action.level;
-        appendLiveJournal(
-          filePath,
-          journalDcaRow(
-            pos.hash,
-            action.level,
-            action.notionalUsd,
-            fill.fillPx,
-            pos.avgEntryPx,
-            pos.currentNotionalUsd,
-            pos.dcaLevelsTaken,
-          ),
-        );
-        console.log(
-          `[hl-twap-live] DCA L${action.level} ${pos.displaySymbol} +$${action.notionalUsd.toFixed(0)} avg=${pos.avgEntryPx.toFixed(4)}`,
-        );
-      }
-
-      action = nextLadderAction(
+    try {
+      let action = nextLadderAction(
         pos.side,
         markPx,
         pos.avgEntryPx,
@@ -309,6 +263,84 @@ export async function processLiveLadders(
         pos.dcaLevelsTaken,
         lcfg,
       );
+
+      while (action) {
+        if (action.kind === 'take_profit') {
+          const closeSide = pos.side === 'buy' ? 'sell' : 'buy';
+          const fill = await client.marketOrder({
+            coin: pos.coin,
+            displaySymbol: pos.displaySymbol,
+            side: closeSide,
+            notionalUsd: action.notionalUsd,
+            markPx,
+            reduceOnly: true,
+            intent: 'tp',
+          });
+          const newNotional = Math.max(0, pos.currentNotionalUsd - action.notionalUsd);
+          pos.currentNotionalUsd = newNotional;
+          pos.tpLevelsTaken = action.level;
+          appendLiveJournal(
+            filePath,
+            journalTpRow(
+              pos.hash,
+              action.level,
+              action.notionalUsd,
+              fill.fillPx,
+              newNotional,
+              pos.tpLevelsTaken,
+            ),
+          );
+          console.log(
+            `[hl-twap-live] TP L${action.level} ${pos.displaySymbol} -$${action.notionalUsd.toFixed(0)} uPnL=${unrealizedUsd(pos.side, pos.avgEntryPx, pos.currentNotionalUsd, markPx).toFixed(2)}`,
+          );
+        } else {
+          const fill = await client.marketOrder({
+            coin: pos.coin,
+            displaySymbol: pos.displaySymbol,
+            side: pos.side,
+            notionalUsd: action.notionalUsd,
+            markPx,
+            reduceOnly: false,
+            intent: 'dca',
+          });
+          pos.avgEntryPx = avgEntryAfterAdd(
+            pos.avgEntryPx,
+            pos.currentNotionalUsd,
+            action.notionalUsd,
+            fill.fillPx,
+          );
+          pos.currentNotionalUsd += action.notionalUsd;
+          pos.dcaLevelsTaken = action.level;
+          appendLiveJournal(
+            filePath,
+            journalDcaRow(
+              pos.hash,
+              action.level,
+              action.notionalUsd,
+              fill.fillPx,
+              pos.avgEntryPx,
+              pos.currentNotionalUsd,
+              pos.dcaLevelsTaken,
+            ),
+          );
+          console.log(
+            `[hl-twap-live] DCA L${action.level} ${pos.displaySymbol} +$${action.notionalUsd.toFixed(0)} avg=${pos.avgEntryPx.toFixed(4)}`,
+          );
+        }
+
+        action = nextLadderAction(
+          pos.side,
+          markPx,
+          pos.avgEntryPx,
+          pos.initialNotionalUsd,
+          pos.currentNotionalUsd,
+          pos.tpLevelsTaken,
+          pos.dcaLevelsTaken,
+          lcfg,
+        );
+      }
+    } catch (e) {
+      console.warn(`[hl-twap-live] ladder failed ${pos.displaySymbol}`, String(e));
     }
   }
 }

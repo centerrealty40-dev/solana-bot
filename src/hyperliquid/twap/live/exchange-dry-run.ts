@@ -20,11 +20,14 @@ export class DryRunExchangeClient implements HlTwapExchangeClient {
 
   async marketOrder(params: MarketOrderParams): Promise<OrderFillResult> {
     const fillPx = params.markPx;
-    const sizeBase = params.notionalUsd / fillPx;
+    const leverage = this.cfg.leverage;
+    const orderUsd =
+      params.intent === 'open' ? params.notionalUsd * leverage : params.notionalUsd;
+    const sizeBase = orderUsd / fillPx;
     const row = journalOrderRow(params.intent, {
         coin: params.coin,
         side: params.side,
-        notionalUsd: params.notionalUsd,
+        notionalUsd: orderUsd,
         markPx: params.markPx,
         reduceOnly: params.reduceOnly,
         mode: 'dry_run',
@@ -36,10 +39,16 @@ export class DryRunExchangeClient implements HlTwapExchangeClient {
     this.onJournal?.(row);
 
     console.log(
-      `[hl-twap-live:DRY] ${params.reduceOnly ? 'reduce' : 'open'} ${params.side} ${params.displaySymbol} $${params.notionalUsd.toFixed(2)} @ ${fillPx.toFixed(4)}`,
+      `[hl-twap-live:DRY] ${params.reduceOnly ? 'reduce' : 'open'} ${params.side} ${params.displaySymbol} $${orderUsd.toFixed(2)} @ ${fillPx.toFixed(4)}`,
     );
 
-    return { fillPx, sizeBase, notionalUsd: params.notionalUsd };
+    return {
+      fillPx,
+      sizeBase,
+      notionalUsd: orderUsd,
+      marginUsd: params.intent === 'open' ? params.notionalUsd : undefined,
+      leverage: params.intent === 'open' ? leverage : undefined,
+    };
   }
 }
 

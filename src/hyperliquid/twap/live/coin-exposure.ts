@@ -1,82 +1,45 @@
 import type { TwapWatchState } from '../detect.js';
-import { crossingImpactDecision } from '../detect.js';
-import type { NormalizedTwapSignal, TwapSide } from '../types.js';
+import {
+  computeCoinEntryPlan,
+  opposingActiveTwapsForCoin,
+  shouldCloseForImpactLoss,
+} from '../coin-twap-analysis.js';
+import type { NormalizedTwapSignal } from '../types.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 export type LiveEntryDecision = {
   allow: boolean;
   reason: string;
+  openAtMs?: number;
 };
 
-/** Active TWAP on same coin, opposite side (any whale). */
-export function oppositeActiveTwapForCoin(
-  state: TwapWatchState,
-  sig: NormalizedTwapSignal,
-): NormalizedTwapSignal | null {
-  const want: TwapSide = sig.side === 'buy' ? 'sell' : 'buy';
-  for (const active of state.activeByHash.values()) {
-    if (active.coin !== sig.coin) continue;
-    if (active.side !== want) continue;
-    return active;
-  }
-  return null;
-}
+export { shouldCloseForImpactLoss, opposingActiveTwapsForCoin, computeCoinEntryPlan };
 
 /**
- * Opposite TWAP while in position: hold if impact diff > minPct (dominant side keeps seat).
+ * Each qualifying TWAP (unique hash) → separate $100 position.
+ * Same coin + same side: stack (multiple whales / TWAPs).
+ * Opposite side on coin blocked while any position open (perps net).
  */
-export function shouldHoldOnOppositeTwap(
-  _posSide: TwapSide,
-  posImpactPct: number | null,
-  oppositeImpactPct: number | null,
-  minDiffPct: number,
-): boolean {
-  if (posImpactPct == null || oppositeImpactPct == null) return true;
-  return Math.abs(posImpactPct - oppositeImpactPct) > minDiffPct;
-}
-
-/** One live position per coin — long OR short, never both. */
 export function canScheduleLiveEntry(
-  coin: string,
-  side: TwapSide,
-  impactPct: number | null,
-  openByCoin: Map<string, HlTwapLiveOpen>,
-  oppositeTwap: NormalizedTwapSignal | null,
+  sig: NormalizedTwapSignal,
+  watchState: TwapWatchState,
+  opens: Map<string, HlTwapLiveOpen>,
   minImpactPct: number,
 ): LiveEntryDecision {
-  if (minImpactPct > 0 && (impactPct == null || impactPct < minImpactPct)) {
+  if (minImpactPct > 0 && (sig.volumeSharePct == null || sig.volumeSharePct < minImpactPct)) {
     return { allow: false, reason: 'impact_below_min' };
   }
 
-  const existing = openByCoin.get(coin);
-  if (!existing) {
-    if (oppositeTwap) {
-      const buyPct = side === 'buy' ? impactPct : oppositeTwap.volumeSharePct;
-      const sellPct = side === 'sell' ? impactPct : oppositeTwap.volumeSharePct;
-      const { allow, dominant } = crossingImpactDecision(buyPct, sellPct, minImpactPct);
-      if (!allow || !dominant || dominant !== side) {
-        return { allow: false, reason: 'crossing_impact_no_edge' };
-      }
-    }
-    return { allow: true, reason: 'ok' };
+  const hasOpposite = [...opens.values()].some(
+    (p) => p.coin === sig.coin && p.side !== sig.side,
+  );
+  if (hasOpposite) {
+    return { allow: false, reason: 'coin_has_opposite_side' };
   }
 
-  if (existing.side === side) {
-    return { allow: false, reason: 'coin_already_open_same_side' };
+  const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
+  if (!plan.allow) {
+    return { allow: false, reason: plan.reason };
   }
-
-  const oppositeImpact = impactPct;
-  if (shouldHoldOnOppositeTwap(existing.side, existing.impactPct, oppositeImpact, minImpactPct)) {
-    return { allow: false, reason: 'opposite_twap_hold_dominant' };
-  }
-
-  return { allow: false, reason: 'opposite_twap_no_flip' };
-}
-
-export function indexOpensByCoin(opens: Map<string, HlTwapLiveOpen>): Map<string, HlTwapLiveOpen> {
-  const byCoin = new Map<string, HlTwapLiveOpen>();
-  for (const pos of opens.values()) {
-    byCoin.set(pos.coin, pos);
-  }
-  return byCoin;
+  return { allow: true, reason: plan.reason, openAtMs: plan.openAtMs };
 }

@@ -10,10 +10,14 @@ export type HlTwapLiveOpen = {
   entryAnchorPx: number;
   /** Volume-weighted average entry after DCAs. */
   avgEntryPx: number;
-  /** Initial notional at open (USD). */
+  /** Initial gross notional at open (USD) = margin × leverage. */
   initialNotionalUsd: number;
   /** Current gross notional (USD). */
   currentNotionalUsd: number;
+  /** Collateral per trade (HL_TWAP_LIVE_NOTIONAL_USD). */
+  marginUsd: number;
+  /** Leverage applied at open (capped by HL max for coin). */
+  entryLeverage: number;
   impactPct: number | null;
   whaleUser: string;
   minutes: number;
@@ -22,6 +26,8 @@ export type HlTwapLiveOpen = {
   twapStartMs: number;
   tpLevelsTaken: number;
   dcaLevelsTaken: number;
+  whaleNotionalUsd: number | null;
+  whaleSize: number | null;
 };
 
 export type HlTwapLiveClose = HlTwapLiveOpen & {
@@ -35,7 +41,11 @@ export type HlTwapLiveClose = HlTwapLiveOpen & {
 export type OrderFillResult = {
   fillPx: number;
   sizeBase: number;
+  /** Gross position notional filled (USD). */
   notionalUsd: number;
+  /** Collateral for opens (margin × leverage = notional). */
+  marginUsd?: number;
+  leverage?: number;
 };
 
 export type MarketOrderIntent = 'open' | 'close' | 'tp' | 'dca';
