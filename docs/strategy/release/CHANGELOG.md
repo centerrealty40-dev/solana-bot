@@ -14,6 +14,22 @@
 
 ---
 
+## [1.11.336] — 2026-05-27
+
+**Тег:** `sa-alpha-1.11.336`
+
+### Live Oscar: sizing — сплит $300+$300, DCA ×$200
+
+| Параметр | Было | Стало |
+|---|---|---|
+| Entry split (2 ноги) | $150 + $150 | **$300 + $300** |
+| DCA −10% / −20% | $100 | **$200** |
+| Max на mint | $500 | **$1000** |
+
+**Откат:** `LIVE_OSCAR_ENTRY_NOTIONAL_USD=300`, `LIVE_OSCAR_MAX_POSITION_USD=500`, split legs `150`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.335] — 2026-05-27
 
 **Тег:** `sa-alpha-1.11.335`
