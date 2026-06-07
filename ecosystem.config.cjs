@@ -307,9 +307,9 @@ const PM2_APPS = [
       env: {
         ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
-        /** QuickNode primary для ingest; live send/sim/balance → Helius (.env HELIUS_*). Fallback при QN budget — см. qn-client. */
+        /** Billable RPC: QuickNode (`SA_RPC_HTTP_URL` в .env). Helius — только fallback при QN budget block. */
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
-        SOLANA_RPC_HELIUS_PREFER: '1',
+        SOLANA_RPC_HELIUS_PREFER: '0',
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
@@ -1274,8 +1274,8 @@ const PM2_APPS = [
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
-        /** Poll + parse leader txs on Helius (QuickNode SSL/budget issues on VPS). */
-        SOLANA_RPC_HELIUS_PREFER: '1',
+        /** Poll + parse leader txs on QuickNode; Helius — fallback при QN budget block. */
+        SOLANA_RPC_HELIUS_PREFER: '0',
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
       },
     },
