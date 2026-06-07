@@ -39,6 +39,7 @@ import {
 } from '../hyperliquid/twap/coin-twap-analysis.js';
 import { deniedWhaleAddresses } from '../hyperliquid/twap/whale-denylist.js';
 import {
+  twapCancelExitDelayMinutes,
   twapExitEarlyMinutes,
   twapMaxMinutes,
   twapMinMinutes,
@@ -223,7 +224,7 @@ async function closePositionsForImpactLoss(cache: HyperliquidMarketCache): Promi
     for (const pos of [...opens.values()]) {
       if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_IMPACT_PCT_HOUR)) continue;
       const px = cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.entryPx;
-      if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost')) {
+      if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost', watchState)) {
         console.log(`[hl-twap] paper closed ${pos.displaySymbol} impact edge lost`);
       }
     }
@@ -234,7 +235,7 @@ async function closePositionsForImpactLoss(cache: HyperliquidMarketCache): Promi
       if (shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_IMPACT_PCT_HOUR)) {
         const px =
           cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.avgEntryPx;
-        await closeLiveTrade(pos.hash, px, 'impact_edge_lost', LIVE_CFG, liveExchange);
+        await closeLiveTrade(pos.hash, px, 'impact_edge_lost', LIVE_CFG, liveExchange, watchState);
         console.log(`[hl-twap-live] closed ${pos.displaySymbol} impact edge lost`);
       }
     }
@@ -275,7 +276,7 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
 
   await closePositionsForImpactLoss(cache);
 
-  if (PAPER_ENABLED) await processPaperTrades(cache);
+  if (PAPER_ENABLED) await processPaperTrades(cache, watchState);
   if (LIVE_ENABLED && liveExchange) {
     await processLiveTrades(cache, LIVE_CFG, liveExchange, watchState);
     await processLiveLadders(cache, LIVE_CFG, liveExchange);
@@ -285,9 +286,9 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
   if (NOTIFY_ENDED) {
     for (const { signal, endedStatus } of endedSignals) {
       console.log(`[hl-twap] END ${signal.displaySymbol} ${endedStatus} ${signal.hash.slice(0, 12)}…`);
-      if (PAPER_ENABLED) handlePaperOnTwapEnd(signal, cache, endedStatus);
+      if (PAPER_ENABLED) handlePaperOnTwapEnd(signal, cache, endedStatus, watchState);
       if (LIVE_ENABLED && liveExchange) {
-        await handleLiveOnTwapEnd(signal, cache, endedStatus, LIVE_CFG, liveExchange);
+        await handleLiveOnTwapEnd(signal, cache, endedStatus, LIVE_CFG, liveExchange, watchState);
       }
       await announceEnd(signal, endedStatus, rows);
     }
@@ -312,7 +313,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m whale_deny=${deniedWhaleAddresses().size} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   let cache = await loadHyperliquidMarketCache();

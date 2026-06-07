@@ -16,6 +16,8 @@ export type TwapWatchState = {
   activeByHash: Map<string, NormalizedTwapSignal>;
   /** Ended notifications already sent. */
   endedAnnounced: Set<string>;
+  /** Delayed exit after whale TWAP cancel/end (hash → exitAtMs + reason). */
+  pendingWhaleExitByHash: Map<string, { exitAtMs: number; reason: string }>;
   /** Telegram message_id for start alerts — link crossing TWAPs. */
   telegramMessageByHash: Map<string, number>;
 };
@@ -31,6 +33,7 @@ export function createTwapWatchState(): TwapWatchState {
     seenOpenHashes: new Set(),
     activeByHash: new Map(),
     endedAnnounced: new Set(),
+    pendingWhaleExitByHash: new Map(),
     telegramMessageByHash: new Map(),
   };
 }

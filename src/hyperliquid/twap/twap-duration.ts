@@ -24,6 +24,11 @@ export function twapExitEarlyMinutes(): number {
   return envInt('HL_TWAP_EXIT_EARLY_MINUTES', 10, 0);
 }
 
+/** Wait N minutes after whale TWAP cancel/end before closing (0 = immediate). Default 2. */
+export function twapCancelExitDelayMinutes(): number {
+  return envInt('HL_TWAP_CANCEL_EXIT_DELAY_MINUTES', 2, 0);
+}
+
 export type TwapDurationGate = {
   allow: boolean;
   reason: string;

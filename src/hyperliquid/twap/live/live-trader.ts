@@ -1,5 +1,10 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY } from '../twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes } from '../twap-duration.js';
+import {
+  clearWhaleExitPending,
+  scheduleWhaleExitDelay,
+  takeDueWhaleExit,
+} from '../twap-whale-exit.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
 import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
@@ -135,6 +140,7 @@ export async function closeLiveTrade(
   exitReason: string,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
 ): Promise<HlTwapLiveClose | null> {
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
@@ -173,6 +179,8 @@ export async function closeLiveTrade(
     pnlPct,
     exitReason: finalReason,
   });
+
+  if (watchState) clearWhaleExitPending(watchState, hash);
 
   const closed: HlTwapLiveClose = {
     ...pos,
@@ -230,16 +238,46 @@ export async function processLiveTrades(
 
   const opens = loadLiveOpensFromJournal(filePath);
   for (const pos of opens.values()) {
+    const dueReason = watchState ? takeDueWhaleExit(watchState, pos.hash, now) : null;
+    if (dueReason) {
+      try {
+        const px = exitPxForOpen(pos, cache);
+        await closeLiveTrade(pos.hash, px, dueReason, cfg, client, watchState);
+        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${dueReason}, delayed +${twapCancelExitDelayMinutes()}m)`);
+      } catch (e) {
+        console.warn(`[hl-twap-live] delayed close failed ${pos.displaySymbol}`, String(e));
+      }
+      continue;
+    }
+
     const whaleEnded = watchState ? !watchState.activeByHash.has(pos.hash) : false;
     const timerDue = now >= pos.liveCloseAtMs;
-    if (!timerDue && !whaleEnded) continue;
-    try {
-      const px = exitPxForOpen(pos, cache);
-      const reason = whaleEnded && !timerDue ? 'twap_ended_feed' : HL_TWAP_EXIT_REASON_EARLY;
-      await closeLiveTrade(pos.hash, px, reason, cfg, client);
-      console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
-    } catch (e) {
-      console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
+
+    if (timerDue) {
+      try {
+        const px = exitPxForOpen(pos, cache);
+        await closeLiveTrade(pos.hash, px, HL_TWAP_EXIT_REASON_EARLY, cfg, client, watchState);
+        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+      } catch (e) {
+        console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
+      }
+      continue;
+    }
+
+    if (whaleEnded) {
+      if (watchState && scheduleWhaleExitDelay(watchState, pos.hash, 'twap_ended_feed', now)) {
+        console.log(
+          `[hl-twap-live] delayed exit ${pos.displaySymbol} in ${twapCancelExitDelayMinutes()}m (twap_ended_feed)`,
+        );
+        continue;
+      }
+      try {
+        const px = exitPxForOpen(pos, cache);
+        await closeLiveTrade(pos.hash, px, 'twap_ended_feed', cfg, client, watchState);
+        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (twap_ended_feed)`);
+      } catch (e) {
+        console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
+      }
     }
   }
 }
@@ -368,15 +406,23 @@ export async function handleLiveOnTwapEnd(
   endedStatus: string,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
 ): Promise<void> {
   const filePath = cfg.journalPath;
+  const reason = `twap_${endedStatus}`;
   const opens = loadLiveOpensFromJournal(filePath);
   if (opens.has(sig.hash)) {
+    if (watchState && scheduleWhaleExitDelay(watchState, sig.hash, reason)) {
+      console.log(
+        `[hl-twap-live] delayed exit ${sig.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,
+      );
+      return;
+    }
     const px = exitPxForOpen(opens.get(sig.hash)!, cache);
-    await closeLiveTrade(sig.hash, px, `twap_${endedStatus}`, cfg, client);
+    await closeLiveTrade(sig.hash, px, reason, cfg, client, watchState);
     return;
   }
-  cancelSchedule(filePath, sig.hash, `twap_${endedStatus}_before_open`);
+  cancelSchedule(filePath, sig.hash, `${reason}_before_open`);
 }
 
 /** Flatten exchange positions with no active journal cycle (ghost leftovers). */

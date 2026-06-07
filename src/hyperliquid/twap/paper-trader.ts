@@ -3,7 +3,13 @@ import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
 import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
-import { HL_TWAP_EXIT_REASON_EARLY, twapExitEarlyMinutes } from './twap-duration.js';
+import type { TwapWatchState } from './detect.js';
+import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from './twap-duration.js';
+import {
+  clearWhaleExitPending,
+  scheduleWhaleExitDelay,
+  takeDueWhaleExit,
+} from './twap-whale-exit.js';
 import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
@@ -230,6 +236,7 @@ export function closePaperTrade(
   sig: Pick<NormalizedTwapSignal, 'hash' | 'displaySymbol'>,
   exitPx: number,
   exitReason: string,
+  watchState?: TwapWatchState,
 ): HlTwapPaperClose | null {
   const filePath = paperJournalPath();
   const opens = loadPaperOpensFromJournal(filePath);
@@ -250,11 +257,16 @@ export function closePaperTrade(
     exitReason,
   });
 
+  if (watchState) clearWhaleExitPending(watchState, pos.hash);
+
   return { ...pos, exitTs: Date.now(), exitPx, pnlUsd, pnlPct, exitReason };
 }
 
 /** Таймеры: открыть/закрыть по циклам; без лимита позиций. */
-export async function processPaperTrades(cache: HyperliquidMarketCache): Promise<void> {
+export async function processPaperTrades(
+  cache: HyperliquidMarketCache,
+  watchState?: TwapWatchState,
+): Promise<void> {
   const filePath = paperJournalPath();
   const now = Date.now();
   const pending = loadPendingSchedules(filePath);
@@ -267,9 +279,16 @@ export async function processPaperTrades(cache: HyperliquidMarketCache): Promise
 
   const opens = loadPaperOpensFromJournal(filePath);
   for (const pos of opens.values()) {
+    const dueReason = watchState ? takeDueWhaleExit(watchState, pos.hash, now) : null;
+    if (dueReason) {
+      const px = exitPxForOpen(pos, cache);
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, dueReason, watchState);
+      continue;
+    }
+
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, HL_TWAP_EXIT_REASON_EARLY);
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, HL_TWAP_EXIT_REASON_EARLY, watchState);
     }
   }
 }
@@ -319,15 +338,23 @@ export function handlePaperOnTwapEnd(
   sig: NormalizedTwapSignal,
   cache: HyperliquidMarketCache,
   endedStatus: string,
+  watchState?: TwapWatchState,
 ): void {
   const filePath = paperJournalPath();
+  const reason = `twap_${endedStatus}`;
   const opens = loadPaperOpensFromJournal(filePath);
   if (opens.has(sig.hash)) {
+    if (watchState && scheduleWhaleExitDelay(watchState, sig.hash, reason)) {
+      console.log(
+        `[hl-twap] paper delayed exit ${sig.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,
+      );
+      return;
+    }
     const px = exitPxForOpen(opens.get(sig.hash)!, cache);
-    closePaperTrade(sig, px, `twap_${endedStatus}`);
+    closePaperTrade(sig, px, reason, watchState);
     return;
   }
-  cancelSchedule(filePath, sig.hash, `twap_${endedStatus}_before_open`);
+  cancelSchedule(filePath, sig.hash, `${reason}_before_open`);
 }
 
 export function markPxForCoin(coin: string, cache: HyperliquidMarketCache): number {
