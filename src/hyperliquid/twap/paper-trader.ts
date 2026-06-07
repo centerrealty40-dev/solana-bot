@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
 import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
 import type { TwapWatchState } from './detect.js';
+import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
 import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from './twap-duration.js';
 import {
   clearWhaleExitPending,
@@ -333,7 +334,7 @@ export function closePaperForWhaleBuyReversal(
   return closed;
 }
 
-/** TWAP завершился раньше планового close — закрыть бумагу или снять schedule. */
+/** TWAP завершился — снять schedule; закрыть бумагу только при cancel (finish → таймер −N min). */
 export function handlePaperOnTwapEnd(
   sig: NormalizedTwapSignal,
   cache: HyperliquidMarketCache,
@@ -344,6 +345,12 @@ export function handlePaperOnTwapEnd(
   const reason = `twap_${endedStatus}`;
   const opens = loadPaperOpensFromJournal(filePath);
   if (opens.has(sig.hash)) {
+    if (!shouldCloseOnWhaleTwapCancel(endedStatus)) {
+      console.log(
+        `[hl-twap] paper ignore whale TWAP end ${sig.displaySymbol} (${endedStatus}) — timer exit −${twapExitEarlyMinutes()}m`,
+      );
+      return;
+    }
     if (watchState && scheduleWhaleExitDelay(watchState, sig.hash, reason)) {
       console.log(
         `[hl-twap] paper delayed exit ${sig.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,

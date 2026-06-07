@@ -7,6 +7,7 @@ import {
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
 } from '../src/hyperliquid/twap/twap-whale-exit.js';
+import { shouldCloseOnWhaleTwapCancel } from '../src/hyperliquid/twap/user-rating.js';
 
 describe('twap-whale-exit delay', () => {
   const env = process.env;
@@ -43,5 +44,15 @@ describe('twap-whale-exit delay', () => {
     process.env.HL_TWAP_CANCEL_EXIT_DELAY_MINUTES = '0';
     const state = createTwapWatchState();
     expect(scheduleWhaleExitDelay(state, '0xabc', 'twap_error')).toBe(false);
+  });
+});
+
+describe('shouldCloseOnWhaleTwapCancel', () => {
+  it('cancel/error/terminated yes; finished/activated no', () => {
+    expect(shouldCloseOnWhaleTwapCancel('terminated')).toBe(true);
+    expect(shouldCloseOnWhaleTwapCancel('error')).toBe(true);
+    expect(shouldCloseOnWhaleTwapCancel('cancelled')).toBe(true);
+    expect(shouldCloseOnWhaleTwapCancel('finished')).toBe(false);
+    expect(shouldCloseOnWhaleTwapCancel('activated')).toBe(false);
   });
 });

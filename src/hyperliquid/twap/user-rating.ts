@@ -23,6 +23,11 @@ export function isTwapEndedFinished(ended: string): boolean {
   return ended.toLowerCase() === 'finished';
 }
 
+/** Only cancelled/error/terminated — not normal finish (timer −N min handles that). */
+export function shouldCloseOnWhaleTwapCancel(ended: string): boolean {
+  return isTwapEndedCancelled(ended);
+}
+
 /** Dedupe by hash; keep row with `ended` when present. */
 export function dedupeTwapRowsByHash(rows: HypurrscanTwapRow[]): HypurrscanTwapRow[] {
   const byHash = new Map<string, HypurrscanTwapRow>();

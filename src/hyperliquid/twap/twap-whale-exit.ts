@@ -3,7 +3,7 @@ import { twapCancelExitDelayMinutes } from './twap-duration.js';
 
 export type PendingWhaleExit = { exitAtMs: number; reason: string };
 
-/** Schedule delayed close after whale TWAP cancel/end. Returns false → caller should close now. */
+/** Schedule delayed close after whale TWAP cancel (not normal finish). Returns false → caller closes now. */
 export function scheduleWhaleExitDelay(
   state: TwapWatchState,
   hash: string,

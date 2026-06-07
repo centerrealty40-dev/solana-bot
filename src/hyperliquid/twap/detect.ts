@@ -16,8 +16,10 @@ export type TwapWatchState = {
   activeByHash: Map<string, NormalizedTwapSignal>;
   /** Ended notifications already sent. */
   endedAnnounced: Set<string>;
-  /** Delayed exit after whale TWAP cancel/end (hash → exitAtMs + reason). */
+  /** Delayed exit after whale TWAP cancel (hash → exitAtMs + reason). */
   pendingWhaleExitByHash: Map<string, { exitAtMs: number; reason: string }>;
+  /** Last HypurrScan `ended` status per hash (set when TWAP leaves active feed). */
+  lastEndedStatusByHash: Map<string, string>;
   /** Telegram message_id for start alerts — link crossing TWAPs. */
   telegramMessageByHash: Map<string, number>;
 };
@@ -34,6 +36,7 @@ export function createTwapWatchState(): TwapWatchState {
     activeByHash: new Map(),
     endedAnnounced: new Set(),
     pendingWhaleExitByHash: new Map(),
+    lastEndedStatusByHash: new Map(),
     telegramMessageByHash: new Map(),
   };
 }
@@ -126,6 +129,7 @@ export function detectTwapChanges(
       state.endedAnnounced.add(sig.hash);
       const tracked = state.activeByHash.get(sig.hash);
       state.activeByHash.delete(sig.hash);
+      state.lastEndedStatusByHash.set(sig.hash, sig.ended);
       if (!state.openedNotifiedHashes.has(sig.hash)) continue;
       const base = tracked ?? sig;
       endedSignals.push({ signal: base, endedStatus: sig.ended });

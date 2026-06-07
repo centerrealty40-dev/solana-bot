@@ -1,10 +1,11 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes } from '../twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from '../twap-duration.js';
 import {
   clearWhaleExitPending,
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
 } from '../twap-whale-exit.js';
+import { shouldCloseOnWhaleTwapCancel } from '../user-rating.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
 import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
@@ -265,16 +266,21 @@ export async function processLiveTrades(
     }
 
     if (whaleEnded) {
-      if (watchState && scheduleWhaleExitDelay(watchState, pos.hash, 'twap_ended_feed', now)) {
+      const endedStatus = watchState?.lastEndedStatusByHash.get(pos.hash);
+      if (endedStatus && !shouldCloseOnWhaleTwapCancel(endedStatus)) {
+        continue;
+      }
+      const reason = endedStatus ? `twap_${endedStatus}` : 'twap_ended_feed';
+      if (watchState && scheduleWhaleExitDelay(watchState, pos.hash, reason, now)) {
         console.log(
-          `[hl-twap-live] delayed exit ${pos.displaySymbol} in ${twapCancelExitDelayMinutes()}m (twap_ended_feed)`,
+          `[hl-twap-live] delayed exit ${pos.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,
         );
         continue;
       }
       try {
         const px = exitPxForOpen(pos, cache);
-        await closeLiveTrade(pos.hash, px, 'twap_ended_feed', cfg, client, watchState);
-        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (twap_ended_feed)`);
+        await closeLiveTrade(pos.hash, px, reason, cfg, client, watchState);
+        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
       } catch (e) {
         console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
       }
@@ -399,7 +405,7 @@ export async function processLiveLadders(
   }
 }
 
-/** TWAP cancelled/ended — close live or cancel pending schedule. */
+/** TWAP cancelled or finished — cancel pending schedule; close live only on cancel. */
 export async function handleLiveOnTwapEnd(
   sig: NormalizedTwapSignal,
   cache: HyperliquidMarketCache,
@@ -412,6 +418,12 @@ export async function handleLiveOnTwapEnd(
   const reason = `twap_${endedStatus}`;
   const opens = loadLiveOpensFromJournal(filePath);
   if (opens.has(sig.hash)) {
+    if (!shouldCloseOnWhaleTwapCancel(endedStatus)) {
+      console.log(
+        `[hl-twap-live] ignore whale TWAP end ${sig.displaySymbol} (${endedStatus}) — timer exit −${twapExitEarlyMinutes()}m`,
+      );
+      return;
+    }
     if (watchState && scheduleWhaleExitDelay(watchState, sig.hash, reason)) {
       console.log(
         `[hl-twap-live] delayed exit ${sig.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,
