@@ -20,6 +20,8 @@ export type TwapWatchState = {
   pendingWhaleExitByHash: Map<string, { exitAtMs: number; reason: string }>;
   /** Last HypurrScan `ended` status per hash (set when TWAP leaves active feed). */
   lastEndedStatusByHash: Map<string, string>;
+  /** Skip ladder retries after insufficient margin (hash). */
+  ladderBlockedHashes: Set<string>;
   /** Telegram message_id for start alerts — link crossing TWAPs. */
   telegramMessageByHash: Map<string, number>;
 };
@@ -37,6 +39,7 @@ export function createTwapWatchState(): TwapWatchState {
     endedAnnounced: new Set(),
     pendingWhaleExitByHash: new Map(),
     lastEndedStatusByHash: new Map(),
+    ladderBlockedHashes: new Set(),
     telegramMessageByHash: new Map(),
   };
 }

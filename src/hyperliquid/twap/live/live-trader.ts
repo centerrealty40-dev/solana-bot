@@ -293,12 +293,15 @@ export async function processLiveLadders(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
 ): Promise<void> {
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
   const lcfg = ladderCfg(cfg);
 
   for (const pos of opens.values()) {
+    if (watchState?.ladderBlockedHashes.has(pos.hash)) continue;
+
     const markPx = exitPxForOpen(pos, cache);
     if (markPx <= 0) continue;
 
@@ -353,6 +356,15 @@ export async function processLiveLadders(
             `[hl-twap-live] TP L${action.level} ${pos.displaySymbol} -$${filledUsd.toFixed(0)} uPnL=${unrealizedUsd(pos.side, pos.avgEntryPx, pos.currentNotionalUsd, markPx).toFixed(2)}`,
           );
         } else {
+          const szi = await client.getPositionSzi(pos.coin);
+          if (Math.abs(szi) <= 0) {
+            console.log(
+              `[hl-twap-live] ${pos.displaySymbol} flat on exchange — reconcile close (journal still open)`,
+            );
+            await closeLiveTrade(pos.hash, markPx, 'exchange_flat_reconcile', cfg, client, watchState);
+            break;
+          }
+
           const fill = await client.marketOrder({
             coin: pos.coin,
             displaySymbol: pos.displaySymbol,
@@ -400,7 +412,15 @@ export async function processLiveLadders(
         );
       }
     } catch (e) {
-      console.warn(`[hl-twap-live] ladder failed ${pos.displaySymbol}`, String(e));
+      const msg = String(e);
+      if (msg.includes('Insufficient margin')) {
+        watchState?.ladderBlockedHashes.add(pos.hash);
+        console.log(
+          `[hl-twap-live] ladder paused ${pos.displaySymbol}: insufficient margin (no further DCA this session)`,
+        );
+        continue;
+      }
+      console.warn(`[hl-twap-live] ladder failed ${pos.displaySymbol}`, msg);
     }
   }
 }
