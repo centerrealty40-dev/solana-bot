@@ -14,6 +14,19 @@
 
 ---
 
+## [1.11.339] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.339`
+
+### Ops: live-oscar + copy-trader — billable RPC back to QuickNode
+
+- **`SOLANA_RPC_HELIUS_PREFER: 0`** для `live-oscar` и `copy-trader` — send/sim/balance/poll снова через платный QuickNode (`SA_RPC_HTTP_URL` в `.env`).
+- **`SOLANA_RPC_HELIUS_FALLBACK_ENABLED: 1`** — Helius остаётся запасным при локальном QN budget block.
+
+**Откат:** `SOLANA_RPC_HELIUS_PREFER=1`; `pm2 reload ecosystem.config.cjs --only live-oscar,copy-trader --update-env`.
+
+---
+
 ## [1.11.338] — 2026-05-27
 
 **Тег:** `sa-alpha-1.11.338`
