@@ -14,6 +14,20 @@
 
 ---
 
+## [1.11.343] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.343`
+
+### Copy-trader: retry quote-failed sells + leader-flat tail sweep
+
+- **`jupiter_sell_quote_failed`** (и `no_quote` / `swap_build:*`) — retryable в окне `sellRetryWindowMs`, как slippage/timeout.
+- **Leader-flat tail sweep:** если `leaderLedger` по mint = 0, а в кошельке ещё есть токены и нет pending sell — ставится **100% wallet exit** (`leader_flat_tail_sweep`).
+- Full exit sell: `fraction` нормализуется к **1.0** при `leaderSellFraction ≥ 99.9%`.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.342] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.342`

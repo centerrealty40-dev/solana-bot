@@ -18,8 +18,10 @@ import {
   bootstrapLeaderPreSellBalance,
   leaderPreBalanceRaw,
 } from './leader-ledger.js';
+import { scheduleLeaderFlatTailSweeps } from './leader-flat-tail-sweep.js';
 import {
   absRawAmount,
+  isFullCloseFraction,
   leaderAddFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
@@ -490,6 +492,7 @@ async function onLeaderSell(
     deployedUsd,
   });
 
+  const ourSellFrac = isFullCloseFraction(sellFrac) ? 1 : sellFrac;
   const delayMs = randomSellDelayMs(cfg);
   const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {
@@ -499,7 +502,7 @@ async function onLeaderSell(
     leaderSignature: row.signature,
     leaderSellTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
     dueTs,
-    fraction: sellFrac,
+    fraction: ourSellFrac,
     leaderSellFraction: sellFrac,
     retryUntilTs: computeRetryUntilTs(dueTs, cfg.sellRetryWindowMs),
   };
@@ -512,7 +515,7 @@ async function onLeaderSell(
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
     leaderSellFraction: sellFrac,
-    ourSellFraction: sellFrac,
+    ourSellFraction: ourSellFrac,
     sellDueTs: pending.dueTs,
     sellDelayMs: delayMs,
   });
@@ -525,7 +528,7 @@ async function onLeaderSell(
       symbol,
       wallet: cfg.targetWallet,
       priceUsd: swap.priceUsd,
-      detail: `Our ${(sellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
+      detail: `Our ${(ourSellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
     }),
   );
 }
@@ -998,6 +1001,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     try {
       await processPendingBuys(cfg, state);
       await processPendingSells(cfg, state);
+      const tailSweeps = await scheduleLeaderFlatTailSweeps(cfg, state);
+      if (tailSweeps > 0) {
+        console.log('[copy-trader] leader-flat tail sweep scheduled', tailSweeps);
+      }
       writeCopyTraderState(cfg.statePath, state);
     } catch (err) {
       console.warn('[copy-trader] tick error', (err as Error).message);
