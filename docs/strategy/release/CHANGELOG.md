@@ -14,6 +14,20 @@
 
 ---
 
+## [1.11.341] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.341`
+
+### Copy-trader: proportional adds after full entry deploy
+
+- **Full-deploy gate:** proportional adds только когда deployed ≥ **99%** `positionUsd` (probe+dip); иначе `entry_not_fully_deployed` даже после expiry dip pending.
+- **Add sizing:** доля add считается от **target `positionUsd`**, не от текущего stack (~$200 probe).
+- **Add price gate:** `evaluateCopyAdd` — не выше цены add лидера (`COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT=0`), без +3% chase.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.340] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.340`

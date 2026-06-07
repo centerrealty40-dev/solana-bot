@@ -4,7 +4,8 @@ import { decodePumpfunSwap, PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { SwapInsert } from '../parser/pumpfun.js';
 import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
-import { evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
+import { evaluateCopyAdd, evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
+import { isEntryFullyDeployed } from './entry-deploy.js';
 import {
   entryDipSizeUsd,
   entryProbeSizeUsd,
@@ -182,13 +183,25 @@ async function onLeaderBuy(
       });
       return;
     }
-    const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
-    const ourStackUsd =
+    const deployedUsd =
       walletBal > 0n && priceUsd > 0
         ? walletNotionalUsdFromRaw(walletBal, priceUsd)
         : existing.sizeUsd;
+    if (!isEntryFullyDeployed(cfg, deployedUsd)) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_add_ignored',
+        reason: 'entry_not_fully_deployed',
+        mint,
+        leaderSignature: row.signature,
+        deployedUsd,
+        targetUsd: cfg.positionUsd,
+        entryMinDeployFraction: cfg.entryMinDeployFraction,
+      });
+      return;
+    }
+    const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
     const ourAddUsd = ourAddUsdFromLeaderAdd({
-      ourSizeUsd: ourStackUsd,
+      ourSizeUsd: cfg.positionUsd,
       addFraction: addFrac,
       maxRoomUsd: positionRoomUsd(cfg, existing),
       minAddUsd: cfg.minProportionalAddUsd,
@@ -598,9 +611,11 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       nowMs: now,
     };
     const evalResult =
-      pending.kind === 'entry' && pending.entryLeg === 'dip'
-        ? evaluateCopyEntryDip(cfg, evalInput)
-        : evaluateCopyEntry(cfg, evalInput);
+      pending.kind === 'add'
+        ? evaluateCopyAdd(cfg, evalInput)
+        : pending.kind === 'entry' && pending.entryLeg === 'dip'
+          ? evaluateCopyEntryDip(cfg, evalInput)
+          : evaluateCopyEntry(cfg, evalInput);
 
     if (!evalResult.pass) {
       const deferNote = noteBuyDefer(state, pending.id, now, cfg);

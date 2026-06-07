@@ -28,6 +28,8 @@ const baseCfg: CopyTraderConfig = {
   buyPriceMaxPremiumPct: 2,
   entryProbeFraction: 0.25,
   entryDipDiscountPct: 5,
+  entryMinDeployFraction: 0.99,
+  addPriceMaxPremiumPct: 0,
   minLeaderBuyUsd: 50,
   minLiquidityUsd: 15_000,
   minMarketCapUsd: 0,

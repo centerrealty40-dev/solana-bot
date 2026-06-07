@@ -1262,6 +1262,8 @@ const PM2_APPS = [
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '0.25',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '5',
+        COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
+        COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
         /** Slippage-class sell: retry same bps every 6s up to 2h (no wait for next leader sell). */
