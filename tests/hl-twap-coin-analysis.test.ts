@@ -101,37 +101,55 @@ describe('coin-twap-analysis', () => {
     expect(plan.waitForOppositeEndsMs).toBeNull();
   });
 
-  it('allows lone long TWAP when hourly impact >= min regardless of duration', () => {
+  it('blocks TWAP ≤15m', () => {
+    const state = createTwapWatchState();
+    const short = sig('s1', 'sell', 40, 15, 1_000_000);
+    state.activeByHash.set(short.hash, short);
+    const plan = computeCoinEntryPlan(short, state, 3);
+    expect(plan.allow).toBe(false);
+    expect(plan.reason).toBe('twap_too_short');
+  });
+
+  it('blocks TWAP >120m even with strong hourly impact', () => {
     const state = createTwapWatchState();
     const weekMin = 7 * 24 * 60;
     const lone = sig('buy1', 'buy', 3 * (weekMin / 60), weekMin, 1_000_000);
     state.activeByHash.set(lone.hash, lone);
     const plan = computeCoinEntryPlan(lone, state, 3);
+    expect(plan.allow).toBe(false);
+    expect(plan.reason).toBe('twap_too_long');
+  });
+
+  it('allows lone long TWAP when hourly impact >= min and duration in band', () => {
+    const state = createTwapWatchState();
+    const lone = sig('buy1', 'buy', 5, 90, 1_000_000);
+    state.activeByHash.set(lone.hash, lone);
+    const plan = computeCoinEntryPlan(lone, state, 3);
     expect(plan.allow).toBe(true);
     expect(plan.reason).toBe('ok');
-    expect(plan.buyPctPerHour).toBeCloseTo(3);
+    expect(plan.buyPctPerHour).toBeCloseTo(10 / 3);
   });
 
   it('blocks lone long TWAP when hourly impact below min', () => {
     const state = createTwapWatchState();
-    const lone = sig('buy1', 'buy', 5, 150, 1_000_000);
+    const lone = sig('buy1', 'buy', 4, 90, 1_000_000);
     state.activeByHash.set(lone.hash, lone);
     const plan = computeCoinEntryPlan(lone, state, 3);
     expect(plan.allow).toBe(false);
     expect(plan.reason).toBe('hourly_impact_no_edge');
-    expect(plan.buyPctPerHour).toBeCloseTo(2);
+    expect(plan.buyPctPerHour).toBeCloseTo(8 / 3);
   });
 
   it('allows stacked long buy TWAPs when combined hourly impact >= min', () => {
     const state = createTwapWatchState();
-    const buy1 = sig('buy1', 'buy', 4, 150, 1_000_000);
-    const buy2 = sig('buy2', 'buy', 4, 150, 1_000_000);
+    const buy1 = sig('buy1', 'buy', 4, 90, 1_000_000);
+    const buy2 = sig('buy2', 'buy', 4, 90, 1_000_000);
     state.activeByHash.set(buy1.hash, buy1);
     state.activeByHash.set(buy2.hash, buy2);
     const plan = computeCoinEntryPlan(buy2, state, 3);
     expect(plan.allow).toBe(true);
     expect(plan.reason).toBe('ok');
-    expect(plan.buyPctPerHour).toBeCloseTo(3.2);
+    expect(plan.buyPctPerHour).toBeCloseTo(16 / 3);
   });
 
   it('buy enters immediately when long impact outweighs active sell TWAP', () => {

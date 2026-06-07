@@ -1,5 +1,6 @@
 import { computeTwapSchedule } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
+import { twapDurationGate } from './twap-duration.js';
 import { isDeniedWhale } from './whale-denylist.js';
 
 export type CrossingImpactDecision = {
@@ -212,6 +213,11 @@ export function computeCoinEntryPlan(
 
   if (isDeniedWhale(sig.user)) {
     return deny('whale_denylisted');
+  }
+
+  const duration = twapDurationGate(sig.minutes);
+  if (!duration.allow) {
+    return deny(duration.reason);
   }
 
   const nowPlan = tryEntryPlan(

@@ -39,6 +39,11 @@ import {
 } from '../hyperliquid/twap/coin-twap-analysis.js';
 import { deniedWhaleAddresses } from '../hyperliquid/twap/whale-denylist.js';
 import {
+  twapExitEarlyMinutes,
+  twapMaxMinutes,
+  twapMinMinutes,
+} from '../hyperliquid/twap/twap-duration.js';
+import {
   buildCrossingNote,
   buildTwapEndMessage,
   buildTwapStartMessage,
@@ -307,7 +312,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h whale_deny=${deniedWhaleAddresses().size} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m whale_deny=${deniedWhaleAddresses().size} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   let cache = await loadHyperliquidMarketCache();

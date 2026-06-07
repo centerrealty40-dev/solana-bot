@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
 import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
+import { HL_TWAP_EXIT_REASON_EARLY, twapExitEarlyMinutes } from './twap-duration.js';
 import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
@@ -268,7 +269,7 @@ export async function processPaperTrades(cache: HyperliquidMarketCache): Promise
   for (const pos of opens.values()) {
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'before_last_cycle');
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, HL_TWAP_EXIT_REASON_EARLY);
     }
   }
 }
@@ -370,13 +371,13 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperOpenAtMs, o.entryTs),
       kind: 'open',
-      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла${o.side === 'sell' ? ', разворот' : ''})`,
-      reason: o.side === 'sell' ? 'reversal_after_buy' : 'after_cycle_1',
+      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (старт TWAP${o.side === 'sell' ? ', разворот' : ''})`,
+      reason: o.side === 'sell' ? 'reversal_after_buy' : 'twap_start',
     },
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
-      label: `Плановый выход перед последним циклом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+      label: `Плановый выход −${twapExitEarlyMinutes()}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },
     {
       ts: new Date().toISOString(),

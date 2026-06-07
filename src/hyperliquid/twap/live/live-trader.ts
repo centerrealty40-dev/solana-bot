@@ -1,4 +1,5 @@
 import type { TwapWatchState } from '../detect.js';
+import { HL_TWAP_EXIT_REASON_EARLY } from '../twap-duration.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
 import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
@@ -234,7 +235,7 @@ export async function processLiveTrades(
     if (!timerDue && !whaleEnded) continue;
     try {
       const px = exitPxForOpen(pos, cache);
-      const reason = whaleEnded && !timerDue ? 'twap_ended_feed' : 'before_last_cycle';
+      const reason = whaleEnded && !timerDue ? 'twap_ended_feed' : HL_TWAP_EXIT_REASON_EARLY;
       await closeLiveTrade(pos.hash, px, reason, cfg, client);
       console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
     } catch (e) {
