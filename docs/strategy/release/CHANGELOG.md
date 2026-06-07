@@ -14,6 +14,20 @@
 
 ---
 
+## [1.11.340] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.340`
+
+### Copy-trader: split entry probe 25% + dip leg −5%
+
+- **Entry probe:** 25% позиции (`COPY_TRADER_ENTRY_PROBE_FRACTION`) входит в коридоре **+3%** к цене лидера (как раньше).
+- **Dip leg:** оставшиеся 75% ждут цену **≤ лидер −5%** (`COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT`), затем добирают в ту же позицию.
+- Журнал: `entry_dip_scheduled`, `entryLeg` на `leader_buy_scheduled`.
+
+**Откат:** `git revert` коммита релиза; `COPY_TRADER_ENTRY_PROBE_FRACTION=1` (полный mirror3); `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.339] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.339`

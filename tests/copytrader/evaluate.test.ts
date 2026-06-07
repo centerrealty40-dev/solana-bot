@@ -26,6 +26,8 @@ const baseCfg: CopyTraderConfig = {
   minProportionalAddUsd: 3,
   minProportionalSellFraction: 0.005,
   buyPriceMaxPremiumPct: 2,
+  entryProbeFraction: 0.25,
+  entryDipDiscountPct: 5,
   minLeaderBuyUsd: 50,
   minLiquidityUsd: 15_000,
   minMarketCapUsd: 0,

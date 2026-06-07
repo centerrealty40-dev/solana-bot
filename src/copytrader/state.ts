@@ -22,11 +22,15 @@ export type LeaderMintLedger = {
   tokenRaw: string;
 };
 
+export type EntryLeg = 'probe' | 'dip';
+
 export type PendingBuy = {
   id: string;
   mint: string;
   symbol: string;
   kind: 'entry' | 'add';
+  /** Entry split: probe (+premium) then dip (−discount from leader). */
+  entryLeg?: EntryLeg;
   sizeUsd: number;
   /** Leader add size / pre-buy holdings when kind=add. */
   leaderAddFraction?: number;
@@ -93,6 +97,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         mint: p.mint,
         symbol: p.symbol,
         kind: p.kind === 'add' ? 'add' : 'entry',
+        entryLeg: p.entryLeg === 'probe' || p.entryLeg === 'dip' ? p.entryLeg : undefined,
         sizeUsd: typeof p.sizeUsd === 'number' && p.sizeUsd > 0 ? p.sizeUsd : 0,
         leaderAddFraction:
           typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
