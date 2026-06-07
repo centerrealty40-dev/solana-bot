@@ -14,6 +14,20 @@
 
 ---
 
+## [1.11.342] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.342`
+
+### Copy-trader: abandon dip leg when leader exits early
+
+- Если лидер **продаёт** до полного entry deploy (&lt;99% `positionUsd`), флаг `entryDipAbandoned` — **75% dip leg больше не ставится и не fill’ится**.
+- Журнал: `entry_dip_abandoned` / `buy_cancelled` `entry_dip_abandoned`.
+- Pending dip по-прежнему снимается на sell; флаг закрывает тему даже после expiry/retry.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.341] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.341`

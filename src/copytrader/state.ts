@@ -15,6 +15,8 @@ export type CopyPosition = {
   leaderWallet: string;
   leaderEntrySig: string;
   ourEntrySig?: string;
+  /** Leader sold before probe+dip filled — never schedule/fill the dip leg. */
+  entryDipAbandoned?: boolean;
 };
 
 export type LeaderMintLedger = {
@@ -89,6 +91,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
       positions[mint] = {
         ...pos,
         addCount: typeof pos.addCount === 'number' ? pos.addCount : 0,
+        entryDipAbandoned: pos.entryDipAbandoned === true,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(

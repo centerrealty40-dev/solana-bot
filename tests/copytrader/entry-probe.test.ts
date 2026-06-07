@@ -3,6 +3,7 @@ import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import {
   entryMinDeployUsd,
   isEntryFullyDeployed,
+  shouldAbandonEntryDipOnLeaderSell,
 } from '../../src/copytrader/entry-deploy.js';
 import {
   entryDipSizeUsd,
@@ -48,6 +49,12 @@ describe('entry-probe sizing', () => {
     expect(isEntryFullyDeployed(baseCfg, 200)).toBe(false);
     expect(isEntryFullyDeployed(baseCfg, 792)).toBe(true);
     expect(isEntryFullyDeployed(baseCfg, 800)).toBe(true);
+  });
+
+  it('abandon dip when leader sells before full deploy', () => {
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 200)).toBe(true);
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 792)).toBe(false);
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 0)).toBe(false);
   });
 });
 

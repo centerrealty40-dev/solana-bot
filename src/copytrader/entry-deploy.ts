@@ -20,3 +20,8 @@ export function isEntryFullyDeployed(cfg: CopyTraderConfig, deployedUsd: number)
   if (!entryRequiresStagedDeploy(cfg)) return true;
   return deployedUsd >= entryMinDeployUsd(cfg);
 }
+
+/** Leader exit before full staged entry — abandon remaining dip leg (e.g. 75%). */
+export function shouldAbandonEntryDipOnLeaderSell(cfg: CopyTraderConfig, deployedUsd: number): boolean {
+  return entryRequiresStagedDeploy(cfg) && deployedUsd > 0 && !isEntryFullyDeployed(cfg, deployedUsd);
+}
