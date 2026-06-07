@@ -10,6 +10,10 @@
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID — whale alerts
  * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — min net impact % **per hour** (not % of day vol)
  * - HL_TWAP_WHALE_DENYLIST — extra whale addresses (comma-sep); built-in denylist always active
+ * - HL_TWAP_FADE_WHALES — comma-sep whales to fade (invert side); overrides denylist for those addresses
+ * - HL_TWAP_BTC_ALIGNED_GATE=1 — block long when BTC 1h < 0, block short when BTC 1h > 0
+ * - HL_TWAP_BTC_GATE_MAX_STALE_MS=900000 — max age of Binance BTC klines for gate
+ * - HL_TWAP_BTC_REFRESH_MS=300000 — poll interval for BTC context when gate enabled
  * - HL_TWAP_BUY_ONLY=0 — long+short (legacy: sell только после buy OPEN)
  * - HL_TWAP_PAPER_NOTIONAL_USD=1000 — бумажная нота на сигнал (плитка 3 дашборда)
  * - HL_TWAP_LIVE_ENABLED=0 — live bot; см. docs/platform/hl-twap.md
@@ -38,6 +42,11 @@ import {
   shouldCloseForImpactLoss,
 } from '../hyperliquid/twap/coin-twap-analysis.js';
 import { deniedWhaleAddresses } from '../hyperliquid/twap/whale-denylist.js';
+import { fadeWhaleAddresses } from '../hyperliquid/twap/fade-whales.js';
+import {
+  hlTwapBtcAlignedGateEnabled,
+  hlTwapBtcGateMaxStaleMs,
+} from '../hyperliquid/twap/twap-btc-gate.js';
 import {
   twapCancelExitDelayMinutes,
   twapExitEarlyMinutes,
@@ -75,6 +84,8 @@ import {
 import { loadLiveOpensFromJournal } from '../hyperliquid/twap/live/journal.js';
 import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
+import { refreshBtcContext } from '../papertrader/pricing.js';
+import type { PaperTraderConfig } from '../papertrader/config.js';
 
 function envNum(name: string, fallback: number): number {
   const v = process.env[name]?.trim();
@@ -111,6 +122,9 @@ const RATING_CACHE_MS = Math.max(60_000, envNum('HL_TWAP_USER_RATING_CACHE_MS', 
 const ratingCache = new Map<string, { at: number; rating: UserTwapRating }>();
 const watchState = createTwapWatchState();
 let liveExchange: HlTwapExchangeClient | null = null;
+let btcRefreshAt = 0;
+const BTC_REFRESH_MS = Math.max(60_000, envNum('HL_TWAP_BTC_REFRESH_MS', 300_000));
+const BTC_CFG = {} as PaperTraderConfig;
 
 async function userRatingCached(user: string, feedRows: HypurrscanTwapRow[]): Promise<UserTwapRating> {
   const key = user.toLowerCase();
@@ -258,7 +272,19 @@ async function announceEnd(
   await sendTelegram(html);
 }
 
+async function refreshBtcIfNeeded(): Promise<void> {
+  if (!hlTwapBtcAlignedGateEnabled()) return;
+  if (Date.now() - btcRefreshAt < BTC_REFRESH_MS) return;
+  try {
+    await refreshBtcContext(BTC_CFG);
+    btcRefreshAt = Date.now();
+  } catch (e) {
+    console.warn('[hl-twap] btc context refresh failed', String(e));
+  }
+}
+
 async function runPass(cache: HyperliquidMarketCache): Promise<void> {
+  await refreshBtcIfNeeded();
   const rows = await fetchHypurrscanTwapFeed();
   const { newSignals, endedSignals } = detectTwapChanges(
     rows,
@@ -313,8 +339,13 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
+
+  if (hlTwapBtcAlignedGateEnabled()) {
+    await refreshBtcContext(BTC_CFG);
+    btcRefreshAt = Date.now();
+  }
 
   let cache = await loadHyperliquidMarketCache();
   let cacheAt = Date.now();

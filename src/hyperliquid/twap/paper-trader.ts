@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
 import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
+import { hlTwapEntrySide } from './fade-whales.js';
+import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
 import type { TwapWatchState } from './detect.js';
 import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
 import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from './twap-duration.js';
@@ -170,6 +172,9 @@ export function schedulePaperTrade(
   const plan = computeCoinEntryPlan(sig, watchState, minHourPct);
   if (!plan.allow) return;
 
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  if (hlTwapBtcAlignedBlockReason(entrySide)) return;
+
   const sched = computeTwapSchedule(sig);
   const row: JournalSchedule = {
     kind: 'schedule',
@@ -180,7 +185,7 @@ export function schedulePaperTrade(
     twapStartMs: sched.twapStartMs,
     coin: sig.coin,
     displaySymbol: sig.displaySymbol,
-    side: sig.side,
+    side: entrySide,
     whaleUser: sig.user,
     minutes: sig.minutes,
     impactPct: sig.volumeSharePct,

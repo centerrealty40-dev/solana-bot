@@ -9,6 +9,7 @@ import { shouldCloseOnWhaleTwapCancel } from '../user-rating.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
 import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
+import { hlTwapEntrySide } from '../fade-whales.js';
 import { markPxForCoin } from '../paper-trader.js';
 import { computeTwapSchedule } from '../twap-schedule.js';
 import type { NormalizedTwapSignal } from '../types.js';
@@ -68,6 +69,7 @@ export function scheduleLiveTrade(
 
   const plan = computeCoinEntryPlan(sig, watchState, cfg.minImpactPct);
   const sched = computeTwapSchedule(sig);
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
   appendLiveJournal(
     filePath,
     journalScheduleRow({
@@ -77,7 +79,7 @@ export function scheduleLiveTrade(
       twapStartMs: sched.twapStartMs,
       coin: sig.coin,
       displaySymbol: sig.displaySymbol,
-      side: sig.side,
+      side: entrySide,
       whaleUser: sig.user,
       minutes: sig.minutes,
       impactPct: sig.volumeSharePct,

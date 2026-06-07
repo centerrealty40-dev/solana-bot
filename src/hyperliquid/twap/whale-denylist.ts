@@ -1,3 +1,5 @@
+import { isFadeWhale } from './fade-whales.js';
+
 /** Prod denylist: slow multi-coin buy cluster (TON/FARTCOIN/TAO/CFX/FET), net −$24 live. */
 export const HL_TWAP_DEFAULT_DENIED_WHALES = [
   '0x153c8444380512cabdc34f6cea09c322e14e319a',
@@ -28,6 +30,7 @@ export function deniedWhaleAddresses(): Set<string> {
 
 export function isDeniedWhale(user: string | null | undefined): boolean {
   if (!user) return false;
+  if (isFadeWhale(user)) return false;
   return deniedWhaleAddresses().has(normAddr(user));
 }
 

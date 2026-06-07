@@ -8,6 +8,7 @@ import {
   isDeniedWhale,
   resetDeniedWhaleCache,
 } from '../src/hyperliquid/twap/whale-denylist.js';
+import { resetFadeWhaleCache } from '../src/hyperliquid/twap/fade-whales.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
 function sig(user: string, impact = 10, minutes = 30): NormalizedTwapSignal {
@@ -59,6 +60,19 @@ describe('whale-denylist', () => {
     const d = canScheduleLiveEntry(sig(whale), state, new Map(), 2);
     expect(d.allow).toBe(false);
     expect(d.reason).toBe('whale_denylisted');
+  });
+
+  it('fade whale overrides built-in denylist for entry plan', () => {
+    process.env.HL_TWAP_FADE_WHALES = HL_TWAP_DEFAULT_DENIED_WHALES[0]!;
+    resetFadeWhaleCache();
+    resetDeniedWhaleCache();
+    const state = createTwapWatchState();
+    const whale = HL_TWAP_DEFAULT_DENIED_WHALES[0]!;
+    const plan = computeCoinEntryPlan(sig(whale, 10, 30), state, 2);
+    expect(plan.allow).toBe(true);
+    delete process.env.HL_TWAP_FADE_WHALES;
+    resetFadeWhaleCache();
+    resetDeniedWhaleCache();
   });
 
   it('merges HL_TWAP_WHALE_DENYLIST env', () => {

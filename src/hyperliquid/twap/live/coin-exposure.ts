@@ -1,3 +1,5 @@
+import { hlTwapEntrySide } from '../fade-whales.js';
+import { hlTwapBtcAlignedBlockReason } from '../twap-btc-gate.js';
 import { isDeniedWhale } from '../whale-denylist.js';
 import type { TwapWatchState } from '../detect.js';
 import {
@@ -33,13 +35,19 @@ export function canScheduleLiveEntry(
     return { allow: false, reason: 'whale_denylisted' };
   }
 
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  const btcBlock = hlTwapBtcAlignedBlockReason(entrySide);
+  if (btcBlock) {
+    return { allow: false, reason: btcBlock };
+  }
+
   const hourly = twapHourlyImpactPct(sig);
   if (minImpactPct > 0 && (hourly == null || hourly < minImpactPct)) {
     return { allow: false, reason: 'impact_below_min' };
   }
 
   const hasOpposite = [...opens.values()].some(
-    (p) => p.coin === sig.coin && p.side !== sig.side,
+    (p) => p.coin === sig.coin && p.side !== entrySide,
   );
   if (hasOpposite) {
     return { allow: false, reason: 'coin_has_opposite_side' };
