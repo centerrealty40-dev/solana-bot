@@ -46,6 +46,10 @@ export type OrderFillResult = {
   /** Collateral for opens (margin × leverage = notional). */
   marginUsd?: number;
   leverage?: number;
+  /** Requested gross notional before fill reconciliation. */
+  requestedNotionalUsd?: number;
+  /** True when filled size < 95% of requested. */
+  partialFill?: boolean;
 };
 
 export type MarketOrderIntent = 'open' | 'close' | 'tp' | 'dca';

@@ -113,6 +113,26 @@ export type HlExchangePosition = {
   unrealizedPnlUsd: number;
 };
 
+export type HlAccountMargin = {
+  accountValueUsd: number;
+  totalMarginUsedUsd: number;
+  withdrawableUsd: number;
+};
+
+/** Cross-margin summary from clearinghouse (live wallet). */
+export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccountMargin> {
+  const st = await postInfo<{
+    marginSummary?: Record<string, string | number>;
+    withdrawable?: string | number;
+  }>({ type: 'clearinghouseState', user });
+  const ms = st.marginSummary ?? {};
+  return {
+    accountValueUsd: num(ms.accountValue) ?? 0,
+    totalMarginUsedUsd: num(ms.totalMarginUsed) ?? 0,
+    withdrawableUsd: num(st.withdrawable) ?? 0,
+  };
+}
+
 /** Live perp positions from Hyperliquid clearinghouse (source of truth for wallet). */
 export async function fetchHlClearinghousePositions(user: string): Promise<HlExchangePosition[]> {
   const st = await postInfo<{
