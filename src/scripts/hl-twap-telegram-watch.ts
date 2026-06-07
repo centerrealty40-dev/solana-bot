@@ -42,7 +42,8 @@ import {
   shouldCloseForImpactLoss,
 } from '../hyperliquid/twap/coin-twap-analysis.js';
 import { deniedWhaleAddresses } from '../hyperliquid/twap/whale-denylist.js';
-import { fadeWhaleAddresses } from '../hyperliquid/twap/fade-whales.js';
+import { fadeWhaleAddresses, hlTwapEntrySide } from '../hyperliquid/twap/fade-whales.js';
+import { abortWhaleExitOnRestart } from '../hyperliquid/twap/twap-whale-exit.js';
 import {
   hlTwapBtcAlignedGateEnabled,
   hlTwapBtcGateMaxStaleMs,
@@ -83,7 +84,7 @@ import {
 } from '../hyperliquid/twap/live/live-trader.js';
 import { loadLiveOpensFromJournal } from '../hyperliquid/twap/live/journal.js';
 import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
-import type { HypurrscanTwapRow, NormalizedTwapSignal } from '../hyperliquid/twap/types.js';
+import type { HypurrscanTwapRow, NormalizedTwapSignal, TwapSide } from '../hyperliquid/twap/types.js';
 import { refreshBtcContext } from '../papertrader/pricing.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 
@@ -294,6 +295,16 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
   );
 
   for (const sig of newSignals) {
+    const entrySide = hlTwapEntrySide(sig.user, sig.side);
+    const openRows: Array<{ hash: string; whaleUser: string; coin: string; side: TwapSide }> = [];
+    if (PAPER_ENABLED) openRows.push(...loadPaperOpensFromJournal(paperJournalPath()).values());
+    if (LIVE_ENABLED) openRows.push(...loadLiveOpensFromJournal(LIVE_CFG.journalPath).values());
+    const kept = abortWhaleExitOnRestart(watchState, sig, openRows, entrySide);
+    for (const hash of kept) {
+      console.log(
+        `[hl-twap] whale restarted ${sig.displaySymbol} — keep position, abort delayed exit ${hash.slice(0, 12)}…`,
+      );
+    }
     console.log(
       `[hl-twap] NEW ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}…`,
     );
