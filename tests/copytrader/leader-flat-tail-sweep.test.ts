@@ -5,6 +5,8 @@ import {
   reconcileLeaderLedgerFromChain,
 } from '../../src/copytrader/leader-flat-tail-sweep.js';
 import { leaderPreBalanceRaw } from '../../src/copytrader/leader-ledger.js';
+import * as executor from '../../src/copytrader/executor.js';
+import * as jupOrders from '../../src/copytrader/jupiter-trigger-orders.js';
 import * as rpc from '../../src/copytrader/rpc.js';
 import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import { emptyCopyTraderState } from '../../src/copytrader/state.js';
@@ -51,6 +53,12 @@ describe('leader flat tail sweep', () => {
   it('leader flat only after two on-chain zero reads', async () => {
     const state = emptyCopyTraderState();
     state.leaderLedger.mintA = { tokenRaw: '9000000' };
+    vi.spyOn(jupOrders, 'leaderHasActiveJupiterSellOrders').mockResolvedValue({
+      active: false,
+      orderCount: 0,
+      totalRemainingRaw: '0',
+      source: 'pro',
+    });
     const spy = vi
       .spyOn(rpc, 'fetchWalletMintBalanceRaw')
       .mockResolvedValueOnce(0n)
@@ -58,6 +66,22 @@ describe('leader flat tail sweep', () => {
     await expect(isLeaderFlatForMint(cfg, state, 'mintA')).resolves.toBe(true);
     expect(leaderPreBalanceRaw(state, 'mintA')).toBe(0n);
     expect(spy).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+  });
+
+  it('not flat when wallet zero but Jupiter trigger sell order active', async () => {
+    const state = emptyCopyTraderState();
+    state.leaderLedger.mintA = { tokenRaw: '9000000' };
+    vi.spyOn(jupOrders, 'leaderHasActiveJupiterSellOrders').mockResolvedValue({
+      active: true,
+      orderCount: 1,
+      totalRemainingRaw: '1000000',
+      source: 'pro',
+    });
+    vi.spyOn(executor, 'appendCopyEvent').mockImplementation(() => {});
+    vi.spyOn(rpc, 'fetchWalletMintBalanceRaw').mockResolvedValue(0n);
+    await expect(isLeaderFlatForMint(cfg, state, 'mintA', 'SYM')).resolves.toBe(false);
+    expect(leaderPreBalanceRaw(state, 'mintA')).toBe(9_000_000n);
     vi.restoreAllMocks();
   });
 
