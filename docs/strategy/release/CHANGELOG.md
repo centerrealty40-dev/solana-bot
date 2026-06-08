@@ -20,6 +20,20 @@
 
 ---
 
+## [1.11.363] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.363`
+
+### Copy-trader: suppress tail sweep when leader has Jupiter limit orders
+
+- Before `leader_flat_tail_sweep`, query Jupiter Trigger API (`getTriggerOrders`, `orderStatus=active`, `inputMint`) for the leader wallet.
+- If tokens are escrowed in an active sell limit order (wallet ATA = 0 but order remains), **do not** schedule 100% tail sweep; journal `leader_flat_suppressed` with `reason=jupiter_trigger_order_active`.
+- Uses existing `JUPITER_API_KEY` (Pro `api.jup.ag`, fallback `lite-api.jup.ag`).
+
+**Откат:** `git checkout sa-alpha-1.11.360 -- src/copytrader/jupiter-trigger-orders.ts src/copytrader/leader-flat-tail-sweep.ts tests/copytrader/jupiter-trigger-orders.test.ts tests/copytrader/leader-flat-tail-sweep.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.360] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.360`

@@ -1,5 +1,6 @@
 import type { CopyTraderConfig } from './config.js';
 import { appendCopyEvent } from './executor.js';
+import { leaderHasActiveJupiterSellOrders } from './jupiter-trigger-orders.js';
 import { getLeaderLedger, leaderPreBalanceRaw } from './leader-ledger.js';
 import { computeRetryUntilTs } from './pending-buy-retry.js';
 import { fetchExecutionWalletBalanceRaw } from './position-reconcile.js';
@@ -34,6 +35,7 @@ export async function isLeaderFlatForMint(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
   mint: string,
+  symbol?: string,
 ): Promise<boolean> {
   const first = await fetchLeaderOnChainBalance(cfg, mint);
   if (first > 0n) {
@@ -46,6 +48,22 @@ export async function isLeaderFlatForMint(
     reconcileLeaderLedgerFromChain(state, mint, second);
     return false;
   }
+
+  const jup = await leaderHasActiveJupiterSellOrders(cfg.targetWallet, mint);
+  if (jup.active) {
+    appendCopyEvent(cfg, {
+      kind: 'leader_flat_suppressed',
+      reason: 'jupiter_trigger_order_active',
+      mint,
+      symbol: symbol ?? null,
+      jupiterOrderCount: jup.orderCount,
+      jupiterRemainingRaw: jup.totalRemainingRaw,
+      jupiterApiSource: jup.source,
+      leaderWalletBalanceRaw: '0',
+    });
+    return false;
+  }
+
   getLeaderLedger(state, mint).tokenRaw = '0';
   return true;
 }
@@ -63,7 +81,7 @@ export async function scheduleLeaderFlatTailSweeps(
   let scheduled = 0;
 
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
-    if (!(await isLeaderFlatForMint(cfg, state, mint))) continue;
+    if (!(await isLeaderFlatForMint(cfg, state, mint, pos.symbol))) continue;
     if (hasPendingSellForMint(state, mint)) continue;
 
     const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
