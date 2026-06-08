@@ -18,7 +18,21 @@
 
 ---
 
-<<<<<<< HEAD
+---
+
+## [1.11.357] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.357`
+
+### HL TWAP live: margin $230 per entry (leverage 7x unchanged)
+
+- **`HL_TWAP_LIVE_NOTIONAL_USD`:** default and prod **230** (was 350); position gross ≈ margin × min(coin max lev, 7).
+- **`HL_TWAP_LIVE_LEVERAGE=7`** — без изменений.
+
+**Откат:** VPS `HL_TWAP_LIVE_NOTIONAL_USD=350`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.356] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.356`
@@ -29,8 +43,10 @@
 - **`resolveEntryDeployedCostUsd`:** legacy open positions infer full staged entry when dip pending is gone.
 - Journal `leader_add_ignored` includes `deployedUsdMtm` for audit.
 
-**Откат:** `git checkout sa-alpha-1.11.352 -- src/copytrader/entry-deploy.ts src/copytrader/main.ts src/copytrader/state.ts tests/copytrader/entry-probe.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
-=======
+**Откат:** `git checkout sa-alpha-1.11.355 -- src/copytrader/entry-deploy.ts src/copytrader/main.ts src/copytrader/state.ts tests/copytrader/entry-probe.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.355] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.355`
@@ -41,7 +57,6 @@
 - **Prod:** `HL_TWAP_BTC_ALIGNED_GATE=1`, `HL_TWAP_BTC_ALIGNED_THRESH_PCT=1`.
 
 **Откат:** `git checkout sa-alpha-1.11.352 -- src/hyperliquid/twap/twap-btc-gate.ts src/scripts/hl-twap-telegram-watch.ts .env.example tests/hl-twap-btc-gate.test.ts docs/strategy/release/`; VPS `HL_TWAP_BTC_ALIGNED_GATE=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
->>>>>>> origin/v2
 
 ---
 
