@@ -18,6 +18,14 @@ describe('isSellRetryableError', () => {
   it('does not retry missing balance', () => {
     expect(isSellRetryableError('no_token_balance')).toBe(false);
   });
+
+  it('retries jupiter sell quote failures', () => {
+    expect(isSellRetryableError('jupiter_sell_quote_failed')).toBe(true);
+  });
+
+  it('retries swap build failures', () => {
+    expect(isSellRetryableError('swap_build:route_not_found')).toBe(true);
+  });
 });
 
 describe('isPendingSellExpired', () => {

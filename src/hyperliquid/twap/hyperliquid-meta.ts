@@ -103,6 +103,126 @@ export function resolveTwapMarket(assetId: number, cache: HyperliquidMarketCache
   return { coin, displaySymbol, isSpot, assetId, midPx, dayNtlVlmUsd };
 }
 
+export type HlExchangePosition = {
+  coin: string;
+  displaySymbol: string;
+  side: 'buy' | 'sell';
+  size: number;
+  entryPx: number;
+  notionalUsd: number;
+  unrealizedPnlUsd: number;
+};
+
+export type HlAccountMargin = {
+  accountValueUsd: number;
+  totalMarginUsedUsd: number;
+  withdrawableUsd: number;
+  /** USDC total from spot clearinghouse (unified account source of truth). */
+  spotUsdcTotalUsd?: number;
+  /** USDC on hold from spot clearinghouse. */
+  spotUsdcHoldUsd?: number;
+};
+
+export type HlSpotUsdcBalance = {
+  totalUsd: number;
+  holdUsd: number;
+  freeUsd: number;
+};
+
+/** USDC balance from spot clearinghouse — canonical for unified HL accounts. */
+export function parseSpotUsdcBalance(spotSt: {
+  balances?: Array<{ coin?: string; total?: string | number; hold?: string | number }>;
+}): HlSpotUsdcBalance {
+  for (const b of spotSt.balances ?? []) {
+    if (b.coin !== 'USDC') continue;
+    const totalUsd = num(b.total) ?? 0;
+    const holdUsd = num(b.hold) ?? 0;
+    return {
+      totalUsd,
+      holdUsd,
+      freeUsd: Math.max(0, totalUsd - holdUsd),
+    };
+  }
+  return { totalUsd: 0, holdUsd: 0, freeUsd: 0 };
+}
+
+/**
+ * Cross-margin summary for live wallet.
+ * Unified HL accounts: USDC lives in spotClearinghouseState; perp marginSummary.accountValue is often 0.
+ * @see https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes
+ */
+export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccountMargin> {
+  const [perpSt, spotSt] = await Promise.all([
+    postInfo<{
+      marginSummary?: Record<string, string | number>;
+      withdrawable?: string | number;
+    }>({ type: 'clearinghouseState', user }),
+    postInfo<{
+      balances?: Array<{ coin?: string; total?: string | number; hold?: string | number }>;
+    }>({ type: 'spotClearinghouseState', user }),
+  ]);
+
+  const ms = perpSt.marginSummary ?? {};
+  const perpAccountValueUsd = num(ms.accountValue) ?? 0;
+  const totalMarginUsedUsd = num(ms.totalMarginUsed) ?? 0;
+  const perpWithdrawableUsd = num(perpSt.withdrawable) ?? 0;
+
+  const spotUsdc = parseSpotUsdcBalance(spotSt);
+  const accountValueUsd =
+    spotUsdc.totalUsd > 0 ? spotUsdc.totalUsd : perpAccountValueUsd;
+  const withdrawableUsd =
+    perpWithdrawableUsd > 0 ? perpWithdrawableUsd : spotUsdc.freeUsd;
+
+  return {
+    accountValueUsd,
+    totalMarginUsedUsd,
+    withdrawableUsd,
+    spotUsdcTotalUsd: spotUsdc.totalUsd,
+    spotUsdcHoldUsd: spotUsdc.holdUsd,
+  };
+}
+
+/** Live perp positions from Hyperliquid clearinghouse (source of truth for wallet). */
+export async function fetchHlClearinghousePositions(user: string): Promise<HlExchangePosition[]> {
+  const st = await postInfo<{
+    assetPositions?: Array<{ position?: Record<string, string | number> }>;
+  }>({ type: 'clearinghouseState', user });
+  const out: HlExchangePosition[] = [];
+  for (const row of st.assetPositions ?? []) {
+    const p = row.position ?? {};
+    const szi = num(p.szi) ?? 0;
+    if (Math.abs(szi) <= 0) continue;
+    const coin = String(p.coin ?? '');
+    if (!coin) continue;
+    const entryPx = num(p.entryPx) ?? 0;
+    const notionalUsd = num(p.positionValue) ?? 0;
+    const unrealizedPnlUsd = num(p.unrealizedPnl) ?? 0;
+    out.push({
+      coin,
+      displaySymbol: displaySymbolFromCoin(coin),
+      side: szi > 0 ? 'buy' : 'sell',
+      size: Math.abs(szi),
+      entryPx,
+      notionalUsd,
+      unrealizedPnlUsd,
+    });
+  }
+  out.sort((a, b) => b.notionalUsd - a.notionalUsd);
+  return out;
+}
+
+/** Signed perp size (base units) for one coin; 0 if flat. */
+export async function fetchHlPerpPositionSzi(user: string, coin: string): Promise<number> {
+  const st = await postInfo<{
+    assetPositions?: Array<{ position?: Record<string, string | number> }>;
+  }>({ type: 'clearinghouseState', user });
+  for (const row of st.assetPositions ?? []) {
+    const p = row.position ?? {};
+    if (String(p.coin ?? '') === coin) return num(p.szi) ?? 0;
+  }
+  return 0;
+}
+
 /** Strip HIP-3 dex prefix and spot @index for human-readable tickers. */
 export function displaySymbolFromCoin(coin: string): string {
   const c = coin.trim();

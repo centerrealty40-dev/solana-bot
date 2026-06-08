@@ -43,7 +43,10 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
-import { buildHlTwapPaperDashboardRow } from '../src/hyperliquid/twap/dashboard-aggregate.js';
+import {
+  buildHlTwapPaperDashboardRow,
+  hlTwapDashboardJsonlPath,
+} from '../src/hyperliquid/twap/dashboard-aggregate.js';
 
 /** Empty paper2 load when optional panel loader fails. */
 function emptyPaper2FileLoad(): Paper2FileLoad {
@@ -3947,9 +3950,10 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] copy-trader panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('copy-trader', DASHBOARD_COPY_TRADER_JSONL);
   });
-  const hlTwapRowP = buildHlTwapPaperDashboardRow().catch((e) => {
+  const hlTwapJsonl = hlTwapDashboardJsonlPath();
+  const hlTwapRowP = buildHlTwapPaperDashboardRow(hlTwapJsonl).catch((e) => {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
-    return makeEmptyDashboardStrategyRow('hl-twap-paper', 'data/hl-twap/live.jsonl');
+    return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
 
   const [liveRow, copyTraderRow, hlTwapRow] = await Promise.all([liveRowP, copyRowP, hlTwapRowP]);
@@ -3987,7 +3991,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
-    hlTwapLiveJsonl: process.env.HL_TWAP_DASHBOARD_JSONL?.trim() || 'data/hl-twap/live.jsonl',
+    hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,

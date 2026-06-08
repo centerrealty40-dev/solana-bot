@@ -14,6 +14,79 @@
 
 ---
 
+---
+
+## [1.11.344] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.344`
+
+### HL TWAP live: actual fills, margin gate, unified account balance
+
+- **Fill accounting:** IoC orders parse HL `filled.totalSz` / `avgPx` and reconcile with exchange `szi` delta; journal logs **actual** notional, not requested.
+- **Margin gate:** defer new opens when free collateral &lt; `HL_TWAP_LIVE_NOTIONAL_USD` + reserve; reject micro-fills (&lt;10% requested) with unwind + `open_fill_too_small`.
+- **Journal sync:** reconcile `currentNotionalUsd` from exchange `positionValue` after open/TP/DCA when drift &gt;15%.
+- **Unified HL account:** margin gate reads USDC from **`spotClearinghouseState`** (canonical balance); perp `clearinghouseState.accountValue` is not used when spot USDC &gt; 0 — fixes false `insufficient_account_margin` with ~$0 free while wallet had USDC.
+
+**Откат:** `git checkout sa-alpha-1.11.343 -- src/hyperliquid/twap/hyperliquid-meta.ts src/hyperliquid/twap/live/`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.343] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.343`
+
+### Copy-trader: retry quote-failed sells + leader-flat tail sweep
+
+- **`jupiter_sell_quote_failed`** (и `no_quote` / `swap_build:*`) — retryable в окне `sellRetryWindowMs`, как slippage/timeout.
+- **Leader-flat tail sweep:** если `leaderLedger` по mint = 0, а в кошельке ещё есть токены и нет pending sell — ставится **100% wallet exit** (`leader_flat_tail_sweep`).
+- Full exit sell: `fraction` нормализуется к **1.0** при `leaderSellFraction ≥ 99.9%`.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
+## [1.11.342] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.342`
+
+### Copy-trader: abandon dip leg when leader exits early
+
+- Если лидер **продаёт** до полного entry deploy (&lt;99% `positionUsd`), флаг `entryDipAbandoned` — **75% dip leg больше не ставится и не fill’ится**.
+- Журнал: `entry_dip_abandoned` / `buy_cancelled` `entry_dip_abandoned`.
+- Pending dip по-прежнему снимается на sell; флаг закрывает тему даже после expiry/retry.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
+## [1.11.341] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.341`
+
+### Copy-trader: proportional adds after full entry deploy
+
+- **Full-deploy gate:** proportional adds только когда deployed ≥ **99%** `positionUsd` (probe+dip); иначе `entry_not_fully_deployed` даже после expiry dip pending.
+- **Add sizing:** доля add считается от **target `positionUsd`**, не от текущего stack (~$200 probe).
+- **Add price gate:** `evaluateCopyAdd` — не выше цены add лидера (`COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT=0`), без +3% chase.
+
+**Откат:** `git revert` коммита релиза; `pm2 reload copy-trader --update-env`.
+
+---
+
+## [1.11.340] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.340`
+
+### Copy-trader: split entry probe 25% + dip leg −5%
+
+- **Entry probe:** 25% позиции (`COPY_TRADER_ENTRY_PROBE_FRACTION`) входит в коридоре **+3%** к цене лидера (как раньше).
+- **Dip leg:** оставшиеся 75% ждут цену **≤ лидер −5%** (`COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT`), затем добирают в ту же позицию.
+- Журнал: `entry_dip_scheduled`, `entryLeg` на `leader_buy_scheduled`.
+
+**Откат:** `git revert` коммита релиза; `COPY_TRADER_ENTRY_PROBE_FRACTION=1` (полный mirror3); `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.339] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.339`

@@ -18,6 +18,9 @@ export function isSellRetryableError(reason: string | undefined): boolean {
   const m = reason.toLowerCase();
   if (m.includes('confirm_timeout')) return true;
   if (m.includes('send_failed') && (m.includes('429') || m.includes('timeout'))) return true;
+  if (m.includes('jupiter_sell_quote_failed')) return true;
+  if (m.includes('no_quote')) return true;
+  if (m.startsWith('swap_build')) return true;
   return false;
 }
 

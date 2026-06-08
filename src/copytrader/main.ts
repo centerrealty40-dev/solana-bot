@@ -4,15 +4,24 @@ import { decodePumpfunSwap, PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { SwapInsert } from '../parser/pumpfun.js';
 import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
-import { evaluateCopyEntry } from './evaluate.js';
+import { evaluateCopyAdd, evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
+import { isEntryFullyDeployed, shouldAbandonEntryDipOnLeaderSell } from './entry-deploy.js';
+import {
+  entryDipSizeUsd,
+  entryProbeSizeUsd,
+  usesDipOnlyEntry,
+  usesSplitEntryProbe,
+} from './entry-probe.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
 import {
   applyLeaderSwapToLedger,
   bootstrapLeaderPreSellBalance,
   leaderPreBalanceRaw,
 } from './leader-ledger.js';
+import { scheduleLeaderFlatTailSweeps } from './leader-flat-tail-sweep.js';
 import {
   absRawAmount,
+  isFullCloseFraction,
   leaderAddFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
@@ -43,6 +52,7 @@ import {
   positionRoomUsd,
   readCopyTraderState,
   writeCopyTraderState,
+  type CopyPosition,
   type CopyTraderState,
   type PendingBuy,
   type PendingSell,
@@ -176,13 +186,25 @@ async function onLeaderBuy(
       });
       return;
     }
-    const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
-    const ourStackUsd =
+    const deployedUsd =
       walletBal > 0n && priceUsd > 0
         ? walletNotionalUsdFromRaw(walletBal, priceUsd)
         : existing.sizeUsd;
+    if (!isEntryFullyDeployed(cfg, deployedUsd)) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_add_ignored',
+        reason: 'entry_not_fully_deployed',
+        mint,
+        leaderSignature: row.signature,
+        deployedUsd,
+        targetUsd: cfg.positionUsd,
+        entryMinDeployFraction: cfg.entryMinDeployFraction,
+      });
+      return;
+    }
+    const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
     const ourAddUsd = ourAddUsdFromLeaderAdd({
-      ourSizeUsd: ourStackUsd,
+      ourSizeUsd: cfg.positionUsd,
       addFraction: addFrac,
       maxRoomUsd: positionRoomUsd(cfg, existing),
       minAddUsd: cfg.minProportionalAddUsd,
@@ -233,14 +255,95 @@ async function onLeaderBuy(
     return;
   }
 
+  if (usesDipOnlyEntry(cfg)) {
+    await schedulePendingBuy(cfg, state, {
+      mint,
+      symbol,
+      kind: 'entry',
+      sizeUsd: cfg.positionUsd,
+      entryLeg: 'dip',
+      preLeaderRaw,
+      swap,
+      row,
+    });
+    return;
+  }
+
+  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg) : cfg.positionUsd;
   await schedulePendingBuy(cfg, state, {
     mint,
     symbol,
     kind: 'entry',
-    sizeUsd: cfg.positionUsd,
+    sizeUsd: probeUsd,
+    entryLeg: usesSplitEntryProbe(cfg) ? 'probe' : undefined,
     preLeaderRaw,
     swap,
     row,
+  });
+}
+
+function markEntryDipAbandoned(
+  cfg: CopyTraderConfig,
+  pos: CopyPosition,
+  meta: {
+    mint: string;
+    leaderSignature: string;
+    leaderSellFraction?: number;
+    deployedUsd: number;
+  },
+): void {
+  if (pos.entryDipAbandoned) return;
+  if (!shouldAbandonEntryDipOnLeaderSell(cfg, meta.deployedUsd)) return;
+  pos.entryDipAbandoned = true;
+  appendCopyEvent(cfg, {
+    kind: 'entry_dip_abandoned',
+    reason: 'leader_exit_before_full_entry',
+    mint: meta.mint,
+    symbol: pos.symbol,
+    leaderSignature: meta.leaderSignature,
+    leaderSellFraction: meta.leaderSellFraction ?? null,
+    deployedUsd: meta.deployedUsd,
+    targetUsd: cfg.positionUsd,
+  });
+}
+
+function scheduleEntryDipBuy(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  probe: PendingBuy,
+): void {
+  const dipUsd = entryDipSizeUsd(cfg);
+  if (!(dipUsd > 0)) return;
+  if (state.positions[probe.mint]?.entryDipAbandoned) return;
+  if (state.pendingBuys.some((p) => p.mint === probe.mint && p.entryLeg === 'dip')) return;
+
+  const now = Date.now();
+  const pending: PendingBuy = {
+    id: newId('pb'),
+    mint: probe.mint,
+    symbol: probe.symbol,
+    kind: 'entry',
+    entryLeg: 'dip',
+    sizeUsd: dipUsd,
+    leaderSignature: probe.leaderSignature,
+    leaderPriceUsd: probe.leaderPriceUsd,
+    leaderBuyUsd: probe.leaderBuyUsd,
+    leaderBuyTs: probe.leaderBuyTs,
+    dueTs: now,
+    leaderHoldingsRawAtSignal: probe.leaderHoldingsRawAtSignal,
+    retryUntilTs: probe.retryUntilTs,
+  };
+  state.pendingBuys.push(pending);
+
+  appendCopyEvent(cfg, {
+    kind: 'entry_dip_scheduled',
+    mint: probe.mint,
+    symbol: probe.symbol,
+    leaderSignature: probe.leaderSignature,
+    leaderPriceUsd: probe.leaderPriceUsd,
+    entryDipDiscountPct: cfg.entryDipDiscountPct,
+    sizeUsd: dipUsd,
+    retryUntilTs: pending.retryUntilTs,
   });
 }
 
@@ -252,13 +355,14 @@ async function schedulePendingBuy(
     symbol: string;
     kind: 'entry' | 'add';
     sizeUsd: number;
+    entryLeg?: PendingBuy['entryLeg'];
     leaderAddFraction?: number;
     preLeaderRaw: bigint;
     swap: SwapInsert;
     row: SignatureRow;
   },
 ): Promise<void> {
-  const { mint, symbol, kind, sizeUsd, leaderAddFraction, preLeaderRaw, swap, row } = args;
+  const { mint, symbol, kind, sizeUsd, entryLeg, leaderAddFraction, preLeaderRaw, swap, row } = args;
   const dueTs = Date.now() + cfg.buyDelayMs;
   const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
@@ -266,6 +370,7 @@ async function schedulePendingBuy(
     mint,
     symbol,
     kind,
+    entryLeg,
     sizeUsd,
     leaderAddFraction,
     leaderSignature: row.signature,
@@ -278,8 +383,14 @@ async function schedulePendingBuy(
   };
   state.pendingBuys.push(pending);
 
+  const schedKind =
+    kind === 'add'
+      ? 'leader_add_scheduled'
+      : entryLeg === 'dip'
+        ? 'leader_buy_scheduled'
+        : 'leader_buy_scheduled';
   appendCopyEvent(cfg, {
-    kind: kind === 'add' ? 'leader_add_scheduled' : 'leader_buy_scheduled',
+    kind: schedKind,
     mint,
     symbol,
     leaderSignature: row.signature,
@@ -290,6 +401,9 @@ async function schedulePendingBuy(
     buyDelayMs: cfg.buyDelayMs,
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
+    entryLeg: entryLeg ?? null,
+    entryProbeFraction: entryLeg === 'probe' ? cfg.entryProbeFraction : null,
+    entryDipDiscountPct: entryLeg === 'dip' ? cfg.entryDipDiscountPct : null,
   });
 
   const delayMin = Math.max(1, Math.round(cfg.buyDelayMs / 60_000));
@@ -367,6 +481,18 @@ async function onLeaderSell(
     syncPositionFromWallet(tracked, walletBal, swap.priceUsd);
   }
 
+  const deployedUsd =
+    walletBal > 0n && swap.priceUsd > 0
+      ? walletNotionalUsdFromRaw(walletBal, swap.priceUsd)
+      : tracked.sizeUsd;
+  markEntryDipAbandoned(cfg, tracked, {
+    mint,
+    leaderSignature: row.signature,
+    leaderSellFraction: sellFrac,
+    deployedUsd,
+  });
+
+  const ourSellFrac = isFullCloseFraction(sellFrac) ? 1 : sellFrac;
   const delayMs = randomSellDelayMs(cfg);
   const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {
@@ -376,7 +502,7 @@ async function onLeaderSell(
     leaderSignature: row.signature,
     leaderSellTs: (row.blockTime ?? Math.floor(Date.now() / 1000)) * 1000,
     dueTs,
-    fraction: sellFrac,
+    fraction: ourSellFrac,
     leaderSellFraction: sellFrac,
     retryUntilTs: computeRetryUntilTs(dueTs, cfg.sellRetryWindowMs),
   };
@@ -389,7 +515,7 @@ async function onLeaderSell(
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
     leaderSellFraction: sellFrac,
-    ourSellFraction: sellFrac,
+    ourSellFraction: ourSellFrac,
     sellDueTs: pending.dueTs,
     sellDelayMs: delayMs,
   });
@@ -402,7 +528,7 @@ async function onLeaderSell(
       symbol,
       wallet: cfg.targetWallet,
       priceUsd: swap.priceUsd,
-      detail: `Our ${(sellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
+      detail: `Our ${(ourSellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
     }),
   );
 }
@@ -427,11 +553,47 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     let existing = state.positions[pending.mint];
 
-    if (pending.kind === 'entry') {
+    if (pending.kind === 'entry' && pending.entryLeg === 'dip' && existing?.entryDipAbandoned) {
+      removePendingBuyById(state, pending.id);
+      appendCopyEvent(cfg, {
+        kind: 'buy_cancelled',
+        reason: 'entry_dip_abandoned',
+        mint: pending.mint,
+        symbol: pending.symbol,
+        leaderSignature: pending.leaderSignature,
+      });
+      continue;
+    }
+
+    if (pending.kind === 'entry' && pending.entryLeg !== 'dip') {
       if (existing) {
         removePendingBuyById(state, pending.id);
         continue;
       }
+      if (cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
+        if (noteBuyDefer(state, pending.id, now, cfg)) {
+          appendCopyEvent(cfg, {
+            kind: 'buy_deferred',
+            reason: 'max_open_positions',
+            mint: pending.mint,
+            retryUntilTs: pending.retryUntilTs,
+          });
+        }
+        continue;
+      }
+    } else if (pending.kind === 'entry' && pending.entryLeg === 'dip' && !existing && usesSplitEntryProbe(cfg)) {
+      if (noteBuyDefer(state, pending.id, now, cfg)) {
+        appendCopyEvent(cfg, {
+          kind: 'buy_deferred',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          reason: 'dip_awaiting_probe_position',
+          retryUntilTs: pending.retryUntilTs,
+        });
+      }
+      continue;
+    } else if (pending.kind === 'entry' && pending.entryLeg === 'dip' && !existing) {
       if (cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
         if (noteBuyDefer(state, pending.id, now, cfg)) {
           appendCopyEvent(cfg, {
@@ -463,7 +625,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         });
         continue;
       }
-    } else if (cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
+    } else if (pending.kind === 'add' && cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'max_adds', mint: pending.mint });
       continue;
@@ -477,6 +639,18 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       const signalRaw = BigInt(pending.leaderHoldingsRawAtSignal);
       const ledgerNow = leaderPreBalanceRaw(state, pending.mint);
       if (leaderHoldingsShrunkSinceSignal(signalRaw, ledgerNow)) {
+        if (existing && pending.kind !== 'add') {
+          const walletBalShrunk = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
+          const shrunkDeployed =
+            walletBalShrunk > 0n && pending.leaderPriceUsd > 0
+              ? walletNotionalUsdFromRaw(walletBalShrunk, pending.leaderPriceUsd)
+              : existing.sizeUsd;
+          markEntryDipAbandoned(cfg, existing, {
+            mint: pending.mint,
+            leaderSignature: pending.leaderSignature,
+            deployedUsd: shrunkDeployed,
+          });
+        }
         removePendingBuyById(state, pending.id);
         appendCopyEvent(cfg, {
           kind: pending.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
@@ -493,14 +667,20 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
-    const evalResult = evaluateCopyEntry(cfg, {
+    const evalInput = {
       mint: pending.mint,
       leaderPriceUsd: pending.leaderPriceUsd,
       leaderBuyUsd: pending.leaderBuyUsd,
       currentPriceUsd: currentPrice,
       dex,
       nowMs: now,
-    });
+    };
+    const evalResult =
+      pending.kind === 'add'
+        ? evaluateCopyAdd(cfg, evalInput)
+        : pending.kind === 'entry' && pending.entryLeg === 'dip'
+          ? evaluateCopyEntryDip(cfg, evalInput)
+          : evaluateCopyEntry(cfg, evalInput);
 
     if (!evalResult.pass) {
       const deferNote = noteBuyDefer(state, pending.id, now, cfg);
@@ -532,13 +712,15 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       continue;
     }
 
+    const execKind =
+      pending.kind === 'entry' && pending.entryLeg === 'dip' ? ('add' as const) : pending.kind;
     const exec = await executeCopyBuy({
       cfg,
       mint: pending.mint,
       symbol: pending.symbol,
       priceUsd: currentPrice,
       sizeUsd: pending.sizeUsd,
-      kind: pending.kind,
+      kind: execKind,
       evalResult,
       leaderSignature: pending.leaderSignature,
     });
@@ -556,10 +738,14 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       continue;
     }
 
+    const wasProbe = pending.kind === 'entry' && pending.entryLeg === 'probe';
     removePendingBuyById(state, pending.id);
+    if (wasProbe) {
+      scheduleEntryDipBuy(cfg, state, pending);
+    }
 
     const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
-    if (pending.kind === 'entry' || !existing) {
+    if ((pending.kind === 'entry' && pending.entryLeg !== 'dip') || !existing) {
       const tokenRaw =
         walletBal > 0n
           ? walletBal.toString()
@@ -624,9 +810,13 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         wallet: cfg.targetWallet,
         priceUsd: currentPrice,
         detail:
-          pending.kind === 'add' && pending.leaderAddFraction != null
-            ? `Add $${pending.sizeUsd} (${(pending.leaderAddFraction * 100).toFixed(0)}% stack) · score ${evalResult.score}`
-            : `${pending.kind === 'add' ? 'Add' : 'Entry'} $${pending.sizeUsd} · score ${evalResult.score}`,
+          pending.entryLeg === 'dip'
+            ? `Dip leg $${pending.sizeUsd} (−${cfg.entryDipDiscountPct}% vs leader) · score ${evalResult.score}`
+            : pending.kind === 'add' && pending.leaderAddFraction != null
+              ? `Add $${pending.sizeUsd} (${(pending.leaderAddFraction * 100).toFixed(0)}% stack) · score ${evalResult.score}`
+              : pending.entryLeg === 'probe'
+                ? `Probe $${pending.sizeUsd} (${(cfg.entryProbeFraction * 100).toFixed(0)}% stack) · score ${evalResult.score}`
+                : `${pending.kind === 'add' ? 'Add' : 'Entry'} $${pending.sizeUsd} · score ${evalResult.score}`,
       }),
     );
     await sleep(150);
@@ -811,6 +1001,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     try {
       await processPendingBuys(cfg, state);
       await processPendingSells(cfg, state);
+      const tailSweeps = await scheduleLeaderFlatTailSweeps(cfg, state);
+      if (tailSweeps > 0) {
+        console.log('[copy-trader] leader-flat tail sweep scheduled', tailSweeps);
+      }
       writeCopyTraderState(cfg.statePath, state);
     } catch (err) {
       console.warn('[copy-trader] tick error', (err as Error).message);
