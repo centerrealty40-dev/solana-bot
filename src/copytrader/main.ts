@@ -713,6 +713,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       currentPriceUsd: currentPrice,
       dex,
       nowMs: now,
+      probeEntryPriceUsd:
+        isEntryDip && existing?.entryPriceUsd > 0 ? existing.entryPriceUsd : undefined,
     };
     const evalResult =
       pending.kind === 'add'
@@ -767,7 +769,13 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
             entryDipPriceSource: dipPriceSource ?? null,
             dipPassStreak: streak,
             entryDipConfirmTicks: cfg.entryDipConfirmTicks,
-            reason: entryDipConfirmReason(cfg, streak, currentPrice, pending.leaderPriceUsd),
+            reason: entryDipConfirmReason(
+              cfg,
+              streak,
+              currentPrice,
+              pending.leaderPriceUsd,
+              existing?.entryPriceUsd,
+            ),
             eval: evalResult,
             retryUntilTs: pending.retryUntilTs,
           });

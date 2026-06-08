@@ -33,3 +33,17 @@ export function leaderDipTargetPx(leaderPriceUsd: number, dipDiscountPct: number
   if (!(leaderPriceUsd > 0) || !(dipDiscountPct > 0)) return 0;
   return leaderPriceUsd * (1 - dipDiscountPct / 100);
 }
+
+/** Dip cap: leader −discount% and, after probe fill, at least entryDipVsProbePct below our probe entry. */
+export function entryDipMaxPriceUsd(
+  cfg: CopyTraderConfig,
+  leaderPriceUsd: number,
+  probeEntryPriceUsd?: number,
+): number {
+  const fromLeader = leaderDipTargetPx(leaderPriceUsd, cfg.entryDipDiscountPct);
+  if (!(fromLeader > 0)) return 0;
+  const probePx = probeEntryPriceUsd ?? 0;
+  if (!(probePx > 0) || !(cfg.entryDipVsProbePct > 0)) return fromLeader;
+  const fromProbe = probePx * (1 - cfg.entryDipVsProbePct / 100);
+  return Math.min(fromLeader, fromProbe);
+}

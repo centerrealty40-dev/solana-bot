@@ -18,6 +18,20 @@
 
 ---
 
+## [1.11.351] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.351`
+
+### Copy-trader: dip must be below probe entry, not only leader −4%
+
+- **`entryDipMaxPriceUsd`:** dip cap = `min(leader × (1 − dip%), probeEntry × (1 − vsProbe%))` when probe leg already filled.
+- **`COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT`** (default **2**): second leg only when Jupiter quote is at least 2% below our probe avg entry — fixes GO-style «две ноги по одной цене» when probe fills well below leader.
+- Journal `buy_deferred` / confirm reason includes `probe_cap` when probe binding.
+
+**Откат:** `git checkout sa-alpha-1.11.350 -- src/copytrader/entry-probe.ts src/copytrader/evaluate.ts src/copytrader/config.ts src/copytrader/main.ts src/copytrader/entry-dip-gate.ts ecosystem.config.cjs tests/copytrader/entry-probe.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.350] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.350`
