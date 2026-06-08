@@ -38,6 +38,7 @@
     "live:compare-whitelist-closes": "node scripts/compare-live-closes-whitelist.mjs",
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "dip-bot-intel:coverage": "tsx src/scripts/dip-bot-intel-coverage.ts",
+    "pumpswap-combo": "tsx src/scripts/pumpswap-combo-bot.ts",
     "dip-bot-intel:anchor-gaps": "tsx src/scripts/dip-bot-intel-anchor-gaps.ts",
     "dip-bot-intel:export-candidates": "tsx src/scripts/dip-bot-intel-export-candidates.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",
@@ -90,6 +91,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.0",
     "@nktkas/hyperliquid": "^0.32.2",
+    "@pump-fun/pump-swap-sdk": "^1.13.0",
     "@solana/web3.js": "^1.95.0",
     "bs58": "^4.0.1",
     "bullmq": "^5.30.0",
@@ -114,6 +116,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.2.0",
     "@types/bs58": "^4.0.4",
     "@types/node": "^22.9.0",
     "@types/node-cron": "^3.0.11",

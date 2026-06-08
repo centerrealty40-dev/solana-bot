@@ -20,6 +20,24 @@
 
 ---
 
+---
+
+## [1.11.361] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.361`
+
+### PumpSwap Combo Bot: direct AMM executor (isolated from Jupiter)
+
+- New **`pumpswap-combo`** strategy module: forensic dip-combo ($3 legs, TP ladder, portfolio SL $50).
+- **Buy/sell/mark via `@pump-fun/pump-swap-sdk`** on PG `pair_address` pool — same venue as signal, not Jupiter aggregator.
+- Fill price from **on-chain token delta** after confirm; journal field `execVenue: pumpswap_direct`.
+- PM2 app **`pumpswap-combo-bot`** in `ecosystem.config.cjs`; go-live script `scripts/ops/pumpswap-combo-go-live.sh`.
+- Resumes open positions from `data/pumpswap-combo/state.json` on restart; pool resolved from PG when missing.
+
+**Откат:** `git checkout sa-alpha-1.11.360 -- src/pumpswap-combo/ src/scripts/pumpswap-combo-bot.ts scripts/ops/pumpswap-combo-*.sh ecosystem.config.cjs package.json package-lock.json docs/strategy/release/`; `pm2 stop pumpswap-combo-bot`.
+
+---
+
 ## [1.11.360] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.360`
