@@ -171,38 +171,7 @@ const PM2_APPS = [
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
-    {
-      name: 'sa-wallet-orchestrator',
-      cwd: root,
-      script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
-      args: '--daemon',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 50,
-      restart_delay: 8000,
-      max_memory_restart: '220M',
-      merge_logs: true,
-      time: true,
-      env: {
-        NODE_ENV: 'production',
-        /** W6.8 — Gecko multi-lane → QN → wallets; локальный потолок оркестратора см. SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY. */
-        SA_ORCH_SCHEDULER_TICK_MS: '10000',
-        SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
-        /** W6.13 — detective ledger (orch/backfill/sigseed); глобальный кап выше суммы подпулов при низком фактическом расходе QN. */
-        SA_QN_GLOBAL_CREDITS_PER_DAY: '4000000',
-        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '2200000',
-        SA_BACKFILL_MAX_CREDITS_PER_DAY: '500000',
-        SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
-        SA_ORCH_MAX_RPC_PER_JOB: '1200',
-        SA_ORCH_MAX_RPC_PER_POOL: '180',
-        SA_ORCH_MAX_POOLS_PER_JOB: '20',
-        SA_ORCH_SIG_PAGES_MAX: '4',
-        SA_ORCH_MAX_TX_FETCHES_PER_POOL: '18',
-        SA_ORCH_RPC_SLEEP_MS: '220',
-      },
-    },
+    /** sa-wallet-orchestrator removed — legacy detective; burns QuickNode, not used by live-oscar/copy-trader. */
     {
       name: 'sa-collector-watch',
       cwd: root,
@@ -591,7 +560,8 @@ const PM2_APPS = [
         LIVE_MINT_SCRATCH_REENTRY_ENABLED: '0',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
-        PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
+        /** Whale/creator-dump gate uses swaps (sigseed) — off in prod. */
+        PAPER_DIP_WHALE_ANALYSIS_ENABLED: '0',
         PAPER_DIP_REQUIRE_WHALE_TRIGGER: '0',
         PAPER_DIP_LARGE_SELL_USD: '3000',
         PAPER_DIP_RECENT_LOOKBACK_MIN: '10',

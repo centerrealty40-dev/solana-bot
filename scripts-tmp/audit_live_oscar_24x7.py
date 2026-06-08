@@ -34,15 +34,14 @@ def main() -> int:
     issues: list[str] = []
     core = [
         'live-oscar',
+        'copy-trader',
+        'pumpswap-dip-bot',
         'live-oscar-dashboard',
         'sa-raydium',
         'sa-meteora',
-        'sa-orca',
         'sa-pumpswap',
         'sa-moonshot',
         'sa-collector-watch',
-        'sa-jupiter',
-        'sa-wallet-orchestrator',
     ]
     st = pm2_online(core)
     print('=== PM2 ===')

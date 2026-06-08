@@ -13,8 +13,17 @@
  *   node scripts-tmp/sa-wallet-orchestrator.mjs --budget-report
  *
  * Normative: docs/Smart Lottery V2/W6.8_wallet_ingest_orchestrator_gecko_multi_source.md
+ *
+ * Production: removed from `ecosystem.config.cjs`. Hard-disabled unless `SA_ORCH_ENABLED=1`.
  */
 import 'dotenv/config';
+
+if (process.env.SA_ORCH_ENABLED !== '1') {
+  console.error(
+    '[sa-wallet-orchestrator] disabled (legacy detective). Set SA_ORCH_ENABLED=1 to run manually.',
+  );
+  process.exit(1);
+}
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

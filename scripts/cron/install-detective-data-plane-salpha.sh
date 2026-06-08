@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# DEPRECATED for production (live-oscar + copy-trader). Installs backfill/sigseed/scam-farm cron.
+# Use uninstall-detective-data-plane-salpha.sh instead. Re-enable only with FORCE=1.
+#
 # Идемпотентно добавляет в crontab пользователя salpha блок задач контура детектива
 # без стрима: enqueue → wallet-backfill:pilot (ширина задаётся env в строке cron) → funding → sigseed → bot-bucket (04:12) → scam-farm (04:15) → отчёты ledger.
 #
@@ -9,6 +12,13 @@
 #   sudo bash /opt/solana-alpha/scripts/cron/install-detective-data-plane-salpha.sh
 #
 set -euo pipefail
+
+if [[ "${FORCE:-}" != "1" ]]; then
+  echo "[refused] detective data-plane is deprecated for production."
+  echo "  To install anyway: FORCE=1 sudo bash $0"
+  echo "  To remove: sudo bash $(dirname "$0")/uninstall-detective-data-plane-salpha.sh"
+  exit 1
+fi
 
 ROOT="${SOLANA_ALPHA_ROOT:-/opt/solana-alpha}"
 U="${CRON_USER:-salpha}"
