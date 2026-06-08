@@ -16,6 +16,20 @@
 
 ---
 
+## [1.11.347] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.347`
+
+### Copy-trader: stuck remnants after failed sells / missed leader full exit
+
+- **Sell fraction (без изменений):** частичный sell лидера → пропорциональный наш sell; **100%** кошелька только при полном выходе лидера (`isFullCloseFraction`).
+- **Sell retry:** `sim_failed` / `InstructionError` (incl. Jupiter Custom 6024), `quote_stale`, `swap-http-429` — retryable until `sellRetryWindowMs` (aligned with live-oscar sell pipeline).
+- **Tail sweep:** leader flat when **on-chain** token balance is zero even if internal ledger is stale (missed poll txs after leader full exit); ledger reconciled, then 100% wallet exit scheduled.
+
+**Откат:** `git checkout sa-alpha-1.11.346 -- src/copytrader/pending-sell-retry.ts src/copytrader/leader-flat-tail-sweep.ts tests/copytrader/pending-sell-retry.test.ts tests/copytrader/leader-flat-tail-sweep.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.346] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.346`

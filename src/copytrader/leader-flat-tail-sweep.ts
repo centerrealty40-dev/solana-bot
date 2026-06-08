@@ -1,10 +1,26 @@
 import type { CopyTraderConfig } from './config.js';
 import { appendCopyEvent } from './executor.js';
-import { leaderPreBalanceRaw } from './leader-ledger.js';
+import { getLeaderLedger, leaderPreBalanceRaw } from './leader-ledger.js';
 import { computeRetryUntilTs } from './pending-buy-retry.js';
 import { fetchExecutionWalletBalanceRaw } from './position-reconcile.js';
+import { fetchWalletMintBalanceRaw } from './rpc.js';
 import type { CopyTraderState, PendingSell } from './state.js';
 import { newId } from './state.js';
+
+/** Leader flat when ledger says zero or on-chain wallet holds no tokens (missed poll txs). */
+export async function isLeaderFlatForMint(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  mint: string,
+): Promise<boolean> {
+  if (leaderPreBalanceRaw(state, mint) === 0n) return true;
+  const onChain = await fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, mint);
+  if (onChain === 0n) {
+    getLeaderLedger(state, mint).tokenRaw = '0';
+    return true;
+  }
+  return false;
+}
 
 export function hasPendingSellForMint(state: CopyTraderState, mint: string): boolean {
   return state.pendingSells.some((p) => p.mint === mint);
@@ -19,7 +35,7 @@ export async function scheduleLeaderFlatTailSweeps(
   let scheduled = 0;
 
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
-    if (leaderPreBalanceRaw(state, mint) > 0n) continue;
+    if (!(await isLeaderFlatForMint(cfg, state, mint))) continue;
     if (hasPendingSellForMint(state, mint)) continue;
 
     const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
