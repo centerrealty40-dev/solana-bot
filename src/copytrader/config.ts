@@ -32,6 +32,8 @@ const CopyTraderConfigSchema = z.object({
   sellRetryDeferLogMs: z.coerce.number().int().min(5_000).max(3_600_000).default(30_000),
   sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(20_000),
   sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
+  /** Second on-chain zero read before leader-flat tail sweep (default 3s). */
+  leaderFlatConfirmDelayMs: z.coerce.number().int().min(0).max(60_000).default(3_000),
   positionUsd: z.coerce.number().positive().max(100_000).default(600),
   addPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   maxPositionUsd: z.coerce.number().min(0).max(500_000).default(0),
@@ -122,6 +124,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellRetryDeferLogMs: process.env.COPY_TRADER_SELL_RETRY_DEFER_LOG_MS,
     sellDelayMinMs,
     sellDelayMaxMs,
+    leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,
     addPositionUsd: process.env.COPY_TRADER_ADD_POSITION_USD,
     maxPositionUsd: process.env.COPY_TRADER_MAX_POSITION_USD,
