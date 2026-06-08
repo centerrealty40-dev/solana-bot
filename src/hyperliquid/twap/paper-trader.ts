@@ -2,6 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
+import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
+import { hlTwapEntrySide } from './fade-whales.js';
+import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
+import type { TwapWatchState } from './detect.js';
+import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
+import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from './twap-duration.js';
+import {
+  clearWhaleExitPending,
+  scheduleWhaleExitDelay,
+  takeDueWhaleExit,
+} from './twap-whale-exit.js';
 import { computeTwapSchedule, formatMoscowDateTime, timelineIso } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 
@@ -147,24 +158,34 @@ export function appendPaperJournal(filePath: string, row: JournalRow): void {
   fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`, 'utf8');
 }
 
-/** После успешного Telegram OPEN — планируем бумагу на 2-й слайс / до предпоследнего. */
-export function schedulePaperTrade(sig: NormalizedTwapSignal): void {
+/** После успешного Telegram OPEN — планируем бумагу по entry plan (%/h + defer). */
+export function schedulePaperTrade(
+  sig: NormalizedTwapSignal,
+  watchState: ActiveTwapLookup,
+  minHourPct: number,
+): void {
   const filePath = paperJournalPath();
   const opens = loadPaperOpensFromJournal(filePath);
   const pending = loadPendingSchedules(filePath);
   if (opens.has(sig.hash) || pending.has(sig.hash)) return;
+
+  const plan = computeCoinEntryPlan(sig, watchState, minHourPct);
+  if (!plan.allow) return;
+
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  if (hlTwapBtcAlignedBlockReason(entrySide)) return;
 
   const sched = computeTwapSchedule(sig);
   const row: JournalSchedule = {
     kind: 'schedule',
     ts: Date.now(),
     hash: sig.hash,
-    openAtMs: sched.paperOpenAtMs,
+    openAtMs: plan.openAtMs,
     closeAtMs: sched.paperCloseAtMs,
     twapStartMs: sched.twapStartMs,
     coin: sig.coin,
     displaySymbol: sig.displaySymbol,
-    side: sig.side,
+    side: entrySide,
     whaleUser: sig.user,
     minutes: sig.minutes,
     impactPct: sig.volumeSharePct,
@@ -221,6 +242,7 @@ export function closePaperTrade(
   sig: Pick<NormalizedTwapSignal, 'hash' | 'displaySymbol'>,
   exitPx: number,
   exitReason: string,
+  watchState?: TwapWatchState,
 ): HlTwapPaperClose | null {
   const filePath = paperJournalPath();
   const opens = loadPaperOpensFromJournal(filePath);
@@ -241,11 +263,16 @@ export function closePaperTrade(
     exitReason,
   });
 
+  if (watchState) clearWhaleExitPending(watchState, pos.hash);
+
   return { ...pos, exitTs: Date.now(), exitPx, pnlUsd, pnlPct, exitReason };
 }
 
 /** Таймеры: открыть/закрыть по циклам; без лимита позиций. */
-export async function processPaperTrades(cache: HyperliquidMarketCache): Promise<void> {
+export async function processPaperTrades(
+  cache: HyperliquidMarketCache,
+  watchState?: TwapWatchState,
+): Promise<void> {
   const filePath = paperJournalPath();
   const now = Date.now();
   const pending = loadPendingSchedules(filePath);
@@ -258,9 +285,16 @@ export async function processPaperTrades(cache: HyperliquidMarketCache): Promise
 
   const opens = loadPaperOpensFromJournal(filePath);
   for (const pos of opens.values()) {
+    const dueReason = watchState ? takeDueWhaleExit(watchState, pos.hash, now) : null;
+    if (dueReason) {
+      const px = exitPxForOpen(pos, cache);
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, dueReason, watchState);
+      continue;
+    }
+
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'before_last_cycle');
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, HL_TWAP_EXIT_REASON_EARLY, watchState);
     }
   }
 }
@@ -305,20 +339,34 @@ export function closePaperForWhaleBuyReversal(
   return closed;
 }
 
-/** TWAP завершился раньше планового close — закрыть бумагу или снять schedule. */
+/** TWAP завершился — снять schedule; закрыть бумагу только при cancel (finish → таймер −N min). */
 export function handlePaperOnTwapEnd(
   sig: NormalizedTwapSignal,
   cache: HyperliquidMarketCache,
   endedStatus: string,
+  watchState?: TwapWatchState,
 ): void {
   const filePath = paperJournalPath();
+  const reason = `twap_${endedStatus}`;
   const opens = loadPaperOpensFromJournal(filePath);
   if (opens.has(sig.hash)) {
+    if (!shouldCloseOnWhaleTwapCancel(endedStatus)) {
+      console.log(
+        `[hl-twap] paper ignore whale TWAP end ${sig.displaySymbol} (${endedStatus}) — timer exit −${twapExitEarlyMinutes()}m`,
+      );
+      return;
+    }
+    if (watchState && scheduleWhaleExitDelay(watchState, sig.hash, reason)) {
+      console.log(
+        `[hl-twap] paper delayed exit ${sig.displaySymbol} in ${twapCancelExitDelayMinutes()}m (${reason})`,
+      );
+      return;
+    }
     const px = exitPxForOpen(opens.get(sig.hash)!, cache);
-    closePaperTrade(sig, px, `twap_${endedStatus}`);
+    closePaperTrade(sig, px, reason, watchState);
     return;
   }
-  cancelSchedule(filePath, sig.hash, `twap_${endedStatus}_before_open`);
+  cancelSchedule(filePath, sig.hash, `${reason}_before_open`);
 }
 
 export function markPxForCoin(coin: string, cache: HyperliquidMarketCache): number {
@@ -362,13 +410,13 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperOpenAtMs, o.entryTs),
       kind: 'open',
-      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (после 1-го цикла${o.side === 'sell' ? ', разворот' : ''})`,
-      reason: o.side === 'sell' ? 'reversal_after_buy' : 'after_cycle_1',
+      label: `Paper ${dir} $${o.notionalUsd.toFixed(0)} @ ${o.entryPx.toFixed(4)} (старт TWAP${o.side === 'sell' ? ', разворот' : ''})`,
+      reason: o.side === 'sell' ? 'reversal_after_buy' : 'twap_start',
     },
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
-      label: `Плановый выход перед последним циклом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+      label: `Плановый выход −${twapExitEarlyMinutes()}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },
     {
       ts: new Date().toISOString(),

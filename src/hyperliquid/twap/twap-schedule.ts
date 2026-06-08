@@ -1,4 +1,5 @@
 import type { NormalizedTwapSignal } from './types.js';
+import { twapExitEarlyMinutes } from './twap-duration.js';
 
 /** Hyperliquid TWAP: child order every 30s over `minutes` (see HL docs). */
 export const HL_TWAP_SLICE_INTERVAL_SEC = 30;
@@ -33,8 +34,11 @@ export function computeTwapSchedule(sig: Pick<
   const sliceMs = HL_TWAP_SLICE_INTERVAL_SEC * 1000;
   const firstCycleOpenMs = twapStartMs + sliceMs;
   const lastCycleEtaMs = twapStartMs + minutes * 60_000;
-  const paperOpenAtMs = firstCycleOpenMs;
-  const paperCloseAtMs = Math.max(paperOpenAtMs + sliceMs, lastCycleEtaMs - sliceMs);
+  /** Enter as soon as TWAP starts (not after first 30s slice). */
+  const paperOpenAtMs = twapStartMs;
+  const exitEarlyMs = twapExitEarlyMinutes() * 60_000;
+  /** Exit N minutes before TWAP end (sim-backed default 10m). */
+  const paperCloseAtMs = Math.max(paperOpenAtMs + sliceMs, lastCycleEtaMs - exitEarlyMs);
 
   return {
     cycleCount,
@@ -101,7 +105,7 @@ export function formatTwapScheduleLines(
   return [
     `Первый цикл (МСК): ${formatMoscowDateTime(schedule.firstCycleOpenMs)}`,
     `ETA последнего цикла (МСК): ${formatMoscowDateTime(schedule.lastCycleEtaMs)}`,
-    `Бумага: вход ${formatMoscowDateTime(schedule.paperOpenAtMs)} · выход ${formatMoscowDateTime(schedule.paperCloseAtMs)}`,
+    `Live/paper: вход при старте TWAP ${formatMoscowDateTime(schedule.paperOpenAtMs)} · выход −${twapExitEarlyMinutes()}m ${formatMoscowDateTime(schedule.paperCloseAtMs)}`,
     `Циклов: ${schedule.cycleCount} (${intervalNote})`,
     `За цикл: ${formatTokenAmount(schedule.sizePerCycle)} ${sig.displaySymbol}${perCycleUsd}`,
   ];

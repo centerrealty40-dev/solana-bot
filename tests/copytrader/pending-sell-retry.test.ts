@@ -18,6 +18,26 @@ describe('isSellRetryableError', () => {
   it('does not retry missing balance', () => {
     expect(isSellRetryableError('no_token_balance')).toBe(false);
   });
+
+  it('retries jupiter sell quote failures', () => {
+    expect(isSellRetryableError('jupiter_sell_quote_failed')).toBe(true);
+  });
+
+  it('retries swap build failures', () => {
+    expect(isSellRetryableError('swap_build:route_not_found')).toBe(true);
+  });
+
+  it('retries Jupiter sim_failed Custom 6024', () => {
+    expect(
+      isSellRetryableError(
+        'sim_failed:{"InstructionError":[3,{"Custom":6024}]}',
+      ),
+    ).toBe(true);
+  });
+
+  it('retries swap-http-429', () => {
+    expect(isSellRetryableError('swap-http-429')).toBe(true);
+  });
 });
 
 describe('isPendingSellExpired', () => {

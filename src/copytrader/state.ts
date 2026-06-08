@@ -15,6 +15,8 @@ export type CopyPosition = {
   leaderWallet: string;
   leaderEntrySig: string;
   ourEntrySig?: string;
+  /** Leader sold before probe+dip filled — never schedule/fill the dip leg. */
+  entryDipAbandoned?: boolean;
 };
 
 export type LeaderMintLedger = {
@@ -22,11 +24,15 @@ export type LeaderMintLedger = {
   tokenRaw: string;
 };
 
+export type EntryLeg = 'probe' | 'dip';
+
 export type PendingBuy = {
   id: string;
   mint: string;
   symbol: string;
   kind: 'entry' | 'add';
+  /** Entry split: probe (+premium) then dip (−discount from leader). */
+  entryLeg?: EntryLeg;
   sizeUsd: number;
   /** Leader add size / pre-buy holdings when kind=add. */
   leaderAddFraction?: number;
@@ -85,6 +91,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
       positions[mint] = {
         ...pos,
         addCount: typeof pos.addCount === 'number' ? pos.addCount : 0,
+        entryDipAbandoned: pos.entryDipAbandoned === true,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(
@@ -93,6 +100,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         mint: p.mint,
         symbol: p.symbol,
         kind: p.kind === 'add' ? 'add' : 'entry',
+        entryLeg: p.entryLeg === 'probe' || p.entryLeg === 'dip' ? p.entryLeg : undefined,
         sizeUsd: typeof p.sizeUsd === 'number' && p.sizeUsd > 0 ? p.sizeUsd : 0,
         leaderAddFraction:
           typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
