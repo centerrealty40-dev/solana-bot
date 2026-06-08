@@ -11,7 +11,7 @@
  * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — min net impact % **per hour** (not % of day vol)
  * - HL_TWAP_WHALE_DENYLIST — optional whale addresses to skip (comma-sep)
  * - HL_TWAP_FADE_WHALES — comma-sep whales to fade (invert side); overrides denylist for those addresses
- * - HL_TWAP_BTC_ALIGNED_GATE=1 — block long when BTC 1h < 0, block short when BTC 1h > 0
+ * - HL_TWAP_BTC_ALIGNED_GATE=0 — optional BTC 1h filter (off by default; prod should keep 0)
  * - HL_TWAP_BTC_GATE_MAX_STALE_MS=900000 — max age of Binance BTC klines for gate
  * - HL_TWAP_BTC_REFRESH_MS=300000 — poll interval for BTC context when gate enabled
  * - HL_TWAP_BUY_ONLY=0 — long+short (legacy: sell только после buy OPEN)
@@ -71,8 +71,10 @@ import {
   paperJournalPath,
   processPaperTrades,
   schedulePaperTrade,
+  resolvePaperEntryAuditPlan,
 } from '../hyperliquid/twap/paper-trader.js';
 import { loadHlTwapLiveConfig } from '../hyperliquid/twap/live/config.js';
+import { resolveLiveEntryAuditPlan } from '../hyperliquid/twap/live/coin-exposure.js';
 import { createHlTwapExchangeClient, type HlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-client.js';
 import {
   handleLiveOnTwapEnd,
@@ -191,7 +193,12 @@ async function announceStart(
   feedRows: HypurrscanTwapRow[],
   _cache: HyperliquidMarketCache,
 ): Promise<void> {
-  const plan = computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
+  const plan =
+    LIVE_ENABLED && liveExchange
+      ? resolveLiveEntryAuditPlan(sig, watchState, LIVE_CFG.journalPath, MIN_IMPACT_PCT_HOUR)
+      : PAPER_ENABLED
+        ? resolvePaperEntryAuditPlan(sig, watchState, MIN_IMPACT_PCT_HOUR)
+        : computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
   appendAudit('twap_start', { sig, plan });
   markTwapOpenedNotified(watchState, sig);
 

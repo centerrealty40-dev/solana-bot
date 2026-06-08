@@ -18,6 +18,19 @@
 
 ---
 
+## [1.11.352] — 2026-06-04
+
+**Тег:** `sa-alpha-1.11.352`
+
+### HL TWAP: audit plan matches live schedule gates; BTC aligned gate off on prod
+
+- **`resolveLiveEntryAuditPlan` / `resolvePaperEntryAuditPlan`:** `signals.jsonl` `twap_start.plan` now reflects the same gates as schedule (BTC aligned gate, opposite side, `already_tracked`) — fixes misleading `plan=ok` when live entry blocked.
+- **Prod:** set `HL_TWAP_BTC_ALIGNED_GATE=0` (21d EV: gate-opposing trades +$167 vs gate-aligned +$11).
+
+**Откат:** `git checkout sa-alpha-1.11.351 -- src/hyperliquid/twap/live/coin-exposure.ts src/hyperliquid/twap/paper-trader.ts src/scripts/hl-twap-telegram-watch.ts .env.example tests/hl-twap-btc-gate.test.ts docs/strategy/release/`; on VPS `sed -i 's/^HL_TWAP_BTC_ALIGNED_GATE=.*/HL_TWAP_BTC_ALIGNED_GATE=1/' .env`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.351] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.351`

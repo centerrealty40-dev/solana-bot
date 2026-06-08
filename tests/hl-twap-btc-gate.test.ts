@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTwapWatchState } from '../src/hyperliquid/twap/detect.js';
-import { canScheduleLiveEntry } from '../src/hyperliquid/twap/live/coin-exposure.js';
+import { canScheduleLiveEntry, resolveLiveEntryAuditPlan } from '../src/hyperliquid/twap/live/coin-exposure.js';
 import {
   hlTwapBtcAlignedBlockReason,
   hlTwapBtcAlignedGateEnabled,
@@ -13,6 +13,9 @@ vi.mock('../src/papertrader/pricing.js', () => ({
 }));
 
 import { getBtcContext } from '../src/papertrader/pricing.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 function sig(side: 'buy' | 'sell'): NormalizedTwapSignal {
   return {
@@ -96,6 +99,26 @@ describe('hl-twap btc aligned gate', () => {
     const d = canScheduleLiveEntry(buy, state, new Map(), 2);
     expect(d.allow).toBe(false);
     expect(d.reason).toBe('btc_aligned_gate_long');
+  });
+
+  it('resolveLiveEntryAuditPlan matches schedule gate (not raw computeCoinEntryPlan)', () => {
+    vi.mocked(getBtcContext).mockReturnValue({
+      ret1h_pct: -1,
+      ret4h_pct: null,
+      ret24h_pct: null,
+      ret72h_pct: null,
+      retPeak72hDrawdown_pct: null,
+      updated_ts: Date.now(),
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-twap-audit-'));
+    const journal = path.join(dir, 'live.jsonl');
+    const state = createTwapWatchState();
+    const buy = sig('buy');
+    state.activeByHash.set(buy.hash, buy);
+    const plan = resolveLiveEntryAuditPlan(buy, state, journal, 2);
+    expect(plan.allow).toBe(false);
+    expect(plan.reason).toBe('btc_aligned_gate_long');
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('is disabled by default env', () => {

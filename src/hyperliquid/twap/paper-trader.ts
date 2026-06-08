@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HyperliquidMarketCache } from './hyperliquid-meta.js';
-import { computeCoinEntryPlan, type ActiveTwapLookup } from './coin-twap-analysis.js';
+import { computeCoinEntryPlan, type ActiveTwapLookup, type CoinEntryPlan } from './coin-twap-analysis.js';
 import { hlTwapEntrySide } from './fade-whales.js';
 import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
 import type { TwapWatchState } from './detect.js';
@@ -191,6 +191,26 @@ export function schedulePaperTrade(
     impactPct: sig.volumeSharePct,
   };
   appendPaperJournal(filePath, row);
+}
+
+/** Audit snapshot: same gates as schedulePaperTrade (journal dedupe + BTC gate). */
+export function resolvePaperEntryAuditPlan(
+  sig: NormalizedTwapSignal,
+  watchState: TwapWatchState,
+  minHourPct: number,
+): CoinEntryPlan {
+  const filePath = paperJournalPath();
+  const plan = computeCoinEntryPlan(sig, watchState, minHourPct);
+  const opens = loadPaperOpensFromJournal(filePath);
+  const pending = loadPendingSchedules(filePath);
+  if (opens.has(sig.hash) || pending.has(sig.hash)) {
+    return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
+  }
+  if (!plan.allow) return plan;
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  const btcBlock = hlTwapBtcAlignedBlockReason(entrySide);
+  if (btcBlock) return { ...plan, allow: false, reason: btcBlock };
+  return plan;
 }
 
 function cancelSchedule(filePath: string, hash: string, reason: string): void {
