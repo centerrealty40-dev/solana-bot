@@ -58,6 +58,8 @@ pm2 list
 
 Daily atlas DB backup to R2 at **04:00 UTC** (crontab user `salpha`): `scripts-tmp/backup-db-r2-api.sh`. Env for R2 lives in `.env` (same keys as `.env.example`).
 
+**Git backup drift audit** at **04:15 UTC**: `scripts/ops/vps-github-sync-audit.sh` (install once: `bash scripts/ops/install-vps-github-sync-cron.sh`). Prod **`HEAD`** must match **`origin/v2`**; log: `data/logs/git-sync-audit.log`.
+
 ## Deploy / update (operator)
 
 ```bash
