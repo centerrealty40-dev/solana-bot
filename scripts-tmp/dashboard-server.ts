@@ -43,6 +43,7 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
+import { loadPumpswapDipJsonlForDashboard } from './pumpswap-dip-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
   hlTwapDashboardJsonlPath,
@@ -152,6 +153,10 @@ const DASHBOARD_COPY_TRADER_JSONL =
 const DASHBOARD_COPY_TRADER_STATE_PATH =
   process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+/** PumpSwap dip bot — isolated journal (not Oscar / copy-trader). */
+const DASHBOARD_PUMPSWAP_DIP_JSONL =
+  process.env.DASHBOARD_PUMPSWAP_DIP_JSONL?.trim() ||
+  path.resolve(PAPER2_DIR, '..', 'pumpswap-dip', 'journal.jsonl');
 /** @deprecated alias — тот же execution wallet (Copy Trader). */
 const DASHBOARD_LIVE_OSCAR_RISKY_JSONL = DASHBOARD_COPY_TRADER_JSONL;
 /** Paper Oscar IDEALIZED V2.1 — отдельный jsonl; панель рядом с live на `/papertrader2`. */
@@ -179,6 +184,7 @@ function dashboardOscarPanelJsonlFiles(): string[] {
   const out: string[] = [];
   if (fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_JSONL);
   if (fs.existsSync(DASHBOARD_COPY_TRADER_JSONL)) out.push(DASHBOARD_COPY_TRADER_JSONL);
+  if (fs.existsSync(DASHBOARD_PUMPSWAP_DIP_JSONL)) out.push(DASHBOARD_PUMPSWAP_DIP_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_RISKY_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V22_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V22_JSONL);
@@ -1335,10 +1341,11 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · Copy Trader · HL TWAP dry-run. */
+/** Плитки `/papertrader2`: Live Oscar · Copy Trader · PumpSwap Dip · HL TWAP dry-run. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'copy-trader',
+  'pumpswap-dip',
   'hl-twap-paper',
 ] as const;
 
@@ -1396,6 +1403,13 @@ export type DashboardPaper2StrategyRow = {
   };
   /** Copy-trader execution counters + pending queue (panel 2). */
   copyTrader?: CopyTraderDashboardStats;
+  /** PumpSwap dip bot counters (panel 3). */
+  pumpswapDip?: {
+    signals1h: number;
+    buys1h: number;
+    sells1h: number;
+    mode: string | null;
+  };
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -3504,7 +3518,10 @@ async function fetchCryptoTickerPayload(): Promise<CryptoTickerApiPayload> {
 async function buildPaper2StrategyRowFromLoad(
   fp: string,
   sid: string,
-  loaded: Paper2FileLoad & { copyTrader?: CopyTraderDashboardStats },
+  loaded: Paper2FileLoad & {
+    copyTrader?: CopyTraderDashboardStats;
+    pumpswapDip?: DashboardPaper2StrategyRow['pumpswapDip'];
+  },
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
 ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
   const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
@@ -3895,6 +3912,7 @@ async function buildPaper2StrategyRowFromLoad(
     liqDrain,
     ...(hb?.reconcileExtras ?? {}),
     ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
+    ...(loaded.pumpswapDip ? { pumpswapDip: loaded.pumpswapDip } : {}),
   };
 }
 
@@ -3955,11 +3973,25 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
+  const dipRowP = buildPaper2StrategyRowFromLoad(
+    DASHBOARD_PUMPSWAP_DIP_JSONL,
+    'pumpswap-dip',
+    loadPumpswapDipJsonlForDashboard(DASHBOARD_PUMPSWAP_DIP_JSONL),
+  ).catch((e) => {
+    console.warn('[dashboard] pumpswap-dip panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('pumpswap-dip', DASHBOARD_PUMPSWAP_DIP_JSONL);
+  });
 
-  const [liveRow, copyTraderRow, hlTwapRow] = await Promise.all([liveRowP, copyRowP, hlTwapRowP]);
+  const [liveRow, copyTraderRow, hlTwapRow, dipRow] = await Promise.all([
+    liveRowP,
+    copyRowP,
+    hlTwapRowP,
+    dipRowP,
+  ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
     copyTraderRow as DashboardPaper2StrategyRow,
+    dipRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
   ]);
 

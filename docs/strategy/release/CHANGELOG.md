@@ -18,6 +18,23 @@
 
 ---
 
+---
+
+## [1.11.353] — 2026-06-07
+
+**Тег:** `sa-alpha-1.11.353`
+
+### Ops: отключить legacy detective RPC; PumpSwap dip bot (изолированный)
+
+- **Удалён `sa-wallet-orchestrator` из PM2** — больше не поднимается при `pm2 reload ecosystem`; kill-switch `SA_ORCH_ENABLED=1` в скрипте.
+- **`install-detective-data-plane-salpha.sh`** — заблокирован без `FORCE=1`; добавлены `uninstall-detective-data-plane-salpha.sh` и `disable-detective-production-salpha.sh`.
+- **Oscar:** whale analysis off (`PAPER_DIP_WHALE_ANALYSIS_ENABLED=0`) — не тянет `swaps`/sigseed.
+- **`pumpswap-dip-bot`:** новый PM2-процесс, журнал `data/pumpswap-dip/`, discovery из PG `pumpswap_pair_snapshots`, пролив −10…−35% / TP +18% / SL −25%; **плитка 3** на `/papertrader2`. По умолчанию **`dry_run`** до отдельного keypair.
+
+**Откат:** `git checkout sa-alpha-1.11.352`; на VPS `pm2 start ecosystem.config.cjs --only sa-wallet-orchestrator` только если нужен detective; `pm2 delete pumpswap-dip-bot`.
+
+---
+
 ## [1.11.352] — 2026-06-04
 
 **Тег:** `sa-alpha-1.11.352`
