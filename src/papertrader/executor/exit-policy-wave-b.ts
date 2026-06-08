@@ -129,8 +129,8 @@ export function waveBHighestTpGridThresholdTaken(ot: OpenTrade, stepPnl: number)
   return max;
 }
 
-/** TP rungs actually taken via partial sells — excludes MTM-only `liveWavePeakPnlFrac`. */
-export function waveBExecutedTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
+/** Max TP threshold from current ladder marks only (no persisted / MTM fields). */
+export function waveBExecutedTpGridThresholdFromMarks(ot: OpenTrade, stepPnl: number): number {
   let max = 0;
   if (stepPnl > 0) {
     for (const idx of ot.ladderUsedIndices) {
@@ -142,6 +142,27 @@ export function waveBExecutedTpGridThresholdTaken(ot: OpenTrade, stepPnl: number
     if (Number.isFinite(u) && u > max) max = u;
   }
   return max;
+}
+
+/** TP rungs actually taken via partial sells — excludes MTM-only `liveWavePeakPnlFrac`. */
+export function waveBExecutedTpGridThresholdTaken(ot: OpenTrade, stepPnl: number): number {
+  const fromMarks = waveBExecutedTpGridThresholdFromMarks(ot, stepPnl);
+  const persisted = ot.liveWaveMaxExecutedTpFrac ?? 0;
+  return Math.max(fromMarks, persisted);
+}
+
+/** Record executed TP rung — survives impulse reset for breakeven eligibility. */
+export function waveBOnTpGridRungExecuted(ot: OpenTrade, thresholdFrac: number): void {
+  if (!isWaveBExitPolicy(ot) || !(thresholdFrac > 0) || !Number.isFinite(thresholdFrac)) return;
+  const prev = ot.liveWaveMaxExecutedTpFrac ?? 0;
+  if (thresholdFrac > prev) ot.liveWaveMaxExecutedTpFrac = thresholdFrac;
+}
+
+/** Backfill persisted max from ladder marks / journal replay when field absent. */
+export function waveBReconcileMaxExecutedTpFromMarks(ot: OpenTrade, stepPnl: number): void {
+  if (!isWaveBExitPolicy(ot)) return;
+  const fromMarks = waveBExecutedTpGridThresholdFromMarks(ot, stepPnl);
+  waveBOnTpGridRungExecuted(ot, fromMarks);
 }
 
 /** Defensive trail: peak or TP ladder reached ≥ +10%. */
@@ -266,6 +287,7 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
     ot.liveWaveTrailAnchorPnlFrac = 0;
     ot.liveWaveTrailLevelsTaken = [];
     ot.liveWavePeakPnlFrac = 0;
+    ot.liveWaveMaxExecutedTpFrac = 0;
     return;
   }
   ot.liveExitPolicyId = 'legacy_grid';
@@ -341,6 +363,8 @@ export function migrateLegacyOpenToWaveB(ot: OpenTrade, pnlFrac?: number): boole
   ot.liveWavePeakPnlFrac = peak;
   ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, peak);
   ot.liveWaveTrailLevelsTaken = ot.liveWaveTrailLevelsTaken ?? [];
+
+  waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
 
   if (peak + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) {
     ot.trailingArmed = true;

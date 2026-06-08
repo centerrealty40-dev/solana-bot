@@ -316,6 +316,11 @@ export interface OpenTrade {
     | 'scratch_flush0'
     | 'scratch_gap_flush';
 
+  /**
+   * Wave B: max TP grid threshold (PnL frac vs avg) ever executed via partial sell.
+   * Survives `waveBMaybeResetTpImpulse` — drives `BREAKEVEN_EXIT` after deep pullback.
+   */
+  liveWaveMaxExecutedTpFrac?: number;
   /** Wave B: last peak PnL fraction (vs avg) for wave reset. */
   liveWavePeakPnlFrac?: number;
   /** Wave B: trail anchor (local high PnL fraction). */

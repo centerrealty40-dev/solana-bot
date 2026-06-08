@@ -16,8 +16,20 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
+---
+
+## [1.11.350] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.350`
+
+### Live-oscar Wave B: breakeven exit after impulse reset
+
+- **`liveWaveMaxExecutedTpFrac`:** persists max TP grid rung ever executed via partial sell; not cleared by `waveBMaybeResetTpImpulse`.
+- **`BREAKEVEN_EXIT`:** eligible at ≤0% avg PnL when historical executed TP ≥ +7.5%, even if ladder marks above +2.5% were reset on pullback (fixes $three-style stuck remainder).
+- **Restore:** journal replay + open snapshot backfill from `partial_sell.ladderPnlPct`.
+
+**Откат:** `git checkout sa-alpha-1.11.349 -- src/papertrader/types.ts src/papertrader/executor/exit-policy-wave-b.ts src/papertrader/executor/tracker.ts src/papertrader/executor/store-restore.ts src/live/strategy-snapshot.ts tests/papertrader-exit-policy-wave-b.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
 ---
 
 ## [1.11.349] — 2026-05-28
@@ -30,25 +42,10 @@
 - **Confirm ticks:** `COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS` (default **2**) — consecutive passes before dip buy.
 - **Fix:** dip pending no longer cancelled via `proportional_add_cap` (that check applies to leader adds only).
 
-**Откат:** `git checkout sa-alpha-1.11.348 -- src/copytrader/entry-dip-gate.ts src/copytrader/main.ts src/copytrader/state.ts src/copytrader/config.ts tests/copytrader/entry-dip-gate.test.ts ecosystem.config.cjs docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+**Откат:** `git checkout sa-alpha-1.11.347 -- src/copytrader/entry-dip-gate.ts src/copytrader/main.ts src/copytrader/state.ts src/copytrader/config.ts tests/copytrader/entry-dip-gate.test.ts ecosystem.config.cjs docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
 
 ---
 
-## [1.11.348] — 2026-06-08
-
-**Тег:** `sa-alpha-1.11.348`
-
-### HL TWAP: Hyperliquid WebSocket fast-path for whale TWAP detect
-
-- **WS entry:** `userTwapHistory` + `twapStates` for top whales (from `signals.jsonl` or `HL_TWAP_WS_WHALE_LIST`); schedule live/paper before HypurrScan poll (~0.8s vs ~9s observed on spike).
-- **Dedupe:** WS-local hash (`ws:…`) linked to HypurrScan tx hash on reconcile; audit `twap_start` includes `detectSource` + `detectLagMs`.
-- **Fallback:** HypurrScan poll 2s unchanged for discovery + ended/cancel; `HL_TWAP_WS_ENABLED=0` disables WS.
-
-**Откат:** `git checkout sa-alpha-1.11.347 -- src/hyperliquid/twap/hl-ws*.ts src/hyperliquid/twap/hl-ws-*.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-hl-ws*.test.ts .env.example docs/strategy/release/`; prod `.env`: `HL_TWAP_WS_ENABLED=0`; `pm2 reload hl-twap-telegram-watch --update-env`; stop `hl-twap-ws-spike` if running.
-
----
-
->>>>>>> Stashed changes
 ## [1.11.347] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.347`

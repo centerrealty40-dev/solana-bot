@@ -52,6 +52,7 @@ import {
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
   waveBMaybeResetTpImpulse,
+  waveBOnTpGridRungExecuted,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
@@ -2688,7 +2689,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           livePhase4,
           liveOscarCfg,
           stats,
-          markLadder: () => markLadderStepFired(ot, k - 1, threshold),
+          markLadder: () => {
+            markLadderStepFired(ot, k - 1, threshold);
+            if (isWaveBExitPolicy(ot)) waveBOnTpGridRungExecuted(ot, threshold);
+          },
           logLabelPct: `TPgrid+${(threshold * 100).toFixed(0)}%`,
         });
         if (r === 'abort_mint') {

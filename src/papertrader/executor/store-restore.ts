@@ -3,7 +3,11 @@ import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
 import {
   ensureLiveOscarExitPolicyPinned,
+  isWaveBExitPolicy,
   waveBMarkTrailLevelTaken,
+  waveBOnTpGridRungExecuted,
+  waveBReconcileMaxExecutedTpFromMarks,
+  WAVE_B_V1_TP_GRID,
 } from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
@@ -381,6 +385,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveVariantASalvage24Checked)) ot.liveVariantASalvage24Checked = true;
     if (Boolean(rawPayload.liveVariantAH48Checked)) ot.liveVariantAH48Checked = true;
 
+    const lwmet = rawPayload.liveWaveMaxExecutedTpFrac;
+    if (typeof lwmet === 'number' && Number.isFinite(lwmet)) ot.liveWaveMaxExecutedTpFrac = lwmet;
+
     const lwp = rawPayload.liveWavePeakPnlFrac;
     if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;
 
@@ -405,6 +412,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
 
     reconcileEntrySplitV2FromLegs(ot);
+
+    if (isWaveBExitPolicy(ot)) {
+      waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
+    }
 
     return ot;
   } catch {
@@ -433,6 +444,7 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   const lp = Number(raw.ladderPnlPct ?? NaN);
   if (reason === 'TP_LADDER' && Number.isFinite(lp)) {
     ladderRememberLevel(ot.ladderUsedLevels, lp);
+    waveBOnTpGridRungExecuted(ot, lp);
   }
   if (reason === 'BREAKEVEN_TRIM') {
     ot.liveBreakevenTrimDone = true;
@@ -495,6 +507,7 @@ export function loadStore(storePath: string): RestoreState {
   };
   if (!fs.existsSync(storePath)) return state;
   const lines = fs.readFileSync(storePath, 'utf-8').split('\n').filter(Boolean);
+  const waveBMaxTpFracByMint = new Map<string, number>();
   for (const ln of lines) {
     try {
       const e = JSON.parse(ln) as {
@@ -516,7 +529,15 @@ export function loadStore(storePath: string): RestoreState {
         if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);
       }
       if (e.kind === 'partial_sell' && e.mint) {
-        applyPartialSellLedgerLine(state, e as unknown as Record<string, unknown>);
+        const rawPs = e as unknown as Record<string, unknown>;
+        applyPartialSellLedgerLine(state, rawPs);
+        if (String(rawPs.reason ?? '') === 'TP_LADDER') {
+          const lp = Number(rawPs.ladderPnlPct ?? NaN);
+          if (Number.isFinite(lp)) {
+            const prev = waveBMaxTpFracByMint.get(e.mint) ?? 0;
+            if (lp > prev) waveBMaxTpFracByMint.set(e.mint, lp);
+          }
+        }
       }
       if (e.kind === 'dca_add' && e.mint) {
         applyDcaAddLedgerLine(state, e as unknown as Record<string, unknown>);
@@ -541,6 +562,10 @@ export function loadStore(storePath: string): RestoreState {
     } catch {
       // ignore corrupt line
     }
+  }
+  for (const [mint, maxTp] of waveBMaxTpFracByMint) {
+    const ot = state.open.get(mint);
+    if (ot) waveBOnTpGridRungExecuted(ot, maxTp);
   }
   return state;
 }
