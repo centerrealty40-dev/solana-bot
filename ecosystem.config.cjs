@@ -380,15 +380,15 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, 2×$400, DCA $300/ступень. */
+        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, сплит 2×$200, DCA $200/ступень (max $800). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '150',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '300',
-        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.333333,-20:0.333333',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '200',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.5,-20:0.5',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
@@ -1252,7 +1252,7 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '800',
+        COPY_TRADER_POSITION_USD: '950',
         /** 0 = unlimited (proportional adds/sells only; no cap rows in state). */
         COPY_TRADER_MAX_POSITION_USD: '0',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
@@ -1260,8 +1260,9 @@ const PM2_APPS = [
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
         COPY_TRADER_BUY_DELAY_MS: '30000',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.25',
-        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '5',
+        /** Split entry: $350 probe (350/950) + $600 dip @ leader−4%. */
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3684210526315789',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '4',
         COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',

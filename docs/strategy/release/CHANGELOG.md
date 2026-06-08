@@ -16,6 +16,20 @@
 
 ---
 
+## [1.11.345] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.345`
+
+### Copy-trader: $950 entry ($350 probe + $600 dip @ −4%)
+
+- **`COPY_TRADER_POSITION_USD=950`** — целевой размер позиции на mint.
+- **Probe $350** (`ENTRY_PROBE_FRACTION=350/950`) @ leader+3%; **dip $600** @ leader **−4%** (было $800 / $200 / $600 @ −5%).
+- PG grid sim: −4% даёт выше EV и чаще fill dip leg, чем −5%.
+
+**Откат:** `COPY_TRADER_POSITION_USD=800`, `ENTRY_PROBE_FRACTION=0.25`, `ENTRY_DIP_DISCOUNT_PCT=5`; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.344] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.344`

@@ -39,10 +39,10 @@ const CopyTraderConfigSchema = z.object({
   minProportionalAddUsd: z.coerce.number().min(0).max(100_000).default(0),
   minProportionalSellFraction: z.coerce.number().min(0).max(1).default(0),
   buyPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(3),
-  /** Fraction of positionUsd for immediate probe buy at leader+premium (default 25%). */
-  entryProbeFraction: z.coerce.number().min(0).max(1).default(0.25),
-  /** Remainder fills when price ≤ leader × (1 − discount/100) (default 5%). */
-  entryDipDiscountPct: z.coerce.number().min(0).max(50).default(5),
+  /** Fraction of positionUsd for immediate probe buy at leader+premium (default 350/950). */
+  entryProbeFraction: z.coerce.number().min(0).max(1).default(350 / 950),
+  /** Remainder fills when price ≤ leader × (1 − discount/100) (default 4%). */
+  entryDipDiscountPct: z.coerce.number().min(0).max(50).default(4),
   /** Proportional adds blocked until deployed ≥ positionUsd × this fraction (default 99%). */
   entryMinDeployFraction: z.coerce.number().min(0.5).max(1).default(0.99),
   /** Leader add mirror: max premium vs leader add price (0 = at or below leader only). */

@@ -15,9 +15,9 @@ import {
 import { evaluateCopyAdd, evaluateCopyEntryDip } from '../../src/copytrader/evaluate.js';
 
 const baseCfg = {
-  positionUsd: 800,
-  entryProbeFraction: 0.25,
-  entryDipDiscountPct: 5,
+  positionUsd: 950,
+  entryProbeFraction: 350 / 950,
+  entryDipDiscountPct: 4,
   entryMinDeployFraction: 0.99,
   addPriceMaxPremiumPct: 0,
   minLeaderBuyUsd: 50,
@@ -28,32 +28,32 @@ const baseCfg = {
 } as CopyTraderConfig;
 
 describe('entry-probe sizing', () => {
-  it('splits 25/75 by default', () => {
+  it('splits $350 probe + $600 dip on $950 position', () => {
     expect(usesSplitEntryProbe(baseCfg)).toBe(true);
-    expect(entryProbeSizeUsd(baseCfg)).toBe(200);
+    expect(entryProbeSizeUsd(baseCfg)).toBe(350);
     expect(entryDipSizeUsd(baseCfg)).toBe(600);
   });
 
-  it('leader dip target at -5%', () => {
-    expect(leaderDipTargetPx(0.001, 5)).toBeCloseTo(0.00095, 8);
+  it('leader dip target at -4%', () => {
+    expect(leaderDipTargetPx(0.001, 4)).toBeCloseTo(0.00096, 8);
   });
 
   it('dip-only when probe fraction is 0', () => {
     const cfg = { ...baseCfg, entryProbeFraction: 0 } as CopyTraderConfig;
     expect(usesDipOnlyEntry(cfg)).toBe(true);
-    expect(entryDipSizeUsd(cfg)).toBe(800);
+    expect(entryDipSizeUsd(cfg)).toBe(950);
   });
 
   it('full deploy requires 99% of positionUsd on split entry', () => {
-    expect(entryMinDeployUsd(baseCfg)).toBe(792);
-    expect(isEntryFullyDeployed(baseCfg, 200)).toBe(false);
-    expect(isEntryFullyDeployed(baseCfg, 792)).toBe(true);
-    expect(isEntryFullyDeployed(baseCfg, 800)).toBe(true);
+    expect(entryMinDeployUsd(baseCfg)).toBe(940.5);
+    expect(isEntryFullyDeployed(baseCfg, 350)).toBe(false);
+    expect(isEntryFullyDeployed(baseCfg, 940.5)).toBe(true);
+    expect(isEntryFullyDeployed(baseCfg, 950)).toBe(true);
   });
 
   it('abandon dip when leader sells before full deploy', () => {
-    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 200)).toBe(true);
-    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 792)).toBe(false);
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 350)).toBe(true);
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 940.5)).toBe(false);
     expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 0)).toBe(false);
   });
 });
@@ -71,14 +71,14 @@ describe('evaluateCopyEntryDip', () => {
     dexId: 'raydium',
   };
 
-  it('passes at -5% from leader', () => {
+  it('passes at -4% from leader', () => {
     const r = evaluateCopyEntryDip(
-      { ...baseCfg, entryDipDiscountPct: 5 } as CopyTraderConfig,
+      { ...baseCfg, entryDipDiscountPct: 4 } as CopyTraderConfig,
       {
         mint: 'Mint1111111111111111111111111111111111111',
         leaderPriceUsd: 0.001,
         leaderBuyUsd: 400,
-        currentPriceUsd: 0.00095,
+        currentPriceUsd: 0.00096,
         dex,
         nowMs: Date.now(),
       },
@@ -88,12 +88,12 @@ describe('evaluateCopyEntryDip', () => {
 
   it('rejects above dip threshold', () => {
     const r = evaluateCopyEntryDip(
-      { ...baseCfg, entryDipDiscountPct: 5 } as CopyTraderConfig,
+      { ...baseCfg, entryDipDiscountPct: 4 } as CopyTraderConfig,
       {
         mint: 'Mint1111111111111111111111111111111111111',
         leaderPriceUsd: 0.001,
         leaderBuyUsd: 400,
-        currentPriceUsd: 0.00098,
+        currentPriceUsd: 0.00097,
         dex,
         nowMs: Date.now(),
       },
