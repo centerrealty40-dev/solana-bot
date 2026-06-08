@@ -3,8 +3,11 @@ import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import {
   entryMinDeployUsd,
   isEntryFullyDeployed,
+  resolveEntryDeployedCostUsd,
   shouldAbandonEntryDipOnLeaderSell,
 } from '../../src/copytrader/entry-deploy.js';
+import type { CopyPosition, CopyTraderState } from '../../src/copytrader/state.js';
+import { emptyCopyTraderState } from '../../src/copytrader/state.js';
 import {
   entryDipMaxPriceUsd,
   entryDipSizeUsd,
@@ -53,9 +56,74 @@ describe('entry-probe sizing', () => {
   });
 
   it('abandon dip when leader sells before full deploy', () => {
-    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 350)).toBe(true);
-    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 940.5)).toBe(false);
-    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, 0)).toBe(false);
+    const state = emptyCopyTraderState();
+    const probeOnly: CopyPosition = {
+      mint: 'Mint1111111111111111111111111111111111111',
+      symbol: 'GO',
+      entryTs: Date.now(),
+      entryPriceUsd: 0.00068,
+      sizeUsd: 350,
+      entryDeployedCostUsd: 350,
+      addCount: 0,
+      leaderWallet: 'Leader111111111111111111111111111111111111',
+      leaderEntrySig: 'sig',
+    };
+    state.positions[probeOnly.mint] = probeOnly;
+    state.pendingBuys.push({
+      id: 'pb1',
+      mint: probeOnly.mint,
+      symbol: 'GO',
+      kind: 'entry',
+      entryLeg: 'dip',
+      sizeUsd: 600,
+      leaderSignature: 'sig',
+      leaderPriceUsd: 0.0007,
+      leaderBuyUsd: 400,
+      leaderBuyTs: Date.now(),
+      dueTs: Date.now() + 60_000,
+      retryUntilTs: Date.now() + 3_600_000,
+    });
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, state, probeOnly)).toBe(true);
+
+    const fullEntry: CopyPosition = { ...probeOnly, entryDeployedCostUsd: 950, sizeUsd: 690 };
+    state.positions[fullEntry.mint] = fullEntry;
+    state.pendingBuys = [];
+    expect(shouldAbandonEntryDipOnLeaderSell(baseCfg, state, fullEntry)).toBe(false);
+  });
+
+  it('GO-style: full entry cost allows adds even when mtm sizeUsd dropped', () => {
+    const state = emptyCopyTraderState();
+    const pos: CopyPosition = {
+      mint: 'CujZ5W6GWYb5XYe3hsTJ6kjiaw5MdZjbKQEuGA6jpump',
+      symbol: 'GO',
+      entryTs: Date.now(),
+      entryPriceUsd: 0.00068,
+      sizeUsd: 689.79,
+      entryDeployedCostUsd: 950,
+      addCount: 1,
+      leaderWallet: 'Leader111111111111111111111111111111111111',
+      leaderEntrySig: 'sig',
+    };
+    state.positions[pos.mint] = pos;
+    expect(resolveEntryDeployedCostUsd(baseCfg, state, pos)).toBe(950);
+    expect(isEntryFullyDeployed(baseCfg, resolveEntryDeployedCostUsd(baseCfg, state, pos))).toBe(true);
+  });
+
+  it('legacy position infers full staged entry when dip pending is gone', () => {
+    const state = emptyCopyTraderState();
+    const pos: CopyPosition = {
+      mint: 'CujZ5W6GWYb5XYe3hsTJ6kjiaw5MdZjbKQEuGA6jpump',
+      symbol: 'GO',
+      entryTs: Date.now(),
+      entryPriceUsd: 0.00068,
+      sizeUsd: 689.79,
+      addCount: 1,
+      leaderWallet: 'Leader111111111111111111111111111111111111',
+      leaderEntrySig: 'sig',
+    };
+    state.positions[pos.mint] = pos;
+    expect(resolveEntryDeployedCostUsd(baseCfg, state, pos)).toBe(950);
+    expect(isEntryFullyDeployed(baseCfg, resolveEntryDeployedCostUsd(baseCfg, state, pos))).toBe(true);
   });
 });
 

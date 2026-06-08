@@ -5,7 +5,11 @@ import type { SwapInsert } from '../parser/pumpfun.js';
 import type { CopyTraderConfig } from './config.js';
 import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyAdd, evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
-import { isEntryFullyDeployed, shouldAbandonEntryDipOnLeaderSell } from './entry-deploy.js';
+import {
+  isEntryFullyDeployed,
+  resolveEntryDeployedCostUsd,
+  shouldAbandonEntryDipOnLeaderSell,
+} from './entry-deploy.js';
 import {
   bumpEntryDipPassStreak,
   entryDipConfirmReason,
@@ -192,17 +196,18 @@ async function onLeaderBuy(
       });
       return;
     }
-    const deployedUsd =
-      walletBal > 0n && priceUsd > 0
-        ? walletNotionalUsdFromRaw(walletBal, priceUsd)
-        : existing.sizeUsd;
-    if (!isEntryFullyDeployed(cfg, deployedUsd)) {
+    const entryDeployedCostUsd = resolveEntryDeployedCostUsd(cfg, state, existing);
+    if (!isEntryFullyDeployed(cfg, entryDeployedCostUsd)) {
       appendCopyEvent(cfg, {
         kind: 'leader_add_ignored',
         reason: 'entry_not_fully_deployed',
         mint,
         leaderSignature: row.signature,
-        deployedUsd,
+        deployedUsd: entryDeployedCostUsd,
+        deployedUsdMtm:
+          walletBal > 0n && priceUsd > 0
+            ? walletNotionalUsdFromRaw(walletBal, priceUsd)
+            : existing.sizeUsd,
         targetUsd: cfg.positionUsd,
         entryMinDeployFraction: cfg.entryMinDeployFraction,
       });
@@ -290,17 +295,18 @@ async function onLeaderBuy(
 
 function markEntryDipAbandoned(
   cfg: CopyTraderConfig,
+  state: CopyTraderState,
   pos: CopyPosition,
   meta: {
     mint: string;
     leaderSignature: string;
     leaderSellFraction?: number;
-    deployedUsd: number;
   },
 ): void {
   if (pos.entryDipAbandoned) return;
-  if (!shouldAbandonEntryDipOnLeaderSell(cfg, meta.deployedUsd)) return;
+  if (!shouldAbandonEntryDipOnLeaderSell(cfg, state, pos)) return;
   pos.entryDipAbandoned = true;
+  const deployedUsd = resolveEntryDeployedCostUsd(cfg, state, pos);
   appendCopyEvent(cfg, {
     kind: 'entry_dip_abandoned',
     reason: 'leader_exit_before_full_entry',
@@ -308,7 +314,7 @@ function markEntryDipAbandoned(
     symbol: pos.symbol,
     leaderSignature: meta.leaderSignature,
     leaderSellFraction: meta.leaderSellFraction ?? null,
-    deployedUsd: meta.deployedUsd,
+    deployedUsd,
     targetUsd: cfg.positionUsd,
   });
 }
@@ -487,15 +493,10 @@ async function onLeaderSell(
     syncPositionFromWallet(tracked, walletBal, swap.priceUsd);
   }
 
-  const deployedUsd =
-    walletBal > 0n && swap.priceUsd > 0
-      ? walletNotionalUsdFromRaw(walletBal, swap.priceUsd)
-      : tracked.sizeUsd;
-  markEntryDipAbandoned(cfg, tracked, {
+  markEntryDipAbandoned(cfg, state, tracked, {
     mint,
     leaderSignature: row.signature,
     leaderSellFraction: sellFrac,
-    deployedUsd,
   });
 
   const ourSellFrac = isFullCloseFraction(sellFrac) ? 1 : sellFrac;
@@ -649,15 +650,9 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       const ledgerNow = leaderPreBalanceRaw(state, pending.mint);
       if (leaderHoldingsShrunkSinceSignal(signalRaw, ledgerNow)) {
         if (existing && pending.kind !== 'add') {
-          const walletBalShrunk = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
-          const shrunkDeployed =
-            walletBalShrunk > 0n && pending.leaderPriceUsd > 0
-              ? walletNotionalUsdFromRaw(walletBalShrunk, pending.leaderPriceUsd)
-              : existing.sizeUsd;
-          markEntryDipAbandoned(cfg, existing, {
+          markEntryDipAbandoned(cfg, state, existing, {
             mint: pending.mint,
             leaderSignature: pending.leaderSignature,
-            deployedUsd: shrunkDeployed,
           });
         }
         removePendingBuyById(state, pending.id);
@@ -811,6 +806,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     const wasProbe = pending.kind === 'entry' && pending.entryLeg === 'probe';
+    const wasEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
     removePendingBuyById(state, pending.id);
     if (wasProbe) {
       scheduleEntryDipBuy(cfg, state, pending);
@@ -837,6 +833,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         sizeUsd,
         tokenRaw,
         addCount: 0,
+        entryDeployedCostUsd: pending.sizeUsd,
         leaderWallet: cfg.targetWallet,
         leaderEntrySig: pending.leaderSignature,
         ourEntrySig: exec.signature,
@@ -851,7 +848,11 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       if (walletBal > 0n) {
         syncPositionFromWallet(prev, walletBal, currentPrice);
         prev.entryPriceUsd = newAvg;
-        prev.addCount = prev.addCount + 1;
+        if (wasEntryDip) {
+          prev.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
+        } else if (pending.kind === 'add') {
+          prev.addCount = prev.addCount + 1;
+        }
         prev.ourEntrySig = exec.signature;
       } else {
         const tokenRaw =
@@ -862,14 +863,19 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         const newSize = prev.sizeUsd + pending.sizeUsd;
         const prevRaw = prev.tokenRaw ? BigInt(prev.tokenRaw) : 0n;
         const addRaw = tokenRaw ? BigInt(tokenRaw) : 0n;
-        state.positions[pending.mint] = {
+        const next: CopyPosition = {
           ...prev,
           entryPriceUsd: newAvg,
           sizeUsd: newSize,
           tokenRaw: (prevRaw + addRaw).toString(),
-          addCount: prev.addCount + 1,
           ourEntrySig: exec.signature,
         };
+        if (wasEntryDip) {
+          next.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
+        } else if (pending.kind === 'add') {
+          next.addCount = prev.addCount + 1;
+        }
+        state.positions[pending.mint] = next;
       }
     }
 

@@ -9,6 +9,8 @@ export type CopyPosition = {
   entryPriceUsd: number;
   /** Total notional deployed (entry + adds). */
   sizeUsd: number;
+  /** Cumulative USD spent on entry legs (probe + dip); not mark-to-market. */
+  entryDeployedCostUsd?: number;
   /** Token balance raw string (live fills / paper estimate). */
   tokenRaw?: string;
   addCount: number;
@@ -94,6 +96,10 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         ...pos,
         addCount: typeof pos.addCount === 'number' ? pos.addCount : 0,
         entryDipAbandoned: pos.entryDipAbandoned === true,
+        entryDeployedCostUsd:
+          typeof pos.entryDeployedCostUsd === 'number' && pos.entryDeployedCostUsd > 0
+            ? pos.entryDeployedCostUsd
+            : undefined,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(
