@@ -19,6 +19,20 @@ export type EvalResult = {
   score: number;
 };
 
+function marketCapEval(cfg: CopyTraderConfig, dex: DexInfo): { fail?: string; scoreInc: number } {
+  if (cfg.minMarketCapUsd <= 0) return { scoreInc: 0 };
+  if (!(dex.marketCap > 0)) {
+    return { fail: `mcap_missing_or_zero<min=${cfg.minMarketCapUsd}`, scoreInc: 0 };
+  }
+  if (dex.marketCap < cfg.minMarketCapUsd) {
+    return {
+      fail: `mcap=${Math.round(dex.marketCap)}<min=${cfg.minMarketCapUsd}`,
+      scoreInc: 0,
+    };
+  }
+  return { scoreInc: 1 };
+}
+
 export function evaluateCopyEntry(cfg: CopyTraderConfig, input: EvalInput): EvalResult {
   const reasons: string[] = [];
   let score = 0;
@@ -53,11 +67,9 @@ export function evaluateCopyEntry(cfg: CopyTraderConfig, input: EvalInput): Eval
       score += 1;
     }
 
-    if (cfg.minMarketCapUsd > 0 && dex.marketCap > 0 && dex.marketCap < cfg.minMarketCapUsd) {
-      reasons.push(`mcap=${Math.round(dex.marketCap)}<min=${cfg.minMarketCapUsd}`);
-    } else if (dex.marketCap > 0) {
-      score += 1;
-    }
+    const mcap = marketCapEval(cfg, dex);
+    if (mcap.fail) reasons.push(mcap.fail);
+    else score += mcap.scoreInc;
 
     if (cfg.maxMarketCapUsd > 0 && dex.marketCap > cfg.maxMarketCapUsd) {
       reasons.push(`mcap=${Math.round(dex.marketCap)}>max=${cfg.maxMarketCapUsd}`);
@@ -127,11 +139,9 @@ export function evaluateCopyEntryDip(cfg: CopyTraderConfig, input: EvalInput): E
       score += 1;
     }
 
-    if (cfg.minMarketCapUsd > 0 && dex.marketCap > 0 && dex.marketCap < cfg.minMarketCapUsd) {
-      reasons.push(`mcap=${Math.round(dex.marketCap)}<min=${cfg.minMarketCapUsd}`);
-    } else if (dex.marketCap > 0) {
-      score += 1;
-    }
+    const mcap = marketCapEval(cfg, dex);
+    if (mcap.fail) reasons.push(mcap.fail);
+    else score += mcap.scoreInc;
 
     if (cfg.maxMarketCapUsd > 0 && dex.marketCap > cfg.maxMarketCapUsd) {
       reasons.push(`mcap=${Math.round(dex.marketCap)}>max=${cfg.maxMarketCapUsd}`);
@@ -190,11 +200,9 @@ export function evaluateCopyAdd(cfg: CopyTraderConfig, input: EvalInput): EvalRe
       score += 1;
     }
 
-    if (cfg.minMarketCapUsd > 0 && dex.marketCap > 0 && dex.marketCap < cfg.minMarketCapUsd) {
-      reasons.push(`mcap=${Math.round(dex.marketCap)}<min=${cfg.minMarketCapUsd}`);
-    } else if (dex.marketCap > 0) {
-      score += 1;
-    }
+    const mcap = marketCapEval(cfg, dex);
+    if (mcap.fail) reasons.push(mcap.fail);
+    else score += mcap.scoreInc;
 
     if (cfg.maxMarketCapUsd > 0 && dex.marketCap > cfg.maxMarketCapUsd) {
       reasons.push(`mcap=${Math.round(dex.marketCap)}>max=${cfg.maxMarketCapUsd}`);

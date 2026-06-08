@@ -55,7 +55,7 @@ const CopyTraderConfigSchema = z.object({
   addPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(0),
   minLeaderBuyUsd: z.coerce.number().min(0).max(1_000_000).default(50),
   minLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(15_000),
-  minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
   maxMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000_000).default(0),
   minPairAgeHours: z.coerce.number().min(0).max(8760).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
