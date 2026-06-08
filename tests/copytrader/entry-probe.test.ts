@@ -6,6 +6,7 @@ import {
   shouldAbandonEntryDipOnLeaderSell,
 } from '../../src/copytrader/entry-deploy.js';
 import {
+  entryDipMaxPriceUsd,
   entryDipSizeUsd,
   entryProbeSizeUsd,
   leaderDipTargetPx,
@@ -100,6 +101,42 @@ describe('evaluateCopyEntryDip', () => {
     );
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('price_not_low_enough'))).toBe(true);
+  });
+
+  it('rejects dip near probe when probe bought below leader (GO-style)', () => {
+    const cfg = { ...baseCfg, entryDipDiscountPct: 4, entryDipVsProbePct: 2 } as CopyTraderConfig;
+    const leaderPriceUsd = 0.00070484;
+    const probeEntryPriceUsd = 0.00068048;
+    const dipQuoteUsd = 0.00067644;
+    expect(entryDipMaxPriceUsd(cfg, leaderPriceUsd, probeEntryPriceUsd)).toBeLessThan(dipQuoteUsd);
+
+    const r = evaluateCopyEntryDip(cfg, {
+      mint: 'Mint1111111111111111111111111111111111111',
+      leaderPriceUsd,
+      leaderBuyUsd: 400,
+      currentPriceUsd: dipQuoteUsd,
+      probeEntryPriceUsd,
+      dex,
+      nowMs: Date.now(),
+    });
+    expect(r.pass).toBe(false);
+    expect(r.reasons.some((x) => x.includes('probe_cap'))).toBe(true);
+  });
+
+  it('passes dip when quote is below probe discount cap', () => {
+    const cfg = { ...baseCfg, entryDipDiscountPct: 4, entryDipVsProbePct: 2 } as CopyTraderConfig;
+    const leaderPriceUsd = 0.00070484;
+    const probeEntryPriceUsd = 0.00068048;
+    const r = evaluateCopyEntryDip(cfg, {
+      mint: 'Mint1111111111111111111111111111111111111',
+      leaderPriceUsd,
+      leaderBuyUsd: 400,
+      currentPriceUsd: 0.000666,
+      probeEntryPriceUsd,
+      dex,
+      nowMs: Date.now(),
+    });
+    expect(r.pass).toBe(true);
   });
 });
 

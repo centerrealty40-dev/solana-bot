@@ -2,7 +2,7 @@ import type { CopyTraderConfig } from './config.js';
 import { copyTraderLiveOscarBridge } from './live-bridge.js';
 import { liveFetchBuyQuote } from '../live/jupiter.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { leaderDipTargetPx } from './entry-probe.js';
+import { entryDipMaxPriceUsd } from './entry-probe.js';
 import type { PendingBuy } from './state.js';
 import { findPendingBuy } from './pending-buy-retry.js';
 
@@ -72,7 +72,8 @@ export function entryDipConfirmReason(
   streak: number,
   priceUsd: number,
   leaderPriceUsd: number,
+  probeEntryPriceUsd?: number,
 ): string {
-  const target = leaderDipTargetPx(leaderPriceUsd, cfg.entryDipDiscountPct);
+  const target = entryDipMaxPriceUsd(cfg, leaderPriceUsd, probeEntryPriceUsd);
   return `dip_confirm_ticks ${streak}/${cfg.entryDipConfirmTicks} price=${priceUsd.toExponential(4)} target<=${target.toExponential(4)}`;
 }

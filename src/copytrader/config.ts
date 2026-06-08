@@ -45,6 +45,8 @@ const CopyTraderConfigSchema = z.object({
   entryDipDiscountPct: z.coerce.number().min(0).max(50).default(4),
   /** Dip leg: consecutive eval passes (Jupiter quote in live) before buy (default 2). */
   entryDipConfirmTicks: z.coerce.number().int().min(1).max(10).default(2),
+  /** After probe fill: dip must be at least this % below our probe entry price (default 2). */
+  entryDipVsProbePct: z.coerce.number().min(0).max(50).default(2),
   /** Proportional adds blocked until deployed ≥ positionUsd × this fraction (default 99%). */
   entryMinDeployFraction: z.coerce.number().min(0.5).max(1).default(0.99),
   /** Leader add mirror: max premium vs leader add price (0 = at or below leader only). */
@@ -130,6 +132,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryProbeFraction: process.env.COPY_TRADER_ENTRY_PROBE_FRACTION,
     entryDipDiscountPct: process.env.COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT,
     entryDipConfirmTicks: process.env.COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS,
+    entryDipVsProbePct: process.env.COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT,
     entryMinDeployFraction: process.env.COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION,
     addPriceMaxPremiumPct: process.env.COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT,
     minLeaderBuyUsd: process.env.COPY_TRADER_MIN_LEADER_BUY_USD,

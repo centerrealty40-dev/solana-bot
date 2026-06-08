@@ -1,5 +1,6 @@
 import type { CopyTraderConfig } from './config.js';
 import type { DexInfo } from './dex-info.js';
+import { entryDipMaxPriceUsd } from './entry-probe.js';
 
 export type EvalInput = {
   mint: string;
@@ -8,6 +9,8 @@ export type EvalInput = {
   currentPriceUsd: number;
   dex: DexInfo | null;
   nowMs: number;
+  /** Our probe leg avg entry — dip must also be below this (split entry). */
+  probeEntryPriceUsd?: number;
 };
 
 export type EvalResult = {
@@ -93,10 +96,20 @@ export function evaluateCopyEntryDip(cfg: CopyTraderConfig, input: EvalInput): E
   if (!(input.leaderPriceUsd > 0) || !(input.currentPriceUsd > 0)) {
     reasons.push('missing_price');
   } else {
-    const maxAllowed = input.leaderPriceUsd * (1 - cfg.entryDipDiscountPct / 100);
+    const maxAllowed = entryDipMaxPriceUsd(cfg, input.leaderPriceUsd, input.probeEntryPriceUsd);
     if (input.currentPriceUsd > maxAllowed) {
+      const leaderCap = entryDipMaxPriceUsd(cfg, input.leaderPriceUsd);
+      const probePx = input.probeEntryPriceUsd ?? 0;
+      const probeOnlyCap =
+        probePx > 0 && cfg.entryDipVsProbePct > 0
+          ? probePx * (1 - cfg.entryDipVsProbePct / 100)
+          : null;
+      const detail =
+        probeOnlyCap != null && probeOnlyCap < leaderCap
+          ? ` (probe_cap=${probeOnlyCap.toExponential(4)} leader_cap=${leaderCap.toExponential(4)})`
+          : '';
       reasons.push(
-        `price_not_low_enough current=${input.currentPriceUsd.toExponential(4)} max=${maxAllowed.toExponential(4)}`,
+        `price_not_low_enough current=${input.currentPriceUsd.toExponential(4)} max=${maxAllowed.toExponential(4)}${detail}`,
       );
     } else {
       score += 2;
