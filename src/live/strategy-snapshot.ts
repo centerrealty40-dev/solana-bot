@@ -63,6 +63,10 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       : {}),
     ...(ot.liveThinVolFlushDone ? { liveThinVolFlushDone: true } : {}),
     ...(ot.liveExitPolicyId ? { liveExitPolicyId: ot.liveExitPolicyId } : {}),
+    ...(typeof ot.liveWaveMaxExecutedTpFrac === 'number' &&
+    Number.isFinite(ot.liveWaveMaxExecutedTpFrac)
+      ? { liveWaveMaxExecutedTpFrac: ot.liveWaveMaxExecutedTpFrac }
+      : {}),
     ...(typeof ot.liveWavePeakPnlFrac === 'number' && Number.isFinite(ot.liveWavePeakPnlFrac)
       ? { liveWavePeakPnlFrac: ot.liveWavePeakPnlFrac }
       : {}),

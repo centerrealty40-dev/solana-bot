@@ -254,6 +254,7 @@ describe('exit-policy-wave-b', () => {
       liveExitPolicyId: 'wave_b_v1',
       ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
       ladderUsedIndices: new Set([0, 1, 2, 3]),
+      liveWaveMaxExecutedTpFrac: 0.075,
     } as unknown as OpenTrade;
     expect(waveBMaybeResetTpImpulse(ot, 0.02, 0.025)).toBe(true);
     expect(ot.ladderUsedLevels.has(0.025)).toBe(true);
@@ -262,6 +263,17 @@ describe('exit-policy-wave-b', () => {
     expect(ot.ladderUsedLevels.has(0.1)).toBe(false);
     expect(ot.ladderUsedIndices.has(1)).toBe(false);
     expect(ot.ladderUsedIndices.has(3)).toBe(false);
+    expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.075);
+  });
+
+  it('waveBBreakevenExitEligible stays true after impulse reset clears ladder marks', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.025, 0.05]),
+      ladderUsedIndices: new Set([0]),
+      liveWaveMaxExecutedTpFrac: 0.075,
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(ot, 0.025)).toBe(true);
   });
 
   it('wave B no-avg profile: escalating sell per +2.5% rung', () => {
