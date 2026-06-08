@@ -155,6 +155,40 @@ export type LastExitMarketSnapshot = {
 /** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
 export const lastExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
 
+/** Ledger-only closes must not replace a recent real exit price (FLASH → RECONCILE ~seconds later). */
+const ADMIN_LEDGER_EXIT_REASONS = new Set(['RECONCILE_ORPHAN', 'PERIODIC_HEAL']);
+const RECONCILE_REENTRY_GRACE_MS = 10 * 60_000;
+
+const STRESS_EXIT_REASONS = new Set(['FLASH_CRASH_KILL', 'SL', 'KILLSTOP', 'LIQ_DRAIN']);
+
+type PartialSellForReentry = { marketPrice?: number; price?: number; reason?: string };
+
+/** RECONCILE_ORPHAN books remainder at avgEntry; re-entry gate needs last on-chain sell price. */
+export function resolveReconcileOrphanReentryGateMeta(
+  ot: { partialSells: PartialSellForReentry[] },
+  ct: {
+    netPnlUsd: number;
+    exitReason: string;
+    theoretical_exit_price: number;
+    effective_exit_price: number;
+  },
+): { marketUsd: number; netPnlUsd: number; exitReason: string } | null {
+  const partials = ot.partialSells;
+  if (partials.length === 0) return null;
+  const last = partials[partials.length - 1]!;
+  const marketUsd = Number(last.marketPrice ?? last.price ?? 0);
+  if (!(marketUsd > 0)) return null;
+  let exitReason = ct.exitReason;
+  for (let i = partials.length - 1; i >= 0; i--) {
+    const r = partials[i]!.reason;
+    if (r && STRESS_EXIT_REASONS.has(r)) {
+      exitReason = r;
+      break;
+    }
+  }
+  return { marketUsd, netPnlUsd: ct.netPnlUsd, exitReason };
+}
+
 export function recordLastExitMarketSnapshotAfterClose(
   mint: string,
   exitTsMs: number,
@@ -165,6 +199,16 @@ export function recordLastExitMarketSnapshotAfterClose(
   const px = Number(marketUsd);
   if (!(px > 0)) return;
   const prev = lastExitMarketSnapshotByMintMap.get(mint);
+  if (
+    prev &&
+    meta?.exitReason &&
+    ADMIN_LEDGER_EXIT_REASONS.has(meta.exitReason) &&
+    prev.exitReason &&
+    !ADMIN_LEDGER_EXIT_REASONS.has(prev.exitReason) &&
+    exitTsMs - prev.exitTs <= RECONCILE_REENTRY_GRACE_MS
+  ) {
+    return;
+  }
   if (!prev || exitTsMs >= prev.exitTs) {
     lastExitMarketSnapshotByMintMap.set(mint, {
       exitTs: exitTsMs,
@@ -192,15 +236,23 @@ export function recordAfterFullCloseForMintRepeatGate(
 export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
   cfg: PaperTraderConfig,
   ct: { mint: string; exitTs: number; theoretical_exit_price: number; effective_exit_price: number; netPnlUsd: number; exitReason: string },
+  opts?: { openTrade?: { partialSells: PartialSellForReentry[] } },
 ): void {
-  recordAfterFullCloseForMintRepeatGate(
-    cfg,
-    ct.mint,
-    ct.exitTs,
-    ct.theoretical_exit_price,
-    ct.effective_exit_price,
-    { netPnlUsd: ct.netPnlUsd, exitReason: ct.exitReason },
-  );
+  let theo = ct.theoretical_exit_price;
+  let eff = ct.effective_exit_price;
+  let meta: { netPnlUsd: number; exitReason: string } = {
+    netPnlUsd: ct.netPnlUsd,
+    exitReason: ct.exitReason,
+  };
+  if (ct.exitReason === 'RECONCILE_ORPHAN' && opts?.openTrade) {
+    const resolved = resolveReconcileOrphanReentryGateMeta(opts.openTrade, ct);
+    if (resolved) {
+      theo = resolved.marketUsd;
+      eff = resolved.marketUsd;
+      meta = { netPnlUsd: resolved.netPnlUsd, exitReason: resolved.exitReason };
+    }
+  }
+  recordAfterFullCloseForMintRepeatGate(cfg, ct.mint, ct.exitTs, theo, eff, meta);
 }
 
 export function isLiveReentryHybridGateEnabled(cfg: PaperTraderConfig): boolean {

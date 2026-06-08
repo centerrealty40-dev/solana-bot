@@ -5,7 +5,9 @@ import {
   appendLiveReentryHybridGateReasons,
   isLiveReentryHybridGateEnabled,
   lastExitMarketSnapshotByMintMap,
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordLastExitMarketSnapshotAfterClose,
+  resolveReconcileOrphanReentryGateMeta,
 } from '../src/papertrader/discovery/dip-clones.js';
 
 const MINT = 'TestMint1111111111111111111111111111111111';
@@ -85,5 +87,71 @@ describe('live re-entry hybrid gate', () => {
     const ok: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.69, ok, Date.now());
     expect(ok).toHaveLength(0);
+  });
+
+  it('RECONCILE_ORPHAN does not overwrite recent FLASH_CRASH exit snapshot', () => {
+    const flashTs = Date.now() - 10_000;
+    const reconcileTs = Date.now() - 5_000;
+    recordLastExitMarketSnapshotAfterClose(MINT, flashTs, 0.003895, {
+      netPnlUsd: -9.4,
+      exitReason: 'FLASH_CRASH_KILL',
+    });
+    recordLastExitMarketSnapshotAfterClose(MINT, reconcileTs, 0.00465, {
+      netPnlUsd: 3.42,
+      exitReason: 'RECONCILE_ORPHAN',
+    });
+    const snap = lastExitMarketSnapshotByMintMap.get(MINT);
+    expect(snap?.marketUsd).toBeCloseTo(0.003895, 8);
+    expect(snap?.exitReason).toBe('FLASH_CRASH_KILL');
+  });
+
+  it('RECONCILE_ORPHAN uses last partial sell price for re-entry gate', () => {
+    lastExitMarketSnapshotByMintMap.clear();
+    const exitTs = Date.now() - 8_000;
+    const ct = {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 0.00465,
+      effective_exit_price: 0.00465,
+      netPnlUsd: 3.42,
+      exitReason: 'RECONCILE_ORPHAN' as const,
+    };
+    const openTrade = {
+      partialSells: [
+        {
+          marketPrice: 0.003895,
+          price: 0.00388,
+          reason: 'FLASH_CRASH_KILL',
+        },
+      ],
+    };
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), ct, { openTrade });
+    const snap = lastExitMarketSnapshotByMintMap.get(MINT);
+    expect(snap?.marketUsd).toBeCloseTo(0.003895, 8);
+    expect(snap?.exitReason).toBe('FLASH_CRASH_KILL');
+
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(
+      { ...hybridCfg(), liveReentryMinDropFromLastExitPct: 12, liveReentryLossMinDropFromLastExitPct: 30 },
+      MINT,
+      0.0039146,
+      reasons,
+      Date.now(),
+    );
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+  });
+
+  it('resolveReconcileOrphanReentryGateMeta inherits stress partial reason', () => {
+    const meta = resolveReconcileOrphanReentryGateMeta(
+      { partialSells: [{ marketPrice: 0.003895, reason: 'FLASH_CRASH_KILL' }] },
+      {
+        netPnlUsd: 3.42,
+        exitReason: 'RECONCILE_ORPHAN',
+        theoretical_exit_price: 0.00465,
+        effective_exit_price: 0.00465,
+      },
+    );
+    expect(meta?.marketUsd).toBeCloseTo(0.003895, 8);
+    expect(meta?.exitReason).toBe('FLASH_CRASH_KILL');
   });
 });
