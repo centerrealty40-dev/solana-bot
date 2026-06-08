@@ -20,6 +20,20 @@
 
 ---
 
+## [1.11.359] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.359`
+
+### Copy-trader: tail sweep only on confirmed on-chain leader flat
+
+- **`isLeaderFlatForMint`:** no longer treats stale `leaderLedger=0` as flat; requires **two** on-chain zero reads (`COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS`, default 3s).
+- **Ledger reconcile:** when on-chain leader balance > ledger, bump ledger up (missed buys) — fixes TOESCOIN-style false tail sweep after partial leader sells (23% + 20% mirrored, then erroneous 100% sweep).
+- Journal `leader_flat_tail_sweep` includes `leaderLedgerRaw` for audit.
+
+**Откат:** `git checkout sa-alpha-1.11.358 -- src/copytrader/leader-flat-tail-sweep.ts src/copytrader/config.ts tests/copytrader/leader-flat-tail-sweep.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.358] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.358`

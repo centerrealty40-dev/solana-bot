@@ -7,19 +7,47 @@ import { fetchWalletMintBalanceRaw } from './rpc.js';
 import type { CopyTraderState, PendingSell } from './state.js';
 import { newId } from './state.js';
 
-/** Leader flat when ledger says zero or on-chain wallet holds no tokens (missed poll txs). */
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Sync ledger up when on-chain leader balance exceeds our estimate (missed buys). */
+export function reconcileLeaderLedgerFromChain(
+  state: CopyTraderState,
+  mint: string,
+  onChainRaw: bigint,
+): void {
+  if (onChainRaw <= 0n) return;
+  const ledgerBal = leaderPreBalanceRaw(state, mint);
+  if (onChainRaw > ledgerBal) {
+    getLeaderLedger(state, mint).tokenRaw = onChainRaw.toString();
+  }
+}
+
+async function fetchLeaderOnChainBalance(cfg: CopyTraderConfig, mint: string): Promise<bigint> {
+  return fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, mint);
+}
+
+/**
+ * Leader flat only when on-chain wallet holds zero (confirmed twice).
+ * Ledger zero alone is not enough — partial sells can drain a stale ledger while leader still holds.
+ */
 export async function isLeaderFlatForMint(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
   mint: string,
 ): Promise<boolean> {
-  if (leaderPreBalanceRaw(state, mint) === 0n) return true;
-  const onChain = await fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, mint);
-  if (onChain === 0n) {
-    getLeaderLedger(state, mint).tokenRaw = '0';
-    return true;
+  const first = await fetchLeaderOnChainBalance(cfg, mint);
+  if (first > 0n) {
+    reconcileLeaderLedgerFromChain(state, mint, first);
+    return false;
   }
-  return false;
+  await sleep(cfg.leaderFlatConfirmDelayMs);
+  const second = await fetchLeaderOnChainBalance(cfg, mint);
+  if (second > 0n) {
+    reconcileLeaderLedgerFromChain(state, mint, second);
+    return false;
+  }
+  getLeaderLedger(state, mint).tokenRaw = '0';
+  return true;
 }
 
 export function hasPendingSellForMint(state: CopyTraderState, mint: string): boolean {
@@ -61,6 +89,7 @@ export async function scheduleLeaderFlatTailSweeps(
       walletTokenRaw: walletBal.toString(),
       sellDueTs: pending.dueTs,
       retryUntilTs: pending.retryUntilTs,
+      leaderLedgerRaw: leaderPreBalanceRaw(state, mint).toString(),
     });
   }
 
