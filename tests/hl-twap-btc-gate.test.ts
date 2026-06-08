@@ -5,6 +5,7 @@ import { canScheduleLiveEntry, resolveLiveEntryAuditPlan } from '../src/hyperliq
 import {
   hlTwapBtcAlignedBlockReason,
   hlTwapBtcAlignedGateEnabled,
+  hlTwapBtcAlignedThreshPct,
 } from '../src/hyperliquid/twap/twap-btc-gate.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
@@ -43,6 +44,7 @@ function sig(side: 'buy' | 'sell'): NormalizedTwapSignal {
 describe('hl-twap btc aligned gate', () => {
   beforeEach(() => {
     process.env.HL_TWAP_BTC_ALIGNED_GATE = '1';
+    delete process.env.HL_TWAP_BTC_ALIGNED_THRESH_PCT;
     vi.mocked(getBtcContext).mockReturnValue({
       ret1h_pct: 1.5,
       ret4h_pct: null,
@@ -55,12 +57,30 @@ describe('hl-twap btc aligned gate', () => {
 
   afterEach(() => {
     delete process.env.HL_TWAP_BTC_ALIGNED_GATE;
+    delete process.env.HL_TWAP_BTC_ALIGNED_THRESH_PCT;
     vi.resetAllMocks();
   });
 
-  it('blocks long when BTC 1h is down', () => {
+  it('defaults threshold to 1%', () => {
+    expect(hlTwapBtcAlignedThreshPct()).toBe(1);
+  });
+
+  it('allows long on weak BTC down when thresh=1 (default)', () => {
     vi.mocked(getBtcContext).mockReturnValue({
       ret1h_pct: -0.5,
+      ret4h_pct: null,
+      ret24h_pct: null,
+      ret72h_pct: null,
+      retPeak72hDrawdown_pct: null,
+      updated_ts: Date.now(),
+    });
+    expect(hlTwapBtcAlignedBlockReason('buy')).toBeNull();
+    expect(hlTwapBtcAlignedBlockReason('sell')).toBeNull();
+  });
+
+  it('blocks long on strong BTC down (default thresh)', () => {
+    vi.mocked(getBtcContext).mockReturnValue({
+      ret1h_pct: -1.2,
       ret4h_pct: null,
       ret24h_pct: null,
       ret72h_pct: null,
@@ -71,9 +91,9 @@ describe('hl-twap btc aligned gate', () => {
     expect(hlTwapBtcAlignedBlockReason('sell')).toBeNull();
   });
 
-  it('blocks short when BTC 1h is up', () => {
+  it('blocks short on strong BTC up (default thresh)', () => {
     vi.mocked(getBtcContext).mockReturnValue({
-      ret1h_pct: 0.8,
+      ret1h_pct: 1.2,
       ret4h_pct: null,
       ret24h_pct: null,
       ret72h_pct: null,
@@ -84,9 +104,22 @@ describe('hl-twap btc aligned gate', () => {
     expect(hlTwapBtcAlignedBlockReason('buy')).toBeNull();
   });
 
-  it('canScheduleLiveEntry rejects long on BTC down', () => {
+  it('legacy thresh=0 blocks any sign mismatch', () => {
+    process.env.HL_TWAP_BTC_ALIGNED_THRESH_PCT = '0';
     vi.mocked(getBtcContext).mockReturnValue({
-      ret1h_pct: -1,
+      ret1h_pct: -0.5,
+      ret4h_pct: null,
+      ret24h_pct: null,
+      ret72h_pct: null,
+      retPeak72hDrawdown_pct: null,
+      updated_ts: Date.now(),
+    });
+    expect(hlTwapBtcAlignedBlockReason('buy')).toBe('btc_aligned_gate_long');
+  });
+
+  it('canScheduleLiveEntry rejects long on strong BTC down', () => {
+    vi.mocked(getBtcContext).mockReturnValue({
+      ret1h_pct: -1.5,
       ret4h_pct: null,
       ret24h_pct: null,
       ret72h_pct: null,
@@ -101,9 +134,9 @@ describe('hl-twap btc aligned gate', () => {
     expect(d.reason).toBe('btc_aligned_gate_long');
   });
 
-  it('resolveLiveEntryAuditPlan matches schedule gate (not raw computeCoinEntryPlan)', () => {
+  it('resolveLiveEntryAuditPlan matches schedule gate', () => {
     vi.mocked(getBtcContext).mockReturnValue({
-      ret1h_pct: -1,
+      ret1h_pct: -1.5,
       ret4h_pct: null,
       ret24h_pct: null,
       ret72h_pct: null,

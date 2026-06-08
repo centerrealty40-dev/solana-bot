@@ -18,6 +18,7 @@
 
 ---
 
+<<<<<<< HEAD
 ## [1.11.356] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.356`
@@ -29,6 +30,18 @@
 - Journal `leader_add_ignored` includes `deployedUsdMtm` for audit.
 
 **Откат:** `git checkout sa-alpha-1.11.352 -- src/copytrader/entry-deploy.ts src/copytrader/main.ts src/copytrader/state.ts tests/copytrader/entry-probe.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+=======
+## [1.11.355] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.355`
+
+### HL TWAP: strong-move BTC aligned gate (threshold 1%)
+
+- **`HL_TWAP_BTC_ALIGNED_THRESH_PCT`** (default **1**): block long only when BTC 1h ≤ −T%, short when ≥ +T%; weak moves (|1h| < T) pass — fixes T=0 gate cutting +EV trades on −0.1…−0.5% BTC noise.
+- **Prod:** `HL_TWAP_BTC_ALIGNED_GATE=1`, `HL_TWAP_BTC_ALIGNED_THRESH_PCT=1`.
+
+**Откат:** `git checkout sa-alpha-1.11.352 -- src/hyperliquid/twap/twap-btc-gate.ts src/scripts/hl-twap-telegram-watch.ts .env.example tests/hl-twap-btc-gate.test.ts docs/strategy/release/`; VPS `HL_TWAP_BTC_ALIGNED_GATE=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
+>>>>>>> origin/v2
 
 ---
 
