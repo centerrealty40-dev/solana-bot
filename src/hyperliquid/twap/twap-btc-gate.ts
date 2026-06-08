@@ -16,6 +16,16 @@ export function hlTwapBtcAlignedGateEnabled(): boolean {
   return envBool('HL_TWAP_BTC_ALIGNED_GATE', false);
 }
 
+/** Min |BTC 1h| move before aligned gate blocks (default 1%). Set 0 for legacy any-sign filter. */
+export function hlTwapBtcAlignedThreshPct(): number {
+  const v = process.env.HL_TWAP_BTC_ALIGNED_THRESH_PCT?.trim();
+  if (v != null && v !== '') {
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 1.0;
+}
+
 export function hlTwapBtcGateMaxStaleMs(): number {
   const v = process.env.HL_TWAP_BTC_GATE_MAX_STALE_MS?.trim();
   if (v != null && v !== '') {
@@ -38,14 +48,16 @@ export function resolveHlTwapBtcAlignedGateStatus(): HlTwapBtcAlignedGateStatus 
 }
 
 /**
- * Side-aware BTC 1h gate: no long when BTC 1h < 0, no short when BTC 1h > 0.
- * Returns skip reason or null when entry is allowed.
+ * Side-aware BTC 1h aligned gate (strong move only):
+ * block long when BTC 1h <= -thresh, block short when BTC 1h >= +thresh.
+ * |BTC 1h| < thresh → allow (weak move / sideways).
  */
 export function hlTwapBtcAlignedBlockReason(side: TwapSide): string | null {
   const st = resolveHlTwapBtcAlignedGateStatus();
   if (st.kind === 'disabled') return null;
   if (st.kind === 'stale') return 'btc_gate_stale';
-  if (side === 'buy' && st.ret1h_pct < 0) return 'btc_aligned_gate_long';
-  if (side === 'sell' && st.ret1h_pct > 0) return 'btc_aligned_gate_short';
+  const thresh = hlTwapBtcAlignedThreshPct();
+  if (side === 'buy' && st.ret1h_pct <= -thresh) return 'btc_aligned_gate_long';
+  if (side === 'sell' && st.ret1h_pct >= thresh) return 'btc_aligned_gate_short';
   return null;
 }

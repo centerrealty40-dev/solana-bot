@@ -11,7 +11,8 @@
  * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — min net impact % **per hour** (not % of day vol)
  * - HL_TWAP_WHALE_DENYLIST — optional whale addresses to skip (comma-sep)
  * - HL_TWAP_FADE_WHALES — comma-sep whales to fade (invert side); overrides denylist for those addresses
- * - HL_TWAP_BTC_ALIGNED_GATE=0 — optional BTC 1h filter (off by default; prod should keep 0)
+ * - HL_TWAP_BTC_ALIGNED_GATE=0 — strong-move aligned gate (off by default)
+ * - HL_TWAP_BTC_ALIGNED_THRESH_PCT=1 — block long when BTC 1h <= -T%, short when >= +T%; |1h| < T allowed
  * - HL_TWAP_BTC_GATE_MAX_STALE_MS=900000 — max age of Binance BTC klines for gate
  * - HL_TWAP_BTC_REFRESH_MS=300000 — poll interval for BTC context when gate enabled
  * - HL_TWAP_BUY_ONLY=0 — long+short (legacy: sell только после buy OPEN)
@@ -46,6 +47,7 @@ import { fadeWhaleAddresses, hlTwapEntrySide } from '../hyperliquid/twap/fade-wh
 import { abortWhaleExitOnRestart } from '../hyperliquid/twap/twap-whale-exit.js';
 import {
   hlTwapBtcAlignedGateEnabled,
+  hlTwapBtcAlignedThreshPct,
   hlTwapBtcGateMaxStaleMs,
 } from '../hyperliquid/twap/twap-btc-gate.js';
 import {
@@ -378,7 +380,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_thresh_pct=${hlTwapBtcAlignedThreshPct()} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   if (hlTwapBtcAlignedGateEnabled()) {
