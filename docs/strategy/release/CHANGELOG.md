@@ -14,6 +14,23 @@
 
 ---
 
+---
+
+## [1.11.344] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.344`
+
+### HL TWAP live: actual fills, margin gate, unified account balance
+
+- **Fill accounting:** IoC orders parse HL `filled.totalSz` / `avgPx` and reconcile with exchange `szi` delta; journal logs **actual** notional, not requested.
+- **Margin gate:** defer new opens when free collateral &lt; `HL_TWAP_LIVE_NOTIONAL_USD` + reserve; reject micro-fills (&lt;10% requested) with unwind + `open_fill_too_small`.
+- **Journal sync:** reconcile `currentNotionalUsd` from exchange `positionValue` after open/TP/DCA when drift &gt;15%.
+- **Unified HL account:** margin gate reads USDC from **`spotClearinghouseState`** (canonical balance); perp `clearinghouseState.accountValue` is not used when spot USDC &gt; 0 — fixes false `insufficient_account_margin` with ~$0 free while wallet had USDC.
+
+**Откат:** `git checkout sa-alpha-1.11.343 -- src/hyperliquid/twap/hyperliquid-meta.ts src/hyperliquid/twap/live/`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.343] — 2026-06-07
 
 **Тег:** `sa-alpha-1.11.343`
