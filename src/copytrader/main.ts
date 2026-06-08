@@ -7,6 +7,12 @@ import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyAdd, evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
 import { isEntryFullyDeployed, shouldAbandonEntryDipOnLeaderSell } from './entry-deploy.js';
 import {
+  bumpEntryDipPassStreak,
+  entryDipConfirmReason,
+  resetEntryDipPassStreak,
+  resolveEntryDipEvalPrice,
+} from './entry-dip-gate.js';
+import {
   entryDipSizeUsd,
   entryProbeSizeUsd,
   usesDipOnlyEntry,
@@ -629,7 +635,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'max_adds', mint: pending.mint });
       continue;
-    } else if (!canScheduleProportionalAdd(cfg, existing, pending.sizeUsd)) {
+    } else if (
+      pending.kind === 'add' &&
+      !canScheduleProportionalAdd(cfg, existing, pending.sizeUsd)
+    ) {
       removePendingBuyById(state, pending.id);
       appendCopyEvent(cfg, { kind: 'add_cancelled', reason: 'proportional_add_cap', mint: pending.mint });
       continue;
@@ -666,7 +675,37 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
-    const currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
+    let currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
+    let dipPriceSource: 'jupiter_quote' | 'dex' | undefined;
+    const isEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
+
+    if (isEntryDip) {
+      const dipPx = await resolveEntryDipEvalPrice({
+        cfg,
+        mint: pending.mint,
+        dipSizeUsd: pending.sizeUsd,
+        dexPriceUsd: currentPrice,
+      });
+      if (dipPx.quoteUnavailable) {
+        resetEntryDipPassStreak(state, pending.id);
+        if (noteBuyDefer(state, pending.id, now, cfg)) {
+          appendCopyEvent(cfg, {
+            kind: 'buy_deferred',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            leaderPriceUsd: pending.leaderPriceUsd,
+            currentPriceUsd: currentPrice,
+            reason: 'jupiter_dip_quote_unavailable',
+            retryUntilTs: pending.retryUntilTs,
+          });
+        }
+        continue;
+      }
+      currentPrice = dipPx.priceUsd;
+      dipPriceSource = dipPx.source;
+    }
+
     const evalInput = {
       mint: pending.mint,
       leaderPriceUsd: pending.leaderPriceUsd,
@@ -678,11 +717,12 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     const evalResult =
       pending.kind === 'add'
         ? evaluateCopyAdd(cfg, evalInput)
-        : pending.kind === 'entry' && pending.entryLeg === 'dip'
+        : isEntryDip
           ? evaluateCopyEntryDip(cfg, evalInput)
           : evaluateCopyEntry(cfg, evalInput);
 
     if (!evalResult.pass) {
+      if (isEntryDip) resetEntryDipPassStreak(state, pending.id);
       const deferNote = noteBuyDefer(state, pending.id, now, cfg);
       if (deferNote) {
         appendCopyEvent(cfg, {
@@ -692,6 +732,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           leaderSignature: pending.leaderSignature,
           leaderPriceUsd: pending.leaderPriceUsd,
           currentPriceUsd: currentPrice,
+          entryDipPriceSource: dipPriceSource ?? null,
           eval: evalResult,
           retryUntilTs: pending.retryUntilTs,
         });
@@ -710,6 +751,29 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         }
       }
       continue;
+    }
+
+    if (isEntryDip) {
+      const streak = bumpEntryDipPassStreak(state, pending.id);
+      if (streak < cfg.entryDipConfirmTicks) {
+        if (noteBuyDefer(state, pending.id, now, cfg)) {
+          appendCopyEvent(cfg, {
+            kind: 'buy_deferred',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            leaderPriceUsd: pending.leaderPriceUsd,
+            currentPriceUsd: currentPrice,
+            entryDipPriceSource: dipPriceSource ?? null,
+            dipPassStreak: streak,
+            entryDipConfirmTicks: cfg.entryDipConfirmTicks,
+            reason: entryDipConfirmReason(cfg, streak, currentPrice, pending.leaderPriceUsd),
+            eval: evalResult,
+            retryUntilTs: pending.retryUntilTs,
+          });
+        }
+        continue;
+      }
     }
 
     const execKind =

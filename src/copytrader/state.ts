@@ -46,6 +46,8 @@ export type PendingBuy = {
   /** Keep retrying eval/exec until this ts (after dueTs). */
   retryUntilTs: number;
   lastDeferLogTs?: number;
+  /** Consecutive dip-gate passes (Jupiter quote + discount) before fill. */
+  dipPassStreak?: number;
 };
 
 export type PendingSell = {
@@ -116,6 +118,8 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
             ? p.retryUntilTs
             : p.dueTs + 3_600_000,
         lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
+        dipPassStreak:
+          typeof p.dipPassStreak === 'number' && p.dipPassStreak >= 0 ? p.dipPassStreak : undefined,
       }),
     );
     const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(
