@@ -25,6 +25,7 @@
 - **Sell fraction (без изменений):** частичный sell лидера → пропорциональный наш sell; **100%** кошелька только при полном выходе лидера (`isFullCloseFraction`).
 - **Sell retry:** `sim_failed` / `InstructionError` (incl. Jupiter Custom 6024), `quote_stale`, `swap-http-429` — retryable until `sellRetryWindowMs` (aligned with live-oscar sell pipeline).
 - **Tail sweep:** leader flat when **on-chain** token balance is zero even if internal ledger is stale (missed poll txs after leader full exit); ledger reconciled, then 100% wallet exit scheduled.
+- **`package-lock.json`:** `utf-8-validate@5.0.10` для `npm ci` на Linux (npm 10 / CI / VPS).
 
 **Откат:** `git checkout sa-alpha-1.11.346 -- src/copytrader/pending-sell-retry.ts src/copytrader/leader-flat-tail-sweep.ts tests/copytrader/pending-sell-retry.test.ts tests/copytrader/leader-flat-tail-sweep.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
 
