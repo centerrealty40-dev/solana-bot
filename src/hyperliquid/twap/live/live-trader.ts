@@ -1,7 +1,6 @@
 import type { TwapWatchState } from '../detect.js';
 import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from '../twap-duration.js';
 import {
-  clearWhaleExitPending,
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
 } from '../twap-whale-exit.js';
@@ -19,6 +18,12 @@ import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
 import { flattenCoinOnExchange } from './flatten-position.js';
 import {
+  closeLiveTrade,
+  instantCloseLiveTrade,
+  isLiveExitPending,
+  processPendingLiveExits,
+} from './chunked-exit-runner.js';
+import {
   appendLiveJournal,
   journalDcaRow,
   journalOpenRow,
@@ -28,7 +33,7 @@ import {
   loadPendingLiveSchedules,
   type JournalSchedule,
 } from './journal.js';
-import { notifyLiveTradeClose, notifyLiveTradeOpen } from './telegram-notify.js';
+import { notifyLiveTradeOpen } from './telegram-notify.js';
 import { isOpenFillAcceptable } from './parse-order-fill.js';
 import {
   avgEntryAfterAdd,
@@ -36,7 +41,7 @@ import {
   unrealizedUsd,
   type LadderConfig,
 } from './position-ladder.js';
-import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
+import type { HlTwapLiveOpen } from './types.js';
 
 function exitPxForOpen(open: HlTwapLiveOpen, cache: HyperliquidMarketCache): number {
   const fromMids = markPxForCoin(open.coin, cache);
@@ -192,65 +197,7 @@ async function executeLiveOpen(
   return { pos };
 }
 
-export async function closeLiveTrade(
-  hash: string,
-  exitPx: number,
-  exitReason: string,
-  cfg: HlTwapLiveConfig,
-  client: HlTwapExchangeClient,
-  watchState?: TwapWatchState,
-): Promise<HlTwapLiveClose | null> {
-  const filePath = cfg.journalPath;
-  const opens = loadLiveOpensFromJournal(filePath);
-  const pos = opens.get(hash);
-  if (!pos || exitPx <= 0) return null;
-
-  const sziBefore = await client.getPositionSzi(pos.coin);
-  const { flat, remainingAbsSize } = await flattenCoinOnExchange(
-    client,
-    pos.coin,
-    pos.displaySymbol,
-    exitPx,
-    'close',
-  );
-
-  if (!flat) {
-    console.error(
-      `[hl-twap-live] close ${pos.displaySymbol} ABORTED: ${remainingAbsSize.toFixed(6)} base still on exchange — journal not updated (${exitReason})`,
-    );
-    return null;
-  }
-
-  const reconciled = Math.abs(sziBefore) <= 0;
-
-  const dir = pos.side === 'buy' ? 1 : -1;
-  const pnlPct = dir * ((exitPx - pos.avgEntryPx) / pos.avgEntryPx) * 100;
-  const pnlUsd = (pnlPct / 100) * pos.currentNotionalUsd;
-  const finalReason = reconciled ? `${exitReason}_reconciled` : exitReason;
-
-  appendLiveJournal(filePath, {
-    kind: 'close',
-    ts: Date.now(),
-    hash: pos.hash,
-    exitPx,
-    pnlUsd,
-    pnlPct,
-    exitReason: finalReason,
-  });
-
-  if (watchState) clearWhaleExitPending(watchState, hash);
-
-  const closed: HlTwapLiveClose = {
-    ...pos,
-    exitTs: Date.now(),
-    exitPx,
-    pnlUsd,
-    pnlPct,
-    exitReason: finalReason,
-  };
-  await notifyLiveTradeClose(closed, cfg);
-  return closed;
-}
+export { closeLiveTrade };
 
 function cancelSchedule(filePath: string, hash: string, reason: string): void {
   const pending = loadPendingLiveSchedules(filePath);
@@ -323,13 +270,19 @@ export async function processLiveTrades(
   }
 
   const opens = loadLiveOpensFromJournal(filePath);
+  await processPendingLiveExits((pos) => exitPxForOpen(pos, cache), cfg, client, watchState);
+
   for (const pos of opens.values()) {
+    if (isLiveExitPending(cfg, pos.hash)) continue;
+
     const dueReason = watchState ? takeDueWhaleExit(watchState, pos.hash, now) : null;
     if (dueReason) {
       try {
         const px = exitPxForOpen(pos, cache);
-        await closeLiveTrade(pos.hash, px, dueReason, cfg, client, watchState);
-        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${dueReason}, delayed +${twapCancelExitDelayMinutes()}m)`);
+        const closed = await closeLiveTrade(pos.hash, px, dueReason, cfg, client, watchState);
+        if (closed) {
+          console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${dueReason}, delayed +${twapCancelExitDelayMinutes()}m)`);
+        }
       } catch (e) {
         console.warn(`[hl-twap-live] delayed close failed ${pos.displaySymbol}`, String(e));
       }
@@ -342,8 +295,12 @@ export async function processLiveTrades(
     if (timerDue) {
       try {
         const px = exitPxForOpen(pos, cache);
-        await closeLiveTrade(pos.hash, px, HL_TWAP_EXIT_REASON_EARLY, cfg, client, watchState);
-        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+        const closed = await closeLiveTrade(pos.hash, px, HL_TWAP_EXIT_REASON_EARLY, cfg, client, watchState);
+        if (closed) {
+          console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+        } else if (!isLiveExitPending(cfg, pos.hash)) {
+          console.log(`[hl-twap-live] exit started ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+        }
       } catch (e) {
         console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
       }
@@ -364,8 +321,10 @@ export async function processLiveTrades(
       }
       try {
         const px = exitPxForOpen(pos, cache);
-        await closeLiveTrade(pos.hash, px, reason, cfg, client, watchState);
-        console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
+        const closed = await closeLiveTrade(pos.hash, px, reason, cfg, client, watchState);
+        if (closed) {
+          console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${reason})`);
+        }
       } catch (e) {
         console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));
       }
@@ -386,6 +345,7 @@ export async function processLiveLadders(
 
   for (const pos of opens.values()) {
     if (watchState?.ladderBlockedHashes.has(pos.hash)) continue;
+    if (isLiveExitPending(cfg, pos.hash)) continue;
 
     const markPx = exitPxForOpen(pos, cache);
     if (markPx <= 0) continue;
@@ -451,7 +411,7 @@ export async function processLiveLadders(
             console.log(
               `[hl-twap-live] ${pos.displaySymbol} flat on exchange — reconcile close (journal still open)`,
             );
-            await closeLiveTrade(pos.hash, markPx, 'exchange_flat_reconcile', cfg, client, watchState);
+            await instantCloseLiveTrade(pos.hash, markPx, 'exchange_flat_reconcile', cfg, client, watchState);
             break;
           }
 

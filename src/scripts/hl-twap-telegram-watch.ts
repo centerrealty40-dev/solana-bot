@@ -9,7 +9,7 @@
  * Env (separate bot — do not reuse Live Oscar TELEGRAM_*):
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID — whale alerts
  * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — min net impact % **per hour** (not % of day vol)
- * - HL_TWAP_WHALE_DENYLIST — extra whale addresses (comma-sep); built-in denylist always active
+ * - HL_TWAP_WHALE_DENYLIST — optional whale addresses to skip (comma-sep)
  * - HL_TWAP_FADE_WHALES — comma-sep whales to fade (invert side); overrides denylist for those addresses
  * - HL_TWAP_BTC_ALIGNED_GATE=1 — block long when BTC 1h < 0, block short when BTC 1h > 0
  * - HL_TWAP_BTC_GATE_MAX_STALE_MS=900000 — max age of Binance BTC klines for gate
@@ -101,7 +101,7 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v === 'yes';
 }
 
-const POLL_MS = Math.max(2000, envNum('HL_TWAP_POLL_INTERVAL_MS', 5000));
+const POLL_MS = Math.max(2000, envNum('HL_TWAP_POLL_INTERVAL_MS', 2000));
 const META_REFRESH_MS = Math.max(30_000, envNum('HL_TWAP_META_REFRESH_MS', 120_000));
 const MIN_IMPACT_PCT_HOUR = minImpactPctHour();
 const BUY_ONLY = envBool('HL_TWAP_BUY_ONLY', false);
@@ -191,9 +191,41 @@ async function announceStart(
   feedRows: HypurrscanTwapRow[],
   _cache: HyperliquidMarketCache,
 ): Promise<void> {
+  const plan = computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
+  appendAudit('twap_start', { sig, plan });
+  markTwapOpenedNotified(watchState, sig);
+
+  if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
+  if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
+
+  if (DRY_RUN) {
+    const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
+    const userRating = await userRatingCached(sig.user, feedRows);
+    const opposing = opposingActiveTwapsForCoin(watchState, sig);
+    const crossingNote = buildCrossingNote({
+      opposingTwaps: opposing,
+      plan,
+      messageLinks: watchState.telegramMessageByHash,
+      telegramChatId: TG_CHAT,
+    });
+    const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating, crossingNote });
+    console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
+    return;
+  }
+
+  void deliverStartTelegram(sig, feedRows, plan).catch((e) => {
+    console.warn('[hl-twap-telegram-watch] telegram start failed (trade already scheduled)', String(e));
+  });
+}
+
+/** Telegram alert — does not block live/paper schedule. */
+async function deliverStartTelegram(
+  sig: NormalizedTwapSignal,
+  feedRows: HypurrscanTwapRow[],
+  plan: ReturnType<typeof computeCoinEntryPlan>,
+): Promise<void> {
   const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
   const userRating = await userRatingCached(sig.user, feedRows);
-  const plan = computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
   const opposing = opposingActiveTwapsForCoin(watchState, sig);
   const crossingNote = buildCrossingNote({
     opposingTwaps: opposing,
@@ -202,20 +234,9 @@ async function announceStart(
     telegramChatId: TG_CHAT,
   });
   const html = buildTwapStartMessage(sig, { mexcUrl: mexc, userRating, crossingNote });
-  appendAudit('twap_start', { sig, plan });
-  if (DRY_RUN) {
-    console.log('[hl-twap-telegram-watch] DRY_RUN start:\n', html.replace(/<[^>]+>/g, ''));
-    markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
-    if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
-    return;
-  }
   const messageId = await sendTelegram(html);
   if (messageId != null) {
     watchState.telegramMessageByHash.set(sig.hash, messageId);
-    markTwapOpenedNotified(watchState, sig);
-    if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
-    if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
   }
 }
 
@@ -345,7 +366,7 @@ async function main(): Promise<void> {
   if (LIVE_ENABLED) {
     liveExchange = await createHlTwapExchangeClient(LIVE_CFG);
     console.log(
-      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}%`,
+      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices=${LIVE_CFG.exitSlices} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
     );
   }
 

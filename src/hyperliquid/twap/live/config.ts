@@ -1,3 +1,5 @@
+import { defaultExitSliceIntervalMs } from './chunked-exit.js';
+
 export type HlTwapLiveMode = 'dry_run' | 'live';
 
 export type HlTwapLiveConfig = {
@@ -17,6 +19,10 @@ export type HlTwapLiveConfig = {
   slippageTolerance: number;
   /** Default cross leverage for new positions. */
   leverage: number;
+  /** Exit TWAP slices (0/1 = instant flatten). Default 10. */
+  exitSlices: number;
+  /** Ms between exit slices (default 30s, aligned with HL TWAP child orders). */
+  exitSliceIntervalMs: number;
   journalPath: string;
   testnet: boolean;
   /** Master HL account where perp positions live (agent wallet signs orders). */
@@ -52,6 +58,8 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),
     slippageTolerance: Math.max(0.001, envNum('HL_TWAP_LIVE_SLIPPAGE_TOLERANCE', 0.01)),
     leverage: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_LEVERAGE', 7))),
+    exitSlices: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES', 10))),
+    exitSliceIntervalMs: defaultExitSliceIntervalMs(),
     journalPath:
       process.env.HL_TWAP_LIVE_JSONL?.trim() ||
       `${process.cwd()}/data/hl-twap/live.jsonl`,

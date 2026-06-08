@@ -1,9 +1,7 @@
 import { isFadeWhale } from './fade-whales.js';
 
-/** Prod denylist: slow multi-coin buy cluster (TON/FARTCOIN/TAO/CFX/FET), net −$24 live. */
-export const HL_TWAP_DEFAULT_DENIED_WHALES = [
-  '0x153c8444380512cabdc34f6cea09c322e14e319a',
-] as const;
+/** Built-in denylist (empty — use `HL_TWAP_WHALE_DENYLIST` env for ad-hoc blocks). */
+export const HL_TWAP_DEFAULT_DENIED_WHALES = [] as const;
 
 function normAddr(addr: string): string {
   return addr.trim().toLowerCase();

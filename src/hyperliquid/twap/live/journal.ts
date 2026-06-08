@@ -79,6 +79,37 @@ type JournalClose = {
   pnlUsd: number;
   pnlPct: number;
   exitReason: string;
+  exitSlices?: number;
+  exitSliceIntervalMs?: number;
+};
+
+export type JournalExitStart = {
+  kind: 'exit_start';
+  ts: number;
+  hash: string;
+  exitReason: string;
+  sliceCount: number;
+  sliceIntervalMs: number;
+  startedAtMs: number;
+  exitStartNotionalUsd: number;
+  twapStartMs?: number;
+  firstWhaleSliceIndex?: number;
+};
+
+export type JournalExitSlice = {
+  kind: 'exit_slice';
+  ts: number;
+  hash: string;
+  sliceIndex: number;
+  fillPx: number;
+  notionalUsd: number;
+  sizeBase: number;
+  remainingBase: number;
+};
+
+export type PendingLiveExit = JournalExitStart & {
+  slicesSent: number;
+  fills: Array<{ fillPx: number; sizeBase: number }>;
 };
 
 type JournalOrder = {
@@ -113,6 +144,8 @@ export type LiveJournalRow =
   | JournalOpen
   | JournalTp
   | JournalDca
+  | JournalExitStart
+  | JournalExitSlice
   | JournalClose
   | JournalOrder
   | JournalResidualFlatten;
@@ -181,6 +214,44 @@ export function loadLiveOpensFromJournal(filePath: string): Map<string, HlTwapLi
     }
   }
   return opens;
+}
+
+/** In-progress chunked exits (exit_start without subsequent close). */
+export function loadPendingLiveExits(filePath: string): Map<string, PendingLiveExit> {
+  const closed = new Set<string>();
+  const starts = new Map<string, JournalExitStart>();
+  const sliceCounts = new Map<string, number>();
+  const fills = new Map<string, Array<{ fillPx: number; sizeBase: number }>>();
+
+  for (const ev of readJournal(filePath)) {
+    if (ev.kind === 'close') closed.add(ev.hash);
+    if (ev.kind === 'exit_start') starts.set(ev.hash, ev);
+    if (ev.kind === 'exit_slice') {
+      sliceCounts.set(ev.hash, (sliceCounts.get(ev.hash) ?? 0) + 1);
+      const list = fills.get(ev.hash) ?? [];
+      list.push({ fillPx: ev.fillPx, sizeBase: ev.sizeBase });
+      fills.set(ev.hash, list);
+    }
+  }
+
+  const out = new Map<string, PendingLiveExit>();
+  for (const [hash, start] of starts) {
+    if (closed.has(hash)) continue;
+    out.set(hash, {
+      ...start,
+      slicesSent: sliceCounts.get(hash) ?? 0,
+      fills: fills.get(hash) ?? [],
+    });
+  }
+  return out;
+}
+
+export function journalExitStartRow(params: Omit<JournalExitStart, 'kind' | 'ts'>): JournalExitStart {
+  return { kind: 'exit_start', ts: Date.now(), ...params };
+}
+
+export function journalExitSliceRow(params: Omit<JournalExitSlice, 'kind' | 'ts'>): JournalExitSlice {
+  return { kind: 'exit_slice', ts: Date.now(), ...params };
 }
 
 export function loadPendingLiveSchedules(filePath: string): Map<string, JournalSchedule> {

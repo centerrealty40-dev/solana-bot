@@ -16,6 +16,20 @@
 
 ---
 
+## [1.11.346] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.346`
+
+### HL TWAP: whale-aligned exit TWAP, faster entry, denylist cleanup
+
+- **Exit TWAP:** chunked reduce-only closes (`HL_TWAP_LIVE_EXIT_SLICES`, default 10×30s) aligned to whale TWAP 30s cycle boundaries (`twapStart + n×interval`); journal `exit_start` / `exit_slice` with crash recovery.
+- **Faster entry:** schedule live/paper before Telegram; poll default 2s (`HL_TWAP_POLL_INTERVAL_MS`); open unchanged (single IoC).
+- **Denylist:** remove built-in whale block; follow general prod filters; fade env-only override.
+
+**Откат:** `git checkout sa-alpha-1.11.345 -- src/hyperliquid/twap/ src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-*.test.ts .env.example docs/strategy/release/`; prod `.env`: remove `HL_TWAP_LIVE_EXIT_*`, restore `HL_TWAP_POLL_INTERVAL_MS=5000` if desired; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.345] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.345`
