@@ -117,19 +117,68 @@ export type HlAccountMargin = {
   accountValueUsd: number;
   totalMarginUsedUsd: number;
   withdrawableUsd: number;
+  /** USDC total from spot clearinghouse (unified account source of truth). */
+  spotUsdcTotalUsd?: number;
+  /** USDC on hold from spot clearinghouse. */
+  spotUsdcHoldUsd?: number;
 };
 
-/** Cross-margin summary from clearinghouse (live wallet). */
+export type HlSpotUsdcBalance = {
+  totalUsd: number;
+  holdUsd: number;
+  freeUsd: number;
+};
+
+/** USDC balance from spot clearinghouse — canonical for unified HL accounts. */
+export function parseSpotUsdcBalance(spotSt: {
+  balances?: Array<{ coin?: string; total?: string | number; hold?: string | number }>;
+}): HlSpotUsdcBalance {
+  for (const b of spotSt.balances ?? []) {
+    if (b.coin !== 'USDC') continue;
+    const totalUsd = num(b.total) ?? 0;
+    const holdUsd = num(b.hold) ?? 0;
+    return {
+      totalUsd,
+      holdUsd,
+      freeUsd: Math.max(0, totalUsd - holdUsd),
+    };
+  }
+  return { totalUsd: 0, holdUsd: 0, freeUsd: 0 };
+}
+
+/**
+ * Cross-margin summary for live wallet.
+ * Unified HL accounts: USDC lives in spotClearinghouseState; perp marginSummary.accountValue is often 0.
+ * @see https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes
+ */
 export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccountMargin> {
-  const st = await postInfo<{
-    marginSummary?: Record<string, string | number>;
-    withdrawable?: string | number;
-  }>({ type: 'clearinghouseState', user });
-  const ms = st.marginSummary ?? {};
+  const [perpSt, spotSt] = await Promise.all([
+    postInfo<{
+      marginSummary?: Record<string, string | number>;
+      withdrawable?: string | number;
+    }>({ type: 'clearinghouseState', user }),
+    postInfo<{
+      balances?: Array<{ coin?: string; total?: string | number; hold?: string | number }>;
+    }>({ type: 'spotClearinghouseState', user }),
+  ]);
+
+  const ms = perpSt.marginSummary ?? {};
+  const perpAccountValueUsd = num(ms.accountValue) ?? 0;
+  const totalMarginUsedUsd = num(ms.totalMarginUsed) ?? 0;
+  const perpWithdrawableUsd = num(perpSt.withdrawable) ?? 0;
+
+  const spotUsdc = parseSpotUsdcBalance(spotSt);
+  const accountValueUsd =
+    spotUsdc.totalUsd > 0 ? spotUsdc.totalUsd : perpAccountValueUsd;
+  const withdrawableUsd =
+    perpWithdrawableUsd > 0 ? perpWithdrawableUsd : spotUsdc.freeUsd;
+
   return {
-    accountValueUsd: num(ms.accountValue) ?? 0,
-    totalMarginUsedUsd: num(ms.totalMarginUsed) ?? 0,
-    withdrawableUsd: num(st.withdrawable) ?? 0,
+    accountValueUsd,
+    totalMarginUsedUsd,
+    withdrawableUsd,
+    spotUsdcTotalUsd: spotUsdc.totalUsd,
+    spotUsdcHoldUsd: spotUsdc.holdUsd,
   };
 }
 

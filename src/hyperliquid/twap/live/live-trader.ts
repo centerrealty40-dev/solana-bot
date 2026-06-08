@@ -299,8 +299,12 @@ export async function processLiveTrades(
 
       if (accountMargin && !hasMarginForNewOpen(accountMargin, opensBefore, cfg.notionalUsd)) {
         const free = freeMarginUsd(accountMargin, opensBefore);
+        const spotNote =
+          accountMargin.spotUsdcTotalUsd != null && accountMargin.spotUsdcTotalUsd > 0
+            ? ` spotUsdc=$${accountMargin.spotUsdcTotalUsd.toFixed(0)}`
+            : '';
         console.log(
-          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${cfg.notionalUsd})`,
+          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${cfg.notionalUsd}${spotNote})`,
         );
         continue;
       }
