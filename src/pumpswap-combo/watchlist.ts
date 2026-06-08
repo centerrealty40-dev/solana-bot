@@ -3,6 +3,9 @@ import { db } from '../core/db/client.js';
 import type { PumpswapComboConfig } from './config.js';
 import type { WatchlistRow } from './types.js';
 
+/** PumpSwap direct executor spends wrapped SOL — USDC-quoted pools fail sim (Token insufficient funds). */
+export const PUMPSWAP_WSOL_QUOTE_MINT = 'So11111111111111111111111111111111111111112';
+
 let cache: { at: number; rows: WatchlistRow[] } | null = null;
 
 export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<WatchlistRow[]> {
@@ -23,6 +26,7 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
         EXTRACT(EPOCH FROM ts)::float * 1000 AS snapshot_ts
       FROM pumpswap_pair_snapshots
       WHERE ts >= now() - interval '45 minutes'
+        AND quote_mint = '${PUMPSWAP_WSOL_QUOTE_MINT}'
         AND COALESCE(price_usd, 0) > 0
         AND COALESCE(liquidity_usd, 0) >= ${cfg.minLiquidityUsd}
         AND COALESCE(volume_5m, 0) >= ${cfg.minVolume5mUsd}
@@ -36,6 +40,7 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
         MIN(COALESCE(price_usd, 0)::float) AS low_15m
       FROM pumpswap_pair_snapshots
       WHERE ts >= now() - interval '${windowMin} minutes'
+        AND quote_mint = '${PUMPSWAP_WSOL_QUOTE_MINT}'
         AND COALESCE(price_usd, 0) > 0
       GROUP BY base_mint
     )
@@ -74,6 +79,7 @@ export async function fetchMintPoolAddress(mint: string): Promise<string | null>
     SELECT pair_address
     FROM pumpswap_pair_snapshots
     WHERE base_mint = '${mint.replace(/'/g, "''")}'
+      AND quote_mint = '${PUMPSWAP_WSOL_QUOTE_MINT}'
       AND ts >= now() - interval '2 hours'
       AND pair_address IS NOT NULL
       AND pair_address <> ''

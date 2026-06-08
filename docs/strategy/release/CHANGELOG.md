@@ -22,6 +22,22 @@
 
 ---
 
+---
+
+## [1.11.362] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.362`
+
+### PumpSwap Combo: WSOL-quoted pools only for direct executor
+
+- Root cause: PG `pair_address` sometimes points at **USDC-quoted** PumpSwap pools; SDK wraps SOL as WSOL and sim fails (`Token insufficient funds` / Custom 6023).
+- Watchlist + `fetchMintPoolAddress` now filter `quote_mint = So111…` (WSOL) — same venue class as hnu5 direct buys.
+- `pumpswap-direct` rejects non-WSOL pools before build; bump `@pump-fun/pump-swap-sdk` to 1.17.0.
+
+**Откат:** `git checkout sa-alpha-1.11.361 -- src/pumpswap-combo/`; reload combo bot.
+
+---
+
 ## [1.11.361] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.361`

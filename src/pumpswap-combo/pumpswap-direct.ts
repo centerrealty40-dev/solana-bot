@@ -13,7 +13,9 @@ import {
   PUMP_AMM_SDK,
   sellBaseInput as calcSellBaseInput,
 } from '@pump-fun/pump-swap-sdk';
+import { NATIVE_MINT } from '@solana/spl-token';
 import { getSolUsd } from '../papertrader/pricing.js';
+import type { SwapSolanaState } from '@pump-fun/pump-swap-sdk';
 
 let connCache: { url: string; conn: Connection } | null = null;
 
@@ -26,6 +28,10 @@ function connectionForRpc(rpcUrl: string): Connection {
 
 export function slippagePctFromBps(bps: number): number {
   return Math.max(0, bps) / 100;
+}
+
+export function isWsolQuotedPool(state: SwapSolanaState): boolean {
+  return state.pool.quoteMint.equals(NATIVE_MINT);
 }
 
 export async function loadPumpSwapState(args: {
@@ -51,6 +57,7 @@ export async function quotePumpSwapExitPriceUsd(args: {
       poolAddress: args.poolAddress,
       user: args.user,
     });
+    if (!isWsolQuotedPool(state)) return { priceUsd: null, decimals: 6 };
     const { uiQuote } = calcSellBaseInput({
       base: new BN(args.tokenRaw.toString()),
       slippage: 0,
@@ -121,6 +128,8 @@ export async function buildPumpSwapBuyTx(args: {
     poolAddress: args.poolAddress,
     user: args.payer.publicKey,
   });
+  if (!isWsolQuotedPool(state)) return null;
+
   const slippage = slippagePctFromBps(args.slippageBps);
   const swapIxs = await PUMP_AMM_SDK.buyQuoteInput(state, quoteLamports, slippage);
   const signedB64 = await buildSignedTxB64({
@@ -149,6 +158,8 @@ export async function buildPumpSwapSellTx(args: {
     poolAddress: args.poolAddress,
     user: args.payer.publicKey,
   });
+  if (!isWsolQuotedPool(state)) return null;
+
   const slippage = slippagePctFromBps(args.slippageBps);
   const swapIxs = await PUMP_AMM_SDK.sellBaseInput(state, baseAmount, slippage);
   const signedB64 = await buildSignedTxB64({

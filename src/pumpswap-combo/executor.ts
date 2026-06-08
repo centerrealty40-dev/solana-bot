@@ -86,8 +86,8 @@ export async function executeComboBuy(args: {
   }
 
   if (!built) {
-    appendComboEvent(cfg, { kind: 'buy_fail', mint, symbol, intent, reason: 'build_tx' });
-    return { ok: false, reason: 'build_tx' };
+    appendComboEvent(cfg, { kind: 'buy_fail', mint, symbol, intent, reason: 'build_tx_or_non_wsol_pool' });
+    return { ok: false, reason: 'build_tx_or_non_wsol_pool' };
   }
 
   const sent = await liveSendSignedSwapPipeline({
@@ -202,9 +202,9 @@ export async function executeComboSell(args: {
       symbol,
       exitReason,
       intent,
-      reason: 'build_tx',
+      reason: 'build_tx_or_non_wsol_pool',
     });
-    return { ok: false, reason: 'build_tx' };
+    return { ok: false, reason: 'build_tx_or_non_wsol_pool' };
   }
 
   const sent = await liveSendSignedSwapPipeline({
