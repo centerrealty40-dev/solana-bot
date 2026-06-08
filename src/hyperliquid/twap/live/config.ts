@@ -52,7 +52,7 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     enabled: envBool('HL_TWAP_LIVE_ENABLED', false),
     mode,
     privateKey,
-    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 350)),
+    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 230)),
     minImpactPct: Math.max(0, envNum('HL_TWAP_MIN_IMPACT_PCT_HOUR', envNum('HL_TWAP_MIN_IMPACT_PCT', 2))),
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 3)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),
