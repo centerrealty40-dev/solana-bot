@@ -4,7 +4,7 @@
  * Стратегия: **следуем за китом** (buy TWAP → LONG, sell TWAP → SHORT). Перекрёстные TWAP — фильтр, не разворот.
  * Документация: docs/platform/hl-twap.md
  *
- * Data source: HypurrScan `GET https://api.hypurrscan.io/twap/*`
+ * Data source: HypurrScan `GET https://api.hypurrscan.io/twap/*` + optional HL WebSocket fast-path.
  *
  * Env (separate bot — do not reuse Live Oscar TELEGRAM_*):
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID — whale alerts
@@ -24,6 +24,9 @@
  * - HL_TWAP_DRY_RUN=0
  * - HL_TWAP_AUDIT_JSONL=path (optional, default data/hl-twap/signals.jsonl)
  * - HL_TWAP_MEXC_LINKS=1 — append MEXC perp URL when symbol known
+ * - HL_TWAP_WS_ENABLED=1 — HL WebSocket fast-path for watched whales (HypurrScan poll remains reconcile/discovery)
+ * - HL_TWAP_WS_MAX_SUBS=30 — whale cap when deriving list from signals.jsonl
+ * - HL_TWAP_WS_WHALE_LIST=0x... — optional comma-sep override
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -61,6 +64,17 @@ import {
   mexcFuturesUrl,
 } from '../hyperliquid/twap/format-telegram.js';
 import { fetchHypurrscanTwapFeed } from '../hyperliquid/twap/hypurrscan.js';
+import { HlWsTwapFeed, loadHlWsFeedConfig } from '../hyperliquid/twap/hl-ws-feed.js';
+import {
+  absorbHypurrscanDuplicate,
+  createWsIntegrateState,
+  mergeWhaleAddresses,
+  resolveLocalTwapHash,
+  tryAcceptWsTwap,
+  withLocalTwapHash,
+} from '../hyperliquid/twap/hl-ws-integrate.js';
+import { detectLagMs } from '../hyperliquid/twap/hl-ws-parse.js';
+import { loadHlWsWhaleList } from '../hyperliquid/twap/hl-ws-whales.js';
 import { loadHyperliquidMarketCache, type HyperliquidMarketCache } from '../hyperliquid/twap/hyperliquid-meta.js';
 import { normalizeHypurrscanRow } from '../hyperliquid/twap/normalize.js';
 import { enrichEndFromTwapHistory } from '../hyperliquid/twap/twap-history.js';
@@ -111,6 +125,8 @@ const LIVE_ENABLED = LIVE_CFG.enabled;
 const NOTIFY_ENDED = envBool('HL_TWAP_NOTIFY_ENDED', true);
 const DRY_RUN = envBool('HL_TWAP_DRY_RUN', false);
 const MEXC_LINKS = envBool('HL_TWAP_MEXC_LINKS', true);
+const WS_ENABLED = envBool('HL_TWAP_WS_ENABLED', true);
+const WS_MAX_SUBS = Math.max(1, envNum('HL_TWAP_WS_MAX_SUBS', 30));
 const ONCE = process.argv.includes('--once');
 
 const TG_TOKEN = process.env.HL_TWAP_TELEGRAM_BOT_TOKEN?.trim() ?? '';
@@ -122,7 +138,12 @@ const RATING_CACHE_MS = Math.max(60_000, envNum('HL_TWAP_USER_RATING_CACHE_MS', 
 
 const ratingCache = new Map<string, { at: number; rating: UserTwapRating }>();
 const watchState = createTwapWatchState();
+const wsIntegrate = createWsIntegrateState();
 let liveExchange: HlTwapExchangeClient | null = null;
+let wsFeed: HlWsTwapFeed | null = null;
+let marketCache: HyperliquidMarketCache | null = null;
+let marketCacheAt = 0;
+let lastFeedRows: HypurrscanTwapRow[] = [];
 let btcRefreshAt = 0;
 const BTC_REFRESH_MS = Math.max(60_000, envNum('HL_TWAP_BTC_REFRESH_MS', 300_000));
 const BTC_CFG = {} as PaperTraderConfig;
@@ -190,9 +211,11 @@ async function announceStart(
   sig: NormalizedTwapSignal,
   feedRows: HypurrscanTwapRow[],
   _cache: HyperliquidMarketCache,
+  detectSource: 'hypurrscan' | 'hl_ws' = 'hypurrscan',
+  detectLagMsVal: number | null = null,
 ): Promise<void> {
   const plan = computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
-  appendAudit('twap_start', { sig, plan });
+  appendAudit('twap_start', { sig, plan, detectSource, detectLagMs: detectLagMsVal });
   markTwapOpenedNotified(watchState, sig);
 
   if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
@@ -305,9 +328,71 @@ async function refreshBtcIfNeeded(): Promise<void> {
   }
 }
 
+async function refreshMarketCacheIfNeeded(force = false): Promise<HyperliquidMarketCache> {
+  if (!force && marketCache && Date.now() - marketCacheAt < META_REFRESH_MS) {
+    return marketCache;
+  }
+  marketCache = await loadHyperliquidMarketCache();
+  marketCacheAt = Date.now();
+  return marketCache;
+}
+
+async function handleNewTwapSignal(
+  sig: NormalizedTwapSignal,
+  feedRows: HypurrscanTwapRow[],
+  cache: HyperliquidMarketCache,
+  detectSource: 'hypurrscan' | 'hl_ws',
+  detectLagMsVal: number | null,
+): Promise<void> {
+  wsFeed?.addWhale(sig.user);
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  const openRows: Array<{ hash: string; whaleUser: string; coin: string; side: TwapSide }> = [];
+  if (PAPER_ENABLED) openRows.push(...loadPaperOpensFromJournal(paperJournalPath()).values());
+  if (LIVE_ENABLED) openRows.push(...loadLiveOpensFromJournal(LIVE_CFG.journalPath).values());
+  const kept = abortWhaleExitOnRestart(watchState, sig, openRows, entrySide);
+  for (const hash of kept) {
+    console.log(
+      `[hl-twap] whale restarted ${sig.displaySymbol} — keep position, abort delayed exit ${hash.slice(0, 12)}…`,
+    );
+  }
+  const srcTag = detectSource === 'hl_ws' ? ' WS' : '';
+  console.log(
+    `[hl-twap] NEW${srcTag} ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}… lag=${detectLagMsVal ?? '?'}ms`,
+  );
+  await announceStart(sig, feedRows, cache, detectSource, detectLagMsVal);
+}
+
+async function handleWsTwapEvent(ev: import('../hyperliquid/twap/hl-ws-types.js').HlWsTwapOpenEvent): Promise<void> {
+  try {
+    const cache = await refreshMarketCacheIfNeeded();
+    const sig = tryAcceptWsTwap(ev, cache, watchState, wsIntegrate, {
+      minVolumeSharePct: MIN_IMPACT_PCT_HOUR,
+      buyOnly: BUY_ONLY,
+    });
+    if (!sig) return;
+    const lag = detectLagMs(ev.receivedAtMs, ev.startedAtMs);
+    await handleNewTwapSignal(sig, lastFeedRows, cache, 'hl_ws', lag);
+  } catch (e) {
+    console.warn('[hl-twap-ws] event failed', String(e));
+  }
+}
+
+function startWsFeed(whales: string[]): void {
+  if (!WS_ENABLED || whales.length === 0) return;
+  const cfg = loadHlWsFeedConfig(whales);
+  wsFeed = new HlWsTwapFeed(cfg, (ev) => {
+    void handleWsTwapEvent(ev);
+  });
+  wsFeed.start();
+}
+
 async function runPass(cache: HyperliquidMarketCache): Promise<void> {
   await refreshBtcIfNeeded();
   const rows = await fetchHypurrscanTwapFeed();
+  lastFeedRows = rows;
+  for (const row of rows) {
+    if (row.user) wsFeed?.addWhale(row.user);
+  }
   const { newSignals, endedSignals } = detectTwapChanges(
     rows,
     (row) => normalizeHypurrscanRow(row, cache),
@@ -316,20 +401,14 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
   );
 
   for (const sig of newSignals) {
-    const entrySide = hlTwapEntrySide(sig.user, sig.side);
-    const openRows: Array<{ hash: string; whaleUser: string; coin: string; side: TwapSide }> = [];
-    if (PAPER_ENABLED) openRows.push(...loadPaperOpensFromJournal(paperJournalPath()).values());
-    if (LIVE_ENABLED) openRows.push(...loadLiveOpensFromJournal(LIVE_CFG.journalPath).values());
-    const kept = abortWhaleExitOnRestart(watchState, sig, openRows, entrySide);
-    for (const hash of kept) {
+    if (absorbHypurrscanDuplicate(sig, watchState, wsIntegrate)) {
       console.log(
-        `[hl-twap] whale restarted ${sig.displaySymbol} — keep position, abort delayed exit ${hash.slice(0, 12)}…`,
+        `[hl-twap] hypurrscan duplicate of WS ${sig.displaySymbol} ${sig.hash.slice(0, 12)}… → local ${resolveLocalTwapHash(sig.hash, wsIntegrate).slice(0, 12)}…`,
       );
+      continue;
     }
-    console.log(
-      `[hl-twap] NEW ${sig.side} ${sig.displaySymbol} $${sig.notionalUsd.toFixed(0)} impact=${sig.volumeSharePct?.toFixed(2) ?? '?'}% ${sig.user.slice(0, 10)}…`,
-    );
-    await announceStart(sig, rows, cache);
+    const lag = sig.startedAtMs > 0 ? Date.now() - sig.startedAtMs : null;
+    await handleNewTwapSignal(sig, rows, cache, 'hypurrscan', lag);
   }
 
   await closePositionsForImpactLoss(cache);
@@ -343,12 +422,15 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
 
   if (NOTIFY_ENDED) {
     for (const { signal, endedStatus } of endedSignals) {
-      console.log(`[hl-twap] END ${signal.displaySymbol} ${endedStatus} ${signal.hash.slice(0, 12)}…`);
-      if (PAPER_ENABLED) handlePaperOnTwapEnd(signal, cache, endedStatus, watchState);
+      const localSig = withLocalTwapHash(signal, wsIntegrate);
+      console.log(
+        `[hl-twap] END ${localSig.displaySymbol} ${endedStatus} ${localSig.hash.slice(0, 12)}…`,
+      );
+      if (PAPER_ENABLED) handlePaperOnTwapEnd(localSig, cache, endedStatus, watchState);
       if (LIVE_ENABLED && liveExchange) {
-        await handleLiveOnTwapEnd(signal, cache, endedStatus, LIVE_CFG, liveExchange, watchState);
+        await handleLiveOnTwapEnd(localSig, cache, endedStatus, LIVE_CFG, liveExchange, watchState);
       }
-      await announceEnd(signal, endedStatus, rows);
+      await announceEnd(localSig, endedStatus, rows);
     }
   }
 }
@@ -371,7 +453,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms ws=${WS_ENABLED ? 1 : 0} ws_max=${WS_MAX_SUBS} min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   if (hlTwapBtcAlignedGateEnabled()) {
@@ -379,10 +461,10 @@ async function main(): Promise<void> {
     btcRefreshAt = Date.now();
   }
 
-  let cache = await loadHyperliquidMarketCache();
-  let cacheAt = Date.now();
+  let cache = await refreshMarketCacheIfNeeded(true);
 
   const rows0 = await fetchHypurrscanTwapFeed();
+  lastFeedRows = rows0;
   const seeded = seedTwapWatchState(
     rows0,
     (row) => normalizeHypurrscanRow(row, cache),
@@ -391,14 +473,18 @@ async function main(): Promise<void> {
   );
   console.log(`[hl-twap-telegram-watch] seeded ${seeded} active TWAP(s) (no retro alerts)`);
 
+  if (WS_ENABLED) {
+    const feedWhales = [...new Set(rows0.map((r) => r.user?.toLowerCase()).filter(Boolean) as string[])];
+    const whales = mergeWhaleAddresses(loadHlWsWhaleList(), feedWhales, WS_MAX_SUBS);
+    startWsFeed(whales);
+    console.log(`[hl-twap-ws] subscribed ${whales.length} whale(s)`);
+  }
+
   const loop = async (): Promise<void> => {
-    if (Date.now() - cacheAt >= META_REFRESH_MS) {
-      try {
-        cache = await loadHyperliquidMarketCache();
-        cacheAt = Date.now();
-      } catch (e) {
-        console.warn('[hl-twap] meta refresh failed', String(e));
-      }
+    try {
+      cache = await refreshMarketCacheIfNeeded();
+    } catch (e) {
+      console.warn('[hl-twap] meta refresh failed', String(e));
     }
     try {
       await runPass(cache);

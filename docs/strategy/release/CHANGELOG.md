@@ -16,6 +16,22 @@
 
 ---
 
+---
+
+## [1.11.348] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.348`
+
+### HL TWAP: Hyperliquid WebSocket fast-path for whale TWAP detect
+
+- **WS entry:** `userTwapHistory` + `twapStates` for top whales (from `signals.jsonl` or `HL_TWAP_WS_WHALE_LIST`); schedule live/paper before HypurrScan poll (~0.8s vs ~9s observed on spike).
+- **Dedupe:** WS-local hash (`ws:…`) linked to HypurrScan tx hash on reconcile; audit `twap_start` includes `detectSource` + `detectLagMs`.
+- **Fallback:** HypurrScan poll 2s unchanged for discovery + ended/cancel; `HL_TWAP_WS_ENABLED=0` disables WS.
+
+**Откат:** `git checkout sa-alpha-1.11.347 -- src/hyperliquid/twap/hl-ws*.ts src/hyperliquid/twap/hl-ws-*.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-hl-ws*.test.ts .env.example docs/strategy/release/`; prod `.env`: `HL_TWAP_WS_ENABLED=0`; `pm2 reload hl-twap-telegram-watch --update-env`; stop `hl-twap-ws-spike` if running.
+
+---
+
 ## [1.11.347] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.347`
