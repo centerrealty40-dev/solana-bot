@@ -20,6 +20,20 @@
 
 ---
 
+## [1.11.360] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.360`
+
+### Copy-trader: block buys below $1M market cap
+
+- **`COPY_TRADER_MIN_MCAP_USD=1000000`** in prod PM2 env; default in config schema.
+- Entry probe, dip leg, and proportional **adds** fail eval when Dex mcap &lt; $1M or mcap missing (`mcap=…<min=1000000` / `mcap_missing_or_zero`).
+- **Existing open positions** (e.g. GO) unchanged — sells still mirror leader; no new buys/adds on sub-$1M coins.
+
+**Откат:** `git checkout sa-alpha-1.11.359 -- src/copytrader/config.ts src/copytrader/evaluate.ts tests/copytrader/evaluate.test.ts ecosystem.config.cjs docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.359] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.359`
