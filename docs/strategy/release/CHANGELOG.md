@@ -20,6 +20,20 @@
 
 ---
 
+## [1.11.358] — 2026-06-08
+
+**Тег:** `sa-alpha-1.11.358`
+
+### Live re-entry gate: RECONCILE_ORPHAN no longer poisons last exit price
+
+- **`RECONCILE_ORPHAN`** после `FLASH_CRASH_KILL` больше не перезаписывает снимок `lastExitMarketSnapshot` ценой `avgEntry` (~+19% vs реальный sell).
+- Гейт re-entry берёт **последний partial sell `marketPrice`** и наследует stress-`exitReason` (`FLASH_CRASH_KILL` и др.).
+- Ledger PnL reconcile без изменений; правка только в repeat-gate / hybrid dip wait.
+
+**Откат:** `git checkout sa-alpha-1.11.357` на `dip-clones.ts` + `tracker.ts`; `pm2 reload live-oscar`.
+
+---
+
 ## [1.11.357] — 2026-06-08
 
 **Тег:** `sa-alpha-1.11.357`

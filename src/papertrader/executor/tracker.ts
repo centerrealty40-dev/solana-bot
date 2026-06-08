@@ -1243,7 +1243,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct, { openTrade: ot });
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
