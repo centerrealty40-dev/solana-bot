@@ -58,3 +58,19 @@ export function liveOscarRpcHttpUrlFromEnv(env: NodeJS.ProcessEnv = process.env)
   }
   return undefined;
 }
+
+/** WebSocket RPC — explicit `SA_RPC_WS_URL` or flip http(s)→ws(s) on primary HTTP URL. */
+export function resolveSolanaRpcWsUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.SA_RPC_WS_URL?.trim() || env.SOLANA_RPC_WS_URL?.trim() || env.QUICKNODE_WS_URL?.trim();
+  if (explicit) return explicit;
+  const http =
+    env.SA_RPC_HTTP_URL?.trim() ||
+    env.SOLANA_RPC_HTTP_URL?.trim() ||
+    env.QUICKNODE_HTTP_URL?.trim() ||
+    primarySolanaRpcUrlFromEnv(env) ||
+    heliusRpcUrlFromEnv(env);
+  if (!http) return '';
+  if (http.startsWith('https://')) return `wss://${http.slice('https://'.length)}`;
+  if (http.startsWith('http://')) return `ws://${http.slice('http://'.length)}`;
+  return '';
+}
