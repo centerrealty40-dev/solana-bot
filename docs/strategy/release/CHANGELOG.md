@@ -34,6 +34,20 @@
 
 ---
 
+## [1.11.393] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.393`
+
+### HL TWAP: 24/7 PM2 + watchdog
+
+- **`hl-twap-telegram-watch`** in `ecosystem.config.cjs`: direct **tsx** (not npm wrapper), `autorestart`, `max_restarts=100`.
+- In-process **heartbeat** every 60s → `data/hl-twap/heartbeat.json`; `last-fatal.json` on crash.
+- **`hl-twap-process-watch`**: polls PM2 + heartbeat; **auto-restart** + `[ALERT][hl_twap_watch]` Telegram when stopped/stale (&gt;5 min).
+
+**Откат:** `git checkout sa-alpha-1.11.392 -- ecosystem.config.cjs src/scripts/hl-twap-telegram-watch.ts scripts-tmp/hl-twap-process-watch.mjs scripts-tmp/hl-twap-watch-lib.mjs tests/hl-twap-process-watch.test.ts docs/strategy/release/`; on VPS restore manual PM2 entry or `pm2 delete hl-twap-process-watch`; `pm2 save`.
+
+---
+
 ## [1.11.392] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.392`
