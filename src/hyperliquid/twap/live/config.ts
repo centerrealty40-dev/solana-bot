@@ -9,6 +9,20 @@ export type HlTwapLiveConfig = {
   privateKey: string | null;
   /** Margin (collateral) per TWAP signal (USD). Position size = margin × leverage. */
   notionalUsd: number;
+  /** Scale entry margin by open count and free collateral (live). */
+  dynamicMargin: boolean;
+  /** Max entry margin when few positions are open (USD). */
+  marginMaxUsd: number;
+  /** Min entry margin when many positions are open (USD). */
+  marginMinUsd: number;
+  /** Open count at or below which max margin applies. */
+  dynamicMarginMaxAtOpenCount: number;
+  /** Open count at or above which min margin applies. */
+  dynamicMarginMinAtOpenCount: number;
+  /** DCA ladder levels reserved when sizing a new open. */
+  dynamicMarginDcaLevelsReserve: number;
+  /** Collateral reserve kept on account for new opens (USD). */
+  marginReserveUsd: number;
   /** Min net hourly impact %/h on dominant side for entries. */
   minImpactPct: number;
   /** TP/DCA step from entry anchor (%). */
@@ -55,6 +69,19 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     mode,
     privateKey,
     notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 230)),
+    dynamicMargin: envBool('HL_TWAP_LIVE_DYNAMIC_MARGIN', true),
+    marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 380)),
+    marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 170)),
+    dynamicMarginMaxAtOpenCount: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_MAX_AT', 2))),
+    dynamicMarginMinAtOpenCount: Math.max(
+      1,
+      Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_MIN_AT', 5)),
+    ),
+    dynamicMarginDcaLevelsReserve: Math.max(
+      0,
+      Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE', 2)),
+    ),
+    marginReserveUsd: Math.max(0, envNum('HL_TWAP_MARGIN_RESERVE_USD', 50)),
     minImpactPct: Math.max(0, envNum('HL_TWAP_MIN_IMPACT_PCT_HOUR', envNum('HL_TWAP_MIN_IMPACT_PCT', 2))),
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 3)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),
