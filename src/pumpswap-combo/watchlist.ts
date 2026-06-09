@@ -27,6 +27,7 @@ function mapPgRow(row: Record<string, unknown>, now: number): WatchlistRow {
     volume5mUsd: Number(row.volume_5m ?? 0),
     marketCapUsd: Number(row.market_cap_usd ?? 0),
     snapshotTs: Number(row.snapshot_ts ?? now),
+    snapshotSource: row.source != null ? String(row.source) : undefined,
     high15mUsd,
     low15mUsd: Number(row.low_15m ?? row.price_usd ?? 0),
     low15mTs: Number(row.low_15m_ts ?? row.snapshot_ts ?? now),
@@ -47,6 +48,7 @@ async function fetchPgWatchlistCore(cfg: PumpswapComboConfig, limit: number): Pr
       SELECT DISTINCT ON (base_mint)
         base_mint,
         pair_address,
+        source,
         COALESCE(price_usd, 0)::float AS price_usd,
         COALESCE(liquidity_usd, 0)::float AS liquidity_usd,
         COALESCE(volume_5m, 0)::float AS volume_5m,

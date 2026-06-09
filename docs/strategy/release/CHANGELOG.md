@@ -30,6 +30,20 @@
 
 ---
 
+## [1.11.376] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.376`
+
+### PumpSwap Combo #1: stream discovery + RPC burst guard (изолировано)
+
+- **`pumpswap-combo-stream`** — WS PumpSwap AMM → bounded `getTransaction` → `pumpswap_pair_snapshots`.
+- Combo bot: exit-mark cache (2/tick), batch balances, RPC gap, watchlist RPC off при fresh stream.
+- QN features `pumpswap_combo` / `pumpswap_combo_stream` — отдельно от live-oscar.
+
+**Откат:** `git checkout sa-alpha-1.11.375 -- src/pumpswap-combo/ src/pumpswap-combo-stream/ src/core/rpc/qn-feature-usage.ts ecosystem.config.cjs docs/strategy/release/`; `pm2 delete pumpswap-combo-stream`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot --update-env`.
+
+---
+
 ## [1.11.375] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.375`
