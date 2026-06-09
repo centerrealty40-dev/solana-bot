@@ -30,6 +30,23 @@
 
 ---
 
+---
+
+## [1.11.377] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.377`
+
+### QuickNode: снять клиентские лимиты (meter-only по умолчанию)
+
+- **`solana-rpc-meter`** — блокировка RPC только при `QUICKNODE_BUDGET_BLOCK=1` (+ опционально `QUICKNODE_DAILY_ENFORCE=1` / hourly / provider cache). Учёт credits и Telegram-алерты без изменений.
+- **`qn-feature-usage`** — feature monthly caps не блокируют RPC, пока явно не задан `QN_FEATURE_BUDGET_ENFORCE=1`.
+- **`ecosystem.config.cjs`** — `QUICKNODE_NO_DAILY_CAP_ENV` для live-oscar, dashboard, orch, combo-follow; follow-live/paper + `QN_FEATURE_BUDGET_DISABLED=1`.
+- **`.env.example`** — `QUICKNODE_DAILY_ENFORCE=0`, документирован `QUICKNODE_BUDGET_BLOCK`.
+
+**Откат:** `git checkout sa-alpha-1.11.376` → deploy `origin/v2` на предыдущий SHA; в `.env` можно снова включить `QUICKNODE_DAILY_ENFORCE=1` (на 1.11.376 блокировало по умолчанию).
+
+---
+
 ## [1.11.376] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.376`

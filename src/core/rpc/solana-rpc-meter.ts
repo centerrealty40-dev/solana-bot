@@ -177,8 +177,17 @@ function hourlyBudgetCredits(): number {
   return Math.max(0, Number(process.env.QUICKNODE_HOURLY_CREDIT_BUDGET || 0));
 }
 
+/**
+ * Client-side RPC **block** is opt-in only (`QUICKNODE_BUDGET_BLOCK=1`).
+ * Metering/alerts still run; live strategies must never stall on local caps by default.
+ */
+export function rpcBudgetBlockEnabled(): boolean {
+  return process.env.QUICKNODE_BUDGET_BLOCK === '1';
+}
+
+/** When block mode is on: set `QUICKNODE_DAILY_ENFORCE=1` to enforce daily cap. */
 function dailyEnforce(): boolean {
-  return process.env.QUICKNODE_DAILY_ENFORCE !== '0';
+  return rpcBudgetBlockEnabled() && process.env.QUICKNODE_DAILY_ENFORCE === '1';
 }
 
 /**
@@ -186,6 +195,7 @@ function dailyEnforce(): boolean {
  * Вкл.: QUICKNODE_DAILY_ENFORCE_PROVIDER=1 + опрос /data/quicknode-provider-daily.json (dashboard / usage loop).
  */
 function getProviderBlockSnapshot(credits: number): { used: number } | null {
+  if (!rpcBudgetBlockEnabled()) return null;
   if (process.env.QUICKNODE_DAILY_ENFORCE_PROVIDER !== '1') return null;
   const maxAge = Math.max(30_000, Number(process.env.QUICKNODE_PROVIDER_CACHE_MAX_AGE_MS || 900_000));
   const c = readProviderDailyCache();
@@ -346,7 +356,7 @@ export async function reserveSolanaRpcCredits(credits: number): Promise<boolean>
       return { state: st, alertsToSend: [] as number[], blocked: true };
     }
     const hourlyCap = hourlyBudgetCredits();
-    if (hourlyCap > 0 && st.creditsUsedHour + credits > hourlyCap) {
+    if (rpcBudgetBlockEnabled() && hourlyCap > 0 && st.creditsUsedHour + credits > hourlyCap) {
       log.warn(
         {
           creditsUsedHour: st.creditsUsedHour,

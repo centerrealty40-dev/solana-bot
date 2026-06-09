@@ -37,6 +37,15 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
   PAPER2_SNAPSHOT_DISCOVERY_PIN_MAX: '200',
 };
 
+/**
+ * Локальный дневной потолок QN (solana-rpc-meter / provider cache) — выкл.
+ * Учёт credits в data/quicknode-usage.json остаётся; hard stop только от плана в кабинете QuickNode.
+ */
+const QUICKNODE_NO_DAILY_CAP_ENV = {
+  QUICKNODE_DAILY_ENFORCE: '0',
+  QUICKNODE_DAILY_ENFORCE_PROVIDER: '0',
+};
+
 const PM2_APPS = [
     {
       name: 'live-oscar-dashboard',
@@ -58,6 +67,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
         HOST: '0.0.0.0',
         PORT: '3008',
         /** Должен совпадать с `isOrganizerPaperStorePath` в dashboard-server (имя `organizer-paper.jsonl`). */
@@ -191,9 +201,10 @@ const PM2_APPS = [
         /** W6.8 — Gecko multi-lane → QN → wallets; локальный потолок оркестратора см. SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY. */
         SA_ORCH_SCHEDULER_TICK_MS: '10000',
         SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
-        /** W6.13 — detective ledger (orch/backfill/sigseed); глобальный кап выше суммы подпулов при низком фактическом расходе QN. */
-        SA_QN_GLOBAL_CREDITS_PER_DAY: '4000000',
-        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '2200000',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        /** W6.13 — detective ledger: высокий потолок; фактический лимит — план QuickNode в кабинете. */
+        SA_QN_GLOBAL_CREDITS_PER_DAY: '50000000',
+        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '50000000',
         SA_BACKFILL_MAX_CREDITS_PER_DAY: '500000',
         SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
         SA_ORCH_MAX_RPC_PER_JOB: '1200',
@@ -308,6 +319,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
         /** Billable RPC: QuickNode (`SA_RPC_HTTP_URL` в .env). Helius — только fallback при QN budget block. */
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
@@ -1406,6 +1418,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        QN_FEATURE_BUDGET_DISABLED: '1',
         PUMPSWAP_COMBO_FOLLOW_EXECUTION_MODE: 'paper',
         PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID: 'pumpswap-combo-follow-paper',
         PUMPSWAP_COMBO_FOLLOW_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo-follow/paper-journal.jsonl'),
@@ -1449,6 +1463,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        QN_FEATURE_BUDGET_DISABLED: '1',
         PUMPSWAP_COMBO_FOLLOW_EXECUTION_MODE: 'live',
         PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID: 'pumpswap-combo-follow-live',
         PUMPSWAP_COMBO_FOLLOW_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo-follow/journal.jsonl'),

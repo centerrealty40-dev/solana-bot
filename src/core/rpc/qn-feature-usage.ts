@@ -81,6 +81,11 @@ export function qnFeatureBudgetUnlimited(): boolean {
   return process.env.QN_FEATURE_BUDGET_DISABLED?.trim() === '1';
 }
 
+/** Block RPC when feature monthly cap exceeded — opt-in only (`QN_FEATURE_BUDGET_ENFORCE=1`). */
+export function qnFeatureBudgetEnforce(): boolean {
+  return process.env.QN_FEATURE_BUDGET_ENFORCE === '1';
+}
+
 export function qnFeatureBudgetMonth(f: QnFeature): number {
   if (qnFeatureBudgetUnlimited()) return Number.MAX_SAFE_INTEGER;
   const raw = Number(process.env[BUDGET_ENV[f]] ?? DEFAULT_BUDGET[f]);
@@ -221,7 +226,7 @@ export async function reserveQnFeatureCredits(feature: QnFeature, credits: numbe
     f = rolloverFile(f);
     const cap = qnFeatureBudgetMonth(feature);
     const slice = f.perFeature[feature];
-    if (slice.monthCredits + credits > cap) {
+    if (qnFeatureBudgetEnforce() && !qnFeatureBudgetUnlimited() && slice.monthCredits + credits > cap) {
       log.warn({ feature, cap, used: slice.monthCredits, requested: credits }, 'qn feature monthly budget exceeded');
       writeFile(f);
       return false;
