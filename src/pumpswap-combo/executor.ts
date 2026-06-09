@@ -10,10 +10,11 @@ import { fetchMintPoolAddress } from './watchlist.js';
 import {
   buildPumpSwapBuyTx,
   buildPumpSwapSellTx,
-  fillPriceUsdFromTokenDelta,
   quotePumpSwapExitPriceUsd,
   signPumpSwapInstructions,
 } from './pumpswap-direct.js';
+import { ensureComboSolUsd } from './sol-oracle.js';
+import { fillFromChainAndTokens, walletSolSpentFromTx } from './chain-fill.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -100,16 +101,27 @@ export async function executeComboBuy(args: {
   intent: 'probe' | 'add';
   dumpPct?: number;
   dipFromPeakPct?: number;
-}): Promise<{ ok: boolean; fillPriceUsd?: number; txSignature?: string; reason?: string }> {
+}): Promise<{
+  ok: boolean;
+  fillPriceUsd?: number;
+  usdAtMarket?: number;
+  solSpent?: number;
+  tokensReceived?: number;
+  txSignature?: string;
+  reason?: string;
+}> {
   const { cfg, mint, symbol, signalPriceUsd, intent } = args;
   const liveCfg = comboLiveBridge(cfg);
   const pk = signer(cfg);
+  const rpcUrl = liveRpcUrl(cfg, liveCfg);
 
   const pool = await resolvePoolAddress(mint, args.poolAddress);
   if (!pool) {
     appendComboEvent(cfg, { kind: 'buy_fail', mint, symbol, intent, reason: 'no_pool' });
     return { ok: false, reason: 'no_pool' };
   }
+
+  const solUsdAtFill = await ensureComboSolUsd(true);
 
   const balancesBefore = await fetchLiveWalletSplBalancesByMint(liveCfg);
   const tokenBefore = balancesBefore?.get(mint) ?? 0n;
@@ -134,7 +146,7 @@ export async function executeComboBuy(args: {
       if (!built) break;
       sent = await signAndSendPumpSwap({
         liveCfg,
-        rpcUrl: liveRpcUrl(cfg, liveCfg),
+        rpcUrl,
         payer: pk,
         swapIxs: built.swapIxs,
       });
@@ -155,16 +167,31 @@ export async function executeComboBuy(args: {
   }
 
   let fillPriceUsd = signalPriceUsd;
-  if (sent.ok) {
+  let usdAtMarket = 0;
+  let solSpent = 0;
+  let tokensReceived = 0;
+  if (sent.ok && sent.signature) {
     const balancesAfter = await fetchLiveWalletSplBalancesByMint(liveCfg);
     const tokenAfter = balancesAfter?.get(mint) ?? 0n;
-    fillPriceUsd = fillPriceUsdFromTokenDelta({
-      legUsd: cfg.legUsd,
-      tokenBefore,
-      tokenAfter,
-      decimals: built.decimals,
-      fallbackPriceUsd: signalPriceUsd,
+    const chain = await walletSolSpentFromTx({
+      rpcUrl,
+      wallet: pk.publicKey,
+      signature: sent.signature,
     });
+    if (chain) {
+      const fill = fillFromChainAndTokens({
+        solSpent: chain.solSpent,
+        solUsd: solUsdAtFill,
+        tokenBefore,
+        tokenAfter,
+        decimals: built.decimals,
+        fallbackPriceUsd: signalPriceUsd,
+      });
+      fillPriceUsd = fill.fillPriceUsd;
+      usdAtMarket = fill.usdAtMarket;
+      solSpent = fill.solSpent;
+      tokensReceived = fill.tokensReceived;
+    }
   }
 
   appendComboEvent(cfg, {
@@ -172,7 +199,12 @@ export async function executeComboBuy(args: {
     mint,
     symbol,
     intent,
-    usd: cfg.legUsd,
+    targetLegUsd: cfg.legUsd,
+    usd: usdAtMarket > 0 ? usdAtMarket : cfg.legUsd,
+    solSpent: solSpent > 0 ? solSpent : null,
+    solUsdAtFill,
+    quoteLamports: built.quoteLamports.toString(),
+    tokensReceived: tokensReceived > 0 ? tokensReceived : null,
     fillPriceUsd,
     poolAddress: pool,
     execVenue: 'pumpswap_direct',
@@ -183,7 +215,14 @@ export async function executeComboBuy(args: {
   });
 
   if (!sent.ok) return { ok: false, reason: sent.message, fillPriceUsd };
-  return { ok: true, fillPriceUsd, txSignature: sent.signature };
+  return {
+    ok: true,
+    fillPriceUsd,
+    usdAtMarket: usdAtMarket > 0 ? usdAtMarket : cfg.legUsd,
+    solSpent,
+    tokensReceived,
+    txSignature: sent.signature,
+  };
 }
 
 export async function executeComboSell(args: {

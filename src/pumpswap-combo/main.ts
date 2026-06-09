@@ -23,12 +23,15 @@ import { fetchComboWatchlist } from './watchlist.js';
 import { pnlPctVsAvgFill, quoteExitPriceUsd, slPctForPosition } from './pricing.js';
 import { comboLiveBridge } from './live-bridge.js';
 import { configureLiveStore } from '../live/store-jsonl.js';
+import { ensureComboSolUsd } from './sol-oracle.js';
+import { getSolUsd } from '../papertrader/pricing.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 async function evaluateExits(cfg: PumpswapComboConfig): Promise<void> {
+  await ensureComboSolUsd();
   const state = readComboState(cfg);
   const liveCfg = comboLiveBridge(cfg);
   const closedMints = new Set<string>();
@@ -171,7 +174,7 @@ async function evaluateEntries(
         legs: [
           {
             ts: nowMs,
-            usd: cfg.legUsd,
+            usd: buy.usdAtMarket ?? cfg.legUsd,
             fillPriceUsd: buy.fillPriceUsd,
             txSignature: buy.txSignature,
           },
@@ -204,7 +207,7 @@ async function evaluateEntries(
 
     pos.legs.push({
       ts: nowMs,
-      usd: cfg.legUsd,
+      usd: buy.usdAtMarket ?? cfg.legUsd,
       fillPriceUsd: buy.fillPriceUsd,
       txSignature: buy.txSignature,
     });
@@ -218,10 +221,13 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
   const rolling = new RollingHighTracker(cfg.rollingHighWindowMs);
   let lastHeartbeat = 0;
 
+  const solUsdBoot = await ensureComboSolUsd(true);
+
   appendComboEvent(cfg, {
     kind: 'boot',
     execVenue: 'pumpswap_direct',
     legUsd: cfg.legUsd,
+    solUsd: solUsdBoot,
     portfolioStopLossUsd: cfg.portfolioStopLossUsd,
     dumpBand: `${cfg.dumpMinPct}-${cfg.dumpMaxPct}`,
     tp1: `${cfg.tp1SellFrac * 100}%@${cfg.tp1Pct}%`,
@@ -236,12 +242,13 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
   });
 
   console.log(
-    `[pumpswap-combo] LIVE leg=$${cfg.legUsd} portfolioSL=$${cfg.portfolioStopLossUsd} poll=${cfg.pollIntervalMs}ms`,
+    `[pumpswap-combo] LIVE leg=$${cfg.legUsd} solUsd=$${getSolUsd().toFixed(2)} portfolioSL=$${cfg.portfolioStopLossUsd} poll=${cfg.pollIntervalMs}ms`,
   );
 
   for (;;) {
     const nowMs = Date.now();
     try {
+      await ensureComboSolUsd();
       const watchlist = await fetchComboWatchlist(cfg);
       rolling.prune(new Set(watchlist.map((w) => w.mint)));
 
@@ -262,6 +269,7 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
           unrealizedPnlUsd: snap.unrealizedPnlUsd,
           totalPnlUsd: snap.totalPnlUsd,
           halted: snap.halted,
+          solUsd: getSolUsd(),
         });
         console.log(
           `[pumpswap-combo] heartbeat open=${snap.openCount} wl=${watchlist.length} dump=${scan.dumpBandCount} probe=${scan.probeReadyCount} pnl=$${snap.totalPnlUsd.toFixed(2)} halted=${snap.halted}`,

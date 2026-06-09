@@ -114,12 +114,12 @@ export async function buildPumpSwapBuyTx(args: {
   payer: Keypair;
   legUsd: number;
   slippageBps: number;
-}): Promise<{ swapIxs: TransactionInstruction[]; quoteLamports: BN; decimals: number } | null> {
+}): Promise<{ swapIxs: TransactionInstruction[]; quoteLamports: BN; decimals: number; solUsd: number } | null> {
   const solUsd = getSolUsd();
   if (!(solUsd > 0) || !(args.legUsd > 0)) return null;
 
-  const quoteLamports = new BN(Math.floor((args.legUsd / solUsd) * 1e9));
-  if (quoteLamports.lte(new BN(0))) return null;
+  const quoteLamports = quoteLamportsForLegUsd(args.legUsd);
+  if (!quoteLamports || quoteLamports.lte(new BN(0))) return null;
 
   const state = await loadPumpSwapState({
     rpcUrl: args.rpcUrl,
@@ -130,7 +130,7 @@ export async function buildPumpSwapBuyTx(args: {
 
   const slippage = slippagePctFromBps(args.slippageBps);
   const swapIxs = await PUMP_AMM_SDK.buyQuoteInput(state, quoteLamports, slippage);
-  return { swapIxs, quoteLamports, decimals: state.baseMintAccount.decimals };
+  return { swapIxs, quoteLamports, decimals: state.baseMintAccount.decimals, solUsd };
 }
 
 export async function buildPumpSwapSellTx(args: {
@@ -182,4 +182,13 @@ export function fillPriceUsdFromTokenDelta(args: {
   const tokens = Number(received) / 10 ** args.decimals;
   if (!(tokens > 0)) return args.fallbackPriceUsd;
   return args.legUsd / tokens;
+}
+
+/** Lamports of WSOL quote for a USD leg at current getSolUsd(). */
+export function quoteLamportsForLegUsd(legUsd: number): BN | null {
+  const solUsd = getSolUsd();
+  if (!(solUsd > 0) || !(legUsd > 0)) return null;
+  const lamports = Math.floor((legUsd / solUsd) * 1e9);
+  if (lamports <= 0) return null;
+  return new BN(lamports);
 }

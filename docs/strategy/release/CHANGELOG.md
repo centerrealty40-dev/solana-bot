@@ -22,6 +22,22 @@
 
 ---
 
+---
+
+## [1.11.365] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.365`
+
+### PumpSwap Combo: live SOL/USD oracle + chain fill accounting
+
+- **`ensureComboSolUsd()`** before boot, each tick, and every buy — fixes undersized legs when Jupiter SOL price ≠ stale $100 default (few tokens for nominal $3).
+- **Buy fill from chain:** journal `solSpent`, `solUsdAtFill`, `usdAtMarket`, `tokensReceived`; state leg `usd` = actual USD at fill, not config fiction.
+- **`fillPriceUsd`** = `(solSpent × solUsd) / tokens` — matches AMM sell mark basis.
+
+**Откат:** `git checkout sa-alpha-1.11.364 -- src/pumpswap-combo/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
 ## [1.11.364] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.364`
