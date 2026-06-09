@@ -12,8 +12,10 @@ import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { executeFollowSell } from './executor.js';
 import { effectiveStopLossPct, nextExitRung } from './exit-ladder.js';
+import { evaluateFollowExitsFlow8z } from './exits-flow8z.js';
 import { evaluateFollowExitsWaveB } from './exits-wave-b.js';
 import { stopLossAllowed } from './exit-policy.js';
+import { followHoldSec, followMaxHoldDue } from './exit-max-hold.js';
 import { leaderPreBalanceRaw } from './leader-ledger.js';
 import { appendFollowEvent } from './journal.js';
 import { followPaperPortfolioSnapshot } from './paper-portfolio.js';
@@ -46,6 +48,9 @@ export async function evaluateFollowExits(
   if (cfg.exitPolicy === 'oscar_wave_b') {
     return evaluateFollowExitsWaveB(cfg, state);
   }
+  if (cfg.exitPolicy === 'flow8z_antidump') {
+    return evaluateFollowExitsFlow8z(cfg, state);
+  }
 
   const execCfg = toComboExecutorConfig(cfg);
   const liveCfg = comboLiveBridge(execCfg);
@@ -67,6 +72,38 @@ export async function evaluateFollowExits(
     const inv =
       cfg.executionMode === 'paper' ? paperInvestedRemainingUsd(pos) : investedUsd(comboPos);
     const multiLeg = pos.legs.length > 1;
+
+    if (followMaxHoldDue(pos, cfg.maxHoldMs)) {
+      const res = await executeFollowSell({
+        cfg,
+        pos,
+        markPriceUsd: mark,
+        exitReason: 'max_hold',
+        intent: 'tp2_full',
+        sellFrac: 1,
+      });
+      if (!res.ok) continue;
+      closedMints.add(pos.mint);
+      const realized = res.pnlUsd ?? inv * (pnlPct / 100);
+      recordRealizedPnl(comboState, realized);
+      state.realizedPnlUsd = comboState.realizedPnlUsd;
+      if (realized < 0) setFollowLossCooldown(cfg, state, pos.mint, Date.now());
+      appendFollowEvent(cfg, {
+        kind: 'round_trip',
+        mode: cfg.executionMode,
+        mint: pos.mint,
+        symbol: pos.symbol,
+        legs: pos.legs.length,
+        investedUsd: inv,
+        pnlUsd: realized,
+        pnlPct,
+        exitReason: 'max_hold',
+        holdSec: followHoldSec(pos),
+        maxHoldMs: cfg.maxHoldMs,
+      });
+      continue;
+    }
+
     const slPct = effectiveStopLossPct(
       cfg.slSingleLegPct,
       cfg.exitLeadPct,
