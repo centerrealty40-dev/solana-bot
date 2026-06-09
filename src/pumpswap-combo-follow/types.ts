@@ -26,6 +26,14 @@ export type PendingFollowBuy = {
   leaderSignature: string;
   leaderPriceUsd: number;
   leaderBuyUsd: number;
+  /** Unix sec from RPC signature row when available. */
+  leaderBlockTimeSec?: number;
   dueTs: number;
   retryUntilTs: number;
+};
+
+export type LeaderSellRef = {
+  ts: number;
+  signature: string;
+  priceUsd: number;
 };

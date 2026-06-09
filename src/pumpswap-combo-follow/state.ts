@@ -15,6 +15,8 @@ export type FollowState = {
   seenSignatures: Record<string, number>;
   leaderLedger: Record<string, LeaderMintLedger>;
   pendingBuys: PendingFollowBuy[];
+  /** Last observed leader sell per mint (for exit timing audit). */
+  lastLeaderSellByMint: Record<string, import('./types.js').LeaderSellRef>;
   updatedAt: number;
 };
 
@@ -27,6 +29,7 @@ function emptyState(): FollowState {
     seenSignatures: {},
     leaderLedger: {},
     pendingBuys: [],
+    lastLeaderSellByMint: {},
     updatedAt: Date.now(),
   };
 }
@@ -58,6 +61,10 @@ export function readFollowState(cfg: PumpswapComboFollowConfig): FollowState {
       leaderLedger:
         j.leaderLedger && typeof j.leaderLedger === 'object' ? j.leaderLedger : {},
       pendingBuys: Array.isArray(j.pendingBuys) ? j.pendingBuys : [],
+      lastLeaderSellByMint:
+        j.lastLeaderSellByMint && typeof j.lastLeaderSellByMint === 'object'
+          ? j.lastLeaderSellByMint
+          : {},
       updatedAt: Number(j.updatedAt ?? Date.now()),
     };
   } catch {

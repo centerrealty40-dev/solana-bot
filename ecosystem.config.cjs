@@ -1388,6 +1388,49 @@ const PM2_APPS = [
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
       },
     },
+    /**
+     * Combo #2 LIVE — mirror hnu5 buys/DCA; ladder exits 2% ahead via direct PumpSwap AMM.
+     * Isolated wallet: data/pumpswap-combo-follow/wallet.keypair.json
+     */
+    {
+      name: 'pumpswap-combo-follow-live',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/pumpswap-combo-follow-bot.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      max_memory_restart: '200M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        PUMPSWAP_COMBO_FOLLOW_EXECUTION_MODE: 'live',
+        PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID: 'pumpswap-combo-follow-live',
+        PUMPSWAP_COMBO_FOLLOW_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo-follow/journal.jsonl'),
+        PUMPSWAP_COMBO_FOLLOW_STATE_PATH: path.join(root, 'data/pumpswap-combo-follow/state.json'),
+        PUMPSWAP_COMBO_FOLLOW_WALLET_SECRET: path.join(root, 'data/pumpswap-combo-follow/wallet.keypair.json'),
+        PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
+        PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET: 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
+        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
+        PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '3',
+        PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT: '2',
+        PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER: '13:0.7,25:1',
+        PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT: '20',
+        PUMPSWAP_COMBO_FOLLOW_SL_MULTI_PCT: '22',
+        PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '50',
+        PUMPSWAP_COMBO_FOLLOW_BUY_DELAY_MS: '0',
+        PUMPSWAP_COMBO_FOLLOW_POLL_MS: '5000',
+        PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT: '25',
+        PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '20',
+        PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '300',
+        SOLANA_RPC_HELIUS_PREFER: '0',
+        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+      },
+    },
 ];
 
 module.exports = {

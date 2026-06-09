@@ -32,6 +32,11 @@ function decodeSwapForWallet(tx: TxJsonParsed, wallet: string, solUsd: number): 
   return decodeAllowlistedDexSwapForWallet(tx, wallet, solUsd);
 }
 
+function leaderObservedMs(row: SignatureRow): number | undefined {
+  const bt = row.blockTime;
+  return typeof bt === 'number' && bt > 0 ? bt * 1000 : undefined;
+}
+
 function scheduleFollowBuy(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
@@ -42,6 +47,7 @@ function scheduleFollowBuy(
     leaderSignature: string;
     leaderPriceUsd: number;
     leaderBuyUsd: number;
+    leaderBlockTimeSec?: number;
   },
 ): void {
   const now = Date.now();
@@ -54,6 +60,7 @@ function scheduleFollowBuy(
     leaderSignature: args.leaderSignature,
     leaderPriceUsd: args.leaderPriceUsd,
     leaderBuyUsd: args.leaderBuyUsd,
+    leaderBlockTimeSec: args.leaderBlockTimeSec,
     dueTs,
     retryUntilTs: dueTs + cfg.buyRetryWindowMs,
   };
@@ -65,6 +72,7 @@ function scheduleFollowBuy(
     leaderSignature: args.leaderSignature,
     leaderPriceUsd: args.leaderPriceUsd,
     leaderBuyUsd: args.leaderBuyUsd,
+    leaderBlockTimeSec: args.leaderBlockTimeSec ?? null,
     buyDueTs: dueTs,
     buyDelayMs: cfg.buyDelayMs,
     retryUntilTs: pending.retryUntilTs,
@@ -114,6 +122,7 @@ async function onLeaderBuy(
       leaderSignature: row.signature,
       leaderPriceUsd: swap.priceUsd,
       leaderBuyUsd: swap.amountUsd,
+      leaderBlockTimeSec: row.blockTime,
     });
     return;
   }
@@ -155,21 +164,30 @@ async function onLeaderBuy(
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
     leaderBuyUsd: swap.amountUsd,
+    leaderBlockTimeSec: row.blockTime,
   });
 }
 
 /** Leader sells update ledger only — exits are price-ladder, not reactive copy. */
 async function onLeaderSell(
   cfg: PumpswapComboFollowConfig,
-  _state: FollowState,
+  state: FollowState,
   swap: SwapInsert,
   row: SignatureRow,
   preLeaderRaw: bigint,
 ): Promise<void> {
+  const mint = swap.baseMint;
+  const ts = leaderObservedMs(row) ?? Date.now();
+  state.lastLeaderSellByMint[mint] = {
+    ts,
+    signature: row.signature,
+    priceUsd: swap.priceUsd,
+  };
   appendFollowEvent(cfg, {
     kind: 'leader_sell_observed',
-    mint: swap.baseMint,
+    mint,
     leaderSignature: row.signature,
+    leaderBlockTimeSec: row.blockTime ?? null,
     leaderPriceUsd: swap.priceUsd,
     leaderSellUsd: swap.amountUsd,
     leaderPreBalanceRaw: preLeaderRaw.toString(),
@@ -217,6 +235,12 @@ async function executePendingBuy(
   }
 
   const nowMs = Date.now();
+  const leaderMs =
+    pending.leaderBlockTimeSec && pending.leaderBlockTimeSec > 0
+      ? pending.leaderBlockTimeSec * 1000
+      : undefined;
+  const lagMsAfterLeader = leaderMs != null ? nowMs - leaderMs : null;
+
   const leg = {
     ts: nowMs,
     usd: buy.usdAtMarket ?? cfg.legUsd,
@@ -224,19 +248,39 @@ async function executePendingBuy(
     txSignature: buy.txSignature,
   };
 
+  const timingFields = {
+    lagMsAfterLeader,
+    leaderBlockTimeSec: pending.leaderBlockTimeSec ?? null,
+    leaderSignature: pending.leaderSignature,
+  };
+
   if (existing) {
     existing.legs.push(leg);
     if (buy.fillPriceUsd > existing.botPeakUsd) existing.botPeakUsd = buy.fillPriceUsd;
-    appendFollowEvent(cfg, {
-      kind: 'add_ok',
-      mode: cfg.executionMode,
-      mint: pending.mint,
-      symbol: pending.symbol,
-      leaderSignature: pending.leaderSignature,
-      legUsd: leg.usd,
-      fillPriceUsd: buy.fillPriceUsd,
-      legs: existing.legs.length,
-    });
+    if (cfg.executionMode === 'paper') {
+      appendFollowEvent(cfg, {
+        kind: 'add_ok',
+        mode: cfg.executionMode,
+        mint: pending.mint,
+        symbol: pending.symbol,
+        legUsd: leg.usd,
+        fillPriceUsd: buy.fillPriceUsd,
+        legs: existing.legs.length,
+        ...timingFields,
+      });
+    } else {
+      appendFollowEvent(cfg, {
+        kind: 'mirror_add_timing',
+        mode: 'live',
+        mint: pending.mint,
+        symbol: pending.symbol,
+        legUsd: leg.usd,
+        fillPriceUsd: buy.fillPriceUsd,
+        legs: existing.legs.length,
+        txSignature: buy.txSignature,
+        ...timingFields,
+      });
+    }
   } else {
     state.positions.push({
       mint: pending.mint,
@@ -249,18 +293,34 @@ async function executePendingBuy(
       leaderWallet: cfg.targetWallet,
       remainingFrac: 1,
     });
-    appendFollowEvent(cfg, {
-      kind: 'buy_ok',
-      mode: cfg.executionMode,
-      mint: pending.mint,
-      symbol: pending.symbol,
-      leaderSignature: pending.leaderSignature,
-      intent: 'mirror_entry',
-      legUsd: leg.usd,
-      fillPriceUsd: buy.fillPriceUsd,
-      leaderPriceUsd: pending.leaderPriceUsd,
-      leaderBuyUsd: pending.leaderBuyUsd,
-    });
+    if (cfg.executionMode === 'paper') {
+      appendFollowEvent(cfg, {
+        kind: 'buy_ok',
+        mode: cfg.executionMode,
+        mint: pending.mint,
+        symbol: pending.symbol,
+        intent: 'mirror_entry',
+        legUsd: leg.usd,
+        fillPriceUsd: buy.fillPriceUsd,
+        leaderPriceUsd: pending.leaderPriceUsd,
+        leaderBuyUsd: pending.leaderBuyUsd,
+        ...timingFields,
+      });
+    } else {
+      appendFollowEvent(cfg, {
+        kind: 'mirror_buy_timing',
+        mode: 'live',
+        mint: pending.mint,
+        symbol: pending.symbol,
+        intent: 'mirror_entry',
+        legUsd: leg.usd,
+        fillPriceUsd: buy.fillPriceUsd,
+        leaderPriceUsd: pending.leaderPriceUsd,
+        leaderBuyUsd: pending.leaderBuyUsd,
+        txSignature: buy.txSignature,
+        ...timingFields,
+      });
+    }
   }
 }
 
