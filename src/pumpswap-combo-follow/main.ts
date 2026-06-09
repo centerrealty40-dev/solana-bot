@@ -180,10 +180,11 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
             await processPendingFollowBuys(cfg, pollState);
           });
         }
-        if (cfg.exitPolicy === 'oscar_wave_b') {
-          await evaluateFollowDca(cfg, fresh);
+        const exitState = readFollowState(cfg);
+        if (cfg.dcaLevels.length > 0) {
+          await evaluateFollowDca(cfg, exitState);
         }
-        await evaluateFollowExits(cfg, fresh);
+        await evaluateFollowExits(cfg, exitState);
       }
 
       if (nowMs - lastHeartbeat >= cfg.heartbeatIntervalMs) {

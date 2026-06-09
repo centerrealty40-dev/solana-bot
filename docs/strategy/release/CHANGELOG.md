@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.392] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.392`
+
+### pumpswap-combo-follow: fix stale state wipe after buy
+
+- Re-read state before DCA/exits tick (was overwriting fresh buys with empty snapshot).
+- Enable DCA eval for any policy with `dcaLevels` configured.
+
+**Откат:** revert `src/pumpswap-combo-follow/main.ts`; reload PM2.
+
+---
+
 ## [1.11.391] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.391`
