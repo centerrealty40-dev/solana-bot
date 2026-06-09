@@ -104,7 +104,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     cfg.exitPolicy === 'oscar_wave_b'
       ? `leg=$${cfg.entryUsd} dca=${cfg.dcaLevels.length}×${(cfg.dcaLevels[0]?.addFraction ?? 0) * 100}% kill=-${cfg.dcaKillstopPct}% waveB`
       : cfg.exitPolicy === 'flow8z_antidump'
-        ? `leg=$${cfg.legUsd} flow8z anti-dump ks=-${cfg.flow8zKillstopPct}% max1st=$${cfg.maxLeaderFirstBuyUsd}`
+        ? `leg=$${cfg.legUsd}${cfg.dcaLevels.length ? ` dca=${cfg.dcaLevels.length}×${((cfg.dcaLevels[0]?.addFraction ?? 0) * 100).toFixed(0)}%` : ''} flow8z ks=-${cfg.flow8zKillstopPct}% max1st=$${cfg.maxLeaderFirstBuyUsd} maxOpen=${cfg.maxOpenPositions}`
         : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
 
   console.log(

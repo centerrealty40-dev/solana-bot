@@ -127,11 +127,14 @@ async function onLeaderBuy(
     if (!cfg.mirrorLeaderAdds) {
       appendFollowEvent(cfg, {
         kind: 'leader_add_ignored',
-        reason: cfg.exitPolicy === 'oscar_wave_b' ? 'oscar_price_dca_only' : 'no_mirror_adds',
+        reason:
+          cfg.exitPolicy === 'oscar_wave_b' || cfg.dcaLevels.length > 0
+            ? 'oscar_price_dca_only'
+            : 'no_mirror_adds',
         mint,
         leaderSignature: row.signature,
         note:
-          cfg.exitPolicy === 'oscar_wave_b'
+          cfg.exitPolicy === 'oscar_wave_b' || cfg.dcaLevels.length > 0
             ? 'DCA at -10/-20 vs first leg, not leader mirror'
             : undefined,
       });
