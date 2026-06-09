@@ -32,6 +32,21 @@
 
 ---
 
+## [1.11.378] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.378`
+
+### PumpSwap Combo: откат stream discovery (firehose)
+
+- **Удалён** `pumpswap-combo-stream` (PM2 + `src/pumpswap-combo-stream/` + script) — WS на весь PumpSwap AMM жёг QN credits без полезных снимков.
+- Combo bot: **`WATCHLIST_STREAM_PREFER=0`**, **`WATCHLIST_RPC_REFRESH=4`** — снова PG + bounded RPC refresh.
+- Combo bot: **`QUICKNODE_NO_DAILY_CAP_ENV`** — локальный дневной потолок не блокирует buy/sell (учёт credits сохраняется).
+- QN feature `pumpswap_combo_stream` убран из `qn-feature-usage`.
+
+**Откат:** `git checkout sa-alpha-1.11.377`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.377] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.377`

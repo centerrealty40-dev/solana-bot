@@ -21,7 +21,6 @@ export const QN_FEATURE_KEYS = [
   /** W7.6 — impulse confirm on-chain spot (Orca whirlpool + optional paths). */
   'impulse_confirm',
   'pumpswap_combo',
-  'pumpswap_combo_stream',
 ] as const;
 export type QnFeature = (typeof QN_FEATURE_KEYS)[number];
 
@@ -60,7 +59,6 @@ const BUDGET_ENV: Record<QnFeature, string> = {
   holders: 'QN_FEATURE_BUDGET_HOLDERS',
   impulse_confirm: 'QN_FEATURE_BUDGET_IMPULSE_CONFIRM',
   pumpswap_combo: 'QN_FEATURE_BUDGET_PUMPSWAP_COMBO',
-  pumpswap_combo_stream: 'QN_FEATURE_BUDGET_PUMPSWAP_COMBO_STREAM',
 };
 
 const DEFAULT_BUDGET: Record<QnFeature, number> = {
@@ -73,7 +71,6 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   holders: 10_000_000,
   impulse_confirm: 5_000_000,
   pumpswap_combo: 800_000,
-  pumpswap_combo_stream: 500_000,
 };
 
 /** `QN_FEATURE_BUDGET_DISABLED=1` or per-feature env `<= 0` → no monthly cap (metering still written to JSON). */
