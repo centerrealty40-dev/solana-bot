@@ -28,6 +28,23 @@
 
 ---
 
+## [1.11.373] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.373`
+
+### PumpSwap Combo #1: PG radar + RPC live spot (autonomous visibility)
+
+Bot was blind: strict vol5m PG filter → 5 mints; dump=0 on stale PG prices; 8/8 slots full blocked new entries.
+
+- **PG lookback 6h**, vol5m optional (0), sort by dump % descending.
+- **RPC pool spot refresh** (~12/tick) for top dump candidates — no leader wallet.
+- **Dump signal** uses max(PG high, rolling high) vs live spot; freshness accepts RPC timestamp.
+- **Heartbeat** reports `slotsFree` when max concurrent opens blocks entries.
+
+**Откат:** `git checkout sa-alpha-1.11.372 -- src/pumpswap-combo/ ecosystem.config.cjs`; `pm2 reload pumpswap-combo-bot --update-env`.
+
+---
+
 ## [1.11.372] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.372`

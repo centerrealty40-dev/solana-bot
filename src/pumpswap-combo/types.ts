@@ -21,7 +21,14 @@ export type WatchlistRow = {
   symbol: string;
   /** PumpSwap pool pubkey from PG — same venue as signal. */
   pairAddress: string;
+  /** Spot — PG or RPC-live when refreshed. */
   priceUsd: number;
+  /** PG snapshot price before RPC refresh. */
+  pgPriceUsd?: number;
+  /** PG-estimated dump % (high→spot). */
+  pgDumpPct?: number;
+  /** Ms when priceUsd came from on-chain pool quote. */
+  livePriceTs?: number;
   liquidityUsd: number;
   volume5mUsd: number;
   marketCapUsd: number;

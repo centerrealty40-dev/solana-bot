@@ -11,10 +11,16 @@ const ConfigSchema = z.object({
   rpcUrl: z.string().min(8),
   pollIntervalMs: z.coerce.number().int().min(2000).max(60_000).default(5000),
   heartbeatIntervalMs: z.coerce.number().int().min(10_000).max(600_000).default(60_000),
+  /** Min PG snapshot age for watchlist (minutes). */
+  watchlistPgLookbackMin: z.coerce.number().int().min(15).max(10_080).default(360),
+  /** Refresh on-chain spot for top dump candidates each tick. */
+  watchlistRpcRefreshEnabled: z.coerce.boolean().default(true),
+  watchlistRpcRefreshPerTick: z.coerce.number().int().min(1).max(40).default(12),
+  watchlistRpcRefreshDelayMs: z.coerce.number().int().min(20).max(500).default(80),
   watchlistMax: z.coerce.number().int().min(5).max(150).default(100),
-  /** PG signal filters — жёстче reference bots, меньше кандидатов. */
-  minLiquidityUsd: z.coerce.number().min(0).default(40_000),
-  minVolume5mUsd: z.coerce.number().min(0).default(3_000),
+  /** PG filters — vol5m optional (0 = off). */
+  minLiquidityUsd: z.coerce.number().min(0).default(35_000),
+  minVolume5mUsd: z.coerce.number().min(0).default(0),
   minMarketCapUsd: z.coerce.number().min(0).default(100_000),
   maxMarketCapUsd: z.coerce.number().min(0).default(3_000_000),
   rollingHighWindowMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
@@ -81,6 +87,10 @@ export function loadPumpswapComboConfig(): PumpswapComboConfig {
     pollIntervalMs: process.env.PUMPSWAP_COMBO_POLL_MS,
     heartbeatIntervalMs: process.env.PUMPSWAP_COMBO_HEARTBEAT_MS,
     watchlistMax: process.env.PUMPSWAP_COMBO_WATCHLIST_MAX,
+    watchlistPgLookbackMin: process.env.PUMPSWAP_COMBO_WATCHLIST_PG_LOOKBACK_MIN,
+    watchlistRpcRefreshEnabled: process.env.PUMPSWAP_COMBO_WATCHLIST_RPC_REFRESH,
+    watchlistRpcRefreshPerTick: process.env.PUMPSWAP_COMBO_WATCHLIST_RPC_PER_TICK,
+    watchlistRpcRefreshDelayMs: process.env.PUMPSWAP_COMBO_WATCHLIST_RPC_DELAY_MS,
     minLiquidityUsd: process.env.PUMPSWAP_COMBO_MIN_LIQ_USD,
     minVolume5mUsd: process.env.PUMPSWAP_COMBO_MIN_VOL_5M_USD,
     minMarketCapUsd: process.env.PUMPSWAP_COMBO_MIN_MCAP_USD,

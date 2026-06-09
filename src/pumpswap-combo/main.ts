@@ -117,7 +117,7 @@ async function evaluateEntries(
   watchlist: Awaited<ReturnType<typeof fetchComboWatchlist>>,
   rolling: RollingHighTracker,
   nowMs: number,
-): Promise<{ dumpBandCount: number; probeReadyCount: number }> {
+): Promise<{ dumpBandCount: number; probeReadyCount: number; slotsFree: number }> {
   const state = readComboState(cfg);
   pruneCooldowns(state, nowMs);
   let dumpBandCount = 0;
@@ -131,16 +131,19 @@ async function evaluateEntries(
       limitUsd: cfg.portfolioStopLossUsd,
     });
     writeComboState(cfg, state);
-    return { dumpBandCount, probeReadyCount };
+    return { dumpBandCount, probeReadyCount, slotsFree: 0 };
   }
 
-  if (state.halted) return { dumpBandCount, probeReadyCount };
+  if (state.halted) return { dumpBandCount, probeReadyCount, slotsFree: 0 };
+
+  const slotsFree = Math.max(0, cfg.maxConcurrentOpens - state.positions.length);
 
   for (const row of watchlist) {
     rolling.push(row.mint, nowMs, row.priceUsd);
-    const hi = row.high15mUsd;
+    const rollHi = rolling.high15m(row.mint);
+    const refHigh = Math.max(row.high15mUsd, rollHi ?? 0, row.priceUsd);
     const currentDumpPct =
-      hi > 0 && row.priceUsd > 0 ? ((hi - row.priceUsd) / hi) * 100 : null;
+      refHigh > 0 && row.priceUsd > 0 ? ((refHigh - row.priceUsd) / refHigh) * 100 : null;
     if (currentDumpPct == null) continue;
 
     const pos = findPosition(state, row.mint);
@@ -150,7 +153,11 @@ async function evaluateEntries(
       if (!row.pairAddress) continue;
       if (isLossCooldownActive(state, row.mint, nowMs)) continue;
       if (!inBand(currentDumpPct, cfg.dumpMinPct, cfg.dumpMaxPct)) continue;
-      if (row.low15mTs > 0 && nowMs - row.low15mTs > cfg.dumpFreshnessMs) continue;
+
+      if (!row.livePriceTs) {
+        const signalFreshTs = row.low15mTs ?? row.snapshotTs;
+        if (signalFreshTs > 0 && nowMs - signalFreshTs > cfg.dumpFreshnessMs) continue;
+      }
 
       dumpBandCount++;
 
@@ -220,7 +227,7 @@ async function evaluateEntries(
     });
     writeComboState(cfg, state);
   }
-  return { dumpBandCount, probeReadyCount };
+  return { dumpBandCount, probeReadyCount, slotsFree };
 }
 
 export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<void> {
@@ -251,6 +258,8 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
       mcap: `${cfg.minMarketCapUsd}-${cfg.maxMarketCapUsd}`,
     },
     watchlistMax: cfg.watchlistMax,
+    watchlistPgLookbackMin: cfg.watchlistPgLookbackMin,
+    watchlistRpcRefresh: cfg.watchlistRpcRefreshEnabled,
     maxConcurrentOpens: cfg.maxConcurrentOpens,
   });
 
@@ -278,6 +287,7 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
           watchlistSize: watchlist.length,
           dumpBandCount: scan.dumpBandCount,
           probeReadyCount: scan.probeReadyCount,
+          slotsFree: scan.slotsFree,
           realizedPnlUsd: snap.realizedPnlUsd,
           unrealizedPnlUsd: snap.unrealizedPnlUsd,
           totalPnlUsd: snap.totalPnlUsd,
@@ -285,7 +295,7 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
           solUsd: getSolUsd(),
         });
         console.log(
-          `[pumpswap-combo] heartbeat open=${snap.openCount} wl=${watchlist.length} dump=${scan.dumpBandCount} probe=${scan.probeReadyCount} pnl=$${snap.totalPnlUsd.toFixed(2)} halted=${snap.halted}`,
+          `[pumpswap-combo] heartbeat open=${snap.openCount} wl=${watchlist.length} dump=${scan.dumpBandCount} probe=${scan.probeReadyCount} slots=${scan.slotsFree} pnl=$${snap.totalPnlUsd.toFixed(2)} halted=${snap.halted}`,
         );
       }
     } catch (err) {
