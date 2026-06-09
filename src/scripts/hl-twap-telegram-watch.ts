@@ -99,7 +99,10 @@ import {
   scheduleLiveTrade,
   closeLiveTrade,
 } from '../hyperliquid/twap/live/live-trader.js';
-import { loadLiveOpensFromJournal } from '../hyperliquid/twap/live/journal.js';
+import {
+  loadLiveOpensFromJournal,
+  loadPendingLiveSchedules,
+} from '../hyperliquid/twap/live/journal.js';
 import { resolveUserTwapRating, type UserTwapRating } from '../hyperliquid/twap/user-rating.js';
 import type { HypurrscanTwapRow, NormalizedTwapSignal, TwapSide } from '../hyperliquid/twap/types.js';
 import { refreshBtcContext } from '../papertrader/pricing.js';
@@ -118,7 +121,41 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v === 'yes';
 }
 
+function writeLastFatal(err: unknown): void {
+  try {
+    fs.mkdirSync(path.dirname(LAST_FATAL_PATH), { recursive: true });
+    const message = err instanceof Error ? err.stack || err.message : String(err);
+    fs.writeFileSync(
+      LAST_FATAL_PATH,
+      `${JSON.stringify({
+        ts: Date.now(),
+        source: 'hl-twap-telegram-watch',
+        message: message.slice(0, 2000),
+      })}\n`,
+      'utf8',
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function fatalExit(err: unknown, label: string): never {
+  console.error(`[hl-twap-telegram-watch] ${label}`, err);
+  writeLastFatal(err);
+  process.exit(1);
+}
+
+process.on('uncaughtException', (err) => fatalExit(err, 'uncaughtException'));
+process.on('unhandledRejection', (err) => fatalExit(err, 'unhandledRejection'));
+
 const POLL_MS = Math.max(2000, envNum('HL_TWAP_POLL_INTERVAL_MS', 2000));
+const HEARTBEAT_MS = Math.max(15_000, envNum('HL_TWAP_HEARTBEAT_MS', 60_000));
+const HEARTBEAT_PATH =
+  process.env.HL_TWAP_HEARTBEAT_PATH?.trim() ||
+  path.join(process.cwd(), 'data/hl-twap/heartbeat.json');
+const LAST_FATAL_PATH =
+  process.env.HL_TWAP_LAST_FATAL_PATH?.trim() ||
+  path.join(process.cwd(), 'data/hl-twap/last-fatal.json');
 const META_REFRESH_MS = Math.max(30_000, envNum('HL_TWAP_META_REFRESH_MS', 120_000));
 const MIN_IMPACT_PCT_HOUR = minImpactPctHour();
 const BUY_ONLY = envBool('HL_TWAP_BUY_ONLY', false);
@@ -418,6 +455,34 @@ async function main(): Promise<void> {
   );
   console.log(`[hl-twap-telegram-watch] seeded ${seeded} active TWAP(s) (no retro alerts)`);
 
+  const emitHeartbeat = (): void => {
+    const livePath = LIVE_CFG.journalPath;
+    const pendingLive = loadPendingLiveSchedules(livePath).size;
+    const liveOpens = loadLiveOpensFromJournal(livePath).size;
+    const activeTwaps = watchState.activeByHash.size;
+    const ts = Date.now();
+    console.log(
+      `[hl-twap-telegram-watch] heartbeat active_twaps=${activeTwaps} pending_live=${pendingLive} live_opens=${liveOpens}`,
+    );
+    try {
+      fs.mkdirSync(path.dirname(HEARTBEAT_PATH), { recursive: true });
+      fs.writeFileSync(
+        HEARTBEAT_PATH,
+        `${JSON.stringify({
+          ts,
+          active_twaps: activeTwaps,
+          pending_live: pendingLive,
+          live_opens: liveOpens,
+        })}\n`,
+        'utf8',
+      );
+    } catch (e) {
+      console.warn('[hl-twap-telegram-watch] heartbeat write failed', String(e));
+    }
+  };
+  emitHeartbeat();
+  setInterval(emitHeartbeat, HEARTBEAT_MS);
+
   const loop = async (): Promise<void> => {
     if (Date.now() - cacheAt >= META_REFRESH_MS) {
       try {
@@ -438,7 +503,4 @@ async function main(): Promise<void> {
   await loop();
 }
 
-main().catch((e) => {
-  console.error('[hl-twap-telegram-watch] fatal', e);
-  process.exit(1);
-});
+main().catch((e) => fatalExit(e, 'fatal'));

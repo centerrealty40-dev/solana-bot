@@ -20,6 +20,23 @@ const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
 /** Pullback + retrace (блоки 1–2–3) — отдельный бот, общий dips-канал. */
 const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
+/** HL TWAP live + paper — paths on VPS (secrets in `.env`). */
+const HL_TWAP_DATA_DIR = path.join(root, 'data/hl-twap');
+const HL_TWAP_LIVE_ENV = {
+  NODE_ENV: 'production',
+  HL_TWAP_LIVE_ENABLED: '1',
+  HL_TWAP_PAPER_ENABLED: '1',
+  HL_TWAP_LIVE_JSONL: path.join(HL_TWAP_DATA_DIR, 'live.jsonl'),
+  HL_TWAP_AUDIT_JSONL: path.join(HL_TWAP_DATA_DIR, 'signals.jsonl'),
+  HL_TWAP_HEARTBEAT_PATH: path.join(HL_TWAP_DATA_DIR, 'heartbeat.json'),
+  HL_TWAP_POLL_INTERVAL_MS: '2000',
+  HL_TWAP_HEARTBEAT_MS: '60000',
+  HL_TWAP_LIVE_DYNAMIC_MARGIN: '1',
+  HL_TWAP_COIN_MOMENTUM_GATE: '1',
+  HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK: '1',
+  HL_TWAP_BTC_ALIGNED_GATE: '1',
+};
+
 /**
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
@@ -1225,6 +1242,58 @@ const PM2_APPS = [
         RETRACE_ALERT_DISPLAY_TZ: 'Europe/Moscow',
         RETRACE_ALERT_CANONICAL_POOL_BY_MAX_LIQ: '1',
         RETRACE_ALERT_DRY_RUN: '0',
+      },
+    },
+    /**
+     * HL TWAP whale watch + live perp bot. Прямой tsx (не npm) — стабильный autorestart PM2.
+     * Секреты HL_TWAP_* / HL_TWAP_LIVE_PRIVATE_KEY — в `.env` хоста.
+     */
+    {
+      name: 'hl-twap-telegram-watch',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/hl-twap-telegram-watch.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 100,
+      min_uptime: 10_000,
+      restart_delay: 5000,
+      max_memory_restart: '512M',
+      kill_timeout: 15_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...HL_TWAP_LIVE_ENV,
+      },
+    },
+    /**
+     * HL TWAP watchdog: PM2 status + heartbeat.json + auto-restart + [ALERT][hl_twap_watch].
+     */
+    {
+      name: 'hl-twap-process-watch',
+      cwd: root,
+      script: 'scripts-tmp/hl-twap-process-watch.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '80M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        HL_TWAP_WATCH_PM2_APP: 'hl-twap-telegram-watch',
+        HL_TWAP_WATCH_POLL_MS: '30000',
+        HL_TWAP_WATCH_HEARTBEAT_PATH: path.join(HL_TWAP_DATA_DIR, 'heartbeat.json'),
+        HL_TWAP_WATCH_HEARTBEAT_MAX_STALE_MS: '300000',
+        HL_TWAP_WATCH_AUTO_RESTART: '1',
+        HL_TWAP_WATCH_TELEGRAM: '1',
+        HL_TWAP_WATCH_ALERT_REPEAT_MIN: '15',
       },
     },
     /**
