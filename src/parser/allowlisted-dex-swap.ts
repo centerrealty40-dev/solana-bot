@@ -365,9 +365,10 @@ export function extractPumpSwapPoolFromTx(tx: TxJsonParsed): string | null {
       if (typeof o.programId === 'string') pid = o.programId;
       else if (typeof o.programIdIndex === 'number') pid = keys[o.programIdIndex];
       if (pid !== PUMP_SWAP_AMM_PROGRAM_ID) continue;
-      const accIdx = o.accounts as number[] | undefined;
-      if (!Array.isArray(accIdx) || accIdx.length === 0) continue;
-      const pool = keys[accIdx[0]!];
+      const acc = o.accounts as number[] | string[] | undefined;
+      if (!Array.isArray(acc) || acc.length === 0) continue;
+      const first = acc[0];
+      const pool = typeof first === 'string' ? first : keys[first!];
       if (pool) return pool;
     }
     return null;

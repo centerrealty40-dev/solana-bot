@@ -1,19 +1,19 @@
 import { PublicKey } from '@solana/web3.js';
 import { canonicalPumpPoolPda } from '@pump-fun/pump-swap-sdk';
 import { fetchMintPoolAddress } from './watchlist.js';
-import { isWsolQuotedPool, loadPumpSwapState } from './pumpswap-direct.js';
+import { isTradablePumpPool, loadPumpSwapState } from './pumpswap-direct.js';
 
 /** Read-only PumpSwap state probe user (no signing). */
 const POOL_PROBE_USER = new PublicKey('11111111111111111111111111111111');
 
-export async function verifyWsolPumpPool(rpcUrl: string, poolAddress: string): Promise<boolean> {
+export async function verifyTradablePumpPool(rpcUrl: string, poolAddress: string): Promise<boolean> {
   try {
     const state = await loadPumpSwapState({
       rpcUrl,
       poolAddress,
       user: POOL_PROBE_USER,
     });
-    return isWsolQuotedPool(state);
+    return isTradablePumpPool(state);
   } catch {
     return false;
   }
@@ -44,7 +44,7 @@ export async function resolveMintPumpPool(
   for (const addr of candidates) {
     if (seen.has(addr)) continue;
     seen.add(addr);
-    if (await verifyWsolPumpPool(rpcUrl, addr)) return addr;
+    if (await verifyTradablePumpPool(rpcUrl, addr)) return addr;
   }
   return null;
 }

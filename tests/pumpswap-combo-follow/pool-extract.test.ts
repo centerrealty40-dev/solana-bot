@@ -55,6 +55,24 @@ describe('extractPumpSwapPoolFromTx', () => {
     expect(extractPumpSwapPoolFromTx(tx)).toBe(POOL);
   });
 
+  it('reads pool from PumpSwap instruction with string account keys', () => {
+    const pool = '8joL92GpGiuya3Vv5TMtQzzaMWBMVsPzBUUveTP4o8KU';
+    const tx = {
+      transaction: {
+        message: {
+          accountKeys: [],
+          instructions: [
+            {
+              programId: PUMP_SWAP_AMM_PROGRAM_ID,
+              accounts: [pool, 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN'],
+            },
+          ],
+        },
+      },
+    } as unknown as import('../../src/parser/rpc-http.js').TxJsonParsed;
+    expect(extractPumpSwapPoolFromTx(tx)).toBe(pool);
+  });
+
   it('returns null when PumpSwap program not invoked', () => {
     const tx = mockPumpSwapBuyTx();
     (tx.transaction!.message as { instructions: unknown[] }).instructions = [

@@ -1,6 +1,6 @@
 import type { TxJsonParsed } from '../parser/rpc-http.js';
 import { extractPumpSwapPoolFromTx } from '../parser/allowlisted-dex-swap.js';
-import { resolveMintPumpPool, verifyWsolPumpPool } from '../pumpswap-combo/pool-resolve.js';
+import { resolveMintPumpPool, verifyTradablePumpPool } from '../pumpswap-combo/pool-resolve.js';
 import { fetchMintPoolAddress } from '../pumpswap-combo/watchlist.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 
@@ -30,7 +30,7 @@ async function sourceForPool(
   }
   const pg = await fetchMintPoolAddress(mint);
   if (pg === pool) return 'pg_snapshot';
-  if (await verifyWsolPumpPool(cfg.rpcUrl, pool)) return 'canonical_pda';
+  if (await verifyTradablePumpPool(cfg.rpcUrl, pool)) return 'canonical_pda';
   return 'none';
 }
 

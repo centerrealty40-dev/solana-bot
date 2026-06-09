@@ -14,6 +14,7 @@ import {
   sellBaseInput as calcSellBaseInput,
 } from '@pump-fun/pump-swap-sdk';
 import { NATIVE_MINT } from '@solana/spl-token';
+import { QUOTE_MINTS } from '../core/constants.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import type { SwapSolanaState } from '@pump-fun/pump-swap-sdk';
 
@@ -35,6 +36,15 @@ export function slippagePctFromBps(bps: number): number {
 
 export function isWsolQuotedPool(state: SwapSolanaState): boolean {
   return state.pool.quoteMint.equals(NATIVE_MINT);
+}
+
+export function isUsdcQuotedPool(state: SwapSolanaState): boolean {
+  return state.pool.quoteMint.toBase58() === QUOTE_MINTS.USDC;
+}
+
+/** Pools the direct PumpSwap executor can buy/sell (WSOL or USDC quote). */
+export function isTradablePumpPool(state: SwapSolanaState): boolean {
+  return isWsolQuotedPool(state) || isUsdcQuotedPool(state);
 }
 
 export async function loadPumpSwapState(args: {
@@ -60,7 +70,7 @@ export async function quotePumpSwapExitPriceUsd(args: {
       poolAddress: args.poolAddress,
       user: args.user,
     });
-    if (!isWsolQuotedPool(state)) return { priceUsd: null, decimals: 6 };
+    if (!isTradablePumpPool(state)) return { priceUsd: null, decimals: 6 };
     const { uiQuote } = calcSellBaseInput({
       base: new BN(args.tokenRaw.toString()),
       slippage: 0,
@@ -73,12 +83,13 @@ export async function quotePumpSwapExitPriceUsd(args: {
       creator: state.pool.creator,
       feeConfig: state.feeConfig,
     });
-    const solUsd = getSolUsd();
     const decimals = state.baseMintAccount.decimals;
-    if (!(solUsd > 0)) return { priceUsd: null, decimals };
     const tokens = Number(args.tokenRaw) / 10 ** decimals;
     if (!(tokens > 0)) return { priceUsd: null, decimals };
-    const proceedsUsd = (uiQuote.toNumber() / 1e9) * solUsd;
+    const proceedsUsd = isUsdcQuotedPool(state)
+      ? uiQuote.toNumber() / 1e6
+      : (uiQuote.toNumber() / 1e9) * (getSolUsd() || 0);
+    if (!(proceedsUsd > 0)) return { priceUsd: null, decimals };
     return { priceUsd: proceedsUsd / tokens, decimals };
   } catch {
     return { priceUsd: null, decimals: 6 };
@@ -118,22 +129,30 @@ export async function buildPumpSwapBuyTx(args: {
   legUsd: number;
   slippageBps: number;
 }): Promise<{ swapIxs: TransactionInstruction[]; quoteLamports: BN; decimals: number; solUsd: number } | null> {
-  const solUsd = getSolUsd();
-  if (!(solUsd > 0) || !(args.legUsd > 0)) return null;
-
-  const quoteLamports = quoteLamportsForLegUsd(args.legUsd);
-  if (!quoteLamports || quoteLamports.lte(new BN(0))) return null;
+  if (!(args.legUsd > 0)) return null;
 
   const state = await loadPumpSwapState({
     rpcUrl: args.rpcUrl,
     poolAddress: args.poolAddress,
     user: args.payer.publicKey,
   });
-  if (!isWsolQuotedPool(state)) return null;
+  if (!isTradablePumpPool(state)) return null;
 
+  const solUsd = getSolUsd();
   const slippage = slippagePctFromBps(args.slippageBps);
-  const swapIxs = await PUMP_AMM_SDK.buyQuoteInput(state, quoteLamports, slippage);
-  return { swapIxs, quoteLamports, decimals: state.baseMintAccount.decimals, solUsd };
+  const quoteAmount = isUsdcQuotedPool(state)
+    ? quoteUsdcMicroForLegUsd(args.legUsd)
+    : quoteLamportsForLegUsd(args.legUsd);
+  if (!quoteAmount || quoteAmount.lte(new BN(0))) return null;
+  if (!isUsdcQuotedPool(state) && !(solUsd > 0)) return null;
+
+  const swapIxs = await PUMP_AMM_SDK.buyQuoteInput(state, quoteAmount, slippage);
+  return {
+    swapIxs,
+    quoteLamports: quoteAmount,
+    decimals: state.baseMintAccount.decimals,
+    solUsd: solUsd || 0,
+  };
 }
 
 export async function buildPumpSwapSellTx(args: {
@@ -151,7 +170,7 @@ export async function buildPumpSwapSellTx(args: {
     poolAddress: args.poolAddress,
     user: args.payer.publicKey,
   });
-  if (!isWsolQuotedPool(state)) return null;
+  if (!isTradablePumpPool(state)) return null;
 
   const slippage = slippagePctFromBps(args.slippageBps);
   const swapIxs = await PUMP_AMM_SDK.sellBaseInput(state, baseAmount, slippage);
@@ -187,6 +206,14 @@ export function fillPriceUsdFromTokenDelta(args: {
   return args.legUsd / tokens;
 }
 
+/** USDC micro-units (6 dp) for a USD leg. */
+export function quoteUsdcMicroForLegUsd(legUsd: number): BN | null {
+  if (!(legUsd > 0)) return null;
+  const micro = Math.floor(legUsd * 1e6);
+  if (micro <= 0) return null;
+  return new BN(micro);
+}
+
 /** Lamports of WSOL quote for a USD leg at current getSolUsd(). */
 export function quoteLamportsForLegUsd(legUsd: number): BN | null {
   const solUsd = getSolUsd();
@@ -207,17 +234,17 @@ export async function quotePumpSwapSpotPriceUsd(args: {
       poolAddress: args.poolAddress,
       user: POOL_PROBE_USER,
     });
-    if (!isWsolQuotedPool(state)) return null;
+    if (!isTradablePumpPool(state)) return null;
     const solUsd = getSolUsd();
-    if (!(solUsd > 0)) return null;
     const baseRaw = state.poolBaseAmount.toNumber();
     const quoteRaw = state.poolQuoteAmount.toNumber();
     if (!(baseRaw > 0) || !(quoteRaw > 0)) return null;
     const decimals = state.baseMintAccount.decimals;
     const tokens = baseRaw / 10 ** decimals;
-    const sol = quoteRaw / 1e9;
-    if (!(tokens > 0) || !(sol > 0)) return null;
-    return (sol / tokens) * solUsd;
+    if (!(tokens > 0)) return null;
+    const quoteUsd = isUsdcQuotedPool(state) ? quoteRaw / 1e6 : (quoteRaw / 1e9) * (solUsd || 0);
+    if (!(quoteUsd > 0)) return null;
+    return quoteUsd / tokens;
   } catch {
     return null;
   }
