@@ -19,8 +19,10 @@ export type HlTwapLiveConfig = {
   slippageTolerance: number;
   /** Default cross leverage for new positions. */
   leverage: number;
-  /** Exit TWAP slices (0/1 = instant flatten). Default 10. */
-  exitSlices: number;
+  /** Exit TWAP slices for shorts (0/1 = instant flatten). Default 10. */
+  exitSlicesShort: number;
+  /** Exit TWAP slices for longs (0/1 = instant). Default 3 (backtest: faster than 10 on longs). */
+  exitSlicesLong: number;
   /** Ms between exit slices (default 30s, aligned with HL TWAP child orders). */
   exitSliceIntervalMs: number;
   journalPath: string;
@@ -58,7 +60,11 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),
     slippageTolerance: Math.max(0.001, envNum('HL_TWAP_LIVE_SLIPPAGE_TOLERANCE', 0.01)),
     leverage: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_LEVERAGE', 7))),
-    exitSlices: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES', 10))),
+    exitSlicesShort: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES', 10))),
+    exitSlicesLong: Math.max(
+      0,
+      Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES_LONG', envNum('HL_TWAP_LIVE_EXIT_SLICES_BUY', 3))),
+    ),
     exitSliceIntervalMs: defaultExitSliceIntervalMs(),
     journalPath:
       process.env.HL_TWAP_LIVE_JSONL?.trim() ||

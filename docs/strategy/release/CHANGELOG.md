@@ -20,6 +20,95 @@
 
 ---
 
+---
+
+---
+
+---
+
+## [1.11.369] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.369`
+
+### PumpSwap Combo #2 follow (paper) + dashboard tile
+
+- **`pumpswap-combo-follow`**: mirror **hnu5** buys/DCA; ladder exits 2% ahead of leader; paper mode with pool-quote marks (no wallet).
+- **PM2** `pumpswap-combo-follow-paper` in `ecosystem.config.cjs`.
+- **Dashboard** `/papertrader2`: плитка 4 `pumpswap-combo-follow-paper` (journal `data/pumpswap-combo-follow/paper-journal.jsonl`).
+
+**Откат:** `git checkout sa-alpha-1.11.368 -- src/pumpswap-combo-follow/ src/scripts/pumpswap-combo-follow-bot.ts tests/pumpswap-combo-follow/ scripts-tmp/pumpswap-combo-follow-dashboard.ts scripts-tmp/pumpswap-combo-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs`; `pm2 delete pumpswap-combo-follow-paper`; `pm2 reload live-oscar-dashboard ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.368] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.368`
+
+### HL TWAP: short lane (<15m) + instant exit before last slice
+
+- **Short TWAP lane** (1–14m, `HL_TWAP_SHORT_ENABLED=1`): separate schedule + instant flatten at whale slice boundary before last 30s child order.
+- Standard lane unchanged (≥16m, chunked exit long 3 / short 10).
+
+**Откат:** `git checkout sa-alpha-1.11.367 -- src/hyperliquid/twap/`; `HL_TWAP_SHORT_ENABLED=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.367] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.367`
+
+### HL TWAP live: side-aware exit slices
+
+- **Long** exits: **3 slices** (`HL_TWAP_LIVE_EXIT_SLICES_LONG`, default 3) — faster than 10× backtest on long book.
+- **Short** exits: **10 slices** unchanged (`HL_TWAP_LIVE_EXIT_SLICES=10`).
+
+**Откат:** `git checkout sa-alpha-1.11.366 -- src/hyperliquid/twap/live/ src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-chunked-exit.test.ts`; unset `HL_TWAP_LIVE_EXIT_SLICES_LONG`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.366] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.366`
+
+### PumpSwap Combo: hnu5 shadow universe + wider watchlist
+
+- **Watchlist 100** (was 30): top PG vol5m + priority inject from reference wallet recent PumpSwap buys.
+- **Shadow lane** (`PUMPSWAP_COMBO_SHADOW_WALLET=hnu5…`): poll signatures ~45s, co-trade entry skips dump-band/freshness for mints hnu5 bought in last 20m (PG filters + probe dip cap remain).
+- **`maxConcurrentOpens=8`**: parallel mints like reference bot (was unlimited serial funnel).
+
+**Откат:** `git checkout sa-alpha-1.11.365 -- src/pumpswap-combo/ ecosystem.config.cjs docs/strategy/release/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.365] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.365`
+
+### PumpSwap Combo: live SOL/USD oracle + chain fill accounting
+
+- **`ensureComboSolUsd()`** before boot, each tick, and every buy — fixes undersized legs when Jupiter SOL price ≠ stale $100 default (few tokens for nominal $3).
+- **Buy fill from chain:** journal `solSpent`, `solUsdAtFill`, `usdAtMarket`, `tokensReceived`; state leg `usd` = actual USD at fill, not config fiction.
+- **`fillPriceUsd`** = `(solSpent × solUsd) / tokens` — matches AMM sell mark basis.
+
+**Откат:** `git checkout sa-alpha-1.11.364 -- src/pumpswap-combo/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.364] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.364`
+
+### PumpSwap Combo: restore module + live dump entry fix
+
+- Re-add `src/pumpswap-combo/` (direct PumpSwap AMM executor, WSOL pools, local Connection sim + skipPreflight) on top of 1.11.363 copy-trader.
+- **Entry signal:** probe uses **current dump** `(high_15m − price_now) / high_15m`, not stale max drawdown `(high − low) / high` — fixes bounce buys (e.g. 3KHMZh).
+- **Freshness gate:** window low must be ≤ `PUMPSWAP_COMBO_DUMP_FRESHNESS_MS` (default 3m) old.
+- PM2 `pumpswap-combo-bot` in ecosystem; deploy script `scripts/ops/pumpswap-combo-deploy.sh` (code only); go-live clears manual halt.
+
+**Откат:** `git checkout sa-alpha-1.11.363 -- src/pumpswap-combo/ ecosystem.config.cjs package.json package-lock.json scripts/ops/pumpswap-combo-*.sh docs/strategy/release/`; `npm install`; `pm2 stop pumpswap-combo-bot`.
+
+---
+
 ## [1.11.363] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.363`

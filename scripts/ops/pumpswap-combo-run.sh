@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# pumpswap-combo — live $3 legs, isolated from live-oscar / copy-trader.
+set -euo pipefail
+ROOT="${SOLANA_ALPHA_ROOT:-/opt/solana-alpha}"
+cd "$ROOT"
+set -a
+# shellcheck disable=SC1091
+source ./.env
+set +a
+
+export NODE_ENV=production
+export PUMPSWAP_COMBO_STRATEGY_ID=pumpswap-combo
+export PUMPSWAP_COMBO_JOURNAL_PATH="$ROOT/data/pumpswap-combo/journal.jsonl"
+export PUMPSWAP_COMBO_STATE_PATH="$ROOT/data/pumpswap-combo/state.json"
+export PUMPSWAP_COMBO_WALLET_SECRET="$ROOT/data/pumpswap-combo/wallet.keypair.json"
+export PUMPSWAP_COMBO_WALLET_PUBKEY="${PUMPSWAP_COMBO_WALLET_PUBKEY:-FLmdN27ovXDwjNJuZPWvu3XwM4nPfU4Apr971Q4Rk13p}"
+export PUMPSWAP_COMBO_LEG_USD=3
+export PUMPSWAP_COMBO_PORTFOLIO_STOP_LOSS_USD=50
+export PUMPSWAP_COMBO_LOSS_COOLDOWN_MS=600000
+export PUMPSWAP_COMBO_LOSS_ALERT_USD=5
+export PUMPSWAP_COMBO_POLL_MS=5000
+export PUMPSWAP_COMBO_WATCHLIST_MAX=30
+export PUMPSWAP_COMBO_MIN_LIQ_USD=35000
+export PUMPSWAP_COMBO_MIN_VOL_5M_USD=2500
+export PUMPSWAP_COMBO_MIN_MCAP_USD=100000
+export PUMPSWAP_COMBO_MAX_MCAP_USD=3000000
+export PUMPSWAP_COMBO_DUMP_MIN_PCT=5
+export PUMPSWAP_COMBO_DUMP_MAX_PCT=22
+export PUMPSWAP_COMBO_PROBE_MAX_DIP_PCT=5
+export PUMPSWAP_COMBO_ADD_DIP_MIN_PCT=25
+export PUMPSWAP_COMBO_ADD_DIP_MAX_PCT=32
+export PUMPSWAP_COMBO_MAX_BUY_LEGS=3
+export PUMPSWAP_COMBO_TP1_PCT=13
+export PUMPSWAP_COMBO_TP1_SELL_FRAC=0.70
+export PUMPSWAP_COMBO_TP2_PCT=25
+export PUMPSWAP_COMBO_SL_SINGLE_PCT=20
+export PUMPSWAP_COMBO_SL_MULTI_PCT=22
+export PUMPSWAP_COMBO_SLIPPAGE_BPS=300
+export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+export TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:--1003878024799}"
+
+exec node node_modules/tsx/dist/cli.mjs src/scripts/pumpswap-combo-bot.ts

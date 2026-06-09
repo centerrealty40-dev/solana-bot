@@ -1,0 +1,48 @@
+import { fetchLiveWalletSplBalancesByMint } from '../live/reconcile-live.js';
+import type { LiveOscarConfig } from '../live/config.js';
+import { loadLiveKeypairFromSecretEnv } from '../live/wallet.js';
+import type { ComboPosition } from './types.js';
+import { avgFillPrice } from './state.js';
+import { fetchMintPoolAddress } from './watchlist.js';
+import { quotePumpSwapExitPriceUsd } from './pumpswap-direct.js';
+
+/** Mark price для SL/TP — direct PumpSwap sell quote на текущий баланс, не Jupiter/PG. */
+export async function quoteExitPriceUsd(
+  liveCfg: LiveOscarConfig,
+  mint: string,
+  poolAddress?: string,
+): Promise<{ priceUsd: number | null; tokenRaw: bigint }> {
+  const secret = liveCfg.walletSecret?.trim();
+  if (!secret) return { priceUsd: null, tokenRaw: 0n };
+  const pk = loadLiveKeypairFromSecretEnv(secret).publicKey;
+  const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+  const raw = chainMap?.get(mint) ?? 0n;
+  if (raw <= 0n) return { priceUsd: null, tokenRaw: 0n };
+
+  const pool = poolAddress?.trim() || (await fetchMintPoolAddress(mint));
+  if (!pool) return { priceUsd: null, tokenRaw: raw };
+
+  const rpcUrl = liveCfg.liveRpcHttpUrl?.trim();
+  if (!rpcUrl) return { priceUsd: null, tokenRaw: raw };
+
+  const q = await quotePumpSwapExitPriceUsd({
+    rpcUrl,
+    poolAddress: pool,
+    tokenRaw: raw,
+    user: pk,
+  });
+  return { priceUsd: q.priceUsd, tokenRaw: raw };
+}
+
+export function pnlPctVsAvgFill(pos: ComboPosition, markPriceUsd: number): number {
+  const avg = avgFillPrice(pos);
+  if (!(avg > 0) || !(markPriceUsd > 0)) return 0;
+  return (markPriceUsd / avg - 1) * 100;
+}
+
+export function slPctForPosition(
+  cfg: { slSingleLegPct: number; slMultiLegPct: number },
+  pos: ComboPosition,
+): number {
+  return pos.legs.length <= 1 ? cfg.slSingleLegPct : cfg.slMultiLegPct;
+}
