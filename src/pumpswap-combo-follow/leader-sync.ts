@@ -25,6 +25,7 @@ import {
   writeFollowState,
   type FollowState,
 } from './state.js';
+import { initFollowWaveBState } from './follow-wave-b-state.js';
 import type { PendingFollowBuy } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -81,7 +82,7 @@ function scheduleFollowBuy(
     buyDueTs: dueTs,
     buyDelayMs: cfg.buyDelayMs,
     retryUntilTs: pending.retryUntilTs,
-    sizeUsd: cfg.legUsd,
+    sizeUsd: cfg.entryUsd,
     targetWallet: cfg.targetWallet,
     poolAddress: args.poolAddress ?? null,
   });
@@ -112,6 +113,16 @@ async function onLeaderBuy(
   const existing = findFollowPosition(state, mint);
 
   if (existing) {
+    if (cfg.exitPolicy === 'oscar_wave_b' && !cfg.mirrorLeaderAdds) {
+      appendFollowEvent(cfg, {
+        kind: 'leader_add_ignored',
+        reason: 'oscar_price_dca_only',
+        mint,
+        leaderSignature: row.signature,
+        note: 'DCA at -10/-20 vs first leg, not leader mirror',
+      });
+      return;
+    }
     if (existing.legs.length >= cfg.maxBuyLegs) {
       appendFollowEvent(cfg, {
         kind: 'leader_add_ignored',
@@ -240,9 +251,9 @@ async function executePendingBuy(
       poolAddress: pool,
       user: probeUser,
     });
-    if (isUsdcQuotedPool(poolState)) {
-      await ensureFollowUsdcForBuy(cfg, cfg.legUsd);
-    }
+      if (isUsdcQuotedPool(poolState)) {
+        await ensureFollowUsdcForBuy(cfg, cfg.entryUsd);
+      }
   } catch {
     /* pool probe failed — buy path will surface error */
   }
@@ -257,6 +268,7 @@ async function executePendingBuy(
     leaderPriceUsd: pending.leaderPriceUsd,
     intent: pending.kind === 'add' ? 'add' : 'probe',
     leaderSignature: pending.leaderSignature,
+    buyUsd: cfg.entryUsd,
   });
 
   if (!buy.ok || !(buy.fillPriceUsd && buy.fillPriceUsd > 0)) {
@@ -279,9 +291,10 @@ async function executePendingBuy(
 
   const leg = {
     ts: nowMs,
-    usd: buy.usdAtMarket ?? cfg.legUsd,
+    usd: buy.usdAtMarket ?? cfg.entryUsd,
     fillPriceUsd: buy.fillPriceUsd,
     txSignature: buy.txSignature,
+    kind: pending.kind === 'add' ? ('mirror_add' as const) : ('entry' as const),
   };
 
   const timingFields = {
@@ -328,6 +341,7 @@ async function executePendingBuy(
       rungsTaken: [],
       leaderWallet: cfg.targetWallet,
       remainingFrac: 1,
+      waveB: cfg.exitPolicy === 'oscar_wave_b' ? initFollowWaveBState() : undefined,
     });
     if (cfg.executionMode === 'paper') {
       appendFollowEvent(cfg, {

@@ -2,8 +2,9 @@ import type { PumpswapComboConfig } from './config.js';
 import type { ComboState } from './state.js';
 import type { ComboPosition } from './types.js';
 import { investedUsd } from './state.js';
-import { quoteExitPriceUsd, pnlPctVsAvgFill } from './pricing.js';
+import { pnlPctVsAvgFill, quoteExitPriceUsd, quoteExitPriceUsdCached } from './pricing.js';
 import { comboLiveBridge } from './live-bridge.js';
+import type { ComboExitMarkCache } from './exit-marks.js';
 
 export type PortfolioSnap = {
   realizedPnlUsd: number;
@@ -13,21 +14,26 @@ export type PortfolioSnap = {
   halted: boolean;
 };
 
-export async function portfolioSnapshot(cfg: PumpswapComboConfig, state: ComboState): Promise<PortfolioSnap> {
+export async function portfolioSnapshot(
+  cfg: PumpswapComboConfig,
+  state: ComboState,
+  balances?: Map<string, bigint> | null,
+  exitMarks?: ComboExitMarkCache,
+): Promise<PortfolioSnap> {
   const liveCfg = comboLiveBridge(cfg);
   let unrealized = 0;
   for (const p of state.positions) {
-    const q = await quoteExitPriceUsd(liveCfg, p.mint, p.poolAddress);
+    const q = exitMarks
+      ? await quoteExitPriceUsdCached(cfg, liveCfg, p, balances ?? null, exitMarks)
+      : await quoteExitPriceUsd(liveCfg, p.mint, p.poolAddress);
     if (q.priceUsd == null) continue;
     const inv = investedUsd(p);
-    const pct = pnlPctVsAvgFill(p, q.priceUsd);
-    unrealized += inv * (pct / 100);
+    unrealized += inv * (pnlPctVsAvgFill(p, q.priceUsd) / 100);
   }
-  const total = state.realizedPnlUsd + unrealized;
   return {
     realizedPnlUsd: state.realizedPnlUsd,
     unrealizedPnlUsd: unrealized,
-    totalPnlUsd: total,
+    totalPnlUsd: state.realizedPnlUsd + unrealized,
     openCount: state.positions.length,
     halted: state.halted,
   };

@@ -12,6 +12,15 @@ import {
   type ExitLadderRungSpec,
 } from './exit-ladder.js';
 import { parseFollowSlMode, type FollowSlMode } from './exit-policy.js';
+import { parseDcaLevels, type DcaLevel } from '../papertrader/config.js';
+
+export type FollowExitPolicy = 'leader_ladder' | 'oscar_wave_b';
+
+function parseFollowExitPolicy(raw: string | undefined): FollowExitPolicy {
+  const v = raw?.trim().toLowerCase();
+  if (v === 'leader_ladder' || v === 'legacy') return 'leader_ladder';
+  return 'oscar_wave_b';
+}
 
 /** Primary reference wallet (hnu5 PumpSwap dip bot). */
 export const HNU5_TARGET_WALLET = 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN';
@@ -34,6 +43,14 @@ const ConfigSchema = z.object({
   minLeaderBuyUsd: z.coerce.number().min(0).default(20),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
+  /** Full entry notional when exitPolicy=oscar_wave_b (live Oscar PAPER_POSITION_USD). */
+  positionUsd: z.coerce.number().positive().max(2000).default(600),
+  dcaLevelsRaw: z.string().default(''),
+  dcaKillstopPct: z.coerce.number().min(0).max(90).default(50),
+  /** leader_ladder | oscar_wave_b */
+  exitPolicy: z.enum(['leader_ladder', 'oscar_wave_b']).default('oscar_wave_b'),
+  mirrorLeaderAdds: z.coerce.boolean().default(false),
+  waveBTrailSellFraction: z.coerce.number().min(0.05).max(1).default(0.2),
   maxBuyLegs: z.coerce.number().int().min(1).max(5).default(3),
   /** TP rungs fire this many % before leader thresholds. */
   exitLeadPct: z.coerce.number().min(0).max(10).default(2),
@@ -65,6 +82,9 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   exitLadder: EffectiveExitRung[];
   treasuryMinFreeSolLamports: bigint;
   slMode: FollowSlMode;
+  dcaLevels: DcaLevel[];
+  /** Entry leg USD: positionUsd (Oscar) or legUsd (legacy mirror). */
+  entryUsd: number;
 };
 
 /** Map to pumpswap-combo executor / journal (unused discovery fields filled with dummies). */
@@ -78,6 +98,14 @@ export function toComboExecutorConfig(cfg: PumpswapComboFollowConfig): PumpswapC
     rpcUrl: cfg.rpcUrl,
     pollIntervalMs: cfg.pollIntervalMs,
     heartbeatIntervalMs: cfg.heartbeatIntervalMs,
+    rpcMinGapMs: 55,
+    meteredRpcEnabled: false,
+    balanceCacheTtlMs: 10_000,
+    exitMarkTtlMs: 20_000,
+    exitMarkMaxStaleMs: 45_000,
+    exitQuotesPerTick: 2,
+    watchlistStreamPreferPg: false,
+    watchlistStreamFreshMs: 120_000,
     watchlistMax: 1,
     watchlistPgLookbackMin: 360,
     watchlistRpcRefreshEnabled: false,
@@ -96,7 +124,7 @@ export function toComboExecutorConfig(cfg: PumpswapComboFollowConfig): PumpswapC
     addDipMaxPct: 100,
     maxBuyLegs: cfg.maxBuyLegs,
     addMinGapMs: 0,
-    legUsd: cfg.legUsd,
+    legUsd: cfg.entryUsd,
     tp1Pct: first?.effectiveTpPct ?? 11,
     tp1SellFrac: first?.sellFracOfRemaining ?? 0.7,
     tp2Pct: last?.effectiveTpPct ?? 23,
@@ -146,6 +174,18 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
   const exitLadderSpec = parseExitLadderSpec(exitLadderRaw);
   const exitLadder = effectiveExitLadder(exitLadderSpec, exitLeadPct);
 
+  const exitPolicy = parseFollowExitPolicy(process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY);
+  const dcaLevelsRaw =
+    process.env.PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS?.trim() ||
+    (exitPolicy === 'oscar_wave_b' ? '-10:0.333333,-20:0.333333' : '');
+  const dcaLevels = parseDcaLevels(dcaLevelsRaw);
+  const positionUsd = Number(process.env.PUMPSWAP_COMBO_FOLLOW_POSITION_USD ?? 600);
+  const mirrorLeaderAddsRaw = process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS?.trim();
+  const mirrorLeaderAdds =
+    mirrorLeaderAddsRaw != null && mirrorLeaderAddsRaw.length > 0
+      ? mirrorLeaderAddsRaw === '1' || mirrorLeaderAddsRaw.toLowerCase() === 'true'
+      : exitPolicy === 'leader_ladder';
+
   const parsed = ConfigSchema.parse({
     executionMode,
     strategyId: process.env.PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID ?? 'pumpswap-combo-follow',
@@ -161,7 +201,15 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     minLeaderBuyUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD,
     maxOpenPositions: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN,
     legUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LEG_USD,
-    maxBuyLegs: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS,
+    positionUsd,
+    dcaLevelsRaw,
+    dcaKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT,
+    exitPolicy,
+    mirrorLeaderAdds,
+    waveBTrailSellFraction: process.env.PUMPSWAP_COMBO_FOLLOW_WAVE_B_TRAIL_SELL_FRACTION,
+    maxBuyLegs:
+      process.env.PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS ??
+      (exitPolicy === 'oscar_wave_b' ? String(1 + dcaLevels.length) : undefined),
     exitLeadPct,
     exitLadderRaw,
     slSingleLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT,
@@ -186,5 +234,14 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     Math.max(0, Math.floor(parsed.treasuryMinFreeSol * 1e9)),
   );
 
-  return { ...parsed, exitLadderSpec, exitLadder, treasuryMinFreeSolLamports };
+  const entryUsd = parsed.exitPolicy === 'oscar_wave_b' ? parsed.positionUsd : parsed.legUsd;
+
+  return {
+    ...parsed,
+    exitLadderSpec,
+    exitLadder,
+    treasuryMinFreeSolLamports,
+    dcaLevels,
+    entryUsd,
+  };
 }

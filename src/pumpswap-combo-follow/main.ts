@@ -6,6 +6,7 @@ import { ensureComboSolUsd } from '../pumpswap-combo/sol-oracle.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { checkFollowPortfolioHalt, evaluateFollowExits } from './exits.js';
+import { evaluateFollowDca } from './follow-dca.js';
 import { appendFollowEvent } from './journal.js';
 import { pollLeaderAndScheduleBuys, processPendingFollowBuys } from './leader-sync.js';
 import { rebalanceFollowTreasuryIfNeeded } from './treasury-rebalance.js';
@@ -39,7 +40,14 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     executionMode: cfg.executionMode,
     mode: 'follow_hnu5',
     targetWallet: cfg.targetWallet,
+    exitPolicy: cfg.exitPolicy,
     legUsd: cfg.legUsd,
+    entryUsd: cfg.entryUsd,
+    positionUsd: cfg.positionUsd,
+    dcaLevels: cfg.dcaLevels.map((l) => `${(l.triggerPct * 100).toFixed(0)}:${l.addFraction}`).join(','),
+    dcaKillstopPct: cfg.dcaKillstopPct,
+    mirrorLeaderAdds: cfg.mirrorLeaderAdds,
+    waveBTrailSellFraction: cfg.waveBTrailSellFraction,
     maxBuyLegs: cfg.maxBuyLegs,
     solUsd: solUsdBoot,
     portfolioStopLossUsd: cfg.portfolioStopLossUsd,
@@ -52,8 +60,13 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     treasuryUsdcMaxPct: cfg.treasuryUsdcMaxPct,
   });
 
+  const bootLine =
+    cfg.exitPolicy === 'oscar_wave_b'
+      ? `entry=$${cfg.entryUsd} dca=${cfg.dcaLevels.length} kill=-${cfg.dcaKillstopPct}% waveB`
+      : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
+
   console.log(
-    `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} leg=$${cfg.legUsd} ladder=${ladderSummary} poll=${cfg.pollIntervalMs}ms`,
+    `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} ${bootLine} poll=${cfg.pollIntervalMs}ms`,
   );
 
   if (cfg.executionMode === 'live') {
@@ -79,6 +92,9 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
           appendFollowEvent(cfg, { kind: 'poll_rpc_fail' });
         }
         await processPendingFollowBuys(cfg, fresh);
+        if (cfg.exitPolicy === 'oscar_wave_b') {
+          await evaluateFollowDca(cfg, fresh);
+        }
         await evaluateFollowExits(cfg, fresh);
       }
 

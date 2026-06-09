@@ -30,6 +30,84 @@
 
 ---
 
+---
+
+---
+
+## [1.11.380] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.380`
+
+### Follow live: параметры live Oscar (wave B + price DCA)
+
+- **`pumpswap-combo-follow`**: политика **`oscar_wave_b`** — TP-сетка wave B (+2.5% шаг, эскалация 5%/10%/…), defensive trail 20% после +10%, breakeven exit после TP ≥+7.5%.
+- **DCA по цене** −10% / −20% vs первая нога: `positionUsd × 0.333333` (~$200 при $600), **не** mirror leader add по `$3`.
+- **Killstop −50%** vs avg (`PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT=50`).
+- Mirror-adds лидера отключены (`MIRROR_LEADER_ADDS=0`); вход по сигналу лидера — **`$600`** entry.
+- Legacy `leader_ladder` сохранён за `PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY=leader_ladder`.
+
+**Откат:** `PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY=leader_ladder`, `LEG_USD=3`, `pm2 reload pumpswap-combo-follow-live --update-env`; `git checkout sa-alpha-1.11.379`.
+
+---
+
+## [1.11.379] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.379`
+
+### Agent: полчасовая сводка 429 в Telegram
+
+- **`scripts-tmp/rate-429-halfhour-report.mjs`** — каждые 30 мин `[REPORT][agent_429]` в операторский канал: счётчик HTTP 429 / rate-limit по PM2-логам + follow journal.
+- PM2: **`sa-rate-429-report`** (`RATE_429_REPORT_INTERVAL_MS=1800000`).
+- **`scripts/lib/telegram.mjs`** — `skipQuietHours` для scheduled REPORT.
+
+**Откат:** `pm2 delete sa-rate-429-report`; `git checkout sa-alpha-1.11.378`.
+
+---
+
+## [1.11.378] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.378`
+
+### PumpSwap Combo: откат stream discovery (firehose)
+
+- **Удалён** `pumpswap-combo-stream` (PM2 + `src/pumpswap-combo-stream/` + script) — WS на весь PumpSwap AMM жёг QN credits без полезных снимков.
+- Combo bot: **`WATCHLIST_STREAM_PREFER=0`**, **`WATCHLIST_RPC_REFRESH=4`** — снова PG + bounded RPC refresh.
+- Combo bot: **`QUICKNODE_NO_DAILY_CAP_ENV`** — локальный дневной потолок не блокирует buy/sell (учёт credits сохраняется).
+- QN feature `pumpswap_combo_stream` убран из `qn-feature-usage`.
+
+**Откат:** `git checkout sa-alpha-1.11.377`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.377] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.377`
+
+### QuickNode: снять клиентские лимиты (meter-only по умолчанию)
+
+- **`solana-rpc-meter`** — блокировка RPC только при `QUICKNODE_BUDGET_BLOCK=1` (+ опционально `QUICKNODE_DAILY_ENFORCE=1` / hourly / provider cache). Учёт credits и Telegram-алерты без изменений.
+- **`qn-feature-usage`** — feature monthly caps не блокируют RPC, пока явно не задан `QN_FEATURE_BUDGET_ENFORCE=1`.
+- **`ecosystem.config.cjs`** — `QUICKNODE_NO_DAILY_CAP_ENV` для live-oscar, dashboard, orch, combo-follow; follow-live/paper + `QN_FEATURE_BUDGET_DISABLED=1`.
+- **`.env.example`** — `QUICKNODE_DAILY_ENFORCE=0`, документирован `QUICKNODE_BUDGET_BLOCK`.
+
+**Откат:** `git checkout sa-alpha-1.11.376` → deploy `origin/v2` на предыдущий SHA; в `.env` можно снова включить `QUICKNODE_DAILY_ENFORCE=1` (на 1.11.376 блокировало по умолчанию).
+
+---
+
+## [1.11.376] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.376`
+
+### PumpSwap Combo #1: stream discovery + RPC burst guard (изолировано)
+
+- **`pumpswap-combo-stream`** — WS PumpSwap AMM → bounded `getTransaction` → `pumpswap_pair_snapshots`.
+- Combo bot: exit-mark cache (2/tick), batch balances, RPC gap, watchlist RPC off при fresh stream.
+- QN features `pumpswap_combo` / `pumpswap_combo_stream` — отдельно от live-oscar.
+
+**Откат:** `git checkout sa-alpha-1.11.375 -- src/pumpswap-combo/ src/pumpswap-combo-stream/ src/core/rpc/qn-feature-usage.ts ecosystem.config.cjs docs/strategy/release/`; `pm2 delete pumpswap-combo-stream`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot --update-env`.
+
+---
+
 ## [1.11.375] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.375`

@@ -23,6 +23,16 @@ const POOL_PROBE_USER = new PublicKey('11111111111111111111111111111111');
 
 let connCache: { url: string; conn: Connection } | null = null;
 
+let comboRpcHook: { beforeCall?: () => Promise<void> } | null = null;
+
+export function setComboRpcHook(hook: { beforeCall?: () => Promise<void> } | null): void {
+  comboRpcHook = hook;
+}
+
+async function beforeComboRpc(): Promise<void> {
+  await comboRpcHook?.beforeCall?.();
+}
+
 function connectionForRpc(rpcUrl: string): Connection {
   if (connCache?.url === rpcUrl) return connCache.conn;
   const conn = new Connection(rpcUrl, 'confirmed');
@@ -52,6 +62,7 @@ export async function loadPumpSwapState(args: {
   poolAddress: string;
   user: PublicKey;
 }) {
+  await beforeComboRpc();
   const conn = connectionForRpc(args.rpcUrl);
   const online = new OnlinePumpAmmSdk(conn);
   return online.swapSolanaState(new PublicKey(args.poolAddress), args.user);
@@ -111,6 +122,7 @@ async function buildSignedTxB64(args: {
     );
   }
   ixs.push(...args.instructions);
+  await beforeComboRpc();
   const { blockhash } = await args.connection.getLatestBlockhash('confirmed');
   const msg = new TransactionMessage({
     payerKey: args.payer.publicKey,

@@ -3,6 +3,7 @@ export type ComboBuyLeg = {
   usd: number;
   fillPriceUsd: number;
   txSignature?: string;
+  kind?: 'entry' | 'dca' | 'mirror_add';
 };
 
 export type ComboPosition = {
@@ -39,4 +40,5 @@ export type WatchlistRow = {
   low15mUsd: number;
   /** When low_15m was observed (ms) — freshness gate for live dump. */
   low15mTs: number;
+  snapshotSource?: string;
 };

@@ -37,6 +37,15 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
   PAPER2_SNAPSHOT_DISCOVERY_PIN_MAX: '200',
 };
 
+/**
+ * Локальный дневной потолок QN (solana-rpc-meter / provider cache) — выкл.
+ * Учёт credits в data/quicknode-usage.json остаётся; hard stop только от плана в кабинете QuickNode.
+ */
+const QUICKNODE_NO_DAILY_CAP_ENV = {
+  QUICKNODE_DAILY_ENFORCE: '0',
+  QUICKNODE_DAILY_ENFORCE_PROVIDER: '0',
+};
+
 const PM2_APPS = [
     {
       name: 'live-oscar-dashboard',
@@ -58,6 +67,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
         HOST: '0.0.0.0',
         PORT: '3008',
         /** Должен совпадать с `isOrganizerPaperStorePath` в dashboard-server (имя `organizer-paper.jsonl`). */
@@ -191,9 +201,10 @@ const PM2_APPS = [
         /** W6.8 — Gecko multi-lane → QN → wallets; локальный потолок оркестратора см. SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY. */
         SA_ORCH_SCHEDULER_TICK_MS: '10000',
         SA_ORCH_GECKO_TARGET_CALLS_PER_MINUTE: '24',
-        /** W6.13 — detective ledger (orch/backfill/sigseed); глобальный кап выше суммы подпулов при низком фактическом расходе QN. */
-        SA_QN_GLOBAL_CREDITS_PER_DAY: '4000000',
-        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '2200000',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        /** W6.13 — detective ledger: высокий потолок; фактический лимит — план QuickNode в кабинете. */
+        SA_QN_GLOBAL_CREDITS_PER_DAY: '50000000',
+        SA_ORCH_MAX_QUICKNODE_CREDITS_PER_DAY: '50000000',
         SA_BACKFILL_MAX_CREDITS_PER_DAY: '500000',
         SA_ORCH_MAX_GECKO_HTTP_PER_DAY: '40000',
         SA_ORCH_MAX_RPC_PER_JOB: '1200',
@@ -224,6 +235,28 @@ const PM2_APPS = [
         COLLECTOR_WATCH_POLL_MS: '15000',
         COLLECTOR_WATCH_TELEGRAM: '1',
         COLLECTOR_WATCH_SILENCE_MAX_MS: '480000',
+      },
+    },
+    {
+      name: 'sa-rate-429-report',
+      cwd: root,
+      script: 'scripts-tmp/rate-429-halfhour-report.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '80M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** [REPORT][agent_429] — сводка 429 каждые 30 мин для агента / triage. */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        RATE_429_REPORT_INTERVAL_MS: '1800000',
+        RATE_429_REPORT_POLL_MS: '60000',
+        RATE_429_REPORT_TELEGRAM: '1',
       },
     },
     {
@@ -308,6 +341,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
         /** Billable RPC: QuickNode (`SA_RPC_HTTP_URL` в .env). Helius — только fallback при QN budget block. */
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
@@ -1321,11 +1355,19 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_LOSS_COOLDOWN_MS: '600000',
         PUMPSWAP_COMBO_LOSS_ALERT_USD: '5',
         PUMPSWAP_COMBO_POLL_MS: '5000',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
         PUMPSWAP_COMBO_WATCHLIST_MAX: '100',
         PUMPSWAP_COMBO_WATCHLIST_PG_LOOKBACK_MIN: '360',
-        PUMPSWAP_COMBO_WATCHLIST_RPC_REFRESH: '1',
-        PUMPSWAP_COMBO_WATCHLIST_RPC_PER_TICK: '8',
+        PUMPSWAP_COMBO_WATCHLIST_RPC_REFRESH: '4',
+        PUMPSWAP_COMBO_WATCHLIST_STREAM_PREFER: '0',
+        PUMPSWAP_COMBO_WATCHLIST_RPC_PER_TICK: '4',
         PUMPSWAP_COMBO_WATCHLIST_RPC_DELAY_MS: '120',
+        PUMPSWAP_COMBO_METERED_RPC: '1',
+        PUMPSWAP_COMBO_RPC_MIN_GAP_MS: '55',
+        PUMPSWAP_COMBO_BALANCE_CACHE_MS: '10000',
+        PUMPSWAP_COMBO_EXIT_MARK_TTL_MS: '20000',
+        PUMPSWAP_COMBO_EXIT_MARK_MAX_STALE_MS: '45000',
+        PUMPSWAP_COMBO_EXIT_QUOTES_PER_TICK: '2',
         PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS: '15',
         PUMPSWAP_COMBO_MIN_LIQ_USD: '35000',
         PUMPSWAP_COMBO_MIN_VOL_5M_USD: '0',
@@ -1371,6 +1413,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        QN_FEATURE_BUDGET_DISABLED: '1',
         PUMPSWAP_COMBO_FOLLOW_EXECUTION_MODE: 'paper',
         PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID: 'pumpswap-combo-follow-paper',
         PUMPSWAP_COMBO_FOLLOW_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo-follow/paper-journal.jsonl'),
@@ -1414,6 +1458,8 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        QN_FEATURE_BUDGET_DISABLED: '1',
         PUMPSWAP_COMBO_FOLLOW_EXECUTION_MODE: 'live',
         PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID: 'pumpswap-combo-follow-live',
         PUMPSWAP_COMBO_FOLLOW_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo-follow/journal.jsonl'),
@@ -1421,8 +1467,14 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_WALLET_SECRET: path.join(root, 'data/pumpswap-combo-follow/wallet.keypair.json'),
         PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
         PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET: 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
-        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
+        PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY: 'oscar_wave_b',
+        PUMPSWAP_COMBO_FOLLOW_POSITION_USD: '600',
+        PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS: '-10:0.333333,-20:0.333333',
+        PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT: '50',
+        PUMPSWAP_COMBO_FOLLOW_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
+        PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS: '0',
         PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '3',
+        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
         PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT: '2',
         PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER: '13:0.7,25:1',
         PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT: '20',

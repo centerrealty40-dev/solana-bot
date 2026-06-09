@@ -41,8 +41,11 @@ export async function executeFollowBuy(args: {
   leaderPriceUsd: number;
   intent: 'probe' | 'add';
   leaderSignature: string;
+  /** Override leg size (DCA add vs entry). Defaults to cfg.entryUsd. */
+  buyUsd?: number;
 }): Promise<FollowBuyResult> {
-  const { cfg, mint, symbol, poolAddress, leaderPriceUsd, intent, leaderSignature } = args;
+  const { cfg, mint, symbol, poolAddress, leaderPriceUsd, intent, leaderSignature, buyUsd } = args;
+  const legUsd = buyUsd ?? cfg.entryUsd;
 
   if (cfg.executionMode === 'paper') {
     let fill = leaderPriceUsd;
@@ -61,7 +64,7 @@ export async function executeFollowBuy(args: {
       return { ok: false, reason: 'no_fill_price' };
     }
     fill *= entrySlippageMult(cfg);
-    const usd = cfg.legUsd;
+    const usd = legUsd;
     const sig = `paper_${Date.now()}`;
     return {
       ok: true,
@@ -71,7 +74,7 @@ export async function executeFollowBuy(args: {
     };
   }
 
-  const execCfg = toComboExecutorConfig(cfg);
+  const execCfg = { ...toComboExecutorConfig(cfg), legUsd };
   const res = await executeComboBuy({
     cfg: execCfg,
     mint,

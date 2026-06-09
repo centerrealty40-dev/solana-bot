@@ -12,6 +12,7 @@ import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { executeFollowSell } from './executor.js';
 import { effectiveStopLossPct, nextExitRung } from './exit-ladder.js';
+import { evaluateFollowExitsWaveB } from './exits-wave-b.js';
 import { stopLossAllowed } from './exit-policy.js';
 import { leaderPreBalanceRaw } from './leader-ledger.js';
 import { appendFollowEvent } from './journal.js';
@@ -42,6 +43,10 @@ export async function evaluateFollowExits(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
 ): Promise<void> {
+  if (cfg.exitPolicy === 'oscar_wave_b') {
+    return evaluateFollowExitsWaveB(cfg, state);
+  }
+
   const execCfg = toComboExecutorConfig(cfg);
   const liveCfg = comboLiveBridge(execCfg);
   const closedMints = new Set<string>();

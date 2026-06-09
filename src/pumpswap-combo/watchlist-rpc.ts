@@ -28,6 +28,13 @@ export async function enrichWatchlistLivePrices(
   let refreshed = 0;
 
   for (const row of batch) {
+    if (
+      cfg.watchlistStreamPreferPg &&
+      row.snapshotSource === 'pumpswap-combo-stream' &&
+      now - row.snapshotTs < cfg.watchlistStreamFreshMs
+    ) {
+      continue;
+    }
     let pool = row.pairAddress?.trim();
     if (!pool) {
       pool = (await resolveMintPumpPool(cfg.rpcUrl, row.mint)) ?? '';

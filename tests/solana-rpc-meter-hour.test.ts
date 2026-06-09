@@ -15,6 +15,7 @@ describe('solana-rpc-meter hourly cap', () => {
     process.env.REDIS_URL = 'redis://127.0.0.1:6379';
     process.env.QUICKNODE_USAGE_PATH = usageFile;
     process.env.QUICKNODE_DAILY_ENFORCE = '0';
+    delete process.env.QUICKNODE_BUDGET_BLOCK;
     process.env.QUICKNODE_HOURLY_CREDIT_BUDGET = '100';
   });
 
@@ -23,6 +24,7 @@ describe('solana-rpc-meter hourly cap', () => {
     delete process.env.REDIS_URL;
     delete process.env.QUICKNODE_USAGE_PATH;
     delete process.env.QUICKNODE_DAILY_ENFORCE;
+    delete process.env.QUICKNODE_BUDGET_BLOCK;
     delete process.env.QUICKNODE_HOURLY_CREDIT_BUDGET;
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -31,7 +33,17 @@ describe('solana-rpc-meter hourly cap', () => {
     }
   });
 
-  it('blocks when hour bucket would exceed hourly cap', async () => {
+  it('never blocks by default even when hourly cap would be exceeded', async () => {
+    const { reserveSolanaRpcCredits, solanaRpcMeterCounters } = await import(
+      '../src/core/rpc/solana-rpc-meter.js'
+    );
+    expect(await reserveSolanaRpcCredits(50)).toBe(true);
+    expect(await reserveSolanaRpcCredits(60)).toBe(true);
+    expect(solanaRpcMeterCounters().hourCredits).toBe(110);
+  });
+
+  it('blocks when QUICKNODE_BUDGET_BLOCK=1 and hour bucket would exceed cap', async () => {
+    process.env.QUICKNODE_BUDGET_BLOCK = '1';
     const {
       reserveSolanaRpcCredits,
       releaseSolanaRpcCredits,

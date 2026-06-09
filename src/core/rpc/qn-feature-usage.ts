@@ -20,6 +20,7 @@ export const QN_FEATURE_KEYS = [
   'holders',
   /** W7.6 — impulse confirm on-chain spot (Orca whirlpool + optional paths). */
   'impulse_confirm',
+  'pumpswap_combo',
 ] as const;
 export type QnFeature = (typeof QN_FEATURE_KEYS)[number];
 
@@ -57,6 +58,7 @@ const BUDGET_ENV: Record<QnFeature, string> = {
   liq_watch: 'QN_FEATURE_BUDGET_LIQ_WATCH',
   holders: 'QN_FEATURE_BUDGET_HOLDERS',
   impulse_confirm: 'QN_FEATURE_BUDGET_IMPULSE_CONFIRM',
+  pumpswap_combo: 'QN_FEATURE_BUDGET_PUMPSWAP_COMBO',
 };
 
 const DEFAULT_BUDGET: Record<QnFeature, number> = {
@@ -67,13 +69,18 @@ const DEFAULT_BUDGET: Record<QnFeature, number> = {
   live_send: 4_000_000,
   liq_watch: 12_000_000,
   holders: 10_000_000,
-  /** Monthly cap for impulse confirm QN calls (rolling 6h kill is separate; see impulse-qn-rolling). */
   impulse_confirm: 5_000_000,
+  pumpswap_combo: 800_000,
 };
 
 /** `QN_FEATURE_BUDGET_DISABLED=1` or per-feature env `<= 0` → no monthly cap (metering still written to JSON). */
 export function qnFeatureBudgetUnlimited(): boolean {
   return process.env.QN_FEATURE_BUDGET_DISABLED?.trim() === '1';
+}
+
+/** Block RPC when feature monthly cap exceeded — opt-in only (`QN_FEATURE_BUDGET_ENFORCE=1`). */
+export function qnFeatureBudgetEnforce(): boolean {
+  return process.env.QN_FEATURE_BUDGET_ENFORCE === '1';
 }
 
 export function qnFeatureBudgetMonth(f: QnFeature): number {
@@ -216,7 +223,7 @@ export async function reserveQnFeatureCredits(feature: QnFeature, credits: numbe
     f = rolloverFile(f);
     const cap = qnFeatureBudgetMonth(feature);
     const slice = f.perFeature[feature];
-    if (slice.monthCredits + credits > cap) {
+    if (qnFeatureBudgetEnforce() && !qnFeatureBudgetUnlimited() && slice.monthCredits + credits > cap) {
       log.warn({ feature, cap, used: slice.monthCredits, requested: credits }, 'qn feature monthly budget exceeded');
       writeFile(f);
       return false;
