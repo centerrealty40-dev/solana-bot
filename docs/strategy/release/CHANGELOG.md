@@ -26,6 +26,20 @@
 
 ---
 
+## [1.11.369] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.369`
+
+### PumpSwap Combo #2 follow (paper) + dashboard tile
+
+- **`pumpswap-combo-follow`**: mirror **hnu5** buys/DCA; ladder exits 2% ahead of leader; paper mode with pool-quote marks (no wallet).
+- **PM2** `pumpswap-combo-follow-paper` in `ecosystem.config.cjs`.
+- **Dashboard** `/papertrader2`: плитка 4 `pumpswap-combo-follow-paper` (journal `data/pumpswap-combo-follow/paper-journal.jsonl`).
+
+**Откат:** `git checkout sa-alpha-1.11.368 -- src/pumpswap-combo-follow/ src/scripts/pumpswap-combo-follow-bot.ts tests/pumpswap-combo-follow/ scripts-tmp/pumpswap-combo-follow-dashboard.ts scripts-tmp/pumpswap-combo-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs`; `pm2 delete pumpswap-combo-follow-paper`; `pm2 reload live-oscar-dashboard ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.368] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.368`
