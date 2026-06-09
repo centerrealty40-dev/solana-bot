@@ -34,6 +34,21 @@
 
 ---
 
+## [1.11.394] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.394`
+
+### Live bots: unified strategy-process-watch (24/7)
+
+- **`strategy-process-watch`** PM2 app watches **hl-twap**, **live-oscar**, **copy-trader**, **pumpswap-combo-follow-live** every 30s (PM2 status + heartbeat file).
+- Auto **`pm2 restart`** + Telegram **`[ALERT][strategy_watch]`** on stopped/stale (&gt;5 min).
+- **`ops-heartbeat`** (60s) in copy-trader, live-oscar, combo-follow; hl-twap keeps `data/hl-twap/heartbeat.json`.
+- Replaces per-app `hl-twap-process-watch`.
+
+**Откат:** `git checkout sa-alpha-1.11.393 -- ecosystem.config.cjs src/core/ops-heartbeat.ts src/scripts/copy-trader.ts src/scripts/live-oscar.ts src/scripts/pumpswap-combo-follow-bot.ts src/pumpswap-combo-follow/main.ts scripts-tmp/strategy-process-watch.mjs scripts-tmp/process-watch-lib.mjs docs/strategy/release/`; VPS `pm2 delete strategy-process-watch; pm2 start ecosystem.config.cjs --only hl-twap-process-watch --update-env; pm2 save`.
+
+---
+
 ## [1.11.393] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.393`

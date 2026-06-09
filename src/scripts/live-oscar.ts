@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { startOpsHeartbeat } from '../core/ops-heartbeat.js';
 import { main } from '../live/main.js';
 
 const sid = process.env.LIVE_STRATEGY_ID?.trim() || 'live-oscar';
@@ -30,6 +31,8 @@ process.on('unhandledRejection', (reason) => {
   writeLiveOscarFatal('unhandledRejection', reason);
   console.error('live-oscar unhandledRejection', reason);
 });
+
+startOpsHeartbeat({ appName: 'live-oscar' });
 
 main().catch((err) => {
   writeLiveOscarFatal('main', err);

@@ -5,6 +5,7 @@ import { followPaperPortfolioSnapshot } from './paper-portfolio.js';
 import { ensureComboSolUsd } from '../pumpswap-combo/sol-oracle.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
+import { startOpsHeartbeat } from '../core/ops-heartbeat.js';
 import { checkFollowPortfolioHalt, evaluateFollowExits } from './exits.js';
 import { evaluateFollowDca } from './follow-dca.js';
 import { appendFollowEvent } from './journal.js';
@@ -41,6 +42,7 @@ function createLeaderPipelineLock() {
 
 export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig): Promise<void> {
   configureLiveStore({ storePath: cfg.journalPath, strategyId: cfg.strategyId });
+  startOpsHeartbeat({ appName: cfg.strategyId, stats: () => ({ executionMode: cfg.executionMode }) });
 
   if (process.env.PUMPSWAP_COMBO_FOLLOW_CLEAR_HALT === '1') {
     const bootState = readFollowState(cfg);
