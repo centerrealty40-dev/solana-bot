@@ -3,15 +3,18 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExitScheduleAnchor,
   chunkedExitEnabled,
+  exitSliceCountForSide,
   exitSliceDueAtMs,
   exitWindowMs,
   firstWhaleSliceIndexAtOrAfter,
+  loadChunkedExitConfig,
   nextDueSliceIndex,
   sliceTargetBase,
   vwapExitPx,
   whaleAlignedExitAtMs,
   whaleSliceBoundaryMs,
 } from '../src/hyperliquid/twap/live/chunked-exit.js';
+import { loadHlTwapLiveConfig } from '../src/hyperliquid/twap/live/config.js';
 import { loadPendingLiveExits } from '../src/hyperliquid/twap/live/journal.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -60,6 +63,14 @@ describe('chunked-exit', () => {
       { fillPx: 100, sizeBase: 1 },
       { fillPx: 110, sizeBase: 1 },
     ])).toBe(105);
+  });
+
+  it('exitSliceCountForSide: long fewer than short by default', () => {
+    const cfg = loadHlTwapLiveConfig();
+    expect(exitSliceCountForSide('buy', cfg)).toBe(cfg.exitSlicesLong);
+    expect(exitSliceCountForSide('sell', cfg)).toBe(cfg.exitSlicesShort);
+    expect(loadChunkedExitConfig(cfg, 'buy').sliceCount).toBe(cfg.exitSlicesLong);
+    expect(loadChunkedExitConfig(cfg, 'sell').sliceCount).toBe(cfg.exitSlicesShort);
   });
 
   it('chunkedExitEnabled when sliceCount > 1', () => {

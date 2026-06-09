@@ -90,11 +90,6 @@ export async function closeLiveTrade(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
 ): Promise<HlTwapLiveClose | null> {
-  const exitCfg = loadChunkedExitConfig(cfg);
-  if (!chunkedExitEnabled(exitCfg)) {
-    return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
-  }
-
   const filePath = cfg.journalPath;
   const pending = loadPendingLiveExits(filePath);
   if (pending.has(hash)) return null;
@@ -102,6 +97,11 @@ export async function closeLiveTrade(
   const opens = loadLiveOpensFromJournal(filePath);
   const pos = opens.get(hash);
   if (!pos || exitPx <= 0) return null;
+
+  const exitCfg = loadChunkedExitConfig(cfg, pos.side);
+  if (!chunkedExitEnabled(exitCfg)) {
+    return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
+  }
 
   const startedAtMs = Date.now();
   const triggerMs = Math.max(startedAtMs, pos.liveCloseAtMs);

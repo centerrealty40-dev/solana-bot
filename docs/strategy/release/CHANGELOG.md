@@ -26,6 +26,19 @@
 
 ---
 
+## [1.11.367] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.367`
+
+### HL TWAP live: side-aware exit slices
+
+- **Long** exits: **3 slices** (`HL_TWAP_LIVE_EXIT_SLICES_LONG`, default 3) — faster than 10× backtest on long book.
+- **Short** exits: **10 slices** unchanged (`HL_TWAP_LIVE_EXIT_SLICES=10`).
+
+**Откат:** `git checkout sa-alpha-1.11.366 -- src/hyperliquid/twap/live/ src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-chunked-exit.test.ts`; unset `HL_TWAP_LIVE_EXIT_SLICES_LONG`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.366] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.366`
