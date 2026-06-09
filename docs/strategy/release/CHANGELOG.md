@@ -32,6 +32,22 @@
 
 ---
 
+---
+
+## [1.11.379] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.379`
+
+### Agent: полчасовая сводка 429 в Telegram
+
+- **`scripts-tmp/rate-429-halfhour-report.mjs`** — каждые 30 мин `[REPORT][agent_429]` в операторский канал: счётчик HTTP 429 / rate-limit по PM2-логам + follow journal.
+- PM2: **`sa-rate-429-report`** (`RATE_429_REPORT_INTERVAL_MS=1800000`).
+- **`scripts/lib/telegram.mjs`** — `skipQuietHours` для scheduled REPORT.
+
+**Откат:** `pm2 delete sa-rate-429-report`; `git checkout sa-alpha-1.11.378`.
+
+---
+
 ## [1.11.378] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.378`

@@ -84,7 +84,7 @@ export async function sendTagged(category, subtag, text, opts = {}) {
   const tag = `[${category}][${subtag}]`;
   const tagKey = `${category}.${subtag}`.toLowerCase();
 
-  if (category !== 'ALERT' && inQuietHours()) return false;
+  if (category !== 'ALERT' && !opts.skipQuietHours && inQuietHours()) return false;
 
   const cd = cooldownMs(category, subtag);
   if (cd > 0) {

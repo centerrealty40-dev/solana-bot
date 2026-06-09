@@ -238,6 +238,28 @@ const PM2_APPS = [
       },
     },
     {
+      name: 'sa-rate-429-report',
+      cwd: root,
+      script: 'scripts-tmp/rate-429-halfhour-report.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '80M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** [REPORT][agent_429] — сводка 429 каждые 30 мин для агента / triage. */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        RATE_429_REPORT_INTERVAL_MS: '1800000',
+        RATE_429_REPORT_POLL_MS: '60000',
+        RATE_429_REPORT_TELEGRAM: '1',
+      },
+    },
+    {
       name: 'sa-snapshot-freshness-watch',
       cwd: root,
       script: 'scripts-tmp/snapshot-freshness-watch.mjs',
