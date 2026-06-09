@@ -24,6 +24,7 @@ import {
   type FollowState,
 } from './state.js';
 import { initFollowWaveBState } from './follow-wave-b-state.js';
+import { checkFlowEntryGate } from './entry-gate.js';
 import type { PendingFollowBuy } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -174,6 +175,40 @@ async function onLeaderBuy(
     return;
   }
 
+  const poolAddress = leaderTx ? extractPumpSwapPoolFromTx(leaderTx) ?? undefined : undefined;
+  const gate = await checkFlowEntryGate(cfg, {
+    pool: poolAddress,
+    mint,
+    leaderSignature: row.signature,
+    leaderTsSec: row.blockTime,
+  });
+  if (!gate.pass) {
+    appendFollowEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: 'flow_entry_gate',
+      gateReason: gate.reason ?? 'unknown',
+      mint,
+      leaderSignature: row.signature,
+      poolAddress: poolAddress ?? null,
+      extSellUsd: gate.extSell?.usd ?? null,
+      extSellLagSec: gate.extSell?.lagSec ?? null,
+      extSellSignature: gate.extSell?.signature ?? null,
+      flowGateMinExtSellUsd: cfg.flowGateMinExtSellUsd,
+      flowGateMaxExtSellUsd: cfg.flowGateMaxExtSellUsd,
+    });
+    return;
+  }
+  if (gate.extSell) {
+    appendFollowEvent(cfg, {
+      kind: 'flow_entry_gate_pass',
+      mint,
+      leaderSignature: row.signature,
+      extSellUsd: gate.extSell.usd,
+      extSellLagSec: gate.extSell.lagSec,
+      extSellSignature: gate.extSell.signature,
+    });
+  }
+
   scheduleFollowBuy(cfg, state, {
     mint,
     symbol,
@@ -182,7 +217,7 @@ async function onLeaderBuy(
     leaderPriceUsd: swap.priceUsd,
     leaderBuyUsd: swap.amountUsd,
     leaderBlockTimeSec: row.blockTime,
-    poolAddress: leaderTx ? extractPumpSwapPoolFromTx(leaderTx) ?? undefined : undefined,
+    poolAddress,
   });
 }
 

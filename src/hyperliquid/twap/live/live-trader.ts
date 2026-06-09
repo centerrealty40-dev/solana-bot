@@ -13,6 +13,7 @@ import { markPxForCoin } from '../paper-trader.js';
 import { computeTwapSchedule } from '../twap-schedule.js';
 import type { NormalizedTwapSignal } from '../types.js';
 import { freeMarginUsd, hasMarginForNewOpen } from './account-margin.js';
+import { computeOpenMarginUsd } from './dynamic-margin.js';
 import { canScheduleLiveEntry } from './coin-exposure.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
@@ -129,9 +130,9 @@ async function executeLiveOpen(
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
+  marginUsd = cfg.notionalUsd,
 ): Promise<{ pos: HlTwapLiveOpen | null; rejectReason?: 'no_price' | 'fill_too_small' }> {
   if (entryPx <= 0) return { pos: null, rejectReason: 'no_price' };
-  const marginUsd = cfg.notionalUsd;
   const fill = await client.marketOrder({
     coin: sched.coin,
     displaySymbol: sched.displaySymbol,
@@ -244,21 +245,34 @@ export async function processLiveTrades(
         }
       }
 
-      if (accountMargin && !hasMarginForNewOpen(accountMargin, opensBefore, cfg.notionalUsd)) {
+      const openMarginUsd = accountMargin
+        ? computeOpenMarginUsd(accountMargin, opensBefore, cfg)
+        : cfg.notionalUsd;
+
+      if (
+        accountMargin &&
+        !hasMarginForNewOpen(accountMargin, opensBefore, openMarginUsd, cfg.marginReserveUsd)
+      ) {
         const free = freeMarginUsd(accountMargin, opensBefore);
         const spotNote =
           accountMargin.spotUsdcTotalUsd != null && accountMargin.spotUsdcTotalUsd > 0
             ? ` spotUsdc=$${accountMargin.spotUsdcTotalUsd.toFixed(0)}`
             : '';
         console.log(
-          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${cfg.notionalUsd}${spotNote})`,
+          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${openMarginUsd}${spotNote})`,
         );
         continue;
       }
 
+      if (cfg.dynamicMargin && openMarginUsd !== cfg.notionalUsd) {
+        console.log(
+          `[hl-twap-live] dynamic margin ${sched.displaySymbol}: $${openMarginUsd} (opens=${opensBefore.size}, base=$${cfg.notionalUsd})`,
+        );
+      }
+
       const px =
         markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
-      const opened = await executeLiveOpen(sched, px, cfg, client, watchState);
+      const opened = await executeLiveOpen(sched, px, cfg, client, watchState, openMarginUsd);
       if (opened.pos) {
         opensBefore.set(opened.pos.hash, opened.pos);
       } else if (opened.rejectReason === 'fill_too_small') {
