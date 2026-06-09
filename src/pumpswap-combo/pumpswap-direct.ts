@@ -17,6 +17,9 @@ import { NATIVE_MINT } from '@solana/spl-token';
 import { getSolUsd } from '../papertrader/pricing.js';
 import type { SwapSolanaState } from '@pump-fun/pump-swap-sdk';
 
+/** Read-only PumpSwap state probe user (no signing). */
+const POOL_PROBE_USER = new PublicKey('11111111111111111111111111111111');
+
 let connCache: { url: string; conn: Connection } | null = null;
 
 function connectionForRpc(rpcUrl: string): Connection {
@@ -191,4 +194,31 @@ export function quoteLamportsForLegUsd(legUsd: number): BN | null {
   const lamports = Math.floor((legUsd / solUsd) * 1e9);
   if (lamports <= 0) return null;
   return new BN(lamports);
+}
+
+/** Spot from pool reserves (no wallet balance required). */
+export async function quotePumpSwapSpotPriceUsd(args: {
+  rpcUrl: string;
+  poolAddress: string;
+}): Promise<number | null> {
+  try {
+    const state = await loadPumpSwapState({
+      rpcUrl: args.rpcUrl,
+      poolAddress: args.poolAddress,
+      user: POOL_PROBE_USER,
+    });
+    if (!isWsolQuotedPool(state)) return null;
+    const solUsd = getSolUsd();
+    if (!(solUsd > 0)) return null;
+    const baseRaw = state.poolBaseAmount.toNumber();
+    const quoteRaw = state.poolQuoteAmount.toNumber();
+    if (!(baseRaw > 0) || !(quoteRaw > 0)) return null;
+    const decimals = state.baseMintAccount.decimals;
+    const tokens = baseRaw / 10 ** decimals;
+    const sol = quoteRaw / 1e9;
+    if (!(tokens > 0) || !(sol > 0)) return null;
+    return (sol / tokens) * solUsd;
+  } catch {
+    return null;
+  }
 }

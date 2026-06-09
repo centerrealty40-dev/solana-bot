@@ -1,22 +1,30 @@
+import { fetchParsedTransaction } from '../copytrader/rpc.js';
+import { decodeAllowlistedDexSwapForWallet } from '../parser/allowlisted-dex-swap.js';
+import type { TxJsonParsed } from '../parser/rpc-http.js';
 import { Connection, PublicKey } from '@solana/web3.js';
 import type { PumpswapComboConfig } from './config.js';
 
 const WSOL = 'So11111111111111111111111111111111111111112';
+const PUMPSWAP_DEX = 'pumpswap';
 
 export type ShadowBuyMint = {
   mint: string;
   boughtAtMs: number;
   usdEst: number;
+  fillPriceUsd: number;
+  signature: string;
 };
 
 let cache: { at: number; mints: ShadowBuyMint[] } | null = null;
 
-function parsePumpSwapBuyMint(
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function parsePumpSwapBuyMintLegacy(
   tx: NonNullable<Awaited<ReturnType<Connection['getTransaction']>>>,
   wallet: string,
   solUsd: number,
   minBuyUsd: number,
-): ShadowBuyMint | null {
+): Omit<ShadowBuyMint, 'signature' | 'fillPriceUsd'> & { fillPriceUsd: number } | null {
   const logs = tx.meta?.logMessages ?? [];
   if (!logs.some((l) => l.includes('Instruction: Buy'))) return null;
 
@@ -52,7 +60,47 @@ function parsePumpSwapBuyMint(
   if (!(usdEst >= minBuyUsd)) return null;
 
   const blockTime = tx.blockTime ?? 0;
-  return { mint, boughtAtMs: blockTime * 1000, usdEst };
+  return {
+    mint,
+    boughtAtMs: blockTime * 1000,
+    usdEst,
+    fillPriceUsd: 0,
+  };
+}
+
+async function decodeShadowBuy(
+  cfg: PumpswapComboConfig,
+  wallet: string,
+  signature: string,
+  solUsd: number,
+): Promise<ShadowBuyMint | null> {
+  const raw = await fetchParsedTransaction(cfg.rpcUrl, signature);
+  if (raw) {
+    const swap = decodeAllowlistedDexSwapForWallet(raw as TxJsonParsed, wallet, solUsd);
+    if (
+      swap &&
+      swap.side === 'buy' &&
+      swap.dex === PUMPSWAP_DEX &&
+      swap.amountUsd >= cfg.shadowMinBuyUsd &&
+      swap.priceUsd > 0
+    ) {
+      const bt = swap.blockTime?.getTime?.() ?? Date.now();
+      return {
+        mint: swap.baseMint,
+        boughtAtMs: bt,
+        usdEst: swap.amountUsd,
+        fillPriceUsd: swap.priceUsd,
+        signature,
+      };
+    }
+  }
+
+  const conn = new Connection(cfg.rpcUrl, 'confirmed');
+  const tx = await conn.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
+  if (!tx?.meta || tx.meta.err) return null;
+  const legacy = parsePumpSwapBuyMintLegacy(tx, wallet, solUsd, cfg.shadowMinBuyUsd);
+  if (!legacy) return null;
+  return { ...legacy, signature };
 }
 
 /** Recent PumpSwap buy mints from shadow reference wallet (cached RPC poll). */
@@ -87,11 +135,8 @@ export async function fetchShadowBuyMints(
         break;
       }
       if (row.err) continue;
-      const tx = await conn.getTransaction(row.signature, {
-        maxSupportedTransactionVersion: 0,
-      });
-      if (!tx?.meta || tx.meta.err) continue;
-      const parsed = parsePumpSwapBuyMint(tx, wallet, solUsd, cfg.shadowMinBuyUsd);
+      const parsed = await decodeShadowBuy(cfg, wallet, row.signature, solUsd);
+      await sleep(120);
       if (!parsed || seen.has(parsed.mint)) continue;
       seen.add(parsed.mint);
       out.push(parsed);

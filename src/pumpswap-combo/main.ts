@@ -162,9 +162,17 @@ async function evaluateEntries(
       }
       dumpBandCount++;
 
-      const dipPeak = rolling.dipFromBotPeakPct(row.mint, row.priceUsd);
-      if (dipPeak == null || dipPeak > cfg.probeMaxDipFromPeakPct) continue;
+      if (shadowCoTrade) {
+        if (!(row.priceUsd > 0)) continue;
+      } else {
+        const dipPeak = rolling.dipFromBotPeakPct(row.mint, row.priceUsd);
+        if (dipPeak == null || dipPeak > cfg.probeMaxDipFromPeakPct) continue;
+      }
       probeReadyCount++;
+
+      const dipPeak = shadowCoTrade
+        ? 0
+        : (rolling.dipFromBotPeakPct(row.mint, row.priceUsd) ?? 0);
 
       const buy = await executeComboBuy({
         cfg,

@@ -39,7 +39,7 @@ async function resolvePoolAddress(cfg: PumpswapComboConfig, mint: string, poolAd
   const direct = poolAddress?.trim();
   if (direct) return direct;
   const rpc = liveRpcUrl(cfg, comboLiveBridge(cfg));
-  return resolveMintPumpPool(rpc, mint, poolAddress);
+  return resolveMintPumpPool(rpc, mint);
 }
 
 function isStaleBlockhashError(message: string): boolean {
