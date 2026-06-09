@@ -111,14 +111,29 @@ async function onLeaderBuy(
 
   const existing = findFollowPosition(state, mint);
 
+  if (!existing && cfg.maxLeaderFirstBuyUsd > 0 && swap.amountUsd > cfg.maxLeaderFirstBuyUsd) {
+    appendFollowEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: 'max_leader_first_buy_usd',
+      mint,
+      leaderBuyUsd: swap.amountUsd,
+      maxLeaderFirstBuyUsd: cfg.maxLeaderFirstBuyUsd,
+      leaderSignature: row.signature,
+    });
+    return;
+  }
+
   if (existing) {
-    if (cfg.exitPolicy === 'oscar_wave_b' && !cfg.mirrorLeaderAdds) {
+    if (!cfg.mirrorLeaderAdds) {
       appendFollowEvent(cfg, {
         kind: 'leader_add_ignored',
-        reason: 'oscar_price_dca_only',
+        reason: cfg.exitPolicy === 'oscar_wave_b' ? 'oscar_price_dca_only' : 'no_mirror_adds',
         mint,
         leaderSignature: row.signature,
-        note: 'DCA at -10/-20 vs first leg, not leader mirror',
+        note:
+          cfg.exitPolicy === 'oscar_wave_b'
+            ? 'DCA at -10/-20 vs first leg, not leader mirror'
+            : undefined,
       });
       return;
     }

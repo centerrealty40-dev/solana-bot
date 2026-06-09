@@ -19,6 +19,7 @@ import {
   gcFollowSeenSignatures,
   pruneFollowCooldowns,
   readFollowState,
+  writeFollowState,
 } from './state.js';
 
 function sleep(ms: number): Promise<void> {
@@ -40,6 +41,18 @@ function createLeaderPipelineLock() {
 
 export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig): Promise<void> {
   configureLiveStore({ storePath: cfg.journalPath, strategyId: cfg.strategyId });
+
+  if (process.env.PUMPSWAP_COMBO_FOLLOW_CLEAR_HALT === '1') {
+    const bootState = readFollowState(cfg);
+    if (bootState.halted) {
+      bootState.halted = false;
+      bootState.haltReason = undefined;
+      bootState.haltedAt = undefined;
+      writeFollowState(cfg, bootState);
+      appendFollowEvent(cfg, { kind: 'halt_cleared', reason: 'clear_halt_on_boot' });
+    }
+  }
+
   let lastHeartbeat = 0;
   const execCfg = toComboExecutorConfig(cfg);
 
@@ -79,6 +92,9 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     entryGate: cfg.entryGate,
     flowGateMinExtSellUsd: cfg.flowGateMinExtSellUsd,
     flowGateMaxExtSellUsd: cfg.flowGateMaxExtSellUsd,
+    flowGateMaxLagSec: cfg.flowGateMaxLagSec,
+    maxOpenPositions: cfg.maxOpenPositions,
+    maxHoldMs: cfg.maxHoldMs,
   });
 
   const pollLabel = cfg.leaderWsEnabled
@@ -87,7 +103,9 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
   const bootLine =
     cfg.exitPolicy === 'oscar_wave_b'
       ? `leg=$${cfg.entryUsd} dca=${cfg.dcaLevels.length}×${(cfg.dcaLevels[0]?.addFraction ?? 0) * 100}% kill=-${cfg.dcaKillstopPct}% waveB`
-      : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
+      : cfg.exitPolicy === 'flow8z_antidump'
+        ? `leg=$${cfg.legUsd} flow8z anti-dump ks=-${cfg.flow8zKillstopPct}% max1st=$${cfg.maxLeaderFirstBuyUsd}`
+        : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
 
   console.log(
     `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} ${bootLine} ${pollLabel}`,

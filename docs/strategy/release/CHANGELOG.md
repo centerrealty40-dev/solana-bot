@@ -34,6 +34,21 @@
 
 ---
 
+## [1.11.390] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.390`
+
+### pumpswap-combo-follow v2: flow8z profile (no pool stream required)
+
+- Live **`flow8z_antidump`**: TP ladder 13% lead, leader pool flush on leader sell, 1 leg only.
+- **MAX_OPEN=8**, **max hold 3h**, portfolio stop **$35** (realized+unrealized).
+- Flow gate: ext sell $300–2500, **lag ≤5s**.
+- `PUMPSWAP_COMBO_FOLLOW_CLEAR_HALT=1` clears operator halt on boot.
+
+**Откат:** `git checkout sa-alpha-1.11.389 -- src/pumpswap-combo-follow/ ecosystem.config.cjs docs/strategy/release/`; restore oscar_wave_b env; `pm2 reload pumpswap-combo-follow-live --update-env`.
+
+---
+
 ## [1.11.389] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.389`

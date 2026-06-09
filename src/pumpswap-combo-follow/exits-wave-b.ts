@@ -26,6 +26,7 @@ import { toComboExecutorConfig } from './config.js';
 import { executeFollowSell } from './executor.js';
 import { appendFollowEvent } from './journal.js';
 import { paperInvestedRemainingUsd, paperPoolExitQuoteUsd, paperPnlPctVsAvg } from './paper-pricing.js';
+import { followMaxHoldDue, followHoldSec } from './exit-max-hold.js';
 import {
   ensureFollowWaveBState,
   followAvgFillUsd,
@@ -214,6 +215,28 @@ export async function evaluateFollowExitsWaveB(
     const pnlFrac = followPnlFracVsAvg(pos, mark);
     const inv =
       cfg.executionMode === 'paper' ? paperInvestedRemainingUsd(pos) : investedUsd(comboPos);
+
+    if (followMaxHoldDue(pos, cfg.maxHoldMs)) {
+      await closeFollowPosition({
+        cfg,
+        state,
+        pos,
+        mark,
+        pnlPct,
+        inv,
+        exitReason: 'max_hold',
+        intent: 'tp2_full',
+        closedMints,
+      });
+      appendFollowEvent(cfg, {
+        kind: 'max_hold_exit',
+        mint: pos.mint,
+        holdSec: followHoldSec(pos),
+        maxHoldMs: cfg.maxHoldMs,
+        pnlPct,
+      });
+      continue;
+    }
 
     if (waveBRecoverPhantomPeakIfNeeded(shim as never, pnlFrac)) {
       syncShimBack(wb, shim);
