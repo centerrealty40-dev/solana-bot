@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.383] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.383`
+
+### Follow live: только SOL — без USDC treasury и сделок
+
+- **`pumpswap-combo-follow`**: все покупки/DCA только через **WSOL-пул**; если лидер покупает в USDC-пуле — резолвим тот же mint в SOL-пуле и покупаем там.
+- Удалены treasury/rebalance USDC, коридор % USDC на кошельке и связанные env (`PUMPSWAP_COMBO_FOLLOW_TREASURY_*`).
+
+**Откат:** `git checkout sa-alpha-1.11.382 -- src/pumpswap-combo-follow/ src/pumpswap-combo/pool-resolve.ts ecosystem.config.cjs`; `pm2 reload pumpswap-combo-follow-live --update-env`.
+
+---
+
 ## [1.11.382] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.382`

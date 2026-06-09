@@ -14,9 +14,6 @@ import type { PumpswapComboFollowConfig } from './config.js';
 import { executeFollowBuy } from './executor.js';
 import { appendFollowEvent } from './journal.js';
 import { resolveFollowPoolAddress } from './pool-resolve.js';
-import { ensureFollowUsdcForBuy } from './treasury-rebalance.js';
-import { isUsdcQuotedPool, loadPumpSwapState } from '../pumpswap-combo/pumpswap-direct.js';
-import { PublicKey } from '@solana/web3.js';
 import {
   findFollowPosition,
   newFollowId,
@@ -244,18 +241,14 @@ async function executePendingBuy(
   }
   pending.poolAddress = pool;
 
-  try {
-    const probeUser = new PublicKey(cfg.walletPubkeyExpected?.trim() || cfg.targetWallet);
-    const poolState = await loadPumpSwapState({
-      rpcUrl: cfg.rpcUrl,
-      poolAddress: pool,
-      user: probeUser,
+  if (resolved.source === 'leader_usdc_skipped' && resolved.leaderUsdcPool) {
+    appendFollowEvent(cfg, {
+      kind: 'pool_resolve_wsol_alt',
+      mint: pending.mint,
+      leaderUsdcPool: resolved.leaderUsdcPool,
+      wsolPool: pool,
+      leaderSignature: pending.leaderSignature,
     });
-      if (isUsdcQuotedPool(poolState)) {
-        await ensureFollowUsdcForBuy(cfg, cfg.entryUsd);
-      }
-  } catch {
-    /* pool probe failed — buy path will surface error */
   }
 
   const existing = findFollowPosition(state, pending.mint);

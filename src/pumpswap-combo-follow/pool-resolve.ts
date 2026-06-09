@@ -1,12 +1,13 @@
 import type { TxJsonParsed } from '../parser/rpc-http.js';
 import { extractPumpSwapPoolFromTx } from '../parser/allowlisted-dex-swap.js';
-import { resolveMintPumpPool, verifyTradablePumpPool } from '../pumpswap-combo/pool-resolve.js';
+import { resolveMintWsolPumpPool, verifyTradablePumpPool } from '../pumpswap-combo/pool-resolve.js';
 import { fetchMintPoolAddress } from '../pumpswap-combo/watchlist.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 
 export type FollowPoolResolveSource =
   | 'leader_hint'
   | 'leader_tx'
+  | 'leader_usdc_skipped'
   | 'pg_snapshot'
   | 'canonical_pda'
   | 'none';
@@ -14,6 +15,8 @@ export type FollowPoolResolveSource =
 export type FollowPoolResolveResult = {
   pool: string | null;
   source: FollowPoolResolveSource;
+  /** When leader traded USDC pool — address we ignored. */
+  leaderUsdcPool?: string;
 };
 
 async function sourceForPool(
@@ -34,7 +37,7 @@ async function sourceForPool(
   return 'none';
 }
 
-/** Resolve PumpSwap WSOL pool for mirror buy — PG lag must not block follow entries. */
+/** Resolve WSOL-quoted PumpSwap pool — if leader used USDC pool, pick SOL pool for same mint. */
 export async function resolveFollowPoolAddress(
   cfg: PumpswapComboFollowConfig,
   mint: string,
@@ -45,9 +48,27 @@ export async function resolveFollowPoolAddress(
     poolHint = extractPumpSwapPoolFromTx(hints.leaderTx) ?? undefined;
   }
 
-  const pool = await resolveMintPumpPool(cfg.rpcUrl, mint, poolHint);
-  if (!pool) return { pool: null, source: 'none' };
+  const resolved = await resolveMintWsolPumpPool(cfg.rpcUrl, mint, poolHint);
+  if (!resolved.pool) {
+    return {
+      pool: null,
+      source: 'none',
+      leaderUsdcPool: resolved.skippedUsdcHint,
+    };
+  }
 
-  const source = await sourceForPool(cfg, mint, pool, { ...hints, poolHint });
-  return { pool, source: source === 'none' ? 'canonical_pda' : source };
+  let source = await sourceForPool(cfg, mint, resolved.pool, { ...hints, poolHint });
+  if (source === 'none') source = 'canonical_pda';
+
+  if (resolved.skippedUsdcHint && resolved.pool !== resolved.skippedUsdcHint) {
+    if (source === 'leader_hint' || source === 'leader_tx') {
+      source = 'leader_usdc_skipped';
+    }
+  }
+
+  return {
+    pool: resolved.pool,
+    source,
+    leaderUsdcPool: resolved.skippedUsdcHint,
+  };
 }

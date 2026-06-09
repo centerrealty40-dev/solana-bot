@@ -1,14 +1,11 @@
 import { dcaCrossedDownward } from '../papertrader/executor/dca-state.js';
 import { quoteExitPriceUsd } from '../pumpswap-combo/pricing.js';
 import { comboLiveBridge } from '../pumpswap-combo/live-bridge.js';
-import { isUsdcQuotedPool, loadPumpSwapState } from '../pumpswap-combo/pumpswap-direct.js';
-import { PublicKey } from '@solana/web3.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { executeFollowBuy } from './executor.js';
 import { appendFollowEvent } from './journal.js';
 import { paperPoolExitQuoteUsd } from './paper-pricing.js';
-import { ensureFollowUsdcForBuy } from './treasury-rebalance.js';
 import { resolveFollowPoolAddress } from './pool-resolve.js';
 import {
   ensureFollowWaveBState,
@@ -71,18 +68,6 @@ export async function evaluateFollowDca(
 
       const addUsd = cfg.dcaNotionalUsd * lvl.addFraction;
       if (!(addUsd > 0)) continue;
-
-      if (cfg.executionMode === 'live') {
-        try {
-          const probeUser = new PublicKey(cfg.walletPubkeyExpected?.trim() || cfg.targetWallet);
-          const poolState = await loadPumpSwapState({ rpcUrl: cfg.rpcUrl, poolAddress: pool, user: probeUser });
-          if (isUsdcQuotedPool(poolState)) {
-            await ensureFollowUsdcForBuy(cfg, addUsd);
-          }
-        } catch {
-          /* buy path surfaces errors */
-        }
-      }
 
       const buy = await executeFollowBuy({
         cfg,
