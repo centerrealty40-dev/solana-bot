@@ -14,6 +14,9 @@ import type { PumpswapComboFollowConfig } from './config.js';
 import { executeFollowBuy } from './executor.js';
 import { appendFollowEvent } from './journal.js';
 import { resolveFollowPoolAddress } from './pool-resolve.js';
+import { ensureFollowUsdcForBuy } from './treasury-rebalance.js';
+import { isUsdcQuotedPool, loadPumpSwapState } from '../pumpswap-combo/pumpswap-direct.js';
+import { PublicKey } from '@solana/web3.js';
 import {
   findFollowPosition,
   newFollowId,
@@ -229,6 +232,20 @@ async function executePendingBuy(
     return;
   }
   pending.poolAddress = pool;
+
+  try {
+    const probeUser = new PublicKey(cfg.walletPubkeyExpected?.trim() || cfg.targetWallet);
+    const poolState = await loadPumpSwapState({
+      rpcUrl: cfg.rpcUrl,
+      poolAddress: pool,
+      user: probeUser,
+    });
+    if (isUsdcQuotedPool(poolState)) {
+      await ensureFollowUsdcForBuy(cfg, cfg.legUsd);
+    }
+  } catch {
+    /* pool probe failed — buy path will surface error */
+  }
 
   const existing = findFollowPosition(state, pending.mint);
 

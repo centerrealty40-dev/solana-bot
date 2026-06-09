@@ -8,6 +8,7 @@ import { toComboExecutorConfig } from './config.js';
 import { checkFollowPortfolioHalt, evaluateFollowExits } from './exits.js';
 import { appendFollowEvent } from './journal.js';
 import { pollLeaderAndScheduleBuys, processPendingFollowBuys } from './leader-sync.js';
+import { rebalanceFollowTreasuryIfNeeded } from './treasury-rebalance.js';
 import {
   followStateAsCombo,
   gcFollowSeenSignatures,
@@ -46,11 +47,16 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     exitLadder: ladderSummary,
     slSingle: effectiveSlSummary(cfg),
     buyDelayMs: cfg.buyDelayMs,
+    treasuryUsdcTargetPct: cfg.treasuryUsdcTargetPct,
   });
 
   console.log(
     `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} leg=$${cfg.legUsd} ladder=${ladderSummary} poll=${cfg.pollIntervalMs}ms`,
   );
+
+  if (cfg.executionMode === 'live') {
+    await rebalanceFollowTreasuryIfNeeded(cfg, { force: true });
+  }
 
   for (;;) {
     const nowMs = Date.now();
@@ -76,6 +82,9 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
 
       if (nowMs - lastHeartbeat >= cfg.heartbeatIntervalMs) {
         lastHeartbeat = nowMs;
+        if (cfg.executionMode === 'live') {
+          await rebalanceFollowTreasuryIfNeeded(cfg);
+        }
         const hbState = readFollowState(cfg);
         const snap =
           cfg.executionMode === 'paper'
