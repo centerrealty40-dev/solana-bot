@@ -16,6 +16,15 @@ import { parseDcaLevels, type DcaLevel } from '../papertrader/config.js';
 
 export type FollowExitPolicy = 'leader_ladder' | 'oscar_wave_b';
 
+export type FollowEntryGate = 'all' | 'flow';
+
+function parseFollowEntryGate(raw: string | undefined, executionMode: string): FollowEntryGate {
+  const v = raw?.trim().toLowerCase();
+  if (v === 'flow') return 'flow';
+  if (v === 'all' || v === 'none' || v === '0') return 'all';
+  return executionMode === 'live' ? 'flow' : 'all';
+}
+
 function parseFollowExitPolicy(raw: string | undefined): FollowExitPolicy {
   const v = raw?.trim().toLowerCase();
   if (v === 'leader_ladder' || v === 'legacy') return 'leader_ladder';
@@ -68,6 +77,15 @@ const ConfigSchema = z.object({
   leaderWsUrl: z.string().optional(),
   /** HTTP poll backfill when leader WS is on (ms). */
   pollFallbackMs: z.coerce.number().int().min(5000).max(300_000).default(30_000),
+  /** all = mirror every entry; flow = skip chase (no large ext sell before leader buy). */
+  entryGate: z.enum(['all', 'flow']).default('all'),
+  flowGateMinExtSellUsd: z.coerce.number().min(0).default(300),
+  /** 0 = no upper cap on triggering sell size. */
+  flowGateMaxExtSellUsd: z.coerce.number().min(0).default(2500),
+  flowGateLookbackSec: z.coerce.number().int().min(5).max(600).default(120),
+  /** 0 = do not filter by sell→buy lag (seconds). */
+  flowGateMaxLagSec: z.coerce.number().int().min(0).max(120).default(0),
+  flowGatePoolTxCap: z.coerce.number().int().min(5).max(80).default(35),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -190,6 +208,8 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
       : executionMode === 'live';
   const leaderWsEnabled = leaderWsRequested && Boolean(leaderWsUrl);
 
+  const entryGate = parseFollowEntryGate(process.env.PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE, executionMode);
+
   const parsed = ConfigSchema.parse({
     executionMode,
     strategyId: process.env.PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID ?? 'pumpswap-combo-follow',
@@ -226,6 +246,12 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     leaderWsEnabled,
     leaderWsUrl,
     pollFallbackMs: process.env.PUMPSWAP_COMBO_FOLLOW_POLL_FALLBACK_MS,
+    entryGate,
+    flowGateMinExtSellUsd: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_MIN_EXT_SELL_USD,
+    flowGateMaxExtSellUsd: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_EXT_SELL_USD,
+    flowGateLookbackSec: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_LOOKBACK_SEC,
+    flowGateMaxLagSec: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_LAG_SEC,
+    flowGatePoolTxCap: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_POOL_TX_CAP,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });

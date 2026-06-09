@@ -76,6 +76,9 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     leaderWsEnabled: cfg.leaderWsEnabled,
     pollIntervalMs: cfg.pollIntervalMs,
     pollFallbackMs: cfg.pollFallbackMs,
+    entryGate: cfg.entryGate,
+    flowGateMinExtSellUsd: cfg.flowGateMinExtSellUsd,
+    flowGateMaxExtSellUsd: cfg.flowGateMaxExtSellUsd,
   });
 
   const pollLabel = cfg.leaderWsEnabled

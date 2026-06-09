@@ -34,6 +34,21 @@
 
 ---
 
+## [1.11.388] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.388`
+
+### pumpswap-combo-follow: flow entry gate (skip chase entries)
+
+- `PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE=flow` — mirror only when large external pool sell preceded leader buy.
+- Skip: no ext sell ≥$300 / 120s, no pool, whale dump >$2500 (configurable).
+- Journal: `flow_entry_gate_pass`, `leader_buy_ignored` + `gateReason`.
+- Backtest: `scripts-tmp/follow-hnu5-flow-lag-backtest.ts` (lag buckets × sell tiers).
+
+**Откат:** `git checkout sa-alpha-1.11.387 -- src/pumpswap-combo-follow/ docs/strategy/release/`; `PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE=all`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-follow-live --update-env`.
+
+---
+
 ## [1.11.387] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.387`
