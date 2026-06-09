@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.387] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.387`
+
+### HL TWAP live: dynamic entry margin
+
+- Scale open collateral by **concurrent position count** ($380 at ≤2 opens → $170 at ≥5) and cap by **free margin** minus reserve + DCA headroom (2×10% ladder slice).
+- `HL_TWAP_LIVE_NOTIONAL_USD` remains base/floor; startup log `dynamic_margin=1 range=…`.
+
+**Откат:** `git checkout sa-alpha-1.11.386 -- src/hyperliquid/twap/live/dynamic-margin.ts src/hyperliquid/twap/live/config.ts src/hyperliquid/twap/live/live-trader.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-dynamic-margin.test.ts docs/strategy/release/`; `HL_TWAP_LIVE_DYNAMIC_MARGIN=0`; `pm2 restart hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.386] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.386`

@@ -88,6 +88,7 @@ import {
   resolvePaperEntryAuditPlan,
 } from '../hyperliquid/twap/paper-trader.js';
 import { loadHlTwapLiveConfig } from '../hyperliquid/twap/live/config.js';
+import { formatDynamicMarginStartup } from '../hyperliquid/twap/live/dynamic-margin.js';
 import { resolveLiveEntryAuditPlan } from '../hyperliquid/twap/live/coin-exposure.js';
 import { createHlTwapExchangeClient, type HlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-client.js';
 import {
@@ -392,7 +393,7 @@ async function main(): Promise<void> {
   if (LIVE_ENABLED) {
     liveExchange = await createHlTwapExchangeClient(LIVE_CFG);
     console.log(
-      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
+      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ${formatDynamicMarginStartup(LIVE_CFG)} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
     );
   }
 
