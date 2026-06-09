@@ -43,8 +43,6 @@ const ConfigSchema = z.object({
   minLeaderBuyUsd: z.coerce.number().min(0).default(20),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
-  /** Full entry notional when exitPolicy=oscar_wave_b (live Oscar PAPER_POSITION_USD). */
-  positionUsd: z.coerce.number().positive().max(2000).default(600),
   dcaLevelsRaw: z.string().default(''),
   dcaKillstopPct: z.coerce.number().min(0).max(90).default(50),
   /** leader_ladder | oscar_wave_b */
@@ -83,8 +81,10 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   treasuryMinFreeSolLamports: bigint;
   slMode: FollowSlMode;
   dcaLevels: DcaLevel[];
-  /** Entry leg USD: positionUsd (Oscar) or legUsd (legacy mirror). */
+  /** Entry mirror size — always legUsd ($3 test agent). */
   entryUsd: number;
+  /** DCA add sizing base: legUsd × addFraction (Oscar % ladder on our notional). */
+  dcaNotionalUsd: number;
 };
 
 /** Map to pumpswap-combo executor / journal (unused discovery fields filled with dummies). */
@@ -179,7 +179,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     process.env.PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS?.trim() ||
     (exitPolicy === 'oscar_wave_b' ? '-10:0.333333,-20:0.333333' : '');
   const dcaLevels = parseDcaLevels(dcaLevelsRaw);
-  const positionUsd = Number(process.env.PUMPSWAP_COMBO_FOLLOW_POSITION_USD ?? 600);
   const mirrorLeaderAddsRaw = process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS?.trim();
   const mirrorLeaderAdds =
     mirrorLeaderAddsRaw != null && mirrorLeaderAddsRaw.length > 0
@@ -201,7 +200,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     minLeaderBuyUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD,
     maxOpenPositions: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN,
     legUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LEG_USD,
-    positionUsd,
     dcaLevelsRaw,
     dcaKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT,
     exitPolicy,
@@ -234,7 +232,10 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     Math.max(0, Math.floor(parsed.treasuryMinFreeSol * 1e9)),
   );
 
-  const entryUsd = parsed.exitPolicy === 'oscar_wave_b' ? parsed.positionUsd : parsed.legUsd;
+  const entryUsd = parsed.legUsd;
+  const dcaNotionalRaw = process.env.PUMPSWAP_COMBO_FOLLOW_DCA_NOTIONAL_USD?.trim();
+  const dcaNotionalUsd =
+    dcaNotionalRaw && Number(dcaNotionalRaw) > 0 ? Number(dcaNotionalRaw) : parsed.legUsd;
 
   return {
     ...parsed,
@@ -243,5 +244,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     treasuryMinFreeSolLamports,
     dcaLevels,
     entryUsd,
+    dcaNotionalUsd,
   };
 }

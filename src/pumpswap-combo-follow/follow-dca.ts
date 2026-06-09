@@ -18,7 +18,7 @@ import {
 import { writeFollowState, type FollowState } from './state.js';
 
 /**
- * Price-triggered DCA (−10% / −20% vs first leg) — same fractions as live Oscar (`positionUsd × addFraction`).
+ * Price-triggered DCA (−10% / −20% vs first leg): `dcaNotionalUsd × addFraction` (default notional = legUsd).
  * Leader mirror adds are disabled in oscar_wave_b mode.
  */
 export async function evaluateFollowDca(
@@ -69,7 +69,7 @@ export async function evaluateFollowDca(
       if (followDcaTaken(wb, dcaIdx, lvl.triggerPct)) continue;
       if (!dcaCrossedDownward(effPrev, dropFromFirst, lvl.triggerPct)) continue;
 
-      const addUsd = cfg.positionUsd * lvl.addFraction;
+      const addUsd = cfg.dcaNotionalUsd * lvl.addFraction;
       if (!(addUsd > 0)) continue;
 
       if (cfg.executionMode === 'live') {
