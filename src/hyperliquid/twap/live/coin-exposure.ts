@@ -11,6 +11,7 @@ import {
 } from '../coin-twap-analysis.js';
 import type { NormalizedTwapSignal } from '../types.js';
 import { loadLiveOpensFromJournal, loadPendingLiveSchedules } from './journal.js';
+import { liveLossStreakBlockReason } from './loss-streak-cooldown.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 export type LiveEntryDecision = {
@@ -32,6 +33,7 @@ export function canScheduleLiveEntry(
   watchState: TwapWatchState,
   opens: Map<string, HlTwapLiveOpen>,
   minImpactPct: number,
+  journalPath?: string,
 ): LiveEntryDecision {
   if (isDeniedWhale(sig.user)) {
     return { allow: false, reason: 'whale_denylisted' };
@@ -59,6 +61,14 @@ export function canScheduleLiveEntry(
   if (!plan.allow) {
     return { allow: false, reason: plan.reason };
   }
+
+  if (journalPath) {
+    const streakBlock = liveLossStreakBlockReason(sig.coin, entrySide, journalPath);
+    if (streakBlock) {
+      return { allow: false, reason: streakBlock };
+    }
+  }
+
   return { allow: true, reason: plan.reason, openAtMs: plan.openAtMs };
 }
 
@@ -75,7 +85,7 @@ export function resolveLiveEntryAuditPlan(
   if (opens.has(sig.hash) || pending.has(sig.hash)) {
     return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
   }
-  const decision = canScheduleLiveEntry(sig, watchState, opens, minImpactPct);
+  const decision = canScheduleLiveEntry(sig, watchState, opens, minImpactPct, journalPath);
   if (!decision.allow) {
     return { ...plan, allow: false, reason: decision.reason };
   }

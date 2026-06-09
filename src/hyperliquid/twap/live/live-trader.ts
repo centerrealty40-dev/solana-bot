@@ -94,7 +94,7 @@ export function scheduleLiveTrade(
     return { scheduled: false, reason: 'already_tracked' };
   }
 
-  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct);
+  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct, filePath);
   if (!decision.allow) {
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
