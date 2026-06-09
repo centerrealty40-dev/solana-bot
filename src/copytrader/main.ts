@@ -29,9 +29,9 @@ import {
   leaderPreBalanceRaw,
 } from './leader-ledger.js';
 import { scheduleLeaderFlatTailSweeps } from './leader-flat-tail-sweep.js';
+import { resolveOurSellFraction } from './leader-dust.js';
 import {
   absRawAmount,
-  isFullCloseFraction,
   leaderAddFraction,
   leaderSellFraction,
   ourAddUsdFromLeaderAdd,
@@ -499,7 +499,12 @@ async function onLeaderSell(
     leaderSellFraction: sellFrac,
   });
 
-  const ourSellFrac = isFullCloseFraction(sellFrac) ? 1 : sellFrac;
+  const postLeaderOnChain = await fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, mint);
+  const ourSellFrac = resolveOurSellFraction({
+    leaderSellFraction: sellFrac,
+    postLeaderBalanceRaw: postLeaderOnChain,
+    dustRaw: cfg.leaderFlatDustRaw,
+  });
   const delayMs = randomSellDelayMs(cfg);
   const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {

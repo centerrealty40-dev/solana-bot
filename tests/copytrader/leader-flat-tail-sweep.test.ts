@@ -15,6 +15,7 @@ const cfg = {
   rpcUrl: 'http://rpc',
   targetWallet: 'LeaderWallet1111111111111111111111111111',
   leaderFlatConfirmDelayMs: 0,
+  leaderFlatDustRaw: 10_000n,
 } as CopyTraderConfig;
 
 describe('leader flat tail sweep', () => {
@@ -46,8 +47,34 @@ describe('leader flat tail sweep', () => {
   it('reconciles ledger up from on-chain when ledger undercounts', () => {
     const state = emptyCopyTraderState();
     state.leaderLedger.mintA = { tokenRaw: '0' };
-    reconcileLeaderLedgerFromChain(state, 'mintA', 9_000_000n);
+    reconcileLeaderLedgerFromChain(state, 'mintA', 9_000_000n, 10_000n);
     expect(leaderPreBalanceRaw(state, 'mintA')).toBe(9_000_000n);
+  });
+
+  it('reconciles ledger to zero when on-chain is dust', () => {
+    const state = emptyCopyTraderState();
+    state.leaderLedger.mintA = { tokenRaw: '95000000000' };
+    reconcileLeaderLedgerFromChain(state, 'mintA', 1n, 10_000n);
+    expect(leaderPreBalanceRaw(state, 'mintA')).toBe(0n);
+  });
+
+  it('leader flat when on-chain holds only dust', async () => {
+    const state = emptyCopyTraderState();
+    state.leaderLedger.mintA = { tokenRaw: '95000000000' };
+    vi.spyOn(jupOrders, 'leaderHasActiveJupiterSellOrders').mockResolvedValue({
+      active: false,
+      orderCount: 0,
+      totalRemainingRaw: '0',
+      source: 'pro',
+    });
+    const spy = vi
+      .spyOn(rpc, 'fetchWalletMintBalanceRaw')
+      .mockResolvedValueOnce(1n)
+      .mockResolvedValueOnce(1n);
+    await expect(isLeaderFlatForMint(cfg, state, 'mintA')).resolves.toBe(true);
+    expect(leaderPreBalanceRaw(state, 'mintA')).toBe(0n);
+    expect(spy).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
   });
 
   it('leader flat only after two on-chain zero reads', async () => {
