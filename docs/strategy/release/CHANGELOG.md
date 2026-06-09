@@ -66,6 +66,25 @@
 
 ---
 
+---
+
+## [1.11.367] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.367`
+
+### PumpSwap Combo: fix shadow universe (366 was PG-gated)
+
+366 promised hnu5 shadow breadth but shadow mints still required fresh PG snapshots + vol/liq filters — universe stayed ~9 mints.
+
+- **Shadow RPC lane:** hnu5 PumpSwap buys inject watchlist via canonical pool PDA + on-chain spot price — **no PG required**.
+- **Discovery relaxed:** PG watchlist fill drops vol5m gate (keeps liq/mcap); shadow PG enrich uses 7d lookback.
+- **Shadow entry:** skip probe dip-cap (hnu5 already validated timing).
+- **Pool resolve:** canonical PumpSwap PDA fallback chain-wide (buy/sell/exit).
+
+**Откат:** `git checkout sa-alpha-1.11.366 -- src/pumpswap-combo/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
 ## [1.11.366] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.366`
