@@ -26,6 +26,19 @@
 
 ---
 
+## [1.11.368] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.368`
+
+### HL TWAP: short lane (<15m) + instant exit before last slice
+
+- **Short TWAP lane** (1–14m, `HL_TWAP_SHORT_ENABLED=1`): separate schedule + instant flatten at whale slice boundary before last 30s child order.
+- Standard lane unchanged (≥16m, chunked exit long 3 / short 10).
+
+**Откат:** `git checkout sa-alpha-1.11.367 -- src/hyperliquid/twap/`; `HL_TWAP_SHORT_ENABLED=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.367] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.367`

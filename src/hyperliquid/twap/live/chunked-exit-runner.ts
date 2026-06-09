@@ -22,6 +22,7 @@ import { notifyLiveTradeClose } from './telegram-notify.js';
 import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
 import type { TwapWatchState } from '../detect.js';
 import { clearWhaleExitPending } from '../twap-whale-exit.js';
+import { isShortTwapMinutes } from '../twap-duration.js';
 
 function exitAnchor(exit: PendingLiveExit) {
   return buildExitScheduleAnchor(
@@ -97,6 +98,10 @@ export async function closeLiveTrade(
   const opens = loadLiveOpensFromJournal(filePath);
   const pos = opens.get(hash);
   if (!pos || exitPx <= 0) return null;
+
+  if (isShortTwapMinutes(pos.minutes)) {
+    return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
+  }
 
   const exitCfg = loadChunkedExitConfig(cfg, pos.side);
   if (!chunkedExitEnabled(exitCfg)) {

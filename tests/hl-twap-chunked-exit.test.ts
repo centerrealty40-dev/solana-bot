@@ -14,6 +14,7 @@ import {
   whaleAlignedExitAtMs,
   whaleSliceBoundaryMs,
 } from '../src/hyperliquid/twap/live/chunked-exit.js';
+import { isShortTwapMinutes } from '../src/hyperliquid/twap/twap-duration.js';
 import { loadHlTwapLiveConfig } from '../src/hyperliquid/twap/live/config.js';
 import { loadPendingLiveExits } from '../src/hyperliquid/twap/live/journal.js';
 import fs from 'node:fs';
@@ -71,6 +72,12 @@ describe('chunked-exit', () => {
     expect(exitSliceCountForSide('sell', cfg)).toBe(cfg.exitSlicesShort);
     expect(loadChunkedExitConfig(cfg, 'buy').sliceCount).toBe(cfg.exitSlicesLong);
     expect(loadChunkedExitConfig(cfg, 'sell').sliceCount).toBe(cfg.exitSlicesShort);
+  });
+
+  it('isShortTwapMinutes: short lane 5m, not 16m', () => {
+    process.env.HL_TWAP_SHORT_ENABLED = '1';
+    expect(isShortTwapMinutes(5)).toBe(true);
+    expect(isShortTwapMinutes(16)).toBe(false);
   });
 
   it('chunkedExitEnabled when sliceCount > 1', () => {

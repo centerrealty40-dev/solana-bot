@@ -1,5 +1,5 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from '../twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutes, isShortTwapMinutes } from '../twap-duration.js';
 import {
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
@@ -295,11 +295,14 @@ export async function processLiveTrades(
     if (timerDue) {
       try {
         const px = exitPxForOpen(pos, cache);
-        const closed = await closeLiveTrade(pos.hash, px, HL_TWAP_EXIT_REASON_EARLY, cfg, client, watchState);
+        const exitReason = isShortTwapMinutes(pos.minutes)
+          ? HL_TWAP_EXIT_REASON_SHORT
+          : HL_TWAP_EXIT_REASON_EARLY;
+        const closed = await closeLiveTrade(pos.hash, px, exitReason, cfg, client, watchState);
         if (closed) {
-          console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+          console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${exitReason})`);
         } else if (!isLiveExitPending(cfg, pos.hash)) {
-          console.log(`[hl-twap-live] exit started ${pos.displaySymbol} (${HL_TWAP_EXIT_REASON_EARLY})`);
+          console.log(`[hl-twap-live] exit started ${pos.displaySymbol} (${exitReason})`);
         }
       } catch (e) {
         console.warn(`[hl-twap-live] close failed ${pos.displaySymbol}`, String(e));

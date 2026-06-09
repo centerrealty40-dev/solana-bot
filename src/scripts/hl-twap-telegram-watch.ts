@@ -55,6 +55,8 @@ import {
   twapExitEarlyMinutes,
   twapMaxMinutes,
   twapMinMinutes,
+  twapShortLaneEnabled,
+  twapShortMaxMinutesExclusive,
 } from '../hyperliquid/twap/twap-duration.js';
 import {
   buildCrossingNote,
@@ -380,7 +382,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_thresh_pct=${hlTwapBtcAlignedThreshPct()} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m short_lane=${twapShortLaneEnabled() ? 1 : 0} short_lt=${twapShortMaxMinutesExclusive()}m exit_early=${twapExitEarlyMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_thresh_pct=${hlTwapBtcAlignedThreshPct()} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   if (hlTwapBtcAlignedGateEnabled()) {
