@@ -26,6 +26,46 @@
 
 ---
 
+---
+
+## [1.11.371] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.371`
+
+### PumpSwap Combo: hnu5-like DCA (mirror adds, no invented gap)
+
+Combo #1 stopped out on A4cXNC (−22%) with 1 leg while hnu5 averaged 3 legs and exited in profit. Root cause: invented `addMinGapMs=10m`, tight SL before DCA zone, stale shadow entry, no leader add mirror.
+
+- **`addMinGapMs: 0`** — same as combo-follow; no artificial delay between legs.
+- **`slPreDcaPct: 35`** — wide SL while `legs < maxBuyLegs`; −20/−22% only after full DCA.
+- **Shadow add mirror:** all hnu5 buy events (`fetchShadowBuyEvents`); `shadow_add` legs before SL/TP in same tick.
+- **Fresh shadow entry:** probe only if leader bought within `shadowEntryMaxAgeMs` (3m); signal price from leader fill.
+- **DCA band 15–35%** (was 25–32%).
+- **combo-follow:** same `slPreDcaPct` pre-DCA SL logic.
+
+**PM2 env:** `PUMPSWAP_COMBO_ADD_MIN_GAP_MS=0`, `PUMPSWAP_COMBO_SL_PRE_DCA_PCT=35`, `PUMPSWAP_COMBO_SHADOW_ADD_ENABLED=1`.
+
+**Откат:** `git checkout sa-alpha-1.11.370 -- src/pumpswap-combo/ src/pumpswap-combo-follow/ ecosystem.config.cjs`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot,pumpswap-combo-follow-paper,pumpswap-combo-follow-live --update-env`.
+
+---
+
+## [1.11.370] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.370`
+
+### PumpSwap Combo: fix shadow universe (366 was PG-gated)
+
+366 promised hnu5 shadow breadth but shadow mints still required fresh PG snapshots + vol/liq filters — universe stayed ~9 mints.
+
+- **Shadow RPC lane:** hnu5 PumpSwap buys inject watchlist via canonical pool PDA + on-chain spot price — **no PG required**.
+- **Discovery relaxed:** PG watchlist fill drops vol5m gate (keeps liq/mcap); shadow PG enrich uses 7d lookback.
+- **Shadow entry:** skip probe dip-cap (hnu5 already validated timing).
+- **Pool resolve:** canonical PumpSwap PDA fallback chain-wide (buy/sell/exit).
+
+**Откат:** revert `src/pumpswap-combo/` to pre-370; `pm2 reload pumpswap-combo-bot`.
+
+---
+
 ## [1.11.369] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.369`

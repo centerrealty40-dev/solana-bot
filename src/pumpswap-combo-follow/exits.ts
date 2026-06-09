@@ -65,6 +65,7 @@ export async function evaluateFollowExits(
       cfg.exitLeadPct,
       multiLeg,
       cfg.slMultiLegPct,
+      { legs: pos.legs.length, maxBuyLegs: cfg.maxBuyLegs, slPreDcaPct: cfg.slPreDcaPct },
     );
 
     if (pnlPct <= -slPct) {

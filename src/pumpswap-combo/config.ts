@@ -25,19 +25,21 @@ const ConfigSchema = z.object({
   dumpFreshnessMs: z.coerce.number().int().min(30_000).max(900_000).default(180_000),
   /** Probe: первый buy около local peak (med 0%). */
   probeMaxDipFromPeakPct: z.coerce.number().min(0).max(30).default(7),
-  /** DCA add: med −29% от bot peak на mint. */
-  addDipMinPct: z.coerce.number().min(5).max(60).default(25),
-  addDipMaxPct: z.coerce.number().min(5).max(70).default(32),
+  /** DCA add: hnu5 med ~−16…−29% от bot peak; 15% floor matches leader add spacing. */
+  addDipMinPct: z.coerce.number().min(5).max(60).default(15),
+  addDipMaxPct: z.coerce.number().min(5).max(70).default(35),
   maxBuyLegs: z.coerce.number().int().min(1).max(5).default(3),
-  addMinGapMs: z.coerce.number().int().min(60_000).default(600_000),
+  /** Min ms between legs — 0 = hnu5-like (combo-follow uses 0). */
+  addMinGapMs: z.coerce.number().int().min(0).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
   /** Forensic TP ladder (hnu5/FYX5): ~70% @ +13%, rest @ +25%. */
   tp1Pct: z.coerce.number().min(1).max(100).default(13),
   tp1SellFrac: z.coerce.number().min(0.1).max(1).default(0.7),
   tp2Pct: z.coerce.number().min(1).max(200).default(25),
-  /** SL: −20% single leg, −22% после DCA (forensic p25 last sell). */
+  /** SL: −20% / −22% only after all DCA legs deployed; wider while averaging. */
   slSingleLegPct: z.coerce.number().min(1).max(90).default(20),
   slMultiLegPct: z.coerce.number().min(1).max(90).default(22),
+  slPreDcaPct: z.coerce.number().min(1).max(90).default(35),
   portfolioStopLossUsd: z.coerce.number().positive().default(50),
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
@@ -51,8 +53,12 @@ const ConfigSchema = z.object({
   shadowPollMs: z.coerce.number().int().min(15_000).max(300_000).default(45_000),
   shadowMinBuyUsd: z.coerce.number().min(1).default(20),
   shadowSigPagesMax: z.coerce.number().int().min(1).max(10).default(3),
-  /** Shadow mints skip dump-band/freshness; still need PG filters + probe dip cap. */
+  /** Shadow mints skip dump-band/freshness; entry only on fresh hnu5 buy. */
   shadowEntryEnabled: z.coerce.boolean().default(true),
+  /** Mirror hnu5 DCA buys on open positions (combo-follow lane). */
+  shadowAddEnabled: z.coerce.boolean().default(true),
+  /** Shadow probe only if hnu5 bought within this window (ms). */
+  shadowEntryMaxAgeMs: z.coerce.number().int().min(30_000).max(900_000).default(180_000),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -107,6 +113,7 @@ export function loadPumpswapComboConfig(): PumpswapComboConfig {
     tp2Pct: process.env.PUMPSWAP_COMBO_TP2_PCT,
     slSingleLegPct: process.env.PUMPSWAP_COMBO_SL_SINGLE_PCT,
     slMultiLegPct: process.env.PUMPSWAP_COMBO_SL_MULTI_PCT,
+    slPreDcaPct: process.env.PUMPSWAP_COMBO_SL_PRE_DCA_PCT,
     portfolioStopLossUsd: process.env.PUMPSWAP_COMBO_PORTFOLIO_STOP_LOSS_USD,
     lossCooldownMs: process.env.PUMPSWAP_COMBO_LOSS_COOLDOWN_MS,
     lossAlertUsd: process.env.PUMPSWAP_COMBO_LOSS_ALERT_USD,
@@ -121,6 +128,8 @@ export function loadPumpswapComboConfig(): PumpswapComboConfig {
     shadowMinBuyUsd: process.env.PUMPSWAP_COMBO_SHADOW_MIN_BUY_USD,
     shadowSigPagesMax: process.env.PUMPSWAP_COMBO_SHADOW_SIG_PAGES,
     shadowEntryEnabled: process.env.PUMPSWAP_COMBO_SHADOW_ENTRY_ENABLED,
+    shadowAddEnabled: process.env.PUMPSWAP_COMBO_SHADOW_ADD_ENABLED,
+    shadowEntryMaxAgeMs: process.env.PUMPSWAP_COMBO_SHADOW_ENTRY_MAX_AGE_MS,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_WALLET_PUBKEY?.trim(),
   });

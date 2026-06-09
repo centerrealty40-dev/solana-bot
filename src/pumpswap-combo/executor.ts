@@ -99,7 +99,7 @@ export async function executeComboBuy(args: {
   symbol: string;
   poolAddress: string;
   signalPriceUsd: number;
-  intent: 'probe' | 'add' | 'shadow_probe';
+  intent: 'probe' | 'add' | 'shadow_probe' | 'shadow_add';
   dumpPct?: number;
   dipFromPeakPct?: number;
 }): Promise<{

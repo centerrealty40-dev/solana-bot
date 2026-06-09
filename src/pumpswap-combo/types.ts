@@ -14,6 +14,8 @@ export type ComboPosition = {
   legs: ComboBuyLeg[];
   botPeakUsd: number;
   tp1Taken: boolean;
+  /** Leader buy signatures already mirrored as DCA legs. */
+  shadowMirroredLeaderSigs?: string[];
 };
 
 export type WatchlistRow = {

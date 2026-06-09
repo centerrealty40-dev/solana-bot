@@ -62,15 +62,25 @@ export function effectiveExitLadder(
   }));
 }
 
-/** SL ahead of leader = tighter stop (smaller loss %). */
+/** SL ahead of leader = tighter stop (smaller loss %). Wider while DCA legs remain. */
 export function effectiveStopLossPct(
   leaderSlPct: number,
   exitLeadPct: number,
   multiLeg: boolean,
   leaderSlMultiPct: number,
+  opts?: { legs?: number; maxBuyLegs?: number; slPreDcaPct?: number },
 ): number {
+  const lead = Math.max(0, exitLeadPct);
+  if (
+    opts?.legs != null &&
+    opts?.maxBuyLegs != null &&
+    opts.legs < opts.maxBuyLegs
+  ) {
+    const pre = opts.slPreDcaPct ?? 35;
+    return Math.max(1, +(pre - lead).toFixed(4));
+  }
   const base = multiLeg ? leaderSlMultiPct : leaderSlPct;
-  return Math.max(1, +(base - exitLeadPct).toFixed(4));
+  return Math.max(1, +(base - lead).toFixed(4));
 }
 
 export function nextExitRung(

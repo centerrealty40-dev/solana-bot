@@ -41,8 +41,14 @@ export function pnlPctVsAvgFill(pos: ComboPosition, markPriceUsd: number): numbe
 }
 
 export function slPctForPosition(
-  cfg: { slSingleLegPct: number; slMultiLegPct: number },
+  cfg: {
+    slSingleLegPct: number;
+    slMultiLegPct: number;
+    slPreDcaPct: number;
+    maxBuyLegs: number;
+  },
   pos: ComboPosition,
 ): number {
+  if (pos.legs.length < cfg.maxBuyLegs) return cfg.slPreDcaPct;
   return pos.legs.length <= 1 ? cfg.slSingleLegPct : cfg.slMultiLegPct;
 }

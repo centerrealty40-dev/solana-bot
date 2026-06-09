@@ -37,9 +37,10 @@ const ConfigSchema = z.object({
   /** TP rungs fire this many % before leader thresholds. */
   exitLeadPct: z.coerce.number().min(0).max(10).default(2),
   exitLadderRaw: z.string().default(''),
-  /** Leader forensic SL — we exit tighter by exitLeadPct. */
+  /** Leader forensic SL — we exit tighter by exitLeadPct. Wider while DCA legs remain. */
   slSingleLegPct: z.coerce.number().min(1).max(90).default(20),
   slMultiLegPct: z.coerce.number().min(1).max(90).default(22),
+  slPreDcaPct: z.coerce.number().min(1).max(90).default(35),
   portfolioStopLossUsd: z.coerce.number().positive().default(50),
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
@@ -93,7 +94,7 @@ export function toComboExecutorConfig(cfg: PumpswapComboFollowConfig): PumpswapC
     tp2Pct: last?.effectiveTpPct ?? 23,
     slSingleLegPct: effectiveStopLossPct(cfg.slSingleLegPct, cfg.exitLeadPct, false, cfg.slMultiLegPct),
     slMultiLegPct: effectiveStopLossPct(cfg.slSingleLegPct, cfg.exitLeadPct, true, cfg.slMultiLegPct),
-    slPreDcaPct: 35,
+    slPreDcaPct: cfg.slPreDcaPct,
     portfolioStopLossUsd: cfg.portfolioStopLossUsd,
     lossCooldownMs: cfg.lossCooldownMs,
     lossAlertUsd: cfg.lossAlertUsd,
@@ -166,6 +167,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     exitLadderRaw,
     slSingleLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT,
     slMultiLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_MULTI_PCT,
+    slPreDcaPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_PRE_DCA_PCT,
     portfolioStopLossUsd: process.env.PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD,
     lossCooldownMs: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_COOLDOWN_MS,
     lossAlertUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_ALERT_USD,

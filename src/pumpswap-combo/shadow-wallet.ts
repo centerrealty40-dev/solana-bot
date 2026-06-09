@@ -15,7 +15,7 @@ export type ShadowBuyMint = {
   signature: string;
 };
 
-let cache: { at: number; mints: ShadowBuyMint[] } | null = null;
+let cache: { at: number; events: ShadowBuyMint[] } | null = null;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -103,8 +103,8 @@ async function decodeShadowBuy(
   return { ...legacy, signature };
 }
 
-/** Recent PumpSwap buy mints from shadow reference wallet (cached RPC poll). */
-export async function fetchShadowBuyMints(
+/** Recent PumpSwap buy events from shadow reference wallet (cached RPC poll). */
+export async function fetchShadowBuyEvents(
   cfg: PumpswapComboConfig,
   solUsd: number,
 ): Promise<ShadowBuyMint[]> {
@@ -112,13 +112,13 @@ export async function fetchShadowBuyMints(
 
   const ttl = Math.max(15_000, cfg.shadowPollMs);
   const now = Date.now();
-  if (cache && now - cache.at < ttl) return cache.mints;
+  if (cache && now - cache.at < ttl) return cache.events;
 
   const conn = new Connection(cfg.rpcUrl, 'confirmed');
   const wallet = cfg.shadowWalletPubkey;
   const sinceSec = Math.floor((now - cfg.shadowLookbackMs) / 1000);
   const out: ShadowBuyMint[] = [];
-  const seen = new Set<string>();
+  const seenSig = new Set<string>();
 
   let before: string | undefined;
   for (let page = 0; page < cfg.shadowSigPagesMax; page++) {
@@ -137,8 +137,8 @@ export async function fetchShadowBuyMints(
       if (row.err) continue;
       const parsed = await decodeShadowBuy(cfg, wallet, row.signature, solUsd);
       await sleep(120);
-      if (!parsed || seen.has(parsed.mint)) continue;
-      seen.add(parsed.mint);
+      if (!parsed || seenSig.has(parsed.signature)) continue;
+      seenSig.add(parsed.signature);
       out.push(parsed);
     }
     if (stop) break;
@@ -147,8 +147,22 @@ export async function fetchShadowBuyMints(
   }
 
   out.sort((a, b) => b.boughtAtMs - a.boughtAtMs);
-  cache = { at: now, mints: out };
+  cache = { at: now, events: out };
   return out;
+}
+
+/** Latest buy per mint — watchlist priority lane. */
+export async function fetchShadowBuyMints(
+  cfg: PumpswapComboConfig,
+  solUsd: number,
+): Promise<ShadowBuyMint[]> {
+  const events = await fetchShadowBuyEvents(cfg, solUsd);
+  const byMint = new Map<string, ShadowBuyMint>();
+  for (const e of events) {
+    const prev = byMint.get(e.mint);
+    if (!prev || e.boughtAtMs > prev.boughtAtMs) byMint.set(e.mint, e);
+  }
+  return [...byMint.values()].sort((a, b) => b.boughtAtMs - a.boughtAtMs);
 }
 
 export function shadowMintSet(mints: ShadowBuyMint[]): Set<string> {
