@@ -16,13 +16,14 @@ import { writeFollowState, type FollowState } from './state.js';
 
 /**
  * Price-triggered DCA (−10% / −20% vs first leg): `dcaNotionalUsd × addFraction` (default notional = legUsd).
- * Leader mirror adds are disabled in oscar_wave_b mode.
+ * Leader mirror adds are disabled; DCA is price-triggered only.
  */
 export async function evaluateFollowDca(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
 ): Promise<void> {
-  if (cfg.exitPolicy !== 'oscar_wave_b' || !cfg.dcaLevels.length) return;
+  const dcaPolicies = new Set(['oscar_wave_b', 'flow8z_antidump']);
+  if (!dcaPolicies.has(cfg.exitPolicy) || !cfg.dcaLevels.length) return;
 
   for (const pos of state.positions) {
     if (pos.remainingFrac <= 1e-6) continue;

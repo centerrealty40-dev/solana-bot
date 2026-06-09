@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.391] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.391`
+
+### pumpswap-combo-follow: flow8z + price DCA for 24h live trial
+
+- Price DCA (−10% / −20%, ⅓ notional each) on `flow8z_antidump` (was oscar_wave_b only).
+- Live PM2: `MAX_BUY_LEGS=3`, `$3` entry, flow gate unchanged; `CLEAR_HALT` removed post-unhalt.
+
+**Откат:** `MAX_BUY_LEGS=1`, unset `DCA_LEVELS`; `pm2 reload pumpswap-combo-follow-live --update-env`.
+
+---
+
 ## [1.11.390] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.390`
