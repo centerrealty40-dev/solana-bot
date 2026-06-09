@@ -1269,31 +1269,29 @@ const PM2_APPS = [
       },
     },
     /**
-     * HL TWAP watchdog: PM2 status + heartbeat.json + auto-restart + [ALERT][hl_twap_watch].
+     * Unified watchdog: hl-twap, live-oscar, copy-trader, combo-follow-live.
+     * PM2 status + heartbeat.json every 30s → auto-restart + [ALERT][strategy_watch].
      */
     {
-      name: 'hl-twap-process-watch',
+      name: 'strategy-process-watch',
       cwd: root,
-      script: 'scripts-tmp/hl-twap-process-watch.mjs',
+      script: 'scripts-tmp/strategy-process-watch.mjs',
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '80M',
+      max_memory_restart: '120M',
       merge_logs: true,
       time: true,
       env: {
         NODE_ENV: 'production',
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        HL_TWAP_WATCH_PM2_APP: 'hl-twap-telegram-watch',
-        HL_TWAP_WATCH_POLL_MS: '30000',
-        HL_TWAP_WATCH_HEARTBEAT_PATH: path.join(HL_TWAP_DATA_DIR, 'heartbeat.json'),
-        HL_TWAP_WATCH_HEARTBEAT_MAX_STALE_MS: '300000',
-        HL_TWAP_WATCH_AUTO_RESTART: '1',
-        HL_TWAP_WATCH_TELEGRAM: '1',
-        HL_TWAP_WATCH_ALERT_REPEAT_MIN: '15',
+        STRATEGY_PROCESS_WATCH_POLL_MS: '30000',
+        STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
+        STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
+        STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
       },
     },
     /**
