@@ -45,9 +45,44 @@ export function twapMaxMinutes(): number {
   return envInt('HL_TWAP_MAX_MINUTES', 120, 1);
 }
 
-/** Close this many minutes before scheduled TWAP end (not before_last_cycle). Default 10. */
+/** Close this many minutes before scheduled TWAP end (standard lane ≤ threshold). Default 10. */
 export function twapExitEarlyMinutes(): number {
   return envInt('HL_TWAP_EXIT_EARLY_MINUTES', 10, 0);
+}
+
+/** Standard lane: fixed early below this duration (default 30m). Above → pct of TWAP length. */
+export function twapExitAdaptiveThresholdMinutes(): number {
+  return envInt('HL_TWAP_EXIT_ADAPTIVE_THRESHOLD_MINUTES', 30, 1);
+}
+
+/** Exit last N% of TWAP (hold the rest). Default 25 → exit when 75% elapsed. */
+export function twapExitAdaptiveTailPct(): number {
+  const v = process.env.HL_TWAP_EXIT_ADAPTIVE_TAIL_PCT?.trim();
+  if (v != null && v !== '') {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0 && n < 100) return n;
+  }
+  return 25;
+}
+
+export function twapExitAdaptiveEnabled(): boolean {
+  const v = process.env.HL_TWAP_EXIT_ADAPTIVE?.trim();
+  if (v == null || v === '') return true;
+  return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
+}
+
+/**
+ * Minutes before TWAP end to start exit.
+ * Short lane: N/A (slice timing). Standard ≤30m: −10m. Standard >30m: last 25% of duration.
+ */
+export function twapExitEarlyMinutesForDuration(minutes: number): number {
+  const mins = Math.max(1, Math.round(minutes || 0));
+  if (isShortTwapMinutes(mins)) return 0;
+  if (!twapExitAdaptiveEnabled() || mins <= twapExitAdaptiveThresholdMinutes()) {
+    return twapExitEarlyMinutes();
+  }
+  const tailPct = twapExitAdaptiveTailPct();
+  return Math.max(1, Math.round((mins * tailPct) / 100));
 }
 
 /** Wait N minutes after whale TWAP cancel/error before closing (0 = immediate). Default 5. Not used on normal finish. */
@@ -69,7 +104,7 @@ export function twapDurationGate(minutes: number): TwapDurationGate {
   const hi = twapMaxMinutes();
   if (mins < lo) return { allow: false, reason: 'twap_too_short' };
   if (mins > hi) return { allow: false, reason: 'twap_too_long' };
-  const holdMin = mins - twapExitEarlyMinutes();
+  const holdMin = mins - twapExitEarlyMinutesForDuration(mins);
   if (holdMin < 1) return { allow: false, reason: 'twap_hold_too_short' };
   return { allow: true, reason: 'ok' };
 }
