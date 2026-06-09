@@ -34,6 +34,22 @@
 
 ---
 
+## [1.11.380] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.380`
+
+### Follow live: параметры live Oscar (wave B + price DCA)
+
+- **`pumpswap-combo-follow`**: политика **`oscar_wave_b`** — TP-сетка wave B (+2.5% шаг, эскалация 5%/10%/…), defensive trail 20% после +10%, breakeven exit после TP ≥+7.5%.
+- **DCA по цене** −10% / −20% vs первая нога: `positionUsd × 0.333333` (~$200 при $600), **не** mirror leader add по `$3`.
+- **Killstop −50%** vs avg (`PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT=50`).
+- Mirror-adds лидера отключены (`MIRROR_LEADER_ADDS=0`); вход по сигналу лидера — **`$600`** entry.
+- Legacy `leader_ladder` сохранён за `PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY=leader_ladder`.
+
+**Откат:** `PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY=leader_ladder`, `LEG_USD=3`, `pm2 reload pumpswap-combo-follow-live --update-env`; `git checkout sa-alpha-1.11.379`.
+
+---
+
 ## [1.11.379] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.379`

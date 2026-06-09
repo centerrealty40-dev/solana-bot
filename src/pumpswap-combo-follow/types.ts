@@ -1,4 +1,5 @@
 import type { ComboBuyLeg } from '../pumpswap-combo/types.js';
+import type { FollowWaveBState } from './follow-wave-b-state.js';
 
 export type FollowPosition = {
   mint: string;
@@ -7,11 +8,13 @@ export type FollowPosition = {
   openedAt: number;
   legs: ComboBuyLeg[];
   botPeakUsd: number;
-  /** Ladder rung ids already executed (tp1, tp2, …). */
+  /** Ladder rung ids already executed (tp1, tp2, …) — legacy leader-ladder mode. */
   rungsTaken: string[];
   leaderWallet: string;
   /** Paper: fraction of original bag still held (live uses chain balance). */
   remainingFrac: number;
+  /** Live Oscar wave B exit + DCA state (`oscar_wave_b` policy). */
+  waveB?: FollowWaveBState;
 };
 
 export type LeaderMintLedger = {

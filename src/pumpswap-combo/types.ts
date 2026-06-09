@@ -3,6 +3,7 @@ export type ComboBuyLeg = {
   usd: number;
   fillPriceUsd: number;
   txSignature?: string;
+  kind?: 'entry' | 'dca' | 'mirror_add';
 };
 
 export type ComboPosition = {
