@@ -43,7 +43,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     exitPolicy: cfg.exitPolicy,
     legUsd: cfg.legUsd,
     entryUsd: cfg.entryUsd,
-    positionUsd: cfg.positionUsd,
+    dcaNotionalUsd: cfg.dcaNotionalUsd,
     dcaLevels: cfg.dcaLevels.map((l) => `${(l.triggerPct * 100).toFixed(0)}:${l.addFraction}`).join(','),
     dcaKillstopPct: cfg.dcaKillstopPct,
     mirrorLeaderAdds: cfg.mirrorLeaderAdds,
@@ -62,7 +62,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
 
   const bootLine =
     cfg.exitPolicy === 'oscar_wave_b'
-      ? `entry=$${cfg.entryUsd} dca=${cfg.dcaLevels.length} kill=-${cfg.dcaKillstopPct}% waveB`
+      ? `leg=$${cfg.entryUsd} dca=${cfg.dcaLevels.length}×${(cfg.dcaLevels[0]?.addFraction ?? 0) * 100}% kill=-${cfg.dcaKillstopPct}% waveB`
       : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
 
   console.log(
