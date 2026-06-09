@@ -65,20 +65,11 @@ const ConfigSchema = z.object({
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
-  /** USDC share corridor — rebalance only outside [min, max]. */
-  treasuryUsdcMinPct: z.coerce.number().min(0).max(80).default(15),
-  treasuryUsdcMaxPct: z.coerce.number().min(0).max(90).default(30),
-  /** Landing zone after corridor breach (default midpoint 20%). */
-  treasuryUsdcTargetPct: z.coerce.number().min(0).max(80).default(20),
-  treasuryRebalanceMinUsd: z.coerce.number().min(1).max(500).default(3),
-  treasuryMinFreeSol: z.coerce.number().min(0.01).max(2).default(0.08),
-  treasuryRebalanceCooldownMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
 });
 
 export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   exitLadderSpec: ExitLadderRungSpec[];
   exitLadder: EffectiveExitRung[];
-  treasuryMinFreeSolLamports: bigint;
   slMode: FollowSlMode;
   dcaLevels: DcaLevel[];
   /** Entry mirror size — always legUsd ($3 test agent). */
@@ -220,17 +211,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     slippageBps: process.env.PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
-    treasuryUsdcMinPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_MIN_PCT,
-    treasuryUsdcMaxPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_MAX_PCT,
-    treasuryUsdcTargetPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_PCT,
-    treasuryRebalanceMinUsd: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_REBALANCE_MIN_USD,
-    treasuryMinFreeSol: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_MIN_FREE_SOL,
-    treasuryRebalanceCooldownMs: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_REBALANCE_COOLDOWN_MS,
   });
-
-  const treasuryMinFreeSolLamports = BigInt(
-    Math.max(0, Math.floor(parsed.treasuryMinFreeSol * 1e9)),
-  );
 
   const entryUsd = parsed.legUsd;
   const dcaNotionalRaw = process.env.PUMPSWAP_COMBO_FOLLOW_DCA_NOTIONAL_USD?.trim();
@@ -241,7 +222,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     ...parsed,
     exitLadderSpec,
     exitLadder,
-    treasuryMinFreeSolLamports,
     dcaLevels,
     entryUsd,
     dcaNotionalUsd,
