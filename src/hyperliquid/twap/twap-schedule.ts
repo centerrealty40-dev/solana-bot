@@ -1,5 +1,5 @@
 import type { NormalizedTwapSignal } from './types.js';
-import { isShortTwapMinutes, twapExitEarlyMinutes } from './twap-duration.js';
+import { isShortTwapMinutes, twapExitAdaptiveThresholdMinutes, twapExitEarlyMinutesForDuration } from './twap-duration.js';
 
 /** Hyperliquid TWAP: child order every 30s over `minutes` (see HL docs). */
 export const HL_TWAP_SLICE_INTERVAL_SEC = 30;
@@ -19,6 +19,8 @@ export type TwapSchedule = {
   paperOpenAtMs: number;
   /** Бумага: выход перед последним циклом (short lane) или −N мин до конца (standard). */
   paperCloseAtMs: number;
+  /** Minutes before TWAP end (standard lane exit timer). */
+  exitEarlyMinutes: number;
   /** Short TWAP (<15m): instant exit aligned to whale slice before last. */
   shortTwapLane: boolean;
   randomize: boolean;
@@ -38,8 +40,9 @@ export function computeTwapSchedule(sig: Pick<
   const lastCycleEtaMs = twapStartMs + minutes * 60_000;
   /** Enter as soon as TWAP starts (not after first 30s slice). */
   const paperOpenAtMs = twapStartMs;
-  const exitEarlyMs = twapExitEarlyMinutes() * 60_000;
   const shortLane = isShortTwapMinutes(minutes);
+  const exitEarlyMinutes = shortLane ? 0 : twapExitEarlyMinutesForDuration(minutes);
+  const exitEarlyMs = exitEarlyMinutes * 60_000;
   /** Short: flatten instant at boundary before whale's last 30s child order. */
   const paperCloseAtMs = shortLane
     ? Math.max(
@@ -58,6 +61,7 @@ export function computeTwapSchedule(sig: Pick<
     lastCycleEtaMs,
     paperOpenAtMs,
     paperCloseAtMs,
+    exitEarlyMinutes,
     shortTwapLane: shortLane,
     randomize: sig.randomize,
   };
@@ -111,12 +115,19 @@ export function formatTwapScheduleLines(
   const perCycleUsd =
     schedule.notionalPerCycleUsd > 0 ? ` (${fmtUsd(schedule.notionalPerCycleUsd)})` : '';
 
+  const mins = Math.max(1, Math.round(sig.minutes));
+  const exitNote = schedule.shortTwapLane
+    ? `instant выход перед последним слайсом ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
+    : mins > twapExitAdaptiveThresholdMinutes()
+      ? `выход после ${Math.round(((mins - schedule.exitEarlyMinutes) / mins) * 100)}% TWAP (−${schedule.exitEarlyMinutes}m) ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
+      : `выход −${schedule.exitEarlyMinutes}m ${formatMoscowDateTime(schedule.paperCloseAtMs)}`;
+
   return [
     `Первый цикл (МСК): ${formatMoscowDateTime(schedule.firstCycleOpenMs)}`,
     `ETA последнего цикла (МСК): ${formatMoscowDateTime(schedule.lastCycleEtaMs)}`,
     schedule.shortTwapLane
-      ? `Live/paper (short TWAP): вход ${formatMoscowDateTime(schedule.paperOpenAtMs)} · instant выход перед последним слайсом ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
-      : `Live/paper: вход при старте TWAP ${formatMoscowDateTime(schedule.paperOpenAtMs)} · выход −${twapExitEarlyMinutes()}m ${formatMoscowDateTime(schedule.paperCloseAtMs)}`,
+      ? `Live/paper (short TWAP): вход ${formatMoscowDateTime(schedule.paperOpenAtMs)} · ${exitNote}`
+      : `Live/paper: вход при старте TWAP ${formatMoscowDateTime(schedule.paperOpenAtMs)} · ${exitNote}`,
     `Циклов: ${schedule.cycleCount} (${intervalNote})`,
     `За цикл: ${formatTokenAmount(schedule.sizePerCycle)} ${sig.displaySymbol}${perCycleUsd}`,
   ];

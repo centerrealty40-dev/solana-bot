@@ -1,5 +1,5 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutes, isShortTwapMinutes } from '../twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, isShortTwapMinutes } from '../twap-duration.js';
 import {
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
@@ -496,7 +496,7 @@ export async function handleLiveOnTwapEnd(
   if (opens.has(sig.hash)) {
     if (!shouldCloseOnWhaleTwapCancel(endedStatus)) {
       console.log(
-        `[hl-twap-live] ignore whale TWAP end ${sig.displaySymbol} (${endedStatus}) — timer exit −${twapExitEarlyMinutes()}m`,
+        `[hl-twap-live] ignore whale TWAP end ${sig.displaySymbol} (${endedStatus}) — timer exit −${twapExitEarlyMinutesForDuration(sig.minutes)}m`,
       );
       return;
     }

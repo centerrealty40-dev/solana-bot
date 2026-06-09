@@ -34,6 +34,20 @@
 
 ---
 
+## [1.11.382] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.382`
+
+### HL TWAP: adaptive exit timing (standard lane)
+
+- **≤30m:** exit **−10m** before TWAP end (unchanged).
+- **>30m:** exit after **75%** of duration (last 25%, e.g. 60m → close at 45m).
+- Short lane (<15m) unchanged: instant before last whale slice.
+
+**Откат:** `git checkout sa-alpha-1.11.381 -- src/hyperliquid/twap/twap-duration.ts src/hyperliquid/twap/twap-schedule.ts src/hyperliquid/twap/paper-trader.ts src/hyperliquid/twap/live/live-trader.ts src/scripts/hl-twap-telegram-watch.ts`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.381] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.381`

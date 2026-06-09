@@ -9,7 +9,7 @@ describe('twap-schedule', () => {
     process.env = { ...envBackup };
   });
 
-  it('opens at TWAP start and closes 10m before end (standard lane)', () => {
+  it('standard ≤30m: closes 10m before end', () => {
     process.env.HL_TWAP_SHORT_ENABLED = '0';
     const start = 1_700_000_000_000;
     const sched = computeTwapSchedule({
@@ -21,8 +21,22 @@ describe('twap-schedule', () => {
     });
     expect(sched.paperOpenAtMs).toBe(start);
     expect(sched.paperCloseAtMs).toBe(start + 30 * 60_000 - 10 * 60_000);
-    expect(sched.firstCycleOpenMs).toBe(start + 30_000);
+    expect(sched.exitEarlyMinutes).toBe(10);
     expect(sched.shortTwapLane).toBe(false);
+  });
+
+  it('standard >30m: exit last 25% (60m → −15m)', () => {
+    process.env.HL_TWAP_SHORT_ENABLED = '0';
+    const start = 1_700_000_000_000;
+    const sched = computeTwapSchedule({
+      size: 100,
+      minutes: 60,
+      randomize: false,
+      midPx: 1,
+      startedAtMs: start,
+    });
+    expect(sched.exitEarlyMinutes).toBe(15);
+    expect(sched.paperCloseAtMs).toBe(start + 45 * 60_000);
   });
 
   it('short lane: close before last whale slice', () => {
