@@ -34,6 +34,20 @@
 
 ---
 
+## [1.11.384] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.384`
+
+### HL TWAP: coin gates A+B for long entries
+
+- **Gate A:** block long when coin **dd24h ≤ −5%** (Hyperliquid 1h candles vs 24h high).
+- **Gate B:** block long after **any prior loss** on same coin+side (live journal).
+- Paper/live audit + schedule paths; startup log `coin_momentum=1 coin_prior_loss=1`.
+
+**Откат:** `git checkout sa-alpha-1.11.383 -- src/hyperliquid/twap/coin-momentum-gate.ts src/hyperliquid/twap/live/loss-streak-cooldown.ts src/hyperliquid/twap/live/coin-exposure.ts src/hyperliquid/twap/paper-trader.ts src/scripts/hl-twap-telegram-watch.ts`; `HL_TWAP_COIN_MOMENTUM_GATE=0 HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.383] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.383`

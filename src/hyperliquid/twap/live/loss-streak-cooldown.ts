@@ -18,11 +18,20 @@ function envInt(name: string, fallback: number, min = 0): number {
   return Math.max(min, Math.round(n));
 }
 
+function envBool(name: string, defaultOn: boolean): boolean {
+  const v = process.env[name]?.trim();
+  if (v == null || v === '') return defaultOn;
+  return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
+}
+
+/** Gate B: block long after any prior losing close on same coin+side (journal). Default on. */
+export function coinPriorLossBlockEnabled(): boolean {
+  return envBool('HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK', true);
+}
+
 /** Block re-entry after N consecutive losses on same coin+side. Default on. */
 export function lossStreakCooldownEnabled(): boolean {
-  const v = process.env.HL_TWAP_LIVE_LOSS_STREAK_COOLDOWN?.trim();
-  if (v == null || v === '') return true;
-  return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
+  return envBool('HL_TWAP_LIVE_LOSS_STREAK_COOLDOWN', true);
 }
 
 export function lossStreakCount(): number {
@@ -66,6 +75,20 @@ export function loadClosedTradeOutcomes(journalPath: string): ClosedTradeOutcome
     }
   }
   return out;
+}
+
+/** Gate B — any prior loss on coin+side blocks new long entries. */
+export function liveCoinPriorLossBlockReason(
+  coin: string,
+  side: TwapSide,
+  journalPath: string,
+): string | null {
+  if (!coinPriorLossBlockEnabled() || side !== 'buy') return null;
+  const history = loadClosedTradeOutcomes(journalPath).filter(
+    (c) => c.coin === coin && c.side === side,
+  );
+  if (history.some((c) => c.pnlUsd < 0)) return 'coin_prior_loss';
+  return null;
 }
 
 /**
