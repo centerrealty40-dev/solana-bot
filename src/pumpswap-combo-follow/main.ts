@@ -48,6 +48,8 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     slSingle: effectiveSlSummary(cfg),
     buyDelayMs: cfg.buyDelayMs,
     treasuryUsdcTargetPct: cfg.treasuryUsdcTargetPct,
+    treasuryUsdcMinPct: cfg.treasuryUsdcMinPct,
+    treasuryUsdcMaxPct: cfg.treasuryUsdcMaxPct,
   });
 
   console.log(
@@ -55,7 +57,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
   );
 
   if (cfg.executionMode === 'live') {
-    await rebalanceFollowTreasuryIfNeeded(cfg, { force: true });
+    await rebalanceFollowTreasuryIfNeeded(cfg);
   }
 
   for (;;) {

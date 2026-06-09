@@ -136,7 +136,7 @@ export type TreasuryRebalanceResult = {
   plan?: ReturnType<typeof planTreasuryRebalance>;
 };
 
-/** Keep ~targetUsdcPct of liquid SOL+USDC in USDC via Jupiter (live only). */
+/** Keep USDC within [minPct, maxPct] corridor via Jupiter (live only). */
 export async function rebalanceFollowTreasuryIfNeeded(
   cfg: PumpswapComboFollowConfig,
   opts?: { force?: boolean; urgentUsdcUsd?: number },
@@ -159,10 +159,11 @@ export async function rebalanceFollowTreasuryIfNeeded(
     solLamports: bal.solLamports,
     usdcMicro: bal.usdcMicro,
     solUsd,
-    targetUsdcPct: cfg.treasuryUsdcTargetPct,
+    usdcMinPct: cfg.treasuryUsdcMinPct,
+    usdcMaxPct: cfg.treasuryUsdcMaxPct,
+    rebalanceTargetPct: cfg.treasuryUsdcTargetPct,
     minFreeSolLamports: cfg.treasuryMinFreeSolLamports,
     minSwapUsd: cfg.treasuryRebalanceMinUsd,
-    bandPct: cfg.treasuryRebalanceBandPct,
   });
 
   if (urgent) {
@@ -177,15 +178,7 @@ export async function rebalanceFollowTreasuryIfNeeded(
   }
 
   if (plan.action === 'none') {
-    appendFollowEvent(cfg, {
-      kind: 'treasury_rebalance_skip',
-      usdcPct: plan.usdcPct,
-      targetUsdcPct: cfg.treasuryUsdcTargetPct,
-      liquidTotalUsd: plan.liquidTotalUsd,
-      usdcUsd: plan.usdcUsd,
-      usdcDeltaUsd: plan.usdcDeltaUsd,
-    });
-    return { ok: true, skipped: true, reason: 'within_band', plan };
+    return { ok: true, skipped: true, reason: 'within_corridor', plan };
   }
 
   appendFollowEvent(cfg, {
@@ -193,7 +186,9 @@ export async function rebalanceFollowTreasuryIfNeeded(
     direction: plan.action,
     swapUsd: plan.swapUsd,
     usdcPct: plan.usdcPct,
-    targetUsdcPct: cfg.treasuryUsdcTargetPct,
+    usdcMinPct: plan.usdcMinPct,
+    usdcMaxPct: plan.usdcMaxPct,
+    rebalanceTargetPct: plan.rebalanceTargetPct,
     liquidTotalUsd: plan.liquidTotalUsd,
     urgent: urgent || false,
   });

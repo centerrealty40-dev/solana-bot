@@ -12,20 +12,28 @@ export type TreasuryRebalancePlan = {
   liquidTotalUsd: number;
   usdcUsd: number;
   usdcPct: number;
+  /** Mid-corridor target when correcting (only set when action !== none). */
+  rebalanceTargetPct: number;
   targetUsdcUsd: number;
   usdcDeltaUsd: number;
+  usdcMinPct: number;
+  usdcMaxPct: number;
 };
 
-/** Liquid SOL (after gas reserve) + USDC → rebalance plan toward target USDC %. */
+/**
+ * Liquid SOL (after gas reserve) + USDC.
+ * Rebalance only **outside** [minPct, maxPct] corridor — no micro-adjust toward exact target.
+ */
 export function planTreasuryRebalance(args: {
   solLamports: bigint;
   usdcMicro: bigint;
   solUsd: number;
-  targetUsdcPct: number;
+  usdcMinPct: number;
+  usdcMaxPct: number;
+  /** Where to land after leaving the corridor (typically midpoint). */
+  rebalanceTargetPct: number;
   minFreeSolLamports: bigint;
   minSwapUsd: number;
-  /** Rebalance only when |delta| exceeds this fraction of liquid total (0.03 = 3%). */
-  bandPct: number;
 }): TreasuryRebalancePlan {
   const reserve = args.minFreeSolLamports > 0n ? args.minFreeSolLamports : 0n;
   const tradableSolLamports = args.solLamports > reserve ? args.solLamports - reserve : 0n;
@@ -33,22 +41,24 @@ export function planTreasuryRebalance(args: {
   const solValueUsd = (Number(tradableSolLamports) / 1e9) * solUsd;
   const usdcUsd = Number(args.usdcMicro) / 1e6;
   const liquidTotalUsd = solValueUsd + usdcUsd;
-  const targetFrac = Math.min(1, Math.max(0, args.targetUsdcPct / 100));
-  const targetUsdcUsd = liquidTotalUsd * targetFrac;
-  const usdcDeltaUsd = targetUsdcUsd - usdcUsd;
   const usdcPct = liquidTotalUsd > 0 ? (usdcUsd / liquidTotalUsd) * 100 : 0;
 
-  const bandUsd = Math.max(args.minSwapUsd, liquidTotalUsd * Math.max(0, args.bandPct));
+  const minPct = Math.min(args.usdcMinPct, args.usdcMaxPct);
+  const maxPct = Math.max(args.usdcMinPct, args.usdcMaxPct);
+  const targetPct = Math.min(maxPct, Math.max(minPct, args.rebalanceTargetPct));
+  const targetUsdcUsd = liquidTotalUsd * (targetPct / 100);
+  const usdcDeltaUsd = targetUsdcUsd - usdcUsd;
+
   let action: TreasuryRebalanceAction = 'none';
   let swapUsd = 0;
 
   if (liquidTotalUsd >= args.minSwapUsd * 2) {
-    if (usdcDeltaUsd >= bandUsd) {
+    if (usdcPct < minPct) {
       action = 'buy_usdc';
-      swapUsd = Math.min(usdcDeltaUsd, solValueUsd * 0.95);
-    } else if (-usdcDeltaUsd >= bandUsd) {
+      swapUsd = Math.min(Math.max(0, targetUsdcUsd - usdcUsd), solValueUsd * 0.95);
+    } else if (usdcPct > maxPct) {
       action = 'sell_usdc';
-      swapUsd = Math.min(-usdcDeltaUsd, usdcUsd * 0.95);
+      swapUsd = Math.min(Math.max(0, usdcUsd - targetUsdcUsd), usdcUsd * 0.95);
     }
   }
 
@@ -66,8 +76,11 @@ export function planTreasuryRebalance(args: {
     liquidTotalUsd,
     usdcUsd,
     usdcPct,
+    rebalanceTargetPct: targetPct,
     targetUsdcUsd,
     usdcDeltaUsd,
+    usdcMinPct: minPct,
+    usdcMaxPct: maxPct,
   };
 }
 

@@ -46,13 +46,14 @@ const ConfigSchema = z.object({
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
-  /** Liquid SOL+USDC treasury: target USDC share (default 20%). */
+  /** USDC share corridor — rebalance only outside [min, max]. */
+  treasuryUsdcMinPct: z.coerce.number().min(0).max(80).default(15),
+  treasuryUsdcMaxPct: z.coerce.number().min(0).max(90).default(30),
+  /** Landing zone after corridor breach (default midpoint 20%). */
   treasuryUsdcTargetPct: z.coerce.number().min(0).max(80).default(20),
   treasuryRebalanceMinUsd: z.coerce.number().min(1).max(500).default(3),
-  /** Rebalance when USDC share drifts more than this fraction of liquid total. */
-  treasuryRebalanceBandPct: z.coerce.number().min(0.005).max(0.25).default(0.04),
   treasuryMinFreeSol: z.coerce.number().min(0.01).max(2).default(0.08),
-  treasuryRebalanceCooldownMs: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
+  treasuryRebalanceCooldownMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
 });
 
 export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
@@ -92,6 +93,7 @@ export function toComboExecutorConfig(cfg: PumpswapComboFollowConfig): PumpswapC
     tp2Pct: last?.effectiveTpPct ?? 23,
     slSingleLegPct: effectiveStopLossPct(cfg.slSingleLegPct, cfg.exitLeadPct, false, cfg.slMultiLegPct),
     slMultiLegPct: effectiveStopLossPct(cfg.slSingleLegPct, cfg.exitLeadPct, true, cfg.slMultiLegPct),
+    slPreDcaPct: 35,
     portfolioStopLossUsd: cfg.portfolioStopLossUsd,
     lossCooldownMs: cfg.lossCooldownMs,
     lossAlertUsd: cfg.lossAlertUsd,
@@ -104,6 +106,8 @@ export function toComboExecutorConfig(cfg: PumpswapComboFollowConfig): PumpswapC
     shadowMinBuyUsd: 20,
     shadowSigPagesMax: 3,
     shadowEntryEnabled: false,
+    shadowAddEnabled: false,
+    shadowEntryMaxAgeMs: 180_000,
     walletSecret: cfg.walletSecret,
     walletPubkeyExpected: cfg.walletPubkeyExpected,
   };
@@ -168,9 +172,10 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     slippageBps: process.env.PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
+    treasuryUsdcMinPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_MIN_PCT,
+    treasuryUsdcMaxPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_MAX_PCT,
     treasuryUsdcTargetPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_USDC_PCT,
     treasuryRebalanceMinUsd: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_REBALANCE_MIN_USD,
-    treasuryRebalanceBandPct: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_REBALANCE_BAND_PCT,
     treasuryMinFreeSol: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_MIN_FREE_SOL,
     treasuryRebalanceCooldownMs: process.env.PUMPSWAP_COMBO_FOLLOW_TREASURY_REBALANCE_COOLDOWN_MS,
   });

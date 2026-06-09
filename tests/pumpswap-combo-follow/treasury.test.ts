@@ -1,45 +1,53 @@
 import { describe, expect, it } from 'vitest';
 import { planTreasuryRebalance } from '../../src/pumpswap-combo-follow/treasury.js';
 
+const base = {
+  solUsd: 100,
+  usdcMinPct: 15,
+  usdcMaxPct: 30,
+  rebalanceTargetPct: 20,
+  minFreeSolLamports: 100_000_000n,
+  minSwapUsd: 3,
+};
+
 describe('planTreasuryRebalance', () => {
-  it('targets 20% USDC and plans SOL→USDC when underweight', () => {
+  it('does nothing inside 15–30% corridor', () => {
     const plan = planTreasuryRebalance({
-      solLamports: 900_000_000n, // 0.9 SOL tradable after reserve
-      usdcMicro: 0n,
-      solUsd: 100,
-      targetUsdcPct: 20,
-      minFreeSolLamports: 100_000_000n,
-      minSwapUsd: 3,
-      bandPct: 0.04,
+      ...base,
+      solLamports: 720_000_000n,
+      usdcMicro: 20_000_000n, // ~$20 / ~$92 ≈ 22%
     });
-    expect(plan.liquidTotalUsd).toBeCloseTo(80, 1);
-    expect(plan.action).toBe('buy_usdc');
-    expect(plan.swapUsd).toBeGreaterThan(12);
+    expect(plan.action).toBe('none');
+    expect(plan.swapUsd).toBe(0);
   });
 
-  it('skips tiny drift inside band', () => {
+  it('does nothing at 18% USDC (still inside corridor)', () => {
     const plan = planTreasuryRebalance({
-      solLamports: 850_000_000n,
-      usdcMicro: 15_000_000n, // $15 USDC on ~$95 liquid ≈ 16%
-      solUsd: 100,
-      targetUsdcPct: 20,
-      minFreeSolLamports: 50_000_000n,
-      minSwapUsd: 3,
-      bandPct: 0.08,
+      ...base,
+      solLamports: 820_000_000n,
+      usdcMicro: 18_000_000n,
     });
     expect(plan.action).toBe('none');
   });
 
-  it('plans USDC→SOL when overweight USDC', () => {
+  it('plans SOL→USDC only below 15%', () => {
     const plan = planTreasuryRebalance({
+      ...base,
+      solLamports: 900_000_000n,
+      usdcMicro: 0n,
+    });
+    expect(plan.usdcPct).toBeLessThan(15);
+    expect(plan.action).toBe('buy_usdc');
+    expect(plan.swapUsd).toBeGreaterThan(12);
+  });
+
+  it('plans USDC→SOL only above 30%', () => {
+    const plan = planTreasuryRebalance({
+      ...base,
       solLamports: 200_000_000n,
       usdcMicro: 80_000_000n,
-      solUsd: 100,
-      targetUsdcPct: 20,
-      minFreeSolLamports: 50_000_000n,
-      minSwapUsd: 3,
-      bandPct: 0.04,
     });
+    expect(plan.usdcPct).toBeGreaterThan(30);
     expect(plan.action).toBe('sell_usdc');
     expect(plan.swapUsd).toBeGreaterThan(3);
   });
