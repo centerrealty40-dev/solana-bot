@@ -166,11 +166,16 @@ function bump(state, key) {
   state.pending[key] = (state.pending[key] || 0) + 1;
 }
 
-function readNewLines(absPath, state) {
+function readNewLines(absPath, state, opts = {}) {
   if (!fs.existsSync(absPath)) return [];
   const st = fs.statSync(absPath);
   const size = st.size;
-  let offset = state.offsets[absPath] ?? 0;
+  let offset = state.offsets[absPath];
+  if (offset == null) {
+    offset = opts.initAtEof ? size : 0;
+    state.offsets[absPath] = offset;
+    return [];
+  }
   if (offset > size) offset = 0;
   if (offset === size) return [];
   const fd = fs.openSync(absPath, 'r');
@@ -190,7 +195,7 @@ function scanLogs(state) {
     const abs = path.resolve(p);
     const key = processKeyFromLogFile(abs);
     try {
-      for (const line of readNewLines(abs, state)) {
+      for (const line of readNewLines(abs, state, { initAtEof: true })) {
         if (line.trim() && isRateLimitLine(line)) bump(state, key);
       }
     } catch (e) {
@@ -204,7 +209,7 @@ function scanJournals(state) {
     const abs = path.resolve(p);
     const key = journalKeyFromPath(abs);
     try {
-      for (const line of readNewLines(abs, state)) {
+      for (const line of readNewLines(abs, state, { initAtEof: true })) {
         if (!line.trim()) continue;
         try {
           const obj = JSON.parse(line);
@@ -276,6 +281,16 @@ function buildReportBody(state, endIso) {
 async function maybeSendReport(state) {
   const now = Date.now();
   if (state.lastReportAt > 0 && now - state.lastReportAt < INTERVAL_MS) return;
+
+  // Первый цикл после старта — только якорим хвосты логов, отчёт со следующего окна.
+  if (state.lastReportAt === 0) {
+    state.lastReportAt = now;
+    state.windowStartIso = new Date().toISOString();
+    state.pending = {};
+    saveState(state);
+    console.log(JSON.stringify({ ts: new Date().toISOString(), msg: 'rate-429 report baseline (no send on cold start)' }));
+    return;
+  }
 
   const endIso = new Date().toISOString();
   const body = buildReportBody(state, endIso);
