@@ -34,6 +34,20 @@
 
 ---
 
+## [1.11.387] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.387`
+
+### Remove sa-wallet-orchestrator from production PM2
+
+- Deleted PM2 app **`sa-wallet-orchestrator`** from `ecosystem.config.cjs` — it will **not** come back on `pm2 reload ecosystem.config.cjs`.
+- Removed npm script `sa-wallet-orchestrator` from `package.json`.
+- Scripts remain in `scripts-tmp/` for manual one-off only; no autostart.
+
+**Откат:** restore orchestrator block in `ecosystem.config.cjs` + `package.json` from `sa-alpha-1.11.386`; `pm2 start ecosystem.config.cjs --only sa-wallet-orchestrator`.
+
+---
+
 ## [1.11.386] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.386`
