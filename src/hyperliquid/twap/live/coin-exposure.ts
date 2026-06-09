@@ -2,6 +2,7 @@ import { hlTwapEntrySide } from '../fade-whales.js';
 import { hlTwapBtcAlignedBlockReason } from '../twap-btc-gate.js';
 import { isDeniedWhale } from '../whale-denylist.js';
 import type { TwapWatchState } from '../detect.js';
+import { hlTwapCoinMomentumBlockReason } from '../coin-momentum-gate.js';
 import {
   computeCoinEntryPlan,
   opposingActiveTwapsForCoin,
@@ -9,9 +10,9 @@ import {
   twapHourlyImpactPct,
   type CoinEntryPlan,
 } from '../coin-twap-analysis.js';
-import type { NormalizedTwapSignal } from '../types.js';
+import type { NormalizedTwapSignal, TwapSide } from '../types.js';
 import { loadLiveOpensFromJournal, loadPendingLiveSchedules } from './journal.js';
-import { liveLossStreakBlockReason } from './loss-streak-cooldown.js';
+import { liveCoinPriorLossBlockReason, liveLossStreakBlockReason } from './loss-streak-cooldown.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 export type LiveEntryDecision = {
@@ -21,6 +22,21 @@ export type LiveEntryDecision = {
 };
 
 export { shouldCloseForImpactLoss, opposingActiveTwapsForCoin, computeCoinEntryPlan };
+
+/** Gate B + A (prior loss, streak cooldown, coin dd24h) — long entries only. */
+export function hlTwapCoinEntryGateBlockReason(
+  coin: string,
+  side: TwapSide,
+  journalPath?: string,
+): string | null {
+  if (journalPath) {
+    const priorLossBlock = liveCoinPriorLossBlockReason(coin, side, journalPath);
+    if (priorLossBlock) return priorLossBlock;
+    const streakBlock = liveLossStreakBlockReason(coin, side, journalPath);
+    if (streakBlock) return streakBlock;
+  }
+  return hlTwapCoinMomentumBlockReason(coin, side);
+}
 
 /**
  * Each qualifying TWAP (unique hash) → separate $100 position.
@@ -63,9 +79,14 @@ export function canScheduleLiveEntry(
   }
 
   if (journalPath) {
-    const streakBlock = liveLossStreakBlockReason(sig.coin, entrySide, journalPath);
-    if (streakBlock) {
-      return { allow: false, reason: streakBlock };
+    const coinGate = hlTwapCoinEntryGateBlockReason(sig.coin, entrySide, journalPath);
+    if (coinGate) {
+      return { allow: false, reason: coinGate };
+    }
+  } else {
+    const coinMomBlock = hlTwapCoinMomentumBlockReason(sig.coin, entrySide);
+    if (coinMomBlock) {
+      return { allow: false, reason: coinMomBlock };
     }
   }
 

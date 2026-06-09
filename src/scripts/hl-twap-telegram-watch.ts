@@ -15,6 +15,8 @@
  * - HL_TWAP_BTC_ALIGNED_THRESH_PCT=1 — block long when BTC 1h <= -T%, short when >= +T%; |1h| < T allowed
  * - HL_TWAP_BTC_GATE_MAX_STALE_MS=900000 — max age of Binance BTC klines for gate
  * - HL_TWAP_BTC_REFRESH_MS=300000 — poll interval for BTC context when gate enabled
+ * - HL_TWAP_COIN_MOMENTUM_GATE=1 — block long when coin dd24h <= -HL_TWAP_COIN_MOMENTUM_DD24H_PCT (default 5%)
+ * - HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK=1 — block long after any prior loss on same coin (gate B)
  * - HL_TWAP_BUY_ONLY=0 — long+short (legacy: sell только после buy OPEN)
  * - HL_TWAP_PAPER_NOTIONAL_USD=1000 — бумажная нота на сигнал (плитка 3 дашборда)
  * - HL_TWAP_LIVE_ENABLED=0 — live bot; см. docs/platform/hl-twap.md
@@ -50,6 +52,12 @@ import {
   hlTwapBtcAlignedThreshPct,
   hlTwapBtcGateMaxStaleMs,
 } from '../hyperliquid/twap/twap-btc-gate.js';
+import {
+  hlTwapCoinMomentumDd24hPct,
+  hlTwapCoinMomentumGateEnabled,
+  refreshCoinMomentumCache,
+} from '../hyperliquid/twap/coin-momentum-gate.js';
+import { coinPriorLossBlockEnabled } from '../hyperliquid/twap/live/loss-streak-cooldown.js';
 import {
   twapCancelExitDelayMinutes,
   twapExitAdaptiveEnabled,
@@ -199,6 +207,11 @@ async function announceStart(
   feedRows: HypurrscanTwapRow[],
   _cache: HyperliquidMarketCache,
 ): Promise<void> {
+  try {
+    await refreshCoinMomentumCache(sig.coin);
+  } catch (e) {
+    console.warn(`[hl-twap] coin momentum refresh failed ${sig.displaySymbol}`, String(e));
+  }
   const plan =
     LIVE_ENABLED && liveExchange
       ? resolveLiveEntryAuditPlan(sig, watchState, LIVE_CFG.journalPath, MIN_IMPACT_PCT_HOUR)
@@ -384,7 +397,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m short_lane=${twapShortLaneEnabled() ? 1 : 0} short_lt=${twapShortMaxMinutesExclusive()}m exit_adaptive=${twapExitAdaptiveEnabled() ? 1 : 0} exit_le=${twapExitEarlyMinutes()}m exit_adaptive_gt=${twapExitAdaptiveThresholdMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_thresh_pct=${hlTwapBtcAlignedThreshPct()} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
+    `[hl-twap-telegram-watch] start poll=${POLL_MS}ms min_impact=${MIN_IMPACT_PCT_HOUR}%/h twap_min=${twapMinMinutes()}m twap_max=${twapMaxMinutes()}m short_lane=${twapShortLaneEnabled() ? 1 : 0} short_lt=${twapShortMaxMinutesExclusive()}m exit_adaptive=${twapExitAdaptiveEnabled() ? 1 : 0} exit_le=${twapExitEarlyMinutes()}m exit_adaptive_gt=${twapExitAdaptiveThresholdMinutes()}m cancel_exit_delay=${twapCancelExitDelayMinutes()}m whale_deny=${deniedWhaleAddresses().size} fade_whales=${fadeWhaleAddresses().size} btc_aligned=${hlTwapBtcAlignedGateEnabled() ? 1 : 0} btc_thresh_pct=${hlTwapBtcAlignedThreshPct()} btc_stale_ms=${hlTwapBtcGateMaxStaleMs()} coin_momentum=${hlTwapCoinMomentumGateEnabled() ? 1 : 0} coin_dd24h_pct=${hlTwapCoinMomentumDd24hPct()} coin_prior_loss=${coinPriorLossBlockEnabled() ? 1 : 0} buy_only=${BUY_ONLY} paper=${PAPER_ENABLED} live=${LIVE_ENABLED} ended=${NOTIFY_ENDED} dry=${DRY_RUN}`,
   );
 
   if (hlTwapBtcAlignedGateEnabled()) {

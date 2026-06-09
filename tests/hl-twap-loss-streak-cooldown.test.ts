@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { canScheduleLiveEntry } from '../src/hyperliquid/twap/live/coin-exposure.js';
 import {
+  liveCoinPriorLossBlockReason,
   liveLossStreakBlockReason,
   loadClosedTradeOutcomes,
 } from '../src/hyperliquid/twap/live/loss-streak-cooldown.js';
@@ -45,6 +46,8 @@ describe('loss-streak-cooldown', () => {
     process.env.HL_TWAP_LIVE_LOSS_STREAK_COUNT = '2';
     process.env.HL_TWAP_LIVE_LOSS_STREAK_COOLDOWN_HOURS = '2';
     process.env.HL_TWAP_BTC_ALIGNED_GATE = '0';
+    process.env.HL_TWAP_COIN_MOMENTUM_GATE = '0';
+    process.env.HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK = '1';
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-loss-streak-'));
     journalPath = path.join(tmpDir, 'live.jsonl');
   });
@@ -58,7 +61,23 @@ describe('loss-streak-cooldown', () => {
     fs.writeFileSync(journalPath, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
   }
 
+  it('coin prior loss blocks re-entry after single loss (gate B)', () => {
+    const t0 = 1_700_000_000_000;
+    writeJournal([
+      { kind: 'open', ts: t0, hash: '0xa', coin: 'GRASS', side: 'buy' },
+      { kind: 'close', ts: t0 + 60_000, hash: '0xa', pnlUsd: -5, exitPx: 1, pnlPct: -1, exitReason: 'x' },
+    ]);
+    expect(liveCoinPriorLossBlockReason('GRASS', 'buy', journalPath)).toBe('coin_prior_loss');
+    const state = createTwapWatchState();
+    const next = sig('0xc', 'GRASS');
+    state.activeByHash.set('0xc', next);
+    const d = canScheduleLiveEntry(next, state, new Map(), 2, journalPath);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toBe('coin_prior_loss');
+  });
+
   it('blocks after 2 consecutive losses on same coin+side within cooldown', () => {
+    process.env.HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK = '0';
     const t0 = 1_700_000_000_000;
     writeJournal([
       { kind: 'open', ts: t0, hash: '0xa', coin: 'GRASS', side: 'buy' },
@@ -78,6 +97,7 @@ describe('loss-streak-cooldown', () => {
   });
 
   it('canScheduleLiveEntry rejects during cooldown', () => {
+    process.env.HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK = '0';
     const t0 = Date.now() - 3600_000;
     writeJournal([
       { kind: 'open', ts: t0, hash: '0xa', coin: 'GRASS', side: 'buy' },
