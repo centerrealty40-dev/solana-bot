@@ -11,7 +11,7 @@ const ConfigSchema = z.object({
   rpcUrl: z.string().min(8),
   pollIntervalMs: z.coerce.number().int().min(2000).max(60_000).default(5000),
   heartbeatIntervalMs: z.coerce.number().int().min(10_000).max(600_000).default(60_000),
-  watchlistMax: z.coerce.number().int().min(5).max(80).default(30),
+  watchlistMax: z.coerce.number().int().min(5).max(150).default(100),
   /** PG signal filters — жёстче reference bots, меньше кандидатов. */
   minLiquidityUsd: z.coerce.number().min(0).default(40_000),
   minVolume5mUsd: z.coerce.number().min(0).default(3_000),
@@ -42,6 +42,17 @@ const ConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
+  /** Max simultaneous mint positions (hnu5 runs many parallel). */
+  maxConcurrentOpens: z.coerce.number().int().min(1).max(20).default(8),
+  /** Poll reference wallet PumpSwap buys → priority watchlist + co-trade entry. */
+  shadowWalletEnabled: z.coerce.boolean().default(true),
+  shadowWalletPubkey: z.string().min(32).max(64).optional(),
+  shadowLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(1_200_000),
+  shadowPollMs: z.coerce.number().int().min(15_000).max(300_000).default(45_000),
+  shadowMinBuyUsd: z.coerce.number().min(1).default(20),
+  shadowSigPagesMax: z.coerce.number().int().min(1).max(10).default(3),
+  /** Shadow mints skip dump-band/freshness; still need PG filters + probe dip cap. */
+  shadowEntryEnabled: z.coerce.boolean().default(true),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -100,6 +111,16 @@ export function loadPumpswapComboConfig(): PumpswapComboConfig {
     lossCooldownMs: process.env.PUMPSWAP_COMBO_LOSS_COOLDOWN_MS,
     lossAlertUsd: process.env.PUMPSWAP_COMBO_LOSS_ALERT_USD,
     slippageBps: process.env.PUMPSWAP_COMBO_SLIPPAGE_BPS,
+    maxConcurrentOpens: process.env.PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS,
+    shadowWalletEnabled: process.env.PUMPSWAP_COMBO_SHADOW_WALLET_ENABLED,
+    shadowWalletPubkey:
+      process.env.PUMPSWAP_COMBO_SHADOW_WALLET?.trim() ||
+      'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
+    shadowLookbackMs: process.env.PUMPSWAP_COMBO_SHADOW_LOOKBACK_MS,
+    shadowPollMs: process.env.PUMPSWAP_COMBO_SHADOW_POLL_MS,
+    shadowMinBuyUsd: process.env.PUMPSWAP_COMBO_SHADOW_MIN_BUY_USD,
+    shadowSigPagesMax: process.env.PUMPSWAP_COMBO_SHADOW_SIG_PAGES,
+    shadowEntryEnabled: process.env.PUMPSWAP_COMBO_SHADOW_ENTRY_ENABLED,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_WALLET_PUBKEY?.trim(),
   });

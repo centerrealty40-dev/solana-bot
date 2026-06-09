@@ -20,6 +20,7 @@ import {
   writeComboState,
 } from './state.js';
 import { fetchComboWatchlist } from './watchlist.js';
+import { fetchShadowBuyMints, shadowMintSet } from './shadow-wallet.js';
 import { pnlPctVsAvgFill, quoteExitPriceUsd, slPctForPosition } from './pricing.js';
 import { comboLiveBridge } from './live-bridge.js';
 import { configureLiveStore } from '../live/store-jsonl.js';
@@ -116,11 +117,14 @@ async function evaluateEntries(
   watchlist: Awaited<ReturnType<typeof fetchComboWatchlist>>,
   rolling: RollingHighTracker,
   nowMs: number,
-): Promise<{ dumpBandCount: number; probeReadyCount: number }> {
+): Promise<{ dumpBandCount: number; probeReadyCount: number; shadowMintCount: number }> {
   const state = readComboState(cfg);
   pruneCooldowns(state, nowMs);
   let dumpBandCount = 0;
   let probeReadyCount = 0;
+  const shadowBuys = cfg.shadowWalletEnabled ? await fetchShadowBuyMints(cfg, getSolUsd()) : [];
+  const activeShadow = shadowMintSet(shadowBuys);
+  const shadowMintCount = activeShadow.size;
 
   const snap = await portfolioSnapshot(cfg, state);
   if (applyPortfolioHalt(cfg, state, snap.totalPnlUsd)) {
@@ -130,10 +134,10 @@ async function evaluateEntries(
       limitUsd: cfg.portfolioStopLossUsd,
     });
     writeComboState(cfg, state);
-    return { dumpBandCount, probeReadyCount };
+    return { dumpBandCount, probeReadyCount, shadowMintCount };
   }
 
-  if (state.halted) return { dumpBandCount, probeReadyCount };
+  if (state.halted) return { dumpBandCount, probeReadyCount, shadowMintCount };
 
   for (const row of watchlist) {
     rolling.push(row.mint, nowMs, row.priceUsd);
@@ -145,11 +149,19 @@ async function evaluateEntries(
     const pos = findPosition(state, row.mint);
 
     if (!pos) {
+      if (state.positions.length >= cfg.maxConcurrentOpens) continue;
       if (!row.pairAddress) continue;
       if (isLossCooldownActive(state, row.mint, nowMs)) continue;
-      if (!inBand(currentDumpPct, cfg.dumpMinPct, cfg.dumpMaxPct)) continue;
-      if (row.low15mTs > 0 && nowMs - row.low15mTs > cfg.dumpFreshnessMs) continue;
+
+      const shadowCoTrade =
+        cfg.shadowEntryEnabled && (row.fromShadow || activeShadow.has(row.mint));
+
+      if (!shadowCoTrade) {
+        if (!inBand(currentDumpPct, cfg.dumpMinPct, cfg.dumpMaxPct)) continue;
+        if (row.low15mTs > 0 && nowMs - row.low15mTs > cfg.dumpFreshnessMs) continue;
+      }
       dumpBandCount++;
+
       const dipPeak = rolling.dipFromBotPeakPct(row.mint, row.priceUsd);
       if (dipPeak == null || dipPeak > cfg.probeMaxDipFromPeakPct) continue;
       probeReadyCount++;
@@ -160,7 +172,7 @@ async function evaluateEntries(
         symbol: row.symbol,
         poolAddress: row.pairAddress,
         signalPriceUsd: row.priceUsd,
-        intent: 'probe',
+        intent: shadowCoTrade ? 'shadow_probe' : 'probe',
         dumpPct: currentDumpPct,
         dipFromPeakPct: dipPeak,
       });
@@ -213,7 +225,7 @@ async function evaluateEntries(
     });
     writeComboState(cfg, state);
   }
-  return { dumpBandCount, probeReadyCount };
+  return { dumpBandCount, probeReadyCount, shadowMintCount };
 }
 
 export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<void> {
@@ -239,6 +251,9 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
       vol5m: cfg.minVolume5mUsd,
       mcap: `${cfg.minMarketCapUsd}-${cfg.maxMarketCapUsd}`,
     },
+    watchlistMax: cfg.watchlistMax,
+    maxConcurrentOpens: cfg.maxConcurrentOpens,
+    shadowWallet: cfg.shadowWalletEnabled ? cfg.shadowWalletPubkey : null,
   });
 
   console.log(
@@ -265,6 +280,7 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
           watchlistSize: watchlist.length,
           dumpBandCount: scan.dumpBandCount,
           probeReadyCount: scan.probeReadyCount,
+          shadowMintCount: scan.shadowMintCount,
           realizedPnlUsd: snap.realizedPnlUsd,
           unrealizedPnlUsd: snap.unrealizedPnlUsd,
           totalPnlUsd: snap.totalPnlUsd,
@@ -272,7 +288,7 @@ export async function runPumpswapComboLoop(cfg: PumpswapComboConfig): Promise<vo
           solUsd: getSolUsd(),
         });
         console.log(
-          `[pumpswap-combo] heartbeat open=${snap.openCount} wl=${watchlist.length} dump=${scan.dumpBandCount} probe=${scan.probeReadyCount} pnl=$${snap.totalPnlUsd.toFixed(2)} halted=${snap.halted}`,
+          `[pumpswap-combo] heartbeat open=${snap.openCount} wl=${watchlist.length} shadow=${scan.shadowMintCount} dump=${scan.dumpBandCount} probe=${scan.probeReadyCount} pnl=$${snap.totalPnlUsd.toFixed(2)} halted=${snap.halted}`,
         );
       }
     } catch (err) {

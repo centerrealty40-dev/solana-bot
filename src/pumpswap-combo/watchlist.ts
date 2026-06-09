@@ -1,6 +1,8 @@
 import { sql as dsql } from 'drizzle-orm';
 import { db } from '../core/db/client.js';
 import type { PumpswapComboConfig } from './config.js';
+import { getSolUsd } from '../papertrader/pricing.js';
+import { fetchShadowBuyMints } from './shadow-wallet.js';
 import type { WatchlistRow } from './types.js';
 
 /** PumpSwap direct executor spends wrapped SOL — USDC-quoted pools fail sim (Token insufficient funds). */
@@ -8,12 +10,38 @@ export const PUMPSWAP_WSOL_QUOTE_MINT = 'So1111111111111111111111111111111111111
 
 let cache: { at: number; rows: WatchlistRow[] } | null = null;
 
-export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<WatchlistRow[]> {
-  const ttl = Math.max(2000, cfg.pollIntervalMs - 500);
-  const now = Date.now();
-  if (cache && now - cache.at < ttl) return cache.rows;
+function mapPgRow(row: Record<string, unknown>, now: number, fromShadow = false): WatchlistRow {
+  const mint = String(row.base_mint ?? '');
+  return {
+    mint,
+    symbol: mint.slice(0, 6),
+    pairAddress: String(row.pair_address ?? ''),
+    priceUsd: Number(row.price_usd ?? 0),
+    liquidityUsd: Number(row.liquidity_usd ?? 0),
+    volume5mUsd: Number(row.volume_5m ?? 0),
+    marketCapUsd: Number(row.market_cap_usd ?? 0),
+    snapshotTs: Number(row.snapshot_ts ?? now),
+    high15mUsd: Number(row.high_15m ?? row.price_usd ?? 0),
+    low15mUsd: Number(row.low_15m ?? row.price_usd ?? 0),
+    low15mTs: Number(row.low_15m_ts ?? row.snapshot_ts ?? now),
+    fromShadow,
+  };
+}
 
+function mintInClause(mints: string[]): string {
+  return mints.map((m) => `'${m.replace(/'/g, "''")}'`).join(',');
+}
+
+async function fetchPgWatchlistCore(
+  cfg: PumpswapComboConfig,
+  limit: number,
+  mintFilter?: string[],
+): Promise<WatchlistRow[]> {
+  const now = Date.now();
   const windowMin = Math.max(1, Math.round(cfg.rollingHighWindowMs / 60_000));
+  const mintWhere =
+    mintFilter?.length ? `AND base_mint IN (${mintInClause(mintFilter)})` : '';
+
   const r = await db.execute(dsql.raw(`
     WITH latest AS (
       SELECT DISTINCT ON (base_mint)
@@ -32,6 +60,7 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
         AND COALESCE(volume_5m, 0) >= ${cfg.minVolume5mUsd}
         AND COALESCE(market_cap_usd, fdv_usd, 0) >= ${cfg.minMarketCapUsd}
         AND COALESCE(market_cap_usd, fdv_usd, 0) <= ${cfg.maxMarketCapUsd}
+        ${mintWhere}
       ORDER BY base_mint, ts DESC
     ),
     highs AS (
@@ -42,6 +71,7 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
       WHERE ts >= now() - interval '${windowMin} minutes'
         AND quote_mint = '${PUMPSWAP_WSOL_QUOTE_MINT}'
         AND COALESCE(price_usd, 0) > 0
+        ${mintWhere}
       GROUP BY base_mint
     ),
     low_pts AS (
@@ -52,6 +82,7 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
       WHERE ts >= now() - interval '${windowMin} minutes'
         AND quote_mint = '${PUMPSWAP_WSOL_QUOTE_MINT}'
         AND COALESCE(price_usd, 0) > 0
+        ${mintWhere}
       ORDER BY base_mint, price_usd ASC, ts DESC
     )
     SELECT l.*,
@@ -62,28 +93,44 @@ export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<Wat
     LEFT JOIN highs h ON h.base_mint = l.base_mint
     LEFT JOIN low_pts lp ON lp.base_mint = l.base_mint
     ORDER BY l.volume_5m DESC NULLS LAST, l.liquidity_usd DESC NULLS LAST
-    LIMIT ${cfg.watchlistMax}
+    LIMIT ${Math.max(1, limit)}
   `));
 
-  const rows = (r as unknown as Array<Record<string, unknown>>).map((row) => {
-    const mint = String(row.base_mint ?? '');
-    return {
-      mint,
-      symbol: mint.slice(0, 6),
-      pairAddress: String(row.pair_address ?? ''),
-      priceUsd: Number(row.price_usd ?? 0),
-      liquidityUsd: Number(row.liquidity_usd ?? 0),
-      volume5mUsd: Number(row.volume_5m ?? 0),
-      marketCapUsd: Number(row.market_cap_usd ?? 0),
-      snapshotTs: Number(row.snapshot_ts ?? now),
-      high15mUsd: Number(row.high_15m ?? row.price_usd ?? 0),
-      low15mUsd: Number(row.low_15m ?? row.price_usd ?? 0),
-      low15mTs: Number(row.low_15m_ts ?? row.snapshot_ts ?? now),
-    } satisfies WatchlistRow;
-  });
+  return (r as unknown as Array<Record<string, unknown>>).map((row) => mapPgRow(row, now));
+}
 
-  cache = { at: now, rows };
-  return rows;
+export async function fetchComboWatchlist(cfg: PumpswapComboConfig): Promise<WatchlistRow[]> {
+  const ttl = Math.max(2000, cfg.pollIntervalMs - 500);
+  const now = Date.now();
+  if (cache && now - cache.at < ttl) return cache.rows;
+
+  const shadowBuys = cfg.shadowWalletEnabled
+    ? await fetchShadowBuyMints(cfg, getSolUsd())
+    : [];
+  const shadowMints = shadowBuys.map((s) => s.mint);
+  const shadowSet = new Set(shadowMints);
+
+  const shadowRows =
+    shadowMints.length > 0
+      ? (await fetchPgWatchlistCore(cfg, shadowMints.length, shadowMints)).map((r) => ({
+          ...r,
+          fromShadow: true,
+        }))
+      : [];
+
+  const have = new Set(shadowRows.map((r) => r.mint));
+  const pgLimit = Math.max(5, cfg.watchlistMax - shadowRows.length);
+  const pgRows = await fetchPgWatchlistCore(cfg, pgLimit);
+  const merged: WatchlistRow[] = [...shadowRows];
+  for (const row of pgRows) {
+    if (have.has(row.mint)) continue;
+    merged.push({ ...row, fromShadow: shadowSet.has(row.mint) });
+    have.add(row.mint);
+    if (merged.length >= cfg.watchlistMax) break;
+  }
+
+  cache = { at: now, rows: merged };
+  return merged;
 }
 
 /** Latest PumpSwap pool for mint (exit / legacy positions). */

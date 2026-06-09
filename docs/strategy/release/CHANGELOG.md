@@ -24,6 +24,22 @@
 
 ---
 
+---
+
+## [1.11.366] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.366`
+
+### PumpSwap Combo: hnu5 shadow universe + wider watchlist
+
+- **Watchlist 100** (was 30): top PG vol5m + priority inject from reference wallet recent PumpSwap buys.
+- **Shadow lane** (`PUMPSWAP_COMBO_SHADOW_WALLET=hnu5…`): poll signatures ~45s, co-trade entry skips dump-band/freshness for mints hnu5 bought in last 20m (PG filters + probe dip cap remain).
+- **`maxConcurrentOpens=8`**: parallel mints like reference bot (was unlimited serial funnel).
+
+**Откат:** `git checkout sa-alpha-1.11.365 -- src/pumpswap-combo/ ecosystem.config.cjs docs/strategy/release/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
 ## [1.11.365] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.365`
