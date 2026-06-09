@@ -20,6 +20,218 @@
 
 ---
 
+---
+
+---
+
+---
+
+---
+
+---
+
+## [1.11.375] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.375`
+
+### PumpSwap Combo Follow: SL только когда лидер вышел
+
+- **`PUMPSWAP_COMBO_FOLLOW_SL_MODE=while_leader_holds_off`** — stop-loss **не** срабатывает, пока hnu5 держит mint (усредняется); TP-лестница на 2% раньше без изменений.
+- **`PUMPSWAP_COMBO_FOLLOW_SL_PRE_DCA_PCT=45`** (шире до полного DCA, когда лидер уже flat).
+- Журнал: `stop_loss_suppressed` при достижении порога SL при активной позиции лидера.
+- Бэктест: `scripts-tmp/follow-hnu5-exit-backtest.ts` (7d hnu5 RPC + PG snapshots).
+
+**Откат:** `PUMPSWAP_COMBO_FOLLOW_SL_MODE=fixed`, `SL_PRE_DCA_PCT=35`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.374] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.374`
+
+### PumpSwap Combo: max 15 open positions, QuickNode-only RPC
+
+- `PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS=15`
+- Helius fallback **off** for combo bot (monthly cap exhausted — QN only).
+
+**Откат:** `PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS=8` in ecosystem; reload PM2.
+
+---
+
+## [1.11.373] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.373`
+
+### PumpSwap Combo #1: PG radar + RPC live spot (autonomous visibility)
+
+Bot was blind: strict vol5m PG filter → 5 mints; dump=0 on stale PG prices; 8/8 slots full blocked new entries.
+
+- **PG lookback 6h**, vol5m optional (0), sort by dump % descending.
+- **RPC pool spot refresh** (~12/tick) for top dump candidates — no leader wallet.
+- **Dump signal** uses max(PG high, rolling high) vs live spot; freshness accepts RPC timestamp.
+- **Heartbeat** reports `slotsFree` when max concurrent opens blocks entries.
+
+**Откат:** `git checkout sa-alpha-1.11.372 -- src/pumpswap-combo/ ecosystem.config.cjs`; `pm2 reload pumpswap-combo-bot --update-env`.
+
+---
+
+## [1.11.372] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.372`
+
+### PumpSwap Combo #1: autonomous only — strip leader/shadow lane
+
+Combo #1 must trade **autonomously** from forensic rules (3 reference bots). Leader copy belongs **only** to `pumpswap-combo-follow-*`.
+
+- **Removed:** shadow wallet poll, `shadow_probe` / `shadow_add`, hnu5 co-trade, RPC leader injection in watchlist.
+- **Watchlist:** PG-only (liq / vol5m / mcap / dump band / freshness).
+- **DCA add:** only when spot **below** avg fill (no adds on rally).
+- **Kept:** dump probe, dip-band DCA, pre-DCA SL, TP ladder — all signal-driven, no wallet mirror.
+
+**Откат:** `git checkout sa-alpha-1.11.371 -- src/pumpswap-combo/ ecosystem.config.cjs`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot --update-env`.
+
+---
+
+## [1.11.371] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.371`
+
+### PumpSwap Combo: hnu5-like DCA (mirror adds, no invented gap)
+
+Combo #1 stopped out on A4cXNC (−22%) with 1 leg while hnu5 averaged 3 legs and exited in profit. Root cause: invented `addMinGapMs=10m`, tight SL before DCA zone, stale shadow entry, no leader add mirror.
+
+- **`addMinGapMs: 0`** — same as combo-follow; no artificial delay between legs.
+- **`slPreDcaPct: 35`** — wide SL while `legs < maxBuyLegs`; −20/−22% only after full DCA.
+- **Shadow add mirror:** all hnu5 buy events (`fetchShadowBuyEvents`); `shadow_add` legs before SL/TP in same tick.
+- **Fresh shadow entry:** probe only if leader bought within `shadowEntryMaxAgeMs` (3m); signal price from leader fill.
+- **DCA band 15–35%** (was 25–32%).
+- **combo-follow:** same `slPreDcaPct` pre-DCA SL logic.
+
+**PM2 env:** `PUMPSWAP_COMBO_ADD_MIN_GAP_MS=0`, `PUMPSWAP_COMBO_SL_PRE_DCA_PCT=35`, `PUMPSWAP_COMBO_SHADOW_ADD_ENABLED=1`.
+
+**Откат:** `git checkout sa-alpha-1.11.370 -- src/pumpswap-combo/ src/pumpswap-combo-follow/ ecosystem.config.cjs`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot,pumpswap-combo-follow-paper,pumpswap-combo-follow-live --update-env`.
+
+---
+
+## [1.11.370] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.370`
+
+### PumpSwap Combo: fix shadow universe (366 was PG-gated)
+
+366 promised hnu5 shadow breadth but shadow mints still required fresh PG snapshots + vol/liq filters — universe stayed ~9 mints.
+
+- **Shadow RPC lane:** hnu5 PumpSwap buys inject watchlist via canonical pool PDA + on-chain spot price — **no PG required**.
+- **Discovery relaxed:** PG watchlist fill drops vol5m gate (keeps liq/mcap); shadow PG enrich uses 7d lookback.
+- **Shadow entry:** skip probe dip-cap (hnu5 already validated timing).
+- **Pool resolve:** canonical PumpSwap PDA fallback chain-wide (buy/sell/exit).
+
+**Откат:** revert `src/pumpswap-combo/` to pre-370; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.369] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.369`
+
+### PumpSwap Combo #2 follow (paper) + dashboard tile
+
+- **`pumpswap-combo-follow`**: mirror **hnu5** buys/DCA; ladder exits 2% ahead of leader; paper mode with pool-quote marks (no wallet).
+- **PM2** `pumpswap-combo-follow-paper` in `ecosystem.config.cjs`.
+- **Dashboard** `/papertrader2`: плитка 4 `pumpswap-combo-follow-paper` (journal `data/pumpswap-combo-follow/paper-journal.jsonl`).
+
+**Откат:** `git checkout sa-alpha-1.11.368 -- src/pumpswap-combo-follow/ src/scripts/pumpswap-combo-follow-bot.ts tests/pumpswap-combo-follow/ scripts-tmp/pumpswap-combo-follow-dashboard.ts scripts-tmp/pumpswap-combo-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs`; `pm2 delete pumpswap-combo-follow-paper`; `pm2 reload live-oscar-dashboard ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.368] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.368`
+
+### HL TWAP: short lane (<15m) + instant exit before last slice
+
+- **Short TWAP lane** (1–14m, `HL_TWAP_SHORT_ENABLED=1`): separate schedule + instant flatten at whale slice boundary before last 30s child order.
+- Standard lane unchanged (≥16m, chunked exit long 3 / short 10).
+
+**Откат:** `git checkout sa-alpha-1.11.367 -- src/hyperliquid/twap/`; `HL_TWAP_SHORT_ENABLED=0`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.367] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.367`
+
+### HL TWAP live: side-aware exit slices
+
+- **Long** exits: **3 slices** (`HL_TWAP_LIVE_EXIT_SLICES_LONG`, default 3) — faster than 10× backtest on long book.
+- **Short** exits: **10 slices** unchanged (`HL_TWAP_LIVE_EXIT_SLICES=10`).
+
+**Откат:** `git checkout sa-alpha-1.11.366 -- src/hyperliquid/twap/live/ src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-chunked-exit.test.ts`; unset `HL_TWAP_LIVE_EXIT_SLICES_LONG`; `pm2 reload hl-twap-telegram-watch --update-env`.
+
+---
+
+---
+
+## [1.11.367] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.367`
+
+### PumpSwap Combo: fix shadow universe (366 was PG-gated)
+
+366 promised hnu5 shadow breadth but shadow mints still required fresh PG snapshots + vol/liq filters — universe stayed ~9 mints.
+
+- **Shadow RPC lane:** hnu5 PumpSwap buys inject watchlist via canonical pool PDA + on-chain spot price — **no PG required**.
+- **Discovery relaxed:** PG watchlist fill drops vol5m gate (keeps liq/mcap); shadow PG enrich uses 7d lookback.
+- **Shadow entry:** skip probe dip-cap (hnu5 already validated timing).
+- **Pool resolve:** canonical PumpSwap PDA fallback chain-wide (buy/sell/exit).
+
+**Откат:** `git checkout sa-alpha-1.11.366 -- src/pumpswap-combo/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.366] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.366`
+
+### PumpSwap Combo: hnu5 shadow universe + wider watchlist
+
+- **Watchlist 100** (was 30): top PG vol5m + priority inject from reference wallet recent PumpSwap buys.
+- **Shadow lane** (`PUMPSWAP_COMBO_SHADOW_WALLET=hnu5…`): poll signatures ~45s, co-trade entry skips dump-band/freshness for mints hnu5 bought in last 20m (PG filters + probe dip cap remain).
+- **`maxConcurrentOpens=8`**: parallel mints like reference bot (was unlimited serial funnel).
+
+**Откат:** `git checkout sa-alpha-1.11.365 -- src/pumpswap-combo/ ecosystem.config.cjs docs/strategy/release/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.365] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.365`
+
+### PumpSwap Combo: live SOL/USD oracle + chain fill accounting
+
+- **`ensureComboSolUsd()`** before boot, each tick, and every buy — fixes undersized legs when Jupiter SOL price ≠ stale $100 default (few tokens for nominal $3).
+- **Buy fill from chain:** journal `solSpent`, `solUsdAtFill`, `usdAtMarket`, `tokensReceived`; state leg `usd` = actual USD at fill, not config fiction.
+- **`fillPriceUsd`** = `(solSpent × solUsd) / tokens` — matches AMM sell mark basis.
+
+**Откат:** `git checkout sa-alpha-1.11.364 -- src/pumpswap-combo/`; `pm2 reload pumpswap-combo-bot`.
+
+---
+
+## [1.11.364] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.364`
+
+### PumpSwap Combo: restore module + live dump entry fix
+
+- Re-add `src/pumpswap-combo/` (direct PumpSwap AMM executor, WSOL pools, local Connection sim + skipPreflight) on top of 1.11.363 copy-trader.
+- **Entry signal:** probe uses **current dump** `(high_15m − price_now) / high_15m`, not stale max drawdown `(high − low) / high` — fixes bounce buys (e.g. 3KHMZh).
+- **Freshness gate:** window low must be ≤ `PUMPSWAP_COMBO_DUMP_FRESHNESS_MS` (default 3m) old.
+- PM2 `pumpswap-combo-bot` in ecosystem; deploy script `scripts/ops/pumpswap-combo-deploy.sh` (code only); go-live clears manual halt.
+
+**Откат:** `git checkout sa-alpha-1.11.363 -- src/pumpswap-combo/ ecosystem.config.cjs package.json package-lock.json scripts/ops/pumpswap-combo-*.sh docs/strategy/release/`; `npm install`; `pm2 stop pumpswap-combo-bot`.
+
+---
+
 ## [1.11.363] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.363`

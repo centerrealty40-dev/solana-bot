@@ -7,7 +7,7 @@ import { hlTwapEntrySide } from './fade-whales.js';
 import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
 import type { TwapWatchState } from './detect.js';
 import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
-import { HL_TWAP_EXIT_REASON_EARLY, twapCancelExitDelayMinutes, twapExitEarlyMinutes } from './twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutes, isShortTwapMinutes } from './twap-duration.js';
 import {
   clearWhaleExitPending,
   scheduleWhaleExitDelay,
@@ -314,7 +314,10 @@ export async function processPaperTrades(
 
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, HL_TWAP_EXIT_REASON_EARLY, watchState);
+      const exitReason = isShortTwapMinutes(pos.minutes)
+        ? HL_TWAP_EXIT_REASON_SHORT
+        : HL_TWAP_EXIT_REASON_EARLY;
+      closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, exitReason, watchState);
     }
   }
 }
@@ -436,7 +439,9 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
-      label: `Плановый выход −${twapExitEarlyMinutes()}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+      label: isShortTwapMinutes(o.minutes)
+        ? `Плановый instant-выход перед последним слайсом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+        : `Плановый выход −${twapExitEarlyMinutes()}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },
     {
       ts: new Date().toISOString(),

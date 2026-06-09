@@ -1,5 +1,6 @@
 import type { HlTwapLiveConfig } from './config.js';
 import { HL_TWAP_SLICE_INTERVAL_SEC } from '../twap-schedule.js';
+import type { TwapSide } from '../types.js';
 
 export type ChunkedExitConfig = {
   /** 0 or 1 → instant flatten (legacy). */
@@ -7,9 +8,15 @@ export type ChunkedExitConfig = {
   sliceIntervalMs: number;
 };
 
-export function loadChunkedExitConfig(cfg: HlTwapLiveConfig): ChunkedExitConfig {
+/** Long exits use fewer slices (sim: ~+$43 vs 10× on long book); shorts keep full whale-aligned ladder. */
+export function exitSliceCountForSide(side: TwapSide, cfg: HlTwapLiveConfig): number {
+  return side === 'buy' ? cfg.exitSlicesLong : cfg.exitSlicesShort;
+}
+
+export function loadChunkedExitConfig(cfg: HlTwapLiveConfig, side?: TwapSide): ChunkedExitConfig {
+  const sliceCount = side != null ? exitSliceCountForSide(side, cfg) : cfg.exitSlicesShort;
   return {
-    sliceCount: cfg.exitSlices,
+    sliceCount,
     sliceIntervalMs: cfg.exitSliceIntervalMs,
   };
 }

@@ -42,20 +42,8 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп vs мобильный: без промежуточных «планшетных» сеток Tailwind.
-      Сводка сверху — 3 карточки; плитки: Live Oscar · Copy Trader · HL TWAP.
+      Десктоп: 5 плиток — Live Oscar · Copy Trader · Combo #1 · Combo #2 follow · HL TWAP.
     */
-    .dash-desktop-summary-cols {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 1rem;
-    }
-    @media (min-width: 1024px) {
-      .dash-desktop-summary-cols {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 1.5rem;
-      }
-    }
     .dash-desktop-strategy-cols {
       display: grid;
       grid-template-columns: 1fr;
@@ -63,6 +51,17 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.75rem;
+      }
+    }
+    .dash-desktop-summary-cols {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    @media (min-width: 1024px) {
+      .dash-desktop-summary-cols {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1.5rem;
       }
@@ -271,8 +270,20 @@
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo' && s.pumpswapCombo" class="pill mr-1" :class="s.pumpswapCombo.halted ? 'pill-bad' : 'pill-ok'">halt: <span x-text="s.pumpswapCombo.halted ? 'yes' : 'no'"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo' && s.pumpswapCombo" class="pill pill-info mr-1">wl: <span x-text="s.pumpswapCombo.watchlistSize || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo' && s.pumpswapCombo" class="pill pill-info mr-1">dump: <span x-text="s.pumpswapCombo.dumpBandCount || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo' && s.pumpswapCombo" class="pill pill-ok mr-1">probe: <span x-text="s.pumpswapCombo.probeReadyCount || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper' && s.pumpswapComboFollow" class="pill mr-1" :class="s.pumpswapComboFollow.halted ? 'pill-bad' : 'pill-ok'">halt: <span x-text="s.pumpswapComboFollow.halted ? 'yes' : 'no'"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper' && s.pumpswapComboFollow" class="pill pill-info mr-1">pending: <span x-text="s.pumpswapComboFollow.pendingBuys || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper' && s.pumpswapComboFollow" class="pill pill-info mr-1">lead 1h: <span x-text="s.pumpswapComboFollow.leaderSignals1h || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper' && s.pumpswapComboFollow" class="pill pill-warn mr-1">lead sell 1h: <span x-text="s.pumpswapComboFollow.leaderSells1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'pumpswap-combo' && s.strategyId !== 'pumpswap-combo-follow-paper'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'pumpswap-combo' && s.strategyId !== 'pumpswap-combo-follow-paper'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo'" class="pill pill-ok mr-1">buys 1h: <span x-text="s.pumpswapCombo?.buys1h ?? s.passed1h ?? 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo'" class="pill pill-ok">sells 1h: <span x-text="s.pumpswapCombo?.sells1h || 0"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper'" class="pill pill-ok mr-1">mirror 1h: <span x-text="(s.pumpswapComboFollow?.buys1h || 0) + (s.pumpswapComboFollow?.adds1h || 0)"></span></span>
+            <span x-show="s.strategyId === 'pumpswap-combo-follow-paper'" class="pill pill-ok">sells 1h: <span x-text="s.pumpswapComboFollow?.sells1h || 0"></span></span>
             <span class="text-slate-400 ml-1" x-show="s.priceVerify"
                   x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
                           + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
@@ -672,6 +683,8 @@
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
       'copy-trader',
+      'pumpswap-combo',
+      'pumpswap-combo-follow-paper',
       'hl-twap-paper',
     ];
     function emptyOscarPanel(strategyId) {
@@ -769,13 +782,29 @@
         details:
           'PM2 copy-trader · journal data/copytrader/journal.jsonl · state data/copytrader/state.json · лидер data/copytrader/target-wallet.txt. Дашборд: циклы copy (leader buy/sell → our mirror), Solscan на ордер лидера, отдельно наш tx.',
       },
+      'pumpswap-combo': {
+        label: 'PumpSwap Combo',
+        tag: 'live',
+        oneLiner:
+          'Forensic dip-combo: live dump 5–22% от 15m high (fresh ≤3m), $3/leg, TP 70%@+13% + rest@+25%, SL −20/−22%. Direct PumpSwap AMM (WSOL pools).',
+        details:
+          '**Плитка 3** · PM2 **`pumpswap-combo-bot`** · изолирован от Oscar / copy-trader / HL.\n\nDiscovery: PG `pumpswap_pair_snapshots` (WSOL quote only).\nИсполнение: `@pump-fun/pump-swap-sdk` direct AMM · кошелёк `data/pumpswap-combo/wallet.keypair.json`.\nЖурнал: `data/pumpswap-combo/journal.jsonl` · state `data/pumpswap-combo/state.json`.',
+      },
+      'pumpswap-combo-follow-paper': {
+        label: 'Combo Follow (paper)',
+        tag: 'paper',
+        oneLiner:
+          'Combo #2: mirror **hnu5** buys/DCA ($3/leg, max 3 legs); выход **лестницей на 2% раньше** лидера (70%@+11%, rest@+23%), SL −18/−20%. Pool-quote marks, без кошелька.',
+        details:
+          '**Плитка 4** · PM2 **`pumpswap-combo-follow-paper`** · target `hnu5iBK8…`.\n\nВход: poll tx лидера → mirror buy/add (продажи лидера **не** копируем).\nВыход: `quotePumpSwapExitPriceUsd` + ladder lead 2% vs hnu5 13/25%.\nЖурнал: `data/pumpswap-combo-follow/paper-journal.jsonl` · state `paper-state.json`.',
+      },
       'hl-twap-paper': {
         label: 'HL TWAP Dry-run',
         tag: 'dry-run',
         oneLiner:
           'Hyperliquid whale TWAP: вход после 1-го цикла, выход перед последним. **$100**/позиция, impact **≥3%**, лестница ±3% от **средней** (TP/DCA 10%).',
         details:
-          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
+          '**Плитка 5** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

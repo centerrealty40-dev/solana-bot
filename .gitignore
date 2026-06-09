@@ -109,6 +109,12 @@ scripts-tmp/patch-graph-env-vps.sh
 scripts-tmp/run-bot-*.sh
 scripts-tmp/run-swaps-diag.sh
 scripts-tmp/vps-dip-bot-bootstrap-run.sh
+scripts-tmp/__pycache__/
+scripts-tmp/_hl_*.py
+scripts-tmp/_list_wallet_spl.py
+scripts-tmp/_recent_closes.py
+scripts-tmp/hl-twap-exit-*.py
+scripts-tmp/probe-*.ts
 
 # Local parallel git worktree clone (not shipped with product)
 solana-alpha-v2-bs/
