@@ -20,6 +20,23 @@
 
 ---
 
+---
+
+## [1.11.364] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.364`
+
+### PumpSwap Combo: restore module + live dump entry fix
+
+- Re-add `src/pumpswap-combo/` (direct PumpSwap AMM executor, WSOL pools, local Connection sim + skipPreflight) on top of 1.11.363 copy-trader.
+- **Entry signal:** probe uses **current dump** `(high_15m − price_now) / high_15m`, not stale max drawdown `(high − low) / high` — fixes bounce buys (e.g. 3KHMZh).
+- **Freshness gate:** window low must be ≤ `PUMPSWAP_COMBO_DUMP_FRESHNESS_MS` (default 3m) old.
+- PM2 `pumpswap-combo-bot` in ecosystem; deploy script `scripts/ops/pumpswap-combo-deploy.sh` (code only); go-live clears manual halt.
+
+**Откат:** `git checkout sa-alpha-1.11.363 -- src/pumpswap-combo/ ecosystem.config.cjs package.json package-lock.json scripts/ops/pumpswap-combo-*.sh docs/strategy/release/`; `npm install`; `pm2 stop pumpswap-combo-bot`.
+
+---
+
 ## [1.11.363] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.363`
