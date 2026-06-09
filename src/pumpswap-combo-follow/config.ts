@@ -11,6 +11,7 @@ import {
   type EffectiveExitRung,
   type ExitLadderRungSpec,
 } from './exit-ladder.js';
+import { parseFollowSlMode, type FollowSlMode } from './exit-policy.js';
 
 /** Primary reference wallet (hnu5 PumpSwap dip bot). */
 export const HNU5_TARGET_WALLET = 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN';
@@ -41,6 +42,8 @@ const ConfigSchema = z.object({
   slSingleLegPct: z.coerce.number().min(1).max(90).default(20),
   slMultiLegPct: z.coerce.number().min(1).max(90).default(22),
   slPreDcaPct: z.coerce.number().min(1).max(90).default(35),
+  /** fixed | while_leader_holds_off | after_leader_sell */
+  slMode: z.enum(['fixed', 'while_leader_holds_off', 'after_leader_sell']).default('while_leader_holds_off'),
   portfolioStopLossUsd: z.coerce.number().positive().default(50),
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
@@ -61,6 +64,7 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   exitLadderSpec: ExitLadderRungSpec[];
   exitLadder: EffectiveExitRung[];
   treasuryMinFreeSolLamports: bigint;
+  slMode: FollowSlMode;
 };
 
 /** Map to pumpswap-combo executor / journal (unused discovery fields filled with dummies). */
@@ -163,6 +167,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     slSingleLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT,
     slMultiLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_MULTI_PCT,
     slPreDcaPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_PRE_DCA_PCT,
+    slMode: parseFollowSlMode(process.env.PUMPSWAP_COMBO_FOLLOW_SL_MODE),
     portfolioStopLossUsd: process.env.PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD,
     lossCooldownMs: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_COOLDOWN_MS,
     lossAlertUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_ALERT_USD,

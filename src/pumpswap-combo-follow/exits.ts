@@ -12,6 +12,8 @@ import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { executeFollowSell } from './executor.js';
 import { effectiveStopLossPct, nextExitRung } from './exit-ladder.js';
+import { stopLossAllowed } from './exit-policy.js';
+import { leaderPreBalanceRaw } from './leader-ledger.js';
 import { appendFollowEvent } from './journal.js';
 import { followPaperPortfolioSnapshot } from './paper-portfolio.js';
 import { paperInvestedRemainingUsd, paperPoolExitQuoteUsd, paperPnlPctVsAvg } from './paper-pricing.js';
@@ -68,7 +70,15 @@ export async function evaluateFollowExits(
       { legs: pos.legs.length, maxBuyLegs: cfg.maxBuyLegs, slPreDcaPct: cfg.slPreDcaPct },
     );
 
-    if (pnlPct <= -slPct) {
+    const leaderHolds = leaderPreBalanceRaw(state, pos.mint) > 0n;
+    const leaderSoldSinceOpen = Boolean(state.lastLeaderSellByMint[pos.mint]);
+    const slAllowed = stopLossAllowed({
+      slMode: cfg.slMode,
+      leaderHolds,
+      leaderSoldSinceOpen,
+    });
+
+    if (slAllowed && pnlPct <= -slPct) {
       const res = await executeFollowSell({
         cfg,
         pos,
@@ -108,9 +118,25 @@ export async function evaluateFollowExits(
         leaderSlPct: multiLeg ? cfg.slMultiLegPct : cfg.slSingleLegPct,
         effectiveSlPct: slPct,
         exitLeadPct: cfg.exitLeadPct,
+        slMode: cfg.slMode,
+        leaderHolds,
         holdSec: Math.round((Date.now() - pos.openedAt) / 1000),
       });
       continue;
+    }
+
+    if (!slAllowed && pnlPct <= -slPct) {
+      appendFollowEvent(cfg, {
+        kind: 'stop_loss_suppressed',
+        mode: cfg.executionMode,
+        mint: pos.mint,
+        symbol: pos.symbol,
+        pnlPct,
+        effectiveSlPct: slPct,
+        slMode: cfg.slMode,
+        leaderHolds,
+        leaderSoldSinceOpen,
+      });
     }
 
     const rung = nextExitRung(cfg.exitLadder, pos.rungsTaken);

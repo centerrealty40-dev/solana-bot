@@ -28,6 +28,36 @@
 
 ---
 
+---
+
+## [1.11.375] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.375`
+
+### PumpSwap Combo Follow: SL только когда лидер вышел
+
+- **`PUMPSWAP_COMBO_FOLLOW_SL_MODE=while_leader_holds_off`** — stop-loss **не** срабатывает, пока hnu5 держит mint (усредняется); TP-лестница на 2% раньше без изменений.
+- **`PUMPSWAP_COMBO_FOLLOW_SL_PRE_DCA_PCT=45`** (шире до полного DCA, когда лидер уже flat).
+- Журнал: `stop_loss_suppressed` при достижении порога SL при активной позиции лидера.
+- Бэктест: `scripts-tmp/follow-hnu5-exit-backtest.ts` (7d hnu5 RPC + PG snapshots).
+
+**Откат:** `PUMPSWAP_COMBO_FOLLOW_SL_MODE=fixed`, `SL_PRE_DCA_PCT=35`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.374] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.374`
+
+### PumpSwap Combo: max 15 open positions, QuickNode-only RPC
+
+- `PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS=15`
+- Helius fallback **off** for combo bot (monthly cap exhausted — QN only).
+
+**Откат:** `PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS=8` in ecosystem; reload PM2.
+
+---
+
 ## [1.11.373] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.373`
