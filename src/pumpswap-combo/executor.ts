@@ -6,7 +6,7 @@ import { comboLiveBridge } from './live-bridge.js';
 import { loadLiveKeypairFromSecretEnv } from '../live/wallet.js';
 import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { fetchLiveWalletSplBalancesByMint } from '../live/reconcile-live.js';
-import { fetchMintPoolAddress } from './watchlist.js';
+import { resolveMintPumpPool } from './pool-resolve.js';
 import {
   buildPumpSwapBuyTx,
   buildPumpSwapSellTx,
@@ -35,10 +35,11 @@ function signer(cfg: PumpswapComboConfig): Keypair {
   return cachedSigner;
 }
 
-async function resolvePoolAddress(mint: string, poolAddress?: string): Promise<string | null> {
+async function resolvePoolAddress(cfg: PumpswapComboConfig, mint: string, poolAddress?: string): Promise<string | null> {
   const direct = poolAddress?.trim();
   if (direct) return direct;
-  return fetchMintPoolAddress(mint);
+  const rpc = liveRpcUrl(cfg, comboLiveBridge(cfg));
+  return resolveMintPumpPool(rpc, mint, poolAddress);
 }
 
 function isStaleBlockhashError(message: string): boolean {
@@ -115,7 +116,7 @@ export async function executeComboBuy(args: {
   const pk = signer(cfg);
   const rpcUrl = liveRpcUrl(cfg, liveCfg);
 
-  const pool = await resolvePoolAddress(mint, args.poolAddress);
+  const pool = await resolvePoolAddress(cfg, mint, args.poolAddress);
   if (!pool) {
     appendComboEvent(cfg, { kind: 'buy_fail', mint, symbol, intent, reason: 'no_pool' });
     return { ok: false, reason: 'no_pool' };
@@ -242,7 +243,7 @@ export async function executeComboSell(args: {
   const isFull = intent === 'tp2_full' || intent === 'stop_loss' || intent === 'portfolio_halt';
   const frac = isFull ? 1 : Math.min(1, Math.max(0.05, args.sellFrac ?? cfg.tp1SellFrac));
 
-  const pool = await resolvePoolAddress(mint, args.poolAddress);
+  const pool = await resolvePoolAddress(cfg, mint, args.poolAddress);
   if (!pool) {
     appendComboEvent(cfg, { kind: 'sell_fail', mint, symbol, exitReason, reason: 'no_pool' });
     return { ok: false, reason: 'no_pool' };
@@ -357,7 +358,7 @@ export async function quoteSellProceedsUsd(
 ): Promise<number | null> {
   if (tokenRaw <= 0n) return null;
   const liveCfg = comboLiveBridge(cfg);
-  const pool = await resolvePoolAddress(mint, poolAddress);
+  const pool = await resolvePoolAddress(cfg, mint, poolAddress);
   if (!pool) return null;
   const rpcUrl = liveRpcUrl(cfg, liveCfg);
   const pk = signer(cfg).publicKey;

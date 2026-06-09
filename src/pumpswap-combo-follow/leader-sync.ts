@@ -1,5 +1,5 @@
 import type { TxJsonParsed } from '../parser/rpc-http.js';
-import { decodeAllowlistedDexSwapForWallet } from '../parser/allowlisted-dex-swap.js';
+import { decodeAllowlistedDexSwapForWallet, extractPumpSwapPoolFromTx } from '../parser/allowlisted-dex-swap.js';
 import { decodePumpfunSwap, PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { SwapInsert } from '../parser/pumpfun.js';
 import {
@@ -10,10 +10,10 @@ import {
 import { fetchParsedTransaction, fetchWalletSignatures, type SignatureRow } from '../copytrader/rpc.js';
 import { fetchWalletMintBalanceRaw } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { fetchMintPoolAddress } from '../pumpswap-combo/watchlist.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { executeFollowBuy } from './executor.js';
 import { appendFollowEvent } from './journal.js';
+import { resolveFollowPoolAddress } from './pool-resolve.js';
 import {
   findFollowPosition,
   newFollowId,
@@ -48,6 +48,7 @@ function scheduleFollowBuy(
     leaderPriceUsd: number;
     leaderBuyUsd: number;
     leaderBlockTimeSec?: number;
+    poolAddress?: string;
   },
 ): void {
   const now = Date.now();
@@ -61,6 +62,7 @@ function scheduleFollowBuy(
     leaderPriceUsd: args.leaderPriceUsd,
     leaderBuyUsd: args.leaderBuyUsd,
     leaderBlockTimeSec: args.leaderBlockTimeSec,
+    poolAddress: args.poolAddress,
     dueTs,
     retryUntilTs: dueTs + cfg.buyRetryWindowMs,
   };
@@ -78,6 +80,7 @@ function scheduleFollowBuy(
     retryUntilTs: pending.retryUntilTs,
     sizeUsd: cfg.legUsd,
     targetWallet: cfg.targetWallet,
+    poolAddress: args.poolAddress ?? null,
   });
 }
 
@@ -88,6 +91,7 @@ async function onLeaderBuy(
   symbol: string,
   row: SignatureRow,
   preLeaderRaw: bigint,
+  leaderTx?: TxJsonParsed,
 ): Promise<void> {
   const mint = swap.baseMint;
   if (swap.amountUsd < cfg.minLeaderBuyUsd) {
@@ -123,6 +127,7 @@ async function onLeaderBuy(
       leaderPriceUsd: swap.priceUsd,
       leaderBuyUsd: swap.amountUsd,
       leaderBlockTimeSec: row.blockTime,
+      poolAddress: leaderTx ? extractPumpSwapPoolFromTx(leaderTx) ?? undefined : undefined,
     });
     return;
   }
@@ -165,6 +170,7 @@ async function onLeaderBuy(
     leaderPriceUsd: swap.priceUsd,
     leaderBuyUsd: swap.amountUsd,
     leaderBlockTimeSec: row.blockTime,
+    poolAddress: leaderTx ? extractPumpSwapPoolFromTx(leaderTx) ?? undefined : undefined,
   });
 }
 
@@ -200,16 +206,21 @@ async function executePendingBuy(
   state: FollowState,
   pending: PendingFollowBuy,
 ): Promise<void> {
-  const pool = await fetchMintPoolAddress(pending.mint);
+  const resolved = await resolveFollowPoolAddress(cfg, pending.mint, {
+    poolHint: pending.poolAddress,
+  });
+  const pool = resolved.pool;
   if (!pool) {
     appendFollowEvent(cfg, {
       kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
       reason: 'no_pumpswap_pool',
       mint: pending.mint,
       leaderSignature: pending.leaderSignature,
+      poolResolveSource: resolved.source,
     });
     return;
   }
+  pending.poolAddress = pool;
 
   const existing = findFollowPosition(state, pending.mint);
 
@@ -317,6 +328,8 @@ async function executePendingBuy(
         fillPriceUsd: buy.fillPriceUsd,
         leaderPriceUsd: pending.leaderPriceUsd,
         leaderBuyUsd: pending.leaderBuyUsd,
+        poolAddress: pool,
+        poolResolveSource: resolved.source,
         txSignature: buy.txSignature,
         ...timingFields,
       });
@@ -421,7 +434,7 @@ export async function pollLeaderAndScheduleBuys(
     }
 
     if (swap.side === 'buy') {
-      await onLeaderBuy(cfg, state, swap, symbol, row, preLeaderRaw);
+      await onLeaderBuy(cfg, state, swap, symbol, row, preLeaderRaw, tx);
     } else {
       await onLeaderSell(cfg, state, swap, row, preLeaderRaw);
     }

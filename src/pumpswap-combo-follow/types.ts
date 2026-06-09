@@ -26,6 +26,8 @@ export type PendingFollowBuy = {
   leaderSignature: string;
   leaderPriceUsd: number;
   leaderBuyUsd: number;
+  /** PumpSwap pool from leader tx / canonical PDA — survives PG indexer lag. */
+  poolAddress?: string;
   /** Unix sec from RPC signature row when available. */
   leaderBlockTimeSec?: number;
   dueTs: number;

@@ -121,7 +121,7 @@ function decimalsForMint(balances: TokenBal[] | null | undefined, owner: string,
   return null;
 }
 
-function fullAccountKeys(tx: TxJsonParsed): string[] {
+export function fullAccountKeys(tx: TxJsonParsed): string[] {
   const msg = tx.transaction?.message as Record<string, unknown> | undefined;
   const ak = msg?.accountKeys ?? msg?.staticAccountKeys;
   const base: string[] = [];
@@ -347,6 +347,45 @@ function tryDecodeAllowlistedRouteForWallet(
     dex: dexLabel,
     source: 'allowlisted_dex_parser',
   };
+}
+
+/**
+ * First PumpSwap AMM pool account in outer/inner instructions (Buy/Sell ix account #0).
+ * Works for direct PumpSwap and Jupiter-routed PumpSwap legs.
+ */
+export function extractPumpSwapPoolFromTx(tx: TxJsonParsed): string | null {
+  const keys = fullAccountKeys(tx);
+
+  const scan = (ixs: unknown): string | null => {
+    if (!Array.isArray(ixs)) return null;
+    for (const ix of ixs) {
+      if (!ix || typeof ix !== 'object') continue;
+      const o = ix as Record<string, unknown>;
+      let pid: string | undefined;
+      if (typeof o.programId === 'string') pid = o.programId;
+      else if (typeof o.programIdIndex === 'number') pid = keys[o.programIdIndex];
+      if (pid !== PUMP_SWAP_AMM_PROGRAM_ID) continue;
+      const accIdx = o.accounts as number[] | undefined;
+      if (!Array.isArray(accIdx) || accIdx.length === 0) continue;
+      const pool = keys[accIdx[0]!];
+      if (pool) return pool;
+    }
+    return null;
+  };
+
+  const msg = tx.transaction?.message as Record<string, unknown> | undefined;
+  const top = scan(msg?.instructions);
+  if (top) return top;
+
+  const meta = tx.meta as Record<string, unknown> | null | undefined;
+  const inner = meta?.innerInstructions;
+  if (Array.isArray(inner)) {
+    for (const block of inner) {
+      const found = scan((block as { instructions?: unknown }).instructions);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 /**
