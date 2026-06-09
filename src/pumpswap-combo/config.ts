@@ -51,7 +51,7 @@ const ConfigSchema = z.object({
   lossAlertUsd: z.coerce.number().positive().default(5),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
   /** Max simultaneous mint positions. */
-  maxConcurrentOpens: z.coerce.number().int().min(1).max(20).default(8),
+  maxConcurrentOpens: z.coerce.number().int().min(1).max(25).default(15),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
