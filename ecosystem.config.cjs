@@ -1290,6 +1290,10 @@ const PM2_APPS = [
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
       },
     },
+    /**
+     * Combo #1 AUTONOMOUS — forensic mix of 3 reference PumpSwap dip bots (PG signals only).
+     * NO leader wallet / copy. Leader mirror → pumpswap-combo-follow-* only.
+     */
     {
       name: 'pumpswap-combo-bot',
       cwd: root,
@@ -1319,13 +1323,6 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_POLL_MS: '5000',
         PUMPSWAP_COMBO_WATCHLIST_MAX: '100',
         PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS: '8',
-        PUMPSWAP_COMBO_SHADOW_WALLET_ENABLED: '1',
-        PUMPSWAP_COMBO_SHADOW_WALLET: 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
-        PUMPSWAP_COMBO_SHADOW_LOOKBACK_MS: '1200000',
-        PUMPSWAP_COMBO_SHADOW_POLL_MS: '45000',
-        PUMPSWAP_COMBO_SHADOW_MIN_BUY_USD: '20',
-        PUMPSWAP_COMBO_SHADOW_SIG_PAGES: '3',
-        PUMPSWAP_COMBO_SHADOW_ENTRY_ENABLED: '1',
         PUMPSWAP_COMBO_MIN_LIQ_USD: '35000',
         PUMPSWAP_COMBO_MIN_VOL_5M_USD: '2500',
         PUMPSWAP_COMBO_MIN_MCAP_USD: '100000',
@@ -1344,8 +1341,6 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_SL_SINGLE_PCT: '20',
         PUMPSWAP_COMBO_SL_MULTI_PCT: '22',
         PUMPSWAP_COMBO_SL_PRE_DCA_PCT: '35',
-        PUMPSWAP_COMBO_SHADOW_ADD_ENABLED: '1',
-        PUMPSWAP_COMBO_SHADOW_ENTRY_MAX_AGE_MS: '180000',
         PUMPSWAP_COMBO_SLIPPAGE_BPS: '300',
         SOLANA_RPC_HELIUS_PREFER: '0',
         SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',

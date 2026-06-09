@@ -25,11 +25,11 @@ const ConfigSchema = z.object({
   dumpFreshnessMs: z.coerce.number().int().min(30_000).max(900_000).default(180_000),
   /** Probe: первый buy около local peak (med 0%). */
   probeMaxDipFromPeakPct: z.coerce.number().min(0).max(30).default(7),
-  /** DCA add: hnu5 med ~−16…−29% от bot peak; 15% floor matches leader add spacing. */
+  /** DCA add: forensic med ~−16…−29% от bot peak. */
   addDipMinPct: z.coerce.number().min(5).max(60).default(15),
   addDipMaxPct: z.coerce.number().min(5).max(70).default(35),
   maxBuyLegs: z.coerce.number().int().min(1).max(5).default(3),
-  /** Min ms between legs — 0 = hnu5-like (combo-follow uses 0). */
+  /** Min ms between DCA legs (0 = no artificial delay). */
   addMinGapMs: z.coerce.number().int().min(0).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
   /** Forensic TP ladder (hnu5/FYX5): ~70% @ +13%, rest @ +25%. */
@@ -44,21 +44,8 @@ const ConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
-  /** Max simultaneous mint positions (hnu5 runs many parallel). */
+  /** Max simultaneous mint positions. */
   maxConcurrentOpens: z.coerce.number().int().min(1).max(20).default(8),
-  /** Poll reference wallet PumpSwap buys → priority watchlist + co-trade entry. */
-  shadowWalletEnabled: z.coerce.boolean().default(true),
-  shadowWalletPubkey: z.string().min(32).max(64).optional(),
-  shadowLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(1_200_000),
-  shadowPollMs: z.coerce.number().int().min(15_000).max(300_000).default(45_000),
-  shadowMinBuyUsd: z.coerce.number().min(1).default(20),
-  shadowSigPagesMax: z.coerce.number().int().min(1).max(10).default(3),
-  /** Shadow mints skip dump-band/freshness; entry only on fresh hnu5 buy. */
-  shadowEntryEnabled: z.coerce.boolean().default(true),
-  /** Mirror hnu5 DCA buys on open positions (combo-follow lane). */
-  shadowAddEnabled: z.coerce.boolean().default(true),
-  /** Shadow probe only if hnu5 bought within this window (ms). */
-  shadowEntryMaxAgeMs: z.coerce.number().int().min(30_000).max(900_000).default(180_000),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -119,17 +106,6 @@ export function loadPumpswapComboConfig(): PumpswapComboConfig {
     lossAlertUsd: process.env.PUMPSWAP_COMBO_LOSS_ALERT_USD,
     slippageBps: process.env.PUMPSWAP_COMBO_SLIPPAGE_BPS,
     maxConcurrentOpens: process.env.PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS,
-    shadowWalletEnabled: process.env.PUMPSWAP_COMBO_SHADOW_WALLET_ENABLED,
-    shadowWalletPubkey:
-      process.env.PUMPSWAP_COMBO_SHADOW_WALLET?.trim() ||
-      'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
-    shadowLookbackMs: process.env.PUMPSWAP_COMBO_SHADOW_LOOKBACK_MS,
-    shadowPollMs: process.env.PUMPSWAP_COMBO_SHADOW_POLL_MS,
-    shadowMinBuyUsd: process.env.PUMPSWAP_COMBO_SHADOW_MIN_BUY_USD,
-    shadowSigPagesMax: process.env.PUMPSWAP_COMBO_SHADOW_SIG_PAGES,
-    shadowEntryEnabled: process.env.PUMPSWAP_COMBO_SHADOW_ENTRY_ENABLED,
-    shadowAddEnabled: process.env.PUMPSWAP_COMBO_SHADOW_ADD_ENABLED,
-    shadowEntryMaxAgeMs: process.env.PUMPSWAP_COMBO_SHADOW_ENTRY_MAX_AGE_MS,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_WALLET_PUBKEY?.trim(),
   });

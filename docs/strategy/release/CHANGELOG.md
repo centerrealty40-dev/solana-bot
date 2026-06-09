@@ -28,6 +28,23 @@
 
 ---
 
+## [1.11.372] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.372`
+
+### PumpSwap Combo #1: autonomous only — strip leader/shadow lane
+
+Combo #1 must trade **autonomously** from forensic rules (3 reference bots). Leader copy belongs **only** to `pumpswap-combo-follow-*`.
+
+- **Removed:** shadow wallet poll, `shadow_probe` / `shadow_add`, hnu5 co-trade, RPC leader injection in watchlist.
+- **Watchlist:** PG-only (liq / vol5m / mcap / dump band / freshness).
+- **DCA add:** only when spot **below** avg fill (no adds on rally).
+- **Kept:** dump probe, dip-band DCA, pre-DCA SL, TP ladder — all signal-driven, no wallet mirror.
+
+**Откат:** `git checkout sa-alpha-1.11.371 -- src/pumpswap-combo/ ecosystem.config.cjs`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-bot --update-env`.
+
+---
+
 ## [1.11.371] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.371`

@@ -14,8 +14,6 @@ export type ComboPosition = {
   legs: ComboBuyLeg[];
   botPeakUsd: number;
   tp1Taken: boolean;
-  /** Leader buy signatures already mirrored as DCA legs. */
-  shadowMirroredLeaderSigs?: string[];
 };
 
 export type WatchlistRow = {
@@ -34,6 +32,4 @@ export type WatchlistRow = {
   low15mUsd: number;
   /** When low_15m was observed (ms) — freshness gate for live dump. */
   low15mTs: number;
-  /** Injected from shadow reference wallet recent buys — relaxed entry path. */
-  fromShadow?: boolean;
 };
