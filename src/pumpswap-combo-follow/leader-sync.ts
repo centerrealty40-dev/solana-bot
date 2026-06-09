@@ -206,8 +206,16 @@ async function executePendingBuy(
   state: FollowState,
   pending: PendingFollowBuy,
 ): Promise<void> {
+  let poolHint = pending.poolAddress;
+  if (!poolHint?.trim()) {
+    const leaderTx = await fetchParsedTransaction(cfg.rpcUrl, pending.leaderSignature);
+    if (leaderTx) {
+      poolHint = extractPumpSwapPoolFromTx(leaderTx as TxJsonParsed) ?? undefined;
+    }
+  }
+
   const resolved = await resolveFollowPoolAddress(cfg, pending.mint, {
-    poolHint: pending.poolAddress,
+    poolHint,
   });
   const pool = resolved.pool;
   if (!pool) {
