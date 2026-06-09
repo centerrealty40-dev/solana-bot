@@ -53,7 +53,6 @@
     "sa-grws-collector": "node scripts-tmp/sa-grws-collector.mjs",
     "sa-grws-analytics": "node scripts-tmp/sa-grws-analytics.mjs",
     "sa-grws-pilot-diagnose": "node scripts-tmp/sa-grws-pilot-diagnose.mjs",
-    "sa-wallet-orchestrator": "node scripts-tmp/sa-wallet-orchestrator.mjs",
     "sa-qn-global-report": "node scripts-tmp/sa-qn-global-report.mjs",
     "sa-qn-budget-check": "node scripts-tmp/sa-qn-budget-check.mjs",
     "wallet-backfill:run": "tsx src/scripts/wallet-backfill-run.ts",
