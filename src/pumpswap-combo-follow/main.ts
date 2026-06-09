@@ -8,7 +8,12 @@ import { toComboExecutorConfig } from './config.js';
 import { checkFollowPortfolioHalt, evaluateFollowExits } from './exits.js';
 import { evaluateFollowDca } from './follow-dca.js';
 import { appendFollowEvent } from './journal.js';
-import { pollLeaderAndScheduleBuys, processPendingFollowBuys } from './leader-sync.js';
+import { LeaderWalletWsClient } from './leader-ws.js';
+import {
+  handleLeaderWsSignature,
+  pollLeaderAndScheduleBuys,
+  processPendingFollowBuys,
+} from './leader-sync.js';
 import {
   followStateAsCombo,
   gcFollowSeenSignatures,
@@ -18,6 +23,19 @@ import {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Serialize poll + WS ingest so state/pendingBuys are not mutated concurrently. */
+function createLeaderPipelineLock() {
+  let chain: Promise<void> = Promise.resolve();
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = chain.then(fn);
+    chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
 }
 
 export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig): Promise<void> {
@@ -55,16 +73,60 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     exitLadder: ladderSummary,
     slSingle: effectiveSlSummary(cfg),
     buyDelayMs: cfg.buyDelayMs,
+    leaderWsEnabled: cfg.leaderWsEnabled,
+    pollIntervalMs: cfg.pollIntervalMs,
+    pollFallbackMs: cfg.pollFallbackMs,
   });
 
+  const pollLabel = cfg.leaderWsEnabled
+    ? `ws+pollFallback=${cfg.pollFallbackMs}ms`
+    : `poll=${cfg.pollIntervalMs}ms`;
   const bootLine =
     cfg.exitPolicy === 'oscar_wave_b'
       ? `leg=$${cfg.entryUsd} dca=${cfg.dcaLevels.length}×${(cfg.dcaLevels[0]?.addFraction ?? 0) * 100}% kill=-${cfg.dcaKillstopPct}% waveB`
       : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
 
   console.log(
-    `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} ${bootLine} poll=${cfg.pollIntervalMs}ms`,
+    `[pumpswap-combo-follow] ${cfg.executionMode.toUpperCase()} follow=${cfg.targetWallet.slice(0, 8)} ${bootLine} ${pollLabel}`,
   );
+
+  const withLeaderLock = createLeaderPipelineLock();
+  let lastPollMs = 0;
+  let leaderWs: LeaderWalletWsClient | null = null;
+
+  if (cfg.leaderWsEnabled && cfg.leaderWsUrl) {
+    leaderWs = new LeaderWalletWsClient({
+      wsUrl: cfg.leaderWsUrl,
+      wallet: cfg.targetWallet,
+      onSignature: (n) => {
+        void withLeaderLock(async () => {
+          try {
+            await handleLeaderWsSignature(cfg, { signature: n.signature, err: n.err });
+          } catch (err) {
+            appendFollowEvent(cfg, {
+              kind: 'leader_ws_ingest_error',
+              leaderSignature: n.signature,
+              error: (err as Error).message,
+            });
+          }
+        });
+      },
+      onStatus: (event, detail) => {
+        appendFollowEvent(cfg, { kind: 'leader_ws_status', event, detail: detail ?? null });
+        if (event === 'open' || event === 'subscribed') {
+          console.log(`[pumpswap-combo-follow] leader-ws ${event}${detail ? ` ${detail}` : ''}`);
+        } else if (event === 'error') {
+          console.warn(`[pumpswap-combo-follow] leader-ws error ${detail ?? ''}`);
+        }
+      },
+    });
+    leaderWs.start();
+  } else if (cfg.executionMode === 'live') {
+    console.warn('[pumpswap-combo-follow] leader WS disabled (no wss URL or PUMPSWAP_COMBO_FOLLOW_LEADER_WS=0)');
+  }
+
+  const tickMs = cfg.leaderWsEnabled ? 1000 : cfg.pollIntervalMs;
+  const pollEveryMs = cfg.leaderWsEnabled ? cfg.pollFallbackMs : cfg.pollIntervalMs;
 
   for (;;) {
     const nowMs = Date.now();
@@ -80,11 +142,23 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
 
       const fresh = readFollowState(cfg);
       if (!fresh.halted) {
-        const poll = await pollLeaderAndScheduleBuys(cfg, fresh);
-        if (poll.rpcFailed) {
-          appendFollowEvent(cfg, { kind: 'poll_rpc_fail' });
+        const shouldPoll = nowMs - lastPollMs >= pollEveryMs;
+        if (shouldPoll) {
+          lastPollMs = nowMs;
+          await withLeaderLock(async () => {
+            const pollState = readFollowState(cfg);
+            const poll = await pollLeaderAndScheduleBuys(cfg, pollState);
+            if (poll.rpcFailed) {
+              appendFollowEvent(cfg, { kind: 'poll_rpc_fail' });
+            }
+            await processPendingFollowBuys(cfg, pollState);
+          });
+        } else if (cfg.leaderWsEnabled) {
+          await withLeaderLock(async () => {
+            const pollState = readFollowState(cfg);
+            await processPendingFollowBuys(cfg, pollState);
+          });
         }
-        await processPendingFollowBuys(cfg, fresh);
         if (cfg.exitPolicy === 'oscar_wave_b') {
           await evaluateFollowDca(cfg, fresh);
         }
@@ -118,7 +192,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
       console.warn('[pumpswap-combo-follow] tick error', (err as Error).message);
       appendFollowEvent(cfg, { kind: 'tick_error', error: (err as Error).message });
     }
-    await sleep(cfg.pollIntervalMs);
+    await sleep(tickMs);
   }
 }
 

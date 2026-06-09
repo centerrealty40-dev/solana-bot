@@ -34,6 +34,35 @@
 
 ---
 
+## [1.11.386] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.386`
+
+### pumpswap-combo-follow: leader wallet WebSocket ingest
+
+- `logsSubscribe` on hnu5 wallet via `SA_RPC_WS_URL` / `resolveSolanaRpcWsUrl()` — push signature instead of 5s HTTP poll.
+- Shared `ingestLeaderSignature`; mutex between WS and poll; HTTP backfill every 30s (`PUMPSWAP_COMBO_FOLLOW_POLL_FALLBACK_MS`).
+- Journal: `leader_ws_observed`, `leader_ws_status`, `leader_ws_ingest_error`.
+- Live PM2: `PUMPSWAP_COMBO_FOLLOW_LEADER_WS=1`.
+
+**Откат:** `git checkout sa-alpha-1.11.385 -- src/pumpswap-combo-follow/ src/core/rpc/resolve-solana-rpc-url.ts ecosystem.config.cjs docs/strategy/release/`; `PUMPSWAP_COMBO_FOLLOW_LEADER_WS=0`; `pm2 reload ecosystem.config.cjs --only pumpswap-combo-follow-live --update-env`.
+
+---
+
+## [1.11.385] — 2026-06-09
+
+**Тег:** `sa-alpha-1.11.385`
+
+### Copy-trader: treat leader dust as flat; full exit on last sell
+
+- Leader post-exit wallet dust (≤ `COPY_TRADER_LEADER_FLAT_DUST_RAW`, default 10 000 raw) no longer blocks `leader_flat_tail_sweep` (e.g. Jotchua: leader `1` raw, we held ~25%).
+- On leader sell, if on-chain post-balance is dust → schedule **100%** our sell instead of proportional 50% of remainder.
+- Ledger reconcile zeroes when on-chain is dust.
+
+**Откат:** `git checkout sa-alpha-1.11.384 -- src/copytrader/leader-dust.ts src/copytrader/leader-flat-tail-sweep.ts src/copytrader/main.ts src/copytrader/config.ts tests/copytrader/leader-dust.test.ts tests/copytrader/leader-flat-tail-sweep.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.384] — 2026-06-09
 
 **Тег:** `sa-alpha-1.11.384`

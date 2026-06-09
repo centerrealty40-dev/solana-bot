@@ -2,7 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
+import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl, resolveSolanaRpcWsUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import type { PumpswapComboConfig } from '../pumpswap-combo/config.js';
 import {
   effectiveExitLadder,
@@ -63,6 +63,11 @@ const ConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).default(600_000),
   lossAlertUsd: z.coerce.number().positive().default(5),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(300),
+  /** logsSubscribe on leader wallet (QuickNode/Helius wss) — instant detect vs HTTP poll. */
+  leaderWsEnabled: z.coerce.boolean().default(false),
+  leaderWsUrl: z.string().optional(),
+  /** HTTP poll backfill when leader WS is on (ms). */
+  pollFallbackMs: z.coerce.number().int().min(5000).max(300_000).default(30_000),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -176,6 +181,15 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
       ? mirrorLeaderAddsRaw === '1' || mirrorLeaderAddsRaw.toLowerCase() === 'true'
       : exitPolicy === 'leader_ladder';
 
+  const leaderWsRaw = process.env.PUMPSWAP_COMBO_FOLLOW_LEADER_WS?.trim();
+  const leaderWsUrl =
+    process.env.PUMPSWAP_COMBO_FOLLOW_LEADER_WS_URL?.trim() || resolveSolanaRpcWsUrl() || undefined;
+  const leaderWsRequested =
+    leaderWsRaw != null && leaderWsRaw.length > 0
+      ? leaderWsRaw === '1' || leaderWsRaw.toLowerCase() === 'true'
+      : executionMode === 'live';
+  const leaderWsEnabled = leaderWsRequested && Boolean(leaderWsUrl);
+
   const parsed = ConfigSchema.parse({
     executionMode,
     strategyId: process.env.PUMPSWAP_COMBO_FOLLOW_STRATEGY_ID ?? 'pumpswap-combo-follow',
@@ -209,6 +223,9 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     lossCooldownMs: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_COOLDOWN_MS,
     lossAlertUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LOSS_ALERT_USD,
     slippageBps: process.env.PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS,
+    leaderWsEnabled,
+    leaderWsUrl,
+    pollFallbackMs: process.env.PUMPSWAP_COMBO_FOLLOW_POLL_FALLBACK_MS,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });

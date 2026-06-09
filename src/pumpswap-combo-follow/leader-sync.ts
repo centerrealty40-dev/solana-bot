@@ -19,6 +19,7 @@ import {
   newFollowId,
   openFollowPositionsCount,
   isFollowLossCooldownActive,
+  readFollowState,
   writeFollowState,
   type FollowState,
 } from './state.js';
@@ -418,6 +419,51 @@ export async function processPendingFollowBuys(
   }
 }
 
+export async function ingestLeaderSignature(
+  cfg: PumpswapComboFollowConfig,
+  state: FollowState,
+  row: SignatureRow,
+  source: 'poll' | 'ws',
+): Promise<boolean> {
+  if (state.seenSignatures[row.signature]) return false;
+  if (row.err) {
+    state.seenSignatures[row.signature] = Date.now();
+    return false;
+  }
+
+  state.seenSignatures[row.signature] = Date.now();
+  state.lastSignature = row.signature;
+
+  const raw = await fetchParsedTransaction(cfg.rpcUrl, row.signature);
+  if (!raw) return false;
+  const tx = raw as TxJsonParsed;
+  const swap = decodeSwapForWallet(tx, cfg.targetWallet, getSolUsd());
+  if (!swap || swap.priceUsd <= 0) return false;
+
+  const symbol = swap.baseMint.slice(0, 6);
+  let preLeaderRaw = leaderPreBalanceRaw(state, swap.baseMint);
+  if (swap.side === 'sell' && preLeaderRaw === 0n) {
+    const post = await fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, swap.baseMint);
+    preLeaderRaw = bootstrapLeaderPreSellBalance(post, swap.baseAmountRaw);
+  }
+
+  if (swap.side === 'buy') {
+    await onLeaderBuy(cfg, state, swap, symbol, row, preLeaderRaw, tx);
+  } else {
+    await onLeaderSell(cfg, state, swap, row, preLeaderRaw);
+  }
+  applyLeaderSwapToLedger(state, swap.baseMint, swap.side, swap.baseAmountRaw);
+
+  appendFollowEvent(cfg, {
+    kind: source === 'ws' ? 'leader_ws_observed' : 'leader_poll_observed',
+    mint: swap.baseMint,
+    side: swap.side,
+    leaderSignature: row.signature,
+    leaderBlockTimeSec: row.blockTime ?? null,
+  });
+  return true;
+}
+
 export async function pollLeaderAndScheduleBuys(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
@@ -450,30 +496,23 @@ export async function pollLeaderAndScheduleBuys(
 
   let newSwaps = 0;
   for (const row of newRows) {
-    state.seenSignatures[row.signature] = Date.now();
-    const raw = await fetchParsedTransaction(cfg.rpcUrl, row.signature);
-    if (!raw) continue;
-    const tx = raw as TxJsonParsed;
-    const swap = decodeSwapForWallet(tx, cfg.targetWallet, getSolUsd());
-    if (!swap || swap.priceUsd <= 0) continue;
-
-    newSwaps++;
-    const symbol = swap.baseMint.slice(0, 6);
-    let preLeaderRaw = leaderPreBalanceRaw(state, swap.baseMint);
-    if (swap.side === 'sell' && preLeaderRaw === 0n) {
-      const post = await fetchWalletMintBalanceRaw(cfg.rpcUrl, cfg.targetWallet, swap.baseMint);
-      preLeaderRaw = bootstrapLeaderPreSellBalance(post, swap.baseAmountRaw);
-    }
-
-    if (swap.side === 'buy') {
-      await onLeaderBuy(cfg, state, swap, symbol, row, preLeaderRaw, tx);
-    } else {
-      await onLeaderSell(cfg, state, swap, row, preLeaderRaw);
-    }
-    applyLeaderSwapToLedger(state, swap.baseMint, swap.side, swap.baseAmountRaw);
+    const ok = await ingestLeaderSignature(cfg, state, row, 'poll');
+    if (ok) newSwaps++;
     await sleep(120);
   }
 
   if (newRows.length) writeFollowState(cfg, state);
   return { newSwaps, rpcFailed: false };
+}
+
+export async function handleLeaderWsSignature(
+  cfg: PumpswapComboFollowConfig,
+  args: { signature: string; err?: unknown | null },
+): Promise<void> {
+  const state = readFollowState(cfg);
+  if (state.halted) return;
+  const row: SignatureRow = { signature: args.signature, err: args.err ?? undefined };
+  const ok = await ingestLeaderSignature(cfg, state, row, 'ws');
+  writeFollowState(cfg, state);
+  if (ok) await processPendingFollowBuys(cfg, state);
 }
