@@ -34,6 +34,8 @@ const CopyTraderConfigSchema = z.object({
   sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
   /** Second on-chain zero read before leader-flat tail sweep (default 3s). */
   leaderFlatConfirmDelayMs: z.coerce.number().int().min(0).max(60_000).default(3_000),
+  /** Leader wallet balance ≤ this raw amount counts as flat (post-exit dust). */
+  leaderFlatDustRaw: z.coerce.bigint().min(0n).max(1_000_000_000_000n).default(10_000n),
   positionUsd: z.coerce.number().positive().max(100_000).default(600),
   addPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   maxPositionUsd: z.coerce.number().min(0).max(500_000).default(0),
@@ -125,6 +127,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellDelayMinMs,
     sellDelayMaxMs,
     leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,
+    leaderFlatDustRaw: process.env.COPY_TRADER_LEADER_FLAT_DUST_RAW,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,
     addPositionUsd: process.env.COPY_TRADER_ADD_POSITION_USD,
     maxPositionUsd: process.env.COPY_TRADER_MAX_POSITION_USD,

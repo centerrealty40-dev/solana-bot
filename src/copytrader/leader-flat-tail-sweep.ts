@@ -1,4 +1,5 @@
 import type { CopyTraderConfig } from './config.js';
+import { effectiveLeaderBalanceRaw } from './leader-dust.js';
 import { appendCopyEvent } from './executor.js';
 import { leaderHasActiveJupiterSellOrders } from './jupiter-trigger-orders.js';
 import { getLeaderLedger, leaderPreBalanceRaw } from './leader-ledger.js';
@@ -15,11 +16,16 @@ export function reconcileLeaderLedgerFromChain(
   state: CopyTraderState,
   mint: string,
   onChainRaw: bigint,
+  dustRaw: bigint,
 ): void {
-  if (onChainRaw <= 0n) return;
+  const effective = effectiveLeaderBalanceRaw(onChainRaw, dustRaw);
+  if (effective <= 0n) {
+    getLeaderLedger(state, mint).tokenRaw = '0';
+    return;
+  }
   const ledgerBal = leaderPreBalanceRaw(state, mint);
-  if (onChainRaw > ledgerBal) {
-    getLeaderLedger(state, mint).tokenRaw = onChainRaw.toString();
+  if (effective > ledgerBal) {
+    getLeaderLedger(state, mint).tokenRaw = effective.toString();
   }
 }
 
@@ -37,15 +43,16 @@ export async function isLeaderFlatForMint(
   mint: string,
   symbol?: string,
 ): Promise<boolean> {
-  const first = await fetchLeaderOnChainBalance(cfg, mint);
+  const dust = cfg.leaderFlatDustRaw;
+  const first = effectiveLeaderBalanceRaw(await fetchLeaderOnChainBalance(cfg, mint), dust);
   if (first > 0n) {
-    reconcileLeaderLedgerFromChain(state, mint, first);
+    reconcileLeaderLedgerFromChain(state, mint, first, dust);
     return false;
   }
   await sleep(cfg.leaderFlatConfirmDelayMs);
-  const second = await fetchLeaderOnChainBalance(cfg, mint);
+  const second = effectiveLeaderBalanceRaw(await fetchLeaderOnChainBalance(cfg, mint), dust);
   if (second > 0n) {
-    reconcileLeaderLedgerFromChain(state, mint, second);
+    reconcileLeaderLedgerFromChain(state, mint, second, dust);
     return false;
   }
 
