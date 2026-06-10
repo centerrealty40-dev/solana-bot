@@ -36,6 +36,18 @@
 
 ---
 
+## [1.11.410] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.410`
+
+### HL TWAP live: entry margin $500 → $800 (fixed)
+
+- **`HL_TWAP_LIVE_NOTIONAL_USD` / `HL_TWAP_LIVE_MARGIN_MIN_USD` / `HL_TWAP_LIVE_MARGIN_MAX_USD`:** **$800** collateral per entry (`HL_TWAP_LIVE_DYNAMIC_MARGIN=0` unchanged).
+- Gross position = **$800 × min(HL coin max leverage, 7x)** (e.g. 7x major → **$5600** gross).
+- TP/DCA ladder unchanged: **10% of live gross** per slice; leverage caps and exit exec slices unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.409 -- ecosystem.config.cjs src/hyperliquid/twap/live/config.ts .env.example docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
 ## [1.11.409] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.409`

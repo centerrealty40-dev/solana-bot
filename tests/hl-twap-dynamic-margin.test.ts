@@ -13,9 +13,9 @@ function cfg(overrides: Partial<ReturnType<typeof baseCfg>> = {}) {
 
 function baseCfg() {
   return {
-    notionalUsd: 500,
+    notionalUsd: 800,
     dynamicMargin: true,
-    marginMaxUsd: 500,
+    marginMaxUsd: 800,
     marginMinUsd: 300,
     dynamicMarginMaxAtOpenCount: 2,
     dynamicMarginMinAtOpenCount: 5,
@@ -53,8 +53,8 @@ function open(notional: number, lev = 7): HlTwapLiveOpen {
 
 describe('targetMarginByOpenCount', () => {
   it('uses max margin at or below maxAt open count', () => {
-    expect(targetMarginByOpenCount(0, cfg())).toBe(500);
-    expect(targetMarginByOpenCount(2, cfg())).toBe(500);
+    expect(targetMarginByOpenCount(0, cfg())).toBe(800);
+    expect(targetMarginByOpenCount(2, cfg())).toBe(800);
   });
 
   it('uses min margin at or above minAt open count', () => {
@@ -63,26 +63,26 @@ describe('targetMarginByOpenCount', () => {
   });
 
   it('interpolates between maxAt and minAt', () => {
-    expect(targetMarginByOpenCount(3, cfg())).toBeCloseTo(433, 0);
-    expect(targetMarginByOpenCount(4, cfg())).toBeCloseTo(367, 0);
+    expect(targetMarginByOpenCount(3, cfg())).toBeCloseTo(633, 0);
+    expect(targetMarginByOpenCount(4, cfg())).toBeCloseTo(467, 0);
   });
 });
 
 describe('dcaHeadroomUsd', () => {
   it('reserves two ladder slices of margin', () => {
-    expect(dcaHeadroomUsd(500, cfg())).toBeCloseTo(100);
+    expect(dcaHeadroomUsd(800, cfg())).toBeCloseTo(160);
   });
 });
 
 describe('computeOpenMarginUsd', () => {
   it('returns base notional when dynamic margin disabled', () => {
     const account = { accountValueUsd: 1100, totalMarginUsedUsd: 0, withdrawableUsd: 1100 };
-    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }))).toBe(500);
+    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }))).toBe(800);
   });
 
   it('scales up with few opens and ample free margin', () => {
     const account = { accountValueUsd: 1100, totalMarginUsedUsd: 0, withdrawableUsd: 1100 };
-    expect(computeOpenMarginUsd(account, new Map(), cfg())).toBe(500);
+    expect(computeOpenMarginUsd(account, new Map(), cfg())).toBe(800);
   });
 
   it('scales down with many open positions', () => {
@@ -102,6 +102,6 @@ describe('computeOpenMarginUsd', () => {
     const margin = computeOpenMarginUsd(account, new Map(), cfg());
     const headroom = margin * 0.1 * 2;
     expect(margin + 50 + headroom).toBeLessThanOrEqual(500 + 1);
-    expect(margin).toBeLessThan(500);
+    expect(margin).toBeLessThan(800);
   });
 });
