@@ -135,6 +135,10 @@ const ConfigSchema = z.object({
   flow8zLeaderFlushEnabled: z.coerce.boolean().default(true),
   /** flow8z: ms to wait after leader sell before pool flush (TP still active). 0 = immediate. */
   flow8zLeaderSellDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  /** flow8z: skip pool flush when leader sell notional is below this (0 = flush all sells). */
+  flow8zLeaderFlushMinSellUsd: z.coerce.number().min(0).default(0),
+  /** flow8z: delay after leader full exit (flat) before flush — 0 = instant rug-follow. */
+  flow8zLeaderFlatFlushDelayMs: z.coerce.number().int().min(0).max(300_000).default(0),
   /** When we missed first entry: still enter on leader add if flow gate passes (no WS mirror-add when we hold). */
   allowLateEntryOnLeaderAdd: z.coerce.boolean().default(true),
   /** 0 = off. Live hnu5: floor sub-150k micro dust. */
@@ -331,16 +335,24 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     flowGateLookbackSec: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_LOOKBACK_SEC,
     flowGateMaxLagSec:
       process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_LAG_SEC ??
-      (entryGate === 'flow' && isFlow8z ? '5' : undefined),
+      (entryGate === 'flow' && isFlow8z ? '15' : undefined),
     flowGatePoolTxCap: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_POOL_TX_CAP,
     maxHoldMs:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_HOLD_MS ??
       (isFlow8z ? String(3 * 3600 * 1000) : undefined),
-    flow8zKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT,
+    flow8zKillstopPct:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT ??
+      (isFlow8z && executionMode === 'live' ? '30' : undefined),
     flow8zLeaderFlushEnabled: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_FLUSH,
     flow8zLeaderSellDelayMs:
       process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS ??
       (isFlow8z ? '60000' : undefined),
+    flow8zLeaderFlushMinSellUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLUSH_MIN_SELL_USD ??
+      (isFlow8z && executionMode === 'live' ? '500' : undefined),
+    flow8zLeaderFlatFlushDelayMs:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLAT_FLUSH_DELAY_MS ??
+      (isFlow8z && executionMode === 'live' ? '0' : undefined),
     allowLateEntryOnLeaderAdd,
     minMarketCapUsd:
       process.env.PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD ??

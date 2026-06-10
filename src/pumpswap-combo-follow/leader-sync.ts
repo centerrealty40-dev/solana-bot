@@ -269,7 +269,7 @@ async function onLeaderBuy(
   });
 }
 
-/** Leader sells update ledger only — exits are price-ladder, not reactive copy. */
+/** Leader sells update ledger only — exits are price-ladder + conditional flush. */
 async function onLeaderSell(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
@@ -279,10 +279,15 @@ async function onLeaderSell(
 ): Promise<void> {
   const mint = swap.baseMint;
   const ts = leaderObservedMs(row) ?? Date.now();
+  const soldRaw = swap.baseAmountRaw < 0n ? -swap.baseAmountRaw : swap.baseAmountRaw;
+  const postLeaderRaw = preLeaderRaw > soldRaw ? preLeaderRaw - soldRaw : 0n;
   state.lastLeaderSellByMint[mint] = {
     ts,
     signature: row.signature,
     priceUsd: swap.priceUsd,
+    sellUsd: swap.amountUsd,
+    leaderPostBalanceRaw: postLeaderRaw.toString(),
+    leaderFlat: postLeaderRaw === 0n,
   };
   appendFollowEvent(cfg, {
     kind: 'leader_sell_observed',
@@ -292,6 +297,8 @@ async function onLeaderSell(
     leaderPriceUsd: swap.priceUsd,
     leaderSellUsd: swap.amountUsd,
     leaderPreBalanceRaw: preLeaderRaw.toString(),
+    leaderPostBalanceRaw: postLeaderRaw.toString(),
+    leaderFlat: postLeaderRaw === 0n,
     note: 'no_mirror_sell',
   });
 }
