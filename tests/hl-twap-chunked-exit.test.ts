@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExitScheduleAnchor,
   chunkedExitEnabled,
+  exitScheduleTriggerMs,
   exitSliceCountForSide,
   exitSliceDueAtMs,
   exitWindowMs,
   firstWhaleSliceIndexAtOrAfter,
   loadChunkedExitConfig,
   nextDueSliceIndex,
+  resolveExitScheduleAnchor,
   sliceTargetBase,
   vwapExitPx,
   whaleAlignedExitAtMs,
@@ -87,6 +89,37 @@ describe('chunked-exit', () => {
 
   it('exitWindowMs for N slices', () => {
     expect(exitWindowMs(10, 30_000)).toBe(270_000);
+  });
+
+  it('exitScheduleTriggerMs: early exit uses now, timer exit uses liveCloseAtMs', () => {
+    const liveClose = 10_000_000;
+    const startedEarly = 1_000_000;
+    const startedAtTimer = 10_000_500;
+    expect(exitScheduleTriggerMs(startedEarly, liveClose)).toBe(startedEarly);
+    expect(exitScheduleTriggerMs(startedAtTimer, liveClose)).toBe(startedAtTimer);
+  });
+
+  it('resolveExitScheduleAnchor repairs far-future whale alignment on stale exit_start', () => {
+    const startedAtMs = 5_000_000;
+    const interval = 30_000;
+    const twapStart = 1_000_000;
+    const stale = resolveExitScheduleAnchor({
+      twapStartMs: twapStart,
+      firstWhaleSliceIndex: 200,
+      startedAtMs,
+      sliceIntervalMs: interval,
+      slicesSent: 0,
+    });
+    expect(stale.twapStartMs).toBeUndefined();
+    expect(exitSliceDueAtMs(stale, 0)).toBe(startedAtMs);
+    expect(nextDueSliceIndex(stale, 0, 3, startedAtMs)).toBe(0);
+
+    const dueSoon = buildExitScheduleAnchor(twapStart, startedAtMs, startedAtMs, interval);
+    const kept = resolveExitScheduleAnchor({
+      ...dueSoon,
+      slicesSent: 0,
+    });
+    expect(kept.firstWhaleSliceIndex).toBe(dueSoon.firstWhaleSliceIndex);
   });
 
   it('loadPendingLiveExits recovers whale-aligned exit', () => {

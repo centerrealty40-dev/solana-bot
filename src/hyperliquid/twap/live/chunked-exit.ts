@@ -145,3 +145,45 @@ export function buildExitScheduleAnchor(
     sliceIntervalMs: intervalMs,
   };
 }
+
+/**
+ * Whale-aligned exit anchor for chunked close.
+ * Timer exits (started at/after liveCloseAtMs) align to the scheduled close tick;
+ * early exits (whale ended, impact lost, …) anchor to actual start — not future liveCloseAtMs.
+ */
+export function exitScheduleTriggerMs(startedAtMs: number, liveCloseAtMs: number): number {
+  if (startedAtMs >= liveCloseAtMs) {
+    return Math.max(startedAtMs, liveCloseAtMs);
+  }
+  return startedAtMs;
+}
+
+/** Drop whale alignment when first slice would fire far after exit actually started (journal repair). */
+export function resolveExitScheduleAnchor(pending: {
+  twapStartMs?: number;
+  firstWhaleSliceIndex?: number;
+  startedAtMs: number;
+  sliceIntervalMs: number;
+  slicesSent: number;
+}): ExitScheduleAnchor {
+  const full: ExitScheduleAnchor = {
+    twapStartMs: pending.twapStartMs,
+    firstWhaleSliceIndex: pending.firstWhaleSliceIndex,
+    startedAtMs: pending.startedAtMs,
+    sliceIntervalMs: pending.sliceIntervalMs,
+  };
+  if (
+    pending.slicesSent === 0 &&
+    pending.twapStartMs != null &&
+    pending.firstWhaleSliceIndex != null
+  ) {
+    const dueAt = exitSliceDueAtMs(full, 0);
+    if (dueAt > pending.startedAtMs + pending.sliceIntervalMs * 2) {
+      return {
+        startedAtMs: pending.startedAtMs,
+        sliceIntervalMs: pending.sliceIntervalMs,
+      };
+    }
+  }
+  return full;
+}
