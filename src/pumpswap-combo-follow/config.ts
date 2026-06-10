@@ -12,7 +12,33 @@ import {
   type ExitLadderRungSpec,
 } from './exit-ladder.js';
 import { parseFollowSlMode, type FollowSlMode } from './exit-policy.js';
-import { parseDcaLevels, type DcaLevel } from '../papertrader/config.js';
+
+export type FollowDcaAnchor = 'first' | 'avg';
+
+export type FollowDcaLevel = {
+  triggerPct: number;
+  addFraction: number;
+  anchor: FollowDcaAnchor;
+};
+
+/** DCA spec: `-8:0.333:first,-7:0.333:avg` (trigger %, add fraction, anchor). */
+export function parseFollowDcaLevels(spec: string | undefined | null): FollowDcaLevel[] {
+  if (!spec?.trim()) return [];
+  const out: FollowDcaLevel[] = [];
+  for (const part of spec.split(',')) {
+    const seg = part.trim().split(':').map((s) => s.trim());
+    if (seg.length < 2) continue;
+    const trig = Number(seg[0]);
+    const frac = Number(seg[1]);
+    const anchor: FollowDcaAnchor = seg[2]?.toLowerCase() === 'avg' ? 'avg' : 'first';
+    if (!Number.isFinite(trig) || !Number.isFinite(frac) || frac <= 0) continue;
+    out.push({ triggerPct: trig / 100, addFraction: frac, anchor });
+  }
+  return out;
+}
+
+/** Default front-run DCA: buy before leader ~−10% / ~−8% avg-down adds. */
+export const FLOW8Z_FRONTRUN_DCA_LEVELS = '-8:0.333333:first,-7:0.333333:avg';
 
 export type FollowExitPolicy = 'leader_ladder' | 'oscar_wave_b' | 'flow8z_antidump';
 
@@ -100,6 +126,8 @@ const ConfigSchema = z.object({
   flow8zKillstopPct: z.coerce.number().min(0).max(90).default(0),
   /** flow8z_antidump: flush at pool quote when leader sells while we still hold. */
   flow8zLeaderFlushEnabled: z.coerce.boolean().default(true),
+  /** flow8z: ms to wait after leader sell before pool flush (TP still active). 0 = immediate. */
+  flow8zLeaderSellDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -108,7 +136,7 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   exitLadderSpec: ExitLadderRungSpec[];
   exitLadder: EffectiveExitRung[];
   slMode: FollowSlMode;
-  dcaLevels: DcaLevel[];
+  dcaLevels: FollowDcaLevel[];
   /** Entry mirror size — always legUsd ($3 test agent). */
   entryUsd: number;
   /** DCA add sizing base: legUsd × addFraction (Oscar % ladder on our notional). */
@@ -211,8 +239,12 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
 
   const dcaLevelsRaw =
     process.env.PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS?.trim() ||
-    (exitPolicy === 'oscar_wave_b' ? '-10:0.333333,-20:0.333333' : '');
-  const dcaLevels = parseDcaLevels(dcaLevelsRaw);
+    (exitPolicy === 'oscar_wave_b'
+      ? '-10:0.333333,-20:0.333333'
+      : isFlow8z
+        ? FLOW8Z_FRONTRUN_DCA_LEVELS
+        : '');
+  const dcaLevels = parseFollowDcaLevels(dcaLevelsRaw);
   const mirrorLeaderAddsRaw = process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS?.trim();
   const mirrorLeaderAdds =
     mirrorLeaderAddsRaw != null && mirrorLeaderAddsRaw.length > 0
@@ -246,8 +278,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     buyRetryWindowMs: process.env.PUMPSWAP_COMBO_FOLLOW_BUY_RETRY_MS,
     minLeaderBuyUsd:
       process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD ?? (isFlow8z ? '150' : undefined),
-    maxLeaderFirstBuyUsd:
-      process.env.PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD ?? (isFlow8z ? '300' : undefined),
+    maxLeaderFirstBuyUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD ?? (isFlow8z ? '0' : undefined),
     maxOpenPositions:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN ??
       (isFlow8z || (executionMode === 'live' && entryGate === 'flow') ? '8' : undefined),
@@ -259,7 +290,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     waveBTrailSellFraction: process.env.PUMPSWAP_COMBO_FOLLOW_WAVE_B_TRAIL_SELL_FRACTION,
     maxBuyLegs:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS ??
-      (exitPolicy === 'oscar_wave_b' ? String(1 + dcaLevels.length) : isFlow8z ? '1' : undefined),
+      (exitPolicy === 'oscar_wave_b' || isFlow8z ? String(1 + dcaLevels.length) : undefined),
     exitLeadPct,
     exitLadderRaw,
     slSingleLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT,
@@ -287,6 +318,9 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
       (isFlow8z ? String(3 * 3600 * 1000) : undefined),
     flow8zKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT,
     flow8zLeaderFlushEnabled: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_FLUSH,
+    flow8zLeaderSellDelayMs:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS ??
+      (isFlow8z ? '60000' : undefined),
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });
