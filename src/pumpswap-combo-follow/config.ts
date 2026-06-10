@@ -137,6 +137,9 @@ const ConfigSchema = z.object({
   flow8zLeaderSellDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
   /** When we missed first entry: still enter on leader add if flow gate passes (no WS mirror-add when we hold). */
   allowLateEntryOnLeaderAdd: z.coerce.boolean().default(true),
+  /** 0 = off. Live hnu5 backtest: skip micro <500k. */
+  minMarketCapUsd: z.coerce.number().min(0).default(0),
+  maxMarketCapUsd: z.coerce.number().min(0).default(0),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -339,6 +342,12 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
       process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS ??
       (isFlow8z ? '60000' : undefined),
     allowLateEntryOnLeaderAdd,
+    minMarketCapUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD ??
+      (isFlow8z && executionMode === 'live' ? '500000' : undefined),
+    maxMarketCapUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_MAX_MCAP_USD ??
+      (isFlow8z && executionMode === 'live' ? '3000000' : undefined),
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });

@@ -34,6 +34,17 @@
 
 ---
 
+## [1.11.403] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.403`
+
+### pumpswap-combo-follow live: min mcap $500k (block micro)
+
+- Entry gate: **`MIN_MCAP_USD=500000`**, **`MAX_MCAP_USD=3000000`** (PG pumpswap snapshot → DexScreener fallback).
+- Ignores leader buys on ~30k micro caps; journal `leader_buy_ignored` / `min_mcap_usd`.
+
+**Откат:** `MIN_MCAP_USD=0`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.402] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.402`
