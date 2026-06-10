@@ -7,7 +7,7 @@ import {
 import { shouldCloseOnWhaleTwapCancel } from '../user-rating.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghouseMargin, fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
-import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
+import { computeCoinEntryPlan, shouldCloseForImpactLoss } from '../coin-twap-analysis.js';
 import { hlTwapEntrySide } from '../fade-whales.js';
 import { markPxForCoin } from '../paper-trader.js';
 import { computeTwapSchedule } from '../twap-schedule.js';
@@ -612,6 +612,51 @@ export async function processExchangeResiduals(
       );
     }
   }
+}
+
+export type LiveTwapEndedSignal = {
+  signal: NormalizedTwapSignal;
+  endedStatus: string;
+};
+
+/** Close live opens when coin-side impact edge is lost (exchange I/O — run off poll loop). */
+export async function closeLivePositionsForImpactLoss(
+  cache: HyperliquidMarketCache,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState: TwapWatchState,
+  minImpactPct: number,
+): Promise<void> {
+  const opens = loadLiveOpensFromJournal(cfg.journalPath);
+  for (const pos of opens.values()) {
+    if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, minImpactPct)) continue;
+    const px =
+      cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.avgEntryPx;
+    await closeLiveTrade(pos.hash, px, 'impact_edge_lost', cfg, client, watchState);
+    console.log(`[hl-twap-live] closed ${pos.displaySymbol} impact edge lost`);
+  }
+}
+
+/**
+ * Full live exchange pass: impact closes, TWAP ends, ladder, timers, residuals.
+ * Intended for background worker — not awaited from HypurrScan poll loop.
+ */
+export async function runLiveExchangePass(
+  cache: HyperliquidMarketCache,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState: TwapWatchState,
+  opts?: { endedSignals?: LiveTwapEndedSignal[] },
+): Promise<void> {
+  await closeLivePositionsForImpactLoss(cache, cfg, client, watchState, cfg.minImpactPct);
+
+  for (const { signal, endedStatus } of opts?.endedSignals ?? []) {
+    await handleLiveOnTwapEnd(signal, cache, endedStatus, cfg, client, watchState);
+  }
+
+  await processLiveLadders(cache, cfg, client, watchState);
+  await processLiveTrades(cache, cfg, client, watchState);
+  await processExchangeResiduals(cache, cfg, client);
 }
 
 export { unrealizedUsd };

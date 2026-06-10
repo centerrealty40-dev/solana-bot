@@ -36,6 +36,18 @@
 
 ---
 
+## [1.11.409] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.409`
+
+### HL TWAP live: single book exit + background exec worker
+
+- **Single exit per coin+side:** stacked journal legs share one exchange position — only one `exit_start`/slice pipeline per book; sibling legs link to the driver; finalize closes all legs when book flattens (fixes HYPE 3× `exit_slice 1/3` triple-close).
+- **Background exec worker:** `kickLiveExecWorker` decouples `runLiveExchangePass` (impact closes, ladder, timers, residuals) from HypurrScan poll loop — poll stays on interval while exchange I/O runs in one batch.
+- **Includes 1.11.408:** exit anchor repair (`exitScheduleTriggerMs`, stale `exit_start` repair).
+
+**Откат:** `git checkout sa-alpha-1.11.408 -- src/hyperliquid/twap/live/chunked-exit-runner.ts src/hyperliquid/twap/live/live-exec-worker.ts src/hyperliquid/twap/live/live-trader.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-single-book-exit.test.ts tests/hl-twap-live-exec-worker.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
 ## [1.11.408] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.408`
