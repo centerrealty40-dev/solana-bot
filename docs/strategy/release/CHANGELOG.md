@@ -34,6 +34,17 @@
 
 ---
 
+## [1.11.396] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.396`
+
+### pumpswap-combo-follow: hnu5 aggressive scalp exit ladder
+
+- Live ladder **`14:0.7,22:1`** + **`exitLeadPct=2`** → effective **+12%** sell 70%, **+20%** close rest (front-run hnu5 ~+15–20% first scalp).
+- Config default for flow8z + hnu5 target when `EXIT_LADDER` unset.
+
+**Откат:** `EXIT_LADDER=13:1`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.395] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.395`

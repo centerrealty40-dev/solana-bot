@@ -61,7 +61,14 @@ function parseFollowExitPolicy(raw: string | undefined): FollowExitPolicy {
 /** PumpSwap flow bot — mirror target (infra savings vs own discovery). */
 export const FLOW8Z_TARGET_WALLET = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
 
+/** flow8z mirror of 8zkg wallet — tiered scalp. */
 export const FLOW8Z_DEFAULT_EXIT_LADDER = '5:0.45,10:0.35,15:1';
+
+/**
+ * hnu5 forensic scalp (7d RPC): 72% RTs = 1 sell; first gain cluster 15–20%;
+ * partial first sell p25 ≈ 65% of bag. Front-run via exitLeadPct=2.
+ */
+export const HNU5_SCALP_EXIT_LADDER = '14:0.7,22:1';
 
 /** Primary reference wallet (hnu5 PumpSwap dip bot). */
 export const HNU5_TARGET_WALLET = 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN';
@@ -227,12 +234,15 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
 
   const exitPolicy = parseFollowExitPolicy(process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY);
   const isFlow8z = exitPolicy === 'flow8z_antidump';
+  const targetWallet = process.env.PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET?.trim() || HNU5_TARGET_WALLET;
+  const isHnu5Target = targetWallet === HNU5_TARGET_WALLET;
 
   const exitLadderRaw =
     process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER?.trim() ||
-    (isFlow8z ? FLOW8Z_DEFAULT_EXIT_LADDER : '');
+    (isFlow8z ? (isHnu5Target ? HNU5_SCALP_EXIT_LADDER : FLOW8Z_DEFAULT_EXIT_LADDER) : '');
   const exitLeadPct = Number(
-    process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT ?? (isFlow8z ? '0' : '2'),
+    process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT ??
+      (isFlow8z ? (isHnu5Target ? '2' : '0') : '2'),
   );
   const exitLadderSpec = parseExitLadderSpec(exitLadderRaw);
   const exitLadder = effectiveExitLadder(exitLadderSpec, exitLeadPct);
@@ -270,7 +280,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     journalPath,
     statePath,
     rpcUrl,
-    targetWallet: process.env.PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET?.trim() || HNU5_TARGET_WALLET,
+    targetWallet,
     pollIntervalMs: process.env.PUMPSWAP_COMBO_FOLLOW_POLL_MS,
     heartbeatIntervalMs: process.env.PUMPSWAP_COMBO_FOLLOW_HEARTBEAT_MS,
     signatureLimit: process.env.PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT,

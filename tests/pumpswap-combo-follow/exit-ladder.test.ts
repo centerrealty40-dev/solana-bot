@@ -31,6 +31,14 @@ describe('effectiveExitLadder', () => {
     expect(eff[1]?.isFinal).toBe(true);
   });
 
+  it('hnu5 aggressive scalp ladder front-runs +14/+22 by 2pp', () => {
+    const eff = effectiveExitLadder(parseExitLadderSpec('14:0.7,22:1'), 2);
+    expect(eff[0]?.effectiveTpPct).toBe(12);
+    expect(eff[0]?.sellFracOfRemaining).toBe(0.7);
+    expect(eff[1]?.effectiveTpPct).toBe(20);
+    expect(eff[1]?.isFinal).toBe(true);
+  });
+
   it('never goes below 0.5% effective TP', () => {
     const tiny = [{ id: 'tp1', leaderTpPct: 1, sellFracOfRemaining: 1 }];
     expect(effectiveExitLadder(tiny, 2)[0]?.effectiveTpPct).toBe(0.5);
