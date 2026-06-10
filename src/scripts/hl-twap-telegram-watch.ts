@@ -92,13 +92,10 @@ import { formatDynamicMarginStartup } from '../hyperliquid/twap/live/dynamic-mar
 import { resolveLiveEntryAuditPlan } from '../hyperliquid/twap/live/coin-exposure.js';
 import { createHlTwapExchangeClient, type HlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-client.js';
 import {
-  handleLiveOnTwapEnd,
-  processLiveLadders,
-  processLiveTrades,
-  processExchangeResiduals,
+  runLiveExchangePass,
   scheduleLiveTrade,
-  closeLiveTrade,
 } from '../hyperliquid/twap/live/live-trader.js';
+import { kickLiveExecWorker } from '../hyperliquid/twap/live/live-exec-worker.js';
 import {
   loadLiveOpensFromJournal,
   loadPendingLiveSchedules,
@@ -318,26 +315,14 @@ function schedulePaperAfterTelegramOpen(sig: NormalizedTwapSignal): void {
   schedulePaperTrade(sig, watchState, MIN_IMPACT_PCT_HOUR);
 }
 
-async function closePositionsForImpactLoss(cache: HyperliquidMarketCache): Promise<void> {
-  if (PAPER_ENABLED) {
-    const opens = loadPaperOpensFromJournal(paperJournalPath());
-    for (const pos of [...opens.values()]) {
-      if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_IMPACT_PCT_HOUR)) continue;
-      const px = cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.entryPx;
-      if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost', watchState)) {
-        console.log(`[hl-twap] paper closed ${pos.displaySymbol} impact edge lost`);
-      }
-    }
-  }
-  if (LIVE_ENABLED && liveExchange) {
-    const opens = loadLiveOpensFromJournal(LIVE_CFG.journalPath);
-    for (const pos of opens.values()) {
-      if (shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_IMPACT_PCT_HOUR)) {
-        const px =
-          cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.avgEntryPx;
-        await closeLiveTrade(pos.hash, px, 'impact_edge_lost', LIVE_CFG, liveExchange, watchState);
-        console.log(`[hl-twap-live] closed ${pos.displaySymbol} impact edge lost`);
-      }
+async function closePaperPositionsForImpactLoss(cache: HyperliquidMarketCache): Promise<void> {
+  if (!PAPER_ENABLED) return;
+  const opens = loadPaperOpensFromJournal(paperJournalPath());
+  for (const pos of [...opens.values()]) {
+    if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, MIN_IMPACT_PCT_HOUR)) continue;
+    const px = cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.entryPx;
+    if (closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, 'impact_edge_lost', watchState)) {
+      console.log(`[hl-twap] paper closed ${pos.displaySymbol} impact edge lost`);
     }
   }
 }
@@ -396,22 +381,26 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
     await announceStart(sig, rows, cache);
   }
 
-  await closePositionsForImpactLoss(cache);
+  await closePaperPositionsForImpactLoss(cache);
 
   if (PAPER_ENABLED) await processPaperTrades(cache, watchState);
+
+  const endedForLive = NOTIFY_ENDED ? endedSignals : [];
   if (LIVE_ENABLED && liveExchange) {
-    await processLiveLadders(cache, LIVE_CFG, liveExchange, watchState);
-    await processLiveTrades(cache, LIVE_CFG, liveExchange, watchState);
-    await processExchangeResiduals(cache, LIVE_CFG, liveExchange);
+    const result = kickLiveExecWorker(() =>
+      runLiveExchangePass(cache, LIVE_CFG, liveExchange!, watchState, {
+        endedSignals: endedForLive,
+      }),
+    );
+    if (result === 'skipped_busy') {
+      console.log('[hl-twap-live] exec worker busy — poll continues, exchange pass deferred');
+    }
   }
 
   if (NOTIFY_ENDED) {
     for (const { signal, endedStatus } of endedSignals) {
       console.log(`[hl-twap] END ${signal.displaySymbol} ${endedStatus} ${signal.hash.slice(0, 12)}…`);
       if (PAPER_ENABLED) handlePaperOnTwapEnd(signal, cache, endedStatus, watchState);
-      if (LIVE_ENABLED && liveExchange) {
-        await handleLiveOnTwapEnd(signal, cache, endedStatus, LIVE_CFG, liveExchange, watchState);
-      }
       await announceEnd(signal, endedStatus, rows);
     }
   }
