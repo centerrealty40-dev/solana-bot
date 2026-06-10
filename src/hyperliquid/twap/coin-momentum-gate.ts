@@ -1,4 +1,5 @@
 import type { TwapSide } from './types.js';
+import { hlTwapUnrestrictedMode } from './unrestricted.js';
 
 const HL_INFO = 'https://api.hyperliquid.xyz/info';
 
@@ -94,6 +95,7 @@ export async function refreshCoinMomentumCache(coin: string, nowMs = Date.now())
  * Stale/missing cache → allow (do not block entries on API miss).
  */
 export function hlTwapCoinMomentumBlockReason(coin: string, side: TwapSide): string | null {
+  if (hlTwapUnrestrictedMode()) return null;
   if (!hlTwapCoinMomentumGateEnabled() || side !== 'buy') return null;
   const snap = cache.get(coin);
   if (!snap) return null;

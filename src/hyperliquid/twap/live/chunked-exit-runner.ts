@@ -22,7 +22,8 @@ import { notifyLiveTradeClose } from './telegram-notify.js';
 import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
 import type { TwapWatchState } from '../detect.js';
 import { clearWhaleExitPending } from '../twap-whale-exit.js';
-import { isShortTwapMinutes } from '../twap-duration.js';
+import { HL_TWAP_SLICE_INTERVAL_SEC } from '../twap-schedule.js';
+import { microTwapExitSliceCount, shouldUseMicroExecution } from '../twap-duration.js';
 
 function exitAnchor(exit: PendingLiveExit) {
   return buildExitScheduleAnchor(
@@ -99,8 +100,16 @@ export async function closeLiveTrade(
   const pos = opens.get(hash);
   if (!pos || exitPx <= 0) return null;
 
-  if (isShortTwapMinutes(pos.minutes)) {
-    return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
+  if (shouldUseMicroExecution(pos.minutes)) {
+    const microSlices = microTwapExitSliceCount(pos.minutes);
+    if (microSlices <= 1) {
+      return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
+    }
+    const exitCfg = {
+      sliceCount: microSlices,
+      sliceIntervalMs: HL_TWAP_SLICE_INTERVAL_SEC * 1000,
+    };
+    return startChunkedExit(pos, exitPx, exitReason, exitCfg, cfg, client, watchState);
   }
 
   const exitCfg = loadChunkedExitConfig(cfg, pos.side);
@@ -108,6 +117,20 @@ export async function closeLiveTrade(
     return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
   }
 
+  return startChunkedExit(pos, exitPx, exitReason, exitCfg, cfg, client, watchState);
+}
+
+async function startChunkedExit(
+  pos: HlTwapLiveOpen,
+  exitPx: number,
+  exitReason: string,
+  exitCfg: { sliceCount: number; sliceIntervalMs: number },
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
+): Promise<HlTwapLiveClose | null> {
+  const hash = pos.hash;
+  const filePath = cfg.journalPath;
   const startedAtMs = Date.now();
   const triggerMs = Math.max(startedAtMs, pos.liveCloseAtMs);
   const anchor = buildExitScheduleAnchor(

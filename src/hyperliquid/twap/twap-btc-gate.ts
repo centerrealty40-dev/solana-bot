@@ -1,5 +1,6 @@
 import { getBtcContext } from '../../papertrader/pricing.js';
 import type { TwapSide } from './types.js';
+import { hlTwapUnrestrictedMode } from './unrestricted.js';
 
 export type HlTwapBtcAlignedGateStatus =
   | { kind: 'disabled' }
@@ -53,6 +54,7 @@ export function resolveHlTwapBtcAlignedGateStatus(): HlTwapBtcAlignedGateStatus 
  * |BTC 1h| < thresh → allow (weak move / sideways).
  */
 export function hlTwapBtcAlignedBlockReason(side: TwapSide): string | null {
+  if (hlTwapUnrestrictedMode()) return null;
   const st = resolveHlTwapBtcAlignedGateStatus();
   if (st.kind === 'disabled') return null;
   if (st.kind === 'stale') return 'btc_gate_stale';

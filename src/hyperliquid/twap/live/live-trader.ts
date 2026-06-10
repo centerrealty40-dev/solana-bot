@@ -1,5 +1,5 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, isShortTwapMinutes } from '../twap-duration.js';
+import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, shouldUseMicroExecution } from '../twap-duration.js';
 import {
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
@@ -309,7 +309,7 @@ export async function processLiveTrades(
     if (timerDue) {
       try {
         const px = exitPxForOpen(pos, cache);
-        const exitReason = isShortTwapMinutes(pos.minutes)
+        const exitReason = shouldUseMicroExecution(pos.minutes)
           ? HL_TWAP_EXIT_REASON_SHORT
           : HL_TWAP_EXIT_REASON_EARLY;
         const closed = await closeLiveTrade(pos.hash, px, exitReason, cfg, client, watchState);

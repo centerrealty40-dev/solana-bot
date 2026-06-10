@@ -34,6 +34,18 @@
 
 ---
 
+## [1.11.400] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.400`
+
+### HL TWAP: unrestricted mode — trade all TWAPs + micro exit
+
+- **`HL_TWAP_UNRESTRICTED=1`**: skip duration, momentum, BTC, whale deny, prior-loss, impact gates; only `already_tracked` remains.
+- **Micro lane (≤15m)**: single exit slice for ≤10m; **2 whale-aligned slices** for 11–15m (no 10-slice chunked exit).
+- **15m gap closed**: micro lane now includes 15m TWAPs (was `twap_too_short`).
+
+**Откат:** `HL_TWAP_UNRESTRICTED=0`; restore gates in `ecosystem.config.cjs` (`HL_TWAP_COIN_MOMENTUM_GATE=1`, `HL_TWAP_BTC_ALIGNED_GATE=1`, `HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK=1`); `git checkout sa-alpha-1.11.399 -- src/hyperliquid/twap/ ecosystem.config.cjs tests/hl-twap-unrestricted.test.ts docs/strategy/release/`; `pm2 delete hl-twap-telegram-watch; pm2 start ecosystem.config.cjs --only hl-twap-telegram-watch; pm2 save`.
+
 ## [1.11.399] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.399`
