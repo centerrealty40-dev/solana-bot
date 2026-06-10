@@ -14,6 +14,7 @@ import {
 import type { NormalizedTwapSignal, TwapSide } from '../types.js';
 import { loadLiveOpensFromJournal, loadPendingLiveSchedules, type JournalSchedule } from './journal.js';
 import { liveCoinPriorLossBlockReason, liveLossStreakBlockReason } from './loss-streak-cooldown.js';
+import { drawdownHaltBlockReason } from './drawdown-stop.js';
 import {
   evaluateCoinStackEntry,
   stackCfgFromLiveConfig,
@@ -65,6 +66,11 @@ export function canScheduleLiveEntry(
 
   if (isDeniedWhale(sig.user)) {
     return { allow: false, reason: 'whale_denylisted' };
+  }
+
+  const drawdownBlock = drawdownHaltBlockReason();
+  if (drawdownBlock) {
+    return { allow: false, reason: drawdownBlock };
   }
 
   const entrySide = hlTwapEntrySide(sig.user, sig.side);

@@ -38,6 +38,22 @@
 
 ---
 
+## [1.11.412] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.412`
+
+### HL TWAP live: account drawdown stop ($1000 default)
+
+- **`HL_TWAP_LIVE_DRAWDOWN_STOP_USD=1000`:** when total equity (incl. uPnL) falls ≥ threshold below startup baseline → emergency flatten all HL positions, cancel pending schedules, halt new entries.
+- **`HL_TWAP_LIVE_DRAWDOWN_CHECK_MS=60000`:** equity poll every 60s via `clearinghouseState` (`accountValue` or unified spot+uPnL).
+- **Baseline:** captured at process start (logged); optional **`HL_TWAP_LIVE_DRAWDOWN_BASELINE_USD`** to pin; state in **`data/hl-twap/drawdown-stop.json`**.
+- **Telegram:** `🛑 STOP LOSS — trading halted` to live-trades + whale channels.
+- **Resume:** set **`HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1`** and restart (re-baselines to current equity).
+
+**Откат:** `git checkout sa-alpha-1.11.411 -- src/hyperliquid/twap/live/drawdown-stop.ts src/hyperliquid/twap/hyperliquid-meta.ts src/scripts/hl-twap-telegram-watch.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.411] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.411`
@@ -47,7 +63,8 @@
 - **`HL_TWAP_LIVE_MAX_BOOK_GROSS_USD=12000`:** hard cap on exchange gross per coin+side (entries + DCA blocked above cap).
 - **`HL_TWAP_LIVE_COIN_MAX_LEGS=2`:** max two concurrent journal legs (incl. pending schedules) per coin+side; 3rd TWAP does **not** open a new leg.
 - **3rd active TWAP:** book timer exit (`liveCloseAtMs`) re-anchors to the **best hourly-impact** active whale TWAP on that side (incl. signals without a journal leg).
-- TP/DCA ladder unchanged (10% of gross, ±3% HL ROE); $800 margin × 7x entry unchanged.
+- **Ladder step (ROE):** TP/DCA triggers at ±3% **Hyperliquid ROE** (`uPnL / margin`), not ±3% price move — aligns with HL UI (fixes late/missing TP on stacked books at 7x).
+- Ladder slice unchanged (10% of current gross); $800 margin × 7x entry unchanged.
 
 **Откат:** `git checkout sa-alpha-1.11.410 -- ecosystem.config.cjs src/hyperliquid/twap/live/ docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
 

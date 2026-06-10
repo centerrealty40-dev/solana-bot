@@ -97,6 +97,13 @@ import {
 } from '../hyperliquid/twap/live/live-trader.js';
 import { kickLiveExecWorker } from '../hyperliquid/twap/live/live-exec-worker.js';
 import {
+  drawdownCheckIntervalMs,
+  drawdownStopEnabled,
+  initDrawdownBaseline,
+  isTradingHaltedByDrawdown,
+  runDrawdownCheck,
+} from '../hyperliquid/twap/live/drawdown-stop.js';
+import {
   loadLiveOpensFromJournal,
   loadPendingLiveSchedules,
 } from '../hyperliquid/twap/live/journal.js';
@@ -303,6 +310,10 @@ async function deliverStartTelegram(
 
 function scheduleLiveAfterTelegramOpen(sig: NormalizedTwapSignal): void {
   if (!liveExchange) return;
+  if (isTradingHaltedByDrawdown()) {
+    console.log(`[hl-twap-live] not scheduled ${sig.displaySymbol}: drawdown_stop_halted`);
+    return;
+  }
   const { scheduled, reason } = scheduleLiveTrade(sig, watchState, LIVE_CFG);
   if (scheduled) {
     console.log(`[hl-twap-live] scheduled ${sig.side} ${sig.displaySymbol}`);
@@ -421,6 +432,9 @@ async function main(): Promise<void> {
     console.log(
       `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ${formatDynamicMarginStartup(LIVE_CFG)} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
     );
+    if (drawdownStopEnabled()) {
+      await initDrawdownBaseline(LIVE_CFG.masterAddress);
+    }
   }
 
   console.log(
@@ -434,6 +448,17 @@ async function main(): Promise<void> {
 
   let cache = await loadHyperliquidMarketCache();
   let cacheAt = Date.now();
+
+  if (LIVE_ENABLED && liveExchange && drawdownStopEnabled()) {
+    const ddMs = drawdownCheckIntervalMs();
+    setInterval(() => {
+      if (!liveExchange) return;
+      void runDrawdownCheck(cache, LIVE_CFG, liveExchange, watchState).catch((e) => {
+        console.warn('[hl-twap-live:drawdown] check failed', String(e));
+      });
+    }, ddMs);
+    console.log(`[hl-twap-live:drawdown] monitor every ${ddMs}ms`);
+  }
 
   const rows0 = await fetchHypurrscanTwapFeed();
   const seeded = seedTwapWatchState(
