@@ -34,6 +34,18 @@
 
 ---
 
+## [1.11.405] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.405`
+
+### HL TWAP live: TP ladder fix + unified $200 exec slices
+
+- **TP ladder:** allow ±3% TP/DCA while chunked exit is *scheduled* but before the first exit slice fires; block ladder only after `slicesSent > 0`. Fixes missed TP when `exit_start` was written hours ahead of whale-aligned first slice (e.g. HYPE legs blocked ~15h).
+- **Poll order:** run `processLiveLadders` before timer/whale exits so profitable books can take TP in the same poll cycle.
+- **Exec slices:** all market orders (open, TP, DCA, exit) split into ≤**$200** gross chunks with **5s** gap (`HL_TWAP_EXEC_SLICE_USD`, `HL_TWAP_EXEC_SLICE_GAP_MS`).
+
+**Откат:** `git checkout sa-alpha-1.11.404 -- src/hyperliquid/twap/live/ src/hyperliquid/twap/twap-duration.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-exec-slice.test.ts tests/hl-twap-ladder-exit-block.test.ts tests/hl-twap-flatten.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
 ## [1.11.404] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.404`

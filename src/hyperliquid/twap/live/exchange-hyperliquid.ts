@@ -4,6 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 import { fetchHlPerpPositionSzi } from '../hyperliquid-meta.js';
 import type { HlTwapLiveConfig } from './config.js';
+import { wrapWithExecSlices } from './exec-slice.js';
 import { appendLiveJournal, journalOrderRow } from './journal.js';
 import {
   parseHlOrderStatus,
@@ -174,6 +175,6 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
   }
 }
 
-export function createHyperliquidClient(cfg: HlTwapLiveConfig): HyperliquidExchangeClient {
-  return new HyperliquidExchangeClient(cfg);
+export function createHyperliquidClient(cfg: HlTwapLiveConfig): HlTwapExchangeClient {
+  return wrapWithExecSlices(new HyperliquidExchangeClient(cfg), cfg);
 }

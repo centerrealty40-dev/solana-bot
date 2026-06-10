@@ -40,6 +40,10 @@ export type HlTwapLiveConfig = {
   exitSlicesLong: number;
   /** Ms between exit slices (default 30s, aligned with HL TWAP child orders). */
   exitSliceIntervalMs: number;
+  /** Max gross USD per exchange child order (0 = no split). Default 200. */
+  execSliceUsd: number;
+  /** Ms between exec sub-slices within one logical order. Default 5000. */
+  execSliceGapMs: number;
   journalPath: string;
   testnet: boolean;
   /** Master HL account where perp positions live (agent wallet signs orders). */
@@ -94,6 +98,8 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
       Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES_LONG', envNum('HL_TWAP_LIVE_EXIT_SLICES_BUY', 3))),
     ),
     exitSliceIntervalMs: defaultExitSliceIntervalMs(),
+    execSliceUsd: Math.max(0, envNum('HL_TWAP_EXEC_SLICE_USD', 200)),
+    execSliceGapMs: Math.max(0, envNum('HL_TWAP_EXEC_SLICE_GAP_MS', 5000)),
     journalPath:
       process.env.HL_TWAP_LIVE_JSONL?.trim() ||
       `${process.cwd()}/data/hl-twap/live.jsonl`,

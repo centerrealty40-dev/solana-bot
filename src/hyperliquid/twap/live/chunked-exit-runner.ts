@@ -375,3 +375,10 @@ export async function processPendingLiveExits(
 export function isLiveExitPending(cfg: HlTwapLiveConfig, hash: string): boolean {
   return loadPendingLiveExits(cfg.journalPath).has(hash);
 }
+
+/** Block TP/DCA only after the first exit slice has actually fired. */
+export function blocksLiveLadderDuringExit(cfg: HlTwapLiveConfig, hash: string): boolean {
+  const exit = loadPendingLiveExits(cfg.journalPath).get(hash);
+  if (!exit) return false;
+  return exit.slicesSent > 0;
+}
