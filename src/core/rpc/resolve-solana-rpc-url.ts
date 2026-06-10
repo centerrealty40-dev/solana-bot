@@ -1,8 +1,8 @@
 /**
  * Canonical Solana HTTPS RPC URL chain for prod.
  *
- * Primary: QuickNode / explicit SOLANA_RPC (metered via qn-client + solana-rpc-meter).
- * Fallback: Helius when primary missing or when qnCall retries after QN budget block.
+ * Primary: Alchemy / SA_RPC (metered via qn-client + solana-rpc-meter).
+ * Fallback: Helius only when `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1` and primary missing or QN budget block.
  */
 
 export function heliusRpcUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
@@ -13,13 +13,13 @@ export function heliusRpcUrlFromEnv(env: NodeJS.ProcessEnv = process.env): strin
   return '';
 }
 
-/** QuickNode-first chain (do not prefer Helius here). */
+/** Alchemy-first chain (QuickNode/Helius only if SA_RPC unset). */
 export function primarySolanaRpcUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
   return (
-    env.SOLANA_RPC_HTTP_URL?.trim() ||
-    env.QUICKNODE_HTTP_URL?.trim() ||
     env.SA_RPC_HTTP_URL?.trim() ||
     env.ALCHEMY_HTTP_URL?.trim() ||
+    env.SOLANA_RPC_HTTP_URL?.trim() ||
+    env.QUICKNODE_HTTP_URL?.trim() ||
     ''
   );
 }
@@ -32,11 +32,18 @@ export function resolveSolanaRpcUrl(opts?: {
   const override = opts?.httpUrlOverride?.trim();
   if (override) return override;
   if (opts?.useHeliusFallback) return heliusRpcUrlFromEnv();
-  return primarySolanaRpcUrlFromEnv() || heliusRpcUrlFromEnv();
+  const primary = primarySolanaRpcUrlFromEnv();
+  if (primary) return primary;
+  if (heliusRpcFallbackEnabled()) return heliusRpcUrlFromEnv();
+  return '';
 }
 
 export function heliusRpcFallbackEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED !== '0';
+  return env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED === '1';
+}
+
+export function isAlchemyRpcEndpoint(url: string): boolean {
+  return /alchemy\.com/i.test(url);
 }
 
 /** Live Oscar / send+sim: billable RPC on Helius while QuickNode URL stays in .env for ingest. */

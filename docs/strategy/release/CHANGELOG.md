@@ -38,6 +38,21 @@
 
 ---
 
+## [1.11.417] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.417`
+
+### Alchemy-only RPC audit + hourly usage Telegram
+
+- **`resolve-solana-rpc-url`:** primary chain Alchemy-first (`SA_RPC` / `ALCHEMY_HTTP_URL`); Helius fallback только при `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`.
+- **`ecosystem.config.cjs`:** все RPC-процессы получают `PM2_SOLANA_RPC_ENV` + `SOLANA_RPC_ALCHEMY_ONLY_ENV`; combo-follow Helius fallback=1 исправлен; `ENABLE_PUMPSWAP_COMBO_PM2` (default off) фильтрует `pumpswap-combo*`; QN hourly Telegram на dashboard выкл.; новый `sa-alchemy-usage-watch`.
+- **`scripts-tmp/alchemy-usage-hourly-telegram.mjs`:** ежечасный REPORT в Telegram (internal meter + getSlot; публичного Alchemy usage API нет).
+- **`copytrader/rpc.ts`:** учёт RPC в internal meter.
+
+**Откат:** `git revert` → deploy `v2`; `ENABLE_PUMPSWAP_COMBO_PM2=true` если нужны combo; вернуть `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` на dashboard.
+
+---
+
 ## [1.11.416] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.416`

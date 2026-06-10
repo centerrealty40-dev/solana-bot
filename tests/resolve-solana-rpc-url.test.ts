@@ -16,11 +16,12 @@ describe('resolve-solana-rpc-url', () => {
     process.env = { ...snapshot };
   });
 
-  it('primary prefers QuickNode chain over Helius', () => {
-    process.env.SA_RPC_HTTP_URL = 'https://qn.example/rpc';
+  it('primary prefers SA_RPC over legacy QuickNode env', () => {
+    process.env.SA_RPC_HTTP_URL = 'https://solana-mainnet.g.alchemy.com/v2/test';
+    process.env.QUICKNODE_HTTP_URL = 'https://qn.example/rpc';
     process.env.HELIUS_API_KEY = 'test-key';
-    expect(primarySolanaRpcUrlFromEnv()).toBe('https://qn.example/rpc');
-    expect(resolveSolanaRpcUrl()).toBe('https://qn.example/rpc');
+    expect(primarySolanaRpcUrlFromEnv()).toBe('https://solana-mainnet.g.alchemy.com/v2/test');
+    expect(resolveSolanaRpcUrl()).toBe('https://solana-mainnet.g.alchemy.com/v2/test');
   });
 
   it('builds Helius URL from API key', () => {
@@ -37,8 +38,10 @@ describe('resolve-solana-rpc-url', () => {
     );
   });
 
-  it('helius fallback enabled by default', () => {
+  it('helius fallback disabled unless explicitly enabled', () => {
     delete process.env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED;
+    expect(heliusRpcFallbackEnabled()).toBe(false);
+    process.env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED = '1';
     expect(heliusRpcFallbackEnabled()).toBe(true);
     process.env.SOLANA_RPC_HELIUS_FALLBACK_ENABLED = '0';
     expect(heliusRpcFallbackEnabled()).toBe(false);
