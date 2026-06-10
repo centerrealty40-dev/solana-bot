@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.415] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.415`
+
+### HL TWAP live: hourly Total Balance Telegram
+
+- **`HL_TWAP_BALANCE_HOURLY_TELEGRAM=1`** (default on in `ecosystem.config.cjs` when live): hourly ping to whale Telegram chat with **HL UI Total Balance** (`resolveAccountEquityUsd`: spot USDC + Σ uPnL).
+- First message after **UTC hour boundary** (no immediate ping on PM2 restart); then every 60m.
+- Optional trailing **peak** (drawdown state) and open positions count.
+
+**Откат:** `HL_TWAP_BALANCE_HOURLY_TELEGRAM=0`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.414] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.414`
