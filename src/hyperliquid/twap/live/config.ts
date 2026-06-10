@@ -24,9 +24,13 @@ export type HlTwapLiveConfig = {
   dynamicMarginDcaLevelsReserve: number;
   /** Collateral reserve kept on account for new opens (USD). */
   marginReserveUsd: number;
+  /** Max concurrent journal legs per coin+side (incl. pending schedules). */
+  coinMaxLegs: number;
+  /** Max exchange gross USD per coin+side book (entries + DCA). */
+  coinMaxGrossUsd: number;
   /** Min net hourly impact %/h on dominant side for entries. */
   minImpactPct: number;
-  /** TP/DCA step from entry anchor (% price move). */
+  /** TP/DCA step as HL ROE % (uPnL / margin), same as clearinghouse UI. */
   ladderStepPct: number;
   /** Each TP/DCA slice as % of current gross position. */
   ladderSlicePct: number;
@@ -87,6 +91,8 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
       Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE', 2)),
     ),
     marginReserveUsd: Math.max(0, envNum('HL_TWAP_MARGIN_RESERVE_USD', 50)),
+    coinMaxLegs: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_COIN_MAX_LEGS', 2))),
+    coinMaxGrossUsd: Math.max(1, envNum('HL_TWAP_LIVE_MAX_BOOK_GROSS_USD', 12_000)),
     minImpactPct: minImpactPctHour(),
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 3)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),

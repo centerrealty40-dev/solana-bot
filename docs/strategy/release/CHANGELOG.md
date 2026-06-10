@@ -36,6 +36,23 @@
 
 ---
 
+---
+
+## [1.11.411] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.411`
+
+### HL TWAP live: coin book gross cap $12k + max 2 legs + driver re-anchor
+
+- **`HL_TWAP_LIVE_MAX_BOOK_GROSS_USD=12000`:** hard cap on exchange gross per coin+side (entries + DCA blocked above cap).
+- **`HL_TWAP_LIVE_COIN_MAX_LEGS=2`:** max two concurrent journal legs (incl. pending schedules) per coin+side; 3rd TWAP does **not** open a new leg.
+- **3rd active TWAP:** book timer exit (`liveCloseAtMs`) re-anchors to the **best hourly-impact** active whale TWAP on that side (incl. signals without a journal leg).
+- TP/DCA ladder unchanged (10% of gross, ±3% HL ROE); $800 margin × 7x entry unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.410 -- ecosystem.config.cjs src/hyperliquid/twap/live/ docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.410] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.410`

@@ -36,7 +36,23 @@ export function sliceNotionalUsd(initialNotionalUsd: number, cfg: LadderConfig):
   return initialNotionalUsd * (cfg.slicePctOfInitial / 100);
 }
 
-/** Next ladder action: ±stepPct **price** move; slice = stepPct% of **current gross** position. */
+/**
+ * Hyperliquid UI ROE % = unrealized PnL / margin (collateral).
+ * Matches clearinghouse display — not raw price move % (which is ~ROE / leverage).
+ */
+export function hlRoePct(
+  side: TwapSide,
+  markPx: number,
+  avgEntryPx: number,
+  currentNotionalUsd: number,
+  marginUsd: number,
+): number {
+  if (marginUsd <= 0) return 0;
+  const pnlUsd = unrealizedUsd(side, avgEntryPx, currentNotionalUsd, markPx);
+  return (pnlUsd / marginUsd) * 100;
+}
+
+/** Next ladder action: ±stepPct **HL ROE** on book margin; slice = slicePct% of current gross. */
 export function nextLadderAction(
   side: TwapSide,
   markPx: number,
@@ -52,18 +68,18 @@ export function nextLadderAction(
   if (markPx <= 0 || entryAnchorPx <= 0 || initialMarginUsd <= 0 || initialNotionalUsd <= 0) return null;
   if (currentNotionalUsd <= 0) return null;
 
-  const priceMove = favorableMovePct(side, markPx, entryAnchorPx);
+  const roePct = hlRoePct(side, markPx, entryAnchorPx, currentNotionalUsd, initialMarginUsd);
   const sliceGross = ladderSliceGrossUsd(currentNotionalUsd, cfg);
 
   const nextTpThreshold = (tpLevelsTaken + 1) * cfg.stepPct;
-  if (priceMove >= nextTpThreshold) {
+  if (roePct >= nextTpThreshold) {
     const take = Math.min(sliceGross, currentNotionalUsd);
     if (take <= 0) return null;
     return { kind: 'take_profit', level: tpLevelsTaken + 1, notionalUsd: take };
   }
 
   const nextDcaThreshold = -(dcaLevelsTaken + 1) * cfg.stepPct;
-  if (priceMove <= nextDcaThreshold) {
+  if (roePct <= nextDcaThreshold) {
     if (sliceGross <= 0) return null;
     return { kind: 'add', level: dcaLevelsTaken + 1, notionalUsd: sliceGross };
   }

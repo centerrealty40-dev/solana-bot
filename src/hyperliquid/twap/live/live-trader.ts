@@ -46,6 +46,7 @@ import {
 import {
   applyDcaLevelToGroup,
   applyTpLevelToGroup,
+  coinSideKey,
   distributeExchangeNotional,
   groupAvgEntryPx,
   groupMaxDcaLevels,
@@ -55,6 +56,10 @@ import {
   sumInitialMarginUsd,
   sumInitialNotionalUsd,
 } from './coin-side-ladder.js';
+import {
+  bookDriverCloseAtMs,
+  dcaWouldExceedBookGrossCap,
+} from './coin-stack-policy.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 function exitPxForOpen(open: HlTwapLiveOpen, cache: HyperliquidMarketCache): number {
@@ -120,7 +125,7 @@ export function scheduleLiveTrade(
     return { scheduled: false, reason: 'already_tracked' };
   }
 
-  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct, filePath);
+  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct, filePath, cfg);
   if (!decision.allow) {
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
@@ -308,6 +313,16 @@ export async function processLiveTrades(
   const opens = loadLiveOpensFromJournal(filePath);
   await processPendingLiveExits((pos) => exitPxForOpen(pos, cache), cfg, client, watchState);
 
+  const bookGroups = groupOpensByCoinSide(opens);
+  const bookCloseAtMs = new Map<string, number>();
+  if (watchState) {
+    for (const [key, group] of bookGroups) {
+      if (group.length === 0) continue;
+      const { coin, side } = group[0]!;
+      bookCloseAtMs.set(key, bookDriverCloseAtMs(coin, side, group, watchState));
+    }
+  }
+
   for (const pos of opens.values()) {
     if (isLiveExitPending(cfg, pos.hash)) continue;
 
@@ -326,7 +341,9 @@ export async function processLiveTrades(
     }
 
     const whaleEnded = watchState ? !watchState.activeByHash.has(pos.hash) : false;
-    const timerDue = now >= pos.liveCloseAtMs;
+    const bookKey = coinSideKey(pos.coin, pos.side);
+    const driverCloseAtMs = bookCloseAtMs.get(bookKey) ?? pos.liveCloseAtMs;
+    const timerDue = now >= driverCloseAtMs;
 
     if (timerDue) {
       try {
@@ -371,7 +388,7 @@ export async function processLiveTrades(
   }
 }
 
-/** ±3% ladder: partial TP and DCA — one book per coin+side (exchange gross). */
+/** ±3% HL ROE ladder: partial TP and DCA — one book per coin+side (exchange gross). */
 export async function processLiveLadders(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,
@@ -460,6 +477,14 @@ export async function processLiveLadders(
             `[hl-twap-live] TP L${action.level} ${primary.displaySymbol} book=$${bookGross.toFixed(0)} -$${filledUsd.toFixed(0)} (legs=${group.length}) uPnL=${unrealizedUsd(primary.side, avgPx, bookGross, markPx).toFixed(2)}`,
           );
         } else {
+          if (
+            dcaWouldExceedBookGrossCap(bookGross, action.notionalUsd, cfg.coinMaxGrossUsd)
+          ) {
+            console.log(
+              `[hl-twap-live] DCA blocked ${primary.displaySymbol}: book gross cap $${cfg.coinMaxGrossUsd}`,
+            );
+            break;
+          }
           const szi = await client.getPositionSzi(primary.coin);
           if (Math.abs(szi) <= 0) {
             console.log(

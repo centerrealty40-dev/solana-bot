@@ -12,8 +12,13 @@ import {
   type CoinEntryPlan,
 } from '../coin-twap-analysis.js';
 import type { NormalizedTwapSignal, TwapSide } from '../types.js';
-import { loadLiveOpensFromJournal, loadPendingLiveSchedules } from './journal.js';
+import { loadLiveOpensFromJournal, loadPendingLiveSchedules, type JournalSchedule } from './journal.js';
 import { liveCoinPriorLossBlockReason, liveLossStreakBlockReason } from './loss-streak-cooldown.js';
+import {
+  evaluateCoinStackEntry,
+  stackCfgFromLiveConfig,
+} from './coin-stack-policy.js';
+import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 export type LiveEntryDecision = {
@@ -51,6 +56,7 @@ export function canScheduleLiveEntry(
   opens: Map<string, HlTwapLiveOpen>,
   minImpactPct: number,
   journalPath?: string,
+  liveCfg?: HlTwapLiveConfig,
 ): LiveEntryDecision {
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
@@ -96,6 +102,21 @@ export function canScheduleLiveEntry(
     }
   }
 
+  if (liveCfg && !hlTwapUnrestrictedMode()) {
+    const pending = journalPath ? loadPendingLiveSchedules(journalPath) : new Map<string, JournalSchedule>();
+    const stack = evaluateCoinStackEntry(
+      sig,
+      entrySide,
+      opens,
+      pending,
+      watchState,
+      stackCfgFromLiveConfig(liveCfg),
+    );
+    if (!stack.allow) {
+      return { allow: false, reason: stack.reason };
+    }
+  }
+
   return { allow: true, reason: plan.reason, openAtMs: plan.openAtMs };
 }
 
@@ -105,6 +126,7 @@ export function resolveLiveEntryAuditPlan(
   watchState: TwapWatchState,
   journalPath: string,
   minImpactPct: number,
+  liveCfg?: HlTwapLiveConfig,
 ): CoinEntryPlan {
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
@@ -122,7 +144,7 @@ export function resolveLiveEntryAuditPlan(
   if (opens.has(sig.hash) || pending.has(sig.hash)) {
     return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
   }
-  const decision = canScheduleLiveEntry(sig, watchState, opens, minImpactPct, journalPath);
+  const decision = canScheduleLiveEntry(sig, watchState, opens, minImpactPct, journalPath, liveCfg);
   if (!decision.allow) {
     return { ...plan, allow: false, reason: decision.reason };
   }
