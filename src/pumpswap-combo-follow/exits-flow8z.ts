@@ -17,6 +17,7 @@ import { paperInvestedRemainingUsd, paperPoolExitQuoteUsd, paperPnlPctVsAvg } fr
 import { followMaxHoldDue, followHoldSec } from './exit-max-hold.js';
 import {
   followStateAsCombo,
+  leaderSellSinceOpen,
   setFollowLossCooldown,
   writeFollowState,
   type FollowState,
@@ -60,11 +61,11 @@ export async function evaluateFollowExitsFlow8z(
       cfg.executionMode === 'paper' ? paperPnlPctVsAvg(pos, mark) : pnlPctVsAvgFill(comboPos, mark);
     const inv =
       cfg.executionMode === 'paper' ? paperInvestedRemainingUsd(pos) : investedUsd(comboPos);
-    const leaderSellRef = state.lastLeaderSellByMint[pos.mint];
+    const leaderSellRef = leaderSellSinceOpen(state, pos.mint, pos.openedAt);
     const leaderFlushDue =
-      Boolean(leaderSellRef) &&
+      leaderSellRef != null &&
       cfg.flow8zLeaderFlushEnabled &&
-      Date.now() >= leaderSellRef!.ts + cfg.flow8zLeaderSellDelayMs;
+      Date.now() >= leaderSellRef.ts + cfg.flow8zLeaderSellDelayMs;
     const holdSec = followHoldSec(pos);
 
     if (followMaxHoldDue(pos, cfg.maxHoldMs)) {

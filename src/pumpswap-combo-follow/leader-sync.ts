@@ -378,6 +378,7 @@ async function executePendingBuy(
       });
     }
   } else {
+    delete state.lastLeaderSellByMint[pending.mint];
     state.positions.push({
       mint: pending.mint,
       symbol: pending.symbol,
