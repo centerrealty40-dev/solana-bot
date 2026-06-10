@@ -38,6 +38,14 @@
 
 **Тег:** `sa-alpha-1.11.403`
 
+### HL TWAP live: unified-account free margin gate
+
+- **Margin gate:** `freeMarginUsd` uses HL **withdrawable** (spot USDC `total − hold`), not `account − max(journal, used)` — fixes false `insufficient_account_margin` when journal over-counts netted perp legs.
+- **Withdrawable fetch:** `max(perpWithdrawable, spotFree)` on unified accounts (perp withdrawable is often 0 while USDC is free).
+- **Defer log:** show `free`, `need`, `account` (drop misleading standalone `spotUsdc=`).
+
+**Откат:** `git checkout sa-alpha-1.11.402 -- src/hyperliquid/twap/hyperliquid-meta.ts src/hyperliquid/twap/live/account-margin.ts src/hyperliquid/twap/live/live-trader.ts tests/hl-twap-account-margin.test.ts`; `pm2 restart hl-twap-telegram-watch`.
+
 ### pumpswap-combo-follow live: min mcap $500k (block micro)
 
 - Entry gate: **`MIN_MCAP_USD=500000`**, **`MAX_MCAP_USD=3000000`** (PG pumpswap snapshot → DexScreener fallback).

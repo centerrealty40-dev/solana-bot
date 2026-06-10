@@ -61,7 +61,7 @@ describe('account margin gating', () => {
     ]);
     const account = { accountValueUsd: 960, totalMarginUsedUsd: 700, withdrawableUsd: 100 };
     expect(hasMarginForNewOpen(account, opens, 350)).toBe(false);
-    expect(freeMarginUsd(account, opens)).toBeCloseTo(260);
+    expect(freeMarginUsd(account, opens)).toBeCloseTo(100);
   });
 
   it('allows new open when margin available', () => {
@@ -81,5 +81,23 @@ describe('account margin gating', () => {
     };
     expect(hasMarginForNewOpen(account, opens, 350)).toBe(true);
     expect(freeMarginUsd(account, opens)).toBeCloseTo(1009);
+  });
+
+  it('uses withdrawable not journal overcount on netted perps', () => {
+    const opens = new Map([
+      ['h1', open(2658, 7)],
+      ['h2', open(2658, 7)],
+      ['h3', open(1867, 7)],
+    ]);
+    const account = {
+      accountValueUsd: 2741,
+      totalMarginUsedUsd: 1146,
+      withdrawableUsd: 1595,
+      spotUsdcTotalUsd: 2741,
+      spotUsdcHoldUsd: 1146,
+    };
+    expect(marginUsedFromJournalOpens(opens)).toBeCloseTo(1026, 0);
+    expect(freeMarginUsd(account, opens)).toBeCloseTo(1595);
+    expect(hasMarginForNewOpen(account, opens, 500)).toBe(true);
   });
 });

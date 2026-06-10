@@ -170,8 +170,8 @@ export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccoun
   const spotUsdc = parseSpotUsdcBalance(spotSt);
   const accountValueUsd =
     spotUsdc.totalUsd > 0 ? spotUsdc.totalUsd : perpAccountValueUsd;
-  const withdrawableUsd =
-    perpWithdrawableUsd > 0 ? perpWithdrawableUsd : spotUsdc.freeUsd;
+  // Unified account: free USDC is spot (total−hold); perp withdrawable is often 0.
+  const withdrawableUsd = Math.max(perpWithdrawableUsd, spotUsdc.freeUsd);
 
   return {
     accountValueUsd,
