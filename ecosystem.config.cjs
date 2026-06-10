@@ -5,6 +5,17 @@ require('dotenv').config({ path: path.join(root, '.env') });
 /** Проброс в `env` каждого PM2-приложения, чтобы ключ был в `process.env` даже если дочерний процесс не подхватил `.env` так, как ожидается. */
 const JUPITER_API_KEY_PM2 = (process.env.JUPITER_API_KEY || '').trim();
 const PM2_JUPITER_KEY_ENV = JUPITER_API_KEY_PM2 ? { JUPITER_API_KEY: JUPITER_API_KEY_PM2 } : {};
+/** Alchemy (или иной primary) из `.env` — ключ не в git; перекрывает stale PM2 QN URL при reload. */
+const SA_RPC_HTTP_URL_PM2 = (process.env.SA_RPC_HTTP_URL || '').trim();
+const LIVE_RPC_HTTP_URL_PM2 = (process.env.LIVE_RPC_HTTP_URL || SA_RPC_HTTP_URL_PM2).trim();
+const COPY_TRADER_RPC_URL_PM2 = (process.env.COPY_TRADER_RPC_URL || SA_RPC_HTTP_URL_PM2).trim();
+const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
+  ? {
+      SA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
+      LIVE_RPC_HTTP_URL: LIVE_RPC_HTTP_URL_PM2,
+      COPY_TRADER_RPC_URL: COPY_TRADER_RPC_URL_PM2,
+    }
+  : {};
 if (!JUPITER_API_KEY_PM2) {
   console.warn(
     '[ecosystem.config.cjs] JUPITER_API_KEY пуст в .env при разборе конфига — в merged env не попадёт Pro-ключ (проверьте файл на VPS и `pm2 reload`).',
@@ -58,10 +69,10 @@ const HL_TWAP_LIVE_ENV = {
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Prod entry split $300+$300 = $600; DCA −10%/−20% × $200; max $1000 per mint.
+ * Prod staged entry $600+$600 ($1200 notional); DCA −10%/−20% × $300; max $1800 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '600';
-const LIVE_OSCAR_MAX_POSITION_USD = '1000';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1200';
+const LIVE_OSCAR_MAX_POSITION_USD = '1800';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -78,6 +89,15 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
 const QUICKNODE_NO_DAILY_CAP_ENV = {
   QUICKNODE_DAILY_ENFORCE: '0',
   QUICKNODE_DAILY_ENFORCE_PROVIDER: '0',
+};
+
+/**
+ * Prod RPC: **Alchemy only** — URL в `.env` (`SA_RPC_HTTP_URL`, опционально `LIVE_RPC_HTTP_URL`, `COPY_TRADER_RPC_URL`).
+ * Ключ Alchemy не коммитить; QuickNode/Helius URL в `.env` остаются как резерв, но не используются пока флаги ниже = `0`.
+ */
+const SOLANA_RPC_ALCHEMY_ONLY_ENV = {
+  SOLANA_RPC_HELIUS_PREFER: '0',
+  SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '0',
 };
 
 const PM2_APPS = [
@@ -101,6 +121,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         HOST: '0.0.0.0',
         PORT: '3008',
@@ -115,9 +136,9 @@ const PM2_APPS = [
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
-        /** Wallet tiles: same RPC chain as live-oscar (Helius when QN TLS/meter blocks). */
+        /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        SOLANA_RPC_HELIUS_PREFER: '1',
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
@@ -342,11 +363,11 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
-        /** Billable RPC: QuickNode (`SA_RPC_HTTP_URL` в .env). Helius — только fallback при QN budget block. */
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
-        SOLANA_RPC_HELIUS_PREFER: '0',
+        /** Billable RPC: Alchemy (`SA_RPC_HTTP_URL` / `LIVE_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
@@ -367,19 +388,19 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$300+$300** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $200.
+         * Staged-entry: сплит **$600+$600** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $300.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '600',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '600',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
@@ -590,10 +611,10 @@ const PM2_APPS = [
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
         /**
-         * DCA −10% / −20%, по $200 (~0.333333 × $600 `PAPER_POSITION_USD`).
-         * Max invested $600 + $200 + $200 = $1000 ladder; cap $1000 (`LIVE_MAX_POSITION_USD`).
+         * DCA −10% / −20%, по $300 (0.25 × $1200 `PAPER_POSITION_USD`).
+         * Max ladder: $600+$600 staged + $300+$300 DCA = $1800 (`LIVE_MAX_POSITION_USD`).
          */
-        PAPER_DCA_LEVELS: '-10:0.333333,-20:0.333333',
+        PAPER_DCA_LEVELS: '-10:0.25,-20:0.25',
         /** No price kill — timed loss exits only (salvage24 / h48_loss). */
         PAPER_DCA_KILLSTOP: '0',
         /**
@@ -1331,6 +1352,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
         /** Исполнение: бывший live-oscar-risky (Phantom base58 или JSON в этом файле на VPS). */
@@ -1371,9 +1393,8 @@ const PM2_APPS = [
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
-        /** Poll + parse leader txs on QuickNode; Helius — fallback при QN budget block. */
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**

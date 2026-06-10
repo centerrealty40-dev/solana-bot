@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.416] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.416`
+
+### Live Oscar: Alchemy-only RPC + entry $1200 (2×$600) + DCA $300
+
+- **`ecosystem.config.cjs`:** `SOLANA_RPC_HELIUS_PREFER=0`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=0` для live-oscar, copy-trader, dashboard; `PM2_SOLANA_RPC_ENV` пробрасывает `SA_RPC_HTTP_URL` / `LIVE_RPC_HTTP_URL` / `COPY_TRADER_RPC_URL` из `.env` (ключ Alchemy не в git).
+- **Sizing:** staged entry **$600+$600** (`PAPER_POSITION_USD=1200`), DCA **−10%/−20% × $300**, cap **`LIVE_MAX_POSITION_USD=1800`**.
+- **`strategy-process-watch`:** combo-процессы убраны из default targets (не воскресают после `pm2 save`).
+
+**Откат:** вернуть QN/Helius URL в `.env`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`; прежние `LIVE_OSCAR_*` / `PAPER_DCA_LEVELS` из `1.11.415`; `git revert` + deploy `v2`.
+
+---
+
 ## [1.11.415] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.415`

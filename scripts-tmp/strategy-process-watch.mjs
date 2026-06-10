@@ -1,7 +1,7 @@
 /**
  * Unified PM2 watchdog for live trading bots: status + heartbeat + auto-restart + Telegram.
  *
- * Watches by default: hl-twap-telegram-watch, live-oscar, copy-trader, pumpswap-combo-follow-live.
+ * Watches by default: hl-twap-telegram-watch, live-oscar, copy-trader.
  * Override: STRATEGY_PROCESS_WATCH_TARGETS JSON array [{ pm2, heartbeatPath, staleMs?, fatalPath? }]
  */
 import 'dotenv/config';
