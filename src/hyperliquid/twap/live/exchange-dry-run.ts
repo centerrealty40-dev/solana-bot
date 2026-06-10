@@ -1,10 +1,15 @@
 import type { HlTwapLiveConfig } from './config.js';
+import { wrapWithExecSlices } from './exec-slice.js';
 import {
   appendLiveJournal,
   journalOrderRow,
   type LiveJournalRow,
 } from './journal.js';
 import type { HlTwapExchangeClient, MarketOrderParams, OrderFillResult } from './types.js';
+
+export type HlTwapDryRunClient = HlTwapExchangeClient & {
+  seedPosition(coin: string, signedSzi: number): void;
+};
 
 export class DryRunExchangeClient implements HlTwapExchangeClient {
   readonly mode = 'dry_run' as const;
@@ -90,6 +95,6 @@ export class DryRunExchangeClient implements HlTwapExchangeClient {
   }
 }
 
-export function createDryRunClient(cfg: HlTwapLiveConfig): DryRunExchangeClient {
-  return new DryRunExchangeClient(cfg);
+export function createDryRunClient(cfg: HlTwapLiveConfig): HlTwapDryRunClient {
+  return wrapWithExecSlices(new DryRunExchangeClient(cfg), cfg) as HlTwapDryRunClient;
 }

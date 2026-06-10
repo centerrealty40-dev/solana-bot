@@ -400,8 +400,8 @@ async function runPass(cache: HyperliquidMarketCache): Promise<void> {
 
   if (PAPER_ENABLED) await processPaperTrades(cache, watchState);
   if (LIVE_ENABLED && liveExchange) {
-    await processLiveTrades(cache, LIVE_CFG, liveExchange, watchState);
     await processLiveLadders(cache, LIVE_CFG, liveExchange, watchState);
+    await processLiveTrades(cache, LIVE_CFG, liveExchange, watchState);
     await processExchangeResiduals(cache, LIVE_CFG, liveExchange);
   }
 

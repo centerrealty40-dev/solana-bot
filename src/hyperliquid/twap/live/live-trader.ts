@@ -19,6 +19,7 @@ import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
 import { flattenCoinOnExchange } from './flatten-position.js';
 import {
+  blocksLiveLadderDuringExit,
   closeLiveTrade,
   instantCloseLiveTrade,
   isLiveExitPending,
@@ -387,7 +388,7 @@ export async function processLiveLadders(
 
     const primary = primaryOpenInGroup(group);
     if (group.some((p) => watchState?.ladderBlockedHashes.has(p.hash))) continue;
-    if (group.some((p) => isLiveExitPending(cfg, p.hash))) continue;
+    if (group.some((p) => blocksLiveLadderDuringExit(cfg, p.hash))) continue;
 
     const markPx = exitPxForOpen(primary, cache);
     if (markPx <= 0) continue;

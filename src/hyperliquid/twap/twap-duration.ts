@@ -79,7 +79,7 @@ export function twapExitSliceCount(minutes: number): number {
   return Math.min(10, Math.max(1, envInt('HL_TWAP_STANDARD_EXIT_SLICES', 3, 1)));
 }
 
-/** Entry is always one full-margin order; gradual slices apply to exit only. */
+/** Entry uses unified exec-slice wrapper at exchange layer; timing exit slices unchanged. */
 export function twapEntrySliceCount(_minutes: number): number {
   return 1;
 }
