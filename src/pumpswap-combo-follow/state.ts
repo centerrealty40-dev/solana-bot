@@ -84,6 +84,17 @@ export function findFollowPosition(state: FollowState, mint: string): FollowPosi
   return state.positions.find((p) => p.mint === mint);
 }
 
+/** Leader sell that happened while this bag is open — ignores stale refs from prior rounds. */
+export function leaderSellSinceOpen(
+  state: FollowState,
+  mint: string,
+  openedAt: number,
+): import('./types.js').LeaderSellRef | undefined {
+  const ref = state.lastLeaderSellByMint[mint];
+  if (!ref || ref.ts < openedAt) return undefined;
+  return ref;
+}
+
 export function openFollowPositionsCount(state: FollowState): number {
   return state.positions.length;
 }

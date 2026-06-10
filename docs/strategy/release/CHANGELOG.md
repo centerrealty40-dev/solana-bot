@@ -34,6 +34,17 @@
 
 ---
 
+## [1.11.398] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.398`
+
+### pumpswap-combo-follow: fix instant sell after buy (stale leader-sell flush)
+
+- **`flow8z_leader_pool_flush`** no longer fires on leader sells that happened **before** our entry; only sells observed while the bag is open arm the 60s flush timer.
+- Clear stale `lastLeaderSellByMint` on new entry; unit test `leader-sell-since-open`.
+
+**Откат:** `git checkout sa-alpha-1.11.397 -- src/pumpswap-combo-follow/`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.397] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.397`
