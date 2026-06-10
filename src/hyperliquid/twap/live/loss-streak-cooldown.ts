@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 import type { TwapSide } from '../types.js';
+import { hlTwapUnrestrictedMode } from '../unrestricted.js';
 
 export type ClosedTradeOutcome = {
   hash: string;
@@ -83,6 +84,7 @@ export function liveCoinPriorLossBlockReason(
   side: TwapSide,
   journalPath: string,
 ): string | null {
+  if (hlTwapUnrestrictedMode()) return null;
   if (!coinPriorLossBlockEnabled() || side !== 'buy') return null;
   const history = loadClosedTradeOutcomes(journalPath).filter(
     (c) => c.coin === coin && c.side === side,
@@ -101,6 +103,7 @@ export function liveLossStreakBlockReason(
   journalPath: string,
   nowMs = Date.now(),
 ): string | null {
+  if (hlTwapUnrestrictedMode()) return null;
   if (!lossStreakCooldownEnabled()) return null;
   const need = lossStreakCount();
   const cooldownMs = lossStreakCooldownMs();

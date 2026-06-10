@@ -1,5 +1,5 @@
 import type { NormalizedTwapSignal } from './types.js';
-import { isShortTwapMinutes, twapExitAdaptiveThresholdMinutes, twapExitEarlyMinutesForDuration } from './twap-duration.js';
+import { shouldUseMicroExecution, twapExitAdaptiveThresholdMinutes, twapExitEarlyMinutesForDuration } from './twap-duration.js';
 
 /** Hyperliquid TWAP: child order every 30s over `minutes` (see HL docs). */
 export const HL_TWAP_SLICE_INTERVAL_SEC = 30;
@@ -40,7 +40,7 @@ export function computeTwapSchedule(sig: Pick<
   const lastCycleEtaMs = twapStartMs + minutes * 60_000;
   /** Enter as soon as TWAP starts (not after first 30s slice). */
   const paperOpenAtMs = twapStartMs;
-  const shortLane = isShortTwapMinutes(minutes);
+  const shortLane = shouldUseMicroExecution(minutes);
   const exitEarlyMinutes = shortLane ? 0 : twapExitEarlyMinutesForDuration(minutes);
   const exitEarlyMs = exitEarlyMinutes * 60_000;
   /** Short: flatten instant at boundary before whale's last 30s child order. */

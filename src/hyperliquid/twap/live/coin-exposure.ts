@@ -1,6 +1,7 @@
 import { hlTwapEntrySide } from '../fade-whales.js';
 import { hlTwapBtcAlignedBlockReason } from '../twap-btc-gate.js';
 import { isDeniedWhale } from '../whale-denylist.js';
+import { hlTwapUnrestrictedMode } from '../unrestricted.js';
 import type { TwapWatchState } from '../detect.js';
 import { hlTwapCoinMomentumBlockReason } from '../coin-momentum-gate.js';
 import {
@@ -51,6 +52,11 @@ export function canScheduleLiveEntry(
   minImpactPct: number,
   journalPath?: string,
 ): LiveEntryDecision {
+  if (hlTwapUnrestrictedMode()) {
+    const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
+    return { allow: plan.allow, reason: plan.reason, openAtMs: plan.openAtMs };
+  }
+
   if (isDeniedWhale(sig.user)) {
     return { allow: false, reason: 'whale_denylisted' };
   }
@@ -100,6 +106,16 @@ export function resolveLiveEntryAuditPlan(
   journalPath: string,
   minImpactPct: number,
 ): CoinEntryPlan {
+  if (hlTwapUnrestrictedMode()) {
+    const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
+    const opens = loadLiveOpensFromJournal(journalPath);
+    const pending = loadPendingLiveSchedules(journalPath);
+    if (opens.has(sig.hash) || pending.has(sig.hash)) {
+      return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
+    }
+    return plan;
+  }
+
   const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
   const opens = loadLiveOpensFromJournal(journalPath);
   const pending = loadPendingLiveSchedules(journalPath);

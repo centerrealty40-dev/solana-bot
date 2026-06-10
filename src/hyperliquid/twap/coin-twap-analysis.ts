@@ -1,7 +1,8 @@
 import { computeTwapSchedule } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
-import { twapDurationGate } from './twap-duration.js';
+import { isMicroTwapMinutes, twapDurationGate } from './twap-duration.js';
 import { isDeniedWhale } from './whale-denylist.js';
+import { hlTwapUnrestrictedMode } from './unrestricted.js';
 
 export type CrossingImpactDecision = {
   allow: boolean;
@@ -210,6 +211,19 @@ export function computeCoinEntryPlan(
       waitForOppositeEndsMs: null,
     });
   };
+
+  if (hlTwapUnrestrictedMode()) {
+    const { buyPctPerHour, sellPctPerHour } = aggregateCoinHourlyImpacts(allIncludingSig);
+    const diffPct = Math.abs(buyPctPerHour - sellPctPerHour);
+    return buildEntryPlan(allIncludingSig, {
+      allow: true,
+      reason: isMicroTwapMinutes(sig.minutes) ? 'ok_micro' : 'ok',
+      diffPct,
+      dominant: sig.side,
+      openAtMs: Math.max(baseOpenMs, Date.now()),
+      waitForOppositeEndsMs: null,
+    });
+  }
 
   if (isDeniedWhale(sig.user)) {
     return deny('whale_denylisted');
