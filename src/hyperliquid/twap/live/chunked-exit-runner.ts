@@ -1,9 +1,11 @@
 import {
   buildExitScheduleAnchor,
   chunkedExitEnabled,
+  exitScheduleTriggerMs,
   exitSliceDueAtMs,
   loadChunkedExitConfig,
   nextDueSliceIndex,
+  resolveExitScheduleAnchor,
   sliceTargetBase,
   vwapExitPx,
 } from './chunked-exit.js';
@@ -25,27 +27,6 @@ import { clearWhaleExitPending } from '../twap-whale-exit.js';
 import { HL_TWAP_SLICE_INTERVAL_SEC } from '../twap-schedule.js';
 import { hlTwapUnrestrictedMode } from '../unrestricted.js';
 import { twapExitSliceCount, shouldUseMicroExecution } from '../twap-duration.js';
-
-function exitAnchor(exit: PendingLiveExit) {
-  return buildExitScheduleAnchor(
-    exit.twapStartMs ?? exit.startedAtMs,
-    exit.startedAtMs,
-    exit.startedAtMs,
-    exit.sliceIntervalMs,
-  );
-}
-
-function exitAnchorFromPending(exit: PendingLiveExit) {
-  if (exit.twapStartMs != null && exit.firstWhaleSliceIndex != null) {
-    return {
-      twapStartMs: exit.twapStartMs,
-      firstWhaleSliceIndex: exit.firstWhaleSliceIndex,
-      startedAtMs: exit.startedAtMs,
-      sliceIntervalMs: exit.sliceIntervalMs,
-    };
-  }
-  return exitAnchor(exit);
-}
 
 /** Instant full flatten (legacy). */
 export async function instantCloseLiveTrade(
@@ -133,7 +114,7 @@ async function startChunkedExit(
   const hash = pos.hash;
   const filePath = cfg.journalPath;
   const startedAtMs = Date.now();
-  const triggerMs = Math.max(startedAtMs, pos.liveCloseAtMs);
+  const triggerMs = exitScheduleTriggerMs(startedAtMs, pos.liveCloseAtMs);
   const anchor = buildExitScheduleAnchor(
     pos.twapStartMs,
     triggerMs,
@@ -177,7 +158,7 @@ async function startChunkedExit(
   };
 
   const dueIdx = nextDueSliceIndex(
-    exitAnchorFromPending(pendingExit),
+    resolveExitScheduleAnchor(pendingExit),
     0,
     exitCfg.sliceCount,
     startedAtMs,
@@ -353,7 +334,7 @@ export async function processPendingLiveExits(
     if (!pos) continue;
 
     const dueIdx = nextDueSliceIndex(
-      exitAnchorFromPending(exit),
+      resolveExitScheduleAnchor(exit),
       exit.slicesSent,
       exit.sliceCount,
       now,

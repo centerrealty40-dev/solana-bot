@@ -36,6 +36,17 @@
 
 ---
 
+## [1.11.408] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.408`
+
+### HL TWAP live: repair stuck exit_start anchor (HYPE/ETH slices)
+
+- **`exitScheduleTriggerMs`:** early exits (whale ended, impact lost, …) anchor to actual `startedAtMs`, not future `liveCloseAtMs` — prevents first slice scheduled hours ahead.
+- **`resolveExitScheduleAnchor`:** journal repair drops whale alignment when first slice due >2 intervals after exit start (unblocks legs stuck at `exit_start` with `slicesSent=0`).
+
+**Откат:** `git checkout sa-alpha-1.11.407 -- src/hyperliquid/twap/live/chunked-exit.ts src/hyperliquid/twap/live/chunked-exit-runner.ts tests/hl-twap-chunked-exit.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
 ## [1.11.407] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.407`
