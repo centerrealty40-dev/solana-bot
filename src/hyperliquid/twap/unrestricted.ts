@@ -4,7 +4,7 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
-/** Trade every TWAP — no duration / momentum / BTC / whale / impact gates. */
+/** Unrestricted: all TWAP durations, no momentum/BTC/whale/prior-loss gates. Impact ≥2%/h always enforced (detect + schedule). */
 export function hlTwapUnrestrictedMode(): boolean {
   return envBool('HL_TWAP_UNRESTRICTED', false);
 }

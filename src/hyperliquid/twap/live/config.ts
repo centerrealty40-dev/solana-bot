@@ -1,4 +1,5 @@
 import { defaultExitSliceIntervalMs } from './chunked-exit.js';
+import { minImpactPctHour } from '../coin-twap-analysis.js';
 
 export type HlTwapLiveMode = 'dry_run' | 'live';
 
@@ -25,9 +26,9 @@ export type HlTwapLiveConfig = {
   marginReserveUsd: number;
   /** Min net hourly impact %/h on dominant side for entries. */
   minImpactPct: number;
-  /** TP/DCA step from entry anchor (%). */
+  /** TP/DCA step from entry anchor (% price move). */
   ladderStepPct: number;
-  /** Each TP/DCA slice as % of initial notional. */
+  /** Each TP/DCA slice as % of current gross position. */
   ladderSlicePct: number;
   /** IoC price buffer for market-like orders. */
   slippageTolerance: number;
@@ -68,10 +69,10 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     enabled: envBool('HL_TWAP_LIVE_ENABLED', false),
     mode,
     privateKey,
-    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 230)),
+    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 500)),
     dynamicMargin: envBool('HL_TWAP_LIVE_DYNAMIC_MARGIN', true),
-    marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 380)),
-    marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 170)),
+    marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 500)),
+    marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 300)),
     dynamicMarginMaxAtOpenCount: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_MAX_AT', 2))),
     dynamicMarginMinAtOpenCount: Math.max(
       1,
@@ -82,7 +83,7 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
       Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE', 2)),
     ),
     marginReserveUsd: Math.max(0, envNum('HL_TWAP_MARGIN_RESERVE_USD', 50)),
-    minImpactPct: Math.max(0, envNum('HL_TWAP_MIN_IMPACT_PCT_HOUR', envNum('HL_TWAP_MIN_IMPACT_PCT', 2))),
+    minImpactPct: minImpactPctHour(),
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 3)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 10))),
     slippageTolerance: Math.max(0.001, envNum('HL_TWAP_LIVE_SLIPPAGE_TOLERANCE', 0.01)),

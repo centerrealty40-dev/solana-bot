@@ -10,14 +10,18 @@ export type CrossingImpactDecision = {
   diffPct: number | null;
 };
 
-/** Min net hourly impact on dominant side (default 2 %/hour). */
+/** Product policy: sole entry filter — hourly impact ≥ this (cannot be lowered via env). */
+export const HL_TWAP_IMPACT_FLOOR_PCT_HOUR = 2;
+
+/** Min net hourly impact on dominant side (default 2 %/hour, floor 2). */
 export function minImpactPctHour(): number {
   const v = process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR?.trim();
+  let n = HL_TWAP_IMPACT_FLOOR_PCT_HOUR;
   if (v != null && v !== '') {
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 0) return n;
+    const parsed = Number(v);
+    if (Number.isFinite(parsed) && parsed >= 0) n = parsed;
   }
-  return 2;
+  return Math.max(HL_TWAP_IMPACT_FLOOR_PCT_HOUR, n);
 }
 
 /**
@@ -213,16 +217,31 @@ export function computeCoinEntryPlan(
   };
 
   if (hlTwapUnrestrictedMode()) {
-    const { buyPctPerHour, sellPctPerHour } = aggregateCoinHourlyImpacts(allIncludingSig);
-    const diffPct = Math.abs(buyPctPerHour - sellPctPerHour);
-    return buildEntryPlan(allIncludingSig, {
-      allow: true,
-      reason: isMicroTwapMinutes(sig.minutes) ? 'ok_micro' : 'ok',
-      diffPct,
-      dominant: sig.side,
-      openAtMs: Math.max(baseOpenMs, Date.now()),
-      waitForOppositeEndsMs: null,
-    });
+    const okReason = isMicroTwapMinutes(sig.minutes) ? 'ok_micro' : 'ok';
+
+    const nowPlan = tryEntryPlan(
+      sig,
+      allIncludingSig,
+      Math.max(baseOpenMs, Date.now()),
+      minHourPct,
+      okReason,
+    );
+    if (nowPlan) return nowPlan;
+
+    const opposing = allIncludingSig.filter((t) => t.side !== sig.side);
+    const endEvents = opposing
+      .map((t) => ({ twap: t, endMs: computeTwapSchedule(t).lastCycleEtaMs }))
+      .sort((a, b) => a.endMs - b.endMs);
+
+    for (let i = 0; i < endEvents.length; i++) {
+      const cutoff = endEvents[i]!.endMs;
+      const endedHashes = new Set(endEvents.slice(0, i + 1).map((e) => e.twap.hash));
+      const remaining = allIncludingSig.filter((t) => !endedHashes.has(t.hash));
+      const plan = tryEntryPlan(sig, remaining, cutoff, minHourPct, 'deferred_opposite_end');
+      if (plan) return plan;
+    }
+
+    return deny('hourly_impact_no_edge');
   }
 
   if (isDeniedWhale(sig.user)) {

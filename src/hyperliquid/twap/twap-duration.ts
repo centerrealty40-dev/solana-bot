@@ -42,12 +42,17 @@ export function isShortTwapMinutes(minutes: number): boolean {
   return mins >= twapShortMinMinutes() && mins < twapShortMaxMinutesExclusive();
 }
 
-/** Micro TWAP upper bound inclusive (default 15m). Uses 1–2 slice entry/exit, not full chunked ladder. */
+/** Micro TWAP upper bound inclusive (default 15m). Gradual multi-slice exit only. */
 export function twapMicroMaxMinutesInclusive(): number {
   return envInt('HL_TWAP_MICRO_MAX_MINUTES', 15, 1);
 }
 
-/** ≤ micro max → micro execution path (single or 2-slice exit). */
+/** Standard lane starts above micro max (default >15m → 3 exit slices). */
+export function twapStandardExitMinMinutesExclusive(): number {
+  return twapMicroMaxMinutesInclusive() + 1;
+}
+
+/** ≤ micro max → micro schedule (exit before last whale slice). */
 export function isMicroTwapMinutes(minutes: number): boolean {
   const mins = Math.max(1, Math.round(minutes || 0));
   return mins <= twapMicroMaxMinutesInclusive();
@@ -59,12 +64,29 @@ export function shouldUseMicroExecution(minutes: number): boolean {
   return isShortTwapMinutes(minutes);
 }
 
-/** Exit slices for micro TWAP: 1 if ≤10m, else 2 (max). */
-export function microTwapExitSliceCount(minutes: number): number {
+/**
+ * Exit slices by TWAP duration — gradual unwind, avoid single-slice book impact.
+ * ≤5m: 1–2 (default 2), 6–15m: 2, >15m: 3.
+ */
+export function twapExitSliceCount(minutes: number): number {
   const mins = Math.max(1, Math.round(minutes || 0));
-  const oneSliceMax = envInt('HL_TWAP_MICRO_ONE_SLICE_MAX_MINUTES', 10, 1);
-  if (mins <= oneSliceMax) return 1;
-  return Math.min(2, envInt('HL_TWAP_MICRO_EXIT_SLICES', 2, 1));
+  if (mins <= 5) {
+    return Math.min(2, Math.max(1, envInt('HL_TWAP_ULTRA_SHORT_EXIT_SLICES', 2, 1)));
+  }
+  if (mins <= twapMicroMaxMinutesInclusive()) {
+    return Math.min(2, Math.max(1, envInt('HL_TWAP_MICRO_EXIT_SLICES', 2, 1)));
+  }
+  return Math.min(10, Math.max(1, envInt('HL_TWAP_STANDARD_EXIT_SLICES', 3, 1)));
+}
+
+/** Entry is always one full-margin order; gradual slices apply to exit only. */
+export function twapEntrySliceCount(_minutes: number): number {
+  return 1;
+}
+
+/** @deprecated use {@link twapExitSliceCount} */
+export function microTwapExitSliceCount(minutes: number): number {
+  return twapExitSliceCount(minutes);
 }
 
 /** Max whale TWAP duration (minutes) for paper/live entry. Default 120. */

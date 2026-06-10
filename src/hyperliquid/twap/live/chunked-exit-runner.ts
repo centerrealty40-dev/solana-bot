@@ -23,7 +23,8 @@ import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
 import type { TwapWatchState } from '../detect.js';
 import { clearWhaleExitPending } from '../twap-whale-exit.js';
 import { HL_TWAP_SLICE_INTERVAL_SEC } from '../twap-schedule.js';
-import { microTwapExitSliceCount, shouldUseMicroExecution } from '../twap-duration.js';
+import { hlTwapUnrestrictedMode } from '../unrestricted.js';
+import { twapExitSliceCount, shouldUseMicroExecution } from '../twap-duration.js';
 
 function exitAnchor(exit: PendingLiveExit) {
   return buildExitScheduleAnchor(
@@ -100,24 +101,24 @@ export async function closeLiveTrade(
   const pos = opens.get(hash);
   if (!pos || exitPx <= 0) return null;
 
-  if (shouldUseMicroExecution(pos.minutes)) {
-    const microSlices = microTwapExitSliceCount(pos.minutes);
-    if (microSlices <= 1) {
-      return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
-    }
-    const exitCfg = {
-      sliceCount: microSlices,
-      sliceIntervalMs: HL_TWAP_SLICE_INTERVAL_SEC * 1000,
-    };
-    return startChunkedExit(pos, exitPx, exitReason, exitCfg, cfg, client, watchState);
-  }
-
-  const exitCfg = loadChunkedExitConfig(cfg, pos.side);
-  if (!chunkedExitEnabled(exitCfg)) {
+  const slices = resolveExitSliceCount(pos, cfg);
+  if (slices <= 1) {
     return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
   }
 
+  const exitCfg = {
+    sliceCount: slices,
+    sliceIntervalMs: HL_TWAP_SLICE_INTERVAL_SEC * 1000,
+  };
   return startChunkedExit(pos, exitPx, exitReason, exitCfg, cfg, client, watchState);
+}
+
+function resolveExitSliceCount(pos: HlTwapLiveOpen, cfg: HlTwapLiveConfig): number {
+  if (hlTwapUnrestrictedMode() || shouldUseMicroExecution(pos.minutes)) {
+    return twapExitSliceCount(pos.minutes);
+  }
+  const sideCfg = loadChunkedExitConfig(cfg, pos.side);
+  return sideCfg.sliceCount;
 }
 
 async function startChunkedExit(

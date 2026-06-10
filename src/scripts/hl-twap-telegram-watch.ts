@@ -8,7 +8,7 @@
  *
  * Env (separate bot — do not reuse Live Oscar TELEGRAM_*):
  * - HL_TWAP_TELEGRAM_BOT_TOKEN / HL_TWAP_TELEGRAM_CHAT_ID — whale alerts
- * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — min net impact % **per hour** (not % of day vol)
+ * - HL_TWAP_MIN_IMPACT_PCT_HOUR=2 — **sole entry filter** (≥2 %/h crossing impact; floor 2, do not set 0)
  * - HL_TWAP_WHALE_DENYLIST — optional whale addresses to skip (comma-sep)
  * - HL_TWAP_FADE_WHALES — comma-sep whales to fade (invert side); overrides denylist for those addresses
  * - HL_TWAP_BTC_ALIGNED_GATE=0 — strong-move aligned gate (off by default)
