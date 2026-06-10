@@ -14,6 +14,8 @@ const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
       SA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
       LIVE_RPC_HTTP_URL: LIVE_RPC_HTTP_URL_PM2,
       COPY_TRADER_RPC_URL: COPY_TRADER_RPC_URL_PM2,
+      SOLANA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
+      ALCHEMY_HTTP_URL: SA_RPC_HTTP_URL_PM2,
     }
   : {};
 if (!JUPITER_API_KEY_PM2) {
@@ -148,7 +150,7 @@ const PM2_APPS = [
          * - `QUICKNODE_USAGE_TELEGRAM` (общая дневная сводка) и milestones — выкл., чтобы не шумели.
          */
         QUICKNODE_USAGE_TELEGRAM: '0',
-        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '1',
+        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '0',
         QUICKNODE_HOURLY_REMAINING_TELEGRAM_MS: '3600000',
         QUICKNODE_HOURLY_RECENT_MINUTES_LIST: '10,30,60',
         /** В конец `[ALERT][quicknode-balance]` — метрики discovery за окно из `data/live-discovery-health.json` (live-oscar). */
@@ -1461,9 +1463,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_SL_MULTI_PCT: '22',
         PUMPSWAP_COMBO_SL_PRE_DCA_PCT: '35',
         PUMPSWAP_COMBO_SLIPPAGE_BPS: '300',
-        /** QuickNode only — Helius monthly cap exhausted. */
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '0',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1507,8 +1508,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT: '25',
         PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '20',
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '300',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1559,8 +1560,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '100',
         PUMPSWAP_COMBO_FOLLOW_LEADER_WS: '1',
         PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '150',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1626,12 +1627,43 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_POLL_MS: '5000',
         PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT: '25',
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '100',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+      },
+    },
+    /**
+     * Hourly Alchemy RPC usage → Telegram (internal meter; no public Alchemy billing API on free tier).
+     */
+    {
+      name: 'sa-alchemy-usage-watch',
+      cwd: root,
+      script: 'scripts-tmp/alchemy-usage-hourly-telegram.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 10_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        ...PM2_SOLANA_RPC_ENV,
+        ALCHEMY_USAGE_TELEGRAM: '1',
+        ALCHEMY_USAGE_INTERVAL_MS: '3600000',
+        ALCHEMY_EST_CU_PER_RPC: '27',
+        TELEGRAM_COOLDOWN_REPORT_ALCHEMY_USAGE_MS: '3600000',
       },
     },
 ];
 
+/** Combo bots off by default — set ENABLE_PUMPSWAP_COMBO_PM2=true to include pumpswap-combo* apps. */
+const ENABLE_PUMPSWAP_COMBO_PM2 = process.env.ENABLE_PUMPSWAP_COMBO_PM2 === 'true';
+const PM2_APPS_FILTERED = PM2_APPS.filter((app) => {
+  if (ENABLE_PUMPSWAP_COMBO_PM2) return true;
+  return !/^pumpswap-combo/.test(app.name);
+});
+
 module.exports = {
-  apps: PM2_APPS,
+  apps: PM2_APPS_FILTERED,
 };
