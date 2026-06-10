@@ -187,19 +187,20 @@ export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccoun
 
 /**
  * Total account equity including unrealized PnL (drawdown / risk monitoring).
- * Prefers perp marginSummary.accountValue; unified fallback = spot USDC + Σ uPnL.
+ * Matches HL UI "Total Balance" on unified accounts: spot USDC + Σ uPnL.
+ * Perp-only accounts fall back to marginSummary.accountValue.
  */
 export function resolveAccountEquityUsd(
   margin: Pick<HlAccountMargin, 'accountValueUsd' | 'perpAccountValueUsd' | 'spotUsdcTotalUsd'>,
   positions: Array<{ unrealizedPnlUsd: number }>,
 ): number {
-  const perpAv = margin.perpAccountValueUsd ?? 0;
-  if (perpAv > 0) return perpAv;
   const spot = margin.spotUsdcTotalUsd ?? 0;
   if (spot > 0) {
     const uPnl = positions.reduce((s, p) => s + p.unrealizedPnlUsd, 0);
     return spot + uPnl;
   }
+  const perpAv = margin.perpAccountValueUsd ?? 0;
+  if (perpAv > 0) return perpAv;
   return margin.accountValueUsd;
 }
 

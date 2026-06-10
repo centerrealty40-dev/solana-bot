@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.414] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.414`
+
+### HL TWAP live: fix unified-account equity for drawdown stop
+
+- **`resolveAccountEquityUsd`:** unified accounts now use **spot USDC + Σ uPnL** (HL UI Total Balance), not perp `marginSummary.accountValue` alone (~$1991 vs ~$5776 on prod).
+- Trailing-peak stop logic unchanged: **`peak − equity ≥ threshold`** each 60s poll (not inter-tick delta).
+- Peak re-inits on process restart after deploy.
+
+**Откат:** `git revert` merge commit → `v2` deploy; или временно `HL_TWAP_LIVE_DRAWDOWN_STOP_USD=0`.
+
+---
+
 ## [1.11.413] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.413`
