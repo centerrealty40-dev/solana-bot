@@ -157,6 +157,44 @@ export async function notifyLiveTradeOpen(
   await sendLiveTradesTelegram(buildLiveTradeOpenMessage(pos, cfg, watchState));
 }
 
+/** Emergency drawdown stop — trading halted, all positions flattened. */
+export async function notifyDrawdownHalt(params: {
+  baselineUsd: number;
+  equityUsd: number;
+  drawdownUsd: number;
+  thresholdUsd: number;
+}): Promise<void> {
+  const { baselineUsd, equityUsd, drawdownUsd, thresholdUsd } = params;
+  const msg = [
+    '🛑 STOP LOSS — trading halted',
+    `Drawdown $${drawdownUsd.toFixed(2)} ≥ $${thresholdUsd.toFixed(0)}`,
+    `Baseline $${baselineUsd.toFixed(2)} → equity $${equityUsd.toFixed(2)}`,
+    'All HL positions flattened. New entries blocked until HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1 + restart.',
+  ].join('\n');
+  await sendLiveTradesTelegram(msg);
+
+  const whaleToken = process.env.HL_TWAP_TELEGRAM_BOT_TOKEN?.trim() ?? '';
+  const whaleChat = process.env.HL_TWAP_TELEGRAM_CHAT_ID?.trim() ?? '';
+  if (whaleToken && whaleChat) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${whaleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: whaleChat,
+          text: msg,
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!res.ok) {
+        console.warn('[hl-twap-live:drawdown] whale telegram send failed', res.status);
+      }
+    } catch (e) {
+      console.warn('[hl-twap-live:drawdown] whale telegram error', String(e));
+    }
+  }
+}
+
 /** Краткое уведомление о закрытии live-позиции с PnL. */
 export async function notifyLiveTradeClose(
   close: HlTwapLiveClose,

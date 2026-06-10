@@ -25,6 +25,7 @@ import {
   isLiveExitPending,
   processPendingLiveExits,
 } from './chunked-exit-runner.js';
+import { isTradingHaltedByDrawdown } from './drawdown-stop.js';
 import {
   appendLiveJournal,
   journalDcaRow,
@@ -244,6 +245,9 @@ export async function processLiveTrades(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
 ): Promise<void> {
+  if (isTradingHaltedByDrawdown()) {
+    return;
+  }
   const filePath = cfg.journalPath;
   const now = Date.now();
   const pending = loadPendingLiveSchedules(filePath);
@@ -395,6 +399,7 @@ export async function processLiveLadders(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
 ): Promise<void> {
+  if (isTradingHaltedByDrawdown()) return;
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
   const lcfg = ladderCfg(cfg);

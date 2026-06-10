@@ -38,6 +38,22 @@
 
 ---
 
+## [1.11.412] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.412`
+
+### HL TWAP live: account drawdown stop ($1000 default)
+
+- **`HL_TWAP_LIVE_DRAWDOWN_STOP_USD=1000`:** when total equity (incl. uPnL) falls ≥ threshold below startup baseline → emergency flatten all HL positions, cancel pending schedules, halt new entries.
+- **`HL_TWAP_LIVE_DRAWDOWN_CHECK_MS=60000`:** equity poll every 60s via `clearinghouseState` (`accountValue` or unified spot+uPnL).
+- **Baseline:** captured at process start (logged); optional **`HL_TWAP_LIVE_DRAWDOWN_BASELINE_USD`** to pin; state in **`data/hl-twap/drawdown-stop.json`**.
+- **Telegram:** `🛑 STOP LOSS — trading halted` to live-trades + whale channels.
+- **Resume:** set **`HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1`** and restart (re-baselines to current equity).
+
+**Откат:** `git checkout sa-alpha-1.11.411 -- src/hyperliquid/twap/live/drawdown-stop.ts src/hyperliquid/twap/hyperliquid-meta.ts src/scripts/hl-twap-telegram-watch.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.411] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.411`

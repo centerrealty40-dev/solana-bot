@@ -115,6 +115,8 @@ export type HlExchangePosition = {
 
 export type HlAccountMargin = {
   accountValueUsd: number;
+  /** Perp `marginSummary.accountValue` (includes uPnL when populated). */
+  perpAccountValueUsd?: number;
   totalMarginUsedUsd: number;
   withdrawableUsd: number;
   /** USDC total from spot clearinghouse (unified account source of truth). */
@@ -175,11 +177,39 @@ export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccoun
 
   return {
     accountValueUsd,
+    perpAccountValueUsd: perpAccountValueUsd,
     totalMarginUsedUsd,
     withdrawableUsd,
     spotUsdcTotalUsd: spotUsdc.totalUsd,
     spotUsdcHoldUsd: spotUsdc.holdUsd,
   };
+}
+
+/**
+ * Total account equity including unrealized PnL (drawdown / risk monitoring).
+ * Prefers perp marginSummary.accountValue; unified fallback = spot USDC + Σ uPnL.
+ */
+export function resolveAccountEquityUsd(
+  margin: Pick<HlAccountMargin, 'accountValueUsd' | 'perpAccountValueUsd' | 'spotUsdcTotalUsd'>,
+  positions: Array<{ unrealizedPnlUsd: number }>,
+): number {
+  const perpAv = margin.perpAccountValueUsd ?? 0;
+  if (perpAv > 0) return perpAv;
+  const spot = margin.spotUsdcTotalUsd ?? 0;
+  if (spot > 0) {
+    const uPnl = positions.reduce((s, p) => s + p.unrealizedPnlUsd, 0);
+    return spot + uPnl;
+  }
+  return margin.accountValueUsd;
+}
+
+/** Fetch total equity (collateral + uPnL) for drawdown monitoring. */
+export async function fetchHlAccountEquityUsd(user: string): Promise<number> {
+  const [margin, positions] = await Promise.all([
+    fetchHlClearinghouseMargin(user),
+    fetchHlClearinghousePositions(user),
+  ]);
+  return resolveAccountEquityUsd(margin, positions);
 }
 
 /** Live perp positions from Hyperliquid clearinghouse (source of truth for wallet). */
