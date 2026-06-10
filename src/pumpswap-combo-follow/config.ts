@@ -135,6 +135,8 @@ const ConfigSchema = z.object({
   flow8zLeaderFlushEnabled: z.coerce.boolean().default(true),
   /** flow8z: ms to wait after leader sell before pool flush (TP still active). 0 = immediate. */
   flow8zLeaderSellDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  /** When we missed first entry: still enter on leader add if flow gate passes (no WS mirror-add when we hold). */
+  allowLateEntryOnLeaderAdd: z.coerce.boolean().default(true),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -260,6 +262,11 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     mirrorLeaderAddsRaw != null && mirrorLeaderAddsRaw.length > 0
       ? mirrorLeaderAddsRaw === '1' || mirrorLeaderAddsRaw.toLowerCase() === 'true'
       : exitPolicy === 'leader_ladder';
+  const allowLateEntryRaw = process.env.PUMPSWAP_COMBO_FOLLOW_ALLOW_LATE_ENTRY_ON_LEADER_ADD?.trim();
+  const allowLateEntryOnLeaderAdd =
+    allowLateEntryRaw != null && allowLateEntryRaw.length > 0
+      ? allowLateEntryRaw === '1' || allowLateEntryRaw.toLowerCase() === 'true'
+      : isFlow8z;
 
   const entryGate = parseFollowEntryGate(
     process.env.PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE ?? (isFlow8z ? 'flow' : undefined),
@@ -331,6 +338,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     flow8zLeaderSellDelayMs:
       process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS ??
       (isFlow8z ? '60000' : undefined),
+    allowLateEntryOnLeaderAdd,
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });
