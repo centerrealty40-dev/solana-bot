@@ -34,6 +34,17 @@
 
 ---
 
+## [1.11.399] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.399`
+
+### pumpswap-combo-follow: late entry when leader adds (we missed first buy)
+
+- **`allowLateEntryOnLeaderAdd`** (default on for flow8z): if we have no bag and hnu5 buys into a coin he already holds, enter via flow gate instead of `missed_entry_leader_already_in`.
+- Mirror-adds while we hold stay off — price DCA only.
+
+**Откат:** `ALLOW_LATE_ENTRY_ON_LEADER_ADD=0`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.398] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.398`

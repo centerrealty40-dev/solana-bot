@@ -25,6 +25,7 @@ import {
 } from './state.js';
 import { initFollowWaveBState } from './follow-wave-b-state.js';
 import { checkFlowEntryGate } from './entry-gate.js';
+import { blocksMissedEntryLeaderAlreadyIn } from './entry-eligibility.js';
 import type { PendingFollowBuy } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -163,7 +164,11 @@ async function onLeaderBuy(
     return;
   }
 
-  if (preLeaderRaw > 0n) {
+  if (blocksMissedEntryLeaderAlreadyIn({
+    preLeaderRaw,
+    hasOurPosition: Boolean(existing),
+    allowLateEntryOnLeaderAdd: cfg.allowLateEntryOnLeaderAdd,
+  })) {
     appendFollowEvent(cfg, {
       kind: 'leader_buy_ignored',
       reason: 'missed_entry_leader_already_in',
@@ -171,6 +176,16 @@ async function onLeaderBuy(
       leaderSignature: row.signature,
     });
     return;
+  }
+
+  if (preLeaderRaw > 0n) {
+    appendFollowEvent(cfg, {
+      kind: 'late_entry_on_leader_add',
+      mint,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      leaderPreBalanceRaw: preLeaderRaw.toString(),
+    });
   }
 
   if (cfg.maxOpenPositions > 0 && openFollowPositionsCount(state) >= cfg.maxOpenPositions) {
