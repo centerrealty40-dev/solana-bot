@@ -38,6 +38,19 @@
 
 ---
 
+## [1.11.418] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.418`
+
+### live-oscar: flash crash kill отключён
+
+- **`ecosystem.config.cjs` (`live-oscar`):** `PAPER_FLASH_CRASH_KILL_ENABLED=0` — velocity/post-fill exit `FLASH_CRASH_KILL` больше не срабатывает (на VPS было `1` с 1.11.309; закрыло SPCX −1.85%% 2026-06-10 23:12 UTC).
+- Код включает флаг только при `PAPER_FLASH_CRASH_KILL_ENABLED === '1'`; дефолт в `config.ts` — `false`.
+
+**Откат:** `PAPER_FLASH_CRASH_KILL_ENABLED: '1'` в `ecosystem.config.cjs` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.417] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.417`
