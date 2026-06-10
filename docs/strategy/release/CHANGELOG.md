@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.406] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.406`
+
+### HL TWAP live: fixed $500 margin per entry (disable dynamic $300 floor)
+
+- **`HL_TWAP_LIVE_DYNAMIC_MARGIN=0`** — every open uses **$500 collateral**; no scale-down to $300 at ≥5 opens.
+- **`HL_TWAP_LIVE_MARGIN_MIN_USD=500`** — min=max when dynamic margin re-enabled.
+- Gross position = **$500 × min(HL coin max leverage, 7x)** (e.g. ONDO 7x → $3500, 5x coin → $2500).
+- TP/DCA ladder unchanged: **10% of live gross** per slice; exit timing and $200/5s exec slices unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.405 -- ecosystem.config.cjs src/hyperliquid/twap/live/config.ts docs/strategy/release/`; set `HL_TWAP_LIVE_DYNAMIC_MARGIN=1` + `HL_TWAP_LIVE_MARGIN_MIN_USD=300`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
 ## [1.11.405] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.405`
