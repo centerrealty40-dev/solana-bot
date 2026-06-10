@@ -27,6 +27,7 @@
  * - HL_TWAP_DRY_RUN=0
  * - HL_TWAP_AUDIT_JSONL=path (optional, default data/hl-twap/signals.jsonl)
  * - HL_TWAP_MEXC_LINKS=1 — append MEXC perp URL when symbol known
+ * - HL_TWAP_BALANCE_HOURLY_TELEGRAM=1 — hourly HL Total Balance ping (default on when live; first after UTC hour boundary)
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -96,6 +97,10 @@ import {
   scheduleLiveTrade,
 } from '../hyperliquid/twap/live/live-trader.js';
 import { kickLiveExecWorker } from '../hyperliquid/twap/live/live-exec-worker.js';
+import {
+  balanceHourlyTelegramEnabled,
+  startBalanceHourlyTelegram,
+} from '../hyperliquid/twap/live/balance-hourly-telegram.js';
 import {
   drawdownCheckIntervalMs,
   drawdownStopEnabled,
@@ -458,6 +463,15 @@ async function main(): Promise<void> {
       });
     }, ddMs);
     console.log(`[hl-twap-live:drawdown] monitor every ${ddMs}ms`);
+  }
+
+  if (LIVE_ENABLED && balanceHourlyTelegramEnabled(LIVE_ENABLED)) {
+    startBalanceHourlyTelegram({
+      user: LIVE_CFG.masterAddress,
+      dryRun: DRY_RUN,
+      send: (text) => sendTelegram(text).then(() => undefined),
+      log: (msg) => console.log(msg),
+    });
   }
 
   const rows0 = await fetchHypurrscanTwapFeed();
