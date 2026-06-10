@@ -34,6 +34,16 @@
 
 ---
 
+## [1.11.404] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.404`
+
+### pumpswap-combo-follow live: min mcap $150k (was $500k)
+
+- `PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD=150000` — blocks sub-150k dust; allows small-cap above floor.
+
+**Откат:** `MIN_MCAP_USD=500000`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.403] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.403`

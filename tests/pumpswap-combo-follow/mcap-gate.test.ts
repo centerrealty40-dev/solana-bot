@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateFollowMcapGate } from '../../src/pumpswap-combo-follow/mcap-gate.js';
 
-const cfg = { minMarketCapUsd: 500_000, maxMarketCapUsd: 3_000_000 };
+const cfg = { minMarketCapUsd: 150_000, maxMarketCapUsd: 3_000_000 };
 
 describe('evaluateFollowMcapGate', () => {
   it('passes when gate off', () => {
@@ -14,8 +14,8 @@ describe('evaluateFollowMcapGate', () => {
     expect(v.reason).toBe('min_mcap_usd');
   });
 
-  it('passes 800k', () => {
-    expect(evaluateFollowMcapGate(cfg, 800_000).pass).toBe(true);
+  it('passes 200k', () => {
+    expect(evaluateFollowMcapGate(cfg, 200_000).pass).toBe(true);
   });
 
   it('blocks missing mcap when min set', () => {
