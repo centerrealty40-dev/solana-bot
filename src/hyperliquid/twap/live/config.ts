@@ -73,10 +73,10 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     enabled: envBool('HL_TWAP_LIVE_ENABLED', false),
     mode,
     privateKey,
-    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 500)),
+    notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 800)),
     dynamicMargin: envBool('HL_TWAP_LIVE_DYNAMIC_MARGIN', false),
-    marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 500)),
-    marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 500)),
+    marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 800)),
+    marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 800)),
     dynamicMarginMaxAtOpenCount: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_MAX_AT', 2))),
     dynamicMarginMinAtOpenCount: Math.max(
       1,

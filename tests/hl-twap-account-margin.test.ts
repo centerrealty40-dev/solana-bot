@@ -98,6 +98,6 @@ describe('account margin gating', () => {
     };
     expect(marginUsedFromJournalOpens(opens)).toBeCloseTo(1026, 0);
     expect(freeMarginUsd(account, opens)).toBeCloseTo(1595);
-    expect(hasMarginForNewOpen(account, opens, 500)).toBe(true);
+    expect(hasMarginForNewOpen(account, opens, 800)).toBe(true);
   });
 });
