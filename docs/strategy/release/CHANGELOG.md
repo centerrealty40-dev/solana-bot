@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.413] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.413`
+
+### HL TWAP live: trailing-peak drawdown stop (fix 1.11.412)
+
+- **Trailing high-water mark:** each 60s poll reads total equity (incl. uPnL); peak rises with new highs; stop when **`peak − equity ≥ HL_TWAP_LIVE_DRAWDOWN_STOP_USD`** (default $1000).
+- Example: $5000 → $6000 peak → stop at **$5000** (6000−1000), not $4000 from initial balance.
+- Peak resets on process start or **`HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1`**; removed fixed startup baseline.
+
+**Откат:** `git checkout sa-alpha-1.11.412 -- src/hyperliquid/twap/live/drawdown-stop.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.412] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.412`

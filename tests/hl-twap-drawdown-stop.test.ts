@@ -4,6 +4,7 @@ import { resolveAccountEquityUsd } from '../src/hyperliquid/twap/hyperliquid-met
 import {
   computeDrawdownUsd,
   shouldTriggerDrawdownStop,
+  updateTrailingPeak,
 } from '../src/hyperliquid/twap/live/drawdown-stop.js';
 
 describe('resolveAccountEquityUsd', () => {
@@ -43,22 +44,37 @@ describe('resolveAccountEquityUsd', () => {
   });
 });
 
-describe('drawdown stop logic', () => {
-  it('computes drawdown as baseline minus current equity', () => {
-    expect(computeDrawdownUsd(5000, 4200)).toBe(800);
-    expect(computeDrawdownUsd(5000, 5100)).toBe(0);
+describe('trailing peak drawdown stop', () => {
+  it('raises peak on new equity high', () => {
+    expect(updateTrailingPeak(5000, 6000)).toBe(6000);
+    expect(updateTrailingPeak(6000, 5500)).toBe(6000);
   });
 
-  it('triggers at threshold inclusive', () => {
-    expect(shouldTriggerDrawdownStop(5000, 4000, 1000)).toBe(true);
-    expect(shouldTriggerDrawdownStop(5000, 4001, 1000)).toBe(false);
+  it('computes drawdown from peak not initial balance', () => {
+    let peak = 5000;
+    peak = updateTrailingPeak(peak, 6000);
+    expect(peak).toBe(6000);
+    expect(computeDrawdownUsd(peak, 5000)).toBe(1000);
+    expect(shouldTriggerDrawdownStop(peak, 5000, 1000)).toBe(true);
+    expect(shouldTriggerDrawdownStop(peak, 5001, 1000)).toBe(false);
+  });
+
+  it('does not trigger from original start when peak grew (6000 peak, stop at 5000 not 4000)', () => {
+    const startEquity = 5000;
+    let peak = startEquity;
+    peak = updateTrailingPeak(peak, 6000);
+    const current = 5000;
+    expect(computeDrawdownUsd(startEquity, current)).toBe(0);
+    expect(shouldTriggerDrawdownStop(startEquity, current, 1000)).toBe(false);
+    expect(computeDrawdownUsd(peak, current)).toBe(1000);
+    expect(shouldTriggerDrawdownStop(peak, current, 1000)).toBe(true);
   });
 
   it('disabled when threshold is 0', () => {
-    expect(shouldTriggerDrawdownStop(5000, 1000, 0)).toBe(false);
+    expect(shouldTriggerDrawdownStop(6000, 1000, 0)).toBe(false);
   });
 
-  it('disabled when baseline is 0', () => {
+  it('disabled when peak is 0', () => {
     expect(shouldTriggerDrawdownStop(0, 1000, 1000)).toBe(false);
   });
 });

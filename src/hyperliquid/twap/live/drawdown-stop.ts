@@ -23,8 +23,9 @@ import { groupOpensByCoinSide } from './coin-side-ladder.js';
 import { notifyDrawdownHalt } from './telegram-notify.js';
 
 export type DrawdownStopState = {
-  baselineAccountValueUsd: number;
-  baselineSetAtMs: number;
+  /** Trailing high-water mark (peak equity since process start or manual reset). */
+  peakAccountValueUsd: number;
+  peakUpdatedAtMs: number;
   halted: boolean;
   haltedAtMs?: number;
   haltReason?: string;
@@ -46,7 +47,7 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
-/** USD drawdown from baseline that triggers emergency flatten (0 = disabled). */
+/** USD drawdown from trailing peak that triggers emergency flatten (0 = disabled). */
 export function drawdownStopThresholdUsd(): number {
   return Math.max(0, envNum('HL_TWAP_LIVE_DRAWDOWN_STOP_USD', 0));
 }
@@ -54,14 +55,6 @@ export function drawdownStopThresholdUsd(): number {
 /** Poll interval for equity check (default 60s). */
 export function drawdownCheckIntervalMs(): number {
   return Math.max(10_000, envNum('HL_TWAP_LIVE_DRAWDOWN_CHECK_MS', 60_000));
-}
-
-/** Optional fixed baseline (USD); when unset, baseline is captured at process start. */
-export function drawdownPinnedBaselineUsd(): number | null {
-  const v = process.env.HL_TWAP_LIVE_DRAWDOWN_BASELINE_USD?.trim();
-  if (!v) return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export function drawdownStopEnabled(): boolean {
@@ -75,25 +68,57 @@ export function drawdownStatePath(): string {
   );
 }
 
-export function computeDrawdownUsd(baselineUsd: number, currentEquityUsd: number): number {
-  return Math.max(0, baselineUsd - currentEquityUsd);
+/** Drawdown from trailing peak: peak − current (never negative). */
+export function computeDrawdownUsd(peakUsd: number, currentEquityUsd: number): number {
+  return Math.max(0, peakUsd - currentEquityUsd);
+}
+
+/** Raise peak when equity makes a new high-water mark. */
+export function updateTrailingPeak(peakUsd: number, currentEquityUsd: number): number {
+  return Math.max(peakUsd, currentEquityUsd);
 }
 
 export function shouldTriggerDrawdownStop(
-  baselineUsd: number,
+  peakUsd: number,
   currentEquityUsd: number,
   thresholdUsd: number,
 ): boolean {
-  if (thresholdUsd <= 0 || baselineUsd <= 0) return false;
-  return computeDrawdownUsd(baselineUsd, currentEquityUsd) >= thresholdUsd;
+  if (thresholdUsd <= 0 || peakUsd <= 0) return false;
+  return computeDrawdownUsd(peakUsd, currentEquityUsd) >= thresholdUsd;
+}
+
+function normalizeLoadedState(raw: Record<string, unknown>): DrawdownStopState | null {
+  const peak =
+    typeof raw.peakAccountValueUsd === 'number'
+      ? raw.peakAccountValueUsd
+      : typeof raw.baselineAccountValueUsd === 'number'
+        ? raw.baselineAccountValueUsd
+        : null;
+  if (peak == null) return null;
+  const peakUpdatedAtMs =
+    typeof raw.peakUpdatedAtMs === 'number'
+      ? raw.peakUpdatedAtMs
+      : typeof raw.baselineSetAtMs === 'number'
+        ? raw.baselineSetAtMs
+        : Date.now();
+  return {
+    peakAccountValueUsd: peak,
+    peakUpdatedAtMs,
+    halted: raw.halted === true,
+    haltedAtMs: typeof raw.haltedAtMs === 'number' ? raw.haltedAtMs : undefined,
+    haltReason: typeof raw.haltReason === 'string' ? raw.haltReason : undefined,
+    lastCheckMs: typeof raw.lastCheckMs === 'number' ? raw.lastCheckMs : undefined,
+    lastAccountValueUsd:
+      typeof raw.lastAccountValueUsd === 'number' ? raw.lastAccountValueUsd : undefined,
+    lastDrawdownUsd: typeof raw.lastDrawdownUsd === 'number' ? raw.lastDrawdownUsd : undefined,
+  };
 }
 
 export function loadDrawdownStopState(filePath = drawdownStatePath()): DrawdownStopState | null {
   if (!fs.existsSync(filePath)) return null;
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as DrawdownStopState;
-    if (typeof raw.baselineAccountValueUsd !== 'number') return null;
-    return raw;
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+    return normalizeLoadedState(raw);
   } catch {
     return null;
   }
@@ -121,8 +146,11 @@ function cancelAllPendingSchedules(journalPath: string, reason: string): number 
   return pending.size;
 }
 
-/** Initialize or refresh baseline on process start. */
-export async function initDrawdownBaseline(
+/**
+ * Initialize trailing-peak monitor on process start.
+ * Peak = current equity (high-water mark resets each start unless halted).
+ */
+export async function initDrawdownMonitor(
   user: string,
   opts?: { clearHalt?: boolean; equityUsd?: number },
 ): Promise<DrawdownStopState | null> {
@@ -130,38 +158,9 @@ export async function initDrawdownBaseline(
 
   const filePath = drawdownStatePath();
   const clearHalt = opts?.clearHalt ?? envBool('HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT', false);
-  const pinned = drawdownPinnedBaselineUsd();
   const existing = loadDrawdownStopState(filePath);
 
-  if (clearHalt) {
-    const equity =
-      opts?.equityUsd ?? (await fetchHlAccountEquityUsd(user));
-    const baseline = pinned ?? equity;
-    const state: DrawdownStopState = {
-      baselineAccountValueUsd: baseline,
-      baselineSetAtMs: Date.now(),
-      halted: false,
-      lastAccountValueUsd: equity,
-      lastDrawdownUsd: computeDrawdownUsd(baseline, equity),
-    };
-    saveDrawdownStopState(state, filePath);
-    console.log(
-      `[hl-twap-live:drawdown] baseline reset $${baseline.toFixed(2)} (equity $${equity.toFixed(2)}, halt cleared)`,
-    );
-    return state;
-  }
-
-  if (existing && !existing.halted) {
-    if (pinned != null && pinned !== existing.baselineAccountValueUsd) {
-      existing.baselineAccountValueUsd = pinned;
-      existing.baselineSetAtMs = Date.now();
-      saveDrawdownStopState(existing, filePath);
-      console.log(`[hl-twap-live:drawdown] baseline pinned $${pinned.toFixed(2)}`);
-    }
-    return existing;
-  }
-
-  if (existing?.halted) {
+  if (existing?.halted && !clearHalt) {
     console.warn(
       `[hl-twap-live:drawdown] trading HALTED since ${existing.haltedAtMs ? new Date(existing.haltedAtMs).toISOString() : '?'} — set HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1 to resume`,
     );
@@ -169,20 +168,23 @@ export async function initDrawdownBaseline(
   }
 
   const equity = opts?.equityUsd ?? (await fetchHlAccountEquityUsd(user));
-  const baseline = pinned ?? equity;
   const state: DrawdownStopState = {
-    baselineAccountValueUsd: baseline,
-    baselineSetAtMs: Date.now(),
+    peakAccountValueUsd: equity,
+    peakUpdatedAtMs: Date.now(),
     halted: false,
     lastAccountValueUsd: equity,
     lastDrawdownUsd: 0,
   };
   saveDrawdownStopState(state, filePath);
+  const action = clearHalt ? 'peak reset (halt cleared)' : 'peak initialized';
   console.log(
-    `[hl-twap-live:drawdown] baseline set $${baseline.toFixed(2)} (equity $${equity.toFixed(2)}, threshold $${drawdownStopThresholdUsd()})`,
+    `[hl-twap-live:drawdown] ${action} peak=$${equity.toFixed(2)} threshold=$${drawdownStopThresholdUsd()} (trailing high-water mark)`,
   );
   return state;
 }
+
+/** @deprecated use initDrawdownMonitor */
+export const initDrawdownBaseline = initDrawdownMonitor;
 
 async function emergencyFlattenAll(
   cache: HyperliquidMarketCache,
@@ -245,7 +247,7 @@ async function emergencyFlattenAll(
 
 let drawdownTriggerInFlight = false;
 
-/** Periodic equity check; triggers emergency flatten when drawdown exceeds threshold. */
+/** Periodic equity check; updates trailing peak; triggers flatten when peak − equity ≥ threshold. */
 export async function runDrawdownCheck(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,
@@ -273,32 +275,38 @@ export async function runDrawdownCheck(
     return;
   }
 
-  const drawdownUsd = computeDrawdownUsd(state.baselineAccountValueUsd, equity);
+  const prevPeak = state.peakAccountValueUsd;
+  const newPeak = updateTrailingPeak(prevPeak, equity);
+  if (newPeak > prevPeak) {
+    state.peakUpdatedAtMs = Date.now();
+  }
+  state.peakAccountValueUsd = newPeak;
+
+  const drawdownUsd = computeDrawdownUsd(newPeak, equity);
   state.lastCheckMs = Date.now();
   state.lastAccountValueUsd = equity;
   state.lastDrawdownUsd = drawdownUsd;
   saveDrawdownStopState(state, filePath);
 
-  if (!shouldTriggerDrawdownStop(state.baselineAccountValueUsd, equity, threshold)) {
+  if (!shouldTriggerDrawdownStop(newPeak, equity, threshold)) {
     return;
   }
 
   drawdownTriggerInFlight = true;
   try {
+    const stopLevel = newPeak - threshold;
     console.error(
-      `[hl-twap-live:drawdown] STOP LOSS: baseline $${state.baselineAccountValueUsd.toFixed(2)} equity $${equity.toFixed(2)} drawdown $${drawdownUsd.toFixed(2)} >= $${threshold}`,
+      `[hl-twap-live:drawdown] STOP LOSS: peak $${newPeak.toFixed(2)} equity $${equity.toFixed(2)} drawdown $${drawdownUsd.toFixed(2)} >= $${threshold} (stop level $${stopLevel.toFixed(2)})`,
     );
 
     state.halted = true;
     state.haltedAtMs = Date.now();
     state.haltReason = 'drawdown_stop';
-    state.lastAccountValueUsd = equity;
-    state.lastDrawdownUsd = drawdownUsd;
     saveDrawdownStopState(state, filePath);
 
     await emergencyFlattenAll(cache, cfg, client, watchState);
     await notifyDrawdownHalt({
-      baselineUsd: state.baselineAccountValueUsd,
+      peakUsd: newPeak,
       equityUsd: equity,
       drawdownUsd,
       thresholdUsd: threshold,
