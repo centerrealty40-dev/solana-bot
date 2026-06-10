@@ -34,6 +34,26 @@
 
 ---
 
+---
+
+## [1.11.407] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.407`
+
+### pumpswap-combo-follow live: conditional flush, rug-follow, mirror adds
+
+24h counterfactual: мелкие scalp-sell лидера (~$200) вызывали −$6.8 flush; TP-лестница +$9.5.
+
+- **Conditional flush:** `FLOW8Z_FLUSH_MIN_SELL_USD=500` — не сливаем бag на мелкий sell; TP-лестница и max_hold остаются.
+- **Rug-follow:** leader **flat** (post-sell balance 0) → `flow8z_leader_flat_flush` с `FLAT_FLUSH_DELAY_MS=0` (мгновенно вслед за полным выходом hnu5).
+- **Killstop:** `FLOW8Z_KILLSTOP_PCT=30` — страховка если лидер ещё держит, а пул уже ломается.
+- **Flow gate:** `FLOW_MAX_LAG_SEC=15` (было 5); scan sleep 45ms (было 90).
+- **Mirror adds:** `MIRROR_LEADER_ADDS=1` — докуп на add лидера (max 3 legs).
+
+**Anti-rug stack:** min mcap $150k → flat flush → large-sell flush → −30% killstop → 3h max_hold.
+
+**Откат:** `git checkout sa-alpha-1.11.406 -- src/pumpswap-combo-follow/ ecosystem.config.cjs docs/strategy/release/ tests/pumpswap-combo-follow/flow8z-leader-flush.test.ts`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.406] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.406`

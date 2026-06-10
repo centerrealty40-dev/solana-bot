@@ -41,4 +41,9 @@ export type LeaderSellRef = {
   ts: number;
   signature: string;
   priceUsd: number;
+  /** USD notional of this leader sell (for conditional flush). */
+  sellUsd?: number;
+  /** Leader token balance after sell (0 = full exit / rug follow). */
+  leaderPostBalanceRaw?: string;
+  leaderFlat?: boolean;
 };

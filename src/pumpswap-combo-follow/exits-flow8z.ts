@@ -16,6 +16,10 @@ import { appendFollowEvent } from './journal.js';
 import { paperInvestedRemainingUsd, paperPoolExitQuoteUsd, paperPnlPctVsAvg } from './paper-pricing.js';
 import { followMaxHoldDue, followHoldSec } from './exit-max-hold.js';
 import {
+  evaluateLeaderPoolFlush,
+  leaderFlushExitReason,
+} from './flow8z-leader-flush.js';
+import {
   followStateAsCombo,
   leaderSellSinceOpen,
   setFollowLossCooldown,
@@ -62,10 +66,15 @@ export async function evaluateFollowExitsFlow8z(
     const inv =
       cfg.executionMode === 'paper' ? paperInvestedRemainingUsd(pos) : investedUsd(comboPos);
     const leaderSellRef = leaderSellSinceOpen(state, pos.mint, pos.openedAt);
-    const leaderFlushDue =
-      leaderSellRef != null &&
-      cfg.flow8zLeaderFlushEnabled &&
-      Date.now() >= leaderSellRef.ts + cfg.flow8zLeaderSellDelayMs;
+    const flushVerdict = evaluateLeaderPoolFlush({
+      nowMs: Date.now(),
+      enabled: cfg.flow8zLeaderFlushEnabled,
+      sellRef: leaderSellRef,
+      openedAt: pos.openedAt,
+      minSellUsd: cfg.flow8zLeaderFlushMinSellUsd,
+      largeSellDelayMs: cfg.flow8zLeaderSellDelayMs,
+      flatFlushDelayMs: cfg.flow8zLeaderFlatFlushDelayMs,
+    });
     const holdSec = followHoldSec(pos);
 
     if (followMaxHoldDue(pos, cfg.maxHoldMs)) {
@@ -191,12 +200,13 @@ export async function evaluateFollowExitsFlow8z(
       continue;
     }
 
-    if (leaderFlushDue) {
+    if (flushVerdict.shouldFlush) {
+      const exitReason = leaderFlushExitReason(flushVerdict.reason);
       const res = await executeFollowSell({
         cfg,
         pos,
         markPriceUsd: mark,
-        exitReason: 'flow8z_leader_pool_flush',
+        exitReason,
         intent: 'tp2_full',
         sellFrac: 1,
       });
@@ -215,11 +225,16 @@ export async function evaluateFollowExitsFlow8z(
         investedUsd: inv,
         pnlUsd: realized,
         pnlPct,
-        exitReason: 'flow8z_leader_pool_flush',
+        exitReason,
         markSource: 'pool_quote',
         holdSec: Math.round((Date.now() - pos.openedAt) / 1000),
         leaderSellDelayMs: cfg.flow8zLeaderSellDelayMs,
+        leaderFlatFlushDelayMs: cfg.flow8zLeaderFlatFlushDelayMs,
+        leaderFlushMinSellUsd: cfg.flow8zLeaderFlushMinSellUsd,
         leaderSellObservedTs: leaderSellRef?.ts,
+        leaderSellUsd: leaderSellRef?.sellUsd ?? null,
+        leaderFlat: leaderSellRef?.leaderFlat ?? null,
+        leaderFlushReason: flushVerdict.reason,
       });
       continue;
     }
