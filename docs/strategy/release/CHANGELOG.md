@@ -34,6 +34,16 @@
 
 ---
 
+## [1.11.401] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.401`
+
+### pumpswap-combo-follow live: entry leg $7 (was $3)
+
+- `PUMPSWAP_COMBO_FOLLOW_LEG_USD=7` — first leg + DCA notional base; max ~$7 + 2×~$2.33 ≈ $11.7/mint at 3 legs.
+
+**Откат:** `LEG_USD=3`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.400] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.400`

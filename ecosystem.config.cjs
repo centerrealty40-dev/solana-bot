@@ -1565,7 +1565,7 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '3',
         PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS: '-8:0.333333:first,-7:0.333333:avg',
         PUMPSWAP_COMBO_FOLLOW_MAX_OPEN: '8',
-        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
+        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '7',
         /** hnu5 scalp forensic: 70% @ +14% leader (~+12% us), rest @ +22% (~+20% us). */
         PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT: '2',
         PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER: '14:0.7,22:1',
