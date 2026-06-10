@@ -47,7 +47,8 @@
 - **`HL_TWAP_LIVE_MAX_BOOK_GROSS_USD=12000`:** hard cap on exchange gross per coin+side (entries + DCA blocked above cap).
 - **`HL_TWAP_LIVE_COIN_MAX_LEGS=2`:** max two concurrent journal legs (incl. pending schedules) per coin+side; 3rd TWAP does **not** open a new leg.
 - **3rd active TWAP:** book timer exit (`liveCloseAtMs`) re-anchors to the **best hourly-impact** active whale TWAP on that side (incl. signals without a journal leg).
-- TP/DCA ladder unchanged (10% of gross, ±3% HL ROE); $800 margin × 7x entry unchanged.
+- **Ladder step (ROE):** TP/DCA triggers at ±3% **Hyperliquid ROE** (`uPnL / margin`), not ±3% price move — aligns with HL UI (fixes late/missing TP on stacked books at 7x).
+- Ladder slice unchanged (10% of current gross); $800 margin × 7x entry unchanged.
 
 **Откат:** `git checkout sa-alpha-1.11.410 -- ecosystem.config.cjs src/hyperliquid/twap/live/ docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
 
