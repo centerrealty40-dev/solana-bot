@@ -249,7 +249,7 @@ async function announceStart(
   }
   const plan =
     LIVE_ENABLED && liveExchange
-      ? resolveLiveEntryAuditPlan(sig, watchState, LIVE_CFG.journalPath, MIN_IMPACT_PCT_HOUR)
+      ? resolveLiveEntryAuditPlan(sig, watchState, LIVE_CFG.journalPath, MIN_IMPACT_PCT_HOUR, LIVE_CFG)
       : PAPER_ENABLED
         ? resolvePaperEntryAuditPlan(sig, watchState, MIN_IMPACT_PCT_HOUR)
         : computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
