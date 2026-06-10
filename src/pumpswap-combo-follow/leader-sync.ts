@@ -26,6 +26,7 @@ import {
 import { initFollowWaveBState } from './follow-wave-b-state.js';
 import { checkFlowEntryGate } from './entry-gate.js';
 import { blocksMissedEntryLeaderAlreadyIn } from './entry-eligibility.js';
+import { checkFollowMcapGate } from './mcap-gate.js';
 import type { PendingFollowBuy } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -240,6 +241,20 @@ async function onLeaderBuy(
       extSellLagSec: gate.extSell.lagSec,
       extSellSignature: gate.extSell.signature,
     });
+  }
+
+  const mcapGate = await checkFollowMcapGate(cfg, mint);
+  if (!mcapGate.pass) {
+    appendFollowEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: mcapGate.reason ?? 'min_mcap_usd',
+      mint,
+      leaderSignature: row.signature,
+      marketCapUsd: mcapGate.marketCapUsd ?? null,
+      minMarketCapUsd: cfg.minMarketCapUsd,
+      maxMarketCapUsd: cfg.maxMarketCapUsd,
+    });
+    return;
   }
 
   scheduleFollowBuy(cfg, state, {
