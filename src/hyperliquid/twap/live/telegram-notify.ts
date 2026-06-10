@@ -159,16 +159,17 @@ export async function notifyLiveTradeOpen(
 
 /** Emergency drawdown stop — trading halted, all positions flattened. */
 export async function notifyDrawdownHalt(params: {
-  baselineUsd: number;
+  peakUsd: number;
   equityUsd: number;
   drawdownUsd: number;
   thresholdUsd: number;
 }): Promise<void> {
-  const { baselineUsd, equityUsd, drawdownUsd, thresholdUsd } = params;
+  const { peakUsd, equityUsd, drawdownUsd, thresholdUsd } = params;
+  const stopLevel = peakUsd - thresholdUsd;
   const msg = [
     '🛑 STOP LOSS — trading halted',
-    `Drawdown $${drawdownUsd.toFixed(2)} ≥ $${thresholdUsd.toFixed(0)}`,
-    `Baseline $${baselineUsd.toFixed(2)} → equity $${equityUsd.toFixed(2)}`,
+    `Drawdown $${drawdownUsd.toFixed(2)} ≥ $${thresholdUsd.toFixed(0)} (trailing peak)`,
+    `Peak $${peakUsd.toFixed(2)} → equity $${equityUsd.toFixed(2)} (stop level $${stopLevel.toFixed(2)})`,
     'All HL positions flattened. New entries blocked until HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1 + restart.',
   ].join('\n');
   await sendLiveTradesTelegram(msg);

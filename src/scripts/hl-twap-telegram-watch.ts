@@ -99,7 +99,7 @@ import { kickLiveExecWorker } from '../hyperliquid/twap/live/live-exec-worker.js
 import {
   drawdownCheckIntervalMs,
   drawdownStopEnabled,
-  initDrawdownBaseline,
+  initDrawdownMonitor,
   isTradingHaltedByDrawdown,
   runDrawdownCheck,
 } from '../hyperliquid/twap/live/drawdown-stop.js';
@@ -433,7 +433,7 @@ async function main(): Promise<void> {
       `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ${formatDynamicMarginStartup(LIVE_CFG)} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
     );
     if (drawdownStopEnabled()) {
-      await initDrawdownBaseline(LIVE_CFG.masterAddress);
+      await initDrawdownMonitor(LIVE_CFG.masterAddress);
     }
   }
 
