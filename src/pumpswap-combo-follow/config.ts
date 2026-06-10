@@ -287,7 +287,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     buyDelayMs: process.env.PUMPSWAP_COMBO_FOLLOW_BUY_DELAY_MS,
     buyRetryWindowMs: process.env.PUMPSWAP_COMBO_FOLLOW_BUY_RETRY_MS,
     minLeaderBuyUsd:
-      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD ?? (isFlow8z ? '150' : undefined),
+      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD ?? (isFlow8z ? '80' : undefined),
     maxLeaderFirstBuyUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD ?? (isFlow8z ? '0' : undefined),
     maxOpenPositions:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN ??

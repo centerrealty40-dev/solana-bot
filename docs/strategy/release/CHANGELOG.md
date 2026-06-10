@@ -34,6 +34,16 @@
 
 ---
 
+## [1.11.397] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.397`
+
+### pumpswap-combo-follow: min leader buy $80 (was $150)
+
+- Unblocks ~60% of hnu5 buys previously ignored as `min_leader_buy_usd`; flow gate unchanged.
+
+**Откат:** `MIN_LEADER_BUY_USD=150`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.396] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.396`
