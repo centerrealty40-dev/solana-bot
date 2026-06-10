@@ -12,6 +12,7 @@ export type FollowWaveBState = {
   dcaUsedIndices: number[];
   dcaUsedLevels: number[];
   dcaLastEvalDropFromFirstPct?: number;
+  dcaLastEvalDropPctByIdx?: Record<number, number>;
   lastObservedPriceUsd?: number;
 };
 

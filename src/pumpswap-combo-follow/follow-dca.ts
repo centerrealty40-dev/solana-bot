@@ -9,14 +9,15 @@ import { paperPoolExitQuoteUsd } from './paper-pricing.js';
 import { resolveFollowPoolAddress } from './pool-resolve.js';
 import {
   ensureFollowWaveBState,
+  followAvgFillUsd,
   followDcaTaken,
   markFollowDcaFired,
 } from './follow-wave-b-state.js';
 import { writeFollowState, type FollowState } from './state.js';
 
 /**
- * Price-triggered DCA (−10% / −20% vs first leg): `dcaNotionalUsd × addFraction` (default notional = legUsd).
- * Leader mirror adds are disabled; DCA is price-triggered only.
+ * Price-triggered front-run DCA: fire before leader avg-down (e.g. −8% vs first, −7% vs avg).
+ * Leader mirror adds stay disabled — we buy on our thresholds, leader lift follows.
  */
 export async function evaluateFollowDca(
   cfg: PumpswapComboFollowConfig,
@@ -56,16 +57,20 @@ export async function evaluateFollowDca(
       }
     }
 
+    const avgPx = followAvgFillUsd(pos);
     const dropFromFirst = mark / firstPx - 1;
-    const effPrev =
-      wb.dcaLastEvalDropFromFirstPct != null && Number.isFinite(wb.dcaLastEvalDropFromFirstPct)
-        ? wb.dcaLastEvalDropFromFirstPct
-        : Number.POSITIVE_INFINITY;
+    const dropFromAvg = avgPx > 0 ? mark / avgPx - 1 : dropFromFirst;
+    if (!wb.dcaLastEvalDropPctByIdx) wb.dcaLastEvalDropPctByIdx = {};
 
     for (let dcaIdx = 0; dcaIdx < cfg.dcaLevels.length; dcaIdx++) {
       const lvl = cfg.dcaLevels[dcaIdx]!;
+      const drop = lvl.anchor === 'avg' ? dropFromAvg : dropFromFirst;
+      const effPrev =
+        wb.dcaLastEvalDropPctByIdx[dcaIdx] != null && Number.isFinite(wb.dcaLastEvalDropPctByIdx[dcaIdx])
+          ? wb.dcaLastEvalDropPctByIdx[dcaIdx]!
+          : Number.POSITIVE_INFINITY;
       if (followDcaTaken(wb, dcaIdx, lvl.triggerPct)) continue;
-      if (!dcaCrossedDownward(effPrev, dropFromFirst, lvl.triggerPct)) continue;
+      if (!dcaCrossedDownward(effPrev, drop, lvl.triggerPct)) continue;
 
       const addUsd = cfg.dcaNotionalUsd * lvl.addFraction;
       if (!(addUsd > 0)) continue;
@@ -117,10 +122,16 @@ export async function evaluateFollowDca(
         fillPriceUsd: buy.fillPriceUsd,
         legs: pos.legs.length,
         dropFromFirstPct: dropFromFirst * 100,
+        dropFromAvgPct: dropFromAvg * 100,
+        dcaAnchor: lvl.anchor,
       });
       break;
     }
 
+    for (let dcaIdx = 0; dcaIdx < cfg.dcaLevels.length; dcaIdx++) {
+      const lvl = cfg.dcaLevels[dcaIdx]!;
+      wb.dcaLastEvalDropPctByIdx![dcaIdx] = lvl.anchor === 'avg' ? dropFromAvg : dropFromFirst;
+    }
     wb.dcaLastEvalDropFromFirstPct = dropFromFirst;
   }
 

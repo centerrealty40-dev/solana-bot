@@ -135,7 +135,7 @@ async function onLeaderBuy(
         leaderSignature: row.signature,
         note:
           cfg.exitPolicy === 'oscar_wave_b' || cfg.dcaLevels.length > 0
-            ? 'DCA at -10/-20 vs first leg, not leader mirror'
+            ? 'price front-run DCA only, not leader mirror'
             : undefined,
       });
       return;

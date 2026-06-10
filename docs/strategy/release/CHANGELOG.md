@@ -34,6 +34,18 @@
 
 ---
 
+## [1.11.395] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.395`
+
+### pumpswap-combo-follow: front-run DCA + delayed leader-sell exit
+
+- **Front-run DCA** `−8%@first`, `−7%@avg` (not leader mirror) — buy before hnu5 avg-down lifts mark.
+- **Leader sell exit delay** `60s` (best in 1–5m selective backtest) then pool flush; TP still active during wait.
+- **Removed max leader first-buy cap** (`MAX_LEADER_FIRST_BUY_USD=0`) — no skip on large leader entries.
+
+**Откат:** `git checkout sa-alpha-1.11.394 -- src/pumpswap-combo-follow/ ecosystem.config.cjs docs/strategy/release/`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
 ## [1.11.394] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.394`

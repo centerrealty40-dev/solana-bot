@@ -60,7 +60,11 @@ export async function evaluateFollowExitsFlow8z(
       cfg.executionMode === 'paper' ? paperPnlPctVsAvg(pos, mark) : pnlPctVsAvgFill(comboPos, mark);
     const inv =
       cfg.executionMode === 'paper' ? paperInvestedRemainingUsd(pos) : investedUsd(comboPos);
-    const leaderSoldSinceOpen = Boolean(state.lastLeaderSellByMint[pos.mint]);
+    const leaderSellRef = state.lastLeaderSellByMint[pos.mint];
+    const leaderFlushDue =
+      Boolean(leaderSellRef) &&
+      cfg.flow8zLeaderFlushEnabled &&
+      Date.now() >= leaderSellRef!.ts + cfg.flow8zLeaderSellDelayMs;
     const holdSec = followHoldSec(pos);
 
     if (followMaxHoldDue(pos, cfg.maxHoldMs)) {
@@ -186,7 +190,7 @@ export async function evaluateFollowExitsFlow8z(
       continue;
     }
 
-    if (leaderSoldSinceOpen && cfg.flow8zLeaderFlushEnabled) {
+    if (leaderFlushDue) {
       const res = await executeFollowSell({
         cfg,
         pos,
@@ -213,6 +217,8 @@ export async function evaluateFollowExitsFlow8z(
         exitReason: 'flow8z_leader_pool_flush',
         markSource: 'pool_quote',
         holdSec: Math.round((Date.now() - pos.openedAt) / 1000),
+        leaderSellDelayMs: cfg.flow8zLeaderSellDelayMs,
+        leaderSellObservedTs: leaderSellRef?.ts,
       });
       continue;
     }

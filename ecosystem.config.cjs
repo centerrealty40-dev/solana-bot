@@ -1073,7 +1073,8 @@ const PM2_APPS = [
         /** Level-2 BTC gate: 1h/4h/24h/72h + drawdown от пика 72h (п.п.; `0` = выкл. для конкретного окна). */
         LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '1',
         LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '2.5',
-        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '2',
+        /** `0` — только короткие окна 1ч/4ч (24ч давал ложные block/clear при recovery). */
+        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '0',
         /** 72h/peak выкл. — не блокировать buy_open из‑за давней просадки при отскоке на 1h/4h. */
         LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '0',
         LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '0',
@@ -1553,11 +1554,11 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_WALLET_SECRET: path.join(root, 'data/pumpswap-combo-follow/wallet.keypair.json'),
         PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
         PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET: 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
-        /** Follow v2 live 24h trial: flow gate + flow8z exits + price DCA (−10/−20). */
+        /** Follow v2 live: flow gate + flow8z exits + front-run DCA (−8%@1st, −7%@avg) + 1m post-leader-sell flush. */
         PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY: 'flow8z_antidump',
         PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS: '0',
         PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '3',
-        PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS: '-10:0.333333,-20:0.333333',
+        PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS: '-8:0.333333:first,-7:0.333333:avg',
         PUMPSWAP_COMBO_FOLLOW_MAX_OPEN: '8',
         PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
         PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT: '2',
@@ -1566,9 +1567,10 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '35',
         PUMPSWAP_COMBO_FOLLOW_MAX_HOLD_MS: '10800000',
         PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '150',
-        PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD: '300',
+        PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD: '0',
         PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT: '0',
         PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_FLUSH: '1',
+        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS: '60000',
         PUMPSWAP_COMBO_FOLLOW_BUY_DELAY_MS: '0',
         PUMPSWAP_COMBO_FOLLOW_LEADER_WS: '1',
         PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE: 'flow',
