@@ -828,9 +828,10 @@ const PM2_APPS = [
 
         /**
          * 1.11.309 — flash crash kill (aggressive): velocity + post-fill guard; blocks DCA after trigger.
+         * 1.11.418 — disabled on live-oscar (premature SPCX exit at −1.85%%).
          * Fractions negative in env (e.g. -0.06 = −6%%). Not a static avg stop.
          */
-        PAPER_FLASH_CRASH_KILL_ENABLED: '1',
+        PAPER_FLASH_CRASH_KILL_ENABLED: '0',
         PAPER_FLASH_CRASH_KILL_DROP_30S_PCT: '-0.06',
         PAPER_FLASH_CRASH_KILL_DROP_60S_PCT: '-0.08',
         PAPER_FLASH_CRASH_KILL_DROP_180S_PCT: '-0.12',

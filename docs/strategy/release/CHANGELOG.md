@@ -38,6 +38,32 @@
 
 ---
 
+## [1.11.418] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.418`
+
+### Live Oscar: disable flash crash kill
+
+- **`ecosystem.config.cjs`:** `PAPER_FLASH_CRASH_KILL_ENABLED=0` for live-oscar (was `1`; closed SPCX at −1.85%% via `FLASH_CRASH_KILL`).
+- **`mint-file-watch-telegram-format`:** denylist/whitelist Telegram shows symbol + GMGN link (HTML).
+
+**Откат:** `PAPER_FLASH_CRASH_KILL_ENABLED=1` in live-oscar env; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.418] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.418`
+
+### live-oscar: flash crash kill отключён
+
+- **`ecosystem.config.cjs` (`live-oscar`):** `PAPER_FLASH_CRASH_KILL_ENABLED=0` — velocity/post-fill exit `FLASH_CRASH_KILL` больше не срабатывает (ранее было `1` с 1.11.309).
+- Код по-прежнему читает флаг только при `=== '1'`; дефолт в `config.ts` — `false`.
+
+**Откат:** `PAPER_FLASH_CRASH_KILL_ENABLED: '1'` в `ecosystem.config.cjs` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.417] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.417`
