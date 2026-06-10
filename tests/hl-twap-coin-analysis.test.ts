@@ -6,6 +6,7 @@ import {
   aggregateCoinImpacts,
   computeCoinEntryPlan,
   crossingImpactDecision,
+  minImpactPctHour,
   shouldCloseForImpactLoss,
   twapHourlyImpactPct,
 } from '../src/hyperliquid/twap/coin-twap-analysis.js';
@@ -41,6 +42,16 @@ function sig(
 }
 
 describe('coin-twap-analysis', () => {
+  it('minImpactPctHour: policy floor 2 even if env=0', () => {
+    const prev = process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR;
+    process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR = '0';
+    expect(minImpactPctHour()).toBe(2);
+    process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR = '3';
+    expect(minImpactPctHour()).toBe(3);
+    if (prev == null) delete process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR;
+    else process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR = prev;
+  });
+
   it('twapHourlyImpactPct: spread daily share over duration', () => {
     expect(twapHourlyImpactPct(sig('a', 'buy', 3, 60))).toBe(3);
     expect(twapHourlyImpactPct(sig('b', 'buy', 3, 24 * 60))).toBeCloseTo(0.125);

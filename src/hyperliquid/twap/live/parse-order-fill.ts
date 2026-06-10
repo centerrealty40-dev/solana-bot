@@ -104,9 +104,14 @@ export function reconcileOrderFill(params: {
   return { sizeBase, fillPx, partialFill };
 }
 
-/** Minimum gross notional (USD) to accept an open fill. */
+/** Minimum gross fill vs requested (default 85% — reject half-slice partials). */
 export function isOpenFillAcceptable(filledNotionalUsd: number, requestedGrossUsd: number): boolean {
-  if (filledNotionalUsd <= 0) return false;
-  const minUsd = Math.max(requestedGrossUsd * 0.1, 50);
+  if (filledNotionalUsd <= 0 || requestedGrossUsd <= 0) return false;
+  const v = process.env.HL_TWAP_LIVE_OPEN_MIN_FILL_RATIO?.trim();
+  const ratio =
+    v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) > 0 && Number(v) <= 1
+      ? Number(v)
+      : 0.85;
+  const minUsd = Math.max(requestedGrossUsd * ratio, 50);
   return filledNotionalUsd >= minUsd;
 }

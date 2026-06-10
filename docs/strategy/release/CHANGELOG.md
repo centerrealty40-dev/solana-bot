@@ -34,6 +34,19 @@
 
 ---
 
+## [1.11.402] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.402`
+
+### HL TWAP: $500 first leg + margin-based DCA ladder
+
+- **Entry:** one full **$500 × ~7x** order (no entry slice split); min fill **85%** requested gross.
+- **TP / DCA ladder:** one book per **coin+side** — slice **10% of exchange gross** (not per TWAP leg); ±**3% price** move; shared tp/dca levels across stacked legs.
+- **Exit:** gradual slices by duration (≤5m→2, 6–15m→2, >15m→3).
+- **Entry filter:** unrestricted keeps **only** hourly impact ≥ **2%/h** (policy floor; detect + schedule).
+
+**Откат:** `git checkout sa-alpha-1.11.401 -- src/hyperliquid/twap/ src/scripts/hl-twap-telegram-watch.ts ecosystem.config.cjs tests/hl-twap-*.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 delete hl-twap-telegram-watch; pm2 start ecosystem.config.cjs --only hl-twap-telegram-watch; pm2 save`.
+
 ## [1.11.401] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.401`
@@ -50,7 +63,7 @@
 
 ### HL TWAP: unrestricted mode — trade all TWAPs + micro exit
 
-- **`HL_TWAP_UNRESTRICTED=1`**: skip duration, momentum, BTC, whale deny, prior-loss, impact gates; only `already_tracked` remains.
+- **`HL_TWAP_UNRESTRICTED=1`**: skip duration, momentum, BTC, whale deny, prior-loss gates; **hourly impact ≥ 2%/h remains the only entry filter** (`HL_TWAP_MIN_IMPACT_PCT_HOUR=2`).
 - **Micro lane (≤15m)**: single exit slice for ≤10m; **2 whale-aligned slices** for 11–15m (no 10-slice chunked exit).
 - **15m gap closed**: micro lane now includes 15m TWAPs (was `twap_too_short`).
 

@@ -6,6 +6,8 @@ import {
   microTwapExitSliceCount,
   shouldUseMicroExecution,
   twapDurationGate,
+  twapEntrySliceCount,
+  twapExitSliceCount,
 } from '../src/hyperliquid/twap/twap-duration.js';
 import { canScheduleLiveEntry } from '../src/hyperliquid/twap/live/coin-exposure.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
@@ -16,7 +18,8 @@ describe('hl-twap unrestricted', () => {
   beforeEach(() => {
     process.env.HL_TWAP_UNRESTRICTED = '1';
     process.env.HL_TWAP_MICRO_MAX_MINUTES = '15';
-    process.env.HL_TWAP_MICRO_ONE_SLICE_MAX_MINUTES = '10';
+    process.env.HL_TWAP_MIN_IMPACT_PCT_HOUR = '2';
+    delete process.env.HL_TWAP_ULTRA_SHORT_EXIT_SLICES;
   });
 
   afterEach(() => {
@@ -52,17 +55,32 @@ describe('hl-twap unrestricted', () => {
     expect(twapDurationGate(1440).reason).toBe('ok');
   });
 
-  it('micro lane covers ≤15m with 1 or 2 exit slices', () => {
+  it('gradual exit slices by duration: ≤5m→2, 6–15m→2, >15m→3; entry always 1 slice', () => {
     expect(isMicroTwapMinutes(15)).toBe(true);
     expect(shouldUseMicroExecution(15)).toBe(true);
-    expect(microTwapExitSliceCount(5)).toBe(1);
-    expect(microTwapExitSliceCount(15)).toBe(2);
+    expect(twapExitSliceCount(5)).toBe(2);
+    expect(twapExitSliceCount(15)).toBe(2);
+    expect(twapExitSliceCount(16)).toBe(3);
+    expect(twapExitSliceCount(60)).toBe(3);
+    expect(twapEntrySliceCount(60)).toBe(1);
+    expect(microTwapExitSliceCount(5)).toBe(2);
   });
 
-  it('computeCoinEntryPlan allows without impact edge', () => {
+  it('ultra-short can use 1 slice via HL_TWAP_ULTRA_SHORT_EXIT_SLICES=1', () => {
+    process.env.HL_TWAP_ULTRA_SHORT_EXIT_SLICES = '1';
+    expect(twapExitSliceCount(5)).toBe(1);
+    expect(twapExitSliceCount(3)).toBe(1);
+  });
+
+  it('computeCoinEntryPlan requires hourly impact ≥ min (only gate in unrestricted)', () => {
     const plan = computeCoinEntryPlan(sig(5), { activeByHash: new Map() }, 2);
     expect(plan.allow).toBe(true);
     expect(plan.reason).toBe('ok_micro');
+
+    const weak = { ...sig(60), volumeSharePct: 0.5 };
+    const blocked = computeCoinEntryPlan(weak, { activeByHash: new Map() }, 2);
+    expect(blocked.allow).toBe(false);
+    expect(blocked.reason).toBe('hourly_impact_no_edge');
   });
 
   it('canScheduleLiveEntry skips whale/btc/momentum blocks', () => {
