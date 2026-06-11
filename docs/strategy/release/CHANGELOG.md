@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.422] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.422`
+
+### hl-twap-live: coin_has_opposite_side before unrestricted bypass (XLM incident)
+
+- **`coin-exposure.ts`:** `coinOppositeLegBlockReason()` runs **before** `HL_TWAP_UNRESTRICTED=1` early return — prevents long+short net exposure on same coin (XLM ~$9.50 dust).
+- **`resolveLiveEntryAuditPlan`:** same gate in unrestricted audit path.
+- **Test:** `canScheduleLiveEntry still blocks opposite side in unrestricted mode`.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.421] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.421`

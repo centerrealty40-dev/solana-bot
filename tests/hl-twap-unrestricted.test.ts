@@ -90,4 +90,39 @@ describe('hl-twap unrestricted', () => {
     const decision = canScheduleLiveEntry(sig(3), { activeByHash: new Map() }, new Map(), 2);
     expect(decision.allow).toBe(true);
   });
+
+  it('canScheduleLiveEntry still blocks opposite side in unrestricted mode', () => {
+    const opens = new Map([
+      [
+        '0xa',
+        {
+          hash: '0xa',
+          coin: 'BTC',
+          displaySymbol: 'BTC',
+          side: 'buy' as const,
+          entryTs: 1,
+          entryAnchorPx: 100,
+          avgEntryPx: 100,
+          initialNotionalUsd: 5000,
+          currentNotionalUsd: 5000,
+          marginUsd: 1000,
+          entryLeverage: 5,
+          impactPct: 5,
+          whaleUser: '0x1',
+          minutes: 30,
+          liveOpenAtMs: 1,
+          liveCloseAtMs: 2,
+          twapStartMs: 1,
+          tpLevelsTaken: 0,
+          dcaLevelsTaken: 0,
+          whaleNotionalUsd: 100_000,
+          whaleSize: 1000,
+        },
+      ],
+    ]);
+    const sell = { ...sig(30), hash: '0xb', side: 'sell' as const };
+    const decision = canScheduleLiveEntry(sell, { activeByHash: new Map() }, opens, 2);
+    expect(decision.allow).toBe(false);
+    expect(decision.reason).toBe('coin_has_opposite_side');
+  });
 });
