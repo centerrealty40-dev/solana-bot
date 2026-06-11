@@ -14,7 +14,7 @@ function cfg(overrides: Partial<ReturnType<typeof baseCfg>> = {}) {
 function baseCfg() {
   return {
     notionalUsd: 800,
-    marginLev3Usd: 1200,
+    marginLev3Usd: 1500,
     marginLev5Usd: 1000,
     marginLev7Usd: 800,
     leverage: 7,
@@ -82,7 +82,7 @@ describe('computeOpenMarginUsd', () => {
   it('returns lev-tier margin when dynamic margin disabled', () => {
     const account = { accountValueUsd: 1100, totalMarginUsedUsd: 0, withdrawableUsd: 1100 };
     expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }))).toBe(800);
-    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }), 3)).toBe(1200);
+    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }), 3)).toBe(1500);
     expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }), 5)).toBe(1000);
   });
 
