@@ -38,6 +38,23 @@
 
 ---
 
+## [1.11.423] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.423`
+
+### hl-twap-live: coin-stack re-anchor (virtual leg transfer)
+
+- **`coin-stack-policy.ts`:** when coin+side stack is full but a stronger TWAP arrives, emit `coin_stack_reanchor` with weakest open/pending slot instead of silent `coin_stack_full`.
+- **`live-trader.ts`:** `performCoinStackReanchor()` rewrites journal hash/whale metadata (no exchange order); `scheduleLiveTrade` handles re-anchor path.
+- **`journal.ts`:** `journalReanchorRow` + reload helpers for pending schedules after hash swap.
+- **`coin-exposure.ts`:** pass pending schedules into stack evaluation; allow re-anchor through gate.
+- **`live-exec-worker.ts`:** clear stale `coin_side_open_in_flight` on re-anchor.
+- **Tests:** coin-stack re-anchor + unrestricted stack scenarios.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.422] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.422`

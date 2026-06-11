@@ -19,7 +19,9 @@ import { drawdownHaltBlockReason } from './drawdown-stop.js';
 import {
   evaluateCoinStackEntry,
   stackCfgFromLiveConfig,
+  type CoinStackReanchorTarget,
 } from './coin-stack-policy.js';
+import { isCoinSideOpenInFlight } from './live-exec-worker.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapLiveOpen } from './types.js';
 
@@ -27,6 +29,7 @@ export type LiveEntryDecision = {
   allow: boolean;
   reason: string;
   openAtMs?: number;
+  reanchor?: CoinStackReanchorTarget;
 };
 
 export { shouldCloseForImpactLoss, opposingActiveTwapsForCoin, computeCoinEntryPlan };
@@ -96,7 +99,31 @@ export function canScheduleLiveEntry(
 
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
-    return { allow: plan.allow, reason: plan.reason, openAtMs: plan.openAtMs };
+    if (!plan.allow) {
+      return { allow: false, reason: plan.reason };
+    }
+    if (liveCfg && isCoinSideOpenInFlight(sig.coin, entrySide)) {
+      return { allow: false, reason: 'coin_side_open_in_flight' };
+    }
+    if (liveCfg) {
+      const stack = evaluateCoinStackEntry(
+        sig,
+        entrySide,
+        opens,
+        pending ?? new Map<string, JournalSchedule>(),
+        watchState,
+        stackCfgFromLiveConfig(liveCfg, leverageForCoin),
+      );
+      if (!stack.allow) {
+        return {
+          allow: false,
+          reason: stack.reason,
+          reanchor: stack.reanchor,
+          openAtMs: plan.openAtMs,
+        };
+      }
+    }
+    return { allow: true, reason: plan.reason, openAtMs: plan.openAtMs };
   }
 
   if (isBlocklistedWhale(sig.user)) {
@@ -139,7 +166,11 @@ export function canScheduleLiveEntry(
     }
   }
 
-  if (liveCfg && !hlTwapUnrestrictedMode()) {
+  if (liveCfg && isCoinSideOpenInFlight(sig.coin, entrySide)) {
+    return { allow: false, reason: 'coin_side_open_in_flight' };
+  }
+
+  if (liveCfg) {
     const stack = evaluateCoinStackEntry(
       sig,
       entrySide,
@@ -149,7 +180,12 @@ export function canScheduleLiveEntry(
       stackCfgFromLiveConfig(liveCfg, leverageForCoin),
     );
     if (!stack.allow) {
-      return { allow: false, reason: stack.reason };
+      return {
+        allow: false,
+        reason: stack.reason,
+        reanchor: stack.reanchor,
+        openAtMs: plan.openAtMs,
+      };
     }
   }
 
@@ -176,6 +212,19 @@ export function resolveLiveEntryAuditPlan(
     const oppositeBlock = coinOppositeLegBlockReason(sig.coin, entrySide, opens, pending, sig.hash);
     if (oppositeBlock) {
       return { ...plan, allow: false, reason: oppositeBlock };
+    }
+    if (liveCfg) {
+      const stack = evaluateCoinStackEntry(
+        sig,
+        entrySide,
+        opens,
+        pending,
+        watchState,
+        stackCfgFromLiveConfig(liveCfg, leverageForCoin),
+      );
+      if (!stack.allow && stack.reason !== 'coin_stack_reanchor') {
+        return { ...plan, allow: false, reason: stack.reason };
+      }
     }
     return plan;
   }

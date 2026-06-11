@@ -9,7 +9,9 @@ import {
   twapEntrySliceCount,
   twapExitSliceCount,
 } from '../src/hyperliquid/twap/twap-duration.js';
+import { createTwapWatchState } from '../src/hyperliquid/twap/detect.js';
 import { canScheduleLiveEntry } from '../src/hyperliquid/twap/live/coin-exposure.js';
+import { loadHlTwapLiveConfig } from '../src/hyperliquid/twap/live/config.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 
 describe('hl-twap unrestricted', () => {
@@ -89,6 +91,73 @@ describe('hl-twap unrestricted', () => {
     process.env.HL_TWAP_COIN_MOMENTUM_GATE = '1';
     const decision = canScheduleLiveEntry(sig(3), { activeByHash: new Map() }, new Map(), 2);
     expect(decision.allow).toBe(true);
+  });
+
+  it('canScheduleLiveEntry enforces coin stack cap in unrestricted mode', () => {
+    const liveCfg = loadHlTwapLiveConfig();
+    const state = createTwapWatchState();
+    const opens = new Map([
+      [
+        '0xa',
+        {
+          hash: '0xa',
+          coin: 'BTC',
+          displaySymbol: 'BTC',
+          side: 'buy' as const,
+          entryTs: 1,
+          entryAnchorPx: 100,
+          avgEntryPx: 100,
+          initialNotionalUsd: 5600,
+          currentNotionalUsd: 5600,
+          marginUsd: 800,
+          entryLeverage: 7,
+          impactPct: 8,
+          whaleUser: '0x1',
+          minutes: 30,
+          liveOpenAtMs: 1,
+          liveCloseAtMs: 2,
+          twapStartMs: 1,
+          tpLevelsTaken: 0,
+          dcaLevelsTaken: 0,
+          whaleNotionalUsd: 100_000,
+          whaleSize: 1000,
+        },
+      ],
+      [
+        '0xb',
+        {
+          hash: '0xb',
+          coin: 'BTC',
+          displaySymbol: 'BTC',
+          side: 'buy' as const,
+          entryTs: 1,
+          entryAnchorPx: 100,
+          avgEntryPx: 100,
+          initialNotionalUsd: 5600,
+          currentNotionalUsd: 5600,
+          marginUsd: 800,
+          entryLeverage: 7,
+          impactPct: 4,
+          whaleUser: '0x2',
+          minutes: 30,
+          liveOpenAtMs: 1,
+          liveCloseAtMs: 2,
+          twapStartMs: 1,
+          tpLevelsTaken: 0,
+          dcaLevelsTaken: 0,
+          whaleNotionalUsd: 100_000,
+          whaleSize: 1000,
+        },
+      ],
+    ]);
+    state.activeByHash.set('0xa', { ...sig(30), hash: '0xa', volumeSharePct: 8 });
+    state.activeByHash.set('0xb', { ...sig(30), hash: '0xb', volumeSharePct: 4 });
+    const steep = { ...sig(15), hash: '0xc', volumeSharePct: 12, minutes: 15 };
+    state.activeByHash.set('0xc', steep);
+    const decision = canScheduleLiveEntry(steep, state, opens, 2, undefined, liveCfg);
+    expect(decision.allow).toBe(false);
+    expect(decision.reason).toBe('coin_stack_reanchor');
+    expect(decision.reanchor?.targetHash).toBe('0xb');
   });
 
   it('canScheduleLiveEntry still blocks opposite side in unrestricted mode', () => {
