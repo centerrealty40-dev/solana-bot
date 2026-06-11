@@ -199,10 +199,12 @@ export function waveBDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boole
   return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC;
 }
 
-/** Full exit at avg breakeven allowed only after an executed TP rung ≥ +7.5%. */
-export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): boolean {
-  if (!isWaveBExitPolicy(ot)) return false;
-  return waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
+/**
+ * Wave B: full close at ≤0% avg PnL — never hold remainder into minus.
+ * Eligible on every wave_b open (incl. after +7.5% trail, partial TPs, or fresh entry).
+ */
+export function waveBBreakevenExitEligible(ot: OpenTrade, _stepPnl?: number): boolean {
+  return isWaveBExitPolicy(ot);
 }
 
 /** True when TP grid rungs +2.5% (idx 0) and +5% (idx 1) were both executed. */
