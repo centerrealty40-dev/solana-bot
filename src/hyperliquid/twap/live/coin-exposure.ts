@@ -31,6 +31,32 @@ export type LiveEntryDecision = {
 
 export { shouldCloseForImpactLoss, opposingActiveTwapsForCoin, computeCoinEntryPlan };
 
+/**
+ * HL is one net position per coin — block opposite-side journal legs even in unrestricted mode.
+ */
+export function coinOppositeLegBlockReason(
+  coin: string,
+  entrySide: TwapSide,
+  opens: Map<string, HlTwapLiveOpen>,
+  pending?: Map<string, JournalSchedule>,
+  excludeHash?: string,
+): string | null {
+  for (const p of opens.values()) {
+    if (p.coin === coin && p.side !== entrySide) {
+      return 'coin_has_opposite_side';
+    }
+  }
+  if (pending) {
+    for (const [hash, s] of pending) {
+      if (hash === excludeHash) continue;
+      if (s.coin === coin && s.side !== entrySide) {
+        return 'coin_has_opposite_side';
+      }
+    }
+  }
+  return null;
+}
+
 /** Gate B + A (prior loss, streak cooldown, coin dd24h) — long entries only. */
 export function hlTwapCoinEntryGateBlockReason(
   coin: string,
@@ -61,6 +87,13 @@ export function canScheduleLiveEntry(
   liveCfg?: HlTwapLiveConfig,
   leverageForCoin?: (coin: string) => number,
 ): LiveEntryDecision {
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  const pending = journalPath ? loadPendingLiveSchedules(journalPath) : undefined;
+  const oppositeBlock = coinOppositeLegBlockReason(sig.coin, entrySide, opens, pending, sig.hash);
+  if (oppositeBlock) {
+    return { allow: false, reason: oppositeBlock };
+  }
+
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
     return { allow: plan.allow, reason: plan.reason, openAtMs: plan.openAtMs };
@@ -79,7 +112,6 @@ export function canScheduleLiveEntry(
     return { allow: false, reason: drawdownBlock };
   }
 
-  const entrySide = hlTwapEntrySide(sig.user, sig.side);
   const btcBlock = hlTwapBtcAlignedBlockReason(entrySide);
   if (btcBlock) {
     return { allow: false, reason: btcBlock };
@@ -88,13 +120,6 @@ export function canScheduleLiveEntry(
   const hourly = twapHourlyImpactPct(sig);
   if (minImpactPct > 0 && (hourly == null || hourly < minImpactPct)) {
     return { allow: false, reason: 'impact_below_min' };
-  }
-
-  const hasOpposite = [...opens.values()].some(
-    (p) => p.coin === sig.coin && p.side !== entrySide,
-  );
-  if (hasOpposite) {
-    return { allow: false, reason: 'coin_has_opposite_side' };
   }
 
   const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
@@ -115,12 +140,11 @@ export function canScheduleLiveEntry(
   }
 
   if (liveCfg && !hlTwapUnrestrictedMode()) {
-    const pending = journalPath ? loadPendingLiveSchedules(journalPath) : new Map<string, JournalSchedule>();
     const stack = evaluateCoinStackEntry(
       sig,
       entrySide,
       opens,
-      pending,
+      pending ?? new Map<string, JournalSchedule>(),
       watchState,
       stackCfgFromLiveConfig(liveCfg, leverageForCoin),
     );
@@ -147,6 +171,11 @@ export function resolveLiveEntryAuditPlan(
     const pending = loadPendingLiveSchedules(journalPath);
     if (opens.has(sig.hash) || pending.has(sig.hash)) {
       return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
+    }
+    const entrySide = hlTwapEntrySide(sig.user, sig.side);
+    const oppositeBlock = coinOppositeLegBlockReason(sig.coin, entrySide, opens, pending, sig.hash);
+    if (oppositeBlock) {
+      return { ...plan, allow: false, reason: oppositeBlock };
     }
     return plan;
   }
