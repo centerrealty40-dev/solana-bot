@@ -45,7 +45,7 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     }
   }
 
-  private leverageForCoin(coin: string): number {
+  leverageForCoin(coin: string): number {
     const max = this.maxLeverageByCoin.get(coin);
     const requested = this.cfg.leverage;
     if (max == null) return requested;

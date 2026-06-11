@@ -34,6 +34,10 @@ export class DryRunExchangeClient implements HlTwapExchangeClient {
     return this.positions.get(coin) ?? 0;
   }
 
+  leverageForCoin(_coin: string): number {
+    return this.cfg.leverage;
+  }
+
   /** Test helper: seed simulated exchange position. */
   seedPosition(coin: string, signedSzi: number): void {
     if (Math.abs(signedSzi) <= 0) this.positions.delete(coin);

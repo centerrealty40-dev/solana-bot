@@ -104,7 +104,7 @@ export async function executeSlicedMarketOrder(
     return inner.marketOrder(params);
   }
 
-  const leverage = cfg.leverage;
+  const leverage = inner.leverageForCoin(params.coin);
   const grossUsd = orderGrossUsd(params, leverage);
   const parts = splitExecNotional(grossUsd, maxChunk);
   if (parts.length <= 1) {
@@ -153,6 +153,10 @@ export class ExecSlicedExchangeClient implements HlTwapExchangeClient {
 
   async getPositionSzi(coin: string): Promise<number> {
     return this.inner.getPositionSzi(coin);
+  }
+
+  leverageForCoin(coin: string): number {
+    return this.inner.leverageForCoin(coin);
   }
 
   async marketOrder(params: MarketOrderParams): Promise<OrderFillResult> {

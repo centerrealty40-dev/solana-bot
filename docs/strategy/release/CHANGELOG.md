@@ -38,6 +38,34 @@
 
 ---
 
+## [1.11.419] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.419`
+
+### hl-twap-live: exec-slice leverage cap (GRASS open_fill_too_small)
+
+- **`exec-slice.ts`:** sliced opens use `inner.leverageForCoin(coin)` (HL max per coin, e.g. GRASS 3×) instead of `cfg.leverage` (7×) for gross notional and fill reconciliation — fixes false `open_fill_too_small` cancels when fill $2400 vs target $5600.
+- **`types.ts` / exchange clients:** expose `leverageForCoin` on `HlTwapExchangeClient`; test covers $800 margin × 3× = $2400 gross.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.419] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.419`
+
+### live-oscar Wave B: страховка у безубытка после первых двух TP
+
+- После исполнения TP-сетки **+2.5%** и **+5%** (индексы 0 и 1), если PnL vs avg возвращается к **≤0%**, один раз продаётся настраиваемая доля **остатка** (prod: **50%**). Полный `BREAKEVEN_EXIT` по-прежнему только после TP **≥+7.5%**.
+- **`exit-policy-wave-b.ts`:** `waveBFirstTwoTpRungsTaken()`, `waveBBreakevenInsuranceEligible()`; флаг **`liveWaveBreakevenInsuranceTaken`** на open.
+- **`tracker.ts`:** partial **`WAVE_B_BREAKEVEN_INSURANCE`**; replay/snapshot в `strategy-snapshot.ts` + `store-restore.ts`.
+- **Env (`live-oscar` в `ecosystem.config.cjs`, включено):** `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED=1`, `…_FRACTION=0.5`, `…_PNL_FRAC=0`.
+
+**Откат:** `git revert`; `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED=0` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.418] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.418`
