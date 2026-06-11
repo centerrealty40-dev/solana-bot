@@ -390,6 +390,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
 
     const lwmet = rawPayload.liveWaveMaxExecutedTpFrac;
     if (typeof lwmet === 'number' && Number.isFinite(lwmet)) ot.liveWaveMaxExecutedTpFrac = lwmet;
+    if (rawPayload.liveWavePreArmReached === true) ot.liveWavePreArmReached = true;
 
     const lwp = rawPayload.liveWavePeakPnlFrac;
     if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;

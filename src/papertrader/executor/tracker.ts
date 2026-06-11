@@ -45,6 +45,8 @@ import {
   waveBMarkTrailLevelTaken,
   clampLiveTrackerMtmForExit,
   waveBRecoverPhantomPeakIfNeeded,
+  waveBUpdatePreArmReached,
+  waveBPreArmKillEligible,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
   waveBAdjustSellFractionForRemainder,
@@ -2000,6 +2002,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (isWaveBExitPolicy(ot) && curMetric > 0) {
+      waveBUpdatePreArmReached(ot, curMetric);
+    }
+
     if (ot.avgEntry > 0 && isPartialGridTrailExitPolicy(ot)) {
       const pnlFracTick = curMetric / ot.avgEntry - 1;
       const anchorBefore = ot.liveWaveTrailAnchorPnlFrac ?? 0;
@@ -3102,10 +3108,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
+      const preArmKill = waveBPreArmKillEligible(ot, killEff, curMetric);
+      const classicKill =
+        !isWaveBExitPolicy(ot) &&
+        !ot.liveStagedEntry &&
+        killEff < 0 &&
+        pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
-        !isVariantAExitPolicy(ot) &&
-        (inSignalKillTerritory || (!ot.liveStagedEntry && killEff < 0 && pnlPctVsAvg / 100 <= killEff));
+        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || preArmKill || classicKill);
       if (inKillTerritory) {
+        if (preArmKill) {
+          ot.liveKillstopBelowStreak = 0;
+          exitReason = 'KILLSTOP';
+        } else {
         const debounceKillAfterReplenish =
           cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKillTerritory;
         if (debounceKillAfterReplenish) {
@@ -3120,6 +3135,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         } else {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
+        }
         }
       } else {
         ot.liveKillstopBelowStreak = 0;

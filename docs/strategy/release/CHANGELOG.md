@@ -38,6 +38,21 @@
 
 ---
 
+## [1.11.429] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.429`
+
+### Live Oscar — $1k split, kill −9%, loss cooldown (no auto-denylist)
+
+- **Вход:** $500+$500, пауза **5 с**; `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` = **$1000**; **DCA выкл**.
+- **Kill-stop:** `PAPER_DCA_KILLSTOP=-0.09` до первого **+7%** vs entry market; после +7% — Wave B без изменений (TP +2.5% ladder, trail **+10%**, breakeven insurance).
+- **Убыток:** `LIVE_NEGATIVE_TRADE_DENY_ENABLED=0`; **10 мин** cooldown (`PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED`); re-entry при цене ≤ last_exit×**0.90**.
+- **Код:** `liveWavePreArmReached`, `waveBPreArmKillEligible`; loss-only post-exit cooldown; first-mint-probe split выкл.
+
+**Откат:** `git checkout sa-alpha-1.11.428 -- ecosystem.config.cjs src/papertrader/ src/live/strategy-snapshot.ts tests/wave-b-pre-arm-kill.test.ts tests/post-exit-loss-cooldown.test.ts`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.428] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.428`
