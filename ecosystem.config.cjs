@@ -78,10 +78,10 @@ const HL_TWAP_LIVE_ENV = {
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Prod staged entry $500+$500 ($1000 notional); DCA off; max $1000 per mint.
+ * Prod staged entry $730+$730 ($1460 notional); DCA off; max $1460 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1000';
-const LIVE_OSCAR_MAX_POSITION_USD = '1000';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1460';
+const LIVE_OSCAR_MAX_POSITION_USD = '1460';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -397,19 +397,19 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$500+$500** (5 с, +3%/−10% к 1-й ноге); без DCA и без staged avg.
+         * Staged-entry: сплит **$730+$730** (5 с, +3%/−10% к 1-й ноге); без DCA и без staged avg.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '730',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '730',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
@@ -453,8 +453,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '730',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1460',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
@@ -615,7 +615,7 @@ const PM2_APPS = [
          */
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
-        /** DCA выкл — только сплит $500+$500. */
+        /** DCA выкл — только сплит $730+$730. */
         PAPER_DCA_LEVELS: '',
         /** Early kill −9% vs entry market до первого +7.5%; после +7.5% — trail + TP ladder (ключевая точка импульса). */
         PAPER_DCA_KILLSTOP: '-0.09',
@@ -915,7 +915,7 @@ const PM2_APPS = [
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         /** Любой net PnL < 0 при закрытии → denylist (`0` = без порога в USD). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '0',
-        /** Единый размер $500+$500 на все mint; thin-vol probe split выкл. */
+        /** Единый размер $730+$730 на все mint; thin-vol probe split выкл. */
         LIVE_MINT_FIRST_PROBE_ENABLED: '0',
         LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '5',
         LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-mint-graduated.txt'),
@@ -1058,7 +1058,7 @@ const PM2_APPS = [
         /**
          * 1.11.230 — Jupiter Pro: больше MTM probe (size = max(MIN, min(MAX, remUsd * FRACTION))).
          * Точная цена в tracker → tighter TP/SL. Раньше: [5..45] @12% (тонкая по большим позициям).
-         * Сейчас: [20..200] @10% — на $1000 позиции probe = $100 (vs $45 раньше).
+         * Сейчас: [20..200] @10% — на $1460 позиции probe = $146 (vs $45 раньше).
          */
         LIVE_TRACKER_MTM_PROBE_MIN_USD: '20',
         LIVE_TRACKER_MTM_PROBE_MAX_USD: '200',

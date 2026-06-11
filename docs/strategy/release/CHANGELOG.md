@@ -38,6 +38,18 @@
 
 ---
 
+## [1.11.434] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.434`
+
+### Live Oscar — entry $730+$730 ($1460)
+
+- Staged split **$730+$730**, 5 с; `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` = **$1460**; low-mcap lane aligned.
+
+**Откат:** `git checkout sa-alpha-1.11.433 -- ecosystem.config.cjs`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.433] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.433`
