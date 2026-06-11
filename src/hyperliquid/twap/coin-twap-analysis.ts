@@ -218,6 +218,11 @@ export function computeCoinEntryPlan(
   };
 
   if (hlTwapUnrestrictedMode()) {
+    const duration = twapDurationGate(sig.minutes);
+    if (!duration.allow) {
+      return deny(duration.reason);
+    }
+
     const okReason = isMicroTwapMinutes(sig.minutes) ? 'ok_micro' : 'ok';
 
     const nowPlan = tryEntryPlan(
