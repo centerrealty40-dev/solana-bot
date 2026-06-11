@@ -43,10 +43,10 @@ const CopyTraderConfigSchema = z.object({
   minProportionalAddUsd: z.coerce.number().min(0).max(100_000).default(0),
   minProportionalSellFraction: z.coerce.number().min(0).max(1).default(0),
   buyPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(3),
-  /** Fraction of positionUsd for immediate probe buy at leader+premium (default 350/950). */
-  entryProbeFraction: z.coerce.number().min(0).max(1).default(350 / 950),
-  /** Remainder fills when price ≤ leader × (1 − discount/100) (default 4%). */
-  entryDipDiscountPct: z.coerce.number().min(0).max(50).default(4),
+  /** Fraction of positionUsd for immediate probe buy at leader+premium (default 300/1000). */
+  entryProbeFraction: z.coerce.number().min(0).max(1).default(300 / 1000),
+  /** Remainder fills when price ≤ leader × (1 − discount/100) (default 10%). */
+  entryDipDiscountPct: z.coerce.number().min(0).max(50).default(10),
   /** Dip leg: consecutive eval passes (Jupiter quote in live) before buy (default 2). */
   entryDipConfirmTicks: z.coerce.number().int().min(1).max(10).default(2),
   /** After probe fill: dip must be at least this % below our probe entry price (default 2). */
