@@ -3108,16 +3108,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
 
-      if (
-        !exitReason &&
-        isWaveBExitPolicy(ot) &&
-        waveBBreakevenExitEligible(ot, tgEff.stepPnl) &&
-        ot.avgEntry > 0 &&
-        pnlPctVsAvg <= 0
-      ) {
-        exitReason = 'BREAKEVEN_EXIT';
-      }
-
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
       const preArmKill = waveBPreArmKillEligible(ot, killEff, curMetric);
       const classicKill =
@@ -3127,7 +3117,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
         !isVariantAExitPolicy(ot) && (inSignalKillTerritory || preArmKill || classicKill);
-      if (!exitReason && inKillTerritory) {
+      if (inKillTerritory) {
         if (preArmKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
@@ -3153,7 +3143,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       if (!exitReason) {
-        if (xAvg >= effCfg.tpX) exitReason = 'TP';
+        if (
+          isWaveBExitPolicy(ot) &&
+          waveBBreakevenExitEligible(ot, tgEff.stepPnl) &&
+          ot.avgEntry > 0 &&
+          pnlPctVsAvg <= 0
+        ) {
+          exitReason = 'BREAKEVEN_EXIT';
+        } else if (xAvg >= effCfg.tpX) exitReason = 'TP';
         else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
         else if (
           effCfg.trailMode === 'ladder_retrace' &&

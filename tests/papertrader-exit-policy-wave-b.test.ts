@@ -235,18 +235,26 @@ describe('exit-policy-wave-b', () => {
     expect(waveBDefensiveTrailActive(otAbove, 0.025)).toBe(true);
   });
 
-  it('waveBBreakevenExitEligible is always true for wave_b (full exit at ≤0%)', () => {
-    const otFresh = { liveExitPolicyId: 'wave_b_v1' } as unknown as OpenTrade;
-    expect(waveBBreakevenExitEligible(otFresh, 0.025)).toBe(true);
+  it('waveBBreakevenExitEligible only after +7.5% gate (touch or executed TP)', () => {
+    const otLow = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.05]),
+      ladderUsedIndices: new Set([0, 1]),
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otLow, 0.025)).toBe(false);
     const otPreArm = {
       liveExitPolicyId: 'wave_b_v1',
       liveWavePreArmReached: true,
-      liveWavePeakPnlFrac: 0.08,
+      ladderUsedIndices: new Set([0, 1]),
     } as unknown as OpenTrade;
     expect(waveBBreakevenExitEligible(otPreArm, 0.025)).toBe(true);
-    expect(waveBBreakevenExitEligible({ liveExitPolicyId: 'legacy_grid' } as OpenTrade, 0.025)).toBe(
-      false,
-    );
+    const otTp75 = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.075]),
+      ladderUsedIndices: new Set([2]),
+      liveWaveMaxExecutedTpFrac: 0.075,
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otTp75, 0.025)).toBe(true);
   });
 
   it('waveBMaybeResetTpImpulse full clear below +2.5% re-arms all rungs', () => {
