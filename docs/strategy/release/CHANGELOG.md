@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.427] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.427`
+
+### Copy-trader: $300 probe + $700 dip @ leader−10%
+
+- **Split entry (prod):** `COPY_TRADER_POSITION_USD=1000`, probe **$300** (`ENTRY_PROBE_FRACTION=0.3`), dip leg **$700** when price ≤ leader × **0.90** (`ENTRY_DIP_DISCOUNT_PCT=10`).
+- **`ENTRY_DIP_VS_PROBE_PCT=0`:** dip gate is leader-relative only (no extra probe discount cap).
+- **Defaults** in `src/copytrader/config.ts` aligned with prod sizing.
+
+**Откат:** `COPY_TRADER_POSITION_USD=950`, `ENTRY_PROBE_FRACTION=0.3684210526315789`, `ENTRY_DIP_DISCOUNT_PCT=4`, `ENTRY_DIP_VS_PROBE_PCT=2`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.426] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.426`

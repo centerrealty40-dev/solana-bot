@@ -1376,7 +1376,7 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '950',
+        COPY_TRADER_POSITION_USD: '1000',
         /** 0 = unlimited (proportional adds/sells only; no cap rows in state). */
         COPY_TRADER_MAX_POSITION_USD: '0',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
@@ -1384,11 +1384,11 @@ const PM2_APPS = [
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
         COPY_TRADER_BUY_DELAY_MS: '30000',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Split entry: $350 probe (350/950) + $600 dip @ leader−4%. */
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3684210526315789',
-        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '4',
+        /** Split entry: $300 probe (30%) + $700 dip @ leader−10%. */
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '10',
         COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS: '2',
-        COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '2',
+        COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '0',
         COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         /** Skip new entries/adds when Dex mcap < $1M (existing positions e.g. GO unchanged). */

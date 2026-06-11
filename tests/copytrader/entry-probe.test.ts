@@ -31,14 +31,37 @@ const baseCfg = {
   minPairAgeHours: 0,
 } as CopyTraderConfig;
 
+const prodEntryCfg = {
+  positionUsd: 1000,
+  entryProbeFraction: 300 / 1000,
+  entryDipDiscountPct: 10,
+  entryMinDeployFraction: 0.99,
+  addPriceMaxPremiumPct: 0,
+  minLeaderBuyUsd: 50,
+  minLiquidityUsd: 15_000,
+  minMarketCapUsd: 0,
+  maxMarketCapUsd: 0,
+  minPairAgeHours: 0,
+} as CopyTraderConfig;
+
 describe('entry-probe sizing', () => {
-  it('splits $350 probe + $600 dip on $950 position', () => {
+  it('splits $300 probe + $700 dip on $1000 position (prod)', () => {
+    expect(usesSplitEntryProbe(prodEntryCfg)).toBe(true);
+    expect(entryProbeSizeUsd(prodEntryCfg)).toBe(300);
+    expect(entryDipSizeUsd(prodEntryCfg)).toBe(700);
+  });
+
+  it('splits $350 probe + $600 dip on $950 position (legacy)', () => {
     expect(usesSplitEntryProbe(baseCfg)).toBe(true);
     expect(entryProbeSizeUsd(baseCfg)).toBe(350);
     expect(entryDipSizeUsd(baseCfg)).toBe(600);
   });
 
-  it('leader dip target at -4%', () => {
+  it('leader dip target at -10%', () => {
+    expect(leaderDipTargetPx(0.001, 10)).toBeCloseTo(0.0009, 8);
+  });
+
+  it('leader dip target at -4% (legacy)', () => {
     expect(leaderDipTargetPx(0.001, 4)).toBeCloseTo(0.00096, 8);
   });
 
