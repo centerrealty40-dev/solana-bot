@@ -1,5 +1,6 @@
 import { hlTwapEntrySide } from '../fade-whales.js';
 import { hlTwapBtcAlignedBlockReason } from '../twap-btc-gate.js';
+import { isBlocklistedWhale } from '../whale-blocklist.js';
 import { isDeniedWhale } from '../whale-denylist.js';
 import { hlTwapUnrestrictedMode } from '../unrestricted.js';
 import type { TwapWatchState } from '../detect.js';
@@ -62,6 +63,10 @@ export function canScheduleLiveEntry(
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
     return { allow: plan.allow, reason: plan.reason, openAtMs: plan.openAtMs };
+  }
+
+  if (isBlocklistedWhale(sig.user)) {
+    return { allow: false, reason: 'whale_blocklist' };
   }
 
   if (isDeniedWhale(sig.user)) {

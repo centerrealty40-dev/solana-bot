@@ -38,6 +38,22 @@
 
 ---
 
+## [1.11.420] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.420`
+
+### hl-twap-live: block serial canceller 0xb676 (live PNL ≤0)
+
+- **`whale-blocklist.ts`**: built-in block for `0xb676…7dbf` (🔴100% cancel, 5/5 TWAP, prod live PNL −$6).
+- Gate in **`computeCoinEntryPlan`** / **`canScheduleLiveEntry`** → skip reason **`whale_blocklist`**.
+- Profitable 🔴100% whales (`0x622f`, `0xa656`, etc.) **not** blocked — live PNL positive.
+- Env override: **`HL_TWAP_WHALE_BLOCKLIST`** (comma-separated, merged with built-in).
+- Analysis: `scripts-tmp/_hl_whale_blocklist_analysis.json`.
+
+**Откат:** `git checkout sa-alpha-1.11.419 -- src/hyperliquid/twap/whale-blocklist.ts src/hyperliquid/twap/coin-twap-analysis.ts src/hyperliquid/twap/live/coin-exposure.ts tests/hl-twap-whale-blocklist.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md .env.example`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.419] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.419`
