@@ -177,6 +177,33 @@ export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): bool
   return waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 }
 
+/** True when TP grid rungs +2.5% (idx 0) and +5% (idx 1) were both executed. */
+export function waveBFirstTwoTpRungsTaken(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;
+  const t1 = stepPnl;
+  const t2 = 2 * stepPnl;
+  let hasFirst = ot.ladderUsedIndices.has(0);
+  let hasSecond = ot.ladderUsedIndices.has(1);
+  for (const u of ot.ladderUsedLevels) {
+    if (!Number.isFinite(u)) continue;
+    if (Math.abs(u - t1) <= LADDER_PNL_EPS) hasFirst = true;
+    if (Math.abs(u - t2) <= LADDER_PNL_EPS) hasSecond = true;
+  }
+  return hasFirst && hasSecond;
+}
+
+/**
+ * Wave B insurance peel: first two TP rungs taken, max executed TP still below +7.5% full-exit gate,
+ * insurance not yet fired.
+ */
+export function waveBBreakevenInsuranceEligible(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWaveBreakevenInsuranceTaken) return false;
+  if (!waveBFirstTwoTpRungsTaken(ot, stepPnl)) return false;
+  return (
+    waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC
+  );
+}
+
 /**
  * Deep pullback after ≥+7.5% TP: unmark grid rungs above +2.5% so +5% / +7.5% / +10% can fire again on rally.
  * @returns true if any marks were cleared this tick
