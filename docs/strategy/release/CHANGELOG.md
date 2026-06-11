@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.424] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.424`
+
+### hl-twap: skip ≤5m TWAPs; exec slices $500 / 2s gap
+
+- **`twap-duration.ts`:** `HL_TWAP_MICRO_MIN_MINUTES=6` — block 5m (and shorter) micro lane in unrestricted + standard gates (`twap_too_short`).
+- **`ecosystem.config.cjs`:** prod `HL_TWAP_EXEC_SLICE_USD=500`, `HL_TWAP_EXEC_SLICE_GAP_MS=2000`, `HL_TWAP_MICRO_MIN_MINUTES=6`.
+- **Tests:** duration + unrestricted gates updated for 5m block.
+
+**Откат:** revert merge → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`; set `HL_TWAP_MICRO_MIN_MINUTES=1` to re-enable 5m.
+
+---
+
 ## [1.11.423] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.423`
