@@ -60,14 +60,14 @@ function waveBOpen(entryMarket = 1): OpenTrade {
 }
 
 describe('wave B pre-arm kill', () => {
-  it('fires kill at −9% before +7% touch', () => {
+  it('fires kill at −9% before +7.5% touch', () => {
     const ot = waveBOpen(1);
     expect(waveBPreArmKillEligible(ot, -0.09, 0.9)).toBe(true);
     expect(waveBPreArmKillEligible(ot, -0.09, 0.91)).toBe(true);
     expect(waveBPreArmKillEligible(ot, -0.09, 0.92)).toBe(false);
   });
 
-  it('disables kill after +7% market touch', () => {
+  it('disables kill after +7.5% market touch', () => {
     const ot = waveBOpen(1);
     const armPx = 1 * (1 + WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC);
     waveBUpdatePreArmReached(ot, armPx);

@@ -214,19 +214,25 @@ describe('exit-policy-wave-b', () => {
     expect(waveBNextTrailLevelToFire(0.11, 0.025, -0.01, [0.085], true)).toBeCloseTo(0.06, 6);
   });
 
-  it('waveBDefensiveTrailActive at +10% ladder mark', () => {
-    const ot = {
+  it('waveBDefensiveTrailActive at +7.5% ladder mark', () => {
+    const otBelow = {
       liveExitPolicyId: 'wave_b_v1',
-      ladderUsedLevels: new Set<number>(),
-      ladderUsedIndices: new Set([3]),
+      ladderUsedLevels: new Set([0.05]),
+      ladderUsedIndices: new Set([1]),
     } as unknown as OpenTrade;
-    expect(waveBDefensiveTrailActive(ot, 0.025)).toBe(true);
-    const ot2 = {
+    expect(waveBDefensiveTrailActive(otBelow, 0.025)).toBe(false);
+    const otAtGate = {
       liveExitPolicyId: 'wave_b_v1',
       ladderUsedLevels: new Set([0.075]),
       ladderUsedIndices: new Set([2]),
     } as unknown as OpenTrade;
-    expect(waveBDefensiveTrailActive(ot2, 0.025)).toBe(false);
+    expect(waveBDefensiveTrailActive(otAtGate, 0.025)).toBe(true);
+    const otAbove = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set([3]),
+    } as unknown as OpenTrade;
+    expect(waveBDefensiveTrailActive(otAbove, 0.025)).toBe(true);
   });
 
   it('waveBBreakevenExitEligible requires executed +7.5% rung, not MTM peak alone', () => {
@@ -251,7 +257,7 @@ describe('exit-policy-wave-b', () => {
     expect(waveBBreakevenExitEligible(otOk, 0.025)).toBe(true);
   });
 
-  it('waveBMaybeResetTpImpulse clears rungs above +2.5% after deep pullback', () => {
+  it('waveBMaybeResetTpImpulse full clear below +2.5% re-arms all rungs', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
       ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
@@ -259,13 +265,23 @@ describe('exit-policy-wave-b', () => {
       liveWaveMaxExecutedTpFrac: 0.075,
     } as unknown as OpenTrade;
     expect(waveBMaybeResetTpImpulse(ot, 0.02, 0.025)).toBe(true);
+    expect(ot.ladderUsedLevels.size).toBe(0);
+    expect(ot.ladderUsedIndices.size).toBe(0);
+    expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.075);
+  });
+
+  it('waveBMaybeResetTpImpulse partial clear at +2.5% after +7.5% gate', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
+      ladderUsedIndices: new Set([0, 1, 2, 3]),
+      liveWaveMaxExecutedTpFrac: 0.075,
+    } as unknown as OpenTrade;
+    expect(waveBMaybeResetTpImpulse(ot, 0.025, 0.025)).toBe(true);
     expect(ot.ladderUsedLevels.has(0.025)).toBe(true);
     expect(ot.ladderUsedLevels.has(0.05)).toBe(false);
     expect(ot.ladderUsedLevels.has(0.075)).toBe(false);
     expect(ot.ladderUsedLevels.has(0.1)).toBe(false);
-    expect(ot.ladderUsedIndices.has(1)).toBe(false);
-    expect(ot.ladderUsedIndices.has(3)).toBe(false);
-    expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.075);
   });
 
   it('waveBBreakevenExitEligible stays true after impulse reset clears ladder marks', () => {
@@ -395,8 +411,26 @@ describe('exit-policy-wave-b', () => {
     expect(hasAveragingLeg(ot)).toBe(true);
   });
 
-  it('defensive arm threshold is +10%', () => {
-    expect(WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC).toBe(0.1);
+  it('defensive arm and pre-arm kill-off threshold is +7.5%', () => {
+    expect(WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC).toBe(0.075);
     expect(WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC).toBe(0.075);
+  });
+
+  it('waveBClearAllTpLadderMarks re-arms +2.5%/+5% after pullback below first rung', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.025, 0.05]),
+      ladderUsedIndices: new Set([0, 1]),
+      liveWaveMaxExecutedTpFrac: 0.05,
+      liveWaveBreakevenInsuranceTaken: true,
+      liveWavePeakPnlFrac: 0.05,
+      liveWaveTrailAnchorPnlFrac: 0.05,
+      trailingArmed: false,
+    } as unknown as OpenTrade;
+    expect(waveBMaybeResetTpImpulse(ot, -0.05, 0.025)).toBe(true);
+    expect(ot.ladderUsedLevels.size).toBe(0);
+    expect(ot.ladderUsedIndices.size).toBe(0);
+    expect(ot.liveWaveBreakevenInsuranceTaken).toBe(false);
+    expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.05);
   });
 });

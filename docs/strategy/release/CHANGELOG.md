@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.430] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.430`
+
+### Live Oscar Wave B — ключевая точка +7.5%, повторный TP после отката
+
+- **+7.5%** — единая ключевая точка: снятие kill −9% (`liveWavePreArmReached`), включение defensive trail, 3-я ступень TP.
+- **Trail** с **+10%** → **+7.5%** (`WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC`).
+- **Повторный TP:** откат **строго ниже +2.5%** после любой взятой ступени → полный сброс меток (+2.5% / +5% / … снова берутся на ралли); после +7.5% — частичный сброс при откате к +2.5%.
+
+**Откат:** `git checkout sa-alpha-1.11.429 -- src/papertrader/executor/exit-policy-wave-b.ts tests/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.429] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.429`
