@@ -235,26 +235,18 @@ describe('exit-policy-wave-b', () => {
     expect(waveBDefensiveTrailActive(otAbove, 0.025)).toBe(true);
   });
 
-  it('waveBBreakevenExitEligible requires executed +7.5% rung, not MTM peak alone', () => {
-    const otLow = {
+  it('waveBBreakevenExitEligible is always true for wave_b (full exit at ≤0%)', () => {
+    const otFresh = { liveExitPolicyId: 'wave_b_v1' } as unknown as OpenTrade;
+    expect(waveBBreakevenExitEligible(otFresh, 0.025)).toBe(true);
+    const otPreArm = {
       liveExitPolicyId: 'wave_b_v1',
-      ladderUsedLevels: new Set([0.05]),
-      ladderUsedIndices: new Set([0]),
+      liveWavePreArmReached: true,
+      liveWavePeakPnlFrac: 0.08,
     } as unknown as OpenTrade;
-    expect(waveBBreakevenExitEligible(otLow, 0.05)).toBe(false);
-    const otGhostPeak = {
-      liveExitPolicyId: 'wave_b_v1',
-      liveWavePeakPnlFrac: 0.098,
-      ladderUsedLevels: new Set<number>(),
-      ladderUsedIndices: new Set<number>(),
-    } as unknown as OpenTrade;
-    expect(waveBBreakevenExitEligible(otGhostPeak, 0.05)).toBe(false);
-    const otOk = {
-      liveExitPolicyId: 'wave_b_v1',
-      ladderUsedLevels: new Set([0.075]),
-      ladderUsedIndices: new Set([1]),
-    } as unknown as OpenTrade;
-    expect(waveBBreakevenExitEligible(otOk, 0.025)).toBe(true);
+    expect(waveBBreakevenExitEligible(otPreArm, 0.025)).toBe(true);
+    expect(waveBBreakevenExitEligible({ liveExitPolicyId: 'legacy_grid' } as OpenTrade, 0.025)).toBe(
+      false,
+    );
   });
 
   it('waveBMaybeResetTpImpulse full clear below +2.5% re-arms all rungs', () => {
@@ -287,8 +279,8 @@ describe('exit-policy-wave-b', () => {
   it('waveBBreakevenExitEligible stays true after impulse reset clears ladder marks', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
-      ladderUsedLevels: new Set([0.025, 0.05]),
-      ladderUsedIndices: new Set([0]),
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set<number>(),
       liveWaveMaxExecutedTpFrac: 0.075,
     } as unknown as OpenTrade;
     expect(waveBBreakevenExitEligible(ot, 0.025)).toBe(true);
