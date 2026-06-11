@@ -32,7 +32,7 @@ export function twapShortMaxMinutesExclusive(): number {
 }
 
 export function twapShortMinMinutes(): number {
-  return envInt('HL_TWAP_SHORT_MIN_MINUTES', 6, 1);
+  return envInt('HL_TWAP_SHORT_MIN_MINUTES', 9, 1);
 }
 
 /** Legacy short lane (<15m). In unrestricted mode use {@link isMicroTwapMinutes} instead. */
@@ -42,9 +42,9 @@ export function isShortTwapMinutes(minutes: number): boolean {
   return mins >= twapShortMinMinutes() && mins < twapShortMaxMinutesExclusive();
 }
 
-/** Micro TWAP lower bound inclusive (default 6m → skip ≤5m ultra-short lane). */
+/** Micro TWAP lower bound inclusive (default 9m → skip <9m ultra-short lane). */
 export function twapMicroMinMinutesInclusive(): number {
-  return envInt('HL_TWAP_MICRO_MIN_MINUTES', 6, 1);
+  return envInt('HL_TWAP_MICRO_MIN_MINUTES', 9, 1);
 }
 
 /** Micro TWAP upper bound inclusive (default 15m). Gradual multi-slice exit only. */

@@ -16,11 +16,11 @@ describe('twap-duration', () => {
     process.env = { ...envBackup };
   });
 
-  it('short lane: 6–14m allowed, 5m and 15m blocked, 16+ standard', () => {
-    expect(twapDurationGate(5).allow).toBe(false);
-    expect(twapDurationGate(5).reason).toBe('twap_too_short');
-    expect(twapDurationGate(6).allow).toBe(true);
-    expect(twapDurationGate(6).reason).toBe('ok_short');
+  it('short lane: 9–14m allowed, 8m and 15m blocked, 16+ standard', () => {
+    expect(twapDurationGate(8).allow).toBe(false);
+    expect(twapDurationGate(8).reason).toBe('twap_too_short');
+    expect(twapDurationGate(9).allow).toBe(true);
+    expect(twapDurationGate(9).reason).toBe('ok_short');
     expect(twapDurationGate(14).allow).toBe(true);
     expect(twapDurationGate(15).allow).toBe(false);
     expect(twapDurationGate(15).reason).toBe('twap_too_short');
