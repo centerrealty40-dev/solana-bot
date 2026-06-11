@@ -46,7 +46,7 @@ import {
   clampLiveTrackerMtmForExit,
   waveBRecoverPhantomPeakIfNeeded,
   waveBUpdatePreArmReached,
-  waveBPreArmKillEligible,
+  waveBAbsoluteKillEligible,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
   waveBAdjustSellFractionForRemainder,
@@ -3109,16 +3109,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
-      const preArmKill = waveBPreArmKillEligible(ot, killEff, curMetric);
+      const waveBKill =
+        isWaveBExitPolicy(ot) &&
+        killEff < 0 &&
+        waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
       const classicKill =
         !isWaveBExitPolicy(ot) &&
         !ot.liveStagedEntry &&
         killEff < 0 &&
         pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
-        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || preArmKill || classicKill);
+        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || waveBKill || classicKill);
       if (inKillTerritory) {
-        if (preArmKill) {
+        if (waveBKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
         } else {

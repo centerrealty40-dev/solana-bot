@@ -3,6 +3,7 @@ import type { OpenTrade } from '../src/papertrader/types.js';
 import {
   waveBPreArmKillEligible,
   waveBUpdatePreArmReached,
+  waveBAbsoluteKillEligible,
   WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC,
 } from '../src/papertrader/executor/exit-policy-wave-b.js';
 import { stampLiveOscarExitPolicyOnOpen } from '../src/papertrader/executor/exit-policy-wave-b.js';
@@ -67,11 +68,12 @@ describe('wave B pre-arm kill', () => {
     expect(waveBPreArmKillEligible(ot, -0.09, 0.92)).toBe(false);
   });
 
-  it('disables kill after +7.5% market touch', () => {
+  it('disables pre-arm kill after +7.5% but absolute −9% floor remains', () => {
     const ot = waveBOpen(1);
     const armPx = 1 * (1 + WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC);
     waveBUpdatePreArmReached(ot, armPx);
     expect(ot.liveWavePreArmReached).toBe(true);
     expect(waveBPreArmKillEligible(ot, -0.09, 0.85)).toBe(false);
+    expect(waveBAbsoluteKillEligible(ot, -0.09, 0.9, -0.095)).toBe(true);
   });
 });
