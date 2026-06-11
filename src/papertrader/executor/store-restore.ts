@@ -352,6 +352,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveBreakevenTrimDone)) {
       ot.liveBreakevenTrimDone = true;
     }
+    if (Boolean(rawPayload.liveWaveBreakevenInsuranceTaken)) {
+      ot.liveWaveBreakevenInsuranceTaken = true;
+    }
     const ltve = rawPayload.liveThinVolEntryVol5mUsd;
     if (typeof ltve === 'number' && Number.isFinite(ltve) && ltve > 0) ot.liveThinVolEntryVol5mUsd = ltve;
     const ltvs = rawPayload.liveThinVolStreak;
@@ -448,6 +451,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'BREAKEVEN_TRIM') {
     ot.liveBreakevenTrimDone = true;
+  }
+  if (reason === 'WAVE_B_BREAKEVEN_INSURANCE') {
+    ot.liveWaveBreakevenInsuranceTaken = true;
   }
   if (reason === 'TRAIL_STEP' && Number.isFinite(lp)) {
     waveBMarkTrailLevelTaken(ot, lp);

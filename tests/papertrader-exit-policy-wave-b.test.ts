@@ -23,6 +23,8 @@ import {
   waveBAdjustSellFractionForRemainder,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
+  waveBFirstTwoTpRungsTaken,
+  waveBBreakevenInsuranceEligible,
   waveBMaybeResetTpImpulse,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC,
@@ -274,6 +276,58 @@ describe('exit-policy-wave-b', () => {
       liveWaveMaxExecutedTpFrac: 0.075,
     } as unknown as OpenTrade;
     expect(waveBBreakevenExitEligible(ot, 0.025)).toBe(true);
+  });
+
+  it('waveBFirstTwoTpRungsTaken requires +2.5% and +5% rungs', () => {
+    const step = 0.025;
+    const otOne = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedIndices: new Set([0]),
+      ladderUsedLevels: new Set<number>(),
+    } as unknown as OpenTrade;
+    expect(waveBFirstTwoTpRungsTaken(otOne, step)).toBe(false);
+
+    const otTwo = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedIndices: new Set([0, 1]),
+      ladderUsedLevels: new Set<number>(),
+    } as unknown as OpenTrade;
+    expect(waveBFirstTwoTpRungsTaken(otTwo, step)).toBe(true);
+
+    const otLevels = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedIndices: new Set<number>(),
+      ladderUsedLevels: new Set([0.025, 0.05]),
+    } as unknown as OpenTrade;
+    expect(waveBFirstTwoTpRungsTaken(otLevels, step)).toBe(true);
+  });
+
+  it('waveBBreakevenInsuranceEligible after first two TPs and before +7.5% gate', () => {
+    const step = 0.025;
+    const eligible = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedIndices: new Set([0, 1]),
+      ladderUsedLevels: new Set([0.025, 0.05]),
+      liveWaveMaxExecutedTpFrac: 0.05,
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenInsuranceEligible(eligible, step)).toBe(true);
+
+    const alreadyTaken = { ...eligible, liveWaveBreakevenInsuranceTaken: true } as OpenTrade;
+    expect(waveBBreakevenInsuranceEligible(alreadyTaken, step)).toBe(false);
+
+    const pastFullExitGate = {
+      ...eligible,
+      liveWaveMaxExecutedTpFrac: 0.075,
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenInsuranceEligible(pastFullExitGate, step)).toBe(false);
+
+    const onlyFirst = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedIndices: new Set([0]),
+      ladderUsedLevels: new Set([0.025]),
+      liveWaveMaxExecutedTpFrac: 0.025,
+    } as unknown as OpenTrade;
+    expect(waveBBreakevenInsuranceEligible(onlyFirst, step)).toBe(false);
   });
 
   it('wave B no-avg profile: escalating sell per +2.5% rung', () => {

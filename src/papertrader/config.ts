@@ -613,6 +613,16 @@ const ConfigSchema = z.object({
   liveOscarBreakevenTrimFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
 
   /**
+   * Wave B (`wave_b_v1`): after first two TP rungs (+2.5% / +5%) taken, if PnL returns to ≤ threshold
+   * (default 0% vs avg), sell `liveOscarWaveBBreakevenInsuranceFraction` of remainder once.
+   * Env: `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_*`.
+   */
+  liveOscarWaveBBreakevenInsuranceEnabled: z.boolean().default(false),
+  liveOscarWaveBBreakevenInsuranceFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
+  /** Max PnL fraction vs avg to fire insurance (0 = at/below breakeven). */
+  liveOscarWaveBBreakevenInsurancePnlFrac: z.coerce.number().min(-0.05).max(0.05).default(0),
+
+  /**
    * Variant A v2: after ≥1 TP, thin market (vol5m) + peak/current PnL gates → flush remainder.
    * Env: `PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED`.
    */
@@ -1221,6 +1231,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       false,
     ),
     liveOscarBreakevenTrimFraction: process.env.PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION,
+    liveOscarWaveBBreakevenInsuranceEnabled: envBool(
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED,
+      false,
+    ),
+    liveOscarWaveBBreakevenInsuranceFraction:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION,
+    liveOscarWaveBBreakevenInsurancePnlFrac:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC,
     liveOscarThinVolExitEnabled: envBool(process.env.PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED, false),
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,

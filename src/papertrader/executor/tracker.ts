@@ -51,6 +51,7 @@ import {
   waveBRemainderValueNetUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
+  waveBBreakevenInsuranceEligible,
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
@@ -957,6 +958,79 @@ async function tryWaveBTrailPartialSells(args: {
       : `Live Oscar wave B · trail −${(tgEff.stepPnl * 100).toFixed(1)}% от хая (+${(level * 100).toFixed(1)}% PnL) · ${(sellFraction * 100).toFixed(0)}% остатка`,
   });
   void r;
+}
+
+/** Wave B: after first two TP rungs (+2.5% / +5%), one insurance peel at breakeven (≤0% vs avg). */
+async function tryWaveBBreakevenInsurance(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  tgEff: TpGridEffective;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    tgEff,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (
+    cfg.strategyId !== 'live-oscar' ||
+    !cfg.liveOscarWaveBBreakevenInsuranceEnabled ||
+    !isWaveBExitPolicy(ot) ||
+    ot.liveWaveBreakevenInsuranceTaken ||
+    ot.remainingFraction <= 1e-9 ||
+    !(ot.avgEntry > 0) ||
+    !(curMetric > 0)
+  ) {
+    return;
+  }
+  const pnlFrac = xAvg - 1;
+  const pnlThreshold = cfg.liveOscarWaveBBreakevenInsurancePnlFrac;
+  if (pnlFrac > pnlThreshold + LADDER_PNL_EPS) return;
+  if (!waveBBreakevenInsuranceEligible(ot, tgEff.stepPnl)) return;
+
+  const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarWaveBBreakevenInsuranceFraction));
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBAdjustSellFractionForRemainder(remainingValueNet, trimFrac, cfg);
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {},
+    logLabelPct: `wave-b-insurance-${(trimFrac * 100).toFixed(0)}pct-at-breakeven`,
+    partialReason: 'WAVE_B_BREAKEVEN_INSURANCE',
+    timelineLabelRu:
+      'Live Oscar wave B · после +2.5%/+5% TP откат к безубытку — страховка ' +
+      `${(trimFrac * 100).toFixed(0)}% остатка`,
+  });
+  if (r === 'ok') {
+    ot.liveWaveBreakevenInsuranceTaken = true;
+  }
 }
 
 /** Variant A v3: scratch flush @0% avg (or gap @ avg) after ≥1 TP; dust flush <$100. */
@@ -2807,6 +2881,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.liveBreakevenTrimDone = true;
       }
     }
+
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    await tryWaveBBreakevenInsurance({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      tgEff,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
 
     /** Same tick as 2nd partial TP: peak block ran before `partialSells` grew — arm peak trailing if still at ATH. */
     if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0) {

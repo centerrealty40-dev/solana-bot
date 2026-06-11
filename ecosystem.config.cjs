@@ -638,6 +638,10 @@ const PM2_APPS = [
         PAPER_TIMEOUT_HOURS: '48',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
+        /** Wave B: after +2.5%/+5% TP rungs, peel 50% of remainder once at breakeven rollback. */
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION: '0.5',
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC: '0',
         /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
         PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
         /** Wave B on for new opens — escalating TP ladder (+2.5% steps). Variant A off. */

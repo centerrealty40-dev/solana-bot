@@ -128,6 +128,7 @@ export interface PartialSell {
   reason:
     | 'TP_LADDER'
     | 'BREAKEVEN_TRIM'
+    | 'WAVE_B_BREAKEVEN_INSURANCE'
     | 'TRAIL_STEP'
     | 'TRAIL'
     | 'TIMEOUT'
@@ -275,6 +276,11 @@ export interface OpenTrade {
    * Live Oscar: после частичного выхода «у безубытка» после первой TP (`BREAKEVEN_TRIM`) — не повторять.
    */
   liveBreakevenTrimDone?: boolean;
+
+  /**
+   * Wave B: одноразовая страховка при откате к безубытку после первых двух TP (+2.5% / +5%).
+   */
+  liveWaveBreakevenInsuranceTaken?: boolean;
 
   /** Variant A v2 thin-volume flush: `volume_5m` at entry (PG snapshot). */
   liveThinVolEntryVol5mUsd?: number;
