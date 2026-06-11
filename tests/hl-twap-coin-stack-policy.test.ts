@@ -28,7 +28,7 @@ import { computeTwapSchedule } from '../src/hyperliquid/twap/twap-schedule.js';
 const stackCfg = {
   coinMaxLegs: 2,
   coinMaxGrossUsd: 12_000,
-  marginTiers: { lev3Usd: 1200, lev5Usd: 1000, lev7Usd: 800 },
+  marginTiers: { lev3Usd: 1500, lev5Usd: 1000, lev7Usd: 800 },
   leverageForCoin: () => 7,
 };
 

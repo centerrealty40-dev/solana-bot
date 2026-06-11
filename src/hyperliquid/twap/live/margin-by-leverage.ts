@@ -31,7 +31,7 @@ export function marginTiersFromConfig(cfg: MarginByLevInput): MarginByLevTiers {
 
 /**
  * Entry collateral (USD) from effective leverage tier.
- * - ≤3× → lev3 (default $1200)
+ * - ≤3× → lev3 (default $1500 → gross $4500)
  * - 4–5× → lev5 (default $1000); 4× uses the 5× tier (between 3× and 7× buckets)
  * - ≥6× → lev7 (default $800)
  */

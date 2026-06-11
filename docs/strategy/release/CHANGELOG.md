@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.426] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.426`
+
+### HL TWAP live: 3× leverage entry margin $1500 (gross $4500)
+
+- **`HL_TWAP_LIVE_MARGIN_LEV3_USD`:** default **1500** (was 1200) when HL effective max leverage ≤3× → gross **≈ $4500**.
+- **5× / 7× tiers unchanged:** $1000 → $5000 gross; $800 → $5600 gross.
+- **`ecosystem.config.cjs`:** explicit `MARGIN_LEV3/5/7` in `HL_TWAP_LIVE_ENV`.
+
+**Откат:** `HL_TWAP_LIVE_MARGIN_LEV3_USD=1200`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.425] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.425`

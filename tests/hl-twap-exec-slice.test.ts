@@ -199,7 +199,7 @@ describe('exec-sliced dry-run client', () => {
         coin: 'GRASS',
         displaySymbol: 'GRASS',
         side: 'sell',
-        notionalUsd: 1200,
+        notionalUsd: 1500,
         markPx: 1,
         reduceOnly: false,
         intent: 'open',
@@ -207,9 +207,9 @@ describe('exec-sliced dry-run client', () => {
       cfg,
     );
 
-    expect(innerCalls).toBe(18);
-    expect(fill.notionalUsd).toBeCloseTo(3600, 0);
-    expect(fill.requestedNotionalUsd).toBeCloseTo(3600, 0);
+    expect(innerCalls).toBe(23);
+    expect(fill.notionalUsd).toBeCloseTo(4500, 0);
+    expect(fill.requestedNotionalUsd).toBeCloseTo(4500, 0);
     expect(isOpenFillAcceptable(fill.notionalUsd, fill.requestedNotionalUsd ?? 5600)).toBe(true);
   });
 

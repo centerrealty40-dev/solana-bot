@@ -84,7 +84,7 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     mode,
     privateKey,
     notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 800)),
-    marginLev3Usd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_LEV3_USD', 1200)),
+    marginLev3Usd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_LEV3_USD', 1500)),
     marginLev5Usd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_LEV5_USD', 1000)),
     marginLev7Usd: Math.max(
       1,
