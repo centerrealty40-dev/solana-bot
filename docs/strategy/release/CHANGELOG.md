@@ -38,7 +38,21 @@
 
 ---
 
-## [1.11.424] — 2026-06-11
+## [1.11.425] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.425`
+
+### hl-twap: skip TWAPs < 9 minutes
+
+- **`twap-duration.ts`:** `HL_TWAP_MICRO_MIN_MINUTES=9`, `HL_TWAP_SHORT_MIN_MINUTES=9` — block whale TWAPs shorter than 9m in unrestricted + short lane gates (`twap_too_short`).
+- **`ecosystem.config.cjs`:** prod `HL_TWAP_MICRO_MIN_MINUTES=9`, `HL_TWAP_SHORT_MIN_MINUTES=9`.
+- **Tests:** duration + unrestricted gates updated for 9m floor.
+- **Analysis:** `scripts-tmp/hl-twap-impact-threshold-backtest.ts` — impact distribution + 2%/4%/5% counterfactual on clean backtest trades.
+
+**Откат:** revert merge → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`; set `HL_TWAP_MICRO_MIN_MINUTES=6` to restore prior 6m floor.
+
+---
+
 
 **Тег:** `sa-alpha-1.11.424`
 

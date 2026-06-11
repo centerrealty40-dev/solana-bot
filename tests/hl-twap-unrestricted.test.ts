@@ -49,11 +49,11 @@ describe('hl-twap unrestricted', () => {
     ended: null,
   });
 
-  it('blocks ≤5m; allows 6–15m micro and standard long TWAPs', () => {
-    expect(twapDurationGate(5).allow).toBe(false);
-    expect(twapDurationGate(5).reason).toBe('twap_too_short');
-    expect(twapDurationGate(6).allow).toBe(true);
-    expect(twapDurationGate(6).reason).toBe('ok_micro');
+  it('blocks <9m; allows 9–15m micro and standard long TWAPs', () => {
+    expect(twapDurationGate(8).allow).toBe(false);
+    expect(twapDurationGate(8).reason).toBe('twap_too_short');
+    expect(twapDurationGate(9).allow).toBe(true);
+    expect(twapDurationGate(9).reason).toBe('ok_micro');
     expect(twapDurationGate(15).allow).toBe(true);
     expect(twapDurationGate(15).reason).toBe('ok_micro');
     expect(twapDurationGate(1440).allow).toBe(true);
@@ -61,11 +61,11 @@ describe('hl-twap unrestricted', () => {
   });
 
   it('gradual exit slices by duration: ≤5m→2, 6–15m→2, >15m→3; entry always 1 slice', () => {
-    expect(isMicroTwapMinutes(5)).toBe(false);
-    expect(isMicroTwapMinutes(6)).toBe(true);
+    expect(isMicroTwapMinutes(8)).toBe(false);
+    expect(isMicroTwapMinutes(9)).toBe(true);
     expect(isMicroTwapMinutes(15)).toBe(true);
     expect(shouldUseMicroExecution(15)).toBe(true);
-    expect(shouldUseMicroExecution(5)).toBe(false);
+    expect(shouldUseMicroExecution(8)).toBe(false);
     expect(twapExitSliceCount(5)).toBe(2);
     expect(twapExitSliceCount(15)).toBe(2);
     expect(twapExitSliceCount(16)).toBe(3);
@@ -81,11 +81,11 @@ describe('hl-twap unrestricted', () => {
   });
 
   it('computeCoinEntryPlan requires hourly impact ≥ min (only gate in unrestricted)', () => {
-    const blockedShort = computeCoinEntryPlan(sig(5), { activeByHash: new Map() }, 2);
+    const blockedShort = computeCoinEntryPlan(sig(8), { activeByHash: new Map() }, 2);
     expect(blockedShort.allow).toBe(false);
     expect(blockedShort.reason).toBe('twap_too_short');
 
-    const plan = computeCoinEntryPlan(sig(6), { activeByHash: new Map() }, 2);
+    const plan = computeCoinEntryPlan(sig(9), { activeByHash: new Map() }, 2);
     expect(plan.allow).toBe(true);
     expect(plan.reason).toBe('ok_micro');
 
@@ -99,7 +99,7 @@ describe('hl-twap unrestricted', () => {
     process.env.HL_TWAP_WHALE_DENYLIST = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
     process.env.HL_TWAP_BTC_ALIGNED_GATE = '1';
     process.env.HL_TWAP_COIN_MOMENTUM_GATE = '1';
-    const decision = canScheduleLiveEntry(sig(6), { activeByHash: new Map() }, new Map(), 2);
+    const decision = canScheduleLiveEntry(sig(9), { activeByHash: new Map() }, new Map(), 2);
     expect(decision.allow).toBe(true);
   });
 
