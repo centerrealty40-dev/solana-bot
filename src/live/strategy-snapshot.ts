@@ -69,6 +69,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveWaveMaxExecutedTpFrac: ot.liveWaveMaxExecutedTpFrac }
       : {}),
     ...(ot.liveWavePreArmReached === true ? { liveWavePreArmReached: true } : {}),
+    ...(ot.liveWaveImpulseBelowFirstRung === true ? { liveWaveImpulseBelowFirstRung: true } : {}),
     ...(typeof ot.liveWavePeakPnlFrac === 'number' && Number.isFinite(ot.liveWavePeakPnlFrac)
       ? { liveWavePeakPnlFrac: ot.liveWavePeakPnlFrac }
       : {}),

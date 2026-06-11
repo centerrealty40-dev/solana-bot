@@ -106,6 +106,18 @@ export function waveBPreArmKillEligible(ot: OpenTrade, killFrac: number, marketP
   if (ot.liveWavePreArmReached === true) return false;
   return waveBMarketPnlFrac(ot, marketPx) <= killFrac + 1e-9;
 }
+
+/** Hard floor −9% (market and avg) — always, including after +7.5% touch. */
+export function waveBAbsoluteKillEligible(
+  ot: OpenTrade,
+  killFrac: number,
+  marketPx: number,
+  pnlFracAvg: number,
+): boolean {
+  if (!isWaveBExitPolicy(ot) || !(killFrac < 0)) return false;
+  if (waveBMarketPnlFrac(ot, marketPx) <= killFrac + 1e-9) return true;
+  return pnlFracAvg <= killFrac + 1e-9;
+}
 /** Pullback at/below this level re-opens TP rungs (full or partial reset). */
 export const WAVE_B_TP_IMPULSE_RESET_PNL_FRAC = 0.025;
 /** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +7.5%. */
@@ -259,15 +271,35 @@ export function waveBClearAllTpLadderMarks(ot: OpenTrade, pnlFrac?: number): boo
 }
 
 /**
- * Pullback reset for re-taking TP rungs on rally.
- * - Strictly below +2.5% after any TP: full clear (+2.5% / +5% / … re-arm).
- * - At/below +2.5% after +7.5% gate: partial clear (rungs above +2.5% only).
+ * Pre +7.5% oscillation cycles: re-arm TP ladder + insurance on each rally from below +2.5%.
+ * Deep red dip (<0%): clear marks immediately; at 0% keep marks for insurance peel.
+ */
+export function waveBUpdatePreArmImpulseCycle(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(stepPnl > 0) || ot.liveWavePreArmReached === true) return false;
+  let changed = false;
+  if (pnlFrac + LADDER_PNL_EPS < stepPnl) {
+    ot.liveWaveImpulseBelowFirstRung = true;
+    const executedMarks = waveBExecutedTpGridThresholdFromMarks(ot, stepPnl);
+    if (executedMarks > 0 && pnlFrac + LADDER_PNL_EPS < 0) {
+      changed = waveBClearAllTpLadderMarks(ot, pnlFrac) || changed;
+    }
+  } else if (ot.liveWaveImpulseBelowFirstRung === true) {
+    ot.liveWaveImpulseBelowFirstRung = false;
+    ot.liveWaveBreakevenInsuranceTaken = false;
+    if (waveBExecutedTpGridThresholdFromMarks(ot, stepPnl) > 0) {
+      changed = waveBClearAllTpLadderMarks(ot, pnlFrac) || changed;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Post +7.5%: at/below +2.5% partial clear (rungs above +2.5% only).
  */
 export function waveBMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;
-  const executedMarks = waveBExecutedTpGridThresholdFromMarks(ot, stepPnl);
-  if (executedMarks > 0 && pnlFrac + LADDER_PNL_EPS < stepPnl) {
-    return waveBClearAllTpLadderMarks(ot, pnlFrac);
+  if (ot.liveWavePreArmReached !== true) {
+    return waveBUpdatePreArmImpulseCycle(ot, pnlFrac, stepPnl);
   }
   const highest = waveBHighestTpGridThresholdTaken(ot, stepPnl);
   if (highest + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC) return false;

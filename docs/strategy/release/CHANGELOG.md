@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.433] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.433`
+
+### Live Oscar Wave B — oscillation cycles, −9% hard floor
+
+- **Pre +7.5%:** каждый цикл «вниз &lt; +2.5% → вверх» заново берёт TP (+2.5%/+5%) и **insurance 50%** на 0%; на красном дипе (&lt;0%) метки сбрасываются сразу.
+- **Пол −9%:** `waveBAbsoluteKillEligible` (market + avg) всегда, в т.ч. после +7.5%; ниже −9% не держим.
+- **Post +7.5%:** trail + BREAKEVEN_EXIT на 0%; partial reset лестницы на откате к +2.5%.
+
+**Откат:** `git checkout sa-alpha-1.11.432 -- src/papertrader/ src/live/strategy-snapshot.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.432] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.432`

@@ -26,6 +26,9 @@ import {
   waveBFirstTwoTpRungsTaken,
   waveBBreakevenInsuranceEligible,
   waveBMaybeResetTpImpulse,
+  waveBUpdatePreArmImpulseCycle,
+  waveBAbsoluteKillEligible,
+  waveBPreArmKillEligible,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC,
 } from '../src/papertrader/executor/exit-policy-wave-b.js';
@@ -257,22 +260,38 @@ describe('exit-policy-wave-b', () => {
     expect(waveBBreakevenExitEligible(otTp75, 0.025)).toBe(true);
   });
 
-  it('waveBMaybeResetTpImpulse full clear below +2.5% re-arms all rungs', () => {
+  it('waveBUpdatePreArmImpulseCycle keeps marks at 0% for insurance, clears on rally', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
-      ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
-      ladderUsedIndices: new Set([0, 1, 2, 3]),
-      liveWaveMaxExecutedTpFrac: 0.075,
+      ladderUsedLevels: new Set([0.025, 0.05]),
+      ladderUsedIndices: new Set([0, 1]),
+      liveWaveBreakevenInsuranceTaken: true,
     } as unknown as OpenTrade;
-    expect(waveBMaybeResetTpImpulse(ot, 0.02, 0.025)).toBe(true);
+    waveBUpdatePreArmImpulseCycle(ot, 0, 0.025);
+    expect(ot.liveWaveImpulseBelowFirstRung).toBe(true);
+    expect(ot.ladderUsedLevels.size).toBe(2);
+    expect(ot.liveWaveBreakevenInsuranceTaken).toBe(true);
+    waveBUpdatePreArmImpulseCycle(ot, 0.03, 0.025);
+    expect(ot.liveWaveImpulseBelowFirstRung).toBe(false);
+    expect(ot.liveWaveBreakevenInsuranceTaken).toBe(false);
     expect(ot.ladderUsedLevels.size).toBe(0);
-    expect(ot.ladderUsedIndices.size).toBe(0);
-    expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.075);
+  });
+
+  it('waveBUpdatePreArmImpulseCycle clears marks on red dip below 0%', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      ladderUsedLevels: new Set([0.025, 0.05]),
+      ladderUsedIndices: new Set([0, 1]),
+    } as unknown as OpenTrade;
+    expect(waveBUpdatePreArmImpulseCycle(ot, -0.07, 0.025)).toBe(true);
+    expect(ot.ladderUsedLevels.size).toBe(0);
+    expect(ot.liveWaveImpulseBelowFirstRung).toBe(true);
   });
 
   it('waveBMaybeResetTpImpulse partial clear at +2.5% after +7.5% gate', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
+      liveWavePreArmReached: true,
       ladderUsedLevels: new Set([0.025, 0.05, 0.075, 0.1]),
       ladderUsedIndices: new Set([0, 1, 2, 3]),
       liveWaveMaxExecutedTpFrac: 0.075,
@@ -414,6 +433,17 @@ describe('exit-policy-wave-b', () => {
   it('defensive arm and pre-arm kill-off threshold is +7.5%', () => {
     expect(WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC).toBe(0.075);
     expect(WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC).toBe(0.075);
+  });
+
+  it('waveBAbsoluteKillEligible fires at −9% even after +7.5% pre-arm', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      avgEntryMarket: 1,
+      legs: [{ price: 1, marketPrice: 1, sizeUsd: 500, reason: 'open' }],
+      liveWavePreArmReached: true,
+    } as unknown as OpenTrade;
+    expect(waveBPreArmKillEligible(ot, -0.09, 0.9)).toBe(false);
+    expect(waveBAbsoluteKillEligible(ot, -0.09, 0.9, -0.1)).toBe(true);
   });
 
   it('waveBClearAllTpLadderMarks re-arms +2.5%/+5% after pullback below first rung', () => {
