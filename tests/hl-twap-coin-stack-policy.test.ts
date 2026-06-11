@@ -9,6 +9,18 @@ import {
   evaluateCoinStackEntry,
   hourlyImpactForSignal,
 } from '../src/hyperliquid/twap/live/coin-stack-policy.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import {
+  appendLiveJournal,
+  journalOpenRow,
+  loadLiveOpensFromJournal,
+  loadPendingLiveSchedules,
+} from '../src/hyperliquid/twap/live/journal.js';
+import { performCoinStackReanchor } from '../src/hyperliquid/twap/live/live-trader.js';
+import { loadHlTwapLiveConfig } from '../src/hyperliquid/twap/live/config.js';
 import type { HlTwapLiveOpen } from '../src/hyperliquid/twap/live/types.js';
 import type { NormalizedTwapSignal } from '../src/hyperliquid/twap/types.js';
 import { computeTwapSchedule } from '../src/hyperliquid/twap/twap-schedule.js';
@@ -100,7 +112,7 @@ describe('evaluateCoinStackEntry', () => {
     expect(d.reason).toBe('coin_stack_full_weaker_signal');
   });
 
-  it('blocks third signal even when steeper (no triple-stack; re-anchor only)', () => {
+  it('requests re-anchor when third signal beats weakest leg (no triple-stack)', () => {
     const state = createTwapWatchState();
     const opens = new Map<string, HlTwapLiveOpen>([
       ['0xa', open('0xa', 8, 2800)],
@@ -112,7 +124,8 @@ describe('evaluateCoinStackEntry', () => {
     state.activeByHash.set('0xc', steep);
     const d = evaluateCoinStackEntry(steep, 'buy', opens, new Map(), state, stackCfg);
     expect(d.allow).toBe(false);
-    expect(d.reason).toBe('coin_stack_full');
+    expect(d.reason).toBe('coin_stack_reanchor');
+    expect(d.reanchor).toEqual({ targetHash: '0xb', slot: 'open' });
   });
 
   it('blocks gross cap when second leg would exceed max book gross', () => {
@@ -155,6 +168,53 @@ describe('bookDriverCloseAtMs', () => {
 
     const closeAt = bookDriverCloseAtMs('ENA', 'buy', legs, state);
     expect(closeAt).toBe(computeTwapSchedule(steep).paperCloseAtMs);
+  });
+});
+
+describe('performCoinStackReanchor', () => {
+  it('rewrites open leg hash and whale metadata in journal', () => {
+    const journalPath = path.join(os.tmpdir(), `hl-twap-reanchor-${Date.now()}.jsonl`);
+    const cfg = { ...loadHlTwapLiveConfig(), journalPath };
+    const weakOpen = open('0xb', 4, 3500);
+    appendLiveJournal(journalPath, journalOpenRow(weakOpen));
+    const steep = sig('0xc', 'buy', 12, 15);
+    performCoinStackReanchor(steep, { targetHash: '0xb', slot: 'open' }, cfg, Date.now());
+    const opens = loadLiveOpensFromJournal(journalPath);
+    expect(opens.has('0xb')).toBe(false);
+    const leg = opens.get('0xc');
+    expect(leg?.whaleUser).toBe(steep.user);
+    expect(leg?.minutes).toBe(15);
+    fs.unlinkSync(journalPath);
+  });
+
+  it('rewrites pending schedule hash in journal', () => {
+    const journalPath2 = path.join(os.tmpdir(), `hl-twap-reanchor-p2-${Date.now()}.jsonl`);
+    const cfg2 = { ...loadHlTwapLiveConfig(), journalPath: journalPath2 };
+    appendLiveJournal(
+      journalPath2,
+      {
+        kind: 'schedule',
+        ts: 1,
+        hash: '0xb',
+        openAtMs: 1,
+        closeAtMs: 2,
+        twapStartMs: 1,
+        coin: 'ENA',
+        displaySymbol: 'ENA',
+        side: 'buy',
+        whaleUser: '0x2',
+        minutes: 30,
+        impactPct: 4,
+        whaleNotionalUsd: 1,
+        whaleSize: 1,
+      },
+    );
+    const steep = sig('0xc', 'buy', 12, 15);
+    performCoinStackReanchor(steep, { targetHash: '0xb', slot: 'pending' }, cfg2, 99);
+    const pending = loadPendingLiveSchedules(journalPath2);
+    expect(pending.has('0xb')).toBe(false);
+    expect(pending.get('0xc')?.minutes).toBe(15);
+    fs.unlinkSync(journalPath2);
   });
 });
 

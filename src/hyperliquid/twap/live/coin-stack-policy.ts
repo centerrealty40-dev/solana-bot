@@ -17,9 +17,15 @@ export type CoinStackConfig = Pick<HlTwapLiveConfig, 'coinMaxLegs' | 'coinMaxGro
   leverageForCoin: (coin: string) => number;
 };
 
+export type CoinStackReanchorTarget = {
+  targetHash: string;
+  slot: 'open' | 'pending';
+};
+
 export type CoinStackDecision = {
   allow: boolean;
   reason: string;
+  reanchor?: CoinStackReanchorTarget;
 };
 
 export function stackCfgFromLiveConfig(
@@ -87,19 +93,55 @@ export function coinSideStackSlots(
   return slots;
 }
 
-function weakestOpenImpact(
+export function hourlyImpactForPending(
+  sched: JournalSchedule,
+  watchState: TwapWatchState,
+): number {
+  const sig = watchState.activeByHash.get(sched.hash);
+  if (sig) return hourlyImpactForSignal(sig);
+  return sched.impactPct ?? 0;
+}
+
+/** Weakest journal slot on coin+side (open or pending schedule). */
+export function findWeakestStackSlot(
   coin: string,
   side: TwapSide,
   opens: Map<string, HlTwapLiveOpen>,
+  pending: Map<string, JournalSchedule>,
   watchState: TwapWatchState,
-): number | null {
-  let weakest: number | null = null;
+): CoinStackReanchorTarget & { impact: number } | null {
+  let weakest: { targetHash: string; slot: 'open' | 'pending'; impact: number } | null = null;
+
   for (const p of opens.values()) {
     if (p.coin !== coin || p.side !== side) continue;
     const impact = hourlyImpactForOpen(p, watchState);
-    if (weakest == null || impact < weakest) weakest = impact;
+    if (!weakest || impact < weakest.impact) {
+      weakest = { targetHash: p.hash, slot: 'open', impact };
+    }
   }
+
+  for (const s of pending.values()) {
+    if (s.coin !== coin || s.side !== side) continue;
+    const impact = hourlyImpactForPending(s, watchState);
+    if (!weakest || impact < weakest.impact) {
+      weakest = { targetHash: s.hash, slot: 'pending', impact };
+    }
+  }
+
   return weakest;
+}
+
+export function pendingBookGrossUsd(
+  coin: string,
+  side: TwapSide,
+  pending: Map<string, JournalSchedule>,
+  cfg: CoinStackConfig,
+): number {
+  let sum = 0;
+  for (const s of pending.values()) {
+    if (s.coin === coin && s.side === side) sum += newLegGrossUsd(cfg, s.coin);
+  }
+  return sum;
 }
 
 /** Max journal legs + gross cap per coin+side book. No triple-stack (exchange is one net position). */
@@ -118,21 +160,32 @@ export function evaluateCoinStackEntry(
 
   const newGross = newLegGrossUsd(cfg, sig.coin);
   const currentGross = bookGrossUsd(sig.coin, entrySide, opens);
-
-  if (currentGross + newGross > cfg.coinMaxGrossUsd) {
-    return { allow: false, reason: 'coin_stack_gross_cap' };
-  }
+  const scheduledGross = pendingBookGrossUsd(sig.coin, entrySide, pending, cfg);
 
   if (slots.length < cfg.coinMaxLegs) {
+    if (currentGross + scheduledGross + newGross > cfg.coinMaxGrossUsd) {
+      return { allow: false, reason: 'coin_stack_gross_cap' };
+    }
     return { allow: true, reason: 'coin_stack_ok' };
   }
 
+  if (currentGross > cfg.coinMaxGrossUsd) {
+    return { allow: false, reason: 'coin_stack_gross_cap' };
+  }
+
   const newImpact = hourlyImpactForSignal(sig);
-  const weakestImpact = weakestOpenImpact(sig.coin, entrySide, opens, watchState);
-  if (weakestImpact != null && newImpact <= weakestImpact) {
+  const weakest = findWeakestStackSlot(sig.coin, entrySide, opens, pending, watchState);
+  if (!weakest) {
+    return { allow: false, reason: 'coin_stack_full' };
+  }
+  if (newImpact <= weakest.impact) {
     return { allow: false, reason: 'coin_stack_full_weaker_signal' };
   }
-  return { allow: false, reason: 'coin_stack_full' };
+  return {
+    allow: false,
+    reason: 'coin_stack_reanchor',
+    reanchor: { targetHash: weakest.targetHash, slot: weakest.slot },
+  };
 }
 
 /** Best-impact journal leg (for logging / fallback). */

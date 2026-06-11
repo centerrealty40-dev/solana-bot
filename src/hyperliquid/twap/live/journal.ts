@@ -23,6 +23,26 @@ export type JournalSchedule = {
 
 type JournalScheduleCancel = { kind: 'schedule_cancel'; ts: number; hash: string; reason: string };
 
+/** Virtual leg transfer: worst journal slot re-anchors to a better TWAP (no exchange order). */
+export type JournalReanchor = {
+  kind: 'reanchor';
+  ts: number;
+  oldHash: string;
+  newHash: string;
+  coin: string;
+  displaySymbol: string;
+  side: TwapSide;
+  slot: 'open' | 'pending';
+  openAtMs: number;
+  closeAtMs: number;
+  twapStartMs: number;
+  whaleUser: string;
+  minutes: number;
+  impactPct: number | null;
+  whaleNotionalUsd: number | null;
+  whaleSize: number | null;
+};
+
 type JournalOpen = {
   kind: 'open';
   ts: number;
@@ -141,6 +161,7 @@ type JournalResidualFlatten = {
 export type LiveJournalRow =
   | JournalSchedule
   | JournalScheduleCancel
+  | JournalReanchor
   | JournalOpen
   | JournalTp
   | JournalDca
@@ -211,6 +232,23 @@ export function loadLiveOpensFromJournal(filePath: string): Map<string, HlTwapLi
       }
     } else if (ev.kind === 'close') {
       opens.delete(ev.hash);
+    } else if (ev.kind === 'reanchor' && ev.slot === 'open') {
+      const pos = opens.get(ev.oldHash);
+      if (pos) {
+        opens.delete(ev.oldHash);
+        opens.set(ev.newHash, {
+          ...pos,
+          hash: ev.newHash,
+          whaleUser: ev.whaleUser,
+          minutes: ev.minutes,
+          impactPct: ev.impactPct,
+          liveOpenAtMs: ev.openAtMs,
+          liveCloseAtMs: ev.closeAtMs,
+          twapStartMs: ev.twapStartMs,
+          whaleNotionalUsd: ev.whaleNotionalUsd,
+          whaleSize: ev.whaleSize,
+        });
+      }
     }
   }
   return opens;
@@ -263,6 +301,25 @@ export function loadPendingLiveSchedules(filePath: string): Map<string, JournalS
     if (ev.kind === 'schedule_cancel') cancelled.add(ev.hash);
     if (ev.kind === 'open' || ev.kind === 'close') opened.add(ev.hash);
     if (ev.kind === 'schedule') pending.set(ev.hash, ev);
+    if (ev.kind === 'reanchor' && ev.slot === 'pending') {
+      pending.delete(ev.oldHash);
+      pending.set(ev.newHash, {
+        kind: 'schedule',
+        ts: ev.ts,
+        hash: ev.newHash,
+        openAtMs: ev.openAtMs,
+        closeAtMs: ev.closeAtMs,
+        twapStartMs: ev.twapStartMs,
+        coin: ev.coin,
+        displaySymbol: ev.displaySymbol,
+        side: ev.side,
+        whaleUser: ev.whaleUser,
+        minutes: ev.minutes,
+        impactPct: ev.impactPct,
+        whaleNotionalUsd: ev.whaleNotionalUsd,
+        whaleSize: ev.whaleSize,
+      });
+    }
   }
   for (const h of cancelled) pending.delete(h);
   for (const h of opened) pending.delete(h);
@@ -273,6 +330,12 @@ export function journalScheduleRow(
   sched: Omit<JournalSchedule, 'kind' | 'ts'>,
 ): JournalSchedule {
   return { kind: 'schedule', ts: Date.now(), ...sched };
+}
+
+export function journalReanchorRow(
+  params: Omit<JournalReanchor, 'kind' | 'ts'>,
+): JournalReanchor {
+  return { kind: 'reanchor', ts: Date.now(), ...params };
 }
 
 export function journalOpenRow(pos: HlTwapLiveOpen): JournalOpen {

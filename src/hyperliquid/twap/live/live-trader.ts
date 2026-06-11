@@ -31,12 +31,17 @@ import {
   appendLiveJournal,
   journalDcaRow,
   journalOpenRow,
+  journalReanchorRow,
   journalScheduleRow,
   journalTpRow,
   loadLiveOpensFromJournal,
   loadPendingLiveSchedules,
   type JournalSchedule,
 } from './journal.js';
+import {
+  clearCoinSideOpenInFlight,
+  markCoinSideOpenInFlight,
+} from './live-exec-worker.js';
 import { notifyLiveTradeOpen } from './telegram-notify.js';
 import { isOpenFillAcceptable } from './parse-order-fill.js';
 import {
@@ -60,7 +65,11 @@ import {
 } from './coin-side-ladder.js';
 import {
   bookDriverCloseAtMs,
+  bookGrossUsd,
   dcaWouldExceedBookGrossCap,
+  newLegGrossUsd,
+  stackCfgFromLiveConfig,
+  type CoinStackReanchorTarget,
 } from './coin-stack-policy.js';
 import type { HlTwapLiveOpen } from './types.js';
 
@@ -114,6 +123,39 @@ async function reconcileJournalNotionalFromExchange(
   }
 }
 
+/** Virtual transfer: re-anchor worst journal leg to a better TWAP (no exchange order). */
+export function performCoinStackReanchor(
+  sig: NormalizedTwapSignal,
+  target: CoinStackReanchorTarget,
+  cfg: HlTwapLiveConfig,
+  openAtMs: number,
+): void {
+  const sched = computeTwapSchedule(sig);
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  appendLiveJournal(
+    cfg.journalPath,
+    journalReanchorRow({
+      oldHash: target.targetHash,
+      newHash: sig.hash,
+      coin: sig.coin,
+      displaySymbol: sig.displaySymbol,
+      side: entrySide,
+      slot: target.slot,
+      openAtMs,
+      closeAtMs: sched.paperCloseAtMs,
+      twapStartMs: sched.twapStartMs,
+      whaleUser: sig.user,
+      minutes: sig.minutes,
+      impactPct: sig.volumeSharePct,
+      whaleNotionalUsd: sig.notionalUsd,
+      whaleSize: sig.size,
+    }),
+  );
+  console.log(
+    `[hl-twap-live] re-anchor ${sig.displaySymbol} ${entrySide}: ${target.targetHash.slice(0, 12)}… → ${sig.hash.slice(0, 12)}… (${target.slot})`,
+  );
+}
+
 /** Schedule live entry after Telegram OPEN (same timing as paper). */
 export function scheduleLiveTrade(
   sig: NormalizedTwapSignal,
@@ -138,6 +180,13 @@ export function scheduleLiveTrade(
     leverageForCoin,
   );
   if (!decision.allow) {
+    if (decision.reason === 'coin_stack_reanchor' && decision.reanchor) {
+      const openAtMs =
+        decision.openAtMs ??
+        computeCoinEntryPlan(sig, watchState, cfg.minImpactPct).openAtMs;
+      performCoinStackReanchor(sig, decision.reanchor, cfg, openAtMs);
+      return { scheduled: true, reason: 'reanchored' };
+    }
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
   }
@@ -165,6 +214,30 @@ export function scheduleLiveTrade(
   return { scheduled: true, reason: 'ok' };
 }
 
+async function wouldExceedCoinGrossCap(
+  sched: JournalSchedule,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  opens: Map<string, HlTwapLiveOpen>,
+  pending: Map<string, JournalSchedule>,
+  marginUsd: number,
+): Promise<boolean> {
+  const lev = client.leverageForCoin(sched.coin);
+  const newGross = marginUsd * (lev > 0 ? lev : cfg.leverage);
+  const stackCfg = stackCfgFromLiveConfig(cfg, (c) => client.leverageForCoin(c));
+  const journalGross = bookGrossUsd(sched.coin, sched.side, opens);
+  let scheduledGross = 0;
+  for (const [hash, s] of pending) {
+    if (hash === sched.hash) continue;
+    if (s.coin === sched.coin && s.side === sched.side) {
+      scheduledGross += newLegGrossUsd(stackCfg, s.coin);
+    }
+  }
+  const exchangeGross = await exchangeGrossNotionalUsd(client, sched.coin, sched.side);
+  const baseline = Math.max(journalGross + scheduledGross, exchangeGross ?? 0);
+  return baseline + newGross > cfg.coinMaxGrossUsd;
+}
+
 async function executeLiveOpen(
   sched: JournalSchedule,
   entryPx: number,
@@ -172,8 +245,23 @@ async function executeLiveOpen(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
   marginUsd = cfg.notionalUsd,
-): Promise<{ pos: HlTwapLiveOpen | null; rejectReason?: 'no_price' | 'fill_too_small' }> {
+  opens?: Map<string, HlTwapLiveOpen>,
+  pending?: Map<string, JournalSchedule>,
+): Promise<{
+  pos: HlTwapLiveOpen | null;
+  rejectReason?: 'no_price' | 'fill_too_small' | 'gross_cap';
+}> {
   if (entryPx <= 0) return { pos: null, rejectReason: 'no_price' };
+
+  if (opens && pending) {
+    const overCap = await wouldExceedCoinGrossCap(sched, cfg, client, opens, pending, marginUsd);
+    if (overCap) {
+      console.warn(
+        `[hl-twap-live] open ${sched.displaySymbol} blocked: coin gross cap $${cfg.coinMaxGrossUsd}`,
+      );
+      return { pos: null, rejectReason: 'gross_cap' };
+    }
+  }
 
   const fill = await client.marketOrder({
     coin: sched.coin,
@@ -319,11 +407,28 @@ export async function processLiveTrades(
 
       const px =
         markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
-      const opened = await executeLiveOpen(sched, px, cfg, client, watchState, openMarginUsd);
+      markCoinSideOpenInFlight(sched.coin, sched.side);
+      let opened: Awaited<ReturnType<typeof executeLiveOpen>>;
+      try {
+        opened = await executeLiveOpen(
+          sched,
+          px,
+          cfg,
+          client,
+          watchState,
+          openMarginUsd,
+          opensBefore,
+          pending,
+        );
+      } finally {
+        clearCoinSideOpenInFlight(sched.coin, sched.side);
+      }
       if (opened.pos) {
         opensBefore.set(opened.pos.hash, opened.pos);
       } else if (opened.rejectReason === 'fill_too_small') {
         cancelSchedule(filePath, sched.hash, 'open_fill_too_small');
+      } else if (opened.rejectReason === 'gross_cap') {
+        cancelSchedule(filePath, sched.hash, 'coin_stack_gross_cap');
       }
     } catch (e) {
       console.warn(`[hl-twap-live] open failed ${sched.displaySymbol}`, String(e));
