@@ -38,6 +38,19 @@
 
 ---
 
+## [1.11.432] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.432`
+
+### Live Oscar Wave B — breakeven full exit только после +7.5%
+
+- **До +7.5%** (только +2.5%/+5%): insurance **50%** на безубытке, далее kill **−9%** — как в 1.11.429/430.
+- **После +7.5%** (touch или TP3): trail + **BREAKEVEN_EXIT 100%** на ≤0%; insurance не мешает полному выходу.
+
+**Откат:** `git checkout sa-alpha-1.11.431 -- src/papertrader/executor/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.431] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.431`
