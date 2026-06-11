@@ -617,7 +617,7 @@ const PM2_APPS = [
 
         /** DCA выкл — только сплит $500+$500. */
         PAPER_DCA_LEVELS: '',
-        /** Early kill −9% vs entry market до первого +7%; после +7% — Wave B (trail +10%, TP ladder). */
+        /** Early kill −9% vs entry market до первого +7.5%; после +7.5% — trail + TP ladder (ключевая точка импульса). */
         PAPER_DCA_KILLSTOP: '-0.09',
         /**
          * Variant A v2 hybrid (1.11.272): infinite +5% TP grid, 10% remainder per rung,
