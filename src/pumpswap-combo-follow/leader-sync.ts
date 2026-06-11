@@ -344,6 +344,7 @@ async function executePendingBuy(
 
   const existing = findFollowPosition(state, pending.mint);
 
+  const buyUsd = pending.kind === 'add' ? cfg.mirrorAddUsdResolved : cfg.entryUsd;
   const buy = await executeFollowBuy({
     cfg,
     mint: pending.mint,
@@ -352,7 +353,7 @@ async function executePendingBuy(
     leaderPriceUsd: pending.leaderPriceUsd,
     intent: pending.kind === 'add' ? 'add' : 'probe',
     leaderSignature: pending.leaderSignature,
-    buyUsd: cfg.entryUsd,
+    buyUsd,
   });
 
   if (!buy.ok || !(buy.fillPriceUsd && buy.fillPriceUsd > 0)) {
@@ -375,7 +376,7 @@ async function executePendingBuy(
 
   const leg = {
     ts: nowMs,
-    usd: buy.usdAtMarket ?? cfg.entryUsd,
+    usd: buy.usdAtMarket ?? buyUsd,
     fillPriceUsd: buy.fillPriceUsd,
     txSignature: buy.txSignature,
     kind: pending.kind === 'add' ? ('mirror_add' as const) : ('entry' as const),

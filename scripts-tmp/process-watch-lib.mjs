@@ -90,5 +90,10 @@ export function defaultStrategyWatchTargets(root) {
       staleMs: 300_000,
       fatalPath: `${root}/data/ops-heartbeats/copy-trader-last-fatal.json`,
     },
+    {
+      pm2: 'pumpswap-combo-follow-live',
+      heartbeatPath: `${root}/data/ops-heartbeats/pumpswap-combo-follow-live.json`,
+      staleMs: 300_000,
+    },
   ];
 }
