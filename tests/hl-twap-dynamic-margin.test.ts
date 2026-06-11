@@ -14,6 +14,10 @@ function cfg(overrides: Partial<ReturnType<typeof baseCfg>> = {}) {
 function baseCfg() {
   return {
     notionalUsd: 800,
+    marginLev3Usd: 1200,
+    marginLev5Usd: 1000,
+    marginLev7Usd: 800,
+    leverage: 7,
     dynamicMargin: true,
     marginMaxUsd: 800,
     marginMinUsd: 300,
@@ -75,9 +79,11 @@ describe('dcaHeadroomUsd', () => {
 });
 
 describe('computeOpenMarginUsd', () => {
-  it('returns base notional when dynamic margin disabled', () => {
+  it('returns lev-tier margin when dynamic margin disabled', () => {
     const account = { accountValueUsd: 1100, totalMarginUsedUsd: 0, withdrawableUsd: 1100 };
     expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }))).toBe(800);
+    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }), 3)).toBe(1200);
+    expect(computeOpenMarginUsd(account, new Map(), cfg({ dynamicMargin: false }), 5)).toBe(1000);
   });
 
   it('scales up with few opens and ample free margin', () => {

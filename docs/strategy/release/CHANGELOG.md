@@ -38,6 +38,21 @@
 
 ---
 
+## [1.11.421] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.421`
+
+### hl-twap-live: variable margin by HL max leverage
+
+- **`margin-by-leverage.ts`:** collateral tiers by effective max leverage — ≤3× → $1200, 4–5× → $1000, ≥6× → $800 (4× uses 5× tier).
+- **Opens:** when `HL_TWAP_LIVE_DYNAMIC_MARGIN=0`, entry margin = tier × coin max lev; gross targets ~$3600 / $5000 / $5600 (3×/5×/7×).
+- **Stack cap:** `newLegGrossUsd` uses per-coin margin×lev (HL meta `maxLeverageByCoin` at schedule time).
+- **Env:** `HL_TWAP_LIVE_MARGIN_LEV3_USD`, `LEV5_USD`, `LEV7_USD` (fallback `NOTIONAL_USD` for 7× tier).
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
 ## [1.11.420] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.420`

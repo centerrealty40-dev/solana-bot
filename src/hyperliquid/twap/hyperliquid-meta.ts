@@ -2,7 +2,7 @@ import type { ResolvedTwapMarket } from './types.js';
 
 const HL_INFO = 'https://api.hyperliquid.xyz/info';
 
-type PerpUniverseEntry = { name: string; szDecimals?: number; isDelisted?: boolean };
+type PerpUniverseEntry = { name: string; szDecimals?: number; isDelisted?: boolean; maxLeverage?: number };
 type PerpMeta = { universe: PerpUniverseEntry[] };
 type SpotUniverseEntry = { name: string; index: number; tokens: number[]; isCanonical?: boolean };
 type SpotMeta = { universe: SpotUniverseEntry[] };
@@ -17,6 +17,8 @@ export type HyperliquidMarketCache = {
   spotByAssetId: Map<number, string>;
   mids: Map<string, number>;
   perpCtxByIndex: Map<number, AssetCtx>;
+  /** HL perp max cross leverage by coin name. */
+  maxLeverageByCoin: Map<string, number>;
   loadedAtMs: number;
 };
 
@@ -35,6 +37,12 @@ export async function loadHyperliquidMarketCache(): Promise<HyperliquidMarketCac
   ]);
 
   const perpNames = meta.universe.map((u) => u.name);
+  const maxLeverageByCoin = new Map<string, number>();
+  for (const asset of meta.universe) {
+    if (asset.name && asset.maxLeverage != null && asset.maxLeverage > 0) {
+      maxLeverageByCoin.set(asset.name, asset.maxLeverage);
+    }
+  }
   const spotByAssetId = new Map<number, string>();
   for (const u of spotMeta.universe) {
     spotByAssetId.set(10_000 + u.index, u.name);
@@ -55,6 +63,7 @@ export async function loadHyperliquidMarketCache(): Promise<HyperliquidMarketCac
     spotByAssetId,
     mids,
     perpCtxByIndex,
+    maxLeverageByCoin,
     loadedAtMs: Date.now(),
   };
 }
