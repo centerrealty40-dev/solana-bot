@@ -228,7 +228,7 @@ export function recordAfterFullCloseForMintRepeatGate(
   effectiveExitUsd: number,
   meta?: { netPnlUsd?: number; exitReason?: string },
 ): void {
-  recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs);
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs, meta?.netPnlUsd);
   const px = theoreticalExitUsd > 0 ? theoreticalExitUsd : effectiveExitUsd;
   recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px, meta);
 }
@@ -335,11 +335,13 @@ export function appendPostExitReentryGateReasons(
   snapshotPriceUsd: number,
   out: string[],
 ): void {
+  if (cfg.dipLossExitCooldownEnabled) {
+    appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
+  }
   if (isLiveReentryHybridGateEnabled(cfg)) {
     appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
     return;
   }
-  appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
   appendLiveReentryPriceGapReasons(cfg, mint, snapshotPriceUsd, out);
 }
 
@@ -368,10 +370,12 @@ export function recordPostExitBuyCooldownIfApplicable(
   cfg: PaperTraderConfig,
   mint: string,
   exitTsMs: number,
+  netPnlUsd?: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
   const m = cfg.dipLossExitCooldownMinutes;
   if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
+  if (netPnlUsd != null && netPnlUsd >= -1e-9) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
   if (exitTsMs >= prev) lastPostExitBuyCooldownTsByMintMap.set(mint, exitTsMs);

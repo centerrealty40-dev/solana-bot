@@ -78,6 +78,34 @@ export function waveBSellFractionForStep(kOneBased: number): number {
 export const WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC = 0.075;
 /** Defensive trail arms when peak or highest TP rung ≥ this (+10%). */
 export const WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC = 0.1;
+/** Early kill-stop (PnL vs entry market) disabled after first touch of this level (+7%). */
+export const WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC = 0.07;
+
+export function waveBEntryMarketUsd(ot: OpenTrade): number {
+  return ot.avgEntryMarket > 0
+    ? ot.avgEntryMarket
+    : ot.legs[0]?.marketPrice ?? ot.legs[0]?.price ?? ot.avgEntry ?? 0;
+}
+
+export function waveBMarketPnlFrac(ot: OpenTrade, marketPx: number): number {
+  const entryMkt = waveBEntryMarketUsd(ot);
+  if (!(entryMkt > 0) || !(marketPx > 0)) return 0;
+  return marketPx / entryMkt - 1;
+}
+
+/** Mark pre-arm complete once price touches +7% vs entry market (enables full Wave B, disables early kill). */
+export function waveBUpdatePreArmReached(ot: OpenTrade, marketPx: number): void {
+  if (ot.liveWavePreArmReached === true) return;
+  if (waveBMarketPnlFrac(ot, marketPx) + LADDER_PNL_EPS >= WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC) {
+    ot.liveWavePreArmReached = true;
+  }
+}
+
+export function waveBPreArmKillEligible(ot: OpenTrade, killFrac: number, marketPx: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(killFrac < 0)) return false;
+  if (ot.liveWavePreArmReached === true) return false;
+  return waveBMarketPnlFrac(ot, marketPx) <= killFrac + 1e-9;
+}
 /** After TP ≥+7.5%, pullback to ≤+2.5% re-opens TP rungs above +2.5% on the next rally. */
 export const WAVE_B_TP_IMPULSE_RESET_PNL_FRAC = 0.025;
 /** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +10%. */

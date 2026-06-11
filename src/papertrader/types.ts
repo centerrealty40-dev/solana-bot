@@ -333,6 +333,8 @@ export interface OpenTrade {
   liveWaveTrailAnchorPnlFrac?: number;
   /** Wave B: trail partial levels already fired (PnL fraction keys). */
   liveWaveTrailLevelsTaken?: number[];
+  /** Wave B: first +7% vs entry market reached — early kill-stop disabled after this. */
+  liveWavePreArmReached?: boolean;
 
   /** Live Oscar — открытие в режиме «первый раз по mint» (жёсткий kill, без усреднения). */
   liveMintFirstProbe?: boolean;
