@@ -93,6 +93,8 @@ const ConfigSchema = z.object({
   maxLeaderFirstBuyUsd: z.coerce.number().min(0).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
+  /** Leader mirror-add notional (0 = derive from first DCA fraction × dcaNotionalUsd). */
+  mirrorAddUsd: z.coerce.number().min(0).max(500).default(0),
   dcaLevelsRaw: z.string().default(''),
   dcaKillstopPct: z.coerce.number().min(0).max(90).default(50),
   /** leader_ladder | oscar_wave_b | flow8z_antidump */
@@ -157,6 +159,8 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   entryUsd: number;
   /** DCA add sizing base: legUsd × addFraction (Oscar % ladder on our notional). */
   dcaNotionalUsd: number;
+  /** Resolved mirror-add USD (leader add legs). */
+  mirrorAddUsdResolved: number;
 };
 
 /** Map to pumpswap-combo executor / journal (unused discovery fields filled with dummies). */
@@ -307,6 +311,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN ??
       (isFlow8z || (executionMode === 'live' && entryGate === 'flow') ? '8' : undefined),
     legUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LEG_USD,
+    mirrorAddUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_ADD_USD,
     dcaLevelsRaw,
     dcaKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT,
     exitPolicy,
@@ -369,6 +374,13 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
   const dcaNotionalUsd =
     dcaNotionalRaw && Number(dcaNotionalRaw) > 0 ? Number(dcaNotionalRaw) : parsed.legUsd;
 
+  const mirrorAddUsdResolved =
+    parsed.mirrorAddUsd > 0
+      ? parsed.mirrorAddUsd
+      : dcaLevels[0]
+        ? dcaNotionalUsd * dcaLevels[0].addFraction
+        : entryUsd;
+
   return {
     ...parsed,
     exitLadderSpec,
@@ -376,5 +388,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     dcaLevels,
     entryUsd,
     dcaNotionalUsd,
+    mirrorAddUsdResolved,
   };
 }

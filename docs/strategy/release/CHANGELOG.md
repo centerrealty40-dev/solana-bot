@@ -38,6 +38,23 @@
 
 ---
 
+## [1.11.428] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.428`
+
+### pumpswap-combo-follow live: relaunch prep ($7 entry, ~$11.7/mint cap)
+
+- **Mirror adds:** `mirrorAddUsdResolved` = first DCA fraction × leg ($7 → ~$2.33/add), not full $7 per leader add.
+- **`live-chain.ts`:** SPL mint decimals from chain (fixes wrong `remainingFrac` after partial sells).
+- **Live buys:** skip when wallet SOL &lt; 0.03 (`insufficient_sol` journal).
+- **Flow gate:** faster pool scan (25ms sleep, `FLOW_POOL_TX_CAP=25`).
+- **Portfolio stop:** $55 (was $35) for $7/leg × 8 open.
+- **Ops:** `go-live.sh` sets `ENABLE_PUMPSWAP_COMBO_PM2=true`; watchdog default includes `pumpswap-combo-follow-live`.
+
+**Откат:** `git checkout sa-alpha-1.11.427 -- src/pumpswap-combo-follow/ scripts-tmp/process-watch-lib.mjs scripts/ops/pumpswap-combo-follow-go-live.sh ecosystem.config.cjs`; `pm2 delete pumpswap-combo-follow-live`.
+
+---
+
 ## [1.11.427] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.427`

@@ -13,6 +13,8 @@ export type FollowPosition = {
   leaderWallet: string;
   /** Paper: fraction of original bag still held (live uses chain balance). */
   remainingFrac: number;
+  /** SPL mint decimals (live chain sync). */
+  mintDecimals?: number;
   /** Live Oscar wave B exit + DCA state (`oscar_wave_b` policy). */
   waveB?: FollowWaveBState;
 };

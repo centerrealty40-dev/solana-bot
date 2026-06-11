@@ -76,6 +76,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     quoteAsset: 'SOL',
     legUsd: cfg.legUsd,
     entryUsd: cfg.entryUsd,
+    mirrorAddUsd: cfg.mirrorAddUsdResolved,
     dcaNotionalUsd: cfg.dcaNotionalUsd,
     dcaLevels: cfg.dcaLevels.map((l) => `${(l.triggerPct * 100).toFixed(0)}:${l.addFraction}`).join(','),
     dcaKillstopPct: cfg.dcaKillstopPct,
