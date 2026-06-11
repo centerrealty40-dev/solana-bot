@@ -10,6 +10,7 @@ import {
   executeSlicedMarketOrder,
   splitExecNotional,
 } from '../src/hyperliquid/twap/live/exec-slice.js';
+import { isOpenFillAcceptable } from '../src/hyperliquid/twap/live/parse-order-fill.js';
 import type { HlTwapExchangeClient, MarketOrderParams, OrderFillResult } from '../src/hyperliquid/twap/live/types.js';
 
 let tmpDir: string | null = null;
@@ -164,6 +165,54 @@ describe('exec-sliced dry-run client', () => {
     expect(orderLines.length).toBe(25);
   });
 
+  it('uses per-coin leverage cap when splitting opens', async () => {
+    let innerCalls = 0;
+    const inner: HlTwapExchangeClient = {
+      mode: 'dry_run',
+      init: async () => {},
+      accountAddress: () => '0x0',
+      getPositionSzi: async () => 0,
+      leverageForCoin: () => 3,
+      marketOrder: async (params: MarketOrderParams): Promise<OrderFillResult> => {
+        innerCalls += 1;
+        const lev = 3;
+        const gross = params.intent === 'open' ? params.notionalUsd * lev : params.notionalUsd;
+        return {
+          fillPx: 1,
+          sizeBase: gross,
+          notionalUsd: gross,
+          marginUsd: params.intent === 'open' ? params.notionalUsd : undefined,
+          leverage: params.intent === 'open' ? lev : undefined,
+          requestedNotionalUsd: gross,
+        };
+      },
+    };
+
+    const cfg = loadHlTwapLiveConfig();
+    cfg.execSliceUsd = 200;
+    cfg.execSliceGapMs = 0;
+    cfg.leverage = 7;
+
+    const fill = await executeSlicedMarketOrder(
+      inner,
+      {
+        coin: 'GRASS',
+        displaySymbol: 'GRASS',
+        side: 'sell',
+        notionalUsd: 800,
+        markPx: 1,
+        reduceOnly: false,
+        intent: 'open',
+      },
+      cfg,
+    );
+
+    expect(innerCalls).toBe(12);
+    expect(fill.notionalUsd).toBeCloseTo(2400, 0);
+    expect(fill.requestedNotionalUsd).toBeCloseTo(2400, 0);
+    expect(isOpenFillAcceptable(fill.notionalUsd, fill.requestedNotionalUsd ?? 5600)).toBe(true);
+  });
+
   it('waits execSliceGapMs between each sub-slice', async () => {
     vi.useFakeTimers();
     let innerCalls = 0;
@@ -172,6 +221,7 @@ describe('exec-sliced dry-run client', () => {
       init: async () => {},
       accountAddress: () => '0x0',
       getPositionSzi: async () => 0,
+      leverageForCoin: () => cfg.leverage,
       marketOrder: async (_params: MarketOrderParams): Promise<OrderFillResult> => {
         innerCalls += 1;
         return { fillPx: 100, sizeBase: 2, notionalUsd: 200 };
