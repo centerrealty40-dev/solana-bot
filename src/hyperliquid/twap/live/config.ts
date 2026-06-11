@@ -10,6 +10,12 @@ export type HlTwapLiveConfig = {
   privateKey: string | null;
   /** Margin (collateral) per TWAP signal (USD). Position size = margin × leverage. */
   notionalUsd: number;
+  /** Entry margin when HL effective max leverage ≤ 3× (USD). */
+  marginLev3Usd: number;
+  /** Entry margin when HL effective max leverage is 4–5× (USD). */
+  marginLev5Usd: number;
+  /** Entry margin when HL effective max leverage ≥ 6× (USD); defaults to notionalUsd. */
+  marginLev7Usd: number;
   /** Scale entry margin by open count and free collateral (live). */
   dynamicMargin: boolean;
   /** Max entry margin when few positions are open (USD). */
@@ -78,6 +84,12 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     mode,
     privateKey,
     notionalUsd: Math.max(1, envNum('HL_TWAP_LIVE_NOTIONAL_USD', 800)),
+    marginLev3Usd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_LEV3_USD', 1200)),
+    marginLev5Usd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_LEV5_USD', 1000)),
+    marginLev7Usd: Math.max(
+      1,
+      envNum('HL_TWAP_LIVE_MARGIN_LEV7_USD', envNum('HL_TWAP_LIVE_NOTIONAL_USD', 800)),
+    ),
     dynamicMargin: envBool('HL_TWAP_LIVE_DYNAMIC_MARGIN', false),
     marginMaxUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MAX_USD', 800)),
     marginMinUsd: Math.max(1, envNum('HL_TWAP_LIVE_MARGIN_MIN_USD', 800)),

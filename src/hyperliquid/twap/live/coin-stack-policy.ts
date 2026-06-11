@@ -5,24 +5,32 @@ import { computeTwapSchedule } from '../twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from '../types.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { JournalSchedule } from './journal.js';
+import {
+  marginTiersFromConfig,
+  openGrossUsdForMaxLev,
+  type MarginByLevTiers,
+} from './margin-by-leverage.js';
 import type { HlTwapLiveOpen } from './types.js';
 
-export type CoinStackConfig = Pick<
-  HlTwapLiveConfig,
-  'coinMaxLegs' | 'coinMaxGrossUsd' | 'notionalUsd' | 'leverage'
->;
+export type CoinStackConfig = Pick<HlTwapLiveConfig, 'coinMaxLegs' | 'coinMaxGrossUsd'> & {
+  marginTiers: MarginByLevTiers;
+  leverageForCoin: (coin: string) => number;
+};
 
 export type CoinStackDecision = {
   allow: boolean;
   reason: string;
 };
 
-export function stackCfgFromLiveConfig(cfg: HlTwapLiveConfig): CoinStackConfig {
+export function stackCfgFromLiveConfig(
+  cfg: HlTwapLiveConfig,
+  leverageForCoin?: (coin: string) => number,
+): CoinStackConfig {
   return {
     coinMaxLegs: cfg.coinMaxLegs,
     coinMaxGrossUsd: cfg.coinMaxGrossUsd,
-    notionalUsd: cfg.notionalUsd,
-    leverage: cfg.leverage,
+    marginTiers: marginTiersFromConfig(cfg),
+    leverageForCoin: leverageForCoin ?? (() => cfg.leverage),
   };
 }
 
@@ -44,8 +52,9 @@ function hourlyImpactForOpen(open: HlTwapLiveOpen, watchState: TwapWatchState): 
   return hourly ?? 0;
 }
 
-export function newLegGrossUsd(cfg: CoinStackConfig): number {
-  return cfg.notionalUsd * cfg.leverage;
+export function newLegGrossUsd(cfg: CoinStackConfig, coin: string): number {
+  const lev = cfg.leverageForCoin(coin);
+  return openGrossUsdForMaxLev(lev, cfg.marginTiers);
 }
 
 export function bookGrossUsd(
@@ -107,7 +116,7 @@ export function evaluateCoinStackEntry(
     return { allow: true, reason: 'already_tracked' };
   }
 
-  const newGross = newLegGrossUsd(cfg);
+  const newGross = newLegGrossUsd(cfg, sig.coin);
   const currentGross = bookGrossUsd(sig.coin, entrySide, opens);
 
   if (currentGross + newGross > cfg.coinMaxGrossUsd) {

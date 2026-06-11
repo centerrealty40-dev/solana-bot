@@ -59,6 +59,7 @@ export function canScheduleLiveEntry(
   minImpactPct: number,
   journalPath?: string,
   liveCfg?: HlTwapLiveConfig,
+  leverageForCoin?: (coin: string) => number,
 ): LiveEntryDecision {
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
@@ -121,7 +122,7 @@ export function canScheduleLiveEntry(
       opens,
       pending,
       watchState,
-      stackCfgFromLiveConfig(liveCfg),
+      stackCfgFromLiveConfig(liveCfg, leverageForCoin),
     );
     if (!stack.allow) {
       return { allow: false, reason: stack.reason };
@@ -138,6 +139,7 @@ export function resolveLiveEntryAuditPlan(
   journalPath: string,
   minImpactPct: number,
   liveCfg?: HlTwapLiveConfig,
+  leverageForCoin?: (coin: string) => number,
 ): CoinEntryPlan {
   if (hlTwapUnrestrictedMode()) {
     const plan = computeCoinEntryPlan(sig, watchState, minImpactPct);
@@ -155,7 +157,15 @@ export function resolveLiveEntryAuditPlan(
   if (opens.has(sig.hash) || pending.has(sig.hash)) {
     return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
   }
-  const decision = canScheduleLiveEntry(sig, watchState, opens, minImpactPct, journalPath, liveCfg);
+  const decision = canScheduleLiveEntry(
+    sig,
+    watchState,
+    opens,
+    minImpactPct,
+    journalPath,
+    liveCfg,
+    leverageForCoin,
+  );
   if (!decision.allow) {
     return { ...plan, allow: false, reason: decision.reason };
   }

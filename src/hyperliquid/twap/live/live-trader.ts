@@ -14,6 +14,7 @@ import { computeTwapSchedule } from '../twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from '../types.js';
 import { freeMarginUsd, hasMarginForNewOpen } from './account-margin.js';
 import { computeOpenMarginUsd } from './dynamic-margin.js';
+import { openMarginUsdForCoin } from './margin-by-leverage.js';
 import { canScheduleLiveEntry } from './coin-exposure.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
@@ -118,6 +119,7 @@ export function scheduleLiveTrade(
   sig: NormalizedTwapSignal,
   watchState: TwapWatchState,
   cfg: HlTwapLiveConfig,
+  leverageForCoin?: (coin: string) => number,
 ): { scheduled: boolean; reason: string } {
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
@@ -126,7 +128,15 @@ export function scheduleLiveTrade(
     return { scheduled: false, reason: 'already_tracked' };
   }
 
-  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct, filePath, cfg);
+  const decision = canScheduleLiveEntry(
+    sig,
+    watchState,
+    opens,
+    cfg.minImpactPct,
+    filePath,
+    cfg,
+    leverageForCoin,
+  );
   if (!decision.allow) {
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
@@ -280,9 +290,10 @@ export async function processLiveTrades(
         }
       }
 
+      const effectiveLev = client.leverageForCoin(sched.coin);
       const openMarginUsd = accountMargin
-        ? computeOpenMarginUsd(accountMargin, opensBefore, cfg)
-        : cfg.notionalUsd;
+        ? computeOpenMarginUsd(accountMargin, opensBefore, cfg, effectiveLev)
+        : openMarginUsdForCoin(sched.coin, cfg, (c) => client.leverageForCoin(c));
 
       if (
         accountMargin &&
@@ -295,9 +306,14 @@ export async function processLiveTrades(
         continue;
       }
 
-      if (cfg.dynamicMargin && openMarginUsd !== cfg.notionalUsd) {
+      const baseMargin = openMarginUsdForCoin(sched.coin, cfg, (c) => client.leverageForCoin(c));
+      if (cfg.dynamicMargin && openMarginUsd !== baseMargin) {
         console.log(
-          `[hl-twap-live] dynamic margin ${sched.displaySymbol}: $${openMarginUsd} (opens=${opensBefore.size}, base=$${cfg.notionalUsd})`,
+          `[hl-twap-live] dynamic margin ${sched.displaySymbol}: $${openMarginUsd} (opens=${opensBefore.size}, base=$${baseMargin})`,
+        );
+      } else if (!cfg.dynamicMargin && openMarginUsd !== cfg.notionalUsd) {
+        console.log(
+          `[hl-twap-live] lev margin ${sched.displaySymbol}: $${openMarginUsd} (${effectiveLev}x)`,
         );
       }
 

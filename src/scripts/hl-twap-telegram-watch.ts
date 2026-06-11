@@ -90,6 +90,10 @@ import {
 } from '../hyperliquid/twap/paper-trader.js';
 import { loadHlTwapLiveConfig } from '../hyperliquid/twap/live/config.js';
 import { formatDynamicMarginStartup } from '../hyperliquid/twap/live/dynamic-margin.js';
+import {
+  createLeverageForCoin,
+  formatMarginByLevStartup,
+} from '../hyperliquid/twap/live/margin-by-leverage.js';
 import { resolveLiveEntryAuditPlan } from '../hyperliquid/twap/live/coin-exposure.js';
 import { createHlTwapExchangeClient, type HlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-client.js';
 import {
@@ -259,9 +263,17 @@ async function announceStart(
   } catch (e) {
     console.warn(`[hl-twap] coin momentum refresh failed ${sig.displaySymbol}`, String(e));
   }
+  const leverageForCoin = createLeverageForCoin(LIVE_CFG.leverage, _cache.maxLeverageByCoin);
   const plan =
     LIVE_ENABLED && liveExchange
-      ? resolveLiveEntryAuditPlan(sig, watchState, LIVE_CFG.journalPath, MIN_IMPACT_PCT_HOUR, LIVE_CFG)
+      ? resolveLiveEntryAuditPlan(
+          sig,
+          watchState,
+          LIVE_CFG.journalPath,
+          MIN_IMPACT_PCT_HOUR,
+          LIVE_CFG,
+          leverageForCoin,
+        )
       : PAPER_ENABLED
         ? resolvePaperEntryAuditPlan(sig, watchState, MIN_IMPACT_PCT_HOUR)
         : computeCoinEntryPlan(sig, watchState, MIN_IMPACT_PCT_HOUR);
@@ -269,7 +281,7 @@ async function announceStart(
   markTwapOpenedNotified(watchState, sig);
 
   if (PAPER_ENABLED) schedulePaperAfterTelegramOpen(sig);
-  if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig);
+  if (LIVE_ENABLED) scheduleLiveAfterTelegramOpen(sig, leverageForCoin);
 
   if (DRY_RUN) {
     const mexc = MEXC_LINKS ? mexcFuturesUrl(sig.displaySymbol) : null;
@@ -313,13 +325,16 @@ async function deliverStartTelegram(
   }
 }
 
-function scheduleLiveAfterTelegramOpen(sig: NormalizedTwapSignal): void {
+function scheduleLiveAfterTelegramOpen(
+  sig: NormalizedTwapSignal,
+  leverageForCoin?: (coin: string) => number,
+): void {
   if (!liveExchange) return;
   if (isTradingHaltedByDrawdown()) {
     console.log(`[hl-twap-live] not scheduled ${sig.displaySymbol}: drawdown_stop_halted`);
     return;
   }
-  const { scheduled, reason } = scheduleLiveTrade(sig, watchState, LIVE_CFG);
+  const { scheduled, reason } = scheduleLiveTrade(sig, watchState, LIVE_CFG, leverageForCoin);
   if (scheduled) {
     console.log(`[hl-twap-live] scheduled ${sig.side} ${sig.displaySymbol}`);
   } else if (reason !== 'already_tracked') {
@@ -435,7 +450,7 @@ async function main(): Promise<void> {
   if (LIVE_ENABLED) {
     liveExchange = await createHlTwapExchangeClient(LIVE_CFG);
     console.log(
-      `[hl-twap-live] enabled mode=${liveExchange.mode} margin=$${LIVE_CFG.notionalUsd} leverage=${LIVE_CFG.leverage}x (~$${LIVE_CFG.notionalUsd * LIVE_CFG.leverage}/position) ${formatDynamicMarginStartup(LIVE_CFG)} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
+      `[hl-twap-live] enabled mode=${liveExchange.mode} ${formatMarginByLevStartup(LIVE_CFG)} leverage=${LIVE_CFG.leverage}x ${formatDynamicMarginStartup(LIVE_CFG)} ladder=±${LIVE_CFG.ladderStepPct}%/${LIVE_CFG.ladderSlicePct}% exit_slices_long=${LIVE_CFG.exitSlicesLong} exit_slices_short=${LIVE_CFG.exitSlicesShort} exit_interval_ms=${LIVE_CFG.exitSliceIntervalMs}`,
     );
     if (drawdownStopEnabled()) {
       await initDrawdownMonitor(LIVE_CFG.masterAddress);
