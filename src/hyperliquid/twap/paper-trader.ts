@@ -8,7 +8,7 @@ import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
 import { hlTwapCoinEntryGateBlockReason } from './live/coin-exposure.js';
 import type { TwapWatchState } from './detect.js';
 import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
-import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, shouldUseMicroExecution } from './twap-duration.js';
+import { twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, twapHoldToEndEnabled, twapTimerExitReason, shouldUseMicroExecution } from './twap-duration.js';
 import { hlTwapUnrestrictedMode } from './unrestricted.js';
 import {
   clearWhaleExitPending,
@@ -323,9 +323,7 @@ export async function processPaperTrades(
 
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      const exitReason = shouldUseMicroExecution(pos.minutes)
-        ? HL_TWAP_EXIT_REASON_SHORT
-        : HL_TWAP_EXIT_REASON_EARLY;
+      const exitReason = twapTimerExitReason(pos.minutes);
       closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, exitReason, watchState);
     }
   }
@@ -448,11 +446,13 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
-      label: shouldUseMicroExecution(o.minutes)
-        ? `Плановый instant-выход перед последним слайсом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
-        : o.minutes > 30
-          ? `Плановый выход после ${Math.round(((o.minutes - twapExitEarlyMinutesForDuration(o.minutes)) / o.minutes) * 100)}% TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
-          : `Плановый выход −${twapExitEarlyMinutesForDuration(o.minutes)}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+      label: twapHoldToEndEnabled()
+        ? `Плановый выход при ETA последнего цикла TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+        : shouldUseMicroExecution(o.minutes)
+          ? `Плановый instant-выход перед последним слайсом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+          : o.minutes > 30
+            ? `Плановый выход после ${Math.round(((o.minutes - twapExitEarlyMinutesForDuration(o.minutes)) / o.minutes) * 100)}% TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+            : `Плановый выход −${twapExitEarlyMinutesForDuration(o.minutes)}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },
     {
       ts: new Date().toISOString(),
