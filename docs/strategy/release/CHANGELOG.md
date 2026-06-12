@@ -38,6 +38,22 @@
 
 ---
 
+---
+
+## [1.11.439] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.439`
+
+### Live Oscar — post-exit re-entry gate hardening (KINS audit repeat)
+
+- **`lastRealExitMarketSnapshotByMintMap`**: гейты dip/cooldown читают только реальный exit (не RECONCILE/PERIODIC_HEAL).
+- **RECONCILE_ORPHAN**: не мутирует re-entry state при активном cooldown или real exit в grace; stale TP partial не поднимает ref price.
+- **Execution pipeline**: `post_exit_reentry_gate` на всех buy intents (`buy_open`, `buy_scale_in`, `dca_add`) — entry_split не обходит gate.
+
+**Откат:** `git checkout sa-alpha-1.11.438 -- src/papertrader/discovery/dip-clones.ts src/live/phase4-execution.ts src/live/main.ts src/papertrader/main.ts src/papertrader/executor/store-restore.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.438] — 2026-06-12
 
 **Тег:** `sa-alpha-1.11.438`

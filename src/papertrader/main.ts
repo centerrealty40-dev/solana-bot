@@ -25,8 +25,9 @@ import {
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
   lastExitMarketSnapshotByMintMap,
+  lastRealExitMarketSnapshotByMintMap,
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordEntryTs,
-  recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
   type EvalDecision,
 } from './discovery/dip-clones.js';
@@ -233,6 +234,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         lastEntryTsByMint: new Map<string, number>(),
         lastPostExitBuyCooldownTsByMint: new Map<string, number>(),
         lastExitMarketSnapshotByMint: new Map(),
+        lastRealExitMarketSnapshotByMint: new Map(),
         open: new Map<string, OpenTrade>(),
       }
     : loadStore(cfg.storePath);
@@ -244,14 +246,17 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   for (const [mint, snap] of restored.lastExitMarketSnapshotByMint) {
     lastExitMarketSnapshotByMintMap.set(mint, snap);
   }
+  for (const [mint, snap] of restored.lastRealExitMarketSnapshotByMint) {
+    lastRealExitMarketSnapshotByMintMap.set(mint, snap);
+  }
   if (opts?.skipPaperJsonlStore && opts.liveStrategyReplay?.closed?.length) {
     for (const ct of opts.liveStrategyReplay.closed) {
       if (!(ct.exitTs > 0)) continue;
-      const prev = lastPostExitBuyCooldownTsByMintMap.get(ct.mint) ?? 0;
-      if (ct.exitTs >= prev) lastPostExitBuyCooldownTsByMintMap.set(ct.mint, ct.exitTs);
-      const px =
-        ct.theoretical_exit_price > 0 ? ct.theoretical_exit_price : ct.effective_exit_price;
-      recordLastExitMarketSnapshotAfterClose(ct.mint, ct.exitTs, px, {
+      recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+        mint: ct.mint,
+        exitTs: ct.exitTs,
+        theoretical_exit_price: ct.theoretical_exit_price,
+        effective_exit_price: ct.effective_exit_price,
         netPnlUsd: ct.netPnlUsd,
         exitReason: ct.exitReason,
       });

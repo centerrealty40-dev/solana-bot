@@ -5,9 +5,12 @@ import {
   appendLiveReentryHybridGateReasons,
   isLiveReentryHybridGateEnabled,
   lastExitMarketSnapshotByMintMap,
+  lastRealExitMarketSnapshotByMintMap,
   recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordLastExitMarketSnapshotAfterClose,
+  reentryExitSnapshotForGate,
   resolveReconcileOrphanReentryGateMeta,
+  shouldPreserveRealExitReentryGate,
 } from '../src/papertrader/discovery/dip-clones.js';
 
 const MINT = 'TestMint1111111111111111111111111111111111';
@@ -26,6 +29,7 @@ function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfi
 describe('live re-entry hybrid gate', () => {
   beforeEach(() => {
     lastExitMarketSnapshotByMintMap.clear();
+    lastRealExitMarketSnapshotByMintMap.clear();
   });
 
   it('enabled when drop and max wait both set', () => {
@@ -153,5 +157,44 @@ describe('live re-entry hybrid gate', () => {
     );
     expect(meta?.marketUsd).toBeCloseTo(0.003895, 8);
     expect(meta?.exitReason).toBe('FLASH_CRASH_KILL');
+  });
+
+  it('RECONCILE after KILLSTOP does not weaken real exit snapshot (stale TP partial)', () => {
+    const cfg = hybridCfg({
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    const killTs = 1_000_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs: killTs,
+      theoretical_exit_price: 0.0056,
+      effective_exit_price: 0.005565,
+      netPnlUsd: -34,
+      exitReason: 'KILLSTOP',
+    });
+    expect(reentryExitSnapshotForGate(MINT)?.marketUsd).toBeCloseTo(0.0056, 4);
+
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(
+      cfg,
+      {
+        mint: MINT,
+        exitTs: killTs + 21_000,
+        theoretical_exit_price: 0.006125,
+        effective_exit_price: 0.006178,
+        netPnlUsd: 5.27,
+        exitReason: 'RECONCILE_ORPHAN',
+      },
+      {
+        openTrade: {
+          partialSells: [{ marketPrice: 0.006517, reason: 'TP_LADDER' }],
+        },
+      },
+    );
+
+    expect(reentryExitSnapshotForGate(MINT)?.marketUsd).toBeCloseTo(0.0056, 4);
+    expect(shouldPreserveRealExitReentryGate(MINT, 'RECONCILE_ORPHAN', killTs + 21_000, cfg)).toBe(
+      true,
+    );
   });
 });
