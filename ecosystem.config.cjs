@@ -143,8 +143,8 @@ const PM2_APPS = [
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         DASHBOARD_COPY_TRADER_JSONL: path.join(root, 'data/copytrader/journal.jsonl'),
         DASHBOARD_COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        /** SuperBot journal on isolated pumpswap-flow-sniper VPS (read-only mount or synced path). */
-        DASHBOARD_SUPERBOT_JSONL: '/opt/pumpswap-flow-sniper/data/pumpswap-flow-sniper/journal.jsonl',
+        /** SuperBot journal — rsync from oscar-stream-de VPS (see docs/DEPLOY_ISOLATION.md). */
+        DASHBOARD_SUPERBOT_JSONL: path.join(root, 'data/live/superbot-journal.jsonl'),
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
