@@ -40,6 +40,23 @@
 
 ---
 
+---
+
+## [1.11.443] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.443`
+
+### HL TWAP live — price-% ladder from avg entry
+
+- **`HL_TWAP_LIVE_LADDER_MODE=price`**: TP/DCA triggers on **price % from avg entry**, not HL ROE.
+- **TP tiers:** +0.3% → sell 20% gross; +0.5% / +1% / +1.5% / … (every +0.5%) → sell 30% gross.
+- **DCA:** single add at **−0.5%** price from avg = **50% of initial gross** (`HL_TWAP_LIVE_LADDER_DCA_PCT_OF_INITIAL=50`).
+- Legacy ROE ladder: `HL_TWAP_LIVE_LADDER_MODE=roe`.
+
+**Откат:** `git checkout sa-alpha-1.11.442 -- src/hyperliquid/twap/live/position-ladder.ts src/hyperliquid/twap/live/config.ts src/hyperliquid/twap/live/dynamic-margin.ts src/hyperliquid/twap/live/live-trader.ts ecosystem.config.cjs tests/hl-twap-live-ladder.test.ts tests/hl-twap-dynamic-margin.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.442] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.442`

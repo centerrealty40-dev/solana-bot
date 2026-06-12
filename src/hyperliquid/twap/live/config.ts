@@ -1,3 +1,4 @@
+import type { LadderMode } from './position-ladder.js';
 import { defaultExitSliceIntervalMs } from './chunked-exit.js';
 import { minImpactPctHour } from '../coin-twap-analysis.js';
 
@@ -36,10 +37,14 @@ export type HlTwapLiveConfig = {
   coinMaxGrossUsd: number;
   /** Min net hourly impact %/h on dominant side for entries. */
   minImpactPct: number;
-  /** TP/DCA step as HL ROE % (uPnL / margin), same as clearinghouse UI. */
+  /** TP/DCA ladder mode: `price` (% from avg entry) or `roe` (HL UI). */
+  ladderMode: LadderMode;
+  /** TP/DCA step as HL ROE % (legacy roe mode only). */
   ladderStepPct: number;
-  /** Each TP/DCA slice as % of current gross position. */
+  /** Each TP/DCA slice as % of current gross (legacy roe mode only). */
   ladderSlicePct: number;
+  /** Price-mode DCA: one add as % of initial gross (default 50). */
+  ladderDcaPctOfInitial: number;
   /** IoC price buffer for market-like orders. */
   slippageTolerance: number;
   /** Default cross leverage for new positions. */
@@ -100,14 +105,20 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     ),
     dynamicMarginDcaLevelsReserve: Math.max(
       0,
-      Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE', 2)),
+      Math.round(envNum('HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE', 1)),
     ),
     marginReserveUsd: Math.max(0, envNum('HL_TWAP_MARGIN_RESERVE_USD', 50)),
     coinMaxLegs: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_COIN_MAX_LEGS', 2))),
     coinMaxGrossUsd: Math.max(1, envNum('HL_TWAP_LIVE_MAX_BOOK_GROSS_USD', 12_000)),
     minImpactPct: minImpactPctHour(),
+    ladderMode:
+      process.env.HL_TWAP_LIVE_LADDER_MODE?.trim().toLowerCase() === 'roe' ? 'roe' : 'price',
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 2)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 30))),
+    ladderDcaPctOfInitial: Math.max(
+      1,
+      Math.min(200, envNum('HL_TWAP_LIVE_LADDER_DCA_PCT_OF_INITIAL', 50)),
+    ),
     slippageTolerance: Math.max(0.001, envNum('HL_TWAP_LIVE_SLIPPAGE_TOLERANCE', 0.01)),
     leverage: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_LEVERAGE', 7))),
     exitSlicesShort: Math.max(0, Math.round(envNum('HL_TWAP_LIVE_EXIT_SLICES', 10))),
