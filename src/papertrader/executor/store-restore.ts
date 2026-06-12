@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { resolveReconcileOrphanReentryGateMeta, type LastExitMarketSnapshot } from '../discovery/dip-clones.js';
 import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
 import {
@@ -43,6 +44,8 @@ export interface RestoreState {
   /** Последний убыточный exit по mint (replay журнала). */
   /** Max `exitTs` (ms) per mint after a full `close` — used for post-exit buy cooldown. */
   lastPostExitBuyCooldownTsByMint: Map<string, number>;
+  /** Last full-exit market snapshot per mint — post-exit re-entry gate (dip / cooldown). */
+  lastExitMarketSnapshotByMint: Map<string, LastExitMarketSnapshot>;
   open: Map<string, OpenTrade>;
 }
 
@@ -506,11 +509,61 @@ function applyDcaAddLedgerLine(state: RestoreState, raw: Record<string, unknown>
   ot.remainingFraction = 1;
 }
 
+function restoreLastExitMarketSnapshotFromCloseLine(
+  state: RestoreState,
+  mint: string,
+  rawClose: Record<string, unknown>,
+): void {
+  const exitTs = Number(rawClose.exitTs ?? rawClose.ts ?? 0);
+  if (!(exitTs > 0)) return;
+  let theo = Number(rawClose.theoretical_exit_price ?? 0);
+  let eff = Number(rawClose.effective_exit_price ?? 0);
+  let netPnlUsd = Number(rawClose.netPnlUsd ?? NaN);
+  let exitReason = String(rawClose.exitReason ?? '');
+  const ot = state.open.get(mint);
+  if (exitReason === 'RECONCILE_ORPHAN' && ot) {
+    const resolved = resolveReconcileOrphanReentryGateMeta(ot, {
+      netPnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : 0,
+      exitReason,
+      theoretical_exit_price: theo,
+      effective_exit_price: eff,
+    });
+    if (resolved) {
+      theo = resolved.marketUsd;
+      eff = resolved.marketUsd;
+      netPnlUsd = resolved.netPnlUsd;
+      exitReason = resolved.exitReason;
+    }
+  }
+  const px = theo > 0 ? theo : eff;
+  if (!(px > 0)) return;
+  const next: LastExitMarketSnapshot = {
+    exitTs,
+    marketUsd: px,
+    netPnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : undefined,
+    exitReason: exitReason || undefined,
+  };
+  const prev = state.lastExitMarketSnapshotByMint.get(mint);
+  if (
+    prev &&
+    next.exitReason &&
+    (next.exitReason === 'RECONCILE_ORPHAN' || next.exitReason === 'PERIODIC_HEAL') &&
+    prev.exitReason &&
+    prev.exitReason !== 'RECONCILE_ORPHAN' &&
+    prev.exitReason !== 'PERIODIC_HEAL' &&
+    exitTs - prev.exitTs <= 10 * 60_000
+  ) {
+    return;
+  }
+  if (!prev || exitTs >= prev.exitTs) state.lastExitMarketSnapshotByMint.set(mint, next);
+}
+
 export function loadStore(storePath: string): RestoreState {
   const state: RestoreState = {
     evaluatedAt: new Map(),
     lastEntryTsByMint: new Map(),
     lastPostExitBuyCooldownTsByMint: new Map(),
+    lastExitMarketSnapshotByMint: new Map(),
     open: new Map(),
   };
   if (!fs.existsSync(storePath)) return state;
@@ -557,6 +610,7 @@ export function loadStore(storePath: string): RestoreState {
           const prev = state.lastPostExitBuyCooldownTsByMint.get(e.mint) ?? 0;
           if (exitTs >= prev) state.lastPostExitBuyCooldownTsByMint.set(e.mint, exitTs);
         }
+        restoreLastExitMarketSnapshotFromCloseLine(state, e.mint, rawClose);
         state.open.delete(e.mint);
       }
       if (

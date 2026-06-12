@@ -38,6 +38,20 @@
 
 ---
 
+## [1.11.435] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.435`
+
+### Live Oscar — post-exit re-entry gate at execution layer (KINS audit 04740207)
+
+- **`tryExecuteBuyOpen`**: блок `post_exit_reentry_gate` до `buy_open` (dip + cooldown), parity с discovery.
+- **Boot restore**: `lastExitMarketSnapshot` из paper JSONL `close` rows (как cooldown ts).
+- **Full close**: сброс `stagedEntrySignals` по mint — staged entry не обходит dip-gate после выхода.
+
+**Откат:** `git checkout sa-alpha-1.11.434 -- src/live/phase4-execution.ts src/papertrader/executor/store-restore.ts src/papertrader/executor/tracker.ts src/papertrader/main.ts tests/execution-post-exit-reentry-gate.test.ts`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.434] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.434`
