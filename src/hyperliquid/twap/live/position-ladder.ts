@@ -21,7 +21,7 @@ export function sliceMarginUsd(initialMarginUsd: number, cfg: LadderConfig): num
   return initialMarginUsd * (cfg.slicePctOfInitial / 100);
 }
 
-/** TP/DCA gross slice: 10% of live position (e.g. $600 on $6k). */
+/** TP/DCA gross slice: slicePct% of live position (e.g. $1.8k on $6k at 30%). */
 export function ladderSliceGrossUsd(currentNotionalUsd: number, cfg: LadderConfig): number {
   return currentNotionalUsd * (cfg.slicePctOfInitial / 100);
 }
