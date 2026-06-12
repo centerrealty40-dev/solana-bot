@@ -40,6 +40,20 @@
 
 ---
 
+## [1.11.442] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.442`
+
+### SuperBot dashboard tile + synced journal path
+
+- **`/papertrader2`:** плитка **SuperBot** (pumpswap-flow-sniper) — MSK timeline ext sell → buy → TP/SL; `scripts-tmp/superbot-dashboard.ts`.
+- **`ecosystem.config.cjs`:** `DASHBOARD_SUPERBOT_JSONL` → `data/live/superbot-journal.jsonl` (rsync с oscar-stream-de VPS, read-only).
+- **Live Oscar:** SPCX в permanent denylist seed; `LIVE_OSCAR_TRADING_SPEC_STREAM.md`.
+
+**Откат:** `git checkout sa-alpha-1.11.441 -- scripts-tmp/superbot-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs tests/superbot-dashboard.test.ts tests/dashboard-paper2-panels.test.ts data/live/live-oscar-permanent-denylist.seed.txt docs/strategy/live-oscar/LIVE_OSCAR_TRADING_SPEC_STREAM.md docs/strategy/release/`; `pm2 reload live-oscar-dashboard --update-env`.
+
+---
+
 ## [1.11.441] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.441`
