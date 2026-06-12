@@ -38,6 +38,22 @@
 
 ---
 
+## [1.11.436] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.436`
+
+### Live Oscar — stress kill re-entry after KILLSTOP (SPCX audit)
+
+- **`stress_kill_reentry` entry path**: после stress exit (KILLSTOP и др.) — вход при падении ≥40% от last exit и bounce ≤8% от 30m low (пример 1.8M→1.87M mcap).
+- **Recovery veto relax**: для stress re-entry только окна ≤30m и relaxed bounce threshold; 60m crash-low не блокирует.
+- **Dip max drop relax**: `LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT=-65` при квалификации stress re-entry.
+
+**Env:** `LIVE_STRESS_REENTRY_ENABLED`, `LIVE_STRESS_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT`, `LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_BOUNCE_PCT`, `LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_WINDOW_MIN`, `LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT`.
+
+**Откат:** `git checkout sa-alpha-1.11.435 -- src/papertrader/discovery/stress-kill-reentry.ts src/papertrader/discovery/dip-clones.ts src/papertrader/dip-detector.ts src/papertrader/config.ts ecosystem.config.cjs tests/stress-kill-reentry.test.ts`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.435] — 2026-06-12
 
 **Тег:** `sa-alpha-1.11.435`

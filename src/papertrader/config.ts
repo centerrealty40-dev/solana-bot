@@ -284,6 +284,21 @@ const ConfigSchema = z.object({
   liveReentryGateMaxAgeHours: z.coerce.number().min(0).max(168).default(4),
 
   /**
+   * After KILLSTOP / stress exit: allow re-entry on modest bounce from short-window low
+   * (e.g. mcap 1.8M → 1.87M) when price is far below last exit.
+   * Env: `LIVE_STRESS_REENTRY_ENABLED`.
+   */
+  liveStressReentryEnabled: z.boolean().default(true),
+  /** Min drop % from last exit market price to qualify (e.g. 50 = half off exit). */
+  liveStressReentryMinDropFromLastExitPct: z.coerce.number().min(0).max(90).default(40),
+  /** Max bounce % from local low (30m default window) — veto only above this. */
+  liveStressReentryRecoveryVetoMaxBouncePct: z.coerce.number().min(0.1).max(500).default(8),
+  /** Only short windows for bounce check (60m low after crash is too stale). */
+  liveStressReentryRecoveryVetoMaxWindowMin: z.coerce.number().int().min(0).max(720).default(30),
+  /** Relaxed dip max drop when stress re-entry qualifies (e.g. -65 vs -50). */
+  liveStressReentryDipMaxDropPct: z.coerce.number().min(-95).max(0).default(-65),
+
+  /**
    * Live JSONL deep audit for whitelist mints: `live_discovery_eval` includes passes; `live_discovery_universe_miss`
    * when mint drops out of snapshot SQL; `live_discovery_tick_skip` on re-eval throttle.
    */
@@ -1030,6 +1045,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 168) : 4;
     })(),
+    liveStressReentryEnabled: envBool(process.env.LIVE_STRESS_REENTRY_ENABLED, true),
+    liveStressReentryMinDropFromLastExitPct: process.env.LIVE_STRESS_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT,
+    liveStressReentryRecoveryVetoMaxBouncePct:
+      process.env.LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_BOUNCE_PCT,
+    liveStressReentryRecoveryVetoMaxWindowMin:
+      process.env.LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_WINDOW_MIN,
+    liveStressReentryDipMaxDropPct: process.env.LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT,
     discoveryDeepAuditJsonl: envBool(process.env.LIVE_DISCOVERY_DEEP_AUDIT_JSONL, false),
     discoveryDeepAuditWhitelistPath: process.env.LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH?.trim() || undefined,
     discoveryDeepAuditUniverseMissMinMs: (() => {

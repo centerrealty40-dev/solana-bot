@@ -19,6 +19,10 @@ import {
   type LocalHighVetoResult,
   type RecoveryVetoResult,
 } from '../dip-detector.js';
+import {
+  evaluateStressKillReentryPath,
+  getStressKillReentryContext,
+} from './stress-kill-reentry.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
@@ -112,7 +116,12 @@ export interface EvalDecision {
    *  - `impulse_pg_snap` — bypass через PG-snap impulse confirm (`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`)
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
    */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast';
+  entryPath?:
+    | 'dip_windows'
+    | 'impulse_pg_snap'
+    | 'runner'
+    | 'post_crash_fast'
+    | 'stress_kill_reentry';
   /** `low` = узкий коридор $1.3M–$3M; `prod` = mcap > $3M (текущий prod). */
   liveOscarMcapTier?: 'low' | 'prod';
 }
@@ -733,7 +742,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       skipHolderCheck: liveHoldersForGate,
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
-    const dipEval = evaluateDip(tierCfg, row, dipMap.get(row.mint));
+    const lastExitSnap = lastExitMarketSnapshotByMintMap.get(row.mint);
+    const stressReentryCtx = getStressKillReentryContext(cfg, lastExitSnap, row.price_usd);
+    const dipTierCfg =
+      stressReentryCtx &&
+      cfg.liveStressReentryDipMaxDropPct < tierCfg.dipMaxDropPct
+        ? { ...tierCfg, dipMaxDropPct: cfg.liveStressReentryDipMaxDropPct }
+        : tierCfg;
+    const dipEval = evaluateDip(dipTierCfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
@@ -742,7 +758,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let postCrashFastPath: PostCrashFastPathResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
-    } else if (snapshotGatePass && cfg.postCrashFastPathEnabled) {
+    } else if (snapshotGatePass) {
+      const stressPath = evaluateStressKillReentryPath(
+        cfg,
+        lastExitSnap,
+        row,
+        dipMap.get(row.mint),
+      );
+      if (stressPath.pass) {
+        dipReasonsForGate = [];
+        entryPath = 'stress_kill_reentry';
+      } else if (stressPath.reasons.length > 0) {
+        dipReasonsForGate = [...dipReasonsForGate, ...stressPath.reasons];
+      }
+    }
+    if (entryPath == null && snapshotGatePass && cfg.postCrashFastPathEnabled) {
       postCrashFastPath = evaluatePostCrashFastPath(tierCfg, row, postCrashMap.get(row.mint));
       if (postCrashFastPath.pass) {
         dipReasonsForGate = [];
@@ -805,7 +835,25 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath === 'post_crash_fast'
           ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
           : dipEval.dipLookbackUsedMin;
-      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipLookbackForRecovery);
+      if (entryPath === 'stress_kill_reentry') {
+        recoveryVeto = { reasons: [], bounces: {} };
+      } else {
+        const recoveryOpts = stressReentryCtx
+          ? {
+              maxBouncePct: stressReentryCtx.maxBouncePct,
+              windowsMin: cfg.dipRecoveryVetoWindowsMin.filter(
+                (w) => w <= stressReentryCtx.maxWindowMin,
+              ),
+            }
+          : undefined;
+        recoveryVeto = evaluateRecoveryVeto(
+          cfg,
+          row,
+          dipMap.get(row.mint),
+          dipLookbackForRecovery,
+          recoveryOpts,
+        );
+      }
       if (recoveryVeto.reasons.length > 0) {
         dipReasonsForGate = [...dipReasonsForGate, ...recoveryVeto.reasons];
         entryPath = undefined;
