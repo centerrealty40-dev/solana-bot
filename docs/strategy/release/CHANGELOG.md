@@ -40,6 +40,18 @@
 
 ---
 
+## [1.11.441] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.441`
+
+### Remove pumpswap-combo autonomous bot completely
+
+- **Deleted:** `src/pumpswap-combo/`, `src/scripts/pumpswap-combo-bot.ts`, PM2 `pumpswap-combo-bot`, ops scripts `scripts/ops/pumpswap-combo-*.sh`, dashboard tile + `scripts-tmp/pumpswap-combo-dashboard.ts`.
+- **`ecosystem.config.cjs`:** removed `ENABLE_PUMPSWAP_COMBO_PM2` gate and all `PUMPSWAP_COMBO_*` env blocks; `/papertrader2` now **Live Oscar · Copy Trader · HL TWAP** (3 tiles).
+- **`qn-feature-usage`:** dropped `pumpswap_combo` QN budget bucket.
+
+**Откат:** `git checkout sa-alpha-1.11.440 -- src/pumpswap-combo/ src/scripts/pumpswap-combo-bot.ts scripts/ops/pumpswap-combo-*.sh scripts-tmp/pumpswap-combo-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs package.json src/core/rpc/qn-feature-usage.ts tests/dashboard-paper2-panels.test.ts docs/strategy/release/`; VPS `pm2 start ecosystem.config.cjs --only pumpswap-combo-bot --update-env` (if wallet/data still present).
+
 ---
 
 ## [1.11.440] — 2026-06-13

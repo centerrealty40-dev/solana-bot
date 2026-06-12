@@ -43,7 +43,6 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
-import { loadPumpswapComboJsonlForDashboard } from './pumpswap-combo-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
   hlTwapDashboardJsonlPath,
@@ -154,9 +153,6 @@ const DASHBOARD_COPY_TRADER_STATE_PATH =
   process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
 /** PumpSwap dip bot — isolated journal (not Oscar / copy-trader). */
-const DASHBOARD_PUMPSWAP_COMBO_JSONL =
-  process.env.DASHBOARD_PUMPSWAP_COMBO_JSONL?.trim() ||
-  path.resolve(PAPER2_DIR, '..', 'pumpswap-combo', 'journal.jsonl');
 /** @deprecated alias — тот же execution wallet (Copy Trader). */
 const DASHBOARD_LIVE_OSCAR_RISKY_JSONL = DASHBOARD_COPY_TRADER_JSONL;
 /** Paper Oscar IDEALIZED V2.1 — отдельный jsonl; панель рядом с live на `/papertrader2`. */
@@ -223,7 +219,6 @@ function dashboardOscarPanelJsonlFiles(): string[] {
   const out: string[] = [];
   if (fs.existsSync(DASHBOARD_LIVE_OSCAR_JSONL)) out.push(DASHBOARD_LIVE_OSCAR_JSONL);
   if (fs.existsSync(DASHBOARD_COPY_TRADER_JSONL)) out.push(DASHBOARD_COPY_TRADER_JSONL);
-  if (fs.existsSync(DASHBOARD_PUMPSWAP_COMBO_JSONL)) out.push(DASHBOARD_PUMPSWAP_COMBO_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_RISKY_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_RISKY_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V21_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V21_JSONL);
   if (fs.existsSync(DASHBOARD_PAPER_OSCAR_V22_JSONL)) out.push(DASHBOARD_PAPER_OSCAR_V22_JSONL);
@@ -1380,15 +1375,14 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · Copy Trader · Combo #1 · HL TWAP. */
+/** Плитки `/papertrader2`: Live Oscar · Copy Trader · HL TWAP. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'copy-trader',
-  'pumpswap-combo',
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-combo-follow-removed-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-combo-removed-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1442,36 +1436,6 @@ export type DashboardPaper2StrategyRow = {
   };
   /** Copy-trader execution counters + pending queue (panel 2). */
   copyTrader?: CopyTraderDashboardStats;
-  /** PumpSwap combo bot runtime (panel 3). */
-  pumpswapCombo?: {
-    buys1h: number;
-    sells1h: number;
-    halted: boolean;
-    watchlistSize: number;
-    dumpBandCount: number;
-    probeReadyCount: number;
-    realizedPnlUsd: number;
-    unrealizedPnlUsd: number;
-    totalPnlUsd: number;
-    lastBootTs: number;
-  };
-  /** Combo #2 follow hnu5 — paper mirror + ladder exits (panel 4). */
-  pumpswapComboFollow?: {
-    buys1h: number;
-    adds1h: number;
-    sells1h: number;
-    leaderSignals1h: number;
-    leaderSells1h: number;
-    halted: boolean;
-    pendingBuys: number;
-    executionMode: string;
-    targetWallet: string;
-    exitLeadPct: number;
-    realizedPnlUsd: number;
-    unrealizedPnlUsd: number;
-    totalPnlUsd: number;
-    lastBootTs: number;
-  };
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -3580,8 +3544,6 @@ async function buildPaper2StrategyRowFromLoad(
   sid: string,
   loaded: Paper2FileLoad & {
     copyTrader?: CopyTraderDashboardStats;
-    pumpswapCombo?: DashboardPaper2StrategyRow['pumpswapCombo'];
-    pumpswapComboFollow?: DashboardPaper2StrategyRow['pumpswapComboFollow'];
     hbOpen?: number;
     hbClosed?: number;
   },
@@ -3692,7 +3654,6 @@ async function buildPaper2StrategyRowFromLoad(
   // future jsonl row has a misclassified baseline.
   const PNL_PCT_CLAMP = 100_000; // 1000x
   const isCopyTraderPanel = sid === 'copy-trader';
-  const isPumpswapComboPanel = sid === 'pumpswap-combo';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
@@ -3806,13 +3767,6 @@ async function buildPaper2StrategyRowFromLoad(
         ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction ?? 1) : 0;
 
       const investedFor = (): number => {
-        if (isPumpswapComboPanel) {
-          const sz = Number((ot as Record<string, unknown>).sizeUsd ?? 0);
-          if (sz > 0 && sz <= 50_000) return sz;
-          const inv = ot.totalInvestedUsd;
-          if (inv > 0 && inv <= 50_000) return inv;
-          return 3;
-        }
         if (isCopyTraderPanel) {
           const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : ot.totalInvestedUsd;
           return basis > 0 && basis <= 50_000 ? basis : POSITION_USD_DEFAULT;
@@ -3858,8 +3812,6 @@ async function buildPaper2StrategyRowFromLoad(
        * Copy-trader: price only — mcap fallback compares ~$0.001 entry to ~$500k mcap → bogus PnL.
        */
       if (isCopyTraderPanel) {
-        tryByPrice();
-      } else if (isPumpswapComboPanel) {
         tryByPrice();
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
@@ -3981,8 +3933,6 @@ async function buildPaper2StrategyRowFromLoad(
     liqDrain,
     ...(hb?.reconcileExtras ?? {}),
     ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
-    ...(loaded.pumpswapCombo ? { pumpswapCombo: loaded.pumpswapCombo } : {}),
-    ...(loaded.pumpswapComboFollow ? { pumpswapComboFollow: loaded.pumpswapComboFollow } : {}),
   };
 }
 
@@ -4043,38 +3993,14 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
-  const comboLoaded = loadPumpswapComboJsonlForDashboard(DASHBOARD_PUMPSWAP_COMBO_JSONL);
-  const comboRowP = buildPaper2StrategyRowFromLoad(
-    DASHBOARD_PUMPSWAP_COMBO_JSONL,
-    'pumpswap-combo',
-    comboLoaded,
-    { hbOpen: comboLoaded.hbOpen, hbClosed: comboLoaded.hbClosed },
-  )
-    .then((row) => {
-      const c = comboLoaded.pumpswapCombo;
-      if (c) {
-        row.realizedPnlUsd = c.realizedPnlUsd;
-        row.unrealizedPnlUsd = c.unrealizedPnlUsd;
-        row.totalPnlUsd = c.totalPnlUsd;
-        row.unrealizedUsd = c.unrealizedPnlUsd;
-      }
-      return row;
-    })
-    .catch((e) => {
-      console.warn('[dashboard] pumpswap-combo panel failed', String(e).slice(0, 200));
-      return makeEmptyDashboardStrategyRow('pumpswap-combo', DASHBOARD_PUMPSWAP_COMBO_JSONL);
-    });
-
-  const [liveRow, copyTraderRow, hlTwapRow, comboRow] = await Promise.all([
+  const [liveRow, copyTraderRow, hlTwapRow] = await Promise.all([
     liveRowP,
     copyRowP,
     hlTwapRowP,
-    comboRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
     copyTraderRow as DashboardPaper2StrategyRow,
-    comboRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
   ]);
 
