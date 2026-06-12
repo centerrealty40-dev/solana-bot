@@ -1,9 +1,8 @@
 import type { PaperTraderConfig } from '../config.js';
 import {
-  liveOscarTierStagedSplitLegUsd,
-  resolveLiveOscarMcapTier,
-  type LiveOscarMcapTier,
-} from '../live-oscar-mcap-tier.js';
+  applyCanonicalStagedEntrySizing,
+  resolveLiveOscarEntrySplitLegUsd,
+} from '../live-oscar-entry-sizing.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
 
 /** `liveStagedEntrySignalTtlMs === 0` — no time limit on staged plan / signal anchor. */
@@ -108,12 +107,8 @@ export function buildLiveStagedEntryState(
     marketCapUsd?: number | null;
   },
 ): LiveStagedEntryState {
-  const tier =
-    options?.marketCapUsd != null && Number(options.marketCapUsd) > 0
-      ? resolveLiveOscarMcapTier(cfg, Number(options.marketCapUsd))
-      : ('prod' as LiveOscarMcapTier);
   const firstMintProbe = options?.firstMintProbe === true;
-  const splitLeg = liveOscarTierStagedSplitLegUsd(cfg, tier === 'low' ? 'low' : 'prod');
+  const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -121,7 +116,7 @@ export function buildLiveStagedEntryState(
   const avgThirdUsd = firstMintProbe ? 0 : cfg.liveStagedEntryThirdLegUsd;
   const avgSecondDrop = firstMintProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
   const avgThirdDrop = firstMintProbe ? 0 : cfg.liveStagedEntryThirdDropPct;
-  return {
+  const st: LiveStagedEntryState = {
     signalTs: signal.signalTs,
     signalPriceUsd: signal.signalPriceUsd,
     firstDropPct: cfg.liveStagedEntryFirstDropPct,
@@ -159,6 +154,8 @@ export function buildLiveStagedEntryState(
         }
       : {}),
   };
+  applyCanonicalStagedEntrySizing(cfg, st);
+  return st;
 }
 
 export function openNotionalUsdForStagedEntry(cfg: PaperTraderConfig): number {

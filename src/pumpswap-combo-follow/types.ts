@@ -13,6 +13,8 @@ export type FollowPosition = {
   leaderWallet: string;
   /** Paper: fraction of original bag still held (live uses chain balance). */
   remainingFrac: number;
+  /** SPL mint decimals (live chain sync). */
+  mintDecimals?: number;
   /** Live Oscar wave B exit + DCA state (`oscar_wave_b` policy). */
   waveB?: FollowWaveBState;
 };
@@ -41,4 +43,9 @@ export type LeaderSellRef = {
   ts: number;
   signature: string;
   priceUsd: number;
+  /** USD notional of this leader sell (for conditional flush). */
+  sellUsd?: number;
+  /** Leader token balance after sell (0 = full exit / rug follow). */
+  leaderPostBalanceRaw?: string;
+  leaderFlat?: boolean;
 };

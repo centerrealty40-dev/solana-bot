@@ -55,7 +55,7 @@ fi
 
 sudo -u "$USER" -H bash -c "cd '$ROOT' && npm run typecheck"
 
-sudo -u "$USER" env PM2_HOME=/home/salpha/.pm2 HOME=/home/salpha bash -c "
+sudo -u "$USER" env PM2_HOME=/home/salpha/.pm2 HOME=/home/salpha ENABLE_PUMPSWAP_COMBO_PM2=true bash -c "
   set -e
   cd '$ROOT'
   pm2 startOrReload '$ROOT/ecosystem.config.cjs' --only pumpswap-combo-follow-live --update-env

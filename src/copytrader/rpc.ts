@@ -1,3 +1,5 @@
+import { creditsPerStandardSolanaRpc, recordSolanaRpcCredits } from '../core/rpc/solana-rpc-meter.js';
+
 type JsonRpcResponse<T> = {
   result?: T;
   error?: { code?: number; message?: string };
@@ -32,6 +34,7 @@ export async function rpcCall<T>(
         continue;
       }
       if (!res.ok || body.error) return null;
+      void recordSolanaRpcCredits(creditsPerStandardSolanaRpc());
       return body.result ?? null;
     } catch {
       await sleep(wait);

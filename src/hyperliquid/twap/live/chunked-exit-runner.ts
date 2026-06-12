@@ -1,12 +1,15 @@
 import {
   buildExitScheduleAnchor,
   chunkedExitEnabled,
+  exitScheduleTriggerMs,
   exitSliceDueAtMs,
   loadChunkedExitConfig,
   nextDueSliceIndex,
+  resolveExitScheduleAnchor,
   sliceTargetBase,
   vwapExitPx,
 } from './chunked-exit.js';
+import { coinSideKey, groupOpensByCoinSide } from './coin-side-ladder.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
 import { flattenCoinOnExchange } from './flatten-position.js';
@@ -22,27 +25,50 @@ import { notifyLiveTradeClose } from './telegram-notify.js';
 import type { HlTwapLiveClose, HlTwapLiveOpen } from './types.js';
 import type { TwapWatchState } from '../detect.js';
 import { clearWhaleExitPending } from '../twap-whale-exit.js';
-import { isShortTwapMinutes } from '../twap-duration.js';
+import { HL_TWAP_SLICE_INTERVAL_SEC } from '../twap-schedule.js';
+import { hlTwapUnrestrictedMode } from '../unrestricted.js';
+import { twapExitSliceCount, shouldUseMicroExecution } from '../twap-duration.js';
 
-function exitAnchor(exit: PendingLiveExit) {
-  return buildExitScheduleAnchor(
-    exit.twapStartMs ?? exit.startedAtMs,
-    exit.startedAtMs,
-    exit.startedAtMs,
-    exit.sliceIntervalMs,
-  );
+function bookKeyForOpen(pos: HlTwapLiveOpen): string {
+  return coinSideKey(pos.coin, pos.side);
 }
 
-function exitAnchorFromPending(exit: PendingLiveExit) {
-  if (exit.twapStartMs != null && exit.firstWhaleSliceIndex != null) {
-    return {
-      twapStartMs: exit.twapStartMs,
-      firstWhaleSliceIndex: exit.firstWhaleSliceIndex,
-      startedAtMs: exit.startedAtMs,
-      sliceIntervalMs: exit.sliceIntervalMs,
-    };
+/** Pick one driver hash per exchange book among pending exits (earliest journal leg). */
+function selectBookExitDrivers(
+  pending: Map<string, PendingLiveExit>,
+  opens: Map<string, HlTwapLiveOpen>,
+): Map<string, string> {
+  const drivers = new Map<string, string>();
+  for (const [hash] of pending) {
+    const pos = opens.get(hash);
+    if (!pos) continue;
+    const bookKey = bookKeyForOpen(pos);
+    const existingHash = drivers.get(bookKey);
+    if (!existingHash) {
+      drivers.set(bookKey, hash);
+      continue;
+    }
+    const existingPos = opens.get(existingHash);
+    if (!existingPos || pos.entryTs < existingPos.entryTs) {
+      drivers.set(bookKey, hash);
+    }
   }
-  return exitAnchor(exit);
+  return drivers;
+}
+
+function pendingExitOnSameBook(
+  pending: Map<string, PendingLiveExit>,
+  opens: Map<string, HlTwapLiveOpen>,
+  pos: HlTwapLiveOpen,
+  excludeHash?: string,
+): string | null {
+  const bookKey = bookKeyForOpen(pos);
+  for (const [hash] of pending) {
+    if (excludeHash && hash === excludeHash) continue;
+    const other = opens.get(hash);
+    if (other && bookKeyForOpen(other) === bookKey) return hash;
+  }
+  return null;
 }
 
 /** Instant full flatten (legacy). */
@@ -99,17 +125,47 @@ export async function closeLiveTrade(
   const pos = opens.get(hash);
   if (!pos || exitPx <= 0) return null;
 
-  if (isShortTwapMinutes(pos.minutes)) {
+  const linkedHash = pendingExitOnSameBook(pending, opens, pos);
+  if (linkedHash) {
+    console.log(
+      `[hl-twap-live] exit skipped ${pos.displaySymbol} ${hash.slice(0, 12)}… — book exit in progress (${linkedHash.slice(0, 12)}…)`,
+    );
+    return null;
+  }
+
+  const slices = resolveExitSliceCount(pos, cfg);
+  if (slices <= 1) {
     return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
   }
 
-  const exitCfg = loadChunkedExitConfig(cfg, pos.side);
-  if (!chunkedExitEnabled(exitCfg)) {
-    return instantCloseLiveTrade(hash, exitPx, exitReason, cfg, client, watchState);
-  }
+  const exitCfg = {
+    sliceCount: slices,
+    sliceIntervalMs: HL_TWAP_SLICE_INTERVAL_SEC * 1000,
+  };
+  return startChunkedExit(pos, exitPx, exitReason, exitCfg, cfg, client, watchState);
+}
 
+function resolveExitSliceCount(pos: HlTwapLiveOpen, cfg: HlTwapLiveConfig): number {
+  if (hlTwapUnrestrictedMode() || shouldUseMicroExecution(pos.minutes)) {
+    return twapExitSliceCount(pos.minutes);
+  }
+  const sideCfg = loadChunkedExitConfig(cfg, pos.side);
+  return sideCfg.sliceCount;
+}
+
+async function startChunkedExit(
+  pos: HlTwapLiveOpen,
+  exitPx: number,
+  exitReason: string,
+  exitCfg: { sliceCount: number; sliceIntervalMs: number },
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState?: TwapWatchState,
+): Promise<HlTwapLiveClose | null> {
+  const hash = pos.hash;
+  const filePath = cfg.journalPath;
   const startedAtMs = Date.now();
-  const triggerMs = Math.max(startedAtMs, pos.liveCloseAtMs);
+  const triggerMs = exitScheduleTriggerMs(startedAtMs, pos.liveCloseAtMs);
   const anchor = buildExitScheduleAnchor(
     pos.twapStartMs,
     triggerMs,
@@ -153,7 +209,7 @@ export async function closeLiveTrade(
   };
 
   const dueIdx = nextDueSliceIndex(
-    exitAnchorFromPending(pendingExit),
+    resolveExitScheduleAnchor(pendingExit),
     0,
     exitCfg.sliceCount,
     startedAtMs,
@@ -260,6 +316,44 @@ async function processOneExitSlice(
   return null;
 }
 
+function writeLiveCloseRow(
+  leg: HlTwapLiveOpen,
+  exitPx: number,
+  exitReason: string,
+  cfg: HlTwapLiveConfig,
+  opts: {
+    reconciled?: boolean;
+    exitSlices: number;
+    exitSliceIntervalMs: number;
+  },
+): HlTwapLiveClose {
+  const dir = leg.side === 'buy' ? 1 : -1;
+  const pnlPct = dir * ((exitPx - leg.avgEntryPx) / leg.avgEntryPx) * 100;
+  const pnlUsd = (pnlPct / 100) * leg.currentNotionalUsd;
+  const finalReason = opts.reconciled ? `${exitReason}_reconciled` : exitReason;
+
+  appendLiveJournal(cfg.journalPath, {
+    kind: 'close',
+    ts: Date.now(),
+    hash: leg.hash,
+    exitPx,
+    pnlUsd,
+    pnlPct,
+    exitReason: finalReason,
+    exitSlices: opts.exitSlices,
+    exitSliceIntervalMs: opts.exitSliceIntervalMs,
+  });
+
+  return {
+    ...leg,
+    exitTs: Date.now(),
+    exitPx,
+    pnlUsd,
+    pnlPct,
+    exitReason: finalReason,
+  };
+}
+
 async function finalizeLiveClose(
   pos: HlTwapLiveOpen,
   exitPx: number,
@@ -273,38 +367,26 @@ async function finalizeLiveClose(
     exitSliceIntervalMs: number;
   },
 ): Promise<HlTwapLiveClose> {
-  const filePath = cfg.journalPath;
-  const dir = pos.side === 'buy' ? 1 : -1;
-  const pnlPct = dir * ((exitPx - pos.avgEntryPx) / pos.avgEntryPx) * 100;
-  const pnlUsd = (pnlPct / 100) * pos.currentNotionalUsd;
+  const opens = loadLiveOpensFromJournal(cfg.journalPath);
+  const group =
+    groupOpensByCoinSide(opens).get(bookKeyForOpen(pos)) ??
+    (opens.has(pos.hash) ? [opens.get(pos.hash)!] : [pos]);
   const reconciled = opts.sziBefore != null ? Math.abs(opts.sziBefore) <= 0 : false;
-  const finalReason = reconciled ? `${exitReason}_reconciled` : exitReason;
-
-  appendLiveJournal(filePath, {
-    kind: 'close',
-    ts: Date.now(),
-    hash: pos.hash,
-    exitPx,
-    pnlUsd,
-    pnlPct,
-    exitReason: finalReason,
+  const closeOpts = {
+    reconciled,
     exitSlices: opts.exitSlices,
     exitSliceIntervalMs: opts.exitSliceIntervalMs,
-  });
-
-  if (watchState) clearWhaleExitPending(watchState, pos.hash);
-
-  const closed: HlTwapLiveClose = {
-    ...pos,
-    exitTs: Date.now(),
-    exitPx,
-    pnlUsd,
-    pnlPct,
-    exitReason: finalReason,
   };
 
-  await notifyLiveTradeClose(closed, cfg);
-  return closed;
+  let primaryClosed: HlTwapLiveClose | null = null;
+  for (const leg of group) {
+    const closed = writeLiveCloseRow(leg, exitPx, exitReason, cfg, closeOpts);
+    if (watchState) clearWhaleExitPending(watchState, leg.hash);
+    if (leg.hash === pos.hash) primaryClosed = closed;
+    await notifyLiveTradeClose(closed, cfg);
+  }
+
+  return primaryClosed ?? writeLiveCloseRow(pos, exitPx, exitReason, cfg, closeOpts);
 }
 
 /** Run due exit slices for all in-progress exits (call each poll). */
@@ -323,13 +405,17 @@ export async function processPendingLiveExits(
 
   const opens = loadLiveOpensFromJournal(filePath);
   const now = Date.now();
+  const bookDrivers = selectBookExitDrivers(pending, opens);
 
   for (const [hash, exit] of pending) {
     const pos = opens.get(hash);
     if (!pos) continue;
 
+    const bookKey = bookKeyForOpen(pos);
+    if (bookDrivers.get(bookKey) !== hash) continue;
+
     const dueIdx = nextDueSliceIndex(
-      exitAnchorFromPending(exit),
+      resolveExitScheduleAnchor(exit),
       exit.slicesSent,
       exit.sliceCount,
       now,
@@ -349,5 +435,28 @@ export async function processPendingLiveExits(
 }
 
 export function isLiveExitPending(cfg: HlTwapLiveConfig, hash: string): boolean {
-  return loadPendingLiveExits(cfg.journalPath).has(hash);
+  const pending = loadPendingLiveExits(cfg.journalPath);
+  if (pending.has(hash)) return true;
+  const opens = loadLiveOpensFromJournal(cfg.journalPath);
+  const pos = opens.get(hash);
+  if (!pos) return false;
+  return pendingExitOnSameBook(pending, opens, pos) !== null;
+}
+
+/** Block TP/DCA only after the first exit slice has actually fired on this book. */
+export function blocksLiveLadderDuringExit(cfg: HlTwapLiveConfig, hash: string): boolean {
+  const pending = loadPendingLiveExits(cfg.journalPath);
+  const direct = pending.get(hash);
+  if (direct && direct.slicesSent > 0) return true;
+
+  const opens = loadLiveOpensFromJournal(cfg.journalPath);
+  const pos = opens.get(hash);
+  if (!pos) return false;
+  const bookKey = bookKeyForOpen(pos);
+  for (const [exitHash, exit] of pending) {
+    const exitPos = opens.get(exitHash);
+    if (!exitPos || bookKeyForOpen(exitPos) !== bookKey) continue;
+    if (exit.slicesSent > 0) return true;
+  }
+  return false;
 }

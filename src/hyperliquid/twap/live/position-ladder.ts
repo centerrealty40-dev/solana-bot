@@ -16,39 +16,72 @@ export function favorableMovePct(side: TwapSide, markPx: number, entryAnchorPx: 
   return side === 'buy' ? raw : -raw;
 }
 
+/** Ladder slice as collateral — used for dynamic-margin DCA headroom at entry. */
+export function sliceMarginUsd(initialMarginUsd: number, cfg: LadderConfig): number {
+  return initialMarginUsd * (cfg.slicePctOfInitial / 100);
+}
+
+/** TP/DCA gross slice: 10% of live position (e.g. $600 on $6k). */
+export function ladderSliceGrossUsd(currentNotionalUsd: number, cfg: LadderConfig): number {
+  return currentNotionalUsd * (cfg.slicePctOfInitial / 100);
+}
+
+/** @deprecated use {@link ladderSliceGrossUsd} */
+export function tpSliceGrossUsd(currentNotionalUsd: number, cfg: LadderConfig): number {
+  return ladderSliceGrossUsd(currentNotionalUsd, cfg);
+}
+
+/** @deprecated use {@link ladderSliceGrossUsd} */
 export function sliceNotionalUsd(initialNotionalUsd: number, cfg: LadderConfig): number {
   return initialNotionalUsd * (cfg.slicePctOfInitial / 100);
 }
 
-/** Next ladder action at current mark, or null if no threshold crossed.
- *  `leverage` scales price move to approximate margin ROE (price% × leverage). */
+/**
+ * Hyperliquid UI ROE % = unrealized PnL / margin (collateral).
+ * Matches clearinghouse display — not raw price move % (which is ~ROE / leverage).
+ */
+export function hlRoePct(
+  side: TwapSide,
+  markPx: number,
+  avgEntryPx: number,
+  currentNotionalUsd: number,
+  marginUsd: number,
+): number {
+  if (marginUsd <= 0) return 0;
+  const pnlUsd = unrealizedUsd(side, avgEntryPx, currentNotionalUsd, markPx);
+  return (pnlUsd / marginUsd) * 100;
+}
+
+/** Next ladder action: ±stepPct **HL ROE** on book margin; slice = slicePct% of current gross. */
 export function nextLadderAction(
   side: TwapSide,
   markPx: number,
   entryAnchorPx: number,
+  initialMarginUsd: number,
   initialNotionalUsd: number,
   currentNotionalUsd: number,
   tpLevelsTaken: number,
   dcaLevelsTaken: number,
   cfg: LadderConfig,
-  leverage = 1,
+  _leverage = 1,
 ): LadderAction | null {
-  if (markPx <= 0 || entryAnchorPx <= 0 || initialNotionalUsd <= 0) return null;
+  if (markPx <= 0 || entryAnchorPx <= 0 || initialMarginUsd <= 0 || initialNotionalUsd <= 0) return null;
+  if (currentNotionalUsd <= 0) return null;
 
-  const lev = Math.max(1, leverage);
-  const move = favorableMovePct(side, markPx, entryAnchorPx) * lev;
-  const slice = sliceNotionalUsd(initialNotionalUsd, cfg);
+  const roePct = hlRoePct(side, markPx, entryAnchorPx, currentNotionalUsd, initialMarginUsd);
+  const sliceGross = ladderSliceGrossUsd(currentNotionalUsd, cfg);
 
   const nextTpThreshold = (tpLevelsTaken + 1) * cfg.stepPct;
-  if (move >= nextTpThreshold) {
-    const take = Math.min(slice, currentNotionalUsd);
+  if (roePct >= nextTpThreshold) {
+    const take = Math.min(sliceGross, currentNotionalUsd);
     if (take <= 0) return null;
     return { kind: 'take_profit', level: tpLevelsTaken + 1, notionalUsd: take };
   }
 
   const nextDcaThreshold = -(dcaLevelsTaken + 1) * cfg.stepPct;
-  if (move <= nextDcaThreshold) {
-    return { kind: 'add', level: dcaLevelsTaken + 1, notionalUsd: slice };
+  if (roePct <= nextDcaThreshold) {
+    if (sliceGross <= 0) return null;
+    return { kind: 'add', level: dcaLevelsTaken + 1, notionalUsd: sliceGross };
   }
 
   return null;

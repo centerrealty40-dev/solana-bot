@@ -12,7 +12,33 @@ import {
   type ExitLadderRungSpec,
 } from './exit-ladder.js';
 import { parseFollowSlMode, type FollowSlMode } from './exit-policy.js';
-import { parseDcaLevels, type DcaLevel } from '../papertrader/config.js';
+
+export type FollowDcaAnchor = 'first' | 'avg';
+
+export type FollowDcaLevel = {
+  triggerPct: number;
+  addFraction: number;
+  anchor: FollowDcaAnchor;
+};
+
+/** DCA spec: `-8:0.333:first,-7:0.333:avg` (trigger %, add fraction, anchor). */
+export function parseFollowDcaLevels(spec: string | undefined | null): FollowDcaLevel[] {
+  if (!spec?.trim()) return [];
+  const out: FollowDcaLevel[] = [];
+  for (const part of spec.split(',')) {
+    const seg = part.trim().split(':').map((s) => s.trim());
+    if (seg.length < 2) continue;
+    const trig = Number(seg[0]);
+    const frac = Number(seg[1]);
+    const anchor: FollowDcaAnchor = seg[2]?.toLowerCase() === 'avg' ? 'avg' : 'first';
+    if (!Number.isFinite(trig) || !Number.isFinite(frac) || frac <= 0) continue;
+    out.push({ triggerPct: trig / 100, addFraction: frac, anchor });
+  }
+  return out;
+}
+
+/** Default front-run DCA: buy before leader ~−10% / ~−8% avg-down adds. */
+export const FLOW8Z_FRONTRUN_DCA_LEVELS = '-8:0.333333:first,-7:0.333333:avg';
 
 export type FollowExitPolicy = 'leader_ladder' | 'oscar_wave_b' | 'flow8z_antidump';
 
@@ -35,7 +61,14 @@ function parseFollowExitPolicy(raw: string | undefined): FollowExitPolicy {
 /** PumpSwap flow bot — mirror target (infra savings vs own discovery). */
 export const FLOW8Z_TARGET_WALLET = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
 
+/** flow8z mirror of 8zkg wallet — tiered scalp. */
 export const FLOW8Z_DEFAULT_EXIT_LADDER = '5:0.45,10:0.35,15:1';
+
+/**
+ * hnu5 forensic scalp (7d RPC): 72% RTs = 1 sell; first gain cluster 15–20%;
+ * partial first sell p25 ≈ 65% of bag. Front-run via exitLeadPct=2.
+ */
+export const HNU5_SCALP_EXIT_LADDER = '14:0.7,22:1';
 
 /** Primary reference wallet (hnu5 PumpSwap dip bot). */
 export const HNU5_TARGET_WALLET = 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN';
@@ -60,6 +93,8 @@ const ConfigSchema = z.object({
   maxLeaderFirstBuyUsd: z.coerce.number().min(0).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   legUsd: z.coerce.number().positive().max(500).default(3),
+  /** Leader mirror-add notional (0 = derive from first DCA fraction × dcaNotionalUsd). */
+  mirrorAddUsd: z.coerce.number().min(0).max(500).default(0),
   dcaLevelsRaw: z.string().default(''),
   dcaKillstopPct: z.coerce.number().min(0).max(90).default(50),
   /** leader_ladder | oscar_wave_b | flow8z_antidump */
@@ -100,6 +135,17 @@ const ConfigSchema = z.object({
   flow8zKillstopPct: z.coerce.number().min(0).max(90).default(0),
   /** flow8z_antidump: flush at pool quote when leader sells while we still hold. */
   flow8zLeaderFlushEnabled: z.coerce.boolean().default(true),
+  /** flow8z: ms to wait after leader sell before pool flush (TP still active). 0 = immediate. */
+  flow8zLeaderSellDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  /** flow8z: skip pool flush when leader sell notional is below this (0 = flush all sells). */
+  flow8zLeaderFlushMinSellUsd: z.coerce.number().min(0).default(0),
+  /** flow8z: delay after leader full exit (flat) before flush — 0 = instant rug-follow. */
+  flow8zLeaderFlatFlushDelayMs: z.coerce.number().int().min(0).max(300_000).default(0),
+  /** When we missed first entry: still enter on leader add if flow gate passes (no WS mirror-add when we hold). */
+  allowLateEntryOnLeaderAdd: z.coerce.boolean().default(true),
+  /** 0 = off. Live hnu5: floor sub-150k micro dust. */
+  minMarketCapUsd: z.coerce.number().min(0).default(0),
+  maxMarketCapUsd: z.coerce.number().min(0).default(0),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
 });
@@ -108,11 +154,13 @@ export type PumpswapComboFollowConfig = z.infer<typeof ConfigSchema> & {
   exitLadderSpec: ExitLadderRungSpec[];
   exitLadder: EffectiveExitRung[];
   slMode: FollowSlMode;
-  dcaLevels: DcaLevel[];
+  dcaLevels: FollowDcaLevel[];
   /** Entry mirror size — always legUsd ($3 test agent). */
   entryUsd: number;
   /** DCA add sizing base: legUsd × addFraction (Oscar % ladder on our notional). */
   dcaNotionalUsd: number;
+  /** Resolved mirror-add USD (leader add legs). */
+  mirrorAddUsdResolved: number;
 };
 
 /** Map to pumpswap-combo executor / journal (unused discovery fields filled with dummies). */
@@ -199,25 +247,37 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
 
   const exitPolicy = parseFollowExitPolicy(process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY);
   const isFlow8z = exitPolicy === 'flow8z_antidump';
+  const targetWallet = process.env.PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET?.trim() || HNU5_TARGET_WALLET;
+  const isHnu5Target = targetWallet === HNU5_TARGET_WALLET;
 
   const exitLadderRaw =
     process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER?.trim() ||
-    (isFlow8z ? FLOW8Z_DEFAULT_EXIT_LADDER : '');
+    (isFlow8z ? (isHnu5Target ? HNU5_SCALP_EXIT_LADDER : FLOW8Z_DEFAULT_EXIT_LADDER) : '');
   const exitLeadPct = Number(
-    process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT ?? (isFlow8z ? '0' : '2'),
+    process.env.PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT ??
+      (isFlow8z ? (isHnu5Target ? '2' : '0') : '2'),
   );
   const exitLadderSpec = parseExitLadderSpec(exitLadderRaw);
   const exitLadder = effectiveExitLadder(exitLadderSpec, exitLeadPct);
 
   const dcaLevelsRaw =
     process.env.PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS?.trim() ||
-    (exitPolicy === 'oscar_wave_b' ? '-10:0.333333,-20:0.333333' : '');
-  const dcaLevels = parseDcaLevels(dcaLevelsRaw);
+    (exitPolicy === 'oscar_wave_b'
+      ? '-10:0.333333,-20:0.333333'
+      : isFlow8z
+        ? FLOW8Z_FRONTRUN_DCA_LEVELS
+        : '');
+  const dcaLevels = parseFollowDcaLevels(dcaLevelsRaw);
   const mirrorLeaderAddsRaw = process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS?.trim();
   const mirrorLeaderAdds =
     mirrorLeaderAddsRaw != null && mirrorLeaderAddsRaw.length > 0
       ? mirrorLeaderAddsRaw === '1' || mirrorLeaderAddsRaw.toLowerCase() === 'true'
       : exitPolicy === 'leader_ladder';
+  const allowLateEntryRaw = process.env.PUMPSWAP_COMBO_FOLLOW_ALLOW_LATE_ENTRY_ON_LEADER_ADD?.trim();
+  const allowLateEntryOnLeaderAdd =
+    allowLateEntryRaw != null && allowLateEntryRaw.length > 0
+      ? allowLateEntryRaw === '1' || allowLateEntryRaw.toLowerCase() === 'true'
+      : isFlow8z;
 
   const entryGate = parseFollowEntryGate(
     process.env.PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE ?? (isFlow8z ? 'flow' : undefined),
@@ -238,20 +298,20 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     journalPath,
     statePath,
     rpcUrl,
-    targetWallet: process.env.PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET?.trim() || HNU5_TARGET_WALLET,
+    targetWallet,
     pollIntervalMs: process.env.PUMPSWAP_COMBO_FOLLOW_POLL_MS,
     heartbeatIntervalMs: process.env.PUMPSWAP_COMBO_FOLLOW_HEARTBEAT_MS,
     signatureLimit: process.env.PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT,
     buyDelayMs: process.env.PUMPSWAP_COMBO_FOLLOW_BUY_DELAY_MS,
     buyRetryWindowMs: process.env.PUMPSWAP_COMBO_FOLLOW_BUY_RETRY_MS,
     minLeaderBuyUsd:
-      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD ?? (isFlow8z ? '150' : undefined),
-    maxLeaderFirstBuyUsd:
-      process.env.PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD ?? (isFlow8z ? '300' : undefined),
+      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD ?? (isFlow8z ? '80' : undefined),
+    maxLeaderFirstBuyUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD ?? (isFlow8z ? '0' : undefined),
     maxOpenPositions:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_OPEN ??
       (isFlow8z || (executionMode === 'live' && entryGate === 'flow') ? '8' : undefined),
     legUsd: process.env.PUMPSWAP_COMBO_FOLLOW_LEG_USD,
+    mirrorAddUsd: process.env.PUMPSWAP_COMBO_FOLLOW_MIRROR_ADD_USD,
     dcaLevelsRaw,
     dcaKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_DCA_KILLSTOP_PCT,
     exitPolicy,
@@ -259,7 +319,7 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     waveBTrailSellFraction: process.env.PUMPSWAP_COMBO_FOLLOW_WAVE_B_TRAIL_SELL_FRACTION,
     maxBuyLegs:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS ??
-      (exitPolicy === 'oscar_wave_b' ? String(1 + dcaLevels.length) : isFlow8z ? '1' : undefined),
+      (exitPolicy === 'oscar_wave_b' || isFlow8z ? String(1 + dcaLevels.length) : undefined),
     exitLeadPct,
     exitLadderRaw,
     slSingleLegPct: process.env.PUMPSWAP_COMBO_FOLLOW_SL_SINGLE_PCT,
@@ -280,13 +340,31 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     flowGateLookbackSec: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_LOOKBACK_SEC,
     flowGateMaxLagSec:
       process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_LAG_SEC ??
-      (entryGate === 'flow' && isFlow8z ? '5' : undefined),
+      (entryGate === 'flow' && isFlow8z ? '15' : undefined),
     flowGatePoolTxCap: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW_POOL_TX_CAP,
     maxHoldMs:
       process.env.PUMPSWAP_COMBO_FOLLOW_MAX_HOLD_MS ??
       (isFlow8z ? String(3 * 3600 * 1000) : undefined),
-    flow8zKillstopPct: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT,
+    flow8zKillstopPct:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT ??
+      (isFlow8z && executionMode === 'live' ? '30' : undefined),
     flow8zLeaderFlushEnabled: process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_FLUSH,
+    flow8zLeaderSellDelayMs:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS ??
+      (isFlow8z ? '60000' : undefined),
+    flow8zLeaderFlushMinSellUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLUSH_MIN_SELL_USD ??
+      (isFlow8z && executionMode === 'live' ? '500' : undefined),
+    flow8zLeaderFlatFlushDelayMs:
+      process.env.PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLAT_FLUSH_DELAY_MS ??
+      (isFlow8z && executionMode === 'live' ? '0' : undefined),
+    allowLateEntryOnLeaderAdd,
+    minMarketCapUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD ??
+      (isFlow8z && executionMode === 'live' ? '150000' : undefined),
+    maxMarketCapUsd:
+      process.env.PUMPSWAP_COMBO_FOLLOW_MAX_MCAP_USD ??
+      (isFlow8z && executionMode === 'live' ? '3000000' : undefined),
     walletSecret,
     walletPubkeyExpected: process.env.PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY?.trim(),
   });
@@ -296,6 +374,13 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
   const dcaNotionalUsd =
     dcaNotionalRaw && Number(dcaNotionalRaw) > 0 ? Number(dcaNotionalRaw) : parsed.legUsd;
 
+  const mirrorAddUsdResolved =
+    parsed.mirrorAddUsd > 0
+      ? parsed.mirrorAddUsd
+      : dcaLevels[0]
+        ? dcaNotionalUsd * dcaLevels[0].addFraction
+        : entryUsd;
+
   return {
     ...parsed,
     exitLadderSpec,
@@ -303,5 +388,6 @@ export function loadPumpswapComboFollowConfig(): PumpswapComboFollowConfig {
     dcaLevels,
     entryUsd,
     dcaNotionalUsd,
+    mirrorAddUsdResolved,
   };
 }

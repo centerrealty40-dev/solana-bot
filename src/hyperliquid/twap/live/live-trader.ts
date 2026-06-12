@@ -1,5 +1,5 @@
 import type { TwapWatchState } from '../detect.js';
-import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, isShortTwapMinutes } from '../twap-duration.js';
+import { twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, twapTimerExitReason } from '../twap-duration.js';
 import {
   scheduleWhaleExitDelay,
   takeDueWhaleExit,
@@ -7,33 +7,41 @@ import {
 import { shouldCloseOnWhaleTwapCancel } from '../user-rating.js';
 import type { HyperliquidMarketCache } from '../hyperliquid-meta.js';
 import { fetchHlClearinghouseMargin, fetchHlClearinghousePositions } from '../hyperliquid-meta.js';
-import { computeCoinEntryPlan } from '../coin-twap-analysis.js';
+import { computeCoinEntryPlan, shouldCloseForImpactLoss } from '../coin-twap-analysis.js';
 import { hlTwapEntrySide } from '../fade-whales.js';
 import { markPxForCoin } from '../paper-trader.js';
 import { computeTwapSchedule } from '../twap-schedule.js';
-import type { NormalizedTwapSignal } from '../types.js';
+import type { NormalizedTwapSignal, TwapSide } from '../types.js';
 import { freeMarginUsd, hasMarginForNewOpen } from './account-margin.js';
 import { computeOpenMarginUsd } from './dynamic-margin.js';
+import { openMarginUsdForCoin } from './margin-by-leverage.js';
 import { canScheduleLiveEntry } from './coin-exposure.js';
 import type { HlTwapLiveConfig } from './config.js';
 import type { HlTwapExchangeClient } from './exchange-client.js';
 import { flattenCoinOnExchange } from './flatten-position.js';
 import {
+  blocksLiveLadderDuringExit,
   closeLiveTrade,
   instantCloseLiveTrade,
   isLiveExitPending,
   processPendingLiveExits,
 } from './chunked-exit-runner.js';
+import { isTradingHaltedByDrawdown } from './drawdown-stop.js';
 import {
   appendLiveJournal,
   journalDcaRow,
   journalOpenRow,
+  journalReanchorRow,
   journalScheduleRow,
   journalTpRow,
   loadLiveOpensFromJournal,
   loadPendingLiveSchedules,
   type JournalSchedule,
 } from './journal.js';
+import {
+  clearCoinSideOpenInFlight,
+  markCoinSideOpenInFlight,
+} from './live-exec-worker.js';
 import { notifyLiveTradeOpen } from './telegram-notify.js';
 import { isOpenFillAcceptable } from './parse-order-fill.js';
 import {
@@ -42,6 +50,27 @@ import {
   unrealizedUsd,
   type LadderConfig,
 } from './position-ladder.js';
+import {
+  applyDcaLevelToGroup,
+  applyTpLevelToGroup,
+  coinSideKey,
+  distributeExchangeNotional,
+  groupAvgEntryPx,
+  groupMaxDcaLevels,
+  groupMaxTpLevels,
+  groupOpensByCoinSide,
+  primaryOpenInGroup,
+  sumInitialMarginUsd,
+  sumInitialNotionalUsd,
+} from './coin-side-ladder.js';
+import {
+  bookDriverCloseAtMs,
+  bookGrossUsd,
+  dcaWouldExceedBookGrossCap,
+  newLegGrossUsd,
+  stackCfgFromLiveConfig,
+  type CoinStackReanchorTarget,
+} from './coin-stack-policy.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 function exitPxForOpen(open: HlTwapLiveOpen, cache: HyperliquidMarketCache): number {
@@ -54,6 +83,18 @@ function exitPxForOpen(open: HlTwapLiveOpen, cache: HyperliquidMarketCache): num
 
 function ladderCfg(cfg: HlTwapLiveConfig): LadderConfig {
   return { stepPct: cfg.ladderStepPct, slicePctOfInitial: cfg.ladderSlicePct };
+}
+
+async function exchangeGrossNotionalUsd(
+  client: HlTwapExchangeClient,
+  coin: string,
+  side: TwapSide,
+): Promise<number | null> {
+  if (client.mode !== 'live') return null;
+  const onExchange = await fetchHlClearinghousePositions(client.accountAddress());
+  const ex = onExchange.find((p) => p.coin === coin && p.side === side);
+  if (!ex || ex.notionalUsd <= 0) return null;
+  return ex.notionalUsd;
 }
 
 /** Sync journal gross notional from exchange positionValue when drift is large. */
@@ -82,11 +123,45 @@ async function reconcileJournalNotionalFromExchange(
   }
 }
 
+/** Virtual transfer: re-anchor worst journal leg to a better TWAP (no exchange order). */
+export function performCoinStackReanchor(
+  sig: NormalizedTwapSignal,
+  target: CoinStackReanchorTarget,
+  cfg: HlTwapLiveConfig,
+  openAtMs: number,
+): void {
+  const sched = computeTwapSchedule(sig);
+  const entrySide = hlTwapEntrySide(sig.user, sig.side);
+  appendLiveJournal(
+    cfg.journalPath,
+    journalReanchorRow({
+      oldHash: target.targetHash,
+      newHash: sig.hash,
+      coin: sig.coin,
+      displaySymbol: sig.displaySymbol,
+      side: entrySide,
+      slot: target.slot,
+      openAtMs,
+      closeAtMs: sched.paperCloseAtMs,
+      twapStartMs: sched.twapStartMs,
+      whaleUser: sig.user,
+      minutes: sig.minutes,
+      impactPct: sig.volumeSharePct,
+      whaleNotionalUsd: sig.notionalUsd,
+      whaleSize: sig.size,
+    }),
+  );
+  console.log(
+    `[hl-twap-live] re-anchor ${sig.displaySymbol} ${entrySide}: ${target.targetHash.slice(0, 12)}… → ${sig.hash.slice(0, 12)}… (${target.slot})`,
+  );
+}
+
 /** Schedule live entry after Telegram OPEN (same timing as paper). */
 export function scheduleLiveTrade(
   sig: NormalizedTwapSignal,
   watchState: TwapWatchState,
   cfg: HlTwapLiveConfig,
+  leverageForCoin?: (coin: string) => number,
 ): { scheduled: boolean; reason: string } {
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
@@ -95,8 +170,23 @@ export function scheduleLiveTrade(
     return { scheduled: false, reason: 'already_tracked' };
   }
 
-  const decision = canScheduleLiveEntry(sig, watchState, opens, cfg.minImpactPct, filePath);
+  const decision = canScheduleLiveEntry(
+    sig,
+    watchState,
+    opens,
+    cfg.minImpactPct,
+    filePath,
+    cfg,
+    leverageForCoin,
+  );
   if (!decision.allow) {
+    if (decision.reason === 'coin_stack_reanchor' && decision.reanchor) {
+      const openAtMs =
+        decision.openAtMs ??
+        computeCoinEntryPlan(sig, watchState, cfg.minImpactPct).openAtMs;
+      performCoinStackReanchor(sig, decision.reanchor, cfg, openAtMs);
+      return { scheduled: true, reason: 'reanchored' };
+    }
     console.log(`[hl-twap-live] skip schedule ${sig.displaySymbol} ${sig.side}: ${decision.reason}`);
     return { scheduled: false, reason: decision.reason };
   }
@@ -124,6 +214,30 @@ export function scheduleLiveTrade(
   return { scheduled: true, reason: 'ok' };
 }
 
+async function wouldExceedCoinGrossCap(
+  sched: JournalSchedule,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  opens: Map<string, HlTwapLiveOpen>,
+  pending: Map<string, JournalSchedule>,
+  marginUsd: number,
+): Promise<boolean> {
+  const lev = client.leverageForCoin(sched.coin);
+  const newGross = marginUsd * (lev > 0 ? lev : cfg.leverage);
+  const stackCfg = stackCfgFromLiveConfig(cfg, (c) => client.leverageForCoin(c));
+  const journalGross = bookGrossUsd(sched.coin, sched.side, opens);
+  let scheduledGross = 0;
+  for (const [hash, s] of pending) {
+    if (hash === sched.hash) continue;
+    if (s.coin === sched.coin && s.side === sched.side) {
+      scheduledGross += newLegGrossUsd(stackCfg, s.coin);
+    }
+  }
+  const exchangeGross = await exchangeGrossNotionalUsd(client, sched.coin, sched.side);
+  const baseline = Math.max(journalGross + scheduledGross, exchangeGross ?? 0);
+  return baseline + newGross > cfg.coinMaxGrossUsd;
+}
+
 async function executeLiveOpen(
   sched: JournalSchedule,
   entryPx: number,
@@ -131,8 +245,24 @@ async function executeLiveOpen(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
   marginUsd = cfg.notionalUsd,
-): Promise<{ pos: HlTwapLiveOpen | null; rejectReason?: 'no_price' | 'fill_too_small' }> {
+  opens?: Map<string, HlTwapLiveOpen>,
+  pending?: Map<string, JournalSchedule>,
+): Promise<{
+  pos: HlTwapLiveOpen | null;
+  rejectReason?: 'no_price' | 'fill_too_small' | 'gross_cap';
+}> {
   if (entryPx <= 0) return { pos: null, rejectReason: 'no_price' };
+
+  if (opens && pending) {
+    const overCap = await wouldExceedCoinGrossCap(sched, cfg, client, opens, pending, marginUsd);
+    if (overCap) {
+      console.warn(
+        `[hl-twap-live] open ${sched.displaySymbol} blocked: coin gross cap $${cfg.coinMaxGrossUsd}`,
+      );
+      return { pos: null, rejectReason: 'gross_cap' };
+    }
+  }
+
   const fill = await client.marketOrder({
     coin: sched.coin,
     displaySymbol: sched.displaySymbol,
@@ -179,7 +309,7 @@ async function executeLiveOpen(
     avgEntryPx: fill.fillPx,
     initialNotionalUsd: fill.notionalUsd,
     currentNotionalUsd: fill.notionalUsd,
-    marginUsd: fill.marginUsd ?? marginUsd,
+    marginUsd,
     entryLeverage: fill.leverage ?? cfg.leverage,
     impactPct: sched.impactPct,
     whaleUser: sched.whaleUser,
@@ -213,6 +343,9 @@ export async function processLiveTrades(
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
 ): Promise<void> {
+  if (isTradingHaltedByDrawdown()) {
+    return;
+  }
   const filePath = cfg.journalPath;
   const now = Date.now();
   const pending = loadPendingLiveSchedules(filePath);
@@ -245,38 +378,57 @@ export async function processLiveTrades(
         }
       }
 
+      const effectiveLev = client.leverageForCoin(sched.coin);
       const openMarginUsd = accountMargin
-        ? computeOpenMarginUsd(accountMargin, opensBefore, cfg)
-        : cfg.notionalUsd;
+        ? computeOpenMarginUsd(accountMargin, opensBefore, cfg, effectiveLev)
+        : openMarginUsdForCoin(sched.coin, cfg, (c) => client.leverageForCoin(c));
 
       if (
         accountMargin &&
         !hasMarginForNewOpen(accountMargin, opensBefore, openMarginUsd, cfg.marginReserveUsd)
       ) {
         const free = freeMarginUsd(accountMargin, opensBefore);
-        const spotNote =
-          accountMargin.spotUsdcTotalUsd != null && accountMargin.spotUsdcTotalUsd > 0
-            ? ` spotUsdc=$${accountMargin.spotUsdcTotalUsd.toFixed(0)}`
-            : '';
         console.log(
-          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${openMarginUsd}${spotNote})`,
+          `[hl-twap-live] defer open ${sched.displaySymbol}: insufficient_account_margin (free ~$${free.toFixed(0)}, need $${openMarginUsd}, account ~$${accountMargin.accountValueUsd.toFixed(0)})`,
         );
         continue;
       }
 
-      if (cfg.dynamicMargin && openMarginUsd !== cfg.notionalUsd) {
+      const baseMargin = openMarginUsdForCoin(sched.coin, cfg, (c) => client.leverageForCoin(c));
+      if (cfg.dynamicMargin && openMarginUsd !== baseMargin) {
         console.log(
-          `[hl-twap-live] dynamic margin ${sched.displaySymbol}: $${openMarginUsd} (opens=${opensBefore.size}, base=$${cfg.notionalUsd})`,
+          `[hl-twap-live] dynamic margin ${sched.displaySymbol}: $${openMarginUsd} (opens=${opensBefore.size}, base=$${baseMargin})`,
+        );
+      } else if (!cfg.dynamicMargin && openMarginUsd !== cfg.notionalUsd) {
+        console.log(
+          `[hl-twap-live] lev margin ${sched.displaySymbol}: $${openMarginUsd} (${effectiveLev}x)`,
         );
       }
 
       const px =
         markPxForCoin(sched.coin, cache) || (cache.mids.get(sched.displaySymbol) ?? 0);
-      const opened = await executeLiveOpen(sched, px, cfg, client, watchState, openMarginUsd);
+      markCoinSideOpenInFlight(sched.coin, sched.side);
+      let opened: Awaited<ReturnType<typeof executeLiveOpen>>;
+      try {
+        opened = await executeLiveOpen(
+          sched,
+          px,
+          cfg,
+          client,
+          watchState,
+          openMarginUsd,
+          opensBefore,
+          pending,
+        );
+      } finally {
+        clearCoinSideOpenInFlight(sched.coin, sched.side);
+      }
       if (opened.pos) {
         opensBefore.set(opened.pos.hash, opened.pos);
       } else if (opened.rejectReason === 'fill_too_small') {
         cancelSchedule(filePath, sched.hash, 'open_fill_too_small');
+      } else if (opened.rejectReason === 'gross_cap') {
+        cancelSchedule(filePath, sched.hash, 'coin_stack_gross_cap');
       }
     } catch (e) {
       console.warn(`[hl-twap-live] open failed ${sched.displaySymbol}`, String(e));
@@ -285,6 +437,16 @@ export async function processLiveTrades(
 
   const opens = loadLiveOpensFromJournal(filePath);
   await processPendingLiveExits((pos) => exitPxForOpen(pos, cache), cfg, client, watchState);
+
+  const bookGroups = groupOpensByCoinSide(opens);
+  const bookCloseAtMs = new Map<string, number>();
+  if (watchState) {
+    for (const [key, group] of bookGroups) {
+      if (group.length === 0) continue;
+      const { coin, side } = group[0]!;
+      bookCloseAtMs.set(key, bookDriverCloseAtMs(coin, side, group, watchState));
+    }
+  }
 
   for (const pos of opens.values()) {
     if (isLiveExitPending(cfg, pos.hash)) continue;
@@ -304,14 +466,14 @@ export async function processLiveTrades(
     }
 
     const whaleEnded = watchState ? !watchState.activeByHash.has(pos.hash) : false;
-    const timerDue = now >= pos.liveCloseAtMs;
+    const bookKey = coinSideKey(pos.coin, pos.side);
+    const driverCloseAtMs = bookCloseAtMs.get(bookKey) ?? pos.liveCloseAtMs;
+    const timerDue = now >= driverCloseAtMs;
 
     if (timerDue) {
       try {
         const px = exitPxForOpen(pos, cache);
-        const exitReason = isShortTwapMinutes(pos.minutes)
-          ? HL_TWAP_EXIT_REASON_SHORT
-          : HL_TWAP_EXIT_REASON_EARLY;
+        const exitReason = twapTimerExitReason(pos.minutes);
         const closed = await closeLiveTrade(pos.hash, px, exitReason, cfg, client, watchState);
         if (closed) {
           console.log(`[hl-twap-live] closed ${pos.displaySymbol} (${exitReason})`);
@@ -349,51 +511,65 @@ export async function processLiveTrades(
   }
 }
 
-/** ±3% ladder: partial TP and DCA while TWAP cycles run. */
+/** ±3% HL ROE ladder: partial TP and DCA — one book per coin+side (exchange gross). */
 export async function processLiveLadders(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,
   client: HlTwapExchangeClient,
   watchState?: TwapWatchState,
 ): Promise<void> {
+  if (isTradingHaltedByDrawdown()) return;
   const filePath = cfg.journalPath;
   const opens = loadLiveOpensFromJournal(filePath);
   const lcfg = ladderCfg(cfg);
+  const groups = groupOpensByCoinSide(opens);
 
-  for (const pos of opens.values()) {
-    if (watchState?.ladderBlockedHashes.has(pos.hash)) continue;
-    if (isLiveExitPending(cfg, pos.hash)) continue;
+  for (const group of groups.values()) {
+    if (group.length === 0) continue;
 
-    const markPx = exitPxForOpen(pos, cache);
+    const primary = primaryOpenInGroup(group);
+    if (group.some((p) => watchState?.ladderBlockedHashes.has(p.hash))) continue;
+    if (group.some((p) => blocksLiveLadderDuringExit(cfg, p.hash))) continue;
+
+    const markPx = exitPxForOpen(primary, cache);
     if (markPx <= 0) continue;
 
     try {
-      await reconcileJournalNotionalFromExchange(pos, client);
+      let bookGross =
+        (await exchangeGrossNotionalUsd(client, primary.coin, primary.side)) ??
+        group.reduce((s, p) => s + p.currentNotionalUsd, 0);
+      if (bookGross <= 0) continue;
+
+      distributeExchangeNotional(group, bookGross);
+
+      const avgPx = groupAvgEntryPx(group);
+      const tpLevels = groupMaxTpLevels(group);
+      const dcaLevels = groupMaxDcaLevels(group);
 
       let action = nextLadderAction(
-        pos.side,
+        primary.side,
         markPx,
-        pos.avgEntryPx,
-        pos.initialNotionalUsd,
-        pos.currentNotionalUsd,
-        pos.tpLevelsTaken,
-        pos.dcaLevelsTaken,
+        avgPx,
+        sumInitialMarginUsd(group),
+        sumInitialNotionalUsd(group),
+        bookGross,
+        tpLevels,
+        dcaLevels,
         lcfg,
-        pos.entryLeverage,
       );
 
       while (action) {
         if (action.kind === 'take_profit') {
-          const closeSide = pos.side === 'buy' ? 'sell' : 'buy';
-          const szi = await client.getPositionSzi(pos.coin);
+          const closeSide = primary.side === 'buy' ? 'sell' : 'buy';
+          const szi = await client.getPositionSzi(primary.coin);
           const absPos = Math.abs(szi);
           const targetBase = action.notionalUsd / markPx;
           const reduceBase = Math.min(targetBase, absPos);
           if (reduceBase <= 0) break;
 
           const fill = await client.marketOrder({
-            coin: pos.coin,
-            displaySymbol: pos.displaySymbol,
+            coin: primary.coin,
+            displaySymbol: primary.displaySymbol,
             side: closeSide,
             notionalUsd: reduceBase * markPx,
             markPx,
@@ -404,38 +580,48 @@ export async function processLiveLadders(
           const filledUsd = fill.notionalUsd;
           if (filledUsd <= 0) break;
 
-          const newNotional = Math.max(0, pos.currentNotionalUsd - filledUsd);
-          pos.currentNotionalUsd = newNotional;
-          pos.tpLevelsTaken = action.level;
+          applyTpLevelToGroup(group, action.level);
+          bookGross =
+            (await exchangeGrossNotionalUsd(client, primary.coin, primary.side)) ??
+            Math.max(0, bookGross - filledUsd);
+          distributeExchangeNotional(group, bookGross);
+
           appendLiveJournal(
             filePath,
             journalTpRow(
-              pos.hash,
+              primary.hash,
               action.level,
               filledUsd,
               fill.fillPx,
-              newNotional,
-              pos.tpLevelsTaken,
+              bookGross,
+              action.level,
             ),
           );
-          await reconcileJournalNotionalFromExchange(pos, client);
           console.log(
-            `[hl-twap-live] TP L${action.level} ${pos.displaySymbol} -$${filledUsd.toFixed(0)} uPnL=${unrealizedUsd(pos.side, pos.avgEntryPx, pos.currentNotionalUsd, markPx).toFixed(2)}`,
+            `[hl-twap-live] TP L${action.level} ${primary.displaySymbol} book=$${bookGross.toFixed(0)} -$${filledUsd.toFixed(0)} (legs=${group.length}) uPnL=${unrealizedUsd(primary.side, avgPx, bookGross, markPx).toFixed(2)}`,
           );
         } else {
-          const szi = await client.getPositionSzi(pos.coin);
+          if (
+            dcaWouldExceedBookGrossCap(bookGross, action.notionalUsd, cfg.coinMaxGrossUsd)
+          ) {
+            console.log(
+              `[hl-twap-live] DCA blocked ${primary.displaySymbol}: book gross cap $${cfg.coinMaxGrossUsd}`,
+            );
+            break;
+          }
+          const szi = await client.getPositionSzi(primary.coin);
           if (Math.abs(szi) <= 0) {
             console.log(
-              `[hl-twap-live] ${pos.displaySymbol} flat on exchange — reconcile close (journal still open)`,
+              `[hl-twap-live] ${primary.displaySymbol} flat on exchange — reconcile close (journal still open)`,
             );
-            await instantCloseLiveTrade(pos.hash, markPx, 'exchange_flat_reconcile', cfg, client, watchState);
+            await instantCloseLiveTrade(primary.hash, markPx, 'exchange_flat_reconcile', cfg, client, watchState);
             break;
           }
 
           const fill = await client.marketOrder({
-            coin: pos.coin,
-            displaySymbol: pos.displaySymbol,
-            side: pos.side,
+            coin: primary.coin,
+            displaySymbol: primary.displaySymbol,
+            side: primary.side,
             notionalUsd: action.notionalUsd,
             markPx,
             reduceOnly: false,
@@ -443,54 +629,54 @@ export async function processLiveLadders(
           });
           if (fill.notionalUsd <= 0) break;
 
-          pos.avgEntryPx = avgEntryAfterAdd(
-            pos.avgEntryPx,
-            pos.currentNotionalUsd,
-            fill.notionalUsd,
-            fill.fillPx,
-          );
-          pos.currentNotionalUsd += fill.notionalUsd;
-          pos.dcaLevelsTaken = action.level;
+          const newAvg = avgEntryAfterAdd(avgPx, bookGross, fill.notionalUsd, fill.fillPx);
+          for (const p of group) p.avgEntryPx = newAvg;
+
+          applyDcaLevelToGroup(group, action.level);
+          bookGross =
+            (await exchangeGrossNotionalUsd(client, primary.coin, primary.side)) ??
+            bookGross + fill.notionalUsd;
+          distributeExchangeNotional(group, bookGross);
+
           appendLiveJournal(
             filePath,
             journalDcaRow(
-              pos.hash,
+              primary.hash,
               action.level,
               fill.notionalUsd,
               fill.fillPx,
-              pos.avgEntryPx,
-              pos.currentNotionalUsd,
-              pos.dcaLevelsTaken,
+              newAvg,
+              bookGross,
+              action.level,
             ),
           );
-          await reconcileJournalNotionalFromExchange(pos, client);
           console.log(
-            `[hl-twap-live] DCA L${action.level} ${pos.displaySymbol} +$${fill.notionalUsd.toFixed(0)} avg=${pos.avgEntryPx.toFixed(4)}`,
+            `[hl-twap-live] DCA L${action.level} ${primary.displaySymbol} book=$${bookGross.toFixed(0)} +$${fill.notionalUsd.toFixed(0)} avg=${newAvg.toFixed(4)} (legs=${group.length})`,
           );
         }
 
         action = nextLadderAction(
-          pos.side,
+          primary.side,
           markPx,
-          pos.avgEntryPx,
-          pos.initialNotionalUsd,
-          pos.currentNotionalUsd,
-          pos.tpLevelsTaken,
-          pos.dcaLevelsTaken,
+          groupAvgEntryPx(group),
+          sumInitialMarginUsd(group),
+          sumInitialNotionalUsd(group),
+          bookGross,
+          groupMaxTpLevels(group),
+          groupMaxDcaLevels(group),
           lcfg,
-          pos.entryLeverage,
         );
       }
     } catch (e) {
       const msg = String(e);
       if (msg.includes('Insufficient margin')) {
-        watchState?.ladderBlockedHashes.add(pos.hash);
+        for (const p of group) watchState?.ladderBlockedHashes.add(p.hash);
         console.log(
-          `[hl-twap-live] ladder paused ${pos.displaySymbol}: insufficient margin (no further DCA this session)`,
+          `[hl-twap-live] ladder paused ${primary.displaySymbol}: insufficient margin (no further DCA this session)`,
         );
         continue;
       }
-      console.warn(`[hl-twap-live] ladder failed ${pos.displaySymbol}`, msg);
+      console.warn(`[hl-twap-live] ladder failed ${primary.displaySymbol}`, msg);
     }
   }
 }
@@ -575,6 +761,51 @@ export async function processExchangeResiduals(
       );
     }
   }
+}
+
+export type LiveTwapEndedSignal = {
+  signal: NormalizedTwapSignal;
+  endedStatus: string;
+};
+
+/** Close live opens when coin-side impact edge is lost (exchange I/O — run off poll loop). */
+export async function closeLivePositionsForImpactLoss(
+  cache: HyperliquidMarketCache,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState: TwapWatchState,
+  minImpactPct: number,
+): Promise<void> {
+  const opens = loadLiveOpensFromJournal(cfg.journalPath);
+  for (const pos of opens.values()) {
+    if (!shouldCloseForImpactLoss(pos.side, watchState, pos.coin, minImpactPct)) continue;
+    const px =
+      cache.mids.get(pos.coin) ?? cache.mids.get(pos.displaySymbol) ?? pos.avgEntryPx;
+    await closeLiveTrade(pos.hash, px, 'impact_edge_lost', cfg, client, watchState);
+    console.log(`[hl-twap-live] closed ${pos.displaySymbol} impact edge lost`);
+  }
+}
+
+/**
+ * Full live exchange pass: impact closes, TWAP ends, ladder, timers, residuals.
+ * Intended for background worker — not awaited from HypurrScan poll loop.
+ */
+export async function runLiveExchangePass(
+  cache: HyperliquidMarketCache,
+  cfg: HlTwapLiveConfig,
+  client: HlTwapExchangeClient,
+  watchState: TwapWatchState,
+  opts?: { endedSignals?: LiveTwapEndedSignal[] },
+): Promise<void> {
+  await closeLivePositionsForImpactLoss(cache, cfg, client, watchState, cfg.minImpactPct);
+
+  for (const { signal, endedStatus } of opts?.endedSignals ?? []) {
+    await handleLiveOnTwapEnd(signal, cache, endedStatus, cfg, client, watchState);
+  }
+
+  await processLiveLadders(cache, cfg, client, watchState);
+  await processLiveTrades(cache, cfg, client, watchState);
+  await processExchangeResiduals(cache, cfg, client);
 }
 
 export { unrealizedUsd };

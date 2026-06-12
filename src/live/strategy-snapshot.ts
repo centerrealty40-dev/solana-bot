@@ -55,6 +55,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveKillstopBelowStreak: ot.liveKillstopBelowStreak }
       : {}),
     ...(ot.liveBreakevenTrimDone ? { liveBreakevenTrimDone: true } : {}),
+    ...(ot.liveWaveBreakevenInsuranceTaken ? { liveWaveBreakevenInsuranceTaken: true } : {}),
     ...(typeof ot.liveThinVolEntryVol5mUsd === 'number' && Number.isFinite(ot.liveThinVolEntryVol5mUsd)
       ? { liveThinVolEntryVol5mUsd: ot.liveThinVolEntryVol5mUsd }
       : {}),
@@ -67,6 +68,8 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     Number.isFinite(ot.liveWaveMaxExecutedTpFrac)
       ? { liveWaveMaxExecutedTpFrac: ot.liveWaveMaxExecutedTpFrac }
       : {}),
+    ...(ot.liveWavePreArmReached === true ? { liveWavePreArmReached: true } : {}),
+    ...(ot.liveWaveImpulseBelowFirstRung === true ? { liveWaveImpulseBelowFirstRung: true } : {}),
     ...(typeof ot.liveWavePeakPnlFrac === 'number' && Number.isFinite(ot.liveWavePeakPnlFrac)
       ? { liveWavePeakPnlFrac: ot.liveWavePeakPnlFrac }
       : {}),

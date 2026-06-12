@@ -1,3 +1,5 @@
+import { Connection, Keypair } from '@solana/web3.js';
+import fs from 'node:fs';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
 import { appendFollowEvent } from './journal.js';
@@ -31,6 +33,21 @@ export type FollowSellResult = {
 
 function entrySlippageMult(cfg: PumpswapComboFollowConfig): number {
   return 1 + cfg.slippageBps / 10_000;
+}
+
+const LIVE_MIN_SOL_LAMPORTS = 30_000_000;
+
+async function liveWalletSolLamports(cfg: PumpswapComboFollowConfig): Promise<number | null> {
+  const secret = cfg.walletSecret?.trim();
+  if (!secret || !fs.existsSync(secret)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(secret, 'utf8')) as number[];
+    const kp = Keypair.fromSecretKey(Uint8Array.from(raw));
+    const conn = new Connection(cfg.rpcUrl, 'confirmed');
+    return await conn.getBalance(kp.publicKey, 'confirmed');
+  } catch {
+    return null;
+  }
 }
 
 export async function executeFollowBuy(args: {
@@ -72,6 +89,21 @@ export async function executeFollowBuy(args: {
       usdAtMarket: usd,
       txSignature: sig,
     };
+  }
+
+  const solLamports = await liveWalletSolLamports(cfg);
+  if (solLamports != null && solLamports < LIVE_MIN_SOL_LAMPORTS) {
+    appendFollowEvent(cfg, {
+      kind: 'buy_fail',
+      mode: 'live',
+      mint,
+      symbol,
+      leaderSignature,
+      reason: 'insufficient_sol',
+      solLamports,
+      minSolLamports: LIVE_MIN_SOL_LAMPORTS,
+    });
+    return { ok: false, reason: 'insufficient_sol' };
   }
 
   const execCfg = { ...toComboExecutorConfig(cfg), legUsd };

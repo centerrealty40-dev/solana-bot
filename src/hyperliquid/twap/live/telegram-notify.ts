@@ -60,6 +60,7 @@ function sideLabel(side: 'buy' | 'sell'): string {
 function closeReasonRu(reason: string): string {
   if (reason === 'before_last_cycle') return 'таймер TWAP (legacy)';
   if (reason === 'twap_early_exit') return 'выход −10m до конца TWAP';
+  if (reason === 'twap_hold_to_end') return 'удержание до ETA последнего цикла TWAP';
   if (reason === 'impact_edge_lost') return 'перекрёстный TWAP съел edge';
   if (reason.endsWith('_reconciled')) return 'позиция уже закрыта на бирже';
   if (reason.startsWith('twap_')) return reason.replace(/^twap_/, 'TWAP ').replace(/_/g, ' ');
@@ -155,6 +156,45 @@ export async function notifyLiveTradeOpen(
 ): Promise<void> {
   if (cfg.mode !== 'live') return;
   await sendLiveTradesTelegram(buildLiveTradeOpenMessage(pos, cfg, watchState));
+}
+
+/** Emergency drawdown stop — trading halted, all positions flattened. */
+export async function notifyDrawdownHalt(params: {
+  peakUsd: number;
+  equityUsd: number;
+  drawdownUsd: number;
+  thresholdUsd: number;
+}): Promise<void> {
+  const { peakUsd, equityUsd, drawdownUsd, thresholdUsd } = params;
+  const stopLevel = peakUsd - thresholdUsd;
+  const msg = [
+    '🛑 STOP LOSS — trading halted',
+    `Drawdown $${drawdownUsd.toFixed(2)} ≥ $${thresholdUsd.toFixed(0)} (trailing peak)`,
+    `Peak $${peakUsd.toFixed(2)} → equity $${equityUsd.toFixed(2)} (stop level $${stopLevel.toFixed(2)})`,
+    'All HL positions flattened. New entries blocked until HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1 + restart.',
+  ].join('\n');
+  await sendLiveTradesTelegram(msg);
+
+  const whaleToken = process.env.HL_TWAP_TELEGRAM_BOT_TOKEN?.trim() ?? '';
+  const whaleChat = process.env.HL_TWAP_TELEGRAM_CHAT_ID?.trim() ?? '';
+  if (whaleToken && whaleChat) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${whaleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: whaleChat,
+          text: msg,
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!res.ok) {
+        console.warn('[hl-twap-live:drawdown] whale telegram send failed', res.status);
+      }
+    } catch (e) {
+      console.warn('[hl-twap-live:drawdown] whale telegram error', String(e));
+    }
+  }
 }
 
 /** Краткое уведомление о закрытии live-позиции с PnL. */

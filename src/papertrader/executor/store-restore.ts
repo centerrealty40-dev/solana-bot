@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { resolveReconcileOrphanReentryGateMeta, type LastExitMarketSnapshot } from '../discovery/dip-clones.js';
 import type { OpenTrade, PartialSell, PositionLeg } from '../types.js';
 import { markFollowupCompleted } from './followup.js';
 import {
@@ -11,6 +12,8 @@ import {
 } from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
+import { loadPaperTraderConfig } from '../config.js';
+import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -43,6 +46,10 @@ export interface RestoreState {
   /** Последний убыточный exit по mint (replay журнала). */
   /** Max `exitTs` (ms) per mint after a full `close` — used for post-exit buy cooldown. */
   lastPostExitBuyCooldownTsByMint: Map<string, number>;
+  /** Last full-exit market snapshot per mint — post-exit re-entry gate (dip / cooldown). */
+  lastExitMarketSnapshotByMint: Map<string, LastExitMarketSnapshot>;
+  /** Non-admin ledger exits only — canonical re-entry gate reference. */
+  lastRealExitMarketSnapshotByMint: Map<string, LastExitMarketSnapshot>;
   open: Map<string, OpenTrade>;
 }
 
@@ -352,6 +359,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveBreakevenTrimDone)) {
       ot.liveBreakevenTrimDone = true;
     }
+    if (Boolean(rawPayload.liveWaveBreakevenInsuranceTaken)) {
+      ot.liveWaveBreakevenInsuranceTaken = true;
+    }
     const ltve = rawPayload.liveThinVolEntryVol5mUsd;
     if (typeof ltve === 'number' && Number.isFinite(ltve) && ltve > 0) ot.liveThinVolEntryVol5mUsd = ltve;
     const ltvs = rawPayload.liveThinVolStreak;
@@ -387,6 +397,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
 
     const lwmet = rawPayload.liveWaveMaxExecutedTpFrac;
     if (typeof lwmet === 'number' && Number.isFinite(lwmet)) ot.liveWaveMaxExecutedTpFrac = lwmet;
+    if (rawPayload.liveWavePreArmReached === true) ot.liveWavePreArmReached = true;
+    if (rawPayload.liveWaveImpulseBelowFirstRung === true) ot.liveWaveImpulseBelowFirstRung = true;
 
     const lwp = rawPayload.liveWavePeakPnlFrac;
     if (typeof lwp === 'number' && Number.isFinite(lwp)) ot.liveWavePeakPnlFrac = lwp;
@@ -412,6 +424,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
 
     reconcileEntrySplitV2FromLegs(ot);
+
+    if (
+      process.env.PAPER_STRATEGY_ID?.trim() === 'live-oscar' &&
+      ot.liveStagedEntry?.entrySplitV2
+    ) {
+      applyCanonicalStagedEntrySizing(loadPaperTraderConfig(), ot.liveStagedEntry);
+    }
 
     if (isWaveBExitPolicy(ot)) {
       waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
@@ -448,6 +467,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'BREAKEVEN_TRIM') {
     ot.liveBreakevenTrimDone = true;
+  }
+  if (reason === 'WAVE_B_BREAKEVEN_INSURANCE') {
+    ot.liveWaveBreakevenInsuranceTaken = true;
   }
   if (reason === 'TRAIL_STEP' && Number.isFinite(lp)) {
     waveBMarkTrailLevelTaken(ot, lp);
@@ -498,11 +520,72 @@ function applyDcaAddLedgerLine(state: RestoreState, raw: Record<string, unknown>
   ot.remainingFraction = 1;
 }
 
+function restoreLastExitMarketSnapshotFromCloseLine(
+  state: RestoreState,
+  mint: string,
+  rawClose: Record<string, unknown>,
+): void {
+  const exitTs = Number(rawClose.exitTs ?? rawClose.ts ?? 0);
+  if (!(exitTs > 0)) return;
+  let theo = Number(rawClose.theoretical_exit_price ?? 0);
+  let eff = Number(rawClose.effective_exit_price ?? 0);
+  let netPnlUsd = Number(rawClose.netPnlUsd ?? NaN);
+  let exitReason = String(rawClose.exitReason ?? '');
+  const ot = state.open.get(mint);
+  if (exitReason === 'RECONCILE_ORPHAN' && ot) {
+    const resolved = resolveReconcileOrphanReentryGateMeta(ot, {
+      netPnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : 0,
+      exitReason,
+      theoretical_exit_price: theo,
+      effective_exit_price: eff,
+    });
+    if (resolved) {
+      theo = resolved.marketUsd;
+      eff = resolved.marketUsd;
+      netPnlUsd = resolved.netPnlUsd;
+      exitReason = resolved.exitReason;
+    }
+  }
+  const px = theo > 0 ? theo : eff;
+  if (!(px > 0)) return;
+  const next: LastExitMarketSnapshot = {
+    exitTs,
+    marketUsd: px,
+    netPnlUsd: Number.isFinite(netPnlUsd) ? netPnlUsd : undefined,
+    exitReason: exitReason || undefined,
+  };
+  const prev = state.lastExitMarketSnapshotByMint.get(mint);
+  if (
+    prev &&
+    next.exitReason &&
+    (next.exitReason === 'RECONCILE_ORPHAN' || next.exitReason === 'PERIODIC_HEAL') &&
+    prev.exitReason &&
+    prev.exitReason !== 'RECONCILE_ORPHAN' &&
+    prev.exitReason !== 'PERIODIC_HEAL' &&
+    exitTs - prev.exitTs <= 10 * 60_000
+  ) {
+    return;
+  }
+  if (!prev || exitTs >= prev.exitTs) state.lastExitMarketSnapshotByMint.set(mint, next);
+  if (
+    next.exitReason &&
+    next.exitReason !== 'RECONCILE_ORPHAN' &&
+    next.exitReason !== 'PERIODIC_HEAL'
+  ) {
+    const realPrev = state.lastRealExitMarketSnapshotByMint.get(mint);
+    if (!realPrev || exitTs >= realPrev.exitTs) {
+      state.lastRealExitMarketSnapshotByMint.set(mint, next);
+    }
+  }
+}
+
 export function loadStore(storePath: string): RestoreState {
   const state: RestoreState = {
     evaluatedAt: new Map(),
     lastEntryTsByMint: new Map(),
     lastPostExitBuyCooldownTsByMint: new Map(),
+    lastExitMarketSnapshotByMint: new Map(),
+    lastRealExitMarketSnapshotByMint: new Map(),
     open: new Map(),
   };
   if (!fs.existsSync(storePath)) return state;
@@ -549,6 +632,7 @@ export function loadStore(storePath: string): RestoreState {
           const prev = state.lastPostExitBuyCooldownTsByMint.get(e.mint) ?? 0;
           if (exitTs >= prev) state.lastPostExitBuyCooldownTsByMint.set(e.mint, exitTs);
         }
+        restoreLastExitMarketSnapshotFromCloseLine(state, e.mint, rawClose);
         state.open.delete(e.mint);
       }
       if (

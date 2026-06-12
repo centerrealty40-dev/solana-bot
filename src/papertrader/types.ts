@@ -128,6 +128,7 @@ export interface PartialSell {
   reason:
     | 'TP_LADDER'
     | 'BREAKEVEN_TRIM'
+    | 'WAVE_B_BREAKEVEN_INSURANCE'
     | 'TRAIL_STEP'
     | 'TRAIL'
     | 'TIMEOUT'
@@ -276,6 +277,11 @@ export interface OpenTrade {
    */
   liveBreakevenTrimDone?: boolean;
 
+  /**
+   * Wave B: одноразовая страховка при откате к безубытку после первых двух TP (+2.5% / +5%).
+   */
+  liveWaveBreakevenInsuranceTaken?: boolean;
+
   /** Variant A v2 thin-volume flush: `volume_5m` at entry (PG snapshot). */
   liveThinVolEntryVol5mUsd?: number;
   /** Consecutive tracker ticks with thin-volume condition after first TP. */
@@ -327,6 +333,10 @@ export interface OpenTrade {
   liveWaveTrailAnchorPnlFrac?: number;
   /** Wave B: trail partial levels already fired (PnL fraction keys). */
   liveWaveTrailLevelsTaken?: number[];
+  /** Wave B: first +7.5% vs entry market reached — early kill-stop disabled after this. */
+  liveWavePreArmReached?: boolean;
+  /** Wave B (pre +7.5%): price dipped below +2.5% — re-arm TP/insurance on next rally. */
+  liveWaveImpulseBelowFirstRung?: boolean;
 
   /** Live Oscar — открытие в режиме «первый раз по mint» (жёсткий kill, без усреднения). */
   liveMintFirstProbe?: boolean;

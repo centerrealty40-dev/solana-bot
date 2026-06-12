@@ -4,6 +4,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 import { fetchHlPerpPositionSzi } from '../hyperliquid-meta.js';
 import type { HlTwapLiveConfig } from './config.js';
+import { effectiveLeverage } from './margin-by-leverage.js';
+import { wrapWithExecSlices } from './exec-slice.js';
 import { appendLiveJournal, journalOrderRow } from './journal.js';
 import {
   parseHlOrderStatus,
@@ -44,11 +46,8 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
     }
   }
 
-  private leverageForCoin(coin: string): number {
-    const max = this.maxLeverageByCoin.get(coin);
-    const requested = this.cfg.leverage;
-    if (max == null) return requested;
-    return Math.min(requested, max);
+  leverageForCoin(coin: string): number {
+    return effectiveLeverage(this.maxLeverageByCoin.get(coin), this.cfg.leverage);
   }
 
   /** Gross position USD for a new open (margin × effective leverage). */
@@ -174,6 +173,6 @@ export class HyperliquidExchangeClient implements HlTwapExchangeClient {
   }
 }
 
-export function createHyperliquidClient(cfg: HlTwapLiveConfig): HyperliquidExchangeClient {
-  return new HyperliquidExchangeClient(cfg);
+export function createHyperliquidClient(cfg: HlTwapLiveConfig): HlTwapExchangeClient {
+  return wrapWithExecSlices(new HyperliquidExchangeClient(cfg), cfg);
 }

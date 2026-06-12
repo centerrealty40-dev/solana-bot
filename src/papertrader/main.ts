@@ -24,8 +24,10 @@ import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
+  lastExitMarketSnapshotByMintMap,
+  lastRealExitMarketSnapshotByMintMap,
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordEntryTs,
-  recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
   type EvalDecision,
 } from './discovery/dip-clones.js';
@@ -36,7 +38,10 @@ import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
-import { liveOscarTierStagedSplitLegUsd } from './live-oscar-mcap-tier.js';
+import {
+  applyCanonicalOpenLegUsd,
+  resolveLiveOscarEntrySplitLegUsd,
+} from './live-oscar-entry-sizing.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import {
   buildLiveStagedEntryState,
@@ -228,6 +233,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         evaluatedAt: new Map<string, number>(),
         lastEntryTsByMint: new Map<string, number>(),
         lastPostExitBuyCooldownTsByMint: new Map<string, number>(),
+        lastExitMarketSnapshotByMint: new Map(),
+        lastRealExitMarketSnapshotByMint: new Map(),
         open: new Map<string, OpenTrade>(),
       }
     : loadStore(cfg.storePath);
@@ -236,14 +243,20 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   for (const [mint, ts] of restored.lastPostExitBuyCooldownTsByMint) {
     lastPostExitBuyCooldownTsByMintMap.set(mint, ts);
   }
+  for (const [mint, snap] of restored.lastExitMarketSnapshotByMint) {
+    lastExitMarketSnapshotByMintMap.set(mint, snap);
+  }
+  for (const [mint, snap] of restored.lastRealExitMarketSnapshotByMint) {
+    lastRealExitMarketSnapshotByMintMap.set(mint, snap);
+  }
   if (opts?.skipPaperJsonlStore && opts.liveStrategyReplay?.closed?.length) {
     for (const ct of opts.liveStrategyReplay.closed) {
       if (!(ct.exitTs > 0)) continue;
-      const prev = lastPostExitBuyCooldownTsByMintMap.get(ct.mint) ?? 0;
-      if (ct.exitTs >= prev) lastPostExitBuyCooldownTsByMintMap.set(ct.mint, ct.exitTs);
-      const px =
-        ct.theoretical_exit_price > 0 ? ct.theoretical_exit_price : ct.effective_exit_price;
-      recordLastExitMarketSnapshotAfterClose(ct.mint, ct.exitTs, px, {
+      recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+        mint: ct.mint,
+        exitTs: ct.exitTs,
+        theoretical_exit_price: ct.theoretical_exit_price,
+        effective_exit_price: ct.effective_exit_price,
         netPnlUsd: ct.netPnlUsd,
         exitReason: ct.exitReason,
       });
@@ -297,6 +310,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       ot.liveMintFirstProbeKillDropPct = firstMintKillDropPct ?? 7;
     }
     markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
+    applyCanonicalOpenLegUsd(cfg, ot);
   }
 
   function isSignalMintMissingFromLiveWhitelist(mint: string): boolean {
@@ -311,12 +325,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  function liveOscarDiscoveryBuyLegUsd(tier?: 'low' | 'prod'): number {
+  function liveOscarDiscoveryBuyLegUsd(_tier?: 'low' | 'prod'): number {
     if (liveStagedEntryActive()) {
-      const leg =
-        tier === 'low'
-          ? liveOscarTierStagedSplitLegUsd(cfg, 'low')
-          : cfg.liveStagedEntryEntrySplitLegUsd;
+      const leg = resolveLiveOscarEntrySplitLegUsd(cfg);
       if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
@@ -724,6 +735,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             journalLiveStrategy: opts?.journalLiveStrategy,
             btcCtx: getBtcContext,
             liveOscarCfg,
+            onMintFullClose: (mint) => {
+              stagedEntrySignals.delete(mint);
+            },
           });
         },
       });
@@ -1317,6 +1331,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               d.features.market_cap_usd,
               d.liveOscarMcapTier,
             );
+            applyCanonicalOpenLegUsd(cfg, ot);
           }
         }
 
@@ -1720,6 +1735,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
           verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
+          onMintFullClose: (mint) => {
+            stagedEntrySignals.delete(mint);
+          },
         }),
         45_000,
         'trackerTick',

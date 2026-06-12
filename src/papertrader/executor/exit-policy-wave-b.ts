@@ -74,13 +74,53 @@ export function waveBSellFractionForStep(kOneBased: number): number {
   return Math.min(1, kOneBased * 0.05);
 }
 
-/** Min TP rung taken to allow breakeven full exit (vs staged avg only below this). */
+/** Key impulse level (+7.5%): breakeven full exit, trail arm, pre-arm kill disable. */
 export const WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC = 0.075;
-/** Defensive trail arms when peak or highest TP rung ≥ this (+10%). */
-export const WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC = 0.1;
-/** After TP ≥+7.5%, pullback to ≤+2.5% re-opens TP rungs above +2.5% on the next rally. */
+/** Defensive trail arms when peak or highest TP rung ≥ this (+7.5%). */
+export const WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
+/** Early kill-stop (PnL vs entry market) disabled after first touch of this level (+7.5%). */
+export const WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
+
+export function waveBEntryMarketUsd(ot: OpenTrade): number {
+  return ot.avgEntryMarket > 0
+    ? ot.avgEntryMarket
+    : ot.legs[0]?.marketPrice ?? ot.legs[0]?.price ?? ot.avgEntry ?? 0;
+}
+
+export function waveBMarketPnlFrac(ot: OpenTrade, marketPx: number): number {
+  const entryMkt = waveBEntryMarketUsd(ot);
+  if (!(entryMkt > 0) || !(marketPx > 0)) return 0;
+  return marketPx / entryMkt - 1;
+}
+
+/** Mark pre-arm complete once price touches +7.5% vs entry market (trail + kill-off gate). */
+export function waveBUpdatePreArmReached(ot: OpenTrade, marketPx: number): void {
+  if (ot.liveWavePreArmReached === true) return;
+  if (waveBMarketPnlFrac(ot, marketPx) + LADDER_PNL_EPS >= WAVE_B_PRE_ARM_KILL_ARM_PNL_FRAC) {
+    ot.liveWavePreArmReached = true;
+  }
+}
+
+export function waveBPreArmKillEligible(ot: OpenTrade, killFrac: number, marketPx: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(killFrac < 0)) return false;
+  if (ot.liveWavePreArmReached === true) return false;
+  return waveBMarketPnlFrac(ot, marketPx) <= killFrac + 1e-9;
+}
+
+/** Hard floor −9% (market and avg) — always, including after +7.5% touch. */
+export function waveBAbsoluteKillEligible(
+  ot: OpenTrade,
+  killFrac: number,
+  marketPx: number,
+  pnlFracAvg: number,
+): boolean {
+  if (!isWaveBExitPolicy(ot) || !(killFrac < 0)) return false;
+  if (waveBMarketPnlFrac(ot, marketPx) <= killFrac + 1e-9) return true;
+  return pnlFracAvg <= killFrac + 1e-9;
+}
+/** Pullback at/below this level re-opens TP rungs (full or partial reset). */
 export const WAVE_B_TP_IMPULSE_RESET_PNL_FRAC = 0.025;
-/** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +10%. */
+/** @deprecated alias — use `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` / defensive arm at +7.5%. */
 export const WAVE_B_ARM_MIN_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
 /** Wave B: if modeled remainder notional is below this, any TP/trail partial sells 100% (no dust). */
@@ -165,24 +205,102 @@ export function waveBReconcileMaxExecutedTpFromMarks(ot: OpenTrade, stepPnl: num
   waveBOnTpGridRungExecuted(ot, fromMarks);
 }
 
-/** Defensive trail: peak or TP ladder reached ≥ +10%. */
+/** Defensive trail: peak or TP ladder reached ≥ +7.5%. */
 export function waveBDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot)) return false;
   return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC;
 }
 
-/** Full exit at avg breakeven allowed only after an executed TP rung ≥ +7.5%. */
+/**
+ * Full close at ≤0% avg PnL only after +7.5% impulse (+7.5% TP taken or entry-market touch).
+ * Before that gate: partial insurance 50% after +2.5%/+5%, then kill −9% if needed.
+ */
 export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot)) return false;
+  if (ot.liveWavePreArmReached === true) return true;
   return waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 }
 
+/** True when TP grid rungs +2.5% (idx 0) and +5% (idx 1) were both executed. */
+export function waveBFirstTwoTpRungsTaken(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;
+  const t1 = stepPnl;
+  const t2 = 2 * stepPnl;
+  let hasFirst = ot.ladderUsedIndices.has(0);
+  let hasSecond = ot.ladderUsedIndices.has(1);
+  for (const u of ot.ladderUsedLevels) {
+    if (!Number.isFinite(u)) continue;
+    if (Math.abs(u - t1) <= LADDER_PNL_EPS) hasFirst = true;
+    if (Math.abs(u - t2) <= LADDER_PNL_EPS) hasSecond = true;
+  }
+  return hasFirst && hasSecond;
+}
+
 /**
- * Deep pullback after ≥+7.5% TP: unmark grid rungs above +2.5% so +5% / +7.5% / +10% can fire again on rally.
- * @returns true if any marks were cleared this tick
+ * Wave B insurance peel: first two TP rungs taken, max executed TP still below +7.5% full-exit gate,
+ * insurance not yet fired.
+ */
+export function waveBBreakevenInsuranceEligible(ot: OpenTrade, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWaveBreakevenInsuranceTaken) return false;
+  if (!waveBFirstTwoTpRungsTaken(ot, stepPnl)) return false;
+  return (
+    waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC
+  );
+}
+
+/**
+ * Clear all TP ladder marks so +2.5% / +5% / … can fire again on the next rally.
+ * Resets trail descent state; keeps `liveWaveMaxExecutedTpFrac` for breakeven-exit gate.
+ */
+export function waveBClearAllTpLadderMarks(ot: OpenTrade, pnlFrac?: number): boolean {
+  if (!isWaveBExitPolicy(ot)) return false;
+  const hadMarks = ot.ladderUsedLevels.size > 0 || ot.ladderUsedIndices.size > 0;
+  if (!hadMarks) return false;
+  ot.ladderUsedLevels.clear();
+  ot.ladderUsedIndices.clear();
+  ot.liveWaveBreakevenInsuranceTaken = false;
+  if (pnlFrac != null && Number.isFinite(pnlFrac)) {
+    ot.liveWavePeakPnlFrac = Math.max(0, pnlFrac);
+    ot.liveWaveTrailAnchorPnlFrac = Math.max(0, pnlFrac);
+    ot.liveWaveTrailLevelsTaken = [];
+    if (pnlFrac + LADDER_PNL_EPS < WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC) {
+      ot.trailingArmed = false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Pre +7.5% oscillation cycles: re-arm TP ladder + insurance on each rally from below +2.5%.
+ * Deep red dip (<0%): clear marks immediately; at 0% keep marks for insurance peel.
+ */
+export function waveBUpdatePreArmImpulseCycle(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
+  if (!isWaveBExitPolicy(ot) || !(stepPnl > 0) || ot.liveWavePreArmReached === true) return false;
+  let changed = false;
+  if (pnlFrac + LADDER_PNL_EPS < stepPnl) {
+    ot.liveWaveImpulseBelowFirstRung = true;
+    const executedMarks = waveBExecutedTpGridThresholdFromMarks(ot, stepPnl);
+    if (executedMarks > 0 && pnlFrac + LADDER_PNL_EPS < 0) {
+      changed = waveBClearAllTpLadderMarks(ot, pnlFrac) || changed;
+    }
+  } else if (ot.liveWaveImpulseBelowFirstRung === true) {
+    ot.liveWaveImpulseBelowFirstRung = false;
+    ot.liveWaveBreakevenInsuranceTaken = false;
+    if (waveBExecutedTpGridThresholdFromMarks(ot, stepPnl) > 0) {
+      changed = waveBClearAllTpLadderMarks(ot, pnlFrac) || changed;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Post +7.5%: at/below +2.5% partial clear (rungs above +2.5% only).
  */
 export function waveBMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;
+  if (ot.liveWavePreArmReached !== true) {
+    return waveBUpdatePreArmImpulseCycle(ot, pnlFrac, stepPnl);
+  }
   const highest = waveBHighestTpGridThresholdTaken(ot, stepPnl);
   if (highest + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC) return false;
   if (pnlFrac > WAVE_B_TP_IMPULSE_RESET_PNL_FRAC + LADDER_PNL_EPS) return false;

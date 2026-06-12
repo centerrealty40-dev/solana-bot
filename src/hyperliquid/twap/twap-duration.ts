@@ -1,8 +1,13 @@
+import { hlTwapUnrestrictedMode } from './unrestricted.js';
+
 /** Journal / close reason for timer exit N minutes before TWAP end. */
 export const HL_TWAP_EXIT_REASON_EARLY = 'twap_early_exit';
 
-/** Short TWAP lane: instant flatten before whale's last 30s slice. */
+/** Short / micro TWAP lane: flatten before whale's last 30s slice (1–2 exit slices). */
 export const HL_TWAP_EXIT_REASON_SHORT = 'twap_short_before_last_slice';
+
+/** Hold through whale TWAP end (exit timer at lastCycleEtaMs). */
+export const HL_TWAP_EXIT_REASON_HOLD = 'twap_hold_to_end';
 
 function envInt(name: string, fallback: number, min = 0): number {
   const v = process.env[name]?.trim();
@@ -30,14 +35,66 @@ export function twapShortMaxMinutesExclusive(): number {
 }
 
 export function twapShortMinMinutes(): number {
-  return envInt('HL_TWAP_SHORT_MIN_MINUTES', 1, 1);
+  return envInt('HL_TWAP_SHORT_MIN_MINUTES', 9, 1);
 }
 
-/** True when TWAP uses short-lane schedule + instant exit before last whale slice. */
+/** Legacy short lane (<15m). In unrestricted mode use {@link isMicroTwapMinutes} instead. */
 export function isShortTwapMinutes(minutes: number): boolean {
   if (!twapShortLaneEnabled()) return false;
   const mins = Math.max(1, Math.round(minutes || 0));
   return mins >= twapShortMinMinutes() && mins < twapShortMaxMinutesExclusive();
+}
+
+/** Micro TWAP lower bound inclusive (default 9m → skip <9m ultra-short lane). */
+export function twapMicroMinMinutesInclusive(): number {
+  return envInt('HL_TWAP_MICRO_MIN_MINUTES', 9, 1);
+}
+
+/** Micro TWAP upper bound inclusive (default 15m). Gradual multi-slice exit only. */
+export function twapMicroMaxMinutesInclusive(): number {
+  return envInt('HL_TWAP_MICRO_MAX_MINUTES', 15, 1);
+}
+
+/** Standard lane starts above micro max (default >15m → 3 exit slices). */
+export function twapStandardExitMinMinutesExclusive(): number {
+  return twapMicroMaxMinutesInclusive() + 1;
+}
+
+/** Micro lane window [microMin, microMax] (default 6–15m). */
+export function isMicroTwapMinutes(minutes: number): boolean {
+  const mins = Math.max(1, Math.round(minutes || 0));
+  return mins >= twapMicroMinMinutesInclusive() && mins <= twapMicroMaxMinutesInclusive();
+}
+
+/** Schedule + micro exit timing (short lane legacy or unrestricted micro). */
+export function shouldUseMicroExecution(minutes: number): boolean {
+  if (hlTwapUnrestrictedMode()) return isMicroTwapMinutes(minutes);
+  return isShortTwapMinutes(minutes);
+}
+
+/**
+ * Exit slices by TWAP duration — gradual unwind, avoid single-slice book impact.
+ * ≤5m: 1–2 (default 2), 6–15m: 2, >15m: 3.
+ */
+export function twapExitSliceCount(minutes: number): number {
+  const mins = Math.max(1, Math.round(minutes || 0));
+  if (mins <= 5) {
+    return Math.min(2, Math.max(1, envInt('HL_TWAP_ULTRA_SHORT_EXIT_SLICES', 2, 1)));
+  }
+  if (mins <= twapMicroMaxMinutesInclusive()) {
+    return Math.min(2, Math.max(1, envInt('HL_TWAP_MICRO_EXIT_SLICES', 2, 1)));
+  }
+  return Math.min(10, Math.max(1, envInt('HL_TWAP_STANDARD_EXIT_SLICES', 3, 1)));
+}
+
+/** Entry uses unified exec-slice wrapper at exchange layer; timing exit slices unchanged. */
+export function twapEntrySliceCount(_minutes: number): number {
+  return 1;
+}
+
+/** @deprecated use {@link twapExitSliceCount} */
+export function microTwapExitSliceCount(minutes: number): number {
+  return twapExitSliceCount(minutes);
 }
 
 /** Max whale TWAP duration (minutes) for paper/live entry. Default 120. */
@@ -71,13 +128,29 @@ export function twapExitAdaptiveEnabled(): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
+/** Hold position until whale TWAP end (no early / short-lane timer exit). */
+export function twapHoldToEndEnabled(): boolean {
+  const v = process.env.HL_TWAP_HOLD_TO_END?.trim();
+  if (v == null || v === '') return false;
+  return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
+}
+
+/** Timer exit reason for scheduled TWAP close (live + paper). */
+export function twapTimerExitReason(minutes: number): string {
+  if (twapHoldToEndEnabled()) return HL_TWAP_EXIT_REASON_HOLD;
+  return shouldUseMicroExecution(minutes)
+    ? HL_TWAP_EXIT_REASON_SHORT
+    : HL_TWAP_EXIT_REASON_EARLY;
+}
+
 /**
  * Minutes before TWAP end to start exit.
- * Short lane: N/A (slice timing). Standard ≤30m: −10m. Standard >30m: last 25% of duration.
+ * Micro lane: N/A (slice timing). Standard ≤30m: −10m. Standard >30m: last 25% of duration.
  */
 export function twapExitEarlyMinutesForDuration(minutes: number): number {
+  if (twapHoldToEndEnabled()) return 0;
   const mins = Math.max(1, Math.round(minutes || 0));
-  if (isShortTwapMinutes(mins)) return 0;
+  if (shouldUseMicroExecution(mins)) return 0;
   if (!twapExitAdaptiveEnabled() || mins <= twapExitAdaptiveThresholdMinutes()) {
     return twapExitEarlyMinutes();
   }
@@ -97,6 +170,15 @@ export type TwapDurationGate = {
 
 export function twapDurationGate(minutes: number): TwapDurationGate {
   const mins = Math.max(1, Math.round(minutes || 0));
+
+  if (hlTwapUnrestrictedMode()) {
+    if (mins < twapMicroMinMinutesInclusive()) {
+      return { allow: false, reason: 'twap_too_short' };
+    }
+    if (isMicroTwapMinutes(mins)) return { allow: true, reason: 'ok_micro' };
+    return { allow: true, reason: 'ok' };
+  }
+
   if (isShortTwapMinutes(mins)) {
     return { allow: true, reason: 'ok_short' };
   }

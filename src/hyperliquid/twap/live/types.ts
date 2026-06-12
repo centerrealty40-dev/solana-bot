@@ -74,5 +74,7 @@ export type HlTwapExchangeClient = {
   accountAddress(): string;
   /** Signed perp size on exchange (base units); 0 if flat. */
   getPositionSzi(coin: string): Promise<number>;
+  /** Effective cross leverage for opens (capped by HL max per coin). */
+  leverageForCoin(coin: string): number;
   marketOrder(params: MarketOrderParams): Promise<OrderFillResult>;
 };

@@ -93,7 +93,7 @@ export async function scanPriorPoolExtSell(args: {
           best = { usd: s.amountUsd, lagSec, signature: row.signature };
         }
       }
-      await sleep(90);
+      await sleep(25);
     }
     if (stop) break;
     before = chunk.at(-1)?.signature;

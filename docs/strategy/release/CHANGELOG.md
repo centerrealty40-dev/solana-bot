@@ -34,6 +34,700 @@
 
 ---
 
+---
+
+---
+
+---
+
+## [1.11.439] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.439`
+
+### Live Oscar — post-exit re-entry gate hardening (KINS audit repeat)
+
+- **`lastRealExitMarketSnapshotByMintMap`**: гейты dip/cooldown читают только реальный exit (не RECONCILE/PERIODIC_HEAL).
+- **RECONCILE_ORPHAN**: не мутирует re-entry state при активном cooldown или real exit в grace; stale TP partial не поднимает ref price.
+- **Execution pipeline**: `post_exit_reentry_gate` на всех buy intents (`buy_open`, `buy_scale_in`, `dca_add`) — entry_split не обходит gate.
+
+**Откат:** `git checkout sa-alpha-1.11.438 -- src/papertrader/discovery/dip-clones.ts src/live/phase4-execution.ts src/live/main.ts src/papertrader/main.ts src/papertrader/executor/store-restore.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.438] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.438`
+
+### HL TWAP — hold-to-end exit, enter at TWAP start
+
+- **`HL_TWAP_HOLD_TO_END=1`**: timer exit at `lastCycleEtaMs` for all duration buckets (micro, short, standard).
+- **Entry** unchanged: `paperOpenAtMs = twapStartMs` (enter at TWAP start, not after first slice).
+- **Exit reason** `twap_hold_to_end` in live/paper journals and Telegram labels.
+- **Env:** `HL_TWAP_EXIT_EARLY_MINUTES=0`, `HL_TWAP_EXIT_ADAPTIVE=0` in `ecosystem.config.cjs`.
+
+**Откат:** `git checkout sa-alpha-1.11.437 -- src/hyperliquid/twap/ ecosystem.config.cjs tests/hl-twap-schedule.test.ts tests/hl-twap-exit-adaptive.test.ts docs/strategy/release/`; `pm2 reload hl-twap-live --update-env`.
+
+---
+
+## [1.11.437] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.437`
+
+### Live Oscar — unified $730+$730 entry sizing (SPCX $200/$300 audit)
+
+- **Single split leg** for all mcap tiers / entry paths: always `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` ($730).
+- **Boot validation** (`assertLiveOscarUnifiedEntrySizing`): exit if low-mcap split/position env diverges from prod split.
+- **Pre-buy canonicalization** (`applyCanonicalOpenLegUsd`): fixes Jupiter price-verify rebuild downgrading low-mcap to $200.
+- **Restore upgrade**: persisted `liveStagedEntry` plan re-synced from env (2-я нога → $730).
+- **Labels**: `liveOscarEntryContextNoteV2` reads live env instead of hardcoded $400/$200.
+
+**Откат:** `git checkout sa-alpha-1.11.436 -- src/papertrader/live-oscar-entry-sizing.ts src/papertrader/live-oscar-mcap-tier.ts src/papertrader/executor/live-staged-entry-gates.ts src/papertrader/executor/live-staged-entry-labels.ts src/papertrader/executor/store-restore.ts src/papertrader/main.ts src/live/main.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.436] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.436`
+
+### Live Oscar — stress kill re-entry after KILLSTOP (SPCX audit)
+
+- **`stress_kill_reentry` entry path**: после stress exit (KILLSTOP и др.) — вход при падении ≥40% от last exit и bounce ≤8% от 30m low (пример 1.8M→1.87M mcap).
+- **Recovery veto relax**: для stress re-entry только окна ≤30m и relaxed bounce threshold; 60m crash-low не блокирует.
+- **Dip max drop relax**: `LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT=-65` при квалификации stress re-entry.
+
+**Env:** `LIVE_STRESS_REENTRY_ENABLED`, `LIVE_STRESS_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT`, `LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_BOUNCE_PCT`, `LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_WINDOW_MIN`, `LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT`.
+
+**Откат:** `git checkout sa-alpha-1.11.435 -- src/papertrader/discovery/stress-kill-reentry.ts src/papertrader/discovery/dip-clones.ts src/papertrader/dip-detector.ts src/papertrader/config.ts ecosystem.config.cjs tests/stress-kill-reentry.test.ts`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.435] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.435`
+
+### Live Oscar — post-exit re-entry gate at execution layer (KINS audit 04740207)
+
+- **`tryExecuteBuyOpen`**: блок `post_exit_reentry_gate` до `buy_open` (dip + cooldown), parity с discovery.
+- **Boot restore**: `lastExitMarketSnapshot` из paper JSONL `close` rows (как cooldown ts).
+- **Full close**: сброс `stagedEntrySignals` по mint — staged entry не обходит dip-gate после выхода.
+
+**Откат:** `git checkout sa-alpha-1.11.434 -- src/live/phase4-execution.ts src/papertrader/executor/store-restore.ts src/papertrader/executor/tracker.ts src/papertrader/main.ts tests/execution-post-exit-reentry-gate.test.ts`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.434] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.434`
+
+### Live Oscar — entry $730+$730 ($1460)
+
+- Staged split **$730+$730**, 5 с; `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` = **$1460**; low-mcap lane aligned.
+
+**Откат:** `git checkout sa-alpha-1.11.433 -- ecosystem.config.cjs`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.433] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.433`
+
+### Live Oscar Wave B — oscillation cycles, −9% hard floor
+
+- **Pre +7.5%:** каждый цикл «вниз &lt; +2.5% → вверх» заново берёт TP (+2.5%/+5%) и **insurance 50%** на 0%; на красном дипе (&lt;0%) метки сбрасываются сразу.
+- **Пол −9%:** `waveBAbsoluteKillEligible` (market + avg) всегда, в т.ч. после +7.5%; ниже −9% не держим.
+- **Post +7.5%:** trail + BREAKEVEN_EXIT на 0%; partial reset лестницы на откате к +2.5%.
+
+**Откат:** `git checkout sa-alpha-1.11.432 -- src/papertrader/ src/live/strategy-snapshot.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
+## [1.11.432] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.432`
+
+### Live Oscar Wave B — breakeven full exit только после +7.5%
+
+- **До +7.5%** (только +2.5%/+5%): insurance **50%** на безубытке, далее kill **−9%** — как в 1.11.429/430.
+- **После +7.5%** (touch или TP3): trail + **BREAKEVEN_EXIT 100%** на ≤0%; insurance не мешает полному выходу.
+
+**Откат:** `git checkout sa-alpha-1.11.431 -- src/papertrader/executor/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.431] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.431`
+
+### Live Oscar Wave B — полное закрытие на безубытке (≤0%)
+
+- **BREAKEVEN_EXIT** на каждой wave_b позиции при **PnL ≤ 0%** vs avg — 100% остатка, без ухода в минус.
+- Проверка **до kill −9%**; после +7.5% (trail) откат к цене входа = полный выход.
+- Partial breakeven insurance отключён (полный exit заменяет 50% peel).
+
+**Откат:** `git checkout sa-alpha-1.11.430 -- src/papertrader/executor/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.430] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.430`
+
+### Live Oscar Wave B — ключевая точка +7.5%, повторный TP после отката
+
+- **+7.5%** — единая ключевая точка: снятие kill −9% (`liveWavePreArmReached`), включение defensive trail, 3-я ступень TP.
+- **Trail** с **+10%** → **+7.5%** (`WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC`).
+- **Повторный TP:** откат **строго ниже +2.5%** после любой взятой ступени → полный сброс меток (+2.5% / +5% / … снова берутся на ралли); после +7.5% — частичный сброс при откате к +2.5%.
+
+**Откат:** `git checkout sa-alpha-1.11.429 -- src/papertrader/executor/exit-policy-wave-b.ts tests/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.429] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.429`
+
+### Live Oscar — $1k split, kill −9%, loss cooldown (no auto-denylist)
+
+- **Вход:** $500+$500, пауза **5 с**; `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` = **$1000**; **DCA выкл**.
+- **Kill-stop:** `PAPER_DCA_KILLSTOP=-0.09` до первого **+7%** vs entry market; после +7% — Wave B без изменений (TP +2.5% ladder, trail **+10%**, breakeven insurance).
+- **Убыток:** `LIVE_NEGATIVE_TRADE_DENY_ENABLED=0`; **10 мин** cooldown (`PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED`); re-entry при цене ≤ last_exit×**0.90**.
+- **Код:** `liveWavePreArmReached`, `waveBPreArmKillEligible`; loss-only post-exit cooldown; first-mint-probe split выкл.
+
+**Откат:** `git checkout sa-alpha-1.11.428 -- ecosystem.config.cjs src/papertrader/ src/live/strategy-snapshot.ts tests/wave-b-pre-arm-kill.test.ts tests/post-exit-loss-cooldown.test.ts`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.428] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.428`
+
+### pumpswap-combo-follow live: relaunch prep ($7 entry, ~$11.7/mint cap)
+
+- **Mirror adds:** `mirrorAddUsdResolved` = first DCA fraction × leg ($7 → ~$2.33/add), not full $7 per leader add.
+- **`live-chain.ts`:** SPL mint decimals from chain (fixes wrong `remainingFrac` after partial sells).
+- **Live buys:** skip when wallet SOL &lt; 0.03 (`insufficient_sol` journal).
+- **Flow gate:** faster pool scan (25ms sleep, `FLOW_POOL_TX_CAP=25`).
+- **Portfolio stop:** $55 (was $35) for $7/leg × 8 open.
+- **Ops:** `go-live.sh` sets `ENABLE_PUMPSWAP_COMBO_PM2=true`; watchdog default includes `pumpswap-combo-follow-live`.
+
+**Откат:** `git checkout sa-alpha-1.11.427 -- src/pumpswap-combo-follow/ scripts-tmp/process-watch-lib.mjs scripts/ops/pumpswap-combo-follow-go-live.sh ecosystem.config.cjs`; `pm2 delete pumpswap-combo-follow-live`.
+
+---
+
+## [1.11.427] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.427`
+
+### Copy-trader: $300 probe + $700 dip @ leader−10%
+
+- **Split entry (prod):** `COPY_TRADER_POSITION_USD=1000`, probe **$300** (`ENTRY_PROBE_FRACTION=0.3`), dip leg **$700** when price ≤ leader × **0.90** (`ENTRY_DIP_DISCOUNT_PCT=10`).
+- **`ENTRY_DIP_VS_PROBE_PCT=0`:** dip gate is leader-relative only (no extra probe discount cap).
+- **Defaults** in `src/copytrader/config.ts` aligned with prod sizing.
+
+**Откат:** `COPY_TRADER_POSITION_USD=950`, `ENTRY_PROBE_FRACTION=0.3684210526315789`, `ENTRY_DIP_DISCOUNT_PCT=4`, `ENTRY_DIP_VS_PROBE_PCT=2`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
+## [1.11.426] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.426`
+
+### HL TWAP live: 3× leverage entry margin $1500 (gross $4500)
+
+- **`HL_TWAP_LIVE_MARGIN_LEV3_USD`:** default **1500** (was 1200) when HL effective max leverage ≤3× → gross **≈ $4500**.
+- **5× / 7× tiers unchanged:** $1000 → $5000 gross; $800 → $5600 gross.
+- **`ecosystem.config.cjs`:** explicit `MARGIN_LEV3/5/7` in `HL_TWAP_LIVE_ENV`.
+
+**Откат:** `HL_TWAP_LIVE_MARGIN_LEV3_USD=1200`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.425] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.425`
+
+### hl-twap: skip TWAPs < 9 minutes
+
+- **`twap-duration.ts`:** `HL_TWAP_MICRO_MIN_MINUTES=9`, `HL_TWAP_SHORT_MIN_MINUTES=9` — block whale TWAPs shorter than 9m in unrestricted + short lane gates (`twap_too_short`).
+- **`ecosystem.config.cjs`:** prod `HL_TWAP_MICRO_MIN_MINUTES=9`, `HL_TWAP_SHORT_MIN_MINUTES=9`.
+- **Tests:** duration + unrestricted gates updated for 9m floor.
+- **Analysis:** `scripts-tmp/hl-twap-impact-threshold-backtest.ts` — impact distribution + 2%/4%/5% counterfactual on clean backtest trades.
+
+**Откат:** revert merge → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`; set `HL_TWAP_MICRO_MIN_MINUTES=6` to restore prior 6m floor.
+
+---
+
+
+**Тег:** `sa-alpha-1.11.424`
+
+### hl-twap: skip ≤5m TWAPs; exec slices $500 / 2s gap
+
+- **`twap-duration.ts`:** `HL_TWAP_MICRO_MIN_MINUTES=6` — block 5m (and shorter) micro lane in unrestricted + standard gates (`twap_too_short`).
+- **`ecosystem.config.cjs`:** prod `HL_TWAP_EXEC_SLICE_USD=500`, `HL_TWAP_EXEC_SLICE_GAP_MS=2000`, `HL_TWAP_MICRO_MIN_MINUTES=6`.
+- **Tests:** duration + unrestricted gates updated for 5m block.
+
+**Откат:** revert merge → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`; set `HL_TWAP_MICRO_MIN_MINUTES=1` to re-enable 5m.
+
+---
+
+## [1.11.423] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.423`
+
+### hl-twap-live: coin-stack re-anchor (virtual leg transfer)
+
+- **`coin-stack-policy.ts`:** when coin+side stack is full but a stronger TWAP arrives, emit `coin_stack_reanchor` with weakest open/pending slot instead of silent `coin_stack_full`.
+- **`live-trader.ts`:** `performCoinStackReanchor()` rewrites journal hash/whale metadata (no exchange order); `scheduleLiveTrade` handles re-anchor path.
+- **`journal.ts`:** `journalReanchorRow` + reload helpers for pending schedules after hash swap.
+- **`coin-exposure.ts`:** pass pending schedules into stack evaluation; allow re-anchor through gate.
+- **`live-exec-worker.ts`:** clear stale `coin_side_open_in_flight` on re-anchor.
+- **Tests:** coin-stack re-anchor + unrestricted stack scenarios.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.422] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.422`
+
+### hl-twap-live: coin_has_opposite_side before unrestricted bypass (XLM incident)
+
+- **`coin-exposure.ts`:** `coinOppositeLegBlockReason()` runs **before** `HL_TWAP_UNRESTRICTED=1` early return — prevents long+short net exposure on same coin (XLM ~$9.50 dust).
+- **`resolveLiveEntryAuditPlan`:** same gate in unrestricted audit path.
+- **Test:** `canScheduleLiveEntry still blocks opposite side in unrestricted mode`.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.421] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.421`
+
+### hl-twap-live: variable margin by HL max leverage
+
+- **`margin-by-leverage.ts`:** collateral tiers by effective max leverage — ≤3× → $1200, 4–5× → $1000, ≥6× → $800 (4× uses 5× tier).
+- **Opens:** when `HL_TWAP_LIVE_DYNAMIC_MARGIN=0`, entry margin = tier × coin max lev; gross targets ~$3600 / $5000 / $5600 (3×/5×/7×).
+- **Stack cap:** `newLegGrossUsd` uses per-coin margin×lev (HL meta `maxLeverageByCoin` at schedule time).
+- **Env:** `HL_TWAP_LIVE_MARGIN_LEV3_USD`, `LEV5_USD`, `LEV7_USD` (fallback `NOTIONAL_USD` for 7× tier).
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.420] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.420`
+
+### hl-twap-live: block serial canceller 0xb676 (live PNL ≤0)
+
+- **`whale-blocklist.ts`**: built-in block for `0xb676…7dbf` (🔴100% cancel, 5/5 TWAP, prod live PNL −$6).
+- Gate in **`computeCoinEntryPlan`** / **`canScheduleLiveEntry`** → skip reason **`whale_blocklist`**.
+- Profitable 🔴100% whales (`0x622f`, `0xa656`, etc.) **not** blocked — live PNL positive.
+- Env override: **`HL_TWAP_WHALE_BLOCKLIST`** (comma-separated, merged with built-in).
+- Analysis: `scripts-tmp/_hl_whale_blocklist_analysis.json`.
+
+**Откат:** `git checkout sa-alpha-1.11.419 -- src/hyperliquid/twap/whale-blocklist.ts src/hyperliquid/twap/coin-twap-analysis.ts src/hyperliquid/twap/live/coin-exposure.ts tests/hl-twap-whale-blocklist.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md .env.example`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.419] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.419`
+
+### hl-twap-live: exec-slice leverage cap (GRASS open_fill_too_small)
+
+- **`exec-slice.ts`:** sliced opens use `inner.leverageForCoin(coin)` (HL max per coin, e.g. GRASS 3×) instead of `cfg.leverage` (7×) for gross notional and fill reconciliation — fixes false `open_fill_too_small` cancels when fill $2400 vs target $5600.
+- **`types.ts` / exchange clients:** expose `leverageForCoin` on `HlTwapExchangeClient`; test covers $800 margin × 3× = $2400 gross.
+
+**Откат:** `git revert` merge commit → `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.419] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.419`
+
+### live-oscar Wave B: страховка у безубытка после первых двух TP
+
+- После исполнения TP-сетки **+2.5%** и **+5%** (индексы 0 и 1), если PnL vs avg возвращается к **≤0%**, один раз продаётся настраиваемая доля **остатка** (prod: **50%**). Полный `BREAKEVEN_EXIT` по-прежнему только после TP **≥+7.5%**.
+- **`exit-policy-wave-b.ts`:** `waveBFirstTwoTpRungsTaken()`, `waveBBreakevenInsuranceEligible()`; флаг **`liveWaveBreakevenInsuranceTaken`** на open.
+- **`tracker.ts`:** partial **`WAVE_B_BREAKEVEN_INSURANCE`**; replay/snapshot в `strategy-snapshot.ts` + `store-restore.ts`.
+- **Env (`live-oscar` в `ecosystem.config.cjs`, включено):** `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED=1`, `…_FRACTION=0.5`, `…_PNL_FRAC=0`.
+
+**Откат:** `git revert`; `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED=0` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.418] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.418`
+
+### live-oscar: flash crash kill отключён
+
+- **`ecosystem.config.cjs` (`live-oscar`):** `PAPER_FLASH_CRASH_KILL_ENABLED=0` — velocity/post-fill exit `FLASH_CRASH_KILL` больше не срабатывает (на VPS было `1` с 1.11.309; закрыло SPCX −1.85%% 2026-06-10 23:12 UTC).
+- Код включает флаг только при `PAPER_FLASH_CRASH_KILL_ENABLED === '1'`; дефолт в `config.ts` — `false`.
+
+**Откат:** `PAPER_FLASH_CRASH_KILL_ENABLED: '1'` в `ecosystem.config.cjs` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+## [1.11.417] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.417`
+
+### Alchemy-only RPC audit + hourly usage Telegram
+
+- **`resolve-solana-rpc-url`:** primary chain Alchemy-first (`SA_RPC` / `ALCHEMY_HTTP_URL`); Helius fallback только при `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`.
+- **`ecosystem.config.cjs`:** все RPC-процессы получают `PM2_SOLANA_RPC_ENV` + `SOLANA_RPC_ALCHEMY_ONLY_ENV`; combo-follow Helius fallback=1 исправлен; `ENABLE_PUMPSWAP_COMBO_PM2` (default off) фильтрует `pumpswap-combo*`; QN hourly Telegram на dashboard выкл.; новый `sa-alchemy-usage-watch`.
+- **`scripts-tmp/alchemy-usage-hourly-telegram.mjs`:** ежечасный REPORT в Telegram (internal meter + getSlot; публичного Alchemy usage API нет).
+- **`copytrader/rpc.ts`:** учёт RPC в internal meter.
+
+**Откат:** `git revert` → deploy `v2`; `ENABLE_PUMPSWAP_COMBO_PM2=true` если нужны combo; вернуть `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` на dashboard.
+
+---
+
+## [1.11.416] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.416`
+
+### Live Oscar: Alchemy-only RPC + entry $1200 (2×$600) + DCA $300
+
+- **`ecosystem.config.cjs`:** `SOLANA_RPC_HELIUS_PREFER=0`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=0` для live-oscar, copy-trader, dashboard; `PM2_SOLANA_RPC_ENV` пробрасывает `SA_RPC_HTTP_URL` / `LIVE_RPC_HTTP_URL` / `COPY_TRADER_RPC_URL` из `.env` (ключ Alchemy не в git).
+- **Sizing:** staged entry **$600+$600** (`PAPER_POSITION_USD=1200`), DCA **−10%/−20% × $300**, cap **`LIVE_MAX_POSITION_USD=1800`**.
+- **`strategy-process-watch`:** combo-процессы убраны из default targets (не воскресают после `pm2 save`).
+
+**Откат:** вернуть QN/Helius URL в `.env`, `SOLANA_RPC_HELIUS_FALLBACK_ENABLED=1`; прежние `LIVE_OSCAR_*` / `PAPER_DCA_LEVELS` из `1.11.415`; `git revert` + deploy `v2`.
+
+---
+
+## [1.11.415] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.415`
+
+### HL TWAP live: hourly Total Balance Telegram
+
+- **`HL_TWAP_BALANCE_HOURLY_TELEGRAM=1`** (default on in `ecosystem.config.cjs` when live): hourly ping to whale Telegram chat with **HL UI Total Balance** (`resolveAccountEquityUsd`: spot USDC + Σ uPnL).
+- First message after **UTC hour boundary** (no immediate ping on PM2 restart); then every 60m.
+- Optional trailing **peak** (drawdown state) and open positions count.
+
+**Откат:** `HL_TWAP_BALANCE_HOURLY_TELEGRAM=0`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.414] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.414`
+
+### HL TWAP live: fix unified-account equity for drawdown stop
+
+- **`resolveAccountEquityUsd`:** unified accounts now use **spot USDC + Σ uPnL** (HL UI Total Balance), not perp `marginSummary.accountValue` alone (~$1991 vs ~$5776 on prod).
+- Trailing-peak stop logic unchanged: **`peak − equity ≥ threshold`** each 60s poll (not inter-tick delta).
+- Peak re-inits on process restart after deploy.
+
+**Откат:** `git revert` merge commit → `v2` deploy; или временно `HL_TWAP_LIVE_DRAWDOWN_STOP_USD=0`.
+
+---
+
+## [1.11.413] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.413`
+
+### HL TWAP live: trailing-peak drawdown stop (fix 1.11.412)
+
+- **Trailing high-water mark:** each 60s poll reads total equity (incl. uPnL); peak rises with new highs; stop when **`peak − equity ≥ HL_TWAP_LIVE_DRAWDOWN_STOP_USD`** (default $1000).
+- Example: $5000 → $6000 peak → stop at **$5000** (6000−1000), not $4000 from initial balance.
+- Peak resets on process start or **`HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1`**; removed fixed startup baseline.
+
+**Откат:** `git checkout sa-alpha-1.11.412 -- src/hyperliquid/twap/live/drawdown-stop.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.412] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.412`
+
+### HL TWAP live: account drawdown stop ($1000 default)
+
+- **`HL_TWAP_LIVE_DRAWDOWN_STOP_USD=1000`:** when total equity (incl. uPnL) falls ≥ threshold below startup baseline → emergency flatten all HL positions, cancel pending schedules, halt new entries.
+- **`HL_TWAP_LIVE_DRAWDOWN_CHECK_MS=60000`:** equity poll every 60s via `clearinghouseState` (`accountValue` or unified spot+uPnL).
+- **Baseline:** captured at process start (logged); optional **`HL_TWAP_LIVE_DRAWDOWN_BASELINE_USD`** to pin; state in **`data/hl-twap/drawdown-stop.json`**.
+- **Telegram:** `🛑 STOP LOSS — trading halted` to live-trades + whale channels.
+- **Resume:** set **`HL_TWAP_LIVE_DRAWDOWN_CLEAR_HALT=1`** and restart (re-baselines to current equity).
+
+**Откат:** `git checkout sa-alpha-1.11.411 -- src/hyperliquid/twap/live/drawdown-stop.ts src/hyperliquid/twap/hyperliquid-meta.ts src/scripts/hl-twap-telegram-watch.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.411] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.411`
+
+### HL TWAP live: coin book gross cap $12k + max 2 legs + driver re-anchor
+
+- **`HL_TWAP_LIVE_MAX_BOOK_GROSS_USD=12000`:** hard cap on exchange gross per coin+side (entries + DCA blocked above cap).
+- **`HL_TWAP_LIVE_COIN_MAX_LEGS=2`:** max two concurrent journal legs (incl. pending schedules) per coin+side; 3rd TWAP does **not** open a new leg.
+- **3rd active TWAP:** book timer exit (`liveCloseAtMs`) re-anchors to the **best hourly-impact** active whale TWAP on that side (incl. signals without a journal leg).
+- **Ladder step (ROE):** TP/DCA triggers at ±3% **Hyperliquid ROE** (`uPnL / margin`), not ±3% price move — aligns with HL UI (fixes late/missing TP on stacked books at 7x).
+- Ladder slice unchanged (10% of current gross); $800 margin × 7x entry unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.410 -- ecosystem.config.cjs src/hyperliquid/twap/live/ docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+---
+
+## [1.11.410] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.410`
+
+### HL TWAP live: entry margin $500 → $800 (fixed)
+
+- **`HL_TWAP_LIVE_NOTIONAL_USD` / `HL_TWAP_LIVE_MARGIN_MIN_USD` / `HL_TWAP_LIVE_MARGIN_MAX_USD`:** **$800** collateral per entry (`HL_TWAP_LIVE_DYNAMIC_MARGIN=0` unchanged).
+- Gross position = **$800 × min(HL coin max leverage, 7x)** (e.g. 7x major → **$5600** gross).
+- TP/DCA ladder unchanged: **10% of live gross** per slice; leverage caps and exit exec slices unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.409 -- ecosystem.config.cjs src/hyperliquid/twap/live/config.ts .env.example docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+## [1.11.409] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.409`
+
+### HL TWAP live: single book exit + background exec worker
+
+- **Single exit per coin+side:** stacked journal legs share one exchange position — only one `exit_start`/slice pipeline per book; sibling legs link to the driver; finalize closes all legs when book flattens (fixes HYPE 3× `exit_slice 1/3` triple-close).
+- **Background exec worker:** `kickLiveExecWorker` decouples `runLiveExchangePass` (impact closes, ladder, timers, residuals) from HypurrScan poll loop — poll stays on interval while exchange I/O runs in one batch.
+- **Includes 1.11.408:** exit anchor repair (`exitScheduleTriggerMs`, stale `exit_start` repair).
+
+**Откат:** `git checkout sa-alpha-1.11.408 -- src/hyperliquid/twap/live/chunked-exit-runner.ts src/hyperliquid/twap/live/live-exec-worker.ts src/hyperliquid/twap/live/live-trader.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-single-book-exit.test.ts tests/hl-twap-live-exec-worker.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+## [1.11.408] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.408`
+
+### HL TWAP live: repair stuck exit_start anchor (HYPE/ETH slices)
+
+- **`exitScheduleTriggerMs`:** early exits (whale ended, impact lost, …) anchor to actual `startedAtMs`, not future `liveCloseAtMs` — prevents first slice scheduled hours ahead.
+- **`resolveExitScheduleAnchor`:** journal repair drops whale alignment when first slice due >2 intervals after exit start (unblocks legs stuck at `exit_start` with `slicesSent=0`).
+
+**Откат:** `git checkout sa-alpha-1.11.407 -- src/hyperliquid/twap/live/chunked-exit.ts src/hyperliquid/twap/live/chunked-exit-runner.ts tests/hl-twap-chunked-exit.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+## [1.11.407] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.407`
+
+### pumpswap-combo-follow live: conditional flush, rug-follow, mirror adds
+
+24h counterfactual: мелкие scalp-sell лидера (~$200) вызывали −$6.8 flush; TP-лестница +$9.5.
+
+- **Conditional flush:** `FLOW8Z_FLUSH_MIN_SELL_USD=500` — не сливаем бag на мелкий sell; TP-лестница и max_hold остаются.
+- **Rug-follow:** leader **flat** (post-sell balance 0) → `flow8z_leader_flat_flush` с `FLAT_FLUSH_DELAY_MS=0` (мгновенно вслед за полным выходом hnu5).
+- **Killstop:** `FLOW8Z_KILLSTOP_PCT=30` — страховка если лидер ещё держит, а пул уже ломается.
+- **Flow gate:** `FLOW_MAX_LAG_SEC=15` (было 5); scan sleep 45ms (было 90).
+- **Mirror adds:** `MIRROR_LEADER_ADDS=1` — докуп на add лидера (max 3 legs).
+
+**Anti-rug stack:** min mcap $150k → flat flush → large-sell flush → −30% killstop → 3h max_hold.
+
+**Откат:** `git checkout sa-alpha-1.11.406 -- src/pumpswap-combo-follow/ ecosystem.config.cjs docs/strategy/release/ tests/pumpswap-combo-follow/flow8z-leader-flush.test.ts`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.406] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.406`
+
+### HL TWAP live: fixed $500 margin per entry (disable dynamic $300 floor)
+
+- **`HL_TWAP_LIVE_DYNAMIC_MARGIN=0`** — every open uses **$500 collateral**; no scale-down to $300 at ≥5 opens.
+- **`HL_TWAP_LIVE_MARGIN_MIN_USD=500`** — min=max when dynamic margin re-enabled.
+- Gross position = **$500 × min(HL coin max leverage, 7x)** (e.g. ONDO 7x → $3500, 5x coin → $2500).
+- TP/DCA ladder unchanged: **10% of live gross** per slice; exit timing and $200/5s exec slices unchanged.
+
+**Откат:** `git checkout sa-alpha-1.11.405 -- ecosystem.config.cjs src/hyperliquid/twap/live/config.ts docs/strategy/release/`; set `HL_TWAP_LIVE_DYNAMIC_MARGIN=1` + `HL_TWAP_LIVE_MARGIN_MIN_USD=300`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+## [1.11.405] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.405`
+
+### HL TWAP live: TP ladder fix + unified $200 exec slices
+
+- **TP ladder:** allow ±3% TP/DCA while chunked exit is *scheduled* but before the first exit slice fires; block ladder only after `slicesSent > 0`. Fixes missed TP when `exit_start` was written hours ahead of whale-aligned first slice (e.g. HYPE legs blocked ~15h).
+- **Poll order:** run `processLiveLadders` before timer/whale exits so profitable books can take TP in the same poll cycle.
+- **Exec slices:** all market orders (open, TP, DCA, exit) split into ≤**$200** gross chunks with **5s** gap (`HL_TWAP_EXEC_SLICE_USD`, `HL_TWAP_EXEC_SLICE_GAP_MS`).
+
+**Откат:** `git checkout sa-alpha-1.11.404 -- src/hyperliquid/twap/live/ src/hyperliquid/twap/twap-duration.ts src/scripts/hl-twap-telegram-watch.ts tests/hl-twap-exec-slice.test.ts tests/hl-twap-ladder-exit-block.test.ts tests/hl-twap-flatten.test.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 reload ecosystem.config.cjs --only hl-twap-telegram-watch --update-env`.
+
+## [1.11.404] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.404`
+
+### pumpswap-combo-follow live: min mcap $150k (was $500k)
+
+- `PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD=150000` — blocks sub-150k dust; allows small-cap above floor.
+
+**Откат:** `MIN_MCAP_USD=500000`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.403] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.403`
+
+### HL TWAP live: unified-account free margin gate
+
+- **Margin gate:** `freeMarginUsd` uses HL **withdrawable** (spot USDC `total − hold`), not `account − max(journal, used)` — fixes false `insufficient_account_margin` when journal over-counts netted perp legs.
+- **Withdrawable fetch:** `max(perpWithdrawable, spotFree)` on unified accounts (perp withdrawable is often 0 while USDC is free).
+- **Defer log:** show `free`, `need`, `account` (drop misleading standalone `spotUsdc=`).
+
+**Откат:** `git checkout sa-alpha-1.11.402 -- src/hyperliquid/twap/hyperliquid-meta.ts src/hyperliquid/twap/live/account-margin.ts src/hyperliquid/twap/live/live-trader.ts tests/hl-twap-account-margin.test.ts`; `pm2 restart hl-twap-telegram-watch`.
+
+### pumpswap-combo-follow live: min mcap $500k (block micro)
+
+- Entry gate: **`MIN_MCAP_USD=500000`**, **`MAX_MCAP_USD=3000000`** (PG pumpswap snapshot → DexScreener fallback).
+- Ignores leader buys on ~30k micro caps; journal `leader_buy_ignored` / `min_mcap_usd`.
+
+**Откат:** `MIN_MCAP_USD=0`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.402] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.402`
+
+### HL TWAP: $500 first leg + margin-based DCA ladder
+
+- **Entry:** one full **$500 × ~7x** order (no entry slice split); min fill **85%** requested gross.
+- **TP / DCA ladder:** one book per **coin+side** — slice **10% of exchange gross** (not per TWAP leg); ±**3% price** move; shared tp/dca levels across stacked legs.
+- **Exit:** gradual slices by duration (≤5m→2, 6–15m→2, >15m→3).
+- **Entry filter:** unrestricted keeps **only** hourly impact ≥ **2%/h** (policy floor; detect + schedule).
+
+**Откат:** `git checkout sa-alpha-1.11.401 -- src/hyperliquid/twap/ src/scripts/hl-twap-telegram-watch.ts ecosystem.config.cjs tests/hl-twap-*.ts docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`; `pm2 delete hl-twap-telegram-watch; pm2 start ecosystem.config.cjs --only hl-twap-telegram-watch; pm2 save`.
+
+## [1.11.401] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.401`
+
+### pumpswap-combo-follow live: entry leg $7 (was $3)
+
+- `PUMPSWAP_COMBO_FOLLOW_LEG_USD=7` — first leg + DCA notional base; max ~$7 + 2×~$2.33 ≈ $11.7/mint at 3 legs.
+
+**Откат:** `LEG_USD=3`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.400] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.400`
+
+### HL TWAP: unrestricted mode — trade all TWAPs + micro exit
+
+- **`HL_TWAP_UNRESTRICTED=1`**: skip duration, momentum, BTC, whale deny, prior-loss gates; **hourly impact ≥ 2%/h remains the only entry filter** (`HL_TWAP_MIN_IMPACT_PCT_HOUR=2`).
+- **Micro lane (≤15m)**: single exit slice for ≤10m; **2 whale-aligned slices** for 11–15m (no 10-slice chunked exit).
+- **15m gap closed**: micro lane now includes 15m TWAPs (was `twap_too_short`).
+
+**Откат:** `HL_TWAP_UNRESTRICTED=0`; restore gates in `ecosystem.config.cjs` (`HL_TWAP_COIN_MOMENTUM_GATE=1`, `HL_TWAP_BTC_ALIGNED_GATE=1`, `HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK=1`); `git checkout sa-alpha-1.11.399 -- src/hyperliquid/twap/ ecosystem.config.cjs tests/hl-twap-unrestricted.test.ts docs/strategy/release/`; `pm2 delete hl-twap-telegram-watch; pm2 start ecosystem.config.cjs --only hl-twap-telegram-watch; pm2 save`.
+
+## [1.11.399] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.399`
+
+### pumpswap-combo-follow: late entry when leader adds (we missed first buy)
+
+- **`allowLateEntryOnLeaderAdd`** (default on for flow8z): if we have no bag and hnu5 buys into a coin he already holds, enter via flow gate instead of `missed_entry_leader_already_in`.
+- Mirror-adds while we hold stay off — price DCA only.
+
+**Откат:** `ALLOW_LATE_ENTRY_ON_LEADER_ADD=0`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.398] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.398`
+
+### pumpswap-combo-follow: fix instant sell after buy (stale leader-sell flush)
+
+- **`flow8z_leader_pool_flush`** no longer fires on leader sells that happened **before** our entry; only sells observed while the bag is open arm the 60s flush timer.
+- Clear stale `lastLeaderSellByMint` on new entry; unit test `leader-sell-since-open`.
+
+**Откат:** `git checkout sa-alpha-1.11.397 -- src/pumpswap-combo-follow/`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.397] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.397`
+
+### pumpswap-combo-follow: min leader buy $80 (was $150)
+
+- Unblocks ~60% of hnu5 buys previously ignored as `min_leader_buy_usd`; flow gate unchanged.
+
+**Откат:** `MIN_LEADER_BUY_USD=150`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.396] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.396`
+
+### pumpswap-combo-follow: hnu5 aggressive scalp exit ladder
+
+- Live ladder **`14:0.7,22:1`** + **`exitLeadPct=2`** → effective **+12%** sell 70%, **+20%** close rest (front-run hnu5 ~+15–20% first scalp).
+- Config default for flow8z + hnu5 target when `EXIT_LADDER` unset.
+
+**Откат:** `EXIT_LADDER=13:1`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.395] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.395`
+
+### pumpswap-combo-follow: front-run DCA + delayed leader-sell exit
+
+- **Front-run DCA** `−8%@first`, `−7%@avg` (not leader mirror) — buy before hnu5 avg-down lifts mark.
+- **Leader sell exit delay** `60s` (best in 1–5m selective backtest) then pool flush; TP still active during wait.
+- **Removed max leader first-buy cap** (`MAX_LEADER_FIRST_BUY_USD=0`) — no skip on large leader entries.
+
+**Откат:** `git checkout sa-alpha-1.11.394 -- src/pumpswap-combo-follow/ ecosystem.config.cjs docs/strategy/release/`; `pm2 delete pumpswap-combo-follow-live; pm2 start ecosystem.config.cjs --only pumpswap-combo-follow-live`.
+
+## [1.11.394] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.394`
+
+### Live bots: unified strategy-process-watch (24/7)
+
+- **`strategy-process-watch`** PM2 app watches **hl-twap**, **live-oscar**, **copy-trader**, **pumpswap-combo-follow-live** every 30s (PM2 status + heartbeat file).
+- Auto **`pm2 restart`** + Telegram **`[ALERT][strategy_watch]`** on stopped/stale (&gt;5 min).
+- **`ops-heartbeat`** (60s) in copy-trader, live-oscar, combo-follow; hl-twap keeps `data/hl-twap/heartbeat.json`.
+- Replaces per-app `hl-twap-process-watch`.
+
+**Откат:** `git checkout sa-alpha-1.11.393 -- ecosystem.config.cjs src/core/ops-heartbeat.ts src/scripts/copy-trader.ts src/scripts/live-oscar.ts src/scripts/pumpswap-combo-follow-bot.ts src/pumpswap-combo-follow/main.ts scripts-tmp/strategy-process-watch.mjs scripts-tmp/process-watch-lib.mjs docs/strategy/release/`; VPS `pm2 delete strategy-process-watch; pm2 start ecosystem.config.cjs --only hl-twap-process-watch --update-env; pm2 save`.
+
+---
+
+## [1.11.393] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.393`
+
+### HL TWAP: 24/7 PM2 + watchdog
+
+- **`hl-twap-telegram-watch`** in `ecosystem.config.cjs`: direct **tsx** (not npm wrapper), `autorestart`, `max_restarts=100`.
+- In-process **heartbeat** every 60s → `data/hl-twap/heartbeat.json`; `last-fatal.json` on crash.
+- **`hl-twap-process-watch`**: polls PM2 + heartbeat; **auto-restart** + `[ALERT][hl_twap_watch]` Telegram when stopped/stale (&gt;5 min).
+
+**Откат:** `git checkout sa-alpha-1.11.392 -- ecosystem.config.cjs src/scripts/hl-twap-telegram-watch.ts scripts-tmp/hl-twap-process-watch.mjs scripts-tmp/hl-twap-watch-lib.mjs tests/hl-twap-process-watch.test.ts docs/strategy/release/`; on VPS restore manual PM2 entry or `pm2 delete hl-twap-process-watch`; `pm2 save`.
+
+---
+
+## [1.11.392] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.392`
+
+### pumpswap-combo-follow: fix stale state wipe after buy
+
+- Re-read state before DCA/exits tick (was overwriting fresh buys with empty snapshot).
+- Enable DCA eval for any policy with `dcaLevels` configured.
+
+**Откат:** revert `src/pumpswap-combo-follow/main.ts`; reload PM2.
+
+---
+
+## [1.11.391] — 2026-06-10
+
+**Тег:** `sa-alpha-1.11.391`
+
+### pumpswap-combo-follow: flow8z + price DCA for 24h live trial
+
+- Price DCA (−10% / −20%, ⅓ notional each) on `flow8z_antidump` (was oscar_wave_b only).
+- Live PM2: `MAX_BUY_LEGS=3`, `$3` entry, flow gate unchanged; `CLEAR_HALT` removed post-unhalt.
+
+**Откат:** `MAX_BUY_LEGS=1`, unset `DCA_LEVELS`; `pm2 reload pumpswap-combo-follow-live --update-env`.
+
+---
+
 ## [1.11.390] — 2026-06-10
 
 **Тег:** `sa-alpha-1.11.390`

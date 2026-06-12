@@ -78,8 +78,12 @@ describe('isOpenFillAcceptable', () => {
     expect(isOpenFillAcceptable(0, 2450)).toBe(false);
   });
 
-  it('accepts partial fill above 10% threshold', () => {
-    expect(isOpenFillAcceptable(300, 2450)).toBe(true);
+  it('accepts fill ≥85% of requested gross', () => {
+    expect(isOpenFillAcceptable(2100, 2450)).toBe(true);
+  });
+
+  it('rejects half-slice partial (~50%)', () => {
+    expect(isOpenFillAcceptable(1750, 3500)).toBe(false);
   });
 
   it('rejects tiny partial fill', () => {

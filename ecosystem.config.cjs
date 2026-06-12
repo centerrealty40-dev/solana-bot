@@ -5,6 +5,19 @@ require('dotenv').config({ path: path.join(root, '.env') });
 /** Проброс в `env` каждого PM2-приложения, чтобы ключ был в `process.env` даже если дочерний процесс не подхватил `.env` так, как ожидается. */
 const JUPITER_API_KEY_PM2 = (process.env.JUPITER_API_KEY || '').trim();
 const PM2_JUPITER_KEY_ENV = JUPITER_API_KEY_PM2 ? { JUPITER_API_KEY: JUPITER_API_KEY_PM2 } : {};
+/** Alchemy (или иной primary) из `.env` — ключ не в git; перекрывает stale PM2 QN URL при reload. */
+const SA_RPC_HTTP_URL_PM2 = (process.env.SA_RPC_HTTP_URL || '').trim();
+const LIVE_RPC_HTTP_URL_PM2 = (process.env.LIVE_RPC_HTTP_URL || SA_RPC_HTTP_URL_PM2).trim();
+const COPY_TRADER_RPC_URL_PM2 = (process.env.COPY_TRADER_RPC_URL || SA_RPC_HTTP_URL_PM2).trim();
+const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
+  ? {
+      SA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
+      LIVE_RPC_HTTP_URL: LIVE_RPC_HTTP_URL_PM2,
+      COPY_TRADER_RPC_URL: COPY_TRADER_RPC_URL_PM2,
+      SOLANA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
+      ALCHEMY_HTTP_URL: SA_RPC_HTTP_URL_PM2,
+    }
+  : {};
 if (!JUPITER_API_KEY_PM2) {
   console.warn(
     '[ecosystem.config.cjs] JUPITER_API_KEY пуст в .env при разборе конфига — в merged env не попадёт Pro-ключ (проверьте файл на VPS и `pm2 reload`).',
@@ -20,14 +33,58 @@ const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
 /** Pullback + retrace (блоки 1–2–3) — отдельный бот, общий dips-канал. */
 const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
+/** HL TWAP live + paper — paths on VPS (secrets in `.env`). */
+const HL_TWAP_DATA_DIR = path.join(root, 'data/hl-twap');
+const HL_TWAP_LIVE_ENV = {
+  NODE_ENV: 'production',
+  HL_TWAP_LIVE_ENABLED: '1',
+  HL_TWAP_PAPER_ENABLED: '1',
+  HL_TWAP_UNRESTRICTED: '1',
+  HL_TWAP_SHORT_MIN_MINUTES: '9',
+  HL_TWAP_MICRO_MIN_MINUTES: '9',
+  HL_TWAP_MICRO_MAX_MINUTES: '15',
+  HL_TWAP_HOLD_TO_END: '1',
+  HL_TWAP_EXIT_EARLY_MINUTES: '0',
+  HL_TWAP_EXIT_ADAPTIVE: '0',
+  HL_TWAP_EXEC_SLICE_USD: '500',
+  HL_TWAP_EXEC_SLICE_GAP_MS: '2000',
+  HL_TWAP_ULTRA_SHORT_EXIT_SLICES: '2',
+  HL_TWAP_MICRO_EXIT_SLICES: '2',
+  HL_TWAP_STANDARD_EXIT_SLICES: '3',
+  HL_TWAP_LIVE_JSONL: path.join(HL_TWAP_DATA_DIR, 'live.jsonl'),
+  HL_TWAP_AUDIT_JSONL: path.join(HL_TWAP_DATA_DIR, 'signals.jsonl'),
+  HL_TWAP_HEARTBEAT_PATH: path.join(HL_TWAP_DATA_DIR, 'heartbeat.json'),
+  HL_TWAP_POLL_INTERVAL_MS: '2000',
+  HL_TWAP_HEARTBEAT_MS: '60000',
+  HL_TWAP_LIVE_NOTIONAL_USD: '800',
+  HL_TWAP_LIVE_MARGIN_LEV3_USD: '1500',
+  HL_TWAP_LIVE_MARGIN_LEV5_USD: '1000',
+  HL_TWAP_LIVE_MARGIN_LEV7_USD: '800',
+  HL_TWAP_LIVE_MARGIN_MAX_USD: '800',
+  HL_TWAP_LIVE_MARGIN_MIN_USD: '800',
+  HL_TWAP_LIVE_LEVERAGE: '7',
+  HL_TWAP_LIVE_LADDER_STEP_PCT: '3',
+  HL_TWAP_LIVE_LADDER_SLICE_PCT: '10',
+  HL_TWAP_LIVE_COIN_MAX_LEGS: '2',
+  HL_TWAP_LIVE_MAX_BOOK_GROSS_USD: '12000',
+  HL_TWAP_LIVE_DYNAMIC_MARGIN: '0',
+  HL_TWAP_COIN_MOMENTUM_GATE: '0',
+  HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK: '0',
+  HL_TWAP_BTC_ALIGNED_GATE: '0',
+  HL_TWAP_MIN_IMPACT_PCT_HOUR: '2',
+  HL_TWAP_LIVE_DRAWDOWN_STOP_USD: '1000',
+  HL_TWAP_LIVE_DRAWDOWN_CHECK_MS: '60000',
+  HL_TWAP_BALANCE_HOURLY_TELEGRAM: '1',
+};
+
 /**
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Prod entry split $300+$300 = $600; DCA −10%/−20% × $200; max $1000 per mint.
+ * Prod staged entry $730+$730 ($1460 notional); DCA off; max $1460 per mint.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '600';
-const LIVE_OSCAR_MAX_POSITION_USD = '1000';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1460';
+const LIVE_OSCAR_MAX_POSITION_USD = '1460';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -44,6 +101,15 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
 const QUICKNODE_NO_DAILY_CAP_ENV = {
   QUICKNODE_DAILY_ENFORCE: '0',
   QUICKNODE_DAILY_ENFORCE_PROVIDER: '0',
+};
+
+/**
+ * Prod RPC: **Alchemy only** — URL в `.env` (`SA_RPC_HTTP_URL`, опционально `LIVE_RPC_HTTP_URL`, `COPY_TRADER_RPC_URL`).
+ * Ключ Alchemy не коммитить; QuickNode/Helius URL в `.env` остаются как резерв, но не используются пока флаги ниже = `0`.
+ */
+const SOLANA_RPC_ALCHEMY_ONLY_ENV = {
+  SOLANA_RPC_HELIUS_PREFER: '0',
+  SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '0',
 };
 
 const PM2_APPS = [
@@ -67,6 +133,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         HOST: '0.0.0.0',
         PORT: '3008',
@@ -81,9 +148,9 @@ const PM2_APPS = [
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
-        /** Wallet tiles: same RPC chain as live-oscar (Helius when QN TLS/meter blocks). */
+        /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        SOLANA_RPC_HELIUS_PREFER: '1',
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
@@ -93,7 +160,7 @@ const PM2_APPS = [
          * - `QUICKNODE_USAGE_TELEGRAM` (общая дневная сводка) и milestones — выкл., чтобы не шумели.
          */
         QUICKNODE_USAGE_TELEGRAM: '0',
-        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '1',
+        QUICKNODE_HOURLY_REMAINING_TELEGRAM: '0',
         QUICKNODE_HOURLY_REMAINING_TELEGRAM_MS: '3600000',
         QUICKNODE_HOURLY_RECENT_MINUTES_LIST: '10,30,60',
         /** В конец `[ALERT][quicknode-balance]` — метрики discovery за окно из `data/live-discovery-health.json` (live-oscar). */
@@ -308,11 +375,11 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
-        /** Billable RPC: QuickNode (`SA_RPC_HTTP_URL` в .env). Helius — только fallback при QN budget block. */
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
-        SOLANA_RPC_HELIUS_PREFER: '0',
+        /** Billable RPC: Alchemy (`SA_RPC_HTTP_URL` / `LIVE_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
@@ -333,22 +400,22 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$300+$300** (10 с, +3%/−10% к 1-й ноге); staged avg −7%/−14% выкл; DCA −10%/−20% × $200.
+         * Staged-entry: сплит **$730+$730** (5 с, +3%/−10% к 1-й ноге); без DCA и без staged avg.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '730',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '7',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '730',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '14',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         /** 0 = signal-kill off (не путать с PAPER_TIMEOUT_HOURS 48h). */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '0',
@@ -383,15 +450,15 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, сплит 2×$200, DCA $200/ступень (max $800). */
+        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $730+$730. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '200',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
-        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '-10:0.5,-20:0.5',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '730',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1460',
+        PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
@@ -414,23 +481,27 @@ const PM2_APPS = [
         PAPER_MIN_TOKEN_AGE_MIN: '2160',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
-        /** После **любого** полного закрытия по mint — legacy blunt cooldown; выкл. при hybrid re-entry (dip12 + 20m). */
-        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'false',
+        /** После убыточного закрытия — 10 мин cooldown (не denylist). Работает вместе с hybrid re-entry gate. */
+        PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED: 'true',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         /**
-         * Re-entry после полного выхода: только если цена ≤ last_exit×(1−12%).
-         * `LIVE_REENTRY_GATE_MAX_AGE_HOURS` — после N ч гейт снимается (без timer-fallback).
+         * Re-entry после выхода: цена ≤ last_exit×(1−10%) (после loss cooldown 10m).
          */
-        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '12',
-        /** >0 включает price-only re-entry path (timer bypass убран в коде). */
-        LIVE_REENTRY_MAX_WAIT_MINUTES: '20',
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '10',
+        LIVE_REENTRY_MAX_WAIT_MINUTES: '240',
         LIVE_REENTRY_GATE_MAX_AGE_HOURS: '4',
-        /** После убыточного / stress-выхода: dip ≥30% от last exit. */
-        LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '30',
+        LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '10',
         LIVE_REENTRY_HYBRID_DISABLE_TIMER_AFTER_LOSS: '1',
-        /** Loss re-entry cooldown выкл. — вместо него permanent denylist (`LIVE_NEGATIVE_TRADE_DENY_*`). */
         LIVE_MINT_LOSS_REENTRY_COOLDOWN_ENABLED: '0',
+        /**
+         * After KILLSTOP/stress exit: re-buy on modest bounce from short-window low (SPCX 1.8M→1.87M).
+         */
+        LIVE_STRESS_REENTRY_ENABLED: '1',
+        LIVE_STRESS_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '40',
+        LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_BOUNCE_PCT: '8',
+        LIVE_STRESS_REENTRY_RECOVERY_VETO_MAX_WINDOW_MIN: '30',
+        LIVE_STRESS_REENTRY_DIP_MAX_DROP_PCT: '-65',
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
@@ -555,13 +626,10 @@ const PM2_APPS = [
          */
         PAPER_LIVE_EXIT_MODE_AB: '0',
 
-        /**
-         * DCA −10% / −20%, по $200 (~0.333333 × $600 `PAPER_POSITION_USD`).
-         * Max invested $600 + $200 + $200 = $1000 ladder; cap $1000 (`LIVE_MAX_POSITION_USD`).
-         */
-        PAPER_DCA_LEVELS: '-10:0.333333,-20:0.333333',
-        /** No price kill — timed loss exits only (salvage24 / h48_loss). */
-        PAPER_DCA_KILLSTOP: '0',
+        /** DCA выкл — только сплит $730+$730. */
+        PAPER_DCA_LEVELS: '',
+        /** Early kill −9% vs entry market до первого +7.5%; после +7.5% — trail + TP ladder (ключевая точка импульса). */
+        PAPER_DCA_KILLSTOP: '-0.09',
         /**
          * Variant A v2 hybrid (1.11.272): infinite +5% TP grid, 10% remainder per rung,
          * partial trail @+10%, DCA resets TP rungs. In-flight v3 scratch / v1 / wave_b unchanged.
@@ -581,6 +649,10 @@ const PM2_APPS = [
         PAPER_TIMEOUT_HOURS: '48',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_AFTER_FIRST_TP_ENABLED: '0',
         PAPER_LIVE_OSCAR_BREAKEVEN_TRIM_FRACTION: '0.5',
+        /** Wave B: after +2.5%/+5% TP rungs, peel 50% of remainder once at breakeven rollback. */
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION: '0.5',
+        PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC: '0',
         /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
         PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
         /** Wave B on for new opens — escalating TP ladder (+2.5% steps). Variant A off. */
@@ -771,9 +843,10 @@ const PM2_APPS = [
 
         /**
          * 1.11.309 — flash crash kill (aggressive): velocity + post-fill guard; blocks DCA after trigger.
+         * 1.11.418 — disabled on live-oscar (premature SPCX exit at −1.85%%).
          * Fractions negative in env (e.g. -0.06 = −6%%). Not a static avg stop.
          */
-        PAPER_FLASH_CRASH_KILL_ENABLED: '1',
+        PAPER_FLASH_CRASH_KILL_ENABLED: '0',
         PAPER_FLASH_CRASH_KILL_DROP_30S_PCT: '-0.06',
         PAPER_FLASH_CRASH_KILL_DROP_60S_PCT: '-0.08',
         PAPER_FLASH_CRASH_KILL_DROP_180S_PCT: '-0.12',
@@ -836,10 +909,10 @@ const PM2_APPS = [
         LIVE_DISCOVERY_DEEP_AUDIT_UNIVERSE_MISS_MIN_MS: '60000',
         /** `0` — входы без whitelist; permanent denylist отключён (см. LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED). */
         LIVE_MINT_WHITELIST_ENABLED: '0',
-        /** Permanent denylist: блок повторных входов + автодопись после убыточного закрытия. */
+        /** Permanent denylist: ручной seed only; авто-deny после убытка выкл. */
         LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '0',
-        /** Любой убыточный полный выход → mint в permanent denylist (не cooldown). */
-        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '1',
+        /** Убыточный выход → 10m cooldown, не denylist. */
+        LIVE_NEGATIVE_TRADE_DENY_ENABLED: '0',
         /** Variant A: 24h mint block after salvage24 / h48_loss (not permanent denylist). */
         LIVE_MINT_TIMED_LOSS_COOLDOWN_ENABLED: '1',
         LIVE_MINT_TIMED_LOSS_COOLDOWN_MS: String(24 * 3600 * 1000),
@@ -853,11 +926,8 @@ const PM2_APPS = [
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         /** Любой net PnL < 0 при закрытии → denylist (`0` = без порога в USD). */
         LIVE_NEGATIVE_TRADE_DENY_MIN_LOSS_USD: '0',
-        /**
-         * Первый live-вход по mint: split 300+300, kill −5% от сигнала; без deny при убытке.
-         * Прибыльное закрытие → `live-oscar-mint-graduated.txt`.
-         */
-        LIVE_MINT_FIRST_PROBE_ENABLED: '1',
+        /** Единый размер $730+$730 на все mint; thin-vol probe split выкл. */
+        LIVE_MINT_FIRST_PROBE_ENABLED: '0',
         LIVE_MINT_FIRST_PROBE_KILL_DROP_PCT: '5',
         LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-mint-graduated.txt'),
         LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
@@ -999,7 +1069,7 @@ const PM2_APPS = [
         /**
          * 1.11.230 — Jupiter Pro: больше MTM probe (size = max(MIN, min(MAX, remUsd * FRACTION))).
          * Точная цена в tracker → tighter TP/SL. Раньше: [5..45] @12% (тонкая по большим позициям).
-         * Сейчас: [20..200] @10% — на $1000 позиции probe = $100 (vs $45 раньше).
+         * Сейчас: [20..200] @10% — на $1460 позиции probe = $146 (vs $45 раньше).
          */
         LIVE_TRACKER_MTM_PROBE_MIN_USD: '20',
         LIVE_TRACKER_MTM_PROBE_MAX_USD: '200',
@@ -1056,7 +1126,8 @@ const PM2_APPS = [
         /** Level-2 BTC gate: 1h/4h/24h/72h + drawdown от пика 72h (п.п.; `0` = выкл. для конкретного окна). */
         LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '1',
         LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '2.5',
-        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '2',
+        /** `0` — только короткие окна 1ч/4ч (24ч давал ложные block/clear при recovery). */
+        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '0',
         /** 72h/peak выкл. — не блокировать buy_open из‑за давней просадки при отскоке на 1h/4h. */
         LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '0',
         LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '0',
@@ -1228,6 +1299,56 @@ const PM2_APPS = [
       },
     },
     /**
+     * HL TWAP whale watch + live perp bot. Прямой tsx (не npm) — стабильный autorestart PM2.
+     * Секреты HL_TWAP_* / HL_TWAP_LIVE_PRIVATE_KEY — в `.env` хоста.
+     */
+    {
+      name: 'hl-twap-telegram-watch',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/hl-twap-telegram-watch.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 100,
+      min_uptime: 10_000,
+      restart_delay: 5000,
+      max_memory_restart: '512M',
+      kill_timeout: 15_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...HL_TWAP_LIVE_ENV,
+      },
+    },
+    /**
+     * Unified watchdog: hl-twap, live-oscar, copy-trader, combo-follow-live.
+     * PM2 status + heartbeat.json every 30s → auto-restart + [ALERT][strategy_watch].
+     */
+    {
+      name: 'strategy-process-watch',
+      cwd: root,
+      script: 'scripts-tmp/strategy-process-watch.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '120M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        STRATEGY_PROCESS_WATCH_POLL_MS: '30000',
+        STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
+        STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
+        STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
+      },
+    },
+    /**
      * Stealth copy-trader — отдельный процесс, журнал и (в live) кошелёк.
      * Не импортирует live-oscar; env-блок без LIVE_* / PAPER_* / whitelist Oscar.
      */
@@ -1246,6 +1367,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
         /** Исполнение: бывший live-oscar-risky (Phantom base58 или JSON в этом файле на VPS). */
@@ -1255,7 +1377,7 @@ const PM2_APPS = [
         /** Лидер: адрес в файле (не execution wallet). */
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '950',
+        COPY_TRADER_POSITION_USD: '1000',
         /** 0 = unlimited (proportional adds/sells only; no cap rows in state). */
         COPY_TRADER_MAX_POSITION_USD: '0',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
@@ -1263,11 +1385,11 @@ const PM2_APPS = [
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
         COPY_TRADER_BUY_DELAY_MS: '30000',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Split entry: $350 probe (350/950) + $600 dip @ leader−4%. */
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3684210526315789',
-        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '4',
+        /** Split entry: $300 probe (30%) + $700 dip @ leader−10%. */
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '10',
         COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS: '2',
-        COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '2',
+        COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '0',
         COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         /** Skip new entries/adds when Dex mcap < $1M (existing positions e.g. GO unchanged). */
@@ -1286,9 +1408,8 @@ const PM2_APPS = [
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
-        /** Poll + parse leader txs on QuickNode; Helius — fallback при QN budget block. */
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1355,9 +1476,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_SL_MULTI_PCT: '22',
         PUMPSWAP_COMBO_SL_PRE_DCA_PCT: '35',
         PUMPSWAP_COMBO_SLIPPAGE_BPS: '300',
-        /** QuickNode only — Helius monthly cap exhausted. */
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '0',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1401,8 +1521,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT: '25',
         PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '20',
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '300',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1453,8 +1573,8 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '100',
         PUMPSWAP_COMBO_FOLLOW_LEADER_WS: '1',
         PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '150',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     /**
@@ -1486,39 +1606,78 @@ const PM2_APPS = [
         PUMPSWAP_COMBO_FOLLOW_WALLET_SECRET: path.join(root, 'data/pumpswap-combo-follow/wallet.keypair.json'),
         PUMPSWAP_COMBO_FOLLOW_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
         PUMPSWAP_COMBO_FOLLOW_TARGET_WALLET: 'hnu5iBK8UoHb51UFsH1RYTUAYdrhjHvV5YMTf9T1CYN',
-        /** Follow v2: flow gate + flow8z exits, max 8 open, 3h hold cap, no DCA bags. */
+        /** Follow v2 live: conditional flush + mirror adds + rug-follow on leader flat. */
         PUMPSWAP_COMBO_FOLLOW_EXIT_POLICY: 'flow8z_antidump',
-        PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS: '0',
-        PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '1',
+        PUMPSWAP_COMBO_FOLLOW_MIRROR_LEADER_ADDS: '1',
+        PUMPSWAP_COMBO_FOLLOW_MAX_BUY_LEGS: '3',
+        PUMPSWAP_COMBO_FOLLOW_DCA_LEVELS: '-8:0.333333:first,-7:0.333333:avg',
         PUMPSWAP_COMBO_FOLLOW_MAX_OPEN: '8',
-        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '3',
+        PUMPSWAP_COMBO_FOLLOW_LEG_USD: '7',
+        /** hnu5 scalp forensic: 70% @ +14% leader (~+12% us), rest @ +22% (~+20% us). */
         PUMPSWAP_COMBO_FOLLOW_EXIT_LEAD_PCT: '2',
-        PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER: '13:1',
+        PUMPSWAP_COMBO_FOLLOW_EXIT_LADDER: '14:0.7,22:1',
         PUMPSWAP_COMBO_FOLLOW_SL_MODE: 'fixed',
-        PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '35',
+        PUMPSWAP_COMBO_FOLLOW_PORTFOLIO_STOP_LOSS_USD: '55',
+        PUMPSWAP_COMBO_FOLLOW_FLOW_POOL_TX_CAP: '25',
         PUMPSWAP_COMBO_FOLLOW_MAX_HOLD_MS: '10800000',
-        PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '150',
-        PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD: '300',
-        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT: '0',
+        PUMPSWAP_COMBO_FOLLOW_MIN_LEADER_BUY_USD: '80',
+        PUMPSWAP_COMBO_FOLLOW_MAX_LEADER_FIRST_BUY_USD: '0',
+        /** Skip sub-150k micro dust. */
+        PUMPSWAP_COMBO_FOLLOW_MIN_MCAP_USD: '150000',
+        PUMPSWAP_COMBO_FOLLOW_MAX_MCAP_USD: '3000000',
+        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_KILLSTOP_PCT: '30',
         PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_FLUSH: '1',
+        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_LEADER_SELL_DELAY_MS: '60000',
+        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLUSH_MIN_SELL_USD: '500',
+        PUMPSWAP_COMBO_FOLLOW_FLOW8Z_FLAT_FLUSH_DELAY_MS: '0',
         PUMPSWAP_COMBO_FOLLOW_BUY_DELAY_MS: '0',
         PUMPSWAP_COMBO_FOLLOW_LEADER_WS: '1',
         PUMPSWAP_COMBO_FOLLOW_ENTRY_GATE: 'flow',
         PUMPSWAP_COMBO_FOLLOW_FLOW_MIN_EXT_SELL_USD: '300',
         PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_EXT_SELL_USD: '2500',
-        PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_LAG_SEC: '5',
+        PUMPSWAP_COMBO_FOLLOW_FLOW_MAX_LAG_SEC: '15',
         PUMPSWAP_COMBO_FOLLOW_FLOW_LOOKBACK_SEC: '120',
-        PUMPSWAP_COMBO_FOLLOW_CLEAR_HALT: '1',
         PUMPSWAP_COMBO_FOLLOW_POLL_FALLBACK_MS: '30000',
         PUMPSWAP_COMBO_FOLLOW_POLL_MS: '5000',
         PUMPSWAP_COMBO_FOLLOW_SIGNATURE_LIMIT: '25',
         PUMPSWAP_COMBO_FOLLOW_SLIPPAGE_BPS: '100',
-        SOLANA_RPC_HELIUS_PREFER: '0',
-        SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+        ...PM2_SOLANA_RPC_ENV,
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+      },
+    },
+    /**
+     * Hourly Alchemy RPC usage → Telegram (internal meter; no public Alchemy billing API on free tier).
+     */
+    {
+      name: 'sa-alchemy-usage-watch',
+      cwd: root,
+      script: 'scripts-tmp/alchemy-usage-hourly-telegram.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 10_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        ...PM2_SOLANA_RPC_ENV,
+        ALCHEMY_USAGE_TELEGRAM: '1',
+        ALCHEMY_USAGE_INTERVAL_MS: '3600000',
+        ALCHEMY_EST_CU_PER_RPC: '27',
+        TELEGRAM_COOLDOWN_REPORT_ALCHEMY_USAGE_MS: '3600000',
       },
     },
 ];
 
+/** Combo bots off by default — set ENABLE_PUMPSWAP_COMBO_PM2=true to include pumpswap-combo* apps. */
+const ENABLE_PUMPSWAP_COMBO_PM2 = process.env.ENABLE_PUMPSWAP_COMBO_PM2 === 'true';
+const PM2_APPS_FILTERED = PM2_APPS.filter((app) => {
+  if (ENABLE_PUMPSWAP_COMBO_PM2) return true;
+  return !/^pumpswap-combo/.test(app.name);
+});
+
 module.exports = {
-  apps: PM2_APPS,
+  apps: PM2_APPS_FILTERED,
 };

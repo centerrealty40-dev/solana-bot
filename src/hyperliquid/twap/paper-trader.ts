@@ -8,7 +8,8 @@ import { hlTwapBtcAlignedBlockReason } from './twap-btc-gate.js';
 import { hlTwapCoinEntryGateBlockReason } from './live/coin-exposure.js';
 import type { TwapWatchState } from './detect.js';
 import { shouldCloseOnWhaleTwapCancel } from './user-rating.js';
-import { HL_TWAP_EXIT_REASON_EARLY, HL_TWAP_EXIT_REASON_SHORT, twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, isShortTwapMinutes } from './twap-duration.js';
+import { twapCancelExitDelayMinutes, twapExitEarlyMinutesForDuration, twapHoldToEndEnabled, twapTimerExitReason, shouldUseMicroExecution } from './twap-duration.js';
+import { hlTwapUnrestrictedMode } from './unrestricted.js';
 import {
   clearWhaleExitPending,
   scheduleWhaleExitDelay,
@@ -174,10 +175,11 @@ export function schedulePaperTrade(
   if (!plan.allow) return;
 
   const entrySide = hlTwapEntrySide(sig.user, sig.side);
-  if (hlTwapBtcAlignedBlockReason(entrySide)) return;
-
-  const coinGate = hlTwapCoinEntryGateBlockReason(sig.coin, entrySide, filePath);
-  if (coinGate) return;
+  if (!hlTwapUnrestrictedMode()) {
+    if (hlTwapBtcAlignedBlockReason(entrySide)) return;
+    const coinGate = hlTwapCoinEntryGateBlockReason(sig.coin, entrySide, filePath);
+    if (coinGate) return;
+  }
 
   const sched = computeTwapSchedule(sig);
   const row: JournalSchedule = {
@@ -210,6 +212,7 @@ export function resolvePaperEntryAuditPlan(
   if (opens.has(sig.hash) || pending.has(sig.hash)) {
     return plan.allow ? { ...plan, allow: false, reason: 'already_tracked' } : plan;
   }
+  if (hlTwapUnrestrictedMode()) return plan;
   if (!plan.allow) return plan;
   const entrySide = hlTwapEntrySide(sig.user, sig.side);
   const btcBlock = hlTwapBtcAlignedBlockReason(entrySide);
@@ -320,9 +323,7 @@ export async function processPaperTrades(
 
     if (now >= pos.paperCloseAtMs) {
       const px = exitPxForOpen(pos, cache);
-      const exitReason = isShortTwapMinutes(pos.minutes)
-        ? HL_TWAP_EXIT_REASON_SHORT
-        : HL_TWAP_EXIT_REASON_EARLY;
+      const exitReason = twapTimerExitReason(pos.minutes);
       closePaperTrade({ hash: pos.hash, displaySymbol: pos.displaySymbol }, px, exitReason, watchState);
     }
   }
@@ -445,11 +446,13 @@ export function buildPaperPositionTimeline(o: HlTwapPaperOpen, markPx: number, p
     {
       ts: timelineIso(o.paperCloseAtMs, o.entryTs),
       kind: 'strategy_note',
-      label: isShortTwapMinutes(o.minutes)
-        ? `Плановый instant-выход перед последним слайсом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
-        : o.minutes > 30
-          ? `Плановый выход после ${Math.round(((o.minutes - twapExitEarlyMinutesForDuration(o.minutes)) / o.minutes) * 100)}% TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
-          : `Плановый выход −${twapExitEarlyMinutesForDuration(o.minutes)}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
+      label: twapHoldToEndEnabled()
+        ? `Плановый выход при ETA последнего цикла TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+        : shouldUseMicroExecution(o.minutes)
+          ? `Плановый instant-выход перед последним слайсом (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+          : o.minutes > 30
+            ? `Плановый выход после ${Math.round(((o.minutes - twapExitEarlyMinutesForDuration(o.minutes)) / o.minutes) * 100)}% TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`
+            : `Плановый выход −${twapExitEarlyMinutesForDuration(o.minutes)}m до конца TWAP (МСК ${formatMoscowDateTime(o.paperCloseAtMs)})`,
     },
     {
       ts: new Date().toISOString(),

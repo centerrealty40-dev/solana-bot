@@ -5,6 +5,7 @@ import { followPaperPortfolioSnapshot } from './paper-portfolio.js';
 import { ensureComboSolUsd } from '../pumpswap-combo/sol-oracle.js';
 import type { PumpswapComboFollowConfig } from './config.js';
 import { toComboExecutorConfig } from './config.js';
+import { startOpsHeartbeat } from '../core/ops-heartbeat.js';
 import { checkFollowPortfolioHalt, evaluateFollowExits } from './exits.js';
 import { evaluateFollowDca } from './follow-dca.js';
 import { appendFollowEvent } from './journal.js';
@@ -41,6 +42,7 @@ function createLeaderPipelineLock() {
 
 export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig): Promise<void> {
   configureLiveStore({ storePath: cfg.journalPath, strategyId: cfg.strategyId });
+  startOpsHeartbeat({ appName: cfg.strategyId, stats: () => ({ executionMode: cfg.executionMode }) });
 
   if (process.env.PUMPSWAP_COMBO_FOLLOW_CLEAR_HALT === '1') {
     const bootState = readFollowState(cfg);
@@ -74,6 +76,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     quoteAsset: 'SOL',
     legUsd: cfg.legUsd,
     entryUsd: cfg.entryUsd,
+    mirrorAddUsd: cfg.mirrorAddUsdResolved,
     dcaNotionalUsd: cfg.dcaNotionalUsd,
     dcaLevels: cfg.dcaLevels.map((l) => `${(l.triggerPct * 100).toFixed(0)}:${l.addFraction}`).join(','),
     dcaKillstopPct: cfg.dcaKillstopPct,
@@ -104,7 +107,7 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
     cfg.exitPolicy === 'oscar_wave_b'
       ? `leg=$${cfg.entryUsd} dca=${cfg.dcaLevels.length}×${(cfg.dcaLevels[0]?.addFraction ?? 0) * 100}% kill=-${cfg.dcaKillstopPct}% waveB`
       : cfg.exitPolicy === 'flow8z_antidump'
-        ? `leg=$${cfg.legUsd} flow8z anti-dump ks=-${cfg.flow8zKillstopPct}% max1st=$${cfg.maxLeaderFirstBuyUsd}`
+        ? `leg=$${cfg.legUsd}${cfg.dcaLevels.length ? ` frontrun-dca=${cfg.dcaLevels.map((l) => `${(l.triggerPct * 100).toFixed(0)}%${l.anchor === 'avg' ? '@avg' : '@1st'}`).join(',')}` : ''} flow8z ks=-${cfg.flow8zKillstopPct}% flushMin=$${cfg.flow8zLeaderFlushMinSellUsd} flatDelay=${cfg.flow8zLeaderFlatFlushDelayMs}ms sellDelay=${cfg.flow8zLeaderSellDelayMs}ms maxOpen=${cfg.maxOpenPositions}`
         : `leg=$${cfg.legUsd} ladder=${ladderSummary}`;
 
   console.log(
@@ -180,10 +183,11 @@ export async function runPumpswapComboFollowLoop(cfg: PumpswapComboFollowConfig)
             await processPendingFollowBuys(cfg, pollState);
           });
         }
-        if (cfg.exitPolicy === 'oscar_wave_b') {
-          await evaluateFollowDca(cfg, fresh);
+        const exitState = readFollowState(cfg);
+        if (cfg.dcaLevels.length > 0) {
+          await evaluateFollowDca(cfg, exitState);
         }
-        await evaluateFollowExits(cfg, fresh);
+        await evaluateFollowExits(cfg, exitState);
       }
 
       if (nowMs - lastHeartbeat >= cfg.heartbeatIntervalMs) {

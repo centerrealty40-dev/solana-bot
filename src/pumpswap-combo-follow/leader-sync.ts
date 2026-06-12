@@ -25,6 +25,8 @@ import {
 } from './state.js';
 import { initFollowWaveBState } from './follow-wave-b-state.js';
 import { checkFlowEntryGate } from './entry-gate.js';
+import { blocksMissedEntryLeaderAlreadyIn } from './entry-eligibility.js';
+import { checkFollowMcapGate } from './mcap-gate.js';
 import type { PendingFollowBuy } from './types.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -127,12 +129,15 @@ async function onLeaderBuy(
     if (!cfg.mirrorLeaderAdds) {
       appendFollowEvent(cfg, {
         kind: 'leader_add_ignored',
-        reason: cfg.exitPolicy === 'oscar_wave_b' ? 'oscar_price_dca_only' : 'no_mirror_adds',
+        reason:
+          cfg.exitPolicy === 'oscar_wave_b' || cfg.dcaLevels.length > 0
+            ? 'oscar_price_dca_only'
+            : 'no_mirror_adds',
         mint,
         leaderSignature: row.signature,
         note:
-          cfg.exitPolicy === 'oscar_wave_b'
-            ? 'DCA at -10/-20 vs first leg, not leader mirror'
+          cfg.exitPolicy === 'oscar_wave_b' || cfg.dcaLevels.length > 0
+            ? 'price front-run DCA only, not leader mirror'
             : undefined,
       });
       return;
@@ -160,7 +165,11 @@ async function onLeaderBuy(
     return;
   }
 
-  if (preLeaderRaw > 0n) {
+  if (blocksMissedEntryLeaderAlreadyIn({
+    preLeaderRaw,
+    hasOurPosition: Boolean(existing),
+    allowLateEntryOnLeaderAdd: cfg.allowLateEntryOnLeaderAdd,
+  })) {
     appendFollowEvent(cfg, {
       kind: 'leader_buy_ignored',
       reason: 'missed_entry_leader_already_in',
@@ -168,6 +177,16 @@ async function onLeaderBuy(
       leaderSignature: row.signature,
     });
     return;
+  }
+
+  if (preLeaderRaw > 0n) {
+    appendFollowEvent(cfg, {
+      kind: 'late_entry_on_leader_add',
+      mint,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      leaderPreBalanceRaw: preLeaderRaw.toString(),
+    });
   }
 
   if (cfg.maxOpenPositions > 0 && openFollowPositionsCount(state) >= cfg.maxOpenPositions) {
@@ -224,6 +243,20 @@ async function onLeaderBuy(
     });
   }
 
+  const mcapGate = await checkFollowMcapGate(cfg, mint);
+  if (!mcapGate.pass) {
+    appendFollowEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: mcapGate.reason ?? 'min_mcap_usd',
+      mint,
+      leaderSignature: row.signature,
+      marketCapUsd: mcapGate.marketCapUsd ?? null,
+      minMarketCapUsd: cfg.minMarketCapUsd,
+      maxMarketCapUsd: cfg.maxMarketCapUsd,
+    });
+    return;
+  }
+
   scheduleFollowBuy(cfg, state, {
     mint,
     symbol,
@@ -236,7 +269,7 @@ async function onLeaderBuy(
   });
 }
 
-/** Leader sells update ledger only — exits are price-ladder, not reactive copy. */
+/** Leader sells update ledger only — exits are price-ladder + conditional flush. */
 async function onLeaderSell(
   cfg: PumpswapComboFollowConfig,
   state: FollowState,
@@ -246,10 +279,15 @@ async function onLeaderSell(
 ): Promise<void> {
   const mint = swap.baseMint;
   const ts = leaderObservedMs(row) ?? Date.now();
+  const soldRaw = swap.baseAmountRaw < 0n ? -swap.baseAmountRaw : swap.baseAmountRaw;
+  const postLeaderRaw = preLeaderRaw > soldRaw ? preLeaderRaw - soldRaw : 0n;
   state.lastLeaderSellByMint[mint] = {
     ts,
     signature: row.signature,
     priceUsd: swap.priceUsd,
+    sellUsd: swap.amountUsd,
+    leaderPostBalanceRaw: postLeaderRaw.toString(),
+    leaderFlat: postLeaderRaw === 0n,
   };
   appendFollowEvent(cfg, {
     kind: 'leader_sell_observed',
@@ -259,6 +297,8 @@ async function onLeaderSell(
     leaderPriceUsd: swap.priceUsd,
     leaderSellUsd: swap.amountUsd,
     leaderPreBalanceRaw: preLeaderRaw.toString(),
+    leaderPostBalanceRaw: postLeaderRaw.toString(),
+    leaderFlat: postLeaderRaw === 0n,
     note: 'no_mirror_sell',
   });
 }
@@ -304,6 +344,7 @@ async function executePendingBuy(
 
   const existing = findFollowPosition(state, pending.mint);
 
+  const buyUsd = pending.kind === 'add' ? cfg.mirrorAddUsdResolved : cfg.entryUsd;
   const buy = await executeFollowBuy({
     cfg,
     mint: pending.mint,
@@ -312,7 +353,7 @@ async function executePendingBuy(
     leaderPriceUsd: pending.leaderPriceUsd,
     intent: pending.kind === 'add' ? 'add' : 'probe',
     leaderSignature: pending.leaderSignature,
-    buyUsd: cfg.entryUsd,
+    buyUsd,
   });
 
   if (!buy.ok || !(buy.fillPriceUsd && buy.fillPriceUsd > 0)) {
@@ -335,7 +376,7 @@ async function executePendingBuy(
 
   const leg = {
     ts: nowMs,
-    usd: buy.usdAtMarket ?? cfg.entryUsd,
+    usd: buy.usdAtMarket ?? buyUsd,
     fillPriceUsd: buy.fillPriceUsd,
     txSignature: buy.txSignature,
     kind: pending.kind === 'add' ? ('mirror_add' as const) : ('entry' as const),
@@ -375,6 +416,7 @@ async function executePendingBuy(
       });
     }
   } else {
+    delete state.lastLeaderSellByMint[pending.mint];
     state.positions.push({
       mint: pending.mint,
       symbol: pending.symbol,

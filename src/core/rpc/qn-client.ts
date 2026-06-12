@@ -176,7 +176,7 @@ export async function qnCall<T>(method: string, params: unknown[], opts: QnCallO
   const cost = defaultCreditsPerCall(opts);
   const timeoutMs = opts.timeoutMs ?? 8000;
   if (isHeliusRpcEndpoint(url)) {
-    log.debug({ method, feature: opts.feature }, 'qn rpc: Helius endpoint (no QuickNode meter)');
+    log.debug({ method, feature: opts.feature }, 'qn rpc: Helius endpoint (no meter)');
     return postJsonRpc<T>(url, method, params, timeoutMs, null);
   }
   const reserved = await reserveAll(opts.feature, cost);
@@ -229,7 +229,7 @@ export async function qnBatchCall<T>(
   const cost = items.length * per;
   const timeoutMs = opts.timeoutMs ?? 8000;
   if (isHeliusRpcEndpoint(url)) {
-    log.debug({ n: items.length, feature: opts.feature }, 'qn batch: Helius endpoint (no QuickNode meter)');
+    log.debug({ n: items.length, feature: opts.feature }, 'qn batch: Helius endpoint (no meter)');
     const results: QnRpcResult<T>[] = [];
     for (const it of items) {
       results.push(await postJsonRpc<T>(url, it.method, it.params, timeoutMs, null));
@@ -243,7 +243,7 @@ export async function qnBatchCall<T>(
   if (!reserved) {
     const heliusUrl = heliusRpcUrlFromEnv();
     if (heliusRpcFallbackEnabled() && heliusUrl && heliusUrl !== url) {
-      log.warn({ n: items.length, feature: opts.feature }, 'qn batch: QuickNode budget blocked — Helius fallback');
+      log.warn({ n: items.length, feature: opts.feature }, 'qn batch: budget blocked — Helius fallback');
       const results: QnRpcResult<T>[] = [];
       for (const it of items) {
         results.push(await postJsonRpc<T>(heliusUrl, it.method, it.params, timeoutMs, null));

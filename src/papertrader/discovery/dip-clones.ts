@@ -19,6 +19,10 @@ import {
   type LocalHighVetoResult,
   type RecoveryVetoResult,
 } from '../dip-detector.js';
+import {
+  evaluateStressKillReentryPath,
+  getStressKillReentryContext,
+} from './stress-kill-reentry.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
@@ -112,7 +116,12 @@ export interface EvalDecision {
    *  - `impulse_pg_snap` — bypass через PG-snap impulse confirm (`PAPER_ENTRY_IMPULSE_PG_BYPASS_DIP`)
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
    */
-  entryPath?: 'dip_windows' | 'impulse_pg_snap' | 'runner' | 'post_crash_fast';
+  entryPath?:
+    | 'dip_windows'
+    | 'impulse_pg_snap'
+    | 'runner'
+    | 'post_crash_fast'
+    | 'stress_kill_reentry';
   /** `low` = узкий коридор $1.3M–$3M; `prod` = mcap > $3M (текущий prod). */
   liveOscarMcapTier?: 'low' | 'prod';
 }
@@ -155,9 +164,55 @@ export type LastExitMarketSnapshot = {
 /** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
 export const lastExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
 
+/** Last on-chain / policy exit (never RECONCILE_ORPHAN / PERIODIC_HEAL) — source of truth for re-entry gates. */
+export const lastRealExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
+
 /** Ledger-only closes must not replace a recent real exit price (FLASH → RECONCILE ~seconds later). */
 const ADMIN_LEDGER_EXIT_REASONS = new Set(['RECONCILE_ORPHAN', 'PERIODIC_HEAL']);
 const RECONCILE_REENTRY_GRACE_MS = 10 * 60_000;
+
+export function isAdminLedgerExitReason(exitReason?: string): boolean {
+  return !!exitReason && ADMIN_LEDGER_EXIT_REASONS.has(exitReason);
+}
+
+/** Snapshot used by post-exit dip/cooldown gates (ignores admin-only ledger closes when a real exit exists). */
+export function reentryExitSnapshotForGate(mint: string): LastExitMarketSnapshot | undefined {
+  const real = lastRealExitMarketSnapshotByMintMap.get(mint);
+  if (real) return real;
+  const snap = lastExitMarketSnapshotByMintMap.get(mint);
+  if (!snap || isAdminLedgerExitReason(snap.exitReason)) return undefined;
+  return snap;
+}
+
+export function isPostExitBuyCooldownActive(
+  cfg: PaperTraderConfig,
+  mint: string,
+  nowMs = Date.now(),
+): boolean {
+  if (!cfg.dipLossExitCooldownEnabled) return false;
+  const lastExit = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (lastExit <= 0) return false;
+  const lossMin = cfg.dipLossExitCooldownMinutes;
+  const lossH = cfg.dipLossExitCooldownHours;
+  let resumeAt = 0;
+  if (Number(lossMin) > 0) resumeAt = lastExit + lossMin * 60_000;
+  else if (Number(lossH) > 0) resumeAt = lastExit + lossH * 3_600_000;
+  return resumeAt > 0 && nowMs < resumeAt;
+}
+
+/** Admin ledger close must not mutate re-entry gate state after a recent real exit (KINS audit 04740207). */
+export function shouldPreserveRealExitReentryGate(
+  mint: string,
+  exitReason: string,
+  exitTsMs: number,
+  cfg: PaperTraderConfig,
+  nowMs = Date.now(),
+): boolean {
+  if (!isAdminLedgerExitReason(exitReason)) return false;
+  const real = lastRealExitMarketSnapshotByMintMap.get(mint);
+  if (real && exitTsMs - real.exitTs <= RECONCILE_REENTRY_GRACE_MS) return true;
+  return isPostExitBuyCooldownActive(cfg, mint, nowMs);
+}
 
 const STRESS_EXIT_REASONS = new Set(['FLASH_CRASH_KILL', 'SL', 'KILLSTOP', 'LIQ_DRAIN']);
 
@@ -198,24 +253,34 @@ export function recordLastExitMarketSnapshotAfterClose(
   if (!(exitTsMs > 0)) return;
   const px = Number(marketUsd);
   if (!(px > 0)) return;
+  const next: LastExitMarketSnapshot = {
+    exitTs: exitTsMs,
+    marketUsd: px,
+    netPnlUsd: meta?.netPnlUsd,
+    exitReason: meta?.exitReason,
+  };
   const prev = lastExitMarketSnapshotByMintMap.get(mint);
-  if (
-    prev &&
-    meta?.exitReason &&
-    ADMIN_LEDGER_EXIT_REASONS.has(meta.exitReason) &&
-    prev.exitReason &&
-    !ADMIN_LEDGER_EXIT_REASONS.has(prev.exitReason) &&
-    exitTsMs - prev.exitTs <= RECONCILE_REENTRY_GRACE_MS
-  ) {
-    return;
+  const real = lastRealExitMarketSnapshotByMintMap.get(mint);
+  if (meta?.exitReason && isAdminLedgerExitReason(meta.exitReason)) {
+    if (real && exitTsMs - real.exitTs <= RECONCILE_REENTRY_GRACE_MS) return;
+    if (real && px > real.marketUsd * (1 + 1e-9)) return;
+    if (
+      prev &&
+      prev.exitReason &&
+      !isAdminLedgerExitReason(prev.exitReason) &&
+      exitTsMs - prev.exitTs <= RECONCILE_REENTRY_GRACE_MS
+    ) {
+      return;
+    }
   }
   if (!prev || exitTsMs >= prev.exitTs) {
-    lastExitMarketSnapshotByMintMap.set(mint, {
-      exitTs: exitTsMs,
-      marketUsd: px,
-      netPnlUsd: meta?.netPnlUsd,
-      exitReason: meta?.exitReason,
-    });
+    lastExitMarketSnapshotByMintMap.set(mint, next);
+  }
+  if (!isAdminLedgerExitReason(meta?.exitReason)) {
+    const realPrev = lastRealExitMarketSnapshotByMintMap.get(mint);
+    if (!realPrev || exitTsMs >= realPrev.exitTs) {
+      lastRealExitMarketSnapshotByMintMap.set(mint, next);
+    }
   }
 }
 
@@ -228,7 +293,7 @@ export function recordAfterFullCloseForMintRepeatGate(
   effectiveExitUsd: number,
   meta?: { netPnlUsd?: number; exitReason?: string },
 ): void {
-  recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs);
+  recordPostExitBuyCooldownIfApplicable(cfg, mint, exitTsMs, meta?.netPnlUsd);
   const px = theoreticalExitUsd > 0 ? theoreticalExitUsd : effectiveExitUsd;
   recordLastExitMarketSnapshotAfterClose(mint, exitTsMs, px, meta);
 }
@@ -238,6 +303,9 @@ export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
   ct: { mint: string; exitTs: number; theoretical_exit_price: number; effective_exit_price: number; netPnlUsd: number; exitReason: string },
   opts?: { openTrade?: { partialSells: PartialSellForReentry[] } },
 ): void {
+  if (shouldPreserveRealExitReentryGate(ct.mint, ct.exitReason, ct.exitTs, cfg)) {
+    return;
+  }
   let theo = ct.theoretical_exit_price;
   let eff = ct.effective_exit_price;
   let meta: { netPnlUsd: number; exitReason: string } = {
@@ -287,7 +355,7 @@ export function appendLiveReentryHybridGateReasons(
   const maxWaitMin = cfg.liveReentryMaxWaitMinutes;
   if (!(baseDropPct > 0) || !(maxWaitMin > 0)) return;
 
-  const snap = lastExitMarketSnapshotByMintMap.get(mint);
+  const snap = reentryExitSnapshotForGate(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
   if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
 
@@ -335,12 +403,31 @@ export function appendPostExitReentryGateReasons(
   snapshotPriceUsd: number,
   out: string[],
 ): void {
+  if (cfg.dipLossExitCooldownEnabled) {
+    appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
+  }
   if (isLiveReentryHybridGateEnabled(cfg)) {
     appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
     return;
   }
-  appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
   appendLiveReentryPriceGapReasons(cfg, mint, snapshotPriceUsd, out);
+}
+
+let postExitReentryGatePaperCfg: PaperTraderConfig | null = null;
+
+/** Live execution pipeline (buy_open / entry_split / dca) — same cfg as discovery gates. */
+export function configurePostExitReentryGatePaperCfg(cfg: PaperTraderConfig): void {
+  postExitReentryGatePaperCfg = cfg;
+}
+
+export function postExitReentryGateReasonsForLiveBuy(
+  mint: string,
+  candidatePriceUsd: number,
+): string[] {
+  if (!postExitReentryGatePaperCfg || !(candidatePriceUsd > 0)) return [];
+  const reasons: string[] = [];
+  appendPostExitReentryGateReasons(postExitReentryGatePaperCfg, mint, candidatePriceUsd, reasons);
+  return reasons;
 }
 
 export function appendLiveReentryPriceGapReasons(
@@ -353,7 +440,7 @@ export function appendLiveReentryPriceGapReasons(
   if (isLiveReentryHybridGateEnabled(cfg)) return;
   const pct = cfg.liveReentryMinDropFromLastExitPct;
   if (!(Number(pct) > 0)) return;
-  const snap = lastExitMarketSnapshotByMintMap.get(mint);
+  const snap = reentryExitSnapshotForGate(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
   if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
   const maxAllowed = snap.marketUsd * (1 - pct / 100);
@@ -368,10 +455,12 @@ export function recordPostExitBuyCooldownIfApplicable(
   cfg: PaperTraderConfig,
   mint: string,
   exitTsMs: number,
+  netPnlUsd?: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
   const m = cfg.dipLossExitCooldownMinutes;
   if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
+  if (netPnlUsd != null && netPnlUsd >= -1e-9) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
   if (exitTsMs >= prev) lastPostExitBuyCooldownTsByMintMap.set(mint, exitTsMs);
@@ -729,7 +818,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       skipHolderCheck: liveHoldersForGate,
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
-    const dipEval = evaluateDip(tierCfg, row, dipMap.get(row.mint));
+    const lastExitSnap = reentryExitSnapshotForGate(row.mint);
+    const stressReentryCtx = getStressKillReentryContext(cfg, lastExitSnap, row.price_usd);
+    const dipTierCfg =
+      stressReentryCtx &&
+      cfg.liveStressReentryDipMaxDropPct < tierCfg.dipMaxDropPct
+        ? { ...tierCfg, dipMaxDropPct: cfg.liveStressReentryDipMaxDropPct }
+        : tierCfg;
+    const dipEval = evaluateDip(dipTierCfg, row, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
@@ -738,7 +834,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let postCrashFastPath: PostCrashFastPathResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
-    } else if (snapshotGatePass && cfg.postCrashFastPathEnabled) {
+    } else if (snapshotGatePass) {
+      const stressPath = evaluateStressKillReentryPath(
+        cfg,
+        lastExitSnap,
+        row,
+        dipMap.get(row.mint),
+      );
+      if (stressPath.pass) {
+        dipReasonsForGate = [];
+        entryPath = 'stress_kill_reentry';
+      } else if (stressPath.reasons.length > 0) {
+        dipReasonsForGate = [...dipReasonsForGate, ...stressPath.reasons];
+      }
+    }
+    if (entryPath == null && snapshotGatePass && cfg.postCrashFastPathEnabled) {
       postCrashFastPath = evaluatePostCrashFastPath(tierCfg, row, postCrashMap.get(row.mint));
       if (postCrashFastPath.pass) {
         dipReasonsForGate = [];
@@ -801,7 +911,25 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath === 'post_crash_fast'
           ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
           : dipEval.dipLookbackUsedMin;
-      recoveryVeto = evaluateRecoveryVeto(cfg, row, dipMap.get(row.mint), dipLookbackForRecovery);
+      if (entryPath === 'stress_kill_reentry') {
+        recoveryVeto = { reasons: [], bounces: {} };
+      } else {
+        const recoveryOpts = stressReentryCtx
+          ? {
+              maxBouncePct: stressReentryCtx.maxBouncePct,
+              windowsMin: cfg.dipRecoveryVetoWindowsMin.filter(
+                (w) => w <= stressReentryCtx.maxWindowMin,
+              ),
+            }
+          : undefined;
+        recoveryVeto = evaluateRecoveryVeto(
+          cfg,
+          row,
+          dipMap.get(row.mint),
+          dipLookbackForRecovery,
+          recoveryOpts,
+        );
+      }
       if (recoveryVeto.reasons.length > 0) {
         dipReasonsForGate = [...dipReasonsForGate, ...recoveryVeto.reasons];
         entryPath = undefined;

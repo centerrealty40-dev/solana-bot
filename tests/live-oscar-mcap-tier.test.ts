@@ -72,9 +72,9 @@ describe('live-oscar-mcap-tier', () => {
     expect(prod.vol1hMinUsd).toBe(25_000);
   });
 
-  it('uses split and dca specs per tier', () => {
+  it('uses unified split leg for all tiers', () => {
     const cfg = loadPaperTraderConfig();
-    expect(liveOscarTierStagedSplitLegUsd(cfg, 'low')).toBe(400);
+    expect(liveOscarTierStagedSplitLegUsd(cfg, 'low')).toBe(750);
     expect(liveOscarTierStagedSplitLegUsd(cfg, 'prod')).toBe(750);
     expect(liveOscarTierDcaLevelsSpec(cfg, 'low')).toBe('-10:0.375,-20:0.375');
   });

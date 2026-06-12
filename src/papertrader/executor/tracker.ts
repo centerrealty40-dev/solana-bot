@@ -45,12 +45,15 @@ import {
   waveBMarkTrailLevelTaken,
   clampLiveTrackerMtmForExit,
   waveBRecoverPhantomPeakIfNeeded,
+  waveBUpdatePreArmReached,
+  waveBAbsoluteKillEligible,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
   waveBAdjustSellFractionForRemainder,
   waveBRemainderValueNetUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
+  waveBBreakevenInsuranceEligible,
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
@@ -277,6 +280,8 @@ export interface TrackerArgs {
    * Live: wall-clock age (`entryTs`) required before orphan close; younger positions skipped (RPC TA lag).
    */
   reconcileOrphanMinPositionAgeMs?: number;
+  /** After full close — e.g. clear staged entry signal so re-entry cannot bypass dip gate. */
+  onMintFullClose?: (mint: string) => void;
 }
 
 interface PeakState {
@@ -959,6 +964,80 @@ async function tryWaveBTrailPartialSells(args: {
   void r;
 }
 
+/** Wave B: after first two TP rungs (+2.5% / +5%), one insurance peel at breakeven (≤0% vs avg). */
+async function tryWaveBBreakevenInsurance(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  tgEff: TpGridEffective;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    tgEff,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (
+    cfg.strategyId !== 'live-oscar' ||
+    !cfg.liveOscarWaveBBreakevenInsuranceEnabled ||
+    !isWaveBExitPolicy(ot) ||
+    waveBBreakevenExitEligible(ot, tgEff.stepPnl) ||
+    ot.liveWaveBreakevenInsuranceTaken ||
+    ot.remainingFraction <= 1e-9 ||
+    !(ot.avgEntry > 0) ||
+    !(curMetric > 0)
+  ) {
+    return;
+  }
+  const pnlFrac = xAvg - 1;
+  const pnlThreshold = cfg.liveOscarWaveBBreakevenInsurancePnlFrac;
+  if (pnlFrac > pnlThreshold + LADDER_PNL_EPS) return;
+  if (!waveBBreakevenInsuranceEligible(ot, tgEff.stepPnl)) return;
+
+  const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarWaveBBreakevenInsuranceFraction));
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBAdjustSellFractionForRemainder(remainingValueNet, trimFrac, cfg);
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {},
+    logLabelPct: `wave-b-insurance-${(trimFrac * 100).toFixed(0)}pct-at-breakeven`,
+    partialReason: 'WAVE_B_BREAKEVEN_INSURANCE',
+    timelineLabelRu:
+      'Live Oscar wave B · после +2.5%/+5% TP откат к безубытку — страховка ' +
+      `${(trimFrac * 100).toFixed(0)}% остатка`,
+  });
+  if (r === 'ok') {
+    ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+}
+
 /** Variant A v3: scratch flush @0% avg (or gap @ avg) after ≥1 TP; dust flush <$100. */
 async function tryVariantAScratchPartialFlush(args: {
   mint: string;
@@ -1087,6 +1166,20 @@ async function tryVariantAHybridThinVolFlush(args: {
   });
 }
 
+function afterFullCloseReentryGate(
+  args: Pick<TrackerArgs, 'onMintFullClose'>,
+  cfg: PaperTraderConfig,
+  ct: ClosedTrade,
+  openTrade?: OpenTrade,
+): void {
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(
+    cfg,
+    ct,
+    openTrade ? { openTrade } : undefined,
+  );
+  args.onMintFullClose?.(ct.mint);
+}
+
 function hookLiveWhitelistAfterFullClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   cfg: PaperTraderConfig,
@@ -1141,6 +1234,7 @@ async function closeOpenTradeReconcileOrphan(args: {
   btcCtx: TrackerArgs['btcCtx'];
   verifyReconcileOrphanWalletZero?: TrackerArgs['verifyReconcileOrphanWalletZero'];
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
 }): Promise<void> {
   const {
     mint,
@@ -1243,7 +1337,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct, { openTrade: ot });
+  afterFullCloseReentryGate(args, cfg, ct, ot);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1279,6 +1373,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   btcCtx: TrackerArgs['btcCtx'];
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
 }): Promise<boolean> {
   const {
     cfg,
@@ -1373,7 +1468,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+  afterFullCloseReentryGate({ onMintFullClose: args.onMintFullClose }, cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1416,6 +1511,7 @@ export async function trackerForceFullExitLive(args: {
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   livePhase4?: LiveOscarPhase4Tracker;
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
   mint: string;
   marketSell: number;
 }): Promise<boolean> {
@@ -1522,7 +1618,7 @@ export async function trackerForceFullExitLive(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+  afterFullCloseReentryGate({ onMintFullClose: args.onMintFullClose }, cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1596,6 +1692,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         btcCtx,
         verifyReconcileOrphanWalletZero,
         liveOscarCfg,
+        onMintFullClose: args.onMintFullClose,
       });
       reconciledOrphans += 1;
     }
@@ -1926,6 +2023,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (isWaveBExitPolicy(ot) && curMetric > 0) {
+      waveBUpdatePreArmReached(ot, curMetric);
+    }
+
     if (ot.avgEntry > 0 && isPartialGridTrailExitPolicy(ot)) {
       const pnlFracTick = curMetric / ot.avgEntry - 1;
       const anchorBefore = ot.liveWaveTrailAnchorPnlFrac ?? 0;
@@ -2069,7 +2170,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+        afterFullCloseReentryGate(args, cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -2164,7 +2265,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+        afterFullCloseReentryGate(args, cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -2808,6 +2909,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (ot.avgEntry > 0) {
+      xAvg = curMetric / ot.avgEntry;
+      pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    await tryWaveBBreakevenInsurance({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      tgEff,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
+
     /** Same tick as 2nd partial TP: peak block ran before `partialSells` grew — arm peak trailing if still at ATH. */
     if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0) {
       effCfg = cfgEffectiveForOpen(cfg, ot);
@@ -3010,10 +3129,22 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
+      const waveBKill =
+        isWaveBExitPolicy(ot) &&
+        killEff < 0 &&
+        waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
+      const classicKill =
+        !isWaveBExitPolicy(ot) &&
+        !ot.liveStagedEntry &&
+        killEff < 0 &&
+        pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
-        !isVariantAExitPolicy(ot) &&
-        (inSignalKillTerritory || (!ot.liveStagedEntry && killEff < 0 && pnlPctVsAvg / 100 <= killEff));
+        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || waveBKill || classicKill);
       if (inKillTerritory) {
+        if (waveBKill) {
+          ot.liveKillstopBelowStreak = 0;
+          exitReason = 'KILLSTOP';
+        } else {
         const debounceKillAfterReplenish =
           cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKillTerritory;
         if (debounceKillAfterReplenish) {
@@ -3028,6 +3159,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         } else {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
+        }
         }
       } else {
         ot.liveKillstopBelowStreak = 0;
@@ -3204,7 +3336,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         closedTrade: serializeClosedTrade(ct),
       });
-      recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+      afterFullCloseReentryGate(args, cfg, ct);
       hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,

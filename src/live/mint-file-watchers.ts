@@ -32,6 +32,10 @@ import {
   resolveLivePermanentDenylistLocalPath,
   resolveLivePermanentDenylistSeedPath,
 } from './mint-permanent-denylist.js';
+import {
+  buildMintFileWatchTelegramText,
+  fetchMintSymbolsBatch,
+} from './mint-file-watch-telegram-format.js';
 
 const log = child('mint-file-watchers');
 
@@ -68,13 +72,6 @@ function formatDiff(prev: Set<string>, next: Set<string>): {
   return { added, removed };
 }
 
-function shortMintList(arr: string[], cap = 6): string {
-  if (arr.length === 0) return '—';
-  const head = arr.slice(0, cap);
-  const tail = arr.length - head.length;
-  return tail > 0 ? `${head.join(', ')} (+${tail} more)` : head.join(', ');
-}
-
 async function emitChangeNotice(args: {
   kind: 'whitelist' | 'denylist';
   path: string;
@@ -99,14 +96,20 @@ async function emitChangeNotice(args: {
     removed: removed.slice(0, 20),
   });
   if (!telegramEnabled()) return;
-  const text =
-    `Файл ${kind} обновлён.\n` +
-    `Путь: ${absPath}\n` +
-    `Всего записей: ${next.size}\n` +
-    `Добавлено (${added.length}): ${shortMintList(added)}\n` +
-    `Удалено (${removed.length}): ${shortMintList(removed)}`;
+  const symbols = await fetchMintSymbolsBatch([...added, ...removed]);
+  const text = buildMintFileWatchTelegramText({
+    kind,
+    absPath,
+    total: next.size,
+    added,
+    removed,
+    symbols,
+  });
   try {
-    await sendTagged('ADVICE', `live_mint_file_watch_${kind}`, text, { skipQuietHours: false });
+    await sendTagged('ADVICE', `live_mint_file_watch_${kind}`, text, {
+      skipQuietHours: false,
+      parseMode: 'HTML',
+    });
   } catch (e) {
     log.warn({ err: String(e), kind }, 'mint file watch telegram failed');
   }

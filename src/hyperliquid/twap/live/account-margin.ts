@@ -14,11 +14,19 @@ export function marginUsedFromJournalOpens(opens: Map<string, HlTwapLiveOpen>): 
   return used;
 }
 
-/** Estimated free collateral for a new open (USD). */
-export function freeMarginUsd(account: HlAccountMargin, opens: Map<string, HlTwapLiveOpen>): number {
-  const fromJournal = marginUsedFromJournalOpens(opens);
-  const used = Math.max(fromJournal, account.totalMarginUsedUsd);
-  return Math.max(0, account.accountValueUsd - used);
+/** Estimated free collateral for a new open (USD). Unified HL: use withdrawable (spot USDC free). */
+export function freeMarginUsd(account: HlAccountMargin, _opens?: Map<string, HlTwapLiveOpen>): number {
+  if (account.withdrawableUsd > 0) {
+    return account.withdrawableUsd;
+  }
+  if (
+    account.spotUsdcTotalUsd != null &&
+    account.spotUsdcHoldUsd != null &&
+    account.spotUsdcTotalUsd > 0
+  ) {
+    return Math.max(0, account.spotUsdcTotalUsd - account.spotUsdcHoldUsd);
+  }
+  return Math.max(0, account.accountValueUsd - account.totalMarginUsedUsd);
 }
 
 /** True when account can allocate margin for another TWAP open. */

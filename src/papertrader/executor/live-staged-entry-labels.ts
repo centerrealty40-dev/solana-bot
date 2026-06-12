@@ -1,4 +1,5 @@
 import type { PaperTraderConfig } from '../config.js';
+import { loadPaperTraderConfig } from '../config.js';
 import type { LiveStagedEntryState } from '../types.js';
 
 function fmtUsd(n: number): string {
@@ -151,11 +152,16 @@ export function legTimelineLabelFromLeg(
   return null;
 }
 
-export function liveOscarEntryContextNoteV2(): string {
+export function liveOscarEntryContextNoteV2(cfg?: PaperTraderConfig): string {
+  const c = cfg ?? loadPaperTraderConfig();
+  const leg = c.liveStagedEntryEntrySplitLegUsd;
+  const delaySec = Math.round(c.liveStagedEntryEntrySplitDelayMs / 1000);
+  const up = c.liveStagedEntryEntrySplitMaxUpPct;
+  const down = c.liveStagedEntryEntrySplitMaxDownPct;
   return (
-    'Live Oscar v3 · вход: сплит $400+$400 по сигналу (2-я нога через 10 с в коридоре ±3%/+10% к 1-й), ' +
-    'DCA −10%/−20% × $200 от первой ноги (до первого TP), cap $1200, liq ≥ $300k, signal kill −25% от сигнала. ' +
-    'Staged-усреднение −7%/−14% — по env, если включено.'
+    `Live Oscar · вход: сплит ${fmtUsd(leg)}+${fmtUsd(leg)} по сигналу ` +
+    `(2-я нога через ${delaySec} с в коридоре +${fmtDropPct(up)}%…−${fmtDropPct(down)}% к 1-й), ` +
+    `cap ${fmtUsd(c.positionUsd)}, staged-усреднение — по env если включено.`
   );
 }
 

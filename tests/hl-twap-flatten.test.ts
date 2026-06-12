@@ -101,6 +101,8 @@ describe('hl-twap flatten close', () => {
     const journalPath = path.join(tmpDir, 'live.jsonl');
     process.env.HL_TWAP_LIVE_JSONL = journalPath;
     process.env.HL_TWAP_LIVE_DRY_RUN = '1';
+    process.env.HL_TWAP_LIVE_EXIT_SLICES_LONG = '1';
+    process.env.HL_TWAP_EXEC_SLICE_GAP_MS = '0';
 
     const cfg = loadHlTwapLiveConfig();
     cfg.journalPath = journalPath;

@@ -2,7 +2,7 @@ import type { ResolvedTwapMarket } from './types.js';
 
 const HL_INFO = 'https://api.hyperliquid.xyz/info';
 
-type PerpUniverseEntry = { name: string; szDecimals?: number; isDelisted?: boolean };
+type PerpUniverseEntry = { name: string; szDecimals?: number; isDelisted?: boolean; maxLeverage?: number };
 type PerpMeta = { universe: PerpUniverseEntry[] };
 type SpotUniverseEntry = { name: string; index: number; tokens: number[]; isCanonical?: boolean };
 type SpotMeta = { universe: SpotUniverseEntry[] };
@@ -17,6 +17,8 @@ export type HyperliquidMarketCache = {
   spotByAssetId: Map<number, string>;
   mids: Map<string, number>;
   perpCtxByIndex: Map<number, AssetCtx>;
+  /** HL perp max cross leverage by coin name. */
+  maxLeverageByCoin: Map<string, number>;
   loadedAtMs: number;
 };
 
@@ -35,6 +37,12 @@ export async function loadHyperliquidMarketCache(): Promise<HyperliquidMarketCac
   ]);
 
   const perpNames = meta.universe.map((u) => u.name);
+  const maxLeverageByCoin = new Map<string, number>();
+  for (const asset of meta.universe) {
+    if (asset.name && asset.maxLeverage != null && asset.maxLeverage > 0) {
+      maxLeverageByCoin.set(asset.name, asset.maxLeverage);
+    }
+  }
   const spotByAssetId = new Map<number, string>();
   for (const u of spotMeta.universe) {
     spotByAssetId.set(10_000 + u.index, u.name);
@@ -55,6 +63,7 @@ export async function loadHyperliquidMarketCache(): Promise<HyperliquidMarketCac
     spotByAssetId,
     mids,
     perpCtxByIndex,
+    maxLeverageByCoin,
     loadedAtMs: Date.now(),
   };
 }
@@ -115,6 +124,8 @@ export type HlExchangePosition = {
 
 export type HlAccountMargin = {
   accountValueUsd: number;
+  /** Perp `marginSummary.accountValue` (includes uPnL when populated). */
+  perpAccountValueUsd?: number;
   totalMarginUsedUsd: number;
   withdrawableUsd: number;
   /** USDC total from spot clearinghouse (unified account source of truth). */
@@ -170,16 +181,45 @@ export async function fetchHlClearinghouseMargin(user: string): Promise<HlAccoun
   const spotUsdc = parseSpotUsdcBalance(spotSt);
   const accountValueUsd =
     spotUsdc.totalUsd > 0 ? spotUsdc.totalUsd : perpAccountValueUsd;
-  const withdrawableUsd =
-    perpWithdrawableUsd > 0 ? perpWithdrawableUsd : spotUsdc.freeUsd;
+  // Unified account: free USDC is spot (total−hold); perp withdrawable is often 0.
+  const withdrawableUsd = Math.max(perpWithdrawableUsd, spotUsdc.freeUsd);
 
   return {
     accountValueUsd,
+    perpAccountValueUsd: perpAccountValueUsd,
     totalMarginUsedUsd,
     withdrawableUsd,
     spotUsdcTotalUsd: spotUsdc.totalUsd,
     spotUsdcHoldUsd: spotUsdc.holdUsd,
   };
+}
+
+/**
+ * Total account equity including unrealized PnL (drawdown / risk monitoring).
+ * Matches HL UI "Total Balance" on unified accounts: spot USDC + Σ uPnL.
+ * Perp-only accounts fall back to marginSummary.accountValue.
+ */
+export function resolveAccountEquityUsd(
+  margin: Pick<HlAccountMargin, 'accountValueUsd' | 'perpAccountValueUsd' | 'spotUsdcTotalUsd'>,
+  positions: Array<{ unrealizedPnlUsd: number }>,
+): number {
+  const spot = margin.spotUsdcTotalUsd ?? 0;
+  if (spot > 0) {
+    const uPnl = positions.reduce((s, p) => s + p.unrealizedPnlUsd, 0);
+    return spot + uPnl;
+  }
+  const perpAv = margin.perpAccountValueUsd ?? 0;
+  if (perpAv > 0) return perpAv;
+  return margin.accountValueUsd;
+}
+
+/** Fetch total equity (collateral + uPnL) for drawdown monitoring. */
+export async function fetchHlAccountEquityUsd(user: string): Promise<number> {
+  const [margin, positions] = await Promise.all([
+    fetchHlClearinghouseMargin(user),
+    fetchHlClearinghousePositions(user),
+  ]);
+  return resolveAccountEquityUsd(margin, positions);
 }
 
 /** Live perp positions from Hyperliquid clearinghouse (source of truth for wallet). */

@@ -22,6 +22,7 @@ import { followPaperPortfolioSnapshot } from './paper-portfolio.js';
 import { paperInvestedRemainingUsd, paperPoolExitQuoteUsd, paperPnlPctVsAvg } from './paper-pricing.js';
 import {
   followStateAsCombo,
+  leaderSellSinceOpen,
   setFollowLossCooldown,
   writeFollowState,
   type FollowState,
@@ -113,7 +114,7 @@ export async function evaluateFollowExits(
     );
 
     const leaderHolds = leaderPreBalanceRaw(state, pos.mint) > 0n;
-    const leaderSoldSinceOpen = Boolean(state.lastLeaderSellByMint[pos.mint]);
+    const leaderSoldSinceOpen = Boolean(leaderSellSinceOpen(state, pos.mint, pos.openedAt));
     const slAllowed = stopLossAllowed({
       slMode: cfg.slMode,
       leaderHolds,

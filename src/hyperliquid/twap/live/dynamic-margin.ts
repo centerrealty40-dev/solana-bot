@@ -1,11 +1,16 @@
 import type { HlAccountMargin } from '../hyperliquid-meta.js';
 import { freeMarginUsd, HL_TWAP_MARGIN_RESERVE_USD } from './account-margin.js';
 import type { HlTwapLiveConfig } from './config.js';
+import { marginTiersFromConfig, marginUsdForMaxLev } from './margin-by-leverage.js';
 import type { HlTwapLiveOpen } from './types.js';
 
 export type DynamicMarginInput = Pick<
   HlTwapLiveConfig,
   | 'notionalUsd'
+  | 'marginLev3Usd'
+  | 'marginLev5Usd'
+  | 'marginLev7Usd'
+  | 'leverage'
   | 'dynamicMargin'
   | 'marginMaxUsd'
   | 'marginMinUsd'
@@ -42,8 +47,12 @@ export function computeOpenMarginUsd(
   account: HlAccountMargin,
   opens: Map<string, HlTwapLiveOpen>,
   cfg: DynamicMarginInput,
+  effectiveLev?: number,
 ): number {
-  if (!cfg.dynamicMargin) return cfg.notionalUsd;
+  if (!cfg.dynamicMargin) {
+    const lev = effectiveLev ?? cfg.leverage;
+    return marginUsdForMaxLev(lev, marginTiersFromConfig(cfg));
+  }
 
   const openCount = opens.size;
   let target = targetMarginByOpenCount(openCount, cfg);
