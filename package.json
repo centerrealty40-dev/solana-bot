@@ -38,7 +38,6 @@
     "live:compare-whitelist-closes": "node scripts/compare-live-closes-whitelist.mjs",
     "dip-bot-intel:run": "tsx src/scripts/dip-bot-intel-run.ts",
     "dip-bot-intel:coverage": "tsx src/scripts/dip-bot-intel-coverage.ts",
-    "pumpswap-combo": "tsx src/scripts/pumpswap-combo-bot.ts",
     "dip-bot-intel:anchor-gaps": "tsx src/scripts/dip-bot-intel-anchor-gaps.ts",
     "dip-bot-intel:export-candidates": "tsx src/scripts/dip-bot-intel-export-candidates.ts",
     "live-slippage-report": "tsx src/scripts/live-slippage-report.ts",

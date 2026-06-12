@@ -63,8 +63,8 @@ const HL_TWAP_LIVE_ENV = {
   HL_TWAP_LIVE_MARGIN_MAX_USD: '800',
   HL_TWAP_LIVE_MARGIN_MIN_USD: '800',
   HL_TWAP_LIVE_LEVERAGE: '7',
-  HL_TWAP_LIVE_LADDER_STEP_PCT: '3',
-  HL_TWAP_LIVE_LADDER_SLICE_PCT: '10',
+  HL_TWAP_LIVE_LADDER_STEP_PCT: '2',
+  HL_TWAP_LIVE_LADDER_SLICE_PCT: '30',
   HL_TWAP_LIVE_COIN_MAX_LEGS: '2',
   HL_TWAP_LIVE_MAX_BOOK_GROSS_USD: '12000',
   HL_TWAP_LIVE_DYNAMIC_MARGIN: '0',
@@ -143,7 +143,6 @@ const PM2_APPS = [
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         DASHBOARD_COPY_TRADER_JSONL: path.join(root, 'data/copytrader/journal.jsonl'),
         DASHBOARD_COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        DASHBOARD_PUMPSWAP_COMBO_JSONL: path.join(root, 'data/pumpswap-combo/journal.jsonl'),
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
@@ -1412,74 +1411,6 @@ const PM2_APPS = [
       },
     },
     /**
-     * Combo #1 AUTONOMOUS — forensic mix of 3 reference PumpSwap dip bots (PG signals only).
-     * NO leader wallet / copy.
-     */
-    {
-      name: 'pumpswap-combo-bot',
-      cwd: root,
-      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
-      args: 'src/scripts/pumpswap-combo-bot.ts',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 30,
-      restart_delay: 8000,
-      max_memory_restart: '180M',
-      merge_logs: true,
-      time: true,
-      env: {
-        NODE_ENV: 'production',
-        /** Isolated wallet — not live-oscar / copy-trader. Direct PumpSwap AMM execution (no Jupiter). */
-        PUMPSWAP_COMBO_STRATEGY_ID: 'pumpswap-combo',
-        PUMPSWAP_COMBO_JOURNAL_PATH: path.join(root, 'data/pumpswap-combo/journal.jsonl'),
-        PUMPSWAP_COMBO_STATE_PATH: path.join(root, 'data/pumpswap-combo/state.json'),
-        PUMPSWAP_COMBO_WALLET_SECRET: path.join(root, 'data/pumpswap-combo/wallet.keypair.json'),
-        PUMPSWAP_COMBO_WALLET_PUBKEY: 'FLmdN27ovXDwjNJuZPWvu3XwM4nPfU4Apr971Q4Rk13p',
-        PUMPSWAP_COMBO_LEG_USD: '3',
-        PUMPSWAP_COMBO_PORTFOLIO_STOP_LOSS_USD: '50',
-        PUMPSWAP_COMBO_LOSS_COOLDOWN_MS: '600000',
-        PUMPSWAP_COMBO_LOSS_ALERT_USD: '5',
-        PUMPSWAP_COMBO_POLL_MS: '5000',
-        ...QUICKNODE_NO_DAILY_CAP_ENV,
-        PUMPSWAP_COMBO_WATCHLIST_MAX: '100',
-        PUMPSWAP_COMBO_WATCHLIST_PG_LOOKBACK_MIN: '360',
-        PUMPSWAP_COMBO_WATCHLIST_RPC_REFRESH: '4',
-        PUMPSWAP_COMBO_WATCHLIST_STREAM_PREFER: '0',
-        PUMPSWAP_COMBO_WATCHLIST_RPC_PER_TICK: '4',
-        PUMPSWAP_COMBO_WATCHLIST_RPC_DELAY_MS: '120',
-        PUMPSWAP_COMBO_METERED_RPC: '1',
-        PUMPSWAP_COMBO_RPC_MIN_GAP_MS: '55',
-        PUMPSWAP_COMBO_BALANCE_CACHE_MS: '10000',
-        PUMPSWAP_COMBO_EXIT_MARK_TTL_MS: '20000',
-        PUMPSWAP_COMBO_EXIT_MARK_MAX_STALE_MS: '45000',
-        PUMPSWAP_COMBO_EXIT_QUOTES_PER_TICK: '2',
-        PUMPSWAP_COMBO_MAX_CONCURRENT_OPENS: '15',
-        PUMPSWAP_COMBO_MIN_LIQ_USD: '35000',
-        PUMPSWAP_COMBO_MIN_VOL_5M_USD: '0',
-        PUMPSWAP_COMBO_MIN_MCAP_USD: '100000',
-        PUMPSWAP_COMBO_MAX_MCAP_USD: '3000000',
-        PUMPSWAP_COMBO_DUMP_MIN_PCT: '5',
-        PUMPSWAP_COMBO_DUMP_MAX_PCT: '22',
-        PUMPSWAP_COMBO_DUMP_FRESHNESS_MS: '180000',
-        PUMPSWAP_COMBO_PROBE_MAX_DIP_PCT: '5',
-        PUMPSWAP_COMBO_ADD_DIP_MIN_PCT: '15',
-        PUMPSWAP_COMBO_ADD_DIP_MAX_PCT: '35',
-        PUMPSWAP_COMBO_MAX_BUY_LEGS: '3',
-        PUMPSWAP_COMBO_ADD_MIN_GAP_MS: '0',
-        PUMPSWAP_COMBO_TP1_PCT: '13',
-        PUMPSWAP_COMBO_TP1_SELL_FRAC: '0.70',
-        PUMPSWAP_COMBO_TP2_PCT: '25',
-        PUMPSWAP_COMBO_SL_SINGLE_PCT: '20',
-        PUMPSWAP_COMBO_SL_MULTI_PCT: '22',
-        PUMPSWAP_COMBO_SL_PRE_DCA_PCT: '35',
-        PUMPSWAP_COMBO_SLIPPAGE_BPS: '300',
-        ...PM2_SOLANA_RPC_ENV,
-        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
-      },
-    },
-    /**
      * Hourly Alchemy RPC usage → Telegram (internal meter; no public Alchemy billing API on free tier).
      */
     {
@@ -1505,13 +1436,6 @@ const PM2_APPS = [
     },
 ];
 
-/** Combo bots off by default — set ENABLE_PUMPSWAP_COMBO_PM2=true to include pumpswap-combo* apps. */
-const ENABLE_PUMPSWAP_COMBO_PM2 = process.env.ENABLE_PUMPSWAP_COMBO_PM2 === 'true';
-const PM2_APPS_FILTERED = PM2_APPS.filter((app) => {
-  if (ENABLE_PUMPSWAP_COMBO_PM2) return true;
-  return !/^pumpswap-combo/.test(app.name);
-});
-
 module.exports = {
-  apps: PM2_APPS_FILTERED,
+  apps: PM2_APPS,
 };
