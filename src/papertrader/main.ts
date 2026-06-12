@@ -24,6 +24,7 @@ import {
   evaluatedAtMap,
   lastEntryTsByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
+  lastExitMarketSnapshotByMintMap,
   recordEntryTs,
   recordLastExitMarketSnapshotAfterClose,
   runDipDiscovery,
@@ -228,6 +229,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         evaluatedAt: new Map<string, number>(),
         lastEntryTsByMint: new Map<string, number>(),
         lastPostExitBuyCooldownTsByMint: new Map<string, number>(),
+        lastExitMarketSnapshotByMint: new Map(),
         open: new Map<string, OpenTrade>(),
       }
     : loadStore(cfg.storePath);
@@ -235,6 +237,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   for (const [mint, ts] of restored.lastEntryTsByMint) lastEntryTsByMintMap.set(mint, ts);
   for (const [mint, ts] of restored.lastPostExitBuyCooldownTsByMint) {
     lastPostExitBuyCooldownTsByMintMap.set(mint, ts);
+  }
+  for (const [mint, snap] of restored.lastExitMarketSnapshotByMint) {
+    lastExitMarketSnapshotByMintMap.set(mint, snap);
   }
   if (opts?.skipPaperJsonlStore && opts.liveStrategyReplay?.closed?.length) {
     for (const ct of opts.liveStrategyReplay.closed) {
@@ -724,6 +729,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             journalLiveStrategy: opts?.journalLiveStrategy,
             btcCtx: getBtcContext,
             liveOscarCfg,
+            onMintFullClose: (mint) => {
+              stagedEntrySignals.delete(mint);
+            },
           });
         },
       });
@@ -1720,6 +1728,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
           verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
+          onMintFullClose: (mint) => {
+            stagedEntrySignals.delete(mint);
+          },
         }),
         45_000,
         'trackerTick',

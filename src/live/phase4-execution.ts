@@ -59,6 +59,8 @@ import {
   mintScratchReentryRefPrice,
   mintScratchReentryThresholdPrice,
 } from './mint-scratch-reentry.js';
+import { appendPostExitReentryGateReasons } from '../papertrader/discovery/dip-clones.js';
+import type { PaperTraderConfig } from '../papertrader/config.js';
 import {
   isStagedAddCooldownActive,
   recordStagedAddOutcome,
@@ -1091,6 +1093,17 @@ function wsolOutLamportsFromSellQuote(q: Record<string, unknown>): bigint | null
   return null;
 }
 
+/** Execution-layer post-exit re-entry gate (parity with discovery `appendPostExitReentryGateReasons`). */
+export function executionPostExitReentryGateReasons(
+  paperCfg: PaperTraderConfig,
+  mint: string,
+  snapshotEntryPriceUsd: number,
+): string[] {
+  const reasons: string[] = [];
+  appendPostExitReentryGateReasons(paperCfg, mint, snapshotEntryPriceUsd, reasons);
+  return reasons;
+}
+
 /** Phase 5 capital rotation — same JSONL + consec hooks as tracker sells. */
 export async function executeLiveTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
@@ -1164,6 +1177,29 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
           anchorMode: mode,
           terminalKind: 'gate',
           terminalMessage: 'mint_scratch_reentry_price',
+        };
+      }
+
+      const reentryReasons = executionPostExitReentryGateReasons(
+        ctx.paperCfg,
+        ctx.ot.mint,
+        ctx.snapshotEntryPriceUsd,
+      );
+      if (reentryReasons.length > 0) {
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'post_exit_reentry_gate',
+          detail: JSON.stringify({
+            mint: ctx.ot.mint.slice(0, 12),
+            candidatePriceUsd: ctx.snapshotEntryPriceUsd,
+            reasons: reentryReasons.slice(0, 3),
+          }).slice(0, 500),
+        });
+        return {
+          ok: false,
+          anchorMode: mode,
+          terminalKind: 'gate',
+          terminalMessage: reentryReasons[0]!.slice(0, 200),
         };
       }
 

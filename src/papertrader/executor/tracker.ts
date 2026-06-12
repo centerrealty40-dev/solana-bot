@@ -280,6 +280,8 @@ export interface TrackerArgs {
    * Live: wall-clock age (`entryTs`) required before orphan close; younger positions skipped (RPC TA lag).
    */
   reconcileOrphanMinPositionAgeMs?: number;
+  /** After full close — e.g. clear staged entry signal so re-entry cannot bypass dip gate. */
+  onMintFullClose?: (mint: string) => void;
 }
 
 interface PeakState {
@@ -1164,6 +1166,20 @@ async function tryVariantAHybridThinVolFlush(args: {
   });
 }
 
+function afterFullCloseReentryGate(
+  args: Pick<TrackerArgs, 'onMintFullClose'>,
+  cfg: PaperTraderConfig,
+  ct: ClosedTrade,
+  openTrade?: OpenTrade,
+): void {
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade(
+    cfg,
+    ct,
+    openTrade ? { openTrade } : undefined,
+  );
+  args.onMintFullClose?.(ct.mint);
+}
+
 function hookLiveWhitelistAfterFullClose(
   liveOscarCfg: LiveOscarConfig | undefined,
   cfg: PaperTraderConfig,
@@ -1218,6 +1234,7 @@ async function closeOpenTradeReconcileOrphan(args: {
   btcCtx: TrackerArgs['btcCtx'];
   verifyReconcileOrphanWalletZero?: TrackerArgs['verifyReconcileOrphanWalletZero'];
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
 }): Promise<void> {
   const {
     mint,
@@ -1320,7 +1337,7 @@ async function closeOpenTradeReconcileOrphan(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct, { openTrade: ot });
+  afterFullCloseReentryGate(args, cfg, ct, ot);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1356,6 +1373,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   btcCtx: TrackerArgs['btcCtx'];
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
 }): Promise<boolean> {
   const {
     cfg,
@@ -1450,7 +1468,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+  afterFullCloseReentryGate({ onMintFullClose: args.onMintFullClose }, cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1493,6 +1511,7 @@ export async function trackerForceFullExitLive(args: {
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   livePhase4?: LiveOscarPhase4Tracker;
   liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
   mint: string;
   marketSell: number;
 }): Promise<boolean> {
@@ -1599,7 +1618,7 @@ export async function trackerForceFullExitLive(args: {
     mint,
     closedTrade: serializeClosedTrade(ct),
   });
-  recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+  afterFullCloseReentryGate({ onMintFullClose: args.onMintFullClose }, cfg, ct);
   hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -1673,6 +1692,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         btcCtx,
         verifyReconcileOrphanWalletZero,
         liveOscarCfg,
+        onMintFullClose: args.onMintFullClose,
       });
       reconciledOrphans += 1;
     }
@@ -2150,7 +2170,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+        afterFullCloseReentryGate(args, cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -2245,7 +2265,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           mint,
           closedTrade: serializeClosedTrade(ct),
         });
-        recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+        afterFullCloseReentryGate(args, cfg, ct);
         hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -3316,7 +3336,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         closedTrade: serializeClosedTrade(ct),
       });
-      recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, ct);
+      afterFullCloseReentryGate(args, cfg, ct);
       hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
