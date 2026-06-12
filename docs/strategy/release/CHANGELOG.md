@@ -38,6 +38,22 @@
 
 ---
 
+## [1.11.437] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.437`
+
+### Live Oscar — unified $730+$730 entry sizing (SPCX $200/$300 audit)
+
+- **Single split leg** for all mcap tiers / entry paths: always `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` ($730).
+- **Boot validation** (`assertLiveOscarUnifiedEntrySizing`): exit if low-mcap split/position env diverges from prod split.
+- **Pre-buy canonicalization** (`applyCanonicalOpenLegUsd`): fixes Jupiter price-verify rebuild downgrading low-mcap to $200.
+- **Restore upgrade**: persisted `liveStagedEntry` plan re-synced from env (2-я нога → $730).
+- **Labels**: `liveOscarEntryContextNoteV2` reads live env instead of hardcoded $400/$200.
+
+**Откат:** `git checkout sa-alpha-1.11.436 -- src/papertrader/live-oscar-entry-sizing.ts src/papertrader/live-oscar-mcap-tier.ts src/papertrader/executor/live-staged-entry-gates.ts src/papertrader/executor/live-staged-entry-labels.ts src/papertrader/executor/store-restore.ts src/papertrader/main.ts src/live/main.ts tests/`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.436] — 2026-06-12
 
 **Тег:** `sa-alpha-1.11.436`

@@ -37,7 +37,10 @@ import { runSmartLotteryDiscovery } from './discovery/smart-lottery.js';
 import { fetchLaunchpadCandidates } from './discovery/launchpad.js';
 import { fetchFreshValidatedCandidates } from './discovery/fresh-validated.js';
 import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js';
-import { liveOscarTierStagedSplitLegUsd } from './live-oscar-mcap-tier.js';
+import {
+  applyCanonicalOpenLegUsd,
+  resolveLiveOscarEntrySplitLegUsd,
+} from './live-oscar-entry-sizing.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import {
   buildLiveStagedEntryState,
@@ -302,6 +305,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       ot.liveMintFirstProbeKillDropPct = firstMintKillDropPct ?? 7;
     }
     markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
+    applyCanonicalOpenLegUsd(cfg, ot);
   }
 
   function isSignalMintMissingFromLiveWhitelist(mint: string): boolean {
@@ -316,12 +320,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  function liveOscarDiscoveryBuyLegUsd(tier?: 'low' | 'prod'): number {
+  function liveOscarDiscoveryBuyLegUsd(_tier?: 'low' | 'prod'): number {
     if (liveStagedEntryActive()) {
-      const leg =
-        tier === 'low'
-          ? liveOscarTierStagedSplitLegUsd(cfg, 'low')
-          : cfg.liveStagedEntryEntrySplitLegUsd;
+      const leg = resolveLiveOscarEntrySplitLegUsd(cfg);
       if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
@@ -1325,6 +1326,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               d.features.market_cap_usd,
               d.liveOscarMcapTier,
             );
+            applyCanonicalOpenLegUsd(cfg, ot);
           }
         }
 
