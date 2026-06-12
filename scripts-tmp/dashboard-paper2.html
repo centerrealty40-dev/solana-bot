@@ -42,7 +42,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 5 плиток — Live Oscar · Copy Trader · Combo #1 · Combo #2 follow · HL TWAP.
+      Десктоп: 4 плитки — Live Oscar · SuperBot · Copy Trader · HL TWAP.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -270,8 +270,16 @@
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot' && s.superbot" class="pill pill-info mr-1">signals: <span x-text="s.superbot.signalsSeen || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot' && s.superbot" class="pill pill-ok mr-1">races: <span x-text="s.superbot.racesAttempted || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot' && s.superbot" class="pill pill-bad mr-1">blocked: <span x-text="s.superbot.racesBlocked || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot' && s.superbot?.executionMode" class="pill shrink-0"
+                  :class="s.superbot.streamConnected ? 'pill-ok' : 'pill-warn'"
+                  x-text="(s.superbot.executionMode || '?') + (s.superbot.streamConnected ? ' · stream' : ' · idle')"></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'superbot'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'superbot'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId === 'superbot'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
             <span class="text-slate-400 ml-1" x-show="s.priceVerify"
                   x-text="'pverify ' + (s.priceVerify?.blockedCount ?? 0) + ' blocked · '
                           + (s.priceVerify?.avgSlipPct != null ? s.priceVerify.avgSlipPct.toFixed(2) + '% avg slip' : 'n/a slip')"></span>
@@ -670,6 +678,7 @@
      */
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
+      'superbot',
       'copy-trader',
       'hl-twap-paper',
     ];
@@ -760,6 +769,14 @@
         details:
           '**Плитка 1** · PM2 **`live-oscar`** · SSOT: `ecosystem.config.cjs`.\n\n**Вход (prod v2)**\n• Сплит: **$400** по сигналу + **$400** через 10 с (коридор цены к 1-й ноге).\n• **DCA** `−10% / −20%` от первой ноги, по **$200** каждая → max **$1200** (`LIVE_MAX_POSITION_USD`).\n• POST: liq **≥$300k**, vol5m **≥$20k**, vol1h **≥$36k**, holders **≥3000**, dip **−20%** от high (2h/6h/12h OR).\n• Signal kill **−25%** от цены сигнала.\n• Timed loss (salvage24 / h48 без TP) → **24h block** по mint.\n\n**Выход hybrid (`variant_a_v2`)**\n• TP grid: каждые **+5%** к avg → **10%** остатка (re-arm после отката ≤+2.5% если взято ≥+10%).\n• После **DCA** — сброс TP-ступеней на новом avg.\n• Trail: partial **−5%** от хая, **20%** остатка за шаг; arm @ **+10%**.\n• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n• **In-flight** v3 scratch / v1 / wave B — без смены политики.\n\n**Журнал:** `data/live/pt1-oscar-live.jsonl`.',
       },
+      superbot: {
+        label: 'SuperBot',
+        tag: 'race',
+        oneLiner:
+          'PumpSwap flow sniper: внешняя продажа $300+ на pool → race-buy · TP1 +12% (70%) · TP2 +20% · SL −30%. RabbitStream + прямой PumpSwap.',
+        details:
+          '**Плитка 2** · PM2 **`pumpswap-flow-sniper`** · репо **pumpswap-flow-sniper** (SuperBot).\n\n**Триггер входа**\n• RabbitStream: **ext sell** на PumpSwap pool (USD, wallet, pool).\n• Mcap gate, pool cooldown — см. env на хосте SuperBot.\n\n**Выход:** TP1 partial · TP2 full · SL.\n\n**Журнал:** `data/pumpswap-flow-sniper/journal.jsonl`.\n**Таймлайн:** MSK · ext sell → buy → TP/SL close.',
+      },
       'copy-trader': {
         label: 'Copy Trader',
         tag: 'live',
@@ -774,7 +791,7 @@
         oneLiner:
           'Hyperliquid whale TWAP: вход после 1-го цикла, выход перед последним. **$100**/позиция, impact **≥3%**, лестница ±3% от **средней** (TP/DCA 10%).',
         details:
-          '**Плитка 3** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
+          '**Плитка 4** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
@@ -973,6 +990,7 @@
         toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
         isExpanded(key) { return !!this.expanded[key]; },
         fmtTimelineTs(ts) {
+          if (this.selected === 'superbot') return this.fmtTimelineTsMsk(ts);
           if (ts == null || ts === '') return '—';
           let d;
           if (typeof ts === 'number' && Number.isFinite(ts)) d = new Date(ts);
@@ -985,6 +1003,23 @@
           const mi = String(d.getMinutes()).padStart(2, '0');
           const ss = String(d.getSeconds()).padStart(2, '0');
           return `${dd}.${mm}, ${hh}:${mi}:${ss}`;
+        },
+        fmtTimelineTsMsk(ts) {
+          if (ts == null || ts === '') return '—';
+          let d;
+          if (typeof ts === 'number' && Number.isFinite(ts)) d = new Date(ts);
+          else if (typeof ts === 'string' && /^\d+$/.test(ts)) d = new Date(Number(ts));
+          else d = new Date(ts);
+          if (Number.isNaN(d.getTime())) return '—';
+          return new Intl.DateTimeFormat('ru-RU', {
+            timeZone: 'Europe/Moscow',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
         fmtHlPx(px) {
