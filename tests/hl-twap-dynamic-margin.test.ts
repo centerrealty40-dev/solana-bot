@@ -24,7 +24,7 @@ function baseCfg() {
     dynamicMarginMaxAtOpenCount: 2,
     dynamicMarginMinAtOpenCount: 5,
     dynamicMarginDcaLevelsReserve: 2,
-    ladderSlicePct: 10,
+    ladderSlicePct: 30,
     marginReserveUsd: 50,
   };
 }
@@ -74,7 +74,7 @@ describe('targetMarginByOpenCount', () => {
 
 describe('dcaHeadroomUsd', () => {
   it('reserves two ladder slices of margin', () => {
-    expect(dcaHeadroomUsd(800, cfg())).toBeCloseTo(160);
+    expect(dcaHeadroomUsd(800, cfg())).toBeCloseTo(480);
   });
 });
 
@@ -88,7 +88,7 @@ describe('computeOpenMarginUsd', () => {
 
   it('scales up with few opens and ample free margin', () => {
     const account = { accountValueUsd: 1100, totalMarginUsedUsd: 0, withdrawableUsd: 1100 };
-    expect(computeOpenMarginUsd(account, new Map(), cfg())).toBe(800);
+    expect(computeOpenMarginUsd(account, new Map(), cfg())).toBe(570);
   });
 
   it('scales down with many open positions', () => {
@@ -104,10 +104,10 @@ describe('computeOpenMarginUsd', () => {
   });
 
   it('caps by affordable free margin including DCA reserve', () => {
-    const account = { accountValueUsd: 500, totalMarginUsedUsd: 0, withdrawableUsd: 500 };
+    const account = { accountValueUsd: 1000, totalMarginUsedUsd: 0, withdrawableUsd: 1000 };
     const margin = computeOpenMarginUsd(account, new Map(), cfg());
-    const headroom = margin * 0.1 * 2;
-    expect(margin + 50 + headroom).toBeLessThanOrEqual(500 + 1);
+    const headroom = margin * 0.3 * 2;
+    expect(margin + 50 + headroom).toBeLessThanOrEqual(1000 + 1);
     expect(margin).toBeLessThan(800);
   });
 });

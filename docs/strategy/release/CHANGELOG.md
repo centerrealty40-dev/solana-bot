@@ -40,6 +40,22 @@
 
 ---
 
+---
+
+## [1.11.440] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.440`
+
+### HL TWAP live — ladder TP/DCA 2% / 30%
+
+- **`HL_TWAP_LIVE_LADDER_STEP_PCT=2`**: TP/DCA triggers at ±2% Hyperliquid ROE (uPnL/margin), not raw price %.
+- **`HL_TWAP_LIVE_LADDER_SLICE_PCT=30`**: each TP or DCA slice = 30% of current gross notional.
+- Defaults in `config.ts`, prod `ecosystem.config.cjs`, and ladder unit tests updated.
+
+**Откат:** `git checkout sa-alpha-1.11.439 -- src/hyperliquid/twap/live/config.ts src/hyperliquid/twap/live/position-ladder.ts ecosystem.config.cjs .env.example tests/hl-twap-live-ladder.test.ts tests/hl-twap-dynamic-margin.test.ts docs/strategy/release/`; `pm2 reload hl-twap-live --update-env`.
+
+---
+
 ## [1.11.439] — 2026-06-12
 
 **Тег:** `sa-alpha-1.11.439`
