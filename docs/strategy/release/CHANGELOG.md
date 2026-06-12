@@ -38,6 +38,21 @@
 
 ---
 
+## [1.11.438] — 2026-06-12
+
+**Тег:** `sa-alpha-1.11.438`
+
+### HL TWAP — hold-to-end exit, enter at TWAP start
+
+- **`HL_TWAP_HOLD_TO_END=1`**: timer exit at `lastCycleEtaMs` for all duration buckets (micro, short, standard).
+- **Entry** unchanged: `paperOpenAtMs = twapStartMs` (enter at TWAP start, not after first slice).
+- **Exit reason** `twap_hold_to_end` in live/paper journals and Telegram labels.
+- **Env:** `HL_TWAP_EXIT_EARLY_MINUTES=0`, `HL_TWAP_EXIT_ADAPTIVE=0` in `ecosystem.config.cjs`.
+
+**Откат:** `git checkout sa-alpha-1.11.437 -- src/hyperliquid/twap/ ecosystem.config.cjs tests/hl-twap-schedule.test.ts tests/hl-twap-exit-adaptive.test.ts docs/strategy/release/`; `pm2 reload hl-twap-live --update-env`.
+
+---
+
 ## [1.11.437] — 2026-06-12
 
 **Тег:** `sa-alpha-1.11.437`

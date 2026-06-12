@@ -60,6 +60,7 @@ function sideLabel(side: 'buy' | 'sell'): string {
 function closeReasonRu(reason: string): string {
   if (reason === 'before_last_cycle') return 'таймер TWAP (legacy)';
   if (reason === 'twap_early_exit') return 'выход −10m до конца TWAP';
+  if (reason === 'twap_hold_to_end') return 'удержание до ETA последнего цикла TWAP';
   if (reason === 'impact_edge_lost') return 'перекрёстный TWAP съел edge';
   if (reason.endsWith('_reconciled')) return 'позиция уже закрыта на бирже';
   if (reason.startsWith('twap_')) return reason.replace(/^twap_/, 'TWAP ').replace(/_/g, ' ');

@@ -1,5 +1,10 @@
 import type { NormalizedTwapSignal } from './types.js';
-import { shouldUseMicroExecution, twapExitAdaptiveThresholdMinutes, twapExitEarlyMinutesForDuration } from './twap-duration.js';
+import {
+  shouldUseMicroExecution,
+  twapExitAdaptiveThresholdMinutes,
+  twapExitEarlyMinutesForDuration,
+  twapHoldToEndEnabled,
+} from './twap-duration.js';
 
 /** Hyperliquid TWAP: child order every 30s over `minutes` (see HL docs). */
 export const HL_TWAP_SLICE_INTERVAL_SEC = 30;
@@ -17,7 +22,7 @@ export type TwapSchedule = {
   lastCycleEtaMs: number;
   /** Бумага: вход после 1-го цикла. */
   paperOpenAtMs: number;
-  /** Бумага: выход перед последним циклом (short lane) или −N мин до конца (standard). */
+  /** Бумага/live: выход при ETA последнего цикла (hold-to-end) или раньше (legacy). */
   paperCloseAtMs: number;
   /** Minutes before TWAP end (standard lane exit timer). */
   exitEarlyMinutes: number;
@@ -41,15 +46,17 @@ export function computeTwapSchedule(sig: Pick<
   /** Enter as soon as TWAP starts (not after first 30s slice). */
   const paperOpenAtMs = twapStartMs;
   const shortLane = shouldUseMicroExecution(minutes);
-  const exitEarlyMinutes = shortLane ? 0 : twapExitEarlyMinutesForDuration(minutes);
+  const holdToEnd = twapHoldToEndEnabled();
+  const exitEarlyMinutes = holdToEnd ? 0 : shortLane ? 0 : twapExitEarlyMinutesForDuration(minutes);
   const exitEarlyMs = exitEarlyMinutes * 60_000;
-  /** Short: flatten instant at boundary before whale's last 30s child order. */
-  const paperCloseAtMs = shortLane
-    ? Math.max(
-        paperOpenAtMs + sliceMs,
-        twapStartMs + Math.max(1, cycleCount - 1) * sliceMs,
-      )
-    : Math.max(paperOpenAtMs + sliceMs, lastCycleEtaMs - exitEarlyMs);
+  const paperCloseAtMs = holdToEnd
+    ? lastCycleEtaMs
+    : shortLane
+      ? Math.max(
+          paperOpenAtMs + sliceMs,
+          twapStartMs + Math.max(1, cycleCount - 1) * sliceMs,
+        )
+      : Math.max(paperOpenAtMs + sliceMs, lastCycleEtaMs - exitEarlyMs);
 
   return {
     cycleCount,
@@ -116,11 +123,13 @@ export function formatTwapScheduleLines(
     schedule.notionalPerCycleUsd > 0 ? ` (${fmtUsd(schedule.notionalPerCycleUsd)})` : '';
 
   const mins = Math.max(1, Math.round(sig.minutes));
-  const exitNote = schedule.shortTwapLane
-    ? `instant выход перед последним слайсом ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
-    : mins > twapExitAdaptiveThresholdMinutes()
-      ? `выход после ${Math.round(((mins - schedule.exitEarlyMinutes) / mins) * 100)}% TWAP (−${schedule.exitEarlyMinutes}m) ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
-      : `выход −${schedule.exitEarlyMinutes}m ${formatMoscowDateTime(schedule.paperCloseAtMs)}`;
+  const exitNote = twapHoldToEndEnabled()
+    ? `выход при ETA последнего цикла ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
+    : schedule.shortTwapLane
+      ? `instant выход перед последним слайсом ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
+      : mins > twapExitAdaptiveThresholdMinutes()
+        ? `выход после ${Math.round(((mins - schedule.exitEarlyMinutes) / mins) * 100)}% TWAP (−${schedule.exitEarlyMinutes}m) ${formatMoscowDateTime(schedule.paperCloseAtMs)}`
+        : `выход −${schedule.exitEarlyMinutes}m ${formatMoscowDateTime(schedule.paperCloseAtMs)}`;
 
   return [
     `Первый цикл (МСК): ${formatMoscowDateTime(schedule.firstCycleOpenMs)}`,
