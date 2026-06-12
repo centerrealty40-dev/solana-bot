@@ -1,0 +1,161 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  DASHBOARD_PANEL_ORDER,
+  mergeDashboardStrategyPanels,
+  type DashboardPaper2StrategyRow,
+} from '../scripts-tmp/dashboard-server.js';
+import {
+  aggregateSuperbotJsonlForDashboard,
+  formatSuperbotMskTs,
+  loadSuperbotJsonlForDashboard,
+} from '../scripts-tmp/superbot-dashboard.js';
+
+let tmpDir: string | null = null;
+afterEach(() => {
+  if (tmpDir && fs.existsSync(tmpDir)) {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  tmpDir = null;
+});
+
+function row(id: string, total: number): DashboardPaper2StrategyRow {
+  return {
+    strategyId: id,
+    file: '/x.jsonl',
+    openCount: 0,
+    closedCount: 0,
+    startedAt: Date.now(),
+    lastTs: Date.now(),
+    hoursOfData: 1,
+    sumPnlUsd: total,
+    realizedPnlUsd: total,
+    unrealizedPnlUsd: 0,
+    totalPnlUsd: total,
+    winRate: 0,
+    avgPnl: 0,
+    avgPeak: 0,
+    bestPnlUsd: 0,
+    worstPnlUsd: 0,
+    unrealizedUsd: 0,
+    exits: {},
+    exitsBreakdown: {},
+    evals1h: 0,
+    passed1h: 0,
+    failReasons: [],
+    open: [],
+    recentClosed: [],
+    priorityFeeUsdTotal: 0,
+    priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
+    liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+  };
+}
+
+describe('DASHBOARD_PANEL_ORDER with superbot', () => {
+  it('includes superbot as second tile', () => {
+    expect(DASHBOARD_PANEL_ORDER).toEqual([
+      'live-oscar',
+      'superbot',
+      'copy-trader',
+      'hl-twap-paper',
+    ]);
+  });
+
+  it('mergeDashboardStrategyPanels fills four strategies', () => {
+    const merged = mergeDashboardStrategyPanels([row('superbot', 7), row('live-oscar', 1)]);
+    expect(merged.length).toBe(4);
+    expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
+    expect(merged[1]!.totalPnlUsd).toBe(7);
+  });
+});
+
+describe('loadSuperbotJsonlForDashboard', () => {
+  it('builds MSK-friendly timeline from ext sell → buy → close', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superbot-dash-'));
+    const fp = path.join(tmpDir, 'journal.jsonl');
+    const base = Date.UTC(2026, 5, 13, 10, 0, 0);
+    const mint = 'So11111111111111111111111111111111111111112';
+    const pool = 'Pool111111111111111111111111111111111111111';
+    const seller = 'Sell111111111111111111111111111111111111111';
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base,
+          kind: 'ext_sell_detected',
+          mint,
+          pool,
+          sellUsd: 420,
+          extSellUsd: 420,
+          sellSignature: 'sigExtSell111111111111111111111111111111111111111111111111111111111',
+          sellerWallet: seller,
+          triggerPool: pool,
+          priceUsd: 0.00001,
+        }),
+        JSON.stringify({
+          ts: base + 500,
+          kind: 'race_buy_ok',
+          mint,
+          pool,
+          sellUsd: 420,
+          extSellUsd: 420,
+          sellSignature: 'sigExtSell111111111111111111111111111111111111111111111111111111111',
+          sellerWallet: seller,
+          triggerPool: pool,
+          legUsd: 5,
+          fillPriceUsd: 0.000012,
+          buyPrice: 0.000012,
+          marketCapUsd: 180000,
+          mcapAtBuy: 180000,
+          txSignature: 'sigBuy1111111111111111111111111111111111111111111111111111111111111111',
+          detectMs: 80,
+          detectToRaceMs: 420,
+        }),
+        JSON.stringify({
+          ts: base + 60_000,
+          kind: 'position_close',
+          mint,
+          pool,
+          sellReason: 'TP2',
+          exitReason: 'tp2_full',
+          sellPriceUsd: 0.0000144,
+          pnlPct: 20,
+          pnlUsd: 1,
+          investedUsd: 5,
+          txSignature: 'sigSell111111111111111111111111111111111111111111111111111111111111111',
+        }),
+        JSON.stringify({
+          ts: base + 120_000,
+          kind: 'heartbeat',
+          openCount: 0,
+          signalsSeen: 10,
+          racesAttempted: 3,
+          racesBlocked: 2,
+          streamConnected: true,
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const agg = aggregateSuperbotJsonlForDashboard(fp);
+    expect(agg.strategyId).toBe('superbot');
+    expect(agg.closedCount).toBe(1);
+    expect(agg.superbot?.signalsSeen).toBe(10);
+    expect(agg.superbot?.racesBlocked).toBe(2);
+
+    const ll = loadSuperbotJsonlForDashboard(fp);
+    expect(ll.open.length).toBe(0);
+    expect(ll.closed.length).toBe(1);
+    const closed = ll.closed[0]!;
+    const tl = closed.__timeline as Array<{ kind: string; label: string; reason: string | null }>;
+    expect(tl.length).toBeGreaterThanOrEqual(3);
+    expect(tl[0]!.label).toContain('420');
+    expect(tl[0]!.label).toContain('Sell');
+    expect(tl[1]!.kind).toBe('open');
+    expect(tl[2]!.kind).toBe('close');
+    expect(tl[2]!.reason).toBe('TP2');
+    expect(formatSuperbotMskTs(base)).toMatch(/\d{2}\.\d{2}/);
+  });
+});

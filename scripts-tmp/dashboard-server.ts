@@ -43,6 +43,7 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
+import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
   hlTwapDashboardJsonlPath,
@@ -152,6 +153,11 @@ const DASHBOARD_COPY_TRADER_JSONL =
 const DASHBOARD_COPY_TRADER_STATE_PATH =
   process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+/** SuperBot (pumpswap-flow-sniper) journal — isolated repo on future VPS. */
+const DASHBOARD_SUPERBOT_JSONL =
+  process.env.DASHBOARD_SUPERBOT_JSONL?.trim() ||
+  process.env.DASHBOARD_PUMPSWAP_FLOW_SNIPER_JSONL?.trim() ||
+  '/opt/pumpswap-flow-sniper/data/pumpswap-flow-sniper/journal.jsonl';
 /** PumpSwap dip bot — isolated journal (not Oscar / copy-trader). */
 /** @deprecated alias — тот же execution wallet (Copy Trader). */
 const DASHBOARD_LIVE_OSCAR_RISKY_JSONL = DASHBOARD_COPY_TRADER_JSONL;
@@ -1375,14 +1381,15 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · Copy Trader · HL TWAP. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · Copy Trader · HL TWAP. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
+  'superbot',
   'copy-trader',
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-combo-removed-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-superbot-panel-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1436,6 +1443,8 @@ export type DashboardPaper2StrategyRow = {
   };
   /** Copy-trader execution counters + pending queue (panel 2). */
   copyTrader?: CopyTraderDashboardStats;
+  /** SuperBot stream/race counters (pumpswap-flow-sniper journal). */
+  superbot?: SuperbotDashboardLoad['superbot'];
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -3544,6 +3553,7 @@ async function buildPaper2StrategyRowFromLoad(
   sid: string,
   loaded: Paper2FileLoad & {
     copyTrader?: CopyTraderDashboardStats;
+    superbot?: SuperbotDashboardLoad['superbot'];
     hbOpen?: number;
     hbClosed?: number;
   },
@@ -3654,10 +3664,11 @@ async function buildPaper2StrategyRowFromLoad(
   // future jsonl row has a misclassified baseline.
   const PNL_PCT_CLAMP = 100_000; // 1000x
   const isCopyTraderPanel = sid === 'copy-trader';
+  const isSuperbotPanel = sid === 'superbot';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
-      const isMcMetric = !isCopyTraderPanel && ot.metricType === 'mc';
+      const isMcMetric = !isCopyTraderPanel && !isSuperbotPanel && ot.metricType === 'mc';
       let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
       if (enrichMode === 'full' && isMcMetric) {
@@ -3767,9 +3778,10 @@ async function buildPaper2StrategyRowFromLoad(
         ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction ?? 1) : 0;
 
       const investedFor = (): number => {
-        if (isCopyTraderPanel) {
+        if (isCopyTraderPanel || isSuperbotPanel) {
           const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : ot.totalInvestedUsd;
-          return basis > 0 && basis <= 50_000 ? basis : POSITION_USD_DEFAULT;
+          const cap = isSuperbotPanel ? 500 : 50_000;
+          return basis > 0 && basis <= cap ? basis : isSuperbotPanel ? PUMPSWAP_DIP_POSITION_USD_DEFAULT : POSITION_USD_DEFAULT;
         }
         const investedRaw = ot.totalInvestedUsd;
         return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
@@ -3811,7 +3823,7 @@ async function buildPaper2StrategyRowFromLoad(
        * through to the other so we always render a number when either signal is alive.
        * Copy-trader: price only — mcap fallback compares ~$0.001 entry to ~$500k mcap → bogus PnL.
        */
-      if (isCopyTraderPanel) {
+      if (isCopyTraderPanel || isSuperbotPanel) {
         tryByPrice();
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
@@ -3933,6 +3945,7 @@ async function buildPaper2StrategyRowFromLoad(
     liqDrain,
     ...(hb?.reconcileExtras ?? {}),
     ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
+    ...(loaded.superbot ? { superbot: loaded.superbot } : {}),
   };
 }
 
@@ -3972,6 +3985,8 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     DASHBOARD_COPY_TRADER_STATE_PATH,
   );
   const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
+  const sbLoad = loadSuperbotJsonlForDashboard(DASHBOARD_SUPERBOT_JSONL);
+  const { superbot: superbotStats, hbOpen: sbHbOpen, hbClosed: sbHbClosed, ...superbotLoaded } = sbLoad;
 
   const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
     hbOpen,
@@ -3980,6 +3995,16 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   }).catch((e) => {
     console.warn('[dashboard] live-oscar panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('live-oscar', DASHBOARD_LIVE_OSCAR_JSONL);
+  });
+  const superbotRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_SUPERBOT_JSONL, 'superbot', {
+    ...superbotLoaded,
+    superbot: superbotStats,
+  }, {
+    hbOpen: sbHbOpen,
+    hbClosed: sbHbClosed,
+  }).catch((e) => {
+    console.warn('[dashboard] superbot panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('superbot', DASHBOARD_SUPERBOT_JSONL);
   });
   const copyRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_COPY_TRADER_JSONL, 'copy-trader', {
     ...copyLoaded,
@@ -3993,13 +4018,15 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
-  const [liveRow, copyTraderRow, hlTwapRow] = await Promise.all([
+  const [liveRow, superbotRow, copyTraderRow, hlTwapRow] = await Promise.all([
     liveRowP,
+    superbotRowP,
     copyRowP,
     hlTwapRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
+    superbotRow as DashboardPaper2StrategyRow,
     copyTraderRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
   ]);
@@ -4032,6 +4059,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     paper2Dir: PAPER2_DIR,
     liveOscarJsonl: DASHBOARD_LIVE_OSCAR_JSONL,
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
+    superbotJsonl: DASHBOARD_SUPERBOT_JSONL,
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
