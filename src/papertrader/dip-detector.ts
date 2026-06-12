@@ -160,6 +160,11 @@ export type RecoveryVetoResult = {
   bounces: Record<number, number>;
 };
 
+export type RecoveryVetoOptions = {
+  maxBouncePct?: number;
+  windowsMin?: number[];
+};
+
 export type LocalHighVetoResult = {
   reasons: string[];
   distanceFromHighPct: Record<number, number>;
@@ -170,6 +175,7 @@ export function evaluateRecoveryVeto(
   row: SnapshotCandidateRow,
   ctxByWindow: DipContextByWindows | null | undefined,
   dipLookbackUsedMin: number | null,
+  opts?: RecoveryVetoOptions,
 ): RecoveryVetoResult {
   const bounces: Record<number, number> = {};
   if (!cfg.dipRecoveryVetoEnabled || cfg.dipRecoveryVetoWindowsMin.length === 0) {
@@ -184,9 +190,10 @@ export function evaluateRecoveryVeto(
   }
 
   const reasons: string[] = [];
-  const thr = cfg.dipRecoveryVetoMaxBouncePct;
+  const thr = opts?.maxBouncePct ?? cfg.dipRecoveryVetoMaxBouncePct;
+  const windows = opts?.windowsMin ?? cfg.dipRecoveryVetoWindowsMin;
 
-  for (const v of cfg.dipRecoveryVetoWindowsMin) {
+  for (const v of windows) {
     if (v >= dipLookbackUsedMin) continue;
     const ctx = ctxByWindow.get(v);
     if (!ctx || !(ctx.low_px > 0)) continue;
