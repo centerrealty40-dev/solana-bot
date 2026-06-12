@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Write gitignored keypair JSON from base58 secret file (one line).
- * Usage: node scripts/ops/import-wallet-base58.mjs --in /path/to/secret.txt --out data/pumpswap-combo-follow/wallet.keypair.json
+ * Usage: node scripts/ops/import-wallet-base58.mjs --in /path/to/secret.txt --out data/pumpswap-flow-sniper/wallet.keypair.json
  */
 import fs from 'node:fs';
 import path from 'node:path';
