@@ -4,6 +4,7 @@ import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import {
   lastExitMarketSnapshotByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
+  lastRealExitMarketSnapshotByMintMap,
   recordLastExitMarketSnapshotAfterClose,
 } from '../src/papertrader/discovery/dip-clones.js';
 import { executionPostExitReentryGateReasons } from '../src/live/phase4-execution.js';
@@ -24,6 +25,7 @@ function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfi
 describe('execution-layer post-exit re-entry gate', () => {
   beforeEach(() => {
     lastExitMarketSnapshotByMintMap.clear();
+    lastRealExitMarketSnapshotByMintMap.clear();
     lastPostExitBuyCooldownTsByMintMap.clear();
   });
 

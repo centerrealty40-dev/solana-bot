@@ -59,7 +59,10 @@ import {
   mintScratchReentryRefPrice,
   mintScratchReentryThresholdPrice,
 } from './mint-scratch-reentry.js';
-import { appendPostExitReentryGateReasons } from '../papertrader/discovery/dip-clones.js';
+import {
+  appendPostExitReentryGateReasons,
+  postExitReentryGateReasonsForLiveBuy,
+} from '../papertrader/discovery/dip-clones.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import {
   isStagedAddCooldownActive,
@@ -388,6 +391,37 @@ async function runSolToTokenPipeline(
       terminalKind: 'gate',
       terminalMessage: `staged_add_cooldown:${Math.round(remaining / 1000)}s`,
     };
+  }
+
+  if (
+    liveCfg.executionMode === 'live' ||
+    liveCfg.executionMode === 'simulate'
+  ) {
+    let gatePx = await fetchJupiterTokenUsdPrice(args.mint);
+    if (gatePx == null || !(gatePx > 0)) {
+      gatePx = await fetchLatestSnapshotPrice(args.mint);
+    }
+    if (gatePx != null && gatePx > 0) {
+      const reentryReasons = postExitReentryGateReasonsForLiveBuy(args.mint, gatePx);
+      if (reentryReasons.length > 0) {
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'post_exit_reentry_gate',
+          detail: JSON.stringify({
+            mint: args.mint.slice(0, 12),
+            intentKind: args.intentKind,
+            candidatePriceUsd: gatePx,
+            reasons: reentryReasons.slice(0, 3),
+          }).slice(0, 500),
+        });
+        return {
+          ok: false,
+          anchorMode: mode,
+          terminalKind: 'gate',
+          terminalMessage: reentryReasons[0]!.slice(0, 200),
+        };
+      }
+    }
   }
 
   const kp = signer(liveCfg);

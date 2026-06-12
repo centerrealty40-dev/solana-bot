@@ -19,6 +19,7 @@ import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
 import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
+import { configurePostExitReentryGatePaperCfg } from '../papertrader/discovery/dip-clones.js';
 import {
   assertLiveOscarUnifiedEntrySizing,
   resolveLiveOscarEntrySplitLegUsd,
@@ -182,6 +183,7 @@ export async function main(): Promise<void> {
   /** 1.11.231 — Daily Telegram-сводка по live-oscar. */
   startLiveDailySummary(liveCfg);
   const paperBaseline = loadPaperTraderConfig();
+  configurePostExitReentryGatePaperCfg(paperBaseline);
   assertLiveOscarUnifiedEntrySizing(paperBaseline);
 
   if (

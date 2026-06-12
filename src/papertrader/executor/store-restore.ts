@@ -48,6 +48,8 @@ export interface RestoreState {
   lastPostExitBuyCooldownTsByMint: Map<string, number>;
   /** Last full-exit market snapshot per mint — post-exit re-entry gate (dip / cooldown). */
   lastExitMarketSnapshotByMint: Map<string, LastExitMarketSnapshot>;
+  /** Non-admin ledger exits only — canonical re-entry gate reference. */
+  lastRealExitMarketSnapshotByMint: Map<string, LastExitMarketSnapshot>;
   open: Map<string, OpenTrade>;
 }
 
@@ -565,6 +567,16 @@ function restoreLastExitMarketSnapshotFromCloseLine(
     return;
   }
   if (!prev || exitTs >= prev.exitTs) state.lastExitMarketSnapshotByMint.set(mint, next);
+  if (
+    next.exitReason &&
+    next.exitReason !== 'RECONCILE_ORPHAN' &&
+    next.exitReason !== 'PERIODIC_HEAL'
+  ) {
+    const realPrev = state.lastRealExitMarketSnapshotByMint.get(mint);
+    if (!realPrev || exitTs >= realPrev.exitTs) {
+      state.lastRealExitMarketSnapshotByMint.set(mint, next);
+    }
+  }
 }
 
 export function loadStore(storePath: string): RestoreState {
@@ -573,6 +585,7 @@ export function loadStore(storePath: string): RestoreState {
     lastEntryTsByMint: new Map(),
     lastPostExitBuyCooldownTsByMint: new Map(),
     lastExitMarketSnapshotByMint: new Map(),
+    lastRealExitMarketSnapshotByMint: new Map(),
     open: new Map(),
   };
   if (!fs.existsSync(storePath)) return state;
