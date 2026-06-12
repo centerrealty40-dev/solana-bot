@@ -44,7 +44,6 @@ import {
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 import { loadPumpswapComboJsonlForDashboard } from './pumpswap-combo-dashboard.js';
-import { loadPumpswapComboFollowJsonlForDashboard } from './pumpswap-combo-follow-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
   hlTwapDashboardJsonlPath,
@@ -158,10 +157,6 @@ const DASHBOARD_COPY_TRADER_STATE_PATH =
 const DASHBOARD_PUMPSWAP_COMBO_JSONL =
   process.env.DASHBOARD_PUMPSWAP_COMBO_JSONL?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'pumpswap-combo', 'journal.jsonl');
-/** Combo #2 follow hnu5 — paper journal (mirror buys, ladder exits). */
-const DASHBOARD_PUMPSWAP_COMBO_FOLLOW_JSONL =
-  process.env.DASHBOARD_PUMPSWAP_COMBO_FOLLOW_JSONL?.trim() ||
-  path.resolve(PAPER2_DIR, '..', 'pumpswap-combo-follow', 'paper-journal.jsonl');
 /** @deprecated alias — тот же execution wallet (Copy Trader). */
 const DASHBOARD_LIVE_OSCAR_RISKY_JSONL = DASHBOARD_COPY_TRADER_JSONL;
 /** Paper Oscar IDEALIZED V2.1 — отдельный jsonl; панель рядом с live на `/papertrader2`. */
@@ -1385,16 +1380,15 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · Copy Trader · Combo #1 · Combo #2 follow · HL TWAP. */
+/** Плитки `/papertrader2`: Live Oscar · Copy Trader · Combo #1 · HL TWAP. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'copy-trader',
   'pumpswap-combo',
-  'pumpswap-combo-follow-paper',
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-09-combo-follow-dash-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-combo-follow-removed-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3698,7 +3692,7 @@ async function buildPaper2StrategyRowFromLoad(
   // future jsonl row has a misclassified baseline.
   const PNL_PCT_CLAMP = 100_000; // 1000x
   const isCopyTraderPanel = sid === 'copy-trader';
-  const isPumpswapComboPanel = sid === 'pumpswap-combo' || sid === 'pumpswap-combo-follow-paper';
+  const isPumpswapComboPanel = sid === 'pumpswap-combo';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
@@ -4071,44 +4065,16 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
       return makeEmptyDashboardStrategyRow('pumpswap-combo', DASHBOARD_PUMPSWAP_COMBO_JSONL);
     });
 
-  const followLoaded = loadPumpswapComboFollowJsonlForDashboard(DASHBOARD_PUMPSWAP_COMBO_FOLLOW_JSONL);
-  const followRowP = buildPaper2StrategyRowFromLoad(
-    DASHBOARD_PUMPSWAP_COMBO_FOLLOW_JSONL,
-    'pumpswap-combo-follow-paper',
-    followLoaded,
-    { hbOpen: followLoaded.hbOpen, hbClosed: followLoaded.hbClosed },
-  )
-    .then((row) => {
-      const f = followLoaded.pumpswapComboFollow;
-      if (f) {
-        row.realizedPnlUsd = f.realizedPnlUsd;
-        row.unrealizedPnlUsd = f.unrealizedPnlUsd;
-        row.totalPnlUsd = f.totalPnlUsd;
-        row.unrealizedUsd = f.unrealizedPnlUsd;
-        row.pumpswapComboFollow = f;
-      }
-      return row;
-    })
-    .catch((e) => {
-      console.warn('[dashboard] pumpswap-combo-follow panel failed', String(e).slice(0, 200));
-      return makeEmptyDashboardStrategyRow(
-        'pumpswap-combo-follow-paper',
-        DASHBOARD_PUMPSWAP_COMBO_FOLLOW_JSONL,
-      );
-    });
-
-  const [liveRow, copyTraderRow, hlTwapRow, comboRow, followRow] = await Promise.all([
+  const [liveRow, copyTraderRow, hlTwapRow, comboRow] = await Promise.all([
     liveRowP,
     copyRowP,
     hlTwapRowP,
     comboRowP,
-    followRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
     copyTraderRow as DashboardPaper2StrategyRow,
     comboRow as DashboardPaper2StrategyRow,
-    followRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
   ]);
 

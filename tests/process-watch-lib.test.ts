@@ -21,13 +21,12 @@ describe('process-watch-lib', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('default targets include four live bots', () => {
+  it('default targets include three live bots', () => {
     const t = defaultStrategyWatchTargets('/opt/solana-alpha');
     expect(t.map((x) => x.pm2)).toEqual([
       'hl-twap-telegram-watch',
       'live-oscar',
       'copy-trader',
-      'pumpswap-combo-follow-live',
     ]);
   });
 
