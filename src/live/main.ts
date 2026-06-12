@@ -19,6 +19,10 @@ import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
 import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
+import {
+  assertLiveOscarUnifiedEntrySizing,
+  resolveLiveOscarEntrySplitLegUsd,
+} from '../papertrader/live-oscar-entry-sizing.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
 import {
@@ -79,11 +83,8 @@ function escapeHtmlPlain(s: string): string {
 }
 
 function liveOscarDiscoveryBuyLegUsd(paperCfg: PaperTraderConfig): number {
-  if (
-    paperCfg.liveStagedEntryEnabled &&
-    paperCfg.liveStagedEntryEntrySplitLegUsd > 0
-  ) {
-    return paperCfg.liveStagedEntryEntrySplitLegUsd;
+  if (paperCfg.liveStagedEntryEnabled && paperCfg.liveStagedEntryEntrySplitLegUsd > 0) {
+    return resolveLiveOscarEntrySplitLegUsd(paperCfg);
   }
   return paperCfg.positionUsd * paperCfg.entryFirstLegFraction;
 }
@@ -181,6 +182,7 @@ export async function main(): Promise<void> {
   /** 1.11.231 — Daily Telegram-сводка по live-oscar. */
   startLiveDailySummary(liveCfg);
   const paperBaseline = loadPaperTraderConfig();
+  assertLiveOscarUnifiedEntrySizing(paperBaseline);
 
   if (
     liveCfg.strategyEnabled &&

@@ -447,7 +447,7 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k, сплит 2×$200, DCA $200/ступень (max $800). */
+        /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $730+$730. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',

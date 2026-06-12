@@ -1,4 +1,5 @@
 import type { PaperTraderConfig } from './config.js';
+import { resolveLiveOscarEntrySplitLegUsd } from './live-oscar-entry-sizing.js';
 
 /** Двухфазный Live Oscar: узкий коридор ≤$3M vs prod >$3M. */
 export type LiveOscarMcapTier = 'below' | 'low' | 'prod';
@@ -45,13 +46,11 @@ export function liveOscarTierEntryConfig(
   return cfg;
 }
 
-export function liveOscarTierStagedSplitLegUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
-  if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLegUsd;
-  return cfg.liveStagedEntryEntrySplitLegUsd;
+export function liveOscarTierStagedSplitLegUsd(cfg: PaperTraderConfig, _tier: LiveOscarMcapTier): number {
+  return resolveLiveOscarEntrySplitLegUsd(cfg);
 }
 
-export function liveOscarTierPositionUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
-  if (tier === 'low') return cfg.liveOscarLowMcapPositionUsd;
+export function liveOscarTierPositionUsd(cfg: PaperTraderConfig, _tier: LiveOscarMcapTier): number {
   return cfg.positionUsd;
 }
 

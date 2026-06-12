@@ -12,6 +12,8 @@ import {
 } from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
+import { loadPaperTraderConfig } from '../config.js';
+import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -420,6 +422,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
 
     reconcileEntrySplitV2FromLegs(ot);
+
+    if (
+      process.env.PAPER_STRATEGY_ID?.trim() === 'live-oscar' &&
+      ot.liveStagedEntry?.entrySplitV2
+    ) {
+      applyCanonicalStagedEntrySizing(loadPaperTraderConfig(), ot.liveStagedEntry);
+    }
 
     if (isWaveBExitPolicy(ot)) {
       waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
