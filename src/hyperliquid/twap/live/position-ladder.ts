@@ -1,9 +1,30 @@
 import type { TwapSide } from '../types.js';
 
+export type LadderMode = 'price' | 'roe';
+
 export type LadderConfig = {
+  /** `price` = ±% from avg entry px; `roe` = legacy HL ROE ladder. */
+  mode: LadderMode;
   stepPct: number;
   slicePctOfInitial: number;
+  /** Price-mode DCA: single add as % of initial gross (default 50). */
+  dcaPctOfInitial: number;
 };
+
+/** TP price threshold % from avg entry for level N (1-based). */
+export function tpPriceThresholdPct(level: number): number {
+  if (level <= 1) return 0.3;
+  if (level === 2) return 0.5;
+  if (level === 3) return 1;
+  return 1 + (level - 3) * 0.5;
+}
+
+/** TP slice as % of current gross for level N (1-based). */
+export function tpPriceSlicePct(level: number): number {
+  return level === 1 ? 20 : 30;
+}
+
+export const PRICE_LADDER_DCA_THRESHOLD_PCT = 0.5;
 
 export type LadderAction =
   | { kind: 'take_profit'; level: number; notionalUsd: number }
@@ -52,22 +73,46 @@ export function hlRoePct(
   return (pnlUsd / marginUsd) * 100;
 }
 
-/** Next ladder action: ±stepPct **HL ROE** on book margin; slice = slicePct% of current gross. */
-export function nextLadderAction(
+function nextPriceLadderAction(
   side: TwapSide,
   markPx: number,
-  entryAnchorPx: number,
-  initialMarginUsd: number,
+  avgEntryPx: number,
   initialNotionalUsd: number,
   currentNotionalUsd: number,
   tpLevelsTaken: number,
   dcaLevelsTaken: number,
   cfg: LadderConfig,
-  _leverage = 1,
 ): LadderAction | null {
-  if (markPx <= 0 || entryAnchorPx <= 0 || initialMarginUsd <= 0 || initialNotionalUsd <= 0) return null;
-  if (currentNotionalUsd <= 0) return null;
+  const favPct = favorableMovePct(side, markPx, avgEntryPx);
+  const nextTpLevel = tpLevelsTaken + 1;
+  const tpThreshold = tpPriceThresholdPct(nextTpLevel);
+  if (favPct >= tpThreshold) {
+    const slicePct = tpPriceSlicePct(nextTpLevel);
+    const take = Math.min(currentNotionalUsd * (slicePct / 100), currentNotionalUsd);
+    if (take <= 0) return null;
+    return { kind: 'take_profit', level: nextTpLevel, notionalUsd: take };
+  }
 
+  if (dcaLevelsTaken < 1 && favPct <= -PRICE_LADDER_DCA_THRESHOLD_PCT) {
+    const add = initialNotionalUsd * (cfg.dcaPctOfInitial / 100);
+    if (add <= 0) return null;
+    return { kind: 'add', level: 1, notionalUsd: add };
+  }
+
+  return null;
+}
+
+function nextRoeLadderAction(
+  side: TwapSide,
+  markPx: number,
+  entryAnchorPx: number,
+  initialMarginUsd: number,
+  _initialNotionalUsd: number,
+  currentNotionalUsd: number,
+  tpLevelsTaken: number,
+  dcaLevelsTaken: number,
+  cfg: LadderConfig,
+): LadderAction | null {
   const roePct = hlRoePct(side, markPx, entryAnchorPx, currentNotionalUsd, initialMarginUsd);
   const sliceGross = ladderSliceGrossUsd(currentNotionalUsd, cfg);
 
@@ -85,6 +130,48 @@ export function nextLadderAction(
   }
 
   return null;
+}
+
+/** Next ladder action (price-% from avg entry, or legacy HL ROE). */
+export function nextLadderAction(
+  side: TwapSide,
+  markPx: number,
+  entryAnchorPx: number,
+  initialMarginUsd: number,
+  initialNotionalUsd: number,
+  currentNotionalUsd: number,
+  tpLevelsTaken: number,
+  dcaLevelsTaken: number,
+  cfg: LadderConfig,
+  _leverage = 1,
+): LadderAction | null {
+  if (markPx <= 0 || entryAnchorPx <= 0 || initialMarginUsd <= 0 || initialNotionalUsd <= 0) return null;
+  if (currentNotionalUsd <= 0) return null;
+
+  if (cfg.mode === 'price') {
+    return nextPriceLadderAction(
+      side,
+      markPx,
+      entryAnchorPx,
+      initialNotionalUsd,
+      currentNotionalUsd,
+      tpLevelsTaken,
+      dcaLevelsTaken,
+      cfg,
+    );
+  }
+
+  return nextRoeLadderAction(
+    side,
+    markPx,
+    entryAnchorPx,
+    initialMarginUsd,
+    initialNotionalUsd,
+    currentNotionalUsd,
+    tpLevelsTaken,
+    dcaLevelsTaken,
+    cfg,
+  );
 }
 
 /** Update avg entry after DCA add. */

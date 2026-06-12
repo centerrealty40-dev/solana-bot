@@ -82,7 +82,12 @@ function exitPxForOpen(open: HlTwapLiveOpen, cache: HyperliquidMarketCache): num
 }
 
 function ladderCfg(cfg: HlTwapLiveConfig): LadderConfig {
-  return { stepPct: cfg.ladderStepPct, slicePctOfInitial: cfg.ladderSlicePct };
+  return {
+    mode: cfg.ladderMode,
+    stepPct: cfg.ladderStepPct,
+    slicePctOfInitial: cfg.ladderSlicePct,
+    dcaPctOfInitial: cfg.ladderDcaPctOfInitial,
+  };
 }
 
 async function exchangeGrossNotionalUsd(
@@ -511,7 +516,7 @@ export async function processLiveTrades(
   }
 }
 
-/** ±3% HL ROE ladder: partial TP and DCA — one book per coin+side (exchange gross). */
+/** Price/ROE ladder: partial TP and DCA — one book per coin+side (exchange gross). */
 export async function processLiveLadders(
   cache: HyperliquidMarketCache,
   cfg: HlTwapLiveConfig,

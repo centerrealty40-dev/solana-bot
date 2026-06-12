@@ -17,7 +17,9 @@ export type DynamicMarginInput = Pick<
   | 'dynamicMarginMaxAtOpenCount'
   | 'dynamicMarginMinAtOpenCount'
   | 'dynamicMarginDcaLevelsReserve'
+  | 'ladderMode'
   | 'ladderSlicePct'
+  | 'ladderDcaPctOfInitial'
   | 'marginReserveUsd'
 >;
 
@@ -37,6 +39,9 @@ export function targetMarginByOpenCount(openCount: number, cfg: DynamicMarginInp
 
 /** Margin reserved for DCA adds on a new position (USD collateral). */
 export function dcaHeadroomUsd(marginUsd: number, cfg: DynamicMarginInput): number {
+  if (cfg.ladderMode === 'price') {
+    return marginUsd * (cfg.ladderDcaPctOfInitial / 100);
+  }
   const levels = Math.max(0, cfg.dynamicMarginDcaLevelsReserve);
   if (levels <= 0) return 0;
   return levels * marginUsd * (cfg.ladderSlicePct / 100);
