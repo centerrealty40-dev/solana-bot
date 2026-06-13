@@ -995,7 +995,8 @@ export type PriceVerifyVerdict =
         | 'timeout'
         | 'http-error'
         | 'parse-error'
-        | 'circuit-open';
+        | 'circuit-open'
+        | 'no-route';
       ts: number;
     };
 

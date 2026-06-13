@@ -159,6 +159,9 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
           ? 'jupiter quote rate limited (impulse)'
           : 'jupiter quote http error (impulse)',
       );
+      if (resp.status === 400 || resp.status === 404) {
+        return { kind: 'skipped', reason: 'no-route', ts };
+      }
       return { kind: 'skipped', reason: 'http-error', ts };
     }
     txt = await resp.text();
@@ -305,6 +308,9 @@ async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Pro
         { status: resp.status, mint, elapsed, rateLimited: resp.status === 429 },
         resp.status === 429 ? 'jupiter sell quote rate limited' : 'jupiter sell quote http error',
       );
+      if (resp.status === 400 || resp.status === 404) {
+        return { kind: 'skipped', reason: 'no-route', ts };
+      }
       return { kind: 'skipped', reason: 'http-error', ts };
     }
     txt = await resp.text();

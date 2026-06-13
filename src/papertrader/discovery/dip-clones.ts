@@ -62,7 +62,10 @@ import {
 import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
 import { writeDiscoveryCollectorPinMints } from './discovery-collector-pin.js';
 import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
-import { getPriorityOpenMints } from './priority-discovery-registry.js';
+import {
+  buildPriorityDiscoveryMintSet,
+  getPriorityOpenMints,
+} from './priority-discovery-registry.js';
 import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 import {
   isLiveOscarTwoPhaseMcap,
@@ -714,15 +717,6 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   }
 
   const evalRows = allowedSnapshotTagged.map((x) => x.row);
-  const { refreshedMints: volumeLeaderJupiterRefreshed } =
-    await crossCheckVolumeLeaderSnapshotsFromJupiter(cfg, evalRows, volumeLeaderMintSet);
-  await refreshPriorityMintPricesFromJupiter(
-    cfg,
-    evalRows,
-    priorityMintSet,
-    volumeLeaderJupiterRefreshed,
-  );
-
   const rowsForCtx = evalRows;
   const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
@@ -735,7 +729,20 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       fetchGlobalPgCoverageState(cfg),
       fetchRunnerContextMap(cfg, rowsForCtx),
     ]);
-  await refreshNearMissDipPricesFromJupiter(cfg, rowsForCtx, dipMap, priorityMintSet);
+  /** Jupiter spot refresh only after PG dip context — not on raw SQL pool (1.11.244 regression fix). */
+  const jupiterPriorityMintSet = buildPriorityDiscoveryMintSet(cfg);
+  const jupiterAlreadyRefreshed = new Set<string>();
+  const { refreshedMints: volumeLeaderJupiterRefreshed } =
+    await crossCheckVolumeLeaderSnapshotsFromJupiter(cfg, rowsForCtx, volumeLeaderMintSet);
+  for (const m of volumeLeaderJupiterRefreshed) jupiterAlreadyRefreshed.add(m);
+  const { refreshedMints: priorityJupiterRefreshed } = await refreshPriorityMintPricesFromJupiter(
+    cfg,
+    rowsForCtx,
+    jupiterPriorityMintSet,
+    jupiterAlreadyRefreshed,
+  );
+  for (const m of priorityJupiterRefreshed) jupiterAlreadyRefreshed.add(m);
+  await refreshNearMissDipPricesFromJupiter(cfg, rowsForCtx, dipMap, jupiterAlreadyRefreshed);
   const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
     cfg,
     rowsForCtx,

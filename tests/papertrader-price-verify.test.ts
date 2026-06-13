@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resetQuoteResilienceForTests } from '../src/papertrader/pricing/jupiter-quote-resilience.js';
+import {
+  gateCircuit,
+  resetQuoteResilienceForTests,
+  type QuoteResilience,
+} from '../src/papertrader/pricing/jupiter-quote-resilience.js';
 import {
   jupiterQuoteBuyPriceUsd,
   verifyEntryPrice,
@@ -211,5 +215,35 @@ describe('verifyExitPrice (W7.4.2)', () => {
     });
     expect(v.kind).toBe('blocked');
     if (v.kind === 'blocked') expect(v.reason).toBe('slip-too-high');
+  });
+});
+
+const quoteResilience = (): QuoteResilience => ({
+  retriesEnabled: false,
+  maxAttempts: 1,
+  retryBackoffMs: 0,
+  circuitEnabled: true,
+  circuitWindowMs: 3_600_000,
+  circuitSkipRatePct: 10,
+  circuitMinAttempts: 10,
+  circuitCooldownMs: 60_000,
+});
+
+describe('jupiterQuoteBuyPriceUsd', () => {
+  it('maps HTTP 400 to no-route without tripping circuit', async () => {
+    mockJupiter({ error: 'No routes found' }, 400);
+    const v = await jupiterQuoteBuyPriceUsd({
+      mint: mintFoo,
+      outMintDecimals: 6,
+      sizeUsd: 50,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+      slippageBps: 400,
+      timeoutMs: 1500,
+      resilience: quoteResilience(),
+    });
+    expect(v.kind).toBe('skipped');
+    if (v.kind === 'skipped') expect(v.reason).toBe('no-route');
+    expect(gateCircuit(quoteResilience())).toBeNull();
   });
 });
