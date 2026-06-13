@@ -41,7 +41,7 @@ esac
 
 # Exactly one OS process for live-oscar.ts under salpha; env must match ecosystem (no stale root PM2).
 if [[ "$PM2_APP" == "live-oscar" ]] && command -v pgrep >/dev/null 2>&1; then
-  mapfile -t LIVE_OSCAR_PIDS < <(pgrep -f 'src/scripts/live-oscar.ts' 2>/dev/null || true)
+  mapfile -t LIVE_OSCAR_PIDS < <(pgrep -f 'loader\.mjs src/scripts/live-oscar\.ts' 2>/dev/null || true)
   if [[ "${#LIVE_OSCAR_PIDS[@]}" -ne 1 ]]; then
     fail "expected exactly 1 live-oscar.ts OS process, got ${#LIVE_OSCAR_PIDS[@]} (pids: ${LIVE_OSCAR_PIDS[*]:-none})"
   fi

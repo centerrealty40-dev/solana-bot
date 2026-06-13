@@ -147,7 +147,7 @@ export function assessLiveOscarProcessSingleton(rows, expected = {}) {
 export function scanLiveOscarScriptProcesses(execSyncFn = execSync) {
   if (process.platform !== 'linux') return [];
   try {
-    const out = execSyncFn("pgrep -af 'src/scripts/live-oscar.ts' 2>/dev/null || true", {
+    const out = execSyncFn("pgrep -af 'loader.mjs src/scripts/live-oscar.ts' 2>/dev/null || true", {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();

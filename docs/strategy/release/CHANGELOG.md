@@ -42,6 +42,18 @@
 
 ---
 
+## [1.11.447] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.447`
+
+### Deploy smoke — pgrep false positives
+
+- **`post-deploy-smoke` / process-watch:** `pgrep` only matches `loader.mjs src/scripts/live-oscar.ts` (node), not shell argv echoes.
+
+**Откат:** `git checkout sa-alpha-1.11.446 -- scripts/release/post-deploy-smoke.sh scripts-tmp/process-watch-lib.mjs docs/strategy/release/`.
+
+---
+
 ## [1.11.446] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.446`
