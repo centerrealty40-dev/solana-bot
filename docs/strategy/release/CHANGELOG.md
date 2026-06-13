@@ -42,6 +42,21 @@
 
 ---
 
+## [1.11.444] — 2026-06-11
+
+**Тег:** `sa-alpha-1.11.444`
+
+### Live Oscar discovery — Jupiter after dip filters (1.11.244 regression)
+
+- **Jupiter spot refresh** (volume-leader crosscheck, priority refresh, near-miss) runs **after** `fetchDipContextMap`, not on the raw SQL snapshot pool.
+- **Priority Jupiter** uses `buildPriorityDiscoveryMintSet` (open / near-ready / recent eval) — not the full per-tick snapshot set.
+- **Near-miss dedup** tracks volume-leader + priority refreshed mints, not the expanded reeval set.
+- **HTTP 400/404** on Jupiter quote maps to `no-route` (does not count as transport fail for circuit breaker).
+
+**Откат:** `git checkout sa-alpha-1.11.443 -- src/papertrader/discovery/dip-clones.ts src/papertrader/discovery/priority-dip-price-refresh.ts src/papertrader/pricing/price-verify.ts tests/papertrader-price-verify.test.ts docs/strategy/release/`; `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.443] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.443`

@@ -5,11 +5,13 @@ import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
 import { refreshRowsPricesFromJupiter, type JupiterSpotRefreshResult } from './jupiter-spot-refresh.js';
 
-export type PriorityPriceRefreshResult = JupiterSpotRefreshResult;
+export type PriorityPriceRefreshResult = JupiterSpotRefreshResult & {
+  refreshedMints: Set<string>;
+};
 
 /**
  * Обновляет `row.price_usd` свежим Jupiter quote (SOL→mint) для priority mint'ов.
- * Не пишет в PG — только in-memory row перед dip-eval на этом тике.
+ * Не пишет в PG — только in-memory row после dipMap, перед eval loop.
  */
 export async function refreshPriorityMintPricesFromJupiter(
   cfg: PaperTraderConfig,
@@ -17,15 +19,24 @@ export async function refreshPriorityMintPricesFromJupiter(
   priorityMintSet: ReadonlySet<string>,
   skipMints: ReadonlySet<string> = new Set(),
 ): Promise<PriorityPriceRefreshResult> {
+  const empty: PriorityPriceRefreshResult = {
+    refreshed: 0,
+    skipped: 0,
+    errors: 0,
+    refreshedMints: new Set(),
+  };
   if (!cfg.priorityDiscoveryEnabled || !cfg.priorityDiscoveryJupiterRefreshEnabled) {
-    return { refreshed: 0, skipped: 0, errors: 0 };
+    return empty;
   }
-  if (priorityMintSet.size === 0) return { refreshed: 0, skipped: 0, errors: 0 };
+  if (priorityMintSet.size === 0) return empty;
 
-  return refreshRowsPricesFromJupiter(
+  const refreshedMints = new Set<string>();
+  const result = await refreshRowsPricesFromJupiter(
     cfg,
     rows,
     (row) => priorityMintSet.has(row.mint) && !skipMints.has(row.mint),
     cfg.priorityDiscoveryJupiterRefreshMaxPerTick,
+    { onApplied: (row) => refreshedMints.add(row.mint) },
   );
+  return { ...result, refreshedMints };
 }
