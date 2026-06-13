@@ -39,6 +39,39 @@ case "$STATUS" in
   *) fail "pm2 $PM2_APP status=$STATUS" ;;
 esac
 
+# Exactly one OS process for live-oscar.ts under salpha; env must match ecosystem (no stale root PM2).
+if [[ "$PM2_APP" == "live-oscar" ]] && command -v pgrep >/dev/null 2>&1; then
+  mapfile -t LIVE_OSCAR_PIDS < <(pgrep -f 'src/scripts/live-oscar.ts' 2>/dev/null || true)
+  if [[ "${#LIVE_OSCAR_PIDS[@]}" -ne 1 ]]; then
+    fail "expected exactly 1 live-oscar.ts OS process, got ${#LIVE_OSCAR_PIDS[@]} (pids: ${LIVE_OSCAR_PIDS[*]:-none})"
+  fi
+  LIVE_PID="${LIVE_OSCAR_PIDS[0]}"
+  LIVE_USER="$(ps -o user= -p "$LIVE_PID" 2>/dev/null | tr -d ' ')"
+  if [[ "$LIVE_USER" != "salpha" ]]; then
+    fail "live-oscar.ts must run as salpha, got user=$LIVE_USER pid=$LIVE_PID"
+  fi
+  EXP_LEG="$(grep -E "PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD:" "$ROOT/ecosystem.config.cjs" | head -1 | sed -E "s/.*['\"]([0-9]+)['\"].*/\1/")"
+  ACT_LEG="$(tr '\0' '\n' < "/proc/$LIVE_PID/environ" 2>/dev/null | grep '^PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD=' | cut -d= -f2 || true)"
+  if [[ -n "$EXP_LEG" && -n "$ACT_LEG" && "$ACT_LEG" != "$EXP_LEG" ]]; then
+    fail "live-oscar ENTRY_SPLIT_LEG_USD=$ACT_LEG != ecosystem $EXP_LEG (stale process env?)"
+  fi
+  if tr '\0' '\n' < "/proc/$LIVE_PID/environ" 2>/dev/null | grep -q '^LIVE_MINT_FIRST_PROBE_ENABLED=1'; then
+    fail "live-oscar LIVE_MINT_FIRST_PROBE_ENABLED=1 on running process (stale /root/.pm2?)"
+  fi
+  ok "single live-oscar.ts pid=$LIVE_PID user=$LIVE_USER leg_usd=${ACT_LEG:-?}"
+
+  if [[ -d /root/.pm2 ]]; then
+    ROOT_ONLINE="$(PM2_HOME=/root/.pm2 HOME=/root pm2 jlist 2>/dev/null | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+process.stdout.write(d.some(x=>x.name==='live-oscar'&&x.pm2_env?.status==='online')?'yes':'no');
+" 2>/dev/null || echo no)"
+    if [[ "$ROOT_ONLINE" == "yes" ]]; then
+      fail "/root/.pm2 still has online live-oscar — run: PM2_HOME=/root/.pm2 pm2 kill"
+    fi
+    ok "no online live-oscar under /root/.pm2"
+  fi
+fi
+
 if [[ -f "$ERR_LOG" ]]; then
   UPTIME_SEC="$(pm2 jlist 2>/dev/null | node -e "
 const d=JSON.parse(require('fs').readFileSync(0,'utf8'));

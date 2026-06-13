@@ -10,10 +10,14 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { sendTagged } from '../scripts/lib/telegram.mjs';
 import {
+  assessLiveOscarProcessSingleton,
   assessProcessHealth,
   defaultStrategyWatchTargets,
   parseHeartbeatJson,
   parseWatchTargetsJson,
+  readExpectedLiveOscarEntrySplitLegUsd,
+  rootPm2HasOnlineLiveOscar,
+  scanLiveOscarScriptProcesses,
 } from './process-watch-lib.mjs';
 
 const ROOT = process.cwd();
@@ -94,6 +98,12 @@ function issueDetail(issue, target, status, heartbeatAgeMs) {
     const min = Math.round(heartbeatAgeMs / 60_000);
     return `${target.pm2}: heartbeat stale ~${min}m (${target.heartbeatPath})`;
   }
+  if (issue.startsWith('live_oscar_')) {
+    return `${target.pm2}: ${issue}`;
+  }
+  if (issue === 'root_pm2_live_oscar_online') {
+    return `${target.pm2}: rogue /root/.pm2 still hosts online live-oscar (PM2_HOME=/root/.pm2 pm2 kill)`;
+  }
   return `${target.pm2}: ${issue}`;
 }
 
@@ -106,6 +116,21 @@ async function tick() {
   const statusMap = getPm2StatusMap();
   const summary = [];
 
+  if (rootPm2HasOnlineLiveOscar(execSync)) {
+    const alertKey = 'root_pm2_live_oscar_online';
+    const prev = state.alerts.__root_pm2 ?? {};
+    const due =
+      now - (prev.lastAlertAt ?? 0) >= REPEAT_MIN * 60_000 || prev.lastAlertKey !== alertKey;
+    if (due && TELEGRAM_ON) {
+      await sendTagged(
+        'ALERT',
+        'strategy_watch',
+        'Strategy watchdog:\n• /root/.pm2 has online live-oscar — kill with: PM2_HOME=/root/.pm2 pm2 kill',
+      );
+      state.alerts.__root_pm2 = { lastAlertAt: now, lastAlertKey: alertKey };
+    }
+  }
+
   for (const target of targets) {
     const status = statusMap.get(target.pm2) ?? 'missing';
     const heartbeatAgeMs = readHeartbeatAgeMs(target.heartbeatPath, now);
@@ -114,6 +139,18 @@ async function tick() {
       heartbeatAgeMs,
       heartbeatMaxStaleMs: target.staleMs,
     });
+
+    if (target.pm2 === 'live-oscar') {
+      const ecoPath = path.join(ROOT, 'ecosystem.config.cjs');
+      const expectedLeg = fs.existsSync(ecoPath)
+        ? readExpectedLiveOscarEntrySplitLegUsd(fs.readFileSync(ecoPath, 'utf8'))
+        : process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD ?? null;
+      const singleton = assessLiveOscarProcessSingleton(scanLiveOscarScriptProcesses(execSync), {
+        expectedEntrySplitLegUsd: expectedLeg,
+      });
+      if (!singleton.ok) health.issues.push(...singleton.issues);
+      if (rootPm2HasOnlineLiveOscar(execSync)) health.issues.push('root_pm2_live_oscar_online');
+    }
 
     let restarted = false;
     if (!health.ok && AUTO_RESTART) {

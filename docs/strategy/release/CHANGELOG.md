@@ -42,6 +42,20 @@
 
 ---
 
+## [1.11.446] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.446`
+
+### Deploy — singleton live-oscar (запрет /root/.pm2 дубликата)
+
+- **NORM §5.2:** канонический деплой через `scripts/ops/deploy-live-oscar-vps.sh` (`pm2 kill` root → `startOrReload` salpha).
+- **`post-deploy-smoke.sh`:** ровно один `live-oscar.ts` под `salpha`, `ENTRY_SPLIT_LEG_USD` = ecosystem, нет online `live-oscar` в `/root/.pm2`.
+- **`strategy-process-watch`:** алерт при дубликате / wrong user / stale env / root PM2.
+
+**Откат:** `git checkout sa-alpha-1.11.445 -- scripts/release/post-deploy-smoke.sh scripts/ops/deploy-live-oscar-vps.sh scripts-tmp/process-watch-lib.mjs scripts-tmp/strategy-process-watch.mjs tests/process-watch-lib.test.ts docs/strategy/release/`; деплой по старому §5.2.
+
+---
+
 ## [1.11.444] — 2026-06-11
 
 **Тег:** `sa-alpha-1.11.444`
