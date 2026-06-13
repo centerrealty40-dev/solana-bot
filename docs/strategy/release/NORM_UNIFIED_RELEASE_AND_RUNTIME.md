@@ -83,27 +83,39 @@
 
 ### 5.2 Последовательность (после `git push origin v2`)
 
-От имени владельца репозитория на сервере (**`salpha`**):
+**Канонический деплой Live Oscar** — скрипт от **root** (гасит случайный PM2 в `/root/.pm2`, затем `startOrReload` только под **`salpha`**):
 
 ```bash
 cd /opt/solana-alpha
-git fetch origin v2
-git reset --hard origin/v2
-npm ci
-pm2 reload ecosystem.config.cjs --update-env
+bash scripts/ops/deploy-live-oscar-vps.sh
 ```
 
-SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) §7.4; команды в каталоге — **`sudo -u salpha bash -lc '…'`**.
+Скрипт выполняет: `pm2 kill` (root) → `git fetch` / `reset` / `npm ci` (salpha) → `pm2 startOrReload` → **`post-deploy-smoke.sh`** (в т.ч. ровно один `live-oscar.ts` под `salpha`, env split leg = ecosystem, нет online `live-oscar` в `/root/.pm2`).
+
+**Ручной эквивалент** (если скрипт недоступен):
+
+```bash
+# от root
+pm2 kill 2>/dev/null || true
+sudo -u salpha env PM2_HOME=/home/salpha/.pm2 HOME=/home/salpha bash -c '
+  cd /opt/solana-alpha
+  git fetch origin v2 && git reset --hard origin/v2 && npm ci
+  pm2 startOrReload ecosystem.config.cjs --update-env && pm2 save
+  bash scripts/release/post-deploy-smoke.sh
+'
+```
+
+SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) §7.4. Для salpha-команд — **`env PM2_HOME=/home/salpha/.pm2 HOME=/home/salpha bash -c`** (не `bash -lc`: login-shell ломает PM2_HOME).
 
 Зафиксировать: **`git rev-parse HEAD`**, **`git status -sb`**.
 
-**Обязательно после PM2 reload:** `bash scripts/release/post-deploy-smoke.sh` (read-only: PM2 online, нет `ERR_MODULE_NOT_FOUND`, discovery пишет `live_discovery_eval`). Без зелёного smoke — **не считать деплой успешным**.
+**Обязательно после PM2 reload:** `bash scripts/release/post-deploy-smoke.sh` (PM2 online, **singleton `live-oscar.ts`**, env parity, нет `ERR_MODULE_NOT_FOUND`, discovery пишет `live_discovery_eval`). Без зелёного smoke — **не считать деплой успешным**.
 
 **Деплой только если** GitHub Actions job **`hygiene`** на целевом SHA **зелёный** (см. [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md)).
 
 ### 5.3 PM2
 
-Под **`salpha`**; при смене env — **`--update-env`** и по политике **`pm2 flush`**; после изменения списка приложений — **`pm2 save`**.
+Только под **`salpha`** (`PM2_HOME=/home/salpha/.pm2`). **Запрещено** держать `live-oscar` в **`/root/.pm2`** — второй демон торгует со старым env в обход деплоя. При смене env — **`--update-env`** и по политике **`pm2 flush`**; после изменения списка приложений — **`pm2 save`**.
 
 ### 5.4 Исключения
 
@@ -143,8 +155,8 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 - [ ] Нет **расщеплённого API**: типы / продюсеры / потребители контракта попали в **`v2` одним потоком** (§4.2, I9 в [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md)); **`check-staged-imports`** не ругается на untracked deps.
 - [ ] **`npm run check:hygiene:integration`** зелёный перед merge в **`v2`**.
 - [ ] Push в **`v2`**, CI job **`hygiene`** зелёный на SHA.
-- [ ] Деплой §5.2; зафиксированы SHA и **`git status`**.
-- [ ] **`bash scripts/release/post-deploy-smoke.sh`** на VPS после reload.
+- [ ] Деплой §5.2 (`bash scripts/ops/deploy-live-oscar-vps.sh` или ручной эквивалент с `pm2 kill` root); зафиксированы SHA и **`git status`**.
+- [ ] **`bash scripts/release/post-deploy-smoke.sh`** зелёный (в т.ч. **один** `live-oscar.ts` под `salpha`, нет online `live-oscar` в `/root/.pm2`).
 - [ ] На сервере после обновления дерева — **`npm run typecheck`** (или полный §5.2), затем PM2 с **`--update-env`** / **`pm2 flush`** по политике процесса.
 - [ ] Нет рутинного **`scp`** tracked-кода на VPS-клон.
 
@@ -154,6 +166,7 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 | Дата | Версия продукта | Суть |
 |------|-----------------|------|
+| 2026-06-13 | 1.11.446 | §5.2 — канонический `deploy-live-oscar-vps.sh` + singleton smoke (один `live-oscar.ts`, запрет `/root/.pm2`). |
 | 2026-05-22 | 1.11.253 | Git hooks (staged imports + typecheck), CI `check:imports`, post-deploy smoke, branch protection doc. |
 | 2026-05-04 | 1.11.62 | §4.2 — атомарность изменений TypeScript/контрактов модулей; совпадение с CI; VPS и откат; §8 — расширенный чеклист интегратора (в т.ч. против ошибки `LiveBuyIncreaseDeny` / `increaseDeny`). |
 | 2026-05-04 | 1.11.52 | §6 — канон платформы/`agents`/`.cursor` в репозитории; синхронизация с деревом Ideas. |

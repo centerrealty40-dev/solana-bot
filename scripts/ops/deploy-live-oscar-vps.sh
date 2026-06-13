@@ -35,4 +35,5 @@ pm2 startOrReload '${APP_DIR}/ecosystem.config.cjs' --update-env
 pm2 save
 git rev-parse HEAD
 git status -sb
+bash scripts/release/post-deploy-smoke.sh
 "
