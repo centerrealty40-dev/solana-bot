@@ -33,7 +33,7 @@ const baseCfg = {
 
 const prodEntryCfg = {
   positionUsd: 1000,
-  entryProbeFraction: 300 / 1000,
+  entryProbeFraction: 500 / 1000,
   entryDipDiscountPct: 10,
   entryMinDeployFraction: 0.99,
   addPriceMaxPremiumPct: 0,
@@ -45,10 +45,10 @@ const prodEntryCfg = {
 } as CopyTraderConfig;
 
 describe('entry-probe sizing', () => {
-  it('splits $300 probe + $700 dip on $1000 position (prod)', () => {
+  it('splits $500 probe + $500 dip on $1000 position (prod)', () => {
     expect(usesSplitEntryProbe(prodEntryCfg)).toBe(true);
-    expect(entryProbeSizeUsd(prodEntryCfg)).toBe(300);
-    expect(entryDipSizeUsd(prodEntryCfg)).toBe(700);
+    expect(entryProbeSizeUsd(prodEntryCfg)).toBe(500);
+    expect(entryDipSizeUsd(prodEntryCfg)).toBe(500);
   });
 
   it('splits $350 probe + $600 dip on $950 position (legacy)', () => {

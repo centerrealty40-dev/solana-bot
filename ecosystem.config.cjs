@@ -33,52 +33,6 @@ const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
 /** Pullback + retrace (блоки 1–2–3) — отдельный бот, общий dips-канал. */
 const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
-/** HL TWAP live + paper — paths on VPS (secrets in `.env`). */
-const HL_TWAP_DATA_DIR = path.join(root, 'data/hl-twap');
-const HL_TWAP_LIVE_ENV = {
-  NODE_ENV: 'production',
-  HL_TWAP_LIVE_ENABLED: '1',
-  HL_TWAP_PAPER_ENABLED: '1',
-  HL_TWAP_UNRESTRICTED: '1',
-  HL_TWAP_SHORT_MIN_MINUTES: '9',
-  HL_TWAP_MICRO_MIN_MINUTES: '9',
-  HL_TWAP_MICRO_MAX_MINUTES: '15',
-  HL_TWAP_HOLD_TO_END: '1',
-  HL_TWAP_EXIT_EARLY_MINUTES: '0',
-  HL_TWAP_EXIT_ADAPTIVE: '0',
-  HL_TWAP_EXEC_SLICE_USD: '500',
-  HL_TWAP_EXEC_SLICE_GAP_MS: '2000',
-  HL_TWAP_ULTRA_SHORT_EXIT_SLICES: '2',
-  HL_TWAP_MICRO_EXIT_SLICES: '2',
-  HL_TWAP_STANDARD_EXIT_SLICES: '3',
-  HL_TWAP_LIVE_JSONL: path.join(HL_TWAP_DATA_DIR, 'live.jsonl'),
-  HL_TWAP_AUDIT_JSONL: path.join(HL_TWAP_DATA_DIR, 'signals.jsonl'),
-  HL_TWAP_HEARTBEAT_PATH: path.join(HL_TWAP_DATA_DIR, 'heartbeat.json'),
-  HL_TWAP_POLL_INTERVAL_MS: '2000',
-  HL_TWAP_HEARTBEAT_MS: '60000',
-  HL_TWAP_LIVE_NOTIONAL_USD: '800',
-  HL_TWAP_LIVE_MARGIN_LEV3_USD: '1500',
-  HL_TWAP_LIVE_MARGIN_LEV5_USD: '1000',
-  HL_TWAP_LIVE_MARGIN_LEV7_USD: '800',
-  HL_TWAP_LIVE_MARGIN_MAX_USD: '800',
-  HL_TWAP_LIVE_MARGIN_MIN_USD: '800',
-  HL_TWAP_LIVE_LEVERAGE: '7',
-  HL_TWAP_LIVE_LADDER_MODE: 'price',
-  HL_TWAP_LIVE_LADDER_DCA_PCT_OF_INITIAL: '50',
-  HL_TWAP_LIVE_DYNAMIC_MARGIN_DCA_RESERVE: '1',
-  HL_TWAP_LIVE_LADDER_STEP_PCT: '2',
-  HL_TWAP_LIVE_LADDER_SLICE_PCT: '30',
-  HL_TWAP_LIVE_COIN_MAX_LEGS: '2',
-  HL_TWAP_LIVE_MAX_BOOK_GROSS_USD: '12000',
-  HL_TWAP_LIVE_DYNAMIC_MARGIN: '0',
-  HL_TWAP_COIN_MOMENTUM_GATE: '0',
-  HL_TWAP_LIVE_COIN_PRIOR_LOSS_BLOCK: '0',
-  HL_TWAP_BTC_ALIGNED_GATE: '0',
-  HL_TWAP_MIN_IMPACT_PCT_HOUR: '2',
-  HL_TWAP_LIVE_DRAWDOWN_STOP_USD: '1000',
-  HL_TWAP_LIVE_DRAWDOWN_CHECK_MS: '60000',
-  HL_TWAP_BALANCE_HOURLY_TELEGRAM: '1',
-};
 
 /**
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
@@ -1301,32 +1255,9 @@ const PM2_APPS = [
         RETRACE_ALERT_DRY_RUN: '0',
       },
     },
+        },
     /**
-     * HL TWAP whale watch + live perp bot. Прямой tsx (не npm) — стабильный autorestart PM2.
-     * Секреты HL_TWAP_* / HL_TWAP_LIVE_PRIVATE_KEY — в `.env` хоста.
-     */
-    {
-      name: 'hl-twap-telegram-watch',
-      cwd: root,
-      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
-      args: 'src/scripts/hl-twap-telegram-watch.ts',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 100,
-      min_uptime: 10_000,
-      restart_delay: 5000,
-      max_memory_restart: '512M',
-      kill_timeout: 15_000,
-      merge_logs: true,
-      time: true,
-      env: {
-        ...HL_TWAP_LIVE_ENV,
-      },
-    },
-    /**
-     * Unified watchdog: hl-twap, live-oscar, copy-trader.
+     * Unified watchdog: live-oscar, copy-trader.
      * PM2 status + heartbeat.json every 30s → auto-restart + [ALERT][strategy_watch].
      */
     {
@@ -1388,8 +1319,8 @@ const PM2_APPS = [
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
         COPY_TRADER_BUY_DELAY_MS: '30000',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Split entry: $300 probe (30%) + $700 dip @ leader−10%. */
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.3',
+        /** Split entry: $500 probe (50%) + $500 dip @ leader−10%. */
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.5',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '10',
         COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS: '2',
         COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '0',
