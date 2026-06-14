@@ -665,6 +665,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           };
     if (!existing || existing.expiresAt <= now) {
       stagedEntrySignals.set(args.mint, signal);
+      if (resolveLiveOscar()?.liveCfg.executionMode === 'live') {
+        cancelLivePostCloseTailSweepForMint(args.mint);
+      }
       journalLiveStrategy?.({
         kind: 'live_staged_entry_signal',
         mint: args.mint,

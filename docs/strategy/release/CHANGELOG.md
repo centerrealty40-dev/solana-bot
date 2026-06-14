@@ -42,6 +42,19 @@
 
 ---
 
+## [1.11.450] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.450`
+
+### Live Oscar: post-close tail sweep cap + cancel on re-entry
+
+- **`LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD`** (default **$25**) — skip tail sweep when on-chain balance est. exceeds cap (prevents selling a fresh re-entry after KILLSTOP).
+- Cancel pending tail-sweep timer on new buy pipeline / `live_staged_entry_signal` for the same mint.
+
+**Откат:** `git checkout sa-alpha-1.11.449 -- src/live/post-close-tail-sweep.ts src/live/config.ts src/live/phase4-execution.ts src/papertrader/main.ts tests/live-oscar-config.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.449] — 2026-06-14
 
 **Тег:** `sa-alpha-1.11.449`

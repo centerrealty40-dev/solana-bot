@@ -115,6 +115,18 @@ async function runLivePostCloseTailSweep(args: {
 
     const tokens = Number(raw) / 10 ** dec;
     const estUsd = Number.isFinite(tokens) && tokens > 0 ? tokens * px : 0;
+    const maxUsd = liveCfg.livePostCloseTailSweepMaxUsd;
+    if (maxUsd > 0 && estUsd > maxUsd) {
+      appendLiveJsonlEvent({
+        kind: 'live_post_close_tail',
+        mint,
+        ok: true,
+        note: 'balance_above_tail_cap',
+        rawAtoms: raw.toString(),
+        estUsd: +estUsd.toFixed(8),
+      });
+      return;
+    }
     const floorUsd = liveCfg.livePostCloseTailSweepMinUsd;
     const usdNotional = Math.max(estUsd, floorUsd);
 

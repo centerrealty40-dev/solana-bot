@@ -302,6 +302,8 @@ const LiveOscarConfigSchema = z
     livePostCloseTailSweepDelayMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
     /** Floor USD notional hint for Jupiter when estimating microscopic tails (actual sell uses on-chain raw). */
     livePostCloseTailSweepMinUsd: z.coerce.number().min(0).max(1000).default(0.05),
+    /** Skip tail sweep when on-chain balance est. USD exceeds this (prevents selling a fresh re-entry). */
+    livePostCloseTailSweepMaxUsd: z.coerce.number().min(0).max(10_000).default(25),
 
     /**
      * Двухногий вход: после первого `buy_open` трекер докупает `(1 − PAPER_ENTRY_FIRST_LEG_FRACTION)×positionUsd`,
@@ -740,6 +742,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 0.05;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : 0.05;
+    })(),
+    livePostCloseTailSweepMaxUsd: (() => {
+      const s = process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD?.trim();
+      if (!s) return 25;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : 25;
     })(),
 
     liveEntryScaleInEnabled: envBool(process.env.LIVE_ENTRY_SCALE_IN_ENABLED, false),
