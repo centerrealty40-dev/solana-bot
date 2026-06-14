@@ -42,6 +42,19 @@
 
 ---
 
+## [1.11.451] — 2026-06-14
+
+**Тег:** `sa-alpha-1.11.451`
+
+### Copy-trader: enter on leader rebuy after missed first entry
+
+- **`COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY=1`** (default on): если мы пропустили первый вход, а лидер докупает/усредняет — ставим обычный entry (probe $500 + dip $500), вместо `leader_buy_ignored` / `missed_entry_leader_already_in`.
+- Journal: `leader_buy_scheduled.lateEntryOnLeaderRebuy=true`.
+
+**Откат:** `git checkout sa-alpha-1.11.450 -- src/copytrader/ docs/strategy/release/ ecosystem.config.cjs tests/copytrader/late-entry-on-rebuy.test.ts`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.450] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.450`

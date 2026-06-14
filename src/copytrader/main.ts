@@ -22,6 +22,7 @@ import {
   usesDipOnlyEntry,
   usesSplitEntryProbe,
 } from './entry-probe.js';
+import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
 import {
   applyLeaderSwapToLedger,
@@ -246,7 +247,8 @@ async function onLeaderBuy(
   }
 
   if (hasPendingBuyForMint(state, mint)) return;
-  if (preLeaderRaw > 0n) {
+  const lateEntryOnLeaderRebuy = preLeaderRaw > 0n;
+  if (shouldIgnoreMissedEntryLeaderRebuy(cfg, preLeaderRaw)) {
     appendCopyEvent(cfg, {
       kind: 'leader_buy_ignored',
       reason: 'missed_entry_leader_already_in',
@@ -276,6 +278,7 @@ async function onLeaderBuy(
       preLeaderRaw,
       swap,
       row,
+      lateEntryOnLeaderRebuy,
     });
     return;
   }
@@ -290,6 +293,7 @@ async function onLeaderBuy(
     preLeaderRaw,
     swap,
     row,
+    lateEntryOnLeaderRebuy,
   });
 }
 
@@ -372,9 +376,21 @@ async function schedulePendingBuy(
     preLeaderRaw: bigint;
     swap: SwapInsert;
     row: SignatureRow;
+    lateEntryOnLeaderRebuy?: boolean;
   },
 ): Promise<void> {
-  const { mint, symbol, kind, sizeUsd, entryLeg, leaderAddFraction, preLeaderRaw, swap, row } = args;
+  const {
+    mint,
+    symbol,
+    kind,
+    sizeUsd,
+    entryLeg,
+    leaderAddFraction,
+    preLeaderRaw,
+    swap,
+    row,
+    lateEntryOnLeaderRebuy,
+  } = args;
   const dueTs = Date.now() + cfg.buyDelayMs;
   const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
@@ -416,6 +432,7 @@ async function schedulePendingBuy(
     entryLeg: entryLeg ?? null,
     entryProbeFraction: entryLeg === 'probe' ? cfg.entryProbeFraction : null,
     entryDipDiscountPct: entryLeg === 'dip' ? cfg.entryDipDiscountPct : null,
+    lateEntryOnLeaderRebuy: lateEntryOnLeaderRebuy ?? false,
   });
 
   const delayMin = Math.max(1, Math.round(cfg.buyDelayMs / 60_000));
@@ -434,7 +451,9 @@ async function schedulePendingBuy(
       detail:
         kind === 'add'
           ? `Add $${sizeUsd}${pct} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`
-          : `Buy $${sizeUsd} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`,
+          : lateEntryOnLeaderRebuy
+            ? `Late entry (leader rebuy) $${sizeUsd} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`
+            : `Buy $${sizeUsd} queued ~${delayMin} min, retry ${Math.round(cfg.buyRetryWindowMs / 60_000)}m if gates fail`,
     }),
   );
 }
