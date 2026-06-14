@@ -15,6 +15,7 @@ import {
   liveSellQuoteAndPrepareSnapshot,
   tokensPerInLamportFromQuote,
 } from './jupiter.js';
+import { cancelLivePostCloseTailSweepForMint } from './post-close-tail-sweep.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
@@ -422,6 +423,10 @@ async function runSolToTokenPipeline(
         };
       }
     }
+  }
+
+  if (liveCfg.executionMode === 'live') {
+    cancelLivePostCloseTailSweepForMint(args.mint);
   }
 
   const kp = signer(liveCfg);

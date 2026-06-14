@@ -124,6 +124,10 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(0);
     process.env.LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS = '120000';
     expect(loadLiveOscarConfig().livePostCloseTailSweepDelayMs).toBe(120_000);
+    delete process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD;
+    expect(loadLiveOscarConfig().livePostCloseTailSweepMaxUsd).toBe(25);
+    process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD = '50';
+    expect(loadLiveOscarConfig().livePostCloseTailSweepMaxUsd).toBe(50);
   });
 
   it('parses LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', () => {
