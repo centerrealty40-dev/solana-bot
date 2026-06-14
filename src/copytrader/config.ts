@@ -55,6 +55,8 @@ const CopyTraderConfigSchema = z.object({
   entryMinDeployFraction: z.coerce.number().min(0.5).max(1).default(0.99),
   /** Leader add mirror: max premium vs leader add price (0 = at or below leader only). */
   addPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(0),
+  /** Enter when leader rebuys/averages into a mint we missed on first buy (default on). */
+  allowLateEntryOnLeaderRebuy: z.boolean().default(true),
   minLeaderBuyUsd: z.coerce.number().min(0).max(1_000_000).default(50),
   minLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(15_000),
   minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
@@ -141,6 +143,10 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryDipVsProbePct: process.env.COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT,
     entryMinDeployFraction: process.env.COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION,
     addPriceMaxPremiumPct: process.env.COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT,
+    allowLateEntryOnLeaderRebuy: envBool(
+      process.env.COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY,
+      true,
+    ),
     minLeaderBuyUsd: process.env.COPY_TRADER_MIN_LEADER_BUY_USD,
     minLiquidityUsd: process.env.COPY_TRADER_MIN_LIQUIDITY_USD,
     minMarketCapUsd: process.env.COPY_TRADER_MIN_MCAP_USD,

@@ -1325,6 +1325,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '0',
         COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /** Skip new entries/adds when Dex mcap < $1M (existing positions e.g. GO unchanged). */
         COPY_TRADER_MIN_MCAP_USD: '1000000',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
