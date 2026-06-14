@@ -42,6 +42,18 @@
 
 ---
 
+## [1.11.448] — 2026-06-13
+
+**Тег:** `sa-alpha-1.11.448`
+
+### Copy-trader: probe leg $500 (50% of $1000 position)
+
+- **`COPY_TRADER_ENTRY_PROBE_FRACTION=0.5`** — первая нога **$500** сразу за лидером; dip **$500** @ leader−10%.
+
+**Откат:** `ENTRY_PROBE_FRACTION=0.3`; `pm2 reload ecosystem.config.cjs --only copy-trader --update-env`.
+
+---
+
 ## [1.11.447] — 2026-06-13
 
 **Тег:** `sa-alpha-1.11.447`
