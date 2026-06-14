@@ -1255,7 +1255,6 @@ const PM2_APPS = [
         RETRACE_ALERT_DRY_RUN: '0',
       },
     },
-        },
     /**
      * Unified watchdog: live-oscar, copy-trader.
      * PM2 status + heartbeat.json every 30s → auto-restart + [ALERT][strategy_watch].
