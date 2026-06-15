@@ -3,7 +3,11 @@
  * W7.4.1 — optional retries + circuit breaker (`jupiter-quote-resilience.ts`).
  */
 import { child } from '../../core/logger.js';
-import { JUPITER_QUOTE_URL_DEFAULT, fetchJupiterSwapQuoteGetJson, jupiterJsonHeaders } from '../../core/jupiter-http.js';
+import {
+  JUPITER_QUOTE_URL_DEFAULT,
+  fetchJupiterSwapQuoteGetJson,
+  fetchJupiterSwapQuoteGetResult,
+} from '../../core/jupiter-http.js';
 import type { PaperTraderConfig } from '../config.js';
 import { quoteResilienceFromPaperCfg } from '../config.js';
 import type { PriceVerifyVerdict } from '../types.js';
@@ -139,50 +143,27 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
 
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
-  let elapsed = 0;
-  let resp: Response | null = null;
-  let txt: string | null = null;
   const start = Date.now();
-  try {
-    resp = await fetch(url.toString(), {
-      method: 'GET',
-      signal: ac.signal,
-      headers: jupiterJsonHeaders(),
-    });
-    elapsed = Date.now() - start;
-    if (!resp.ok) {
-      log.debug(
-        { status: resp.status, mint, elapsed, rateLimited: resp.status === 429 },
-        resp.status === 429
-          ? 'jupiter quote rate limited (impulse)'
-          : 'jupiter quote http error (impulse)',
-      );
-      if (resp.status === 400 || resp.status === 404) {
-        return { kind: 'skipped', reason: 'no-route', ts };
-      }
-      return { kind: 'skipped', reason: 'http-error', ts };
+  const fetched = await fetchJupiterSwapQuoteGetResult({ url: url.toString(), timeoutMs });
+  const elapsed = Date.now() - start;
+  if (!fetched.ok) {
+    if (fetched.aborted) {
+      log.debug({ mint, elapsed }, 'jupiter quote timeout (impulse)');
+      return { kind: 'skipped', reason: 'timeout', ts };
     }
-    txt = await resp.text();
-  } catch (e) {
-    elapsed = Date.now() - start;
-    const aborted = (e as Error)?.name === 'AbortError';
+    if (fetched.status === 400 || fetched.status === 404) {
+      return { kind: 'skipped', reason: 'no-route', ts };
+    }
     log.debug(
-      { mint, elapsed, err: (e as Error)?.message },
-      aborted ? 'jupiter quote timeout (impulse)' : 'jupiter quote fetch fail (impulse)',
+      { status: fetched.status, mint, elapsed, rateLimited: fetched.status === 429 },
+      fetched.status === 429
+        ? 'jupiter quote rate limited (impulse)'
+        : 'jupiter quote http error (impulse)',
     );
-    return { kind: 'skipped', reason: aborted ? 'timeout' : 'fetch-fail', ts };
-  } finally {
-    clearTimeout(tt);
+    return { kind: 'skipped', reason: fetched.status ? 'http-error' : 'fetch-fail', ts };
   }
 
-  let body: JupiterQuoteResponse | null = null;
-  try {
-    body = JSON.parse(txt!) as JupiterQuoteResponse;
-  } catch {
-    return { kind: 'skipped', reason: 'parse-error', ts };
-  }
+  const body = fetched.body as JupiterQuoteResponse;
 
   const outAmountStr = body?.outAmount;
   if (!outAmountStr || !/^\d+$/.test(outAmountStr)) {
@@ -290,48 +271,25 @@ async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Pro
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
 
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(500, timeoutMs));
-  let elapsed = 0;
-  let resp: Response | null = null;
-  let txt: string | null = null;
   const start = Date.now();
-  try {
-    resp = await fetch(url.toString(), {
-      method: 'GET',
-      signal: ac.signal,
-      headers: jupiterJsonHeaders(),
-    });
-    elapsed = Date.now() - start;
-    if (!resp.ok) {
-      log.debug(
-        { status: resp.status, mint, elapsed, rateLimited: resp.status === 429 },
-        resp.status === 429 ? 'jupiter sell quote rate limited' : 'jupiter sell quote http error',
-      );
-      if (resp.status === 400 || resp.status === 404) {
-        return { kind: 'skipped', reason: 'no-route', ts };
-      }
-      return { kind: 'skipped', reason: 'http-error', ts };
+  const fetched = await fetchJupiterSwapQuoteGetResult({ url: url.toString(), timeoutMs });
+  const elapsed = Date.now() - start;
+  if (!fetched.ok) {
+    if (fetched.aborted) {
+      log.debug({ mint, elapsed }, 'jupiter sell quote timeout');
+      return { kind: 'skipped', reason: 'timeout', ts };
     }
-    txt = await resp.text();
-  } catch (e) {
-    elapsed = Date.now() - start;
-    const aborted = (e as Error)?.name === 'AbortError';
+    if (fetched.status === 400 || fetched.status === 404) {
+      return { kind: 'skipped', reason: 'no-route', ts };
+    }
     log.debug(
-      { mint, elapsed, err: (e as Error)?.message },
-      aborted ? 'jupiter sell quote timeout' : 'jupiter sell quote fetch fail',
+      { status: fetched.status, mint, elapsed, rateLimited: fetched.status === 429 },
+      fetched.status === 429 ? 'jupiter sell quote rate limited' : 'jupiter sell quote http error',
     );
-    return { kind: 'skipped', reason: aborted ? 'timeout' : 'fetch-fail', ts };
-  } finally {
-    clearTimeout(tt);
+    return { kind: 'skipped', reason: fetched.status ? 'http-error' : 'fetch-fail', ts };
   }
 
-  let body: JupiterQuoteResponse | null = null;
-  try {
-    body = JSON.parse(txt!) as JupiterQuoteResponse;
-  } catch {
-    return { kind: 'skipped', reason: 'parse-error', ts };
-  }
+  const body = fetched.body as JupiterQuoteResponse;
 
   const outAmountStr = body?.outAmount;
   if (!outAmountStr || !/^\d+$/.test(outAmountStr)) {
