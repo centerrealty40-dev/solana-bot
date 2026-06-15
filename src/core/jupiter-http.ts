@@ -42,17 +42,21 @@ async function sleepMs(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+export type JupiterSwapQuoteGetResult =
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; status?: number; aborted?: boolean };
+
 /**
  * GET JSON for Jupiter `/swap/v1/quote` (and same-shape sell quotes).
  * Retries on **HTTP 429** with exponential backoff and optional `Retry-After` (seconds).
  * Uses `jupiterJsonHeaders()` → **`JUPITER_API_KEY`** from your Jupiter Developer account as **`x-api-key`** (Pro limits apply to that key; the app never mints a new key).
  * Tuned for Developer Platform bursts; set `JUPITER_QUOTE_429_MAX_RETRIES=0` to disable.
  */
-export async function fetchJupiterSwapQuoteGetJson(args: {
+export async function fetchJupiterSwapQuoteGetResult(args: {
   url: string;
   timeoutMs: number;
   extraHeaders?: Record<string, string>;
-}): Promise<Record<string, unknown> | null> {
+}): Promise<JupiterSwapQuoteGetResult> {
   const maxR = jupiterQuote429MaxRetries();
   let backoff = jupiterQuote429InitialBackoffMs();
   for (let j = 0; j <= maxR; j++) {
@@ -82,18 +86,37 @@ export async function fetchJupiterSwapQuoteGetJson(args: {
         backoff = Math.min(8000, Math.floor(backoff * 1.8) || 200);
         continue;
       }
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        try {
+          await resp.text();
+        } catch {
+          /* ignore body */
+        }
+        return { ok: false, status: resp.status };
+      }
       const raw = (await resp.json()) as unknown;
-      return typeof raw === 'object' && raw != null && !Array.isArray(raw)
-        ? (raw as Record<string, unknown>)
-        : null;
-    } catch {
-      return null;
+      const body =
+        typeof raw === 'object' && raw != null && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : null;
+      if (!body) return { ok: false, status: resp.status };
+      return { ok: true, body };
+    } catch (e) {
+      return { ok: false, aborted: (e as Error)?.name === 'AbortError' };
     } finally {
       clearTimeout(tt);
     }
   }
-  return null;
+  return { ok: false, status: 429 };
+}
+
+export async function fetchJupiterSwapQuoteGetJson(args: {
+  url: string;
+  timeoutMs: number;
+  extraHeaders?: Record<string, string>;
+}): Promise<Record<string, unknown> | null> {
+  const r = await fetchJupiterSwapQuoteGetResult(args);
+  return r.ok ? r.body : null;
 }
 
 export function jupiterPriceV3Url(id: string): string {

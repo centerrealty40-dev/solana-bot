@@ -46,6 +46,19 @@
 
 ---
 
+## [1.11.456] — 2026-06-15
+
+**Тег:** `sa-alpha-1.11.456`
+
+### Jupiter Pro: 429 retry on discovery/tracker/verify quote paths
+
+- **`fetchJupiterSwapQuoteGetResult`** — structured GET result with **429 exponential backoff** + `Retry-After`; `fetchJupiterSwapQuoteGetJson` wraps it for existing callers.
+- **`price-verify.ts`** — buy/sell impulse quotes now use the shared Jupiter HTTP helper (Pro `x-api-key`, 429 retries) instead of raw `fetch` — fixes rate-limit storms on discovery, tracker, and verify paths that bypassed the live-oscar/copy-trader pipeline.
+
+**Откат:** redeploy `sa-alpha-1.11.455`; revert `src/core/jupiter-http.ts` and `src/papertrader/pricing/price-verify.ts`.
+
+---
+
 ## [1.11.455] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.455`
