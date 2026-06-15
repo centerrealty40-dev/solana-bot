@@ -418,6 +418,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.dcaLastEvalPnlVsAvgFrac = dlap;
     }
 
+    const lps = rawPayload.lastPartialSellTs;
+    if (typeof lps === 'number' && Number.isFinite(lps) && lps > 0) {
+      ot.lastPartialSellTs = lps;
+    } else if (partialSells.length > 0) {
+      const lastTs = partialSells[partialSells.length - 1]!.ts;
+      if (Number.isFinite(lastTs) && lastTs > 0) ot.lastPartialSellTs = lastTs;
+    }
+
     /** Wave migration runs on first tracker tick when `PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B=1`. */
     if (lepi !== 'wave_b_v1' && lepi !== 'variant_a_v1' && lepi !== 'variant_a_v2' && lepi !== 'variant_a_v3') {
       ensureLiveOscarExitPolicyPinned(ot);

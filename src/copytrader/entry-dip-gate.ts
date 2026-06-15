@@ -23,7 +23,28 @@ export type EntryDipEvalPrice = {
   priceUsd: number;
   source: 'jupiter_quote' | 'dex';
   quoteUnavailable: boolean;
+  /** True when eval reused cached Jupiter price within min-interval window. */
+  quoteCached?: boolean;
 };
+
+export type EntryDipQuoteCache = {
+  lastTs?: number;
+  lastPriceUsd?: number;
+};
+
+/** Returns cached eval price when within `entryDipJupiterMinIntervalMs`; else null. */
+export function entryDipQuoteCacheHit(
+  cfg: CopyTraderConfig,
+  cache: EntryDipQuoteCache | undefined,
+  nowMs = Date.now(),
+): number | null {
+  const minIv = cfg.entryDipJupiterMinIntervalMs;
+  if (minIv <= 0 || cache?.lastTs == null || !(cache.lastPriceUsd != null && cache.lastPriceUsd > 0)) {
+    return null;
+  }
+  if (nowMs - cache.lastTs < minIv) return cache.lastPriceUsd;
+  return null;
+}
 
 /** Live/dry_run: gate on Jupiter quote price; paper: Dex spot. */
 export async function resolveEntryDipEvalPrice(args: {
@@ -31,10 +52,18 @@ export async function resolveEntryDipEvalPrice(args: {
   mint: string;
   dipSizeUsd: number;
   dexPriceUsd: number;
+  quoteCache?: EntryDipQuoteCache;
+  nowMs?: number;
 }): Promise<EntryDipEvalPrice> {
-  const { cfg, mint, dipSizeUsd, dexPriceUsd } = args;
+  const { cfg, mint, dipSizeUsd, dexPriceUsd, quoteCache } = args;
+  const nowMs = args.nowMs ?? Date.now();
   if (cfg.executionMode === 'paper') {
     return { priceUsd: dexPriceUsd, source: 'dex', quoteUnavailable: false };
+  }
+
+  const cached = entryDipQuoteCacheHit(cfg, quoteCache, nowMs);
+  if (cached != null) {
+    return { priceUsd: cached, source: 'jupiter_quote', quoteUnavailable: false, quoteCached: true };
   }
 
   const solUsd = getSolUsd();
@@ -50,6 +79,10 @@ export async function resolveEntryDipEvalPrice(args: {
   const priceUsd = impliedBuyPriceUsdFromQuote(quote.quoteResponse, solUsd);
   if (!(priceUsd > 0)) {
     return { priceUsd: 0, source: 'jupiter_quote', quoteUnavailable: true };
+  }
+  if (quoteCache) {
+    quoteCache.lastTs = nowMs;
+    quoteCache.lastPriceUsd = priceUsd;
   }
   return { priceUsd, source: 'jupiter_quote', quoteUnavailable: false };
 }

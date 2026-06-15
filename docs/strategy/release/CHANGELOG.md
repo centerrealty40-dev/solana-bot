@@ -42,6 +42,20 @@
 
 ---
 
+## [1.11.452] — 2026-06-15
+
+**Тег:** `sa-alpha-1.11.452`
+
+### Jupiter 429 mitigation — live-oscar + copy-trader
+
+- **Live Oscar partial TP:** `LIVE_PARTIAL_TP_MIN_INTERVAL_MS` / `PAPER_LIVE_PARTIAL_TP_MIN_INTERVAL_MS` (prod **5000** ms) — defer `tryExecuteTpPartialSell` via `defer_next` when same mint sold too recently.
+- **Live Oscar discovery:** `PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK` **25→5**, near-miss **15→5**.
+- **Copy-trader:** `COPY_TRADER_MIN_SELL_INTERVAL_MS` (**5000**), `COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS` (**12000**) — sell spacing + cached dip eval quotes.
+
+**Откат:** set throttle env to `0`; restore discovery max-per-tick **25/15**; redeploy NORM §5.
+
+---
+
 ## [1.11.451] — 2026-06-14
 
 **Тег:** `sa-alpha-1.11.451`

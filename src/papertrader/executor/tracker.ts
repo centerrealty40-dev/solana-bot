@@ -631,6 +631,11 @@ async function tryExecuteTpPartialSell(args: {
     markLadder();
     return 'ok';
   }
+  const minPartialInterval = cfg.livePartialTpMinIntervalMs;
+  if (minPartialInterval > 0 && ot.lastPartialSellTs != null) {
+    const elapsed = Date.now() - ot.lastPartialSellTs;
+    if (elapsed < minPartialInterval) return 'defer_next';
+  }
   const remainUsdForFlush = waveBRemainderValueNetUsd(ot, marketSell);
   let sellFraction = Math.min(1, rawSellFrac);
   if (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot)) {
@@ -818,6 +823,7 @@ async function tryExecuteTpPartialSell(args: {
       : {}),
   };
   ot.partialSells.push(ps);
+  ot.lastPartialSellTs = ps.ts;
   ot.remainingFraction *= 1 - sellFraction;
   /**
    * Live partial: Phase 4 caps token raw amount to on-chain balance (`computedBn > chainAmt` → sell all atoms).
