@@ -20,6 +20,8 @@ import {
 import {
   entryDipSizeUsd,
   entryProbeSizeUsd,
+  entryScheduleDelayMs,
+  isEntryProbePending,
   usesDipOnlyEntry,
   usesSplitEntryProbe,
 } from './entry-probe.js';
@@ -392,7 +394,7 @@ async function schedulePendingBuy(
     row,
     lateEntryOnLeaderRebuy,
   } = args;
-  const dueTs = Date.now() + cfg.buyDelayMs;
+  const dueTs = Date.now() + entryScheduleDelayMs(cfg, { kind, entryLeg });
   const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
     id: newId('pb'),
@@ -427,7 +429,7 @@ async function schedulePendingBuy(
     leaderBuyUsd: swap.amountUsd,
     leaderAddFraction: leaderAddFraction ?? null,
     buyDueTs: dueTs,
-    buyDelayMs: cfg.buyDelayMs,
+    buyDelayMs: entryScheduleDelayMs(cfg, { kind, entryLeg }),
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
     entryLeg: entryLeg ?? null,
@@ -696,15 +698,20 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     let currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
-    let dipPriceSource: 'jupiter_quote' | 'dex' | undefined;
+    let entryPriceSource: 'jupiter_quote' | 'dex' | undefined;
     const isEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
+    const isEntryProbe = isEntryProbePending({
+      kind: pending.kind,
+      entryLeg: pending.entryLeg,
+      usesDipOnly: usesDipOnlyEntry(cfg),
+    });
 
-    if (isEntryDip) {
+    if (isEntryDip || isEntryProbe) {
       const dipQuoteCache: EntryDipQuoteCache = {
         lastTs: pending.lastDipQuoteTs,
         lastPriceUsd: pending.lastDipQuotePriceUsd,
       };
-      const dipPx = await resolveEntryDipEvalPrice({
+      const evalPx = await resolveEntryDipEvalPrice({
         cfg,
         mint: pending.mint,
         dipSizeUsd: pending.sizeUsd,
@@ -714,8 +721,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       });
       pending.lastDipQuoteTs = dipQuoteCache.lastTs;
       pending.lastDipQuotePriceUsd = dipQuoteCache.lastPriceUsd;
-      if (dipPx.quoteUnavailable) {
-        resetEntryDipPassStreak(state, pending.id);
+      if (evalPx.quoteUnavailable) {
+        if (isEntryDip) resetEntryDipPassStreak(state, pending.id);
         if (noteBuyDefer(state, pending.id, now, cfg)) {
           appendCopyEvent(cfg, {
             kind: 'buy_deferred',
@@ -724,14 +731,14 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
             leaderSignature: pending.leaderSignature,
             leaderPriceUsd: pending.leaderPriceUsd,
             currentPriceUsd: currentPrice,
-            reason: 'jupiter_dip_quote_unavailable',
+            reason: isEntryProbe ? 'jupiter_probe_quote_unavailable' : 'jupiter_dip_quote_unavailable',
             retryUntilTs: pending.retryUntilTs,
           });
         }
         continue;
       }
-      currentPrice = dipPx.priceUsd;
-      dipPriceSource = dipPx.source;
+      currentPrice = evalPx.priceUsd;
+      entryPriceSource = evalPx.source;
     }
 
     const evalInput = {
@@ -762,7 +769,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           leaderSignature: pending.leaderSignature,
           leaderPriceUsd: pending.leaderPriceUsd,
           currentPriceUsd: currentPrice,
-          entryDipPriceSource: dipPriceSource ?? null,
+          entryDipPriceSource: entryPriceSource ?? null,
           eval: evalResult,
           retryUntilTs: pending.retryUntilTs,
         });
@@ -794,7 +801,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
             leaderSignature: pending.leaderSignature,
             leaderPriceUsd: pending.leaderPriceUsd,
             currentPriceUsd: currentPrice,
-            entryDipPriceSource: dipPriceSource ?? null,
+            entryDipPriceSource: entryPriceSource ?? null,
             dipPassStreak: streak,
             entryDipConfirmTicks: cfg.entryDipConfirmTicks,
             reason: entryDipConfirmReason(
@@ -1080,6 +1087,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     maxAddsPerMint: cfg.maxAddsPerMint > 0 ? cfg.maxAddsPerMint : 'unlimited',
     maxOpenPositions: cfg.maxOpenPositions > 0 ? cfg.maxOpenPositions : 'unlimited',
     buyDelayMin: Math.round(cfg.buyDelayMs / 60_000),
+    probeBuyDelaySec: Math.round(cfg.entryProbeBuyDelayMs / 1000),
+    buyPriceMaxPremiumPct: cfg.buyPriceMaxPremiumPct,
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),

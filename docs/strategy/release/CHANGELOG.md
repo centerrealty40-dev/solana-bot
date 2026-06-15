@@ -44,6 +44,21 @@
 
 ---
 
+---
+
+## [1.11.455] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.455`
+
+### Copy-trader: probe сразу после лидера, gate +3% по Jupiter quote
+
+- **`COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS=0`** — первая нога (probe $500) без 30-сек паузы; adds по-прежнему `COPY_TRADER_BUY_DELAY_MS=30s`.
+- Probe/full entry в live: цена для gate берётся из **Jupiter buy quote** (как dip), не только Dex — не покупаем, если исполнимая цена **> leader × 1.03** (`COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT=3`).
+
+**Откат:** redeploy `sa-alpha-1.11.454`; убрать `COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS` или вернуть probe delay к `buyDelayMs`.
+
+---
+
 ## [1.11.454] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.454`
