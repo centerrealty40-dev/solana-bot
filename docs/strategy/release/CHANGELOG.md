@@ -42,6 +42,18 @@
 
 ---
 
+## [1.11.453] — 2026-06-15
+
+**Тег:** `sa-alpha-1.11.453`
+
+### Post-crash stabilize 25m → 15m (live-oscar)
+
+- `PAPER_POST_CRASH_FAST_PATH_STABILIZE_MIN`: **25 → 15** — раньше разрешаем вход после spike-crash, если остальные post-crash гейты проходят.
+
+**Откат:** вернуть **25** в `ecosystem.config.cjs`; redeploy NORM §5.
+
+---
+
 ## [1.11.452] — 2026-06-15
 
 **Тег:** `sa-alpha-1.11.452`

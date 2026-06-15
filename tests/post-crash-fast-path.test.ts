@@ -15,7 +15,7 @@ function cfg(partial: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     postCrashFastPathMinDropPct: -16,
     postCrashFastPathMaxDropPct: -50,
     postCrashFastPathMinVolSpikeMult: 5,
-    postCrashFastPathStabilizeMin: 25,
+    postCrashFastPathStabilizeMin: 15,
     postCrashFastPathMaxAgeMin: 240,
     postCrashFastPathMaxKnife15mPct: -8,
     postCrashFastPathBypassLocalHighVeto: true,
