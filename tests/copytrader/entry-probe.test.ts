@@ -12,6 +12,8 @@ import {
   entryDipMaxPriceUsd,
   entryDipSizeUsd,
   entryProbeSizeUsd,
+  entryScheduleDelayMs,
+  isEntryProbePending,
   leaderDipTargetPx,
   usesDipOnlyEntry,
   usesSplitEntryProbe,
@@ -273,5 +275,34 @@ describe('evaluateCopyAdd', () => {
     );
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('add_price_too_high'))).toBe(true);
+  });
+});
+
+describe('entryScheduleDelayMs', () => {
+  const cfg = {
+    ...prodEntryCfg,
+    buyDelayMs: 30_000,
+    entryProbeBuyDelayMs: 0,
+  } as CopyTraderConfig;
+
+  it('probe leg fires immediately after leader', () => {
+    expect(entryScheduleDelayMs(cfg, { kind: 'entry', entryLeg: 'probe' })).toBe(0);
+  });
+
+  it('dip leg schedules without extra buy delay', () => {
+    expect(entryScheduleDelayMs(cfg, { kind: 'entry', entryLeg: 'dip' })).toBe(0);
+  });
+
+  it('adds keep leader buy delay', () => {
+    expect(entryScheduleDelayMs(cfg, { kind: 'add' })).toBe(30_000);
+  });
+});
+
+describe('isEntryProbePending', () => {
+  it('treats probe and full entry as probe path', () => {
+    expect(isEntryProbePending({ kind: 'entry', entryLeg: 'probe', usesDipOnly: false })).toBe(true);
+    expect(isEntryProbePending({ kind: 'entry', usesDipOnly: false })).toBe(true);
+    expect(isEntryProbePending({ kind: 'entry', entryLeg: 'dip', usesDipOnly: false })).toBe(false);
+    expect(isEntryProbePending({ kind: 'entry', entryLeg: 'dip', usesDipOnly: true })).toBe(false);
   });
 });

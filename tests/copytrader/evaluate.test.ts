@@ -63,6 +63,29 @@ describe('evaluateCopyEntry', () => {
     expect(r.reasons).toHaveLength(0);
   });
 
+  it('passes at exactly +3% premium cap', () => {
+    const cfg = { ...baseCfg, buyPriceMaxPremiumPct: 3 };
+    const r = evaluateCopyEntry(cfg, {
+      mint: 'Mint1111111111111111111111111111111111111',
+      leaderPriceUsd: 0.001,
+      leaderBuyUsd: 200,
+      currentPriceUsd: 0.00103,
+      dex: {
+        symbol: 'TEST',
+        name: 'Test',
+        priceUsd: 0.00103,
+        marketCap: 500_000,
+        liquidityUsd: 40_000,
+        volume24h: 100_000,
+        volume1h: 5_000,
+        pairCreatedAtMs: Date.now() - 48 * 3600_000,
+        dexId: 'raydium',
+      },
+      nowMs: Date.now(),
+    });
+    expect(r.pass).toBe(true);
+  });
+
   it('rejects when current price exceeds leader tolerance', () => {
     const r = evaluateCopyEntry(baseCfg, {
       mint: 'Mint1111111111111111111111111111111111111',

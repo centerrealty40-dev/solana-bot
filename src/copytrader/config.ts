@@ -25,6 +25,8 @@ const CopyTraderConfigSchema = z.object({
   signatureLimit: z.coerce.number().int().min(5).max(50).default(25),
   tickIntervalMs: z.coerce.number().int().min(500).max(30_000).default(2000),
   buyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(30_000),
+  /** Probe / full entry: ms after leader buy before first attempt (default 0 = immediate). */
+  entryProbeBuyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   buyRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
   buyRetryDeferLogMs: z.coerce.number().int().min(5_000).max(3_600_000).default(60_000),
   sellRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
@@ -125,6 +127,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     signatureLimit: process.env.COPY_TRADER_SIGNATURE_LIMIT,
     tickIntervalMs: process.env.COPY_TRADER_TICK_INTERVAL_MS,
     buyDelayMs: process.env.COPY_TRADER_BUY_DELAY_MS,
+    entryProbeBuyDelayMs: process.env.COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS,
     buyRetryWindowMs: process.env.COPY_TRADER_BUY_RETRY_WINDOW_MS,
     buyRetryDeferLogMs: process.env.COPY_TRADER_BUY_RETRY_DEFER_LOG_MS,
     sellRetryWindowMs: process.env.COPY_TRADER_SELL_RETRY_WINDOW_MS,

@@ -1,4 +1,5 @@
 import type { CopyTraderConfig } from './config.js';
+import type { EntryLeg } from './state.js';
 
 /** Split entry: probe at leader+premium, remainder on dip below leader. */
 export function usesSplitEntryProbe(cfg: CopyTraderConfig): boolean {
@@ -46,4 +47,22 @@ export function entryDipMaxPriceUsd(
   if (!(probePx > 0) || !(cfg.entryDipVsProbePct > 0)) return fromLeader;
   const fromProbe = probePx * (1 - cfg.entryDipVsProbePct / 100);
   return Math.min(fromLeader, fromProbe);
+}
+
+/** Ms before first probe/full entry attempt after leader buy (dip leg schedules at 0 when probe fills). */
+export function entryScheduleDelayMs(
+  cfg: CopyTraderConfig,
+  args: { kind: 'entry' | 'add'; entryLeg?: EntryLeg },
+): number {
+  if (args.kind === 'entry' && args.entryLeg === 'probe') return cfg.entryProbeBuyDelayMs;
+  if (args.kind === 'entry' && args.entryLeg === 'dip') return 0;
+  return cfg.buyDelayMs;
+}
+
+export function isEntryProbePending(args: {
+  kind: 'entry' | 'add';
+  entryLeg?: EntryLeg;
+  usesDipOnly: boolean;
+}): boolean {
+  return args.kind === 'entry' && args.entryLeg !== 'dip' && !args.usesDipOnly;
 }
