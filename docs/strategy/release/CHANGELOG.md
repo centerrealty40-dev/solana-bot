@@ -42,6 +42,24 @@
 
 ---
 
+---
+
+## [1.11.454] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.454`
+
+### Copy-trader: premium Jupiter sell pipeline (fast exit)
+
+- **Sell delay:** `COPY_TRADER_SELL_DELAY` **20–30s → 0–2s** — выход сразу после сигнала лидера, без искусственной паузы.
+- **Jupiter Pro path:** copy-trader bridge читает `LIVE_JUPITER_*` / `LIVE_SELL_SIM_*` (veryHigh priority fee, 10 sim-retries, slippage bump до 500 bps) — тот же конверт, что live-oscar.
+- **Inner sell retry:** `executeLiveCopySell` — до 10 попыток quote→build→sim→send в одном вызове (раньше один выстрел + внешний retry каждые 6s).
+- **Swap 429:** `liveBuildUnsignedSwapTx` — backoff-retry на POST `/swap/v1/swap` (раньше только quote GET).
+- **PM2 env:** `LIVE_JUPITER_QUOTE_URL`, `LIVE_JUPITER_SWAP_URL`, priority, 429 tuning в блоке `copy-trader`.
+
+**Откат:** redeploy `sa-alpha-1.11.453`; вернуть sell delay 20–30s и убрать LIVE_* из copy-trader env в `ecosystem.config.cjs`.
+
+---
+
 ## [1.11.453] — 2026-06-15
 
 **Тег:** `sa-alpha-1.11.453`

@@ -8,11 +8,30 @@ import {
   liveSellQuoteAndPrepareSnapshot,
 } from '../live/jupiter.js';
 import { signLiveJupiterSwapBase64 } from '../live/simulate.js';
+import { isRetryableSellSimError, isSlippageClassSimError } from '../live/phase4-execution.js';
 import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isRetryableSellPreSendError(reason: string): boolean {
+  if (!reason) return false;
+  if (reason.startsWith('confirm_timeout')) return false;
+  if (reason.includes('swap-http-429')) return true;
+  if (reason === 'jupiter_sell_quote_failed') return true;
+  return isRetryableSellSimError(reason);
+}
+
+function bumpSellSlippageBps(args: {
+  currentBps: number;
+  bumpBps: number;
+  maxBps: number;
+}): number {
+  return Math.min(args.maxBps, Math.max(args.currentBps, args.currentBps + args.bumpBps));
+}
 
 let cachedSigner: Keypair | null = null;
 
@@ -141,44 +160,104 @@ export async function executeLiveCopySell(args: {
     return { ok: false, priceUsd: 0, reason: 'sell_amount_zero' };
   }
 
-  const prep = await liveSellQuoteAndPrepareSnapshot({
-    cfg: liveCfg,
-    inputMint: mint,
-    tokenAmountRaw: sellRaw.toString(),
-    solUsd,
-    userPublicKey: userPk,
-  });
-  if (!prep) {
-    return { ok: false, priceUsd: 0, reason: 'jupiter_sell_quote_failed' };
+  const maxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
+  const slippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
+  let slippageClassAttempts = 0;
+  let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  let lastReason = 'jupiter_sell_quote_failed';
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const prep = await liveSellQuoteAndPrepareSnapshot({
+      cfg: liveCfg,
+      inputMint: mint,
+      tokenAmountRaw: sellRaw.toString(),
+      solUsd,
+      userPublicKey: userPk,
+      slippageBpsOverride: currentSlippageBps,
+    });
+    if (!prep) {
+      lastReason = 'jupiter_sell_quote_failed';
+      if (attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd: 0, reason: lastReason };
+    }
+    if (!prep.swapBuild.ok) {
+      lastReason = prep.swapBuild.reason;
+      if (attempt < maxAttempts - 1 && isRetryableSellPreSendError(lastReason)) {
+        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd: 0, reason: lastReason };
+    }
+
+    const outRaw = prep.quoteResponse.outAmount;
+    const outLamports = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
+    const proceedsUsd = outLamports > 0 ? (outLamports / 1e9) * solUsd : 0;
+    const tokensSold = Number(sellRaw) / 1e6;
+    const exitPriceUsd = tokensSold > 0 && proceedsUsd > 0 ? proceedsUsd / tokensSold : 0;
+
+    const sent = await sendSwap(cfg, prep.swapBuild.b64, {
+      side: 'sell',
+      mint,
+      symbol,
+      leaderSignature,
+      sellFraction: fraction,
+      tokenAmountRaw: sellRaw.toString(),
+      quoteSnapshot: {
+        ...prep.quoteSnapshot,
+        sellSimRetryAttempt: attempt,
+        sellSimRetryMaxAttempts: maxAttempts,
+        slippageBps: currentSlippageBps,
+      },
+    });
+
+    const remaining = totalRaw > sellRaw ? (totalRaw - sellRaw).toString() : '0';
+
+    if (sent.ok) {
+      return {
+        ok: true,
+        priceUsd: exitPriceUsd,
+        signature: sent.signature,
+        tokenRawRemaining: remaining,
+      };
+    }
+
+    lastReason = sent.reason ?? 'send_failed';
+    if (lastReason.startsWith('confirm_timeout')) {
+      return {
+        ok: false,
+        priceUsd: exitPriceUsd,
+        signature: sent.signature,
+        tokenRawRemaining: remaining,
+        reason: lastReason,
+      };
+    }
+
+    const isSlippage = isSlippageClassSimError(lastReason);
+    if (isSlippage) {
+      slippageClassAttempts += 1;
+      currentSlippageBps = bumpSellSlippageBps({
+        currentBps: currentSlippageBps,
+        bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
+        maxBps: liveCfg.liveSimSlippageRetryMaxBps,
+      });
+    }
+    const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
+    if (!slippageBail && attempt < maxAttempts - 1 && isRetryableSellPreSendError(lastReason)) {
+      await sleep(liveCfg.liveSellSimRetryDelayMs);
+      continue;
+    }
+
+    return {
+      ok: false,
+      priceUsd: exitPriceUsd,
+      signature: sent.signature,
+      tokenRawRemaining: remaining,
+      reason: lastReason,
+    };
   }
-  if (!prep.swapBuild.ok) {
-    return { ok: false, priceUsd: 0, reason: prep.swapBuild.reason };
-  }
 
-  const outRaw = prep.quoteResponse.outAmount;
-  const outLamports = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-  const proceedsUsd = outLamports > 0 ? (outLamports / 1e9) * solUsd : 0;
-  // Per-token exit price (same 6-decimal assumption as executeLiveCopyBuy), not total proceeds.
-  const tokensSold = Number(sellRaw) / 1e6;
-  const exitPriceUsd = tokensSold > 0 && proceedsUsd > 0 ? proceedsUsd / tokensSold : 0;
-
-  const sent = await sendSwap(cfg, prep.swapBuild.b64, {
-    side: 'sell',
-    mint,
-    symbol,
-    leaderSignature,
-    sellFraction: fraction,
-    tokenAmountRaw: sellRaw.toString(),
-    quoteSnapshot: prep.quoteSnapshot,
-  });
-
-  const remaining = totalRaw > sellRaw ? (totalRaw - sellRaw).toString() : '0';
-
-  return {
-    ok: sent.ok,
-    priceUsd: exitPriceUsd,
-    signature: sent.signature,
-    tokenRawRemaining: remaining,
-    reason: sent.reason,
-  };
+  return { ok: false, priceUsd: 0, reason: lastReason };
 }

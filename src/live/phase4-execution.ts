@@ -170,7 +170,7 @@ function isRetryableBuySimError(message: string): boolean {
  * are retryable. Tightened slippage (1.11.167) means Jupiter rejects more quotes;
  * persistent retry pushes the order through eventually.
  */
-function isRetryableSellSimError(message: string): boolean {
+export function isRetryableSellSimError(message: string): boolean {
   if (!message) return false;
   if (message.startsWith('confirm_timeout')) return false;
   return (
