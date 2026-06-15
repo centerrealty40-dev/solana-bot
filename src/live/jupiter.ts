@@ -302,41 +302,67 @@ export async function liveBuildUnsignedSwapTx(args: {
 }): Promise<{ ok: true; b64: string } | { ok: false; reason: string }> {
   const { cfg, quoteResponse, userPublicKey } = args;
   const buildTimeoutMs = cfg.liveJupiterSwapTimeoutMs;
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
   const headers = jupiterJsonHeaders({ 'content-type': 'application/json' });
-  try {
-    const body = liveJupiterSwapPostBody({ cfg, quoteResponse, userPublicKey });
-    const res = await fetch(resolveLiveJupiterSwapUrl(cfg), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: ac.signal,
-    });
-    const txt = await res.text();
-    if (!res.ok) {
-      log.debug(
-        { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
-        res.status === 429 ? 'live jupiter swap rate limited' : 'live jupiter swap http',
-      );
-      return { ok: false, reason: `swap-http-${res.status}` };
-    }
-    let j: { swapTransaction?: string };
+  const body = liveJupiterSwapPostBody({ cfg, quoteResponse, userPublicKey });
+  const swapUrl = resolveLiveJupiterSwapUrl(cfg);
+  const max429 = (() => {
+    const s = process.env.JUPITER_SWAP_429_MAX_RETRIES?.trim();
+    if (s === '0') return 0;
+    if (!s) return 3;
+    const n = Number.parseInt(s, 10);
+    return Number.isFinite(n) && n >= 0 ? Math.min(8, n) : 3;
+  })();
+  let backoff = 150;
+
+  for (let j = 0; j <= max429; j++) {
+    const ac = new AbortController();
+    const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
     try {
-      j = JSON.parse(txt) as { swapTransaction?: string };
-    } catch {
-      return { ok: false, reason: 'swap-parse' };
+      const res = await fetch(swapUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      });
+      const txt = await res.text();
+      if (res.status === 429 && j < max429) {
+        const ra = res.headers.get('retry-after');
+        let waitMs = backoff;
+        if (ra) {
+          const sec = Number.parseFloat(ra);
+          if (Number.isFinite(sec) && sec >= 0) {
+            waitMs = Math.max(waitMs, Math.min(15_000, Math.round(sec * 1000)));
+          }
+        }
+        await new Promise((r) => setTimeout(r, waitMs));
+        backoff = Math.min(8000, Math.floor(backoff * 1.8) || 200);
+        continue;
+      }
+      if (!res.ok) {
+        log.debug(
+          { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
+          res.status === 429 ? 'live jupiter swap rate limited' : 'live jupiter swap http',
+        );
+        return { ok: false, reason: `swap-http-${res.status}` };
+      }
+      let parsed: { swapTransaction?: string };
+      try {
+        parsed = JSON.parse(txt) as { swapTransaction?: string };
+      } catch {
+        return { ok: false, reason: 'swap-parse' };
+      }
+      if (!parsed.swapTransaction || typeof parsed.swapTransaction !== 'string') {
+        return { ok: false, reason: 'no-swap-tx' };
+      }
+      return { ok: true, b64: parsed.swapTransaction };
+    } catch (e) {
+      const aborted = (e as Error)?.name === 'AbortError';
+      return { ok: false, reason: aborted ? 'swap-timeout' : 'swap-fetch' };
+    } finally {
+      clearTimeout(tt);
     }
-    if (!j.swapTransaction || typeof j.swapTransaction !== 'string') {
-      return { ok: false, reason: 'no-swap-tx' };
-    }
-    return { ok: true, b64: j.swapTransaction };
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    return { ok: false, reason: aborted ? 'swap-timeout' : 'swap-fetch' };
-  } finally {
-    clearTimeout(tt);
   }
+  return { ok: false, reason: 'swap-http-429' };
 }
 
 /**
