@@ -3,6 +3,7 @@ import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import {
   bumpEntryDipPassStreak,
   entryDipConfirmReason,
+  entryDipQuoteCacheHit,
   impliedBuyPriceUsdFromQuote,
   resetEntryDipPassStreak,
 } from '../../src/copytrader/entry-dip-gate.js';
@@ -75,5 +76,33 @@ describe('entry dip gate vs Bountywork incident', () => {
 
   it('formats confirm defer reason', () => {
     expect(entryDipConfirmReason(baseCfg, 1, target, leader)).toContain('1/2');
+  });
+});
+
+describe('entryDipQuoteCacheHit', () => {
+  it('returns cached price within min interval', () => {
+    const cfg = { entryDipJupiterMinIntervalMs: 12_000 } as CopyTraderConfig;
+    const now = 1_000_000;
+    const hit = entryDipQuoteCacheHit(
+      cfg,
+      { lastTs: now - 5_000, lastPriceUsd: 0.0012 },
+      now,
+    );
+    expect(hit).toBeCloseTo(0.0012, 8);
+  });
+
+  it('returns null when interval elapsed or disabled', () => {
+    const cfg = { entryDipJupiterMinIntervalMs: 12_000 } as CopyTraderConfig;
+    const now = 1_000_000;
+    expect(
+      entryDipQuoteCacheHit(cfg, { lastTs: now - 20_000, lastPriceUsd: 0.0012 }, now),
+    ).toBeNull();
+    expect(
+      entryDipQuoteCacheHit(
+        { entryDipJupiterMinIntervalMs: 0 } as CopyTraderConfig,
+        { lastTs: now - 1, lastPriceUsd: 0.0012 },
+        now,
+      ),
+    ).toBeNull();
   });
 });

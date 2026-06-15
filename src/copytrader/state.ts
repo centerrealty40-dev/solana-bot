@@ -19,6 +19,8 @@ export type CopyPosition = {
   ourEntrySig?: string;
   /** Leader sold before probe+dip filled — never schedule/fill the dip leg. */
   entryDipAbandoned?: boolean;
+  /** Last successful sell execution timestamp (ms) — min-interval throttle. */
+  lastSellTs?: number;
 };
 
 export type LeaderMintLedger = {
@@ -50,6 +52,9 @@ export type PendingBuy = {
   lastDeferLogTs?: number;
   /** Consecutive dip-gate passes (Jupiter quote + discount) before fill. */
   dipPassStreak?: number;
+  /** Cached Jupiter dip eval quote (eval-only; not used for execution sizing). */
+  lastDipQuoteTs?: number;
+  lastDipQuotePriceUsd?: number;
 };
 
 export type PendingSell = {

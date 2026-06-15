@@ -15,6 +15,7 @@ import {
   entryDipConfirmReason,
   resetEntryDipPassStreak,
   resolveEntryDipEvalPrice,
+  type EntryDipQuoteCache,
 } from './entry-dip-gate.js';
 import {
   entryDipSizeUsd,
@@ -699,12 +700,20 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     const isEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
 
     if (isEntryDip) {
+      const dipQuoteCache: EntryDipQuoteCache = {
+        lastTs: pending.lastDipQuoteTs,
+        lastPriceUsd: pending.lastDipQuotePriceUsd,
+      };
       const dipPx = await resolveEntryDipEvalPrice({
         cfg,
         mint: pending.mint,
         dipSizeUsd: pending.sizeUsd,
         dexPriceUsd: currentPrice,
+        quoteCache: dipQuoteCache,
+        nowMs: now,
       });
+      pending.lastDipQuoteTs = dipQuoteCache.lastTs;
+      pending.lastDipQuotePriceUsd = dipQuoteCache.lastPriceUsd;
       if (dipPx.quoteUnavailable) {
         resetEntryDipPassStreak(state, pending.id);
         if (noteBuyDefer(state, pending.id, now, cfg)) {
@@ -968,6 +977,11 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     const sellUsd =
       walletNotional > 0 ? walletNotional * pending.fraction : pos.sizeUsd * pending.fraction;
 
+    if (cfg.minSellIntervalMs > 0 && pos.lastSellTs != null) {
+      const sinceLastSell = now - pos.lastSellTs;
+      if (sinceLastSell < cfg.minSellIntervalMs) continue;
+    }
+
     const exec = await executeCopySell({
       cfg,
       mint: pending.mint,
@@ -982,6 +996,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
 
     if (exec.ok) {
       removePendingSellById(state, pending.id);
+      pos.lastSellTs = Date.now();
       await refreshPositionFromWallet(cfg, state, pending.mint, exitPrice);
 
       await notifyCopyTraderTelegram(

@@ -30,6 +30,10 @@ const CopyTraderConfigSchema = z.object({
   sellRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
   sellRetryIntervalMs: z.coerce.number().int().min(1_000).max(600_000).default(6_000),
   sellRetryDeferLogMs: z.coerce.number().int().min(5_000).max(3_600_000).default(30_000),
+  /** Min ms between sell executions on the same mint (Jupiter 429 mitigation). **0** = off. */
+  minSellIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
+  /** Min ms between Jupiter dip eval quotes per pending buy (eval-only cache). **0** = off. */
+  entryDipJupiterMinIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
   sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(20_000),
   sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
   /** Second on-chain zero read before leader-flat tail sweep (default 3s). */
@@ -126,6 +130,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellRetryWindowMs: process.env.COPY_TRADER_SELL_RETRY_WINDOW_MS,
     sellRetryIntervalMs: process.env.COPY_TRADER_SELL_RETRY_INTERVAL_MS,
     sellRetryDeferLogMs: process.env.COPY_TRADER_SELL_RETRY_DEFER_LOG_MS,
+    minSellIntervalMs: process.env.COPY_TRADER_MIN_SELL_INTERVAL_MS,
+    entryDipJupiterMinIntervalMs: process.env.COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS,
     sellDelayMinMs,
     sellDelayMaxMs,
     leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,

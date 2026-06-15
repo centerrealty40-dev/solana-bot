@@ -234,6 +234,8 @@ export interface OpenTrade {
   liveFlashLastJupiterPx?: number | null;
   /** W8.0-p4 — SPL decimals for Jupiter sizing (live-oscar); optional on paper restore. */
   tokenDecimals?: number | null;
+  /** Last partial TP sell timestamp (ms) — throttle Jupiter partial exits; in-memory + restore from partialSells. */
+  lastPartialSellTs?: number;
   /**
    * W8.0-p7.1 — confirmed buy tx signatures (open first, then each DCA leg). Required for chain replay filtering.
    */

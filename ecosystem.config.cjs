@@ -713,6 +713,8 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         /** После N defer pre-exit Jupiter verify по TIMEOUT — один проход без block_on_fail (см. live_exit_verify_defer). */
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
+        /** Min ms between partial TP sells on same mint (Jupiter 429 mitigation). */
+        LIVE_PARTIAL_TP_MIN_INTERVAL_MS: '5000',
 
         PAPER_SIM_AUDIT_ENABLED: '1',
         PAPER_SIM_SAMPLE_PCT: '5',
@@ -834,11 +836,11 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_RECENT_EVAL_MIN: '180',
         PAPER_PRIORITY_DISCOVERY_MAX_MINTS: '200',
         PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH: '1',
-        PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '25',
+        PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '5',
         /** 1.11.251 — near-miss dip: Jupiter refresh если PG dip в (min, min+gap] (minute bucket отстаёт). */
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH: '1',
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_GAP_PCT: '4',
-        PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK: '15',
+        PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK: '5',
         /** Priority tier BS 0.75 (global POST_MIN_BS остаётся 0.98). */
         PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.75',
         /** 1.11.274 — Volume Leader tier: top-N by 24h peak vol_1h, canonical pool = max volume. */
@@ -1334,6 +1336,9 @@ const PM2_APPS = [
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '6000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
+        /** Jupiter 429 mitigation: min ms between sells on same mint / dip eval quotes. */
+        COPY_TRADER_MIN_SELL_INTERVAL_MS: '5000',
+        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '12000',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         COPY_TRADER_SELL_DELAY_MIN_MS: '20000',
         COPY_TRADER_SELL_DELAY_MAX_MS: '30000',

@@ -378,6 +378,11 @@ const ConfigSchema = z.object({
   liveExitModeBDcaKillstop: z.coerce.number().optional(),
   liveExitModeBPeakLogStepPct: z.coerce.number().nonnegative().optional(),
   /**
+   * Min ms between partial TP sells on the same open mint (Jupiter 429 mitigation). **0** = off.
+   * Env: `PAPER_LIVE_PARTIAL_TP_MIN_INTERVAL_MS` or `LIVE_PARTIAL_TP_MIN_INTERVAL_MS`.
+   */
+  livePartialTpMinIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
+  /**
    * Paper Oscar IDEALIZED (v2.1 / v2.2): доля PnL к avg для включения режима B и докупа 20%.
    * Отрицательная дробь (напр. −0.06 = −6%). Env: `PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC`.
    */
@@ -1119,6 +1124,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveExitModeBTpGridMaxRungs: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_TP_GRID_MAX_RUNGS),
     liveExitModeBDcaKillstop: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_DCA_KILLSTOP),
     liveExitModeBPeakLogStepPct: envOptNum(process.env.PAPER_LIVE_EXIT_MODE_B_PEAK_LOG_STEP_PCT),
+    livePartialTpMinIntervalMs: (() => {
+      const raw =
+        process.env.PAPER_LIVE_PARTIAL_TP_MIN_INTERVAL_MS ??
+        process.env.LIVE_PARTIAL_TP_MIN_INTERVAL_MS;
+      if (raw === undefined || raw === '') return undefined;
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : undefined;
+    })(),
     idealizedOscarModeBArmFrac:
       envOptNum(process.env.PAPER_IDEALIZED_OSCAR_MODE_B_ARM_FRAC) ?? -0.04,
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
