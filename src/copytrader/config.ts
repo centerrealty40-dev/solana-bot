@@ -49,6 +49,12 @@ const CopyTraderConfigSchema = z.object({
   minProportionalAddUsd: z.coerce.number().min(0).max(100_000).default(0),
   minProportionalSellFraction: z.coerce.number().min(0).max(1).default(0),
   buyPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(3),
+  /** Mcap ≥ this → full `positionUsd` split (default $1M). Below → `entryMidPositionUsd` ($300+$300). */
+  entryFullMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
+  /** Total staged entry when mcap ∈ [minMarketCapUsd, entryFullMcapUsd) (default $600). */
+  entryMidPositionUsd: z.coerce.number().positive().max(100_000).default(600),
+  /** Each probe/dip leg for mid mcap tier (default $300). */
+  entryMidLegUsd: z.coerce.number().positive().max(100_000).default(300),
   /** Fraction of positionUsd for immediate probe buy at leader+premium (default 500/1000). */
   entryProbeFraction: z.coerce.number().min(0).max(1).default(500 / 1000),
   /** Remainder fills when price ≤ leader × (1 − discount/100) (default 10%). */
@@ -65,7 +71,7 @@ const CopyTraderConfigSchema = z.object({
   allowLateEntryOnLeaderRebuy: z.boolean().default(true),
   minLeaderBuyUsd: z.coerce.number().min(0).max(1_000_000).default(50),
   minLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(15_000),
-  minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
+  minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(500_000),
   maxMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000_000).default(0),
   minPairAgeHours: z.coerce.number().min(0).max(8760).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
@@ -146,6 +152,9 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minProportionalAddUsd: process.env.COPY_TRADER_MIN_PROPORTIONAL_ADD_USD,
     minProportionalSellFraction: process.env.COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION,
     buyPriceMaxPremiumPct: process.env.COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT,
+    entryFullMcapUsd: process.env.COPY_TRADER_ENTRY_FULL_MCAP_USD,
+    entryMidPositionUsd: process.env.COPY_TRADER_ENTRY_MID_POSITION_USD,
+    entryMidLegUsd: process.env.COPY_TRADER_ENTRY_MID_LEG_USD,
     entryProbeFraction: process.env.COPY_TRADER_ENTRY_PROBE_FRACTION,
     entryDipDiscountPct: process.env.COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT,
     entryDipConfirmTicks: process.env.COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS,

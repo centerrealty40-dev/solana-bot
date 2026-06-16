@@ -13,6 +13,7 @@ import {
   entryDipSizeUsd,
   entryProbeSizeUsd,
   entryScheduleDelayMs,
+  entryTargetUsd,
   isEntryProbePending,
   leaderDipTargetPx,
   usesDipOnlyEntry,
@@ -51,6 +52,31 @@ describe('entry-probe sizing', () => {
     expect(usesSplitEntryProbe(prodEntryCfg)).toBe(true);
     expect(entryProbeSizeUsd(prodEntryCfg)).toBe(500);
     expect(entryDipSizeUsd(prodEntryCfg)).toBe(500);
+  });
+
+  it('splits $300+$300 when mcap is $500k–$1M', () => {
+    const midTierCfg = {
+      ...prodEntryCfg,
+      entryFullMcapUsd: 1_000_000,
+      entryMidPositionUsd: 600,
+      entryMidLegUsd: 300,
+    } as CopyTraderConfig;
+    expect(entryTargetUsd(midTierCfg, 750_000)).toBe(600);
+    expect(entryProbeSizeUsd(midTierCfg, 750_000)).toBe(300);
+    expect(entryDipSizeUsd(midTierCfg, 750_000)).toBe(300);
+    expect(entryMinDeployUsd(midTierCfg, { entryMcapUsd: 750_000 } as CopyPosition)).toBe(594);
+  });
+
+  it('keeps $500+$500 when mcap ≥ $1M', () => {
+    const midTierCfg = {
+      ...prodEntryCfg,
+      entryFullMcapUsd: 1_000_000,
+      entryMidPositionUsd: 600,
+      entryMidLegUsd: 300,
+    } as CopyTraderConfig;
+    expect(entryTargetUsd(midTierCfg, 1_500_000)).toBe(1000);
+    expect(entryProbeSizeUsd(midTierCfg, 1_500_000)).toBe(500);
+    expect(entryDipSizeUsd(midTierCfg, 1_500_000)).toBe(500);
   });
 
   it('splits $350 probe + $600 dip on $950 position (legacy)', () => {

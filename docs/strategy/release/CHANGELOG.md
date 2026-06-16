@@ -46,6 +46,21 @@
 
 ---
 
+## [1.11.457] — 2026-05-28
+
+**Тег:** `sa-alpha-1.11.457`
+
+### Copy-trader: mid mcap tier $300+$300 ($500k–$1M)
+
+- **`COPY_TRADER_MIN_MCAP_USD=500000`** — входы от $500k mcap (раньше $1M).
+- Mcap **< $1M**: staged entry **$300 probe + $300 dip** (`COPY_TRADER_ENTRY_MID_*`).
+- Mcap **≥ $1M**: без изменений **$500+$500** на `COPY_TRADER_POSITION_USD=1000`.
+- Tier фиксируется в state (`entryTargetUsd`, `entryMcapUsd`) для deploy-gate и proportional adds.
+
+**Откат:** redeploy `sa-alpha-1.11.456`; вернуть `COPY_TRADER_MIN_MCAP_USD=1000000`, убрать `COPY_TRADER_ENTRY_*_MID_*`.
+
+---
+
 ## [1.11.456] — 2026-06-15
 
 **Тег:** `sa-alpha-1.11.456`
