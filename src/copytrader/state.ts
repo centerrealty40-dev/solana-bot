@@ -11,6 +11,10 @@ export type CopyPosition = {
   sizeUsd: number;
   /** Cumulative USD spent on entry legs (probe + dip); not mark-to-market. */
   entryDeployedCostUsd?: number;
+  /** Staged entry target ($1000 full tier or $600 mid mcap tier). */
+  entryTargetUsd?: number;
+  /** Dex mcap at entry signal (for tier sizing / adds mirror). */
+  entryMcapUsd?: number;
   /** Token balance raw string (live fills / paper estimate). */
   tokenRaw?: string;
   addCount: number;
@@ -38,6 +42,9 @@ export type PendingBuy = {
   /** Entry split: probe (+premium) then dip (−discount from leader). */
   entryLeg?: EntryLeg;
   sizeUsd: number;
+  /** Staged entry target when kind=entry (full $1000 or mid $600). */
+  entryTargetUsd?: number;
+  entryMcapUsd?: number;
   /** Leader add size / pre-buy holdings when kind=add. */
   leaderAddFraction?: number;
   leaderSignature: string;
@@ -105,6 +112,10 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof pos.entryDeployedCostUsd === 'number' && pos.entryDeployedCostUsd > 0
             ? pos.entryDeployedCostUsd
             : undefined,
+        entryTargetUsd:
+          typeof pos.entryTargetUsd === 'number' && pos.entryTargetUsd > 0 ? pos.entryTargetUsd : undefined,
+        entryMcapUsd:
+          typeof pos.entryMcapUsd === 'number' && pos.entryMcapUsd > 0 ? pos.entryMcapUsd : undefined,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(
@@ -115,6 +126,10 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         kind: p.kind === 'add' ? 'add' : 'entry',
         entryLeg: p.entryLeg === 'probe' || p.entryLeg === 'dip' ? p.entryLeg : undefined,
         sizeUsd: typeof p.sizeUsd === 'number' && p.sizeUsd > 0 ? p.sizeUsd : 0,
+        entryTargetUsd:
+          typeof p.entryTargetUsd === 'number' && p.entryTargetUsd > 0 ? p.entryTargetUsd : undefined,
+        entryMcapUsd:
+          typeof p.entryMcapUsd === 'number' && p.entryMcapUsd > 0 ? p.entryMcapUsd : undefined,
         leaderAddFraction:
           typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
         leaderSignature: p.leaderSignature,

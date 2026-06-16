@@ -1329,8 +1329,11 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
-        /** Skip new entries/adds when Dex mcap < $1M (existing positions e.g. GO unchanged). */
-        COPY_TRADER_MIN_MCAP_USD: '1000000',
+        /** Mcap $500k–$1M: $300+$300; ≥$1M: $500+$500 (unchanged). */
+        COPY_TRADER_MIN_MCAP_USD: '500000',
+        COPY_TRADER_ENTRY_FULL_MCAP_USD: '1000000',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '600',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '300',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
         /** Slippage-class sell: retry same bps every 6s up to 2h (no wait for next leader sell). */

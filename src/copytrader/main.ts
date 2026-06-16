@@ -7,6 +7,7 @@ import { fetchDexInfo } from './dex-info.js';
 import { evaluateCopyAdd, evaluateCopyEntry, evaluateCopyEntryDip } from './evaluate.js';
 import {
   isEntryFullyDeployed,
+  entryTargetDeployUsd,
   resolveEntryDeployedCostUsd,
   shouldAbandonEntryDipOnLeaderSell,
 } from './entry-deploy.js';
@@ -21,7 +22,9 @@ import {
   entryDipSizeUsd,
   entryProbeSizeUsd,
   entryScheduleDelayMs,
+  entryTargetUsd,
   isEntryProbePending,
+  syncEntryPendingSizing,
   usesDipOnlyEntry,
   usesSplitEntryProbe,
 } from './entry-probe.js';
@@ -201,7 +204,7 @@ async function onLeaderBuy(
       return;
     }
     const entryDeployedCostUsd = resolveEntryDeployedCostUsd(cfg, state, existing);
-    if (!isEntryFullyDeployed(cfg, entryDeployedCostUsd)) {
+    if (!isEntryFullyDeployed(cfg, entryDeployedCostUsd, existing)) {
       appendCopyEvent(cfg, {
         kind: 'leader_add_ignored',
         reason: 'entry_not_fully_deployed',
@@ -212,14 +215,14 @@ async function onLeaderBuy(
           walletBal > 0n && priceUsd > 0
             ? walletNotionalUsdFromRaw(walletBal, priceUsd)
             : existing.sizeUsd,
-        targetUsd: cfg.positionUsd,
+        targetUsd: entryTargetDeployUsd(cfg, existing),
         entryMinDeployFraction: cfg.entryMinDeployFraction,
       });
       return;
     }
     const addFrac = leaderAddFraction(preLeaderRaw, swap.baseAmountRaw);
     const ourAddUsd = ourAddUsdFromLeaderAdd({
-      ourSizeUsd: cfg.positionUsd,
+      ourSizeUsd: entryTargetDeployUsd(cfg, existing),
       addFraction: addFrac,
       maxRoomUsd: positionRoomUsd(cfg, existing),
       minAddUsd: cfg.minProportionalAddUsd,
@@ -272,12 +275,17 @@ async function onLeaderBuy(
   }
 
   if (usesDipOnlyEntry(cfg)) {
+    const dex = await fetchDexInfo(mint, getSolUsd());
+    const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
+    const targetUsd = entryTargetUsd(cfg, mcap);
     await schedulePendingBuy(cfg, state, {
       mint,
       symbol,
       kind: 'entry',
-      sizeUsd: cfg.positionUsd,
+      sizeUsd: entryDipSizeUsd(cfg, mcap),
       entryLeg: 'dip',
+      entryTargetUsd: targetUsd,
+      entryMcapUsd: mcap,
       preLeaderRaw,
       swap,
       row,
@@ -286,13 +294,18 @@ async function onLeaderBuy(
     return;
   }
 
-  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg) : cfg.positionUsd;
+  const dex = await fetchDexInfo(mint, getSolUsd());
+  const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
+  const targetUsd = entryTargetUsd(cfg, mcap);
+  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg, mcap) : targetUsd;
   await schedulePendingBuy(cfg, state, {
     mint,
     symbol,
     kind: 'entry',
     sizeUsd: probeUsd,
     entryLeg: usesSplitEntryProbe(cfg) ? 'probe' : undefined,
+    entryTargetUsd: targetUsd,
+    entryMcapUsd: mcap,
     preLeaderRaw,
     swap,
     row,
@@ -322,7 +335,7 @@ function markEntryDipAbandoned(
     leaderSignature: meta.leaderSignature,
     leaderSellFraction: meta.leaderSellFraction ?? null,
     deployedUsd,
-    targetUsd: cfg.positionUsd,
+    targetUsd: entryTargetDeployUsd(cfg, pos),
   });
 }
 
@@ -331,7 +344,8 @@ function scheduleEntryDipBuy(
   state: CopyTraderState,
   probe: PendingBuy,
 ): void {
-  const dipUsd = entryDipSizeUsd(cfg);
+  const mcap = probe.entryMcapUsd;
+  const dipUsd = entryDipSizeUsd(cfg, mcap);
   if (!(dipUsd > 0)) return;
   if (state.positions[probe.mint]?.entryDipAbandoned) return;
   if (state.pendingBuys.some((p) => p.mint === probe.mint && p.entryLeg === 'dip')) return;
@@ -344,6 +358,8 @@ function scheduleEntryDipBuy(
     kind: 'entry',
     entryLeg: 'dip',
     sizeUsd: dipUsd,
+    entryTargetUsd: probe.entryTargetUsd,
+    entryMcapUsd: mcap,
     leaderSignature: probe.leaderSignature,
     leaderPriceUsd: probe.leaderPriceUsd,
     leaderBuyUsd: probe.leaderBuyUsd,
@@ -375,6 +391,8 @@ async function schedulePendingBuy(
     kind: 'entry' | 'add';
     sizeUsd: number;
     entryLeg?: PendingBuy['entryLeg'];
+    entryTargetUsd?: number;
+    entryMcapUsd?: number;
     leaderAddFraction?: number;
     preLeaderRaw: bigint;
     swap: SwapInsert;
@@ -388,6 +406,8 @@ async function schedulePendingBuy(
     kind,
     sizeUsd,
     entryLeg,
+    entryTargetUsd,
+    entryMcapUsd,
     leaderAddFraction,
     preLeaderRaw,
     swap,
@@ -403,6 +423,8 @@ async function schedulePendingBuy(
     kind,
     entryLeg,
     sizeUsd,
+    entryTargetUsd,
+    entryMcapUsd,
     leaderAddFraction,
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
@@ -697,6 +719,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
+    syncEntryPendingSizing(cfg, pending, dex?.marketCap);
     let currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
     let entryPriceSource: 'jupiter_quote' | 'dex' | undefined;
     const isEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
@@ -874,6 +897,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         tokenRaw,
         addCount: 0,
         entryDeployedCostUsd: pending.sizeUsd,
+        entryTargetUsd: pending.entryTargetUsd ?? entryTargetUsd(cfg, pending.entryMcapUsd),
+        entryMcapUsd: pending.entryMcapUsd,
         leaderWallet: cfg.targetWallet,
         leaderEntrySig: pending.leaderSignature,
         ourEntrySig: exec.signature,
