@@ -112,6 +112,10 @@ import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-st
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
+import {
+  getOpenPositionExecSellUsd,
+  isOpenPositionExecSellFresh,
+} from '../../live/open-position-exec-price.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -2000,6 +2004,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             errorMessage: (e as Error)?.message,
           });
         }
+      }
+    }
+
+    /** 1.11.458 — executable sell from hot tick overrides buy-probe MTM for kill/exit decisions. */
+    if (liveOscarCfg && isOpenPositionExecSellFresh(mint, liveOscarCfg.liveOpenHotExecPriceMaxAgeMs)) {
+      const execSell = getOpenPositionExecSellUsd(mint);
+      if (execSell != null && execSell > 0) {
+        curMetric = execSell;
+        ot.liveFlashLastJupiterPx = execSell;
       }
     }
 

@@ -47,6 +47,7 @@ import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from 
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
+import { startLiveOpenPositionHotTick } from './open-position-hot-tick.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import type { OpenTrade } from '../papertrader/types.js';
 import {
@@ -465,6 +466,7 @@ export async function main(): Promise<void> {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
     },
     livePeriodicSelfHealFactory: (ctx) => startLivePeriodicSelfHeal({ ...ctx, liveCfg }),
+    liveOpenPositionHotTickFactory: (ctx) => startLiveOpenPositionHotTick({ ...ctx, liveCfg }),
 
     reconcilePaperCloseZeroMints: orphanReconcileLive
       ? async (open: Map<string, OpenTrade>) => {

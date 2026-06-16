@@ -145,7 +145,7 @@ const LiveOscarConfigSchema = z
      * (250ms..30s), default 5000ms in config; PM2 sets 3000ms in 1.11.168.
      */
     liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
-    liveBuySimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
+    liveBuySimRetryDelayMs: z.coerce.number().int().min(50).max(30_000).default(500),
     /**
      * 1.11.228 — кэп ретраев для «slippage class» sim_err (Custom:1 / 0x1771 / явное «slippage»):
      * после N таких подряд на одном intent выходим из retry-цикла, чтобы не сжигать кредиты
@@ -153,7 +153,7 @@ const LiveOscarConfigSchema = z
      */
     liveBuySimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(2),
     liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
-    liveSellSimRetryDelayMs: z.coerce.number().int().min(250).max(30_000).default(5000),
+    liveSellSimRetryDelayMs: z.coerce.number().int().min(50).max(30_000).default(500),
     /** То же, но для продаж — exits должны проходить, поэтому кэп выше. */
     liveSellSimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(5),
     /**
@@ -247,6 +247,20 @@ const LiveOscarConfigSchema = z
     liveTrackerMtmProbeMinUsd: z.coerce.number().min(1).max(500).default(20),
     liveTrackerMtmProbeMaxUsd: z.coerce.number().min(5).max(2000).default(200),
     liveTrackerMtmProbeFraction: z.coerce.number().min(0.01).max(1).default(0.1),
+    /**
+     * 1.11.458 — hot tick для открытых позиций: executable sell quote каждые N ms.
+     * Tracker читает cache для kill/exit; при пересечении kill — немедленный tracker tick.
+     */
+    liveOpenHotTickEnabled: z.boolean().default(true),
+    liveOpenHotTickIntervalMs: z.coerce.number().int().min(500).max(60_000).default(2000),
+    liveOpenHotExecPriceMaxAgeMs: z.coerce.number().int().min(500).max(120_000).default(5000),
+    liveOpenHotProbeMinUsd: z.coerce.number().min(1).max(500).default(20),
+    liveOpenHotProbeMaxUsd: z.coerce.number().min(5).max(2000).default(200),
+    liveOpenHotProbeFraction: z.coerce.number().min(0.01).max(1).default(0.1),
+    liveOpenHotInterMintDelayMs: z.coerce.number().int().min(0).max(5000).default(100),
+    /** Pre-arm full sell quote when executable PnL within this many pct-points above kill threshold. */
+    liveKillstopPrearmBufferPct: z.coerce.number().min(0).max(10).default(1),
+    liveKillstopPrearmTtlMs: z.coerce.number().int().min(1000).max(60_000).default(8000),
     liveSendMaxRetries: z.coerce.number().int().min(0).max(10).default(2),
     liveSendRetryBaseMs: z.coerce.number().int().min(100).max(30_000).default(500),
     liveSendCreditsPerCall: z.coerce.number().int().min(10).max(200).default(30),
@@ -671,6 +685,15 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveTrackerMtmProbeMinUsd: process.env.LIVE_TRACKER_MTM_PROBE_MIN_USD,
     liveTrackerMtmProbeMaxUsd: process.env.LIVE_TRACKER_MTM_PROBE_MAX_USD,
     liveTrackerMtmProbeFraction: process.env.LIVE_TRACKER_MTM_PROBE_FRACTION,
+    liveOpenHotTickEnabled: envBool(process.env.LIVE_OPEN_HOT_TICK_ENABLED, true),
+    liveOpenHotTickIntervalMs: process.env.LIVE_OPEN_HOT_TICK_INTERVAL_MS,
+    liveOpenHotExecPriceMaxAgeMs: process.env.LIVE_OPEN_HOT_EXEC_PRICE_MAX_AGE_MS,
+    liveOpenHotProbeMinUsd: process.env.LIVE_OPEN_HOT_PROBE_MIN_USD,
+    liveOpenHotProbeMaxUsd: process.env.LIVE_OPEN_HOT_PROBE_MAX_USD,
+    liveOpenHotProbeFraction: process.env.LIVE_OPEN_HOT_PROBE_FRACTION,
+    liveOpenHotInterMintDelayMs: process.env.LIVE_OPEN_HOT_INTER_MINT_DELAY_MS,
+    liveKillstopPrearmBufferPct: process.env.LIVE_KILLSTOP_PREARM_BUFFER_PCT,
+    liveKillstopPrearmTtlMs: process.env.LIVE_KILLSTOP_PREARM_TTL_MS,
     liveSendMaxRetries: process.env.LIVE_SEND_MAX_RETRIES,
     liveSendRetryBaseMs: process.env.LIVE_SEND_RETRY_BASE_MS,
     liveSendCreditsPerCall: process.env.LIVE_SEND_CREDITS_PER_CALL,

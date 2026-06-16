@@ -77,6 +77,13 @@ import {
   consumeArmedSellQuote,
 } from './sell-quote-prearm.js';
 import type { LiveBuyTerminalKind } from './phase4-types.js';
+import {
+  isRetryableBuySimError,
+  isRetryablePreBroadcastError,
+  isRetryableSellSimError,
+} from './execution-retry-errors.js';
+
+export { isRetryableSellSimError } from './execution-retry-errors.js';
 
 let cachedSigner: Keypair | null = null;
 
@@ -156,30 +163,6 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
 
 function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['anchorMode'] {
   return liveCfg.executionMode === 'simulate' ? 'simulate' : 'chain';
-}
-
-function isRetryableBuySimError(message: string): boolean {
-  if (isInsufficientFundsSimError(message)) return false;
-  return message.startsWith('sim_failed:') || message.includes('InstructionError');
-}
-
-/**
- * Sell pipeline retry: similar to buy retry but never retries `confirm_timeout`
- * (we already broadcast the swap; a retry would risk double-sell). All transient
- * pre-broadcast failures (`no_quote`, `swap_build`, `quote_stale`, `sim_failed`)
- * are retryable. Tightened slippage (1.11.167) means Jupiter rejects more quotes;
- * persistent retry pushes the order through eventually.
- */
-export function isRetryableSellSimError(message: string): boolean {
-  if (!message) return false;
-  if (message.startsWith('confirm_timeout')) return false;
-  return (
-    message.startsWith('sim_failed:') ||
-    message.includes('InstructionError') ||
-    message.startsWith('quote_stale') ||
-    message === 'no_quote' ||
-    message === 'swap_build'
-  );
 }
 
 /**
@@ -482,8 +465,13 @@ async function runSolToTokenPipeline(
         status: 'sim_err',
         simulated: true,
         error: { message: reason },
+        slippageBps: currentSlippageBps,
       });
       notifyLiveExecutionSimErrForTerminal(reason);
+      if (attempt < maxAttempts - 1 && isRetryablePreBroadcastError(reason)) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
       const tk = reason === 'no_quote' ? 'no_quote' : 'swap_build';
       return failure('other', tk, reason);
     }
@@ -527,6 +515,10 @@ async function runSolToTokenPipeline(
         error: { message: staleMsg },
       });
       notifyLiveExecutionSimErrForTerminal(staleMsg);
+      if (attempt < maxAttempts - 1 && isRetryablePreBroadcastError(staleMsg)) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
       return failure('other', 'quote_stale', staleMsg);
     }
 
@@ -669,7 +661,7 @@ async function runSolToTokenPipeline(
     if (
       !ok &&
       !liveOut.ok &&
-      liveOut.kind === 'sim_err' &&
+      (liveOut.kind === 'sim_err' || liveOut.kind === 'send_failed') &&
       isRetryableBuySimError(liveOut.message)
     ) {
       const isSlippage = isSlippageClassSimError(liveOut.message);
@@ -871,7 +863,7 @@ async function runTokenToSolPipeline(
         error: { message: reason },
       });
       notifyLiveExecutionSimErrForTerminal(reason);
-      if (attempt < sellMaxAttempts - 1 && isRetryableSellSimError(reason)) {
+      if (attempt < sellMaxAttempts - 1 && isRetryablePreBroadcastError(reason)) {
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
@@ -1030,7 +1022,7 @@ async function runTokenToSolPipeline(
     if (
       !ok &&
       !liveOut.ok &&
-      liveOut.kind === 'sim_err' &&
+      (liveOut.kind === 'sim_err' || liveOut.kind === 'send_failed') &&
       isRetryableSellSimError(liveOut.message)
     ) {
       const isSlippage = isSlippageClassSimError(liveOut.message);

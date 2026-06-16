@@ -46,6 +46,21 @@
 
 ---
 
+## [1.11.458] — 2026-06-16
+
+**Тег:** `sa-alpha-1.11.458`
+
+### Phase 1 execution hardening (без Shyft stream / фазы 2)
+
+- **Aggressive retry** — `swap-http-429`, `quote_stale`, `send_failed` ретраятся в buy/sell pipeline (200 ms delay); buy больше не abort'ится на первом swap-build fail.
+- **Hot tick open positions** — каждые 2 s executable **sell** quote → cache; tracker использует для kill/exit; при kill — немедленный `trackerTick`.
+- **Killstop pre-arm** — за 1 pp до kill порога готовится full sell swap tx (`LIVE_KILLSTOP_PREARM_*`).
+- **Jupiter** — без зависимости от Pro-подписки; `api.jup.ag` free-tier + optional key.
+
+**Откат:** redeploy `sa-alpha-1.11.457`; `LIVE_OPEN_HOT_TICK_ENABLED=0`, вернуть `LIVE_*_SIM_RETRY_DELAY_MS=3000`.
+
+---
+
 ## [1.11.457] — 2026-05-28
 
 **Тег:** `sa-alpha-1.11.457`

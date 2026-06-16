@@ -78,6 +78,7 @@ import { isMintPermanentlyDeniedLiveOscar } from '../live/mint-permanent-denylis
 import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
 import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
+import type { LiveOpenPositionHotTickPaperContext } from '../live/open-position-hot-tick.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
@@ -162,6 +163,11 @@ export interface PapertraderMainOptions {
    */
   livePeriodicSelfHealFactory?: (
     ctx: LivePeriodicSelfHealPaperContext,
+  ) => ReturnType<typeof setInterval> | null;
+
+  /** Live-oscar: fast executable sell probes for open positions (Phase 1 hot tick). */
+  liveOpenPositionHotTickFactory?: (
+    ctx: LiveOpenPositionHotTickPaperContext,
   ) => ReturnType<typeof setInterval> | null;
 
   /**
@@ -1830,6 +1836,36 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     isTrackerBusy: () => trackerRunning,
   });
 
+  const liveOpenHotTickTimer = opts?.liveOpenPositionHotTickFactory?.({
+    paperCfg: cfg,
+    getOpen: () => open,
+    isTrackerBusy: () => trackerRunning,
+    runTrackerTick: () =>
+      withTimeout(
+        trackerTick({
+          cfg,
+          open,
+          closed,
+          dcaLevels,
+          tpLadder,
+          stats: trackerStats,
+          btcCtx: getBtcContext,
+          journalAppend,
+          journalLiveStrategy: opts?.journalLiveStrategy,
+          livePhase4: resolveLiveOscar()?.tracker,
+          liveOscarCfg: resolveLiveOscar()?.liveCfg,
+          reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
+          verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
+          reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
+          onMintFullClose: (mint) => {
+            stagedEntrySignals.delete(mint);
+          },
+        }),
+        45_000,
+        'trackerTickHot',
+      ),
+  });
+
   const solTimer = setInterval(() => {
     void refreshSolPrice();
   }, cfg.solPriceRefreshMs);
@@ -1849,6 +1885,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     clearInterval(heartbeatTimer);
     clearInterval(statsTimer);
     if (livePeriodicHealTimer) clearInterval(livePeriodicHealTimer);
+    if (liveOpenHotTickTimer) clearInterval(liveOpenHotTickTimer);
     clearInterval(solTimer);
     clearInterval(btcTimer);
     setTimeout(() => process.exit(0), 200);
