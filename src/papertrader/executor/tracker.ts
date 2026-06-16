@@ -1717,11 +1717,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
     const tradeDcaLevels =
-      ot.liveOscarMcapTier === 'low'
-        ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, 'low'))
+      ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
+        ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
         : dcaLevels;
     if (ot.liveOscarMcapTier === 'low') {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarLowMcapPositionUsd };
+    } else if (ot.liveOscarMcapTier === 'micro') {
+      effCfg = { ...effCfg, positionUsd: cfg.liveOscarMicroMcapPositionUsd };
     }
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */

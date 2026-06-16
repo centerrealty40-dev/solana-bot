@@ -401,12 +401,21 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $1.3M (коридор low-lane). Prod-входы — mcap ≥ $3M (tier prod).
-         * Не путать с low-only: $1.3M–$3M используют отдельные dip/vol (см. PAPER_LIVE_OSCAR_LOW_*).
+         * Discovery SQL pool: от $500k (micro-lane). Prod-входы — mcap ≥ $3M (tier prod).
+         * Micro $500k–$1.3M и low $1.3M–$3M — отдельные dip/vol (см. PAPER_LIVE_OSCAR_*).
          */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '1300000',
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
+        /** 1.11.460 — micro коридор $500k–$1.3M: dip −30%, vol1h ≥$75k; split $300+$300. */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '75000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '600',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
         /** 1.11.306 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $730+$730. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',

@@ -46,6 +46,21 @@
 
 ---
 
+## [1.11.460] — 2026-06-16
+
+**Тег:** `sa-alpha-1.11.460`
+
+### Feature: Live Oscar micro mcap tier ($500k–$1.3M, $300+$300)
+
+- **Новый tier `micro`:** $500k ≤ mcap < $1.3M; split entry **$300 + $300** (position $600).
+- **`below`** при включённом micro-lane: mcap < $500k; discovery SQL pool от **$500k** (`PAPER_DISCOVERY_MIN_MARKET_CAP_USD`).
+- **Dip/vol micro:** −30% / vol1h ≥ $75k (как low tier); low/prod без изменений ($730+$730 / $1460).
+- **Tier-aware sizing:** `resolveLiveOscarEntrySplitLegUsd`, staged entry, tracker DCA/position, journal restore.
+
+**Откат:** redeploy `sa-alpha-1.11.459`; отключить `PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED=0`, вернуть `PAPER_DISCOVERY_MIN_MARKET_CAP_USD=1300000`.
+
+---
+
 ## [1.11.459] — 2026-06-16
 
 **Тег:** `sa-alpha-1.11.459`

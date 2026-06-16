@@ -299,8 +299,8 @@ export interface OpenTrade {
    * `variant_a_v3` — scratch harvest: +5%→30%, flush @0% avg, no DCA after TP, price re-entry −10%.
    */
   liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3';
-  /** Live Oscar двухфазный mcap: low = $1.3M–$3M lane; absent = prod tier. */
-  liveOscarMcapTier?: 'low' | 'prod';
+  /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; absent = prod. */
+  liveOscarMcapTier?: 'micro' | 'low' | 'prod';
   /** v3: at least one TP partial taken — blocks DCA and timed exits. */
   liveVariantAScratchHadTp?: boolean;
   liveVariantAScratchPrevPnlFrac?: number;
@@ -570,7 +570,7 @@ export interface SnapshotFeatures {
   /** Pool-reported mcap (or FDV coalesced in SQL) at discovery row — stamped into jsonl for dashboards. */
   market_cap_usd: number | null;
   /** Live Oscar двухфазный вход: `low` ($1.3M–$3M) | `prod` (>$3M). */
-  live_oscar_mcap_tier?: 'low' | 'prod';
+  live_oscar_mcap_tier?: 'micro' | 'low' | 'prod';
   recovery_veto?: {
     threshold_pct: number;
     veto_windows_min: number[];
