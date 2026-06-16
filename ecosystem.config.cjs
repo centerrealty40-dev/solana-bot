@@ -20,11 +20,11 @@ const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
   : {};
 if (!JUPITER_API_KEY_PM2) {
   console.warn(
-    '[ecosystem.config.cjs] JUPITER_API_KEY пуст в .env при разборе конфига — в merged env не попадёт Pro-ключ (проверьте файл на VPS и `pm2 reload`).',
+    '[ecosystem.config.cjs] JUPITER_API_KEY пуст — Jupiter api.jup.ag free-tier (1 RPS); optional key from .env if present.',
   );
 }
-const JUPITER_PRO_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
-const JUPITER_PRO_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
+const JUPITER_SWAP_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
+const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
 
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
@@ -290,7 +290,7 @@ const PM2_APPS = [
       env: {
         ...PM2_JUPITER_KEY_ENV,
         NODE_ENV: 'production',
-        JUPITER_QUOTE_API_URL: JUPITER_PRO_QUOTE_URL,
+        JUPITER_QUOTE_API_URL: JUPITER_SWAP_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
         /** Было 1250 по умолчанию в watcher — чаще quote в рамках Pro, с паузой между mint в цикле. */
         JUPITER_WATCHER_REQUEST_DELAY_MS: '650',
@@ -708,7 +708,7 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
-        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
+        PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
         PAPER_PRICE_VERIFY_EXIT_ENABLED: '1',
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         /** После N defer pre-exit Jupiter verify по TIMEOUT — один проход без block_on_fail (см. live_exit_verify_defer). */
@@ -720,7 +720,7 @@ const PM2_APPS = [
         PAPER_SIM_SAMPLE_PCT: '5',
         PAPER_SIM_MAX_WALL_MS: '8000',
         PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
-        PAPER_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
+        PAPER_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         /**
          * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
@@ -951,9 +951,20 @@ const PM2_APPS = [
          * ниже взятой ступени TP-лесенки.
          */
         LIVE_BUY_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_BUY_SIM_RETRY_DELAY_MS: '3000',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '200',
         LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '3000',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '200',
+        /** 1.11.458 — hot tick: executable sell quote for open positions every 2s; kill pre-arm + fast tracker trigger. */
+        LIVE_OPEN_HOT_TICK_ENABLED: '1',
+        LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2000',
+        LIVE_OPEN_HOT_EXEC_PRICE_MAX_AGE_MS: '5000',
+        LIVE_OPEN_HOT_PROBE_MIN_USD: '20',
+        LIVE_OPEN_HOT_PROBE_MAX_USD: '200',
+        LIVE_OPEN_HOT_PROBE_FRACTION: '0.10',
+        LIVE_OPEN_HOT_INTER_MINT_DELAY_MS: '100',
+        LIVE_KILLSTOP_PREARM_BUFFER_PCT: '1',
+        LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
         /**
          * 1.11.230 — Smart retry classification (A.2).
          *
@@ -1050,8 +1061,8 @@ const PM2_APPS = [
          * новый sellFraction-профиль 1.11.168).
          */
         LIVE_DEFAULT_SLIPPAGE_BPS: '50',
-        LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
-        LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
+        LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
+        LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
         /**
          * Jupiter `/swap/v1/swap`: cap priority fee at **0.0001 SOL** (100_000 lamports) via `priorityLevelWithMaxLamports`.
          * `veryHigh` — максимально агрессивный приоритет в рамках cap (дороже по приоритет-фии).
@@ -1350,17 +1361,17 @@ const PM2_APPS = [
         COPY_TRADER_POLL_INTERVAL_MS: '12000',
         COPY_TRADER_SLIPPAGE_BPS: '400',
         /** Same Jupiter Pro sell pipeline as live-oscar (priority fee + sim retry envelope). */
-        LIVE_JUPITER_QUOTE_URL: JUPITER_PRO_QUOTE_URL,
-        LIVE_JUPITER_SWAP_URL: JUPITER_PRO_SWAP_URL,
+        LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
+        LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
         LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '3000',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '200',
         LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '5',
         LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '500',
         JUPITER_QUOTE_429_MAX_RETRIES: '8',
-        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
