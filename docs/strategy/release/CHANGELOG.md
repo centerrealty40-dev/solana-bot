@@ -46,6 +46,20 @@
 
 ---
 
+## [1.11.459] — 2026-06-16
+
+**Тег:** `sa-alpha-1.11.459`
+
+### Fix: ложный `insufficient_wallet_sol_for_buy` при устаревшем SOL/USD
+
+- **Root cause:** buy-quote sizing использовал кэш `getSolUsd()` (refresh раз в 5 мин); afford gate слепо сравнивал `getBalance` с Jupiter `quoteInAmount` — при stale ~$75 вместо ~$150 quote запрашивал ~2× SOL на ту же ногу $730.
+- **Fix:** `refreshSolPrice()` перед каждой buy-попыткой; afford через `resolveBuyAffordRequiredLamports` (estimate vs quote, drift ≤15%); при drift — retry quote (`buy_quote_sol_usd_drift`), не ложный insufficient.
+- **Journal:** `execution_skip` detail теперь включает `solUsdUsed`, `estimateLamports`, `driftPct`.
+
+**Откат:** redeploy `sa-alpha-1.11.458`.
+
+---
+
 ## [1.11.458] — 2026-06-16
 
 **Тег:** `sa-alpha-1.11.458`

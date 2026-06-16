@@ -6,6 +6,7 @@ import {
   fetchJupiterTokenUsdPrice,
   fetchLatestSnapshotPrice,
   getSolUsd,
+  refreshSolPrice,
 } from '../papertrader/pricing.js';
 import {
   isBuyQuoteChasingAnchor,
@@ -43,7 +44,7 @@ import {
 import {
   isInsufficientFundsSimError,
   liveWalletCanAffordLamports,
-  requiredLamportsForBuyQuote,
+  resolveBuyAffordRequiredLamports,
 } from './wallet-buy-affordability.js';
 import {
   clearLiveBuyCooldown,
@@ -427,7 +428,10 @@ async function runSolToTokenPipeline(
    */
   let anchorTokensPerLamport: number | null = null;
 
+  await refreshSolPrice();
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await refreshSolPrice();
     const solUsd = getSolUsd() ?? 0;
     const intentId = newLiveIntentId();
     const prep = await liveBuyQuoteAndPrepareSnapshot({
@@ -476,14 +480,33 @@ async function runSolToTokenPipeline(
       return failure('other', tk, reason);
     }
 
-    if (liveCfg.executionMode === 'live' && attempt === 0) {
+    if (liveCfg.executionMode === 'live') {
       const quoteInRaw = (prep.quoteSnapshot as Record<string, unknown> | undefined)?.quoteInAmount;
       if (typeof quoteInRaw === 'string' && /^\d+$/.test(quoteInRaw)) {
-        const need = requiredLamportsForBuyQuote(
-          BigInt(quoteInRaw),
-          liveCfg.liveFreeSolBufferLamports,
-        );
-        const afford = await liveWalletCanAffordLamports(liveCfg, need);
+        const quoteInLamports = BigInt(quoteInRaw);
+        const resolved = resolveBuyAffordRequiredLamports({
+          intendedUsd: args.usdNotional,
+          solUsd,
+          quoteInLamports,
+          bufferLamports: liveCfg.liveFreeSolBufferLamports,
+        });
+        if (!resolved.sane && attempt < maxAttempts - 1) {
+          appendLiveJsonlEvent({
+            kind: 'execution_skip',
+            reason: 'buy_quote_sol_usd_drift',
+            detail: JSON.stringify({
+              mint: args.mint.slice(0, 12),
+              intendedUsd: args.usdNotional,
+              solUsdUsed: solUsd,
+              driftPct: resolved.driftPct,
+              quoteInLamports: String(quoteInLamports),
+              estimateLamports: String(resolved.estimateLamports),
+            }).slice(0, 500),
+          });
+          await sleep(liveCfg.liveBuySimRetryDelayMs);
+          continue;
+        }
+        const afford = await liveWalletCanAffordLamports(liveCfg, resolved.requiredLamports);
         if (!afford.ok) {
           appendLiveJsonlEvent({
             kind: 'execution_skip',
@@ -491,7 +514,13 @@ async function runSolToTokenPipeline(
             detail: JSON.stringify({
               mint: args.mint.slice(0, 12),
               lamports: afford.lamports != null ? String(afford.lamports) : null,
-              requiredLamports: String(need),
+              requiredLamports: String(resolved.requiredLamports),
+              intendedUsd: args.usdNotional,
+              solUsdUsed: solUsd,
+              affordSource: resolved.source,
+              quoteInLamports: String(quoteInLamports),
+              estimateLamports: String(resolved.estimateLamports),
+              driftPct: resolved.driftPct,
             }).slice(0, 500),
           });
           return failure('other', 'insufficient_funds', 'insufficient_wallet_sol_for_buy');
