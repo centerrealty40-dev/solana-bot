@@ -49,6 +49,65 @@ export function requiredLamportsForBuyQuote(
   return quoteInLamports + buf;
 }
 
+/** Max |quote−estimate|/estimate before we distrust Jupiter inAmount for afford gate (1.11.459). */
+export const BUY_QUOTE_VS_ESTIMATE_MAX_DRIFT_PCT = 15;
+
+export function buyQuoteVsEstimateDriftPct(
+  quoteInLamports: bigint,
+  estimateLamports: bigint,
+): number | null {
+  if (estimateLamports <= 0n) return null;
+  const diff = quoteInLamports - estimateLamports;
+  const pct = (Number(diff) / Number(estimateLamports)) * 100;
+  return Number.isFinite(pct) ? pct : null;
+}
+
+export function isBuyQuoteInAmountSane(args: {
+  intendedUsd: number;
+  solUsd: number;
+  quoteInLamports: bigint;
+  maxDriftPct?: number;
+}): { sane: boolean; estimateLamports: bigint; driftPct: number | null } {
+  const estimateLamports = estimateLamportsForBuyUsd(args.intendedUsd, args.solUsd);
+  const driftPct = buyQuoteVsEstimateDriftPct(args.quoteInLamports, estimateLamports);
+  const cap = args.maxDriftPct ?? BUY_QUOTE_VS_ESTIMATE_MAX_DRIFT_PCT;
+  const sane =
+    estimateLamports > 0n &&
+    driftPct != null &&
+    Math.abs(driftPct) <= cap;
+  return { sane, estimateLamports, driftPct };
+}
+
+/**
+ * Afford gate: trust Jupiter `inAmount` only when it matches fresh SOL/USD sizing.
+ * Stale `getSolUsd()` can inflate quote ~2× and false-trigger insufficient_wallet_sol.
+ */
+export function resolveBuyAffordRequiredLamports(args: {
+  intendedUsd: number;
+  solUsd: number;
+  quoteInLamports: bigint;
+  bufferLamports: number;
+  maxDriftPct?: number;
+}): {
+  requiredLamports: bigint;
+  estimateLamports: bigint;
+  quoteInLamports: bigint;
+  source: 'quote' | 'estimate';
+  driftPct: number | null;
+  sane: boolean;
+} {
+  const { sane, estimateLamports, driftPct } = isBuyQuoteInAmountSane(args);
+  const base = sane ? args.quoteInLamports : estimateLamports;
+  return {
+    requiredLamports: requiredLamportsForBuyQuote(base, args.bufferLamports),
+    estimateLamports,
+    quoteInLamports: args.quoteInLamports,
+    source: sane ? 'quote' : 'estimate',
+    driftPct,
+    sane,
+  };
+}
+
 export function estimateLamportsForBuyUsd(usdNotional: number, solUsd: number): bigint {
   if (!(usdNotional > 0) || !(solUsd > 0)) return 0n;
   return BigInt(Math.ceil((usdNotional / solUsd) * 1e9));
