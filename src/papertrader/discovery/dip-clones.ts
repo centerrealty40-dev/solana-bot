@@ -68,10 +68,12 @@ import {
 } from './priority-discovery-registry.js';
 import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 import {
-  isLiveOscarTwoPhaseMcap,
+  isLiveOscarMcapTieringEnabled,
+  liveOscarBelowMcapThresholdUsd,
   liveOscarTierEntryConfig,
   resolveLiveOscarMcapTier,
   type LiveOscarMcapTier,
+  type LiveOscarTradeTier,
 } from '../live-oscar-mcap-tier.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
@@ -125,8 +127,8 @@ export interface EvalDecision {
     | 'runner'
     | 'post_crash_fast'
     | 'stress_kill_reentry';
-  /** `low` = узкий коридор $1.3M–$3M; `prod` = mcap > $3M (текущий prod). */
-  liveOscarMcapTier?: 'low' | 'prod';
+  /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M. */
+  liveOscarMcapTier?: LiveOscarTradeTier;
 }
 
 export interface DiscoveryTickResult {
@@ -797,11 +799,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     evaluated++;
 
     const refMcap = snapshotRefMarketCapUsd(row);
-    const oscarTier: LiveOscarMcapTier = isLiveOscarTwoPhaseMcap(cfg)
+    const oscarTier: LiveOscarMcapTier = isLiveOscarMcapTieringEnabled(cfg)
       ? resolveLiveOscarMcapTier(cfg, refMcap)
       : 'prod';
     if (oscarTier === 'below') {
-      const belowReasons = [`mcap<${cfg.liveOscarLowMcapMinUsd}`];
+      const belowReasons = [`mcap<${liveOscarBelowMcapThresholdUsd(cfg)}`];
       decisions.push({
         lane,
         source: row.source,
@@ -816,7 +818,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       continue;
     }
     const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
-    const journalTier: 'low' | 'prod' = oscarTier === 'low' ? 'low' : 'prod';
+    const journalTier: LiveOscarTradeTier =
+      oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
 
     const v = priorityMintSet.has(row.mint)
       ? evaluateSnapshotPriorityTier(tierCfg, row, lane)
@@ -1328,7 +1331,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         },
       };
     }
-    if (isLiveOscarTwoPhaseMcap(cfg)) {
+    if (isLiveOscarMcapTieringEnabled(cfg)) {
       decisionFeatures.live_oscar_mcap_tier = journalTier;
     }
     decisions.push({
@@ -1343,7 +1346,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       whale,
       holdersMeta,
       entryPath,
-      ...(isLiveOscarTwoPhaseMcap(cfg) ? { liveOscarMcapTier: journalTier } : {}),
+      ...(isLiveOscarMcapTieringEnabled(cfg) ? { liveOscarMcapTier: journalTier } : {}),
     });
   }
 

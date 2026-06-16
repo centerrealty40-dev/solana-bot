@@ -2,6 +2,7 @@ import type { PaperTraderConfig } from '../config.js';
 import {
   applyCanonicalStagedEntrySizing,
   resolveLiveOscarEntrySplitLegUsd,
+  resolveLiveOscarTradeTierFromMcap,
 } from '../live-oscar-entry-sizing.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
 
@@ -108,7 +109,8 @@ export function buildLiveStagedEntryState(
   },
 ): LiveStagedEntryState {
   const firstMintProbe = options?.firstMintProbe === true;
-  const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg);
+  const tier = resolveLiveOscarTradeTierFromMcap(cfg, options?.marketCapUsd);
+  const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -154,7 +156,7 @@ export function buildLiveStagedEntryState(
         }
       : {}),
   };
-  applyCanonicalStagedEntrySizing(cfg, st);
+  applyCanonicalStagedEntrySizing(cfg, st, tier);
   return st;
 }
 

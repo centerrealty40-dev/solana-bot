@@ -298,14 +298,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     mint: string,
     signal: { signalTs: number; signalPriceUsd: number },
     marketCapUsd: number | null,
-    liveOscarMcapTier?: 'low' | 'prod',
+    liveOscarMcapTier?: 'micro' | 'low' | 'prod',
   ): void {
     if (!liveStagedEntryActive()) return;
     const liveCfg = resolveLiveOscar()?.liveCfg;
     const firstMintProbe =
       cfg.strategyId === 'live-oscar' && liveCfg != null && shouldUseLiveMintFirstProbe(liveCfg, mint);
     const firstMintKillDropPct = firstMintProbe ? liveMintFirstProbeKillDropPct(liveCfg!) : undefined;
-    if (liveOscarMcapTier === 'low') ot.liveOscarMcapTier = 'low';
+    if (liveOscarMcapTier === 'micro' || liveOscarMcapTier === 'low' || liveOscarMcapTier === 'prod') {
+      ot.liveOscarMcapTier = liveOscarMcapTier;
+    }
     ot.liveStagedEntry = buildLiveStagedEntryState(cfg, signal, {
       firstMintProbe,
       firstMintKillDropPct,
@@ -331,9 +333,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  function liveOscarDiscoveryBuyLegUsd(_tier?: 'low' | 'prod'): number {
+  function liveOscarDiscoveryBuyLegUsd(tier?: 'micro' | 'low' | 'prod'): number {
     if (liveStagedEntryActive()) {
-      const leg = resolveLiveOscarEntrySplitLegUsd(cfg);
+      const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
       if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
