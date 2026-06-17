@@ -46,6 +46,20 @@
 
 ---
 
+## [1.11.465] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.465`
+
+### Ops: disable Wave B post-TP1 scratch/re-entry on live-oscar (honest A/B revert)
+
+- `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED=0` в `ecosystem.config.cjs` (prod live-oscar).
+- Причина: честный A/B на когорте 363 он-чейн покупок с реальным `simWaveBStep` показал, что scratch/re-entry — **не источник альфы**. Реалистично (≤1 re-entry/сделку) дельта ≈ **+$571** (шум); на 36% scratch-событий без повторного входа теряет **−$5 002** против «держать по Wave B»; присутствует churn-баг геометрии (re-entry −30% глубже scratch −15% → зацикливание на одной монете давало миражные +$119k). Чистый Wave B baseline = +$9 481 на той же когорте.
+- Артефакты анализа: `scripts-tmp/_cf360_scratch_validation_ru.md`, `_cf360_ab_waveb_vs_flat_ru.md`.
+
+**Откат:** redeploy `sa-alpha-1.11.464` или `ENABLED=1` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.464] — 2026-06-17
 
 **Тег:** `sa-alpha-1.11.464`
