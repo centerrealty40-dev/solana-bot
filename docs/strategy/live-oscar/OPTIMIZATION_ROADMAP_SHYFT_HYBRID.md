@@ -59,7 +59,8 @@
 - **A/B-проверка:** оффлайн — сопоставить stream-цену vs PG на одних и тех же mint/ts; доля случаев, где stream «увидел» −5%/−10% касание раньше PG, и медианный выигрыш по времени.
 - **Флаг:** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` default **OFF** (+ `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS`, `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS`; креды `SHYFT_GRPC_ENDPOINT`/`SHYFT_GRPC_TOKEN` в `.env`).
 
-### 1.2 Stream-цена primary для discovery-eval и MTM + freshness-gate
+### 1.2 Stream-цена primary для discovery-eval и MTM + freshness-gate — РЕАЛИЗОВАН (default-OFF) в 1.11.468
+- **Статус:** код реализован за флагами **default-OFF** (`npm run typecheck` зелёный; `tests/shyft-price-primary.test.ts` 12/12). Чистый резолвер `src/papertrader/stream/price-primary.ts` (`resolvePrimaryPriceUsd` — passthrough на PG при OFF) + инъекции в MTM (`tracker.ts`, override `curMetric` перед exec-sell) и discovery (`dip-clones.ts`, `evalRow` для snapshot/dip/features). Флаги: `SHYFT_PRICE_PRIMARY_ENABLED` (мастер, default 0), `SHYFT_PRICE_PRIMARY_MTM_ENABLED` (default 1), `SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED` (default 0, MTM-first), `SHYFT_MAX_STALE_MS` (default 5000). Активация требует включённого Stage 1.1 shadow (`SHYFT_GRPC_TOKEN` + `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1`). Наблюдение: `live_shyft_price_primary`.
 - **Что:** для discovery-eval (дип −5/−10%) и MTM открытых позиций брать stream-цену как primary; `MAX_STALE_MS` freshness-gate — если stream-цена старше порога/недоступна, **откат на PG** (текущее поведение).
 - **Файлы (план):** `src/papertrader/pricing.ts` (источник цены за абстракцией), `src/papertrader/discovery/dip-clones.ts` (eval), `src/papertrader/executor/tracker.ts` (MTM); env `SHYFT_PRICE_PRIMARY_ENABLED`, `SHYFT_MAX_STALE_MS`.
 - **Риск:** средний — меняет данные, на которых принимаются решения. Митигация: freshness-gate + PG-fallback + поэтапный rollout (сначала MTM, потом discovery).

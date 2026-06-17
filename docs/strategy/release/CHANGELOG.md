@@ -46,6 +46,36 @@
 
 ---
 
+## [1.11.468] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.468` (планируется координатором)
+
+### Этап 1.2 (live-oscar): Shyft stream-цена PRIMARY для MTM + discovery dip-eval (freshness-gate + PG fallback)
+
+Реализован **Этап 1.2** роадмапа `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`: стрим-цена Shyft становится **primary** источником в двух точках решения live-oscar — **MTM открытых позиций** и **discovery dip-eval** — с **freshness-gate** (`SHYFT_MAX_STALE_MS`) и **fallback** на текущий PG/Jupiter, когда стрим выключен / не виден / устарел / ≤0. **При дефолтных значениях (мастер-флаг OFF) прод-торговля байт-в-байт = текущий PG/Jupiter-путь.**
+
+**Что построено (всё за флагами default-OFF):**
+- Новый чистый резолвер `src/papertrader/stream/price-primary.ts`: `resolvePrimaryPriceUsd({enabled, pgPriceUsd, streamPriceUsd, streamTsMs, nowMs, maxStaleMs})` → `{priceUsd, source:'pg'|'stream', streamAgeMs}`. При `enabled=false` — **дословный passthrough** baseline-цены (`source:'pg'`). Плюс builder события `live_shyft_price_primary` (для A/B-наблюдения, пишется только когда выбран стрим).
+- **MTM (`src/papertrader/executor/tracker.ts`):** override `curMetric` стрим-ценой **перед** exec-sell override (свежий исполняемый fill всё ещё выигрывает) и перед ghost-quote clamp. Гейт: `shyftPricePrimaryEnabled && shyftPricePrimaryMtmEnabled && strategyId==='live-oscar' && isShyftShadowEnabled()`.
+- **Discovery (`src/papertrader/discovery/dip-clones.ts`):** `evalRow` (клон строки только с подменённым `price_usd` = свежая стрим-цена) подаётся в snapshot-гейт, dip-eval, stress-reentry и `buildFeatures`. Гейт включает дополнительно `shyftPricePrimaryDiscoveryEnabled` (default **0** — раскатка MTM-first). При OFF `evalRow === row` (та же ссылка) → гейты байт-в-байт = текущий PG-путь.
+
+**Флаги (env → config, все default так, что прод не меняется):**
+- `SHYFT_PRICE_PRIMARY_ENABLED` (`shyftPricePrimaryEnabled`, default **0/false**) — мастер-выключатель.
+- `SHYFT_PRICE_PRIMARY_MTM_ENABLED` (`shyftPricePrimaryMtmEnabled`, default **1**) — scope MTM (активен только при мастере ON).
+- `SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED` (`shyftPricePrimaryDiscoveryEnabled`, default **0**) — scope discovery (MTM-first).
+- `SHYFT_MAX_STALE_MS` (`shyftMaxStaleMs`, default **5000**) — freshness-gate возраста стрим-цены.
+- **Зависимость активации:** требуется работающий Stage 1.1 shadow-консьюмер (`PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1` + `SHYFT_GRPC_TOKEN` в `.env`), иначе стрим-цены нет и резолвер всегда даёт PG-fallback.
+
+**Тесты:** `tests/shyft-price-primary.test.ts` (OFF-passthrough, freshness-gate, fallback при missing/stale/≤0/future-skew, граница gate, builder события — 12). `npm run typecheck` — зелёный.
+
+**Затронутые файлы:** `ecosystem.config.cjs`, `src/papertrader/config.ts`, `src/papertrader/executor/tracker.ts`, `src/papertrader/discovery/dip-clones.ts`, новый `src/papertrader/stream/price-primary.ts`, `tests/shyft-price-primary.test.ts`, `docs/strategy/release/VERSION`, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Включение на VPS (после деплоя):** в `/opt/solana-alpha/.env` уже должен быть `SHYFT_GRPC_TOKEN`; включить Stage 1.1 shadow (`PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1`), затем `SHYFT_PRICE_PRIMARY_ENABLED=1` (сначала только MTM — discovery остаётся 0), `pm2 reload ecosystem.config.cjs --update-env`. Наблюдать `live_shyft_price_primary` (доля стрим-выборов, `streamVsBaselinePct`) и сверять число входов/выходов и PnL с baseline +$9 481. Discovery включать (`SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED=1`) только после стабильного MTM.
+
+**Откат:** `SHYFT_PRICE_PRIMARY_ENABLED=0` + `pm2 reload live-oscar --update-env` (мгновенно возвращает PG/Jupiter-путь); либо redeploy `sa-alpha-1.11.467`. Поскольку при OFF поведение торговли не менялось, откат по риск-причинам не требуется.
+
+---
+
 ## [1.11.467] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.467` (планируется координатором)
