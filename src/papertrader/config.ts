@@ -111,6 +111,18 @@ const ConfigSchema = z.object({
    * `0` disables the warning. Prod default 45000 (collector poll 30s + reeval throttle 15–30s).
    */
   liveOscarStalePriceWarnMs: z.coerce.number().int().nonnegative().default(45_000),
+  /**
+   * Stage 1.1 (1.11.467) — Shyft Yellowstone gRPC **shadow** stream for live-oscar. When enabled, a
+   * single gRPC consumer subscribes to swap txs for watched/open mints and stores an in-memory last
+   * stream price. At the entry / MTM comparison points a `live_shyft_shadow_price` journal record is
+   * written next to the PG price to measure how far PG lags behind the stream. **Observability only —
+   * the stream price never feeds a gate / eval / execution decision.** Default OFF (byte-for-byte prod).
+   */
+  liveOscarShyftShadowEnabled: z.boolean().default(false),
+  /** Max age (ms) a stored stream price may have to still be paired at a comparison point. */
+  liveOscarShyftShadowMaxAgeMs: z.coerce.number().int().positive().default(60_000),
+  /** Cap on `accountInclude` filter size (narrow, never program-wide firehose). */
+  liveOscarShyftShadowMaxMints: z.coerce.number().int().positive().max(2_000).default(256),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -981,6 +993,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
     liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
     liveOscarStalePriceWarnMs: process.env.PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS,
+    liveOscarShyftShadowEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED, false),
+    liveOscarShyftShadowMaxAgeMs: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS,
+    liveOscarShyftShadowMaxMints: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),

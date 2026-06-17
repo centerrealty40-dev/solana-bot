@@ -50,12 +50,14 @@
 
 Принцип: **Shyft = primary свежей цены, PG = fallback.** Один gRPC-консьюмер внутри процесса `live-oscar`, узкие фильтры, всё за флагами.
 
-### 1.1 Shadow-стрим (измеримость, без изменения решений)
-- **Что:** Yellowstone gRPC-консьюмер по **watched/open** mint'ам; в журнал пишется stream-цена и `priceAgeMs` **рядом** с PG-ценой. Решения **не меняются**.
-- **Файлы (план):** новый `src/papertrader/stream/shyft-shadow-consumer.ts` (ingest + in-memory last-price по mint); точка сравнения — рядом с `observeStaleEntryPrice` и MTM в `tracker.ts`; env-блок `SHYFT_*` в `ecosystem.config.cjs`.
-- **Риск:** низкий (shadow, ничего не исполняет). Точки риска — gRPC reconnect-штормы (RC-4) и счётчик коннектов Shyft (см. контеншен).
+### 1.1 Shadow-стрим (измеримость, без изменения решений) — РЕАЛИЗОВАН (shadow) в 1.11.467, pending деплой/наблюдение
+- **Статус:** код реализован за флагом **default-OFF** (`npm run typecheck` зелёный, unit-тесты чистой логики проходят). Ожидает: деплой на `salpha-v2` + `SHYFT_GRPC_TOKEN` в `.env` + включение флага + сбор `live_shyft_shadow_price` 24–48 ч для распределения лага PG.
+- **Что:** Yellowstone gRPC-консьюмер по **watched/open** mint'ам; в журнал пишется stream-цена и лаг **рядом** с PG-ценой. Решения **не меняются** — стрим-цена не читается ни одним гейтом/eval/исполнением.
+- **Файлы (факт):** новые `src/papertrader/stream/shadow-price.ts` (чистая логика), `shadow-state.ts` (in-memory last-price + watched-set, без gRPC), `shyft-shadow-consumer.ts` (gRPC ingest, узкий `accountInclude`, reconnect/backoff). Точки сравнения — `observeShyftShadowEntryPrice` рядом с `observeStaleEntryPrice` (`src/papertrader/main.ts`) и MTM-цикл `tracker.ts`. Старт консьюмера — `src/live/main.ts`. Env-блок в `ecosystem.config.cjs`. Зависимость `@triton-one/yellowstone-grpc@^5.0.9`.
+- **Формат журнала:** `live_shyft_shadow_price` = `{mint, lane, surface, streamPriceUsd, pgPriceUsd, streamTsMs, pgSnapshotTsMs, pgPriceAgeMs, streamVsPgLagMs, streamVsPgPriceDiffPct, streamSlot}`.
+- **Риск:** низкий (shadow, ничего не исполняет). Точки риска — gRPC reconnect-штормы (RC-4; митигировано backoff+jitter и in-place обновлением подписки без reconnect) и счётчик коннектов Shyft (один консьюмер на весь процесс).
 - **A/B-проверка:** оффлайн — сопоставить stream-цену vs PG на одних и тех же mint/ts; доля случаев, где stream «увидел» −5%/−10% касание раньше PG, и медианный выигрыш по времени.
-- **Флаг:** `SHYFT_SHADOW_ENABLED` default **OFF**.
+- **Флаг:** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` default **OFF** (+ `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS`, `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS`; креды `SHYFT_GRPC_ENDPOINT`/`SHYFT_GRPC_TOKEN` в `.env`).
 
 ### 1.2 Stream-цена primary для discovery-eval и MTM + freshness-gate
 - **Что:** для discovery-eval (дип −5/−10%) и MTM открытых позиций брать stream-цену как primary; `MAX_STALE_MS` freshness-gate — если stream-цена старше порога/недоступна, **откат на PG** (текущее поведение).

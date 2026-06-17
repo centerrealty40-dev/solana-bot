@@ -92,6 +92,7 @@
     "@nktkas/hyperliquid": "^0.32.2",
     "@pump-fun/pump-swap-sdk": "^1.17.0",
     "@solana/web3.js": "^1.95.0",
+    "@triton-one/yellowstone-grpc": "^5.0.9",
     "bs58": "^4.0.1",
     "bullmq": "^5.30.0",
     "decimal.js": "^10.4.3",

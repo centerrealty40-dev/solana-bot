@@ -387,6 +387,17 @@ const PM2_APPS = [
          * LIVE_OSCAR_STALE_PRICE_TELEGRAM_ENABLED=1 (default OFF). 0 = выключить варн.
          */
         PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS: '45000',
+        /**
+         * 1.11.467 — Этап 1.1: Shyft Yellowstone gRPC SHADOW-стрим (observability only, default OFF).
+         * При '1' один gRPC-консьюмер подписывается на swap-tx по watched/open mint'ам (узкий
+         * accountInclude, НЕ firehose) и пишет журнал `live_shyft_shadow_price` рядом с PG-ценой на
+         * точках входа/MTM — измеряет лаг PG vs стрим. Стрим-цена НИГДЕ не участвует в гейтах/eval/
+         * исполнении. При OFF торговля байт-в-байт = текущая. Креды: SHYFT_GRPC_ENDPOINT (default
+         * https://grpc.fra.shyft.to) + SHYFT_GRPC_TOKEN (x-token) в .env (НЕ сюда).
+         */
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',

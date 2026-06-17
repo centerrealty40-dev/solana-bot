@@ -14,6 +14,8 @@ import type {
   PriceVerifyVerdict,
 } from '../types.js';
 import { fetchLatestSnapshotQuote, getLiveMcUsd, getSolUsd } from '../pricing.js';
+import { buildShadowPriceEvent } from '../stream/shadow-price.js';
+import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
 import { verifyExitPrice } from '../pricing/price-verify.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
@@ -1977,6 +1979,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     let snapPx = 0;
     let snapVol5m: number | null = null;
+    let snapTsMs: number | null = null;
     try {
       const quote = await fetchLatestSnapshotQuote(
         mint,
@@ -1984,8 +1987,30 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       );
       snapPx = Number(quote.priceUsd ?? 0);
       snapVol5m = quote.volume5mUsd;
+      snapTsMs = quote.snapshotTsMs ?? null;
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
+    }
+    // Stage 1.1 shadow (observability only, default OFF): pair the PG MTM price with the freshest Shyft
+    // stream price to measure PG lag. NEVER influences any exit/MTM decision below.
+    if (cfg.liveOscarShyftShadowEnabled && cfg.strategyId === 'live-oscar' && isShyftShadowEnabled()) {
+      const nowShadow = Date.now();
+      const streamShadow = getShyftShadowStreamPrice(mint, nowShadow);
+      if (streamShadow) {
+        const shadowEvent = buildShadowPriceEvent({
+          mint,
+          lane: 'mtm',
+          surface: 'mtm',
+          streamPriceUsd: streamShadow.priceUsd,
+          pgPriceUsd: snapPx > 0 ? snapPx : null,
+          streamTsMs: streamShadow.streamTsMs,
+          pgSnapshotTsMs: snapTsMs,
+          streamSlot: streamShadow.slot,
+          nowMs: nowShadow,
+        });
+        journalAppend(shadowEvent);
+        journalLiveStrategy?.(shadowEvent);
+      }
     }
     let curMetric = snapPx > 0 ? snapPx : 0;
     let entrySplitJupiterPx: number | undefined;
