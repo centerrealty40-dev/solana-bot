@@ -46,6 +46,20 @@
 
 ---
 
+## [1.11.462] — 2026-06-17
+
+**Тег:** `sa-alpha-1.11.462`
+
+### Feature: Live Oscar optimized staged entry ($1000+$500, wait −5% / leg-2 −10%)
+
+- **Асимметричный сплит:** `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD` (leg-2 USD; `0` = symmetric legacy).
+- **Prod:** ждать −5% от сигнала → $1000; 2-я нога $500 при −10%; position **$1500**; kill −50% без изменений; Wave B exit без изменений.
+- **Micro tier:** $300+$150 = $450; **low tier:** $1000+$500 = $1500 (aligned with prod).
+
+**Откат:** redeploy `sa-alpha-1.11.461`; вернуть `FIRST_DROP_PCT=0`, `ENTRY_SPLIT_LEG_USD=730`, `ENTRY_SPLIT_TARGET_DROP_PCT=5`, `POSITION_USD=1460`.
+
+---
+
 ## [1.11.460] — 2026-06-16
 
 **Тег:** `sa-alpha-1.11.460`

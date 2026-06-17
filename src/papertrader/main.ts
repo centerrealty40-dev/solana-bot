@@ -367,6 +367,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
     const symbol = args.symbol?.trim() || '?';
     const splitUsd = cfg.liveStagedEntryEntrySplitLegUsd;
+    const split2Usd =
+      cfg.liveStagedEntryEntrySplitLeg2Usd > 0
+        ? cfg.liveStagedEntryEntrySplitLeg2Usd
+        : splitUsd;
     const sl = cfg.liveStagedEntrySecondLegUsd;
     const sd = cfg.liveStagedEntrySecondDropPct;
     const td = cfg.liveStagedEntryThirdDropPct;
@@ -378,11 +382,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     const firstLegExplain =
       cfg.liveStagedEntryFirstDropPct <= 0
         ? cfg.liveStagedEntryEntrySplitTargetDropPct > 0
-          ? `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> по сигналу, 2-я нога <b>$${splitUsd.toFixed(0)}</b> при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала.`
-          : `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> сразу, затем <b>$${splitUsd.toFixed(0)}</b> через 10 с, если цена в коридоре +3% / −10% к 1-й ноге.`
-        : ttlMin != null
-          ? `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала (TTL <b>${ttlMin} мин</b>).`
-          : `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала.`;
+          ? `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> по сигналу, 2-я нога <b>$${split2Usd.toFixed(0)}</b> при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала.`
+          : `Сплит входа (не усреднение): <b>$${splitUsd.toFixed(0)}</b> сразу, затем <b>$${split2Usd.toFixed(0)}</b> через 10 с, если цена в коридоре +3% / −10% к 1-й ноге.`
+        : cfg.liveStagedEntryEntrySplitTargetDropPct > 0
+          ? `Сплит входа (не усреднение): 1-я нога <b>$${splitUsd.toFixed(0)}</b> при −${cfg.liveStagedEntryFirstDropPct}% от сигнала; 2-я нога <b>$${split2Usd.toFixed(0)}</b> при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала.`
+          : ttlMin != null
+            ? `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала (TTL <b>${ttlMin} мин</b>).`
+            : `Сплит входа после −${cfg.liveStagedEntryFirstDropPct}% от сигнала.`;
     const secondLine =
       sl > 0
         ? `Усреднение staged (не сплит): <b>$${sl.toFixed(0)}</b> на −${sd}% и <b>$${tl.toFixed(0)}</b> на −${td}% — не раньше 3 и 5 мин после предыдущей ноги.`
@@ -1559,10 +1565,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 const killDropPct = firstProbe
                   ? (ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct ?? 7)
                   : cfg.liveStagedEntryKillDropPct;
+                const tradeTier = ot.liveOscarMcapTier;
                 const totalNotional = firstProbe
                   ? cfg.liveStagedEntryEntrySplitLegUsd * 2
                   : v2Split
-                    ? stagedEntryPlanInvestedCapUsd(cfg)
+                    ? stagedEntryPlanInvestedCapUsd(cfg, tradeTier)
                     : cfg.liveStagedEntryFirstLegUsd +
                       cfg.liveStagedEntrySecondLegUsd +
                       cfg.liveStagedEntryThirdLegUsd;
@@ -1583,12 +1590,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 };
                 if (v2Split) {
                   const leg1 = cfg.liveStagedEntryEntrySplitLegUsd;
+                  const leg2 =
+                    cfg.liveStagedEntryEntrySplitLeg2Usd > 0
+                      ? cfg.liveStagedEntryEntrySplitLeg2Usd
+                      : leg1;
+                  const firstDrop = cfg.liveStagedEntryFirstDropPct;
+                  const leg1When =
+                    firstDrop > 0 ? `при −${firstDrop}% от сигнала` : 'по сигналу';
                   const description = firstProbe
                     ? `${cfg.strategyId} first-mint-probe: split ${leg1.toFixed(0)}+${leg1.toFixed(0)} USD, kill −${killDropPct}% от сигнала, без усреднения; при убытке → denylist, при прибыли → обычный режим.`
                     : cfg.liveStagedEntryEntrySplitTargetDropPct > 0
-                      ? `${cfg.strategyId} entry-split v2: 1-я нога ${leg1.toFixed(0)} USD по сигналу; 2-я нога ${leg1.toFixed(0)} USD при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала; kill −${killDropPct}% от сигнала.`
+                      ? `${cfg.strategyId} entry-split v2: 1-я нога ${leg1.toFixed(0)} USD ${leg1When}; 2-я нога ${leg2.toFixed(0)} USD при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала; kill −${killDropPct}% от сигнала.`
                       : `${cfg.strategyId} entry-split v2: нотионал до $${totalNotional.toFixed(0)}. ` +
-                        `1-я нога сплита ${leg1.toFixed(0)} USD по сигналу; 2-я нога сплита ${leg1.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
+                        `1-я нога сплита ${leg1.toFixed(0)} USD ${leg1When}; 2-я нога сплита ${leg2.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
                         `1-е усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} при −${cfg.liveStagedEntrySecondDropPct}%…−${cfg.liveStagedEntryThirdDropPct}% от сигнала (≥${(cfg.liveStagedEntryAvgCooldownMs / 60_000).toFixed(0)} мин). ` +
                         `2-е усреднение $${cfg.liveStagedEntryThirdLegUsd.toFixed(0)} при ≤−${cfg.liveStagedEntryThirdDropPct}% (≥${(cfg.liveStagedEntryAvgSecondCooldownMs / 60_000).toFixed(0)} мин после 1-го).`;
                   return {
@@ -1599,6 +1613,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                       ...sharedParams,
                       firstLegUsd: leg1,
                       entrySplitLegUsd: leg1,
+                      entrySplitLeg2Usd: leg2,
+                      firstDropPct: firstDrop,
                       entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
                       entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
                       entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,

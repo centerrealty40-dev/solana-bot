@@ -359,6 +359,8 @@ export interface LiveStagedEntryState {
    */
   entrySplitV2?: boolean;
   entrySplitLegUsd?: number;
+  /** Asymmetric split leg-2; when omitted, same as `entrySplitLegUsd`. */
+  entrySplitLeg2Usd?: number;
   entrySplitDelayMs?: number;
   entrySplitMaxUpPct?: number;
   entrySplitMaxDownPct?: number;

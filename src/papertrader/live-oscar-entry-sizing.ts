@@ -6,7 +6,7 @@ import {
 } from './live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from './types.js';
 
-/** Tier-aware staged-entry split leg: micro=$300, low/prod/default=$730 (canonical env). */
+/** Tier-aware staged-entry split leg-1: micro=$300, low/prod/default=$1000 (canonical env). */
 export function resolveLiveOscarEntrySplitLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -15,37 +15,70 @@ export function resolveLiveOscarEntrySplitLegUsd(
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
+/** Tier-aware split leg-2; `0` in env → same as leg-1 (symmetric split). */
+export function resolveLiveOscarEntrySplitLeg2Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  if (tier === 'micro') {
+    const configured = cfg.liveOscarMicroMcapEntrySplitLeg2Usd;
+    return configured > 0 ? configured : leg1;
+  }
+  if (tier === 'low') {
+    const configured = cfg.liveOscarLowMcapEntrySplitLeg2Usd;
+    return configured > 0 ? configured : leg1;
+  }
+  const configured = cfg.liveStagedEntryEntrySplitLeg2Usd;
+  return configured > 0 ? configured : leg1;
+}
+
+export function resolveLiveOscarEntrySplitTotalUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  return resolveLiveOscarEntrySplitLegUsd(cfg, tier) + resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+}
+
 /** Fail fast on boot when tier-specific env diverges from contracts. */
 export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void {
   if (cfg.strategyId !== 'live-oscar' || !cfg.liveStagedEntryEnabled) return;
 
-  const leg = resolveLiveOscarEntrySplitLegUsd(cfg);
+  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg);
+  const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg);
   const pos = cfg.positionUsd;
   const errors: string[] = [];
 
-  if (!(leg > 0)) {
+  if (!(leg1 > 0)) {
     errors.push('PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD must be > 0');
   }
   if (!(pos > 0)) {
     errors.push('PAPER_POSITION_USD must be > 0');
   }
-  if (leg > 0 && pos > 0 && Math.abs(pos - leg * 2) > 1e-6) {
+  if (leg1 > 0 && pos > 0 && Math.abs(pos - (leg1 + leg2)) > 1e-6) {
     errors.push(
-      `PAPER_POSITION_USD (${pos}) must equal 2× PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD (${leg * 2})`,
+      `PAPER_POSITION_USD (${pos}) must equal leg1+leg2 (${leg1}+${leg2}=${leg1 + leg2})`,
     );
   }
-  if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - leg) > 1e-6) {
+  if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - leg1) > 1e-6) {
     errors.push(
-      `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD (${cfg.liveStagedEntryFirstLegUsd}) must equal ENTRY_SPLIT_LEG (${leg})`,
+      `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD (${cfg.liveStagedEntryFirstLegUsd}) must equal ENTRY_SPLIT_LEG (${leg1})`,
     );
   }
   if (
     cfg.liveOscarLowMcapLaneEnabled &&
-    Math.abs(cfg.liveOscarLowMcapEntrySplitLegUsd - leg) > 1e-6
+    Math.abs(cfg.liveOscarLowMcapEntrySplitLegUsd - leg1) > 1e-6
   ) {
     errors.push(
-      `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD (${cfg.liveOscarLowMcapEntrySplitLegUsd}) must equal ENTRY_SPLIT_LEG (${leg})`,
+      `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD (${cfg.liveOscarLowMcapEntrySplitLegUsd}) must equal ENTRY_SPLIT_LEG (${leg1})`,
     );
+  }
+  if (cfg.liveOscarLowMcapLaneEnabled && cfg.liveOscarLowMcapEntrySplitLeg2Usd > 0) {
+    if (Math.abs(cfg.liveOscarLowMcapEntrySplitLeg2Usd - leg2) > 1e-6) {
+      errors.push(
+        `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD (${cfg.liveOscarLowMcapEntrySplitLeg2Usd}) must equal ENTRY_SPLIT_LEG2 (${leg2})`,
+      );
+    }
   }
   if (
     cfg.liveOscarLowMcapLaneEnabled &&
@@ -56,17 +89,18 @@ export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void 
     );
   }
   if (cfg.liveOscarMicroMcapLaneEnabled) {
-    const microLeg = cfg.liveOscarMicroMcapEntrySplitLegUsd;
+    const microLeg1 = cfg.liveOscarMicroMcapEntrySplitLegUsd;
+    const microLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, 'micro');
     const microPos = cfg.liveOscarMicroMcapPositionUsd;
-    if (!(microLeg > 0)) {
+    if (!(microLeg1 > 0)) {
       errors.push('PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD must be > 0');
     }
     if (!(microPos > 0)) {
       errors.push('PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD must be > 0');
     }
-    if (microLeg > 0 && microPos > 0 && Math.abs(microPos - microLeg * 2) > 1e-6) {
+    if (microLeg1 > 0 && microPos > 0 && Math.abs(microPos - (microLeg1 + microLeg2)) > 1e-6) {
       errors.push(
-        `PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD (${microPos}) must equal 2× MICRO_ENTRY_SPLIT_LEG (${microLeg * 2})`,
+        `PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD (${microPos}) must equal leg1+leg2 (${microLeg1}+${microLeg2}=${microLeg1 + microLeg2})`,
       );
     }
   }
@@ -82,12 +116,15 @@ export function applyCanonicalStagedEntrySizing(
   st: LiveStagedEntryState,
   tier?: LiveOscarTradeTier,
 ): void {
-  const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
-  st.firstLegUsd = leg;
-  st.entrySplitLegUsd = leg;
+  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  st.firstLegUsd = leg1;
+  st.entrySplitLegUsd = leg1;
+  st.entrySplitLeg2Usd = leg2;
   st.entrySplitDelayMs = cfg.liveStagedEntryEntrySplitDelayMs;
   st.entrySplitMaxUpPct = cfg.liveStagedEntryEntrySplitMaxUpPct;
   st.entrySplitMaxDownPct = cfg.liveStagedEntryEntrySplitMaxDownPct;
+  st.entrySplitTargetDropPct = cfg.liveStagedEntryEntrySplitTargetDropPct;
 }
 
 /** Before live buy_open: first journal leg + staged plan must match canonical split. */
