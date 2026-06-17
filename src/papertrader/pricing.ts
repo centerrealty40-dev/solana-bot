@@ -153,6 +153,8 @@ function dexSnapshotTables(source?: DexSnapshotSource): string[] {
 export type LatestSnapshotQuote = {
   priceUsd: number | null;
   volume5mUsd: number | null;
+  /** Epoch ms of the snapshot row whose `price_usd` is returned (Stage 1.1 shadow lag). `null` if absent. */
+  snapshotTsMs?: number | null;
 };
 
 export async function fetchLatestSnapshotQuote(
@@ -163,20 +165,31 @@ export async function fetchLatestSnapshotQuote(
   const safeMint = mint.replace(/'/g, "''");
   for (const t of tables) {
     const r = await db.execute(dsql.raw(`
-      SELECT price_usd, COALESCE(volume_5m, 0)::float AS volume_5m
+      SELECT price_usd, COALESCE(volume_5m, 0)::float AS volume_5m,
+             extract(epoch from ts) * 1000 AS ts_ms
       FROM ${t}
       WHERE base_mint = '${safeMint}'
       ORDER BY ts DESC
       LIMIT 1
     `));
-    const rows = r as unknown as Array<{ price_usd: number | string; volume_5m: number | string }>;
+    const rows = r as unknown as Array<{
+      price_usd: number | string;
+      volume_5m: number | string;
+      ts_ms: number | string | null;
+    }>;
     const px = Number(rows[0]?.price_usd ?? 0);
     const v5 = Number(rows[0]?.volume_5m ?? 0);
+    const tsMsRaw = rows[0]?.ts_ms;
+    const tsMs = tsMsRaw == null ? null : Number(tsMsRaw);
     if (px > 0) {
-      return { priceUsd: px, volume5mUsd: v5 > 0 ? v5 : null };
+      return {
+        priceUsd: px,
+        volume5mUsd: v5 > 0 ? v5 : null,
+        snapshotTsMs: tsMs != null && Number.isFinite(tsMs) ? Math.round(tsMs) : null,
+      };
     }
   }
-  return { priceUsd: null, volume5mUsd: null };
+  return { priceUsd: null, volume5mUsd: null, snapshotTsMs: null };
 }
 
 export async function fetchLatestSnapshotPrice(

@@ -46,6 +46,39 @@
 
 ---
 
+## [1.11.467] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.467` (планируется координатором)
+
+### Этап 1.1 (live-oscar): Shyft shadow-стрим — измерение лага PG (observability only)
+
+Реализован **Этап 1.1** роадмапа `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`: Yellowstone gRPC **shadow**-консьюмер Shyft для измерения реального лага PG-цены **без изменения торговых решений**. База перед Этапом 1.2. **При дефолтных значениях прод-торговля байт-в-байт не меняется** — стрим-цена НИГДЕ не участвует в гейтах/eval/исполнении.
+
+**Что построено (всё за флагами default-OFF):**
+- Один gRPC-консьюмер на весь процесс live-oscar (`src/papertrader/stream/shyft-shadow-consumer.ts`): подписка на swap-tx по **watched/open** mint'ам с **узким** `accountInclude` (никакого program-wide firehose — не грузим общий аккаунт Shyft Build / superbot). Ручной reconnect c экспоненциальным backoff+jitter; обновление набора mint'ов пишется в активный стрим без переподключения (анти-RC-4).
+- Цена из стрима выводится из резервов пулового vault'а в `postTokenBalances` swap-tx (DEX-agnostic: base-vault = mint, quote-vault = WSOL/USDC/USDT того же владельца), `price = quoteUi·quoteUsd / baseUi`. In-memory last-price по mint с TTL.
+- На точках сравнения — рядом с `observeStaleEntryPrice` (вход) и в MTM-цикле трекера — пишется журнал `live_shyft_shadow_price`: `{mint, lane, surface, streamPriceUsd, pgPriceUsd, streamTsMs, pgSnapshotTsMs, pgPriceAgeMs, streamVsPgLagMs, streamVsPgPriceDiffPct, streamSlot}`. `pgSnapshotTsMs` переиспользует `SnapshotFeatures.snapshot_ts_ms` (1.11.466) на входе; для MTM добавлен `snapshotTsMs` в `LatestSnapshotQuote`.
+
+**Флаги (env → config, все default-OFF / byte-for-byte прод):**
+- `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` (`liveOscarShyftShadowEnabled`, default **0/false**) — мастер-выключатель shadow.
+- `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS` (`liveOscarShyftShadowMaxAgeMs`, default **60000**) — макс. возраст хранимой стрим-цены при сопоставлении.
+- `PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS` (`liveOscarShyftShadowMaxMints`, default **256**) — кап размера `accountInclude`.
+- Креды (в `.env`, не в ecosystem): `SHYFT_GRPC_ENDPOINT` (default `https://grpc.fra.shyft.to`) + `SHYFT_GRPC_TOKEN` (x-token; та же конвенция, что у pumpswap-flow-sniper).
+
+**Зависимость:** добавлен `@triton-one/yellowstone-grpc@^5.0.9` (Yellowstone gRPC NAPI-клиент; native-биндинг ставится `npm ci` под linux-x64 на VPS).
+
+**Тесты:** `tests/shyft-shadow-price.test.ts` (вывод цены из резервов, lag/age/diff, builder события — 15) + `tests/shyft-shadow-state.test.ts` (enabled/TTL/смена набора mint'ов — 3). `npm run typecheck` — зелёный.
+
+**Test-hygiene (не связано с 1.1, прод-код не тронут):** `tests/papertrader-live-mcap.test.ts` отставал от рефакторинга `fetchLatestSnapshotMcap` (помощник `pricing/mcap-snapshot.ts`: проход за reference-supply + per-table pick = **два** `db.execute`, строки должны нести `price_usd > 0`). Старый мок отдавал один `db`-вызов без `price_usd` → `TypeError: raw is not iterable`. Мок приведён к актуальной реализации (4 теста снова зелёные); правка только в тесте. Это падение **предсуществовало** на `origin/v2` (SHA `b78c967`) и не вносилось Этапом 1.1.
+
+**Затронутые файлы:** `package.json`, `ecosystem.config.cjs`, `src/papertrader/config.ts`, `src/papertrader/pricing.ts`, `src/papertrader/main.ts`, `src/papertrader/executor/tracker.ts`, `src/live/main.ts`, новые `src/papertrader/stream/{shadow-price,shadow-state,shyft-shadow-consumer}.ts`, тесты, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Включение на VPS (после деплоя):** в `/opt/solana-alpha/.env` задать `SHYFT_GRPC_TOKEN=<x-token>` (+ при нужде `SHYFT_GRPC_ENDPOINT`); затем в env live-oscar `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1` → `pm2 reload ecosystem.config.cjs --update-env`. Наблюдать `live_shyft_shadow_price` / `live_shyft_shadow_status` в live-журнале.
+
+**Откат:** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=0` + `pm2 reload live-oscar --update-env` (мгновенно отключает консьюмер и журнал); либо redeploy `sa-alpha-1.11.466`. Поскольку при OFF поведение торговли не менялось, откат по риск-причинам не требуется.
+
+---
+
 ## [1.11.466] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.466` (планируется координатором)

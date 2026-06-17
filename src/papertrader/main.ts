@@ -95,6 +95,12 @@ import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { isEntryPriceStale, snapshotPriceAgeMs } from './stale-price.js';
+import { buildShadowPriceEvent } from './stream/shadow-price.js';
+import {
+  getShyftShadowStreamPrice,
+  isShyftShadowEnabled,
+  setShyftShadowWatchedMints,
+} from './stream/shadow-state.js';
 import {
   isLiveBuyDiscoveryTelegramSuppressed,
   refreshLiveBuyTelegramSuppressForTick,
@@ -689,6 +695,33 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     notifyLiveOscarStalePrice(d, priceAgeMs);
   }
 
+  /**
+   * Observability only (Stage 1.1, 1.11.467): at the entry-decision point, pair the PG price being used
+   * with the freshest Shyft stream price (if any) and journal a `live_shyft_shadow_price` record to
+   * measure how far PG lags behind the live stream. Gated by `liveOscarShyftShadowEnabled` (default OFF)
+   * + `live-oscar`. **Never changes a trading decision** — the stream price is not read by any gate/eval.
+   */
+  function observeShyftShadowEntryPrice(d: EvalDecision): void {
+    if (!cfg.liveOscarShyftShadowEnabled || cfg.strategyId !== 'live-oscar') return;
+    if (!isShyftShadowEnabled()) return;
+    const now = Date.now();
+    const stream = getShyftShadowStreamPrice(d.mint, now);
+    if (!stream) return;
+    const event = buildShadowPriceEvent({
+      mint: d.mint,
+      lane: String(d.lane),
+      surface: 'entry',
+      streamPriceUsd: stream.priceUsd,
+      pgPriceUsd: d.features.price_usd,
+      streamTsMs: stream.streamTsMs,
+      pgSnapshotTsMs: d.features.snapshot_ts_ms ?? null,
+      streamSlot: stream.slot,
+      nowMs: now,
+    });
+    journalAppend(event);
+    journalLiveStrategy?.(event);
+  }
+
   function notifyLiveOscarStalePrice(d: EvalDecision, priceAgeMs: number): void {
     if (cfg.strategyId !== 'live-oscar') return;
     // Throttled alert is opt-in (default OFF) — journal metric above is the primary observability surface.
@@ -1122,6 +1155,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         const near = res.decisions.filter((d) => !d.pass && isAwaitingDipQualityHold(d.reasons));
         updateNearReadyDipWatchlist(near.map((d) => ({ mint: d.mint, symbol: d.symbol ?? '?' })));
       }
+      // Stage 1.1 shadow: feed the narrow watched/open mint set to the Shyft gRPC consumer (default OFF).
+      if (cfg.liveOscarShyftShadowEnabled && cfg.strategyId === 'live-oscar') {
+        const shadowMints = new Set<string>(open.keys());
+        for (const d of res.decisions) shadowMints.add(d.mint);
+        setShyftShadowWatchedMints(shadowMints);
+      }
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
       for (const d of res.decisions) {
@@ -1239,6 +1278,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         observeStaleEntryPrice(d);
+        observeShyftShadowEntryPrice(d);
 
         const stagedEntrySignal = resolveLiveStagedEntrySignal({
           mint: d.mint,

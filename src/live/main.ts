@@ -20,6 +20,11 @@ import { configureAdaptivePriorityFee } from './adaptive-priority-fee.js';
 import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
+import {
+  setShyftShadowEnabled,
+  setShyftShadowMaxAgeMs,
+} from '../papertrader/stream/shadow-state.js';
+import { startShyftShadowConsumer } from '../papertrader/stream/shyft-shadow-consumer.js';
 import { configurePostExitReentryGatePaperCfg } from '../papertrader/discovery/dip-clones.js';
 import {
   assertLiveOscarUnifiedEntrySizing,
@@ -188,6 +193,43 @@ export async function main(): Promise<void> {
   configurePostExitReentryGatePaperCfg(paperBaseline);
   configureWaveBPostTp1ScratchReentry(paperBaseline);
   assertLiveOscarUnifiedEntrySizing(paperBaseline);
+
+  /**
+   * Stage 1.1 (1.11.467) — Shyft Yellowstone gRPC SHADOW stream (observability only, default OFF).
+   * One consumer for the whole process; narrow `accountInclude` on watched/open mints. The stream price
+   * is journalled next to the PG price at the entry/MTM comparison points to measure PG lag, and NEVER
+   * feeds a trading gate / eval / execution decision. Endpoint/token reuse the shared `SHYFT_GRPC_*`
+   * convention (same `SHYFT_GRPC_TOKEN` x-token used by the pumpswap flow-sniper reference).
+   */
+  setShyftShadowEnabled(paperBaseline.liveOscarShyftShadowEnabled);
+  setShyftShadowMaxAgeMs(paperBaseline.liveOscarShyftShadowMaxAgeMs);
+  if (paperBaseline.liveOscarShyftShadowEnabled) {
+    const shyftEndpoint =
+      process.env.SHYFT_GRPC_ENDPOINT?.trim() || 'https://grpc.fra.shyft.to';
+    const shyftToken = process.env.SHYFT_GRPC_TOKEN?.trim() ?? '';
+    if (!shyftToken) {
+      log.warn(
+        {},
+        'live-oscar Shyft shadow ENABLED but SHYFT_GRPC_TOKEN missing — consumer idle (no stream observations)',
+      );
+      appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status: 'idle', detail: 'missing_token' });
+    } else {
+      startShyftShadowConsumer(
+        {
+          endpoint: shyftEndpoint,
+          token: shyftToken,
+          maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
+        },
+        {
+          onStatus: (status, detail) =>
+            appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status, ...(detail ? { detail } : {}) }),
+          onError: (err) =>
+            log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
+        },
+      );
+      log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+    }
+  }
 
   if (
     liveCfg.strategyEnabled &&

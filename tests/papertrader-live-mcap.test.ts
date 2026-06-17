@@ -20,31 +20,41 @@ beforeEach(() => {
   mockFetch.mockReset();
 });
 
+// fetchLatestSnapshotMcap issues two db.execute passes per source table:
+// a reference-supply pass (medianSupplyFromRows) and a per-table pick pass.
+// Rows must carry price_usd > 0 so parseSnapshotMcapRows keeps them.
 describe('fetchLatestSnapshotMcap', () => {
   it('prefers market_cap_usd over fdv', async () => {
-    mockExec.mockResolvedValueOnce([{ market_cap_usd: 800_000, fdv_usd: 1_500_000 }] as never);
+    mockExec.mockResolvedValue([
+      { price_usd: 1, market_cap_usd: 800_000, fdv_usd: 1_500_000 },
+    ] as never);
     const mc = await fetchLatestSnapshotMcap('mint', 'raydium');
     expect(mc).toBe(800_000);
   });
   it('falls back to fdv when mcap is null', async () => {
-    mockExec.mockResolvedValueOnce([{ market_cap_usd: null, fdv_usd: 1_200_000 }] as never);
+    mockExec.mockResolvedValue([
+      { price_usd: 1, market_cap_usd: null, fdv_usd: 1_200_000 },
+    ] as never);
     const mc = await fetchLatestSnapshotMcap('mint', 'raydium');
     expect(mc).toBe(1_200_000);
   });
   it('returns null when both empty', async () => {
-    mockExec.mockResolvedValueOnce([{ market_cap_usd: 0, fdv_usd: 0 }] as never);
+    mockExec.mockResolvedValue([{ price_usd: 1, market_cap_usd: 0, fdv_usd: 0 }] as never);
     const mc = await fetchLatestSnapshotMcap('mint', 'raydium');
     expect(mc).toBeNull();
   });
 });
 
 describe('getLiveMcUsd cache', () => {
-  it('cache hit avoids second db query', async () => {
-    mockExec.mockResolvedValueOnce([{ market_cap_usd: 770_100, fdv_usd: null }] as never);
+  it('cache hit avoids re-querying the db', async () => {
+    mockExec.mockResolvedValue([
+      { price_usd: 1, market_cap_usd: 770_100, fdv_usd: null },
+    ] as never);
     const a = await getLiveMcUsd('mint-cache', 'raydium');
     const b = await getLiveMcUsd('mint-cache', 'raydium');
     expect(a).toBe(770_100);
     expect(b).toBe(770_100);
-    expect(mockExec.mock.calls.length).toBe(1);
+    // First call: refSupply pass + table pass = 2 db.execute; cached second call: 0.
+    expect(mockExec.mock.calls.length).toBe(2);
   });
 });
