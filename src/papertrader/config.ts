@@ -123,6 +123,21 @@ const ConfigSchema = z.object({
   liveOscarShyftShadowMaxAgeMs: z.coerce.number().int().positive().default(60_000),
   /** Cap on `accountInclude` filter size (narrow, never program-wide firehose). */
   liveOscarShyftShadowMaxMints: z.coerce.number().int().positive().max(2_000).default(256),
+  /**
+   * Stage 1.2 (1.11.468) — use the Shyft **stream** price as PRIMARY for live-oscar decision points
+   * (open-position MTM and discovery dip-eval), with a `shyftMaxStaleMs` freshness-gate and PG/Jupiter
+   * **fallback** when the stream price is disabled / unseen / stale / non-positive. Master gate; when
+   * OFF the price source is byte-for-byte the current PG/Jupiter path. Requires the Stage 1.1 shadow
+   * consumer running (`liveOscarShyftShadowEnabled` + `SHYFT_GRPC_TOKEN`) to populate stream prices.
+   * Default OFF.
+   */
+  shyftPricePrimaryEnabled: z.boolean().default(false),
+  /** Stage 1.2 scope: apply stream-primary to open-position MTM (only active when master ON). */
+  shyftPricePrimaryMtmEnabled: z.boolean().default(true),
+  /** Stage 1.2 scope: apply stream-primary to discovery dip-eval (only active when master ON). Default OFF (MTM-first rollout). */
+  shyftPricePrimaryDiscoveryEnabled: z.boolean().default(false),
+  /** Stage 1.2 freshness-gate (ms): max age of a stream price to accept it as primary. */
+  shyftMaxStaleMs: z.coerce.number().int().positive().default(5_000),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -996,6 +1011,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarShyftShadowEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED, false),
     liveOscarShyftShadowMaxAgeMs: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS,
     liveOscarShyftShadowMaxMints: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS,
+    shyftPricePrimaryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_ENABLED, false),
+    shyftPricePrimaryMtmEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_MTM_ENABLED, true),
+    shyftPricePrimaryDiscoveryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED, false),
+    shyftMaxStaleMs: process.env.SHYFT_MAX_STALE_MS,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),

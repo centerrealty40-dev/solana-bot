@@ -398,6 +398,18 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
+        /**
+         * 1.11.468 — Этап 1.2: Shyft stream-цена PRIMARY для live-oscar (MTM открытых позиций +
+         * discovery dip-eval), freshness-gate `SHYFT_MAX_STALE_MS` + fallback на PG/Jupiter. Master
+         * флаг default OFF — при OFF источник цены байт-в-байт = текущий PG/Jupiter. Требует включённый
+         * Stage 1.1 shadow-консьюмер (PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1 + SHYFT_GRPC_TOKEN), чтобы
+         * было что брать как primary. Раскатка: сначала только MTM (SHYFT_PRICE_PRIMARY_MTM_ENABLED=1,
+         * default), затем discovery (SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED=1, default 0).
+         */
+        SHYFT_PRICE_PRIMARY_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_MTM_ENABLED: '1',
+        SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '0',
+        SHYFT_MAX_STALE_MS: '5000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',

@@ -1,6 +1,8 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
 import { snapshotRowTsMs } from '../stale-price.js';
+import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
+import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
 import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
@@ -823,21 +825,63 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const journalTier: LiveOscarTradeTier =
       oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
 
+    /**
+     * Stage 1.2 (1.11.468): Shyft stream price PRIMARY for discovery dip-eval (freshness-gated,
+     * PG fallback). `evalRow` differs from `row` only in `price_usd` (the fresh stream price) and is
+     * used by the snapshot/dip gates + reported features. **Default OFF** (`shyftPricePrimaryEnabled`
+     * + `shyftPricePrimaryDiscoveryEnabled`): when OFF `evalRow === row` (same reference), so the gates
+     * are byte-for-byte identical to the current PG path.
+     */
+    let evalRow = row;
+    if (
+      cfg.shyftPricePrimaryEnabled &&
+      cfg.shyftPricePrimaryDiscoveryEnabled &&
+      cfg.strategyId === 'live-oscar' &&
+      isShyftShadowEnabled()
+    ) {
+      const nowPrimary = Date.now();
+      const streamPrimary = getShyftShadowStreamPrice(row.mint, nowPrimary);
+      const picked = resolvePrimaryPriceUsd({
+        enabled: true,
+        pgPriceUsd: row.price_usd ?? null,
+        streamPriceUsd: streamPrimary?.priceUsd ?? null,
+        streamTsMs: streamPrimary?.streamTsMs ?? null,
+        nowMs: nowPrimary,
+        maxStaleMs: cfg.shyftMaxStaleMs,
+      });
+      if (picked.source === 'stream' && picked.priceUsd != null && picked.priceUsd > 0 && streamPrimary) {
+        evalRow = { ...row, price_usd: picked.priceUsd };
+        auditRows.push(
+          buildPricePrimaryEvent({
+            mint: row.mint,
+            lane: String(lane),
+            surface: 'entry',
+            baselinePriceUsd: row.price_usd ?? null,
+            streamPriceUsd: streamPrimary.priceUsd,
+            streamTsMs: streamPrimary.streamTsMs,
+            streamAgeMs: picked.streamAgeMs,
+            streamSlot: streamPrimary.slot,
+            nowMs: nowPrimary,
+          }),
+        );
+      }
+    }
+
     const v = priorityMintSet.has(row.mint)
-      ? evaluateSnapshotPriorityTier(tierCfg, row, lane)
-      : evaluateSnapshot(tierCfg, row, lane);
+      ? evaluateSnapshotPriorityTier(tierCfg, evalRow, lane)
+      : evaluateSnapshot(tierCfg, evalRow, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersForGate,
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
     const lastExitSnap = reentryExitSnapshotForGate(row.mint);
-    const stressReentryCtx = getStressKillReentryContext(cfg, lastExitSnap, row.price_usd);
+    const stressReentryCtx = getStressKillReentryContext(cfg, lastExitSnap, evalRow.price_usd);
     const dipTierCfg =
       stressReentryCtx &&
       cfg.liveStressReentryDipMaxDropPct < tierCfg.dipMaxDropPct
         ? { ...tierCfg, dipMaxDropPct: cfg.liveStressReentryDipMaxDropPct }
         : tierCfg;
-    const dipEval = evaluateDip(dipTierCfg, row, dipMap.get(row.mint));
+    const dipEval = evaluateDip(dipTierCfg, evalRow, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
     let entryPath: EvalDecision['entryPath'];
     let recoveryVeto: RecoveryVetoResult | undefined;
@@ -1156,7 +1200,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         : dipEval.dipLookbackUsedMin;
 
     const decisionFeatures = buildFeatures(
-      row,
+      evalRow,
       reportDipPct,
       dipEval.impulsePct,
       reportDipLookback,

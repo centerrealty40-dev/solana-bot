@@ -16,6 +16,7 @@ import type {
 import { fetchLatestSnapshotQuote, getLiveMcUsd, getSolUsd } from '../pricing.js';
 import { buildShadowPriceEvent } from '../stream/shadow-price.js';
 import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
+import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
 import { verifyExitPrice } from '../pricing/price-verify.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
@@ -2266,6 +2267,46 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             errorMessage: (e as Error)?.message,
           });
         }
+      }
+    }
+
+    /**
+     * Stage 1.2 (1.11.468): Shyft stream price PRIMARY for live-oscar MTM, freshness-gated
+     * (`shyftMaxStaleMs`) with PG/Jupiter fallback. Placed before the exec-sell override so a fresh
+     * executable fill still wins over the stream. **Default OFF** (`shyftPricePrimaryEnabled`) — when
+     * OFF this block is skipped and `curMetric` is byte-for-byte the current PG/Jupiter value.
+     */
+    if (
+      cfg.shyftPricePrimaryEnabled &&
+      cfg.shyftPricePrimaryMtmEnabled &&
+      cfg.strategyId === 'live-oscar' &&
+      isShyftShadowEnabled()
+    ) {
+      const nowPrimary = Date.now();
+      const streamPrimary = getShyftShadowStreamPrice(mint, nowPrimary);
+      const picked = resolvePrimaryPriceUsd({
+        enabled: true,
+        pgPriceUsd: curMetric > 0 ? curMetric : null,
+        streamPriceUsd: streamPrimary?.priceUsd ?? null,
+        streamTsMs: streamPrimary?.streamTsMs ?? null,
+        nowMs: nowPrimary,
+        maxStaleMs: cfg.shyftMaxStaleMs,
+      });
+      if (picked.source === 'stream' && picked.priceUsd != null && picked.priceUsd > 0 && streamPrimary) {
+        const primaryEvent = buildPricePrimaryEvent({
+          mint,
+          lane: 'mtm',
+          surface: 'mtm',
+          baselinePriceUsd: curMetric > 0 ? curMetric : null,
+          streamPriceUsd: streamPrimary.priceUsd,
+          streamTsMs: streamPrimary.streamTsMs,
+          streamAgeMs: picked.streamAgeMs,
+          streamSlot: streamPrimary.slot,
+          nowMs: nowPrimary,
+        });
+        journalAppend(primaryEvent);
+        journalLiveStrategy?.(primaryEvent);
+        curMetric = picked.priceUsd;
       }
     }
 
