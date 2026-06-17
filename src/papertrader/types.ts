@@ -362,6 +362,8 @@ export interface LiveStagedEntryState {
   entrySplitDelayMs?: number;
   entrySplitMaxUpPct?: number;
   entrySplitMaxDownPct?: number;
+  /** When >0: leg-2 at −N% from signal instead of delay+corridor. */
+  entrySplitTargetDropPct?: number;
   entrySplitAnchorUsd?: number;
   entrySplitLeg1Ts?: number;
   entrySplitLeg2Done?: boolean;

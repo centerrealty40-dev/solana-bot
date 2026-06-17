@@ -100,6 +100,8 @@ const ConfigSchema = z.object({
   liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
   liveStagedEntryEntrySplitMaxUpPct: z.coerce.number().min(0).max(50).default(3),
   liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
+  /** When >0: leg-2 split at −N% from signal (replaces delay+corridor). 0 = legacy timed corridor. */
+  liveStagedEntryEntrySplitTargetDropPct: z.coerce.number().min(0).max(95).default(0),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -946,6 +948,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
+    liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),
