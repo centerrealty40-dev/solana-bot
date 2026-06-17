@@ -29,10 +29,12 @@ export function liveStagedOpenLabelRuFromCfg(cfg: PaperTraderConfig): string {
   const cd2Min = Math.round(cfg.liveStagedEntryAvgSecondCooldownMs / 60_000);
   const up = cfg.liveStagedEntryEntrySplitMaxUpPct;
   const down = cfg.liveStagedEntryEntrySplitMaxDownPct;
-  const parts: string[] = [
-    `Покупка · 1-я нога сплита входа: ${fmtUsd(leg1)} по сигналу`,
-    `план: 2-я нога сплита ${fmtUsd(leg2)} через ${delaySec} с (коридор +${fmtDropPct(up)}%…−${fmtDropPct(down)}% к якорю 1-й ноги, не усреднение)`,
-  ];
+  const dip2 = cfg.liveStagedEntryEntrySplitTargetDropPct;
+  const leg2Plan =
+    dip2 > 0
+      ? `план: 2-я нога сплита ${fmtUsd(leg2)} при −${fmtDropPct(dip2)}% от сигнала (не усреднение)`
+      : `план: 2-я нога сплита ${fmtUsd(leg2)} через ${delaySec} с (коридор +${fmtDropPct(up)}%…−${fmtDropPct(down)}% к якорю 1-й ноги, не усреднение)`;
+  const parts: string[] = [`Покупка · 1-я нога сплита входа: ${fmtUsd(leg1)} по сигналу`, leg2Plan];
   if (avg1 > 0 && d7 > 0) {
     parts.push(
       `1-е усреднение ${fmtUsd(avg1)} при просадке −${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала (≥${cd1Min} мин после 1-й ноги)`,
@@ -66,10 +68,12 @@ export function liveStagedOpenLabelFromState(
   const cd2Min = Math.round(Number(st.avgSecondCooldownMs ?? 300_000) / 60_000);
   const up = Number(st.entrySplitMaxUpPct ?? 3);
   const down = Number(st.entrySplitMaxDownPct ?? 10);
-  const parts: string[] = [
-    `Покупка · 1-я нога сплита входа: ${fmtUsd(leg1)} по сигналу`,
-    `план: 2-я нога сплита ${fmtUsd(leg2)} через ${delaySec} с (+${fmtDropPct(up)}%…−${fmtDropPct(down)}% к якорю, не усреднение)`,
-  ];
+  const dip2 = Number(st.entrySplitTargetDropPct ?? 0);
+  const leg2Plan =
+    dip2 > 0
+      ? `план: 2-я нога сплита ${fmtUsd(leg2)} при −${fmtDropPct(dip2)}% от сигнала`
+      : `план: 2-я нога сплита ${fmtUsd(leg2)} через ${delaySec} с (+${fmtDropPct(up)}%…−${fmtDropPct(down)}% к якорю, не усреднение)`;
+  const parts: string[] = [`Покупка · 1-я нога сплита входа: ${fmtUsd(leg1)} по сигналу`, leg2Plan];
   if (avg1 > 0 && d7 > 0) {
     parts.push(
       `1-е усреднение ${fmtUsd(avg1)} (−${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала, ≥${cd1Min} мин)`,
@@ -104,7 +108,14 @@ function liveStagedOpenLabelLegacy(strategyId: string, e: Record<string, unknown
   return `${name}: ${fmtUsd(firstLegUsd)} ${trigger}${planSuffix}${killSuffix}`;
 }
 
-export function entrySplitLeg2TimelineLabel(usd: number, changePctFromAnchor: number): string {
+export function entrySplitLeg2TimelineLabel(
+  usd: number,
+  changePctFromAnchor: number,
+  targetDropPct?: number,
+): string {
+  if (targetDropPct != null && targetDropPct > 0) {
+    return `Покупка · 2-я нога сплита входа: ${fmtUsd(usd)} · −${fmtDropPct(targetDropPct)}% от сигнала (факт ${changePctFromAnchor.toFixed(2)}%, не усреднение)`;
+  }
   const sign = changePctFromAnchor >= 0 ? '+' : '−';
   return `Покупка · 2-я нога сплита входа: ${fmtUsd(usd)} · цена ${sign}${Math.abs(changePctFromAnchor).toFixed(2)}% к якорю 1-й ноги (не усреднение)`;
 }
@@ -155,13 +166,19 @@ export function legTimelineLabelFromLeg(
 export function liveOscarEntryContextNoteV2(cfg?: PaperTraderConfig): string {
   const c = cfg ?? loadPaperTraderConfig();
   const leg = c.liveStagedEntryEntrySplitLegUsd;
-  const delaySec = Math.round(c.liveStagedEntryEntrySplitDelayMs / 1000);
-  const up = c.liveStagedEntryEntrySplitMaxUpPct;
-  const down = c.liveStagedEntryEntrySplitMaxDownPct;
+  const dip2 = c.liveStagedEntryEntrySplitTargetDropPct;
+  const leg2Desc =
+    dip2 > 0
+      ? `2-я нога при −${fmtDropPct(dip2)}% от сигнала`
+      : (() => {
+          const delaySec = Math.round(c.liveStagedEntryEntrySplitDelayMs / 1000);
+          const up = c.liveStagedEntryEntrySplitMaxUpPct;
+          const down = c.liveStagedEntryEntrySplitMaxDownPct;
+          return `2-я нога через ${delaySec} с в коридоре +${fmtDropPct(up)}%…−${fmtDropPct(down)}% к 1-й`;
+        })();
   return (
-    `Live Oscar · вход: сплит ${fmtUsd(leg)}+${fmtUsd(leg)} по сигналу ` +
-    `(2-я нога через ${delaySec} с в коридоре +${fmtDropPct(up)}%…−${fmtDropPct(down)}% к 1-й), ` +
-    `cap ${fmtUsd(c.positionUsd)}, staged-усреднение — по env если включено.`
+    `Live Oscar · вход: сплит ${fmtUsd(leg)}+${fmtUsd(leg)} (${leg2Desc}), ` +
+    `cap ${fmtUsd(c.positionUsd)}, kill −${fmtDropPct(c.liveStagedEntryKillDropPct)}% от сигнала.`
   );
 }
 
