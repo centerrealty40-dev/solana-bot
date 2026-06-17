@@ -104,6 +104,13 @@ const ConfigSchema = z.object({
   liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
   /** When >0: leg-2 split at −N% from signal (replaces delay+corridor). 0 = legacy timed corridor. */
   liveStagedEntryEntrySplitTargetDropPct: z.coerce.number().min(0).max(95).default(0),
+  /**
+   * Observability only (Stage 0, 1.11.466): warn threshold (ms) for the age of the PG snapshot price
+   * used at the entry-decision point. When the polled PG price is older than this, the entry path emits a
+   * `live_stale_price_warn` journal event (+ throttled alert). Does **not** change any trading decision.
+   * `0` disables the warning. Prod default 45000 (collector poll 30s + reeval throttle 15–30s).
+   */
+  liveOscarStalePriceWarnMs: z.coerce.number().int().nonnegative().default(45_000),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -973,6 +980,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
     liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
+    liveOscarStalePriceWarnMs: process.env.PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),

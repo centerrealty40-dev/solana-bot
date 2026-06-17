@@ -94,6 +94,7 @@ import {
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import { isEntryPriceStale, snapshotPriceAgeMs } from './stale-price.js';
 import {
   isLiveBuyDiscoveryTelegramSuppressed,
   refreshLiveBuyTelegramSuppressForTick,
@@ -290,6 +291,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const localHighVetoTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
+  const stalePriceTelegramLastMs = new Map<string, number>();
 
   function liveStagedEntryActive(): boolean {
     return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
@@ -656,6 +658,83 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       telegramChatId: chat,
     }).catch((e) =>
       logger.warn({ err: String(e), mode }, 'live pg-coverage-mode telegram failed'),
+    );
+  }
+
+  /**
+   * Observability only (Stage 0, 1.11.466): at the entry-decision point, measure how stale the polled
+   * PG snapshot price is and, if older than `liveOscarStalePriceWarnMs`, emit a `live_stale_price_warn`
+   * journal metric (+ optional throttled alert). Does NOT change any trading decision — pure telemetry to
+   * quantify the 30–90s price-blindness before the Shyft hybrid (Stage 1).
+   */
+  function observeStaleEntryPrice(d: EvalDecision): void {
+    const warnMs = cfg.liveOscarStalePriceWarnMs;
+    const tsMs = d.features.snapshot_ts_ms ?? null;
+    const now = Date.now();
+    if (!isEntryPriceStale(tsMs, now, warnMs)) return;
+    const priceAgeMs = snapshotPriceAgeMs(tsMs, now) ?? 0;
+    const event = {
+      kind: 'live_stale_price_warn' as const,
+      lane: d.lane,
+      source: d.source,
+      mint: d.mint,
+      symbol: d.symbol,
+      priceAgeMs: Math.round(priceAgeMs),
+      warnThresholdMs: warnMs,
+      priceUsd: d.features.price_usd,
+      snapshotTsMs: tsMs,
+    };
+    journalAppend(event);
+    journalLiveStrategy?.(event);
+    notifyLiveOscarStalePrice(d, priceAgeMs);
+  }
+
+  function notifyLiveOscarStalePrice(d: EvalDecision, priceAgeMs: number): void {
+    if (cfg.strategyId !== 'live-oscar') return;
+    // Throttled alert is opt-in (default OFF) — journal metric above is the primary observability surface.
+    if (process.env.LIVE_OSCAR_STALE_PRICE_TELEGRAM_ENABLED !== '1') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_OSCAR_STALE_PRICE_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+    );
+    const now = Date.now();
+    const prev = stalePriceTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    stalePriceTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_OSCAR_STALE_PRICE_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_OSCAR_STALE_PRICE_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live stale-price telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const symbol = d.symbol?.trim() || '?';
+    const ageSec = (priceAgeMs / 1000).toFixed(1);
+    const thrSec = (cfg.liveOscarStalePriceWarnMs / 1000).toFixed(0);
+    const text =
+      `<b>Live Oscar — устаревшая цена входа</b>\n` +
+      `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
+      `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
+      `Возраст PG-цены: <b>${escapeHtmlPlain(ageSec)}s</b> (порог ${escapeHtmlPlain(thrSec)}s)\n` +
+      `Lane: <code>${escapeHtmlPlain(`${d.lane}${d.source ? `/${d.source}` : ''}`)}</code>\n` +
+      `Price: <b>${escapeHtmlPlain(fmtUsdCompact(d.features.price_usd))}</b>\n` +
+      `Решение торговли не изменено — это только наблюдаемость.`;
+
+    void sendTagged('ADVICE', 'live_oscar_stale_price', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live stale-price telegram failed'),
     );
   }
 
@@ -1158,6 +1237,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             continue;
           }
         }
+
+        observeStaleEntryPrice(d);
 
         const stagedEntrySignal = resolveLiveStagedEntrySignal({
           mint: d.mint,

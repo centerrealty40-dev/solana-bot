@@ -380,6 +380,13 @@ const PM2_APPS = [
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
+        /**
+         * 1.11.466 — observability-only: если возраст использованной PG-цены на входе > N мс,
+         * журналируем метрику `live_stale_price_warn` (priceAgeMs, mint, lane). НЕ меняет торговлю.
+         * База для замера 30–90s слепоты перед гибридом Shyft (Этап 1). Опц. троттлед-алерт:
+         * LIVE_OSCAR_STALE_PRICE_TELEGRAM_ENABLED=1 (default OFF). 0 = выключить варн.
+         */
+        PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS: '45000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',
@@ -599,7 +606,7 @@ const PM2_APPS = [
 
         /** DCA выкл — только сплит $1000+$500. */
         PAPER_DCA_LEVELS: '',
-        /** Early kill −9% vs entry market до первого +7.5%; после +7.5% — trail + TP ladder (ключевая точка импульса). */
+        /** Absolute kill −50% vs entry market (avg или market). Wave B: trail + TP ladder работают после +7.5%; жёсткий стоп −50% действует всегда. (Значение факт: -0.50 = −50%; ранее комментарий ошибочно говорил −9%.) */
         PAPER_DCA_KILLSTOP: '-0.50',
         /**
          * Variant A v2 hybrid (1.11.272): infinite +5% TP grid, 10% remainder per rung,
