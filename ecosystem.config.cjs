@@ -628,8 +628,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_ENABLED: '0',
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_PNL_FRAC: '-0.15',
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_FRACTION: '0.5',
-        /** Post-TP1 scratch/re-entry: full exit @ −15% signal after TP1; re-open $1500 @ −30% signal (backtest +~$1.5k). */
-        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED: '1',
+        /** Post-TP1 scratch/re-entry: honest A/B on 363-trade cohort (real simWaveBStep) — НЕ альфа: реалистично ≈ нейтрален (+$571 шум), теряет −$5k на 36% scratch-без-reentry, churn-баг геометрии порогов. Выключено в 1.11.465. */
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED: '0',
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_DROP_PCT: '15',
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_DROP_PCT: '30',
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_USD: '1500',
