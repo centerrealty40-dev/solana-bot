@@ -46,6 +46,18 @@
 
 ---
 
+## [1.11.464] — 2026-06-17
+
+**Тег:** `sa-alpha-1.11.464`
+
+### Ops: enable Wave B post-TP1 scratch/re-entry on live-oscar
+
+- `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED=1` в `ecosystem.config.cjs` (prod live-oscar).
+
+**Откат:** redeploy `sa-alpha-1.11.463` или `ENABLED=0` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.463] — 2026-06-17
 
 **Тег:** `sa-alpha-1.11.463`
