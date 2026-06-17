@@ -357,7 +357,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$730+$730** (5 с, +3%/−10% к 1-й ноге); без DCA и без staged avg.
+         * Staged-entry: сплит **$730+$730** — 1-я нога по сигналу, 2-я при −5% от сигнала; kill −50%.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -367,6 +367,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
+        /** >0: 2-я нога сплита только при −N% от signal (вместо delay+corridor). */
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '5',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '730',
@@ -374,8 +376,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
-        /** 0 = signal-kill off (не путать с PAPER_TIMEOUT_HOURS 48h). */
-        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '0',
+        /** Signal kill: full exit when price ≤ −N% from signal anchor. */
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -595,7 +597,7 @@ const PM2_APPS = [
         /** DCA выкл — только сплит $730+$730. */
         PAPER_DCA_LEVELS: '',
         /** Early kill −9% vs entry market до первого +7.5%; после +7.5% — trail + TP ladder (ключевая точка импульса). */
-        PAPER_DCA_KILLSTOP: '-0.09',
+        PAPER_DCA_KILLSTOP: '-0.50',
         /**
          * Variant A v2 hybrid (1.11.272): infinite +5% TP grid, 10% remainder per rung,
          * partial trail @+10%, DCA resets TP rungs. In-flight v3 scratch / v1 / wave_b unchanged.

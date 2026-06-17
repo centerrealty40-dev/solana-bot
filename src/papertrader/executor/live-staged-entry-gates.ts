@@ -44,6 +44,31 @@ export function entrySplitBandOk(changePctFromAnchor: number, maxUpPct: number, 
   return changePctFromAnchor <= maxUpPct && changePctFromAnchor >= -maxDownPct;
 }
 
+/** Leg-2 entry split: dip-at-signal mode or legacy delay+corridor. */
+export function entrySplitLeg2Eligible(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number | null;
+  nowMs: number;
+  entrySplitPx: number;
+  anchorUsd: number;
+}): { ok: boolean; triggerPct: number } {
+  const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd } = args;
+  const targetDrop = st.entrySplitTargetDropPct ?? 0;
+  if (targetDrop > 0) {
+    if (signalDropPct == null) return { ok: false, triggerPct: 0 };
+    if (signalDropPct <= -targetDrop) return { ok: true, triggerPct: signalDropPct / 100 };
+    return { ok: false, triggerPct: 0 };
+  }
+  const leg1Ts = st.entrySplitLeg1Ts ?? st.signalTs;
+  const delay = st.entrySplitDelayMs ?? 10_000;
+  if (nowMs < leg1Ts + delay) return { ok: false, triggerPct: 0 };
+  const ch = pctFromAnchor(anchorUsd, entrySplitPx);
+  const maxUp = st.entrySplitMaxUpPct ?? 3;
+  const maxDown = st.entrySplitMaxDownPct ?? 10;
+  if (ch != null && entrySplitBandOk(ch, maxUp, maxDown)) return { ok: true, triggerPct: ch / 100 };
+  return { ok: false, triggerPct: 0 };
+}
+
 export function pctFromAnchor(anchorUsd: number, priceUsd: number): number | null {
   if (!(anchorUsd > 0) || !(priceUsd > 0)) return null;
   return (priceUsd / anchorUsd - 1) * 100;
@@ -130,6 +155,7 @@ export function buildLiveStagedEntryState(
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
+    entrySplitTargetDropPct: cfg.liveStagedEntryEntrySplitTargetDropPct,
     entrySplitLeg1Ts: signal.signalTs,
     entrySplitAnchorUsd: signal.signalPriceUsd,
     entrySplitLeg2Done: false,

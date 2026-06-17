@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   entrySplitBandOk,
+  entrySplitLeg2Eligible,
   liveStagedEntrySignalTimeWindowOpen,
   liveStagedEntrySignalTtlExpired,
   reconcileEntrySplitV2FromLegs,
@@ -47,6 +48,52 @@ describe('liveStagedEntrySignalTtl', () => {
     const signalTs = 1_000_000;
     expect(liveStagedEntrySignalTimeWindowOpen(cfg, signalTs, signalTs + 59_000)).toBe(true);
     expect(liveStagedEntrySignalTtlExpired(cfg, signalTs, signalTs + 61_000)).toBe(true);
+  });
+});
+
+describe('entrySplitLeg2Eligible', () => {
+  it('dip mode: fills at −5% from signal without delay', () => {
+    const st = { ...baseSt(), entrySplitTargetDropPct: 5 };
+    expect(
+      entrySplitLeg2Eligible({
+        st,
+        signalDropPct: -4.9,
+        nowMs: st.entrySplitLeg1Ts! + 1000,
+        entrySplitPx: 0.95,
+        anchorUsd: 1,
+      }).ok,
+    ).toBe(false);
+    const hit = entrySplitLeg2Eligible({
+      st,
+      signalDropPct: -5.1,
+      nowMs: st.entrySplitLeg1Ts! + 1000,
+      entrySplitPx: 0.949,
+      anchorUsd: 1,
+    });
+    expect(hit.ok).toBe(true);
+    expect(hit.triggerPct).toBeCloseTo(-0.051, 4);
+  });
+
+  it('legacy corridor: requires delay and band', () => {
+    const st = { ...baseSt(), entrySplitTargetDropPct: 0 };
+    expect(
+      entrySplitLeg2Eligible({
+        st,
+        signalDropPct: -5,
+        nowMs: st.entrySplitLeg1Ts! + 5000,
+        entrySplitPx: 0.98,
+        anchorUsd: 1,
+      }).ok,
+    ).toBe(false);
+    expect(
+      entrySplitLeg2Eligible({
+        st,
+        signalDropPct: 0,
+        nowMs: st.entrySplitLeg1Ts! + 200_000,
+        entrySplitPx: 1.02,
+        anchorUsd: 1,
+      }).ok,
+    ).toBe(true);
   });
 });
 
