@@ -25,6 +25,7 @@ import {
   waveBBreakevenExitEligible,
   waveBFirstTwoTpRungsTaken,
   waveBBreakevenInsuranceEligible,
+  waveBPostTp1ScratchEligible,
   waveBMaybeResetTpImpulse,
   waveBUpdatePreArmImpulseCycle,
   waveBAbsoluteKillEligible,
@@ -462,5 +463,16 @@ describe('exit-policy-wave-b', () => {
     expect(ot.ladderUsedIndices.size).toBe(0);
     expect(ot.liveWaveBreakevenInsuranceTaken).toBe(false);
     expect(ot.liveWaveMaxExecutedTpFrac).toBeCloseTo(0.05);
+  });
+
+  it('waveBPostTp1ScratchEligible after first TP partial on wave B', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      partialSells: [{ reason: 'TP_LADDER' }],
+    } as unknown as OpenTrade;
+    expect(waveBPostTp1ScratchEligible(ot)).toBe(true);
+    expect(waveBPostTp1ScratchEligible({ ...ot, liveWavePostTp1ScratchTaken: true } as OpenTrade)).toBe(
+      false,
+    );
   });
 });

@@ -65,6 +65,7 @@ import {
   appendPostExitReentryGateReasons,
   postExitReentryGateReasonsForLiveBuy,
 } from '../papertrader/discovery/dip-clones.js';
+import { waveBPostTp1ScratchReentryBypassGate } from '../papertrader/executor/wave-b-post-tp1-scratch-reentry.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import {
   isStagedAddCooldownActive,
@@ -386,7 +387,7 @@ async function runSolToTokenPipeline(
     if (gatePx == null || !(gatePx > 0)) {
       gatePx = await fetchLatestSnapshotPrice(args.mint);
     }
-    if (gatePx != null && gatePx > 0) {
+    if (gatePx != null && gatePx > 0 && !waveBPostTp1ScratchReentryBypassGate(args.mint)) {
       const reentryReasons = postExitReentryGateReasonsForLiveBuy(args.mint, gatePx);
       if (reentryReasons.length > 0) {
         appendLiveJsonlEvent({
@@ -1240,11 +1241,13 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
         };
       }
 
-      const reentryReasons = executionPostExitReentryGateReasons(
-        ctx.paperCfg,
-        ctx.ot.mint,
-        ctx.snapshotEntryPriceUsd,
-      );
+      const reentryReasons = waveBPostTp1ScratchReentryBypassGate(ctx.ot.mint)
+        ? []
+        : executionPostExitReentryGateReasons(
+            ctx.paperCfg,
+            ctx.ot.mint,
+            ctx.snapshotEntryPriceUsd,
+          );
       if (reentryReasons.length > 0) {
         appendLiveJsonlEvent({
           kind: 'execution_skip',
