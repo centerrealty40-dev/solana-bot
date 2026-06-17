@@ -1,5 +1,6 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
+import { snapshotRowTsMs } from '../stale-price.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
 import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
@@ -511,6 +512,7 @@ function buildFeatures(
 ): SnapshotFeatures {
   const base: SnapshotFeatures = {
     price_usd: +Number(row.price_usd || 0).toFixed(8),
+    snapshot_ts_ms: snapshotRowTsMs(row.ts),
     liq_usd: +Number(row.liquidity_usd || 0).toFixed(0),
     pair_address: row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
     vol5m_usd: +Number(row.volume_5m || 0).toFixed(0),

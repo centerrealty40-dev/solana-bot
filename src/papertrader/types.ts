@@ -563,6 +563,12 @@ export interface DipContext {
 
 export interface SnapshotFeatures {
   price_usd: number;
+  /**
+   * Epoch ms of the PG snapshot row whose `price_usd` is used here (from `*_pair_snapshots.ts`).
+   * Observability only — lets the entry path measure how stale the polled PG price is
+   * (collector poll 30s + reeval throttle). `null`/absent for legacy rows without a parseable ts.
+   */
+  snapshot_ts_ms?: number | null;
   liq_usd: number;
   /** Pool/pair address from snapshot (W7.5). */
   pair_address: string | null;

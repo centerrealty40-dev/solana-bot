@@ -1,6 +1,8 @@
 # Live Oscar — торговая спецификация (stream-only)
 
-> **Именование:** эта спецификация описывает **Oscar Stream** (новая standalone-реализация в репозитории `oscar-stream`, Shyft stream, без PostgreSQL). Она **не** описывает prod **Live Oscar** / **Живой Оскар** — PG-based бот в monorepo `solana-alpha` (PM2 `live-oscar`). См. также `oscar-stream/docs/STRATEGY_GLOSSARY.md`.
+> **⚠️ DEPRECATED (2026-06-18):** продукт **Oscar Stream** (отдельный репозиторий `oscar-stream`, VPS `oscar-stream-de`) **закрыт и удалён** как неудачный. Этот документ задумывался как спецификация порта стратегии на stream-архитектуру oscar-stream и больше **не актуален** как план работ. Сохранён только как **справочный снимок прод-параметров Live Oscar** на момент написания; источник истины по параметрам — `ecosystem.config.cjs` → процесс `live-oscar`.
+>
+> **Именование:** эта спецификация описывала **Oscar Stream** (standalone-реализация, Shyft stream, без PostgreSQL). Она **не** описывает prod **Live Oscar** / **Живой Оскар** — PG-based бот в monorepo `solana-alpha` (PM2 `live-oscar`).
 
 **Версия:** prod PM2 `live-oscar` (`ecosystem.config.cjs`, ветка `v2` / 1.11.440+)  
 **Аудитория:** агент, переписывающий стратегию на новой архитектуре  
@@ -12,7 +14,9 @@
 
 ### 1.1. Что строим
 
-Live Oscar — **живой** Solana-бот на PumpSwap / Raydium / Meteora post-lane: discovery проливов → staged entry $730+$730 → удержание с политикой выхода **Wave B v1** → Jupiter Pro swap (slippage 50 bps, persistent retry).
+Live Oscar — **живой** Solana-бот на PumpSwap / Raydium / Meteora post-lane: discovery проливов → staged entry **$1000+$500** (notional $1500) → удержание с политикой выхода **Wave B v1** → Jupiter Pro swap (slippage 50 bps, persistent retry).
+
+> **Прим. (2026-06-18, 1.11.466):** числа ниже в этом DEPRECATED-документе местами отражают старый срез ($730+$730/$1460, killstop −9%). Факт в проде: **$1000+$500 / $1500**, killstop **−50%** (`PAPER_DCA_KILLSTOP=-0.50`). Источник истины — `ecosystem.config.cjs` → `live-oscar`. Ключевые места ниже приведены к факту; полная сверка не выполнялась, т.к. документ закрыт.
 
 ### 1.2. Новая архитектура (обязательные ограничения)
 
@@ -45,7 +49,7 @@ Live Oscar — **живой** Solana-бот на PumpSwap / Raydium / Meteora po
 | Re-eval (priority tier) | 15 s |
 | Re-eval (volume leader) | 15 s |
 | Max open positions | 30 |
-| Max position USD | 1 460 (cap = notional) |
+| Max position USD | **1 500** (cap = notional) |
 
 ---
 
@@ -55,12 +59,12 @@ Live Oscar — **живой** Solana-бот на PumpSwap / Raydium / Meteora po
 
 | Параметр | Prod | Смысл |
 |----------|------|-------|
-| `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` | **$1 460** | Полный размер позиции |
-| Staged split | **$730 + $730** | Две cash-ноги, без DCA |
+| `PAPER_POSITION_USD` / `LIVE_MAX_POSITION_USD` | **$1 500** | Полный размер позиции |
+| Staged split | **$1000 + $500** | Две cash-ноги (асимметрия), без DCA |
 | `PAPER_DCA_LEVELS` | пусто | DCA выключен |
-| Low-mcap lane split | $730+$730, position $1 460 | Паритет с prod tier |
+| Low-mcap lane split | пропорционально tier, position $1 500 | Паритет с prod tier |
 
-Boot-check: `positionUsd === 2 × entrySplitLegUsd` (см. `assertLiveOscarUnifiedEntrySizing`).
+Boot-check: `positionUsd === leg1Usd + leg2Usd` (см. `assertLiveOscarUnifiedEntrySizing`).
 
 ### 2.2. Что не применяется
 
@@ -249,19 +253,19 @@ Creator dump block: **вкл** (`PAPER_DIP_BLOCK_CREATOR_DUMP=1`).
 
 | Параметр | Значение |
 |----------|----------|
-| Leg 1 (`buy_open`) | **$730** |
-| Leg 2 (`entry_split`) | **$730** |
+| Leg 1 (`buy_open`) | **$1000** (при −5% от сигнала) |
+| Leg 2 (`entry_split`) | **$500** (при −10% от сигнала) |
 | Delay leg1→leg2 | **5 000 ms** |
-| Price corridor vs anchor leg1 | **+3% / −10%** |
+| Price corridor vs anchor leg1 | **+3% / −10%** (target −10% от сигнала) |
 | Signal TTL | **0** (без лимита) |
-| Signal kill drop | **0** (выкл) |
+| Signal kill drop | **−50%** (`PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT=50`) |
 | Staged avg legs 2/3 | **$0** (усреднение выкл) |
 
 **Leg 2 логика** (`live-staged-entry-lifecycle.ts`):
 
 1. Ждать `leg1_ts + 5s`
 2. `change_pct = (price / anchor - 1) × 100`
-3. Если `−10% ≤ change_pct ≤ +3%` → `buy_scale_in` $730
+3. Если `−10% ≤ change_pct ≤ +3%` → `buy_scale_in` $500 (target-drop вариант: при −10% от сигнала)
 
 ### 4.2. Execution gates (перед каждым swap)
 
@@ -359,11 +363,11 @@ Eligible после +7.5% touch **или** executed TP ≥ +7.5%.
 
 | | |
 |--|--|
-| `PAPER_DCA_KILLSTOP` | **−9%** (−0.09 fraction) |
-| Wave B | `waveBAbsoluteKillEligible`: market ≤ −9% vs entry **или** avg ≤ −9% |
+| `PAPER_DCA_KILLSTOP` | **−50%** (−0.50 fraction) |
+| Wave B | `waveBAbsoluteKillEligible`: market ≤ −50% vs entry **или** avg ≤ −50% |
 | Дебаунс после multi-leg | 2 ticks (не для waveBKill path) |
 
-**Примечание:** `waveBPreArmKillEligible` (kill только до +7.5%) в tracker **не вызывается**; prod использует absolute −9% floor всегда.
+**Примечание:** `waveBPreArmKillEligible` (kill только до +7.5%) в tracker **не вызывается**; prod использует absolute −50% floor всегда.
 
 ### 5.11. Liq watch (`PAPER_LIQ_WATCH_ENABLED=1`)
 
@@ -393,7 +397,7 @@ Eligible после +7.5% touch **или** executed TP ≥ +7.5%.
 | 5 | **Trail partials** | defensive −2.5% steps | partial 20% |
 | 6 | ~~Thin vol flush~~ | только Variant A hybrid — **не Wave B** | — |
 | 7 | **Staged leg 2** | entry_split если corridor OK | add |
-| 8 | **KILLSTOP** | −9% | full |
+| 8 | **KILLSTOP** | −50% | full |
 | 9 | **BREAKEVEN_EXIT** | §5.9 | full |
 | 10 | Legacy TP x100 / SL / peak trail | не Wave B | — |
 | 11 | **TIMEOUT 48h** | не Wave B | full |
@@ -470,8 +474,9 @@ Entry path: `stress_kill_reentry` — альтернатива dip_windows пр�
 
 | Env / constant | Prod | Meaning |
 |----------------|------|---------|
-| `LIVE_OSCAR_ENTRY_NOTIONAL_USD` | 1460 | Полный notional |
-| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` | 730 | Одна нога split |
+| `LIVE_OSCAR_ENTRY_NOTIONAL_USD` | 1500 | Полный notional |
+| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` | 1000 | Leg-1 split |
+| `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD` | 500 | Leg-2 split (асимметрия) |
 | `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS` | 5000 | Пауза leg1→leg2 |
 | `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT` | 3 | Верх коридора leg2 |
 | `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT` | 10 | Низ коридора leg2 |
@@ -511,7 +516,7 @@ Entry path: `stress_kill_reentry` — альтернатива dip_windows пр�
 
 | Env / code | Prod | Meaning |
 |------------|------|---------|
-| `PAPER_DCA_KILLSTOP` | -0.09 | −9% kill |
+| `PAPER_DCA_KILLSTOP` | -0.50 | −50% kill |
 | `WAVE_B_V1_TP_GRID.gridStepPnl` | 0.025 | +2.5% steps |
 | `WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC` | 0.075 | +7.5% arm |
 | `PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION` | 0.5 | Insurance peel |
@@ -591,7 +596,7 @@ Entry path: `stress_kill_reentry` — альтернатива dip_windows пр�
 8. Whale (creator dump only blocks)
 9. Cooldowns: mint 30m, post-exit (hybrid), loss 10m (legacy path)
 10. Holders (off)
-→ PASS → buy_open $730
+→ PASS → buy_open $1000 (leg-1; leg-2 $500 при −10%)
 ```
 
 ## Приложение B. Файлы кода (reference)

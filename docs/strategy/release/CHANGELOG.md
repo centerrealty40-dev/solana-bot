@@ -46,6 +46,31 @@
 
 ---
 
+## [1.11.466] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.466` (планируется координатором)
+
+### Этап 0 (live-oscar): гигиена конфига + observability устаревшей цены входа
+
+Подготовка к гибриду Shyft+PG внутри live-oscar (роадмап: `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`). Принцип «сначала надёжность, потом скорость». **Прод-торговля при дефолтных значениях не меняется байт-в-байт** — только наблюдаемость и комментарии.
+
+**0.1 Гигиена конфига (только комментарии/доки, значения не тронуты):**
+- `ecosystem.config.cjs`: исправлен вводящий в заблуждение комментарий у `PAPER_DCA_KILLSTOP` — говорил «−9%», фактическое значение `-0.50` (**−50%**). Приведён к факту.
+- `docs/strategy/live-oscar/LIVE_OSCAR_TRADING_SPEC_STREAM.md` (DEPRECATED): числа приведены к проду — `$730+$730/$1460` → **$1000+$500/$1500**, killstop **−9% → −50%**.
+
+**0.2 Алерт/метрика на устаревшую цену входа (observability-only):**
+- Новый env `PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS` (config: `liveOscarStalePriceWarnMs`, дефолт **45000**; `0` = выключить). В пути принятия решения о входе (`src/papertrader/main.ts`, перед `resolveLiveStagedEntrySignal`) при возрасте использованной PG-цены > порога журналируется метрика `live_stale_price_warn` (`priceAgeMs`, `mint`, `lane`, `source`, `priceUsd`, `snapshotTsMs`).
+- Источник возраста: новый `SnapshotFeatures.snapshot_ts_ms` (из `*_pair_snapshots.ts`), заполняется в `buildFeatures` (`src/papertrader/discovery/dip-clones.ts`).
+- Опц. троттлед Telegram-алерт: `LIVE_OSCAR_STALE_PRICE_TELEGRAM_ENABLED=1` (**default OFF**), cooldown `LIVE_OSCAR_STALE_PRICE_TELEGRAM_COOLDOWN_MS` (дефолт 30 мин).
+- Поведение торговли НЕ меняется — это база для замера 30–90s слепоты перед Этапом 1.
+- Тест: `tests/stale-price-observability.test.ts` (parse ts, age, stale-predicate + «0 = выключено»).
+
+**Затронутые файлы:** `ecosystem.config.cjs`, `src/papertrader/config.ts`, `src/papertrader/types.ts`, `src/papertrader/discovery/dip-clones.ts`, `src/papertrader/main.ts`, `docs/strategy/live-oscar/LIVE_OSCAR_TRADING_SPEC_STREAM.md`, новый `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Откат:** redeploy `sa-alpha-1.11.465`. Либо точечно: `PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS=0` (отключает метрику) + `pm2 reload live-oscar --update-env`. Поскольку поведение торговли не менялось, откат не требуется по риск-причинам.
+
+---
+
 ## [1.11.465] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.465`
