@@ -14,6 +14,7 @@ import { ladderPnlThresholdMark } from './tp-ladder-state.js';
 import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
 import { loadPaperTraderConfig } from '../config.js';
 import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
+import { applyWaveBPostTp1ScratchJournalLine } from './wave-b-post-tp1-scratch-reentry.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -369,6 +370,12 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWaveBreakevenInsuranceTaken)) {
       ot.liveWaveBreakevenInsuranceTaken = true;
     }
+    if (Boolean(rawPayload.liveWavePostTp1DeriskTaken)) {
+      ot.liveWavePostTp1DeriskTaken = true;
+    }
+    if (Boolean(rawPayload.liveWavePostTp1ScratchTaken)) {
+      ot.liveWavePostTp1ScratchTaken = true;
+    }
     const ltve = rawPayload.liveThinVolEntryVol5mUsd;
     if (typeof ltve === 'number' && Number.isFinite(ltve) && ltve > 0) ot.liveThinVolEntryVol5mUsd = ltve;
     const ltvs = rawPayload.liveThinVolStreak;
@@ -485,6 +492,12 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'WAVE_B_BREAKEVEN_INSURANCE') {
     ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+  if (reason === 'WAVE_B_POST_TP1_DERISK') {
+    ot.liveWavePostTp1DeriskTaken = true;
+  }
+  if (reason === 'WAVE_B_POST_TP1_SCRATCH') {
+    ot.liveWavePostTp1ScratchTaken = true;
   }
   if (reason === 'TRAIL_STEP' && Number.isFinite(lp)) {
     waveBMarkTrailLevelTaken(ot, lp);
@@ -657,6 +670,12 @@ export function loadStore(storePath: string): RestoreState {
         typeof e.offsetMin === 'number'
       ) {
         markFollowupCompleted(e.mint, e.entryTs, e.offsetMin);
+      }
+      if (
+        e.kind === 'wave_b_post_tp1_scratch_pending' ||
+        e.kind === 'wave_b_post_tp1_scratch_consumed'
+      ) {
+        applyWaveBPostTp1ScratchJournalLine(e as unknown as Record<string, unknown>);
       }
     } catch {
       // ignore corrupt line

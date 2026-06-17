@@ -658,6 +658,25 @@ const ConfigSchema = z.object({
   liveOscarWaveBBreakevenInsurancePnlFrac: z.coerce.number().min(-0.05).max(0.05).default(0),
 
   /**
+   * Wave B: after first `TP_LADDER` partial, if PnL vs avg falls to ≤ threshold (default −15%),
+   * sell `liveOscarWaveBPostTp1DeriskFraction` of remainder once (before full kill).
+   * Env: `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_*`.
+   */
+  liveOscarWaveBPostTp1DeriskEnabled: z.boolean().default(false),
+  liveOscarWaveBPostTp1DeriskPnlFrac: z.coerce.number().min(-0.5).max(-0.01).default(-0.15),
+  liveOscarWaveBPostTp1DeriskFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
+
+  /**
+   * Wave B: after first `TP_LADDER` partial, if price ≤ −N% from **signal anchor** → full exit;
+   * when price ≤ −M% from same signal → re-open configured USD (Wave B + sig50 kill).
+   * Env: `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_*`.
+   */
+  liveOscarWaveBPostTp1ScratchReentryEnabled: z.boolean().default(false),
+  liveOscarWaveBPostTp1ScratchDropPct: z.coerce.number().min(1).max(95).default(15),
+  liveOscarWaveBPostTp1ScratchReentryDropPct: z.coerce.number().min(1).max(95).default(30),
+  liveOscarWaveBPostTp1ScratchReentryUsd: z.coerce.number().positive().default(1500),
+
+  /**
    * Variant A v2: after ≥1 TP, thin market (vol5m) + peak/current PnL gates → flush remainder.
    * Env: `PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED`.
    */
@@ -1301,6 +1320,22 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION,
     liveOscarWaveBBreakevenInsurancePnlFrac:
       process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC,
+    liveOscarWaveBPostTp1DeriskEnabled: envBool(
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_ENABLED,
+      false,
+    ),
+    liveOscarWaveBPostTp1DeriskPnlFrac: process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_PNL_FRAC,
+    liveOscarWaveBPostTp1DeriskFraction: process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_FRACTION,
+    liveOscarWaveBPostTp1ScratchReentryEnabled: envBool(
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED,
+      false,
+    ),
+    liveOscarWaveBPostTp1ScratchDropPct:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_DROP_PCT,
+    liveOscarWaveBPostTp1ScratchReentryDropPct:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_DROP_PCT,
+    liveOscarWaveBPostTp1ScratchReentryUsd:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_USD,
     liveOscarThinVolExitEnabled: envBool(process.env.PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED, false),
     dcaLevelsSpec: process.env.PAPER_DCA_LEVELS,
     dcaKillstop: process.env.PAPER_DCA_KILLSTOP,

@@ -16,7 +16,9 @@ export type ExitReason =
   /** Live periodic job: force full exit + chain-sized sell, skipping exit price-verify defer loop. */
   | 'PERIODIC_HEAL'
   /** Phase 5: полный on-chain sell для освобождения SOL под новый вход (не ошибка журнала). */
-  | 'CAPITAL_ROTATE';
+  | 'CAPITAL_ROTATE'
+  /** Wave B: full exit after TP1 when price ≤ scratch drop vs signal anchor. */
+  | 'WAVE_B_POST_TP1_SCRATCH';
 export type DexId = 'pumpfun' | 'pumpswap' | 'raydium' | 'orca' | 'meteora' | 'moonshot';
 
 export interface Metrics {
@@ -129,6 +131,7 @@ export interface PartialSell {
     | 'TP_LADDER'
     | 'BREAKEVEN_TRIM'
     | 'WAVE_B_BREAKEVEN_INSURANCE'
+    | 'WAVE_B_POST_TP1_DERISK'
     | 'TRAIL_STEP'
     | 'TRAIL'
     | 'TIMEOUT'
@@ -283,6 +286,16 @@ export interface OpenTrade {
    * Wave B: одноразовая страховка при откате к безубытку после первых двух TP (+2.5% / +5%).
    */
   liveWaveBreakevenInsuranceTaken?: boolean;
+
+  /**
+   * Wave B: одноразовый de-risk после первой TP — продажа доли остатка при просадке ниже порога vs avg.
+   */
+  liveWavePostTp1DeriskTaken?: boolean;
+
+  /**
+   * Wave B: одноразовый scratch после первой TP — полное закрытие при просадке vs signal anchor.
+   */
+  liveWavePostTp1ScratchTaken?: boolean;
 
   /** Variant A v2 thin-volume flush: `volume_5m` at entry (PG snapshot). */
   liveThinVolEntryVol5mUsd?: number;

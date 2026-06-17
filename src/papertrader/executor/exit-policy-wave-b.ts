@@ -248,6 +248,18 @@ export function waveBBreakevenInsuranceEligible(ot: OpenTrade, stepPnl: number):
   );
 }
 
+/** Wave B post-TP1 de-risk: ≥1 TP ladder partial taken, peel not yet fired. */
+export function waveBPostTp1DeriskEligible(ot: OpenTrade): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWavePostTp1DeriskTaken) return false;
+  return ot.partialSells.some((p) => p.reason === 'TP_LADDER');
+}
+
+/** Wave B post-TP1 scratch: ≥1 TP ladder partial taken, full scratch not yet fired. */
+export function waveBPostTp1ScratchEligible(ot: OpenTrade): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWavePostTp1ScratchTaken) return false;
+  return ot.partialSells.some((p) => p.reason === 'TP_LADDER');
+}
+
 /**
  * Clear all TP ladder marks so +2.5% / +5% / … can fire again on the next rally.
  * Resets trail descent state; keeps `liveWaveMaxExecutedTpFrac` for breakeven-exit gate.
@@ -259,6 +271,8 @@ export function waveBClearAllTpLadderMarks(ot: OpenTrade, pnlFrac?: number): boo
   ot.ladderUsedLevels.clear();
   ot.ladderUsedIndices.clear();
   ot.liveWaveBreakevenInsuranceTaken = false;
+  ot.liveWavePostTp1DeriskTaken = false;
+  ot.liveWavePostTp1ScratchTaken = false;
   if (pnlFrac != null && Number.isFinite(pnlFrac)) {
     ot.liveWavePeakPnlFrac = Math.max(0, pnlFrac);
     ot.liveWaveTrailAnchorPnlFrac = Math.max(0, pnlFrac);
@@ -286,6 +300,8 @@ export function waveBUpdatePreArmImpulseCycle(ot: OpenTrade, pnlFrac: number, st
   } else if (ot.liveWaveImpulseBelowFirstRung === true) {
     ot.liveWaveImpulseBelowFirstRung = false;
     ot.liveWaveBreakevenInsuranceTaken = false;
+    ot.liveWavePostTp1DeriskTaken = false;
+    ot.liveWavePostTp1ScratchTaken = false;
     if (waveBExecutedTpGridThresholdFromMarks(ot, stepPnl) > 0) {
       changed = waveBClearAllTpLadderMarks(ot, pnlFrac) || changed;
     }

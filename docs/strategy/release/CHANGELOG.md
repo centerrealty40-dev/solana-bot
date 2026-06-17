@@ -46,6 +46,22 @@
 
 ---
 
+## [1.11.463] — 2026-06-17
+
+**Тег:** `sa-alpha-1.11.463`
+
+### Feature: Wave B post-TP1 scratch @ −15% signal → re-entry @ −30% ($1500)
+
+- После первой `TP_LADDER` фиксации: при просадке ≤ **−15% от signal price** (`liveStagedEntry.signalPriceUsd`) — **полное закрытие** (`WAVE_B_POST_TP1_SCRATCH`).
+- При просадке ≤ **−30% от того же signal anchor** — повторный вход **$1500**, Wave B + sig50 kill; обходит post-exit re-entry gates.
+- Отдельно от partial `POST_TP1_DERISK` (−15% vs avg, 50% peel) и Variant A exit-ref re-entry.
+- Backtest (honest sim, combo `scratch15_re30`): **~+$1.5k** vs baseline на том же окне.
+- Env (default **OFF**): `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_*`.
+
+**Откат:** redeploy `sa-alpha-1.11.462`; `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED=0`.
+
+---
+
 ## [1.11.462] — 2026-06-17
 
 **Тег:** `sa-alpha-1.11.462`

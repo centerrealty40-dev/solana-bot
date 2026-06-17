@@ -43,6 +43,7 @@ import {
   resolveLiveOscarEntrySplitLegUsd,
 } from './live-oscar-entry-sizing.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
+import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
 import {
   buildLiveStagedEntryState,
   liveStagedEntrySignalExpiresAt,
@@ -203,6 +204,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const cfg = loadPaperTraderConfig();
+  configureWaveBPostTp1ScratchReentry(cfg);
   logger.info(
     {
       strategyId: cfg.strategyId,
@@ -793,6 +795,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       RECONCILE_ORPHAN: 0,
       PERIODIC_HEAL: 0,
       CAPITAL_ROTATE: 0,
+      WAVE_B_POST_TP1_SCRATCH: 0,
     } as Record<ExitReason, number>,
     skippedPriceVerifyExit: 0,
   };

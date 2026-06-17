@@ -54,8 +54,10 @@ import {
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
   waveBBreakevenInsuranceEligible,
+  waveBPostTp1DeriskEligible,
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
+  stampLiveOscarExitPolicyOnOpen,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
@@ -84,7 +86,7 @@ import {
 import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown.js';
 import { recordMintScratchReentry } from '../../live/mint-scratch-reentry.js';
 import { child } from '../../core/logger.js';
-import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
+import { appendLiveBuyAnchorsAfterDca, applyLiveBuyAnchorsAfterOpen } from '../../live/live-buy-anchor.js';
 import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
 import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
@@ -95,8 +97,17 @@ import {
   onLiveOscarFullCloseUpdateWhitelistLossStreak,
 } from '../../live/mint-whitelist.js';
 import { onLiveOscarFirstMintProbeFullClose } from '../../live/mint-first-probe.js';
-import { stagedAveragingConfigured } from './live-staged-entry-gates.js';
+import { stagedAveragingConfigured, buildLiveStagedEntryState } from './live-staged-entry-gates.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
+import { makeOpenTradeFromEntry } from './open.js';
+import {
+  armWaveBPostTp1ScratchReentryFromOpenTrade,
+  consumeWaveBPostTp1ScratchReentry,
+  listWaveBPostTp1ScratchReentryPending,
+  waveBPostTp1ScratchFullExitDue,
+  waveBPostTp1ScratchReentryDue,
+  waveBPostTp1ScratchReentryExpired,
+} from './wave-b-post-tp1-scratch-reentry.js';
 import {
   appendFlashKillPriceSample,
   evaluateFlashCrashKill,
@@ -497,6 +508,9 @@ function buildExitContext(args: {
       break;
     case 'CAPITAL_ROTATE':
       triggerLabel = `Ротация капитала (Phase 5): полный on-chain sell для освобождения SOL под новый вход — не сбой кода`;
+      break;
+    case 'WAVE_B_POST_TP1_SCRATCH':
+      triggerLabel = `Wave B post-TP1 scratch (signal drop ≤−${cfg.liveOscarWaveBPostTp1ScratchDropPct}%, full exit)`;
       break;
   }
 
@@ -1045,6 +1059,217 @@ async function tryWaveBBreakevenInsurance(args: {
   });
   if (r === 'ok') {
     ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+}
+
+/** Wave B: after first TP partial, peel configured fraction when PnL vs avg falls to deep drawdown. */
+async function tryWaveBPostTp1Derisk(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (
+    cfg.strategyId !== 'live-oscar' ||
+    !cfg.liveOscarWaveBPostTp1DeriskEnabled ||
+    cfg.liveOscarWaveBPostTp1ScratchReentryEnabled ||
+    !isWaveBExitPolicy(ot) ||
+    ot.liveWavePostTp1DeriskTaken ||
+    ot.remainingFraction <= 1e-9 ||
+    !(ot.avgEntry > 0) ||
+    !(curMetric > 0)
+  ) {
+    return;
+  }
+  const pnlFrac = xAvg - 1;
+  const pnlThreshold = cfg.liveOscarWaveBPostTp1DeriskPnlFrac;
+  if (pnlFrac > pnlThreshold + LADDER_PNL_EPS) return;
+  if (!waveBPostTp1DeriskEligible(ot)) return;
+
+  const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarWaveBPostTp1DeriskFraction));
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBAdjustSellFractionForRemainder(remainingValueNet, trimFrac, cfg);
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {},
+    logLabelPct: `wave-b-post-tp1-derisk-${(trimFrac * 100).toFixed(0)}pct-at-${(pnlThreshold * 100).toFixed(0)}pnl`,
+    partialReason: 'WAVE_B_POST_TP1_DERISK',
+    timelineLabelRu:
+      'Live Oscar wave B · после 1-й фиксации TP просадка до ' +
+      `${(pnlThreshold * 100).toFixed(0)}% vs avg — de-risk ${(trimFrac * 100).toFixed(0)}% остатка`,
+  });
+  if (r === 'ok') {
+    ot.liveWavePostTp1DeriskTaken = true;
+  }
+}
+
+async function tryWaveBPostTp1ScratchReentryOpens(args: {
+  cfg: PaperTraderConfig;
+  open: Map<string, OpenTrade>;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+}): Promise<void> {
+  const { cfg, open, journalAppend, journalLiveStrategy, livePhase4 } = args;
+  if (cfg.strategyId !== 'live-oscar' || !cfg.liveOscarWaveBPostTp1ScratchReentryEnabled) return;
+
+  const now = Date.now();
+  for (const pending of listWaveBPostTp1ScratchReentryPending()) {
+    const mint = pending.mint;
+    if (open.has(mint)) continue;
+    if (waveBPostTp1ScratchReentryExpired(cfg, pending, now)) {
+      consumeWaveBPostTp1ScratchReentry(mint, journalAppend);
+      journalAppend({
+        kind: 'eval-skip-open',
+        mint,
+        symbol: pending.symbol,
+        source: pending.source,
+        reason: 'wave_b_post_tp1_scratch_reentry_expired',
+      });
+      continue;
+    }
+
+    let curMetric = 0;
+    try {
+      const quote = await fetchLatestSnapshotQuote(
+        mint,
+        pending.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+      );
+      curMetric = Number(quote.priceUsd ?? 0);
+    } catch {
+      continue;
+    }
+    if (!(curMetric > 0)) continue;
+    if (!waveBPostTp1ScratchReentryDue(pending, curMetric)) continue;
+
+    const row = {
+      mint,
+      symbol: pending.symbol,
+      ts: new Date(),
+      launch_ts: null,
+      age_min: 0,
+      price_usd: curMetric,
+      liquidity_usd: 0,
+      volume_5m: 0,
+      volume_1h: 0,
+      buys_5m: 0,
+      sells_5m: 0,
+      market_cap_usd: pending.entryMarketCapUsd ?? null,
+      source: pending.source ?? 'raydium',
+      holder_count: 0,
+      token_age_min: 0,
+      pair_address: pending.pairAddress ?? null,
+    };
+    let ot = makeOpenTradeFromEntry({
+      cfg,
+      row,
+      lane: pending.lane,
+      dex: pending.dex,
+      liquidityUsd: null,
+      firstLegUsdOverride: pending.reentryUsd,
+    });
+    ot.liveStagedEntry = buildLiveStagedEntryState(
+      cfg,
+      { signalTs: pending.signalTs, signalPriceUsd: pending.signalPriceUsd },
+      { marketCapUsd: pending.entryMarketCapUsd },
+    );
+    if (pending.liveOscarMcapTier) ot.liveOscarMcapTier = pending.liveOscarMcapTier;
+    if (pending.tokenDecimals != null) ot.tokenDecimals = pending.tokenDecimals;
+    stampLiveOscarExitPolicyOnOpen(ot, cfg);
+
+    journalAppend({
+      kind: 'wave_b_post_tp1_scratch_reentry',
+      mint,
+      symbol: pending.symbol,
+      signalPriceUsd: pending.signalPriceUsd,
+      reentryDropPct: pending.reentryDropPct,
+      reentryUsd: pending.reentryUsd,
+      entryPriceUsd: curMetric,
+    });
+
+    if (livePhase4) {
+      const buyOut = await livePhase4.trySolToTokenBuy({
+        mint,
+        symbol: pending.symbol,
+        usdNotional: pending.reentryUsd,
+        intentKind: 'buy_scale_in',
+      });
+      if (!buyOut.ok) {
+        journalLiveStrategy?.({
+          kind: 'execution_skip',
+          reason: 'wave_b_post_tp1_scratch_reentry_buy_failed',
+          detail: mint.slice(0, 12),
+        });
+        continue;
+      }
+      applyLiveBuyAnchorsAfterOpen(ot, buyOut);
+    }
+
+    open.set(mint, ot);
+    consumeWaveBPostTp1ScratchReentry(mint, journalAppend);
+    journalAppend({
+      kind: 'open',
+      mint: ot.mint,
+      symbol: ot.symbol,
+      lane: ot.lane,
+      source: ot.source,
+      dex: ot.dex,
+      entryTs: ot.entryTs,
+      entryMcUsd: ot.entryMcUsd,
+      entryMarketPrice: ot.legs[0]?.marketPrice ?? ot.entryMcUsd,
+      snapshotEntryPriceUsd: curMetric,
+      legs: ot.legs,
+      totalInvestedUsd: ot.totalInvestedUsd,
+      avgEntry: ot.avgEntry,
+      avgEntryMarket: ot.avgEntryMarket,
+      pairAddress: ot.pairAddress,
+      entryLiqUsd: ot.entryLiqUsd,
+      eval_reasons: ['wave_b_post_tp1_scratch_reentry'],
+      liveStagedEntry: ot.liveStagedEntry,
+      liveExitPolicyId: ot.liveExitPolicyId,
+      liveOscarMcapTier: ot.liveOscarMcapTier,
+    });
+    journalLiveStrategy?.({
+      kind: 'live_position_open',
+      mint,
+      entryPath: 'wave_b_post_tp1_scratch_reentry',
+      openTrade: serializeOpenTrade(ot),
+    });
+    console.log(
+      `[WAVE_B_POST_TP1_SCRATCH_REENTRY] ${mint.slice(0, 8)} $${pending.symbol} $${pending.reentryUsd.toFixed(0)} @ ${curMetric.toExponential(4)} (signal ${pending.signalPriceUsd.toExponential(4)})`,
+    );
   }
 }
 
@@ -1708,7 +1933,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
   }
 
-  if (open.size === 0) return;
+  if (open.size === 0) {
+    await tryWaveBPostTp1ScratchReentryOpens({
+      cfg,
+      open,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+    });
+    return;
+  }
   const mints = [...open.keys()];
 
   for (const mint of mints) {
@@ -2947,6 +3182,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       liveOscarCfg,
       stats,
     });
+    await tryWaveBPostTp1Derisk({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
 
     /** Same tick as 2nd partial TP: peak block ran before `partialSells` grew — arm peak trailing if still at ATH. */
     if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0) {
@@ -3150,6 +3397,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
 
       const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
+      if (
+        !exitReason &&
+        waveBPostTp1ScratchFullExitDue(effCfg, ot, curMetric)
+      ) {
+        ot.liveWavePostTp1ScratchTaken = true;
+        exitReason = 'WAVE_B_POST_TP1_SCRATCH';
+      }
       const waveBKill =
         isWaveBExitPolicy(ot) &&
         killEff < 0 &&
@@ -3358,6 +3612,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         closedTrade: serializeClosedTrade(ct),
       });
       afterFullCloseReentryGate(args, cfg, ct);
+      if (exitReason === 'WAVE_B_POST_TP1_SCRATCH') {
+        armWaveBPostTp1ScratchReentryFromOpenTrade(ot, cfg, journalAppend);
+      }
       hookLiveWhitelistAfterFullClose(
     liveOscarCfg,
     cfg,
@@ -3402,4 +3659,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
   }
+
+  await tryWaveBPostTp1ScratchReentryOpens({
+    cfg,
+    open,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+  });
 }

@@ -624,6 +624,15 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_ENABLED: '1',
         PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION: '0.5',
         PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC: '0',
+        /** Post-TP1 de-risk: после 1-й TP при просадке −15% vs avg — продать 50% остатка (backtest +$121 vs baseline). */
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_ENABLED: '0',
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_PNL_FRAC: '-0.15',
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_FRACTION: '0.5',
+        /** Post-TP1 scratch/re-entry: full exit @ −15% signal after TP1; re-open $1500 @ −30% signal (backtest +~$1.5k). */
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_ENABLED: '0',
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_DROP_PCT: '15',
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_DROP_PCT: '30',
+        PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_USD: '1500',
         /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
         PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
         /** Wave B on for new opens — escalating TP ladder (+2.5% steps). Variant A off. */
