@@ -97,6 +97,8 @@ const ConfigSchema = z.object({
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),
   /** Entry split (NOT averaging): second cash leg after delay if price within band vs leg-1 anchor. */
   liveStagedEntryEntrySplitLegUsd: z.coerce.number().positive().default(500),
+  /** Asymmetric split leg-2 USD; `0` = same as leg-1 (symmetric 2× split, backward compat). */
+  liveStagedEntryEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
   liveStagedEntryEntrySplitMaxUpPct: z.coerce.number().min(0).max(50).default(3),
   liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
@@ -195,6 +197,7 @@ const ConfigSchema = z.object({
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
+  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(600),
   liveOscarMicroMcapDcaLevelsSpec: z.string().default(''),
   /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); ≥$3M = prod tier. */
@@ -207,6 +210,7 @@ const ConfigSchema = z.object({
   liveOscarProdMcapDipMinDropPct: z.coerce.number().default(-18),
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(25_000),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
+  liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(800),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
@@ -945,6 +949,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryThirdLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD,
     liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
     liveStagedEntryEntrySplitLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD,
+    liveStagedEntryEntrySplitLeg2Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD,
     liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
@@ -1011,6 +1016,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarMicroMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT,
     liveOscarMicroMcapVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD,
     liveOscarMicroMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD,
+    liveOscarMicroMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarMicroMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD,
     liveOscarMicroMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS,
     liveOscarLowMcapLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED, false),
@@ -1019,6 +1025,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarLowMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT,
     liveOscarLowMcapVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD,
     liveOscarLowMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD,
+    liveOscarLowMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarLowMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD,
     liveOscarLowMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS,
     liveOscarProdMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT,

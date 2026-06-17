@@ -228,6 +228,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
             ? {
                 entrySplitV2: true,
                 entrySplitLegUsd: Number(p.entrySplitLegUsd) || firstLegUsd,
+                entrySplitLeg2Usd:
+                  Number(p.entrySplitLeg2Usd) ||
+                  Number(p.entrySplitLegUsd) ||
+                  firstLegUsd,
+                entrySplitTargetDropPct: Number.isFinite(Number(p.entrySplitTargetDropPct))
+                  ? Number(p.entrySplitTargetDropPct)
+                  : 0,
                 entrySplitDelayMs: Number(p.entrySplitDelayMs) || 10_000,
                 entrySplitMaxUpPct: Number(p.entrySplitMaxUpPct) || 3,
                 entrySplitMaxDownPct: Number(p.entrySplitMaxDownPct) || 10,

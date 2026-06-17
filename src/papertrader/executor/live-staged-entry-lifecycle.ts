@@ -155,7 +155,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       anchorUsd: anchor,
     });
     if (leg2.ok) {
-      const usd = st.entrySplitLegUsd ?? st.firstLegUsd;
+      const usd = st.entrySplitLeg2Usd ?? st.entrySplitLegUsd ?? st.firstLegUsd;
       const chPct = leg2.triggerPct * 100;
       const ok = await pushBuyLeg({
         cfg: args.cfg,

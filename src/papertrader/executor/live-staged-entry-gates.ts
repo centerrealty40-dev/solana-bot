@@ -1,9 +1,12 @@
 import type { PaperTraderConfig } from '../config.js';
 import {
   applyCanonicalStagedEntrySizing,
+  resolveLiveOscarEntrySplitLeg2Usd,
   resolveLiveOscarEntrySplitLegUsd,
+  resolveLiveOscarEntrySplitTotalUsd,
   resolveLiveOscarTradeTierFromMcap,
 } from '../live-oscar-entry-sizing.js';
+import type { LiveOscarTradeTier } from '../live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
 
 /** `liveStagedEntrySignalTtlMs === 0` — no time limit on staged plan / signal anchor. */
@@ -136,6 +139,7 @@ export function buildLiveStagedEntryState(
   const firstMintProbe = options?.firstMintProbe === true;
   const tier = resolveLiveOscarTradeTierFromMcap(cfg, options?.marketCapUsd);
   const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  const splitLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -152,6 +156,7 @@ export function buildLiveStagedEntryState(
     ...(firstMintProbe ? { mintFirstProbe: true } : {}),
     entrySplitV2: true,
     entrySplitLegUsd: splitLeg,
+    entrySplitLeg2Usd: splitLeg2,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
@@ -190,8 +195,8 @@ export function openNotionalUsdForStagedEntry(cfg: PaperTraderConfig): number {
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
-export function stagedEntryPlanInvestedCapUsd(cfg: PaperTraderConfig): number {
-  let sum = cfg.liveStagedEntryEntrySplitLegUsd * 2;
+export function stagedEntryPlanInvestedCapUsd(cfg: PaperTraderConfig, tier?: LiveOscarTradeTier): number {
+  let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
   sum += cfg.liveStagedEntrySecondLegUsd;
   if (cfg.liveStagedEntryThirdLegUsd > 0) sum += cfg.liveStagedEntryThirdLegUsd;
   return sum;
