@@ -11,7 +11,9 @@
  *
  * Dependency: `@triton-one/yellowstone-grpc` (Yellowstone gRPC NAPI client).
  */
-import Client, { CommitmentLevel, txEncode } from '@triton-one/yellowstone-grpc';
+import * as YellowstoneGrpc from '@triton-one/yellowstone-grpc';
+import { CommitmentLevel, txEncode } from '@triton-one/yellowstone-grpc';
+import type ClientType from '@triton-one/yellowstone-grpc';
 import type {
   SubscribeRequest,
   SubscribeUpdate,
@@ -24,6 +26,47 @@ import {
   onShyftShadowMintsChanged,
   recordShyftShadowStreamPrice,
 } from './shadow-state.js';
+
+/**
+ * Resolve the Yellowstone `Client` constructor robustly across CJS/ESM interop shapes.
+ *
+ * `@triton-one/yellowstone-grpc@5` ships dual CJS/ESM builds. Under tsx/esbuild the default
+ * export arrives double-wrapped (the namespace's `default` is the CJS `module.exports`, whose
+ * own `default` is the class), so a plain `import Client from ...` yields a non-constructable
+ * object ("Client is not a constructor"). Unwrap nested `default` layers until we hit the class.
+ */
+type YellowstoneClientCtor = new (
+  endpoint: string,
+  xToken: string | undefined,
+  channelOptions: unknown,
+  reconnectOptions?: { enabled?: boolean },
+) => ClientType;
+
+function resolveYellowstoneClientCtor(): YellowstoneClientCtor {
+  const ns = YellowstoneGrpc as Record<string, unknown>;
+  let candidate: unknown = ns.default ?? (ns as { Client?: unknown }).Client ?? ns;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof candidate === 'function') return candidate as YellowstoneClientCtor;
+    if (candidate && typeof candidate === 'object' && 'default' in (candidate as object)) {
+      candidate = (candidate as { default: unknown }).default;
+      continue;
+    }
+    break;
+  }
+  throw new Error('yellowstone-grpc Client constructor not found (CJS/ESM interop)');
+}
+
+/**
+ * Lazily resolved (and memoized) so any interop failure surfaces inside the flag-gated connect
+ * loop — caught by its try/catch + backoff — and never throws at module load (process-safe).
+ */
+let cachedYellowstoneClientCtor: YellowstoneClientCtor | null = null;
+function getYellowstoneClientCtor(): YellowstoneClientCtor {
+  if (!cachedYellowstoneClientCtor) {
+    cachedYellowstoneClientCtor = resolveYellowstoneClientCtor();
+  }
+  return cachedYellowstoneClientCtor;
+}
 
 const FILTER_NAME = 'live_oscar_shadow';
 /** Valid base58 pubkey that effectively never appears in DEX swaps — used as a "match nothing" filter. */
@@ -168,7 +211,11 @@ export function startShyftShadowConsumer(
 
   async function connectOnce(): Promise<void> {
     cb.onStatus?.('connecting', cfg.endpoint);
-    const client = new Client(cfg.endpoint, cfg.token, undefined, { enabled: false });
+    const YellowstoneClient = getYellowstoneClientCtor();
+    const client = new YellowstoneClient(cfg.endpoint, cfg.token, undefined, { enabled: false });
+    // yellowstone-grpc@5 requires an explicit connect() before subscribe()/unary calls
+    // (otherwise: "Client not connected. Call connect() first").
+    await client.connect();
     const stream = await client.subscribe(
       buildSubscribeRequest(getShyftShadowWatchedMints(), maxAccountInclude),
     );
