@@ -67,7 +67,8 @@
 - **A/B-проверка:** включить на части lane / shadow-сравнение PnL; следить, что число входов/выходов не разъезжается из-за более «дёрганой» цены; сверять с baseline +$9 481.
 - **Флаг:** `SHYFT_PRICE_PRIMARY_ENABLED` default **OFF**; при OFF поведение байт-в-байт = PG.
 
-### 1.3 DeFi API Shyft для mcap/liq на кандидатах
+### 1.3 DeFi API Shyft для mcap/liq на кандидатах — РЕАЛИЗОВАН (default-OFF) в 1.11.469
+- **Статус:** код реализован за флагом **default-OFF** (`npm run typecheck` зелёный; `tests/shyft-defi-mcap.test.ts` 9/9). Модуль `src/papertrader/stream/shyft-defi-mcap.ts` (защитный парсер `parseShyftDefiPools` + `resolveShyftDefiMcap` с TTL-кэшем/таймаутом/fallback). Инъекция в `dip-clones.ts`: override `refMcap` (tier) + `evalRow.market_cap_usd/liquidity_usd`. Флаги: `SHYFT_DEFI_MCAP_ENABLED` (default 0), `SHYFT_DEFI_MCAP_TTL_MS` (default 12000); ключ `SHYFT_DEFI_API_KEY`/`SHYFT_API_KEY` в `.env`. Наблюдение: `live_shyft_defi_mcap`. **Перед активацией владельцу подтвердить схему ответа DeFi API** (при несовпадении полей — fallback на PG, прод-безопасно).
 - **Что:** mcap/liq-гейт на кандидатах через Shyft DeFi API (`defi.shyft.to/v0/pools/...`) c **TTL-кэшем** (10–15s) и **fallback** на текущий PG/pump.fun источник.
 - **Файлы (план):** `src/papertrader/pricing.ts` (mcap-резолвер) или новый `src/papertrader/stream/shyft-defi-mcap.ts`; env `SHYFT_DEFI_MCAP_ENABLED`, `SHYFT_DEFI_MCAP_TTL_MS`.
 - **Риск:** низкий-средний — DeFi API req/s лимит (см. контеншен); только на кандидатах + TTL-кэш ограничивают бёрст.

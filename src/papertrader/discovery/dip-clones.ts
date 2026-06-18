@@ -3,6 +3,7 @@ import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from
 import { snapshotRowTsMs } from '../stale-price.js';
 import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
 import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
+import { resolveShyftDefiMcap, type ShyftDefiMcapResult } from '../stream/shyft-defi-mcap.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
 import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
@@ -802,7 +803,33 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   for (const { row, lane } of allowedSnapshotTagged) {
     evaluated++;
 
-    const refMcap = snapshotRefMarketCapUsd(row);
+    /**
+     * Stage 1.3 (1.11.469): Shyft DeFi mcap/liq for the candidate (TTL cache + PG fallback). Used to
+     * override `refMcap` (tier) and the snapshot mcap/liq gate inputs (folded into `evalRow` below).
+     * **Default OFF** (`shyftDefiMcapEnabled`): when OFF this is skipped and `refMcap` / gate inputs are
+     * byte-for-byte the current PG path. On the ON path any DeFi failure falls back to PG.
+     */
+    let defiMcap: ShyftDefiMcapResult | null = null;
+    if (cfg.shyftDefiMcapEnabled && cfg.strategyId === 'live-oscar') {
+      const fetched = await resolveShyftDefiMcap(row.mint, { ttlMs: cfg.shyftDefiMcapTtlMs });
+      if (fetched && (fetched.mcapUsd != null || fetched.liqUsd != null)) {
+        defiMcap = fetched;
+        auditRows.push({
+          kind: 'live_shyft_defi_mcap',
+          mint: row.mint,
+          lane: String(lane),
+          pgMcapUsd: row.market_cap_usd ?? null,
+          pgLiqUsd: row.liquidity_usd ?? null,
+          defiMcapUsd: fetched.mcapUsd,
+          defiLiqUsd: fetched.liqUsd,
+        });
+      }
+    }
+
+    const refMcap =
+      defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0
+        ? defiMcap.mcapUsd
+        : snapshotRefMarketCapUsd(row);
     const oscarTier: LiveOscarMcapTier = isLiveOscarMcapTieringEnabled(cfg)
       ? resolveLiveOscarMcapTier(cfg, refMcap)
       : 'prod';
@@ -826,13 +853,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
 
     /**
-     * Stage 1.2 (1.11.468): Shyft stream price PRIMARY for discovery dip-eval (freshness-gated,
-     * PG fallback). `evalRow` differs from `row` only in `price_usd` (the fresh stream price) and is
-     * used by the snapshot/dip gates + reported features. **Default OFF** (`shyftPricePrimaryEnabled`
-     * + `shyftPricePrimaryDiscoveryEnabled`): when OFF `evalRow === row` (same reference), so the gates
-     * are byte-for-byte identical to the current PG path.
+     * Stage 1.2 (1.11.468) + 1.3 (1.11.469): build `evalRow` — a clone of `row` with the freshest
+     * Shyft stream `price_usd` (1.2) and/or DeFi `market_cap_usd` / `liquidity_usd` (1.3) overrides
+     * folded in — used by the snapshot/dip gates + reported features. **Default OFF** for both stages:
+     * when no override applies `evalRow === row` (same reference), so the gates are byte-for-byte
+     * identical to the current PG path.
      */
-    let evalRow = row;
+    const evalOverrides: Partial<SnapshotCandidateRow> = {};
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryDiscoveryEnabled &&
@@ -850,7 +877,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         maxStaleMs: cfg.shyftMaxStaleMs,
       });
       if (picked.source === 'stream' && picked.priceUsd != null && picked.priceUsd > 0 && streamPrimary) {
-        evalRow = { ...row, price_usd: picked.priceUsd };
+        evalOverrides.price_usd = picked.priceUsd;
         auditRows.push(
           buildPricePrimaryEvent({
             mint: row.mint,
@@ -866,6 +893,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         );
       }
     }
+    if (defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0) evalOverrides.market_cap_usd = defiMcap.mcapUsd;
+    if (defiMcap?.liqUsd != null && defiMcap.liqUsd > 0) evalOverrides.liquidity_usd = defiMcap.liqUsd;
+    const evalRow = Object.keys(evalOverrides).length > 0 ? { ...row, ...evalOverrides } : row;
 
     const v = priorityMintSet.has(row.mint)
       ? evaluateSnapshotPriorityTier(tierCfg, evalRow, lane)
