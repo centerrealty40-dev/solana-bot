@@ -179,6 +179,47 @@ describe('W8.0-p1 live JSONL contract', () => {
     }
   });
 
+  it('parses Stage 1.1 Shyft shadow kinds (status + price) so they are journaled, not dropped', () => {
+    const status: LiveEventBody = {
+      kind: 'live_shyft_shadow_status',
+      status: 'connected',
+      detail: 'https://grpc.fra.shyft.to',
+    };
+    const price: LiveEventBody = {
+      kind: 'live_shyft_shadow_price',
+      mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      lane: 'post',
+      surface: 'mtm',
+      streamPriceUsd: 0.0001234,
+      pgPriceUsd: 0.0001201,
+      streamTsMs: 1_700_000_000_500,
+      pgSnapshotTsMs: 1_700_000_000_000,
+      pgPriceAgeMs: 500,
+      streamVsPgLagMs: 500,
+      streamVsPgPriceDiffPct: 2.75,
+      streamSlot: 123456,
+    };
+    for (const b of [status, price]) {
+      expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(b))).success).toBe(true);
+      expect(parseLiveEventBody(JSON.parse(JSON.stringify(b)))).toEqual(b);
+    }
+    // nullable PG fields (no PG snapshot available) still parse
+    const priceNoPg: LiveEventBody = {
+      kind: 'live_shyft_shadow_price',
+      mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      lane: 'post',
+      surface: 'entry',
+      streamPriceUsd: 0.0001234,
+      pgPriceUsd: null,
+      streamTsMs: 1_700_000_000_500,
+      pgSnapshotTsMs: null,
+      pgPriceAgeMs: null,
+      streamVsPgLagMs: null,
+      streamVsPgPriceDiffPct: null,
+    };
+    expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(priceNoPg))).success).toBe(true);
+  });
+
   it('rejects invalid intentId on execution_attempt', () => {
     const bad = safeParseLiveEventBody({
       kind: 'execution_attempt',

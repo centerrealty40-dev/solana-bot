@@ -46,6 +46,26 @@
 
 ---
 
+## [1.11.472] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.472` (планируется координатором)
+
+### Этап 1.1 (live-oscar): регистрация shadow-событий в live-схеме журнала (иначе drop)
+
+После фикса консьюмера (1.11.471) он подключается, но события `live_shyft_shadow_status` и `live_shyft_shadow_price` **не появлялись** в журнале: `appendLiveJsonlEvent` (`src/live/store-jsonl.ts`) валидирует тело против `LiveEventBodySchema` (`src/live/events.ts`) и **молча отбрасывает** (только `console.warn`) тела с незарегистрированным `kind`. Оба shadow-kind'а отсутствовали в `discriminatedUnion` (автор 1.11.467 добавил их в билдер/консьюмер, но не в live-схему; не ловилось, т.к. флаг был OFF).
+
+**Фикс:** добавлены `LiveShyftShadowStatusSchema` (`status` ∈ connecting/connected/end/error/decode_error/closed/idle + optional `detail`) и `LiveShyftShadowPriceSchema` (mint/lane/surface/streamPriceUsd/pgPriceUsd/streamTsMs/pgSnapshotTsMs/pgPriceAgeMs/streamVsPgLagMs/streamVsPgPriceDiffPct/streamSlot, PG-поля nullable) в `LiveEventBodySchema`. Теперь shadow-события **журналируются** в `data/live/*.jsonl` (default-fsync = false, как у прочих наблюдательных событий).
+
+**Поведение торговли НЕ меняется** — правка только в схеме валидации журнала + новый тест. Прочие Shyft-флаги остаются OFF.
+
+**Тесты:** `tests/live-jsonl-phase1.test.ts` — новый кейс: оба shadow-kind'а парсятся и не отбрасываются (включая nullable PG-поля). `npm run typecheck` зелёный; vitest live-jsonl 9/9, shyft-shadow 18/18.
+
+**Затронутые файлы:** `src/live/events.ts`, `tests/live-jsonl-phase1.test.ts`, `docs/strategy/release/VERSION`, `docs/strategy/release/CHANGELOG.md`, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Откат:** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=0` + redeploy; либо redeploy тега `sa-alpha-1.11.469`. При OFF поведение торговли байт-в-байт = текущее.
+
+---
+
 ## [1.11.471] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.471` (планируется координатором)

@@ -384,6 +384,32 @@ export const LiveDailySummarySchema = z.object({
     .optional(),
 });
 
+/**
+ * Stage 1.1 (1.11.467) — Shyft shadow consumer connection status (observability only).
+ * Without this schema member `appendLiveJsonlEvent` silently drops the event (validation fail).
+ */
+export const LiveShyftShadowStatusSchema = z.object({
+  kind: z.literal('live_shyft_shadow_status'),
+  status: z.enum(['connecting', 'connected', 'end', 'error', 'decode_error', 'closed', 'idle']),
+  detail: z.string().max(400).optional(),
+});
+
+/** Stage 1.1 (1.11.467) — stream-vs-PG shadow price observation (observability only). */
+export const LiveShyftShadowPriceSchema = z.object({
+  kind: z.literal('live_shyft_shadow_price'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  surface: z.enum(['entry', 'mtm']).optional(),
+  streamPriceUsd: z.number().finite(),
+  pgPriceUsd: z.number().finite().nullable(),
+  streamTsMs: z.number().finite(),
+  pgSnapshotTsMs: z.number().finite().nullable(),
+  pgPriceAgeMs: z.number().finite().nullable(),
+  streamVsPgLagMs: z.number().finite().nullable(),
+  streamVsPgPriceDiffPct: z.number().finite().nullable(),
+  streamSlot: z.number().finite().nullable().optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -413,6 +439,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveStagedEntrySignalSchema,
   LiveDiscoverySkipOpenSchema,
   LiveDailySummarySchema,
+  LiveShyftShadowStatusSchema,
+  LiveShyftShadowPriceSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;
