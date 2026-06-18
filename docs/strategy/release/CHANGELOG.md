@@ -46,6 +46,29 @@
 
 ---
 
+## [1.11.473] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.473` (планируется координатором)
+
+### live-oscar: вход $500+$500 ($1000 notional), leg-1 сразу по сигналу (0%) — TRADING-BEHAVIOR
+
+Осознанное изменение торгового поведения входа (одобрено владельцем). Глобальный staged-entry prod-тира (mcap ≥ $3M) и связанный low-тир ($1.3M–$3M) переведены со схемы **$1000+$500 ($1500 notional), 1-я нога при −5%** на **$500+$500 ($1000 notional), 1-я нога немедленно по цене сигнала (0%)**; 2-я нога (усреднение) без изменений при −10%, kill −50%.
+
+**Изменения env (`ecosystem.config.cjs`, live-oscar):**
+- GLOBAL: `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT` `5`→`0`; `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` `1000`→`500`; `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD` `1000`→`500`; консты `LIVE_OSCAR_ENTRY_NOTIONAL_USD` `1500`→`1000` и `LIVE_OSCAR_MAX_POSITION_USD` `1500`→`1000`. `..._ENTRY_SPLIT_LEG2_USD` остаётся `500`, `PAPER_ENTRY_FIRST_LEG_FRACTION` остаётся `0.5`.
+- LOW_MCAP (требуется boot-инвариантом `assertLiveOscarUnifiedEntrySizing`: low leg == global leg, low position == global position): `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD` `1000`→`500`; `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD` `1500`→`1000`; `..._LEG2_USD` остаётся `500`.
+- MICRO_MCAP без изменений ($300+$150/$450). Shyft-флаги без изменений (shadow `1`, остальные `0`). PROD_MCAP dip/vol без изменений. `.env`/секреты не трогались.
+
+**Консистентность (проверено):** boot-guard зелёный — leg1+leg2 = 500+500 = pos 1000 (prod и low); `FIRST_LEG_USD`(500) == `ENTRY_SPLIT_LEG`(500); low leg/pos == global; PAPER_POSITION_USD 1000 ≤ LIVE_MAX_POSITION_USD 1000 (boot в `src/live/main.ts` не падает). `npm run typecheck` зелёный; vitest entry-sizing/staged-entry зелёные.
+
+**Поведение:** затрагивает только НОВЫЕ входы. Уже открытые позиции сохраняют Wave-B выходы (изменение касается только сайзинга/триггера входа).
+
+**Затронутые файлы:** `ecosystem.config.cjs`, `docs/strategy/release/VERSION`, `docs/strategy/release/CHANGELOG.md`.
+
+**Откат:** redeploy тега `sa-alpha-1.11.472` / SHA `8b76511` (`git reset --hard 8b76511 && npm ci && pm2 reload ecosystem.config.cjs --update-env`); либо вернуть ключи к `FIRST_DROP_PCT=5`, `ENTRY_SPLIT_LEG_USD=1000`, `FIRST_LEG_USD=1000`, notional/max `1500`, и LOW_MCAP leg `1000` / position `1500`.
+
+---
+
 ## [1.11.472] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.472` (планируется координатором)
