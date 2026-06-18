@@ -394,8 +394,9 @@ const PM2_APPS = [
          * точках входа/MTM — измеряет лаг PG vs стрим. Стрим-цена НИГДЕ не участвует в гейтах/eval/
          * исполнении. При OFF торговля байт-в-байт = текущая. Креды: SHYFT_GRPC_ENDPOINT (default
          * https://grpc.fra.shyft.to) + SHYFT_GRPC_TOKEN (x-token) в .env (НЕ сюда).
+         * 1.11.470 — включён ('1') для наблюдения (сбор лага PG); прочие Shyft-флаги остаются '0'.
          */
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '1',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
         /**
