@@ -38,10 +38,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): entry notional vs max cap with DCA.
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * Prod staged entry $1000+$500 ($1500 notional); wait −5% for leg-1; leg-2 at −10%; DCA off.
+ * Prod staged entry $500+$500 ($1000 notional); leg-1 immediately at signal (0%); leg-2 averaging at −10%; DCA off.
  */
-const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1500';
-const LIVE_OSCAR_MAX_POSITION_USD = '1500';
+const LIVE_OSCAR_ENTRY_NOTIONAL_USD = '1000';
+const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -357,13 +357,13 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$1000+$500** — 1-я нога при −5% от сигнала, 2-я при −10%; kill −50%.
+         * Staged-entry: сплит **$500+$500** ($1000 notional) — 1-я нога сразу по сигналу (0%), 2-я (усреднение) при −10%; kill −50%.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '5',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
@@ -372,7 +372,7 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '180000',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
@@ -459,15 +459,15 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '450',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $1000+$500. */
+        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $500+$500 ($1000 notional), leg-1 сразу по сигналу (0%), leg-2 усреднение при −10%. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '1000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '500',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
