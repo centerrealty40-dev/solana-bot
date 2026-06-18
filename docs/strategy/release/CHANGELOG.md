@@ -46,6 +46,26 @@
 
 ---
 
+## [1.11.470] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.470` (планируется координатором)
+
+### Этап 1.1 (live-oscar): включение Shyft shadow-стрима на проде (observability only)
+
+Активирован **Stage 1.1** роадмапа `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`: в `ecosystem.config.cjs` флаг `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` переведён `'0'` → **`'1'`**. Это запускает Yellowstone gRPC shadow-консьюмер (один на процесс live-oscar, узкий `accountInclude` по watched/open mint'ам), который журналирует `live_shyft_shadow_price` рядом с PG-ценой для измерения лага. **Торговля байт-в-байт не меняется** — стрим-цена НИГДЕ не участвует в гейтах/eval/исполнении.
+
+**Что изменилось:**
+- `ecosystem.config.cjs`: **только** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` `'0'` → `'1'`. Все прочие Shyft-флаги остаются OFF: `SHYFT_PRICE_PRIMARY_ENABLED='0'`, `SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED='0'`, `SHYFT_DEFI_MCAP_ENABLED='0'`.
+- Креды уже на VPS в `/opt/solana-alpha/.env` (`SHYFT_GRPC_TOKEN`, `SHYFT_GRPC_ENDPOINT=https://grpc.fra.shyft.to`). При отсутствии токена консьюмер идлит без падения процесса.
+
+**Наблюдение:** `live_shyft_shadow_price` / `live_shyft_shadow_status` в live-журнале (`data/live/*.jsonl`). Сбор лага PG vs стрим 24–48 ч перед активацией Stage 1.2.
+
+**Откат:** установить `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED` обратно в `'0'` + redeploy; либо redeploy тега `sa-alpha-1.11.469`. При OFF поведение торговли байт-в-байт = текущее — откат по риску не требуется.
+
+**Затронутые файлы:** `ecosystem.config.cjs`, `docs/strategy/release/VERSION`, `docs/strategy/release/CHANGELOG.md`, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+---
+
 ## [1.11.469] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.469` (планируется координатором)
