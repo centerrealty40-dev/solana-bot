@@ -138,6 +138,16 @@ const ConfigSchema = z.object({
   shyftPricePrimaryDiscoveryEnabled: z.boolean().default(false),
   /** Stage 1.2 freshness-gate (ms): max age of a stream price to accept it as primary. */
   shyftMaxStaleMs: z.coerce.number().int().positive().default(5_000),
+  /**
+   * Stage 1.3 (1.11.469) — resolve discovery-candidate mcap/liq from the Shyft DeFi API
+   * (`/v0/pools/get_by_token`) with a TTL cache + **fallback** to the current PG/pump.fun source.
+   * Used to override `refMcap` (tier resolution) + the snapshot mcap/liq gate inputs on candidates.
+   * Default OFF; when OFF the mcap/liq source is byte-for-byte the current PG path. Needs
+   * `SHYFT_DEFI_API_KEY` (or `SHYFT_API_KEY`) in `.env`; on any failure falls back to PG.
+   */
+  shyftDefiMcapEnabled: z.boolean().default(false),
+  /** Stage 1.3 TTL (ms) for the DeFi mcap/liq in-memory cache (limits req/s burst). */
+  shyftDefiMcapTtlMs: z.coerce.number().int().positive().default(12_000),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -1015,6 +1025,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     shyftPricePrimaryMtmEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_MTM_ENABLED, true),
     shyftPricePrimaryDiscoveryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED, false),
     shyftMaxStaleMs: process.env.SHYFT_MAX_STALE_MS,
+    shyftDefiMcapEnabled: envBool(process.env.SHYFT_DEFI_MCAP_ENABLED, false),
+    shyftDefiMcapTtlMs: process.env.SHYFT_DEFI_MCAP_TTL_MS,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),

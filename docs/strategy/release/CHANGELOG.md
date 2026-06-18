@@ -46,6 +46,35 @@
 
 ---
 
+## [1.11.469] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.469` (планируется координатором)
+
+### Этап 1.3 (live-oscar): mcap/liq кандидатов из Shyft DeFi API (TTL-кэш + PG fallback)
+
+Реализован **Этап 1.3** роадмапа `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`: на кандидатах discovery mcap/liq резолвится из **Shyft DeFi API** (`/v0/pools/get_by_token?token=<mint>&dex=pumpFunAmm`, заголовок `x-api-key`) с **in-memory TTL-кэшем** (default 12s, ограничивает req/s бёрст) и **fallback** на текущий PG/pump.fun источник при любой ошибке. **При дефолтных значениях (флаг OFF) источник mcap/liq байт-в-байт = текущий PG-путь.**
+
+**Что построено (всё за флагом default-OFF):**
+- Новый модуль `src/papertrader/stream/shyft-defi-mcap.ts`: чистый защитный парсер `parseShyftDefiPools(json)` (пробует распространённые имена полей `marketCap/market_cap_usd/fdv/...`, `liquidity/tvl/...` по нескольким вариантам конверта ответа; возвращает `null`, если не удалось прочитать → caller берёт PG) + async-резолвер `resolveShyftDefiMcap(mint, {ttlMs,...})` с TTL-кэшем, таймаутом (AbortController, 2.5s), graceful fallback (любой сбой/непарс/non-200/нет ключа → `null`), кэшированием miss'ов.
+- **Discovery (`src/papertrader/discovery/dip-clones.ts`):** при включённом флаге DeFi-значения переопределяют `refMcap` (tier-резолв `micro/low/prod`) и складываются в `evalRow` (`market_cap_usd`/`liquidity_usd`) рядом с 1.2 price-override — так snapshot mcap/liq-гейт + reported features когерентны. Наблюдение: `live_shyft_defi_mcap` (pg vs defi mcap/liq). При OFF `evalRow === row`, `refMcap` = PG.
+
+**Флаги (env → config, default так, что прод не меняется):**
+- `SHYFT_DEFI_MCAP_ENABLED` (`shyftDefiMcapEnabled`, default **0/false**) — мастер-выключатель.
+- `SHYFT_DEFI_MCAP_TTL_MS` (`shyftDefiMcapTtlMs`, default **12000**) — TTL кэша.
+- Ключ DeFi REST API: `SHYFT_DEFI_API_KEY` (или `SHYFT_API_KEY`) в `.env`; база `SHYFT_DEFI_API_BASE` (default `https://defi.shyft.to`).
+
+**ВАЖНО (для владельца перед активацией):** точную схему ответа DeFi API нужно подтвердить на живом API — парсер защитный, но при несовпадении имён полей вернёт `null` → всегда fallback на PG (override не сработает, но прод-безопасно). Сверить, что tier-резолв не сдвигает входы непреднамеренно (A/B по `live_shyft_defi_mcap`).
+
+**Тесты:** `tests/shyft-defi-mcap.test.ts` (парсер: конверты/алиасы/пустой; резолвер: нет-ключа, success, TTL-кэш одним сетевым вызовом, ре-фетч после TTL, fallback на non-200/throw — 9). `npm run typecheck` — зелёный.
+
+**Затронутые файлы:** `ecosystem.config.cjs`, `src/papertrader/config.ts`, `src/papertrader/discovery/dip-clones.ts`, новый `src/papertrader/stream/shyft-defi-mcap.ts`, `tests/shyft-defi-mcap.test.ts`, `docs/strategy/release/VERSION`, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Включение на VPS (после деплоя):** в `/opt/solana-alpha/.env` задать `SHYFT_DEFI_API_KEY=<key>` (Shyft REST), затем `SHYFT_DEFI_MCAP_ENABLED=1`, `pm2 reload ecosystem.config.cjs --update-env`. Наблюдать `live_shyft_defi_mcap` (расхождение PG vs DeFi mcap/liq, свежесть) и убедиться, что число входов по tier не разъезжается.
+
+**Откат:** `SHYFT_DEFI_MCAP_ENABLED=0` + `pm2 reload live-oscar --update-env`; либо redeploy `sa-alpha-1.11.468`. При OFF поведение торговли не менялось — откат по риску не требуется.
+
+---
+
 ## [1.11.468] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.468` (планируется координатором)
