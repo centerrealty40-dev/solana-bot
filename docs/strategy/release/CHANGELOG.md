@@ -46,6 +46,27 @@
 
 ---
 
+## [1.11.471] — 2026-06-18
+
+**Тег:** `sa-alpha-1.11.471` (планируется координатором)
+
+### Этап 1.1 (live-oscar): фикс gRPC-консьюмера Shyft (CJS/ESM interop + явный connect)
+
+После включения shadow-флага в 1.11.470 консьюмер стартовал, но НЕ подключался: в логах `shyft shadow consumer error: "Client is not a constructor"`, backoff-реконнекты. Две причины (обе — дефект кода из 1.11.467, не проявлялся при OFF-флаге):
+
+1. **CJS/ESM interop:** `@triton-one/yellowstone-grpc@5` поставляет dual CJS/ESM-сборку; под tsx/esbuild дефолтный экспорт приходит **двойне обёрнутым** (`namespace.default` = CJS `module.exports`, чей `default` — класс `Client`). Поэтому `import Client from ...` давал не-конструируемый объект. Фикс: `import * as YellowstoneGrpc` + ленивый (мемоизированный) резолвер `resolveYellowstoneClientCtor()`, разворачивающий вложенные `default` до функции-класса. Резолв **ленивый** — любой сбой всплывает внутри flag-gated reconnect-цикла (try/catch + backoff), а НЕ на загрузке модуля → процесс live-oscar не падает.
+2. **Явный connect:** в v5 `Client` требует `await client.connect()` перед `subscribe()`/unary (иначе `"Client not connected. Call connect() first"`). Добавлен `await client.connect()` перед `subscribe(...)`.
+
+Подтверждено на проде probe-скриптом (read-only, `/tmp`): резолв класса OK, `connect()` OK, `getVersion()` вернул реальную версию сервера (token принят, endpoint `https://grpc.fra.shyft.to`), `subscribe()` OK.
+
+**Поведение торговли НЕ меняется** — правка только в shadow-консьюмере (`src/papertrader/stream/shyft-shadow-consumer.ts`); стрим-цена по-прежнему НИГДЕ не участвует в гейтах/eval/исполнении. Прочие Shyft-флаги остаются OFF.
+
+**Затронутые файлы:** `src/papertrader/stream/shyft-shadow-consumer.ts`, `docs/strategy/release/VERSION`, `docs/strategy/release/CHANGELOG.md`, `docs/strategy/live-oscar/OPTIMIZATION_ROADMAP_SHYFT_HYBRID.md`.
+
+**Откат:** `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=0` + redeploy (консьюмер отключается); либо redeploy тега `sa-alpha-1.11.469`. При OFF поведение торговли байт-в-байт = текущее.
+
+---
+
 ## [1.11.470] — 2026-06-18
 
 **Тег:** `sa-alpha-1.11.470` (планируется координатором)
