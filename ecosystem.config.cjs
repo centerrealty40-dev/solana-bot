@@ -391,7 +391,7 @@ const PM2_APPS = [
          * after a 1h −10% wait (overrides SIGNAL_TTL_MS). Plumbing shipped default-OFF; owner
          * flips when ready. Rollback: set back to '0' (or remove) → current behaviour.
          */
-        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '0',
+        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '1', // 1.11.477: ACTIVE 1h hard-skip (was '0' OFF)
         /**
          * 1.11.466 — observability-only: если возраст использованной PG-цены на входе > N мс,
          * журналируем метрику `live_stale_price_warn` (priceAgeMs, mint, lane). НЕ меняет торговлю.

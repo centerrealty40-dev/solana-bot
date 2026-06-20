@@ -46,6 +46,27 @@
 
 ---
 
+## [1.11.477] — 2026-06-20
+
+**Тег:** `sa-alpha-1.11.477` (следующий за 1.11.476)
+
+### live-oscar: активация entry-wait окна = 1 час (в 1.11.476 был default-OFF)
+
+Чистый follow-up к 1.11.476 (история не переписывалась). Только прод-конфиг (`ecosystem.config.cjs`, app `live-oscar`); код papertrader не менялся.
+
+**Изменение (активно в проде):**
+- `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS`: `'0'` → **`'1'`**.
+- Семантика: `liveStagedEntryWaitHours = 1` → `liveStagedEntrySignalTtlMs = 3_600_000` мс. Staged-signal якорь (−10% от сигнального уровня) живёт 1 час; если за 1 ч цена не достигла −10% — сигнал истекает (перестаём ждать). Дополнительная re-monitoring / re-entry логика НЕ включается — только TTL якоря.
+- Подтверждено в коде: `src/papertrader/config.ts` (WAIT_HOURS > 0 → TTL = hours × 3_600_000), гейты `src/papertrader/executor/live-staged-entry-gates.ts`.
+
+**Vol1h (унаследовано из 1.11.476, остаётся активным):** micro/low vol1h = 35000, global `PAPER_VOL_1H_MIN_USD` = 35000.
+
+**Rollback:** вернуть `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS` → `'0'` (или удалить ключ) + `pm2 reload ecosystem.config.cjs --update-env`. Код не трогали — откат чисто по env.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.476] — 2026-06-20
 
 **Тег:** `sa-alpha-1.11.476` (планируется координатором)
