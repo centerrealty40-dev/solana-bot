@@ -46,6 +46,49 @@
 
 ---
 
+## [1.11.476] — 2026-06-20
+
+**Тег:** `sa-alpha-1.11.476` (планируется координатором)
+
+### live-oscar: расширение объёма (ВКЛ) + плумбинг entry-wait окна (флаг, default-OFF)
+
+Два независимых изменения поверх 1.11.475. Только продуктовый конфиг + papertrader-код; кросс-продуктовых
+изменений нет.
+
+**1. Расширение объёма (одобрено владельцем — АКТИВНО в проде, `ecosystem.config.cjs`, app `live-oscar`):**
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD`: `75000` → **`35000`**
+- `PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD`: `75000` → **`35000`**
+- `PAPER_VOL_1H_MIN_USD`: `36000` → **`35000`**
+- PROD-тир `PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD=25000` — **без изменений**. Dip-пороги, mcap-коридоры,
+  holders — **не трогались**.
+
+**2. Entry-wait окно (плумбинг, флаг, default = текущее поведение / эффективно OFF):**
+- Новый флаг `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS` (`liveStagedEntryWaitHours`, `src/papertrader/config.ts`).
+  `0` (default) = OFF → тайминг входа определяется только `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS` (прод `0` =
+  без лимита), т.е. **байт-в-байт текущий live-тайминг входа**. При `> 0` переопределяет staged-signal TTL
+  на `hours * 3_600_000` мс (например `1` = 1ч ожидания −10% от сигнального якоря, после — якорь снимается).
+- Механизм окна — существующий `liveStagedEntrySignalTtlMs` (`live-staged-entry-gates.ts`,
+  `tracker.ts`); флаг — эргономичная «в часах» обёртка, резолвится в `loadPaperTraderConfig` после parse.
+  Boot-guard `assertLiveOscarUnifiedEntrySizing` не затрагивается (валидирует только sizing) — зелёный.
+- `ecosystem.config.cjs` задаёт `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS='0'` → **live-тайминг входа на деплое НЕ
+  меняется**; владелец флипает в `'1'` когда готов.
+
+**Обоснование (read-only анализ, Part A):** точная модель «релиз обратно в discovery + ре-квалификация
+свежим якорем» (`scripts-tmp/_cf_remonitor_entry.py`, `_cf_remonitor_entry_results.json`) показала, что
+ре-мониторинг НЕ окупается: на 45д чистый `1ч hard-skip` = +$678 (DD $280) против `1ч+ре-мониторинг` = +$36
+(DD $1329); инкрементальные ре-входы −$642, при этом «pump-then-pullback» ветка −$700. Поэтому окно
+поставлено как плумбинг default-OFF, а не включено.
+
+**Тесты:** `npm run typecheck` зелёный. OFF-паритет: при `WAIT_HOURS=0` `liveStagedEntrySignalTtlMs`
+остаётся прод-значением (`0`) — поведение неизменно.
+
+**Откат:** мгновенно — объём вернуть `MICRO/LOW=75000`, `PAPER_VOL_1H_MIN_USD=36000`; окно — убрать/обнулить
+`PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS` (default `0` = текущее поведение) + `pm2 reload ecosystem.config.cjs
+--update-env`. Полный откат кода — redeploy `sa-alpha-1.11.475`. Изменения объёма влияют только на новые
+discovery-проходы; открытые позиции не затрагиваются.
+
+---
+
 ## [1.11.475] — 2026-06-20
 
 **Тег:** `sa-alpha-1.11.475` (планируется координатором)
