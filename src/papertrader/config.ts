@@ -667,6 +667,26 @@ const ConfigSchema = z.object({
   liveOscarExitPolicyWaveBEnabled: z.boolean().default(false),
   /** Fraction of remainder per trail step under wave B (default 0.30). */
   liveOscarExitPolicyWaveBTrailSellFraction: z.coerce.number().min(0.01).max(1).default(0.3),
+  /**
+   * Wave B flat-take (1.11.475, owner-approved). When ON, NEW wave-B opens are stamped with a
+   * flat/early take profile that REPLACES the escalating ladder (CF optimizer: escalating ladder is
+   * the losing lever; early/flat take is the regime-robust win). In-flight opens are NOT re-stamped
+   * (keep their escalating ladder) — safe transition. Default OFF → byte-identical to escalating.
+   * Env `PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP`.
+   */
+  liveOscarWaveBFlatTpEnabled: z.boolean().default(false),
+  /**
+   * Flat-take shape (only when `liveOscarWaveBFlatTpEnabled`): `half8_runner` = sell 50% at each +8%
+   * then ride/exit the runner on the defensive trail (matches "grab +8%, let the runner run");
+   * `flat` = sell 100% at +15%, no trail. Env `PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE`.
+   */
+  liveOscarWaveBFlatTpMode: z.enum(['half8_runner', 'flat']).default('half8_runner'),
+  /**
+   * Wave B time-stop (hours). Wave B has NO time-stop in the legacy ladder; this adds one, applied
+   * ONLY to opens stamped with a flat-take mode (so in-flight opens are never force-closed by it).
+   * `0` disables. Env `PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS` (default 12).
+   */
+  liveOscarWaveBTimeStopHours: z.coerce.number().min(0).max(720).default(12),
 
   /**
    * Live Oscar Variant A (v1): discrete TP ladder + moon +50% + peak retrace trail + smart48/salvage24.
@@ -1351,6 +1371,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarExitPolicyWaveBEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B, false),
     liveOscarExitPolicyWaveBTrailSellFraction:
       process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION,
+    liveOscarWaveBFlatTpEnabled: envBool(process.env.PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP, false),
+    liveOscarWaveBFlatTpMode:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE === 'flat' ? 'flat' : 'half8_runner',
+    liveOscarWaveBTimeStopHours: process.env.PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS,
     liveOscarExitPolicyVariantAEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A, false),
     liveOscarVariantAMoonTargetPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_MOON_TARGET_PCT,
     liveOscarVariantATrailArmPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_ARM_PCT,

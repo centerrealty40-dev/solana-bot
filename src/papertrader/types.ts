@@ -297,6 +297,13 @@ export interface OpenTrade {
    */
   liveWavePostTp1ScratchTaken?: boolean;
 
+  /**
+   * Wave B flat-take (1.11.475): stamped on the open when the flat-TP flag was on at open time.
+   * `half8_runner` — sell 50% at each +8% + defensive-trail runner; `flat` — sell 100% at +15%, no trail.
+   * Absent → legacy escalating ladder. Drives `waveBTpGridProfileFor` + the wave-B time-stop gate.
+   */
+  liveWaveFlatTpMode?: 'half8_runner' | 'flat';
+
   /** Variant A v2 thin-volume flush: `volume_5m` at entry (PG snapshot). */
   liveThinVolEntryVol5mUsd?: number;
   /** Consecutive tracker ticks with thin-volume condition after first TP. */

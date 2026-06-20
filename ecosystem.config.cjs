@@ -678,9 +678,20 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_SCRATCH_REENTRY_USD: '1500',
         /** 1.11.304: thin market after 1st TP → flush remainder (combo peak≥+8%, cur≥+2.5%). */
         PAPER_LIVE_OSCAR_THIN_VOL_EXIT_ENABLED: '1',
-        /** Wave B on for new opens — escalating TP ladder (+2.5% steps). Variant A off. */
+        /** Wave B on for new opens. Variant A off. */
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
+        /**
+         * 1.11.475 — TRADING-BEHAVIOR (одобрено владельцем): flat-take ВКЛ. NEW wave-B opens получают
+         * ранний/плоский тейк вместо эскалирующей лесенки (CF-оптимизатор: лесенка — убыточный рычаг,
+         * ранний/плоский тейк — режим-устойчивый выигрыш). Открытые на момент включения позиции НЕ
+         * переклеймляются (остаются на лесенке) — безопасный переход. Режим `half8_runner`: продать 50%
+         * на каждом +8% + defensive-trail на остаток (раннер); kill −50% и брейкэвен-пол остаются.
+         * Wave-B тайм-стоп 12ч применяется ТОЛЬКО к новым (заклеймлённым) позициям. OFF → байт-в-байт лесенка.
+         */
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
+        PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',

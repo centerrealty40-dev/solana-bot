@@ -52,6 +52,28 @@ export const WAVE_B_V1_TP_GRID_NO_AVG = {
 } as const;
 
 /**
+ * Wave B flat-take profile «half8_runner» (1.11.475, owner-approved) — early/flat take that REPLACES
+ * the escalating ladder for opens stamped `liveWaveFlatTpMode='half8_runner'`. Each +8% step sells 50%
+ * of the remainder (re-arms on pullback below the rung), then the defensive trail rides/exits the
+ * runner on retrace from peak; breakeven floor (+7.5%) and kill (−50%) machinery stay intact.
+ */
+export const WAVE_B_FLAT_TP_HALF8_RUNNER = {
+  gridStepPnl: 0.08,
+  gridSellFractionByStep: [0.5],
+  gridFirstRungRetraceMinPnlPct: 0,
+} as const;
+
+/**
+ * Wave B flat-take profile «flat» (1.11.475) — sell 100% at +15% PnL, NO trail (suppressed below the
+ * target); for opens stamped `liveWaveFlatTpMode='flat'`. Kill (−50%) stays intact.
+ */
+export const WAVE_B_FLAT_TP_FLAT15 = {
+  gridStepPnl: 0.15,
+  gridSellFractionByStep: [1],
+  gridFirstRungRetraceMinPnlPct: 0,
+} as const;
+
+/**
  * True iff trade has at least one averaging leg (`dca` or `staged_avg`).
  * Entry split legs (`scale_in`, `entry_split`) are NOT averaging — they are the 500+500 split of the initial entry.
  */
@@ -59,12 +81,18 @@ export function hasAveragingLeg(ot: OpenTrade): boolean {
   return ot.legs.some((l) => l.reason === 'dca' || l.reason === 'staged_avg');
 }
 
-/** Wave B grid profile selector — averaging-aware. */
+/**
+ * Wave B grid profile selector. Opens stamped with a flat-take mode (1.11.475) use the flat profile;
+ * otherwise averaging-aware escalating ladder. The flat stamp is set ONLY on new opens when the flag
+ * is on (see `stampLiveOscarExitPolicyOnOpen`), so in-flight opens keep their escalating ladder.
+ */
 export function waveBTpGridProfileFor(ot: OpenTrade): {
   gridStepPnl: number;
   gridSellFractionByStep: readonly number[];
   gridFirstRungRetraceMinPnlPct: number;
 } {
+  if (ot.liveWaveFlatTpMode === 'half8_runner') return WAVE_B_FLAT_TP_HALF8_RUNNER;
+  if (ot.liveWaveFlatTpMode === 'flat') return WAVE_B_FLAT_TP_FLAT15;
   return hasAveragingLeg(ot) ? WAVE_B_V1_TP_GRID : WAVE_B_V1_TP_GRID_NO_AVG;
 }
 
@@ -205,9 +233,10 @@ export function waveBReconcileMaxExecutedTpFromMarks(ot: OpenTrade, stepPnl: num
   waveBOnTpGridRungExecuted(ot, fromMarks);
 }
 
-/** Defensive trail: peak or TP ladder reached ≥ +7.5%. */
+/** Defensive trail: peak or TP ladder reached ≥ +7.5%. Suppressed for `flat` mode (sell 100% at target). */
 export function waveBDefensiveTrailActive(ot: OpenTrade, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot)) return false;
+  if (ot.liveWaveFlatTpMode === 'flat') return false;
   return waveBHighestTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC;
 }
 
@@ -417,6 +446,9 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     ot.liveExitPolicyId = 'wave_b_v1';
+    if (cfg.liveOscarWaveBFlatTpEnabled) {
+      ot.liveWaveFlatTpMode = cfg.liveOscarWaveBFlatTpMode;
+    }
     applyWaveBGridOverrides(ot);
     ot.liveWaveTrailAnchorPnlFrac = 0;
     ot.liveWaveTrailLevelsTaken = [];

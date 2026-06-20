@@ -3545,6 +3545,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !timeoutSuppressedByProgress(ot)
     )
       exitReason = 'TIMEOUT';
+    /**
+     * Wave B time-stop (1.11.475): legacy Wave B has no time-stop; applied ONLY to opens stamped with a
+     * flat-take mode (`liveWaveFlatTpMode`), so in-flight (pre-change) opens are never force-closed.
+     */
+    if (
+      !exitReason &&
+      isWaveBExitPolicy(ot) &&
+      ot.liveWaveFlatTpMode != null &&
+      cfg.liveOscarWaveBTimeStopHours > 0 &&
+      ageH >= cfg.liveOscarWaveBTimeStopHours
+    )
+      exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
 
     if (exitReason) {
