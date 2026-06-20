@@ -357,12 +357,16 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * Staged-entry: сплит **$500+$500** ($1000 notional) — 1-я нога сразу по сигналу (0%), 2-я (усреднение) при −10%; kill −50%.
+         * Staged-entry: $1000 notional одним заходом при −10% от сигнала (две клипсы $500 на одном
+         * уровне −10%: leg-1 FIRST_DROP=10, leg-2 TARGET_DROP=10) — без усреднения вниз; kill −50%.
+         * 1.11.474 — TRADING-BEHAVIOR: вход переведён с немедленного (0%) на −10% (CF-оптимизатор:
+         * мгновенный вход нетто-минус, −10% даёт лучший нетто/сделку). Sizing без изменений
+         * ($500+$500, fraction 0.5) → boot-инвариант assertLiveOscarUnifiedEntrySizing зелёный.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
