@@ -60,6 +60,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.liveWaveBreakevenInsuranceTaken ? { liveWaveBreakevenInsuranceTaken: true } : {}),
     ...(ot.liveWavePostTp1DeriskTaken ? { liveWavePostTp1DeriskTaken: true } : {}),
     ...(ot.liveWavePostTp1ScratchTaken ? { liveWavePostTp1ScratchTaken: true } : {}),
+    ...(ot.liveWaveFlatTpMode ? { liveWaveFlatTpMode: ot.liveWaveFlatTpMode } : {}),
     ...(typeof ot.liveThinVolEntryVol5mUsd === 'number' && Number.isFinite(ot.liveThinVolEntryVol5mUsd)
       ? { liveThinVolEntryVol5mUsd: ot.liveThinVolEntryVol5mUsd }
       : {}),

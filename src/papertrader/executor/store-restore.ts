@@ -376,6 +376,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWavePostTp1ScratchTaken)) {
       ot.liveWavePostTp1ScratchTaken = true;
     }
+    if (rawPayload.liveWaveFlatTpMode === 'half8_runner' || rawPayload.liveWaveFlatTpMode === 'flat') {
+      ot.liveWaveFlatTpMode = rawPayload.liveWaveFlatTpMode;
+    }
     const ltve = rawPayload.liveThinVolEntryVol5mUsd;
     if (typeof ltve === 'number' && Number.isFinite(ltve) && ltve > 0) ot.liveThinVolEntryVol5mUsd = ltve;
     const ltvs = rawPayload.liveThinVolStreak;
