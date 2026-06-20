@@ -95,6 +95,15 @@ const ConfigSchema = z.object({
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),
+  /**
+   * Ergonomic entry-wait window for the staged −10%-from-signal trigger, in HOURS.
+   * `0` (default) = OFF → behaviour is governed solely by `liveStagedEntrySignalTtlMs`
+   * (prod = 0 = no time limit), i.e. byte-for-byte current live behaviour.
+   * When `> 0`, it OVERRIDES the staged-signal TTL with `hours * 3_600_000` ms: the staged
+   * signal anchor is dropped once it ages past the window without a fill (e.g. `1` = 1h wait).
+   * Plumbing only — default preserves today's timing until the owner flips the flag.
+   */
+  liveStagedEntryWaitHours: z.coerce.number().nonnegative().default(0),
   /** Entry split (NOT averaging): second cash leg after delay if price within band vs leg-1 anchor. */
   liveStagedEntryEntrySplitLegUsd: z.coerce.number().positive().default(500),
   /** Asymmetric split leg-2 USD; `0` = same as leg-1 (symmetric 2× split, backward compat). */
@@ -1031,6 +1040,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntrySecondLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD,
     liveStagedEntryThirdLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD,
     liveStagedEntrySignalTtlMs: process.env.PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS,
+    liveStagedEntryWaitHours: process.env.PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS,
     liveStagedEntryEntrySplitLegUsd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD,
     liveStagedEntryEntrySplitLeg2Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD,
     liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
@@ -1628,6 +1638,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     throw new Error(`Invalid paper-trader env configuration:\n${issues}`);
   }
   const base = parsed.data;
+  // Entry-wait window flag (ergonomic hours). DEFAULT 0 = OFF → keep current TTL behaviour
+  // (prod `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0` = no time limit). When > 0 it OVERRIDES the
+  // staged-signal TTL so the −10%-from-signal anchor is dropped after the window without a fill.
+  if (base.liveStagedEntryWaitHours > 0) {
+    base.liveStagedEntrySignalTtlMs = Math.round(base.liveStagedEntryWaitHours * 3_600_000);
+  }
   if (base.mintBlacklistEnabled) {
     const raw = base.mintBlacklistPath.trim();
     const abs = path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);

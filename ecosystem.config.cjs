@@ -385,6 +385,14 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         /**
+         * 1.11.476 — entry-wait window (HOURS) for the staged −10%-from-signal trigger.
+         * '0' = OFF (DEFAULT) → timing governed only by SIGNAL_TTL_MS above (=0 = no limit),
+         * i.e. byte-for-byte current live entry timing. Set to '1' to drop the signal anchor
+         * after a 1h −10% wait (overrides SIGNAL_TTL_MS). Plumbing shipped default-OFF; owner
+         * flips when ready. Rollback: set back to '0' (or remove) → current behaviour.
+         */
+        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '0',
+        /**
          * 1.11.466 — observability-only: если возраст использованной PG-цены на входе > N мс,
          * журналируем метрику `live_stale_price_warn` (priceAgeMs, mint, lane). НЕ меняет торговлю.
          * База для замера 30–90s слепоты перед гибридом Shyft (Этап 1). Опц. троттлед-алерт:
@@ -453,22 +461,22 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.462 — micro коридор $500k–$1.3M: dip −30%, vol1h ≥$75k; split $300+$150. */
+        /** 1.11.462 — micro коридор $500k–$1.3M: dip −30%, vol1h ≥$35k; split $300+$150. (1.11.476: vol 75k→35k, owner approved volume expansion). */
         PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '75000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '35000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '450',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$75k; split aligned with prod $500+$500 ($1000 notional), leg-1 сразу по сигналу (0%), leg-2 усреднение при −10%. */
+        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split aligned with prod $500+$500 ($1000 notional), leg-1 сразу по сигналу (0%), leg-2 усреднение при −10%. (1.11.476: vol 75k→35k, owner approved volume expansion). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
-        PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '75000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '500',
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1000',
@@ -477,7 +485,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        PAPER_VOL_1H_MIN_USD: '36000',
+        /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
+        PAPER_VOL_1H_MIN_USD: '35000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         /** `0` — без порога по holders в globalGate / dip-clones (код не трогаем). */
         PAPER_MIN_HOLDER_COUNT: '0',
