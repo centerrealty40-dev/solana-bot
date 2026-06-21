@@ -48,6 +48,41 @@
 
 ---
 
+## [1.11.480] — 2026-06-21
+
+**Тег:** `sa-alpha-1.11.480`
+
+### live-oscar: 3-leg staged entry ($250 + $250 + $500)
+
+Новая схема входа от якоря сигнала (total **$1000**):
+
+| Нога | USD | Триггер |
+|------|-----|---------|
+| Leg-1 | **$250** | сразу по сигналу (`FIRST_DROP_PCT=0`) |
+| Leg-2 | **$250** | **−5%** от якоря (`ENTRY_SPLIT_TARGET_DROP_PCT=5`) |
+| Leg-3 | **$500** | **−10%** от якоря (`SECOND_DROP_PCT=10`, `SECOND_LEG_USD=500`) |
+
+**Env (`ecosystem.config.cjs` → `live-oscar`):**
+- `PAPER_POSITION_USD` / split: **$500** (leg1+leg2, boot-инвариант)
+- `LIVE_MAX_POSITION_USD`: **$1000** (полный план)
+- `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT`: `10` → **`0`**
+- `..._ENTRY_SPLIT_LEG_USD` / `..._FIRST_LEG_USD`: `500` → **`250`**
+- `..._ENTRY_SPLIT_LEG2_USD`: `500` → **`250`**
+- `..._ENTRY_SPLIT_TARGET_DROP_PCT`: `10` → **`5`**
+- `..._SECOND_DROP_PCT`: `0` → **`10`**, `..._SECOND_LEG_USD`: `0` → **`500`**
+- `..._AVG_COOLDOWN_MS`: `180000` → **`0`** (leg-3 без паузы после leg-1)
+- Low-mcap lane aligned: split **$250+$250**, position **$500**
+
+**Код:** подписи `live-staged-entry-labels.ts` (3-я нога vs усреднение), описание в `main.ts`.
+
+**Тесты:** `tests/live-staged-entry-gates.test.ts` — 3-leg progression (−5% / −10%, no double-buy flags).
+
+**Rollback:** revert + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`; или вернуть env 1.11.479 (`FIRST_DROP_PCT=10`, split $500+$500 @ −10%).
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.479] — 2026-06-21
 
 **Тег:** `sa-alpha-1.11.479`

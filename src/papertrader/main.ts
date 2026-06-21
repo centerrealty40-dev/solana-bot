@@ -1837,10 +1837,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   const firstDrop = cfg.liveStagedEntryFirstDropPct;
                   const leg1When =
                     firstDrop > 0 ? `при −${firstDrop}% от сигнала` : 'по сигналу';
+                  const leg3Usd = firstProbe ? 0 : cfg.liveStagedEntrySecondLegUsd;
+                  const leg3Drop = firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
+                  const leg3Suffix =
+                    leg3Usd > 0 && leg3Drop > 0
+                      ? `; 3-я нога ${leg3Usd.toFixed(0)} USD при −${leg3Drop}% от сигнала`
+                      : '';
                   const description = firstProbe
                     ? `${cfg.strategyId} first-mint-probe: split ${leg1.toFixed(0)}+${leg1.toFixed(0)} USD, kill −${killDropPct}% от сигнала, без усреднения; при убытке → denylist, при прибыли → обычный режим.`
                     : cfg.liveStagedEntryEntrySplitTargetDropPct > 0
-                      ? `${cfg.strategyId} entry-split v2: 1-я нога ${leg1.toFixed(0)} USD ${leg1When}; 2-я нога ${leg2.toFixed(0)} USD при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала; kill −${killDropPct}% от сигнала.`
+                      ? `${cfg.strategyId} entry-split v2: 1-я нога ${leg1.toFixed(0)} USD ${leg1When}; 2-я нога ${leg2.toFixed(0)} USD при −${cfg.liveStagedEntryEntrySplitTargetDropPct}% от сигнала${leg3Suffix}; kill −${killDropPct}% от сигнала.`
                       : `${cfg.strategyId} entry-split v2: нотионал до $${totalNotional.toFixed(0)}. ` +
                         `1-я нога сплита ${leg1.toFixed(0)} USD ${leg1When}; 2-я нога сплита ${leg2.toFixed(0)} USD через ${(cfg.liveStagedEntryEntrySplitDelayMs / 1000).toFixed(0)} с в коридоре +${cfg.liveStagedEntryEntrySplitMaxUpPct}%…−${cfg.liveStagedEntryEntrySplitMaxDownPct}% к якорю (не усреднение). ` +
                         `1-е усреднение $${cfg.liveStagedEntrySecondLegUsd.toFixed(0)} при −${cfg.liveStagedEntrySecondDropPct}%…−${cfg.liveStagedEntryThirdDropPct}% от сигнала (≥${(cfg.liveStagedEntryAvgCooldownMs / 60_000).toFixed(0)} мин). ` +
