@@ -49,8 +49,11 @@ export function liveStagedOpenLabelRuFromCfg(cfg: PaperTraderConfig): string {
     leg2Plan,
   ];
   if (avg1 > 0 && d7 > 0) {
+    const isThirdEntryLeg = dip2 > 0 && !(avg2 > 0 && d14 > 0);
     parts.push(
-      `1-е усреднение ${fmtUsd(avg1)} при просадке −${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала (≥${cd1Min} мин после 1-й ноги)`,
+      isThirdEntryLeg
+        ? `3-я нога сплита ${fmtUsd(avg1)} при −${fmtDropPct(d7)}% от сигнала`
+        : `1-е усреднение ${fmtUsd(avg1)} при просадке −${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала (≥${cd1Min} мин после 1-й ноги)`,
     );
   }
   if (avg2 > 0 && d14 > 0) {
@@ -92,8 +95,11 @@ export function liveStagedOpenLabelFromState(
     leg2Plan,
   ];
   if (avg1 > 0 && d7 > 0) {
+    const isThirdEntryLeg = dip2 > 0 && !(avg2 > 0 && d14 > 0);
     parts.push(
-      `1-е усреднение ${fmtUsd(avg1)} (−${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала, ≥${cd1Min} мин)`,
+      isThirdEntryLeg
+        ? `3-я нога сплита ${fmtUsd(avg1)} при −${fmtDropPct(d7)}% от сигнала`
+        : `1-е усреднение ${fmtUsd(avg1)} (−${fmtDropPct(d7)}%…−${fmtDropPct(d14)}% от сигнала, ≥${cd1Min} мин)`,
     );
   }
   if (avg2 > 0 && d14 > 0) {

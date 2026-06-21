@@ -84,7 +84,7 @@ const ConfigSchema = z.object({
   liveStagedEntryEnabled: z.boolean().default(false),
   /**
    * % drawdown **from signal price** required before the **first cash leg** opens (`0` = first leg at current price ≤ anchor).
-   * Add-on legs use `liveStagedEntrySecondDropPct` / `Third`. Prod PM2 sets `PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT=0` (immediate first leg, DCA at −7% / −14%).
+   * Add-on legs use `liveStagedEntrySecondDropPct` / `Third`. Prod PM2 (1.11.480): immediate leg-1 ($250), leg-2 @ −5%, leg-3 @ −10% ($500).
    */
   liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),

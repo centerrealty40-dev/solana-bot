@@ -25,6 +25,25 @@ function miniCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
 }
 
 describe('live-staged-entry-labels', () => {
+  it('open label uses 3rd split leg wording in dip-at-signal mode', () => {
+    const s = liveStagedOpenLabelRuFromCfg(
+      miniCfg({
+        liveStagedEntryEntrySplitLegUsd: 250,
+        liveStagedEntryEntrySplitLeg2Usd: 250,
+        liveStagedEntryEntrySplitTargetDropPct: 5,
+        liveStagedEntrySecondLegUsd: 500,
+        liveStagedEntrySecondDropPct: 10,
+        liveStagedEntryThirdLegUsd: 0,
+        liveStagedEntryThirdDropPct: 0,
+        liveStagedEntryAvgCooldownMs: 0,
+      }),
+    );
+    assert.match(s, /1-я нога сплита.*\$250/);
+    assert.match(s, /2-я нога сплита.*\$250.*−5%/);
+    assert.match(s, /3-я нога сплита.*\$500.*−10%/);
+    assert.doesNotMatch(s, /1-е усреднение/);
+  });
+
   it('open label mentions split leg 1 and planned avg legs', () => {
     const s = liveStagedOpenLabelRuFromCfg(miniCfg());
     assert.match(s, /1-я нога сплита/);

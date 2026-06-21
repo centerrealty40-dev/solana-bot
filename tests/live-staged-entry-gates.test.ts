@@ -232,6 +232,54 @@ describe('stagedAvgSecondEligible', () => {
   });
 });
 
+describe('stagedEntryThreeLegProgression', () => {
+  it('leg2 at −5%, leg3 at −10% with zero cooldown', () => {
+    const st = {
+      ...baseSt(),
+      firstDropPct: 0,
+      firstLegUsd: 250,
+      entrySplitLegUsd: 250,
+      entrySplitLeg2Usd: 250,
+      entrySplitTargetDropPct: 5,
+      entrySplitLeg2Done: false,
+      avgSecondDropPct: 10,
+      avgSecondLegUsd: 500,
+      secondDropPct: 10,
+      secondLegUsd: 500,
+      thirdDropPct: 0,
+      thirdLegUsd: 0,
+      avgFirstCooldownMs: 0,
+      avgFirstLegDone: false,
+    };
+
+    expect(
+      entrySplitLeg2Eligible({
+        st,
+        signalDropPct: -4.9,
+        nowMs: st.entrySplitLeg1Ts! + 1000,
+        entrySplitPx: 0.951,
+        anchorUsd: 1,
+      }).ok,
+    ).toBe(false);
+    expect(
+      entrySplitLeg2Eligible({
+        st,
+        signalDropPct: -5.1,
+        nowMs: st.entrySplitLeg1Ts! + 1000,
+        entrySplitPx: 0.949,
+        anchorUsd: 1,
+      }).ok,
+    ).toBe(true);
+
+    expect(stagedAvgFirstEligible({ st, signalDropPct: -9.9, nowMs: st.entrySplitLeg1Ts! })).toBe(false);
+    expect(stagedAvgFirstEligible({ st, signalDropPct: -10, nowMs: st.entrySplitLeg1Ts! })).toBe(true);
+    expect(stagedAvgFirstEligible({ st, signalDropPct: -10.1, nowMs: st.entrySplitLeg1Ts! })).toBe(true);
+
+    st.avgFirstLegDone = true;
+    expect(stagedAvgFirstEligible({ st, signalDropPct: -10.1, nowMs: st.entrySplitLeg1Ts! })).toBe(false);
+  });
+});
+
 describe('reconcileEntrySplitV2FromLegs', () => {
   it('marks entrySplitLeg2Done when entry_split leg exists after restore', () => {
     const st = { ...baseSt(), entrySplitLeg2Done: false };
