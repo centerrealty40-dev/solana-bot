@@ -4,6 +4,7 @@ import {
   entrySplitLeg2Eligible,
   liveStagedEntrySignalTimeWindowOpen,
   liveStagedEntrySignalTtlExpired,
+  planLiveStagedEntrySignalResolution,
   reconcileEntrySplitV2FromLegs,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
@@ -48,6 +49,112 @@ describe('liveStagedEntrySignalTtl', () => {
     const signalTs = 1_000_000;
     expect(liveStagedEntrySignalTimeWindowOpen(cfg, signalTs, signalTs + 59_000)).toBe(true);
     expect(liveStagedEntrySignalTtlExpired(cfg, signalTs, signalTs + 61_000)).toBe(true);
+  });
+});
+
+describe('planLiveStagedEntrySignalResolution', () => {
+  const ttlCfg1h = ttlCfg(3_600_000);
+  const anchor = {
+    signalTs: 1_000_000,
+    signalPriceUsd: 1,
+    signalMarketCapUsd: 50_000,
+    holderCount: 100,
+    expiresAt: 1_000_000 + 3_600_000,
+  };
+
+  it('clears expired anchor instead of re-anchoring at current price', () => {
+    const now = anchor.expiresAt + 1;
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: anchor,
+      now,
+      currentPriceUsd: 1.05,
+      marketCapUsd: 55_000,
+      holderCount: 110,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(plan.action).toBe('ttl_expired_clear');
+    if (plan.action === 'ttl_expired_clear') {
+      expect(plan.expired.signalPriceUsd).toBe(1);
+    }
+  });
+
+  it('preserves expired anchor when re-anchor blocked (buy in-flight)', () => {
+    const now = anchor.expiresAt + 1;
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: anchor,
+      now,
+      currentPriceUsd: 1.05,
+      marketCapUsd: 55_000,
+      holderCount: 110,
+      reanchorBlocked: true,
+      cfg: ttlCfg1h,
+    });
+    expect(plan.action).toBe('use_existing');
+    if (plan.action === 'use_existing') {
+      expect(plan.signal.signalPriceUsd).toBe(1);
+    }
+  });
+
+  it('creates fresh anchor only when no prior signal exists', () => {
+    const now = 2_000_000;
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: undefined,
+      now,
+      currentPriceUsd: 0.9,
+      marketCapUsd: 40_000,
+      holderCount: 80,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(plan.action).toBe('create_new');
+    if (plan.action === 'create_new') {
+      expect(plan.signal.signalPriceUsd).toBe(0.9);
+      expect(plan.signal.expiresAt).toBe(now + 3_600_000);
+    }
+  });
+
+  it('after TTL clear, next discovery pass may create new anchor (not same-tick re-anchor)', () => {
+    const now = anchor.expiresAt + 1;
+    const expired = planLiveStagedEntrySignalResolution({
+      existing: anchor,
+      now,
+      currentPriceUsd: 1.05,
+      marketCapUsd: 55_000,
+      holderCount: 110,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(expired.action).toBe('ttl_expired_clear');
+
+    const later = now + 60_000;
+    const fresh = planLiveStagedEntrySignalResolution({
+      existing: undefined,
+      now: later,
+      currentPriceUsd: 1.05,
+      marketCapUsd: 55_000,
+      holderCount: 110,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(fresh.action).toBe('create_new');
+    if (fresh.action === 'create_new') {
+      expect(fresh.signal.signalPriceUsd).toBe(1.05);
+      expect(fresh.signal.signalTs).toBe(later);
+    }
+  });
+
+  it('keeps valid anchor while waiting for first-leg dip', () => {
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: anchor,
+      now: anchor.signalTs + 30 * 60_000,
+      currentPriceUsd: 0.95,
+      marketCapUsd: 48_000,
+      holderCount: 95,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(plan.action).toBe('use_existing');
   });
 });
 
