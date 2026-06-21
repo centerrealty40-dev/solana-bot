@@ -365,6 +365,18 @@ export const LiveStagedEntryRestoredAfterBuyFailSchema = z.object({
   expiresAt: z.number().finite(),
 });
 
+/** Staged-entry anchor cleared after wait-window TTL without −10% entry (fresh re-eval required). */
+export const LiveStagedEntryTtlExpiredSchema = z.object({
+  kind: z.literal('staged_entry_ttl_expired'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  signalPriceUsd: z.number().finite(),
+  signalTs: z.number().finite(),
+  expiresAt: z.number().finite(),
+});
+
 /** Passed eval but open blocked (safety, impulse, price verify, already_open, etc.). */
 export const LiveDiscoverySkipOpenSchema = z.object({
   kind: z.literal('live_discovery_skip_open'),
@@ -457,6 +469,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveStagedEntrySignalSchema,
   LiveStagedEntryClearedForBuySchema,
   LiveStagedEntryRestoredAfterBuyFailSchema,
+  LiveStagedEntryTtlExpiredSchema,
   LiveDiscoverySkipOpenSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,

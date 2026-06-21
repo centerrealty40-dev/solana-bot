@@ -42,6 +42,54 @@ export function liveStagedEntrySignalExpiresAt(
   return signalTs + cfg.liveStagedEntrySignalTtlMs;
 }
 
+export type StagedEntrySignalAnchor = {
+  signalTs: number;
+  signalPriceUsd: number;
+  signalMarketCapUsd: number | null;
+  holderCount: number | null;
+  expiresAt: number;
+};
+
+/** Pure plan for staged-entry anchor: fresh create, wait on existing, TTL clear, or blocked. */
+export type StagedEntrySignalPlan =
+  | { action: 'use_existing'; signal: StagedEntrySignalAnchor }
+  | { action: 'create_new'; signal: StagedEntrySignalAnchor }
+  | { action: 'ttl_expired_clear'; expired: StagedEntrySignalAnchor }
+  | { action: 'blocked_no_anchor' };
+
+export function planLiveStagedEntrySignalResolution(args: {
+  existing: StagedEntrySignalAnchor | undefined;
+  now: number;
+  currentPriceUsd: number;
+  marketCapUsd: number | null;
+  holderCount: number | null;
+  reanchorBlocked: boolean;
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>;
+}): StagedEntrySignalPlan {
+  const { existing, now, reanchorBlocked, cfg } = args;
+
+  if (existing && existing.expiresAt <= now) {
+    if (reanchorBlocked) {
+      return { action: 'use_existing', signal: existing };
+    }
+    return { action: 'ttl_expired_clear', expired: existing };
+  }
+
+  if (!existing) {
+    if (reanchorBlocked) return { action: 'blocked_no_anchor' };
+    const signal: StagedEntrySignalAnchor = {
+      signalTs: now,
+      signalPriceUsd: args.currentPriceUsd,
+      signalMarketCapUsd: args.marketCapUsd,
+      holderCount: args.holderCount,
+      expiresAt: liveStagedEntrySignalExpiresAt(cfg, now),
+    };
+    return { action: 'create_new', signal };
+  }
+
+  return { action: 'use_existing', signal: existing };
+}
+
 /** % change from anchor: +3 max, −10 min (inclusive). */
 export function entrySplitBandOk(changePctFromAnchor: number, maxUpPct: number, maxDownPct: number): boolean {
   return changePctFromAnchor <= maxUpPct && changePctFromAnchor >= -maxDownPct;

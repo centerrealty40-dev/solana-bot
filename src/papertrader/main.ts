@@ -47,6 +47,7 @@ import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-
 import {
   buildLiveStagedEntryState,
   liveStagedEntrySignalExpiresAt,
+  planLiveStagedEntrySignalResolution,
   liveStagedEntrySignalTtlEnabled,
   markEntrySplitLeg1Filled,
   stagedEntryPlanInvestedCapUsd,
@@ -848,60 +849,77 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       };
     }
     const now = Date.now();
-    const existing = stagedEntrySignals.get(args.mint);
     const reanchorBlocked = isStagedEntryReanchorBlocked(args.mint);
-    const needsNewAnchor = !existing || existing.expiresAt <= now;
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: stagedEntrySignals.get(args.mint),
+      now,
+      currentPriceUsd: args.currentPriceUsd,
+      marketCapUsd: args.marketCapUsd,
+      holderCount: args.holderCount,
+      reanchorBlocked,
+      cfg,
+    });
 
-    let signal: {
-      signalTs: number;
-      signalPriceUsd: number;
-      signalMarketCapUsd: number | null;
-      holderCount: number | null;
-      expiresAt: number;
-    };
+    if (plan.action === 'ttl_expired_clear') {
+      stagedEntrySignals.delete(args.mint);
+      journalLiveStrategy?.({
+        kind: 'staged_entry_ttl_expired',
+        mint: args.mint,
+        symbol: args.symbol,
+        lane: args.lane,
+        source: args.source,
+        signalPriceUsd: plan.expired.signalPriceUsd,
+        signalTs: plan.expired.signalTs,
+        expiresAt: plan.expired.expiresAt,
+      });
+      journalAppend({
+        kind: 'eval-skip-open',
+        lane: args.lane,
+        source: args.source,
+        mint: args.mint,
+        symbol: args.symbol,
+        reason: 'staged_entry_ttl_expired',
+        stagedEntry: {
+          signalPriceUsd: plan.expired.signalPriceUsd,
+          currentPriceUsd: args.currentPriceUsd,
+          expiresAt: plan.expired.expiresAt,
+        },
+      });
+      return { ok: false };
+    }
 
-    if (needsNewAnchor) {
-      if (reanchorBlocked) {
-        if (!existing) return { ok: false };
-        signal = existing;
-      } else {
-        signal = {
-          signalTs: now,
-          signalPriceUsd: args.currentPriceUsd,
-          signalMarketCapUsd: args.marketCapUsd,
-          holderCount: args.holderCount,
-          expiresAt: liveStagedEntrySignalExpiresAt(cfg, now),
-        };
-        stagedEntrySignals.set(args.mint, signal);
-        if (resolveLiveOscar()?.liveCfg.executionMode === 'live') {
-          cancelLivePostCloseTailSweepForMint(args.mint);
-        }
-        journalLiveStrategy?.({
-          kind: 'live_staged_entry_signal',
+    if (plan.action === 'blocked_no_anchor') return { ok: false };
+
+    let signal = plan.signal;
+
+    if (plan.action === 'create_new') {
+      stagedEntrySignals.set(args.mint, signal);
+      if (resolveLiveOscar()?.liveCfg.executionMode === 'live') {
+        cancelLivePostCloseTailSweepForMint(args.mint);
+      }
+      journalLiveStrategy?.({
+        kind: 'live_staged_entry_signal',
+        mint: args.mint,
+        symbol: args.symbol,
+        lane: args.lane,
+        source: args.source,
+        signalPriceUsd: signal.signalPriceUsd,
+        signalMarketCapUsd: signal.signalMarketCapUsd,
+        holderCount: signal.holderCount,
+        firstDropPct: cfg.liveStagedEntryFirstDropPct,
+        firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
+        secondDropPct: cfg.liveStagedEntrySecondDropPct,
+        thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+        expiresAt: signal.expiresAt,
+      });
+      if (cfg.strategyId === 'live-oscar') {
+        notifyLiveStagedEntrySignal({
           mint: args.mint,
           symbol: args.symbol,
-          lane: args.lane,
-          source: args.source,
-          signalPriceUsd: signal.signalPriceUsd,
-          signalMarketCapUsd: signal.signalMarketCapUsd,
+          marketCapUsd: signal.signalMarketCapUsd,
           holderCount: signal.holderCount,
-          firstDropPct: cfg.liveStagedEntryFirstDropPct,
-          firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
-          secondDropPct: cfg.liveStagedEntrySecondDropPct,
-          thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-          expiresAt: signal.expiresAt,
         });
-        if (cfg.strategyId === 'live-oscar') {
-          notifyLiveStagedEntrySignal({
-            mint: args.mint,
-            symbol: args.symbol,
-            marketCapUsd: signal.signalMarketCapUsd,
-            holderCount: signal.holderCount,
-          });
-        }
       }
-    } else {
-      signal = existing;
     }
 
     const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);

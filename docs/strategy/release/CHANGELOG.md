@@ -46,6 +46,31 @@
 
 ---
 
+---
+
+## [1.11.479] — 2026-06-21
+
+**Тег:** `sa-alpha-1.11.479`
+
+### live-oscar: staged-entry TTL — clear anchor, fresh re-eval (не re-anchor)
+
+После истечения `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS` (1 ч) без входа на −10% бот **сбрасывает** якорь `stagedEntrySignals` и **не** создаёт новый на текущей цене в том же discovery-проходе. Монета должна снова пройти полный discovery/eval pipeline; только при повторном `pass` — новый `live_staged_entry_signal` с якорем на **оцененной** цене того прохода.
+
+**Код:**
+- `planLiveStagedEntrySignalResolution` (`live-staged-entry-gates.ts`) — чистая логика: `ttl_expired_clear` vs `create_new` vs `use_existing`.
+- `resolveLiveStagedEntrySignal` (`main.ts`) — при TTL expiry: delete anchor, journal `staged_entry_ttl_expired`, skip open.
+- Сохранён 1.11.478: при `reanchorBlocked` (buy in-flight / ambiguous cooldown) expired anchor не сбрасывается.
+
+**Observability:** `staged_entry_ttl_expired` в live JSONL schema (`events.ts`).
+
+**Тесты:** `tests/live-staged-entry-gates.test.ts` — TTL clear, no same-tick re-anchor, buy-in-flight preserve.
+
+**Rollback:** `git revert` → push `v2` → NORM §5 deploy.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.478] — 2026-06-21
 
 **Тег:** `sa-alpha-1.11.478`
