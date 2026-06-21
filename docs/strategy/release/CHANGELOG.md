@@ -46,6 +46,31 @@
 
 ---
 
+## [1.11.478] — 2026-06-21
+
+**Тег:** `sa-alpha-1.11.478`
+
+### live-oscar: SOLANGELES RCA — staged-entry anchor + buy retry (P0–P2)
+
+Исправления по RCA провала входа SOLANGELES (slippage `0x1771` + преждевременный re-anchor).
+
+**P0 staged entry (`src/papertrader/main.ts`):**
+- Якорь `stagedEntrySignals` не удаляется при достижении −10%; сброс только после `live_position_open`.
+- При `tryExecuteBuyOpen` failure — восстановление прежнего anchor + журнал `staged_entry_restored_after_buy_fail`.
+- Re-anchor блокируется при in-flight buy и `live_ambiguous_buy_cooldown`.
+
+**P1 execution retry:**
+- `isRetryableBuySimError`: `0x1771`, `rpc_error:`, `qn_rpc_error:`, `Transaction simulation failed`.
+- `finalizeLiveSendJsonl`: pre-send sim/slippage → `status: sim_err` (не `failed`).
+
+**P2 observability:** `staged_entry_cleared_for_buy` / `staged_entry_restored_after_buy_fail` в live JSONL.
+
+**Rollback:** `git revert` коммита 1.11.478 → push `v2` → стандартный деплой NORM §5.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.477] — 2026-06-20
 
 **Тег:** `sa-alpha-1.11.477` (следующий за 1.11.476)

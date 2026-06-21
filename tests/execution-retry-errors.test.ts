@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isPreSendSimFailureMessage,
   isRetryableBuySimError,
   isRetryablePreBroadcastError,
   isRetryableSellSimError,
@@ -26,5 +27,14 @@ describe('execution-retry-errors', () => {
     expect(isRetryableBuySimError('send_failed:429')).toBe(true);
     expect(isRetryableBuySimError('insufficient_wallet_sol_for_buy')).toBe(false);
     expect(isRetryableBuySimError('sim_failed:InsufficientFunds')).toBe(false);
+  });
+
+  it('buy retries SOLANGELES-class pre-send sim / slippage messages', () => {
+    const solAngelesMsg =
+      'rpc_error:Transaction simulation failed: Error processing Instruction 6: custom program error: 0x1771';
+    expect(isPreSendSimFailureMessage(solAngelesMsg)).toBe(true);
+    expect(isRetryableBuySimError(solAngelesMsg)).toBe(true);
+    expect(isRetryableBuySimError('qn_rpc_error:Transaction simulation failed')).toBe(true);
+    expect(isRetryableBuySimError('sim_failed:{"InstructionError":[6,{"Custom":6001}]}')).toBe(true);
   });
 });

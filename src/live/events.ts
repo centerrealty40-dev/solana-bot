@@ -347,6 +347,24 @@ export const LiveStagedEntrySignalSchema = z.object({
   expiresAt: z.number().finite(),
 });
 
+/** Staged-entry anchor cleared after confirmed buy / `live_position_open`. */
+export const LiveStagedEntryClearedForBuySchema = z.object({
+  kind: z.literal('staged_entry_cleared_for_buy'),
+  mint: z.string().min(1).max(64),
+  signalPriceUsd: z.number().finite().optional(),
+  signalTs: z.number().finite().optional(),
+  expiresAt: z.number().finite().optional(),
+});
+
+/** Staged-entry anchor restored after a failed `tryExecuteBuyOpen` (RCA observability). */
+export const LiveStagedEntryRestoredAfterBuyFailSchema = z.object({
+  kind: z.literal('staged_entry_restored_after_buy_fail'),
+  mint: z.string().min(1).max(64),
+  signalPriceUsd: z.number().finite(),
+  signalTs: z.number().finite(),
+  expiresAt: z.number().finite(),
+});
+
 /** Passed eval but open blocked (safety, impulse, price verify, already_open, etc.). */
 export const LiveDiscoverySkipOpenSchema = z.object({
   kind: z.literal('live_discovery_skip_open'),
@@ -437,6 +455,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveDiscoveryTickSkipSchema,
   LiveDiscoveryUniverseMissSchema,
   LiveStagedEntrySignalSchema,
+  LiveStagedEntryClearedForBuySchema,
+  LiveStagedEntryRestoredAfterBuyFailSchema,
   LiveDiscoverySkipOpenSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
