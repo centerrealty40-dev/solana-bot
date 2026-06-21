@@ -48,6 +48,38 @@
 
 ---
 
+---
+
+## [1.11.481] — 2026-06-21
+
+**Тег:** `sa-alpha-1.11.481`
+
+### live-oscar: 3-leg staged entry ($200 + $200 + $600)
+
+Схема входа от якоря сигнала (total **$1000**):
+
+| Нога | USD | Триггер |
+|------|-----|---------|
+| Leg-1 | **$200** | сразу по сигналу (`FIRST_DROP_PCT=0`) |
+| Leg-2 | **$200** | **−5%** от якоря (`ENTRY_SPLIT_TARGET_DROP_PCT=5`) |
+| Leg-3 | **$600** | **−10%** от якоря (`SECOND_DROP_PCT=10`, `SECOND_LEG_USD=600`) |
+
+**Env (`ecosystem.config.cjs` → `live-oscar`):**
+- `PAPER_POSITION_USD` / split: **$400** (leg1+leg2, boot-инвариант)
+- `LIVE_MAX_POSITION_USD`: **$1000** (полный план)
+- `..._ENTRY_SPLIT_LEG_USD` / `..._FIRST_LEG_USD`: `250` → **`200`**
+- `..._ENTRY_SPLIT_LEG2_USD`: `250` → **`200`**
+- `..._SECOND_LEG_USD`: `500` → **`600`**
+- Low-mcap lane aligned: split **$200+$200**, position **$400**
+
+**Тесты:** `live-staged-entry-labels`, `live-staged-entry-gates` — prod 3-leg wording/progression.
+
+**Rollback:** redeploy `sa-alpha-1.11.480`; или вернуть env split **$250+$250**, leg-3 **$500**, position **$500**.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.480] — 2026-06-21
 
 **Тег:** `sa-alpha-1.11.480`

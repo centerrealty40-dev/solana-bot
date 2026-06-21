@@ -28,19 +28,19 @@ describe('live-staged-entry-labels', () => {
   it('open label uses 3rd split leg wording in dip-at-signal mode', () => {
     const s = liveStagedOpenLabelRuFromCfg(
       miniCfg({
-        liveStagedEntryEntrySplitLegUsd: 250,
-        liveStagedEntryEntrySplitLeg2Usd: 250,
+        liveStagedEntryEntrySplitLegUsd: 200,
+        liveStagedEntryEntrySplitLeg2Usd: 200,
         liveStagedEntryEntrySplitTargetDropPct: 5,
-        liveStagedEntrySecondLegUsd: 500,
+        liveStagedEntrySecondLegUsd: 600,
         liveStagedEntrySecondDropPct: 10,
         liveStagedEntryThirdLegUsd: 0,
         liveStagedEntryThirdDropPct: 0,
         liveStagedEntryAvgCooldownMs: 0,
       }),
     );
-    assert.match(s, /1-я нога сплита.*\$250/);
-    assert.match(s, /2-я нога сплита.*\$250.*−5%/);
-    assert.match(s, /3-я нога сплита.*\$500.*−10%/);
+    assert.match(s, /1-я нога сплита.*\$200/);
+    assert.match(s, /2-я нога сплита.*\$200.*−5%/);
+    assert.match(s, /3-я нога сплита.*\$600.*−10%/);
     assert.doesNotMatch(s, /1-е усреднение/);
   });
 

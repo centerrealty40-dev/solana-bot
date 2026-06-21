@@ -38,10 +38,10 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): split notional (leg1+leg2) vs max cap (all legs).
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * 1.11.480 — 3-leg staged entry: $250 @ signal + $250 @ −5% + $500 @ −10% = $1000 max.
- * PAPER_POSITION_USD = split leg1+leg2 ($500); LIVE_MAX = full plan ($1000).
+ * 1.11.481 — 3-leg staged entry: $200 @ signal + $200 @ −5% + $600 @ −10% = $1000 max.
+ * PAPER_POSITION_USD = split leg1+leg2 ($400); LIVE_MAX = full plan ($1000).
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '500';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '400';
 const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
@@ -358,26 +358,26 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.480 — 3-leg staged entry ($1000 max): leg-1 $250 @ signal (0%), leg-2 $250 @ −5%,
-         * leg-3 $500 @ −10% от якоря сигнала; kill −50%. PAPER_POSITION_USD = leg1+leg2 ($500).
+         * 1.11.481 — 3-leg staged entry ($1000 max): leg-1 $200 @ signal (0%), leg-2 $200 @ −5%,
+         * leg-3 $600 @ −10% от якоря сигнала; kill −50%. PAPER_POSITION_USD = leg1+leg2 ($400).
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '250',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '250',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '200',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '200',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         /** >0: 2-я нога сплита только при −N% от signal (вместо delay+corridor). */
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '5',
-        /** Leg-3: $500 @ −10% от сигнала (staged add-on; cooldown 0 = без паузы после leg-1). */
+        /** Leg-3: $600 @ −10% от сигнала (staged add-on; cooldown 0 = без паузы после leg-1). */
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '250',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '200',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '600',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
@@ -470,15 +470,15 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '450',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split aligned with prod $500+$500 ($1000 notional), leg-1 сразу по сигналу (0%), leg-2 усреднение при −10%. (1.11.476: vol 75k→35k, owner approved volume expansion). */
+        /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split aligned with prod $200+$200 (boot $400, max $1000), leg-1 сразу по сигналу (0%), leg-2 @ −5%, leg-3 @ −10%. (1.11.476: vol 75k→35k, owner approved volume expansion). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '200',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
