@@ -294,6 +294,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       expiresAt: number;
     }
   >();
+  const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
@@ -771,6 +772,48 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     );
   }
 
+  function isStagedEntryReanchorBlocked(mint: string): boolean {
+    return stagedEntryBuyInFlight.has(mint) || isMintBlockedForAmbiguousLiveBuy(mint);
+  }
+
+  function clearStagedEntrySignalForConfirmedBuy(
+    mint: string,
+    signal?: {
+      signalTs: number;
+      signalPriceUsd: number;
+      expiresAt: number;
+    },
+  ): void {
+    if (!stagedEntrySignals.delete(mint)) return;
+    journalLiveStrategy?.({
+      kind: 'staged_entry_cleared_for_buy',
+      mint,
+      signalPriceUsd: signal?.signalPriceUsd,
+      signalTs: signal?.signalTs,
+      expiresAt: signal?.expiresAt,
+    });
+  }
+
+  function restoreStagedEntrySignalAfterBuyFail(
+    mint: string,
+    signal: {
+      signalTs: number;
+      signalPriceUsd: number;
+      signalMarketCapUsd: number | null;
+      holderCount: number | null;
+      expiresAt: number;
+    },
+  ): void {
+    stagedEntrySignals.set(mint, signal);
+    journalLiveStrategy?.({
+      kind: 'staged_entry_restored_after_buy_fail',
+      mint,
+      signalPriceUsd: signal.signalPriceUsd,
+      signalTs: signal.signalTs,
+      expiresAt: signal.expiresAt,
+    });
+  }
+
   function resolveLiveStagedEntrySignal(args: {
     mint: string;
     symbol: string;
@@ -779,48 +822,86 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     currentPriceUsd: number;
     marketCapUsd: number | null;
     holderCount: number | null;
-  }): { ok: true; signalTs: number; signalPriceUsd: number } | { ok: false } {
-    if (!liveStagedEntryActive()) return { ok: true, signalTs: Date.now(), signalPriceUsd: args.currentPriceUsd };
+  }):
+    | {
+        ok: true;
+        signal: {
+          signalTs: number;
+          signalPriceUsd: number;
+          signalMarketCapUsd: number | null;
+          holderCount: number | null;
+          expiresAt: number;
+        };
+      }
+    | { ok: false } {
+    if (!liveStagedEntryActive()) {
+      const now = Date.now();
+      return {
+        ok: true,
+        signal: {
+          signalTs: now,
+          signalPriceUsd: args.currentPriceUsd,
+          signalMarketCapUsd: args.marketCapUsd,
+          holderCount: args.holderCount,
+          expiresAt: now,
+        },
+      };
+    }
     const now = Date.now();
     const existing = stagedEntrySignals.get(args.mint);
-    const signal =
-      existing && existing.expiresAt > now
-        ? existing
-        : {
-            signalTs: now,
-            signalPriceUsd: args.currentPriceUsd,
-            signalMarketCapUsd: args.marketCapUsd,
-            holderCount: args.holderCount,
-            expiresAt: liveStagedEntrySignalExpiresAt(cfg, now),
-          };
-    if (!existing || existing.expiresAt <= now) {
-      stagedEntrySignals.set(args.mint, signal);
-      if (resolveLiveOscar()?.liveCfg.executionMode === 'live') {
-        cancelLivePostCloseTailSweepForMint(args.mint);
-      }
-      journalLiveStrategy?.({
-        kind: 'live_staged_entry_signal',
-        mint: args.mint,
-        symbol: args.symbol,
-        lane: args.lane,
-        source: args.source,
-        signalPriceUsd: signal.signalPriceUsd,
-        signalMarketCapUsd: signal.signalMarketCapUsd,
-        holderCount: signal.holderCount,
-        firstDropPct: cfg.liveStagedEntryFirstDropPct,
-        firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
-        secondDropPct: cfg.liveStagedEntrySecondDropPct,
-        thirdDropPct: cfg.liveStagedEntryThirdDropPct,
-        expiresAt: signal.expiresAt,
-      });
-      if (cfg.strategyId === 'live-oscar') {
-        notifyLiveStagedEntrySignal({
+    const reanchorBlocked = isStagedEntryReanchorBlocked(args.mint);
+    const needsNewAnchor = !existing || existing.expiresAt <= now;
+
+    let signal: {
+      signalTs: number;
+      signalPriceUsd: number;
+      signalMarketCapUsd: number | null;
+      holderCount: number | null;
+      expiresAt: number;
+    };
+
+    if (needsNewAnchor) {
+      if (reanchorBlocked) {
+        if (!existing) return { ok: false };
+        signal = existing;
+      } else {
+        signal = {
+          signalTs: now,
+          signalPriceUsd: args.currentPriceUsd,
+          signalMarketCapUsd: args.marketCapUsd,
+          holderCount: args.holderCount,
+          expiresAt: liveStagedEntrySignalExpiresAt(cfg, now),
+        };
+        stagedEntrySignals.set(args.mint, signal);
+        if (resolveLiveOscar()?.liveCfg.executionMode === 'live') {
+          cancelLivePostCloseTailSweepForMint(args.mint);
+        }
+        journalLiveStrategy?.({
+          kind: 'live_staged_entry_signal',
           mint: args.mint,
           symbol: args.symbol,
-          marketCapUsd: signal.signalMarketCapUsd,
+          lane: args.lane,
+          source: args.source,
+          signalPriceUsd: signal.signalPriceUsd,
+          signalMarketCapUsd: signal.signalMarketCapUsd,
           holderCount: signal.holderCount,
+          firstDropPct: cfg.liveStagedEntryFirstDropPct,
+          firstTargetUsd: signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100),
+          secondDropPct: cfg.liveStagedEntrySecondDropPct,
+          thirdDropPct: cfg.liveStagedEntryThirdDropPct,
+          expiresAt: signal.expiresAt,
         });
+        if (cfg.strategyId === 'live-oscar') {
+          notifyLiveStagedEntrySignal({
+            mint: args.mint,
+            symbol: args.symbol,
+            marketCapUsd: signal.signalMarketCapUsd,
+            holderCount: signal.holderCount,
+          });
+        }
       }
+    } else {
+      signal = existing;
     }
 
     const firstTargetUsd = signal.signalPriceUsd * (1 - cfg.liveStagedEntryFirstDropPct / 100);
@@ -842,8 +923,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       return { ok: false };
     }
 
-    stagedEntrySignals.delete(args.mint);
-    return { ok: true, signalTs: signal.signalTs, signalPriceUsd: signal.signalPriceUsd };
+    return { ok: true, signal };
   }
 
   let liveOscarResolved = false;
@@ -1325,8 +1405,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           ot,
           d.mint,
           {
-            signalTs: stagedEntrySignal.signalTs,
-            signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+            signalTs: stagedEntrySignal.signal.signalTs,
+            signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
           },
           d.features.market_cap_usd,
           d.liveOscarMcapTier,
@@ -1468,8 +1548,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ot,
               ot.mint,
               {
-                signalTs: stagedEntrySignal.signalTs,
-                signalPriceUsd: stagedEntrySignal.signalPriceUsd,
+                signalTs: stagedEntrySignal.signal.signalTs,
+                signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
               },
               d.features.market_cap_usd,
               d.liveOscarMcapTier,
@@ -1587,15 +1667,26 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             tokenDecimals,
             priceVerify,
           });
-          const opened = await liveOscar.discovery.tryExecuteBuyOpen({
-            liveCfg: liveOscar.liveCfg,
-            paperCfg: cfg,
-            ot,
-            decision: d,
-            snapshotEntryPriceUsd,
-            tokenDecimals,
-          });
-          if (!opened.ok) continue;
+          stagedEntryBuyInFlight.add(d.mint);
+          let opened: Awaited<ReturnType<typeof liveOscar.discovery.tryExecuteBuyOpen>>;
+          try {
+            opened = await liveOscar.discovery.tryExecuteBuyOpen({
+              liveCfg: liveOscar.liveCfg,
+              paperCfg: cfg,
+              ot,
+              decision: d,
+              snapshotEntryPriceUsd,
+              tokenDecimals,
+            });
+          } finally {
+            stagedEntryBuyInFlight.delete(d.mint);
+          }
+          if (!opened.ok) {
+            if (liveStagedEntryActive()) {
+              restoreStagedEntrySignalAfterBuyFail(d.mint, stagedEntrySignal.signal);
+            }
+            continue;
+          }
           applyLiveBuyAnchorsAfterOpen(ot, opened);
           if (
             liveOscar.liveCfg.liveEntryScaleInEnabled &&
@@ -1677,6 +1768,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (cfg.strategyId === 'live-oscar') stampLiveOscarExitPolicyOnOpen(ot, cfg);
 
         open.set(ot.mint, ot);
+        if (liveStagedEntryActive()) {
+          clearStagedEntrySignalForConfirmedBuy(ot.mint, {
+            signalTs: ot.liveStagedEntry?.signalTs ?? ot.entryTs,
+            signalPriceUsd: ot.liveStagedEntry?.signalPriceUsd ?? ot.legs[0]?.marketPrice ?? 0,
+            expiresAt: liveStagedEntrySignalExpiresAt(cfg, ot.liveStagedEntry?.signalTs ?? ot.entryTs),
+          });
+        }
         const liveOscarForJournal = resolveLiveOscar();
         const liveOpenExtras: Record<string, unknown> =
           liveOscarForJournal && liveStagedEntryActive()

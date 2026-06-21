@@ -14,10 +14,21 @@ export function isRetryablePreBroadcastError(reason: string): boolean {
   return false;
 }
 
+/** Pre-send simulate / RPC slippage failures that must surface as `sim_err`, not terminal `failed`. */
+export function isPreSendSimFailureMessage(message: string): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  if (m.includes('0x1771') || m.includes('slippage')) return true;
+  if (message.includes('Transaction simulation failed')) return true;
+  if (message.startsWith('rpc_error:') || message.startsWith('qn_rpc_error:')) return true;
+  return message.startsWith('sim_failed:') || message.includes('InstructionError');
+}
+
 export function isRetryableBuySimError(message: string): boolean {
   if (isInsufficientFundsBuyMessage(message)) return false;
   if (isRetryablePreBroadcastError(message)) return true;
   if (message.startsWith('send_failed')) return true;
+  if (isPreSendSimFailureMessage(message)) return true;
   return message.startsWith('sim_failed:') || message.includes('InstructionError');
 }
 

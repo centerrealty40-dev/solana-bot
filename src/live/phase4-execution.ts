@@ -80,6 +80,7 @@ import {
 } from './sell-quote-prearm.js';
 import type { LiveBuyTerminalKind } from './phase4-types.js';
 import {
+  isPreSendSimFailureMessage,
   isRetryableBuySimError,
   isRetryablePreBroadcastError,
   isRetryableSellSimError,
@@ -113,29 +114,38 @@ export function tokenAmountRawFromUsd(
   return raw.toString();
 }
 
+function normalizeLiveSendOutcome(outcome: LiveSendPipelineOutcome): LiveSendPipelineOutcome {
+  if (outcome.ok || outcome.kind === 'sim_err') return outcome;
+  if (isPreSendSimFailureMessage(outcome.message)) {
+    return { ...outcome, kind: 'sim_err' };
+  }
+  return outcome;
+}
+
 function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcome): boolean {
-  if (outcome.ok) {
+  const o = normalizeLiveSendOutcome(outcome);
+  if (o.ok) {
     appendLiveJsonlEvent({
       kind: 'execution_result',
       intentId,
       status: 'confirmed',
-      txSignature: outcome.signature,
+      txSignature: o.signature,
       simulated: false,
-      unitsConsumed: outcome.preSimUnits,
-      slot: outcome.slot,
+      unitsConsumed: o.preSimUnits,
+      slot: o.slot,
     });
     notifyLiveExecutionSimOk();
     recordPriorityFeeOutcome({ kind: 'success' });
     return true;
   }
-  if (outcome.kind === 'sim_err') {
+  if (o.kind === 'sim_err') {
     appendLiveJsonlEvent({
       kind: 'execution_result',
       intentId,
       status: 'sim_err',
       simulated: true,
-      unitsConsumed: outcome.preSimUnits ?? null,
-      error: { message: outcome.message },
+      unitsConsumed: o.preSimUnits ?? null,
+      error: { message: o.message },
     });
     notifyLiveExecutionSimErr();
     recordPriorityFeeOutcome({ kind: 'sim_err' });
@@ -146,18 +156,18 @@ function finalizeLiveSendJsonl(intentId: string, outcome: LiveSendPipelineOutcom
     intentId,
     status: 'failed',
     simulated: false,
-    txSignature: outcome.signature ?? null,
-    unitsConsumed: outcome.preSimUnits ?? null,
-    error: { message: outcome.message },
+    txSignature: o.signature ?? null,
+    unitsConsumed: o.preSimUnits ?? null,
+    error: { message: o.message },
   });
   /** `confirm_timeout` / `send_failed` are operational; do not trip consec-sim global gate (see phase5-state). */
-  if (outcome.kind !== 'confirm_timeout') {
-    notifyLiveExecutionSimErrForTerminal(outcome.message);
+  if (o.kind !== 'confirm_timeout') {
+    notifyLiveExecutionSimErrForTerminal(o.message);
   }
   /** 1.11.231 — adaptive priority fee: учитываем confirm_timeout + send_failed для congestion sense. */
-  if (outcome.kind === 'confirm_timeout') {
+  if (o.kind === 'confirm_timeout') {
     recordPriorityFeeOutcome({ kind: 'confirm_timeout' });
-  } else if (outcome.kind === 'send_failed') {
+  } else if (o.kind === 'send_failed') {
     recordPriorityFeeOutcome({ kind: 'send_failed' });
   }
   return false;
