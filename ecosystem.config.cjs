@@ -481,13 +481,12 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /**
-         * 1.11.485 — Фаза 4: scalp_wave lane ($800k–$2M, age 12–36h, shallow dip −8..−15%).
+         * 1.11.487 — Фаза 4: scalp_wave lane ($800k–$2M, age ≥12h no max, shallow dip −8..−15%).
          * One-shot $300, exit scalp_wave_v1 (+10% TP / −10% kill / 3h timestop), max 3 concurrent.
          * Mint mutex: один mint = одна OpenTrade (prod/micro/low/scalp_wave).
          */
         PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN: '720',
-        PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_AGE_MIN: '2160',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD: '800000',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD: '2000000',
         PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT: '-15',
