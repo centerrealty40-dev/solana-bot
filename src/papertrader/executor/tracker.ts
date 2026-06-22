@@ -2,6 +2,11 @@ import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
+import {
+  applyLiveOscarPhaseEscalation,
+  computeDropFromScalpAnchor,
+  evaluateScalpPhaseEscalationTrigger,
+} from '../live-oscar-phase-escalation.js';
 import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
@@ -2373,6 +2378,48 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+
+    const scalpEscalationTrigger = evaluateScalpPhaseEscalationTrigger({
+      cfg,
+      ot,
+      curPriceUsd: curMetric,
+      ageHours: ageH,
+    });
+    if (scalpEscalationTrigger) {
+      const escalated = applyLiveOscarPhaseEscalation({
+        cfg,
+        ot,
+        trigger: scalpEscalationTrigger,
+        curPriceUsd: curMetric,
+        marketCapUsd: ot.entryMarketCapUsd,
+      });
+      if (escalated) {
+        const dropPct = computeDropFromScalpAnchor(ot, curMetric);
+        journalAppend({
+          kind: 'live_phase_escalation',
+          mint,
+          symbol: ot.symbol,
+          fromLane: 'scalp_wave',
+          toLane: 'prod',
+          toTier: ot.liveOscarMcapTier,
+          trigger: scalpEscalationTrigger,
+          liveExitPolicyId: ot.liveExitPolicyId,
+          ...(dropPct != null ? { dropFromEntryPct: +dropPct.toFixed(3) } : {}),
+        });
+        journalLiveStrategy?.({
+          kind: 'live_phase_escalation',
+          mint,
+          symbol: ot.symbol,
+          fromLane: 'scalp_wave',
+          toLane: 'prod',
+          toTier: ot.liveOscarMcapTier,
+          trigger: scalpEscalationTrigger,
+          openTrade: serializeOpenTrade(ot),
+        });
+        resolveLiveOscarExitPolicyForTick(ot, cfg);
+        effCfg = cfgEffectiveForOpen(cfg, ot);
+      }
+    }
 
     // ----- W7.5 — liquidity drain watch (before TP/SL/TRAIL and NO_DATA stall close) -----
     if (cfg.liqWatchEnabled && ot.pairAddress && (ot.entryLiqUsd ?? 0) > 0) {

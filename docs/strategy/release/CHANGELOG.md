@@ -50,6 +50,28 @@
 
 ---
 
+---
+
+## [1.11.488] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.488`
+
+### live-oscar: phase escalation scalp_wave → prod/low
+
+**Проблема:** Фаза 4 (scalp_wave) входила на мелком дипе (−8..−15%), но при углублении просадки mutex блокировал prod/low lane; kill −10% закрывал позицию вместо передачи управления staged-entry / wave_b.
+
+**Исправление:**
+- **Phase escalation:** при просадке глубже −15% от входа, timestop 3h без TP, или discovery handoff (prod eval pass при открытом scalp) — `liveOscarTradeLane` → `prod`, `liveExitPolicyId` → `wave_b_v1`, staged entry legs по mcap-tier
+- **Kill scalp отключён** (`dcaKillstop=0`); вместо −10% kill — эскалация
+- **Mutex:** `phase_escalation_handoff` вместо `lane_mint_mutex` для prod на открытом scalp
+- Journal: `live_phase_escalation` (paper + live JSONL schema)
+
+**Rollback:** redeploy `sa-alpha-1.11.487`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.487] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.487`

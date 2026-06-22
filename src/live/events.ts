@@ -392,6 +392,22 @@ export const LiveDiscoverySkipOpenSchema = z.object({
   detail: z.string().max(2000).optional(),
 });
 
+/** scalp_wave → prod/low handoff when shallow dip deepens or timestop without TP. */
+export const LivePhaseEscalationSchema = z.object({
+  kind: z.literal('live_phase_escalation'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  fromLane: z.string().max(32),
+  toLane: z.string().max(32),
+  toTier: z.string().max(32).optional(),
+  trigger: z.enum(['deep_dip', 'timestop_no_tp', 'discovery_handoff']),
+  liveExitPolicyId: z.string().max(32).optional(),
+  dropFromEntryPct: z.number().finite().optional(),
+  openTrade: z.record(z.string(), z.unknown()).optional(),
+});
+
 /** Daily Telegram summary tick (1.11.231+); appended to live JSONL for audit. */
 export const LiveDailySummarySchema = z.object({
   kind: z.literal('live_daily_summary'),
@@ -528,6 +544,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveStagedEntryRestoredAfterBuyFailSchema,
   LiveStagedEntryTtlExpiredSchema,
   LiveDiscoverySkipOpenSchema,
+  LivePhaseEscalationSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,

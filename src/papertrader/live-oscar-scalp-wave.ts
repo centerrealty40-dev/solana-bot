@@ -4,6 +4,7 @@ import { evaluateSnapshot } from './filters/snapshot-filter.js';
 import { globalGate } from './filters/global-gate.js';
 import type { Lane, OpenTrade, SnapshotCandidateRow } from './types.js';
 import { liveOscarTierEntryConfig, type LiveOscarMcapTier } from './live-oscar-mcap-tier.js';
+import { liveOscarMintOpenSkipReasonForEscalation } from './live-oscar-phase-escalation.js';
 
 /** Trade strategy lane — mutex dimension (one open per mint across lanes). */
 export type LiveOscarTradeLane = 'prod' | 'scalp_wave';
@@ -152,7 +153,16 @@ export function liveOscarMintOpenSkipReason(args: {
   open: ReadonlyMap<string, OpenTrade>;
   mint: string;
   incomingTradeLane: LiveOscarTradeLane;
-}): 'lane_mint_mutex' | 'already_open' | null {
+  cfg?: PaperTraderConfig;
+}): 'lane_mint_mutex' | 'already_open' | 'phase_escalation_handoff' | null {
+  if (args.cfg) {
+    return liveOscarMintOpenSkipReasonForEscalation({
+      open: args.open,
+      mint: args.mint,
+      incomingTradeLane: args.incomingTradeLane,
+      cfg: args.cfg,
+    });
+  }
   const existing = args.open.get(args.mint);
   if (!existing) return null;
   const openLane = resolveLiveOscarTradeLaneFromOpen(existing);
