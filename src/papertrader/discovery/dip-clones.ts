@@ -79,6 +79,10 @@ import {
   type LiveOscarMcapTier,
   type LiveOscarTradeTier,
 } from '../live-oscar-mcap-tier.js';
+import {
+  evaluateLiveOscarScalpWaveDiscovery,
+  isLiveOscarScalpWaveLaneEnabled,
+} from '../live-oscar-scalp-wave.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
@@ -131,8 +135,10 @@ export interface EvalDecision {
     | 'runner'
     | 'post_crash_fast'
     | 'stress_kill_reentry';
-  /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M. */
+  /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
+  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot). */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave';
 }
 
 export interface DiscoveryTickResult {
@@ -1422,6 +1428,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       whale,
       holdersMeta,
       entryPath,
+      liveOscarTradeLane: 'prod',
       ...(isLiveOscarMcapTieringEnabled(cfg) ? { liveOscarMcapTier: journalTier } : {}),
     });
   }
@@ -1481,6 +1488,38 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   }
 
   syncDiscoveryCollectorPin(cfg, priorityMintSet);
+
+  if (isLiveOscarScalpWaveLaneEnabled(cfg)) {
+    for (const { row, lane } of allowedSnapshotTagged) {
+      const refMcap = snapshotRefMarketCapUsd(row);
+      const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      const scalpEval = evaluateLiveOscarScalpWaveDiscovery({
+        cfg,
+        row,
+        lane,
+        refMcap,
+        ageMin,
+        dipCtx: dipMap.get(row.mint),
+      });
+      evaluated++;
+      if (scalpEval.pass) passed++;
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin,
+        pass: scalpEval.pass,
+        reasons: scalpEval.pass ? scalpEval.reasons : scalpEval.reasons,
+        features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        whale: null,
+        entryPath: scalpEval.entryPath,
+        liveOscarMcapTier: 'scalp_wave',
+        liveOscarTradeLane: 'scalp_wave',
+      });
+    }
+  }
+
   return {
     discovered: snapshotTagged.length,
     evaluated,

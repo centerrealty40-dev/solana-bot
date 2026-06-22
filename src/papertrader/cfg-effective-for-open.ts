@@ -11,7 +11,15 @@ import {
   WAVE_B_V1_TP_GRID,
 } from './executor/exit-policy-wave-b.js';
 
+import {
+  isScalpWaveExitPolicy,
+  scalpWaveEffectiveExitParams,
+} from './executor/exit-policy-scalp-wave.js';
+
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
+  if (isScalpWaveExitPolicy(ot)) {
+    return { ...cfg, ...scalpWaveEffectiveExitParams(cfg) };
+  }
   if (isWaveBExitPolicy(ot)) {
     return {
       ...cfg,

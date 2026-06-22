@@ -42,6 +42,12 @@ import {
   applyCanonicalOpenLegUsd,
   resolveLiveOscarEntrySplitLegUsd,
 } from './live-oscar-entry-sizing.js';
+import {
+  countOpenScalpWavePositions,
+  liveOscarScalpWaveOpenLegUsd,
+  stampLiveOscarTradeLaneOnOpen,
+  type LiveOscarTradeLane,
+} from './live-oscar-scalp-wave.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
 import {
@@ -346,9 +352,23 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  function liveOscarDiscoveryBuyLegUsd(tier?: 'micro' | 'low' | 'prod'): number {
-    if (liveStagedEntryActive()) {
-      const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  function resolveDecisionTradeLane(d: EvalDecision): LiveOscarTradeLane {
+    return d.liveOscarTradeLane ?? 'prod';
+  }
+
+  function liveStagedEntryActiveForDecision(d: EvalDecision): boolean {
+    return liveStagedEntryActive() && resolveDecisionTradeLane(d) !== 'scalp_wave';
+  }
+
+  function liveOscarDiscoveryBuyLegUsd(
+    d: EvalDecision,
+    tier?: 'micro' | 'low' | 'prod' | 'scalp_wave',
+  ): number {
+    if (resolveDecisionTradeLane(d) === 'scalp_wave') {
+      return liveOscarScalpWaveOpenLegUsd(cfg);
+    }
+    if (liveStagedEntryActiveForDecision(d)) {
+      const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier === 'scalp_wave' ? undefined : tier);
       if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
@@ -1232,7 +1252,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       if (cfg.strategyId === 'live-oscar' && liveOscarForTg?.liveCfg.executionMode === 'live') {
         await refreshLiveBuyTelegramSuppressForTick(
           liveOscarForTg.liveCfg,
-          liveOscarDiscoveryBuyLegUsd(),
+          resolveLiveOscarEntrySplitLegUsd(cfg),
         );
       }
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
@@ -1281,6 +1301,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           whale_analysis: d.whale,
           holders_meta: d.holdersMeta ?? null,
           entry_path: d.entryPath,
+          tradeLane: resolveDecisionTradeLane(d),
           _liveDiscoveryDeepAudit: deepAuditFlag,
           _priorityDiscovery: priorityFlag,
         });
@@ -1303,12 +1324,36 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           continue;
         }
         if (open.has(d.mint)) {
+          const incomingLane = resolveDecisionTradeLane(d);
+          const existing = open.get(d.mint)!;
+          const openLane = existing.liveOscarTradeLane ?? 'prod';
+          const skipReason = openLane !== incomingLane ? 'lane_mint_mutex' : 'already_open';
           journalAppend({
             kind: 'eval-skip-open',
             lane: d.lane,
             source: d.source,
             mint: d.mint,
-            reason: 'already_open',
+            symbol: d.symbol,
+            reason: skipReason,
+            tradeLane: incomingLane,
+            openTradeLane: openLane,
+          });
+          continue;
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'scalp_wave' &&
+          countOpenScalpWavePositions(open) >= cfg.liveOscarScalpWaveMaxConcurrent
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'scalp_wave_max_concurrent',
+            tradeLane: 'scalp_wave',
+            openScalpWave: countOpenScalpWavePositions(open),
+            maxScalpWave: cfg.liveOscarScalpWaveMaxConcurrent,
           });
           continue;
         }
@@ -1379,16 +1424,20 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         observeStaleEntryPrice(d);
         observeShyftShadowEntryPrice(d);
 
-        const stagedEntrySignal = resolveLiveStagedEntrySignal({
-          mint: d.mint,
-          symbol: d.symbol,
-          lane: d.lane,
-          source: d.source,
-          currentPriceUsd: d.features.price_usd,
-          marketCapUsd: d.features.market_cap_usd ?? null,
-          holderCount: d.features.holders ?? null,
-        });
-        if (!stagedEntrySignal.ok) continue;
+        const tradeLane = resolveDecisionTradeLane(d);
+        let stagedEntrySignal: Awaited<ReturnType<typeof resolveLiveStagedEntrySignal>> | null = null;
+        if (liveStagedEntryActiveForDecision(d)) {
+          stagedEntrySignal = resolveLiveStagedEntrySignal({
+            mint: d.mint,
+            symbol: d.symbol,
+            lane: d.lane,
+            source: d.source,
+            currentPriceUsd: d.features.price_usd,
+            marketCapUsd: d.features.market_cap_usd ?? null,
+            holderCount: d.features.holders ?? null,
+          });
+          if (!stagedEntrySignal.ok) continue;
+        }
 
         const dex = snapshotSourceToDex(d.source);
         const row = {
@@ -1409,27 +1458,33 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           token_age_min: d.features.token_age_min,
           pair_address: d.features.pair_address ?? null,
         };
-        const stagedSplitUsd = liveStagedEntryActive()
-          ? liveOscarDiscoveryBuyLegUsd(d.liveOscarMcapTier)
-          : undefined;
+        const openLegUsd =
+          tradeLane === 'scalp_wave'
+            ? liveOscarScalpWaveOpenLegUsd(cfg)
+            : liveStagedEntryActiveForDecision(d)
+              ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
+              : undefined;
         let ot = makeOpenTradeFromEntry({
           cfg,
           row,
           lane: d.lane,
           dex,
           liquidityUsd: d.features.liq_usd,
-          ...(stagedSplitUsd != null && stagedSplitUsd > 0 ? { firstLegUsdOverride: stagedSplitUsd } : {}),
+          ...(openLegUsd != null && openLegUsd > 0 ? { firstLegUsdOverride: openLegUsd } : {}),
         });
-        attachLiveStagedEntryPlan(
-          ot,
-          d.mint,
-          {
-            signalTs: stagedEntrySignal.signal.signalTs,
-            signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
-          },
-          d.features.market_cap_usd,
-          d.liveOscarMcapTier,
-        );
+        stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
+        if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
+          attachLiveStagedEntryPlan(
+            ot,
+            d.mint,
+            {
+              signalTs: stagedEntrySignal.signal.signalTs,
+              signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
+            },
+            d.features.market_cap_usd,
+            d.liveOscarMcapTier === 'scalp_wave' ? undefined : d.liveOscarMcapTier,
+          );
+        }
 
         const preDyn = cfg.preEntryDynamicsEnabled
           ? await fetchPreEntryDynamics(d.mint, ot.entryTs)
@@ -1523,7 +1578,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               cfg,
               mint: ot.mint,
               outMintDecimals: dec,
-              sizeUsd: cfg.positionUsd * cfg.entryFirstLegFraction,
+              sizeUsd: openLegUsd ?? cfg.positionUsd * cfg.entryFirstLegFraction,
               solUsd: getSolUsd() ?? 0,
               snapshotPriceUsd: snapshotEntryPriceUsd,
               reuseVerdict: reused?.kind === 'ok' ? reused : undefined,
@@ -1553,7 +1608,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             priceVerify.jupiterPriceUsd > 0
           ) {
             const rowJ = { ...row, price_usd: priceVerify.jupiterPriceUsd, pair_address: row.pair_address };
-            const stagedSplitUsd = liveOscarDiscoveryBuyLegUsd(d.liveOscarMcapTier);
+            const jupLegUsd =
+              tradeLane === 'scalp_wave'
+                ? liveOscarScalpWaveOpenLegUsd(cfg)
+                : liveStagedEntryActiveForDecision(d)
+                  ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
+                  : undefined;
             ot = makeOpenTradeFromEntry({
               cfg,
               row: rowJ,
@@ -1561,19 +1621,22 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               dex,
               liquidityUsd: d.features.liq_usd,
               entryTs: ot.entryTs,
-              firstLegUsdOverride: stagedSplitUsd,
+              ...(jupLegUsd != null && jupLegUsd > 0 ? { firstLegUsdOverride: jupLegUsd } : {}),
             });
-            attachLiveStagedEntryPlan(
-              ot,
-              ot.mint,
-              {
-                signalTs: stagedEntrySignal.signal.signalTs,
-                signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
-              },
-              d.features.market_cap_usd,
-              d.liveOscarMcapTier,
-            );
-            applyCanonicalOpenLegUsd(cfg, ot);
+            stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
+            if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
+              attachLiveStagedEntryPlan(
+                ot,
+                ot.mint,
+                {
+                  signalTs: stagedEntrySignal.signal.signalTs,
+                  signalPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
+                },
+                d.features.market_cap_usd,
+                d.liveOscarMcapTier === 'scalp_wave' ? undefined : d.liveOscarMcapTier,
+              );
+              applyCanonicalOpenLegUsd(cfg, ot);
+            }
           }
         }
 
@@ -1701,7 +1764,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             stagedEntryBuyInFlight.delete(d.mint);
           }
           if (!opened.ok) {
-            if (liveStagedEntryActive()) {
+            if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
               restoreStagedEntrySignalAfterBuyFail(d.mint, stagedEntrySignal.signal);
             }
             continue;
@@ -1787,7 +1850,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (cfg.strategyId === 'live-oscar') stampLiveOscarExitPolicyOnOpen(ot, cfg);
 
         open.set(ot.mint, ot);
-        if (liveStagedEntryActive()) {
+        if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
           clearStagedEntrySignalForConfirmedBuy(ot.mint, {
             signalTs: ot.liveStagedEntry?.signalTs ?? ot.entryTs,
             signalPriceUsd: ot.liveStagedEntry?.signalPriceUsd ?? ot.legs[0]?.marketPrice ?? 0,
@@ -1796,7 +1859,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         const liveOscarForJournal = resolveLiveOscar();
         const liveOpenExtras: Record<string, unknown> =
-          liveOscarForJournal && liveStagedEntryActive()
+          liveOscarForJournal && liveStagedEntryActiveForDecision(d)
             ? (() => {
                 const sigPx = ot.liveStagedEntry?.signalPriceUsd ?? 0;
                 const targetUsd = (dropPct: number): number | null =>

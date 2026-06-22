@@ -50,6 +50,26 @@
 
 ---
 
+## [1.11.484] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.484`
+
+### live-oscar: scalp_wave lane ($300 shallow dip, mint mutex)
+
+**Новая trade-lane `scalp_wave`** — независима от prod Oscar (staged $200+$200+$600):
+- Коридор: age 12–36h, mcap $800k–$2M, dip −8..−15%
+- Вход: one-shot **$300**, без staged split / DCA
+- Выход `scalp_wave_v1`: TP **+10%** full, kill **−10%**, timestop **3h**
+- Max **3** concurrent scalp_wave (env `PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_CONCURRENT`)
+- **Mint mutex:** один mint = одна `OpenTrade`; вторая lane → `live_discovery_skip_open: lane_mint_mutex`
+- Env: `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED` (default **0**)
+
+**Rollback:** redeploy `sa-alpha-1.11.483`, set `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED=0`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.483] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.483`

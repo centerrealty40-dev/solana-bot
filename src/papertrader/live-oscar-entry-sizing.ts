@@ -149,6 +149,6 @@ export function resolveLiveOscarTradeTierFromMcap(
 ): LiveOscarTradeTier | undefined {
   if (marketCapUsd == null || !(marketCapUsd > 0)) return undefined;
   const t = resolveLiveOscarMcapTier(cfg, marketCapUsd);
-  if (t === 'micro' || t === 'low' || t === 'prod') return t;
+  if (t === 'micro' || t === 'low' || t === 'prod' || t === 'scalp_wave') return t;
   return undefined;
 }

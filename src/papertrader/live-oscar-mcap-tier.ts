@@ -1,10 +1,10 @@
 import type { PaperTraderConfig } from './config.js';
 
-/** Live Oscar mcap resolution: below / micro / low / prod. */
-export type LiveOscarMcapTier = 'below' | 'micro' | 'low' | 'prod';
+/** Live Oscar mcap resolution: below / micro / low / prod / scalp_wave. */
+export type LiveOscarMcapTier = 'below' | 'micro' | 'low' | 'prod' | 'scalp_wave';
 
 /** Tradeable tiers (journal / sizing / restore). */
-export type LiveOscarTradeTier = 'micro' | 'low' | 'prod';
+export type LiveOscarTradeTier = 'micro' | 'low' | 'prod' | 'scalp_wave';
 
 export function isLiveOscarTwoPhaseMcap(cfg: PaperTraderConfig): boolean {
   return cfg.strategyId === 'live-oscar' && cfg.liveOscarLowMcapLaneEnabled;
@@ -46,13 +46,21 @@ export function resolveLiveOscarMcapTier(cfg: PaperTraderConfig, mcapUsd: number
 
 export function resolveLiveOscarTradeTierFromOpen(
   cfg: PaperTraderConfig,
-  ot: { liveOscarMcapTier?: LiveOscarTradeTier; entryMarketCapUsd?: number | null },
+  ot: {
+    liveOscarMcapTier?: LiveOscarTradeTier;
+    liveOscarTradeLane?: 'prod' | 'scalp_wave';
+    liveExitPolicyId?: string;
+    entryMarketCapUsd?: number | null;
+  },
 ): LiveOscarTradeTier | undefined {
   if (ot.liveOscarMcapTier) return ot.liveOscarMcapTier;
+  if (ot.liveOscarTradeLane === 'scalp_wave' || ot.liveExitPolicyId === 'scalp_wave_v1') {
+    return 'scalp_wave';
+  }
   const mcap = ot.entryMarketCapUsd;
   if (mcap != null && mcap > 0) {
     const t = resolveLiveOscarMcapTier(cfg, mcap);
-    if (t === 'micro' || t === 'low' || t === 'prod') return t;
+    if (t === 'micro' || t === 'low' || t === 'prod' || t === 'scalp_wave') return t;
   }
   return undefined;
 }
@@ -62,6 +70,18 @@ export function liveOscarTierEntryConfig(
   cfg: PaperTraderConfig,
   tier: LiveOscarMcapTier,
 ): PaperTraderConfig {
+  if (tier === 'scalp_wave') {
+    return {
+      ...cfg,
+      dipMinDropPct: cfg.liveOscarScalpWaveDipMinDropPct,
+      dipMaxDropPct: cfg.liveOscarScalpWaveDipMaxDropPct,
+      dipMinAgeMin: cfg.liveOscarScalpWaveMinAgeMin,
+      dipMinImpulsePct: cfg.liveOscarScalpWaveMinImpulsePct,
+      vol1hMinUsd: cfg.liveOscarScalpWaveVol1hMinUsd,
+      postCrashFastPathMinDropPct: cfg.liveOscarScalpWaveDipMinDropPct,
+      positionUsd: cfg.liveOscarScalpWavePositionUsd,
+    };
+  }
   if (tier === 'micro') {
     return {
       ...cfg,
@@ -90,17 +110,20 @@ export function liveOscarTierEntryConfig(
 }
 
 export function liveOscarTierStagedSplitLegUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
+  if (tier === 'scalp_wave') return cfg.liveOscarScalpWavePositionUsd;
   if (tier === 'micro') return cfg.liveOscarMicroMcapEntrySplitLegUsd;
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
 export function liveOscarTierPositionUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
+  if (tier === 'scalp_wave') return cfg.liveOscarScalpWavePositionUsd;
   if (tier === 'micro') return cfg.liveOscarMicroMcapPositionUsd;
   if (tier === 'low') return cfg.liveOscarLowMcapPositionUsd;
   return cfg.positionUsd;
 }
 
 export function liveOscarTierDcaLevelsSpec(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): string {
+  if (tier === 'scalp_wave') return '';
   if (tier === 'micro') return cfg.liveOscarMicroMcapDcaLevelsSpec;
   if (tier === 'low') return cfg.liveOscarLowMcapDcaLevelsSpec;
   return cfg.dcaLevelsSpec;
