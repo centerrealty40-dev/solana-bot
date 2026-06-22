@@ -79,7 +79,7 @@ describe('live-oscar-scalp-wave', () => {
     expect(cfg.globalMinTokenAgeMin).toBeGreaterThanOrEqual(2160);
   });
 
-  it('mutex: different trade lane on same mint → lane_mint_mutex', () => {
+  it('mutex: different trade lane on same mint → lane_mint_mutex (no cfg)', () => {
     const open = new Map<string, OpenTrade>();
     open.set('mintA', {
       liveOscarTradeLane: 'scalp_wave',
@@ -100,7 +100,24 @@ describe('live-oscar-scalp-wave', () => {
     ).toBe('already_open');
   });
 
-  it('stamps scalp_wave_v1 exit policy with TP +10%, kill −10%, timestop 3h', () => {
+  it('mutex with cfg: prod on open scalp → phase_escalation_handoff', () => {
+    const cfg = loadPaperTraderConfig();
+    const open = new Map<string, OpenTrade>();
+    open.set('mintA', {
+      liveOscarTradeLane: 'scalp_wave',
+      liveOscarMcapTier: 'scalp_wave',
+    } as OpenTrade);
+    expect(
+      liveOscarMintOpenSkipReason({
+        open,
+        mint: 'mintA',
+        incomingTradeLane: 'prod',
+        cfg,
+      }),
+    ).toBe('phase_escalation_handoff');
+  });
+
+  it('stamps scalp_wave_v1 exit policy with TP +10%, no kill, timestop 3h', () => {
     const cfg = loadPaperTraderConfig();
     const ot = {
       liveOscarTradeLane: 'scalp_wave',
@@ -112,7 +129,7 @@ describe('live-oscar-scalp-wave', () => {
     expect(resolveLiveOscarTradeLaneFromOpen(ot)).toBe('scalp_wave');
     const eff = scalpWaveEffectiveExitParams(cfg);
     expect(eff.tpX).toBeCloseTo(1.1);
-    expect(eff.dcaKillstop).toBeCloseTo(-0.1);
+    expect(eff.dcaKillstop).toBe(0);
     expect(eff.timeoutHours).toBe(3);
     expect(eff.tpGridStepPnl).toBe(0);
   });

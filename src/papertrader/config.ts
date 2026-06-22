@@ -268,7 +268,7 @@ const ConfigSchema = z.object({
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /**
    * Live Oscar scalp_wave lane: min age 12h (no max), $800k–$2M mcap, shallow dip −8..−15%,
-   * one-shot $300, TP +10% / kill −10% / timestop 3h. Mutex with prod lane per mint.
+   * one-shot $300, TP +10% / no kill (phase escalation) / timestop 3h. Mutex with prod unless handoff.
    */
   liveOscarScalpWaveLaneEnabled: z.boolean().default(false),
   liveOscarScalpWaveMinAgeMin: z.coerce.number().nonnegative().default(720),

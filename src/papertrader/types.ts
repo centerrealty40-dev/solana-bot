@@ -323,6 +323,8 @@ export interface OpenTrade {
   liveOscarTradeLane?: 'prod' | 'scalp_wave';
   /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$2M; absent = prod. */
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
+  /** Set when scalp_wave hands off to prod/low staged management. */
+  liveOscarPhaseEscalatedFrom?: 'scalp_wave';
   /** v3: at least one TP partial taken — blocks DCA and timed exits. */
   liveVariantAScratchHadTp?: boolean;
   liveVariantAScratchPrevPnlFrac?: number;

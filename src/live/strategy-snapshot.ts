@@ -51,6 +51,9 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveOscarMcapTier: ot.liveOscarMcapTier }
       : {}),
     ...(ot.liveOscarTradeLane ? { liveOscarTradeLane: ot.liveOscarTradeLane } : {}),
+    ...(ot.liveOscarPhaseEscalatedFrom
+      ? { liveOscarPhaseEscalatedFrom: ot.liveOscarPhaseEscalatedFrom }
+      : {}),
     ...(ot.tpRegime ? { tpRegime: ot.tpRegime } : {}),
     ...(ot.tpRegimeFeatures ? { tpRegimeFeatures: { ...ot.tpRegimeFeatures } } : {}),
     ...(ot.tpGridOverrides ? { tpGridOverrides: { ...ot.tpGridOverrides } } : {}),

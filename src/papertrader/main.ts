@@ -44,10 +44,13 @@ import {
 } from './live-oscar-entry-sizing.js';
 import {
   countOpenScalpWavePositions,
+  liveOscarMintOpenSkipReason,
   liveOscarScalpWaveOpenLegUsd,
+  resolveLiveOscarTradeLaneFromOpen,
   stampLiveOscarTradeLaneOnOpen,
   type LiveOscarTradeLane,
 } from './live-oscar-scalp-wave.js';
+import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
 import {
@@ -1326,17 +1329,57 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (open.has(d.mint)) {
           const incomingLane = resolveDecisionTradeLane(d);
           const existing = open.get(d.mint)!;
-          const openLane = existing.liveOscarTradeLane ?? 'prod';
-          const skipReason = openLane !== incomingLane ? 'lane_mint_mutex' : 'already_open';
+          const skipReason = liveOscarMintOpenSkipReason({
+            open,
+            mint: d.mint,
+            incomingTradeLane: incomingLane,
+            cfg,
+          });
+          if (skipReason === 'phase_escalation_handoff') {
+            const escalated = applyLiveOscarPhaseEscalation({
+              cfg,
+              ot: existing,
+              trigger: 'discovery_handoff',
+              marketCapUsd: d.features.market_cap_usd ?? null,
+              curPriceUsd: d.features.price_usd,
+            });
+            if (escalated) {
+              const dropPct = computeDropFromScalpAnchor(existing, d.features.price_usd);
+              journalAppend({
+                kind: 'live_phase_escalation',
+                mint: d.mint,
+                symbol: d.symbol,
+                lane: d.lane,
+                source: d.source,
+                fromLane: 'scalp_wave',
+                toLane: 'prod',
+                toTier: existing.liveOscarMcapTier,
+                trigger: 'discovery_handoff',
+                liveExitPolicyId: existing.liveExitPolicyId,
+                ...(dropPct != null ? { dropFromEntryPct: +dropPct.toFixed(3) } : {}),
+              });
+              journalLiveStrategy?.({
+                kind: 'live_phase_escalation',
+                mint: d.mint,
+                symbol: d.symbol,
+                fromLane: 'scalp_wave',
+                toLane: 'prod',
+                toTier: existing.liveOscarMcapTier,
+                trigger: 'discovery_handoff',
+                openTrade: serializeOpenTrade(existing),
+              });
+            }
+            continue;
+          }
           journalAppend({
             kind: 'eval-skip-open',
             lane: d.lane,
             source: d.source,
             mint: d.mint,
             symbol: d.symbol,
-            reason: skipReason,
+            reason: skipReason ?? 'already_open',
             tradeLane: incomingLane,
-            openTradeLane: openLane,
+            openTradeLane: resolveLiveOscarTradeLaneFromOpen(existing),
           });
           continue;
         }
