@@ -8,8 +8,10 @@ import {
   configureLiveOpenSnapshot,
   emptyLiveOpenSnapshot,
   isLiveOpenSnapshotFresh,
+  mergeLiveOpenSnapshotIntoBootReplay,
   readLiveOpenSnapshot,
   writeLiveOpenSnapshotFromMap,
+  type LiveOpenSnapshot,
 } from '../src/live/open-snapshot.js';
 import {
   mergeLiveOscarOpenSnapshotIntoLoad,
@@ -109,6 +111,55 @@ describe('live open snapshot', () => {
     snap.updatedAtMs = Date.now() - 60_000;
     expect(isLiveOpenSnapshotFresh(snap, 30_000)).toBe(false);
     expect(isLiveOpenSnapshotFresh(snap, 120_000)).toBe(true);
+  });
+
+  it('merges pre-boot snapshot into truncated tail replay', () => {
+    const openA = mkOpen('MintA', 1000);
+    const openB = mkOpen('MintB', 2000);
+    const snap: LiveOpenSnapshot = {
+      version: 1,
+      strategyId: 'live-oscar',
+      updatedAtMs: Date.now(),
+      openCount: 2,
+      positions: [
+        { mint: 'MintA', openTrade: { mint: 'MintA', symbol: 'A', entryTs: 1000, entryMcUsd: 1, totalInvestedUsd: 10 } },
+        { mint: 'MintB', openTrade: { mint: 'MintB', symbol: 'B', entryTs: 2000, entryMcUsd: 2, totalInvestedUsd: 20 } },
+      ],
+    };
+    const replayOpen = new Map<string, OpenTrade>([['MintC', mkOpen('MintC', 3000)]]);
+    const merged = mergeLiveOpenSnapshotIntoBootReplay(
+      {
+        open: replayOpen,
+        replaySeenMints: new Set(['MintC']),
+        journalTruncated: true,
+      },
+      snap,
+    );
+    expect(merged.restoredMints).toEqual(['MintA', 'MintB']);
+    expect([...merged.open.keys()].sort()).toEqual(['MintA', 'MintB', 'MintC']);
+  });
+
+  it('does not resurrect snapshot mint closed in tail replay window', () => {
+    const snap: LiveOpenSnapshot = {
+      version: 1,
+      strategyId: 'live-oscar',
+      updatedAtMs: Date.now(),
+      openCount: 1,
+      positions: [
+        { mint: 'MintX', openTrade: { mint: 'MintX', symbol: 'X', entryTs: 1, entryMcUsd: 1, totalInvestedUsd: 10 } },
+      ],
+    };
+    const merged = mergeLiveOpenSnapshotIntoBootReplay(
+      {
+        open: new Map(),
+        replaySeenMints: new Set(['MintX']),
+        journalTruncated: true,
+      },
+      snap,
+    );
+    expect(merged.restoredMints).toEqual([]);
+    expect(merged.skippedSeenInReplay).toEqual(['MintX']);
+    expect(merged.open.size).toBe(0);
   });
 });
 

@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { OpenTrade } from '../papertrader/types.js';
+import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
 
 export const LIVE_OPEN_SNAPSHOT_VERSION = 1;
@@ -146,4 +147,59 @@ export function isLiveOpenSnapshotFresh(
 ): boolean {
   if (!(maxAgeMs > 0)) return true;
   return nowMs - snapshot.updatedAtMs <= maxAgeMs;
+}
+
+export type MergeBootSnapshotResult = {
+  open: Map<string, OpenTrade>;
+  restoredMints: string[];
+  skippedSeenInReplay: string[];
+};
+
+/**
+ * When journal replay is tail-truncated, merge pre-boot sidecar positions that fall outside the byte window.
+ * Skips mints already present in replay `open` or with any `live_position_*` row in the replay window
+ * (e.g. `live_position_close` in tail must not be resurrected from a stale snapshot).
+ */
+export function mergeLiveOpenSnapshotIntoBootReplay(
+  replay: {
+    open: Map<string, OpenTrade>;
+    replaySeenMints: ReadonlySet<string>;
+    journalTruncated?: boolean;
+  },
+  snapshot: LiveOpenSnapshot | null,
+  opts?: { strategyId?: string; maxSnapshotAgeMs?: number; nowMs?: number },
+): MergeBootSnapshotResult {
+  const open = new Map(replay.open);
+  const restoredMints: string[] = [];
+  const skippedSeenInReplay: string[] = [];
+
+  if (!replay.journalTruncated || !snapshot) {
+    return { open, restoredMints, skippedSeenInReplay };
+  }
+
+  const strategyId = opts?.strategyId ?? configured?.strategyId ?? 'live-oscar';
+  if (snapshot.strategyId !== strategyId) {
+    return { open, restoredMints, skippedSeenInReplay };
+  }
+
+  const maxAgeMs = opts?.maxSnapshotAgeMs ?? 7 * 24 * 3_600_000;
+  if (!isLiveOpenSnapshotFresh(snapshot, maxAgeMs, opts?.nowMs)) {
+    return { open, restoredMints, skippedSeenInReplay };
+  }
+
+  for (const row of snapshot.positions) {
+    const mint = row.mint?.trim();
+    if (!mint) continue;
+    if (open.has(mint)) continue;
+    if (replay.replaySeenMints.has(mint)) {
+      skippedSeenInReplay.push(mint);
+      continue;
+    }
+    const ot = restoreOpenTradeFromJson(row.openTrade as Partial<OpenTrade> & { mint: string });
+    if (!ot) continue;
+    open.set(mint, ot);
+    restoredMints.push(mint);
+  }
+
+  return { open, restoredMints, skippedSeenInReplay };
 }

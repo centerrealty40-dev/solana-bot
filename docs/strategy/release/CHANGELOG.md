@@ -50,6 +50,25 @@
 
 ---
 
+## [1.11.483] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.483`
+
+### live-oscar P0: boot не теряет open после tail-replay (Jotchua ghost)
+
+**Проблема:** при `LIVE_REPLAY_MAX_FILE_BYTES` (prod 200MB) и журнале ~5.8GB tail-replay не видел `live_position_open`/`partial_sell` старше окна (Jotchua 19.06). Boot перезаписывал sidecar snapshot урезанным replay; `spl_reconcile_removed` не восстанавливал wallet→tracker; orphan reconcile закрывает только «журнал open, кошелёк 0», не наоборот.
+
+**Исправление:**
+- **`mergeLiveOpenSnapshotIntoBootReplay`** — при `journalTruncated` подмешивает свежий pre-boot `live-oscar-open-snapshot.json` (кроме mint с событиями в tail, включая close).
+- **`restoreWalletOrphanOpensOnBoot`** — SPL на кошельке без open в replay → full-journal replay по mint (`replayLiveStrategyJournalForMints`).
+- JSONL: `live_boot_snapshot_merge`, `live_boot_wallet_orphan_restore`.
+
+**Rollback:** redeploy `sa-alpha-1.11.482`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.482] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.482`
