@@ -27,7 +27,8 @@ import {
   markDcaStepFired,
 } from '../papertrader/executor/dca-state.js';
 import {
-  liveStagedEntrySignalTimeWindowOpen,
+  liveStagedEntryAddWindowOpen,
+  liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTtlExpired,
 } from '../papertrader/executor/live-staged-entry-gates.js';
 import {
@@ -312,10 +313,12 @@ function simTryLiveStagedEntryAdds(args: {
   const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
   const hasThird = (st.thirdLegUsd ?? 0) > 0;
   const thirdDone = hasThird ? st.thirdLegDone === true : true;
-  const pendingStagedLegs = !st.secondLegDone || !thirdDone;
-  const timeWindowOpen = liveStagedEntrySignalTimeWindowOpen(cfg, st.signalTs, virtualNow);
-  const stagedAddWindowOpen =
-    timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
+  const stagedAddWindowOpen = liveStagedEntryAddWindowOpen({
+    cfg,
+    st,
+    signalTs: st.signalTs,
+    nowMs: virtualNow,
+  });
   const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
 
   function pushStagedLeg(stepIndex: number, addUsd: number, dropPct: number): void {
@@ -370,8 +373,7 @@ function simTryLiveStagedEntryAdds(args: {
 
   const stagedLegsComplete = st.secondLegDone === true && thirdDone;
   const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, virtualNow);
-  const ttlPreservesStagedPlan =
-    tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
+  const ttlPreservesStagedPlan = liveStagedEntryTtlPreservesPlan(st);
   if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {
     ot.liveStagedEntry = undefined;
   }

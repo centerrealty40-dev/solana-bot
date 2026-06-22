@@ -54,6 +54,26 @@
 
 ---
 
+## [1.11.490] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.490`
+
+### live-oscar: TTL staged-entry не сбрасывает план усреднения на открытой позиции
+
+**Проблема (SOLANGELES):** после leg1+leg2 сплита `liveStagedEntry` снимался по `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS=1`, хотя avg $600 @ −10% ещё не исполнился; −10% пришёл через 28 мин после TTL — добора не было.
+
+**Исправление:**
+- TTL 1 ч остаётся для **pre-entry** (discovery anchor в `main.ts` — без изменений)
+- На **открытой** позиции: `liveStagedEntry` не очищается по TTL, пока есть незавершённые ноги (entry split leg2 или staged avg)
+- `liveStagedEntryHasPendingLegs`, `liveStagedEntryTtlPreservesPlan`, `liveStagedEntryAddWindowOpen` в `live-staged-entry-gates.ts`
+- Паритет в `paper2-strategy-backtest.ts`
+
+**Откат:** `git revert` коммита; redeploy `sa-alpha-1.11.489`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.489] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.489`

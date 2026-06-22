@@ -172,6 +172,37 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
   );
 }
 
+/** Incomplete entry-split or staged-averaging legs on an open trade. */
+export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean {
+  if (st.entrySplitV2) {
+    if (!st.entrySplitLeg2Done) return true;
+    if (!stagedAveragingConfigured(st)) return false;
+    const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
+    const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
+    if (avg1Usd > 0 && !st.avgFirstLegDone) return true;
+    if (avg2Usd > 0 && !st.avgSecondLegDone) return true;
+    return false;
+  }
+  const hasThird = (st.thirdLegUsd ?? 0) > 0;
+  const thirdDone = hasThird ? st.thirdLegDone === true : true;
+  return !st.secondLegDone || !thirdDone;
+}
+
+/** On open position: do not TTL-clear `liveStagedEntry` while staged legs remain. */
+export function liveStagedEntryTtlPreservesPlan(st: LiveStagedEntryState): boolean {
+  return liveStagedEntryHasPendingLegs(st);
+}
+
+export function liveStagedEntryAddWindowOpen(args: {
+  cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>;
+  st: LiveStagedEntryState;
+  signalTs: number;
+  nowMs: number;
+}): boolean {
+  if (liveStagedEntryHasPendingLegs(args.st)) return true;
+  return liveStagedEntrySignalTimeWindowOpen(args.cfg, args.signalTs, args.nowMs);
+}
+
 export function buildLiveStagedEntryState(
   cfg: PaperTraderConfig,
   signal: {

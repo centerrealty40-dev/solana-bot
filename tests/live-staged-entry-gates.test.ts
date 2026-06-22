@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   entrySplitBandOk,
   entrySplitLeg2Eligible,
+  liveStagedEntryAddWindowOpen,
+  liveStagedEntryHasPendingLegs,
+  liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTimeWindowOpen,
   liveStagedEntrySignalTtlExpired,
   planLiveStagedEntrySignalResolution,
@@ -277,6 +280,73 @@ describe('stagedEntryThreeLegProgression', () => {
 
     st.avgFirstLegDone = true;
     expect(stagedAvgFirstEligible({ st, signalDropPct: -10.1, nowMs: st.entrySplitLeg1Ts! })).toBe(false);
+  });
+});
+
+describe('liveStagedEntryInPositionTtl', () => {
+  const ttlCfg1h = ttlCfg(3_600_000);
+  const signalTs = 1_000_000;
+  const afterTtl = signalTs + 3_600_000 + 28 * 60_000;
+
+  it('preserves staged plan after TTL when entry split done but avg @ -10% pending (SOLANGELES)', () => {
+    const st = {
+      ...baseSt(),
+      entrySplitLeg2Done: true,
+      avgSecondDropPct: 10,
+      avgSecondLegUsd: 600,
+      avgFirstLegDone: false,
+      secondLegDone: false,
+    };
+    expect(liveStagedEntryHasPendingLegs(st)).toBe(true);
+    expect(liveStagedEntryTtlPreservesPlan(st)).toBe(true);
+    expect(
+      liveStagedEntryAddWindowOpen({ cfg: ttlCfg1h, st, signalTs, nowMs: afterTtl }),
+    ).toBe(true);
+  });
+
+  it('preserves staged plan after TTL while entry split leg2 still pending', () => {
+    const st = { ...baseSt(), entrySplitTargetDropPct: 5, entrySplitLeg2Done: false };
+    expect(liveStagedEntryHasPendingLegs(st)).toBe(true);
+    expect(liveStagedEntryTtlPreservesPlan(st)).toBe(true);
+    expect(
+      liveStagedEntryAddWindowOpen({ cfg: ttlCfg1h, st, signalTs, nowMs: afterTtl }),
+    ).toBe(true);
+  });
+
+  it('allows TTL clear once all staged legs complete on open trade', () => {
+    const st = {
+      ...baseSt(),
+      entrySplitLeg2Done: true,
+      avgFirstLegDone: true,
+      avgSecondLegDone: true,
+      secondLegDone: true,
+      thirdLegDone: true,
+    };
+    expect(liveStagedEntryHasPendingLegs(st)).toBe(false);
+    expect(liveStagedEntryTtlPreservesPlan(st)).toBe(false);
+    expect(
+      liveStagedEntryAddWindowOpen({ cfg: ttlCfg1h, st, signalTs, nowMs: afterTtl }),
+    ).toBe(false);
+  });
+
+  it('pre-entry TTL still expires discovery anchor (unchanged)', () => {
+    const anchor = {
+      signalTs,
+      signalPriceUsd: 1,
+      signalMarketCapUsd: 50_000,
+      holderCount: 100,
+      expiresAt: signalTs + 3_600_000,
+    };
+    const plan = planLiveStagedEntrySignalResolution({
+      existing: anchor,
+      now: afterTtl,
+      currentPriceUsd: 0.9,
+      marketCapUsd: 45_000,
+      holderCount: 90,
+      reanchorBlocked: false,
+      cfg: ttlCfg1h,
+    });
+    expect(plan.action).toBe('ttl_expired_clear');
   });
 });
 

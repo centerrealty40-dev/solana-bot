@@ -126,7 +126,8 @@ import {
   stampFlashKillLastBuyLeg,
 } from './flash-crash-kill.js';
 import {
-  liveStagedEntrySignalTimeWindowOpen,
+  liveStagedEntryAddWindowOpen,
+  liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTtlExpired,
 } from './live-staged-entry-gates.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
@@ -2851,11 +2852,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       const hasThird = (st.thirdLegUsd ?? 0) > 0;
       const thirdDone = hasThird ? st.thirdLegDone === true : true;
-      const pendingStagedLegs = !st.secondLegDone || !thirdDone;
-      const timeWindowOpen = liveStagedEntrySignalTimeWindowOpen(cfg, st.signalTs, Date.now());
-      /** После первой partial TP (пока вторая не взята): откат к −N%% к цене сигнала может случиться позже TTL сигнала — окно доборов не закрываем только по времени. */
-      const stagedAddWindowOpen =
-        timeWindowOpen || (tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs);
+      const nowMs = Date.now();
+      /** TTL — только до входа; на открытой позиции с незакрытыми ногами окно доборов не режем по времени. */
+      const stagedAddWindowOpen = liveStagedEntryAddWindowOpen({
+        cfg,
+        st,
+        signalTs: st.signalTs,
+        nowMs,
+      });
       const stagedAddAllowed = stagedAddWindowOpen && tpLadderPartials < 2;
       const totalStagedAddLegs = st.thirdLegUsd && st.thirdLegUsd > 0 ? 2 : 1;
       const tryStagedAddLeg = async (args: {
@@ -2997,9 +3001,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                   : st.avgFirstLegDone === true))
             : false;
         const stagedLegsComplete = st.entrySplitV2 ? v2AvgDone : st.secondLegDone === true && thirdDone;
-        const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, Date.now());
-        const ttlPreservesStagedPlan =
-          tpLadderPartials >= 1 && tpLadderPartials < 2 && pendingStagedLegs;
+        const ttlExpired = liveStagedEntrySignalTtlExpired(cfg, st.signalTs, nowMs);
+        const ttlPreservesStagedPlan = liveStagedEntryTtlPreservesPlan(st);
         if (stagedLegsComplete || tpLadderPartials >= 2 || (ttlExpired && !ttlPreservesStagedPlan)) {
           ot.liveStagedEntry = undefined;
         }
