@@ -57,6 +57,11 @@ import { startLiveOpenPositionHotTick } from './open-position-hot-tick.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import type { OpenTrade } from '../papertrader/types.js';
 import {
+  applyLiveOpenSnapshotEvent,
+  configureLiveOpenSnapshot,
+  writeLiveOpenSnapshotFromMap,
+} from './open-snapshot.js';
+import {
   discoveryHealthSummaryRolling,
   getNearReadyDipWatchlist,
 } from '../papertrader/discovery-health-window.js';
@@ -164,6 +169,10 @@ export async function main(): Promise<void> {
   }
 
   configureLiveStore({ storePath: liveCfg.liveTradesPath, strategyId: liveCfg.strategyId });
+  configureLiveOpenSnapshot({
+    path: liveCfg.liveOpenSnapshotPath,
+    strategyId: liveCfg.strategyId,
+  });
   configureSignalLabStore({ storePath: liveCfg.signalLabPath, strategyId: liveCfg.strategyId });
   configureMtmShadowStore({ storePath: liveCfg.mtmShadowPath, strategyId: liveCfg.strategyId });
   configureStagedAddSimCooldown(
@@ -499,12 +508,28 @@ export async function main(): Promise<void> {
     (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
     Boolean(liveCfg.walletSecret?.trim());
 
+  if (liveStrategyReplay) {
+    try {
+      writeLiveOpenSnapshotFromMap(liveStrategyReplay.open);
+      log.info({ open: liveStrategyReplay.open.size }, 'live-oscar open snapshot seeded from boot replay');
+    } catch (err) {
+      log.warn({ err: (err as Error)?.message }, 'live open snapshot boot seed failed');
+    }
+  }
+
   await paperOscarMain({
     heartbeatIntervalMsOverride: liveCfg.heartbeatIntervalMs,
     journalAppend: createLiveDiscoveryAuditJournalAppend(liveCfg.liveDiscoveryAuditJsonlEnabled),
     skipPaperJsonlStore: true,
     liveStrategyReplay,
-    journalLiveStrategy: (body) => appendLiveJsonlEvent(body),
+    journalLiveStrategy: (body) => {
+      appendLiveJsonlEvent(body);
+      try {
+        applyLiveOpenSnapshotEvent(body);
+      } catch (err) {
+        log.warn({ err: (err as Error)?.message }, 'live open snapshot event apply failed');
+      }
+    },
     liveOscarFactory: (deps) => createLiveOscarPhase5Bundle(liveCfg, deps, paperBaseline.positionUsd),
     onShutdown: (sig) => {
       appendLiveJsonlEvent({ kind: 'live_shutdown', sig }, { sync: true });
@@ -534,7 +559,12 @@ export async function main(): Promise<void> {
       : undefined,
     reconcileOrphanMinPositionAgeMs: orphanReconcileLive ? LIVE_ORPHAN_RECONCILE_MIN_AGE_MS : undefined,
 
-    onOscarHeartbeat: ({ openPositions, closedTotal, stats, trackerClosed }) => {
+    onOscarHeartbeat: ({ openPositions, closedTotal, open, stats, trackerClosed }) => {
+      try {
+        writeLiveOpenSnapshotFromMap(open);
+      } catch (err) {
+        log.warn({ err: (err as Error)?.message }, 'live open snapshot heartbeat write failed');
+      }
       const maxBlockMs = liveCfg.liveReconcileBlockMaxMs;
       if (
         maxBlockMs > 0 &&

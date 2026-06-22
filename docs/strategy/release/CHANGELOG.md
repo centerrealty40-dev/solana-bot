@@ -50,6 +50,27 @@
 
 ---
 
+## [1.11.482] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.482`
+
+### dashboard: Live Oscar open positions via sidecar snapshot
+
+**Проблема:** `/api/paper2` для Live Oscar показывал 1 open при 4 в полном replay журнала — tail-only scan последних 200MB из 5.4GB JSONL терял старые `live_position_open`; `openCount` завышался из heartbeat.
+
+**Исправление:**
+- **`data/live/live-oscar-open-snapshot.json`** — sidecar, который live-oscar обновляет на boot replay, heartbeat и каждом `live_position_*` (open/close/dca/partial/scale-in).
+- **Dashboard** читает snapshot как source of truth для `open[]`; fallback на tail replay если snapshot отсутствует или stale (`DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS`, default 24h).
+- **`openCount`** = длина фактического списка `open[]`, без `Math.max` с heartbeat.
+
+**Env (optional):** `LIVE_OPEN_SNAPSHOT_PATH`, `DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT`.
+
+**Rollback:** redeploy `sa-alpha-1.11.481`; удалить sidecar snapshot (dashboard вернётся к tail-only replay).
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.481] — 2026-06-21
 
 **Тег:** `sa-alpha-1.11.481`
