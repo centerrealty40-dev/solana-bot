@@ -1,6 +1,8 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
+import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
+import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
 import type {
@@ -144,6 +146,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Закрытие по TIMEOUT отключается после прогресса по позиции (ожидание отработки сетки после долгого удержания). Сплит scale-in не считается DCA. */
 function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
+  if (isScalpWaveExitPolicy(ot)) return false;
   if (ot.partialSells.length > 0) return true;
   return ot.legs.some((l) => l.reason === 'dca');
 }
@@ -1954,14 +1957,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!ot) continue;
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
-    const tradeDcaLevels =
-      ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
+    const tradeDcaLevels = isLiveOscarScalpWaveTrade(ot)
+      ? []
+      : ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
         ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
         : dcaLevels;
     if (ot.liveOscarMcapTier === 'low') {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarLowMcapPositionUsd };
     } else if (ot.liveOscarMcapTier === 'micro') {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarMicroMcapPositionUsd };
+    } else if (isLiveOscarScalpWaveTrade(ot)) {
+      effCfg = { ...effCfg, positionUsd: cfg.liveOscarScalpWavePositionUsd };
     }
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
@@ -2537,7 +2543,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (!(curMetric > 0)) {
-      if (ageH >= effCfg.timeoutHours && !isWaveBExitPolicy(ot) && !isVariantAExitPolicy(ot)) {
+      if (ageH >= effCfg.timeoutHours && !isWaveBExitPolicy(ot) && !isVariantAExitPolicy(ot) && !isScalpWaveExitPolicy(ot)) {
         const pfCloseNd = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
         const perTxNd = pfCloseNd.usd > 0 ? pfCloseNd.usd : cfg.networkFeeUsd;
         const ct = buildClosedTrade({
@@ -3541,8 +3547,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       !exitReason &&
       !isWaveBExitPolicy(ot) &&
       !isVariantAExitPolicy(ot) &&
+      !isScalpWaveExitPolicy(ot) &&
       ageH >= effCfg.timeoutHours &&
       !timeoutSuppressedByProgress(ot)
+    )
+      exitReason = 'TIMEOUT';
+    if (
+      !exitReason &&
+      isScalpWaveExitPolicy(ot) &&
+      ageH >= effCfg.timeoutHours
     )
       exitReason = 'TIMEOUT';
     /**

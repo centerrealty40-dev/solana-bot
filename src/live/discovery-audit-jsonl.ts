@@ -165,6 +165,7 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
         lane: trimStr(row.lane, 32),
         source: trimStr(row.source, 64),
         ageMin: typeof row.ageMin === 'number' && Number.isFinite(row.ageMin) ? row.ageMin : undefined,
+        tradeLane: trimStr(row.tradeLane, 32),
         reasons: reasonsForEval(row.reasons, row.pass === true),
         entryPath: trimStr(row.entry_path, 120),
         ...tele,
@@ -208,6 +209,8 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
         lane: trimStr(row.lane, 32),
         source: trimStr(row.source, 64),
         reason,
+        tradeLane: trimStr(row.tradeLane, 32),
+        openTradeLane: trimStr(row.openTradeLane, 32),
         detail: detailFromEvalSkipOpenRest(row),
       });
     }

@@ -391,12 +391,17 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'wave_b_v1' ||
       lepi === 'variant_a_v1' ||
       lepi === 'variant_a_v2' ||
-      lepi === 'variant_a_v3'
+      lepi === 'variant_a_v3' ||
+      lepi === 'scalp_wave_v1'
     ) {
       ot.liveExitPolicyId = lepi;
     }
     const lomt = rawPayload.liveOscarMcapTier;
-    if (lomt === 'micro' || lomt === 'low' || lomt === 'prod') ot.liveOscarMcapTier = lomt;
+    if (lomt === 'micro' || lomt === 'low' || lomt === 'prod' || lomt === 'scalp_wave') {
+      ot.liveOscarMcapTier = lomt;
+    }
+    const lotl = rawPayload.liveOscarTradeLane;
+    if (lotl === 'prod' || lotl === 'scalp_wave') ot.liveOscarTradeLane = lotl;
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
     if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;

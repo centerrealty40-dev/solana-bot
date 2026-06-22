@@ -121,7 +121,12 @@ export function armWaveBPostTp1ScratchReentryFromOpenTrade(
       reentryDropPct: cfg.liveOscarWaveBPostTp1ScratchReentryDropPct,
       reentryUsd: cfg.liveOscarWaveBPostTp1ScratchReentryUsd,
       tokenDecimals: ot.tokenDecimals != null ? ot.tokenDecimals : undefined,
-      liveOscarMcapTier: ot.liveOscarMcapTier,
+      liveOscarMcapTier:
+        ot.liveOscarMcapTier === 'micro' ||
+        ot.liveOscarMcapTier === 'low' ||
+        ot.liveOscarMcapTier === 'prod'
+          ? ot.liveOscarMcapTier
+          : undefined,
       pairAddress: ot.pairAddress,
       entryMarketCapUsd: ot.entryMarketCapUsd != null ? ot.entryMarketCapUsd : undefined,
     },

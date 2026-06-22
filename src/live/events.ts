@@ -282,6 +282,8 @@ export const LiveDiscoveryEvalSchema = z.object({
   lane: z.string().max(32).optional(),
   source: z.string().max(64).optional(),
   ageMin: z.number().finite().optional(),
+  /** Trade strategy lane (`prod` | `scalp_wave`) for mutex audit. */
+  tradeLane: z.string().max(32).optional(),
   reasons: z.array(z.string().max(400)).max(24),
   entryPath: z.string().max(120).optional(),
   /**
@@ -385,6 +387,8 @@ export const LiveDiscoverySkipOpenSchema = z.object({
   lane: z.string().max(32).optional(),
   source: z.string().max(64).optional(),
   reason: z.string().min(1).max(500),
+  tradeLane: z.string().max(32).optional(),
+  openTradeLane: z.string().max(32).optional(),
   detail: z.string().max(2000).optional(),
 });
 

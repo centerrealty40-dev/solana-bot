@@ -318,9 +318,11 @@ export interface OpenTrade {
    * `variant_a_v2` — infinite +5% TP grid, partial trail from +10%, DCA resets rungs.
    * `variant_a_v3` — scratch harvest: +5%→30%, flush @0% avg, no DCA after TP, price re-entry −10%.
    */
-  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3';
-  /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; absent = prod. */
-  liveOscarMcapTier?: 'micro' | 'low' | 'prod';
+  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3' | 'scalp_wave_v1';
+  /** Live Oscar trade lane — mutex owner for mint (`prod` staged Oscar vs `scalp_wave`). */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave';
+  /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$2M; absent = prod. */
+  liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** v3: at least one TP partial taken — blocks DCA and timed exits. */
   liveVariantAScratchHadTp?: boolean;
   liveVariantAScratchPrevPnlFrac?: number;

@@ -10,6 +10,7 @@ import {
   isVariantAExitPolicy,
   isVariantAHybridExitPolicy,
 } from './exit-policy-variant-a.js';
+import { stampScalpWaveExitPolicyOnOpen } from './exit-policy-scalp-wave.js';
 
 export type LiveExitPolicyId = 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3';
 
@@ -443,6 +444,7 @@ export function waveBTrailSellFractionForRemainder(
 /** Stamp policy on first open (before journal). */
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
   if (cfg.strategyId !== 'live-oscar') return;
+  if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     ot.liveExitPolicyId = 'wave_b_v1';

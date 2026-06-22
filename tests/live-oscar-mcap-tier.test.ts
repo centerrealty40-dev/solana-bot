@@ -112,4 +112,16 @@ describe('live-oscar-mcap-tier', () => {
     expect(liveOscarTierDcaLevelsSpec(cfg, 'low')).toBe('-10:0.375,-20:0.375');
     expect(liveOscarTierDcaLevelsSpec(cfg, 'micro')).toBe('');
   });
+
+  it('resolves scalp_wave tier sizing (one-shot $300, no DCA)', () => {
+    process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED = '1';
+    process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_POSITION_USD = '300';
+    const cfg = loadPaperTraderConfig();
+    expect(liveOscarTierStagedSplitLegUsd(cfg, 'scalp_wave')).toBe(300);
+    expect(liveOscarTierPositionUsd(cfg, 'scalp_wave')).toBe(300);
+    expect(liveOscarTierDcaLevelsSpec(cfg, 'scalp_wave')).toBe('');
+    const scalpEntry = liveOscarTierEntryConfig(cfg, 'scalp_wave');
+    expect(scalpEntry.dipMinDropPct).toBe(-15);
+    expect(scalpEntry.dipMaxDropPct).toBe(-8);
+  });
 });
