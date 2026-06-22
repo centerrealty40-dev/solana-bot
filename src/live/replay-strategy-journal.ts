@@ -2,6 +2,7 @@
  * W8.0 Phase 7 — deterministic replay of `live_position_*` rows from LIVE_TRADES_PATH (P7-I1).
  */
 import fs from 'node:fs';
+import readline from 'node:readline';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
 import { restoreClosedTradeFromJson } from './strategy-snapshot.js';
@@ -98,6 +99,8 @@ export function openTradePassesReplayAnchorGate(raw: Record<string, unknown>, tr
 export interface ReplayLiveStrategyJournalResult {
   open: Map<string, OpenTrade>;
   closed: ClosedTrade[];
+  /** Mints with any `live_position_*` row in the scanned replay window (open or close). */
+  replaySeenMints: Set<string>;
   /** True when only a trailing byte chunk of the journal was scanned (`maxFileBytes` cap). */
   journalTruncated?: boolean;
 }
@@ -113,7 +116,7 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
   const trustGhost = opts.trustGhostPositions === true;
 
   if (!opts.storePath?.trim() || !fs.existsSync(opts.storePath)) {
-    return { open, closed };
+    return { open, closed, replaySeenMints: new Set() };
   }
 
   const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
@@ -127,6 +130,7 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
     lines = lines.slice(-opts.tailLines);
   }
 
+  const replaySeenMints = new Set<string>();
   const batch: SortRow[] = [];
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const ln = lines[lineIdx]!;
@@ -150,6 +154,7 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
     const mint = row.mint != null ? String(row.mint) : '';
     if (!mint) continue;
 
+    replaySeenMints.add(mint);
     batch.push({ ts, lineIdx, kind, mint, payload: row });
   }
 
@@ -159,41 +164,128 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
   });
 
   for (const row of batch) {
-    switch (row.kind) {
-      case 'live_position_open':
-      case 'live_position_scale_in':
-      case 'live_position_dca': {
-        const otRaw = row.payload.openTrade;
-        if (typeof otRaw !== 'object' || otRaw === null) break;
-        const otr = otRaw as Record<string, unknown>;
-        if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
-        const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
-        if (ot) open.set(row.mint, ot);
-        break;
-      }
-      case 'live_position_partial_sell': {
-        const otRaw = row.payload.openTrade;
-        if (typeof otRaw !== 'object' || otRaw === null) break;
-        const otr = otRaw as Record<string, unknown>;
-        if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
-        const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
-        if (ot) open.set(row.mint, ot);
-        break;
-      }
-      case 'live_position_close': {
-        const ctRaw = row.payload.closedTrade;
-        if (typeof ctRaw !== 'object' || ctRaw === null) break;
-        const ct = restoreClosedTradeFromJson(ctRaw as Record<string, unknown>);
-        if (ct) {
-          open.delete(row.mint);
-          closed.push(ct);
-        }
-        break;
-      }
-      default:
-        break;
-    }
+    applyReplayRow(row, open, closed, trustGhost);
   }
 
-  return { open, closed, journalTruncated: truncated || undefined };
+  return { open, closed, replaySeenMints, journalTruncated: truncated || undefined };
+}
+
+function applyReplayRow(
+  row: SortRow,
+  open: Map<string, OpenTrade>,
+  closed: ClosedTrade[],
+  trustGhost: boolean,
+): void {
+  switch (row.kind) {
+    case 'live_position_open':
+    case 'live_position_scale_in':
+    case 'live_position_dca': {
+      const otRaw = row.payload.openTrade;
+      if (typeof otRaw !== 'object' || otRaw === null) break;
+      const otr = otRaw as Record<string, unknown>;
+      if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
+      const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
+      if (ot) open.set(row.mint, ot);
+      break;
+    }
+    case 'live_position_partial_sell': {
+      const otRaw = row.payload.openTrade;
+      if (typeof otRaw !== 'object' || otRaw === null) break;
+      const otr = otRaw as Record<string, unknown>;
+      if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
+      const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
+      if (ot) open.set(row.mint, ot);
+      break;
+    }
+    case 'live_position_close': {
+      const ctRaw = row.payload.closedTrade;
+      if (typeof ctRaw !== 'object' || ctRaw === null) break;
+      const ct = restoreClosedTradeFromJson(ctRaw as Record<string, unknown>);
+      if (ct) {
+        open.delete(row.mint);
+        closed.push(ct);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/**
+ * Full-journal replay for specific mints only (boot wallet orphan recovery when tail replay truncates).
+ */
+export async function replayLiveStrategyJournalForMints(
+  opts: Pick<
+    ReplayLiveStrategyJournalOpts,
+    'storePath' | 'strategyId' | 'trustGhostPositions'
+  >,
+  mints: readonly string[],
+): Promise<ReplayLiveStrategyJournalResult> {
+  const open = new Map<string, OpenTrade>();
+  const closed: ClosedTrade[] = [];
+  const replaySeenMints = new Set<string>();
+  const trustGhost = opts.trustGhostPositions === true;
+  const mintSet = new Set(mints.filter((m) => m.trim().length > 0));
+
+  if (!opts.storePath?.trim() || !fs.existsSync(opts.storePath) || mintSet.size === 0) {
+    return { open, closed, replaySeenMints };
+  }
+
+  const batch: SortRow[] = [];
+  let lineIdx = 0;
+  const rl = readline.createInterface({
+    input: fs.createReadStream(opts.storePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  for await (const ln of rl) {
+    const trimmed = ln.trim();
+    if (!trimmed) {
+      lineIdx++;
+      continue;
+    }
+    let row: Record<string, unknown>;
+    try {
+      row = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      lineIdx++;
+      continue;
+    }
+    const sid = row.strategyId != null ? String(row.strategyId) : '';
+    if (sid !== opts.strategyId) {
+      lineIdx++;
+      continue;
+    }
+    if (!lineMatchesChannel(row)) {
+      lineIdx++;
+      continue;
+    }
+    const kind = row.kind != null ? String(row.kind) : '';
+    if (!POSITION_KINDS.has(kind)) {
+      lineIdx++;
+      continue;
+    }
+    const mint = row.mint != null ? String(row.mint) : '';
+    if (!mint || !mintSet.has(mint)) {
+      lineIdx++;
+      continue;
+    }
+    const tsRaw = row.ts;
+    const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
+    replaySeenMints.add(mint);
+    batch.push({ ts, lineIdx, kind, mint, payload: row });
+    lineIdx++;
+  }
+
+  batch.sort((a, b) => {
+    if (a.ts !== b.ts) return a.ts - b.ts;
+    return a.lineIdx - b.lineIdx;
+  });
+
+  for (const row of batch) {
+    applyReplayRow(row, open, closed, trustGhost);
+  }
+
+  return { open, closed, replaySeenMints };
 }

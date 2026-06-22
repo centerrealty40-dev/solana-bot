@@ -50,6 +50,7 @@ import {
 } from './reconcile-tx-anchor-sample.js';
 import { evaluateLiveNotionalParity } from './notional-parity.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
+import { restoreWalletOrphanOpensOnBoot } from './boot-open-restore.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
@@ -59,6 +60,8 @@ import type { OpenTrade } from '../papertrader/types.js';
 import {
   applyLiveOpenSnapshotEvent,
   configureLiveOpenSnapshot,
+  mergeLiveOpenSnapshotIntoBootReplay,
+  readLiveOpenSnapshot,
   writeLiveOpenSnapshotFromMap,
 } from './open-snapshot.js';
 import {
@@ -173,6 +176,7 @@ export async function main(): Promise<void> {
     path: liveCfg.liveOpenSnapshotPath,
     strategyId: liveCfg.strategyId,
   });
+  const preBootOpenSnapshot = readLiveOpenSnapshot(liveCfg.liveOpenSnapshotPath);
   configureSignalLabStore({ storePath: liveCfg.signalLabPath, strategyId: liveCfg.strategyId });
   configureMtmShadowStore({ storePath: liveCfg.mtmShadowPath, strategyId: liveCfg.strategyId });
   configureStagedAddSimCooldown(
@@ -509,6 +513,58 @@ export async function main(): Promise<void> {
     Boolean(liveCfg.walletSecret?.trim());
 
   if (liveStrategyReplay) {
+    const merged = mergeLiveOpenSnapshotIntoBootReplay(liveStrategyReplay, preBootOpenSnapshot, {
+      strategyId: liveCfg.strategyId,
+    });
+    if (merged.restoredMints.length > 0) {
+      liveStrategyReplay = { ...liveStrategyReplay, open: merged.open };
+      log.warn(
+        {
+          restoredMints: merged.restoredMints.map((m) => m.slice(0, 8)),
+          skippedSeenInReplay: merged.skippedSeenInReplay.map((m) => m.slice(0, 8)),
+          replayOpen: liveStrategyReplay.open.size,
+          journalTruncated: liveStrategyReplay.journalTruncated,
+        },
+        'live-oscar boot: restored open positions from pre-boot snapshot (tail replay gap)',
+      );
+      appendLiveJsonlEvent({
+        kind: 'live_boot_snapshot_merge',
+        restoredMints: merged.restoredMints,
+        skippedSeenInReplay: merged.skippedSeenInReplay,
+        journalReplayTruncated: Boolean(liveStrategyReplay.journalTruncated),
+        replayOpenAfterMerge: liveStrategyReplay.open.size,
+      });
+    } else if (merged.open.size !== liveStrategyReplay.open.size) {
+      liveStrategyReplay = { ...liveStrategyReplay, open: merged.open };
+    }
+
+    if (liveStrategyReplay.journalTruncated) {
+      try {
+        const walletRestore = await restoreWalletOrphanOpensOnBoot(liveCfg, liveStrategyReplay.open, {
+          journalTruncated: true,
+        });
+        if (walletRestore.restoredMints.length > 0) {
+          liveStrategyReplay = { ...liveStrategyReplay, open: walletRestore.open };
+          log.warn(
+            {
+              restoredMints: walletRestore.restoredMints.map((m) => m.slice(0, 8)),
+              walletMintsScanned: walletRestore.walletMintsScanned.map((m) => m.slice(0, 8)),
+              replayOpen: liveStrategyReplay.open.size,
+            },
+            'live-oscar boot: restored open positions from full journal scan (wallet SPL orphan)',
+          );
+          appendLiveJsonlEvent({
+            kind: 'live_boot_wallet_orphan_restore',
+            restoredMints: walletRestore.restoredMints,
+            walletMintsScanned: walletRestore.walletMintsScanned,
+            replayOpenAfterRestore: liveStrategyReplay.open.size,
+          });
+        }
+      } catch (err) {
+        log.warn({ err: (err as Error)?.message }, 'live-oscar boot wallet orphan restore failed');
+      }
+    }
+
     try {
       writeLiveOpenSnapshotFromMap(liveStrategyReplay.open);
       log.info({ open: liveStrategyReplay.open.size }, 'live-oscar open snapshot seeded from boot replay');
