@@ -50,6 +50,23 @@
 
 ---
 
+## [1.11.485] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.485`
+
+### live-oscar: включить Фазу 4 — scalp_wave lane на prod
+
+Код lane из **1.11.484** уже на prod; этот релиз **включает** её в PM2:
+
+- `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED`: `0` → **`1`**
+- Явные env (паритет с `config.ts` defaults): age **720–2160** min, mcap **$800k–$2M**, dip **−8..−15%**, one-shot **$300**, max **3** concurrent, exit **+10% / −10% / 3h**
+
+**Rollback:** redeploy `sa-alpha-1.11.484` или `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED=0` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.484] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.484`
