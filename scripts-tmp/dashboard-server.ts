@@ -48,6 +48,10 @@ import {
   buildHlTwapPaperDashboardRow,
   hlTwapDashboardJsonlPath,
 } from '../src/hyperliquid/twap/dashboard-aggregate.js';
+import {
+  isLiveOpenSnapshotFresh,
+  readLiveOpenSnapshot,
+} from '../src/live/open-snapshot.js';
 
 /** Empty paper2 load when optional panel loader fails. */
 function emptyPaper2FileLoad(): Paper2FileLoad {
@@ -146,6 +150,13 @@ const PAPER2_DIR = process.env.PAPER2_DIR ?? '/opt/solana-alpha/data/paper2';
 const DASHBOARD_LIVE_OSCAR_JSONL =
   process.env.DASHBOARD_LIVE_OSCAR_JSONL?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'live', 'pt1-oscar-live.jsonl');
+/** Sidecar open list from live-oscar process (source of truth when fresh). */
+const DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT =
+  process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT?.trim() ||
+  path.resolve(PAPER2_DIR, '..', 'live', 'live-oscar-open-snapshot.json');
+const DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS = Number(
+  process.env.DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS ?? 24 * 3_600_000,
+);
 /** Copy-trader journal — панель вместо Live Oscar Risky на `/papertrader2`. */
 const DASHBOARD_COPY_TRADER_JSONL =
   process.env.DASHBOARD_COPY_TRADER_JSONL?.trim() ||
@@ -2504,6 +2515,63 @@ function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | nul
   return Number.isFinite(mc) && mc > 0 ? mc : null;
 }
 
+export function paper2OpenItemFromLiveOpenTrade(
+  mint: string,
+  ot: Record<string, unknown>,
+): Paper2OpenItem {
+  const metricType = ot.metricType != null ? String(ot.metricType) : null;
+  const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
+  const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
+  const legMp = legsArr[0] ? Number(legsArr[0].marketPrice ?? 0) : 0;
+  const emp = Number(ot.avgEntryMarket ?? 0);
+  const baselinePriceUsd = emp > 0 ? emp : legMp > 0 ? legMp : null;
+
+  return {
+    mint,
+    symbol: String(ot.symbol ?? ''),
+    entryTs: Number(ot.entryTs ?? 0),
+    entryMcUsd: Number(ot.entryMcUsd ?? 0),
+    entryRealMcUsd,
+    baselinePriceUsd,
+    openedAtIso: ot.entryTs ? new Date(Number(ot.entryTs)).toISOString() : null,
+    lane: ot.lane != null ? String(ot.lane) : null,
+    source: ot.source != null ? String(ot.source) : null,
+    metricType,
+    features: null,
+    btc: null,
+    peakMcUsd: Number(ot.peakMcUsd ?? 0),
+    peakPnlPct: Number(ot.peakPnlPct ?? 0),
+    trailingArmed: Boolean(ot.trailingArmed),
+    totalInvestedUsd: Number(ot.totalInvestedUsd ?? 0),
+    entryPriorityFeeUsd: null,
+    entryPriceVerifySlipPct: null,
+    entryPriceVerifyImpactPct: null,
+    entryPriceVerifySource: null,
+    pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
+    entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
+    remainingFraction: Number(ot.remainingFraction ?? 1),
+  };
+}
+
+/**
+ * Prefer sidecar open snapshot when present and fresh; tail JSONL replay may miss opens outside the byte window.
+ */
+export function mergeLiveOscarOpenSnapshotIntoLoad(
+  load: LiveOscarPaper2Load,
+  snapshotPath = DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT,
+  maxAgeMs = DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+): LiveOscarPaper2Load {
+  const snap = readLiveOpenSnapshot(snapshotPath);
+  if (!snap || !isLiveOpenSnapshotFresh(snap, maxAgeMs)) return load;
+
+  const open = snap.positions.map((p) => paper2OpenItemFromLiveOpenTrade(p.mint, p.openTrade));
+  const openTimelines = new Map(load.openTimelines);
+  for (const row of open) {
+    if (!openTimelines.has(row.mint)) openTimelines.set(row.mint, []);
+  }
+  return { ...load, open, openTimelines };
+}
+
 /**
  * Live `PERIODIC_HEAL` раньше получал в трекер «цену выхода» = USD **market cap** (`getLiveMcUsd`),
  * из‑за чего в JSONL остались космические pnlPct/netPnlUsd. Журнал не переписываем — чиним только
@@ -2753,35 +2821,8 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const metricType = ot.metricType != null ? String(ot.metricType) : null;
       const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
       const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
-      const legMp = legsArr[0] ? Number(legsArr[0].marketPrice ?? 0) : 0;
-      const emp = Number(ot.avgEntryMarket ?? 0);
-      const baselinePriceUsd = emp > 0 ? emp : legMp > 0 ? legMp : null;
 
-      om.set(mint, {
-        mint,
-        symbol: String(ot.symbol ?? ''),
-        entryTs: Number(ot.entryTs ?? 0),
-        entryMcUsd: Number(ot.entryMcUsd ?? 0),
-        entryRealMcUsd,
-        baselinePriceUsd,
-        openedAtIso: ot.entryTs ? new Date(Number(ot.entryTs)).toISOString() : null,
-        lane: ot.lane != null ? String(ot.lane) : null,
-        source: ot.source != null ? String(ot.source) : null,
-        metricType,
-        features: null,
-        btc: null,
-        peakMcUsd: Number(ot.peakMcUsd ?? 0),
-        peakPnlPct: Number(ot.peakPnlPct ?? 0),
-        trailingArmed: Boolean(ot.trailingArmed),
-        totalInvestedUsd: Number(ot.totalInvestedUsd ?? 0),
-        entryPriorityFeeUsd: null,
-        entryPriceVerifySlipPct: null,
-        entryPriceVerifyImpactPct: null,
-        entryPriceVerifySource: null,
-        pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
-        entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
-        remainingFraction: Number(ot.remainingFraction ?? 1),
-      });
+      om.set(mint, paper2OpenItemFromLiveOpenTrade(mint, ot));
       liveMeta.set(mint, { metricType, entryRealMcUsd });
 
       const emMc0 = entryRealMcFromLiveOpenTrade(ot);
@@ -3064,7 +3105,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       ? { ...(liveReconcileBoot ? { liveReconcileBoot } : {}), ...(liveReconcileReport ? { liveReconcileReport } : {}) }
       : undefined;
 
-  return {
+  return mergeLiveOscarOpenSnapshotIntoLoad({
     open: [...om.values()],
     closed: closedVisible,
     firstTs: f,
@@ -3077,7 +3118,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
     hbOpen,
     hbClosed,
     ...(extras ? { liveExtras: extras } : {}),
-  };
+  });
 }
 
 function paper2Metrics(closed: Paper2ClosedRow[]): {
@@ -3210,7 +3251,7 @@ export function aggregateLiveOscarJsonlForDashboard(filePath: string): Dashboard
   return {
     strategyId: 'live-oscar',
     file: filePath,
-    openCount: Math.max(ll.open.length, ll.hbOpen),
+    openCount: ll.open.length,
     closedCount: Math.max(ll.closed.length, ll.hbClosed),
     startedAt,
     lastTs: ll.lastTs > 0 ? ll.lastTs : startedAt,
@@ -3918,7 +3959,7 @@ async function buildPaper2StrategyRowFromLoad(
   return {
     strategyId: sid,
     file: fp,
-    openCount: Math.max(open.length, hb?.hbOpen ?? 0),
+    openCount: open.length,
     closedCount: Math.max(closed.length, hb?.hbClosed ?? 0),
     startedAt,
     lastTs,

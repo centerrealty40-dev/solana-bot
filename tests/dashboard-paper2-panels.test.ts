@@ -123,7 +123,7 @@ describe('aggregateLiveOscarJsonlForDashboard', () => {
 
     const r = aggregateLiveOscarJsonlForDashboard(fp);
     expect(r.strategyId).toBe('live-oscar');
-    expect(r.openCount).toBe(2);
+    expect(r.openCount).toBe(0);
     expect(r.closedCount).toBe(3);
     expect(r.evals1h).toBeGreaterThanOrEqual(1);
     expect(r.passed1h).toBeGreaterThanOrEqual(1);

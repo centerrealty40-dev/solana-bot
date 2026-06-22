@@ -187,6 +187,7 @@ export interface PapertraderMainOptions {
   onOscarHeartbeat?: (payload: {
     openPositions: number;
     closedTotal: number;
+    open: ReadonlyMap<string, OpenTrade>;
       stats: {
       discovered: number;
       evaluated: number;
@@ -2064,6 +2065,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     opts?.onOscarHeartbeat?.({
       openPositions: open.size,
       closedTotal: closed.length,
+      open,
       stats: { ...stats },
       trackerClosed: trackerStats.closed,
     });

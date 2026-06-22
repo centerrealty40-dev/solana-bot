@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { liveOscarRpcHttpUrlFromEnv } from '../core/rpc/resolve-solana-rpc-url.js';
+import { liveOpenSnapshotPathFromEnv } from './open-snapshot.js';
 
 const ExecutionModeSchema = z.enum(['dry_run', 'simulate', 'live']);
 const ProfileSchema = z.enum(['oscar']);
@@ -44,6 +45,8 @@ const LiveOscarConfigSchema = z
     profile: ProfileSchema,
     /** SSOT live journal — must never equal paper Oscar path when both are set. */
     liveTradesPath: z.string().min(1),
+    /** Sidecar open-positions snapshot for dashboard (default: alongside live journal). */
+    liveOpenSnapshotPath: z.string().min(1),
     strategyId: z.string().min(1).default('live-oscar'),
     /** Live JSONL + Telegram pulse cadence (overrides paper heartbeat when live-oscar runs). Default 30m. */
     heartbeatIntervalMs: z.coerce.number().int().min(5000).max(7200_000).default(1_800_000),
@@ -562,6 +565,10 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     executionMode: (process.env.LIVE_EXECUTION_MODE ?? 'dry_run').trim().toLowerCase(),
     profile: (process.env.LIVE_STRATEGY_PROFILE ?? 'oscar').trim().toLowerCase(),
     liveTradesPath: process.env.LIVE_TRADES_PATH,
+    liveOpenSnapshotPath: (() => {
+      const liveTrades = process.env.LIVE_TRADES_PATH?.trim() || 'data/live/pt1-oscar-live.jsonl';
+      return liveOpenSnapshotPathFromEnv(liveTrades);
+    })(),
     strategyId: process.env.LIVE_STRATEGY_ID,
     heartbeatIntervalMs: process.env.LIVE_HEARTBEAT_INTERVAL_MS,
     parityPaperTradesPath: parityPaper,
