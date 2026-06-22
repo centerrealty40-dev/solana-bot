@@ -150,8 +150,30 @@ function detailFromEvalSkipOpenRest(row: Record<string, unknown>): string | unde
  */
 export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event: Record<string, unknown>) => void {
   return (row) => {
-    if (!enabled) return;
     const kind = row.kind;
+    if (kind === 'entry_split_add' || kind === 'staged_avg_add') {
+      appendLiveJsonlEvent({
+        kind,
+        mint: trimStr(row.mint, 64) ?? '(missing_mint)',
+        ts: typeof row.ts === 'number' && Number.isFinite(row.ts) ? row.ts : undefined,
+        price: numOrUndef(row.price),
+        marketPrice: numOrUndef(row.marketPrice),
+        sizeUsd: numOrUndef(row.sizeUsd),
+        avgEntry: numOrUndef(row.avgEntry),
+        avgEntryMarket: numOrUndef(row.avgEntryMarket),
+        totalInvestedUsd: numOrUndef(row.totalInvestedUsd),
+        legCount:
+          typeof row.legCount === 'number' && Number.isFinite(row.legCount)
+            ? Math.max(0, Math.floor(row.legCount))
+            : undefined,
+        mcUsdLive: numOrNullOrUndef(row.mcUsdLive),
+        priorityFee: numOrUndef(row.priorityFee),
+        timelineLabelRu: trimStr(row.timelineLabelRu, 512),
+        liveExitProfileMode: row.liveExitProfileMode === 'B' ? 'B' : undefined,
+      });
+      return;
+    }
+    if (!enabled) return;
     if (kind === 'eval') {
       const deep = row._liveDiscoveryDeepAudit === true;
       const priority = row._priorityDiscovery === true;

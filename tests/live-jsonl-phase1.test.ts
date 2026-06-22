@@ -220,6 +220,42 @@ describe('W8.0-p1 live JSONL contract', () => {
     expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(priceNoPg))).success).toBe(true);
   });
 
+  it('parses boot merge / orphan restore and staged add kinds (1.11.486)', () => {
+    const bodies: LiveEventBody[] = [
+      {
+        kind: 'live_boot_snapshot_merge',
+        restoredMints: ['Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        journalReplayTruncated: true,
+        replayOpenAfterMerge: 3,
+      },
+      {
+        kind: 'live_boot_wallet_orphan_restore',
+        restoredMints: ['Mintbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+        walletMintsScanned: ['Mintbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+        replayOpenAfterRestore: 4,
+      },
+      {
+        kind: 'entry_split_add',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sizeUsd: 200,
+        timelineLabelRu: '2-я нога сплита',
+        liveExitProfileMode: 'B',
+      },
+      {
+        kind: 'staged_avg_add',
+        mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sizeUsd: 600,
+        marketPrice: 0.005,
+        timelineLabelRu: '1-е усреднение −10%',
+        liveExitProfileMode: 'B',
+      },
+    ];
+    for (const b of bodies) {
+      expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(b))).success).toBe(true);
+      expect(parseLiveEventBody(JSON.parse(JSON.stringify(b)))).toEqual(b);
+    }
+  });
+
   it('rejects invalid intentId on execution_attempt', () => {
     const bad = safeParseLiveEventBody({
       kind: 'execution_attempt',

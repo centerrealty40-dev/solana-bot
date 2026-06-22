@@ -50,6 +50,27 @@
 
 ---
 
+## [1.11.486] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.486`
+
+### live-oscar P0: ZERO leg3 — staged entry vs MTM clamp + JSONL schema
+
+**Проблема:** `clampLiveTrackerMtmForExit` (±12%/tick) применялся до staged entry — leg3 (−10% vs signal) не срабатывал при PG −17%; `staged_avg_add` / boot-события 1.11.483 падали на Zod whitelist; редкие `execution_attempt` без `execution_result` при throw из simulate RPC.
+
+**Исправление:**
+- Staged entry (leg2/leg3, signal-kill) — **PG snapshot** (fallback: raw MTM до clamp); exit TP/trail/kill vs avg — clamped MTM; `lastObservedPriceUsd` = raw MTM для дашборда.
+- JSONL schema: `staged_avg_add`, `entry_split_add`, `live_boot_snapshot_merge`, `live_boot_wallet_orphan_restore`.
+- Mirror `entry_split_add` / `staged_avg_add` в live JSONL (всегда, не только discovery audit).
+- Buy simulate: `execution_result` при throw из `liveSimulateSignedTransaction`.
+- post-deploy-smoke: grep `live-oscar executor start`.
+
+**Rollback:** redeploy `sa-alpha-1.11.485`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.485] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.485`

@@ -444,6 +444,59 @@ export const LiveShyftShadowPriceSchema = z.object({
   streamSlot: z.number().finite().nullable().optional(),
 });
 
+/** Boot: pre-boot open snapshot merged into truncated journal replay (1.11.483). */
+export const LiveBootSnapshotMergeSchema = z.object({
+  kind: z.literal('live_boot_snapshot_merge'),
+  restoredMints: z.array(z.string()).optional(),
+  skippedSeenInReplay: z.array(z.string()).optional(),
+  journalReplayTruncated: z.boolean().optional(),
+  replayOpenAfterMerge: z.number().int().nonnegative().optional(),
+});
+
+/** Boot: wallet SPL orphan restored via full-journal mint replay (1.11.483). */
+export const LiveBootWalletOrphanRestoreSchema = z.object({
+  kind: z.literal('live_boot_wallet_orphan_restore'),
+  restoredMints: z.array(z.string()).optional(),
+  walletMintsScanned: z.array(z.string()).optional(),
+  replayOpenAfterRestore: z.number().int().nonnegative().optional(),
+});
+
+/** Entry-split leg 2 add (v2 staged entry); mirrored from paper tracker on live-oscar. */
+export const EntrySplitAddSchema = z.object({
+  kind: z.literal('entry_split_add'),
+  mint: z.string().min(1).max(64),
+  ts: z.number().finite().optional(),
+  price: z.number().finite().optional(),
+  marketPrice: z.number().finite().optional(),
+  sizeUsd: z.number().finite().optional(),
+  avgEntry: z.number().finite().optional(),
+  avgEntryMarket: z.number().finite().optional(),
+  totalInvestedUsd: z.number().finite().optional(),
+  legCount: z.number().int().nonnegative().optional(),
+  mcUsdLive: z.number().finite().nullable().optional(),
+  priorityFee: z.number().finite().optional(),
+  timelineLabelRu: z.string().max(512).optional(),
+  liveExitProfileMode: z.literal('B').optional(),
+});
+
+/** Staged averaging leg add (−7% / −14% vs signal); mirrored from paper tracker on live-oscar. */
+export const StagedAvgAddSchema = z.object({
+  kind: z.literal('staged_avg_add'),
+  mint: z.string().min(1).max(64),
+  ts: z.number().finite().optional(),
+  price: z.number().finite().optional(),
+  marketPrice: z.number().finite().optional(),
+  sizeUsd: z.number().finite().optional(),
+  avgEntry: z.number().finite().optional(),
+  avgEntryMarket: z.number().finite().optional(),
+  totalInvestedUsd: z.number().finite().optional(),
+  legCount: z.number().int().nonnegative().optional(),
+  mcUsdLive: z.number().finite().nullable().optional(),
+  priorityFee: z.number().finite().optional(),
+  timelineLabelRu: z.string().max(512).optional(),
+  liveExitProfileMode: z.literal('B').optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -478,6 +531,10 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,
+  LiveBootSnapshotMergeSchema,
+  LiveBootWalletOrphanRestoreSchema,
+  EntrySplitAddSchema,
+  StagedAvgAddSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

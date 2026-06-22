@@ -2327,25 +2327,26 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     await sleep(liveOscarCfg?.liveTrackerInterMintDelayMs ?? 120);
 
-    if (curMetric > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
-      const rawMtm = curMetric;
-      const exitMtm = clampLiveTrackerMtmForExit(ot, rawMtm);
-      if (exitMtm > 0 && Math.abs(exitMtm - rawMtm) / Math.max(rawMtm, 1e-18) > 0.002) {
+    /** Raw PG/Jupiter MTM before ±12% exit clamp — staged entry / signal-kill vs anchor use this, not clamped exit MTM. */
+    const rawTrackerPriceUsd = curMetric > 0 ? curMetric : 0;
+    if (rawTrackerPriceUsd > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
+      const exitMtm = clampLiveTrackerMtmForExit(ot, rawTrackerPriceUsd);
+      if (exitMtm > 0 && Math.abs(exitMtm - rawTrackerPriceUsd) / Math.max(rawTrackerPriceUsd, 1e-18) > 0.002) {
         log.warn(
           {
             mint: mint.slice(0, 8),
             symbol: ot.symbol,
-            rawMtmUsd: +rawMtm.toFixed(8),
+            rawMtmUsd: +rawTrackerPriceUsd.toFixed(8),
             exitMtmUsd: +exitMtm.toFixed(8),
           },
           'live tracker: MTM tick jump clamped for exit decisions (ghost quote guard)',
         );
       }
-      curMetric = exitMtm > 0 ? exitMtm : curMetric;
+      curMetric = exitMtm > 0 ? exitMtm : rawTrackerPriceUsd;
     }
 
-    if (curMetric > 0) {
-      ot.lastObservedPriceUsd = curMetric;
+    if (rawTrackerPriceUsd > 0) {
+      ot.lastObservedPriceUsd = rawTrackerPriceUsd;
       if (cfg.flashCrashKillEnabled && cfg.strategyId === 'live-oscar') {
         appendFlashKillPriceSample(ot, Date.now(), curMetric);
       }
@@ -2782,21 +2783,23 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.remainingFraction > 0 &&
       !liveOscarNoDcaInModeA;
 
+    const stagedEntryPriceUsd =
+      snapPx > 0 ? snapPx : rawTrackerPriceUsd > 0 ? rawTrackerPriceUsd : curMetric;
     const st = ot.liveStagedEntry;
-    if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, curMetric)) {
+    if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, stagedEntryPriceUsd)) {
       if (st.entrySplitV2) {
         await tryLiveStagedEntryV2TrackerStep({
           cfg,
           ot,
           mint,
-          curMetric,
+          curMetric: stagedEntryPriceUsd,
           entrySplitMetricUsd: entrySplitJupiterPx,
           livePhase4,
           journalAppend,
           journalLiveStrategy,
         });
       }
-      const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
+      const signalDropPct = liveStagedEntrySignalDropPct(ot, stagedEntryPriceUsd);
       /** Staged доборы до якоря сигнала: раньше блокировались после любого partial TP; теперь — до 2-й ступени TP-сетки (`TP_LADDER`), затем запрет. */
       const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       const hasThird = (st.thirdLegUsd ?? 0) > 0;
@@ -2827,7 +2830,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           });
           if (!dcaBuyRes.ok) return false;
         }
-        const marketBuy = curMetric;
+        const marketBuy = stagedEntryPriceUsd;
         const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
         ot.legs.push({
           ts: Date.now(),
@@ -3468,7 +3471,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
 
-      const inSignalKillTerritory = liveStagedEntryKillHit(ot, curMetric);
+      const inSignalKillTerritory = liveStagedEntryKillHit(ot, stagedEntryPriceUsd);
       if (
         !exitReason &&
         waveBPostTp1ScratchFullExitDue(effCfg, ot, curMetric)
