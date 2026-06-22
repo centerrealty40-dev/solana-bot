@@ -3,6 +3,7 @@
  */
 export const TELEGRAM_MARKET_ALERT_BLOCKED_MINTS = new Set<string>([
   'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
+  'HfMbPyDdZH6QMaDDUokjYCkHxzjoGBMpgaUvpLWGbF5p', // PBTC / Purple Bitcoin
 ]);
 
 export function isTelegramMarketAlertMintBlocked(mint: string): boolean {
