@@ -103,7 +103,7 @@ fi
 
 if [[ -f "$OUT_LOG" ]]; then
   sleep 12
-  if ! tail -n 120 "$OUT_LOG" | grep -q 'papertrader executor start'; then
+  if ! tail -n 120 "$OUT_LOG" | grep -qE 'live-oscar executor start|papertrader executor start'; then
     fail "no recent executor start in ${PM2_APP}-out.log"
   fi
 fi

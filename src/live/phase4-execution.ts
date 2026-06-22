@@ -622,10 +622,29 @@ async function runSolToTokenPipeline(
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
 
     if (liveCfg.executionMode === 'simulate') {
-      const sim = await liveSimulateSignedTransaction({
-        cfg: liveCfg,
-        signedTxSerializedBase64: signedB64,
-      });
+      let sim;
+      try {
+        sim = await liveSimulateSignedTransaction({
+          cfg: liveCfg,
+          signedTxSerializedBase64: signedB64,
+        });
+      } catch (err) {
+        const message = `simulate_throw:${(err as Error).message}`.slice(0, 400);
+        appendLiveJsonlEvent({
+          kind: 'execution_result',
+          intentId,
+          status: 'sim_err',
+          simulated: true,
+          error: { message },
+          slippageBps: currentSlippageBps,
+        });
+        notifyLiveExecutionSimErrForTerminal(message);
+        if (attempt < maxAttempts - 1 && isRetryableBuySimError(message)) {
+          await sleep(liveCfg.liveBuySimRetryDelayMs);
+          continue;
+        }
+        return failure('sim_err', 'sim_err', message);
+      }
 
       if (!sim.ok) {
         const message = sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : '');

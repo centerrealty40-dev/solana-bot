@@ -74,6 +74,11 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
       return false;
     case 'live_discovery_skip_open':
       return true;
+    case 'live_boot_snapshot_merge':
+    case 'live_boot_wallet_orphan_restore':
+    case 'entry_split_add':
+    case 'staged_avg_add':
+      return true;
     default:
       return false;
   }
