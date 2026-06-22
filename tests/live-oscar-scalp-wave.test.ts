@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadPaperTraderConfig } from '../src/papertrader/config.js';
 import {
-  liveOscarScalpWaveAgeInBand,
+  liveOscarScalpWaveAgeMeetsMin,
   liveOscarMintOpenSkipReason,
   liveOscarScalpWaveEntryConfig,
   resolveLiveOscarScalpWaveMcapTier,
@@ -20,9 +20,9 @@ describe('live-oscar-scalp-wave', () => {
   beforeEach(() => {
     const keys = [
       'PAPER_STRATEGY_ID',
+      'PAPER_MIN_TOKEN_AGE_MIN',
       'PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED',
       'PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN',
-      'PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_AGE_MIN',
       'PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD',
       'PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD',
       'PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT',
@@ -34,9 +34,9 @@ describe('live-oscar-scalp-wave', () => {
     ];
     for (const k of keys) envBackup[k] = process.env[k];
     process.env.PAPER_STRATEGY_ID = 'live-oscar';
+    process.env.PAPER_MIN_TOKEN_AGE_MIN = '2160';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED = '1';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN = '720';
-    process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_AGE_MIN = '2160';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD = '800000';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD = '2000000';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT = '-15';
@@ -54,26 +54,29 @@ describe('live-oscar-scalp-wave', () => {
     }
   });
 
-  it('resolves scalp_wave mcap corridor and age band', () => {
+  it('resolves scalp_wave mcap corridor and min age (no max cap)', () => {
     const cfg = loadPaperTraderConfig();
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 750_000)).toBe('below');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 800_000)).toBe('scalp_wave');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 1_500_000)).toBe('scalp_wave');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 2_000_000)).toBe('scalp_wave');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 2_000_001)).toBe('below');
-    expect(liveOscarScalpWaveAgeInBand(cfg, 719)).toBe(false);
-    expect(liveOscarScalpWaveAgeInBand(cfg, 720)).toBe(true);
-    expect(liveOscarScalpWaveAgeInBand(cfg, 1500)).toBe(true);
-    expect(liveOscarScalpWaveAgeInBand(cfg, 2160)).toBe(true);
-    expect(liveOscarScalpWaveAgeInBand(cfg, 2161)).toBe(false);
+    expect(liveOscarScalpWaveAgeMeetsMin(cfg, 719)).toBe(false);
+    expect(liveOscarScalpWaveAgeMeetsMin(cfg, 720)).toBe(true);
+    expect(liveOscarScalpWaveAgeMeetsMin(cfg, 1500)).toBe(true);
+    expect(liveOscarScalpWaveAgeMeetsMin(cfg, 2160)).toBe(true);
+    expect(liveOscarScalpWaveAgeMeetsMin(cfg, 10_000)).toBe(true);
   });
 
-  it('uses shallow dip entry config and one-shot $300', () => {
+  it('uses shallow dip entry config, one-shot $300, scalp min age not global 36h', () => {
     const cfg = loadPaperTraderConfig();
     const scalpCfg = liveOscarScalpWaveEntryConfig(cfg);
     expect(scalpCfg.dipMinDropPct).toBe(-15);
     expect(scalpCfg.dipMaxDropPct).toBe(-8);
     expect(scalpCfg.positionUsd).toBe(300);
+    expect(scalpCfg.dipMinAgeMin).toBe(720);
+    expect(scalpCfg.globalMinTokenAgeMin).toBe(720);
+    expect(cfg.globalMinTokenAgeMin).toBeGreaterThanOrEqual(2160);
   });
 
   it('mutex: different trade lane on same mint → lane_mint_mutex', () => {

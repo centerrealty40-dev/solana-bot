@@ -50,6 +50,26 @@
 
 ---
 
+## [1.11.487] — 2026-06-22
+
+**Тег:** `sa-alpha-1.11.487`
+
+### live-oscar scalp_wave: min age 12h, без верхнего cap 36h
+
+**Проблема:** Фаза 4 отсекала токены старше 36h (`scalp_wave_age_outside_720_2160m`); prod `PAPER_POST_MIN_AGE_MIN=2160` также блокировал scalp на 12–35h на уровне SQL universe и `globalGate`.
+
+**Исправление:**
+- scalp_wave: только **min 12h (720 min)**, **max age снят** (default `liveOscarScalpWaveMaxAgeMin=0`)
+- skip reason: `scalp_wave_age_below_12h`
+- `liveOscarScalpWaveEntryConfig`: `globalMinTokenAgeMin` / `dipMinAgeMin` = 720 (не prod 36h)
+- SQL snapshot post lane: при включённом scalp_wave — `min(POST_MIN, scalp_min)` для universe (prod eval по-прежнему 36h через globalGate)
+
+**Rollback:** redeploy `sa-alpha-1.11.486`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.486] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.486`

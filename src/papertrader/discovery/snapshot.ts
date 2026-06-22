@@ -3,6 +3,7 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
+import { isLiveOscarScalpWaveLaneEnabled } from '../live-oscar-scalp-wave.js';
 import {
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
 } from './snapshot-canonical-pick.js';
@@ -36,6 +37,11 @@ export async function fetchSnapshotLaneCandidates(
   lane: Lane,
 ): Promise<SnapshotCandidateRow[]> {
   const lc = laneCfg(cfg, lane);
+  /** When scalp_wave is on, widen SQL universe to scalp min (12h) while prod keeps 36h in eval gates. */
+  const sqlMinAgeMin =
+    lane === 'post_migration' && isLiveOscarScalpWaveLaneEnabled(cfg)
+      ? Math.min(lc.MIN_AGE_MIN, cfg.liveOscarScalpWaveMinAgeMin)
+      : lc.MIN_AGE_MIN;
   /** Pool/token age anchor: pair launch when collectors filled `launch_ts` (DexScreener `pairCreatedAt`, etc.), else first time we saw the mint in `tokens`. */
   const unions = SNAPSHOT_TABLES.map(
     (t) => `
@@ -91,7 +97,7 @@ export async function fetchSnapshotLaneCandidates(
              price_usd, liquidity_usd, volume_5m, volume_1h, buys_5m, sells_5m,
              market_cap_usd, pair_address, source
       FROM with_max
-      WHERE COALESCE(age_min, 0) >= ${lc.MIN_AGE_MIN}
+      WHERE COALESCE(age_min, 0) >= ${sqlMinAgeMin}
         ${maxAgeFilter}
         AND liquidity_usd >= ${lc.MIN_LIQ_USD}
         ${maxLiqFilter}

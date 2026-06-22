@@ -52,19 +52,29 @@ export function resolveLiveOscarScalpWaveMcapTier(
   return 'scalp_wave';
 }
 
-export function liveOscarScalpWaveAgeInBand(cfg: PaperTraderConfig, ageMin: number): boolean {
+/** Min age only (12h prod default); no upper cap when maxAgeMin is 0. */
+export function liveOscarScalpWaveAgeMeetsMin(cfg: PaperTraderConfig, ageMin: number): boolean {
   const age = Number(ageMin);
   if (!Number.isFinite(age)) return false;
-  return age + 1e-9 >= cfg.liveOscarScalpWaveMinAgeMin && age - 1e-9 <= cfg.liveOscarScalpWaveMaxAgeMin;
+  if (age + 1e-9 < cfg.liveOscarScalpWaveMinAgeMin) return false;
+  const maxAge = cfg.liveOscarScalpWaveMaxAgeMin ?? 0;
+  if (maxAge > 0 && age - 1e-9 > maxAge) return false;
+  return true;
 }
+
+/** @deprecated Use {@link liveOscarScalpWaveAgeMeetsMin}. */
+export const liveOscarScalpWaveAgeInBand = liveOscarScalpWaveAgeMeetsMin;
 
 /** Per-lane entry thresholds: shallow dip −8..−15%, no staged split. */
 export function liveOscarScalpWaveEntryConfig(cfg: PaperTraderConfig): PaperTraderConfig {
+  const minAge = cfg.liveOscarScalpWaveMinAgeMin;
   return {
     ...cfg,
     dipMinDropPct: cfg.liveOscarScalpWaveDipMinDropPct,
     dipMaxDropPct: cfg.liveOscarScalpWaveDipMaxDropPct,
-    dipMinAgeMin: cfg.liveOscarScalpWaveMinAgeMin,
+    dipMinAgeMin: minAge,
+    /** Scalp lane min 12h — not prod global 36h (`PAPER_POST_MIN_AGE_MIN` / `PAPER_MIN_TOKEN_AGE_MIN`). */
+    globalMinTokenAgeMin: minAge,
     dipMinImpulsePct: cfg.liveOscarScalpWaveMinImpulsePct,
     vol1hMinUsd: cfg.liveOscarScalpWaveVol1hMinUsd,
     postCrashFastPathMinDropPct: cfg.liveOscarScalpWaveDipMinDropPct,
@@ -103,10 +113,9 @@ export function evaluateLiveOscarScalpWaveDiscovery(args: {
     );
     return { pass: false, reasons, entryPath: undefined };
   }
-  if (!liveOscarScalpWaveAgeInBand(cfg, ageMin)) {
-    reasons.push(
-      `scalp_wave_age_outside_${cfg.liveOscarScalpWaveMinAgeMin}_${cfg.liveOscarScalpWaveMaxAgeMin}m`,
-    );
+  if (!liveOscarScalpWaveAgeMeetsMin(cfg, ageMin)) {
+    const minH = Math.round(cfg.liveOscarScalpWaveMinAgeMin / 60);
+    reasons.push(`scalp_wave_age_below_${minH}h`);
     return { pass: false, reasons, entryPath: undefined };
   }
 
