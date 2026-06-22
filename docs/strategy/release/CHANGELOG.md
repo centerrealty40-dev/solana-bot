@@ -54,6 +54,24 @@
 
 ---
 
+## [1.11.491] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.491`
+
+### live-oscar: scalp_wave max mcap $2M → $30M (Фаза 4)
+
+**Изменение:** верхний коридор market cap для lane `scalp_wave` расширен с **$2M** до **$30M**; min **$800k** без изменений.
+
+- `PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD`: `2000000` → **`30000000`**
+- default в `config.ts`, prod env в `ecosystem.config.cjs`
+- skip reason `scalp_wave_mcap_outside_*` подхватывает новые границы из cfg
+
+**Откат:** redeploy `sa-alpha-1.11.490` или `PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD=2000000` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.490] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.490`

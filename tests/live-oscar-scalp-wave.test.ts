@@ -38,7 +38,7 @@ describe('live-oscar-scalp-wave', () => {
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED = '1';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN = '720';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD = '800000';
-    process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD = '2000000';
+    process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD = '30000000';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT = '-15';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MAX_DROP_PCT = '-8';
     process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_POSITION_USD = '300';
@@ -59,8 +59,9 @@ describe('live-oscar-scalp-wave', () => {
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 750_000)).toBe('below');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 800_000)).toBe('scalp_wave');
     expect(resolveLiveOscarScalpWaveMcapTier(cfg, 1_500_000)).toBe('scalp_wave');
-    expect(resolveLiveOscarScalpWaveMcapTier(cfg, 2_000_000)).toBe('scalp_wave');
-    expect(resolveLiveOscarScalpWaveMcapTier(cfg, 2_000_001)).toBe('below');
+    expect(resolveLiveOscarScalpWaveMcapTier(cfg, 15_000_000)).toBe('scalp_wave');
+    expect(resolveLiveOscarScalpWaveMcapTier(cfg, 30_000_000)).toBe('scalp_wave');
+    expect(resolveLiveOscarScalpWaveMcapTier(cfg, 30_000_001)).toBe('below');
     expect(liveOscarScalpWaveAgeMeetsMin(cfg, 719)).toBe(false);
     expect(liveOscarScalpWaveAgeMeetsMin(cfg, 720)).toBe(true);
     expect(liveOscarScalpWaveAgeMeetsMin(cfg, 1500)).toBe(true);

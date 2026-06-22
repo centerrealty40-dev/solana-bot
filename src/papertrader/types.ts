@@ -321,7 +321,7 @@ export interface OpenTrade {
   liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3' | 'scalp_wave_v1';
   /** Live Oscar trade lane — mutex owner for mint (`prod` staged Oscar vs `scalp_wave`). */
   liveOscarTradeLane?: 'prod' | 'scalp_wave';
-  /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$2M; absent = prod. */
+  /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$30M; absent = prod. */
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** Set when scalp_wave hands off to prod/low staged management. */
   liveOscarPhaseEscalatedFrom?: 'scalp_wave';
