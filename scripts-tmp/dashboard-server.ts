@@ -52,6 +52,7 @@ import {
   isLiveOpenSnapshotFresh,
   readLiveOpenSnapshot,
 } from '../src/live/open-snapshot.js';
+import { isLiveOscarScalpWaveTrade } from '../src/papertrader/live-oscar-scalp-wave.js';
 
 /** Empty paper2 load when optional panel loader fails. */
 function emptyPaper2FileLoad(): Paper2FileLoad {
@@ -1356,6 +1357,10 @@ export type Paper2OpenItem = {
    * DCA rows reset the live tracker position to 100% remainder — we mirror that via `dca_add` handling.
    */
   remainingFraction: number;
+  /** Live Oscar trade lane mutex (`prod` staged Oscar vs `scalp_wave` one-shot). */
+  liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
+  /** True while position is actively managed as scalp_wave (false after phase escalation). */
+  isScalpWave: boolean;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -1655,6 +1660,8 @@ export type Paper2ApiEnrichedOpen = {
   currentLiqUsd: number | null;
   liqDropPct: number | null;
   remainingCostBasisUsd: number;
+  liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
+  isScalpWave: boolean;
 };
 
 const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
@@ -2395,6 +2402,7 @@ export function loadPaper2File(filePath: string): {
         entryLiqUsd,
         remainingFraction: 1,
         ...pvUi,
+        ...scalpWaveOpenFieldsFromRecord(e),
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
       const tev = buildTimelineEvent(e, metricType, entryRealMcUsd);
@@ -2515,6 +2523,20 @@ function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | nul
   return Number.isFinite(mc) && mc > 0 ? mc : null;
 }
 
+function scalpWaveOpenFieldsFromRecord(
+  ot: Record<string, unknown>,
+): Pick<Paper2OpenItem, 'liveOscarTradeLane' | 'isScalpWave'> {
+  const laneRaw = ot.liveOscarTradeLane;
+  const liveOscarTradeLane =
+    laneRaw === 'scalp_wave' || laneRaw === 'prod' ? laneRaw : null;
+  return {
+    liveOscarTradeLane,
+    isScalpWave: isLiveOscarScalpWaveTrade(
+      ot as Parameters<typeof isLiveOscarScalpWaveTrade>[0],
+    ),
+  };
+}
+
 export function paper2OpenItemFromLiveOpenTrade(
   mint: string,
   ot: Record<string, unknown>,
@@ -2550,6 +2572,7 @@ export function paper2OpenItemFromLiveOpenTrade(
     pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
     entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
     remainingFraction: Number(ot.remainingFraction ?? 1),
+    ...scalpWaveOpenFieldsFromRecord(ot),
   };
 }
 
@@ -2985,6 +3008,15 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
         const tiu = Number(ot.totalInvestedUsd ?? 0);
         if (tiu > 0) cur.totalInvestedUsd = tiu;
         cur.remainingFraction = 1;
+      }
+      continue;
+    }
+
+    if (kind === 'live_phase_escalation') {
+      const cur = om.get(mint);
+      const ot = (o.openTrade ?? {}) as Record<string, unknown>;
+      if (cur) {
+        Object.assign(cur, scalpWaveOpenFieldsFromRecord(ot));
       }
       continue;
     }
@@ -3920,6 +3952,8 @@ async function buildPaper2StrategyRowFromLoad(
         currentLiqUsd: currentLiqUsdVal,
         liqDropPct,
         remainingCostBasisUsd,
+        liveOscarTradeLane: ot.liveOscarTradeLane ?? null,
+        isScalpWave: ot.isScalpWave,
       };
     }),
   );

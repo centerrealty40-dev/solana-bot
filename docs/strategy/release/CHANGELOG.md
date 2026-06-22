@@ -52,6 +52,25 @@
 
 ---
 
+---
+
+## [1.11.489] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.489`
+
+### dashboard: метка scalp_wave (Фаза 4) на открытых позициях Live Oscar
+
+**Проблема:** scalp_wave-позиции попадали в список open через sidecar snapshot, но UI не показывал, что это скальп — `lane` в API брался из discovery (`post_migration`), а не из `liveOscarTradeLane`.
+
+**Изменения:**
+- API `/api/paper2`: поля `isScalpWave` и `liveOscarTradeLane` на open rows (из `openTrade` / snapshot)
+- UI: pill **«Скальп · Ф4»** на плитке Live Oscar для активных scalp_wave
+- После phase escalation (`liveOscarTradeLane=prod`) badge не показывается; JSONL replay обрабатывает `live_phase_escalation`
+
+**Откат:** `git revert` коммита; redeploy предыдущего SHA на VPS.
+
+---
+
 ## [1.11.488] — 2026-06-22
 
 **Тег:** `sa-alpha-1.11.488`
