@@ -480,6 +480,25 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
+        /**
+         * 1.11.485 — Фаза 4: scalp_wave lane ($800k–$2M, age 12–36h, shallow dip −8..−15%).
+         * One-shot $300, exit scalp_wave_v1 (+10% TP / −10% kill / 3h timestop), max 3 concurrent.
+         * Mint mutex: один mint = одна OpenTrade (prod/micro/low/scalp_wave).
+         */
+        PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN: '720',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_AGE_MIN: '2160',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD: '800000',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD: '2000000',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT: '-15',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MAX_DROP_PCT: '-8',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_IMPULSE_PCT: '8',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_VOL_1H_MIN_USD: '25000',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_POSITION_USD: '300',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_CONCURRENT: '3',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT: '0.1',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT: '0.1',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS: '3',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
