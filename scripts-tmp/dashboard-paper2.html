@@ -444,6 +444,8 @@
                         <a :href="gmgn(o.mint)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
                       </template>
+                      <span x-show="selected === 'live-oscar' && o.isScalpWave"
+                            class="pill pill-warn ml-2 text-xs align-middle">Скальп · Ф4</span>
                       <template x-if="isHlTwap()">
                         <a :href="(o.hlTwap && o.hlTwap.hyperliquidUrl) || '#'" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="o.symbol || o.coin || '?'"></a>

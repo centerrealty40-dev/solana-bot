@@ -200,3 +200,30 @@ describe('mergeLiveOscarOpenSnapshotIntoLoad', () => {
     expect(merged.hbOpen).toBe(3);
   });
 });
+
+describe('paper2OpenItemFromLiveOpenTrade scalp_wave', () => {
+  it('marks active scalp_wave positions', () => {
+    const item = paper2OpenItemFromLiveOpenTrade('MintS', {
+      symbol: 'SCALP',
+      entryTs: 1,
+      liveOscarTradeLane: 'scalp_wave',
+      liveOscarMcapTier: 'scalp_wave',
+      liveExitPolicyId: 'scalp_wave_v1',
+    });
+    expect(item.isScalpWave).toBe(true);
+    expect(item.liveOscarTradeLane).toBe('scalp_wave');
+  });
+
+  it('clears scalp badge after phase escalation to prod', () => {
+    const item = paper2OpenItemFromLiveOpenTrade('MintE', {
+      symbol: 'ESC',
+      entryTs: 1,
+      liveOscarTradeLane: 'prod',
+      liveOscarMcapTier: 'low',
+      liveExitPolicyId: 'wave_b_v1',
+      liveOscarPhaseEscalatedFrom: 'scalp_wave',
+    });
+    expect(item.isScalpWave).toBe(false);
+    expect(item.liveOscarTradeLane).toBe('prod');
+  });
+});
