@@ -9,6 +9,7 @@ LOG="${BASE}/data/logs/db-backup.log"
 BACKUP_DIR="${BACKUP_HOME:-/home/salpha/backups}/postgres"
 
 mkdir -p "${BACKUP_DIR}" "${BASE}/data/logs"
+cd "${BASE}"
 
 # shellcheck disable=SC1091
 source "${BASE}/scripts/ops/_backup-common.sh"
