@@ -27,6 +27,19 @@ export type DexSnapshotFreshness = {
   ok: boolean;
 };
 
+/** PG drivers may return `MAX(ts)` as string — normalize before alert formatting. */
+export function normalizeSnapshotLatestTs(v: unknown): Date | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  const d = new Date(v as string | number);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function formatSnapshotLatestTs(v: unknown): string {
+  const d = normalizeSnapshotLatestTs(v);
+  return d ? d.toISOString() : 'null';
+}
+
 export function snapshotMaxAgeSecFromEnv(): number {
   const n = Number(process.env.SNAPSHOT_FRESHNESS_MAX_AGE_SEC?.trim());
   if (Number.isFinite(n) && n > 0) return Math.floor(n);
@@ -46,7 +59,7 @@ export async function fetchDexSnapshotFreshness(
       `));
       const rows = r as unknown as Array<{ ts: Date | null; age_sec: number | null }>;
       const row = rows[0];
-      const latestTs = row?.ts ?? null;
+      const latestTs = normalizeSnapshotLatestTs(row?.ts);
       const ageSec =
         row?.age_sec != null && Number.isFinite(Number(row.age_sec)) ? Number(row.age_sec) : null;
       const ok =
@@ -105,7 +118,7 @@ export function buildSnapshotStaleAlertBody(
     const ageMin =
       r.ageSec != null && Number.isFinite(r.ageSec) ? Math.round(r.ageSec / 60) : '?';
     const flag = r.ok ? 'OK' : 'STALE';
-    lines.push(`• ${r.source}: ${flag} age=${ageMin}m latest=${r.latestTs?.toISOString?.() ?? 'null'}`);
+    lines.push(`• ${r.source}: ${flag} age=${ageMin}m latest=${formatSnapshotLatestTs(r.latestTs)}`);
   }
   return lines.join('\n');
 }

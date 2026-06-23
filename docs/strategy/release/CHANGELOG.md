@@ -54,6 +54,26 @@
 
 ---
 
+---
+
+## [1.11.495] — 2026-06-24
+
+**Тег:** `sa-alpha-1.11.495`
+
+### pumpswap: PG snapshot freshness — cap enrich, primary-first upsert, alert ts fix
+
+**RCA:** тик `sa-pumpswap` занимал 5–6 мин из‑за ~85 solo-fetch DexScreener + 3 search; при 429 (Retry-After 60s) enrich блокировал upsert → `MAX(ts)` не двигался → STALE alert; в алерте `latest=null` при строковом `ts` из PG driver.
+
+- **`pumpswap-collector.mjs`:** primary search/gecko bucket **upsert до enrich**; enrich с `ENRICH_MAX_RETRIES=1` (fail-fast на 429); интервал PM2 **30s → 60s**
+- **`paper2-open-snapshot-enrich.mjs`:** cap solo-fetch (**12**/tick, rotate queue), batch chunks (**8**/tick); приоритет live → paper → whitelist → discovery pin
+- **`pair-snapshot-freshness.ts`:** `normalizeSnapshotLatestTs` / `formatSnapshotLatestTs` — строковый `MAX(ts)` больше не даёт `latest=null`
+- **`ecosystem.config.cjs`:** env caps для pumpswap enrich
+- Тесты alert formatter
+
+**Откат:** `git checkout sa-alpha-1.11.494`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.494] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.494`

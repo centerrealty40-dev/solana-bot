@@ -3,6 +3,7 @@ import {
   activeDexPairSnapshotTables,
   buildSnapshotStaleAlertBody,
   formatSnapshotFreshnessPulseLine,
+  formatSnapshotLatestTs,
   snapshotsAnyStale,
   worstSnapshotAgeSec,
   type DexSnapshotFreshness,
@@ -46,5 +47,29 @@ describe('pair-snapshot-freshness', () => {
     expect(body).toContain('STALE');
     expect(body).toContain('pumpswap');
     expect(body).not.toContain('sa-orca');
+  });
+
+  it('formatSnapshotLatestTs handles string timestamps from PG driver', () => {
+    const iso = '2026-06-24T12:34:56.789Z';
+    expect(formatSnapshotLatestTs(iso)).toBe(iso);
+    expect(formatSnapshotLatestTs(null)).toBe('null');
+  });
+
+  it('buildSnapshotStaleAlertBody shows ISO latest when latestTs is a string', () => {
+    const iso = '2026-06-24T10:00:00.000Z';
+    const body = buildSnapshotStaleAlertBody(
+      [
+        {
+          source: 'pumpswap',
+          table: 'pumpswap_pair_snapshots',
+          latestTs: iso as unknown as Date,
+          ageSec: 900,
+          ok: false,
+        },
+      ],
+      600,
+    );
+    expect(body).toContain(`latest=${iso}`);
+    expect(body).not.toContain('latest=null');
   });
 });
