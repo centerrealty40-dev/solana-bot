@@ -8,6 +8,7 @@ import { jupiterQuoteBuyPriceUsd } from '../pricing/price-verify.js';
 import { applyEntryCosts } from '../costs.js';
 import { stampFlashKillLastBuyLeg } from './flash-crash-kill.js';
 import type { OpenTrade } from '../types.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { readPaperOscarScaleInEnv } from './paper-scale-in-env.js';
 import { usesPaperOscarSecondLegScaleIn } from '../paper-oscar-v21.js';
@@ -187,7 +188,7 @@ export async function tryPaperOnlyScaleInTrackerStep(args: {
     reason: 'scale_in',
   });
   stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
-  if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
+  if (isLiveOscarTradingStrategyId(cfg.strategyId)) ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;

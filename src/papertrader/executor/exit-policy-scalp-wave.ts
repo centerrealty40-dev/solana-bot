@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 
 export function isScalpWaveExitPolicy(ot: OpenTrade): boolean {
   return ot.liveExitPolicyId === 'scalp_wave_v1' || isLiveOscarScalpWaveTrade(ot);
@@ -8,7 +9,7 @@ export function isScalpWaveExitPolicy(ot: OpenTrade): boolean {
 
 /** Stamp scalp_wave_v1 on open — one-shot $300, TP +10%, no kill (escalation handoff), timestop 3h. */
 export function stampScalpWaveExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): boolean {
-  if (cfg.strategyId !== 'live-oscar' || !isLiveOscarScalpWaveTrade(ot)) return false;
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !isLiveOscarScalpWaveTrade(ot)) return false;
   ot.liveExitPolicyId = 'scalp_wave_v1';
   ot.tpGridOverrides = {
     ...ot.tpGridOverrides,

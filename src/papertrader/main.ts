@@ -31,6 +31,12 @@ import {
   runDipDiscovery,
   type EvalDecision,
 } from './discovery/dip-clones.js';
+import { runPresetCDiscovery } from '../preset-c/discovery.js';
+import {
+  isLiveOscarMainStrategyId,
+  isLiveOscarPresetCStrategyId,
+  isLiveOscarTradingStrategyId,
+} from '../preset-c/live-oscar-family.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
@@ -313,7 +319,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const stalePriceTelegramLastMs = new Map<string, number>();
 
   function liveStagedEntryActive(): boolean {
-    return (cfg.strategyId === 'live-oscar' || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
+    return (isLiveOscarTradingStrategyId(cfg.strategyId) || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
   }
 
   function attachLiveStagedEntryPlan(
@@ -494,7 +500,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function notifyLiveOscarLocalHighVetoOnly(d: EvalDecision): void {
-    if (cfg.strategyId !== 'live-oscar') return;
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const cooldownMs = Math.max(0, Number(process.env.LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000));
@@ -541,7 +547,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function notifyLiveOscarVolumeEphemeralGuard(d: EvalDecision): void {
-    if (cfg.strategyId !== 'live-oscar') return;
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const cooldownMs = Math.max(
@@ -594,7 +600,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function notifyLiveOscarDataCoverageSkip(d: EvalDecision): void {
-    if (cfg.strategyId !== 'live-oscar') return;
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     if (!d.features.pg_data_coverage?.nearEntry) return;
@@ -664,7 +670,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function notifyLiveOscarPgCoverageModeChange(mode: 'full' | 'relaxed'): void {
-    if (cfg.strategyId !== 'live-oscar') return;
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
 
     const token =
@@ -729,7 +735,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
    * + `live-oscar`. **Never changes a trading decision** — the stream price is not read by any gate/eval.
    */
   function observeShyftShadowEntryPrice(d: EvalDecision): void {
-    if (!cfg.liveOscarShyftShadowEnabled || cfg.strategyId !== 'live-oscar') return;
+    if (!cfg.liveOscarShyftShadowEnabled || !isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (!isShyftShadowEnabled()) return;
     const now = Date.now();
     const stream = getShyftShadowStreamPrice(d.mint, now);
@@ -750,7 +756,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function notifyLiveOscarStalePrice(d: EvalDecision, priceAgeMs: number): void {
-    if (cfg.strategyId !== 'live-oscar') return;
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     // Throttled alert is opt-in (default OFF) — journal metric above is the primary observability surface.
     if (process.env.LIVE_OSCAR_STALE_PRICE_TELEGRAM_ENABLED !== '1') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
@@ -937,7 +943,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         thirdDropPct: cfg.liveStagedEntryThirdDropPct,
         expiresAt: signal.expiresAt,
       });
-      if (cfg.strategyId === 'live-oscar') {
+      if (isLiveOscarMainStrategyId(cfg.strategyId)) {
         notifyLiveStagedEntrySignal({
           mint: args.mint,
           symbol: args.symbol,
@@ -1253,7 +1259,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       cleanupStaleEntryRechecks(tickNow);
       resetLiveBuyTelegramSuppressTick();
       const liveOscarForTg = resolveLiveOscar();
-      if (cfg.strategyId === 'live-oscar' && liveOscarForTg?.liveCfg.executionMode === 'live') {
+      if (isLiveOscarMainStrategyId(cfg.strategyId) && liveOscarForTg?.liveCfg.executionMode === 'live') {
         await refreshLiveBuyTelegramSuppressForTick(
           liveOscarForTg.liveCfg,
           resolveLiveOscarEntrySplitLegUsd(cfg),
@@ -1263,7 +1269,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       syncPriorityOpenMints(open.keys());
       const res =
         cfg.strategyKind === 'dip'
-          ? await runDipDiscovery(cfg)
+          ? isLiveOscarPresetCStrategyId(cfg.strategyId)
+            ? await runPresetCDiscovery(cfg)
+            : await runDipDiscovery(cfg)
           : await runSmartLotteryDiscovery(cfg);
       for (const row of res.auditRows ?? []) {
         journalAppend(row);
@@ -1271,15 +1279,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;
       stats.passed += res.passed;
-      if (cfg.strategyId === 'live-oscar' && res.pgCoverageModeChanged) {
+      if (isLiveOscarMainStrategyId(cfg.strategyId) && res.pgCoverageModeChanged) {
         notifyLiveOscarPgCoverageModeChange(res.pgCoverageModeChanged);
       }
-      if (cfg.strategyId === 'live-oscar') {
+      if (isLiveOscarMainStrategyId(cfg.strategyId)) {
         const near = res.decisions.filter((d) => !d.pass && isAwaitingDipQualityHold(d.reasons));
         updateNearReadyDipWatchlist(near.map((d) => ({ mint: d.mint, symbol: d.symbol ?? '?' })));
       }
       // Stage 1.1 shadow: feed the narrow watched/open mint set to the Shyft gRPC consumer (default OFF).
-      if (cfg.liveOscarShyftShadowEnabled && cfg.strategyId === 'live-oscar') {
+      if (cfg.liveOscarShyftShadowEnabled && isLiveOscarMainStrategyId(cfg.strategyId)) {
         const shadowMints = new Set<string>(open.keys());
         for (const d of res.decisions) shadowMints.add(d.mint);
         setShyftShadowWatchedMints(shadowMints);
@@ -1413,7 +1421,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
 
         const liveOscarForEntryGates = resolveLiveOscar();
-        if (liveOscarForEntryGates && cfg.strategyId === 'live-oscar') {
+        if (liveOscarForEntryGates && isLiveOscarTradingStrategyId(cfg.strategyId)) {
           if (isMintPermanentlyDeniedLiveOscar(liveOscarForEntryGates.liveCfg, d.mint)) {
             stats.skippedLivePermanentDeny += 1;
             journalAppend({
@@ -1726,13 +1734,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (
           cfg.liveExitModeAbEnabled &&
           !isPaperOscarIdealizedStackStrategyId(cfg.strategyId) &&
-          cfg.strategyId !== 'live-oscar'
+          !isLiveOscarTradingStrategyId(cfg.strategyId)
         ) {
           ot.liveExitProfileMode = 'A';
         }
 
         const liveOscar = liveOscarForEntryGates ?? resolveLiveOscar();
-        if (liveOscar && cfg.strategyId === 'live-oscar') {
+        if (liveOscar && isLiveOscarTradingStrategyId(cfg.strategyId)) {
           if (isMintPermanentlyDeniedLiveOscar(liveOscar.liveCfg, ot.mint)) {
             stats.skippedLivePermanentDeny += 1;
             journalAppend({
@@ -1891,7 +1899,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           }
         }
 
-        if (cfg.strategyId === 'live-oscar') stampLiveOscarExitPolicyOnOpen(ot, cfg);
+        if (isLiveOscarTradingStrategyId(cfg.strategyId)) stampLiveOscarExitPolicyOnOpen(ot, cfg);
 
         open.set(ot.mint, ot);
         if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {

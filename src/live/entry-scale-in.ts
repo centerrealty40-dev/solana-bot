@@ -14,6 +14,7 @@ import { appendLiveBuyAnchorsAfterDca } from './live-buy-anchor.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { getPriorityFeeUsd } from '../papertrader/pricing/priority-fee.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 
 function parsePending(raw: unknown): NonNullable<OpenTrade['livePendingScaleIn']> | null {
   if (raw == null || typeof raw !== 'object') return null;
@@ -253,7 +254,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     sizeUsd: addUsd,
     reason: 'scale_in',
   });
-  if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
+  if (isLiveOscarTradingStrategyId(cfg.strategyId)) ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;

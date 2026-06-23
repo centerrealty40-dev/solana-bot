@@ -773,11 +773,11 @@
       },
       superbot: {
         label: 'SuperBot',
-        tag: 'race',
+        tag: 'preset-c',
         oneLiner:
-          'PumpSwap flow sniper: внешняя продажа $300+ на pool → race-buy · TP1 +12% (70%) · TP2 +20% · SL −30%. RabbitStream + прямой PumpSwap.',
+          'Preset C · Telegram dips (pullback $1–15M, пролив 9–30%): вход **$100**, staged **$50** · фазы micro/low/scalp/prod · выход **Live Oscar wave B**.',
         details:
-          '**Плитка 2** · PM2 **`pumpswap-flow-sniper`** · репо **pumpswap-flow-sniper** (SuperBot).\n\n**Триггер входа**\n• RabbitStream: **ext sell** на PumpSwap pool (USD, wallet, pool).\n• Mcap gate, pool cooldown — см. env на хосте SuperBot.\n\n**Выход:** TP1 partial · TP2 full · SL.\n\n**Журнал:** `data/pumpswap-flow-sniper/journal.jsonl`.\n**Таймлайн:** MSK · ext sell → buy → TP/SL close.',
+          '**Плитка 2** · PM2 **`live-oscar-preset-c`** · кошелёк SuperBot (HcV3BhmK…).\n\n**Вход Preset C**\n• Сигналы **Telegram dips** (pullback only): mcap кандидата **$1–15M**, пролив от пика **9–30%**, cap ≤ **$300M**.\n• Первая нога **$100**; staged-доборы **$50** по правилам Live Oscar.\n• **Фаза по mcap:** micro · low · scalp_wave · prod — задаёт параметры усреднения.\n\n**Выход:** тот же **wave B / tracker.ts**, что у Live Oscar — TP-сетка, partial trail, salvage24/h48.\n\n**Журнал:** `data/live/live-oscar-preset-c.jsonl`.\n**Таймлайн:** MSK · dips-сигнал → open → staged $50 → partial TP / wave B close.',
       },
       'copy-trader': {
         label: 'Copy Trader',

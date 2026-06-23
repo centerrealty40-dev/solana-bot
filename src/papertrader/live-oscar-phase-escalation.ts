@@ -20,6 +20,7 @@ import {
   type LiveOscarTradeTier,
 } from './live-oscar-mcap-tier.js';
 import type { OpenTrade } from './types.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 
 export type ScalpPhaseEscalationTrigger = 'deep_dip' | 'timestop_no_tp' | 'discovery_handoff';
 
@@ -52,7 +53,7 @@ export function isScalpWaveEscalationEligible(
 }
 
 export function isLiveOscarPhaseEscalationEnabled(cfg: PaperTraderConfig): boolean {
-  return cfg.strategyId === 'live-oscar' && isLiveOscarScalpWaveLaneEnabled(cfg);
+  return isLiveOscarTradingStrategyId(cfg.strategyId) && isLiveOscarScalpWaveLaneEnabled(cfg);
 }
 
 export function evaluateScalpPhaseEscalationTrigger(args: {

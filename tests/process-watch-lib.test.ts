@@ -24,10 +24,11 @@ describe('process-watch-lib', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('default targets include two live bots', () => {
+  it('default targets include live-oscar, preset-c, copy-trader', () => {
     const t = defaultStrategyWatchTargets('/opt/solana-alpha');
     expect(t.map((x) => x.pm2)).toEqual([
       'live-oscar',
+      'live-oscar-preset-c',
       'copy-trader',
     ]);
   });

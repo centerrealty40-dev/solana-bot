@@ -192,7 +192,90 @@ const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
 const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
+/** Legacy pumpswap-flow-sniper journal fallback (Preset C uses $100). */
 const PUMPSWAP_DIP_POSITION_USD_DEFAULT = 3;
+const PRESET_C_POSITION_USD_DEFAULT = 100;
+const PRESET_C_STAGED_LEG_USD_DEFAULT = 50;
+
+/** Dashboard + journal id for SuperBot tile / live-oscar-preset-c PM2. */
+export const LIVE_OSCAR_PRESET_C_STRATEGY_ID = 'live-oscar-preset-c';
+
+export function resolveLiveOscarDashboardStrategyId(filePath: string): string {
+  const lower = filePath.toLowerCase().replace(/\\/g, '/');
+  if (
+    lower.includes('preset-c') ||
+    lower.includes('preset_c') ||
+    lower.includes('live-oscar-preset-c')
+  ) {
+    return LIVE_OSCAR_PRESET_C_STRATEGY_ID;
+  }
+  if (lower.includes('risky')) return 'live-oscar-risky';
+  return 'live-oscar';
+}
+
+/** SuperBot panel reads live-oscar JSONL (Preset C) vs legacy pumpswap race journal. */
+export function superbotJsonlIsLiveOscarFormat(filePath: string): boolean {
+  const lower = filePath.toLowerCase().replace(/\\/g, '/');
+  if (
+    lower.includes('preset-c') ||
+    lower.includes('preset_c') ||
+    lower.includes('live-oscar-preset-c')
+  ) {
+    return true;
+  }
+  if (!fs.existsSync(filePath)) return false;
+  if (lower.includes('superbot-journal') || lower.includes('pumpswap-flow-sniper')) {
+    return false;
+  }
+  try {
+    const head = fs.readFileSync(filePath, { encoding: 'utf8' }).slice(0, 96_000);
+    if (head.includes('"live_position_open"') || head.includes('"channel":"live"')) return true;
+    if (head.includes('"ext_sell_detected"') || head.includes('"race_buy_ok"')) return false;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function presetCMcapTierRu(tier: unknown): string {
+  const t = String(tier ?? '').trim();
+  if (t === 'micro') return 'микро-капа ($500k–$1.3M)';
+  if (t === 'low') return 'лоу-капа ($1.3M–$3M)';
+  if (t === 'scalp_wave') return 'скальп-волна ($800k–$30M)';
+  if (t === 'prod') return 'крупная капа (≥$3M)';
+  return 'фаза по mcap';
+}
+
+function presetCOpenTimelineLabelRu(openTrade: Record<string, unknown>): string {
+  const tier = presetCMcapTierRu(openTrade.liveOscarMcapTier);
+  const legsArr = Array.isArray(openTrade.legs) ? (openTrade.legs as Record<string, unknown>[]) : [];
+  const legUsd = Number(legsArr[0]?.sizeUsd ?? PRESET_C_POSITION_USD_DEFAULT);
+  const usd = legUsd > 0 ? legUsd : PRESET_C_POSITION_USD_DEFAULT;
+  return `Preset C · Telegram dips: pullback $1–15M, пролив 9–30% · вход $${usd.toFixed(0)} · ${tier}`;
+}
+
+function presetCStagedLegTimelineLabelRu(legUsd: number, tier: unknown): string {
+  const u = legUsd > 0 ? legUsd : PRESET_C_STAGED_LEG_USD_DEFAULT;
+  return `Усреднение staged $${u.toFixed(0)} · ${presetCMcapTierRu(tier)} · wave B`;
+}
+
+function presetCTimelineContextNote(evKind: string): string {
+  const entry =
+    'Preset C (SuperBot): вход по сигналам Telegram dips — только pullback; mcap кандидата $1–15M, пролив от пика 9–30%, общий cap ≤ $300M. Первая нога $100; доборы staged по $50 по правилам Live Oscar; фаза (micro / low / scalp / prod) задаёт параметры усреднения.';
+  const exit =
+    'Выход Live Oscar wave B: TP-сетка к средней, partial trail после +10%, timed salvage24/h48 — тот же tracker.ts, что у основного Oscar.';
+  if (
+    evKind === 'open' ||
+    evKind === 'scale_in_add' ||
+    evKind === 'dca_add' ||
+    evKind === 'entry_split_add' ||
+    evKind === 'staged_avg_add'
+  ) {
+    return entry;
+  }
+  if (evKind === 'partial_sell' || evKind === 'close') return exit;
+  return `${entry}\n${exit}`;
+}
 
 function closedRowNotionalUsd(c: Paper2ClosedRow): number {
   const sz = Number(c.sizeUsd ?? 0);
@@ -1749,6 +1832,11 @@ function timelineContextNoteFromJournal(e: Record<string, unknown>): string | nu
   const strategyId = String(e.strategyId || '');
   const isLiveOscar = strategyId === 'live-oscar';
   const isLiveOscarRisky = strategyId === 'live-oscar-risky';
+  const isPresetC = strategyId === LIVE_OSCAR_PRESET_C_STRATEGY_ID;
+  if (isPresetC) {
+    parts.push(presetCTimelineContextNote(evKind));
+    return parts.join('\n');
+  }
   if (isLiveOscarRisky) {
     if (mode === 'A') {
       parts.push(
@@ -1839,6 +1927,7 @@ export function buildTimelineEvent(
   const kind = String(e.kind || '');
   const strategyId = String(e.strategyId || '');
   const isLiveOscarRisky = strategyId === 'live-oscar-risky';
+  const isPresetC = strategyId === LIVE_OSCAR_PRESET_C_STRATEGY_ID;
   const isMcMetric = metricType === 'mc';
   const marketPrice = Number(e.marketPrice ?? 0);
   /** W7.2+ stamped mcap snapshot on each ledger row — takes precedence. */
@@ -2084,9 +2173,13 @@ export function buildTimelineEvent(
           : isLiveOscarRisky && exitReason === 'TIMEOUT'
             ? 'Закрытие Risky · TIMEOUT: истёк лимит времени позиции'
             : null;
+    const presetCCloseLabel = isPresetC
+      ? `Preset C · wave B · ${exitReason}`
+      : null;
     const closeLabel =
       vaTagLabel ??
       riskyCloseReason ??
+      presetCCloseLabel ??
       (exitReason === 'CAPITAL_ROTATE'
         ? `Close · CAPITAL_ROTATE — ротация капитала Phase 5 (ожидаемо, не сбой)${liveExitModeLabelSuffix(e)}`
         : `Close · ${exitReason}${liveExitModeLabelSuffix(e)}`);
@@ -2263,6 +2356,9 @@ function applyOscarDashboardDeferredAbLabels(timeline: TimelineEvent[]): Timelin
 
 export function finalizeTimelineForApi(timeline: TimelineEvent[], strategyId?: string): TimelineEvent[] {
   const enriched = timeline.map(enrichTimelineAmountUsd);
+  if (strategyId === 'superbot') {
+    return enriched;
+  }
   if (strategyId && (DASHBOARD_PANEL_ORDER as readonly string[]).includes(strategyId)) {
     return applyOscarDashboardDeferredAbLabels(enriched);
   }
@@ -2711,8 +2807,9 @@ function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
 export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Load {
   if (!fs.existsSync(filePath)) return emptyLiveOscarPaper2Load();
 
-  const dashboardStrategyId = filePath.toLowerCase().includes('risky') ? 'live-oscar-risky' : 'live-oscar';
+  const dashboardStrategyId = resolveLiveOscarDashboardStrategyId(filePath);
   const isLiveOscarRiskyFile = dashboardStrategyId === 'live-oscar-risky';
+  const isPresetCFile = dashboardStrategyId === LIVE_OSCAR_PRESET_C_STRATEGY_ID;
 
   const om = new Map<string, Paper2OpenItem>();
   const cl: Paper2ClosedRow[] = [];
@@ -2850,15 +2947,16 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
       const emMc0 = entryRealMcFromLiveOpenTrade(ot);
       const openLegUsd = Number(legsArr[0]?.sizeUsd ?? 0);
-      const openLabelRu =
-        liveStagedOpenLabelRu(dashboardStrategyId, { ...ot, strategyId: dashboardStrategyId }) ??
-        (isLiveOscarRiskyFile && openLegUsd > 0
-          ? openLegUsd <= 60
-            ? `Первая нога Risky: $${openLegUsd.toFixed(0)} по сигналу`
-            : `Legacy Risky open: $${openLegUsd.toFixed(0)} после recheck`
-          : typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
-            ? o.timelineOpenLabelRu.trim()
-            : undefined);
+      const openLabelRu = isPresetCFile
+        ? presetCOpenTimelineLabelRu(ot)
+        : liveStagedOpenLabelRu(dashboardStrategyId, { ...ot, strategyId: dashboardStrategyId }) ??
+          (isLiveOscarRiskyFile && openLegUsd > 0
+            ? openLegUsd <= 60
+              ? `Первая нога Risky: $${openLegUsd.toFixed(0)} по сигналу`
+              : `Legacy Risky open: $${openLegUsd.toFixed(0)} после recheck`
+            : typeof o.timelineOpenLabelRu === 'string' && o.timelineOpenLabelRu.trim()
+              ? o.timelineOpenLabelRu.trim()
+              : undefined);
       const syn: Record<string, unknown> = {
         kind: 'open',
         ts,
@@ -2897,8 +2995,9 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const legUsd = Number(lastLeg.sizeUsd ?? 0);
       const fracFull = posUsd > 0 && legUsd > 0 ? legUsd / posUsd : 0;
 
-      const baseLab =
-        isLiveOscarRiskyFile && legUsd > 0
+      const baseLab = isPresetCFile
+        ? presetCStagedLegTimelineLabelRu(legUsd, ot.liveOscarMcapTier)
+        : isLiveOscarRiskyFile && legUsd > 0
           ? `Legacy scale-in Risky: $${legUsd.toFixed(0)} по старому коридору +1%/−2%`
           : fracFull > 0
             ? `Докупка ${Math.round(fracFull * 100)}% позиции`
@@ -2956,12 +3055,13 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const trig = Number(lastLeg.triggerPct ?? 0);
       const dcaUsd = Number(lastLeg.sizeUsd ?? 0);
       const legReason = String(lastLeg.reason ?? '');
-      const dcaLabelRu =
-        journalDcaLabelRu ??
-        legTimelineLabelFromLeg(lastLeg, ot) ??
-        (isLiveOscarRiskyFile && dcaUsd > 0
-          ? `DCA Risky: докупка $${dcaUsd.toFixed(0)} при ${(trig * 100).toFixed(0)}% от первой ноги · режим выхода B`
-          : undefined);
+      const dcaLabelRu = isPresetCFile
+        ? presetCStagedLegTimelineLabelRu(dcaUsd, ot.liveOscarMcapTier)
+        : journalDcaLabelRu ??
+          legTimelineLabelFromLeg(lastLeg, ot) ??
+          (isLiveOscarRiskyFile && dcaUsd > 0
+            ? `DCA Risky: докупка $${dcaUsd.toFixed(0)} при ${(trig * 100).toFixed(0)}% от первой ноги · режим выхода B`
+            : undefined);
       const synKind =
         legReason === 'entry_split'
           ? 'entry_split_add'
@@ -3854,7 +3954,13 @@ async function buildPaper2StrategyRowFromLoad(
         if (isCopyTraderPanel || isSuperbotPanel) {
           const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : ot.totalInvestedUsd;
           const cap = isSuperbotPanel ? 500 : 50_000;
-          return basis > 0 && basis <= cap ? basis : isSuperbotPanel ? PUMPSWAP_DIP_POSITION_USD_DEFAULT : POSITION_USD_DEFAULT;
+          return basis > 0 && basis <= cap
+            ? basis
+            : isSuperbotPanel
+              ? superbotJsonlIsLiveOscarFormat(DASHBOARD_SUPERBOT_JSONL)
+                ? PRESET_C_POSITION_USD_DEFAULT
+                : PUMPSWAP_DIP_POSITION_USD_DEFAULT
+              : POSITION_USD_DEFAULT;
         }
         const investedRaw = ot.totalInvestedUsd;
         return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
@@ -4060,7 +4166,9 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     DASHBOARD_COPY_TRADER_STATE_PATH,
   );
   const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
-  const sbLoad = loadSuperbotJsonlForDashboard(DASHBOARD_SUPERBOT_JSONL);
+  const sbLoad = superbotJsonlIsLiveOscarFormat(DASHBOARD_SUPERBOT_JSONL)
+    ? loadLiveOscarJsonlAsPaper2(DASHBOARD_SUPERBOT_JSONL)
+    : loadSuperbotJsonlForDashboard(DASHBOARD_SUPERBOT_JSONL);
   const { superbot: superbotStats, hbOpen: sbHbOpen, hbClosed: sbHbClosed, ...superbotLoaded } = sbLoad;
 
   const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {

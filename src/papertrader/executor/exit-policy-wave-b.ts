@@ -4,6 +4,7 @@
  */
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { LADDER_PNL_EPS } from './tp-ladder-state.js';
 import {
   stampVariantAOnOpen,
@@ -443,7 +444,7 @@ export function waveBTrailSellFractionForRemainder(
 
 /** Stamp policy on first open (before journal). */
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
-  if (cfg.strategyId !== 'live-oscar') return;
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return;
   if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
@@ -474,7 +475,7 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
  * Wave-B opens keep their stamped overrides.
  */
 export function ensureLiveOscarExitPolicyPinned(ot: OpenTrade, cfg?: PaperTraderConfig): void {
-  if (cfg != null && cfg.strategyId !== 'live-oscar') return;
+  if (cfg != null && !isLiveOscarTradingStrategyId(cfg.strategyId)) return;
   if (isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) return;
   if (!ot.liveExitPolicyId) ot.liveExitPolicyId = 'legacy_grid';
   if (ot.liveExitPolicyId !== 'legacy_grid') return;
@@ -552,7 +553,7 @@ export function resolveLiveOscarExitPolicyForTick(
   cfg: PaperTraderConfig,
   pnlFrac?: number,
 ): boolean {
-  if (cfg.strategyId !== 'live-oscar') return false;
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return false;
   if (isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot)) return false;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     return migrateLegacyOpenToWaveB(ot, pnlFrac);

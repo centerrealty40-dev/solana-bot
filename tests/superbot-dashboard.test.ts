@@ -6,6 +6,10 @@ import {
   DASHBOARD_PANEL_ORDER,
   mergeDashboardStrategyPanels,
   type DashboardPaper2StrategyRow,
+  loadLiveOscarJsonlAsPaper2,
+  resolveLiveOscarDashboardStrategyId,
+  superbotJsonlIsLiveOscarFormat,
+  LIVE_OSCAR_PRESET_C_STRATEGY_ID,
 } from '../scripts-tmp/dashboard-server.js';
 import {
   aggregateSuperbotJsonlForDashboard,
@@ -157,5 +161,69 @@ describe('loadSuperbotJsonlForDashboard', () => {
     expect(tl[2]!.kind).toBe('close');
     expect(tl[2]!.reason).toBe('TP2');
     expect(formatSuperbotMskTs(base)).toMatch(/\d{2}\.\d{2}/);
+  });
+});
+
+describe('SuperBot preset-c live journal', () => {
+  it('detects preset-c strategy id from journal path', () => {
+    expect(resolveLiveOscarDashboardStrategyId('/data/live/live-oscar-preset-c.jsonl')).toBe(
+      LIVE_OSCAR_PRESET_C_STRATEGY_ID,
+    );
+    expect(superbotJsonlIsLiveOscarFormat('/data/live/live-oscar-preset-c.jsonl')).toBe(true);
+  });
+
+  it('builds preset-c open/close timeline labels from live JSONL', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superbot-preset-c-'));
+    const fp = path.join(tmpDir, 'live-oscar-preset-c.jsonl');
+    const base = Date.UTC(2026, 5, 23, 12, 0, 0);
+    const mint = 'Mint111111111111111111111111111111111111111';
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base,
+          channel: 'live',
+          kind: 'live_position_open',
+          mint,
+          openTrade: {
+            symbol: 'TEST',
+            metricType: 'mc',
+            entryTs: base,
+            entryMcUsd: 2_500_000,
+            totalInvestedUsd: 100,
+            liveOscarMcapTier: 'low',
+            liveExitPolicyId: 'wave_b_v1',
+            legs: [{ sizeUsd: 100, marketPrice: 0.0025, reason: 'entry_split' }],
+          },
+        }),
+        JSON.stringify({
+          ts: base + 120_000,
+          channel: 'live',
+          kind: 'live_position_close',
+          mint,
+          closedTrade: {
+            symbol: 'TEST',
+            exitTs: base + 120_000,
+            exitReason: 'TRAIL',
+            pnlPct: 8.5,
+            netPnlUsd: 6.2,
+            totalInvestedUsd: 100,
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const ll = loadLiveOscarJsonlAsPaper2(fp);
+    expect(ll.closed.length).toBe(1);
+    const tl = ll.closed[0]!.__timeline as Array<{ kind: string; label: string; contextNote?: string }>;
+    expect(tl[0]!.label).toContain('Preset C');
+    expect(tl[0]!.label).toContain('Telegram dips');
+    expect(tl[0]!.label).toContain('лоу-капа');
+    expect(tl[0]!.contextNote).toContain('Telegram dips');
+    const closeEv = tl.find((e) => e.kind === 'close');
+    expect(closeEv?.label).toContain('wave B');
+    expect(closeEv?.label).toContain('TRAIL');
+    expect(closeEv?.contextNote).toContain('wave B');
   });
 });

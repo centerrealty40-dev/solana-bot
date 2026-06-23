@@ -12,6 +12,7 @@ import {
   resolveLivePermanentDenylistLocalPath,
 } from './mint-permanent-denylist.js';
 import { sendTagged, type TelegramCategory } from '../core/telegram/sender.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 
 const log = child('live-mint-first-probe');
 
@@ -180,7 +181,7 @@ export function onLiveOscarFirstMintProbeFullClose(args: {
 }): void {
   const { liveOscarCfg, strategyId, mint, symbol, netPnlUsd, liveMintFirstProbe } = args;
   if (!liveMintFirstProbe || !liveOscarCfg) return;
-  if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
+  if (!isLiveOscarTradingStrategyId(strategyId) || liveOscarCfg.executionMode !== 'live') return;
 
   const key = mint.trim();
   if (!key) return;

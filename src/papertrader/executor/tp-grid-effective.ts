@@ -3,6 +3,7 @@ import type { OpenTrade } from '../types.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { isVariantAHybridExitPolicy } from './exit-policy-variant-a.js';
 import { isWaveBExitPolicy, waveBTpGridProfileFor } from './exit-policy-wave-b.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 
 export interface TpGridEffective {
   stepPnl: number;
@@ -38,9 +39,9 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
   const paperIdealizedUnlimitedB =
     isPaperOscarIdealizedStackStrategyId(cfg.strategyId) && ot.liveExitProfileMode === 'B';
   /** §5.4 `IDEALIZED_OSCAR_STACK_SPEC_V2` — лестница B без верхней крышки (prod был maxRungs=4). */
-  const liveOscarUnlimitedB = cfg.strategyId === 'live-oscar' && ot.liveExitProfileMode === 'B';
+  const liveOscarUnlimitedB = isLiveOscarTradingStrategyId(cfg.strategyId) && ot.liveExitProfileMode === 'B';
   const variantAHybridUnlimited =
-    cfg.strategyId === 'live-oscar' && isVariantAHybridExitPolicy(ot);
+    isLiveOscarTradingStrategyId(cfg.strategyId) && isVariantAHybridExitPolicy(ot);
   const unlimitedBGrid = paperIdealizedUnlimitedB || liveOscarUnlimitedB || variantAHybridUnlimited;
   const flatSellFraction = Math.min(
     1,

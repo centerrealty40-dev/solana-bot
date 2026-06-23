@@ -1,4 +1,5 @@
 import type { PaperTraderConfig } from './config.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import {
   resolveLiveOscarMcapTier,
   resolveLiveOscarTradeTierFromOpen,
@@ -62,7 +63,7 @@ export function resolveLiveOscarStagedEntryMaxUsd(
 
 /** Fail fast on boot when tier-specific env diverges from contracts. */
 export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void {
-  if (cfg.strategyId !== 'live-oscar' || !cfg.liveStagedEntryEnabled) return;
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !cfg.liveStagedEntryEnabled) return;
 
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg);
   const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg);

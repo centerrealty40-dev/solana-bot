@@ -1,4 +1,5 @@
 import type { PaperTraderConfig } from './config.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 
 /** Live Oscar mcap resolution: below / micro / low / prod / scalp_wave. */
 export type LiveOscarMcapTier = 'below' | 'micro' | 'low' | 'prod' | 'scalp_wave';
@@ -7,12 +8,12 @@ export type LiveOscarMcapTier = 'below' | 'micro' | 'low' | 'prod' | 'scalp_wave
 export type LiveOscarTradeTier = 'micro' | 'low' | 'prod' | 'scalp_wave';
 
 export function isLiveOscarTwoPhaseMcap(cfg: PaperTraderConfig): boolean {
-  return cfg.strategyId === 'live-oscar' && cfg.liveOscarLowMcapLaneEnabled;
+  return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveOscarLowMcapLaneEnabled;
 }
 
 export function isLiveOscarMcapTieringEnabled(cfg: PaperTraderConfig): boolean {
   return (
-    cfg.strategyId === 'live-oscar' &&
+    isLiveOscarTradingStrategyId(cfg.strategyId) &&
     (cfg.liveOscarLowMcapLaneEnabled || cfg.liveOscarMicroMcapLaneEnabled)
   );
 }

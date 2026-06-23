@@ -16,6 +16,7 @@ import {
   resolveLivePermanentDenylistLocalPath,
 } from './mint-permanent-denylist.js';
 import { isLiveBuyDiscoveryTelegramSuppressed } from './wallet-buy-affordability.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 
 const log = child('live-mint-whitelist');
 
@@ -251,7 +252,7 @@ export function onLiveOscarFullCloseUpdateWhitelistLossStreak(args: {
   const { liveOscarCfg, strategyId, mint, symbol, netPnlUsd } = args;
   const key = mint.trim();
   if (!key || !liveOscarCfg) return;
-  if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
+  if (!isLiveOscarTradingStrategyId(strategyId) || liveOscarCfg.executionMode !== 'live') return;
   if (!liveOscarCfg.liveMintWhitelistEnabled) return;
 
   const threshold = consecLossRemoveThreshold();
@@ -358,7 +359,7 @@ export function onLiveOscarFullCloseNegativeTradeDenylist(args: {
   const { liveOscarCfg, strategyId, mint, symbol, netPnlUsd } = args;
   const key = mint.trim();
   if (!key || !liveOscarCfg) return;
-  if (strategyId !== 'live-oscar' || liveOscarCfg.executionMode !== 'live') return;
+  if (!isLiveOscarTradingStrategyId(strategyId) || liveOscarCfg.executionMode !== 'live') return;
   if (!liveOscarCfg.liveNegativeTradeDenyEnabled) {
     log.debug({ mint: key, netPnlUsd }, 'live negative trade denylist disabled (stub preserved)');
     return;
