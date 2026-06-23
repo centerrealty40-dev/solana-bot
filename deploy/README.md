@@ -56,7 +56,7 @@ pm2 list
 
 ## Cron / backups
 
-Daily atlas DB backup to R2 at **04:00 UTC** (crontab user `salpha`): `scripts-tmp/backup-db-r2-api.sh`. Env for R2 lives in `.env` (same keys as `.env.example`).
+Daily PG backup to R2 at **03:10 UTC** (crontab user `salpha`): `scripts/ops/backup-db-r2-api.sh`. Install once: `sudo -u salpha bash scripts/ops/install-vps-pg-backup-cron.sh`. Env: `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `R2_BUCKET` in `.env` (see `.env.example`). DR: NORM §5.5.
 
 **Git backup drift audit** at **04:15 UTC**: `scripts/ops/vps-github-sync-audit.sh` (install once: `bash scripts/ops/install-vps-github-sync-cron.sh`). Prod **`HEAD`** must match **`origin/v2`**; log: `data/logs/git-sync-audit.log`.
 

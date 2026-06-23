@@ -121,9 +121,62 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 Аварийный hotfix — минимальный коммит в **`v2`** → push → §5.2. Секреты — только неотслеживаемые пути (`.env`, `data/`), без подмены tracked-файлов.
 
-### 5.5 Резерв
+### 5.5 Резерв и disaster recovery (краткий runbook)
 
-По [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) §7.3.
+**Ежедневный бэкап PostgreSQL → Cloudflare R2** (cron **`salpha`**, **03:10 UTC**):
+
+| Элемент | Значение |
+|---------|----------|
+| Скрипт | `scripts/ops/backup-db-r2-api.sh` (общие helpers: `_backup-common.sh`) |
+| Установка cron | `sudo -u salpha bash /opt/solana-alpha/scripts/ops/install-vps-pg-backup-cron.sh` |
+| Лог | `/opt/solana-alpha/data/logs/db-backup.log` |
+| Локальный staging | `/home/salpha/backups/postgres/` (retention 14 суток `.dump.zst`) |
+| R2 bucket | `R2_BUCKET` из `.env` (default `solana-alpha-backups`) |
+| Ключи объектов | `postgres/chunks/solana_alpha_YYYYMMDD-HHMMSS.dump.zst/part_XXXX` + `…/manifest.txt` |
+| Env (`.env`) | `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `R2_BUCKET`; опционально `TELEGRAM_*` для алертов |
+
+Схемы в дампе: **`public`**, **`drizzle`** (БД `solana_alpha`; чужие product-схемы не включаются). Формат: `pg_dump -Fc` → `zstd` → chunk upload (≤90 MB) через Cloudflare R2 HTTP API.
+
+**Проверка бэкапа вручную** (на VPS под `salpha`, секреты не печатать):
+
+```bash
+cd /opt/solana-alpha
+bash scripts/ops/backup-db-r2-api.sh
+tail -20 data/logs/db-backup.log
+```
+
+**Восстановление PostgreSQL из R2** (на чистом или существующем хосте с Postgres):
+
+1. В `.env` задать `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `R2_BUCKET` (как на проде).
+2. Скачать и проверить последний архив:
+   ```bash
+   cd /opt/solana-alpha && set -a && . ./.env && set +a
+   bash scripts-tmp/restore-from-r2-chunks.sh
+   ```
+   Без аргумента скрипт берёт **последний** `manifest.txt` в `postgres/chunks/`. Для конкретного снимка: `bash scripts-tmp/restore-from-r2-chunks.sh postgres/chunks/solana_alpha_YYYYMMDD-HHMMSS.dump.zst`.
+3. После проверки (`RESTORE CHECK OK` в stdout) — восстановить в БД (пример; **перезаписывает** схемы):
+   ```bash
+   cd /tmp/r2-restore-check
+   dropdb --if-exists solana_alpha
+   createdb -O salpha solana_alpha
+   pg_restore --no-owner --no-acl -d solana_alpha dump.file
+   ```
+4. Перезапустить PM2 под `salpha` (`pm2 reload ecosystem.config.cjs --update-env`).
+
+**Восстановление кода solana-alpha:** клон `/opt/solana-alpha` из Git **`origin/v2`** (§5.2): `git fetch origin v2 && git reset --hard origin/v2 && npm ci`. Секреты и `data/` — из отдельного хранилища / ручного `.env`, не из Git.
+
+**dc-trader** (отдельный продукт на том же VPS): каталог **`/opt/dc-trader`**, PM2 **`dc-trader`**. Код — свой Git-репозиторий (ветка по политике продукта); state/journal — **`/opt/dc-trader/data/`** (не входят в PG-бэкап solana-alpha). После rebuild VPS: восстановить `.env`, `data/`, затем `git pull` / deploy по runbook продукта.
+
+**Минимальный чеклист rebuild VPS**
+
+1. OS + Postgres + Node + PM2; пользователь **`salpha`**; каталоги `/opt/solana-alpha`, `/opt/dc-trader`.
+2. Восстановить **`/opt/solana-alpha/.env`** (и при необходимости `/opt/dc-trader/.env`) из secure backup.
+3. §5.2 — checkout **`v2`**, `npm ci`, `pm2 startOrReload ecosystem.config.cjs --update-env`, `post-deploy-smoke.sh`.
+4. PG restore из R2 (§5.5 выше) **или** свежий дамп, если R2 недоступен.
+5. `install-vps-pg-backup-cron.sh` + `install-vps-github-sync-cron.sh` — cron бэкапа и drift-audit.
+6. Проверить: `tail data/logs/db-backup.log`, `pm2 ls`, smoke green.
+
+Перед рискованным деплоем — дополнительно §7.3 [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) (JSONL / точечный `pg_dump`).
 
 ---
 
@@ -143,6 +196,7 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 | Параллельные агенты | [`docs/strategy/release/PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) |
 | CI hygiene | [`scripts/check-release-hygiene.mjs`](../../../scripts/check-release-hygiene.mjs) |
 | Git hooks / smoke | [`scripts/release/install-git-hooks.sh`](../../../scripts/release/install-git-hooks.sh), [`scripts/release/post-deploy-smoke.sh`](../../../scripts/release/post-deploy-smoke.sh), [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md) |
+| PG backup / DR | [`scripts/ops/backup-db-r2-api.sh`](../../../scripts/ops/backup-db-r2-api.sh), [`scripts-tmp/restore-from-r2-chunks.sh`](../../../scripts-tmp/restore-from-r2-chunks.sh), [`scripts/ops/install-vps-pg-backup-cron.sh`](../../../scripts/ops/install-vps-pg-backup-cron.sh) |
 | Платформа и агенты | [`docs/platform/BOUNDARIES.md`](../../platform/BOUNDARIES.md), [`docs/agents/AGENT_BOOTSTRAP.md`](../../agents/AGENT_BOOTSTRAP.md) |
 
 ---
@@ -166,6 +220,7 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 | Дата | Версия продукта | Суть |
 |------|-----------------|------|
+| 2026-06-24 | — | §5.5 — PG→R2 cron, R2 path, restore и rebuild VPS (DR runbook). |
 | 2026-06-13 | 1.11.446 | §5.2 — канонический `deploy-live-oscar-vps.sh` + singleton smoke (один `live-oscar.ts`, запрет `/root/.pm2`). |
 | 2026-05-22 | 1.11.253 | Git hooks (staged imports + typecheck), CI `check:imports`, post-deploy smoke, branch protection doc. |
 | 2026-05-04 | 1.11.62 | §4.2 — атомарность изменений TypeScript/контрактов модулей; совпадение с CI; VPS и откат; §8 — расширенный чеклист интегратора (в т.ч. против ошибки `LiveBuyIncreaseDeny` / `increaseDeny`). |
