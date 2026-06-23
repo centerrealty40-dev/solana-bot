@@ -17,7 +17,7 @@ import {
 import { resolveLiveOscarScalpWaveMcapTier } from '../papertrader/live-oscar-scalp-wave.js';
 import type { SnapshotFeatures } from '../papertrader/types.js';
 import { evaluatePresetCCandidates, type PresetCPullbackCandidate } from './pullback-scan.js';
-import { presetCFilterReasons } from './filters.js';
+import { isPresetCMcapKnown, presetCFilterReasons } from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
 import { presetCTelegramGateReasons } from './telegram-gate.js';
 
@@ -31,6 +31,7 @@ function resolvePresetCPhaseTier(
   cfg: PaperTraderConfig,
   mcapUsd: number,
 ): LiveOscarTradeTier | undefined {
+  if (!isPresetCMcapKnown(mcapUsd)) return 'low';
   if (resolveLiveOscarScalpWaveMcapTier(cfg, mcapUsd) === 'scalp_wave') {
     return 'scalp_wave';
   }

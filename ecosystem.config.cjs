@@ -1248,7 +1248,7 @@ const PM2_APPS = [
     },
     /**
      * Preset C — isolated Live Oscar on SuperBot wallet (HcV3BhmK…).
-     * Entry: PG-native pullback ($1–15M mcap, 9–30% retrace). Exit: wave B (shared tracker).
+     * Entry: PG-native pullback ($1–20M mcap when known; unknown mcap allowed, 9–30% retrace). Exit: wave B (shared tracker).
      * Does NOT share discovery path with `live-oscar`.
      */
     {
