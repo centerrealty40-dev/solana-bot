@@ -19,6 +19,7 @@ import type { SnapshotFeatures } from '../papertrader/types.js';
 import { evaluatePresetCCandidates, type PresetCPullbackCandidate } from './pullback-scan.js';
 import { presetCFilterReasons } from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
+import { presetCTelegramGateReasons } from './telegram-gate.js';
 
 const MINT_COOLDOWN_MS = Math.max(
   0,
@@ -109,6 +110,8 @@ export function evaluatePresetCCandidate(
   }
 
   appendPostExitReentryGateReasons(cfg, c.mint, c.priceUsd, reasons);
+
+  reasons.push(...presetCTelegramGateReasons(c.mint, nowMs));
 
   const tier = resolvePresetCPhaseTier(cfg, c.refMcapUsd);
   if (!tier) {

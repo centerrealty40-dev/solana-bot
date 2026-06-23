@@ -21,13 +21,13 @@ const PEAK_BUCKET_MINUTES = Math.max(
   ),
 );
 
-type DedupeEntry = {
+export type RetracePullbackChannelDedupeEntry = {
   peakBucket: number;
   sentAtMs: number;
   source: 'pullback' | 'retrace';
 };
 
-type DedupeStore = Record<string, DedupeEntry>;
+type DedupeStore = Record<string, RetracePullbackChannelDedupeEntry>;
 
 function dedupeFilePath(): string {
   return path.join(process.cwd(), DEDUPE_REL);
@@ -61,6 +61,11 @@ function readStoreSync(): DedupeStore {
   } catch {
     return {};
   }
+}
+
+/** Read-only snapshot of channel send dedupe (pullback + retrace watchers). */
+export function readRetracePullbackChannelStore(): Record<string, RetracePullbackChannelDedupeEntry> {
+  return readStoreSync();
 }
 
 function writeStoreSync(store: DedupeStore): void {

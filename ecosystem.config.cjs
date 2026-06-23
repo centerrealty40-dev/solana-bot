@@ -1336,7 +1336,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_FLASH_CRASH_KILL_ENABLED: '0',
         LIVE_STRATEGY_ENABLED: '1',
-        LIVE_EXECUTION_MODE: 'live',
+        /** Emergency pause until telegram gate verified on prod — restore `live` after smoke. */
+        LIVE_EXECUTION_MODE: 'simulate',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar-preset-c',
         LIVE_TRADES_PATH: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
@@ -1389,6 +1390,10 @@ const PM2_APPS = [
         PRESET_C_DISCOVERY_MIN_HOLDERS: '1000',
         PRESET_C_DISCOVERY_MIN_AGE_HOURS: '8',
         PRESET_C_DISCOVERY_MINT_COOLDOWN_MS: '1800000',
+        /** Buy only after dips/retrace channel watcher recorded send in dedupe JSON. */
+        PRESET_C_TELEGRAM_GATE_ENABLED: '1',
+        PRESET_C_TELEGRAM_GATE_SOURCES: 'pullback,retrace',
+        PRESET_C_TELEGRAM_GATE_MAX_AGE_MS: '3600000',
       },
     },
     /**
