@@ -54,6 +54,35 @@
 
 ---
 
+## [1.11.494] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.494`
+
+### live-oscar: унификация входов — только $200 и $300
+
+**Изменение:** все staged-entry ноги приведены к двум размерам **$200** и **$300**; prod leg-3 **$600 → $300**; micro leg-2 **$150 → $200**.
+
+| Tier | Leg-1 | Leg-2 @ −5% | Leg-3 @ −10% | Max |
+|------|-------|-------------|--------------|-----|
+| **prod** | $200 | $200 | **$300** | **$700** |
+| **low** | $200 | $200 | $300 | **$700** |
+| **micro** | $300 | **$200** | $300 | **$800** |
+| **scalp_wave** | $300 one-shot | — | — | **$300** |
+
+- `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD`: **`300`** (prod/low leg-3)
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD`: **`200`**
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD`: **`500`** (leg1+leg2)
+- `LIVE_MAX_POSITION_USD`: **`700`** (полный prod/low план)
+- defaults в `config.ts`; тесты entry-sizing / escalation / labels
+
+После scalp_wave escalation — tier sizing целевого mcap (micro max **$800**, low/prod **$700**).
+
+**Откат:** redeploy `sa-alpha-1.11.493` или восстановить env 1.11.492/493; `pm2 reload ecosystem.config.cjs --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.493] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.493`

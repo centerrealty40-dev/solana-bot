@@ -41,7 +41,7 @@ export function resolveLiveOscarEntrySplitTotalUsd(
   return resolveLiveOscarEntrySplitLegUsd(cfg, tier) + resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
 }
 
-/** Tier-aware leg-3 staged avg @ −10%: micro/low=$300, prod/default=$600. */
+/** Tier-aware leg-3 staged avg @ −10%: all tiers $300 (prod via `liveStagedEntrySecondLegUsd`). */
 export function resolveLiveOscarStagedAvgLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,

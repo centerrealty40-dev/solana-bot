@@ -31,7 +31,7 @@ describe('live-staged-entry-labels', () => {
         liveStagedEntryEntrySplitLegUsd: 200,
         liveStagedEntryEntrySplitLeg2Usd: 200,
         liveStagedEntryEntrySplitTargetDropPct: 5,
-        liveStagedEntrySecondLegUsd: 600,
+        liveStagedEntrySecondLegUsd: 300,
         liveStagedEntrySecondDropPct: 10,
         liveStagedEntryThirdLegUsd: 0,
         liveStagedEntryThirdDropPct: 0,
@@ -40,7 +40,7 @@ describe('live-staged-entry-labels', () => {
     );
     assert.match(s, /1-я нога сплита.*\$200/);
     assert.match(s, /2-я нога сплита.*\$200.*−5%/);
-    assert.match(s, /3-я нога сплита.*\$600.*−10%/);
+    assert.match(s, /3-я нога сплита.*\$300.*−10%/);
     assert.doesNotMatch(s, /1-е усреднение/);
   });
 
