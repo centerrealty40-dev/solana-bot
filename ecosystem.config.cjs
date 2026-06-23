@@ -1336,7 +1336,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_FLASH_CRASH_KILL_ENABLED: '0',
         LIVE_STRATEGY_ENABLED: '1',
-        LIVE_EXECUTION_MODE: 'simulate',
+        LIVE_EXECUTION_MODE: 'live',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar-preset-c',
         LIVE_TRADES_PATH: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
@@ -1368,10 +1368,10 @@ const PM2_APPS = [
         LIVE_TELEGRAM_HEARTBEAT: '0',
         LIVE_DAILY_SUMMARY_ENABLED: '0',
         /**
-         * SuperBot wallet — place keypair at this path on VPS (`chmod 600`).
-         * On VPS `.env` may also define `WALLET_KEYPAIR_PATH` for the same key; symlink or copy here.
+         * SuperBot wallet — one-line base58 in `.keypair.txt` (Phantom export) or CLI JSON in `.keypair.json`.
+         * Place on VPS with `chmod 600`; loader auto-detects format and `.txt`/`.json` sibling fallback.
          */
-        LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-preset-c.keypair.json'),
+        LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-preset-c.keypair.txt'),
         LIVE_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
         LIVE_SIM_ENABLED: '1',
         LIVE_MAX_POSITION_USD: PRESET_C_MAX_POSITION_USD,
