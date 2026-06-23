@@ -117,5 +117,14 @@ scripts-tmp/_recent_closes.py
 scripts-tmp/hl-twap-exit-*.py
 scripts-tmp/probe-*.ts
 
+scripts-tmp/_patch*
+scripts-tmp/probe-*.mjs
+scripts-tmp/vault-probe.mjs
+scripts-tmp/dc-*
+scripts-tmp/analyze-trader.mjs
+scripts-tmp/build-table.mjs
+scripts-tmp/trader-journal.jsonl
+scripts-tmp/trader-state.json
+
 # Local parallel git worktree clone (not shipped with product)
 solana-alpha-v2-bs/
