@@ -32,6 +32,7 @@ import {
   type EvalDecision,
 } from './discovery/dip-clones.js';
 import { runPresetCDiscovery } from '../preset-c/discovery.js';
+import { stampPresetCTgDedupeKeysOnOpen } from '../preset-c/telegram-gate.js';
 import {
   isLiveOscarMainStrategyId,
   isLiveOscarPresetCStrategyId,
@@ -1900,6 +1901,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         if (isLiveOscarTradingStrategyId(cfg.strategyId)) stampLiveOscarExitPolicyOnOpen(ot, cfg);
+        if (isLiveOscarPresetCStrategyId(cfg.strategyId)) stampPresetCTgDedupeKeysOnOpen(ot);
 
         open.set(ot.mint, ot);
         if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {

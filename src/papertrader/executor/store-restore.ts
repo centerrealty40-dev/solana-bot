@@ -466,6 +466,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
     }
 
+    const tgKeys = rawPayload.presetCTgDedupeKeys;
+    if (Array.isArray(tgKeys)) {
+      const keys = tgKeys
+        .map((k) => (typeof k === 'string' ? k.trim() : ''))
+        .filter((k) => k.length > 0);
+      if (keys.length > 0) ot.presetCTgDedupeKeys = keys;
+    }
+
     return ot;
   } catch {
     return null;

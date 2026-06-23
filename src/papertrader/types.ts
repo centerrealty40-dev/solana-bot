@@ -368,6 +368,9 @@ export interface OpenTrade {
   liveMintFirstProbe?: boolean;
   /** Signal-kill % зафиксирован при open (обычно 7 для first-probe). */
   liveMintFirstProbeKillDropPct?: number;
+
+  /** Preset C: TG channel dedupe keys that unlocked entry (`mint|peakBucket`). */
+  presetCTgDedupeKeys?: string[];
 }
 
 export interface LiveStagedEntryState {

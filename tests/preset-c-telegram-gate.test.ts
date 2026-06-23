@@ -33,6 +33,14 @@ describe('preset C telegram gate', () => {
     );
   }
 
+  function writeConsumed(body: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(tmpDir, 'data/live/preset-c-tg-consumed.json'),
+      `${JSON.stringify(body)}\n`,
+      'utf8',
+    );
+  }
+
   it('blocks when mint has no channel alert in dedupe store', async () => {
     writeStore({});
     const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
@@ -61,6 +69,76 @@ describe('preset C telegram gate', () => {
     });
     const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
     expect(presetCTelegramGateReasons(mint)).toEqual(['preset_c_telegram_gate_no_channel_alert']);
+  });
+
+  it('blocks when fresh alert dedupe key was already traded', async () => {
+    const mint = 'EaxAUcXxNnVwcqm2BBocbows7D1XVY2Q63V38NEypump';
+    const key = `${mint}|1980246`;
+    writeStore({
+      [key]: { peakBucket: 1980246, sentAtMs: Date.now() - 60_000, source: 'retrace' },
+    });
+    writeConsumed({ [key]: { consumedAtMs: Date.now() - 30_000, peakBucket: 1980246 } });
+    const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
+    expect(presetCTelegramGateReasons(mint)).toEqual(['preset_c_telegram_gate_signal_already_traded']);
+  });
+
+  it('passes when consumed key expired (24h TTL)', async () => {
+    const mint = 'EaxAUcXxNnVwcqm2BBocbows7D1XVY2Q63V38NEypump';
+    const key = `${mint}|1980246`;
+    writeStore({
+      [key]: { peakBucket: 1980246, sentAtMs: Date.now() - 60_000, source: 'retrace' },
+    });
+    writeConsumed({
+      [key]: { consumedAtMs: Date.now() - 25 * 60 * 60_000, peakBucket: 1980246 },
+    });
+    const { presetCTelegramGateReasons, isConsumed } = await import('../src/preset-c/telegram-gate.js');
+    expect(isConsumed(key)).toBe(false);
+    expect(presetCTelegramGateReasons(mint)).toEqual([]);
+  });
+
+  it('passes on new peak bucket while old bucket key remains consumed', async () => {
+    const mint = 'EaxAUcXxNnVwcqm2BBocbows7D1XVY2Q63V38NEypump';
+    const oldKey = `${mint}|1980246`;
+    const newKey = `${mint}|1980247`;
+    writeStore({
+      [oldKey]: { peakBucket: 1980246, sentAtMs: Date.now() - 3_600_000, source: 'retrace' },
+      [newKey]: { peakBucket: 1980247, sentAtMs: Date.now() - 30_000, source: 'pullback' },
+    });
+    writeConsumed({ [oldKey]: { consumedAtMs: Date.now() - 60_000, peakBucket: 1980246 } });
+    const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
+    expect(presetCTelegramGateReasons(mint)).toEqual([]);
+  });
+
+  it('markConsumedKeys records keys and blocks subsequent gate pass', async () => {
+    const mint = 'ACpzkGJV3DDU8HXy8yjab7RL9qNmDGym2GwLkzNppump';
+    const key = `${mint}|1980250`;
+    writeStore({
+      [key]: { peakBucket: 1980250, sentAtMs: Date.now() - 60_000, source: 'pullback' },
+    });
+    const gate = await import('../src/preset-c/telegram-gate.js');
+    expect(gate.presetCTelegramGateReasons(mint)).toEqual([]);
+    gate.markConsumedKeys([key]);
+    expect(gate.isConsumed(key)).toBe(true);
+    expect(gate.presetCTelegramGateReasons(mint)).toEqual([
+      'preset_c_telegram_gate_signal_already_traded',
+    ]);
+  });
+
+  it('markPresetCTelegramGateConsumedOnFullClose uses stamped open keys', async () => {
+    const mint = 'ACpzkGJV3DDU8HXy8yjab7RL9qNmDGym2GwLkzNppump';
+    const key = `${mint}|1980250`;
+    const staleKey = `${mint}|1980245`;
+    writeStore({
+      [key]: { peakBucket: 1980250, sentAtMs: Date.now() - 60_000, source: 'pullback' },
+      [staleKey]: { peakBucket: 1980245, sentAtMs: Date.now() - 30_000, source: 'pullback' },
+    });
+    const gate = await import('../src/preset-c/telegram-gate.js');
+    gate.markPresetCTelegramGateConsumedOnFullClose('live-oscar-preset-c', {
+      mint,
+      presetCTgDedupeKeys: [key],
+    } as import('../src/papertrader/types.js').OpenTrade);
+    expect(gate.isConsumed(key)).toBe(true);
+    expect(gate.isConsumed(staleKey)).toBe(false);
   });
 
   it('evaluatePresetCCandidate applies telegram gate', async () => {
