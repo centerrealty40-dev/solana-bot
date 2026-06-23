@@ -84,6 +84,19 @@ fi
 find "${BACKUP_DIR}/runtime" -type f -name "*.tar.zst" -mtime +30 -delete || true
 
 # --- journals: local zstd ---
+compress_journal() {
+  local src="$1"
+  local dest="$2"
+  local size
+  size=$(stat -c '%s' "${src}")
+  local level=19
+  if [[ "${size}" -gt $((500 * 1024 * 1024)) ]]; then
+    level=3
+    log "journal large file (${size}B) using zstd -${level}"
+  fi
+  zstd -q "-${level}" -T0 "${src}" -o "${dest}"
+}
+
 for j in "${LOCAL_JOURNALS[@]}"; do
   src="${LIVE_DIR}/${j}"
   if [[ ! -f "${src}" ]]; then
@@ -91,7 +104,7 @@ for j in "${LOCAL_JOURNALS[@]}"; do
     continue
   fi
   dest="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}.jsonl.zst"
-  zstd -q -19 -T0 "${src}" -o "${dest}"
+  compress_journal "${src}" "${dest}"
   log "journal local ok ${j} -> $(basename "${dest}")"
 done
 
@@ -104,7 +117,7 @@ if r2_credentials_ok; then
     [[ -f "${src}" ]] || continue
     archive="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}.jsonl.zst"
     if [[ ! -f "${archive}" ]]; then
-      zstd -q -19 -T0 "${src}" -o "${archive}"
+      compress_journal "${src}" "${archive}"
     fi
     TMPDIR="/tmp/r2_live_journal_${TS}_${j}"
     mkdir -p "${TMPDIR}"
