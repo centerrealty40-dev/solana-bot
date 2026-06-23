@@ -56,7 +56,16 @@ pm2 list
 
 ## Cron / backups
 
-Daily PG backup to R2 at **03:10 UTC** (crontab user `salpha`): `scripts/ops/backup-db-r2-api.sh`. Install once: `sudo -u salpha bash scripts/ops/install-vps-pg-backup-cron.sh`. Env: `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `R2_BUCKET` in `.env` (see `.env.example`). DR: NORM §5.5.
+Full DR runbook: [`docs/strategy/release/DR_RESTORE.md`](../docs/strategy/release/DR_RESTORE.md).
+
+| Job | Schedule (UTC) | Script |
+|-----|----------------|--------|
+| Postgres → R2 | daily **03:10** | `scripts/ops/backup-db-r2-api.sh` |
+| Secrets (gpg) | daily **03:20** | `scripts/ops/backup-secrets-encrypted.sh` |
+| Live journals + runtime | daily **03:30**; large journal R2 **Sun 04:00** | `scripts/ops/backup-live-data.sh` |
+
+Install all cron jobs (as `salpha`): `bash scripts/ops/install-backup-cron.sh` (alias: `install-vps-pg-backup-cron.sh`).  
+Local: `/home/salpha/backups/`. Env: `CF_*`, `R2_BUCKET`, `BACKUP_GPG_PASSPHRASE_FILE` in `.env`.
 
 **Git backup drift audit** at **04:15 UTC**: `scripts/ops/vps-github-sync-audit.sh` (install once: `bash scripts/ops/install-vps-github-sync-cron.sh`). Prod **`HEAD`** must match **`origin/v2`**; log: `data/logs/git-sync-audit.log`.
 

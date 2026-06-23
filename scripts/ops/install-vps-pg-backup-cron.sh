@@ -15,7 +15,7 @@ MARK_BEGIN="# VPS_PG_BACKUP_R2_BEGIN"
 MARK_END="# VPS_PG_BACKUP_R2_END"
 CRON_LINE="${SCHEDULE} bash ${APP_DIR}/scripts/ops/backup-db-r2-api.sh >> ${APP_DIR}/data/logs/db-backup.log 2>&1"
 
-mkdir -p "${APP_DIR}/data/logs" "${APP_DIR}/backups" "/home/salpha/backups/postgres"
+mkdir -p "${APP_DIR}/data/logs" "/home/salpha/backups/postgres"
 chmod +x "${APP_DIR}/scripts/ops/backup-db-r2-api.sh" 2>/dev/null || true
 chmod +x "${APP_DIR}/scripts/ops/_backup-common.sh" 2>/dev/null || true
 
