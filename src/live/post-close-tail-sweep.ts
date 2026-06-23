@@ -5,13 +5,18 @@ import {
   fetchJupiterTokenUsdPrice,
   fetchLatestSnapshotPrice,
 } from '../papertrader/pricing.js';
-import type { DexSource } from '../papertrader/types.js';
+import type { DexSource, ExitReason } from '../papertrader/types.js';
 import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import type { LiveOscarConfig } from './config.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 
 const pendingByMint = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Cap applies only after killstop-class exits (may re-enter same mint before timer fires). */
+export function livePostCloseTailSweepCapApplies(exitReason?: ExitReason): boolean {
+  return exitReason === 'KILLSTOP' || exitReason === 'FLASH_CRASH_KILL';
+}
 
 /**
  * Сбрасывает отложенный post-close tail sweep для mint (например, новый вход по тому же mint
@@ -32,6 +37,8 @@ export function scheduleLivePostCloseTailSweep(args: {
   /** Last known USD/token at close (fallback if fresh price missing). */
   priceUsdPerToken: number;
   dexSource?: string;
+  /** When set, `LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD` applies only for killstop-class exits. */
+  exitReason?: ExitReason;
 }): void {
   const liveCfg = args.liveCfg;
   if (!liveCfg) return;
@@ -52,6 +59,7 @@ export function scheduleLivePostCloseTailSweep(args: {
       decimals: args.decimals,
       hintPriceUsdPerToken: args.priceUsdPerToken,
       dexSource: args.dexSource,
+      exitReason: args.exitReason,
     });
   }, delayMs);
   pendingByMint.set(mint, handle);
@@ -64,6 +72,7 @@ async function runLivePostCloseTailSweep(args: {
   decimals: number;
   hintPriceUsdPerToken: number;
   dexSource?: string;
+  exitReason?: ExitReason;
 }): Promise<void> {
   const { liveCfg, mint, symbol } = args;
   const dec = Math.min(24, Math.max(0, Math.floor(args.decimals)));
@@ -116,7 +125,11 @@ async function runLivePostCloseTailSweep(args: {
     const tokens = Number(raw) / 10 ** dec;
     const estUsd = Number.isFinite(tokens) && tokens > 0 ? tokens * px : 0;
     const maxUsd = liveCfg.livePostCloseTailSweepMaxUsd;
-    if (maxUsd > 0 && estUsd > maxUsd) {
+    if (
+      maxUsd > 0 &&
+      estUsd > maxUsd &&
+      livePostCloseTailSweepCapApplies(args.exitReason)
+    ) {
       appendLiveJsonlEvent({
         kind: 'live_post_close_tail',
         mint,
@@ -124,6 +137,7 @@ async function runLivePostCloseTailSweep(args: {
         note: 'balance_above_tail_cap',
         rawAtoms: raw.toString(),
         estUsd: +estUsd.toFixed(8),
+        exitReason: args.exitReason,
       });
       return;
     }

@@ -193,6 +193,7 @@ function scheduleTailAfterLiveClose(
   decimals: number,
   priceUsdPerToken: number,
   dexSource?: string,
+  exitReason?: ExitReason,
 ): void {
   const px = priceUsdPerToken > 0 ? priceUsdPerToken : 1e-12;
   scheduleLivePostCloseTailSweep({
@@ -202,6 +203,7 @@ function scheduleTailAfterLiveClose(
     decimals,
     priceUsdPerToken: px,
     dexSource,
+    exitReason,
   });
 }
 
@@ -1735,6 +1737,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     ot.tokenDecimals ?? 6,
     marketSell,
     ot.source,
+    'CAPITAL_ROTATE',
   );
   peakStateByMint.delete(mint);
   console.log(
@@ -1885,6 +1888,7 @@ export async function trackerForceFullExitLive(args: {
     ot.tokenDecimals ?? 6,
     marketSell,
     ot.source,
+    'PERIODIC_HEAL',
   );
   peakStateByMint.delete(mint);
   console.log(
@@ -2567,6 +2571,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           ot.tokenDecimals ?? 6,
           marketSell,
           ot.source,
+          'LIQ_DRAIN',
         );
         peakStateByMint.delete(mint);
         console.log(
@@ -3778,6 +3783,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.tokenDecimals ?? 6,
         marketSell,
         ot.source,
+        ct.exitReason,
       );
       peakStateByMint.delete(mint);
       const arrow = ct.pnlPct >= 0 ? '+' : '';
