@@ -31,7 +31,7 @@ fi
 
 if [[ -z "${PREFIX}" ]]; then
   PREFIX=$(python3 - <<'PY'
-import json
+import json, re
 j = json.load(open("objects.json"))
 r = j.get("result", [])
 if isinstance(r, dict):
@@ -45,7 +45,12 @@ for o in objs:
     if isinstance(o, dict) and "key" in o:
         keys.append(o["key"])
 man = [k for k in keys if k.endswith("/manifest.txt")]
-man.sort()
+
+def sort_key(k: str):
+    m = re.search(r"solana_alpha_(\d{8}-\d{6})", k)
+    return m.group(1) if m else k
+
+man.sort(key=sort_key)
 print(man[-1].rsplit("/manifest.txt", 1)[0] if man else "")
 PY
 )
@@ -82,8 +87,8 @@ done < <(tail -n +4 manifest.txt)
 cat parts/part_* > "${FILE_NAME}"
 
 ls -lh "${FILE_NAME}"
-zstd -t "${FILE_NAME}"
-zstd -d "${FILE_NAME}" -o dump.file
+zstd -f -t "${FILE_NAME}"
+zstd -f -d "${FILE_NAME}" -o dump.file
 pg_restore --list dump.file >/dev/null
 
 echo "RESTORE CHECK OK: archive valid, pg_restore can read dump"
