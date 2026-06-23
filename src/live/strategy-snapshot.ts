@@ -104,6 +104,9 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     Number.isFinite(ot.liveMintFirstProbeKillDropPct)
       ? { liveMintFirstProbeKillDropPct: ot.liveMintFirstProbeKillDropPct }
       : {}),
+    ...(ot.presetCTgDedupeKeys != null && ot.presetCTgDedupeKeys.length > 0
+      ? { presetCTgDedupeKeys: [...ot.presetCTgDedupeKeys] }
+      : {}),
   };
 }
 

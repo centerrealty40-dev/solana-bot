@@ -731,7 +731,7 @@ const PM2_APPS = [
          * на каждом +8% + defensive-trail на остаток (раннер); kill −50% и брейкэвен-пол остаются.
          * Wave-B тайм-стоп 12ч применяется ТОЛЬКО к новым (заклеймлённым) позициям. OFF → байт-в-байт лесенка.
          */
-        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '0',
         PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
@@ -1337,8 +1337,9 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_ENABLED: '0',
         PAPER_VOLUME_LEADER_ENABLED: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION: '0.20',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
-        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '0',
         PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_FLASH_CRASH_KILL_ENABLED: '0',
