@@ -8,8 +8,11 @@ import {
   type DashboardPaper2StrategyRow,
   loadLiveOscarJsonlAsPaper2,
   resolveLiveOscarDashboardStrategyId,
+  resolveLiveOscarOpenSnapshotPath,
+  synthesizeTimelineFromLiveOpenTrade,
   superbotJsonlIsLiveOscarFormat,
   LIVE_OSCAR_PRESET_C_STRATEGY_ID,
+  paper2OpenItemFromLiveOpenTrade,
 } from '../scripts-tmp/dashboard-server.js';
 import {
   aggregateSuperbotJsonlForDashboard,
@@ -225,5 +228,120 @@ describe('SuperBot preset-c live journal', () => {
     expect(closeEv?.label).toContain('wave B');
     expect(closeEv?.label).toContain('TRAIL');
     expect(closeEv?.contextNote).toContain('wave B');
+  });
+
+  it('resolves preset-c open snapshot path from journal path', () => {
+    expect(resolveLiveOscarOpenSnapshotPath('/data/live/live-oscar-preset-c.jsonl')).toMatch(
+      /live-oscar-preset-c-open-snapshot\.json$/,
+    );
+  });
+
+  it('parses execution_attempt quote slip onto open row', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superbot-exec-slip-'));
+    const fp = path.join(tmpDir, 'live-oscar-preset-c.jsonl');
+    const base = Date.UTC(2026, 5, 24, 8, 0, 0);
+    const mint = 'MintExec111111111111111111111111111111111111';
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base,
+          channel: 'live',
+          kind: 'execution_attempt',
+          side: 'buy',
+          mint,
+          intentId: 'intent-1',
+          quoteSnapshot: { provider: 'jupiter', slippageBps: 50, priceImpactPct: '0.00125' },
+        }),
+        JSON.stringify({
+          ts: base + 1000,
+          channel: 'live',
+          kind: 'live_position_open',
+          mint,
+          openTrade: {
+            symbol: 'SLIP',
+            metricType: 'price',
+            entryTs: base + 1000,
+            totalInvestedUsd: 50,
+            avgEntryMarket: 0.01,
+            legs: [{ ts: base + 1000, marketPrice: 0.01, sizeUsd: 50, reason: 'open' }],
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    const ll = loadLiveOscarJsonlAsPaper2(fp);
+    expect(ll.open.length).toBe(1);
+    expect(ll.open[0]!.entryPriceVerifySource).toBe('jupiter');
+    expect(ll.open[0]!.entryPriceVerifySlipPct).toBe(0.5);
+    expect(ll.open[0]!.entryPriceVerifyImpactPct).toBe(0.125);
+  });
+
+  it('synthesizes open timeline legs from openTrade snapshot shape', () => {
+    const mint = 'MintSynth111111111111111111111111111111111';
+    const base = Date.UTC(2026, 5, 24, 9, 0, 0);
+    const tl = synthesizeTimelineFromLiveOpenTrade(mint, {
+      symbol: 'SYN',
+      metricType: 'price',
+      entryTs: base,
+      liveOscarMcapTier: 'low',
+      legs: [
+        { ts: base, marketPrice: 0.002, sizeUsd: 50, reason: 'open' },
+        { ts: base + 60_000, marketPrice: 0.0021, sizeUsd: 50, reason: 'entry_split', triggerPct: 0.05 },
+      ],
+      partialSells: [],
+      totalInvestedUsd: 100,
+    }, LIVE_OSCAR_PRESET_C_STRATEGY_ID);
+    expect(tl.length).toBe(2);
+    expect(tl[0]!.kind).toBe('open');
+    expect(tl[0]!.label).toContain('Preset C');
+    expect(tl[0]!.spotPxUsd).toBe(0.002);
+    expect(tl[0]!.amountUsd).toBe(50);
+    expect(tl[1]!.spotPxUsd).toBe(0.0021);
+    expect(tl[1]!.amountUsd).toBe(50);
+  });
+
+  it('shows fee PnL for RECONCILE_ORPHAN closes (net 0 in journal)', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superbot-reconcile-'));
+    const fp = path.join(tmpDir, 'live-oscar-preset-c.jsonl');
+    const base = Date.UTC(2026, 5, 24, 10, 0, 0);
+    const mint = 'MintReco1111111111111111111111111111111111';
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base + 120_000,
+          channel: 'live',
+          kind: 'live_position_close',
+          mint,
+          closedTrade: {
+            symbol: 'RECO',
+            entryTs: base,
+            exitTs: base + 120_000,
+            exitReason: 'RECONCILE_ORPHAN',
+            totalInvestedUsd: 100,
+            netPnlUsd: 0,
+            pnlPct: 0,
+            grossPnlUsd: -0.8,
+            grossPnlPct: -0.8,
+            avgEntryMarket: 0.001,
+            avgEntry: 0.00101,
+            effective_entry_price: 0.00101,
+            theoretical_entry_price: 0.001,
+            effective_exit_price: 0.00101,
+            theoretical_exit_price: 0.001,
+            lastObservedPriceUsd: 0.0009,
+            durationMin: 2,
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    const ll = loadLiveOscarJsonlAsPaper2(fp);
+    expect(ll.closed.length).toBe(1);
+    const c = ll.closed[0]!;
+    expect(c.netPnlUsd).toBe(-0.8);
+    expect(c.entryPriceUsd).toBe(0.001);
+    expect(c.exitPriceUsd).toBe(0.0009);
   });
 });
