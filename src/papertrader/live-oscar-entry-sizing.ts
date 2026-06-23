@@ -6,7 +6,7 @@ import {
 } from './live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from './types.js';
 
-/** Tier-aware staged-entry split leg-1: micro=$300, low/prod/default=$1000 (canonical env). */
+/** Tier-aware staged-entry split leg-1: micro=$300, low/prod/default=$200 (canonical env). */
 export function resolveLiveOscarEntrySplitLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -38,6 +38,26 @@ export function resolveLiveOscarEntrySplitTotalUsd(
   tier?: LiveOscarTradeTier,
 ): number {
   return resolveLiveOscarEntrySplitLegUsd(cfg, tier) + resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+}
+
+/** Tier-aware leg-3 staged avg @ −10%: micro/low=$300, prod/default=$600. */
+export function resolveLiveOscarStagedAvgLegUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'micro') return cfg.liveOscarMicroMcapStagedAvgLegUsd;
+  if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgLegUsd;
+  return cfg.liveStagedEntrySecondLegUsd;
+}
+
+export function resolveLiveOscarStagedEntryMaxUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
+  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
+  if (cfg.liveStagedEntryThirdLegUsd > 0) sum += cfg.liveStagedEntryThirdLegUsd;
+  return sum;
 }
 
 /** Fail fast on boot when tier-specific env diverges from contracts. */
@@ -118,6 +138,7 @@ export function applyCanonicalStagedEntrySizing(
 ): void {
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier);
   st.firstLegUsd = leg1;
   st.entrySplitLegUsd = leg1;
   st.entrySplitLeg2Usd = leg2;
@@ -125,6 +146,12 @@ export function applyCanonicalStagedEntrySizing(
   st.entrySplitMaxUpPct = cfg.liveStagedEntryEntrySplitMaxUpPct;
   st.entrySplitMaxDownPct = cfg.liveStagedEntryEntrySplitMaxDownPct;
   st.entrySplitTargetDropPct = cfg.liveStagedEntryEntrySplitTargetDropPct;
+  if (!st.mintFirstProbe) {
+    st.avgSecondLegUsd = avgUsd;
+    st.secondLegUsd = avgUsd;
+    st.avgSecondDropPct = cfg.liveStagedEntrySecondDropPct;
+    st.secondDropPct = cfg.liveStagedEntrySecondDropPct;
+  }
 }
 
 /** Before live buy_open: first journal leg + staged plan must match canonical split. */

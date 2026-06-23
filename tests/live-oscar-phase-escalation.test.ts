@@ -28,6 +28,8 @@ describe('live-oscar-phase-escalation', () => {
       'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD',
+      'PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD',
+      'PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD',
     ];
     for (const k of keys) envBackup[k] = process.env[k];
     process.env.PAPER_STRATEGY_ID = 'live-oscar';
@@ -39,6 +41,8 @@ describe('live-oscar-phase-escalation', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '1';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD = '1300000';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '600';
   });
 
   afterEach(() => {
@@ -109,6 +113,7 @@ describe('live-oscar-phase-escalation', () => {
     expect(isWaveBExitPolicy(ot)).toBe(true);
     expect(ot.liveStagedEntry).toBeDefined();
     expect(ot.liveStagedEntry?.entrySplitLeg1Ts).toBeGreaterThan(0);
+    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(300);
   });
 
   it('mutex: prod eval on open scalp → phase_escalation_handoff (not lane_mint_mutex)', () => {

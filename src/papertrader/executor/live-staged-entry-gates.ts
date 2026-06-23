@@ -4,6 +4,7 @@ import {
   resolveLiveOscarEntrySplitLeg2Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
+  resolveLiveOscarStagedAvgLegUsd,
   resolveLiveOscarTradeTierFromMcap,
 } from '../live-oscar-entry-sizing.js';
 import type { LiveOscarTradeTier } from '../live-oscar-mcap-tier.js';
@@ -222,7 +223,7 @@ export function buildLiveStagedEntryState(
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
-  const avgSecondUsd = firstMintProbe ? 0 : cfg.liveStagedEntrySecondLegUsd;
+  const avgSecondUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tier);
   const avgThirdUsd = firstMintProbe ? 0 : cfg.liveStagedEntryThirdLegUsd;
   const avgSecondDrop = firstMintProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
   const avgThirdDrop = firstMintProbe ? 0 : cfg.liveStagedEntryThirdDropPct;
@@ -276,7 +277,7 @@ export function openNotionalUsdForStagedEntry(cfg: PaperTraderConfig): number {
 
 export function stagedEntryPlanInvestedCapUsd(cfg: PaperTraderConfig, tier?: LiveOscarTradeTier): number {
   let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
-  sum += cfg.liveStagedEntrySecondLegUsd;
+  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
   if (cfg.liveStagedEntryThirdLegUsd > 0) sum += cfg.liveStagedEntryThirdLegUsd;
   return sum;
 }

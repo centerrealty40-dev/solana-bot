@@ -41,6 +41,7 @@ import { stampLiveOscarExitPolicyOnOpen } from './executor/exit-policy-wave-b.js
 import {
   applyCanonicalOpenLegUsd,
   resolveLiveOscarEntrySplitLegUsd,
+  resolveLiveOscarStagedAvgLegUsd,
 } from './live-oscar-entry-sizing.js';
 import {
   countOpenScalpWavePositions,
@@ -1944,7 +1945,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   const firstDrop = cfg.liveStagedEntryFirstDropPct;
                   const leg1When =
                     firstDrop > 0 ? `при −${firstDrop}% от сигнала` : 'по сигналу';
-                  const leg3Usd = firstProbe ? 0 : cfg.liveStagedEntrySecondLegUsd;
+                  const leg3Usd = firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier);
                   const leg3Drop = firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
                   const leg3Suffix =
                     leg3Usd > 0 && leg3Drop > 0
@@ -1972,7 +1973,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                       entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
                       entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
                       entrySplitTargetDropPct: cfg.liveStagedEntryEntrySplitTargetDropPct,
-                      avgSecondLegUsd: firstProbe ? 0 : cfg.liveStagedEntrySecondLegUsd,
+                      avgSecondLegUsd: firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier),
                       avgSecondDropPct: firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct,
                       avgThirdLegUsd: firstProbe ? 0 : cfg.liveStagedEntryThirdLegUsd,
                       avgThirdDropPct: firstProbe ? 0 : cfg.liveStagedEntryThirdDropPct,

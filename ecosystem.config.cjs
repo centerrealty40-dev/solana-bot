@@ -38,8 +38,8 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * live-oscar (`name: live-oscar`): split notional (leg1+leg2) vs max cap (all legs).
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
- * 1.11.481 — 3-leg staged entry: $200 @ signal + $200 @ −5% + $600 @ −10% = $1000 max.
- * PAPER_POSITION_USD = split leg1+leg2 ($400); LIVE_MAX = full plan ($1000).
+ * 1.11.492 — 3-leg staged entry: prod $200+$200+$600=$1000; micro/low leg-3 avg $300 (max $750/$700).
+ * PAPER_POSITION_USD = split leg1+leg2 ($400 prod/low); LIVE_MAX = prod full plan ($1000).
  */
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '400';
 const LIVE_OSCAR_MAX_POSITION_USD = '1000';
@@ -469,6 +469,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '450',
+        /** Leg-3 staged avg @ −10% (micro); prod tier keeps $600 via PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD. */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
         /** 1.11.462 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split aligned with prod $200+$200 (boot $400, max $1000), leg-1 сразу по сигналу (0%), leg-2 @ −5%, leg-3 @ −10%. (1.11.476: vol 75k→35k, owner approved volume expansion). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
@@ -479,6 +481,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '200',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
+        /** Leg-3 staged avg @ −10% (low); prod tier keeps $600 via PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD. */
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '300',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /**
          * 1.11.491 — Фаза 4: scalp_wave lane ($800k–$30M, age ≥12h no max, shallow dip −8..−15%).
