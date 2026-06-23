@@ -765,6 +765,11 @@ export type LiveTokenToSolPipelineResult = {
   retryAttempts?: number;
 };
 
+function resolveSellExecutionMode(liveCfg: LiveOscarConfig): LiveOscarConfig['executionMode'] {
+  if (liveCfg.executionMode === 'simulate' && liveCfg.liveSimulateBuysOnly) return 'live';
+  return liveCfg.executionMode;
+}
+
 async function runTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
   args: {
@@ -776,8 +781,9 @@ async function runTokenToSolPipeline(
     intentKind: 'sell_partial' | 'sell_full';
   },
 ): Promise<LiveTokenToSolPipelineResult> {
+  const executionMode = resolveSellExecutionMode(liveCfg);
   if (!liveCfg.strategyEnabled) return { ok: false };
-  if (liveCfg.executionMode === 'dry_run') {
+  if (executionMode === 'dry_run') {
     appendLiveJsonlEvent({
       kind: 'execution_skip',
       reason: `dry_run:${args.intentKind}`,
@@ -785,7 +791,7 @@ async function runTokenToSolPipeline(
     });
     return { ok: false };
   }
-  if (liveCfg.executionMode !== 'simulate' && liveCfg.executionMode !== 'live') return { ok: false };
+  if (executionMode !== 'simulate' && executionMode !== 'live') return { ok: false };
 
   let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
   if (raw == null) {
@@ -798,7 +804,7 @@ async function runTokenToSolPipeline(
   }
 
   let sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain' = 'usd_math';
-  if (liveCfg.executionMode === 'live') {
+  if (executionMode === 'live') {
     const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
     if (chainMap == null) {
       appendLiveJsonlEvent({
@@ -906,7 +912,7 @@ async function runTokenToSolPipeline(
       intendedUsd: args.usdNotional,
       intendedAmountAtomic: raw,
       sellAmountSource,
-      executionMode: liveCfg.executionMode,
+      executionMode: executionMode,
       quoteSnapshot,
       targetPriceUsd: args.priceUsdPerToken,
     });
@@ -996,7 +1002,7 @@ async function runTokenToSolPipeline(
           })();
     const signedB64 = signLiveJupiterSwapBase64(prep.swapBuild.b64, kp);
 
-    if (liveCfg.executionMode === 'simulate') {
+    if (executionMode === 'simulate') {
       const sim = await liveSimulateSignedTransaction({
         cfg: liveCfg,
         signedTxSerializedBase64: signedB64,
@@ -1058,7 +1064,7 @@ async function runTokenToSolPipeline(
       signedTxSerializedBase64: signedB64,
     });
     const ok = finalizeLiveSendJsonl(intentId, liveOut);
-    if (liveCfg.executionMode === 'live' && ok) {
+    if (executionMode === 'live' && ok) {
       clearLiveBuyCooldown(args.mint);
     }
 
