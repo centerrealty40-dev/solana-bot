@@ -211,7 +211,10 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
+        PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000',
+        PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '12',
+        PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },

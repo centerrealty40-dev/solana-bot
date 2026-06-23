@@ -18,6 +18,13 @@ const DEFAULT_DISCOVERY_PIN_PATH = path.join(
 );
 const TOKEN_CHUNK = 10;
 const DS_DELAY_MS = 350;
+/** Cap solo `/tokens/{mint}` calls per collector tick — rotate through queue across ticks. */
+const SOLO_FETCH_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK || 12);
+/** Cap batch `/tokens/{m1,m2,…}` chunks per tick (10 mints each). */
+const BATCH_CHUNKS_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK || 8);
+
+/** Per-component rotation cursor for capped solo-fetch queues. */
+const _soloFetchRotation = new Map();
 /**
  * Stream-read chunk size (~256 KB). Keeps memory constant regardless of file
  * size, which matters because the live JSONL grows past 300MB and previous
@@ -193,6 +200,42 @@ export function loadDiscoveryCollectorPinMintsSync() {
   return out;
 }
 
+function prioritizeSoloMints(missingSolo, { liveSet, paperSet, whitelistSet, discoverySet }) {
+  const seen = new Set();
+  const out = [];
+  const tiers = [
+    missingSolo.filter((m) => liveSet.has(m)),
+    missingSolo.filter((m) => paperSet.has(m) && !liveSet.has(m)),
+    missingSolo.filter((m) => whitelistSet.has(m) && !liveSet.has(m) && !paperSet.has(m)),
+    missingSolo.filter(
+      (m) => discoverySet.has(m) && !whitelistSet.has(m) && !liveSet.has(m) && !paperSet.has(m),
+    ),
+    missingSolo.filter(
+      (m) => !liveSet.has(m) && !paperSet.has(m) && !whitelistSet.has(m) && !discoverySet.has(m),
+    ),
+  ];
+  for (const tier of tiers) {
+    for (const m of tier) {
+      if (seen.has(m)) continue;
+      seen.add(m);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function selectRotatingBatch(list, component, max) {
+  if (max <= 0 || list.length === 0) return [];
+  if (list.length <= max) return list;
+  const cursor = _soloFetchRotation.get(component) ?? 0;
+  const selected = [];
+  for (let i = 0; i < max; i += 1) {
+    selected.push(list[(cursor + i) % list.length]);
+  }
+  _soloFetchRotation.set(component, (cursor + max) % list.length);
+  return selected;
+}
+
 /** Discovery / dip eval keys on `base_mint` — quote-only presence must not skip enrich. */
 function mintsWithBaseSnapshot(rows) {
   const s = new Set();
@@ -262,6 +305,10 @@ export async function mergePaper2OpenMintSnapshots({
   let whitelistMintCount = 0;
   let discoveryPinMintCount = 0;
   let soloFetchSet = new Set();
+  let liveSet = new Set();
+  let paperSet = new Set();
+  let whitelistSet = new Set();
+  let discoverySet = new Set();
   try {
     const paper = loadPaper2OpenMintsSync(dir);
     const live = loadLiveOscarOpenMintsSync();
@@ -269,6 +316,10 @@ export async function mergePaper2OpenMintSnapshots({
     const discoveryPin = loadDiscoveryCollectorPinMintsSync();
     whitelistMintCount = whitelist.length;
     discoveryPinMintCount = discoveryPin.length;
+    paperSet = new Set(paper);
+    liveSet = new Set(live);
+    whitelistSet = new Set(whitelist);
+    discoverySet = new Set(discoveryPin);
     soloFetchSet = new Set([...whitelist, ...discoveryPin]);
     openMints = [...new Set([...paper, ...live, ...whitelist, ...discoveryPin])];
   } catch (e) {
@@ -281,11 +332,22 @@ export async function mergePaper2OpenMintSnapshots({
   const missing = openMints.filter((m) => !covered.has(m));
   if (missing.length === 0) return rows;
 
-  const missingSolo = missing.filter((m) => soloFetchSet.has(m));
-  const missingBatch = missing.filter((m) => !soloFetchSet.has(m));
+  const missingSoloAll = missing.filter((m) => soloFetchSet.has(m));
+  const missingBatchAll = missing.filter((m) => !soloFetchSet.has(m));
+  const prioritizedSolo = prioritizeSoloMints(missingSoloAll, {
+    liveSet,
+    paperSet,
+    whitelistSet,
+    discoverySet,
+  });
+  const missingSolo = selectRotatingBatch(prioritizedSolo, component, SOLO_FETCH_MAX_PER_TICK);
+  const batchChunkLimit = BATCH_CHUNKS_MAX_PER_TICK * TOKEN_CHUNK;
+  const missingBatch = missingBatchAll.slice(0, batchChunkLimit);
 
   const extra = [];
   let whitelistSingleFetchOk = 0;
+  const soloFetchDeferred = Math.max(0, prioritizedSolo.length - missingSolo.length);
+  const batchFetchDeferred = Math.max(0, missingBatchAll.length - missingBatch.length);
 
   for (let i = 0; i < missingBatch.length; i += TOKEN_CHUNK) {
     const chunk = missingBatch.slice(i, i + TOKEN_CHUNK);
@@ -331,6 +393,8 @@ export async function mergePaper2OpenMintSnapshots({
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
         missingSoloFetch: missingSolo.length,
+        soloFetchDeferred,
+        batchFetchDeferred,
         stillMissingSoloFetch: stillMissingSolo.length,
       });
     }
@@ -346,6 +410,8 @@ export async function mergePaper2OpenMintSnapshots({
       discoveryPinMintCount,
       missingFromPrimaryTick: missing.length,
       missingSoloFetch: missingSolo.length,
+      soloFetchDeferred,
+      batchFetchDeferred,
       soloFetchOk: whitelistSingleFetchOk,
       stillMissingSoloFetch: stillMissingSolo.length,
       extraPairsThisDex: extra.length,
