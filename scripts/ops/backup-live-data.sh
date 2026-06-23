@@ -97,6 +97,15 @@ compress_journal() {
   zstd -q "-${level}" -T0 "${src}" -o "${dest}"
 }
 
+# Copy active JSONL to staging so concurrent appends do not break zstd.
+stage_journal_copy() {
+  local src="$1"
+  local staging="$2"
+  log "journal staging copy start $(basename "${src}")"
+  cp -a "${src}" "${staging}"
+  log "journal staging copy ok $(basename "${staging}")"
+}
+
 for j in "${LOCAL_JOURNALS[@]}"; do
   src="${LIVE_DIR}/${j}"
   if [[ ! -f "${src}" ]]; then
@@ -104,7 +113,10 @@ for j in "${LOCAL_JOURNALS[@]}"; do
     continue
   fi
   dest="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}.jsonl.zst"
-  compress_journal "${src}" "${dest}"
+  staging="${BACKUP_DIR}/journals/.staging_${j%.jsonl}_${TS}.jsonl"
+  stage_journal_copy "${src}" "${staging}"
+  compress_journal "${staging}" "${dest}"
+  rm -f "${staging}"
   log "journal local ok ${j} -> $(basename "${dest}")"
 done
 
@@ -117,7 +129,10 @@ if r2_credentials_ok; then
     [[ -f "${src}" ]] || continue
     archive="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}.jsonl.zst"
     if [[ ! -f "${archive}" ]]; then
-      compress_journal "${src}" "${archive}"
+      staging="${BACKUP_DIR}/journals/.staging_${j%.jsonl}_${TS}.jsonl"
+      stage_journal_copy "${src}" "${staging}"
+      compress_journal "${staging}" "${archive}"
+      rm -f "${staging}"
     fi
     TMPDIR="/tmp/r2_live_journal_${TS}_${j}"
     mkdir -p "${TMPDIR}"
@@ -138,7 +153,10 @@ if [[ "${R2_FULL}" -eq 1 ]] && r2_credentials_ok; then
     [[ -f "${src}" ]] || continue
     archive="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}_weekly.jsonl.zst"
     log "weekly R2 journal compress start ${j}"
-    zstd -q -10 -T0 "${src}" -o "${archive}"
+    staging="${BACKUP_DIR}/journals/.staging_${j%.jsonl}_${TS}_weekly.jsonl"
+    stage_journal_copy "${src}" "${staging}"
+    compress_journal "${staging}" "${archive}"
+    rm -f "${staging}"
     TMPDIR="/tmp/r2_live_weekly_${TS}"
     mkdir -p "${TMPDIR}"
     if r2_put_chunked "${archive}" "live/journals-weekly/${j%.jsonl}_${TS}.jsonl.zst" "${TMPDIR}"; then
