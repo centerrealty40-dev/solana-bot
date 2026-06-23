@@ -54,6 +54,25 @@
 
 ---
 
+## [1.11.493] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.493`
+
+### live-oscar: post-close tail sweep — cap only after killstop (P0 SOLANGELES ghost)
+
+**Проблема:** после TP-close ~$503 SPL остались на кошельке; post-close tail sweep пропустил sell из‑за `LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD=25` (`balance_above_tail_cap`). Tracker считал позицию закрытой; orphan SPL не управлялся.
+
+**Исправление:**
+- `livePostCloseTailSweepCapApplies()` — cap $25 только после `KILLSTOP` / `FLASH_CRASH_KILL`; после TP/TRAIL/TIMEOUT всегда sweep remainder
+- `tracker.ts` передаёт `exitReason` в tail sweep
+- тест `tests/live-post-close-tail-sweep.test.ts`
+
+**Откат:** redeploy `sa-alpha-1.11.492`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.492] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.492`
