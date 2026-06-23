@@ -16,6 +16,7 @@ coverage/
 
 # Wallet keypairs - NEVER commit
 *.keypair.json
+*.keypair.txt
 *.wallet.json
 secrets/
 keypairs/
