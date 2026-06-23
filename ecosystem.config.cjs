@@ -1336,9 +1336,9 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_FLASH_CRASH_KILL_ENABLED: '0',
         LIVE_STRATEGY_ENABLED: '1',
-        /** Emergency pause until telegram gate verified on prod — restore `live` after smoke. */
-        LIVE_EXECUTION_MODE: 'simulate',
-        LIVE_SIMULATE_BUYS_ONLY: '1',
+        /** Live on-chain buys when telegram gate passes. */
+        LIVE_EXECUTION_MODE: 'live',
+        LIVE_SIMULATE_BUYS_ONLY: '0',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar-preset-c',
         LIVE_TRADES_PATH: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
