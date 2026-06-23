@@ -5,6 +5,7 @@
  * - v3 scratch: harvest +5%→30%, ladder up, flush @0% avg, gap tail −3% (in-flight only)
  */
 import type { PaperTraderConfig } from '../config.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import type { OpenTrade } from '../types.js';
 import { LADDER_PNL_EPS } from './tp-ladder-state.js';
 
@@ -85,7 +86,7 @@ export function isPartialGridTrailExitPolicy(ot: OpenTrade): boolean {
 }
 
 export function isVariantAExitPolicyEnabled(cfg: PaperTraderConfig): boolean {
-  return cfg.strategyId === 'live-oscar' && cfg.liveOscarExitPolicyVariantAEnabled;
+  return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveOscarExitPolicyVariantAEnabled;
 }
 
 export function variantAScratchGapTailPnlFrac(cfg: PaperTraderConfig): number {

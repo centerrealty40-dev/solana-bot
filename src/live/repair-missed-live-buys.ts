@@ -12,6 +12,7 @@ import { serializeOpenTrade } from './strategy-snapshot.js';
 import type { LiveOscarConfig } from './config.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { cancelLivePostCloseTailSweepForMint } from './post-close-tail-sweep.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import { entryLegSignaturesFromOpenTradeJson, readLiveJournalLinesBounded } from './replay-strategy-journal.js';
 
 function envBool(v: unknown, defaultVal: boolean): boolean {
@@ -201,7 +202,7 @@ function mergeDcaLeg(
     sizeUsd: args.addUsd,
     reason: 'dca',
   });
-  if (strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
+  if (strategyId && isLiveOscarTradingStrategyId(strategyId)) ot.liveKillstopBelowStreak = 0;
   ot.totalInvestedUsd += args.addUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;

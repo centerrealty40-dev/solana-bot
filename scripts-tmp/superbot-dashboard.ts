@@ -101,7 +101,7 @@ function normalizeExitReason(raw: string): string {
 
 function triggerNote(t: TriggerCtx): string {
   const usd = t.extSellUsd > 0 ? `$${t.extSellUsd.toFixed(0)}` : 'n/a';
-  return `Внешняя продажа ${usd} от ${shortWallet(t.sellerWallet)} на pool ${shortWallet(t.triggerPool)}`;
+  return `Preset C dips (legacy race journal): внешняя продажа ${usd} от ${shortWallet(t.sellerWallet)} · pool ${shortWallet(t.triggerPool)}`;
 }
 
 function pushTimeline(tl: TimelineEvent[], ev: TimelineEvent): void {
@@ -264,7 +264,7 @@ export function loadSuperbotJsonlForDashboard(filePath: string): SuperbotDashboa
         kind: 'open',
         label: shadowOnly
           ? `Shadow: купили бы $${legUsd.toFixed(0)} @ ${entryPrice > 0 ? entryPrice.toFixed(8) : 'n/a'}${lagTail}`
-          : `Купили $${legUsd.toFixed(0)} @ ${entryPrice > 0 ? entryPrice.toFixed(8) : 'n/a'}${lagTail}`,
+          : `Preset C · вход $${legUsd.toFixed(0)} @ ${entryPrice > 0 ? entryPrice.toFixed(8) : 'n/a'}${lagTail}`,
         mcUsd: mcap,
         spotPxUsd: entryPrice > 0 ? entryPrice : null,
         sizePct: null,
@@ -330,7 +330,7 @@ export function loadSuperbotJsonlForDashboard(filePath: string): SuperbotDashboa
       pushTimeline(pos.timeline, {
         ts,
         kind: 'partial_sell',
-        label: `${exitReasonLabel(String(o.sellReason ?? 'TP1'))} ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% → продали ${Math.round(frac * 100)}% @ ${sellPrice > 0 ? sellPrice.toFixed(8) : 'n/a'}`,
+        label: `${exitReasonLabel(String(o.sellReason ?? 'TP1'))} · wave B ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% → partial ${Math.round(frac * 100)}% @ ${sellPrice > 0 ? sellPrice.toFixed(8) : 'n/a'}`,
         mcUsd: num(o.mcapAtSell ?? o.marketCapUsd),
         spotPxUsd: sellPrice > 0 ? sellPrice : null,
         sizePct: frac * 100,
@@ -360,7 +360,7 @@ export function loadSuperbotJsonlForDashboard(filePath: string): SuperbotDashboa
         pushTimeline(timeline, {
           ts,
           kind: 'close',
-          label: `${sellReason} ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% → закрыли @ ${sellPrice > 0 ? sellPrice.toFixed(8) : 'n/a'}`,
+          label: `Preset C · wave B · ${sellReason} ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% → закрыли @ ${sellPrice > 0 ? sellPrice.toFixed(8) : 'n/a'}`,
           mcUsd: num(o.mcapAtSell ?? o.marketCapUsd),
           spotPxUsd: sellPrice > 0 ? sellPrice : null,
           sizePct: null,

@@ -3,6 +3,7 @@ import { evaluateDip, type DipContextByWindows } from './dip-detector.js';
 import { evaluateSnapshot } from './filters/snapshot-filter.js';
 import { globalGate } from './filters/global-gate.js';
 import type { Lane, OpenTrade, SnapshotCandidateRow } from './types.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import { liveOscarTierEntryConfig, type LiveOscarMcapTier } from './live-oscar-mcap-tier.js';
 import { liveOscarMintOpenSkipReasonForEscalation } from './live-oscar-phase-escalation.js';
 
@@ -12,7 +13,7 @@ export type LiveOscarTradeLane = 'prod' | 'scalp_wave';
 export type ScalpWaveEntryPath = 'dip_windows';
 
 export function isLiveOscarScalpWaveLaneEnabled(cfg: PaperTraderConfig): boolean {
-  return cfg.strategyId === 'live-oscar' && cfg.liveOscarScalpWaveLaneEnabled;
+  return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveOscarScalpWaveLaneEnabled;
 }
 
 export function resolveLiveOscarTradeLaneFromOpen(

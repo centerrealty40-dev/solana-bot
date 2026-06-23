@@ -1,5 +1,6 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
+import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
 import {
@@ -670,7 +671,7 @@ async function tryExecuteTpPartialSell(args: {
   }
   const remainUsdForFlush = waveBRemainderValueNetUsd(ot, marketSell);
   let sellFraction = Math.min(1, rawSellFrac);
-  if (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot)) {
+  if (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot)) {
     sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg);
   }
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
@@ -1030,7 +1031,7 @@ async function tryWaveBBreakevenInsurance(args: {
     stats,
   } = args;
   if (
-    cfg.strategyId !== 'live-oscar' ||
+    !isLiveOscarTradingStrategyId(cfg.strategyId) ||
     !cfg.liveOscarWaveBBreakevenInsuranceEnabled ||
     !isWaveBExitPolicy(ot) ||
     waveBBreakevenExitEligible(ot, tgEff.stepPnl) ||
@@ -1102,7 +1103,7 @@ async function tryWaveBPostTp1Derisk(args: {
     stats,
   } = args;
   if (
-    cfg.strategyId !== 'live-oscar' ||
+    !isLiveOscarTradingStrategyId(cfg.strategyId) ||
     !cfg.liveOscarWaveBPostTp1DeriskEnabled ||
     cfg.liveOscarWaveBPostTp1ScratchReentryEnabled ||
     !isWaveBExitPolicy(ot) ||
@@ -1157,7 +1158,7 @@ async function tryWaveBPostTp1ScratchReentryOpens(args: {
   liveOscarCfg?: LiveOscarConfig;
 }): Promise<void> {
   const { cfg, open, journalAppend, journalLiveStrategy, livePhase4 } = args;
-  if (cfg.strategyId !== 'live-oscar' || !cfg.liveOscarWaveBPostTp1ScratchReentryEnabled) return;
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !cfg.liveOscarWaveBPostTp1ScratchReentryEnabled) return;
 
   const now = Date.now();
   for (const pending of listWaveBPostTp1ScratchReentryPending()) {
@@ -1982,7 +1983,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */
     if (
-      cfg.strategyId === 'live-oscar' &&
+      isLiveOscarTradingStrategyId(cfg.strategyId) &&
       cfg.liveExitModeAbEnabled &&
       ot.liveExitProfileMode === 'A' &&
       ot.partialSells.length === 0 &&
@@ -2010,7 +2011,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
     // Stage 1.1 shadow (observability only, default OFF): pair the PG MTM price with the freshest Shyft
     // stream price to measure PG lag. NEVER influences any exit/MTM decision below.
-    if (cfg.liveOscarShyftShadowEnabled && cfg.strategyId === 'live-oscar' && isShyftShadowEnabled()) {
+    if (cfg.liveOscarShyftShadowEnabled && isLiveOscarTradingStrategyId(cfg.strategyId) && isShyftShadowEnabled()) {
       const nowShadow = Date.now();
       const streamShadow = getShyftShadowStreamPrice(mint, nowShadow);
       if (streamShadow) {
@@ -2295,7 +2296,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryMtmEnabled &&
-      cfg.strategyId === 'live-oscar' &&
+      isLiveOscarTradingStrategyId(cfg.strategyId) &&
       isShyftShadowEnabled()
     ) {
       const nowPrimary = Date.now();
@@ -2339,7 +2340,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     /** Raw PG/Jupiter MTM before ±12% exit clamp — staged entry / signal-kill vs anchor use this, not clamped exit MTM. */
     const rawTrackerPriceUsd = curMetric > 0 ? curMetric : 0;
-    if (rawTrackerPriceUsd > 0 && (cfg.strategyId === 'live-oscar' || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
+    if (rawTrackerPriceUsd > 0 && (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
       const exitMtm = clampLiveTrackerMtmForExit(ot, rawTrackerPriceUsd);
       if (exitMtm > 0 && Math.abs(exitMtm - rawTrackerPriceUsd) / Math.max(rawTrackerPriceUsd, 1e-18) > 0.002) {
         log.warn(
@@ -2357,7 +2358,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (rawTrackerPriceUsd > 0) {
       ot.lastObservedPriceUsd = rawTrackerPriceUsd;
-      if (cfg.flashCrashKillEnabled && cfg.strategyId === 'live-oscar') {
+      if (cfg.flashCrashKillEnabled && isLiveOscarTradingStrategyId(cfg.strategyId)) {
         appendFlashKillPriceSample(ot, Date.now(), curMetric);
       }
     }
@@ -2785,7 +2786,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     let tgEff = tpGridEffective(ot, effCfg);
     let killEff = dcaKillstopEffective(ot, effCfg);
 
-    const liveOscarAb = cfg.strategyId === 'live-oscar' && cfg.liveExitModeAbEnabled;
+    const liveOscarAb = isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveExitModeAbEnabled;
     const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
@@ -3058,7 +3059,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           triggerPct: lvl.triggerPct,
         });
         stampFlashKillLastBuyLeg(ot, marketBuy, Date.now());
-        if (cfg.strategyId === 'live-oscar') ot.liveKillstopBelowStreak = 0;
+        if (isLiveOscarTradingStrategyId(cfg.strategyId)) ot.liveKillstopBelowStreak = 0;
         ot.totalInvestedUsd += addUsd;
         const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
         ot.avgEntry = num / ot.totalInvestedUsd;
@@ -3147,7 +3148,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (ladderStepOrThresholdTaken(ot, k - 1, threshold)) continue;
         if (pnlFrac + LADDER_PNL_EPS < threshold) break;
         if (
-          cfg.strategyId === 'live-oscar' &&
+          isLiveOscarTradingStrategyId(cfg.strategyId) &&
           cfg.liveExitModeAbEnabled &&
           ot.liveExitProfileMode == null &&
           k === 1
@@ -3207,7 +3208,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (ladderStepOrThresholdTaken(ot, stepIdx, lvl.pnlPct)) continue;
         if (xAvg - 1 >= lvl.pnlPct) {
           if (
-            cfg.strategyId === 'live-oscar' &&
+            isLiveOscarTradingStrategyId(cfg.strategyId) &&
             cfg.liveExitModeAbEnabled &&
             ot.liveExitProfileMode == null &&
             stepIdx === 0
@@ -3256,7 +3257,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     /** Live Oscar: после первой `TP_LADDER` — при возврате к средней (≤ безубытка) один раз снять настраиваемую долю остатка. */
     if (
-      cfg.strategyId === 'live-oscar' &&
+      isLiveOscarTradingStrategyId(cfg.strategyId) &&
       cfg.liveOscarBreakevenTrimAfterFirstTpEnabled &&
       !isWaveBExitPolicy(ot) &&
       !isVariantAExitPolicy(ot) &&
@@ -3453,7 +3454,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (
       cfg.flashCrashKillEnabled &&
-      cfg.strategyId === 'live-oscar' &&
+      isLiveOscarTradingStrategyId(cfg.strategyId) &&
       ot.avgEntry > 0 &&
       curMetric > 0 &&
       ot.remainingFraction > 1e-6
@@ -3551,7 +3552,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           exitReason = 'KILLSTOP';
         } else {
         const debounceKillAfterReplenish =
-          cfg.strategyId === 'live-oscar' && ot.legs.length > 1 && !inSignalKillTerritory;
+          isLiveOscarTradingStrategyId(cfg.strategyId) && ot.legs.length > 1 && !inSignalKillTerritory;
         if (debounceKillAfterReplenish) {
           const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
           ot.liveKillstopBelowStreak = nextStreak;
@@ -3798,7 +3799,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (Number.isFinite(dropFromFirstPct)) ote.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
         const splitOk = ote.legs.some((l) => l.reason === 'scale_in');
         if (
-          cfg.strategyId === 'live-oscar' &&
+          isLiveOscarTradingStrategyId(cfg.strategyId) &&
           cfg.liveExitModeAbEnabled &&
           ote.liveExitProfileMode == null &&
           splitOk &&

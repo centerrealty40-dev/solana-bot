@@ -44,6 +44,11 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '400';
 const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
+/** live-oscar-preset-c: $100 flat entry + $50 staged avg legs (SuperBot wallet). */
+const PRESET_C_ENTRY_USD = '100';
+const PRESET_C_STAGED_LEG_USD = '50';
+const PRESET_C_MAX_POSITION_USD = '200';
+
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
 const DISCOVERY_COLLECTOR_PIN_ENV = {
@@ -101,8 +106,8 @@ const PM2_APPS = [
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         DASHBOARD_COPY_TRADER_JSONL: path.join(root, 'data/copytrader/journal.jsonl'),
         DASHBOARD_COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        /** SuperBot journal — rsync from oscar-stream-de VPS (see docs/DEPLOY_ISOLATION.md). */
-        DASHBOARD_SUPERBOT_JSONL: path.join(root, 'data/live/superbot-journal.jsonl'),
+        /** SuperBot / live-oscar-preset-c journal (HcV3BhmK wallet, отдельный PM2). */
+        DASHBOARD_SUPERBOT_JSONL: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */
         DASHBOARD_COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
@@ -1239,6 +1244,151 @@ const PM2_APPS = [
         LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
         /** `1` = продавать любые SPL не в open выше min USD (осторожно: скам-airdrops). */
         LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
+      },
+    },
+    /**
+     * Preset C — isolated Live Oscar on SuperBot wallet (HcV3BhmK…).
+     * Entry: PG-native pullback ($1–15M mcap, 9–30% retrace). Exit: wave B (shared tracker).
+     * Does NOT share discovery path with `live-oscar`.
+     */
+    {
+      name: 'live-oscar-preset-c',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/live-oscar-preset-c.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 5000,
+      kill_timeout: 15000,
+      max_memory_restart: '200M',
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...PM2_SOLANA_RPC_ENV,
+        ...QUICKNODE_NO_DAILY_CAP_ENV,
+        NODE_ENV: 'production',
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+        PAPER_STRATEGY_KIND: 'dip',
+        PAPER_STRATEGY_ID: 'live-oscar-preset-c',
+        PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_preset_c_unused.jsonl'),
+        PAPER_HEARTBEAT_INTERVAL_MS: '30000',
+        PAPER_DISCOVERY_INTERVAL_MS: '15000',
+        PAPER_TRACK_INTERVAL_MS: '30000',
+        PAPER_FOLLOWUP_TICK_MS: '60000',
+        PAPER_DRY_RUN: 'false',
+        /** $100 entry = $50+$50 split @ signal (0% drop), staged avg $50 @ −10%. */
+        PAPER_POSITION_USD: PRESET_C_ENTRY_USD,
+        PAPER_ENTRY_FIRST_LEG_FRACTION: '1',
+        PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '50',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '50',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '50',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: PRESET_C_STAGED_LEG_USD,
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
+        PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
+        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '1',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_ENABLED: '0',
+        SHYFT_DEFI_MCAP_ENABLED: '0',
+        PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
+        PAPER_ENABLE_MIGRATION_LANE: 'false',
+        PAPER_ENABLE_POST_LANE: 'true',
+        PAPER_POST_MIN_AGE_MIN: '480',
+        PAPER_POST_MAX_AGE_MIN: '0',
+        PAPER_POST_MIN_LIQ_USD: '30000',
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
+        PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '300000000',
+        /** Phase tiers (micro / low / scalp_wave / prod) — same mcap bands as live-oscar. */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '50',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '50',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: PRESET_C_ENTRY_USD,
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: PRESET_C_STAGED_LEG_USD,
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '50',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '50',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: PRESET_C_ENTRY_USD,
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: PRESET_C_STAGED_LEG_USD,
+        PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN: '720',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD: '800000',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD: '30000000',
+        PAPER_PRIORITY_DISCOVERY_ENABLED: '0',
+        PAPER_VOLUME_LEADER_ENABLED: '0',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B: '1',
+        PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
+        PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
+        PAPER_FLASH_CRASH_KILL_ENABLED: '0',
+        LIVE_STRATEGY_ENABLED: '1',
+        LIVE_EXECUTION_MODE: 'simulate',
+        LIVE_STRATEGY_PROFILE: 'oscar',
+        LIVE_STRATEGY_ID: 'live-oscar-preset-c',
+        LIVE_TRADES_PATH: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
+        LIVE_DISCOVERY_AUDIT_JSONL: '1',
+        LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '0',
+        LIVE_MINT_WHITELIST_ENABLED: '0',
+        LIVE_OSCAR_PERMANENT_DENYLIST_DISABLED: '0',
+        LIVE_MINT_BLACKLIST_ENABLED: '1',
+        LIVE_MINT_BLACKLIST_PATH: path.join(root, 'data/live/live-oscar-preset-c-mint-blacklist.txt'),
+        LIVE_MINT_GRADUATED_PATH: path.join(root, 'data/live/live-oscar-preset-c-mint-graduated.txt'),
+        LIVE_MINT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-preset-c-mint-whitelist.txt'),
+        LIVE_MINT_PERMANENT_DENYLIST_PATH: path.join(
+          root,
+          'data/live/live-oscar-preset-c-permanent-denylist.txt',
+        ),
+        LIVE_MINT_PERMANENT_DENYLIST_SEED_PATH: path.join(
+          root,
+          'data/live/live-oscar-preset-c-permanent-denylist.seed.txt',
+        ),
+        LIVE_OPEN_SNAPSHOT_PATH: path.join(root, 'data/live/live-oscar-preset-c-open-snapshot.json'),
+        LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(
+          root,
+          'data/live/live-oscar-preset-c-discovery-health.json',
+        ),
+        SIGNAL_LAB_ENABLED: '0',
+        MTM_SHADOW_ENABLED: '0',
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
+        LIVE_TELEGRAM_HEARTBEAT: '0',
+        LIVE_DAILY_SUMMARY_ENABLED: '0',
+        /**
+         * SuperBot wallet — place keypair at this path on VPS (`chmod 600`).
+         * On VPS `.env` may also define `WALLET_KEYPAIR_PATH` for the same key; symlink or copy here.
+         */
+        LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-preset-c.keypair.json'),
+        LIVE_WALLET_PUBKEY: 'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo',
+        LIVE_SIM_ENABLED: '1',
+        LIVE_MAX_POSITION_USD: PRESET_C_MAX_POSITION_USD,
+        LIVE_MAX_OPEN_POSITIONS: '55',
+        LIVE_KILL_AFTER_CONSEC_FAIL: '0',
+        LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
+        LIVE_BTC_GATE_ENABLED: '1',
+        LIVE_OPEN_HOT_TICK_ENABLED: '1',
+        LIVE_DEFAULT_SLIPPAGE_BPS: '50',
+        LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
+        LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
+        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
+        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
+        PRESET_C_DISCOVERY_SCAN_MINUTES: '360',
+        PRESET_C_DISCOVERY_MIN_HOLDERS: '1000',
+        PRESET_C_DISCOVERY_MIN_AGE_HOURS: '8',
+        PRESET_C_DISCOVERY_MINT_COOLDOWN_MS: '1800000',
       },
     },
     /**
