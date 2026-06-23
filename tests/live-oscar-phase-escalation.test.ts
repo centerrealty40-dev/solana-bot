@@ -42,7 +42,7 @@ describe('live-oscar-phase-escalation', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD = '1300000';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '300';
-    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '600';
+    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '300';
   });
 
   afterEach(() => {

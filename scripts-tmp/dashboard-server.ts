@@ -97,7 +97,7 @@ function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
   const mode = (process.env.DASHBOARD_ENRICH_MODE || 'lite').trim().toLowerCase();
   if (mode === 'full') return 'full';
   if (mode === 'lite') return 'lite';
-  return sid === 'live-oscar' ? 'full' : 'lite';
+  return sid === 'live-oscar' || sid === 'superbot' ? 'full' : 'lite';
 }
 
 type Paper2ApiCache = { expiresAt: number; builtAt: number; payload: unknown };
@@ -237,6 +237,59 @@ export function superbotJsonlIsLiveOscarFormat(filePath: string): boolean {
   return false;
 }
 
+/** Open sidecar path paired with a live-oscar family journal (Preset C vs main Oscar). */
+export function resolveLiveOscarOpenSnapshotPath(jsonlPath: string): string {
+  const envPreset =
+    process.env.DASHBOARD_LIVE_OSCAR_PRESET_C_OPEN_SNAPSHOT?.trim() ||
+    process.env.LIVE_OSCAR_PRESET_C_OPEN_SNAPSHOT_PATH?.trim();
+  const lower = jsonlPath.toLowerCase().replace(/\\/g, '/');
+  if (
+    lower.includes('live-oscar-preset-c') ||
+    lower.includes('preset-c') ||
+    lower.includes('preset_c')
+  ) {
+    return envPreset || path.resolve(path.dirname(jsonlPath), 'live-oscar-preset-c-open-snapshot.json');
+  }
+  return (
+    process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT?.trim() ||
+    path.resolve(PAPER2_DIR, '..', 'live', 'live-oscar-open-snapshot.json')
+  );
+}
+
+function entryQuoteVerifyFromExecutionAttempt(o: Record<string, unknown>): {
+  entryPriceVerifySlipPct: number | null;
+  entryPriceVerifyImpactPct: number | null;
+  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+} {
+  const qs = o.quoteSnapshot;
+  if (!qs || typeof qs !== 'object') {
+    return {
+      entryPriceVerifySlipPct: null,
+      entryPriceVerifyImpactPct: null,
+      entryPriceVerifySource: null,
+    };
+  }
+  const snap = qs as Record<string, unknown>;
+  const slipBps = Number(snap.slippageBps ?? 0);
+  const impactRaw = Number(snap.priceImpactPct ?? 0);
+  const impactPct =
+    Number.isFinite(impactRaw) && impactRaw > 0
+      ? impactRaw < 1
+        ? +(impactRaw * 100).toFixed(4)
+        : +impactRaw.toFixed(4)
+      : null;
+  const slipPct =
+    Number.isFinite(slipBps) && slipBps > 0 ? +(slipBps / 100).toFixed(4) : null;
+  const provider = String(snap.provider ?? '').trim().toLowerCase();
+  const entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null =
+    provider === 'jupiter' || provider === 'jup' ? 'jupiter' : slipPct != null || impactPct != null ? 'jupiter' : null;
+  return {
+    entryPriceVerifySlipPct: slipPct,
+    entryPriceVerifyImpactPct: impactPct,
+    entryPriceVerifySource,
+  };
+}
+
 function presetCMcapTierRu(tier: unknown): string {
   const t = String(tier ?? '').trim();
   if (t === 'micro') return 'микро-капа ($500k–$1.3M)';
@@ -286,8 +339,16 @@ function closedRowNotionalUsd(c: Paper2ClosedRow): number {
 }
 
 function closedRowPnlUsd(c: Paper2ClosedRow): number {
+  const exitReason = String(c.exitReason ?? '');
   const netUsd = c.netPnlUsd;
-  if (typeof netUsd === 'number' && Number.isFinite(netUsd)) return netUsd;
+  if (typeof netUsd === 'number' && Number.isFinite(netUsd)) {
+    if (exitReason === 'RECONCILE_ORPHAN' && netUsd === 0) {
+      const gross = Number(c.grossPnlUsd ?? NaN);
+      if (Number.isFinite(gross) && gross !== 0) return gross;
+    } else {
+      return netUsd;
+    }
+  }
   const raw = Number(c.pnlUsd ?? NaN);
   if (Number.isFinite(raw)) return raw;
   const pnlPct = Number(c.pnlPct ?? 0);
@@ -295,15 +356,46 @@ function closedRowPnlUsd(c: Paper2ClosedRow): number {
 }
 
 function closedRowDisplayPnlPct(c: Paper2ClosedRow, pnlUsd: number): number {
-  const entryPx = Number(c.entryPriceUsd ?? 0);
-  const exitPx = Number(c.exitPriceUsd ?? 0);
+  const entryPx = closedRowEntryPx(c);
+  const exitPx = closedRowExitPx(c);
   if (entryPx > 0 && exitPx > 0) {
     const fillPct = (exitPx / entryPx - 1) * 100;
     if (Number.isFinite(fillPct)) return fillPct;
   }
   const notional = closedRowNotionalUsd(c);
   if (notional > 0 && Number.isFinite(pnlUsd)) return (pnlUsd / notional) * 100;
+  const grossPct = Number(c.grossPnlPct ?? NaN);
+  if (
+    String(c.exitReason ?? '') === 'RECONCILE_ORPHAN' &&
+    Number(c.pnlPct ?? 0) === 0 &&
+    Number.isFinite(grossPct) &&
+    grossPct !== 0
+  ) {
+    return grossPct;
+  }
   return Number(c.pnlPct ?? 0);
+}
+
+function closedRowEntryPx(c: Paper2ClosedRow): number {
+  const direct = Number(c.entryPriceUsd ?? c.entryPx ?? 0);
+  if (direct > 0) return direct;
+  const theo = Number(c.theoretical_entry_price ?? 0);
+  if (theo > 0) return theo;
+  const avgM = Number(c.avgEntryMarket ?? 0);
+  if (avgM > 0) return avgM;
+  const eff = Number(c.effective_entry_price ?? 0);
+  if (eff > 0) return eff;
+  return Number(c.avgEntry ?? 0);
+}
+
+function closedRowExitPx(c: Paper2ClosedRow): number {
+  const direct = Number(c.exitPriceUsd ?? c.exitPx ?? 0);
+  if (direct > 0) return direct;
+  const lastObs = Number(c.lastObservedPriceUsd ?? 0);
+  if (lastObs > 0) return lastObs;
+  const eff = Number(c.effective_exit_price ?? 0);
+  if (eff > 0) return eff;
+  return Number(c.theoretical_exit_price ?? 0);
 }
 
 function normalizePaper2ExitReason(raw: string): string {
@@ -1488,7 +1580,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-13-superbot-panel-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-23-superbot-preset-c-dash-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -2356,6 +2448,12 @@ function applyOscarDashboardDeferredAbLabels(timeline: TimelineEvent[]): Timelin
 
 export function finalizeTimelineForApi(timeline: TimelineEvent[], strategyId?: string): TimelineEvent[] {
   const enriched = timeline.map(enrichTimelineAmountUsd);
+  if (strategyId === 'superbot' && superbotJsonlIsLiveOscarFormat(DASHBOARD_SUPERBOT_JSONL)) {
+    return enriched.map((ev) => ({
+      ...ev,
+      contextNote: ev.contextNote ?? presetCTimelineContextNote(ev.kind),
+    }));
+  }
   if (strategyId === 'superbot') {
     return enriched;
   }
@@ -2608,6 +2706,14 @@ export type LiveOscarPaper2Load = Paper2FileLoad & {
   hbOpen: number;
   hbClosed: number;
   liveExtras?: LiveOscarPaper2Extras;
+  entryQuoteByMint?: Map<
+    string,
+    {
+      entryPriceVerifySlipPct: number | null;
+      entryPriceVerifyImpactPct: number | null;
+      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+    }
+  >;
 };
 
 function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | null {
@@ -2636,6 +2742,11 @@ function scalpWaveOpenFieldsFromRecord(
 export function paper2OpenItemFromLiveOpenTrade(
   mint: string,
   ot: Record<string, unknown>,
+  entryQuoteVerify?: {
+    entryPriceVerifySlipPct: number | null;
+    entryPriceVerifyImpactPct: number | null;
+    entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  },
 ): Paper2OpenItem {
   const metricType = ot.metricType != null ? String(ot.metricType) : null;
   const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
@@ -2662,14 +2773,109 @@ export function paper2OpenItemFromLiveOpenTrade(
     trailingArmed: Boolean(ot.trailingArmed),
     totalInvestedUsd: Number(ot.totalInvestedUsd ?? 0),
     entryPriorityFeeUsd: null,
-    entryPriceVerifySlipPct: null,
-    entryPriceVerifyImpactPct: null,
-    entryPriceVerifySource: null,
+    entryPriceVerifySlipPct: entryQuoteVerify?.entryPriceVerifySlipPct ?? null,
+    entryPriceVerifyImpactPct: entryQuoteVerify?.entryPriceVerifyImpactPct ?? null,
+    entryPriceVerifySource: entryQuoteVerify?.entryPriceVerifySource ?? null,
     pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
     entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
     remainingFraction: Number(ot.remainingFraction ?? 1),
     ...scalpWaveOpenFieldsFromRecord(ot),
   };
+}
+
+/**
+ * Build per-mint timeline from openTrade snapshot when JSONL tail missed `live_position_open`.
+ */
+export function synthesizeTimelineFromLiveOpenTrade(
+  mint: string,
+  ot: Record<string, unknown>,
+  strategyId: string,
+): TimelineEvent[] {
+  const metricType = ot.metricType != null ? String(ot.metricType) : null;
+  const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
+  const isPresetCFile = strategyId === LIVE_OSCAR_PRESET_C_STRATEGY_ID;
+  const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
+  const partials = Array.isArray(ot.partialSells) ? (ot.partialSells as Record<string, unknown>[]) : [];
+  const out: TimelineEvent[] = [];
+
+  if (legsArr.length > 0) {
+    const openLabelRu = isPresetCFile
+      ? presetCOpenTimelineLabelRu(ot)
+      : typeof ot.timelineOpenLabelRu === 'string' && ot.timelineOpenLabelRu.trim()
+        ? ot.timelineOpenLabelRu.trim()
+        : undefined;
+    const openSyn: Record<string, unknown> = {
+      kind: 'open',
+      ts: Number(legsArr[0]?.ts ?? ot.entryTs ?? 0),
+      strategyId,
+      mint,
+      symbol: ot.symbol,
+      lane: ot.lane,
+      source: ot.source,
+      dex: ot.dex,
+      entryTs: ot.entryTs,
+      entryMcUsd: ot.entryMcUsd,
+      entryMarketPrice: legsArr[0]?.marketPrice ?? ot.avgEntryMarket,
+      legs: ot.legs,
+      totalInvestedUsd: legsArr[0]?.sizeUsd ?? ot.totalInvestedUsd,
+      metricType,
+      ...(openLabelRu ? { timelineOpenLabelRu: openLabelRu } : {}),
+    };
+    const openEv = buildTimelineEvent(openSyn, metricType, entryRealMcUsd);
+    if (openEv) out.push(openEv);
+
+    for (let i = 1; i < legsArr.length; i++) {
+      const leg = legsArr[i]!;
+      const legReason = String(leg.reason ?? '');
+      const legUsd = Number(leg.sizeUsd ?? 0);
+      const synKind =
+        legReason === 'entry_split'
+          ? 'entry_split_add'
+          : legReason === 'staged_avg'
+            ? 'staged_avg_add'
+            : 'dca_add';
+      const labelRu = isPresetCFile
+        ? presetCStagedLegTimelineLabelRu(legUsd, ot.liveOscarMcapTier)
+        : legReason === 'entry_split'
+          ? 'Покупка · 2-я нога сплита входа'
+          : legReason === 'staged_avg'
+            ? 'Усреднение staged'
+            : 'DCA докупка';
+      const syn: Record<string, unknown> = {
+        kind: synKind,
+        ts: Number(leg.ts ?? ot.entryTs ?? 0),
+        strategyId,
+        mint,
+        marketPrice: Number(leg.marketPrice ?? leg.price ?? 0),
+        sizeUsd: legUsd,
+        triggerPct: Number(leg.triggerPct ?? 0),
+        timelineLabelRu: labelRu,
+        totalInvestedUsd: ot.totalInvestedUsd,
+      };
+      const tev = buildTimelineEvent(syn, metricType, entryRealMcUsd);
+      if (tev) out.push(tev);
+    }
+  }
+
+  for (const ps of partials) {
+    const syn: Record<string, unknown> = {
+      kind: 'partial_sell',
+      ts: Number(ps.ts ?? ot.entryTs ?? 0),
+      strategyId,
+      mint,
+      marketPrice: Number(ps.marketPrice ?? ps.price ?? 0),
+      sellFraction: Number(ps.sellFraction ?? 0),
+      reason: ps.reason ?? 'partial_sell',
+      proceedsUsd: Number(ps.proceedsUsd ?? 0),
+      pnlUsd: Number(ps.pnlUsd ?? 0),
+      remainingFraction: ot.remainingFraction,
+      timelineLabelRu: ps.timelineLabelRu,
+    };
+    const tev = buildTimelineEvent(syn, metricType, entryRealMcUsd);
+    if (tev) out.push(tev);
+  }
+
+  return out;
 }
 
 /**
@@ -2679,16 +2885,25 @@ export function mergeLiveOscarOpenSnapshotIntoLoad(
   load: LiveOscarPaper2Load,
   snapshotPath = DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT,
   maxAgeMs = DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+  dashboardStrategyId = 'live-oscar',
 ): LiveOscarPaper2Load {
   const snap = readLiveOpenSnapshot(snapshotPath);
   if (!snap || !isLiveOpenSnapshotFresh(snap, maxAgeMs)) return load;
 
-  const open = snap.positions.map((p) => paper2OpenItemFromLiveOpenTrade(p.mint, p.openTrade));
+  const entryQuoteByMint = load.entryQuoteByMint ?? new Map();
+  const open = snap.positions.map((p) =>
+    paper2OpenItemFromLiveOpenTrade(p.mint, p.openTrade, entryQuoteByMint.get(p.mint)),
+  );
   const openTimelines = new Map(load.openTimelines);
-  for (const row of open) {
-    if (!openTimelines.has(row.mint)) openTimelines.set(row.mint, []);
+  for (const row of snap.positions) {
+    const existing = openTimelines.get(row.mint) ?? [];
+    if (!existing.length) {
+      const synth = synthesizeTimelineFromLiveOpenTrade(row.mint, row.openTrade, dashboardStrategyId);
+      if (synth.length) openTimelines.set(row.mint, synth);
+      else if (!openTimelines.has(row.mint)) openTimelines.set(row.mint, []);
+    }
   }
-  return { ...load, open, openTimelines };
+  return { ...load, open, openTimelines, entryQuoteByMint };
 }
 
 /**
@@ -2783,6 +2998,37 @@ function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>)
   return out;
 }
 
+/** RECONCILE_ORPHAN books remainder at cost (net 0); dashboard shows fees / last observed px. */
+function sanitizeReconcileOrphanClosedTradeForDashboard(ct: Record<string, unknown>): Record<string, unknown> {
+  if (String(ct.exitReason ?? '') !== 'RECONCILE_ORPHAN') return ct;
+  const invested = Number(ct.totalInvestedUsd ?? 0);
+  const net = Number(ct.netPnlUsd ?? 0);
+  const gross = Number(ct.grossPnlUsd ?? 0);
+  const grossPct = Number(ct.grossPnlPct ?? 0);
+  const entryPx = closedRowEntryPx(ct as Paper2ClosedRow);
+  const exitPx = closedRowExitPx(ct as Paper2ClosedRow);
+  const out: Record<string, unknown> = { ...ct };
+  if (entryPx > 0) {
+    out.entryPriceUsd = entryPx;
+    out.baselinePriceUsd = entryPx;
+  }
+  if (exitPx > 0) {
+    out.exitPriceUsd = exitPx;
+  }
+  if (net === 0 && Number.isFinite(gross) && gross !== 0) {
+    out.netPnlUsd = gross;
+    out.pnlUsd = gross;
+    if (invested > 0) {
+      const pct = (gross / invested) * 100;
+      out.pnlPct = pct;
+      if (!Number.isFinite(grossPct) || grossPct === 0) out.grossPnlPct = pct;
+    } else if (Number.isFinite(grossPct) && grossPct !== 0) {
+      out.pnlPct = grossPct;
+    }
+  }
+  return out;
+}
+
 function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
   const z = Date.now();
   return {
@@ -2830,6 +3076,14 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
   const intentToMint = new Map<string, string>();
   const sigQueues = new Map<string, string[]>();
+  const entryQuoteByMint = new Map<
+    string,
+    {
+      entryPriceVerifySlipPct: number | null;
+      entryPriceVerifyImpactPct: number | null;
+      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+    }
+  >();
 
   const enqueueSig = (mint: string, sig: string) => {
     const q = sigQueues.get(mint) ?? [];
@@ -2911,6 +3165,10 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const id = String(o.intentId ?? '');
       const m = String(o.mint ?? '');
       if (id && m) intentToMint.set(id, m);
+      if (m && String(o.side ?? '').toLowerCase() === 'buy') {
+        const qv = entryQuoteVerifyFromExecutionAttempt(o);
+        if (qv.entryPriceVerifySource) entryQuoteByMint.set(m, qv);
+      }
       continue;
     }
 
@@ -2942,7 +3200,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const entryRealMcUsd = entryRealMcFromLiveOpenTrade(ot);
       const legsArr = Array.isArray(ot.legs) ? (ot.legs as Record<string, unknown>[]) : [];
 
-      om.set(mint, paper2OpenItemFromLiveOpenTrade(mint, ot));
+      om.set(mint, paper2OpenItemFromLiveOpenTrade(mint, ot, entryQuoteByMint.get(mint)));
       liveMeta.set(mint, { metricType, entryRealMcUsd });
 
       const emMc0 = entryRealMcFromLiveOpenTrade(ot);
@@ -3183,7 +3441,8 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
     }
 
     if (kind === 'live_position_close') {
-      const ct = sanitizeCorruptLivePeriodicHealClosedTrade((o.closedTrade ?? {}) as Record<string, unknown>);
+      let ct = sanitizeCorruptLivePeriodicHealClosedTrade((o.closedTrade ?? {}) as Record<string, unknown>);
+      ct = sanitizeReconcileOrphanClosedTradeForDashboard(ct);
       const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
       const syn: Record<string, unknown> = {
         kind: 'close',
@@ -3237,20 +3496,26 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       ? { ...(liveReconcileBoot ? { liveReconcileBoot } : {}), ...(liveReconcileReport ? { liveReconcileReport } : {}) }
       : undefined;
 
-  return mergeLiveOscarOpenSnapshotIntoLoad({
-    open: [...om.values()],
-    closed: closedVisible,
-    firstTs: f,
-    lastTs: l,
-    resetTs,
-    evals1h,
-    passed1h,
-    failReasons,
-    openTimelines: liveTimelines,
-    hbOpen,
-    hbClosed,
-    ...(extras ? { liveExtras: extras } : {}),
-  });
+  return mergeLiveOscarOpenSnapshotIntoLoad(
+    {
+      open: [...om.values()],
+      closed: closedVisible,
+      firstTs: f,
+      lastTs: l,
+      resetTs,
+      evals1h,
+      passed1h,
+      failReasons,
+      openTimelines: liveTimelines,
+      hbOpen,
+      hbClosed,
+      entryQuoteByMint,
+      ...(extras ? { liveExtras: extras } : {}),
+    },
+    resolveLiveOscarOpenSnapshotPath(filePath),
+    DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+    dashboardStrategyId,
+  );
 }
 
 function paper2Metrics(closed: Paper2ClosedRow[]): {
@@ -3791,6 +4056,8 @@ async function buildPaper2StrategyRowFromLoad(
           c.entryPriceVerifySource === 'blocked'
             ? c.entryPriceVerifySource
             : null;
+        const closedEntryPx = closedRowEntryPx(c);
+        const closedExitPx = closedRowExitPx(c);
         const lw = c.liqWatch as { currentLiqUsd?: unknown; dropPct?: unknown } | undefined;
         const exitLiqUsd =
           lw != null && Number.isFinite(Number(lw.currentLiqUsd)) && Number(lw.currentLiqUsd) > 0
@@ -3815,6 +4082,9 @@ async function buildPaper2StrategyRowFromLoad(
           entryPriceVerifySlipPct,
           entryPriceVerifyImpactPct,
           entryPriceVerifySource,
+          entryPx: closedEntryPx > 0 ? closedEntryPx : null,
+          exitPx: closedExitPx > 0 ? closedExitPx : null,
+          baselinePriceUsd: closedEntryPx > 0 ? closedEntryPx : null,
           exitLiqUsd,
           exitLiqDropPct,
           exitContext,

@@ -84,14 +84,14 @@ const ConfigSchema = z.object({
   liveStagedEntryEnabled: z.boolean().default(false),
   /**
    * % drawdown **from signal price** required before the **first cash leg** opens (`0` = first leg at current price ≤ anchor).
-   * Add-on legs use `liveStagedEntrySecondDropPct` / `Third`. Prod PM2 (1.11.481): immediate leg-1 ($200), leg-2 @ −5%, leg-3 @ −10% ($600).
+   * Add-on legs use `liveStagedEntrySecondDropPct` / `Third`. Prod PM2 (1.11.494): immediate leg-1 ($200), leg-2 @ −5%, leg-3 @ −10% ($300).
    */
   liveStagedEntryFirstDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
   liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
-  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(600),
+  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(300),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),
@@ -243,15 +243,15 @@ const ConfigSchema = z.object({
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Max ref mcap on discovery snapshot — excludes large caps from SQL pool and eval (saves PG/CPU). */
   discoveryMaxMarketCapUsd: z.coerce.number().nonnegative().default(0),
-  /** Live Oscar: micro коридор $500k–$1.3M ($300+$300); отдельные dip/vol. */
+  /** Live Oscar: micro коридор $500k–$1.3M ($300+$200 split; leg-3 $300). */
   liveOscarMicroMcapLaneEnabled: z.boolean().default(false),
   liveOscarMicroMcapMinUsd: z.coerce.number().nonnegative().default(500_000),
   liveOscarMicroMcapMaxUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
-  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
-  liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(600),
+  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(200),
+  liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(500),
   /** Leg-3 staged avg @ −10% for micro tier; prod uses `liveStagedEntrySecondLegUsd`. */
   liveOscarMicroMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
   liveOscarMicroMcapDcaLevelsSpec: z.string().default(''),
