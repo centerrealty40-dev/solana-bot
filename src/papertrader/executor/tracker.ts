@@ -11,6 +11,7 @@ import {
 import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
+import { markPresetCTelegramGateConsumedOnFullClose } from '../../preset-c/telegram-gate.js';
 import type {
   ClosedTrade,
   DexSource,
@@ -1427,6 +1428,7 @@ function afterFullCloseReentryGate(
     ct,
     openTrade ? { openTrade } : undefined,
   );
+  markPresetCTelegramGateConsumedOnFullClose(cfg.strategyId, openTrade);
   args.onMintFullClose?.(ct.mint);
 }
 
