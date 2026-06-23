@@ -1338,6 +1338,7 @@ const PM2_APPS = [
         LIVE_STRATEGY_ENABLED: '1',
         /** Emergency pause until telegram gate verified on prod — restore `live` after smoke. */
         LIVE_EXECUTION_MODE: 'simulate',
+        LIVE_SIMULATE_BUYS_ONLY: '1',
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar-preset-c',
         LIVE_TRADES_PATH: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),

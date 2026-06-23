@@ -81,6 +81,8 @@ const LiveOscarConfigSchema = z
 
     /** W8.0 Phase 3 — sign + simulateTransaction (qnCall feature sim). */
     liveSimEnabled: z.boolean(),
+    /** When executionMode=simulate, still broadcast sells (block new buys only). */
+    liveSimulateBuysOnly: z.boolean(),
     liveSimTimeoutMs: z.coerce.number().int().min(2000).max(60_000),
     liveSimCreditsPerCall: z.coerce.number().int().min(10).max(200),
     liveSimReplaceRecentBlockhash: z.boolean().default(true),
@@ -589,6 +591,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     })(),
 
     liveSimEnabled: envBool(process.env.LIVE_SIM_ENABLED, true),
+    liveSimulateBuysOnly: envBool(process.env.LIVE_SIMULATE_BUYS_ONLY, false),
     liveSimTimeoutMs: (() => {
       const s = process.env.LIVE_SIM_TIMEOUT_MS?.trim();
       if (!s) return 12_000;
