@@ -123,12 +123,22 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 ### 5.5 Резерв и disaster recovery (краткий runbook)
 
-**Ежедневный бэкап PostgreSQL → Cloudflare R2** (cron **`salpha`**, **03:10 UTC**):
+**Полный runbook:** [`DR_RESTORE.md`](./DR_RESTORE.md) (JSONL, runtime state, secrets, restore checklist).
+
+**Ежедневные бэкапы** (cron **`salpha`**, установка: `bash scripts/ops/install-backup-cron.sh`):
+
+| Время UTC | Объект | Скрипт |
+|-----------|--------|--------|
+| 03:10 | PostgreSQL → R2 | `scripts/ops/backup-db-r2-api.sh` |
+| 03:20 | `.env` + keypairs (gpg) | `scripts/ops/backup-secrets-encrypted.sh` |
+| 03:30 | JSONL + runtime state | `scripts/ops/backup-live-data.sh` |
+| вс 04:00 | `pt1-oscar-live.jsonl` → R2 | `backup-live-data.sh --r2-full-journals` |
+
+**PostgreSQL → R2** (03:10 UTC):
 
 | Элемент | Значение |
 |---------|----------|
-| Скрипт | `scripts/ops/backup-db-r2-api.sh` (общие helpers: `_backup-common.sh`) |
-| Установка cron | `sudo -u salpha bash /opt/solana-alpha/scripts/ops/install-vps-pg-backup-cron.sh` |
+| Скрипт | `scripts/ops/backup-db-r2-api.sh` (helpers: `_backup-common.sh`) |
 | Лог | `/opt/solana-alpha/data/logs/db-backup.log` |
 | Локальный staging | `/home/salpha/backups/postgres/` (retention 14 суток `.dump.zst`) |
 | R2 bucket | `R2_BUCKET` из `.env` (default `solana-alpha-backups`) |
@@ -151,9 +161,9 @@ tail -20 data/logs/db-backup.log
 2. Скачать и проверить последний архив:
    ```bash
    cd /opt/solana-alpha && set -a && . ./.env && set +a
-   bash scripts-tmp/restore-from-r2-chunks.sh
+   bash scripts/ops/restore-from-r2-chunks.sh
    ```
-   Без аргумента скрипт берёт **последний** `manifest.txt` в `postgres/chunks/`. Для конкретного снимка: `bash scripts-tmp/restore-from-r2-chunks.sh postgres/chunks/solana_alpha_YYYYMMDD-HHMMSS.dump.zst`.
+   Без аргумента скрипт берёт **последний** `manifest.txt` в `postgres/chunks/`. Для конкретного снимка: `bash scripts/ops/restore-from-r2-chunks.sh postgres/chunks/solana_alpha_YYYYMMDD-HHMMSS.dump.zst`.
 3. После проверки (`RESTORE CHECK OK` в stdout) — восстановить в БД (пример; **перезаписывает** схемы):
    ```bash
    cd /tmp/r2-restore-check
@@ -173,7 +183,7 @@ tail -20 data/logs/db-backup.log
 2. Восстановить **`/opt/solana-alpha/.env`** (и при необходимости `/opt/dc-trader/.env`) из secure backup.
 3. §5.2 — checkout **`v2`**, `npm ci`, `pm2 startOrReload ecosystem.config.cjs --update-env`, `post-deploy-smoke.sh`.
 4. PG restore из R2 (§5.5 выше) **или** свежий дамп, если R2 недоступен.
-5. `install-vps-pg-backup-cron.sh` + `install-vps-github-sync-cron.sh` — cron бэкапа и drift-audit.
+5. `install-backup-cron.sh` + `install-vps-github-sync-cron.sh` — cron бэкапа и drift-audit.
 6. Проверить: `tail data/logs/db-backup.log`, `pm2 ls`, smoke green.
 
 Перед рискованным деплоем — дополнительно §7.3 [`RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) (JSONL / точечный `pg_dump`).
@@ -196,7 +206,7 @@ tail -20 data/logs/db-backup.log
 | Параллельные агенты | [`docs/strategy/release/PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) |
 | CI hygiene | [`scripts/check-release-hygiene.mjs`](../../../scripts/check-release-hygiene.mjs) |
 | Git hooks / smoke | [`scripts/release/install-git-hooks.sh`](../../../scripts/release/install-git-hooks.sh), [`scripts/release/post-deploy-smoke.sh`](../../../scripts/release/post-deploy-smoke.sh), [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md) |
-| PG backup / DR | [`scripts/ops/backup-db-r2-api.sh`](../../../scripts/ops/backup-db-r2-api.sh), [`scripts-tmp/restore-from-r2-chunks.sh`](../../../scripts-tmp/restore-from-r2-chunks.sh), [`scripts/ops/install-vps-pg-backup-cron.sh`](../../../scripts/ops/install-vps-pg-backup-cron.sh) |
+| PG backup / DR | [`DR_RESTORE.md`](./DR_RESTORE.md), [`scripts/ops/backup-db-r2-api.sh`](../../../scripts/ops/backup-db-r2-api.sh), [`scripts/ops/restore-from-r2-chunks.sh`](../../../scripts/ops/restore-from-r2-chunks.sh), [`scripts/ops/install-backup-cron.sh`](../../../scripts/ops/install-backup-cron.sh) |
 | Платформа и агенты | [`docs/platform/BOUNDARIES.md`](../../platform/BOUNDARIES.md), [`docs/agents/AGENT_BOOTSTRAP.md`](../../agents/AGENT_BOOTSTRAP.md) |
 
 ---
