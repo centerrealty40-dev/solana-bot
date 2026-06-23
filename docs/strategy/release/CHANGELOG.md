@@ -54,6 +54,33 @@
 
 ---
 
+## [1.11.492] — 2026-06-23
+
+**Тег:** `sa-alpha-1.11.492`
+
+### live-oscar: micro/low leg-3 avg $600 → $300 (prod без изменений)
+
+**Изменение:** 3-я нога staged entry (avg @ −10%) для tier **micro** и **low** — **$300** вместо $600; **prod** остаётся **$600**.
+
+| Tier | Leg-1 | Leg-2 @ −5% | Leg-3 @ −10% | Max |
+|------|-------|-------------|--------------|-----|
+| **micro** | $300 | $150 | **$300** | **$750** |
+| **low** | $200 | $200 | **$300** | **$700** |
+| **prod** | $200 | $200 | $600 | **$1000** |
+
+После scalp_wave escalation применяется tier sizing целевого mcap (micro/low/prod).
+
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD`: **`300`**
+- `PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD`: **`300`**
+- `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD`: **`600`** (prod default)
+- `resolveLiveOscarStagedAvgLegUsd()` + `applyCanonicalStagedEntrySizing()` синхронизируют avg leg по tier
+
+**Откат:** redeploy `sa-alpha-1.11.491` или unset tier env + `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD=600`; `pm2 reload ecosystem.config.cjs --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.491] — 2026-06-23
 
 **Тег:** `sa-alpha-1.11.491`

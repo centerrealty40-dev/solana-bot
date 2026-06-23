@@ -252,6 +252,8 @@ const ConfigSchema = z.object({
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
   liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(600),
+  /** Leg-3 staged avg @ −10% for micro tier; prod uses `liveStagedEntrySecondLegUsd`. */
+  liveOscarMicroMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
   liveOscarMicroMcapDcaLevelsSpec: z.string().default(''),
   /** Live Oscar: узкий коридор $1.3M–$3M (отдельные dip/vol/размер); ≥$3M = prod tier. */
   liveOscarLowMcapLaneEnabled: z.boolean().default(false),
@@ -265,6 +267,8 @@ const ConfigSchema = z.object({
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(800),
+  /** Leg-3 staged avg @ −10% for low tier; prod uses `liveStagedEntrySecondLegUsd`. */
+  liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /**
    * Live Oscar scalp_wave lane: min age 12h (no max), $800k–$30M mcap, shallow dip −8..−15%,
@@ -1140,6 +1144,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarMicroMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD,
     liveOscarMicroMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarMicroMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD,
+    liveOscarMicroMcapStagedAvgLegUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD,
     liveOscarMicroMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS,
     liveOscarLowMcapLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED, false),
     liveOscarLowMcapMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD,
@@ -1149,6 +1154,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarLowMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD,
     liveOscarLowMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarLowMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD,
+    liveOscarLowMcapStagedAvgLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD,
     liveOscarLowMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS,
     liveOscarScalpWaveLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED, false),
     liveOscarScalpWaveMinAgeMin: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN,
