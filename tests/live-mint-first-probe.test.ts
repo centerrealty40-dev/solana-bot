@@ -25,6 +25,7 @@ function liveCfg(dir: string): LiveOscarConfig {
   return {
     executionMode: 'live',
     liveMintFirstProbeEnabled: true,
+    liveFirstMintProbeDenyOnLossEnabled: true,
     liveMintFirstProbeKillDropPct: 7,
     liveMintGraduatedPath: path.join(dir, 'graduated.txt'),
     livePermanentDenylistDisabled: false,
@@ -112,3 +113,4 @@ describe('live mint first probe', () => {
     expect(markMintLiveOscarGraduated(cfg, mint)).toBe(false);
   });
 });
+
