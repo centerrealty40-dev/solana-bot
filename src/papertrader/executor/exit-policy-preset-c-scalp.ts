@@ -1,9 +1,8 @@
 /**
  * Preset C scalp exit policy — levels vs TG/signal anchor (not avg entry).
  *
- * +2.5%: sell 50% once (first touch of level from below OR pullback to +2.5% after higher).
- * +5%:   sell 50% of remainder, arm defensive trail from peak.
- * +10%:  sell 100%.
+ * +5%:   sell 50%, arm defensive trail from peak.
+ * +15%:  sell 100%.
  * 0%:    full exit at breakeven vs signal (price recovered to signal anchor).
  * −50%:  kill stop vs signal anchor.
  * Trail (after +5%): each −2.5% retrace from peak → sell 50% of remainder (one level per tick).
@@ -125,7 +124,6 @@ export function evaluatePresetCScalpExitAction(
   }
 
   const pnl = presetCScalpSignalPnlFrac(ot, marketPx);
-  const tp1 = fracFromPct(scalp.tp1Pct);
   const tp2 = fracFromPct(scalp.tp2Pct);
   const tp3 = fracFromPct(scalp.tp3Pct);
 
@@ -137,7 +135,7 @@ export function evaluatePresetCScalpExitAction(
     return { kind: 'full_exit', reason: 'TP' };
   }
 
-  if (presetCScalpBreakevenExitEligible(ot, marketPx) && (ot.presetCScalpTp25Taken || ot.presetCScalpTp5Taken)) {
+  if (presetCScalpBreakevenExitEligible(ot, marketPx) && ot.presetCScalpTp5Taken) {
     return { kind: 'full_exit', reason: 'BREAKEVEN_EXIT' };
   }
 
@@ -155,17 +153,6 @@ export function evaluatePresetCScalpExitAction(
         ot.trailingArmed = true;
         ot.liveWavePeakPnlFrac = Math.max(ot.liveWavePeakPnlFrac ?? 0, pnl);
         ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, pnl);
-      },
-    };
-  }
-
-  if (!ot.presetCScalpTp25Taken && pnl + LADDER_PNL_EPS >= tp1) {
-    return {
-      kind: 'partial',
-      sellFraction: adj(0.5),
-      label: `PresetC scalp TP +${scalp.tp1Pct}% (50% once — touch or pullback to level)`,
-      mark: () => {
-        ot.presetCScalpTp25Taken = true;
       },
     };
   }
