@@ -39,6 +39,7 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  * Boot fails if PAPER_POSITION_USD exceeds LIVE_MAX_POSITION_USD (see src/live/main.ts).
  *
  * 1.11.494 — 3-leg staged entry ($200/$300 only): prod/low $200+$200+$300=$700; micro $300+$200+$300=$800; scalp_wave $300.
+ * 1.11.497 — micro: no leg-2 @ −5%; $300 open + $300 staged_avg @ −10% = $600 max.
  * PAPER_POSITION_USD = split leg1+leg2 ($400 prod/low); LIVE_MAX = prod full plan ($700).
  */
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '400';
@@ -472,15 +473,15 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.494 — micro коридор $500k–$1.3M: dip −30%, vol1h ≥$35k; split $300+$200 (max $800). (1.11.476: vol 75k→35k). */
+        /** 1.11.497 — micro $500k–$1.3M: dip −30%, vol1h ≥$35k; $300 open + $300 avg @ −10% (max $600). Leg-2 split @ −5% off. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '35000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '500',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '0',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '300',
         /** Leg-3 staged avg @ −10% (micro); prod/low use PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($300). */
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
