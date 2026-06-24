@@ -32,7 +32,20 @@ import {
   type EvalDecision,
 } from './discovery/dip-clones.js';
 import { runPresetCDiscovery } from '../preset-c/discovery.js';
-import { stampPresetCTgDedupeKeysOnOpen } from '../preset-c/telegram-gate.js';
+import { isPresetCScalpModeEnabled, loadPresetCScalpConfig } from '../preset-c/scalp-config.js';
+import {
+  findPresetCScalpEntriesReady,
+  markPresetCScalpPendingEntryDone,
+  presetCScalpReadyToEvalDecision,
+  pruneExpiredPresetCScalpPending,
+  removePresetCScalpPending,
+  upsertPresetCScalpPendingFromDecision,
+  type PresetCScalpReadyEntry,
+} from '../preset-c/scalp-pending.js';
+import {
+  matchingPresetCTelegramGateKeys,
+  stampPresetCTgDedupeKeysOnOpen,
+} from '../preset-c/telegram-gate.js';
 import {
   isLiveOscarMainStrategyId,
   isLiveOscarPresetCStrategyId,
@@ -367,7 +380,21 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     return d.liveOscarTradeLane ?? 'prod';
   }
 
+  type ScalpDiscoveryDecision = EvalDecision & { _presetCScalpFromPending?: PresetCScalpReadyEntry };
+  const presetCScalpDeferredOpens: PresetCScalpReadyEntry[] = [];
+
+  async function queuePresetCScalpDeferredEntries(): Promise<void> {
+    if (!isPresetCScalpModeEnabled(cfg)) return;
+    const ready = await findPresetCScalpEntriesReady(new Set(open.keys()));
+    for (const r of ready) {
+      if (!presetCScalpDeferredOpens.some((x) => x.mint === r.mint)) {
+        presetCScalpDeferredOpens.push(r);
+      }
+    }
+  }
+
   function liveStagedEntryActiveForDecision(d: EvalDecision): boolean {
+    if (isPresetCScalpModeEnabled(cfg) && isLiveOscarPresetCStrategyId(cfg.strategyId)) return false;
     return liveStagedEntryActive() && resolveDecisionTradeLane(d) !== 'scalp_wave';
   }
 
@@ -1295,7 +1322,28 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       }
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
-      for (const d of res.decisions) {
+
+      await queuePresetCScalpDeferredEntries();
+      for (const mint of pruneExpiredPresetCScalpPending(tickNow)) {
+        journalAppend({
+          kind: 'preset_c_scalp_pending_expired',
+          mint,
+          ts: tickNow,
+        });
+        removePresetCScalpPending(mint);
+      }
+
+      const scalpOpenDecisions: ScalpDiscoveryDecision[] = presetCScalpDeferredOpens.splice(0).map(
+        (ready) => ({
+          ...presetCScalpReadyToEvalDecision(ready),
+          pass: true,
+          reasons: [],
+          _presetCScalpFromPending: ready,
+        }),
+      );
+      const discoveryDecisions: ScalpDiscoveryDecision[] = [...scalpOpenDecisions, ...res.decisions];
+
+      for (const d of discoveryDecisions) {
         const priorityFlag = res.priorityMintSet?.has(d.mint) ?? false;
         const deepAuditFlag =
           cfg.discoveryDeepAuditJsonl === true &&
@@ -1421,6 +1469,27 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (cfg.dryRun && !resolveLiveOscar()) continue;
         if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
 
+        if (
+          isPresetCScalpModeEnabled(cfg) &&
+          isLiveOscarPresetCStrategyId(cfg.strategyId) &&
+          !d._presetCScalpFromPending
+        ) {
+          const tgKeys = matchingPresetCTelegramGateKeys(d.mint, tickNow);
+          const pending = upsertPresetCScalpPendingFromDecision(d, tgKeys, tickNow);
+          journalAppend({
+            kind: 'preset_c_scalp_pending',
+            mint: d.mint,
+            symbol: d.symbol,
+            lane: d.lane,
+            source: d.source,
+            signalPriceUsd: pending.signalPriceUsd,
+            entryDropPct: loadPresetCScalpConfig().entryDropPct,
+            dcaDropPct: loadPresetCScalpConfig().dcaDropPct,
+            expiresAtMs: pending.expiresAtMs,
+          });
+          continue;
+        }
+
         const liveOscarForEntryGates = resolveLiveOscar();
         if (liveOscarForEntryGates && isLiveOscarTradingStrategyId(cfg.strategyId)) {
           if (isMintPermanentlyDeniedLiveOscar(liveOscarForEntryGates.liveCfg, d.mint)) {
@@ -1512,11 +1581,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           pair_address: d.features.pair_address ?? null,
         };
         const openLegUsd =
-          tradeLane === 'scalp_wave'
-            ? liveOscarScalpWaveOpenLegUsd(cfg)
-            : liveStagedEntryActiveForDecision(d)
-              ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
-              : undefined;
+          d._presetCScalpFromPending != null
+            ? loadPresetCScalpConfig().entryUsd
+            : tradeLane === 'scalp_wave'
+              ? liveOscarScalpWaveOpenLegUsd(cfg)
+              : liveStagedEntryActiveForDecision(d)
+                ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
+                : undefined;
         let ot = makeOpenTradeFromEntry({
           cfg,
           row,
@@ -1537,6 +1608,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             d.features.market_cap_usd,
             d.liveOscarMcapTier === 'scalp_wave' ? undefined : d.liveOscarMcapTier,
           );
+        }
+        if (d._presetCScalpFromPending) {
+          ot.presetCScalpAnchorPriceUsd = d._presetCScalpFromPending.signalPriceUsd;
+          if (d._presetCScalpFromPending.tgDedupeKeys?.length) {
+            ot.presetCTgDedupeKeys = [...d._presetCScalpFromPending.tgDedupeKeys];
+          }
         }
 
         const preDyn = cfg.preEntryDynamicsEnabled
@@ -1901,9 +1978,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
 
         if (isLiveOscarTradingStrategyId(cfg.strategyId)) stampLiveOscarExitPolicyOnOpen(ot, cfg);
-        if (isLiveOscarPresetCStrategyId(cfg.strategyId)) stampPresetCTgDedupeKeysOnOpen(ot);
+        if (isLiveOscarPresetCStrategyId(cfg.strategyId) && !d._presetCScalpFromPending) {
+          stampPresetCTgDedupeKeysOnOpen(ot);
+        }
 
         open.set(ot.mint, ot);
+        if (d._presetCScalpFromPending) {
+          markPresetCScalpPendingEntryDone(d.mint);
+          removePresetCScalpPending(d.mint);
+          journalAppend({
+            kind: 'preset_c_scalp_entry',
+            mint: d.mint,
+            symbol: d.symbol,
+            signalPriceUsd: d._presetCScalpFromPending.signalPriceUsd,
+            entryPriceUsd: d.features.price_usd,
+            signalDropPct: +d._presetCScalpFromPending.signalDropPct.toFixed(3),
+            entryUsd: loadPresetCScalpConfig().entryUsd,
+          });
+        }
         if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
           clearStagedEntrySignalForConfirmedBuy(ot.mint, {
             signalTs: ot.liveStagedEntry?.signalTs ?? ot.entryTs,
@@ -2133,6 +2225,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
           onMintFullClose: (mint) => {
             stagedEntrySignals.delete(mint);
+            removePresetCScalpPending(mint);
+          },
+          processPresetCScalpDeferredEntries: async () => {
+            await queuePresetCScalpDeferredEntries();
+            if (presetCScalpDeferredOpens.length > 0 && !discoveryRunning) {
+              await withTimeout(discoveryTick(), 60_000, 'discoveryTickScalpDeferred');
+            }
           },
         }),
         45_000,
@@ -2247,6 +2346,13 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
           onMintFullClose: (mint) => {
             stagedEntrySignals.delete(mint);
+            removePresetCScalpPending(mint);
+          },
+          processPresetCScalpDeferredEntries: async () => {
+            await queuePresetCScalpDeferredEntries();
+            if (presetCScalpDeferredOpens.length > 0 && !discoveryRunning) {
+              await withTimeout(discoveryTick(), 60_000, 'discoveryTickScalpDeferredHot');
+            }
           },
         }),
         45_000,

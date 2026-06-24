@@ -12,8 +12,15 @@ import {
   isVariantAHybridExitPolicy,
 } from './exit-policy-variant-a.js';
 import { stampScalpWaveExitPolicyOnOpen } from './exit-policy-scalp-wave.js';
+import { stampPresetCScalpExitPolicyOnOpen, isPresetCScalpExitPolicy } from './exit-policy-preset-c-scalp.js';
 
-export type LiveExitPolicyId = 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3';
+export type LiveExitPolicyId =
+  | 'legacy_grid'
+  | 'wave_b_v1'
+  | 'variant_a_v1'
+  | 'variant_a_v2'
+  | 'variant_a_v3'
+  | 'preset_c_scalp_v1';
 
 /** Prod grid pinned for opens/restores without `liveExitPolicyId` (1.11.168 live-oscar). */
 export const LEGACY_LIVE_OSCAR_TP_GRID = {
@@ -445,6 +452,7 @@ export function waveBTrailSellFractionForRemainder(
 /** Stamp policy on first open (before journal). */
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return;
+  if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
   if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
@@ -554,7 +562,7 @@ export function resolveLiveOscarExitPolicyForTick(
   pnlFrac?: number,
 ): boolean {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return false;
-  if (isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot)) return false;
+  if (isPresetCScalpExitPolicy(ot) || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot)) return false;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     return migrateLegacyOpenToWaveB(ot, pnlFrac);
   }
