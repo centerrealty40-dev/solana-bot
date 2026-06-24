@@ -2,6 +2,7 @@
  * Preset C scalp exit policy — levels vs TG/signal anchor (not avg entry).
  *
  * +5%:   sell 50%, arm defensive trail from peak.
+ * +10%:  sell 50% of remainder.
  * +15%:  sell 100%.
  * 0%:    full exit at breakeven vs signal (price recovered to signal anchor).
  * −50%:  kill stop vs signal anchor.
@@ -125,6 +126,7 @@ export function evaluatePresetCScalpExitAction(
 
   const pnl = presetCScalpSignalPnlFrac(ot, marketPx);
   const tp2 = fracFromPct(scalp.tp2Pct);
+  const tpMid = fracFromPct(scalp.tpMidPct);
   const tp3 = fracFromPct(scalp.tp3Pct);
 
   if (presetCScalpKillEligible(ot, marketPx, scalp)) {
@@ -135,7 +137,10 @@ export function evaluatePresetCScalpExitAction(
     return { kind: 'full_exit', reason: 'TP' };
   }
 
-  if (presetCScalpBreakevenExitEligible(ot, marketPx) && ot.presetCScalpTp5Taken) {
+  if (
+    presetCScalpBreakevenExitEligible(ot, marketPx) &&
+    (ot.presetCScalpTp5Taken || ot.presetCScalpTp10Taken)
+  ) {
     return { kind: 'full_exit', reason: 'BREAKEVEN_EXIT' };
   }
 
@@ -151,6 +156,23 @@ export function evaluatePresetCScalpExitAction(
         ot.presetCScalpTp5Taken = true;
         ot.presetCScalpTrailArmed = true;
         ot.trailingArmed = true;
+        ot.liveWavePeakPnlFrac = Math.max(ot.liveWavePeakPnlFrac ?? 0, pnl);
+        ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, pnl);
+      },
+    };
+  }
+
+  if (
+    ot.presetCScalpTp5Taken &&
+    !ot.presetCScalpTp10Taken &&
+    pnl + LADDER_PNL_EPS >= tpMid
+  ) {
+    return {
+      kind: 'partial',
+      sellFraction: adj(0.5),
+      label: `PresetC scalp TP +${scalp.tpMidPct}% (50% of remainder)`,
+      mark: () => {
+        ot.presetCScalpTp10Taken = true;
         ot.liveWavePeakPnlFrac = Math.max(ot.liveWavePeakPnlFrac ?? 0, pnl);
         ot.liveWaveTrailAnchorPnlFrac = Math.max(ot.liveWaveTrailAnchorPnlFrac ?? 0, pnl);
       },

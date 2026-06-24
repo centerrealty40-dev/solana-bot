@@ -107,6 +107,16 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.presetCTgDedupeKeys != null && ot.presetCTgDedupeKeys.length > 0
       ? { presetCTgDedupeKeys: [...ot.presetCTgDedupeKeys] }
       : {}),
+    ...(typeof ot.presetCScalpAnchorPriceUsd === 'number' &&
+    Number.isFinite(ot.presetCScalpAnchorPriceUsd) &&
+    ot.presetCScalpAnchorPriceUsd > 0
+      ? { presetCScalpAnchorPriceUsd: ot.presetCScalpAnchorPriceUsd }
+      : {}),
+    ...(ot.presetCScalpTp25Taken ? { presetCScalpTp25Taken: true } : {}),
+    ...(ot.presetCScalpTp5Taken ? { presetCScalpTp5Taken: true } : {}),
+    ...(ot.presetCScalpTp10Taken ? { presetCScalpTp10Taken: true } : {}),
+    ...(ot.presetCScalpTrailArmed ? { presetCScalpTrailArmed: true } : {}),
+    ...(ot.presetCScalpDcaLegDone ? { presetCScalpDcaLegDone: true } : {}),
   };
 }
 
