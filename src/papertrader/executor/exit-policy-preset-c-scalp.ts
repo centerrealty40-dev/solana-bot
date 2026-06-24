@@ -219,6 +219,22 @@ export function presetCScalpDcaDue(
   return dropPct + 1e-6 >= scalp.dcaDropPct;
 }
 
+/** Second DCA leg at −20% from signal (after DCA1, max one add). */
+export function presetCScalpDca2Due(
+  ot: OpenTrade,
+  marketPx: number,
+  scalp: PresetCScalpConfig = loadPresetCScalpConfig(),
+): boolean {
+  if (!isPresetCScalpExitPolicy(ot) || !ot.presetCScalpDcaLegDone || ot.presetCScalpDca2LegDone) {
+    return false;
+  }
+  if (!(scalp.dca2Usd > 0)) return false;
+  const anchor = presetCScalpAnchorPriceUsd(ot);
+  if (!(anchor > 0) || !(marketPx > 0)) return false;
+  const dropPct = (1 - marketPx / anchor) * 100;
+  return dropPct + 1e-6 >= scalp.dca2DropPct;
+}
+
 export function presetCScalpEffectiveExitParams(
   cfg: PaperTraderConfig,
 ): Pick<PaperTraderConfig, 'dcaKillstop' | 'tpGridStepPnl' | 'trailMode' | 'timeoutHours'> {

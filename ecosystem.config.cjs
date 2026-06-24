@@ -1259,7 +1259,7 @@ const PM2_APPS = [
     },
     /**
      * Preset C — isolated Live Oscar on SuperBot wallet (HcV3BhmK…).
-     * Entry: TG-gated pullback → pending scalp (−5% / −10% DCA). Exit: preset_c_scalp_v1.
+     * Entry: TG-gated pullback → pending scalp (−5% / −10% / −20% DCA). Exit: preset_c_scalp_v1.
      * Does NOT share discovery path with `live-oscar`.
      */
     {
@@ -1291,12 +1291,14 @@ const PM2_APPS = [
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Preset C scalp: deferred entry −5%/−10%, dedicated exit (not wave B). */
+        /** Preset C scalp: deferred entry −5%/−10%/−20%, dedicated exit (not wave B). */
         PRESET_C_SCALP_MODE: '1',
         PRESET_C_SCALP_ENTRY_DROP_PCT: '5',
         PRESET_C_SCALP_DCA_DROP_PCT: '10',
+        PRESET_C_SCALP_DCA2_DROP_PCT: '20',
         PRESET_C_SCALP_ENTRY_USD: '100',
         PRESET_C_SCALP_DCA_USD: '100',
+        PRESET_C_SCALP_DCA2_USD: '100',
         PRESET_C_SCALP_TP2_PCT: '5',
         PRESET_C_SCALP_TP_MID_PCT: '10',
         PRESET_C_SCALP_TP3_PCT: '15',
@@ -1314,8 +1316,9 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
+        /** Legacy wave_b opens (drooling/FARM): third avg leg at −20% / $100. */
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '100',
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '1',

@@ -4,6 +4,8 @@ import {
   evaluatePresetCScalpExitAction,
   isPresetCScalpExitPolicy,
   presetCScalpBreakevenExitEligible,
+  presetCScalpDca2Due,
+  presetCScalpDcaDue,
   presetCScalpKillEligible,
   presetCScalpSignalPnlFrac,
   stampPresetCScalpExitPolicyOnOpen,
@@ -75,6 +77,10 @@ describe('preset-c-scalp-config', () => {
     const scalp = loadPresetCScalpConfig();
     expect(scalp.entryDropPct).toBe(5);
     expect(scalp.dcaDropPct).toBe(10);
+    expect(scalp.dca2DropPct).toBe(20);
+    expect(scalp.entryUsd).toBe(100);
+    expect(scalp.dcaUsd).toBe(100);
+    expect(scalp.dca2Usd).toBe(100);
     expect(scalp.tp2Pct).toBe(5);
     expect(scalp.tpMidPct).toBe(10);
     expect(scalp.tp3Pct).toBe(15);
@@ -228,5 +234,21 @@ describe('preset-c-scalp-exit-policy', () => {
     const action = evaluatePresetCScalpExitAction(ot, cfg, 100);
     expect(action.kind).toBe('full_exit');
     if (action.kind === 'full_exit') expect(action.reason).toBe('BREAKEVEN_EXIT');
+  });
+
+  it('fires DCA1 at −10% from signal anchor', () => {
+    const ot = baseOpen(100);
+    expect(presetCScalpDcaDue(ot, 90)).toBe(true);
+    expect(presetCScalpDcaDue(ot, 91)).toBe(false);
+  });
+
+  it('fires DCA2 at −20% only after DCA1 done', () => {
+    const ot = baseOpen(100);
+    expect(presetCScalpDca2Due(ot, 80)).toBe(false);
+    ot.presetCScalpDcaLegDone = true;
+    expect(presetCScalpDca2Due(ot, 80)).toBe(true);
+    expect(presetCScalpDca2Due(ot, 81)).toBe(false);
+    ot.presetCScalpDca2LegDone = true;
+    expect(presetCScalpDca2Due(ot, 80)).toBe(false);
   });
 });

@@ -117,6 +117,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(ot.presetCScalpTp10Taken ? { presetCScalpTp10Taken: true } : {}),
     ...(ot.presetCScalpTrailArmed ? { presetCScalpTrailArmed: true } : {}),
     ...(ot.presetCScalpDcaLegDone ? { presetCScalpDcaLegDone: true } : {}),
+    ...(ot.presetCScalpDca2LegDone ? { presetCScalpDca2LegDone: true } : {}),
   };
 }
 

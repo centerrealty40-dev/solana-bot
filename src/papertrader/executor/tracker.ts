@@ -16,6 +16,7 @@ import {
   evaluatePresetCScalpExitAction,
   isPresetCScalpExitPolicy,
   presetCScalpDcaDue,
+  presetCScalpDca2Due,
   presetCScalpKillEligible,
   presetCScalpBreakevenExitEligible,
 } from './exit-policy-preset-c-scalp.js';
@@ -1961,61 +1962,96 @@ async function tryPresetCScalpDcaLeg(args: {
   liveOscarCfg?: LiveOscarConfig;
 }): Promise<void> {
   const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4 } = args;
-  if (!isPresetCScalpExitPolicy(ot) || ot.presetCScalpDcaLegDone || !presetCScalpDcaDue(ot, curMetric)) {
+  if (!isPresetCScalpExitPolicy(ot)) return;
+
+  const scalp = loadPresetCScalpConfig();
+
+  type ScalpDcaSpec = {
+    due: boolean;
+    addUsd: number;
+    dropPct: number;
+    reason: string;
+    logTag: string;
+    markDone: () => void;
+  };
+
+  const legs: ScalpDcaSpec[] = [
+    {
+      due: !ot.presetCScalpDcaLegDone && presetCScalpDcaDue(ot, curMetric, scalp),
+      addUsd: scalp.dcaUsd,
+      dropPct: scalp.dcaDropPct,
+      reason: 'preset_c_scalp_dca',
+      logTag: 'PRESET_C_SCALP_DCA',
+      markDone: () => {
+        ot.presetCScalpDcaLegDone = true;
+      },
+    },
+    {
+      due: !ot.presetCScalpDca2LegDone && presetCScalpDca2Due(ot, curMetric, scalp),
+      addUsd: scalp.dca2Usd,
+      dropPct: scalp.dca2DropPct,
+      reason: 'preset_c_scalp_dca2',
+      logTag: 'PRESET_C_SCALP_DCA2',
+      markDone: () => {
+        ot.presetCScalpDca2LegDone = true;
+      },
+    },
+  ];
+
+  for (const leg of legs) {
+    if (!leg.due || !(leg.addUsd > 0)) continue;
+
+    let dcaBuyRes: LiveBuyPipelineResult | undefined;
+    if (livePhase4) {
+      dcaBuyRes = await livePhase4.trySolToTokenBuy({
+        mint,
+        symbol: ot.symbol,
+        usdNotional: leg.addUsd,
+      });
+      if (!dcaBuyRes.ok) return;
+    }
+
+    const addUsd = leg.addUsd;
+    const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, curMetric, ot.dex, addUsd, null);
+    ot.legs.push({
+      ts: Date.now(),
+      price: effectiveBuy,
+      marketPrice: curMetric,
+      sizeUsd: addUsd,
+      reason: 'dca',
+      triggerPct: -leg.dropPct / 100,
+    });
+    leg.markDone();
+    ot.totalInvestedUsd += addUsd;
+    const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+    ot.avgEntry = num / ot.totalInvestedUsd;
+    const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+    ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+    ot.remainingFraction = 1;
+    if (livePhase4 && dcaBuyRes) {
+      appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+    }
+    journalAppend({
+      kind: 'dca_add',
+      mint,
+      ts: Date.now(),
+      price: effectiveBuy,
+      marketPrice: curMetric,
+      sizeUsd: addUsd,
+      reason: leg.reason,
+      timelineLabelRu: `Preset C scalp DCA $${addUsd.toFixed(0)} @ −${leg.dropPct}% от сигнала`,
+    });
+    journalLiveStrategy?.({
+      kind: 'live_position_dca',
+      mint,
+      openTrade: serializeOpenTrade(ot),
+      timelineLabelRu: `Preset C scalp DCA −${leg.dropPct}%`,
+    });
+    console.log(
+      `[${leg.logTag}] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @ −${leg.dropPct}% signal`,
+    );
     return;
   }
-  const scalp = loadPresetCScalpConfig();
-  if (!(scalp.dcaUsd > 0)) return;
-
-  let dcaBuyRes: LiveBuyPipelineResult | undefined;
-  if (livePhase4) {
-    dcaBuyRes = await livePhase4.trySolToTokenBuy({
-      mint,
-      symbol: ot.symbol,
-      usdNotional: scalp.dcaUsd,
-    });
-    if (!dcaBuyRes.ok) return;
-  }
-
-  const addUsd = scalp.dcaUsd;
-  const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, curMetric, ot.dex, addUsd, null);
-  ot.legs.push({
-    ts: Date.now(),
-    price: effectiveBuy,
-    marketPrice: curMetric,
-    sizeUsd: addUsd,
-    reason: 'dca',
-    triggerPct: -scalp.dcaDropPct / 100,
-  });
-  ot.presetCScalpDcaLegDone = true;
-  ot.totalInvestedUsd += addUsd;
-  const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
-  ot.avgEntry = num / ot.totalInvestedUsd;
-  const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
-  ot.avgEntryMarket = numM / ot.totalInvestedUsd;
-  ot.remainingFraction = 1;
-  if (livePhase4 && dcaBuyRes) {
-    appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
-  }
-  journalAppend({
-    kind: 'dca_add',
-    mint,
-    ts: Date.now(),
-    price: effectiveBuy,
-    marketPrice: curMetric,
-    sizeUsd: addUsd,
-    reason: 'preset_c_scalp_dca',
-    timelineLabelRu: `Preset C scalp DCA $${addUsd.toFixed(0)} @ −${scalp.dcaDropPct}% от сигнала`,
-  });
-  journalLiveStrategy?.({
-    kind: 'live_position_dca',
-    mint,
-    openTrade: serializeOpenTrade(ot),
-    timelineLabelRu: `Preset C scalp DCA −${scalp.dcaDropPct}%`,
-  });
-  console.log(
-    `[PRESET_C_SCALP_DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @ −${scalp.dcaDropPct}% signal`,
-  );
 }
 
 export async function trackerTick(args: TrackerArgs): Promise<void> {

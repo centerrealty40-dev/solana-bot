@@ -484,6 +484,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.presetCScalpTp10Taken)) ot.presetCScalpTp10Taken = true;
     if (Boolean(rawPayload.presetCScalpTrailArmed)) ot.presetCScalpTrailArmed = true;
     if (Boolean(rawPayload.presetCScalpDcaLegDone)) ot.presetCScalpDcaLegDone = true;
+    if (Boolean(rawPayload.presetCScalpDca2LegDone)) ot.presetCScalpDca2LegDone = true;
 
     return ot;
   } catch {
