@@ -77,6 +77,12 @@ function pathIsAbsolute(p) {
 export function defaultStrategyWatchTargets(root) {
   return [
     {
+      pm2: 'hl-twap-telegram-watch',
+      heartbeatPath: `${root}/data/hl-twap/heartbeat.json`,
+      staleMs: 300_000,
+      fatalPath: `${root}/data/hl-twap/last-fatal.json`,
+    },
+    {
       pm2: 'live-oscar',
       heartbeatPath: `${root}/data/ops-heartbeats/live-oscar.json`,
       staleMs: 300_000,
