@@ -27,6 +27,8 @@ export type PresetCScalpConfig = {
   dcaUsd: number;
   /** +5% vs signal — sell 50%, arm trail. */
   tp2Pct: number;
+  /** +10% vs signal — sell 50% of remainder. */
+  tpMidPct: number;
   /** +15% vs signal — sell 100%. */
   tp3Pct: number;
   killPct: number;
@@ -43,6 +45,7 @@ export function loadPresetCScalpConfig(): PresetCScalpConfig {
     entryUsd: Math.max(1, envNum('PRESET_C_SCALP_ENTRY_USD', 100)),
     dcaUsd: Math.max(0, envNum('PRESET_C_SCALP_DCA_USD', 100)),
     tp2Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP2_PCT', 5)),
+    tpMidPct: Math.max(0.1, envNum('PRESET_C_SCALP_TP_MID_PCT', 10)),
     tp3Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP3_PCT', 15)),
     killPct: Math.max(1, envNum('PRESET_C_SCALP_KILL_PCT', 50)),
     trailStepPnl: Math.max(0.005, envNum('PRESET_C_SCALP_TRAIL_RETRACE_PCT', 2.5) / 100),

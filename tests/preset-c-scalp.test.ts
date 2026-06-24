@@ -75,6 +75,9 @@ describe('preset-c-scalp-config', () => {
     const scalp = loadPresetCScalpConfig();
     expect(scalp.entryDropPct).toBe(5);
     expect(scalp.dcaDropPct).toBe(10);
+    expect(scalp.tp2Pct).toBe(5);
+    expect(scalp.tpMidPct).toBe(10);
+    expect(scalp.tp3Pct).toBe(15);
     expect(scalp.killPct).toBe(50);
   });
 
@@ -155,14 +158,46 @@ describe('preset-c-scalp-exit-policy', () => {
     }
   });
 
-  it('holds 50% remainder at +10% after tp2', () => {
+  it('fires tpMid partial at +10% after tp2 (50% of remainder)', () => {
     const cfg = loadPaperTraderConfig();
     const ot = baseOpen(100);
     ot.presetCScalpTp5Taken = true;
     ot.presetCScalpTrailArmed = true;
     ot.remainingFraction = 0.5;
     const action = evaluatePresetCScalpExitAction(ot, cfg, 110);
-    expect(action.kind).toBe('none');
+    expect(action.kind).toBe('partial');
+    if (action.kind === 'partial') {
+      expect(action.sellFraction).toBeCloseTo(0.5, 6);
+      action.mark();
+      expect(ot.presetCScalpTp10Taken).toBe(true);
+    }
+  });
+
+  it('sequential partials: +5% then +10% leave 25% for +15% exit', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = baseOpen(100);
+    ot.totalInvestedUsd = 200;
+    ot.legs[0].sizeUsd = 200;
+
+    const tp5 = evaluatePresetCScalpExitAction(ot, cfg, 105);
+    expect(tp5.kind).toBe('partial');
+    if (tp5.kind === 'partial') {
+      tp5.mark();
+      ot.remainingFraction *= 1 - tp5.sellFraction;
+    }
+    expect(ot.remainingFraction).toBeCloseTo(0.5, 6);
+
+    const tp10 = evaluatePresetCScalpExitAction(ot, cfg, 110);
+    expect(tp10.kind).toBe('partial');
+    if (tp10.kind === 'partial') {
+      tp10.mark();
+      ot.remainingFraction *= 1 - tp10.sellFraction;
+    }
+    expect(ot.remainingFraction).toBeCloseTo(0.25, 6);
+
+    const tp15 = evaluatePresetCScalpExitAction(ot, cfg, 115);
+    expect(tp15.kind).toBe('full_exit');
+    if (tp15.kind === 'full_exit') expect(tp15.reason).toBe('TP');
   });
 
   it('full exit at +15%', () => {
@@ -182,5 +217,16 @@ describe('preset-c-scalp-exit-policy', () => {
     const ot = baseOpen(100);
     ot.presetCScalpTp5Taken = true;
     expect(presetCScalpBreakevenExitEligible(ot, 100)).toBe(true);
+  });
+
+  it('breakeven exit at 0% after tp10 partial', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = baseOpen(100);
+    ot.presetCScalpTp5Taken = true;
+    ot.presetCScalpTp10Taken = true;
+    ot.remainingFraction = 0.25;
+    const action = evaluatePresetCScalpExitAction(ot, cfg, 100);
+    expect(action.kind).toBe('full_exit');
+    if (action.kind === 'full_exit') expect(action.reason).toBe('BREAKEVEN_EXIT');
   });
 });

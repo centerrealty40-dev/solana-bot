@@ -385,6 +385,8 @@ export interface OpenTrade {
   presetCScalpTp25Taken?: boolean;
   /** Preset C scalp: +5% partial (50%) taken, trail armed. */
   presetCScalpTp5Taken?: boolean;
+  /** Preset C scalp: +10% partial (50% of remainder) taken once. */
+  presetCScalpTp10Taken?: boolean;
   presetCScalpTrailArmed?: boolean;
   /** Preset C scalp: −10% DCA leg filled. */
   presetCScalpDcaLegDone?: boolean;
