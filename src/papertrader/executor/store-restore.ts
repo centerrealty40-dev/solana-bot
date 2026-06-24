@@ -392,7 +392,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'variant_a_v1' ||
       lepi === 'variant_a_v2' ||
       lepi === 'variant_a_v3' ||
-      lepi === 'scalp_wave_v1'
+      lepi === 'scalp_wave_v1' ||
+      lepi === 'preset_c_scalp_v1'
     ) {
       ot.liveExitPolicyId = lepi;
     }
@@ -473,6 +474,15 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
         .filter((k) => k.length > 0);
       if (keys.length > 0) ot.presetCTgDedupeKeys = keys;
     }
+
+    const scalpAnchor = rawPayload.presetCScalpAnchorPriceUsd;
+    if (typeof scalpAnchor === 'number' && Number.isFinite(scalpAnchor) && scalpAnchor > 0) {
+      ot.presetCScalpAnchorPriceUsd = scalpAnchor;
+    }
+    if (Boolean(rawPayload.presetCScalpTp25Taken)) ot.presetCScalpTp25Taken = true;
+    if (Boolean(rawPayload.presetCScalpTp5Taken)) ot.presetCScalpTp5Taken = true;
+    if (Boolean(rawPayload.presetCScalpTrailArmed)) ot.presetCScalpTrailArmed = true;
+    if (Boolean(rawPayload.presetCScalpDcaLegDone)) ot.presetCScalpDcaLegDone = true;
 
     return ot;
   } catch {

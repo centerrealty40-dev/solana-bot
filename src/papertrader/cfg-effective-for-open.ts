@@ -15,8 +15,15 @@ import {
   isScalpWaveExitPolicy,
   scalpWaveEffectiveExitParams,
 } from './executor/exit-policy-scalp-wave.js';
+import {
+  isPresetCScalpExitPolicy,
+  presetCScalpEffectiveExitParams,
+} from './executor/exit-policy-preset-c-scalp.js';
 
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
+  if (isPresetCScalpExitPolicy(ot)) {
+    return { ...cfg, ...presetCScalpEffectiveExitParams(cfg) };
+  }
   if (isScalpWaveExitPolicy(ot)) {
     return { ...cfg, ...scalpWaveEffectiveExitParams(cfg) };
   }

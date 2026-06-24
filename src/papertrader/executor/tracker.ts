@@ -12,6 +12,14 @@ import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
 import { markPresetCTelegramGateConsumedOnFullClose } from '../../preset-c/telegram-gate.js';
+import {
+  evaluatePresetCScalpExitAction,
+  isPresetCScalpExitPolicy,
+  presetCScalpDcaDue,
+  presetCScalpKillEligible,
+  presetCScalpBreakevenExitEligible,
+} from './exit-policy-preset-c-scalp.js';
+import { loadPresetCScalpConfig } from '../../preset-c/scalp-config.js';
 import type {
   ClosedTrade,
   DexSource,
@@ -313,6 +321,8 @@ export interface TrackerArgs {
   reconcileOrphanMinPositionAgeMs?: number;
   /** After full close — e.g. clear staged entry signal so re-entry cannot bypass dip gate. */
   onMintFullClose?: (mint: string) => void;
+  /** Preset C scalp — check pending −5% entries between discovery ticks. */
+  processPresetCScalpDeferredEntries?: () => Promise<void>;
 }
 
 interface PeakState {
@@ -1900,6 +1910,114 @@ export async function trackerForceFullExitLive(args: {
   return true;
 }
 
+async function tryPresetCScalpPartialExit(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<'partial' | 'none'> {
+  const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
+    args;
+  if (!isPresetCScalpExitPolicy(ot) || !(curMetric > 0) || ot.remainingFraction <= 1e-6) return 'none';
+
+  const action = evaluatePresetCScalpExitAction(ot, cfg, curMetric);
+  if (action.kind !== 'partial') return 'none';
+
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction: action.sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: 0,
+    tpGrid: true,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: action.mark,
+    logLabelPct: action.label,
+    timelineLabelRu: action.label,
+  });
+  return r === 'ok' ? 'partial' : 'none';
+}
+
+async function tryPresetCScalpDcaLeg(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+}): Promise<void> {
+  const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4 } = args;
+  if (!isPresetCScalpExitPolicy(ot) || ot.presetCScalpDcaLegDone || !presetCScalpDcaDue(ot, curMetric)) {
+    return;
+  }
+  const scalp = loadPresetCScalpConfig();
+  if (!(scalp.dcaUsd > 0)) return;
+
+  let dcaBuyRes: LiveBuyPipelineResult | undefined;
+  if (livePhase4) {
+    dcaBuyRes = await livePhase4.trySolToTokenBuy({
+      mint,
+      symbol: ot.symbol,
+      usdNotional: scalp.dcaUsd,
+    });
+    if (!dcaBuyRes.ok) return;
+  }
+
+  const addUsd = scalp.dcaUsd;
+  const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, curMetric, ot.dex, addUsd, null);
+  ot.legs.push({
+    ts: Date.now(),
+    price: effectiveBuy,
+    marketPrice: curMetric,
+    sizeUsd: addUsd,
+    reason: 'dca',
+    triggerPct: -scalp.dcaDropPct / 100,
+  });
+  ot.presetCScalpDcaLegDone = true;
+  ot.totalInvestedUsd += addUsd;
+  const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
+  ot.avgEntry = num / ot.totalInvestedUsd;
+  const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
+  ot.avgEntryMarket = numM / ot.totalInvestedUsd;
+  ot.remainingFraction = 1;
+  if (livePhase4 && dcaBuyRes) {
+    appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+  }
+  journalAppend({
+    kind: 'dca_add',
+    mint,
+    ts: Date.now(),
+    price: effectiveBuy,
+    marketPrice: curMetric,
+    sizeUsd: addUsd,
+    reason: 'preset_c_scalp_dca',
+    timelineLabelRu: `Preset C scalp DCA $${addUsd.toFixed(0)} @ −${scalp.dcaDropPct}% от сигнала`,
+  });
+  journalLiveStrategy?.({
+    kind: 'live_position_dca',
+    mint,
+    openTrade: serializeOpenTrade(ot),
+    timelineLabelRu: `Preset C scalp DCA −${scalp.dcaDropPct}%`,
+  });
+  console.log(
+    `[PRESET_C_SCALP_DCA] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} @ −${scalp.dcaDropPct}% signal`,
+  );
+}
+
 export async function trackerTick(args: TrackerArgs): Promise<void> {
   const {
     cfg,
@@ -1950,6 +2068,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       });
       reconciledOrphans += 1;
     }
+  }
+
+  if (args.processPresetCScalpDeferredEntries) {
+    await args.processPresetCScalpDeferredEntries();
   }
 
   if (open.size === 0) {
@@ -3017,6 +3139,21 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (isPresetCScalpExitPolicy(ot)) {
+      const scalpMetric =
+        snapPx > 0 ? snapPx : rawTrackerPriceUsd > 0 ? rawTrackerPriceUsd : curMetric;
+      await tryPresetCScalpDcaLeg({
+        mint,
+        ot,
+        cfg,
+        curMetric: scalpMetric,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+      });
+    }
+
     if (mayDca) {
       for (let dcaIdx = 0; dcaIdx < tradeDcaLevels.length; dcaIdx++) {
         const lvl = tradeDcaLevels[dcaIdx]!;
@@ -3131,6 +3268,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       !(isPaperOscarIdealized && idealizedMute) &&
       !skipTpGridLiveOscarNeutral &&
+      !isPresetCScalpExitPolicy(ot) &&
       tgEff.stepPnl > 0 &&
       ot.remainingFraction > 0
     ) {
@@ -3301,6 +3439,23 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (ot.avgEntry > 0) {
       xAvg = curMetric / ot.avgEntry;
       pnlPctVsAvg = (xAvg - 1) * 100;
+    }
+    if (isPresetCScalpExitPolicy(ot)) {
+      await tryPresetCScalpPartialExit({
+        mint,
+        ot,
+        cfg: effCfg,
+        curMetric,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+      });
+      if (ot.avgEntry > 0) {
+        xAvg = curMetric / ot.avgEntry;
+        pnlPctVsAvg = (xAvg - 1) * 100;
+      }
     }
     await tryWaveBBreakevenInsurance({
       mint,
@@ -3541,15 +3696,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         isWaveBExitPolicy(ot) &&
         killEff < 0 &&
         waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
+      const presetCScalpKill =
+        isPresetCScalpExitPolicy(ot) && presetCScalpKillEligible(ot, curMetric);
       const classicKill =
         !isWaveBExitPolicy(ot) &&
+        !isPresetCScalpExitPolicy(ot) &&
         !ot.liveStagedEntry &&
         killEff < 0 &&
         pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
-        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || waveBKill || classicKill);
+        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || waveBKill || presetCScalpKill || classicKill);
       if (inKillTerritory) {
-        if (waveBKill) {
+        if (waveBKill || presetCScalpKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
         } else {
@@ -3575,6 +3733,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
       if (!exitReason) {
         if (
+          isPresetCScalpExitPolicy(ot) &&
+          presetCScalpBreakevenExitEligible(ot, curMetric) &&
+          (ot.presetCScalpTp25Taken || ot.presetCScalpTp5Taken)
+        ) {
+          exitReason = 'BREAKEVEN_EXIT';
+        } else if (isPresetCScalpExitPolicy(ot)) {
+          const scalpFull = evaluatePresetCScalpExitAction(ot, cfg, curMetric);
+          if (scalpFull.kind === 'full_exit') exitReason = scalpFull.reason;
+        } else if (
           isWaveBExitPolicy(ot) &&
           waveBBreakevenExitEligible(ot, tgEff.stepPnl) &&
           ot.avgEntry > 0 &&
