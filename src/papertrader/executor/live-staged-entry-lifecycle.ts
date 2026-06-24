@@ -146,7 +146,8 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   const anchor = st.entrySplitAnchorUsd ?? st.signalPriceUsd;
   const signalDropPct = signalDropPctFromState(st, curMetric);
 
-  if (!st.entrySplitLeg2Done) {
+  const entrySplitLeg2Usd = st.entrySplitLeg2Usd ?? 0;
+  if (!st.entrySplitLeg2Done && entrySplitLeg2Usd > 0) {
     const leg2 = entrySplitLeg2Eligible({
       st,
       signalDropPct,

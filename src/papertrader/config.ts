@@ -243,15 +243,15 @@ const ConfigSchema = z.object({
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Max ref mcap on discovery snapshot — excludes large caps from SQL pool and eval (saves PG/CPU). */
   discoveryMaxMarketCapUsd: z.coerce.number().nonnegative().default(0),
-  /** Live Oscar: micro коридор $500k–$1.3M ($300+$200 split; leg-3 $300). */
+  /** Live Oscar: micro коридор $500k–$1.3M ($300 open; leg-2 split off; staged avg $300 @ −10%). */
   liveOscarMicroMcapLaneEnabled: z.boolean().default(false),
   liveOscarMicroMcapMinUsd: z.coerce.number().nonnegative().default(500_000),
   liveOscarMicroMcapMaxUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
-  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(200),
-  liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(500),
+  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
+  liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(300),
   /** Leg-3 staged avg @ −10% for micro tier; prod uses `liveStagedEntrySecondLegUsd`. */
   liveOscarMicroMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
   liveOscarMicroMcapDcaLevelsSpec: z.string().default(''),

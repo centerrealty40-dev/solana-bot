@@ -56,6 +56,34 @@
 
 ---
 
+---
+
+## [1.11.497] — 2026-06-24
+
+**Тег:** `sa-alpha-1.11.497`
+
+### live-oscar: micro tier — убрана leg-2 @ −5%
+
+**Изменение (только micro, $500k–$1.3M):** первая покупка **$300** @ signal; **без** entry_split leg-2 @ −5%; одно усреднение **$300** @ −10% (`staged_avg`). Max **$600**. prod/low/scalp_wave без изменений.
+
+| Tier | Leg-1 | Leg-2 @ −5% | Leg-3 @ −10% | Max |
+|------|-------|-------------|--------------|-----|
+| **micro** | $300 | — | $300 | **$600** |
+| **low** | $200 | $200 | $300 | **$700** |
+| **prod** | $200 | $200 | $300 | **$700** |
+| **scalp_wave** | $300 one-shot | — | — | **$300** |
+
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD`: **`0`** (split off)
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD`: **`300`**
+- Phase escalation scalp→micro: уже вложено $300 scalp + до $300 avg = max **$600**
+- `resolveLiveOscarEntrySplitLeg2Usd` / lifecycle / gates; тесты entry-sizing / mcap-tier / phase-escalation
+
+**Откат:** redeploy `sa-alpha-1.11.496`; восстановить micro env leg2=`200`, position=`500`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.496] — 2026-06-24
 
 **Тег:** `sa-alpha-1.11.496`

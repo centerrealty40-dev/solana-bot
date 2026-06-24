@@ -16,15 +16,14 @@ export function resolveLiveOscarEntrySplitLegUsd(
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
-/** Tier-aware split leg-2; `0` in env → same as leg-1 (symmetric split). */
+/** Tier-aware split leg-2 @ −5%; micro: `0` = disabled. Other tiers: `0` → same as leg-1. */
 export function resolveLiveOscarEntrySplitLeg2Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   if (tier === 'micro') {
-    const configured = cfg.liveOscarMicroMcapEntrySplitLeg2Usd;
-    return configured > 0 ? configured : leg1;
+    return cfg.liveOscarMicroMcapEntrySplitLeg2Usd;
   }
   if (tier === 'low') {
     const configured = cfg.liveOscarLowMcapEntrySplitLeg2Usd;

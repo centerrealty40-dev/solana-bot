@@ -176,7 +176,8 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
 /** Incomplete entry-split or staged-averaging legs on an open trade. */
 export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean {
   if (st.entrySplitV2) {
-    if (!st.entrySplitLeg2Done) return true;
+    const leg2Usd = st.entrySplitLeg2Usd ?? 0;
+    if (leg2Usd > 0 && !st.entrySplitLeg2Done) return true;
     if (!stagedAveragingConfigured(st)) return false;
     const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
     const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
@@ -243,7 +244,7 @@ export function buildLiveStagedEntryState(
     entrySplitTargetDropPct: cfg.liveStagedEntryEntrySplitTargetDropPct,
     entrySplitLeg1Ts: signal.signalTs,
     entrySplitAnchorUsd: signal.signalPriceUsd,
-    entrySplitLeg2Done: false,
+    entrySplitLeg2Done: splitLeg2 <= 0,
     avgSecondDropPct: avgSecondDrop,
     avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,

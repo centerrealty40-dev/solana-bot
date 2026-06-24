@@ -150,7 +150,8 @@ export function applyLiveOscarPhaseEscalation(args: {
       { marketCapUsd: marketCapUsd ?? ot.entryMarketCapUsd },
     );
     markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
-    ot.liveStagedEntry.entrySplitLeg2Done = false;
+    const leg2Usd = ot.liveStagedEntry.entrySplitLeg2Usd ?? 0;
+    ot.liveStagedEntry.entrySplitLeg2Done = leg2Usd <= 0;
     ot.liveStagedEntry.secondLegDone = false;
     ot.liveStagedEntry.avgFirstLegDone = false;
     ot.liveStagedEntry.avgSecondLegDone = false;
