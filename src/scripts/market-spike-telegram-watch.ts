@@ -50,6 +50,7 @@ import 'dotenv/config';
 import { sql as dsql } from 'drizzle-orm';
 
 import { db, sql as pgSql } from '../core/db/client.js';
+import { writeSpikeChannelDedupeEntry } from './market-retrace-pullback-channel-dedupe.js';
 import { isTelegramMarketAlertMintBlocked } from './telegram-alert-mint-blacklist.js';
 
 const SNAPSHOT_TABLES = [
@@ -1856,6 +1857,12 @@ async function runOnePass(
           tgMsgId: null,
         }),
       );
+      if (row.pct < 0) {
+        writeSpikeChannelDedupeEntry(mintKey, anchorTs, {
+          spikeDumpPct: Math.abs(row.pct),
+          refMcapUsd: refMcap,
+        });
+      }
       continue;
     }
 
@@ -1881,6 +1888,12 @@ async function runOnePass(
           tgMsgId: tg.messageId,
         }),
       );
+      if (row.pct < 0) {
+        writeSpikeChannelDedupeEntry(row.base_mint.trim(), anchorTs, {
+          spikeDumpPct: Math.abs(row.pct),
+          refMcapUsd: row.refMcapUsd ?? refMcap,
+        });
+      }
     } else {
       console.warn(
         '[market-spike-telegram-watch] Telegram send failed for',

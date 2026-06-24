@@ -12,6 +12,7 @@ import {
   readRetracePullbackChannelStore,
   type RetracePullbackChannelDedupeEntry,
 } from '../scripts/market-retrace-pullback-channel-dedupe.js';
+import { passesPresetCRetraceBand } from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
 
 const DEFAULT_MAX_AGE_MS = 3_600_000;
@@ -40,15 +41,16 @@ function envNum(name: string, fallback: number): number {
 }
 
 function allowedSources(): Set<RetracePullbackChannelDedupeEntry['source']> {
-  const raw = (process.env.PRESET_C_TELEGRAM_GATE_SOURCES ?? 'pullback,retrace').trim();
+  const raw = (process.env.PRESET_C_TELEGRAM_GATE_SOURCES ?? 'pullback,retrace,spike').trim();
   const out = new Set<RetracePullbackChannelDedupeEntry['source']>();
   for (const part of raw.split(',')) {
     const s = part.trim().toLowerCase();
-    if (s === 'pullback' || s === 'retrace') out.add(s);
+    if (s === 'pullback' || s === 'retrace' || s === 'spike') out.add(s);
   }
   if (out.size === 0) {
     out.add('pullback');
     out.add('retrace');
+    out.add('spike');
   }
   return out;
 }
@@ -106,6 +108,49 @@ export function matchingPresetCTelegramGateKeys(mint: string, nowMs = Date.now()
   }
 
   return keys;
+}
+
+/** Fresh spike dump % from channel dedupe (largest |dump| among tradeable spike keys). */
+export function presetCFreshSpikeDumpPct(mint: string, nowMs = Date.now()): number | null {
+  const trimmed = mint.trim();
+  if (!trimmed) return null;
+  if (!allowedSources().has('spike')) return null;
+
+  const maxAgeMs = gateMaxAgeMs();
+  const prefix = `${trimmed}|`;
+  const store = readRetracePullbackChannelStore();
+  let best: number | null = null;
+
+  for (const [key, entry] of Object.entries(store)) {
+    if (!key.startsWith(prefix)) continue;
+    if (entry.source !== 'spike') continue;
+    if (nowMs - entry.sentAtMs > maxAgeMs) continue;
+    if (isConsumed(key, nowMs)) continue;
+    const pct = entry.spikeDumpPct;
+    if (pct == null || !Number.isFinite(pct) || !(pct > 0)) continue;
+    if (best == null || pct > best) best = pct;
+  }
+
+  return best;
+}
+
+/**
+ * When PG local-high retrace differs from spike dump, accept spike |dump%| if it is in 9–30% band
+ * and a fresh spike dedupe key exists (telegram gate would pass via spike source).
+ */
+export function presetCApplySpikeGeometryRetraceBypass(
+  mint: string,
+  pgRetraceFromPeakPct: number,
+  geometryReasons: string[],
+  nowMs = Date.now(),
+): string[] {
+  void pgRetraceFromPeakPct;
+  if (!geometryReasons.some((r) => r.includes('retrace'))) return geometryReasons;
+
+  const spikePct = presetCFreshSpikeDumpPct(mint, nowMs);
+  if (spikePct == null || !passesPresetCRetraceBand(spikePct)) return geometryReasons;
+
+  return geometryReasons.filter((r) => !r.includes('retrace'));
 }
 
 /** Drop consumed entries older than 24h. Mutates `store` when passed; otherwise prunes persisted file. */

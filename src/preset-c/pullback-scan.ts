@@ -46,6 +46,8 @@ export type PresetCPullbackCandidate = {
   refMcapUsd: number;
   priceUsd: number;
   pick: PullbackPick;
+  /** preset_c_spike when sourced from spike-channel dedupe */
+  entryPath?: 'preset_c_pullback' | 'preset_c_spike';
 };
 
 function envNum(name: string, fallback: number): number {

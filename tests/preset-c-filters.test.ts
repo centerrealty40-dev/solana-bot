@@ -10,11 +10,11 @@ import {
 } from '../src/preset-c/filters.js';
 
 describe('preset C filters', () => {
-  it('accepts mcap $1M–$20M and retrace 9–30%', () => {
+  it('accepts mcap $1M–$30M and retrace 9–30%', () => {
     expect(passesPresetCMcapBand(1_500_000)).toBe(true);
-    expect(passesPresetCMcapBand(20_000_000)).toBe(true);
+    expect(passesPresetCMcapBand(30_000_000)).toBe(true);
     expect(passesPresetCMcapBand(999_999)).toBe(false);
-    expect(passesPresetCMcapBand(20_000_001)).toBe(false);
+    expect(passesPresetCMcapBand(30_000_001)).toBe(false);
     expect(passesPresetCRetraceBand(9)).toBe(true);
     expect(passesPresetCRetraceBand(30)).toBe(true);
     expect(passesPresetCRetraceBand(8.9)).toBe(false);
@@ -46,6 +46,6 @@ describe('preset C filters', () => {
 
   it('documents preset C mcap window constants', () => {
     expect(PRESET_C_MIN_MCAP_USD).toBe(1_000_000);
-    expect(PRESET_C_MAX_MCAP_USD).toBe(20_000_000);
+    expect(PRESET_C_MAX_MCAP_USD).toBe(30_000_000);
   });
 });

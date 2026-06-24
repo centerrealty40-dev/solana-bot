@@ -1256,7 +1256,7 @@ const PM2_APPS = [
     },
     /**
      * Preset C — isolated Live Oscar on SuperBot wallet (HcV3BhmK…).
-     * Entry: PG-native pullback ($1–20M mcap when known; unknown mcap allowed, 9–30% retrace). Exit: wave B (shared tracker).
+     * Entry: PG-native pullback ($1–30M mcap when known; unknown mcap allowed, 9–30% retrace). Exit: wave B (shared tracker).
      * Does NOT share discovery path with `live-oscar`.
      */
     {
@@ -1412,7 +1412,7 @@ const PM2_APPS = [
         PRESET_C_DISCOVERY_MINT_COOLDOWN_MS: '1800000',
         /** Buy only after dips/retrace channel watcher recorded send in dedupe JSON. */
         PRESET_C_TELEGRAM_GATE_ENABLED: '1',
-        PRESET_C_TELEGRAM_GATE_SOURCES: 'pullback,retrace',
+        PRESET_C_TELEGRAM_GATE_SOURCES: 'pullback,retrace,spike',
         PRESET_C_TELEGRAM_GATE_MAX_AGE_MS: '3600000',
       },
     },
