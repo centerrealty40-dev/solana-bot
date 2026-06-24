@@ -267,6 +267,10 @@
           </div>
 
           <div class="mt-4 text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-1 items-center">
+            <span x-show="s.strategyId === 'dc-trader' && s.dcTrader" class="pill pill-info mr-1">watch: <span x-text="s.dcTrader.watching || 0"></span></span>
+            <span x-show="s.strategyId === 'dc-trader' && s.dcTrader" class="pill pill-ok mr-1">open: <span x-text="s.dcTrader.entered || 0"></span></span>
+            <span x-show="s.strategyId === 'dc-trader' && s.dcTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.dcTrader.buysOk || 0"></span></span>
+            <span x-show="s.strategyId === 'dc-trader' && s.dcTrader" class="pill pill-bad mr-1">sells fail: <span x-text="s.dcTrader.sellsFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-ok mr-1">buys OK: <span x-text="s.copyTrader.buysOk || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-bad mr-1">buys fail: <span x-text="s.copyTrader.buysFail || 0"></span></span>
             <span x-show="s.strategyId === 'copy-trader' && s.copyTrader" class="pill pill-info">pending: <span x-text="(s.copyTrader.pendingBuys || 0) + (s.copyTrader.pendingSells || 0)"></span></span>
@@ -276,8 +280,8 @@
             <span x-show="s.strategyId === 'superbot' && s.superbot?.executionMode" class="pill shrink-0"
                   :class="s.superbot.streamConnected ? 'pill-ok' : 'pill-warn'"
                   x-text="(s.superbot.executionMode || '?') + (s.superbot.streamConnected ? ' · stream' : ' · idle')"></span>
-            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'superbot'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
-            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'superbot'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'dc-trader' && s.strategyId !== 'superbot'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
+            <span x-show="s.strategyId !== 'copy-trader' && s.strategyId !== 'dc-trader' && s.strategyId !== 'superbot'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
             <span x-show="s.strategyId === 'superbot'" class="pill pill-ok mr-1">eval 1h: <span x-text="s.evals1h || 0"></span></span>
             <span x-show="s.strategyId === 'superbot'" class="pill pill-ok">pass 1h: <span x-text="s.passed1h || 0"></span></span>
             <span class="text-slate-400 ml-1" x-show="s.priceVerify"
@@ -681,7 +685,7 @@
     const OSCAR_PANEL_ORDER_FALLBACK = [
       'live-oscar',
       'superbot',
-      'copy-trader',
+      'dc-trader',
       'hl-twap-paper',
     ];
     function emptyOscarPanel(strategyId) {
@@ -778,6 +782,14 @@
           'Preset C · Telegram dips (pullback $1–15M, пролив 9–30%): вход **$100**, staged **$50** · фазы micro/low/scalp/prod · выход **Live Oscar wave B**.',
         details:
           '**Плитка 2** · PM2 **`live-oscar-preset-c`** · кошелёк SuperBot (HcV3BhmK…).\n\n**Вход Preset C**\n• Сигналы **Telegram dips** (pullback only): mcap кандидата **$1–15M**, пролив от пика **9–30%**, cap ≤ **$300M**.\n• Первая нога **$100**; staged-доборы **$50** по правилам Live Oscar.\n• **Фаза по mcap:** micro · low · scalp_wave · prod — задаёт параметры усреднения.\n\n**Выход:** тот же **wave B / tracker.ts**, что у Live Oscar — TP-сетка, partial trail, salvage24/h48.\n\n**Журнал:** `data/live/live-oscar-preset-c.jsonl`.\n**Таймлайн:** MSK · dips-сигнал → open → staged $50 → partial TP / wave B close.',
+      },
+      'dc-trader': {
+        label: 'DCA Trader Risky',
+        tag: 'live',
+        oneLiner:
+          'Vault DCA frontrun: watch Telegram/Jupiter DCA deposits, enter before cycle 1, avg-down bands, on-chain SOL PnL. PM2 **dc-trader** · wallet HoFKB…',
+        details:
+          '**Плитка 3** · отдельный продукт **`/opt/dc-trader`** · PM2 **`dc-trader`**.\n\n**Журнал / state**\n• `trader-journal.jsonl` + `trader-state.json` под `/opt/dc-trader/data/`.\n• PnL SSOT: on-chain SOL (`pnlSol` = exitSol − entrySol).\n\n**UI**\n• Open = entered vaults; Monitoring = watching.\n• Таймлайн: watch → entry → DCA fills → partial/full exit.\n\n**Не путать с Copy Trader** (solana-alpha `data/copytrader/`) — на дашборде только dc-trader.',
       },
       'copy-trader': {
         label: 'Copy Trader',

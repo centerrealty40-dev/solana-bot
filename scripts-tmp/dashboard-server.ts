@@ -43,6 +43,7 @@ import {
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
+import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
@@ -165,6 +166,11 @@ const DASHBOARD_COPY_TRADER_JSONL =
 const DASHBOARD_COPY_TRADER_STATE_PATH =
   process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+/** DCA Trader Risky (dc-trader) — tile 3 on `/papertrader2`. */
+const DASHBOARD_DC_TRADER_JSONL =
+  process.env.DASHBOARD_DC_TRADER_JSONL?.trim() || '/opt/dc-trader/data/trader-journal.jsonl';
+const DASHBOARD_DC_TRADER_STATE_PATH =
+  process.env.DASHBOARD_DC_TRADER_STATE_PATH?.trim() || '/opt/dc-trader/data/trader-state.json';
 /** SuperBot (pumpswap-flow-sniper) journal — isolated repo on future VPS. */
 const DASHBOARD_SUPERBOT_JSONL =
   process.env.DASHBOARD_SUPERBOT_JSONL?.trim() ||
@@ -1572,15 +1578,15 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · Copy Trader · HL TWAP. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
-  'copy-trader',
+  'dc-trader',
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-23-superbot-preset-c-dash-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-24-dc-trader-tile3-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1632,8 +1638,10 @@ export type DashboardPaper2StrategyRow = {
     txAnchorMissing?: number;
     txAnchorRpcErrors?: number;
   };
-  /** Copy-trader execution counters + pending queue (panel 2). */
+  /** Copy-trader execution counters + pending queue (legacy; not a dashboard tile). */
   copyTrader?: CopyTraderDashboardStats;
+  /** DCA Trader (dc-trader) vault counters — tile 3. */
+  dcTrader?: DcTraderDashboardStats;
   /** SuperBot stream/race counters (pumpswap-flow-sniper journal). */
   superbot?: SuperbotDashboardLoad['superbot'];
 };
@@ -3784,8 +3792,9 @@ function pctChangeVsPast(current: number | null, past: number | null): number | 
 
 let cryptoTickerCache: { at: number; payload: CryptoTickerApiPayload } | null = null;
 
-/** Second header wallet (Copy Trader / former Live Oscar Risky) — same RPC/shape as main `Wallet` tile. */
+/** Second header wallet (DCA Trader / former Copy Trader) — same RPC/shape as main `Wallet` tile. */
 const DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY = (
+  process.env.DASHBOARD_DC_TRADER_WALLET_PUBKEY ||
   process.env.DASHBOARD_COPY_TRADER_WALLET_PUBKEY ||
   process.env.DASHBOARD_LIVE_OSCAR_RISKY_WALLET_PUBKEY ||
   ''
@@ -3859,7 +3868,7 @@ async function fetchWalletSolTickerRows(signal: AbortSignal): Promise<CryptoTick
   if (!riskyPk) return [main];
   const risky = await fetchWalletSolTickerRowForPk(signal, riskyPk, {
     id: 'wallet_sol_risky',
-    symbol: 'Copy Trader',
+    symbol: 'DCA Trader',
   });
   return [main, risky];
 }
@@ -3991,6 +4000,7 @@ async function buildPaper2StrategyRowFromLoad(
   sid: string,
   loaded: Paper2FileLoad & {
     copyTrader?: CopyTraderDashboardStats;
+    dcTrader?: DcTraderDashboardStats;
     superbot?: SuperbotDashboardLoad['superbot'];
     hbOpen?: number;
     hbClosed?: number;
@@ -4106,12 +4116,12 @@ async function buildPaper2StrategyRowFromLoad(
   // We also clamp pnlPct to ±100000% to guard against absurd numbers if a
   // future jsonl row has a misclassified baseline.
   const PNL_PCT_CLAMP = 100_000; // 1000x
-  const isCopyTraderPanel = sid === 'copy-trader';
+  const isDcTraderPanel = sid === 'dc-trader';
   const isSuperbotPanel = sid === 'superbot';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
-      const isMcMetric = !isCopyTraderPanel && !isSuperbotPanel && ot.metricType === 'mc';
+      const isMcMetric = !isDcTraderPanel && !isSuperbotPanel && ot.metricType === 'mc';
       let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
       if (enrichMode === 'full' && isMcMetric) {
@@ -4221,7 +4231,7 @@ async function buildPaper2StrategyRowFromLoad(
         ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd * Math.max(0, ot.remainingFraction ?? 1) : 0;
 
       const investedFor = (): number => {
-        if (isCopyTraderPanel || isSuperbotPanel) {
+        if (isDcTraderPanel || isSuperbotPanel) {
           const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : ot.totalInvestedUsd;
           const cap = isSuperbotPanel ? 500 : 50_000;
           return basis > 0 && basis <= cap
@@ -4272,7 +4282,7 @@ async function buildPaper2StrategyRowFromLoad(
        * through to the other so we always render a number when either signal is alive.
        * Copy-trader: price only — mcap fallback compares ~$0.001 entry to ~$500k mcap → bogus PnL.
        */
-      if (isCopyTraderPanel || isSuperbotPanel) {
+      if (isDcTraderPanel || isSuperbotPanel) {
         tryByPrice();
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
@@ -4396,6 +4406,7 @@ async function buildPaper2StrategyRowFromLoad(
     liqDrain,
     ...(hb?.reconcileExtras ?? {}),
     ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
+    ...(loaded.dcTrader ? { dcTrader: loaded.dcTrader } : {}),
     ...(loaded.superbot ? { superbot: loaded.superbot } : {}),
   };
 }
@@ -4431,11 +4442,11 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
-  const ctLoad = loadCopyTraderJsonlForDashboard(
-    DASHBOARD_COPY_TRADER_JSONL,
-    DASHBOARD_COPY_TRADER_STATE_PATH,
+  const dcLoad = loadDcTraderForDashboard(
+    DASHBOARD_DC_TRADER_JSONL,
+    DASHBOARD_DC_TRADER_STATE_PATH,
   );
-  const { copyTrader: copyTraderStats, ...copyLoaded } = ctLoad;
+  const { dcTrader: dcTraderStats, watchingOpen, ...dcLoaded } = dcLoad;
   const sbLoad = superbotJsonlIsLiveOscarFormat(DASHBOARD_SUPERBOT_JSONL)
     ? loadLiveOscarJsonlAsPaper2(DASHBOARD_SUPERBOT_JSONL)
     : loadSuperbotJsonlForDashboard(DASHBOARD_SUPERBOT_JSONL);
@@ -4459,28 +4470,29 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] superbot panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('superbot', DASHBOARD_SUPERBOT_JSONL);
   });
-  const copyRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_COPY_TRADER_JSONL, 'copy-trader', {
-    ...copyLoaded,
-    copyTrader: copyTraderStats,
+  const dcRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_DC_TRADER_JSONL, 'dc-trader', {
+    ...dcLoaded,
+    open: [...dcLoaded.open, ...watchingOpen],
+    dcTrader: dcTraderStats,
   }).catch((e) => {
-    console.warn('[dashboard] copy-trader panel failed', String(e).slice(0, 200));
-    return makeEmptyDashboardStrategyRow('copy-trader', DASHBOARD_COPY_TRADER_JSONL);
+    console.warn('[dashboard] dc-trader panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('dc-trader', DASHBOARD_DC_TRADER_JSONL);
   });
   const hlTwapJsonl = hlTwapDashboardJsonlPath();
   const hlTwapRowP = buildHlTwapPaperDashboardRow(hlTwapJsonl).catch((e) => {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
-  const [liveRow, superbotRow, copyTraderRow, hlTwapRow] = await Promise.all([
+  const [liveRow, superbotRow, dcTraderRow, hlTwapRow] = await Promise.all([
     liveRowP,
     superbotRowP,
-    copyRowP,
+    dcRowP,
     hlTwapRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
     superbotRow as DashboardPaper2StrategyRow,
-    copyTraderRow as DashboardPaper2StrategyRow,
+    dcTraderRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
   ]);
 

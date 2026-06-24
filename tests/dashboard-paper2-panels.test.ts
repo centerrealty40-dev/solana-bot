@@ -50,12 +50,12 @@ function row(id: string, total: number): DashboardPaper2StrategyRow {
 }
 
 describe('mergeDashboardStrategyPanels', () => {
-  it('orders Live → SuperBot → Copy Trader → HL TWAP regardless of input order', () => {
+  it('orders Live → SuperBot → DCA Trader → HL TWAP regardless of input order', () => {
     const merged = mergeDashboardStrategyPanels([
       row('hl-twap-paper', 99),
       row('live-oscar', 50),
       row('superbot', 22),
-      row('copy-trader', 11),
+      row('dc-trader', 11),
     ]);
     expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
     expect(merged[0]!.totalPnlUsd).toBe(50);
