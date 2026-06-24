@@ -90,7 +90,7 @@ const ConfigSchema = z.object({
   liveStagedEntrySecondDropPct: z.coerce.number().min(0).max(90).default(14),
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
-  liveStagedEntryFirstLegUsd: z.coerce.number().positive().default(400),
+  liveStagedEntryFirstLegUsd: z.coerce.number().nonnegative().default(400),
   liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(300),
   liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
@@ -105,7 +105,7 @@ const ConfigSchema = z.object({
    */
   liveStagedEntryWaitHours: z.coerce.number().nonnegative().default(0),
   /** Entry split (NOT averaging): second cash leg after delay if price within band vs leg-1 anchor. */
-  liveStagedEntryEntrySplitLegUsd: z.coerce.number().positive().default(500),
+  liveStagedEntryEntrySplitLegUsd: z.coerce.number().nonnegative().default(500),
   /** Asymmetric split leg-2 USD; `0` = same as leg-1 (symmetric 2× split, backward compat). */
   liveStagedEntryEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
@@ -1682,6 +1682,18 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
   // staged-signal TTL so the −10%-from-signal anchor is dropped after the window without a fill.
   if (base.liveStagedEntryWaitHours > 0) {
     base.liveStagedEntrySignalTtlMs = Math.round(base.liveStagedEntryWaitHours * 3_600_000);
+  }
+  if (base.liveStagedEntryEnabled) {
+    if (base.liveStagedEntryFirstLegUsd <= 0) {
+      throw new Error(
+        'PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD must be > 0 when PAPER_LIVE_STAGED_ENTRY_ENABLED=1',
+      );
+    }
+    if (base.liveStagedEntryEntrySplitLegUsd <= 0) {
+      throw new Error(
+        'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD must be > 0 when PAPER_LIVE_STAGED_ENTRY_ENABLED=1',
+      );
+    }
   }
   if (base.mintBlacklistEnabled) {
     const raw = base.mintBlacklistPath.trim();
