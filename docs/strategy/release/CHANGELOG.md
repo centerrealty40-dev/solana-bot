@@ -56,6 +56,23 @@
 
 ---
 
+## [1.11.496] — 2026-06-24
+
+**Тег:** `sa-alpha-1.11.496`
+
+### Fix: `/papertrader2` tile 3 — DCA Trader (dc-trader), not Copy Trader
+
+**RCA:** `ecosystem.config.cjs` уже указывал `DASHBOARD_DC_TRADER_*`, но `scripts-tmp/dc-trader-dashboard.ts` был в `.gitignore` (`scripts-tmp/dc-*`) и не подключался в `dashboard-server.ts` / HTML — после `git reset --hard origin/v2` на VPS оставалась плитка **Copy Trader**.
+
+- **`scripts-tmp/dc-trader-dashboard.ts`:** tracked (exception в `.gitignore`).
+- **`dashboard-server.ts`:** `DASHBOARD_PANEL_ORDER` tile 3 → **`dc-trader`**; loader `loadDcTraderForDashboard`; header wallet «DCA Trader».
+- **`dashboard-paper2.html`:** fallback order + `STRATEGY_META` для dc-trader.
+- **`tests/dashboard-paper2-panels.test.ts`:** порядок плиток.
+
+**Откат:** `git checkout sa-alpha-1.11.495 -- .gitignore scripts-tmp/dc-trader-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html tests/dashboard-paper2-panels.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+---
+
 ## [1.11.495] — 2026-06-24
 
 **Тег:** `sa-alpha-1.11.495`
