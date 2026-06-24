@@ -77,6 +77,13 @@ describe('preset-c-scalp-config', () => {
     expect(scalp.dcaDropPct).toBe(10);
     expect(scalp.killPct).toBe(50);
   });
+
+  it('allows staged-entry leg USD=0 when staged entry disabled (PM2 preset-c scalp)', () => {
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENABLED = '0';
+    process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '0';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '0';
+    expect(() => loadPaperTraderConfig()).not.toThrow();
+  });
 });
 
 describe('preset-c-scalp-pending', () => {
