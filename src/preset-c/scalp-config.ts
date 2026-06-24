@@ -25,11 +25,9 @@ export type PresetCScalpConfig = {
   dcaDropPct: number;
   entryUsd: number;
   dcaUsd: number;
-  /** +2.5% vs signal — sell 50% once (touch or pullback). */
-  tp1Pct: number;
-  /** +5% vs signal — sell 50% remainder, arm trail. */
+  /** +5% vs signal — sell 50%, arm trail. */
   tp2Pct: number;
-  /** +10% vs signal — sell 100%. */
+  /** +15% vs signal — sell 100%. */
   tp3Pct: number;
   killPct: number;
   /** Trail retrace from peak after +5% (fraction of price, e.g. 0.025 = 2.5%). */
@@ -44,9 +42,8 @@ export function loadPresetCScalpConfig(): PresetCScalpConfig {
     dcaDropPct: Math.max(0.1, envNum('PRESET_C_SCALP_DCA_DROP_PCT', 10)),
     entryUsd: Math.max(1, envNum('PRESET_C_SCALP_ENTRY_USD', 100)),
     dcaUsd: Math.max(0, envNum('PRESET_C_SCALP_DCA_USD', 100)),
-    tp1Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP1_PCT', 2.5)),
     tp2Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP2_PCT', 5)),
-    tp3Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP3_PCT', 10)),
+    tp3Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP3_PCT', 15)),
     killPct: Math.max(1, envNum('PRESET_C_SCALP_KILL_PCT', 50)),
     trailStepPnl: Math.max(0.005, envNum('PRESET_C_SCALP_TRAIL_RETRACE_PCT', 2.5) / 100),
     trailSellFraction: Math.min(1, Math.max(0.05, envNum('PRESET_C_SCALP_TRAIL_SELL_FRAC', 0.5))),

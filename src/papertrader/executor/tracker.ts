@@ -3735,7 +3735,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (
           isPresetCScalpExitPolicy(ot) &&
           presetCScalpBreakevenExitEligible(ot, curMetric) &&
-          (ot.presetCScalpTp25Taken || ot.presetCScalpTp5Taken)
+          ot.presetCScalpTp5Taken
         ) {
           exitReason = 'BREAKEVEN_EXIT';
         } else if (isPresetCScalpExitPolicy(ot)) {
