@@ -390,6 +390,8 @@ export interface OpenTrade {
   presetCScalpTrailArmed?: boolean;
   /** Preset C scalp: −10% DCA leg filled. */
   presetCScalpDcaLegDone?: boolean;
+  /** Preset C scalp: −20% DCA leg filled. */
+  presetCScalpDca2LegDone?: boolean;
 }
 
 export interface LiveStagedEntryState {
