@@ -138,40 +138,37 @@ describe('preset-c-scalp-exit-policy', () => {
 
   it('uses signal anchor for pnl levels', () => {
     const ot = baseOpen(100);
-    expect(presetCScalpSignalPnlFrac(ot, 102.5)).toBeCloseTo(0.025, 6);
-    expect(presetCScalpSignalPnlFrac(ot, 110)).toBeCloseTo(0.1, 6);
-  });
-
-  it('fires tp1 partial at +2.5%', () => {
-    const cfg = loadPaperTraderConfig();
-    const ot = baseOpen(100);
-    const action = evaluatePresetCScalpExitAction(ot, cfg, 102.5);
-    expect(action.kind).toBe('partial');
-    if (action.kind === 'partial') {
-      expect(action.sellFraction).toBeCloseTo(0.5, 6);
-      action.mark();
-      expect(ot.presetCScalpTp25Taken).toBe(true);
-    }
+    expect(presetCScalpSignalPnlFrac(ot, 105)).toBeCloseTo(0.05, 6);
+    expect(presetCScalpSignalPnlFrac(ot, 115)).toBeCloseTo(0.15, 6);
   });
 
   it('fires tp2 partial and arms trail at +5%', () => {
     const cfg = loadPaperTraderConfig();
     const ot = baseOpen(100);
-    ot.presetCScalpTp25Taken = true;
-    ot.remainingFraction = 0.5;
     const action = evaluatePresetCScalpExitAction(ot, cfg, 105);
     expect(action.kind).toBe('partial');
     if (action.kind === 'partial') {
+      expect(action.sellFraction).toBeCloseTo(0.5, 6);
       action.mark();
       expect(ot.presetCScalpTp5Taken).toBe(true);
       expect(ot.presetCScalpTrailArmed).toBe(true);
     }
   });
 
-  it('full exit at +10%', () => {
+  it('holds 50% remainder at +10% after tp2', () => {
     const cfg = loadPaperTraderConfig();
     const ot = baseOpen(100);
+    ot.presetCScalpTp5Taken = true;
+    ot.presetCScalpTrailArmed = true;
+    ot.remainingFraction = 0.5;
     const action = evaluatePresetCScalpExitAction(ot, cfg, 110);
+    expect(action.kind).toBe('none');
+  });
+
+  it('full exit at +15%', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = baseOpen(100);
+    const action = evaluatePresetCScalpExitAction(ot, cfg, 115);
     expect(action.kind).toBe('full_exit');
     if (action.kind === 'full_exit') expect(action.reason).toBe('TP');
   });
@@ -183,7 +180,7 @@ describe('preset-c-scalp-exit-policy', () => {
 
   it('breakeven exit at 0% after partial tp', () => {
     const ot = baseOpen(100);
-    ot.presetCScalpTp25Taken = true;
+    ot.presetCScalpTp5Taken = true;
     expect(presetCScalpBreakevenExitEligible(ot, 100)).toBe(true);
   });
 });
