@@ -32,6 +32,11 @@ export type DcTraderPositionRow = {
   classification: string | null;
 };
 
+export type DcTraderExitBreakdown = Record<
+  string,
+  { count: number; sumPct: number; sumUsd: number; sumSol: number; avgPct: number }
+>;
+
 export type DcTraderDashboardStats = {
   watching: number;
   entered: number;
@@ -43,6 +48,8 @@ export type DcTraderDashboardStats = {
   sellsFail: number;
   signals1h: number;
   positions: DcTraderPositionRow[];
+  /** Realized exit reasons from journal sells / sync (not Oscar TP/TRAIL). */
+  exitBreakdown: DcTraderExitBreakdown;
 };
 
 export type DcTraderDashboardLoad = {
@@ -126,19 +133,35 @@ function pushTimeline(
   });
 }
 
-function pnlFromSell(ev: JournalEv, entrySolFallback: number | null): {
+type BuySnapshot = { entrySolSpent: number; entrySizeUsd: number | null; entryPriceUsd: number | null; marketSolUsd: number | null };
+
+/** PnL SSOT: on-chain SOL (exitSol − entrySol). Ignore legacy price-band pnlPct when SOL missing. */
+function pnlFromSell(
+  ev: JournalEv,
+  buy: BuySnapshot | null,
+): {
   pnlSol: number | null;
   pnlPct: number | null;
   pnlUsd: number | null;
 } {
-  const entrySol = num(ev.entrySolSpent) ?? entrySolFallback;
+  const entrySol = num(ev.entrySolSpent) ?? buy?.entrySolSpent ?? null;
   const exitSol = num(ev.exitSolReceived);
   let pnlSol = num(ev.pnlSol);
   if (pnlSol == null && entrySol != null && exitSol != null) {
     pnlSol = +(exitSol - entrySol).toFixed(9);
   }
-  const pnlPct = num(ev.pnlPct);
-  const pnlUsd = num(ev.pnlUsd);
+  if (pnlSol == null || entrySol == null || entrySol <= 0) {
+    return { pnlSol: null, pnlPct: null, pnlUsd: null };
+  }
+  const pnlPct = +((pnlSol / entrySol) * 100).toFixed(4);
+  const solUsd = num(ev.marketSolUsd) ?? buy?.marketSolUsd ?? null;
+  let pnlUsd: number | null = null;
+  if (solUsd != null && solUsd > 0) {
+    pnlUsd = +(pnlSol * solUsd).toFixed(2);
+  } else {
+    const entryUsd = num(ev.entrySizeUsd) ?? buy?.entrySizeUsd ?? null;
+    if (entryUsd != null && entryUsd > 0) pnlUsd = +((entryUsd * pnlPct) / 100).toFixed(2);
+  }
   return { pnlSol, pnlPct, pnlUsd };
 }
 
@@ -236,7 +259,16 @@ function buildTimelineForSig(sig: string, events: JournalEv[], vault: VaultState
 
     if (action === 'sell') {
       const ok = ev.ok === true;
-      const { pnlSol, pnlPct, pnlUsd } = pnlFromSell(ev, vault.entrySolSpent ?? null);
+      const buySnap: BuySnapshot | null =
+        vault.entrySolSpent != null
+          ? {
+              entrySolSpent: vault.entrySolSpent,
+              entrySizeUsd: vault.entrySizeUsd ?? null,
+              entryPriceUsd: vault.entryPriceUsd ?? null,
+              marketSolUsd: null,
+            }
+          : null;
+      const { pnlSol, pnlPct, pnlUsd } = pnlFromSell(ev, buySnap);
       pushTimeline(tl, {
         ts,
         kind: ok ? 'close' : 'strategy_note',
@@ -271,7 +303,16 @@ function buildTimelineForSig(sig: string, events: JournalEv[], vault: VaultState
     }
 
     if (action === 'sync_wallet_flat' || action === 'sync_vault_closed') {
-      const { pnlSol, pnlPct, pnlUsd } = pnlFromSell(ev, vault.entrySolSpent ?? null);
+      const buySnap: BuySnapshot | null =
+        vault.entrySolSpent != null
+          ? {
+              entrySolSpent: vault.entrySolSpent,
+              entrySizeUsd: vault.entrySizeUsd ?? null,
+              entryPriceUsd: vault.entryPriceUsd ?? null,
+              marketSolUsd: null,
+            }
+          : null;
+      const { pnlSol, pnlPct, pnlUsd } = pnlFromSell(ev, buySnap);
       pushTimeline(tl, {
         ts,
         kind: 'close',
@@ -312,6 +353,7 @@ function emptyLoad(): DcTraderDashboardLoad {
       sellsFail: 0,
       signals1h: 0,
       positions: [],
+      exitBreakdown: {},
     },
   };
 }
@@ -355,11 +397,14 @@ export function loadDcTraderForDashboard(
     sellsFail: 0,
     signals1h: 0,
     positions: [],
+    exitBreakdown: {},
   };
 
   const eventsBySig = new Map<string, JournalEv[]>();
   const lastSellBySig = new Map<string, JournalEv>();
   const sellsBySig = new Map<string, JournalEv[]>();
+  const buyBySig = new Map<string, BuySnapshot>();
+  const syncExitBySig = new Map<string, JournalEv>();
 
   if (fs.existsSync(journalPath)) {
     for (const line of journalLines(journalPath)) {
@@ -387,6 +432,16 @@ export function loadDcTraderForDashboard(
       if (action === 'buy') {
         stats.buysTotal += 1;
         stats.buysOk += 1;
+        const entrySol = num(ev.entrySolSpent) ?? num(ev.solSpent);
+        const entryUsd = num(ev.usd);
+        if (entrySol != null && entrySol > 0) {
+          buyBySig.set(sig, {
+            entrySolSpent: entrySol,
+            entrySizeUsd: entryUsd,
+            entryPriceUsd: num(ev.entryPriceUsd),
+            marketSolUsd: num(ev.marketSolUsd),
+          });
+        }
       }
       if (action === 'sell') {
         if (ev.ok === true) {
@@ -405,6 +460,9 @@ export function loadDcTraderForDashboard(
         stats.sellsFail += 1;
         const reason = String(ev.reason ?? 'sell_fail').slice(0, 80);
         failReasonsCount.set(reason, (failReasonsCount.get(reason) ?? 0) + 1);
+      }
+      if (action === 'sync_wallet_flat' || action === 'sync_vault_closed') {
+        syncExitBySig.set(sig, ev);
       }
     }
   }
@@ -428,12 +486,15 @@ export function loadDcTraderForDashboard(
   for (const vault of vaults) {
     const sig = vault.openSignature;
     if (!sig) continue;
-    const status = mapVaultStatus(String(vault.status ?? 'watching'));
+    const rawStatus = String(vault.status ?? 'watching');
+    const status = mapVaultStatus(rawStatus);
     const mint = String(vault.targetMint ?? '').trim();
-      const symbol = String(vault.tokenSymbol ?? (mint.slice(0, 6) || '?'));
+    const symbol = String(vault.tokenSymbol ?? (mint.slice(0, 6) || '?'));
     const posKey = mint || sig;
     const journalEvents = eventsBySig.get(sig) ?? [];
     const timeline = buildTimelineForSig(sig, journalEvents, vault);
+    const buySnap = buyBySig.get(sig) ?? null;
+    const hasBuy = buySnap != null;
 
     const watchTs =
       (vault.openTsSec != null && vault.openTsSec > 0 ? vault.openTsSec * 1000 : 0) ||
@@ -442,11 +503,12 @@ export function loadDcTraderForDashboard(
 
     const entryTs = vault.enteredAt ? Date.parse(vault.enteredAt) : null;
     const lastSell = lastSellBySig.get(sig) ?? null;
-    const exitTs = lastSell ? tsMs(lastSell) : null;
+    const syncExit = syncExitBySig.get(sig) ?? null;
+    const exitTs = lastSell ? tsMs(lastSell) : syncExit ? tsMs(syncExit) : null;
 
-    const entrySolSpent = vault.entrySolSpent ?? num(lastSell?.entrySolSpent);
-    const entrySizeUsd = vault.entrySizeUsd ?? null;
-    const entryPx = vault.entryPriceUsd ?? null;
+    const entrySolSpent = vault.entrySolSpent ?? buySnap?.entrySolSpent ?? null;
+    const entrySizeUsd = vault.entrySizeUsd ?? buySnap?.entrySizeUsd ?? null;
+    const entryPx = vault.entryPriceUsd ?? buySnap?.entryPriceUsd ?? null;
 
     let pnlSol: number | null = null;
     let pnlPct: number | null = null;
@@ -455,25 +517,31 @@ export function loadDcTraderForDashboard(
     if (status === 'exited') {
       const okSells = sellsBySig.get(sig) ?? [];
       if (okSells.length) {
-        pnlSol = okSells.reduce((acc, s) => acc + (pnlFromSell(s, entrySolSpent).pnlSol ?? 0), 0);
-        pnlUsd = okSells.reduce((acc, s) => acc + (pnlFromSell(s, entrySolSpent).pnlUsd ?? 0), 0);
-        const last = okSells[okSells.length - 1]!;
-        pnlPct = pnlFromSell(last, entrySolSpent).pnlPct;
+        let sumSol: number | null = null;
+        let sumUsd: number | null = null;
+        let lastPct: number | null = null;
+        for (const s of okSells) {
+          const p = pnlFromSell(s, buySnap);
+          if (p.pnlSol != null) sumSol = (sumSol ?? 0) + p.pnlSol;
+          if (p.pnlUsd != null) sumUsd = (sumUsd ?? 0) + p.pnlUsd;
+          if (p.pnlPct != null) lastPct = p.pnlPct;
+        }
+        pnlSol = sumSol;
+        pnlUsd = sumUsd;
+        pnlPct = lastPct;
         if (pnlSol != null) pnlSol = +pnlSol.toFixed(9);
         if (pnlUsd != null) pnlUsd = +pnlUsd.toFixed(2);
-      } else if (entrySolSpent != null && vault.maxPctFromEntry != null) {
-        pnlPct = vault.maxPctFromEntry;
-        pnlUsd = entrySizeUsd != null ? (entrySizeUsd * pnlPct) / 100 : null;
-        pnlSol = entrySolSpent != null && pnlPct != null ? (entrySolSpent * pnlPct) / 100 : null;
       }
-    } else if (status === 'entered') {
+      // wallet_flat / sync without on-chain sell PnL → leave null (never use maxPctFromEntry)
+    } else if (status === 'entered' && hasBuy) {
       const lastBand = [...journalEvents].reverse().find((e) => e.action === 'price_band');
-      pnlPct = num(lastBand?.pctFromEntry) ?? vault.maxPctFromEntry ?? null;
-      if (entrySolSpent != null && pnlPct != null) {
-        pnlSol = +(entrySolSpent * (pnlPct / 100)).toFixed(9);
-      }
-      if (entrySizeUsd != null && pnlPct != null) {
-        pnlUsd = +(entrySizeUsd * (pnlPct / 100)).toFixed(2);
+      const bandPct = num(lastBand?.pctFromEntry);
+      if (entrySolSpent != null && bandPct != null) {
+        pnlSol = +((entrySolSpent * bandPct) / 100).toFixed(9);
+        pnlPct = bandPct;
+        const solUsd = buySnap?.marketSolUsd ?? num(lastBand?.marketSolUsd);
+        if (solUsd != null && solUsd > 0) pnlUsd = +(pnlSol * solUsd).toFixed(2);
+        else if (entrySizeUsd != null) pnlUsd = +((entrySizeUsd * bandPct) / 100).toFixed(2);
       }
     }
 
@@ -512,6 +580,8 @@ export function loadDcTraderForDashboard(
       tokenName: vault.tokenName ?? null,
       dcStatus: status,
       pnlSol,
+      pnlPct,
+      pnlUsd,
       entrySolSpent,
       entrySizeUsd,
       depositSolEquiv: vault.depositSolEquiv ?? null,
@@ -520,20 +590,33 @@ export function loadDcTraderForDashboard(
       classification: vault.lastClassification ?? null,
       watchTs,
       exitTs,
+      hasBuy,
     };
 
     if (status === 'exited') {
+      if (!hasBuy) continue;
+      const exitReason = exitReasonLabel(vault, lastSell);
+      const exitKey = exitReason || 'unknown';
+      const eb = stats.exitBreakdown[exitKey] ?? { count: 0, sumPct: 0, sumUsd: 0, sumSol: 0, avgPct: 0 };
+      eb.count += 1;
+      if (pnlPct != null) eb.sumPct += pnlPct;
+      if (pnlUsd != null) eb.sumUsd += pnlUsd;
+      if (pnlSol != null) eb.sumSol += pnlSol;
+      stats.exitBreakdown[exitKey] = eb;
+
       closed.push({
         mint,
         symbol,
         entryTs: entryTs ?? watchTs,
         exitTs: exitTs ?? lastTs,
-        exitReason: exitReasonLabel(vault, lastSell),
+        exitReason,
         pnlPct: pnlPct ?? 0,
         pnlUsd: pnlUsd ?? 0,
         netPnlUsd: pnlUsd ?? 0,
         pnlSol: pnlSol ?? null,
         entrySolSpent,
+        entrySizeUsd,
+        marketSolUsd: buySnap?.marketSolUsd ?? num(lastSell?.marketSolUsd) ?? null,
         baselinePriceUsd: entryPx,
         entryPx,
         durationMin: entryTs && exitTs ? Math.max(0, Math.round((exitTs - entryTs) / 60_000)) : 0,
@@ -543,7 +626,10 @@ export function loadDcTraderForDashboard(
       continue;
     }
 
+    if (status === 'entered' && !hasBuy) continue;
+
     openTimelines.set(posKey, timeline);
+    const investedUsd = entrySizeUsd ?? 0;
     const openRow: Paper2OpenItem = {
       mint: posKey,
       symbol,
@@ -560,7 +646,7 @@ export function loadDcTraderForDashboard(
       peakMcUsd: entryPx ?? 0,
       peakPnlPct: vault.maxPctFromEntry ?? pnlPct ?? 0,
       trailingArmed: false,
-      totalInvestedUsd: entrySizeUsd ?? (entrySolSpent != null ? entrySolSpent * 170 : 100),
+      totalInvestedUsd: investedUsd,
       entryPriorityFeeUsd: null,
       entryPriceVerifySlipPct: null,
       entryPriceVerifyImpactPct: null,
@@ -573,7 +659,12 @@ export function loadDcTraderForDashboard(
       ...dcMeta,
     };
     if (status === 'watching') watchingOpen.push(openRow);
-    else open.push(openRow);
+    else if (status === 'entered') open.push(openRow);
+  }
+
+  for (const k of Object.keys(stats.exitBreakdown)) {
+    const eb = stats.exitBreakdown[k]!;
+    eb.avgPct = eb.count ? eb.sumPct / eb.count : 0;
   }
 
   open.sort((a, b) => (b.entryTs ?? 0) - (a.entryTs ?? 0));

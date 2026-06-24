@@ -88,6 +88,17 @@
 
 **Тег:** `sa-alpha-1.11.496`
 
+### Fix: dc-trader dashboard — real PnL, open vs watching, exit params
+
+**RCA:** плитка 3 была переименована в «DCA Trader», но UI оставался Oscar-адаптером: **268 watching-vault** сливались в Open positions (`open: [...open, ...watchingOpen]`), PnL брался из **price_band / maxPctFromEntry** (+136% на ~$100) вместо on-chain SOL, строка TP/TRAIL/SL — из live-oscar.
+
+- **`dc-trader-dashboard.ts`:** Open = только `entered` + journal `buy`; Monitoring = `watching`; closed PnL SSOT = `pnlSol` / `exitSol − entrySol`; legacy price-only sells без SOL → null, не +136%.
+- **`dashboard-server.ts`:** не мержить watching в open; `dcTraderWatching`; dc-trader unrealized без $100 fallback.
+- **`dashboard-paper2.html`:** dc-trader params grid, exit breakdown по `exitReason`, секция Monitoring.
+- **`tests/dc-trader-dashboard.test.ts`:** regression loader.
+
+**Откат:** `git checkout sa-alpha-1.11.496 -- scripts-tmp/dc-trader-dashboard.ts scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html tests/dc-trader-dashboard.test.ts`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
 ### Fix: `/papertrader2` tile 3 — DCA Trader (dc-trader), not Copy Trader
 
 **RCA:** `ecosystem.config.cjs` уже указывал `DASHBOARD_DC_TRADER_*`, но `scripts-tmp/dc-trader-dashboard.ts` был в `.gitignore` (`scripts-tmp/dc-*`) и не подключался в `dashboard-server.ts` / HTML — после `git reset --hard origin/v2` на VPS оставалась плитка **Copy Trader**.

@@ -392,6 +392,49 @@
         </div>
       </div>
 
+      <div x-show="selected === 'dc-trader' && selectedRow()?.dcTrader" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm mono">
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Position</div>
+          <div class="stat-num mt-1 text-slate-100">$150</div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Entry gate</div>
+          <div class="stat-num mt-1 text-sky-300 text-sm leading-snug">before cycle 1 · min 5 cycles</div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Exit bands</div>
+          <div class="stat-num mt-1 text-violet-300 text-sm leading-snug">+3% ladder · corridor TP</div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Cooldown</div>
+          <div class="stat-num mt-1 text-amber-200">2h / mint</div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">PnL SSOT</div>
+          <div class="stat-num mt-1 text-emerald-300 text-sm leading-snug">on-chain SOL</div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Watching</div>
+          <div class="stat-num mt-1 text-slate-100" x-text="(selectedRow()?.dcTraderWatching || []).length"></div>
+        </div>
+      </div>
+
+      <div x-show="selected === 'dc-trader' && selectedRow()?.dcTrader?.exitBreakdown" class="dash-exits-single-row mono mt-4 text-sm">
+        <template x-for="(val, reason) in (selectedRow()?.dcTrader?.exitBreakdown || {})" :key="reason">
+          <div class="dash-exit-chip shrink-0" x-show="val.count > 0">
+            <div class="label-caps" x-text="reason"></div>
+            <div class="exit-chip-val">
+              <span class="text-slate-100" x-text="val.count"></span>
+              <span class="text-slate-500" x-show="val.count"> · </span>
+              <span x-show="val.count && val.sumSol" class="text-slate-400" x-text="fmtSolSigned(val.sumSol)"></span>
+              <span x-show="val.count && val.sumUsd" class="text-slate-500"> · </span>
+              <span x-show="val.count && val.sumUsd" :class="(val.sumUsd || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+                    x-text="fmtUsdSigned(val.sumUsd)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
       <div x-show="selected === 'hl-twap-paper' && selectedRow()?.hlTwap" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm mono">
         <div class="card rounded-lg p-3">
           <div class="label-caps">Paper size</div>
@@ -419,7 +462,7 @@
         </div>
       </div>
 
-      <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader'">
+      <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader' && selected !== 'dc-trader'">
         <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA','LIQ_DRAIN','RECONCILE_ORPHAN','PERIODIC_HEAL','CAPITAL_ROTATE']" :key="r">
           <div class="dash-exit-chip shrink-0">
             <div class="label-caps" x-text="r"></div>
@@ -457,8 +500,12 @@
                       </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
                       <span class="text-sky-200 text-sm font-semibold mono ml-2"
+                            x-show="selected !== 'dc-trader'"
                             x-text="'остаток ' + fmtUsd(o.remainingCostBasisUsd ?? 0)"></span>
-                      <span class="text-slate-500 text-xs ml-1 align-middle">база</span>
+                      <span class="text-sky-200 text-sm font-semibold mono ml-2"
+                            x-show="selected === 'dc-trader'"
+                            x-text="dcOpenBasisLabel(o)"></span>
+                      <span class="text-slate-500 text-xs ml-1 align-middle" x-text="selected === 'dc-trader' ? 'вложено' : 'база'"></span>
                     </div>
                     <div x-show="isHlTwap() && o.hlTwap" class="mt-1.5 text-xs text-slate-300 leading-snug max-w-3xl" x-text="o.hlTwap.entryReasonShort"></div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="isHlTwap()">
@@ -480,7 +527,7 @@
                       <span class="text-slate-400">депозит</span>
                       <span class="font-semibold mono text-slate-100" x-text="fmtUsd(o.hlTwap?.initialNotionalUsd || o.notionalUsd)"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap()">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap() && selected !== 'dc-trader'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">цена</span>
@@ -503,6 +550,18 @@
                       <span class="font-semibold mono"
                             :class="liqDropColor(o)"
                             x-text="liqDropLabel(o)"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="selected === 'dc-trader'">
+                      <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">fills</span>
+                      <span class="font-semibold mono text-sky-200" x-text="o.fills != null ? o.fills : '—'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">deposit</span>
+                      <span class="font-semibold mono text-violet-200" x-text="o.depositSolEquiv != null ? o.depositSolEquiv.toFixed(1) + ' SOL eq' : '—'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry SOL</span>
+                      <span class="font-semibold mono text-emerald-300" x-text="o.entrySolSpent != null ? o.entrySolSpent.toFixed(4) : '—'"></span>
                     </div>
                   </div>
                   <div class="text-right max-w-[13rem]">
@@ -555,6 +614,24 @@
               </div>
             </template>
             <div x-show="!(selectedRow()?.open || []).length" class="text-slate-500 text-sm">No open positions</div>
+          </div>
+
+          <div x-show="selected === 'dc-trader' && (selectedRow()?.dcTraderWatching || []).length" class="mt-6">
+            <h3 class="text-lg font-bold text-white mb-2">Monitoring · watching vaults</h3>
+            <p class="text-xs text-slate-400 mb-3 leading-snug">Vault DCA сигналы без покупки — только наблюдение до gate (min fills / cycles). Не путать с открытыми позициями.</p>
+            <details class="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+              <summary class="cursor-pointer text-sm font-semibold text-violet-300 hover:text-violet-200 select-none">
+                <span x-text="(selectedRow()?.dcTraderWatching || []).length + ' vaults'"></span>
+              </summary>
+              <div class="mt-3 space-y-2 text-sm max-h-80 overflow-y-auto">
+                <template x-for="w in (selectedRow()?.dcTraderWatching || []).slice(0, 40)" :key="w.positionId || (w.mint + w.watchTs)">
+                  <div class="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-1">
+                    <a :href="gmgn(w.mint)" target="_blank" class="text-amber-300 font-semibold hover:underline" x-text="'$' + (w.symbol || '?') + ' ' + short(w.mint)"></a>
+                    <span class="text-xs text-slate-400 mono" x-text="w.depositSolEquiv != null ? w.depositSolEquiv.toFixed(1) + ' SOL dep · ' + (w.fills || 0) + ' fills' : 'watch'"></span>
+                  </div>
+                </template>
+              </div>
+            </details>
           </div>
         </div>
 
@@ -616,6 +693,7 @@
                   <div class="text-right">
                     <div class="mono text-base font-bold" :class="(c.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="fmtPct(c.pnlPct)"></div>
                     <div class="text-sm font-medium" :class="(c.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="fmtUsdSigned(c.pnlUsd)"></div>
+                    <div class="text-xs text-slate-500 mt-0.5 mono" x-show="selected === 'dc-trader' && c.pnlSol != null" x-text="fmtSolSigned(c.pnlSol) + ' SOL'"></div>
                   </div>
                 </div>
                 <div x-show="isExpanded('c:' + c.mint + ':' + c.exitTs)" x-cloak
@@ -1036,6 +1114,25 @@
           }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
+        isDcTrader() { return this.selected === 'dc-trader'; },
+        fmtSol(n) {
+          const v = Number(n);
+          if (!Number.isFinite(v)) return '—';
+          return Math.abs(v).toFixed(4) + ' SOL';
+        },
+        fmtSolSigned(n) {
+          const v = Number(n);
+          if (!Number.isFinite(v)) return '—';
+          return (v >= 0 ? '+' : '') + v.toFixed(4) + ' SOL';
+        },
+        dcOpenBasisLabel(o) {
+          const usd = Number(o?.entrySizeUsd ?? o?.totalInvestedUsd ?? 0);
+          const sol = Number(o?.entrySolSpent ?? NaN);
+          if (usd > 0 && sol > 0) return this.fmtUsd(usd) + ' · ' + sol.toFixed(4) + ' SOL';
+          if (usd > 0) return this.fmtUsd(usd);
+          if (sol > 0) return sol.toFixed(4) + ' SOL';
+          return '—';
+        },
         fmtHlPx(px) {
           const n = Number(px);
           if (!(n > 0)) return 'n/a';

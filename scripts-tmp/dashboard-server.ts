@@ -339,12 +339,22 @@ function presetCTimelineContextNote(evKind: string): string {
 function closedRowNotionalUsd(c: Paper2ClosedRow): number {
   const sz = Number(c.sizeUsd ?? 0);
   if (Number.isFinite(sz) && sz > 0 && sz <= 50_000) return sz;
+  const entrySizeUsd = Number(c.entrySizeUsd ?? 0);
+  if (Number.isFinite(entrySizeUsd) && entrySizeUsd > 0 && entrySizeUsd <= 50_000) return entrySizeUsd;
   const inv = Number(c.totalInvestedUsd ?? 0);
   if (Number.isFinite(inv) && inv > 0 && inv <= 50_000) return inv;
   return POSITION_USD_DEFAULT;
 }
 
 function closedRowPnlUsd(c: Paper2ClosedRow): number {
+  const pnlSolRaw = c.pnlSol;
+  if (typeof pnlSolRaw === 'number' && Number.isFinite(pnlSolRaw)) {
+    const m = Number(c.marketSolUsd ?? NaN);
+    if (Number.isFinite(m) && m > 0) return pnlSolRaw * m;
+    const entrySol = Number(c.entrySolSpent ?? NaN);
+    const entryUsd = closedRowNotionalUsd(c);
+    if (Number.isFinite(entrySol) && entrySol > 0) return (entryUsd * pnlSolRaw) / entrySol;
+  }
   const exitReason = String(c.exitReason ?? '');
   const netUsd = c.netPnlUsd;
   if (typeof netUsd === 'number' && Number.isFinite(netUsd)) {
@@ -362,6 +372,11 @@ function closedRowPnlUsd(c: Paper2ClosedRow): number {
 }
 
 function closedRowDisplayPnlPct(c: Paper2ClosedRow, pnlUsd: number): number {
+  const pnlSolRaw = c.pnlSol;
+  const entrySol = Number(c.entrySolSpent ?? NaN);
+  if (typeof pnlSolRaw === 'number' && Number.isFinite(pnlSolRaw) && entrySol > 0) {
+    return (pnlSolRaw / entrySol) * 100;
+  }
   const entryPx = closedRowEntryPx(c);
   const exitPx = closedRowExitPx(c);
   if (entryPx > 0 && exitPx > 0) {
@@ -1586,7 +1601,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-24-dc-trader-tile3-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-24-dc-trader-tile3-v2';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1642,6 +1657,8 @@ export type DashboardPaper2StrategyRow = {
   copyTrader?: CopyTraderDashboardStats;
   /** DCA Trader (dc-trader) vault counters — tile 3. */
   dcTrader?: DcTraderDashboardStats;
+  /** dc-trader vaults in watch-only state (not open positions). */
+  dcTraderWatching?: unknown[];
   /** SuperBot stream/race counters (pumpswap-flow-sniper journal). */
   superbot?: SuperbotDashboardLoad['superbot'];
 };
@@ -4001,6 +4018,7 @@ async function buildPaper2StrategyRowFromLoad(
   loaded: Paper2FileLoad & {
     copyTrader?: CopyTraderDashboardStats;
     dcTrader?: DcTraderDashboardStats;
+    dcTraderWatching?: Paper2OpenItem[];
     superbot?: SuperbotDashboardLoad['superbot'];
     hbOpen?: number;
     hbClosed?: number;
@@ -4278,11 +4296,24 @@ async function buildPaper2StrategyRowFromLoad(
       };
 
       /**
-       * mc-strategies prefer mcap, price-strategies prefer price; in either case fall
-       * through to the other so we always render a number when either signal is alive.
-       * Copy-trader: price only — mcap fallback compares ~$0.001 entry to ~$500k mcap → bogus PnL.
+       * dc-trader: unrealized from journal price bands + entry SOL/USD — never Oscar $100 fallback / Jupiter mark.
+       * superbot: price path as before.
        */
-      if (isDcTraderPanel || isSuperbotPanel) {
+      if (isDcTraderPanel) {
+        const dc = ot as Record<string, unknown>;
+        const bandPct = typeof dc.pnlPct === 'number' && Number.isFinite(dc.pnlPct) ? dc.pnlPct : null;
+        const bandUsd = typeof dc.pnlUsd === 'number' && Number.isFinite(dc.pnlUsd) ? dc.pnlUsd : null;
+        const entryUsd =
+          ot.totalInvestedUsd > 0
+            ? ot.totalInvestedUsd
+            : typeof dc.entrySizeUsd === 'number' && dc.entrySizeUsd > 0
+              ? dc.entrySizeUsd
+              : 0;
+        if (bandPct != null && entryUsd > 0) {
+          pnlPct = bandPct;
+          pnlUsd = bandUsd ?? (entryUsd * bandPct) / 100;
+        }
+      } else if (isSuperbotPanel) {
         tryByPrice();
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
@@ -4407,6 +4438,7 @@ async function buildPaper2StrategyRowFromLoad(
     ...(hb?.reconcileExtras ?? {}),
     ...(loaded.copyTrader ? { copyTrader: loaded.copyTrader } : {}),
     ...(loaded.dcTrader ? { dcTrader: loaded.dcTrader } : {}),
+    ...(loaded.dcTraderWatching ? { dcTraderWatching: loaded.dcTraderWatching } : {}),
     ...(loaded.superbot ? { superbot: loaded.superbot } : {}),
   };
 }
@@ -4472,8 +4504,8 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   });
   const dcRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_DC_TRADER_JSONL, 'dc-trader', {
     ...dcLoaded,
-    open: [...dcLoaded.open, ...watchingOpen],
     dcTrader: dcTraderStats,
+    dcTraderWatching: watchingOpen,
   }).catch((e) => {
     console.warn('[dashboard] dc-trader panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('dc-trader', DASHBOARD_DC_TRADER_JSONL);
