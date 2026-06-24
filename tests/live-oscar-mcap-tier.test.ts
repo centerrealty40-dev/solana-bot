@@ -46,7 +46,7 @@ describe('live-oscar-mcap-tier', () => {
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD = '500000';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD = '1300000';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT = '-30';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD = '75000';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD = '20000';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD = '300';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD = '0';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD = '300';
@@ -93,7 +93,7 @@ describe('live-oscar-mcap-tier', () => {
     const cfg = loadPaperTraderConfig();
     const micro = liveOscarTierEntryConfig(cfg, 'micro');
     expect(micro.dipMinDropPct).toBe(-30);
-    expect(micro.vol1hMinUsd).toBe(75_000);
+    expect(micro.vol1hMinUsd).toBe(20_000);
     const low = liveOscarTierEntryConfig(cfg, 'low');
     expect(low.dipMinDropPct).toBe(-30);
     expect(low.vol1hMinUsd).toBe(75_000);

@@ -473,12 +473,12 @@ const PM2_APPS = [
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.497 — micro $500k–$1.3M: dip −30%, vol1h ≥$35k; $300 open + $300 avg @ −10% (max $600). Leg-2 split @ −5% off. */
+        /** 1.11.498 — micro $500k–$1.3M: dip −30%, vol1h ≥$20k; $300 open + $300 avg @ −10% (max $600). Leg-2 split @ −5% off. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '35000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '20000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '0',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '300',

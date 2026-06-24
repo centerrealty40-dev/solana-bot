@@ -58,6 +58,21 @@
 
 ---
 
+## [1.11.498] — 2026-06-24
+
+**Тег:** `sa-alpha-1.11.498`
+
+### live-oscar: micro tier — vol1h порог $20k (Фаза 3)
+
+**Изменение (только micro, $500k–$1.3M):** минимальный объём за 1 час для входа **$20 000** (было $35 000). low/prod/scalp_wave и global `PAPER_VOL_1H_MIN_USD` без изменений.
+
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD`: **`35000`** → **`20000`**
+- schema default `liveOscarMicroMcapVol1hMinUsd`: `75000` → **`20000`**
+
+**Откат:** redeploy `sa-alpha-1.11.497`; `PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD=35000`.
+
+---
+
 ## [1.11.497] — 2026-06-24
 
 **Тег:** `sa-alpha-1.11.497`

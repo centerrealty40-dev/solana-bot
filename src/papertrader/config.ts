@@ -248,7 +248,7 @@ const ConfigSchema = z.object({
   liveOscarMicroMcapMinUsd: z.coerce.number().nonnegative().default(500_000),
   liveOscarMicroMcapMaxUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
-  liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(75_000),
+  liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(20_000),
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
   liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(300),
