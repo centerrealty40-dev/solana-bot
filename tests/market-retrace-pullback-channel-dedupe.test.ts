@@ -63,3 +63,16 @@ describe('reserveRetracePullbackChannelSlot', () => {
     expect(mod.reserveRetracePullbackChannelSlot(mint, peak, 'retrace')).toBe(false);
   });
 });
+
+describe('writeSpikeChannelDedupeEntry', () => {
+  it('records spike dump for Preset C gate', async () => {
+    const mod = await import('../src/scripts/market-retrace-pullback-channel-dedupe.js');
+    const mint = `SpikeMint${Date.now()}`;
+    const anchor = new Date('2026-06-24T10:45:00.000Z');
+    mod.writeSpikeChannelDedupeEntry(mint, anchor, { spikeDumpPct: 9.45, refMcapUsd: 26_490_000 });
+    const store = mod.readRetracePullbackChannelStore();
+    const key = mod.retracePullbackChannelEventKey(mint, anchor);
+    expect(store[key]?.source).toBe('spike');
+    expect(store[key]?.spikeDumpPct).toBe(9.45);
+  });
+});

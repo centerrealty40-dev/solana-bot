@@ -17,9 +17,13 @@ import {
 import { resolveLiveOscarScalpWaveMcapTier } from '../papertrader/live-oscar-scalp-wave.js';
 import type { SnapshotFeatures } from '../papertrader/types.js';
 import { evaluatePresetCCandidates, type PresetCPullbackCandidate } from './pullback-scan.js';
+import { evaluatePresetCSpikeCandidates } from './spike-candidates.js';
 import { isPresetCMcapKnown, presetCFilterReasons } from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
-import { presetCTelegramGateReasons } from './telegram-gate.js';
+import {
+  presetCApplySpikeGeometryRetraceBypass,
+  presetCTelegramGateReasons,
+} from './telegram-gate.js';
 
 const MINT_COOLDOWN_MS = Math.max(
   0,
@@ -77,7 +81,7 @@ function buildDecision(
     reasons,
     features: candidateToFeatures(c),
     whale: null,
-    entryPath: 'preset_c_pullback',
+    entryPath: c.entryPath ?? 'preset_c_pullback',
     ...(tier ? { liveOscarMcapTier: tier } : {}),
     liveOscarTradeLane: 'prod',
   };
@@ -89,10 +93,15 @@ export function evaluatePresetCCandidate(
   c: PresetCPullbackCandidate,
   nowMs = Date.now(),
 ): EvalDecision {
-  const geom = presetCFilterReasons({
-    refMcapUsd: c.refMcapUsd,
-    retraceFromPeakPct: c.pick.retraceFromPeakPct,
-  });
+  const geom = presetCApplySpikeGeometryRetraceBypass(
+    c.mint,
+    c.pick.retraceFromPeakPct,
+    presetCFilterReasons({
+      refMcapUsd: c.refMcapUsd,
+      retraceFromPeakPct: c.pick.retraceFromPeakPct,
+    }),
+    nowMs,
+  );
   const reasons = [...geom];
 
   if (geom.length > 0) {
@@ -127,7 +136,14 @@ export async function runPresetCDiscovery(cfg: PaperTraderConfig): Promise<Disco
     return { discovered: 0, evaluated: 0, passed: 0, decisions: [] };
   }
 
-  const raw = await evaluatePresetCCandidates();
+  const rawPullback = await evaluatePresetCCandidates();
+  const rawSpike = await evaluatePresetCSpikeCandidates();
+  const byMint = new Map<string, PresetCPullbackCandidate>();
+  for (const c of rawPullback) byMint.set(c.mint, c);
+  for (const c of rawSpike) {
+    if (!byMint.has(c.mint)) byMint.set(c.mint, c);
+  }
+  const raw = [...byMint.values()];
   const decisions: EvalDecision[] = [];
   let evaluated = 0;
   let passed = 0;

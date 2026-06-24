@@ -12,7 +12,7 @@ describe('preset C telegram gate', () => {
     cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     fs.mkdirSync(path.join(tmpDir, 'data/live'), { recursive: true });
     process.env.PRESET_C_TELEGRAM_GATE_ENABLED = '1';
-    process.env.PRESET_C_TELEGRAM_GATE_SOURCES = 'pullback,retrace';
+    process.env.PRESET_C_TELEGRAM_GATE_SOURCES = 'pullback,retrace,spike';
     process.env.PRESET_C_TELEGRAM_GATE_MAX_AGE_MS = '3600000';
   });
 
@@ -47,6 +47,22 @@ describe('preset C telegram gate', () => {
     expect(presetCTelegramGateReasons('MintNoAlert1111111111111111111111111111111')).toEqual([
       'preset_c_telegram_gate_no_channel_alert',
     ]);
+  });
+
+  it('passes when mint was sent recently via spike dump', async () => {
+    const mint = 'BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump';
+    process.env.PRESET_C_TELEGRAM_GATE_SOURCES = 'pullback,retrace,spike';
+    writeStore({
+      [`${mint}|1980277`]: {
+        peakBucket: 1980277,
+        sentAtMs: Date.now() - 60_000,
+        source: 'spike',
+        spikeDumpPct: 9.45,
+        refMcapUsd: 26_490_000,
+      },
+    });
+    const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
+    expect(presetCTelegramGateReasons(mint)).toEqual([]);
   });
 
   it('passes when mint was sent recently via pullback', async () => {
@@ -107,6 +123,73 @@ describe('preset C telegram gate', () => {
     writeConsumed({ [oldKey]: { consumedAtMs: Date.now() - 60_000, peakBucket: 1980246 } });
     const { presetCTelegramGateReasons } = await import('../src/preset-c/telegram-gate.js');
     expect(presetCTelegramGateReasons(mint)).toEqual([]);
+  });
+
+  it('spike geometry bypass accepts dump pct when PG retrace differs', async () => {
+    const mint = 'BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump';
+    const key = `${mint}|1980250`;
+    writeStore({
+      [key]: {
+        peakBucket: 1980250,
+        sentAtMs: Date.now() - 60_000,
+        source: 'spike',
+        spikeDumpPct: 9.45,
+      },
+    });
+    const gate = await import('../src/preset-c/telegram-gate.js');
+    const reasons = gate.presetCApplySpikeGeometryRetraceBypass(
+      mint,
+      5,
+      ['preset_c_retrace_outside_9_30pct'],
+    );
+    expect(reasons).toEqual([]);
+    expect(gate.presetCFreshSpikeDumpPct(mint)).toBe(9.45);
+  });
+
+  it('MANIFEST-like: $26M mcap and spike 9.45% pass geometry with PG retrace below 9%', async () => {
+    process.env.PULLBACK_ALERT_SKIP_MAIN = '1';
+    const mint = 'BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump';
+    const key = `${mint}|1980277`;
+    writeStore({
+      [key]: {
+        peakBucket: 1980277,
+        sentAtMs: Date.now() - 60_000,
+        source: 'spike',
+        spikeDumpPct: 9.45,
+        refMcapUsd: 26_490_000,
+      },
+    });
+    const { evaluatePresetCCandidate } = await import('../src/preset-c/discovery.js');
+    const decision = evaluatePresetCCandidate(
+      { strategyId: 'live-oscar-preset-c' } as import('../src/papertrader/config.js').PaperTraderConfig,
+      {
+        dex: 'pumpswap',
+        mint,
+        pair: 'EcL9YDP3PsViKs2aDzDeTYdNXUCPLDodcKTbS4ayqf4N',
+        symbol: 'MANIFEST',
+        tokenAgeMin: 52000,
+        holderCount: 5000,
+        liqUsd: 200000,
+        refMcapUsd: 26_490_000,
+        priceUsd: 0.002,
+        pick: {
+          anchorTs: new Date(),
+          peakTs: new Date(),
+          lastTs: new Date(),
+          anchorPx: 0.0022,
+          peakPx: 0.0024,
+          lastPx: 0.00218,
+          risePct: 10,
+          retraceFromPeakPct: 5,
+          anchorMcapUsd: 26_000_000,
+          peakMcapUsd: 28_000_000,
+          lastMcapUsd: 26_490_000,
+        },
+      },
+    );
+    expect(decision.reasons).not.toContain('preset_c_mcap_above_30m');
+    expect(decision.reasons).not.toContain('preset_c_retrace_outside_9_30pct');
+    expect(decision.reasons).not.toContain('preset_c_telegram_gate_no_channel_alert');
   });
 
   it('markConsumedKeys records keys and blocks subsequent gate pass', async () => {

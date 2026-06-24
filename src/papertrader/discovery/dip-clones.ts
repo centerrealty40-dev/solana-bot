@@ -135,7 +135,8 @@ export interface EvalDecision {
     | 'runner'
     | 'post_crash_fast'
     | 'stress_kill_reentry'
-    | 'preset_c_pullback';
+    | 'preset_c_pullback'
+    | 'preset_c_spike';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot). */

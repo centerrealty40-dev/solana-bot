@@ -24,7 +24,10 @@ const PEAK_BUCKET_MINUTES = Math.max(
 export type RetracePullbackChannelDedupeEntry = {
   peakBucket: number;
   sentAtMs: number;
-  source: 'pullback' | 'retrace';
+  source: 'pullback' | 'retrace' | 'spike';
+  /** spike dump magnitude (positive %), for Preset C geometry when PG retrace differs */
+  spikeDumpPct?: number;
+  refMcapUsd?: number;
 };
 
 type DedupeStore = Record<string, RetracePullbackChannelDedupeEntry>;
@@ -133,6 +136,30 @@ export function reserveRetracePullbackChannelSlot(
     };
     writeStoreSync(store);
     return true;
+  });
+}
+
+/** Record spike dump alert for Preset C telegram gate (after successful TG send). */
+export function writeSpikeChannelDedupeEntry(
+  mint: string,
+  anchorTs: Date,
+  extra: { spikeDumpPct: number; refMcapUsd?: number | null },
+): void {
+  const trimmed = mint.trim();
+  if (!trimmed) return;
+  const key = retracePullbackChannelEventKey(trimmed, anchorTs);
+  withDedupeFileLock(() => {
+    const store = readStoreSync();
+    store[key] = {
+      peakBucket: peakBucketIndex(anchorTs),
+      sentAtMs: Date.now(),
+      source: 'spike',
+      spikeDumpPct: extra.spikeDumpPct,
+      ...(extra.refMcapUsd != null && Number.isFinite(extra.refMcapUsd) && extra.refMcapUsd > 0
+        ? { refMcapUsd: extra.refMcapUsd }
+        : {}),
+    };
+    writeStoreSync(store);
   });
 }
 
