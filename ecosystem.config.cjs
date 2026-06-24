@@ -1389,6 +1389,16 @@ const PM2_APPS = [
         LIVE_KILL_AFTER_CONSEC_FAIL: '0',
         LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
         LIVE_BTC_GATE_ENABLED: '1',
+        /** Level-2 BTC gate: 1h/4h/24h/72h + drawdown от пика 72h (п.п.; `0` = выкл. для конкретного окна). */
+        LIVE_BTC_BLOCK_1H_DRAWDOWN_PCT: '1',
+        LIVE_BTC_BLOCK_4H_DRAWDOWN_PCT: '2.5',
+        /** `0` — только короткие окна 1ч/4ч (24ч давал ложные block/clear при recovery). */
+        LIVE_BTC_BLOCK_24H_DRAWDOWN_PCT: '0',
+        /** 72h/peak выкл. — не блокировать buy_open из‑за давней просадки при отскоке на 1h/4h. */
+        LIVE_BTC_BLOCK_72H_DRAWDOWN_PCT: '0',
+        LIVE_BTC_BLOCK_PEAK_72H_DRAWDOWN_PCT: '0',
+        /** ret1h ≥ 0 → только 1h+4h; 24h не режет покупки на отскоке. */
+        LIVE_BTC_RECOVERY_SKIP_LONG_WINDOWS: '1',
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
         LIVE_DEFAULT_SLIPPAGE_BPS: '50',
         LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
