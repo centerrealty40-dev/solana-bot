@@ -58,6 +58,39 @@
 
 ---
 
+## [1.11.499] — 2026-06-24
+
+**Тег:** `sa-alpha-1.11.499`
+
+### live-oscar: «Живой Оскар» канон — ноги 500/300/200, half8_runner flat TP ВКЛ
+
+**Изменение (live-oscar process):** распределение ног staged-entry перебалансировано (бо́льшая нога теперь на SIGNAL) и включён ранее существовавший плоский тейк `half8_runner` (продать 50% @ +8%, раннер на defensive-trail). micro снова трёхногий — нога −5% возвращена (была убрана в 1.11.497). prod = low. scalp_wave без изменений.
+
+| Tier | Leg-1 @ signal | Leg-2 @ −5% | Leg-3 @ −10% | Max |
+|------|----------------|-------------|--------------|-----|
+| **prod** | $500 | $300 | $200 | **$1000** |
+| **low** | $500 | $300 | $200 | **$1000** |
+| **micro** | $300 | $200 | $100 | **$600** |
+| **scalp_wave** | $300 one-shot | — | — | **$300** |
+
+**Take-profit:** `half8_runner` ВКЛ для wave_b (50% @ +8%, остаток на трейле; kill −50% и брейкэвен-пол сохранены). Открытые на момент включения позиции НЕ переклеймляются.
+
+env-ключи (live-oscar) old→new:
+- `LIVE_OSCAR_ENTRY_SPLIT_USD` (`PAPER_POSITION_USD`): `400` → **`800`**
+- `LIVE_OSCAR_MAX_POSITION_USD` (`LIVE_MAX_POSITION_USD`): `700` → **`1000`**
+- prod: `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD` `200`→**`500`**; `…_ENTRY_SPLIT_LEG2_USD` `200`→**`300`**; `…_FIRST_LEG_USD` `200`→**`500`**; `…_SECOND_LEG_USD` `300`→**`200`**
+- low: `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD` `200`→**`500`**; `…_ENTRY_SPLIT_LEG2_USD` `200`→**`300`**; `…_POSITION_USD` `400`→**`800`**; `…_STAGED_AVG_LEG_USD` `300`→**`200`**
+- micro: `PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD` `0`→**`200`** (re-enable −5%); `…_POSITION_USD` `300`→**`500`**; `…_STAGED_AVG_LEG_USD` `300`→**`100`** (leg-1 без изм. `300`)
+- TP: `PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP` `0`→**`1`** (`…_MODE=half8_runner` без изм.)
+
+Phase escalation scalp→prod/low/micro переиспользует tier-aware env (scalp $300 → micro: +$200 @ −5% +$100 @ −10% = max $600). `live-oscar-preset-c` (SuperBot) — без изменений. Тесты entry-sizing / phase-escalation обновлены.
+
+**Откат:** redeploy `sa-alpha-1.11.498`; вернуть env: prod/low legs `200/200/300`, `PAPER_POSITION_USD=400`, `LIVE_MAX_POSITION_USD=700`; micro `300/0/300` (`POSITION=300`); `PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.498] — 2026-06-24
 
 **Тег:** `sa-alpha-1.11.498`

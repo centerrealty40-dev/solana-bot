@@ -40,10 +40,11 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
  *
  * 1.11.494 — 3-leg staged entry ($200/$300 only): prod/low $200+$200+$300=$700; micro $300+$200+$300=$800; scalp_wave $300.
  * 1.11.497 — micro: no leg-2 @ −5%; $300 open + $300 staged_avg @ −10% = $600 max.
- * PAPER_POSITION_USD = split leg1+leg2 ($400 prod/low); LIVE_MAX = prod full plan ($700).
+ * 1.11.499 — «Живой Оскар» canon: prod/low $500+$300+$200=$1000; micro re-enables leg-2 @ −5%: $300+$200+$100=$600; scalp_wave $300; half8_runner flat TP ON.
+ * PAPER_POSITION_USD = split leg1+leg2 ($800 prod/low); LIVE_MAX = prod full plan ($1000).
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '400';
-const LIVE_OSCAR_MAX_POSITION_USD = '700';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '800';
+const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
 /** live-oscar-preset-c: $100 flat entry + $50 staged avg legs (SuperBot wallet). */
 const PRESET_C_ENTRY_USD = '100';
@@ -371,26 +372,26 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.494 — 3-leg staged entry ($700 max prod/low): leg-1 $200 @ signal (0%), leg-2 $200 @ −5%,
-         * leg-3 $300 @ −10% от якоря сигнала; kill −50%. PAPER_POSITION_USD = leg1+leg2 ($400).
+         * 1.11.499 — 3-leg staged entry ($1000 max prod/low): leg-1 $500 @ signal (0%), leg-2 $300 @ −5%,
+         * leg-3 $200 @ −10% от якоря сигнала; kill −50%. PAPER_POSITION_USD = leg1+leg2 ($800).
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '200',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '200',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
         /** >0: 2-я нога сплита только при −N% от signal (вместо delay+corridor). */
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '5',
-        /** Leg-3: $300 @ −10% от сигнала (staged add-on; cooldown 0 = без паузы после leg-1). */
+        /** Leg-3: $200 @ −10% от сигнала (staged add-on; cooldown 0 = без паузы после leg-1). */
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '200',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '200',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
@@ -479,11 +480,12 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '20000',
+        /** 1.11.499 — micro снова трёхногий: leg-1 $300 @ signal, leg-2 $200 @ −5%, leg-3 $100 @ −10% = $600 max. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '0',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '300',
-        /** Leg-3 staged avg @ −10% (micro); prod/low use PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($300). */
-        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '300',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '500',
+        /** Leg-3 staged avg @ −10% (micro); prod/low use PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($200). */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '100',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
         /** 1.11.494 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split $200+$200 (boot $400, max $700), leg-1 @ signal (0%), leg-2 @ −5%, leg-3 @ −10% $300. (1.11.476: vol 75k→35k). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
@@ -491,11 +493,11 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '200',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '400',
-        /** Leg-3 staged avg @ −10% (low); prod uses PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($300). */
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '800',
+        /** Leg-3 staged avg @ −10% (low); prod uses PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($200). */
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '200',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /**
          * 1.11.491 — Фаза 4: scalp_wave lane ($800k–$30M, age ≥12h no max, shallow dip −8..−15%).
@@ -731,8 +733,9 @@ const PM2_APPS = [
          * переклеймляются (остаются на лесенке) — безопасный переход. Режим `half8_runner`: продать 50%
          * на каждом +8% + defensive-trail на остаток (раннер); kill −50% и брейкэвен-пол остаются.
          * Wave-B тайм-стоп 12ч применяется ТОЛЬКО к новым (заклеймлённым) позициям. OFF → байт-в-байт лесенка.
+         * 1.11.499 — ВКЛ по «Живой Оскар» канону (продать 50% @ +8%, раннер на трейле).
          */
-        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '0',
+        PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
         PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
