@@ -318,7 +318,14 @@ export interface OpenTrade {
    * `variant_a_v2` — infinite +5% TP grid, partial trail from +10%, DCA resets rungs.
    * `variant_a_v3` — scratch harvest: +5%→30%, flush @0% avg, no DCA after TP, price re-entry −10%.
    */
-  liveExitPolicyId?: 'legacy_grid' | 'wave_b_v1' | 'variant_a_v1' | 'variant_a_v2' | 'variant_a_v3' | 'scalp_wave_v1';
+  liveExitPolicyId?:
+    | 'legacy_grid'
+    | 'wave_b_v1'
+    | 'variant_a_v1'
+    | 'variant_a_v2'
+    | 'variant_a_v3'
+    | 'scalp_wave_v1'
+    | 'preset_c_scalp_v1';
   /** Live Oscar trade lane — mutex owner for mint (`prod` staged Oscar vs `scalp_wave`). */
   liveOscarTradeLane?: 'prod' | 'scalp_wave';
   /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$30M; absent = prod. */
@@ -371,6 +378,16 @@ export interface OpenTrade {
 
   /** Preset C: TG channel dedupe keys that unlocked entry (`mint|peakBucket`). */
   presetCTgDedupeKeys?: string[];
+
+  /** Preset C scalp: signal anchor for entry/exit levels (TG discovery pass price). */
+  presetCScalpAnchorPriceUsd?: number;
+  /** Preset C scalp: +2.5% partial (50%) taken once. */
+  presetCScalpTp25Taken?: boolean;
+  /** Preset C scalp: +5% partial (50%) taken, trail armed. */
+  presetCScalpTp5Taken?: boolean;
+  presetCScalpTrailArmed?: boolean;
+  /** Preset C scalp: −10% DCA leg filled. */
+  presetCScalpDcaLegDone?: boolean;
 }
 
 export interface LiveStagedEntryState {
