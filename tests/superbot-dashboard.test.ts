@@ -9,6 +9,7 @@ import {
   loadLiveOscarJsonlAsPaper2,
   resolveLiveOscarDashboardStrategyId,
   resolveLiveOscarOpenSnapshotPath,
+  selectRecentClosedRowsForDashboard,
   synthesizeTimelineFromLiveOpenTrade,
   superbotJsonlIsLiveOscarFormat,
   LIVE_OSCAR_PRESET_C_STRATEGY_ID,
@@ -343,5 +344,19 @@ describe('SuperBot preset-c live journal', () => {
     expect(c.netPnlUsd).toBe(-0.8);
     expect(c.entryPriceUsd).toBe(0.001);
     expect(c.exitPriceUsd).toBe(0.0009);
+  });
+
+  it('selectRecentClosedRowsForDashboard picks newest closes, not journal append order', () => {
+    const base = Date.UTC(2026, 5, 20, 12, 0, 0);
+    const rows = Array.from({ length: 25 }, (_, i) => ({
+      mint: `Mint${i}`,
+      symbol: i === 24 ? 'world' : `SYM${i}`,
+      exitTs: base + i * 60_000,
+    }));
+    const picked = selectRecentClosedRowsForDashboard(rows, 20);
+    expect(picked).toHaveLength(20);
+    expect(picked[0]!.symbol).toBe('world');
+    expect(picked[0]!.exitTs).toBe(base + 24 * 60_000);
+    expect(picked.some((c) => c.symbol === 'SYM0')).toBe(false);
   });
 });

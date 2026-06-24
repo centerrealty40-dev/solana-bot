@@ -419,6 +419,17 @@ function closedRowExitPx(c: Paper2ClosedRow): number {
   return Number(c.theoretical_exit_price ?? 0);
 }
 
+/** Most recent N closed rows for dashboard enrichment (journal replay order is oldest-first). */
+export function selectRecentClosedRowsForDashboard(
+  closed: Paper2ClosedRow[],
+  limit: number,
+): Paper2ClosedRow[] {
+  if (limit <= 0) return [];
+  return [...closed]
+    .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
+    .slice(0, limit);
+}
+
 function normalizePaper2ExitReason(raw: string): string {
   const r = raw.trim() || 'NO_DATA';
   if (r === 'stop_loss') return 'SL';
@@ -1601,7 +1612,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-24-dc-trader-tile3-v2';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-25-preset-c-recent-closes-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -4029,9 +4040,10 @@ async function buildPaper2StrategyRowFromLoad(
   const enrichMode = paper2EnrichModeForSid(sid);
   const m = paper2Metrics(closed);
   const startedAt = resetTs || firstTs;
+  const recentClosedLimit = enrichMode === 'lite' ? 12 : 20;
   const closedWithUsd = (
     await Promise.all(
-      closed.slice(0, enrichMode === 'lite' ? 12 : 20).map(async (c) => {
+      selectRecentClosedRowsForDashboard(closed, recentClosedLimit).map(async (c) => {
         const pnlUsd = closedRowPnlUsd(c);
         const pnlPct = closedRowDisplayPnlPct(c, pnlUsd);
         const costs = c.costs as Record<string, unknown> | undefined;
