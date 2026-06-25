@@ -10,6 +10,7 @@ import {
   fetchJupiterSwapQuoteGetJson,
   jupiterJsonHeaders,
 } from '../core/jupiter-http.js';
+import { recordJupiter429Event } from '../core/jupiter-429-monitor.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { adaptivePriorityMaxLamports } from './adaptive-priority-fee.js';
 import type { LiveOscarConfig } from './config.js';
@@ -326,6 +327,7 @@ export async function liveBuildUnsignedSwapTx(args: {
       });
       const txt = await res.text();
       if (res.status === 429 && j < max429) {
+        recordJupiter429Event({ source: 'swap', retriesAttempted: j + 1 });
         const ra = res.headers.get('retry-after');
         let waitMs = backoff;
         if (ra) {
@@ -339,6 +341,13 @@ export async function liveBuildUnsignedSwapTx(args: {
         continue;
       }
       if (!res.ok) {
+        if (res.status === 429) {
+          recordJupiter429Event({
+            source: 'swap',
+            exhausted: true,
+            retriesAttempted: max429 + 1,
+          });
+        }
         log.debug(
           { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
           res.status === 429 ? 'live jupiter swap rate limited' : 'live jupiter swap http',

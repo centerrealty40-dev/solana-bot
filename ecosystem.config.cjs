@@ -1129,6 +1129,13 @@ const PM2_APPS = [
         LIVE_KILLSTOP_PREARM_BUFFER_PCT: '1',
         LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
+        /** 1.11.504 — немедленный TG при burst/exhaust Jupiter HTTP 429 (не ждать 30min sa-rate-429-report). */
+        JUPITER_429_BURST_TELEGRAM: '1',
+        JUPITER_429_BURST_THRESHOLD: '4',
+        JUPITER_429_BURST_WINDOW_MS: '60000',
+        JUPITER_429_EXHAUST_TELEGRAM: '1',
+        TELEGRAM_COOLDOWN_ALERT_JUPITER_429_BURST_MS: '300000',
+        TELEGRAM_COOLDOWN_ALERT_JUPITER_429_EXHAUST_MS: '120000',
         /**
          * 1.11.503 — Smart retry classification (A.2), tighter slippage envelope.
          *

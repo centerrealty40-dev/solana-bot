@@ -8,6 +8,8 @@
  * Env:
  * - `LIVE_JUPITER_TRACKER_TELEGRAM=0` — выкл. алерты трекера (fallback PG / расхождение с Jupiter).
  * - `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` — выкл. алерт при открытии circuit breaker (price-verify).
+ * - `JUPITER_429_BURST_TELEGRAM=0` — выкл. немедленный алерт при burst HTTP 429 (см. jupiter-429-monitor.ts).
+ * - `JUPITER_429_EXHAUST_TELEGRAM=0` — выкл. алерт при исчерпании retry на quote/swap 429.
  * - `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS` — мин. интервал между одинаковыми алертами по одному mint (default 300000).
  * - `live-jupiter-tracker-mtm-snap-clamp` — Jupiter buy-probe сильно выше PG snapshot; MTM на тике переведён на snapshot.
  * Дополнительно можно задать `TELEGRAM_COOLDOWN_ALERT_<SUBTAG>_MS` для sendTagged (см. sender.ts).
@@ -179,4 +181,62 @@ export async function notifyJupiterQuoteCircuitBreakerOpen(args: {
     `tsUtc=${new Date().toISOString()}`,
   ];
   await sendTagged('ALERT', 'jupiter-quote-circuit', lines.join('\n'));
+}
+
+/** Немедленный алерт: burst HTTP 429 от Jupiter (free-tier choking / rate limit). */
+export async function notifyJupiter429RateLimitBurst(args: {
+  eventsInWindow: number;
+  windowMs: number;
+  bySource: Record<'quote' | 'swap' | 'price', number>;
+  tierHint: string;
+}): Promise<void> {
+  const key = '429-burst';
+  const cd = Math.max(
+    throttleDefaultMs,
+    Number(process.env.JUPITER_429_BURST_TG_THROTTLE_MS ?? 300_000),
+  );
+  if (shouldThrottle(key, cd)) return;
+
+  const lines = [
+    'severity=ACTION  investigate_product=YES',
+    '',
+    'Причина: burst HTTP 429 от Jupiter API — вероятно упёрлись в rate limit (free tier ≈1 RPS).',
+    'Что делать: проверить JUPITER_API_KEY tier, sa-rate-429-report, логи live-oscar; рассмотреть Developer ($25/mo, 10 RPS).',
+    '',
+    `eventsInWindow=${args.eventsInWindow}`,
+    `windowMs=${args.windowMs}`,
+    `quote429=${args.bySource.quote} swap429=${args.bySource.swap} price429=${args.bySource.price}`,
+    `jupiterTier=${args.tierHint}`,
+    `tsUtc=${new Date().toISOString()}`,
+  ];
+  await sendTagged('ALERT', 'jupiter-429-burst', lines.join('\n'));
+}
+
+/** Немедленный алерт: quote/swap исчерпал retry на 429 — котировка/сборка tx не получена. */
+export async function notifyJupiterQuoteRateLimitExhausted(args: {
+  source: 'quote' | 'swap' | 'price';
+  retriesAttempted: number;
+  eventsInWindow: number;
+  tierHint: string;
+}): Promise<void> {
+  const key = `429-exhaust:${args.source}`;
+  const cd = Math.max(
+    60_000,
+    Number(process.env.JUPITER_429_EXHAUST_TG_THROTTLE_MS ?? 120_000),
+  );
+  if (shouldThrottle(key, cd)) return;
+
+  const lines = [
+    'severity=ACTION  investigate_product=YES',
+    '',
+    `Причина: Jupiter ${args.source} HTTP 429 — исчерпаны retry, запрос не выполнен.`,
+    'Что делать: снизить параллелизм Jupiter, проверить tier ключа, hot-tick / exit-slice нагрузку.',
+    '',
+    `source=${args.source}`,
+    `retriesAttempted=${args.retriesAttempted}`,
+    `recent429InWindow=${args.eventsInWindow}`,
+    `jupiterTier=${args.tierHint}`,
+    `tsUtc=${new Date().toISOString()}`,
+  ];
+  await sendTagged('ALERT', 'jupiter-429-exhaust', lines.join('\n'));
 }
