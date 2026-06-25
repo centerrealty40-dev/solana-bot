@@ -1,3 +1,5 @@
+import { recordJupiter429Event } from './jupiter-429-monitor.js';
+
 export const JUPITER_QUOTE_URL_DEFAULT = 'https://api.jup.ag/swap/v1/quote';
 export const JUPITER_SWAP_URL_DEFAULT = 'https://api.jup.ag/swap/v1/swap';
 export const JUPITER_PRICE_V3_URL_DEFAULT = 'https://api.jup.ag/price/v3';
@@ -68,6 +70,7 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
         headers: jupiterJsonHeaders(args.extraHeaders ?? {}),
       });
       if (resp.status === 429 && j < maxR) {
+        recordJupiter429Event({ source: 'quote', retriesAttempted: j + 1 });
         const ra = resp.headers.get('retry-after');
         let waitMs = backoff;
         if (ra) {
@@ -106,6 +109,11 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
       clearTimeout(tt);
     }
   }
+  recordJupiter429Event({
+    source: 'quote',
+    exhausted: true,
+    retriesAttempted: maxR + 1,
+  });
   return { ok: false, status: 429 };
 }
 

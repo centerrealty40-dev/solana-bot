@@ -58,6 +58,20 @@
 
 ---
 
+## [1.11.504] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.504`
+
+### Jupiter: немедленный Telegram при HTTP 429 burst / исчерпании retry
+
+**Изменение:** shared `jupiter-http.ts` + `live/jupiter.ts` записывают HTTP 429 в in-process sliding window; при **≥4** событиях за 60s или при **исчерпании retry** на quote/swap — `[ALERT][jupiter-429-burst]` / `[ALERT][jupiter-429-exhaust]` в операторский Telegram (не ждать 30min `sa-rate-429-report`). Env: `JUPITER_429_BURST_TELEGRAM`, `JUPITER_429_BURST_THRESHOLD`, `JUPITER_429_EXHAUST_TELEGRAM`.
+
+**Откат:** redeploy `sa-alpha-1.11.502`; `JUPITER_429_BURST_TELEGRAM=0` + `JUPITER_429_EXHAUST_TELEGRAM=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.502] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.502`
