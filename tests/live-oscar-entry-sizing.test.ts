@@ -7,9 +7,12 @@ import {
   applyCanonicalStagedEntrySizing,
   assertLiveOscarUnifiedEntrySizing,
   resolveLiveOscarEntrySplitLeg2Usd,
+  resolveLiveOscarEntrySplitLeg3Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
+  resolveLiveOscarStagedAvgFirstDropPct,
   resolveLiveOscarStagedAvgLegUsd,
+  resolveLiveOscarStagedAvgSecondLegUsd,
   resolveLiveOscarStagedEntryMaxUsd,
   resolveLiveOscarTradeTierFromMcap,
 } from '../src/papertrader/live-oscar-entry-sizing.js';
@@ -24,47 +27,48 @@ describe('live-oscar-entry-sizing', () => {
       'PAPER_LIVE_STAGED_ENTRY_ENABLED',
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD',
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD',
+      'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD',
       'PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD',
       'PAPER_POSITION_USD',
+      'PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD',
+      'PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT',
+      'PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD',
+      'PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT',
       'PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD',
-      'PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD',
+      'PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD',
-      'PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD',
+      'PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT',
+      'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS',
     ];
     for (const k of keys) envBackup[k] = process.env[k];
     process.env.PAPER_STRATEGY_ID = 'live-oscar';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENABLED = '1';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '1000';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD = '500';
-    process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '1000';
-    process.env.PAPER_POSITION_USD = '1500';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED = '1';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD = '500000';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD = '1300000';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD = '300';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD = '200';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD = '500';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '1';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD = '1300000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD = '1000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD = '500';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '1500';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '300';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD = '100';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '400';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD = '400';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD = '400';
+    process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '400';
+    process.env.PAPER_POSITION_USD = '1200';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '300';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '5000';
+    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT = '5';
+    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT = '20';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED = '0';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '1';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD = '2000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD = '0';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '500';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT = '10';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '10000';
   });
 
   afterEach(() => {
@@ -77,84 +81,64 @@ describe('live-oscar-entry-sizing', () => {
   it('passes boot validation when env is aligned', () => {
     const cfg = loadPaperTraderConfig();
     expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).not.toThrow();
-    expect(resolveLiveOscarEntrySplitLegUsd(cfg)).toBe(1000);
-    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg)).toBe(500);
-    expect(resolveLiveOscarEntrySplitTotalUsd(cfg)).toBe(1500);
-    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'micro')).toBe(300);
-    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'micro')).toBe(200);
+    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'prod')).toBe(400);
+    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'prod')).toBe(400);
+    expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, 'prod')).toBe(400);
+    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod')).toBe(1200);
+    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'low')).toBe(250);
+    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'low')).toBe(250);
+    expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, 'low')).toBe(0);
   });
 
-  it('throws when low-mcap split diverges from prod split', () => {
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD = '200';
+  it('throws when low-mcap position is not leg1+leg2', () => {
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '600';
     const cfg = loadPaperTraderConfig();
-    expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).toThrow(/LOW_MCAP_ENTRY_SPLIT/);
+    expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).toThrow(/LOW_MCAP_POSITION/);
   });
 
-  it('throws when micro position is not leg1+leg2', () => {
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD = '600';
+  it('tier-aware staged avg: low −10% $250; prod −5%/$300 + −20%/$300', () => {
     const cfg = loadPaperTraderConfig();
-    expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).toThrow(/MICRO_MCAP_POSITION/);
-  });
-
-  it('tier-aware staged avg leg: micro $100, low/prod per fixtures', () => {
-    const cfg = loadPaperTraderConfig();
-    expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'micro')).toBe(100);
-    expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'low')).toBe(300);
+    expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'low')).toBe(10);
+    expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'low')).toBe(250);
+    expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'prod')).toBe(5);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'prod')).toBe(300);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(600);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(1800);
+    expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(750);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(1800);
   });
 
-  it('buildLiveStagedEntryState uses $100 avg leg for micro mcap', () => {
+  it('buildLiveStagedEntryState uses $250 avg @ −10% for low mcap', () => {
     const cfg = loadPaperTraderConfig();
-    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 800_000 });
-    expect(st.avgSecondLegUsd).toBe(100);
-    expect(st.secondLegUsd).toBe(100);
+    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 2_500_000 });
+    expect(st.avgSecondLegUsd).toBe(250);
+    expect(st.avgSecondDropPct).toBe(10);
+    expect(st.entrySplitLeg3Usd).toBe(0);
+    expect(st.entrySplitLeg3Done).toBe(true);
   });
 
-  it('buildLiveStagedEntryState uses $300 avg leg for low mcap', () => {
-    const cfg = loadPaperTraderConfig();
-    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 1_900_000 });
-    expect(st.avgSecondLegUsd).toBe(300);
-    expect(st.secondLegUsd).toBe(300);
-  });
-
-  it('buildLiveStagedEntryState uses $300 avg leg for prod mcap', () => {
+  it('buildLiveStagedEntryState uses 3×$400 split + prod avg for prod mcap', () => {
     const cfg = loadPaperTraderConfig();
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 5_000_000 });
+    expect(st.entrySplitLegUsd).toBe(400);
+    expect(st.entrySplitLeg2Usd).toBe(400);
+    expect(st.entrySplitLeg3Usd).toBe(400);
+    expect(st.entrySplitLeg3Done).toBe(false);
     expect(st.avgSecondLegUsd).toBe(300);
-    expect(st.secondLegUsd).toBe(300);
+    expect(st.avgSecondDropPct).toBe(5);
+    expect(st.avgThirdLegUsd).toBe(300);
+    expect(st.avgThirdDropPct).toBe(20);
+    expect(st.entrySplitDelayMs).toBe(10000);
   });
 
-  it('buildLiveStagedEntryState uses $300+$200 split (leg-2 @ −5% re-enabled) for micro mcap', () => {
+  it('below $2M resolves to below tier when micro disabled', () => {
     const cfg = loadPaperTraderConfig();
-    expect(cfg.liveOscarMicroMcapLaneEnabled).toBe(true);
-    expect(resolveLiveOscarMcapTier(cfg, 800_000)).toBe('micro');
-    expect(resolveLiveOscarTradeTierFromMcap(cfg, 800_000)).toBe('micro');
-    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'micro')).toBe(300);
-    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'micro')).toBe(200);
-    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 800_000 });
-    expect(st.firstLegUsd).toBe(300);
-    expect(st.entrySplitLegUsd).toBe(300);
-    expect(st.entrySplitLeg2Usd).toBe(200);
-    expect(st.entrySplitLeg2Done).toBe(false);
-    expect(st.entrySplitDelayMs).toBe(5000);
+    expect(resolveLiveOscarMcapTier(cfg, 1_500_000)).toBe('below');
+    expect(resolveLiveOscarTradeTierFromMcap(cfg, 1_500_000)).toBeUndefined();
   });
 
-  it('buildLiveStagedEntryState uses $1000+$500 split for low mcap', () => {
+  it('applyCanonicalOpenLegUsd fixes pre-buy open leg for low tier', () => {
     const cfg = loadPaperTraderConfig();
-    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 1_900_000 });
-    expect(st.firstLegUsd).toBe(1000);
-    expect(st.entrySplitLegUsd).toBe(1000);
-    expect(st.entrySplitLeg2Usd).toBe(500);
-  });
-
-  it('applyCanonicalOpenLegUsd fixes pre-buy open leg after tier drift (micro)', () => {
-    const cfg = loadPaperTraderConfig();
-    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 800_000 });
-    st.firstLegUsd = 200;
-    st.entrySplitLegUsd = 200;
+    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 2_500_000 });
     const ot: OpenTrade = {
       mint: 'mint',
       symbol: 'T',
@@ -164,8 +148,8 @@ describe('live-oscar-entry-sizing', () => {
       dex: 'pumpswap',
       entryTs: 1,
       entryMcUsd: 0.01,
-      entryMarketCapUsd: 800_000,
-      liveOscarMcapTier: 'micro',
+      entryMarketCapUsd: 2_500_000,
+      liveOscarMcapTier: 'low',
       entryMetrics: {
         uniqueBuyers: 0,
         uniqueSellers: 0,
@@ -190,21 +174,21 @@ describe('live-oscar-entry-sizing', () => {
       liveStagedEntry: st,
     };
     applyCanonicalOpenLegUsd(cfg, ot);
-    expect(ot.legs[0]!.sizeUsd).toBe(300);
-    expect(ot.liveStagedEntry!.entrySplitLegUsd).toBe(300);
-    expect(ot.liveStagedEntry!.entrySplitLeg2Usd).toBe(200);
-    expect(ot.totalInvestedUsd).toBe(300);
+    expect(ot.legs[0]!.sizeUsd).toBe(250);
+    expect(ot.liveStagedEntry!.entrySplitLegUsd).toBe(250);
+    expect(ot.totalInvestedUsd).toBe(250);
   });
 
-  it('applyCanonicalStagedEntrySizing upgrades restored plan for 2nd leg', () => {
+  it('applyCanonicalStagedEntrySizing upgrades restored plan', () => {
     const cfg = loadPaperTraderConfig();
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 });
     st.entrySplitLegUsd = 200;
     st.entrySplitLeg2Usd = 100;
-    st.entrySplitDelayMs = 10_000;
+    st.entrySplitDelayMs = 5000;
     applyCanonicalStagedEntrySizing(cfg, st);
-    expect(st.entrySplitLegUsd).toBe(1000);
-    expect(st.entrySplitLeg2Usd).toBe(500);
-    expect(st.entrySplitDelayMs).toBe(5000);
+    expect(st.entrySplitLegUsd).toBe(400);
+    expect(st.entrySplitLeg2Usd).toBe(400);
+    expect(st.entrySplitLeg3Usd).toBe(400);
+    expect(st.entrySplitDelayMs).toBe(10000);
   });
 });

@@ -58,6 +58,114 @@
 
 ---
 
+## [1.11.502] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.502`
+
+### live-oscar: exit slicing — max $250 per Jupiter sell, 5s gap
+
+**Изменение:** крупные live-выходы (partial TP, kill stop, trail, full close и др.) при planned notional **> $250** исполняются серией slice'ов ≤ **$250** с паузой **5s** между slice'ами. Последний slice full exit — `sell_full` (chain balance). Env: `LIVE_EXIT_SLICE_MAX_USD` (default **250**, **0** = off), `LIVE_EXIT_SLICE_DELAY_MS` (default **5000**).
+
+**Откат:** redeploy `sa-alpha-1.11.501`; unset slice env или `LIVE_EXIT_SLICE_MAX_USD=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.501] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.501`
+
+### live-oscar: entry-split corridor gate — только TP_LADDER partial
+
+**Исправление:** `entrySplitCorridorBlocked` больше не блокирует timed split-ноги после breakeven trim, defensive trail, derisk и прочих partial sell с reason ≠ `TP_LADDER`. Коридор split (+3%/−5%) продолжает работать до первого partial TP по лестнице или первого усреднения; повторные попытки в коридоре — на каждом тике (не one-shot).
+
+**Открытые позиции:** journal-restored планы без миграции — старые `liveStagedEntry` на открытых сделках не переписываются.
+
+**Откат:** redeploy `sa-alpha-1.11.500`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.500] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.500`
+
+### live-oscar: min mcap $2M, micro/scalp_wave OFF, новые tier A/B entry rules
+
+**Изменение (live-oscar process):** все входы только при mcap ≥ **$2M**; **micro** и **scalp_wave** lanes выключены. Новые правила staged-entry:
+
+| Tier | Mcap | Entry split (timed @10s, corridor +3%/−5%) | Averaging |
+|------|------|---------------------------------------------|-----------|
+| **low (A)** | $2M–$3M | 2× **$250** | −10% **$250** (max **$750**) |
+| **prod (B)** | ≥$3M | 3× **$400** | −5% **$300**, −20% **$300** (max **$1800**) |
+
+Коридор split-ног: цена в **[anchor×0.95, anchor×1.03]**; повторные попытки, пока не сработает partial TP или первое усреднение. Split-ноги — **time-based** (`ENTRY_SPLIT_TARGET_DROP_PCT=0`), не dip −5%/−10%.
+
+env-ключи (live-oscar) old→new:
+- `PAPER_DISCOVERY_MIN_MARKET_CAP_USD`: `500000` → **`2000000`**
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED`: `1` → **`0`**
+- `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED`: `1` → **`0`**
+- low: `PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD` `1300000`→**`2000000`**; split **`250+250`**; `…_POSITION_USD` `800`→**`500`**; avg −10% **`250`**
+- prod: split **`400+400+400`**; `PAPER_POSITION_USD` `800`→**`1200`**; `LIVE_MAX_POSITION_USD` `1000`→**`1800`**; corridor max down **`5`**; avg **`300@−5%` + `300@−20%`**
+
+**Откат:** redeploy `sa-alpha-1.11.499`; вернуть env 1.11.499; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.500] — 2026-06-25
+
+**Тег:** `sa-alpha-1.11.500`
+
+### live-oscar: min mcap $2M, scalp_wave OFF, timed entry splits + corridor +3/−5%
+
+**Изменение:** торгуем только mcap ≥ **$2M** (micro и scalp_wave **выключены**). Entry split по **времени** (10 с между ногами) в коридоре **+3% / −5%** от якоря сигнала; коридор для добора ног сплита действует до первого partial TP или первого усреднения.
+
+| Tier | Entry split | Усреднение | Max |
+|------|-------------|------------|-----|
+| **low** ($2M–$3M) | 2×$250 @ 10s | −10% $250 | **$750** |
+| **prod** (≥ $3M) | 3×$400 @ 10s | −5% $300, −20% $300 | **$1800** |
+
+Код: 3-я нога entry split (`entrySplitLeg3`), `entrySplitCorridorBlocked`, tier-aware staged avg drops.
+
+**Откат:** redeploy `sa-alpha-1.11.499`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
+---
+
+## [1.11.500] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.500`
+
+### live-oscar: min mcap $2M, timed entry splits, scalp_wave OFF
+
+**Изменение (live-oscar):** торговля только при mcap > $2M; micro и scalp_wave lanes выключены. Entry split — **time-based** (10s между ногами, коридор +3%/−5% от якоря сигнала до первого partial TP или первого avg), не dip-staged −5%/−10%.
+
+| Tier | Entry split (timed) | Averaging | Max |
+|------|---------------------|-----------|-----|
+| **low** $2M–$3M | $250 + $250 @ 10s | −10% $250 | **$750** |
+| **prod** ≥ $3M | 3× $400 @ 10s | −5% $300, −20% $300 | **$1800** |
+
+**Код:** 3-я нога entry split (`PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD`), коридор entry split блокируется после partial TP / первого `staged_avg`; low-tier avg drop через `PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT`.
+
+env (live-oscar) ключевые old→new:
+- `PAPER_DISCOVERY_MIN_MARKET_CAP_USD`: `500000` → **`2000000`**
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED`: `1` → **`0`**
+- `PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED`: `1` → **`0`**
+- prod split: `400/400/400` @ **`ENTRY_SPLIT_TARGET_DROP_PCT=0`**, delay **`10000`**, corridor **`+3/−5`**
+- prod avg: **`SECOND_DROP_PCT=5`**, `SECOND_LEG_USD=300`, **`THIRD_DROP_PCT=20`**, `THIRD_LEG_USD=300`
+- low: `250/250`, `POSITION=500`, `STAGED_AVG=250` @ **`STAGED_AVG_DROP_PCT=10`**
+- `LIVE_OSCAR_ENTRY_SPLIT_USD` / `PAPER_POSITION_USD`: **`1200`**; `LIVE_MAX_POSITION_USD`: **`1800`**
+- `PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS`: `1` → **`0`**
+
+**Откат:** redeploy `sa-alpha-1.11.499`; вернуть env 1.11.499 (micro/scalp ON, legs 500/300/200, `PAPER_POSITION_USD=800`, `LIVE_MAX=1000`); `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.499] — 2026-06-24
 
 **Тег:** `sa-alpha-1.11.499`

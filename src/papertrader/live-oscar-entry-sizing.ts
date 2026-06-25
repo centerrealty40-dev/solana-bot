@@ -7,16 +7,17 @@ import {
 } from './live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from './types.js';
 
-/** Tier-aware staged-entry split leg-1: micro=$300, low/prod/default=$200 (canonical env). */
+/** Tier-aware staged-entry split leg-1: low/prod/default from env. */
 export function resolveLiveOscarEntrySplitLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
   if (tier === 'micro') return cfg.liveOscarMicroMcapEntrySplitLegUsd;
+  if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLegUsd;
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
-/** Tier-aware split leg-2 @ −5%; micro: `0` = disabled. Other tiers: `0` → same as leg-1. */
+/** Tier-aware split leg-2; micro: `0` = disabled. Other tiers: `0` → same as leg-1. */
 export function resolveLiveOscarEntrySplitLeg2Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -33,14 +34,37 @@ export function resolveLiveOscarEntrySplitLeg2Usd(
   return configured > 0 ? configured : leg1;
 }
 
+/** Tier-aware split leg-3 (timed entry split, not averaging). Low/micro default `0`. */
+export function resolveLiveOscarEntrySplitLeg3Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLeg3Usd;
+  if (tier === 'micro') return 0;
+  return cfg.liveStagedEntryEntrySplitLeg3Usd;
+}
+
 export function resolveLiveOscarEntrySplitTotalUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
-  return resolveLiveOscarEntrySplitLegUsd(cfg, tier) + resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  return (
+    resolveLiveOscarEntrySplitLegUsd(cfg, tier) +
+    resolveLiveOscarEntrySplitLeg2Usd(cfg, tier) +
+    resolveLiveOscarEntrySplitLeg3Usd(cfg, tier)
+  );
 }
 
-/** Tier-aware leg-3 staged avg @ −10%: all tiers $300 (prod via `liveStagedEntrySecondLegUsd`). */
+/** First staged averaging drop % from signal anchor. */
+export function resolveLiveOscarStagedAvgFirstDropPct(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgDropPct;
+  return cfg.liveStagedEntrySecondDropPct;
+}
+
+/** Tier-aware first staged avg leg USD. */
 export function resolveLiveOscarStagedAvgLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -50,13 +74,30 @@ export function resolveLiveOscarStagedAvgLegUsd(
   return cfg.liveStagedEntrySecondLegUsd;
 }
 
+/** Second staged averaging leg (prod only when configured). */
+export function resolveLiveOscarStagedAvgSecondLegUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'low' || tier === 'micro') return 0;
+  return cfg.liveStagedEntryThirdLegUsd;
+}
+
+export function resolveLiveOscarStagedAvgSecondDropPct(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'low' || tier === 'micro') return 0;
+  return cfg.liveStagedEntryThirdDropPct;
+}
+
 export function resolveLiveOscarStagedEntryMaxUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
   let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
   sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  if (cfg.liveStagedEntryThirdLegUsd > 0) sum += cfg.liveStagedEntryThirdLegUsd;
+  sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
   return sum;
 }
 
@@ -64,50 +105,48 @@ export function resolveLiveOscarStagedEntryMaxUsd(
 export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !cfg.liveStagedEntryEnabled) return;
 
-  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg);
-  const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg);
+  const prodLeg1 = resolveLiveOscarEntrySplitLegUsd(cfg, 'prod');
+  const prodLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, 'prod');
+  const prodLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, 'prod');
+  const prodSplitTotal = prodLeg1 + prodLeg2 + prodLeg3;
   const pos = cfg.positionUsd;
   const errors: string[] = [];
 
-  if (!(leg1 > 0)) {
+  if (!(prodLeg1 > 0)) {
     errors.push('PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD must be > 0');
   }
   if (!(pos > 0)) {
     errors.push('PAPER_POSITION_USD must be > 0');
   }
-  if (leg1 > 0 && pos > 0 && Math.abs(pos - (leg1 + leg2)) > 1e-6) {
+  if (prodLeg1 > 0 && pos > 0 && Math.abs(pos - prodSplitTotal) > 1e-6) {
     errors.push(
-      `PAPER_POSITION_USD (${pos}) must equal leg1+leg2 (${leg1}+${leg2}=${leg1 + leg2})`,
+      `PAPER_POSITION_USD (${pos}) must equal prod split leg1+leg2+leg3 (${prodLeg1}+${prodLeg2}+${prodLeg3}=${prodSplitTotal})`,
     );
   }
-  if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - leg1) > 1e-6) {
+  if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - prodLeg1) > 1e-6) {
     errors.push(
-      `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD (${cfg.liveStagedEntryFirstLegUsd}) must equal ENTRY_SPLIT_LEG (${leg1})`,
+      `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD (${cfg.liveStagedEntryFirstLegUsd}) must equal ENTRY_SPLIT_LEG (${prodLeg1})`,
     );
   }
-  if (
-    cfg.liveOscarLowMcapLaneEnabled &&
-    Math.abs(cfg.liveOscarLowMcapEntrySplitLegUsd - leg1) > 1e-6
-  ) {
-    errors.push(
-      `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD (${cfg.liveOscarLowMcapEntrySplitLegUsd}) must equal ENTRY_SPLIT_LEG (${leg1})`,
-    );
-  }
-  if (cfg.liveOscarLowMcapLaneEnabled && cfg.liveOscarLowMcapEntrySplitLeg2Usd > 0) {
-    if (Math.abs(cfg.liveOscarLowMcapEntrySplitLeg2Usd - leg2) > 1e-6) {
+
+  if (cfg.liveOscarLowMcapLaneEnabled) {
+    const lowLeg1 = cfg.liveOscarLowMcapEntrySplitLegUsd;
+    const lowLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, 'low');
+    const lowLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, 'low');
+    const lowPos = cfg.liveOscarLowMcapPositionUsd;
+    if (!(lowLeg1 > 0)) {
+      errors.push('PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD must be > 0');
+    }
+    if (!(lowPos > 0)) {
+      errors.push('PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD must be > 0');
+    }
+    if (lowLeg1 > 0 && lowPos > 0 && Math.abs(lowPos - (lowLeg1 + lowLeg2 + lowLeg3)) > 1e-6) {
       errors.push(
-        `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD (${cfg.liveOscarLowMcapEntrySplitLeg2Usd}) must equal ENTRY_SPLIT_LEG2 (${leg2})`,
+        `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD (${lowPos}) must equal leg1+leg2+leg3 (${lowLeg1}+${lowLeg2}+${lowLeg3}=${lowLeg1 + lowLeg2 + lowLeg3})`,
       );
     }
   }
-  if (
-    cfg.liveOscarLowMcapLaneEnabled &&
-    Math.abs(cfg.liveOscarLowMcapPositionUsd - pos) > 1e-6
-  ) {
-    errors.push(
-      `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD (${cfg.liveOscarLowMcapPositionUsd}) must equal PAPER_POSITION_USD (${pos})`,
-    );
-  }
+
   if (cfg.liveOscarMicroMcapLaneEnabled) {
     const microLeg1 = cfg.liveOscarMicroMcapEntrySplitLegUsd;
     const microLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, 'micro');
@@ -138,10 +177,15 @@ export function applyCanonicalStagedEntrySizing(
 ): void {
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  const leg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
   const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier);
+  const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
+  const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
+  const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier);
   st.firstLegUsd = leg1;
   st.entrySplitLegUsd = leg1;
   st.entrySplitLeg2Usd = leg2;
+  st.entrySplitLeg3Usd = leg3;
   st.entrySplitDelayMs = cfg.liveStagedEntryEntrySplitDelayMs;
   st.entrySplitMaxUpPct = cfg.liveStagedEntryEntrySplitMaxUpPct;
   st.entrySplitMaxDownPct = cfg.liveStagedEntryEntrySplitMaxDownPct;
@@ -149,8 +193,14 @@ export function applyCanonicalStagedEntrySizing(
   if (!st.mintFirstProbe) {
     st.avgSecondLegUsd = avgUsd;
     st.secondLegUsd = avgUsd;
-    st.avgSecondDropPct = cfg.liveStagedEntrySecondDropPct;
-    st.secondDropPct = cfg.liveStagedEntrySecondDropPct;
+    st.avgSecondDropPct = avgDrop;
+    st.secondDropPct = avgDrop;
+    if (avg2Usd > 0 && avg2Drop > 0) {
+      st.avgThirdLegUsd = avg2Usd;
+      st.thirdLegUsd = avg2Usd;
+      st.avgThirdDropPct = avg2Drop;
+      st.thirdDropPct = avg2Drop;
+    }
   }
 }
 

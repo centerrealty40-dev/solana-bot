@@ -233,6 +233,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                   Number(p.entrySplitLeg2Usd) ||
                   Number(p.entrySplitLegUsd) ||
                   firstLegUsd,
+                entrySplitLeg3Usd: Number.isFinite(Number(p.entrySplitLeg3Usd))
+                  ? Number(p.entrySplitLeg3Usd)
+                  : 0,
                 entrySplitTargetDropPct: Number.isFinite(Number(p.entrySplitTargetDropPct))
                   ? Number(p.entrySplitTargetDropPct)
                   : 0,
@@ -242,6 +245,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitAnchorUsd: Number(p.entrySplitAnchorUsd) || signalPriceUsd,
                 entrySplitLeg1Ts: Number(p.entrySplitLeg1Ts) || signalTs,
                 entrySplitLeg2Done: Boolean(p.entrySplitLeg2Done),
+                entrySplitLeg3Done: Boolean(p.entrySplitLeg3Done),
                 avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
                 avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
                 avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,

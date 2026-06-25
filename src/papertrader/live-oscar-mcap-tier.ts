@@ -39,7 +39,7 @@ export function resolveLiveOscarMcapTier(cfg: PaperTraderConfig, mcapUsd: number
     return 'below';
   }
   if (isLiveOscarTwoPhaseMcap(cfg)) {
-    /** $3M ровно — prod; low только $1.3M ≤ mcap < $3M. */
+    /** $3M ровно — prod; low только minUsd ≤ mcap < $3M. */
     if (mcap + 1e-9 < cfg.liveOscarLowMcapMaxUsd) return 'low';
   }
   return 'prod';
@@ -113,6 +113,7 @@ export function liveOscarTierEntryConfig(
 export function liveOscarTierStagedSplitLegUsd(cfg: PaperTraderConfig, tier: LiveOscarMcapTier): number {
   if (tier === 'scalp_wave') return cfg.liveOscarScalpWavePositionUsd;
   if (tier === 'micro') return cfg.liveOscarMicroMcapEntrySplitLegUsd;
+  if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLegUsd;
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 

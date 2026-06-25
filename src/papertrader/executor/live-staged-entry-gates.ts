@@ -2,15 +2,17 @@ import type { PaperTraderConfig } from '../config.js';
 import {
   applyCanonicalStagedEntrySizing,
   resolveLiveOscarEntrySplitLeg2Usd,
+  resolveLiveOscarEntrySplitLeg3Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
+  resolveLiveOscarStagedAvgFirstDropPct,
   resolveLiveOscarStagedAvgLegUsd,
+  resolveLiveOscarStagedAvgSecondDropPct,
+  resolveLiveOscarStagedAvgSecondLegUsd,
   resolveLiveOscarTradeTierFromMcap,
 } from '../live-oscar-entry-sizing.js';
 import type { LiveOscarTradeTier } from '../live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from '../types.js';
-
-/** `liveStagedEntrySignalTtlMs === 0` — no time limit on staged plan / signal anchor. */
 export function liveStagedEntrySignalTtlEnabled(
   cfg: Pick<PaperTraderConfig, 'liveStagedEntrySignalTtlMs'>,
 ): boolean {
@@ -96,7 +98,7 @@ export function entrySplitBandOk(changePctFromAnchor: number, maxUpPct: number, 
   return changePctFromAnchor <= maxUpPct && changePctFromAnchor >= -maxDownPct;
 }
 
-/** Leg-2 entry split: dip-at-signal mode or legacy delay+corridor. */
+/** Leg-2 entry split: dip-at-signal mode or timed delay+corridor from signal anchor. */
 export function entrySplitLeg2Eligible(args: {
   st: LiveStagedEntryState;
   signalDropPct: number | null;
@@ -104,21 +106,64 @@ export function entrySplitLeg2Eligible(args: {
   entrySplitPx: number;
   anchorUsd: number;
 }): { ok: boolean; triggerPct: number } {
-  const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd } = args;
+  return entrySplitTimedLegEligible({
+    ...args,
+    legIndex: 2,
+  });
+}
+
+/** Leg-3+ timed entry split: `legIndex` × delay from leg-1, same corridor vs signal anchor. */
+export function entrySplitTimedLegEligible(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number | null;
+  nowMs: number;
+  entrySplitPx: number;
+  anchorUsd: number;
+  legIndex: 2 | 3;
+}): { ok: boolean; triggerPct: number } {
+  const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd, legIndex } = args;
   const targetDrop = st.entrySplitTargetDropPct ?? 0;
   if (targetDrop > 0) {
+    if (legIndex !== 2) return { ok: false, triggerPct: 0 };
     if (signalDropPct == null) return { ok: false, triggerPct: 0 };
     if (signalDropPct <= -targetDrop) return { ok: true, triggerPct: signalDropPct / 100 };
     return { ok: false, triggerPct: 0 };
   }
   const leg1Ts = st.entrySplitLeg1Ts ?? st.signalTs;
   const delay = st.entrySplitDelayMs ?? 10_000;
-  if (nowMs < leg1Ts + delay) return { ok: false, triggerPct: 0 };
+  const readyTs =
+    legIndex === 2
+      ? leg1Ts + delay
+      : (st.entrySplitLeg2Ts ?? leg1Ts + delay) + delay;
+  if (nowMs < readyTs) return { ok: false, triggerPct: 0 };
   const ch = pctFromAnchor(anchorUsd, entrySplitPx);
   const maxUp = st.entrySplitMaxUpPct ?? 3;
-  const maxDown = st.entrySplitMaxDownPct ?? 10;
+  const maxDown = st.entrySplitMaxDownPct ?? 5;
   if (ch != null && entrySplitBandOk(ch, maxUp, maxDown)) return { ok: true, triggerPct: ch / 100 };
   return { ok: false, triggerPct: 0 };
+}
+
+export function entrySplitLeg3Eligible(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number | null;
+  nowMs: number;
+  entrySplitPx: number;
+  anchorUsd: number;
+}): { ok: boolean; triggerPct: number } {
+  return entrySplitTimedLegEligible({ ...args, legIndex: 3 });
+}
+
+/** Stop pending entry-split legs after TP-ladder partial or first staged avg fill. */
+export function entrySplitCorridorBlocked(ot: OpenTrade): boolean {
+  if (ot.partialSells.some((p) => p.reason === 'TP_LADDER')) return true;
+  const st = ot.liveStagedEntry;
+  if (!st) return false;
+  return st.avgFirstLegDone === true || ot.legs.some((l) => l.reason === 'staged_avg');
+}
+
+export function cancelPendingEntrySplitLegs(st: LiveStagedEntryState): void {
+  st.entrySplitLeg2Done = true;
+  st.entrySplitLeg3Done = true;
 }
 
 export function pctFromAnchor(anchorUsd: number, priceUsd: number): number | null {
@@ -177,7 +222,9 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
 export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean {
   if (st.entrySplitV2) {
     const leg2Usd = st.entrySplitLeg2Usd ?? 0;
+    const leg3Usd = st.entrySplitLeg3Usd ?? 0;
     if (leg2Usd > 0 && !st.entrySplitLeg2Done) return true;
+    if (leg3Usd > 0 && !st.entrySplitLeg3Done) return true;
     if (!stagedAveragingConfigured(st)) return false;
     const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
     const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
@@ -221,13 +268,14 @@ export function buildLiveStagedEntryState(
   const tier = resolveLiveOscarTradeTierFromMcap(cfg, options?.marketCapUsd);
   const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   const splitLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  const splitLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
   const avgSecondUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  const avgThirdUsd = firstMintProbe ? 0 : cfg.liveStagedEntryThirdLegUsd;
-  const avgSecondDrop = firstMintProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
-  const avgThirdDrop = firstMintProbe ? 0 : cfg.liveStagedEntryThirdDropPct;
+  const avgThirdUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
+  const avgSecondDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
+  const avgThirdDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondDropPct(cfg, tier);
   const st: LiveStagedEntryState = {
     signalTs: signal.signalTs,
     signalPriceUsd: signal.signalPriceUsd,
@@ -238,6 +286,7 @@ export function buildLiveStagedEntryState(
     entrySplitV2: true,
     entrySplitLegUsd: splitLeg,
     entrySplitLeg2Usd: splitLeg2,
+    entrySplitLeg3Usd: splitLeg3,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
@@ -245,6 +294,7 @@ export function buildLiveStagedEntryState(
     entrySplitLeg1Ts: signal.signalTs,
     entrySplitAnchorUsd: signal.signalPriceUsd,
     entrySplitLeg2Done: splitLeg2 <= 0,
+    entrySplitLeg3Done: splitLeg3 <= 0,
     avgSecondDropPct: avgSecondDrop,
     avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
@@ -279,7 +329,7 @@ export function openNotionalUsdForStagedEntry(cfg: PaperTraderConfig): number {
 export function stagedEntryPlanInvestedCapUsd(cfg: PaperTraderConfig, tier?: LiveOscarTradeTier): number {
   let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
   sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  if (cfg.liveStagedEntryThirdLegUsd > 0) sum += cfg.liveStagedEntryThirdLegUsd;
+  sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
   return sum;
 }
 
@@ -302,8 +352,16 @@ export function reconcileEntrySplitV2FromLegs(ot: OpenTrade): void {
   if (!st?.entrySplitV2) return;
 
   const splitLegs = ot.legs.filter((l) => l.reason === 'entry_split');
-  if (splitLegs.length > 0) {
+  const leg2Usd = st.entrySplitLeg2Usd ?? 0;
+  const leg3Usd = st.entrySplitLeg3Usd ?? 0;
+  if (leg2Usd <= 0) st.entrySplitLeg2Done = true;
+  else if (splitLegs.length >= 1) {
     st.entrySplitLeg2Done = true;
+    st.entrySplitLeg2Ts = splitLegs[0]!.ts;
+  }
+  if (leg3Usd <= 0) st.entrySplitLeg3Done = true;
+  else if (splitLegs.length >= 2) st.entrySplitLeg3Done = true;
+  if (splitLegs.length > 0) {
     const anchorFromOpen = ot.legs.find((l) => l.reason === 'open')?.marketPrice;
     if (!((st.entrySplitAnchorUsd ?? 0) > 0)) {
       st.entrySplitAnchorUsd = anchorFromOpen ?? st.signalPriceUsd;

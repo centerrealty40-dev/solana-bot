@@ -19,6 +19,9 @@ import {
   stagedAveragingConfigured,
   usesLegacyStagedAdds,
   entrySplitLeg2Eligible,
+  entrySplitLeg3Eligible,
+  entrySplitCorridorBlocked,
+  cancelPendingEntrySplitLegs,
 } from './live-staged-entry-gates.js';
 import {
   entrySplitLeg2TimelineLabel,
@@ -146,33 +149,70 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   const anchor = st.entrySplitAnchorUsd ?? st.signalPriceUsd;
   const signalDropPct = signalDropPctFromState(st, curMetric);
 
-  const entrySplitLeg2Usd = st.entrySplitLeg2Usd ?? 0;
-  if (!st.entrySplitLeg2Done && entrySplitLeg2Usd > 0) {
-    const leg2 = entrySplitLeg2Eligible({
-      st,
-      signalDropPct,
-      nowMs: now,
-      entrySplitPx,
-      anchorUsd: anchor,
-    });
-    if (leg2.ok) {
-      const usd = st.entrySplitLeg2Usd ?? st.entrySplitLegUsd ?? st.firstLegUsd;
-      const chPct = leg2.triggerPct * 100;
-      const ok = await pushBuyLeg({
-        cfg: args.cfg,
-        ot: args.ot,
-        mint: args.mint,
-        addUsd: usd,
-        marketBuy: entrySplitPx,
-        reason: 'entry_split',
-        triggerPct: leg2.triggerPct,
-        livePhase4: args.livePhase4,
-        journalAppend: args.journalAppend,
-        journalLiveStrategy: args.journalLiveStrategy,
-        timelineLabelRu: entrySplitLeg2TimelineLabel(usd, chPct, st.entrySplitTargetDropPct),
-        logTag: 'ENTRY_SPLIT',
+  if (entrySplitCorridorBlocked(args.ot)) {
+    cancelPendingEntrySplitLegs(st);
+  } else {
+    const entrySplitLeg2Usd = st.entrySplitLeg2Usd ?? 0;
+    if (!st.entrySplitLeg2Done && entrySplitLeg2Usd > 0) {
+      const leg2 = entrySplitLeg2Eligible({
+        st,
+        signalDropPct,
+        nowMs: now,
+        entrySplitPx,
+        anchorUsd: anchor,
       });
-      if (ok) st.entrySplitLeg2Done = true;
+      if (leg2.ok) {
+        const usd = st.entrySplitLeg2Usd ?? st.entrySplitLegUsd ?? st.firstLegUsd;
+        const chPct = leg2.triggerPct * 100;
+        const ok = await pushBuyLeg({
+          cfg: args.cfg,
+          ot: args.ot,
+          mint: args.mint,
+          addUsd: usd,
+          marketBuy: entrySplitPx,
+          reason: 'entry_split',
+          triggerPct: leg2.triggerPct,
+          livePhase4: args.livePhase4,
+          journalAppend: args.journalAppend,
+          journalLiveStrategy: args.journalLiveStrategy,
+          timelineLabelRu: entrySplitLeg2TimelineLabel(usd, chPct, st.entrySplitTargetDropPct),
+          logTag: 'ENTRY_SPLIT',
+        });
+        if (ok) {
+          st.entrySplitLeg2Done = true;
+          st.entrySplitLeg2Ts = Date.now();
+        }
+      }
+    }
+
+    const entrySplitLeg3Usd = st.entrySplitLeg3Usd ?? 0;
+    if (!st.entrySplitLeg3Done && entrySplitLeg3Usd > 0 && st.entrySplitLeg2Done) {
+      const leg3 = entrySplitLeg3Eligible({
+        st,
+        signalDropPct,
+        nowMs: now,
+        entrySplitPx,
+        anchorUsd: anchor,
+      });
+      if (leg3.ok) {
+        const usd = entrySplitLeg3Usd;
+        const chPct = leg3.triggerPct * 100;
+        const ok = await pushBuyLeg({
+          cfg: args.cfg,
+          ot: args.ot,
+          mint: args.mint,
+          addUsd: usd,
+          marketBuy: entrySplitPx,
+          reason: 'entry_split',
+          triggerPct: leg3.triggerPct,
+          livePhase4: args.livePhase4,
+          journalAppend: args.journalAppend,
+          journalLiveStrategy: args.journalLiveStrategy,
+          timelineLabelRu: entrySplitLeg2TimelineLabel(usd, chPct, st.entrySplitTargetDropPct),
+          logTag: 'ENTRY_SPLIT',
+        });
+        if (ok) st.entrySplitLeg3Done = true;
+      }
     }
   }
 
@@ -213,6 +253,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       st.avgFirstLegDone = true;
       st.avgFirstLegTs = now;
       st.secondLegDone = true;
+      cancelPendingEntrySplitLegs(st);
     }
   }
 

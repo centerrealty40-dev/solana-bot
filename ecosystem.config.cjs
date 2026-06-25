@@ -87,10 +87,10 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.494 — 3-leg staged entry ($200/$300 only): prod/low $200+$200+$300=$700; micro $300+$200+$300=$800; scalp_wave $300.
  * 1.11.497 — micro: no leg-2 @ −5%; $300 open + $300 staged_avg @ −10% = $600 max.
  * 1.11.499 — «Живой Оскар» canon: prod/low $500+$300+$200=$1000; micro re-enables leg-2 @ −5%: $300+$200+$100=$600; scalp_wave $300; half8_runner flat TP ON.
- * PAPER_POSITION_USD = split leg1+leg2 ($800 prod/low); LIVE_MAX = prod full plan ($1000).
+ * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '800';
-const LIVE_OSCAR_MAX_POSITION_USD = '1000';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '1200';
+const LIVE_OSCAR_MAX_POSITION_USD = '1800';
 
 /** live-oscar-preset-c: $200 entry @ −10% + $150 DCA @ −20% (SuperBot wallet). */
 const PRESET_C_ENTRY_USD = '200';
@@ -418,28 +418,27 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.499 — 3-leg staged entry ($1000 max prod/low): leg-1 $500 @ signal (0%), leg-2 $300 @ −5%,
-         * leg-3 $200 @ −10% от якоря сигнала; kill −50%. PAPER_POSITION_USD = leg1+leg2 ($800).
+         * 1.11.500 — prod ≥$3M: 3×$400 entry split @10s (+3/−5% corridor); avg −5% $300, −20% $300; max $1800.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '10',
-        /** >0: 2-я нога сплита только при −N% от signal (вместо delay+corridor). */
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '5',
-        /** Leg-3: $200 @ −10% от сигнала (staged add-on; cooldown 0 = без паузы после leg-1). */
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
+        /** 0 = timed corridor splits (not dip-triggered leg-2). */
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '200',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '5',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '300',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
@@ -450,7 +449,7 @@ const PM2_APPS = [
          * after a 1h −10% wait (overrides SIGNAL_TTL_MS). Plumbing shipped default-OFF; owner
          * flips when ready. Rollback: set back to '0' (or remove) → current behaviour.
          */
-        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '1', // 1.11.477: ACTIVE 1h hard-skip (was '0' OFF)
+        PAPER_LIVE_STAGED_ENTRY_WAIT_HOURS: '0',
         /**
          * 1.11.466 — observability-only: если возраст использованной PG-цены на входе > N мс,
          * журналируем метрику `live_stale_price_warn` (priceAgeMs, mint, lane). НЕ меняет торговлю.
@@ -514,43 +513,38 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $500k (micro-lane). Prod-входы — mcap ≥ $3M (tier prod).
-         * Micro $500k–$1.3M и low $1.3M–$3M — отдельные dip/vol (см. PAPER_LIVE_OSCAR_*).
+         * Discovery SQL pool: от $2M (min tradeable mcap). Prod — mcap ≥ $3M; low $2M–$3M.
+         * Micro/scalp_wave lanes disabled (1.11.500).
          */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '500000',
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
         /** Не сканировать discovery pool / eval для mcap > $50M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '50000000',
-        /** 1.11.498 — micro $500k–$1.3M: dip −30%, vol1h ≥$20k; $300 open + $300 avg @ −10% (max $600). Leg-2 split @ −5% off. */
-        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '1',
+        /** 1.11.500 — micro lane OFF (min mcap $2M). */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '20000',
-        /** 1.11.499 — micro снова трёхногий: leg-1 $300 @ signal, leg-2 $200 @ −5%, leg-3 $100 @ −10% = $600 max. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '500',
-        /** Leg-3 staged avg @ −10% (micro); prod/low use PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($200). */
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '100',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.494 — узкий коридор $1.3M–$3M: dip −30%, vol1h ≥$35k; split $200+$200 (boot $400, max $700), leg-1 @ signal (0%), leg-2 @ −5%, leg-3 @ −10% $300. (1.11.476: vol 75k→35k). */
+        /** 1.11.500 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250 (max $750). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
-        PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '1300000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '300',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '800',
-        /** Leg-3 staged avg @ −10% (low); prod uses PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD ($200). */
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '200',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '250',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '250',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '0',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '250',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
-        /**
-         * 1.11.491 — Фаза 4: scalp_wave lane ($800k–$30M, age ≥12h no max, shallow dip −8..−15%).
-         * One-shot $300, exit scalp_wave_v1 (+10% TP / −10% kill / 3h timestop), max 3 concurrent.
-         * Mint mutex: один mint = одна OpenTrade (prod/micro/low/scalp_wave).
-         */
-        PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '1',
+        /** 1.11.500 — scalp_wave lane OFF. */
+        PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN: '720',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_MCAP_USD: '800000',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD: '30000000',
@@ -563,7 +557,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS: '3',
-        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $1.3–3M без изменений. */
+        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
@@ -884,6 +878,9 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
         /** Min ms between partial TP sells on same mint (Jupiter 429 mitigation). */
         LIVE_PARTIAL_TP_MIN_INTERVAL_MS: '5000',
+        /** 1.11.502 — split large live exits (partial TP, kill, full close) into ≤$250 slices. */
+        LIVE_EXIT_SLICE_MAX_USD: '250',
+        LIVE_EXIT_SLICE_DELAY_MS: '5000',
 
         PAPER_SIM_AUDIT_ENABLED: '1',
         PAPER_SIM_SAMPLE_PCT: '5',

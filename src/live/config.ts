@@ -190,6 +190,18 @@ const LiveOscarConfigSchema = z
     liveSellMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
 
     /**
+     * 1.11.502 — Chunk large live exits (partial TP, kill stop, full close) into slices
+     * of at most this USD notional. **0** = off (single-shot sell).
+     * Env: `LIVE_EXIT_SLICE_MAX_USD`.
+     */
+    liveExitSliceMaxUsd: z.coerce.number().min(0).max(10_000).default(250),
+    /**
+     * Ms to wait between exit slices when `liveExitSliceMaxUsd` splits a sell.
+     * Env: `LIVE_EXIT_SLICE_DELAY_MS`.
+     */
+    liveExitSliceDelayMs: z.coerce.number().int().min(0).max(120_000).default(5000),
+
+    /**
      * 1.11.234 — Anti-chase guard для buy-pipeline.
      *
      * Внутри одного `runSolToTokenPipeline` фиксируем `tokensPerLamport`
@@ -680,6 +692,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
     liveBuyMaxPriceImpactPct: process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT,
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
+    liveExitSliceMaxUsd: process.env.LIVE_EXIT_SLICE_MAX_USD,
+    liveExitSliceDelayMs: process.env.LIVE_EXIT_SLICE_DELAY_MS,
     liveBuyMaxChasePct: process.env.LIVE_BUY_MAX_CHASE_PCT,
     liveWalletSplBalanceCacheTtlMs: process.env.LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS,
     liveStagedAddSimErrThreshold: process.env.LIVE_STAGED_ADD_SIM_ERR_THRESHOLD,

@@ -151,7 +151,9 @@ export function applyLiveOscarPhaseEscalation(args: {
     );
     markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
     const leg2Usd = ot.liveStagedEntry.entrySplitLeg2Usd ?? 0;
+    const leg3Usd = ot.liveStagedEntry.entrySplitLeg3Usd ?? 0;
     ot.liveStagedEntry.entrySplitLeg2Done = leg2Usd <= 0;
+    ot.liveStagedEntry.entrySplitLeg3Done = leg3Usd <= 0;
     ot.liveStagedEntry.secondLegDone = false;
     ot.liveStagedEntry.avgFirstLegDone = false;
     ot.liveStagedEntry.avgSecondLegDone = false;

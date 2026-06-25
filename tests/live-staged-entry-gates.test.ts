@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   entrySplitBandOk,
+  entrySplitCorridorBlocked,
   entrySplitLeg2Eligible,
   liveStagedEntryAddWindowOpen,
   liveStagedEntryHasPendingLegs,
@@ -13,7 +14,7 @@ import {
   stagedAvgSecondEligible,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
-import type { LiveStagedEntryState, OpenTrade } from '../src/papertrader/types.js';
+import type { LiveStagedEntryState, OpenTrade, PartialSell } from '../src/papertrader/types.js';
 
 function baseSt(): LiveStagedEntryState {
   return {
@@ -213,6 +214,59 @@ describe('entrySplitBandOk', () => {
     expect(entrySplitBandOk(-10, 3, 10)).toBe(true);
     expect(entrySplitBandOk(3.1, 3, 10)).toBe(false);
     expect(entrySplitBandOk(-10.1, 3, 10)).toBe(false);
+  });
+});
+
+describe('entrySplitCorridorBlocked', () => {
+  function otWithPartials(reasons: Array<PartialSell['reason']>): OpenTrade {
+    return {
+      partialSells: reasons.map((reason) => ({ reason })),
+      liveStagedEntry: baseSt(),
+      legs: [],
+    } as unknown as OpenTrade;
+  }
+
+  it('blocks only on TP_LADDER partials, not breakeven/trail/derisk', () => {
+    expect(entrySplitCorridorBlocked(otWithPartials(['TP_LADDER']))).toBe(true);
+    expect(entrySplitCorridorBlocked(otWithPartials(['BREAKEVEN_TRIM']))).toBe(false);
+    expect(entrySplitCorridorBlocked(otWithPartials(['TRAIL_STEP']))).toBe(false);
+    expect(entrySplitCorridorBlocked(otWithPartials(['WAVE_B_POST_TP1_DERISK']))).toBe(false);
+    expect(entrySplitCorridorBlocked(otWithPartials(['WAVE_B_BREAKEVEN_INSURANCE']))).toBe(false);
+    expect(entrySplitCorridorBlocked({ partialSells: [], liveStagedEntry: baseSt(), legs: [] } as unknown as OpenTrade)).toBe(false);
+  });
+
+  it('blocks after first staged avg leg', () => {
+    const st = baseSt();
+    const ot = {
+      partialSells: [],
+      liveStagedEntry: { ...st, avgFirstLegDone: true },
+      legs: [{ reason: 'staged_avg' }],
+    } as unknown as OpenTrade;
+    expect(entrySplitCorridorBlocked(ot)).toBe(true);
+  });
+});
+
+describe('entrySplitCorridorRetry', () => {
+  it('allows leg2 after delay when price re-enters corridor (not one-shot)', () => {
+    const st = { ...baseSt(), entrySplitTargetDropPct: 0, entrySplitMaxUpPct: 3, entrySplitMaxDownPct: 5 };
+    const leg1Ts = st.entrySplitLeg1Ts!;
+    const anchor = 1;
+    const outside = entrySplitLeg2Eligible({
+      st,
+      signalDropPct: 0,
+      nowMs: leg1Ts + 15_000,
+      entrySplitPx: 1.04,
+      anchorUsd: anchor,
+    });
+    expect(outside.ok).toBe(false);
+    const inside = entrySplitLeg2Eligible({
+      st,
+      signalDropPct: 0,
+      nowMs: leg1Ts + 180_000,
+      entrySplitPx: 1.02,
+      anchorUsd: anchor,
+    });
+    expect(inside.ok).toBe(true);
   });
 });
 
