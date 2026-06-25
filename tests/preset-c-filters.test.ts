@@ -21,17 +21,20 @@ describe('preset C filters', () => {
     expect(passesPresetCRetraceBand(30.1)).toBe(false);
   });
 
-  it('passes unknown or zero mcap (enter when mcap not known)', () => {
+  it('rejects unknown or zero mcap (require known mcap ≥ $1M)', () => {
     expect(isPresetCMcapKnown(0)).toBe(false);
     expect(isPresetCMcapKnown(NaN)).toBe(false);
-    expect(passesPresetCMcapBand(0)).toBe(true);
-    expect(passesPresetCMcapBand(NaN)).toBe(true);
+    expect(passesPresetCMcapBand(0)).toBe(false);
+    expect(passesPresetCMcapBand(NaN)).toBe(false);
     expect(
       presetCFilterReasons({ refMcapUsd: 0, retraceFromPeakPct: 10 }),
-    ).toEqual([]);
+    ).toContain('preset_c_mcap_below_1m');
     expect(
       presetCFilterReasons({ refMcapUsd: 0, retraceFromPeakPct: 5 }),
-    ).toContain('preset_c_retrace_outside_9_30pct');
+    ).toEqual([
+      'preset_c_mcap_below_1m',
+      'preset_c_retrace_outside_9_30pct',
+    ]);
   });
 
   it('evaluatePresetCCandidateGeometry matches band', () => {

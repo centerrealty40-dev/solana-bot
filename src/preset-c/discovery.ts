@@ -35,7 +35,7 @@ function resolvePresetCPhaseTier(
   cfg: PaperTraderConfig,
   mcapUsd: number,
 ): LiveOscarTradeTier | undefined {
-  if (!isPresetCMcapKnown(mcapUsd)) return 'low';
+  if (!isPresetCMcapKnown(mcapUsd)) return undefined;
   if (resolveLiveOscarScalpWaveMcapTier(cfg, mcapUsd) === 'scalp_wave') {
     return 'scalp_wave';
   }
