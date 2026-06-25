@@ -1109,17 +1109,15 @@ const PM2_APPS = [
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.168: persistent retry x10 на quote+swap для buy и sell с тугим slippage
-         * 50bps. Эмулирует ручную торговлю в jup.ag UI — выставляем минимальный
-         * допустимый slippage и долбим запросы до победы; Jupiter сам выберет момент
-         * когда пул стабилен. Пауза 3с между попытками (быстрее чем 5с в 1.11.167),
-         * чтобы общая retry-петля укладывалась в 30 с — за это время цена редко уйдёт
-         * ниже взятой ступени TP-лесенки.
+         * 1.11.503: persistent retry x15 на quote+swap для buy и sell с тугим slippage
+         * 10bps. Эмулирует ручную торговлю в jup.ag UI — минимальный slippage и
+         * больше попыток до победы; Jupiter выбирает момент когда пул стабилен.
+         * Пауза 150ms между попытками — быстрый burst в рамках Pro RPS.
          */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_BUY_SIM_RETRY_DELAY_MS: '200',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '200',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '15',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '15',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
         /** 1.11.458 — hot tick: executable sell quote for open positions every 2s; kill pre-arm + fast tracker trigger. */
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
         LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2000',
@@ -1132,28 +1130,17 @@ const PM2_APPS = [
         LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
         JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
         /**
-         * 1.11.230 — Smart retry classification (A.2).
+         * 1.11.503 — Smart retry classification (A.2), tighter slippage envelope.
          *
-         * Если внутри общего retry-envelope (10 попыток для buy / sell) Jupiter возвращает
-         * **slippage class** `sim_err` (`InstructionError[*,{"Custom":1}]`, `0x1771`,
-         * текст «Slippage tolerance exceeded»), мы:
-         *   1) считаем slippage-class attempts ОТДЕЛЬНО от общего счётчика;
-         *   2) бампим `slippageBps` на `LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS` каждый retry,
-         *      капируем на `LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS` (даём Jupiter Pro собрать
-         *      route с приемлемым price impact на разных пулах);
-         *   3) кэпируем по `LIVE_*_SIM_SLIPPAGE_RETRY_ATTEMPTS` — если уже несколько раз
-         *      подряд получили slippage-class на тот же intent, дальнейшие повторы
-         *      бесполезны (route стабилен, пул просто не выдаёт нужный fill).
-         *
-         * Buy: 3 попытки (50 → 100 → 150 bps) — потеряем меньше QN-кредитов на
-         * глухих маршрутах, чем при 11 одинаковых сим-фейлах. Sell: 6 попыток
-         * (50 → 100 → 150 → 200 → 250 → 300 bps) — выходить надо обязательно,
-         * адаптивный slippage помогает протолкнуть TP/SL в просадке.
+         * Внутри общего retry-envelope (15 попыток buy/sell) на slippage-class `sim_err`:
+         *   1) slippage-class attempts отдельно от общего счётчика;
+         *   2) bump `slippageBps` +10 bps каждый retry, cap 100 bps;
+         *   3) buy slippage-cap 8 (10→20→…→100), sell 12 — exits должны пройти.
          */
-        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '2',
-        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '5',
-        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50',
-        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '300',
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8',
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '12',
+        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
+        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
         /**
          * 1.11.230 — Staged-add sim_err cooldown (A.1).
          *
@@ -1175,13 +1162,9 @@ const PM2_APPS = [
         LIVE_STAGED_ADD_AUTO_DENYLIST_TELEGRAM_ENABLED: '1',
 
         /**
-         * 1.11.231 — adaptive Jupiter priority fee при congestion.
-         *
-         * Если получили 5+ confirm_timeout подряд за 10 минут — boost'аем
-         * `liveJupiterPriorityMaxLamports` × 2.5 и держим 30 минут. Потом обратно.
-         * Спасает от того, что наши tx залипают в очереди валидаторов при congestion.
+         * 1.11.503 — adaptive priority fee OFF: фиксированный cap 0.0001 SOL + level high.
          */
-        LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED: '1',
+        LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED: '0',
         LIVE_ADAPTIVE_PRIORITY_FEE_THRESHOLD: '5',
         LIVE_ADAPTIVE_PRIORITY_FEE_WINDOW_MS: '600000',
         LIVE_ADAPTIVE_PRIORITY_FEE_BOOST_FACTOR: '2.5',
@@ -1218,23 +1201,18 @@ const PM2_APPS = [
          */
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
         /**
-         * Jupiter quote + swap: max execution tolerance (bps). 1.11.168:
-         * **100 → 50** (1% → 0.5%). Жёсткий слиппедж = больше rejection'ов
-         * Jupiter quote, но persistent retry x10 их прокатает. Бенефит — мы
-         * принципиально не отдаём боту больше 0.5% между quote и swap; всё
-         * что выше — это price-impact самого пула (видно в `priceImpactPct`,
-         * не настраивается, лечится только меньшим размером ордера → см.
-         * новый sellFraction-профиль 1.11.168).
+         * Jupiter quote + swap: max execution tolerance (bps). 1.11.503:
+         * **10 bps** (0.1%) base + adaptive bump до 100 bps на slippage-class retry.
          */
-        LIVE_DEFAULT_SLIPPAGE_BPS: '50',
+        LIVE_DEFAULT_SLIPPAGE_BPS: '10',
         LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
         LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
         /**
          * Jupiter `/swap/v1/swap`: cap priority fee at **0.0001 SOL** (100_000 lamports) via `priorityLevelWithMaxLamports`.
-         * `veryHigh` — максимально агрессивный приоритет в рамках cap (дороже по приоритет-фии).
+         * `high` — агрессивный приоритет в рамках cap (1.11.503: veryHigh → high).
          */
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
+        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'high',
         /**
          * Пауза между mint после Jupiter MTM (см. `LIVE_TRACKER_INTER_MINT_DELAY_MS`): 60 ms — ближе к ~10 RPS.
          * Полный снятие паузы: `0` (не задаём здесь без мониторинга 429).

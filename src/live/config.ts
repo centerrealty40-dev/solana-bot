@@ -65,7 +65,7 @@ const LiveOscarConfigSchema = z
     liveJupiterSwapUrl: z.string().min(1).optional(),
     liveJupiterQuoteTimeoutMs: z.coerce.number().int().min(500).max(30_000).default(5000),
     liveJupiterSwapTimeoutMs: z.coerce.number().int().min(500).max(60_000).default(8000),
-    liveDefaultSlippageBps: z.coerce.number().int().min(10).max(5000).default(400),
+    liveDefaultSlippageBps: z.coerce.number().int().min(1).max(5000).default(400),
     /**
      * Optional: max prioritization lamports passed to Jupiter `/swap/v1/swap` as `priorityLevelWithMaxLamports.maxLamports`.
      * Unset ⇒ omit field (Jupiter default). Example: **0.0001 SOL** = `100_000` lamports via **`LIVE_JUPITER_PRIORITY_MAX_SOL`**.
