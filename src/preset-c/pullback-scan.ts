@@ -105,13 +105,8 @@ function sqlMintPairInTuples(rows: LatestMeta[]): string | null {
 function buildLatestOnlyQuery(table: DexTable): string {
   const liqClause = MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause = MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
-  const mcapClause = `AND (
-      COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) = 0
-      OR (
-        COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) >= ${PRESET_C_MIN_MCAP_USD}
-        AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) <= ${PRESET_C_MAX_MCAP_USD}
-      )
-    )`;
+  const mcapClause = `AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) >= ${PRESET_C_MIN_MCAP_USD}
+    AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) <= ${PRESET_C_MAX_MCAP_USD}`;
   const holdersClause = HOLDER_NULL_SOFT
     ? `AND (t.holder_count IS NULL OR t.holder_count >= ${MIN_HOLDERS})`
     : `AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}`;

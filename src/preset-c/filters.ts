@@ -13,7 +13,7 @@ export function isPresetCMcapKnown(mcapUsd: number): boolean {
 }
 
 export function passesPresetCMcapBand(mcapUsd: number): boolean {
-  if (!isPresetCMcapKnown(mcapUsd)) return true;
+  if (!isPresetCMcapKnown(mcapUsd)) return false;
   const m = Number(mcapUsd);
   if (m + 1e-9 < PRESET_C_MIN_MCAP_USD) return false;
   if (m > PRESET_C_MAX_MCAP_USD + 1e-9) return false;
@@ -36,6 +36,7 @@ export function presetCFilterReasons(args: {
   const reasons: string[] = [];
   const m = args.refMcapUsd;
   if (!isPresetCMcapKnown(m)) {
+    reasons.push(`preset_c_mcap_below_${(PRESET_C_MIN_MCAP_USD / 1e6).toFixed(0)}m`);
     const r = args.retraceFromPeakPct;
     if (!passesPresetCRetraceBand(r)) {
       reasons.push(`preset_c_retrace_outside_${PRESET_C_MIN_RETRACE_PCT}_${PRESET_C_MAX_RETRACE_PCT}pct`);
