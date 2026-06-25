@@ -66,7 +66,23 @@
 
 **Изменение:** shared `jupiter-http.ts` + `live/jupiter.ts` записывают HTTP 429 в in-process sliding window; при **≥4** событиях за 60s или при **исчерпании retry** на quote/swap — `[ALERT][jupiter-429-burst]` / `[ALERT][jupiter-429-exhaust]` в операторский Telegram (не ждать 30min `sa-rate-429-report`). Env: `JUPITER_429_BURST_TELEGRAM`, `JUPITER_429_BURST_THRESHOLD`, `JUPITER_429_EXHAUST_TELEGRAM`.
 
-**Откат:** redeploy `sa-alpha-1.11.502`; `JUPITER_429_BURST_TELEGRAM=0` + `JUPITER_429_EXHAUST_TELEGRAM=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+**Откат:** redeploy `sa-alpha-1.11.503`; `JUPITER_429_BURST_TELEGRAM=0` + `JUPITER_429_EXHAUST_TELEGRAM=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.503] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.503`
+
+### live-oscar: slippage optimization — 10 bps base, more retries, adaptive bump до 100 bps
+
+**Изменение:** PM2 `live-oscar` — минимизация slippage для PnL: `LIVE_DEFAULT_SLIPPAGE_BPS=10`, bump +10 bps / cap 100 bps, buy slippage-retry 8 / sell 12, общие sim-retry 15 @ 150 ms, `LIVE_JUPITER_SWAP_PRIORITY_LEVEL=high`, `LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED=0`. Cap priority fee **0.0001 SOL** без изменений; exit slices и sell impact gate без изменений.
+
+**Код:** `liveDefaultSlippageBps` schema min **10 → 1** bps (future ops).
+
+**Откат:** redeploy `sa-alpha-1.11.502`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
 
 Без cross-product изменений.
 
