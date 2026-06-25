@@ -28,6 +28,7 @@ import type {
   LiveOscarPhase4Tracker,
   LiveOscarRuntimeBundle,
   LivePhase4BuyOpenContext,
+  LiveTokenToSolPipelineResult,
 } from './phase4-types.js';
 import type { DexSource } from '../papertrader/types.js';
 import {
@@ -74,6 +75,7 @@ import {
   type StagedAddIntentKind,
 } from './staged-add-sim-cooldown.js';
 import { recordSendOutcome as recordPriorityFeeOutcome } from './adaptive-priority-fee.js';
+import { runSlicedTokenToSolPipeline } from './exit-slice.js';
 import {
   clearArmedSellQuote,
   consumeArmedSellQuote,
@@ -750,21 +752,6 @@ async function runSolToTokenPipeline(
   return failure('other', 'other', 'retries_exhausted');
 }
 
-export type LiveTokenToSolPipelineResult = {
-  ok: boolean;
-  wsolOutLamports?: bigint;
-  /** Откуда взяты lamports для учёта partial/full sell. */
-  solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
-  txSignature?: string | null;
-  /**
-   * 1.11.168: priceImpactPct из последней Jupiter-котировки (которая прошла) — 0..1, не %.
-   * Прокидывается до tracker.ts для записи в `partialSells[].priceImpactPct`.
-   */
-  priceImpactPct?: number;
-  /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
-  retryAttempts?: number;
-};
-
 function resolveSellExecutionMode(liveCfg: LiveOscarConfig): LiveOscarConfig['executionMode'] {
   if (liveCfg.executionMode === 'simulate' && liveCfg.liveSimulateBuysOnly) return 'live';
   return liveCfg.executionMode;
@@ -1212,7 +1199,7 @@ export async function executeLiveTokenToSolPipeline(
     intentKind: 'sell_partial' | 'sell_full';
   },
 ): Promise<LiveTokenToSolPipelineResult> {
-  return runTokenToSolPipeline(liveCfg, args);
+  return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline);
 }
 
 function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
@@ -1325,7 +1312,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
       });
     },
     tryTokenToSolSell(args) {
-      return runTokenToSolPipeline(liveCfg, args).then((r) => ({
+      return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline).then((r) => ({
         ok: r.ok,
         solProceedsLamports: r.wsolOutLamports,
         solProceedsSource: r.solProceedsSource,

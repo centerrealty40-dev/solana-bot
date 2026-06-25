@@ -74,6 +74,21 @@ export type LiveTokenToSolSellResult = {
   retryAttempts?: number;
 };
 
+export type LiveTokenToSolPipelineResult = {
+  ok: boolean;
+  wsolOutLamports?: bigint;
+  /** Откуда взяты lamports для учёта partial/full sell. */
+  solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
+  txSignature?: string | null;
+  /**
+   * 1.11.168: priceImpactPct из последней Jupiter-котировки (которая прошла) — 0..1, не %.
+   * Прокидывается до tracker.ts для записи в `partialSells[].priceImpactPct`.
+   */
+  priceImpactPct?: number;
+  /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
+  retryAttempts?: number;
+};
+
 export interface LiveOscarPhase4Tracker {
   trySolToTokenBuy(args: {
     mint: string;

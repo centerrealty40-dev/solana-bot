@@ -513,6 +513,35 @@ export const StagedAvgAddSchema = z.object({
   liveExitProfileMode: z.literal('B').optional(),
 });
 
+/** 1.11.502 — planned multi-slice live exit (partial TP, kill, full close). */
+export const ExitSlicePlanSchema = z.object({
+  kind: z.literal('exit_slice_plan'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.enum(['sell_partial', 'sell_full']).optional(),
+  totalUsdNotional: z.number().finite().optional(),
+  maxUsdPerSlice: z.number().finite().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  delayMs: z.number().int().nonnegative().optional(),
+});
+
+export const ExitSliceAttemptSchema = z.object({
+  kind: z.literal('exit_slice_attempt'),
+  mint: z.string().min(1).max(64),
+  sliceIndex: z.number().int().nonnegative().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  usdNotional: z.number().finite().optional(),
+  intentKind: z.enum(['sell_partial', 'sell_full']).optional(),
+});
+
+export const ExitSliceResultSchema = z.object({
+  kind: z.literal('exit_slice_result'),
+  mint: z.string().min(1).max(64),
+  sliceIndex: z.number().int().nonnegative().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  ok: z.boolean().optional(),
+  slicesCompleted: z.number().int().nonnegative().optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -552,6 +581,9 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootWalletOrphanRestoreSchema,
   EntrySplitAddSchema,
   StagedAvgAddSchema,
+  ExitSlicePlanSchema,
+  ExitSliceAttemptSchema,
+  ExitSliceResultSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;
