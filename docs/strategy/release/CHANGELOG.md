@@ -58,6 +58,22 @@
 
 ---
 
+## [1.11.503] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.503`
+
+### live-oscar: slippage optimization — 10 bps base, more retries, adaptive bump до 100 bps
+
+**Изменение:** PM2 `live-oscar` — минимизация slippage для PnL: `LIVE_DEFAULT_SLIPPAGE_BPS=10`, bump +10 bps / cap 100 bps, buy slippage-retry 8 / sell 12, общие sim-retry 15 @ 150 ms, `LIVE_JUPITER_SWAP_PRIORITY_LEVEL=high`, `LIVE_ADAPTIVE_PRIORITY_FEE_ENABLED=0`. Cap priority fee **0.0001 SOL** без изменений; exit slices и sell impact gate без изменений.
+
+**Код:** `liveDefaultSlippageBps` schema min **10 → 1** bps (future ops).
+
+**Откат:** redeploy `sa-alpha-1.11.502`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.502] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.502`
