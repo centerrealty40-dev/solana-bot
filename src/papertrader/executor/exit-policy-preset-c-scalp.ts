@@ -205,7 +205,7 @@ export function evaluatePresetCScalpExitAction(
   return { kind: 'none' };
 }
 
-/** DCA leg at −10% from signal (max one add). */
+/** Optional DCA leg at `dcaDropPct` from signal (max one add; disabled when `dcaUsd` is 0). */
 export function presetCScalpDcaDue(
   ot: OpenTrade,
   marketPx: number,
@@ -219,15 +219,14 @@ export function presetCScalpDcaDue(
   return dropPct + 1e-6 >= scalp.dcaDropPct;
 }
 
-/** Second DCA leg at −20% from signal (after DCA1, max one add). */
+/** DCA leg at `dca2DropPct` from signal (after DCA1 when enabled, max one add). */
 export function presetCScalpDca2Due(
   ot: OpenTrade,
   marketPx: number,
   scalp: PresetCScalpConfig = loadPresetCScalpConfig(),
 ): boolean {
-  if (!isPresetCScalpExitPolicy(ot) || !ot.presetCScalpDcaLegDone || ot.presetCScalpDca2LegDone) {
-    return false;
-  }
+  if (!isPresetCScalpExitPolicy(ot) || ot.presetCScalpDca2LegDone) return false;
+  if (scalp.dcaUsd > 0 && !ot.presetCScalpDcaLegDone) return false;
   if (!(scalp.dca2Usd > 0)) return false;
   const anchor = presetCScalpAnchorPriceUsd(ot);
   if (!(anchor > 0) || !(marketPx > 0)) return false;

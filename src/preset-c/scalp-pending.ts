@@ -130,7 +130,7 @@ export type PresetCScalpReadyEntry = PresetCScalpPendingSignal & {
 };
 
 /**
- * Pending mints whose price reached entry drop (−5% default) and are not yet opened.
+ * Pending mints whose price reached entry drop (−10% default) and are not yet opened.
  */
 export async function findPresetCScalpEntriesReady(
   openMints: ReadonlySet<string>,

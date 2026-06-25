@@ -322,7 +322,7 @@ export interface TrackerArgs {
   reconcileOrphanMinPositionAgeMs?: number;
   /** After full close — e.g. clear staged entry signal so re-entry cannot bypass dip gate. */
   onMintFullClose?: (mint: string) => void;
-  /** Preset C scalp — check pending −5% entries between discovery ticks. */
+  /** Preset C scalp — check pending −10% entries between discovery ticks. */
   processPresetCScalpDeferredEntries?: () => Promise<void>;
 }
 

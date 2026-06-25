@@ -55,7 +55,7 @@ describe('preset-c-scalp-config', () => {
     }
     process.env.PAPER_STRATEGY_ID = 'live-oscar-preset-c';
     process.env.PRESET_C_SCALP_MODE = '1';
-    process.env.PRESET_C_SCALP_ENTRY_DROP_PCT = '5';
+    process.env.PRESET_C_SCALP_ENTRY_DROP_PCT = '10';
   });
 
   afterEach(() => {
@@ -73,14 +73,14 @@ describe('preset-c-scalp-config', () => {
     expect(isPresetCScalpModeEnabled(cfgMain)).toBe(false);
   });
 
-  it('loads default entry drop 5% and kill 50%', () => {
+  it('loads default entry drop 10% and kill 50%', () => {
     const scalp = loadPresetCScalpConfig();
-    expect(scalp.entryDropPct).toBe(5);
+    expect(scalp.entryDropPct).toBe(10);
     expect(scalp.dcaDropPct).toBe(10);
     expect(scalp.dca2DropPct).toBe(20);
-    expect(scalp.entryUsd).toBe(100);
-    expect(scalp.dcaUsd).toBe(100);
-    expect(scalp.dca2Usd).toBe(100);
+    expect(scalp.entryUsd).toBe(200);
+    expect(scalp.dcaUsd).toBe(0);
+    expect(scalp.dca2Usd).toBe(150);
     expect(scalp.tp2Pct).toBe(5);
     expect(scalp.tpMidPct).toBe(10);
     expect(scalp.tp3Pct).toBe(15);
@@ -123,7 +123,7 @@ describe('preset-c-scalp-exit-policy', () => {
   const envBackup: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    for (const k of ['PAPER_STRATEGY_ID', 'PRESET_C_SCALP_MODE']) {
+    for (const k of ['PAPER_STRATEGY_ID', 'PRESET_C_SCALP_MODE', 'PRESET_C_SCALP_DCA_USD']) {
       envBackup[k] = process.env[k];
     }
     process.env.PAPER_STRATEGY_ID = 'live-oscar-preset-c';
@@ -236,13 +236,30 @@ describe('preset-c-scalp-exit-policy', () => {
     if (action.kind === 'full_exit') expect(action.reason).toBe('BREAKEVEN_EXIT');
   });
 
-  it('fires DCA1 at −10% from signal anchor', () => {
+  it('fires DCA1 at −10% from signal anchor when enabled', () => {
+    process.env.PRESET_C_SCALP_DCA_USD = '100';
     const ot = baseOpen(100);
     expect(presetCScalpDcaDue(ot, 90)).toBe(true);
     expect(presetCScalpDcaDue(ot, 91)).toBe(false);
   });
 
-  it('fires DCA2 at −20% only after DCA1 done', () => {
+  it('skips DCA1 when dcaUsd is 0', () => {
+    process.env.PRESET_C_SCALP_DCA_USD = '0';
+    const ot = baseOpen(100);
+    expect(presetCScalpDcaDue(ot, 90)).toBe(false);
+  });
+
+  it('fires DCA2 at −20% without DCA1 when DCA1 disabled', () => {
+    process.env.PRESET_C_SCALP_DCA_USD = '0';
+    const ot = baseOpen(100);
+    expect(presetCScalpDca2Due(ot, 80)).toBe(true);
+    expect(presetCScalpDca2Due(ot, 81)).toBe(false);
+    ot.presetCScalpDca2LegDone = true;
+    expect(presetCScalpDca2Due(ot, 80)).toBe(false);
+  });
+
+  it('fires DCA2 at −20% only after DCA1 when DCA1 enabled', () => {
+    process.env.PRESET_C_SCALP_DCA_USD = '100';
     const ot = baseOpen(100);
     expect(presetCScalpDca2Due(ot, 80)).toBe(false);
     ot.presetCScalpDcaLegDone = true;
