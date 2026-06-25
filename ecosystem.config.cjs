@@ -92,10 +92,10 @@ const HL_TWAP_LIVE_ENV = {
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '800';
 const LIVE_OSCAR_MAX_POSITION_USD = '1000';
 
-/** live-oscar-preset-c: $100 flat entry + $50 staged avg legs (SuperBot wallet). */
-const PRESET_C_ENTRY_USD = '100';
+/** live-oscar-preset-c: $200 entry @ −10% + $150 DCA @ −20% (SuperBot wallet). */
+const PRESET_C_ENTRY_USD = '200';
 const PRESET_C_STAGED_LEG_USD = '50';
-const PRESET_C_MAX_POSITION_USD = '200';
+const PRESET_C_MAX_POSITION_USD = '350';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -1337,14 +1337,14 @@ const PM2_APPS = [
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
-        /** Preset C scalp: deferred entry −5%/−10%/−20%, dedicated exit (not wave B). */
+        /** Preset C scalp: deferred entry −10% / −20% DCA, dedicated exit (not wave B). */
         PRESET_C_SCALP_MODE: '1',
-        PRESET_C_SCALP_ENTRY_DROP_PCT: '5',
+        PRESET_C_SCALP_ENTRY_DROP_PCT: '10',
         PRESET_C_SCALP_DCA_DROP_PCT: '10',
         PRESET_C_SCALP_DCA2_DROP_PCT: '20',
-        PRESET_C_SCALP_ENTRY_USD: '100',
-        PRESET_C_SCALP_DCA_USD: '100',
-        PRESET_C_SCALP_DCA2_USD: '100',
+        PRESET_C_SCALP_ENTRY_USD: '200',
+        PRESET_C_SCALP_DCA_USD: '0',
+        PRESET_C_SCALP_DCA2_USD: '150',
         PRESET_C_SCALP_TP2_PCT: '5',
         PRESET_C_SCALP_TP_MID_PCT: '10',
         PRESET_C_SCALP_TP3_PCT: '15',
