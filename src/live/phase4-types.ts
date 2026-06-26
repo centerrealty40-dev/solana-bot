@@ -36,6 +36,8 @@ export interface LiveBuyPipelineResult {
   anchorMode: LiveBuyAnchorMode;
   /** Populated when `anchorMode === 'chain'` and swap landed on-chain. */
   confirmedBuyTxSignature?: string | null;
+  /** Actual USD notional executed when partial wallet slice applied (1.11.506). */
+  executedUsdNotional?: number;
   /** Terminal failure class (set only when `ok === false`). */
   terminalKind?: LiveBuyTerminalKind;
   /** Optional short message tail for diagnostics (≤200 chars). */

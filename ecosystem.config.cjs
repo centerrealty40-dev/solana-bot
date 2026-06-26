@@ -89,6 +89,7 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.497 — micro: no leg-2 @ −5%; $300 open + $300 staged_avg @ −10% = $600 max.
  * 1.11.499 — «Живой Оскар» canon: prod/low $500+$300+$200=$1000; micro re-enables leg-2 @ −5%: $300+$200+$100=$600; scalp_wave $300; half8_runner flat TP ON.
  * 1.11.505 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $300; max $2400.
+ * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '1800';
@@ -1239,6 +1240,10 @@ const PM2_APPS = [
          * Включить прежнее W8.0-p5: LIVE_PHASE5_FREE_SOL_GATE_ENABLED=1 (опц. LIVE_CAPITAL_ROTATE_ENABLED=1).
          */
         LIVE_PHASE5_FREE_SOL_GATE_ENABLED: '0',
+        /** Fee/rent reserve kept on wallet; spendable SOL = balance − this (0.05 SOL). */
+        LIVE_FREE_SOL_BUFFER_LAMPORTS: '50000000',
+        /** Partial entry slice when full leg unaffordable; below this USD → hard block (1.11.506). */
+        LIVE_PARTIAL_BUY_MIN_USD: '50',
         /** 0 = never block new buys on sim streak; transient quote misses no longer increment streak (phase4 + phase5-state). */
         LIVE_KILL_AFTER_CONSEC_FAIL: '0',
         /**

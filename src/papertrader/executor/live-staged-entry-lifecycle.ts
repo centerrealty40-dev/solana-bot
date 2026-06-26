@@ -8,7 +8,7 @@ import { applyEntryCosts } from '../costs.js';
 import type { OpenTrade } from '../types.js';
 import type { LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
 import type { LiveBuyPipelineResult } from '../../live/phase4-types.js';
-import { appendLiveBuyAnchorsAfterDca } from '../../live/live-buy-anchor.js';
+import { appendLiveBuyAnchorsAfterDca, executedBuyUsd } from '../../live/live-buy-anchor.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import {
@@ -77,12 +77,13 @@ async function pushBuyLeg(args: {
     });
     if (!buyRes.ok) return false;
   }
-  const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, addUsd, null);
+  const filledUsd = buyRes ? executedBuyUsd(addUsd, buyRes) : addUsd;
+  const { effectivePrice: effectiveBuy } = applyEntryCosts(cfg, marketBuy, ot.dex, filledUsd, null);
   ot.legs.push({
     ts: Date.now(),
     price: effectiveBuy,
     marketPrice: marketBuy,
-    sizeUsd: addUsd,
+    sizeUsd: filledUsd,
     reason,
     triggerPct,
   });
@@ -90,7 +91,7 @@ async function pushBuyLeg(args: {
   if (reason === 'staged_avg') refreshWaveBGridOverrides(ot);
   ot.livePendingScaleIn = null;
   ot.liveKillstopBelowStreak = 0;
-  ot.totalInvestedUsd += addUsd;
+  ot.totalInvestedUsd += filledUsd;
   const num = ot.legs.reduce((s, l) => s + l.sizeUsd * l.price, 0);
   ot.avgEntry = num / ot.totalInvestedUsd;
   const numM = ot.legs.reduce((s, l) => s + l.sizeUsd * (l.marketPrice ?? l.price), 0);
@@ -111,7 +112,7 @@ async function pushBuyLeg(args: {
     ts: Date.now(),
     price: effectiveBuy,
     marketPrice: marketBuy,
-    sizeUsd: addUsd,
+    sizeUsd: filledUsd,
     avgEntry: ot.avgEntry,
     avgEntryMarket: ot.avgEntryMarket,
     totalInvestedUsd: ot.totalInvestedUsd,
@@ -127,7 +128,7 @@ async function pushBuyLeg(args: {
     openTrade: serializeOpenTrade(ot),
     timelineLabelRu,
   });
-  console.log(`[${logTag}] ${mint.slice(0, 8)} $${ot.symbol} +$${addUsd.toFixed(0)} ${timelineLabelRu}`);
+  console.log(`[${logTag}] ${mint.slice(0, 8)} $${ot.symbol} +$${filledUsd.toFixed(0)} ${timelineLabelRu}`);
   return true;
 }
 

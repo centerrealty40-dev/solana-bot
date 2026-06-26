@@ -58,6 +58,20 @@
 
 ---
 
+## [1.11.506] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.506`
+
+### Live buy: partial entry slice при нехватке SOL (reserve 0.05)
+
+**Изменение:** если кошелёк не тянет полный слайс ($300 prod / $250 low), pipeline считает `(balance − LIVE_FREE_SOL_BUFFER_LAMPORTS) × SOL/USD`, исполняет уменьшенную ногу если ≥ `LIVE_PARTIAL_BUY_MIN_USD` (50), не блокируя весь entry-split. Резерв комиссий: **0.05 SOL** (`LIVE_FREE_SOL_BUFFER_LAMPORTS=50000000`). Журнал live: `partial_slice_due_to_wallet`; `executedUsdNotional` в результате buy для корректного journal leg.
+
+**Откат:** redeploy `sa-alpha-1.11.505`; убрать `LIVE_PARTIAL_BUY_MIN_USD` или `0`; `LIVE_FREE_SOL_BUFFER_LAMPORTS=10000000` при необходимости legacy; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.505] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.505`
