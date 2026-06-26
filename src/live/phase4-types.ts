@@ -74,6 +74,8 @@ export type LiveTokenToSolSellResult = {
   priceImpactPct?: number;
   /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
   retryAttempts?: number;
+  sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain';
+  walletDrained?: boolean;
 };
 
 export type LiveTokenToSolPipelineResult = {
@@ -89,6 +91,8 @@ export type LiveTokenToSolPipelineResult = {
   priceImpactPct?: number;
   /** 1.11.168: фактическое количество retry-попыток до успеха (0 = с первого раза). */
   retryAttempts?: number;
+  sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain';
+  walletDrained?: boolean;
 };
 
 export interface LiveOscarPhase4Tracker {

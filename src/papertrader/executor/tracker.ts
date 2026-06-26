@@ -149,7 +149,9 @@ import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapsh
 import {
   getOpenPositionExecSellUsd,
   isOpenPositionExecSellFresh,
+  clearOpenPositionExecSellUsd,
 } from '../../live/open-position-exec-price.js';
+import { partialReasonToExitReason, livePartialSellDrainedWallet } from '../../live/wallet-zero-policy.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -871,12 +873,23 @@ async function tryExecuteTpPartialSell(args: {
   ot.partialSells.push(ps);
   ot.lastPartialSellTs = ps.ts;
   ot.remainingFraction *= 1 - sellFraction;
-  /**
-   * Live partial: Phase 4 caps token raw amount to on-chain balance (`computedBn > chainAmt` → sell all atoms).
-   * Paper model still assumes only `sellFraction` of remainder left → phantom open + RECONCILE_ORPHAN next tick.
-   * If wallet already has 0 SPL for mint after confirmed sell, force remainder to zero.
-   */
   if (
+    liveOscarCfg?.strategyEnabled &&
+    liveOscarCfg.executionMode === 'live' &&
+    livePhase4 &&
+    sellOut.ok &&
+    livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained)
+  ) {
+    ot.remainingFraction = 0;
+    log.info(
+      {
+        mint: mint.slice(0, 8),
+        symbol: ot.symbol,
+        sellAmountSource: sellOut.sellAmountSource,
+      },
+      'live partial sell drained wallet — sync remainingFraction=0',
+    );
+  } else if (
     liveOscarCfg?.strategyEnabled &&
     liveOscarCfg.executionMode === 'live' &&
     livePhase4 &&
@@ -1485,6 +1498,184 @@ function hookLiveWhitelistAfterFullClose(
   }
 }
 
+/**
+ * Live: wallet SPL=0 while journal still open — close with last policy partial reason (TP/TRAIL/KILL),
+ * never RECONCILE_ORPHAN. If no recorded partials, alert and keep open for policy retry.
+ */
+async function closeOpenTradeWalletZeroPolicySync(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+  stats: TrackerStats;
+  tpLadder: TpLadderLevel[];
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  btcCtx: TrackerArgs['btcCtx'];
+  verifyReconcileOrphanWalletZero?: TrackerArgs['verifyReconcileOrphanWalletZero'];
+  liveOscarCfg?: LiveOscarConfig;
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
+}): Promise<boolean> {
+  const {
+    mint,
+    ot,
+    cfg,
+    open,
+    closed,
+    stats,
+    tpLadder,
+    journalAppend,
+    journalLiveStrategy,
+    btcCtx,
+    verifyReconcileOrphanWalletZero,
+    liveOscarCfg,
+  } = args;
+
+  if (verifyReconcileOrphanWalletZero) {
+    let allow: boolean;
+    try {
+      allow = await verifyReconcileOrphanWalletZero(mint);
+    } catch {
+      allow = false;
+    }
+    if (!allow) return false;
+  }
+
+  if (ot.partialSells.length === 0) {
+    journalLiveStrategy?.({
+      kind: 'risk_note',
+      reason: 'wallet_zero_open_no_policy_exit',
+      mint,
+      detail: JSON.stringify({
+        symbol: ot.symbol,
+        investedUsd: ot.totalInvestedUsd,
+        remainingFraction: ot.remainingFraction,
+      }).slice(0, 400),
+    });
+    log.error(
+      { mint: mint.slice(0, 8), symbol: ot.symbol, investedUsd: ot.totalInvestedUsd },
+      'live wallet SPL=0 but journal open with no policy partials — not closing (no RECONCILE_ORPHAN)',
+    );
+    return false;
+  }
+
+  const lastPartial = ot.partialSells[ot.partialSells.length - 1]!;
+  const exitReason = partialReasonToExitReason(lastPartial.reason);
+  const marketSell =
+    lastPartial.marketPrice > 0
+      ? lastPartial.marketPrice
+      : ot.lastObservedPriceUsd ?? ot.avgEntryMarket ?? ot.avgEntry;
+  const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+  const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+  const perTxNd = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+  const ct = buildClosedTrade({
+    cfg,
+    ot,
+    marketSell,
+    effectiveSell: lastPartial.price > 0 ? lastPartial.price : marketSell,
+    exitReason,
+    ageH,
+    networkFeeUsdPerTx: perTxNd,
+  });
+  const invested = ot.totalInvestedUsd;
+  const partialNet = totalProceedsNet(ot);
+  const partialGross = totalProceedsGross(ot);
+  const remUsdAtCost = invested * Math.max(0, ot.remainingFraction);
+  const remUsdAtCostGross = remUsdAtCost * (ot.avgEntryMarket > 0 ? ot.avgEntryMarket / ot.avgEntry : 1);
+  ct.totalProceedsUsd = partialNet + remUsdAtCost;
+  ct.grossTotalProceedsUsd = partialGross + remUsdAtCostGross;
+  ct.netPnlUsd = ct.totalProceedsUsd - invested;
+  ct.grossPnlUsd = ct.grossTotalProceedsUsd - invested;
+  ct.pnlPct = invested > 0 ? (ct.netPnlUsd / invested) * 100 : 0;
+  ct.grossPnlPct = invested > 0 ? (ct.grossPnlUsd / invested) * 100 : 0;
+  if (lastPartial.price > 0) {
+    ct.effective_exit_price = lastPartial.price;
+  }
+  ct.theoretical_exit_price = marketSell;
+  ct.exitMcUsd = marketSell > 0 ? marketSell : 0;
+  ct.costs = buildCloseCosts({
+    cfg,
+    trade: ot,
+    exit: { effectivePrice: ct.effective_exit_price, marketPrice: marketSell },
+    networkFeeUsdTotal: 0,
+    slipDynamicBpsEntry: 0,
+    slipDynamicBpsExit: 0,
+    netPnlUsd: ct.netPnlUsd,
+    grossPnlUsd: ct.grossPnlUsd,
+  });
+  const xAvg = ot.avgEntry > 0 && marketSell > 0 ? marketSell / ot.avgEntry : 0;
+  const exitCtx = buildExitContext({
+    cfg,
+    ot,
+    closePnlPct: ct.pnlPct,
+    ageH,
+    exitReason,
+    curMetric: marketSell,
+    xAvg,
+    tpLadder,
+  });
+  ct.exitContext = exitCtx;
+  clearExitCloseDeferForMint(mint);
+  clearExitPartialDeferForMint(mint);
+  open.delete(mint);
+  closed.push(ct);
+  const statKey: ExitReason =
+    exitReason === 'KILLSTOP' ? 'SL' : exitReason === 'FLASH_CRASH_KILL' ? exitReason : exitReason;
+  if (stats.closed[statKey] != null) stats.closed[statKey]++;
+  const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+  const mcUsdLive_close = await getLiveMcUsd(
+    mint,
+    ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+  );
+  const liqWatchStamp = await buildOptionalLiqWatchCloseStamp(cfg, ot);
+  journalAppend({
+    kind: 'close',
+    ...ct,
+    peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+    btc_exit: btcCtx(),
+    exit_swaps: exitSwaps,
+    mcUsdLive: mcUsdLive_close,
+    priorityFee: pfClose,
+    exitContext: exitCtx,
+    walletZeroPolicySync: true,
+    lastPartialReason: lastPartial.reason,
+    ...(liqWatchStamp ? { liqWatch: liqWatchStamp } : {}),
+  });
+  journalLiveStrategy?.({
+    kind: 'live_position_close',
+    mint,
+    closedTrade: serializeClosedTrade(ct),
+  });
+  afterFullCloseReentryGate(args, cfg, ct, ot);
+  hookLiveWhitelistAfterFullClose(
+    liveOscarCfg,
+    cfg,
+    mint,
+    ot.symbol,
+    ct.netPnlUsd,
+    ot.liveMintFirstProbe === true,
+    ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+    ot.liveVariantAExitTag,
+    ot,
+    ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+  );
+  scheduleTailAfterLiveClose(
+    liveOscarCfg,
+    mint,
+    ot.symbol,
+    ot.tokenDecimals ?? 6,
+    marketSell,
+    ot.source,
+    ct.exitReason,
+  );
+  peakStateByMint.delete(mint);
+  console.log(
+    `[${exitReason}] ${mint.slice(0, 8)} $${ot.symbol} wallet-zero sync (last partial ${lastPartial.reason})`,
+  );
+  return true;
+}
+
 async function closeOpenTradeReconcileOrphan(args: {
   mint: string;
   ot: OpenTrade;
@@ -2088,22 +2279,44 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const ot = open.get(m);
       if (!ot) continue;
       if (graceMs > 0 && ot.entryTs > 0 && nowOrphan - ot.entryTs < graceMs) continue;
-      await closeOpenTradeReconcileOrphan({
-        mint: m,
-        ot,
-        cfg,
-        open,
-        closed,
-        stats,
-        tpLadder,
-        journalAppend,
-        journalLiveStrategy,
-        btcCtx,
-        verifyReconcileOrphanWalletZero,
-        liveOscarCfg,
-        onMintFullClose: args.onMintFullClose,
-      });
-      reconciledOrphans += 1;
+      const liveWalletZeroPolicy =
+        liveOscarCfg?.strategyEnabled &&
+        (liveOscarCfg.executionMode === 'live' || liveOscarCfg.executionMode === 'simulate');
+      if (liveWalletZeroPolicy) {
+        const synced = await closeOpenTradeWalletZeroPolicySync({
+          mint: m,
+          ot,
+          cfg,
+          open,
+          closed,
+          stats,
+          tpLadder,
+          journalAppend,
+          journalLiveStrategy,
+          btcCtx,
+          verifyReconcileOrphanWalletZero,
+          liveOscarCfg,
+          onMintFullClose: args.onMintFullClose,
+        });
+        if (synced) reconciledOrphans += 1;
+      } else {
+        await closeOpenTradeReconcileOrphan({
+          mint: m,
+          ot,
+          cfg,
+          open,
+          closed,
+          stats,
+          tpLadder,
+          journalAppend,
+          journalLiveStrategy,
+          btcCtx,
+          verifyReconcileOrphanWalletZero,
+          liveOscarCfg,
+          onMintFullClose: args.onMintFullClose,
+        });
+        reconciledOrphans += 1;
+      }
     }
   }
 
@@ -2492,8 +2705,34 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (liveOscarCfg && isOpenPositionExecSellFresh(mint, liveOscarCfg.liveOpenHotExecPriceMaxAgeMs)) {
       const execSell = getOpenPositionExecSellUsd(mint);
       if (execSell != null && execSell > 0) {
-        curMetric = execSell;
-        ot.liveFlashLastJupiterPx = execSell;
+        const refPx =
+          ot.lastObservedPriceUsd != null && ot.lastObservedPriceUsd > 0
+            ? ot.lastObservedPriceUsd
+            : ot.avgEntryMarket > 0
+              ? ot.avgEntryMarket
+              : ot.avgEntry;
+        if (refPx > 0) {
+          const ratio = execSell / refPx;
+          if (ratio >= 0.25 && ratio <= 4) {
+            curMetric = execSell;
+            ot.liveFlashLastJupiterPx = execSell;
+          } else {
+            log.warn(
+              {
+                mint: mint.slice(0, 8),
+                symbol: ot.symbol,
+                execSellUsd: execSell,
+                refPxUsd: refPx,
+                ratio,
+              },
+              'live tracker: ignoring ghost hot-tick exec sell price',
+            );
+            clearOpenPositionExecSellUsd(mint);
+          }
+        } else {
+          curMetric = execSell;
+          ot.liveFlashLastJupiterPx = execSell;
+        }
       }
     }
 
