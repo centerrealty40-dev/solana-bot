@@ -39,6 +39,7 @@ export function targetMarginByOpenCount(openCount: number, cfg: DynamicMarginInp
 
 /** Margin reserved for DCA adds on a new position (USD collateral). */
 export function dcaHeadroomUsd(marginUsd: number, cfg: DynamicMarginInput): number {
+  if (cfg.ladderMode === 'off' || cfg.ladderDcaPctOfInitial <= 0) return 0;
   if (cfg.ladderMode === 'price') {
     return marginUsd * (cfg.ladderDcaPctOfInitial / 100);
   }

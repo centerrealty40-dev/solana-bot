@@ -1,6 +1,6 @@
 import type { TwapSide } from '../types.js';
 
-export type LadderMode = 'price' | 'roe';
+export type LadderMode = 'price' | 'roe' | 'off';
 
 export type LadderConfig = {
   /** `price` = ±% from avg entry px; `roe` = legacy HL ROE ladder. */
@@ -147,6 +147,7 @@ export function nextLadderAction(
 ): LadderAction | null {
   if (markPx <= 0 || entryAnchorPx <= 0 || initialMarginUsd <= 0 || initialNotionalUsd <= 0) return null;
   if (currentNotionalUsd <= 0) return null;
+  if (cfg.mode === 'off') return null;
 
   if (cfg.mode === 'price') {
     return nextPriceLadderAction(

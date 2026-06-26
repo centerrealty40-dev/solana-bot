@@ -111,12 +111,16 @@ export function loadHlTwapLiveConfig(): HlTwapLiveConfig {
     coinMaxLegs: Math.max(1, Math.round(envNum('HL_TWAP_LIVE_COIN_MAX_LEGS', 2))),
     coinMaxGrossUsd: Math.max(1, envNum('HL_TWAP_LIVE_MAX_BOOK_GROSS_USD', 12_000)),
     minImpactPct: minImpactPctHour(),
-    ladderMode:
-      process.env.HL_TWAP_LIVE_LADDER_MODE?.trim().toLowerCase() === 'roe' ? 'roe' : 'price',
+    ladderMode: (() => {
+      const m = process.env.HL_TWAP_LIVE_LADDER_MODE?.trim().toLowerCase();
+      if (m === 'off' || m === '0' || m === 'false') return 'off';
+      if (m === 'roe') return 'roe';
+      return 'price';
+    })(),
     ladderStepPct: Math.max(0.1, envNum('HL_TWAP_LIVE_LADDER_STEP_PCT', 2)),
     ladderSlicePct: Math.max(0.1, Math.min(100, envNum('HL_TWAP_LIVE_LADDER_SLICE_PCT', 30))),
     ladderDcaPctOfInitial: Math.max(
-      1,
+      0,
       Math.min(200, envNum('HL_TWAP_LIVE_LADDER_DCA_PCT_OF_INITIAL', 50)),
     ),
     slippageTolerance: Math.max(0.001, envNum('HL_TWAP_LIVE_SLIPPAGE_TOLERANCE', 0.01)),
