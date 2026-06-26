@@ -62,6 +62,20 @@
 
 ---
 
+
+## [1.11.511] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.511`
+
+### Runtime — sa-jupiter watcher quote pacing
+
+- **`sa-jupiter`:** `JUPITER_WATCHER_REQUEST_DELAY_MS=1000` (было 650; снижение нагрузки на Jupiter quote API).
+
+**Откат:** `git checkout sa-alpha-1.11.510 -- ecosystem.config.cjs docs/strategy/release/`; `pm2 reload sa-jupiter --update-env`.
+
+Без cross-product изменений.
+
+---
 ## [1.11.510] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.510`

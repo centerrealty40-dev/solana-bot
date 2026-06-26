@@ -359,7 +359,7 @@ const PM2_APPS = [
         JUPITER_QUOTE_API_URL: JUPITER_SWAP_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
         /** Было 1250 по умолчанию в watcher — чаще quote в рамках Pro, с паузой между mint в цикле. */
-        JUPITER_WATCHER_REQUEST_DELAY_MS: '650',
+        JUPITER_WATCHER_REQUEST_DELAY_MS: '1000',
       },
     },
     {
