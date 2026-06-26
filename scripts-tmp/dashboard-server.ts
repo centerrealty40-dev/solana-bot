@@ -371,20 +371,25 @@ function closedRowPnlUsd(c: Paper2ClosedRow): number {
   return (closedRowNotionalUsd(c) * pnlPct) / 100;
 }
 
-function closedRowDisplayPnlPct(c: Paper2ClosedRow, pnlUsd: number): number {
+/** Net realized % for closed rows (exported for dashboard regression tests). */
+export function closedRowDisplayPnlPct(c: Paper2ClosedRow, pnlUsd: number): number {
   const pnlSolRaw = c.pnlSol;
   const entrySol = Number(c.entrySolSpent ?? NaN);
   if (typeof pnlSolRaw === 'number' && Number.isFinite(pnlSolRaw) && entrySol > 0) {
     return (pnlSolRaw / entrySol) * 100;
   }
+  // Partial TP/trail unwinds: last exit px can sit above avg entry while total
+  // proceeds < invested — netPnlUsd (and journal pnlPct) are the display truth.
+  const notional = closedRowNotionalUsd(c);
+  if (notional > 0 && Number.isFinite(pnlUsd)) return (pnlUsd / notional) * 100;
+  const journalPct = Number(c.pnlPct ?? NaN);
+  if (Number.isFinite(journalPct)) return journalPct;
   const entryPx = closedRowEntryPx(c);
   const exitPx = closedRowExitPx(c);
   if (entryPx > 0 && exitPx > 0) {
     const fillPct = (exitPx / entryPx - 1) * 100;
     if (Number.isFinite(fillPct)) return fillPct;
   }
-  const notional = closedRowNotionalUsd(c);
-  if (notional > 0 && Number.isFinite(pnlUsd)) return (pnlUsd / notional) * 100;
   const grossPct = Number(c.grossPnlPct ?? NaN);
   if (
     String(c.exitReason ?? '') === 'RECONCILE_ORPHAN' &&
@@ -1612,7 +1617,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-twap-paper',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-25-preset-c-recent-closes-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-26-closed-pnl-net-pct-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
