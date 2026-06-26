@@ -63,6 +63,21 @@
 ---
 
 
+---
+
+## [1.11.512] — 2026-06-27
+
+**Тег:** `sa-alpha-1.11.512`
+
+### live-oscar prod tier: avg −20% leg $300 → $500
+
+**Изменение:** prod (mcap ≥ $3M): вторая усредняющая нога @ −20% **$500** (было $300); −5% @ $300 без изменений. `LIVE_MAX_POSITION_USD=2600` (1800 split + $300 + $500). Env: `SECOND_DROP_PCT=5`, `SECOND_LEG_USD=300`, `THIRD_DROP_PCT=20`, `THIRD_LEG_USD=500`.
+
+**Откат:** redeploy `sa-alpha-1.11.511`; `PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD=300`, `LIVE_MAX_POSITION_USD=2400`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
 ## [1.11.511] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.511`
