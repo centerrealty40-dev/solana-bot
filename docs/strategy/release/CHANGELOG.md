@@ -60,6 +60,22 @@
 
 ---
 
+## [1.11.509] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.509`
+
+### Dashboard — closed PnL % vs $ после partial TP/trail
+
+**Root cause (NEST):** `closedRowDisplayPnlPct` брал `(exitPx/entryPx−1)×100` раньше `netPnlUsd/totalInvestedUsd`. После лестницы TP и trail-dump на просадке последняя цена выше средней входа (+~18%), а суммарный PnL отрицательный (−$64 / −3.6%).
+
+**Fix:** для закрытых сделок % PnL = `netPnlUsd / notional × 100` (как $ колонка); fill-ratio только fallback без net.
+
+**Откат:** `git checkout sa-alpha-1.11.508 -- scripts-tmp/dashboard-server.ts tests/dashboard-paper2-closed-pnl.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.508] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.508`
