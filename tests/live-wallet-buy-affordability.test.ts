@@ -35,21 +35,36 @@ describe('lamports helpers', () => {
     expect(Number(lam)).toBeLessThan(5_100_000_000);
   });
 
-  it('detects inflated quote from stale solUsd and uses estimate for afford', () => {
-    const estimate = estimateLamportsForBuyUsd(730, 150);
-    const inflatedQuote = estimate * 2n;
+  it('detects inflated quote from stale solUsd and uses fresh estimate for afford', () => {
+    const freshSolUsd = 136;
+    const freshEstimate = estimateLamportsForBuyUsd(400, freshSolUsd);
+    const staleQuote = estimateLamportsForBuyUsd(400, 68);
     const resolved = resolveBuyAffordRequiredLamports({
-      intendedUsd: 730,
-      solUsd: 150,
-      quoteInLamports: inflatedQuote,
-      bufferLamports: 10_000_000,
+      intendedUsd: 400,
+      solUsd: freshSolUsd,
+      quoteInLamports: staleQuote,
+      bufferLamports: 50_000_000,
     });
     expect(resolved.sane).toBe(false);
     expect(resolved.source).toBe('estimate');
-    expect(resolved.requiredLamports).toBe(estimate + 10_000_000n);
+    expect(resolved.affordableBaseLamports).toBe(freshEstimate);
+    expect(resolved.requiredLamports).toBe(freshEstimate + 50_000_000n);
   });
 
-  it('trusts quote when within drift band', () => {
+  it('52 SOL wallet passes $300 leg when quote inflated from stale sizing', () => {
+    const walletLamports = 52_000_000_000n;
+    const freshSolUsd = 136;
+    const staleQuote = estimateLamportsForBuyUsd(300, 68);
+    const resolved = resolveBuyAffordRequiredLamports({
+      intendedUsd: 300,
+      solUsd: freshSolUsd,
+      quoteInLamports: staleQuote,
+      bufferLamports: 50_000_000,
+    });
+    expect(walletLamports >= resolved.requiredLamports).toBe(true);
+  });
+
+  it('trusts lower quote when within drift band', () => {
     const estimate = estimateLamportsForBuyUsd(730, 150);
     const quote = (estimate * 105n) / 100n;
     const resolved = resolveBuyAffordRequiredLamports({
@@ -59,8 +74,9 @@ describe('lamports helpers', () => {
       bufferLamports: 10_000_000,
     });
     expect(resolved.sane).toBe(true);
-    expect(resolved.source).toBe('quote');
-    expect(resolved.requiredLamports).toBe(quote + 10_000_000n);
+    expect(resolved.source).toBe('estimate');
+    expect(resolved.affordableBaseLamports).toBe(estimate);
+    expect(resolved.requiredLamports).toBe(estimate + 10_000_000n);
   });
 });
 

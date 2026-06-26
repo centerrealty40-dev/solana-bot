@@ -58,6 +58,26 @@
 
 ---
 
+## [1.11.507] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.507`
+
+### Live buy: fresh SOL/USD afford gate + partial slice unblock
+
+**Root cause:** afford gate сравнивал баланс с Jupiter `quoteInAmount`, посчитанным по **тому же stale** `getSolUsd()` — drift-check не срабатывал (~2× SOL на ногу при ~$68 vs ~$136); 419 ложных `insufficient_wallet_sol_for_buy` при ~52 SOL на кошельке; partial (1.11.506) не доходил до исполнения.
+
+**Fix:**
+- `requireFreshSolUsd()` / `LIVE_SOL_USD_MAX_AGE_MS` (default 30s) — Jupiter price перед каждой buy-попыткой; stale → `buy_sol_usd_stale` retry, не false skip.
+- `resolveBuyAffordRequiredLamports`: `required = min(quoteIn, freshEstimate) + LIVE_FREE_SOL_BUFFER_LAMPORTS` — stale-inflated quote не блокирует вход.
+- Drift >15% логируется (`buy_quote_sol_usd_drift`), pipeline идёт в afford/partial, не blind-retry.
+- Partial slice: fresh SOL/USD для `maxAffordableBuyUsd`; journal `partial_slice_due_to_wallet`.
+
+**Откат:** redeploy `sa-alpha-1.11.506`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.506] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.506`
