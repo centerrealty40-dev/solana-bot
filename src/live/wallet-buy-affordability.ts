@@ -113,6 +113,51 @@ export function estimateLamportsForBuyUsd(usdNotional: number, solUsd: number): 
   return BigInt(Math.ceil((usdNotional / solUsd) * 1e9));
 }
 
+/** Native SOL left after fee/rent reserve — never negative. */
+export function spendableLamportsForBuy(walletLamports: bigint, bufferLamports: number): bigint {
+  const buf = BigInt(Math.max(0, bufferLamports));
+  return walletLamports > buf ? walletLamports - buf : 0n;
+}
+
+/** Max USD notional fundable from wallet SOL minus reserve (estimate via SOL/USD). */
+export function maxAffordableBuyUsd(
+  walletLamports: bigint,
+  bufferLamports: number,
+  solUsd: number,
+): number {
+  if (!(solUsd > 0)) return 0;
+  const spendable = spendableLamportsForBuy(walletLamports, bufferLamports);
+  if (spendable <= 0n) return 0;
+  return (Number(spendable) / 1e9) * solUsd;
+}
+
+export type PartialBuyNotionalResolution = {
+  ok: boolean;
+  usdNotional: number;
+  maxAffordableUsd: number;
+};
+
+/**
+ * When wallet cannot fund the full planned slice, shrink to what fits above `minUsd`.
+ * Returns `ok: false` when partial is below minimum or equals the planned amount.
+ */
+export function resolvePartialBuyNotional(args: {
+  plannedUsd: number;
+  walletLamports: bigint;
+  bufferLamports: number;
+  solUsd: number;
+  minUsd: number;
+}): PartialBuyNotionalResolution {
+  const maxUsd = maxAffordableBuyUsd(args.walletLamports, args.bufferLamports, args.solUsd);
+  const capped = Math.min(args.plannedUsd, maxUsd);
+  const partial = Math.floor(capped * 100) / 100;
+  const min = Math.max(0, args.minUsd);
+  if (partial >= min && partial + 1e-6 < args.plannedUsd) {
+    return { ok: true, usdNotional: partial, maxAffordableUsd: maxUsd };
+  }
+  return { ok: false, usdNotional: args.plannedUsd, maxAffordableUsd: maxUsd };
+}
+
 export type LiveWalletAffordability = {
   ok: boolean;
   reason?: 'wallet_balance_rpc' | 'insufficient_wallet_sol';

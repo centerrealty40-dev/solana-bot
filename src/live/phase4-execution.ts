@@ -46,6 +46,7 @@ import {
   isInsufficientFundsSimError,
   liveWalletCanAffordLamports,
   resolveBuyAffordRequiredLamports,
+  resolvePartialBuyNotional,
 } from './wallet-buy-affordability.js';
 import {
   clearLiveBuyCooldown,
@@ -440,6 +441,8 @@ async function runSolToTokenPipeline(
    * abort. Не догоняем уже разогнанную цену.
    */
   let anchorTokensPerLamport: number | null = null;
+  /** May shrink below `args.usdNotional` when wallet SOL is short (1.11.506). */
+  let effectiveNotional = args.usdNotional;
 
   await refreshSolPrice();
 
@@ -450,7 +453,7 @@ async function runSolToTokenPipeline(
     const prep = await liveBuyQuoteAndPrepareSnapshot({
       cfg: liveCfg,
       outputMint: args.mint,
-      sizeUsd: args.usdNotional,
+      sizeUsd: effectiveNotional,
       solUsd,
       userPublicKey: pk,
       slippageBpsOverride: currentSlippageBps,
@@ -467,7 +470,8 @@ async function runSolToTokenPipeline(
       intentId,
       side: 'buy',
       mint: args.mint,
-      intendedUsd: args.usdNotional,
+      intendedUsd: effectiveNotional,
+      plannedUsd: args.usdNotional,
       executionMode: liveCfg.executionMode,
       quoteSnapshot,
       targetPriceUsd: null,
@@ -498,7 +502,7 @@ async function runSolToTokenPipeline(
       if (typeof quoteInRaw === 'string' && /^\d+$/.test(quoteInRaw)) {
         const quoteInLamports = BigInt(quoteInRaw);
         const resolved = resolveBuyAffordRequiredLamports({
-          intendedUsd: args.usdNotional,
+          intendedUsd: effectiveNotional,
           solUsd,
           quoteInLamports,
           bufferLamports: liveCfg.liveFreeSolBufferLamports,
@@ -521,6 +525,32 @@ async function runSolToTokenPipeline(
         }
         const afford = await liveWalletCanAffordLamports(liveCfg, resolved.requiredLamports);
         if (!afford.ok) {
+          const partial =
+            afford.lamports != null && liveCfg.livePartialBuyMinUsd > 0
+              ? resolvePartialBuyNotional({
+                  plannedUsd: effectiveNotional,
+                  walletLamports: afford.lamports,
+                  bufferLamports: liveCfg.liveFreeSolBufferLamports,
+                  solUsd,
+                  minUsd: liveCfg.livePartialBuyMinUsd,
+                })
+              : null;
+          if (partial?.ok) {
+            appendLiveJsonlEvent({
+              kind: 'partial_slice_due_to_wallet',
+              mint: args.mint,
+              intentKind: args.intentKind,
+              plannedUsd: args.usdNotional,
+              priorEffectiveUsd: effectiveNotional,
+              partialUsd: partial.usdNotional,
+              maxAffordableUsd: partial.maxAffordableUsd,
+              walletLamports: String(afford.lamports),
+              bufferLamports: liveCfg.liveFreeSolBufferLamports,
+              solUsdUsed: solUsd,
+            });
+            effectiveNotional = partial.usdNotional;
+            continue;
+          }
           appendLiveJsonlEvent({
             kind: 'execution_skip',
             reason: 'insufficient_wallet_sol_for_buy',
@@ -528,7 +558,9 @@ async function runSolToTokenPipeline(
               mint: args.mint.slice(0, 12),
               lamports: afford.lamports != null ? String(afford.lamports) : null,
               requiredLamports: String(resolved.requiredLamports),
-              intendedUsd: args.usdNotional,
+              intendedUsd: effectiveNotional,
+              plannedUsd: args.usdNotional,
+              maxAffordableUsd: partial?.maxAffordableUsd ?? null,
               solUsdUsed: solUsd,
               affordSource: resolved.source,
               quoteInLamports: String(quoteInLamports),
@@ -690,7 +722,7 @@ async function runSolToTokenPipeline(
         unitsConsumed: sim.unitsConsumed ?? null,
       });
       notifyLiveExecutionSimOk();
-      return success({ ok: true, anchorMode: 'simulate' });
+      return success({ ok: true, anchorMode: 'simulate', executedUsdNotional: effectiveNotional });
     }
 
     const liveOut = await liveSendSignedSwapPipeline({
@@ -717,7 +749,12 @@ async function runSolToTokenPipeline(
       }
     }
     if (ok && liveOut.signature) {
-      return success({ ok: true, anchorMode: 'chain', confirmedBuyTxSignature: liveOut.signature });
+      return success({
+        ok: true,
+        anchorMode: 'chain',
+        confirmedBuyTxSignature: liveOut.signature,
+        executedUsdNotional: effectiveNotional,
+      });
     }
     if (
       !ok &&

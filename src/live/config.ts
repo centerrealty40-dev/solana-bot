@@ -134,8 +134,13 @@ const LiveOscarConfigSchema = z
      */
     liveCapitalRotateEnabled: z.boolean().default(false),
     liveCapitalRotateCascade: z.boolean().default(false),
-    /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). */
-    liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(10_000_000),
+    /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). Default 0.05 SOL. */
+    liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(50_000_000),
+    /**
+     * Live buy: when wallet cannot fund full slice, execute partial notional if ≥ this USD (1.11.506).
+     * Env: `LIVE_PARTIAL_BUY_MIN_USD`. `0` = never partial (legacy hard block).
+     */
+    livePartialBuyMinUsd: z.coerce.number().min(0).max(10_000).default(50),
 
     /** W8.0 Phase 6 — send + confirm (live). */
     liveConfirmCommitment: LiveConfirmCommitmentSchema.default('confirmed'),
@@ -677,6 +682,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveCapitalRotateEnabled: envBool(process.env.LIVE_CAPITAL_ROTATE_ENABLED, false),
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
     liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
+    livePartialBuyMinUsd: process.env.LIVE_PARTIAL_BUY_MIN_USD,
 
     liveConfirmCommitment: parseLiveConfirmCommitment(process.env.LIVE_CONFIRM_COMMITMENT),
     liveConfirmTimeoutMs: process.env.LIVE_CONFIRM_TIMEOUT_MS,
