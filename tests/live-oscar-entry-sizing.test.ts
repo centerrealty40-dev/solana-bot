@@ -65,7 +65,7 @@ describe('live-oscar-entry-sizing', () => {
     process.env.PAPER_POSITION_USD = '1800';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '300';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT = '5';
-    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '500';
     process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT = '20';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED = '0';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '1';
@@ -108,15 +108,15 @@ describe('live-oscar-entry-sizing', () => {
     expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).toThrow(/LOW_MCAP_POSITION/);
   });
 
-  it('tier-aware staged avg: low −10% $250; prod −5%/$300 + −20%/$300', () => {
+  it('tier-aware staged avg: low −10% $250; prod −5%/$300 + −20%/$500', () => {
     const cfg = loadPaperTraderConfig();
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'low')).toBe(10);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'low')).toBe(250);
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'prod')).toBe(5);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'prod')).toBe(300);
-    expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(500);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(750);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(2400);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(2600);
   });
 
   it('buildLiveStagedEntryState uses $250 avg @ −10% for low mcap', () => {
@@ -140,7 +140,7 @@ describe('live-oscar-entry-sizing', () => {
     expect(st.entrySplitLeg6Done).toBe(false);
     expect(st.avgSecondLegUsd).toBe(300);
     expect(st.avgSecondDropPct).toBe(5);
-    expect(st.avgThirdLegUsd).toBe(300);
+    expect(st.avgThirdLegUsd).toBe(500);
     expect(st.avgThirdDropPct).toBe(20);
     expect(st.entrySplitDelayMs).toBe(5000);
   });
