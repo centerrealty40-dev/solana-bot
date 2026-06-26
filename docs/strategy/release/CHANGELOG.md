@@ -58,6 +58,28 @@
 
 ---
 
+---
+
+## [1.11.508] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.508`
+
+### Live Oscar — no RECONCILE_ORPHAN closes; wallet-zero policy sync
+
+**Root cause (NEST RCA):** ghost hot-tick exec sell price (~6e-6 vs ~0.0055 entry) oversized partial sell raw → `usd_capped_by_chain` drained wallet; partial not always synced → `wallet_spl_balance_zero` skip without `execution_result` → **RECONCILE_ORPHAN** paper-close.
+
+**Fix:**
+- Live wallet SPL=0: **no RECONCILE_ORPHAN** — `closeOpenTradeWalletZeroPolicySync` closes with last policy reason (TP/TRAIL/KILL); no partials → `risk_note` + keep open.
+- Hot-tick exec sell override: sanity band 0.25×–4× ref MTM; ghost quotes cleared.
+- After partial sell: `sellAmountSource` / `walletDrained` → `remainingFraction=0`.
+- Sell preflight: `sell_price_usd_insane` guard; `execution_skip` paired with `execution_result` status `skipped`.
+
+**Откат:** `git checkout sa-alpha-1.11.507 -- src/live/phase4-execution.ts src/live/wallet-zero-policy.ts src/papertrader/executor/tracker.ts src/live/events.ts src/live/phase4-types.ts docs/strategy/release/` → `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.507] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.507`

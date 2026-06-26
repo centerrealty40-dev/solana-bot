@@ -809,6 +809,59 @@ function resolveSellExecutionMode(liveCfg: LiveOscarConfig): LiveOscarConfig['ex
   return liveCfg.executionMode;
 }
 
+/** Reject ghost hot-tick quotes that oversize token raw (NEST RCA: ~6e-6 vs ~5e-3 entry). */
+const LIVE_SELL_MIN_PRICE_USD = 1e-5;
+
+function liveSellPriceUsdSane(priceUsdPerToken: number): boolean {
+  return Number.isFinite(priceUsdPerToken) && priceUsdPerToken >= LIVE_SELL_MIN_PRICE_USD;
+}
+
+function appendSellPreflightSkip(
+  liveCfg: LiveOscarConfig,
+  args: {
+    mint: string;
+    reason: string;
+    detail: string;
+    intentKind: 'sell_partial' | 'sell_full';
+  },
+): void {
+  const intentId = newLiveIntentId();
+  const executionMode = resolveSellExecutionMode(liveCfg);
+  appendLiveJsonlEvent({
+    kind: 'execution_attempt',
+    intentId,
+    side: 'sell',
+    mint: args.mint,
+    intendedUsd: 0,
+    executionMode,
+    quoteSnapshot: { preflight_skip: true, reason: args.reason, intentKind: args.intentKind },
+    targetPriceUsd: null,
+  });
+  appendLiveJsonlEvent({
+    kind: 'execution_skip',
+    intentId,
+    reason: args.reason,
+    detail: args.detail,
+  });
+  appendLiveJsonlEvent({
+    kind: 'execution_result',
+    intentId,
+    status: 'skipped',
+    simulated: false,
+    error: { message: args.reason },
+  });
+}
+
+function sellPipelineWalletDrained(
+  intentKind: 'sell_partial' | 'sell_full',
+  sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain',
+): boolean {
+  return (
+    intentKind === 'sell_partial' &&
+    (sellAmountSource === 'usd_capped_by_chain' || sellAmountSource === 'chain_full_balance')
+  );
+}
+
 async function runTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
   args: {
@@ -823,21 +876,37 @@ async function runTokenToSolPipeline(
   const executionMode = resolveSellExecutionMode(liveCfg);
   if (!liveCfg.strategyEnabled) return { ok: false };
   if (executionMode === 'dry_run') {
-    appendLiveJsonlEvent({
-      kind: 'execution_skip',
+    appendSellPreflightSkip(liveCfg, {
+      mint: args.mint,
       reason: `dry_run:${args.intentKind}`,
       detail: args.mint.slice(0, 8),
+      intentKind: args.intentKind,
     });
     return { ok: false };
   }
   if (executionMode !== 'simulate' && executionMode !== 'live') return { ok: false };
 
+  if (!liveSellPriceUsdSane(args.priceUsdPerToken)) {
+    appendSellPreflightSkip(liveCfg, {
+      mint: args.mint,
+      reason: 'sell_price_usd_insane',
+      detail: JSON.stringify({
+        mint: args.mint,
+        intentKind: args.intentKind,
+        priceUsdPerToken: args.priceUsdPerToken,
+      }).slice(0, 400),
+      intentKind: args.intentKind,
+    });
+    return { ok: false };
+  }
+
   let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
   if (raw == null) {
-    appendLiveJsonlEvent({
-      kind: 'execution_skip',
+    appendSellPreflightSkip(liveCfg, {
+      mint: args.mint,
       reason: 'token_amount_raw',
       detail: args.mint.slice(0, 8),
+      intentKind: args.intentKind,
     });
     return { ok: false };
   }
@@ -846,28 +915,31 @@ async function runTokenToSolPipeline(
   if (executionMode === 'live') {
     const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
     if (chainMap == null) {
-      appendLiveJsonlEvent({
-        kind: 'execution_skip',
+      appendSellPreflightSkip(liveCfg, {
+        mint: args.mint,
         reason: 'spl_balance_rpc_null',
         detail: args.mint.slice(0, 8),
+        intentKind: args.intentKind,
       });
       return { ok: false };
     }
     const chainAmt = chainMap.get(args.mint) ?? 0n;
     if (chainAmt === 0n) {
-      appendLiveJsonlEvent({
-        kind: 'execution_skip',
+      appendSellPreflightSkip(liveCfg, {
+        mint: args.mint,
         reason: 'wallet_spl_balance_zero',
         detail: JSON.stringify({ mint: args.mint, intentKind: args.intentKind }).slice(0, 400),
+        intentKind: args.intentKind,
       });
       return { ok: false };
     }
     const computedBn = BigInt(raw);
     if (computedBn === 0n) {
-      appendLiveJsonlEvent({
-        kind: 'execution_skip',
+      appendSellPreflightSkip(liveCfg, {
+        mint: args.mint,
         reason: 'sell_amount_zero',
         detail: args.mint.slice(0, 8),
+        intentKind: args.intentKind,
       });
       return { ok: false };
     }
@@ -1095,6 +1167,8 @@ async function runTokenToSolPipeline(
         solProceedsSource: wsolOut != null && wsolOut > 0n ? 'jupiter_quote' : undefined,
         priceImpactPct,
         retryAttempts: attempt,
+        sellAmountSource,
+        walletDrained: sellPipelineWalletDrained(args.intentKind, sellAmountSource),
       };
     }
 
@@ -1121,6 +1195,8 @@ async function runTokenToSolPipeline(
       lastResult = await finalizeSellOutcome(liveCfg, args, pk, wsolOut, liveOut);
       lastResult.priceImpactPct = priceImpactPct;
       lastResult.retryAttempts = attempt;
+      lastResult.sellAmountSource = sellAmountSource;
+      lastResult.walletDrained = sellPipelineWalletDrained(args.intentKind, sellAmountSource);
       return lastResult;
     }
     if (
@@ -1371,6 +1447,8 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
         txSignature: r.txSignature,
         priceImpactPct: r.priceImpactPct,
         retryAttempts: r.retryAttempts,
+        sellAmountSource: r.sellAmountSource,
+        walletDrained: r.walletDrained,
       }));
     },
   };

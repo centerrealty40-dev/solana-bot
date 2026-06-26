@@ -79,7 +79,15 @@ export const ExecutionAttemptSchema = z.object({
   targetPriceUsd: z.number().nullable().optional(),
 });
 
-export const ExecutionResultStatusSchema = z.enum(['sim_ok', 'sim_err', 'sent', 'confirmed', 'failed']);
+export const ExecutionResultStatusSchema = z.enum([
+  'sim_ok',
+  'sim_err',
+  'sent',
+  'confirmed',
+  'failed',
+  /** Pre-broadcast gate (SPL=0, bad price, dry_run) — paired with `execution_skip` for audit. */
+  'skipped',
+]);
 
 export const ExecutionResultSchema = z.object({
   kind: z.literal('execution_result'),
