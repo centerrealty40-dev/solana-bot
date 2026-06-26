@@ -18,11 +18,18 @@ import {
   reconcileEntrySplitV2FromLegs,
   stagedAveragingConfigured,
   usesLegacyStagedAdds,
-  entrySplitLeg2Eligible,
-  entrySplitLeg3Eligible,
+  entrySplitTimedLegEligible,
   entrySplitCorridorBlocked,
   cancelPendingEntrySplitLegs,
 } from './live-staged-entry-gates.js';
+import {
+  entrySplitLegDoneFromState,
+  entrySplitLegUsdFromState,
+  entrySplitTimedLegIndices,
+  setEntrySplitLegDone,
+  setEntrySplitLegTs,
+  type EntrySplitLegIndex,
+} from '../entry-split-legs.js';
 import {
   entrySplitLeg2TimelineLabel,
   stagedAvgTimelineLabel,
@@ -152,66 +159,40 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   if (entrySplitCorridorBlocked(args.ot)) {
     cancelPendingEntrySplitLegs(st);
   } else {
-    const entrySplitLeg2Usd = st.entrySplitLeg2Usd ?? 0;
-    if (!st.entrySplitLeg2Done && entrySplitLeg2Usd > 0) {
-      const leg2 = entrySplitLeg2Eligible({
-        st,
-        signalDropPct,
-        nowMs: now,
-        entrySplitPx,
-        anchorUsd: anchor,
-      });
-      if (leg2.ok) {
-        const usd = st.entrySplitLeg2Usd ?? st.entrySplitLegUsd ?? st.firstLegUsd;
-        const chPct = leg2.triggerPct * 100;
-        const ok = await pushBuyLeg({
-          cfg: args.cfg,
-          ot: args.ot,
-          mint: args.mint,
-          addUsd: usd,
-          marketBuy: entrySplitPx,
-          reason: 'entry_split',
-          triggerPct: leg2.triggerPct,
-          livePhase4: args.livePhase4,
-          journalAppend: args.journalAppend,
-          journalLiveStrategy: args.journalLiveStrategy,
-          timelineLabelRu: entrySplitLeg2TimelineLabel(usd, chPct, st.entrySplitTargetDropPct),
-          logTag: 'ENTRY_SPLIT',
-        });
-        if (ok) {
-          st.entrySplitLeg2Done = true;
-          st.entrySplitLeg2Ts = Date.now();
-        }
-      }
-    }
+    for (const legIndex of entrySplitTimedLegIndices()) {
+      const legUsd = entrySplitLegUsdFromState(st, legIndex);
+      if (legUsd <= 0 || entrySplitLegDoneFromState(st, legIndex)) continue;
+      const prevLegIndex = (legIndex - 1) as EntrySplitLegIndex;
+      if (legIndex > 2 && !entrySplitLegDoneFromState(st, prevLegIndex)) continue;
 
-    const entrySplitLeg3Usd = st.entrySplitLeg3Usd ?? 0;
-    if (!st.entrySplitLeg3Done && entrySplitLeg3Usd > 0 && st.entrySplitLeg2Done) {
-      const leg3 = entrySplitLeg3Eligible({
+      const leg = entrySplitTimedLegEligible({
         st,
         signalDropPct,
         nowMs: now,
         entrySplitPx,
         anchorUsd: anchor,
+        legIndex,
       });
-      if (leg3.ok) {
-        const usd = entrySplitLeg3Usd;
-        const chPct = leg3.triggerPct * 100;
-        const ok = await pushBuyLeg({
-          cfg: args.cfg,
-          ot: args.ot,
-          mint: args.mint,
-          addUsd: usd,
-          marketBuy: entrySplitPx,
-          reason: 'entry_split',
-          triggerPct: leg3.triggerPct,
-          livePhase4: args.livePhase4,
-          journalAppend: args.journalAppend,
-          journalLiveStrategy: args.journalLiveStrategy,
-          timelineLabelRu: entrySplitLeg2TimelineLabel(usd, chPct, st.entrySplitTargetDropPct),
-          logTag: 'ENTRY_SPLIT',
-        });
-        if (ok) st.entrySplitLeg3Done = true;
+      if (!leg.ok) continue;
+
+      const chPct = leg.triggerPct * 100;
+      const ok = await pushBuyLeg({
+        cfg: args.cfg,
+        ot: args.ot,
+        mint: args.mint,
+        addUsd: legUsd,
+        marketBuy: entrySplitPx,
+        reason: 'entry_split',
+        triggerPct: leg.triggerPct,
+        livePhase4: args.livePhase4,
+        journalAppend: args.journalAppend,
+        journalLiveStrategy: args.journalLiveStrategy,
+        timelineLabelRu: entrySplitLeg2TimelineLabel(legUsd, chPct, st.entrySplitTargetDropPct),
+        logTag: 'ENTRY_SPLIT',
+      });
+      if (ok) {
+        setEntrySplitLegDone(st, legIndex, true);
+        setEntrySplitLegTs(st, legIndex, Date.now());
       }
     }
   }

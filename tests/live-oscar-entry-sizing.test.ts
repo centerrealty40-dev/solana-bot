@@ -8,6 +8,9 @@ import {
   assertLiveOscarUnifiedEntrySizing,
   resolveLiveOscarEntrySplitLeg2Usd,
   resolveLiveOscarEntrySplitLeg3Usd,
+  resolveLiveOscarEntrySplitLeg4Usd,
+  resolveLiveOscarEntrySplitLeg5Usd,
+  resolveLiveOscarEntrySplitLeg6Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
   resolveLiveOscarStagedAvgFirstDropPct,
@@ -28,6 +31,9 @@ describe('live-oscar-entry-sizing', () => {
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD',
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD',
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD',
+      'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD',
+      'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD',
+      'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD',
       'PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD',
       'PAPER_POSITION_USD',
       'PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD',
@@ -49,11 +55,14 @@ describe('live-oscar-entry-sizing', () => {
     for (const k of keys) envBackup[k] = process.env[k];
     process.env.PAPER_STRATEGY_ID = 'live-oscar';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENABLED = '1';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '400';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD = '400';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD = '400';
-    process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '400';
-    process.env.PAPER_POSITION_USD = '1200';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD = '300';
+    process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '300';
+    process.env.PAPER_POSITION_USD = '1800';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '300';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT = '5';
     process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '300';
@@ -68,7 +77,7 @@ describe('live-oscar-entry-sizing', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '500';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '250';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT = '10';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '10000';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '5000';
   });
 
   afterEach(() => {
@@ -81,10 +90,13 @@ describe('live-oscar-entry-sizing', () => {
   it('passes boot validation when env is aligned', () => {
     const cfg = loadPaperTraderConfig();
     expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).not.toThrow();
-    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'prod')).toBe(400);
-    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'prod')).toBe(400);
-    expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, 'prod')).toBe(400);
-    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod')).toBe(1200);
+    expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitLeg4Usd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitLeg5Usd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitLeg6Usd(cfg, 'prod')).toBe(300);
+    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod')).toBe(1800);
     expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'low')).toBe(250);
     expect(resolveLiveOscarEntrySplitLeg2Usd(cfg, 'low')).toBe(250);
     expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, 'low')).toBe(0);
@@ -104,7 +116,7 @@ describe('live-oscar-entry-sizing', () => {
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'prod')).toBe(300);
     expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(300);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(750);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(1800);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(2400);
   });
 
   it('buildLiveStagedEntryState uses $250 avg @ −10% for low mcap', () => {
@@ -116,18 +128,21 @@ describe('live-oscar-entry-sizing', () => {
     expect(st.entrySplitLeg3Done).toBe(true);
   });
 
-  it('buildLiveStagedEntryState uses 3×$400 split + prod avg for prod mcap', () => {
+  it('buildLiveStagedEntryState uses 6×$300 split + prod avg for prod mcap', () => {
     const cfg = loadPaperTraderConfig();
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 5_000_000 });
-    expect(st.entrySplitLegUsd).toBe(400);
-    expect(st.entrySplitLeg2Usd).toBe(400);
-    expect(st.entrySplitLeg3Usd).toBe(400);
-    expect(st.entrySplitLeg3Done).toBe(false);
+    expect(st.entrySplitLegUsd).toBe(300);
+    expect(st.entrySplitLeg2Usd).toBe(300);
+    expect(st.entrySplitLeg3Usd).toBe(300);
+    expect(st.entrySplitLeg4Usd).toBe(300);
+    expect(st.entrySplitLeg5Usd).toBe(300);
+    expect(st.entrySplitLeg6Usd).toBe(300);
+    expect(st.entrySplitLeg6Done).toBe(false);
     expect(st.avgSecondLegUsd).toBe(300);
     expect(st.avgSecondDropPct).toBe(5);
     expect(st.avgThirdLegUsd).toBe(300);
     expect(st.avgThirdDropPct).toBe(20);
-    expect(st.entrySplitDelayMs).toBe(10000);
+    expect(st.entrySplitDelayMs).toBe(5000);
   });
 
   it('below $2M resolves to below tier when micro disabled', () => {
@@ -184,11 +199,14 @@ describe('live-oscar-entry-sizing', () => {
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 });
     st.entrySplitLegUsd = 200;
     st.entrySplitLeg2Usd = 100;
-    st.entrySplitDelayMs = 5000;
+    st.entrySplitDelayMs = 10000;
     applyCanonicalStagedEntrySizing(cfg, st);
-    expect(st.entrySplitLegUsd).toBe(400);
-    expect(st.entrySplitLeg2Usd).toBe(400);
-    expect(st.entrySplitLeg3Usd).toBe(400);
-    expect(st.entrySplitDelayMs).toBe(10000);
+    expect(st.entrySplitLegUsd).toBe(300);
+    expect(st.entrySplitLeg2Usd).toBe(300);
+    expect(st.entrySplitLeg3Usd).toBe(300);
+    expect(st.entrySplitLeg4Usd).toBe(300);
+    expect(st.entrySplitLeg5Usd).toBe(300);
+    expect(st.entrySplitLeg6Usd).toBe(300);
+    expect(st.entrySplitDelayMs).toBe(5000);
   });
 });

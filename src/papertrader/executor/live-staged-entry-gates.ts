@@ -1,8 +1,21 @@
 import type { PaperTraderConfig } from '../config.js';
 import {
+  cancelAllPendingEntrySplitLegs,
+  entrySplitLegDoneFromState,
+  entrySplitLegTsFromState,
+  entrySplitLegUsdFromState,
+  entrySplitTimedLegIndices,
+  setEntrySplitLegDone,
+  setEntrySplitLegTs,
+  type EntrySplitLegIndex,
+} from '../entry-split-legs.js';
+import {
   applyCanonicalStagedEntrySizing,
   resolveLiveOscarEntrySplitLeg2Usd,
   resolveLiveOscarEntrySplitLeg3Usd,
+  resolveLiveOscarEntrySplitLeg4Usd,
+  resolveLiveOscarEntrySplitLeg5Usd,
+  resolveLiveOscarEntrySplitLeg6Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
   resolveLiveOscarStagedAvgFirstDropPct,
@@ -112,16 +125,28 @@ export function entrySplitLeg2Eligible(args: {
   });
 }
 
-/** Leg-3+ timed entry split: `legIndex` × delay from leg-1, same corridor vs signal anchor. */
+/** Leg-3 timed entry split (backward-compat wrapper). */
+export function entrySplitLeg3Eligible(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number | null;
+  nowMs: number;
+  entrySplitPx: number;
+  anchorUsd: number;
+}): { ok: boolean; triggerPct: number } {
+  return entrySplitTimedLegEligible({ ...args, legIndex: 3 });
+}
+
+/** Timed entry split legs 2–6: `(legIndex−1)` × delay from leg-1, corridor vs signal anchor. */
 export function entrySplitTimedLegEligible(args: {
   st: LiveStagedEntryState;
   signalDropPct: number | null;
   nowMs: number;
   entrySplitPx: number;
   anchorUsd: number;
-  legIndex: 2 | 3;
+  legIndex: EntrySplitLegIndex;
 }): { ok: boolean; triggerPct: number } {
   const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd, legIndex } = args;
+  if (legIndex < 2 || legIndex > 6) return { ok: false, triggerPct: 0 };
   const targetDrop = st.entrySplitTargetDropPct ?? 0;
   if (targetDrop > 0) {
     if (legIndex !== 2) return { ok: false, triggerPct: 0 };
@@ -131,26 +156,15 @@ export function entrySplitTimedLegEligible(args: {
   }
   const leg1Ts = st.entrySplitLeg1Ts ?? st.signalTs;
   const delay = st.entrySplitDelayMs ?? 10_000;
-  const readyTs =
-    legIndex === 2
-      ? leg1Ts + delay
-      : (st.entrySplitLeg2Ts ?? leg1Ts + delay) + delay;
+  const prevLegIndex = (legIndex - 1) as EntrySplitLegIndex;
+  const prevTs = entrySplitLegTsFromState(st, prevLegIndex) ?? leg1Ts + (legIndex - 2) * delay;
+  const readyTs = prevTs + delay;
   if (nowMs < readyTs) return { ok: false, triggerPct: 0 };
   const ch = pctFromAnchor(anchorUsd, entrySplitPx);
   const maxUp = st.entrySplitMaxUpPct ?? 3;
   const maxDown = st.entrySplitMaxDownPct ?? 5;
   if (ch != null && entrySplitBandOk(ch, maxUp, maxDown)) return { ok: true, triggerPct: ch / 100 };
   return { ok: false, triggerPct: 0 };
-}
-
-export function entrySplitLeg3Eligible(args: {
-  st: LiveStagedEntryState;
-  signalDropPct: number | null;
-  nowMs: number;
-  entrySplitPx: number;
-  anchorUsd: number;
-}): { ok: boolean; triggerPct: number } {
-  return entrySplitTimedLegEligible({ ...args, legIndex: 3 });
 }
 
 /** Stop pending entry-split legs after TP-ladder partial or first staged avg fill. */
@@ -162,8 +176,7 @@ export function entrySplitCorridorBlocked(ot: OpenTrade): boolean {
 }
 
 export function cancelPendingEntrySplitLegs(st: LiveStagedEntryState): void {
-  st.entrySplitLeg2Done = true;
-  st.entrySplitLeg3Done = true;
+  cancelAllPendingEntrySplitLegs(st);
 }
 
 export function pctFromAnchor(anchorUsd: number, priceUsd: number): number | null {
@@ -221,10 +234,10 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
 /** Incomplete entry-split or staged-averaging legs on an open trade. */
 export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean {
   if (st.entrySplitV2) {
-    const leg2Usd = st.entrySplitLeg2Usd ?? 0;
-    const leg3Usd = st.entrySplitLeg3Usd ?? 0;
-    if (leg2Usd > 0 && !st.entrySplitLeg2Done) return true;
-    if (leg3Usd > 0 && !st.entrySplitLeg3Done) return true;
+    for (const legIndex of entrySplitTimedLegIndices()) {
+      const legUsd = entrySplitLegUsdFromState(st, legIndex);
+      if (legUsd > 0 && !entrySplitLegDoneFromState(st, legIndex)) return true;
+    }
     if (!stagedAveragingConfigured(st)) return false;
     const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
     const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
@@ -269,6 +282,9 @@ export function buildLiveStagedEntryState(
   const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
   const splitLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
   const splitLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
+  const splitLeg4 = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
+  const splitLeg5 = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
+  const splitLeg6 = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -287,6 +303,9 @@ export function buildLiveStagedEntryState(
     entrySplitLegUsd: splitLeg,
     entrySplitLeg2Usd: splitLeg2,
     entrySplitLeg3Usd: splitLeg3,
+    entrySplitLeg4Usd: splitLeg4,
+    entrySplitLeg5Usd: splitLeg5,
+    entrySplitLeg6Usd: splitLeg6,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
@@ -295,6 +314,9 @@ export function buildLiveStagedEntryState(
     entrySplitAnchorUsd: signal.signalPriceUsd,
     entrySplitLeg2Done: splitLeg2 <= 0,
     entrySplitLeg3Done: splitLeg3 <= 0,
+    entrySplitLeg4Done: splitLeg4 <= 0,
+    entrySplitLeg5Done: splitLeg5 <= 0,
+    entrySplitLeg6Done: splitLeg6 <= 0,
     avgSecondDropPct: avgSecondDrop,
     avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
@@ -352,15 +374,16 @@ export function reconcileEntrySplitV2FromLegs(ot: OpenTrade): void {
   if (!st?.entrySplitV2) return;
 
   const splitLegs = ot.legs.filter((l) => l.reason === 'entry_split');
-  const leg2Usd = st.entrySplitLeg2Usd ?? 0;
-  const leg3Usd = st.entrySplitLeg3Usd ?? 0;
-  if (leg2Usd <= 0) st.entrySplitLeg2Done = true;
-  else if (splitLegs.length >= 1) {
-    st.entrySplitLeg2Done = true;
-    st.entrySplitLeg2Ts = splitLegs[0]!.ts;
+  for (let i = 0; i < entrySplitTimedLegIndices().length; i++) {
+    const legIndex = entrySplitTimedLegIndices()[i]!;
+    const legUsd = entrySplitLegUsdFromState(st, legIndex);
+    if (legUsd <= 0) {
+      setEntrySplitLegDone(st, legIndex, true);
+    } else if (splitLegs.length >= i + 1) {
+      setEntrySplitLegDone(st, legIndex, true);
+      setEntrySplitLegTs(st, legIndex, splitLegs[i]!.ts);
+    }
   }
-  if (leg3Usd <= 0) st.entrySplitLeg3Done = true;
-  else if (splitLegs.length >= 2) st.entrySplitLeg3Done = true;
   if (splitLegs.length > 0) {
     const anchorFromOpen = ot.legs.find((l) => l.reason === 'open')?.marketPrice;
     if (!((st.entrySplitAnchorUsd ?? 0) > 0)) {
