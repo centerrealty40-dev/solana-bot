@@ -166,6 +166,8 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_JSONL: '/opt/dc-trader/data/trader-journal.jsonl',
         DASHBOARD_DC_TRADER_STATE_PATH: '/opt/dc-trader/data/trader-state.json',
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
+        /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
+        DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -357,7 +359,7 @@ const PM2_APPS = [
         JUPITER_QUOTE_API_URL: JUPITER_SWAP_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
         /** Было 1250 по умолчанию в watcher — чаще quote в рамках Pro, с паузой между mint в цикле. */
-        JUPITER_WATCHER_REQUEST_DELAY_MS: '650',
+        JUPITER_WATCHER_REQUEST_DELAY_MS: '1000',
       },
     },
     {

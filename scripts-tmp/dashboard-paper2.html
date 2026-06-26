@@ -42,7 +42,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 4 плитки — Live Oscar · SuperBot · Copy Trader · HL TWAP.
+      Десктоп: 5 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -765,6 +765,7 @@
       'superbot',
       'dc-trader',
       'hl-twap-paper',
+      'base-pulse',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -884,6 +885,14 @@
           'Hyperliquid whale TWAP: вход после 1-го цикла, выход перед последним. **$100**/позиция, impact **≥3%**, лестница ±3% от **средней** (TP/DCA 10%).',
         details:
           '**Плитка 4** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
+      },
+      'base-pulse': {
+        label: 'BasePulse',
+        tag: 'live',
+        oneLiner:
+          'Base L2 dip-buy: DexScreener + GeckoTerminal, пролив **3–25%**, staged entry, kill/trail/timeout. **$10**/позиция через KyberSwap на Base.',
+        details:
+          '**Плитка 5** · VPS **72.62.152.201** · PM2 **`basepulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар Base (DexScreener + GeckoTerminal trending/new).\n• Вход на dip с фильтрами liq/vol; stage-2 add при −4% от entry.\n• Выход: kill **−8%**, trail после **+10%**, timeout **4h**.\n\n**Live:** swap через **KyberSwap** (fallback 0x с API key); `BPULSE_POSITION_USD=10`, max **3** concurrent.\n\n**Журнал:** `/opt/base-pulse/data/basepulse-journal.jsonl` → sync `data/basepulse/` на дашборде.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

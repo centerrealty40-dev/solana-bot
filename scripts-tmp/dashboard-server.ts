@@ -44,6 +44,7 @@ import {
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
+import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
@@ -1608,12 +1609,13 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
   'dc-trader',
   'hl-twap-paper',
+  'base-pulse',
 ] as const;
 
 export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-26-closed-pnl-net-pct-v1';
@@ -4609,17 +4611,25 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] hl-twap panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-twap-paper', hlTwapJsonl);
   });
-  const [liveRow, superbotRow, dcTraderRow, hlTwapRow] = await Promise.all([
+  const basePulseJsonl = basePulseDashboardJsonlPath();
+  const basePulseLoad = loadBasePulseForDashboard(basePulseJsonl);
+  const basePulseRowP = buildPaper2StrategyRowFromLoad(basePulseJsonl, 'base-pulse', basePulseLoad).catch((e) => {
+    console.warn('[dashboard] base-pulse panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('base-pulse', basePulseJsonl);
+  });
+  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow] = await Promise.all([
     liveRowP,
     superbotRowP,
     dcRowP,
     hlTwapRowP,
+    basePulseRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
     superbotRow as DashboardPaper2StrategyRow,
     dcTraderRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
+    basePulseRow as DashboardPaper2StrategyRow,
   ]);
 
   const totals = merged.reduce(
@@ -4652,6 +4662,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
     superbotJsonl: DASHBOARD_SUPERBOT_JSONL,
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
+    basePulseJsonl: basePulseDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,
