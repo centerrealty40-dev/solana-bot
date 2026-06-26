@@ -34,18 +34,56 @@ async function fetchJson<T = unknown>(
 }
 
 let solUsd = 100;
+let solUsdUpdatedAtMs = 0;
+
 export function getSolUsd(): number {
   return solUsd;
+}
+
+/** Age of cached SOL/USD; `Infinity` when never refreshed this process. */
+export function getSolUsdAgeMs(): number {
+  if (solUsdUpdatedAtMs <= 0) return Number.POSITIVE_INFINITY;
+  return Date.now() - solUsdUpdatedAtMs;
+}
+
+export type FreshSolUsdResult = {
+  price: number;
+  ageMs: number;
+  refreshed: boolean;
+  /** True when price missing or cache older than `maxAgeMs` after refresh attempt. */
+  stale: boolean;
+};
+
+/**
+ * Jupiter SOL/USD for live buy afford gate — refresh when cache exceeds max age.
+ * Afford estimate must not reuse a stale tick cached for quote sizing (1.11.507).
+ */
+export async function requireFreshSolUsd(maxAgeMs = 30_000): Promise<FreshSolUsdResult> {
+  const cap = Number.isFinite(maxAgeMs) && maxAgeMs > 0 ? maxAgeMs : 30_000;
+  const ageBefore = getSolUsdAgeMs();
+  let refreshed = false;
+  if (ageBefore > cap) {
+    refreshed = await refreshSolPrice();
+  }
+  const price = getSolUsd();
+  const ageMs = getSolUsdAgeMs();
+  const stale = !(price > 0) || ageMs > cap;
+  return { price, ageMs, refreshed, stale };
 }
 
 type JupiterPriceV3 = Record<string, { usdPrice?: number; price?: number }> & {
   data?: Record<string, { price?: number; usdPrice?: number }>;
 };
 
-export async function refreshSolPrice(): Promise<void> {
+export async function refreshSolPrice(): Promise<boolean> {
   const j = await fetchJson<JupiterPriceV3>(jupiterPriceV3Url(SOL_MINT), 2, jupiterJsonHeaders());
   const px = Number(j?.[SOL_MINT]?.usdPrice ?? j?.data?.[SOL_MINT]?.price ?? 0);
-  if (px > 20 && px < 5000) solUsd = px;
+  if (px > 20 && px < 5000) {
+    solUsd = px;
+    solUsdUpdatedAtMs = Date.now();
+    return true;
+  }
+  return false;
 }
 
 /** Best-effort token USD price (Jupiter API); used when DB snapshot price missing. */

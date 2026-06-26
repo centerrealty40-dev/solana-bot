@@ -141,6 +141,11 @@ const LiveOscarConfigSchema = z
      * Env: `LIVE_PARTIAL_BUY_MIN_USD`. `0` = never partial (legacy hard block).
      */
     livePartialBuyMinUsd: z.coerce.number().min(0).max(10_000).default(50),
+    /**
+     * Max age (ms) of cached SOL/USD before buy pipeline refetches Jupiter price (1.11.507).
+     * Env: `LIVE_SOL_USD_MAX_AGE_MS`. Stale price + inflated quote blocked buys when wallet had SOL.
+     */
+    liveSolUsdMaxAgeMs: z.coerce.number().int().min(1000).max(600_000).default(30_000),
 
     /** W8.0 Phase 6 — send + confirm (live). */
     liveConfirmCommitment: LiveConfirmCommitmentSchema.default('confirmed'),
@@ -683,6 +688,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
     liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
     livePartialBuyMinUsd: process.env.LIVE_PARTIAL_BUY_MIN_USD,
+    liveSolUsdMaxAgeMs: process.env.LIVE_SOL_USD_MAX_AGE_MS,
 
     liveConfirmCommitment: parseLiveConfirmCommitment(process.env.LIVE_CONFIRM_COMMITMENT),
     liveConfirmTimeoutMs: process.env.LIVE_CONFIRM_TIMEOUT_MS,

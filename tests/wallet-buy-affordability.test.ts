@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  estimateLamportsForBuyUsd,
   maxAffordableBuyUsd,
+  resolveBuyAffordRequiredLamports,
   resolvePartialBuyNotional,
   spendableLamportsForBuy,
 } from '../src/live/wallet-buy-affordability.js';
@@ -19,19 +21,48 @@ describe('wallet-buy-affordability partial slice', () => {
     expect(maxAffordableBuyUsd(wallet, buffer, solUsd)).toBeCloseTo(268.5, 1);
   });
 
-  it('resolvePartialBuyNotional shrinks $300 slice when wallet short', () => {
+  it('1.84 SOL wallet partials $300 leg instead of full skip', () => {
     const wallet = 1_840_000_000n;
     const solUsd = 150;
-    const r = resolvePartialBuyNotional({
+    const partial = resolvePartialBuyNotional({
       plannedUsd: 300,
       walletLamports: wallet,
       bufferLamports: buffer,
       solUsd,
       minUsd: 50,
     });
-    expect(r.ok).toBe(true);
-    expect(r.usdNotional).toBeCloseTo(268.5, 0);
-    expect(r.usdNotional).toBeLessThan(300);
+    expect(partial.ok).toBe(true);
+    expect(partial.usdNotional).toBeCloseTo(268.5, 0);
+    expect(partial.usdNotional).toBeLessThan(300);
+
+    const required = resolveBuyAffordRequiredLamports({
+      intendedUsd: 300,
+      solUsd,
+      quoteInLamports: estimateLamportsForBuyUsd(300, solUsd),
+      bufferLamports: buffer,
+    });
+    expect(wallet < required.requiredLamports).toBe(true);
+    expect(partial.usdNotional).toBeGreaterThanOrEqual(50);
+  });
+
+  it('52 SOL wallet passes afford gate for $300 leg at fresh SOL/USD', () => {
+    const wallet = 52_000_000_000n;
+    const solUsd = 136;
+    const resolved = resolveBuyAffordRequiredLamports({
+      intendedUsd: 300,
+      solUsd,
+      quoteInLamports: estimateLamportsForBuyUsd(300, 68),
+      bufferLamports: buffer,
+    });
+    expect(wallet >= resolved.requiredLamports).toBe(true);
+    const partial = resolvePartialBuyNotional({
+      plannedUsd: 300,
+      walletLamports: wallet,
+      bufferLamports: buffer,
+      solUsd,
+      minUsd: 50,
+    });
+    expect(partial.ok).toBe(false);
   });
 
   it('resolvePartialBuyNotional rejects when below minimum', () => {

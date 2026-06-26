@@ -6,7 +6,6 @@ import {
   fetchJupiterTokenUsdPrice,
   fetchLatestSnapshotPrice,
   getSolUsd,
-  refreshSolPrice,
 } from '../papertrader/pricing.js';
 import {
   isBuyQuoteChasingAnchor,
@@ -45,6 +44,7 @@ import {
 import {
   isInsufficientFundsSimError,
   liveWalletCanAffordLamports,
+  freshSolUsdForBuyGate,
   resolveBuyAffordRequiredLamports,
   resolvePartialBuyNotional,
 } from './wallet-buy-affordability.js';
@@ -444,11 +444,25 @@ async function runSolToTokenPipeline(
   /** May shrink below `args.usdNotional` when wallet SOL is short (1.11.506). */
   let effectiveNotional = args.usdNotional;
 
-  await refreshSolPrice();
-
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await refreshSolPrice();
-    const solUsd = getSolUsd() ?? 0;
+    const freshSol = await freshSolUsdForBuyGate(liveCfg);
+    if (freshSol.stale || !(freshSol.price > 0)) {
+      appendLiveJsonlEvent({
+        kind: 'execution_skip',
+        reason: 'buy_sol_usd_stale',
+        detail: JSON.stringify({
+          mint: args.mint.slice(0, 12),
+          solUsdAgeMs: freshSol.ageMs,
+          maxAgeMs: liveCfg.liveSolUsdMaxAgeMs,
+        }).slice(0, 500),
+      });
+      if (attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
+      return failure('other', 'other', 'buy_sol_usd_stale');
+    }
+    const solUsd = freshSol.price;
     const intentId = newLiveIntentId();
     const prep = await liveBuyQuoteAndPrepareSnapshot({
       cfg: liveCfg,
@@ -507,21 +521,21 @@ async function runSolToTokenPipeline(
           quoteInLamports,
           bufferLamports: liveCfg.liveFreeSolBufferLamports,
         });
-        if (!resolved.sane && attempt < maxAttempts - 1) {
+        if (!resolved.sane) {
           appendLiveJsonlEvent({
             kind: 'execution_skip',
             reason: 'buy_quote_sol_usd_drift',
             detail: JSON.stringify({
               mint: args.mint.slice(0, 12),
-              intendedUsd: args.usdNotional,
+              intendedUsd: effectiveNotional,
               solUsdUsed: solUsd,
+              solUsdAgeMs: freshSol.ageMs,
               driftPct: resolved.driftPct,
               quoteInLamports: String(quoteInLamports),
               estimateLamports: String(resolved.estimateLamports),
+              affordableBaseLamports: String(resolved.affordableBaseLamports),
             }).slice(0, 500),
           });
-          await sleep(liveCfg.liveBuySimRetryDelayMs);
-          continue;
         }
         const afford = await liveWalletCanAffordLamports(liveCfg, resolved.requiredLamports);
         if (!afford.ok) {
@@ -563,6 +577,7 @@ async function runSolToTokenPipeline(
               maxAffordableUsd: partial?.maxAffordableUsd ?? null,
               solUsdUsed: solUsd,
               affordSource: resolved.source,
+              affordableBaseLamports: String(resolved.affordableBaseLamports),
               quoteInLamports: String(quoteInLamports),
               estimateLamports: String(resolved.estimateLamports),
               driftPct: resolved.driftPct,

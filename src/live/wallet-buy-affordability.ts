@@ -3,7 +3,7 @@
  * avoids retry loops when the wallet cannot fund the Jupiter swap.
  */
 import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
-import { getSolUsd } from '../papertrader/pricing.js';
+import { requireFreshSolUsd } from '../papertrader/pricing.js';
 import type { LiveOscarConfig } from './config.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 
@@ -52,6 +52,12 @@ export function requiredLamportsForBuyQuote(
 /** Max |quote−estimate|/estimate before we distrust Jupiter inAmount for afford gate (1.11.459). */
 export const BUY_QUOTE_VS_ESTIMATE_MAX_DRIFT_PCT = 15;
 
+function minPositiveLamports(a: bigint, b: bigint): bigint {
+  if (a <= 0n) return b;
+  if (b <= 0n) return a;
+  return a < b ? a : b;
+}
+
 export function buyQuoteVsEstimateDriftPct(
   quoteInLamports: bigint,
   estimateLamports: bigint,
@@ -79,8 +85,9 @@ export function isBuyQuoteInAmountSane(args: {
 }
 
 /**
- * Afford gate: trust Jupiter `inAmount` only when it matches fresh SOL/USD sizing.
- * Stale `getSolUsd()` can inflate quote ~2× and false-trigger insufficient_wallet_sol.
+ * Afford gate: size check uses fresh SOL/USD estimate vs Jupiter `inAmount`.
+ * Required lamports = min(quote, freshEstimate) + buffer so stale-inflated quotes
+ * (same stale solUsd used for quote + estimate) cannot false-trigger insufficient_wallet_sol.
  */
 export function resolveBuyAffordRequiredLamports(args: {
   intendedUsd: number;
@@ -91,21 +98,39 @@ export function resolveBuyAffordRequiredLamports(args: {
 }): {
   requiredLamports: bigint;
   estimateLamports: bigint;
+  affordableBaseLamports: bigint;
   quoteInLamports: bigint;
   source: 'quote' | 'estimate';
   driftPct: number | null;
   sane: boolean;
 } {
   const { sane, estimateLamports, driftPct } = isBuyQuoteInAmountSane(args);
-  const base = sane ? args.quoteInLamports : estimateLamports;
+  const affordableBaseLamports =
+    estimateLamports > 0n
+      ? minPositiveLamports(args.quoteInLamports, estimateLamports)
+      : args.quoteInLamports;
+  const source: 'quote' | 'estimate' =
+    estimateLamports > 0n && args.quoteInLamports <= estimateLamports ? 'quote' : 'estimate';
   return {
-    requiredLamports: requiredLamportsForBuyQuote(base, args.bufferLamports),
+    requiredLamports: requiredLamportsForBuyQuote(affordableBaseLamports, args.bufferLamports),
     estimateLamports,
+    affordableBaseLamports,
     quoteInLamports: args.quoteInLamports,
-    source: sane ? 'quote' : 'estimate',
+    source,
     driftPct,
     sane,
   };
+}
+
+/** Fresh Jupiter SOL/USD for buy afford + partial sizing (max-age from config). */
+export async function freshSolUsdForBuyGate(cfg: LiveOscarConfig): Promise<{
+  price: number;
+  stale: boolean;
+  ageMs: number;
+}> {
+  const maxAge = cfg.liveSolUsdMaxAgeMs;
+  const r = await requireFreshSolUsd(maxAge);
+  return { price: r.price, stale: r.stale, ageMs: r.ageMs };
 }
 
 export function estimateLamportsForBuyUsd(usdNotional: number, solUsd: number): bigint {
@@ -190,8 +215,12 @@ export async function liveWalletCanAffordBuyUsd(
   usdNotional: number,
   solUsd?: number,
 ): Promise<LiveWalletAffordability> {
-  const px = solUsd ?? getSolUsd() ?? 0;
-  const swap = estimateLamportsForBuyUsd(usdNotional, px);
+  let px = solUsd;
+  if (!(typeof px === 'number' && px > 0)) {
+    const fresh = await freshSolUsdForBuyGate(cfg);
+    px = fresh.price;
+  }
+  const swap = estimateLamportsForBuyUsd(usdNotional, px ?? 0);
   const required = requiredLamportsForBuyQuote(swap, cfg.liveFreeSolBufferLamports);
   return liveWalletCanAffordLamports(cfg, required);
 }
