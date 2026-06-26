@@ -88,10 +88,11 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.494 — 3-leg staged entry ($200/$300 only): prod/low $200+$200+$300=$700; micro $300+$200+$300=$800; scalp_wave $300.
  * 1.11.497 — micro: no leg-2 @ −5%; $300 open + $300 staged_avg @ −10% = $600 max.
  * 1.11.499 — «Живой Оскар» canon: prod/low $500+$300+$200=$1000; micro re-enables leg-2 @ −5%: $300+$200+$100=$600; scalp_wave $300; half8_runner flat TP ON.
+ * 1.11.505 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $300; max $2400.
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '1200';
-const LIVE_OSCAR_MAX_POSITION_USD = '1800';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '1800';
+const LIVE_OSCAR_MAX_POSITION_USD = '2400';
 
 /** live-oscar-preset-c: $200 entry @ −10% + $150 DCA @ −20% (SuperBot wallet). */
 const PRESET_C_ENTRY_USD = '200';
@@ -419,23 +420,26 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.500 — prod ≥$3M: 3×$400 entry split @10s (+3/−5% corridor); avg −5% $300, −20% $300; max $1800.
+         * 1.11.505 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $300; max $2400.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '400',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '400',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '400',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
         /** 0 = timed corridor splits (not dip-triggered leg-2). */
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '5',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',

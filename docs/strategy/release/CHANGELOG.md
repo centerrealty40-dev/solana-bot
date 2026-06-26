@@ -58,6 +58,20 @@
 
 ---
 
+## [1.11.505] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.505`
+
+### live-oscar prod tier: 6×$300 entry split @5s (+3/−5% corridor)
+
+**Изменение:** prod (mcap ≥ $3M): вход **6 слайсов × $300 = $1800** с **5s** паузой между слайсами и коридором **+3%/−5%** к якорю сигнала (как exit slice timing). Low tier ($2M–$3M) без изменений: **2×$250 @ 10s**. `PAPER_POSITION_USD=1800`, `LIVE_MAX_POSITION_USD=2400` (1800 split + avg $300+$300). Код: legs 4–6 в staged entry (`entry-split-legs.ts`, gates/lifecycle/restore).
+
+**Откат:** redeploy `sa-alpha-1.11.504`; prod env: `ENTRY_SPLIT_LEG{,_2,_3}_USD=400`, `LEG4/5/6=0`, `DELAY_MS=10000`, `PAPER_POSITION_USD=1200`, `LIVE_MAX_POSITION_USD=1800`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.504] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.504`

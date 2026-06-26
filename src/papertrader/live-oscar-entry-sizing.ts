@@ -1,6 +1,12 @@
 import type { PaperTraderConfig } from './config.js';
 import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import {
+  ENTRY_SPLIT_LEG_COUNT,
+  type EntrySplitLegIndex,
+  entrySplitLegUsdFromState,
+  setEntrySplitLegDone,
+} from './entry-split-legs.js';
+import {
   resolveLiveOscarMcapTier,
   resolveLiveOscarTradeTierFromOpen,
   type LiveOscarTradeTier,
@@ -44,15 +50,63 @@ export function resolveLiveOscarEntrySplitLeg3Usd(
   return cfg.liveStagedEntryEntrySplitLeg3Usd;
 }
 
+/** Prod timed entry-split legs 4–6; low/micro always `0`. */
+export function resolveLiveOscarEntrySplitLeg4Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'micro' || tier === 'low') return 0;
+  return cfg.liveStagedEntryEntrySplitLeg4Usd;
+}
+
+export function resolveLiveOscarEntrySplitLeg5Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'micro' || tier === 'low') return 0;
+  return cfg.liveStagedEntryEntrySplitLeg5Usd;
+}
+
+export function resolveLiveOscarEntrySplitLeg6Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'micro' || tier === 'low') return 0;
+  return cfg.liveStagedEntryEntrySplitLeg6Usd;
+}
+
+export function resolveLiveOscarEntrySplitLegUsdByIndex(
+  cfg: PaperTraderConfig,
+  tier: LiveOscarTradeTier | undefined,
+  legIndex: EntrySplitLegIndex,
+): number {
+  switch (legIndex) {
+    case 1:
+      return resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+    case 2:
+      return resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+    case 3:
+      return resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
+    case 4:
+      return resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
+    case 5:
+      return resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
+    case 6:
+      return resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+    default:
+      return 0;
+  }
+}
+
 export function resolveLiveOscarEntrySplitTotalUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
-  return (
-    resolveLiveOscarEntrySplitLegUsd(cfg, tier) +
-    resolveLiveOscarEntrySplitLeg2Usd(cfg, tier) +
-    resolveLiveOscarEntrySplitLeg3Usd(cfg, tier)
-  );
+  let sum = 0;
+  for (let i = 1; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
+    sum += resolveLiveOscarEntrySplitLegUsdByIndex(cfg, tier, i as EntrySplitLegIndex);
+  }
+  return sum;
 }
 
 /** First staged averaging drop % from signal anchor. */
@@ -106,9 +160,7 @@ export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void 
   if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !cfg.liveStagedEntryEnabled) return;
 
   const prodLeg1 = resolveLiveOscarEntrySplitLegUsd(cfg, 'prod');
-  const prodLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, 'prod');
-  const prodLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, 'prod');
-  const prodSplitTotal = prodLeg1 + prodLeg2 + prodLeg3;
+  const prodSplitTotal = resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod');
   const pos = cfg.positionUsd;
   const errors: string[] = [];
 
@@ -120,7 +172,7 @@ export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void 
   }
   if (prodLeg1 > 0 && pos > 0 && Math.abs(pos - prodSplitTotal) > 1e-6) {
     errors.push(
-      `PAPER_POSITION_USD (${pos}) must equal prod split leg1+leg2+leg3 (${prodLeg1}+${prodLeg2}+${prodLeg3}=${prodSplitTotal})`,
+      `PAPER_POSITION_USD (${pos}) must equal prod entry-split total (${prodSplitTotal})`,
     );
   }
   if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - prodLeg1) > 1e-6) {
@@ -176,16 +228,20 @@ export function applyCanonicalStagedEntrySizing(
   tier?: LiveOscarTradeTier,
 ): void {
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
-  const leg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
-  const leg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
   const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier);
   const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
   const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
   const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier);
   st.firstLegUsd = leg1;
   st.entrySplitLegUsd = leg1;
-  st.entrySplitLeg2Usd = leg2;
-  st.entrySplitLeg3Usd = leg3;
+  st.entrySplitLeg2Usd = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+  st.entrySplitLeg3Usd = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
+  st.entrySplitLeg4Usd = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
+  st.entrySplitLeg5Usd = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
+  st.entrySplitLeg6Usd = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+  for (let i = 2; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
+    setEntrySplitLegDone(st, i as EntrySplitLegIndex, entrySplitLegUsdFromState(st, i as EntrySplitLegIndex) <= 0);
+  }
   st.entrySplitDelayMs = cfg.liveStagedEntryEntrySplitDelayMs;
   st.entrySplitMaxUpPct = cfg.liveStagedEntryEntrySplitMaxUpPct;
   st.entrySplitMaxDownPct = cfg.liveStagedEntryEntrySplitMaxDownPct;

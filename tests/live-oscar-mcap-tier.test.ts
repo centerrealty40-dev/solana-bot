@@ -44,7 +44,7 @@ describe('live-oscar-mcap-tier', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS = '';
     process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT = '-18';
     process.env.PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD = '25000';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '400';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '300';
     process.env.PAPER_DCA_LEVELS = '-10:0.266667,-20:0.266667';
   });
 
@@ -79,7 +79,7 @@ describe('live-oscar-mcap-tier', () => {
     const cfg = loadPaperTraderConfig();
     expect(liveOscarTierStagedSplitLegUsd(cfg, 'low')).toBe(250);
     expect(liveOscarTierPositionUsd(cfg, 'low')).toBe(500);
-    expect(liveOscarTierStagedSplitLegUsd(cfg, 'prod')).toBe(400);
+    expect(liveOscarTierStagedSplitLegUsd(cfg, 'prod')).toBe(300);
     expect(liveOscarTierDcaLevelsSpec(cfg, 'low')).toBe('');
   });
 

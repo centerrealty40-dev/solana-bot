@@ -3,6 +3,7 @@ import {
   entrySplitBandOk,
   entrySplitCorridorBlocked,
   entrySplitLeg2Eligible,
+  entrySplitTimedLegEligible,
   liveStagedEntryAddWindowOpen,
   liveStagedEntryHasPendingLegs,
   liveStagedEntryTtlPreservesPlan,
@@ -401,6 +402,42 @@ describe('liveStagedEntryInPositionTtl', () => {
       cfg: ttlCfg1h,
     });
     expect(plan.action).toBe('ttl_expired_clear');
+  });
+});
+
+describe('entrySplitTimedLegEligible legs 3–6', () => {
+  it('leg4 requires delay after leg-3 fill timestamp', () => {
+    const leg1Ts = 1_000_000;
+    const st = {
+      ...baseSt(),
+      entrySplitLeg1Ts: leg1Ts,
+      entrySplitTargetDropPct: 0,
+      entrySplitDelayMs: 5000,
+      entrySplitLeg2Done: true,
+      entrySplitLeg3Done: true,
+      entrySplitLeg2Ts: leg1Ts + 5000,
+      entrySplitLeg3Ts: leg1Ts + 10_000,
+    };
+    expect(
+      entrySplitTimedLegEligible({
+        st,
+        signalDropPct: 0,
+        nowMs: leg1Ts + 14_999,
+        entrySplitPx: 1.01,
+        anchorUsd: 1,
+        legIndex: 4,
+      }).ok,
+    ).toBe(false);
+    expect(
+      entrySplitTimedLegEligible({
+        st,
+        signalDropPct: 0,
+        nowMs: leg1Ts + 15_000,
+        entrySplitPx: 1.01,
+        anchorUsd: 1,
+        legIndex: 4,
+      }).ok,
+    ).toBe(true);
   });
 });
 

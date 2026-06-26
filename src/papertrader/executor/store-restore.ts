@@ -236,6 +236,15 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg3Usd: Number.isFinite(Number(p.entrySplitLeg3Usd))
                   ? Number(p.entrySplitLeg3Usd)
                   : 0,
+                entrySplitLeg4Usd: Number.isFinite(Number(p.entrySplitLeg4Usd))
+                  ? Number(p.entrySplitLeg4Usd)
+                  : 0,
+                entrySplitLeg5Usd: Number.isFinite(Number(p.entrySplitLeg5Usd))
+                  ? Number(p.entrySplitLeg5Usd)
+                  : 0,
+                entrySplitLeg6Usd: Number.isFinite(Number(p.entrySplitLeg6Usd))
+                  ? Number(p.entrySplitLeg6Usd)
+                  : 0,
                 entrySplitTargetDropPct: Number.isFinite(Number(p.entrySplitTargetDropPct))
                   ? Number(p.entrySplitTargetDropPct)
                   : 0,
@@ -246,6 +255,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg1Ts: Number(p.entrySplitLeg1Ts) || signalTs,
                 entrySplitLeg2Done: Boolean(p.entrySplitLeg2Done),
                 entrySplitLeg3Done: Boolean(p.entrySplitLeg3Done),
+                entrySplitLeg4Done: Boolean(p.entrySplitLeg4Done),
+                entrySplitLeg5Done: Boolean(p.entrySplitLeg5Done),
+                entrySplitLeg6Done: Boolean(p.entrySplitLeg6Done),
+                entrySplitLeg2Ts: Number.isFinite(Number(p.entrySplitLeg2Ts)) ? Number(p.entrySplitLeg2Ts) : undefined,
+                entrySplitLeg3Ts: Number.isFinite(Number(p.entrySplitLeg3Ts)) ? Number(p.entrySplitLeg3Ts) : undefined,
+                entrySplitLeg4Ts: Number.isFinite(Number(p.entrySplitLeg4Ts)) ? Number(p.entrySplitLeg4Ts) : undefined,
+                entrySplitLeg5Ts: Number.isFinite(Number(p.entrySplitLeg5Ts)) ? Number(p.entrySplitLeg5Ts) : undefined,
+                entrySplitLeg6Ts: Number.isFinite(Number(p.entrySplitLeg6Ts)) ? Number(p.entrySplitLeg6Ts) : undefined,
                 avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
                 avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
                 avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,

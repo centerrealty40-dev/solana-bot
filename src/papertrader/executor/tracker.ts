@@ -119,6 +119,7 @@ import {
 } from '../../live/mint-whitelist.js';
 import { onLiveOscarFirstMintProbeFullClose } from '../../live/mint-first-probe.js';
 import { stagedAveragingConfigured, buildLiveStagedEntryState } from './live-staged-entry-gates.js';
+import { entrySplitAllLegsDone } from '../entry-split-legs.js';
 import { tryPaperOnlyScaleInTrackerStep } from './paper-entry-scale-in.js';
 import { makeOpenTradeFromEntry } from './open.js';
 import {
@@ -3160,10 +3161,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       {
         const v2AvgDone =
           st.entrySplitV2 === true
-            ? st.entrySplitLeg2Done === true &&
-              (st.entrySplitLeg3Usd == null ||
-                st.entrySplitLeg3Usd <= 0 ||
-                st.entrySplitLeg3Done === true) &&
+            ? entrySplitAllLegsDone(st) &&
               (!stagedAveragingConfigured(st) ||
                 (st.avgThirdLegUsd != null && st.avgThirdLegUsd > 0
                   ? st.avgSecondLegDone === true

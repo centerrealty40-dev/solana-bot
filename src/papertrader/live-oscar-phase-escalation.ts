@@ -10,6 +10,11 @@ import {
   markEntrySplitLeg1Filled,
 } from './executor/live-staged-entry-gates.js';
 import {
+  entrySplitLegUsdFromState,
+  entrySplitTimedLegIndices,
+  setEntrySplitLegDone,
+} from './entry-split-legs.js';
+import {
   isLiveOscarScalpWaveLaneEnabled,
   isLiveOscarScalpWaveTrade,
   resolveLiveOscarTradeLaneFromOpen,
@@ -150,10 +155,13 @@ export function applyLiveOscarPhaseEscalation(args: {
       { marketCapUsd: marketCapUsd ?? ot.entryMarketCapUsd },
     );
     markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
-    const leg2Usd = ot.liveStagedEntry.entrySplitLeg2Usd ?? 0;
-    const leg3Usd = ot.liveStagedEntry.entrySplitLeg3Usd ?? 0;
-    ot.liveStagedEntry.entrySplitLeg2Done = leg2Usd <= 0;
-    ot.liveStagedEntry.entrySplitLeg3Done = leg3Usd <= 0;
+    for (const legIndex of entrySplitTimedLegIndices()) {
+      setEntrySplitLegDone(
+        ot.liveStagedEntry,
+        legIndex,
+        entrySplitLegUsdFromState(ot.liveStagedEntry, legIndex) <= 0,
+      );
+    }
     ot.liveStagedEntry.secondLegDone = false;
     ot.liveStagedEntry.avgFirstLegDone = false;
     ot.liveStagedEntry.avgSecondLegDone = false;
