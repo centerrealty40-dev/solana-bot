@@ -60,6 +60,26 @@
 
 ---
 
+---
+
+## [1.11.510] — 2026-06-26
+
+**Тег:** `sa-alpha-1.11.510`
+
+### Dashboard + tracker — wallet-drain partial close PnL (NEST)
+
+**Root cause (NEST):** после TP1/TP2 journal `remainingFraction` ещё 25%, но на кошельке осталось ~3% токенов; trail partial с `usd_capped_by_chain` вернул $64 chain SOL, wallet SPL=0 → `remainingFraction=0`, close посчитал `sum(partial proceeds)−invested = −$64`. Реальная экономика выхода по trail — MTM остатка по `marketPrice` последнего partial (+~22%, trail label +20%).
+
+**Fix:**
+- Tracker: на wallet-drain partial — `mtmFlushProceedsUsd` по journal-остатку до partial; `buildClosedTrade` reconciles close proceeds.
+- Dashboard: `sanitizeWalletDrainPartialCloseForDashboard` для исторических JSONL; `%` = `netPnlUsd/notional` после repair (согласовано с $).
+
+**Откат:** `git checkout sa-alpha-1.11.509 -- src/papertrader/types.ts src/papertrader/executor/tracker.ts scripts-tmp/dashboard-server.ts tests/dashboard-paper2-closed-pnl.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar live-oscar-dashboard --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.509] — 2026-06-26
 
 **Тег:** `sa-alpha-1.11.509`
