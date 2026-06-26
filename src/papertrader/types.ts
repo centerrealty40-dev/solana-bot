@@ -171,6 +171,12 @@ export interface PartialSell {
   trailLevelPnlFrac?: number;
   /** Russian dashboard label when set at sell time. */
   timelineLabelRu?: string;
+  /** Live: SPL=0 after partial while journal still had remainder — chain under-recovered vs MTM. */
+  walletDrainedFlush?: boolean;
+  /** Journal `remainingFraction` immediately before this partial sell. */
+  remainingFractionBeforePartial?: number;
+  /** MTM USD for full journal remainder at `marketPrice` when wallet drained with chain drift. */
+  mtmFlushProceedsUsd?: number;
 }
 
 export interface OpenTrade {

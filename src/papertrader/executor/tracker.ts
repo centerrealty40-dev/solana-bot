@@ -361,6 +361,86 @@ function totalProceedsGross(ot: OpenTrade): number {
   return ot.partialSells.reduce((s, p) => s + (p.grossProceedsUsd || 0), 0);
 }
 
+/** Journal remainder fraction immediately before partial `lastIdx` (product of prior sellFractions). */
+function journalRemainderFractionBeforePartial(ot: OpenTrade, lastIdx: number): number {
+  let rem = 1;
+  for (let i = 0; i < lastIdx; i++) {
+    rem *= 1 - (ot.partialSells[i]?.sellFraction ?? 0);
+  }
+  return rem;
+}
+
+function inferMtmFlushProceedsUsd(ot: OpenTrade, lastIdx: number): number {
+  const last = ot.partialSells[lastIdx];
+  if (!last) return 0;
+  const rem = last.remainingFractionBeforePartial ?? journalRemainderFractionBeforePartial(ot, lastIdx);
+  const px = last.marketPrice > 0 ? last.marketPrice : last.price;
+  if (!(rem > 1e-9 && px > 0 && ot.avgEntry > 0 && ot.totalInvestedUsd > 0)) return last.proceedsUsd || 0;
+  return ot.totalInvestedUsd * rem * (px / ot.avgEntry);
+}
+
+function partialUnwindProceedsUsdForClose(ot: OpenTrade): number {
+  const partials = ot.partialSells;
+  if (!partials.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < partials.length; i++) {
+    const p = partials[i]!;
+    const isLast = i === partials.length - 1;
+    const chain = p.proceedsUsd || 0;
+    if (!isLast) {
+      sum += chain;
+      continue;
+    }
+    const mtm = p.mtmFlushProceedsUsd ?? inferMtmFlushProceedsUsd(ot, i);
+    const useMtm =
+      p.walletDrainedFlush === true ||
+      (p.mtmFlushProceedsUsd != null && p.mtmFlushProceedsUsd > chain) ||
+      (ot.remainingFraction <= 1e-6 &&
+        (p.slipRealizedPct ?? 0) >= 15 &&
+        mtm > chain * 1.12 &&
+        chain > 0);
+    sum += useMtm ? mtm : chain;
+  }
+  return sum;
+}
+
+function applyPartialUnwindCloseProceedsReconcile(ct: ClosedTrade, ot: OpenTrade): void {
+  if (!ot.partialSells.length) return;
+  const invested = ot.totalInvestedUsd;
+  if (!(invested > 0)) return;
+  const chainTotal = totalProceedsNet(ot);
+  const reconciled = partialUnwindProceedsUsdForClose(ot);
+  if (!(reconciled > chainTotal + 0.5)) return;
+  ct.totalProceedsUsd = reconciled;
+  ct.grossTotalProceedsUsd = reconciled;
+  ct.netPnlUsd = reconciled - invested;
+  ct.grossPnlUsd = ct.netPnlUsd;
+  ct.pnlPct = (ct.netPnlUsd / invested) * 100;
+  ct.grossPnlPct = ct.pnlPct;
+  const last = ot.partialSells[ot.partialSells.length - 1]!;
+  const exitPx = last.marketPrice > 0 ? last.marketPrice : last.price;
+  if (exitPx > 0) {
+    ct.effective_exit_price = exitPx;
+    ct.theoretical_exit_price = exitPx;
+    ct.exitMcUsd = exitPx;
+  } else if (ot.avgEntry > 0) {
+    ct.effective_exit_price = ot.avgEntry * (reconciled / invested);
+  }
+  if (ct.exitContext && typeof ct.exitContext === 'object') {
+    ct.exitContext = {
+      ...ct.exitContext,
+      closePnlPct: +ct.pnlPct.toFixed(2),
+    };
+  }
+  if (ct.costs) {
+    ct.costs = {
+      ...ct.costs,
+      gross_pnl_usd: ct.grossPnlUsd,
+      net_pnl_usd: ct.netPnlUsd,
+    };
+  }
+}
+
 function stampFullExitTxSignature(ct: ClosedTrade, sellOut: LiveTokenToSolSellResult): void {
   const s = sellOut.txSignature;
   if (typeof s === 'string' && s.length > 16) ct.fullExitTxSignature = s;
@@ -608,7 +688,7 @@ function buildClosedTrade(args: {
   });
 
   const firstLeg: PositionLeg | undefined = ot.legs[0];
-  return {
+  const ct: ClosedTrade = {
     ...ot,
     exitTs: Date.now(),
     exitMcUsd: marketSell,
@@ -626,6 +706,8 @@ function buildClosedTrade(args: {
     theoretical_entry_price: firstLeg ? firstLeg.marketPrice : ot.avgEntryMarket,
     theoretical_exit_price: marketSell,
   };
+  applyPartialUnwindCloseProceedsReconcile(ct, ot);
+  return ct;
 }
 
 type TpPartialSellResult = 'ok' | 'defer_next' | 'abort_mint';
@@ -689,6 +771,7 @@ async function tryExecuteTpPartialSell(args: {
   if (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot)) {
     sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg);
   }
+  const remainingFractionBeforePartial = ot.remainingFraction;
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
   const investedSoldUsd = ot.totalInvestedUsd * ot.remainingFraction * sellFraction;
   /**
@@ -873,6 +956,7 @@ async function tryExecuteTpPartialSell(args: {
   ot.partialSells.push(ps);
   ot.lastPartialSellTs = ps.ts;
   ot.remainingFraction *= 1 - sellFraction;
+  let walletDrainedFlush = false;
   if (
     liveOscarCfg?.strategyEnabled &&
     liveOscarCfg.executionMode === 'live' &&
@@ -881,6 +965,7 @@ async function tryExecuteTpPartialSell(args: {
     livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained)
   ) {
     ot.remainingFraction = 0;
+    walletDrainedFlush = true;
     log.info(
       {
         mint: mint.slice(0, 8),
@@ -899,10 +984,28 @@ async function tryExecuteTpPartialSell(args: {
     const bal = chainMap?.get(mint);
     if (chainMap != null && (!bal || bal === 0n)) {
       ot.remainingFraction = 0;
+      walletDrainedFlush = true;
       log.info(
         { mint: mint.slice(0, 8), symbol: ot.symbol },
         'live partial TP: SPL balance 0 after sell — sync remainingFraction=0 (avoid false orphan)',
       );
+    }
+  }
+  if (
+    walletDrainedFlush &&
+    remainingFractionBeforePartial > 1e-6 &&
+    marketSell > 0 &&
+    ot.avgEntry > 0
+  ) {
+    const mtmFlushProceedsUsd =
+      ot.totalInvestedUsd * remainingFractionBeforePartial * (marketSell / ot.avgEntry);
+    ps.walletDrainedFlush = true;
+    ps.remainingFractionBeforePartial = remainingFractionBeforePartial;
+    ps.mtmFlushProceedsUsd = mtmFlushProceedsUsd;
+    if (proceedsUsd < mtmFlushProceedsUsd * 0.85) {
+      ps.price = marketSell;
+      ps.pnlUsd = mtmFlushProceedsUsd - ot.totalInvestedUsd * remainingFractionBeforePartial;
+      ps.grossPnlUsd = ps.pnlUsd;
     }
   }
   markLadder();
