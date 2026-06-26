@@ -1,6 +1,7 @@
 import { computeTwapSchedule } from './twap-schedule.js';
 import type { NormalizedTwapSignal, TwapSide } from './types.js';
 import { isMicroTwapMinutes, twapDurationGate } from './twap-duration.js';
+import { isBlockedCoin } from './coin-blocklist.js';
 import { isBlocklistedWhale } from './whale-blocklist.js';
 import { isDeniedWhale } from './whale-denylist.js';
 import { hlTwapUnrestrictedMode } from './unrestricted.js';
@@ -216,6 +217,10 @@ export function computeCoinEntryPlan(
       waitForOppositeEndsMs: null,
     });
   };
+
+  if (isBlockedCoin(sig.coin, sig.displaySymbol)) {
+    return deny('coin_blocklist');
+  }
 
   if (hlTwapUnrestrictedMode()) {
     const duration = twapDurationGate(sig.minutes);
