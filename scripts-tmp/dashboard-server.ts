@@ -378,8 +378,7 @@ export function closedRowDisplayPnlPct(c: Paper2ClosedRow, pnlUsd: number): numb
   if (typeof pnlSolRaw === 'number' && Number.isFinite(pnlSolRaw) && entrySol > 0) {
     return (pnlSolRaw / entrySol) * 100;
   }
-  // Partial TP/trail unwinds: last exit px can sit above avg entry while total
-  // proceeds < invested — netPnlUsd (and journal pnlPct) are the display truth.
+  // Partial TP/trail unwinds: netPnlUsd / notional; % must match $ column after wallet-drain MTM repair.
   const notional = closedRowNotionalUsd(c);
   if (notional > 0 && Number.isFinite(pnlUsd)) return (pnlUsd / notional) * 100;
   const journalPct = Number(c.pnlPct ?? NaN);
@@ -3039,6 +3038,83 @@ function sanitizeCorruptLivePeriodicHealClosedTrade(ct: Record<string, unknown>)
   return out;
 }
 
+function journalRemainderFractionBeforePartialDashboard(
+  partials: Record<string, unknown>[],
+  lastIdx: number,
+): number {
+  let rem = 1;
+  for (let i = 0; i < lastIdx; i++) {
+    rem *= 1 - Number(partials[i]?.sellFraction ?? 0);
+  }
+  return rem;
+}
+
+/**
+ * Wallet-drain partial unwind (NEST 2026-06-26): journal remainder >> chain proceeds on last
+ * trail dump after usd_capped_by_chain drift. Repair close PnL using MTM at last partial market px.
+ */
+export function sanitizeWalletDrainPartialCloseForDashboard(ct: Record<string, unknown>): Record<string, unknown> {
+  const partials = Array.isArray(ct.partialSells)
+    ? (ct.partialSells as Record<string, unknown>[])
+    : [];
+  if (partials.length < 2) return ct;
+  const invested = Number(ct.totalInvestedUsd ?? 0);
+  let avgEntry = Number(ct.avgEntry ?? 0);
+  if (!(avgEntry > 0)) avgEntry = Number(ct.effective_entry_price ?? 0);
+  if (!(invested > 0 && avgEntry > 0 && avgEntry < 500)) return ct;
+
+  const exitCtx = ct.exitContext as Record<string, unknown> | undefined;
+  const remAtClose =
+    exitCtx && exitCtx.remainingFractionAtClose != null
+      ? Number(exitCtx.remainingFractionAtClose)
+      : Number(ct.remainingFraction ?? 0);
+  if (remAtClose > 1e-6) return ct;
+
+  const lastIdx = partials.length - 1;
+  const last = partials[lastIdx]!;
+  const chainProceeds = Number(last.proceedsUsd ?? 0);
+  const slip = Number(last.slipRealizedPct ?? 0);
+  const remBefore =
+    Number(last.remainingFractionBeforePartial ?? NaN) ||
+    journalRemainderFractionBeforePartialDashboard(partials, lastIdx);
+  const lastPx = Number(last.marketPrice ?? last.price ?? 0);
+  if (!(remBefore > 1e-6 && lastPx > 0 && chainProceeds > 0)) return ct;
+
+  const mtmFlush =
+    Number(last.mtmFlushProceedsUsd ?? NaN) ||
+    invested * remBefore * (lastPx / avgEntry);
+  const useMtm =
+    last.walletDrainedFlush === true ||
+    (Number.isFinite(Number(last.mtmFlushProceedsUsd)) && Number(last.mtmFlushProceedsUsd) > chainProceeds) ||
+    (slip >= 15 && mtmFlush > chainProceeds * 1.12);
+  if (!useMtm) return ct;
+
+  const sumPrior = partials
+    .slice(0, lastIdx)
+    .reduce((s, p) => s + Number(p.proceedsUsd ?? 0), 0);
+  const chainTotal = sumPrior + chainProceeds;
+  const totalRecv = sumPrior + mtmFlush;
+  if (!(totalRecv > chainTotal + 0.5)) return ct;
+
+  const netRepair = totalRecv - invested;
+  const pnlPctRepair = (netRepair / invested) * 100;
+  const out: Record<string, unknown> = { ...ct };
+  out.netPnlUsd = netRepair;
+  out.pnlPct = pnlPctRepair;
+  out.grossPnlUsd = netRepair;
+  out.grossPnlPct = pnlPctRepair;
+  out.totalProceedsUsd = totalRecv;
+  out.grossTotalProceedsUsd = totalRecv;
+  out.theoretical_exit_price = lastPx;
+  out.effective_exit_price = lastPx;
+  out.exitMcUsd = lastPx;
+  if (exitCtx && typeof exitCtx === 'object') {
+    out.exitContext = { ...exitCtx, closePnlPct: +pnlPctRepair.toFixed(2) };
+  }
+  out.__pnlDisplayRepair = 'wallet_drain_partial_mtm_flush';
+  return out;
+}
+
 /** RECONCILE_ORPHAN books remainder at cost (net 0); dashboard shows fees / last observed px. */
 function sanitizeReconcileOrphanClosedTradeForDashboard(ct: Record<string, unknown>): Record<string, unknown> {
   if (String(ct.exitReason ?? '') !== 'RECONCILE_ORPHAN') return ct;
@@ -3484,6 +3560,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
     if (kind === 'live_position_close') {
       let ct = sanitizeCorruptLivePeriodicHealClosedTrade((o.closedTrade ?? {}) as Record<string, unknown>);
       ct = sanitizeReconcileOrphanClosedTradeForDashboard(ct);
+      ct = sanitizeWalletDrainPartialCloseForDashboard(ct);
       const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
       const syn: Record<string, unknown> = {
         kind: 'close',
