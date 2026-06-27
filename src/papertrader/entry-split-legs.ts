@@ -1,11 +1,11 @@
 import type { LiveStagedEntryState } from './types.js';
 
-/** Max timed entry-split legs including open leg-1 (prod: 6×$300). */
-export const ENTRY_SPLIT_LEG_COUNT = 6;
+/** Max timed entry-split legs including open leg-1 (prod: 7×$300). */
+export const ENTRY_SPLIT_LEG_COUNT = 7;
 
-export type EntrySplitLegIndex = 1 | 2 | 3 | 4 | 5 | 6;
+export type EntrySplitLegIndex = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-const TIMED_LEG_INDICES: EntrySplitLegIndex[] = [2, 3, 4, 5, 6];
+const TIMED_LEG_INDICES: EntrySplitLegIndex[] = [2, 3, 4, 5, 6, 7];
 
 export function entrySplitLegUsdFromState(st: LiveStagedEntryState, legIndex: EntrySplitLegIndex): number {
   switch (legIndex) {
@@ -21,6 +21,8 @@ export function entrySplitLegUsdFromState(st: LiveStagedEntryState, legIndex: En
       return st.entrySplitLeg5Usd ?? 0;
     case 6:
       return st.entrySplitLeg6Usd ?? 0;
+    case 7:
+      return st.entrySplitLeg7Usd ?? 0;
     default:
       return 0;
   }
@@ -40,6 +42,8 @@ export function entrySplitLegDoneFromState(st: LiveStagedEntryState, legIndex: E
       return st.entrySplitLeg5Done === true;
     case 6:
       return st.entrySplitLeg6Done === true;
+    case 7:
+      return st.entrySplitLeg7Done === true;
     default:
       return true;
   }
@@ -61,6 +65,9 @@ export function setEntrySplitLegDone(st: LiveStagedEntryState, legIndex: EntrySp
       break;
     case 6:
       st.entrySplitLeg6Done = done;
+      break;
+    case 7:
+      st.entrySplitLeg7Done = done;
       break;
     default:
       break;
@@ -84,6 +91,9 @@ export function setEntrySplitLegTs(st: LiveStagedEntryState, legIndex: EntrySpli
     case 6:
       st.entrySplitLeg6Ts = ts;
       break;
+    case 7:
+      st.entrySplitLeg7Ts = ts;
+      break;
     default:
       break;
   }
@@ -106,6 +116,8 @@ export function entrySplitLegTsFromState(
       return st.entrySplitLeg5Ts;
     case 6:
       return st.entrySplitLeg6Ts;
+    case 7:
+      return st.entrySplitLeg7Ts;
     default:
       return undefined;
   }

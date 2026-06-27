@@ -245,6 +245,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg6Usd: Number.isFinite(Number(p.entrySplitLeg6Usd))
                   ? Number(p.entrySplitLeg6Usd)
                   : 0,
+                entrySplitLeg7Usd: Number.isFinite(Number(p.entrySplitLeg7Usd))
+                  ? Number(p.entrySplitLeg7Usd)
+                  : 0,
                 entrySplitTargetDropPct: Number.isFinite(Number(p.entrySplitTargetDropPct))
                   ? Number(p.entrySplitTargetDropPct)
                   : 0,
@@ -258,11 +261,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg4Done: Boolean(p.entrySplitLeg4Done),
                 entrySplitLeg5Done: Boolean(p.entrySplitLeg5Done),
                 entrySplitLeg6Done: Boolean(p.entrySplitLeg6Done),
+                entrySplitLeg7Done: Boolean(p.entrySplitLeg7Done),
                 entrySplitLeg2Ts: Number.isFinite(Number(p.entrySplitLeg2Ts)) ? Number(p.entrySplitLeg2Ts) : undefined,
                 entrySplitLeg3Ts: Number.isFinite(Number(p.entrySplitLeg3Ts)) ? Number(p.entrySplitLeg3Ts) : undefined,
                 entrySplitLeg4Ts: Number.isFinite(Number(p.entrySplitLeg4Ts)) ? Number(p.entrySplitLeg4Ts) : undefined,
                 entrySplitLeg5Ts: Number.isFinite(Number(p.entrySplitLeg5Ts)) ? Number(p.entrySplitLeg5Ts) : undefined,
                 entrySplitLeg6Ts: Number.isFinite(Number(p.entrySplitLeg6Ts)) ? Number(p.entrySplitLeg6Ts) : undefined,
+                entrySplitLeg7Ts: Number.isFinite(Number(p.entrySplitLeg7Ts)) ? Number(p.entrySplitLeg7Ts) : undefined,
                 avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
                 avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
                 avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,
@@ -390,6 +395,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     }
     if (Boolean(rawPayload.liveWaveBreakevenInsuranceTaken)) {
       ot.liveWaveBreakevenInsuranceTaken = true;
+    }
+    if (Boolean(rawPayload.liveWavePreArmNoHalf8PartialTaken)) {
+      ot.liveWavePreArmNoHalf8PartialTaken = true;
     }
     if (Boolean(rawPayload.liveWavePostTp1DeriskTaken)) {
       ot.liveWavePostTp1DeriskTaken = true;
@@ -541,6 +549,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'WAVE_B_BREAKEVEN_INSURANCE') {
     ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+  if (reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') {
+    ot.liveWavePreArmNoHalf8PartialTaken = true;
   }
   if (reason === 'WAVE_B_POST_TP1_DERISK') {
     ot.liveWavePostTp1DeriskTaken = true;

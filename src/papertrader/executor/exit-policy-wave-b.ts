@@ -259,6 +259,57 @@ export function waveBBreakevenExitEligible(ot: OpenTrade, stepPnl: number): bool
   return waveBExecutedTpGridThresholdTaken(ot, stepPnl) + LADDER_PNL_EPS >= WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 }
 
+/** half8_runner: first +8% TP grid rung executed via partial sell. */
+export function waveBHalf8TpTaken(ot: OpenTrade): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWaveFlatTpMode !== 'half8_runner') return false;
+  const step = WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl;
+  return waveBExecutedTpGridThresholdTaken(ot, step) + LADDER_PNL_EPS >= step;
+}
+
+/**
+ * half8_runner rare path: pre-arm (+7.5% vs entry market) touched but +8% TP never fired.
+ * Normal half8_runner (+8% partial taken) and non-half8 modes are excluded.
+ */
+export function waveBPreArmNoHalf8ScenarioActive(ot: OpenTrade): boolean {
+  if (!isWaveBExitPolicy(ot) || ot.liveWaveFlatTpMode !== 'half8_runner') return false;
+  if (ot.liveWavePreArmReached !== true) return false;
+  return !waveBHalf8TpTaken(ot);
+}
+
+/** Pre-arm/no-TP8 ladder: one partial at/above configured PnL vs avg (default +5%). */
+export function waveBPreArmNoHalf8PartialEligible(
+  ot: OpenTrade,
+  cfg: PaperTraderConfig,
+  pnlFrac: number,
+): boolean {
+  if (!cfg.liveOscarWaveBPreArmNoHalf8LadderEnabled) return false;
+  if (!waveBPreArmNoHalf8ScenarioActive(ot)) return false;
+  if (ot.liveWavePreArmNoHalf8PartialTaken) return false;
+  if (ot.remainingFraction <= 1e-9) return false;
+  return pnlFrac + LADDER_PNL_EPS >= cfg.liveOscarWaveBPreArmNoHalf8PartialPnlFrac;
+}
+
+/** Pre-arm/no-TP8 ladder: full exit on pullback to configured floor vs avg (default +2.5%) after partial. */
+export function waveBPreArmNoHalf8PullbackFullExitEligible(
+  ot: OpenTrade,
+  cfg: PaperTraderConfig,
+  pnlFrac: number,
+): boolean {
+  if (!cfg.liveOscarWaveBPreArmNoHalf8LadderEnabled) return false;
+  if (!waveBPreArmNoHalf8ScenarioActive(ot)) return false;
+  if (!ot.liveWavePreArmNoHalf8PartialTaken) return false;
+  return pnlFrac <= cfg.liveOscarWaveBPreArmNoHalf8PullbackPnlFrac + LADDER_PNL_EPS;
+}
+
+/**
+ * Legacy breakeven-at-0% gate — suppressed for pre-arm/no-TP8 ladder (uses +2.5% pullback exit instead).
+ */
+export function waveBBreakevenAtZeroExitEligible(ot: OpenTrade, stepPnl: number): boolean {
+  if (!waveBBreakevenExitEligible(ot, stepPnl)) return false;
+  if (waveBPreArmNoHalf8ScenarioActive(ot)) return false;
+  return true;
+}
+
 /** True when TP grid rungs +2.5% (idx 0) and +5% (idx 1) were both executed. */
 export function waveBFirstTwoTpRungsTaken(ot: OpenTrade, stepPnl: number): boolean {
   if (!isWaveBExitPolicy(ot) || !(stepPnl > 0)) return false;

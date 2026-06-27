@@ -131,6 +131,7 @@ export interface PartialSell {
     | 'TP_LADDER'
     | 'BREAKEVEN_TRIM'
     | 'WAVE_B_BREAKEVEN_INSURANCE'
+    | 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL'
     | 'WAVE_B_POST_TP1_DERISK'
     | 'TRAIL_STEP'
     | 'TRAIL'
@@ -292,6 +293,8 @@ export interface OpenTrade {
    * Wave B: одноразовая страховка при откате к безубытку после первых двух TP (+2.5% / +5%).
    */
   liveWaveBreakevenInsuranceTaken?: boolean;
+  /** Wave B half8_runner: +5% partial taken in pre-arm-without-+8%-TP ladder. */
+  liveWavePreArmNoHalf8PartialTaken?: boolean;
 
   /**
    * Wave B: одноразовый de-risk после первой TP — продажа доли остатка при просадке ниже порога vs avg.
@@ -417,10 +420,11 @@ export interface LiveStagedEntryState {
   entrySplitLeg2Usd?: number;
   /** Optional third timed entry-split leg (prod 3×+ split). */
   entrySplitLeg3Usd?: number;
-  /** Prod timed entry-split legs 4–6 (6×$300 slice model). */
+  /** Prod timed entry-split legs 4–7 (7×$300 slice model). */
   entrySplitLeg4Usd?: number;
   entrySplitLeg5Usd?: number;
   entrySplitLeg6Usd?: number;
+  entrySplitLeg7Usd?: number;
   entrySplitDelayMs?: number;
   entrySplitMaxUpPct?: number;
   entrySplitMaxDownPct?: number;
@@ -433,11 +437,13 @@ export interface LiveStagedEntryState {
   entrySplitLeg4Done?: boolean;
   entrySplitLeg5Done?: boolean;
   entrySplitLeg6Done?: boolean;
+  entrySplitLeg7Done?: boolean;
   entrySplitLeg2Ts?: number;
   entrySplitLeg3Ts?: number;
   entrySplitLeg4Ts?: number;
   entrySplitLeg5Ts?: number;
   entrySplitLeg6Ts?: number;
+  entrySplitLeg7Ts?: number;
   avgSecondDropPct?: number;
   avgSecondLegUsd?: number;
   avgThirdDropPct?: number;

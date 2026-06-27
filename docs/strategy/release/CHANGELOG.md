@@ -65,6 +65,21 @@
 
 ---
 
+---
+
+## [1.11.513] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.513`
+
+### live-oscar sizing: 7×$300 entry split; +$100 on all avg tiers
+
+**Изменение:** prod (mcap ≥ $3M): вход **7×$300 = $2100** (было 6×$300); усреднение −5% **$400** (было $300), −20% **$600** (было $500). Low ($2M–$3M): avg −10% **$350** (было $250). `PAPER_POSITION_USD=2100`, `LIVE_MAX_POSITION_USD=3100` (prod max staged $3100; low $850). Код: leg-7 в entry-split (`entry-split-legs.ts`, sizing/gates/restore).
+
+**Откат:** redeploy `sa-alpha-1.11.512`; prod env: `LEG7=0`, `PAPER_POSITION_USD=1800`, avg `$300/$500`, low avg `$250`, `LIVE_MAX_POSITION_USD=2600`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
 ## [1.11.512] — 2026-06-27
 
 **Тег:** `sa-alpha-1.11.512`

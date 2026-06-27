@@ -113,11 +113,12 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.499 — «Живой Оскар» canon: prod/low $500+$300+$200=$1000; micro re-enables leg-2 @ −5%: $300+$200+$100=$600; scalp_wave $300; half8_runner flat TP ON.
  * 1.11.505 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $300; max $2400.
  * 1.11.512 — prod avg −20% leg $300→$500; LIVE_MAX_POSITION_USD $2400→$2600.
+ * 1.11.513 — prod 7×$300 entry split; avg −5% $400, −20% $600 (+$100/tier); low avg −10% $350; max $3100 / low $850.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '1800';
-const LIVE_OSCAR_MAX_POSITION_USD = '2600';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '2100';
+const LIVE_OSCAR_MAX_POSITION_USD = '3100';
 
 /** live-oscar-preset-c: $200 entry @ −10% + $150 DCA @ −20% (SuperBot wallet). */
 const PRESET_C_ENTRY_USD = '200';
@@ -447,7 +448,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.512 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $500; max $2600.
+         * 1.11.513 — prod ≥$3M: 7×$300 entry split @5s (+3/−5% corridor); avg −5% $400, −20% $600; max $3100.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -459,6 +460,7 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
@@ -468,9 +470,9 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '5',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '600',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
@@ -560,9 +562,9 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '500',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '100',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '200',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.500 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250 (max $750). */
+        /** 1.11.513 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $850). */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
@@ -573,7 +575,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '500',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '250',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '350',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** 1.11.500 — scalp_wave lane OFF. */
         PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '0',
