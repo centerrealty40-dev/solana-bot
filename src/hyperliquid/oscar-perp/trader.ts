@@ -10,6 +10,7 @@ import { computeOscarExitActions } from './exit-engine.js';
 import {
   appendOscarJournal,
   lastEntryBarTsByCoin,
+  loadOscarOpenModesFromJournal,
   loadOscarOpensFromJournal,
   type OscarJournalRow,
 } from './journal.js';
@@ -26,6 +27,8 @@ import {
 export type OscarTraderState = {
   opens: Map<string, OscarOpenPosition>;
   openByCoin: Map<string, string>;
+  /** Journal mode at open time — used to reconcile paper vs live exposure. */
+  openModes: Map<string, 'dry_run' | 'live'>;
   candleCache: Map<string, { candles: OscarCandle[]; loadedAtMs: number }>;
   lastEntryBarTs: Map<string, number>;
   scanOffset: number;
@@ -33,11 +36,13 @@ export type OscarTraderState = {
 
 export function createOscarTraderState(journalPath: string): OscarTraderState {
   const opens = loadOscarOpensFromJournal(journalPath);
+  const openModes = loadOscarOpenModesFromJournal(journalPath);
   const openByCoin = new Map<string, string>();
   for (const [id, pos] of opens) openByCoin.set(pos.coin, id);
   return {
     opens,
     openByCoin,
+    openModes,
     candleCache: new Map(),
     lastEntryBarTs: lastEntryBarTsByCoin(journalPath),
     scanOffset: 0,
@@ -198,6 +203,7 @@ export async function runOscarTraderPass(args: {
     });
     state.opens.set(id, pos);
     state.openByCoin.set(coin.coin, id);
+    state.openModes.set(id, mode);
     state.lastEntryBarTs.set(coin.coin, signal.barTs);
 
     const row: OscarJournalRow = {
@@ -415,6 +421,7 @@ async function finalizeClose(
   });
   state.opens.delete(pos.id);
   state.openByCoin.delete(pos.coin);
+  state.openModes.delete(pos.id);
   console.log(
     `[hl-oscar-perp] CLOSE ${pos.coin} ${reason} pnl=$${pos.realizedPnlUsd.toFixed(2)} (${pnlPct.toFixed(2)}%)`,
   );

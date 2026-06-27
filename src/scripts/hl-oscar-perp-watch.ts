@@ -15,6 +15,7 @@ import { createHlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-cl
 import { loadHlOscarPerpConfig, toHlTwapLiveConfig } from '../hyperliquid/oscar-perp/config.js';
 import { initOscarDrawdownMonitor, runOscarDrawdownCheck } from '../hyperliquid/oscar-perp/drawdown.js';
 import { writeHeartbeat } from '../hyperliquid/oscar-perp/journal.js';
+import { countOscarOpensByMode, reconcileOscarOpensForLiveMode } from '../hyperliquid/oscar-perp/reconcile.js';
 import {
   createOscarTraderState,
   fetchOscarAccountEquity,
@@ -71,6 +72,10 @@ async function main(): Promise<void> {
   const client = await createHlTwapExchangeClient(twapCfg);
   const state = createOscarTraderState(cfg.journalPath);
 
+  if (cfg.mode === 'live') {
+    await reconcileOscarOpensForLiveMode({ cfg, state });
+  }
+
   const denylist = resolveOscarDenylist();
   const whitelist = resolveOscarWhitelist();
 
@@ -119,6 +124,7 @@ async function main(): Promise<void> {
 
       writeHeartbeat(cfg.heartbeatPath, {
         openCount: state.opens.size,
+        paperOpenCount: countOscarOpensByMode(state).paper,
         mode: cfg.mode,
         universeSize: universe.length,
       });

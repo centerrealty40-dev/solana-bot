@@ -114,6 +114,43 @@ describe('loadHlOscarPerpForDashboard', () => {
     expect(load.hlOscar?.liveDryRun).toBe(false);
   });
 
+  it('hides dry_run journal opens when heartbeat mode is live', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-oscar-hb-'));
+    const fp = path.join(tmpDir, 'live.jsonl');
+    const hbPath = path.join(tmpDir, 'heartbeat.json');
+    fs.writeFileSync(
+      fp,
+      `${JSON.stringify({
+        kind: 'open',
+        ts: Date.now() - 60_000,
+        id: 'pos-paper-1',
+        coin: 'SYRUP',
+        displaySymbol: 'SYRUP',
+        fillPx: 0.14,
+        grossUsd: 13.64,
+        marginUsd: 6.82,
+        dipPct: -12,
+        impulsePct: 15,
+        mode: 'dry_run',
+      })}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      hbPath,
+      `${JSON.stringify({ ts: Date.now(), mode: 'live', openCount: 0, paperOpenCount: 0, universeSize: 88 })}\n`,
+      'utf8',
+    );
+    process.env.DASHBOARD_HL_OSCAR_PERP_JSONL = fp;
+    process.env.DASHBOARD_HL_OSCAR_HEARTBEAT = hbPath;
+
+    const load = loadHlOscarPerpForDashboard(fp);
+    expect(load.hlOscar?.mode).toBe('live');
+    expect(load.open).toHaveLength(0);
+    expect(load.hlOscar?.openCount).toBe(0);
+    delete process.env.DASHBOARD_HL_OSCAR_PERP_JSONL;
+    delete process.env.DASHBOARD_HL_OSCAR_HEARTBEAT;
+  });
+
   it('prefers heartbeat.json mode over stale journal defaults', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-oscar-hb-'));
     const fp = path.join(tmpDir, 'live.jsonl');

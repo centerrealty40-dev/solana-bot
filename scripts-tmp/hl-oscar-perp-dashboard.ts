@@ -30,6 +30,7 @@ export function hlOscarPerpHeartbeatPath(): string {
 type HlOscarHeartbeatSnapshot = {
   mode?: 'dry_run' | 'live';
   openCount?: number;
+  paperOpenCount?: number;
   universeSize?: number;
 };
 
@@ -44,6 +45,7 @@ function readHlOscarHeartbeatFile(heartbeatPath: string): HlOscarHeartbeatSnapsh
     return {
       mode,
       openCount: num(row.openCount) ?? undefined,
+      paperOpenCount: num(row.paperOpenCount) ?? undefined,
       universeSize: num(row.universeSize) ?? undefined,
     };
   } catch {
@@ -80,6 +82,7 @@ export type HlOscarPerpDashboardMeta = {
   mode: 'dry_run' | 'live';
   liveDryRun: boolean;
   openCount: number;
+  paperPhantomCount: number;
   universeSize: number;
   leverage: number;
   notionalUsd: number;
@@ -99,7 +102,12 @@ export type HlOscarPerpDashboardLoad = {
 };
 
 type JournalEv = Record<string, unknown>;
-type OpenRow = Paper2OpenItem & { timeline: TimelineEvent[]; coin: string; positionId: string };
+type OpenRow = Paper2OpenItem & {
+  timeline: TimelineEvent[];
+  coin: string;
+  positionId: string;
+  journalMode: 'dry_run' | 'live';
+};
 
 function* journalLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, TAIL_BYTES, FULL_SCAN_MAX);
@@ -161,7 +169,13 @@ export function hlOscarExitReasonForMetrics(raw: string): string {
   return r || 'NO_DATA';
 }
 
-function emptyOpenRow(posId: string, coin: string, symbol: string, ts: number): OpenRow {
+function emptyOpenRow(
+  posId: string,
+  coin: string,
+  symbol: string,
+  ts: number,
+  journalMode: 'dry_run' | 'live',
+): OpenRow {
   return {
     mint: posId,
     symbol,
@@ -191,6 +205,7 @@ function emptyOpenRow(posId: string, coin: string, symbol: string, ts: number): 
     timeline: [],
     coin,
     positionId: posId,
+    journalMode,
   };
 }
 
@@ -225,6 +240,7 @@ export function loadHlOscarPerpForDashboard(
         mode: 'dry_run',
         liveDryRun: true,
         openCount: 0,
+        paperPhantomCount: 0,
         universeSize: 0,
         leverage: Number(process.env.HL_OSCAR_LEVERAGE ?? 2),
         notionalUsd: Number(process.env.HL_OSCAR_POSITION_NOTIONAL_USD ?? 50),
@@ -280,7 +296,8 @@ export function loadHlOscarPerpForDashboard(
       const marginUsd = num(ev.marginUsd);
       const dipPct = num(ev.dipPct);
       const impulsePct = num(ev.impulsePct);
-      const row = emptyOpenRow(posId, coin, displaySymbol, ts);
+      const journalMode: 'dry_run' | 'live' = ev.mode === 'live' ? 'live' : 'dry_run';
+      const row = emptyOpenRow(posId, coin, displaySymbol, ts, journalMode);
       row.baselinePriceUsd = fillPx;
       row.entryMcUsd = fillPx ?? 0;
       row.totalInvestedUsd = grossUsd;
@@ -394,22 +411,29 @@ export function loadHlOscarPerpForDashboard(
     }
   }
 
-  const open: Paper2OpenItem[] = [...openById.values()].map(({ timeline: _tl, coin: _c, positionId: _p, ...rest }) => rest);
-  const openTimelines = new Map<string, TimelineEvent[]>(
-    [...openById.entries()].map(([, r]) => [r.mint, r.timeline]),
+  const fileHb = readHlOscarHeartbeatFile(hlOscarPerpHeartbeatPath());
+  const mode =
+    fileHb?.mode ?? journalHeartbeatMode ?? latestEventMode ?? 'dry_run';
+  const allOpenRows = [...openById.values()];
+  const paperPhantomCount =
+    fileHb?.paperOpenCount ??
+    allOpenRows.filter((r) => r.journalMode === 'dry_run').length;
+  const visibleOpenRows =
+    mode === 'live'
+      ? allOpenRows.filter((r) => r.journalMode === 'live')
+      : allOpenRows;
+  const open: Paper2OpenItem[] = visibleOpenRows.map(
+    ({ timeline: _tl, coin: _c, positionId: _p, journalMode: _m, ...rest }) => rest,
   );
-
+  const openTimelines = new Map<string, TimelineEvent[]>(
+    visibleOpenRows.map((r) => [r.mint, r.timeline]),
+  );
+  const openCount = open.length > 0 ? open.length : (fileHb?.openCount ?? journalHeartbeatOpenCount ?? 0);
+  const universeSize = fileHb?.universeSize ?? journalHeartbeatUniverse ?? 0;
   const failReasons = [...failMap.entries()]
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
-
-  const fileHb = readHlOscarHeartbeatFile(hlOscarPerpHeartbeatPath());
-  const mode =
-    fileHb?.mode ?? journalHeartbeatMode ?? latestEventMode ?? 'dry_run';
-  const openCount =
-    open.length > 0 ? open.length : (fileHb?.openCount ?? journalHeartbeatOpenCount ?? 0);
-  const universeSize = fileHb?.universeSize ?? journalHeartbeatUniverse ?? 0;
   return {
     open,
     closed,
@@ -424,6 +448,7 @@ export function loadHlOscarPerpForDashboard(
       mode,
       liveDryRun: mode !== 'live',
       openCount,
+      paperPhantomCount,
       universeSize,
       leverage: Number(process.env.HL_OSCAR_LEVERAGE ?? 2),
       notionalUsd: Number(process.env.HL_OSCAR_POSITION_NOTIONAL_USD ?? 50),

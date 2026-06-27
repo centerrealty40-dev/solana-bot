@@ -76,6 +76,29 @@ export function appendOscarJournal(journalPath: string, row: OscarJournalRow): v
   fs.appendFileSync(journalPath, `${JSON.stringify(row)}\n`, 'utf8');
 }
 
+export function loadOscarOpenModesFromJournal(journalPath: string): Map<string, 'dry_run' | 'live'> {
+  const modes = new Map<string, 'dry_run' | 'live'>();
+  if (!fs.existsSync(journalPath)) return modes;
+
+  const lines = fs.readFileSync(journalPath, 'utf8').split('\n');
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      const id = typeof row.id === 'string' ? row.id : null;
+      if (!id) continue;
+      if (row.kind === 'open') {
+        modes.set(id, row.mode === 'live' ? 'live' : 'dry_run');
+      } else if (row.kind === 'close') {
+        modes.delete(id);
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return modes;
+}
+
 export function loadOscarOpensFromJournal(journalPath: string): Map<string, OscarOpenPosition> {
   const opens = new Map<string, OscarOpenPosition>();
   if (!fs.existsSync(journalPath)) return opens;
@@ -174,7 +197,12 @@ export function lastEntryBarTsByCoin(journalPath: string): Map<string, number> {
 
 export function writeHeartbeat(
   heartbeatPath: string,
-  payload: { openCount: number; mode: 'dry_run' | 'live'; universeSize: number },
+  payload: {
+    openCount: number;
+    paperOpenCount?: number;
+    mode: 'dry_run' | 'live';
+    universeSize: number;
+  },
 ): void {
   fs.mkdirSync(path.dirname(heartbeatPath), { recursive: true });
   fs.writeFileSync(
