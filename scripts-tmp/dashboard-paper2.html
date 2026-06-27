@@ -486,7 +486,7 @@
         <div class="card rounded-lg p-3">
           <div class="label-caps">Mode</div>
           <div class="stat-num mt-1" :class="selectedRow()?.hlOscar?.liveDryRun ? 'text-amber-300' : 'text-emerald-300'"
-               x-text="selectedRow()?.hlOscar?.liveDryRun ? 'dry-run' : 'live'"></div>
+               x-text="selectedRow()?.hlOscar?.liveDryRun ? 'DRY-RUN' : 'LIVE'"></div>
         </div>
       </div>
 
@@ -530,8 +530,8 @@
                         <span class="pill ml-2 text-xs" :class="hlSideClass(o.hlTwap?.sideLabel)" x-text="o.hlTwap?.sideLabel || (o.side === 'buy' ? 'LONG' : 'SHORT')"></span>
                       </template>
                       <template x-if="isHlOscarPerp()">
-                        <a :href="hlOscarTradeUrl(o)" target="_blank" @click.stop
-                           class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?')"></a>
+                        <a :href="hlOscarTradeUrl(o)" target="_blank" rel="noopener noreferrer" @click.stop
+                           class="text-amber-300 text-base font-semibold hover:underline" x-text="hlOscarCoin(o)"></a>
                         <span class="pill pill-ok ml-2 text-xs">LONG perp</span>
                       </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
@@ -575,6 +575,19 @@
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">vol24h</span>
                       <span class="font-semibold mono text-slate-200" x-text="fmtUsd(o.vol24hUsd)"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="isHlOscarPerp()">
+                      <span class="text-slate-400">age</span>
+                      <span class="font-semibold mono text-slate-200" x-text="Math.round(o.ageMin || 0) + 'm'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">entry px</span>
+                      <span class="font-semibold mono text-sky-200" x-text="'$' + fmtHlPx(o.entryPx || o.baselinePriceUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">mark</span>
+                      <span class="font-semibold mono text-emerald-300" x-text="'$' + fmtHlPx(o.markPx || o.livePriceUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">basis</span>
+                      <span class="font-semibold mono text-slate-100" x-text="fmtUsd(o.remainingCostBasisUsd ?? o.totalInvestedUsd)"></span>
                     </div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap() && !isHlOscarPerp() && selected !== 'dc-trader'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
@@ -695,7 +708,7 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
-                      <template x-if="!isHlTwap()">
+                      <template x-if="!isHlTwap() && !isHlOscarPerp()">
                         <a :href="tokenLink(c.mint, c.pairAddress)" target="_blank" @click.stop
                            class="text-sky-300 text-base font-semibold hover:underline">
                           <span x-text="tokenTitle(c)"></span>
@@ -707,17 +720,22 @@
                            class="text-sky-300 text-base font-semibold hover:underline" x-text="c.symbol || c.coin || '?'"></a>
                         <span class="pill ml-2 text-xs" :class="hlSideClass(c.hlTwap?.sideLabel)" x-text="c.hlTwap?.sideLabel || (c.side === 'buy' ? 'LONG' : 'SHORT')"></span>
                       </template>
+                      <template x-if="isHlOscarPerp()">
+                        <a :href="hlOscarTradeUrl(c)" target="_blank" rel="noopener noreferrer" @click.stop
+                           class="text-sky-300 text-base font-semibold hover:underline" x-text="hlOscarCoin(c)"></a>
+                        <span class="pill pill-ok ml-2 text-xs">LONG perp</span>
+                      </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (c.timeline?.length || 0) + ' events)'"></span>
                     </div>
                     <div x-show="isHlTwap() && c.hlTwap" class="mt-1 text-xs text-slate-300" x-text="(c.hlTwap.entryReasonShort || '') + (c.hlTwap.exitReasonShort ? ' → ' + c.hlTwap.exitReasonShort : '')"></div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm" x-show="!isHlTwap()">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm" x-show="!isHlTwap() && !isHlOscarPerp()">
                       <span class="pill shrink-0 text-xs"
                             :class="exitReasonPillClass(c)"
                             x-text="c.exitReason"></span>
                       <span class="text-slate-300" x-text="exitReasonHeadline(c)"></span>
                     </div>
-                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-show="!isHlTwap()" x-text="exitReasonDetail(c)"></div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="isHlTwap()">
+                    <div class="text-xs text-slate-400 mt-1 leading-snug" x-show="!isHlTwap() && !isHlOscarPerp()" x-text="exitReasonDetail(c)"></div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="isHlTwap() || isHlOscarPerp()">
                       <span class="pill shrink-0 text-xs"
                             :class="exitReasonPillClass(c)"
                             x-text="c.exitReason"></span>
@@ -730,7 +748,7 @@
                       <span class="text-slate-400">impact</span>
                       <span class="font-semibold mono text-violet-200" x-text="c.impactPct != null ? c.impactPct.toFixed(2) + '%' : 'n/a'"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="!isHlTwap()">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-sm leading-snug" x-show="!isHlTwap() && !isHlOscarPerp()">
                       <span class="text-slate-400">entry px</span>
                       <span class="font-semibold mono" :class="closedEntryPxOk(c) ? 'text-sky-200' : 'text-slate-500'" x-text="closedEntryPxLabel(c)"></span>
                       <span class="text-slate-600">·</span>
@@ -1194,6 +1212,18 @@
           }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
+        isHlOscarPerp() { return this.selected === 'hl-oscar-perp'; },
+        hlOscarCoin(row) {
+          const c = row?.coin || row?.pairAddress || row?.features?.coin || row?.symbol || '';
+          const s = String(c).trim().toUpperCase();
+          return s && s !== '?' ? s : '?';
+        },
+        hlOscarTradeUrl(row) {
+          const u = row?.hyperliquidUrl || row?.features?.hyperliquidUrl;
+          if (u) return u;
+          const coin = this.hlOscarCoin(row);
+          return coin === '?' ? '#' : 'https://app.hyperliquid.xyz/trade/' + encodeURIComponent(coin);
+        },
         isBasePulse() { return this.selected === 'base-pulse'; },
         isBscPulse() { return this.selected === 'bsc-pulse'; },
         isEvmPulse() { return this.isBasePulse() || this.isBscPulse(); },

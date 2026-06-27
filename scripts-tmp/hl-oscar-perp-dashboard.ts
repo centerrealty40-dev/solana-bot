@@ -18,6 +18,60 @@ export function hlOscarPerpDashboardJsonlPath(): string {
   );
 }
 
+export function hlOscarPerpHeartbeatPath(): string {
+  const jsonl = hlOscarPerpDashboardJsonlPath();
+  return (
+    process.env.DASHBOARD_HL_OSCAR_HEARTBEAT?.trim() ||
+    process.env.HL_OSCAR_HEARTBEAT_PATH?.trim() ||
+    path.join(path.dirname(jsonl), 'heartbeat.json')
+  );
+}
+
+type HlOscarHeartbeatSnapshot = {
+  mode?: 'dry_run' | 'live';
+  openCount?: number;
+  universeSize?: number;
+};
+
+function readHlOscarHeartbeatFile(heartbeatPath: string): HlOscarHeartbeatSnapshot | null {
+  if (!fs.existsSync(heartbeatPath)) return null;
+  try {
+    const raw = fs.readFileSync(heartbeatPath, 'utf8').trim();
+    if (!raw) return null;
+    const row = JSON.parse(raw.split('\n')[0]!) as Record<string, unknown>;
+    const mode =
+      row.mode === 'live' ? 'live' : row.mode === 'dry_run' ? 'dry_run' : undefined;
+    return {
+      mode,
+      openCount: num(row.openCount) ?? undefined,
+      universeSize: num(row.universeSize) ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function resolveHlOscarCoinFromRow(row: {
+  pairAddress?: string | null;
+  symbol?: string | null;
+  features?: { coin?: string; hyperliquidUrl?: string } | null;
+}): { coin: string; hyperliquidUrl: string } {
+  const coin =
+    (typeof row.pairAddress === 'string' && row.pairAddress.trim()) ||
+    (typeof row.features?.coin === 'string' && row.features.coin.trim()) ||
+    (typeof row.symbol === 'string' && row.symbol.trim() && row.symbol !== '?'
+      ? row.symbol.trim()
+      : '') ||
+    '?';
+  const normalized = coin === '?' ? coin : String(coin).trim().toUpperCase();
+  return {
+    coin: normalized,
+    hyperliquidUrl:
+      (typeof row.features?.hyperliquidUrl === 'string' && row.features.hyperliquidUrl.trim()) ||
+      hlOscarHyperliquidTradeUrl(normalized),
+  };
+}
+
 export function hlOscarHyperliquidTradeUrl(coin: string): string {
   return `https://app.hyperliquid.xyz/trade/${encodeURIComponent(String(coin).trim().toUpperCase())}`;
 }
@@ -150,9 +204,10 @@ export function loadHlOscarPerpForDashboard(
   let lastTs = 0;
   let evals1h = 0;
   let passed1h = 0;
-  let heartbeatMode: 'dry_run' | 'live' = 'dry_run';
-  let heartbeatOpenCount = 0;
-  let heartbeatUniverse = 0;
+  let journalHeartbeatMode: 'dry_run' | 'live' | null = null;
+  let journalHeartbeatOpenCount = 0;
+  let journalHeartbeatUniverse = 0;
+  let latestEventMode: 'dry_run' | 'live' | null = null;
   const oneHourAgo = Date.now() - 3_600_000;
 
   if (!fs.existsSync(jsonlPath)) {
@@ -197,11 +252,14 @@ export function loadHlOscarPerpForDashboard(
         ? ev.displaySymbol.trim()
         : coin || '?';
 
+    if (ev.mode === 'live' || ev.mode === 'dry_run') {
+      latestEventMode = ev.mode;
+    }
+
     if (kind === 'heartbeat') {
-      const mode = ev.mode === 'live' ? 'live' : 'dry_run';
-      heartbeatMode = mode;
-      heartbeatOpenCount = num(ev.openCount) ?? heartbeatOpenCount;
-      heartbeatUniverse = num(ev.universeSize) ?? heartbeatUniverse;
+      journalHeartbeatMode = ev.mode === 'live' ? 'live' : 'dry_run';
+      journalHeartbeatOpenCount = num(ev.openCount) ?? journalHeartbeatOpenCount;
+      journalHeartbeatUniverse = num(ev.universeSize) ?? journalHeartbeatUniverse;
       continue;
     }
 
@@ -346,7 +404,12 @@ export function loadHlOscarPerpForDashboard(
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
 
-  const mode = heartbeatMode;
+  const fileHb = readHlOscarHeartbeatFile(hlOscarPerpHeartbeatPath());
+  const mode =
+    fileHb?.mode ?? journalHeartbeatMode ?? latestEventMode ?? 'dry_run';
+  const openCount =
+    open.length > 0 ? open.length : (fileHb?.openCount ?? journalHeartbeatOpenCount ?? 0);
+  const universeSize = fileHb?.universeSize ?? journalHeartbeatUniverse ?? 0;
   return {
     open,
     closed,
@@ -360,8 +423,8 @@ export function loadHlOscarPerpForDashboard(
     hlOscar: {
       mode,
       liveDryRun: mode !== 'live',
-      openCount: open.length || heartbeatOpenCount,
-      universeSize: heartbeatUniverse,
+      openCount,
+      universeSize,
       leverage: Number(process.env.HL_OSCAR_LEVERAGE ?? 2),
       notionalUsd: Number(process.env.HL_OSCAR_POSITION_NOTIONAL_USD ?? 50),
     },
