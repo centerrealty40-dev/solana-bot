@@ -16,6 +16,7 @@ export function partialReasonToExitReason(reason: PartialSell['reason']): ExitRe
     case 'TP_LADDER':
     case 'BREAKEVEN_TRIM':
     case 'WAVE_B_BREAKEVEN_INSURANCE':
+    case 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL':
     case 'WAVE_B_POST_TP1_DERISK':
     case 'SCRATCH_FLUSH0':
     case 'SCRATCH_GAP_FLUSH':

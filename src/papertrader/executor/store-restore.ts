@@ -391,6 +391,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWaveBreakevenInsuranceTaken)) {
       ot.liveWaveBreakevenInsuranceTaken = true;
     }
+    if (Boolean(rawPayload.liveWavePreArmNoHalf8PartialTaken)) {
+      ot.liveWavePreArmNoHalf8PartialTaken = true;
+    }
     if (Boolean(rawPayload.liveWavePostTp1DeriskTaken)) {
       ot.liveWavePostTp1DeriskTaken = true;
     }
@@ -541,6 +544,9 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'WAVE_B_BREAKEVEN_INSURANCE') {
     ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+  if (reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') {
+    ot.liveWavePreArmNoHalf8PartialTaken = true;
   }
   if (reason === 'WAVE_B_POST_TP1_DERISK') {
     ot.liveWavePostTp1DeriskTaken = true;

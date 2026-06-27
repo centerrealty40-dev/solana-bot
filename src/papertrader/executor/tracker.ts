@@ -74,7 +74,11 @@ import {
   waveBRemainderValueNetUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
+  waveBBreakevenAtZeroExitEligible,
   waveBBreakevenInsuranceEligible,
+  waveBPreArmNoHalf8PartialEligible,
+  waveBPreArmNoHalf8PullbackFullExitEligible,
+  waveBPreArmNoHalf8ScenarioActive,
   waveBPostTp1DeriskEligible,
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
@@ -588,7 +592,9 @@ function buildExitContext(args: {
     case 'BREAKEVEN_EXIT':
       triggerLabel = isPresetCScalpExitPolicy(ot)
         ? `Preset C breakeven exit (TP≥+5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`
-        : `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
+        : waveBPreArmNoHalf8ScenarioActive(ot) && ot.liveWavePreArmNoHalf8PartialTaken
+          ? `Wave B pre-arm/no-TP8 pullback exit (partial @ +5%, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`
+          : `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
       break;
     case 'KILLSTOP':
       if (ot.liveStagedEntry) {
@@ -1208,6 +1214,73 @@ async function tryWaveBBreakevenInsurance(args: {
   });
   if (r === 'ok') {
     ot.liveWaveBreakevenInsuranceTaken = true;
+  }
+}
+
+/** Wave B half8_runner: pre-arm (+7.5%) without +8% TP — lock 50% at +5% vs avg once. */
+async function tryWaveBPreArmNoHalf8PartialExit(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (
+    !isLiveOscarTradingStrategyId(cfg.strategyId) ||
+    !isWaveBExitPolicy(ot) ||
+    !(ot.avgEntry > 0) ||
+    !(curMetric > 0) ||
+    ot.remainingFraction <= 1e-9
+  ) {
+    return;
+  }
+  const pnlFrac = xAvg - 1;
+  if (!waveBPreArmNoHalf8PartialEligible(ot, cfg, pnlFrac)) return;
+
+  const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarWaveBPreArmNoHalf8PartialFraction));
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBAdjustSellFractionForRemainder(remainingValueNet, trimFrac, cfg);
+  const partialPnlPct = cfg.liveOscarWaveBPreArmNoHalf8PartialPnlFrac * 100;
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {},
+    logLabelPct: `wave-b-pre-arm-no-half8-${(trimFrac * 100).toFixed(0)}pct-at-${partialPnlPct.toFixed(1)}pct`,
+    partialReason: 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL',
+    timelineLabelRu:
+      `Live Oscar wave B · pre-arm без +8% TP — фиксация ${(trimFrac * 100).toFixed(0)}% остатка @ +${partialPnlPct.toFixed(1)}% vs avg`,
+  });
+  if (r === 'ok') {
+    ot.liveWavePreArmNoHalf8PartialTaken = true;
   }
 }
 
@@ -4005,6 +4078,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       liveOscarCfg,
       stats,
     });
+    await tryWaveBPreArmNoHalf8PartialExit({
+      mint,
+      ot,
+      cfg: effCfg,
+      curMetric,
+      xAvg,
+      journalAppend,
+      journalLiveStrategy,
+      livePhase4,
+      liveOscarCfg,
+      stats,
+    });
     await tryWaveBPostTp1Derisk({
       mint,
       ot,
@@ -4278,7 +4363,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           if (scalpFull.kind === 'full_exit') exitReason = scalpFull.reason;
         } else if (
           isWaveBExitPolicy(ot) &&
-          waveBBreakevenExitEligible(ot, tgEff.stepPnl) &&
+          waveBPreArmNoHalf8PullbackFullExitEligible(ot, effCfg, pnlPctVsAvg / 100) &&
+          ot.avgEntry > 0
+        ) {
+          exitReason = 'BREAKEVEN_EXIT';
+        } else if (
+          isWaveBExitPolicy(ot) &&
+          waveBBreakevenAtZeroExitEligible(ot, tgEff.stepPnl) &&
           ot.avgEntry > 0 &&
           pnlPctVsAvg <= 0
         ) {

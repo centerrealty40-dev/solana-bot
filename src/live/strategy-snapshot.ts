@@ -64,6 +64,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       : {}),
     ...(ot.liveBreakevenTrimDone ? { liveBreakevenTrimDone: true } : {}),
     ...(ot.liveWaveBreakevenInsuranceTaken ? { liveWaveBreakevenInsuranceTaken: true } : {}),
+    ...(ot.liveWavePreArmNoHalf8PartialTaken ? { liveWavePreArmNoHalf8PartialTaken: true } : {}),
     ...(ot.liveWavePostTp1DeriskTaken ? { liveWavePostTp1DeriskTaken: true } : {}),
     ...(ot.liveWavePostTp1ScratchTaken ? { liveWavePostTp1ScratchTaken: true } : {}),
     ...(ot.liveWaveFlatTpMode ? { liveWaveFlatTpMode: ot.liveWaveFlatTpMode } : {}),

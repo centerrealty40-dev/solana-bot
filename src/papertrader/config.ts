@@ -763,6 +763,16 @@ const ConfigSchema = z.object({
   liveOscarWaveBBreakevenInsurancePnlFrac: z.coerce.number().min(-0.05).max(0.05).default(0),
 
   /**
+   * Wave B half8_runner: pre-arm (+7.5%) reached but +8% TP not taken — sell partial at +5% vs avg,
+   * then full exit remaining on pullback to +2.5% vs avg (not breakeven-at-0%).
+   * Env: `PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_*`.
+   */
+  liveOscarWaveBPreArmNoHalf8LadderEnabled: z.boolean().default(true),
+  liveOscarWaveBPreArmNoHalf8PartialPnlFrac: z.coerce.number().min(0.01).max(0.2).default(0.05),
+  liveOscarWaveBPreArmNoHalf8PullbackPnlFrac: z.coerce.number().min(0).max(0.1).default(0.025),
+  liveOscarWaveBPreArmNoHalf8PartialFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
+
+  /**
    * Wave B: after first `TP_LADDER` partial, if PnL vs avg falls to ≤ threshold (default −15%),
    * sell `liveOscarWaveBPostTp1DeriskFraction` of remainder once (before full kill).
    * Env: `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_*`.
@@ -1462,6 +1472,16 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_FRACTION,
     liveOscarWaveBBreakevenInsurancePnlFrac:
       process.env.PAPER_LIVE_OSCAR_WAVE_B_BREAKEVEN_INSURANCE_PNL_FRAC,
+    liveOscarWaveBPreArmNoHalf8LadderEnabled: envBool(
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_LADDER_ENABLED,
+      true,
+    ),
+    liveOscarWaveBPreArmNoHalf8PartialPnlFrac:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_PARTIAL_PNL_FRAC,
+    liveOscarWaveBPreArmNoHalf8PullbackPnlFrac:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_PULLBACK_PNL_FRAC,
+    liveOscarWaveBPreArmNoHalf8PartialFraction:
+      process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_PARTIAL_FRACTION,
     liveOscarWaveBPostTp1DeriskEnabled: envBool(
       process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_ENABLED,
       false,

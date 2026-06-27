@@ -23,8 +23,13 @@ import {
   waveBAdjustSellFractionForRemainder,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
+  waveBBreakevenAtZeroExitEligible,
   waveBFirstTwoTpRungsTaken,
   waveBBreakevenInsuranceEligible,
+  waveBHalf8TpTaken,
+  waveBPreArmNoHalf8ScenarioActive,
+  waveBPreArmNoHalf8PartialEligible,
+  waveBPreArmNoHalf8PullbackFullExitEligible,
   waveBPostTp1ScratchEligible,
   waveBMaybeResetTpImpulse,
   waveBUpdatePreArmImpulseCycle,
@@ -474,5 +479,77 @@ describe('exit-policy-wave-b', () => {
     expect(waveBPostTp1ScratchEligible({ ...ot, liveWavePostTp1ScratchTaken: true } as OpenTrade)).toBe(
       false,
     );
+  });
+
+  describe('pre-arm without +8% TP ladder (half8_runner)', () => {
+    const half8Ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      liveWaveFlatTpMode: 'half8_runner',
+      liveWavePreArmReached: true,
+      remainingFraction: 1,
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set<number>(),
+    } as unknown as OpenTrade;
+
+    const ladderCfg = cfg({
+      liveOscarExitPolicyWaveBEnabled: true,
+      liveOscarWaveBPreArmNoHalf8LadderEnabled: true,
+      liveOscarWaveBPreArmNoHalf8PartialPnlFrac: 0.05,
+      liveOscarWaveBPreArmNoHalf8PullbackPnlFrac: 0.025,
+      liveOscarWaveBPreArmNoHalf8PartialFraction: 0.5,
+    });
+
+    it('waveBPreArmNoHalf8ScenarioActive only for half8 pre-arm without +8% TP', () => {
+      expect(waveBPreArmNoHalf8ScenarioActive(half8Ot)).toBe(true);
+      expect(waveBHalf8TpTaken(half8Ot)).toBe(false);
+
+      const withTp8 = {
+        ...half8Ot,
+        liveWaveMaxExecutedTpFrac: 0.08,
+        ladderUsedLevels: new Set([0.08]),
+      } as unknown as OpenTrade;
+      expect(waveBHalf8TpTaken(withTp8)).toBe(true);
+      expect(waveBPreArmNoHalf8ScenarioActive(withTp8)).toBe(false);
+
+      const noPreArm = { ...half8Ot, liveWavePreArmReached: false } as OpenTrade;
+      expect(waveBPreArmNoHalf8ScenarioActive(noPreArm)).toBe(false);
+
+      const escalating = {
+        ...half8Ot,
+        liveWaveFlatTpMode: undefined,
+      } as unknown as OpenTrade;
+      expect(waveBPreArmNoHalf8ScenarioActive(escalating)).toBe(false);
+    });
+
+    it('waveBPreArmNoHalf8PartialEligible at/above +5% vs avg once', () => {
+      expect(waveBPreArmNoHalf8PartialEligible(half8Ot, ladderCfg, 0.06)).toBe(true);
+      expect(waveBPreArmNoHalf8PartialEligible(half8Ot, ladderCfg, 0.05)).toBe(true);
+      expect(waveBPreArmNoHalf8PartialEligible(half8Ot, ladderCfg, 0.04)).toBe(false);
+
+      const taken = { ...half8Ot, liveWavePreArmNoHalf8PartialTaken: true } as OpenTrade;
+      expect(waveBPreArmNoHalf8PartialEligible(taken, ladderCfg, 0.08)).toBe(false);
+
+      const disabled = cfg({ liveOscarWaveBPreArmNoHalf8LadderEnabled: false });
+      expect(waveBPreArmNoHalf8PartialEligible(half8Ot, disabled, 0.08)).toBe(false);
+    });
+
+    it('waveBPreArmNoHalf8PullbackFullExitEligible on drop to +2.5% after partial', () => {
+      const afterPartial = { ...half8Ot, liveWavePreArmNoHalf8PartialTaken: true } as OpenTrade;
+      expect(waveBPreArmNoHalf8PullbackFullExitEligible(afterPartial, ladderCfg, 0.025)).toBe(true);
+      expect(waveBPreArmNoHalf8PullbackFullExitEligible(afterPartial, ladderCfg, 0.02)).toBe(true);
+      expect(waveBPreArmNoHalf8PullbackFullExitEligible(afterPartial, ladderCfg, 0.03)).toBe(false);
+      expect(waveBPreArmNoHalf8PullbackFullExitEligible(half8Ot, ladderCfg, 0.025)).toBe(false);
+    });
+
+    it('waveBBreakevenAtZeroExitEligible suppressed for pre-arm/no-TP8 path', () => {
+      expect(waveBBreakevenExitEligible(half8Ot, 0.08)).toBe(true);
+      expect(waveBBreakevenAtZeroExitEligible(half8Ot, 0.08)).toBe(false);
+
+      const withTp8 = {
+        ...half8Ot,
+        liveWaveMaxExecutedTpFrac: 0.08,
+      } as unknown as OpenTrade;
+      expect(waveBBreakevenAtZeroExitEligible(withTp8, 0.08)).toBe(true);
+    });
   });
 });
