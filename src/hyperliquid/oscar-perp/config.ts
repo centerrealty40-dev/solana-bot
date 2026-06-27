@@ -27,6 +27,9 @@ export type HlOscarPerpConfig = {
   minDayVolumeUsd: number;
   pollIntervalMs: number;
   candleRefreshMs: number;
+  /** Max coins to scan for new entries per tick (rotating batch). */
+  scanBatchSize: number;
+  candleFetchConcurrency: number;
   slippageTolerance: number;
   journalPath: string;
   heartbeatPath: string;
@@ -47,10 +50,10 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
-/** Scale Oscar legs 300/300/500 → $50 total notional. */
+/** Scale Oscar legs to total notional: ~30% / 30% / 40% ($15+$15+$20 @ $50). */
 export function defaultLegGrossUsd(totalUsd: number): { leg1: number; leg2: number; leg3: number } {
-  const leg1 = Math.round(totalUsd * (300 / 1100) * 100) / 100;
-  const leg2 = Math.round(totalUsd * (300 / 1100) * 100) / 100;
+  const leg1 = Math.round(totalUsd * 0.3 * 100) / 100;
+  const leg2 = Math.round(totalUsd * 0.3 * 100) / 100;
   const leg3 = Math.round((totalUsd - leg1 - leg2) * 100) / 100;
   return { leg1, leg2, leg3 };
 }
@@ -101,6 +104,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     minDayVolumeUsd: envNum('HL_OSCAR_MIN_DAY_VOLUME_USD', 100_000),
     pollIntervalMs: Math.max(5_000, envNum('HL_OSCAR_POLL_MS', 60_000)),
     candleRefreshMs: Math.max(60_000, envNum('HL_OSCAR_CANDLE_REFRESH_MS', 300_000)),
+    scanBatchSize: Math.max(5, Math.round(envNum('HL_OSCAR_SCAN_BATCH_SIZE', 25))),
+    candleFetchConcurrency: Math.max(1, Math.round(envNum('HL_OSCAR_CANDLE_CONCURRENCY', 4))),
     slippageTolerance: Math.max(0.001, envNum('HL_OSCAR_SLIPPAGE_TOLERANCE', 0.01)),
     journalPath:
       process.env.HL_OSCAR_JOURNAL_JSONL?.trim() || `${dataDir}/live.jsonl`,

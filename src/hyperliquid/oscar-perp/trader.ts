@@ -22,6 +22,7 @@ export type OscarTraderState = {
   openByCoin: Map<string, string>;
   candleCache: Map<string, { candles: OscarCandle[]; loadedAtMs: number }>;
   lastEntryBarTs: Map<string, number>;
+  scanOffset: number;
 };
 
 export function createOscarTraderState(journalPath: string): OscarTraderState {
@@ -33,6 +34,7 @@ export function createOscarTraderState(journalPath: string): OscarTraderState {
     openByCoin,
     candleCache: new Map(),
     lastEntryBarTs: lastEntryBarTsByCoin(journalPath),
+    scanOffset: 0,
   };
 }
 
@@ -103,6 +105,28 @@ export async function refreshCoinCandles(
   return fetchOscarCandles(coin, startMs, endMs);
 }
 
+async function ensureCandles(
+  cfg: HlOscarPerpConfig,
+  state: OscarTraderState,
+  coin: string,
+  lookbackHours: number,
+): Promise<OscarCandle[]> {
+  let cached = state.candleCache.get(coin);
+  if (!cached || Date.now() - cached.loadedAtMs > cfg.candleRefreshMs) {
+    const candles = await refreshCoinCandles(coin, lookbackHours);
+    cached = { candles, loadedAtMs: Date.now() };
+    state.candleCache.set(coin, cached);
+  }
+  return cached.candles;
+}
+
+function rotatingBatch<T>(items: T[], offset: number, size: number): T[] {
+  if (items.length <= size) return items;
+  const out: T[] = [];
+  for (let i = 0; i < size; i++) out.push(items[(offset + i) % items.length]!);
+  return out;
+}
+
 export async function runOscarTraderPass(args: {
   cfg: HlOscarPerpConfig;
   client: HlTwapExchangeClient;
@@ -125,17 +149,16 @@ export async function runOscarTraderPass(args: {
 
   if (state.opens.size >= cfg.maxOpenPositions) return;
 
-  for (const coin of universe) {
+  const entryCandidates = universe.filter((c) => !state.openByCoin.has(c.coin));
+  const batch = rotatingBatch(entryCandidates, state.scanOffset, cfg.scanBatchSize);
+  state.scanOffset = (state.scanOffset + batch.length) % Math.max(entryCandidates.length, 1);
+
+  for (const coin of batch) {
     if (state.openByCoin.has(coin.coin)) continue;
     if (state.opens.size >= cfg.maxOpenPositions) break;
 
-    let cached = state.candleCache.get(coin.coin);
-    if (!cached || Date.now() - cached.loadedAtMs > cfg.candleRefreshMs) {
-      const candles = await refreshCoinCandles(coin.coin, lookbackHours);
-      cached = { candles, loadedAtMs: Date.now() };
-      state.candleCache.set(coin.coin, cached);
-    }
-    const signal = evaluateOscarEntry(cfg, coin.coin, cached.candles);
+    const candles = await ensureCandles(cfg, state, coin.coin, lookbackHours);
+    const signal = evaluateOscarEntry(cfg, coin.coin, candles);
     if (!signal) continue;
 
     const lastTs = state.lastEntryBarTs.get(coin.coin);
@@ -202,13 +225,8 @@ async function processOpenPosition(
   lookbackHours: number,
   mode: 'dry_run' | 'live',
 ): Promise<void> {
-  let cached = state.candleCache.get(pos.coin);
-  if (!cached || Date.now() - cached.loadedAtMs > cfg.candleRefreshMs) {
-    const candles = await refreshCoinCandles(pos.coin, lookbackHours);
-    cached = { candles, loadedAtMs: Date.now() };
-    state.candleCache.set(pos.coin, cached);
-  }
-  const last = cached.candles[cached.candles.length - 1];
+  const candles = await ensureCandles(cfg, state, pos.coin, lookbackHours);
+  const last = candles[candles.length - 1];
   if (!last) return;
   const markPx = last.close;
   const lowPx = last.low;
