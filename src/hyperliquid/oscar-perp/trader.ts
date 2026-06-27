@@ -308,6 +308,8 @@ async function maybeFillStagedLegs(
   markPx: number,
   mode: 'dry_run' | 'live',
 ): Promise<void> {
+  if (!cfg.stagedEntryEnabled || cfg.leg2GrossUsd <= 0) return;
+
   const leg2Px = pos.signalPrice * (1 - cfg.leg2DropPct / 100);
   if (!pos.leg2Filled && lowPx <= leg2Px) {
     const marginUsd = grossToMargin(cfg.leg2GrossUsd, cfg.leverage);
@@ -351,6 +353,8 @@ async function maybeFillStagedLegs(
       avgEntryPx: pos.avgEntryPx,
     });
   }
+
+  if (cfg.leg3GrossUsd <= 0) return;
 
   const leg3Px = pos.signalPrice * (1 - cfg.leg3DropPct / 100);
   if (!pos.leg3Filled && lowPx <= leg3Px) {
