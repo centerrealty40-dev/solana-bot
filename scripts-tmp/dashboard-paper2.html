@@ -42,7 +42,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 5 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse.
+      Десктоп: 6 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -220,7 +220,7 @@
       </div>
     </section>
 
-    <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе пять колонок Oscar -->
+    <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе шесть колонок Oscar -->
     <section class="dash-desktop-strategy-cols">
       <template x-for="(s, idx) in (state.strategies || [])" :key="(s.strategyId || 'row') + ':' + idx">
         <div class="card rounded-xl p-5 lg:p-6 cursor-pointer select-none min-w-0"
@@ -488,7 +488,7 @@
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
-                        <a :href="gmgn(o.mint)" target="_blank" @click.stop
+                        <a :href="tokenLink(o.mint)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
                       </template>
                       <span x-show="selected === 'live-oscar' && o.isScalpWave"
@@ -526,6 +526,16 @@
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">депозит</span>
                       <span class="font-semibold mono text-slate-100" x-text="fmtUsd(o.hlTwap?.initialNotionalUsd || o.notionalUsd)"></span>
+                    </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="isEvmPulse()">
+                      <span class="text-slate-400">mcap</span>
+                      <span class="font-semibold mono text-slate-200" x-text="fmtUsd(o.currentMcUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">liq</span>
+                      <span class="font-semibold mono text-slate-200" x-text="fmtUsd(o.currentLiqUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-400">vol24h</span>
+                      <span class="font-semibold mono text-slate-200" x-text="fmtUsd(o.vol24hUsd)"></span>
                     </div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap() && selected !== 'dc-trader'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
@@ -567,7 +577,8 @@
                   <div class="text-right max-w-[13rem]">
                     <div class="mono text-base font-bold" :class="(o.pnlPct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'" x-text="o.pnlPct === null ? '—' : fmtPct(o.pnlPct)"></div>
                     <div class="text-sm font-medium" :class="(o.pnlUsd || 0) >= 0 ? 'text-emerald-300' : 'text-rose-400'" x-text="o.pnlUsd === null ? '' : fmtUsdSigned(o.pnlUsd)"></div>
-                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd">Нереализованный PnL: нет live-цены (DEX, Jupiter, журнал). Проверьте entry px в open.</div>
+                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd && !isEvmPulse()">Нереализованный PnL: нет live-цены (DEX, Jupiter, журнал). Проверьте entry px в open.</div>
+                    <div class="text-xs text-slate-500 mt-0.5 leading-snug" x-show="o.pnlPct === null && o.baselinePriceUsd && isEvmPulse()">Нереализованный PnL: нет live-цены DexScreener. Проверьте entry px (fillPriceUsd).</div>
                     <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
                 </div>
@@ -598,7 +609,7 @@
                           </span>
                           <span x-show="selected !== 'copy-trader' && ev.txSignature">
                             <span class="text-slate-500"> · </span>
-                            <a :href="solscanHref(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
+                            <a :href="chainTxLink(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm" x-text="isBasePulse() ? 'Basescan' : (isBscPulse() ? 'BscScan' : 'Solscan')"></a>
                           </span>
                           <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                             <span class="text-slate-500"> · </span>
@@ -646,7 +657,7 @@
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
-                        <a :href="gmgn(c.mint)" target="_blank" @click.stop
+                        <a :href="tokenLink(c.mint)" target="_blank" @click.stop
                            class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
                       </template>
                       <template x-if="isHlTwap()">
@@ -723,7 +734,7 @@
                           </span>
                           <span x-show="selected !== 'copy-trader' && ev.txSignature">
                             <span class="text-slate-500"> · </span>
-                            <a :href="solscanHref(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
+                            <a :href="chainTxLink(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm" x-text="isBasePulse() ? 'Basescan' : (isBscPulse() ? 'BscScan' : 'Solscan')"></a>
                           </span>
                           <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                             <span class="text-slate-500"> · </span>
@@ -766,6 +777,7 @@
       'dc-trader',
       'hl-twap-paper',
       'base-pulse',
+      'bsc-pulse',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -893,6 +905,14 @@
           'Base L2 dip-buy: DexScreener + GeckoTerminal, пролив **3–25%**, staged entry, kill/trail/timeout. **$10**/позиция через KyberSwap на Base.',
         details:
           '**Плитка 5** · VPS **72.62.152.201** · PM2 **`basepulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар Base (DexScreener + GeckoTerminal trending/new).\n• Вход на dip с фильтрами liq/vol; stage-2 add при −4% от entry.\n• Выход: kill **−8%**, trail после **+10%**, timeout **4h**.\n\n**Live:** swap через **KyberSwap** (fallback 0x с API key); `BPULSE_POSITION_USD=10`, max **3** concurrent.\n\n**Журнал:** `/opt/base-pulse/data/basepulse-journal.jsonl` → sync `data/basepulse/` на дашборде.',
+      },
+      'bsc-pulse': {
+        label: 'BscPulse',
+        tag: 'live',
+        oneLiner:
+          'BSC dip-buy на **крупные** пары: liq **≥$500k**, FDV **≥$5M**, пролив **3–22%**, staged entry. **$10**/позиция через Pancake/1inch.',
+        details:
+          '**Плитка 6** · VPS **72.62.152.201** · PM2 **`bscpulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар BSC (DexScreener + GeckoTerminal).\n• Только large-cap: `MIN_LIQ=$500k`, `MIN_FDV=$5M`; верхний FDV-cap отключён для Beat/UB.\n• Dip **3–22%** (5m/1h lookback); vol1h **≥$200k**, vol5m **≥$30k**.\n• Выход: kill/trail/timeout как BasePulse.\n\n**Live:** `BSCPULSE_POSITION_USD=10`, max concurrent по env.\n\n**Журнал:** `/opt/bsc-pulse/data/bscpulse-journal.jsonl` → sync `data/bscpulse/` (`DASHBOARD_BSCPULSE_JSONL`).',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
@@ -1123,6 +1143,29 @@
           }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
+        isBasePulse() { return this.selected === 'base-pulse'; },
+        isBscPulse() { return this.selected === 'bsc-pulse'; },
+        isEvmPulse() { return this.isBasePulse() || this.isBscPulse(); },
+        tokenLink(m) {
+          if (!m) return '#';
+          const addr = String(m).trim();
+          if (this.isBasePulse() && addr.startsWith('0x')) {
+            return this.gmgnBase(addr);
+          }
+          if (this.isBscPulse() && addr.startsWith('0x')) {
+            return this.gmgnBsc(addr);
+          }
+          return this.gmgn(addr);
+        },
+        chainTxLink(sig) {
+          if (this.isBasePulse() && sig && String(sig).startsWith('0x')) {
+            return `https://basescan.org/tx/${sig}`;
+          }
+          if (this.isBscPulse() && sig && String(sig).startsWith('0x')) {
+            return `https://bscscan.com/tx/${sig}`;
+          }
+          return this.solscanHref(sig);
+        },
         isDcTrader() { return this.selected === 'dc-trader'; },
         fmtSol(n) {
           const v = Number(n);
@@ -1183,8 +1226,11 @@
         },
         timelinePriceLine(ev) {
           const px = Number(ev?.spotPxUsd ?? ev?.markPx ?? ev?.entryPx ?? ev?.exitPx ?? 0);
-          if (px > 0) return `px ${this.pxLabel(px)}`;
-          return 'px n/a';
+          const mc = Number(ev?.mcUsd ?? 0);
+          const parts = [];
+          if (px > 0) parts.push(`px ${this.pxLabel(px)}`);
+          if (this.isEvmPulse() && mc > 0) parts.push(`mcap ${this.fmtUsd(mc)}`);
+          return parts.length ? parts.join(' · ') : 'px n/a';
         },
         normalizeTimelineLabelForUsdParse(s) {
           return String(s || '')
@@ -1235,6 +1281,7 @@
           const p = o?.livePxProvenance;
           if (p === 'jupiter') return '(Jupiter)';
           if (p === 'hyperliquid') return '(HL)';
+          if (p === 'dexscreener') return '(DexScreener)';
           if (p === 'journal') return '(journal)';
           if (p === 'snapshots') return '(DEX)';
           return '';
@@ -1243,11 +1290,17 @@
           const p = o?.livePxProvenance;
           if (p === 'jupiter') return 'Цена для PnL: Jupiter';
           if (p === 'hyperliquid') return 'Цена для PnL: Hyperliquid mark';
+          if (p === 'dexscreener') return 'Цена для PnL: DexScreener';
           if (p === 'journal') return 'Цена для PnL: последняя в журнале';
           if (p === 'snapshots') return 'Цена для PnL: DEX-снимки';
           return '';
         },
         entrySlipLabel(o) {
+          if (this.isEvmPulse()) {
+            const impact = o.entryPriceVerifyImpactPct ?? o.entryPriceVerifySlipPct;
+            if (impact == null) return 'n/a';
+            return (impact >= 0 ? '+' : '') + impact.toFixed(2) + '% impact';
+          }
           if (o.entryPriceVerifySource == null) return 'n/a';
           if (o.entryPriceVerifySource === 'blocked') return 'blocked';
           if (o.entryPriceVerifySource === 'skipped') return 'skip';
@@ -1256,6 +1309,12 @@
           return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
         },
         entrySlipColor(o) {
+          if (this.isEvmPulse()) {
+            const v = Math.abs(o.entryPriceVerifyImpactPct ?? o.entryPriceVerifySlipPct ?? 0);
+            if (v >= 1) return 'text-rose-400';
+            if (v >= 0.5) return 'text-amber-300';
+            return 'text-emerald-300';
+          }
           if (o.entryPriceVerifySource !== 'jupiter') return 'text-slate-500';
           const v = Math.abs(o.entryPriceVerifySlipPct ?? 0);
           if (v >= 4) return 'text-rose-400';
@@ -1455,6 +1514,8 @@
         },
         short(m) { return m ? (m.slice(0, 6) + '…' + m.slice(-4)) : '-'; },
         gmgn(m) { return `https://gmgn.ai/sol/token/${m}`; },
+        gmgnBase(m) { return `https://gmgn.ai/base/token/${encodeURIComponent(String(m).trim())}`; },
+        gmgnBsc(m) { return `https://gmgn.ai/bsc/token/${encodeURIComponent(String(m).trim())}`; },
         /** Emerald / rose by sign; slate when n/a (matches fmtPct “—”). */
         signedPctColor(v) {
           if (v == null || v === '' || Number.isNaN(Number(v))) return 'text-slate-300';

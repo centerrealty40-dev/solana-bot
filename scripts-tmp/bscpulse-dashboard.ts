@@ -1,6 +1,6 @@
 /**
- * BasePulse — dashboard loader for `/papertrader2` tile 5.
- * Reads BasePulse JSONL journal (synced from 72.62.152.201 or local path).
+ * BscPulse — dashboard loader for `/papertrader2` tile 6.
+ * Reads BscPulse JSONL journal (synced from 72.62.152.201 or local path).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,25 +10,19 @@ import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
 const FULL_SCAN_MAX = Number(process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024);
 
-/** Well-known Base token symbols when journal rows omit `symbol`. */
-const BASE_KNOWN_SYMBOLS: Record<string, string> = {
-  '0x940181a94a35a4569e4529a3cdfb74e38fd98631': 'AERO',
-  '0xbf927b841994731c573bdf09ceb0c6b0aa887cdd': 'VELVET',
-};
-
-/** GMGN token page for Base chain (same slug pattern as Solana `/sol/token/`). */
-export function basePulseGmgnTokenUrl(tokenAddress: string): string {
-  return `https://gmgn.ai/base/token/${encodeURIComponent(tokenAddress.trim())}`;
+/** GMGN token page for BSC (same slug pattern as Solana `/sol/token/`). */
+export function bscPulseGmgnTokenUrl(tokenAddress: string): string {
+  return `https://gmgn.ai/bsc/token/${encodeURIComponent(tokenAddress.trim())}`;
 }
 
-export function basePulseDashboardJsonlPath(): string {
+export function bscPulseDashboardJsonlPath(): string {
   return (
-    process.env.DASHBOARD_BASEPULSE_JSONL?.trim() ||
-    path.join(process.cwd(), 'data', 'basepulse', 'basepulse-journal.jsonl')
+    process.env.DASHBOARD_BSCPULSE_JSONL?.trim() ||
+    path.join(process.cwd(), 'data', 'bscpulse', 'bscpulse-journal.jsonl')
   );
 }
 
-export type BasePulseDashboardLoad = {
+export type BscPulseDashboardLoad = {
   open: Paper2OpenItem[];
   closed: Array<Record<string, unknown>>;
   firstTs: number;
@@ -49,7 +43,7 @@ function* journalLines(filePath: string): Generator<string> {
 
 function tsMs(ev: JournalEv): number {
   const t = ev.ts;
-  if (typeof t === 'number' && t > 0) return t;
+  if (typeof t === 'number' && t > 0) return t > 1e12 ? t : t * 1000;
   if (typeof t === 'string') {
     const n = Date.parse(t);
     return Number.isFinite(n) ? n : 0;
@@ -72,15 +66,33 @@ function shortToken(token: unknown): string {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
+function resolveToken(ev: JournalEv): string {
+  if (typeof ev.token === 'string' && ev.token.trim()) return ev.token.trim();
+  if (typeof ev.baseTokenAddress === 'string' && ev.baseTokenAddress.trim()) {
+    return ev.baseTokenAddress.trim();
+  }
+  if (typeof ev.pair === 'string' && ev.pair.trim()) return ev.pair.trim();
+  return '';
+}
+
 function resolveSymbol(token: string, ev: JournalEv, symbolHints: Map<string, string>): string {
   const key = tokenKey(token);
-  const known = BASE_KNOWN_SYMBOLS[key];
-  if (known) return known;
   const fromEv = typeof ev.symbol === 'string' ? ev.symbol.trim() : '';
   if (fromEv) return fromEv.slice(0, 32);
   const hinted = symbolHints.get(key);
   if (hinted) return hinted;
   return shortToken(token);
+}
+
+function eventKind(ev: JournalEv): string {
+  if (typeof ev.kind === 'string' && ev.kind) return ev.kind;
+  const type = typeof ev.type === 'string' ? ev.type : '';
+  if (type === 'live_open' || type === 'paper_open') return 'open';
+  if (type === 'live_close' || type === 'paper_close') return 'close';
+  if (type === 'filter_reject') return 'eval-skip-open';
+  if (type === 'entry_decision') return 'eval-pass-open';
+  if (type === 'dip_signal') return 'dip_signal';
+  return type;
 }
 
 function pushTimeline(
@@ -104,31 +116,20 @@ function pushTimeline(
   });
 }
 
-function entryPriceFromEv(ev: JournalEv): number | null {
-  return num(ev.fillPriceUsd) ?? num(ev.spotPxUsd) ?? num(ev.priceUsd);
-}
-
-function impactPctFromEv(ev: JournalEv): number | null {
-  const bps = num(ev.priceImpactBps);
-  return bps != null ? +(bps / 100).toFixed(3) : null;
-}
-
 function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: number): OpenRow {
   const positionUsd = num(ev.positionUsd) ?? 10;
-  const price = entryPriceFromEv(ev);
+  const price = num(ev.spotPxUsd) ?? num(ev.priceUsd) ?? num(ev.fillPriceUsd) ?? num(ev.price);
   const pair = typeof ev.pair === 'string' ? ev.pair : null;
-  const impactPct = impactPctFromEv(ev);
-  const fdvUsd = num(ev.fdvUsd);
   const row: OpenRow = {
     mint: token,
     symbol,
     entryTs: ts,
     entryMcUsd: price ?? 0,
-    entryRealMcUsd: fdvUsd,
+    entryRealMcUsd: null,
     baselinePriceUsd: price,
     openedAtIso: new Date(ts).toISOString(),
-    lane: 'base-pulse',
-    source: 'base',
+    lane: 'bsc-pulse',
+    source: 'bsc',
     metricType: 'price',
     features: null,
     btc: null,
@@ -137,9 +138,9 @@ function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: num
     trailingArmed: false,
     totalInvestedUsd: positionUsd,
     entryPriorityFeeUsd: null,
-    entryPriceVerifySlipPct: impactPct,
-    entryPriceVerifyImpactPct: impactPct,
-    entryPriceVerifySource: impactPct != null ? 'skipped' : null,
+    entryPriceVerifySlipPct: null,
+    entryPriceVerifyImpactPct: null,
+    entryPriceVerifySource: null,
     pairAddress: pair,
     entryLiqUsd: num(ev.liquidityUsd),
     remainingFraction: 1,
@@ -160,9 +161,8 @@ function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: num
   return row;
 }
 
-export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPath()): BasePulseDashboardLoad {
+export function loadBscPulseForDashboard(jsonlPath = bscPulseDashboardJsonlPath()): BscPulseDashboardLoad {
   const openByToken = new Map<string, OpenRow>();
-  const preOpenTimeline = new Map<string, TimelineEvent[]>();
   const closed: Array<Record<string, unknown>> = [];
   const failMap = new Map<string, number>();
   const symbolHints = new Map<string, string>();
@@ -198,19 +198,15 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
     if (firstTs === 0 || ts < firstTs) firstTs = ts;
     if (ts > lastTs) lastTs = ts;
 
-    const kind = typeof ev.kind === 'string' ? ev.kind : '';
-    const type = typeof ev.type === 'string' ? ev.type : '';
-    const tokenRaw =
-      typeof ev.token === 'string' ? ev.token : typeof ev.baseToken === 'string' ? ev.baseToken : '';
-    const pairRaw = typeof ev.pair === 'string' ? ev.pair : '';
-    const token = tokenRaw || pairRaw;
+    const kind = eventKind(ev);
+    const token = resolveToken(ev);
     const tokenId = token ? tokenKey(token) : '';
 
     if (tokenId && typeof ev.symbol === 'string' && ev.symbol.trim()) {
       symbolHints.set(tokenId, ev.symbol.trim().slice(0, 32));
     }
 
-    if (kind === 'eval-skip-open' || kind === 'eval-pass-open' || type === 'dip_signal') {
+    if (kind === 'eval-skip-open' || kind === 'eval-pass-open' || kind === 'dip_signal') {
       if (ts >= oneHourAgo) {
         evals1h += 1;
         if (kind === 'eval-pass-open') passed1h += 1;
@@ -226,59 +222,18 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
       }
     }
 
-    if (type === 'entry_decision' && kind === 'eval-pass-open') {
-      if (!tokenId || openByToken.has(tokenId)) continue;
-      const tl = preOpenTimeline.get(tokenId) ?? [];
-      const dropPct = num(ev.dropPct);
-      const tier = typeof ev.dipTier === 'string' ? ev.dipTier : null;
-      pushTimeline(tl, {
-        ts,
-        kind: 'strategy_note',
-        label: 'Entry decision',
-        spotPxUsd: entryPriceFromEv(ev),
-        contextNote:
-          dropPct != null
-            ? `dip ${dropPct.toFixed(1)}%${tier ? ` · ${tier}` : ''}`
-            : tier
-              ? tier
-              : null,
-      });
-      preOpenTimeline.set(tokenId, tl);
-      continue;
-    }
-
-    if (type === 'swap_ok') {
-      if (!tokenId || openByToken.has(tokenId)) continue;
-      const tl = preOpenTimeline.get(tokenId) ?? [];
-      const provider = typeof ev.provider === 'string' ? ev.provider : 'swap';
-      pushTimeline(tl, {
-        ts,
-        kind: 'strategy_note',
-        label: `Swap OK (${provider})`,
-        txSignature: typeof ev.txHash === 'string' ? ev.txHash : null,
-      });
-      preOpenTimeline.set(tokenId, tl);
-      continue;
-    }
-
-    if (kind === 'open' || type === 'live_open') {
+    if (kind === 'open') {
       if (!tokenId) continue;
       const symbol = resolveSymbol(token, ev, symbolHints);
       const row = makeOpenRowFromEv(token, symbol, ev, ts);
-      const pre = preOpenTimeline.get(tokenId);
-      if (pre?.length) {
-        row.timeline.unshift(...pre);
-        preOpenTimeline.delete(tokenId);
-      }
       openByToken.set(tokenId, row);
       continue;
     }
 
-    if (kind === 'stage_add' || type === 'live_stage_add') {
+    if (kind === 'stage_add' || kind === 'live_stage_add') {
       const row = openByToken.get(tokenId);
       if (!row) continue;
-      const addEth = num(ev.addEth);
-      const addUsd = num(ev.addUsd) ?? num(ev.positionUsd) ?? (addEth != null ? addEth * 2500 : null);
+      const addUsd = num(ev.addUsd) ?? num(ev.positionUsd);
       if (addUsd != null && addUsd > 0) {
         row.totalInvestedUsd += addUsd;
       }
@@ -292,11 +247,16 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
       continue;
     }
 
-    if (kind === 'close' || type === 'live_close') {
+    if (kind === 'close') {
       const row = openByToken.get(tokenId);
       const pnlPct = num(ev.pnlPct) ?? 0;
       const pnlUsd = num(ev.pnlUsd) ?? 0;
-      const exitReason = typeof ev.exitReason === 'string' ? ev.exitReason : 'close';
+      const exitReason =
+        typeof ev.exitReason === 'string'
+          ? ev.exitReason
+          : typeof ev.reason === 'string'
+            ? ev.reason
+            : 'close';
       const entryPx = row?.baselinePriceUsd ?? num(ev.entryPriceUsd);
       if (row) {
         pushTimeline(row.timeline, {
@@ -323,9 +283,9 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
           __timeline: row.timeline,
         });
         openByToken.delete(tokenId);
-      } else {
+      } else if (tokenId) {
         closed.unshift({
-          mint: token || `bp-close-${ts}`,
+          mint: token,
           symbol: resolveSymbol(token, ev, symbolHints),
           exitTs: ts,
           pnlPct,
@@ -338,7 +298,7 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
 
   const open: Paper2OpenItem[] = [...openByToken.values()].map(({ timeline: _tl, ...rest }) => rest);
   const openTimelines = new Map<string, TimelineEvent[]>(
-    [...openByToken.entries()].map(([id, row]) => [row.mint, row.timeline]),
+    [...openByToken.entries()].map(([, row]) => [row.mint, row.timeline]),
   );
 
   const failReasons = [...failMap.entries()]
