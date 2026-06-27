@@ -107,6 +107,9 @@ async function main(): Promise<void> {
         mode: client.mode,
         universeSize: universe.length,
       });
+      console.log(
+        `[hl-oscar-perp] tick ok opens=${state.opens.size} universe=${universe.length}`,
+      );
     } catch (e) {
       console.error('[hl-oscar-perp] tick error', e);
       writeLastFatal(e);
