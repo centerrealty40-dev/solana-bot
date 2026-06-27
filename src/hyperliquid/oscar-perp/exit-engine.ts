@@ -3,13 +3,17 @@ import type { OscarOpenPosition } from './position-types.js';
 
 /** Wave B half8_runner exit params (aligned with backtest EXIT_OSCAR_WAVE_B). */
 export const OSCAR_EXIT = {
-  killFrac: -0.5,
   tpStepFrac: 0.08,
   tpSellFrac: 0.5,
   trailArmFrac: 0.075,
   trailStepDropFrac: 0.025,
   trailSellFrac: 0.2,
 } as const;
+
+/** Position kill as negative PnL fraction (e.g. 45 → −0.45). */
+export function positionKillFrac(cfg: HlOscarPerpConfig): number {
+  return -(cfg.positionKillDropPct / 100);
+}
 
 export type OscarExitAction =
   | { kind: 'none' }
@@ -41,12 +45,13 @@ export function computeOscarExitActions(
   const pnlLow = pnlFrac(avg, lowPx);
   const pnlHigh = pnlFrac(avg, highPx);
   const pnlMark = pnlFrac(avg, markPx);
+  const killFrac = positionKillFrac(cfg);
 
-  if (pnlLow <= OSCAR_EXIT.killFrac + 1e-9) {
+  if (pnlLow <= killFrac + 1e-9) {
     actions.push({
       kind: 'full',
       reason: 'KILL',
-      triggerPx: avg * (1 + OSCAR_EXIT.killFrac),
+      triggerPx: avg * (1 + killFrac),
     });
     return actions;
   }
