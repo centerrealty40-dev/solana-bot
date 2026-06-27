@@ -710,7 +710,7 @@ function buildClosedTrade(args: {
   return ct;
 }
 
-type TpPartialSellResult = 'ok' | 'defer_next' | 'abort_mint';
+type TpPartialSellResult = 'ok' | 'defer_next' | 'abort_mint' | 'wallet_zero';
 
 /** Shared partial TP path for discrete ladder rungs and TP grid steps. */
 async function tryExecuteTpPartialSell(args: {
@@ -856,7 +856,10 @@ async function tryExecuteTpPartialSell(args: {
       decimals: ot.tokenDecimals ?? 6,
       intentKind: 'sell_partial',
     });
-    if (!sellOut.ok) return 'abort_mint';
+    if (!sellOut.ok) {
+      if (sellOut.preflightSkipReason === 'wallet_spl_balance_zero') return 'wallet_zero';
+      return 'abort_mint';
+    }
     if (sellOut.solProceedsLamports == null || sellOut.solProceedsLamports <= 0n) {
       log.warn(
         { mint: mint.slice(0, 8), symbol: ot.symbol },
@@ -1619,6 +1622,8 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
   verifyReconcileOrphanWalletZero?: TrackerArgs['verifyReconcileOrphanWalletZero'];
   liveOscarCfg?: LiveOscarConfig;
   onMintFullClose?: TrackerArgs['onMintFullClose'];
+  /** When wallet SPL=0 during a policy exit attempt with no journaled partials yet. */
+  forcedExitReason?: ExitReason;
 }): Promise<boolean> {
   const {
     mint,
@@ -1633,6 +1638,7 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
     btcCtx,
     verifyReconcileOrphanWalletZero,
     liveOscarCfg,
+    forcedExitReason,
   } = args;
 
   if (verifyReconcileOrphanWalletZero) {
@@ -1646,21 +1652,106 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
   }
 
   if (ot.partialSells.length === 0) {
-    journalLiveStrategy?.({
-      kind: 'risk_note',
-      reason: 'wallet_zero_open_no_policy_exit',
-      mint,
-      detail: JSON.stringify({
-        symbol: ot.symbol,
-        investedUsd: ot.totalInvestedUsd,
-        remainingFraction: ot.remainingFraction,
-      }).slice(0, 400),
+    if (!forcedExitReason) {
+      journalLiveStrategy?.({
+        kind: 'risk_note',
+        reason: 'wallet_zero_open_no_policy_exit',
+        mint,
+        detail: JSON.stringify({
+          symbol: ot.symbol,
+          investedUsd: ot.totalInvestedUsd,
+          remainingFraction: ot.remainingFraction,
+        }).slice(0, 400),
+      });
+      log.error(
+        { mint: mint.slice(0, 8), symbol: ot.symbol, investedUsd: ot.totalInvestedUsd },
+        'live wallet SPL=0 but journal open with no policy partials — not closing (no RECONCILE_ORPHAN)',
+      );
+      return false;
+    }
+
+    const exitReason = forcedExitReason;
+    const marketSell =
+      ot.lastObservedPriceUsd ?? ot.avgEntryMarket ?? ot.avgEntry;
+    if (!(marketSell > 0)) return false;
+    const ageH = (Date.now() - ot.entryTs) / 3_600_000;
+    const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+    const perTxNd = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+    const ct = buildClosedTrade({
+      cfg,
+      ot,
+      marketSell,
+      effectiveSell: marketSell,
+      exitReason,
+      ageH,
+      networkFeeUsdPerTx: perTxNd,
     });
-    log.error(
-      { mint: mint.slice(0, 8), symbol: ot.symbol, investedUsd: ot.totalInvestedUsd },
-      'live wallet SPL=0 but journal open with no policy partials — not closing (no RECONCILE_ORPHAN)',
+    const xAvg = ot.avgEntry > 0 && marketSell > 0 ? marketSell / ot.avgEntry : 0;
+    const exitCtx = buildExitContext({
+      cfg,
+      ot,
+      closePnlPct: ct.pnlPct,
+      ageH,
+      exitReason,
+      curMetric: marketSell,
+      xAvg,
+      tpLadder,
+    });
+    ct.exitContext = exitCtx;
+    clearExitCloseDeferForMint(mint);
+    clearExitPartialDeferForMint(mint);
+    open.delete(mint);
+    closed.push(ct);
+    const statKey: ExitReason = exitReason === 'KILLSTOP' ? 'SL' : exitReason;
+    if (stats.closed[statKey] != null) stats.closed[statKey]++;
+    const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+    const mcUsdLive_close = await getLiveMcUsd(
+      mint,
+      ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
     );
-    return false;
+    const liqWatchStamp = await buildOptionalLiqWatchCloseStamp(cfg, ot);
+    journalAppend({
+      kind: 'close',
+      ...ct,
+      peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+      btc_exit: btcCtx(),
+      exit_swaps: exitSwaps,
+      mcUsdLive: mcUsdLive_close,
+      priorityFee: pfClose,
+      exitContext: exitCtx,
+      walletZeroForcedExit: true,
+      forcedExitReason: exitReason,
+      ...(liqWatchStamp ? { liqWatch: liqWatchStamp } : {}),
+    });
+    journalLiveStrategy?.({
+      kind: 'live_position_close',
+      mint,
+      closedTrade: serializeClosedTrade(ct),
+    });
+    afterFullCloseReentryGate(args, cfg, ct, ot);
+    hookLiveWhitelistAfterFullClose(
+      liveOscarCfg,
+      cfg,
+      mint,
+      ot.symbol,
+      ct.netPnlUsd,
+      ot.liveMintFirstProbe === true,
+      ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+      ot.liveVariantAExitTag,
+      ot,
+      ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+    );
+    scheduleTailAfterLiveClose(
+      liveOscarCfg,
+      mint,
+      ot.symbol,
+      ot.tokenDecimals ?? 6,
+      marketSell,
+      ot.source,
+      ct.exitReason,
+    );
+    peakStateByMint.delete(mint);
+    return true;
   }
 
   const lastPartial = ot.partialSells[ot.partialSells.length - 1]!;
@@ -2211,14 +2302,35 @@ async function tryPresetCScalpPartialExit(args: {
   ot: OpenTrade;
   cfg: PaperTraderConfig;
   curMetric: number;
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+  tpLadder: TpLadderLevel[];
   journalAppend: TrackerArgs['journalAppend'];
   journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
   livePhase4?: LiveOscarPhase4Tracker;
   liveOscarCfg?: LiveOscarConfig;
   stats: TrackerStats;
+  btcCtx: TrackerArgs['btcCtx'];
+  verifyReconcileOrphanWalletZero?: TrackerArgs['verifyReconcileOrphanWalletZero'];
+  onMintFullClose?: TrackerArgs['onMintFullClose'];
 }): Promise<'partial' | 'none'> {
-  const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
-    args;
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    open,
+    closed,
+    tpLadder,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    btcCtx,
+    verifyReconcileOrphanWalletZero,
+    onMintFullClose,
+  } = args;
   if (!isPresetCScalpExitPolicy(ot) || !(curMetric > 0) || ot.remainingFraction <= 1e-6) return 'none';
 
   const action = evaluatePresetCScalpExitAction(ot, cfg, curMetric);
@@ -2243,6 +2355,26 @@ async function tryPresetCScalpPartialExit(args: {
     logLabelPct: action.label,
     timelineLabelRu: action.label,
   });
+  if (r === 'wallet_zero') {
+    const forcedExitReason: ExitReason = action.label.toLowerCase().includes('trail') ? 'TRAIL' : 'TP';
+    await closeOpenTradeWalletZeroPolicySync({
+      mint,
+      ot,
+      cfg,
+      open,
+      closed,
+      stats,
+      tpLadder,
+      journalAppend,
+      journalLiveStrategy,
+      btcCtx,
+      verifyReconcileOrphanWalletZero,
+      liveOscarCfg,
+      onMintFullClose,
+      forcedExitReason,
+    });
+    return 'partial';
+  }
   return r === 'ok' ? 'partial' : 'none';
 }
 
@@ -3825,11 +3957,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot,
         cfg: effCfg,
         curMetric,
+        open,
+        closed,
+        tpLadder,
         journalAppend,
         journalLiveStrategy,
         livePhase4,
         liveOscarCfg,
         stats,
+        btcCtx,
+        verifyReconcileOrphanWalletZero,
+        onMintFullClose: args.onMintFullClose,
       });
       if (ot.avgEntry > 0) {
         xAvg = curMetric / ot.avgEntry;
@@ -4257,7 +4395,31 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           decimals: ot.tokenDecimals ?? 6,
           intentKind: 'sell_full',
         });
-        if (!sellFullOut.ok) continue;
+        if (!sellFullOut.ok) {
+          if (sellFullOut.preflightSkipReason === 'wallet_spl_balance_zero') {
+            const synced = await closeOpenTradeWalletZeroPolicySync({
+              mint,
+              ot,
+              cfg,
+              open,
+              closed,
+              stats,
+              tpLadder,
+              journalAppend,
+              journalLiveStrategy,
+              btcCtx,
+              verifyReconcileOrphanWalletZero,
+              liveOscarCfg,
+              onMintFullClose: args.onMintFullClose,
+              forcedExitReason: exitReason,
+            });
+            if (synced) {
+              peakStateByMint.delete(mint);
+              continue;
+            }
+          }
+          continue;
+        }
       }
       applyLiveFullCloseProceedsFromChain({
         ct,

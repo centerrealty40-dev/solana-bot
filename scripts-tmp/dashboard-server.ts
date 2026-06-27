@@ -1718,7 +1718,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'bsc-pulse',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-26-closed-pnl-net-pct-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-27-basepulse-partial-sell-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3254,6 +3254,114 @@ function sanitizeReconcileOrphanClosedTradeForDashboard(ct: Record<string, unkno
   return out;
 }
 
+type WalletDrainedZombieTrack = {
+  hadSellAttempt: boolean;
+  walletDrainedAt: number;
+  lastSellTargetPx: number | null;
+};
+
+function bumpWalletDrainedZombieTrack(
+  map: Map<string, WalletDrainedZombieTrack>,
+  mint: string,
+): WalletDrainedZombieTrack {
+  let row = map.get(mint);
+  if (!row) {
+    row = { hadSellAttempt: false, walletDrainedAt: 0, lastSellTargetPx: null };
+    map.set(mint, row);
+  }
+  return row;
+}
+
+/** Journal open + sell attempts + wallet_spl_balance_zero skip but no `live_position_close`. */
+export function applyWalletDrainedZombieInference(
+  load: LiveOscarPaper2Load,
+  zombieTracks: Map<string, WalletDrainedZombieTrack>,
+  openTimelines: Map<string, TimelineEvent[]>,
+  liveMeta: Map<string, { metricType: string | null; entryRealMcUsd: number | null }>,
+  dashboardStrategyId: string,
+): LiveOscarPaper2Load {
+  const closed = [...load.closed];
+  const closedMints = new Set(closed.map((c) => String(c.mint ?? '')));
+  const openMints = new Set(load.open.map((o) => o.mint));
+
+  for (const [mint, z] of zombieTracks) {
+    if (!z.hadSellAttempt || z.walletDrainedAt <= 0) continue;
+    if (closedMints.has(mint) || !openMints.has(mint)) continue;
+
+    const openItem = load.open.find((o) => o.mint === mint);
+    if (!openItem) continue;
+
+    const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+    const entryTs = Number(openItem.entryTs ?? 0);
+    const exitTs = z.walletDrainedAt;
+    const invested = Number(openItem.totalInvestedUsd ?? 0);
+    const avgEntry = Number(openItem.avgEntry ?? openItem.entryPx ?? 0);
+    const observedPx = Number(openItem.lastObservedPriceUsd ?? 0);
+    const baselinePx = Number(openItem.baselinePriceUsd ?? 0);
+    const exitPx =
+      z.lastSellTargetPx ??
+      (observedPx > 0 ? observedPx : baselinePx > 0 ? baselinePx : avgEntry);
+    const netPnlUsd =
+      invested > 0 && avgEntry > 0 && exitPx > 0 ? invested * (exitPx / avgEntry - 1) : 0;
+    const pnlPct = invested > 0 ? (netPnlUsd / invested) * 100 : 0;
+    const durationMin = entryTs > 0 && exitTs > entryTs ? (exitTs - entryTs) / 60_000 : 0;
+
+    const timeline = openTimelines.get(mint) ?? [];
+    const synClose: Record<string, unknown> = {
+      kind: 'close',
+      ts: exitTs,
+      strategyId: dashboardStrategyId,
+      mint,
+      exitTs,
+      exitMcUsd: exitPx,
+      exit_market_price: exitPx,
+      pnlPct,
+      netPnlUsd,
+      exitReason: 'KILLSTOP',
+      remainingFraction: 0,
+      totalInvestedUsd: invested,
+      __dashboardInference: 'wallet_drained_zombie',
+    };
+    const tev = buildTimelineEvent(synClose, meta.metricType, meta.entryRealMcUsd);
+    const arr = [...timeline];
+    if (tev) arr.push(tev);
+
+    closed.push(
+      sanitizeReconcileOrphanClosedTradeForDashboard({
+        mint,
+        symbol: openItem.symbol ?? '',
+        entryTs,
+        exitTs,
+        exitReason: 'KILLSTOP',
+        pnlPct,
+        netPnlUsd,
+        pnlUsd: netPnlUsd,
+        durationMin,
+        totalInvestedUsd: invested,
+        avgEntry,
+        avgEntryMarket: openItem.avgEntryMarket ?? avgEntry,
+        effective_entry_price: avgEntry,
+        theoretical_entry_price: openItem.baselinePriceUsd ?? avgEntry,
+        effective_exit_price: exitPx,
+        theoretical_exit_price: exitPx,
+        exitMcUsd: exitPx,
+        exitPriceUsd: exitPx,
+        lastObservedPriceUsd: exitPx,
+        __dashboardInference: 'wallet_drained_zombie',
+        __timeline: arr,
+      }),
+    );
+    openMints.delete(mint);
+    closedMints.add(mint);
+  }
+
+  return {
+    ...load,
+    open: load.open.filter((o) => openMints.has(o.mint)),
+    closed,
+  };
+}
+
 function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
   const z = Date.now();
   return {
@@ -3301,6 +3409,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
   const intentToMint = new Map<string, string>();
   const sigQueues = new Map<string, string[]>();
+  const zombieTracks = new Map<string, WalletDrainedZombieTrack>();
   const entryQuoteByMint = new Map<
     string,
     {
@@ -3390,6 +3499,12 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const id = String(o.intentId ?? '');
       const m = String(o.mint ?? '');
       if (id && m) intentToMint.set(id, m);
+      if (m && String(o.side ?? '').toLowerCase() === 'sell') {
+        const z = bumpWalletDrainedZombieTrack(zombieTracks, m);
+        z.hadSellAttempt = true;
+        const targetPx = Number(o.targetPriceUsd ?? 0);
+        if (targetPx > 0) z.lastSellTargetPx = targetPx;
+      }
       if (m && String(o.side ?? '').toLowerCase() === 'buy') {
         const qv = entryQuoteVerifyFromExecutionAttempt(o);
         if (qv.entryPriceVerifySource) entryQuoteByMint.set(m, qv);
@@ -3413,6 +3528,14 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
     if (kind === 'execution_skip' && typeof o.reason === 'string' && o.reason) {
       failReasonsCount.set(o.reason, (failReasonsCount.get(o.reason) ?? 0) + 1);
+      if (o.reason === 'wallet_spl_balance_zero') {
+        const id = String(o.intentId ?? '');
+        const m = intentToMint.get(id) ?? String(o.mint ?? '');
+        if (m) {
+          const z = bumpWalletDrainedZombieTrack(zombieTracks, m);
+          z.walletDrainedAt = ts;
+        }
+      }
       continue;
     }
 
@@ -3703,6 +3826,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       om.delete(mint);
       liveMeta.delete(mint);
       liveTimelines.delete(mint);
+      zombieTracks.delete(mint);
     }
     }
   } catch {
@@ -3722,24 +3846,30 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       ? { ...(liveReconcileBoot ? { liveReconcileBoot } : {}), ...(liveReconcileReport ? { liveReconcileReport } : {}) }
       : undefined;
 
-  return mergeLiveOscarOpenSnapshotIntoLoad(
-    {
-      open: [...om.values()],
-      closed: closedVisible,
-      firstTs: f,
-      lastTs: l,
-      resetTs,
-      evals1h,
-      passed1h,
-      failReasons,
-      openTimelines: liveTimelines,
-      hbOpen,
-      hbClosed,
-      entryQuoteByMint,
-      ...(extras ? { liveExtras: extras } : {}),
-    },
-    resolveLiveOscarOpenSnapshotPath(filePath),
-    DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+  return applyWalletDrainedZombieInference(
+    mergeLiveOscarOpenSnapshotIntoLoad(
+      {
+        open: [...om.values()],
+        closed: closedVisible,
+        firstTs: f,
+        lastTs: l,
+        resetTs,
+        evals1h,
+        passed1h,
+        failReasons,
+        openTimelines: liveTimelines,
+        hbOpen,
+        hbClosed,
+        entryQuoteByMint,
+        ...(extras ? { liveExtras: extras } : {}),
+      },
+      resolveLiveOscarOpenSnapshotPath(filePath),
+      DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+      dashboardStrategyId,
+    ),
+    zombieTracks,
+    liveTimelines,
+    liveMeta,
     dashboardStrategyId,
   );
 }
@@ -4617,6 +4747,7 @@ async function buildPaper2StrategyRowFromLoad(
         currentLiqUsd: currentLiqUsdVal,
         liqDropPct,
         remainingCostBasisUsd,
+        remainingFraction: ot.remainingFraction ?? 1,
         vol24hUsd,
         liveFdvUsd,
         liveOscarTradeLane: ot.liveOscarTradeLane ?? null,

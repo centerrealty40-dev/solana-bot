@@ -7,6 +7,7 @@ import path from 'node:path';
 import type { EvalDecision } from '../papertrader/discovery/dip-clones.js';
 import { fetchLatestSnapshotQuote, type DexSnapshotSource } from '../papertrader/pricing.js';
 import { loadPresetCScalpConfig } from './scalp-config.js';
+import { passesPresetCMcapBand } from './filters.js';
 
 const PENDING_REL = 'data/live/preset-c-scalp-pending.json';
 
@@ -143,6 +144,7 @@ export async function findPresetCScalpEntriesReady(
   for (const row of listPresetCScalpPending()) {
     if (row.entryLegDone || openMints.has(row.mint)) continue;
     if (nowMs > row.expiresAtMs) continue;
+    if (!passesPresetCMcapBand(Number(row.features.market_cap_usd ?? 0))) continue;
 
     const src = row.source as DexSnapshotSource | undefined;
     const q = await fetchLatestSnapshotQuote(row.mint, src);

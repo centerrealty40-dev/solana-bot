@@ -882,7 +882,7 @@ async function runTokenToSolPipeline(
       detail: args.mint.slice(0, 8),
       intentKind: args.intentKind,
     });
-    return { ok: false };
+    return { ok: false, preflightSkipReason: `dry_run:${args.intentKind}` };
   }
   if (executionMode !== 'simulate' && executionMode !== 'live') return { ok: false };
 
@@ -897,7 +897,7 @@ async function runTokenToSolPipeline(
       }).slice(0, 400),
       intentKind: args.intentKind,
     });
-    return { ok: false };
+    return { ok: false, preflightSkipReason: 'sell_price_usd_insane' };
   }
 
   let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
@@ -908,7 +908,7 @@ async function runTokenToSolPipeline(
       detail: args.mint.slice(0, 8),
       intentKind: args.intentKind,
     });
-    return { ok: false };
+    return { ok: false, preflightSkipReason: 'token_amount_raw' };
   }
 
   let sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain' = 'usd_math';
@@ -921,7 +921,7 @@ async function runTokenToSolPipeline(
         detail: args.mint.slice(0, 8),
         intentKind: args.intentKind,
       });
-      return { ok: false };
+      return { ok: false, preflightSkipReason: 'spl_balance_rpc_null' };
     }
     const chainAmt = chainMap.get(args.mint) ?? 0n;
     if (chainAmt === 0n) {
@@ -931,7 +931,7 @@ async function runTokenToSolPipeline(
         detail: JSON.stringify({ mint: args.mint, intentKind: args.intentKind }).slice(0, 400),
         intentKind: args.intentKind,
       });
-      return { ok: false };
+      return { ok: false, preflightSkipReason: 'wallet_spl_balance_zero' };
     }
     const computedBn = BigInt(raw);
     if (computedBn === 0n) {
@@ -941,7 +941,7 @@ async function runTokenToSolPipeline(
         detail: args.mint.slice(0, 8),
         intentKind: args.intentKind,
       });
-      return { ok: false };
+      return { ok: false, preflightSkipReason: 'sell_amount_zero' };
     }
     if (args.intentKind === 'sell_full') {
       raw = chainAmt.toString();
@@ -1442,6 +1442,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
     tryTokenToSolSell(args) {
       return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline).then((r) => ({
         ok: r.ok,
+        preflightSkipReason: r.preflightSkipReason,
         solProceedsLamports: r.wsolOutLamports,
         solProceedsSource: r.solProceedsSource,
         txSignature: r.txSignature,

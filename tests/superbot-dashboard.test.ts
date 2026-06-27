@@ -346,6 +346,59 @@ describe('SuperBot preset-c live journal', () => {
     expect(c.exitPriceUsd).toBe(0.0009);
   });
 
+  it('infers closed when wallet drained after sell attempts without live_position_close', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superbot-wallet-zombie-'));
+    const fp = path.join(tmpDir, 'live-oscar-preset-c.jsonl');
+    const base = Date.UTC(2026, 6, 27, 10, 0, 0);
+    const mint = 'MintZombie1111111111111111111111111111111';
+    fs.writeFileSync(
+      fp,
+      [
+        JSON.stringify({
+          ts: base,
+          channel: 'live',
+          kind: 'live_position_open',
+          mint,
+          openTrade: {
+            symbol: 'ZOM',
+            metricType: 'price',
+            entryTs: base,
+            entryMcUsd: 0.001,
+            legs: [{ ts: base, marketPrice: 0.001, sizeUsd: 200, reason: 'open' }],
+            partialSells: [],
+            totalInvestedUsd: 200,
+            avgEntry: 0.001,
+            avgEntryMarket: 0.001,
+            remainingFraction: 1,
+            lastObservedPriceUsd: 0.0005,
+          },
+        }),
+        JSON.stringify({
+          ts: base + 60_000,
+          channel: 'live',
+          kind: 'execution_attempt',
+          intentId: 'sell-intent-1',
+          side: 'sell',
+          mint,
+          intendedUsd: 200,
+          targetPriceUsd: 0.00048,
+        }),
+        JSON.stringify({
+          ts: base + 61_000,
+          channel: 'live',
+          kind: 'execution_skip',
+          intentId: 'sell-intent-1',
+          reason: 'wallet_spl_balance_zero',
+          detail: JSON.stringify({ mint, intentKind: 'sell_full' }),
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    const ll = loadLiveOscarJsonlAsPaper2(fp);
+    expect(ll.open.some((o) => o.mint === mint)).toBe(false);
+    expect(ll.closed.some((c) => c.mint === mint && c.exitReason === 'KILLSTOP')).toBe(true);
+  });
+
   it('selectRecentClosedRowsForDashboard picks newest closes, not journal append order', () => {
     const base = Date.UTC(2026, 5, 20, 12, 0, 0);
     const rows = Array.from({ length: 25 }, (_, i) => ({
