@@ -586,7 +586,9 @@ function buildExitContext(args: {
       }
       break;
     case 'BREAKEVEN_EXIT':
-      triggerLabel = `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
+      triggerLabel = isPresetCScalpExitPolicy(ot)
+        ? `Preset C breakeven exit (TP≥+5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`
+        : `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
       break;
     case 'KILLSTOP':
       if (ot.liveStagedEntry) {
@@ -1652,25 +1654,41 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
   }
 
   if (ot.partialSells.length === 0) {
-    if (!forcedExitReason) {
-      journalLiveStrategy?.({
-        kind: 'risk_note',
-        reason: 'wallet_zero_open_no_policy_exit',
-        mint,
-        detail: JSON.stringify({
-          symbol: ot.symbol,
-          investedUsd: ot.totalInvestedUsd,
-          remainingFraction: ot.remainingFraction,
-        }).slice(0, 400),
-      });
-      log.error(
-        { mint: mint.slice(0, 8), symbol: ot.symbol, investedUsd: ot.totalInvestedUsd },
-        'live wallet SPL=0 but journal open with no policy partials — not closing (no RECONCILE_ORPHAN)',
-      );
-      return false;
+    let exitReason = forcedExitReason;
+    if (!exitReason) {
+      const ageMs = Date.now() - (ot.entryTs > 0 ? ot.entryTs : 0);
+      const graceMs = 120_000;
+      if (ageMs >= graceMs) {
+        exitReason = 'PERIODIC_HEAL';
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            investedUsd: ot.totalInvestedUsd,
+            ageSec: +(ageMs / 1000).toFixed(0),
+          },
+          'live wallet SPL=0, journal open without partials — hygiene close (PERIODIC_HEAL, not RECONCILE_ORPHAN)',
+        );
+      } else {
+        journalLiveStrategy?.({
+          kind: 'risk_note',
+          reason: 'wallet_zero_open_no_policy_exit',
+          mint,
+          detail: {
+            symbol: ot.symbol,
+            investedUsd: ot.totalInvestedUsd,
+            remainingFraction: ot.remainingFraction,
+            ageSec: +(ageMs / 1000).toFixed(0),
+            graceSec: graceMs / 1000,
+          },
+        });
+        log.error(
+          { mint: mint.slice(0, 8), symbol: ot.symbol, investedUsd: ot.totalInvestedUsd },
+          'live wallet SPL=0 but journal open with no policy partials — waiting grace before hygiene close',
+        );
+        return false;
+      }
     }
-
-    const exitReason = forcedExitReason;
     const marketSell =
       ot.lastObservedPriceUsd ?? ot.avgEntryMarket ?? ot.avgEntry;
     if (!(marketSell > 0)) return false;

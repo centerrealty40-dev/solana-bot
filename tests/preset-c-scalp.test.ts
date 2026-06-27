@@ -219,10 +219,10 @@ describe('preset-c-scalp-exit-policy', () => {
     expect(presetCScalpKillEligible(ot, 49)).toBe(true);
   });
 
-  it('breakeven exit at 0% after partial tp', () => {
+  it('breakeven exit at 0% vs avg after partial tp', () => {
     const ot = baseOpen(100);
     ot.presetCScalpTp5Taken = true;
-    expect(presetCScalpBreakevenExitEligible(ot, 100)).toBe(true);
+    expect(presetCScalpBreakevenExitEligible(ot, ot.avgEntry)).toBe(true);
   });
 
   it('breakeven exit at 0% after tp10 partial', () => {
@@ -231,7 +231,7 @@ describe('preset-c-scalp-exit-policy', () => {
     ot.presetCScalpTp5Taken = true;
     ot.presetCScalpTp10Taken = true;
     ot.remainingFraction = 0.25;
-    const action = evaluatePresetCScalpExitAction(ot, cfg, 100);
+    const action = evaluatePresetCScalpExitAction(ot, cfg, ot.avgEntry);
     expect(action.kind).toBe('full_exit');
     if (action.kind === 'full_exit') expect(action.reason).toBe('BREAKEVEN_EXIT');
   });

@@ -226,11 +226,13 @@ export const LiveExitVerifyDeferSchema = z.object({
       'TIMEOUT',
       'NO_DATA',
       'KILLSTOP',
+      'BREAKEVEN_EXIT',
       'LIQ_DRAIN',
       'FLASH_CRASH_KILL',
       'RECONCILE_ORPHAN',
       'PERIODIC_HEAL',
       'CAPITAL_ROTATE',
+      'WAVE_B_POST_TP1_SCRATCH',
     ])
     .optional(),
 });
@@ -550,6 +552,39 @@ export const ExitSliceResultSchema = z.object({
   slicesCompleted: z.number().int().nonnegative().optional(),
 });
 
+/** 1.11.458 — hot tick killstop pre-arm observability. */
+export const LiveKillstopPrearmSchema = z.object({
+  kind: z.literal('live_killstop_prearm'),
+  mint: z.string().min(1).max(64),
+  pnlFracVsAvg: z.number().finite().optional(),
+  killEffPct: z.number().finite().optional(),
+  sellUsdPerToken: z.number().finite().optional(),
+  ttlMs: z.number().int().nonnegative().optional(),
+});
+
+export const LiveSellQuotePrearmArmedSchema = z.object({
+  kind: z.literal('live_sell_quote_prearm_armed'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.enum(['sell_partial', 'sell_full']).optional(),
+  tokenAmountRaw: z.string().optional(),
+  expiresAtMs: z.number().finite().optional(),
+});
+
+export const LiveSellQuotePrearmExpiredSchema = z.object({
+  kind: z.literal('live_sell_quote_prearm_expired'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.enum(['sell_partial', 'sell_full']).optional(),
+  expiresAtMs: z.number().finite().optional(),
+  nowMs: z.number().finite().optional(),
+});
+
+export const LiveSellQuotePrearmConsumedSchema = z.object({
+  kind: z.literal('live_sell_quote_prearm_consumed'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.enum(['sell_partial', 'sell_full']).optional(),
+  ageMs: z.number().finite().optional(),
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -592,6 +627,10 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   ExitSlicePlanSchema,
   ExitSliceAttemptSchema,
   ExitSliceResultSchema,
+  LiveKillstopPrearmSchema,
+  LiveSellQuotePrearmArmedSchema,
+  LiveSellQuotePrearmExpiredSchema,
+  LiveSellQuotePrearmConsumedSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

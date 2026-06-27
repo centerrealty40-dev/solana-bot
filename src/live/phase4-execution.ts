@@ -1267,12 +1267,12 @@ async function finalizeSellOutcome(
         appendLiveJsonlEvent({
           kind: 'risk_note',
           reason: 'sell_sol_proceeds_chain_below_quote',
-          detail: JSON.stringify({
+          detail: {
             mint: args.mint.slice(0, 12),
             intentKind: args.intentKind,
             chainLamports: chain.toString(),
             quoteLamports: quoteOk.toString(),
-          }).slice(0, 500),
+          },
         });
         outLamports = quoteOk;
         solProceedsSource = 'jupiter_quote';
