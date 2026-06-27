@@ -52,7 +52,7 @@ describe('live-oscar-phase-escalation', () => {
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD = '300';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD = '200';
     process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD = '500';
-    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD = '100';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD = '200';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '300';
   });
 
@@ -127,7 +127,7 @@ describe('live-oscar-phase-escalation', () => {
     expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(300);
   });
 
-  it('apply escalation to micro: scalp $300 + leg-2 $200 @ −5% + avg $100 @ −10% = $600 max', () => {
+  it('apply escalation to micro: scalp $300 + leg-2 $200 @ ?5% + avg $200 @ ?10% = $700 max', () => {
     const cfg = loadPaperTraderConfig();
     const ot = scalpOpen(1);
     ot.entryMarketCapUsd = 800_000;
@@ -142,8 +142,8 @@ describe('live-oscar-phase-escalation', () => {
     expect(ot.liveOscarMcapTier).toBe('micro');
     expect(ot.liveStagedEntry?.entrySplitLeg2Done).toBe(false);
     expect(ot.liveStagedEntry?.entrySplitLeg2Usd).toBe(200);
-    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(100);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(600);
+    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(200);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(700);
     expect(ot.totalInvestedUsd).toBe(300);
   });
 

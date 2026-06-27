@@ -108,11 +108,12 @@ const ConfigSchema = z.object({
   liveStagedEntryEntrySplitLegUsd: z.coerce.number().nonnegative().default(500),
   /** Asymmetric split leg-2 USD; `0` = same as leg-1 (symmetric 2× split, backward compat). */
   liveStagedEntryEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
-  /** Optional third timed entry-split leg (prod tier: up to 6× split); `0` = two-leg split only. */
+  /** Optional third timed entry-split leg (prod tier: up to 7× split); `0` = two-leg split only. */
   liveStagedEntryEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg4Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg5Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg6Usd: z.coerce.number().nonnegative().default(0),
+  liveStagedEntryEntrySplitLeg7Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
   liveStagedEntryEntrySplitMaxUpPct: z.coerce.number().min(0).max(50).default(3),
   liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
@@ -1089,6 +1090,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitLeg4Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD,
     liveStagedEntryEntrySplitLeg5Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD,
     liveStagedEntryEntrySplitLeg6Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD,
+    liveStagedEntryEntrySplitLeg7Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD,
     liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,

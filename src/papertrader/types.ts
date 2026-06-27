@@ -420,10 +420,11 @@ export interface LiveStagedEntryState {
   entrySplitLeg2Usd?: number;
   /** Optional third timed entry-split leg (prod 3×+ split). */
   entrySplitLeg3Usd?: number;
-  /** Prod timed entry-split legs 4–6 (6×$300 slice model). */
+  /** Prod timed entry-split legs 4–7 (7×$300 slice model). */
   entrySplitLeg4Usd?: number;
   entrySplitLeg5Usd?: number;
   entrySplitLeg6Usd?: number;
+  entrySplitLeg7Usd?: number;
   entrySplitDelayMs?: number;
   entrySplitMaxUpPct?: number;
   entrySplitMaxDownPct?: number;
@@ -436,11 +437,13 @@ export interface LiveStagedEntryState {
   entrySplitLeg4Done?: boolean;
   entrySplitLeg5Done?: boolean;
   entrySplitLeg6Done?: boolean;
+  entrySplitLeg7Done?: boolean;
   entrySplitLeg2Ts?: number;
   entrySplitLeg3Ts?: number;
   entrySplitLeg4Ts?: number;
   entrySplitLeg5Ts?: number;
   entrySplitLeg6Ts?: number;
+  entrySplitLeg7Ts?: number;
   avgSecondDropPct?: number;
   avgSecondLegUsd?: number;
   avgThirdDropPct?: number;

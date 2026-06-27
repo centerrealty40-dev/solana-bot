@@ -50,7 +50,7 @@ export function resolveLiveOscarEntrySplitLeg3Usd(
   return cfg.liveStagedEntryEntrySplitLeg3Usd;
 }
 
-/** Prod timed entry-split legs 4–6; low/micro always `0`. */
+/** Prod timed entry-split legs 4–7; low/micro always `0`. */
 export function resolveLiveOscarEntrySplitLeg4Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -75,6 +75,14 @@ export function resolveLiveOscarEntrySplitLeg6Usd(
   return cfg.liveStagedEntryEntrySplitLeg6Usd;
 }
 
+export function resolveLiveOscarEntrySplitLeg7Usd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+): number {
+  if (tier === 'micro' || tier === 'low') return 0;
+  return cfg.liveStagedEntryEntrySplitLeg7Usd;
+}
+
 export function resolveLiveOscarEntrySplitLegUsdByIndex(
   cfg: PaperTraderConfig,
   tier: LiveOscarTradeTier | undefined,
@@ -93,6 +101,8 @@ export function resolveLiveOscarEntrySplitLegUsdByIndex(
       return resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
     case 6:
       return resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+    case 7:
+      return resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
     default:
       return 0;
   }
@@ -239,6 +249,7 @@ export function applyCanonicalStagedEntrySizing(
   st.entrySplitLeg4Usd = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
   st.entrySplitLeg5Usd = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
   st.entrySplitLeg6Usd = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+  st.entrySplitLeg7Usd = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
   for (let i = 2; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
     setEntrySplitLegDone(st, i as EntrySplitLegIndex, entrySplitLegUsdFromState(st, i as EntrySplitLegIndex) <= 0);
   }

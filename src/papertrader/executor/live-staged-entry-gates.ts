@@ -16,6 +16,7 @@ import {
   resolveLiveOscarEntrySplitLeg4Usd,
   resolveLiveOscarEntrySplitLeg5Usd,
   resolveLiveOscarEntrySplitLeg6Usd,
+  resolveLiveOscarEntrySplitLeg7Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarEntrySplitTotalUsd,
   resolveLiveOscarStagedAvgFirstDropPct,
@@ -136,7 +137,7 @@ export function entrySplitLeg3Eligible(args: {
   return entrySplitTimedLegEligible({ ...args, legIndex: 3 });
 }
 
-/** Timed entry split legs 2–6: `(legIndex−1)` × delay from leg-1, corridor vs signal anchor. */
+/** Timed entry split legs 2–7: `(legIndex−1)` × delay from leg-1, corridor vs signal anchor. */
 export function entrySplitTimedLegEligible(args: {
   st: LiveStagedEntryState;
   signalDropPct: number | null;
@@ -146,7 +147,7 @@ export function entrySplitTimedLegEligible(args: {
   legIndex: EntrySplitLegIndex;
 }): { ok: boolean; triggerPct: number } {
   const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd, legIndex } = args;
-  if (legIndex < 2 || legIndex > 6) return { ok: false, triggerPct: 0 };
+  if (legIndex < 2 || legIndex > 7) return { ok: false, triggerPct: 0 };
   const targetDrop = st.entrySplitTargetDropPct ?? 0;
   if (targetDrop > 0) {
     if (legIndex !== 2) return { ok: false, triggerPct: 0 };
@@ -285,6 +286,7 @@ export function buildLiveStagedEntryState(
   const splitLeg4 = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
   const splitLeg5 = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
   const splitLeg6 = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+  const splitLeg7 = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -306,6 +308,7 @@ export function buildLiveStagedEntryState(
     entrySplitLeg4Usd: splitLeg4,
     entrySplitLeg5Usd: splitLeg5,
     entrySplitLeg6Usd: splitLeg6,
+    entrySplitLeg7Usd: splitLeg7,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
@@ -317,6 +320,7 @@ export function buildLiveStagedEntryState(
     entrySplitLeg4Done: splitLeg4 <= 0,
     entrySplitLeg5Done: splitLeg5 <= 0,
     entrySplitLeg6Done: splitLeg6 <= 0,
+    entrySplitLeg7Done: splitLeg7 <= 0,
     avgSecondDropPct: avgSecondDrop,
     avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
