@@ -63,12 +63,6 @@ function tokenKey(token: string): string {
   return token.trim().toLowerCase();
 }
 
-function shortToken(token: unknown): string {
-  const s = typeof token === 'string' ? token : '';
-  if (s.length <= 12) return s || '?';
-  return `${s.slice(0, 6)}…${s.slice(-4)}`;
-}
-
 function resolveToken(ev: JournalEv): string {
   if (typeof ev.token === 'string' && ev.token.trim()) return ev.token.trim();
   if (typeof ev.baseTokenAddress === 'string' && ev.baseTokenAddress.trim()) {
@@ -84,7 +78,24 @@ function resolveSymbol(token: string, ev: JournalEv, symbolHints: Map<string, st
   if (fromEv) return fromEv.slice(0, 32);
   const hinted = symbolHints.get(key);
   if (hinted) return hinted;
-  return shortToken(token);
+  return '?';
+}
+
+/** Map journal `reason` / partial exit to Oscar-style partial label. */
+function partialSellLabel(ev: JournalEv): string {
+  const reason = typeof ev.reason === 'string' ? ev.reason.trim() : '';
+  const exitReason = typeof ev.exitReason === 'string' ? ev.exitReason.trim() : '';
+  const sellFraction = num(ev.fraction) ?? num(ev.sellFraction);
+  const sellPct = sellFraction != null ? Math.round(sellFraction * 100) : null;
+  const tag = exitReason || reason || 'partial';
+  return sellPct != null ? `Частичная продажа · ${tag} · ${sellPct}%` : `Частичная продажа · ${tag}`;
+}
+
+function shouldSkipDuplicatePartial(tl: TimelineEvent[], ts: number, label: string): boolean {
+  const last = tl[tl.length - 1];
+  if (!last || last.kind !== 'partial_sell') return false;
+  if (last.label !== label) return false;
+  return ts - last.ts < 45_000;
 }
 
 function eventKind(ev: JournalEv): string {
@@ -119,16 +130,21 @@ function pushTimeline(
   });
 }
 
+function entryPriceFromEv(ev: JournalEv): number | null {
+  return num(ev.fillPriceUsd) ?? num(ev.spotPxUsd) ?? num(ev.priceUsd) ?? num(ev.price);
+}
+
 function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: number): OpenRow {
   const positionUsd = num(ev.positionUsd) ?? 10;
-  const price = num(ev.spotPxUsd) ?? num(ev.priceUsd) ?? num(ev.fillPriceUsd) ?? num(ev.price);
+  const price = entryPriceFromEv(ev);
   const pair = typeof ev.pair === 'string' ? ev.pair : null;
+  const fdvUsd = num(ev.fdvUsd) ?? num(ev.mcapUsd);
   const row: OpenRow = {
     mint: token,
     symbol,
     entryTs: ts,
     entryMcUsd: price ?? 0,
-    entryRealMcUsd: null,
+    entryRealMcUsd: fdvUsd,
     baselinePriceUsd: price,
     openedAtIso: new Date(ts).toISOString(),
     lane: 'bsc-pulse',
@@ -230,6 +246,47 @@ export function loadBscPulseForDashboard(jsonlPath = bscPulseDashboardJsonlPath(
       const symbol = resolveSymbol(token, ev, symbolHints);
       const row = makeOpenRowFromEv(token, symbol, ev, ts);
       openByToken.set(tokenId, row);
+      continue;
+    }
+
+    if (
+      kind === 'partial_sell' ||
+      kind === 'partial_exit' ||
+      (typeof ev.type === 'string' && (ev.type === 'live_partial' || ev.type === 'paper_partial'))
+    ) {
+      const row = openByToken.get(tokenId);
+      if (!row) continue;
+      const label = partialSellLabel(ev);
+      if (shouldSkipDuplicatePartial(row.timeline, ts, label)) continue;
+      const remainingFraction = num(ev.remainingFraction);
+      if (remainingFraction != null && remainingFraction >= 0 && remainingFraction <= 1) {
+        row.remainingFraction = remainingFraction;
+      } else {
+        const fraction = num(ev.fraction) ?? num(ev.sellFraction);
+        if (fraction != null && fraction > 0 && fraction <= 1) {
+          row.remainingFraction = Math.max(0, (row.remainingFraction ?? 1) * (1 - fraction));
+        }
+      }
+      const pnlPct = num(ev.pnlPct);
+      pushTimeline(row.timeline, {
+        ts,
+        kind: 'partial_sell',
+        label,
+        pnlPct,
+        sizePct: num(ev.fraction) ?? num(ev.sellFraction),
+        remainingFraction: row.remainingFraction ?? null,
+        reason:
+          typeof ev.exitReason === 'string'
+            ? ev.exitReason
+            : typeof ev.reason === 'string'
+              ? ev.reason
+              : null,
+        txSignature: typeof ev.txHash === 'string' ? ev.txHash : null,
+        contextNote:
+          row.remainingFraction != null
+            ? `остаток позиции ${(row.remainingFraction * 100).toFixed(0)}%`
+            : null,
+      });
       continue;
     }
 

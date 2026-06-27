@@ -4,7 +4,7 @@
  * +5%:   sell 50%, arm defensive trail from peak.
  * +10%:  sell 50% of remainder.
  * +15%:  sell 100%.
- * 0%:    full exit at breakeven vs signal (price recovered to signal anchor).
+ * 0%:    full exit at breakeven vs avg entry (after +5%/+10% partial TPs).
  * −50%:  kill stop vs signal anchor.
  * Trail (after +5%): each −2.5% retrace from peak → sell 50% of remainder (one level per tick).
  */
@@ -102,7 +102,8 @@ export function presetCScalpBreakevenExitEligible(
   marketPx: number,
 ): boolean {
   if (!isPresetCScalpExitPolicy(ot)) return false;
-  return presetCScalpSignalPnlFrac(ot, marketPx) <= 0 + LADDER_PNL_EPS;
+  if (!(ot.avgEntry > 0) || !(marketPx > 0)) return false;
+  return marketPx / ot.avgEntry - 1 <= LADDER_PNL_EPS;
 }
 
 export type PresetCScalpExitAction =
@@ -137,11 +138,10 @@ export function evaluatePresetCScalpExitAction(
     return { kind: 'full_exit', reason: 'TP' };
   }
 
-  if (
-    presetCScalpBreakevenExitEligible(ot, marketPx) &&
-    (ot.presetCScalpTp5Taken || ot.presetCScalpTp10Taken)
-  ) {
-    return { kind: 'full_exit', reason: 'BREAKEVEN_EXIT' };
+  if (ot.presetCScalpTp5Taken || ot.presetCScalpTp10Taken) {
+    if (presetCScalpBreakevenExitEligible(ot, marketPx)) {
+      return { kind: 'full_exit', reason: 'BREAKEVEN_EXIT' };
+    }
   }
 
   const remainUsd = waveBRemainderValueNetUsd(ot, marketPx);

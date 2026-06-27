@@ -824,10 +824,147 @@ function shortTokenForUi(mint: string | null | undefined): string {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
+/** Journal/loader placeholder that is really a truncated EVM address — not a ticker. */
+function isAddressLikeSymbol(sym: string | null | undefined): boolean {
+  const s = String(sym ?? '').trim();
+  if (!s || s === '?') return false;
+  if (/^0x[0-9a-f]{4}/i.test(s)) return true;
+  return false;
+}
+
+function dexscreenerQuoteFromPair(p: Record<string, unknown>, tokenAddrLower: string): DexscreenerEvmQuote {
+  const priceUsd = Number(p.priceUsd ?? 0);
+  const fdvUsd = Number(p.fdv ?? 0);
+  const marketCapUsd = Number(p.marketCap ?? 0);
+  const liquidityUsd = Number((p.liquidity as { usd?: number } | undefined)?.usd ?? 0);
+  const volume24hUsd = Number((p.volume as { h24?: number } | undefined)?.h24 ?? 0);
+  const baseTok = p.baseToken as { address?: string; symbol?: string } | undefined;
+  const quoteTok = p.quoteToken as { address?: string; symbol?: string } | undefined;
+  const sym =
+    baseTok?.address?.toLowerCase() === tokenAddrLower
+      ? String(baseTok.symbol ?? '').trim()
+      : quoteTok?.address?.toLowerCase() === tokenAddrLower
+        ? String(quoteTok.symbol ?? '').trim()
+        : '';
+  return {
+    priceUsd: priceUsd > 0 ? priceUsd : null,
+    fdvUsd: fdvUsd > 0 ? fdvUsd : null,
+    marketCapUsd: marketCapUsd > 0 ? marketCapUsd : null,
+    liquidityUsd: liquidityUsd > 0 ? liquidityUsd : null,
+    volume24hUsd: volume24hUsd > 0 ? volume24hUsd : null,
+    symbol: sym || null,
+  };
+}
+
+/** Implied mark from latest partial/close pnlPct vs entry (journal fallback when DexScreener is down). */
+function evmImpliedMarkPxFromTimeline(timeline: TimelineEvent[], entryPx: number | null): number | null {
+  if (!(entryPx && entryPx > 0)) return null;
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const ev = timeline[i];
+    const pnl = ev.pnlPct;
+    if (pnl != null && Number.isFinite(pnl) && (ev.kind === 'partial_sell' || ev.kind === 'close')) {
+      return entryPx * (1 + pnl / 100);
+    }
+  }
+  return null;
+}
+
+export type EvmPulseOpenPnl = {
+  /** Total position PnL % vs full `totalInvestedUsd` (Oscar-style). */
+  pnlPct: number;
+  /** Net mark-to-market PnL in USD (remaining + realized partial proceeds − invested). */
+  pnlUsd: number;
+  /** Unrealized price change on remaining slice only (legacy display). */
+  pricePnlPct: number;
+  realizedProceedsUsd: number;
+  currentValueUsd: number;
+};
+
+/**
+ * Oscar-style open PnL for BasePulse / BscPulse: denominator is full entry notional,
+ * numerator includes realized partial proceeds plus mark on the remaining fraction.
+ */
+export function computeEvmPulseOpenPnl(args: {
+  totalInvestedUsd: number;
+  entryPx: number;
+  livePx: number;
+  remainingFraction: number;
+  timeline: TimelineEvent[];
+}): EvmPulseOpenPnl | null {
+  const { totalInvestedUsd, entryPx, livePx, timeline } = args;
+  if (!(totalInvestedUsd > 0 && entryPx > 0 && livePx > 0)) return null;
+
+  const rem = Math.max(0, Math.min(1, args.remainingFraction ?? 1));
+  const pricePnlPct = ((livePx / entryPx - 1) * 100);
+
+  let remWalk = 1;
+  let realizedProceedsUsd = 0;
+  for (const ev of timeline) {
+    if (ev.kind !== 'partial_sell') continue;
+    const amountUsd = Number(ev.amountUsd ?? NaN);
+    if (Number.isFinite(amountUsd) && amountUsd > 0) {
+      realizedProceedsUsd += amountUsd;
+      const rf = Number(ev.remainingFraction ?? NaN);
+      if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+      else {
+        const sellFrac = Number(ev.sizePct ?? NaN);
+        if (Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1) remWalk *= 1 - sellFrac;
+      }
+      continue;
+    }
+    const pnlUsd = Number(ev.pnlUsd ?? NaN);
+    const sellFrac = Number(ev.sizePct ?? NaN);
+    if (Number.isFinite(pnlUsd)) {
+      const soldOriginalFrac = Number.isFinite(sellFrac) && sellFrac > 0 ? remWalk * sellFrac : NaN;
+      const costBasis =
+        Number.isFinite(soldOriginalFrac) && soldOriginalFrac > 0
+          ? totalInvestedUsd * soldOriginalFrac
+          : totalInvestedUsd * Math.max(0, remWalk - (Number(ev.remainingFraction ?? remWalk)));
+      if (costBasis > 0) realizedProceedsUsd += costBasis + pnlUsd;
+      const rf = Number(ev.remainingFraction ?? NaN);
+      if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+      else if (Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1) remWalk *= 1 - sellFrac;
+      continue;
+    }
+    if (!(Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1)) continue;
+    const soldOriginalFrac = remWalk * sellFrac;
+    const costBasis = totalInvestedUsd * soldOriginalFrac;
+    const partialPnlPct = Number(ev.pnlPct ?? 0);
+    realizedProceedsUsd += costBasis * (1 + partialPnlPct / 100);
+    const rf = Number(ev.remainingFraction ?? NaN);
+    if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+    else remWalk *= 1 - sellFrac;
+  }
+
+  const currentValueUsd = totalInvestedUsd * rem * (livePx / entryPx);
+  const pnlUsd = currentValueUsd + realizedProceedsUsd - totalInvestedUsd;
+  const pnlPct = (pnlUsd / totalInvestedUsd) * 100;
+  if (!Number.isFinite(pnlPct) || !Number.isFinite(pnlUsd)) return null;
+
+  return {
+    pnlPct,
+    pnlUsd,
+    pricePnlPct,
+    realizedProceedsUsd,
+    currentValueUsd,
+  };
+}
+
+async function resolveEvmPulseDisplaySymbol(
+  mint: string,
+  journalSymbol: string | null | undefined,
+  evmQuote: DexscreenerEvmQuote | null,
+): Promise<string> {
+  if (evmQuote?.symbol) return evmQuote.symbol.slice(0, 32);
+  const js = String(journalSymbol ?? '').trim();
+  if (js && js !== '?' && !isAddressLikeSymbol(js)) return js.slice(0, 32);
+  return resolveTokenSymbolForUi(mint, null);
+}
+
 /** When journal has `?` (repair / missing metadata), resolve from DexScreener token API. */
 async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null | undefined): Promise<string> {
   const t0 = (fromJournal ?? '').trim();
-  if (t0 && t0 !== '?' && t0.length > 0) return t0.slice(0, 32);
+  if (t0 && t0 !== '?' && t0.length > 0 && !isAddressLikeSymbol(t0)) return t0.slice(0, 32);
   const c = tokenSymbolByMint.get(mint);
   if (c && Date.now() - c.at < TOKEN_SYMBOL_TTL_MS) return c.s;
   try {
@@ -858,7 +995,9 @@ type DexscreenerEvmQuote = {
 };
 
 const dexscreenerEvmCache = new Map<string, { data: DexscreenerEvmQuote; ts: number }>();
-const DEXSCREENER_EVM_TTL_MS = 30_000;
+const dexscreenerEvmInflight = new Map<string, Promise<DexscreenerEvmQuote | null>>();
+const DEXSCREENER_EVM_TTL_MS = 120_000;
+const DEXSCREENER_EVM_STALE_MS = 30 * 60_000;
 
 /** Live quote for EVM tokens (BasePulse / BscPulse) via DexScreener public API. */
 async function fetchDexscreenerEvmToken(
@@ -871,60 +1010,80 @@ async function fetchDexscreenerEvmToken(
   const cacheKey = `${chainId}:${addr}:${preferredPair?.trim().toLowerCase() ?? ''}`;
   const cached = dexscreenerEvmCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < DEXSCREENER_EVM_TTL_MS) return cached.data;
-  try {
-    const r = await fetch(
-      `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(addr)}`,
-      { signal: AbortSignal.timeout(7000) },
-    );
-    if (!r.ok) return null;
-    const j = (await r.json()) as { pairs?: Array<Record<string, unknown>> };
-    const pairs = (j.pairs ?? []).filter((p) => String(p.chainId ?? '').toLowerCase() === chainId);
-    if (!pairs.length) return null;
-    const pref = preferredPair?.trim().toLowerCase();
-    let best: Record<string, unknown> | null = null;
-    if (pref) {
-      best = pairs.find((p) => String(p.pairAddress ?? '').toLowerCase() === pref) ?? null;
-    }
-    if (!best) {
-      let bestLiq = -1;
-      for (const p of pairs) {
-        const baseAddr = String((p.baseToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
-        const quoteAddr = String((p.quoteToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
-        if (baseAddr !== addr && quoteAddr !== addr) continue;
-        const liq = Number((p.liquidity as { usd?: number } | undefined)?.usd ?? 0);
-        if (liq > bestLiq) {
-          bestLiq = liq;
-          best = p;
+
+  const inflight = dexscreenerEvmInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const work = (async (): Promise<DexscreenerEvmQuote | null> => {
+    const staleFallback = (): DexscreenerEvmQuote | null => {
+      if (cached && Date.now() - cached.ts < DEXSCREENER_EVM_STALE_MS) return cached.data;
+      return null;
+    };
+    try {
+      const pref = preferredPair?.trim();
+      if (pref) {
+        const pairR = await fetch(
+          `https://api.dexscreener.com/latest/dex/pairs/${chainId}/${encodeURIComponent(pref)}`,
+          { signal: AbortSignal.timeout(7000) },
+        );
+        if (pairR.ok) {
+          const j = (await pairR.json()) as { pair?: Record<string, unknown>; pairs?: Record<string, unknown>[] };
+          const p = j.pair ?? j.pairs?.[0];
+          if (p && typeof p === 'object') {
+            const data = dexscreenerQuoteFromPair(p as Record<string, unknown>, addr);
+            if (data.priceUsd != null || data.symbol != null || data.fdvUsd != null) {
+              dexscreenerEvmCache.set(cacheKey, { data, ts: Date.now() });
+              return data;
+            }
+          }
+        } else if (pairR.status === 429) {
+          const stale = staleFallback();
+          if (stale) return stale;
         }
       }
+
+      const r = await fetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(addr)}`,
+        { signal: AbortSignal.timeout(7000) },
+      );
+      if (!r.ok) {
+        if (r.status === 429) return staleFallback();
+        return null;
+      }
+      const j = (await r.json()) as { pairs?: Array<Record<string, unknown>> };
+      const pairs = (j.pairs ?? []).filter((p) => String(p.chainId ?? '').toLowerCase() === chainId);
+      if (!pairs.length) return staleFallback();
+      const prefLower = preferredPair?.trim().toLowerCase();
+      let best: Record<string, unknown> | null = null;
+      if (prefLower) {
+        best = pairs.find((p) => String(p.pairAddress ?? '').toLowerCase() === prefLower) ?? null;
+      }
+      if (!best) {
+        let bestLiq = -1;
+        for (const p of pairs) {
+          const baseAddr = String((p.baseToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
+          const quoteAddr = String((p.quoteToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
+          if (baseAddr !== addr && quoteAddr !== addr) continue;
+          const liq = Number((p.liquidity as { usd?: number } | undefined)?.usd ?? 0);
+          if (liq > bestLiq) {
+            bestLiq = liq;
+            best = p;
+          }
+        }
+      }
+      if (!best) return staleFallback();
+      const data = dexscreenerQuoteFromPair(best, addr);
+      dexscreenerEvmCache.set(cacheKey, { data, ts: Date.now() });
+      return data;
+    } catch {
+      return staleFallback();
+    } finally {
+      dexscreenerEvmInflight.delete(cacheKey);
     }
-    if (!best) return null;
-    const priceUsd = Number(best.priceUsd ?? 0);
-    const fdvUsd = Number(best.fdv ?? 0);
-    const marketCapUsd = Number(best.marketCap ?? 0);
-    const liquidityUsd = Number((best.liquidity as { usd?: number } | undefined)?.usd ?? 0);
-    const volume24hUsd = Number((best.volume as { h24?: number } | undefined)?.h24 ?? 0);
-    const baseTok = best.baseToken as { address?: string; symbol?: string } | undefined;
-    const quoteTok = best.quoteToken as { address?: string; symbol?: string } | undefined;
-    const sym =
-      baseTok?.address?.toLowerCase() === addr
-        ? String(baseTok.symbol ?? '').trim()
-        : quoteTok?.address?.toLowerCase() === addr
-          ? String(quoteTok.symbol ?? '').trim()
-          : '';
-    const data: DexscreenerEvmQuote = {
-      priceUsd: priceUsd > 0 ? priceUsd : null,
-      fdvUsd: fdvUsd > 0 ? fdvUsd : null,
-      marketCapUsd: marketCapUsd > 0 ? marketCapUsd : null,
-      liquidityUsd: liquidityUsd > 0 ? liquidityUsd : null,
-      volume24hUsd: volume24hUsd > 0 ? volume24hUsd : null,
-      symbol: sym || null,
-    };
-    dexscreenerEvmCache.set(cacheKey, { data, ts: Date.now() });
-    return data;
-  } catch {
-    return null;
-  }
+  })();
+
+  dexscreenerEvmInflight.set(cacheKey, work);
+  return work;
 }
 
 async function getCurrentMcAny(mint: string, source?: string | null): Promise<number | null> {
@@ -4402,8 +4561,18 @@ async function buildPaper2StrategyRowFromLoad(
           );
         }
         tlOut = finalizeTimelineForApi(tlOut, sid);
-        const closedDisplaySymbol =
-          enrichMode === 'lite' && c.symbol && String(c.symbol).trim() && c.symbol !== '?'
+        const pairAddr = typeof c.pairAddress === 'string' ? c.pairAddress : null;
+        const closedEvmQuote =
+          isEvmPulseSid(sid) && String(c.mint ?? '').startsWith('0x')
+            ? await fetchDexscreenerEvmToken(
+                String(c.mint),
+                evmChainForSid(sid) as 'base' | 'bsc',
+                pairAddr,
+              ).catch(() => null)
+            : null;
+        const closedDisplaySymbol = isEvmPulseSid(sid)
+          ? await resolveEvmPulseDisplaySymbol(String(c.mint), c.symbol, closedEvmQuote)
+          : enrichMode === 'lite' && c.symbol && String(c.symbol).trim() && c.symbol !== '?'
             ? String(c.symbol).slice(0, 32)
             : await resolveTokenSymbolForUi(String(c.mint), c.symbol);
         const entryPriceVerifySlipPct =
@@ -4590,24 +4759,12 @@ async function buildPaper2StrategyRowFromLoad(
 
       const displaySymbol =
         isBasePulsePanel || isBscPulsePanel
-          ? evmQuote?.symbol ||
-            (ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
-              ? String(ot.symbol).slice(0, 32)
-              : shortTokenForUi(ot.mint))
+          ? await resolveEvmPulseDisplaySymbol(ot.mint, ot.symbol, evmQuote)
           : enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
             ? String(ot.symbol).slice(0, 32)
             : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
       const liveFdvUsd = evmQuote?.fdvUsd ?? evmQuote?.marketCapUsd ?? null;
-      const currentMcUsd =
-        displayLiveMc != null && displayLiveMc > 0
-          ? displayLiveMc
-          : liveFdvUsd != null && liveFdvUsd > 0
-            ? liveFdvUsd
-            : isMcMetric
-              ? (baseEntryUsd ?? 0)
-              : 0;
-      const livePriceUsd = hasLivePrice ? livePx : null;
 
       let pnlPct: number | null = null;
       let pnlUsd: number | null = null;
@@ -4628,6 +4785,10 @@ async function buildPaper2StrategyRowFromLoad(
               : POSITION_USD_DEFAULT;
         }
         const investedRaw = ot.totalInvestedUsd;
+        if (isBasePulsePanel || isBscPulsePanel) {
+          const basis = remainingCostBasisUsd > 0 ? remainingCostBasisUsd : investedRaw;
+          return basis > 0 && basis <= 10_000 ? basis : POSITION_USD_DEFAULT;
+        }
         return investedRaw > 0 && investedRaw <= 10_000 ? investedRaw : POSITION_USD_DEFAULT;
       };
       const tryByMcap = (): boolean => {
@@ -4646,7 +4807,7 @@ async function buildPaper2StrategyRowFromLoad(
         return true;
       };
       const tryByPrice = (): boolean => {
-        if (!(basePx && basePx > 0 && hasLivePrice && livePx && livePx > 0)) return false;
+        if (!(basePx && basePx > 0 && livePx != null && livePx > 0)) return false;
         /**
          * If our only "live" price is the journal-derived spot equal to the entry, this is
          * a stale pseudo-price (e.g. position has no DCA/partial events yet). Bail so the
@@ -4683,7 +4844,28 @@ async function buildPaper2StrategyRowFromLoad(
       } else if (isSuperbotPanel) {
         tryByPrice();
       } else if (isBasePulsePanel || isBscPulsePanel) {
-        tryByPrice();
+        if (!tryByPrice()) {
+          const impliedPx = evmImpliedMarkPxFromTimeline(timelineOut, basePx);
+          if (impliedPx != null && basePx && basePx > 0) {
+            livePx = impliedPx;
+            livePriceStale = true;
+            livePxProvenance = 'journal';
+            tryByPrice();
+          }
+        }
+        if (basePx && livePx != null && livePx > 0 && ot.totalInvestedUsd > 0) {
+          const pulsePnl = computeEvmPulseOpenPnl({
+            totalInvestedUsd: ot.totalInvestedUsd,
+            entryPx: basePx,
+            livePx,
+            remainingFraction: ot.remainingFraction ?? 1,
+            timeline: timelineOut,
+          });
+          if (pulsePnl != null) {
+            pnlPct = pulsePnl.pnlPct;
+            pnlUsd = pulsePnl.pnlUsd;
+          }
+        }
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
       } else {
@@ -4710,6 +4892,34 @@ async function buildPaper2StrategyRowFromLoad(
           ? (ot.features as { vol24hUsd: number }).vol24hUsd
           : null);
 
+      if (
+        (isBasePulsePanel || isBscPulsePanel) &&
+        (displayLiveMc == null || displayLiveMc <= 0) &&
+        entryMcapAtBuyUsd != null &&
+        entryMcapAtBuyUsd > 0 &&
+        basePx &&
+        basePx > 0 &&
+        livePx != null &&
+        livePx > 0
+      ) {
+        displayLiveMc = entryMcapAtBuyUsd * (livePx / basePx);
+        liveMcProvenance = liveMcProvenance ?? 'journal';
+      }
+
+      const currentMcUsdResolved =
+        displayLiveMc != null && displayLiveMc > 0
+          ? displayLiveMc
+          : liveFdvUsd != null && liveFdvUsd > 0
+            ? liveFdvUsd
+            : isMcMetric
+              ? (baseEntryUsd ?? 0)
+              : entryMcapAtBuyUsd != null && entryMcapAtBuyUsd > 0
+                ? entryMcapAtBuyUsd
+                : 0;
+
+      const hasLivePriceResolved = livePx != null && livePx > 0;
+      const livePriceUsd = hasLivePriceResolved ? livePx : null;
+
       return {
         mint: ot.mint,
         symbol: displaySymbol,
@@ -4719,12 +4929,12 @@ async function buildPaper2StrategyRowFromLoad(
         entryMcapAtBuyUsd,
         baselinePriceUsd: ot.baselinePriceUsd,
         entryPx: basePx,
-        markPx: hasLivePrice ? livePx : basePx,
+        markPx: hasLivePriceResolved ? livePx : basePx,
         metricType: ot.metricType,
         openedAtIso: ot.openedAtIso,
         lane: ot.lane,
         source: ot.source,
-        currentMcUsd,
+        currentMcUsd: currentMcUsdResolved,
         livePriceUsd,
         peakMcUsd: ot.peakMcUsd,
         peakPnlPct: ot.peakPnlPct,
@@ -4732,8 +4942,8 @@ async function buildPaper2StrategyRowFromLoad(
         pnlPct,
         pnlUsd,
         ageMin: (Date.now() - (ot.entryTs || Date.now())) / 60_000,
-        hasLiveMc,
-        hasLivePrice,
+        hasLiveMc: displayLiveMc != null && displayLiveMc > 0,
+        hasLivePrice: hasLivePriceResolved,
         livePriceStale,
         livePxProvenance,
         liveMcProvenance,
