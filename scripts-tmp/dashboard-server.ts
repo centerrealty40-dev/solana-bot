@@ -45,6 +45,7 @@ import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
 import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
+import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse-dashboard.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
@@ -803,6 +804,13 @@ export async function enrichTimelineMcapGaps(
 
 const tokenSymbolByMint = new Map<string, { s: string; at: number }>();
 const TOKEN_SYMBOL_TTL_MS = 6 * 3_600_000;
+
+function shortTokenForUi(mint: string | null | undefined): string {
+  const s = String(mint ?? '').trim();
+  if (!s) return '?';
+  if (s.length <= 12) return s;
+  return `${s.slice(0, 6)}…${s.slice(-4)}`;
+}
 
 /** When journal has `?` (repair / missing metadata), resolve from DexScreener token API. */
 async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null | undefined): Promise<string> {
@@ -1609,13 +1617,14 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
   'dc-trader',
   'hl-twap-paper',
   'base-pulse',
+  'bsc-pulse',
 ] as const;
 
 export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-26-closed-pnl-net-pct-v1';
@@ -4331,9 +4340,13 @@ async function buildPaper2StrategyRowFromLoad(
       timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
       const displaySymbol =
-        enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
-          ? String(ot.symbol).slice(0, 32)
-          : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
+        sid === 'base-pulse'
+          ? ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
+            ? String(ot.symbol).slice(0, 32)
+            : shortTokenForUi(ot.mint)
+          : enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
+            ? String(ot.symbol).slice(0, 32)
+            : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
       const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
       const livePriceUsd = hasLivePrice ? livePx : null;
@@ -4617,12 +4630,19 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] base-pulse panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('base-pulse', basePulseJsonl);
   });
-  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow] = await Promise.all([
+  const bscPulseJsonl = bscPulseDashboardJsonlPath();
+  const bscPulseLoad = loadBscPulseForDashboard(bscPulseJsonl);
+  const bscPulseRowP = buildPaper2StrategyRowFromLoad(bscPulseJsonl, 'bsc-pulse', bscPulseLoad).catch((e) => {
+    console.warn('[dashboard] bsc-pulse panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('bsc-pulse', bscPulseJsonl);
+  });
+  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow, bscPulseRow] = await Promise.all([
     liveRowP,
     superbotRowP,
     dcRowP,
     hlTwapRowP,
     basePulseRowP,
+    bscPulseRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
@@ -4630,6 +4650,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     dcTraderRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
     basePulseRow as DashboardPaper2StrategyRow,
+    bscPulseRow as DashboardPaper2StrategyRow,
   ]);
 
   const totals = merged.reduce(
@@ -4663,6 +4684,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     superbotJsonl: DASHBOARD_SUPERBOT_JSONL,
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
     basePulseJsonl: basePulseDashboardJsonlPath(),
+    bscPulseJsonl: bscPulseDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,

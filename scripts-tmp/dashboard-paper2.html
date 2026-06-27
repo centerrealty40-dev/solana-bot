@@ -42,7 +42,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 5 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse.
+      Десктоп: 6 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -220,7 +220,7 @@
       </div>
     </section>
 
-    <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе пять колонок Oscar -->
+    <!-- Strategy tiles: порядок с сервера (`DASHBOARD_PANEL_ORDER`); на десктопе шесть колонок Oscar -->
     <section class="dash-desktop-strategy-cols">
       <template x-for="(s, idx) in (state.strategies || [])" :key="(s.strategyId || 'row') + ':' + idx">
         <div class="card rounded-xl p-5 lg:p-6 cursor-pointer select-none min-w-0"
@@ -488,7 +488,7 @@
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
-                        <a :href="gmgn(o.mint)" target="_blank" @click.stop
+                        <a :href="tokenLink(o.mint)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
                       </template>
                       <span x-show="selected === 'live-oscar' && o.isScalpWave"
@@ -598,7 +598,7 @@
                           </span>
                           <span x-show="selected !== 'copy-trader' && ev.txSignature">
                             <span class="text-slate-500"> · </span>
-                            <a :href="solscanHref(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
+                            <a :href="chainTxLink(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm" x-text="isBasePulse() ? 'Basescan' : 'Solscan'"></a>
                           </span>
                           <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                             <span class="text-slate-500"> · </span>
@@ -723,7 +723,7 @@
                           </span>
                           <span x-show="selected !== 'copy-trader' && ev.txSignature">
                             <span class="text-slate-500"> · </span>
-                            <a :href="solscanHref(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm">Solscan</a>
+                            <a :href="chainTxLink(ev.txSignature)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline text-sm" x-text="isBasePulse() ? 'Basescan' : 'Solscan'"></a>
                           </span>
                           <span x-show="ev.pnlUsd != null && ev.kind !== 'partial_sell'">
                             <span class="text-slate-500"> · </span>
@@ -766,6 +766,7 @@
       'dc-trader',
       'hl-twap-paper',
       'base-pulse',
+      'bsc-pulse',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -893,6 +894,14 @@
           'Base L2 dip-buy: DexScreener + GeckoTerminal, пролив **3–25%**, staged entry, kill/trail/timeout. **$10**/позиция через KyberSwap на Base.',
         details:
           '**Плитка 5** · VPS **72.62.152.201** · PM2 **`basepulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар Base (DexScreener + GeckoTerminal trending/new).\n• Вход на dip с фильтрами liq/vol; stage-2 add при −4% от entry.\n• Выход: kill **−8%**, trail после **+10%**, timeout **4h**.\n\n**Live:** swap через **KyberSwap** (fallback 0x с API key); `BPULSE_POSITION_USD=10`, max **3** concurrent.\n\n**Журнал:** `/opt/base-pulse/data/basepulse-journal.jsonl` → sync `data/basepulse/` на дашборде.',
+      },
+      'bsc-pulse': {
+        label: 'BscPulse',
+        tag: 'live',
+        oneLiner:
+          'BSC dip-buy на **крупные** пары: liq **≥$500k**, FDV **≥$5M**, пролив **3–22%**, staged entry. **$10**/позиция через Pancake/1inch.',
+        details:
+          '**Плитка 6** · VPS **72.62.152.201** · PM2 **`bscpulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар BSC (DexScreener + GeckoTerminal).\n• Только large-cap: `MIN_LIQ=$500k`, `MIN_FDV=$5M`; верхний FDV-cap отключён для Beat/UB.\n• Dip **3–22%** (5m/1h lookback); vol1h **≥$200k**, vol5m **≥$30k**.\n• Выход: kill/trail/timeout как BasePulse.\n\n**Live:** `BSCPULSE_POSITION_USD=10`, max concurrent по env.\n\n**Журнал:** `/opt/bsc-pulse/data/bscpulse-journal.jsonl` → sync `data/bscpulse/` (`DASHBOARD_BSCPULSE_JSONL`).',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
@@ -1123,6 +1132,19 @@
           }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
+        isBasePulse() { return this.selected === 'base-pulse'; },
+        tokenLink(m) {
+          if (this.isBasePulse() && m && String(m).startsWith('0x')) {
+            return `https://dexscreener.com/base/${m}`;
+          }
+          return this.gmgn(m);
+        },
+        chainTxLink(sig) {
+          if (this.isBasePulse() && sig && String(sig).startsWith('0x')) {
+            return `https://basescan.org/tx/${sig}`;
+          }
+          return this.solscanHref(sig);
+        },
         isDcTrader() { return this.selected === 'dc-trader'; },
         fmtSol(n) {
           const v = Number(n);

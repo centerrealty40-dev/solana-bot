@@ -171,6 +171,8 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
         DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
+        /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
+        DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -189,6 +191,38 @@ const PM2_APPS = [
         /** В конец `[ALERT][quicknode-balance]` — метрики discovery за окно из `data/live-discovery-health.json` (live-oscar). */
         QUICKNODE_HOURLY_APPEND_OSCAR_HEALTH: '1',
         QUICKNODE_BILLING_MILESTONES: '0',
+      },
+    },
+    {
+      name: 'basepulse-journal-sync',
+      cwd: root,
+      script: path.join(root, 'scripts/basepulse-journal-sync-loop.sh'),
+      interpreter: 'bash',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      merge_logs: true,
+      time: true,
+      env: {
+        BPULSE_SYNC_INTERVAL_SEC: '30',
+      },
+    },
+    {
+      name: 'bscpulse-journal-sync',
+      cwd: root,
+      script: path.join(root, 'scripts/bscpulse-journal-sync-loop.sh'),
+      interpreter: 'bash',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      merge_logs: true,
+      time: true,
+      env: {
+        BSCPULSE_SYNC_INTERVAL_SEC: '30',
       },
     },
     {
