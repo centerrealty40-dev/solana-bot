@@ -9,8 +9,10 @@ export type HlOscarPerpConfig = {
   masterAddress: string;
   testnet: boolean;
   leverage: number;
-  /** Total gross notional per full position (all legs). */
+  /** Total gross notional per position on entry (single-shot) or all staged legs combined. */
   positionNotionalUsd: number;
+  /** When false, open full notional on signal (no leg2/leg3 DCA). Default for HL perps. */
+  stagedEntryEnabled: boolean;
   leg1GrossUsd: number;
   leg2GrossUsd: number;
   leg3GrossUsd: number;
@@ -62,8 +64,14 @@ export function defaultLegGrossUsd(totalUsd: number): { leg1: number; leg2: numb
 }
 
 export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
-  const positionNotionalUsd = Math.max(1, envNum('HL_OSCAR_POSITION_NOTIONAL_USD', 50));
-  const legs = defaultLegGrossUsd(positionNotionalUsd);
+  const positionNotionalUsd = Math.max(
+    1,
+    envNum('HL_OSCAR_POSITION_NOTIONAL_USD', envNum('HL_OSCAR_NOTIONAL_USD', 50)),
+  );
+  const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', false);
+  const legs = stagedEntryEnabled
+    ? defaultLegGrossUsd(positionNotionalUsd)
+    : { leg1: positionNotionalUsd, leg2: 0, leg3: 0 };
   const privateKey =
     process.env.HL_OSCAR_PRIVATE_KEY?.trim() ||
     process.env.HL_TWAP_LIVE_PRIVATE_KEY?.trim() ||
@@ -89,6 +97,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     testnet: envBool('HL_OSCAR_TESTNET', false),
     leverage: Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2))),
     positionNotionalUsd,
+    stagedEntryEnabled,
     leg1GrossUsd: envNum('HL_OSCAR_LEG1_USD', legs.leg1),
     leg2GrossUsd: envNum('HL_OSCAR_LEG2_USD', legs.leg2),
     leg3GrossUsd: envNum('HL_OSCAR_LEG3_USD', legs.leg3),
@@ -129,7 +138,8 @@ function parseWindows(spec: string): number[] {
 
 /** Map Oscar config to shared HL TWAP exchange client config. */
 export function toHlTwapLiveConfig(cfg: HlOscarPerpConfig): HlTwapLiveConfig {
-  const leg1Margin = cfg.leg1GrossUsd / cfg.leverage;
+  const entryGrossUsd = cfg.stagedEntryEnabled ? cfg.leg1GrossUsd : cfg.positionNotionalUsd;
+  const leg1Margin = entryGrossUsd / cfg.leverage;
   return {
     enabled: cfg.enabled,
     mode: cfg.mode,
