@@ -42,7 +42,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 6 плиток — Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse.
+      Десктоп: 7 плиток — Live Oscar · SuperBot · DCA · HL TWAP · BasePulse · BscPulse · HL Oscar Perp.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -51,7 +51,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -462,6 +462,34 @@
         </div>
       </div>
 
+      <div x-show="isHlOscarPerp() && selectedRow()?.hlOscar" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm mono">
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Notional</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="fmtUsd(selectedRow()?.hlOscar?.notionalUsd || 50)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Leverage</div>
+          <div class="stat-num mt-1 text-slate-100" x-text="(selectedRow()?.hlOscar?.leverage || 2) + 'x'"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Open</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="selectedRow()?.openCount || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Universe</div>
+          <div class="stat-num mt-1 text-violet-200" x-text="selectedRow()?.hlOscar?.universeSize || 0"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Signals 1h</div>
+          <div class="stat-num mt-1 text-sky-300" x-text="(selectedRow()?.passed1h || 0) + ' / ' + (selectedRow()?.evals1h || 0)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Mode</div>
+          <div class="stat-num mt-1" :class="selectedRow()?.hlOscar?.liveDryRun ? 'text-amber-300' : 'text-emerald-300'"
+               x-text="selectedRow()?.hlOscar?.liveDryRun ? 'dry-run' : 'live'"></div>
+        </div>
+      </div>
+
       <div class="dash-exits-single-row mono mt-4 text-sm" x-show="selected !== 'copy-trader' && selected !== 'dc-trader'">
         <template x-for="r in ['TP','TRAIL','SL','TIMEOUT','NO_DATA','LIQ_DRAIN','RECONCILE_ORPHAN','PERIODIC_HEAL','CAPITAL_ROTATE']" :key="r">
           <div class="dash-exit-chip shrink-0">
@@ -487,7 +515,7 @@
                   <div class="flex flex-col">
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
-                      <template x-if="!isHlTwap()">
+                      <template x-if="!isHlTwap() && !isHlOscarPerp()">
                         <a :href="tokenLink(o.mint, o.pairAddress)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline">
                           <span x-text="tokenTitle(o)"></span>
@@ -500,6 +528,11 @@
                         <a :href="(o.hlTwap && o.hlTwap.hyperliquidUrl) || '#'" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="o.symbol || o.coin || '?'"></a>
                         <span class="pill ml-2 text-xs" :class="hlSideClass(o.hlTwap?.sideLabel)" x-text="o.hlTwap?.sideLabel || (o.side === 'buy' ? 'LONG' : 'SHORT')"></span>
+                      </template>
+                      <template x-if="isHlOscarPerp()">
+                        <a :href="hlOscarTradeUrl(o)" target="_blank" @click.stop
+                           class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?')"></a>
+                        <span class="pill pill-ok ml-2 text-xs">LONG perp</span>
                       </template>
                       <span class="text-slate-400 text-sm ml-1.5" x-text="'(' + (o.timeline?.length || 0) + ' events)'"></span>
                       <span class="text-sky-200 text-sm font-semibold mono ml-2"
@@ -543,7 +576,7 @@
                       <span class="text-slate-400">vol24h</span>
                       <span class="font-semibold mono text-slate-200" x-text="fmtUsd(o.vol24hUsd)"></span>
                     </div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap() && selected !== 'dc-trader'">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="!isHlTwap() && !isHlOscarPerp() && selected !== 'dc-trader'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
                       <span class="text-slate-600">·</span>
                       <span class="text-slate-400">цена</span>
@@ -787,6 +820,7 @@
       'hl-twap-paper',
       'base-pulse',
       'bsc-pulse',
+      'hl-oscar-perp',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -922,6 +956,14 @@
           'BSC dip-buy на **крупные** пары: liq **≥$500k**, FDV **≥$5M**, пролив **3–22%**, staged entry. **$10**/позиция через Pancake/1inch.',
         details:
           '**Плитка 6** · VPS **72.62.152.201** · PM2 **`bscpulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар BSC (DexScreener + GeckoTerminal).\n• Только large-cap: `MIN_LIQ=$500k`, `MIN_FDV=$5M`; верхний FDV-cap отключён для Beat/UB.\n• Dip **3–22%** (5m/1h lookback); vol1h **≥$200k**, vol5m **≥$30k**.\n• Выход: kill/trail/timeout как BasePulse.\n\n**Live:** `BSCPULSE_POSITION_USD=10`, max concurrent по env.\n\n**Журнал:** `/opt/bsc-pulse/data/bscpulse-journal.jsonl` → sync `data/bscpulse/` (`DASHBOARD_BSCPULSE_JSONL`).',
+      },
+      'hl-oscar-perp': {
+        label: 'HL Oscar Perp',
+        tag: 'live',
+        oneLiner:
+          'Hyperliquid perp dip-buy (Live Oscar wave B): staged legs **$15+$15+$20**, kill/trail/TP, time stop **12h**. **$50** notional · **2x** leverage.',
+        details:
+          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−10…−50%** от high (2h/6h/12h), impulse **≥12%**.\n• Staged legs: leg1 → leg2 @ −5% → leg3 @ −20%; staged kill **−50%** от сигнала.\n\n**Выход (wave B)**\n• TP partial, trail, breakeven, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

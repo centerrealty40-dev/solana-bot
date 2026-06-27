@@ -46,6 +46,11 @@ import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from '
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
 import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
 import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse-dashboard.js';
+import {
+  hlOscarPerpDashboardJsonlPath,
+  loadHlOscarPerpForDashboard,
+} from './hl-oscar-perp-dashboard.js';
+import { loadHyperliquidMarketCache } from '../src/hyperliquid/twap/hyperliquid-meta.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
@@ -100,7 +105,11 @@ function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
   const mode = (process.env.DASHBOARD_ENRICH_MODE || 'lite').trim().toLowerCase();
   if (mode === 'full') return 'full';
   if (mode === 'lite') return 'lite';
-  return sid === 'live-oscar' || sid === 'superbot' || sid === 'base-pulse' || sid === 'bsc-pulse'
+  return sid === 'live-oscar' ||
+    sid === 'superbot' ||
+    sid === 'base-pulse' ||
+    sid === 'bsc-pulse' ||
+    sid === 'hl-oscar-perp'
     ? 'full'
     : 'lite';
 }
@@ -1867,7 +1876,7 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA · HL TWAP · BasePulse · BscPulse · HL Oscar. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
@@ -1875,9 +1884,10 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-twap-paper',
   'base-pulse',
   'bsc-pulse',
+  'hl-oscar-perp',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-27-basepulse-partial-sell-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-28-hl-oscar-perp-tile-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1937,6 +1947,15 @@ export type DashboardPaper2StrategyRow = {
   dcTraderWatching?: unknown[];
   /** SuperBot stream/race counters (pumpswap-flow-sniper journal). */
   superbot?: SuperbotDashboardLoad['superbot'];
+  /** HL Oscar perp bot meta (tile 7). */
+  hlOscar?: {
+    mode: 'dry_run' | 'live';
+    liveDryRun: boolean;
+    openCount: number;
+    universeSize: number;
+    leverage: number;
+    notionalUsd: number;
+  };
 };
 
 function aggregatePriceVerifyFromJsonl(filePath: string, windowMs: number): {
@@ -4512,6 +4531,7 @@ async function buildPaper2StrategyRowFromLoad(
     superbot?: SuperbotDashboardLoad['superbot'];
     hbOpen?: number;
     hbClosed?: number;
+    hlOscar?: DashboardPaper2StrategyRow['hlOscar'];
   },
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
 ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
@@ -4643,6 +4663,16 @@ async function buildPaper2StrategyRowFromLoad(
   const isSuperbotPanel = sid === 'superbot';
   const isBasePulsePanel = sid === 'base-pulse';
   const isBscPulsePanel = sid === 'bsc-pulse';
+  const isHlOscarPanel = sid === 'hl-oscar-perp';
+  let hlMids: Map<string, number> | null = null;
+  if (isHlOscarPanel) {
+    try {
+      const cache = await loadHyperliquidMarketCache();
+      hlMids = cache.mids;
+    } catch (e) {
+      console.warn('[dashboard] hl-oscar mids fetch failed', String(e).slice(0, 120));
+    }
+  }
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
@@ -4866,6 +4896,25 @@ async function buildPaper2StrategyRowFromLoad(
             pnlUsd = pulsePnl.pnlUsd;
           }
         }
+      } else if (isHlOscarPanel) {
+        const coin =
+          (typeof ot.pairAddress === 'string' && ot.pairAddress.trim()) ||
+          (typeof (ot.features as { coin?: string } | null)?.coin === 'string'
+            ? String((ot.features as { coin: string }).coin)
+            : ot.symbol);
+        const mid = hlMids?.get(String(coin).toUpperCase());
+        if (mid != null && mid > 0) {
+          livePx = mid;
+          livePxProvenance = 'snapshots';
+        }
+        if (basePx && livePx != null && livePx > 0 && ot.totalInvestedUsd > 0) {
+          const rem = ot.remainingFraction ?? 1;
+          const p = (livePx / basePx - 1) * 100;
+          if (Number.isFinite(p) && Math.abs(p) <= PNL_PCT_CLAMP) {
+            pnlPct = p;
+            pnlUsd = (ot.totalInvestedUsd * rem * p) / 100;
+          }
+        }
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
       } else {
@@ -5031,6 +5080,7 @@ async function buildPaper2StrategyRowFromLoad(
     ...(loaded.dcTrader ? { dcTrader: loaded.dcTrader } : {}),
     ...(loaded.dcTraderWatching ? { dcTraderWatching: loaded.dcTraderWatching } : {}),
     ...(loaded.superbot ? { superbot: loaded.superbot } : {}),
+    ...(loaded.hlOscar ? { hlOscar: loaded.hlOscar } : {}),
   };
 }
 
@@ -5118,13 +5168,23 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] bsc-pulse panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('bsc-pulse', bscPulseJsonl);
   });
-  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow, bscPulseRow] = await Promise.all([
+  const hlOscarJsonl = hlOscarPerpDashboardJsonlPath();
+  const hlOscarLoad = loadHlOscarPerpForDashboard(hlOscarJsonl);
+  const hlOscarRowP = buildPaper2StrategyRowFromLoad(hlOscarJsonl, 'hl-oscar-perp', {
+    ...hlOscarLoad,
+    hlOscar: hlOscarLoad.hlOscar,
+  }).catch((e) => {
+    console.warn('[dashboard] hl-oscar-perp panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('hl-oscar-perp', hlOscarJsonl);
+  });
+  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow, bscPulseRow, hlOscarRow] = await Promise.all([
     liveRowP,
     superbotRowP,
     dcRowP,
     hlTwapRowP,
     basePulseRowP,
     bscPulseRowP,
+    hlOscarRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
@@ -5133,6 +5193,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     hlTwapRow as DashboardPaper2StrategyRow,
     basePulseRow as DashboardPaper2StrategyRow,
     bscPulseRow as DashboardPaper2StrategyRow,
+    hlOscarRow as DashboardPaper2StrategyRow,
   ]);
 
   const totals = merged.reduce(
@@ -5167,6 +5228,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
     basePulseJsonl: basePulseDashboardJsonlPath(),
     bscPulseJsonl: bscPulseDashboardJsonlPath(),
+    hlOscarPerpJsonl: hlOscarPerpDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,
