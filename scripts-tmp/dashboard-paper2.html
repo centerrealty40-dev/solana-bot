@@ -489,7 +489,10 @@
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
                         <a :href="tokenLink(o.mint, o.pairAddress)" target="_blank" @click.stop
-                           class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
+                           class="text-amber-300 text-base font-semibold hover:underline">
+                          <span x-text="tokenTitle(o)"></span>
+                          <span class="text-slate-500 text-sm font-normal ml-1.5" x-text="short(o.mint)"></span>
+                        </a>
                       </template>
                       <span x-show="selected === 'live-oscar' && o.isScalpWave"
                             class="pill pill-warn ml-2 text-xs align-middle">Скальп · Ф4</span>
@@ -502,6 +505,9 @@
                       <span class="text-sky-200 text-sm font-semibold mono ml-2"
                             x-show="selected !== 'dc-trader'"
                             x-text="'остаток ' + fmtUsd(o.remainingCostBasisUsd ?? 0)"></span>
+                      <span class="text-emerald-200 text-xs mono ml-1"
+                            x-show="isEvmPulse() && o.remainingFraction != null && o.remainingFraction < 0.999"
+                            x-text="'(' + Math.round((o.remainingFraction ?? 1) * 100) + '% поз.)'"></span>
                       <span class="text-sky-200 text-sm font-semibold mono ml-2"
                             x-show="selected === 'dc-trader'"
                             x-text="dcOpenBasisLabel(o)"></span>
@@ -658,7 +664,10 @@
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
                         <a :href="tokenLink(c.mint, c.pairAddress)" target="_blank" @click.stop
-                           class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
+                           class="text-sky-300 text-base font-semibold hover:underline">
+                          <span x-text="tokenTitle(c)"></span>
+                          <span class="text-slate-500 text-sm font-normal ml-1.5" x-text="short(c.mint)"></span>
+                        </a>
                       </template>
                       <template x-if="isHlTwap()">
                         <a :href="(c.hlTwap && c.hlTwap.hyperliquidUrl) || '#'" target="_blank" @click.stop
@@ -1146,6 +1155,16 @@
         isBasePulse() { return this.selected === 'base-pulse'; },
         isBscPulse() { return this.selected === 'bsc-pulse'; },
         isEvmPulse() { return this.isBasePulse() || this.isBscPulse(); },
+        isAddressLikeSymbol(sym) {
+          const s = String(sym || '').trim();
+          if (!s || s === '?') return false;
+          return /^0x[0-9a-f]{4}/i.test(s);
+        },
+        tokenTitle(row) {
+          const sym = String(row?.symbol || '').trim();
+          if (sym && sym !== '?' && !this.isAddressLikeSymbol(sym)) return '$' + sym;
+          return '$?';
+        },
         tokenLink(m, pairAddress) {
           if (!m) return '#';
           const addr = String(m).trim();

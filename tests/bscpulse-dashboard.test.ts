@@ -53,6 +53,31 @@ const PROD_FILTER_REJECT = {
   ts: '2026-06-27T11:30:42.707Z',
 };
 
+const PROD_PARTIALS = [
+  {
+    type: 'live_partial',
+    kind: 'partial_exit',
+    token: PROD_LIVE_OPEN.token,
+    pair: PROD_LIVE_OPEN.pair,
+    fraction: 0.05,
+    reason: 'tp',
+    exitReason: 'tp',
+    pnlPct: 4.6,
+    ts: 1782564719843,
+  },
+  {
+    type: 'live_partial',
+    kind: 'partial_exit',
+    token: PROD_LIVE_OPEN.token,
+    pair: PROD_LIVE_OPEN.pair,
+    fraction: 0.2,
+    reason: 'trail',
+    exitReason: 'trail',
+    pnlPct: -16.3,
+    ts: 1782570469580,
+  },
+];
+
 function writeJournal(fp: string, lines: unknown[]): void {
   fs.writeFileSync(fp, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
 }
@@ -87,7 +112,7 @@ describe('loadBscPulseForDashboard', () => {
     expect(r.open.length).toBe(1);
     const o = r.open[0]!;
     expect(o.mint).toBe(PROD_LIVE_OPEN.token);
-    expect(o.symbol).toContain('0x92aa');
+    expect(o.symbol).toBe('?');
     expect(o.baselinePriceUsd).toBeCloseTo(0.352066629998303);
     expect(o.totalInvestedUsd).toBe(10);
     expect(o.lane).toBe('bsc-pulse');
@@ -128,11 +153,25 @@ describe('loadBscPulseForDashboard', () => {
   it('counts filter_reject as eval-skip-open fail reasons', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bscp-dash-'));
     const fp = path.join(tmpDir, 'journal.jsonl');
-    writeJournal(fp, [PROD_FILTER_REJECT]);
+    writeJournal(fp, [{ ...PROD_FILTER_REJECT, ts: Date.now() - 60_000 }]);
 
     const r = loadBscPulseForDashboard(fp);
     expect(r.evals1h).toBeGreaterThanOrEqual(1);
     expect(r.failReasons.some((f) => f.reason === 'not_large_cap')).toBe(true);
+  });
+
+  it('tracks live_partial remainingFraction and timeline events', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bscp-dash-'));
+    const fp = path.join(tmpDir, 'journal.jsonl');
+    writeJournal(fp, [PROD_LIVE_OPEN, ...PROD_PARTIALS]);
+
+    const r = loadBscPulseForDashboard(fp);
+    expect(r.open.length).toBe(1);
+    const o = r.open[0]!;
+    expect(o.remainingFraction).toBeCloseTo(0.76, 5);
+    const tl = r.openTimelines.get(o.mint) ?? [];
+    expect(tl.filter((e) => e.kind === 'partial_sell').length).toBe(2);
+    expect(tl.some((e) => e.pnlPct != null)).toBe(true);
   });
 
   it('uses symbol from journal when present', () => {
