@@ -16,6 +16,12 @@ import {
 import { newOscarPosition, recomputeAvgEntry, type OscarOpenPosition } from './position-types.js';
 import type { OscarUniverseCoin } from './universe.js';
 import { isOscarTradingHalted } from './drawdown.js';
+import {
+  notifyOscarAddLeg,
+  notifyOscarClose,
+  notifyOscarOpen,
+  notifyOscarPartialExit,
+} from './telegram-notify.js';
 
 export type OscarTraderState = {
   opens: Map<string, OscarOpenPosition>;
@@ -214,6 +220,16 @@ export async function runOscarTraderPass(args: {
     console.log(
       `[hl-oscar-perp] OPEN ${coin.coin} dip=${signal.dipPct.toFixed(1)}% imp=${signal.impulsePct.toFixed(1)}% $${legFill.grossUsd.toFixed(0)} @ ${legFill.fillPx}`,
     );
+    await notifyOscarOpen({
+      cfg,
+      sym: coin.displaySymbol,
+      legIndex: 1,
+      fillPx: legFill.fillPx,
+      grossUsd: legFill.grossUsd,
+      dipPct: signal.dipPct,
+      impulsePct: signal.impulsePct,
+      windowMin: signal.windowMin,
+    });
   }
 }
 
@@ -254,6 +270,16 @@ async function processOpenPosition(
         pnlUsd: res.pnlUsd,
         remainingFraction: pos.remainingFraction,
         mode,
+      });
+      await notifyOscarPartialExit({
+        cfg,
+        sym: pos.displaySymbol,
+        reason: action.reason,
+        fillPx: res.fillPx,
+        pnlUsd: res.pnlUsd,
+        fraction: action.fraction,
+        remainingFraction: pos.remainingFraction,
+        level: action.level,
       });
       if (pos.remainingFraction <= 1e-6) {
         await finalizeClose(cfg, state, pos, action.reason, res.fillPx, mode);
@@ -310,6 +336,14 @@ async function maybeFillStagedLegs(
       mode,
     });
     console.log(`[hl-oscar-perp] LEG2 ${pos.coin} @ ${fill.fillPx.toFixed(4)}`);
+    await notifyOscarAddLeg({
+      cfg,
+      sym: pos.displaySymbol,
+      legIndex: 2,
+      fillPx: fill.fillPx,
+      grossUsd: fill.notionalUsd,
+      avgEntryPx: pos.avgEntryPx,
+    });
   }
 
   const leg3Px = pos.signalPrice * (1 - cfg.leg3DropPct / 100);
@@ -346,6 +380,14 @@ async function maybeFillStagedLegs(
       mode,
     });
     console.log(`[hl-oscar-perp] LEG3 ${pos.coin} @ ${fill.fillPx.toFixed(4)}`);
+    await notifyOscarAddLeg({
+      cfg,
+      sym: pos.displaySymbol,
+      legIndex: 3,
+      fillPx: fill.fillPx,
+      grossUsd: fill.notionalUsd,
+      avgEntryPx: pos.avgEntryPx,
+    });
   }
 }
 
@@ -376,6 +418,15 @@ async function finalizeClose(
   console.log(
     `[hl-oscar-perp] CLOSE ${pos.coin} ${reason} pnl=$${pos.realizedPnlUsd.toFixed(2)} (${pnlPct.toFixed(2)}%)`,
   );
+  await notifyOscarClose({
+    cfg,
+    sym: pos.displaySymbol,
+    reason,
+    exitPx,
+    pnlUsd: pos.realizedPnlUsd,
+    pnlPct,
+    holdHours,
+  });
 }
 
 export async function fetchOscarAccountEquity(masterAddress: string): Promise<number> {

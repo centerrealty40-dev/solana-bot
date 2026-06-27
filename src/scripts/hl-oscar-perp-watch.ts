@@ -25,6 +25,11 @@ import {
   resolveOscarDenylist,
   resolveOscarWhitelist,
 } from '../hyperliquid/oscar-perp/universe.js';
+import {
+  assertOscarTelegramBot,
+  notifyOscarStartup,
+  notifyOscarTelegramTest,
+} from '../hyperliquid/oscar-perp/telegram-notify.js';
 
 const LAST_FATAL_PATH =
   process.env.HL_OSCAR_LAST_FATAL_PATH?.trim() ||
@@ -45,10 +50,19 @@ function writeLastFatal(err: unknown): void {
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes('--telegram-test')) {
+    const ok = await notifyOscarTelegramTest();
+    process.exit(ok ? 0 : 1);
+  }
+
   const cfg = loadHlOscarPerpConfig();
   if (!cfg.enabled) {
     console.log('[hl-oscar-perp] HL_OSCAR_ENABLED=0 — exit');
     return;
+  }
+
+  if (cfg.mode === 'live') {
+    await assertOscarTelegramBot();
   }
 
   fs.mkdirSync(path.dirname(cfg.journalPath), { recursive: true });
@@ -70,6 +84,7 @@ async function main(): Promise<void> {
   if (cfg.mode === 'live') {
     const equity = await fetchOscarAccountEquity(cfg.masterAddress);
     await initOscarDrawdownMonitor(cfg, equity);
+    await notifyOscarStartup(cfg, client.mode);
   } else {
     console.log('[hl-oscar-perp] PAPER/DRY-RUN — set HL_OSCAR_LIVE_ENABLED=1 and HL_OSCAR_DRY_RUN=0 for live');
   }

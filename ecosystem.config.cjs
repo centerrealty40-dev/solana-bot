@@ -32,6 +32,8 @@ const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
 const SPIKE_TELEGRAM_CHAT_ID = '-1003633176769';
 /** Pullback + retrace (блоки 1–2–3) — отдельный бот, общий dips-канал. */
 const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
+/** Neural Chain News RU — HL TWAP whale alerts + HL Oscar trade pings. */
+const HL_NEWS_TELEGRAM_CHAT_ID = '-1003801824851';
 
 /** HL TWAP live + paper — paths on VPS (secrets in `.env`). */
 const HL_TWAP_DATA_DIR = path.join(root, 'data/hl-twap');
@@ -40,8 +42,8 @@ const HL_OSCAR_DATA_DIR = path.join(root, 'data/hl-oscar-perp');
 const HL_OSCAR_PERP_ENV = {
   NODE_ENV: 'production',
   HL_OSCAR_ENABLED: '1',
-  HL_OSCAR_LIVE_ENABLED: '0',
-  HL_OSCAR_DRY_RUN: '1',
+  HL_OSCAR_LIVE_ENABLED: '1',
+  HL_OSCAR_DRY_RUN: '0',
   HL_OSCAR_LEVERAGE: '2',
   HL_OSCAR_POSITION_NOTIONAL_USD: '50',
   HL_OSCAR_TIME_STOP_HOURS: '12',
@@ -55,10 +57,12 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_JOURNAL_JSONL: path.join(HL_OSCAR_DATA_DIR, 'live.jsonl'),
   HL_OSCAR_HEARTBEAT_PATH: path.join(HL_OSCAR_DATA_DIR, 'heartbeat.json'),
   HL_OSCAR_SLIPPAGE_TOLERANCE: '0.01',
+  HL_OSCAR_TELEGRAM_CHAT_ID: HL_NEWS_TELEGRAM_CHAT_ID,
+  HL_OSCAR_TELEGRAM_ENABLED: '1',
 };
 const HL_TWAP_LIVE_ENV = {
   NODE_ENV: 'production',
-  HL_TWAP_LIVE_ENABLED: '1',
+  HL_TWAP_LIVE_ENABLED: '0',
   HL_TWAP_PAPER_ENABLED: '1',
   HL_TWAP_UNRESTRICTED: '1',
   HL_TWAP_SHORT_MIN_MINUTES: '9',
