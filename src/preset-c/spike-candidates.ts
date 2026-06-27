@@ -13,6 +13,7 @@ import {
   PRESET_C_MIN_RETRACE_PCT,
   passesPresetCMcapBand,
   passesPresetCRetraceBand,
+  isPresetCMcapKnown,
 } from './filters.js';
 import type { PresetCPullbackCandidate } from './pullback-scan.js';
 import { matchingPresetCTelegramGateKeys } from './telegram-gate.js';
@@ -141,9 +142,12 @@ function parseTs(v: Date | string): Date {
 }
 
 function refMcap(meta: LatestRow, spikeRef: number): number {
-  if (spikeRef > 0) return spikeRef;
-  const m = meta.market_cap_usd ?? meta.token_fdv_usd ?? 0;
-  return Number.isFinite(m) && m > 0 ? m : 0;
+  if (isPresetCMcapKnown(spikeRef)) return spikeRef;
+  const mcap = meta.market_cap_usd;
+  if (mcap != null && isPresetCMcapKnown(mcap)) return mcap;
+  const fdv = meta.token_fdv_usd;
+  if (fdv != null && isPresetCMcapKnown(fdv)) return fdv;
+  return 0;
 }
 
 /** Spike TG dumps with fresh dedupe keys → Preset C candidates (entry path preset_c_spike). */

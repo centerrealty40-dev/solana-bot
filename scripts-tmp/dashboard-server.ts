@@ -45,6 +45,7 @@ import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
 import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
+import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse-dashboard.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
 import {
   buildHlTwapPaperDashboardRow,
@@ -99,7 +100,19 @@ function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
   const mode = (process.env.DASHBOARD_ENRICH_MODE || 'lite').trim().toLowerCase();
   if (mode === 'full') return 'full';
   if (mode === 'lite') return 'lite';
-  return sid === 'live-oscar' || sid === 'superbot' ? 'full' : 'lite';
+  return sid === 'live-oscar' || sid === 'superbot' || sid === 'base-pulse' || sid === 'bsc-pulse'
+    ? 'full'
+    : 'lite';
+}
+
+function isEvmPulseSid(sid: string): boolean {
+  return sid === 'base-pulse' || sid === 'bsc-pulse';
+}
+
+function evmChainForSid(sid: string): 'base' | 'bsc' | null {
+  if (sid === 'base-pulse') return 'base';
+  if (sid === 'bsc-pulse') return 'bsc';
+  return null;
 }
 
 type Paper2ApiCache = { expiresAt: number; builtAt: number; payload: unknown };
@@ -266,7 +279,7 @@ export function resolveLiveOscarOpenSnapshotPath(jsonlPath: string): string {
 function entryQuoteVerifyFromExecutionAttempt(o: Record<string, unknown>): {
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
-  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
 } {
   const qs = o.quoteSnapshot;
   if (!qs || typeof qs !== 'object') {
@@ -804,6 +817,13 @@ export async function enrichTimelineMcapGaps(
 const tokenSymbolByMint = new Map<string, { s: string; at: number }>();
 const TOKEN_SYMBOL_TTL_MS = 6 * 3_600_000;
 
+function shortTokenForUi(mint: string | null | undefined): string {
+  const s = String(mint ?? '').trim();
+  if (!s) return '?';
+  if (s.length <= 12) return s;
+  return `${s.slice(0, 6)}…${s.slice(-4)}`;
+}
+
 /** When journal has `?` (repair / missing metadata), resolve from DexScreener token API. */
 async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null | undefined): Promise<string> {
   const t0 = (fromJournal ?? '').trim();
@@ -826,6 +846,85 @@ async function resolveTokenSymbolForUi(mint: string, fromJournal: string | null 
     /* optional */
   }
   return t0 && t0 !== '?' ? t0 : '?';
+}
+
+type DexscreenerEvmQuote = {
+  priceUsd: number | null;
+  fdvUsd: number | null;
+  marketCapUsd: number | null;
+  liquidityUsd: number | null;
+  volume24hUsd: number | null;
+  symbol: string | null;
+};
+
+const dexscreenerEvmCache = new Map<string, { data: DexscreenerEvmQuote; ts: number }>();
+const DEXSCREENER_EVM_TTL_MS = 30_000;
+
+/** Live quote for EVM tokens (BasePulse / BscPulse) via DexScreener public API. */
+async function fetchDexscreenerEvmToken(
+  tokenAddress: string,
+  chainId: 'base' | 'bsc',
+  preferredPair?: string | null,
+): Promise<DexscreenerEvmQuote | null> {
+  const addr = tokenAddress.trim().toLowerCase();
+  if (!addr.startsWith('0x') || addr.length < 10) return null;
+  const cacheKey = `${chainId}:${addr}:${preferredPair?.trim().toLowerCase() ?? ''}`;
+  const cached = dexscreenerEvmCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < DEXSCREENER_EVM_TTL_MS) return cached.data;
+  try {
+    const r = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(addr)}`,
+      { signal: AbortSignal.timeout(7000) },
+    );
+    if (!r.ok) return null;
+    const j = (await r.json()) as { pairs?: Array<Record<string, unknown>> };
+    const pairs = (j.pairs ?? []).filter((p) => String(p.chainId ?? '').toLowerCase() === chainId);
+    if (!pairs.length) return null;
+    const pref = preferredPair?.trim().toLowerCase();
+    let best: Record<string, unknown> | null = null;
+    if (pref) {
+      best = pairs.find((p) => String(p.pairAddress ?? '').toLowerCase() === pref) ?? null;
+    }
+    if (!best) {
+      let bestLiq = -1;
+      for (const p of pairs) {
+        const baseAddr = String((p.baseToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
+        const quoteAddr = String((p.quoteToken as { address?: string } | undefined)?.address ?? '').toLowerCase();
+        if (baseAddr !== addr && quoteAddr !== addr) continue;
+        const liq = Number((p.liquidity as { usd?: number } | undefined)?.usd ?? 0);
+        if (liq > bestLiq) {
+          bestLiq = liq;
+          best = p;
+        }
+      }
+    }
+    if (!best) return null;
+    const priceUsd = Number(best.priceUsd ?? 0);
+    const fdvUsd = Number(best.fdv ?? 0);
+    const marketCapUsd = Number(best.marketCap ?? 0);
+    const liquidityUsd = Number((best.liquidity as { usd?: number } | undefined)?.usd ?? 0);
+    const volume24hUsd = Number((best.volume as { h24?: number } | undefined)?.h24 ?? 0);
+    const baseTok = best.baseToken as { address?: string; symbol?: string } | undefined;
+    const quoteTok = best.quoteToken as { address?: string; symbol?: string } | undefined;
+    const sym =
+      baseTok?.address?.toLowerCase() === addr
+        ? String(baseTok.symbol ?? '').trim()
+        : quoteTok?.address?.toLowerCase() === addr
+          ? String(quoteTok.symbol ?? '').trim()
+          : '';
+    const data: DexscreenerEvmQuote = {
+      priceUsd: priceUsd > 0 ? priceUsd : null,
+      fdvUsd: fdvUsd > 0 ? fdvUsd : null,
+      marketCapUsd: marketCapUsd > 0 ? marketCapUsd : null,
+      liquidityUsd: liquidityUsd > 0 ? liquidityUsd : null,
+      volume24hUsd: volume24hUsd > 0 ? volume24hUsd : null,
+      symbol: sym || null,
+    };
+    dexscreenerEvmCache.set(cacheKey, { data, ts: Date.now() });
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 async function getCurrentMcAny(mint: string, source?: string | null): Promise<number | null> {
@@ -1559,7 +1658,7 @@ export type Paper2OpenItem = {
   /** W7.4 — Jupiter pre-entry quote vs snapshot (open row only; carried to closed via journal map). */
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
-  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
   /** W7.5 — pool address from journal open row / features. */
   pairAddress: string | null;
   /** W7.5 — entry liquidity USD baseline. */
@@ -1586,7 +1685,7 @@ type PriceVerifyDtoFromJsonl = {
 function priceVerifyUiFields(pv: unknown): {
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
-  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
 } {
   if (!pv || typeof pv !== 'object') {
     return {
@@ -1609,16 +1708,17 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA Trader · HL TWAP · BasePulse · BscPulse. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
   'dc-trader',
   'hl-twap-paper',
   'base-pulse',
+  'bsc-pulse',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-26-closed-pnl-net-pct-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-27-basepulse-partial-sell-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -1866,13 +1966,19 @@ export type Paper2ApiEnrichedOpen = {
   hasLiveMc: boolean;
   hasLivePrice: boolean;
   livePriceStale: boolean;
-  livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | null;
+  livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | 'dexscreener' | null;
+  /** DexScreener 24h volume (EVM pulse panels). */
+  vol24hUsd?: number | null;
+  /** Live FDV / mcap from DexScreener (EVM pulse panels). */
+  liveFdvUsd?: number | null;
   liveMcProvenance: 'snapshots' | 'pump.fun' | null;
   timeline: TimelineEvent[];
   entryPriorityFeeUsd: number | null;
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
-  entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+  entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
+  /** Pool/pair address (EVM pulse panels — DexScreener ticker links). */
+  pairAddress?: string | null;
   entryLiqUsd: number | null;
   currentLiqUsd: number | null;
   liqDropPct: number | null;
@@ -2552,7 +2658,7 @@ export function loadPaper2File(filePath: string): {
     {
       entryPriceVerifySlipPct: number | null;
       entryPriceVerifyImpactPct: number | null;
-      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+      entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
     }
   >();
 
@@ -2753,7 +2859,7 @@ export type LiveOscarPaper2Load = Paper2FileLoad & {
     {
       entryPriceVerifySlipPct: number | null;
       entryPriceVerifyImpactPct: number | null;
-      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+      entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
     }
   >;
 };
@@ -2787,7 +2893,7 @@ export function paper2OpenItemFromLiveOpenTrade(
   entryQuoteVerify?: {
     entryPriceVerifySlipPct: number | null;
     entryPriceVerifyImpactPct: number | null;
-    entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+    entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
   },
 ): Paper2OpenItem {
   const metricType = ot.metricType != null ? String(ot.metricType) : null;
@@ -3148,6 +3254,114 @@ function sanitizeReconcileOrphanClosedTradeForDashboard(ct: Record<string, unkno
   return out;
 }
 
+type WalletDrainedZombieTrack = {
+  hadSellAttempt: boolean;
+  walletDrainedAt: number;
+  lastSellTargetPx: number | null;
+};
+
+function bumpWalletDrainedZombieTrack(
+  map: Map<string, WalletDrainedZombieTrack>,
+  mint: string,
+): WalletDrainedZombieTrack {
+  let row = map.get(mint);
+  if (!row) {
+    row = { hadSellAttempt: false, walletDrainedAt: 0, lastSellTargetPx: null };
+    map.set(mint, row);
+  }
+  return row;
+}
+
+/** Journal open + sell attempts + wallet_spl_balance_zero skip but no `live_position_close`. */
+export function applyWalletDrainedZombieInference(
+  load: LiveOscarPaper2Load,
+  zombieTracks: Map<string, WalletDrainedZombieTrack>,
+  openTimelines: Map<string, TimelineEvent[]>,
+  liveMeta: Map<string, { metricType: string | null; entryRealMcUsd: number | null }>,
+  dashboardStrategyId: string,
+): LiveOscarPaper2Load {
+  const closed = [...load.closed];
+  const closedMints = new Set(closed.map((c) => String(c.mint ?? '')));
+  const openMints = new Set(load.open.map((o) => o.mint));
+
+  for (const [mint, z] of zombieTracks) {
+    if (!z.hadSellAttempt || z.walletDrainedAt <= 0) continue;
+    if (closedMints.has(mint) || !openMints.has(mint)) continue;
+
+    const openItem = load.open.find((o) => o.mint === mint);
+    if (!openItem) continue;
+
+    const meta = liveMeta.get(mint) ?? { metricType: null, entryRealMcUsd: null };
+    const entryTs = Number(openItem.entryTs ?? 0);
+    const exitTs = z.walletDrainedAt;
+    const invested = Number(openItem.totalInvestedUsd ?? 0);
+    const avgEntry = Number(openItem.avgEntry ?? openItem.entryPx ?? 0);
+    const observedPx = Number(openItem.lastObservedPriceUsd ?? 0);
+    const baselinePx = Number(openItem.baselinePriceUsd ?? 0);
+    const exitPx =
+      z.lastSellTargetPx ??
+      (observedPx > 0 ? observedPx : baselinePx > 0 ? baselinePx : avgEntry);
+    const netPnlUsd =
+      invested > 0 && avgEntry > 0 && exitPx > 0 ? invested * (exitPx / avgEntry - 1) : 0;
+    const pnlPct = invested > 0 ? (netPnlUsd / invested) * 100 : 0;
+    const durationMin = entryTs > 0 && exitTs > entryTs ? (exitTs - entryTs) / 60_000 : 0;
+
+    const timeline = openTimelines.get(mint) ?? [];
+    const synClose: Record<string, unknown> = {
+      kind: 'close',
+      ts: exitTs,
+      strategyId: dashboardStrategyId,
+      mint,
+      exitTs,
+      exitMcUsd: exitPx,
+      exit_market_price: exitPx,
+      pnlPct,
+      netPnlUsd,
+      exitReason: 'KILLSTOP',
+      remainingFraction: 0,
+      totalInvestedUsd: invested,
+      __dashboardInference: 'wallet_drained_zombie',
+    };
+    const tev = buildTimelineEvent(synClose, meta.metricType, meta.entryRealMcUsd);
+    const arr = [...timeline];
+    if (tev) arr.push(tev);
+
+    closed.push(
+      sanitizeReconcileOrphanClosedTradeForDashboard({
+        mint,
+        symbol: openItem.symbol ?? '',
+        entryTs,
+        exitTs,
+        exitReason: 'KILLSTOP',
+        pnlPct,
+        netPnlUsd,
+        pnlUsd: netPnlUsd,
+        durationMin,
+        totalInvestedUsd: invested,
+        avgEntry,
+        avgEntryMarket: openItem.avgEntryMarket ?? avgEntry,
+        effective_entry_price: avgEntry,
+        theoretical_entry_price: openItem.baselinePriceUsd ?? avgEntry,
+        effective_exit_price: exitPx,
+        theoretical_exit_price: exitPx,
+        exitMcUsd: exitPx,
+        exitPriceUsd: exitPx,
+        lastObservedPriceUsd: exitPx,
+        __dashboardInference: 'wallet_drained_zombie',
+        __timeline: arr,
+      }),
+    );
+    openMints.delete(mint);
+    closedMints.add(mint);
+  }
+
+  return {
+    ...load,
+    open: load.open.filter((o) => openMints.has(o.mint)),
+    closed,
+  };
+}
+
 function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
   const z = Date.now();
   return {
@@ -3195,12 +3409,13 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
   const intentToMint = new Map<string, string>();
   const sigQueues = new Map<string, string[]>();
+  const zombieTracks = new Map<string, WalletDrainedZombieTrack>();
   const entryQuoteByMint = new Map<
     string,
     {
       entryPriceVerifySlipPct: number | null;
       entryPriceVerifyImpactPct: number | null;
-      entryPriceVerifySource: 'jupiter' | 'skipped' | 'blocked' | null;
+      entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
     }
   >();
 
@@ -3284,6 +3499,12 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const id = String(o.intentId ?? '');
       const m = String(o.mint ?? '');
       if (id && m) intentToMint.set(id, m);
+      if (m && String(o.side ?? '').toLowerCase() === 'sell') {
+        const z = bumpWalletDrainedZombieTrack(zombieTracks, m);
+        z.hadSellAttempt = true;
+        const targetPx = Number(o.targetPriceUsd ?? 0);
+        if (targetPx > 0) z.lastSellTargetPx = targetPx;
+      }
       if (m && String(o.side ?? '').toLowerCase() === 'buy') {
         const qv = entryQuoteVerifyFromExecutionAttempt(o);
         if (qv.entryPriceVerifySource) entryQuoteByMint.set(m, qv);
@@ -3307,6 +3528,14 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
 
     if (kind === 'execution_skip' && typeof o.reason === 'string' && o.reason) {
       failReasonsCount.set(o.reason, (failReasonsCount.get(o.reason) ?? 0) + 1);
+      if (o.reason === 'wallet_spl_balance_zero') {
+        const id = String(o.intentId ?? '');
+        const m = intentToMint.get(id) ?? String(o.mint ?? '');
+        if (m) {
+          const z = bumpWalletDrainedZombieTrack(zombieTracks, m);
+          z.walletDrainedAt = ts;
+        }
+      }
       continue;
     }
 
@@ -3597,6 +3826,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       om.delete(mint);
       liveMeta.delete(mint);
       liveTimelines.delete(mint);
+      zombieTracks.delete(mint);
     }
     }
   } catch {
@@ -3616,24 +3846,30 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       ? { ...(liveReconcileBoot ? { liveReconcileBoot } : {}), ...(liveReconcileReport ? { liveReconcileReport } : {}) }
       : undefined;
 
-  return mergeLiveOscarOpenSnapshotIntoLoad(
-    {
-      open: [...om.values()],
-      closed: closedVisible,
-      firstTs: f,
-      lastTs: l,
-      resetTs,
-      evals1h,
-      passed1h,
-      failReasons,
-      openTimelines: liveTimelines,
-      hbOpen,
-      hbClosed,
-      entryQuoteByMint,
-      ...(extras ? { liveExtras: extras } : {}),
-    },
-    resolveLiveOscarOpenSnapshotPath(filePath),
-    DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+  return applyWalletDrainedZombieInference(
+    mergeLiveOscarOpenSnapshotIntoLoad(
+      {
+        open: [...om.values()],
+        closed: closedVisible,
+        firstTs: f,
+        lastTs: l,
+        resetTs,
+        evals1h,
+        passed1h,
+        failReasons,
+        openTimelines: liveTimelines,
+        hbOpen,
+        hbClosed,
+        entryQuoteByMint,
+        ...(extras ? { liveExtras: extras } : {}),
+      },
+      resolveLiveOscarOpenSnapshotPath(filePath),
+      DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+      dashboardStrategyId,
+    ),
+    zombieTracks,
+    liveTimelines,
+    liveMeta,
     dashboardStrategyId,
   );
 }
@@ -4213,6 +4449,10 @@ async function buildPaper2StrategyRowFromLoad(
           exitLiqDropPct,
           exitContext,
           timeline: tlOut,
+          pairAddress:
+            typeof (c as { pairAddress?: unknown }).pairAddress === 'string'
+              ? String((c as { pairAddress: string }).pairAddress).trim() || null
+              : null,
         };
       }),
     )
@@ -4232,13 +4472,28 @@ async function buildPaper2StrategyRowFromLoad(
   const PNL_PCT_CLAMP = 100_000; // 1000x
   const isDcTraderPanel = sid === 'dc-trader';
   const isSuperbotPanel = sid === 'superbot';
+  const isBasePulsePanel = sid === 'base-pulse';
+  const isBscPulsePanel = sid === 'bsc-pulse';
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
       const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
       const isMcMetric = !isDcTraderPanel && !isSuperbotPanel && ot.metricType === 'mc';
       let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
-      if (enrichMode === 'full' && isMcMetric) {
+      let evmQuote: DexscreenerEvmQuote | null = null;
+      if (isBasePulsePanel && String(ot.mint ?? '').startsWith('0x')) {
+        evmQuote = await fetchDexscreenerEvmToken(ot.mint, 'base', ot.pairAddress).catch(() => null);
+      } else if (isBscPulsePanel && String(ot.mint ?? '').startsWith('0x')) {
+        evmQuote = await fetchDexscreenerEvmToken(ot.mint, 'bsc', ot.pairAddress).catch(() => null);
+      }
+      if (evmQuote) {
+        const mc = evmQuote.marketCapUsd ?? evmQuote.fdvUsd;
+        if (mc != null && mc > 0) {
+          displayLiveMc = mc;
+          liveMcProvenance = 'snapshots';
+        }
+      }
+      if (enrichMode === 'full' && isMcMetric && !isBasePulsePanel && !isBscPulsePanel) {
         /** pump.fun → DEX; used for mcap-based PnL only when metricType=mc. */
         const liveMcForPnl = await getCurrentMcAny(ot.mint, ot.source).catch(() => null);
         const dexMcDisplay =
@@ -4265,9 +4520,12 @@ async function buildPaper2StrategyRowFromLoad(
 
       const basePx = ot.baselinePriceUsd != null && ot.baselinePriceUsd > 0 ? ot.baselinePriceUsd : null;
       let livePx: number | null = null;
-      let livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | null = null;
+      let livePxProvenance: 'snapshots' | 'jupiter' | 'pump.fun' | 'journal' | 'dexscreener' | null = null;
       let livePriceStale = false;
-      if (basePx) {
+      if (evmQuote?.priceUsd != null && evmQuote.priceUsd > 0) {
+        livePx = evmQuote.priceUsd;
+        livePxProvenance = 'dexscreener';
+      } else if (basePx) {
         if (enrichMode === 'full') {
           livePx = await getDexLivePrice(ot.mint, ot.source).catch(() => null);
           if (livePx) livePxProvenance = 'snapshots';
@@ -4325,17 +4583,30 @@ async function buildPaper2StrategyRowFromLoad(
       ) {
         timelineOut[0] = { ...timelineOut[0], mcUsd: entryMcapAtBuyUsd };
       }
-      if (enrichMode === 'full') {
+      if (enrichMode === 'full' && !isBasePulsePanel && !isBscPulsePanel) {
         timelineOut = await enrichTimelineMcapGaps(ot.mint, timelineOut, ot.source);
       }
       timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
       const displaySymbol =
-        enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
-          ? String(ot.symbol).slice(0, 32)
-          : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
+        isBasePulsePanel || isBscPulsePanel
+          ? evmQuote?.symbol ||
+            (ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
+              ? String(ot.symbol).slice(0, 32)
+              : shortTokenForUi(ot.mint))
+          : enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
+            ? String(ot.symbol).slice(0, 32)
+            : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
-      const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
+      const liveFdvUsd = evmQuote?.fdvUsd ?? evmQuote?.marketCapUsd ?? null;
+      const currentMcUsd =
+        displayLiveMc != null && displayLiveMc > 0
+          ? displayLiveMc
+          : liveFdvUsd != null && liveFdvUsd > 0
+            ? liveFdvUsd
+            : isMcMetric
+              ? (baseEntryUsd ?? 0)
+              : 0;
       const livePriceUsd = hasLivePrice ? livePx : null;
 
       let pnlPct: number | null = null;
@@ -4411,6 +4682,8 @@ async function buildPaper2StrategyRowFromLoad(
         }
       } else if (isSuperbotPanel) {
         tryByPrice();
+      } else if (isBasePulsePanel || isBscPulsePanel) {
+        tryByPrice();
       } else if (isMcMetric) {
         if (!tryByMcap()) tryByPrice();
       } else {
@@ -4418,9 +4691,11 @@ async function buildPaper2StrategyRowFromLoad(
       }
 
       const entryLiqUsdVal = ot.entryLiqUsd ?? null;
-      const currentLiqUsdVal = await fetchPairLiquidityUsdFromPg(ot.pairAddress, ot.source).catch(
-        () => null,
-      );
+      let currentLiqUsdVal =
+        evmQuote?.liquidityUsd != null && evmQuote.liquidityUsd > 0 ? evmQuote.liquidityUsd : null;
+      if (currentLiqUsdVal == null) {
+        currentLiqUsdVal = await fetchPairLiquidityUsdFromPg(ot.pairAddress, ot.source).catch(() => null);
+      }
       const liqDropPct =
         entryLiqUsdVal != null &&
         entryLiqUsdVal > 0 &&
@@ -4428,6 +4703,12 @@ async function buildPaper2StrategyRowFromLoad(
         Number.isFinite(currentLiqUsdVal)
           ? +(((entryLiqUsdVal - currentLiqUsdVal) / entryLiqUsdVal) * 100).toFixed(2)
           : null;
+
+      const vol24hUsd =
+        evmQuote?.volume24hUsd ??
+        (typeof (ot.features as { vol24hUsd?: number } | null)?.vol24hUsd === 'number'
+          ? (ot.features as { vol24hUsd: number }).vol24hUsd
+          : null);
 
       return {
         mint: ot.mint,
@@ -4461,10 +4742,14 @@ async function buildPaper2StrategyRowFromLoad(
         entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
         entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
         entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
+        pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
         entryLiqUsd: entryLiqUsdVal,
         currentLiqUsd: currentLiqUsdVal,
         liqDropPct,
         remainingCostBasisUsd,
+        remainingFraction: ot.remainingFraction ?? 1,
+        vol24hUsd,
+        liveFdvUsd,
         liveOscarTradeLane: ot.liveOscarTradeLane ?? null,
         isScalpWave: ot.isScalpWave,
       };
@@ -4617,12 +4902,19 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] base-pulse panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('base-pulse', basePulseJsonl);
   });
-  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow] = await Promise.all([
+  const bscPulseJsonl = bscPulseDashboardJsonlPath();
+  const bscPulseLoad = loadBscPulseForDashboard(bscPulseJsonl);
+  const bscPulseRowP = buildPaper2StrategyRowFromLoad(bscPulseJsonl, 'bsc-pulse', bscPulseLoad).catch((e) => {
+    console.warn('[dashboard] bsc-pulse panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow('bsc-pulse', bscPulseJsonl);
+  });
+  const [liveRow, superbotRow, dcTraderRow, hlTwapRow, basePulseRow, bscPulseRow] = await Promise.all([
     liveRowP,
     superbotRowP,
     dcRowP,
     hlTwapRowP,
     basePulseRowP,
+    bscPulseRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
     liveRow as DashboardPaper2StrategyRow,
@@ -4630,6 +4922,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     dcTraderRow as DashboardPaper2StrategyRow,
     hlTwapRow as DashboardPaper2StrategyRow,
     basePulseRow as DashboardPaper2StrategyRow,
+    bscPulseRow as DashboardPaper2StrategyRow,
   ]);
 
   const totals = merged.reduce(
@@ -4663,6 +4956,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     superbotJsonl: DASHBOARD_SUPERBOT_JSONL,
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
     basePulseJsonl: basePulseDashboardJsonlPath(),
+    bscPulseJsonl: bscPulseDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,
     totals,
     strategies: merged,

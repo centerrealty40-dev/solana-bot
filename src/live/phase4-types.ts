@@ -62,6 +62,8 @@ export interface LiveOscarPhase4Discovery {
 /** Token→SOL sell: chain proceeds when `solProceedsLamports` parsed from confirmed tx (live). */
 export type LiveTokenToSolSellResult = {
   ok: boolean;
+  /** Set when sell aborted before quote/sim (`execution_skip` reason). */
+  preflightSkipReason?: string;
   solProceedsLamports?: bigint;
   /** Совпадает с `LiveTokenToSolPipelineResult.solProceedsSource` после свопа. */
   solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
@@ -80,6 +82,8 @@ export type LiveTokenToSolSellResult = {
 
 export type LiveTokenToSolPipelineResult = {
   ok: boolean;
+  /** Set when sell aborted before quote/sim (`execution_skip` reason). */
+  preflightSkipReason?: string;
   wsolOutLamports?: bigint;
   /** Откуда взяты lamports для учёта partial/full sell. */
   solProceedsSource?: 'confirmed_meta' | 'jupiter_quote';
