@@ -35,6 +35,26 @@ const DIPS_TELEGRAM_CHAT_ID = '-1003504887486';
 
 /** HL TWAP live + paper — paths on VPS (secrets in `.env`). */
 const HL_TWAP_DATA_DIR = path.join(root, 'data/hl-twap');
+/** HL Oscar dip-buy perp bot — paper default (secrets in `.env`). */
+const HL_OSCAR_DATA_DIR = path.join(root, 'data/hl-oscar-perp');
+const HL_OSCAR_PERP_ENV = {
+  NODE_ENV: 'production',
+  HL_OSCAR_ENABLED: '1',
+  HL_OSCAR_LIVE_ENABLED: '0',
+  HL_OSCAR_DRY_RUN: '1',
+  HL_OSCAR_LEVERAGE: '2',
+  HL_OSCAR_POSITION_NOTIONAL_USD: '50',
+  HL_OSCAR_TIME_STOP_HOURS: '12',
+  HL_OSCAR_MAX_OPEN_POSITIONS: '10',
+  HL_OSCAR_MIN_DAY_VOLUME_USD: '100000',
+  HL_OSCAR_POLL_MS: '60000',
+  HL_OSCAR_CANDLE_REFRESH_MS: '300000',
+  HL_OSCAR_DRAWDOWN_STOP_USD: '500',
+  HL_OSCAR_DRAWDOWN_CHECK_MS: '60000',
+  HL_OSCAR_JOURNAL_JSONL: path.join(HL_OSCAR_DATA_DIR, 'live.jsonl'),
+  HL_OSCAR_HEARTBEAT_PATH: path.join(HL_OSCAR_DATA_DIR, 'heartbeat.json'),
+  HL_OSCAR_SLIPPAGE_TOLERANCE: '0.01',
+};
 const HL_TWAP_LIVE_ENV = {
   NODE_ENV: 'production',
   HL_TWAP_LIVE_ENABLED: '1',
@@ -1632,6 +1652,30 @@ const PM2_APPS = [
       time: true,
       env: {
         ...HL_TWAP_LIVE_ENV,
+      },
+    },
+    /**
+     * HyperLiquid Oscar dip-buy perp bot — PAPER by default (HL_OSCAR_LIVE_ENABLED=0).
+     * Same HL wallet/API as hl-twap via `.env` (HL_TWAP_* fallback).
+     */
+    {
+      name: 'hl-oscar-perp-watch',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/hl-oscar-perp-watch.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 100,
+      min_uptime: 10_000,
+      restart_delay: 5000,
+      max_memory_restart: '512M',
+      kill_timeout: 15_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...HL_OSCAR_PERP_ENV,
       },
     },
     /**
