@@ -869,6 +869,87 @@ function evmImpliedMarkPxFromTimeline(timeline: TimelineEvent[], entryPx: number
   return null;
 }
 
+export type EvmPulseOpenPnl = {
+  /** Total position PnL % vs full `totalInvestedUsd` (Oscar-style). */
+  pnlPct: number;
+  /** Net mark-to-market PnL in USD (remaining + realized partial proceeds − invested). */
+  pnlUsd: number;
+  /** Unrealized price change on remaining slice only (legacy display). */
+  pricePnlPct: number;
+  realizedProceedsUsd: number;
+  currentValueUsd: number;
+};
+
+/**
+ * Oscar-style open PnL for BasePulse / BscPulse: denominator is full entry notional,
+ * numerator includes realized partial proceeds plus mark on the remaining fraction.
+ */
+export function computeEvmPulseOpenPnl(args: {
+  totalInvestedUsd: number;
+  entryPx: number;
+  livePx: number;
+  remainingFraction: number;
+  timeline: TimelineEvent[];
+}): EvmPulseOpenPnl | null {
+  const { totalInvestedUsd, entryPx, livePx, timeline } = args;
+  if (!(totalInvestedUsd > 0 && entryPx > 0 && livePx > 0)) return null;
+
+  const rem = Math.max(0, Math.min(1, args.remainingFraction ?? 1));
+  const pricePnlPct = ((livePx / entryPx - 1) * 100);
+
+  let remWalk = 1;
+  let realizedProceedsUsd = 0;
+  for (const ev of timeline) {
+    if (ev.kind !== 'partial_sell') continue;
+    const amountUsd = Number(ev.amountUsd ?? NaN);
+    if (Number.isFinite(amountUsd) && amountUsd > 0) {
+      realizedProceedsUsd += amountUsd;
+      const rf = Number(ev.remainingFraction ?? NaN);
+      if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+      else {
+        const sellFrac = Number(ev.sizePct ?? NaN);
+        if (Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1) remWalk *= 1 - sellFrac;
+      }
+      continue;
+    }
+    const pnlUsd = Number(ev.pnlUsd ?? NaN);
+    const sellFrac = Number(ev.sizePct ?? NaN);
+    if (Number.isFinite(pnlUsd)) {
+      const soldOriginalFrac = Number.isFinite(sellFrac) && sellFrac > 0 ? remWalk * sellFrac : NaN;
+      const costBasis =
+        Number.isFinite(soldOriginalFrac) && soldOriginalFrac > 0
+          ? totalInvestedUsd * soldOriginalFrac
+          : totalInvestedUsd * Math.max(0, remWalk - (Number(ev.remainingFraction ?? remWalk)));
+      if (costBasis > 0) realizedProceedsUsd += costBasis + pnlUsd;
+      const rf = Number(ev.remainingFraction ?? NaN);
+      if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+      else if (Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1) remWalk *= 1 - sellFrac;
+      continue;
+    }
+    if (!(Number.isFinite(sellFrac) && sellFrac > 0 && sellFrac <= 1)) continue;
+    const soldOriginalFrac = remWalk * sellFrac;
+    const costBasis = totalInvestedUsd * soldOriginalFrac;
+    const partialPnlPct = Number(ev.pnlPct ?? 0);
+    realizedProceedsUsd += costBasis * (1 + partialPnlPct / 100);
+    const rf = Number(ev.remainingFraction ?? NaN);
+    if (Number.isFinite(rf) && rf >= 0 && rf <= 1) remWalk = rf;
+    else remWalk *= 1 - sellFrac;
+  }
+
+  const currentValueUsd = totalInvestedUsd * rem * (livePx / entryPx);
+  const pnlUsd = currentValueUsd + realizedProceedsUsd - totalInvestedUsd;
+  const pnlPct = (pnlUsd / totalInvestedUsd) * 100;
+  if (!Number.isFinite(pnlPct) || !Number.isFinite(pnlUsd)) return null;
+
+  return {
+    pnlPct,
+    pnlUsd,
+    pricePnlPct,
+    realizedProceedsUsd,
+    currentValueUsd,
+  };
+}
+
 async function resolveEvmPulseDisplaySymbol(
   mint: string,
   journalSymbol: string | null | undefined,
@@ -4770,6 +4851,19 @@ async function buildPaper2StrategyRowFromLoad(
             livePriceStale = true;
             livePxProvenance = 'journal';
             tryByPrice();
+          }
+        }
+        if (basePx && livePx != null && livePx > 0 && ot.totalInvestedUsd > 0) {
+          const pulsePnl = computeEvmPulseOpenPnl({
+            totalInvestedUsd: ot.totalInvestedUsd,
+            entryPx: basePx,
+            livePx,
+            remainingFraction: ot.remainingFraction ?? 1,
+            timeline: timelineOut,
+          });
+          if (pulsePnl != null) {
+            pnlPct = pulsePnl.pnlPct;
+            pnlUsd = pulsePnl.pnlUsd;
           }
         }
       } else if (isMcMetric) {
