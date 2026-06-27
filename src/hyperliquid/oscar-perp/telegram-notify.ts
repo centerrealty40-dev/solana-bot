@@ -39,9 +39,9 @@ function pnlSign(v: number): string {
   return v >= 0 ? '+' : '';
 }
 
-function closeReasonRu(reason: string): string {
-  if (reason === 'KILL') return 'стоп −50%';
-  if (reason === 'STAGED_KILL') return 'стоп −50% от сигнала';
+function closeReasonRu(reason: string, cfg?: HlOscarPerpConfig): string {
+  if (reason === 'KILL') return `стоп −${cfg?.positionKillDropPct ?? 45}%`;
+  if (reason === 'STAGED_KILL') return `стоп −${cfg?.stagedKillDropPct ?? 45}% от сигнала`;
   if (reason === 'TIME_STOP') return 'тайм-стоп 12ч';
   if (reason === 'BREAKEVEN') return 'безубыток после trail';
   if (reason === 'TP') return 'take-profit';
@@ -158,7 +158,7 @@ export async function notifyOscarPartialExit(params: {
 }): Promise<void> {
   if (params.cfg.mode !== 'live') return;
   const { sym, reason, fillPx, pnlUsd, fraction, remainingFraction, level } = params;
-  const reasonRu = closeReasonRu(reason);
+  const reasonRu = closeReasonRu(reason, params.cfg);
   const levelNote = level != null ? ` · rung ${level}` : '';
   const emoji = reason === 'TRAIL' ? '📉' : '💰';
   await sendOscarTelegram(
@@ -181,7 +181,7 @@ export async function notifyOscarClose(params: {
 }): Promise<void> {
   if (params.cfg.mode !== 'live') return;
   const { sym, reason, exitPx, pnlUsd, pnlPct, holdHours } = params;
-  const reasonRu = closeReasonRu(reason);
+  const reasonRu = closeReasonRu(reason, params.cfg);
   await sendOscarTelegram(
     [
       `🔴 Закрыли ${sym} LONG · ${reasonRu}`,

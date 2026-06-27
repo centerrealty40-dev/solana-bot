@@ -16,6 +16,9 @@ export type HlOscarPerpConfig = {
   leg3GrossUsd: number;
   leg2DropPct: number;
   leg3DropPct: number;
+  /** Full exit when PnL vs avg entry ≤ −N% (Wave B position kill). */
+  positionKillDropPct: number;
+  /** Full exit when price ≤ −N% from signal anchor (staged entry kill). */
   stagedKillDropPct: number;
   dipMinDropPct: number;
   dipMaxDropPct: number;
@@ -91,7 +94,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     leg3GrossUsd: envNum('HL_OSCAR_LEG3_USD', legs.leg3),
     leg2DropPct: envNum('HL_OSCAR_LEG2_DROP_PCT', 5),
     leg3DropPct: envNum('HL_OSCAR_LEG3_DROP_PCT', 20),
-    stagedKillDropPct: envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 50),
+    positionKillDropPct: Math.max(1, envNum('HL_OSCAR_KILL_PCT', 45)),
+    stagedKillDropPct: Math.max(1, envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 45)),
     dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -10),
     dipMaxDropPct: envNum('HL_OSCAR_DIP_MAX_PCT', -50),
     dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 12),

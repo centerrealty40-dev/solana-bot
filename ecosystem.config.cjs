@@ -57,6 +57,10 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_JOURNAL_JSONL: path.join(HL_OSCAR_DATA_DIR, 'live.jsonl'),
   HL_OSCAR_HEARTBEAT_PATH: path.join(HL_OSCAR_DATA_DIR, 'heartbeat.json'),
   HL_OSCAR_SLIPPAGE_TOLERANCE: '0.01',
+  /** Position kill −45% vs avg (2x lev: exits before ~−100% ROE liquidation). */
+  HL_OSCAR_KILL_PCT: '45',
+  /** Staged signal kill −45% from signal anchor. */
+  HL_OSCAR_STAGED_KILL_DROP_PCT: '45',
   HL_OSCAR_TELEGRAM_CHAT_ID: HL_NEWS_TELEGRAM_CHAT_ID,
   HL_OSCAR_TELEGRAM_ENABLED: '1',
 };
