@@ -49,6 +49,7 @@ import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse
 import {
   hlOscarPerpDashboardJsonlPath,
   loadHlOscarPerpForDashboard,
+  resolveHlOscarCoinFromRow,
 } from './hl-oscar-perp-dashboard.js';
 import { loadHyperliquidMarketCache } from '../src/hyperliquid/twap/hyperliquid-meta.js';
 import { loadSuperbotJsonlForDashboard, type SuperbotDashboardLoad } from './superbot-dashboard.js';
@@ -1887,7 +1888,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-oscar-perp',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-28-hl-oscar-perp-tile-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-28-hl-oscar-perp-tile-v2';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -4590,11 +4591,25 @@ async function buildPaper2StrategyRowFromLoad(
                 pairAddr,
               ).catch(() => null)
             : null;
-        const closedDisplaySymbol = isEvmPulseSid(sid)
+        const isHlOscarClosed = sid === 'hl-oscar-perp';
+        const closedDisplaySymbol = isHlOscarClosed
+          ? resolveHlOscarCoinFromRow({
+              pairAddress: pairAddr,
+              symbol: c.symbol,
+              features: (c as { features?: { coin?: string; hyperliquidUrl?: string } }).features,
+            }).coin
+          : isEvmPulseSid(sid)
           ? await resolveEvmPulseDisplaySymbol(String(c.mint), c.symbol, closedEvmQuote)
           : enrichMode === 'lite' && c.symbol && String(c.symbol).trim() && c.symbol !== '?'
             ? String(c.symbol).slice(0, 32)
             : await resolveTokenSymbolForUi(String(c.mint), c.symbol);
+        const closedHlOscar = isHlOscarClosed
+          ? resolveHlOscarCoinFromRow({
+              pairAddress: pairAddr,
+              symbol: closedDisplaySymbol,
+              features: (c as { features?: { coin?: string; hyperliquidUrl?: string } }).features,
+            })
+          : null;
         const entryPriceVerifySlipPct =
           typeof c.entryPriceVerifySlipPct === 'number' ? c.entryPriceVerifySlipPct : null;
         const entryPriceVerifyImpactPct =
@@ -4642,6 +4657,9 @@ async function buildPaper2StrategyRowFromLoad(
             typeof (c as { pairAddress?: unknown }).pairAddress === 'string'
               ? String((c as { pairAddress: string }).pairAddress).trim() || null
               : null,
+          ...(closedHlOscar
+            ? { coin: closedHlOscar.coin, hyperliquidUrl: closedHlOscar.hyperliquidUrl }
+            : {}),
         };
       }),
     )
@@ -4787,12 +4805,24 @@ async function buildPaper2StrategyRowFromLoad(
       }
       timelineOut = finalizeTimelineForApi(timelineOut, sid);
 
-      const displaySymbol =
-        isBasePulsePanel || isBscPulsePanel
+      const displaySymbol = isHlOscarPanel
+        ? resolveHlOscarCoinFromRow({
+            pairAddress: ot.pairAddress,
+            symbol: ot.symbol,
+            features: ot.features as { coin?: string; hyperliquidUrl?: string } | null,
+          }).coin
+        : isBasePulsePanel || isBscPulsePanel
           ? await resolveEvmPulseDisplaySymbol(ot.mint, ot.symbol, evmQuote)
           : enrichMode === 'lite' && ot.symbol && String(ot.symbol).trim() && ot.symbol !== '?'
             ? String(ot.symbol).slice(0, 32)
             : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
+      const openHlOscar = isHlOscarPanel
+        ? resolveHlOscarCoinFromRow({
+            pairAddress: ot.pairAddress,
+            symbol: displaySymbol,
+            features: ot.features as { coin?: string; hyperliquidUrl?: string } | null,
+          })
+        : null;
 
       const liveFdvUsd = evmQuote?.fdvUsd ?? evmQuote?.marketCapUsd ?? null;
 
@@ -4905,7 +4935,7 @@ async function buildPaper2StrategyRowFromLoad(
         const mid = hlMids?.get(String(coin).toUpperCase());
         if (mid != null && mid > 0) {
           livePx = mid;
-          livePxProvenance = 'snapshots';
+          livePxProvenance = 'hyperliquid';
         }
         if (basePx && livePx != null && livePx > 0 && ot.totalInvestedUsd > 0) {
           const rem = ot.remainingFraction ?? 1;
@@ -5011,6 +5041,9 @@ async function buildPaper2StrategyRowFromLoad(
         liveFdvUsd,
         liveOscarTradeLane: ot.liveOscarTradeLane ?? null,
         isScalpWave: ot.isScalpWave,
+        ...(openHlOscar
+          ? { coin: openHlOscar.coin, hyperliquidUrl: openHlOscar.hyperliquidUrl }
+          : {}),
       };
     }),
   );

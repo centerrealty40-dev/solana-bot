@@ -119,7 +119,7 @@ async function main(): Promise<void> {
 
       writeHeartbeat(cfg.heartbeatPath, {
         openCount: state.opens.size,
-        mode: client.mode,
+        mode: cfg.mode,
         universeSize: universe.length,
       });
       console.log(

@@ -6,6 +6,7 @@ import {
   hlOscarExitReasonForMetrics,
   hlOscarHyperliquidTradeUrl,
   loadHlOscarPerpForDashboard,
+  resolveHlOscarCoinFromRow,
 } from '../scripts-tmp/hl-oscar-perp-dashboard.js';
 
 let tmpDir: string | null = null;
@@ -111,6 +112,53 @@ describe('loadHlOscarPerpForDashboard', () => {
     expect(tl.some((e) => e.kind === 'close')).toBe(true);
     expect(load.hlOscar?.mode).toBe('live');
     expect(load.hlOscar?.liveDryRun).toBe(false);
+  });
+
+  it('prefers heartbeat.json mode over stale journal defaults', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-oscar-hb-'));
+    const fp = path.join(tmpDir, 'live.jsonl');
+    const hbPath = path.join(tmpDir, 'heartbeat.json');
+    fs.writeFileSync(
+      fp,
+      `${JSON.stringify({
+        kind: 'open',
+        ts: Date.now() - 60_000,
+        id: 'pos-eth-1',
+        coin: 'ETH',
+        displaySymbol: 'ETH',
+        fillPx: 2500,
+        grossUsd: 15,
+        marginUsd: 7.5,
+        dipPct: -12,
+        impulsePct: 15,
+        mode: 'live',
+      })}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      hbPath,
+      `${JSON.stringify({ ts: Date.now(), mode: 'live', openCount: 1, universeSize: 88 })}\n`,
+      'utf8',
+    );
+    process.env.DASHBOARD_HL_OSCAR_PERP_JSONL = fp;
+    process.env.DASHBOARD_HL_OSCAR_HEARTBEAT = hbPath;
+
+    const load = loadHlOscarPerpForDashboard(fp);
+    expect(load.hlOscar?.mode).toBe('live');
+    expect(load.hlOscar?.liveDryRun).toBe(false);
+    expect(load.hlOscar?.openCount).toBe(1);
+    expect(load.hlOscar?.universeSize).toBe(88);
+    expect(load.open[0]?.symbol).toBe('ETH');
+    delete process.env.DASHBOARD_HL_OSCAR_PERP_JSONL;
+    delete process.env.DASHBOARD_HL_OSCAR_HEARTBEAT;
+  });
+});
+
+describe('resolveHlOscarCoinFromRow', () => {
+  it('uses pairAddress coin and builds HL trade URL', () => {
+    const row = resolveHlOscarCoinFromRow({ pairAddress: 'sol', symbol: 'pos-id' });
+    expect(row.coin).toBe('SOL');
+    expect(row.hyperliquidUrl).toBe('https://app.hyperliquid.xyz/trade/SOL');
   });
 });
 
