@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { HlOscarPerpConfig } from './config.js';
+import { notifyOscarDrawdownHalt } from './telegram-notify.js';
 
 export type OscarDrawdownState = {
   peakAccountValueUsd: number;
@@ -99,5 +100,11 @@ export async function runOscarDrawdownCheck(
   console.error(
     `[hl-oscar-perp:drawdown] STOP: peak $${newPeak.toFixed(2)} equity $${equityUsd.toFixed(2)} dd $${drawdownUsd.toFixed(2)}`,
   );
+  await notifyOscarDrawdownHalt({
+    peakUsd: newPeak,
+    equityUsd,
+    drawdownUsd,
+    thresholdUsd: cfg.drawdownStopUsd,
+  });
   return true;
 }
