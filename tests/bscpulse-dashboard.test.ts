@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { bscPulseGmgnTokenUrl, loadBscPulseForDashboard } from '../scripts-tmp/bscpulse-dashboard.js';
+import { bscPulseDexScreenerUrl, loadBscPulseForDashboard } from '../scripts-tmp/bscpulse-dashboard.js';
 
 let tmpDir: string | null = null;
 afterEach(() => {
@@ -58,10 +58,14 @@ function writeJournal(fp: string, lines: unknown[]): void {
 }
 
 describe('loadBscPulseForDashboard', () => {
-  it('builds GMGN BSC token URL', () => {
-    const addr = '0x92aa03137385f18539301349dcfc9ebc923ffb10';
-    expect(bscPulseGmgnTokenUrl(addr)).toBe(
-      `https://gmgn.ai/bsc/token/${encodeURIComponent(addr)}`,
+  it('builds DexScreener BSC URL (pair preferred, token fallback)', () => {
+    const token = '0x92aa03137385f18539301349dcfc9ebc923ffb10';
+    const pair = '0xbc42145d5a574ede9b8860fca2a49eb7b239efa5';
+    expect(bscPulseDexScreenerUrl(token, pair)).toBe(
+      `https://dexscreener.com/bsc/${encodeURIComponent(pair)}`,
+    );
+    expect(bscPulseDexScreenerUrl(token)).toBe(
+      `https://dexscreener.com/bsc/${encodeURIComponent(token)}`,
     );
   });
 
@@ -118,6 +122,7 @@ describe('loadBscPulseForDashboard', () => {
     expect(c.pnlUsd).toBe(-10);
     expect(c.durationMin).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(c.__timeline)).toBe(true);
+    expect(c.pairAddress).toBe('0x44dfec2cfa2bcf21b9d5f4d0bb383f69c2a2e1f8');
   });
 
   it('counts filter_reject as eval-skip-open fail reasons', () => {

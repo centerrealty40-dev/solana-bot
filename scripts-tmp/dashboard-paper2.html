@@ -488,7 +488,7 @@
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + o.entryTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
-                        <a :href="tokenLink(o.mint)" target="_blank" @click.stop
+                        <a :href="tokenLink(o.mint, o.pairAddress)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline" x-text="'$' + (o.symbol || '?') + ' ' + short(o.mint)"></a>
                       </template>
                       <span x-show="selected === 'live-oscar' && o.isScalpWave"
@@ -657,7 +657,7 @@
                     <div>
                       <span class="text-slate-400 text-sm mr-1" x-text="isExpanded('c:' + c.mint + ':' + c.exitTs) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap()">
-                        <a :href="tokenLink(c.mint)" target="_blank" @click.stop
+                        <a :href="tokenLink(c.mint, c.pairAddress)" target="_blank" @click.stop
                            class="text-sky-300 text-base font-semibold hover:underline" x-text="'$' + (c.symbol || '?') + ' ' + short(c.mint)"></a>
                       </template>
                       <template x-if="isHlTwap()">
@@ -1146,14 +1146,14 @@
         isBasePulse() { return this.selected === 'base-pulse'; },
         isBscPulse() { return this.selected === 'bsc-pulse'; },
         isEvmPulse() { return this.isBasePulse() || this.isBscPulse(); },
-        tokenLink(m) {
+        tokenLink(m, pairAddress) {
           if (!m) return '#';
           const addr = String(m).trim();
           if (this.isBasePulse() && addr.startsWith('0x')) {
             return this.gmgnBase(addr);
           }
           if (this.isBscPulse() && addr.startsWith('0x')) {
-            return this.gmgnBsc(addr);
+            return this.dexScreenerBsc(addr, pairAddress);
           }
           return this.gmgn(addr);
         },
@@ -1515,7 +1515,12 @@
         short(m) { return m ? (m.slice(0, 6) + '…' + m.slice(-4)) : '-'; },
         gmgn(m) { return `https://gmgn.ai/sol/token/${m}`; },
         gmgnBase(m) { return `https://gmgn.ai/base/token/${encodeURIComponent(String(m).trim())}`; },
-        gmgnBsc(m) { return `https://gmgn.ai/bsc/token/${encodeURIComponent(String(m).trim())}`; },
+        dexScreenerBsc(tokenMint, pairAddress) {
+          const pair = pairAddress != null ? String(pairAddress).trim() : '';
+          const token = String(tokenMint || '').trim();
+          const addr = pair || token;
+          return addr ? `https://dexscreener.com/bsc/${encodeURIComponent(addr)}` : '#';
+        },
         /** Emerald / rose by sign; slate when n/a (matches fmtPct “—”). */
         signedPctColor(v) {
           if (v == null || v === '' || Number.isNaN(Number(v))) return 'text-slate-300';

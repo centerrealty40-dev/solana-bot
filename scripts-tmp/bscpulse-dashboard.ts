@@ -10,9 +10,12 @@ import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
 const FULL_SCAN_MAX = Number(process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024);
 
-/** GMGN token page for BSC (same slug pattern as Solana `/sol/token/`). */
-export function bscPulseGmgnTokenUrl(tokenAddress: string): string {
-  return `https://gmgn.ai/bsc/token/${encodeURIComponent(tokenAddress.trim())}`;
+/** DexScreener pair/token page for BSC — prefer pair address from journal live_open. */
+export function bscPulseDexScreenerUrl(tokenAddress: string, pairAddress?: string | null): string {
+  const pair = typeof pairAddress === 'string' ? pairAddress.trim() : '';
+  const token = tokenAddress.trim();
+  const addr = pair || token;
+  return `https://dexscreener.com/bsc/${encodeURIComponent(addr)}`;
 }
 
 export function bscPulseDashboardJsonlPath(): string {
@@ -271,6 +274,7 @@ export function loadBscPulseForDashboard(jsonlPath = bscPulseDashboardJsonlPath(
         closed.unshift({
           mint: row.mint,
           symbol: row.symbol,
+          pairAddress: row.pairAddress ?? null,
           entryTs: row.entryTs,
           exitTs: ts,
           entryPx,
@@ -284,9 +288,11 @@ export function loadBscPulseForDashboard(jsonlPath = bscPulseDashboardJsonlPath(
         });
         openByToken.delete(tokenId);
       } else if (tokenId) {
+        const pairFromEv = typeof ev.pair === 'string' ? ev.pair.trim() : null;
         closed.unshift({
           mint: token,
           symbol: resolveSymbol(token, ev, symbolHints),
+          pairAddress: pairFromEv,
           exitTs: ts,
           pnlPct,
           pnlUsd,

@@ -1977,14 +1977,14 @@ export type Paper2ApiEnrichedOpen = {
   entryPriceVerifySlipPct: number | null;
   entryPriceVerifyImpactPct: number | null;
   entryPriceVerifySource: 'jupiter' | 'dex' | 'skipped' | 'blocked' | null;
+  /** Pool/pair address (EVM pulse panels — DexScreener ticker links). */
+  pairAddress?: string | null;
   entryLiqUsd: number | null;
   currentLiqUsd: number | null;
   liqDropPct: number | null;
   remainingCostBasisUsd: number;
   liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
   isScalpWave: boolean;
-  /** BasePulse / BscPulse — DexScreener 24h volume when available. */
-  vol24hUsd?: number | null;
 };
 
 const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
@@ -4319,6 +4319,10 @@ async function buildPaper2StrategyRowFromLoad(
           exitLiqDropPct,
           exitContext,
           timeline: tlOut,
+          pairAddress:
+            typeof (c as { pairAddress?: unknown }).pairAddress === 'string'
+              ? String((c as { pairAddress: string }).pairAddress).trim() || null
+              : null,
         };
       }),
     )
@@ -4347,9 +4351,9 @@ async function buildPaper2StrategyRowFromLoad(
       let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
       let evmQuote: DexscreenerEvmQuote | null = null;
-      if (isBasePulsePanel && ot.mint.startsWith('0x')) {
+      if (isBasePulsePanel && String(ot.mint ?? '').startsWith('0x')) {
         evmQuote = await fetchDexscreenerEvmToken(ot.mint, 'base', ot.pairAddress).catch(() => null);
-      } else if (isBscPulsePanel && ot.mint.startsWith('0x')) {
+      } else if (isBscPulsePanel && String(ot.mint ?? '').startsWith('0x')) {
         evmQuote = await fetchDexscreenerEvmToken(ot.mint, 'bsc', ot.pairAddress).catch(() => null);
       }
       if (evmQuote) {
@@ -4464,7 +4468,15 @@ async function buildPaper2StrategyRowFromLoad(
             ? String(ot.symbol).slice(0, 32)
             : await resolveTokenSymbolForUi(ot.mint, ot.symbol);
 
-      const currentMcUsd = hasLiveMc ? (displayLiveMc as number) : isMcMetric ? (baseEntryUsd ?? 0) : 0;
+      const liveFdvUsd = evmQuote?.fdvUsd ?? evmQuote?.marketCapUsd ?? null;
+      const currentMcUsd =
+        displayLiveMc != null && displayLiveMc > 0
+          ? displayLiveMc
+          : liveFdvUsd != null && liveFdvUsd > 0
+            ? liveFdvUsd
+            : isMcMetric
+              ? (baseEntryUsd ?? 0)
+              : 0;
       const livePriceUsd = hasLivePrice ? livePx : null;
 
       let pnlPct: number | null = null;
@@ -4567,7 +4579,6 @@ async function buildPaper2StrategyRowFromLoad(
         (typeof (ot.features as { vol24hUsd?: number } | null)?.vol24hUsd === 'number'
           ? (ot.features as { vol24hUsd: number }).vol24hUsd
           : null);
-      const liveFdvUsd = evmQuote?.fdvUsd ?? evmQuote?.marketCapUsd ?? null;
 
       return {
         mint: ot.mint,
@@ -4601,6 +4612,7 @@ async function buildPaper2StrategyRowFromLoad(
         entryPriceVerifySlipPct: ot.entryPriceVerifySlipPct ?? null,
         entryPriceVerifyImpactPct: ot.entryPriceVerifyImpactPct ?? null,
         entryPriceVerifySource: ot.entryPriceVerifySource ?? null,
+        pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
         entryLiqUsd: entryLiqUsdVal,
         currentLiqUsd: currentLiqUsdVal,
         liqDropPct,
