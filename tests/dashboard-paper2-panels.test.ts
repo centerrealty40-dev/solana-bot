@@ -53,8 +53,8 @@ describe('mergeDashboardStrategyPanels', () => {
   it('orders all seven dashboard tiles regardless of input order', () => {
     const merged = mergeDashboardStrategyPanels([
       row('bsc-pulse', 5),
-      row('hl-oscar-perp', 7),
-      row('hl-twap-paper', 99),
+      row('hl-oscar-majors', 7),
+      row('hl-oscar-perp', 99),
       row('live-oscar', 50),
       row('superbot', 22),
       row('dc-trader', 11),

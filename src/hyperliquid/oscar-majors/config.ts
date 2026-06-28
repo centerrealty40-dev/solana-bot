@@ -114,6 +114,21 @@ export function hlMajorsSizingFromEnv(): {
   return { leverage, grossUsd, marginUsd: grossUsd / leverage };
 }
 
+/** Gross/margin/leverage for dashboard tiles (reads same env as bot). */
+export function hlOscarMajorsSizingFromEnv(): {
+  leverage: number;
+  grossUsd: number;
+  marginUsd: number;
+} {
+  const leverage = Math.max(1, Math.round(envNum('HL_MAJORS_LEVERAGE', 2)));
+  const positionNotionalUsd = resolvePositionGrossUsd(leverage);
+  return {
+    leverage,
+    grossUsd: positionNotionalUsd,
+    marginUsd: positionNotionalUsd / leverage,
+  };
+}
+
 export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
   const leverage = Math.max(1, Math.round(envNum('HL_MAJORS_LEVERAGE', 2)));
   const positionNotionalUsd = resolvePositionGrossUsd(leverage);

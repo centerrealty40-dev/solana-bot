@@ -839,10 +839,10 @@
       'live-oscar',
       'superbot',
       'dc-trader',
-      'hl-twap-paper',
+      'hl-oscar-perp',
       'base-pulse',
       'bsc-pulse',
-      'hl-oscar-perp',
+      'hl-oscar-majors',
     ];
     function emptyOscarPanel(strategyId) {
       return {
@@ -980,12 +980,20 @@
           '**Плитка 6** · VPS **72.62.152.201** · PM2 **`bscpulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар BSC (DexScreener + GeckoTerminal).\n• Только large-cap: `MIN_LIQ=$500k`, `MIN_FDV=$5M`; верхний FDV-cap отключён для Beat/UB.\n• Dip **3–22%** (5m/1h lookback); vol1h **≥$200k**, vol5m **≥$30k**.\n• Выход: kill/trail/timeout как BasePulse.\n\n**Live:** `BSCPULSE_POSITION_USD=10`, max concurrent по env.\n\n**Журнал:** `/opt/bsc-pulse/data/bscpulse-journal.jsonl` → sync `data/bscpulse/` (`DASHBOARD_BSCPULSE_JSONL`).',
       },
       'hl-oscar-perp': {
-        label: 'HL Oscar Perp',
+        label: 'HL Oscar Alts',
         tag: 'live',
         oneLiner:
-          'Hyperliquid perp dip-buy (Live Oscar wave B): staged **$30+$30+$40** gross (**$50 margin @ 2x** total $100), leg2/3 @ −5%/−10% от сигнала, TP +5%/+7.5%/+10%, trail from +5%, kill **−45%**, time stop **12h**.',
+          'Hyperliquid perp dip-buy на **все alt** (~117 монет, BTC/ETH в denylist): staged **$30+$30+$40**, dip **−7…−50%**, impulse **≥10%**, wave B exit.',
         details:
-          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−7…−50%** от high (2h/6h/12h), impulse **≥10%**.\n• Staged **30/30/40** ($30+$30+$40 @ $100 gross): leg1 @ −7% dip; leg2 @ **−5%** / leg3 @ **−10%** от цены сигнала.\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%** — по **50% остатка** на ступень (100→50→25→12.5%).\n• Trail с **+5%**: −**2.5%** от хая → **20%** остатка; breakeven на ≤0% после arm.\n• Kill **−45%**, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
+          '**Плитка 4** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl` · heartbeat `data/hl-oscar-perp/heartbeat.json`.\n\n**Universe**\n• Полный HL alt scan (meta minus denylist); **BTC/ETH** → отдельный majors-бот.\n• `universeSize` в heartbeat ≈ число монет в скане.\n\n**Вход**\n• Dip **−7…−50%** от high (2h/6h/12h), impulse **≥10%**.\n• Staged **30/30/40** ($100 gross @ 2x).\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%**, trail from **+5%**, kill **−45%**, time stop **12h**.\n\n**API:** `/api/hl-all` · UI: HL mid price only.',
+      },
+      'hl-oscar-majors': {
+        label: 'HL Oscar Majors',
+        tag: 'live',
+        oneLiner:
+          'BTC+ETH only · Mode A knife **−6%** (impulse off): per-coin TP ladder, trail, kill **−15%**, time stop **12h**. PM2 **`hl-oscar-majors-watch`**.',
+        details:
+          '**Плитка 7** · PM2 **`hl-oscar-majors-watch`** · журнал `data/hl-oscar-majors/live.jsonl` · heartbeat `data/hl-oscar-majors/heartbeat.json`.\n\n**Universe**\n• Whitelist **BTC, ETH** only (`universeSize` = 2).\n\n**Вход (Mode A)**\n• Knife dip **−6%** от high (2h/6h/12h), impulse filter **off**.\n• Single shot **$100** gross @ 2x (no staged legs by default).\n\n**Выход**\n• BTC TP **+2% / +3% / +4%** · ETH **+1.5% / +2% / +2.5%** (50% остатка на ступень).\n• Per-coin trail; kill **−15%**; time stop **12h**.\n\n**API:** `/api/hl-majors` · UI: HL mid price only.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',
@@ -1216,7 +1224,8 @@
           }).format(d) + ' MSK';
         },
         isHlTwap() { return this.selected === 'hl-twap-paper'; },
-        isHlOscarPerp() { return this.selected === 'hl-oscar-perp'; },
+        isHlOscarHl() { return this.selected === 'hl-oscar-perp' || this.selected === 'hl-oscar-majors'; },
+        isHlOscarPerp() { return this.isHlOscarHl(); },
         hlOscarCoin(row) {
           const c = row?.coin || row?.pairAddress || row?.features?.coin || row?.symbol || '';
           const s = String(c).trim().toUpperCase();
