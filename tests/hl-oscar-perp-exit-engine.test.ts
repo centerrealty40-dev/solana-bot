@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HlOscarPerpConfig } from '../src/hyperliquid/oscar-perp/config.js';
-import { computeOscarExitActions, positionKillFrac } from '../src/hyperliquid/oscar-perp/exit-engine.js';
+import { computeOscarExitActions, OSCAR_EXIT, positionKillFrac } from '../src/hyperliquid/oscar-perp/exit-engine.js';
 import type { OscarOpenPosition } from '../src/hyperliquid/oscar-perp/position-types.js';
 
 function testCfg(overrides: Partial<HlOscarPerpConfig> = {}): HlOscarPerpConfig {
@@ -57,5 +57,89 @@ describe('hl-oscar-perp exit-engine kill', () => {
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ kind: 'full', reason: 'STAGED_KILL' });
     expect((actions[0] as { triggerPx: number }).triggerPx).toBeCloseTo(55, 5);
+  });
+});
+
+describe('hl-oscar-perp exit-engine TP ladder', () => {
+  it('OSCAR_EXIT tpRungs are +5%, +7.5%, +10% with 50% sell each', () => {
+    expect(OSCAR_EXIT.tpRungs).toEqual([0.05, 0.075, 0.1]);
+    expect(OSCAR_EXIT.tpSellFrac).toBe(0.5);
+    expect(OSCAR_EXIT.trailArmFrac).toBe(0.05);
+  });
+
+  it('fires TP level 1 at +5%', () => {
+    const cfg = testCfg();
+    const pos = testPos();
+    const actions = computeOscarExitActions(pos, cfg, 105, 100, 105, Date.now());
+    const tp = actions.filter((a) => a.kind === 'partial' && a.reason === 'TP');
+    expect(tp).toHaveLength(1);
+    expect(tp[0]).toMatchObject({ fraction: 0.5, level: 1 });
+    expect(pos.tpLevelsTaken.has(0)).toBe(true);
+    expect(pos.maxTpTaken).toBeCloseTo(0.05);
+  });
+
+  it('fires TP levels 1–3 at +10% high', () => {
+    const cfg = testCfg();
+    const pos = testPos();
+    const actions = computeOscarExitActions(pos, cfg, 110, 100, 110, Date.now());
+    const tp = actions.filter((a) => a.kind === 'partial' && a.reason === 'TP');
+    expect(tp).toHaveLength(3);
+    expect(tp.map((a) => (a as { level: number }).level)).toEqual([1, 2, 3]);
+    expect(tp.every((a) => a.fraction === 0.5)).toBe(true);
+  });
+
+  it('does not fire TP below +5%', () => {
+    const cfg = testCfg();
+    const pos = testPos();
+    const actions = computeOscarExitActions(pos, cfg, 104, 100, 104, Date.now());
+    expect(actions.some((a) => a.reason === 'TP')).toBe(false);
+  });
+});
+
+describe('hl-oscar-perp exit-engine trail', () => {
+  it('arms trail from +5% peak (not +7.5%)', () => {
+    const cfg = testCfg();
+    const pos = testPos();
+    computeOscarExitActions(pos, cfg, 105, 100, 105, Date.now());
+    expect(pos.preArmReached).toBe(true);
+  });
+
+  it('fires TRAIL after −2.5% drop from peak when armed', () => {
+    const cfg = testCfg();
+    const pos = testPos({ peakPnlFrac: 0.06, preArmReached: true, trailAnchor: 0.06 });
+    const actions = computeOscarExitActions(pos, cfg, 103.5, 103.4, 103.5, Date.now());
+    const trail = actions.filter((a) => a.kind === 'partial' && a.reason === 'TRAIL');
+    expect(trail.length).toBeGreaterThanOrEqual(1);
+    expect(trail[0]!.fraction).toBe(0.2);
+  });
+});
+
+describe('hl-oscar-perp exit-engine breakeven', () => {
+  it('fires BREAKEVEN at ≤0% after first TP (+5%)', () => {
+    const cfg = testCfg();
+    const pos = testPos({
+      maxTpTaken: 0.05,
+      preArmReached: true,
+      tpLevelsTaken: new Set([0]),
+      peakPnlFrac: 0.05,
+    });
+    const actions = computeOscarExitActions(pos, cfg, 100, 99, 100, Date.now());
+    expect(actions.some((a) => a.kind === 'full' && a.reason === 'BREAKEVEN')).toBe(true);
+  });
+
+  it('does not fire BREAKEVEN before trail arm', () => {
+    const cfg = testCfg();
+    const pos = testPos();
+    const actions = computeOscarExitActions(pos, cfg, 100, 99, 100, Date.now());
+    expect(actions.some((a) => a.reason === 'BREAKEVEN')).toBe(false);
+  });
+});
+
+describe('hl-oscar-perp exit-engine time stop', () => {
+  it('fires TIME_STOP after 12h', () => {
+    const cfg = testCfg({ timeStopHours: 12 });
+    const pos = testPos({ entryTs: Date.now() - 13 * 3_600_000 });
+    const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions.some((a) => a.kind === 'full' && a.reason === 'TIME_STOP')).toBe(true);
   });
 });

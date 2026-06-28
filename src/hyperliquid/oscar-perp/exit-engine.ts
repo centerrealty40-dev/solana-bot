@@ -1,12 +1,24 @@
 import type { HlOscarPerpConfig } from './config.js';
 import type { OscarOpenPosition } from './position-types.js';
 
-/** Wave B half8_runner exit params (aligned with backtest EXIT_OSCAR_WAVE_B). */
+/**
+ * HL Oscar perp exit ladder (wave B runner).
+ *
+ * TP: sell `tpSellFrac` (50%) of **remaining** at each rung in `tpRungs` (+5%, +7.5%, +10%).
+ * Trail arms at first +5% touch; −2.5% from peak → sell 20% of remaining per step.
+ * Breakeven full exit at ≤0% avg after trail armed (first TP or +5% peak).
+ * Kill −45% and time stop 12h are config-driven (`positionKillDropPct`, `timeStopHours`).
+ */
 export const OSCAR_EXIT = {
-  tpStepFrac: 0.08,
+  /** Take-profit thresholds vs avg entry (PnL fraction). */
+  tpRungs: [0.05, 0.075, 0.1] as const,
+  /** Fraction of **remaining** position sold at each TP rung. */
   tpSellFrac: 0.5,
-  trailArmFrac: 0.075,
+  /** Trail + breakeven arm when peak/TP reaches this PnL fraction (+5%). */
+  trailArmFrac: 0.05,
+  /** Trail fires when price drops this far below peak PnL anchor (−2.5%). */
   trailStepDropFrac: 0.025,
+  /** Fraction of **remaining** sold on each trail step. */
   trailSellFrac: 0.2,
 } as const;
 
@@ -59,8 +71,8 @@ export function computeOscarExitActions(
   pos.peakPnlFrac = Math.max(pos.peakPnlFrac, pnlHigh);
   if (pnlHigh + 1e-9 >= OSCAR_EXIT.trailArmFrac) pos.preArmReached = true;
 
-  for (let rung = 1; rung <= 20; rung++) {
-    const thr = rung * OSCAR_EXIT.tpStepFrac;
+  for (let rung = 0; rung < OSCAR_EXIT.tpRungs.length; rung++) {
+    const thr = OSCAR_EXIT.tpRungs[rung]!;
     if (pos.tpLevelsTaken.has(rung)) continue;
     if (pnlHigh + 1e-9 >= thr) {
       pos.tpLevelsTaken.add(rung);
@@ -69,7 +81,7 @@ export function computeOscarExitActions(
         kind: 'partial',
         fraction: OSCAR_EXIT.tpSellFrac,
         reason: 'TP',
-        level: rung,
+        level: rung + 1,
       });
     }
   }
