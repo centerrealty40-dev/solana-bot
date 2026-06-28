@@ -2,9 +2,12 @@ import type { HyperliquidMarketCache } from '../twap/hyperliquid-meta.js';
 
 /**
  * Hardcoded denylist from HL Oscar backtest bottom-20 (12h + no-timestop merged).
- * Override/extend via HL_OSCAR_DENYLIST / HL_OSCAR_WHITELIST env.
+ * BTC/ETH excluded — separate hl-oscar-majors bot (see docs/products/hl-oscar-majors/).
+ * Override/extend via HL_OSCAR_DENYLIST / HL_OSCAR_DENYLIST_EXTRA / HL_OSCAR_WHITELIST env.
  */
 export const OSCAR_PERP_DENYLIST_DEFAULT = [
+  'BTC',
+  'ETH',
   '2Z',
   'ACE',
   'APT',
