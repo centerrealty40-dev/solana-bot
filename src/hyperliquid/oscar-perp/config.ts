@@ -131,7 +131,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     stagedKillDropPct: Math.max(1, envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 45)),
     dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -10),
     dipMaxDropPct: envNum('HL_OSCAR_DIP_MAX_PCT', -50),
-    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 12),
+    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 10),
     dipLookbackWindowsMin: parseWindows(
       process.env.HL_OSCAR_DIP_WINDOWS_MIN?.trim() || '120,360,720',
     ),
