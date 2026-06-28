@@ -67,6 +67,25 @@
 
 ---
 
+## [1.11.517] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.517`
+
+### live-oscar E+2: open positions inherit avg1 −10% + DIP10_FIRST_TP5
+
+**Проблема:** открытые на момент деплоя позиции могли иметь pending avg1 @ −5%, не иметь `liveWaveDip10ReachedBeforeTp8` при уже пройденном −10% vs signal, и пропускать TP2 @ +5%.
+
+**Изменение:**
+- **Reload / tracker tick:** `reconcileE2OpenOnRestore` + `reconcileE2OpenOnTrackerTick` — retarget pending avg1 на −10%, без double-fill.
+- **Dip10 backfill (one-time):** PG hourly min/max с `entryTs` + fallback по leg/partial marks → `liveWaveDip10ReachedBeforeTp8`; флаг `liveE2Dip10BackfillAttempted`.
+- **Snapshot:** persist dip10 + backfill flags в `serializeOpenTrade` / restore.
+
+**Откат:** redeploy `sa-alpha-1.11.516`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.516] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.516`
