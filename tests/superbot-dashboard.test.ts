@@ -222,13 +222,13 @@ describe('SuperBot preset-c live journal', () => {
     expect(ll.closed.length).toBe(1);
     const tl = ll.closed[0]!.__timeline as Array<{ kind: string; label: string; contextNote?: string }>;
     expect(tl[0]!.label).toContain('Preset C');
-    expect(tl[0]!.label).toContain('Telegram dips');
+    expect(tl[0]!.label).toContain('TG gate');
     expect(tl[0]!.label).toContain('лоу-капа');
-    expect(tl[0]!.contextNote).toContain('Telegram dips');
+    expect(tl[0]!.contextNote).toContain('deferred −10%');
     const closeEv = tl.find((e) => e.kind === 'close');
-    expect(closeEv?.label).toContain('wave B');
+    expect(closeEv?.label).toContain('preset_c_scalp_v1');
     expect(closeEv?.label).toContain('TRAIL');
-    expect(closeEv?.contextNote).toContain('wave B');
+    expect(closeEv?.contextNote).toContain('preset_c_scalp_v1');
   });
 
   it('resolves preset-c open snapshot path from journal path', () => {
