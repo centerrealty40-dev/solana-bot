@@ -37,11 +37,12 @@ const JUPITER_SWAP_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
 /**
  * Shared Jupiter Pro execution envelope — tight slippage + max retries (subscription underutilized).
- * Used by live-oscar-preset-c and copy-trader; live-oscar sets same keys inline (10 bps base).
+ * Used by live-oscar, live-oscar-preset-c, and copy-trader (live-oscar may override slippage inline).
  */
 const JUPITER_PRO_TRADING_ENV = {
   ...JUPITER_DEVELOPER_TIER_ENV,
   JUPITER_QUOTE_429_MAX_RETRIES: '12',
+  JUPITER_SWAP_429_MAX_RETRIES: '12',
   JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
   LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
   LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
@@ -518,7 +519,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
-        ...JUPITER_DEVELOPER_TIER_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
         ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
