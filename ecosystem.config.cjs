@@ -204,8 +204,8 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.513 — prod 7×$300 entry split; avg −5% $400, −20% $600 (+$100/tier); low avg −10% $350; max $3100 / low $850.
  * 1.11.515 — sim E+2: prod avg1 −10% $400 (was −5%); dip−10% before +8% → 50% @ +5% vs avg (half8_runner).
  * 1.11.517 — E+2 parity low/micro avg −10%; DIP10_FIRST_TP5 tier-agnostic on wave_b half8_runner.
- * 1.11.523 — low $2–3M: 3×$250 entry ($750), avg −10% $350 (max $1100); 10s delay + corridor unchanged.
- * 1.11.522 — low $2–3M: 3×$300 entry ($900) — superseded by 1.11.523.
+ * 1.11.524 — low $2–3M: 3×$300 entry ($900), avg −10% $350 (max $1250); 10s delay + corridor unchanged.
+ * 1.11.522 — low $2–3M: 3×$300 entry ($900) — superseded by 1.11.524.
  * 1.11.518 — prod tiered max position by mcap at entry: $3–5M $3100, $5–8M $2800, $8–12M $2100, ≥$12M $1500; low $2–3M $850 unchanged.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
@@ -662,16 +662,16 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '210',
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.523 — low $2M–$3M: 3×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $1100); TP2 = global DIP10_FIRST_TP5. */
+        /** 1.11.523 — low $2M–$3M: 3×$300 @ 10s (+3/−5% corridor), avg −10% $350 (max $1250); TP2 = global DIP10_FIRST_TP5. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '750',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '900',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '350',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',

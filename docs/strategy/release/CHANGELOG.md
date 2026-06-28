@@ -73,6 +73,21 @@
 
 ---
 
+
+## [1.11.524] - 2026-06-29
+
+**Тег:** `sa-alpha-1.11.524`
+
+### live-oscar — low tier $2M–$3M: restore owner 3×$300 ($900)
+
+**Причина:** откат ошибочного 1.11.523 (3×$250); канон — 1.11.522 / owner mandate.
+
+| Tier | mcap | Entry | Avg | Max position |
+|------|------|-------|-----|--------------|
+| **low** | $2M–$3M | 3×$300 ($900) @ 10s (+3/−5%) | −10% **$350** | **$1250** |
+
+**Откат:** redeploy; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
 ## [1.11.523] — 2026-06-29
 
 **Тег:** `sa-alpha-1.11.523`
