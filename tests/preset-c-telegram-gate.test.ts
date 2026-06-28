@@ -239,7 +239,7 @@ describe('preset C telegram gate', () => {
         tokenAgeMin: 52000,
         holderCount: 5000,
         liqUsd: 200000,
-        refMcapUsd: 2_000_000,
+        refMcapUsd: 5_000_000,
         priceUsd: 0.002,
         pick: {
           anchorTs: new Date(),
@@ -250,9 +250,9 @@ describe('preset C telegram gate', () => {
           lastPx: 0.002,
           risePct: 10,
           retraceFromPeakPct: 12,
-          anchorMcapUsd: 2_000_000,
-          peakMcapUsd: 2_200_000,
-          lastMcapUsd: 2_000_000,
+          anchorMcapUsd: 5_000_000,
+          peakMcapUsd: 5_500_000,
+          lastMcapUsd: 5_000_000,
         },
       },
     );
