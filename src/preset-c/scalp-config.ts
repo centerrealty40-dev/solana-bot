@@ -1,5 +1,5 @@
 /**
- * Preset C scalp mode — deferred entry (−10% / −20% DCA) + dedicated exit policy.
+ * Preset C scalp mode — deferred entry (−10%) + dedicated exit policy (optional DCA legs via env).
  * Enabled via `PRESET_C_SCALP_MODE=1` on `live-oscar-preset-c` only.
  */
 import type { PaperTraderConfig } from '../papertrader/config.js';
@@ -45,9 +45,9 @@ export function loadPresetCScalpConfig(): PresetCScalpConfig {
     entryDropPct: Math.max(0.1, envNum('PRESET_C_SCALP_ENTRY_DROP_PCT', 10)),
     dcaDropPct: Math.max(0.1, envNum('PRESET_C_SCALP_DCA_DROP_PCT', 10)),
     dca2DropPct: Math.max(0.1, envNum('PRESET_C_SCALP_DCA2_DROP_PCT', 20)),
-    entryUsd: Math.max(1, envNum('PRESET_C_SCALP_ENTRY_USD', 200)),
+    entryUsd: Math.max(1, envNum('PRESET_C_SCALP_ENTRY_USD', 50)),
     dcaUsd: Math.max(0, envNum('PRESET_C_SCALP_DCA_USD', 0)),
-    dca2Usd: Math.max(0, envNum('PRESET_C_SCALP_DCA2_USD', 150)),
+    dca2Usd: Math.max(0, envNum('PRESET_C_SCALP_DCA2_USD', 0)),
     tp2Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP2_PCT', 5)),
     tpMidPct: Math.max(0.1, envNum('PRESET_C_SCALP_TP_MID_PCT', 10)),
     tp3Pct: Math.max(0.1, envNum('PRESET_C_SCALP_TP3_PCT', 15)),

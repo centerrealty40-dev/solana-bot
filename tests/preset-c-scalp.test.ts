@@ -78,9 +78,9 @@ describe('preset-c-scalp-config', () => {
     expect(scalp.entryDropPct).toBe(10);
     expect(scalp.dcaDropPct).toBe(10);
     expect(scalp.dca2DropPct).toBe(20);
-    expect(scalp.entryUsd).toBe(200);
+    expect(scalp.entryUsd).toBe(50);
     expect(scalp.dcaUsd).toBe(0);
-    expect(scalp.dca2Usd).toBe(150);
+    expect(scalp.dca2Usd).toBe(0);
     expect(scalp.tp2Pct).toBe(5);
     expect(scalp.tpMidPct).toBe(10);
     expect(scalp.tp3Pct).toBe(15);
@@ -251,6 +251,7 @@ describe('preset-c-scalp-exit-policy', () => {
 
   it('fires DCA2 at −20% without DCA1 when DCA1 disabled', () => {
     process.env.PRESET_C_SCALP_DCA_USD = '0';
+    process.env.PRESET_C_SCALP_DCA2_USD = '150';
     const ot = baseOpen(100);
     expect(presetCScalpDca2Due(ot, 80)).toBe(true);
     expect(presetCScalpDca2Due(ot, 81)).toBe(false);
@@ -258,8 +259,16 @@ describe('preset-c-scalp-exit-policy', () => {
     expect(presetCScalpDca2Due(ot, 80)).toBe(false);
   });
 
+  it('skips DCA2 when dca2Usd is 0 (single entry)', () => {
+    process.env.PRESET_C_SCALP_DCA_USD = '0';
+    process.env.PRESET_C_SCALP_DCA2_USD = '0';
+    const ot = baseOpen(100);
+    expect(presetCScalpDca2Due(ot, 80)).toBe(false);
+  });
+
   it('fires DCA2 at −20% only after DCA1 when DCA1 enabled', () => {
     process.env.PRESET_C_SCALP_DCA_USD = '100';
+    process.env.PRESET_C_SCALP_DCA2_USD = '150';
     const ot = baseOpen(100);
     expect(presetCScalpDca2Due(ot, 80)).toBe(false);
     ot.presetCScalpDcaLegDone = true;
