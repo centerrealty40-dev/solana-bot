@@ -410,7 +410,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       return liveOscarScalpWaveOpenLegUsd(cfg);
     }
     if (liveStagedEntryActiveForDecision(d)) {
-      const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier === 'scalp_wave' ? undefined : tier);
+      const mcap = d.features.market_cap_usd ?? null;
+      const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier === 'scalp_wave' ? undefined : tier, mcap);
       if (leg > 0) return leg;
     }
     return cfg.positionUsd * cfg.entryFirstLegFraction;
@@ -2023,7 +2024,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                 const totalNotional = firstProbe
                   ? cfg.liveStagedEntryEntrySplitLegUsd * 2
                   : v2Split
-                    ? stagedEntryPlanInvestedCapUsd(cfg, tradeTier)
+                    ? stagedEntryPlanInvestedCapUsd(cfg, tradeTier, ot.entryMarketCapUsd)
                     : cfg.liveStagedEntryFirstLegUsd +
                       cfg.liveStagedEntrySecondLegUsd +
                       cfg.liveStagedEntryThirdLegUsd;
@@ -2051,7 +2052,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   const firstDrop = cfg.liveStagedEntryFirstDropPct;
                   const leg1When =
                     firstDrop > 0 ? `при −${firstDrop}% от сигнала` : 'по сигналу';
-                  const leg3Usd = firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier);
+                  const leg3Usd = firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier, ot.entryMarketCapUsd);
                   const leg3Drop = firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct;
                   const leg3Suffix =
                     leg3Usd > 0 && leg3Drop > 0
@@ -2079,7 +2080,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                       entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
                       entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
                       entrySplitTargetDropPct: cfg.liveStagedEntryEntrySplitTargetDropPct,
-                      avgSecondLegUsd: firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier),
+                      avgSecondLegUsd: firstProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tradeTier, ot.entryMarketCapUsd),
                       avgSecondDropPct: firstProbe ? 0 : cfg.liveStagedEntrySecondDropPct,
                       avgThirdLegUsd: firstProbe ? 0 : cfg.liveStagedEntryThirdLegUsd,
                       avgThirdDropPct: firstProbe ? 0 : cfg.liveStagedEntryThirdDropPct,

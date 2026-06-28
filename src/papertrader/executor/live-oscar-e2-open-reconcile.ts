@@ -251,7 +251,7 @@ export function reconcileE2StagedAvgThreshold(ot: OpenTrade, cfg: PaperTraderCon
   const prevDrop = st.avgSecondDropPct ?? st.secondDropPct ?? 0;
   const canonicalDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
 
-  applyCanonicalStagedEntrySizing(cfg, st, tier);
+  applyCanonicalStagedEntrySizing(cfg, st, tier, ot.entryMarketCapUsd);
 
   return prevDrop > 0 && prevDrop < canonicalDrop;
 }
