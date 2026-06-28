@@ -603,5 +603,25 @@ describe('exit-policy-wave-b', () => {
       expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.08)).toBe(false);
       expect(waveBPreArmNoHalf8ScenarioActive(ot)).toBe(false);
     });
+
+    it('low-tier open (wave_b half8_runner): dip10-first TP5 eligible at +5%', () => {
+      const ot = {
+        ...half8Ot,
+        liveOscarMcapTier: 'low',
+        liveWaveDip10ReachedBeforeTp8: true,
+      } as OpenTrade;
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.05)).toBe(true);
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.04)).toBe(false);
+    });
+
+    it('micro-tier open (wave_b half8_runner): dip10 arms and TP5 eligible', () => {
+      const ot = {
+        ...half8Ot,
+        liveOscarMcapTier: 'micro',
+      } as OpenTrade;
+      waveBUpdateDip10ReachedBeforeTp8(ot, 0.89, -10.2, 10);
+      expect(ot.liveWaveDip10ReachedBeforeTp8).toBe(true);
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.05)).toBe(true);
+    });
   });
 });

@@ -249,17 +249,19 @@ const ConfigSchema = z.object({
   discoveryMinMarketCapUsd: z.coerce.number().nonnegative().default(0),
   /** 0 = off. Max ref mcap on discovery snapshot — excludes large caps from SQL pool and eval (saves PG/CPU). */
   discoveryMaxMarketCapUsd: z.coerce.number().nonnegative().default(0),
-  /** Live Oscar: micro коридор $500k–$1.3M ($300 open; leg-2 split off; staged avg $300 @ −10%). */
+  /** Live Oscar: micro коридор $500k–$1.3M (2×$150 entry; avg $210 @ −10%; lane default OFF). */
   liveOscarMicroMcapLaneEnabled: z.boolean().default(false),
   liveOscarMicroMcapMinUsd: z.coerce.number().nonnegative().default(500_000),
   liveOscarMicroMcapMaxUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(20_000),
-  liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(300),
-  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
+  liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(150),
+  liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(150),
   liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(300),
   /** Leg-3 staged avg @ −10% for micro tier; prod uses `liveStagedEntrySecondLegUsd`. */
-  liveOscarMicroMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
+  liveOscarMicroMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(210),
+  /** Micro tier first staged avg drop % from signal (E+2 parity with prod/low −10%). */
+  liveOscarMicroMcapStagedAvgDropPct: z.coerce.number().min(0).max(90).default(10),
   liveOscarMicroMcapDcaLevelsSpec: z.string().default(''),
   /** Live Oscar: узкий коридор $2M–$3M (отдельные dip/vol/размер); ≥$3M = prod tier. */
   liveOscarLowMcapLaneEnabled: z.boolean().default(false),
@@ -1180,6 +1182,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarMicroMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarMicroMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD,
     liveOscarMicroMcapStagedAvgLegUsd: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD,
+    liveOscarMicroMcapStagedAvgDropPct: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT,
     liveOscarMicroMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS,
     liveOscarLowMcapLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED, false),
     liveOscarLowMcapMinUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD,

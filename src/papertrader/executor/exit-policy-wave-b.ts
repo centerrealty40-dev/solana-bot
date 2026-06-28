@@ -296,6 +296,7 @@ function waveBDip10FirstTp5PolicyEligible(ot: OpenTrade): boolean {
 /**
  * half8_runner E+2: signal anchor hit −N% before +8% TP grid rung — early 50% @ +5% vs avg.
  * Normal +8%-first path (no dip10 flag) keeps standard half8_runner TP grid.
+ * Tier-agnostic: applies to prod/low/micro wave_b_v1 opens stamped `half8_runner` (not prod-only).
  */
 export function waveBDip10FirstTp5ScenarioActive(ot: OpenTrade): boolean {
   if (!waveBDip10FirstTp5PolicyEligible(ot)) return false;
