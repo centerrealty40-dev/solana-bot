@@ -289,6 +289,55 @@ export function waveBPreArmNoHalf8PartialEligible(
   return pnlFrac + LADDER_PNL_EPS >= cfg.liveOscarWaveBPreArmNoHalf8PartialPnlFrac;
 }
 
+function waveBDip10FirstTp5PolicyEligible(ot: OpenTrade): boolean {
+  return isWaveBExitPolicy(ot) && ot.liveWaveFlatTpMode === 'half8_runner';
+}
+
+/**
+ * half8_runner E+2: signal anchor hit −N% before +8% TP grid rung — early 50% @ +5% vs avg.
+ * Normal +8%-first path (no dip10 flag) keeps standard half8_runner TP grid.
+ */
+export function waveBDip10FirstTp5ScenarioActive(ot: OpenTrade): boolean {
+  if (!waveBDip10FirstTp5PolicyEligible(ot)) return false;
+  if (ot.liveWaveDip10ReachedBeforeTp8 !== true) return false;
+  return !waveBHalf8TpTaken(ot);
+}
+
+/** Track signal −N% before +8% TP for dip10-first partial (uses peak vs avg to detect +8% first). */
+export function waveBUpdateDip10ReachedBeforeTp8(
+  ot: OpenTrade,
+  marketPx: number,
+  signalDropPct: number | null,
+  signalDropThresholdPct: number,
+): void {
+  if (ot.liveWaveDip10ReachedBeforeTp8 === true) return;
+  if (!waveBDip10FirstTp5PolicyEligible(ot)) return;
+  if (waveBHalf8TpTaken(ot)) return;
+  if (!(signalDropThresholdPct > 0)) return;
+
+  const pnlVsAvg = ot.avgEntry > 0 && marketPx > 0 ? marketPx / ot.avgEntry - 1 : 0;
+  const half8 = WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl;
+  const peak = Math.max(ot.liveWavePeakPnlFrac ?? 0, pnlVsAvg);
+  if (peak + LADDER_PNL_EPS >= half8) return;
+
+  if (signalDropPct != null && signalDropPct <= -signalDropThresholdPct) {
+    ot.liveWaveDip10ReachedBeforeTp8 = true;
+  }
+}
+
+/** Dip10-first path: one partial at/above configured PnL vs avg (default +5%). */
+export function waveBDip10FirstTp5PartialEligible(
+  ot: OpenTrade,
+  cfg: PaperTraderConfig,
+  pnlFrac: number,
+): boolean {
+  if (!cfg.liveOscarDip10FirstTp5Enabled) return false;
+  if (!waveBDip10FirstTp5ScenarioActive(ot)) return false;
+  if (ot.liveWaveDip10FirstTp5PartialTaken) return false;
+  if (ot.remainingFraction <= 1e-9) return false;
+  return pnlFrac + LADDER_PNL_EPS >= cfg.liveOscarDip10FirstTp5PartialPnlFrac;
+}
+
 /** Pre-arm/no-TP8 ladder: full exit on pullback to configured floor vs avg (default +2.5%) after partial. */
 export function waveBPreArmNoHalf8PullbackFullExitEligible(
   ot: OpenTrade,

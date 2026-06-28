@@ -8,6 +8,7 @@ import {
   waveBMarkTrailLevelTaken,
   waveBOnTpGridRungExecuted,
   waveBReconcileMaxExecutedTpFromMarks,
+  WAVE_B_FLAT_TP_HALF8_RUNNER,
   WAVE_B_V1_TP_GRID,
 } from './exit-policy-wave-b.js';
 import { ladderPnlThresholdMark } from './tp-ladder-state.js';
@@ -399,6 +400,12 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWavePreArmNoHalf8PartialTaken)) {
       ot.liveWavePreArmNoHalf8PartialTaken = true;
     }
+    if (Boolean(rawPayload.liveWaveDip10ReachedBeforeTp8)) {
+      ot.liveWaveDip10ReachedBeforeTp8 = true;
+    }
+    if (Boolean(rawPayload.liveWaveDip10FirstTp5PartialTaken)) {
+      ot.liveWaveDip10FirstTp5PartialTaken = true;
+    }
     if (Boolean(rawPayload.liveWavePostTp1DeriskTaken)) {
       ot.liveWavePostTp1DeriskTaken = true;
     }
@@ -552,6 +559,11 @@ function applyPartialSellLedgerLine(state: RestoreState, raw: Record<string, unk
   }
   if (reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') {
     ot.liveWavePreArmNoHalf8PartialTaken = true;
+  }
+  if (reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL') {
+    ot.liveWaveDip10FirstTp5PartialTaken = true;
+    ot.liveWaveDip10ReachedBeforeTp8 = true;
+    waveBOnTpGridRungExecuted(ot, WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl);
   }
   if (reason === 'WAVE_B_POST_TP1_DERISK') {
     ot.liveWavePostTp1DeriskTaken = true;

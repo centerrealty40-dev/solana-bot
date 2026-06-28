@@ -774,6 +774,16 @@ const ConfigSchema = z.object({
   liveOscarWaveBPreArmNoHalf8PartialFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
 
   /**
+   * Wave B half8_runner: signal anchor hit −N% before +8% TP — sell partial at +5% vs avg once
+   * (instead of waiting for half8 +8%). Env: `PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_*`.
+   */
+  liveOscarDip10FirstTp5Enabled: z.boolean().default(true),
+  liveOscarDip10FirstTp5PartialPnlFrac: z.coerce.number().min(0.01).max(0.2).default(0.05),
+  liveOscarDip10FirstTp5PartialFraction: z.coerce.number().min(0.01).max(0.99).default(0.5),
+  /** Signal-anchor drop % that arms the dip10-first path (default 10 = −10% from signal). */
+  liveOscarDip10FirstTp5SignalDropPct: z.coerce.number().min(1).max(50).default(10),
+
+  /**
    * Wave B: after first `TP_LADDER` partial, if PnL vs avg falls to ≤ threshold (default −15%),
    * sell `liveOscarWaveBPostTp1DeriskFraction` of remainder once (before full kill).
    * Env: `PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_*`.
@@ -1484,6 +1494,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_PULLBACK_PNL_FRAC,
     liveOscarWaveBPreArmNoHalf8PartialFraction:
       process.env.PAPER_LIVE_OSCAR_WAVE_B_PRE_ARM_NO_HALF8_PARTIAL_FRACTION,
+    liveOscarDip10FirstTp5Enabled: envBool(process.env.PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_ENABLED, true),
+    liveOscarDip10FirstTp5PartialPnlFrac: process.env.PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_PNL_FRAC,
+    liveOscarDip10FirstTp5PartialFraction:
+      process.env.PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_FRACTION,
+    liveOscarDip10FirstTp5SignalDropPct: process.env.PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_SIGNAL_DROP_PCT,
     liveOscarWaveBPostTp1DeriskEnabled: envBool(
       process.env.PAPER_LIVE_OSCAR_WAVE_B_POST_TP1_DERISK_ENABLED,
       false,
