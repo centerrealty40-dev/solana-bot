@@ -71,6 +71,8 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_STAGED_KILL_DROP_PCT: '45',
   HL_OSCAR_TELEGRAM_CHAT_ID: HL_NEWS_TELEGRAM_CHAT_ID,
   HL_OSCAR_TELEGRAM_ENABLED: '1',
+  /** Majors → dedicated hl-oscar-majors bot; alt Oscar skips BTC/ETH. */
+  HL_OSCAR_DENYLIST_EXTRA: 'BTC,ETH',
 };
 const HL_TWAP_LIVE_ENV = {
   NODE_ENV: 'production',
