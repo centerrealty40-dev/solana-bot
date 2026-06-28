@@ -935,9 +935,9 @@
         label: 'SuperBot',
         tag: 'preset-c',
         oneLiner:
-          'Preset C · Telegram dips (pullback $1–15M, пролив 9–30%): вход **$100**, staged **$50** · фазы micro/low/scalp/prod · выход **Live Oscar wave B**.',
+          'Preset C · TG gate **pullback/retrace/spike** (1h): mcap **$3M–$30M** · вход **$50** single leg deferred **−10%** от сигнала · выход **`preset_c_scalp_v1`** (+5/+10/+15%, trail −2.5%, kill −50%).',
         details:
-          '**Плитка 2** · PM2 **`live-oscar-preset-c`** · кошелёк SuperBot (HcV3BhmK…).\n\n**Вход Preset C**\n• Сигналы **Telegram dips** (pullback only): mcap кандидата **$1–15M**, пролив от пика **9–30%**, cap ≤ **$300M**.\n• Первая нога **$100**; staged-доборы **$50** по правилам Live Oscar.\n• **Фаза по mcap:** micro · low · scalp_wave · prod — задаёт параметры усреднения.\n\n**Выход:** тот же **wave B / tracker.ts**, что у Live Oscar — TP-сетка, partial trail, salvage24/h48.\n\n**Журнал:** `data/live/live-oscar-preset-c.jsonl`.\n**Таймлайн:** MSK · dips-сигнал → open → staged $50 → partial TP / wave B close.',
+          '**Плитка 2** · PM2 **`live-oscar-preset-c`** · кошелёк SuperBot (HcV3BhmK…).\n\n**Вход Preset C**\n• **TG gate:** pullback / retrace / spike, окно **1h** (`PRESET_C_TELEGRAM_GATE_MAX_AGE_MS`).\n• Mcap кандидата **$3M–$30M**, пролив от пика **9–30%**.\n• Одна нога **$50**, deferred **−10%** от цены TG-сигнала (без staged-доборов).\n\n**Выход `preset_c_scalp_v1`:** TP **+5% / +10% / +15%** к anchor сигнала; partial trail **−2.5%** от хая после +5%; kill **−50%** от цены сигнала.\n\n**Журнал:** `data/live/live-oscar-preset-c.jsonl`.\n**Таймлайн:** MSK · TG-сигнал → pending −10% → open $50 → partial TP / scalp close.',
       },
       'dc-trader': {
         label: 'DCA Trader Risky',

@@ -229,9 +229,9 @@ const HTML_SMLOT_PATH = path.join(__dirname, 'dashboard-smart-lottery.html');
 const DASHBOARD_SMLOT_JSONL =
   process.env.DASHBOARD_SMLOT_JSONL?.trim() || path.join(PAPER2_DIR, 'pt1-smart-lottery.jsonl');
 const POSITION_USD_DEFAULT = Number(process.env.POSITION_USD ?? 100);
-/** Legacy pumpswap-flow-sniper journal fallback (Preset C uses $100). */
+/** Legacy pumpswap-flow-sniper journal fallback (Preset C scalp: $50 single leg). */
 const PUMPSWAP_DIP_POSITION_USD_DEFAULT = 3;
-const PRESET_C_POSITION_USD_DEFAULT = 100;
+const PRESET_C_POSITION_USD_DEFAULT = 50;
 const PRESET_C_STAGED_LEG_USD_DEFAULT = 50;
 
 /** Dashboard + journal id for SuperBot tile / live-oscar-preset-c PM2. */
@@ -341,19 +341,19 @@ function presetCOpenTimelineLabelRu(openTrade: Record<string, unknown>): string 
   const legsArr = Array.isArray(openTrade.legs) ? (openTrade.legs as Record<string, unknown>[]) : [];
   const legUsd = Number(legsArr[0]?.sizeUsd ?? PRESET_C_POSITION_USD_DEFAULT);
   const usd = legUsd > 0 ? legUsd : PRESET_C_POSITION_USD_DEFAULT;
-  return `Preset C · Telegram dips: pullback $1–15M, пролив 9–30% · вход $${usd.toFixed(0)} · ${tier}`;
+  return `Preset C · TG gate pullback/retrace/spike (1h) · mcap $3M–$30M · вход $${usd.toFixed(0)} deferred −10% от сигнала · ${tier}`;
 }
 
 function presetCStagedLegTimelineLabelRu(legUsd: number, tier: unknown): string {
   const u = legUsd > 0 ? legUsd : PRESET_C_STAGED_LEG_USD_DEFAULT;
-  return `Усреднение staged $${u.toFixed(0)} · ${presetCMcapTierRu(tier)} · wave B`;
+  return `Preset C · добор $${u.toFixed(0)} · ${presetCMcapTierRu(tier)} · preset_c_scalp_v1`;
 }
 
 function presetCTimelineContextNote(evKind: string): string {
   const entry =
-    'Preset C (SuperBot): вход по сигналам Telegram dips — только pullback; mcap кандидата $1–15M, пролив от пика 9–30%, общий cap ≤ $300M. Первая нога $100; доборы staged по $50 по правилам Live Oscar; фаза (micro / low / scalp / prod) задаёт параметры усреднения.';
+    'Preset C (SuperBot): TG gate pullback/retrace/spike, окно 1h; mcap кандидата $3M–$30M, пролив от пика 9–30%. Вход — одна нога $50, deferred −10% от цены TG-сигнала (без staged-доборов).';
   const exit =
-    'Выход Live Oscar wave B: TP-сетка к средней, partial trail после +10%, timed salvage24/h48 — тот же tracker.ts, что у основного Oscar.';
+    'Выход preset_c_scalp_v1: TP +5% / +10% / +15% к anchor сигнала; partial trail −2.5% от хая после +5%; kill −50% от цены сигнала.';
   if (
     evKind === 'open' ||
     evKind === 'scale_in_add' ||
@@ -2601,7 +2601,7 @@ export function buildTimelineEvent(
             ? 'Закрытие Risky · TIMEOUT: истёк лимит времени позиции'
             : null;
     const presetCCloseLabel = isPresetC
-      ? `Preset C · wave B · ${exitReason}`
+      ? `Preset C · preset_c_scalp_v1 · ${exitReason}`
       : null;
     const closeLabel =
       vaTagLabel ??
