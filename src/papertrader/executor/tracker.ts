@@ -865,6 +865,7 @@ async function tryExecuteTpPartialSell(args: {
   clearExitPartialDeferForMint(mint);
 
   let sellOut: LiveTokenToSolSellResult = { ok: true };
+  let chainPartialProceeds = false;
   if (livePhase4 && marketSell > 0 && tokenSizingUsdForSwap > 1e-6) {
     sellOut = await livePhase4.tryTokenToSolSell({
       mint,
@@ -874,17 +875,31 @@ async function tryExecuteTpPartialSell(args: {
       decimals: ot.tokenDecimals ?? 6,
       intentKind: 'sell_partial',
     });
-    if (!sellOut.ok) {
+    chainPartialProceeds =
+      sellOut.solProceedsLamports != null && sellOut.solProceedsLamports > 0n;
+    if (!sellOut.ok && !chainPartialProceeds) {
       if (sellOut.preflightSkipReason === 'wallet_spl_balance_zero') return 'wallet_zero';
       return 'abort_mint';
     }
-    if (sellOut.solProceedsLamports == null || sellOut.solProceedsLamports <= 0n) {
+    if (!sellOut.ok && chainPartialProceeds) {
+      log.warn(
+        {
+          mint: mint.slice(0, 8),
+          symbol: ot.symbol,
+          preflightSkipReason: sellOut.preflightSkipReason,
+          solProceedsLamports: sellOut.solProceedsLamports?.toString(),
+        },
+        'live partial sell exit-slice partial chain success — journaling proceeds before handling failure',
+      );
+    }
+    if (sellOut.ok && (sellOut.solProceedsLamports == null || sellOut.solProceedsLamports <= 0n)) {
       log.warn(
         { mint: mint.slice(0, 8), symbol: ot.symbol },
         'live partial sell ok but missing solProceedsLamports — using modeled proceedsUsd',
       );
     }
   }
+  const sellChainRecorded = sellOut.ok || chainPartialProceeds;
 
   let proceedsUsdSource: NonNullable<PartialSell['proceedsUsdSource']> = 'model';
   let solProceedsLamports: string | undefined;
@@ -982,7 +997,7 @@ async function tryExecuteTpPartialSell(args: {
     liveOscarCfg?.strategyEnabled &&
     liveOscarCfg.executionMode === 'live' &&
     livePhase4 &&
-    sellOut.ok &&
+    sellChainRecorded &&
     livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained)
   ) {
     ot.remainingFraction = 0;
@@ -999,7 +1014,7 @@ async function tryExecuteTpPartialSell(args: {
     liveOscarCfg?.strategyEnabled &&
     liveOscarCfg.executionMode === 'live' &&
     livePhase4 &&
-    sellOut.ok
+    (sellChainRecorded || sellOut.preflightSkipReason === 'wallet_spl_balance_zero')
   ) {
     const chainMap = await fetchLiveWalletSplBalancesByMint(liveOscarCfg);
     const bal = chainMap?.get(mint);
@@ -1073,6 +1088,15 @@ async function tryExecuteTpPartialSell(args: {
   console.log(
     `[${logLabelPct}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
   );
+  if (
+    !sellOut.ok &&
+    (walletDrainedFlush ||
+      sellOut.preflightSkipReason === 'wallet_spl_balance_zero' ||
+      livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained))
+  ) {
+    return 'wallet_zero';
+  }
+  if (!sellOut.ok) return 'abort_mint';
   return 'ok';
 }
 
@@ -1689,6 +1713,15 @@ function hookLiveWhitelistAfterFullClose(
   }
 }
 
+/** Infer policy exit when chain is empty but journal missed partials (avoid PERIODIC_HEAL mis-tag). */
+function inferWalletZeroPolicyExitReason(ot: OpenTrade): ExitReason | undefined {
+  if (ot.trailingArmed) return 'TRAIL';
+  if ((ot.liveWaveTrailAnchorPnlFrac ?? 0) > 0) return 'TRAIL';
+  if (ot.liveWavePreArmReached) return 'TRAIL';
+  if ((ot.liveWaveMaxExecutedTpFrac ?? 0) > 0) return 'TP';
+  return undefined;
+}
+
 /**
  * Live: wallet SPL=0 while journal still open — close with last policy partial reason (TP/TRAIL/KILL),
  * never RECONCILE_ORPHAN. If no recorded partials, alert and keep open for policy retry.
@@ -1738,6 +1771,9 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
 
   if (ot.partialSells.length === 0) {
     let exitReason = forcedExitReason;
+    if (!exitReason) {
+      exitReason = inferWalletZeroPolicyExitReason(ot);
+    }
     if (!exitReason) {
       const ageMs = Date.now() - (ot.entryTs > 0 ? ot.entryTs : 0);
       const graceMs = 120_000;

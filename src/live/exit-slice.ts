@@ -95,6 +95,8 @@ export async function runSlicedTokenToSolPipeline(
   let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
   let maxPriceImpact: number | undefined;
   let totalRetryAttempts = 0;
+  let lastSellAmountSource: LiveTokenToSolPipelineResult['sellAmountSource'];
+  let lastWalletDrained: boolean | undefined;
 
   for (let i = 0; i < plan.length; i++) {
     if (i > 0 && liveCfg.liveExitSliceDelayMs > 0) {
@@ -125,13 +127,20 @@ export async function runSlicedTokenToSolPipeline(
         ok: false,
         slicesCompleted: i,
       });
+      const walletDrainedAfterPartial =
+        r.preflightSkipReason === 'wallet_spl_balance_zero' ||
+        r.walletDrained === true ||
+        lastWalletDrained === true;
       return {
         ok: false,
+        preflightSkipReason: r.preflightSkipReason,
         wsolOutLamports: totalLamports > 0n ? totalLamports : undefined,
         solProceedsSource,
         txSignature: lastTxSig,
         priceImpactPct: maxPriceImpact,
         retryAttempts: totalRetryAttempts,
+        sellAmountSource: lastSellAmountSource ?? r.sellAmountSource,
+        walletDrained: walletDrainedAfterPartial || undefined,
       };
     }
 
@@ -140,6 +149,8 @@ export async function runSlicedTokenToSolPipeline(
     }
     lastTxSig = r.txSignature;
     solProceedsSource = r.solProceedsSource ?? solProceedsSource;
+    lastSellAmountSource = r.sellAmountSource ?? lastSellAmountSource;
+    lastWalletDrained = r.walletDrained ?? lastWalletDrained;
     if (r.priceImpactPct != null && Number.isFinite(r.priceImpactPct)) {
       maxPriceImpact =
         maxPriceImpact == null ? r.priceImpactPct : Math.max(maxPriceImpact, r.priceImpactPct);
@@ -162,5 +173,7 @@ export async function runSlicedTokenToSolPipeline(
     txSignature: lastTxSig,
     priceImpactPct: maxPriceImpact,
     retryAttempts: totalRetryAttempts,
+    sellAmountSource: lastSellAmountSource,
+    walletDrained: lastWalletDrained,
   };
 }
