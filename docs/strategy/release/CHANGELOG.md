@@ -67,6 +67,25 @@
 
 ---
 
+## [1.11.515] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.515`
+
+### live-oscar sim E+2: avg1 −10% + dip10-first TP5
+
+**Изменение (prod ≥$3M):** 1-е усреднение **−10% $400** (было −5% $400); −20% $600 без изменений; max **$3100** (7×$300 + $400 + $600). Wave B **half8_runner TP2**: если цена vs **signal** достигла **−10% до +8% TP**, при отскоке к **+5% vs avg** — partial **50%** (`WAVE_B_DIP10_FIRST_TP5_PARTIAL`), вместо ожидания half8 **+8%**. Обычный путь «+8% первым» без изменений. Runtime: `liveWaveDip10ReachedBeforeTp8`, `liveWaveDip10FirstTp5PartialTaken`.
+
+**Env (live-oscar PM2):**
+- `PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT`: `5` → **`10`**
+- `PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_ENABLED`: **`1`**
+- `PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_PNL_FRAC`: **`0.05`**
+- `PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_FRACTION`: **`0.5`**
+- `PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_SIGNAL_DROP_PCT`: **`10`**
+
+**Откат:** redeploy `sa-alpha-1.11.514`; `SECOND_DROP_PCT=5`, unset `DIP10_FIRST_TP5_*` или `…_ENABLED=0`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.513] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.513`

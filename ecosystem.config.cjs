@@ -127,6 +127,7 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.505 — prod ≥$3M: 6×$300 entry split @5s (+3/−5% corridor); avg −5% $300, −20% $300; max $2400.
  * 1.11.512 — prod avg −20% leg $300→$500; LIVE_MAX_POSITION_USD $2400→$2600.
  * 1.11.513 — prod 7×$300 entry split; avg −5% $400, −20% $600 (+$100/tier); low avg −10% $350; max $3100 / low $850.
+ * 1.11.515 — sim E+2: prod avg1 −10% $400 (was −5%); dip−10% before +8% → 50% @ +5% vs avg (half8_runner).
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
@@ -461,7 +462,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.513 — prod ≥$3M: 7×$300 entry split @5s (+3/−5% corridor); avg −5% $400, −20% $600; max $3100.
+         * 1.11.515 — prod ≥$3M: 7×$300 entry split @5s (+3/−5% corridor); avg −10% $400, −20% $600; max $3100.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -482,7 +483,7 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '5',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '400',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '600',
@@ -824,6 +825,11 @@ const PM2_APPS = [
          */
         PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP: '1',
         PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE: 'half8_runner',
+        /** E+2 TP2: signal −10% before +8% half8 → 50% partial @ +5% vs avg (policy-only exit). */
+        PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_ENABLED: '1',
+        PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_PNL_FRAC: '0.05',
+        PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_FRACTION: '0.5',
+        PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_SIGNAL_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',

@@ -79,11 +79,14 @@ import {
   waveBPreArmNoHalf8PartialEligible,
   waveBPreArmNoHalf8PullbackFullExitEligible,
   waveBPreArmNoHalf8ScenarioActive,
+  waveBDip10FirstTp5PartialEligible,
+  waveBUpdateDip10ReachedBeforeTp8,
   waveBPostTp1DeriskEligible,
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
   stampLiveOscarExitPolicyOnOpen,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
+  WAVE_B_FLAT_TP_HALF8_RUNNER,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 } from './exit-policy-wave-b.js';
 import {
@@ -1315,6 +1318,75 @@ async function tryWaveBPreArmNoHalf8PartialExit(args: {
   });
   if (r === 'ok') {
     ot.liveWavePreArmNoHalf8PartialTaken = true;
+  }
+}
+
+/** Wave B half8_runner E+2: signal −10% before +8% — lock 50% at +5% vs avg once (replaces half8 +8%). */
+async function tryWaveBDip10FirstTp5PartialExit(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  xAvg: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<void> {
+  const {
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    xAvg,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+  } = args;
+  if (
+    !isLiveOscarTradingStrategyId(cfg.strategyId) ||
+    !isWaveBExitPolicy(ot) ||
+    !(ot.avgEntry > 0) ||
+    !(curMetric > 0) ||
+    ot.remainingFraction <= 1e-9
+  ) {
+    return;
+  }
+  const pnlFrac = xAvg - 1;
+  if (!waveBDip10FirstTp5PartialEligible(ot, cfg, pnlFrac)) return;
+
+  const trimFrac = Math.min(0.99, Math.max(0.01, cfg.liveOscarDip10FirstTp5PartialFraction));
+  const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
+  const sellFraction = waveBAdjustSellFractionForRemainder(remainingValueNet, trimFrac, cfg);
+  const partialPnlPct = cfg.liveOscarDip10FirstTp5PartialPnlFrac * 100;
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction,
+    ladderStepIndex: 0,
+    ladderRungsTotal: 0,
+    ladderPnlPct: pnlFrac,
+    tpGrid: false,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {
+      waveBOnTpGridRungExecuted(ot, WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl);
+    },
+    logLabelPct: `wave-b-dip10-first-${(trimFrac * 100).toFixed(0)}pct-at-${partialPnlPct.toFixed(1)}pct`,
+    partialReason: 'WAVE_B_DIP10_FIRST_TP5_PARTIAL',
+    timelineLabelRu:
+      `Live Oscar wave B · −10% до +8% — фиксация ${(trimFrac * 100).toFixed(0)}% остатка @ +${partialPnlPct.toFixed(1)}% vs avg`,
+  });
+  if (r === 'ok') {
+    ot.liveWaveDip10FirstTp5PartialTaken = true;
   }
 }
 
@@ -3147,6 +3219,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (isWaveBExitPolicy(ot) && curMetric > 0) {
       waveBUpdatePreArmReached(ot, curMetric);
+      waveBUpdateDip10ReachedBeforeTp8(
+        ot,
+        curMetric,
+        liveStagedEntrySignalDropPct(ot, curMetric),
+        cfg.liveOscarDip10FirstTp5SignalDropPct,
+      );
     }
 
     if (ot.avgEntry > 0 && isPartialGridTrailExitPolicy(ot)) {
@@ -3922,6 +4000,25 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.avgEntry > 0 &&
       curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl;
     const skipTpGridLiveOscarNeutral = neutralBelowFirstTpAfterFullSplit;
+
+    if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0 && ot.remainingFraction > 0) {
+      await tryWaveBDip10FirstTp5PartialExit({
+        mint,
+        ot,
+        cfg: effCfg,
+        curMetric,
+        xAvg,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+      });
+      if (ot.avgEntry > 0) {
+        xAvg = curMetric / ot.avgEntry;
+        pnlPctVsAvg = (xAvg - 1) * 100;
+      }
+    }
 
     if (
       !(isPaperOscarIdealized && idealizedMute) &&

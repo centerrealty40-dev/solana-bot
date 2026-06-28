@@ -30,6 +30,9 @@ import {
   waveBPreArmNoHalf8ScenarioActive,
   waveBPreArmNoHalf8PartialEligible,
   waveBPreArmNoHalf8PullbackFullExitEligible,
+  waveBDip10FirstTp5PartialEligible,
+  waveBDip10FirstTp5ScenarioActive,
+  waveBUpdateDip10ReachedBeforeTp8,
   waveBPostTp1ScratchEligible,
   waveBMaybeResetTpImpulse,
   waveBUpdatePreArmImpulseCycle,
@@ -550,6 +553,55 @@ describe('exit-policy-wave-b', () => {
         liveWaveMaxExecutedTpFrac: 0.08,
       } as unknown as OpenTrade;
       expect(waveBBreakevenAtZeroExitEligible(withTp8, 0.08)).toBe(true);
+    });
+  });
+
+  describe('dip10-first TP5 (half8_runner E+2)', () => {
+    const half8Ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      liveWaveFlatTpMode: 'half8_runner',
+      avgEntry: 1,
+      remainingFraction: 1,
+      ladderUsedLevels: new Set<number>(),
+      ladderUsedIndices: new Set<number>(),
+      liveWavePeakPnlFrac: 0,
+    } as unknown as OpenTrade;
+
+    const dipCfg = cfg({
+      liveOscarExitPolicyWaveBEnabled: true,
+      liveOscarDip10FirstTp5Enabled: true,
+      liveOscarDip10FirstTp5PartialPnlFrac: 0.05,
+      liveOscarDip10FirstTp5PartialFraction: 0.5,
+      liveOscarDip10FirstTp5SignalDropPct: 10,
+    });
+
+    it('waveBUpdateDip10ReachedBeforeTp8 arms on signal −10% before +8%', () => {
+      const ot = { ...half8Ot } as OpenTrade;
+      waveBUpdateDip10ReachedBeforeTp8(ot, 0.89, -10.5, 10);
+      expect(ot.liveWaveDip10ReachedBeforeTp8).toBe(true);
+      expect(waveBDip10FirstTp5ScenarioActive(ot)).toBe(true);
+    });
+
+    it('does not arm dip10 when +8% vs avg seen first', () => {
+      const ot = { ...half8Ot, liveWavePeakPnlFrac: 0.09 } as OpenTrade;
+      waveBUpdateDip10ReachedBeforeTp8(ot, 0.89, -11, 10);
+      expect(ot.liveWaveDip10ReachedBeforeTp8).toBeUndefined();
+    });
+
+    it('waveBDip10FirstTp5PartialEligible at +5% once; marks half8 consumed on execute path', () => {
+      const ot = { ...half8Ot, liveWaveDip10ReachedBeforeTp8: true } as OpenTrade;
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.05)).toBe(true);
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.04)).toBe(false);
+
+      const taken = { ...ot, liveWaveMaxExecutedTpFrac: 0.08 } as OpenTrade;
+      expect(waveBDip10FirstTp5ScenarioActive(taken)).toBe(false);
+      expect(waveBHalf8TpTaken(taken)).toBe(true);
+    });
+
+    it('normal +8% path unchanged when dip10 never armed', () => {
+      const ot = { ...half8Ot } as OpenTrade;
+      expect(waveBDip10FirstTp5PartialEligible(ot, dipCfg, 0.08)).toBe(false);
+      expect(waveBPreArmNoHalf8ScenarioActive(ot)).toBe(false);
     });
   });
 });

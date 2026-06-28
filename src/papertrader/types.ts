@@ -132,6 +132,7 @@ export interface PartialSell {
     | 'BREAKEVEN_TRIM'
     | 'WAVE_B_BREAKEVEN_INSURANCE'
     | 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL'
+    | 'WAVE_B_DIP10_FIRST_TP5_PARTIAL'
     | 'WAVE_B_POST_TP1_DERISK'
     | 'TRAIL_STEP'
     | 'TRAIL'
@@ -295,6 +296,10 @@ export interface OpenTrade {
   liveWaveBreakevenInsuranceTaken?: boolean;
   /** Wave B half8_runner: +5% partial taken in pre-arm-without-+8%-TP ladder. */
   liveWavePreArmNoHalf8PartialTaken?: boolean;
+  /** Wave B half8_runner: signal −10% touched before +8% TP (E+2 dip10-first path). */
+  liveWaveDip10ReachedBeforeTp8?: boolean;
+  /** Wave B half8_runner: dip10-first +5% partial taken (replaces half8 +8% for that path). */
+  liveWaveDip10FirstTp5PartialTaken?: boolean;
 
   /**
    * Wave B: одноразовый de-risk после первой TP — продажа доли остатка при просадке ниже порога vs avg.
