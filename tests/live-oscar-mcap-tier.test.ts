@@ -38,10 +38,10 @@ describe('live-oscar-mcap-tier', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT = '-30';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD = '35000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD = '300';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD = '300';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD = '300';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '900';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD = '250';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '750';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS = '';
     process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT = '-18';
     process.env.PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD = '25000';
@@ -78,8 +78,8 @@ describe('live-oscar-mcap-tier', () => {
 
   it('uses tier-specific split leg and position sizing', () => {
     const cfg = loadPaperTraderConfig();
-    expect(liveOscarTierStagedSplitLegUsd(cfg, 'low')).toBe(300);
-    expect(liveOscarTierPositionUsd(cfg, 'low')).toBe(900);
+    expect(liveOscarTierStagedSplitLegUsd(cfg, 'low')).toBe(250);
+    expect(liveOscarTierPositionUsd(cfg, 'low')).toBe(750);
     expect(liveOscarTierStagedSplitLegUsd(cfg, 'prod')).toBe(300);
     expect(liveOscarTierDcaLevelsSpec(cfg, 'low')).toBe('');
   });
