@@ -67,6 +67,54 @@
 
 ---
 
+## [1.11.517] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.517`
+
+### live-oscar E+2: open positions inherit avg1 −10% + DIP10_FIRST_TP5
+
+**Проблема:** открытые на момент деплоя позиции могли иметь pending avg1 @ −5%, не иметь `liveWaveDip10ReachedBeforeTp8` при уже пройденном −10% vs signal, и пропускать TP2 @ +5%.
+
+**Изменение:**
+- **Reload / tracker tick:** `reconcileE2OpenOnRestore` + `reconcileE2OpenOnTrackerTick` — retarget pending avg1 на −10%, без double-fill.
+- **Dip10 backfill (one-time):** PG hourly min/max с `entryTs` + fallback по leg/partial marks → `liveWaveDip10ReachedBeforeTp8`; флаг `liveE2Dip10BackfillAttempted`.
+- **Snapshot:** persist dip10 + backfill flags в `serializeOpenTrade` / restore.
+
+**Откат:** redeploy `sa-alpha-1.11.516`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.516] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.516`
+
+### live-oscar E+2 parity: low + micro tiers + tier-agnostic TP2
+
+**Изменение:** E+2 (avg1 **−10%**, **DIP10_FIRST_TP5**) распространён на все mcap-тиры с пропорционально меньшими USD. TP2 **не prod-only**: любой `wave_b_v1` + `half8_runner` (prod/low/micro) — при **−10% vs signal до +8% TP** → partial **50% @ +5% vs avg** (`WAVE_B_DIP10_FIRST_TP5_PARTIAL`). Micro lane по-прежнему **OFF**; env готов к включению.
+
+| Tier | mcap | Entry | Avg legs | TP2 | Max position |
+|------|------|-------|----------|-----|--------------|
+| **prod** | ≥ $3M | 7×$300 ($2100) | −10% $400, −20% $600 | DIP10_FIRST_TP5: 50% @ +5% vs avg | **$3100** |
+| **low** | $2M–$3M | 2×$250 ($500) | −10% $350 | DIP10_FIRST_TP5 (global) | **$850** |
+| **micro** | $500k–$1.3M (lane OFF) | 2×$150 ($300) | −10% $210 | DIP10_FIRST_TP5 (global) | **$510** |
+
+**Env (live-oscar PM2):**
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD` / `…LEG2_USD`: **`150`** (было 300/200)
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD`: **`300`** (было 500)
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD`: **`210`** (было 200)
+- `PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT`: **`10`** (новый; tier-aware resolver)
+- Low/prod/DIP10_* без изменений vs 1.11.515
+
+**Код:** `resolveLiveOscarStagedAvgFirstDropPct` — micro tier; комментарий tier-agnostic в `exit-policy-wave-b.ts`.
+
+**Откат:** redeploy `sa-alpha-1.11.515`; micro env: leg 300/200, position 500, avg 200; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.515] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.515`

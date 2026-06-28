@@ -96,6 +96,7 @@ import {
   type TrackerStats,
 } from './executor/tracker.js';
 import { reconcileOpenTradeDcaFromLegs } from './executor/dca-state.js';
+import { reconcileE2OpenOnRestore } from './executor/live-oscar-e2-open-reconcile.js';
 import { loadStore } from './executor/store-restore.js';
 import type {
   ClosedTrade,
@@ -313,6 +314,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
   for (const ot of open.values()) {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
+    if (isLiveOscarTradingStrategyId(cfg.strategyId)) {
+      reconcileE2OpenOnRestore(ot, cfg);
+    }
   }
   const closed: ClosedTrade[] =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? [...opts.liveStrategyReplay.closed] : [];

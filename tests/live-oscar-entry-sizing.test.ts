@@ -52,6 +52,12 @@ describe('live-oscar-entry-sizing', () => {
       'PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD',
       'PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD',
+      'PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT',
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS',
     ];
     for (const k of keys) envBackup[k] = process.env[k];
@@ -80,6 +86,12 @@ describe('live-oscar-entry-sizing', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD = '500';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '350';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT = '10';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED = '0';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD = '150';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD = '150';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD = '300';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD = '210';
+    process.env.PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT = '10';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '5000';
   });
 
@@ -112,15 +124,18 @@ describe('live-oscar-entry-sizing', () => {
     expect(() => assertLiveOscarUnifiedEntrySizing(cfg)).toThrow(/LOW_MCAP_POSITION/);
   });
 
-  it('tier-aware staged avg: low −10% $350; prod −10%/$400 + −20%/$600', () => {
+  it('tier-aware staged avg: low −10% $350; prod −10%/$400 + −20%/$600; micro −10% $210', () => {
     const cfg = loadPaperTraderConfig();
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'low')).toBe(10);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'low')).toBe(350);
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'prod')).toBe(10);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'prod')).toBe(400);
     expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(600);
+    expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'micro')).toBe(10);
+    expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'micro')).toBe(210);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(850);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(3100);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(510);
   });
 
   it('buildLiveStagedEntryState uses $350 avg @ −10% for low mcap', () => {

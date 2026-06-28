@@ -16,6 +16,7 @@ import { reconcileEntrySplitV2FromLegs } from './live-staged-entry-gates.js';
 import { loadPaperTraderConfig } from '../config.js';
 import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
 import { applyWaveBPostTp1ScratchJournalLine } from './wave-b-post-tp1-scratch-reentry.js';
+import { reconcileE2OpenOnRestore } from './live-oscar-e2-open-reconcile.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -406,6 +407,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWaveDip10FirstTp5PartialTaken)) {
       ot.liveWaveDip10FirstTp5PartialTaken = true;
     }
+    if (Boolean(rawPayload.liveE2Dip10BackfillAttempted)) {
+      ot.liveE2Dip10BackfillAttempted = true;
+    }
     if (Boolean(rawPayload.liveWavePostTp1DeriskTaken)) {
       ot.liveWavePostTp1DeriskTaken = true;
     }
@@ -501,6 +505,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
 
     if (isWaveBExitPolicy(ot)) {
       waveBReconcileMaxExecutedTpFromMarks(ot, WAVE_B_V1_TP_GRID.gridStepPnl);
+    }
+
+    if (process.env.PAPER_STRATEGY_ID?.trim() === 'live-oscar') {
+      reconcileE2OpenOnRestore(ot, loadPaperTraderConfig());
     }
 
     const tgKeys = rawPayload.presetCTgDedupeKeys;

@@ -128,6 +128,7 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.512 — prod avg −20% leg $300→$500; LIVE_MAX_POSITION_USD $2400→$2600.
  * 1.11.513 — prod 7×$300 entry split; avg −5% $400, −20% $600 (+$100/tier); low avg −10% $350; max $3100 / low $850.
  * 1.11.515 — sim E+2: prod avg1 −10% $400 (was −5%); dip−10% before +8% → 50% @ +5% vs avg (half8_runner).
+ * 1.11.516 — E+2 parity low/micro: avg1 −10%; TP2 (DIP10_FIRST_TP5) tier-agnostic on wave_b half8_runner; micro 2×$150 + avg $210 (max $510, lane OFF).
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
@@ -573,12 +574,14 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '20000',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '300',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '200',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '500',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '200',
+        /** 1.11.516 — micro (lane OFF): 2×$150 entry; avg −10% $210 (max staged $510); TP2 = global DIP10_FIRST_TP5. */
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '150',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '300',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '210',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.513 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $850). */
+        /** 1.11.516 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $850); TP2 = global DIP10_FIRST_TP5. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',

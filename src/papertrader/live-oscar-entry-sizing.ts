@@ -119,11 +119,12 @@ export function resolveLiveOscarEntrySplitTotalUsd(
   return sum;
 }
 
-/** First staged averaging drop % from signal anchor. */
+/** First staged averaging drop % from signal anchor (tier-aware; E+2 −10% on prod/low/micro). */
 export function resolveLiveOscarStagedAvgFirstDropPct(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
 ): number {
+  if (tier === 'micro') return cfg.liveOscarMicroMcapStagedAvgDropPct;
   if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgDropPct;
   return cfg.liveStagedEntrySecondDropPct;
 }

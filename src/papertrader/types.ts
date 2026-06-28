@@ -300,6 +300,8 @@ export interface OpenTrade {
   liveWaveDip10ReachedBeforeTp8?: boolean;
   /** Wave B half8_runner: dip10-first +5% partial taken (replaces half8 +8% for that path). */
   liveWaveDip10FirstTp5PartialTaken?: boolean;
+  /** E+2: one-time PG/mark backfill for dip10-before-tp8 attempted on this open. */
+  liveE2Dip10BackfillAttempted?: boolean;
 
   /**
    * Wave B: одноразовый de-risk после первой TP — продажа доли остатка при просадке ниже порога vs avg.
