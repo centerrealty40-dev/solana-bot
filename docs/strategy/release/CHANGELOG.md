@@ -69,6 +69,27 @@
 
 ---
 
+## [1.11.519] — 2026-06-29
+
+**Тег:** `sa-alpha-1.11.519`
+
+### live-oscar — упрощение prod mcap sub-tiers
+
+**Изменение:** prod tier (mcap ≥ $3M) — две полосы вместо четырёх:
+
+| Mcap | Max | Slices |
+|------|-----|--------|
+| $3M–$12M | $3100 | 7×$300 + $400@-10% + $600@-20% |
+| $12M+ | $2100 | 7×$300 only |
+
+Удалены промежуточные полосы $5–8M ($2800) и $8–12M ($2100). Low ($2M–$3M) **$850** без изменений. Env: `PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD`, `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD`, `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD`.
+
+**Откат:** redeploy `sa-alpha-1.11.518`; restore 1.11.518 prod mcap band env; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.518] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.518`

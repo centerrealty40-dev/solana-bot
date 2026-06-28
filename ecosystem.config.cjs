@@ -174,6 +174,7 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.515 — sim E+2: prod avg1 −10% $400 (was −5%); dip−10% before +8% → 50% @ +5% vs avg (half8_runner).
  * 1.11.517 — E+2 parity low/micro avg −10%; DIP10_FIRST_TP5 tier-agnostic on wave_b half8_runner.
  * 1.11.518 — prod tiered max position by mcap at entry: $3–5M $3100, $5–8M $2800, $8–12M $2100, ≥$12M $1500; low $2–3M $850 unchanged.
+ * 1.11.519 — prod mcap tiers simplified: $3–12M $3100 (full 7×$300 + avg), ≥$12M $2100 (7×$300 only); remove $5–8M/$8–12M bands.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
@@ -656,14 +657,10 @@ const PM2_APPS = [
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
-        /** Prod sub-tier boundaries + max caps (signal mcap at entry → scaled slices). */
-        PAPER_LIVE_OSCAR_PROD_MCAP_BAND_5M_USD: '5000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_BAND_8M_USD: '8000000',
+        /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_5_USD: '3100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_5_8_USD: '2800',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_8_12_USD: '2100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '1500',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '3100',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '2100',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
         PAPER_VOL_1H_MIN_USD: '35000',
