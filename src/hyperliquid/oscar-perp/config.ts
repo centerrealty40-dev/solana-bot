@@ -91,7 +91,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
   const leverage = Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2)));
   const positionNotionalUsd = resolvePositionGrossUsd(leverage);
   const positionMarginUsd = positionNotionalUsd / leverage;
-  const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', true);
+  const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', false);
   const legs = stagedEntryEnabled
     ? defaultLegGrossUsd(positionNotionalUsd)
     : { leg1: positionNotionalUsd, leg2: 0, leg3: 0 };

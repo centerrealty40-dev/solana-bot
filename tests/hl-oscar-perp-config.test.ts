@@ -25,24 +25,22 @@ function clearEnv(): void {
 describe('hl-oscar-perp config sizing', () => {
   afterEach(() => clearEnv());
 
-  it('defaults to staged $100 gross ($50 margin) at 2x — 30/30/40 legs', () => {
+  it('defaults to single-shot $100 gross ($50 margin) at 2x', () => {
     clearEnv();
     const cfg = loadHlOscarPerpConfig();
     expect(cfg.dipMinDropPct).toBe(-7);
     expect(cfg.dipMinImpulsePct).toBe(10);
-    expect(cfg.stagedEntryEnabled).toBe(true);
+    expect(cfg.stagedEntryEnabled).toBe(false);
     expect(cfg.leg2DropPct).toBe(5);
     expect(cfg.leg3DropPct).toBe(10);
     expect(cfg.positionNotionalUsd).toBe(100);
     expect(cfg.positionMarginUsd).toBe(50);
-    const legs = defaultLegGrossUsd(100);
-    expect(cfg.leg1GrossUsd).toBe(legs.leg1);
-    expect(cfg.leg2GrossUsd).toBe(legs.leg2);
-    expect(cfg.leg3GrossUsd).toBe(legs.leg3);
-    expect(cfg.leg1GrossUsd + cfg.leg2GrossUsd + cfg.leg3GrossUsd).toBe(100);
+    expect(cfg.leg1GrossUsd).toBe(100);
+    expect(cfg.leg2GrossUsd).toBe(0);
+    expect(cfg.leg3GrossUsd).toBe(0);
     expect(cfg.leverage).toBe(2);
     const twap = toHlTwapLiveConfig(cfg);
-    expect(twap.notionalUsd).toBe(legs.leg1 / 2);
+    expect(twap.notionalUsd).toBe(50);
   });
 
   it('single-shot when HL_OSCAR_STAGED_ENTRY=0', () => {
@@ -69,8 +67,8 @@ describe('hl-oscar-perp config sizing', () => {
     process.env.HL_OSCAR_NOTIONAL_USD = '150';
     const cfg = loadHlOscarPerpConfig();
     expect(cfg.positionNotionalUsd).toBe(150);
-    const legs = defaultLegGrossUsd(150);
-    expect(cfg.leg1GrossUsd).toBe(legs.leg1);
+    expect(cfg.leg1GrossUsd).toBe(150);
+    expect(cfg.leg2GrossUsd).toBe(0);
     expect(cfg.positionMarginUsd).toBe(75);
   });
 

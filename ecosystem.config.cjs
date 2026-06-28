@@ -48,8 +48,8 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_MARGIN_USD: '50',
   HL_OSCAR_NOTIONAL_USD: '100',
   HL_OSCAR_POSITION_NOTIONAL_USD: '100',
-  /** Staged 30/30/40 DCA: leg1 @ −7% dip, leg2 @ −5% / leg3 @ −10% from signal. */
-  HL_OSCAR_STAGED_ENTRY: '1',
+  /** Single-shot $100 gross on signal ($50 margin @ 2x). Set 1 for staged 30/30/40 DCA. */
+  HL_OSCAR_STAGED_ENTRY: '0',
   HL_OSCAR_DIP_MIN_PCT: '-7',
   HL_OSCAR_LEG2_DROP_PCT: '5',
   HL_OSCAR_LEG3_DROP_PCT: '10',
