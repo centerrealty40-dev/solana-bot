@@ -104,7 +104,7 @@ export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): 
   await sendOscarTelegram(
     [
       '🟢 HL Oscar — бот запущен',
-      `Режим: ${mode} · ${cfg.leverage}x · $${cfg.positionNotionalUsd}/позиция`,
+      `Режим: ${mode} · ${cfg.leverage}x · $${cfg.positionNotionalUsd} gross ($${cfg.positionMarginUsd} margin)/позиция`,
       `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours}ч`,
     ].join('\n'),
   );
