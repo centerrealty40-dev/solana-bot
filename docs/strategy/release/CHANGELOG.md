@@ -71,6 +71,32 @@
 
 ---
 
+---
+
+## [1.11.522] — 2026-06-29
+
+**Тег:** `sa-alpha-1.11.522`
+
+### live-oscar — low tier $2M–$3M: 3×$250 entry ($750)
+
+**Изменение:** low mcap lane — вход **3×$250 = $750** (было 2×$250 = $500). Усреднение, коридор и delay без изменений.
+
+| Tier | mcap | Entry | Avg | Max position |
+|------|------|-------|-----|--------------|
+| **low** | $2M–$3M | 3×$250 ($750) @ 10s (+3/−5%) | −10% **$350** | **$1100** |
+
+**Env (live-oscar PM2):**
+- `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD`: **`250`** (было `0`)
+- `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD`: **`750`** (было `500`)
+
+Boot-инвариант `assertLiveOscarUnifiedEntrySizing`: `position == leg1+leg2+leg3`.
+
+**Откат:** redeploy `sa-alpha-1.11.521`; leg3 `0`, position `500`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.521] — 2026-06-29
 
 **Тег:** `sa-alpha-1.11.521`
