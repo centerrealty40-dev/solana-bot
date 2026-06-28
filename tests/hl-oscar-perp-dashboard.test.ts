@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   hlOscarExitReasonForMetrics,
   hlOscarHyperliquidTradeUrl,
+  loadHlOscarMajorsForDashboard,
   loadHlOscarPerpForDashboard,
   resolveHlOscarCoinFromRow,
 } from '../scripts-tmp/hl-oscar-perp-dashboard.js';
@@ -188,6 +189,28 @@ describe('loadHlOscarPerpForDashboard', () => {
     expect(load.open[0]?.symbol).toBe('ETH');
     delete process.env.DASHBOARD_HL_OSCAR_PERP_JSONL;
     delete process.env.DASHBOARD_HL_OSCAR_HEARTBEAT;
+  });
+});
+
+describe('loadHlOscarMajorsForDashboard', () => {
+  it('reads majors journal with universe size 2', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-majors-dash-'));
+    const fp = path.join(tmpDir, 'live.jsonl');
+    const hbPath = path.join(tmpDir, 'heartbeat.json');
+    fs.writeFileSync(fp, '', 'utf8');
+    fs.writeFileSync(
+      hbPath,
+      `${JSON.stringify({ ts: Date.now(), mode: 'live', openCount: 0, universeSize: 2 })}\n`,
+      'utf8',
+    );
+    process.env.DASHBOARD_HL_OSCAR_MAJORS_JSONL = fp;
+    process.env.DASHBOARD_HL_OSCAR_MAJORS_HEARTBEAT = hbPath;
+
+    const load = loadHlOscarMajorsForDashboard(fp);
+    expect(load.hlOscar?.universeSize).toBe(2);
+    expect(load.hlOscar?.mode).toBe('live');
+    delete process.env.DASHBOARD_HL_OSCAR_MAJORS_JSONL;
+    delete process.env.DASHBOARD_HL_OSCAR_MAJORS_HEARTBEAT;
   });
 });
 

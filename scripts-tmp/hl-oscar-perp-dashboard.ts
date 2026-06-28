@@ -1,11 +1,12 @@
 /**
- * HL Oscar perp — dashboard loader for `/papertrader2` tile 7.
- * Journal: `data/hl-oscar-perp/live.jsonl` (same host as bot on VPS).
+ * HL Oscar journal dashboard loader — perp alts (tile 4) and majors BTC/ETH (tile 7).
+ * Journals: `data/hl-oscar-perp/live.jsonl`, `data/hl-oscar-majors/live.jsonl`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
 import type { Paper2OpenItem, TimelineEvent } from './dashboard-server.js';
+import { hlOscarMajorsSizingFromEnv } from '../src/hyperliquid/oscar-majors/config.js';
 import { hlOscarSizingFromEnv } from '../src/hyperliquid/oscar-perp/config.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
@@ -24,6 +25,23 @@ export function hlOscarPerpHeartbeatPath(): string {
   return (
     process.env.DASHBOARD_HL_OSCAR_HEARTBEAT?.trim() ||
     process.env.HL_OSCAR_HEARTBEAT_PATH?.trim() ||
+    path.join(path.dirname(jsonl), 'heartbeat.json')
+  );
+}
+
+export function hlOscarMajorsDashboardJsonlPath(): string {
+  return (
+    process.env.DASHBOARD_HL_OSCAR_MAJORS_JSONL?.trim() ||
+    process.env.HL_MAJORS_JOURNAL_JSONL?.trim() ||
+    path.join(process.cwd(), 'data', 'hl-oscar-majors', 'live.jsonl')
+  );
+}
+
+export function hlOscarMajorsHeartbeatPath(): string {
+  const jsonl = hlOscarMajorsDashboardJsonlPath();
+  return (
+    process.env.DASHBOARD_HL_OSCAR_MAJORS_HEARTBEAT?.trim() ||
+    process.env.HL_MAJORS_HEARTBEAT_PATH?.trim() ||
     path.join(path.dirname(jsonl), 'heartbeat.json')
   );
 }
@@ -179,6 +197,7 @@ function emptyOpenRow(
   symbol: string,
   ts: number,
   journalMode: 'dry_run' | 'live',
+  lane: string,
 ): OpenRow {
   return {
     mint: posId,
@@ -188,7 +207,7 @@ function emptyOpenRow(
     entryRealMcUsd: null,
     baselinePriceUsd: null,
     openedAtIso: new Date(ts).toISOString(),
-    lane: 'hl-oscar-perp',
+    lane,
     source: 'hyperliquid',
     metricType: 'price',
     features: { coin, positionId: posId, hyperliquidUrl: hlOscarHyperliquidTradeUrl(coin) },
@@ -213,9 +232,15 @@ function emptyOpenRow(
   };
 }
 
-export function loadHlOscarPerpForDashboard(
-  jsonlPath = hlOscarPerpDashboardJsonlPath(),
-): HlOscarPerpDashboardLoad {
+type HlOscarJournalDashboardOpts = {
+  jsonlPath: string;
+  heartbeatPath: string;
+  lane: string;
+  sizing: { leverage: number; grossUsd: number; marginUsd: number };
+};
+
+function loadHlOscarJournalForDashboard(opts: HlOscarJournalDashboardOpts): HlOscarPerpDashboardLoad {
+  const { jsonlPath, heartbeatPath, lane, sizing } = opts;
   const openById = new Map<string, OpenRow>();
   const closed: Array<Record<string, unknown>> = [];
   const failMap = new Map<string, number>();
@@ -230,7 +255,6 @@ export function loadHlOscarPerpForDashboard(
   const oneHourAgo = Date.now() - 3_600_000;
 
   if (!fs.existsSync(jsonlPath)) {
-    const sizing = hlOscarSizingFromEnv();
     return {
       open: [],
       closed: [],
@@ -303,7 +327,7 @@ export function loadHlOscarPerpForDashboard(
       const dipPct = num(ev.dipPct);
       const impulsePct = num(ev.impulsePct);
       const journalMode: 'dry_run' | 'live' = ev.mode === 'live' ? 'live' : 'dry_run';
-      const row = emptyOpenRow(posId, coin, displaySymbol, ts, journalMode);
+      const row = emptyOpenRow(posId, coin, displaySymbol, ts, journalMode, lane);
       row.baselinePriceUsd = fillPx;
       row.entryMcUsd = fillPx ?? 0;
       row.totalInvestedUsd = grossUsd;
@@ -417,7 +441,7 @@ export function loadHlOscarPerpForDashboard(
     }
   }
 
-  const fileHb = readHlOscarHeartbeatFile(hlOscarPerpHeartbeatPath());
+  const fileHb = readHlOscarHeartbeatFile(heartbeatPath);
   const mode =
     fileHb?.mode ?? journalHeartbeatMode ?? latestEventMode ?? 'dry_run';
   const allOpenRows = [...openById.values()];
@@ -440,7 +464,7 @@ export function loadHlOscarPerpForDashboard(
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
-  const sizing = hlOscarSizingFromEnv();
+  const sizingFinal = sizing;
   return {
     open,
     closed,
@@ -457,9 +481,33 @@ export function loadHlOscarPerpForDashboard(
       openCount,
       paperPhantomCount,
       universeSize,
-      leverage: sizing.leverage,
-      notionalUsd: sizing.grossUsd,
-      marginUsd: sizing.marginUsd,
+      leverage: sizingFinal.leverage,
+      notionalUsd: sizingFinal.grossUsd,
+      marginUsd: sizingFinal.marginUsd,
     },
   };
+}
+
+export function loadHlOscarPerpForDashboard(
+  jsonlPath = hlOscarPerpDashboardJsonlPath(),
+): HlOscarPerpDashboardLoad {
+  const sizing = hlOscarSizingFromEnv();
+  return loadHlOscarJournalForDashboard({
+    jsonlPath,
+    heartbeatPath: hlOscarPerpHeartbeatPath(),
+    lane: 'hl-oscar-perp',
+    sizing,
+  });
+}
+
+export function loadHlOscarMajorsForDashboard(
+  jsonlPath = hlOscarMajorsDashboardJsonlPath(),
+): HlOscarPerpDashboardLoad {
+  const sizing = hlOscarMajorsSizingFromEnv();
+  return loadHlOscarJournalForDashboard({
+    jsonlPath,
+    heartbeatPath: hlOscarMajorsHeartbeatPath(),
+    lane: 'hl-oscar-majors',
+    sizing,
+  });
 }

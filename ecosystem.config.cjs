@@ -79,8 +79,8 @@ const HL_MAJORS_DATA_DIR = path.join(root, 'data/hl-oscar-majors');
 const HL_MAJORS_ENV = {
   NODE_ENV: 'production',
   HL_MAJORS_ENABLED: '1',
-  HL_MAJORS_LIVE_ENABLED: '0',
-  HL_MAJORS_DRY_RUN: '1',
+  HL_MAJORS_LIVE_ENABLED: '1',
+  HL_MAJORS_DRY_RUN: '0',
   HL_MAJORS_LEVERAGE: '2',
   HL_MAJORS_MARGIN_USD: '50',
   HL_MAJORS_STAGED_ENTRY: '0',
