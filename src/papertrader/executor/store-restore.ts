@@ -500,7 +500,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       process.env.PAPER_STRATEGY_ID?.trim() === 'live-oscar' &&
       ot.liveStagedEntry?.entrySplitV2
     ) {
-      applyCanonicalStagedEntrySizing(loadPaperTraderConfig(), ot.liveStagedEntry, ot.liveOscarMcapTier);
+      applyCanonicalStagedEntrySizing(loadPaperTraderConfig(), ot.liveStagedEntry, ot.liveOscarMcapTier, ot.entryMarketCapUsd);
     }
 
     if (isWaveBExitPolicy(ot)) {

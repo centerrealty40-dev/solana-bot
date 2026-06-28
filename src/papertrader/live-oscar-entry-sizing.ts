@@ -13,13 +13,113 @@ import {
 } from './live-oscar-mcap-tier.js';
 import type { LiveStagedEntryState, OpenTrade } from './types.js';
 
+/** Prod tier mcap bands (≥ $3M when low lane ON). */
+export type LiveOscarProdMcapBand = '3_5' | '5_8' | '8_12' | '12_plus';
+
+export type LiveOscarProdBandEntryPlan = {
+  band: LiveOscarProdMcapBand;
+  maxUsd: number;
+  splitLegCount: number;
+  avgLeg1Usd: number;
+  avgLeg2Usd: number;
+};
+
+export function resolveLiveOscarProdMcapBand(
+  cfg: PaperTraderConfig,
+  mcapUsd: number,
+): LiveOscarProdMcapBand | undefined {
+  if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return undefined;
+  const mcap = Number(mcapUsd);
+  if (!Number.isFinite(mcap) || mcap <= 0) return undefined;
+  const prodMin = cfg.liveOscarLowMcapLaneEnabled
+    ? cfg.liveOscarLowMcapMaxUsd
+    : (cfg.discoveryMinMarketCapUsd ?? 0);
+  if (prodMin > 0 && mcap + 1e-9 < prodMin) return undefined;
+  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand5MUsd) return '3_5';
+  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand8MUsd) return '5_8';
+  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand12MUsd) return '8_12';
+  return '12_plus';
+}
+
+function prodBandMaxUsd(cfg: PaperTraderConfig, band: LiveOscarProdMcapBand): number {
+  switch (band) {
+    case '3_5':
+      return cfg.liveOscarProdMcapMaxUsd3_5;
+    case '5_8':
+      return cfg.liveOscarProdMcapMaxUsd5_8;
+    case '8_12':
+      return cfg.liveOscarProdMcapMaxUsd8_12;
+    case '12_plus':
+      return cfg.liveOscarProdMcapMaxUsd12Plus;
+  }
+}
+
+/** Derive split/avg legs from band max cap (7×$300 pattern, scaled avg / leg count). */
+export function deriveLiveOscarProdBandEntryPlan(
+  cfg: PaperTraderConfig,
+  band: LiveOscarProdMcapBand,
+): LiveOscarProdBandEntryPlan {
+  const maxUsd = prodBandMaxUsd(cfg, band);
+  const legUsd = cfg.liveStagedEntryEntrySplitLegUsd;
+  const avg1Default = cfg.liveStagedEntrySecondLegUsd;
+  const avg2Default = cfg.liveStagedEntryThirdLegUsd;
+  const sevenLeg = 7 * legUsd;
+  const fullMax = sevenLeg + avg1Default + avg2Default;
+
+  if (maxUsd >= fullMax) {
+    return {
+      band,
+      maxUsd,
+      splitLegCount: 7,
+      avgLeg1Usd: avg1Default,
+      avgLeg2Usd: avg2Default,
+    };
+  }
+  if (maxUsd > sevenLeg) {
+    const avg1 = avg1Default;
+    const avg2 = Math.max(0, maxUsd - sevenLeg - avg1);
+    return { band, maxUsd, splitLegCount: 7, avgLeg1Usd: avg1, avgLeg2Usd: avg2 };
+  }
+  if (maxUsd >= sevenLeg) {
+    return { band, maxUsd, splitLegCount: 7, avgLeg1Usd: 0, avgLeg2Usd: 0 };
+  }
+  const splitLegCount = Math.max(1, Math.floor(maxUsd / legUsd));
+  return { band, maxUsd, splitLegCount, avgLeg1Usd: 0, avgLeg2Usd: 0 };
+}
+
+function resolveProdBandPlanIfApplicable(
+  cfg: PaperTraderConfig,
+  tier: LiveOscarTradeTier | undefined,
+  marketCapUsd: number | null | undefined,
+): LiveOscarProdBandEntryPlan | undefined {
+  const effectiveTier = tier ?? 'prod';
+  if (effectiveTier !== 'prod') return undefined;
+  if (marketCapUsd == null || !(marketCapUsd > 0)) return undefined;
+  const band = resolveLiveOscarProdMcapBand(cfg, marketCapUsd);
+  if (!band) return undefined;
+  return deriveLiveOscarProdBandEntryPlan(cfg, band);
+}
+
+function prodSplitLegEnabled(
+  cfg: PaperTraderConfig,
+  tier: LiveOscarTradeTier | undefined,
+  marketCapUsd: number | null | undefined,
+  legIndex: EntrySplitLegIndex,
+): boolean {
+  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
+  if (!plan) return true;
+  return legIndex <= plan.splitLegCount;
+}
+
 /** Tier-aware staged-entry split leg-1: low/prod/default from env. */
 export function resolveLiveOscarEntrySplitLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro') return cfg.liveOscarMicroMcapEntrySplitLegUsd;
   if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLegUsd;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 1)) return 0;
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
@@ -27,8 +127,9 @@ export function resolveLiveOscarEntrySplitLegUsd(
 export function resolveLiveOscarEntrySplitLeg2Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
-  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
   if (tier === 'micro') {
     return cfg.liveOscarMicroMcapEntrySplitLeg2Usd;
   }
@@ -36,6 +137,7 @@ export function resolveLiveOscarEntrySplitLeg2Usd(
     const configured = cfg.liveOscarLowMcapEntrySplitLeg2Usd;
     return configured > 0 ? configured : leg1;
   }
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 2)) return 0;
   const configured = cfg.liveStagedEntryEntrySplitLeg2Usd;
   return configured > 0 ? configured : leg1;
 }
@@ -44,9 +146,11 @@ export function resolveLiveOscarEntrySplitLeg2Usd(
 export function resolveLiveOscarEntrySplitLeg3Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'low') return cfg.liveOscarLowMcapEntrySplitLeg3Usd;
   if (tier === 'micro') return 0;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 3)) return 0;
   return cfg.liveStagedEntryEntrySplitLeg3Usd;
 }
 
@@ -54,32 +158,40 @@ export function resolveLiveOscarEntrySplitLeg3Usd(
 export function resolveLiveOscarEntrySplitLeg4Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro' || tier === 'low') return 0;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 4)) return 0;
   return cfg.liveStagedEntryEntrySplitLeg4Usd;
 }
 
 export function resolveLiveOscarEntrySplitLeg5Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro' || tier === 'low') return 0;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 5)) return 0;
   return cfg.liveStagedEntryEntrySplitLeg5Usd;
 }
 
 export function resolveLiveOscarEntrySplitLeg6Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro' || tier === 'low') return 0;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 6)) return 0;
   return cfg.liveStagedEntryEntrySplitLeg6Usd;
 }
 
 export function resolveLiveOscarEntrySplitLeg7Usd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro' || tier === 'low') return 0;
+  if (!prodSplitLegEnabled(cfg, tier, marketCapUsd, 7)) return 0;
   return cfg.liveStagedEntryEntrySplitLeg7Usd;
 }
 
@@ -87,22 +199,23 @@ export function resolveLiveOscarEntrySplitLegUsdByIndex(
   cfg: PaperTraderConfig,
   tier: LiveOscarTradeTier | undefined,
   legIndex: EntrySplitLegIndex,
+  marketCapUsd?: number | null,
 ): number {
   switch (legIndex) {
     case 1:
-      return resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+      return resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
     case 2:
-      return resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg2Usd(cfg, tier, marketCapUsd);
     case 3:
-      return resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg3Usd(cfg, tier, marketCapUsd);
     case 4:
-      return resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg4Usd(cfg, tier, marketCapUsd);
     case 5:
-      return resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg5Usd(cfg, tier, marketCapUsd);
     case 6:
-      return resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg6Usd(cfg, tier, marketCapUsd);
     case 7:
-      return resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
+      return resolveLiveOscarEntrySplitLeg7Usd(cfg, tier, marketCapUsd);
     default:
       return 0;
   }
@@ -111,10 +224,11 @@ export function resolveLiveOscarEntrySplitLegUsdByIndex(
 export function resolveLiveOscarEntrySplitTotalUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   let sum = 0;
   for (let i = 1; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
-    sum += resolveLiveOscarEntrySplitLegUsdByIndex(cfg, tier, i as EntrySplitLegIndex);
+    sum += resolveLiveOscarEntrySplitLegUsdByIndex(cfg, tier, i as EntrySplitLegIndex, marketCapUsd);
   }
   return sum;
 }
@@ -123,6 +237,7 @@ export function resolveLiveOscarEntrySplitTotalUsd(
 export function resolveLiveOscarStagedAvgFirstDropPct(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  _marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro') return cfg.liveOscarMicroMcapStagedAvgDropPct;
   if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgDropPct;
@@ -133,9 +248,12 @@ export function resolveLiveOscarStagedAvgFirstDropPct(
 export function resolveLiveOscarStagedAvgLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'micro') return cfg.liveOscarMicroMcapStagedAvgLegUsd;
   if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgLegUsd;
+  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
+  if (plan) return plan.avgLeg1Usd;
   return cfg.liveStagedEntrySecondLegUsd;
 }
 
@@ -143,14 +261,18 @@ export function resolveLiveOscarStagedAvgLegUsd(
 export function resolveLiveOscarStagedAvgSecondLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
   if (tier === 'low' || tier === 'micro') return 0;
+  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
+  if (plan) return plan.avgLeg2Usd;
   return cfg.liveStagedEntryThirdLegUsd;
 }
 
 export function resolveLiveOscarStagedAvgSecondDropPct(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  _marketCapUsd?: number | null,
 ): number {
   if (tier === 'low' || tier === 'micro') return 0;
   return cfg.liveStagedEntryThirdDropPct;
@@ -159,10 +281,13 @@ export function resolveLiveOscarStagedAvgSecondDropPct(
 export function resolveLiveOscarStagedEntryMaxUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): number {
-  let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
-  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
+  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
+  if (plan) return plan.maxUsd;
+  let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier, marketCapUsd);
+  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier, marketCapUsd);
+  sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);
   return sum;
 }
 
@@ -189,6 +314,14 @@ export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void 
   if (cfg.liveStagedEntryFirstLegUsd > 0 && Math.abs(cfg.liveStagedEntryFirstLegUsd - prodLeg1) > 1e-6) {
     errors.push(
       `PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD (${cfg.liveStagedEntryFirstLegUsd}) must equal ENTRY_SPLIT_LEG (${prodLeg1})`,
+    );
+  }
+
+  const prodMaxCap = cfg.liveOscarProdMcapMaxUsd3_5;
+  const prodDerivedMax = resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', cfg.liveOscarProdMcapBand5MUsd - 1);
+  if (Math.abs(prodMaxCap - prodDerivedMax) > 1e-6) {
+    errors.push(
+      `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_5_USD (${prodMaxCap}) must match derived plan (${prodDerivedMax})`,
     );
   }
 
@@ -237,20 +370,21 @@ export function applyCanonicalStagedEntrySizing(
   cfg: PaperTraderConfig,
   st: LiveStagedEntryState,
   tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
 ): void {
-  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
-  const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
-  const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
-  const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier);
+  const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
+  const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier, marketCapUsd);
+  const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);
+  const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier, marketCapUsd);
+  const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier, marketCapUsd);
   st.firstLegUsd = leg1;
   st.entrySplitLegUsd = leg1;
-  st.entrySplitLeg2Usd = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
-  st.entrySplitLeg3Usd = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
-  st.entrySplitLeg4Usd = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
-  st.entrySplitLeg5Usd = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
-  st.entrySplitLeg6Usd = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
-  st.entrySplitLeg7Usd = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
+  st.entrySplitLeg2Usd = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier, marketCapUsd);
+  st.entrySplitLeg3Usd = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier, marketCapUsd);
+  st.entrySplitLeg4Usd = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier, marketCapUsd);
+  st.entrySplitLeg5Usd = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier, marketCapUsd);
+  st.entrySplitLeg6Usd = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier, marketCapUsd);
+  st.entrySplitLeg7Usd = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier, marketCapUsd);
   for (let i = 2; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
     setEntrySplitLegDone(st, i as EntrySplitLegIndex, entrySplitLegUsdFromState(st, i as EntrySplitLegIndex) <= 0);
   }
@@ -268,6 +402,11 @@ export function applyCanonicalStagedEntrySizing(
       st.thirdLegUsd = avg2Usd;
       st.avgThirdDropPct = avg2Drop;
       st.thirdDropPct = avg2Drop;
+    } else {
+      st.avgThirdLegUsd = 0;
+      st.thirdLegUsd = 0;
+      st.avgThirdDropPct = 0;
+      st.thirdDropPct = 0;
     }
   }
 }
@@ -277,8 +416,9 @@ export function applyCanonicalOpenLegUsd(cfg: PaperTraderConfig, ot: OpenTrade):
   const st = ot.liveStagedEntry;
   if (!st?.entrySplitV2) return;
   const tier = resolveLiveOscarTradeTierFromOpen(cfg, ot);
-  applyCanonicalStagedEntrySizing(cfg, st, tier);
-  const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
+  const mcap = ot.entryMarketCapUsd;
+  applyCanonicalStagedEntrySizing(cfg, st, tier, mcap);
+  const leg = resolveLiveOscarEntrySplitLegUsd(cfg, tier, mcap);
   const openLeg = ot.legs.find((l) => l.reason === 'open');
   const hasFilledBuy = (ot.entryLegSignatures?.length ?? 0) > 0;
   if (openLeg && !hasFilledBuy && openLeg.sizeUsd !== leg) {

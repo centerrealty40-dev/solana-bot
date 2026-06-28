@@ -272,6 +272,14 @@ const ConfigSchema = z.object({
   /** Prod tier (mcap ≥ maxUsd): near-miss runner corridor — dip −18%, vol1h ≥$25k. */
   liveOscarProdMcapDipMinDropPct: z.coerce.number().default(-18),
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(25_000),
+  /** Prod sub-tier boundaries ($3M floor = low max when low lane ON). */
+  liveOscarProdMcapBand5MUsd: z.coerce.number().positive().default(5_000_000),
+  liveOscarProdMcapBand8MUsd: z.coerce.number().positive().default(8_000_000),
+  liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
+  liveOscarProdMcapMaxUsd3_5: z.coerce.number().positive().default(3_100),
+  liveOscarProdMcapMaxUsd5_8: z.coerce.number().positive().default(2_800),
+  liveOscarProdMcapMaxUsd8_12: z.coerce.number().positive().default(2_100),
+  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(1_500),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
@@ -1212,6 +1220,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarScalpWaveTimeStopHours: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS,
     liveOscarProdMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT,
     liveOscarProdMcapVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD,
+    liveOscarProdMcapBand5MUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_BAND_5M_USD,
+    liveOscarProdMcapBand8MUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_BAND_8M_USD,
+    liveOscarProdMcapBand12MUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD,
+    liveOscarProdMcapMaxUsd3_5: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_5_USD,
+    liveOscarProdMcapMaxUsd5_8: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_5_8_USD,
+    liveOscarProdMcapMaxUsd8_12: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_8_12_USD,
+    liveOscarProdMcapMaxUsd12Plus: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,

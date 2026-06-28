@@ -18,11 +18,11 @@ import {
   resolveLiveOscarEntrySplitLeg6Usd,
   resolveLiveOscarEntrySplitLeg7Usd,
   resolveLiveOscarEntrySplitLegUsd,
-  resolveLiveOscarEntrySplitTotalUsd,
   resolveLiveOscarStagedAvgFirstDropPct,
   resolveLiveOscarStagedAvgLegUsd,
   resolveLiveOscarStagedAvgSecondDropPct,
   resolveLiveOscarStagedAvgSecondLegUsd,
+  resolveLiveOscarStagedEntryMaxUsd,
   resolveLiveOscarTradeTierFromMcap,
 } from '../live-oscar-entry-sizing.js';
 import type { LiveOscarTradeTier } from '../live-oscar-mcap-tier.js';
@@ -279,21 +279,22 @@ export function buildLiveStagedEntryState(
   },
 ): LiveStagedEntryState {
   const firstMintProbe = options?.firstMintProbe === true;
-  const tier = resolveLiveOscarTradeTierFromMcap(cfg, options?.marketCapUsd);
-  const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier);
-  const splitLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier);
-  const splitLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier);
-  const splitLeg4 = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier);
-  const splitLeg5 = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier);
-  const splitLeg6 = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier);
-  const splitLeg7 = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier);
+  const mcap = options?.marketCapUsd;
+  const tier = resolveLiveOscarTradeTierFromMcap(cfg, mcap);
+  const splitLeg = resolveLiveOscarEntrySplitLegUsd(cfg, tier, mcap);
+  const splitLeg2 = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier, mcap);
+  const splitLeg3 = resolveLiveOscarEntrySplitLeg3Usd(cfg, tier, mcap);
+  const splitLeg4 = resolveLiveOscarEntrySplitLeg4Usd(cfg, tier, mcap);
+  const splitLeg5 = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier, mcap);
+  const splitLeg6 = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier, mcap);
+  const splitLeg7 = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier, mcap);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
-  const avgSecondUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  const avgThirdUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
-  const avgSecondDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgFirstDropPct(cfg, tier);
-  const avgThirdDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondDropPct(cfg, tier);
+  const avgSecondUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgLegUsd(cfg, tier, mcap);
+  const avgThirdUsd = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, mcap);
+  const avgSecondDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgFirstDropPct(cfg, tier, mcap);
+  const avgThirdDrop = firstMintProbe ? 0 : resolveLiveOscarStagedAvgSecondDropPct(cfg, tier, mcap);
   const st: LiveStagedEntryState = {
     signalTs: signal.signalTs,
     signalPriceUsd: signal.signalPriceUsd,
@@ -344,7 +345,7 @@ export function buildLiveStagedEntryState(
         }
       : {}),
   };
-  applyCanonicalStagedEntrySizing(cfg, st, tier);
+  applyCanonicalStagedEntrySizing(cfg, st, tier, mcap);
   return st;
 }
 
@@ -352,11 +353,12 @@ export function openNotionalUsdForStagedEntry(cfg: PaperTraderConfig): number {
   return cfg.liveStagedEntryEntrySplitLegUsd;
 }
 
-export function stagedEntryPlanInvestedCapUsd(cfg: PaperTraderConfig, tier?: LiveOscarTradeTier): number {
-  let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier);
-  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier);
-  sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier);
-  return sum;
+export function stagedEntryPlanInvestedCapUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): number {
+  return resolveLiveOscarStagedEntryMaxUsd(cfg, tier, marketCapUsd);
 }
 
 export function usesLegacyStagedAdds(st: LiveStagedEntryState): boolean {
