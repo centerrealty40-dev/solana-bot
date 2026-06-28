@@ -100,4 +100,47 @@ describe('runSlicedTokenToSolPipeline', () => {
     expect(calls).toBe(2);
     expect(r.wsolOutLamports).toBe(100n);
   });
+
+  it('propagates preflightSkipReason and walletDrained after partial slice success', async () => {
+    let calls = 0;
+    const runOne = async (): Promise<LiveTokenToSolPipelineResult> => {
+      calls += 1;
+      if (calls === 3) {
+        return {
+          ok: false,
+          preflightSkipReason: 'wallet_spl_balance_zero',
+        };
+      }
+      return {
+        ok: true,
+        wsolOutLamports: 250_000_000n,
+        sellAmountSource: calls === 2 ? 'usd_capped_by_chain' : 'usd_math',
+        walletDrained: calls === 2,
+      };
+    };
+    const r = await runSlicedTokenToSolPipeline(baseCfg, args, runOne);
+    expect(r.ok).toBe(false);
+    expect(calls).toBe(3);
+    expect(r.wsolOutLamports).toBe(500_000_000n);
+    expect(r.preflightSkipReason).toBe('wallet_spl_balance_zero');
+    expect(r.sellAmountSource).toBe('usd_capped_by_chain');
+    expect(r.walletDrained).toBe(true);
+  });
+
+  it('propagates sellAmountSource and walletDrained on full slice success', async () => {
+    const runOne = async (
+      _cfg: LiveOscarConfig,
+      a: { usdNotional: number; intentKind: 'sell_partial' | 'sell_full' },
+    ): Promise<LiveTokenToSolPipelineResult> => ({
+      ok: true,
+      wsolOutLamports: BigInt(Math.round(a.usdNotional * 1e6)),
+      sellAmountSource: a.intentKind === 'sell_full' ? 'chain_full_balance' : 'usd_math',
+      walletDrained: a.intentKind === 'sell_full',
+    });
+    const fullArgs = { ...args, intentKind: 'sell_full' as const };
+    const r = await runSlicedTokenToSolPipeline(baseCfg, fullArgs, runOne);
+    expect(r.ok).toBe(true);
+    expect(r.sellAmountSource).toBe('chain_full_balance');
+    expect(r.walletDrained).toBe(true);
+  });
 });
