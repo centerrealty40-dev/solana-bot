@@ -983,9 +983,9 @@
         label: 'HL Oscar Perp',
         tag: 'live',
         oneLiner:
-          'Hyperliquid perp dip-buy (Live Oscar wave B): single entry **$100 gross** (**$50 margin @ 2x**), TP +5%/+7.5%/+10%, trail from +5%, kill **−45%**, time stop **12h**.',
+          'Hyperliquid perp dip-buy (Live Oscar wave B): staged **$30+$30+$40** gross (**$50 margin @ 2x** total $100), leg2/3 @ −5%/−10% от сигнала, TP +5%/+7.5%/+10%, trail from +5%, kill **−45%**, time stop **12h**.',
         details:
-          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−10…−50%** от high (2h/6h/12h), impulse **≥12%**.\n• Default: single **$100 gross** ($50 margin @ 2x); optional staged legs 30/30/40.\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%** — по **50% остатка** на ступень (100→50→25→12.5%).\n• Trail с **+5%**: −**2.5%** от хая → **20%** остатка; breakeven на ≤0% после arm.\n• Kill **−45%**, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
+          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−7…−50%** от high (2h/6h/12h), impulse **≥10%**.\n• Staged **30/30/40** ($30+$30+$40 @ $100 gross): leg1 @ −7% dip; leg2 @ **−5%** / leg3 @ **−10%** от цены сигнала.\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%** — по **50% остатка** на ступень (100→50→25→12.5%).\n• Trail с **+5%**: −**2.5%** от хая → **20%** остатка; breakeven на ≤0% после arm.\n• Kill **−45%**, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

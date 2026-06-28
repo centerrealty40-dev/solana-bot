@@ -1,7 +1,7 @@
 /**
  * HyperLiquid Oscar dip-buy perp bot — paper/dry-run by default.
  *
- * Strategy: dip ≥10% from local high (2h/6h/12h) + impulse ≥10%, staged entry,
+ * Strategy: dip ≥7% from local high (2h/6h/12h) + impulse ≥10%, staged entry (30/30/40),
  * Wave B runner exit: TP +5%/+7.5%/+10% (50% remaining each), trail from +5% (−2.5% step, 20%), kill −45%.
  *
  * Env: HL_OSCAR_LIVE_ENABLED=0 (default paper), HL_OSCAR_* — see .env.example in hl-oscar-perp repo.
