@@ -74,6 +74,45 @@ const HL_OSCAR_PERP_ENV = {
   /** Majors → dedicated hl-oscar-majors bot; alt Oscar skips BTC/ETH. */
   HL_OSCAR_DENYLIST_EXTRA: 'BTC,ETH',
 };
+/** HL Oscar Majors (BTC+ETH knife Mode A) — paper default until smoke passes. */
+const HL_MAJORS_DATA_DIR = path.join(root, 'data/hl-oscar-majors');
+const HL_MAJORS_ENV = {
+  NODE_ENV: 'production',
+  HL_MAJORS_ENABLED: '1',
+  HL_MAJORS_LIVE_ENABLED: '0',
+  HL_MAJORS_DRY_RUN: '1',
+  HL_MAJORS_LEVERAGE: '2',
+  HL_MAJORS_MARGIN_USD: '50',
+  HL_MAJORS_STAGED_ENTRY: '0',
+  HL_MAJORS_DIP_MIN_PCT: '-6',
+  HL_MAJORS_DIP_MIN_IMPULSE_PCT: '0',
+  HL_MAJORS_DIP_WINDOWS_MIN: '120,360,720',
+  HL_MAJORS_DIP_COOLDOWN_MIN: '30',
+  HL_MAJORS_BTC_TP_RUNGS: '0.02,0.03,0.04',
+  HL_MAJORS_ETH_TP_RUNGS: '0.015,0.02,0.025',
+  HL_MAJORS_BTC_TRAIL_ARM_FRAC: '0.02',
+  HL_MAJORS_BTC_TRAIL_STEP_DROP_FRAC: '0.01',
+  HL_MAJORS_ETH_TRAIL_ARM_FRAC: '0.015',
+  HL_MAJORS_ETH_TRAIL_STEP_DROP_FRAC: '0.008',
+  HL_MAJORS_TP_SELL_FRAC: '0.5',
+  HL_MAJORS_TRAIL_SELL_FRAC: '0.25',
+  HL_MAJORS_TIME_STOP_HOURS: '12',
+  HL_MAJORS_KILL_PCT: '15',
+  HL_MAJORS_STAGED_KILL_DROP_PCT: '10',
+  HL_MAJORS_MAX_OPEN_POSITIONS: '2',
+  HL_MAJORS_WHITELIST: 'BTC,ETH',
+  HL_MAJORS_MIN_DAY_VOLUME_USD: '1000000',
+  HL_MAJORS_POLL_MS: '60000',
+  HL_MAJORS_CANDLE_REFRESH_MS: '300000',
+  HL_MAJORS_SCAN_BATCH_SIZE: '2',
+  HL_MAJORS_DRAWDOWN_STOP_USD: '300',
+  HL_MAJORS_DRAWDOWN_CHECK_MS: '60000',
+  HL_MAJORS_JOURNAL_JSONL: path.join(HL_MAJORS_DATA_DIR, 'live.jsonl'),
+  HL_MAJORS_HEARTBEAT_PATH: path.join(HL_MAJORS_DATA_DIR, 'heartbeat.json'),
+  HL_MAJORS_SLIPPAGE_TOLERANCE: '0.01',
+  HL_MAJORS_TELEGRAM_CHAT_ID: HL_NEWS_TELEGRAM_CHAT_ID,
+  HL_MAJORS_TELEGRAM_ENABLED: '1',
+};
 const HL_TWAP_LIVE_ENV = {
   NODE_ENV: 'production',
   HL_TWAP_LIVE_ENABLED: '0',
@@ -1710,6 +1749,30 @@ const PM2_APPS = [
       time: true,
       env: {
         ...HL_OSCAR_PERP_ENV,
+      },
+    },
+    /**
+     * HyperLiquid Oscar Majors — BTC+ETH knife Mode A (paper default).
+     * Enable live: HL_MAJORS_LIVE_ENABLED=1 + HL_MAJORS_DRY_RUN=0 in `.env`.
+     */
+    {
+      name: 'hl-oscar-majors-watch',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/hl-oscar-majors-watch.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 100,
+      min_uptime: 10_000,
+      restart_delay: 5000,
+      max_memory_restart: '512M',
+      kill_timeout: 15_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...HL_MAJORS_ENV,
       },
     },
     /**
