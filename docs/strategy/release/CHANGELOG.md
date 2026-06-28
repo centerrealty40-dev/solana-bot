@@ -67,6 +67,31 @@
 
 ---
 
+---
+
+## [1.11.518] — 2026-06-28
+
+**Тег:** `sa-alpha-1.11.518`
+
+### live-oscar — tiered max position by mcap at entry (prod sub-tiers)
+
+**Изменение:** prod tier (mcap ≥ $3M) — max invest от `signalMarketCapUsd` при входе:
+
+| Mcap | Max | Slices |
+|------|-----|--------|
+| $3M–$5M | $3100 | 7×$300 + $400@-10% + $600@-20% |
+| $5M–$8M | $2800 | 7×$300 + $400@-10% + $300@-20% |
+| $8M–$12M | $2100 | 7×$300 only |
+| $12M+ | $1500 | 5×$300 only |
+
+Low ($2M–$3M) **$850** без изменений. Env: `PAPER_LIVE_OSCAR_PROD_MCAP_BAND_*`, `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_*`. `LIVE_MAX_POSITION_USD=3100` (верхняя граница).
+
+**Откат:** redeploy `sa-alpha-1.11.517`; unset prod mcap band env; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.517] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.517`
