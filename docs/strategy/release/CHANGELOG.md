@@ -77,17 +77,17 @@
 
 **Тег:** `sa-alpha-1.11.522`
 
-### live-oscar — low tier $2M–$3M: 3×$250 entry ($750)
+### live-oscar — low tier $2M–$3M: 3×$300 entry ($900)
 
-**Изменение:** low mcap lane — вход **3×$250 = $750** (было 2×$250 = $500). Усреднение, коридор и delay без изменений.
+**Изменение:** low mcap lane — вход **3×$300 = $900** (было 2×$250 = $500). Усреднение, коридор и delay без изменений.
 
 | Tier | mcap | Entry | Avg | Max position |
 |------|------|-------|-----|--------------|
-| **low** | $2M–$3M | 3×$250 ($750) @ 10s (+3/−5%) | −10% **$350** | **$1100** |
+| **low** | $2M–$3M | 3×$300 ($900) @ 10s (+3/−5%) | −10% **$350** | **$1250** |
 
 **Env (live-oscar PM2):**
-- `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD`: **`250`** (было `0`)
-- `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD`: **`750`** (было `500`)
+- `PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD` / `…LEG2_USD` / `…LEG3_USD`: **`300`**
+- `PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD`: **`900`** (было `500`)
 
 Boot-инвариант `assertLiveOscarUnifiedEntrySizing`: `position == leg1+leg2+leg3`.
 
