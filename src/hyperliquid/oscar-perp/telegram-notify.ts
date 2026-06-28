@@ -101,10 +101,14 @@ export async function assertOscarTelegramBot(): Promise<void> {
 
 export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): Promise<void> {
   if (cfg.mode !== 'live') return;
+  const entryLine = cfg.stagedEntryEnabled
+    ? `Staged: $${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} @ dip −${Math.abs(cfg.dipMinDropPct)}% / leg2 −${cfg.leg2DropPct}% / leg3 −${cfg.leg3DropPct}% от сигнала`
+    : `Single entry $${cfg.positionNotionalUsd} gross`;
   await sendOscarTelegram(
     [
       '🟢 HL Oscar — бот запущен',
       `Режим: ${mode} · ${cfg.leverage}x · $${cfg.positionNotionalUsd} gross ($${cfg.positionMarginUsd} margin)/позиция`,
+      entryLine,
       `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours}ч`,
     ].join('\n'),
   );
