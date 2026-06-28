@@ -10,6 +10,7 @@ import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import type { LiveOscarConfig } from './config.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
+import { livePolicyBlocksHealSyncSells } from './policy-only-exits.js';
 
 const pendingByMint = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -42,6 +43,7 @@ export function scheduleLivePostCloseTailSweep(args: {
 }): void {
   const liveCfg = args.liveCfg;
   if (!liveCfg) return;
+  if (livePolicyBlocksHealSyncSells(liveCfg)) return;
   const delayMs = liveCfg.livePostCloseTailSweepDelayMs;
   if (!(delayMs > 0)) return;
   if (!liveCfg.strategyEnabled || liveCfg.executionMode !== 'live') return;

@@ -156,6 +156,13 @@ import {
   clearOpenPositionExecSellUsd,
 } from '../../live/open-position-exec-price.js';
 import { partialReasonToExitReason, livePartialSellDrainedWallet } from '../../live/wallet-zero-policy.js';
+import {
+  isPolicyAllowedFullExitReason,
+  isPolicyAllowedPartialSell,
+  livePolicyBlocksHealSyncSells,
+  livePolicyOnlyExitsEnabled,
+  recordPostHealChurnBlock,
+} from '../../live/policy-only-exits.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -763,6 +770,9 @@ async function tryExecuteTpPartialSell(args: {
     timelineLabelRu,
   } = args;
   const partialReason: PartialSell['reason'] = partialReasonArg ?? 'TP_LADDER';
+  if (livePhase4 && !isPolicyAllowedPartialSell(partialReason, liveOscarCfg)) {
+    return 'defer_next';
+  }
   const marketSell = curMetric;
   if (!(ot.remainingFraction > 1e-12)) return 'ok';
   if (rawSellFrac <= 1e-12) {
@@ -1820,6 +1830,9 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
       closedTrade: serializeClosedTrade(ct),
     });
     afterFullCloseReentryGate(args, cfg, ct, ot);
+    if (exitReason === 'PERIODIC_HEAL' && liveOscarCfg) {
+      recordPostHealChurnBlock(mint, liveOscarCfg);
+    }
     hookLiveWhitelistAfterFullClose(
       liveOscarCfg,
       cfg,
@@ -2273,6 +2286,13 @@ export async function trackerForceFullExitLive(args: {
   const ot = open.get(mint);
   if (!ot || !(marketSell > 0)) return false;
   if (!livePhase4) return false;
+  if (livePolicyBlocksHealSyncSells(args.liveOscarCfg)) {
+    log.warn(
+      { mint: mint.slice(0, 8), symbol: ot.symbol },
+      'trackerForceFullExitLive blocked (LIVE_POLICY_ONLY_EXITS — no PERIODIC_HEAL on-chain sell)',
+    );
+    return false;
+  }
 
   const ageH = (Date.now() - ot.entryTs) / 3_600_000;
   const paperRemUsd = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
@@ -4232,6 +4252,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       cfg.flashCrashKillEnabled &&
       isLiveOscarTradingStrategyId(cfg.strategyId) &&
+      !livePolicyOnlyExitsEnabled(liveOscarCfg) &&
       ot.avgEntry > 0 &&
       curMetric > 0 &&
       ot.remainingFraction > 1e-6
@@ -4425,6 +4446,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     )
       exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
+
+    if (
+      exitReason &&
+      livePhase4 &&
+      !isPolicyAllowedFullExitReason(exitReason, liveOscarCfg)
+    ) {
+      journalLiveStrategy?.({
+        kind: 'risk_note',
+        reason: 'policy_only_exit_blocked',
+        mint,
+        detail: { exitReason, symbol: ot.symbol },
+      });
+      log.info(
+        { mint: mint.slice(0, 8), symbol: ot.symbol, exitReason },
+        'policy-only exits: blocked non-policy full exit (no Jupiter sell)',
+      );
+      continue;
+    }
 
     if (exitReason) {
       const marketSell = curMetric;

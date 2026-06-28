@@ -15,6 +15,7 @@ import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import type { LiveOscarRuntimeBundle } from './phase4-types.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
+import { livePolicyBlocksHealSyncSells } from './policy-only-exits.js';
 
 export interface LivePeriodicSelfHealFactoryContext {
   liveCfg: LiveOscarConfig;
@@ -93,7 +94,9 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
       const closedMintSeen = new Set(closed.map((c) => c.mint));
       const minUsd = liveCfg.livePeriodicSweepMinUsd;
       const allowUnknown = liveCfg.livePeriodicSweepUnknownChainOnly;
+      const policyOnly = livePolicyBlocksHealSyncSells(liveCfg);
 
+      if (!policyOnly) {
       for (const [mint, rawBal] of chainMap) {
         if (mint === WRAPPED_SOL_MINT || rawBal === 0n) continue;
         if (open.has(mint)) continue;
@@ -124,9 +127,13 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
         });
         if (res.ok) tailSweepsOk++;
       }
+      } else {
+        note = 'policy_only_exits_tail_sweep_disabled';
+      }
 
       const stuckThresholdH = paperCfg.timeoutHours + liveCfg.livePeriodicStuckGraceHours;
-      const forceCloseEnabled = liveCfg.livePeriodicStuckForceCloseEnabled;
+      const forceCloseEnabled =
+        liveCfg.livePeriodicStuckForceCloseEnabled && !policyOnly;
       const liveOscar = forceCloseEnabled ? ctx.resolveLiveOscar() : undefined;
       const phase4 = liveOscar?.tracker;
 

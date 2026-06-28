@@ -14,6 +14,7 @@ import { executeLiveTokenToSolPipeline } from './phase4-execution.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { liveReconcileBlocksNewExposure } from './live-reconcile-state.js';
+import { livePolicyOnlyExitsEnabled } from './policy-only-exits.js';
 
 export function capitalNotionalXUsd(liveCfg: LiveOscarConfig, paperPositionUsd: number): number {
   return liveCfg.liveEntryNotionalUsd ?? liveCfg.liveMaxPositionUsd ?? paperPositionUsd;
@@ -363,6 +364,17 @@ export async function phase5AllowIncreaseExposure(args: {
     appendLiveJsonlEvent({
       kind: 'capital_skip',
       reason: 'capital_rotate_disabled',
+      freeUsdEstimate: freeUsd,
+      requiredFreeUsd: requiredFree,
+      shortfallUsd: shortfallAt(freeUsd),
+    });
+    return false;
+  }
+
+  if (livePolicyOnlyExitsEnabled(liveCfg)) {
+    appendLiveJsonlEvent({
+      kind: 'capital_skip',
+      reason: 'policy_only_exits',
       freeUsdEstimate: freeUsd,
       requiredFreeUsd: requiredFree,
       shortfallUsd: shortfallAt(freeUsd),
