@@ -2,7 +2,7 @@
  * In-process Jupiter HTTP 429 burst detector + immediate Telegram (via jupiter-alerts).
  *
  * Env:
- * - `JUPITER_429_BURST_TELEGRAM=0` — disable burst alerts.
+ * - `JUPITER_429_BURST_TELEGRAM=1` — enable burst alerts (default off; retry noise when trades succeed).
  * - `JUPITER_429_BURST_WINDOW_MS` — sliding window (default 60000).
  * - `JUPITER_429_BURST_THRESHOLD` — 429 events in window to fire burst (default 4).
  * - `JUPITER_429_EXHAUST_TELEGRAM=0` — disable per-call exhaustion alerts.
@@ -20,7 +20,7 @@ let lastBurstAt = 0;
 const lastExhaustAt = new Map<Jupiter429Source, number>();
 
 function burstOn(): boolean {
-  return process.env.JUPITER_429_BURST_TELEGRAM !== '0';
+  return process.env.JUPITER_429_BURST_TELEGRAM === '1';
 }
 
 function exhaustOn(): boolean {

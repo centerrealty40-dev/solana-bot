@@ -8,7 +8,7 @@
  * Env:
  * - `LIVE_JUPITER_TRACKER_TELEGRAM=0` — выкл. алерты трекера (fallback PG / расхождение с Jupiter).
  * - `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` — выкл. алерт при открытии circuit breaker (price-verify).
- * - `JUPITER_429_BURST_TELEGRAM=0` — выкл. немедленный алерт при burst HTTP 429 (см. jupiter-429-monitor.ts).
+ * - `JUPITER_429_BURST_TELEGRAM=1` — вкл. немедленный алерт при burst HTTP 429 (default off; см. jupiter-429-monitor.ts).
  * - `JUPITER_429_EXHAUST_TELEGRAM=0` — выкл. алерт при исчерпании retry на quote/swap 429.
  * - `LIVE_JUPITER_TRACKER_TG_THROTTLE_MS` — мин. интервал между одинаковыми алертами по одному mint (default 300000).
  * - `live-jupiter-tracker-mtm-snap-clamp` — Jupiter buy-probe сильно выше PG snapshot; MTM на тике переведён на snapshot.

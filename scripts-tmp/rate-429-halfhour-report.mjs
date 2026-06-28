@@ -8,7 +8,8 @@
  *   RATE_429_REPORT_STATE — JSON state (default data/rate-429-report-state.json)
  *   RATE_429_REPORT_LOGS — через запятую glob или пути; иначе все *-out.log / *-error.log в PM2_HOME/logs
  *   RATE_429_JOURNAL_PATHS — jsonl для buy_fail/add_fail с rate (default follow live+paper journals)
- *   RATE_429_REPORT_TELEGRAM — `0` только лог в stdout
+ *   RATE_429_REPORT_TELEGRAM — `1` шлёт в Telegram; default `0` (только stdout)
+ *   RATE_429_REPORT_FAILURES_ONLY — при `1` (default) Telegram только если buy/add/sell fail с 429 в journal
  *   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — операторский канал
  */
 import 'dotenv/config';
@@ -21,8 +22,11 @@ const INTERVAL_MS = Math.max(60_000, Number(process.env.RATE_429_REPORT_INTERVAL
 const POLL_MS = Math.max(10_000, Number(process.env.RATE_429_REPORT_POLL_MS || 60_000));
 const STATE_PATH =
   process.env.RATE_429_REPORT_STATE || path.join('data', 'rate-429-report-state.json');
-const TELEGRAM_ON = !['0', 'false', 'no'].includes(
-  String(process.env.RATE_429_REPORT_TELEGRAM ?? '1').toLowerCase(),
+const TELEGRAM_ON = ['1', 'true', 'yes'].includes(
+  String(process.env.RATE_429_REPORT_TELEGRAM ?? '0').toLowerCase(),
+);
+const TELEGRAM_FAILURES_ONLY = !['0', 'false', 'no'].includes(
+  String(process.env.RATE_429_REPORT_FAILURES_ONLY ?? '1').toLowerCase(),
 );
 
 function defaultJournalPaths() {
@@ -101,6 +105,7 @@ function loadState() {
       lastReportAt: typeof j.lastReportAt === 'number' ? j.lastReportAt : 0,
       windowStartIso: typeof j.windowStartIso === 'string' ? j.windowStartIso : new Date().toISOString(),
       pending: j.pending && typeof j.pending === 'object' ? j.pending : {},
+      journalFails: j.journalFails && typeof j.journalFails === 'object' ? j.journalFails : {},
     };
   } catch {
     return {
@@ -108,6 +113,7 @@ function loadState() {
       lastReportAt: 0,
       windowStartIso: new Date().toISOString(),
       pending: {},
+      journalFails: {},
     };
   }
 }
@@ -157,13 +163,28 @@ function isRateLimitLine(line) {
 function isJournalRateFail(obj) {
   if (!obj || typeof obj !== 'object') return false;
   const kind = String(obj.kind || '');
-  if (!/(buy_fail|add_fail|sell_fail|fill_failed)/i.test(kind)) return false;
-  const reason = String(obj.reason || obj.message || '');
-  return /\b429\b/.test(reason) || /rate/i.test(reason) || /too many requests/i.test(reason);
+  if (/(buy_fail|add_fail|sell_fail|fill_failed)/i.test(kind)) {
+    const reason = String(obj.reason || obj.message || '');
+    return /\b429\b/.test(reason) || /rate/i.test(reason) || /too many requests/i.test(reason);
+  }
+  if (kind === 'execution_result' && obj.status && obj.status !== 'ok' && obj.status !== 'sim_ok' && obj.status !== 'confirmed') {
+    const msg = String(obj.error?.message ?? obj.reason ?? obj.message ?? '');
+    return /\b429\b/.test(msg) || /swap-http-429/i.test(msg) || msg === 'no_quote';
+  }
+  if (kind === 'exit_slice_result' && obj.status && obj.status !== 'ok' && obj.status !== 'confirmed') {
+    const detail = JSON.stringify(obj);
+    return /\b429\b/.test(detail) || /swap-http-429/i.test(detail) || /no_quote/i.test(detail);
+  }
+  return false;
 }
 
 function bump(state, key) {
   state.pending[key] = (state.pending[key] || 0) + 1;
+}
+
+function bumpJournalFail(state, key) {
+  state.journalFails = state.journalFails || {};
+  state.journalFails[key] = (state.journalFails[key] || 0) + 1;
 }
 
 function readNewLines(absPath, state, opts = {}) {
@@ -213,7 +234,9 @@ function scanJournals(state) {
         if (!line.trim()) continue;
         try {
           const obj = JSON.parse(line);
-          if (isJournalRateFail(obj)) bump(state, key);
+          if (isJournalRateFail(obj)) {
+            bumpJournalFail(state, key);
+          }
         } catch {
           if (isRateLimitLine(line)) bump(state, key);
         }
@@ -287,6 +310,7 @@ async function maybeSendReport(state) {
     state.lastReportAt = now;
     state.windowStartIso = new Date().toISOString();
     state.pending = {};
+    state.journalFails = {};
     saveState(state);
     console.log(JSON.stringify({ ts: new Date().toISOString(), msg: 'rate-429 report baseline (no send on cold start)' }));
     return;
@@ -295,9 +319,20 @@ async function maybeSendReport(state) {
   const endIso = new Date().toISOString();
   const body = buildReportBody(state, endIso);
   const total429 = Object.values(state.pending).reduce((a, b) => a + b, 0);
+  const journalFailTotal = Object.values(state.journalFails || {}).reduce((a, b) => a + b, 0);
+  const shouldTelegram =
+    TELEGRAM_ON && (!TELEGRAM_FAILURES_ONLY || journalFailTotal > 0);
 
-  if (TELEGRAM_ON) {
+  if (shouldTelegram) {
     await sendTagged('REPORT', 'agent_429', body, { skipQuietHours: true });
+  } else if (TELEGRAM_ON && TELEGRAM_FAILURES_ONLY && journalFailTotal === 0) {
+    console.log(
+      JSON.stringify({
+        ts: endIso,
+        msg: 'rate-429 report skipped (no journal execution failures)',
+        total429,
+      }),
+    );
   } else {
     console.log(JSON.stringify({ ts: endIso, msg: 'rate-429 report (telegram off)', body }));
   }
@@ -305,6 +340,7 @@ async function maybeSendReport(state) {
   state.lastReportAt = now;
   state.windowStartIso = endIso;
   state.pending = {};
+  state.journalFails = {};
   saveState(state);
 
   console.log(

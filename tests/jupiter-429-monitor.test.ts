@@ -56,4 +56,10 @@ describe('jupiter-429-monitor', () => {
     for (let i = 0; i < 5; i++) recordJupiter429Event({ source: 'quote' });
     expect(burstSpy).not.toHaveBeenCalled();
   });
+
+  it('defaults burst alerts off when env unset', () => {
+    delete process.env.JUPITER_429_BURST_TELEGRAM;
+    for (let i = 0; i < 5; i++) recordJupiter429Event({ source: 'quote' });
+    expect(burstSpy).not.toHaveBeenCalled();
+  });
 });

@@ -432,7 +432,7 @@ const PM2_APPS = [
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         RATE_429_REPORT_INTERVAL_MS: '1800000',
         RATE_429_REPORT_POLL_MS: '60000',
-        RATE_429_REPORT_TELEGRAM: '1',
+        RATE_429_REPORT_TELEGRAM: '0',
       },
     },
     {
@@ -1266,8 +1266,8 @@ const PM2_APPS = [
         LIVE_OPEN_HOT_INTER_MINT_DELAY_MS: '100',
         LIVE_KILLSTOP_PREARM_BUFFER_PCT: '1',
         LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
-        /** 1.11.504 — immediate TG on Jupiter 429 burst/exhaust. */
-        JUPITER_429_BURST_TELEGRAM: '1',
+        /** 1.11.526 — TG only on exhausted quote/swap 429 (not retry burst noise). */
+        JUPITER_429_BURST_TELEGRAM: '0',
         JUPITER_429_BURST_THRESHOLD: '4',
         JUPITER_429_BURST_WINDOW_MS: '60000',
         JUPITER_429_EXHAUST_TELEGRAM: '1',
