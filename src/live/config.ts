@@ -159,18 +159,18 @@ const LiveOscarConfigSchema = z
      * pattern «retry until pool settles». Caller-side delay is also configurable
      * (250ms..30s), default 5000ms in config; PM2 sets 3000ms in 1.11.168.
      */
-    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
+    liveBuySimRetryAttempts: z.coerce.number().int().min(0).max(25).default(0),
     liveBuySimRetryDelayMs: z.coerce.number().int().min(50).max(30_000).default(500),
     /**
      * 1.11.228 — кэп ретраев для «slippage class» sim_err (Custom:1 / 0x1771 / явное «slippage»):
      * после N таких подряд на одном intent выходим из retry-цикла, чтобы не сжигать кредиты
      * на одинаковых маршрутах. Когда `null/undefined`, кэп не применяется (fallback на legacy).
      */
-    liveBuySimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(2),
-    liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(15).default(0),
+    liveBuySimSlippageRetryAttempts: z.coerce.number().int().min(0).max(25).default(2),
+    liveSellSimRetryAttempts: z.coerce.number().int().min(0).max(25).default(0),
     liveSellSimRetryDelayMs: z.coerce.number().int().min(50).max(30_000).default(500),
     /** То же, но для продаж — exits должны проходить, поэтому кэп выше. */
-    liveSellSimSlippageRetryAttempts: z.coerce.number().int().min(0).max(15).default(5),
+    liveSellSimSlippageRetryAttempts: z.coerce.number().int().min(0).max(25).default(5),
     /**
      * 1.11.228 — на каждый retry в slippage-классе bump'аем `slippageBps` на эту величину,
      * чтобы дать Jupiter Pro шанс собрать маршрут с другим acceptable impact. 0 = выкл.
@@ -496,7 +496,7 @@ const LiveOscarConfigSchema = z
 
     /**
      * Пауза (мс) между открытыми mint в тике трекера после Jupiter MTM — снижает burst на API.
-     * При Jupiter Pro (~10 RPS) можно **50–100**; `0` = без паузы.
+     * При Jupiter Developer tier (~10 RPS) можно **50–100**; `0` = без паузы.
      */
     liveTrackerInterMintDelayMs: z.coerce.number().int().min(0).max(10_000).default(120),
   })
