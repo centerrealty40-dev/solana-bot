@@ -10,10 +10,10 @@ import {
 } from '../src/preset-c/filters.js';
 
 describe('preset C filters', () => {
-  it('accepts mcap $1M–$30M and retrace 9–30%', () => {
-    expect(passesPresetCMcapBand(1_500_000)).toBe(true);
+  it('accepts mcap $3M–$30M and retrace 9–30%', () => {
+    expect(passesPresetCMcapBand(5_000_000)).toBe(true);
     expect(passesPresetCMcapBand(30_000_000)).toBe(true);
-    expect(passesPresetCMcapBand(999_999)).toBe(false);
+    expect(passesPresetCMcapBand(2_999_999)).toBe(false);
     expect(passesPresetCMcapBand(30_000_001)).toBe(false);
     expect(passesPresetCRetraceBand(9)).toBe(true);
     expect(passesPresetCRetraceBand(30)).toBe(true);
@@ -21,18 +21,18 @@ describe('preset C filters', () => {
     expect(passesPresetCRetraceBand(30.1)).toBe(false);
   });
 
-  it('rejects unknown or zero mcap (require known mcap ≥ $1M)', () => {
+  it('rejects unknown or zero mcap (require known mcap ≥ $3M)', () => {
     expect(isPresetCMcapKnown(0)).toBe(false);
     expect(isPresetCMcapKnown(NaN)).toBe(false);
     expect(passesPresetCMcapBand(0)).toBe(false);
     expect(passesPresetCMcapBand(NaN)).toBe(false);
     expect(
       presetCFilterReasons({ refMcapUsd: 0, retraceFromPeakPct: 10 }),
-    ).toContain('preset_c_mcap_below_1m');
+    ).toContain('preset_c_mcap_below_3m');
     expect(
       presetCFilterReasons({ refMcapUsd: 0, retraceFromPeakPct: 5 }),
     ).toEqual([
-      'preset_c_mcap_below_1m',
+      'preset_c_mcap_below_3m',
       'preset_c_retrace_outside_9_30pct',
     ]);
   });
@@ -48,7 +48,7 @@ describe('preset C filters', () => {
   });
 
   it('documents preset C mcap window constants', () => {
-    expect(PRESET_C_MIN_MCAP_USD).toBe(1_000_000);
+    expect(PRESET_C_MIN_MCAP_USD).toBe(3_000_000);
     expect(PRESET_C_MAX_MCAP_USD).toBe(30_000_000);
   });
 });

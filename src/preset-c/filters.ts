@@ -1,6 +1,6 @@
 /** Preset C entry geometry — pullback only (Telegram dips parity). */
 
-export const PRESET_C_MIN_MCAP_USD = 1_000_000;
+export const PRESET_C_MIN_MCAP_USD = 3_000_000;
 export const PRESET_C_MAX_MCAP_USD = 30_000_000;
 export const PRESET_C_MAX_CAP_USD = 300_000_000;
 export const PRESET_C_MIN_RETRACE_PCT = 9;
