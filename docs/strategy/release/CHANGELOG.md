@@ -74,6 +74,26 @@
 ---
 
 
+## [1.11.525] - 2026-06-29
+
+**Тег:** `sa-alpha-1.11.525`
+
+### Jupiter Pro — swap 429 retries on live-oscar
+
+**Изменение:** `live-oscar` PM2 env переведён с `JUPITER_DEVELOPER_TIER_ENV` на `JUPITER_PRO_TRADING_ENV`; в shared envelope добавлен `JUPITER_SWAP_429_MAX_RETRIES=12` (quote retries уже были 12, swap оставался default 3).
+
+| Surface | Swap 429 retries (old→new) |
+|---------|----------------------------|
+| live-oscar | **3 → 12** |
+| live-oscar-preset-c | 12 (unchanged, via envelope) |
+| copy-trader | 12 (unchanged, via envelope) |
+
+**Откат:** redeploy `sa-alpha-1.11.524`; `pm2 reload ecosystem.config.cjs --only live-oscar,live-oscar-preset-c --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.524] - 2026-06-29
 
 **Тег:** `sa-alpha-1.11.524`
