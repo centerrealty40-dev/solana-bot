@@ -48,6 +48,8 @@ function liveCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
     livePeriodicSweepUnknownChainOnly: false,
     livePeriodicStuckForceCloseEnabled: false,
     livePeriodicStuckGraceHours: 0,
+    livePolicyOnlyExitsEnabled: true,
+    livePolicyPostHealChurnBlockMs: 0,
     ...over,
   } as LiveOscarConfig;
 }

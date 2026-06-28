@@ -329,6 +329,14 @@ const LiveOscarConfigSchema = z
     livePeriodicStuckForceCloseEnabled: z.boolean().default(false),
     /** Hours beyond `timeoutHours` before forcing PERIODIC_HEAL on an open with on-chain balance (only when enabled). */
     livePeriodicStuckGraceHours: z.coerce.number().min(0).max(168).default(0.5),
+    /**
+     * When true (default): only KILLSTOP / TRAIL / TP / BREAKEVEN may submit Jupiter sells in live/simulate.
+     * PERIODIC_HEAL with SPL>0, tail sweeps, flash, timeout, capital rotate sells are blocked.
+     * Env: `LIVE_POLICY_ONLY_EXITS` (`1` default, `0` to restore legacy heal sells).
+     */
+    livePolicyOnlyExitsEnabled: z.boolean().default(true),
+    /** Optional re-buy block on mint after PERIODIC_HEAL journal-only close. Env: `LIVE_POLICY_POST_HEAL_CHURN_BLOCK_MS`. */
+    livePolicyPostHealChurnBlockMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
 
     /**
      * 0 = off. In **live** `buy_open` only: skip swap if wallet already holds this mint worth ≥ this USD
@@ -782,6 +790,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 0.5;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 168) : 0.5;
+    })(),
+    livePolicyOnlyExitsEnabled: envBool(process.env.LIVE_POLICY_ONLY_EXITS, true),
+    livePolicyPostHealChurnBlockMs: (() => {
+      const s = process.env.LIVE_POLICY_POST_HEAL_CHURN_BLOCK_MS?.trim();
+      if (!s || s === '0') return 0;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 0;
     })(),
     liveSkipBuyOpenIfWalletMintMinUsd: (() => {
       const s = process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD?.trim();

@@ -1333,6 +1333,10 @@ const PM2_APPS = [
         LIVE_PERIODIC_STUCK_GRACE_HOURS: '0.5',
         /** `1` = продавать любые SPL не в open выше min USD (осторожно: скам-airdrops). */
         LIVE_PERIODIC_SWEEP_UNKNOWN_CHAIN_ONLY: '0',
+        /** Только kill/trail/TP/breakeven Jupiter sells; heal/tail/flash/timeout blocked. */
+        LIVE_POLICY_ONLY_EXITS: '1',
+        /** 0 = off. Optional re-buy block after PERIODIC_HEAL journal-only close (ms). */
+        LIVE_POLICY_POST_HEAL_CHURN_BLOCK_MS: '0',
       },
     },
     /**

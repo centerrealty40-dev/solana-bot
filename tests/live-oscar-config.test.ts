@@ -158,6 +158,21 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(loadLiveOscarConfig().livePeriodicStuckForceCloseEnabled).toBe(true);
   });
 
+  it('defaults LIVE_POLICY_ONLY_EXITS to enabled; 0 disables', () => {
+    process.env.LIVE_STRATEGY_ENABLED = '0';
+    process.env.LIVE_EXECUTION_MODE = 'dry_run';
+    process.env.LIVE_STRATEGY_PROFILE = 'oscar';
+    process.env.LIVE_TRADES_PATH = '/tmp/live-test.jsonl';
+    process.env.LIVE_PARITY_PAPER_TRADES_PATH = '/tmp/paper-test.jsonl';
+    delete process.env.LIVE_WALLET_SECRET;
+    delete process.env.LIVE_POLICY_ONLY_EXITS;
+
+    expect(loadLiveOscarConfig().livePolicyOnlyExitsEnabled).toBe(true);
+
+    process.env.LIVE_POLICY_ONLY_EXITS = '0';
+    expect(loadLiveOscarConfig().livePolicyOnlyExitsEnabled).toBe(false);
+  });
+
   it('parses LIVE_RECONCILE_BLOCK_MAX_MS', () => {
     process.env.LIVE_STRATEGY_ENABLED = '0';
     process.env.LIVE_EXECUTION_MODE = 'dry_run';

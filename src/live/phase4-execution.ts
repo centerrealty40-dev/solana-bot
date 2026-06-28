@@ -67,6 +67,7 @@ import {
   appendPostExitReentryGateReasons,
   postExitReentryGateReasonsForLiveBuy,
 } from '../papertrader/discovery/dip-clones.js';
+import { postHealChurnGateReason } from './policy-only-exits.js';
 import { waveBPostTp1ScratchReentryBypassGate } from '../papertrader/executor/wave-b-post-tp1-scratch-reentry.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import {
@@ -402,6 +403,8 @@ async function runSolToTokenPipeline(
     }
     if (gatePx != null && gatePx > 0 && !waveBPostTp1ScratchReentryBypassGate(args.mint)) {
       const reentryReasons = postExitReentryGateReasonsForLiveBuy(args.mint, gatePx);
+      const healChurn = postHealChurnGateReason(args.mint, liveCfg);
+      if (healChurn) reentryReasons.push(healChurn);
       if (reentryReasons.length > 0) {
         appendLiveJsonlEvent({
           kind: 'execution_skip',
