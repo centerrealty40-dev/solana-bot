@@ -22,7 +22,10 @@ export function jupiterJsonHeaders(extra: Record<string, string> = {}): Record<s
 function jupiterQuote429MaxRetries(): number {
   const s = process.env.JUPITER_QUOTE_429_MAX_RETRIES?.trim();
   if (s === '0') return 0;
-  if (!s) return 3;
+  if (!s) {
+    /** Developer tier default when env unset — Pro subscription underutilized. */
+    return process.env.JUPITER_DEVELOPER_TIER === '1' ? 12 : 3;
+  }
   const n = Number.parseInt(s, 10);
   /**
    * 1.11.230 — cap поднят 8 → 12: при 429 от Jupiter free/paid tier

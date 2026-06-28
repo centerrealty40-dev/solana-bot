@@ -14,7 +14,7 @@ import {
 import type { LiveStagedEntryState, OpenTrade } from './types.js';
 
 /** Prod tier mcap bands (≥ $3M when low lane ON). */
-export type LiveOscarProdMcapBand = '3_5' | '5_8' | '8_12' | '12_plus';
+export type LiveOscarProdMcapBand = '3_12' | '12_plus';
 
 export type LiveOscarProdBandEntryPlan = {
   band: LiveOscarProdMcapBand;
@@ -35,20 +35,14 @@ export function resolveLiveOscarProdMcapBand(
     ? cfg.liveOscarLowMcapMaxUsd
     : (cfg.discoveryMinMarketCapUsd ?? 0);
   if (prodMin > 0 && mcap + 1e-9 < prodMin) return undefined;
-  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand5MUsd) return '3_5';
-  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand8MUsd) return '5_8';
-  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand12MUsd) return '8_12';
+  if (mcap + 1e-9 < cfg.liveOscarProdMcapBand12MUsd) return '3_12';
   return '12_plus';
 }
 
 function prodBandMaxUsd(cfg: PaperTraderConfig, band: LiveOscarProdMcapBand): number {
   switch (band) {
-    case '3_5':
-      return cfg.liveOscarProdMcapMaxUsd3_5;
-    case '5_8':
-      return cfg.liveOscarProdMcapMaxUsd5_8;
-    case '8_12':
-      return cfg.liveOscarProdMcapMaxUsd8_12;
+    case '3_12':
+      return cfg.liveOscarProdMcapMaxUsd3_12;
     case '12_plus':
       return cfg.liveOscarProdMcapMaxUsd12Plus;
   }
@@ -317,11 +311,11 @@ export function assertLiveOscarUnifiedEntrySizing(cfg: PaperTraderConfig): void 
     );
   }
 
-  const prodMaxCap = cfg.liveOscarProdMcapMaxUsd3_5;
-  const prodDerivedMax = resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', cfg.liveOscarProdMcapBand5MUsd - 1);
+  const prodMaxCap = cfg.liveOscarProdMcapMaxUsd3_12;
+  const prodDerivedMax = resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', cfg.liveOscarProdMcapBand12MUsd - 1);
   if (Math.abs(prodMaxCap - prodDerivedMax) > 1e-6) {
     errors.push(
-      `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_5_USD (${prodMaxCap}) must match derived plan (${prodDerivedMax})`,
+      `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD (${prodMaxCap}) must match derived plan (${prodDerivedMax})`,
     );
   }
 

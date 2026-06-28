@@ -23,8 +23,39 @@ if (!JUPITER_API_KEY_PM2) {
     '[ecosystem.config.cjs] JUPITER_API_KEY пуст — Jupiter api.jup.ag free-tier (1 RPS); optional key from .env if present.',
   );
 }
+/**
+ * Jupiter Developer Platform ($25/mo, ~10 RPS with `JUPITER_API_KEY` in VPS `.env`).
+ * PM2 passes key via `PM2_JUPITER_KEY_ENV`; tier flag tunes watcher concurrency/delays.
+ * Rollback: `JUPITER_DEVELOPER_TIER=0` + `JUPITER_WATCHER_REQUEST_DELAY_MS=1250`.
+ */
+const JUPITER_DEVELOPER_TIER = '1';
+const JUPITER_DEVELOPER_TIER_ENV = { JUPITER_DEVELOPER_TIER };
+/** sa-jupiter: 3 workers × 500 ms ≈ 6 RPS (headroom for live-oscar hot-tick / discovery). */
+const JUPITER_WATCHER_REQUEST_DELAY_MS = '500';
+const JUPITER_WATCHER_QUOTE_CONCURRENCY = '3';
 const JUPITER_SWAP_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
+/**
+ * Shared Jupiter Pro execution envelope — tight slippage + max retries (subscription underutilized).
+ * Used by live-oscar-preset-c and copy-trader; live-oscar sets same keys inline (10 bps base).
+ */
+const JUPITER_PRO_TRADING_ENV = {
+  ...JUPITER_DEVELOPER_TIER_ENV,
+  JUPITER_QUOTE_429_MAX_RETRIES: '12',
+  JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
+  LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
+  LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
+  LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
+  LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'high',
+  LIVE_BUY_SIM_RETRY_ATTEMPTS: '20',
+  LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
+  LIVE_SELL_SIM_RETRY_ATTEMPTS: '20',
+  LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
+  LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '10',
+  LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '15',
+  LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
+  LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
+};
 
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
@@ -173,6 +204,7 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.513 — prod 7×$300 entry split; avg −5% $400, −20% $600 (+$100/tier); low avg −10% $350; max $3100 / low $850.
  * 1.11.515 — sim E+2: prod avg1 −10% $400 (was −5%); dip−10% before +8% → 50% @ +5% vs avg (half8_runner).
  * 1.11.517 — E+2 parity low/micro avg −10%; DIP10_FIRST_TP5 tier-agnostic on wave_b half8_runner.
+ * 1.11.522 — low $2–3M: 3×$250 entry ($750), avg −10% $350 (max $1100); 10s delay + corridor unchanged.
  * 1.11.518 — prod tiered max position by mcap at entry: $3–5M $3100, $5–8M $2800, $8–12M $2100, ≥$12M $1500; low $2–3M $850 unchanged.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
@@ -440,11 +472,13 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_DEVELOPER_TIER_ENV,
         NODE_ENV: 'production',
         JUPITER_QUOTE_API_URL: JUPITER_SWAP_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
-        /** Было 1250 по умолчанию в watcher — чаще quote в рамках Pro, с паузой между mint в цикле. */
-        JUPITER_WATCHER_REQUEST_DELAY_MS: '1000',
+        /** Developer 10 RPS: 3 parallel workers, 500 ms per worker (~6 RPS). Was 1000 ms serial. */
+        JUPITER_WATCHER_REQUEST_DELAY_MS,
+        JUPITER_WATCHER_QUOTE_CONCURRENCY,
       },
     },
     {
@@ -483,6 +517,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_DEVELOPER_TIER_ENV,
         ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
@@ -626,7 +661,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '210',
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.516 — low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $850); TP2 = global DIP10_FIRST_TP5. */
+        /** 1.11.522 — low $2M–$3M: 3×$250 @ 10s (+3/−5% corridor), avg −10% $350 (max $1100); TP2 = global DIP10_FIRST_TP5. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
@@ -634,8 +669,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '35000',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '250',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '250',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '0',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '250',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '750',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '350',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
@@ -656,14 +691,10 @@ const PM2_APPS = [
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
-        /** Prod sub-tier boundaries + max caps (signal mcap at entry → scaled slices). */
-        PAPER_LIVE_OSCAR_PROD_MCAP_BAND_5M_USD: '5000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_BAND_8M_USD: '8000000',
+        /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_5_USD: '3100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_5_8_USD: '2800',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_8_12_USD: '2100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '1500',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '3100',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '2100',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
         PAPER_VOL_1H_MIN_USD: '35000',
@@ -977,7 +1008,8 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_BLOCK_ON_FAIL: '1',
         PAPER_PRICE_VERIFY_USE_JUPITER_PRICE: '0',
         PAPER_PRICE_VERIFY_MAX_SLIP_PCT: '4.0',
-        PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '400',
+        /** 1.11.520 — Jupiter Pro: tighter verify quote (was 400 bps free-tier cushion). */
+        PAPER_PRICE_VERIFY_MAX_SLIP_BPS: '150',
         PAPER_PRICE_VERIFY_MAX_PRICE_IMPACT_PCT: '8.0',
         PAPER_PRICE_VERIFY_TIMEOUT_MS: '2500',
         PAPER_PRICE_VERIFY_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
@@ -985,8 +1017,8 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_EXIT_BLOCK_ON_FAIL: '1',
         /** После N defer pre-exit Jupiter verify по TIMEOUT — один проход без block_on_fail (см. live_exit_verify_defer). */
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
-        /** Min ms between partial TP sells on same mint (Jupiter 429 mitigation). */
-        LIVE_PARTIAL_TP_MIN_INTERVAL_MS: '5000',
+        /** Min ms between partial TP sells on same mint. Pro tier: 1000 (was 5000). */
+        LIVE_PARTIAL_TP_MIN_INTERVAL_MS: '1000',
         /** 1.11.502 — split large live exits (partial TP, kill, full close) into ≤$250 slices. */
         LIVE_EXIT_SLICE_MAX_USD: '250',
         LIVE_EXIT_SLICE_DELAY_MS: '5000',
@@ -998,12 +1030,10 @@ const PM2_APPS = [
         PAPER_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
         PAPER_SIM_USE_JUPITER_BUILD: '1',
         /**
-         * 1.11.230 — Jupiter Pro: бампим 429-retry 5 → 8. Внутренний cap 12 (см. `jupiter-http.ts`).
-         * Free-эндпоинт даёт <1 RPS, Pro — 50+ RPS, поэтому 429 от **`/quote`** изредка приходит даже на Pro;
-         * экспоненциальный backoff (150 → 270 → 486 ms…) уверенно прокатывает их.
+         * 1.11.520 — Jupiter Pro ($25/mo): max 429 retries (cap 12 in `jupiter-http.ts`), fast backoff.
          */
-        JUPITER_QUOTE_429_MAX_RETRIES: '8',
-        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '150',
+        JUPITER_QUOTE_429_MAX_RETRIES: '12',
+        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
 
         /**
          * 1.11.231 — pre-check Jupiter `priceImpactPct` ПЕРЕД simulate.
@@ -1218,14 +1248,11 @@ const PM2_APPS = [
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.503: persistent retry x15 на quote+swap для buy и sell с тугим slippage
-         * 10bps. Эмулирует ручную торговлю в jup.ag UI — минимальный slippage и
-         * больше попыток до победы; Jupiter выбирает момент когда пул стабилен.
-         * Пауза 150ms между попытками — быстрый burst в рамках Pro RPS.
+         * 1.11.520 — Developer 10 RPS: persistent retry x20, base slippage 10 bps, delay 150 ms.
          */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '15',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '20',
         LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '15',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '20',
         LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
         /** 1.11.458 — hot tick: executable sell quote for open positions every 2s; kill pre-arm + fast tracker trigger. */
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
@@ -1237,8 +1264,7 @@ const PM2_APPS = [
         LIVE_OPEN_HOT_INTER_MINT_DELAY_MS: '100',
         LIVE_KILLSTOP_PREARM_BUFFER_PCT: '1',
         LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
-        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
-        /** 1.11.504 — немедленный TG при burst/exhaust Jupiter HTTP 429 (не ждать 30min sa-rate-429-report). */
+        /** 1.11.504 — immediate TG on Jupiter 429 burst/exhaust. */
         JUPITER_429_BURST_TELEGRAM: '1',
         JUPITER_429_BURST_THRESHOLD: '4',
         JUPITER_429_BURST_WINDOW_MS: '60000',
@@ -1253,8 +1279,8 @@ const PM2_APPS = [
          *   2) bump `slippageBps` +10 bps каждый retry, cap 100 bps;
          *   3) buy slippage-cap 8 (10→20→…→100), sell 12 — exits должны пройти.
          */
-        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8',
-        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '12',
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '10',
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '15',
         LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
         /**
@@ -1268,8 +1294,9 @@ const PM2_APPS = [
          * и сжигает кредиты QN на 11 одинаковых симуляциях. Cooldown сбрасывается
          * на первый же успешный заход в pipeline.
          */
-        LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '3',
-        LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '1800000',
+        LIVE_STAGED_ADD_SIM_ERR_THRESHOLD: '5',
+        /** Pro tier: shorter cooldown (was 30m credit-save); still stops infinite sim loops. */
+        LIVE_STAGED_ADD_SIM_ERR_COOLDOWN_MS: '600000',
         /**
          * 1.11.231 — после N cooldown-rearm'ов auto-denylist. `0` = выкл (заготовка в коде).
          */
@@ -1424,6 +1451,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
         ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
@@ -1563,11 +1591,8 @@ const PM2_APPS = [
         /** ret1h ≥ 0 → только 1h+4h; 24h не режет покупки на отскоке. */
         LIVE_BTC_RECOVERY_SKIP_LONG_WINDOWS: '1',
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
-        LIVE_DEFAULT_SLIPPAGE_BPS: '50',
-        LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
-        LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
-        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
+        /** Pro tier: 100 bps base (was 50); adaptive bump to 100 bps cap via JUPITER_PRO_TRADING_ENV. */
+        LIVE_DEFAULT_SLIPPAGE_BPS: '100',
         PRESET_C_DISCOVERY_SCAN_MINUTES: '360',
         PRESET_C_DISCOVERY_MIN_HOLDERS: '1000',
         PRESET_C_DISCOVERY_MIN_AGE_HOURS: '8',
@@ -1829,6 +1854,7 @@ const PM2_APPS = [
       time: true,
       env: {
         ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
         ...PM2_SOLANA_RPC_ENV,
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
@@ -1867,27 +1893,16 @@ const PM2_APPS = [
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
-        /** Jupiter 429 mitigation: min ms between sells on same mint / dip eval quotes. */
-        COPY_TRADER_MIN_SELL_INTERVAL_MS: '2000',
-        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '12000',
+        /** Pro tier: minimal Jupiter throttling (was 2s / 12s credit-save). */
+        COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
+        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '2000',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         /** Exit soon after leader sell (was 20–30s anti-panic; now match manual jup.ag speed). */
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
         COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
         COPY_TRADER_POLL_INTERVAL_MS: '12000',
-        COPY_TRADER_SLIPPAGE_BPS: '400',
-        /** Same Jupiter Pro sell pipeline as live-oscar (priority fee + sim retry envelope). */
-        LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
-        LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
-        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
-        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'veryHigh',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '10',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '200',
-        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '5',
-        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50',
-        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '500',
-        JUPITER_QUOTE_429_MAX_RETRIES: '8',
-        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
+        /** Pro tier: 100 bps base slippage (was 400 free-tier). Sell retry envelope via JUPITER_PRO_TRADING_ENV. */
+        COPY_TRADER_SLIPPAGE_BPS: '100',
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
