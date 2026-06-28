@@ -70,10 +70,10 @@ export function copyTraderLiveOscarBridge(cfg: CopyTraderConfig): LiveOscarConfi
     liveConfirmCommitment: 'confirmed',
     liveJupiterPriorityMaxLamports: readJupiterPriorityMaxLamports(),
     liveJupiterSwapPriorityLevel: readJupiterSwapPriorityLevel(),
-    liveSellSimRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_ATTEMPTS', 10, 0, 15),
-    liveSellSimRetryDelayMs: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_DELAY_MS', 3000, 250, 30_000),
-    liveSellSimSlippageRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS', 5, 0, 15),
-    liveSimSlippageRetryBumpBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS', 50, 0, 500),
-    liveSimSlippageRetryMaxBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS', 300, 10, 5000),
+    liveSellSimRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_ATTEMPTS', 15, 0, 15),
+    liveSellSimRetryDelayMs: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_DELAY_MS', 150, 50, 30_000),
+    liveSellSimSlippageRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS', 12, 0, 15),
+    liveSimSlippageRetryBumpBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS', 10, 0, 500),
+    liveSimSlippageRetryMaxBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS', 100, 10, 5000),
   } as LiveOscarConfig;
 }

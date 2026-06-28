@@ -69,6 +69,72 @@
 
 ---
 
+---
+
+## [1.11.521] — 2026-06-29
+
+**Тег:** `sa-alpha-1.11.521`
+
+### Jupiter Developer ($25/mo) — fill quality over credit savings
+
+**Изменение:** PM2 `live-oscar`, `live-oscar-preset-c`, `copy-trader`, `sa-jupiter` — Pro URLs (`api.jup.ag`), `JUPITER_DEVELOPER_TIER=1`, tighter slippage, max retries, reduced quote throttling.
+
+| Surface | Slippage (old→new) | Retries / 429 (old→new) |
+|---------|-------------------|-------------------------|
+| live-oscar | verify 400→150 bps; exec stays **10 bps** | 429: 8→**12**; sim x15 unchanged |
+| live-oscar-preset-c | 50→**100 bps** + full Pro retry envelope | code defaults → **x15** sim, 429 **12** |
+| copy-trader | 400→**100 bps** | sell sim 10→**15**; slippage-class 5→**12**; 429 8→**12** |
+| Throttles | partial TP 5s→**1s**; staged sim cooldown 30m→**10m** | copy sell interval 2s→**500ms**; dip quote 12s→**2s** |
+
+**Откат:** redeploy `sa-alpha-1.11.518`; `pm2 reload ecosystem.config.cjs --only live-oscar,live-oscar-preset-c,copy-trader,sa-jupiter --update-env`.
+
+Без cross-product изменений.
+
+---
+
+---
+
+## [1.11.520] — 2026-06-29
+
+**Тег:** `sa-alpha-1.11.520`
+
+### Jupiter Developer tier (10 RPS) + live-oscar retry tuning
+
+**Изменение:** подписка Jupiter Developer ($25/mo, 10 RPS):
+
+- `JUPITER_DEVELOPER_TIER=1` в PM2 (`live-oscar`, `sa-jupiter`, preset-c, copy-trader).
+- **sa-jupiter:** `JUPITER_WATCHER_REQUEST_DELAY_MS=500`, `JUPITER_WATCHER_QUOTE_CONCURRENCY=3` (parallel workers, ~6 RPS).
+- **live-oscar:** sim retry **x20** (150 ms), slippage-class buy **10** / sell **15** attempts; base slippage **10 bps**; priority fee cap **0.0001 SOL** + `high`.
+- `.env.example` — документация Developer tier.
+- `src/live/config.ts` — retry cap 15→25.
+
+**Откат:** redeploy `sa-alpha-1.11.519`; `JUPITER_DEVELOPER_TIER=0`, watcher delay 1250, concurrency 1, sim retry 15; `pm2 reload ecosystem.config.cjs --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.519] — 2026-06-29
+
+**Тег:** `sa-alpha-1.11.519`
+
+### live-oscar — упрощение prod mcap sub-tiers
+
+**Изменение:** prod tier (mcap ≥ $3M) — две полосы вместо четырёх:
+
+| Mcap | Max | Slices |
+|------|-----|--------|
+| $3M–$12M | $3100 | 7×$300 + $400@-10% + $600@-20% |
+| $12M+ | $2100 | 7×$300 only |
+
+Удалены промежуточные полосы $5–8M ($2800) и $8–12M ($2100). Low ($2M–$3M) **$850** без изменений. Env: `PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD`, `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD`, `PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD`.
+
+**Откат:** redeploy `sa-alpha-1.11.518`; restore 1.11.518 prod mcap band env; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.518] — 2026-06-28
 
 **Тег:** `sa-alpha-1.11.518`

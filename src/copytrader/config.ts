@@ -75,7 +75,7 @@ const CopyTraderConfigSchema = z.object({
   maxMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000_000).default(0),
   minPairAgeHours: z.coerce.number().min(0).max(8760).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
-  slippageBps: z.coerce.number().int().min(10).max(5000).default(400),
+  slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   telegramBotToken: z.string().optional(),

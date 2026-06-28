@@ -16,7 +16,17 @@ const LOOKBACK_HOURS = Number(process.env.JUPITER_WATCHER_LOOKBACK_HOURS || 2);
 const MAX_MINTS = Number(process.env.JUPITER_WATCHER_MAX_MINTS || 20);
 const MAX_RETRIES = Number(process.env.JUPITER_WATCHER_MAX_RETRIES || 3);
 const REQUEST_TIMEOUT_MS = Number(process.env.JUPITER_WATCHER_TIMEOUT_MS || 12_000);
-const REQUEST_DELAY_MS = Number(process.env.JUPITER_WATCHER_REQUEST_DELAY_MS || 1250);
+const DEVELOPER_TIER = process.env.JUPITER_DEVELOPER_TIER === '1';
+const QUOTE_CONCURRENCY = Math.max(
+  1,
+  Math.min(
+    10,
+    Number(process.env.JUPITER_WATCHER_QUOTE_CONCURRENCY || (DEVELOPER_TIER ? 3 : 1)),
+  ),
+);
+const REQUEST_DELAY_MS = Number(
+  process.env.JUPITER_WATCHER_REQUEST_DELAY_MS || (DEVELOPER_TIER ? 500 : 1250),
+);
 const QUOTE_IN_USD = Number(process.env.JUPITER_WATCHER_QUOTE_IN_USD || 25);
 const DEFAULT_DECIMALS = Number(process.env.JUPITER_WATCHER_DEFAULT_DECIMALS || 6);
 const SLIPPAGE_BPS = Number(process.env.JUPITER_WATCHER_SLIPPAGE_BPS || 300);
@@ -375,35 +385,69 @@ async function enqueueRpcTasks(candidatesByMint, snapshots) {
   return enqueued;
 }
 
+async function quoteOneCandidate(candidate, decimalsByMint, bucketTs) {
+  const decimals = decimalsByMint.get(candidate.mint) ?? DEFAULT_DECIMALS;
+  const { amountRaw, quoteInUsd } = quoteAmountForCandidate(candidate, decimals);
+
+  try {
+    const quote = await fetchQuoteWithRetry(candidate, amountRaw);
+    return snapshotFromQuote(candidate, bucketTs, quote, quoteInUsd);
+  } catch (error) {
+    errorsTotal += 1;
+    if (isRateLimitError(error)) {
+      log('warn', 'quote rate limited, skipping snapshot to avoid false non-routeable', {
+        mint: candidate.mint,
+        error: String(error),
+      });
+      await sleep(Math.max(REQUEST_DELAY_MS, 2_500));
+      return null;
+    }
+    log('warn', 'quote failed after retries', { mint: candidate.mint, error: String(error) });
+    return snapshotFromQuote(candidate, bucketTs, null, quoteInUsd);
+  }
+}
+
+/** Parallel quote workers with per-worker throttle (Developer 10 RPS). */
+async function quoteCandidatesParallel(candidates, decimalsByMint, bucketTs) {
+  const snapshots = [];
+  let nextIdx = 0;
+
+  async function worker() {
+    while (true) {
+      const i = nextIdx;
+      nextIdx += 1;
+      if (i >= candidates.length) break;
+      const row = await quoteOneCandidate(candidates[i], decimalsByMint, bucketTs);
+      if (row) snapshots.push(row);
+      if (REQUEST_DELAY_MS > 0) await sleep(REQUEST_DELAY_MS);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(QUOTE_CONCURRENCY, candidates.length) }, () =>
+    worker(),
+  );
+  await Promise.all(workers);
+  return snapshots;
+}
+
 async function collectOneTick() {
   const startedAt = Date.now();
   const bucketTs = getMinuteBucketUtc();
   const candidates = await loadShortlist();
   const decimalsByMint = await loadDecimals(candidates.map((row) => row.mint));
-  const snapshots = [];
 
-  for (const candidate of candidates) {
-    const decimals = decimalsByMint.get(candidate.mint) ?? DEFAULT_DECIMALS;
-    const { amountRaw, quoteInUsd } = quoteAmountForCandidate(candidate, decimals);
-
-    try {
-      const quote = await fetchQuoteWithRetry(candidate, amountRaw);
-      snapshots.push(snapshotFromQuote(candidate, bucketTs, quote, quoteInUsd));
-    } catch (error) {
-      errorsTotal += 1;
-      if (isRateLimitError(error)) {
-        log('warn', 'quote rate limited, skipping snapshot to avoid false non-routeable', {
-          mint: candidate.mint,
-          error: String(error),
-        });
-        await sleep(Math.max(REQUEST_DELAY_MS, 2_500));
-        continue;
-      }
-      log('warn', 'quote failed after retries', { mint: candidate.mint, error: String(error) });
-      snapshots.push(snapshotFromQuote(candidate, bucketTs, null, quoteInUsd));
-    }
-    await sleep(REQUEST_DELAY_MS);
-  }
+  const snapshots =
+    QUOTE_CONCURRENCY > 1
+      ? await quoteCandidatesParallel(candidates, decimalsByMint, bucketTs)
+      : await (async () => {
+          const rows = [];
+          for (const candidate of candidates) {
+            const row = await quoteOneCandidate(candidate, decimalsByMint, bucketTs);
+            if (row) rows.push(row);
+            if (REQUEST_DELAY_MS > 0) await sleep(REQUEST_DELAY_MS);
+          }
+          return rows;
+        })();
 
   const written = await upsertSnapshots(snapshots);
   const candidatesByMint = new Map(candidates.map((row) => [row.mint, row]));
