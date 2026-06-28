@@ -150,6 +150,7 @@ import {
   liveStagedEntrySignalTtlExpired,
 } from './live-staged-entry-gates.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
+import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
@@ -3218,6 +3219,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (isWaveBExitPolicy(ot) && curMetric > 0) {
+      reconcileE2OpenOnTrackerTick(ot, cfg, rawTrackerPriceUsd > 0 ? rawTrackerPriceUsd : curMetric);
       waveBUpdatePreArmReached(ot, curMetric);
       waveBUpdateDip10ReachedBeforeTp8(
         ot,
