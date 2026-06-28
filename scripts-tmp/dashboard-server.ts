@@ -1956,6 +1956,7 @@ export type DashboardPaper2StrategyRow = {
     universeSize: number;
     leverage: number;
     notionalUsd: number;
+    marginUsd: number;
   };
 };
 

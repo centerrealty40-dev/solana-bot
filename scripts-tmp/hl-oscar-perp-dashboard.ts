@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { Paper2OpenItem, TimelineEvent } from './dashboard-server.js';
+import { hlOscarSizingFromEnv } from '../src/hyperliquid/oscar-perp/config.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
 const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
@@ -85,7 +86,10 @@ export type HlOscarPerpDashboardMeta = {
   paperPhantomCount: number;
   universeSize: number;
   leverage: number;
+  /** Gross notional per entry. */
   notionalUsd: number;
+  /** Margin per entry (= gross / leverage). */
+  marginUsd: number;
 };
 
 export type HlOscarPerpDashboardLoad = {
@@ -226,6 +230,7 @@ export function loadHlOscarPerpForDashboard(
   const oneHourAgo = Date.now() - 3_600_000;
 
   if (!fs.existsSync(jsonlPath)) {
+    const sizing = hlOscarSizingFromEnv();
     return {
       open: [],
       closed: [],
@@ -242,8 +247,9 @@ export function loadHlOscarPerpForDashboard(
         openCount: 0,
         paperPhantomCount: 0,
         universeSize: 0,
-        leverage: Number(process.env.HL_OSCAR_LEVERAGE ?? 2),
-        notionalUsd: Number(process.env.HL_OSCAR_POSITION_NOTIONAL_USD ?? 50),
+        leverage: sizing.leverage,
+        notionalUsd: sizing.grossUsd,
+        marginUsd: sizing.marginUsd,
       },
     };
   }
@@ -434,6 +440,7 @@ export function loadHlOscarPerpForDashboard(
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
+  const sizing = hlOscarSizingFromEnv();
   return {
     open,
     closed,
@@ -450,8 +457,9 @@ export function loadHlOscarPerpForDashboard(
       openCount,
       paperPhantomCount,
       universeSize,
-      leverage: Number(process.env.HL_OSCAR_LEVERAGE ?? 2),
-      notionalUsd: Number(process.env.HL_OSCAR_POSITION_NOTIONAL_USD ?? 50),
+      leverage: sizing.leverage,
+      notionalUsd: sizing.grossUsd,
+      marginUsd: sizing.marginUsd,
     },
   };
 }

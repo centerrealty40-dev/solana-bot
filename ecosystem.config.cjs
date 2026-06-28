@@ -45,9 +45,10 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_LIVE_ENABLED: '1',
   HL_OSCAR_DRY_RUN: '0',
   HL_OSCAR_LEVERAGE: '2',
-  HL_OSCAR_NOTIONAL_USD: '50',
-  HL_OSCAR_POSITION_NOTIONAL_USD: '50',
-  /** Single $50 gross on signal; staged 30/30/40 DCA off for HL perps. */
+  HL_OSCAR_MARGIN_USD: '50',
+  HL_OSCAR_NOTIONAL_USD: '100',
+  HL_OSCAR_POSITION_NOTIONAL_USD: '100',
+  /** Single $100 gross ($50 margin @ 2x) on signal; staged 30/30/40 DCA off for HL perps. */
   HL_OSCAR_STAGED_ENTRY: '0',
   HL_OSCAR_TIME_STOP_HOURS: '12',
   HL_OSCAR_MAX_OPEN_POSITIONS: '10',

@@ -462,10 +462,14 @@
         </div>
       </div>
 
-      <div x-show="isHlOscarPerp() && selectedRow()?.hlOscar" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm mono">
+      <div x-show="isHlOscarPerp() && selectedRow()?.hlOscar" class="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 text-sm mono">
         <div class="card rounded-lg p-3">
-          <div class="label-caps">Notional</div>
-          <div class="stat-num mt-1 text-emerald-300" x-text="fmtUsd(selectedRow()?.hlOscar?.notionalUsd || 50)"></div>
+          <div class="label-caps">Gross</div>
+          <div class="stat-num mt-1 text-emerald-300" x-text="fmtUsd(selectedRow()?.hlOscar?.notionalUsd || 100)"></div>
+        </div>
+        <div class="card rounded-lg p-3">
+          <div class="label-caps">Margin</div>
+          <div class="stat-num mt-1 text-sky-300" x-text="fmtUsd(selectedRow()?.hlOscar?.marginUsd || 50)"></div>
         </div>
         <div class="card rounded-lg p-3">
           <div class="label-caps">Leverage</div>
@@ -979,9 +983,9 @@
         label: 'HL Oscar Perp',
         tag: 'live',
         oneLiner:
-          'Hyperliquid perp dip-buy (Live Oscar wave B): staged legs **$15+$15+$20**, kill/trail/TP, time stop **12h**. **$50** notional · **2x** leverage.',
+          'Hyperliquid perp dip-buy (Live Oscar wave B): single entry **$100 gross** (**$50 margin @ 2x**), kill/trail/TP, time stop **12h**.',
         details:
-          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−10…−50%** от high (2h/6h/12h), impulse **≥12%**.\n• Staged legs: leg1 → leg2 @ −5% → leg3 @ −20%; staged kill **−50%** от сигнала.\n\n**Выход (wave B)**\n• TP partial, trail, breakeven, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
+          '**Плитка 7** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl`.\n\n**Вход**\n• Dip **−10…−50%** от high (2h/6h/12h), impulse **≥12%**.\n• Default: single **$100 gross** ($50 margin @ 2x); optional staged legs 30/30/40.\n\n**Выход (wave B)**\n• TP partial, trail, breakeven, time stop **12h**.\n\n**UI:** только **цена** perp (Hyperliquid mid), таймлайн open → leg2/3 → partial TP/trail → close.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

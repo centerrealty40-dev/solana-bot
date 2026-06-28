@@ -11,6 +11,8 @@ export type HlOscarPerpConfig = {
   leverage: number;
   /** Total gross notional per position on entry (single-shot) or all staged legs combined. */
   positionNotionalUsd: number;
+  /** Margin deployed per position (= gross / leverage). */
+  positionMarginUsd: number;
   /** When false, open full notional on signal (no leg2/leg3 DCA). Default for HL perps. */
   stagedEntryEnabled: boolean;
   leg1GrossUsd: number;
@@ -55,7 +57,7 @@ function envBool(name: string, defaultOn: boolean): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
-/** Scale Oscar legs to total notional: ~30% / 30% / 40% ($15+$15+$20 @ $50). */
+/** Scale Oscar legs to total notional: ~30% / 30% / 40% ($30+$30+$40 @ $100). */
 export function defaultLegGrossUsd(totalUsd: number): { leg1: number; leg2: number; leg3: number } {
   const leg1 = Math.round(totalUsd * 0.3 * 100) / 100;
   const leg2 = Math.round(totalUsd * 0.3 * 100) / 100;
@@ -63,11 +65,32 @@ export function defaultLegGrossUsd(totalUsd: number): { leg1: number; leg2: numb
   return { leg1, leg2, leg3 };
 }
 
-export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
-  const positionNotionalUsd = Math.max(
+function resolvePositionGrossUsd(leverage: number): number {
+  const marginUsd = envNum('HL_OSCAR_MARGIN_USD', 0);
+  if (marginUsd > 0) {
+    return Math.max(1, marginUsd * leverage);
+  }
+  return Math.max(
     1,
-    envNum('HL_OSCAR_POSITION_NOTIONAL_USD', envNum('HL_OSCAR_NOTIONAL_USD', 50)),
+    envNum('HL_OSCAR_POSITION_NOTIONAL_USD', envNum('HL_OSCAR_NOTIONAL_USD', 100)),
   );
+}
+
+/** Gross/margin/leverage for dashboard tiles (reads same env as bot). */
+export function hlOscarSizingFromEnv(): {
+  leverage: number;
+  grossUsd: number;
+  marginUsd: number;
+} {
+  const leverage = Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2)));
+  const grossUsd = resolvePositionGrossUsd(leverage);
+  return { leverage, grossUsd, marginUsd: grossUsd / leverage };
+}
+
+export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
+  const leverage = Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2)));
+  const positionNotionalUsd = resolvePositionGrossUsd(leverage);
+  const positionMarginUsd = positionNotionalUsd / leverage;
   const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', false);
   const legs = stagedEntryEnabled
     ? defaultLegGrossUsd(positionNotionalUsd)
@@ -95,8 +118,9 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
       '0x37adDf55f2d36e34Bb9a8d79546591131FFecdd3'
     ).toLowerCase(),
     testnet: envBool('HL_OSCAR_TESTNET', false),
-    leverage: Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2))),
+    leverage,
     positionNotionalUsd,
+    positionMarginUsd,
     stagedEntryEnabled,
     leg1GrossUsd: envNum('HL_OSCAR_LEG1_USD', legs.leg1),
     leg2GrossUsd: envNum('HL_OSCAR_LEG2_USD', legs.leg2),

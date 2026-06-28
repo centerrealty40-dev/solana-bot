@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   defaultLegGrossUsd,
+  hlOscarSizingFromEnv,
   loadHlOscarPerpConfig,
   toHlTwapLiveConfig,
 } from '../src/hyperliquid/oscar-perp/config.js';
@@ -9,6 +10,7 @@ import {
 const ENV_KEYS = [
   'HL_OSCAR_POSITION_NOTIONAL_USD',
   'HL_OSCAR_NOTIONAL_USD',
+  'HL_OSCAR_MARGIN_USD',
   'HL_OSCAR_STAGED_ENTRY',
   'HL_OSCAR_LEG1_USD',
   'HL_OSCAR_LEG2_USD',
@@ -23,35 +25,62 @@ function clearEnv(): void {
 describe('hl-oscar-perp config sizing', () => {
   afterEach(() => clearEnv());
 
-  it('defaults to single $50 entry at 2x (no staged DCA)', () => {
+  it('defaults to single $100 gross ($50 margin) at 2x (no staged DCA)', () => {
     clearEnv();
     const cfg = loadHlOscarPerpConfig();
     expect(cfg.stagedEntryEnabled).toBe(false);
-    expect(cfg.positionNotionalUsd).toBe(50);
-    expect(cfg.leg1GrossUsd).toBe(50);
+    expect(cfg.positionNotionalUsd).toBe(100);
+    expect(cfg.positionMarginUsd).toBe(50);
+    expect(cfg.leg1GrossUsd).toBe(100);
     expect(cfg.leg2GrossUsd).toBe(0);
     expect(cfg.leg3GrossUsd).toBe(0);
     expect(cfg.leverage).toBe(2);
     const twap = toHlTwapLiveConfig(cfg);
-    expect(twap.notionalUsd).toBe(25);
+    expect(twap.notionalUsd).toBe(50);
   });
 
-  it('accepts HL_OSCAR_NOTIONAL_USD alias', () => {
-    process.env.HL_OSCAR_NOTIONAL_USD = '75';
+  it('derives gross from HL_OSCAR_MARGIN_USD × leverage', () => {
+    process.env.HL_OSCAR_MARGIN_USD = '50';
+    process.env.HL_OSCAR_LEVERAGE = '2';
     const cfg = loadHlOscarPerpConfig();
-    expect(cfg.positionNotionalUsd).toBe(75);
-    expect(cfg.leg1GrossUsd).toBe(75);
+    expect(cfg.positionNotionalUsd).toBe(100);
+    expect(cfg.positionMarginUsd).toBe(50);
+  });
+
+  it('accepts HL_OSCAR_NOTIONAL_USD alias for gross', () => {
+    process.env.HL_OSCAR_NOTIONAL_USD = '150';
+    const cfg = loadHlOscarPerpConfig();
+    expect(cfg.positionNotionalUsd).toBe(150);
+    expect(cfg.leg1GrossUsd).toBe(150);
+    expect(cfg.positionMarginUsd).toBe(75);
+  });
+
+  it('HL_OSCAR_MARGIN_USD takes precedence over notional env', () => {
+    process.env.HL_OSCAR_MARGIN_USD = '40';
+    process.env.HL_OSCAR_NOTIONAL_USD = '999';
+    process.env.HL_OSCAR_LEVERAGE = '2';
+    const cfg = loadHlOscarPerpConfig();
+    expect(cfg.positionNotionalUsd).toBe(80);
+    expect(cfg.positionMarginUsd).toBe(40);
   });
 
   it('staged entry splits 30/30/40 when HL_OSCAR_STAGED_ENTRY=1', () => {
     process.env.HL_OSCAR_STAGED_ENTRY = '1';
-    process.env.HL_OSCAR_POSITION_NOTIONAL_USD = '50';
+    process.env.HL_OSCAR_POSITION_NOTIONAL_USD = '100';
     const cfg = loadHlOscarPerpConfig();
     expect(cfg.stagedEntryEnabled).toBe(true);
-    const legs = defaultLegGrossUsd(50);
+    const legs = defaultLegGrossUsd(100);
     expect(cfg.leg1GrossUsd).toBe(legs.leg1);
     expect(cfg.leg2GrossUsd).toBe(legs.leg2);
     expect(cfg.leg3GrossUsd).toBe(legs.leg3);
-    expect(cfg.leg1GrossUsd + cfg.leg2GrossUsd + cfg.leg3GrossUsd).toBe(50);
+    expect(cfg.leg1GrossUsd + cfg.leg2GrossUsd + cfg.leg3GrossUsd).toBe(100);
+  });
+
+  it('hlOscarSizingFromEnv matches loadHlOscarPerpConfig defaults', () => {
+    clearEnv();
+    const sizing = hlOscarSizingFromEnv();
+    expect(sizing.leverage).toBe(2);
+    expect(sizing.grossUsd).toBe(100);
+    expect(sizing.marginUsd).toBe(50);
   });
 });
