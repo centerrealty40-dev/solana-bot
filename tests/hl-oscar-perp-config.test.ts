@@ -28,6 +28,7 @@ describe('hl-oscar-perp config sizing', () => {
   it('defaults to single $100 gross ($50 margin) at 2x (no staged DCA)', () => {
     clearEnv();
     const cfg = loadHlOscarPerpConfig();
+    expect(cfg.dipMinImpulsePct).toBe(10);
     expect(cfg.stagedEntryEnabled).toBe(false);
     expect(cfg.positionNotionalUsd).toBe(100);
     expect(cfg.positionMarginUsd).toBe(50);
