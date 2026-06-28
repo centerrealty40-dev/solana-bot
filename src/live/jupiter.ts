@@ -371,6 +371,11 @@ export async function liveBuildUnsignedSwapTx(args: {
       clearTimeout(tt);
     }
   }
+  recordJupiter429Event({
+    source: 'swap',
+    exhausted: true,
+    retriesAttempted: max429 + 1,
+  });
   return { ok: false, reason: 'swap-http-429' };
 }
 

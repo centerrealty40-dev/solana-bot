@@ -74,6 +74,20 @@
 ---
 
 
+---
+
+## [1.11.526] - 2026-06-29
+
+**Тег:** `sa-alpha-1.11.526`
+
+### Jupiter 429 Telegram — только реальные провалы исполнения
+
+**Изменение:** burst HTTP 429 (retry noise при успешных сделках) **не** шлёт `[ALERT][jupiter-429-burst]` в Telegram по умолчанию (`JUPITER_429_BURST_TELEGRAM` default off). `[ALERT][jupiter-429-exhaust]` остаётся при исчерпании retry quote/swap. `sa-rate-429-report`: `RATE_429_REPORT_TELEGRAM=0` в PM2; при явном `=1` — только journal execution fails (`RATE_429_REPORT_FAILURES_ONLY=1`).
+
+**Откат:** redeploy `sa-alpha-1.11.525`; `JUPITER_429_BURST_TELEGRAM=1` + `RATE_429_REPORT_TELEGRAM=1`; `pm2 reload ecosystem.config.cjs --only live-oscar,sa-rate-429-report --update-env`.
+
+---
+
 ## [1.11.525] - 2026-06-29
 
 **Тег:** `sa-alpha-1.11.525`
