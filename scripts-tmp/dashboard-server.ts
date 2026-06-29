@@ -95,15 +95,44 @@ async function loadDcaliveDashboardSafe(jsonlPath: string): Promise<Paper2FileLo
 const DASHBOARD_JSONL_TAIL_BYTES = Number(
   process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024,
 );
+/** Live Oscar main journal — smaller tail OK when open snapshot sidecar is fresh. */
+const DASHBOARD_LIVE_OSCAR_TAIL_BYTES = Number(
+  process.env.DASHBOARD_LIVE_OSCAR_TAIL_BYTES ?? DASHBOARD_JSONL_TAIL_BYTES,
+);
 /** Files at or below this size are scanned fully; larger files use tail-only replay. */
 const DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES = Number(
   process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024,
 );
+/** Max closed rows enriched for UI (`recentClosed`); metrics still use full tail replay set. */
+const DASHBOARD_RECENT_CLOSED_LIMIT = Number(process.env.DASHBOARD_RECENT_CLOSED_LIMIT ?? 20);
 const DASHBOARD_PAPER2_CACHE_MS = Number(process.env.DASHBOARD_PAPER2_CACHE_MS ?? 45_000);
+/** Fast refresh for live-oscar open rows only (`GET /api/paper2/opens`). */
+const DASHBOARD_PAPER2_OPENS_CACHE_MS = Number(process.env.DASHBOARD_PAPER2_OPENS_CACHE_MS ?? 15_000);
 /** Serve last good payload while rebuilding (avoid 5min browser wait on cache miss mid-build). */
 const DASHBOARD_PAPER2_STALE_SERVE_MS = Number(
   process.env.DASHBOARD_PAPER2_STALE_SERVE_MS ?? 30 * 60_000,
 );
+
+/** Substrings checked before JSON.parse — skips noisy live-oscar audit lines in dashboard tail scans. */
+const DASHBOARD_JSONL_SKIP_KIND_MARKERS = [
+  '"kind":"live_discovery_eval"',
+  '"kind":"live_discovery_tick_skip"',
+  '"kind":"live_discovery_universe_miss"',
+] as const;
+
+/** Pre-parse filter for dashboard JSONL tail scans (live-oscar audit dominates multi-GB journals). */
+export function dashboardJsonlLineFastSkip(line: string): boolean {
+  for (const marker of DASHBOARD_JSONL_SKIP_KIND_MARKERS) {
+    if (line.includes(marker)) return true;
+  }
+  return false;
+}
+
+export function dashboardRecentClosedLimit(): number {
+  return Number.isFinite(DASHBOARD_RECENT_CLOSED_LIMIT) && DASHBOARD_RECENT_CLOSED_LIMIT > 0
+    ? Math.floor(DASHBOARD_RECENT_CLOSED_LIMIT)
+    : 20;
+}
 
 function isHlOscarSid(sid: string): boolean {
   return sid === 'hl-oscar-perp' || sid === 'hl-oscar-majors';
@@ -135,6 +164,9 @@ function evmChainForSid(sid: string): 'base' | 'bsc' | null {
 type Paper2ApiCache = { expiresAt: number; builtAt: number; payload: unknown };
 let paper2ApiCache: Paper2ApiCache | null = null;
 let paper2ApiBuild: Promise<unknown> | null = null;
+type Paper2OpensApiCache = { expiresAt: number; payload: unknown };
+let paper2OpensApiCache: Paper2OpensApiCache | null = null;
+let paper2OpensApiBuild: Promise<unknown> | null = null;
 
 function startPaper2ApiBuild(): Promise<unknown> {
   if (paper2ApiBuild) return paper2ApiBuild;
@@ -153,8 +185,19 @@ function startPaper2ApiBuild(): Promise<unknown> {
   return paper2ApiBuild;
 }
 
-function* dashboardJsonlLines(filePath: string): Generator<string> {
-  yield* iterJsonlLinesBounded(filePath, DASHBOARD_JSONL_TAIL_BYTES, DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES);
+function* dashboardJsonlLines(filePath: string, tailBytes = DASHBOARD_JSONL_TAIL_BYTES): Generator<string> {
+  for (const line of iterJsonlLinesBounded(
+    filePath,
+    tailBytes,
+    DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES,
+  )) {
+    if (dashboardJsonlLineFastSkip(line)) continue;
+    yield line;
+  }
+}
+
+function* liveOscarDashboardJsonlLines(filePath: string): Generator<string> {
+  yield* dashboardJsonlLines(filePath, DASHBOARD_LIVE_OSCAR_TAIL_BYTES);
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1895,7 +1938,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-oscar-majors',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-28-hl-tiles-perp-vs-majors-v3';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-29-dashboard-tail-skip-opens-fast-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -3628,7 +3671,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
   };
 
   try {
-    for (const line of dashboardJsonlLines(filePath)) {
+    for (const line of liveOscarDashboardJsonlLines(filePath)) {
       const t = line;
     let o: Record<string, unknown>;
     try {
@@ -4543,13 +4586,21 @@ async function buildPaper2StrategyRowFromLoad(
     hlOscar?: DashboardPaper2StrategyRow['hlOscar'];
   },
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
+  buildOpts?: { opensOnly?: boolean },
 ): Promise<DashboardPaper2StrategyRow & { open: Paper2ApiEnrichedOpen[] }> {
   const { open, closed, firstTs, lastTs, resetTs, evals1h, passed1h, failReasons, openTimelines } = loaded;
   const enrichMode = paper2EnrichModeForSid(sid);
   const m = paper2Metrics(closed);
   const startedAt = resetTs || firstTs;
-  const recentClosedLimit = enrichMode === 'lite' ? 12 : 20;
-  const closedWithUsd = (
+  const opensOnly = buildOpts?.opensOnly === true;
+  const recentClosedLimit = opensOnly
+    ? 0
+    : enrichMode === 'lite'
+      ? Math.min(12, dashboardRecentClosedLimit())
+      : dashboardRecentClosedLimit();
+  const closedWithUsd = opensOnly
+    ? []
+    : (
     await Promise.all(
       selectRecentClosedRowsForDashboard(closed, recentClosedLimit).map(async (c) => {
         const pnlUsd = closedRowPnlUsd(c);
@@ -4673,7 +4724,7 @@ async function buildPaper2StrategyRowFromLoad(
     )
   )
     .sort((a, b) => Number(b.exitTs ?? 0) - Number(a.exitTs ?? 0))
-    .slice(0, 20);
+    .slice(0, recentClosedLimit);
 
   // Enrich open positions with a live mcap (pump.fun -> DEX snapshot fallback),
   // recompute pnl% and pnl$ when possible. Capped to 30 rows for sanity.
@@ -5007,6 +5058,22 @@ async function buildPaper2StrategyRowFromLoad(
       const hasLivePriceResolved = livePx != null && livePx > 0;
       const livePriceUsd = hasLivePriceResolved ? livePx : null;
 
+      const scalpAnchorPx =
+        ot.presetCScalpAnchorPriceUsd != null && ot.presetCScalpAnchorPriceUsd > 0
+          ? ot.presetCScalpAnchorPriceUsd
+          : null;
+      const markForAnchor = hasLivePriceResolved ? (livePx as number) : basePx > 0 ? basePx : null;
+      let pnlPctVsAnchor: number | null = null;
+      let peakPnlPctAnchor = ot.peakPnlPctAnchor ?? null;
+      if (scalpAnchorPx != null && markForAnchor != null && markForAnchor > 0) {
+        pnlPctVsAnchor = (markForAnchor / scalpAnchorPx - 1) * 100;
+        if (peakPnlPctAnchor == null || !Number.isFinite(peakPnlPctAnchor)) {
+          peakPnlPctAnchor = pnlPctVsAnchor;
+        } else {
+          peakPnlPctAnchor = Math.max(peakPnlPctAnchor, pnlPctVsAnchor);
+        }
+      }
+
       return {
         mint: ot.mint,
         symbol: displaySymbol,
@@ -5025,6 +5092,9 @@ async function buildPaper2StrategyRowFromLoad(
         livePriceUsd,
         peakMcUsd: ot.peakMcUsd,
         peakPnlPct: ot.peakPnlPct,
+        peakPnlPctAnchor,
+        presetCScalpAnchorPriceUsd: scalpAnchorPx,
+        pnlPctVsAnchor,
         trailingArmed: ot.trailingArmed,
         pnlPct,
         pnlUsd,
@@ -5062,14 +5132,20 @@ async function buildPaper2StrategyRowFromLoad(
   const realizedPnlUsd = m.sumPnlUsd;
   const totalPnlUsd = realizedPnlUsd + unrealizedUsd;
 
-  const priorityFeeUsdTotal = closed.reduce((acc, row) => {
-    const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
-    return acc + (pf > 0 ? pf : 0);
-  }, 0);
+  const priorityFeeUsdTotal = opensOnly
+    ? 0
+    : closed.reduce((acc, row) => {
+        const pf = Number((row as { priorityFee?: { usd?: number } }).priorityFee?.usd ?? 0);
+        return acc + (pf > 0 ? pf : 0);
+      }, 0);
 
-  const priceVerify = aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
+  const priceVerify = opensOnly
+    ? { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null }
+    : aggregatePriceVerifyFromJsonl(fp, PAPER2_PRICE_VERIFY_AGG_WINDOW_MS);
 
-  const liqDrain = (() => {
+  const liqDrain = opensOnly
+    ? { exits: 0, avgDropPct: null, p90DropPct: null }
+    : (() => {
     let exits = 0;
     const drops: number[] = [];
     for (const r of closed) {
@@ -5300,6 +5376,67 @@ async function getPaper2ApiPayloadCached(): Promise<{ payload: unknown; stale: b
   const payload = await startPaper2ApiBuild();
   return { payload, stale: false, building: false };
 }
+
+async function buildPaper2OpensPayload(): Promise<Record<string, unknown>> {
+  const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
+  const row = await buildPaper2StrategyRowFromLoad(
+    DASHBOARD_LIVE_OSCAR_JSONL,
+    'live-oscar',
+    liveLoaded,
+    { hbOpen, hbClosed, reconcileExtras: liveExtras },
+    { opensOnly: true },
+  );
+  return {
+    now: Date.now(),
+    strategyId: 'live-oscar',
+    openCount: row.openCount,
+    open: row.open,
+    unrealizedUsd: row.unrealizedUsd,
+    totalPnlUsd: row.totalPnlUsd,
+    ...(liveExtras ? { liveExtras } : {}),
+  };
+}
+
+function startPaper2OpensApiBuild(): Promise<unknown> {
+  if (paper2OpensApiBuild) return paper2OpensApiBuild;
+  paper2OpensApiBuild = buildPaper2OpensPayload()
+    .then((payload) => {
+      paper2OpensApiCache = {
+        expiresAt: Date.now() + DASHBOARD_PAPER2_OPENS_CACHE_MS,
+        payload,
+      };
+      return payload;
+    })
+    .finally(() => {
+      paper2OpensApiBuild = null;
+    });
+  return paper2OpensApiBuild;
+}
+
+async function getPaper2OpensPayloadCached(): Promise<{ payload: unknown; stale: boolean }> {
+  const now = Date.now();
+  const hit = paper2OpensApiCache;
+  if (hit && hit.expiresAt > now) {
+    return { payload: hit.payload, stale: false };
+  }
+  if (hit) {
+    startPaper2OpensApiBuild().catch((e) => {
+      console.warn('[dashboard] paper2/opens background refresh failed', String(e).slice(0, 200));
+    });
+    return { payload: hit.payload, stale: true };
+  }
+  const payload = await startPaper2OpensApiBuild();
+  return { payload, stale: false };
+}
+
+app.get('/api/paper2/opens', async (_req, reply) => {
+  reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
+  reply.header('pragma', 'no-cache');
+  const { payload, stale } = await getPaper2OpensPayloadCached();
+  if (stale) reply.header('x-dashboard-stale', '1');
+  return payload;
+});
 
 app.get('/api/paper2', async (_req, reply) => {
   reply.header('cache-control', 'no-store, no-cache, must-revalidate, max-age=0');
