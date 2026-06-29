@@ -21,6 +21,7 @@ function testCfg(overrides: Partial<HlOscarMajorsConfig> = {}): HlOscarMajorsCon
     btcTrailStepDropFrac: 0.01,
     ethTrailArmFrac: 0.015,
     ethTrailStepDropFrac: 0.008,
+    remainderClosePct: 10,
     ...overrides,
   } as HlOscarMajorsConfig;
 }
@@ -154,5 +155,21 @@ describe('hl-oscar-majors exit-engine time stop', () => {
     const pos = testPos({ entryTs: Date.now() - 13 * 3_600_000 });
     const actions = computeMajorsExitActions(pos, cfg, 100, 100, 100, Date.now());
     expect(actions.some((a) => a.kind === 'full' && a.reason === 'TIME_STOP')).toBe(true);
+  });
+});
+
+describe('hl-oscar-majors exit-engine remainder flush', () => {
+  it('fires REMAINDER_FLUSH when remaining ≤ 10% of original', () => {
+    const cfg = testCfg({ remainderClosePct: 10 });
+    const pos = testPos({ coin: 'BTC', remainingFraction: 0.08, totalGrossUsd: 100 });
+    const actions = computeMajorsExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions).toEqual([{ kind: 'full', reason: 'REMAINDER_FLUSH' }]);
+  });
+
+  it('does not flush at 12.5% remaining', () => {
+    const cfg = testCfg({ remainderClosePct: 10 });
+    const pos = testPos({ coin: 'ETH', remainingFraction: 0.125, totalGrossUsd: 100 });
+    const actions = computeMajorsExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions.some((a) => a.reason === 'REMAINDER_FLUSH')).toBe(false);
   });
 });

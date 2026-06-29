@@ -42,6 +42,8 @@ export type HlOscarPerpConfig = {
   heartbeatPath: string;
   drawdownStopUsd: number;
   drawdownCheckMs: number;
+  /** Full close when remaining size ≤ this % of original (default 10). */
+  remainderClosePct: number;
 };
 
 function envNum(name: string, fallback: number): number {
@@ -150,6 +152,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
       process.env.HL_OSCAR_HEARTBEAT_PATH?.trim() || `${dataDir}/heartbeat.json`,
     drawdownStopUsd: Math.max(0, envNum('HL_OSCAR_DRAWDOWN_STOP_USD', 500)),
     drawdownCheckMs: Math.max(10_000, envNum('HL_OSCAR_DRAWDOWN_CHECK_MS', 60_000)),
+    remainderClosePct: Math.max(0, Math.min(100, envNum('HL_OSCAR_REMAINDER_CLOSE_PCT', 10))),
   };
 }
 

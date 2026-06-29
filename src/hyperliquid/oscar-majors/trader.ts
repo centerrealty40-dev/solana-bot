@@ -7,6 +7,7 @@ import type { HlOscarMajorsConfig } from './config.js';
 import { fetchOscarCandles, type OscarCandle } from './candles.js';
 import { cooldownBlocksEntry, evaluateOscarEntry } from './entry-signal.js';
 import { computeMajorsExitActions } from './exit-engine.js';
+import { shouldRemainderFlush } from '../oscar-remainder-flush.js';
 import {
   appendOscarJournal,
   lastEntryBarTsByCoin,
@@ -288,6 +289,13 @@ async function processOpenPosition(
         remainingFraction: pos.remainingFraction,
         level: action.level,
       });
+      if (shouldRemainderFlush(pos.remainingFraction, cfg.remainderClosePct)) {
+        const flushRes = await reducePosition(client, pos, 1, markPx);
+        const exitPx = flushRes?.fillPx ?? markPx;
+        if (flushRes) pos.realizedPnlUsd += flushRes.pnlUsd;
+        await finalizeClose(cfg, state, pos, 'REMAINDER_FLUSH', exitPx, mode);
+        break;
+      }
       if (pos.remainingFraction <= 1e-6) {
         await finalizeClose(cfg, state, pos, action.reason, res.fillPx, mode);
       }
