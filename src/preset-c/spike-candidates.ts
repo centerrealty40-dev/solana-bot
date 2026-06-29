@@ -11,8 +11,8 @@ import {
 import { isTelegramMarketAlertMintBlocked } from '../scripts/telegram-alert-mint-blacklist.js';
 import {
   PRESET_C_MIN_RETRACE_PCT,
-  passesPresetCMcapBand,
   passesPresetCRetraceBand,
+  passesPresetCSpikeMcapBand,
   isPresetCMcapKnown,
 } from './filters.js';
 import type { PresetCPullbackCandidate } from './pullback-scan.js';
@@ -52,7 +52,7 @@ function freshSpikeSignalsByMint(nowMs: number): Map<string, SpikeMintSignal> {
     if (!(dumpPct >= PRESET_C_MIN_RETRACE_PCT)) continue;
 
     const refM = entry.refMcapUsd ?? 0;
-    if (!passesPresetCMcapBand(refM)) continue;
+    if (!passesPresetCSpikeMcapBand(refM)) continue;
 
     const prev = byMint.get(mint);
     if (!prev || entry.sentAtMs > prev.sentAtMs) {
@@ -184,7 +184,7 @@ export async function evaluatePresetCSpikeCandidates(
       if (!passesPresetCRetraceBand(retracePct)) continue;
 
       const refM = refMcap(meta, sig.refMcapUsd);
-      if (!passesPresetCMcapBand(refM)) continue;
+      if (!passesPresetCSpikeMcapBand(refM)) continue;
 
       const liq = meta.liq_usd ?? 0;
       const prev = byMint.get(mint);

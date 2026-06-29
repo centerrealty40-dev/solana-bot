@@ -1,15 +1,34 @@
 /** Preset C entry geometry — pullback only (Telegram dips parity). */
 
+function envNum(name: string, fallback: number): number {
+  const v = process.env[name]?.trim();
+  if (!v) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export const PRESET_C_MIN_MCAP_USD = 3_000_000;
+export const PRESET_C_SPIKE_MIN_MCAP_USD = Math.max(
+  PRESET_C_MIN_MCAP_USD,
+  envNum('PRESET_C_SPIKE_MIN_MCAP_USD', 5_000_000),
+);
 export const PRESET_C_MAX_MCAP_USD = 30_000_000;
 export const PRESET_C_MAX_CAP_USD = 300_000_000;
 export const PRESET_C_MIN_RETRACE_PCT = 9;
 export const PRESET_C_MAX_RETRACE_PCT = 30;
 
-/** True when mcap is a positive finite USD value (known). */
 export function isPresetCMcapKnown(mcapUsd: number): boolean {
   const m = Number(mcapUsd);
   return Number.isFinite(m) && m > 0;
+}
+
+export function passesPresetCSpikeMcapBand(mcapUsd: number): boolean {
+  if (!isPresetCMcapKnown(mcapUsd)) return false;
+  const m = Number(mcapUsd);
+  if (m + 1e-9 < PRESET_C_SPIKE_MIN_MCAP_USD) return false;
+  if (m > PRESET_C_MAX_MCAP_USD + 1e-9) return false;
+  if (m > PRESET_C_MAX_CAP_USD + 1e-9) return false;
+  return true;
 }
 
 export function passesPresetCMcapBand(mcapUsd: number): boolean {

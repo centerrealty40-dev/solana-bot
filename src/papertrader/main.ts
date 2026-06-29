@@ -36,10 +36,13 @@ import { isPresetCScalpModeEnabled, loadPresetCScalpConfig } from '../preset-c/s
 import {
   findPresetCScalpEntriesReady,
   markPresetCScalpPendingEntryDone,
+  presetCScalpFillTooDeep,
   presetCScalpReadyToEvalDecision,
+  presetCScalpSignalDropPct,
   pruneExpiredPresetCScalpPending,
   removePresetCScalpPending,
   upsertPresetCScalpPendingFromDecision,
+  PRESET_C_SCALP_FILL_TOO_DEEP_REASON,
   type PresetCScalpReadyEntry,
 } from '../preset-c/scalp-pending.js';
 import {
@@ -1475,6 +1478,28 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (cfg.dryRun && !resolveLiveOscar()) continue;
         if (!handlePassedEntryRecheckDecision(d, tickNow)) continue;
 
+        if (d._presetCScalpFromPending) {
+          const scalpCfg = loadPresetCScalpConfig();
+          const anchorPx = d._presetCScalpFromPending.signalPriceUsd;
+          const quotePx = d.features.price_usd;
+          if (presetCScalpFillTooDeep(anchorPx, quotePx, scalpCfg.maxFillDropPct)) {
+            const dropPct = presetCScalpSignalDropPct(anchorPx, quotePx);
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: PRESET_C_SCALP_FILL_TOO_DEEP_REASON,
+              signalPriceUsd: anchorPx,
+              quotePriceUsd: quotePx,
+              signalDropPct: dropPct != null ? +dropPct.toFixed(3) : null,
+              maxFillDropPct: scalpCfg.maxFillDropPct,
+            });
+            continue;
+          }
+        }
+
         if (
           isPresetCScalpModeEnabled(cfg) &&
           isLiveOscarPresetCStrategyId(cfg.strategyId) &&
@@ -1619,6 +1644,34 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           ot.presetCScalpAnchorPriceUsd = d._presetCScalpFromPending.signalPriceUsd;
           if (d._presetCScalpFromPending.tgDedupeKeys?.length) {
             ot.presetCTgDedupeKeys = [...d._presetCScalpFromPending.tgDedupeKeys];
+          }
+          const scalpCfgPost = loadPresetCScalpConfig();
+          const fillPx = ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.legs[0]?.marketPrice ?? 0;
+          if (
+            fillPx > 0 &&
+            presetCScalpFillTooDeep(
+              d._presetCScalpFromPending.signalPriceUsd,
+              fillPx,
+              scalpCfgPost.maxFillDropPct,
+            )
+          ) {
+            const dropPct = presetCScalpSignalDropPct(
+              d._presetCScalpFromPending.signalPriceUsd,
+              fillPx,
+            );
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: PRESET_C_SCALP_FILL_TOO_DEEP_REASON,
+              signalPriceUsd: d._presetCScalpFromPending.signalPriceUsd,
+              fillPriceUsd: fillPx,
+              signalDropPct: dropPct != null ? +dropPct.toFixed(3) : null,
+              maxFillDropPct: scalpCfgPost.maxFillDropPct,
+            });
+            continue;
           }
         }
 
