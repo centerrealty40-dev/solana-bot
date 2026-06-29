@@ -293,6 +293,11 @@ const PM2_APPS = [
         DASHBOARD_PAPER_OSCAR_V21_JSONL: path.join(root, 'data/paper2/paper-oscar-v21.jsonl'),
         DASHBOARD_PAPER_OSCAR_V22_JSONL: path.join(root, 'data/paper2/paper-oscar-v22.jsonl'),
         DASHBOARD_PAPER_OSCAR_RISKY_JSONL: path.join(root, 'data/paper2/paper-oscar-risky.jsonl'),
+        /** Dashboard JSONL tail — UI reads last N bytes only (full journal kept for bot/backtest). */
+        DASHBOARD_JSONL_TAIL_BYTES: String(64 * 1024 * 1024),
+        DASHBOARD_LIVE_OSCAR_TAIL_BYTES: String(64 * 1024 * 1024),
+        DASHBOARD_RECENT_CLOSED_LIMIT: '20',
+        DASHBOARD_PAPER2_OPENS_CACHE_MS: '15000',
         /**
          * QuickNode Admin API → Telegram:
          * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — не чаще 1×/ч `[ALERT][quicknode-balance]` (интервал ≥1h в коде + cooldown ниже).

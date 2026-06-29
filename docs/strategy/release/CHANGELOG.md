@@ -76,6 +76,25 @@
 
 ---
 
+## [1.11.528] - 2026-06-29
+
+**Тег:** `sa-alpha-1.11.528`
+
+### Dashboard — tail-only JSONL, skip discovery_eval, fast `/api/paper2/opens`
+
+**Проблема:** `/api/paper2` на 6.9GB live-oscar journal читал tail 200MB (~2s+) и парсил миллионы `live_discovery_eval`; UI ждал сборку всех 7 плиток.
+
+**Изменение:**
+- **`dashboard-server.ts`:** pre-parse skip `live_discovery_eval` / tick_skip / universe_miss; `DASHBOARD_LIVE_OSCAR_TAIL_BYTES`; `DASHBOARD_RECENT_CLOSED_LIMIT`; `GET /api/paper2/opens` (live-oscar opens only, cache 15s).
+- **`dashboard-paper2.html`:** параллельный fast refresh opens.
+- **`ecosystem.config.cjs`:** tail 64MB, recent closed 20.
+
+**Откат:** `git checkout sa-alpha-1.11.527 -- scripts-tmp/dashboard-server.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs tests/dashboard-jsonl-perf.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.527] - 2026-06-29
 
 **Тег:** `sa-alpha-1.11.527`
