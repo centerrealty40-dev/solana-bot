@@ -50,6 +50,8 @@ export type HlOscarMajorsConfig = {
   ethTrailStepDropFrac: number;
   /** Full close when remaining size ≤ this % of original (default 10). */
   remainderClosePct: number;
+  /** Free collateral kept on top of each new open margin (USD). */
+  marginReserveUsd: number;
 };
 
 function envNum(name: string, fallback: number): number {
@@ -220,6 +222,13 @@ export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
     ethTrailArmFrac: envNum('HL_MAJORS_ETH_TRAIL_ARM_FRAC', 0.015),
     ethTrailStepDropFrac: envNum('HL_MAJORS_ETH_TRAIL_STEP_DROP_FRAC', 0.008),
     remainderClosePct: Math.max(0, Math.min(100, envNum('HL_MAJORS_REMAINDER_CLOSE_PCT', 10))),
+    marginReserveUsd: Math.max(
+      0,
+      envNum(
+        'HL_MAJORS_MARGIN_RESERVE_USD',
+        envNum('HL_OSCAR_MARGIN_RESERVE_USD', 25),
+      ),
+    ),
   };
 }
 
@@ -241,7 +250,7 @@ export function toHlTwapLiveConfig(cfg: HlOscarMajorsConfig): HlTwapLiveConfig {
     dynamicMarginMaxAtOpenCount: 0,
     dynamicMarginMinAtOpenCount: 1,
     dynamicMarginDcaLevelsReserve: 0,
-    marginReserveUsd: 0,
+    marginReserveUsd: cfg.marginReserveUsd,
     coinMaxLegs: 3,
     coinMaxGrossUsd: cfg.positionNotionalUsd * 2,
     minImpactPct: 0,
