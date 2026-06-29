@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import type { HyperliquidMarketCache } from '../twap/hyperliquid-meta.js';
-import { fetchHlAccountEquityUsd } from '../twap/hyperliquid-meta.js';
+import { fetchHlAccountEquityUsd, fetchHlClearinghouseMargin } from '../twap/hyperliquid-meta.js';
 import type { HlTwapExchangeClient } from '../twap/live/exchange-client.js';
 import type { HlOscarPerpConfig } from './config.js';
 import { fetchOscarCandles, type OscarCandle } from './candles.js';
 import { cooldownBlocksEntry, evaluateOscarEntry } from './entry-signal.js';
 import { computeOscarExitActions } from './exit-engine.js';
+import { shouldRemainderFlush } from '../oscar-remainder-flush.js';
+import { tryOscarBuyLeg } from '../oscar-open-margin.js';
 import {
   appendOscarJournal,
   lastEntryBarTsByCoin,
@@ -49,33 +51,26 @@ export function createOscarTraderState(journalPath: string): OscarTraderState {
   };
 }
 
-function grossToMargin(grossUsd: number, leverage: number): number {
-  return grossUsd / leverage;
-}
-
-async function openLeg(
-  cfg: HlOscarPerpConfig,
-  client: HlTwapExchangeClient,
-  coin: OscarUniverseCoin,
-  grossUsd: number,
-  markPx: number,
-): Promise<{ fillPx: number; grossUsd: number; marginUsd: number } | null> {
-  const marginUsd = grossToMargin(grossUsd, cfg.leverage);
-  try {
-    const fill = await client.marketOrder({
-      coin: coin.coin,
-      displaySymbol: coin.displaySymbol,
-      side: 'buy',
-      notionalUsd: marginUsd,
-      markPx,
-      reduceOnly: false,
-      intent: 'open',
-    });
-    return { fillPx: fill.fillPx, grossUsd: fill.notionalUsd, marginUsd };
-  } catch (e) {
-    console.error(`[hl-oscar-perp] open leg failed ${coin.coin}`, String(e));
-    return null;
-  }
+function journalSkipFromBuyReject(
+  coin: string,
+  reason: string,
+  meta: {
+    requestedGrossUsd: number;
+    filledGrossUsd: number;
+    partialFill: boolean;
+    freeMarginAtOpen?: number;
+  },
+): OscarJournalRow {
+  return {
+    kind: 'signal_skip',
+    ts: Date.now(),
+    coin,
+    reason,
+    requestedGrossUsd: meta.requestedGrossUsd,
+    filledGrossUsd: meta.filledGrossUsd,
+    partialFill: meta.partialFill,
+    freeMarginAtOpen: meta.freeMarginAtOpen,
+  };
 }
 
 async function reducePosition(
@@ -160,6 +155,15 @@ export async function runOscarTraderPass(args: {
 
   if (state.opens.size >= cfg.maxOpenPositions) return;
 
+  let accountMargin: Awaited<ReturnType<typeof fetchHlClearinghouseMargin>> | null = null;
+  if (client.mode === 'live') {
+    try {
+      accountMargin = await fetchHlClearinghouseMargin(client.accountAddress());
+    } catch (e) {
+      console.warn('[hl-oscar-perp] margin fetch failed', String(e));
+    }
+  }
+
   const entryCandidates = universe.filter((c) => !state.openByCoin.has(c.coin));
   const batch = rotatingBatch(entryCandidates, state.scanOffset, cfg.scanBatchSize);
   state.scanOffset = (state.scanOffset + batch.length) % Math.max(entryCandidates.length, 1);
@@ -184,8 +188,28 @@ export async function runOscarTraderPass(args: {
     }
 
     const markPx = coin.midPx;
-    const legFill = await openLeg(cfg, client, coin, cfg.leg1GrossUsd, markPx);
-    if (!legFill) continue;
+    const legResult = await tryOscarBuyLeg({
+      client,
+      coin: coin.coin,
+      displaySymbol: coin.displaySymbol,
+      grossUsd: cfg.leg1GrossUsd,
+      leverage: cfg.leverage,
+      markPx,
+      marginReserveUsd: cfg.marginReserveUsd,
+      accountMargin,
+      logPrefix: '[hl-oscar-perp]',
+      intent: 'open',
+    });
+    if (!legResult.ok) {
+      if (legResult.reason !== 'order_failed') {
+        appendOscarJournal(
+          cfg.journalPath,
+          journalSkipFromBuyReject(coin.coin, legResult.reason, legResult.meta),
+        );
+      }
+      continue;
+    }
+    const legFill = legResult;
 
     const id = randomUUID();
     const pos = newOscarPosition({
@@ -221,6 +245,10 @@ export async function runOscarTraderPass(args: {
       impulsePct: signal.impulsePct,
       windowMin: signal.windowMin,
       mode,
+      requestedGrossUsd: legFill.meta.requestedGrossUsd,
+      filledGrossUsd: legFill.meta.filledGrossUsd,
+      partialFill: legFill.meta.partialFill,
+      freeMarginAtOpen: legFill.meta.freeMarginAtOpen,
     };
     appendOscarJournal(cfg.journalPath, row);
     console.log(
@@ -287,6 +315,13 @@ async function processOpenPosition(
         remainingFraction: pos.remainingFraction,
         level: action.level,
       });
+      if (shouldRemainderFlush(pos.remainingFraction, cfg.remainderClosePct)) {
+        const flushRes = await reducePosition(client, pos, 1, markPx);
+        const exitPx = flushRes?.fillPx ?? markPx;
+        if (flushRes) pos.realizedPnlUsd += flushRes.pnlUsd;
+        await finalizeClose(cfg, state, pos, 'REMAINDER_FLUSH', exitPx, mode);
+        break;
+      }
       if (pos.remainingFraction <= 1e-6) {
         await finalizeClose(cfg, state, pos, action.reason, res.fillPx, mode);
       }
@@ -310,23 +345,43 @@ async function maybeFillStagedLegs(
 ): Promise<void> {
   if (!cfg.stagedEntryEnabled || cfg.leg2GrossUsd <= 0) return;
 
+  let accountMargin: Awaited<ReturnType<typeof fetchHlClearinghouseMargin>> | null = null;
+  if (client.mode === 'live') {
+    try {
+      accountMargin = await fetchHlClearinghouseMargin(client.accountAddress());
+    } catch (e) {
+      console.warn('[hl-oscar-perp] margin fetch failed (staged leg)', String(e));
+    }
+  }
+
   const leg2Px = pos.signalPrice * (1 - cfg.leg2DropPct / 100);
   if (!pos.leg2Filled && lowPx <= leg2Px) {
-    const marginUsd = grossToMargin(cfg.leg2GrossUsd, cfg.leverage);
-    const fill = await client.marketOrder({
+    const legResult = await tryOscarBuyLeg({
+      client,
       coin: pos.coin,
       displaySymbol: pos.displaySymbol,
-      side: 'buy',
-      notionalUsd: marginUsd,
+      grossUsd: cfg.leg2GrossUsd,
+      leverage: cfg.leverage,
       markPx,
-      reduceOnly: false,
+      marginReserveUsd: cfg.marginReserveUsd,
+      accountMargin,
+      logPrefix: '[hl-oscar-perp]',
       intent: 'dca',
     });
+    if (!legResult.ok) {
+      if (legResult.reason !== 'order_failed') {
+        appendOscarJournal(
+          cfg.journalPath,
+          journalSkipFromBuyReject(pos.coin, `leg2_${legResult.reason}`, legResult.meta),
+        );
+      }
+      return;
+    }
     pos.legs.push({
       ts: Date.now(),
-      grossUsd: fill.notionalUsd,
-      marginUsd,
-      fillPx: fill.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
+      fillPx: legResult.fillPx,
       legIndex: 2,
     });
     pos.leg2Filled = true;
@@ -337,19 +392,19 @@ async function maybeFillStagedLegs(
       id: pos.id,
       coin: pos.coin,
       legIndex: 2,
-      fillPx: fill.fillPx,
-      grossUsd: fill.notionalUsd,
-      marginUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
       avgEntryPx: pos.avgEntryPx,
       mode,
     });
-    console.log(`[hl-oscar-perp] LEG2 ${pos.coin} @ ${fill.fillPx.toFixed(4)}`);
+    console.log(`[hl-oscar-perp] LEG2 ${pos.coin} @ ${legResult.fillPx.toFixed(4)}`);
     await notifyOscarAddLeg({
       cfg,
       sym: pos.displaySymbol,
       legIndex: 2,
-      fillPx: fill.fillPx,
-      grossUsd: fill.notionalUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
       avgEntryPx: pos.avgEntryPx,
     });
   }
@@ -358,21 +413,32 @@ async function maybeFillStagedLegs(
 
   const leg3Px = pos.signalPrice * (1 - cfg.leg3DropPct / 100);
   if (!pos.leg3Filled && lowPx <= leg3Px) {
-    const marginUsd = grossToMargin(cfg.leg3GrossUsd, cfg.leverage);
-    const fill = await client.marketOrder({
+    const legResult = await tryOscarBuyLeg({
+      client,
       coin: pos.coin,
       displaySymbol: pos.displaySymbol,
-      side: 'buy',
-      notionalUsd: marginUsd,
+      grossUsd: cfg.leg3GrossUsd,
+      leverage: cfg.leverage,
       markPx,
-      reduceOnly: false,
+      marginReserveUsd: cfg.marginReserveUsd,
+      accountMargin,
+      logPrefix: '[hl-oscar-perp]',
       intent: 'dca',
     });
+    if (!legResult.ok) {
+      if (legResult.reason !== 'order_failed') {
+        appendOscarJournal(
+          cfg.journalPath,
+          journalSkipFromBuyReject(pos.coin, `leg3_${legResult.reason}`, legResult.meta),
+        );
+      }
+      return;
+    }
     pos.legs.push({
       ts: Date.now(),
-      grossUsd: fill.notionalUsd,
-      marginUsd,
-      fillPx: fill.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
+      fillPx: legResult.fillPx,
       legIndex: 3,
     });
     pos.leg3Filled = true;
@@ -383,19 +449,19 @@ async function maybeFillStagedLegs(
       id: pos.id,
       coin: pos.coin,
       legIndex: 3,
-      fillPx: fill.fillPx,
-      grossUsd: fill.notionalUsd,
-      marginUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
       avgEntryPx: pos.avgEntryPx,
       mode,
     });
-    console.log(`[hl-oscar-perp] LEG3 ${pos.coin} @ ${fill.fillPx.toFixed(4)}`);
+    console.log(`[hl-oscar-perp] LEG3 ${pos.coin} @ ${legResult.fillPx.toFixed(4)}`);
     await notifyOscarAddLeg({
       cfg,
       sym: pos.displaySymbol,
       legIndex: 3,
-      fillPx: fill.fillPx,
-      grossUsd: fill.notionalUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
       avgEntryPx: pos.avgEntryPx,
     });
   }

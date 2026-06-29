@@ -42,6 +42,10 @@ export type HlOscarPerpConfig = {
   heartbeatPath: string;
   drawdownStopUsd: number;
   drawdownCheckMs: number;
+  /** Full close when remaining size ≤ this % of original (default 10). */
+  remainderClosePct: number;
+  /** Free collateral kept on top of each new open margin (USD). */
+  marginReserveUsd: number;
 };
 
 function envNum(name: string, fallback: number): number {
@@ -150,6 +154,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
       process.env.HL_OSCAR_HEARTBEAT_PATH?.trim() || `${dataDir}/heartbeat.json`,
     drawdownStopUsd: Math.max(0, envNum('HL_OSCAR_DRAWDOWN_STOP_USD', 500)),
     drawdownCheckMs: Math.max(10_000, envNum('HL_OSCAR_DRAWDOWN_CHECK_MS', 60_000)),
+    remainderClosePct: Math.max(0, Math.min(100, envNum('HL_OSCAR_REMAINDER_CLOSE_PCT', 10))),
+    marginReserveUsd: Math.max(0, envNum('HL_OSCAR_MARGIN_RESERVE_USD', 25)),
   };
 }
 
@@ -178,7 +184,7 @@ export function toHlTwapLiveConfig(cfg: HlOscarPerpConfig): HlTwapLiveConfig {
     dynamicMarginMaxAtOpenCount: 0,
     dynamicMarginMinAtOpenCount: 1,
     dynamicMarginDcaLevelsReserve: 0,
-    marginReserveUsd: 0,
+    marginReserveUsd: cfg.marginReserveUsd,
     coinMaxLegs: 3,
     coinMaxGrossUsd: cfg.positionNotionalUsd * 2,
     minImpactPct: 0,

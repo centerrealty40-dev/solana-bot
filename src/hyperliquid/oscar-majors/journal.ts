@@ -19,6 +19,10 @@ export type OscarJournalRow =
       impulsePct: number;
       windowMin: number;
       mode: 'dry_run' | 'live';
+      requestedGrossUsd?: number;
+      filledGrossUsd?: number;
+      partialFill?: boolean;
+      freeMarginAtOpen?: number;
     }
   | {
       kind: 'add_leg';
@@ -62,6 +66,10 @@ export type OscarJournalRow =
       ts: number;
       coin: string;
       reason: string;
+      requestedGrossUsd?: number;
+      filledGrossUsd?: number;
+      partialFill?: boolean;
+      freeMarginAtOpen?: number;
     }
   | {
       kind: 'heartbeat';
