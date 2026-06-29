@@ -74,9 +74,10 @@ describe('preset-c-scalp-config', () => {
     expect(isPresetCScalpModeEnabled(cfgMain)).toBe(false);
   });
 
-  it('loads default entry drop 10% and kill 50%', () => {
+  it('loads default entry drop 10%, max fill 13%, kill 50%', () => {
     const scalp = loadPresetCScalpConfig();
     expect(scalp.entryDropPct).toBe(10);
+    expect(scalp.maxFillDropPct).toBe(13);
     expect(scalp.dcaDropPct).toBe(10);
     expect(scalp.dca2DropPct).toBe(20);
     expect(scalp.entryUsd).toBe(50);
@@ -100,6 +101,11 @@ describe('preset-c-scalp-pending', () => {
   it('computes signal drop pct', () => {
     expect(presetCScalpSignalDropPct(100, 95)).toBeCloseTo(5, 6);
     expect(presetCScalpSignalDropPct(100, 90)).toBeCloseTo(10, 6);
+  });
+
+  it('flags fill too deep beyond maxFillDropPct', () => {
+    expect(presetCScalpFillTooDeep(100, 87, 13)).toBe(false);
+    expect(presetCScalpFillTooDeep(100, 86.9, 13)).toBe(true);
   });
 
   it('builds eval decision for deferred open', () => {
