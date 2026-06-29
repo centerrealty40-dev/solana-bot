@@ -17,6 +17,7 @@ import {
 import {
   presetCScalpSignalDropPct,
   presetCScalpReadyToEvalDecision,
+  presetCScalpFillTooDeep,
 } from '../src/preset-c/scalp-pending.js';
 import type { OpenTrade } from '../src/papertrader/types.js';
 
