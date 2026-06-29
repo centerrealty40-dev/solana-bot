@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   entrySplitBandOk,
   entrySplitCorridorBlocked,
+  entrySplitFastPollIntervalMs,
   entrySplitLeg2Eligible,
   entrySplitTimedLegEligible,
   liveStagedEntryAddWindowOpen,
+  liveStagedEntryHasPendingEntrySplitLegs,
   liveStagedEntryHasPendingLegs,
   liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTimeWindowOpen,
   liveStagedEntrySignalTtlExpired,
+  openTradeNeedsEntrySplitFastPoll,
   planLiveStagedEntrySignalResolution,
   reconcileEntrySplitV2FromLegs,
+  resolveEntrySplitFastPollIntervalMsFromOpen,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
@@ -402,6 +406,78 @@ describe('liveStagedEntryInPositionTtl', () => {
       cfg: ttlCfg1h,
     });
     expect(plan.action).toBe('ttl_expired_clear');
+  });
+});
+
+describe('entrySplitFastPollIntervalMs', () => {
+  it('uses configured delay when <= 5s', () => {
+    expect(entrySplitFastPollIntervalMs(5000)).toBe(5000);
+    expect(entrySplitFastPollIntervalMs(3000)).toBe(3000);
+  });
+
+  it('caps poll at 5s when delay is longer', () => {
+    expect(entrySplitFastPollIntervalMs(10_000)).toBe(5000);
+  });
+
+  it('floors poll at 1s', () => {
+    expect(entrySplitFastPollIntervalMs(500)).toBe(1000);
+  });
+});
+
+describe('entry split fast poll scheduling', () => {
+  it('detects pending entry-split legs only', () => {
+    const st = { ...baseSt(), entrySplitV2: true, entrySplitLeg2Done: false, entrySplitLeg2Usd: 300 };
+    expect(liveStagedEntryHasPendingEntrySplitLegs(st)).toBe(true);
+    st.entrySplitLeg2Done = true;
+    st.avgSecondLegUsd = 300;
+    st.avgFirstLegDone = false;
+    expect(liveStagedEntryHasPendingEntrySplitLegs(st)).toBe(false);
+    expect(liveStagedEntryHasPendingLegs(st)).toBe(true);
+  });
+
+  it('resolves min poll interval from open map', () => {
+    const open = new Map<string, OpenTrade>();
+    open.set('a', {
+      remainingFraction: 1,
+      partialSells: [],
+      legs: [],
+      liveStagedEntry: {
+        ...baseSt(),
+        entrySplitV2: true,
+        entrySplitDelayMs: 5000,
+        entrySplitLeg2Done: false,
+        entrySplitLeg2Usd: 300,
+      },
+    } as OpenTrade);
+    open.set('b', {
+      remainingFraction: 1,
+      partialSells: [],
+      legs: [],
+      liveStagedEntry: {
+        ...baseSt(),
+        entrySplitV2: true,
+        entrySplitDelayMs: 10_000,
+        entrySplitLeg3Done: false,
+        entrySplitLeg2Done: true,
+        entrySplitLeg3Usd: 300,
+      },
+    } as OpenTrade);
+    expect(resolveEntrySplitFastPollIntervalMsFromOpen(open)).toBe(5000);
+  });
+
+  it('skips fast poll when corridor blocked by TP ladder', () => {
+    const ot = {
+      remainingFraction: 1,
+      partialSells: [{ reason: 'TP_LADDER' }] as PartialSell[],
+      liveStagedEntry: {
+        ...baseSt(),
+        entrySplitV2: true,
+        entrySplitLeg2Done: false,
+        entrySplitLeg2Usd: 300,
+      },
+    } as OpenTrade;
+    expect(openTradeNeedsEntrySplitFastPoll(ot)).toBe(false);
+    expect(resolveEntrySplitFastPollIntervalMsFromOpen(new Map([['m', ot]]))).toBe(null);
   });
 });
 
