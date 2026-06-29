@@ -12,6 +12,7 @@ const ENV_KEYS = [
   'HL_OSCAR_NOTIONAL_USD',
   'HL_OSCAR_MARGIN_USD',
   'HL_OSCAR_STAGED_ENTRY',
+  'HL_OSCAR_DIP_MIN_PCT',
   'HL_OSCAR_LEG1_USD',
   'HL_OSCAR_LEG2_USD',
   'HL_OSCAR_LEG3_USD',
@@ -25,22 +26,24 @@ function clearEnv(): void {
 describe('hl-oscar-perp config sizing', () => {
   afterEach(() => clearEnv());
 
-  it('defaults to single-shot $100 gross ($50 margin) at 2x', () => {
+  it('defaults to staged $100 gross ($50 margin) at 2x with dip −10%', () => {
     clearEnv();
     const cfg = loadHlOscarPerpConfig();
-    expect(cfg.dipMinDropPct).toBe(-7);
+    expect(cfg.dipMinDropPct).toBe(-10);
     expect(cfg.dipMinImpulsePct).toBe(10);
-    expect(cfg.stagedEntryEnabled).toBe(false);
+    expect(cfg.stagedEntryEnabled).toBe(true);
     expect(cfg.leg2DropPct).toBe(5);
     expect(cfg.leg3DropPct).toBe(10);
     expect(cfg.positionNotionalUsd).toBe(100);
     expect(cfg.positionMarginUsd).toBe(50);
-    expect(cfg.leg1GrossUsd).toBe(100);
-    expect(cfg.leg2GrossUsd).toBe(0);
-    expect(cfg.leg3GrossUsd).toBe(0);
+    const legs = defaultLegGrossUsd(100);
+    expect(cfg.leg1GrossUsd).toBe(legs.leg1);
+    expect(cfg.leg2GrossUsd).toBe(legs.leg2);
+    expect(cfg.leg3GrossUsd).toBe(legs.leg3);
+    expect(cfg.leg1GrossUsd + cfg.leg2GrossUsd + cfg.leg3GrossUsd).toBe(100);
     expect(cfg.leverage).toBe(2);
     const twap = toHlTwapLiveConfig(cfg);
-    expect(twap.notionalUsd).toBe(50);
+    expect(twap.notionalUsd).toBe(15);
   });
 
   it('single-shot when HL_OSCAR_STAGED_ENTRY=0', () => {
@@ -67,8 +70,10 @@ describe('hl-oscar-perp config sizing', () => {
     process.env.HL_OSCAR_NOTIONAL_USD = '150';
     const cfg = loadHlOscarPerpConfig();
     expect(cfg.positionNotionalUsd).toBe(150);
-    expect(cfg.leg1GrossUsd).toBe(150);
-    expect(cfg.leg2GrossUsd).toBe(0);
+    const legs = defaultLegGrossUsd(150);
+    expect(cfg.leg1GrossUsd).toBe(legs.leg1);
+    expect(cfg.leg2GrossUsd).toBe(legs.leg2);
+    expect(cfg.leg3GrossUsd).toBe(legs.leg3);
     expect(cfg.positionMarginUsd).toBe(75);
   });
 

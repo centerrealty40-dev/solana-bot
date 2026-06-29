@@ -1,8 +1,8 @@
 /**
  * HyperLiquid Oscar dip-buy perp bot — paper/dry-run by default.
  *
- * Strategy: dip ≥7% from local high (2h/6h/12h) + impulse ≥10%, single-shot entry ($100 gross @ 2x),
- * Wave B runner exit: TP +5%/+7.5%/+10% (50% remaining each), trail from +5% (−2.5% step, 20%), kill −45%.
+ * Strategy: dip ≥10% from local high (2h/6h/12h) + impulse ≥10%, staged entry 30/30/40 ($100 gross @ 2x),
+ * leg2 −5% / leg3 −10% from signal; Wave B exit: TP +5%/+7.5%/+10%, trail from +5%, kill −45%.
  *
  * Env: HL_OSCAR_LIVE_ENABLED=0 (default paper), HL_OSCAR_* — see .env.example in hl-oscar-perp repo.
  */
@@ -87,6 +87,9 @@ async function main(): Promise<void> {
   );
   console.log(
     `[hl-oscar-perp] denylist=${denylist.size} coins whitelist=${whitelist ? whitelist.size : 'all-except-deny'}`,
+  );
+  console.log(
+    `[hl-oscar-perp] dip=${cfg.dipMinDropPct}% impulseMin=${cfg.dipMinImpulsePct}% leg2Drop=${cfg.leg2DropPct}% leg3Drop=${cfg.leg3DropPct}%`,
   );
 
   if (cfg.mode === 'live') {

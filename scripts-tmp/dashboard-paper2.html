@@ -983,9 +983,9 @@
         label: 'HL Oscar Alts',
         tag: 'live',
         oneLiner:
-          'Hyperliquid perp dip-buy на **все alt** (~117 монет, BTC/ETH в denylist): staged **$30+$30+$40**, dip **−7…−50%**, impulse **≥10%**, wave B exit.',
+          'Hyperliquid perp dip-buy на **все alt** (~117 монет, BTC/ETH в denylist): staged **$30+$30+$40**, dip **−10…−50%**, leg2 **−5%** / leg3 **−10%** от сигнала, impulse **≥10%**, wave B exit.',
         details:
-          '**Плитка 4** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl` · heartbeat `data/hl-oscar-perp/heartbeat.json`.\n\n**Universe**\n• Полный HL alt scan (meta minus denylist); **BTC/ETH** → отдельный majors-бот.\n• `universeSize` в heartbeat ≈ число монет в скане.\n\n**Вход**\n• Dip **−7…−50%** от high (2h/6h/12h), impulse **≥10%**.\n• Staged **30/30/40** ($100 gross @ 2x).\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%**, trail from **+5%**, kill **−45%**, time stop **12h**.\n\n**API:** `/api/hl-all` · UI: HL mid price only.',
+          '**Плитка 4** · PM2 **`hl-oscar-perp-watch`** · журнал `data/hl-oscar-perp/live.jsonl` · heartbeat `data/hl-oscar-perp/heartbeat.json`.\n\n**Universe**\n• Полный HL alt scan (meta minus denylist); **BTC/ETH** → отдельный live majors-бот (`hl-oscar-majors-watch`).\n• `universeSize` в heartbeat ≈ число монет в скане.\n\n**Вход**\n• Dip **−10…−50%** от high (2h/6h/12h), impulse **≥10%**.\n• Staged **30/30/40** ($100 gross @ 2x); leg2 **−5%**, leg3 **−10%** от signal price.\n\n**Выход (wave B)**\n• TP **+5% / +7.5% / +10%**, trail from **+5%**, kill **−45%**, time stop **12h**.\n\n**API:** `/api/hl-all` · UI: HL mid price only.',
       },
       'hl-oscar-majors': {
         label: 'HL Oscar Majors',

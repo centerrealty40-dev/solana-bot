@@ -1,7 +1,7 @@
 # HL Oscar Majors — спецификация бота knife-catch для BTC и ETH
 
 **Версия:** 0.2 (2026-06-28)  
-**Статус:** draft для реализации отдельным агентом  
+**Статус:** live на VPS (`hl-oscar-majors-watch`, dip **−6%**, spec v0.2)  
 **Источник данных:** 30d backtest BTC+ETH, 15m HL (`scripts-tmp/hl-majors-btc-eth-strategy-study-results.json`, summary: `scripts-tmp/hl-majors-btc-eth-strategy-study-summary.ru.md`)
 
 ---
@@ -18,7 +18,7 @@
 | Journal | `data/hl-oscar-majors/live.jsonl` |
 | Denylist в alt Oscar | BTC, ETH в `OSCAR_PERP_DENYLIST_DEFAULT` + `HL_OSCAR_DENYLIST_EXTRA` |
 
-**Не входит в scope:** SOL, HYPE, alt-универсум HL Oscar, Solana live-oscar, deploy prod (только spec + paper после реализации).
+**Не входит в scope:** SOL, HYPE, alt-универсум HL Oscar (tile 4 / `hl-oscar-perp-watch`), Solana live-oscar.
 
 ---
 
@@ -307,13 +307,12 @@ Majors ETH reach +5%@12h @ −7%: **3.6%** — **10× ниже**.
 
 ## 10. Implementation checklist
 
-- [ ] `src/hyperliquid/oscar-majors/` + watch script
-- [ ] Per-coin exit-engine (BTC +2/3/4, ETH +1.5/2/2.5)
-- [ ] `HL_MAJORS_*` config + `.env.example`
-- [ ] PM2 `hl-oscar-majors-watch` (paper default)
-- [ ] Tests + `npm run verify`
-- [ ] Paper 14d → compare §7
-- [ ] **Не деплоить** до review paper metrics
+- [x] `src/hyperliquid/oscar-majors/` + watch script
+- [x] Per-coin exit-engine (BTC +2/3/4, ETH +1.5/2/2.5)
+- [x] `HL_MAJORS_*` config + `.env.example`
+- [x] PM2 `hl-oscar-majors-watch` (live on VPS)
+- [x] Tests + `npm run verify`
+- [ ] Paper 14d → compare §7 (ongoing monitoring)
 
 ---
 
