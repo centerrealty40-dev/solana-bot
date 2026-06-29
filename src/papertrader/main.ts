@@ -95,6 +95,7 @@ import {
   finalizeLiveCapitalRotatePaperClose,
   type TrackerStats,
 } from './executor/tracker.js';
+import { startEntrySplitFastPoll, stopEntrySplitFastPoll } from './executor/entry-split-fast-poll.js';
 import { reconcileOpenTradeDcaFromLegs } from './executor/dca-state.js';
 import { reconcileE2OpenOnRestore } from './executor/live-oscar-e2-open-reconcile.js';
 import { loadStore } from './executor/store-restore.js';
@@ -2328,6 +2329,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     isTrackerBusy: () => trackerRunning,
   });
 
+  const entrySplitFastPollTimer = liveStagedEntryActive()
+    ? startEntrySplitFastPoll({
+        paperCfg: cfg,
+        getOpen: () => open,
+        isTrackerBusy: () => trackerRunning,
+        journalAppend,
+        journalLiveStrategy: opts?.journalLiveStrategy,
+        resolveLivePhase4: () => resolveLiveOscar()?.tracker,
+        resolveLiveOscarCfg: () => resolveLiveOscar()?.liveCfg,
+      })
+    : null;
+
   const liveOpenHotTickTimer = opts?.liveOpenPositionHotTickFactory?.({
     paperCfg: cfg,
     getOpen: () => open,
@@ -2384,6 +2397,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     clearInterval(heartbeatTimer);
     clearInterval(statsTimer);
     if (livePeriodicHealTimer) clearInterval(livePeriodicHealTimer);
+    stopEntrySplitFastPoll(entrySplitFastPollTimer);
     if (liveOpenHotTickTimer) clearInterval(liveOpenHotTickTimer);
     clearInterval(solTimer);
     clearInterval(btcTimer);

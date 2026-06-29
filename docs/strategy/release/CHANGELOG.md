@@ -76,6 +76,20 @@
 
 ---
 
+## [1.11.527] - 2026-06-29
+
+**Тег:** `sa-alpha-1.11.527`
+
+### Entry split — fast poll по `ENTRY_SPLIT_DELAY_MS` (не 30s tracker)
+
+**Изменение:** ноги 2–7 entry split проверяются отдельным fast poll (`entry-split-fast-poll.ts`) каждые `min(5s, PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS)` для открытых позиций с pending legs. Коридор +3%/−5% и Jupiter corridor probe без изменений; основной tracker остаётся на `PAPER_TRACK_INTERVAL_MS=30000`.
+
+**Откат:** redeploy `sa-alpha-1.11.526`; `pm2 reload ecosystem.config.cjs --only live-oscar,live-oscar-preset-c --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.526] - 2026-06-29
 
 **Тег:** `sa-alpha-1.11.526`

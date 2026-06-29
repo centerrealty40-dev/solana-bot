@@ -232,13 +232,48 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
   );
 }
 
+/** Pending timed entry-split legs 2–7 only (excludes staged averaging). */
+export function liveStagedEntryHasPendingEntrySplitLegs(st: LiveStagedEntryState): boolean {
+  if (!st.entrySplitV2) return false;
+  for (const legIndex of entrySplitTimedLegIndices()) {
+    const legUsd = entrySplitLegUsdFromState(st, legIndex);
+    if (legUsd > 0 && !entrySplitLegDoneFromState(st, legIndex)) return true;
+  }
+  return false;
+}
+
+/** Fast-poll cadence for one position: min(5s, configured delay), floor 1s. */
+export function entrySplitFastPollIntervalMs(entrySplitDelayMs: number): number {
+  const delay = Number.isFinite(entrySplitDelayMs) && entrySplitDelayMs > 0 ? entrySplitDelayMs : 10_000;
+  return Math.max(1000, Math.min(5000, delay));
+}
+
+/** Min fast-poll interval across open trades with pending entry-split legs; null when idle. */
+export function resolveEntrySplitFastPollIntervalMsFromOpen(
+  open: ReadonlyMap<string, OpenTrade>,
+): number | null {
+  let minMs: number | null = null;
+  for (const ot of open.values()) {
+    if (!openTradeNeedsEntrySplitFastPoll(ot)) continue;
+    const delay = ot.liveStagedEntry!.entrySplitDelayMs ?? 10_000;
+    const pollMs = entrySplitFastPollIntervalMs(delay);
+    minMs = minMs == null ? pollMs : Math.min(minMs, pollMs);
+  }
+  return minMs;
+}
+
+/** Open trade still filling entry-split legs 2–7 (corridor not blocked). */
+export function openTradeNeedsEntrySplitFastPoll(ot: OpenTrade): boolean {
+  const st = ot.liveStagedEntry;
+  if (!st?.entrySplitV2 || ot.remainingFraction <= 0) return false;
+  if (entrySplitCorridorBlocked(ot)) return false;
+  return liveStagedEntryHasPendingEntrySplitLegs(st);
+}
+
 /** Incomplete entry-split or staged-averaging legs on an open trade. */
 export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean {
   if (st.entrySplitV2) {
-    for (const legIndex of entrySplitTimedLegIndices()) {
-      const legUsd = entrySplitLegUsdFromState(st, legIndex);
-      if (legUsd > 0 && !entrySplitLegDoneFromState(st, legIndex)) return true;
-    }
+    if (liveStagedEntryHasPendingEntrySplitLegs(st)) return true;
     if (!stagedAveragingConfigured(st)) return false;
     const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
     const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
