@@ -105,4 +105,10 @@ describe('hl-oscar-perp config sizing', () => {
     expect(sizing.grossUsd).toBe(100);
     expect(sizing.marginUsd).toBe(50);
   });
+
+  it('loads marginReserveUsd from HL_OSCAR_MARGIN_RESERVE_USD', () => {
+    clearEnv();
+    process.env.HL_OSCAR_MARGIN_RESERVE_USD = '30';
+    expect(loadHlOscarPerpConfig().marginReserveUsd).toBe(30);
+  });
 });
