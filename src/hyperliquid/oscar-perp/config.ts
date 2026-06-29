@@ -91,7 +91,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
   const leverage = Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2)));
   const positionNotionalUsd = resolvePositionGrossUsd(leverage);
   const positionMarginUsd = positionNotionalUsd / leverage;
-  const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', false);
+  const stagedEntryEnabled = envBool('HL_OSCAR_STAGED_ENTRY', true);
   const legs = stagedEntryEnabled
     ? defaultLegGrossUsd(positionNotionalUsd)
     : { leg1: positionNotionalUsd, leg2: 0, leg3: 0 };
@@ -129,7 +129,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     leg3DropPct: envNum('HL_OSCAR_LEG3_DROP_PCT', 10),
     positionKillDropPct: Math.max(1, envNum('HL_OSCAR_KILL_PCT', 45)),
     stagedKillDropPct: Math.max(1, envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 45)),
-    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -7),
+    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -10),
     dipMaxDropPct: envNum('HL_OSCAR_DIP_MAX_PCT', -50),
     dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 10),
     dipLookbackWindowsMin: parseWindows(

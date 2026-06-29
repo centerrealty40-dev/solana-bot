@@ -80,9 +80,9 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_MARGIN_USD: '50',
   HL_OSCAR_NOTIONAL_USD: '100',
   HL_OSCAR_POSITION_NOTIONAL_USD: '100',
-  /** Single-shot $100 gross on signal ($50 margin @ 2x). Set 1 for staged 30/30/40 DCA. */
-  HL_OSCAR_STAGED_ENTRY: '0',
-  HL_OSCAR_DIP_MIN_PCT: '-7',
+  /** Staged 30/30/40 DCA ($100 gross @ 2x). Set 0 for single-shot on signal. */
+  HL_OSCAR_STAGED_ENTRY: '1',
+  HL_OSCAR_DIP_MIN_PCT: '-10',
   HL_OSCAR_LEG2_DROP_PCT: '5',
   HL_OSCAR_LEG3_DROP_PCT: '10',
   HL_OSCAR_DIP_MIN_IMPULSE_PCT: '10',
@@ -106,7 +106,7 @@ const HL_OSCAR_PERP_ENV = {
   /** Majors → dedicated hl-oscar-majors bot; alt Oscar skips BTC/ETH. */
   HL_OSCAR_DENYLIST_EXTRA: 'BTC,ETH',
 };
-/** HL Oscar Majors (BTC+ETH knife Mode A) — paper default until smoke passes. */
+/** HL Oscar Majors (BTC+ETH knife Mode A) — live on `hl-oscar-majors-watch`. */
 const HL_MAJORS_DATA_DIR = path.join(root, 'data/hl-oscar-majors');
 const HL_MAJORS_ENV = {
   NODE_ENV: 'production',
@@ -1469,6 +1469,7 @@ const PM2_APPS = [
         /** Preset C scalp: deferred entry −10% only ($50 single leg), dedicated exit (not wave B). */
         PRESET_C_SCALP_MODE: '1',
         PRESET_C_SCALP_ENTRY_DROP_PCT: '10',
+        PRESET_C_SCALP_MAX_FILL_DROP_PCT: '13',
         PRESET_C_SCALP_DCA_DROP_PCT: '10',
         PRESET_C_SCALP_DCA2_DROP_PCT: '20',
         PRESET_C_SCALP_ENTRY_USD: '50',
@@ -1603,6 +1604,7 @@ const PM2_APPS = [
         PRESET_C_TELEGRAM_GATE_ENABLED: '1',
         PRESET_C_TELEGRAM_GATE_SOURCES: 'pullback,retrace,spike',
         PRESET_C_TELEGRAM_GATE_MAX_AGE_MS: '3600000',
+        PRESET_C_SPIKE_MIN_MCAP_USD: '5000000',
       },
     },
     /**
@@ -1788,8 +1790,8 @@ const PM2_APPS = [
       },
     },
     /**
-     * HyperLiquid Oscar Majors — BTC+ETH knife Mode A (paper default).
-     * Enable live: HL_MAJORS_LIVE_ENABLED=1 + HL_MAJORS_DRY_RUN=0 in `.env`.
+     * HyperLiquid Oscar Majors — BTC+ETH knife Mode A (live on VPS).
+     * Env overrides: HL_MAJORS_* in `.env`.
      */
     {
       name: 'hl-oscar-majors-watch',
