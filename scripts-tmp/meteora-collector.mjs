@@ -6,6 +6,7 @@ const { Pool } = pg;
 
 const INTERVAL_MS = Number(process.env.METEORA_COLLECTOR_INTERVAL_MS || 60_000);
 const MAX_RETRIES = Number(process.env.METEORA_COLLECTOR_MAX_RETRIES || 4);
+const ENRICH_MAX_RETRIES = Number(process.env.METEORA_COLLECTOR_ENRICH_MAX_RETRIES || 1);
 const REQUEST_TIMEOUT_MS = Number(process.env.METEORA_COLLECTOR_TIMEOUT_MS || 15_000);
 const DEX_SEARCH_TERMS = (process.env.METEORA_DEX_SEARCH_TERMS || 'meteora,dlmm,solana')
   .split(',')
@@ -64,9 +65,10 @@ function toInt(v) {
   return Math.trunc(n);
 }
 
-async function fetchJsonWithRetry(url, options = {}, retryTag = 'http') {
+async function fetchJsonWithRetry(url, options = {}, retryTag = 'http', retryOpts = {}) {
+  const maxRetries = Number.isFinite(retryOpts.maxRetries) ? retryOpts.maxRetries : MAX_RETRIES;
   let attempt = 0;
-  while (attempt <= MAX_RETRIES) {
+  while (attempt <= maxRetries) {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -86,7 +88,7 @@ async function fetchJsonWithRetry(url, options = {}, retryTag = 'http') {
       }
 
       const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
-      if (!retryable || attempt === MAX_RETRIES) {
+      if (!retryable || attempt === maxRetries) {
         throw new Error(`${retryTag} non-retryable status=${res.status}`);
       }
 
@@ -107,7 +109,7 @@ async function fetchJsonWithRetry(url, options = {}, retryTag = 'http') {
       await sleep(backoffMs);
     } catch (error) {
       clearTimeout(timeout);
-      if (attempt === MAX_RETRIES) throw error;
+      if (attempt === maxRetries) throw error;
       const backoffMs = Math.min(10_000, 500 * 2 ** attempt);
       log('warn', 'request failed, retrying', {
         retryTag,
@@ -121,6 +123,10 @@ async function fetchJsonWithRetry(url, options = {}, retryTag = 'http') {
     }
   }
   throw new Error(`${retryTag} failed after retries`);
+}
+
+function fetchJsonEnrich(url, options = {}, retryTag = 'http') {
+  return fetchJsonWithRetry(url, options, retryTag, { maxRetries: ENRICH_MAX_RETRIES });
 }
 
 function normalizeDexScreenerPair(pair, bucketTs) {
@@ -311,38 +317,57 @@ async function upsertSnapshots(rows) {
 async function collectOneTick() {
   const tickStartedAt = Date.now();
   const bucketTs = getMinuteBucketUtc();
-  let rows = [];
+  let primaryRows = [];
   let sourceUsed = 'dexscreener';
+  let primaryUpserted = 0;
+  let enrichUpserted = 0;
 
   try {
-    rows = await fetchFromDexScreener(bucketTs);
-    if (rows.length === 0) {
+    primaryRows = await fetchFromDexScreener(bucketTs);
+    if (primaryRows.length === 0) {
       sourceUsed = 'geckoterminal';
-      rows = await fetchFromGeckoTrending(bucketTs);
+      primaryRows = await fetchFromGeckoTrending(bucketTs);
     }
 
-    rows = await mergePaper2OpenMintSnapshots({
-      rows,
-      bucketTs,
-      fetchJsonWithRetry,
-      sleep,
-      normalizeDexPair: normalizeDexScreenerPair,
-      dedupByPairAddress,
-      log,
-      component: 'meteora-collector',
-    });
+    // Persist primary search bucket first — MAX(ts) must advance even if enrich hits 429.
+    primaryUpserted = await upsertSnapshots(primaryRows);
 
-    const written = await upsertSnapshots(rows);
-    await upsertTokensMeta(rows, pool).catch(() => {});
+    let finalRows = primaryRows;
+    try {
+      finalRows = await mergePaper2OpenMintSnapshots({
+        rows: primaryRows,
+        bucketTs,
+        fetchJsonWithRetry: fetchJsonEnrich,
+        sleep,
+        normalizeDexPair: normalizeDexScreenerPair,
+        dedupByPairAddress,
+        log,
+        component: 'meteora-collector',
+      });
+      if (finalRows.length > primaryRows.length) {
+        enrichUpserted = await upsertSnapshots(finalRows);
+      }
+    } catch (enrichError) {
+      log('warn', 'open mint enrich failed; primary snapshot already persisted', {
+        error: String(enrichError),
+        primaryUpserted,
+        primaryRows: primaryRows.length,
+      });
+    }
+
+    await upsertTokensMeta(finalRows, pool).catch(() => {});
     ticksTotal += 1;
-    rowsCollectedTotal += rows.length;
-    rowsUpsertedTotal += written;
+    rowsCollectedTotal += finalRows.length;
+    rowsUpsertedTotal += primaryUpserted + enrichUpserted;
 
     log('info', 'tick completed', {
       sourceUsed,
       bucketTs: bucketTs.toISOString(),
-      collected: rows.length,
-      upserted: written,
+      collected: finalRows.length,
+      primaryCollected: primaryRows.length,
+      upserted: primaryUpserted + enrichUpserted,
+      primaryUpserted,
+      enrichUpserted,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
       rowsCollectedTotal,
@@ -353,6 +378,7 @@ async function collectOneTick() {
     errorsTotal += 1;
     log('error', 'tick failed', {
       error: String(error),
+      primaryUpserted,
       elapsedMs: Date.now() - tickStartedAt,
       ticksTotal,
       errorsTotal,
