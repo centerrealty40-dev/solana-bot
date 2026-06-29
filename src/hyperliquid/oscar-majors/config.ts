@@ -48,6 +48,8 @@ export type HlOscarMajorsConfig = {
   btcTrailStepDropFrac: number;
   ethTrailArmFrac: number;
   ethTrailStepDropFrac: number;
+  /** Full close when remaining size ≤ this % of original (default 10). */
+  remainderClosePct: number;
 };
 
 function envNum(name: string, fallback: number): number {
@@ -217,6 +219,7 @@ export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
     btcTrailStepDropFrac: envNum('HL_MAJORS_BTC_TRAIL_STEP_DROP_FRAC', 0.01),
     ethTrailArmFrac: envNum('HL_MAJORS_ETH_TRAIL_ARM_FRAC', 0.015),
     ethTrailStepDropFrac: envNum('HL_MAJORS_ETH_TRAIL_STEP_DROP_FRAC', 0.008),
+    remainderClosePct: Math.max(0, Math.min(100, envNum('HL_MAJORS_REMAINDER_CLOSE_PCT', 10))),
   };
 }
 

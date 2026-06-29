@@ -9,6 +9,7 @@ function testCfg(overrides: Partial<HlOscarPerpConfig> = {}): HlOscarPerpConfig 
     positionKillDropPct: 45,
     stagedKillDropPct: 45,
     timeStopHours: 12,
+    remainderClosePct: 10,
     ...overrides,
   } as HlOscarPerpConfig;
 }
@@ -141,5 +142,45 @@ describe('hl-oscar-perp exit-engine time stop', () => {
     const pos = testPos({ entryTs: Date.now() - 13 * 3_600_000 });
     const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
     expect(actions.some((a) => a.kind === 'full' && a.reason === 'TIME_STOP')).toBe(true);
+  });
+});
+
+describe('hl-oscar-perp exit-engine remainder flush', () => {
+  it('fires REMAINDER_FLUSH when remaining ≤ 10% of original', () => {
+    const cfg = testCfg({ remainderClosePct: 10 });
+    const pos = testPos({ remainingFraction: 0.08, totalGrossUsd: 100 });
+    const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions).toEqual([{ kind: 'full', reason: 'REMAINDER_FLUSH' }]);
+  });
+
+  it('does not flush at 12.5% remaining (after 3×50% TP ladder)', () => {
+    const cfg = testCfg({ remainderClosePct: 10 });
+    const pos = testPos({ remainingFraction: 0.125, totalGrossUsd: 100 });
+    const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions.some((a) => a.reason === 'REMAINDER_FLUSH')).toBe(false);
+  });
+
+  it('does not preempt KILL when remainder is tiny', () => {
+    const cfg = testCfg();
+    const pos = testPos({
+      remainingFraction: 0.05,
+      signalPrice: 50,
+      avgEntryPx: 100,
+    });
+    const actions = computeOscarExitActions(pos, cfg, 55, 54, 55, Date.now());
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ kind: 'full', reason: 'KILL' });
+  });
+
+  it('$100 → 3 partials → $8 left triggers flush on next tick', () => {
+    const cfg = testCfg({ remainderClosePct: 10 });
+    let pos = testPos({ totalGrossUsd: 100 });
+    computeOscarExitActions(pos, cfg, 110, 100, 110, Date.now());
+    pos = { ...pos, remainingFraction: 0.125 };
+    let actions = computeOscarExitActions(pos, cfg, 103, 103, 103, Date.now());
+    expect(actions.some((a) => a.reason === 'REMAINDER_FLUSH')).toBe(false);
+    pos = { ...pos, remainingFraction: 0.125 * (1 - 0.2) };
+    actions = computeOscarExitActions(pos, cfg, 103, 103, 103, Date.now());
+    expect(actions).toEqual([{ kind: 'full', reason: 'REMAINDER_FLUSH' }]);
   });
 });

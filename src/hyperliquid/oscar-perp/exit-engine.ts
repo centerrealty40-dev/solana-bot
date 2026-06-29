@@ -1,3 +1,4 @@
+import { shouldRemainderFlush } from '../oscar-remainder-flush.js';
 import type { HlOscarPerpConfig } from './config.js';
 import type { OscarOpenPosition } from './position-types.js';
 
@@ -65,6 +66,11 @@ export function computeOscarExitActions(
       reason: 'KILL',
       triggerPx: avg * (1 + killFrac),
     });
+    return actions;
+  }
+
+  if (shouldRemainderFlush(pos.remainingFraction, cfg.remainderClosePct)) {
+    actions.push({ kind: 'full', reason: 'REMAINDER_FLUSH' });
     return actions;
   }
 
