@@ -22,6 +22,8 @@ export const PRESET_C_SCALP_POLICY_ID = 'preset_c_scalp_v1' as const;
 
 export type PresetCScalpConfig = {
   entryDropPct: number;
+  /** Skip open when fill is deeper than this % below signal anchor. */
+  maxFillDropPct: number;
   dcaDropPct: number;
   dca2DropPct: number;
   entryUsd: number;
@@ -41,8 +43,10 @@ export type PresetCScalpConfig = {
 };
 
 export function loadPresetCScalpConfig(): PresetCScalpConfig {
+  const entryDropPct = Math.max(0.1, envNum('PRESET_C_SCALP_ENTRY_DROP_PCT', 10));
   return {
-    entryDropPct: Math.max(0.1, envNum('PRESET_C_SCALP_ENTRY_DROP_PCT', 10)),
+    entryDropPct,
+    maxFillDropPct: Math.max(entryDropPct, envNum('PRESET_C_SCALP_MAX_FILL_DROP_PCT', 13)),
     dcaDropPct: Math.max(0.1, envNum('PRESET_C_SCALP_DCA_DROP_PCT', 10)),
     dca2DropPct: Math.max(0.1, envNum('PRESET_C_SCALP_DCA2_DROP_PCT', 20)),
     entryUsd: Math.max(1, envNum('PRESET_C_SCALP_ENTRY_USD', 50)),

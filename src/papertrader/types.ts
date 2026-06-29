@@ -196,6 +196,7 @@ export interface OpenTrade {
   entryMetrics: Metrics;
   peakMcUsd: number;
   peakPnlPct: number;
+  peakPnlPctAnchor?: number;
   trailingArmed: boolean;
   legs: PositionLeg[];
   partialSells: PartialSell[];

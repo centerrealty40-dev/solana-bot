@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   passesPresetCMcapBand,
+  passesPresetCSpikeMcapBand,
   passesPresetCRetraceBand,
   presetCFilterReasons,
   PRESET_C_MAX_MCAP_USD,
   PRESET_C_MIN_MCAP_USD,
+  PRESET_C_SPIKE_MIN_MCAP_USD,
   evaluatePresetCCandidateGeometry,
   isPresetCMcapKnown,
 } from '../src/preset-c/filters.js';
@@ -49,6 +51,13 @@ describe('preset C filters', () => {
 
   it('documents preset C mcap window constants', () => {
     expect(PRESET_C_MIN_MCAP_USD).toBe(3_000_000);
+    expect(PRESET_C_SPIKE_MIN_MCAP_USD).toBeGreaterThanOrEqual(5_000_000);
     expect(PRESET_C_MAX_MCAP_USD).toBe(30_000_000);
+  });
+
+  it('spike mcap band requires $5M+ by default', () => {
+    expect(passesPresetCSpikeMcapBand(4_000_000)).toBe(false);
+    expect(passesPresetCSpikeMcapBand(5_000_000)).toBe(true);
+    expect(passesPresetCMcapBand(4_000_000)).toBe(true);
   });
 });

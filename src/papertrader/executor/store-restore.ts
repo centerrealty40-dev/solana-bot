@@ -135,6 +135,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       },
       peakMcUsd: Number(o.peakMcUsd ?? o.entryMcUsd ?? 0),
       peakPnlPct: Number(o.peakPnlPct ?? 0),
+      ...(typeof o.peakPnlPctAnchor === 'number' && Number.isFinite(o.peakPnlPctAnchor)
+        ? { peakPnlPctAnchor: Number(o.peakPnlPctAnchor) }
+        : {}),
       trailingArmed: Boolean(o.trailingArmed ?? false),
       legs: Array.isArray(o.legs)
         ? o.legs.map((l) => ({

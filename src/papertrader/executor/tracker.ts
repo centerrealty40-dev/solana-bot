@@ -19,6 +19,7 @@ import {
   presetCScalpDca2Due,
   presetCScalpKillEligible,
   presetCScalpBreakevenExitEligible,
+  presetCScalpSignalPnlFrac,
 } from './exit-policy-preset-c-scalp.js';
 import { loadPresetCScalpConfig } from '../../preset-c/scalp-config.js';
 import type {
@@ -3654,6 +3655,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
       const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
+      if (isPresetCScalpExitPolicy(ot)) {
+        ot.peakPnlPctAnchor = Math.max(
+          ot.peakPnlPctAnchor ?? -Infinity,
+          presetCScalpSignalPnlFrac(ot, curMetric) * 100,
+        );
+      }
       if (isWaveBExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) {
         waveBOnNewHigh(ot, pnlFracPeak, tgEff.stepPnl);
       } else if (isVariantALegacyV1ExitPolicy(ot)) {

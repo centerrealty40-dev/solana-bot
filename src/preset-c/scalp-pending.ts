@@ -10,6 +10,7 @@ import { loadPresetCScalpConfig } from './scalp-config.js';
 import { passesPresetCMcapBand } from './filters.js';
 
 const PENDING_REL = 'data/live/preset-c-scalp-pending.json';
+export const PRESET_C_SCALP_FILL_TOO_DEEP_REASON = 'preset_c_scalp_fill_too_deep' as const;
 
 export type PresetCScalpPendingSignal = {
   mint: string;
@@ -125,6 +126,16 @@ export function presetCScalpSignalDropPct(signalPriceUsd: number, curPriceUsd: n
   return (1 - curPriceUsd / signalPriceUsd) * 100;
 }
 
+export function presetCScalpFillTooDeep(
+  signalPriceUsd: number,
+  fillPriceUsd: number,
+  maxFillDropPct = loadPresetCScalpConfig().maxFillDropPct,
+): boolean {
+  const drop = presetCScalpSignalDropPct(signalPriceUsd, fillPriceUsd);
+  if (drop == null) return true;
+  return drop > maxFillDropPct + 1e-6;
+}
+
 export type PresetCScalpReadyEntry = PresetCScalpPendingSignal & {
   currentPriceUsd: number;
   signalDropPct: number;
@@ -153,6 +164,7 @@ export async function findPresetCScalpEntriesReady(
 
     const dropPct = presetCScalpSignalDropPct(row.signalPriceUsd, px);
     if (dropPct == null || dropPct + 1e-6 < scalp.entryDropPct) continue;
+    if (presetCScalpFillTooDeep(row.signalPriceUsd, px, scalp.maxFillDropPct)) continue;
 
     out.push({
       ...row,
