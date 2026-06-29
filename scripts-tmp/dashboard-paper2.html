@@ -617,6 +617,24 @@
                             :class="liqDropColor(o)"
                             x-text="liqDropLabel(o)"></span>
                     </div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1 text-xs leading-snug"
+                         x-show="selected === 'preset-c' && o.presetCScalpAnchorPriceUsd">
+                      <span class="text-slate-500">anchor</span>
+                      <span class="font-semibold mono text-violet-200" x-text="pxLabel(o.presetCScalpAnchorPriceUsd)"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-500">PnL anchor</span>
+                      <span class="font-semibold mono"
+                            :class="(o.pnlPctVsAnchor || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'"
+                            x-text="o.pnlPctVsAnchor != null ? fmtPct(o.pnlPctVsAnchor) : '—'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-500">peak anchor</span>
+                      <span class="font-semibold mono text-emerald-300/90"
+                            x-text="o.peakPnlPctAnchor != null ? fmtPct(o.peakPnlPctAnchor) : '—'"></span>
+                      <span class="text-slate-600">·</span>
+                      <span class="text-slate-500">peak avg</span>
+                      <span class="font-semibold mono text-sky-200/90"
+                            x-text="o.peakPnlPct != null ? fmtPct(o.peakPnlPct) : '—'"></span>
+                    </div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5 text-sm leading-snug" x-show="selected === 'dc-trader'">
                       <span class="text-slate-400">age <span class="text-slate-200 font-semibold mono" x-text="Math.round(o.ageMin || 0)"></span>m</span>
                       <span class="text-slate-600">·</span>
@@ -1570,6 +1588,7 @@
           }
         },
         async refresh() {
+          void this.refreshOpensFast();
           try {
             this.refreshing = true;
             const r = await fetch('/api/paper2?t=' + Date.now(), {
@@ -1600,6 +1619,66 @@
             this.updatedAt = new Date().toLocaleTimeString();
           } catch (e) { console.error(e); }
           finally { this.refreshing = false; }
+        },
+        /** Fast path: live-oscar open rows without waiting for all 7 tiles. */
+        async refreshOpensFast() {
+          if (this.authNeeded) return;
+          try {
+            const r = await fetch('/api/paper2/opens?t=' + Date.now(), {
+              credentials: 'include',
+              cache: 'no-store',
+              headers: {
+                ...this.authHeaders(),
+                'cache-control': 'no-cache',
+                pragma: 'no-cache',
+              },
+            });
+            if (r.status === 401) return;
+            const j = await r.json();
+            if (!Array.isArray(j?.open)) return;
+            const strategies = [...(this.state.strategies || [])];
+            const idx = strategies.findIndex((s) => s.strategyId === 'live-oscar');
+            const patch = {
+              open: j.open,
+              openCount: Number(j.openCount ?? j.open.length),
+              unrealizedUsd: j.unrealizedUsd,
+              totalPnlUsd: j.totalPnlUsd,
+            };
+            if (idx >= 0) {
+              strategies[idx] = { ...strategies[idx], ...patch };
+            } else {
+              strategies.unshift({
+                strategyId: 'live-oscar',
+                file: '—',
+                closedCount: 0,
+                startedAt: Date.now(),
+                lastTs: Date.now(),
+                hoursOfData: 0,
+                sumPnlUsd: 0,
+                realizedPnlUsd: 0,
+                unrealizedPnlUsd: j.unrealizedUsd ?? 0,
+                winRate: 0,
+                avgPnl: 0,
+                avgPeak: 0,
+                bestPnlUsd: 0,
+                worstPnlUsd: 0,
+                exits: {},
+                exitsBreakdown: {},
+                evals1h: 0,
+                passed1h: 0,
+                failReasons: [],
+                recentClosed: [],
+                priorityFeeUsdTotal: 0,
+                priceVerify: { okCount: 0, blockedCount: 0, skippedCount: 0, avgSlipPct: null, p90SlipPct: null },
+                liqDrain: { exits: 0, avgDropPct: null, p90DropPct: null },
+                ...patch,
+              });
+            }
+            this.state = { ...this.state, strategies };
+            if (this.selected === 'live-oscar') this.syncRowCache();
+          } catch (e) {
+            console.error(e);
+          }
         },
         selectedRow() { return this.rowCache; },
         describe(id) {
