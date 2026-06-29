@@ -330,6 +330,9 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         RAYDIUM_COLLECTOR_INTERVAL_MS: '30000',
+        RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '12',
+        PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
@@ -350,6 +353,9 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '30000',
+        METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '12',
+        PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
@@ -371,6 +377,9 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '30000',
+        MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '12',
+        PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },

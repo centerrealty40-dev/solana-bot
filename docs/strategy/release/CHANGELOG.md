@@ -76,6 +76,25 @@
 
 ---
 
+---
+
+## [1.11.529] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.529`
+
+### PG collectors: primary-first upsert для raydium/meteora/moonshot
+
+**RCA:** тик коллекторов писал в PG только после 6–7 мин enrich → `MAX(ts)` отставал на 12–15 мин → `snapshot_stale` и `pg_stale_now_worst_age_sec` блокировали покупки.
+
+- **`raydium-collector.mjs`**, **`meteora-collector.mjs`**, **`moonshot-collector.mjs`:** primary search/gecko bucket **upsert до enrich** (как в pumpswap); enrich с `*_ENRICH_MAX_RETRIES=1` (fail-fast на 429)
+- **`ecosystem.config.cjs`:** env caps enrich для sa-raydium / sa-meteora / sa-moonshot
+
+**Откат:** `git checkout sa-alpha-1.11.528 -- scripts-tmp/raydium-collector.mjs scripts-tmp/meteora-collector.mjs scripts-tmp/moonshot-collector.mjs ecosystem.config.cjs docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only sa-raydium,sa-meteora,sa-moonshot --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.528] - 2026-06-29
 
 **Тег:** `sa-alpha-1.11.528`
