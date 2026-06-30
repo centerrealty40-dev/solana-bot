@@ -8,7 +8,7 @@ import type { OscarOpenPosition } from './position-types.js';
  * TP: sell `tpSellFrac` (50%) of **remaining** at each rung in `tpRungs` (+5%, +7.5%, +10%).
  * Trail arms at first +5% touch; −2.5% from peak → sell 20% of remaining per step.
  * Breakeven full exit at ≤0% avg after trail armed (first TP or +5% peak).
- * Kill −45% and time stop 12h are config-driven (`positionKillDropPct`, `timeStopHours`).
+ * Kill −45% and optional time stop are config-driven (`positionKillDropPct`, `timeStopHours`; `0` = off).
  */
 export const OSCAR_EXIT = {
   /** Take-profit thresholds vs avg entry (PnL fraction). */
@@ -123,7 +123,7 @@ export function computeOscarExitActions(
   }
 
   const ageH = (nowMs - pos.entryTs) / 3_600_000;
-  if (ageH >= cfg.timeStopHours && pos.remainingFraction > 1e-6) {
+  if (cfg.timeStopHours > 0 && ageH >= cfg.timeStopHours && pos.remainingFraction > 1e-6) {
     actions.push({ kind: 'full', reason: 'TIME_STOP' });
   }
 

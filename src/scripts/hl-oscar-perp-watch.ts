@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     ? `staged legs=$${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} (total $${cfg.positionNotionalUsd})`
     : `single entry=$${cfg.leg1GrossUsd} gross ($${(cfg.leg1GrossUsd / cfg.leverage).toFixed(0)} margin @ ${cfg.leverage}x)`;
   console.log(
-    `[hl-oscar-perp] start mode=${client.mode} leverage=${cfg.leverage}x ${entryDesc} timeStop=${cfg.timeStopHours}h maxOpen=${cfg.maxOpenPositions}`,
+    `[hl-oscar-perp] start mode=${client.mode} leverage=${cfg.leverage}x ${entryDesc} timeStop=${cfg.timeStopHours > 0 ? `${cfg.timeStopHours}h` : 'off'} maxOpen=${cfg.maxOpenPositions}`,
   );
   console.log(
     `[hl-oscar-perp] denylist=${denylist.size} coins whitelist=${whitelist ? whitelist.size : 'all-except-deny'}`,

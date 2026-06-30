@@ -17,6 +17,8 @@ const ENV_KEYS = [
   'HL_OSCAR_LEG2_USD',
   'HL_OSCAR_LEG3_USD',
   'HL_OSCAR_LEVERAGE',
+  'HL_OSCAR_TIME_STOP_HOURS',
+  'HL_OSCAR_TIME_STOP_ENABLED',
 ] as const;
 
 function clearEnv(): void {
@@ -110,5 +112,18 @@ describe('hl-oscar-perp config sizing', () => {
     clearEnv();
     process.env.HL_OSCAR_MARGIN_RESERVE_USD = '30';
     expect(loadHlOscarPerpConfig().marginReserveUsd).toBe(30);
+  });
+
+  it('disables time stop when HL_OSCAR_TIME_STOP_HOURS=0', () => {
+    clearEnv();
+    process.env.HL_OSCAR_TIME_STOP_HOURS = '0';
+    expect(loadHlOscarPerpConfig().timeStopHours).toBe(0);
+  });
+
+  it('disables time stop when HL_OSCAR_TIME_STOP_ENABLED=0', () => {
+    clearEnv();
+    process.env.HL_OSCAR_TIME_STOP_HOURS = '12';
+    process.env.HL_OSCAR_TIME_STOP_ENABLED = '0';
+    expect(loadHlOscarPerpConfig().timeStopHours).toBe(0);
   });
 });
