@@ -216,10 +216,11 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.524 — low $2–3M: 3×$300 entry ($900), avg −10% $350 (max $1250); 10s delay + corridor unchanged.
  * 1.11.522 — low $2–3M: 3×$300 entry ($900) — superseded by 1.11.524.
  * 1.11.518 — prod tiered max position by mcap at entry: $3–5M $3100, $5–8M $2800, $8–12M $2100, ≥$12M $1500; low $2–3M $850 unchanged.
+ * 1.11.538 — prod ≥$3M: 8×$300 entry split; avg −10% $300, −20% $400 (all prod incl. ≥$12M); low 5×$300 + avg $300/$400; max $3100 / low $2200.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '2100';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '2400';
 const LIVE_OSCAR_MAX_POSITION_USD = '3100';
 
 /** live-oscar-preset-c: single $50 entry @ −10% (no DCA legs). */
@@ -567,7 +568,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.515 — prod ≥$3M: 7×$300 entry split @5s (+3/−5% corridor); avg −10% $400, −20% $600; max $3100.
+         * 1.11.538 — prod ≥$3M: 8×$300 entry split @5s (+3/−5% corridor); avg −10% $300, −20% $400; max $3100 (≥$12M incl. avg).
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -580,6 +581,7 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
@@ -589,9 +591,9 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '400',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '600',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '400',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
@@ -685,7 +687,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '210',
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.523 — low $2M–$3M: 3×$300 @ 10s (+3/−5% corridor), avg −10% $350 (max $1250); TP2 = global DIP10_FIRST_TP5. */
+        /** 1.11.538 — low $2M–$3M: 5×$300 @ 5s (+3/−5% corridor), avg −10% $300 + −20% $400 (max $2200); TP2 = global DIP10_FIRST_TP5. */
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
@@ -694,9 +696,13 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '300',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '300',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '300',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '900',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG4_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG5_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1500',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '350',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '300',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_DROP_PCT: '20',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD: '400',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** 1.11.500 — scalp_wave lane OFF. */
         PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '0',
@@ -718,7 +724,7 @@ const PM2_APPS = [
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '3100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '2100',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '3100',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
         PAPER_VOL_1H_MIN_USD: '35000',

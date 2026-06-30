@@ -108,12 +108,13 @@ const ConfigSchema = z.object({
   liveStagedEntryEntrySplitLegUsd: z.coerce.number().nonnegative().default(500),
   /** Asymmetric split leg-2 USD; `0` = same as leg-1 (symmetric 2× split, backward compat). */
   liveStagedEntryEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
-  /** Optional third timed entry-split leg (prod tier: up to 7× split); `0` = two-leg split only. */
+  /** Optional third timed entry-split leg (prod tier: up to 8× split); `0` = two-leg split only. */
   liveStagedEntryEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg4Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg5Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg6Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitLeg7Usd: z.coerce.number().nonnegative().default(0),
+  liveStagedEntryEntrySplitLeg8Usd: z.coerce.number().nonnegative().default(0),
   liveStagedEntryEntrySplitDelayMs: z.coerce.number().int().nonnegative().default(10_000),
   liveStagedEntryEntrySplitMaxUpPct: z.coerce.number().min(0).max(50).default(3),
   liveStagedEntryEntrySplitMaxDownPct: z.coerce.number().min(0).max(95).default(10),
@@ -275,16 +276,20 @@ const ConfigSchema = z.object({
   /** Prod sub-tier boundary ($3M floor = low max when low lane ON). */
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
   liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(3_100),
-  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(2_100),
+  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(3_100),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(400),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(0),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
   liveOscarLowMcapEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(0),
+  liveOscarLowMcapEntrySplitLeg4Usd: z.coerce.number().nonnegative().default(0),
+  liveOscarLowMcapEntrySplitLeg5Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(800),
   /** Staged avg drop % from signal for low tier (e.g. 10 = −10%). */
   liveOscarLowMcapStagedAvgDropPct: z.coerce.number().min(0).max(90).default(10),
   /** Leg-3 staged avg @ −10% for low tier; prod uses `liveStagedEntrySecondLegUsd`. */
   liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(300),
+  liveOscarLowMcapStagedAvgSecondDropPct: z.coerce.number().min(0).max(90).default(20),
+  liveOscarLowMcapStagedAvgSecondLegUsd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /**
    * Live Oscar scalp_wave lane: min age 12h (no max), $800k–$30M mcap, shallow dip −8..−15%,
@@ -1126,6 +1131,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitLeg5Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD,
     liveStagedEntryEntrySplitLeg6Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD,
     liveStagedEntryEntrySplitLeg7Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD,
+    liveStagedEntryEntrySplitLeg8Usd: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD,
     liveStagedEntryEntrySplitDelayMs: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS,
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
@@ -1215,9 +1221,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarLowMcapEntrySplitLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD,
     liveOscarLowMcapEntrySplitLeg2Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD,
     liveOscarLowMcapEntrySplitLeg3Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD,
+    liveOscarLowMcapEntrySplitLeg4Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG4_USD,
+    liveOscarLowMcapEntrySplitLeg5Usd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG5_USD,
     liveOscarLowMcapPositionUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD,
     liveOscarLowMcapStagedAvgDropPct: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT,
     liveOscarLowMcapStagedAvgLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD,
+    liveOscarLowMcapStagedAvgSecondDropPct: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_DROP_PCT,
+    liveOscarLowMcapStagedAvgSecondLegUsd: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD,
     liveOscarLowMcapDcaLevelsSpec: process.env.PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS,
     liveOscarScalpWaveLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED, false),
     liveOscarScalpWaveMinAgeMin: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_AGE_MIN,
