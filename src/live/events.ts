@@ -262,6 +262,22 @@ export const LivePostCloseTailSchema = z.object({
   note: z.string().max(240).optional(),
   rawAtoms: z.string().max(64).optional(),
   estUsd: z.number().finite().optional(),
+  exitReason: z.string().max(64).optional(),
+  delayMs: z.number().int().nonnegative().optional(),
+  thresholdUsd: z.number().finite().optional(),
+});
+
+/** Wallet tail flush after partial exit, post-close sweep, or periodic heal. */
+export const LiveTailFlushSchema = z.object({
+  kind: z.literal('live_tail_flush'),
+  mint: z.string().min(1).max(64),
+  context: z.enum(['post_close', 'partial_exit', 'periodic_heal']),
+  ok: z.boolean(),
+  note: z.string().max(240).optional(),
+  estUsd: z.number().finite().optional(),
+  thresholdUsd: z.number().finite().optional(),
+  rawAtoms: z.string().max(64).optional(),
+  flushed: z.boolean().optional(),
 });
 
 /** Candidate passed paper gates but mint not on allowlist (`LIVE_MINT_WHITELIST_ENABLED`). */
@@ -606,6 +622,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveExitVerifyDeferSchema,
   LivePeriodicSelfHealReportSchema,
   LivePostCloseTailSchema,
+  LiveTailFlushSchema,
   LiveWhitelistSkipSchema,
   LivePermanentDenySkipSchema,
   LiveDiscoveryEvalSchema,

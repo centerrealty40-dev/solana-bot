@@ -116,7 +116,10 @@ import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown
 import { recordMintScratchReentry } from '../../live/mint-scratch-reentry.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca, applyLiveBuyAnchorsAfterOpen } from '../../live/live-buy-anchor.js';
-import { scheduleLivePostCloseTailSweep } from '../../live/post-close-tail-sweep.js';
+import {
+  runLivePartialExitTailFlush,
+  scheduleLivePostCloseTailSweep,
+} from '../../live/post-close-tail-sweep.js';
 import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
@@ -1090,6 +1093,16 @@ async function tryExecuteTpPartialSell(args: {
     mint,
     openTrade: serializeOpenTrade(ot),
   });
+  if (sellChainRecorded && ot.remainingFraction > 1e-12) {
+    runLivePartialExitTailFlush({
+      liveCfg: liveOscarCfg,
+      mint,
+      symbol: ot.symbol,
+      decimals: ot.tokenDecimals ?? 6,
+      hintPriceUsdPerToken: marketSell,
+      dexSource: ot.source,
+    });
+  }
   console.log(
     `[${logLabelPct}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
   );

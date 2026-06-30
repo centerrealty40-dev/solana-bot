@@ -353,6 +353,11 @@ const LiveOscarConfigSchema = z
     livePostCloseTailSweepMinUsd: z.coerce.number().min(0).max(1000).default(0.05),
     /** Skip tail sweep when on-chain balance est. USD exceeds this (prevents selling a fresh re-entry). */
     livePostCloseTailSweepMaxUsd: z.coerce.number().min(0).max(10_000).default(25),
+    /**
+     * Partial exit / periodic heal: sell 100% wallet balance when remainder est. USD is below this threshold.
+     * Post-close tail sweep always sells any positive remainder (orphan tails).
+     */
+    liveTailFlushThresholdUsd: z.coerce.number().min(0).max(10_000).default(100),
 
     /**
      * Двухногий вход: после первого `buy_open` трекер докупает `(1 − PAPER_ENTRY_FIRST_LEG_FRACTION)×positionUsd`,
@@ -822,6 +827,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 25;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : 25;
+    })(),
+    liveTailFlushThresholdUsd: (() => {
+      const s = process.env.LIVE_TAIL_FLUSH_THRESHOLD_USD?.trim();
+      if (!s) return 100;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : 100;
     })(),
 
     liveEntryScaleInEnabled: envBool(process.env.LIVE_ENTRY_SCALE_IN_ENABLED, false),

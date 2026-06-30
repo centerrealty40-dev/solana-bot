@@ -128,6 +128,10 @@ describe('loadLiveOscarConfig (W8.0 p0)', () => {
     expect(loadLiveOscarConfig().livePostCloseTailSweepMaxUsd).toBe(25);
     process.env.LIVE_POST_CLOSE_TAIL_SWEEP_MAX_USD = '50';
     expect(loadLiveOscarConfig().livePostCloseTailSweepMaxUsd).toBe(50);
+    delete process.env.LIVE_TAIL_FLUSH_THRESHOLD_USD;
+    expect(loadLiveOscarConfig().liveTailFlushThresholdUsd).toBe(100);
+    process.env.LIVE_TAIL_FLUSH_THRESHOLD_USD = '75';
+    expect(loadLiveOscarConfig().liveTailFlushThresholdUsd).toBe(75);
   });
 
   it('parses LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', () => {
