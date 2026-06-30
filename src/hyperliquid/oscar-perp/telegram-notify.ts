@@ -104,8 +104,12 @@ export async function assertOscarTelegramBot(): Promise<void> {
 
 export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): Promise<void> {
   if (cfg.mode !== 'live') return;
+  const impulseLine =
+    cfg.dipMinImpulsePct > 0
+      ? ` · импульс ≥${cfg.dipMinImpulsePct}%`
+      : ' · импульс выкл';
   const entryLine = cfg.stagedEntryEnabled
-    ? `Staged: $${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} @ dip −${Math.abs(cfg.dipMinDropPct)}% / leg2 −${cfg.leg2DropPct}% / leg3 −${cfg.leg3DropPct}% от сигнала`
+    ? `Staged: $${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} @ dip −${Math.abs(cfg.dipMinDropPct)}%${impulseLine} / leg2 −${cfg.leg2DropPct}% / leg3 −${cfg.leg3DropPct}% от сигнала`
     : `Single entry $${cfg.positionNotionalUsd} gross`;
   await sendOscarTelegram(
     [
@@ -129,11 +133,15 @@ export async function notifyOscarOpen(params: {
 }): Promise<void> {
   if (params.cfg.mode !== 'live') return;
   const { sym, fillPx, grossUsd, dipPct, impulsePct, windowMin } = params;
+  const impLine =
+    params.cfg.dipMinImpulsePct > 0 && impulsePct > 0
+      ? ` · импульс +${impulsePct.toFixed(1)}%`
+      : '';
   await sendOscarTelegram(
     [
       `🟢 Открыли ${sym} LONG · Oscar dip-buy`,
       `Leg1 ${formatUsdCompact(grossUsd)} @ ${formatUsdPrice(fillPx)}`,
-      `Дип ${dipPct.toFixed(1)}% · импульс +${impulsePct.toFixed(1)}% · окно ${windowMin}m`,
+      `Дип ${dipPct.toFixed(1)}%${impLine} · окно ${windowMin}m`,
     ].join('\n'),
   );
 }

@@ -134,15 +134,16 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     leg3DropPct: envNum('HL_OSCAR_LEG3_DROP_PCT', 10),
     positionKillDropPct: Math.max(1, envNum('HL_OSCAR_KILL_PCT', 45)),
     stagedKillDropPct: Math.max(1, envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 45)),
-    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -10),
+    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -7),
     dipMaxDropPct: envNum('HL_OSCAR_DIP_MAX_PCT', -50),
-    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 10),
+    /** `0` disables impulse filter (any window high/low ratio passes). */
+    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 0),
     dipLookbackWindowsMin: parseWindows(
       process.env.HL_OSCAR_DIP_WINDOWS_MIN?.trim() || '120,360,720',
     ),
     dipCooldownMin: envNum('HL_OSCAR_DIP_COOLDOWN_MIN', 30),
     timeStopHours: resolveTimeStopHours(),
-    maxOpenPositions: Math.max(1, Math.round(envNum('HL_OSCAR_MAX_OPEN_POSITIONS', 10))),
+    maxOpenPositions: Math.max(1, Math.round(envNum('HL_OSCAR_MAX_OPEN_POSITIONS', 4))),
     minDayVolumeUsd: envNum('HL_OSCAR_MIN_DAY_VOLUME_USD', 100_000),
     pollIntervalMs: Math.max(5_000, envNum('HL_OSCAR_POLL_MS', 60_000)),
     candleRefreshMs: Math.max(60_000, envNum('HL_OSCAR_CANDLE_REFRESH_MS', 300_000)),
@@ -161,8 +162,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
 }
 
 function resolveTimeStopHours(): number {
-  if (!envBool('HL_OSCAR_TIME_STOP_ENABLED', true)) return 0;
-  return Math.max(0, envNum('HL_OSCAR_TIME_STOP_HOURS', 12));
+  if (!envBool('HL_OSCAR_TIME_STOP_ENABLED', false)) return 0;
+  return Math.max(0, envNum('HL_OSCAR_TIME_STOP_HOURS', 0));
 }
 
 function parseWindows(spec: string): number[] {
