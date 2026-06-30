@@ -78,6 +78,53 @@
 
 ---
 
+## [1.11.533] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.533`
+
+### Live Oscar — new mint volume sustain (10h) + MUSHU denylist
+
+- **Volume ephemeral guard:** для **новых** mint (нет сделки бота за 14d) вход только при ≥**10** активных часов vol5m в lookback (`PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS`); блок spike-only wash (MUSHU: 2h burst + inflated vol1h).
+- Дополнительно: new-mint tail block без aging-out, vol5m/vol1h ratio wash gate (shared sybil+ephemeral).
+- **MUSHU** (`5Jr9hGmJ…Wpump`) в `live-oscar-permanent-denylist.seed.txt` — permanent block.
+
+**Откат:** `PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS=0`; убрать mint из seed; `pm2 reload live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.532] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.532`
+
+### Live Oscar — MUSHU permanent denylist
+
+- **MUSHU** (`5Jr9hGmJ…Wpump`) в `live-oscar-permanent-denylist.seed.txt` — ручной permanent block повторных входов.
+
+**Откат:** убрать mint из seed; `pm2 reload live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
+## [1.11.532] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.532`
+
+### live-oscar: stricter volume guards for NEW mints + MUSHU ban
+
+**Проблема:** новые mint проходили wash-паттерн (мёртвый vol5m, раздутая vol1h): ephemeral tail «старел» при activeHours>4; sybil vol1h-exempt; stale PG mcap ($4.6M vs реальные ~$800k).
+
+- **`known-mint.ts`:** `isKnownMint()` (14d lookback) для строгих volume guards; PG gap bypass (#302) без изменений.
+- **Ephemeral / sybil:** для NEW mint — tail block без aging-out; vol1h exempt только при живом vol5m или vol5m/vol1h ≥ 8%.
+- **Discovery hard mcap:** `discovery_hard_mcap=…_src=pg_snapshot|shyft_defi|price_scaled`; price-primary масштабирует mcap.
+- **Denylist seed:** MUSHU `5Jr9hGmJ…Wpump`.
+
+**Откат:** `git checkout sa-alpha-1.11.531 -- src/papertrader/discovery/known-mint.ts src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/discovery/volume-sybil-guard.ts src/papertrader/discovery/dip-clones.ts src/papertrader/filters/snapshot-filter.ts src/papertrader/config.ts data/live/live-oscar-permanent-denylist.seed.txt ecosystem.config.cjs tests/volume-* tests/discovery-hard-mcap.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.531] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.531`
