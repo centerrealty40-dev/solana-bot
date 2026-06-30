@@ -13,6 +13,9 @@ const ENV_KEYS = [
   'HL_OSCAR_MARGIN_USD',
   'HL_OSCAR_STAGED_ENTRY',
   'HL_OSCAR_DIP_MIN_PCT',
+  'HL_OSCAR_DIP_MAX_PCT',
+  'HL_OSCAR_DIP_MIN_IMPULSE_PCT',
+  'HL_OSCAR_MAX_OPEN_POSITIONS',
   'HL_OSCAR_LEG1_USD',
   'HL_OSCAR_LEG2_USD',
   'HL_OSCAR_LEG3_USD',
@@ -28,11 +31,14 @@ function clearEnv(): void {
 describe('hl-oscar-perp config sizing', () => {
   afterEach(() => clearEnv());
 
-  it('defaults to staged $100 gross ($50 margin) at 2x with dip −10%', () => {
+  it('defaults to staged $100 gross ($50 margin) at 2x with aggressive dip −7%', () => {
     clearEnv();
     const cfg = loadHlOscarPerpConfig();
-    expect(cfg.dipMinDropPct).toBe(-10);
-    expect(cfg.dipMinImpulsePct).toBe(10);
+    expect(cfg.dipMinDropPct).toBe(-7);
+    expect(cfg.dipMinImpulsePct).toBe(0);
+    expect(cfg.dipMaxDropPct).toBe(-50);
+    expect(cfg.timeStopHours).toBe(0);
+    expect(cfg.maxOpenPositions).toBe(4);
     expect(cfg.stagedEntryEnabled).toBe(true);
     expect(cfg.leg2DropPct).toBe(5);
     expect(cfg.leg3DropPct).toBe(10);
@@ -120,10 +126,10 @@ describe('hl-oscar-perp config sizing', () => {
     expect(loadHlOscarPerpConfig().timeStopHours).toBe(0);
   });
 
-  it('disables time stop when HL_OSCAR_TIME_STOP_ENABLED=0', () => {
+  it('enables time stop when HL_OSCAR_TIME_STOP_ENABLED=1', () => {
     clearEnv();
+    process.env.HL_OSCAR_TIME_STOP_ENABLED = '1';
     process.env.HL_OSCAR_TIME_STOP_HOURS = '12';
-    process.env.HL_OSCAR_TIME_STOP_ENABLED = '0';
-    expect(loadHlOscarPerpConfig().timeStopHours).toBe(0);
+    expect(loadHlOscarPerpConfig().timeStopHours).toBe(12);
   });
 });
