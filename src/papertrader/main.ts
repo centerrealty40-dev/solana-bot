@@ -321,6 +321,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     if (isLiveOscarTradingStrategyId(cfg.strategyId)) {
       reconcileE2OpenOnRestore(ot, cfg);
     }
+    if (ot.entryTs > 0) recordEntryTs(ot.mint, ot.entryTs);
   }
   const closed: ClosedTrade[] =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? [...opts.liveStrategyReplay.closed] : [];

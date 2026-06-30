@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import {
   evaluatePgDataCoverageGuard,
@@ -6,6 +6,11 @@ import {
   type MintPgCoverageFeatures,
   resolvePgCoverageRelaxedMode,
 } from '../src/papertrader/discovery/pg-data-coverage-guard.js';
+import {
+  isPgCoverageKnownMint,
+  lastEntryTsByMintMap,
+  lastPostExitBuyCooldownTsByMintMap,
+} from '../src/papertrader/discovery/dip-clones.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
 function baseRow(over: Partial<SnapshotCandidateRow> = {}): SnapshotCandidateRow {
@@ -44,6 +49,8 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     pgDataCoverageBlockOnPgStale: true,
     pgDataCoverageStrictAfterRecoveryHours: 24,
     pgDataCoverageAutoEscalate: true,
+    pgDataCoverageKnownMintGapBypass: false,
+    pgDataCoverageKnownMintLookbackDays: 14,
     volumeSybilGuardEnabled: true,
     volumeSybilMinBaselineSamples: 25,
     volumeEphemeralGuardEnabled: true,
@@ -267,5 +274,104 @@ describe('evaluatePgDataCoverageGuard', () => {
       true,
     );
     expect(r.blocked).toBe(false);
+  });
+
+  it('bypasses recent pg gap for known mint when flag enabled', () => {
+    const mint = baseRow().mint;
+    lastEntryTsByMintMap.set(mint, Date.now() - 2 * 24 * 3_600_000);
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageKnownMintGapBypass: true }),
+      baseRow(),
+      mintCtx({ recentMaxGapMinutes: 180 }),
+      globalState({ coverageMode: 'relaxed' }),
+      true,
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.features.knownMintGapBypass).toBe(true);
+    lastEntryTsByMintMap.delete(mint);
+  });
+
+  it('still blocks known mint on pg_stale_now when gap bypass enabled', () => {
+    const mint = baseRow().mint;
+    lastEntryTsByMintMap.set(mint, Date.now() - 1 * 24 * 3_600_000);
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageKnownMintGapBypass: true }),
+      baseRow(),
+      mintCtx({ recentMaxGapMinutes: 180 }),
+      globalState({ coverageMode: 'relaxed', pgStaleNow: true, worstAgeSec: 900 }),
+      true,
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap'))).toBe(false);
+    lastEntryTsByMintMap.delete(mint);
+  });
+
+  it('blocks new mint pg gap even when bypass flag enabled', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageKnownMintGapBypass: true }),
+      baseRow(),
+      mintCtx({ recentMaxGapMinutes: 180 }),
+      globalState({ coverageMode: 'relaxed' }),
+      true,
+      { knownMint: false },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_recent_history'))).toBe(
+      true,
+    );
+  });
+
+  it('blocks full-mode pg gap for new mint', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageKnownMintGapBypass: true }),
+      baseRow(),
+      mintCtx({ maxGapMinutes: 180 }),
+      globalState({ coverageMode: 'full' }),
+      true,
+      { knownMint: false },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_history'))).toBe(true);
+  });
+});
+
+describe('isPgCoverageKnownMint', () => {
+  const mint = 'KnownMint111111111111111111111111111111111';
+
+  afterEach(() => {
+    lastEntryTsByMintMap.delete(mint);
+    lastPostExitBuyCooldownTsByMintMap.delete(mint);
+  });
+
+  it('returns false when bypass disabled', () => {
+    lastEntryTsByMintMap.set(mint, Date.now());
+    expect(isPgCoverageKnownMint(baseCfg(), mint)).toBe(false);
+  });
+
+  it('returns true for recent entry within lookback', () => {
+    lastEntryTsByMintMap.set(mint, Date.now() - 3 * 24 * 3_600_000);
+    expect(
+      isPgCoverageKnownMint(baseCfg({ pgDataCoverageKnownMintGapBypass: true }), mint),
+    ).toBe(true);
+  });
+
+  it('returns true for recent exit within lookback', () => {
+    lastPostExitBuyCooldownTsByMintMap.set(mint, Date.now() - 5 * 24 * 3_600_000);
+    expect(
+      isPgCoverageKnownMint(baseCfg({ pgDataCoverageKnownMintGapBypass: true }), mint),
+    ).toBe(true);
+  });
+
+  it('returns false when last trade older than lookback', () => {
+    lastEntryTsByMintMap.set(mint, Date.now() - 20 * 24 * 3_600_000);
+    expect(
+      isPgCoverageKnownMint(
+        baseCfg({ pgDataCoverageKnownMintGapBypass: true, pgDataCoverageKnownMintLookbackDays: 14 }),
+        mint,
+      ),
+    ).toBe(false);
   });
 });
