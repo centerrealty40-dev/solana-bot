@@ -15,6 +15,7 @@ import {
   liveSellQuoteAndPrepareSnapshot,
   tokensPerInLamportFromQuote,
 } from './jupiter.js';
+import { oscarWalletMintUsdExcludingCopyLeader } from './copy-leader-attribution.js';
 import { cancelLivePostCloseTailSweepForMint } from './post-close-tail-sweep.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
@@ -259,7 +260,8 @@ async function estimateLiveWalletMintHoldingUsd(args: {
     px = await fetchJupiterTokenUsdPrice(args.mint);
   }
   if (px == null || !(px > 0)) return null;
-  return tokens * px;
+  const gross = tokens * px;
+  return oscarWalletMintUsdExcludingCopyLeader({ walletMintUsd: gross, mint: args.mint });
 }
 
 async function runSolToTokenPipeline(

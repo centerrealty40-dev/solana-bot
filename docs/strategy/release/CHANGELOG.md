@@ -78,6 +78,28 @@
 
 ---
 
+---
+
+## [1.11.540] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.540`
+
+### Copy-trader + live-oscar shared wallet (golden-goose)
+
+**Лидер:** `498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma` · **кошелёк:** `live-oscar-micro` (общий пул SOL с Oscar).
+
+- **`positionSource: copy_leader`** — параллельный учёт в `data/copytrader/state.json`; Oscar `open` map не видит copy-ноги.
+- **Golden-goose:** `copy-leader-attribution.ts` вычитает copy cost basis из `wallet_holds_mint_over_usd_cap` — Oscar может открыть полный 8×$300 ($2400+) на том же mint после $500 copy.
+- **Spare-capital gate:** copy покупает только если свободный SOL > Oscar reserve + committed open (читает `live-oscar-open-snapshot.json`).
+- **Shared wallet sells:** продаёт только `tokenRaw` copy-ноги, не токены Oscar.
+- **PM2:** $500 fixed entry, 5s buy delay, poll 3s, `COPY_TRADER_SHARED_OSCAR_WALLET=1`, `COPY_TRADER_SPARE_CAPITAL_GATE=1`.
+
+**Откат:** redeploy `sa-alpha-1.11.539`; вернуть risky wallet + staged probe/dip в `ecosystem.config.cjs` copy-trader block; `pm2 reload ecosystem.config.cjs --only live-oscar,copy-trader --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.539] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.539`

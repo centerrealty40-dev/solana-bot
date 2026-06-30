@@ -1166,6 +1166,10 @@ const PM2_APPS = [
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        LIVE_OPEN_SNAPSHOT_PATH: path.join(root, 'data/live/live-oscar-open-snapshot.json'),
+        /** Subtract copy-leader cost basis from wallet-holds-mint gate (golden-goose). */
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
+        LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
@@ -1884,8 +1888,8 @@ const PM2_APPS = [
       },
     },
     /**
-     * Stealth copy-trader — отдельный процесс, журнал и (в live) кошелёк.
-     * Не импортирует live-oscar; env-блок без LIVE_* / PAPER_* / whitelist Oscar.
+     * Copy-leader lane — shares live-oscar-micro wallet; parallel `positionSource: copy_leader` accounting.
+     * Golden-goose: oscar open/discovery ignores copy legs; copy only uses spare capital.
      */
     {
       name: 'copy-trader',
@@ -1906,54 +1910,52 @@ const PM2_APPS = [
         ...PM2_SOLANA_RPC_ENV,
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
-        /** Исполнение: бывший live-oscar-risky (Phantom base58 или JSON в этом файле на VPS). */
-        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-risky.keypair.json'),
-        COPY_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
-        COPY_TRADER_USE_RISKY_WALLET: '1',
-        /** Лидер: адрес в файле (не execution wallet). */
+        COPY_TRADER_SHARED_OSCAR_WALLET: '1',
+        COPY_TRADER_SPARE_CAPITAL_GATE: '1',
+        /** Same execution wallet as live-oscar (one SOL pool). */
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
+        COPY_TRADER_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+        COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_POSITION_USD: '1000',
-        /** 0 = unlimited (proportional adds/sells only; no cap rows in state). */
+        /** Fixed $500 mirror entry (no probe/dip split). */
+        COPY_TRADER_POSITION_USD: '500',
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_MAX_POSITION_USD: '0',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MAX_OPEN_POSITIONS: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
-        COPY_TRADER_BUY_DELAY_MS: '30000',
+        /** ~5s follow on leader buy/add (was 30s). */
+        COPY_TRADER_BUY_DELAY_MS: '5000',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Split entry: $500 probe (50%) + $500 dip @ leader−10%. */
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '0.5',
-        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '10',
-        COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS: '2',
-        COPY_TRADER_ENTRY_DIP_VS_PROBE_PCT: '0',
-        COPY_TRADER_ENTRY_MIN_DEPLOY_FRACTION: '0.99',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
-        /** Mcap $500k–$1M: $300+$300; ≥$1M: $500+$500 (unchanged). */
-        COPY_TRADER_MIN_MCAP_USD: '500000',
-        COPY_TRADER_ENTRY_FULL_MCAP_USD: '1000000',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '600',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '300',
+        /** No mcap gate — leader filter only. */
+        COPY_TRADER_MIN_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '500',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
-        /** Slippage-class sell: retry same bps every 6s up to 2h (no wait for next leader sell). */
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
-        /** Pro tier: minimal Jupiter throttling (was 2s / 12s credit-save). */
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '2000',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
-        /** Exit soon after leader sell (was 20–30s anti-panic; now match manual jup.ag speed). */
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
         COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
-        COPY_TRADER_POLL_INTERVAL_MS: '12000',
-        /** Pro tier: 100 bps base slippage (was 400 free-tier). Sell retry envelope via JUPITER_PRO_TRADING_ENV. */
+        /** Faster leader poll for ~5s latency (was 12s). */
+        COPY_TRADER_POLL_INTERVAL_MS: '3000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
         COPY_TRADER_SLIPPAGE_BPS: '100',
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         COPY_TRADER_TELEGRAM_ENABLED: '0',
+        LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
