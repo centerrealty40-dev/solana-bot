@@ -143,18 +143,29 @@ export async function executeLiveCopySell(args: {
   symbol: string;
   leaderSignature: string;
   fraction: number;
+  /** Copy-attributed balance (required in shared-wallet mode). */
+  tokenRawBase?: string;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRawRemaining?: string; reason?: string }> {
-  const { cfg, mint, symbol, leaderSignature, fraction } = args;
+  const { cfg, mint, symbol, leaderSignature, fraction, tokenRawBase } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
 
-  const tokenRaw = await fetchMintBalanceRaw(cfg, mint);
-  if (!tokenRaw) {
-    return { ok: false, priceUsd: 0, reason: 'no_token_balance' };
+  let totalRaw = 0n;
+  if (tokenRawBase) {
+    try {
+      totalRaw = BigInt(tokenRawBase);
+    } catch {
+      totalRaw = 0n;
+    }
   }
-
-  const totalRaw = BigInt(tokenRaw);
+  if (totalRaw <= 0n) {
+    const tokenRaw = await fetchMintBalanceRaw(cfg, mint);
+    if (!tokenRaw) {
+      return { ok: false, priceUsd: 0, reason: 'no_token_balance' };
+    }
+    totalRaw = BigInt(tokenRaw);
+  }
   const sellRaw = isFullCloseFraction(fraction) ? totalRaw : scaleTokenRaw(totalRaw, fraction);
   if (sellRaw <= 0n) {
     return { ok: false, priceUsd: 0, reason: 'sell_amount_zero' };

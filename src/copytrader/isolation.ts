@@ -5,8 +5,8 @@ import bs58 from 'bs58';
 import type { CopyTraderConfig } from './config.js';
 import { pubkeyFromWalletSecretPath } from './wallet-pubkey.js';
 
-/** Main live-oscar wallet — copy-trader must never use this keypair. */
-const LIVE_OSCAR_MAIN_PUBKEY = '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc';
+/** Main live-oscar wallet pubkey (shared-wallet mode uses the same keypair). */
+export const LIVE_OSCAR_MAIN_PUBKEY = '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc';
 
 /** Repurposed live-oscar-risky execution wallet (see COPY_TRADER_USE_RISKY_WALLET). */
 export const COPY_TRADER_RISKY_WALLET_PUBKEY = 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19';
@@ -76,15 +76,23 @@ export function assertCopyTraderIsolation(cfg: CopyTraderConfig): void {
 
   const liveSecret = process.env.LIVE_WALLET_SECRET?.trim();
   const copySecret = process.env.COPY_TRADER_WALLET_SECRET?.trim();
-  if (liveSecret && copySecret && norm(liveSecret) === norm(copySecret)) {
-    throw new Error('COPY_TRADER_WALLET_SECRET must not equal LIVE_WALLET_SECRET (main Oscar wallet)');
+  const sharedOscarWallet = envBool(process.env.COPY_TRADER_SHARED_OSCAR_WALLET, false);
+  if (
+    liveSecret &&
+    copySecret &&
+    norm(liveSecret) === norm(copySecret) &&
+    !sharedOscarWallet
+  ) {
+    throw new Error(
+      'COPY_TRADER_WALLET_SECRET must not equal LIVE_WALLET_SECRET unless COPY_TRADER_SHARED_OSCAR_WALLET=1',
+    );
   }
 
   if ((cfg.executionMode === 'live' || cfg.executionMode === 'dry_run') && copySecret) {
     const pubkey = readPubkeyFromKeypairFile(copySecret);
-    if (pubkey === LIVE_OSCAR_MAIN_PUBKEY) {
+    if (pubkey === LIVE_OSCAR_MAIN_PUBKEY && !sharedOscarWallet) {
       throw new Error(
-        'COPY_TRADER_WALLET_SECRET resolves to main live-oscar wallet — use live-oscar-risky keypair instead',
+        'COPY_TRADER_WALLET_SECRET resolves to main live-oscar wallet — set COPY_TRADER_SHARED_OSCAR_WALLET=1',
       );
     }
     const allowRisky = envBool(process.env.COPY_TRADER_USE_RISKY_WALLET, false);

@@ -78,6 +78,10 @@ const CopyTraderConfigSchema = z.object({
   slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
+  /** Share live-oscar-micro wallet; track copy tokenRaw separately from oscar legs. */
+  sharedOscarWallet: z.boolean().default(false),
+  /** Block copy buys when free SOL would starve live-oscar reserve + open committed. */
+  spareCapitalGateEnabled: z.boolean().default(false),
   telegramBotToken: z.string().optional(),
   telegramChatId: z.string().optional(),
 });
@@ -174,6 +178,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),
     walletPubkeyExpected: process.env.COPY_TRADER_WALLET_PUBKEY?.trim() || undefined,
+    sharedOscarWallet: envBool(process.env.COPY_TRADER_SHARED_OSCAR_WALLET, false),
+    spareCapitalGateEnabled: envBool(process.env.COPY_TRADER_SPARE_CAPITAL_GATE, false),
     telegramBotToken:
       process.env.COPY_TRADER_TELEGRAM_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim(),
     telegramChatId:

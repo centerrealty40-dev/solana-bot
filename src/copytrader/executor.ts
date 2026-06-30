@@ -3,6 +3,9 @@ import path from 'node:path';
 import type { CopyTraderConfig } from './config.js';
 import type { EvalResult } from './evaluate.js';
 import { executeLiveCopyBuy, executeLiveCopySell } from './live-exec.js';
+import { COPY_LEADER_POSITION_SOURCE } from './state.js';
+
+const POSITION_SOURCE = COPY_LEADER_POSITION_SOURCE;
 
 function appendJsonl(journalPath: string, event: Record<string, unknown>): void {
   const dir = path.dirname(journalPath);
@@ -47,6 +50,7 @@ export async function executeCopyBuy(args: {
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',
       mode: cfg.executionMode,
+      positionSource: POSITION_SOURCE,
       mint,
       symbol,
       sizeUsd,
@@ -69,6 +73,7 @@ export async function executeCopyBuy(args: {
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',
       mode: 'live',
+      positionSource: POSITION_SOURCE,
       mint,
       symbol,
       sizeUsd,
@@ -102,6 +107,7 @@ export async function executeCopySell(args: {
   fraction: number;
   leaderSignature: string;
   sellDelayMs: number;
+  tokenRawBase?: string;
 }): Promise<SellExecutionResult> {
   const {
     cfg,
@@ -113,6 +119,7 @@ export async function executeCopySell(args: {
     fraction,
     leaderSignature,
     sellDelayMs,
+    tokenRawBase,
   } = args;
   const pnlPct = entryPriceUsd > 0 ? ((exitPriceUsd / entryPriceUsd - 1) * 100) : 0;
 
@@ -120,6 +127,7 @@ export async function executeCopySell(args: {
     appendJsonl(cfg.journalPath, {
       kind: 'copy_sell',
       mode: cfg.executionMode,
+      positionSource: POSITION_SOURCE,
       mint,
       symbol,
       sizeUsd,
@@ -140,12 +148,20 @@ export async function executeCopySell(args: {
   }
 
   if (cfg.executionMode === 'live') {
-    const live = await executeLiveCopySell({ cfg, mint, symbol, leaderSignature, fraction });
+    const live = await executeLiveCopySell({
+      cfg,
+      mint,
+      symbol,
+      leaderSignature,
+      fraction,
+      tokenRawBase,
+    });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;
     appendJsonl(cfg.journalPath, {
       kind: 'copy_sell',
       mode: 'live',
+      positionSource: POSITION_SOURCE,
       mint,
       symbol,
       sizeUsd,

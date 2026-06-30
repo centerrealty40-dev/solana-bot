@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+export const COPY_LEADER_POSITION_SOURCE = 'copy_leader' as const;
+
 export type CopyPosition = {
   mint: string;
   symbol: string;
+  /** Parallel leg vs live-oscar — never counted in oscar open map. */
+  positionSource?: typeof COPY_LEADER_POSITION_SOURCE;
   entryTs: number;
   /** Volume-weighted average entry price. */
   entryPriceUsd: number;
@@ -106,6 +110,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
     for (const [mint, pos] of Object.entries(parsed.positions ?? {})) {
       positions[mint] = {
         ...pos,
+        positionSource: pos.positionSource ?? COPY_LEADER_POSITION_SOURCE,
         addCount: typeof pos.addCount === 'number' ? pos.addCount : 0,
         entryDipAbandoned: pos.entryDipAbandoned === true,
         entryDeployedCostUsd:
