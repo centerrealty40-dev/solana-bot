@@ -171,8 +171,8 @@ function isOnlyLocalHighVetoReasons(reasons: string[]): boolean {
   return reasons.length > 0 && reasons.every((r) => r.startsWith('local_high_veto_'));
 }
 
-function hasVolumeEphemeralBlockReason(reasons: string[]): boolean {
-  return reasons.some((r) => r.startsWith('volume_ephemeral:'));
+function isOnlyVolumeEphemeralBlockReasons(reasons: string[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => r.startsWith('volume_ephemeral:'));
 }
 
 /** True when coverage guard is the sole blocker (snapshot/dip/volume gates already passed). */
@@ -617,7 +617,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       `<b>Live Oscar — подозрительный всплеск объёма</b>\n` +
       `Монета: <b>${escapeHtmlPlain(symbol)}</b>\n` +
       `Адрес: ${gmgnMintHrefHtml(d.mint, d.mint)}\n` +
-      `Статус: покупка пропущена — объём сжат в узкое окно (разовый burst).\n` +
+      `Статус: на этом eval покупка не открывается — объём сжат в узкое окно (разовый burst).\n` +
+      `(Следующий eval может пройти, если PG/объём обновятся.)\n` +
       `Причины: <code>${escapeHtmlPlain(ephemeralReasons.join('; '))}</code>\n` +
       `Активных часов: <b>${escapeHtmlPlain(String(ve?.activeHours ?? 'n/a'))}</b> / ` +
       `<b>${escapeHtmlPlain(String(ve?.hoursWithData ?? 'n/a'))}</b> с данными за ` +
@@ -1379,7 +1380,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
         }
-        if (!d.pass && hasVolumeEphemeralBlockReason(d.reasons) && !open.has(d.mint)) {
+        if (!d.pass && isOnlyVolumeEphemeralBlockReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarVolumeEphemeralGuard(d);
         }
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
