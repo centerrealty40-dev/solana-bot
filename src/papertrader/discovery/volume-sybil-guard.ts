@@ -160,12 +160,10 @@ export function evaluateVolumeSybilGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: VolumeSybilFeatures,
-  opts?: VolumeSybilEvalOpts,
+  _opts?: VolumeSybilEvalOpts,
 ): VolumeSybilEvalResult {
   const lookbackHours = clampLookbackHours(cfg.volumeSybilLookbackHours);
   const recentMinutes = clampRecentMinutes(cfg.volumeSybilRecentMinutes, lookbackHours);
-  const knownMint = opts?.knownMint === true;
-
   if (!cfg.volumeSybilGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
   }
@@ -208,8 +206,8 @@ export function evaluateVolumeSybilGuard(
   const vol1hAliveExempt =
     Number.isFinite(vol1h) &&
     vol1h >= cfg.volumeSybilVol1hAliveExemptUsd &&
-    (knownMint ||
-      (vol5mVol1h != null && vol5mVol1h >= cfg.volumeGuardNewMintMinVol5mToVol1hRatio));
+    vol5mVol1h != null &&
+    vol5mVol1h >= cfg.volumeGuardNewMintMinVol5mToVol1hRatio;
   if (vol1hAliveExempt) {
     return { blocked: false, blockedReasons, features };
   }

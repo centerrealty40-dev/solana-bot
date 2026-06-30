@@ -615,8 +615,8 @@ const ConfigSchema = z.object({
   /** Skip sybil block when snapshot vol1h >= this (alive market, not wash dead→spike). */
   volumeSybilVol1hAliveExemptUsd: z.coerce.number().nonnegative().default(36_000),
   /**
-   * New mints (no bot trade in lookback): min vol5m/vol1h ratio to trust high vol1h
-   * (blocks wash: dead vol5m + inflated vol1h). Shared by sybil + ephemeral guards.
+   * Min vol5m/vol1h ratio to trust high vol1h (blocks wash: dead vol5m + inflated vol1h).
+   * Shared by sybil + ephemeral guards for all mints.
    */
   volumeGuardNewMintMinVol5mToVol1hRatio: z.coerce.number().min(0.01).max(1).default(0.08),
   /** New mint wash check: apply ratio gate when snapshot vol1h >= this (USD). */

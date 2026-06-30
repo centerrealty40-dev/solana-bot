@@ -78,6 +78,23 @@
 
 ---
 
+## [1.11.534] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.534`
+
+### Live Oscar — known mint tail-wash vol5m/vol1h gate (NEST RCA)
+
+**Проблема:** repeat mint (NEST 68Nq) проходил guards при мёртвом vol5m ($1.4k) и раздутой vol1h ($194k): known-mint bypass снимал vol5m/vol1h wash gate и sybil vol1h-exempt.
+
+- **Ephemeral guard:** vol5m/vol1h ratio < 8% **+** vol5m < min active hour — блок для **всех** mint (включая known); PG gap bypass (#302) и 10h new-mint rule без изменений.
+- **Sybil guard:** vol1h alive-exempt только при vol5m/vol1h ≥ 8% (known mint больше не exempt по vol1h alone).
+
+**Откат:** `git checkout sa-alpha-1.11.533 -- src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/discovery/volume-sybil-guard.ts tests/volume-ephemeral-guard.test.ts tests/volume-sybil-guard.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.533] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.533`
