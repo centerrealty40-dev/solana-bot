@@ -78,6 +78,26 @@
 
 ---
 
+## [1.11.531] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.531`
+
+### live-oscar: wallet tail flush — не оставлять orphan SPL
+
+**Проблема:** после TP-close и partial exit на кошельке оставались orphan-хвосты (CATWIF, SOLANGELES); post-close tail sweep не выполнялся при `LIVE_POLICY_ONLY_EXITS=1`.
+
+- **`LIVE_TAIL_FLUSH_THRESHOLD_USD=100`:** после partial exit — если остаток mint на кошельке < $100, `sell_full` 100% баланса.
+- **Post-close sweep:** всегда планируется (снят gate `livePolicyBlocksHealSyncSells`); любой положительный остаток после close продаётся через 60 s.
+- **`wallet-tail-flush.ts` / `tail-flush.ts`:** общий pipeline для post-close, partial exit, periodic heal.
+- **Tracker:** `runLivePartialExitTailFlush` после каждого успешного partial sell.
+- **JSONL:** `live_tail_flush` event kind.
+
+**Откат:** `git checkout sa-alpha-1.11.530 -- src/live/post-close-tail-sweep.ts src/live/wallet-tail-flush.ts src/live/tail-flush.ts src/live/config.ts src/live/events.ts src/papertrader/executor/tracker.ts ecosystem.config.cjs .env.example tests/live-tail-flush.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.530] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.530`

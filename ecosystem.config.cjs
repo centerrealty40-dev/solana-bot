@@ -1424,6 +1424,8 @@ const PM2_APPS = [
         LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD: '30',
         /** После `live_position_close`: через N мс дожать остаток mint на кошельке (`sell_full`). 0 = выкл. */
         LIVE_POST_CLOSE_TAIL_SWEEP_DELAY_MS: '60000',
+        /** Partial exit: flush wallet when remainder est. USD below threshold. Post-close always flushes. */
+        LIVE_TAIL_FLUSH_THRESHOLD_USD: '100',
 
         /** Старый 5-секундный scale-in отключён: вторая нога — только через staged-entry (`PAPER_LIVE_STAGED_ENTRY_*`, см. комментарий к `PAPER_POSITION_USD`). */
         LIVE_ENTRY_SCALE_IN_ENABLED: '0',
