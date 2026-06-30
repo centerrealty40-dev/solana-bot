@@ -78,6 +78,24 @@
 
 ---
 
+## [1.11.536] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.536`
+
+### Live Oscar — volume_ephemeral dead-tail bypass fix (MUSHU RCA)
+
+**Проблема:** MUSHU проходил guard после aging-out narrowWindow при activeHours=5 (<10h sustain): dead vol5m + inflated vol1h, PG safe-skip при отсутствии hourly context.
+
+- **Dead-tail block:** persist until 10h sustain even when narrowWindow aged out (new + known mint).
+- **PG safe-skip fallback:** row-only wash gate blocks obvious tail_wash when PG hourly context missing.
+- **Telegram ADVICE:** volume_ephemeral alert only when it is the sole blocker; текст уточнён («на этом eval…»).
+
+**Откат:** `git checkout sa-alpha-1.11.535 -- src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/main.ts tests/volume-ephemeral-guard.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.535] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.535`
