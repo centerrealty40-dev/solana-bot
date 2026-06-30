@@ -163,16 +163,28 @@ describe('evaluateVolumeEphemeralGuard', () => {
       { knownMint: false },
     );
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.includes('new_mint_vol5m_vol1h'))).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
   });
 
-  it('known mint keeps relaxed ephemeral rules (activeHours aged out, no tail block)', () => {
+  it('NEST-like known mint: 18 active hours but dead vol5m + inflated vol1h blocks wash', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
-      baseRow({ volume_5m: 3_500, volume_1h: 82_000 }),
+      baseRow({ volume_5m: 1_400, volume_1h: 194_000, symbol: 'NEST' }),
+      ctx({ hoursWithData: 22, activeHours: 18, peakHourVol5mUsd: 45_000 }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
+  });
+
+  it('known mint with live vol5m/vol1h ratio passes wash gate', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({ volume_5m: 12_000, volume_1h: 82_000 }),
       ctx({ hoursWithData: 10, activeHours: 5, peakHourVol5mUsd: 210_000 }),
       { knownMint: true },
     );
     expect(r.blocked).toBe(false);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(false);
   });
 });

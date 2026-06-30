@@ -224,16 +224,19 @@ export function evaluateVolumeEphemeralGuard(
     );
   }
 
+  const vol5m = Number(row.volume_5m ?? 0);
   const vol5mVol1h = newMintVol5mVol1hRatio(row);
+  const deadVol5m =
+    Number.isFinite(vol5m) && vol5m < cfg.volumeEphemeralMinActiveHourVol5mUsd;
   if (
-    !knownMint &&
     Number.isFinite(vol1h) &&
     vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
+    deadVol5m &&
     vol5mVol1h != null &&
     vol5mVol1h < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
   ) {
     blockedReasons.push(
-      `volume_ephemeral:new_mint_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol1h=$${Math.round(vol1h)}`,
+      `volume_ephemeral:tail_wash_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5m)}_vol1h=$${Math.round(vol1h)}`,
     );
   }
 

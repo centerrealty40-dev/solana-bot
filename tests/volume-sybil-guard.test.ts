@@ -177,4 +177,19 @@ describe('evaluateVolumeSybilGuard', () => {
     );
     expect(r.blocked).toBe(true);
   });
+
+  it('NEST-like known mint: high vol1h with dead vol5m does not get alive exempt', () => {
+    const r = evaluateVolumeSybilGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 1_400, volume_1h: 194_000 }),
+      ctx({
+        baselineP10Vol5mUsd: 800,
+        baselineP50Vol5mUsd: 2_000,
+        baselineDeadFraction: 0.67,
+        recentMaxVol5mUsd: 18_000,
+      }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+  });
 });
