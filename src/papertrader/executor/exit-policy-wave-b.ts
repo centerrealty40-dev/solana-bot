@@ -12,6 +12,7 @@ import {
   isVariantAHybridExitPolicy,
 } from './exit-policy-variant-a.js';
 import { stampScalpWaveExitPolicyOnOpen } from './exit-policy-scalp-wave.js';
+import { stampRunnerProbeExitPolicyOnOpen } from './exit-policy-runner-probe.js';
 import { stampPresetCScalpExitPolicyOnOpen, isPresetCScalpExitPolicy } from './exit-policy-preset-c-scalp.js';
 
 export type LiveExitPolicyId =
@@ -554,6 +555,7 @@ export function waveBTrailSellFractionForRemainder(
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return;
   if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
+  if (stampRunnerProbeExitPolicyOnOpen(ot, cfg)) return;
   if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {

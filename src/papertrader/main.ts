@@ -74,6 +74,14 @@ import {
   stampLiveOscarTradeLaneOnOpen,
   type LiveOscarTradeLane,
 } from './live-oscar-scalp-wave.js';
+import {
+  countOpenRunnerProbePositions,
+  resolveOpenMapKey,
+  runnerProbeMintOpenSkipReason,
+  runnerProbeOpenLegUsd,
+  stampRunnerProbeOnOpen,
+  sumRunnerProbeExposureUsd,
+} from './live-oscar-runner-probe.js';
 import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
@@ -386,7 +394,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
 
   function resolveDecisionTradeLane(d: EvalDecision): LiveOscarTradeLane {
-    return d.liveOscarTradeLane ?? 'prod';
+    if (d.liveOscarTradeLane) return d.liveOscarTradeLane;
+    if (d.positionSource === 'runner_probe') return 'runner_probe';
+    return 'prod';
   }
 
   type ScalpDiscoveryDecision = EvalDecision & { _presetCScalpFromPending?: PresetCScalpReadyEntry };
@@ -404,7 +414,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function liveStagedEntryActiveForDecision(d: EvalDecision): boolean {
     if (isPresetCScalpModeEnabled(cfg) && isLiveOscarPresetCStrategyId(cfg.strategyId)) return false;
-    return liveStagedEntryActive() && resolveDecisionTradeLane(d) !== 'scalp_wave';
+    return (
+      liveStagedEntryActive() &&
+      resolveDecisionTradeLane(d) !== 'scalp_wave' &&
+      resolveDecisionTradeLane(d) !== 'runner_probe'
+    );
   }
 
   function liveOscarDiscoveryBuyLegUsd(
@@ -413,6 +427,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   ): number {
     if (resolveDecisionTradeLane(d) === 'scalp_wave') {
       return liveOscarScalpWaveOpenLegUsd(cfg);
+    }
+    if (resolveDecisionTradeLane(d) === 'runner_probe') {
+      return runnerProbeOpenLegUsd(cfg);
     }
     if (liveStagedEntryActiveForDecision(d)) {
       const mcap = d.features.market_cap_usd ?? null;
@@ -1395,7 +1412,21 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         ) {
           continue;
         }
-        if (open.has(d.mint)) {
+        if (resolveDecisionTradeLane(d) === 'runner_probe') {
+          const skipReason = runnerProbeMintOpenSkipReason({ open, mint: d.mint });
+          if (skipReason) {
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: skipReason,
+              tradeLane: 'runner_probe',
+            });
+            continue;
+          }
+        } else if (open.has(d.mint)) {
           const incomingLane = resolveDecisionTradeLane(d);
           const existing = open.get(d.mint)!;
           const skipReason = liveOscarMintOpenSkipReason({
@@ -1449,6 +1480,41 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             reason: skipReason ?? 'already_open',
             tradeLane: incomingLane,
             openTradeLane: resolveLiveOscarTradeLaneFromOpen(existing),
+          });
+          continue;
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_probe' &&
+          countOpenRunnerProbePositions(open) >= cfg.runnerProbeMaxConcurrent
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'runner_probe_max_concurrent',
+            tradeLane: 'runner_probe',
+            openRunnerProbe: countOpenRunnerProbePositions(open),
+            maxRunnerProbe: cfg.runnerProbeMaxConcurrent,
+          });
+          continue;
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_probe' &&
+          sumRunnerProbeExposureUsd(open) + cfg.runnerProbePositionUsd >
+            cfg.runnerProbeMaxExposureUsd + 1e-6
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'runner_probe_max_exposure',
+            tradeLane: 'runner_probe',
+            runnerProbeExposureUsd: sumRunnerProbeExposureUsd(open),
+            maxRunnerProbeExposureUsd: cfg.runnerProbeMaxExposureUsd,
           });
           continue;
         }
@@ -1618,7 +1684,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             ? loadPresetCScalpConfig().entryUsd
             : tradeLane === 'scalp_wave'
               ? liveOscarScalpWaveOpenLegUsd(cfg)
-              : liveStagedEntryActiveForDecision(d)
+              : tradeLane === 'runner_probe'
+                ? runnerProbeOpenLegUsd(cfg)
+                : liveStagedEntryActiveForDecision(d)
                 ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
                 : undefined;
         let ot = makeOpenTradeFromEntry({
@@ -1630,6 +1698,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           ...(openLegUsd != null && openLegUsd > 0 ? { firstLegUsdOverride: openLegUsd } : {}),
         });
         stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
+        if (tradeLane === 'runner_probe') stampRunnerProbeOnOpen(ot);
         if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
           attachLiveStagedEntryPlan(
             ot,
@@ -1815,6 +1884,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ...(jupLegUsd != null && jupLegUsd > 0 ? { firstLegUsdOverride: jupLegUsd } : {}),
             });
             stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
+            if (tradeLane === 'runner_probe') stampRunnerProbeOnOpen(ot);
             if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
               attachLiveStagedEntryPlan(
                 ot,
@@ -2043,7 +2113,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           stampPresetCTgDedupeKeysOnOpen(ot);
         }
 
-        open.set(ot.mint, ot);
+        open.set(resolveOpenMapKey(ot), ot);
         if (d._presetCScalpFromPending) {
           markPresetCScalpPendingEntryDone(d.mint);
           removePresetCScalpPending(d.mint);

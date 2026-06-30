@@ -20,9 +20,17 @@ import {
   presetCScalpEffectiveExitParams,
 } from './executor/exit-policy-preset-c-scalp.js';
 
+import {
+  isRunnerProbeExitPolicy,
+  runnerProbeEffectiveExitParams,
+} from './executor/exit-policy-runner-probe.js';
+
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
   if (isPresetCScalpExitPolicy(ot)) {
     return { ...cfg, ...presetCScalpEffectiveExitParams(cfg) };
+  }
+  if (isRunnerProbeExitPolicy(ot)) {
+    return { ...cfg, ...runnerProbeEffectiveExitParams(cfg) };
   }
   if (isScalpWaveExitPolicy(ot)) {
     return { ...cfg, ...scalpWaveEffectiveExitParams(cfg) };

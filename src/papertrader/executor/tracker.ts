@@ -3,6 +3,7 @@ import { parseDcaLevels } from '../config.js';
 import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
+import { isRunnerProbeTrade } from '../live-oscar-runner-probe.js';
 import {
   applyLiveOscarPhaseEscalation,
   computeDropFromScalpAnchor,
@@ -2791,14 +2792,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const oz = new Set(orphanMints);
     const graceMs = reconcileOrphanMinPositionAgeMs ?? 0;
     const nowOrphan = Date.now();
-    for (const m of [...open.keys()]) {
+    for (const [, ot] of open.entries()) {
+      const m = ot.mint;
       if (!oz.has(m)) continue;
-      const ot = open.get(m);
-      if (!ot) continue;
       if (graceMs > 0 && ot.entryTs > 0 && nowOrphan - ot.entryTs < graceMs) continue;
-      const liveWalletZeroPolicy =
-        liveOscarCfg?.strategyEnabled &&
-        (liveOscarCfg.executionMode === 'live' || liveOscarCfg.executionMode === 'simulate');
+        const liveWalletZeroPolicy =
+          liveOscarCfg?.strategyEnabled &&
+          (liveOscarCfg.executionMode === 'live' || liveOscarCfg.executionMode === 'simulate');
       if (liveWalletZeroPolicy) {
         const synced = await closeOpenTradeWalletZeroPolicySync({
           mint: m,
@@ -2859,7 +2859,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (!ot) continue;
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
-    const tradeDcaLevels = isLiveOscarScalpWaveTrade(ot)
+    const tradeDcaLevels =
+      isLiveOscarScalpWaveTrade(ot) || isRunnerProbeTrade(ot)
       ? []
       : ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
         ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
@@ -2870,6 +2871,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarMicroMcapPositionUsd };
     } else if (isLiveOscarScalpWaveTrade(ot)) {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarScalpWavePositionUsd };
+    } else if (isRunnerProbeTrade(ot)) {
+      effCfg = { ...effCfg, positionUsd: cfg.runnerProbePositionUsd };
     }
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */

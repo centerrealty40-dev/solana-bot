@@ -126,6 +126,8 @@ scripts-tmp/analyze-trader.mjs
 scripts-tmp/build-table.mjs
 scripts-tmp/trader-journal.jsonl
 scripts-tmp/trader-state.json
+scripts-tmp/pt1-oscar-live-vps.jsonl
+scripts-tmp/live-oscar-half8-cf-14d*
 
 # Local parallel git worktree clone (not shipped with product)
 solana-alpha-v2-bs/
