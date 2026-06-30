@@ -78,6 +78,26 @@
 
 ---
 
+## [1.11.530] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.530`
+
+### PG data coverage: bypass pg_gap для repeat mints
+
+**Проблема:** `pg_gap_in_recent_history` блокировал повторные входы в монеты вроде Jotchua, которые бот уже торговал — gap в PG snapshots не означает отсутствие монеты, а артефакт collector pin / enrich defer.
+
+- **`evaluatePgDataCoverageGuard`:** known mint (open/close в journal за lookback) → снимает только `pg_gap_*` блоки; `pg_stale_now`, thin coverage, sybil — без изменений.
+- **`isPgCoverageKnownMint`:** journal-derived maps (`lastEntryTs`, `lastPostExitBuyCooldown`, exit snapshots).
+- **Env:** `PAPER_PG_DATA_COVERAGE_KNOWN_MINT_GAP_BYPASS=1`, `PAPER_PG_DATA_COVERAGE_KNOWN_MINT_LOOKBACK_DAYS=14`.
+- **`ecosystem.config.cjs` live-oscar:** включено по умолчанию.
+- **Boot:** seed `lastEntryTs` из open trades при live replay.
+
+**Откат:** `PAPER_PG_DATA_COVERAGE_KNOWN_MINT_GAP_BYPASS=0`; `pm2 reload live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.529] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.529`

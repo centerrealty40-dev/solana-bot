@@ -803,6 +803,7 @@ export interface SnapshotFeatures {
     sybilBaselineSamples: number;
     sybilCoverageOk: boolean;
     ephemeralCoverageOk: boolean;
+    knownMintGapBypass?: boolean;
     global: {
       pgStaleNow: boolean;
       systemHourRatio: number | null;

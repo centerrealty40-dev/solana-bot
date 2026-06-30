@@ -1056,12 +1056,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
+        const knownMint = isPgCoverageKnownMint(cfg, row.mint);
         const evalRes = evaluatePgDataCoverageGuard(
           cfg,
           row,
           mintPgCoverageMap.get(row.mint),
           globalPgCoverage,
           true,
+          { knownMint },
         );
         pgDataCoverageFeatures = evalRes.features;
         if (evalRes.blocked) {
@@ -1361,6 +1363,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         sybilBaselineSamples: pgDataCoverageFeatures.sybilBaselineSamples,
         sybilCoverageOk: pgDataCoverageFeatures.sybilCoverageOk,
         ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
+        knownMintGapBypass: pgDataCoverageFeatures.knownMintGapBypass ?? false,
         global: {
           pgStaleNow: globalPgCoverage.pgStaleNow,
           systemHourRatio: globalPgCoverage.systemHourRatio,
@@ -1535,4 +1538,23 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
 export function recordEntryTs(mint: string, ts: number): void {
   lastEntryTsByMintMap.set(mint, ts);
+}
+
+/** Prior bot open/close within lookback — qualifies for PG gap bypass on repeat mints. */
+export function isPgCoverageKnownMint(
+  cfg: PaperTraderConfig,
+  mint: string,
+  nowMs = Date.now(),
+): boolean {
+  if (!cfg.pgDataCoverageKnownMintGapBypass) return false;
+  const days = cfg.pgDataCoverageKnownMintLookbackDays;
+  if (!(days > 0)) return false;
+  const cutoff = nowMs - days * 24 * 3_600_000;
+  const tsCandidates = [
+    lastEntryTsByMintMap.get(mint) ?? 0,
+    lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0,
+    lastRealExitMarketSnapshotByMintMap.get(mint)?.exitTs ?? 0,
+    lastExitMarketSnapshotByMintMap.get(mint)?.exitTs ?? 0,
+  ];
+  return tsCandidates.some((ts) => ts >= cutoff);
 }

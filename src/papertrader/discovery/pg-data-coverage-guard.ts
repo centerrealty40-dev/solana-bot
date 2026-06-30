@@ -48,6 +48,8 @@ export interface MintPgCoverageFeatures {
   sybilCoverageOk: boolean;
   ephemeralCoverageOk: boolean;
   nearEntry: boolean;
+  /** True when known-mint gap bypass removed pg_gap block reasons this eval. */
+  knownMintGapBypass?: boolean;
 }
 
 export interface PgDataCoverageEvalResult {
@@ -411,6 +413,14 @@ export async function fetchMintPgCoverageMap(
   return map;
 }
 
+/** True for per-mint PG minute-bar gap block reasons (not pg_stale / thin coverage). */
+export function isPgCoverageGapBlockReason(reason: string): boolean {
+  return (
+    reason.startsWith('data_coverage:pg_gap_in_recent_history') ||
+    reason.startsWith('data_coverage:pg_gap_in_history')
+  );
+}
+
 /** Block entry when PG history is too thin or gapped to trust volume guards. */
 export function evaluatePgDataCoverageGuard(
   cfg: PaperTraderConfig,
@@ -418,6 +428,7 @@ export function evaluatePgDataCoverageGuard(
   ctx: MintPgCoverageFeatures | undefined,
   global: GlobalPgCoverageState,
   nearEntry: boolean,
+  opts?: { knownMint?: boolean },
 ): PgDataCoverageEvalResult {
   if (!cfg.pgDataCoverageGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_MINT };
@@ -510,9 +521,23 @@ export function evaluatePgDataCoverageGuard(
     }
   }
 
+  let knownMintGapBypass = false;
+  if (
+    opts?.knownMint &&
+    cfg.pgDataCoverageKnownMintGapBypass &&
+    blockedReasons.some(isPgCoverageGapBlockReason)
+  ) {
+    const filtered = blockedReasons.filter((r) => !isPgCoverageGapBlockReason(r));
+    if (filtered.length !== blockedReasons.length) {
+      knownMintGapBypass = true;
+      blockedReasons.length = 0;
+      blockedReasons.push(...filtered);
+    }
+  }
+
   return {
     blocked: blockedReasons.length > 0,
     blockedReasons,
-    features,
+    features: { ...features, knownMintGapBypass },
   };
 }

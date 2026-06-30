@@ -666,6 +666,13 @@ const ConfigSchema = z.object({
    * system ratio + strict recovery when metrics healthy (no manual env toggle).
    */
   pgDataCoverageAutoEscalate: z.boolean().default(true),
+  /**
+   * When true: mints the bot traded recently skip pg_gap blocks (still block pg_stale_now,
+   * thin coverage, sybil). New mints keep full gap enforcement.
+   */
+  pgDataCoverageKnownMintGapBypass: z.boolean().default(false),
+  /** Lookback for prior bot open/close (journal-derived maps) to qualify as known mint. */
+  pgDataCoverageKnownMintLookbackDays: z.coerce.number().int().min(1).max(90).default(14),
 
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
@@ -1430,6 +1437,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     pgDataCoverageBlockOnPgStale: envBool(process.env.PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE, true),
     pgDataCoverageStrictAfterRecoveryHours: process.env.PAPER_PG_DATA_COVERAGE_STRICT_AFTER_RECOVERY_HOURS,
     pgDataCoverageAutoEscalate: envBool(process.env.PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE, true),
+    pgDataCoverageKnownMintGapBypass: envBool(
+      process.env.PAPER_PG_DATA_COVERAGE_KNOWN_MINT_GAP_BYPASS,
+      false,
+    ),
+    pgDataCoverageKnownMintLookbackDays: process.env.PAPER_PG_DATA_COVERAGE_KNOWN_MINT_LOOKBACK_DAYS,
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,
