@@ -1,6 +1,7 @@
 import type { HlAccountMargin } from './twap/hyperliquid-meta.js';
 import { freeMarginUsd, hasMarginForNewOpen } from './twap/live/account-margin.js';
 import type { HlTwapExchangeClient } from './twap/live/exchange-client.js';
+import { flattenCoinOnExchange } from './twap/live/flatten-position.js';
 import type { OrderFillResult } from './twap/live/types.js';
 
 /** Collateral for a gross-notional open leg. */
@@ -43,7 +44,12 @@ export function oscarOpenFillAcceptable(filledGrossUsd: number, requestedGrossUs
   return filledGrossUsd >= requestedGrossUsd * ratio;
 }
 
-/** Flatten a rejected partial open on exchange (live only). */
+export type UnwindRejectedOpenResult = {
+  flat: boolean;
+  remainingAbsSize: number;
+};
+
+/** Flatten a rejected partial open on exchange (live only); verify HL flat before returning. */
 export async function unwindOscarRejectedOpen(
   client: HlTwapExchangeClient,
   coin: string,
@@ -51,21 +57,28 @@ export async function unwindOscarRejectedOpen(
   fill: OrderFillResult,
   markPx: number,
   logPrefix: string,
-): Promise<void> {
-  if (fill.sizeBase <= 0) return;
+): Promise<UnwindRejectedOpenResult> {
+  if (client.mode !== 'live' || fill.sizeBase <= 0) {
+    return { flat: true, remainingAbsSize: 0 };
+  }
   try {
-    await client.marketOrder({
+    const { flat, remainingAbsSize } = await flattenCoinOnExchange(
+      client,
       coin,
       displaySymbol,
-      side: 'sell',
-      notionalUsd: fill.notionalUsd,
       markPx,
-      reduceOnly: true,
-      intent: 'close',
-      sizeBase: fill.sizeBase,
-    });
+      'close',
+    );
+    if (!flat) {
+      console.error(
+        `${logPrefix} unwind ${coin} incomplete: remaining ${remainingAbsSize.toFixed(6)} base (~$${(remainingAbsSize * markPx).toFixed(2)})`,
+      );
+    }
+    return { flat, remainingAbsSize };
   } catch (e) {
-    console.warn(`${logPrefix} unwind tiny ${coin} fill failed`, String(e));
+    console.warn(`${logPrefix} unwind ${coin} fill failed`, String(e));
+    const remaining = Math.abs(await client.getPositionSzi(coin));
+    return { flat: remaining <= 0, remainingAbsSize: remaining };
   }
 }
 
@@ -100,8 +113,9 @@ export type OscarBuyLegOk = {
 
 export type OscarBuyLegReject = {
   ok: false;
-  reason: 'insufficient_margin' | 'fill_too_small' | 'order_failed';
+  reason: 'insufficient_margin' | 'fill_too_small' | 'order_failed' | 'unwind_failed';
   meta: OscarOpenFillMeta;
+  unwindRemainingAbsSize?: number;
 };
 
 export type OscarBuyLegResult = OscarBuyLegOk | OscarBuyLegReject;
@@ -155,7 +169,7 @@ export async function tryOscarBuyLeg(args: {
       console.warn(
         `${args.logPrefix} ${args.intent} ${args.coin} rejected: fill $${meta.filledGrossUsd.toFixed(2)} too small (requested ~$${meta.requestedGrossUsd.toFixed(0)})`,
       );
-      await unwindOscarRejectedOpen(
+      const unwind = await unwindOscarRejectedOpen(
         args.client,
         args.coin,
         args.displaySymbol,
@@ -163,6 +177,14 @@ export async function tryOscarBuyLeg(args: {
         args.markPx,
         args.logPrefix,
       );
+      if (!unwind.flat) {
+        return {
+          ok: false,
+          reason: 'unwind_failed',
+          meta,
+          unwindRemainingAbsSize: unwind.remainingAbsSize,
+        };
+      }
       return { ok: false, reason: 'fill_too_small', meta };
     }
     return {

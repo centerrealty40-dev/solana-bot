@@ -15,7 +15,7 @@ import { createHlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-cl
 import { loadHlOscarMajorsConfig, toHlTwapLiveConfig } from '../hyperliquid/oscar-majors/config.js';
 import { initMajorsDrawdownMonitor, runMajorsDrawdownCheck } from '../hyperliquid/oscar-majors/drawdown.js';
 import { writeHeartbeat } from '../hyperliquid/oscar-majors/journal.js';
-import { countMajorsOpensByMode, reconcileMajorsOpensForLiveMode } from '../hyperliquid/oscar-majors/reconcile.js';
+import { countMajorsOpensByMode, reconcileMajorsWithHl } from '../hyperliquid/oscar-majors/reconcile.js';
 import {
   createMajorsTraderState,
   fetchMajorsAccountEquity,
@@ -69,7 +69,12 @@ async function main(): Promise<void> {
   const state = createMajorsTraderState(cfg.journalPath);
 
   if (cfg.mode === 'live') {
-    await reconcileMajorsOpensForLiveMode({ cfg, state });
+    const metaCache = await loadHyperliquidMarketCache();
+    const universe = buildMajorsUniverse(metaCache, {
+      minDayVolumeUsd: cfg.minDayVolumeUsd,
+      whitelist: cfg.whitelist,
+    });
+    await reconcileMajorsWithHl({ cfg, client, state, universe, purgePaperOpens: true });
   }
 
   const entryDesc = cfg.stagedEntryEnabled
@@ -110,6 +115,10 @@ async function main(): Promise<void> {
         lastDrawdownCheck = Date.now();
         const equity = await fetchMajorsAccountEquity(cfg.masterAddress);
         await runMajorsDrawdownCheck(cfg, equity);
+      }
+
+      if (cfg.mode === 'live') {
+        await reconcileMajorsWithHl({ cfg, client, state, universe });
       }
 
       await runMajorsTraderPass({

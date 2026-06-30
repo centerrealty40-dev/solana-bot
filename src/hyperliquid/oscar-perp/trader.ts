@@ -9,6 +9,7 @@ import { cooldownBlocksEntry, evaluateOscarEntry } from './entry-signal.js';
 import { computeOscarExitActions } from './exit-engine.js';
 import { shouldRemainderFlush } from '../oscar-remainder-flush.js';
 import { tryOscarBuyLeg } from '../oscar-open-margin.js';
+import { flattenCoinOnExchange } from '../twap/live/flatten-position.js';
 import {
   appendOscarJournal,
   lastEntryBarTsByCoin,
@@ -201,7 +202,17 @@ export async function runOscarTraderPass(args: {
       intent: 'open',
     });
     if (!legResult.ok) {
-      if (legResult.reason !== 'order_failed') {
+      if (legResult.reason === 'unwind_failed') {
+        appendOscarJournal(cfg.journalPath, {
+          kind: 'unwind_failed',
+          ts: Date.now(),
+          coin: coin.coin,
+          displaySymbol: coin.displaySymbol,
+          filledGrossUsd: legResult.meta.filledGrossUsd,
+          remainingAbsSize: legResult.unwindRemainingAbsSize ?? 0,
+          mode: 'live',
+        });
+      } else if (legResult.reason !== 'order_failed') {
         appendOscarJournal(
           cfg.journalPath,
           journalSkipFromBuyReject(coin.coin, legResult.reason, legResult.meta),
@@ -319,17 +330,17 @@ async function processOpenPosition(
         const flushRes = await reducePosition(client, pos, 1, markPx);
         const exitPx = flushRes?.fillPx ?? markPx;
         if (flushRes) pos.realizedPnlUsd += flushRes.pnlUsd;
-        await finalizeClose(cfg, state, pos, 'REMAINDER_FLUSH', exitPx, mode);
+        await finalizeClose(cfg, state, pos, 'REMAINDER_FLUSH', exitPx, mode, client);
         break;
       }
       if (pos.remainingFraction <= 1e-6) {
-        await finalizeClose(cfg, state, pos, action.reason, res.fillPx, mode);
+        await finalizeClose(cfg, state, pos, action.reason, res.fillPx, mode, client);
       }
     } else if (action.kind === 'full') {
       const res = await reducePosition(client, pos, pos.remainingFraction, markPx);
       const exitPx = res?.fillPx ?? markPx;
       if (res) pos.realizedPnlUsd += res.pnlUsd;
-      await finalizeClose(cfg, state, pos, action.reason, exitPx, mode);
+      await finalizeClose(cfg, state, pos, action.reason, exitPx, mode, client);
       break;
     }
   }
@@ -474,7 +485,23 @@ async function finalizeClose(
   reason: string,
   exitPx: number,
   mode: 'dry_run' | 'live',
+  client: HlTwapExchangeClient,
 ): Promise<void> {
+  if (mode === 'live') {
+    const { flat, remainingAbsSize } = await flattenCoinOnExchange(
+      client,
+      pos.coin,
+      pos.displaySymbol,
+      exitPx,
+      'close',
+    );
+    if (!flat) {
+      console.error(
+        `[hl-oscar-perp] close incomplete ${pos.coin} reason=${reason} remaining=${remainingAbsSize.toFixed(6)} base — keeping in tracker`,
+      );
+      return;
+    }
+  }
   const pnlPct = pos.totalGrossUsd > 0 ? (pos.realizedPnlUsd / pos.totalGrossUsd) * 100 : 0;
   const holdHours = (Date.now() - pos.entryTs) / 3_600_000;
   appendOscarJournal(cfg.journalPath, {
