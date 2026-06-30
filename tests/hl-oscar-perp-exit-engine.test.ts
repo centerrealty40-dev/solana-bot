@@ -143,6 +143,13 @@ describe('hl-oscar-perp exit-engine time stop', () => {
     const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
     expect(actions.some((a) => a.kind === 'full' && a.reason === 'TIME_STOP')).toBe(true);
   });
+
+  it('does not fire TIME_STOP when timeStopHours is 0', () => {
+    const cfg = testCfg({ timeStopHours: 0 });
+    const pos = testPos({ entryTs: Date.now() - 48 * 3_600_000 });
+    const actions = computeOscarExitActions(pos, cfg, 100, 100, 100, Date.now());
+    expect(actions.some((a) => a.reason === 'TIME_STOP')).toBe(false);
+  });
 });
 
 describe('hl-oscar-perp exit-engine remainder flush', () => {

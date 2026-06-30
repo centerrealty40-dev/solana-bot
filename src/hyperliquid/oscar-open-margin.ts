@@ -1,6 +1,5 @@
 import type { HlAccountMargin } from './twap/hyperliquid-meta.js';
 import { freeMarginUsd, hasMarginForNewOpen } from './twap/live/account-margin.js';
-import { isOpenFillAcceptable } from './twap/live/parse-order-fill.js';
 import type { HlTwapExchangeClient } from './twap/live/exchange-client.js';
 import type { OrderFillResult } from './twap/live/types.js';
 
@@ -30,9 +29,18 @@ export function oscarRequestedGrossUsd(
   return fill.requestedNotionalUsd ?? marginUsd * leverage;
 }
 
-/** Minimum gross fill vs requested (same 85% rule as HL TWAP live). */
+/**
+ * Minimum gross fill vs requested (85% ratio, no TWAP $50 absolute floor).
+ * Oscar staged legs are intentionally $30–$40; the TWAP $50 floor would reject full fills.
+ */
 export function oscarOpenFillAcceptable(filledGrossUsd: number, requestedGrossUsd: number): boolean {
-  return isOpenFillAcceptable(filledGrossUsd, requestedGrossUsd);
+  if (filledGrossUsd <= 0 || requestedGrossUsd <= 0) return false;
+  const v = process.env.HL_TWAP_LIVE_OPEN_MIN_FILL_RATIO?.trim();
+  const ratio =
+    v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) > 0 && Number(v) <= 1
+      ? Number(v)
+      : 0.85;
+  return filledGrossUsd >= requestedGrossUsd * ratio;
 }
 
 /** Flatten a rejected partial open on exchange (live only). */

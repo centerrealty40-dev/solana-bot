@@ -29,6 +29,7 @@ export type HlOscarPerpConfig = {
   dipMinImpulsePct: number;
   dipLookbackWindowsMin: number[];
   dipCooldownMin: number;
+  /** Full exit after N hours in position; `0` disables (or set `HL_OSCAR_TIME_STOP_ENABLED=0`). */
   timeStopHours: number;
   maxOpenPositions: number;
   minDayVolumeUsd: number;
@@ -140,7 +141,7 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
       process.env.HL_OSCAR_DIP_WINDOWS_MIN?.trim() || '120,360,720',
     ),
     dipCooldownMin: envNum('HL_OSCAR_DIP_COOLDOWN_MIN', 30),
-    timeStopHours: envNum('HL_OSCAR_TIME_STOP_HOURS', 12),
+    timeStopHours: resolveTimeStopHours(),
     maxOpenPositions: Math.max(1, Math.round(envNum('HL_OSCAR_MAX_OPEN_POSITIONS', 10))),
     minDayVolumeUsd: envNum('HL_OSCAR_MIN_DAY_VOLUME_USD', 100_000),
     pollIntervalMs: Math.max(5_000, envNum('HL_OSCAR_POLL_MS', 60_000)),
@@ -157,6 +158,11 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     remainderClosePct: Math.max(0, Math.min(100, envNum('HL_OSCAR_REMAINDER_CLOSE_PCT', 10))),
     marginReserveUsd: Math.max(0, envNum('HL_OSCAR_MARGIN_RESERVE_USD', 25)),
   };
+}
+
+function resolveTimeStopHours(): number {
+  if (!envBool('HL_OSCAR_TIME_STOP_ENABLED', true)) return 0;
+  return Math.max(0, envNum('HL_OSCAR_TIME_STOP_HOURS', 12));
 }
 
 function parseWindows(spec: string): number[] {

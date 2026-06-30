@@ -42,7 +42,10 @@ function pnlSign(v: number): string {
 function closeReasonRu(reason: string, cfg?: HlOscarPerpConfig): string {
   if (reason === 'KILL') return `стоп −${cfg?.positionKillDropPct ?? 45}%`;
   if (reason === 'STAGED_KILL') return `стоп −${cfg?.stagedKillDropPct ?? 45}% от сигнала`;
-  if (reason === 'TIME_STOP') return 'тайм-стоп 12ч';
+  if (reason === 'TIME_STOP') {
+    const h = cfg?.timeStopHours ?? 0;
+    return h > 0 ? `тайм-стоп ${h}ч` : 'тайм-стоп';
+  }
   if (reason === 'BREAKEVEN') return 'безубыток после trail';
   if (reason === 'TP') return 'take-profit';
   if (reason === 'TRAIL') return 'trail';
@@ -109,7 +112,7 @@ export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): 
       '🟢 HL Oscar — бот запущен',
       `Режим: ${mode} · ${cfg.leverage}x · $${cfg.positionNotionalUsd} gross ($${cfg.positionMarginUsd} margin)/позиция`,
       entryLine,
-      `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours}ч`,
+      `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours > 0 ? `${cfg.timeStopHours}ч` : 'выкл'}`,
     ].join('\n'),
   );
 }
