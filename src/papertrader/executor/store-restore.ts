@@ -253,6 +253,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg7Usd: Number.isFinite(Number(p.entrySplitLeg7Usd))
                   ? Number(p.entrySplitLeg7Usd)
                   : 0,
+                entrySplitLeg8Usd: Number.isFinite(Number(p.entrySplitLeg8Usd))
+                  ? Number(p.entrySplitLeg8Usd)
+                  : 0,
                 entrySplitTargetDropPct: Number.isFinite(Number(p.entrySplitTargetDropPct))
                   ? Number(p.entrySplitTargetDropPct)
                   : 0,
@@ -267,12 +270,14 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 entrySplitLeg5Done: Boolean(p.entrySplitLeg5Done),
                 entrySplitLeg6Done: Boolean(p.entrySplitLeg6Done),
                 entrySplitLeg7Done: Boolean(p.entrySplitLeg7Done),
+                entrySplitLeg8Done: Boolean(p.entrySplitLeg8Done),
                 entrySplitLeg2Ts: Number.isFinite(Number(p.entrySplitLeg2Ts)) ? Number(p.entrySplitLeg2Ts) : undefined,
                 entrySplitLeg3Ts: Number.isFinite(Number(p.entrySplitLeg3Ts)) ? Number(p.entrySplitLeg3Ts) : undefined,
                 entrySplitLeg4Ts: Number.isFinite(Number(p.entrySplitLeg4Ts)) ? Number(p.entrySplitLeg4Ts) : undefined,
                 entrySplitLeg5Ts: Number.isFinite(Number(p.entrySplitLeg5Ts)) ? Number(p.entrySplitLeg5Ts) : undefined,
                 entrySplitLeg6Ts: Number.isFinite(Number(p.entrySplitLeg6Ts)) ? Number(p.entrySplitLeg6Ts) : undefined,
                 entrySplitLeg7Ts: Number.isFinite(Number(p.entrySplitLeg7Ts)) ? Number(p.entrySplitLeg7Ts) : undefined,
+                entrySplitLeg8Ts: Number.isFinite(Number(p.entrySplitLeg8Ts)) ? Number(p.entrySplitLeg8Ts) : undefined,
                 avgSecondDropPct: Number(p.avgSecondDropPct) || secondDropPct,
                 avgSecondLegUsd: Number(p.avgSecondLegUsd) || secondLegUsd,
                 avgThirdDropPct: Number.isFinite(thirdDropPct) ? thirdDropPct : undefined,

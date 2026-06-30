@@ -78,6 +78,26 @@
 
 ---
 
+## [1.11.539] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.539`
+
+### Live Oscar — entry sizing: 8-leg prod / 5-leg low + unified avg
+
+**Prod (mcap ≥ $3M):** entry split **8×$300 = $2400** (было 7×$300); staged avg **−10% $300**, **−20% $400** (было −10%/$400 + −20%/$600 для $3–12M; ≥$12M раньше без avg). Max **$3100** для всех prod-бандов включая ≥$12M.
+
+**Low ($2M–$3M):** entry split **5×$300 = $1500** (было 3×$300); staged avg **−10% $300**, **−20% $400** (было только −10%/$350). Max **$2200**.
+
+Коридор +3%/−5%, delay 5s, discovery gates, exit policy — без изменений. `LIVE_MAX_POSITION_USD=3100`.
+
+**Примечание:** band ≥$12M теперь получает те же avg-ноги, что и $3–12M (раньше entry-only $2100).
+
+**Откат:** redeploy `sa-alpha-1.11.538`; prod: `LEG8=0`, `PAPER_POSITION_USD=2100`, avg `$400/$600`, `PROD_MCAP_MAX_12_PLUS=2100`; low: 3 legs, avg `$350`, `LOW_POSITION=900`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.538] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.538`

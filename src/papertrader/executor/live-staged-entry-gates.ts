@@ -17,6 +17,7 @@ import {
   resolveLiveOscarEntrySplitLeg5Usd,
   resolveLiveOscarEntrySplitLeg6Usd,
   resolveLiveOscarEntrySplitLeg7Usd,
+  resolveLiveOscarEntrySplitLeg8Usd,
   resolveLiveOscarEntrySplitLegUsd,
   resolveLiveOscarStagedAvgFirstDropPct,
   resolveLiveOscarStagedAvgLegUsd,
@@ -323,6 +324,7 @@ export function buildLiveStagedEntryState(
   const splitLeg5 = resolveLiveOscarEntrySplitLeg5Usd(cfg, tier, mcap);
   const splitLeg6 = resolveLiveOscarEntrySplitLeg6Usd(cfg, tier, mcap);
   const splitLeg7 = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier, mcap);
+  const splitLeg8 = resolveLiveOscarEntrySplitLeg8Usd(cfg, tier, mcap);
   const killDropPct = firstMintProbe
     ? Math.min(50, Math.max(1, options?.firstMintKillDropPct ?? 7))
     : cfg.liveStagedEntryKillDropPct;
@@ -345,6 +347,7 @@ export function buildLiveStagedEntryState(
     entrySplitLeg5Usd: splitLeg5,
     entrySplitLeg6Usd: splitLeg6,
     entrySplitLeg7Usd: splitLeg7,
+    entrySplitLeg8Usd: splitLeg8,
     entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
     entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
     entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
@@ -357,6 +360,7 @@ export function buildLiveStagedEntryState(
     entrySplitLeg5Done: splitLeg5 <= 0,
     entrySplitLeg6Done: splitLeg6 <= 0,
     entrySplitLeg7Done: splitLeg7 <= 0,
+    entrySplitLeg8Done: splitLeg8 <= 0,
     avgSecondDropPct: avgSecondDrop,
     avgSecondLegUsd: avgSecondUsd,
     avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
