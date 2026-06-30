@@ -36,6 +36,7 @@ describe('oscar-open-margin', () => {
 
   it('oscarOpenFillAcceptable accepts full $30 staged leg (no TWAP $50 floor)', () => {
     expect(oscarOpenFillAcceptable(30, 30)).toBe(true);
+    expect(oscarOpenFillAcceptable(30.03, 30)).toBe(true);
     expect(oscarOpenFillAcceptable(25, 30)).toBe(false);
   });
 

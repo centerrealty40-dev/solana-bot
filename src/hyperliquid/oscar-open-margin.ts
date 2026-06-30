@@ -162,6 +162,12 @@ export async function tryOscarBuyLeg(args: {
       intent: args.intent,
     });
     const meta = oscarOpenFillMeta(fill, marginUsd, args.leverage, freeMarginAtOpen);
+    // Oscar legs are $30–$40 gross; TWAP fill metadata may carry $50 min floor — use leg intent.
+    meta.requestedGrossUsd = requestedGrossUsd;
+    meta.partialFill =
+      requestedGrossUsd > 0 &&
+      meta.filledGrossUsd > 0 &&
+      meta.filledGrossUsd < requestedGrossUsd * 0.95;
     if (
       args.client.mode === 'live' &&
       !oscarOpenFillAcceptable(meta.filledGrossUsd, meta.requestedGrossUsd)
