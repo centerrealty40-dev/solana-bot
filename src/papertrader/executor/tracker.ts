@@ -242,6 +242,52 @@ function scheduleTailAfterLiveClose(
 
 export { ladderRetraceTriggered } from './tp-ladder-state.js';
 
+/** Token count for partial sell slip — actual chain fill, not planned exit-slice notional. */
+export function resolvePartialSellTokensSold(args: {
+  tokenAmountRawSold?: string;
+  tokenDecimals: number;
+  actualProceedsUsd?: number;
+  marketSell: number;
+  tokenSizingUsdForSwap: number;
+  investedSoldUsd: number;
+  avgEntry: number;
+}): number {
+  const {
+    tokenAmountRawSold,
+    tokenDecimals,
+    actualProceedsUsd,
+    marketSell,
+    tokenSizingUsdForSwap,
+    investedSoldUsd,
+    avgEntry,
+  } = args;
+  if (typeof tokenAmountRawSold === 'string' && /^\d+$/.test(tokenAmountRawSold) && tokenAmountRawSold !== '0') {
+    const dec = Math.min(24, Math.max(0, Math.floor(tokenDecimals)));
+    const tokens = Number(BigInt(tokenAmountRawSold)) / 10 ** dec;
+    if (tokens > 1e-18 && Number.isFinite(tokens)) return tokens;
+  }
+  if (
+    actualProceedsUsd != null &&
+    actualProceedsUsd > 0 &&
+    marketSell > 1e-18 &&
+    Number.isFinite(marketSell)
+  ) {
+    return actualProceedsUsd / marketSell;
+  }
+  if (marketSell > 1e-18 && Number.isFinite(marketSell)) {
+    return tokenSizingUsdForSwap / marketSell;
+  }
+  return investedSoldUsd / avgEntry;
+}
+
+export function computeSlipRealizedPct(
+  marketSell: number,
+  effectiveSell: number,
+): number | undefined {
+  if (!(marketSell > 0 && effectiveSell > 0)) return undefined;
+  return +(((marketSell - effectiveSell) / marketSell) * 100).toFixed(4);
+}
+
 /** W7.4.2 — returns verdict for JSONL stamping; `defer` means skip this exit attempt until next tracker tick. */
 async function exitPriceVerifyGate(args: {
   cfg: PaperTraderConfig;
@@ -920,10 +966,15 @@ async function tryExecuteTpPartialSell(args: {
     ot.avgEntry > 0
   ) {
     const actualUsd = (Number(sellOut.solProceedsLamports) / 1e9) * spotSol;
-    const tokensSold =
-      marketSell > 1e-18 && Number.isFinite(marketSell)
-        ? tokenSizingUsdForSwap / marketSell
-        : investedSoldUsd / ot.avgEntry;
+    const tokensSold = resolvePartialSellTokensSold({
+      tokenAmountRawSold: sellOut.tokenAmountRawSold,
+      tokenDecimals: ot.tokenDecimals ?? 6,
+      actualProceedsUsd: actualUsd,
+      marketSell,
+      tokenSizingUsdForSwap,
+      investedSoldUsd,
+      avgEntry: ot.avgEntry,
+    });
     const modeledProceedsFloor = proceedsUsd;
     if (tokensSold > 1e-18 && Number.isFinite(actualUsd)) {
       const chainImplausible =
@@ -970,10 +1021,7 @@ async function tryExecuteTpPartialSell(args: {
     sellOut.priceImpactPct != null && Number.isFinite(sellOut.priceImpactPct)
       ? Math.max(0, Math.min(1, sellOut.priceImpactPct))
       : undefined;
-  const slipRealizedPct =
-    marketSell > 0 && effectiveSell > 0
-      ? +(((marketSell - effectiveSell) / marketSell) * 100).toFixed(4)
-      : undefined;
+  const slipRealizedPct = computeSlipRealizedPct(marketSell, effectiveSell);
 
   const ps: PartialSell = {
     ts: Date.now(),
