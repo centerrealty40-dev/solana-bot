@@ -78,6 +78,8 @@ export type LiveTokenToSolSellResult = {
   retryAttempts?: number;
   sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain';
   walletDrained?: boolean;
+  /** Actual token atoms sold on-chain (sum across exit slices). Used for partial slipRealizedPct. */
+  tokenAmountRawSold?: string;
 };
 
 export type LiveTokenToSolPipelineResult = {
@@ -97,6 +99,8 @@ export type LiveTokenToSolPipelineResult = {
   retryAttempts?: number;
   sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain';
   walletDrained?: boolean;
+  /** Actual token atoms sold on-chain (sum across exit slices). Used for partial slipRealizedPct. */
+  tokenAmountRawSold?: string;
 };
 
 export interface LiveOscarPhase4Tracker {

@@ -78,6 +78,24 @@
 
 ---
 
+## [1.11.538] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.538`
+
+### Live Oscar — partial sell slipRealizedPct fix (WORLD RCA)
+
+**Проблема:** при exit-slice ($663 planned, $250 executed) `slipRealizedPct` делил chain proceeds на inflated `tokenSizingUsdForSwap/marketSell` → ложные ~62% вместо ~0%.
+
+- **`tracker.ts`:** `resolvePartialSellTokensSold` — actual `tokenAmountRawSold` / chain proceeds, не planned notional.
+- **`phase4-execution.ts` / `exit-slice.ts`:** passthrough + sum `tokenAmountRawSold` across slices.
+- **Test:** world-like partial $663→$250 → slip <2%.
+
+**Откат:** `git checkout sa-alpha-1.11.537 -- src/papertrader/executor/tracker.ts src/live/phase4-types.ts src/live/phase4-execution.ts src/live/exit-slice.ts tests/live-partial-sell-slip.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.537] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.537`

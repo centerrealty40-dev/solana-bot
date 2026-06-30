@@ -91,6 +91,7 @@ export async function runSlicedTokenToSolPipeline(
   });
 
   let totalLamports = 0n;
+  let totalTokenRawSold = 0n;
   let lastTxSig: string | null | undefined;
   let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
   let maxPriceImpact: number | undefined;
@@ -141,11 +142,15 @@ export async function runSlicedTokenToSolPipeline(
         retryAttempts: totalRetryAttempts,
         sellAmountSource: lastSellAmountSource ?? r.sellAmountSource,
         walletDrained: walletDrainedAfterPartial || undefined,
+        tokenAmountRawSold: totalTokenRawSold > 0n ? totalTokenRawSold.toString() : undefined,
       };
     }
 
     if (r.wsolOutLamports != null && r.wsolOutLamports > 0n) {
       totalLamports += r.wsolOutLamports;
+    }
+    if (typeof r.tokenAmountRawSold === 'string' && /^\d+$/.test(r.tokenAmountRawSold)) {
+      totalTokenRawSold += BigInt(r.tokenAmountRawSold);
     }
     lastTxSig = r.txSignature;
     solProceedsSource = r.solProceedsSource ?? solProceedsSource;
@@ -175,5 +180,6 @@ export async function runSlicedTokenToSolPipeline(
     retryAttempts: totalRetryAttempts,
     sellAmountSource: lastSellAmountSource,
     walletDrained: lastWalletDrained,
+    tokenAmountRawSold: totalTokenRawSold > 0n ? totalTokenRawSold.toString() : undefined,
   };
 }

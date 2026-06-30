@@ -1172,6 +1172,7 @@ async function runTokenToSolPipeline(
         retryAttempts: attempt,
         sellAmountSource,
         walletDrained: sellPipelineWalletDrained(args.intentKind, sellAmountSource),
+        tokenAmountRawSold: raw,
       };
     }
 
@@ -1200,6 +1201,7 @@ async function runTokenToSolPipeline(
       lastResult.retryAttempts = attempt;
       lastResult.sellAmountSource = sellAmountSource;
       lastResult.walletDrained = sellPipelineWalletDrained(args.intentKind, sellAmountSource);
+      lastResult.tokenAmountRawSold = raw;
       return lastResult;
     }
     if (
@@ -1453,6 +1455,7 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
         retryAttempts: r.retryAttempts,
         sellAmountSource: r.sellAmountSource,
         walletDrained: r.walletDrained,
+        tokenAmountRawSold: r.tokenAmountRawSold,
       }));
     },
   };
