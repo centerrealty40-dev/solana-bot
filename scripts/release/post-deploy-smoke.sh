@@ -118,4 +118,8 @@ else
   echo "[post-deploy-smoke] WARN: journal missing at $JOURNAL" >&2
 fi
 
+if [[ -f "$ROOT/scripts/release/verify-dc-trader-pm2.sh" ]]; then
+  bash "$ROOT/scripts/release/verify-dc-trader-pm2.sh" || true
+fi
+
 ok "smoke passed for $PM2_APP @ $SHA"

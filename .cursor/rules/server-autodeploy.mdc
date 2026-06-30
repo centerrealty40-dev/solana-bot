@@ -59,13 +59,14 @@ npm ci
 pm2 reload ecosystem.config.cjs --update-env
 ```
 
-Зафиксировать **`git rev-parse HEAD`** и **`git status -sb`**. PM2 — под **`salpha`**; при смене env — **`--update-env`**; по политике — **`pm2 flush`** для нужных процессов.
+Зафиксировать **`git rev-parse HEAD`** и **`git status -sb`**. PM2 — под **`salpha`**; при смене env — **`--update-env`**; по политике — **`pm2 flush`** для нужных процессов. После reload — **`bash scripts/release/post-deploy-smoke.sh`** и **`bash scripts/release/verify-dc-trader-pm2.sh`**.
 
 ## Never
 
 - Не использовать **`scp`** для выкладки **трекнутого** кода вместо Git на VPS-клоне.
 - Не пушить в **`main`** без явной политики репозитория.
 - Не выполнять разрушительные действия без явного согласия пользователя.
+- **Не использовать `pm2 stop all`, `pm2 delete all`, `pm2 restart all`** под **`salpha`** — на VPS общий PM2 с **`dc-trader`** (`/opt/dc-trader`); только **`pm2 reload ecosystem.config.cjs --update-env`** или **`--only <app>`** из solana-alpha ecosystem (NORM §5.3).
 - Если SSH недоступен — сообщить пользователю; не замалчивать переход на «инструкции вручную» как норму.
 
 ## Scope

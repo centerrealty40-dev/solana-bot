@@ -78,6 +78,24 @@
 
 ---
 
+## [1.11.537] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.537`
+
+### Deploy safety — shared VPS PM2 (dc-trader)
+
+**RCA:** solana-alpha deploy used ad-hoc **`pm2 stop all`** under **`salpha`**, killing **`dc-trader`** (separate product at `/opt/dc-trader`, same `PM2_HOME`).
+
+- **NORM §5.3:** explicit ban on `pm2 stop all` / `delete all` / `restart all` on shared VPS; scoped `startOrReload` / `--only` only.
+- **`scripts/release/verify-dc-trader-pm2.sh`:** read-only post-deploy WARN if `dc-trader` missing/offline; wired into **`post-deploy-smoke.sh`**.
+- **`deploy-live-oscar-vps.sh`**, **`.cursor/rules/server-autodeploy.mdc`:** safeguard comments for agents.
+
+**Откат:** revert commit; no runtime change required.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.536] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.536`

@@ -3,6 +3,10 @@
 # Запуск: от root на сервере (или sudo bash …).
 # Переменные: APP_DIR (по умолчанию /opt/solana-alpha), GIT_BRANCH (по умолчанию v2).
 #
+# SHARED VPS: dc-trader (/opt/dc-trader) shares salpha PM2_HOME. NEVER run
+# `pm2 stop all`, `pm2 delete all`, or `pm2 restart all` — use startOrReload on
+# solana-alpha ecosystem.config.cjs only (see NORM §5.3).
+#
 # Отдельный GitHub-репозиторий «только Oscar» этим скриптом не создаётся — это другой объём работ.
 
 set -euo pipefail

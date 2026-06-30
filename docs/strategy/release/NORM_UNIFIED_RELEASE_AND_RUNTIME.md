@@ -109,13 +109,23 @@ SSH от **`root`** с ключом из [`RELEASE_OPERATING_MODEL.md`](./RELEAS
 
 Зафиксировать: **`git rev-parse HEAD`**, **`git status -sb`**.
 
-**Обязательно после PM2 reload:** `bash scripts/release/post-deploy-smoke.sh` (PM2 online, **singleton `live-oscar.ts`**, env parity, нет `ERR_MODULE_NOT_FOUND`, discovery пишет `live_discovery_eval`). Без зелёного smoke — **не считать деплой успешным**.
+**Обязательно после PM2 reload:** `bash scripts/release/post-deploy-smoke.sh` (PM2 online, **singleton `live-oscar.ts`**, env parity, нет `ERR_MODULE_NOT_FOUND`, discovery пишет `live_discovery_eval`; в конце — **`verify-dc-trader-pm2.sh`**, WARN если **`dc-trader`** пропал). Без зелёного smoke — **не считать деплой успешным**.
 
 **Деплой только если** GitHub Actions job **`hygiene`** на целевом SHA **зелёный** (см. [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md)).
 
 ### 5.3 PM2
 
 Только под **`salpha`** (`PM2_HOME=/home/salpha/.pm2`). **Запрещено** держать `live-oscar` в **`/root/.pm2`** — второй демон торгует со старым env в обход деплоя. При смене env — **`--update-env`** и по политике **`pm2 flush`**; после изменения списка приложений — **`pm2 save`**.
+
+**Общий VPS (co-hosted products):** под **`salpha`** могут работать PM2-процессы **вне** `ecosystem.config.cjs` solana-alpha (например **`dc-trader`** из `/opt/dc-trader`). Для деплоя solana-alpha:
+
+| Разрешено | Запрещено |
+|-----------|-----------|
+| `pm2 startOrReload /opt/solana-alpha/ecosystem.config.cjs --update-env` | **`pm2 stop all`**, **`pm2 delete all`**, **`pm2 restart all`** |
+| `pm2 reload ecosystem.config.cjs --only <app>` (имена из solana-alpha ecosystem) | Любая «глобальная» PM2-команда под **`salpha`**, затрагивающая чужие продукты |
+| `pm2 kill` от **root** — только **`/root/.pm2`**, на dc-trader не влияет | |
+
+После деплоя solana-alpha: **`bash scripts/release/verify-dc-trader-pm2.sh`** (read-only; **WARN**, если `dc-trader` offline или отсутствует в salpha PM2).
 
 ### 5.4 Исключения
 
@@ -205,7 +215,7 @@ tail -20 data/logs/db-backup.log
 | SSOT, replay JSONL, риски | [`docs/strategy/release/RELEASE_OPERATING_MODEL.md`](./RELEASE_OPERATING_MODEL.md) |
 | Параллельные агенты | [`docs/strategy/release/PARALLEL_WORKFLOW.md`](./PARALLEL_WORKFLOW.md) |
 | CI hygiene | [`scripts/check-release-hygiene.mjs`](../../../scripts/check-release-hygiene.mjs) |
-| Git hooks / smoke | [`scripts/release/install-git-hooks.sh`](../../../scripts/release/install-git-hooks.sh), [`scripts/release/post-deploy-smoke.sh`](../../../scripts/release/post-deploy-smoke.sh), [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md) |
+| Git hooks / smoke | [`scripts/release/install-git-hooks.sh`](../../../scripts/release/install-git-hooks.sh), [`scripts/release/post-deploy-smoke.sh`](../../../scripts/release/post-deploy-smoke.sh), [`scripts/release/verify-dc-trader-pm2.sh`](../../../scripts/release/verify-dc-trader-pm2.sh), [`BRANCH_PROTECTION_SETUP.md`](./BRANCH_PROTECTION_SETUP.md) |
 | PG backup / DR | [`DR_RESTORE.md`](./DR_RESTORE.md), [`scripts/ops/backup-db-r2-api.sh`](../../../scripts/ops/backup-db-r2-api.sh), [`scripts/ops/restore-from-r2-chunks.sh`](../../../scripts/ops/restore-from-r2-chunks.sh), [`scripts/ops/install-backup-cron.sh`](../../../scripts/ops/install-backup-cron.sh) |
 | Платформа и агенты | [`docs/platform/BOUNDARIES.md`](../../platform/BOUNDARIES.md), [`docs/agents/AGENT_BOOTSTRAP.md`](../../agents/AGENT_BOOTSTRAP.md) |
 
@@ -221,6 +231,7 @@ tail -20 data/logs/db-backup.log
 - [ ] Push в **`v2`**, CI job **`hygiene`** зелёный на SHA.
 - [ ] Деплой §5.2 (`bash scripts/ops/deploy-live-oscar-vps.sh` или ручной эквивалент с `pm2 kill` root); зафиксированы SHA и **`git status`**.
 - [ ] **`bash scripts/release/post-deploy-smoke.sh`** зелёный (в т.ч. **один** `live-oscar.ts` под `salpha`, нет online `live-oscar` в `/root/.pm2`).
+- [ ] **`verify-dc-trader-pm2.sh`** без WARN (или dc-trader намеренно не установлен); деплой **не** использовал `pm2 stop all` / `pm2 delete all`.
 - [ ] На сервере после обновления дерева — **`npm run typecheck`** (или полный §5.2), затем PM2 с **`--update-env`** / **`pm2 flush`** по политике процесса.
 - [ ] Нет рутинного **`scp`** tracked-кода на VPS-клон.
 
@@ -230,6 +241,7 @@ tail -20 data/logs/db-backup.log
 
 | Дата | Версия продукта | Суть |
 |------|-----------------|------|
+| 2026-06-30 | 1.11.537 | §5.3 — запрет `pm2 stop all` на shared VPS; `verify-dc-trader-pm2.sh` после деплоя. |
 | 2026-06-24 | — | §5.5 — PG→R2 cron, R2 path, restore и rebuild VPS (DR runbook). |
 | 2026-06-13 | 1.11.446 | §5.2 — канонический `deploy-live-oscar-vps.sh` + singleton smoke (один `live-oscar.ts`, запрет `/root/.pm2`). |
 | 2026-05-22 | 1.11.253 | Git hooks (staged imports + typecheck), CI `check:imports`, post-deploy smoke, branch protection doc. |
