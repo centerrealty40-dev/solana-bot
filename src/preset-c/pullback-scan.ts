@@ -48,6 +48,8 @@ export type PresetCPullbackCandidate = {
   pick: PullbackPick;
   /** preset_c_spike when sourced from spike-channel dedupe */
   entryPath?: 'preset_c_pullback' | 'preset_c_spike';
+  /** Spike TG alert send time — used for elite UTC window gate. */
+  spikeSentAtMs?: number;
 };
 
 function envNum(name: string, fallback: number): number {

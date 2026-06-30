@@ -14,6 +14,8 @@ describe('preset C telegram gate', () => {
     process.env.PRESET_C_TELEGRAM_GATE_ENABLED = '1';
     process.env.PRESET_C_TELEGRAM_GATE_SOURCES = 'pullback,retrace,spike';
     process.env.PRESET_C_TELEGRAM_GATE_MAX_AGE_MS = '3600000';
+    /** Legacy pullback/spike-bypass tests use 9–30% band and 9.45% spike samples. */
+    process.env.PRESET_C_ELITE_SPIKE_ENABLED = '0';
   });
 
   afterEach(() => {
@@ -21,6 +23,7 @@ describe('preset C telegram gate', () => {
     delete process.env.PRESET_C_TELEGRAM_GATE_ENABLED;
     delete process.env.PRESET_C_TELEGRAM_GATE_SOURCES;
     delete process.env.PRESET_C_TELEGRAM_GATE_MAX_AGE_MS;
+    delete process.env.PRESET_C_ELITE_SPIKE_ENABLED;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     vi.resetModules();
   });
@@ -258,5 +261,106 @@ describe('preset C telegram gate', () => {
     );
     expect(decision.pass).toBe(false);
     expect(decision.reasons).toContain('preset_c_telegram_gate_no_channel_alert');
+  });
+
+  it('elite spike path rejects dump below 10% at discovery', async () => {
+    process.env.PRESET_C_ELITE_SPIKE_ENABLED = '1';
+    process.env.PRESET_C_SPIKE_UTC_WINDOW_ENABLED = '0';
+    const mint = 'BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump';
+    const key = `${mint}|1980277`;
+    writeStore({
+      [key]: {
+        peakBucket: 1980277,
+        sentAtMs: Date.now() - 60_000,
+        source: 'spike',
+        spikeDumpPct: 9.45,
+        refMcapUsd: 26_490_000,
+      },
+    });
+    const { evaluatePresetCCandidate } = await import('../src/preset-c/discovery.js');
+    const decision = evaluatePresetCCandidate(
+      { strategyId: 'live-oscar-preset-c' } as import('../src/papertrader/config.js').PaperTraderConfig,
+      {
+        dex: 'pumpswap',
+        mint,
+        pair: 'EcL9YDP3PsViKs2aDzDeTYdNXUCPLDodcKTbS4ayqf4N',
+        symbol: 'MANIFEST',
+        tokenAgeMin: 52000,
+        holderCount: 5000,
+        liqUsd: 200000,
+        refMcapUsd: 26_490_000,
+        priceUsd: 0.002,
+        entryPath: 'preset_c_spike',
+        spikeSentAtMs: Date.now() - 60_000,
+        pick: {
+          signalMode: 'local_high_retrace',
+          anchorTs: new Date(),
+          peakTs: new Date(),
+          lastTs: new Date(),
+          anchorPx: 0.0022,
+          peakPx: 0.0024,
+          lastPx: 0.00218,
+          risePct: 0,
+          retraceFromPeakPct: 9.45,
+          anchorMcapUsd: 26_000_000,
+          peakMcapUsd: 28_000_000,
+          lastMcapUsd: 26_490_000,
+        },
+      },
+    );
+    expect(decision.pass).toBe(false);
+    expect(decision.reasons).toContain('preset_c_elite_spike_dump_outside_10_20pct');
+  });
+
+  it('elite spike path accepts 15% dump in UTC window', async () => {
+    process.env.PRESET_C_ELITE_SPIKE_ENABLED = '1';
+    process.env.PRESET_C_SPIKE_UTC_WINDOW_ENABLED = '0';
+    const mint = 'BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump';
+    const key = `${mint}|1980277`;
+    writeStore({
+      [key]: {
+        peakBucket: 1980277,
+        sentAtMs: Date.now() - 60_000,
+        source: 'spike',
+        spikeDumpPct: 15,
+        refMcapUsd: 8_000_000,
+      },
+    });
+    const { evaluatePresetCCandidate } = await import('../src/preset-c/discovery.js');
+    const decision = evaluatePresetCCandidate(
+      {
+        strategyId: 'live-oscar-preset-c',
+        mintBlacklistEnabled: false,
+      } as import('../src/papertrader/config.js').PaperTraderConfig,
+      {
+        dex: 'pumpswap',
+        mint,
+        pair: 'EcL9YDP3PsViKs2aDzDeTYdNXUCPLDodcKTbS4ayqf4N',
+        symbol: 'ELITE',
+        tokenAgeMin: 52000,
+        holderCount: 5000,
+        liqUsd: 200000,
+        refMcapUsd: 8_000_000,
+        priceUsd: 0.002,
+        entryPath: 'preset_c_spike',
+        spikeSentAtMs: Date.now() - 60_000,
+        pick: {
+          signalMode: 'local_high_retrace',
+          anchorTs: new Date(),
+          peakTs: new Date(),
+          lastTs: new Date(),
+          anchorPx: 0.0022,
+          peakPx: 0.0024,
+          lastPx: 0.002,
+          risePct: 0,
+          retraceFromPeakPct: 15,
+          anchorMcapUsd: 8_000_000,
+          peakMcapUsd: 9_400_000,
+          lastMcapUsd: 8_000_000,
+        },
+      },
+    );
+    expect(decision.reasons).not.toContain('preset_c_elite_spike_dump_outside_10_20pct');
+    expect(decision.reasons).not.toContain('preset_c_telegram_gate_no_channel_alert');
   });
 });

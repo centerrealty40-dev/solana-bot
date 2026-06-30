@@ -1629,7 +1629,14 @@ const PM2_APPS = [
         PRESET_C_TELEGRAM_GATE_ENABLED: '1',
         PRESET_C_TELEGRAM_GATE_SOURCES: 'pullback,retrace,spike',
         PRESET_C_TELEGRAM_GATE_MAX_AGE_MS: '3600000',
-        PRESET_C_SPIKE_MIN_MCAP_USD: '5000000',
+        /** Elite spike: dump 10–20%, mcap $3–30M, |pct|<35%, UTC 12–18 (spike path only). */
+        PRESET_C_ELITE_SPIKE_ENABLED: '1',
+        PRESET_C_SPIKE_MIN_MCAP_USD: '3000000',
+        PRESET_C_SPIKE_DUMP_PCT_MIN: '10',
+        PRESET_C_SPIKE_DUMP_PCT_MAX: '20',
+        PRESET_C_SPIKE_MAX_ABS_PCT: '35',
+        PRESET_C_SPIKE_UTC_WINDOW_ENABLED: '1',
+        PRESET_C_SPIKE_UTC_HOURS: '12-18',
       },
     },
     /**

@@ -10,7 +10,11 @@ import {
 } from '../scripts/market-retrace-pullback-channel-dedupe.js';
 import { isTelegramMarketAlertMintBlocked } from '../scripts/telegram-alert-mint-blacklist.js';
 import {
+  PRESET_C_ELITE_SPIKE_ENABLED,
   PRESET_C_MIN_RETRACE_PCT,
+  passesPresetCEliteSpikeDumpBand,
+  passesPresetCEliteSpikeSanity,
+  passesPresetCEliteSpikeUtcWindow,
   passesPresetCRetraceBand,
   passesPresetCSpikeMcapBand,
   isPresetCMcapKnown,
@@ -49,7 +53,13 @@ function freshSpikeSignalsByMint(nowMs: number): Map<string, SpikeMintSignal> {
     if (!matchingPresetCTelegramGateKeys(mint, nowMs).includes(key)) continue;
 
     const dumpPct = entry.spikeDumpPct ?? 0;
-    if (!(dumpPct >= PRESET_C_MIN_RETRACE_PCT)) continue;
+    if (PRESET_C_ELITE_SPIKE_ENABLED) {
+      if (!passesPresetCEliteSpikeDumpBand(dumpPct)) continue;
+      if (!passesPresetCEliteSpikeSanity(dumpPct)) continue;
+      if (!passesPresetCEliteSpikeUtcWindow(entry.sentAtMs)) continue;
+    } else if (!(dumpPct >= PRESET_C_MIN_RETRACE_PCT)) {
+      continue;
+    }
 
     const refM = entry.refMcapUsd ?? 0;
     if (!passesPresetCSpikeMcapBand(refM)) continue;
@@ -181,7 +191,13 @@ export async function evaluatePresetCSpikeCandidates(
       if (nowMs - ts.getTime() > MAX_BAR_AGE_MS) continue;
 
       const retracePct = sig.spikeDumpPct;
-      if (!passesPresetCRetraceBand(retracePct)) continue;
+      if (PRESET_C_ELITE_SPIKE_ENABLED) {
+        if (!passesPresetCEliteSpikeDumpBand(retracePct)) continue;
+        if (!passesPresetCEliteSpikeSanity(retracePct)) continue;
+        if (!passesPresetCEliteSpikeUtcWindow(sig.sentAtMs)) continue;
+      } else if (!passesPresetCRetraceBand(retracePct)) {
+        continue;
+      }
 
       const refM = refMcap(meta, sig.refMcapUsd);
       if (!passesPresetCSpikeMcapBand(refM)) continue;
@@ -205,6 +221,7 @@ export async function evaluatePresetCSpikeCandidates(
         refMcapUsd: refM,
         priceUsd: px,
         entryPath: 'preset_c_spike',
+        spikeSentAtMs: sig.sentAtMs,
         pick: {
           signalMode: 'local_high_retrace',
           anchorTs: now,

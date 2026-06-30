@@ -18,7 +18,12 @@ import { resolveLiveOscarScalpWaveMcapTier } from '../papertrader/live-oscar-sca
 import type { SnapshotFeatures } from '../papertrader/types.js';
 import { evaluatePresetCCandidates, type PresetCPullbackCandidate } from './pullback-scan.js';
 import { evaluatePresetCSpikeCandidates } from './spike-candidates.js';
-import { isPresetCMcapKnown, presetCFilterReasons } from './filters.js';
+import {
+  isPresetCMcapKnown,
+  PRESET_C_ELITE_SPIKE_ENABLED,
+  presetCEliteSpikeFilterReasons,
+  presetCFilterReasons,
+} from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
 import {
   presetCApplySpikeGeometryRetraceBypass,
@@ -93,15 +98,25 @@ export function evaluatePresetCCandidate(
   c: PresetCPullbackCandidate,
   nowMs = Date.now(),
 ): EvalDecision {
-  const geom = presetCApplySpikeGeometryRetraceBypass(
-    c.mint,
-    c.pick.retraceFromPeakPct,
-    presetCFilterReasons({
-      refMcapUsd: c.refMcapUsd,
-      retraceFromPeakPct: c.pick.retraceFromPeakPct,
-    }),
-    nowMs,
-  );
+  const isSpikePath = c.entryPath === 'preset_c_spike';
+  const baseGeom = isSpikePath && PRESET_C_ELITE_SPIKE_ENABLED
+    ? presetCEliteSpikeFilterReasons({
+        spikeDumpPct: c.pick.retraceFromPeakPct,
+        refMcapUsd: c.refMcapUsd,
+        atMs: c.spikeSentAtMs ?? nowMs,
+      })
+    : presetCFilterReasons({
+        refMcapUsd: c.refMcapUsd,
+        retraceFromPeakPct: c.pick.retraceFromPeakPct,
+      });
+  const geom = isSpikePath
+    ? baseGeom
+    : presetCApplySpikeGeometryRetraceBypass(
+        c.mint,
+        c.pick.retraceFromPeakPct,
+        baseGeom,
+        nowMs,
+      );
   const reasons = [...geom];
 
   if (geom.length > 0) {

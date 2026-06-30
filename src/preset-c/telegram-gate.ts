@@ -12,7 +12,11 @@ import {
   readRetracePullbackChannelStore,
   type RetracePullbackChannelDedupeEntry,
 } from '../scripts/market-retrace-pullback-channel-dedupe.js';
-import { passesPresetCRetraceBand } from './filters.js';
+import {
+  PRESET_C_ELITE_SPIKE_ENABLED,
+  passesPresetCEliteSpikeDumpBand,
+  passesPresetCRetraceBand,
+} from './filters.js';
 import { isLiveOscarPresetCStrategyId } from './live-oscar-family.js';
 
 const DEFAULT_MAX_AGE_MS = 3_600_000;
@@ -148,7 +152,11 @@ export function presetCApplySpikeGeometryRetraceBypass(
   if (!geometryReasons.some((r) => r.includes('retrace'))) return geometryReasons;
 
   const spikePct = presetCFreshSpikeDumpPct(mint, nowMs);
-  if (spikePct == null || !passesPresetCRetraceBand(spikePct)) return geometryReasons;
+  if (spikePct == null) return geometryReasons;
+  const spikeBandOk = PRESET_C_ELITE_SPIKE_ENABLED
+    ? passesPresetCEliteSpikeDumpBand(spikePct)
+    : passesPresetCRetraceBand(spikePct);
+  if (!spikeBandOk) return geometryReasons;
 
   return geometryReasons.filter((r) => !r.includes('retrace'));
 }
