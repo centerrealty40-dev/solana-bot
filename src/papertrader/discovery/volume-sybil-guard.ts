@@ -38,6 +38,10 @@ export interface VolumeSybilEvalResult {
   features: VolumeSybilFeatures;
 }
 
+export interface VolumeSybilEvalOpts {
+  knownMint?: boolean;
+}
+
 const EMPTY_FEATURES: VolumeSybilFeatures = {
   lookbackHours: 0,
   recentMinutes: 0,
@@ -156,9 +160,11 @@ export function evaluateVolumeSybilGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: VolumeSybilFeatures,
+  opts?: VolumeSybilEvalOpts,
 ): VolumeSybilEvalResult {
   const lookbackHours = clampLookbackHours(cfg.volumeSybilLookbackHours);
   const recentMinutes = clampRecentMinutes(cfg.volumeSybilRecentMinutes, lookbackHours);
+  const knownMint = opts?.knownMint === true;
 
   if (!cfg.volumeSybilGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
@@ -197,7 +203,14 @@ export function evaluateVolumeSybilGuard(
   }
 
   const vol1h = Number(row.volume_1h ?? 0);
-  if (Number.isFinite(vol1h) && vol1h >= cfg.volumeSybilVol1hAliveExemptUsd) {
+  const vol5m = Number(row.volume_5m ?? 0);
+  const vol5mVol1h = vol1h > 0 && vol5m >= 0 ? vol5m / vol1h : null;
+  const vol1hAliveExempt =
+    Number.isFinite(vol1h) &&
+    vol1h >= cfg.volumeSybilVol1hAliveExemptUsd &&
+    (knownMint ||
+      (vol5mVol1h != null && vol5mVol1h >= cfg.volumeGuardNewMintMinVol5mToVol1hRatio));
+  if (vol1hAliveExempt) {
     return { blocked: false, blockedReasons, features };
   }
 

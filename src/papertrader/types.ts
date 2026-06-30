@@ -786,6 +786,7 @@ export interface SnapshotFeatures {
       sparseHoursBuffer: number;
       tailBlockEnabled: boolean;
       tailMaxPeakRatio: number;
+      newMintMinActiveHours?: number;
     };
   };
   /** 1.11.222: PG minute-bar coverage / gap metrics for volume guard trust. */

@@ -18,6 +18,45 @@ export function snapshotRefMarketCapUsd(row: SnapshotCandidateRow): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+export type DiscoveryMcapSource = 'pg_snapshot' | 'shyft_defi' | 'price_scaled';
+
+export interface DiscoveryRefMcap {
+  refMcapUsd: number;
+  source: DiscoveryMcapSource;
+  pgMcapUsd: number;
+}
+
+/** Resolve ref mcap for discovery gates with source attribution (audit / hard floor). */
+export function resolveDiscoveryRefMcap(
+  row: SnapshotCandidateRow,
+  opts?: { defiMcapUsd?: number | null; evalRow?: SnapshotCandidateRow },
+): DiscoveryRefMcap {
+  const pgMcapUsd = snapshotRefMarketCapUsd(row);
+  const evalMcap = opts?.evalRow != null ? snapshotRefMarketCapUsd(opts.evalRow) : pgMcapUsd;
+  const defi = opts?.defiMcapUsd;
+  if (defi != null && defi > 0) {
+    return { refMcapUsd: defi, source: 'shyft_defi', pgMcapUsd };
+  }
+  if (opts?.evalRow != null && evalMcap > 0 && evalMcap !== pgMcapUsd) {
+    return { refMcapUsd: evalMcap, source: 'price_scaled', pgMcapUsd };
+  }
+  return { refMcapUsd: pgMcapUsd, source: 'pg_snapshot', pgMcapUsd };
+}
+
+/** Hard discovery floor — applies regardless of Oscar mcap tier / lane. */
+export function appendDiscoveryHardMcapReasons(
+  cfg: PaperTraderConfig,
+  resolved: DiscoveryRefMcap,
+  reasons: string[],
+): void {
+  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  if (minMcap > 0 && resolved.refMcapUsd + 1e-9 < minMcap) {
+    reasons.push(
+      `discovery_hard_mcap=${Math.round(resolved.refMcapUsd)}<${minMcap}_src=${resolved.source}`,
+    );
+  }
+}
+
 /** Discovery min mcap gate (`PAPER_DISCOVERY_MIN_MARKET_CAP_USD`; 0 = off). */
 export function passesDiscoveryMinMarketCap(cfg: PaperTraderConfig, row: SnapshotCandidateRow): boolean {
   const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
