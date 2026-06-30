@@ -17,6 +17,7 @@ import { loadPaperTraderConfig } from '../config.js';
 import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
 import { applyWaveBPostTp1ScratchJournalLine } from './wave-b-post-tp1-scratch-reentry.js';
 import { reconcileE2OpenOnRestore } from './live-oscar-e2-open-reconcile.js';
+import { resolveOpenMapKey, runnerProbeOpenMapKey } from '../live-oscar-runner-probe.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -441,6 +442,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'variant_a_v2' ||
       lepi === 'variant_a_v3' ||
       lepi === 'scalp_wave_v1' ||
+      lepi === 'runner_probe_v1' ||
       lepi === 'preset_c_scalp_v1'
     ) {
       ot.liveExitPolicyId = lepi;
@@ -450,7 +452,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveOscarMcapTier = lomt;
     }
     const lotl = rawPayload.liveOscarTradeLane;
-    if (lotl === 'prod' || lotl === 'scalp_wave') ot.liveOscarTradeLane = lotl;
+    if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe') ot.liveOscarTradeLane = lotl;
+    const ps = rawPayload.positionSource;
+    if (ps === 'runner_probe') ot.positionSource = 'runner_probe';
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
     if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;
@@ -723,7 +727,7 @@ export function loadStore(storePath: string): RestoreState {
       }
       if (e.kind === 'open' && e.mint && typeof e.entryTs === 'number') {
         const ot = restoreOpenTradeFromJson(e as Partial<OpenTrade> & { mint: string });
-        if (ot) state.open.set(e.mint, ot);
+        if (ot) state.open.set(resolveOpenMapKey(ot), ot);
         const prev = state.lastEntryTsByMint.get(e.mint) || 0;
         if (e.entryTs > prev) state.lastEntryTsByMint.set(e.mint, e.entryTs);
       }
@@ -750,6 +754,7 @@ export function loadStore(storePath: string): RestoreState {
         }
         restoreLastExitMarketSnapshotFromCloseLine(state, e.mint, rawClose);
         state.open.delete(e.mint);
+        state.open.delete(runnerProbeOpenMapKey(e.mint));
       }
       if (
         e.kind === 'followup_snapshot' &&

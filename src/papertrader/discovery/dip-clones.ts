@@ -84,6 +84,14 @@ import {
   evaluateLiveOscarScalpWaveDiscovery,
   isLiveOscarScalpWaveLaneEnabled,
 } from '../live-oscar-scalp-wave.js';
+import {
+  evaluateLiveOscarRunnerProbeDiscovery,
+  isRunnerProbeLaneEnabled,
+  runnerProbeRunnerFetchConfig,
+  summariseRunnerPass,
+  type RunnerProbeDiscoveryEval,
+} from '../live-oscar-runner-probe.js';
+import { evaluateOscarIntelGateForRunnerProbe } from './oscar-intel-gate.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
@@ -146,8 +154,9 @@ export interface EvalDecision {
     | 'preset_c_spike';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
-  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot). */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave';
+  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe` parallel. */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe';
+  positionSource?: 'runner_probe';
 }
 
 export interface DiscoveryTickResult {
@@ -740,6 +749,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
   const evalRows = allowedSnapshotTagged.map((x) => x.row);
   const rowsForCtx = evalRows;
+  const runnerMapCfg = cfg.runnerModeEnabled
+    ? cfg
+    : isRunnerProbeLaneEnabled(cfg)
+      ? runnerProbeRunnerFetchConfig(cfg)
+      : { ...cfg, runnerModeEnabled: false };
   const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),
@@ -749,7 +763,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       fetchVolumeSybilContextMap(cfg, rowsForCtx),
       fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
       fetchGlobalPgCoverageState(cfg),
-      fetchRunnerContextMap(cfg, rowsForCtx),
+      fetchRunnerContextMap(runnerMapCfg, rowsForCtx),
     ]);
   /** Jupiter spot refresh only after PG dip context — not on raw SQL pool (1.11.244 regression fix). */
   const jupiterPriorityMintSet = buildPriorityDiscoveryMintSet(cfg);
@@ -1617,6 +1631,124 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath: scalpEval.entryPath,
         liveOscarMcapTier: 'scalp_wave',
         liveOscarTradeLane: 'scalp_wave',
+      });
+    }
+  }
+
+  if (isRunnerProbeLaneEnabled(cfg)) {
+    type ProbeRow = {
+      row: SnapshotCandidateRow;
+      lane: Lane;
+      ageMin: number;
+      eval: RunnerProbeDiscoveryEval;
+      guardPass: boolean;
+      reasons: string[];
+    };
+    const probeRows: ProbeRow[] = [];
+
+    for (const { row, lane } of allowedSnapshotTagged) {
+      const discoveryMcap = resolveDiscoveryRefMcap(row);
+      const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      const probeEval = evaluateLiveOscarRunnerProbeDiscovery({
+        cfg,
+        row,
+        lane,
+        refMcap: discoveryMcap.refMcapUsd,
+        ageMin,
+        dipCtx: dipMap.get(row.mint),
+        runnerCtx: runnerMap.get(row.mint),
+      });
+      let guardPass = probeEval.pass;
+      const reasons = [...probeEval.reasons];
+
+      if (guardPass) {
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        if (cfg.volumeSybilGuardEnabled) {
+          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
+            knownMint,
+          });
+          if (sybilRes.blocked) {
+            guardPass = false;
+            reasons.push(...sybilRes.blockedReasons);
+          }
+        }
+        if (guardPass && cfg.volumeEphemeralGuardEnabled) {
+          const ephemeralRes = evaluateVolumeEphemeralGuard(
+            cfg,
+            row,
+            volumeEphemeralMap.get(row.mint),
+            { knownMint },
+          );
+          if (ephemeralRes.blocked) {
+            guardPass = false;
+            reasons.push(...ephemeralRes.blockedReasons);
+          }
+        }
+        if (guardPass) {
+          const ig = await evaluateOscarIntelGateForRunnerProbe(row.mint, cfg, ageMin);
+          if (ig.required && ig.blocked) {
+            guardPass = false;
+            reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
+          } else if (ig.required && ig.wouldBlock && ig.mode === 'shadow') {
+            reasons.push('runner_probe_intel_shadow_would_block');
+          }
+          if (ig.required && !ig.ok && ig.mode === 'gate') {
+            guardPass = false;
+          }
+        }
+      }
+
+      probeRows.push({ row, lane, ageMin, eval: probeEval, guardPass, reasons });
+    }
+
+    probeRows.sort((a, b) => (b.eval.rankScore ?? 0) - (a.eval.rankScore ?? 0));
+    let rankSlots = cfg.runnerProbeMaxConcurrent;
+
+    for (const pr of probeRows) {
+      evaluated++;
+      let pass = pr.guardPass;
+      const outReasons = [...pr.reasons];
+      if (pass) {
+        if (rankSlots <= 0) {
+          pass = false;
+          outReasons.push('runner_probe_rank_crowded_out');
+        } else {
+          rankSlots -= 1;
+        }
+      }
+      if (pass) passed++;
+      const baseFeatures = buildFeatures(
+        pr.row,
+        null,
+        null,
+        null,
+        cfg,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      if (pr.eval.runnerFeatures) {
+        Object.assign(baseFeatures, {
+          runner_probe: {
+            rankScore: pr.eval.rankScore,
+            summary: summariseRunnerPass(pr.eval.runnerFeatures),
+          },
+        });
+      }
+      decisions.push({
+        lane: pr.lane,
+        source: pr.row.source,
+        mint: pr.row.mint,
+        symbol: pr.row.symbol,
+        ageMin: pr.ageMin,
+        pass,
+        reasons: outReasons,
+        features: baseFeatures,
+        whale: null,
+        entryPath: pr.eval.entryPath,
+        liveOscarTradeLane: 'runner_probe',
+        positionSource: 'runner_probe',
       });
     }
   }

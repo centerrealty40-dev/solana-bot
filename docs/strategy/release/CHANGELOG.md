@@ -80,6 +80,58 @@
 
 ---
 
+## [1.11.543] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.543`
+
+### Live Oscar — runner_probe lane (fresh runners 12–36h)
+
+- **`PAPER_RUNNER_PROBE_ENABLED`** (default **0**): параллельный lane `positionSource: runner_probe` — **не блокирует** prod staged Oscar на том же mint (composite open-map key `mint::runner_probe`).
+- **Discovery:** strict runner guards (vol1h/5m, bs, liq, anti-stale) + dip entry; sybil/ephemeral/wallet-intel BLOCK; age **720–2160 min** (12–36h); ranking `score = vol1hUsd × max(velocity, 1)`.
+- **Sizing:** one-shot **$500**, max **2** open, max exposure **$1000**; exit `runner_probe_v1` (TP +12%, kill −15%, timestop 6h).
+- **Intel:** `oscar-intel-gate.ts` + `LIVE_OSCAR_INTEL_*` (default OFF); 12–24h band requires intel when `PAPER_RUNNER_PROBE_12H_INTEL_REQUIRED=1`.
+- **Tests:** `tests/live-oscar-runner-probe.test.ts`.
+
+**Prod enable (after shadow):** `PAPER_RUNNER_PROBE_ENABLED=1`, `LIVE_OSCAR_INTEL_MODE=shadow` → 48h → `gate`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+**Откат:** `PAPER_RUNNER_PROBE_ENABLED=0` + `LIVE_OSCAR_INTEL_MODE=off` → reload live-oscar; или `git checkout sa-alpha-1.11.542` → NORM deploy.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
+## [1.11.542] — 2026-07-01
+
+**Тег:** *(doc-only, tag optional)*
+
+### Live Oscar — Coin Intelligence spec §4 lifecycle scope
+
+- **§4 Scope by coin lifecycle:** матрица age band (0–12h … mature) × intel features; early buyers primary для **12–36h runners**, не для week+ large mcap; mature dip buys → cluster dump exit + holder concentration.
+- **Age relaxation policy:** `PAPER_POST_MIN_AGE_MIN` 2160→1440/720 только при intel composite green (no BLOCK_TRADE, no sybil/ephemeral); **7d shadow** на 12h/24h lane до prod; kill `LIVE_OSCAR_INTEL_AGE_RELAX_ENABLED=0`.
+- Спека v1.1: [`LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md`](../live-oscar/LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md).
+
+**Откат:** doc-only — `git checkout sa-alpha-1.11.541 -- docs/strategy/live-oscar/LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
+## [1.11.541] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.541`
+
+### Live Oscar — Coin Intelligence spec (superpowers roadmap)
+
+- **Normative spec:** [`docs/strategy/live-oscar/LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md`](../live-oscar/LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md) — mint-scoped intel overlay (L0–L4), rollout shadow→gate, Postgres strategy, collector safety contract, copy-trader fusion, P0–P3 roadmap.
+- **Index:** [`docs/strategy/live-oscar/README.md`](../live-oscar/README.md).
+- **Рекомендованный MVP:** wallet-intel mint gate (port `smart-lottery-intel` pattern), все флаги default-OFF; код не в этом релизе.
+
+**Откат:** doc-only — `git checkout sa-alpha-1.11.540 -- docs/strategy/live-oscar/ docs/strategy/release/VERSION docs/strategy/release/CHANGELOG.md`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.540] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.540`
