@@ -718,8 +718,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS: '3',
-        /** 1.11.543 — runner_probe lane OFF (fresh runners 12–36h, 2×$500, intel gate). */
-        PAPER_RUNNER_PROBE_ENABLED: '0',
+        /** 1.11.543 — runner_probe lane ON (fresh runners 12–36h, 2×$500); intel shadow 48h before gate. */
+        PAPER_RUNNER_PROBE_ENABLED: '1',
         PAPER_RUNNER_PROBE_MIN_AGE_MIN: '720',
         PAPER_RUNNER_PROBE_MAX_AGE_MIN: '2160',
         PAPER_RUNNER_PROBE_12H_INTEL_REQUIRED: '1',
@@ -746,10 +746,10 @@ const PM2_APPS = [
         PAPER_RUNNER_PROBE_TP_PCT: '0.12',
         PAPER_RUNNER_PROBE_KILL_PCT: '0.15',
         PAPER_RUNNER_PROBE_TIME_STOP_HOURS: '6',
-        /** Coin intelligence overlay — default OFF; shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
-        LIVE_OSCAR_INTEL_ENABLED: '0',
-        LIVE_OSCAR_INTEL_MODE: 'off',
-        LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED: '0',
+        /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
+        LIVE_OSCAR_INTEL_ENABLED: '1',
+        LIVE_OSCAR_INTEL_MODE: 'shadow',
+        LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED: '1',
         LIVE_OSCAR_INTEL_FAIL_CLOSED: '0',
         LIVE_OSCAR_INTEL_REQUIRE_SWAP_COVERAGE: '0',
         LIVE_OSCAR_INTEL_EARLY_BUY_WINDOW_SEC: '180',
