@@ -30,6 +30,11 @@ export interface VolumeEphemeralEvalResult {
   features: VolumeEphemeralFeatures;
 }
 
+export interface VolumeEphemeralEvalOpts {
+  /** Mint with prior bot trade in lookback — relaxed tail / wash rules. */
+  knownMint?: boolean;
+}
+
 const EMPTY_FEATURES: VolumeEphemeralFeatures = {
   lookbackHours: 0,
   hoursWithData: 0,
@@ -46,6 +51,13 @@ function sqlQuote(value: string): string {
 
 function clampLookbackHours(h: number): number {
   return Math.max(12, Math.min(48, Math.round(h)));
+}
+
+function newMintVol5mVol1hRatio(row: SnapshotCandidateRow): number | null {
+  const vol1h = Number(row.volume_1h ?? 0);
+  const vol5m = Number(row.volume_5m ?? 0);
+  if (!(vol1h > 0) || !(vol5m >= 0)) return null;
+  return +(vol5m / vol1h).toFixed(4);
 }
 
 /**
@@ -120,8 +132,10 @@ export function evaluateVolumeEphemeralGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: VolumeEphemeralFeatures,
+  opts?: VolumeEphemeralEvalOpts,
 ): VolumeEphemeralEvalResult {
   const lookbackHours = clampLookbackHours(cfg.volumeEphemeralLookbackHours);
+  const knownMint = opts?.knownMint === true;
 
   if (!cfg.volumeEphemeralGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
@@ -146,16 +160,37 @@ export function evaluateVolumeEphemeralGuard(
   if (!features.coverageOk) {
     return { blocked: false, blockedReasons, features };
   }
+
+  const vol1h = Number(row.volume_1h ?? 0);
+  const minActiveHours = cfg.volumeEphemeralNewMintMinActiveHours;
+  const peakSignificant =
+    peak != null && peak >= cfg.volumeEphemeralMinPeakVol5mUsd;
+
+  /** New mints: require sustained hourly volume before first entry. */
+  if (
+    !knownMint &&
+    minActiveHours > 0 &&
+    features.activeHours < minActiveHours
+  ) {
+    const inflatedVol1h =
+      Number.isFinite(vol1h) && vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd;
+    if (inflatedVol1h || peakSignificant || features.activeHours > 0) {
+      blockedReasons.push(
+        `volume_ephemeral:new_mint_min_active_hours=${features.activeHours}/${minActiveHours}h_in_${lookbackHours}h`,
+      );
+      return { blocked: true, blockedReasons, features };
+    }
+  }
+
   if (peak == null || features.activeHours <= 0) {
     return { blocked: false, blockedReasons, features };
   }
 
   const narrowWindow = features.activeHours <= cfg.volumeEphemeralMaxActiveHours;
-  const significantPeak = peak >= cfg.volumeEphemeralMinPeakVol5mUsd;
   const sparseHistory =
     features.hoursWithData <= cfg.volumeEphemeralMaxActiveHours + cfg.volumeEphemeralSparseHoursBuffer;
 
-  if (narrowWindow && significantPeak && sparseHistory) {
+  if (narrowWindow && peakSignificant && sparseHistory) {
     blockedReasons.push(
       `volume_ephemeral:active_hours=${features.activeHours}/${features.hoursWithData}h_in_${lookbackHours}h_peak=$${Math.round(peak)}<=${cfg.volumeEphemeralMaxActiveHours}h_window`,
     );
@@ -165,12 +200,40 @@ export function evaluateVolumeEphemeralGuard(
   if (
     cfg.volumeEphemeralTailBlockEnabled &&
     narrowWindow &&
-    significantPeak &&
+    peakSignificant &&
     peakToCurrent != null &&
     peakToCurrent <= cfg.volumeEphemeralTailMaxPeakRatio
   ) {
     blockedReasons.push(
       `volume_ephemeral:tail_vol5m=${Math.round(currentVol5m ?? 0)}/${Math.round(peak)}=${(peakToCurrent * 100).toFixed(1)}%<=${(cfg.volumeEphemeralTailMaxPeakRatio * 100).toFixed(0)}%_of_peak`,
+    );
+  }
+
+  /** New mints: do not age out tail block when sustain threshold not met. */
+  if (
+    cfg.volumeEphemeralTailBlockEnabled &&
+    !knownMint &&
+    peakSignificant &&
+    peakToCurrent != null &&
+    peakToCurrent <= cfg.volumeEphemeralTailMaxPeakRatio &&
+    (minActiveHours <= 0 || features.activeHours < minActiveHours) &&
+    !blockedReasons.some((r) => r.includes('tail_vol5m'))
+  ) {
+    blockedReasons.push(
+      `volume_ephemeral:new_mint_tail_vol5m=${Math.round(currentVol5m ?? 0)}/${Math.round(peak)}=${(peakToCurrent * 100).toFixed(1)}%<=${(cfg.volumeEphemeralTailMaxPeakRatio * 100).toFixed(0)}%_of_peak`,
+    );
+  }
+
+  const vol5mVol1h = newMintVol5mVol1hRatio(row);
+  if (
+    !knownMint &&
+    Number.isFinite(vol1h) &&
+    vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
+    vol5mVol1h != null &&
+    vol5mVol1h < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
+  ) {
+    blockedReasons.push(
+      `volume_ephemeral:new_mint_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol1h=$${Math.round(vol1h)}`,
     );
   }
 

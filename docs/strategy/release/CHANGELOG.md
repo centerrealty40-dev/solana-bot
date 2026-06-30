@@ -94,34 +94,23 @@
 
 ---
 
-## [1.11.532] — 2026-06-30
+## [1.11.533] — 2026-06-30
 
-**Тег:** `sa-alpha-1.11.532`
+**Тег:** `sa-alpha-1.11.533`
 
-### Live Oscar — MUSHU permanent denylist
+### live-oscar: NEW mint volume guards + hard mcap + MUSHU denylist
 
-- **MUSHU** (`5Jr9hGmJ…Wpump`) в `live-oscar-permanent-denylist.seed.txt` — ручной permanent block повторных входов.
+**Проблема:** новые mint проходили wash (мёртвый vol5m, раздутая vol1h): ephemeral aging-out, sybil vol1h-exempt, stale PG mcap.
 
-**Откат:** убрать mint из seed; `pm2 reload live-oscar --update-env`.
-
-Без cross-product изменений.
-
----
-
-## [1.11.532] — 2026-06-30
-
-**Тег:** `sa-alpha-1.11.532`
-
-### live-oscar: stricter volume guards for NEW mints + MUSHU ban
-
-**Проблема:** новые mint проходили wash-паттерн (мёртвый vol5m, раздутая vol1h): ephemeral tail «старел» при activeHours>4; sybil vol1h-exempt; stale PG mcap ($4.6M vs реальные ~$800k).
-
-- **`known-mint.ts`:** `isKnownMint()` (14d lookback) для строгих volume guards; PG gap bypass (#302) без изменений.
-- **Ephemeral / sybil:** для NEW mint — tail block без aging-out; vol1h exempt только при живом vol5m или vol5m/vol1h ≥ 8%.
-- **Discovery hard mcap:** `discovery_hard_mcap=…_src=pg_snapshot|shyft_defi|price_scaled`; price-primary масштабирует mcap.
+- **`known-mint.ts`:** `isKnownMint()` (14d) — строже volume guards; PG gap bypass (#302) без изменений.
+- **Ephemeral:** min 10 active hours для NEW mint; tail block без aging-out; vol5m/vol1h ratio ≥ 8%.
+- **Sybil:** vol1h exempt для NEW mint только при живом vol5m или ratio.
+- **Discovery hard mcap:** `discovery_hard_mcap=…_src=…`; price-primary масштабирует mcap.
 - **Denylist seed:** MUSHU `5Jr9hGmJ…Wpump`.
 
-**Откат:** `git checkout sa-alpha-1.11.531 -- src/papertrader/discovery/known-mint.ts src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/discovery/volume-sybil-guard.ts src/papertrader/discovery/dip-clones.ts src/papertrader/filters/snapshot-filter.ts src/papertrader/config.ts data/live/live-oscar-permanent-denylist.seed.txt ecosystem.config.cjs tests/volume-* tests/discovery-hard-mcap.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+**Откат:** `git checkout sa-alpha-1.11.531 -- src/papertrader/discovery/ known-mint.ts src/papertrader/filters/snapshot-filter.ts ecosystem.config.cjs data/live/live-oscar-permanent-denylist.seed.txt docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
 
 ---
 

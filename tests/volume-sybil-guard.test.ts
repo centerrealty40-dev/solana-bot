@@ -40,6 +40,8 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     volumeSybilDeadVol5mUsd: 2_500,
     volumeSybilMinDeadFraction: 0.55,
     volumeSybilVol1hAliveExemptUsd: 36_000,
+    volumeGuardNewMintMinVol5mToVol1hRatio: 0.08,
+    volumeGuardNewMintVol1hWashMinUsd: 36_000,
     ...over,
   } as PaperTraderConfig;
 }
@@ -158,6 +160,21 @@ describe('evaluateVolumeSybilGuard', () => {
       }),
     );
     expect(r.features.effectiveRecentVol5mUsd).toBe(12_000);
+    expect(r.blocked).toBe(true);
+  });
+
+  it('new mint: high vol1h with dead vol5m does not get alive exempt', () => {
+    const r = evaluateVolumeSybilGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 2_800, volume_1h: 90_000 }),
+      ctx({
+        baselineP10Vol5mUsd: 800,
+        baselineP50Vol5mUsd: 2_000,
+        baselineDeadFraction: 0.67,
+        recentMaxVol5mUsd: 18_000,
+      }),
+      { knownMint: false },
+    );
     expect(r.blocked).toBe(true);
   });
 });

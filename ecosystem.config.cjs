@@ -840,6 +840,10 @@ const PM2_APPS = [
         PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER: '2',
         PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED: '1',
         PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO: '0.3',
+        /** New mints: min active hours + wash vol ratio (MUSHU RCA 2026-06-30). */
+        PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS: '10',
+        PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO: '0.08',
+        PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD: '36000',
         /**
          * PG data coverage (1.11.222): block near-entry when PG minute history is gapped/thin;
          * ADVICE `live_oscar_pg_data_coverage` in Telegram when skip due to incomplete data.

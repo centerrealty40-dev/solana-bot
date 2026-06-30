@@ -13,6 +13,8 @@ import {
   passesDiscoveryMinMarketCap,
   passesDiscoveryMaxMarketCap,
   evaluateSnapshotPriorityTier,
+  resolveDiscoveryRefMcap,
+  appendDiscoveryHardMcapReasons,
 } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
@@ -70,7 +72,6 @@ import {
   buildPriorityDiscoveryMintSet,
   getPriorityOpenMints,
 } from './priority-discovery-registry.js';
-import { snapshotRefMarketCapUsd } from '../filters/snapshot-filter.js';
 import {
   isLiveOscarMcapTieringEnabled,
   liveOscarBelowMcapThresholdUsd,
@@ -93,6 +94,12 @@ import {
   evaluateRunner,
   type RunnerWindowFeatures,
 } from './runner-mode.js';
+import {
+  buildKnownMintTradeHistory,
+  isKnownMint,
+  isPgCoverageKnownMint as isPgCoverageKnownMintFromHistory,
+} from './known-mint.js';
+import { scaleMcapWithPrice } from '../pricing/mcap-snapshot.js';
 
 function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: ReadonlySet<string>): void {
   if (cfg.strategyId !== 'live-oscar') return;
@@ -782,6 +789,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const liveHoldersForGate =
     cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
+  const knownMintHistory = buildKnownMintTradeHistory({
+    lastEntryTsByMint: lastEntryTsByMintMap,
+    lastPostExitBuyCooldownTsByMint: lastPostExitBuyCooldownTsByMintMap,
+    lastRealExitMarketSnapshotByMint: lastRealExitMarketSnapshotByMintMap,
+    lastExitMarketSnapshotByMint: lastExitMarketSnapshotByMintMap,
+  });
+
   /** Throttled deep-аудит для whitelist + priority tier. */
   const wlForThrottle = cfg.discoveryDeepAuditWhitelistMintSet;
   const throttleAuditMints = new Set<string>([...priorityMintSet]);
@@ -834,38 +848,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
     }
 
-    const refMcap =
-      defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0
-        ? defiMcap.mcapUsd
-        : snapshotRefMarketCapUsd(row);
-    const oscarTier: LiveOscarMcapTier = isLiveOscarMcapTieringEnabled(cfg)
-      ? resolveLiveOscarMcapTier(cfg, refMcap)
-      : 'prod';
-    if (oscarTier === 'below') {
-      const belowReasons = [`mcap<${liveOscarBelowMcapThresholdUsd(cfg)}`];
-      decisions.push({
-        lane,
-        source: row.source,
-        mint: row.mint,
-        symbol: row.symbol,
-        ageMin: +Number(row.age_min ?? 0).toFixed(1),
-        pass: false,
-        reasons: belowReasons,
-        features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
-        whale: null,
-      });
-      continue;
-    }
-    const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
-    const journalTier: LiveOscarTradeTier =
-      oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
-
     /**
      * Stage 1.2 (1.11.468) + 1.3 (1.11.469): build `evalRow` — a clone of `row` with the freshest
      * Shyft stream `price_usd` (1.2) and/or DeFi `market_cap_usd` / `liquidity_usd` (1.3) overrides
-     * folded in — used by the snapshot/dip gates + reported features. **Default OFF** for both stages:
-     * when no override applies `evalRow === row` (same reference), so the gates are byte-for-byte
-     * identical to the current PG path.
+     * folded in — used by the snapshot/dip gates + reported features.
      */
     const evalOverrides: Partial<SnapshotCandidateRow> = {};
     if (
@@ -903,7 +889,65 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
     if (defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0) evalOverrides.market_cap_usd = defiMcap.mcapUsd;
     if (defiMcap?.liqUsd != null && defiMcap.liqUsd > 0) evalOverrides.liquidity_usd = defiMcap.liqUsd;
+    if (
+      evalOverrides.price_usd != null &&
+      evalOverrides.market_cap_usd == null &&
+      row.price_usd > 0 &&
+      row.market_cap_usd != null &&
+      Number(row.market_cap_usd) > 0
+    ) {
+      const scaled = scaleMcapWithPrice(
+        Number(row.price_usd),
+        Number(evalOverrides.price_usd),
+        Number(row.market_cap_usd),
+      );
+      if (scaled != null && scaled > 0) evalOverrides.market_cap_usd = scaled;
+    }
     const evalRow = Object.keys(evalOverrides).length > 0 ? { ...row, ...evalOverrides } : row;
+
+    const discoveryMcap = resolveDiscoveryRefMcap(row, {
+      defiMcapUsd: defiMcap?.mcapUsd,
+      evalRow,
+    });
+    const hardMcapReasons: string[] = [];
+    appendDiscoveryHardMcapReasons(cfg, discoveryMcap, hardMcapReasons);
+    if (hardMcapReasons.length > 0) {
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin: +Number(row.age_min ?? 0).toFixed(1),
+        pass: false,
+        reasons: hardMcapReasons,
+        features: buildFeatures(evalRow, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        whale: null,
+      });
+      continue;
+    }
+
+    const refMcap = discoveryMcap.refMcapUsd;
+    const oscarTier: LiveOscarMcapTier = isLiveOscarMcapTieringEnabled(cfg)
+      ? resolveLiveOscarMcapTier(cfg, refMcap)
+      : 'prod';
+    if (oscarTier === 'below') {
+      const belowReasons = [`mcap<${liveOscarBelowMcapThresholdUsd(cfg)}`];
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin: +Number(row.age_min ?? 0).toFixed(1),
+        pass: false,
+        reasons: belowReasons,
+        features: buildFeatures(evalRow, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        whale: null,
+      });
+      continue;
+    }
+    const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
+    const journalTier: LiveOscarTradeTier =
+      oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
 
     const v = priorityMintSet.has(row.mint)
       ? evaluateSnapshotPriorityTier(tierCfg, evalRow, lane)
@@ -1056,7 +1100,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
-        const knownMint = isPgCoverageKnownMint(cfg, row.mint);
+        const knownMint = isPgCoverageKnownMint(cfg, row.mint, knownMintHistory);
         const evalRes = evaluatePgDataCoverageGuard(
           cfg,
           row,
@@ -1072,7 +1116,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeSybilGuardEnabled) {
-        const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint));
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
+          knownMint,
+        });
         volumeSybilFeatures = evalRes.features;
         if (evalRes.blocked) {
           dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
@@ -1080,7 +1127,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
-        const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint));
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
+          knownMint,
+        });
         volumeEphemeralFeatures = evalRes.features;
         if (evalRes.blocked) {
           dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
@@ -1345,6 +1395,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           sparseHoursBuffer: cfg.volumeEphemeralSparseHoursBuffer,
           tailBlockEnabled: cfg.volumeEphemeralTailBlockEnabled,
           tailMaxPeakRatio: cfg.volumeEphemeralTailMaxPeakRatio,
+          newMintMinActiveHours: cfg.volumeEphemeralNewMintMinActiveHours,
         },
       };
     }
@@ -1496,26 +1547,71 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
   if (isLiveOscarScalpWaveLaneEnabled(cfg)) {
     for (const { row, lane } of allowedSnapshotTagged) {
-      const refMcap = snapshotRefMarketCapUsd(row);
+      const discoveryMcap = resolveDiscoveryRefMcap(row);
+      const hardMcapReasons: string[] = [];
+      appendDiscoveryHardMcapReasons(cfg, discoveryMcap, hardMcapReasons);
       const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      if (hardMcapReasons.length > 0) {
+        evaluated++;
+        decisions.push({
+          lane,
+          source: row.source,
+          mint: row.mint,
+          symbol: row.symbol,
+          ageMin,
+          pass: false,
+          reasons: hardMcapReasons,
+          features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+          whale: null,
+          liveOscarMcapTier: 'scalp_wave',
+          liveOscarTradeLane: 'scalp_wave',
+        });
+        continue;
+      }
       const scalpEval = evaluateLiveOscarScalpWaveDiscovery({
         cfg,
         row,
         lane,
-        refMcap,
+        refMcap: discoveryMcap.refMcapUsd,
         ageMin,
         dipCtx: dipMap.get(row.mint),
       });
+      let scalpPass = scalpEval.pass;
+      const scalpReasons = [...scalpEval.reasons];
+      if (scalpPass) {
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        if (cfg.volumeSybilGuardEnabled) {
+          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
+            knownMint,
+          });
+          if (sybilRes.blocked) {
+            scalpPass = false;
+            scalpReasons.push(...sybilRes.blockedReasons);
+          }
+        }
+        if (scalpPass && cfg.volumeEphemeralGuardEnabled) {
+          const ephemeralRes = evaluateVolumeEphemeralGuard(
+            cfg,
+            row,
+            volumeEphemeralMap.get(row.mint),
+            { knownMint },
+          );
+          if (ephemeralRes.blocked) {
+            scalpPass = false;
+            scalpReasons.push(...ephemeralRes.blockedReasons);
+          }
+        }
+      }
       evaluated++;
-      if (scalpEval.pass) passed++;
+      if (scalpPass) passed++;
       decisions.push({
         lane,
         source: row.source,
         mint: row.mint,
         symbol: row.symbol,
         ageMin,
-        pass: scalpEval.pass,
-        reasons: scalpEval.pass ? scalpEval.reasons : scalpEval.reasons,
+        pass: scalpPass,
+        reasons: scalpReasons,
         features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
         whale: null,
         entryPath: scalpEval.entryPath,
@@ -1544,17 +1640,15 @@ export function recordEntryTs(mint: string, ts: number): void {
 export function isPgCoverageKnownMint(
   cfg: PaperTraderConfig,
   mint: string,
+  history = buildKnownMintTradeHistory({
+    lastEntryTsByMint: lastEntryTsByMintMap,
+    lastPostExitBuyCooldownTsByMint: lastPostExitBuyCooldownTsByMintMap,
+    lastRealExitMarketSnapshotByMint: lastRealExitMarketSnapshotByMintMap,
+    lastExitMarketSnapshotByMint: lastExitMarketSnapshotByMintMap,
+  }),
   nowMs = Date.now(),
 ): boolean {
-  if (!cfg.pgDataCoverageKnownMintGapBypass) return false;
-  const days = cfg.pgDataCoverageKnownMintLookbackDays;
-  if (!(days > 0)) return false;
-  const cutoff = nowMs - days * 24 * 3_600_000;
-  const tsCandidates = [
-    lastEntryTsByMintMap.get(mint) ?? 0,
-    lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0,
-    lastRealExitMarketSnapshotByMintMap.get(mint)?.exitTs ?? 0,
-    lastExitMarketSnapshotByMintMap.get(mint)?.exitTs ?? 0,
-  ];
-  return tsCandidates.some((ts) => ts >= cutoff);
+  return isPgCoverageKnownMintFromHistory(cfg, mint, history, nowMs);
 }
+
+export { isKnownMint } from './known-mint.js';

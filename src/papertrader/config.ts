@@ -614,6 +614,13 @@ const ConfigSchema = z.object({
   volumeSybilMinDeadFraction: z.coerce.number().min(0).max(1).default(0.55),
   /** Skip sybil block when snapshot vol1h >= this (alive market, not wash dead→spike). */
   volumeSybilVol1hAliveExemptUsd: z.coerce.number().nonnegative().default(36_000),
+  /**
+   * New mints (no bot trade in lookback): min vol5m/vol1h ratio to trust high vol1h
+   * (blocks wash: dead vol5m + inflated vol1h). Shared by sybil + ephemeral guards.
+   */
+  volumeGuardNewMintMinVol5mToVol1hRatio: z.coerce.number().min(0.01).max(1).default(0.08),
+  /** New mint wash check: apply ratio gate when snapshot vol1h >= this (USD). */
+  volumeGuardNewMintVol1hWashMinUsd: z.coerce.number().nonnegative().default(36_000),
 
   /**
    * Volume Ephemeral guard (1.11.219): block when hourly vol5m is concentrated in a
@@ -636,6 +643,11 @@ const ConfigSchema = z.object({
   volumeEphemeralTailBlockEnabled: z.boolean().default(true),
   /** Tail block when current/peak <= this ratio (0–1). */
   volumeEphemeralTailMaxPeakRatio: z.coerce.number().min(0.01).max(1).default(0.3),
+  /**
+   * New mints (no bot trade in lookback): min active hours with vol5m before entry.
+   * Blocks spike-only wash (e.g. MUSHU: 2h burst + inflated vol1h, 10h dead).
+   */
+  volumeEphemeralNewMintMinActiveHours: z.coerce.number().int().min(0).max(24).default(10),
 
   /**
    * PG data coverage guard (1.11.222): block when minute-bar history is gapped or
@@ -1416,6 +1428,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeSybilDeadVol5mUsd: process.env.PAPER_VOLUME_SYBIL_DEAD_VOL5M_USD,
     volumeSybilMinDeadFraction: process.env.PAPER_VOLUME_SYBIL_MIN_DEAD_FRACTION,
     volumeSybilVol1hAliveExemptUsd: process.env.PAPER_VOLUME_SYBIL_VOL1H_ALIVE_EXEMPT_USD,
+    volumeGuardNewMintMinVol5mToVol1hRatio: process.env.PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO,
+    volumeGuardNewMintVol1hWashMinUsd: process.env.PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD,
     volumeEphemeralGuardEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED, false),
     volumeEphemeralLookbackHours: process.env.PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS,
     volumeEphemeralMinActiveHourVol5mUsd: process.env.PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD,
@@ -1425,6 +1439,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralSparseHoursBuffer: process.env.PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER,
     volumeEphemeralTailBlockEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED, true),
     volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
+    volumeEphemeralNewMintMinActiveHours: process.env.PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS,
     pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
     pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
     pgDataCoverageRecentHours: process.env.PAPER_PG_DATA_COVERAGE_RECENT_HOURS,
