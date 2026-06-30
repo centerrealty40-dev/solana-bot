@@ -78,6 +78,23 @@
 
 ---
 
+## [1.11.535] — 2026-06-30
+
+**Тег:** `sa-alpha-1.11.535`
+
+### Live Oscar — discovery max mcap $50M → $200M
+
+**Проблема:** ANSEM и другие крупные caps блокировались `PAPER_DISCOVERY_MAX_MARKET_CAP_USD=50000000` в discovery pool / eval.
+
+- **`live-oscar` PM2:** `PAPER_DISCOVERY_MAX_MARKET_CAP_USD`: `50000000` → **`200000000`** ($200M ceiling).
+- Scalp-wave (`PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_MCAP_USD`), runner, preset-c — без изменений.
+
+**Откат:** `PAPER_DISCOVERY_MAX_MARKET_CAP_USD=50000000`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений.
+
+---
+
 ## [1.11.534] — 2026-06-30
 
 **Тег:** `sa-alpha-1.11.534`
