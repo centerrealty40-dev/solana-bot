@@ -1,89 +1,77 @@
-import { fetchHlClearinghousePositions } from '../twap/hyperliquid-meta.js';
+import type { HlTwapExchangeClient } from '../twap/live/exchange-client.js';
+import type { OscarUniverseCoin } from './universe.js';
 import type { HlOscarPerpConfig } from './config.js';
 import { appendOscarJournal } from './journal.js';
-import type { OscarOpenPosition } from './position-types.js';
+import {
+  countOpensByMode,
+  loadCoinsFromJournalHistory,
+  reconcileWithTracker,
+  type OscarReconcileResult,
+} from '../oscar-reconcile-core.js';
 import type { OscarTraderState } from './trader.js';
 
-function closePhantomJournalOpen(args: {
-  cfg: HlOscarPerpConfig;
-  state: OscarTraderState;
-  pos: OscarOpenPosition;
-  reason: 'PAPER_STALE' | 'EXCHANGE_ORPHAN';
-}): void {
-  const { cfg, state, pos, reason } = args;
-  const holdHours = (Date.now() - pos.entryTs) / 3_600_000;
-  appendOscarJournal(cfg.journalPath, {
-    kind: 'close',
-    ts: Date.now(),
-    id: pos.id,
-    coin: pos.coin,
-    reason,
-    exitPx: pos.avgEntryPx,
-    pnlUsd: 0,
-    pnlPct: 0,
-    holdHours,
-    mode: 'live',
-  });
-  state.opens.delete(pos.id);
-  state.openByCoin.delete(pos.coin);
-  state.openModes.delete(pos.id);
+export { countOpensByMode as countOscarOpensByMode };
+
+function markPxMap(universe: OscarUniverseCoin[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const c of universe) m.set(c.coin, c.midPx);
+  return m;
 }
 
-/**
- * On live startup: drop paper journal opens and journal-only live opens with no HL position.
- * Prevents dashboard / trader from treating dry_run fills as real exposure.
- */
+/** Startup + every-tick reconcile: HL clearinghouse is ground truth. */
+export async function reconcileOscarWithHl(args: {
+  cfg: HlOscarPerpConfig;
+  client: HlTwapExchangeClient;
+  state: OscarTraderState;
+  universe: OscarUniverseCoin[];
+  purgePaperOpens?: boolean;
+}): Promise<OscarReconcileResult> {
+  const { cfg, client, state, universe } = args;
+  return reconcileWithTracker({
+    logPrefix: '[hl-oscar-perp]',
+    mode: cfg.mode,
+    masterAddress: cfg.masterAddress,
+    client,
+    state,
+    universeCoins: new Set(universe.map((c) => c.coin)),
+    journalCoins: loadCoinsFromJournalHistory(cfg.journalPath),
+    leverage: cfg.leverage,
+    markPxByCoin: markPxMap(universe),
+    appendJournal: (row) => appendOscarJournal(cfg.journalPath, row as never),
+    purgePaperOpens: args.purgePaperOpens,
+  });
+}
+
+/** @deprecated use reconcileOscarWithHl — kept for tests */
 export async function reconcileOscarOpensForLiveMode(args: {
   cfg: HlOscarPerpConfig;
   state: OscarTraderState;
+  client?: HlTwapExchangeClient;
+  universe?: OscarUniverseCoin[];
 }): Promise<{ paperClosed: number; exchangeOrphans: number }> {
-  const { cfg, state } = args;
-  if (cfg.mode !== 'live') return { paperClosed: 0, exchangeOrphans: 0 };
-
-  let paperClosed = 0;
-  for (const [id, pos] of [...state.opens.entries()]) {
-    if (state.openModes.get(id) !== 'dry_run') continue;
-    closePhantomJournalOpen({ cfg, state, pos, reason: 'PAPER_STALE' });
-    paperClosed += 1;
-    console.warn(
-      `[hl-oscar-perp:reconcile] closed paper journal open ${pos.coin} (${id.slice(0, 8)}) — not on exchange`,
-    );
+  if (args.client && args.universe) {
+    const r = await reconcileOscarWithHl({
+      cfg: args.cfg,
+      client: args.client,
+      state: args.state,
+      universe: args.universe,
+      purgePaperOpens: true,
+    });
+    return { paperClosed: r.paperClosed, exchangeOrphans: r.exchangeOrphans };
   }
-
-  let exchangeOrphans = 0;
-  if (state.opens.size > 0) {
-    const onExchange = new Set(
-      (await fetchHlClearinghousePositions(cfg.masterAddress)).map((p) => p.coin),
-    );
-    for (const [id, pos] of [...state.opens.entries()]) {
-      if (state.openModes.get(id) !== 'live') continue;
-      if (onExchange.has(pos.coin)) continue;
-      closePhantomJournalOpen({ cfg, state, pos, reason: 'EXCHANGE_ORPHAN' });
-      exchangeOrphans += 1;
-      console.warn(
-        `[hl-oscar-perp:reconcile] closed journal orphan ${pos.coin} (${id.slice(0, 8)}) — missing on HL`,
-      );
-    }
-  }
-
-  if (paperClosed > 0 || exchangeOrphans > 0) {
-    console.log(
-      `[hl-oscar-perp:reconcile] paperClosed=${paperClosed} exchangeOrphans=${exchangeOrphans} remaining=${state.opens.size}`,
-    );
-  }
-
-  return { paperClosed, exchangeOrphans };
-}
-
-export function countOscarOpensByMode(state: OscarTraderState): {
-  live: number;
-  paper: number;
-} {
-  let live = 0;
-  let paper = 0;
-  for (const id of state.opens.keys()) {
-    if (state.openModes.get(id) === 'live') live += 1;
-    else paper += 1;
-  }
-  return { live, paper };
+  const { reconcileWithTracker: core } = await import('../oscar-reconcile-core.js');
+  const r = await core({
+    logPrefix: '[hl-oscar-perp]',
+    mode: args.cfg.mode,
+    masterAddress: args.cfg.masterAddress,
+    client: { mode: 'live', accountAddress: () => args.cfg.masterAddress } as HlTwapExchangeClient,
+    state: args.state,
+    universeCoins: new Set(),
+    journalCoins: loadCoinsFromJournalHistory(args.cfg.journalPath),
+    leverage: 2,
+    markPxByCoin: new Map(),
+    appendJournal: (row) => appendOscarJournal(args.cfg.journalPath, row as never),
+    purgePaperOpens: true,
+  });
+  return { paperClosed: r.paperClosed, exchangeOrphans: r.exchangeOrphans };
 }

@@ -15,7 +15,7 @@ import { createHlTwapExchangeClient } from '../hyperliquid/twap/live/exchange-cl
 import { loadHlOscarPerpConfig, toHlTwapLiveConfig } from '../hyperliquid/oscar-perp/config.js';
 import { initOscarDrawdownMonitor, runOscarDrawdownCheck } from '../hyperliquid/oscar-perp/drawdown.js';
 import { writeHeartbeat } from '../hyperliquid/oscar-perp/journal.js';
-import { countOscarOpensByMode, reconcileOscarOpensForLiveMode } from '../hyperliquid/oscar-perp/reconcile.js';
+import { countOscarOpensByMode, reconcileOscarWithHl } from '../hyperliquid/oscar-perp/reconcile.js';
 import {
   createOscarTraderState,
   fetchOscarAccountEquity,
@@ -73,7 +73,13 @@ async function main(): Promise<void> {
   const state = createOscarTraderState(cfg.journalPath);
 
   if (cfg.mode === 'live') {
-    await reconcileOscarOpensForLiveMode({ cfg, state });
+    const metaCache = await loadHyperliquidMarketCache();
+    const universe = buildOscarUniverse(metaCache, {
+      minDayVolumeUsd: cfg.minDayVolumeUsd,
+      denylist: resolveOscarDenylist(),
+      whitelist: resolveOscarWhitelist(),
+    });
+    await reconcileOscarWithHl({ cfg, client, state, universe, purgePaperOpens: true });
   }
 
   const denylist = resolveOscarDenylist();
@@ -118,6 +124,10 @@ async function main(): Promise<void> {
         lastDrawdownCheck = Date.now();
         const equity = await fetchOscarAccountEquity(cfg.masterAddress);
         await runOscarDrawdownCheck(cfg, equity);
+      }
+
+      if (cfg.mode === 'live') {
+        await reconcileOscarWithHl({ cfg, client, state, universe });
       }
 
       await runOscarTraderPass({

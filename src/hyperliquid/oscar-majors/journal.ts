@@ -77,6 +77,46 @@ export type OscarJournalRow =
       openCount: number;
       mode: 'dry_run' | 'live';
       universeSize: number;
+    }
+  | {
+      kind: 'reconcile_adopt';
+      ts: number;
+      id: string;
+      coin: string;
+      displaySymbol: string;
+      hlNotionalUsd: number;
+      hlEntryPx: number;
+      reason: 'ORPHAN_ADOPT';
+      mode: 'live';
+    }
+  | {
+      kind: 'reconcile_force_close';
+      ts: number;
+      coin: string;
+      displaySymbol: string;
+      hlNotionalUsd: number;
+      flat: boolean;
+      remainingAbsSize: number;
+      reason: 'UNKNOWN_ORPHAN' | 'SHORT_ORPHAN';
+      mode: 'live';
+    }
+  | {
+      kind: 'reconcile_sync_size';
+      ts: number;
+      id: string;
+      coin: string;
+      journalNotionalUsd: number;
+      hlNotionalUsd: number;
+      mode: 'live';
+    }
+  | {
+      kind: 'unwind_failed';
+      ts: number;
+      coin: string;
+      displaySymbol: string;
+      filledGrossUsd: number;
+      remainingAbsSize: number;
+      mode: 'live';
     };
 
 export function appendOscarJournal(journalPath: string, row: OscarJournalRow): void {
@@ -95,7 +135,7 @@ export function loadOscarOpenModesFromJournal(journalPath: string): Map<string, 
       const row = JSON.parse(line) as Record<string, unknown>;
       const id = typeof row.id === 'string' ? row.id : null;
       if (!id) continue;
-      if (row.kind === 'open') {
+      if (row.kind === 'open' || row.kind === 'reconcile_adopt') {
         modes.set(id, row.mode === 'live' ? 'live' : 'dry_run');
       } else if (row.kind === 'close') {
         modes.delete(id);
@@ -180,6 +220,40 @@ export function loadOscarOpensFromJournal(journalPath: string): Map<string, Osca
       pos.realizedPnlUsd += Number(row.pnlUsd);
     } else if (kind === 'close') {
       opens.delete(id);
+    } else if (kind === 'reconcile_adopt') {
+      const pos: OscarOpenPosition = {
+        id,
+        coin: String(row.coin),
+        displaySymbol: String(row.displaySymbol ?? row.coin),
+        entryTs: Number(row.ts),
+        signalPrice: Number(row.hlEntryPx),
+        signalBarTs: Number(row.ts),
+        dipPct: 0,
+        impulsePct: 0,
+        windowMin: 0,
+        legs: [
+          {
+            ts: Number(row.ts),
+            grossUsd: Number(row.hlNotionalUsd),
+            marginUsd: Number(row.hlNotionalUsd) / 2,
+            fillPx: Number(row.hlEntryPx),
+            legIndex: 1,
+          },
+        ],
+        avgEntryPx: Number(row.hlEntryPx),
+        totalGrossUsd: Number(row.hlNotionalUsd),
+        remainingFraction: 1,
+        realizedPnlUsd: 0,
+        tpLevelsTaken: new Set(),
+        trailLevelsTaken: new Set(),
+        maxTpTaken: 0,
+        peakPnlFrac: -Infinity,
+        trailAnchor: 0,
+        preArmReached: false,
+        leg2Filled: false,
+        leg3Filled: false,
+      };
+      opens.set(id, pos);
     }
   }
   return opens;
