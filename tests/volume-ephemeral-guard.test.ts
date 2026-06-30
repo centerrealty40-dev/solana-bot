@@ -65,10 +65,10 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('passes when PG coverage insufficient (safe-skip)', () => {
+  it('passes when PG coverage insufficient and snapshot is not wash-shaped (safe-skip)', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg(),
-      baseRow(),
+      baseRow({ volume_5m: 12_000, volume_1h: 65_000 }),
       ctx({ coverageOk: false, hoursWithData: 1 }),
     );
     expect(r.blocked).toBe(false);
@@ -175,6 +175,38 @@ describe('evaluateVolumeEphemeralGuard', () => {
     );
     expect(r.blocked).toBe(true);
     expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
+  });
+
+  it('MUSHU prod bypass: activeHours=5 dead tail still blocks (new mint)', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 5505, volume_1h: 168_265, symbol: 'MUSHU' }),
+      ctx({ hoursWithData: 12, activeHours: 5, peakHourVol5mUsd: 153_197 }),
+      { knownMint: false },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.length).toBeGreaterThan(0);
+  });
+
+  it('MUSHU prod bypass: activeHours=5 known mint dead tail blocks wash or tail', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 5505, volume_1h: 168_265, symbol: 'MUSHU' }),
+      ctx({ hoursWithData: 12, activeHours: 5, peakHourVol5mUsd: 153_197 }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+  });
+
+  it('MUSHU prod bypass: PG ctx missing still blocks obvious wash from snapshot', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg(),
+      baseRow({ volume_5m: 5505, volume_1h: 168_265, symbol: 'MUSHU' }),
+      ctx({ coverageOk: false, hoursWithData: 0, activeHours: 0, peakHourVol5mUsd: null }),
+      { knownMint: false },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_no_pg_ctx'))).toBe(true);
   });
 
   it('known mint with live vol5m/vol1h ratio passes wash gate', () => {

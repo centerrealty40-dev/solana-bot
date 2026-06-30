@@ -158,6 +158,23 @@ export function evaluateVolumeEphemeralGuard(
 
   const blockedReasons: string[] = [];
   if (!features.coverageOk) {
+    /** PG hourly context missing — still block obvious live-snapshot wash (MUSHU RCA 2026-06-30). */
+    const vol5mVol1hNoCtx = newMintVol5mVol1hRatio(row);
+    const vol5mNoCtx = Number(row.volume_5m ?? 0);
+    const vol1hNoCtx = Number(row.volume_1h ?? 0);
+    if (
+      Number.isFinite(vol1hNoCtx) &&
+      vol1hNoCtx >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
+      Number.isFinite(vol5mNoCtx) &&
+      vol5mNoCtx < cfg.volumeEphemeralMinActiveHourVol5mUsd &&
+      vol5mVol1hNoCtx != null &&
+      vol5mVol1hNoCtx < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
+    ) {
+      blockedReasons.push(
+        `volume_ephemeral:tail_wash_no_pg_ctx_vol5m_vol1h=${(vol5mVol1hNoCtx * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5mNoCtx)}_vol1h=$${Math.round(vol1hNoCtx)}`,
+      );
+      return { blocked: true, blockedReasons, features };
+    }
     return { blocked: false, blockedReasons, features };
   }
 
@@ -197,6 +214,13 @@ export function evaluateVolumeEphemeralGuard(
     return { blocked: true, blockedReasons, features };
   }
 
+  const sustainThreshold = cfg.volumeEphemeralNewMintMinActiveHours;
+  const notYetSustained = sustainThreshold > 0 && features.activeHours < sustainThreshold;
+
+  const vol5m = Number(row.volume_5m ?? 0);
+  const deadVol5m =
+    Number.isFinite(vol5m) && vol5m < cfg.volumeEphemeralMinActiveHourVol5mUsd;
+
   if (
     cfg.volumeEphemeralTailBlockEnabled &&
     narrowWindow &&
@@ -209,7 +233,22 @@ export function evaluateVolumeEphemeralGuard(
     );
   }
 
-  /** New mints: do not age out tail block when sustain threshold not met. */
+  /** Dead tail after burst: block until sustain threshold even when narrowWindow aged out (MUSHU RCA). */
+  if (
+    cfg.volumeEphemeralTailBlockEnabled &&
+    notYetSustained &&
+    deadVol5m &&
+    peakSignificant &&
+    peakToCurrent != null &&
+    peakToCurrent <= cfg.volumeEphemeralTailMaxPeakRatio &&
+    !blockedReasons.some((r) => r.includes('tail_vol5m'))
+  ) {
+    blockedReasons.push(
+      `${knownMint ? 'volume_ephemeral:tail_vol5m' : 'volume_ephemeral:new_mint_tail_vol5m'}=${Math.round(currentVol5m ?? 0)}/${Math.round(peak)}=${(peakToCurrent * 100).toFixed(1)}%<=${(cfg.volumeEphemeralTailMaxPeakRatio * 100).toFixed(0)}%_of_peak`,
+    );
+  }
+
+  /** Legacy alias kept for tests/docs — merged into notYetSustained tail above. */
   if (
     cfg.volumeEphemeralTailBlockEnabled &&
     !knownMint &&
@@ -224,19 +263,19 @@ export function evaluateVolumeEphemeralGuard(
     );
   }
 
-  const vol5m = Number(row.volume_5m ?? 0);
+  const vol5mWash = Number(row.volume_5m ?? 0);
   const vol5mVol1h = newMintVol5mVol1hRatio(row);
-  const deadVol5m =
-    Number.isFinite(vol5m) && vol5m < cfg.volumeEphemeralMinActiveHourVol5mUsd;
+  const deadVol5mWash =
+    Number.isFinite(vol5mWash) && vol5mWash < cfg.volumeEphemeralMinActiveHourVol5mUsd;
   if (
     Number.isFinite(vol1h) &&
     vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
-    deadVol5m &&
+    deadVol5mWash &&
     vol5mVol1h != null &&
     vol5mVol1h < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
   ) {
     blockedReasons.push(
-      `volume_ephemeral:tail_wash_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5m)}_vol1h=$${Math.round(vol1h)}`,
+      `volume_ephemeral:tail_wash_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5mWash)}_vol1h=$${Math.round(vol1h)}`,
     );
   }
 
