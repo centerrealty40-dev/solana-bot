@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import {
   evaluateVolumeEphemeralGuard,
+  neighborVolumeHealthy,
   type VolumeEphemeralFeatures,
 } from '../src/papertrader/discovery/volume-ephemeral-guard.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
@@ -175,6 +176,70 @@ describe('evaluateVolumeEphemeralGuard', () => {
     );
     expect(r.blocked).toBe(false);
     expect(r.blockedReasons.some((x) => x.includes('volume_ephemeral:'))).toBe(false);
+  });
+
+  it('NEST/world: single dead vol5m tick with healthy neighbor hours → pass + stale flag', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({
+        mint: 'FMqh9mqR6drPZqqW6wPqLHxX4rqNDWGhYLaMfoaJpump',
+        volume_5m: 1_400,
+        volume_1h: 194_000,
+        symbol: 'world',
+      }),
+      ctx({
+        hoursWithData: 22,
+        activeHours: 6,
+        peakHourVol5mUsd: 45_000,
+        vol5mPrev1hUsd: 12_000,
+        vol5mPrev2hUsd: 15_000,
+        vol5mPrev3hUsd: 9_500,
+      }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.features.singleTickStaleIgnored).toBe(true);
+    expect(r.features.staleIgnoreFlag).toBe('volume_ephemeral:single_tick_stale_ignored');
+  });
+
+  it('known mint sustained dead neighbors → still blocks', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({ volume_5m: 1_200, volume_1h: 5_000 }),
+      ctx({
+        hoursWithData: 8,
+        activeHours: 2,
+        peakHourVol5mUsd: 210_000,
+        vol5mPrev1hUsd: 1_100,
+        vol5mPrev2hUsd: 900,
+        medianVol5m12hUsd: 1_500,
+      }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('known_mint_sustained_dead'))).toBe(true);
+  });
+
+  it('neighborVolumeHealthy: 2 adjacent hours above threshold', () => {
+    const ok = neighborVolumeHealthy(
+      baseCfg(),
+      ctx({
+        activeHours: 5,
+        vol5mPrev3hUsd: 3_000,
+        vol5mPrev2hUsd: 12_000,
+        vol5mPrev1hUsd: 15_000,
+        currentVol5mUsd: 1_400,
+      }),
+    );
+    expect(ok).toBe(true);
+  });
+
+  it('neighborVolumeHealthy: 12h median above threshold', () => {
+    const ok = neighborVolumeHealthy(
+      baseCfg(),
+      ctx({ activeHours: 6, medianVol5m12hUsd: 11_000 }),
+    );
+    expect(ok).toBe(true);
   });
 
   it('82XVW-like new mint: blocks on min active hours (3/10h)', () => {

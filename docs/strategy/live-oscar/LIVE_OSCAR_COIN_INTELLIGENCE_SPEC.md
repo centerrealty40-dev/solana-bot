@@ -3,7 +3,7 @@
 **Продукт:** `solana-alpha` / PM2 `live-oscar`  
 **Ветка:** `v2`  
 **Статус:** normative (целевая архитектура и поэтапный rollout)  
-**Версия спеки:** 1.1 (2026-07-01), продукт ≥ **1.11.542**
+**Версия спеки:** 1.2 (2026-07-01), продукт ≥ **1.11.545**
 
 **Связанные нормативы:**
 
@@ -58,6 +58,7 @@ Oscar **сегодня** торгует **зрелые post-lane проливы*
 Эти механизмы **не заменяются** intelligence-слоем; новый слой **дополняет** после них или на exit-side:
 
 - Volume sybil / ephemeral (PG `*_pair_snapshots`, 6–24h)
+- **Ephemeral neighbor-window (1.11.545):** для **known repeat mint** (14d journal) spike/narrow-window/tail_wash — **только new mint**; мёртвый live `vol5m` при здоровых соседних PG hourly окнах (2+ соседних часа ≥$8k или median 12h) → **не блокировать**, флаг `volume_ephemeral:single_tick_stale_ignored` в `live_discovery_eval`. Journal: `known_mint_vol_profile` на каждом eval.
 - PG data coverage guard
 - Recovery / local-high / Policy A+ veto
 - Whale analysis **на входе** (`PAPER_DIP_WHALE_ANALYSIS_ENABLED=1`, creator dump block, group pressure)
