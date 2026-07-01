@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import pg from 'pg';
 import Decimal from 'decimal.js';
+import { acquireJupiterApiSlot } from '../src/core/jupiter-api-gate.ts';
 
 const { Pool } = pg;
 
@@ -241,6 +242,7 @@ async function fetchQuoteWithRetry(candidate, amountRaw) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      await acquireJupiterApiSlot();
       const res = await fetch(url, {
         headers: {
           accept: 'application/json',

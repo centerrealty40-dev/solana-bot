@@ -30,9 +30,9 @@ if (!JUPITER_API_KEY_PM2) {
  */
 const JUPITER_DEVELOPER_TIER = '1';
 const JUPITER_DEVELOPER_TIER_ENV = { JUPITER_DEVELOPER_TIER };
-/** sa-jupiter: 3 workers × 500 ms ≈ 6 RPS (headroom for live-oscar hot-tick / discovery). */
-const JUPITER_WATCHER_REQUEST_DELAY_MS = '500';
-const JUPITER_WATCHER_QUOTE_CONCURRENCY = '3';
+/** sa-jupiter: 2 workers × 600 ms ≈ 3.3 RPS (global gate caps total ~8 RPS for all PM2 apps). */
+const JUPITER_WATCHER_REQUEST_DELAY_MS = '600';
+const JUPITER_WATCHER_QUOTE_CONCURRENCY = '2';
 const JUPITER_SWAP_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
 /**
@@ -41,6 +41,9 @@ const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
  */
 const JUPITER_PRO_TRADING_ENV = {
   ...JUPITER_DEVELOPER_TIER_ENV,
+  /** Cross-process slot scheduler — one Developer key shared by live-oscar, copy-trader, sa-jupiter, preset-c. */
+  JUPITER_GLOBAL_MAX_RPS: '8',
+  JUPITER_GLOBAL_GATE_PATH: path.join(root, 'data/jupiter-api-gate.json'),
   JUPITER_QUOTE_429_MAX_RETRIES: '12',
   JUPITER_SWAP_429_MAX_RETRIES: '12',
   JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
@@ -494,7 +497,8 @@ const PM2_APPS = [
     {
       name: 'sa-jupiter',
       cwd: root,
-      script: 'scripts-tmp/jupiter-route-watcher.mjs',
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'scripts-tmp/jupiter-route-watcher.mjs',
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
@@ -510,9 +514,11 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         JUPITER_QUOTE_API_URL: JUPITER_SWAP_QUOTE_URL,
         JUPITER_WATCHER_ENQUEUE_RPC: '0',
-        /** Developer 10 RPS: 3 parallel workers, 500 ms per worker (~6 RPS). Was 1000 ms serial. */
+        /** Developer 10 RPS: global gate + 2 parallel workers, 600 ms (~3.3 RPS from watcher). */
         JUPITER_WATCHER_REQUEST_DELAY_MS,
         JUPITER_WATCHER_QUOTE_CONCURRENCY,
+        JUPITER_GLOBAL_MAX_RPS: '8',
+        JUPITER_GLOBAL_GATE_PATH: path.join(root, 'data/jupiter-api-gate.json'),
       },
     },
     {
@@ -1346,12 +1352,12 @@ const PM2_APPS = [
         LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
         /** 1.11.458 — hot tick: executable sell quote for open positions every 2s; kill pre-arm + fast tracker trigger. */
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
-        LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2000',
+        LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2500',
         LIVE_OPEN_HOT_EXEC_PRICE_MAX_AGE_MS: '5000',
         LIVE_OPEN_HOT_PROBE_MIN_USD: '20',
         LIVE_OPEN_HOT_PROBE_MAX_USD: '200',
         LIVE_OPEN_HOT_PROBE_FRACTION: '0.10',
-        LIVE_OPEN_HOT_INTER_MINT_DELAY_MS: '100',
+        LIVE_OPEN_HOT_INTER_MINT_DELAY_MS: '200',
         LIVE_KILLSTOP_PREARM_BUFFER_PCT: '1',
         LIVE_KILLSTOP_PREARM_TTL_MS: '8000',
         /** 1.11.526 — TG only on exhausted quote/swap 429 (not retry burst noise). */
@@ -1684,7 +1690,8 @@ const PM2_APPS = [
         /** ret1h ≥ 0 → только 1h+4h; 24h не режет покупки на отскоке. */
         LIVE_BTC_RECOVERY_SKIP_LONG_WINDOWS: '1',
         LIVE_OPEN_HOT_TICK_ENABLED: '1',
-        /** Pro tier: 100 bps base (was 50); adaptive bump to 100 bps cap via JUPITER_PRO_TRADING_ENV. */
+        /** Stagger vs live-oscar (2.5s) to avoid aligned hot-tick bursts on one Jupiter key. */
+        LIVE_OPEN_HOT_TICK_INTERVAL_MS: '3500',
         LIVE_DEFAULT_SLIPPAGE_BPS: '100',
         PRESET_C_DISCOVERY_SCAN_MINUTES: '360',
         PRESET_C_DISCOVERY_MIN_HOLDERS: '1000',
