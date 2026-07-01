@@ -80,6 +80,26 @@
 
 ---
 
+---
+
+## [1.11.547] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.547`
+
+### Dashboard — убрать дублирующий copy UI на Live Oscar
+
+**Контекст:** после 1.11.546 copy cycles/stats дублировали открытые copy-позиции сверху EPSP timeline.
+
+- **Live Oscar:** секции **Copy cycles** и copy-trader stats скрыты; copy-позиции только в **Open positions** с бейджем **COPY**.
+- **Copy-trader tile:** cycles/stats без изменений.
+- **API:** `augmentLiveOscarLoadWithCopyLeaderOpens` по-прежнему мержит open rows; `copyTrader` в payload Live Oscar больше не отдаётся.
+
+**Откат:** `git checkout sa-alpha-1.11.546 -- scripts-tmp/dashboard-paper2.html scripts-tmp/dashboard-server.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.546] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.546`
