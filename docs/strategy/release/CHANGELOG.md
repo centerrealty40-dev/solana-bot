@@ -82,6 +82,25 @@
 
 ---
 
+## [1.11.548] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.548`
+
+### Dashboard — RUNNER badge + жёлтые COPY/RUNNER на Live Oscar
+
+**Контекст:** после 1.11.547 copy cycles убраны; runner_probe lane нужен отдельный бейдж в Open positions.
+
+- **Live Oscar Open:** бейдж **RUNNER** для `liveOscarTradeLane: runner_probe` / `isRunnerProbe`.
+- **COPY** и **RUNNER** — ярко-жёлтый `#facc15` (класс `pill-lane`).
+- **API:** `isRunnerProbe`, `positionSource: runner_probe` в enriched open rows; `DASHBOARD_PAPER2_BUILD_ID` bump.
+- **Open row keys:** `copy` / `runner` / `oscar` lane suffix — prod + runner_probe на одном mint не схлопываются в UI.
+
+**Откат:** `git checkout sa-alpha-1.11.547 -- scripts-tmp/dashboard-paper2.html scripts-tmp/dashboard-server.ts tests/live-open-snapshot.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.547] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.547`
