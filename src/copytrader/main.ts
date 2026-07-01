@@ -89,9 +89,52 @@ import {
   copySellableTokenRaw,
   copyTrackedTokenRaw,
 } from './position-reconcile.js';
+import { checkCopyBuyOscarDupGuard, type CopyBuyOscarDupGuardVerdict } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function logCopyBuySkipped(
+  cfg: CopyTraderConfig,
+  args: {
+    mint: string;
+    symbol?: string;
+    leaderSignature?: string;
+    buyKind?: 'entry' | 'add';
+    verdict: CopyBuyOscarDupGuardVerdict & { skip: true };
+  },
+): void {
+  appendCopyEvent(cfg, {
+    kind: 'copy_buy_skipped',
+    reason: args.verdict.reason,
+    mint: args.mint,
+    symbol: args.symbol ?? null,
+    leaderSignature: args.leaderSignature ?? null,
+    buyKind: args.buyKind ?? null,
+    estUsd: args.verdict.estUsd ?? null,
+    minUsd: args.verdict.minUsd ?? null,
+  });
+}
+
+function oscarDupGuardBlocksBuy(
+  cfg: CopyTraderConfig,
+  args: {
+    mint: string;
+    copyPosition?: CopyPosition | null;
+    walletMintRaw?: bigint;
+    priceUsd?: number;
+  },
+): CopyBuyOscarDupGuardVerdict & { skip: true } | null {
+  const verdict = checkCopyBuyOscarDupGuard({
+    cfg,
+    mint: args.mint,
+    copyPosition: args.copyPosition,
+    walletMintRaw: args.walletMintRaw,
+    priceUsd: args.priceUsd,
+    statePath: cfg.statePath,
+  });
+  return verdict.skip ? verdict : null;
+}
 
 let lastPollRpcFailLogMs = 0;
 const POLL_RPC_FAIL_LOG_MS = 60_000;
@@ -198,6 +241,22 @@ async function onLeaderBuy(
 
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
+    const dupOnAdd = oscarDupGuardBlocksBuy(cfg, {
+      mint,
+      copyPosition: existing,
+      walletMintRaw: walletBal,
+      priceUsd,
+    });
+    if (dupOnAdd) {
+      logCopyBuySkipped(cfg, {
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        buyKind: 'add',
+        verdict: dupOnAdd,
+      });
+      return;
+    }
     if (cfg.maxAddsPerMint > 0 && existing.addCount >= cfg.maxAddsPerMint) {
       appendCopyEvent(cfg, {
         kind: 'leader_add_ignored',
@@ -258,6 +317,22 @@ async function onLeaderBuy(
   }
 
   if (hasPendingBuyForMint(state, mint)) return;
+  const dupOnEntry = oscarDupGuardBlocksBuy(cfg, {
+    mint,
+    copyPosition: existing,
+    walletMintRaw: walletBal,
+    priceUsd,
+  });
+  if (dupOnEntry) {
+    logCopyBuySkipped(cfg, {
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      buyKind: 'entry',
+      verdict: dupOnEntry,
+    });
+    return;
+  }
   const lateEntryOnLeaderRebuy = preLeaderRaw > 0n;
   if (shouldIgnoreMissedEntryLeaderRebuy(cfg, preLeaderRaw)) {
     appendCopyEvent(cfg, {
@@ -866,6 +941,27 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
             retryUntilTs: pending.retryUntilTs,
           });
         }
+        continue;
+      }
+    }
+
+    if (cfg.sharedOscarWallet) {
+      const walletBalForGuard = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
+      const dupGuard = oscarDupGuardBlocksBuy(cfg, {
+        mint: pending.mint,
+        copyPosition: existing,
+        walletMintRaw: walletBalForGuard,
+        priceUsd: currentPrice,
+      });
+      if (dupGuard) {
+        removePendingBuyById(state, pending.id);
+        logCopyBuySkipped(cfg, {
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          buyKind: pending.kind === 'add' ? 'add' : 'entry',
+          verdict: dupGuard,
+        });
         continue;
       }
     }
