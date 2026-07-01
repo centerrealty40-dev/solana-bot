@@ -296,6 +296,11 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
         DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
+        /** BasePulse journal ~350MB — full scan avoids phantom opens when tail truncates closes. */
+        DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES: String(512 * 1024 * 1024),
+        DASHBOARD_BASEPULSE_TAIL_BYTES: String(512 * 1024 * 1024),
+        /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
+        DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -1998,6 +2003,44 @@ const PM2_APPS = [
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+      },
+    },
+    /**
+     * EVM pulse journals (72.62.152.201 → local data/) for `/papertrader2` tiles 5–6.
+     * Runs rsync as root (SSH key in /root/.ssh); salpha has passwordless sudo on sync scripts.
+     */
+    {
+      name: 'basepulse-journal-sync',
+      cwd: root,
+      script: 'scripts/basepulse-journal-sync-loop.sh',
+      interpreter: 'bash',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        BPULSE_SYNC_INTERVAL_SEC: '30',
+      },
+    },
+    {
+      name: 'bscpulse-journal-sync',
+      cwd: root,
+      script: 'scripts/bscpulse-journal-sync-loop.sh',
+      interpreter: 'bash',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        BSCPULSE_SYNC_INTERVAL_SEC: '30',
       },
     },
     /**

@@ -135,7 +135,7 @@ function entryPriceFromEv(ev: JournalEv): number | null {
 }
 
 function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: number): OpenRow {
-  const positionUsd = num(ev.positionUsd) ?? 10;
+  const positionUsd = num(ev.positionUsd) ?? num(ev.legUsd) ?? 10;
   const price = entryPriceFromEv(ev);
   const pair = typeof ev.pair === 'string' ? ev.pair : null;
   const fdvUsd = num(ev.fdvUsd) ?? num(ev.mcapUsd);
@@ -174,8 +174,10 @@ function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: num
     spotPxUsd: price,
     amountUsd: positionUsd,
     txSignature: typeof ev.txHash === 'string' ? ev.txHash : null,
-    contextNote:
-      typeof ev.dropPct === 'number' ? `dip ${ev.dropPct.toFixed(1)}% · $${positionUsd.toFixed(0)}` : null,
+    contextNote: (() => {
+      const dip = num(ev.dropPct) ?? num(ev.dipPct);
+      return dip != null ? `dip ${Math.abs(dip).toFixed(1)}% · $${positionUsd.toFixed(0)}` : null;
+    })(),
   });
   return row;
 }
