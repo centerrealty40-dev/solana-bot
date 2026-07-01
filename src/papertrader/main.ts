@@ -603,6 +603,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function notifyLiveOscarVolumeEphemeralGuard(d: EvalDecision): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
+    if (d.features.volume_ephemeral?.knownMint === true) return;
     if (process.env.LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const cooldownMs = Math.max(

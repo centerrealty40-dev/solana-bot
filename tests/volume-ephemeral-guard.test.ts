@@ -166,15 +166,46 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
   });
 
-  it('NEST-like known mint: 18 active hours but dead vol5m + inflated vol1h blocks wash', () => {
+  it('NEST-like known mint at dip: no ephemeral block (tail_wash skipped for repeat mint)', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
       baseRow({ volume_5m: 1_400, volume_1h: 194_000, symbol: 'NEST' }),
       ctx({ hoursWithData: 22, activeHours: 18, peakHourVol5mUsd: 45_000 }),
       { knownMint: true },
     );
+    expect(r.blocked).toBe(false);
+    expect(r.blockedReasons.some((x) => x.includes('volume_ephemeral:'))).toBe(false);
+  });
+
+  it('82XVW-like new mint: blocks on min active hours (3/10h)', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg(),
+      baseRow({
+        mint: '82XVWa4pEfPhZfN3a7ANHSy9iPekmMwm934ZUpkFMUSA',
+        volume_5m: 1_379,
+        volume_1h: 28_179,
+        symbol: 'FREE',
+      }),
+      ctx({ hoursWithData: 12, activeHours: 3, peakHourVol5mUsd: 210_000 }),
+      { knownMint: false },
+    );
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('new_mint_min_active_hours=3/10'))).toBe(true);
+  });
+
+  it('world-like known mint at dip: no tail_wash or spike block', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({
+        mint: 'FMqh9mqR6drPZqqW6wPqLHxX4rqNDWGhYLaMfoaJpump',
+        volume_5m: 4_955,
+        volume_1h: 65_949,
+        symbol: 'world',
+      }),
+      ctx({ hoursWithData: 22, activeHours: 18, peakHourVol5mUsd: 45_000 }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(false);
   });
 
   it('MUSHU prod bypass: activeHours=5 dead tail still blocks (new mint)', () => {
@@ -188,14 +219,14 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blockedReasons.length).toBeGreaterThan(0);
   });
 
-  it('MUSHU prod bypass: activeHours=5 known mint dead tail blocks wash or tail', () => {
+  it('MUSHU prod bypass: activeHours=5 known mint passes ephemeral (repeat mint)', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg(),
       baseRow({ volume_5m: 5505, volume_1h: 168_265, symbol: 'MUSHU' }),
       ctx({ hoursWithData: 12, activeHours: 5, peakHourVol5mUsd: 153_197 }),
       { knownMint: true },
     );
-    expect(r.blocked).toBe(true);
+    expect(r.blocked).toBe(false);
   });
 
   it('MUSHU prod bypass: PG ctx missing still blocks obvious wash from snapshot', () => {

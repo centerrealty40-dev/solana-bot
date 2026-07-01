@@ -1392,8 +1392,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       };
     }
     if (volumeEphemeralFeatures != null) {
+      const volumeEphemeralKnownMint = isKnownMint(cfg, row.mint, knownMintHistory);
       decisionFeatures.volume_ephemeral = {
         enabled: cfg.volumeEphemeralGuardEnabled,
+        knownMint: volumeEphemeralKnownMint,
         coverageOk: volumeEphemeralFeatures.coverageOk,
         lookbackHours: volumeEphemeralFeatures.lookbackHours,
         hoursWithData: volumeEphemeralFeatures.hoursWithData,

@@ -156,6 +156,11 @@ export function evaluateVolumeEphemeralGuard(
     peakToCurrentRatio: peakToCurrent,
   };
 
+  /** Repeat mint (bot open/close in 14d lookback): spike/narrow-window protection is new-mint-only. */
+  if (knownMint) {
+    return { blocked: false, blockedReasons: [], features };
+  }
+
   const blockedReasons: string[] = [];
   if (!features.coverageOk) {
     /** PG hourly context missing — still block obvious live-snapshot wash (MUSHU RCA 2026-06-30). */

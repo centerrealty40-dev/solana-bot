@@ -777,6 +777,8 @@ export interface SnapshotFeatures {
   /** 1.11.219: narrow-window hourly volume burst metrics (retro / audit). */
   volume_ephemeral?: {
     enabled: boolean;
+    /** Prior bot trade in lookback — ephemeral spike blocks skipped (1.11.544). */
+    knownMint?: boolean;
     coverageOk: boolean;
     lookbackHours: number;
     hoursWithData: number;
