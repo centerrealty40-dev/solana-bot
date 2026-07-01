@@ -498,6 +498,16 @@ async function onLeaderSell(
 ): Promise<void> {
   const mint = swap.baseMint;
   const pos = state.positions[mint];
+  if (pos?.oscarPromotedAt) {
+    appendCopyEvent(cfg, {
+      kind: 'leader_sell_ignored',
+      reason: 'oscar_promoted_handoff',
+      mint,
+      leaderSignature: row.signature,
+      oscarPromotedAt: pos.oscarPromotedAt,
+    });
+    return;
+  }
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
 
   if (cfg.minProportionalSellFraction > 0 && sellFrac < cfg.minProportionalSellFraction) {
@@ -1032,6 +1042,10 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
 
   for (const pending of due) {
     let pos = state.positions[pending.mint];
+    if (pos?.oscarPromotedAt) {
+      removePendingSellById(state, pending.id);
+      continue;
+    }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const exitPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);

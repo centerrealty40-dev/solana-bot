@@ -352,6 +352,8 @@ export interface OpenTrade {
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** Set when scalp_wave hands off to prod/low staged management. */
   liveOscarPhaseEscalatedFrom?: 'scalp_wave';
+  /** Copy-leader leg promoted to Oscar discovery management on shared wallet. */
+  copyToOscarPromoted?: boolean;
   /** v3: at least one TP partial taken — blocks DCA and timed exits. */
   liveVariantAScratchHadTp?: boolean;
   liveVariantAScratchPrevPnlFrac?: number;

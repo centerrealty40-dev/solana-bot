@@ -1,3 +1,4 @@
+import type { CopyToOscarPromotionPlan } from './copy-to-oscar-promotion.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import type { EvalDecision } from '../papertrader/discovery/dip-clones.js';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
@@ -42,6 +43,8 @@ export interface LiveBuyPipelineResult {
   terminalKind?: LiveBuyTerminalKind;
   /** Optional short message tail for diagnostics (≤200 chars). */
   terminalMessage?: string;
+  /** Copy-leader handoff: top-up buy metadata for open-trade accounting. */
+  copyToOscarPromotion?: CopyToOscarPromotionPlan;
 }
 
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */

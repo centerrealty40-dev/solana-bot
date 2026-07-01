@@ -137,6 +137,7 @@ export async function refreshPositionFromWallet(
 ): Promise<bigint> {
   const pos = state.positions[mint];
   if (cfg.sharedOscarWallet) {
+    if (pos?.oscarPromotedAt) return copyTrackedTokenRaw(pos);
     const tracked = copyTrackedTokenRaw(pos);
     if (tracked === 0n) {
       if (pos) {
@@ -169,6 +170,7 @@ export async function reconcileGhostPositions(cfg: CopyTraderConfig, state: Copy
   const now = Date.now();
   let cleared = 0;
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
+    if (pos.oscarPromotedAt) continue;
     if (now - pos.entryTs < COPY_TRADER_GHOST_RECONCILE_GRACE_MS) continue;
 
     const stateRaw = pos.tokenRaw ? BigInt(pos.tokenRaw) : 0n;

@@ -13,6 +13,9 @@ export type CopyLeaderMintAttribution = {
   sizeUsd: number;
   tokenRaw?: string;
   positionSource: typeof COPY_LEADER_POSITION_SOURCE;
+  /** Set when live-oscar promoted copy leg → Oscar-managed (copy-trader stops mirror sells). */
+  oscarPromotedAt?: number;
+  entryPriceUsd?: number;
 };
 
 function envBool(v: unknown, def: boolean): boolean {
@@ -39,6 +42,8 @@ type CopyStateRow = {
   entryDeployedCostUsd?: number;
   tokenRaw?: string;
   positionSource?: string;
+  entryPriceUsd?: number;
+  oscarPromotedAt?: number;
 };
 
 type CopyStateFile = {
@@ -78,13 +83,58 @@ export function readCopyLeaderMintAttribution(
         : 0;
   if (!(deployed > 0)) return null;
 
+  const row = pos as CopyStateRow;
+
   return {
     mint: key,
     costBasisUsd: deployed,
     sizeUsd: typeof pos.sizeUsd === 'number' && pos.sizeUsd > 0 ? pos.sizeUsd : deployed,
     tokenRaw: pos.tokenRaw,
     positionSource: COPY_LEADER_POSITION_SOURCE,
+    oscarPromotedAt:
+      typeof row.oscarPromotedAt === 'number' && row.oscarPromotedAt > 0
+        ? row.oscarPromotedAt
+        : undefined,
+    entryPriceUsd:
+      typeof row.entryPriceUsd === 'number' && row.entryPriceUsd > 0 ? row.entryPriceUsd : undefined,
   };
+}
+
+export function isCopyLeaderPromotedToOscar(mint: string, statePath?: string): boolean {
+  const row = readCopyLeaderMintAttribution(mint, statePath);
+  return row?.oscarPromotedAt != null && row.oscarPromotedAt > 0;
+}
+
+/** Mark copy position Oscar-managed so copy-trader stops proportional mirror sells. */
+export function markCopyLeaderPromotedToOscar(args: {
+  mint: string;
+  statePath?: string;
+  promotedAt?: number;
+}): boolean {
+  const fp = args.statePath ?? copyLeaderStatePathFromEnv();
+  if (!fp) return false;
+  const key = args.mint.trim();
+  if (!key) return false;
+
+  let parsed: CopyStateFile;
+  try {
+    parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as CopyStateFile;
+  } catch {
+    return false;
+  }
+
+  const pos = parsed.positions?.[key];
+  if (!pos) return false;
+
+  const promotedAt = args.promotedAt ?? Date.now();
+  (pos as CopyStateRow).oscarPromotedAt = promotedAt;
+
+  const dir = path.dirname(fp);
+  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${fp}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(parsed, null, 2), 'utf8');
+  fs.renameSync(tmp, fp);
+  return true;
 }
 
 /**
@@ -95,6 +145,9 @@ export function oscarWalletMintUsdExcludingCopyLeader(args: {
   mint: string;
   statePath?: string;
 }): number {
+  if (isCopyLeaderPromotedToOscar(args.mint, args.statePath)) {
+    return args.walletMintUsd;
+  }
   const attributed = readCopyLeaderCostBasisUsd(args.mint, args.statePath);
   if (!(attributed > 0)) return args.walletMintUsd;
   return Math.max(0, args.walletMintUsd - attributed);
