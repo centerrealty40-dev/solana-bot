@@ -30,6 +30,7 @@
     .pill-bad { background: rgba(244,63,94,.12); color:#fb7185; }
     .pill-info { background: rgba(99,102,241,.15); color:#c7d2fe; }
     .pill-warn { background: rgba(245,158,11,.14); color:#fbbf24; }
+    .pill-lane { background: rgba(250,204,21,.18); color:#facc15; border:1px solid rgba(250,204,21,.35); }
     /* Header spot tickers — compact strip */
     .ticker-strip .ticker-card {
       background: rgba(255,255,255,.04);
@@ -328,7 +329,7 @@
         </div>
       </div>
 
-      <div x-show="selectedRow()?.copyTrader" class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mono">
+      <div x-show="selected === 'copy-trader' && selectedRow()?.copyTrader" class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mono">
         <div class="card rounded-lg p-3">
           <div class="label-caps">Buys OK / fail</div>
           <div class="stat-num mt-1 text-emerald-400" x-text="(selectedRow()?.copyTrader?.buysOk || 0) + ' / ' + (selectedRow()?.copyTrader?.buysFail || 0)"></div>
@@ -347,7 +348,7 @@
         </div>
       </div>
 
-      <div x-show="(selected === 'copy-trader' || selected === 'live-oscar') && (selectedRow()?.copyTrader?.cycles || []).length" class="mt-6">
+      <div x-show="selected === 'copy-trader' && (selectedRow()?.copyTrader?.cycles || []).length" class="mt-6">
         <h3 class="text-lg font-bold text-white mb-3">Copy cycles · ордера лидера</h3>
         <p class="text-xs text-slate-400 mb-3 leading-snug">Только реальные циклы: закрытые сделки и очередь buy/sell из state. Пропущенные сигналы лидера (buy_skipped без очереди) здесь не показываются — см. Recent closes / timeline.</p>
         <div class="space-y-3 text-sm">
@@ -512,13 +513,13 @@
         <div>
           <h3 class="text-lg font-bold text-white mb-3">Open positions</h3>
           <div class="space-y-2 text-base">
-            <template x-for="o in (selectedRow()?.open || [])" :key="o.mint + ':' + (o.isCopyLeader ? 'copy' : 'oscar') + ':' + o.entryTs">
+            <template x-for="o in (selectedRow()?.open || [])" :key="openRowKey(o)">
               <div class="border-b border-white/5 pb-1">
                 <div class="flex items-center justify-between cursor-pointer hover:bg-white/5 px-1 -mx-1 rounded"
-                     @click="toggleExpand(o.mint + ':' + (o.isCopyLeader ? 'copy' : 'oscar') + ':' + o.entryTs)">
+                     @click="toggleExpand(openRowKey(o))">
                   <div class="flex flex-col">
                     <div>
-                      <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(o.mint + ':' + (o.isCopyLeader ? 'copy' : 'oscar') + ':' + o.entryTs) ? '▼' : '▶'"></span>
+                      <span class="text-slate-400 text-sm mr-1" x-text="isExpanded(openRowKey(o)) ? '▼' : '▶'"></span>
                       <template x-if="!isHlTwap() && !isHlOscarPerp()">
                         <a :href="tokenLink(o.mint, o.pairAddress)" target="_blank" @click.stop
                            class="text-amber-300 text-base font-semibold hover:underline">
@@ -529,8 +530,11 @@
                       <span x-show="selected === 'live-oscar' && o.isScalpWave"
                             class="pill pill-warn ml-2 text-xs align-middle">Скальп · Ф4</span>
                       <span x-show="selected === 'live-oscar' && o.isCopyLeader"
-                            class="pill pill-info ml-2 text-xs align-middle font-semibold"
+                            class="pill pill-lane ml-2 text-xs align-middle font-semibold"
                             title="Copy-trader · следование лидеру">COPY</span>
+                      <span x-show="selected === 'live-oscar' && (o.isRunnerProbe || o.liveOscarTradeLane === 'runner_probe' || o.positionSource === 'runner_probe')"
+                            class="pill pill-lane ml-2 text-xs align-middle font-semibold"
+                            title="Runner probe · fresh runners 12–36h lane">RUNNER</span>
                       <span x-show="selected === 'live-oscar' && o.isCopyLeader && o.copyLeaderWalletShort"
                             class="pill ml-2 text-xs align-middle text-fuchsia-200 border-fuchsia-500/40"
                             x-text="'лидер ' + o.copyLeaderWalletShort"></span>
@@ -670,7 +674,7 @@
                     <div class="text-xs text-slate-500 mt-0.5" x-show="o.pnlPct != null && o.livePxProvenance" x-text="livePxSourceLabel(o)"></div>
                   </div>
                 </div>
-                <div x-show="isExpanded(o.mint + ':' + (o.isCopyLeader ? 'copy' : 'oscar') + ':' + o.entryTs)" x-cloak
+                <div x-show="isExpanded(openRowKey(o))" x-cloak
                      class="timeline-pane mono mt-2 ml-3 border-l-[3px] border-violet-500/55 pl-4 py-2 space-y-2">
                   <div class="text-[11px] text-slate-500 mb-1.5 leading-tight">
                     После цены/token — сумма ноги (покупка первой ноги, staged-доборы или DCA), выручка TP-сетки (≈) или объём закрытого остатка (−).
@@ -961,7 +965,7 @@
         oneLiner:
           '**Variant A v2 hybrid** (1.11.272). Вход: $800 сплит $400+$400, DCA −10%/−20% × $200, cap **$1200**, liq **≥$300k**, POST **≥36 ч**. Выход: бесконечная TP-сетка **+5% / 10% остатка**, partial trail @+10%, salvage24/h48 без TP.',
         details:
-          '**Плитка 1** · PM2 **`live-oscar`** · SSOT: `ecosystem.config.cjs`.\n\n**Copy-leader (shared wallet)**\n• Открытые copy-позиции (`positionSource: copy_leader`) — отдельные строки в Open с бейджем **COPY** и лидером `498S…aNma`.\n• SSOT: `data/copytrader/state.json` + journal; Oscar JSONL их не содержит.\n\n**Вход (prod v2)**\n• Сплит: **$400** по сигналу + **$400** через 10 с (коридор цены к 1-й ноге).\n• **DCA** `−10% / −20%` от первой ноги, по **$200** каждая → max **$1200** (`LIVE_MAX_POSITION_USD`).\n• POST: liq **≥$300k**, vol5m **≥$20k**, vol1h **≥$36k**, holders **≥3000**, dip **−20%** от high (2h/6h/12h OR).\n• Signal kill **−25%** от цены сигнала.\n• Timed loss (salvage24 / h48 без TP) → **24h block** по mint.\n\n**Выход hybrid (`variant_a_v2`)**\n• TP grid: каждые **+5%** к avg → **10%** остатка (re-arm после отката ≤+2.5% если взято ≥+10%).\n• После **DCA** — сброс TP-ступеней на новом avg.\n• Trail: partial **−5%** от хая, **20%** остатка за шаг; arm @ **+10%**.\n• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n• **In-flight** v3 scratch / v1 / wave B — без смены политики.\n\n**Журнал:** `data/live/pt1-oscar-live.jsonl`.',
+          '**Плитка 1** · PM2 **`live-oscar`** · SSOT: `ecosystem.config.cjs`.\n\n**Copy-leader (shared wallet)**\n• Открытые copy-позиции (`positionSource: copy_leader`) — отдельные строки в Open с бейджем **COPY** (жёлтый) и лидером `498S…aNma`.\n• SSOT: `data/copytrader/state.json` + journal; Oscar JSONL их не содержит.\n\n**Runner probe lane**\n• `liveOscarTradeLane: runner_probe` — отдельные open-строки с бейджем **RUNNER** (жёлтый); параллельно prod на том же mint.\n\n**Вход (prod v2)**\n• Сплит: **$400** по сигналу + **$400** через 10 с (коридор цены к 1-й ноге).\n• **DCA** `−10% / −20%` от первой ноги, по **$200** каждая → max **$1200** (`LIVE_MAX_POSITION_USD`).\n• POST: liq **≥$300k**, vol5m **≥$20k**, vol1h **≥$36k**, holders **≥3000**, dip **−20%** от high (2h/6h/12h OR).\n• Signal kill **−25%** от цены сигнала.\n• Timed loss (salvage24 / h48 без TP) → **24h block** по mint.\n\n**Выход hybrid (`variant_a_v2`)**\n• TP grid: каждые **+5%** к avg → **10%** остатка (re-arm после отката ≤+2.5% если взято ≥+10%).\n• После **DCA** — сброс TP-ступеней на новом avg.\n• Trail: partial **−5%** от хая, **20%** остатка за шаг; arm @ **+10%**.\n• Timed: salvage24 + h48 loss @ breakeven; smart48 off.\n• **In-flight** v3 scratch / v1 / wave B — без смены политики.\n\n**Журнал:** `data/live/pt1-oscar-live.jsonl`.',
       },
       superbot: {
         label: 'SuperBot',
@@ -1220,6 +1224,12 @@
           const arr = events || [];
           const max = this.timelineUiMax;
           return arr.length > max ? arr.slice(arr.length - max) : arr;
+        },
+        openRowKey(o) {
+          const lane = o.isCopyLeader ? 'copy'
+            : (o.isRunnerProbe || o.liveOscarTradeLane === 'runner_probe' || o.positionSource === 'runner_probe') ? 'runner'
+            : 'oscar';
+          return `${o.mint}:${lane}:${o.entryTs}`;
         },
         toggleExpand(key) { this.expanded[key] = !this.expanded[key]; },
         isExpanded(key) { return !!this.expanded[key]; },

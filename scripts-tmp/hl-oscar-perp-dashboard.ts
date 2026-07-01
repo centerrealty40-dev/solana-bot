@@ -225,6 +225,7 @@ function emptyOpenRow(
     remainingFraction: 1,
     liveOscarTradeLane: null,
     isScalpWave: false,
+    isRunnerProbe: false,
     timeline: [],
     coin,
     positionId: posId,

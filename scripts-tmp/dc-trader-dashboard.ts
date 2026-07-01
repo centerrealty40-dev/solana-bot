@@ -656,6 +656,7 @@ export function loadDcTraderForDashboard(
       remainingFraction: status === 'entered' ? 1 : 0,
       liveOscarTradeLane: null,
       isScalpWave: false,
+      isRunnerProbe: false,
       ...dcMeta,
     };
     if (status === 'watching') watchingOpen.push(openRow);

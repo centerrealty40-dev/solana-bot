@@ -344,6 +344,9 @@ export function loadCopyTraderJsonlForDashboard(
     pairAddress: null,
     entryLiqUsd: null,
     remainingFraction: p.remainingFraction,
+    liveOscarTradeLane: null,
+    isScalpWave: false,
+    isRunnerProbe: false,
   });
 
   const closePosition = (mint: string, exitTs: number, exitReason: string, pnlPct: number, pnlUsd: number): void => {
@@ -811,6 +814,7 @@ export function loadCopyLeaderOpensForLiveOscarDashboard(
       remainingFraction: 1,
       liveOscarTradeLane: null,
       isScalpWave: false,
+      isRunnerProbe: false,
       isCopyLeader: true,
       positionSource: 'copy_leader',
       copyLeaderWalletShort: leaderShort,

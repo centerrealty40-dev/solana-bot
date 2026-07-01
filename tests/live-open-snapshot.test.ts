@@ -201,6 +201,21 @@ describe('mergeLiveOscarOpenSnapshotIntoLoad', () => {
   });
 });
 
+describe('paper2OpenItemFromLiveOpenTrade runner_probe', () => {
+  it('marks runner_probe lane positions', () => {
+    const item = paper2OpenItemFromLiveOpenTrade('MintR', {
+      symbol: 'RUN',
+      entryTs: 1,
+      liveOscarTradeLane: 'runner_probe',
+      liveExitPolicyId: 'runner_probe_v1',
+    });
+    expect(item.isRunnerProbe).toBe(true);
+    expect(item.liveOscarTradeLane).toBe('runner_probe');
+    expect(item.positionSource).toBe('runner_probe');
+    expect(item.isScalpWave).toBe(false);
+  });
+});
+
 describe('paper2OpenItemFromLiveOpenTrade scalp_wave', () => {
   it('marks active scalp_wave positions', () => {
     const item = paper2OpenItemFromLiveOpenTrade('MintS', {
@@ -211,7 +226,21 @@ describe('paper2OpenItemFromLiveOpenTrade scalp_wave', () => {
       liveExitPolicyId: 'scalp_wave_v1',
     });
     expect(item.isScalpWave).toBe(true);
+    expect(item.isRunnerProbe).toBe(false);
     expect(item.liveOscarTradeLane).toBe('scalp_wave');
+  });
+
+  it('marks runner_probe positions', () => {
+    const item = paper2OpenItemFromLiveOpenTrade('MintR', {
+      symbol: 'RUN',
+      entryTs: 1,
+      liveOscarTradeLane: 'runner_probe',
+      liveExitPolicyId: 'runner_probe_v1',
+    });
+    expect(item.isRunnerProbe).toBe(true);
+    expect(item.isScalpWave).toBe(false);
+    expect(item.liveOscarTradeLane).toBe('runner_probe');
+    expect(item.positionSource).toBe('runner_probe');
   });
 
   it('clears scalp badge after phase escalation to prod', () => {
