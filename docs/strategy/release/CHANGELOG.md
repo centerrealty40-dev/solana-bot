@@ -8,6 +8,27 @@
 
 ---
 
+## [1.11.279] — 2026-07-01
+
+### Hotfix: PM2 collector merge broke discovery (live-oscar no trades)
+
+**Symptom:** `live-oscar` online (heartbeat OK) but zero buys/sells — discovery evals fail with `data_coverage:*` / stale PG snapshots.
+
+**Root cause:** `ecosystem.config.cjs` had duplicate keys inside `sa-meteora` and `sa-pumpswap` PM2 app objects (bad merge). JavaScript kept the **last** key only:
+- `sa-meteora` actually ran **`orca-collector.mjs`** (Meteora snapshots never ingested).
+- `sa-pumpswap` actually ran **`sa-wallet-orchestrator.mjs`** (Pumpswap collector never started).
+- No dedicated `sa-orca` process.
+
+Thin cross-DEX PG coverage → `PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE=1` rejects every candidate.
+
+**Fix:**
+- Split into four separate PM2 apps: `sa-meteora`, `sa-orca`, `sa-pumpswap`, `sa-wallet-orchestrator`.
+- Pin `LIVE_ENTRY_NOTIONAL_USD=800` in `live-oscar` env (parity with `PAPER_POSITION_USD`) so stale VPS `.env` cannot arm sticky exposure block.
+
+**Rollback:** revert commit; `pm2 delete sa-orca sa-wallet-orchestrator`; restore merged (broken) objects; `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.278] — 2026-05-25
 
 ### Fix: Telegram blacklist ORCA mint (spike + dips)

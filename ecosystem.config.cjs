@@ -99,6 +99,10 @@ const PM2_APPS = [
       name: 'sa-meteora',
       cwd: root,
       script: 'scripts-tmp/meteora-collector.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
       max_memory_restart: '1024M',
@@ -109,6 +113,9 @@ const PM2_APPS = [
         METEORA_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
+    },
+    {
+      name: 'sa-orca',
       cwd: root,
       script: 'scripts-tmp/orca-collector.mjs',
       interpreter: 'node',
@@ -164,6 +171,9 @@ const PM2_APPS = [
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '30000',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
       },
+    },
+    {
+      name: 'sa-wallet-orchestrator',
       cwd: root,
       script: 'scripts-tmp/sa-wallet-orchestrator.mjs',
       args: '--daemon',
@@ -971,7 +981,10 @@ const PM2_APPS = [
          */
         LIVE_TRACKER_INTER_MINT_DELAY_MS: '60',
         /** Полный нотионал (= `PAPER_POSITION_USD`); SOL на swap — из Jupiter quote по USD-нотации ноги. */
+        LIVE_ENTRY_NOTIONAL_USD: LIVE_OSCAR_ENTRY_NOTIONAL_USD,
         LIVE_MAX_POSITION_USD: LIVE_OSCAR_MAX_POSITION_USD,
+        /** Явно в PM2 env — перекрывает устаревший `.env`, иначе `LIVE_STRICT_NOTIONAL_PARITY=1` блокирует все покупки. */
+        LIVE_STRICT_NOTIONAL_PARITY: '1',
         LIVE_MAX_OPEN_POSITIONS: '30',
         /**
          * Phase 5: гейт «свободный SOL ≥ k·X» + capital_skip / CAPITAL_ROTATE — выкл.
