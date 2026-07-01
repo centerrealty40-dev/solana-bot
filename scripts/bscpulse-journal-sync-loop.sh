@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # PM2 loop: sync BscPulse journal every 30s (sudo as root for SSH key).
 set -uo pipefail
-SCRIPT="/opt/solana-alpha/scripts/ops/sync-bscpulse-journal.sh"
+ROOT="${BSCPULSE_REPO_ROOT:-/opt/solana-alpha}"
+SCRIPT="${BSCPULSE_SYNC_SCRIPT:-}"
+if [ -z "$SCRIPT" ]; then
+  if [ -f "$ROOT/scripts/ops/sync-bscpulse-journal.sh" ]; then
+    SCRIPT="$ROOT/scripts/ops/sync-bscpulse-journal.sh"
+  else
+    SCRIPT="$ROOT/scripts/sync-bscpulse-journal.sh"
+  fi
+fi
 INTERVAL="${BSCPULSE_SYNC_INTERVAL_SEC:-30}"
 run_sync() {
   if [ "$(id -u)" -eq 0 ]; then

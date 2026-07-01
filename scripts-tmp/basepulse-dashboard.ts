@@ -5,15 +5,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Paper2OpenItem, TimelineEvent } from './dashboard-server.js';
-import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
+import { iterJsonlLines, iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
-const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
-const FULL_SCAN_MAX = Number(process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024);
+const TAIL_BYTES = Number(
+  process.env.DASHBOARD_BASEPULSE_TAIL_BYTES ?? process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 512 * 1024 * 1024,
+);
+/** BasePulse journal ~350MB — full scan below this cap avoids phantom opens from tail truncation. */
+const FULL_SCAN_MAX = Number(
+  process.env.DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES ??
+    process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ??
+    512 * 1024 * 1024,
+);
 
 /** Well-known Base token symbols when journal rows omit `symbol`. */
 const BASE_KNOWN_SYMBOLS: Record<string, string> = {
   '0x940181a94a35a4569e4529a3cdfb74e38fd98631': 'AERO',
   '0xbf927b841994731c573bdf09ceb0c6b0aa887cdd': 'VELVET',
+  '0x9126236476efba9ad8ab77855c60eb5bf37586eb': 'CHECK',
 };
 
 /** GMGN token page for Base chain (same slug pattern as Solana `/sol/token/`). */
@@ -47,14 +55,70 @@ function* journalLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, TAIL_BYTES, FULL_SCAN_MAX);
 }
 
+/** Position state from entire journal when it fits FULL_SCAN_MAX; else tail only. */
+function* positionStateLines(filePath: string): Generator<string> {
+  const size = fs.statSync(filePath).size;
+  if (size <= FULL_SCAN_MAX) {
+    yield* iterJsonlLines(filePath);
+    return;
+  }
+  yield* journalLines(filePath);
+}
+
 function tsMs(ev: JournalEv): number {
   const t = ev.ts;
-  if (typeof t === 'number' && t > 0) return t;
+  if (typeof t === 'number' && t > 0) return t > 1e12 ? t : t * 1000;
   if (typeof t === 'string') {
     const n = Date.parse(t);
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function parseJournalLine(ln: string): JournalEv | null {
+  try {
+    return JSON.parse(ln) as JournalEv;
+  } catch {
+    return null;
+  }
+}
+
+function eventTokenId(ev: JournalEv): string {
+  const tokenRaw =
+    typeof ev.token === 'string' ? ev.token : typeof ev.baseToken === 'string' ? ev.baseToken : '';
+  const pairRaw = typeof ev.pair === 'string' ? ev.pair : '';
+  const token = tokenRaw || pairRaw;
+  return token ? tokenKey(token) : '';
+}
+
+function isPositionOpenEv(ev: JournalEv): boolean {
+  const kind = typeof ev.kind === 'string' ? ev.kind : '';
+  const type = typeof ev.type === 'string' ? ev.type : '';
+  return kind === 'open' || type === 'live_open';
+}
+
+function isPositionCloseEv(ev: JournalEv): boolean {
+  const kind = typeof ev.kind === 'string' ? ev.kind : '';
+  const type = typeof ev.type === 'string' ? ev.type : '';
+  return kind === 'close' || type === 'live_close';
+}
+
+/** Last live_open/live_close per token in the scanned window (reverse pass). */
+function openTokenIdsFromTailReverse(lines: readonly string[]): Set<string> {
+  const lastState = new Map<string, 'open' | 'close'>();
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const ev = parseJournalLine(lines[i]!);
+    if (!ev) continue;
+    const tokenId = eventTokenId(ev);
+    if (!tokenId || lastState.has(tokenId)) continue;
+    if (isPositionOpenEv(ev)) lastState.set(tokenId, 'open');
+    else if (isPositionCloseEv(ev)) lastState.set(tokenId, 'close');
+  }
+  const open = new Set<string>();
+  for (const [id, state] of lastState) {
+    if (state === 'open') open.add(id);
+  }
+  return open;
 }
 
 function num(v: unknown): number | null {
@@ -186,13 +250,12 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
     };
   }
 
-  for (const ln of journalLines(jsonlPath)) {
-    let ev: JournalEv;
-    try {
-      ev = JSON.parse(ln) as JournalEv;
-    } catch {
-      continue;
-    }
+  const lines = [...journalLines(jsonlPath)];
+  const trulyOpenIds = openTokenIdsFromTailReverse([...positionStateLines(jsonlPath)]);
+
+  for (const ln of lines) {
+    const ev = parseJournalLine(ln);
+    if (!ev) continue;
     const ts = tsMs(ev);
     if (ts <= 0) continue;
     if (firstTs === 0 || ts < firstTs) firstTs = ts;
@@ -204,7 +267,7 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
       typeof ev.token === 'string' ? ev.token : typeof ev.baseToken === 'string' ? ev.baseToken : '';
     const pairRaw = typeof ev.pair === 'string' ? ev.pair : '';
     const token = tokenRaw || pairRaw;
-    const tokenId = token ? tokenKey(token) : '';
+    const tokenId = eventTokenId(ev);
 
     if (tokenId && typeof ev.symbol === 'string' && ev.symbol.trim()) {
       symbolHints.set(tokenId, ev.symbol.trim().slice(0, 32));
@@ -334,6 +397,10 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
         });
       }
     }
+  }
+
+  for (const id of openByToken.keys()) {
+    if (!trulyOpenIds.has(id)) openByToken.delete(id);
   }
 
   const open: Paper2OpenItem[] = [...openByToken.values()].map(({ timeline: _tl, ...rest }) => rest);

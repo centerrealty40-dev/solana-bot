@@ -296,6 +296,9 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
         DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
+        /** BasePulse journal ~350MB — full scan avoids phantom opens when tail truncates closes. */
+        DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES: String(512 * 1024 * 1024),
+        DASHBOARD_BASEPULSE_TAIL_BYTES: String(512 * 1024 * 1024),
         /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
         DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
