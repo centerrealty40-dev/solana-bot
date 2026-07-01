@@ -183,6 +183,29 @@ describe('loadBscPulseForDashboard', () => {
     expect(r.open[0]!.symbol).toBe('UB');
   });
 
+  it('uses legUsd when positionUsd is absent (new journal format)', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bscp-dash-'));
+    const fp = path.join(tmpDir, 'journal.jsonl');
+    writeJournal(fp, [
+      {
+        type: 'live_open',
+        kind: 'open',
+        token: PROD_LIVE_OPEN.token,
+        pair: PROD_LIVE_OPEN.pair,
+        spotPxUsd: 0.5,
+        legUsd: 10,
+        dipPct: -18.4,
+        ts: Date.now() - 60_000,
+      },
+    ]);
+
+    const r = loadBscPulseForDashboard(fp);
+    expect(r.open.length).toBe(1);
+    expect(r.open[0]!.totalInvestedUsd).toBe(10);
+    const tl = r.openTimelines.get(r.open[0]!.mint) ?? [];
+    expect(tl[0]?.contextNote).toContain('18.4%');
+  });
+
   it('resolves baseTokenAddress when token field is absent', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bscp-dash-'));
     const fp = path.join(tmpDir, 'journal.jsonl');
