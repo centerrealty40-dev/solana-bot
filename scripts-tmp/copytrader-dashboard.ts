@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { Paper2OpenItem } from './dashboard-server.js';
+import type { LiveOscarPaper2Load, Paper2OpenItem } from './dashboard-server.js';
 import type { TimelineEvent } from './dashboard-server.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
@@ -712,5 +712,162 @@ export function loadCopyTraderJsonlForDashboard(
     failReasons,
     openTimelines: timelines,
     copyTrader: stats,
+  };
+}
+
+type CopyStateRow = {
+  mint?: string;
+  symbol?: string;
+  entryTs?: number;
+  entryPriceUsd?: number;
+  entryMcapUsd?: number;
+  sizeUsd?: number;
+  entryDeployedCostUsd?: number;
+  leaderWallet?: string;
+  positionSource?: string;
+};
+
+function shortLeaderWallet(pk: string): string | null {
+  const s = pk.trim();
+  if (!s) return null;
+  if (s.length <= 10) return s;
+  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
+
+export type CopyLeaderDashboardMerge = {
+  open: Paper2OpenItem[];
+  openTimelines: Map<string, TimelineEvent[]>;
+  copyTrader: CopyTraderDashboardStats;
+};
+
+/**
+ * SSOT: `data/copytrader/state.json` open positions; journal enriches timelines + cycle stats.
+ * Merged into Live Oscar `/api/paper2` as separate rows (`isCopyLeader`) on the shared wallet.
+ */
+export function loadCopyLeaderOpensForLiveOscarDashboard(
+  statePath: string,
+  journalPath: string,
+  leaderWallet: string,
+): CopyLeaderDashboardMerge | null {
+  if (!statePath || !fs.existsSync(statePath)) return null;
+
+  const journalLoad = fs.existsSync(journalPath)
+    ? loadCopyTraderJsonlForDashboard(journalPath, statePath)
+    : emptyLoad();
+
+  let parsed: { positions?: Record<string, CopyStateRow> };
+  try {
+    parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { positions?: Record<string, CopyStateRow> };
+  } catch {
+    return null;
+  }
+
+  const positions = parsed.positions ?? {};
+  const leaderFromState = Object.values(positions).find(
+    (p) => typeof p?.leaderWallet === 'string' && p.leaderWallet.length >= 32,
+  )?.leaderWallet;
+  const leaderShort = shortLeaderWallet(leaderFromState || leaderWallet);
+
+  const open: Paper2OpenItem[] = [];
+  const openTimelines = new Map<string, TimelineEvent[]>();
+
+  for (const [mint, pos] of Object.entries(positions)) {
+    if (!pos || typeof pos !== 'object') continue;
+    const deployed =
+      typeof pos.entryDeployedCostUsd === 'number' && pos.entryDeployedCostUsd > 0
+        ? pos.entryDeployedCostUsd
+        : typeof pos.sizeUsd === 'number' && pos.sizeUsd > 0
+          ? pos.sizeUsd
+          : 0;
+    if (!(deployed > 0)) continue;
+
+    const symbol = typeof pos.symbol === 'string' && pos.symbol.trim() ? pos.symbol : mint.slice(0, 6);
+    const entryTs = typeof pos.entryTs === 'number' && pos.entryTs > 0 ? pos.entryTs : Date.now();
+    const entryPx = typeof pos.entryPriceUsd === 'number' && pos.entryPriceUsd > 0 ? pos.entryPriceUsd : 0;
+
+    const item: Paper2OpenItem = {
+      mint,
+      symbol,
+      entryTs,
+      entryMcUsd: entryPx,
+      entryRealMcUsd: typeof pos.entryMcapUsd === 'number' && pos.entryMcapUsd > 0 ? pos.entryMcapUsd : null,
+      baselinePriceUsd: entryPx > 0 ? entryPx : null,
+      openedAtIso: new Date(entryTs).toISOString(),
+      lane: 'copy-trader',
+      source: 'copy_leader',
+      metricType: 'price',
+      features: null,
+      btc: null,
+      peakMcUsd: entryPx,
+      peakPnlPct: 0,
+      trailingArmed: false,
+      totalInvestedUsd: deployed,
+      entryPriorityFeeUsd: null,
+      entryPriceVerifySlipPct: null,
+      entryPriceVerifyImpactPct: null,
+      entryPriceVerifySource: null,
+      pairAddress: null,
+      entryLiqUsd: null,
+      remainingFraction: 1,
+      liveOscarTradeLane: null,
+      isScalpWave: false,
+      isCopyLeader: true,
+      positionSource: 'copy_leader',
+      copyLeaderWalletShort: leaderShort,
+    };
+    open.push(item);
+
+    const journalTl = journalLoad.openTimelines.get(mint);
+    if (journalTl?.length) {
+      openTimelines.set(mint, journalTl.slice());
+      continue;
+    }
+    openTimelines.set(mint, [
+      {
+        ts: entryTs,
+        kind: 'open',
+        label: `Copy entry $${deployed.toFixed(0)} · leader ${leaderShort ?? '?'}`,
+        mcUsd: null,
+        spotPxUsd: entryPx > 0 ? entryPx : null,
+        sizePct: null,
+        pnlPct: null,
+        pnlUsd: null,
+        reason: null,
+        remainingFraction: 1,
+        amountUsd: deployed,
+        contextNote: leaderShort ? `Лидер ${leaderShort}` : null,
+      },
+    ]);
+  }
+
+  open.sort((a, b) => b.entryTs - a.entryTs);
+  if (!open.length && !journalLoad.copyTrader.cycles.length) {
+    return { open, openTimelines, copyTrader: journalLoad.copyTrader };
+  }
+
+  return {
+    open,
+    openTimelines,
+    copyTrader: journalLoad.copyTrader,
+  };
+}
+
+/** Append copy-leader open rows to Live Oscar load; Oscar rows on the same mint stay separate. */
+export function mergeCopyLeaderOpensIntoLiveOscarLoad(
+  load: LiveOscarPaper2Load,
+  merge: CopyLeaderDashboardMerge | null,
+): LiveOscarPaper2Load {
+  if (!merge?.open.length) return load;
+
+  const openTimelines = new Map(load.openTimelines);
+  for (const row of merge.open) {
+    const tl = merge.openTimelines.get(row.mint);
+    if (tl?.length) openTimelines.set(`copy:${row.mint}`, tl);
+  }
+
+  return {
+    ...load,
+    open: [...load.open, ...merge.open],
+    openTimelines,
   };
 }

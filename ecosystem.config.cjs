@@ -285,6 +285,7 @@ const PM2_APPS = [
         DASHBOARD_LIVE_OSCAR_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         DASHBOARD_COPY_TRADER_JSONL: path.join(root, 'data/copytrader/journal.jsonl'),
         DASHBOARD_COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        DASHBOARD_COPY_TRADER_LEADER_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         /** SuperBot / live-oscar-preset-c journal (HcV3BhmK wallet, отдельный PM2). */
         DASHBOARD_SUPERBOT_JSONL: path.join(root, 'data/live/live-oscar-preset-c.jsonl'),
         /** Вторая плитка «Wallet» в шапке `/papertrader2` — баланс copy-trader (бывший risky). */

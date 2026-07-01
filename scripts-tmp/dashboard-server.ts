@@ -42,7 +42,12 @@ import {
   type DexSnapshotSource,
 } from '../src/papertrader/pricing.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
-import { loadCopyTraderJsonlForDashboard, type CopyTraderDashboardStats } from './copytrader-dashboard.js';
+import {
+  loadCopyLeaderOpensForLiveOscarDashboard,
+  loadCopyTraderJsonlForDashboard,
+  mergeCopyLeaderOpensIntoLiveOscarLoad,
+  type CopyTraderDashboardStats,
+} from './copytrader-dashboard.js';
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
 import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
 import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse-dashboard.js';
@@ -240,6 +245,12 @@ const DASHBOARD_COPY_TRADER_JSONL =
 const DASHBOARD_COPY_TRADER_STATE_PATH =
   process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
   path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+/** Leader wallet mirrored on Live Oscar open rows (`COPY` badge). */
+const DASHBOARD_COPY_TRADER_LEADER_WALLET = (
+  process.env.DASHBOARD_COPY_TRADER_LEADER_WALLET?.trim() ||
+  process.env.COPY_TRADER_TARGET_WALLET?.trim() ||
+  ''
+).trim();
 /** DCA Trader Risky (dc-trader) — tile 3 on `/papertrader2`. */
 const DASHBOARD_DC_TRADER_JSONL =
   process.env.DASHBOARD_DC_TRADER_JSONL?.trim() || '/opt/dc-trader/data/trader-journal.jsonl';
@@ -1891,6 +1902,11 @@ export type Paper2OpenItem = {
   liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
   /** True while position is actively managed as scalp_wave (false after phase escalation). */
   isScalpWave: boolean;
+  /** Parallel copy-leader leg on shared wallet — separate open row from Oscar on same mint. */
+  isCopyLeader?: boolean;
+  positionSource?: 'copy_leader' | null;
+  /** Truncated leader wallet for UI, e.g. `498S…aNma`. */
+  copyLeaderWalletShort?: string | null;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -1938,7 +1954,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-oscar-majors',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-06-29-dashboard-tail-skip-opens-fast-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-07-01-dashboard-copy-leader-opens-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -2215,6 +2231,10 @@ export type Paper2ApiEnrichedOpen = {
   remainingCostBasisUsd: number;
   liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
   isScalpWave: boolean;
+  isCopyLeader?: boolean;
+  positionSource?: 'copy_leader' | null;
+  copyLeaderWalletShort?: string | null;
+  copySizeUsd?: number | null;
 };
 
 const TIMELINE_SPOT_FALLBACK_MAX_AGE_MS = 48 * 3600 * 1000;
@@ -4104,6 +4124,30 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
   );
 }
 
+/** Merge copy-trader state/journal opens into Live Oscar panel (shared wallet). */
+export function augmentLiveOscarLoadWithCopyLeaderOpens(load: LiveOscarPaper2Load): {
+  load: LiveOscarPaper2Load;
+  copyTrader?: CopyTraderDashboardStats;
+} {
+  const statePath =
+    process.env.DASHBOARD_COPY_TRADER_STATE_PATH?.trim() ||
+    path.resolve(PAPER2_DIR, '..', 'copytrader', 'state.json');
+  const journalPath =
+    process.env.DASHBOARD_COPY_TRADER_JSONL?.trim() ||
+    path.resolve(PAPER2_DIR, '..', 'copytrader', 'journal.jsonl');
+  const leaderWallet = (
+    process.env.DASHBOARD_COPY_TRADER_LEADER_WALLET?.trim() ||
+    process.env.COPY_TRADER_TARGET_WALLET?.trim() ||
+    DASHBOARD_COPY_TRADER_LEADER_WALLET
+  ).trim();
+  const merge = loadCopyLeaderOpensForLiveOscarDashboard(statePath, journalPath, leaderWallet);
+  if (!merge) return { load };
+  return {
+    load: mergeCopyLeaderOpensIntoLiveOscarLoad(load, merge),
+    copyTrader: merge.copyTrader,
+  };
+}
+
 function paper2Metrics(closed: Paper2ClosedRow[]): {
   total: number;
   wins: number;
@@ -4752,7 +4796,11 @@ async function buildPaper2StrategyRowFromLoad(
   }
   const enrichedOpen: Paper2ApiEnrichedOpen[] = await Promise.all(
     open.slice(0, 30).map(async (ot): Promise<Paper2ApiEnrichedOpen> => {
-      const timelineSorted = (openTimelines.get(ot.mint) ?? []).slice().sort((a, b) => a.ts - b.ts);
+      const isCopyRow = ot.isCopyLeader === true;
+      const timelineKey = isCopyRow ? `copy:${ot.mint}` : ot.mint;
+      const timelineSorted = (openTimelines.get(timelineKey) ?? openTimelines.get(ot.mint) ?? [])
+        .slice()
+        .sort((a, b) => a.ts - b.ts);
       const isMcMetric = !isDcTraderPanel && !isSuperbotPanel && ot.metricType === 'mc';
       let displayLiveMc: number | null = null;
       let liveMcProvenance: 'snapshots' | 'pump.fun' | null = null;
@@ -5119,6 +5167,10 @@ async function buildPaper2StrategyRowFromLoad(
         liveFdvUsd,
         liveOscarTradeLane: ot.liveOscarTradeLane ?? null,
         isScalpWave: ot.isScalpWave,
+        isCopyLeader: ot.isCopyLeader === true,
+        positionSource: ot.positionSource ?? null,
+        copyLeaderWalletShort: ot.copyLeaderWalletShort ?? null,
+        copySizeUsd: isCopyRow && ot.totalInvestedUsd > 0 ? ot.totalInvestedUsd : null,
         ...(openHlOscar
           ? { coin: openHlOscar.coin, hyperliquidUrl: openHlOscar.hyperliquidUrl }
           : {}),
@@ -5230,7 +5282,8 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 });
 
 async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
-  const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const llRaw = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const { load: ll, copyTrader: liveCopyTrader } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const dcLoad = loadDcTraderForDashboard(
     DASHBOARD_DC_TRADER_JSONL,
@@ -5242,7 +5295,10 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     : loadSuperbotJsonlForDashboard(DASHBOARD_SUPERBOT_JSONL);
   const { superbot: superbotStats, hbOpen: sbHbOpen, hbClosed: sbHbClosed, ...superbotLoaded } = sbLoad;
 
-  const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', liveLoaded, {
+  const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', {
+    ...liveLoaded,
+    ...(liveCopyTrader ? { copyTrader: liveCopyTrader } : {}),
+  }, {
     hbOpen,
     hbClosed,
     reconcileExtras: liveExtras,
@@ -5378,7 +5434,8 @@ async function getPaper2ApiPayloadCached(): Promise<{ payload: unknown; stale: b
 }
 
 async function buildPaper2OpensPayload(): Promise<Record<string, unknown>> {
-  const ll = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const llRaw = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const { load: ll } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const row = await buildPaper2StrategyRowFromLoad(
     DASHBOARD_LIVE_OSCAR_JSONL,

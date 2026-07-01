@@ -80,6 +80,24 @@
 
 ---
 
+## [1.11.546] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.546`
+
+### Dashboard — copy-leader open positions on Live Oscar panel
+
+**Контекст:** copy-trader и live-oscar на общем кошельке (`live-oscar-micro`); copy-ноги живут в `data/copytrader/state.json`, Oscar JSONL их не видит.
+
+- **`/papertrader2` · Live Oscar:** открытые copy-позиции из state+journal — **отдельные строки** с бейджем **COPY** и лидером `498S…aNma`; Oscar-строка на том же mint не сливается.
+- **API:** `augmentLiveOscarLoadWithCopyLeaderOpens`, поля `isCopyLeader`, `copySizeUsd`, `copyLeaderWalletShort`; copy cycles/stats на плитке Live Oscar.
+- **PM2 `live-oscar-dashboard`:** `DASHBOARD_COPY_TRADER_LEADER_WALLET`.
+
+**Откат:** `git checkout sa-alpha-1.11.545 -- scripts-tmp/dashboard-server.ts scripts-tmp/copytrader-dashboard.ts scripts-tmp/dashboard-paper2.html ecosystem.config.cjs tests/dashboard-copy-leader-opens.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.545] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.545`
