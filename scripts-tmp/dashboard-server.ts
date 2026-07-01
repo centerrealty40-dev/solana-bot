@@ -5283,7 +5283,7 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 
 async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   const llRaw = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
-  const { load: ll, copyTrader: liveCopyTrader } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
+  const { load: ll } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const dcLoad = loadDcTraderForDashboard(
     DASHBOARD_DC_TRADER_JSONL,
@@ -5297,7 +5297,6 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
 
   const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', {
     ...liveLoaded,
-    ...(liveCopyTrader ? { copyTrader: liveCopyTrader } : {}),
   }, {
     hbOpen,
     hbClosed,
