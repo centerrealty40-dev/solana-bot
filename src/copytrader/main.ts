@@ -89,10 +89,53 @@ import {
   copySellableTokenRaw,
   copyTrackedTokenRaw,
 } from './position-reconcile.js';
-import { checkCopyBuyOscarDupGuard, type CopyBuyOscarDupGuardVerdict } from './oscar-position-guard.js';
+import {
+  checkCopyBuyWalletCapGuard,
+  shouldIgnoreLeaderForMint,
+  type CopyBuyOscarDupGuardVerdict,
+  type CopyLeaderIgnoreVerdict,
+} from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function logCopyLeaderIgnored(
+  cfg: CopyTraderConfig,
+  args: {
+    mint: string;
+    symbol?: string;
+    leaderSignature?: string;
+    leaderAction: 'buy' | 'sell' | 'add' | 'pending_buy' | 'pending_sell' | 'tail_sweep';
+    verdict: CopyLeaderIgnoreVerdict & { ignore: true };
+    oscarPromotedAt?: number;
+  },
+): void {
+  appendCopyEvent(cfg, {
+    kind: 'copy_leader_ignored',
+    reason: args.verdict.reason,
+    mint: args.mint,
+    symbol: args.symbol ?? null,
+    leaderSignature: args.leaderSignature ?? null,
+    leaderAction: args.leaderAction,
+    oscarPromotedAt: args.oscarPromotedAt ?? null,
+  });
+}
+
+function leaderIgnoreBlocksAction(
+  cfg: CopyTraderConfig,
+  args: {
+    mint: string;
+    copyPosition?: CopyPosition | null;
+  },
+): CopyLeaderIgnoreVerdict & { ignore: true } | null {
+  const verdict = shouldIgnoreLeaderForMint({
+    cfg,
+    mint: args.mint,
+    copyPosition: args.copyPosition,
+    statePath: cfg.statePath,
+  });
+  return verdict.ignore ? verdict : null;
+}
 
 function logCopyBuySkipped(
   cfg: CopyTraderConfig,
@@ -120,15 +163,13 @@ function oscarDupGuardBlocksBuy(
   cfg: CopyTraderConfig,
   args: {
     mint: string;
-    copyPosition?: CopyPosition | null;
     walletMintRaw?: bigint;
     priceUsd?: number;
   },
 ): CopyBuyOscarDupGuardVerdict & { skip: true } | null {
-  const verdict = checkCopyBuyOscarDupGuard({
+  const verdict = checkCopyBuyWalletCapGuard({
     cfg,
     mint: args.mint,
-    copyPosition: args.copyPosition,
     walletMintRaw: args.walletMintRaw,
     priceUsd: args.priceUsd,
     statePath: cfg.statePath,
@@ -241,9 +282,20 @@ async function onLeaderBuy(
 
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
+    const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: existing });
+    if (leaderIgnore) {
+      logCopyLeaderIgnored(cfg, {
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderAction: 'add',
+        verdict: leaderIgnore,
+        oscarPromotedAt: existing.oscarPromotedAt,
+      });
+      return;
+    }
     const dupOnAdd = oscarDupGuardBlocksBuy(cfg, {
       mint,
-      copyPosition: existing,
       walletMintRaw: walletBal,
       priceUsd,
     });
@@ -317,9 +369,20 @@ async function onLeaderBuy(
   }
 
   if (hasPendingBuyForMint(state, mint)) return;
+  const leaderIgnoreEntry = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: existing });
+  if (leaderIgnoreEntry) {
+    logCopyLeaderIgnored(cfg, {
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderAction: 'buy',
+      verdict: leaderIgnoreEntry,
+      oscarPromotedAt: state.positions[mint]?.oscarPromotedAt,
+    });
+    return;
+  }
   const dupOnEntry = oscarDupGuardBlocksBuy(cfg, {
     mint,
-    copyPosition: existing,
     walletMintRaw: walletBal,
     priceUsd,
   });
@@ -573,13 +636,15 @@ async function onLeaderSell(
 ): Promise<void> {
   const mint = swap.baseMint;
   const pos = state.positions[mint];
-  if (pos?.oscarPromotedAt) {
-    appendCopyEvent(cfg, {
-      kind: 'leader_sell_ignored',
-      reason: 'oscar_promoted_handoff',
+  const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: pos });
+  if (leaderIgnore) {
+    logCopyLeaderIgnored(cfg, {
       mint,
+      symbol,
       leaderSignature: row.signature,
-      oscarPromotedAt: pos.oscarPromotedAt,
+      leaderAction: 'sell',
+      verdict: leaderIgnore,
+      oscarPromotedAt: pos?.oscarPromotedAt,
     });
     return;
   }
@@ -946,10 +1011,26 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     if (cfg.sharedOscarWallet) {
+      const leaderIgnore = leaderIgnoreBlocksAction(cfg, {
+        mint: pending.mint,
+        copyPosition: existing,
+      });
+      if (leaderIgnore) {
+        removePendingBuyById(state, pending.id);
+        logCopyLeaderIgnored(cfg, {
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          leaderAction: 'pending_buy',
+          verdict: leaderIgnore,
+          oscarPromotedAt: existing?.oscarPromotedAt,
+        });
+        continue;
+      }
+
       const walletBalForGuard = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
       const dupGuard = oscarDupGuardBlocksBuy(cfg, {
         mint: pending.mint,
-        copyPosition: existing,
         walletMintRaw: walletBalForGuard,
         priceUsd: currentPrice,
       });
@@ -1138,8 +1219,17 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
 
   for (const pending of due) {
     let pos = state.positions[pending.mint];
-    if (pos?.oscarPromotedAt) {
+    const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint: pending.mint, copyPosition: pos });
+    if (leaderIgnore) {
       removePendingSellById(state, pending.id);
+      logCopyLeaderIgnored(cfg, {
+        mint: pending.mint,
+        symbol: pending.symbol ?? pos?.symbol,
+        leaderSignature: pending.leaderSignature,
+        leaderAction: 'pending_sell',
+        verdict: leaderIgnore,
+        oscarPromotedAt: pos?.oscarPromotedAt,
+      });
       continue;
     }
 
