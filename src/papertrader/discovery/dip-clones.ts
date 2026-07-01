@@ -1392,8 +1392,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       };
     }
     if (volumeEphemeralFeatures != null) {
+      const volumeEphemeralKnownMint = isKnownMint(cfg, row.mint, knownMintHistory);
       decisionFeatures.volume_ephemeral = {
         enabled: cfg.volumeEphemeralGuardEnabled,
+        knownMint: volumeEphemeralKnownMint,
         coverageOk: volumeEphemeralFeatures.coverageOk,
         lookbackHours: volumeEphemeralFeatures.lookbackHours,
         hoursWithData: volumeEphemeralFeatures.hoursWithData,
@@ -1401,6 +1403,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         peakHourVol5mUsd: volumeEphemeralFeatures.peakHourVol5mUsd,
         currentVol5mUsd: volumeEphemeralFeatures.currentVol5mUsd,
         peakToCurrentRatio: volumeEphemeralFeatures.peakToCurrentRatio,
+        vol5mPrev1hUsd: volumeEphemeralFeatures.vol5mPrev1hUsd ?? null,
+        vol5mPrev2hUsd: volumeEphemeralFeatures.vol5mPrev2hUsd ?? null,
+        medianVol5m12hUsd: volumeEphemeralFeatures.medianVol5m12hUsd ?? null,
+        neighborHealthy: volumeEphemeralFeatures.neighborHealthy,
+        singleTickStaleIgnored: volumeEphemeralFeatures.singleTickStaleIgnored,
+        staleIgnoreFlag: volumeEphemeralFeatures.staleIgnoreFlag,
         thresholds: {
           minActiveHourVol5mUsd: cfg.volumeEphemeralMinActiveHourVol5mUsd,
           maxActiveHours: cfg.volumeEphemeralMaxActiveHours,
@@ -1411,6 +1419,22 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           tailMaxPeakRatio: cfg.volumeEphemeralTailMaxPeakRatio,
           newMintMinActiveHours: cfg.volumeEphemeralNewMintMinActiveHours,
         },
+      };
+    }
+    const knownMintForProfile = isKnownMint(cfg, row.mint, knownMintHistory);
+    if (knownMintForProfile) {
+      decisionFeatures.known_mint_vol_profile = {
+        vol5mUsd: Number(row.volume_5m ?? 0),
+        vol1hUsd: Number(row.volume_1h ?? 0),
+        vol5mPrev1hUsd: volumeEphemeralFeatures?.vol5mPrev1hUsd ?? null,
+        vol5mPrev2hUsd: volumeEphemeralFeatures?.vol5mPrev2hUsd ?? null,
+        activeHours24h: volumeEphemeralFeatures?.activeHours ?? null,
+        holderCount:
+          row.holder_count != null && Number.isFinite(Number(row.holder_count))
+            ? Number(row.holder_count)
+            : null,
+        medianVol5m12hUsd: volumeEphemeralFeatures?.medianVol5m12hUsd ?? null,
+        singleTickStaleIgnored: volumeEphemeralFeatures?.singleTickStaleIgnored === true,
       };
     }
     if (pgDataCoverageFeatures != null) {

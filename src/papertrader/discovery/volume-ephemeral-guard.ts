@@ -1,9 +1,12 @@
 /**
- * Volume Ephemeral guard (1.11.219).
+ * Volume Ephemeral guard (1.11.219, neighbor-window 1.11.545).
  *
  * Blocks entries when trading volume is concentrated in a narrow hourly window
  * within the lookback (typical one-shot wash / sybil burst — e.g. GOAT: 3 active
  * hours in 24h, peak vol5m $432k, otherwise dead).
+ *
+ * Known repeat mints: spike/narrow-window/tail_wash are new-mint-only; dead live
+ * vol5m is ignored when neighboring PG hourly windows show healthy volume.
  *
  * Uses hourly MAX(volume_5m) from PG pair snapshots. Missing PG history => safe-skip.
  */
@@ -22,6 +25,20 @@ export interface VolumeEphemeralFeatures {
   currentVol5mUsd: number | null;
   peakToCurrentRatio: number | null;
   coverageOk: boolean;
+  /** PG hourly max vol5m one hour ago (1.11.545). */
+  vol5mPrev1hUsd?: number | null;
+  /** PG hourly max vol5m two hours ago. */
+  vol5mPrev2hUsd?: number | null;
+  /** PG hourly max vol5m three hours ago. */
+  vol5mPrev3hUsd?: number | null;
+  /** Median hourly max vol5m over last 12h. */
+  medianVol5m12hUsd?: number | null;
+  /** Neighbor/adjacent-hour sanity passed (known mint dead-tick bypass). */
+  neighborHealthy?: boolean;
+  /** Live vol5m dead but PG neighbors healthy — do not block. */
+  singleTickStaleIgnored?: boolean;
+  /** Audit flag when {@link singleTickStaleIgnored}. */
+  staleIgnoreFlag?: string;
 }
 
 export interface VolumeEphemeralEvalResult {
@@ -53,11 +70,103 @@ function clampLookbackHours(h: number): number {
   return Math.max(12, Math.min(48, Math.round(h)));
 }
 
+function posVol(v: unknown): number | null {
+  const n = Number(v ?? 0);
+  return n > 0 ? n : null;
+}
+
 function newMintVol5mVol1hRatio(row: SnapshotCandidateRow): number | null {
   const vol1h = Number(row.volume_1h ?? 0);
   const vol5m = Number(row.volume_5m ?? 0);
   if (!(vol1h > 0) || !(vol5m >= 0)) return null;
   return +(vol5m / vol1h).toFixed(4);
+}
+
+/**
+ * True when PG neighbor hourly windows show sustained healthy vol5m — one dead live
+ * tick should not block (NEST/world RCA: stale PG snapshot vs constant market).
+ */
+export function neighborVolumeHealthy(
+  cfg: PaperTraderConfig,
+  features: VolumeEphemeralFeatures,
+): boolean {
+  const thresh = cfg.volumeEphemeralMinActiveHourVol5mUsd;
+
+  /** 24h active-hour count — many active hours => not a one-off stale tick. */
+  if (features.activeHours >= 10) return true;
+
+  const median12h = features.medianVol5m12hUsd;
+  if (median12h != null && median12h >= thresh) return true;
+
+  /** 2+ adjacent hours (prev3→current) with hourly max vol5m >= threshold. */
+  const series = [
+    features.vol5mPrev3hUsd ?? 0,
+    features.vol5mPrev2hUsd ?? 0,
+    features.vol5mPrev1hUsd ?? 0,
+    features.currentVol5mUsd ?? 0,
+  ];
+  let run = 0;
+  let maxAdjacent = 0;
+  for (const v of series) {
+    if (v >= thresh) {
+      run += 1;
+      maxAdjacent = Math.max(maxAdjacent, run);
+    } else {
+      run = 0;
+    }
+  }
+  return maxAdjacent >= 2;
+}
+
+function evaluateKnownMintVolumeEphemeral(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  features: VolumeEphemeralFeatures,
+): VolumeEphemeralEvalResult {
+  const vol5m = Number(row.volume_5m ?? 0);
+  const deadVol5m =
+    Number.isFinite(vol5m) && vol5m < cfg.volumeEphemeralMinActiveHourVol5mUsd;
+  const neighborsHealthy = neighborVolumeHealthy(cfg, features);
+  const peak = features.peakHourVol5mUsd;
+  const peakSignificant =
+    peak != null && peak >= cfg.volumeEphemeralMinPeakVol5mUsd;
+
+  const enriched: VolumeEphemeralFeatures = {
+    ...features,
+    neighborHealthy: neighborsHealthy,
+  };
+
+  if (deadVol5m && neighborsHealthy) {
+    return {
+      blocked: false,
+      blockedReasons: [],
+      features: {
+        ...enriched,
+        singleTickStaleIgnored: true,
+        staleIgnoreFlag: 'volume_ephemeral:single_tick_stale_ignored',
+      },
+    };
+  }
+
+  const blockedReasons: string[] = [];
+  const sustainedDead =
+    features.coverageOk &&
+    features.activeHours <= cfg.volumeEphemeralMaxActiveHours &&
+    deadVol5m &&
+    peakSignificant &&
+    !neighborsHealthy;
+
+  if (sustainedDead) {
+    blockedReasons.push(
+      `volume_ephemeral:known_mint_sustained_dead_active=${features.activeHours}h_vol5m=$${Math.round(vol5m)}`,
+    );
+  }
+
+  return {
+    blocked: blockedReasons.length > 0,
+    blockedReasons,
+    features: enriched,
+  };
 }
 
 /**
@@ -102,7 +211,19 @@ export async function fetchVolumeEphemeralContextMap(
         mint,
         COUNT(*)::int AS hours_with_data,
         COUNT(*) FILTER (WHERE hour_max_vol5m >= ${activeThresh})::int AS active_hours,
-        MAX(hour_max_vol5m)::float AS peak_hour_vol5m
+        MAX(hour_max_vol5m)::float AS peak_hour_vol5m,
+        MAX(hour_max_vol5m) FILTER (
+          WHERE hour_bucket = date_trunc('hour', now()) - interval '1 hour'
+        )::float AS vol5m_prev_1h,
+        MAX(hour_max_vol5m) FILTER (
+          WHERE hour_bucket = date_trunc('hour', now()) - interval '2 hours'
+        )::float AS vol5m_prev_2h,
+        MAX(hour_max_vol5m) FILTER (
+          WHERE hour_bucket = date_trunc('hour', now()) - interval '3 hours'
+        )::float AS vol5m_prev_3h,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hour_max_vol5m) FILTER (
+          WHERE hour_bucket >= date_trunc('hour', now()) - interval '12 hours'
+        )::float AS median_vol5m_12h
       FROM hourly
       GROUP BY mint
     `));
@@ -111,8 +232,7 @@ export async function fetchVolumeEphemeralContextMap(
       const mint = String(row.mint ?? '');
       const hoursWithData = Number(row.hours_with_data ?? 0) | 0;
       const activeHours = Number(row.active_hours ?? 0) | 0;
-      const peak =
-        Number(row.peak_hour_vol5m ?? 0) > 0 ? Number(row.peak_hour_vol5m) : null;
+      const peak = posVol(row.peak_hour_vol5m);
       map.set(mint, {
         lookbackHours,
         hoursWithData,
@@ -121,6 +241,10 @@ export async function fetchVolumeEphemeralContextMap(
         currentVol5mUsd: null,
         peakToCurrentRatio: null,
         coverageOk: hoursWithData >= cfg.volumeEphemeralMinHoursWithData,
+        vol5mPrev1hUsd: posVol(row.vol5m_prev_1h),
+        vol5mPrev2hUsd: posVol(row.vol5m_prev_2h),
+        vol5mPrev3hUsd: posVol(row.vol5m_prev_3h),
+        medianVol5m12hUsd: posVol(row.median_vol5m_12h),
       });
     }
   }
@@ -156,6 +280,11 @@ export function evaluateVolumeEphemeralGuard(
     peakToCurrentRatio: peakToCurrent,
   };
 
+  /** Repeat mint: spike/narrow-window/tail_wash are new-mint-only; neighbor-window for dead ticks. */
+  if (knownMint) {
+    return evaluateKnownMintVolumeEphemeral(cfg, row, features);
+  }
+
   const blockedReasons: string[] = [];
   if (!features.coverageOk) {
     /** PG hourly context missing — still block obvious live-snapshot wash (MUSHU RCA 2026-06-30). */
@@ -184,11 +313,7 @@ export function evaluateVolumeEphemeralGuard(
     peak != null && peak >= cfg.volumeEphemeralMinPeakVol5mUsd;
 
   /** New mints: require sustained hourly volume before first entry. */
-  if (
-    !knownMint &&
-    minActiveHours > 0 &&
-    features.activeHours < minActiveHours
-  ) {
+  if (minActiveHours > 0 && features.activeHours < minActiveHours) {
     const inflatedVol1h =
       Number.isFinite(vol1h) && vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd;
     if (inflatedVol1h || peakSignificant || features.activeHours > 0) {
@@ -244,14 +369,13 @@ export function evaluateVolumeEphemeralGuard(
     !blockedReasons.some((r) => r.includes('tail_vol5m'))
   ) {
     blockedReasons.push(
-      `${knownMint ? 'volume_ephemeral:tail_vol5m' : 'volume_ephemeral:new_mint_tail_vol5m'}=${Math.round(currentVol5m ?? 0)}/${Math.round(peak)}=${(peakToCurrent * 100).toFixed(1)}%<=${(cfg.volumeEphemeralTailMaxPeakRatio * 100).toFixed(0)}%_of_peak`,
+      `volume_ephemeral:new_mint_tail_vol5m=${Math.round(currentVol5m ?? 0)}/${Math.round(peak)}=${(peakToCurrent * 100).toFixed(1)}%<=${(cfg.volumeEphemeralTailMaxPeakRatio * 100).toFixed(0)}%_of_peak`,
     );
   }
 
   /** Legacy alias kept for tests/docs — merged into notYetSustained tail above. */
   if (
     cfg.volumeEphemeralTailBlockEnabled &&
-    !knownMint &&
     peakSignificant &&
     peakToCurrent != null &&
     peakToCurrent <= cfg.volumeEphemeralTailMaxPeakRatio &&

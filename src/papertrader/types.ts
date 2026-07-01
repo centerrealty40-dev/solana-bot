@@ -777,6 +777,8 @@ export interface SnapshotFeatures {
   /** 1.11.219: narrow-window hourly volume burst metrics (retro / audit). */
   volume_ephemeral?: {
     enabled: boolean;
+    /** Prior bot trade in lookback — ephemeral spike blocks skipped (1.11.544). */
+    knownMint?: boolean;
     coverageOk: boolean;
     lookbackHours: number;
     hoursWithData: number;
@@ -784,6 +786,13 @@ export interface SnapshotFeatures {
     peakHourVol5mUsd: number | null;
     currentVol5mUsd: number | null;
     peakToCurrentRatio: number | null;
+    /** PG neighbor-hour sanity (1.11.545). */
+    vol5mPrev1hUsd?: number | null;
+    vol5mPrev2hUsd?: number | null;
+    medianVol5m12hUsd?: number | null;
+    neighborHealthy?: boolean;
+    singleTickStaleIgnored?: boolean;
+    staleIgnoreFlag?: string;
     thresholds: {
       minActiveHourVol5mUsd: number;
       maxActiveHours: number;
@@ -794,6 +803,17 @@ export interface SnapshotFeatures {
       tailMaxPeakRatio: number;
       newMintMinActiveHours?: number;
     };
+  };
+  /** 1.11.545: holistic volume/holder profile for repeat mints on each discovery eval. */
+  known_mint_vol_profile?: {
+    vol5mUsd: number;
+    vol1hUsd: number;
+    vol5mPrev1hUsd: number | null;
+    vol5mPrev2hUsd: number | null;
+    activeHours24h: number | null;
+    holderCount: number | null;
+    medianVol5m12hUsd: number | null;
+    singleTickStaleIgnored: boolean;
   };
   /** 1.11.222: PG minute-bar coverage / gap metrics for volume guard trust. */
   pg_data_coverage?: {

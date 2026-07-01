@@ -80,6 +80,47 @@
 
 ---
 
+## [1.11.545] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.545`
+
+### Live Oscar — ephemeral neighbor-window + known mint vol profile (NEST/world)
+
+**Проблема:** repeat mints (NEST, world) блокировались на одном мёртвом live `vol5m` при стабильном объёме в соседних PG hourly окнах; не хватало трендового профиля в journal.
+
+**Fix:**
+- **`volume-ephemeral-guard`:** PG fetch — `vol5m_prev_1h/2h/3h`, median 12h; `neighborVolumeHealthy()` — 2+ соседних часа ≥$8k или median 12h или `activeHours≥10`.
+- **Known mint:** spike/narrow/tail_wash — new-mint-only; мёртвый tick + здоровые соседи → pass + `single_tick_stale_ignored`; sustained dead (узкое окно + мёртвые соседи) → `known_mint_sustained_dead`.
+- **Journal:** `known_mint_vol_profile` в `live_discovery_eval` (vol5m, vol1h, prev hours, active_hours_24h, holders).
+- **Telegram:** ADVICE ephemeral по-прежнему skip для known mint.
+
+**Откат:** `git checkout sa-alpha-1.11.544 -- src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/discovery/dip-clones.ts src/papertrader/types.ts tests/volume-ephemeral-guard.test.ts docs/strategy/live-oscar/LIVE_OSCAR_COIN_INTELLIGENCE_SPEC.md docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
+## [1.11.544] — 2026-07-01
+
+**Тег:** `sa-alpha-1.11.544`
+
+### Live Oscar — volume_ephemeral new-mint-only (NEST/world RCA)
+
+**Проблема:** repeat mints (NEST 68Nq, world FMqh9 — bot торговал в 14d lookback) блокировались `volume_ephemeral` на глубоких дипах (`tail_wash_vol5m_vol1h`, `tail_vol5m`, narrow-window `active_hours`); Telegram ADVICE «подозрительный всплеск» — ложные срабатывания. Новые mint (82XVW FREE) — корректный true positive.
+
+**Fix:**
+- **`evaluateVolumeEphemeralGuard`:** при `isKnownMint()` (14d journal lookback) — **skip всех** `volume_ephemeral:*` блоков; spike/narrow-window/tail_wash защита **только для new mint**.
+- **Telegram `live_oscar_volume_ephemeral`:** не шлётся для known mint (`volume_ephemeral.knownMint` в features).
+- **Audit:** `volume_ephemeral.knownMint` в discovery eval features.
+
+**Clarification vs 1.11.534:** tail_wash на known mint **снят** — repeat coins на dip не режутся wash-ratio; dead-tail wash для known можно вернуть отдельным флагом при необходимости. New mint — полная строгость без изменений.
+
+**Откат:** `git checkout sa-alpha-1.11.543 -- src/papertrader/discovery/volume-ephemeral-guard.ts src/papertrader/discovery/dip-clones.ts src/papertrader/main.ts src/papertrader/types.ts tests/volume-ephemeral-guard.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.543] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.543`
