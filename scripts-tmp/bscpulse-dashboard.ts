@@ -7,8 +7,15 @@ import path from 'node:path';
 import type { Paper2OpenItem, TimelineEvent } from './dashboard-server.js';
 import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
-const TAIL_BYTES = Number(process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 200 * 1024 * 1024);
-const FULL_SCAN_MAX = Number(process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ?? 32 * 1024 * 1024);
+const TAIL_BYTES = Number(
+  process.env.DASHBOARD_BSCPULSE_TAIL_BYTES ?? process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 1024 * 1024 * 1024,
+);
+/** BscPulse journal multi-GB — full scan below this cap; tail-only misses live_open buried in filter_reject noise. */
+const FULL_SCAN_MAX = Number(
+  process.env.DASHBOARD_BSCPULSE_FULL_SCAN_MAX_BYTES ??
+    process.env.DASHBOARD_JSONL_FULL_SCAN_MAX_BYTES ??
+    3 * 1024 * 1024 * 1024,
+);
 
 /** DexScreener pair/token page for BSC — prefer pair address from journal live_open. */
 export function bscPulseDexScreenerUrl(tokenAddress: string, pairAddress?: string | null): string {
