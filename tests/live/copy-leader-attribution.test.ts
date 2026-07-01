@@ -53,4 +53,18 @@ describe('copy-leader-attribution', () => {
       oscarWalletMintUsdExcludingCopyLeader({ walletMintUsd: 2400, mint, statePath }),
     ).toBe(2400);
   });
+
+  it('stops subtracting copy basis after Oscar promotion', () => {
+    const mint = 'MintPromoted111111111111111111111111111111';
+    const statePath = writeState({
+      [mint]: {
+        sizeUsd: 500,
+        entryDeployedCostUsd: 500,
+        oscarPromotedAt: Date.now(),
+      },
+    });
+    expect(
+      oscarWalletMintUsdExcludingCopyLeader({ walletMintUsd: 3100, mint, statePath }),
+    ).toBe(3100);
+  });
 });

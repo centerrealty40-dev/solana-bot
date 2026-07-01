@@ -16,6 +16,11 @@ import {
   tokensPerInLamportFromQuote,
 } from './jupiter.js';
 import { oscarWalletMintUsdExcludingCopyLeader } from './copy-leader-attribution.js';
+import {
+  defaultBuyOpenLegUsd,
+  evaluateCopyToOscarPromotionPlan,
+  finalizeCopyToOscarHandoff,
+} from './copy-to-oscar-promotion.js';
 import { cancelLivePostCloseTailSweepForMint } from './post-close-tail-sweep.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
@@ -233,8 +238,8 @@ function terminalKindFromMessage(message: string): LiveBuyTerminalKind {
   return 'other';
 }
 
-/** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
-async function estimateLiveWalletMintHoldingUsd(args: {
+/** Estimates gross USD value of `mint` on the live wallet (before copy-leader subtraction). */
+async function estimateLiveWalletMintHoldingGrossUsd(args: {
   liveCfg: LiveOscarConfig;
   mint: string;
   tokenDecimals: number;
@@ -260,9 +265,22 @@ async function estimateLiveWalletMintHoldingUsd(args: {
     px = await fetchJupiterTokenUsdPrice(args.mint);
   }
   if (px == null || !(px > 0)) return null;
-  const gross = tokens * px;
+  return tokens * px;
+}
+
+/** Estimates USD value of `mint` already on the live wallet (null = could not estimate — caller should not block). */
+async function estimateLiveWalletMintHoldingUsd(args: {
+  liveCfg: LiveOscarConfig;
+  mint: string;
+  tokenDecimals: number;
+  dexSource?: string;
+}): Promise<number | null> {
+  const gross = await estimateLiveWalletMintHoldingGrossUsd(args);
+  if (gross == null) return null;
   return oscarWalletMintUsdExcludingCopyLeader({ walletMintUsd: gross, mint: args.mint });
 }
+
+export { estimateLiveWalletMintHoldingGrossUsd };
 
 async function runSolToTokenPipeline(
   liveCfg: LiveOscarConfig,
@@ -1342,12 +1360,24 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
     async tryExecuteBuyOpen(ctx: LivePhase4BuyOpenContext): Promise<LiveBuyPipelineResult> {
       const mode = pipelineAnchorMode(ctx.liveCfg);
       const minUsd = ctx.liveCfg.liveSkipBuyOpenIfWalletMintMinUsd;
+      const dec = ctx.tokenDecimals ?? ctx.ot.tokenDecimals ?? 6;
+      const walletGrossUsd = await estimateLiveWalletMintHoldingGrossUsd({
+        liveCfg: ctx.liveCfg,
+        mint: ctx.ot.mint,
+        tokenDecimals: dec,
+        dexSource: ctx.ot.source,
+      });
+      const promotion =
+        walletGrossUsd != null
+          ? evaluateCopyToOscarPromotionPlan({ ctx, walletGrossUsd })
+          : null;
+
       if (
         minUsd > 0 &&
         ctx.liveCfg.strategyEnabled &&
-        ctx.liveCfg.executionMode === 'live'
+        ctx.liveCfg.executionMode === 'live' &&
+        !promotion
       ) {
-        const dec = ctx.tokenDecimals ?? ctx.ot.tokenDecimals ?? 6;
         const est = await estimateLiveWalletMintHoldingUsd({
           liveCfg: ctx.liveCfg,
           mint: ctx.ot.mint,
@@ -1366,6 +1396,19 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
           });
           return { ok: false, anchorMode: mode };
         }
+      }
+
+      if (promotion) {
+        appendLiveJsonlEvent({
+          kind: 'copy_to_oscar_promotion',
+          mint: ctx.ot.mint,
+          symbol: ctx.ot.symbol,
+          copyCostBasisUsd: +promotion.copyCostBasisUsd.toFixed(2),
+          walletGrossUsd: +promotion.walletGrossUsd.toFixed(2),
+          targetUsd: +promotion.targetUsd.toFixed(2),
+          topUpUsd: +promotion.topUpUsd.toFixed(2),
+          tier: promotion.tier,
+        });
       }
 
       const signalPx = ctx.snapshotEntryPriceUsd;
@@ -1423,15 +1466,33 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
         };
       }
 
-      const firstUsd =
-        ctx.ot.legs[0]?.sizeUsd ??
-        ctx.paperCfg.positionUsd * ctx.paperCfg.entryFirstLegFraction;
-      return runSolToTokenPipeline(liveCfg, {
+      const firstUsd = promotion
+        ? promotion.topUpUsd
+        : defaultBuyOpenLegUsd(ctx);
+
+      if (promotion && !(firstUsd > 0)) {
+        finalizeCopyToOscarHandoff(ctx.ot.mint);
+        return {
+          ok: true,
+          anchorMode: mode,
+          executedUsdNotional: 0,
+          copyToOscarPromotion: promotion,
+        };
+      }
+
+      const buyResult = await runSolToTokenPipeline(liveCfg, {
         mint: ctx.ot.mint,
         symbol: ctx.ot.symbol,
         usdNotional: firstUsd,
         intentKind: 'buy_open',
       });
+
+      if (buyResult.ok && promotion) {
+        finalizeCopyToOscarHandoff(ctx.ot.mint);
+        return { ...buyResult, copyToOscarPromotion: promotion };
+      }
+
+      return buyResult;
     },
   };
 }

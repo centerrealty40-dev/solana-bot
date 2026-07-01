@@ -29,6 +29,8 @@ export type CopyPosition = {
   entryDipAbandoned?: boolean;
   /** Last successful sell execution timestamp (ms) — min-interval throttle. */
   lastSellTs?: number;
+  /** Live-oscar took over management — stop proportional mirror sells. */
+  oscarPromotedAt?: number;
 };
 
 export type LeaderMintLedger = {
@@ -121,6 +123,10 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof pos.entryTargetUsd === 'number' && pos.entryTargetUsd > 0 ? pos.entryTargetUsd : undefined,
         entryMcapUsd:
           typeof pos.entryMcapUsd === 'number' && pos.entryMcapUsd > 0 ? pos.entryMcapUsd : undefined,
+        oscarPromotedAt:
+          typeof pos.oscarPromotedAt === 'number' && pos.oscarPromotedAt > 0
+            ? pos.oscarPromotedAt
+            : undefined,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(

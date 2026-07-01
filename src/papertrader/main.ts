@@ -125,6 +125,7 @@ import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import type { LiveOpenPositionHotTickPaperContext } from '../live/open-position-hot-tick.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
+import { applyCopyToOscarPromotionAccounting } from '../live/copy-to-oscar-promotion.js';
 import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { cancelLivePostCloseTailSweepForMint } from '../live/post-close-tail-sweep.js';
@@ -2032,6 +2033,25 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             continue;
           }
           applyLiveBuyAnchorsAfterOpen(ot, opened);
+          if (opened.copyToOscarPromotion) {
+            applyCopyToOscarPromotionAccounting({
+              ot,
+              cfg,
+              res: opened,
+              plan: opened.copyToOscarPromotion,
+              snapshotPriceUsd: snapshotEntryPriceUsd,
+            });
+            journalLiveStrategy?.({
+              kind: 'copy_to_oscar_promotion',
+              mint: ot.mint,
+              symbol: ot.symbol,
+              copyCostBasisUsd: opened.copyToOscarPromotion.copyCostBasisUsd,
+              walletGrossUsd: opened.copyToOscarPromotion.walletGrossUsd,
+              targetUsd: opened.copyToOscarPromotion.targetUsd,
+              topUpUsd: opened.copyToOscarPromotion.topUpUsd,
+              tier: opened.copyToOscarPromotion.tier,
+            });
+          }
           if (
             liveOscar.liveCfg.liveEntryScaleInEnabled &&
             liveOscar.liveCfg.executionMode === 'live' &&
