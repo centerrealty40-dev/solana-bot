@@ -425,6 +425,9 @@ export function loadSuperbotJsonlForDashboard(filePath: string): SuperbotDashboa
     pairAddress: p.pool || null,
     entryLiqUsd: null,
     remainingFraction: p.remainingFraction,
+    liveOscarTradeLane: null,
+    isScalpWave: false,
+    isRunnerProbe: false,
   }));
 
   const failReasons = [...failReasonsCount.entries()]

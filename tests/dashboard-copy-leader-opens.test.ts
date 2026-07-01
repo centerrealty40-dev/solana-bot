@@ -48,6 +48,7 @@ function emptyLiveLoad(openMint?: string): LiveOscarPaper2Load {
             remainingFraction: 1,
             liveOscarTradeLane: 'prod',
             isScalpWave: false,
+            isRunnerProbe: false,
           },
         ]
       : [],

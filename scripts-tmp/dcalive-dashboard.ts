@@ -275,6 +275,9 @@ function positionToOpenItem(pos: PgPositionRow, fills: PgFillRow[]): Paper2OpenI
     pairAddress: null,
     entryLiqUsd: null,
     remainingFraction: pos.qty_token > 0 && pos.cost_usd > 0 ? 1 : 0,
+    liveOscarTradeLane: null,
+    isScalpWave: false,
+    isRunnerProbe: false,
   };
 }
 

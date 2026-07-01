@@ -172,6 +172,7 @@ function makeOpenRowFromEv(token: string, symbol: string, ev: JournalEv, ts: num
     remainingFraction: 1,
     liveOscarTradeLane: null,
     isScalpWave: false,
+    isRunnerProbe: false,
     timeline: [],
   };
   pushTimeline(row.timeline, {

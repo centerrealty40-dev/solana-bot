@@ -69,6 +69,7 @@ import {
   isLiveOpenSnapshotFresh,
   readLiveOpenSnapshot,
 } from '../src/live/open-snapshot.js';
+import { isRunnerProbeTrade } from '../src/papertrader/live-oscar-runner-probe.js';
 import { isLiveOscarScalpWaveTrade } from '../src/papertrader/live-oscar-scalp-wave.js';
 
 /** Empty paper2 load when optional panel loader fails. */
@@ -1898,13 +1899,15 @@ export type Paper2OpenItem = {
    * DCA rows reset the live tracker position to 100% remainder — we mirror that via `dca_add` handling.
    */
   remainingFraction: number;
-  /** Live Oscar trade lane mutex (`prod` staged Oscar vs `scalp_wave` one-shot). */
-  liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
+  /** Live Oscar trade lane (`prod` / `scalp_wave` mutex; `runner_probe` parallel via composite open key). */
+  liveOscarTradeLane: 'prod' | 'scalp_wave' | 'runner_probe' | null;
   /** True while position is actively managed as scalp_wave (false after phase escalation). */
   isScalpWave: boolean;
+  /** Fresh runners 12–36h lane (`runner_probe_v1` exit). */
+  isRunnerProbe: boolean;
   /** Parallel copy-leader leg on shared wallet — separate open row from Oscar on same mint. */
   isCopyLeader?: boolean;
-  positionSource?: 'copy_leader' | null;
+  positionSource?: 'copy_leader' | 'runner_probe' | null;
   /** Truncated leader wallet for UI, e.g. `498S…aNma`. */
   copyLeaderWalletShort?: string | null;
 };
@@ -1954,7 +1957,7 @@ export const DASHBOARD_PANEL_ORDER = [
   'hl-oscar-majors',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-07-01-dashboard-copy-leader-opens-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-07-01-dashboard-runner-probe-badge-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -2229,10 +2232,11 @@ export type Paper2ApiEnrichedOpen = {
   currentLiqUsd: number | null;
   liqDropPct: number | null;
   remainingCostBasisUsd: number;
-  liveOscarTradeLane: 'prod' | 'scalp_wave' | null;
+  liveOscarTradeLane: 'prod' | 'scalp_wave' | 'runner_probe' | null;
   isScalpWave: boolean;
+  isRunnerProbe: boolean;
   isCopyLeader?: boolean;
-  positionSource?: 'copy_leader' | null;
+  positionSource?: 'copy_leader' | 'runner_probe' | null;
   copyLeaderWalletShort?: string | null;
   copySizeUsd?: number | null;
 };
@@ -2994,7 +2998,7 @@ export function loadPaper2File(filePath: string): {
         entryLiqUsd,
         remainingFraction: 1,
         ...pvUi,
-        ...scalpWaveOpenFieldsFromRecord(e),
+        ...liveOscarOpenLaneFieldsFromRecord(e),
       });
       liveMeta.set(mint, { metricType, entryRealMcUsd });
       const tev = buildTimelineEvent(e, metricType, entryRealMcUsd);
@@ -3123,17 +3127,27 @@ function entryRealMcFromLiveOpenTrade(ot: Record<string, unknown>): number | nul
   return Number.isFinite(mc) && mc > 0 ? mc : null;
 }
 
-function scalpWaveOpenFieldsFromRecord(
+function liveOscarOpenLaneFieldsFromRecord(
   ot: Record<string, unknown>,
-): Pick<Paper2OpenItem, 'liveOscarTradeLane' | 'isScalpWave'> {
+): Pick<Paper2OpenItem, 'liveOscarTradeLane' | 'isScalpWave' | 'isRunnerProbe' | 'positionSource'> {
   const laneRaw = ot.liveOscarTradeLane;
   const liveOscarTradeLane =
-    laneRaw === 'scalp_wave' || laneRaw === 'prod' ? laneRaw : null;
+    laneRaw === 'scalp_wave' || laneRaw === 'prod' || laneRaw === 'runner_probe' ? laneRaw : null;
+  const runnerPick = ot as Parameters<typeof isRunnerProbeTrade>[0];
+  const positionSourceRaw = ot.positionSource;
+  const positionSource =
+    positionSourceRaw === 'copy_leader' || positionSourceRaw === 'runner_probe'
+      ? positionSourceRaw
+      : isRunnerProbeTrade(runnerPick)
+        ? 'runner_probe'
+        : null;
   return {
     liveOscarTradeLane,
     isScalpWave: isLiveOscarScalpWaveTrade(
       ot as Parameters<typeof isLiveOscarScalpWaveTrade>[0],
     ),
+    isRunnerProbe: isRunnerProbeTrade(runnerPick),
+    positionSource,
   };
 }
 
@@ -3177,7 +3191,7 @@ export function paper2OpenItemFromLiveOpenTrade(
     pairAddress: ot.pairAddress != null ? String(ot.pairAddress).trim() || null : null,
     entryLiqUsd: typeof ot.entryLiqUsd === 'number' && ot.entryLiqUsd > 0 ? ot.entryLiqUsd : null,
     remainingFraction: Number(ot.remainingFraction ?? 1),
-    ...scalpWaveOpenFieldsFromRecord(ot),
+    ...liveOscarOpenLaneFieldsFromRecord(ot),
   };
 }
 
@@ -3972,7 +3986,7 @@ export function loadLiveOscarJsonlAsPaper2(filePath: string): LiveOscarPaper2Loa
       const cur = om.get(mint);
       const ot = (o.openTrade ?? {}) as Record<string, unknown>;
       if (cur) {
-        Object.assign(cur, scalpWaveOpenFieldsFromRecord(ot));
+        Object.assign(cur, liveOscarOpenLaneFieldsFromRecord(ot));
       }
       continue;
     }
@@ -5167,6 +5181,7 @@ async function buildPaper2StrategyRowFromLoad(
         liveFdvUsd,
         liveOscarTradeLane: ot.liveOscarTradeLane ?? null,
         isScalpWave: ot.isScalpWave,
+        isRunnerProbe: ot.isRunnerProbe === true,
         isCopyLeader: ot.isCopyLeader === true,
         positionSource: ot.positionSource ?? null,
         copyLeaderWalletShort: ot.copyLeaderWalletShort ?? null,
