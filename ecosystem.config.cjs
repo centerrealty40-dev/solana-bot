@@ -1960,7 +1960,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
         COPY_TRADER_SHARED_OSCAR_WALLET: '1',
-        COPY_TRADER_SPARE_CAPITAL_GATE: '1',
+        COPY_TRADER_SPARE_CAPITAL_GATE: '0',
         /** Same execution wallet as live-oscar (one SOL pool). */
         COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         COPY_TRADER_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
