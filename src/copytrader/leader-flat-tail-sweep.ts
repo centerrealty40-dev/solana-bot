@@ -1,6 +1,7 @@
 import type { CopyTraderConfig } from './config.js';
 import { effectiveLeaderBalanceRaw } from './leader-dust.js';
 import { appendCopyEvent } from './executor.js';
+import { shouldIgnoreLeaderForMint } from './oscar-position-guard.js';
 import { leaderHasActiveJupiterSellOrders } from './jupiter-trigger-orders.js';
 import { getLeaderLedger, leaderPreBalanceRaw } from './leader-ledger.js';
 import { computeRetryUntilTs } from './pending-buy-retry.js';
@@ -88,7 +89,22 @@ export async function scheduleLeaderFlatTailSweeps(
   let scheduled = 0;
 
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
-    if (pos.oscarPromotedAt) continue;
+    const leaderIgnore = shouldIgnoreLeaderForMint({
+      cfg,
+      mint,
+      copyPosition: pos,
+      statePath: cfg.statePath,
+    });
+    if (leaderIgnore.ignore) {
+      appendCopyEvent(cfg, {
+        kind: 'copy_leader_ignored',
+        reason: leaderIgnore.reason,
+        mint,
+        symbol: pos.symbol,
+        leaderAction: 'tail_sweep',
+      });
+      continue;
+    }
     if (!(await isLeaderFlatForMint(cfg, state, mint, pos.symbol))) continue;
     if (hasPendingSellForMint(state, mint)) continue;
 

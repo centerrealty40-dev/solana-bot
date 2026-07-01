@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import {
   checkCopyBuyOscarDupGuard,
+  checkCopyBuyWalletCapGuard,
+  copyTraderSharesPresetCWallet,
   oscarHasOpenPositionOnMint,
+  shouldIgnoreLeaderForMint,
   skipBuyOpenWalletMintMinUsd,
 } from '../../src/copytrader/oscar-position-guard.js';
 import { COPY_TRADER_TOKEN_UI_SCALE } from '../../src/copytrader/position-reconcile.js';
@@ -13,6 +16,7 @@ import type { CopyPosition } from '../../src/copytrader/state.js';
 import { LIVE_OPEN_SNAPSHOT_VERSION } from '../../src/live/open-snapshot.js';
 
 const mint = 'MintOscarDup111111111111111111111111111';
+const presetMint = 'MintPresetC111111111111111111111111111111';
 
 const baseCfg: CopyTraderConfig = {
   targetWallet: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
@@ -56,6 +60,8 @@ const baseCfg: CopyTraderConfig = {
 describe('copy-trader oscar position guard', () => {
   const tmpFiles: string[] = [];
   const prevMinUsd = process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD;
+  const prevCopyWallet = process.env.COPY_TRADER_WALLET_PUBKEY;
+  const prevPresetWallet = process.env.COPY_TRADER_PRESET_C_WALLET_PUBKEY;
 
   afterEach(() => {
     for (const f of tmpFiles) {
@@ -67,6 +73,10 @@ describe('copy-trader oscar position guard', () => {
     }
     if (prevMinUsd === undefined) delete process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD;
     else process.env.LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD = prevMinUsd;
+    if (prevCopyWallet === undefined) delete process.env.COPY_TRADER_WALLET_PUBKEY;
+    else process.env.COPY_TRADER_WALLET_PUBKEY = prevCopyWallet;
+    if (prevPresetWallet === undefined) delete process.env.COPY_TRADER_PRESET_C_WALLET_PUBKEY;
+    else process.env.COPY_TRADER_PRESET_C_WALLET_PUBKEY = prevPresetWallet;
   });
 
   function tmpFile(suffix: string): string {
@@ -95,24 +105,76 @@ describe('copy-trader oscar position guard', () => {
     const snap = tmpFile('.json');
     writeSnapshot(snap, [mint]);
     expect(
-      checkCopyBuyOscarDupGuard({
+      shouldIgnoreLeaderForMint({
         cfg: { ...baseCfg, sharedOscarWallet: false },
         mint,
         snapshotPath: snap,
-      }).skip,
+      }).ignore,
     ).toBe(false);
   });
 
-  it('skips when Oscar open snapshot contains mint', () => {
+  it('shouldIgnoreLeaderForMint when Oscar open snapshot contains mint', () => {
     const snap = tmpFile('.json');
     writeSnapshot(snap, [mint]);
     expect(oscarHasOpenPositionOnMint(mint, snap)).toBe(true);
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: baseCfg,
+        mint,
+        snapshotPath: snap,
+      }),
+    ).toEqual({ ignore: true, reason: 'oscar_position_open' });
+  });
+
+  it('checkCopyBuyOscarDupGuard maps oscar_position_open to already_in_oscar_position', () => {
+    const snap = tmpFile('.json');
+    writeSnapshot(snap, [mint]);
     const verdict = checkCopyBuyOscarDupGuard({
       cfg: baseCfg,
       mint,
       snapshotPath: snap,
     });
     expect(verdict).toEqual({ skip: true, reason: 'already_in_oscar_position' });
+  });
+
+  it('reads preset-c snapshot only when copy wallet matches preset-c wallet', () => {
+    const presetSnap = tmpFile('-preset.json');
+    writeSnapshot(presetSnap, [presetMint]);
+    process.env.COPY_TRADER_WALLET_PUBKEY = 'SameWallet111111111111111111111111111111';
+    process.env.COPY_TRADER_PRESET_C_WALLET_PUBKEY = 'SameWallet111111111111111111111111111111';
+
+    expect(
+      copyTraderSharesPresetCWallet({
+        ...baseCfg,
+        walletPubkeyExpected: 'SameWallet111111111111111111111111111111',
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: baseCfg,
+        mint: presetMint,
+        snapshotPath: presetSnap,
+      }),
+    ).toEqual({ ignore: true, reason: 'oscar_position_open' });
+
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: baseCfg,
+        mint: presetMint,
+      }).ignore,
+    ).toBe(false);
+
+    process.env.COPY_TRADER_PRESET_C_OPEN_SNAPSHOT_PATH = presetSnap;
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: {
+          ...baseCfg,
+          walletPubkeyExpected: 'SameWallet111111111111111111111111111111',
+        },
+        mint: presetMint,
+      }),
+    ).toEqual({ ignore: true, reason: 'oscar_position_open' });
   });
 
   it('skips when wallet holds Oscar leg over LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', () => {
@@ -124,7 +186,7 @@ describe('copy-trader oscar position guard', () => {
 
     const priceUsd = 1;
     const walletRaw = BigInt(Math.floor(50 * COPY_TRADER_TOKEN_UI_SCALE));
-    const verdict = checkCopyBuyOscarDupGuard({
+    const verdict = checkCopyBuyWalletCapGuard({
       cfg: { ...baseCfg, statePath },
       mint,
       walletMintRaw: walletRaw,
@@ -153,7 +215,7 @@ describe('copy-trader oscar position guard', () => {
 
     const priceUsd = 1;
     const walletRaw = BigInt(Math.floor(500 * COPY_TRADER_TOKEN_UI_SCALE));
-    const verdict = checkCopyBuyOscarDupGuard({
+    const verdict = checkCopyBuyWalletCapGuard({
       cfg: { ...baseCfg, statePath },
       mint,
       walletMintRaw: walletRaw,
@@ -163,7 +225,7 @@ describe('copy-trader oscar position guard', () => {
     expect(verdict.skip).toBe(false);
   });
 
-  it('skips when copy leg was promoted to Oscar', () => {
+  it('shouldIgnoreLeaderForMint when copy leg was promoted to Oscar', () => {
     const statePath = tmpFile('-state.json');
     fs.writeFileSync(
       statePath,
@@ -193,12 +255,13 @@ describe('copy-trader oscar position guard', () => {
       oscarPromotedAt: Date.now(),
     };
 
-    const verdict = checkCopyBuyOscarDupGuard({
-      cfg: { ...baseCfg, statePath },
-      mint,
-      copyPosition: pos,
-      statePath,
-    });
-    expect(verdict).toEqual({ skip: true, reason: 'oscar_promoted_handoff' });
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: { ...baseCfg, statePath },
+        mint,
+        copyPosition: pos,
+        statePath,
+      }),
+    ).toEqual({ ignore: true, reason: 'oscar_promoted_handoff' });
   });
 });
