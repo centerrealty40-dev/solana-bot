@@ -1,3 +1,4 @@
+import { acquireJupiterApiSlot } from './jupiter-api-gate.js';
 import { recordJupiter429Event } from './jupiter-429-monitor.js';
 
 export const JUPITER_QUOTE_URL_DEFAULT = 'https://api.jup.ag/swap/v1/quote';
@@ -64,6 +65,7 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
   const maxR = jupiterQuote429MaxRetries();
   let backoff = jupiterQuote429InitialBackoffMs();
   for (let j = 0; j <= maxR; j++) {
+    await acquireJupiterApiSlot();
     const ac = new AbortController();
     const tt = setTimeout(() => ac.abort(), Math.max(500, args.timeoutMs));
     try {

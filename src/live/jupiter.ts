@@ -10,6 +10,7 @@ import {
   fetchJupiterSwapQuoteGetJson,
   jupiterJsonHeaders,
 } from '../core/jupiter-http.js';
+import { acquireJupiterApiSlot } from '../core/jupiter-api-gate.js';
 import { recordJupiter429Event } from '../core/jupiter-429-monitor.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { adaptivePriorityMaxLamports } from './adaptive-priority-fee.js';
@@ -309,13 +310,14 @@ export async function liveBuildUnsignedSwapTx(args: {
   const max429 = (() => {
     const s = process.env.JUPITER_SWAP_429_MAX_RETRIES?.trim();
     if (s === '0') return 0;
-    if (!s) return 3;
+    if (!s) return process.env.JUPITER_DEVELOPER_TIER === '1' ? 12 : 3;
     const n = Number.parseInt(s, 10);
-    return Number.isFinite(n) && n >= 0 ? Math.min(8, n) : 3;
+    return Number.isFinite(n) && n >= 0 ? Math.min(12, n) : 3;
   })();
   let backoff = 150;
 
   for (let j = 0; j <= max429; j++) {
+    await acquireJupiterApiSlot();
     const ac = new AbortController();
     const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
     try {

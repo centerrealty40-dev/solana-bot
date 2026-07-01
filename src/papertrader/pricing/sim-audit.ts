@@ -7,6 +7,7 @@ import { Keypair } from '@solana/web3.js';
 import { qnCall } from '../../core/rpc/qn-client.js';
 import { child } from '../../core/logger.js';
 import { JUPITER_SWAP_URL_DEFAULT, jupiterJsonHeaders } from '../../core/jupiter-http.js';
+import { acquireJupiterApiSlot } from '../../core/jupiter-api-gate.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import type { SimAuditStamp } from '../types.js';
 import { fetchJupiterBuyQuoteResponse } from './price-verify.js';
@@ -72,6 +73,7 @@ async function jupiterBuildSwapBase64(
       dynamicComputeUnitLimit: false,
       asLegacyTransaction: false,
     };
+    await acquireJupiterApiSlot();
     const res = await fetch(swapApiUrl(), {
       method: 'POST',
       headers,
