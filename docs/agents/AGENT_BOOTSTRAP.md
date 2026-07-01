@@ -46,7 +46,8 @@ For faster startup, use `docs/agents/TASK_INTAKE_TEMPLATE.md`.
 3. **До merge в `v2`:** локально **`npm run typecheck`**; по регламенту продукта — **`npm run check:hygiene`** и **`npm run check:hygiene:integration`** (см. тот же NORM и `RELEASE_OPERATING_MODEL.md`).
 4. **Роль агента и ветка:** работа в **`task/*`** или согласованной ветке; **прямой push агента в `v2`** не считается нормой — merge после **просмотра diff** и **зелёного CI**. На GitHub для **`v2`**: branch protection (required checks), **без force-push** — по возможности (политика репозитория).
 5. **SSH / секреты:** в обычной задаче («только код») агент **не** подключается к прод-серверу и **не** вставляет в ответ ключи, DSN с паролями, содержимое прод-`.env`. Сессия с SSH допустима только если пользователь **явно** включил **deploy-session / разбор инцидента на сервере** в промпте (см. `TASK_INTAKE_TEMPLATE.md`).
-6. **Индекс документов:** `docs/agents/DOC_INDEX.md`.
+6. **Cloud Agent (iPhone):** SSH с облака — через Cursor Secrets + `scripts/platform/vps-ssh.sh` (см. **`docs/agents/CLOUD_AGENT_VPS_SSH.md`**). Без секрета `VPS_SSH_PRIVATE_KEY_B64` агент на телефоне на VPS не зайдёт.
+7. **Индекс документов:** `docs/agents/DOC_INDEX.md`.
 
 ## Hard Constraints
 

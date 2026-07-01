@@ -6,6 +6,7 @@
 |------|------------|
 | [`AGENT_BOOTSTRAP.md`](./AGENT_BOOTSTRAP.md) | Обязательный порядок чтения контекста, жёсткие ограничения, Git v2 / CI / деплой |
 | [`TASK_INTAKE_TEMPLATE.md`](./TASK_INTAKE_TEMPLATE.md) | Шаблон промпта: продукт, цель, **ALLOWED_SURFACE**, запрет SSH/scp по умолчанию |
+| [`CLOUD_AGENT_VPS_SSH.md`](./CLOUD_AGENT_VPS_SSH.md) | **iPhone / Cloud Agent:** Secrets + `scripts/platform/vps-ssh.sh`, read-only diagnose, deploy v2 |
 | [`NORM_UNIFIED_RELEASE_AND_RUNTIME.md`](./NORM_UNIFIED_RELEASE_AND_RUNTIME.md) | Указатель на **канон** релиза Solana Alpha (`docs/strategy/release/`) |
 | [`CURSOR_HOOKS_REMINDER.md`](./CURSOR_HOOKS_REMINDER.md) | Опциональные Cursor hooks (напоминания / блоки под ваш сценарий) |
 

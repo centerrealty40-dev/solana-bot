@@ -3,7 +3,7 @@
 > **GENERATED FILE — DO NOT EDIT BY HAND.**
 > Source of truth: `docs/platform/products.yaml`.
 > Regenerate: `node docs/platform/generate-registry.mjs`.
-> Platform version: 1.5.2
+> Platform version: 1.5.3
 
 Single source of truth for product ownership and isolation boundaries.
 

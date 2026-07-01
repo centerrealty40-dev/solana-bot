@@ -26,6 +26,7 @@ Tracked-код в **`/opt/solana-alpha`** попадает на сервер **�
 
 - **Host:** `187.124.38.242` (использовать IP; DNS-алиасы из локального `~/.ssh/config` могут конфликтовать с пользователем ключа).
 - **«Bot Admin» / ключ:** локальный ключ автоматизации **`botadmin_187_auto`** (Windows: `c:/Users/cente/.ssh/botadmin_187_auto`). Это и есть рабочий «Bot Admin»-доступ; содержимое ключа в чат не копировать.
+- **Cloud Agent (iPhone / облако):** ключ **не** на диске агента — один раз в **Cursor Secrets** как `VPS_SSH_PRIVATE_KEY_B64` (или `VPS_SSH_PRIVATE_KEY`). Команды: `bash scripts/platform/vps-ssh.sh --test`, read-only `bash scripts/platform/vps-diagnose-live-oscar.sh`, deploy `VPS_DEPLOY_CONFIRM=1 bash scripts/platform/vps-deploy-v2.sh`. Канон: **`docs/agents/CLOUD_AGENT_VPS_SSH.md`**.
 - **User для SSH:** на этом VPS указанный ключ привязан к **`root`** (`authorized_keys` у root). Учётная запись Linux **`botadmin`** с тем же ключом здесь **не принимается** (`Permission denied`) — не подменять пользователя из сторонних SSH config.
 - Команды приложения выполнять как **`sudo -u salpha`** (`pm2`, `git`/`npm` в `/opt/solana-alpha` от владельца клона).
 

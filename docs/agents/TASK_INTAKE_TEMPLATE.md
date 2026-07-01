@@ -11,7 +11,7 @@ Do not touch: <critical paths / other products / schemas>
 
 Deploy session: <yes | no>
   - no (default): implementation only — commit/PR readiness, typecheck/CI; NO SSH, NO scp, NO prod secrets in chat.
-  - yes (explicit): after merge/push to integration branch, deploy per Solana Alpha NORM §5.2 — still NO scp/rsync of tracked trees over the Git clone.
+  - yes (explicit): SSH через `scripts/platform/vps-ssh.sh` (Cloud Agent: Secret `VPS_SSH_PRIVATE_KEY_B64`, см. CLOUD_AGENT_VPS_SSH.md). Read-only: `vps-diagnose-live-oscar.sh`. Deploy: `VPS_DEPLOY_CONFIRM=1 vps-deploy-v2.sh` после merge в v2 — still NO scp/rsync of tracked trees.
 
 Done when: <acceptance criteria in 2-5 bullets>
 

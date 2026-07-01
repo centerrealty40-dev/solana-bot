@@ -57,6 +57,30 @@ If a platform change turns out to be harmful:
 
 ---
 
+## [1.5.3] — 2026-07-01 — agent: cursor (cloud-agent-vps)
+
+### Surface touched
+- `docs/platform/VERSION` (1.5.2 → 1.5.3)
+- `docs/platform/products.yaml` (`platform_version` → 1.5.3), `PRODUCT_REGISTRY.md` (regenerated)
+- `docs/agents/CLOUD_AGENT_VPS_SSH.md` (new)
+- `docs/agents/AGENT_BOOTSTRAP.md`, `DOC_INDEX.md`, `TASK_INTAKE_TEMPLATE.md`
+- `scripts/platform/vps-ssh.sh`, `vps-diagnose-live-oscar.sh`, `vps-deploy-v2.sh`, `README.md`
+- `.cursor/rules/server-autodeploy.mdc`
+
+### Change
+- Platform SSH path for **Cloud Agent** (iPhone): Cursor Secrets → `scripts/platform/vps-ssh.sh`; read-only Oscar diagnose and guarded v2 deploy wrappers.
+
+### Why
+- Cloud Agent sandbox has no access to maintainer's local `~/.ssh`; mobile sessions need documented, secret-based VPS access without pasting keys into chat.
+
+### Migration required
+- Solana Alpha maintainer: one-time Cursor Secret `VPS_SSH_PRIVATE_KEY_B64` (see `docs/agents/CLOUD_AGENT_VPS_SSH.md`). No code changes required for other products.
+
+### Rollback note
+- Revert commit; remove Secrets from Cursor UI; agents fall back to «no SSH from cloud» behavior.
+
+---
+
 ## [1.5.2] — 2026-05-04 — agent: cursor (integrator)
 
 ### Surface touched
