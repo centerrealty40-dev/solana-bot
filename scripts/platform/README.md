@@ -62,3 +62,23 @@ See `docs/platform/HEALTH_CONTRACT.md` for the full contract.
 
 Without these vars, health-check.sh still runs and updates state files;
 it just doesn't notify.
+
+## `vps-ssh.sh` / Cloud Agent VPS access
+
+SSH wrapper for Solana Alpha prod from **Cloud Agent** (iPhone) or CI.
+Credentials via env — **never commit keys**.
+
+| Variable | Purpose |
+|----------|---------|
+| `VPS_SSH_PRIVATE_KEY_B64` | Recommended: base64 PEM for Cursor Secrets |
+| `VPS_SSH_PRIVATE_KEY` | Raw PEM (supports `\n` escapes) |
+| `VPS_SSH_KEY_PATH` | Local Desktop fallback (`~/.ssh/botadmin_187_auto`) |
+
+```bash
+bash scripts/platform/vps-ssh.sh --test
+bash scripts/platform/vps-diagnose-live-oscar.sh    # read-only Oscar
+VPS_DEPLOY_CONFIRM=1 bash scripts/platform/vps-deploy-v2.sh   # deploy v2
+```
+
+Setup: **`docs/agents/CLOUD_AGENT_VPS_SSH.md`**.
+
