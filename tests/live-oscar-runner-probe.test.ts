@@ -43,7 +43,7 @@ describe('live-oscar-runner-probe', () => {
     process.env.PAPER_STRATEGY_ID = 'live-oscar';
     process.env.PAPER_RUNNER_PROBE_ENABLED = '1';
     process.env.PAPER_RUNNER_PROBE_MIN_AGE_MIN = '720';
-    process.env.PAPER_RUNNER_PROBE_MAX_AGE_MIN = '2160';
+    process.env.PAPER_RUNNER_PROBE_MAX_AGE_MIN = '2880';
     process.env.PAPER_RUNNER_PROBE_POSITION_USD = '500';
     process.env.PAPER_RUNNER_PROBE_MAX_CONCURRENT = '2';
     process.env.PAPER_RUNNER_PROBE_MAX_EXPOSURE_USD = '1000';
@@ -61,13 +61,13 @@ describe('live-oscar-runner-probe', () => {
     }
   });
 
-  it('age band 12h–36h and $500 one-shot sizing', () => {
+  it('age band 12h–48h and $500 one-shot sizing', () => {
     const cfg = loadPaperTraderConfig();
     expect(runnerProbeAgeInBand(cfg, 719)).toBe(false);
     expect(runnerProbeAgeInBand(cfg, 720)).toBe(true);
     expect(runnerProbeAgeInBand(cfg, 1500)).toBe(true);
-    expect(runnerProbeAgeInBand(cfg, 2160)).toBe(true);
-    expect(runnerProbeAgeInBand(cfg, 2161)).toBe(false);
+    expect(runnerProbeAgeInBand(cfg, 2880)).toBe(true);
+    expect(runnerProbeAgeInBand(cfg, 2881)).toBe(false);
     expect(runnerProbeOpenLegUsd(cfg)).toBe(500);
   });
 

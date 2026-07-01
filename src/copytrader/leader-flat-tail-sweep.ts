@@ -88,6 +88,7 @@ export async function scheduleLeaderFlatTailSweeps(
   let scheduled = 0;
 
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
+    if (pos.oscarPromotedAt) continue;
     if (!(await isLeaderFlatForMint(cfg, state, mint, pos.symbol))) continue;
     if (hasPendingSellForMint(state, mint)) continue;
 
