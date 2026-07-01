@@ -666,8 +666,8 @@ const PM2_APPS = [
         PAPER_ENABLE_LAUNCHPAD_LANE: 'false',
         PAPER_ENABLE_MIGRATION_LANE: 'false',
         PAPER_ENABLE_POST_LANE: 'true',
-        /** Пост-lane: мин. возраст пула в снимке 36 ч (паритет четырёх Oscar-плиток); верхняя граница не задана. */
-        PAPER_POST_MIN_AGE_MIN: '2160',
+        /** Пост-lane: мин. возраст пула в снимке 48 ч (2 дня); верхняя граница не задана. */
+        PAPER_POST_MIN_AGE_MIN: '2880',
         PAPER_POST_MAX_AGE_MIN: '0',
         /** Min liq post-lane / discovery ($30k). */
         PAPER_POST_MIN_LIQ_USD: '30000',
@@ -727,10 +727,10 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS: '3',
-        /** 1.11.543 — runner_probe lane ON (fresh runners 12–36h, 2×$500); intel shadow 48h before gate. */
+        /** 1.11.543 — runner_probe lane ON (fresh runners 12–48h, 2×$500); intel shadow 48h before gate. */
         PAPER_RUNNER_PROBE_ENABLED: '1',
         PAPER_RUNNER_PROBE_MIN_AGE_MIN: '720',
-        PAPER_RUNNER_PROBE_MAX_AGE_MIN: '2160',
+        PAPER_RUNNER_PROBE_MAX_AGE_MIN: '2880',
         PAPER_RUNNER_PROBE_12H_INTEL_REQUIRED: '1',
         PAPER_RUNNER_PROBE_MIN_MCAP_USD: '1000000',
         PAPER_RUNNER_PROBE_MAX_MCAP_USD: '30000000',
@@ -788,10 +788,10 @@ const PM2_APPS = [
         PAPER_DIP_MIN_DROP_PCT: '-20',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
-        /** 1.11.283: паритет с PAPER_POST_MIN_AGE_MIN (36 ч). Было 0 — volume-leader inject обходил post SQL age. */
-        PAPER_DIP_MIN_AGE_MIN: '2160',
+        /** 1.11.283: паритет с PAPER_POST_MIN_AGE_MIN (48 ч). Было 0 — volume-leader inject обходил post SQL age. */
+        PAPER_DIP_MIN_AGE_MIN: '2880',
         /** Глобальный gate discovery/dip: возраст токена (мин), не только age_min пула. */
-        PAPER_MIN_TOKEN_AGE_MIN: '2160',
+        PAPER_MIN_TOKEN_AGE_MIN: '2880',
         PAPER_DIP_COOLDOWN_MIN: '30',
         PAPER_DIP_COOLDOWN_MIN_SCALP: '20',
         /** После убыточного закрытия — 10 мин cooldown (не denylist). Работает вместе с hybrid re-entry gate. */

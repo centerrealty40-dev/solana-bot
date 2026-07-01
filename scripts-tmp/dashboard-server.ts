@@ -1903,7 +1903,7 @@ export type Paper2OpenItem = {
   liveOscarTradeLane: 'prod' | 'scalp_wave' | 'runner_probe' | null;
   /** True while position is actively managed as scalp_wave (false after phase escalation). */
   isScalpWave: boolean;
-  /** Fresh runners 12–36h lane (`runner_probe_v1` exit). */
+  /** Fresh runners 12–48h lane (`runner_probe_v1` exit). */
   isRunnerProbe: boolean;
   /** Parallel copy-leader leg on shared wallet — separate open row from Oscar on same mint. */
   isCopyLeader?: boolean;

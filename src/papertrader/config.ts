@@ -311,12 +311,12 @@ const ConfigSchema = z.object({
   liveOscarScalpWaveKillPct: z.coerce.number().min(0.01).max(0.5).default(0.1),
   liveOscarScalpWaveTimeStopHours: z.coerce.number().min(0.5).max(24).default(3),
   /**
-   * Live Oscar runner_probe lane (1.11.543): fresh runners 12–36h, strict runner guards + dip entry,
+   * Live Oscar runner_probe lane (1.11.543): fresh runners 12–48h, strict runner guards + dip entry,
    * wallet-intel gate, max 2×$500 parallel to prod (`positionSource: runner_probe`).
    */
   runnerProbeEnabled: z.boolean().default(false),
   runnerProbeMinAgeMin: z.coerce.number().nonnegative().default(720),
-  runnerProbeMaxAgeMin: z.coerce.number().nonnegative().default(2160),
+  runnerProbeMaxAgeMin: z.coerce.number().nonnegative().default(2880),
   /** 12–24h band requires intel green (§4.3 age relax). */
   runnerProbe12hIntelRequired: z.boolean().default(true),
   runnerProbeMinMcapUsd: z.coerce.number().nonnegative().default(1_000_000),

@@ -63,7 +63,7 @@ export function sumRunnerProbeExposureUsd(open: ReadonlyMap<string, OpenTrade>):
   return sum;
 }
 
-/** Age band 12h–36h (minutes). */
+/** Age band 12h–48h (minutes). */
 export function runnerProbeAgeInBand(cfg: PaperTraderConfig, ageMin: number): boolean {
   const age = Number(ageMin);
   if (!Number.isFinite(age)) return false;
