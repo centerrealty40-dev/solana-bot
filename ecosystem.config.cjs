@@ -302,6 +302,9 @@ const PM2_APPS = [
         DASHBOARD_BASEPULSE_TAIL_BYTES: String(512 * 1024 * 1024),
         /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
         DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
+        /** BscPulse journal ~2.3GB — full scan while under cap; 64MiB tail is filter_reject noise only. */
+        DASHBOARD_BSCPULSE_FULL_SCAN_MAX_BYTES: String(3 * 1024 * 1024 * 1024),
+        DASHBOARD_BSCPULSE_TAIL_BYTES: String(1024 * 1024 * 1024),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
