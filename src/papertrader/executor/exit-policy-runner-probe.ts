@@ -80,6 +80,19 @@ export function runnerProbeTpEligible(
   return false;
 }
 
+/**
+ * After DCA lowers avgEntry, a pre-DCA peakMcUsd can look like +10% vs the new avg and
+ * fire TP while the position is still underwater (FROGBULL 2026-07-02). Re-anchor peak
+ * to the post-DCA tick so TP only arms on gains from the new cost basis.
+ */
+export function runnerProbeResetPeakAfterDca(ot: OpenTrade, curMetricUsd: number): boolean {
+  if (!isRunnerProbeExitPolicy(ot) || !(curMetricUsd > 0) || !(ot.avgEntry > 0)) return false;
+  ot.peakMcUsd = curMetricUsd;
+  ot.peakPnlPct = (curMetricUsd / ot.avgEntry - 1) * 100;
+  ot.trailingArmed = false;
+  return true;
+}
+
 /** Re-key + exit-policy stamp for runner_probe opens after journal/snapshot replay. */
 export function finalizeRunnerProbeOpenOnBoot(
   open: Map<string, OpenTrade>,

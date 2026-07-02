@@ -23,6 +23,7 @@ import {
   runnerProbeEffectiveKillFrac,
   runnerProbeKillEligible,
   runnerProbeMaxPositionUsd,
+  runnerProbeResetPeakAfterDca,
   runnerProbeTpEligible,
   stampRunnerProbeExitPolicyOnOpen,
 } from '../src/papertrader/executor/exit-policy-runner-probe.js';
@@ -234,5 +235,21 @@ describe('live-oscar-runner-probe', () => {
     } as OpenTrade;
     expect(runnerProbeTpEligible(ot, 1.05, 1.05, cfg)).toBe(true);
     expect(runnerProbeEffectiveKillFrac(cfg)).toBe(-0.5);
+  });
+
+  it('does not phantom-TP after DCA when pre-DCA peak exceeds new avgEntry', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = {
+      mint: 'm1',
+      liveExitPolicyId: 'runner_probe_v1',
+      avgEntry: 0.0018177951694850678,
+      peakMcUsd: 0.0021334969336829785,
+      peakPnlPct: -18.02,
+    } as OpenTrade;
+    expect(runnerProbeTpEligible(ot, 0.0014901720290547192, 0.0014901720290547192, cfg)).toBe(true);
+    runnerProbeResetPeakAfterDca(ot, 0.0014901720290547192);
+    expect(runnerProbeTpEligible(ot, 0.0014901720290547192, 0.0014901720290547192, cfg)).toBe(false);
+    expect(ot.peakMcUsd).toBeCloseTo(0.0014901720290547192);
+    expect(ot.peakPnlPct).toBeCloseTo(-18.02, 1);
   });
 });
