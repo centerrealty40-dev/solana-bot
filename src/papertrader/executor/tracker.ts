@@ -5,6 +5,13 @@ import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
 import { isRunnerProbeTrade } from '../live-oscar-runner-probe.js';
 import {
+  isRunnerProbeExitPolicy,
+  runnerProbeDcaLevelsSpec,
+  runnerProbeKillEligible,
+  runnerProbeOptimisticTpPx,
+  runnerProbeTpEligible,
+} from './exit-policy-runner-probe.js';
+import {
   applyLiveOscarPhaseEscalation,
   computeDropFromScalpAnchor,
   evaluateScalpPhaseEscalationTrigger,
@@ -187,6 +194,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Закрытие по TIMEOUT отключается после прогресса по позиции (ожидание отработки сетки после долгого удержания). Сплит scale-in не считается DCA. */
 function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
   if (isScalpWaveExitPolicy(ot)) return false;
+  if (isRunnerProbeExitPolicy(ot)) return false;
   if (ot.partialSells.length > 0) return true;
   return ot.legs.some((l) => l.reason === 'dca');
 }
@@ -2860,8 +2868,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
     const tradeDcaLevels =
-      isLiveOscarScalpWaveTrade(ot) || isRunnerProbeTrade(ot)
+      isLiveOscarScalpWaveTrade(ot)
       ? []
+      : isRunnerProbeTrade(ot)
+        ? parseDcaLevels(runnerProbeDcaLevelsSpec(cfg))
       : ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
         ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
         : dcaLevels;
@@ -3718,7 +3728,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
-      const pnlFracPeak = ot.avgEntry > 0 ? curMetric / ot.avgEntry - 1 : 0;
+      const peakMetric = isRunnerProbeExitPolicy(ot)
+        ? runnerProbeOptimisticTpPx(ot, curMetric, snapPx)
+        : curMetric;
+      const pnlFracPeak = ot.avgEntry > 0 ? peakMetric / ot.avgEntry - 1 : 0;
       if (isPresetCScalpExitPolicy(ot)) {
         ot.peakPnlPctAnchor = Math.max(
           ot.peakPnlPctAnchor ?? -Infinity,
@@ -3730,8 +3743,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       } else if (isVariantALegacyV1ExitPolicy(ot)) {
         variantAUpdateRemainderPeak(ot, pnlFracPeak, cfg);
       }
-      ot.peakMcUsd = curMetric;
-      ot.peakPnlPct = pnlPctVsAvg;
+      ot.peakMcUsd = isRunnerProbeExitPolicy(ot) ? peakMetric : curMetric;
+      ot.peakPnlPct = isRunnerProbeExitPolicy(ot) ? pnlFracPeak * 100 : pnlPctVsAvg;
       /**
        * Peak trailing only after ≥2 partial TP rungs when using TP grid or discrete ladder — avoids full exit
        * on retrace right after a shallow first rung (~2.5%).
@@ -3845,7 +3858,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
-        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+        if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
         }
@@ -3977,7 +3990,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           : dcaEffPrev(ot);
         const currDropMetric = usePnlVsAvgForDca ? curMetric / ot.avgEntry - 1 : dropFromFirstPct;
         if (!dcaCrossedDownward(effPrevDrop, currDropMetric, lvl.triggerPct)) continue;
-        const addUsd = cfg.positionUsd * lvl.addFraction;
+        const addUsd = effCfg.positionUsd * lvl.addFraction;
         if (
           liveOscarCfg?.liveMaxPositionUsd != null &&
           ot.totalInvestedUsd + addUsd > liveOscarCfg.liveMaxPositionUsd + 1e-6
@@ -4019,7 +4032,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
         ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
-        if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
+        if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
         }
@@ -4545,16 +4558,20 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
       const presetCScalpKill =
         isPresetCScalpExitPolicy(ot) && presetCScalpKillEligible(ot, curMetric);
+      const runnerProbeKill =
+        isRunnerProbeExitPolicy(ot) && runnerProbeKillEligible(ot, curMetric, snapPx, cfg);
       const classicKill =
         !isWaveBExitPolicy(ot) &&
         !isPresetCScalpExitPolicy(ot) &&
+        !isRunnerProbeExitPolicy(ot) &&
         !ot.liveStagedEntry &&
         killEff < 0 &&
         pnlPctVsAvg / 100 <= killEff;
       const inKillTerritory =
-        !isVariantAExitPolicy(ot) && (inSignalKillTerritory || waveBKill || presetCScalpKill || classicKill);
+        !isVariantAExitPolicy(ot) &&
+        (inSignalKillTerritory || waveBKill || presetCScalpKill || runnerProbeKill || classicKill);
       if (inKillTerritory) {
-        if (waveBKill || presetCScalpKill) {
+        if (waveBKill || presetCScalpKill || runnerProbeKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
         } else {
@@ -4601,7 +4618,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           pnlPctVsAvg <= 0
         ) {
           exitReason = 'BREAKEVEN_EXIT';
-        } else if (xAvg >= effCfg.tpX) exitReason = 'TP';
+        } else if (runnerProbeTpEligible(ot, curMetric, snapPx, cfg)) exitReason = 'TP';
+        else if (xAvg >= effCfg.tpX) exitReason = 'TP';
         else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
         else if (
           effCfg.trailMode === 'ladder_retrace' &&
