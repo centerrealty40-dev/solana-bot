@@ -13,6 +13,7 @@ import {
   RUNNER_PROBE_POSITION_SOURCE,
   stampRunnerProbeOnOpen,
   sumRunnerProbeExposureUsd,
+  mintFromOpenMapKey,
 } from '../src/papertrader/live-oscar-runner-probe.js';
 import {
   isRunnerProbeExitPolicy,
@@ -160,6 +161,12 @@ describe('live-oscar-runner-probe', () => {
     });
     expect(evalRes.pass).toBe(false);
     expect(evalRes.reasons.some((r) => r.includes('runner_probe_age_outside'))).toBe(true);
+  });
+
+  it('mintFromOpenMapKey strips runner_probe composite suffix', () => {
+    const bare = 'mintA';
+    expect(mintFromOpenMapKey(bare)).toBe(bare);
+    expect(mintFromOpenMapKey(runnerProbeOpenMapKey(bare))).toBe(bare);
   });
 
   it('stamps runner_probe_v1 exit policy with negative kill and effective params', () => {

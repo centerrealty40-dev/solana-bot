@@ -3,13 +3,14 @@ import { parseDcaLevels } from '../config.js';
 import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
-import { isRunnerProbeTrade } from '../live-oscar-runner-probe.js';
+import { isRunnerProbeTrade, mintFromOpenMapKey } from '../live-oscar-runner-probe.js';
 import {
   isRunnerProbeExitPolicy,
   runnerProbeDcaLevelsSpec,
   runnerProbeKillEligible,
   runnerProbeOptimisticTpPx,
   runnerProbeTpEligible,
+  stampRunnerProbeExitPolicyOnOpen,
 } from './exit-policy-runner-probe.js';
 import {
   applyLiveOscarPhaseEscalation,
@@ -2862,9 +2863,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
   }
   const mints = [...open.keys()];
 
-  for (const mint of mints) {
-    const ot = open.get(mint);
+  for (const openKey of mints) {
+    const ot = open.get(openKey);
     if (!ot) continue;
+    /** Composite open-map key (`mint::runner_probe`) — bare mint for PG/Jupiter/journal. */
+    const mint = mintFromOpenMapKey(openKey);
+    if (isRunnerProbeExitPolicy(ot)) stampRunnerProbeExitPolicyOnOpen(ot, cfg);
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
     const tradeDcaLevels =
@@ -3456,7 +3460,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ct.exitContext = exitContext;
         clearExitCloseDeferForMint(mint);
         clearExitPartialDeferForMint(mint);
-        open.delete(mint);
+        open.delete(openKey);
         closed.push(ct);
         stats.closed.LIQ_DRAIN++;
         const mcUsdLive_close = await getLiveMcUsd(
@@ -3560,7 +3564,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ct.exitContext = exitContextNd;
         clearExitCloseDeferForMint(mint);
         clearExitPartialDeferForMint(mint);
-        open.delete(mint);
+        open.delete(openKey);
         closed.push(ct);
         stats.closed.NO_DATA++;
         const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
@@ -3726,11 +3730,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const liveOscarAb = isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveExitModeAbEnabled;
     const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
 
-    if (!(isPaperOscarIdealized && idealizedMute) && curMetric > ot.peakMcUsd) {
+    const peakCandidate = isRunnerProbeExitPolicy(ot)
+      ? runnerProbeOptimisticTpPx(ot, curMetric, snapPx)
+      : curMetric;
+    if (!(isPaperOscarIdealized && idealizedMute) && peakCandidate > ot.peakMcUsd) {
       const wasArmed = ot.trailingArmed;
-      const peakMetric = isRunnerProbeExitPolicy(ot)
-        ? runnerProbeOptimisticTpPx(ot, curMetric, snapPx)
-        : curMetric;
+      const peakMetric = peakCandidate;
       const pnlFracPeak = ot.avgEntry > 0 ? peakMetric / ot.avgEntry - 1 : 0;
       if (isPresetCScalpExitPolicy(ot)) {
         ot.peakPnlPctAnchor = Math.max(
@@ -3825,7 +3830,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         const { stepIndex, legLabelRu, addUsd, dropPct, signalDropPct, markDone } = args;
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
-          if (!open.has(mint)) return false;
+          if (!open.has(openKey)) return false;
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
@@ -3999,7 +4004,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
-          if (!open.has(mint)) continue;
+          if (!open.has(openKey)) continue;
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
@@ -4444,7 +4449,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         liveOscarCfg,
         journalAppend,
         journalLiveStrategy,
-        verifyStillOpen: () => open.has(mint),
+        verifyStillOpen: () => open.has(openKey),
       });
     }
 
@@ -4455,7 +4460,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         mint,
         curMetric,
         journalAppend,
-        verifyStillOpen: () => open.has(mint),
+        verifyStillOpen: () => open.has(openKey),
       });
     }
 
@@ -4813,7 +4818,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         tpLadder,
       });
       ct.exitContext = exitContextMain;
-      open.delete(mint);
+      open.delete(openKey);
       clearExitCloseDeferForMint(mint);
       clearExitPartialDeferForMint(mint);
       closed.push(ct);
@@ -4875,8 +4880,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       );
     }
 
-    if (curMetric > 0 && open.has(mint)) {
-      const ote = open.get(mint);
+    if (curMetric > 0 && open.has(openKey)) {
+      const ote = open.get(openKey);
       if (ote) {
         if (Number.isFinite(dropFromFirstPct)) ote.dcaLastEvalDropFromFirstPct = dropFromFirstPct;
         const splitOk = ote.legs.some((l) => l.reason === 'scale_in');

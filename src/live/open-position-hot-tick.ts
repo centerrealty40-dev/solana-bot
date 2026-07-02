@@ -11,6 +11,7 @@ import {
   runnerProbeKillEligible,
   runnerProbeTpEligible,
 } from '../papertrader/executor/exit-policy-runner-probe.js';
+import { mintFromOpenMapKey, runnerProbeOpenMapKey } from '../papertrader/live-oscar-runner-probe.js';
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
 import { liveSellQuoteAndPrepareSnapshot } from './jupiter.js';
@@ -177,14 +178,17 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
       const open = ctx.getOpen();
       if (open.size === 0) return;
       for (const cachedMint of listOpenPositionExecPriceMints()) {
-        if (!open.has(cachedMint)) clearOpenPositionExecSellUsd(cachedMint);
+        if (!open.has(cachedMint) && !open.has(runnerProbeOpenMapKey(cachedMint))) {
+          clearOpenPositionExecSellUsd(cachedMint);
+        }
       }
       if (!pk) pk = signerPk(liveCfg);
       const solUsd = getSolUsd() ?? 0;
       if (!(solUsd > 0)) return;
 
-      for (const [mint, ot] of open) {
+      for (const [openKey, ot] of open) {
         if (!ot || ot.remainingFraction <= 1e-6) continue;
+        const mint = mintFromOpenMapKey(openKey);
         try {
           const probe = await probeExecutableSellUsd({
             liveCfg,
