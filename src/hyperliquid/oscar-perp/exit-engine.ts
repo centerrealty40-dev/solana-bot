@@ -5,23 +5,39 @@ import type { OscarOpenPosition } from './position-types.js';
 /**
  * HL Oscar perp exit ladder (wave B runner).
  *
- * TP: sell `tpSellFrac` (50%) of **remaining** at each rung in `tpRungs` (+5%, +7.5%, +10%).
- * Trail arms at first +5% touch; −2.5% from peak → sell 20% of remaining per step.
- * Breakeven full exit at ≤0% avg after trail armed (first TP or +5% peak).
+ * TP: sell `tpSellFrac` (50%) of **remaining** at each rung in `tpRungs` (env: HL_OSCAR_TP_RUNGS).
+ * Trail arms at `trailArmFrac` (env: HL_OSCAR_TRAIL_ARM_PCT); −2.5% from peak → sell 20% of remaining per step.
+ * Breakeven full exit at ≤0% avg after trail armed (first TP or trail arm).
  * Kill −45% and optional time stop are config-driven (`positionKillDropPct`, `timeStopHours`; `0` = off).
  */
-export const OSCAR_EXIT = {
-  /** Take-profit thresholds vs avg entry (PnL fraction). */
-  tpRungs: [0.05, 0.075, 0.1] as const,
-  /** Fraction of **remaining** position sold at each TP rung. */
+export const OSCAR_EXIT_DEFAULTS = {
+  tpRungs: [0.08, 0.12, 0.16] as const,
   tpSellFrac: 0.5,
-  /** Trail + breakeven arm when peak/TP reaches this PnL fraction (+5%). */
-  trailArmFrac: 0.05,
-  /** Trail fires when price drops this far below peak PnL anchor (−2.5%). */
+  trailArmFrac: 0.08,
   trailStepDropFrac: 0.025,
-  /** Fraction of **remaining** sold on each trail step. */
   trailSellFrac: 0.2,
 } as const;
+
+/** @deprecated Use config-driven exit params via `resolveOscarExitParams`. */
+export const OSCAR_EXIT = OSCAR_EXIT_DEFAULTS;
+
+export type OscarExitParams = {
+  tpRungs: readonly number[];
+  tpSellFrac: number;
+  trailArmFrac: number;
+  trailStepDropFrac: number;
+  trailSellFrac: number;
+};
+
+export function resolveOscarExitParams(cfg: HlOscarPerpConfig): OscarExitParams {
+  return {
+    tpRungs: cfg.tpRungs.length > 0 ? cfg.tpRungs : [...OSCAR_EXIT_DEFAULTS.tpRungs],
+    tpSellFrac: cfg.tpSellFrac,
+    trailArmFrac: cfg.trailArmFrac,
+    trailStepDropFrac: cfg.trailStepDropFrac,
+    trailSellFrac: cfg.trailSellFrac,
+  };
+}
 
 /** Position kill as negative PnL fraction (e.g. 45 → −0.45). */
 export function positionKillFrac(cfg: HlOscarPerpConfig): number {
@@ -45,6 +61,7 @@ export function computeOscarExitActions(
   highPx: number,
   nowMs: number,
 ): OscarExitAction[] {
+  const exit = resolveOscarExitParams(cfg);
   const actions: OscarExitAction[] = [];
   const avg = pos.avgEntryPx;
   if (!(avg > 0)) return actions;
@@ -75,37 +92,36 @@ export function computeOscarExitActions(
   }
 
   pos.peakPnlFrac = Math.max(pos.peakPnlFrac, pnlHigh);
-  if (pnlHigh + 1e-9 >= OSCAR_EXIT.trailArmFrac) pos.preArmReached = true;
+  if (pnlHigh + 1e-9 >= exit.trailArmFrac) pos.preArmReached = true;
 
-  for (let rung = 0; rung < OSCAR_EXIT.tpRungs.length; rung++) {
-    const thr = OSCAR_EXIT.tpRungs[rung]!;
+  for (let rung = 0; rung < exit.tpRungs.length; rung++) {
+    const thr = exit.tpRungs[rung]!;
     if (pos.tpLevelsTaken.has(rung)) continue;
     if (pnlHigh + 1e-9 >= thr) {
       pos.tpLevelsTaken.add(rung);
       pos.maxTpTaken = Math.max(pos.maxTpTaken, thr);
       actions.push({
         kind: 'partial',
-        fraction: OSCAR_EXIT.tpSellFrac,
+        fraction: exit.tpSellFrac,
         reason: 'TP',
         level: rung + 1,
       });
     }
   }
 
-  const trailActive =
-    pos.maxTpTaken + 1e-9 >= OSCAR_EXIT.trailArmFrac || pos.preArmReached;
+  const trailActive = pos.maxTpTaken + 1e-9 >= exit.trailArmFrac || pos.preArmReached;
   if (trailActive) {
     pos.trailAnchor = Math.max(pos.trailAnchor, pos.peakPnlFrac, pnlHigh);
     const dropFromPeak = pos.trailAnchor - pnlLow;
-    if (dropFromPeak >= OSCAR_EXIT.trailStepDropFrac) {
-      const steps = Math.floor(dropFromPeak / OSCAR_EXIT.trailStepDropFrac);
+    if (dropFromPeak >= exit.trailStepDropFrac) {
+      const steps = Math.floor(dropFromPeak / exit.trailStepDropFrac);
       for (let s = 1; s <= steps; s++) {
-        const key = Math.round((pos.trailAnchor - s * OSCAR_EXIT.trailStepDropFrac) * 1000);
+        const key = Math.round((pos.trailAnchor - s * exit.trailStepDropFrac) * 1000);
         if (pos.trailLevelsTaken.has(key)) continue;
         pos.trailLevelsTaken.add(key);
         actions.push({
           kind: 'partial',
-          fraction: OSCAR_EXIT.trailSellFrac,
+          fraction: exit.trailSellFrac,
           reason: 'TRAIL',
         });
       }
@@ -114,7 +130,7 @@ export function computeOscarExitActions(
 
   if (
     trailActive &&
-    pos.maxTpTaken + 1e-9 >= OSCAR_EXIT.trailArmFrac &&
+    pos.maxTpTaken + 1e-9 >= exit.trailArmFrac &&
     pnlMark <= 0 &&
     pos.remainingFraction > 1e-6
   ) {

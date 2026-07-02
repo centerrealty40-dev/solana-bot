@@ -102,12 +102,22 @@ export async function assertOscarTelegramBot(): Promise<void> {
   }
 }
 
+function formatTpRungsPct(tpRungs: number[]): string {
+  return tpRungs.map((r) => `+${Math.round(r * 1000) / 10}%`).join(' / ');
+}
+
 export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): Promise<void> {
   if (cfg.mode !== 'live') return;
   const impulseLine =
     cfg.dipMinImpulsePct > 0
       ? ` · импульс ≥${cfg.dipMinImpulsePct}%`
       : ' · импульс выкл';
+  const vetoLine = [
+    cfg.recoveryVetoEnabled ? `recovery veto ≥${cfg.recoveryVetoMaxBouncePct}%` : null,
+    cfg.localHighVetoEnabled ? `local-high ≤${cfg.localHighVetoMaxDistancePct}%` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const entryLine = cfg.stagedEntryEnabled
     ? `Staged: $${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} @ dip −${Math.abs(cfg.dipMinDropPct)}%${impulseLine} / leg2 −${cfg.leg2DropPct}% / leg3 −${cfg.leg3DropPct}% от сигнала`
     : `Single entry $${cfg.positionNotionalUsd} gross`;
@@ -116,7 +126,8 @@ export async function notifyOscarStartup(cfg: HlOscarPerpConfig, mode: string): 
       '🟢 HL Oscar — бот запущен',
       `Режим: ${mode} · ${cfg.leverage}x · $${cfg.positionNotionalUsd} gross ($${cfg.positionMarginUsd} margin)/позиция`,
       entryLine,
-      `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours > 0 ? `${cfg.timeStopHours}ч` : 'выкл'}`,
+      `TP ${formatTpRungsPct(cfg.tpRungs)} · trail arm +${Math.round(cfg.trailArmFrac * 1000) / 10}% · kill −${cfg.positionKillDropPct}%`,
+      `Макс открытых: ${cfg.maxOpenPositions} · тайм-стоп ${cfg.timeStopHours > 0 ? `${cfg.timeStopHours}ч` : 'выкл'}${vetoLine ? ` · ${vetoLine}` : ''}`,
     ].join('\n'),
   );
 }
