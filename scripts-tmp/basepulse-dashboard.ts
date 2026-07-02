@@ -100,7 +100,12 @@ function isPositionOpenEv(ev: JournalEv): boolean {
 function isPositionCloseEv(ev: JournalEv): boolean {
   const kind = typeof ev.kind === 'string' ? ev.kind : '';
   const type = typeof ev.type === 'string' ? ev.type : '';
-  return kind === 'close' || type === 'live_close';
+  if (kind === 'close' || type === 'live_close') return true;
+  if (type === 'live_partial' || kind === 'partial_sell') {
+    const rf = num(ev.remainingFraction);
+    return rf != null && rf <= 1e-6;
+  }
+  return false;
 }
 
 /** Last live_open/live_close per token in the scanned window (reverse pass). */

@@ -12,10 +12,11 @@ if [ -z "$SCRIPT" ]; then
 fi
 INTERVAL="${BSCPULSE_SYNC_INTERVAL_SEC:-30}"
 run_sync() {
+  # Invoke via bash — ops/*.sh may lack +x when deployed from git on Windows hosts.
   if [ "$(id -u)" -eq 0 ]; then
-    "$SCRIPT"
+    bash "$SCRIPT"
   else
-    sudo -n "$SCRIPT"
+    sudo -n bash "$SCRIPT"
   fi
 }
 while true; do
