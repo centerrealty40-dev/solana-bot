@@ -82,6 +82,26 @@
 
 ---
 
+## [1.11.549] — 2026-07-02
+
+**Тег:** `sa-alpha-1.11.549`
+
+### Live Oscar — активирован гибрид Shyft (Stage 1.2 + 1.3)
+
+**Контекст:** shadow Stage 1.1 собирал лаг PG 24–48 ч; код primary-цены и DeFi mcap уже в репо (1.11.468–469). Владелец запросил полное использование оплаченного Shyft на проде.
+
+- **`ecosystem.config.cjs` (live-oscar):** `SHYFT_PRICE_PRIMARY_ENABLED` `'0'` → **`'1'`** (MTM + discovery dip-eval, freshness-gate 5s + PG/Jupiter fallback); `SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED` `'0'` → **`'1'`**; `SHYFT_DEFI_MCAP_ENABLED` `'0'` → **`'1'`** (TTL 12s + PG fallback). Shadow **`PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED='1'`** остаётся для сравнения лага в журнале.
+- **Креды на VPS** уже в `.env` (`SHYFT_GRPC_TOKEN`, `SHYFT_DEFI_API_KEY`/`SHYFT_API_KEY`) — доп. правок `.env` не требуется.
+- **Затронутые lane:** pumpswap discovery dip-eval (−5/−10%), MTM/hot-tick exits открытых позиций, runner_probe mcap-гейт; preset-c без изменений (Shyft OFF).
+
+**Наблюдение после деплоя:** `live_shyft_shadow_price`, `live_shyft_price_primary`, `live_shyft_defi_mcap`; меньше `live_stale_price_warn` на входах/MTM.
+
+**Откат:** `SHYFT_PRICE_PRIMARY_ENABLED=0`, `SHYFT_DEFI_MCAP_ENABLED=0` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`; либо redeploy `sa-alpha-1.11.548`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.548] — 2026-07-01
 
 **Тег:** `sa-alpha-1.11.548`
