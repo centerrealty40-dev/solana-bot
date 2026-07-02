@@ -29,9 +29,26 @@ export function mintFromOpenMapKey(key: string): string {
   return isRunnerProbeOpenMapKey(key) ? key.slice(0, -RUNNER_PROBE_MAP_SUFFIX.length) : key;
 }
 
-export function resolveOpenMapKey(ot: Pick<OpenTrade, 'mint' | 'positionSource'>): string {
-  if (ot.positionSource === RUNNER_PROBE_POSITION_SOURCE) return runnerProbeOpenMapKey(ot.mint);
+export function resolveOpenMapKey(
+  ot: Pick<OpenTrade, 'mint' | 'positionSource' | 'liveOscarTradeLane' | 'liveExitPolicyId'>,
+): string {
+  if (isRunnerProbeTrade(ot)) return runnerProbeOpenMapKey(ot.mint);
   return ot.mint;
+}
+
+/** Re-key runner_probe opens to `mint::runner_probe` after journal/snapshot replay at bare mint. */
+export function normalizeRunnerProbeOpenMapKeys(open: Map<string, OpenTrade>): number {
+  let migrated = 0;
+  for (const [key, ot] of [...open.entries()]) {
+    if (!isRunnerProbeTrade(ot)) continue;
+    stampRunnerProbeOnOpen(ot);
+    const canon = resolveOpenMapKey(ot);
+    if (key === canon) continue;
+    open.delete(key);
+    open.set(canon, ot);
+    migrated += 1;
+  }
+  return migrated;
 }
 
 export function isRunnerProbeLaneEnabled(cfg: PaperTraderConfig): boolean {
@@ -219,7 +236,9 @@ export function stampRunnerProbeOnOpen(ot: OpenTrade): void {
 }
 
 export function runnerProbeMintAlreadyOpen(open: ReadonlyMap<string, OpenTrade>, mint: string): boolean {
-  return open.has(runnerProbeOpenMapKey(mint));
+  if (open.has(runnerProbeOpenMapKey(mint))) return true;
+  const bare = open.get(mint);
+  return bare != null && isRunnerProbeTrade(bare);
 }
 
 /**

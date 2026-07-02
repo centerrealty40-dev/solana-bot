@@ -4,8 +4,10 @@ import {
   countOpenRunnerProbePositions,
   evaluateLiveOscarRunnerProbeDiscovery,
   isRunnerProbeTrade,
+  normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
   runnerProbeAgeInBand,
+  runnerProbeMintAlreadyOpen,
   runnerProbeMintOpenSkipReason,
   runnerProbeOpenMapKey,
   runnerProbeOpenLegUsd,
@@ -167,6 +169,31 @@ describe('live-oscar-runner-probe', () => {
     const bare = 'mintA';
     expect(mintFromOpenMapKey(bare)).toBe(bare);
     expect(mintFromOpenMapKey(runnerProbeOpenMapKey(bare))).toBe(bare);
+  });
+
+  it('resolveOpenMapKey uses liveOscarTradeLane when positionSource missing', () => {
+    const ot = { mint: 'mintA', liveOscarTradeLane: 'runner_probe' } as OpenTrade;
+    expect(resolveOpenMapKey(ot)).toBe(runnerProbeOpenMapKey('mintA'));
+  });
+
+  it('normalizeRunnerProbeOpenMapKeys migrates bare replay key to composite', () => {
+    const ot = {
+      mint: 'mintA',
+      liveOscarTradeLane: 'runner_probe',
+      liveExitPolicyId: 'runner_probe_v1',
+    } as OpenTrade;
+    const open = new Map<string, OpenTrade>([['mintA', ot]]);
+    expect(normalizeRunnerProbeOpenMapKeys(open)).toBe(1);
+    expect(open.has('mintA')).toBe(false);
+    expect(open.has(runnerProbeOpenMapKey('mintA'))).toBe(true);
+    expect(open.get(runnerProbeOpenMapKey('mintA'))?.positionSource).toBe(RUNNER_PROBE_POSITION_SOURCE);
+  });
+
+  it('runnerProbeMintAlreadyOpen detects bare replay key', () => {
+    const open = new Map<string, OpenTrade>([
+      ['mintA', { mint: 'mintA', liveOscarTradeLane: 'runner_probe' } as OpenTrade],
+    ]);
+    expect(runnerProbeMintAlreadyOpen(open, 'mintA')).toBe(true);
   });
 
   it('stamps runner_probe_v1 exit policy with negative kill and effective params', () => {

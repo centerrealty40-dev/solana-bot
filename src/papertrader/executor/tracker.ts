@@ -2801,9 +2801,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const oz = new Set(orphanMints);
     const graceMs = reconcileOrphanMinPositionAgeMs ?? 0;
     const nowOrphan = Date.now();
-    for (const [, ot] of open.entries()) {
-      const m = ot.mint;
-      if (!oz.has(m)) continue;
+    for (const [openKey, ot] of open.entries()) {
+      const m = mintFromOpenMapKey(openKey);
+      if (!oz.has(m) && !oz.has(openKey)) continue;
       if (graceMs > 0 && ot.entryTs > 0 && nowOrphan - ot.entryTs < graceMs) continue;
         const liveWalletZeroPolicy =
           liveOscarCfg?.strategyEnabled &&

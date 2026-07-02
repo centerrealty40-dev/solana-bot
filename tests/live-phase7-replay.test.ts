@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { replayLiveStrategyJournal } from '../src/live/replay-strategy-journal.js';
+import { runnerProbeOpenMapKey } from '../src/papertrader/live-oscar-runner-probe.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../src/live/strategy-snapshot.js';
 import type { ClosedTrade, OpenTrade } from '../src/papertrader/types.js';
 
@@ -157,5 +158,29 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
     fs.writeFileSync(p, `${JSON.stringify({ noise: 1 })}\n${JSON.stringify(row)}\n`, 'utf-8');
     const r = replayLiveStrategyJournal({ storePath: p, strategyId: 'live-oscar', tailLines: 1 });
     expect(r.open.size).toBe(1);
+  });
+
+  it('replays runner_probe live_position_open under composite open-map key', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-p7-rp-'));
+    const p = path.join(dir, 'live.jsonl');
+    const mint = 'MintRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRPRP';
+    const ot = {
+      ...minimalOpen(mint, 1),
+      liveOscarTradeLane: 'runner_probe',
+      liveExitPolicyId: 'runner_probe_v1',
+    } as OpenTrade;
+    const row = {
+      ts: 1,
+      strategyId: 'live-oscar',
+      channel: 'live',
+      kind: 'live_position_open',
+      mint,
+      openTrade: liveOpenTradeSnapshot(ot),
+    };
+    fs.writeFileSync(p, `${JSON.stringify(row)}\n`, 'utf-8');
+    const r = replayLiveStrategyJournal({ storePath: p, strategyId: 'live-oscar' });
+    expect(r.open.size).toBe(1);
+    expect(r.open.has(mint)).toBe(false);
+    expect(r.open.has(runnerProbeOpenMapKey(mint))).toBe(true);
   });
 });

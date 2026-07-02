@@ -1,13 +1,16 @@
 import { getNearReadyDipWatchlist } from '../discovery-health-window.js';
 import { getRecentlyEvaluatedMints } from './discovery-eval-throttle.js';
 import type { PaperTraderConfig } from '../config.js';
+import { mintFromOpenMapKey } from '../live-oscar-runner-probe.js';
 
 /** Mint'ы с открытой позицией — обновляются из `papertrader/main` каждый discovery-tick. */
 let openMintSet = new Set<string>();
 
 export function syncPriorityOpenMints(mints: Iterable<string>): void {
   openMintSet = new Set(
-    [...mints].map((m) => String(m ?? '').trim()).filter((m) => m.length >= 32),
+    [...mints]
+      .map((m) => mintFromOpenMapKey(String(m ?? '').trim()))
+      .filter((m) => m.length >= 32),
   );
 }
 

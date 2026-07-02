@@ -51,6 +51,7 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveOscarMcapTier: ot.liveOscarMcapTier }
       : {}),
     ...(ot.liveOscarTradeLane ? { liveOscarTradeLane: ot.liveOscarTradeLane } : {}),
+    ...(ot.positionSource ? { positionSource: ot.positionSource } : {}),
     ...(ot.liveOscarPhaseEscalatedFrom
       ? { liveOscarPhaseEscalatedFrom: ot.liveOscarPhaseEscalatedFrom }
       : {}),

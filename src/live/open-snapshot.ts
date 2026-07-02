@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { OpenTrade } from '../papertrader/types.js';
 import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
+import { resolveOpenMapKey } from '../papertrader/live-oscar-runner-probe.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
 
 export const LIVE_OPEN_SNAPSHOT_VERSION = 1;
@@ -190,14 +191,15 @@ export function mergeLiveOpenSnapshotIntoBootReplay(
   for (const row of snapshot.positions) {
     const mint = row.mint?.trim();
     if (!mint) continue;
-    if (open.has(mint)) continue;
     if (replay.replaySeenMints.has(mint)) {
       skippedSeenInReplay.push(mint);
       continue;
     }
     const ot = restoreOpenTradeFromJson(row.openTrade as Partial<OpenTrade> & { mint: string });
     if (!ot) continue;
-    open.set(mint, ot);
+    const canon = resolveOpenMapKey(ot);
+    if (open.has(canon) || open.has(mint)) continue;
+    open.set(canon, ot);
     restoredMints.push(mint);
   }
 
