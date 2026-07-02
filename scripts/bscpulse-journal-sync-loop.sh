@@ -13,8 +13,9 @@ fi
 INTERVAL="${BSCPULSE_SYNC_INTERVAL_SEC:-30}"
 run_sync() {
   if [ "$(id -u)" -eq 0 ]; then
-    "$SCRIPT"
+    bash "$SCRIPT"
   else
+    # sudoers NOPASSWD lists exact script paths — must be executable (+x).
     sudo -n "$SCRIPT"
   fi
 }
