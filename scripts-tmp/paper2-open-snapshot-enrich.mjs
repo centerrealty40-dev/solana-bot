@@ -17,9 +17,9 @@ const DEFAULT_DISCOVERY_PIN_PATH = path.join(
   'discovery-collector-pin-mints.txt',
 );
 const TOKEN_CHUNK = 10;
-const DS_DELAY_MS = 350;
+const DS_DELAY_MS = Number(process.env.PAPER2_SNAPSHOT_DS_DELAY_MS || 500);
 /** Cap solo `/tokens/{mint}` calls per collector tick — rotate through queue across ticks. */
-const SOLO_FETCH_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK || 12);
+const SOLO_FETCH_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK || 6);
 /** Cap batch `/tokens/{m1,m2,…}` chunks per tick (10 mints each). */
 const BATCH_CHUNKS_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK || 8);
 

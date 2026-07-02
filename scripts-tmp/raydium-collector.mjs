@@ -5,6 +5,7 @@ import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs'
 const { Pool } = pg;
 
 const INTERVAL_MS = Number(process.env.RAYDIUM_COLLECTOR_INTERVAL_MS || 60_000);
+const START_OFFSET_MS = Math.max(0, Number(process.env.RAYDIUM_COLLECTOR_START_OFFSET_MS || 0));
 const MAX_RETRIES = Number(process.env.RAYDIUM_COLLECTOR_MAX_RETRIES || 4);
 const ENRICH_MAX_RETRIES = Number(process.env.RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES || 1);
 const REQUEST_TIMEOUT_MS = Number(process.env.RAYDIUM_COLLECTOR_TIMEOUT_MS || 15_000);
@@ -418,6 +419,7 @@ async function shutdown(signal) {
 async function main() {
   log('info', 'collector start', {
     intervalMs: INTERVAL_MS,
+    startOffsetMs: START_OFFSET_MS,
     maxRetries: MAX_RETRIES,
     timeoutMs: REQUEST_TIMEOUT_MS,
     once: ONCE,
@@ -429,6 +431,10 @@ async function main() {
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  if (START_OFFSET_MS > 0 && !ONCE) {
+    await sleep(START_OFFSET_MS);
+  }
 
   await runTickGuarded();
 
