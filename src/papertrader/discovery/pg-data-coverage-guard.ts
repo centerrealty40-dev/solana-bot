@@ -11,8 +11,11 @@ import path from 'node:path';
 import { sql as dsql } from 'drizzle-orm';
 import { db } from '../../core/db/client.js';
 import {
+  type DexSnapshotFreshness,
   DEX_PAIR_SNAPSHOT_TABLES,
   fetchDexSnapshotFreshness,
+  filterFreshnessForPgStaleBlocking,
+  isMintLaneSnapshotStale,
   snapshotMaxAgeSecFromEnv,
 } from '../../ingestion/pair-snapshot-freshness.js';
 import type { PaperTraderConfig } from '../config.js';
@@ -24,6 +27,8 @@ export type PgCoverageMode = 'relaxed' | 'full';
 export interface GlobalPgCoverageState {
   pgStaleNow: boolean;
   worstAgeSec: number | null;
+  /** Per-source snapshot ages (discovery tick cache). */
+  freshness: readonly DexSnapshotFreshness[];
   systemHourRatio: number | null;
   strictRecoveryActive: boolean;
   hoursSinceLastRecovery: number | null;
@@ -172,7 +177,8 @@ export async function fetchGlobalPgCoverageState(cfg: PaperTraderConfig): Promis
   const recentHours = clampRecentHours(cfg.pgDataCoverageRecentHours, lookbackHours);
   const maxAgeSec = snapshotMaxAgeSecFromEnv();
   const freshness = await fetchDexSnapshotFreshness(maxAgeSec);
-  const pgStaleNow = freshness.some((r) => !r.ok);
+  const blockingFreshness = filterFreshnessForPgStaleBlocking(freshness);
+  const pgStaleNow = blockingFreshness.some((r) => !r.ok);
   let worstAgeSec: number | null = null;
   for (const r of freshness) {
     if (r.ageSec == null || !Number.isFinite(r.ageSec)) {
@@ -247,6 +253,7 @@ export async function fetchGlobalPgCoverageState(cfg: PaperTraderConfig): Promis
   return {
     pgStaleNow,
     worstAgeSec,
+    freshness,
     systemHourRatio,
     strictRecoveryActive,
     hoursSinceLastRecovery,
@@ -449,10 +456,17 @@ export function evaluatePgDataCoverageGuard(
   const lookbackHours = global.lookbackHours;
   const minRecentHours = cfg.pgDataCoverageMinRecentHoursWithData;
 
-  if (cfg.pgDataCoverageBlockOnPgStale && global.pgStaleNow) {
-    blockedReasons.push(
-      `data_coverage:pg_stale_now_worst_age_sec=${global.worstAgeSec ?? 'null'}`,
+  if (cfg.pgDataCoverageBlockOnPgStale) {
+    const laneStale = isMintLaneSnapshotStale(
+      _row.source,
+      global.freshness ?? [],
+      snapshotMaxAgeSecFromEnv(),
     );
+    if (laneStale.stale) {
+      blockedReasons.push(
+        `data_coverage:pg_stale_now_worst_age_sec=${laneStale.ageSec ?? global.worstAgeSec ?? 'null'}`,
+      );
+    }
   }
 
   if (

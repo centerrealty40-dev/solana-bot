@@ -511,7 +511,7 @@ const PM2_APPS = [
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
         /** sa-orca off — do not treat stale orca_pair_snapshots as prod incident. */
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
       },
     },
     {
@@ -1359,7 +1359,7 @@ const PM2_APPS = [
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',

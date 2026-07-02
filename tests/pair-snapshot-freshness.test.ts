@@ -4,6 +4,7 @@ import {
   buildSnapshotStaleAlertBody,
   formatSnapshotFreshnessPulseLine,
   formatSnapshotLatestTs,
+  isMintLaneSnapshotStale,
   snapshotsAnyStale,
   worstSnapshotAgeSec,
   type DexSnapshotFreshness,
@@ -53,6 +54,16 @@ describe('pair-snapshot-freshness', () => {
     const iso = '2026-06-24T12:34:56.789Z';
     expect(formatSnapshotLatestTs(iso)).toBe(iso);
     expect(formatSnapshotLatestTs(null)).toBe('null');
+  });
+
+  it('isMintLaneSnapshotStale ignores non-lane stale sources for pumpswap', () => {
+    const rows = [
+      row('pumpswap', 188, true),
+      row('moonshot', 804, false),
+      row('meteora', 848, false),
+    ];
+    expect(isMintLaneSnapshotStale('pumpswap', rows, 600).stale).toBe(false);
+    expect(isMintLaneSnapshotStale('meteora', rows, 600).stale).toBe(true);
   });
 
   it('buildSnapshotStaleAlertBody shows ISO latest when latestTs is a string', () => {

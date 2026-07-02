@@ -60,9 +60,16 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
 }
 
 function globalState(over: Partial<GlobalPgCoverageState> = {}): GlobalPgCoverageState {
+  const freshness = over.freshness ?? [
+    { source: 'raydium', table: 'raydium_pair_snapshots', latestTs: new Date(), ageSec: 60, ok: true },
+    { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: new Date(), ageSec: 60, ok: true },
+    { source: 'meteora', table: 'meteora_pair_snapshots', latestTs: new Date(), ageSec: 60, ok: true },
+    { source: 'moonshot', table: 'moonshot_pair_snapshots', latestTs: new Date(), ageSec: 900, ok: false },
+  ];
   return {
     pgStaleNow: false,
     worstAgeSec: 60,
+    freshness,
     systemHourRatio: 0.85,
     strictRecoveryActive: false,
     hoursSinceLastRecovery: null,
@@ -160,16 +167,44 @@ describe('evaluatePgDataCoverageGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('blocks when PG is stale now', () => {
+  it('blocks when PG is stale now for mint lane source', () => {
     const r = evaluatePgDataCoverageGuard(
       baseCfg(),
-      baseRow(),
+      baseRow({ source: 'raydium' }),
       mintCtx(),
-      globalState({ pgStaleNow: true, worstAgeSec: 900 }),
+      globalState({
+        pgStaleNow: true,
+        worstAgeSec: 900,
+        freshness: [
+          { source: 'raydium', table: 'raydium_pair_snapshots', latestTs: null, ageSec: 900, ok: false },
+          { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: new Date(), ageSec: 120, ok: true },
+        ],
+      }),
       true,
     );
     expect(r.blocked).toBe(true);
     expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
+  });
+
+  it('does not block pumpswap mint when only moonshot/meteora lane is stale', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg(),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx(),
+      globalState({
+        pgStaleNow: true,
+        worstAgeSec: 804,
+        freshness: [
+          { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: new Date(), ageSec: 188, ok: true },
+          { source: 'raydium', table: 'raydium_pair_snapshots', latestTs: new Date(), ageSec: 68, ok: true },
+          { source: 'meteora', table: 'meteora_pair_snapshots', latestTs: null, ageSec: 848, ok: false },
+          { source: 'moonshot', table: 'moonshot_pair_snapshots', latestTs: null, ageSec: 804, ok: false },
+        ],
+      }),
+      true,
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(false);
   });
 
   it('ignores low system hour ratio in relaxed mode', () => {
@@ -297,9 +332,17 @@ describe('evaluatePgDataCoverageGuard', () => {
     lastEntryTsByMintMap.set(mint, Date.now() - 1 * 24 * 3_600_000);
     const r = evaluatePgDataCoverageGuard(
       baseCfg({ pgDataCoverageKnownMintGapBypass: true }),
-      baseRow(),
+      baseRow({ source: 'raydium' }),
       mintCtx({ recentMaxGapMinutes: 180 }),
-      globalState({ coverageMode: 'relaxed', pgStaleNow: true, worstAgeSec: 900 }),
+      globalState({
+        coverageMode: 'relaxed',
+        pgStaleNow: true,
+        worstAgeSec: 900,
+        freshness: [
+          { source: 'raydium', table: 'raydium_pair_snapshots', latestTs: null, ageSec: 900, ok: false },
+          { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: new Date(), ageSec: 120, ok: true },
+        ],
+      }),
       true,
       { knownMint: true },
     );
