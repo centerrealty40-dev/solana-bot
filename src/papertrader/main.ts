@@ -82,6 +82,7 @@ import {
   stampRunnerProbeOnOpen,
   sumRunnerProbeExposureUsd,
 } from './live-oscar-runner-probe.js';
+import { runnerProbeMaxPositionUsd } from './executor/exit-policy-runner-probe.js';
 import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
@@ -1504,7 +1505,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (
           resolveDecisionTradeLane(d) === 'runner_probe' &&
-          sumRunnerProbeExposureUsd(open) + cfg.runnerProbePositionUsd >
+          sumRunnerProbeExposureUsd(open) + runnerProbeMaxPositionUsd(cfg) >
             cfg.runnerProbeMaxExposureUsd + 1e-6
         ) {
           journalAppend({

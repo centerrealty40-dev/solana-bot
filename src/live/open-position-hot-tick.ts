@@ -6,6 +6,11 @@ import type { OpenTrade } from '../papertrader/types.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { cfgEffectiveForOpen } from '../papertrader/cfg-effective-for-open.js';
 import { dcaKillstopEffective } from '../papertrader/executor/tp-grid-effective.js';
+import {
+  isRunnerProbeExitPolicy,
+  runnerProbeKillEligible,
+  runnerProbeTpEligible,
+} from '../papertrader/executor/exit-policy-runner-probe.js';
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
 import { liveSellQuoteAndPrepareSnapshot } from './jupiter.js';
@@ -167,6 +172,7 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
     if (running || ctx.isTrackerBusy()) return;
     running = true;
     let killTrigger = false;
+    let tpTrigger = false;
     try {
       const open = ctx.getOpen();
       if (open.size === 0) return;
@@ -201,7 +207,13 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
             const effCfg = cfgEffectiveForOpen(paperCfg, ot);
             const killEff = dcaKillstopEffective(ot, effCfg);
             const pnlPct = (probe.sellUsd / ot.avgEntry - 1) * 100;
-            if (killEff < 0 && pnlPct / 100 <= killEff) {
+            if (isRunnerProbeExitPolicy(ot)) {
+              if (runnerProbeKillEligible(ot, probe.sellUsd, ot.lastObservedPriceUsd ?? 0, paperCfg)) {
+                killTrigger = true;
+              } else if (runnerProbeTpEligible(ot, probe.sellUsd, ot.lastObservedPriceUsd ?? 0, paperCfg)) {
+                tpTrigger = true;
+              }
+            } else if (killEff < 0 && pnlPct / 100 <= killEff) {
               killTrigger = true;
             }
           }
@@ -225,7 +237,7 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
         }
       }
 
-      if (killTrigger && !ctx.isTrackerBusy()) {
+      if ((killTrigger || tpTrigger) && !ctx.isTrackerBusy()) {
         await ctx.runTrackerTick();
       }
     } finally {

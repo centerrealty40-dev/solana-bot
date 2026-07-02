@@ -339,9 +339,11 @@ const ConfigSchema = z.object({
   runnerProbeMinLiqUsd: z.coerce.number().nonnegative().default(80_000),
   runnerProbeStaleVolRatioMax: z.coerce.number().nonnegative().default(0.5),
   runnerProbeMinPgSamples24h: z.coerce.number().int().min(0).default(36),
-  runnerProbeTpPct: z.coerce.number().min(0.01).max(1).default(0.12),
-  runnerProbeKillPct: z.coerce.number().min(0.01).max(0.5).default(0.15),
+  runnerProbeTpPct: z.coerce.number().min(0.01).max(1).default(0.1),
+  runnerProbeKillPct: z.coerce.number().min(0.01).max(0.5).default(0.3),
   runnerProbeTimeStopHours: z.coerce.number().min(0.5).max(48).default(6),
+  /** One DCA leg at −20% (+100% of positionUsd, default $500 → max $1000/position). */
+  runnerProbeDcaLevelsSpec: z.string().default('-20:1'),
   /** Live Oscar coin intelligence overlay (default-OFF; see LIVE_OSCAR_COIN_INTELLIGENCE_SPEC). */
   liveOscarIntelEnabled: z.boolean().default(false),
   liveOscarIntelMode: z.enum(['off', 'shadow', 'advisory', 'gate']).default('off'),
@@ -1314,6 +1316,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     runnerProbeTpPct: process.env.PAPER_RUNNER_PROBE_TP_PCT,
     runnerProbeKillPct: process.env.PAPER_RUNNER_PROBE_KILL_PCT,
     runnerProbeTimeStopHours: process.env.PAPER_RUNNER_PROBE_TIME_STOP_HOURS,
+    runnerProbeDcaLevelsSpec: process.env.PAPER_RUNNER_PROBE_DCA_LEVELS,
     liveOscarIntelEnabled: envBool(process.env.LIVE_OSCAR_INTEL_ENABLED, false),
     liveOscarIntelMode: process.env.LIVE_OSCAR_INTEL_MODE,
     liveOscarIntelWalletGateEnabled: envBool(process.env.LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED, false),

@@ -33,7 +33,8 @@ export function tpGridEffective(ot: OpenTrade, cfg: PaperTraderConfig): TpGridEf
     ot.liveExitPolicyId === 'legacy_grid' ||
     ot.liveExitPolicyId === 'wave_b_v1' ||
     ot.liveExitPolicyId === 'variant_a_v1' ||
-    ot.liveExitPolicyId === 'variant_a_v2';
+    ot.liveExitPolicyId === 'variant_a_v2' ||
+    ot.liveExitPolicyId === 'runner_probe_v1';
   const ignoreOverrides =
     cfg.liveExitModeAbEnabled === true && ot.liveExitProfileMode === 'B' && !exitPolicyPinned;
   const paperIdealizedUnlimitedB =

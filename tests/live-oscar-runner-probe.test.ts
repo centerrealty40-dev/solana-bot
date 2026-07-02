@@ -16,8 +16,14 @@ import {
 } from '../src/papertrader/live-oscar-runner-probe.js';
 import {
   isRunnerProbeExitPolicy,
+  runnerProbeEffectiveExitParams,
+  runnerProbeEffectiveKillFrac,
+  runnerProbeKillEligible,
+  runnerProbeMaxPositionUsd,
+  runnerProbeTpEligible,
   stampRunnerProbeExitPolicyOnOpen,
 } from '../src/papertrader/executor/exit-policy-runner-probe.js';
+import { cfgEffectiveForOpen } from '../src/papertrader/cfg-effective-for-open.js';
 import type { OpenTrade, SnapshotCandidateRow } from '../src/papertrader/types.js';
 import type { RunnerWindowFeatures } from '../src/papertrader/discovery/runner-mode.js';
 
@@ -33,6 +39,10 @@ describe('live-oscar-runner-probe', () => {
       'PAPER_RUNNER_PROBE_POSITION_USD',
       'PAPER_RUNNER_PROBE_MAX_CONCURRENT',
       'PAPER_RUNNER_PROBE_MAX_EXPOSURE_USD',
+      'PAPER_RUNNER_PROBE_TP_PCT',
+      'PAPER_RUNNER_PROBE_KILL_PCT',
+      'PAPER_RUNNER_PROBE_DCA_LEVELS',
+      'PAPER_RUNNER_PROBE_TIME_STOP_HOURS',
       'PAPER_RUNNER_PROBE_MIN_MCAP_USD',
       'PAPER_RUNNER_PROBE_MAX_MCAP_USD',
       'LIVE_OSCAR_INTEL_ENABLED',
@@ -46,7 +56,11 @@ describe('live-oscar-runner-probe', () => {
     process.env.PAPER_RUNNER_PROBE_MAX_AGE_MIN = '2880';
     process.env.PAPER_RUNNER_PROBE_POSITION_USD = '500';
     process.env.PAPER_RUNNER_PROBE_MAX_CONCURRENT = '2';
-    process.env.PAPER_RUNNER_PROBE_MAX_EXPOSURE_USD = '1000';
+    process.env.PAPER_RUNNER_PROBE_MAX_EXPOSURE_USD = '2000';
+    process.env.PAPER_RUNNER_PROBE_TP_PCT = '0.10';
+    process.env.PAPER_RUNNER_PROBE_KILL_PCT = '0.30';
+    process.env.PAPER_RUNNER_PROBE_DCA_LEVELS = '-20:1';
+    process.env.PAPER_RUNNER_PROBE_TIME_STOP_HOURS = '6';
     process.env.PAPER_RUNNER_PROBE_MIN_MCAP_USD = '1000000';
     process.env.PAPER_RUNNER_PROBE_MAX_MCAP_USD = '30000000';
     process.env.LIVE_OSCAR_INTEL_ENABLED = '0';
@@ -148,13 +162,43 @@ describe('live-oscar-runner-probe', () => {
     expect(evalRes.reasons.some((r) => r.includes('runner_probe_age_outside'))).toBe(true);
   });
 
-  it('stamps runner_probe_v1 exit policy', () => {
+  it('stamps runner_probe_v1 exit policy with negative kill and effective params', () => {
     const cfg = loadPaperTraderConfig();
-    const ot = { mint: 'm1', liveOscarTradeLane: 'runner_probe' } as OpenTrade;
+    const ot = { mint: 'm1', liveOscarTradeLane: 'runner_probe', avgEntry: 1 } as OpenTrade;
     stampRunnerProbeOnOpen(ot);
     expect(stampRunnerProbeExitPolicyOnOpen(ot, cfg)).toBe(true);
     expect(isRunnerProbeExitPolicy(ot)).toBe(true);
     expect(isRunnerProbeTrade(ot)).toBe(true);
     expect(resolveOpenMapKey(ot)).toBe(runnerProbeOpenMapKey('m1'));
+    expect(ot.tpGridOverrides?.dcaKillstop).toBe(-0.3);
+    const eff = cfgEffectiveForOpen(cfg, ot);
+    expect(eff.tpX).toBeCloseTo(1.1);
+    expect(eff.dcaKillstop).toBe(-0.3);
+    expect(eff.timeoutHours).toBe(6);
+    expect(runnerProbeMaxPositionUsd(cfg)).toBe(1000);
+  });
+
+  it('kill uses PG floor when Jupiter MTM is optimistic', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = {
+      mint: 'm1',
+      liveExitPolicyId: 'runner_probe_v1',
+      avgEntry: 1,
+    } as OpenTrade;
+    expect(runnerProbeKillEligible(ot, 0.88, 0.68, cfg)).toBe(true);
+    expect(runnerProbeKillEligible(ot, 0.88, 0.80, cfg)).toBe(false);
+  });
+
+  it('TP triggers from tracked peak even when current tick is below tpX', () => {
+    const cfg = loadPaperTraderConfig();
+    const ot = {
+      mint: 'm1',
+      liveExitPolicyId: 'runner_probe_v1',
+      avgEntry: 1,
+      peakMcUsd: 1.12,
+      peakPnlPct: 12,
+    } as OpenTrade;
+    expect(runnerProbeTpEligible(ot, 1.05, 1.05, cfg)).toBe(true);
+    expect(runnerProbeEffectiveKillFrac(cfg)).toBe(-0.3);
   });
 });
