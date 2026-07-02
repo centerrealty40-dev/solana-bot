@@ -32,6 +32,7 @@ import {
 } from '../papertrader/live-oscar-entry-sizing.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { mintFromOpenMapKey } from '../papertrader/live-oscar-runner-probe.js';
+import { finalizeRunnerProbeOpenOnBoot } from '../papertrader/executor/exit-policy-runner-probe.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
 import {
   clearLiveReconcileBlock,
@@ -481,33 +482,6 @@ export async function main(): Promise<void> {
     }
   }
 
-  log.info(
-    {
-      strategyId: liveCfg.strategyId,
-      profile: liveCfg.profile,
-      liveTradesPath: liveCfg.liveTradesPath,
-      strategyEnabled: liveCfg.strategyEnabled,
-      executionMode: liveCfg.executionMode,
-    },
-    'live-oscar executor start (W8.0-p7)',
-  );
-
-  appendLiveJsonlEvent({
-    kind: 'live_boot',
-    profile: liveCfg.profile,
-    liveStrategyEnabled: liveCfg.strategyEnabled,
-    executionMode: liveCfg.executionMode,
-    phase: 'W8.0-p7',
-  });
-
-  void runLiveJupiterSelfTest(liveCfg).catch((err) => {
-    log.error({ err: (err as Error)?.message }, 'runLiveJupiterSelfTest failed');
-  });
-
-  void runLivePhase3SimSelfTest(liveCfg).catch((err) => {
-    log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
-  });
-
   const orphanReconcileLive =
     liveCfg.strategyEnabled &&
     (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
@@ -539,6 +513,18 @@ export async function main(): Promise<void> {
       liveStrategyReplay = { ...liveStrategyReplay, open: merged.open };
     }
 
+    const paperBootCfg = loadPaperTraderConfig();
+    const runnerProbeKeysNormalized = finalizeRunnerProbeOpenOnBoot(
+      liveStrategyReplay.open,
+      paperBootCfg,
+    );
+    if (runnerProbeKeysNormalized > 0) {
+      log.info(
+        { migrated: runnerProbeKeysNormalized, replayOpen: liveStrategyReplay.open.size },
+        'live-oscar boot: runner_probe open-map keys normalized before wallet orphan scan',
+      );
+    }
+
     if (liveStrategyReplay.journalTruncated) {
       try {
         const walletRestore = await restoreWalletOrphanOpensOnBoot(liveCfg, liveStrategyReplay.open, {
@@ -552,7 +538,7 @@ export async function main(): Promise<void> {
               walletMintsScanned: walletRestore.walletMintsScanned.map((m) => m.slice(0, 8)),
               replayOpen: liveStrategyReplay.open.size,
             },
-            'live-oscar boot: restored open positions from full journal scan (wallet SPL orphan)',
+            'live-oscar boot: restored open positions from tail-bounded journal scan (wallet SPL orphan)',
           );
           appendLiveJsonlEvent({
             kind: 'live_boot_wallet_orphan_restore',
@@ -573,6 +559,33 @@ export async function main(): Promise<void> {
       log.warn({ err: (err as Error)?.message }, 'live open snapshot boot seed failed');
     }
   }
+
+  log.info(
+    {
+      strategyId: liveCfg.strategyId,
+      profile: liveCfg.profile,
+      liveTradesPath: liveCfg.liveTradesPath,
+      strategyEnabled: liveCfg.strategyEnabled,
+      executionMode: liveCfg.executionMode,
+    },
+    'live-oscar executor start (W8.0-p7)',
+  );
+
+  appendLiveJsonlEvent({
+    kind: 'live_boot',
+    profile: liveCfg.profile,
+    liveStrategyEnabled: liveCfg.strategyEnabled,
+    executionMode: liveCfg.executionMode,
+    phase: 'W8.0-p7',
+  });
+
+  void runLiveJupiterSelfTest(liveCfg).catch((err) => {
+    log.error({ err: (err as Error)?.message }, 'runLiveJupiterSelfTest failed');
+  });
+
+  void runLivePhase3SimSelfTest(liveCfg).catch((err) => {
+    log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
+  });
 
   await paperOscarMain({
     heartbeatIntervalMsOverride: liveCfg.heartbeatIntervalMs,

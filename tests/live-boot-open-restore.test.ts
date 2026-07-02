@@ -82,6 +82,7 @@ describe('restoreWalletOrphanOpensOnBoot', () => {
       walletSecret: 'test-secret',
       liveTradesPath: journal,
       liveReplayTrustGhostPositions: false,
+      liveReplayMaxFileBytes: 26_214_400,
     };
 
     const result = await restoreWalletOrphanOpensOnBoot(liveCfg as never, new Map(), {

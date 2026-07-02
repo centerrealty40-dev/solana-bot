@@ -1,7 +1,11 @@
 import type { PaperTraderConfig } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import type { OpenTrade } from '../types.js';
-import { isRunnerProbeTrade, stampRunnerProbeOnOpen } from '../live-oscar-runner-probe.js';
+import {
+  isRunnerProbeTrade,
+  normalizeRunnerProbeOpenMapKeys,
+  stampRunnerProbeOnOpen,
+} from '../live-oscar-runner-probe.js';
 import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { LADDER_PNL_EPS } from './tp-ladder-state.js';
 
@@ -70,10 +74,44 @@ export function runnerProbeTpEligible(
 ): boolean {
   if (!isRunnerProbeExitPolicy(ot) || !(ot.avgEntry > 0)) return false;
   const tpX = 1 + cfg.runnerProbeTpPct;
+  // After DCA, pre-DCA peakMcUsd can phantom-trigger TP vs the new avgEntry (FROGBULL 2026-07-02).
+  // Only live prices + post-DCA peakPnlPct may arm TP; ignore stale entry-time peak.
+  const hasDcaLeg = (ot.legs ?? []).some((l) => l.reason === 'dca');
+  if (hasDcaLeg) {
+    let bestLive = curMetricUsd > 0 ? curMetricUsd : 0;
+    if (snapPxUsd > bestLive) bestLive = snapPxUsd;
+    if (bestLive > 0 && bestLive / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
+    return ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100;
+  }
   const px = runnerProbeOptimisticTpPx(ot, curMetricUsd, snapPxUsd);
   if (px > 0 && px / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
   if (ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100) return true;
   return false;
+}
+
+/**
+ * After DCA lowers avgEntry, a pre-DCA peakMcUsd can look like +10% vs the new avg and
+ * fire TP while the position is still underwater (FROGBULL 2026-07-02). Re-anchor peak
+ * to the post-DCA tick so TP only arms on gains from the new cost basis.
+ */
+export function runnerProbeResetPeakAfterDca(ot: OpenTrade, curMetricUsd: number): boolean {
+  if (!isRunnerProbeExitPolicy(ot) || !(curMetricUsd > 0) || !(ot.avgEntry > 0)) return false;
+  ot.peakMcUsd = curMetricUsd;
+  ot.peakPnlPct = (curMetricUsd / ot.avgEntry - 1) * 100;
+  ot.trailingArmed = false;
+  return true;
+}
+
+/** Re-key + exit-policy stamp for runner_probe opens after journal/snapshot replay. */
+export function finalizeRunnerProbeOpenOnBoot(
+  open: Map<string, OpenTrade>,
+  cfg: PaperTraderConfig,
+): number {
+  const migrated = normalizeRunnerProbeOpenMapKeys(open);
+  for (const ot of open.values()) {
+    stampRunnerProbeExitPolicyOnOpen(ot, cfg);
+  }
+  return migrated;
 }
 
 /** $500 probe + optional DCA: TP +10%, kill −50%, timestop 6h. */

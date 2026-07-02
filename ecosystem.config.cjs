@@ -564,7 +564,8 @@ const PM2_APPS = [
       max_restarts: 20,
       restart_delay: 5000,
       kill_timeout: 15000,
-      max_memory_restart: '200M',
+      /** Boot replay + wallet orphan scan exceed 200M; was causing PM2 restart loop before tracker starts. */
+      max_memory_restart: '512M',
       merge_logs: true,
       time: true,
       env: {

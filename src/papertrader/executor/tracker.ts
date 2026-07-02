@@ -9,6 +9,7 @@ import {
   runnerProbeDcaLevelsSpec,
   runnerProbeKillEligible,
   runnerProbeOptimisticTpPx,
+  runnerProbeResetPeakAfterDca,
   runnerProbeTpEligible,
   stampRunnerProbeExitPolicyOnOpen,
 } from './exit-policy-runner-probe.js';
@@ -3638,8 +3639,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.remainingFraction = 1;
         ot.liveExitProfileMode = 'B';
         effCfg = cfgEffectiveForOpen(cfg, ot);
-        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
-        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        if (isRunnerProbeExitPolicy(ot)) {
+          runnerProbeResetPeakAfterDca(ot, curMetric);
+        } else if (curMetric > ot.peakMcUsd) {
+          ot.peakMcUsd = curMetric;
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        } else {
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        }
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
         const mcUsdLiveV21b = await getLiveMcUsd(
           mint,
@@ -3860,8 +3867,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         markDcaStepFired(ot, stepIndex, -dropPct / 100);
         variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
-        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
-        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        if (isRunnerProbeExitPolicy(ot)) {
+          runnerProbeResetPeakAfterDca(ot, curMetric);
+        } else if (curMetric > ot.peakMcUsd) {
+          ot.peakMcUsd = curMetric;
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        } else {
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        }
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
         if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
@@ -4034,8 +4047,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         markDcaStepFired(ot, dcaIdx, lvl.triggerPct);
         variantAHybridResetTpGridOnDca(ot);
         ot.remainingFraction = 1;
-        if (curMetric > ot.peakMcUsd) ot.peakMcUsd = curMetric;
-        ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        if (isRunnerProbeExitPolicy(ot)) {
+          runnerProbeResetPeakAfterDca(ot, curMetric);
+        } else if (curMetric > ot.peakMcUsd) {
+          ot.peakMcUsd = curMetric;
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        } else {
+          ot.peakPnlPct = (curMetric / ot.avgEntry - 1) * 100;
+        }
         ot.trailingArmed = ot.trailingArmed && curMetric / ot.avgEntry >= effCfg.trailTriggerX;
         if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {

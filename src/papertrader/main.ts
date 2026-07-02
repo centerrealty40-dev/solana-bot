@@ -76,14 +76,16 @@ import {
 } from './live-oscar-scalp-wave.js';
 import {
   countOpenRunnerProbePositions,
-  normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
   runnerProbeMintOpenSkipReason,
   runnerProbeOpenLegUsd,
   stampRunnerProbeOnOpen,
   sumRunnerProbeExposureUsd,
 } from './live-oscar-runner-probe.js';
-import { runnerProbeMaxPositionUsd } from './executor/exit-policy-runner-probe.js';
+import {
+  finalizeRunnerProbeOpenOnBoot,
+  runnerProbeMaxPositionUsd,
+} from './executor/exit-policy-runner-probe.js';
 import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
@@ -327,7 +329,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
   const open: Map<string, OpenTrade> =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
-  const runnerProbeKeysNormalized = normalizeRunnerProbeOpenMapKeys(open);
+  const runnerProbeKeysNormalized = finalizeRunnerProbeOpenOnBoot(open, cfg);
   if (runnerProbeKeysNormalized > 0) {
     logger.info({ migrated: runnerProbeKeysNormalized }, 'runner_probe open-map keys normalized on boot');
   }
