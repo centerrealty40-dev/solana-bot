@@ -64,6 +64,7 @@ export async function restoreWalletOrphanOpensOnBoot(
       storePath: liveCfg.liveTradesPath,
       strategyId: liveCfg.strategyId,
       trustGhostPositions: liveCfg.liveReplayTrustGhostPositions,
+      maxFileBytes: liveCfg.liveReplayMaxFileBytes,
     },
     orphanMints,
   );

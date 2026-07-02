@@ -482,33 +482,6 @@ export async function main(): Promise<void> {
     }
   }
 
-  log.info(
-    {
-      strategyId: liveCfg.strategyId,
-      profile: liveCfg.profile,
-      liveTradesPath: liveCfg.liveTradesPath,
-      strategyEnabled: liveCfg.strategyEnabled,
-      executionMode: liveCfg.executionMode,
-    },
-    'live-oscar executor start (W8.0-p7)',
-  );
-
-  appendLiveJsonlEvent({
-    kind: 'live_boot',
-    profile: liveCfg.profile,
-    liveStrategyEnabled: liveCfg.strategyEnabled,
-    executionMode: liveCfg.executionMode,
-    phase: 'W8.0-p7',
-  });
-
-  void runLiveJupiterSelfTest(liveCfg).catch((err) => {
-    log.error({ err: (err as Error)?.message }, 'runLiveJupiterSelfTest failed');
-  });
-
-  void runLivePhase3SimSelfTest(liveCfg).catch((err) => {
-    log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
-  });
-
   const orphanReconcileLive =
     liveCfg.strategyEnabled &&
     (liveCfg.executionMode === 'live' || liveCfg.executionMode === 'simulate') &&
@@ -565,7 +538,7 @@ export async function main(): Promise<void> {
               walletMintsScanned: walletRestore.walletMintsScanned.map((m) => m.slice(0, 8)),
               replayOpen: liveStrategyReplay.open.size,
             },
-            'live-oscar boot: restored open positions from full journal scan (wallet SPL orphan)',
+            'live-oscar boot: restored open positions from tail-bounded journal scan (wallet SPL orphan)',
           );
           appendLiveJsonlEvent({
             kind: 'live_boot_wallet_orphan_restore',
@@ -586,6 +559,33 @@ export async function main(): Promise<void> {
       log.warn({ err: (err as Error)?.message }, 'live open snapshot boot seed failed');
     }
   }
+
+  log.info(
+    {
+      strategyId: liveCfg.strategyId,
+      profile: liveCfg.profile,
+      liveTradesPath: liveCfg.liveTradesPath,
+      strategyEnabled: liveCfg.strategyEnabled,
+      executionMode: liveCfg.executionMode,
+    },
+    'live-oscar executor start (W8.0-p7)',
+  );
+
+  appendLiveJsonlEvent({
+    kind: 'live_boot',
+    profile: liveCfg.profile,
+    liveStrategyEnabled: liveCfg.strategyEnabled,
+    executionMode: liveCfg.executionMode,
+    phase: 'W8.0-p7',
+  });
+
+  void runLiveJupiterSelfTest(liveCfg).catch((err) => {
+    log.error({ err: (err as Error)?.message }, 'runLiveJupiterSelfTest failed');
+  });
+
+  void runLivePhase3SimSelfTest(liveCfg).catch((err) => {
+    log.error({ err: (err as Error)?.message }, 'runLivePhase3SimSelfTest failed');
+  });
 
   await paperOscarMain({
     heartbeatIntervalMsOverride: liveCfg.heartbeatIntervalMs,

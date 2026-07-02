@@ -2,7 +2,6 @@
  * W8.0 Phase 7 — deterministic replay of `live_position_*` rows from LIVE_TRADES_PATH (P7-I1).
  */
 import fs from 'node:fs';
-import readline from 'node:readline';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
 import { restoreClosedTradeFromJson } from './strategy-snapshot.js';
@@ -221,12 +220,13 @@ function applyReplayRow(
 }
 
 /**
- * Full-journal replay for specific mints only (boot wallet orphan recovery when tail replay truncates).
+ * Tail-bounded replay for specific mints (boot wallet orphan recovery when tail replay truncates).
+ * Uses the same `maxFileBytes` cap as Phase 7 replay — never scans multi-GB journals line-by-line.
  */
 export async function replayLiveStrategyJournalForMints(
   opts: Pick<
     ReplayLiveStrategyJournalOpts,
-    'storePath' | 'strategyId' | 'trustGhostPositions'
+    'storePath' | 'strategyId' | 'trustGhostPositions' | 'maxFileBytes'
   >,
   mints: readonly string[],
 ): Promise<ReplayLiveStrategyJournalResult> {
@@ -240,50 +240,33 @@ export async function replayLiveStrategyJournalForMints(
     return { open, closed, replaySeenMints };
   }
 
-  const batch: SortRow[] = [];
-  let lineIdx = 0;
-  const rl = readline.createInterface({
-    input: fs.createReadStream(opts.storePath, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  });
+  const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
+  const { lines: rawLines, truncated } =
+    maxB >= Number.MAX_SAFE_INTEGER
+      ? { lines: fs.readFileSync(opts.storePath, 'utf-8').split('\n'), truncated: false }
+      : readLiveJournalLinesBounded(opts.storePath, maxB);
 
-  for await (const ln of rl) {
-    const trimmed = ln.trim();
-    if (!trimmed) {
-      lineIdx++;
-      continue;
-    }
+  const batch: SortRow[] = [];
+  for (let lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
+    const trimmed = rawLines[lineIdx]!.trim();
+    if (!trimmed) continue;
     let row: Record<string, unknown>;
     try {
       row = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
-      lineIdx++;
       continue;
     }
     const sid = row.strategyId != null ? String(row.strategyId) : '';
-    if (sid !== opts.strategyId) {
-      lineIdx++;
-      continue;
-    }
-    if (!lineMatchesChannel(row)) {
-      lineIdx++;
-      continue;
-    }
+    if (sid !== opts.strategyId) continue;
+    if (!lineMatchesChannel(row)) continue;
     const kind = row.kind != null ? String(row.kind) : '';
-    if (!POSITION_KINDS.has(kind)) {
-      lineIdx++;
-      continue;
-    }
+    if (!POSITION_KINDS.has(kind)) continue;
     const mint = row.mint != null ? String(row.mint) : '';
-    if (!mint || !mintSet.has(mint)) {
-      lineIdx++;
-      continue;
-    }
+    if (!mint || !mintSet.has(mint)) continue;
     const tsRaw = row.ts;
     const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
     replaySeenMints.add(mint);
     batch.push({ ts, lineIdx, kind, mint, payload: row });
-    lineIdx++;
   }
 
   batch.sort((a, b) => {
@@ -295,5 +278,5 @@ export async function replayLiveStrategyJournalForMints(
     applyReplayRow(row, open, closed, trustGhost);
   }
 
-  return { open, closed, replaySeenMints };
+  return { open, closed, replaySeenMints, journalTruncated: truncated || undefined };
 }
