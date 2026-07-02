@@ -511,7 +511,7 @@ const PM2_APPS = [
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
         /** sa-orca off — do not treat stale orca_pair_snapshots as prod incident. */
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
       },
     },
     {
@@ -665,20 +665,21 @@ const PM2_APPS = [
          * discovery dip-eval), freshness-gate `SHYFT_MAX_STALE_MS` + fallback на PG/Jupiter. Master
          * флаг default OFF — при OFF источник цены байт-в-байт = текущий PG/Jupiter. Требует включённый
          * Stage 1.1 shadow-консьюмер (PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1 + SHYFT_GRPC_TOKEN), чтобы
-         * было что брать как primary. Раскатка: сначала только MTM (SHYFT_PRICE_PRIMARY_MTM_ENABLED=1,
-         * default), затем discovery (SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED=1, default 0).
+         * было что брать как primary. 1.11.549 — активирован полный Stage 1.2: MTM + discovery;
+         * shadow остаётся '1' для сравнения лага в журнале.
          */
-        SHYFT_PRICE_PRIMARY_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_ENABLED: '1',
         SHYFT_PRICE_PRIMARY_MTM_ENABLED: '1',
-        SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '1',
         SHYFT_MAX_STALE_MS: '5000',
         /**
          * 1.11.469 — Этап 1.3: mcap/liq кандидата из Shyft DeFi API (`/v0/pools/get_by_token`) с
          * TTL-кэшем + fallback на PG/pump.fun. Override `refMcap` (tier) + входы snapshot mcap/liq-гейта.
          * Default OFF — при OFF источник mcap/liq байт-в-байт = текущий PG. Ключ DeFi REST API:
          * SHYFT_DEFI_API_KEY (или SHYFT_API_KEY) в .env; SHYFT_DEFI_API_BASE default https://defi.shyft.to.
+         * 1.11.549 — активирован Stage 1.3 (TTL 12s + PG fallback).
          */
-        SHYFT_DEFI_MCAP_ENABLED: '0',
+        SHYFT_DEFI_MCAP_ENABLED: '1',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
@@ -1358,7 +1359,7 @@ const PM2_APPS = [
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '600',
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',

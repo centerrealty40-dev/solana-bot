@@ -46,6 +46,49 @@ export function snapshotMaxAgeSecFromEnv(): number {
   return 600;
 }
 
+/** Sources excluded from pg_stale entry blocks (orca off; moonshot low-volume lane). */
+export function snapshotFreshnessSkipSourcesFromEnv(): ReadonlySet<string> {
+  return new Set(
+    String(process.env.SNAPSHOT_FRESHNESS_SKIP_SOURCES ?? 'orca')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+export function filterFreshnessForPgStaleBlocking(
+  rows: readonly DexSnapshotFreshness[],
+): DexSnapshotFreshness[] {
+  const skip = snapshotFreshnessSkipSourcesFromEnv();
+  return rows.filter((r) => !skip.has(r.source.toLowerCase()));
+}
+
+/** True when a mint's lane source (or any blocking source if unknown) exceeds max age. */
+export function isMintLaneSnapshotStale(
+  source: string | undefined,
+  rows: readonly DexSnapshotFreshness[],
+  maxAgeSec = snapshotMaxAgeSecFromEnv(),
+): { stale: boolean; ageSec: number | null; blockingSource: string | null } {
+  const lane = source?.trim().toLowerCase() ?? '';
+  const blocking = filterFreshnessForPgStaleBlocking(rows);
+  if (lane) {
+    const row = rows.find((r) => r.source.toLowerCase() === lane);
+    if (row && !snapshotFreshnessSkipSourcesFromEnv().has(lane)) {
+      const stale = !row.ok || (row.ageSec != null && row.ageSec > maxAgeSec);
+      return { stale, ageSec: row.ageSec, blockingSource: row.source };
+    }
+  }
+  const stale = blocking.some((r) => !r.ok || (r.ageSec != null && r.ageSec > maxAgeSec));
+  const ageSec = worstSnapshotAgeSec(blocking);
+  const worst =
+    blocking.reduce<DexSnapshotFreshness | null>((acc, r) => {
+      if (r.ageSec == null) return acc;
+      if (acc == null || acc.ageSec == null || r.ageSec > acc.ageSec) return r;
+      return acc;
+    }, null) ?? null;
+  return { stale, ageSec, blockingSource: worst?.source ?? null };
+}
+
 export async function fetchDexSnapshotFreshness(
   maxAgeSec = snapshotMaxAgeSecFromEnv(),
 ): Promise<DexSnapshotFreshness[]> {
