@@ -6,6 +6,11 @@ import readline from 'node:readline';
 import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import { restoreOpenTradeFromJson } from '../papertrader/executor/store-restore.js';
 import { restoreClosedTradeFromJson } from './strategy-snapshot.js';
+import {
+  mintFromOpenMapKey,
+  resolveOpenMapKey,
+  runnerProbeOpenMapKey,
+} from '../papertrader/live-oscar-runner-probe.js';
 
 /** Read UTF-8 lines; if file larger than `maxFileBytes`, only the trailing chunk is read (partial first line dropped). */
 export function readLiveJournalLinesBounded(
@@ -185,7 +190,7 @@ function applyReplayRow(
       const otr = otRaw as Record<string, unknown>;
       if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
       const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
-      if (ot) open.set(row.mint, ot);
+      if (ot) open.set(resolveOpenMapKey(ot), ot);
       break;
     }
     case 'live_position_partial_sell': {
@@ -194,7 +199,7 @@ function applyReplayRow(
       const otr = otRaw as Record<string, unknown>;
       if (!openTradePassesReplayAnchorGate(otr, trustGhost)) break;
       const ot = restoreOpenTradeFromJson(otRaw as Partial<OpenTrade> & { mint: string });
-      if (ot) open.set(row.mint, ot);
+      if (ot) open.set(resolveOpenMapKey(ot), ot);
       break;
     }
     case 'live_position_close': {
@@ -202,7 +207,10 @@ function applyReplayRow(
       if (typeof ctRaw !== 'object' || ctRaw === null) break;
       const ct = restoreClosedTradeFromJson(ctRaw as Record<string, unknown>);
       if (ct) {
+        const bare = mintFromOpenMapKey(row.mint);
         open.delete(row.mint);
+        open.delete(bare);
+        open.delete(runnerProbeOpenMapKey(bare));
         closed.push(ct);
       }
       break;

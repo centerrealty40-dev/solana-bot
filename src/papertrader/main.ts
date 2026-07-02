@@ -76,6 +76,7 @@ import {
 } from './live-oscar-scalp-wave.js';
 import {
   countOpenRunnerProbePositions,
+  normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
   runnerProbeMintOpenSkipReason,
   runnerProbeOpenLegUsd,
@@ -326,6 +327,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   }
   const open: Map<string, OpenTrade> =
     opts?.skipPaperJsonlStore && opts.liveStrategyReplay ? opts.liveStrategyReplay.open : restored.open;
+  const runnerProbeKeysNormalized = normalizeRunnerProbeOpenMapKeys(open);
+  if (runnerProbeKeysNormalized > 0) {
+    logger.info({ migrated: runnerProbeKeysNormalized }, 'runner_probe open-map keys normalized on boot');
+  }
   for (const ot of open.values()) {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
     if (isLiveOscarTradingStrategyId(cfg.strategyId)) {

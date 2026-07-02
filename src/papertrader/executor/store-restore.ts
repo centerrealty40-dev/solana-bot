@@ -455,6 +455,9 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe') ot.liveOscarTradeLane = lotl;
     const ps = rawPayload.positionSource;
     if (ps === 'runner_probe') ot.positionSource = 'runner_probe';
+    else if (ot.liveOscarTradeLane === 'runner_probe' || ot.liveExitPolicyId === 'runner_probe_v1') {
+      ot.positionSource = 'runner_probe';
+    }
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
     if (Boolean(rawPayload.liveVariantAScratchFlushedAtZero)) ot.liveVariantAScratchFlushedAtZero = true;

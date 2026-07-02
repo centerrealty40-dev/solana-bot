@@ -31,6 +31,7 @@ import {
   resolveLiveOscarEntrySplitLegUsd,
 } from '../papertrader/live-oscar-entry-sizing.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
+import { mintFromOpenMapKey } from '../papertrader/live-oscar-runner-probe.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
 import {
   clearLiveReconcileBlock,
@@ -598,9 +599,10 @@ export async function main(): Promise<void> {
           const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
           if (!chainMap) return undefined;
           const orphans: string[] = [];
-          for (const mint of open.keys()) {
+          for (const openKey of open.keys()) {
+            const mint = mintFromOpenMapKey(openKey);
             const b = chainMap.get(mint);
-            if (!b || b === 0n) orphans.push(mint);
+            if (!b || b === 0n) orphans.push(openKey);
           }
           return orphans.length ? orphans : undefined;
         }
