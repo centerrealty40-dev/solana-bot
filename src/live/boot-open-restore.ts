@@ -3,6 +3,10 @@
  */
 import type { OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
+import {
+  resolveOpenMapKey,
+  runnerProbeOpenMapKey,
+} from '../papertrader/live-oscar-runner-probe.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { replayLiveStrategyJournalForMints } from './replay-strategy-journal.js';
 
@@ -44,7 +48,7 @@ export async function restoreWalletOrphanOpensOnBoot(
   const orphanMints: string[] = [];
   for (const [mint, atoms] of chainMap) {
     if (atoms < BOOT_WALLET_ORPHAN_MIN_RAW_ATOMS) continue;
-    if (outOpen.has(mint)) continue;
+    if (outOpen.has(mint) || outOpen.has(runnerProbeOpenMapKey(mint))) continue;
     orphanMints.push(mint);
   }
 
@@ -63,9 +67,10 @@ export async function restoreWalletOrphanOpensOnBoot(
   );
 
   for (const mint of orphanMints) {
-    const ot = fullReplay.open.get(mint);
+    const ot =
+      fullReplay.open.get(mint) ?? fullReplay.open.get(runnerProbeOpenMapKey(mint));
     if (!ot) continue;
-    outOpen.set(mint, ot);
+    outOpen.set(resolveOpenMapKey(ot), ot);
     restoredMints.push(mint);
   }
 
