@@ -245,8 +245,12 @@ describe('live-oscar-runner-probe', () => {
       avgEntry: 0.0018177951694850678,
       peakMcUsd: 0.0021334969336829785,
       peakPnlPct: -18.02,
+      legs: [
+        { reason: 'open', sizeUsd: 500 } as OpenTrade['legs'][0],
+        { reason: 'dca', sizeUsd: 500 } as OpenTrade['legs'][0],
+      ],
     } as OpenTrade;
-    expect(runnerProbeTpEligible(ot, 0.0014901720290547192, 0.0014901720290547192, cfg)).toBe(true);
+    expect(runnerProbeTpEligible(ot, 0.0014901720290547192, 0.0014901720290547192, cfg)).toBe(false);
     runnerProbeResetPeakAfterDca(ot, 0.0014901720290547192);
     expect(runnerProbeTpEligible(ot, 0.0014901720290547192, 0.0014901720290547192, cfg)).toBe(false);
     expect(ot.peakMcUsd).toBeCloseTo(0.0014901720290547192);

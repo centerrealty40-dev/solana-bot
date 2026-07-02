@@ -74,6 +74,15 @@ export function runnerProbeTpEligible(
 ): boolean {
   if (!isRunnerProbeExitPolicy(ot) || !(ot.avgEntry > 0)) return false;
   const tpX = 1 + cfg.runnerProbeTpPct;
+  // After DCA, pre-DCA peakMcUsd can phantom-trigger TP vs the new avgEntry (FROGBULL 2026-07-02).
+  // Only live prices + post-DCA peakPnlPct may arm TP; ignore stale entry-time peak.
+  const hasDcaLeg = (ot.legs ?? []).some((l) => l.reason === 'dca');
+  if (hasDcaLeg) {
+    let bestLive = curMetricUsd > 0 ? curMetricUsd : 0;
+    if (snapPxUsd > bestLive) bestLive = snapPxUsd;
+    if (bestLive > 0 && bestLive / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
+    return ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100;
+  }
   const px = runnerProbeOptimisticTpPx(ot, curMetricUsd, snapPxUsd);
   if (px > 0 && px / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
   if (ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100) return true;
