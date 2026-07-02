@@ -654,7 +654,7 @@ const ConfigSchema = z.object({
   /** Baseline p10 vol5m at or below this = "dead" market (USD). */
   volumeSybilBaselineP10MaxUsd: z.coerce.number().nonnegative().default(3_000),
   /** Min PG samples in baseline window before rule applies. */
-  volumeSybilMinBaselineSamples: z.coerce.number().int().min(5).max(500).default(25),
+  volumeSybilMinBaselineSamples: z.coerce.number().int().min(5).max(500).default(15),
   /** Recent effective vol5m must reach this to count as spike (USD). */
   volumeSybilMinRecentVol5mUsd: z.coerce.number().nonnegative().default(8_000),
   /** Block when effectiveRecent / max(baselineP10, 100) >= this ratio. */
@@ -715,9 +715,9 @@ const ConfigSchema = z.object({
   /** Stricter hour ratio while within strict-after-recovery window. */
   pgDataCoverageStrictMinHourRatio: z.coerce.number().min(0.1).max(1).default(0.75),
   /** Min share of full hours with ≥N minute bars across dex tables (full tier; 0 = off). */
-  pgDataCoverageMinSystemHourRatio: z.coerce.number().min(0).max(1).default(0.7),
+  pgDataCoverageMinSystemHourRatio: z.coerce.number().min(0).max(1).default(0.3),
   /** Hour counts as covered when it has at least this many distinct minute bars. */
-  pgDataCoverageMinMinutesPerHour: z.coerce.number().int().min(10).max(59).default(45),
+  pgDataCoverageMinMinutesPerHour: z.coerce.number().int().min(5).max(59).default(5),
   /** Block when largest gap between consecutive mint minute bars exceeds this. */
   pgDataCoverageMaxGapMinutes: z.coerce.number().int().min(5).max(720).default(30),
   /** Block all entries while any dex snapshot table is stale right now. */
