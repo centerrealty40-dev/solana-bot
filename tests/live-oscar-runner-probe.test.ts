@@ -58,8 +58,8 @@ describe('live-oscar-runner-probe', () => {
     process.env.PAPER_RUNNER_PROBE_MAX_CONCURRENT = '2';
     process.env.PAPER_RUNNER_PROBE_MAX_EXPOSURE_USD = '2000';
     process.env.PAPER_RUNNER_PROBE_TP_PCT = '0.10';
-    process.env.PAPER_RUNNER_PROBE_KILL_PCT = '0.30';
-    process.env.PAPER_RUNNER_PROBE_DCA_LEVELS = '-20:1';
+    process.env.PAPER_RUNNER_PROBE_KILL_PCT = '0.50';
+    process.env.PAPER_RUNNER_PROBE_DCA_LEVELS = '-25:1';
     process.env.PAPER_RUNNER_PROBE_TIME_STOP_HOURS = '6';
     process.env.PAPER_RUNNER_PROBE_MIN_MCAP_USD = '1000000';
     process.env.PAPER_RUNNER_PROBE_MAX_MCAP_USD = '30000000';
@@ -170,10 +170,10 @@ describe('live-oscar-runner-probe', () => {
     expect(isRunnerProbeExitPolicy(ot)).toBe(true);
     expect(isRunnerProbeTrade(ot)).toBe(true);
     expect(resolveOpenMapKey(ot)).toBe(runnerProbeOpenMapKey('m1'));
-    expect(ot.tpGridOverrides?.dcaKillstop).toBe(-0.3);
+    expect(ot.tpGridOverrides?.dcaKillstop).toBe(-0.5);
     const eff = cfgEffectiveForOpen(cfg, ot);
     expect(eff.tpX).toBeCloseTo(1.1);
-    expect(eff.dcaKillstop).toBe(-0.3);
+    expect(eff.dcaKillstop).toBe(-0.5);
     expect(eff.timeoutHours).toBe(6);
     expect(runnerProbeMaxPositionUsd(cfg)).toBe(1000);
   });
@@ -185,8 +185,8 @@ describe('live-oscar-runner-probe', () => {
       liveExitPolicyId: 'runner_probe_v1',
       avgEntry: 1,
     } as OpenTrade;
-    expect(runnerProbeKillEligible(ot, 0.88, 0.68, cfg)).toBe(true);
-    expect(runnerProbeKillEligible(ot, 0.88, 0.80, cfg)).toBe(false);
+    expect(runnerProbeKillEligible(ot, 0.88, 0.48, cfg)).toBe(true);
+    expect(runnerProbeKillEligible(ot, 0.88, 0.55, cfg)).toBe(false);
   });
 
   it('TP triggers from tracked peak even when current tick is below tpX', () => {
@@ -199,6 +199,6 @@ describe('live-oscar-runner-probe', () => {
       peakPnlPct: 12,
     } as OpenTrade;
     expect(runnerProbeTpEligible(ot, 1.05, 1.05, cfg)).toBe(true);
-    expect(runnerProbeEffectiveKillFrac(cfg)).toBe(-0.3);
+    expect(runnerProbeEffectiveKillFrac(cfg)).toBe(-0.5);
   });
 });
