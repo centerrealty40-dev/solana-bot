@@ -85,16 +85,28 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_POSITION_NOTIONAL_USD: '100',
   /** Staged 30/30/40 DCA ($100 gross @ 2x). Set 0 for single-shot on signal. */
   HL_OSCAR_STAGED_ENTRY: '1',
-  /** Aggressive sweep 88783ee0: dip −7%, impulse off, time stop off. */
-  HL_OSCAR_DIP_MIN_PCT: '-7',
+  /** Rethink study D_dip_12: deep dip −12%, impulse ≥8%, recovery veto on. */
+  HL_OSCAR_DIP_MIN_PCT: '-12',
   HL_OSCAR_DIP_MAX_PCT: '-50',
   HL_OSCAR_DIP_WINDOWS_MIN: '120,360,720',
   HL_OSCAR_DIP_COOLDOWN_MIN: '30',
   HL_OSCAR_LEG2_DROP_PCT: '5',
   HL_OSCAR_LEG3_DROP_PCT: '10',
-  HL_OSCAR_DIP_MIN_IMPULSE_PCT: '0',
-  HL_OSCAR_TIME_STOP_ENABLED: '0',
-  HL_OSCAR_TIME_STOP_HOURS: '0',
+  HL_OSCAR_DIP_MIN_IMPULSE_PCT: '8',
+  /** Recovery veto — skip bounce ≥12% from 30/60m low (Solana Oscar parity). */
+  HL_OSCAR_RECOVERY_VETO_ENABLED: '1',
+  HL_OSCAR_RECOVERY_VETO_WINDOWS_MIN: '30,60',
+  HL_OSCAR_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+  /** Local-high veto — off by default (study: −76% signal rate on HL alts). */
+  HL_OSCAR_LOCAL_HIGH_VETO_ENABLED: '0',
+  HL_OSCAR_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
+  HL_OSCAR_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
+  /** Hold-longer TP ladder +8/+12/+16%, trail arm +8%, step −2.5%. */
+  HL_OSCAR_TP_RUNGS: '0.08,0.12,0.16',
+  HL_OSCAR_TRAIL_ARM_PCT: '8',
+  HL_OSCAR_TRAIL_STEP_PCT: '2.5',
+  HL_OSCAR_TIME_STOP_ENABLED: '1',
+  HL_OSCAR_TIME_STOP_HOURS: '12',
   HL_OSCAR_REMAINDER_CLOSE_PCT: '10',
   HL_OSCAR_MAX_OPEN_POSITIONS: '4',
   HL_OSCAR_MARGIN_RESERVE_USD: '25',

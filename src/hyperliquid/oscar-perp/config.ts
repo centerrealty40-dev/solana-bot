@@ -29,6 +29,24 @@ export type HlOscarPerpConfig = {
   dipMinImpulsePct: number;
   dipLookbackWindowsMin: number[];
   dipCooldownMin: number;
+  /** Block entry when bounce from shorter-window low ≥ threshold (Solana Oscar parity). */
+  recoveryVetoEnabled: boolean;
+  recoveryVetoWindowsMin: number[];
+  recoveryVetoMaxBouncePct: number;
+  /** Block entry when price is too close to shorter-window high. */
+  localHighVetoEnabled: boolean;
+  localHighVetoWindowsMin: number[];
+  localHighVetoMaxDistancePct: number;
+  /** Take-profit rungs vs avg entry (PnL fraction, e.g. 0.08 = +8%). */
+  tpRungs: number[];
+  /** Trail + breakeven arm when peak/TP reaches this PnL fraction. */
+  trailArmFrac: number;
+  /** Trail fires when price drops this far below peak PnL anchor. */
+  trailStepDropFrac: number;
+  /** Fraction of **remaining** sold at each TP rung. */
+  tpSellFrac: number;
+  /** Fraction of **remaining** sold on each trail step. */
+  trailSellFrac: number;
   /** Full exit after N hours in position; `0` disables (or set `HL_OSCAR_TIME_STOP_ENABLED=0`). */
   timeStopHours: number;
   maxOpenPositions: number;
@@ -92,6 +110,54 @@ export function hlOscarSizingFromEnv(): {
   return { leverage, grossUsd, marginUsd: grossUsd / leverage };
 }
 
+/** Human-readable strategy knobs for dashboard / ops (reads same env as bot). */
+export function hlOscarStrategyLabelsFromEnv(): {
+  dipMinPct: number;
+  impulseMinPct: number;
+  tpRungsPct: number[];
+  trailArmPct: number;
+  timeStopHours: number;
+  recoveryVeto: boolean;
+  localHighVeto: boolean;
+} {
+  const cfg = loadHlOscarPerpConfig();
+  return {
+    dipMinPct: cfg.dipMinDropPct,
+    impulseMinPct: cfg.dipMinImpulsePct,
+    tpRungsPct: cfg.tpRungs.map((r) => Math.round(r * 1000) / 10),
+    trailArmPct: Math.round(cfg.trailArmFrac * 1000) / 10,
+    timeStopHours: cfg.timeStopHours,
+    recoveryVeto: cfg.recoveryVetoEnabled,
+    localHighVeto: cfg.localHighVetoEnabled,
+  };
+}
+
+export function parseCsvInts(spec: string): number[] {
+  return spec
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/** Parse TP/trail fractions: accepts `0.08,0.12` or `8,12` (percent). */
+export function parseFracCsv(spec: string, fallback: number[]): number[] {
+  const raw = spec
+    .trim()
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (raw.length === 0) return fallback;
+  return raw.map((n) => (n > 1 ? n / 100 : n)).sort((a, b) => a - b);
+}
+
+function resolvePctFrac(name: string, fallbackPct: number): number {
+  const v = process.env[name]?.trim();
+  if (!v) return fallbackPct / 100;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return fallbackPct / 100;
+  return n > 1 ? n / 100 : n;
+}
+
 export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
   const leverage = Math.max(1, Math.round(envNum('HL_OSCAR_LEVERAGE', 2)));
   const positionNotionalUsd = resolvePositionGrossUsd(leverage);
@@ -134,14 +200,32 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     leg3DropPct: envNum('HL_OSCAR_LEG3_DROP_PCT', 10),
     positionKillDropPct: Math.max(1, envNum('HL_OSCAR_KILL_PCT', 45)),
     stagedKillDropPct: Math.max(1, envNum('HL_OSCAR_STAGED_KILL_DROP_PCT', 45)),
-    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -7),
+    dipMinDropPct: envNum('HL_OSCAR_DIP_MIN_PCT', -12),
     dipMaxDropPct: envNum('HL_OSCAR_DIP_MAX_PCT', -50),
     /** `0` disables impulse filter (any window high/low ratio passes). */
-    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 0),
-    dipLookbackWindowsMin: parseWindows(
+    dipMinImpulsePct: envNum('HL_OSCAR_DIP_MIN_IMPULSE_PCT', 8),
+    dipLookbackWindowsMin: parseCsvInts(
       process.env.HL_OSCAR_DIP_WINDOWS_MIN?.trim() || '120,360,720',
     ),
     dipCooldownMin: envNum('HL_OSCAR_DIP_COOLDOWN_MIN', 30),
+    recoveryVetoEnabled: envBool('HL_OSCAR_RECOVERY_VETO_ENABLED', false),
+    recoveryVetoWindowsMin: parseCsvInts(
+      process.env.HL_OSCAR_RECOVERY_VETO_WINDOWS_MIN?.trim() || '30,60',
+    ),
+    recoveryVetoMaxBouncePct: envNum('HL_OSCAR_RECOVERY_VETO_MAX_BOUNCE_PCT', 12),
+    localHighVetoEnabled: envBool('HL_OSCAR_LOCAL_HIGH_VETO_ENABLED', false),
+    localHighVetoWindowsMin: parseCsvInts(
+      process.env.HL_OSCAR_LOCAL_HIGH_VETO_WINDOWS_MIN?.trim() || '30,60,120',
+    ),
+    localHighVetoMaxDistancePct: envNum('HL_OSCAR_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT', 2),
+    tpRungs: parseFracCsv(
+      process.env.HL_OSCAR_TP_RUNGS?.trim() || '0.08,0.12,0.16',
+      [0.08, 0.12, 0.16],
+    ),
+    trailArmFrac: resolvePctFrac('HL_OSCAR_TRAIL_ARM_PCT', 8),
+    trailStepDropFrac: resolvePctFrac('HL_OSCAR_TRAIL_STEP_PCT', 2.5),
+    tpSellFrac: Math.max(0.01, Math.min(1, envNum('HL_OSCAR_TP_SELL_FRAC', 0.5))),
+    trailSellFrac: Math.max(0.01, Math.min(1, envNum('HL_OSCAR_TRAIL_SELL_FRAC', 0.2))),
     timeStopHours: resolveTimeStopHours(),
     maxOpenPositions: Math.max(1, Math.round(envNum('HL_OSCAR_MAX_OPEN_POSITIONS', 4))),
     minDayVolumeUsd: envNum('HL_OSCAR_MIN_DAY_VOLUME_USD', 100_000),
@@ -162,15 +246,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
 }
 
 function resolveTimeStopHours(): number {
-  if (!envBool('HL_OSCAR_TIME_STOP_ENABLED', false)) return 0;
-  return Math.max(0, envNum('HL_OSCAR_TIME_STOP_HOURS', 0));
-}
-
-function parseWindows(spec: string): number[] {
-  return spec
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!envBool('HL_OSCAR_TIME_STOP_ENABLED', true)) return 0;
+  return Math.max(0, envNum('HL_OSCAR_TIME_STOP_HOURS', 12));
 }
 
 /** Map Oscar config to shared HL TWAP exchange client config. */

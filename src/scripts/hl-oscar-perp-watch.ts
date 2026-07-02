@@ -1,10 +1,11 @@
 /**
  * HyperLiquid Oscar dip-buy perp bot — paper/dry-run by default.
  *
- * Strategy: dip ≥7% from local high (2h/6h/12h), impulse filter off, staged entry 30/30/40 ($100 gross @ 2x),
- * leg2 −5% / leg3 −10% from signal; Wave B exit: TP +5%/+7.5%/+10%, trail from +5%, kill −45%, time stop off.
+ * Strategy: dip ≥12% from local high (2h/6h/12h), impulse ≥8%, recovery veto (30/60m bounce),
+ * staged entry 30/30/40 ($100 gross @ 2x), leg2 −5% / leg3 −10% from signal;
+ * Wave B exit: TP +8%/+12%/+16% (env HL_OSCAR_TP_RUNGS), trail arm +8%, kill −45%, time stop 12h.
  *
- * Env: HL_OSCAR_LIVE_ENABLED=0 (default paper), HL_OSCAR_* — see .env.example in hl-oscar-perp repo.
+ * Env: HL_OSCAR_LIVE_ENABLED=0 (default paper), HL_OSCAR_* — see .env.example.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -94,8 +95,12 @@ async function main(): Promise<void> {
   console.log(
     `[hl-oscar-perp] denylist=${denylist.size} coins whitelist=${whitelist ? whitelist.size : 'all-except-deny'}`,
   );
+  const tpPct = cfg.tpRungs.map((r) => `+${Math.round(r * 1000) / 10}%`).join('/');
   console.log(
     `[hl-oscar-perp] dip=${cfg.dipMinDropPct}% impulseMin=${cfg.dipMinImpulsePct}% leg2Drop=${cfg.leg2DropPct}% leg3Drop=${cfg.leg3DropPct}%`,
+  );
+  console.log(
+    `[hl-oscar-perp] tp=${tpPct} trailArm=+${Math.round(cfg.trailArmFrac * 1000) / 10}% recoveryVeto=${cfg.recoveryVetoEnabled ? 'on' : 'off'} localHighVeto=${cfg.localHighVetoEnabled ? 'on' : 'off'}`,
   );
 
   if (cfg.mode === 'live') {
