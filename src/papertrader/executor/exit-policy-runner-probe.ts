@@ -1,7 +1,11 @@
 import type { PaperTraderConfig } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import type { OpenTrade } from '../types.js';
-import { isRunnerProbeTrade, stampRunnerProbeOnOpen } from '../live-oscar-runner-probe.js';
+import {
+  isRunnerProbeTrade,
+  normalizeRunnerProbeOpenMapKeys,
+  stampRunnerProbeOnOpen,
+} from '../live-oscar-runner-probe.js';
 import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { LADDER_PNL_EPS } from './tp-ladder-state.js';
 
@@ -74,6 +78,18 @@ export function runnerProbeTpEligible(
   if (px > 0 && px / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
   if (ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100) return true;
   return false;
+}
+
+/** Re-key + exit-policy stamp for runner_probe opens after journal/snapshot replay. */
+export function finalizeRunnerProbeOpenOnBoot(
+  open: Map<string, OpenTrade>,
+  cfg: PaperTraderConfig,
+): number {
+  const migrated = normalizeRunnerProbeOpenMapKeys(open);
+  for (const ot of open.values()) {
+    stampRunnerProbeExitPolicyOnOpen(ot, cfg);
+  }
+  return migrated;
 }
 
 /** $500 probe + optional DCA: TP +10%, kill −50%, timestop 6h. */

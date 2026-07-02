@@ -32,6 +32,7 @@ import {
 } from '../papertrader/live-oscar-entry-sizing.js';
 import { main as paperOscarMain } from '../papertrader/main.js';
 import { mintFromOpenMapKey } from '../papertrader/live-oscar-runner-probe.js';
+import { finalizeRunnerProbeOpenOnBoot } from '../papertrader/executor/exit-policy-runner-probe.js';
 import { verifyReplayedOpenBuyAnchorsOnBoot } from './boot-anchor-verify.js';
 import {
   clearLiveReconcileBlock,
@@ -537,6 +538,18 @@ export async function main(): Promise<void> {
       });
     } else if (merged.open.size !== liveStrategyReplay.open.size) {
       liveStrategyReplay = { ...liveStrategyReplay, open: merged.open };
+    }
+
+    const paperBootCfg = loadPaperTraderConfig();
+    const runnerProbeKeysNormalized = finalizeRunnerProbeOpenOnBoot(
+      liveStrategyReplay.open,
+      paperBootCfg,
+    );
+    if (runnerProbeKeysNormalized > 0) {
+      log.info(
+        { migrated: runnerProbeKeysNormalized, replayOpen: liveStrategyReplay.open.size },
+        'live-oscar boot: runner_probe open-map keys normalized before wallet orphan scan',
+      );
     }
 
     if (liveStrategyReplay.journalTruncated) {

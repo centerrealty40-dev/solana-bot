@@ -4,6 +4,7 @@
 import type { OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
 import {
+  normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
   runnerProbeOpenMapKey,
 } from '../papertrader/live-oscar-runner-probe.js';
@@ -28,6 +29,7 @@ export async function restoreWalletOrphanOpensOnBoot(
   opts: { journalTruncated: boolean },
 ): Promise<BootWalletOrphanRestoreResult> {
   const outOpen = new Map(open);
+  normalizeRunnerProbeOpenMapKeys(outOpen);
   const restoredMints: string[] = [];
   const walletMintsScanned: string[] = [];
 
