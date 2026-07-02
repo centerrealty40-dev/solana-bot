@@ -12,11 +12,11 @@ if [ -z "$SCRIPT" ]; then
 fi
 INTERVAL="${BPULSE_SYNC_INTERVAL_SEC:-30}"
 run_sync() {
-  # Invoke via bash — ops/*.sh may lack +x when deployed from git on Windows hosts.
   if [ "$(id -u)" -eq 0 ]; then
     bash "$SCRIPT"
   else
-    sudo -n bash "$SCRIPT"
+    # sudoers NOPASSWD lists exact script paths — must be executable (+x).
+    sudo -n "$SCRIPT"
   fi
 }
 while true; do
