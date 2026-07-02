@@ -9,7 +9,7 @@ export function isRunnerProbeExitPolicy(ot: OpenTrade): boolean {
   return ot.liveExitPolicyId === 'runner_probe_v1' || isRunnerProbeTrade(ot);
 }
 
-/** Negative kill fraction for dcaKillstop / classicKill (e.g. −0.30 for 30% drawdown). */
+/** Negative kill fraction for dcaKillstop / classicKill (e.g. −0.50 for 50% drawdown). */
 export function runnerProbeEffectiveKillFrac(cfg: PaperTraderConfig): number {
   return -cfg.runnerProbeKillPct;
 }
@@ -76,7 +76,7 @@ export function runnerProbeTpEligible(
   return false;
 }
 
-/** $500 probe + optional DCA: TP +10%, kill −30%, timestop 6h. */
+/** $500 probe + optional DCA: TP +10%, kill −50%, timestop 6h. */
 export function stampRunnerProbeExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): boolean {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId) || !isRunnerProbeTrade(ot)) return false;
   ot.liveExitPolicyId = 'runner_probe_v1';
