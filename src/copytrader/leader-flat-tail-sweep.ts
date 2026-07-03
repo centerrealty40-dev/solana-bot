@@ -1,4 +1,5 @@
 import type { CopyTraderConfig } from './config.js';
+import { usesOscarExitPolicy } from './exit-mode.js';
 import { effectiveLeaderBalanceRaw } from './leader-dust.js';
 import { appendCopyEvent } from './executor.js';
 import { shouldIgnoreLeaderForMint } from './oscar-position-guard.js';
@@ -85,6 +86,8 @@ export async function scheduleLeaderFlatTailSweeps(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
 ): Promise<number> {
+  if (usesOscarExitPolicy(cfg)) return 0;
+
   const now = Date.now();
   let scheduled = 0;
 

@@ -3,6 +3,7 @@ import {
   hasPendingSellForMint,
   isLeaderFlatForMint,
   reconcileLeaderLedgerFromChain,
+  scheduleLeaderFlatTailSweeps,
 } from '../../src/copytrader/leader-flat-tail-sweep.js';
 import { leaderPreBalanceRaw } from '../../src/copytrader/leader-ledger.js';
 import * as executor from '../../src/copytrader/executor.js';
@@ -121,5 +122,22 @@ describe('leader flat tail sweep', () => {
     await expect(isLeaderFlatForMint(cfg, state, 'mintA')).resolves.toBe(false);
     expect(leaderPreBalanceRaw(state, 'mintA')).toBe(5_000_000n);
     vi.restoreAllMocks();
+  });
+
+  it('skips tail sweep when exit mode is oscar_half8', async () => {
+    const state = emptyCopyTraderState();
+    state.positions.mintA = {
+      mint: 'mintA',
+      symbol: 'A',
+      entryTs: Date.now(),
+      entryPriceUsd: 1,
+      sizeUsd: 100,
+      addCount: 0,
+      leaderWallet: cfg.targetWallet,
+      leaderEntrySig: 'sig',
+    };
+    const oscarCfg = { ...cfg, exitMode: 'oscar_half8' } as CopyTraderConfig;
+    await expect(scheduleLeaderFlatTailSweeps(oscarCfg, state)).resolves.toBe(0);
+    expect(state.pendingSells).toHaveLength(0);
   });
 });

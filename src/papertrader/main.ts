@@ -251,6 +251,9 @@ export interface PapertraderMainOptions {
     ctx: LiveOpenPositionHotTickPaperContext,
   ) => ReturnType<typeof setInterval> | null;
 
+  /** Live-oscar: hook before each tracker tick (e.g. adopt copy-leader exit opens). */
+  beforeTrackerTick?: (open: Map<string, OpenTrade>) => void | Promise<void>;
+
   /**
    * Live-oscar: override paper `PAPER_HEARTBEAT_INTERVAL_MS` for JSONL + `onOscarHeartbeat` cadence.
    */
@@ -2580,6 +2583,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     if (trackerRunning) return;
     trackerRunning = true;
     try {
+      await opts?.beforeTrackerTick?.(open);
       await withTimeout(
         trackerTick({
           cfg,
@@ -2712,8 +2716,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     paperCfg: cfg,
     getOpen: () => open,
     isTrackerBusy: () => trackerRunning,
-    runTrackerTick: () =>
-      withTimeout(
+    runTrackerTick: async () => {
+      await opts?.beforeTrackerTick?.(open);
+      return withTimeout(
         trackerTick({
           cfg,
           open,
@@ -2742,7 +2747,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }),
         45_000,
         'trackerTickHot',
-      ),
+      );
+    },
   });
 
   const solTimer = setInterval(() => {
