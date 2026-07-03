@@ -132,6 +132,8 @@ export function runnerProbeEntryConfig(cfg: PaperTraderConfig): PaperTraderConfi
   const minAge = cfg.runnerProbeMinAgeMin;
   return {
     ...cfg,
+    /** Probe band ($1M–$3M) is below prod discovery floor; tier routing owns mcap. */
+    discoveryMinMarketCapUsd: 0,
     dipMinDropPct: cfg.runnerProbeDipMinDropPct,
     dipMaxDropPct: cfg.runnerProbeDipMaxDropPct,
     dipMinAgeMin: minAge,

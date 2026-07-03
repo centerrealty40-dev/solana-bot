@@ -245,6 +245,8 @@ export function runnerLiteEntryConfig(cfg: PaperTraderConfig): PaperTraderConfig
   const minAge = cfg.runnerLiteMinAgeMin;
   return {
     ...cfg,
+    /** Mcap band already enforced by {@link resolveRunnerLiteTier}; prod $2M floor must not block lite. */
+    discoveryMinMarketCapUsd: 0,
     dipMinDropPct: cfg.runnerLiteDipMinDropPct,
     dipMaxDropPct: cfg.runnerLiteDipMaxDropPct,
     dipMinAgeMin: minAge,
