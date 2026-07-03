@@ -7,6 +7,7 @@ import {
   normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
   runnerProbeAgeInBand,
+  runnerProbeCandidateInBand,
   runnerProbeMintAlreadyOpen,
   runnerProbeMintOpenSkipReason,
   runnerProbeOpenMapKey,
@@ -87,6 +88,14 @@ describe('live-oscar-runner-probe', () => {
     expect(runnerProbeAgeInBand(cfg, 2880)).toBe(true);
     expect(runnerProbeAgeInBand(cfg, 2881)).toBe(false);
     expect(runnerProbeOpenLegUsd(cfg)).toBe(500);
+  });
+
+  it('runnerProbeCandidateInBand rejects old coins and out-of-band mcap', () => {
+    const cfg = loadPaperTraderConfig();
+    expect(runnerProbeCandidateInBand(cfg, 2_000_000, 1500)).toBe(true);
+    expect(runnerProbeCandidateInBand(cfg, 2_000_000, 100_000)).toBe(false);
+    expect(runnerProbeCandidateInBand(cfg, 50_000_000, 1500)).toBe(false);
+    expect(runnerProbeCandidateInBand(cfg, 500_000, 1500)).toBe(false);
   });
 
   it('ranking score favors vol1h × velocity', () => {

@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import {
   cancelAllPendingEntrySplitLegs,
+  ENTRY_SPLIT_LEG_COUNT,
   entrySplitLegDoneFromState,
   entrySplitLegTsFromState,
   entrySplitLegUsdFromState,
@@ -138,7 +139,7 @@ export function entrySplitLeg3Eligible(args: {
   return entrySplitTimedLegEligible({ ...args, legIndex: 3 });
 }
 
-/** Timed entry split legs 2–7: `(legIndex−1)` × delay from leg-1, corridor vs signal anchor. */
+/** Timed entry split legs 2–8: `(legIndex−1)` × delay from leg-1, corridor vs signal anchor. */
 export function entrySplitTimedLegEligible(args: {
   st: LiveStagedEntryState;
   signalDropPct: number | null;
@@ -148,7 +149,7 @@ export function entrySplitTimedLegEligible(args: {
   legIndex: EntrySplitLegIndex;
 }): { ok: boolean; triggerPct: number } {
   const { st, signalDropPct, nowMs, entrySplitPx, anchorUsd, legIndex } = args;
-  if (legIndex < 2 || legIndex > 7) return { ok: false, triggerPct: 0 };
+  if (legIndex < 2 || legIndex > ENTRY_SPLIT_LEG_COUNT) return { ok: false, triggerPct: 0 };
   const targetDrop = st.entrySplitTargetDropPct ?? 0;
   if (targetDrop > 0) {
     if (legIndex !== 2) return { ok: false, triggerPct: 0 };
@@ -233,7 +234,7 @@ export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
   );
 }
 
-/** Pending timed entry-split legs 2–7 only (excludes staged averaging). */
+/** Pending timed entry-split legs 2–8 only (excludes staged averaging). */
 export function liveStagedEntryHasPendingEntrySplitLegs(st: LiveStagedEntryState): boolean {
   if (!st.entrySplitV2) return false;
   for (const legIndex of entrySplitTimedLegIndices()) {
@@ -263,7 +264,7 @@ export function resolveEntrySplitFastPollIntervalMsFromOpen(
   return minMs;
 }
 
-/** Open trade still filling entry-split legs 2–7 (corridor not blocked). */
+/** Open trade still filling entry-split legs 2–8 (corridor not blocked). */
 export function openTradeNeedsEntrySplitFastPoll(ot: OpenTrade): boolean {
   const st = ot.liveStagedEntry;
   if (!st?.entrySplitV2 || ot.remainingFraction <= 0) return false;
