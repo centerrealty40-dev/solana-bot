@@ -321,6 +321,11 @@ const LiveOscarConfigSchema = z
     /** Skip chain-only tail sweep below this estimated USD (spam / dust). */
     livePeriodicSweepMinUsd: z.coerce.number().min(0).max(1_000_000).default(0.25),
     /**
+     * Min Oscar-attributed wallet USD before resyncing journal `remainingFraction` upward or
+     * treating journal-zero opens as still managed (manual add / partial-fill drift).
+     */
+    liveWalletBalanceReconcileMinUsd: z.coerce.number().min(0).max(10_000).default(5),
+    /**
      * When false (default), tail sweep only runs for mints that appear in this process's `closed[]` history.
      * When true, any non-open SPL balance above min USD is sold (airdrops / unknown tokens — higher risk).
      */
@@ -781,6 +786,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 1_800_000;
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 86_400_000) : 1_800_000;
+    })(),
+    liveWalletBalanceReconcileMinUsd: (() => {
+      const s = process.env.LIVE_WALLET_BALANCE_RECONCILE_MIN_USD?.trim();
+      if (!s) return 5;
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : 5;
     })(),
     livePeriodicSweepMinUsd: (() => {
       const s = process.env.LIVE_PERIODIC_SWEEP_MIN_USD?.trim();
