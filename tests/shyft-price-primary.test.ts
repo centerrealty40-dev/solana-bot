@@ -131,6 +131,30 @@ describe('resolvePrimaryPriceUsd — ON path freshness gate + fallback', () => {
     expect(r.priceUsd).toBe(0.002);
   });
 
+  it('uses tick-start nowMs so Jupiter probe latency does not expire a fresh stream (NEST 2026-07-03)', () => {
+    const tickStartMs = NOW - 6_000;
+    const streamTsMs = tickStartMs - 4_300;
+    const staleIfProbeEnd = resolvePrimaryPriceUsd({
+      enabled: true,
+      pgPriceUsd: 0.01459,
+      streamPriceUsd: 0.01176,
+      streamTsMs,
+      nowMs: NOW,
+      maxStaleMs: 5_000,
+    });
+    expect(staleIfProbeEnd.source).toBe('pg');
+    const freshAtTickStart = resolvePrimaryPriceUsd({
+      enabled: true,
+      pgPriceUsd: 0.01459,
+      streamPriceUsd: 0.01176,
+      streamTsMs,
+      nowMs: tickStartMs,
+      maxStaleMs: 5_000,
+    });
+    expect(freshAtTickStart.source).toBe('stream');
+    expect(freshAtTickStart.priceUsd).toBe(0.01176);
+  });
+
   it('picks the stream even when PG is missing, as long as the stream is fresh', () => {
     const r = resolvePrimaryPriceUsd({
       enabled: true,

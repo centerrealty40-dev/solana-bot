@@ -2918,6 +2918,22 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
+    /**
+     * Shyft primary MTM: snapshot stream at tick start. Jupiter buy-probe can take >5s; using
+     * `Date.now()` after the probe makes a fresh stream look stale vs `SHYFT_MAX_STALE_MS` and
+     * falls back to PG ghost (NEST 2026-07-03 wave_b instant TP).
+     */
+    let shyftPrimaryTickMs: number | null = null;
+    let shyftPrimaryStreamAtTick: ReturnType<typeof getShyftShadowStreamPrice> = null;
+    if (
+      cfg.shyftPricePrimaryEnabled &&
+      cfg.shyftPricePrimaryMtmEnabled &&
+      isLiveOscarTradingStrategyId(cfg.strategyId) &&
+      isShyftShadowEnabled()
+    ) {
+      shyftPrimaryTickMs = Date.now();
+      shyftPrimaryStreamAtTick = getShyftShadowStreamPrice(mint, shyftPrimaryTickMs);
+    }
     // Stage 1.1 shadow (observability only, default OFF): pair the PG MTM price with the freshest Shyft
     // stream price to measure PG lag. NEVER influences any exit/MTM decision below.
     if (cfg.liveOscarShyftShadowEnabled && isLiveOscarTradingStrategyId(cfg.strategyId) && isShyftShadowEnabled()) {
@@ -3206,16 +3222,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryMtmEnabled &&
       isLiveOscarTradingStrategyId(cfg.strategyId) &&
-      isShyftShadowEnabled()
+      isShyftShadowEnabled() &&
+      shyftPrimaryTickMs != null
     ) {
-      const nowPrimary = Date.now();
-      const streamPrimary = getShyftShadowStreamPrice(mint, nowPrimary);
+      const streamPrimary = shyftPrimaryStreamAtTick;
       const picked = resolvePrimaryPriceUsd({
         enabled: true,
         pgPriceUsd: curMetric > 0 ? curMetric : null,
         streamPriceUsd: streamPrimary?.priceUsd ?? null,
         streamTsMs: streamPrimary?.streamTsMs ?? null,
-        nowMs: nowPrimary,
+        nowMs: shyftPrimaryTickMs,
         maxStaleMs: cfg.shyftMaxStaleMs,
       });
       if (picked.source === 'stream' && picked.priceUsd != null && picked.priceUsd > 0 && streamPrimary) {
@@ -3228,7 +3244,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           streamTsMs: streamPrimary.streamTsMs,
           streamAgeMs: picked.streamAgeMs,
           streamSlot: streamPrimary.slot,
-          nowMs: nowPrimary,
+          nowMs: shyftPrimaryTickMs,
         });
         journalAppend(primaryEvent);
         journalLiveStrategy?.(primaryEvent);
