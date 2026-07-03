@@ -420,12 +420,12 @@ async function onLeaderBuy(
   if (usesDipOnlyEntry(cfg)) {
     const dex = await fetchDexInfo(mint, getSolUsd());
     const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
-    const targetUsd = entryTargetUsd(cfg, mcap);
+    const targetUsd = entryTargetUsd(cfg, mcap, swap.amountUsd);
     await schedulePendingBuy(cfg, state, {
       mint,
       symbol,
       kind: 'entry',
-      sizeUsd: entryDipSizeUsd(cfg, mcap),
+      sizeUsd: entryDipSizeUsd(cfg, mcap, swap.amountUsd),
       entryLeg: 'dip',
       entryTargetUsd: targetUsd,
       entryMcapUsd: mcap,
@@ -439,8 +439,8 @@ async function onLeaderBuy(
 
   const dex = await fetchDexInfo(mint, getSolUsd());
   const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
-  const targetUsd = entryTargetUsd(cfg, mcap);
-  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg, mcap) : targetUsd;
+  const targetUsd = entryTargetUsd(cfg, mcap, swap.amountUsd);
+  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg, mcap, swap.amountUsd) : targetUsd;
   await schedulePendingBuy(cfg, state, {
     mint,
     symbol,
@@ -488,7 +488,7 @@ function scheduleEntryDipBuy(
   probe: PendingBuy,
 ): void {
   const mcap = probe.entryMcapUsd;
-  const dipUsd = entryDipSizeUsd(cfg, mcap);
+  const dipUsd = entryDipSizeUsd(cfg, mcap, probe.leaderBuyUsd);
   if (!(dipUsd > 0)) return;
   if (state.positions[probe.mint]?.entryDipAbandoned) return;
   if (state.pendingBuys.some((p) => p.mint === probe.mint && p.entryLeg === 'dip')) return;
@@ -1123,7 +1123,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         tokenRaw,
         addCount: 0,
         entryDeployedCostUsd: pending.sizeUsd,
-        entryTargetUsd: pending.entryTargetUsd ?? entryTargetUsd(cfg, pending.entryMcapUsd),
+        entryTargetUsd: pending.entryTargetUsd ?? entryTargetUsd(cfg, pending.entryMcapUsd, pending.leaderBuyUsd),
         entryMcapUsd: pending.entryMcapUsd,
         leaderWallet: cfg.targetWallet,
         leaderEntrySig: pending.leaderSignature,
@@ -1385,6 +1385,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
+    initialMirrorRatio: cfg.initialMirrorRatio > 0 ? cfg.initialMirrorRatio : null,
     addMirror: 'proportional_to_leader',
     maxPositionUsd: cfg.maxPositionUsd > 0 ? cfg.maxPositionUsd : 'unlimited',
     maxAddsPerMint: cfg.maxAddsPerMint > 0 ? cfg.maxAddsPerMint : 'unlimited',
