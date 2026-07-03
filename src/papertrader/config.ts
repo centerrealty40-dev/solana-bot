@@ -500,6 +500,11 @@ const ConfigSchema = z.object({
   volumeLeaderLookbackHours: z.coerce.number().int().min(1).max(48).default(24),
   volumeLeaderQueryCacheSec: z.coerce.number().int().min(15).max(600).default(60),
   volumeLeaderSnapshotLookbackMin: z.coerce.number().int().min(5).max(120).default(30),
+  /**
+   * Volume-leader inject snapshot SQL: min token age (default 12h).
+   * Does NOT inherit PAPER_MIN_TOKEN_AGE_MIN / dip / post 48h prod gates.
+   */
+  volumeLeaderMinTokenAgeMin: z.coerce.number().nonnegative().default(720),
 
   /**
    * Discovery snapshot sanity (1.11.275): отсечь liq≈0 при высокой mcap, dead pool (< share max liq mint).
@@ -1439,6 +1444,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeLeaderLookbackHours: process.env.PAPER_VOLUME_LEADER_LOOKBACK_HOURS,
     volumeLeaderQueryCacheSec: process.env.PAPER_VOLUME_LEADER_QUERY_CACHE_SEC,
     volumeLeaderSnapshotLookbackMin: process.env.PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN,
+    volumeLeaderMinTokenAgeMin: process.env.PAPER_VOLUME_LEADER_MIN_TOKEN_AGE_MIN,
     discoverySnapshotSanityEnabled: envBool(process.env.PAPER_DISCOVERY_SNAPSHOT_SANITY_ENABLED, true),
     discoverySnapshotSanityRefMcapMinUsd: process.env.PAPER_DISCOVERY_SNAPSHOT_SANITY_REF_MCAP_MIN_USD,
     discoverySnapshotSanityMinLiqToMcapRatio:

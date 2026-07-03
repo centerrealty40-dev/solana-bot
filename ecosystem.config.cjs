@@ -1309,6 +1309,8 @@ const PM2_APPS = [
         PAPER_VOLUME_LEADER_QUERY_CACHE_SEC: '60',
         /** 1.11.283: откат 90→30m + меньше top-N — реже inject молодых раннеров. */
         PAPER_VOLUME_LEADER_SNAPSHOT_LOOKBACK_MIN: '30',
+        /** Volume-leader inject visibility: 12h floor (runner_probe band). Prod eval stays 48h via PAPER_MIN_TOKEN_AGE_MIN. */
+        PAPER_VOLUME_LEADER_MIN_TOKEN_AGE_MIN: '720',
         /** 1.11.275 — Snapshot sanity: dead pool / liq≈0 at high mcap before canonical pick. */
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ENABLED: '1',
         PAPER_DISCOVERY_SNAPSHOT_SANITY_REF_MCAP_MIN_USD: '2000000',
