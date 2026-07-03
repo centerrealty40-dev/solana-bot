@@ -110,6 +110,16 @@ export function isPervyyVystrelLaneEnabled(
   return isLiveOscarTradingStrategyId(strategyId) && pv.enabled && pv.mode !== 'off';
 }
 
+/** PR1 ingest + shadow eval — mode ≠ off (includes ENABLED=0 shadow rollout). */
+export function isPervyyVystrelObservabilityActive(
+  strategyId: string,
+  pv: Pick<PervyyVystrelConfig, 'enabled' | 'mode'>,
+): boolean {
+  if (!isLiveOscarTradingStrategyId(strategyId)) return false;
+  if (pv.mode === 'off') return false;
+  return pv.mode === 'shadow' || pv.enabled;
+}
+
 export function pervyyVystrelOpenMapKey(mint: string): string {
   return `${mint}${PERVYY_VYSTREL_OPEN_MAP_SUFFIX}`;
 }

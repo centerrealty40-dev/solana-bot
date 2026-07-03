@@ -14,7 +14,6 @@ import {
   passesDiscoveryMaxMarketCap,
   evaluateSnapshotPriorityTier,
   resolveDiscoveryRefMcap,
-  appendDiscoveryHardMcapReasons,
 } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import {
@@ -100,6 +99,15 @@ import {
   type RunnerLiteDiscoveryEval,
 } from '../live-oscar-runner-lite.js';
 import {
+  evaluateLiveOscarPervyyVystrelDiscovery,
+  isPervyyVystrelObservabilityActive,
+  pervyyVystrelDiscoveryPrefilter,
+} from '../live-oscar-pervyy-vystrel.js';
+import {
+  resolveDiscoveryHardMcapMinUsd,
+  resolveDiscoverySqlMinMarketCapUsd,
+} from './discovery-mcap-floor.js';
+import {
   evaluateOscarIntelGateForRunnerProbe,
   evaluateOscarIntelGateForRunnerLite,
   evaluateOscarIntelGateForProd,
@@ -168,11 +176,17 @@ export interface EvalDecision {
     | 'preset_c_spike';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
-  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe`/`runner_lite` parallel. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
-  positionSource?: 'runner_probe' | 'runner_lite';
+  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); runner lanes parallel. */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
+  positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
+  /** PR1 shadow — Phase 0 onboard telemetry (full machine PR3). */
+  pervyyVystrel?: {
+    phase: string;
+    wouldOnboard: boolean;
+    shadowMode: boolean;
+  };
 }
 
 export interface DiscoveryTickResult {
@@ -954,7 +968,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       evalRow,
     });
     const hardMcapReasons: string[] = [];
-    appendDiscoveryHardMcapReasons(cfg, discoveryMcap, hardMcapReasons);
+    const isVolumeLeader = volumeLeaderMintSet.has(row.mint);
+    const hardMinMcap = resolveDiscoveryHardMcapMinUsd(cfg, { volumeLeader: isVolumeLeader });
+    if (hardMinMcap > 0 && discoveryMcap.refMcapUsd + 1e-9 < hardMinMcap) {
+      hardMcapReasons.push(
+        `discovery_hard_mcap=${Math.round(discoveryMcap.refMcapUsd)}<${hardMinMcap}_src=${discoveryMcap.source}`,
+      );
+    }
     if (hardMcapReasons.length > 0) {
       decisions.push({
         lane,
@@ -990,12 +1010,16 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       continue;
     }
     const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
+    const mcapGateCfg =
+      isVolumeLeader && resolveDiscoverySqlMinMarketCapUsd(cfg) < (cfg.discoveryMinMarketCapUsd ?? 0)
+        ? { ...tierCfg, discoveryMinMarketCapUsd: resolveDiscoverySqlMinMarketCapUsd(cfg) }
+        : tierCfg;
     const journalTier: LiveOscarTradeTier =
       oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
 
     const v = priorityMintSet.has(row.mint)
-      ? evaluateSnapshotPriorityTier(tierCfg, evalRow, lane)
-      : evaluateSnapshot(tierCfg, evalRow, lane);
+      ? evaluateSnapshotPriorityTier(mcapGateCfg, evalRow, lane)
+      : evaluateSnapshot(mcapGateCfg, evalRow, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
       skipHolderCheck: liveHoldersForGate,
     });
@@ -1647,7 +1671,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     for (const { row, lane } of allowedSnapshotTagged) {
       const discoveryMcap = resolveDiscoveryRefMcap(row);
       const hardMcapReasons: string[] = [];
-      appendDiscoveryHardMcapReasons(cfg, discoveryMcap, hardMcapReasons);
+      const hardMinMcap = resolveDiscoveryHardMcapMinUsd(cfg, {
+        volumeLeader: volumeLeaderMintSet.has(row.mint),
+      });
+      if (hardMinMcap > 0 && discoveryMcap.refMcapUsd + 1e-9 < hardMinMcap) {
+        hardMcapReasons.push(
+          `discovery_hard_mcap=${Math.round(discoveryMcap.refMcapUsd)}<${hardMinMcap}_src=${discoveryMcap.source}`,
+        );
+      }
       const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
       if (hardMcapReasons.length > 0) {
         evaluated++;
@@ -2001,6 +2032,85 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         liveOscarTradeLane: 'runner_lite',
         positionSource: 'runner_lite',
         oscarIntel: lr.oscarIntel,
+      });
+    }
+  }
+
+  if (isPervyyVystrelObservabilityActive(cfg)) {
+    for (const { row, lane } of allowedSnapshotTagged) {
+      const discoveryMcap = resolveDiscoveryRefMcap(row);
+      const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      if (!pervyyVystrelDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)) {
+        continue;
+      }
+      const pvEval = evaluateLiveOscarPervyyVystrelDiscovery({
+        cfg,
+        row,
+        lane,
+        refMcap: discoveryMcap.refMcapUsd,
+        ageMin,
+        discoveryMcap,
+      });
+      evaluated++;
+      const baseFeatures = buildFeatures(
+        row,
+        null,
+        null,
+        null,
+        cfg,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      Object.assign(baseFeatures, {
+        pervyy_vystrel: {
+          phase: pvEval.phase,
+          wouldOnboard: pvEval.wouldOnboard,
+          vol1hUsd: Number(row.volume_1h ?? 0),
+          refMcapUsd: discoveryMcap.refMcapUsd,
+        },
+      });
+      if (pvEval.wouldOnboard) {
+        auditRows.push({
+          kind: 'pervyy_vystrel_watch_onboard',
+          mint: row.mint,
+          symbol: row.symbol,
+          lane,
+          source: row.source,
+          mcap: discoveryMcap.refMcapUsd,
+          vol1h: Number(row.volume_1h ?? 0),
+          anchor_band: `${cfg.pervyyVystrel.anchorMinMcapUsd}-${cfg.pervyyVystrel.anchorMaxMcapUsd}`,
+          shadowMode: pvEval.shadowMode,
+        });
+      } else if (pvEval.phase === 'phase0' || pvEval.reasons.some((r) => r.startsWith('pervyy_vystrel_'))) {
+        auditRows.push({
+          kind: 'pervyy_vystrel_shadow_skip',
+          mint: row.mint,
+          symbol: row.symbol,
+          lane,
+          source: row.source,
+          reasons: pvEval.reasons.slice(0, 12),
+          phase: pvEval.phase,
+        });
+      }
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin,
+        pass: pvEval.pass,
+        reasons: pvEval.reasons,
+        features: baseFeatures,
+        whale: null,
+        liveOscarTradeLane: 'pervyy_vystrel',
+        positionSource: 'pervyy_vystrel',
+        pervyyVystrel: {
+          phase: pvEval.phase,
+          wouldOnboard: pvEval.wouldOnboard,
+          shadowMode: pvEval.shadowMode,
+        },
       });
     }
   }
