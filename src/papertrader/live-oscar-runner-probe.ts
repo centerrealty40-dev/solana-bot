@@ -89,6 +89,15 @@ export function runnerProbeAgeInBand(cfg: PaperTraderConfig, ageMin: number): bo
   return true;
 }
 
+/** Preflight: runner_probe lane only applies inside configured age + mcap bands. */
+export function runnerProbeCandidateInBand(
+  cfg: PaperTraderConfig,
+  refMcapUsd: number,
+  ageMin: number,
+): boolean {
+  return runnerProbeMcapInBand(cfg, refMcapUsd) && runnerProbeAgeInBand(cfg, ageMin);
+}
+
 export function runnerProbeMcapInBand(cfg: PaperTraderConfig, mcapUsd: number): boolean {
   const mcap = Number(mcapUsd);
   if (!Number.isFinite(mcap) || mcap <= 0) return false;
