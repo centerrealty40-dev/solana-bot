@@ -84,14 +84,31 @@ import {
   sumRunnerProbeExposureUsd,
 } from './live-oscar-runner-probe.js';
 import {
-  buildRunnerProbeIntelSkipTelegramText,
-  isRunnerProbeIntelSkipDecision,
-  shouldJournalRunnerProbeIntel,
-} from './runner-probe-intel-notify.js';
+  countOpenRunnerLitePositions,
+  runnerLiteMintOpenSkipReason,
+  runnerLiteMintAlreadyOpen,
+  runnerLiteOpenLegUsd,
+  stampRunnerLiteOnOpen,
+  sumRunnerLiteExposureUsd,
+  attachRunnerLitePendingScaleIn,
+} from './live-oscar-runner-lite.js';
+import {
+  buildLiveOscarIntelBlockTelegramText,
+  isLiveOscarIntelBlockNotifyDecision,
+  recordLiveOscarIntelBlockNotified,
+  resolveLiveOscarIntelTradeLane,
+  shouldJournalLiveOscarIntel,
+  shouldNotifyLiveOscarIntelBlock,
+  type LiveOscarIntelBlockNotifyCache,
+} from './live-oscar-intel-notify.js';
 import {
   finalizeRunnerProbeOpenOnBoot,
   runnerProbeMaxPositionUsd,
 } from './executor/exit-policy-runner-probe.js';
+import {
+  finalizeRunnerLiteOpenOnBoot,
+  runnerLiteMaxPositionUsd,
+} from './executor/exit-policy-runner-lite.js';
 import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
@@ -339,6 +356,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   if (runnerProbeKeysNormalized > 0) {
     logger.info({ migrated: runnerProbeKeysNormalized }, 'runner_probe open-map keys normalized on boot');
   }
+  const runnerLiteKeysNormalized = finalizeRunnerLiteOpenOnBoot(open, cfg);
+  if (runnerLiteKeysNormalized > 0) {
+    logger.info({ migrated: runnerLiteKeysNormalized }, 'runner_lite open-map keys normalized on boot');
+  }
   for (const ot of open.values()) {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
     if (isLiveOscarTradingStrategyId(cfg.strategyId)) {
@@ -360,7 +381,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
   const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
-  const runnerProbeIntelTelegramLastMs = new Map<string, number>();
+  const liveOscarIntelBlockNotified: LiveOscarIntelBlockNotifyCache = new Map();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
@@ -412,6 +433,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function resolveDecisionTradeLane(d: EvalDecision): LiveOscarTradeLane {
     if (d.liveOscarTradeLane) return d.liveOscarTradeLane;
+    if (d.positionSource === 'runner_lite') return 'runner_lite';
     if (d.positionSource === 'runner_probe') return 'runner_probe';
     return 'prod';
   }
@@ -434,7 +456,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     return (
       liveStagedEntryActive() &&
       resolveDecisionTradeLane(d) !== 'scalp_wave' &&
-      resolveDecisionTradeLane(d) !== 'runner_probe'
+      resolveDecisionTradeLane(d) !== 'runner_probe' &&
+      resolveDecisionTradeLane(d) !== 'runner_lite'
     );
   }
 
@@ -447,6 +470,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
     if (resolveDecisionTradeLane(d) === 'runner_probe') {
       return runnerProbeOpenLegUsd(cfg);
+    }
+    if (resolveDecisionTradeLane(d) === 'runner_lite') {
+      return runnerLiteOpenLegUsd(cfg);
     }
     if (liveStagedEntryActiveForDecision(d)) {
       const mcap = d.features.market_cap_usd ?? null;
@@ -743,50 +769,60 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     );
   }
 
-  function notifyRunnerProbeIntelSkip(d: EvalDecision): void {
+  function notifyLiveOscarIntelBlock(d: EvalDecision): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
-    if (resolveDecisionTradeLane(d) !== 'runner_probe') return;
-    if (!isRunnerProbeIntelSkipDecision(d)) return;
-    if (process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_ENABLED === '0') return;
+    const tradeLane = resolveLiveOscarIntelTradeLane(d);
+    if (!tradeLane) return;
+    if (!isLiveOscarIntelBlockNotifyDecision({ ...d, liveOscarTradeLane: tradeLane })) return;
+    if (process.env.LIVE_OSCAR_INTEL_TELEGRAM_ENABLED === '0') return;
+    if (
+      tradeLane === 'runner_probe' &&
+      process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_ENABLED === '0'
+    ) {
+      return;
+    }
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    if (tradeLane === 'runner_probe' && runnerProbeMintAlreadyOpen(open, d.mint)) return;
+    if (tradeLane === 'runner_lite' && runnerLiteMintAlreadyOpen(open, d.mint)) return;
+    if (tradeLane === 'prod' && open.has(d.mint)) return;
 
-    const cooldownMs = Math.max(
-      0,
-      Number(process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
-    );
-    const now = Date.now();
-    const prev = runnerProbeIntelTelegramLastMs.get(d.mint) ?? 0;
-    if (cooldownMs > 0 && now - prev < cooldownMs) return;
-    runnerProbeIntelTelegramLastMs.set(d.mint, now);
+    const ig = d.oscarIntel!;
+    if (!shouldNotifyLiveOscarIntelBlock(liveOscarIntelBlockNotified, tradeLane, d.mint, ig)) {
+      return;
+    }
+    recordLiveOscarIntelBlockNotified(liveOscarIntelBlockNotified, tradeLane, d.mint, ig);
 
     const token =
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.TELEGRAM_BOT_TOKEN?.trim();
     const chat =
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID?.trim() ||
       process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_CHAT_ID?.trim() ||
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
       '-1003878024799';
     if (!token || !chat) {
-      logger.warn({ mint: d.mint }, 'runner_probe intel telegram skipped: bot token/chat missing');
+      logger.warn({ mint: d.mint, tradeLane }, 'live oscar intel telegram skipped: bot token/chat missing');
       return;
     }
 
-    const text = buildRunnerProbeIntelSkipTelegramText({
+    const text = buildLiveOscarIntelBlockTelegramText({
       d,
+      tradeLane,
       escapeHtml: escapeHtmlPlain,
       mintHrefHtml: gmgnMintHrefHtml,
       fmtUsd: fmtUsdCompact,
     });
 
-    void sendTagged('ADVICE', 'runner_probe_intel', text, {
+    void sendTagged('ADVICE', 'live_oscar_intel_block', text, {
       parseMode: 'HTML',
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
     }).catch((e) =>
-      logger.warn({ err: String(e), mint: d.mint }, 'runner_probe intel telegram failed'),
+      logger.warn({ err: String(e), mint: d.mint, tradeLane }, 'live oscar intel telegram failed'),
     );
   }
 
@@ -1476,17 +1512,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
         }
-        if (
-          resolveDecisionTradeLane(d) === 'runner_probe' &&
-          shouldJournalRunnerProbeIntel(d.oscarIntel)
-        ) {
+        const intelTradeLane = resolveLiveOscarIntelTradeLane(d);
+        if (intelTradeLane && shouldJournalLiveOscarIntel(d.oscarIntel)) {
           journalAppend({
             kind: d.oscarIntel!.blocked ? 'live_oscar_intel_block' : 'live_oscar_intel_shadow',
             lane: d.lane,
             source: d.source,
             mint: d.mint,
             symbol: d.symbol,
-            tradeLane: 'runner_probe',
+            tradeLane: intelTradeLane,
             pass: d.pass,
             mode: d.oscarIntel!.mode,
             wouldBlock: d.oscarIntel!.wouldBlock,
@@ -1494,16 +1528,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             reasons: d.oscarIntel!.reasons,
             hits: d.oscarIntel!.hits,
             swapCovered: d.oscarIntel!.swapCovered,
+            tierGatesPassed: d.oscarIntel!.tierGatesPassed,
             evalReasons: d.reasons,
           });
         }
-        if (
-          resolveDecisionTradeLane(d) === 'runner_probe' &&
-          isRunnerProbeIntelSkipDecision(d) &&
-          !runnerProbeMintAlreadyOpen(open, d.mint) &&
-          !open.has(d.mint)
-        ) {
-          notifyRunnerProbeIntelSkip(d);
+        if (intelTradeLane && isLiveOscarIntelBlockNotifyDecision({ ...d, liveOscarTradeLane: intelTradeLane })) {
+          notifyLiveOscarIntelBlock(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;
@@ -1525,6 +1555,20 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               symbol: d.symbol,
               reason: skipReason,
               tradeLane: 'runner_probe',
+            });
+            continue;
+          }
+        } else if (resolveDecisionTradeLane(d) === 'runner_lite') {
+          const skipReason = runnerLiteMintOpenSkipReason({ open, mint: d.mint });
+          if (skipReason) {
+            journalAppend({
+              kind: 'eval-skip-open',
+              lane: d.lane,
+              source: d.source,
+              mint: d.mint,
+              symbol: d.symbol,
+              reason: skipReason,
+              tradeLane: 'runner_lite',
             });
             continue;
           }
@@ -1617,6 +1661,41 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             tradeLane: 'runner_probe',
             runnerProbeExposureUsd: sumRunnerProbeExposureUsd(open),
             maxRunnerProbeExposureUsd: cfg.runnerProbeMaxExposureUsd,
+          });
+          continue;
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_lite' &&
+          countOpenRunnerLitePositions(open) >= cfg.runnerLiteMaxConcurrent
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'runner_lite_max_concurrent',
+            tradeLane: 'runner_lite',
+            openRunnerLite: countOpenRunnerLitePositions(open),
+            maxRunnerLite: cfg.runnerLiteMaxConcurrent,
+          });
+          continue;
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_lite' &&
+          sumRunnerLiteExposureUsd(open) + runnerLiteMaxPositionUsd(cfg) >
+            cfg.runnerLiteMaxExposureUsd + 1e-6
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'runner_lite_max_exposure',
+            tradeLane: 'runner_lite',
+            runnerLiteExposureUsd: sumRunnerLiteExposureUsd(open),
+            maxRunnerLiteExposureUsd: cfg.runnerLiteMaxExposureUsd,
           });
           continue;
         }
@@ -1788,6 +1867,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ? liveOscarScalpWaveOpenLegUsd(cfg)
               : tradeLane === 'runner_probe'
                 ? runnerProbeOpenLegUsd(cfg)
+                : tradeLane === 'runner_lite'
+                  ? runnerLiteOpenLegUsd(cfg)
                 : liveStagedEntryActiveForDecision(d)
                 ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
                 : undefined;
@@ -1801,6 +1882,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         });
         stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
         if (tradeLane === 'runner_probe') stampRunnerProbeOnOpen(ot);
+        if (tradeLane === 'runner_lite') stampRunnerLiteOnOpen(ot);
         if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
           attachLiveStagedEntryPlan(
             ot,
@@ -1973,6 +2055,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             const jupLegUsd =
               tradeLane === 'scalp_wave'
                 ? liveOscarScalpWaveOpenLegUsd(cfg)
+                : tradeLane === 'runner_probe'
+                  ? runnerProbeOpenLegUsd(cfg)
+                  : tradeLane === 'runner_lite'
+                    ? runnerLiteOpenLegUsd(cfg)
                 : liveStagedEntryActiveForDecision(d)
                   ? liveOscarDiscoveryBuyLegUsd(d, d.liveOscarMcapTier)
                   : undefined;
@@ -1987,6 +2073,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             });
             stampLiveOscarTradeLaneOnOpen(ot, tradeLane);
             if (tradeLane === 'runner_probe') stampRunnerProbeOnOpen(ot);
+            if (tradeLane === 'runner_lite') stampRunnerLiteOnOpen(ot);
             if (liveStagedEntryActiveForDecision(d) && stagedEntrySignal?.ok) {
               attachLiveStagedEntryPlan(
                 ot,
@@ -2152,7 +2239,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               tier: opened.copyToOscarPromotion.tier,
             });
           }
-          if (
+          if (tradeLane === 'runner_lite') {
+            attachRunnerLitePendingScaleIn(ot, cfg, snapshotEntryPriceUsd, {
+              enabled: liveOscar.liveCfg.liveEntryScaleInEnabled,
+              delayMs: liveOscar.liveCfg.liveEntryScaleInDelayMs,
+              corridorUpPct: liveOscar.liveCfg.liveEntryScaleInCorridorUpPct,
+              corridorDownPct: liveOscar.liveCfg.liveEntryScaleInCorridorDownPct,
+              maxSwapAttempts: liveOscar.liveCfg.liveEntryScaleInMaxSwapAttempts,
+            });
+          } else if (
             liveOscar.liveCfg.liveEntryScaleInEnabled &&
             liveOscar.liveCfg.executionMode === 'live' &&
             cfg.entryFirstLegFraction < 1 - 1e-9 &&
@@ -2209,7 +2304,16 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
               ? { liveExitProfileMode: ot.liveExitProfileMode }
               : {}),
           });
-          if (usesPaperOscarSecondLegScaleIn(cfg.strategyId)) {
+          if (tradeLane === 'runner_lite') {
+            const si = readPaperOscarScaleInEnv();
+            attachRunnerLitePendingScaleIn(ot, cfg, snapshotEntryPriceUsd, {
+              enabled: si.enabled,
+              delayMs: si.delayMs,
+              corridorUpPct: si.corridorUpPct,
+              corridorDownPct: si.corridorDownPct,
+              maxSwapAttempts: si.maxSwapAttempts,
+            });
+          } else if (usesPaperOscarSecondLegScaleIn(cfg.strategyId)) {
             const si = readPaperOscarScaleInEnv();
             if (si.enabled && cfg.entryFirstLegFraction < 1 - 1e-9) {
               const secondUsd = cfg.positionUsd * (1 - cfg.entryFirstLegFraction);

@@ -18,6 +18,7 @@ import { applyCanonicalStagedEntrySizing } from '../live-oscar-entry-sizing.js';
 import { applyWaveBPostTp1ScratchJournalLine } from './wave-b-post-tp1-scratch-reentry.js';
 import { reconcileE2OpenOnRestore } from './live-oscar-e2-open-reconcile.js';
 import { resolveOpenMapKey, runnerProbeOpenMapKey } from '../live-oscar-runner-probe.js';
+import { runnerLiteOpenMapKey } from '../live-oscar-runner-lite.js';
 
 function ladderRememberLevel(used: Set<number>, pnlPct: number): void {
   ladderPnlThresholdMark(used, pnlPct);
@@ -443,6 +444,7 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'variant_a_v3' ||
       lepi === 'scalp_wave_v1' ||
       lepi === 'runner_probe_v1' ||
+      lepi === 'runner_lite_v1' ||
       lepi === 'preset_c_scalp_v1'
     ) {
       ot.liveExitPolicyId = lepi;
@@ -452,11 +454,16 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveOscarMcapTier = lomt;
     }
     const lotl = rawPayload.liveOscarTradeLane;
-    if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe') ot.liveOscarTradeLane = lotl;
+    if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe' || lotl === 'runner_lite') {
+      ot.liveOscarTradeLane = lotl;
+    }
     const ps = rawPayload.positionSource;
     if (ps === 'runner_probe') ot.positionSource = 'runner_probe';
+    else if (ps === 'runner_lite') ot.positionSource = 'runner_lite';
     else if (ot.liveOscarTradeLane === 'runner_probe' || ot.liveExitPolicyId === 'runner_probe_v1') {
       ot.positionSource = 'runner_probe';
+    } else if (ot.liveOscarTradeLane === 'runner_lite' || ot.liveExitPolicyId === 'runner_lite_v1') {
+      ot.positionSource = 'runner_lite';
     }
 
     if (Boolean(rawPayload.liveVariantAScratchHadTp)) ot.liveVariantAScratchHadTp = true;
@@ -758,6 +765,7 @@ export function loadStore(storePath: string): RestoreState {
         restoreLastExitMarketSnapshotFromCloseLine(state, e.mint, rawClose);
         state.open.delete(e.mint);
         state.open.delete(runnerProbeOpenMapKey(e.mint));
+        state.open.delete(runnerLiteOpenMapKey(e.mint));
       }
       if (
         e.kind === 'followup_snapshot' &&

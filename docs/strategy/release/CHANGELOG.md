@@ -82,6 +82,23 @@
 
 ---
 
+## [1.11.550] — 2026-07-03
+
+**Тег:** `sa-alpha-1.11.550`
+
+### Live Oscar — runner_lite lane + intel gate/TG для всех lane
+
+- **`runner_lite`:** sub-$1M young runners (12–48h), 2×$100, mcap-first tier routing (tier-1 $500k–<$1M; tier-2 только когда probe in-band но не full pass).
+- **Intel gate:** `LIVE_OSCAR_INTEL_MODE_RUNNER_LITE=gate` (hard block после tier gates); unified `live-oscar-intel-notify.ts` для prod / runner_probe / runner_lite.
+- **Telegram ADVICE:** dedup по mint+intel-reason fingerprint (cooldown `0`, не «попробуем позже»).
+- **`PAPER_RUNNER_LITE_ENABLED=1`** в `ecosystem.config.cjs` (live-oscar).
+
+**Откат:** `PAPER_RUNNER_LITE_ENABLED=0`, `LIVE_OSCAR_INTEL_MODE_RUNNER_LITE=shadow` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`; либо redeploy `sa-alpha-1.11.549`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.549] — 2026-07-02
 
 **Тег:** `sa-alpha-1.11.549`

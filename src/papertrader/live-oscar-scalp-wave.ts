@@ -7,8 +7,8 @@ import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import { liveOscarTierEntryConfig, type LiveOscarMcapTier } from './live-oscar-mcap-tier.js';
 import { liveOscarMintOpenSkipReasonForEscalation } from './live-oscar-phase-escalation.js';
 
-/** Trade strategy lane — mutex dimension (prod/scalp_wave); runner_probe is parallel via composite open key. */
-export type LiveOscarTradeLane = 'prod' | 'scalp_wave' | 'runner_probe';
+/** Trade strategy lane — mutex dimension (prod/scalp_wave); runner_probe/runner_lite parallel via composite open key. */
+export type LiveOscarTradeLane = 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
 
 export type ScalpWaveEntryPath = 'dip_windows';
 
@@ -25,6 +25,9 @@ export function resolveLiveOscarTradeLaneFromOpen(
   if (ot.positionSource === 'runner_probe') return 'runner_probe';
   if (ot.liveOscarTradeLane === 'runner_probe') return 'runner_probe';
   if (ot.liveExitPolicyId === 'runner_probe_v1') return 'runner_probe';
+  if (ot.positionSource === 'runner_lite') return 'runner_lite';
+  if (ot.liveOscarTradeLane === 'runner_lite') return 'runner_lite';
+  if (ot.liveExitPolicyId === 'runner_lite_v1') return 'runner_lite';
   if (ot.liveOscarTradeLane === 'scalp_wave') return 'scalp_wave';
   if (ot.liveOscarMcapTier === 'scalp_wave') return 'scalp_wave';
   if (ot.liveExitPolicyId === 'scalp_wave_v1') return 'scalp_wave';

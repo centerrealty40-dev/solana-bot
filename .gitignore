@@ -119,6 +119,7 @@ scripts-tmp/probe-*.ts
 
 scripts-tmp/_patch*
 scripts-tmp/probe-*.mjs
+scripts-tmp/runner-lite-*.mjs
 scripts-tmp/vault-probe.mjs
 scripts-tmp/dc-*
 !scripts-tmp/dc-trader-dashboard.ts

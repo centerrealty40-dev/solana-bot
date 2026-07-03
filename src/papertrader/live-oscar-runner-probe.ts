@@ -25,16 +25,13 @@ export function isRunnerProbeOpenMapKey(key: string): boolean {
   return key.endsWith(RUNNER_PROBE_MAP_SUFFIX);
 }
 
-export function mintFromOpenMapKey(key: string): string {
-  return isRunnerProbeOpenMapKey(key) ? key.slice(0, -RUNNER_PROBE_MAP_SUFFIX.length) : key;
-}
+import {
+  resolveOpenMapKey,
+  mintFromCompositeOpenMapKey,
+  runnerLiteMintAlreadyOpen,
+} from './live-oscar-runner-lite.js';
 
-export function resolveOpenMapKey(
-  ot: Pick<OpenTrade, 'mint' | 'positionSource' | 'liveOscarTradeLane' | 'liveExitPolicyId'>,
-): string {
-  if (isRunnerProbeTrade(ot)) return runnerProbeOpenMapKey(ot.mint);
-  return ot.mint;
-}
+export { resolveOpenMapKey, mintFromCompositeOpenMapKey as mintFromOpenMapKey };
 
 /** Re-key runner_probe opens to `mint::runner_probe` after journal/snapshot replay at bare mint. */
 export function normalizeRunnerProbeOpenMapKeys(open: Map<string, OpenTrade>): number {
@@ -256,10 +253,13 @@ export function runnerProbeMintAlreadyOpen(open: ReadonlyMap<string, OpenTrade>,
 export function runnerProbeMintOpenSkipReason(args: {
   open: ReadonlyMap<string, OpenTrade>;
   mint: string;
-}): 'runner_probe_already_open' | 'prod_blocks_runner_probe' | null {
+}): 'runner_probe_already_open' | 'runner_lite_blocks_runner_probe' | 'prod_blocks_runner_probe' | null {
   if (runnerProbeMintAlreadyOpen(args.open, args.mint)) return 'runner_probe_already_open';
+  if (runnerLiteMintAlreadyOpen(args.open, args.mint)) return 'runner_lite_blocks_runner_probe';
   const prodOt = args.open.get(args.mint);
-  if (prodOt && !isRunnerProbeTrade(prodOt)) return 'prod_blocks_runner_probe';
+  if (prodOt && !isRunnerProbeTrade(prodOt) && prodOt.liveOscarTradeLane !== 'runner_lite') {
+    return 'prod_blocks_runner_probe';
+  }
   return null;
 }
 
