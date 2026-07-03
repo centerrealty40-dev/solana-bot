@@ -815,6 +815,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     lastRealExitMarketSnapshotByMint: lastRealExitMarketSnapshotByMintMap,
     lastExitMarketSnapshotByMint: lastExitMarketSnapshotByMintMap,
   });
+  /** Whitelist deep-audit set = repeat-traded mints for relaxed volume / PG gap rules. */
+  const knownMintSupplement = cfg.discoveryDeepAuditWhitelistMintSet;
 
   /** Throttled deep-аудит для whitelist + priority tier. */
   const wlForThrottle = cfg.discoveryDeepAuditWhitelistMintSet;
@@ -1136,7 +1138,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeSybilGuardEnabled) {
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
           knownMint,
         });
@@ -1147,7 +1149,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
           knownMint,
         });
@@ -1398,7 +1400,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       };
     }
     if (volumeEphemeralFeatures != null) {
-      const volumeEphemeralKnownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+      const volumeEphemeralKnownMint = isKnownMint(
+        cfg,
+        row.mint,
+        knownMintHistory,
+        Date.now(),
+        knownMintSupplement,
+      );
       decisionFeatures.volume_ephemeral = {
         enabled: cfg.volumeEphemeralGuardEnabled,
         knownMint: volumeEphemeralKnownMint,
@@ -1427,7 +1435,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         },
       };
     }
-    const knownMintForProfile = isKnownMint(cfg, row.mint, knownMintHistory);
+    const knownMintForProfile = isKnownMint(
+      cfg,
+      row.mint,
+      knownMintHistory,
+      Date.now(),
+      knownMintSupplement,
+    );
     if (knownMintForProfile) {
       decisionFeatures.known_mint_vol_profile = {
         vol5mUsd: Number(row.volume_5m ?? 0),
@@ -1623,7 +1637,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       let scalpPass = scalpEval.pass;
       const scalpReasons = [...scalpEval.reasons];
       if (scalpPass) {
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         if (cfg.volumeSybilGuardEnabled) {
           const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
             knownMint,
@@ -1693,7 +1707,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const reasons = [...probeEval.reasons];
 
       if (guardPass) {
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory);
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         if (cfg.volumeSybilGuardEnabled) {
           const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
             knownMint,

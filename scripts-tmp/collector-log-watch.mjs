@@ -42,6 +42,7 @@ const SILENCE_MAX_MS = Number(process.env.COLLECTOR_WATCH_SILENCE_MAX_MS || 480_
 function defaultLogFiles() {
   const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), '.pm2');
   const logsDir = path.join(pm2Home, 'logs');
+  /** sa-orca removed 2026-05-26 — do not watch dead collector logs. */
   return ['moonshot', 'raydium', 'meteora', 'pumpswap'].map((n) =>
     path.join(logsDir, `sa-${n}-out.log`),
   );

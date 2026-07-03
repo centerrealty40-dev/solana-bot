@@ -364,6 +364,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
+  let pgCoverageModeTelegramLastMs = 0;
 
   function liveStagedEntryActive(): boolean {
     return (isLiveOscarTradingStrategyId(cfg.strategyId) || cfg.strategyId === 'live-oscar-risky') && cfg.liveStagedEntryEnabled;
@@ -792,6 +793,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   function notifyLiveOscarPgCoverageModeChange(mode: 'full' | 'relaxed'): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
+
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_PG_COVERAGE_MODE_TELEGRAM_COOLDOWN_MS ?? 7_200_000),
+    );
+    const now = Date.now();
+    if (cooldownMs > 0 && now - pgCoverageModeTelegramLastMs < cooldownMs) return;
+    pgCoverageModeTelegramLastMs = now;
 
     const token =
       process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_BOT_TOKEN?.trim() ||
