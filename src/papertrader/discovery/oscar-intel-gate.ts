@@ -119,6 +119,44 @@ export async function evaluateOscarIntelGate(
 }
 
 /** Runner probe 12–48h: intel required for 12–24h relax band; 24h+ uses standard gate flags. */
+export function resolveOscarIntelModeForRunnerLite(cfg: PaperTraderConfig): OscarIntelMode {
+  if (!cfg.liveOscarIntelEnabled) return 'off';
+  const lane = parseOscarIntelMode(cfg.liveOscarIntelModeRunnerLite);
+  if (lane && lane !== 'off') return lane;
+  return resolveOscarIntelMode(cfg);
+}
+
+/** Runner_lite 12–48h: intel shadow by default; optional gate for 12–24h band. */
+export async function evaluateOscarIntelGateForRunnerLite(
+  mint: string,
+  cfg: PaperTraderConfig,
+  ageMin: number,
+): Promise<OscarIntelGateResult & { required: boolean }> {
+  const age = Number(ageMin);
+  const in12hBand = age + 1e-9 >= 720 && age - 1e-9 < 1440;
+  const in24hBand =
+    age + 1e-9 >= 1440 && age - 1e-9 <= cfg.runnerLiteMaxAgeMin;
+  const required =
+    (in12hBand && cfg.runnerLite12hIntelRequired) ||
+    (in24hBand && cfg.liveOscarIntelWalletGateEnabled);
+  const mode = resolveOscarIntelModeForRunnerLite(cfg);
+  if (!required) {
+    return {
+      ok: true,
+      reasons: [],
+      swapCovered: true,
+      hits: [],
+      mode,
+      wouldBlock: false,
+      blocked: false,
+      required: false,
+    };
+  }
+  const ig = await evaluateOscarIntelGate(mint, cfg, mode);
+  return { ...ig, required: true };
+}
+
+/** Runner probe 12–48h: intel required for 12–24h relax band; 24h+ uses standard gate flags. */
 export async function evaluateOscarIntelGateForRunnerProbe(
   mint: string,
   cfg: PaperTraderConfig,

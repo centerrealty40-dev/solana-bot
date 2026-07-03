@@ -93,7 +93,15 @@ import {
   type RunnerProbeDiscoveryEval,
 } from '../live-oscar-runner-probe.js';
 import {
+  evaluateLiveOscarRunnerLiteDiscovery,
+  isRunnerLiteLaneEnabled,
+  runnerLiteDiscoveryPrefilter,
+  runnerLiteRunnerFetchConfig,
+  type RunnerLiteDiscoveryEval,
+} from '../live-oscar-runner-lite.js';
+import {
   evaluateOscarIntelGateForRunnerProbe,
+  evaluateOscarIntelGateForRunnerLite,
   oscarIntelGateSnapshotFromResult,
   type OscarIntelGateSnapshot,
 } from './oscar-intel-gate.js';
@@ -159,9 +167,9 @@ export interface EvalDecision {
     | 'preset_c_spike';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
-  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe` parallel. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe';
-  positionSource?: 'runner_probe';
+  /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe`/`runner_lite` parallel. */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
+  positionSource?: 'runner_probe' | 'runner_lite';
   /** Wallet-intel gate snapshot (runner_probe lane). */
   oscarIntel?: OscarIntelGateSnapshot;
 }
@@ -756,11 +764,23 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
   const evalRows = allowedSnapshotTagged.map((x) => x.row);
   const rowsForCtx = evalRows;
+  /** PG runner context: enable when either parallel lane is on (mcap band picks lane at eval). */
   const runnerMapCfg = cfg.runnerModeEnabled
     ? cfg
-    : isRunnerProbeLaneEnabled(cfg)
-      ? runnerProbeRunnerFetchConfig(cfg)
-      : { ...cfg, runnerModeEnabled: false };
+    : isRunnerProbeLaneEnabled(cfg) && isRunnerLiteLaneEnabled(cfg)
+      ? {
+          ...cfg,
+          runnerModeEnabled: true,
+          runnerMinPgSamples24h: Math.min(
+            cfg.runnerProbeMinPgSamples24h,
+            cfg.runnerLiteMinPgSamples24h,
+          ),
+        }
+      : isRunnerProbeLaneEnabled(cfg)
+        ? runnerProbeRunnerFetchConfig(cfg)
+        : isRunnerLiteLaneEnabled(cfg)
+          ? runnerLiteRunnerFetchConfig(cfg)
+          : { ...cfg, runnerModeEnabled: false };
   const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),
@@ -1680,6 +1700,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
   }
 
+  // Runner lanes: probe ($500 full pass) → else runner_lite fallback (2×$100).
+  const probeGuardPassedMints = new Set<string>();
+  const probeOutcomeByMint = new Map<string, { inBand: boolean; fullyPassed: boolean }>();
+
   if (isRunnerProbeLaneEnabled(cfg)) {
     type ProbeRow = {
       row: SnapshotCandidateRow;
@@ -1762,6 +1786,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       probeRows.push({ row, lane, ageMin, eval: probeEval, guardPass, reasons });
     }
 
+    for (const pr of probeRows) {
+      probeOutcomeByMint.set(pr.row.mint, { inBand: true, fullyPassed: pr.guardPass });
+      if (pr.guardPass) probeGuardPassedMints.add(pr.row.mint);
+    }
+
     probeRows.sort((a, b) => (b.eval.rankScore ?? 0) - (a.eval.rankScore ?? 0));
     let rankSlots = cfg.runnerProbeMaxConcurrent;
 
@@ -1811,6 +1840,148 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         liveOscarTradeLane: 'runner_probe',
         positionSource: 'runner_probe',
         oscarIntel: pr.oscarIntel,
+      });
+    }
+  }
+
+  if (isRunnerLiteLaneEnabled(cfg)) {
+    type LiteRow = {
+      row: SnapshotCandidateRow;
+      lane: Lane;
+      ageMin: number;
+      eval: RunnerLiteDiscoveryEval;
+      guardPass: boolean;
+      reasons: string[];
+      oscarIntel?: OscarIntelGateSnapshot;
+    };
+    const liteRows: LiteRow[] = [];
+
+    for (const { row, lane } of allowedSnapshotTagged) {
+      const discoveryMcap = resolveDiscoveryRefMcap(row);
+      const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      if (!runnerLiteDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)) {
+        continue;
+      }
+      if (probeGuardPassedMints.has(row.mint)) {
+        continue;
+      }
+      const probeOutcome = probeOutcomeByMint.get(row.mint) ?? {
+        inBand: false,
+        fullyPassed: false,
+      };
+      const liteEval = evaluateLiveOscarRunnerLiteDiscovery({
+        cfg,
+        row,
+        lane,
+        refMcap: discoveryMcap.refMcapUsd,
+        ageMin,
+        dipCtx: dipMap.get(row.mint),
+        runnerCtx: runnerMap.get(row.mint),
+        probeOutcome,
+      });
+      let guardPass = liteEval.pass;
+      const reasons = [...liteEval.reasons];
+
+      if (guardPass) {
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
+        if (cfg.volumeSybilGuardEnabled) {
+          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
+            knownMint,
+          });
+          if (sybilRes.blocked) {
+            guardPass = false;
+            reasons.push(...sybilRes.blockedReasons);
+          }
+        }
+        if (guardPass && cfg.volumeEphemeralGuardEnabled) {
+          const ephemeralRes = evaluateVolumeEphemeralGuard(
+            cfg,
+            row,
+            volumeEphemeralMap.get(row.mint),
+            { knownMint },
+          );
+          if (ephemeralRes.blocked) {
+            guardPass = false;
+            reasons.push(...ephemeralRes.blockedReasons);
+          }
+        }
+        if (guardPass) {
+          const ig = await evaluateOscarIntelGateForRunnerLite(row.mint, cfg, ageMin);
+          const intelSnap = oscarIntelGateSnapshotFromResult(ig);
+          if (ig.required) {
+            if (ig.blocked) {
+              guardPass = false;
+              reasons.push(...ig.reasons.map((r) => `runner_lite_intel_${r}`));
+            } else if (ig.wouldBlock) {
+              reasons.push('runner_lite_intel_shadow_would_block');
+              reasons.push(...ig.reasons.map((r) => `runner_lite_intel_${r}`));
+            }
+          }
+          liteRows.push({
+            row,
+            lane,
+            ageMin,
+            eval: liteEval,
+            guardPass,
+            reasons,
+            oscarIntel: intelSnap,
+          });
+          continue;
+        }
+      }
+
+      liteRows.push({ row, lane, ageMin, eval: liteEval, guardPass, reasons });
+    }
+
+    liteRows.sort((a, b) => (b.eval.rankScore ?? 0) - (a.eval.rankScore ?? 0));
+    let liteRankSlots = cfg.runnerLiteMaxConcurrent;
+
+    for (const lr of liteRows) {
+      evaluated++;
+      let pass = lr.guardPass;
+      const outReasons = [...lr.reasons];
+      if (pass) {
+        if (liteRankSlots <= 0) {
+          pass = false;
+          outReasons.push('runner_lite_rank_crowded_out');
+        } else {
+          liteRankSlots -= 1;
+        }
+      }
+      if (pass) passed++;
+      const baseFeatures = buildFeatures(
+        lr.row,
+        null,
+        null,
+        null,
+        cfg,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      if (lr.eval.runnerFeatures) {
+        Object.assign(baseFeatures, {
+          runner_lite: {
+            rankScore: lr.eval.rankScore,
+            summary: summariseRunnerPass(lr.eval.runnerFeatures),
+          },
+        });
+      }
+      decisions.push({
+        lane: lr.lane,
+        source: lr.row.source,
+        mint: lr.row.mint,
+        symbol: lr.row.symbol,
+        ageMin: lr.ageMin,
+        pass,
+        reasons: outReasons,
+        features: baseFeatures,
+        whale: null,
+        entryPath: lr.eval.entryPath,
+        liveOscarTradeLane: 'runner_lite',
+        positionSource: 'runner_lite',
+        oscarIntel: lr.oscarIntel,
       });
     }
   }

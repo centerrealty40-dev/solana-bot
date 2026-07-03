@@ -13,6 +13,7 @@ import {
 } from './exit-policy-variant-a.js';
 import { stampScalpWaveExitPolicyOnOpen } from './exit-policy-scalp-wave.js';
 import { stampRunnerProbeExitPolicyOnOpen } from './exit-policy-runner-probe.js';
+import { stampRunnerLiteExitPolicyOnOpen } from './exit-policy-runner-lite.js';
 import { stampPresetCScalpExitPolicyOnOpen, isPresetCScalpExitPolicy } from './exit-policy-preset-c-scalp.js';
 
 export type LiveExitPolicyId =
@@ -501,7 +502,7 @@ export function waveBNextTrailLevelToFire(
 }
 
 export function isWaveBExitPolicy(ot: OpenTrade): boolean {
-  return ot.liveExitPolicyId === 'wave_b_v1';
+  return ot.liveExitPolicyId === 'wave_b_v1' || ot.liveExitPolicyId === 'runner_lite_v1';
 }
 
 export function isLegacyGridExitPolicy(ot: OpenTrade): boolean {
@@ -555,6 +556,7 @@ export function waveBTrailSellFractionForRemainder(
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return;
   if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
+  if (stampRunnerLiteExitPolicyOnOpen(ot, cfg)) return;
   if (stampRunnerProbeExitPolicyOnOpen(ot, cfg)) return;
   if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
@@ -605,7 +607,7 @@ export function ensureLiveOscarExitPolicyPinned(ot: OpenTrade, cfg?: PaperTrader
   }
 }
 
-function applyWaveBGridOverrides(ot: OpenTrade): void {
+export function applyWaveBGridOverrides(ot: OpenTrade): void {
   const p = waveBTpGridProfileFor(ot);
   ot.tpGridOverrides = {
     ...ot.tpGridOverrides,

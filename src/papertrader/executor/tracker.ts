@@ -4,6 +4,7 @@ import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.j
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
 import { isRunnerProbeTrade, mintFromOpenMapKey } from '../live-oscar-runner-probe.js';
+import { isRunnerLiteTrade } from '../live-oscar-runner-lite.js';
 import {
   isRunnerProbeExitPolicy,
   runnerProbeDcaLevelsSpec,
@@ -13,6 +14,9 @@ import {
   runnerProbeTpEligible,
   stampRunnerProbeExitPolicyOnOpen,
 } from './exit-policy-runner-probe.js';
+import {
+  stampRunnerLiteExitPolicyOnOpen,
+} from './exit-policy-runner-lite.js';
 import {
   applyLiveOscarPhaseEscalation,
   computeDropFromScalpAnchor,
@@ -2870,10 +2874,11 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     /** Composite open-map key (`mint::runner_probe`) — bare mint for PG/Jupiter/journal. */
     const mint = mintFromOpenMapKey(openKey);
     if (isRunnerProbeExitPolicy(ot)) stampRunnerProbeExitPolicyOnOpen(ot, cfg);
+    if (isRunnerLiteTrade(ot)) stampRunnerLiteExitPolicyOnOpen(ot, cfg);
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
     const tradeDcaLevels =
-      isLiveOscarScalpWaveTrade(ot)
+      isLiveOscarScalpWaveTrade(ot) || isRunnerLiteTrade(ot)
       ? []
       : isRunnerProbeTrade(ot)
         ? parseDcaLevels(runnerProbeDcaLevelsSpec(cfg))
@@ -2888,6 +2893,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarScalpWavePositionUsd };
     } else if (isRunnerProbeTrade(ot)) {
       effCfg = { ...effCfg, positionUsd: cfg.runnerProbePositionUsd };
+    } else if (isRunnerLiteTrade(ot)) {
+      effCfg = { ...effCfg, positionUsd: cfg.runnerLitePositionUsd };
     }
 
     /** Старые журналы/live-снимки ставили A на открытии; для live-oscar сплит ≠ DCA — сбрасываем до «не назначен». */

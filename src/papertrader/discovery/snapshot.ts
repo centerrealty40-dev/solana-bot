@@ -5,6 +5,7 @@ import type { Lane, SnapshotCandidateRow } from '../types.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
 import { isLiveOscarScalpWaveLaneEnabled } from '../live-oscar-scalp-wave.js';
 import { isRunnerProbeLaneEnabled } from '../live-oscar-runner-probe.js';
+import { isRunnerLiteLaneEnabled } from '../live-oscar-runner-lite.js';
 import {
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
 } from './snapshot-canonical-pick.js';
@@ -38,12 +39,13 @@ export async function fetchSnapshotLaneCandidates(
   lane: Lane,
 ): Promise<SnapshotCandidateRow[]> {
   const lc = laneCfg(cfg, lane);
-  /** When scalp_wave or runner_probe is on, widen SQL universe to lane min age while prod keeps 36h in eval gates. */
+  /** When scalp_wave, runner_probe, or runner_lite is on, widen SQL universe to lane min age while prod keeps 36h in eval gates. */
   const laneMinAgeCandidates = [
     lane === 'post_migration' && isLiveOscarScalpWaveLaneEnabled(cfg)
       ? cfg.liveOscarScalpWaveMinAgeMin
       : null,
     lane === 'post_migration' && isRunnerProbeLaneEnabled(cfg) ? cfg.runnerProbeMinAgeMin : null,
+    lane === 'post_migration' && isRunnerLiteLaneEnabled(cfg) ? cfg.runnerLiteMinAgeMin : null,
   ].filter((v): v is number => v != null && v >= 0);
   const sqlMinAgeMin =
     laneMinAgeCandidates.length > 0

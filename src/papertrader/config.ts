@@ -311,8 +311,9 @@ const ConfigSchema = z.object({
   liveOscarScalpWaveKillPct: z.coerce.number().min(0.01).max(0.5).default(0.1),
   liveOscarScalpWaveTimeStopHours: z.coerce.number().min(0.5).max(24).default(3),
   /**
-   * Live Oscar runner_probe lane (1.11.543): fresh runners 12–48h, strict runner guards + dip entry,
-   * wallet-intel gate, max 2×$500 parallel to prod (`positionSource: runner_probe`).
+   * Live Oscar runner_probe lane (tier 2): mcap **≥ $1M** (up to $30M), age 12–48h (720–2880 min),
+   * strict runner guards + dip entry, wallet-intel gate, $500 entry parallel to prod.
+   * **Full pass only** — any gate fail → evaluate runner_lite fallback (2×$100), not skip.
    */
   runnerProbeEnabled: z.boolean().default(false),
   runnerProbeMinAgeMin: z.coerce.number().nonnegative().default(720),
@@ -344,11 +345,46 @@ const ConfigSchema = z.object({
   runnerProbeTimeStopHours: z.coerce.number().min(0.5).max(48).default(6),
   /** One DCA leg at −25% (+100% of positionUsd, default $500 → max $1000/position). */
   runnerProbeDcaLevelsSpec: z.string().default('-25:1'),
+  /**
+   * Live Oscar runner_lite lane: fallback / partial qualification — 2×$100, wave_b half8_runner exit.
+   * Tier-1: mcap $500k–<$1M (always lite). Tier-2: mcap ≥$1M when runner_probe fails ≥1 gate
+   * but lite relaxed gates pass. One lane per mint — probe full pass → $500 only.
+   */
+  runnerLiteEnabled: z.boolean().default(false),
+  runnerLiteMinAgeMin: z.coerce.number().nonnegative().default(720),
+  runnerLiteMaxAgeMin: z.coerce.number().nonnegative().default(2880),
+  runnerLite12hIntelRequired: z.boolean().default(false),
+  runnerLiteMinMcapUsd: z.coerce.number().nonnegative().default(500_000),
+  runnerLiteMaxMcapUsd: z.coerce.number().positive().default(999_999),
+  /** Total position cap ($200 = 2×$100 legs). */
+  runnerLitePositionUsd: z.coerce.number().positive().default(200),
+  runnerLiteLegUsd: z.coerce.number().positive().default(100),
+  runnerLiteMaxConcurrent: z.coerce.number().int().min(1).max(10).default(2),
+  runnerLiteMaxExposureUsd: z.coerce.number().positive().default(400),
+  runnerLiteDipMinDropPct: z.coerce.number().default(-20),
+  runnerLiteDipMaxDropPct: z.coerce.number().default(-45),
+  runnerLiteMinImpulsePct: z.coerce.number().nonnegative().default(10),
+  runnerLiteVol1hMinUsd: z.coerce.number().nonnegative().default(50_000),
+  runnerLiteMinVol1hUsd: z.coerce.number().nonnegative().default(50_000),
+  runnerLiteMinVol12hUsd: z.coerce.number().nonnegative().default(200_000),
+  runnerLiteVelocityMinX: z.coerce.number().nonnegative().default(1.0),
+  runnerLiteMinVol5mPeak1hUsd: z.coerce.number().nonnegative().default(10_000),
+  runnerLiteBs1hMin: z.coerce.number().nonnegative().default(0.85),
+  runnerLiteBs12hMin: z.coerce.number().nonnegative().default(0.9),
+  runnerLiteLiqVsP25Min: z.coerce.number().nonnegative().default(0.8),
+  runnerLitePriceHoldMin: z.coerce.number().nonnegative().default(0.55),
+  runnerLiteMinLiqUsd: z.coerce.number().nonnegative().default(50_000),
+  runnerLiteStaleVolRatioMax: z.coerce.number().nonnegative().default(0.35),
+  runnerLiteMinPgSamples24h: z.coerce.number().int().min(0).default(24),
   /** Live Oscar coin intelligence overlay (default-OFF; see LIVE_OSCAR_COIN_INTELLIGENCE_SPEC). */
   liveOscarIntelEnabled: z.boolean().default(false),
   liveOscarIntelMode: z.enum(['off', 'shadow', 'advisory', 'gate']).default('off'),
   /** Overrides global mode for runner_probe lane only (`LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE`). */
   liveOscarIntelModeRunnerProbe: z
+    .enum(['off', 'shadow', 'advisory', 'gate'])
+    .optional(),
+  /** Overrides global mode for runner_lite lane (`LIVE_OSCAR_INTEL_MODE_RUNNER_LITE`). */
+  liveOscarIntelModeRunnerLite: z
     .enum(['off', 'shadow', 'advisory', 'gate'])
     .optional(),
   liveOscarIntelWalletGateEnabled: z.boolean().default(false),
@@ -1326,9 +1362,35 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     runnerProbeKillPct: process.env.PAPER_RUNNER_PROBE_KILL_PCT,
     runnerProbeTimeStopHours: process.env.PAPER_RUNNER_PROBE_TIME_STOP_HOURS,
     runnerProbeDcaLevelsSpec: process.env.PAPER_RUNNER_PROBE_DCA_LEVELS,
+    runnerLiteEnabled: envBool(process.env.PAPER_RUNNER_LITE_ENABLED, false),
+    runnerLiteMinAgeMin: process.env.PAPER_RUNNER_LITE_MIN_AGE_MIN,
+    runnerLiteMaxAgeMin: process.env.PAPER_RUNNER_LITE_MAX_AGE_MIN,
+    runnerLite12hIntelRequired: envBool(process.env.PAPER_RUNNER_LITE_12H_INTEL_REQUIRED, false),
+    runnerLiteMinMcapUsd: process.env.PAPER_RUNNER_LITE_MIN_MCAP_USD,
+    runnerLiteMaxMcapUsd: process.env.PAPER_RUNNER_LITE_MAX_MCAP_USD,
+    runnerLitePositionUsd: process.env.PAPER_RUNNER_LITE_POSITION_USD,
+    runnerLiteLegUsd: process.env.PAPER_RUNNER_LITE_LEG_USD,
+    runnerLiteMaxConcurrent: process.env.PAPER_RUNNER_LITE_MAX_CONCURRENT,
+    runnerLiteMaxExposureUsd: process.env.PAPER_RUNNER_LITE_MAX_EXPOSURE_USD,
+    runnerLiteDipMinDropPct: process.env.PAPER_RUNNER_LITE_DIP_MIN_DROP_PCT,
+    runnerLiteDipMaxDropPct: process.env.PAPER_RUNNER_LITE_DIP_MAX_DROP_PCT,
+    runnerLiteMinImpulsePct: process.env.PAPER_RUNNER_LITE_MIN_IMPULSE_PCT,
+    runnerLiteVol1hMinUsd: process.env.PAPER_RUNNER_LITE_VOL_1H_MIN_USD,
+    runnerLiteMinVol1hUsd: process.env.PAPER_RUNNER_LITE_MIN_VOL_1H_USD,
+    runnerLiteMinVol12hUsd: process.env.PAPER_RUNNER_LITE_MIN_VOL_12H_USD,
+    runnerLiteVelocityMinX: process.env.PAPER_RUNNER_LITE_VELOCITY_MIN_X,
+    runnerLiteMinVol5mPeak1hUsd: process.env.PAPER_RUNNER_LITE_MIN_VOL_5M_PEAK_1H_USD,
+    runnerLiteBs1hMin: process.env.PAPER_RUNNER_LITE_BS_1H_MIN,
+    runnerLiteBs12hMin: process.env.PAPER_RUNNER_LITE_BS_12H_MIN,
+    runnerLiteLiqVsP25Min: process.env.PAPER_RUNNER_LITE_LIQ_VS_P25_MIN,
+    runnerLitePriceHoldMin: process.env.PAPER_RUNNER_LITE_PRICE_HOLD_MIN,
+    runnerLiteMinLiqUsd: process.env.PAPER_RUNNER_LITE_MIN_LIQ_USD,
+    runnerLiteStaleVolRatioMax: process.env.PAPER_RUNNER_LITE_STALE_VOL_RATIO_MAX,
+    runnerLiteMinPgSamples24h: process.env.PAPER_RUNNER_LITE_MIN_PG_SAMPLES_24H,
     liveOscarIntelEnabled: envBool(process.env.LIVE_OSCAR_INTEL_ENABLED, false),
     liveOscarIntelMode: process.env.LIVE_OSCAR_INTEL_MODE,
     liveOscarIntelModeRunnerProbe: process.env.LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE,
+    liveOscarIntelModeRunnerLite: process.env.LIVE_OSCAR_INTEL_MODE_RUNNER_LITE,
     liveOscarIntelWalletGateEnabled: envBool(process.env.LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED, false),
     liveOscarIntelFailClosed: envBool(process.env.LIVE_OSCAR_INTEL_FAIL_CLOSED, false),
     liveOscarIntelRequireSwapCoverage: envBool(
