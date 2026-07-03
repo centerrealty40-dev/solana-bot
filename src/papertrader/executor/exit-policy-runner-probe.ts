@@ -40,8 +40,15 @@ export function runnerProbeConservativeKillPx(curMetricUsd: number, snapPxUsd: n
 }
 
 /**
- * TP uses the best of tick MTM, PG snapshot, and tracked peak so brief spikes are not missed
- * when Jupiter lags or tick-to-tick clamp undershoots.
+ * TP arms only on live sell-side confirmation — min(Jupiter MTM, PG snapshot) — so optimistic
+ * peak tracking cannot phantom-trigger exit (LojakPaul 2026-07-03; FROGBULL-class).
+ */
+export function runnerProbeConservativeTpPx(curMetricUsd: number, snapPxUsd: number): number {
+  return runnerProbeConservativeKillPx(curMetricUsd, snapPxUsd);
+}
+
+/**
+ * Peak tracking only (not TP arming): best of tick MTM, PG snapshot, and tracked peak.
  */
 export function runnerProbeOptimisticTpPx(
   ot: OpenTrade,
@@ -74,19 +81,8 @@ export function runnerProbeTpEligible(
 ): boolean {
   if (!isRunnerProbeExitPolicy(ot) || !(ot.avgEntry > 0)) return false;
   const tpX = 1 + cfg.runnerProbeTpPct;
-  // After DCA, pre-DCA peakMcUsd can phantom-trigger TP vs the new avgEntry (FROGBULL 2026-07-02).
-  // Only live prices + post-DCA peakPnlPct may arm TP; ignore stale entry-time peak.
-  const hasDcaLeg = (ot.legs ?? []).some((l) => l.reason === 'dca');
-  if (hasDcaLeg) {
-    let bestLive = curMetricUsd > 0 ? curMetricUsd : 0;
-    if (snapPxUsd > bestLive) bestLive = snapPxUsd;
-    if (bestLive > 0 && bestLive / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
-    return ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100;
-  }
-  const px = runnerProbeOptimisticTpPx(ot, curMetricUsd, snapPxUsd);
-  if (px > 0 && px / ot.avgEntry + LADDER_PNL_EPS >= tpX) return true;
-  if (ot.peakPnlPct + 1e-6 >= cfg.runnerProbeTpPct * 100) return true;
-  return false;
+  const px = runnerProbeConservativeTpPx(curMetricUsd, snapPxUsd);
+  return px > 0 && px / ot.avgEntry + LADDER_PNL_EPS >= tpX;
 }
 
 /**
