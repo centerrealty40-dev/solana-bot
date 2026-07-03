@@ -312,14 +312,14 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
         /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
         DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
-        /** BasePulse journal ~350MB — full scan avoids phantom opens when tail truncates closes. */
-        DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES: String(512 * 1024 * 1024),
-        DASHBOARD_BASEPULSE_TAIL_BYTES: String(512 * 1024 * 1024),
+        /** BasePulse journal ~350MB — tail-only + reverse open-state on same window (see basepulse-dashboard). */
+        DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES: String(32 * 1024 * 1024),
+        DASHBOARD_BASEPULSE_TAIL_BYTES: String(64 * 1024 * 1024),
         /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
         DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
-        /** BscPulse journal ~2.3GB — full scan while under cap; 64MiB tail is filter_reject noise only. */
-        DASHBOARD_BSCPULSE_FULL_SCAN_MAX_BYTES: String(3 * 1024 * 1024 * 1024),
-        DASHBOARD_BSCPULSE_TAIL_BYTES: String(1024 * 1024 * 1024),
+        /** BscPulse journal multi-GB — 128MiB tail keeps tile responsive (was 1GiB → ~30s rebuild). */
+        DASHBOARD_BSCPULSE_FULL_SCAN_MAX_BYTES: String(32 * 1024 * 1024),
+        DASHBOARD_BSCPULSE_TAIL_BYTES: String(128 * 1024 * 1024),
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -330,7 +330,8 @@ const PM2_APPS = [
         DASHBOARD_JSONL_TAIL_BYTES: String(64 * 1024 * 1024),
         DASHBOARD_LIVE_OSCAR_TAIL_BYTES: String(64 * 1024 * 1024),
         DASHBOARD_RECENT_CLOSED_LIMIT: '20',
-        DASHBOARD_PAPER2_OPENS_CACHE_MS: '15000',
+        DASHBOARD_PAPER2_CACHE_MS: '90000',
+        DASHBOARD_PAPER2_OPENS_CACHE_MS: '30000',
         /**
          * QuickNode Admin API → Telegram:
          * - `QUICKNODE_HOURLY_REMAINING_TELEGRAM=1` — не чаще 1×/ч `[ALERT][quicknode-balance]` (интервал ≥1h в коде + cooldown ниже).

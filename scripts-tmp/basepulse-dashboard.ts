@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Paper2OpenItem, TimelineEvent } from './dashboard-server.js';
-import { iterJsonlLines, iterJsonlLinesBounded } from './jsonl-line-reader.js';
+import { iterJsonlLinesBounded } from './jsonl-line-reader.js';
 
 const TAIL_BYTES = Number(
   process.env.DASHBOARD_BASEPULSE_TAIL_BYTES ?? process.env.DASHBOARD_JSONL_TAIL_BYTES ?? 512 * 1024 * 1024,
@@ -53,16 +53,6 @@ type OpenRow = Paper2OpenItem & { timeline: TimelineEvent[] };
 
 function* journalLines(filePath: string): Generator<string> {
   yield* iterJsonlLinesBounded(filePath, TAIL_BYTES, FULL_SCAN_MAX);
-}
-
-/** Position state from entire journal when it fits FULL_SCAN_MAX; else tail only. */
-function* positionStateLines(filePath: string): Generator<string> {
-  const size = fs.statSync(filePath).size;
-  if (size <= FULL_SCAN_MAX) {
-    yield* iterJsonlLines(filePath);
-    return;
-  }
-  yield* journalLines(filePath);
 }
 
 function tsMs(ev: JournalEv): number {
@@ -256,10 +246,11 @@ export function loadBasePulseForDashboard(jsonlPath = basePulseDashboardJsonlPat
     };
   }
 
-  const lines = [...journalLines(jsonlPath)];
-  const trulyOpenIds = openTokenIdsFromTailReverse([...positionStateLines(jsonlPath)]);
+  /** Single tail/full read — avoid second full-file pass via `positionStateLines`. */
+  const tailLines = [...journalLines(jsonlPath)];
+  const trulyOpenIds = openTokenIdsFromTailReverse(tailLines);
 
-  for (const ln of lines) {
+  for (const ln of tailLines) {
     const ev = parseJournalLine(ln);
     if (!ev) continue;
     const ts = tsMs(ev);

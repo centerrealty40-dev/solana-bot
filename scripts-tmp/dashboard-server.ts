@@ -3318,6 +3318,24 @@ export function mergeLiveOscarOpenSnapshotIntoLoad(
   return { ...load, open, openTimelines, entryQuoteByMint };
 }
 
+/** Skip multi-GB journal replay when sidecar snapshot is fresh (`GET /api/paper2/opens`). */
+export function loadLiveOscarOpensOnlyFromSnapshot(
+  jsonlPath = DASHBOARD_LIVE_OSCAR_JSONL,
+): LiveOscarPaper2Load | null {
+  const snapshotPath = resolveLiveOscarOpenSnapshotPath(jsonlPath);
+  const snap = readLiveOpenSnapshot(snapshotPath);
+  if (!snap || !isLiveOpenSnapshotFresh(snap, DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS)) {
+    return null;
+  }
+  const dashboardStrategyId = resolveLiveOscarDashboardStrategyId(jsonlPath);
+  return mergeLiveOscarOpenSnapshotIntoLoad(
+    emptyLiveOscarPaper2Load(),
+    snapshotPath,
+    DASHBOARD_LIVE_OSCAR_SNAPSHOT_MAX_AGE_MS,
+    dashboardStrategyId,
+  );
+}
+
 /**
  * Live `PERIODIC_HEAL` раньше получал в трекер «цену выхода» = USD **market cap** (`getLiveMcUsd`),
  * из‑за чего в JSONL остались космические pnlPct/netPnlUsd. Журнал не переписываем — чиним только
@@ -5448,7 +5466,9 @@ async function getPaper2ApiPayloadCached(): Promise<{ payload: unknown; stale: b
 }
 
 async function buildPaper2OpensPayload(): Promise<Record<string, unknown>> {
-  const llRaw = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
+  const llRaw =
+    loadLiveOscarOpensOnlyFromSnapshot(DASHBOARD_LIVE_OSCAR_JSONL) ??
+    loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
   const { load: ll } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const row = await buildPaper2StrategyRowFromLoad(
