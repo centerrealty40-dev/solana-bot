@@ -135,6 +135,54 @@ describe('live-oscar-runner-lite', () => {
     expect(normalizeRunnerLiteOpenMapKeys(open)).toBe(0);
   });
 
+  it('does not apply prod discoveryMinMarketCapUsd ($2M) to tier-2 lite fallback', () => {
+    const cfg = loadPaperTraderConfig();
+    const row = {
+      mint: 'cgp3',
+      symbol: 'CGp3',
+      price_usd: 0.001028,
+      liquidity_usd: 87_000,
+      volume_1h: 180_000,
+      volume_5m: 9_771,
+      market_cap_usd: 1_028_380,
+      token_age_min: 1355,
+      age_min: 1355,
+      buys_5m: 10,
+      sells_5m: 5,
+      holder_count: 100,
+      source: 'pumpswap',
+    } as SnapshotCandidateRow;
+    const runnerCtx = {
+      vol1hUsd: 180_305,
+      vol12hUsd: 500_000,
+      vol5mPeak1hUsd: 15_000,
+      vol1hVelocity: 1.2,
+      bs1h: 1.0,
+      bs12h: 0.95,
+      coverageOk: true,
+      pgSamples24h: 48,
+      mcapNowUsd: 1_028_380,
+      liqNowUsd: 87_000,
+      priceNowUsd: 0.001028,
+      priceMax24hUsd: 0.0014,
+      vol1hAvg24hUsd: 100_000,
+      liqP25_24hUsd: 80_000,
+    } as RunnerWindowFeatures;
+    const evalRes = evaluateLiveOscarRunnerLiteDiscovery({
+      cfg,
+      row,
+      lane: 'post_migration',
+      refMcap: 1_028_380,
+      ageMin: 1355,
+      dipCtx: undefined,
+      runnerCtx,
+      probeOutcome: { inBand: true, fullyPassed: false },
+    });
+    expect(evalRes.tier).toBe('tier2');
+    expect(evalRes.reasons).not.toContain('mcap<2000000');
+    expect(evalRes.reasons.some((r) => r.startsWith('runner_lite_runner_mcap>'))).toBe(false);
+  });
+
   it('rejects mcap ≥ $1M in discovery eval (probe band only)', () => {
     const cfg = loadPaperTraderConfig();
     const row = {
