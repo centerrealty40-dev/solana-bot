@@ -43,6 +43,8 @@ const CopyTraderConfigSchema = z.object({
   /** Leader wallet balance ≤ this raw amount counts as flat (post-exit dust). */
   leaderFlatDustRaw: z.coerce.bigint().min(0n).max(1_000_000_000_000n).default(10_000n),
   positionUsd: z.coerce.number().positive().max(100_000).default(600),
+  /** Initial entry: mirror this fraction of leader buy USD (0 = fixed positionUsd). */
+  initialMirrorRatio: z.coerce.number().min(0).max(1).default(0),
   addPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   maxPositionUsd: z.coerce.number().min(0).max(500_000).default(0),
   maxAddsPerMint: z.coerce.number().int().min(0).max(999).default(0),
@@ -150,6 +152,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,
     leaderFlatDustRaw: process.env.COPY_TRADER_LEADER_FLAT_DUST_RAW,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,
+    initialMirrorRatio: process.env.COPY_TRADER_INITIAL_MIRROR_RATIO,
     addPositionUsd: process.env.COPY_TRADER_ADD_POSITION_USD,
     maxPositionUsd: process.env.COPY_TRADER_MAX_POSITION_USD,
     maxAddsPerMint: process.env.COPY_TRADER_MAX_ADDS_PER_MINT,

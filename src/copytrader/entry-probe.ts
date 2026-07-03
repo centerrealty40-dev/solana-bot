@@ -21,14 +21,35 @@ export function isMidMcapEntryTier(cfg: CopyTraderConfig, marketCapUsd: number |
   return marketCapUsd < cfg.entryFullMcapUsd;
 }
 
-/** Planned total entry deploy (probe + dip) for this mcap. */
-export function entryTargetUsd(cfg: CopyTraderConfig, marketCapUsd?: number): number {
+export function usesInitialLeaderMirror(cfg: CopyTraderConfig): boolean {
+  return cfg.initialMirrorRatio > 0;
+}
+
+/** Initial entry notional from leader buy USD when mirror ratio is enabled. */
+export function leaderInitialEntryUsd(cfg: CopyTraderConfig, leaderBuyUsd: number): number {
+  if (!(leaderBuyUsd > 0) || !usesInitialLeaderMirror(cfg)) return 0;
+  return roundUsd(leaderBuyUsd * cfg.initialMirrorRatio);
+}
+
+/** Planned total entry deploy (probe + dip) for this mcap / leader buy. */
+export function entryTargetUsd(
+  cfg: CopyTraderConfig,
+  marketCapUsd?: number,
+  leaderBuyUsd?: number,
+): number {
+  if (usesInitialLeaderMirror(cfg) && leaderBuyUsd != null && leaderBuyUsd > 0) {
+    return leaderInitialEntryUsd(cfg, leaderBuyUsd);
+  }
   if (isMidMcapEntryTier(cfg, marketCapUsd)) return cfg.entryMidPositionUsd;
   return cfg.positionUsd;
 }
 
-export function entryProbeSizeUsd(cfg: CopyTraderConfig, marketCapUsd?: number): number {
-  const total = entryTargetUsd(cfg, marketCapUsd);
+export function entryProbeSizeUsd(
+  cfg: CopyTraderConfig,
+  marketCapUsd?: number,
+  leaderBuyUsd?: number,
+): number {
+  const total = entryTargetUsd(cfg, marketCapUsd, leaderBuyUsd);
   if (!usesSplitEntryProbe(cfg)) return total;
   if (isMidMcapEntryTier(cfg, marketCapUsd)) {
     const leg = roundUsd(cfg.entryMidLegUsd);
@@ -39,8 +60,12 @@ export function entryProbeSizeUsd(cfg: CopyTraderConfig, marketCapUsd?: number):
   return probe;
 }
 
-export function entryDipSizeUsd(cfg: CopyTraderConfig, marketCapUsd?: number): number {
-  const total = entryTargetUsd(cfg, marketCapUsd);
+export function entryDipSizeUsd(
+  cfg: CopyTraderConfig,
+  marketCapUsd?: number,
+  leaderBuyUsd?: number,
+): number {
+  const total = entryTargetUsd(cfg, marketCapUsd, leaderBuyUsd);
   if (usesDipOnlyEntry(cfg)) return total;
   if (!usesSplitEntryProbe(cfg)) return 0;
   if (isMidMcapEntryTier(cfg, marketCapUsd)) {
@@ -48,7 +73,7 @@ export function entryDipSizeUsd(cfg: CopyTraderConfig, marketCapUsd?: number): n
     const dip = leg > 0 ? leg : roundUsd(total / 2);
     return dip > 0 && dip < total ? dip : 0;
   }
-  const dip = roundUsd(total - entryProbeSizeUsd(cfg, marketCapUsd));
+  const dip = roundUsd(total - entryProbeSizeUsd(cfg, marketCapUsd, leaderBuyUsd));
   return dip > 0 ? dip : 0;
 }
 
@@ -98,17 +123,19 @@ export function syncEntryPendingSizing(
     sizeUsd: number;
     entryTargetUsd?: number;
     entryMcapUsd?: number;
+    leaderBuyUsd?: number;
   },
   marketCapUsd?: number,
 ): void {
-  if (pending.kind !== 'entry' || !(marketCapUsd != null && marketCapUsd > 0)) return;
-  pending.entryMcapUsd = marketCapUsd;
-  pending.entryTargetUsd = entryTargetUsd(cfg, marketCapUsd);
+  if (pending.kind !== 'entry') return;
+  const leaderBuyUsd = pending.leaderBuyUsd;
+  if (marketCapUsd != null && marketCapUsd > 0) pending.entryMcapUsd = marketCapUsd;
+  pending.entryTargetUsd = entryTargetUsd(cfg, marketCapUsd, leaderBuyUsd);
   if (pending.entryLeg === 'dip' || usesDipOnlyEntry(cfg)) {
-    pending.sizeUsd = entryDipSizeUsd(cfg, marketCapUsd);
+    pending.sizeUsd = entryDipSizeUsd(cfg, marketCapUsd, leaderBuyUsd);
     return;
   }
   pending.sizeUsd = usesSplitEntryProbe(cfg)
-    ? entryProbeSizeUsd(cfg, marketCapUsd)
-    : entryTargetUsd(cfg, marketCapUsd);
+    ? entryProbeSizeUsd(cfg, marketCapUsd, leaderBuyUsd)
+    : entryTargetUsd(cfg, marketCapUsd, leaderBuyUsd);
 }

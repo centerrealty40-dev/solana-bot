@@ -16,7 +16,9 @@ import {
   entryTargetUsd,
   isEntryProbePending,
   leaderDipTargetPx,
+  leaderInitialEntryUsd,
   usesDipOnlyEntry,
+  usesInitialLeaderMirror,
   usesSplitEntryProbe,
 } from '../../src/copytrader/entry-probe.js';
 import { evaluateCopyAdd, evaluateCopyEntryDip } from '../../src/copytrader/evaluate.js';
@@ -48,6 +50,27 @@ const prodEntryCfg = {
 } as CopyTraderConfig;
 
 describe('entry-probe sizing', () => {
+  it('mirrors 50% of leader buy on initial entry when configured', () => {
+    const mirrorCfg = {
+      ...prodEntryCfg,
+      initialMirrorRatio: 0.5,
+      entryProbeFraction: 1,
+      entryDipDiscountPct: 0,
+    } as CopyTraderConfig;
+    expect(usesInitialLeaderMirror(mirrorCfg)).toBe(true);
+    expect(leaderInitialEntryUsd(mirrorCfg, 1000)).toBe(500);
+    expect(entryTargetUsd(mirrorCfg, undefined, 1000)).toBe(500);
+    expect(entryProbeSizeUsd(mirrorCfg, undefined, 1000)).toBe(500);
+    expect(entryDipSizeUsd(mirrorCfg, undefined, 1000)).toBe(0);
+    expect(entryTargetUsd(mirrorCfg, undefined, 400)).toBe(200);
+  });
+
+  it('keeps fixed positionUsd when initialMirrorRatio is 0', () => {
+    const fixedCfg = { ...prodEntryCfg, initialMirrorRatio: 0 } as CopyTraderConfig;
+    expect(usesInitialLeaderMirror(fixedCfg)).toBe(false);
+    expect(entryTargetUsd(fixedCfg, undefined, 1000)).toBe(1000);
+  });
+
   it('splits $500 probe + $500 dip on $1000 position (prod)', () => {
     expect(usesSplitEntryProbe(prodEntryCfg)).toBe(true);
     expect(entryProbeSizeUsd(prodEntryCfg)).toBe(500);
