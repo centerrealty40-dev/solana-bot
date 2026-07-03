@@ -14,7 +14,7 @@ const baseDecision = {
   symbol: 'TEST',
   ageMin: 800,
   pass: false,
-  features: { market_cap_usd: 2_000_000, price_usd: 1 },
+  features: { market_cap_usd: 2_000_000, vol1h_usd: 120_000, price_usd: 1 },
   whale: null,
   liveOscarTradeLane: 'runner_probe',
   positionSource: 'runner_probe',
@@ -27,7 +27,22 @@ describe('runner-probe-intel-notify', () => {
       'runner_probe_intel_intel_BLOCK_TRADE:AbCdEfGh',
     ];
     expect(runnerProbeIntelSkipReasons(reasons)).toHaveLength(2);
-    expect(isRunnerProbeIntelSkipDecision({ reasons, oscarIntel: undefined })).toBe(true);
+    expect(
+      isRunnerProbeIntelSkipDecision({
+        reasons,
+        liveOscarTradeLane: 'runner_probe',
+        oscarIntel: {
+          mode: 'gate',
+          required: true,
+          wouldBlock: true,
+          blocked: true,
+          swapCovered: true,
+          tierGatesPassed: true,
+          reasons: ['intel_BLOCK_TRADE:AbCdEfGh'],
+          hits: [],
+        },
+      }),
+    ).toBe(true);
   });
 
   it('formats intel hit with wallet and kind', () => {
@@ -52,6 +67,7 @@ describe('runner-probe-intel-notify', () => {
         wouldBlock: true,
         blocked: true,
         swapCovered: true,
+        tierGatesPassed: true,
         reasons: ['intel_BLOCK_TRADE:AbCdEfGh'],
         hits: [{ wallet: 'AbCdEfGh1234567890', kind: 'BLOCK_TRADE' }],
       },
@@ -62,8 +78,8 @@ describe('runner-probe-intel-notify', () => {
       mintHrefHtml: (mint) => mint,
       fmtUsd: () => '$2.0M',
     });
-    expect(text).toContain('[ADVICE][runner_probe_intel]');
-    expect(text).toContain('заблокирована');
+    expect(text).toContain('[ADVICE][live_oscar_intel_block]');
+    expect(text).toContain('не покупаем');
     expect(text).toContain('BLOCK_TRADE');
     expect(text).toContain('runner_probe_rank_crowded_out');
   });
@@ -79,6 +95,7 @@ describe('runner-probe-intel-notify', () => {
         wouldBlock: true,
         blocked: false,
         swapCovered: true,
+        tierGatesPassed: true,
         reasons: ['atlas_cluster:AbCdEfGh'],
         hits: [{ wallet: 'AbCdEfGh1234567890', kind: 'atlas_cluster' }],
       },

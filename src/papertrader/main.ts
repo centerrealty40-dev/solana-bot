@@ -86,16 +86,21 @@ import {
 import {
   countOpenRunnerLitePositions,
   runnerLiteMintOpenSkipReason,
+  runnerLiteMintAlreadyOpen,
   runnerLiteOpenLegUsd,
   stampRunnerLiteOnOpen,
   sumRunnerLiteExposureUsd,
   attachRunnerLitePendingScaleIn,
 } from './live-oscar-runner-lite.js';
 import {
-  buildRunnerProbeIntelSkipTelegramText,
-  isRunnerProbeIntelSkipDecision,
-  shouldJournalRunnerProbeIntel,
-} from './runner-probe-intel-notify.js';
+  buildLiveOscarIntelBlockTelegramText,
+  isLiveOscarIntelBlockNotifyDecision,
+  recordLiveOscarIntelBlockNotified,
+  resolveLiveOscarIntelTradeLane,
+  shouldJournalLiveOscarIntel,
+  shouldNotifyLiveOscarIntelBlock,
+  type LiveOscarIntelBlockNotifyCache,
+} from './live-oscar-intel-notify.js';
 import {
   finalizeRunnerProbeOpenOnBoot,
   runnerProbeMaxPositionUsd,
@@ -376,7 +381,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
   const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
-  const runnerProbeIntelTelegramLastMs = new Map<string, number>();
+  const liveOscarIntelBlockNotified: LiveOscarIntelBlockNotifyCache = new Map();
+  const liveOscarIntelTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
@@ -764,50 +770,73 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     );
   }
 
-  function notifyRunnerProbeIntelSkip(d: EvalDecision): void {
+  function notifyLiveOscarIntelBlock(d: EvalDecision): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
-    if (resolveDecisionTradeLane(d) !== 'runner_probe') return;
-    if (!isRunnerProbeIntelSkipDecision(d)) return;
-    if (process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_ENABLED === '0') return;
+    const tradeLane = resolveLiveOscarIntelTradeLane(d);
+    if (!tradeLane) return;
+    if (!isLiveOscarIntelBlockNotifyDecision({ ...d, liveOscarTradeLane: tradeLane })) return;
+    if (process.env.LIVE_OSCAR_INTEL_TELEGRAM_ENABLED === '0') return;
+    if (
+      tradeLane === 'runner_probe' &&
+      process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_ENABLED === '0'
+    ) {
+      return;
+    }
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    if (tradeLane === 'runner_probe' && runnerProbeMintAlreadyOpen(open, d.mint)) return;
+    if (tradeLane === 'runner_lite' && runnerLiteMintAlreadyOpen(open, d.mint)) return;
+    if (tradeLane === 'prod' && open.has(d.mint)) return;
 
     const cooldownMs = Math.max(
       0,
-      Number(process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+      Number(
+        process.env.LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS ??
+          process.env.TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS ??
+          60 * 60_000,
+      ),
     );
     const now = Date.now();
-    const prev = runnerProbeIntelTelegramLastMs.get(d.mint) ?? 0;
+    const prev = liveOscarIntelTelegramLastMs.get(d.mint) ?? 0;
     if (cooldownMs > 0 && now - prev < cooldownMs) return;
-    runnerProbeIntelTelegramLastMs.set(d.mint, now);
+
+    const ig = d.oscarIntel!;
+    if (!shouldNotifyLiveOscarIntelBlock(liveOscarIntelBlockNotified, tradeLane, d.mint, ig)) {
+      return;
+    }
+    liveOscarIntelTelegramLastMs.set(d.mint, now);
+    recordLiveOscarIntelBlockNotified(liveOscarIntelBlockNotified, tradeLane, d.mint, ig);
 
     const token =
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
       process.env.TELEGRAM_BOT_TOKEN?.trim();
     const chat =
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID?.trim() ||
       process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_CHAT_ID?.trim() ||
       process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
       '-1003878024799';
     if (!token || !chat) {
-      logger.warn({ mint: d.mint }, 'runner_probe intel telegram skipped: bot token/chat missing');
+      logger.warn({ mint: d.mint, tradeLane }, 'live oscar intel telegram skipped: bot token/chat missing');
       return;
     }
 
-    const text = buildRunnerProbeIntelSkipTelegramText({
+    const text = buildLiveOscarIntelBlockTelegramText({
       d,
+      tradeLane,
       escapeHtml: escapeHtmlPlain,
       mintHrefHtml: gmgnMintHrefHtml,
       fmtUsd: fmtUsdCompact,
     });
 
-    void sendTagged('ADVICE', 'runner_probe_intel', text, {
+    void sendTagged('ADVICE', 'live_oscar_intel_block', text, {
       parseMode: 'HTML',
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
     }).catch((e) =>
-      logger.warn({ err: String(e), mint: d.mint }, 'runner_probe intel telegram failed'),
+      logger.warn({ err: String(e), mint: d.mint, tradeLane }, 'live oscar intel telegram failed'),
     );
   }
 
@@ -1497,17 +1526,15 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
         }
-        if (
-          resolveDecisionTradeLane(d) === 'runner_probe' &&
-          shouldJournalRunnerProbeIntel(d.oscarIntel)
-        ) {
+        const intelTradeLane = resolveLiveOscarIntelTradeLane(d);
+        if (intelTradeLane && shouldJournalLiveOscarIntel(d.oscarIntel)) {
           journalAppend({
             kind: d.oscarIntel!.blocked ? 'live_oscar_intel_block' : 'live_oscar_intel_shadow',
             lane: d.lane,
             source: d.source,
             mint: d.mint,
             symbol: d.symbol,
-            tradeLane: 'runner_probe',
+            tradeLane: intelTradeLane,
             pass: d.pass,
             mode: d.oscarIntel!.mode,
             wouldBlock: d.oscarIntel!.wouldBlock,
@@ -1515,16 +1542,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             reasons: d.oscarIntel!.reasons,
             hits: d.oscarIntel!.hits,
             swapCovered: d.oscarIntel!.swapCovered,
+            tierGatesPassed: d.oscarIntel!.tierGatesPassed,
             evalReasons: d.reasons,
           });
         }
-        if (
-          resolveDecisionTradeLane(d) === 'runner_probe' &&
-          isRunnerProbeIntelSkipDecision(d) &&
-          !runnerProbeMintAlreadyOpen(open, d.mint) &&
-          !open.has(d.mint)
-        ) {
-          notifyRunnerProbeIntelSkip(d);
+        if (intelTradeLane && isLiveOscarIntelBlockNotifyDecision({ ...d, liveOscarTradeLane: intelTradeLane })) {
+          notifyLiveOscarIntelBlock(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;

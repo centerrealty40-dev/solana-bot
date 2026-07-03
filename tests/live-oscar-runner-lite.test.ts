@@ -6,17 +6,14 @@ import {
   isRunnerLiteTrade,
   normalizeRunnerLiteOpenMapKeys,
   resolveOpenMapKey,
-  resolveRunnerLiteTier,
   runnerLiteAgeInBand,
   runnerLiteCandidateInBand,
-  runnerLiteDiscoveryPrefilter,
   runnerLiteMcapInBand,
-  normalizeRunnerLiteOpenMapKeys,
+  runnerLiteMintAlreadyOpen,
   runnerLiteMintOpenSkipReason,
   runnerLiteOpenLegUsd,
   runnerLiteOpenMapKey,
   runnerLiteRankScore,
-  runnerLiteTier2McapInBand,
   RUNNER_LITE_POSITION_SOURCE,
   runnerProbeMintAlreadyOpen,
   stampRunnerLiteOnOpen,
@@ -138,19 +135,7 @@ describe('live-oscar-runner-lite', () => {
     expect(normalizeRunnerLiteOpenMapKeys(open)).toBe(0);
   });
 
-  it('tier2 fallback when probe in-band but not fully passed', () => {
-    const cfg = loadPaperTraderConfig();
-    expect(
-      resolveRunnerLiteTier(cfg, 1_200_000, 1500, { inBand: true, fullyPassed: false }).tier,
-    ).toBe('tier2');
-    expect(
-      resolveRunnerLiteTier(cfg, 1_200_000, 1500, { inBand: true, fullyPassed: true }).reasons,
-    ).toContain('runner_lite_skipped_probe_full_pass');
-    expect(runnerLiteDiscoveryPrefilter(cfg, 1_200_000, 1500)).toBe(true);
-    expect(runnerLiteTier2McapInBand(cfg, 1_200_000)).toBe(true);
-  });
-
-  it('rejects tier2 without probe in-band outcome', () => {
+  it('rejects mcap ≥ $1M in discovery eval (probe band only)', () => {
     const cfg = loadPaperTraderConfig();
     const row = {
       mint: 'x',
@@ -180,10 +165,13 @@ describe('live-oscar-runner-lite', () => {
         coverageOk: true,
         pgSamples24h: 48,
       } as RunnerWindowFeatures,
-      probeOutcome: { inBand: false, fullyPassed: false },
     });
     expect(eval1.pass).toBe(false);
-    expect(eval1.reasons.some((r) => r.includes('runner_lite_tier2_requires'))).toBe(true);
+    expect(
+      eval1.reasons.some(
+        (r) => r.includes('runner_lite_tier2_requires_probe_band') || r.includes('runner_lite_mcap_outside'),
+      ),
+    ).toBe(true);
   });
 
   it('ranking score favors vol1h × velocity', () => {

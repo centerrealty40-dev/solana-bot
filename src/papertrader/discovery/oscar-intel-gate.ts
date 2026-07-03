@@ -24,6 +24,8 @@ export type OscarIntelGateSnapshot = {
   swapCovered: boolean;
   reasons: string[];
   hits: IntelGateHit[];
+  /** Discovery/runner tier thresholds passed before intel gate fired. */
+  tierGatesPassed: boolean;
 };
 
 function parseOscarIntelMode(raw: string | undefined): OscarIntelMode | null {
@@ -186,8 +188,32 @@ export async function evaluateOscarIntelGateForRunnerProbe(
   return { ...ig, required: true };
 }
 
+/** Prod lane: global `LIVE_OSCAR_INTEL_MODE` when wallet gate enabled. */
+export async function evaluateOscarIntelGateForProd(
+  mint: string,
+  cfg: PaperTraderConfig,
+): Promise<OscarIntelGateResult & { required: boolean }> {
+  const mode = resolveOscarIntelMode(cfg);
+  const required = cfg.liveOscarIntelWalletGateEnabled && mode !== 'off';
+  if (!required) {
+    return {
+      ok: true,
+      reasons: [],
+      swapCovered: true,
+      hits: [],
+      mode,
+      wouldBlock: false,
+      blocked: false,
+      required: false,
+    };
+  }
+  const ig = await evaluateOscarIntelGate(mint, cfg, mode);
+  return { ...ig, required: true };
+}
+
 export function oscarIntelGateSnapshotFromResult(
   ig: OscarIntelGateResult & { required: boolean },
+  tierGatesPassed = false,
 ): OscarIntelGateSnapshot {
   return {
     mode: ig.mode,
@@ -197,5 +223,6 @@ export function oscarIntelGateSnapshotFromResult(
     swapCovered: ig.swapCovered,
     reasons: ig.reasons,
     hits: ig.hits,
+    tierGatesPassed,
   };
 }

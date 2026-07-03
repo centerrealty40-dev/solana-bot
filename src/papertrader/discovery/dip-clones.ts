@@ -102,6 +102,7 @@ import {
 import {
   evaluateOscarIntelGateForRunnerProbe,
   evaluateOscarIntelGateForRunnerLite,
+  evaluateOscarIntelGateForProd,
   oscarIntelGateSnapshotFromResult,
   type OscarIntelGateSnapshot,
 } from './oscar-intel-gate.js';
@@ -170,7 +171,7 @@ export interface EvalDecision {
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe`/`runner_lite` parallel. */
   liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
   positionSource?: 'runner_probe' | 'runner_lite';
-  /** Wallet-intel gate snapshot (runner_probe lane). */
+  /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
 }
 
@@ -1319,8 +1320,25 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       entryPath == null && runnerReasons.length > 0
         ? [...preHoldersReasons, ...holderReasons, ...runnerReasons]
         : [...preHoldersReasons, ...holderReasons];
-    const mergedReasons = reasonsWithRunner;
-    const pass = preHoldersReasons.length === 0 && holderReasons.length === 0;
+    let mergedReasons = reasonsWithRunner;
+    let pass = preHoldersReasons.length === 0 && holderReasons.length === 0;
+    let oscarIntelProd: OscarIntelGateSnapshot | undefined;
+    if (pass) {
+      const ig = await evaluateOscarIntelGateForProd(row.mint, cfg);
+      if (ig.required) {
+        oscarIntelProd = oscarIntelGateSnapshotFromResult(ig, true);
+        if (ig.blocked) {
+          pass = false;
+          mergedReasons = [...mergedReasons, ...ig.reasons.map((r) => `prod_intel_${r}`)];
+        } else if (ig.wouldBlock) {
+          mergedReasons = [
+            ...mergedReasons,
+            'prod_intel_shadow_would_block',
+            ...ig.reasons.map((r) => `prod_intel_${r}`),
+          ];
+        }
+      }
+    }
     if (pass) passed++;
 
     const reportDipPct =
@@ -1564,6 +1582,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       holdersMeta,
       entryPath,
       liveOscarTradeLane: 'prod',
+      ...(oscarIntelProd ? { oscarIntel: oscarIntelProd } : {}),
       ...(isLiveOscarMcapTieringEnabled(cfg) ? { liveOscarMcapTier: journalTier } : {}),
     });
   }
@@ -1760,7 +1779,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
         if (guardPass) {
           const ig = await evaluateOscarIntelGateForRunnerProbe(row.mint, cfg, ageMin);
-          const intelSnap = oscarIntelGateSnapshotFromResult(ig);
+          const intelSnap = oscarIntelGateSnapshotFromResult(ig, probeEval.pass);
           if (ig.required) {
             if (ig.blocked) {
               guardPass = false;
@@ -1907,7 +1926,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
         if (guardPass) {
           const ig = await evaluateOscarIntelGateForRunnerLite(row.mint, cfg, ageMin);
-          const intelSnap = oscarIntelGateSnapshotFromResult(ig);
+          const intelSnap = oscarIntelGateSnapshotFromResult(ig, liteEval.pass);
           if (ig.required) {
             if (ig.blocked) {
               guardPass = false;
@@ -1924,7 +1943,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             eval: liteEval,
             guardPass,
             reasons,
-            oscarIntel: intelSnap,
+            oscarIntel: ig.required ? intelSnap : undefined,
           });
           continue;
         }

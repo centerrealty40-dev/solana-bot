@@ -856,6 +856,11 @@ const PM2_APPS = [
         LIVE_OSCAR_INTEL_BLOCK_BAD_TAGS: '1',
         LIVE_OSCAR_INTEL_BLOCK_CLUSTERED_WALLETS: '1',
         LIVE_OSCAR_INTEL_BLOCK_SCAM_FARM_META: '1',
+        /** TG ADVICE: tier gates OK but wallet-intel blocks (prod / runner_probe / runner_lite). */
+        LIVE_OSCAR_INTEL_TELEGRAM_ENABLED: '1',
+        LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '3600000',
+        TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '3600000',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',

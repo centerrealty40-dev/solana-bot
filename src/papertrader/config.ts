@@ -313,7 +313,7 @@ const ConfigSchema = z.object({
   /**
    * Live Oscar runner_probe lane (tier 2): mcap **≥ $1M** (up to $30M), age 12–48h (720–2880 min),
    * strict runner guards + dip entry, wallet-intel gate, $500 entry parallel to prod.
-   * **Full pass only** — any gate fail → evaluate runner_lite fallback (2×$100), not skip.
+   * **Tier routing is mcap-first:** strong vol/liq below $1M stays on runner_lite — never promoted here.
    */
   runnerProbeEnabled: z.boolean().default(false),
   runnerProbeMinAgeMin: z.coerce.number().nonnegative().default(720),
@@ -346,9 +346,9 @@ const ConfigSchema = z.object({
   /** One DCA leg at −25% (+100% of positionUsd, default $500 → max $1000/position). */
   runnerProbeDcaLevelsSpec: z.string().default('-25:1'),
   /**
-   * Live Oscar runner_lite lane: fallback / partial qualification — 2×$100, wave_b half8_runner exit.
-   * Tier-1: mcap $500k–<$1M (always lite). Tier-2: mcap ≥$1M when runner_probe fails ≥1 gate
-   * but lite relaxed gates pass. One lane per mint — probe full pass → $500 only.
+   * Live Oscar runner_lite lane (tier 1): mcap **$500k – <$1M**, age 12–48h (720–2880 min),
+   * relaxed vol gates (vol1h ≥ $50k, vol12h ≥ $200k), 2×$100 entry, wave_b half8_runner exit.
+   * **Mcap band selects lane** — probe-level metrics do not upgrade entry to $500; graduate only when mcap ≥ $1M.
    */
   runnerLiteEnabled: z.boolean().default(false),
   runnerLiteMinAgeMin: z.coerce.number().nonnegative().default(720),
