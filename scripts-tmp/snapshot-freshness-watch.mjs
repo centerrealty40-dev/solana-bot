@@ -93,15 +93,21 @@ function buildRecoveryBody(rows) {
 
 async function tick(pool) {
   const rows = await fetchRows(pool);
-  const stale = rows.some((r) => !r.ok);
+  const staleNow = rows.some((r) => !r.ok);
   const st = loadState();
   const wasStale = st.stale === true;
+  const needTicks = Math.max(1, Number(process.env.SNAPSHOT_FRESHNESS_STALE_CONFIRM_TICKS || 2));
+  st.staleConfirmTicks = staleNow ? (Number(st.staleConfirmTicks) || 0) + 1 : 0;
+  const stale = st.staleConfirmTicks >= needTicks;
+  saveState(st);
 
   console.log(
     JSON.stringify({
       ts: new Date().toISOString(),
       msg: 'snapshot-freshness-watch tick',
       stale,
+      staleNow,
+      staleConfirmTicks: st.staleConfirmTicks,
       maxAgeSec: MAX_AGE_SEC,
       rows: rows.map((r) => ({
         source: r.source,
@@ -132,6 +138,7 @@ async function tick(pool) {
 
   if (!stale && wasStale) {
     st.stale = false;
+    st.staleConfirmTicks = 0;
     st.lastRecoveryAt = Date.now();
     saveState(st);
     if (!DRY_RUN) await sendTagged('ALERT', 'snapshot_stale', buildRecoveryBody(rows));

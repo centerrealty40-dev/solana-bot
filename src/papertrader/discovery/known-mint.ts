@@ -12,12 +12,16 @@ export type KnownMintTradeHistory = {
  * Prior bot open/close within lookback — mint is "known" (not a first-time discovery).
  * Used for stricter volume guards on new mints; PG gap bypass uses {@link isPgCoverageKnownMint}.
  */
+/** Journal history + optional whitelist/graduated supplement (repeat-traded mints). */
 export function isKnownMint(
   cfg: PaperTraderConfig,
   mint: string,
   history: KnownMintTradeHistory,
   nowMs = Date.now(),
+  supplement?: ReadonlySet<string>,
 ): boolean {
+  const key = mint.trim();
+  if (key && supplement?.has(key)) return true;
   const days = cfg.pgDataCoverageKnownMintLookbackDays;
   if (!(days > 0)) return false;
   const cutoff = nowMs - days * 24 * 3_600_000;
