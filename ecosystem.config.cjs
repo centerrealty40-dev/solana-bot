@@ -2017,7 +2017,9 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        /** Fixed $500 mirror entry (no probe/dip split). */
+        /** Leader-mirror initial entry: 50% of leader buy USD (0 = fixed positionUsd). */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        /** Fallback / cap when initialMirrorRatio=0; ignored for entry when mirror is on. */
         COPY_TRADER_POSITION_USD: '500',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
