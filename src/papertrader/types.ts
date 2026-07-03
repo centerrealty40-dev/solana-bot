@@ -590,7 +590,9 @@ export type JsonlEventKind =
   | 'partial_sell'
   | 'close'
   | 'followup_snapshot'
-  | 'liq_watch_tick';
+  | 'liq_watch_tick'
+  | 'live_oscar_intel_shadow'
+  | 'live_oscar_intel_block';
 
 export interface JsonlEventBase {
   ts: number;

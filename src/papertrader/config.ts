@@ -347,6 +347,10 @@ const ConfigSchema = z.object({
   /** Live Oscar coin intelligence overlay (default-OFF; see LIVE_OSCAR_COIN_INTELLIGENCE_SPEC). */
   liveOscarIntelEnabled: z.boolean().default(false),
   liveOscarIntelMode: z.enum(['off', 'shadow', 'advisory', 'gate']).default('off'),
+  /** Overrides global mode for runner_probe lane only (`LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE`). */
+  liveOscarIntelModeRunnerProbe: z
+    .enum(['off', 'shadow', 'advisory', 'gate'])
+    .optional(),
   liveOscarIntelWalletGateEnabled: z.boolean().default(false),
   liveOscarIntelFailClosed: z.boolean().default(false),
   liveOscarIntelRequireSwapCoverage: z.boolean().default(false),
@@ -1319,6 +1323,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     runnerProbeDcaLevelsSpec: process.env.PAPER_RUNNER_PROBE_DCA_LEVELS,
     liveOscarIntelEnabled: envBool(process.env.LIVE_OSCAR_INTEL_ENABLED, false),
     liveOscarIntelMode: process.env.LIVE_OSCAR_INTEL_MODE,
+    liveOscarIntelModeRunnerProbe: process.env.LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE,
     liveOscarIntelWalletGateEnabled: envBool(process.env.LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED, false),
     liveOscarIntelFailClosed: envBool(process.env.LIVE_OSCAR_INTEL_FAIL_CLOSED, false),
     liveOscarIntelRequireSwapCoverage: envBool(

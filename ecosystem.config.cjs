@@ -787,6 +787,8 @@ const PM2_APPS = [
         /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
         LIVE_OSCAR_INTEL_ENABLED: '1',
         LIVE_OSCAR_INTEL_MODE: 'shadow',
+        /** runner_probe lane: hard gate after shadow window (prod/scalp_wave stay shadow). */
+        LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE: 'gate',
         LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED: '1',
         LIVE_OSCAR_INTEL_FAIL_CLOSED: '0',
         LIVE_OSCAR_INTEL_REQUIRE_SWAP_COVERAGE: '0',

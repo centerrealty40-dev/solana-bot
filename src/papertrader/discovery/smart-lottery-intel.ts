@@ -8,11 +8,24 @@ function sqlQuote(value: string): string {
 
 const MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
+export type IntelGateHitKind =
+  | 'BLOCK_TRADE'
+  | 'bad_tag'
+  | 'atlas_cluster'
+  | 'scam_farm_meta';
+
+export type IntelGateHit = {
+  wallet: string;
+  kind: IntelGateHitKind;
+};
+
 export type SmartLotteryIntelResult = {
   ok: boolean;
   reasons: string[];
   /** True when we saw at least one buy swap for the mint in `swaps`. */
   swapCovered: boolean;
+  /** First blocking early-buyer hit (empty when ok). */
+  hits: IntelGateHit[];
 };
 
 /**
@@ -24,10 +37,10 @@ export async function evaluateSmartLotteryIntelGate(
   cfg: PaperTraderConfig,
 ): Promise<SmartLotteryIntelResult> {
   if (!cfg.smlotIntelGateEnabled) {
-    return { ok: true, reasons: [], swapCovered: true };
+    return { ok: true, reasons: [], swapCovered: true, hits: [] };
   }
   if (!MINT_RE.test(mint)) {
-    return { ok: false, reasons: ['invalid_mint'], swapCovered: false };
+    return { ok: false, reasons: ['invalid_mint'], swapCovered: false, hits: [] };
   }
 
   const mq = sqlQuote(mint);
@@ -40,9 +53,9 @@ export async function evaluateSmartLotteryIntelGate(
   const nBuys = Number((probe as unknown as { n: number }[])[0]?.n ?? 0);
   if (nBuys <= 0) {
     if (cfg.smlotRequireEarlySwapCoverage) {
-      return { ok: false, reasons: ['no_swap_buys'], swapCovered: false };
+      return { ok: false, reasons: ['no_swap_buys'], swapCovered: false, hits: [] };
     }
-    return { ok: true, reasons: [], swapCovered: false };
+    return { ok: true, reasons: [], swapCovered: false, hits: [] };
   }
 
   const rows = (await db.execute(dsql.raw(`
@@ -88,18 +101,38 @@ export async function evaluateSmartLotteryIntelGate(
   for (const row of rows) {
     const wshort = row.wallet?.slice(0, 8) ?? '?';
     if (cfg.smlotBlockIntelBlockTrade && row.intel_block) {
-      return { ok: false, reasons: [`intel_BLOCK_TRADE:${wshort}`], swapCovered: true };
+      return {
+        ok: false,
+        reasons: [`intel_BLOCK_TRADE:${wshort}`],
+        swapCovered: true,
+        hits: [{ wallet: row.wallet, kind: 'BLOCK_TRADE' }],
+      };
     }
     if (cfg.smlotBlockBadTags && row.bad_tag) {
-      return { ok: false, reasons: [`wallet_tag_bad:${wshort}`], swapCovered: true };
+      return {
+        ok: false,
+        reasons: [`wallet_tag_bad:${wshort}`],
+        swapCovered: true,
+        hits: [{ wallet: row.wallet, kind: 'bad_tag' }],
+      };
     }
     if (cfg.smlotBlockClusteredWallets && row.clustered) {
-      return { ok: false, reasons: [`atlas_cluster:${wshort}`], swapCovered: true };
+      return {
+        ok: false,
+        reasons: [`atlas_cluster:${wshort}`],
+        swapCovered: true,
+        hits: [{ wallet: row.wallet, kind: 'atlas_cluster' }],
+      };
     }
     if (cfg.smlotBlockScamFarmMeta && row.scam_meta) {
-      return { ok: false, reasons: [`scam_farm_meta:${wshort}`], swapCovered: true };
+      return {
+        ok: false,
+        reasons: [`scam_farm_meta:${wshort}`],
+        swapCovered: true,
+        hits: [{ wallet: row.wallet, kind: 'scam_farm_meta' }],
+      };
     }
   }
 
-  return { ok: true, reasons: [], swapCovered: true };
+  return { ok: true, reasons: [], swapCovered: true, hits: [] };
 }
