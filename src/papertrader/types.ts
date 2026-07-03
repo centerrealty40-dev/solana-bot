@@ -186,8 +186,8 @@ export interface OpenTrade {
   symbol: string;
   lane: Lane;
   source?: string;
-  /** Parallel lane accounting (`runner_probe` / `runner_lite` do not block prod open on same mint). */
-  positionSource?: 'runner_probe' | 'runner_lite';
+  /** Parallel lane accounting (runner / pervyy lanes do not block prod open on same mint). */
+  positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   metricType: 'mc' | 'price';
   dex: DexId;
   entryTs: number;
@@ -346,9 +346,10 @@ export interface OpenTrade {
     | 'scalp_wave_v1'
     | 'runner_probe_v1'
     | 'runner_lite_v1'
+    | 'pervyy_vystrel_v1'
     | 'preset_c_scalp_v1';
-  /** Live Oscar trade lane — prod/scalp_wave mutex; runner_probe/runner_lite parallel via composite open key. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
+  /** Live Oscar trade lane — prod/scalp_wave mutex; parallel lanes via composite open key. */
+  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$30M; absent = prod. */
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** Set when scalp_wave hands off to prod/low staged management. */

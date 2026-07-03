@@ -4,6 +4,10 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { QuoteResilience } from './pricing/jupiter-quote-resilience.js';
 import type { DexId } from './types.js';
+import {
+  loadPervyyVystrelConfig,
+  type PervyyVystrelConfig,
+} from './live-oscar-pervyy-vystrel-config.js';
 
 const StrategyKindSchema = z.enum(['fresh', 'dip', 'smart_lottery', 'fresh_validated']);
 
@@ -385,6 +389,10 @@ const ConfigSchema = z.object({
     .optional(),
   /** Overrides global mode for runner_lite lane (`LIVE_OSCAR_INTEL_MODE_RUNNER_LITE`). */
   liveOscarIntelModeRunnerLite: z
+    .enum(['off', 'shadow', 'advisory', 'gate'])
+    .optional(),
+  /** Overrides global mode for pervyy_vystrel lane (`LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL`). */
+  liveOscarIntelModePervyyVystrel: z
     .enum(['off', 'shadow', 'advisory', 'gate'])
     .optional(),
   liveOscarIntelWalletGateEnabled: z.boolean().default(false),
@@ -1175,6 +1183,8 @@ const ConfigSchema = z.object({
 
 export type PaperTraderConfig = z.infer<typeof ConfigSchema> & {
   discoveryDeepAuditWhitelistMintSet?: ReadonlySet<string>;
+  /** Tier «Первый выстрел» — typed env slice (see LIVE_OSCAR_PERVYY_VYSTREL_SPEC). */
+  pervyyVystrel: PervyyVystrelConfig;
 };
 
 function loadMintWhitelistPathToSet(absPath: string): ReadonlySet<string> {
@@ -1391,6 +1401,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarIntelMode: process.env.LIVE_OSCAR_INTEL_MODE,
     liveOscarIntelModeRunnerProbe: process.env.LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE,
     liveOscarIntelModeRunnerLite: process.env.LIVE_OSCAR_INTEL_MODE_RUNNER_LITE,
+    liveOscarIntelModePervyyVystrel: process.env.LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL,
     liveOscarIntelWalletGateEnabled: envBool(process.env.LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED, false),
     liveOscarIntelFailClosed: envBool(process.env.LIVE_OSCAR_INTEL_FAIL_CLOSED, false),
     liveOscarIntelRequireSwapCoverage: envBool(
@@ -1978,8 +1989,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     discoveryDeepAuditWhitelistMintSet = loadMintWhitelistPathToSet(abs);
   }
   return discoveryDeepAuditWhitelistMintSet
-    ? { ...base, discoveryDeepAuditWhitelistMintSet }
-    : base;
+    ? { ...base, discoveryDeepAuditWhitelistMintSet, pervyyVystrel: loadPervyyVystrelConfig() }
+    : { ...base, pervyyVystrel: loadPervyyVystrelConfig() };
 }
 
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';

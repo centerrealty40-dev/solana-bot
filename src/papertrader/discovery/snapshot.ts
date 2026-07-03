@@ -6,6 +6,8 @@ import { laneCfg } from '../filters/snapshot-filter.js';
 import { isLiveOscarScalpWaveLaneEnabled } from '../live-oscar-scalp-wave.js';
 import { isRunnerProbeLaneEnabled } from '../live-oscar-runner-probe.js';
 import { isRunnerLiteLaneEnabled } from '../live-oscar-runner-lite.js';
+import { resolveDiscoverySqlMinMarketCapUsd } from './discovery-mcap-floor.js';
+import { isPervyyVystrelObservabilityActive } from '../live-oscar-pervyy-vystrel-config.js';
 import {
   CANONICAL_SNAPSHOT_ROW_ORDER_SQL,
 } from './snapshot-canonical-pick.js';
@@ -39,13 +41,17 @@ export async function fetchSnapshotLaneCandidates(
   lane: Lane,
 ): Promise<SnapshotCandidateRow[]> {
   const lc = laneCfg(cfg, lane);
-  /** When scalp_wave, runner_probe, or runner_lite is on, widen SQL universe to lane min age while prod keeps 36h in eval gates. */
+  /** When scalp_wave, runner_probe, runner_lite, or pervyy_vystrel is on, widen SQL universe to lane min age while prod keeps 36h in eval gates. */
   const laneMinAgeCandidates = [
     lane === 'post_migration' && isLiveOscarScalpWaveLaneEnabled(cfg)
       ? cfg.liveOscarScalpWaveMinAgeMin
       : null,
     lane === 'post_migration' && isRunnerProbeLaneEnabled(cfg) ? cfg.runnerProbeMinAgeMin : null,
     lane === 'post_migration' && isRunnerLiteLaneEnabled(cfg) ? cfg.runnerLiteMinAgeMin : null,
+    lane === 'post_migration' &&
+    isPervyyVystrelObservabilityActive(cfg.strategyId, cfg.pervyyVystrel)
+      ? cfg.pervyyVystrel.minAgeMin
+      : null,
   ].filter((v): v is number => v != null && v >= 0);
   const sqlMinAgeMin =
     laneMinAgeCandidates.length > 0
@@ -82,10 +88,9 @@ export async function fetchSnapshotLaneCandidates(
   const maxLiqFilter = lc.MAX_LIQ_USD > 0 ? `AND liquidity_usd <= ${lc.MAX_LIQ_USD}` : '';
   const maxVol5mFilter = lc.MAX_VOL_5M_USD > 0 ? `AND volume_5m <= ${lc.MAX_VOL_5M_USD}` : '';
   /** `market_cap_usd` in raw already COALESCE(mcap, fdv) from pair row — do not reference `fdv_usd` here. */
+  const sqlMinMcap = resolveDiscoverySqlMinMarketCapUsd(cfg);
   const minMcapFilter =
-    cfg.discoveryMinMarketCapUsd > 0
-      ? `AND COALESCE(market_cap_usd, 0) >= ${cfg.discoveryMinMarketCapUsd}`
-      : '';
+    sqlMinMcap > 0 ? `AND COALESCE(market_cap_usd, 0) >= ${sqlMinMcap}` : '';
   const maxMcapFilter =
     cfg.discoveryMaxMarketCapUsd > 0
       ? `AND COALESCE(market_cap_usd, 0) <= ${cfg.discoveryMaxMarketCapUsd}`

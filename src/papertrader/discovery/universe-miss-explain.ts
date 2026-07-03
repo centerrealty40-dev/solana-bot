@@ -1,5 +1,6 @@
 import type { PaperTraderConfig } from '../config.js';
 import { laneCfg } from '../filters/snapshot-filter.js';
+import { resolveDiscoverySqlMinMarketCapUsd } from './discovery-mcap-floor.js';
 import type { SnapshotCandidateRow } from '../types.js';
 
 const SNAPSHOT_MAX_STALE_MS = 30 * 60 * 1000;
@@ -67,7 +68,7 @@ export function explainPostLaneUniverseMiss(
     reasons.push(`sells_5m_${sells}<${lc.MIN_SELLS_5M}`);
   }
 
-  const minMcap = cfg.discoveryMinMarketCapUsd ?? 0;
+  const minMcap = resolveDiscoverySqlMinMarketCapUsd(cfg);
   const maxMcap = cfg.discoveryMaxMarketCapUsd ?? 0;
   const refMcap = Number(row.market_cap_usd ?? 0);
   if (minMcap > 0 && !(refMcap >= minMcap)) {

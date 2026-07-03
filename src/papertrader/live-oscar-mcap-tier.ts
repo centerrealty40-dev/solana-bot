@@ -49,7 +49,7 @@ export function resolveLiveOscarTradeTierFromOpen(
   cfg: PaperTraderConfig,
   ot: {
     liveOscarMcapTier?: LiveOscarTradeTier;
-    liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite';
+    liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
     liveExitPolicyId?: string;
     entryMarketCapUsd?: number | null;
   },

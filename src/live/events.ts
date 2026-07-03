@@ -311,6 +311,14 @@ export const LiveDiscoveryEvalSchema = z.object({
   /** Trade strategy lane (`prod` | `scalp_wave`) for mutex audit. */
   tradeLane: z.string().max(32).optional(),
   reasons: z.array(z.string().max(400)).max(24),
+  /** Tier «Первый выстрел» shadow eval (PR1+). */
+  pervyyVystrel: z
+    .object({
+      phase: z.string().max(32),
+      wouldOnboard: z.boolean().optional(),
+      shadowMode: z.boolean().optional(),
+    })
+    .optional(),
   entryPath: z.string().max(120).optional(),
   /**
    * Numeric telemetry pulled from `EvalDecision.features` (1.11.234 — telemetry-A).
@@ -432,6 +440,64 @@ export const LivePhaseEscalationSchema = z.object({
   liveExitPolicyId: z.string().max(32).optional(),
   dropFromEntryPct: z.number().finite().optional(),
   openTrade: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** PR1+ — Phase 0 watchlist onboard (shadow observability). */
+export const PervyyVystrelWatchOnboardSchema = z.object({
+  kind: z.literal('pervyy_vystrel_watch_onboard'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  mcap: z.number().finite().optional(),
+  vol1h: z.number().finite().optional(),
+  anchor_band: z.string().max(64).optional(),
+  shadowMode: z.boolean().optional(),
+});
+
+/** PR1+ — shadow gate blocked / pre-onboard skip. */
+export const PervyyVystrelShadowSkipSchema = z.object({
+  kind: z.literal('pervyy_vystrel_shadow_skip'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  phase: z.string().max(32).optional(),
+  reasons: z.array(z.string().max(400)).max(16),
+});
+
+/** Phase A surveillance tick (PR3; schema registered PR1). */
+export const PervyyVystrelPhaseATickSchema = z.object({
+  kind: z.literal('pervyy_vystrel_phase_a_tick'),
+  mint: z.string().min(1).max(64),
+  peakMcap: z.number().finite().optional(),
+  unique_buyers_1h: z.number().finite().optional(),
+  cluster_ratio: z.number().finite().optional(),
+});
+
+/** Phase B hourly surveillance (PR3; schema registered PR1). */
+export const PervyyVystrelSurveillanceTickSchema = z.object({
+  kind: z.literal('pervyy_vystrel_surveillance_tick'),
+  mint: z.string().min(1).max(64),
+  mcap: z.number().finite().optional(),
+  vol1h: z.number().finite().optional(),
+  holder_delta_30m: z.number().finite().optional(),
+});
+
+/** Phase C cluster dump confirmed (PR2/PR3). */
+export const PervyyVystrelClusterDumpConfirmedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_cluster_dump_confirmed'),
+  mint: z.string().min(1).max(64),
+  dump_pct: z.number().finite().optional(),
+  cluster_sell_ratio: z.number().finite().optional(),
+});
+
+/** Phase D entry signal (PR3). */
+export const PervyyVystrelEntrySignalSchema = z.object({
+  kind: z.literal('pervyy_vystrel_entry_signal'),
+  mint: z.string().min(1).max(64),
+  would_enter: z.boolean().optional(),
+  enter: z.boolean().optional(),
 });
 
 /** Daily Telegram summary tick (1.11.231+); appended to live JSONL for audit. */
@@ -634,6 +700,12 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveStagedEntryTtlExpiredSchema,
   LiveDiscoverySkipOpenSchema,
   LivePhaseEscalationSchema,
+  PervyyVystrelWatchOnboardSchema,
+  PervyyVystrelShadowSkipSchema,
+  PervyyVystrelPhaseATickSchema,
+  PervyyVystrelSurveillanceTickSchema,
+  PervyyVystrelClusterDumpConfirmedSchema,
+  PervyyVystrelEntrySignalSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,

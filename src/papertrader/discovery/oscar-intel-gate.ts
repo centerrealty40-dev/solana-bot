@@ -128,6 +128,14 @@ export function resolveOscarIntelModeForRunnerLite(cfg: PaperTraderConfig): Osca
   return resolveOscarIntelMode(cfg);
 }
 
+/** Pervyy_vystrel lane: intel via `LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL` (default shadow). */
+export function resolveOscarIntelModeForPervyyVystrel(cfg: PaperTraderConfig): OscarIntelMode {
+  if (!cfg.liveOscarIntelEnabled) return 'off';
+  const lane = parseOscarIntelMode(cfg.liveOscarIntelModePervyyVystrel);
+  if (lane && lane !== 'off') return lane;
+  return resolveOscarIntelMode(cfg);
+}
+
 /** Runner_lite 12–48h: intel via `LIVE_OSCAR_INTEL_MODE_RUNNER_LITE` (prod default gate). */
 export async function evaluateOscarIntelGateForRunnerLite(
   mint: string,
