@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
@@ -169,6 +170,7 @@ async function fetchJsonWithRetry(url, options = {}, retryTag = 'http', retryOpt
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
       const res = await fetch(url, {
         ...options,
         headers: {
@@ -333,10 +335,21 @@ async function collectOneTick() {
   let primaryUpserted = 0;
   let enrichUpserted = 0;
 
+  let dexRateLimited = false;
   try {
-    primaryRows = await fetchFromDexScreener(bucketTs);
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal-trending';
+    try {
+      primaryRows = await fetchFromDexScreener(bucketTs);
+    } catch (error) {
+      if (String(error).includes('status=429')) {
+        dexRateLimited = true;
+        log('warn', 'dexscreener rate limited; gecko fallback', { error: String(error) });
+        primaryRows = [];
+      } else {
+        throw error;
+      }
+    }
+    if (primaryRows.length === 0 || dexRateLimited) {
+      sourceUsed = dexRateLimited ? 'geckoterminal-trending-429-fallback' : 'geckoterminal-trending';
       primaryRows = await fetchFromGecko(
         bucketTs,
         { path: 'trending_pools', pages: GECKO_TRENDING_PAGES },

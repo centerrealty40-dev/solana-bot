@@ -251,6 +251,13 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
   PAPER2_SNAPSHOT_DISCOVERY_PIN_MAX: '200',
 };
 
+/** Shared DexScreener quota across sa-raydium/meteora/moonshot/pumpswap (one VPS egress IP). */
+const DEXSCREENER_GATE_ENV = {
+  DEXSCREENER_GLOBAL_RATE_LIMIT: '1',
+  DEXSCREENER_GLOBAL_MAX_RPM: '42',
+  DEXSCREENER_GLOBAL_GATE_PATH: path.join(root, 'data/dexscreener-api-gate.json'),
+};
+
 /**
  * Локальный дневной потолок QN (solana-rpc-meter / provider cache) — выкл.
  * Учёт credits в data/quicknode-usage.json остаётся; hard stop только от плана в кабинете QuickNode.
@@ -365,9 +372,10 @@ const PM2_APPS = [
         RAYDIUM_COLLECTOR_START_OFFSET_MS: '0',
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
@@ -390,9 +398,10 @@ const PM2_APPS = [
         METEORA_COLLECTOR_START_OFFSET_MS: '10000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
@@ -416,9 +425,10 @@ const PM2_APPS = [
         MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
@@ -437,13 +447,14 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        PUMPSWAP_COLLECTOR_INTERVAL_MS: '90000',
+        PUMPSWAP_COLLECTOR_INTERVAL_MS: '180000',
         PUMPSWAP_COLLECTOR_START_OFFSET_MS: '35000',
         PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
+        ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },

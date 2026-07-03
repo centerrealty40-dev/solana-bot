@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 
 const { Pool } = pg;
@@ -63,6 +64,7 @@ async function fetchJsonWithRetry(url, options = {}, retryTag = 'http', retryOpt
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
       const res = await fetch(url, {
         ...options,
         headers: {

@@ -7,6 +7,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { acquireDexScreenerSlot } from './dexscreener-api-gate.mjs';
 
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
 const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
@@ -257,6 +258,7 @@ async function fetchDexPairsForMintChunk({
 }) {
   const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
   try {
+    await acquireDexScreenerSlot();
     const json = await fetchJsonWithRetry(url, {}, retryTag);
     const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
     for (const p of pairs) {
@@ -320,7 +322,8 @@ export async function mergePaper2OpenMintSnapshots({
     liveSet = new Set(live);
     whitelistSet = new Set(whitelist);
     discoverySet = new Set(discoveryPin);
-    soloFetchSet = new Set([...whitelist, ...discoveryPin]);
+    // Live/paper solo-fetch first; pin-file mints rotate after open positions.
+    soloFetchSet = new Set([...live, ...paper, ...whitelist, ...discoveryPin]);
     openMints = [...new Set([...paper, ...live, ...whitelist, ...discoveryPin])];
   } catch (e) {
     if (log) log('warn', 'paper2/live open mints load failed', { error: String(e), component });
