@@ -1,5 +1,5 @@
 /**
- * Fast poll for pending entry-split legs 2–7 — independent of 30s tracker tick.
+ * Fast poll for pending entry-split legs 2–8 — independent of 30s tracker tick.
  * Corridor gates (+3% / −5%) and delay from `PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS`.
  */
 import type { PaperTraderConfig } from '../config.js';
