@@ -88,6 +88,7 @@ import {
   runnerLiteMintOpenSkipReason,
   runnerLiteMintAlreadyOpen,
   runnerLiteOpenLegUsd,
+  runnerLiteSecondLegUsd,
   stampRunnerLiteOnOpen,
   sumRunnerLiteExposureUsd,
   attachRunnerLitePendingScaleIn,
@@ -2241,7 +2242,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           }
           if (tradeLane === 'runner_lite') {
             attachRunnerLitePendingScaleIn(ot, cfg, snapshotEntryPriceUsd, {
-              enabled: liveOscar.liveCfg.liveEntryScaleInEnabled,
               delayMs: liveOscar.liveCfg.liveEntryScaleInDelayMs,
               corridorUpPct: liveOscar.liveCfg.liveEntryScaleInCorridorUpPct,
               corridorDownPct: liveOscar.liveCfg.liveEntryScaleInCorridorDownPct,
@@ -2307,7 +2307,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           if (tradeLane === 'runner_lite') {
             const si = readPaperOscarScaleInEnv();
             attachRunnerLitePendingScaleIn(ot, cfg, snapshotEntryPriceUsd, {
-              enabled: si.enabled,
               delayMs: si.delayMs,
               corridorUpPct: si.corridorUpPct,
               corridorDownPct: si.corridorDownPct,
@@ -2485,6 +2484,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
                   },
                 };
               })()
+            : liveOscarForJournal && tradeLane === 'runner_lite'
+              ? {
+                  timelineOpenLabelRu: `Покупка ${Math.round((runnerLiteOpenLegUsd(cfg) / cfg.runnerLitePositionUsd) * 100)}% позиции`,
+                  liveScaleInParams: {
+                    runnerLiteScaleInEnabled: true,
+                    executionMode: liveOscarForJournal.liveCfg.executionMode,
+                    firstLegUsd: runnerLiteOpenLegUsd(cfg),
+                    secondLegUsd: runnerLiteSecondLegUsd(cfg),
+                    delayMs: liveOscarForJournal.liveCfg.liveEntryScaleInDelayMs,
+                    corridorSymFallbackPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorPct,
+                    corridorUpPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorUpPct,
+                    corridorDownPct: liveOscarForJournal.liveCfg.liveEntryScaleInCorridorDownPct,
+                    maxSwapAttempts: liveOscarForJournal.liveCfg.liveEntryScaleInMaxSwapAttempts,
+                    retryBackoffMs: liveOscarForJournal.liveCfg.liveEntryScaleInRetryBackoffMs,
+                    corridorCheckDescription:
+                      'runner_lite 2×$100: вторая нога через LIVE_ENTRY_SCALE_IN_DELAY_MS в коридоре (не зависит от LIVE_ENTRY_SCALE_IN_ENABLED=0 для prod staged-entry).',
+                  },
+                }
             : liveOscarForJournal && cfg.entryFirstLegFraction < 1 - 1e-9
             ? {
                 timelineOpenLabelRu: `Покупка ${Math.round(cfg.entryFirstLegFraction * 100)}% позиции`,
