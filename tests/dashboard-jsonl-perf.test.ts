@@ -7,6 +7,7 @@ import {
   dashboardJsonlLineFastSkip,
   dashboardRecentClosedLimit,
   loadLiveOscarJsonlAsPaper2,
+  loadLiveOscarOpensOnlyFromSnapshot,
   selectRecentClosedRowsForDashboard,
 } from '../scripts-tmp/dashboard-server.js';
 
@@ -84,6 +85,63 @@ describe('loadLiveOscarJsonlAsPaper2 skip discovery eval', () => {
     expect(ll.open.some((o) => o.mint === mint)).toBe(true);
     const agg = aggregateLiveOscarJsonlForDashboard(fp);
     expect(agg.openCount).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('loadLiveOscarOpensOnlyFromSnapshot', () => {
+  it('returns opens from fresh sidecar without parsing journal', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-snap-'));
+    const jsonl = path.join(tmpDir, 'live.jsonl');
+    const snapPath = path.join(tmpDir, 'live-oscar-open-snapshot.json');
+    fs.writeFileSync(
+      jsonl,
+      JSON.stringify({
+        ts: Date.now(),
+        channel: 'live',
+        kind: 'live_position_open',
+        mint: 'ShouldNotParseMint111111111111111111111',
+        openTrade: { symbol: 'NO', entryTs: 1, legs: [{ sizeUsd: 1 }] },
+      }) + '\n',
+      'utf8',
+    );
+    const mint = 'SnapMint111111111111111111111111111111';
+    fs.writeFileSync(
+      snapPath,
+      JSON.stringify({
+        version: 1,
+        strategyId: 'live-oscar',
+        updatedAtMs: Date.now(),
+        openCount: 1,
+        positions: [
+          {
+            mint,
+            openTrade: {
+              symbol: 'SNAP',
+              entryTs: Date.now(),
+              totalInvestedUsd: 100,
+              legs: [{ sizeUsd: 100, marketPrice: 1 }],
+            },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const prevJsonl = process.env.DASHBOARD_LIVE_OSCAR_JSONL;
+    const prevSnap = process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT;
+    process.env.DASHBOARD_LIVE_OSCAR_JSONL = jsonl;
+    process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT = snapPath;
+    try {
+      const load = loadLiveOscarOpensOnlyFromSnapshot(jsonl);
+      expect(load).not.toBeNull();
+      expect(load!.open.some((o) => o.mint === mint)).toBe(true);
+      expect(load!.open.some((o) => o.mint.includes('ShouldNotParse'))).toBe(false);
+    } finally {
+      if (prevJsonl === undefined) delete process.env.DASHBOARD_LIVE_OSCAR_JSONL;
+      else process.env.DASHBOARD_LIVE_OSCAR_JSONL = prevJsonl;
+      if (prevSnap === undefined) delete process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT;
+      else process.env.DASHBOARD_LIVE_OSCAR_OPEN_SNAPSHOT = prevSnap;
+    }
   });
 });
 
