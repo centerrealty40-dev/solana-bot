@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { OscarOpenPosition } from './position-types.js';
+import type { OscarOpenPosition, OscarTradeMode } from './position-types.js';
 
 export type OscarJournalRow =
   | {
@@ -18,11 +18,13 @@ export type OscarJournalRow =
       dipPct: number;
       impulsePct: number;
       windowMin: number;
+      tradeMode?: OscarTradeMode;
       mode: 'dry_run' | 'live';
       requestedGrossUsd?: number;
       filledGrossUsd?: number;
       partialFill?: boolean;
       freeMarginAtOpen?: number;
+      signalBarTs?: number;
     }
   | {
       kind: 'add_leg';
@@ -34,6 +36,7 @@ export type OscarJournalRow =
       grossUsd: number;
       marginUsd: number;
       avgEntryPx: number;
+      tradeMode?: OscarTradeMode;
       mode: 'dry_run' | 'live';
     }
   | {
@@ -47,6 +50,7 @@ export type OscarJournalRow =
       notionalUsd: number;
       pnlUsd: number;
       remainingFraction: number;
+      tradeMode?: OscarTradeMode;
       mode: 'dry_run' | 'live';
     }
   | {
@@ -59,6 +63,7 @@ export type OscarJournalRow =
       pnlUsd: number;
       pnlPct: number;
       holdHours: number;
+      tradeMode?: OscarTradeMode;
       mode: 'dry_run' | 'live';
     }
   | {
@@ -116,7 +121,7 @@ export type OscarJournalRow =
       displaySymbol: string;
       filledGrossUsd: number;
       remainingAbsSize: number;
-      mode: 'live';
+      mode: 'dry_run' | 'live';
     };
 
 export function appendOscarJournal(journalPath: string, row: OscarJournalRow): void {
@@ -165,13 +170,17 @@ export function loadOscarOpensFromJournal(journalPath: string): Map<string, Osca
     if (!id) continue;
 
     if (kind === 'open') {
+      const tradeMode: OscarTradeMode =
+        row.tradeMode === 'scalp' ? 'scalp' : 'knife';
       const pos: OscarOpenPosition = {
         id,
         coin: String(row.coin),
         displaySymbol: String(row.displaySymbol ?? row.coin),
+        tradeMode,
         entryTs: Number(row.ts),
         signalPrice: Number(row.signalPrice),
-        signalBarTs: Number(row.ts),
+        signalBarTs:
+          typeof row.signalBarTs === 'number' ? row.signalBarTs : Number(row.ts),
         dipPct: Number(row.dipPct),
         impulsePct: Number(row.impulsePct),
         windowMin: Number(row.windowMin),
@@ -225,6 +234,7 @@ export function loadOscarOpensFromJournal(journalPath: string): Map<string, Osca
         id,
         coin: String(row.coin),
         displaySymbol: String(row.displaySymbol ?? row.coin),
+        tradeMode: 'knife',
         entryTs: Number(row.ts),
         signalPrice: Number(row.hlEntryPx),
         signalBarTs: Number(row.ts),
@@ -259,7 +269,10 @@ export function loadOscarOpensFromJournal(journalPath: string): Map<string, Osca
   return opens;
 }
 
-export function lastEntryBarTsByCoin(journalPath: string): Map<string, number> {
+export function lastEntryBarTsByCoin(
+  journalPath: string,
+  tradeMode?: OscarTradeMode,
+): Map<string, number> {
   const map = new Map<string, number>();
   if (!fs.existsSync(journalPath)) return map;
   const lines = fs.readFileSync(journalPath, 'utf8').split('\n');
@@ -268,7 +281,10 @@ export function lastEntryBarTsByCoin(journalPath: string): Map<string, number> {
     try {
       const row = JSON.parse(line) as Record<string, unknown>;
       if (row.kind === 'open' && typeof row.coin === 'string') {
-        map.set(row.coin, Number(row.ts));
+        const mode: OscarTradeMode = row.tradeMode === 'scalp' ? 'scalp' : 'knife';
+        if (tradeMode != null && mode !== tradeMode) continue;
+        const barTs = typeof row.signalBarTs === 'number' ? row.signalBarTs : Number(row.ts);
+        map.set(row.coin, barTs);
       }
     } catch {
       /* skip */
@@ -280,10 +296,12 @@ export function lastEntryBarTsByCoin(journalPath: string): Map<string, number> {
 export function writeHeartbeat(
   heartbeatPath: string,
   payload: {
-    openCount: number;
-    paperOpenCount?: number;
-    mode: 'dry_run' | 'live';
-    universeSize: number;
+      openCount: number;
+      paperOpenCount?: number;
+      mode: 'dry_run' | 'live';
+      strategyMode?: string;
+      scalpMode?: 'dry_run' | 'live';
+      universeSize: number;
   },
 ): void {
   fs.mkdirSync(path.dirname(heartbeatPath), { recursive: true });

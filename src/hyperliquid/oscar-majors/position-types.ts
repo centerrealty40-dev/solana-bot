@@ -6,10 +6,14 @@ export type OscarLeg = {
   legIndex: 1 | 2 | 3;
 };
 
+export type OscarTradeMode = 'knife' | 'scalp';
+
 export type OscarOpenPosition = {
   id: string;
   coin: string;
   displaySymbol: string;
+  /** Strategy lane: knife (Mode A) or scalp (Mode B). */
+  tradeMode: OscarTradeMode;
   entryTs: number;
   signalPrice: number;
   signalBarTs: number;
@@ -35,6 +39,7 @@ export function newOscarPosition(args: {
   id: string;
   coin: string;
   displaySymbol: string;
+  tradeMode?: OscarTradeMode;
   signal: { signalPrice: number; barTs: number; dipPct: number; impulsePct: number; windowMin: number };
   leg1: OscarLeg;
 }): OscarOpenPosition {
@@ -42,6 +47,7 @@ export function newOscarPosition(args: {
     id: args.id,
     coin: args.coin,
     displaySymbol: args.displaySymbol,
+    tradeMode: args.tradeMode ?? 'knife',
     entryTs: args.leg1.ts,
     signalPrice: args.signal.signalPrice,
     signalBarTs: args.signal.barTs,

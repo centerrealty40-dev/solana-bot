@@ -1,10 +1,8 @@
 /**
- * HyperLiquid Oscar Majors — Mode A knife-catch for BTC+ETH only.
+ * HyperLiquid Oscar Majors — Mode A knife (−6%) + Mode B scalp (−2%) for BTC+ETH.
  *
- * Strategy: dip ≥6% from local high (2h/6h/12h), impulse off, single-shot entry ($100 gross @ 2x),
- * per-coin TP ladder (BTC +2/+3/+4%, ETH +1.5/+2/+2.5%), trail, kill −15%, time stop 12h.
- *
- * Env: HL_MAJORS_LIVE_ENABLED=0 (default paper), HL_MAJORS_* — see .env.example.
+ * Env: HL_MAJORS_MODE=knife|scalp|both, HL_MAJORS_* (knife), HL_MAJORS_SCALP_* (scalp).
+ * Scalp paper: HL_MAJORS_SCALP_DRY_RUN=1 (default) while knife may stay live.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -81,14 +79,20 @@ async function main(): Promise<void> {
     ? `staged legs=$${cfg.leg1GrossUsd}+$${cfg.leg2GrossUsd}+$${cfg.leg3GrossUsd} (total $${cfg.positionNotionalUsd})`
     : `single entry=$${cfg.leg1GrossUsd} gross ($${(cfg.leg1GrossUsd / cfg.leverage).toFixed(0)} margin @ ${cfg.leverage}x)`;
   console.log(
-    `[hl-oscar-majors] start mode=${client.mode} leverage=${cfg.leverage}x ${entryDesc} timeStop=${cfg.timeStopHours}h maxOpen=${cfg.maxOpenPositions} maxConcurrent=${cfg.maxConcurrentPositions}`,
+    `[hl-oscar-majors] start strategyMode=${cfg.strategyMode} knifeMode=${client.mode} scalpMode=${cfg.scalp.mode} leverage=${cfg.leverage}x ${entryDesc} timeStop=${cfg.timeStopHours}h maxOpen=${cfg.maxOpenPositions}`,
   );
   console.log(
-    `[hl-oscar-majors] whitelist=${cfg.whitelist.join(',')} dip=${cfg.dipMinDropPct}% impulseMin=${cfg.dipMinImpulsePct}%`,
+    `[hl-oscar-majors] whitelist=${cfg.whitelist.join(',')} knifeDip=${cfg.dipMinDropPct}% impulseMin=${cfg.dipMinImpulsePct}%`,
   );
   console.log(
     `[hl-oscar-majors] BTC TP=${cfg.btcTpRungs.join('/')} ETH TP=${cfg.ethTpRungs.join('/')}`,
   );
+  if (cfg.strategyMode === 'scalp' || cfg.strategyMode === 'both') {
+    const s = cfg.scalp;
+    console.log(
+      `[hl-oscar-majors] scalp dip=${s.dipPct}% window=${s.windowMin}m TP=${s.tpRungs.join('/')} SL=${s.slPct}% timeStop=${s.timeStopMin}m margin=$${s.marginUsd} gross=$${s.grossUsd} rangeMax=${s.rangeMaxPct ?? 'off'}`,
+    );
+  }
 
   if (cfg.mode === 'live') {
     const equity = await fetchMajorsAccountEquity(cfg.masterAddress);
@@ -133,6 +137,8 @@ async function main(): Promise<void> {
         openCount: state.opens.size,
         paperOpenCount: countMajorsOpensByMode(state).paper,
         mode: cfg.mode,
+        strategyMode: cfg.strategyMode,
+        scalpMode: cfg.scalp.mode,
         universeSize: universe.length,
       });
       console.log(
