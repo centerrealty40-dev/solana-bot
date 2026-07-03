@@ -224,16 +224,17 @@ describe('live-oscar-runner-probe', () => {
     expect(runnerProbeKillEligible(ot, 0.88, 0.55, cfg)).toBe(false);
   });
 
-  it('TP triggers from tracked peak even when current tick is below tpX', () => {
+  it('does not phantom-TP from tracked peak when live sell-side is below tpX (LojakPaul)', () => {
     const cfg = loadPaperTraderConfig();
     const ot = {
       mint: 'm1',
       liveExitPolicyId: 'runner_probe_v1',
-      avgEntry: 1,
-      peakMcUsd: 1.12,
-      peakPnlPct: 12,
+      avgEntry: 0.0022081355573126318,
+      peakMcUsd: 0.002524,
+      peakPnlPct: 14.3,
     } as OpenTrade;
-    expect(runnerProbeTpEligible(ot, 1.05, 1.05, cfg)).toBe(true);
+    expect(runnerProbeTpEligible(ot, 0.002228414527549165, 0.002262660166074309, cfg)).toBe(false);
+    expect(runnerProbeTpEligible(ot, 1.12, 1.12, cfg)).toBe(true);
     expect(runnerProbeEffectiveKillFrac(cfg)).toBe(-0.5);
   });
 
