@@ -89,12 +89,6 @@ export function defaultStrategyWatchTargets(root) {
       fatalPath: `${root}/data/live/last-fatal-live-oscar.json`,
     },
     {
-      pm2: 'live-oscar-preset-c',
-      heartbeatPath: `${root}/data/ops-heartbeats/live-oscar-preset-c.json`,
-      staleMs: 300_000,
-      fatalPath: `${root}/data/live/last-fatal-live-oscar-preset-c.json`,
-    },
-    {
       pm2: 'copy-trader',
       heartbeatPath: `${root}/data/ops-heartbeats/copy-trader.json`,
       staleMs: 300_000,
