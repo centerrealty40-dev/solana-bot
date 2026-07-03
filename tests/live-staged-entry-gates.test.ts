@@ -481,7 +481,7 @@ describe('entry split fast poll scheduling', () => {
   });
 });
 
-describe('entrySplitTimedLegEligible legs 3–6', () => {
+describe('entrySplitTimedLegEligible legs 3–8', () => {
   it('leg4 requires delay after leg-3 fill timestamp', () => {
     const leg1Ts = 1_000_000;
     const st = {
@@ -512,6 +512,50 @@ describe('entrySplitTimedLegEligible legs 3–6', () => {
         entrySplitPx: 1.01,
         anchorUsd: 1,
         legIndex: 4,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('leg8 is eligible when prior legs done and delay elapsed', () => {
+    const leg1Ts = 1_000_000;
+    const delay = 5000;
+    const st = {
+      ...baseSt(),
+      entrySplitLeg1Ts: leg1Ts,
+      entrySplitTargetDropPct: 0,
+      entrySplitDelayMs: delay,
+      entrySplitLeg2Done: true,
+      entrySplitLeg3Done: true,
+      entrySplitLeg4Done: true,
+      entrySplitLeg5Done: true,
+      entrySplitLeg6Done: true,
+      entrySplitLeg7Done: true,
+      entrySplitLeg2Ts: leg1Ts + delay,
+      entrySplitLeg3Ts: leg1Ts + 2 * delay,
+      entrySplitLeg4Ts: leg1Ts + 3 * delay,
+      entrySplitLeg5Ts: leg1Ts + 4 * delay,
+      entrySplitLeg6Ts: leg1Ts + 5 * delay,
+      entrySplitLeg7Ts: leg1Ts + 6 * delay,
+    };
+    const readyTs = leg1Ts + 7 * delay;
+    expect(
+      entrySplitTimedLegEligible({
+        st,
+        signalDropPct: 0,
+        nowMs: readyTs - 1,
+        entrySplitPx: 1.01,
+        anchorUsd: 1,
+        legIndex: 8,
+      }).ok,
+    ).toBe(false);
+    expect(
+      entrySplitTimedLegEligible({
+        st,
+        signalDropPct: 0,
+        nowMs: readyTs,
+        entrySplitPx: 1.01,
+        anchorUsd: 1,
+        legIndex: 8,
       }).ok,
     ).toBe(true);
   });
