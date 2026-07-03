@@ -22,6 +22,10 @@ const ENV_KEYS = [
   'HL_MAJORS_ETH_TP_RUNGS',
   'HL_MAJORS_MAX_OPEN_POSITIONS',
   'HL_MAJORS_WHITELIST',
+  'HL_MAJORS_MODE',
+  'HL_MAJORS_SCALP_DIP_PCT',
+  'HL_MAJORS_SCALP_DRY_RUN',
+  'HL_MAJORS_SCALP_MARGIN_USD',
 ] as const;
 
 function clearEnv(): void {
@@ -56,6 +60,9 @@ describe('hl-oscar-majors config', () => {
     expect(cfg.trailSellFrac).toBe(0.25);
     expect(cfg.dipLookbackWindowsMin).toEqual([120, 360, 720]);
     expect(cfg.dipCooldownMin).toBe(30);
+    expect(cfg.strategyMode).toBe('knife');
+    expect(cfg.scalp.dipPct).toBe(-2);
+    expect(cfg.scalp.mode).toBe('dry_run');
     expect(cfg.minDayVolumeUsd).toBe(1_000_000);
     const twap = toHlTwapLiveConfig(cfg);
     expect(twap.notionalUsd).toBe(50);
@@ -97,5 +104,19 @@ describe('hl-oscar-majors config', () => {
     expect(cfg.leg2GrossUsd).toBe(legs.leg2);
     expect(cfg.leg3GrossUsd).toBe(legs.leg3);
     expect(cfg.leg1GrossUsd + cfg.leg2GrossUsd + cfg.leg3GrossUsd).toBe(100);
+  });
+
+  it('loads both mode with scalp paper defaults', () => {
+    process.env.HL_MAJORS_MODE = 'both';
+    process.env.HL_MAJORS_SCALP_DRY_RUN = '1';
+    process.env.HL_MAJORS_SCALP_LIVE_ENABLED = '0';
+    const cfg = loadHlOscarMajorsConfig();
+    expect(cfg.strategyMode).toBe('both');
+    expect(cfg.scalp.enabled).toBe(true);
+    expect(cfg.scalp.mode).toBe('dry_run');
+    expect(cfg.scalp.grossUsd).toBe(50);
+    expect(cfg.scalp.marginUsd).toBe(25);
+    expect(cfg.scalp.tpRungs).toEqual([0.005, 0.01]);
+    expect(cfg.scalp.timeStopMin).toBe(240);
   });
 });

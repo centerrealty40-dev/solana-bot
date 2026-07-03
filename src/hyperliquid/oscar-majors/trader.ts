@@ -7,6 +7,8 @@ import type { HlOscarMajorsConfig } from './config.js';
 import { fetchOscarCandles, type OscarCandle } from './candles.js';
 import { cooldownBlocksEntry, evaluateOscarEntry } from './entry-signal.js';
 import { computeMajorsExitActions } from './exit-engine.js';
+import { evaluateScalpEntry } from './scalp-entry.js';
+import { computeScalpExitActions } from './scalp-exit-engine.js';
 import { shouldRemainderFlush } from '../oscar-remainder-flush.js';
 import { tryOscarBuyLeg } from '../oscar-open-margin.js';
 import { flattenCoinOnExchange } from '../twap/live/flatten-position.js';
@@ -17,7 +19,7 @@ import {
   loadOscarOpensFromJournal,
   type OscarJournalRow,
 } from './journal.js';
-import { newOscarPosition, recomputeAvgEntry, type OscarOpenPosition } from './position-types.js';
+import { newOscarPosition, recomputeAvgEntry, type OscarOpenPosition, type OscarTradeMode } from './position-types.js';
 import type { OscarUniverseCoin } from './universe.js';
 import { isMajorsTradingHalted } from './drawdown.js';
 import {
@@ -32,7 +34,8 @@ export type MajorsTraderState = {
   openByCoin: Map<string, string>;
   openModes: Map<string, 'dry_run' | 'live'>;
   candleCache: Map<string, { candles: OscarCandle[]; loadedAtMs: number }>;
-  lastEntryBarTs: Map<string, number>;
+  lastKnifeEntryBarTs: Map<string, number>;
+  lastScalpEntryBarTs: Map<string, number>;
   scanOffset: number;
 };
 
@@ -46,9 +49,38 @@ export function createMajorsTraderState(journalPath: string): MajorsTraderState 
     openByCoin,
     openModes,
     candleCache: new Map(),
-    lastEntryBarTs: lastEntryBarTsByCoin(journalPath),
+    lastKnifeEntryBarTs: lastEntryBarTsByCoin(journalPath, 'knife'),
+    lastScalpEntryBarTs: lastEntryBarTsByCoin(journalPath, 'scalp'),
     scanOffset: 0,
   };
+}
+
+function countOpensByTradeMode(state: MajorsTraderState, tradeMode: OscarTradeMode): number {
+  let n = 0;
+  for (const pos of state.opens.values()) {
+    if (pos.tradeMode === tradeMode) n++;
+  }
+  return n;
+}
+
+function strategyModeActive(cfg: HlOscarMajorsConfig, lane: OscarTradeMode): boolean {
+  if (lane === 'knife') {
+    return cfg.strategyMode === 'knife' || cfg.strategyMode === 'both';
+  }
+  return (
+    (cfg.strategyMode === 'scalp' || cfg.strategyMode === 'both') && cfg.scalp.enabled
+  );
+}
+
+function executionModeForTrade(
+  cfg: HlOscarMajorsConfig,
+  tradeMode: OscarTradeMode,
+  clientMode: 'dry_run' | 'live',
+): 'dry_run' | 'live' {
+  if (tradeMode === 'scalp') {
+    return cfg.scalp.mode === 'live' && clientMode === 'live' ? 'live' : 'dry_run';
+  }
+  return clientMode;
 }
 
 function journalSkipFromBuyReject(
@@ -142,7 +174,10 @@ export async function runMajorsTraderPass(args: {
 }): Promise<void> {
   const { cfg, client, universe, state } = args;
   const mode = client.mode;
-  const lookbackHours = Math.max(...cfg.dipLookbackWindowsMin) / 60 + 2;
+  const lookbackHours = Math.max(
+    Math.max(...cfg.dipLookbackWindowsMin) / 60 + 2,
+    cfg.scalp.enabled ? cfg.scalp.windowMin / 60 + 26 : 0,
+  );
 
   if (isMajorsTradingHalted(cfg)) {
     console.warn('[hl-oscar-majors] trading halted (drawdown)');
@@ -153,8 +188,9 @@ export async function runMajorsTraderPass(args: {
     await processOpenPosition(cfg, client, state, pos, lookbackHours, mode);
   }
 
-  if (state.opens.size >= cfg.maxOpenPositions) return;
-  if (state.opens.size >= cfg.maxConcurrentPositions) return;
+  const knifeActive = strategyModeActive(cfg, 'knife');
+  const scalpActive = strategyModeActive(cfg, 'scalp');
+  if (!knifeActive && !scalpActive) return;
 
   let accountMargin: Awaited<ReturnType<typeof fetchHlClearinghouseMargin>> | null = null;
   if (client.mode === 'live') {
@@ -169,6 +205,175 @@ export async function runMajorsTraderPass(args: {
   const batch = rotatingBatch(entryCandidates, state.scanOffset, cfg.scanBatchSize);
   state.scanOffset = (state.scanOffset + batch.length) % Math.max(entryCandidates.length, 1);
 
+  if (scalpActive) {
+    await scanScalpEntries({
+      cfg,
+      client,
+      state,
+      batch,
+      lookbackHours,
+      accountMargin,
+      clientMode: mode,
+    });
+  }
+
+  if (knifeActive) {
+    await scanKnifeEntries({
+      cfg,
+      client,
+      state,
+      batch,
+      lookbackHours,
+      accountMargin,
+      clientMode: mode,
+    });
+  }
+}
+
+async function scanScalpEntries(args: {
+  cfg: HlOscarMajorsConfig;
+  client: HlTwapExchangeClient;
+  state: MajorsTraderState;
+  batch: OscarUniverseCoin[];
+  lookbackHours: number;
+  accountMargin: Awaited<ReturnType<typeof fetchHlClearinghouseMargin>> | null;
+  clientMode: 'dry_run' | 'live';
+}): Promise<void> {
+  const { cfg, client, state, batch, lookbackHours, accountMargin, clientMode } = args;
+  const scalp = cfg.scalp;
+  const execMode = executionModeForTrade(cfg, 'scalp', clientMode);
+
+  for (const coin of batch) {
+    if (state.openByCoin.has(coin.coin)) continue;
+    if (state.opens.size >= cfg.maxOpenPositions) break;
+    if (countOpensByTradeMode(state, 'scalp') >= scalp.maxOpenPositions) break;
+
+    const candles = await ensureCandles(cfg, state, coin.coin, lookbackHours);
+    const signal = evaluateScalpEntry(scalp, coin.coin, candles);
+    if (!signal) continue;
+
+    const lastTs = state.lastScalpEntryBarTs.get(coin.coin);
+    if (cooldownBlocksEntry(lastTs, signal.barTs, scalp.cooldownMin)) {
+      appendOscarJournal(cfg.journalPath, {
+        kind: 'signal_skip',
+        ts: Date.now(),
+        coin: coin.coin,
+        reason: 'scalp_cooldown',
+      });
+      continue;
+    }
+
+    const markPx = coin.midPx;
+    const legResult = await tryOscarBuyLeg({
+      client,
+      coin: coin.coin,
+      displaySymbol: coin.displaySymbol,
+      grossUsd: scalp.grossUsd,
+      leverage: scalp.leverage,
+      markPx,
+      marginReserveUsd: cfg.marginReserveUsd,
+      accountMargin: execMode === 'live' ? accountMargin : null,
+      logPrefix: '[hl-oscar-majors:scalp]',
+      intent: 'open',
+    });
+    if (!legResult.ok) {
+      if (legResult.reason === 'unwind_failed') {
+        appendOscarJournal(cfg.journalPath, {
+          kind: 'unwind_failed',
+          ts: Date.now(),
+          coin: coin.coin,
+          displaySymbol: coin.displaySymbol,
+          filledGrossUsd: legResult.meta.filledGrossUsd,
+          remainingAbsSize: legResult.unwindRemainingAbsSize ?? 0,
+          mode: execMode,
+        });
+      } else if (legResult.reason !== 'order_failed') {
+        appendOscarJournal(
+          cfg.journalPath,
+          journalSkipFromBuyReject(coin.coin, `scalp_${legResult.reason}`, legResult.meta),
+        );
+      }
+      continue;
+    }
+
+    const id = randomUUID();
+    const pos = newOscarPosition({
+      id,
+      coin: coin.coin,
+      displaySymbol: coin.displaySymbol,
+      tradeMode: 'scalp',
+      signal: {
+        signalPrice: signal.signalPrice,
+        barTs: signal.barTs,
+        dipPct: signal.dipPct,
+        impulsePct: 0,
+        windowMin: signal.windowMin,
+      },
+      leg1: {
+        ts: Date.now(),
+        grossUsd: legResult.grossUsd,
+        marginUsd: legResult.marginUsd,
+        fillPx: legResult.fillPx,
+        legIndex: 1,
+      },
+    });
+    state.opens.set(id, pos);
+    state.openByCoin.set(coin.coin, id);
+    state.openModes.set(id, execMode);
+    state.lastScalpEntryBarTs.set(coin.coin, signal.barTs);
+
+    appendOscarJournal(cfg.journalPath, {
+      kind: 'open',
+      ts: Date.now(),
+      id,
+      coin: coin.coin,
+      displaySymbol: coin.displaySymbol,
+      legIndex: 1,
+      signalPrice: signal.signalPrice,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
+      dipPct: signal.dipPct,
+      impulsePct: 0,
+      windowMin: signal.windowMin,
+      tradeMode: 'scalp',
+      mode: execMode,
+      requestedGrossUsd: legResult.meta.requestedGrossUsd,
+      filledGrossUsd: legResult.meta.filledGrossUsd,
+      partialFill: legResult.meta.partialFill,
+      freeMarginAtOpen: legResult.meta.freeMarginAtOpen,
+      signalBarTs: signal.barTs,
+    } as OscarJournalRow);
+    console.log(
+      `[hl-oscar-majors:scalp] OPEN ${coin.coin} dip=${signal.dipPct.toFixed(2)}% range=${signal.posIn24hRange?.toFixed(2) ?? 'n/a'} $${legResult.grossUsd.toFixed(0)} @ ${legResult.fillPx} mode=${execMode}`,
+    );
+    await notifyMajorsOpen({
+      cfg,
+      sym: coin.displaySymbol,
+      legIndex: 1,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
+      dipPct: signal.dipPct,
+      impulsePct: 0,
+      windowMin: signal.windowMin,
+    });
+  }
+}
+
+async function scanKnifeEntries(args: {
+  cfg: HlOscarMajorsConfig;
+  client: HlTwapExchangeClient;
+  state: MajorsTraderState;
+  batch: OscarUniverseCoin[];
+  lookbackHours: number;
+  accountMargin: Awaited<ReturnType<typeof fetchHlClearinghouseMargin>> | null;
+  clientMode: 'dry_run' | 'live';
+}): Promise<void> {
+  const { cfg, client, state, batch, lookbackHours, accountMargin, clientMode } = args;
+
+  if (state.opens.size >= cfg.maxOpenPositions) return;
+  if (state.opens.size >= cfg.maxConcurrentPositions) return;
+
   for (const coin of batch) {
     if (state.openByCoin.has(coin.coin)) continue;
     if (state.opens.size >= cfg.maxOpenPositions) break;
@@ -178,7 +383,7 @@ export async function runMajorsTraderPass(args: {
     const signal = evaluateOscarEntry(cfg, coin.coin, candles);
     if (!signal) continue;
 
-    const lastTs = state.lastEntryBarTs.get(coin.coin);
+    const lastTs = state.lastKnifeEntryBarTs.get(coin.coin);
     if (cooldownBlocksEntry(lastTs, signal.barTs, cfg.dipCooldownMin)) {
       appendOscarJournal(cfg.journalPath, {
         kind: 'signal_skip',
@@ -211,7 +416,7 @@ export async function runMajorsTraderPass(args: {
           displaySymbol: coin.displaySymbol,
           filledGrossUsd: legResult.meta.filledGrossUsd,
           remainingAbsSize: legResult.unwindRemainingAbsSize ?? 0,
-          mode: 'live',
+          mode: clientMode,
         });
       } else if (legResult.reason !== 'order_failed') {
         appendOscarJournal(
@@ -221,26 +426,26 @@ export async function runMajorsTraderPass(args: {
       }
       continue;
     }
-    const legFill = legResult;
 
     const id = randomUUID();
     const pos = newOscarPosition({
       id,
       coin: coin.coin,
       displaySymbol: coin.displaySymbol,
+      tradeMode: 'knife',
       signal,
       leg1: {
         ts: Date.now(),
-        grossUsd: legFill.grossUsd,
-        marginUsd: legFill.marginUsd,
-        fillPx: legFill.fillPx,
+        grossUsd: legResult.grossUsd,
+        marginUsd: legResult.marginUsd,
+        fillPx: legResult.fillPx,
         legIndex: 1,
       },
     });
     state.opens.set(id, pos);
     state.openByCoin.set(coin.coin, id);
-    state.openModes.set(id, mode);
-    state.lastEntryBarTs.set(coin.coin, signal.barTs);
+    state.openModes.set(id, clientMode);
+    state.lastKnifeEntryBarTs.set(coin.coin, signal.barTs);
 
     const row: OscarJournalRow = {
       kind: 'open',
@@ -250,28 +455,30 @@ export async function runMajorsTraderPass(args: {
       displaySymbol: coin.displaySymbol,
       legIndex: 1,
       signalPrice: signal.signalPrice,
-      fillPx: legFill.fillPx,
-      grossUsd: legFill.grossUsd,
-      marginUsd: legFill.marginUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
+      marginUsd: legResult.marginUsd,
       dipPct: signal.dipPct,
       impulsePct: signal.impulsePct,
       windowMin: signal.windowMin,
-      mode,
-      requestedGrossUsd: legFill.meta.requestedGrossUsd,
-      filledGrossUsd: legFill.meta.filledGrossUsd,
-      partialFill: legFill.meta.partialFill,
-      freeMarginAtOpen: legFill.meta.freeMarginAtOpen,
-    };
+      tradeMode: 'knife',
+      mode: clientMode,
+      requestedGrossUsd: legResult.meta.requestedGrossUsd,
+      filledGrossUsd: legResult.meta.filledGrossUsd,
+      partialFill: legResult.meta.partialFill,
+      freeMarginAtOpen: legResult.meta.freeMarginAtOpen,
+      signalBarTs: signal.barTs,
+    } as OscarJournalRow;
     appendOscarJournal(cfg.journalPath, row);
     console.log(
-      `[hl-oscar-majors] OPEN ${coin.coin} dip=${signal.dipPct.toFixed(1)}% imp=${signal.impulsePct.toFixed(1)}% $${legFill.grossUsd.toFixed(0)} @ ${legFill.fillPx}`,
+      `[hl-oscar-majors] OPEN ${coin.coin} dip=${signal.dipPct.toFixed(1)}% imp=${signal.impulsePct.toFixed(1)}% $${legResult.grossUsd.toFixed(0)} @ ${legResult.fillPx}`,
     );
     await notifyMajorsOpen({
       cfg,
       sym: coin.displaySymbol,
       legIndex: 1,
-      fillPx: legFill.fillPx,
-      grossUsd: legFill.grossUsd,
+      fillPx: legResult.fillPx,
+      grossUsd: legResult.grossUsd,
       dipPct: signal.dipPct,
       impulsePct: signal.impulsePct,
       windowMin: signal.windowMin,
@@ -285,7 +492,7 @@ async function processOpenPosition(
   state: MajorsTraderState,
   pos: OscarOpenPosition,
   lookbackHours: number,
-  mode: 'dry_run' | 'live',
+  clientMode: 'dry_run' | 'live',
 ): Promise<void> {
   const candles = await ensureCandles(cfg, state, pos.coin, lookbackHours);
   const last = candles[candles.length - 1];
@@ -293,10 +500,25 @@ async function processOpenPosition(
   const markPx = last.close;
   const lowPx = last.low;
   const highPx = last.high;
+  const mode = state.openModes.get(pos.id) ?? executionModeForTrade(cfg, pos.tradeMode, clientMode);
 
-  await maybeFillStagedLegs(cfg, client, pos, lowPx, markPx, mode);
+  if (pos.tradeMode === 'knife') {
+    await maybeFillStagedLegs(cfg, client, pos, lowPx, markPx, mode);
+  }
 
-  const actions = computeMajorsExitActions(pos, cfg, markPx, lowPx, highPx, Date.now());
+  const actions =
+    pos.tradeMode === 'scalp'
+      ? computeScalpExitActions(
+          pos,
+          cfg.scalp,
+          markPx,
+          lowPx,
+          highPx,
+          Date.now(),
+          cfg.remainderClosePct,
+        )
+      : computeMajorsExitActions(pos, cfg, markPx, lowPx, highPx, Date.now());
+
   for (const action of actions) {
     if (action.kind === 'none') continue;
     if (action.kind === 'partial') {
@@ -315,6 +537,7 @@ async function processOpenPosition(
         notionalUsd: res.notionalUsd,
         pnlUsd: res.pnlUsd,
         remainingFraction: pos.remainingFraction,
+        tradeMode: pos.tradeMode,
         mode,
       });
       await notifyMajorsPartialExit({
@@ -515,6 +738,7 @@ async function finalizeClose(
     pnlUsd: pos.realizedPnlUsd,
     pnlPct,
     holdHours,
+    tradeMode: pos.tradeMode,
     mode,
   });
   state.opens.delete(pos.id);

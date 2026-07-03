@@ -1,10 +1,36 @@
 import type { HlTwapLiveConfig } from '../twap/live/config.js';
 
 export type HlOscarMajorsMode = 'dry_run' | 'live';
+export type HlMajorsStrategyMode = 'knife' | 'scalp' | 'both';
+
+export type HlOscarMajorsScalpConfig = {
+  enabled: boolean;
+  mode: HlOscarMajorsMode;
+  dipPct: number;
+  windowMin: number;
+  /** Skip entry when position in 24h range exceeds this (0–1); null = filter off. */
+  rangeMaxPct: number | null;
+  tpRungs: number[];
+  slPct: number;
+  timeStopMin: number;
+  cooldownMin: number;
+  marginUsd: number;
+  leverage: number;
+  grossUsd: number;
+  maxOpenPositions: number;
+  tpSellFrac: number;
+  trailSellFrac: number;
+  trailArmPct: number;
+  trailStepPct: number;
+  maxFunding8h: number;
+};
 
 export type HlOscarMajorsConfig = {
   enabled: boolean;
   mode: HlOscarMajorsMode;
+  /** Which strategy lanes are active: knife, scalp, or both (mutex per coin). */
+  strategyMode: HlMajorsStrategyMode;
+  scalp: HlOscarMajorsScalpConfig;
   privateKey: string | null;
   masterAddress: string;
   testnet: boolean;
@@ -133,6 +159,58 @@ export function hlOscarMajorsSizingFromEnv(): {
   };
 }
 
+function parseStrategyMode(raw: string | undefined): HlMajorsStrategyMode {
+  const v = raw?.trim().toLowerCase();
+  if (v === 'scalp' || v === 'both') return v;
+  return 'knife';
+}
+
+function resolveScalpGrossUsd(leverage: number): { marginUsd: number; grossUsd: number } {
+  const marginUsd = Math.max(1, envNum('HL_MAJORS_SCALP_MARGIN_USD', 25));
+  return { marginUsd, grossUsd: marginUsd * leverage };
+}
+
+function loadScalpConfig(privateKey: string | null): HlOscarMajorsScalpConfig {
+  const leverage = Math.max(1, Math.round(envNum('HL_MAJORS_SCALP_LEVERAGE', 2)));
+  const { marginUsd, grossUsd } = resolveScalpGrossUsd(leverage);
+  const scalpEnabled = envBool('HL_MAJORS_SCALP_ENABLED', true);
+  const scalpLiveEnabled = envBool('HL_MAJORS_SCALP_LIVE_ENABLED', false);
+  const scalpDryRun = envBool('HL_MAJORS_SCALP_DRY_RUN', true);
+  let scalpMode: HlOscarMajorsMode = 'dry_run';
+  if (scalpEnabled && scalpLiveEnabled && !scalpDryRun && privateKey) {
+    scalpMode = 'live';
+  }
+
+  const rangeFilterEnabled = envBool('HL_MAJORS_SCALP_RANGE_FILTER', true);
+  const rangeMaxPct = rangeFilterEnabled
+    ? Math.max(0, Math.min(1, envNum('HL_MAJORS_SCALP_RANGE_MAX_PCT', 0.4)))
+    : null;
+
+  return {
+    enabled: scalpEnabled,
+    mode: scalpMode,
+    dipPct: envNum('HL_MAJORS_SCALP_DIP_PCT', -2),
+    windowMin: Math.max(15, envNum('HL_MAJORS_SCALP_WINDOW_MIN', 120)),
+    rangeMaxPct,
+    tpRungs: parseFracList(
+      process.env.HL_MAJORS_SCALP_TP_RUNGS?.trim() || '0.005,0.01',
+      [0.005, 0.01],
+    ),
+    slPct: Math.max(0.1, envNum('HL_MAJORS_SCALP_SL_PCT', 2.5)),
+    timeStopMin: Math.max(15, envNum('HL_MAJORS_SCALP_TIME_STOP_MIN', 240)),
+    cooldownMin: envNum('HL_MAJORS_SCALP_COOLDOWN_MIN', 30),
+    marginUsd,
+    leverage,
+    grossUsd,
+    maxOpenPositions: Math.max(1, Math.round(envNum('HL_MAJORS_SCALP_MAX_OPEN', 2))),
+    tpSellFrac: envNum('HL_MAJORS_SCALP_TP_SELL_FRAC', 0.5),
+    trailSellFrac: envNum('HL_MAJORS_SCALP_TRAIL_SELL_FRAC', 0.25),
+    trailArmPct: envNum('HL_MAJORS_SCALP_TRAIL_ARM_PCT', 0.8),
+    trailStepPct: envNum('HL_MAJORS_SCALP_TRAIL_STEP_PCT', 0.4),
+    maxFunding8h: envNum('HL_MAJORS_SCALP_MAX_FUNDING_8H', 0.0001),
+  };
+}
+
 export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
   const leverage = Math.max(1, Math.round(envNum('HL_MAJORS_LEVERAGE', 2)));
   const positionNotionalUsd = resolvePositionGrossUsd(leverage);
@@ -151,6 +229,9 @@ export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
   const mode: HlOscarMajorsMode =
     liveEnabled && !explicitDry && privateKey ? 'live' : 'dry_run';
 
+  const strategyMode = parseStrategyMode(process.env.HL_MAJORS_MODE);
+  const scalp = loadScalpConfig(privateKey);
+
   const dataDir =
     process.env.HL_MAJORS_DATA_DIR?.trim() ||
     `${process.cwd()}/data/hl-oscar-majors`;
@@ -165,6 +246,8 @@ export function loadHlOscarMajorsConfig(): HlOscarMajorsConfig {
   return {
     enabled: envBool('HL_MAJORS_ENABLED', true),
     mode,
+    strategyMode,
+    scalp,
     privateKey,
     masterAddress: (
       process.env.HL_MAJORS_MASTER_ADDRESS?.trim() ||
