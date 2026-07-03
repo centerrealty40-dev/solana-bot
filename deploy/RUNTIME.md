@@ -229,7 +229,7 @@ sudo bash /opt/solana-alpha/scripts/cron/install-detective-data-plane-salpha.sh
 
 Блок помечен `# SA_ALPHA_DP_BEGIN` … `# SA_ALPHA_DP_END` (повторный запуск перезаписывает только этот блок).
 
-**Расписание блока (UTC, `salpha`):** `03:10` `wallet-backfill:run` (enqueue); `03:25` и `15:17` `wallet-backfill:pilot`; `03:40` `wallet-funding:backfill`; `04:12` `intel:bot-bucket`; `04:15` `scam-farm:detect`; `04:35` `scam-farm:graph`; минута **5** каждые **6** ч `sa-qn-global-report`; `00 4 * * *` `sa-qn-budget-check`; каждый час **`:08`** `sigseed:enqueue`, **`:18`** `sigseed:run`. **Hourly Telegram** (отдельная строка crontab, чаще всего **`:05`**) идёт **раньше** ежечасного sigseed — лёгкие read-only запросы к PG в отчёте не конкурируют с **`:08`**.
+**Расписание блока (UTC, `salpha`):** `03:10` `wallet-backfill:run` (enqueue); `03:25` и `15:17` `wallet-backfill:pilot`; `03:40` `wallet-funding:backfill`; `04:12` `intel:bot-bucket`; `04:15` `scam-farm:detect`; `04:20` `wallet-intel:policy`; `04:35` `scam-farm:graph`; минута **5** каждые **6** ч `sa-qn-global-report`; `00 4 * * *` `sa-qn-budget-check`; каждый час **`:08`** `sigseed:enqueue`, **`:18`** `sigseed:run`. **Hourly Telegram** (отдельная строка crontab, чаще всего **`:05`**) идёт **раньше** ежечасного sigseed — лёгкие read-only запросы к PG в отчёте не конкурируют с **`:08`**.
 
 ---
 
