@@ -87,6 +87,7 @@ import {
 import {
   evaluateLiveOscarRunnerProbeDiscovery,
   isRunnerProbeLaneEnabled,
+  runnerProbeCandidateInBand,
   runnerProbeRunnerFetchConfig,
   summariseRunnerPass,
   type RunnerProbeDiscoveryEval,
@@ -1694,6 +1695,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     for (const { row, lane } of allowedSnapshotTagged) {
       const discoveryMcap = resolveDiscoveryRefMcap(row);
       const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      // Skip runner_probe entirely for out-of-band mints — avoids misleading deep-audit noise on prod lane.
+      if (!runnerProbeCandidateInBand(cfg, discoveryMcap.refMcapUsd, ageMin)) {
+        continue;
+      }
       const probeEval = evaluateLiveOscarRunnerProbeDiscovery({
         cfg,
         row,
