@@ -1,4 +1,11 @@
 import type { PaperTraderConfig } from './config.js';
+import type { ClusterDumpShadowEval } from './discovery/mint-early-cluster-map.js';
+import type { OrganicFlowSnapshot } from './discovery/mint-organic-flow-gate.js';
+import type { VolumeAuthenticitySnapshot } from './discovery/mint-volume-authenticity.js';
+import {
+  readPervyyVystrelMintSnapshot,
+  type PervyyVystrelMintMaterialized,
+} from './discovery/pervyy-vystrel-snapshot-cache.js';
 import {
   isPervyyVystrelLaneEnabled,
   isPervyyVystrelObservabilityActive as isPervyyVystrelObservabilityActiveCfg,
@@ -46,7 +53,67 @@ export function pervyyVystrelEntryConfig(cfg: PaperTraderConfig): PaperTraderCon
   };
 }
 
-export type PervyyVystrelDiscoveryPhase = 'phase0' | 'out_of_band';
+export type PervyyVystrelDiscoveryPhase = 'phase0' | 'phase_a' | 'phase_b' | 'phase_c' | 'out_of_band';
+
+export interface PervyyVystrelVolAuthShadow {
+  washScore: number | null;
+  organicScore: number | null;
+  pass: boolean;
+  insufficientData: boolean;
+}
+
+export interface PervyyVystrelOrganicFlowShadow {
+  uniqueBuyers1h: number | null;
+  clusterBuyerRatio: number | null;
+  unclusteredBuyers: number | null;
+  pass: boolean;
+}
+
+export interface PervyyVystrelClusterDumpShadow {
+  clusterSellRatio: number | null;
+  clusterUniqueSellers: number | null;
+  pass: boolean;
+}
+
+export interface PervyyVystrelShadowAnalyzers {
+  phase: PervyyVystrelDiscoveryPhase;
+  volAuth: PervyyVystrelVolAuthShadow | null;
+  organicFlow: PervyyVystrelOrganicFlowShadow | null;
+  clusterDump: PervyyVystrelClusterDumpShadow | null;
+  journalEvents: PervyyVystrelShadowJournalEvent[];
+}
+
+export type PervyyVystrelShadowJournalEvent =
+  | {
+      kind: 'pervyy_vystrel_vol_auth_snapshot';
+      mint: string;
+      wash_score: number;
+      organic_score: number;
+      round_trip_share?: number | null;
+      cycle_share?: number | null;
+      net_new_share?: number | null;
+      pass: boolean;
+    }
+  | {
+      kind: 'pervyy_vystrel_organic_flow_shadow';
+      mint: string;
+      unique_buyers_1h: number;
+      cluster_buyer_ratio: number | null;
+      unclustered_buyers: number;
+      pass: boolean;
+    }
+  | {
+      kind: 'pervyy_vystrel_cluster_dump_shadow';
+      mint: string;
+      cluster_sell_ratio: number | null;
+      cluster_unique_sellers: number;
+      pass: boolean;
+    }
+  | {
+      kind: 'pervyy_vystrel_vol_auth_insufficient_data';
+      mint: string;
+      swap_count: number;
+    };
 
 export interface PervyyVystrelDiscoveryEval {
   pass: boolean;
@@ -54,10 +121,118 @@ export interface PervyyVystrelDiscoveryEval {
   phase: PervyyVystrelDiscoveryPhase;
   reasons: string[];
   shadowMode: boolean;
+  shadowAnalyzers?: PervyyVystrelShadowAnalyzers;
 }
 
 function anchorBandLabel(pv: PervyyVystrelConfig): string {
   return `${Math.round(pv.anchorMinMcapUsd / 1000)}k-${Math.round(pv.anchorMaxMcapUsd / 1000)}k`;
+}
+
+function inferShadowPhase(refMcap: number, pv: PervyyVystrelConfig): PervyyVystrelDiscoveryPhase {
+  if (refMcap >= pv.anchorMaxMcapUsd * 1.6) return 'phase_c';
+  if (refMcap >= pv.anchorMaxMcapUsd * 1.2) return 'phase_b';
+  if (refMcap >= pv.anchorMinMcapUsd) return 'phase_a';
+  return 'phase0';
+}
+
+function volAuthShadowFromSnapshot(
+  volAuth: VolumeAuthenticitySnapshot | null | undefined,
+): PervyyVystrelVolAuthShadow | null {
+  if (!volAuth) return null;
+  return {
+    washScore: volAuth.washScore,
+    organicScore: volAuth.organicScore,
+    pass: volAuth.authenticPass,
+    insufficientData: volAuth.insufficientData,
+  };
+}
+
+function organicShadowFromSnapshot(
+  organic: OrganicFlowSnapshot | null | undefined,
+): PervyyVystrelOrganicFlowShadow | null {
+  if (!organic) return null;
+  return {
+    uniqueBuyers1h: organic.uniqueBuyers1h,
+    clusterBuyerRatio: organic.clusterBuyerRatio,
+    unclusteredBuyers: organic.unclusteredBuyers,
+    pass: organic.pass,
+  };
+}
+
+function clusterDumpShadowFromSnapshot(
+  dump: ClusterDumpShadowEval | null | undefined,
+): PervyyVystrelClusterDumpShadow | null {
+  if (!dump) return null;
+  return {
+    clusterSellRatio: dump.clusterSellRatio,
+    clusterUniqueSellers: dump.clusterUniqueSellers,
+    pass: false,
+  };
+}
+
+/** PR2 — read materialized cache; shadow eval for Phase A/B/C (pass:false for entry until PR3). */
+export function evaluatePervyyVystrelShadowAnalyzers(args: {
+  cfg: PaperTraderConfig;
+  mint: string;
+  refMcap: number;
+  materialized?: PervyyVystrelMintMaterialized | null;
+}): PervyyVystrelShadowAnalyzers {
+  const { cfg, mint, refMcap } = args;
+  const pv = cfg.pervyyVystrel;
+  const phase = inferShadowPhase(refMcap, pv);
+  const snap = args.materialized ?? readPervyyVystrelMintSnapshot(mint);
+  const journalEvents: PervyyVystrelShadowJournalEvent[] = [];
+
+  const volAuth = volAuthShadowFromSnapshot(snap?.volAuth ?? null);
+  const organicFlow = organicShadowFromSnapshot(snap?.organicFlow ?? null);
+  const clusterDump = clusterDumpShadowFromSnapshot(snap?.clusterDumpShadow ?? null);
+
+  if (pv.volAuthEnabled && snap?.volAuth) {
+    const v = snap.volAuth;
+    if (v.insufficientData) {
+      journalEvents.push({
+        kind: 'pervyy_vystrel_vol_auth_insufficient_data',
+        mint,
+        swap_count: v.signals.swapCount,
+      });
+    } else {
+      journalEvents.push({
+        kind: 'pervyy_vystrel_vol_auth_snapshot',
+        mint,
+        wash_score: v.washScore,
+        organic_score: v.organicScore,
+        round_trip_share: v.signals.roundTripShare,
+        cycle_share: v.signals.cycleShare,
+        net_new_share: v.signals.netNewWalletShare,
+        pass: false,
+      });
+    }
+  }
+
+  if (pv.organicGateEnabled && snap?.organicFlow) {
+    const o = snap.organicFlow;
+    journalEvents.push({
+      kind: 'pervyy_vystrel_organic_flow_shadow',
+      mint,
+      unique_buyers_1h: o.uniqueBuyers1h,
+      cluster_buyer_ratio: o.clusterBuyerRatio,
+      unclustered_buyers: o.unclusteredBuyers,
+      pass: false,
+    });
+  }
+
+  if (pv.clusterDumpMode !== 'off' && phase === 'phase_c' && snap?.clusterDumpShadow) {
+    const c = snap.clusterDumpShadow;
+    journalEvents.push({
+      kind: 'pervyy_vystrel_cluster_dump_shadow',
+      mint,
+      cluster_sell_ratio: c.clusterSellRatio,
+      cluster_unique_sellers: c.clusterUniqueSellers,
+      pass: false,
+    });
+  }
+
+  return { phase, volAuth, organicFlow, clusterDump, journalEvents };
 }
 
 /**
@@ -162,11 +337,25 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
   reasons.push('pervyy_vystrel_phase0_would_onboard');
   if (shadowMode) reasons.push('pervyy_vystrel_shadow_no_entry_pr3');
 
+  const shadowAnalyzers = evaluatePervyyVystrelShadowAnalyzers({
+    cfg,
+    mint: row.mint,
+    refMcap,
+  });
+
+  if (shadowAnalyzers.volAuth && !shadowAnalyzers.volAuth.pass && pv.volAuthEnabled) {
+    reasons.push('pervyy_vystrel_vol_auth_shadow_fail');
+  }
+  if (shadowAnalyzers.organicFlow && !shadowAnalyzers.organicFlow.pass && pv.organicGateEnabled) {
+    reasons.push('pervyy_vystrel_organic_flow_shadow_fail');
+  }
+
   return {
     pass: false,
     wouldOnboard: true,
     phase: 'phase0',
     reasons,
     shadowMode,
+    shadowAnalyzers,
   };
 }

@@ -186,6 +186,18 @@ export interface EvalDecision {
     phase: string;
     wouldOnboard: boolean;
     shadowMode: boolean;
+    volAuth?: {
+      washScore: number | null;
+      organicScore: number | null;
+      pass: boolean;
+      insufficientData: boolean;
+    };
+    organicFlow?: {
+      uniqueBuyers1h: number | null;
+      clusterBuyerRatio: number | null;
+      unclusteredBuyers: number | null;
+      pass: boolean;
+    };
   };
 }
 
@@ -2069,6 +2081,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           wouldOnboard: pvEval.wouldOnboard,
           vol1hUsd: Number(row.volume_1h ?? 0),
           refMcapUsd: discoveryMcap.refMcapUsd,
+          volAuth: pvEval.shadowAnalyzers?.volAuth ?? undefined,
+          organicFlow: pvEval.shadowAnalyzers?.organicFlow ?? undefined,
+          clusterDump: pvEval.shadowAnalyzers?.clusterDump ?? undefined,
         },
       });
       if (pvEval.wouldOnboard) {
@@ -2083,6 +2098,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           anchor_band: `${cfg.pervyyVystrel.anchorMinMcapUsd}-${cfg.pervyyVystrel.anchorMaxMcapUsd}`,
           shadowMode: pvEval.shadowMode,
         });
+        for (const ev of pvEval.shadowAnalyzers?.journalEvents ?? []) {
+          auditRows.push(ev);
+        }
       } else if (pvEval.phase === 'phase0' || pvEval.reasons.some((r) => r.startsWith('pervyy_vystrel_'))) {
         auditRows.push({
           kind: 'pervyy_vystrel_shadow_skip',
@@ -2110,6 +2128,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           phase: pvEval.phase,
           wouldOnboard: pvEval.wouldOnboard,
           shadowMode: pvEval.shadowMode,
+          volAuth: pvEval.shadowAnalyzers?.volAuth ?? undefined,
+          organicFlow: pvEval.shadowAnalyzers?.organicFlow ?? undefined,
         },
       });
     }

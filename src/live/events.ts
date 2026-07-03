@@ -500,6 +500,43 @@ export const PervyyVystrelEntrySignalSchema = z.object({
   enter: z.boolean().optional(),
 });
 
+/** PR2 — batch volume authenticity snapshot (shadow). */
+export const PervyyVystrelVolAuthSnapshotSchema = z.object({
+  kind: z.literal('pervyy_vystrel_vol_auth_snapshot'),
+  mint: z.string().min(1).max(64),
+  wash_score: z.number().finite(),
+  organic_score: z.number().finite(),
+  round_trip_share: z.number().finite().nullable().optional(),
+  cycle_share: z.number().finite().nullable().optional(),
+  net_new_share: z.number().finite().nullable().optional(),
+  pass: z.boolean().optional(),
+});
+
+export const PervyyVystrelVolAuthInsufficientDataSchema = z.object({
+  kind: z.literal('pervyy_vystrel_vol_auth_insufficient_data'),
+  mint: z.string().min(1).max(64),
+  swap_count: z.number().int().nonnegative(),
+});
+
+/** PR2 — organic flow shadow gate. */
+export const PervyyVystrelOrganicFlowShadowSchema = z.object({
+  kind: z.literal('pervyy_vystrel_organic_flow_shadow'),
+  mint: z.string().min(1).max(64),
+  unique_buyers_1h: z.number().finite(),
+  cluster_buyer_ratio: z.number().finite().nullable().optional(),
+  unclustered_buyers: z.number().finite(),
+  pass: z.boolean().optional(),
+});
+
+/** PR2 — cluster dump attribution shadow (Phase C). */
+export const PervyyVystrelClusterDumpShadowSchema = z.object({
+  kind: z.literal('pervyy_vystrel_cluster_dump_shadow'),
+  mint: z.string().min(1).max(64),
+  cluster_sell_ratio: z.number().finite().nullable().optional(),
+  cluster_unique_sellers: z.number().int().nonnegative(),
+  pass: z.boolean().optional(),
+});
+
 /** Daily Telegram summary tick (1.11.231+); appended to live JSONL for audit. */
 export const LiveDailySummarySchema = z.object({
   kind: z.literal('live_daily_summary'),
@@ -718,6 +755,10 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   PervyyVystrelSurveillanceTickSchema,
   PervyyVystrelClusterDumpConfirmedSchema,
   PervyyVystrelEntrySignalSchema,
+  PervyyVystrelVolAuthSnapshotSchema,
+  PervyyVystrelVolAuthInsufficientDataSchema,
+  PervyyVystrelOrganicFlowShadowSchema,
+  PervyyVystrelClusterDumpShadowSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,

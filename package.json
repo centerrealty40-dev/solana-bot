@@ -86,6 +86,7 @@
     "wallet-intel:policy": "tsx src/scripts/wallet-intel-policy.ts",
     "wallet-intel:mint-check": "tsx src/scripts/wallet-intel-mint-check.ts",
     "wallet-intel:pipeline": "tsx src/scripts/wallet-intel-pipeline.ts",
+    "pervyy-vystrel:materialize": "tsx src/scripts/pervyy-vystrel-materialize.ts",
     "copy-trader": "tsx src/scripts/copy-trader.ts",
     "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts"
   },
