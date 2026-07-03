@@ -158,6 +158,14 @@ function mapSnapshotRow(row: Record<string, unknown>, source: string): SnapshotC
  * Latest snapshot row for a mint across all collector tables (last N minutes, price > 0).
  * Канонический пул = max `liquidity_usd` среди свежих пар всех DEX (не «самый новый ts» на мёртвом пуле).
  */
+/**
+ * Volume-leader snapshot SQL age floor — separate from prod global/dip/post gates (48h).
+ * Rollback: raise `PAPER_VOLUME_LEADER_MIN_TOKEN_AGE_MIN` toward 2880.
+ */
+export function resolveVolumeLeaderMinTokenAgeMin(cfg: PaperTraderConfig): number {
+  return Math.max(0, cfg.volumeLeaderMinTokenAgeMin);
+}
+
 export async function fetchLatestCrossVenueSnapshotRowForMint(
   mint: string,
   opts?: { lookbackMinutes?: number; canonicalByVolume?: boolean },
@@ -191,11 +199,7 @@ export async function fetchCrossVenueSnapshotRowsByVolumeCanonical(
       ? Math.floor(opts.lookbackMinutes)
       : Math.max(5, Math.min(240, cfg.volumeLeaderSnapshotLookbackMin ?? 30));
 
-  const minTokenAgeMin = Math.max(
-    cfg.lanePostMinAgeMin ?? 0,
-    cfg.dipMinAgeMin ?? 0,
-    cfg.globalMinTokenAgeMin ?? 0,
-  );
+  const minTokenAgeMin = resolveVolumeLeaderMinTokenAgeMin(cfg);
   const minTokenAgeSql =
     minTokenAgeMin > 0
       ? `AND EXTRACT(EPOCH FROM (now() - COALESCE(p.launch_ts, tok.first_seen_at, p.ts))) / 60.0 >= ${minTokenAgeMin}`
