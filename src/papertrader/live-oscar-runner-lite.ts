@@ -382,7 +382,6 @@ export function attachRunnerLitePendingScaleIn(
   cfg: PaperTraderConfig,
   snapshotEntryPriceUsd: number,
   opts: {
-    enabled: boolean;
     delayMs: number;
     corridorUpPct: number;
     corridorDownPct: number;
@@ -390,7 +389,7 @@ export function attachRunnerLitePendingScaleIn(
   },
 ): void {
   const secondUsd = runnerLiteSecondLegUsd(cfg);
-  if (!(secondUsd > 1e-6) || !opts.enabled) return;
+  if (!(secondUsd > 1e-6)) return;
   ot.livePendingScaleIn = {
     anchorMarketUsd: ot.legs[0]?.marketPrice ?? snapshotEntryPriceUsd,
     secondLegUsd: secondUsd,

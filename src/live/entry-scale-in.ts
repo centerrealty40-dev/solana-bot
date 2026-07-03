@@ -15,6 +15,7 @@ import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { getPriorityFeeUsd } from '../papertrader/pricing/priority-fee.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
 import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
+import { isRunnerLiteTrade } from '../papertrader/live-oscar-runner-lite.js';
 
 function parsePending(raw: unknown): NonNullable<OpenTrade['livePendingScaleIn']> | null {
   if (raw == null || typeof raw !== 'object') return null;
@@ -88,20 +89,23 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   if (!pending) return;
   ot.livePendingScaleIn = pending;
 
-  if (!liveOscarCfg.liveEntryScaleInEnabled || liveOscarCfg.executionMode !== 'live') {
+  const runnerLiteScaleIn = isRunnerLiteTrade(ot);
+  if (liveOscarCfg.executionMode !== 'live') {
     ot.livePendingScaleIn = null;
-    if (liveOscarCfg.executionMode === 'live' && !liveOscarCfg.liveEntryScaleInEnabled) {
-      appendLiveJsonlEvent({
-        kind: 'risk_note',
-        reason: 'live_scale_in_disabled_clear_pending',
-        detail: {
-          mint,
-          timelineKind: 'scale_in_skip',
-          timelineLabelRu:
-            'Плановый scale-in выключен в конфиге: ожидание второй ноги по коридору снято (вторая нога — через DCA по стратегии).',
-        },
-      });
-    }
+    return;
+  }
+  if (!liveOscarCfg.liveEntryScaleInEnabled && !runnerLiteScaleIn) {
+    ot.livePendingScaleIn = null;
+    appendLiveJsonlEvent({
+      kind: 'risk_note',
+      reason: 'live_scale_in_disabled_clear_pending',
+      detail: {
+        mint,
+        timelineKind: 'scale_in_skip',
+        timelineLabelRu:
+          'Плановый scale-in выключен в конфиге: ожидание второй ноги по коридору снято (вторая нога — через DCA по стратегии).',
+      },
+    });
     return;
   }
 
