@@ -3473,16 +3473,41 @@ export function sanitizeWalletDrainPartialCloseForDashboard(ct: Record<string, u
   const mtmFlush =
     Number(last.mtmFlushProceedsUsd ?? NaN) ||
     invested * remBefore * (lastPx / avgEntry);
-  const useMtm =
-    last.walletDrainedFlush === true ||
-    (Number.isFinite(Number(last.mtmFlushProceedsUsd)) && Number(last.mtmFlushProceedsUsd) > chainProceeds) ||
-    (slip >= 15 && mtmFlush > chainProceeds * 1.12);
-  if (!useMtm) return ct;
-
   const sumPrior = partials
     .slice(0, lastIdx)
     .reduce((s, p) => s + Number(p.proceedsUsd ?? 0), 0);
   const chainTotal = sumPrior + chainProceeds;
+  /** MTM repair only when last leg had severe slip (Jun NEST trail); low-slip flush uses chain net below. */
+  const useMtm =
+    slip >= 15 &&
+    (last.walletDrainedFlush === true ||
+      (Number.isFinite(Number(last.mtmFlushProceedsUsd)) && Number(last.mtmFlushProceedsUsd) > chainProceeds * 1.12) ||
+      mtmFlush > chainProceeds * 1.12);
+  if (!useMtm) {
+    if (
+      last.walletDrainedFlush === true &&
+      slip < 15 &&
+      chainTotal > 0 &&
+      chainTotal < invested - 0.5
+    ) {
+      const netChain = chainTotal - invested;
+      const pnlPctChain = (netChain / invested) * 100;
+      const out: Record<string, unknown> = { ...ct };
+      out.netPnlUsd = netChain;
+      out.pnlPct = pnlPctChain;
+      out.grossPnlUsd = netChain;
+      out.grossPnlPct = pnlPctChain;
+      out.totalProceedsUsd = chainTotal;
+      out.grossTotalProceedsUsd = chainTotal;
+      if (exitCtx && typeof exitCtx === 'object') {
+        out.exitContext = { ...exitCtx, closePnlPct: +pnlPctChain.toFixed(2) };
+      }
+      out.__pnlDisplayRepair = 'wallet_drain_chain_net_loss';
+      return out;
+    }
+    return ct;
+  }
+
   const totalRecv = sumPrior + mtmFlush;
   if (!(totalRecv > chainTotal + 0.5)) return ct;
 

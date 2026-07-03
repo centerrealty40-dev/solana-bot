@@ -58,6 +58,52 @@ describe('sanitizeWalletDrainPartialCloseForDashboard — NEST wallet-drain MTM'
   });
 });
 
+/** NEST 2026-07-03: TP ladder wallet-drain flush with low slip — chain net loss, no MTM inflate. */
+const nestJul3CloseRaw = {
+  mint: '68Nq68CrtLVpyvK5Un7UADiNczaGf39hBbj3diRsYj6D',
+  symbol: 'NEST',
+  exitReason: 'TP',
+  totalInvestedUsd: 300,
+  avgEntry: 0.010291240558985159,
+  netPnlUsd: 62.79,
+  pnlPct: 20.93,
+  remainingFraction: 0,
+  exitContext: { remainingFractionAtClose: 0, closePnlPct: 20.93 },
+  partialSells: [
+    {
+      reason: 'TP_LADDER',
+      sellFraction: 0.5,
+      proceedsUsd: 182.26173215164513,
+      marketPrice: 0.01144416,
+      price: 0.012415669194170559,
+      slipRealizedPct: -8.4891,
+    },
+    {
+      reason: 'TP_LADDER',
+      sellFraction: 1,
+      proceedsUsd: 112.2653719674901,
+      marketPrice: 0.012385829444765052,
+      price: 0.012385829444765052,
+      slipRealizedPct: 0.0219,
+      walletDrainedFlush: true,
+      remainingFractionBeforePartial: 0.5,
+      mtmFlushProceedsUsd: 180.52968503322663,
+    },
+  ],
+} as const;
+
+describe('sanitizeWalletDrainPartialCloseForDashboard — NEST Jul 3 low-slip flush', () => {
+  it('shows chain net loss when walletDrainedFlush has low slip', () => {
+    const repaired = sanitizeWalletDrainPartialCloseForDashboard({ ...nestJul3CloseRaw });
+    expect(repaired.__pnlDisplayRepair).toBe('wallet_drain_chain_net_loss');
+    const net = Number(repaired.netPnlUsd);
+    const pct = Number(repaired.pnlPct);
+    expect(net).toBeCloseTo(182.26173215164513 + 112.2653719674901 - 300, 2);
+    expect(pct).toBeLessThan(0);
+    expect(pct).toBeGreaterThan(-5);
+  });
+});
+
 describe('closedRowDisplayPnlPct — net matches $ after wallet-drain repair', () => {
   it('uses repaired netPnlUsd / invested for NEST (not fill-ratio nor raw journal -3.6%)', () => {
     const repaired = sanitizeWalletDrainPartialCloseForDashboard({ ...nestCloseRaw });
