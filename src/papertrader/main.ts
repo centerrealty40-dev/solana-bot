@@ -382,7 +382,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
   const liveOscarIntelBlockNotified: LiveOscarIntelBlockNotifyCache = new Map();
-  const liveOscarIntelTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
@@ -787,23 +786,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     if (tradeLane === 'runner_lite' && runnerLiteMintAlreadyOpen(open, d.mint)) return;
     if (tradeLane === 'prod' && open.has(d.mint)) return;
 
-    const cooldownMs = Math.max(
-      0,
-      Number(
-        process.env.LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS ??
-          process.env.TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS ??
-          60 * 60_000,
-      ),
-    );
-    const now = Date.now();
-    const prev = liveOscarIntelTelegramLastMs.get(d.mint) ?? 0;
-    if (cooldownMs > 0 && now - prev < cooldownMs) return;
-
     const ig = d.oscarIntel!;
     if (!shouldNotifyLiveOscarIntelBlock(liveOscarIntelBlockNotified, tradeLane, d.mint, ig)) {
       return;
     }
-    liveOscarIntelTelegramLastMs.set(d.mint, now);
     recordLiveOscarIntelBlockNotified(liveOscarIntelBlockNotified, tradeLane, d.mint, ig);
 
     const token =

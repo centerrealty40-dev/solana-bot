@@ -840,8 +840,8 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_MIN_LIQ_USD: '50000',
         PAPER_RUNNER_LITE_STALE_VOL_RATIO_MAX: '0.35',
         PAPER_RUNNER_LITE_MIN_PG_SAMPLES_24H: '24',
-        /** runner_lite: intel shadow (observe before gate). */
-        LIVE_OSCAR_INTEL_MODE_RUNNER_LITE: 'shadow',
+        /** runner_lite: hard intel gate when tier gates pass (same as runner_probe). */
+        LIVE_OSCAR_INTEL_MODE_RUNNER_LITE: 'gate',
         /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
         LIVE_OSCAR_INTEL_ENABLED: '1',
         LIVE_OSCAR_INTEL_MODE: 'shadow',
@@ -859,8 +859,9 @@ const PM2_APPS = [
         /** TG ADVICE: tier gates OK but wallet-intel blocks (prod / runner_probe / runner_lite). */
         LIVE_OSCAR_INTEL_TELEGRAM_ENABLED: '1',
         LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '3600000',
-        TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '3600000',
+        /** Dedup via mint+intel-reason fingerprint in-process; no time cooldown. */
+        LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '0',
+        TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '0',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',

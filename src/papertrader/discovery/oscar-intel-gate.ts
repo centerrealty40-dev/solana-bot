@@ -128,7 +128,7 @@ export function resolveOscarIntelModeForRunnerLite(cfg: PaperTraderConfig): Osca
   return resolveOscarIntelMode(cfg);
 }
 
-/** Runner_lite 12–48h: intel shadow by default; optional gate for 12–24h band. */
+/** Runner_lite 12–48h: intel via `LIVE_OSCAR_INTEL_MODE_RUNNER_LITE` (prod default gate). */
 export async function evaluateOscarIntelGateForRunnerLite(
   mint: string,
   cfg: PaperTraderConfig,
