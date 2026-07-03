@@ -91,7 +91,11 @@ import {
   summariseRunnerPass,
   type RunnerProbeDiscoveryEval,
 } from '../live-oscar-runner-probe.js';
-import { evaluateOscarIntelGateForRunnerProbe } from './oscar-intel-gate.js';
+import {
+  evaluateOscarIntelGateForRunnerProbe,
+  oscarIntelGateSnapshotFromResult,
+  type OscarIntelGateSnapshot,
+} from './oscar-intel-gate.js';
 import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
 import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
 import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
@@ -157,6 +161,8 @@ export interface EvalDecision {
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); `runner_probe` parallel. */
   liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe';
   positionSource?: 'runner_probe';
+  /** Wallet-intel gate snapshot (runner_probe lane). */
+  oscarIntel?: OscarIntelGateSnapshot;
 }
 
 export interface DiscoveryTickResult {
@@ -1667,6 +1673,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       eval: RunnerProbeDiscoveryEval;
       guardPass: boolean;
       reasons: string[];
+      oscarIntel?: OscarIntelGateSnapshot;
     };
     const probeRows: ProbeRow[] = [];
 
@@ -1710,15 +1717,26 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
         if (guardPass) {
           const ig = await evaluateOscarIntelGateForRunnerProbe(row.mint, cfg, ageMin);
-          if (ig.required && ig.blocked) {
-            guardPass = false;
-            reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
-          } else if (ig.required && ig.wouldBlock && ig.mode === 'shadow') {
-            reasons.push('runner_probe_intel_shadow_would_block');
+          const intelSnap = oscarIntelGateSnapshotFromResult(ig);
+          if (ig.required) {
+            if (ig.blocked) {
+              guardPass = false;
+              reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
+            } else if (ig.wouldBlock) {
+              reasons.push('runner_probe_intel_shadow_would_block');
+              reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
+            }
           }
-          if (ig.required && !ig.ok && ig.mode === 'gate') {
-            guardPass = false;
-          }
+          probeRows.push({
+            row,
+            lane,
+            ageMin,
+            eval: probeEval,
+            guardPass,
+            reasons,
+            oscarIntel: ig.required ? intelSnap : undefined,
+          });
+          continue;
         }
       }
 
@@ -1773,6 +1791,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath: pr.eval.entryPath,
         liveOscarTradeLane: 'runner_probe',
         positionSource: 'runner_probe',
+        oscarIntel: pr.oscarIntel,
       });
     }
   }

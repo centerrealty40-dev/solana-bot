@@ -77,11 +77,17 @@ import {
 import {
   countOpenRunnerProbePositions,
   resolveOpenMapKey,
+  runnerProbeMintAlreadyOpen,
   runnerProbeMintOpenSkipReason,
   runnerProbeOpenLegUsd,
   stampRunnerProbeOnOpen,
   sumRunnerProbeExposureUsd,
 } from './live-oscar-runner-probe.js';
+import {
+  buildRunnerProbeIntelSkipTelegramText,
+  isRunnerProbeIntelSkipDecision,
+  shouldJournalRunnerProbeIntel,
+} from './runner-probe-intel-notify.js';
 import {
   finalizeRunnerProbeOpenOnBoot,
   runnerProbeMaxPositionUsd,
@@ -354,6 +360,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
   const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
+  const runnerProbeIntelTelegramLastMs = new Map<string, number>();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
@@ -732,6 +739,53 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       telegramChatId: chat,
     }    ).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live pg-data-coverage telegram failed'),
+    );
+  }
+
+  function notifyRunnerProbeIntelSkip(d: EvalDecision): void {
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
+    if (resolveDecisionTradeLane(d) !== 'runner_probe') return;
+    if (!isRunnerProbeIntelSkipDecision(d)) return;
+    if (process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+    );
+    const now = Date.now();
+    const prev = runnerProbeIntelTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    runnerProbeIntelTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_RUNNER_PROBE_INTEL_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'runner_probe intel telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const text = buildRunnerProbeIntelSkipTelegramText({
+      d,
+      escapeHtml: escapeHtmlPlain,
+      mintHrefHtml: gmgnMintHrefHtml,
+      fmtUsd: fmtUsdCompact,
+    });
+
+    void sendTagged('ADVICE', 'runner_probe_intel', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'runner_probe intel telegram failed'),
     );
   }
 
@@ -1412,6 +1466,35 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_probe' &&
+          shouldJournalRunnerProbeIntel(d.oscarIntel)
+        ) {
+          journalAppend({
+            kind: d.oscarIntel!.blocked ? 'live_oscar_intel_block' : 'live_oscar_intel_shadow',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            tradeLane: 'runner_probe',
+            pass: d.pass,
+            mode: d.oscarIntel!.mode,
+            wouldBlock: d.oscarIntel!.wouldBlock,
+            blocked: d.oscarIntel!.blocked,
+            reasons: d.oscarIntel!.reasons,
+            hits: d.oscarIntel!.hits,
+            swapCovered: d.oscarIntel!.swapCovered,
+            evalReasons: d.reasons,
+          });
+        }
+        if (
+          resolveDecisionTradeLane(d) === 'runner_probe' &&
+          isRunnerProbeIntelSkipDecision(d) &&
+          !runnerProbeMintAlreadyOpen(open, d.mint) &&
+          !open.has(d.mint)
+        ) {
+          notifyRunnerProbeIntelSkip(d);
         }
         if (!d.pass && handleFailedEntryRecheckDecision(d, tickNow)) continue;
         if (!d.pass) continue;

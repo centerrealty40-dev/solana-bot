@@ -1,6 +1,7 @@
 import type { PaperTraderConfig } from '../config.js';
 import {
   evaluateSmartLotteryIntelGate,
+  type IntelGateHit,
   type SmartLotteryIntelResult,
 } from './smart-lottery-intel.js';
 
@@ -14,11 +15,33 @@ export type OscarIntelGateResult = SmartLotteryIntelResult & {
   blocked: boolean;
 };
 
+/** Snapshot attached to runner_probe eval decisions (journal + Telegram). */
+export type OscarIntelGateSnapshot = {
+  mode: OscarIntelMode;
+  required: boolean;
+  wouldBlock: boolean;
+  blocked: boolean;
+  swapCovered: boolean;
+  reasons: string[];
+  hits: IntelGateHit[];
+};
+
+function parseOscarIntelMode(raw: string | undefined): OscarIntelMode | null {
+  if (raw === 'shadow' || raw === 'advisory' || raw === 'gate' || raw === 'off') return raw;
+  return null;
+}
+
 function resolveOscarIntelMode(cfg: PaperTraderConfig): OscarIntelMode {
   if (!cfg.liveOscarIntelEnabled) return 'off';
-  const m = cfg.liveOscarIntelMode;
-  if (m === 'shadow' || m === 'advisory' || m === 'gate') return m;
-  return 'off';
+  return parseOscarIntelMode(cfg.liveOscarIntelMode) ?? 'off';
+}
+
+/** Runner_probe lane may override global `LIVE_OSCAR_INTEL_MODE` via `LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE`. */
+export function resolveOscarIntelModeForRunnerProbe(cfg: PaperTraderConfig): OscarIntelMode {
+  if (!cfg.liveOscarIntelEnabled) return 'off';
+  const lane = parseOscarIntelMode(cfg.liveOscarIntelModeRunnerProbe);
+  if (lane && lane !== 'off') return lane;
+  return resolveOscarIntelMode(cfg);
 }
 
 /** Map Oscar intel env → smart-lottery gate cfg slice (read-only overlay). */
@@ -43,10 +66,19 @@ function oscarIntelCfgSlice(cfg: PaperTraderConfig): PaperTraderConfig {
 export async function evaluateOscarIntelGate(
   mint: string,
   cfg: PaperTraderConfig,
+  modeOverride?: OscarIntelMode,
 ): Promise<OscarIntelGateResult> {
-  const mode = resolveOscarIntelMode(cfg);
+  const mode = modeOverride ?? resolveOscarIntelMode(cfg);
   if (mode === 'off' || !cfg.liveOscarIntelWalletGateEnabled) {
-    return { ok: true, reasons: [], swapCovered: true, mode, wouldBlock: false, blocked: false };
+    return {
+      ok: true,
+      reasons: [],
+      swapCovered: true,
+      hits: [],
+      mode,
+      wouldBlock: false,
+      blocked: false,
+    };
   }
 
   let core: SmartLotteryIntelResult;
@@ -58,12 +90,21 @@ export async function evaluateOscarIntelGate(
         ok: false,
         reasons: ['intel_pg_error'],
         swapCovered: false,
+        hits: [],
         mode,
         wouldBlock: true,
         blocked: mode === 'gate',
       };
     }
-    return { ok: true, reasons: [], swapCovered: false, mode, wouldBlock: false, blocked: false };
+    return {
+      ok: true,
+      reasons: [],
+      swapCovered: false,
+      hits: [],
+      mode,
+      wouldBlock: false,
+      blocked: false,
+    };
   }
 
   const wouldBlock = !core.ok;
@@ -90,17 +131,33 @@ export async function evaluateOscarIntelGateForRunnerProbe(
   const required =
     (in12hBand && cfg.runnerProbe12hIntelRequired) ||
     (in24hBand && cfg.liveOscarIntelWalletGateEnabled);
+  const mode = resolveOscarIntelModeForRunnerProbe(cfg);
   if (!required) {
     return {
       ok: true,
       reasons: [],
       swapCovered: true,
-      mode: resolveOscarIntelMode(cfg),
+      hits: [],
+      mode,
       wouldBlock: false,
       blocked: false,
       required: false,
     };
   }
-  const ig = await evaluateOscarIntelGate(mint, cfg);
+  const ig = await evaluateOscarIntelGate(mint, cfg, mode);
   return { ...ig, required: true };
+}
+
+export function oscarIntelGateSnapshotFromResult(
+  ig: OscarIntelGateResult & { required: boolean },
+): OscarIntelGateSnapshot {
+  return {
+    mode: ig.mode,
+    required: ig.required,
+    wouldBlock: ig.wouldBlock,
+    blocked: ig.blocked,
+    swapCovered: ig.swapCovered,
+    reasons: ig.reasons,
+    hits: ig.hits,
+  };
 }
