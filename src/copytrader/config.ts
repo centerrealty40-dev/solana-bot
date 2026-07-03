@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import { assertCopyTraderIsolation } from './isolation.js';
+import { parseCopyTraderExitMode, type CopyTraderExitMode } from './exit-mode.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
 
@@ -82,6 +83,11 @@ const CopyTraderConfigSchema = z.object({
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   /** Share live-oscar-micro wallet; track copy tokenRaw separately from oscar legs. */
   sharedOscarWallet: z.boolean().default(false),
+  /**
+   * Exit policy: `oscar_half8` — live-oscar wave_b half8_runner (+8% half, kill −50%);
+   * `mirror` — proportional leader sell mirror (legacy).
+   */
+  exitMode: z.enum(['oscar_half8', 'mirror']).default('oscar_half8'),
   /** Block copy buys when free SOL would starve live-oscar reserve + open committed. */
   spareCapitalGateEnabled: z.boolean().default(false),
   telegramBotToken: z.string().optional(),
@@ -182,6 +188,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),
     walletPubkeyExpected: process.env.COPY_TRADER_WALLET_PUBKEY?.trim() || undefined,
     sharedOscarWallet: envBool(process.env.COPY_TRADER_SHARED_OSCAR_WALLET, false),
+    exitMode: parseCopyTraderExitMode(process.env.COPY_TRADER_EXIT_MODE),
     spareCapitalGateEnabled: envBool(process.env.COPY_TRADER_SPARE_CAPITAL_GATE, false),
     telegramBotToken:
       process.env.COPY_TRADER_TELEGRAM_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim(),
@@ -207,6 +214,13 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
 
   if (envBool(process.env.COPY_TRADER_STRICT_ISOLATION, true)) {
     assertCopyTraderIsolation(parsed.data);
+  }
+
+  if (parsed.data.exitMode === 'oscar_half8' && !parsed.data.sharedOscarWallet) {
+    console.warn(
+      '[copy-trader] COPY_TRADER_EXIT_MODE=oscar_half8 requires COPY_TRADER_SHARED_OSCAR_WALLET=1 — falling back to mirror exits',
+    );
+    (parsed.data as { exitMode: CopyTraderExitMode }).exitMode = 'mirror';
   }
 
   return parsed.data;

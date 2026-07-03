@@ -54,6 +54,7 @@ import { evaluateLiveNotionalParity } from './notional-parity.js';
 import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
 import { restoreWalletOrphanOpensOnBoot } from './boot-open-restore.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
+import { adoptCopyLeaderExitOpens } from './copy-leader-exit-adopt.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 import { startLiveOpenPositionHotTick } from './open-position-hot-tick.js';
@@ -592,6 +593,24 @@ export async function main(): Promise<void> {
     journalAppend: createLiveDiscoveryAuditJournalAppend(liveCfg.liveDiscoveryAuditJsonlEnabled),
     skipPaperJsonlStore: true,
     liveStrategyReplay,
+    beforeTrackerTick: (open) => {
+      const r = adoptCopyLeaderExitOpens({
+        open,
+        paperCfg: paperBaseline,
+        journalLiveStrategy: (body) => {
+          appendLiveJsonlEvent(body);
+          try {
+            applyLiveOpenSnapshotEvent(body);
+          } catch (err) {
+            log.warn({ err: (err as Error)?.message }, 'live open snapshot copy adopt failed');
+          }
+        },
+        statePath: process.env.LIVE_COPY_LEADER_STATE_PATH?.trim() || undefined,
+      });
+      if (r.adopted.length > 0) {
+        log.info({ mints: r.adopted.map((m) => m.slice(0, 8)) }, 'live-oscar adopted copy-leader exit opens');
+      }
+    },
     journalLiveStrategy: (body) => {
       appendLiveJsonlEvent(body);
       try {

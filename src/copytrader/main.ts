@@ -96,6 +96,8 @@ import {
   type CopyLeaderIgnoreVerdict,
 } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
+import { usesOscarExitPolicy } from './exit-mode.js';
+import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -648,7 +650,39 @@ async function onLeaderSell(
     });
     return;
   }
+
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
+
+  if (usesOscarExitPolicy(cfg)) {
+    const cancelledBuys = cancelPendingBuysForMint(state, mint, 'any');
+    for (const c of cancelledBuys) {
+      appendCopyEvent(cfg, {
+        kind: c.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+        reason: 'leader_started_exit',
+        mint,
+        symbol: c.symbol,
+        leaderSignature: c.leaderSignature,
+        leaderSellFraction: sellFrac,
+      });
+    }
+    if (pos) {
+      markEntryDipAbandoned(cfg, state, pos, {
+        mint,
+        leaderSignature: row.signature,
+        leaderSellFraction: sellFrac,
+      });
+    }
+    appendCopyEvent(cfg, {
+      kind: 'leader_sell_skipped_oscar_exit',
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderPriceUsd: swap.priceUsd,
+      leaderSellFraction: sellFrac,
+      exitMode: cfg.exitMode,
+    });
+    return;
+  }
 
   if (cfg.minProportionalSellFraction > 0 && sellFrac < cfg.minProportionalSellFraction) {
     appendCopyEvent(cfg, {
@@ -1181,6 +1215,16 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }
     }
 
+    const filledPos = state.positions[pending.mint];
+    if (filledPos) {
+      handoffCopyPositionToOscarExit({
+        cfg,
+        state,
+        pos: filledPos,
+        leaderSignature: pending.leaderSignature,
+      });
+    }
+
     await notifyCopyTraderTelegram(
       cfg,
       fmtCopyAlert({
@@ -1214,6 +1258,15 @@ function noteBuyDefer(state: CopyTraderState, pendingId: string, nowMs: number, 
 
 export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
   const now = Date.now();
+  if (usesOscarExitPolicy(cfg) && state.pendingSells.length > 0) {
+    const dropped = state.pendingSells.length;
+    state.pendingSells = [];
+    appendCopyEvent(cfg, {
+      kind: 'pending_sells_cleared_oscar_exit',
+      count: dropped,
+      exitMode: cfg.exitMode,
+    });
+  }
   const due = state.pendingSells.filter((p) => p.dueTs <= now);
   if (due.length === 0) return;
 
@@ -1397,6 +1450,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
+    exitMode: cfg.exitMode,
     isolated: true,
   });
 
