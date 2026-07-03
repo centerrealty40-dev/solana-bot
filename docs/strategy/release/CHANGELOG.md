@@ -82,6 +82,27 @@
 
 ---
 
+## [1.11.551] — 2026-07-03
+
+**Тег:** `sa-alpha-1.11.551`
+
+### Dashboard — NEST Jul 3 wallet-drain PnL (low-slip flush)
+
+**Root cause (NEST Jul 3):** journal показывал TP_LADDER +20.9% ($62.79 net), chain net ≈ −1.8% ($294.53 proceeds − $300 invested). `walletDrainedFlush` с `mtmFlushProceedsUsd` ≈ $180 при chain $112 и slip 0.02% — dashboard MTM-repair (Jun NEST trail logic) завышал closed PnL.
+
+**Fix:**
+- `sanitizeWalletDrainPartialCloseForDashboard`: MTM repair только при `slipRealizedPct >= 15%` (Jun trail-dump).
+- Low-slip `walletDrainedFlush` + chain net loss → `wallet_drain_chain_net_loss` (sum chain proceeds − invested).
+- Тест `nestJul3CloseRaw` в `tests/dashboard-paper2-closed-pnl.test.ts`.
+
+**Oscar journal:** TP_LADDER +20% vs chain −1.8% — slippage/walletDrainedFlush; tracker fix не в scope (только dashboard display).
+
+**Откат:** `git checkout sa-alpha-1.11.550 -- scripts-tmp/dashboard-server.ts tests/dashboard-paper2-closed-pnl.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar-dashboard --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.550] — 2026-07-03
 
 **Тег:** `sa-alpha-1.11.550`
