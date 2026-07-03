@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadPaperTraderConfig } from '../src/papertrader/config.js';
 import {
+  attachRunnerLitePendingScaleIn,
   countOpenRunnerLitePositions,
   evaluateLiveOscarRunnerLiteDiscovery,
   isRunnerLiteTrade,
@@ -19,6 +20,7 @@ import {
   stampRunnerLiteOnOpen,
   sumRunnerLiteExposureUsd,
 } from '../src/papertrader/live-oscar-runner-lite.js';
+import type { OpenTrade } from '../src/papertrader/types.js';
 import {
   runnerProbeCandidateInBand,
   runnerProbeMintOpenSkipReason,
@@ -239,5 +241,28 @@ describe('live-oscar-runner-lite', () => {
   it('identifies runner_lite trade markers', () => {
     expect(isRunnerLiteTrade({ liveExitPolicyId: 'runner_lite_v1' } as OpenTrade)).toBe(true);
     expect(runnerProbeMintAlreadyOpen(new Map(), 'mintZ')).toBe(false);
+  });
+
+  it('always attaches pending scale-in for 2×$100 (ignores LIVE_ENTRY_SCALE_IN_ENABLED=0)', () => {
+    const cfg = loadPaperTraderConfig();
+    process.env.LIVE_ENTRY_SCALE_IN_ENABLED = '0';
+    process.env.LIVE_ENTRY_SCALE_IN_DELAY_MS = '5000';
+    const ot: OpenTrade = {
+      mint: 'mintLite',
+      legs: [{ ts: Date.now(), price: 1, marketPrice: 1, sizeUsd: 100, reason: 'open' }],
+    } as OpenTrade;
+    attachRunnerLitePendingScaleIn(ot, cfg, 1, {
+      delayMs: 5000,
+      corridorUpPct: 1,
+      corridorDownPct: 2,
+      maxSwapAttempts: 8,
+    });
+    expect(ot.livePendingScaleIn).toMatchObject({
+      secondLegUsd: 100,
+      corridorUpPct: 1,
+      corridorDownPct: 2,
+      maxSwapAttempts: 8,
+    });
+    expect(ot.livePendingScaleIn!.executeAfterTs).toBeGreaterThan(Date.now() - 100);
   });
 });
