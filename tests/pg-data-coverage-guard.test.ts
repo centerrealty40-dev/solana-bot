@@ -47,6 +47,7 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     pgDataCoverageMinMinutesPerHour: 45,
     pgDataCoverageMaxGapMinutes: 30,
     pgDataCoverageBlockOnPgStale: true,
+    pgDataCoverageBlockBuy: true,
     pgDataCoverageStrictAfterRecoveryHours: 24,
     pgDataCoverageAutoEscalate: true,
     pgDataCoverageKnownMintGapBypass: false,
@@ -378,6 +379,27 @@ describe('evaluatePgDataCoverageGuard', () => {
     );
     expect(r.blocked).toBe(true);
     expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_gap_in_history'))).toBe(true);
+  });
+
+  it('does not block buy when pgDataCoverageBlockBuy is false (default)', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageBlockBuy: false }),
+      baseRow({ source: 'raydium' }),
+      mintCtx({ sybilBaselineSamples: 11, sybilCoverageOk: false }),
+      globalState({
+        pgStaleNow: true,
+        worstAgeSec: 1172,
+        freshness: [
+          { source: 'raydium', table: 'raydium_pair_snapshots', latestTs: null, ageSec: 1172, ok: false },
+          { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: new Date(), ageSec: 120, ok: true },
+        ],
+      }),
+      true,
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.blockedReasons).toEqual([]);
+    expect(r.features.sybilBaselineSamples).toBe(11);
+    expect(r.features.nearEntry).toBe(true);
   });
 });
 
