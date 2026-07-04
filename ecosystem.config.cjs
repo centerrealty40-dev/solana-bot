@@ -1076,8 +1076,9 @@ const PM2_APPS = [
         /**
          * Volume Ephemeral guard (1.11.219): блокирует монеты с объёмом, сжатым
          * в узкое почасовое окно (разовый burst — паттерн GOAT).
+         * Off on prod: buys proceed when snapshot/dip pass (DADDY RCA Jul 5); no TG advice.
          */
-        PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '1',
+        PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '0',
         PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD: '8000',
         PAPER_VOLUME_EPHEMERAL_MAX_ACTIVE_HOURS: '4',
@@ -1120,7 +1121,7 @@ const PM2_APPS = [
         LIVE_PG_COVERAGE_MODE_TELEGRAM_COOLDOWN_MS: '7200000',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_PG_DATA_COVERAGE_MS: '1800000',
         /** TG: блок volume ephemeral guard — подозрительный разовый всплеск объёма. */
-        LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED: '1',
+        LIVE_VOLUME_EPHEMERAL_TELEGRAM_ENABLED: '0',
         LIVE_VOLUME_EPHEMERAL_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS: '3600000',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_VOLUME_EPHEMERAL_MS: '1800000',
