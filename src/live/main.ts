@@ -237,6 +237,7 @@ export async function main(): Promise<void> {
           endpoint: shyftEndpoint,
           token: shyftToken,
           maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
+          connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
         },
         {
           onStatus: (status, detail) =>

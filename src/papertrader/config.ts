@@ -143,6 +143,8 @@ const ConfigSchema = z.object({
   liveOscarShyftShadowMaxAgeMs: z.coerce.number().int().positive().default(60_000),
   /** Cap on `accountInclude` filter size (narrow, never program-wide firehose). */
   liveOscarShyftShadowMaxMints: z.coerce.number().int().positive().max(2_000).default(256),
+  /** After gRPC connect, suppress mint-set resubscribes for this many ms (boot churn). */
+  liveOscarShyftShadowConnectGraceMs: z.coerce.number().int().nonnegative().default(15_000),
   /**
    * Stage 1.2 (1.11.468) — use the Shyft **stream** price as PRIMARY for live-oscar decision points
    * (open-position MTM and discovery dip-eval), with a `shyftMaxStaleMs` freshness-gate and PG/Jupiter
@@ -1254,6 +1256,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarShyftShadowEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED, false),
     liveOscarShyftShadowMaxAgeMs: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS,
     liveOscarShyftShadowMaxMints: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS,
+    liveOscarShyftShadowConnectGraceMs: process.env.SHYFT_SHADOW_CONNECT_GRACE_MS,
     shyftPricePrimaryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_ENABLED, false),
     shyftPricePrimaryMtmEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_MTM_ENABLED, true),
     shyftPricePrimaryDiscoveryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED, false),

@@ -146,8 +146,11 @@ export async function runPervyyVystrelMaterializeOnce(): Promise<PervyyVystrelMa
 async function main(): Promise<void> {
   const enabled = envBool(process.env.PERVYY_VYSTREL_MATERIALIZE_ENABLED, false);
   if (!enabled) {
-    log.info('PERVYY_VYSTREL_MATERIALIZE_ENABLED=0 — exiting (one-shot dry run disabled)');
-    process.exit(0);
+    log.info('PERVYY_VYSTREL_MATERIALIZE_ENABLED=0 — idle (avoid PM2 restart loop on exit)');
+    await new Promise<void>(() => {
+      /* hang — PM2 autorestart would loop on process.exit(0) */
+    });
+    return;
   }
 
   const intervalMin = Math.max(5, Number(process.env.PERVYY_VYSTREL_MATERIALIZE_INTERVAL_MIN || 15));

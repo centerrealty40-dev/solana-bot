@@ -77,6 +77,8 @@ const DEFAULT_RECONNECT_INITIAL_MS = 5_000;
 const DEFAULT_RECONNECT_MAX_MS = 60_000;
 /** Debounce mint-set churn — full reconnect instead of in-flight stream.write (causes receive failed). */
 const RESUBSCRIBE_DEBOUNCE_MS = 3_000;
+/** After connect, ignore mint-set resubscribes for this long (boot churn → reconnect storm). */
+const DEFAULT_CONNECT_GRACE_MS = 15_000;
 /** Connected but no swap-derived price for this long → tear down and reconnect. */
 const DEFAULT_STALE_STREAM_MS = 5 * 60_000;
 const STALE_CHECK_INTERVAL_MS = 30_000;
@@ -89,6 +91,8 @@ export interface ShyftShadowConsumerConfig {
   maxAccountInclude?: number;
   reconnectInitialMs?: number;
   reconnectMaxMs?: number;
+  /** After connect, suppress mint-set resubscribes for this many ms (0 = disabled). */
+  connectGraceMs?: number;
   /** Reconnect when connected but no prices observed for this many ms (0 = disabled). */
   staleStreamMs?: number;
 }
@@ -159,14 +163,25 @@ export function startShyftShadowConsumer(
   const maxAccountInclude = cfg.maxAccountInclude ?? DEFAULT_MAX_ACCOUNT_INCLUDE;
   const reconnectMaxMs = cfg.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
   const reconnectInitialMs = cfg.reconnectInitialMs ?? DEFAULT_RECONNECT_INITIAL_MS;
+  const connectGraceMs = cfg.connectGraceMs ?? DEFAULT_CONNECT_GRACE_MS;
   const staleStreamMs = cfg.staleStreamMs ?? DEFAULT_STALE_STREAM_MS;
 
   let closed = false;
   let backoff = reconnectInitialMs;
+  let connectLoopStarted = false;
   let activeStream: { write: (r: SubscribeRequest) => void; end: () => void } | null = null;
   let resubscribeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectGraceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingResubscribeAfterGrace = false;
   let lastObservationMs = 0;
   let connectedAtMs = 0;
+
+  function clearConnectGraceTimer(): void {
+    if (connectGraceTimer) {
+      clearTimeout(connectGraceTimer);
+      connectGraceTimer = null;
+    }
+  }
 
   function scheduleResubscribe(reason: string): void {
     if (closed || !activeStream) return;
@@ -178,15 +193,67 @@ export function startShyftShadowConsumer(
     }
   }
 
-  // Mint-set changes: debounced full reconnect (stream.write mid-flight → subscribe stream receive failed).
-  onShyftShadowMintsChanged(() => {
-    if (!activeStream) return;
+  function queueMintSetResubscribe(): void {
+    if (closed || !activeStream) return;
+    const sinceConnect = Date.now() - connectedAtMs;
+    if (connectedAtMs > 0 && connectGraceMs > 0 && sinceConnect < connectGraceMs) {
+      pendingResubscribeAfterGrace = true;
+      return;
+    }
     if (resubscribeDebounceTimer) clearTimeout(resubscribeDebounceTimer);
     resubscribeDebounceTimer = setTimeout(() => {
       resubscribeDebounceTimer = null;
       scheduleResubscribe('resubscribe_mint_set_changed');
     }, RESUBSCRIBE_DEBOUNCE_MS);
     if (typeof resubscribeDebounceTimer.unref === 'function') resubscribeDebounceTimer.unref();
+  }
+
+  function armConnectGraceTimer(): void {
+    clearConnectGraceTimer();
+    pendingResubscribeAfterGrace = false;
+    if (connectGraceMs <= 0) return;
+    connectGraceTimer = setTimeout(() => {
+      connectGraceTimer = null;
+      if (closed || !activeStream) return;
+      if (pendingResubscribeAfterGrace) {
+        pendingResubscribeAfterGrace = false;
+        queueMintSetResubscribe();
+      }
+    }, connectGraceMs);
+    if (typeof connectGraceTimer.unref === 'function') connectGraceTimer.unref();
+  }
+
+  function startConnectLoop(): void {
+    if (connectLoopStarted || closed) return;
+    connectLoopStarted = true;
+    void (async () => {
+      while (!closed) {
+        const mints = getShyftShadowWatchedMints();
+        if (mints.length === 0) {
+          await delay(reconnectInitialMs);
+          continue;
+        }
+        try {
+          await connectOnce();
+        } catch (err) {
+          cb.onStatus?.('error', err instanceof Error ? err.message : String(err));
+          cb.onError?.(err);
+        }
+        if (closed) break;
+        const jitter = Math.floor(Math.random() * Math.min(2_000, backoff));
+        await delay(backoff + jitter);
+        backoff = Math.min(backoff * 2, reconnectMaxMs);
+      }
+    })();
+  }
+
+  // Defer connect until first non-empty mint set; debounced resubscribe on later changes.
+  onShyftShadowMintsChanged((mints) => {
+    if (mints.length > 0 && !connectLoopStarted) {
+      startConnectLoop();
+      return;
+    }
+    queueMintSetResubscribe();
   });
 
   function handleUpdate(update: SubscribeUpdate): void {
@@ -234,16 +301,19 @@ export function startShyftShadowConsumer(
   }
 
   async function connectOnce(): Promise<void> {
+    const mints = getShyftShadowWatchedMints();
+    if (mints.length === 0) return;
+
     cb.onStatus?.('connecting', cfg.endpoint);
     const YellowstoneClient = getYellowstoneClientCtor();
     const client = new YellowstoneClient(cfg.endpoint, cfg.token, undefined, { enabled: false });
     await client.connect();
-    const mints = getShyftShadowWatchedMints();
     const stream = await client.subscribe(buildSubscribeRequest(mints, maxAccountInclude));
     activeStream = stream;
     backoff = reconnectInitialMs;
     connectedAtMs = Date.now();
     lastObservationMs = 0;
+    armConnectGraceTimer();
     cb.onStatus?.('connected', `${cfg.endpoint} mints=${mints.length}`);
 
     await new Promise<void>((resolve) => {
@@ -305,25 +375,15 @@ export function startShyftShadowConsumer(
     });
   }
 
-  void (async () => {
-    while (!closed) {
-      try {
-        await connectOnce();
-      } catch (err) {
-        cb.onStatus?.('error', err instanceof Error ? err.message : String(err));
-        cb.onError?.(err);
-      }
-      if (closed) break;
-      const jitter = Math.floor(Math.random() * Math.min(2_000, backoff));
-      await delay(backoff + jitter);
-      backoff = Math.min(backoff * 2, reconnectMaxMs);
-    }
-  })();
+  if (getShyftShadowWatchedMints().length > 0) {
+    startConnectLoop();
+  }
 
   return {
     close(): void {
       closed = true;
       if (resubscribeDebounceTimer) clearTimeout(resubscribeDebounceTimer);
+      clearConnectGraceTimer();
       onShyftShadowMintsChanged(null);
       cb.onStatus?.('closed');
       try {
