@@ -18,7 +18,7 @@ export function snapshotRefMarketCapUsd(row: SnapshotCandidateRow): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-export type DiscoveryMcapSource = 'pg_snapshot' | 'shyft_defi' | 'price_scaled';
+export type DiscoveryMcapSource = 'pg_snapshot' | 'shyft_defi' | 'birdeye' | 'dexscreener' | 'price_scaled';
 
 export interface DiscoveryRefMcap {
   refMcapUsd: number;
@@ -29,13 +29,26 @@ export interface DiscoveryRefMcap {
 /** Resolve ref mcap for discovery gates with source attribution (audit / hard floor). */
 export function resolveDiscoveryRefMcap(
   row: SnapshotCandidateRow,
-  opts?: { defiMcapUsd?: number | null; evalRow?: SnapshotCandidateRow },
+  opts?: {
+    defiMcapUsd?: number | null;
+    evalRow?: SnapshotCandidateRow;
+    quoteMcapSource?: DiscoveryMcapSource;
+  },
 ): DiscoveryRefMcap {
   const pgMcapUsd = snapshotRefMarketCapUsd(row);
   const evalMcap = opts?.evalRow != null ? snapshotRefMarketCapUsd(opts.evalRow) : pgMcapUsd;
   const defi = opts?.defiMcapUsd;
   if (defi != null && defi > 0) {
     return { refMcapUsd: defi, source: 'shyft_defi', pgMcapUsd };
+  }
+  if (
+    opts?.quoteMcapSource === 'birdeye' ||
+    opts?.quoteMcapSource === 'dexscreener'
+  ) {
+    const m = evalMcap > 0 ? evalMcap : pgMcapUsd;
+    if (m > 0) {
+      return { refMcapUsd: m, source: opts.quoteMcapSource, pgMcapUsd };
+    }
   }
   if (opts?.evalRow != null && evalMcap > 0 && evalMcap !== pgMcapUsd) {
     return { refMcapUsd: evalMcap, source: 'price_scaled', pgMcapUsd };

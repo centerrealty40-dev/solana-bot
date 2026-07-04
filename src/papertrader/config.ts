@@ -170,6 +170,17 @@ const ConfigSchema = z.object({
   shyftDefiMcapEnabled: z.boolean().default(false),
   /** Stage 1.3 TTL (ms) for the DeFi mcap/liq in-memory cache (limits req/s burst). */
   shyftDefiMcapTtlMs: z.coerce.number().int().positive().default(12_000),
+  /**
+   * Birdeye REST primary for discovery eval price/mcap/vol (Birdeye → DexScreener → PG).
+   * Default OFF; needs `BIRDEYE_API_KEY`. Independent of Shyft stream-primary.
+   */
+  birdeyePrimaryEnabled: z.boolean().default(false),
+  /** TTL (ms) for Birdeye market-data in-memory cache per mint. */
+  birdeyeMarketTtlMs: z.coerce.number().int().positive().default(12_000),
+  /** Freshness gate (ms): max age of a Birdeye quote to accept as primary over PG. */
+  birdeyeMaxStaleMs: z.coerce.number().int().positive().default(15_000),
+  /** Emit `birdeye_coverage_gap` when PG snapshot age exceeds this and REST fallbacks miss. */
+  birdeyeCoverageGapMinMs: z.coerce.number().int().positive().default(5 * 60_000),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -1263,6 +1274,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     shyftMaxStaleMs: process.env.SHYFT_MAX_STALE_MS,
     shyftDefiMcapEnabled: envBool(process.env.SHYFT_DEFI_MCAP_ENABLED, false),
     shyftDefiMcapTtlMs: process.env.SHYFT_DEFI_MCAP_TTL_MS,
+    birdeyePrimaryEnabled: envBool(process.env.BIRDEYE_PRIMARY_ENABLED, false),
+    birdeyeMarketTtlMs: process.env.BIRDEYE_MARKET_TTL_MS,
+    birdeyeMaxStaleMs: process.env.BIRDEYE_MAX_STALE_MS,
+    birdeyeCoverageGapMinMs: process.env.BIRDEYE_COVERAGE_GAP_MIN_MS,
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),
