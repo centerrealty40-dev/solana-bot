@@ -181,6 +181,26 @@ export interface PartialSell {
   mtmFlushProceedsUsd?: number;
 }
 
+export interface LivePendingTpSellIntent {
+  id: string;
+  createdTs: number;
+  updatedTs: number;
+  retryUntilTs: number;
+  attempts: number;
+  sellFraction: number;
+  reason: PartialSell['reason'];
+  ladderStepIndex: number;
+  ladderRungsTotal: number;
+  ladderPnlPct: number;
+  tpGrid: boolean;
+  logLabelPct: string;
+  timelineLabelRu?: string;
+  triggerPnlFrac: number;
+  protectBelowPnlFrac: number;
+  terminalKind?: 'sim_err' | 'send_failed' | 'confirm_timeout' | 'preflight' | 'other';
+  terminalMessage?: string;
+}
+
 export interface OpenTrade {
   mint: string;
   symbol: string;
@@ -299,6 +319,8 @@ export interface OpenTrade {
   liveWaveBreakevenInsuranceTaken?: boolean;
   /** Wave B half8_runner: +5% partial taken in pre-arm-without-+8%-TP ladder. */
   liveWavePreArmNoHalf8PartialTaken?: boolean;
+  /** Live: retryable TP/pre-arm partial sell failed pre-broadcast; retry before marking TP. */
+  livePendingTpSell?: LivePendingTpSellIntent;
   /** Wave B half8_runner: signal −10% touched before +8% TP (E+2 dip10-first path). */
   liveWaveDip10ReachedBeforeTp8?: boolean;
   /** Wave B half8_runner: dip10-first +5% partial taken (replaces half8 +8% for that path). */

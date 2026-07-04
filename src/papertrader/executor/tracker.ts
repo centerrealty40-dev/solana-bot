@@ -42,6 +42,7 @@ import type {
   DexSource,
   ExitContext,
   ExitReason,
+  LivePendingTpSellIntent,
   OpenTrade,
   PartialSell,
   PositionLeg,
@@ -208,6 +209,51 @@ import {
 const log = child('tracker');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const FAILED_TP_SELL_RETRY_WINDOW_MS = 180_000;
+
+export function retryableFailedTpSell(sellOut: LiveTokenToSolSellResult): boolean {
+  if (sellOut.ok) return false;
+  if (sellOut.preflightSkipReason === 'wallet_spl_balance_zero') return false;
+  if (sellOut.terminalKind === 'sim_err' || sellOut.terminalKind === 'send_failed') return true;
+  if (sellOut.terminalKind === 'preflight') {
+    const msg = (sellOut.terminalMessage ?? sellOut.preflightSkipReason ?? '').toLowerCase();
+    return (
+      msg.includes('rpc') ||
+      msg.includes('quote_stale') ||
+      msg.includes('no_quote') ||
+      msg.includes('swap_build') ||
+      msg.includes('429') ||
+      msg.includes('timeout')
+    );
+  }
+  return false;
+}
+
+export function failedTpSellProtectBelowPnlFrac(reason: PartialSell['reason']): number {
+  return reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' ? 0 : Number.NEGATIVE_INFINITY;
+}
+
+export function failedTpSellReasonSupportsPending(reason: PartialSell['reason']): boolean {
+  return (
+    reason === 'TP_LADDER' ||
+    reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' ||
+    reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL'
+  );
+}
+
+function samePendingTpSellIntent(a: LivePendingTpSellIntent | undefined, b: {
+  reason: PartialSell['reason'];
+  ladderStepIndex: number;
+  ladderPnlPct: number;
+}): boolean {
+  if (!a) return false;
+  return (
+    a.reason === b.reason &&
+    a.ladderStepIndex === b.ladderStepIndex &&
+    Math.abs(a.ladderPnlPct - b.ladderPnlPct) <= LADDER_PNL_EPS
+  );
+}
 
 /** Закрытие по TIMEOUT отключается после прогресса по позиции (ожидание отработки сетки после долгого удержания). Сплит scale-in не считается DCA. */
 function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
@@ -808,6 +854,62 @@ function buildClosedTrade(args: {
 
 type TpPartialSellResult = 'ok' | 'defer_next' | 'abort_mint' | 'wallet_zero';
 
+function armFailedTpSellRetry(args: {
+  mint: string;
+  ot: OpenTrade;
+  sellOut: LiveTokenToSolSellResult;
+  sellFraction: number;
+  ladderStepIndex: number;
+  ladderRungsTotal: number;
+  ladderPnlPct: number;
+  tpGrid: boolean;
+  partialReason: PartialSell['reason'];
+  logLabelPct: string;
+  timelineLabelRu?: string;
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+}): void {
+  const now = Date.now();
+  const existing = samePendingTpSellIntent(args.ot.livePendingTpSell, {
+    reason: args.partialReason,
+    ladderStepIndex: args.ladderStepIndex,
+    ladderPnlPct: args.ladderPnlPct,
+  })
+    ? args.ot.livePendingTpSell
+    : undefined;
+  const pending: LivePendingTpSellIntent = {
+    id: existing?.id ?? `failed_tp_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    createdTs: existing?.createdTs ?? now,
+    updatedTs: now,
+    retryUntilTs: existing?.retryUntilTs ?? now + FAILED_TP_SELL_RETRY_WINDOW_MS,
+    attempts: (existing?.attempts ?? 0) + 1,
+    sellFraction: args.sellFraction,
+    reason: args.partialReason,
+    ladderStepIndex: args.ladderStepIndex,
+    ladderRungsTotal: args.ladderRungsTotal,
+    ladderPnlPct: args.ladderPnlPct,
+    tpGrid: args.tpGrid,
+    logLabelPct: args.logLabelPct,
+    ...(args.timelineLabelRu ? { timelineLabelRu: args.timelineLabelRu } : {}),
+    triggerPnlFrac: args.ladderPnlPct,
+    protectBelowPnlFrac: failedTpSellProtectBelowPnlFrac(args.partialReason),
+    terminalKind: args.sellOut.terminalKind,
+    terminalMessage: (args.sellOut.terminalMessage ?? args.sellOut.preflightSkipReason)?.slice(0, 400),
+  };
+  args.ot.livePendingTpSell = pending;
+  args.journalLiveStrategy?.({
+    kind: 'failed_tp_retry_pending',
+    mint: args.mint,
+    reason: pending.reason,
+    retryId: pending.id,
+    attempts: pending.attempts,
+    retryUntilTs: pending.retryUntilTs,
+    ladderPnlPct: pending.ladderPnlPct,
+    sellFraction: pending.sellFraction,
+    terminalKind: pending.terminalKind,
+    terminalMessage: pending.terminalMessage,
+  });
+}
+
 /** Shared partial TP path for discrete ladder rungs and TP grid steps. */
 async function tryExecuteTpPartialSell(args: {
   mint: string;
@@ -831,6 +933,8 @@ async function tryExecuteTpPartialSell(args: {
   timelineLabelRu?: string;
   /** Live: Oscar-attributed chain USD for this mint (wallet source of truth). */
   chainOscarUsd?: number;
+  /** Pending retry path owns the existing intent and should not create another pending record. */
+  suppressPendingRetry?: boolean;
 }): Promise<TpPartialSellResult> {
   const {
     mint,
@@ -852,6 +956,7 @@ async function tryExecuteTpPartialSell(args: {
     partialReason: partialReasonArg,
     timelineLabelRu,
     chainOscarUsd: chainOscarUsdArg,
+    suppressPendingRetry,
   } = args;
   const partialReason: PartialSell['reason'] = partialReasonArg ?? 'TP_LADDER';
   const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
@@ -990,6 +1095,27 @@ async function tryExecuteTpPartialSell(args: {
       sellOut.solProceedsLamports != null && sellOut.solProceedsLamports > 0n;
     if (!sellOut.ok && !chainPartialProceeds) {
       if (sellOut.preflightSkipReason === 'wallet_spl_balance_zero') return 'wallet_zero';
+      if (
+        !suppressPendingRetry &&
+        failedTpSellReasonSupportsPending(partialReason) &&
+        retryableFailedTpSell(sellOut)
+      ) {
+        armFailedTpSellRetry({
+          mint,
+          ot,
+          sellOut,
+          sellFraction,
+          ladderStepIndex,
+          ladderRungsTotal,
+          ladderPnlPct,
+          tpGrid,
+          partialReason,
+          logLabelPct,
+          timelineLabelRu,
+          journalLiveStrategy,
+        });
+        return 'defer_next';
+      }
       return 'abort_mint';
     }
     if (!sellOut.ok && chainPartialProceeds) {
@@ -1221,6 +1347,130 @@ async function tryExecuteTpPartialSell(args: {
   }
   if (!sellOut.ok) return 'abort_mint';
   return 'ok';
+}
+
+async function tryExecutePendingFailedTpSell(args: {
+  mint: string;
+  ot: OpenTrade;
+  cfg: PaperTraderConfig;
+  curMetric: number;
+  pnlFrac: number;
+  journalAppend: TrackerArgs['journalAppend'];
+  journalLiveStrategy?: TrackerArgs['journalLiveStrategy'];
+  livePhase4?: LiveOscarPhase4Tracker;
+  liveOscarCfg?: LiveOscarConfig;
+  stats: TrackerStats;
+}): Promise<'none' | 'executed' | 'pending' | 'protect_full_exit'> {
+  const { mint, ot, cfg, curMetric, pnlFrac, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg, stats } =
+    args;
+  const pending = ot.livePendingTpSell;
+  if (!pending) return 'none';
+
+  if (
+    pending.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' &&
+    Number.isFinite(pending.protectBelowPnlFrac) &&
+    pnlFrac <= pending.protectBelowPnlFrac + LADDER_PNL_EPS
+  ) {
+    journalLiveStrategy?.({
+      kind: 'failed_tp_retry_pending',
+      mint,
+      reason: pending.reason,
+      retryId: pending.id,
+      phase: 'protective_full_exit',
+      attempts: pending.attempts,
+      pnlFrac,
+      protectBelowPnlFrac: pending.protectBelowPnlFrac,
+      terminalKind: pending.terminalKind,
+      terminalMessage: pending.terminalMessage,
+    });
+    return 'protect_full_exit';
+  }
+
+  const now = Date.now();
+  const priceStillValid = pnlFrac + LADDER_PNL_EPS >= pending.triggerPnlFrac;
+  if (!priceStillValid && now > pending.retryUntilTs) {
+    journalLiveStrategy?.({
+      kind: 'failed_tp_retry_pending',
+      mint,
+      reason: pending.reason,
+      retryId: pending.id,
+      phase: 'expired',
+      attempts: pending.attempts,
+      pnlFrac,
+      triggerPnlFrac: pending.triggerPnlFrac,
+      retryUntilTs: pending.retryUntilTs,
+    });
+    ot.livePendingTpSell = undefined;
+    return 'none';
+  }
+
+  pending.attempts += 1;
+  pending.updatedTs = now;
+  const r = await tryExecuteTpPartialSell({
+    mint,
+    ot,
+    cfg,
+    curMetric,
+    sellFraction: pending.sellFraction,
+    ladderStepIndex: pending.ladderStepIndex,
+    ladderRungsTotal: pending.ladderRungsTotal,
+    ladderPnlPct: pending.ladderPnlPct,
+    tpGrid: pending.tpGrid,
+    journalAppend,
+    journalLiveStrategy,
+    livePhase4,
+    liveOscarCfg,
+    stats,
+    markLadder: () => {
+      if (pending.reason === 'TP_LADDER') {
+        markLadderStepFired(ot, pending.ladderStepIndex, pending.ladderPnlPct);
+        if (isWaveBExitPolicy(ot)) waveBOnTpGridRungExecuted(ot, pending.ladderPnlPct);
+      } else if (pending.reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL') {
+        waveBOnTpGridRungExecuted(ot, WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl);
+      }
+    },
+    logLabelPct: `${pending.logLabelPct}-retry`,
+    partialReason: pending.reason,
+    timelineLabelRu: pending.timelineLabelRu,
+    suppressPendingRetry: true,
+  });
+
+  if (r === 'ok') {
+    if (pending.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') {
+      ot.liveWavePreArmNoHalf8PartialTaken = true;
+    } else if (pending.reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL') {
+      ot.liveWaveDip10FirstTp5PartialTaken = true;
+    }
+    ot.livePendingTpSell = undefined;
+    journalLiveStrategy?.({
+      kind: 'failed_tp_retry_executed',
+      mint,
+      reason: pending.reason,
+      retryId: pending.id,
+      attempts: pending.attempts,
+      pnlFrac,
+      sellFraction: pending.sellFraction,
+    });
+    return 'executed';
+  }
+  if (r === 'wallet_zero') {
+    ot.livePendingTpSell = undefined;
+    return 'executed';
+  }
+
+  journalLiveStrategy?.({
+    kind: 'failed_tp_retry_pending',
+    mint,
+    reason: pending.reason,
+    retryId: pending.id,
+    phase: 'retry_failed',
+    attempts: pending.attempts,
+    pnlFrac,
+    triggerPnlFrac: pending.triggerPnlFrac,
+    retryUntilTs: pending.retryUntilTs,
+    result: r,
+  });
+  return 'pending';
 }
 
 /** Wave B: partial trail sells on −stepPnl descents from `liveWaveTrailAnchorPnlFrac`. */
@@ -4213,8 +4463,36 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.avgEntry > 0 &&
       curMetric / ot.avgEntry - 1 + LADDER_PNL_EPS < tgEff.stepPnl;
     const skipTpGridLiveOscarNeutral = neutralBelowFirstTpAfterFullSplit;
+    let pendingTpProtectiveExit: ExitReason | null = null;
 
     if (!(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0 && ot.remainingFraction > 0) {
+      const pendingTp = await tryExecutePendingFailedTpSell({
+        mint,
+        ot,
+        cfg: effCfg,
+        curMetric,
+        pnlFrac: xAvg - 1,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+      });
+      if (pendingTp === 'pending') {
+        continue;
+      }
+      if (pendingTp === 'protect_full_exit') {
+        pendingTpProtectiveExit = 'KILLSTOP';
+        ot.livePendingTpSell = undefined;
+      }
+      if (pendingTp === 'executed' && ot.avgEntry > 0) {
+        xAvg = curMetric / ot.avgEntry;
+        pnlPctVsAvg = (xAvg - 1) * 100;
+        tgEff = tpGridEffective(ot, effCfg);
+      }
+    }
+
+    if (!pendingTpProtectiveExit && !(isPaperOscarIdealized && idealizedMute) && ot.avgEntry > 0 && ot.remainingFraction > 0) {
       await tryWaveBDip10FirstTp5PartialExit({
         mint,
         ot,
@@ -4235,6 +4513,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (
       !(isPaperOscarIdealized && idealizedMute) &&
+      !pendingTpProtectiveExit &&
       !skipTpGridLiveOscarNeutral &&
       !isPresetCScalpExitPolicy(ot) &&
       tgEff.stepPnl > 0 &&
@@ -4306,6 +4585,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (
       !(isPaperOscarIdealized && idealizedMute) &&
+      !pendingTpProtectiveExit &&
       !skipTpGridLiveOscarNeutral &&
       !isVariantAHybridExitPolicy(ot) &&
       tpLadder.length > 0 &&
@@ -4593,7 +4873,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     effCfg = cfgEffectiveForOpen(cfg, ot);
     killEff = dcaKillstopEffective(ot, effCfg);
 
-    let exitReason: ExitReason | null = null;
+    let exitReason: ExitReason | null = pendingTpProtectiveExit;
 
     if (
       cfg.flashCrashKillEnabled &&

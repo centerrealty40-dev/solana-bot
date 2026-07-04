@@ -83,6 +83,10 @@ export type LiveTokenToSolSellResult = {
   walletDrained?: boolean;
   /** Actual token atoms sold on-chain (sum across exit slices). Used for partial slipRealizedPct. */
   tokenAmountRawSold?: string;
+  /** Terminal sell failure class when `ok === false`; callers keep retryable intents pending. */
+  terminalKind?: 'sim_err' | 'send_failed' | 'confirm_timeout' | 'preflight' | 'other';
+  /** Short terminal message for journal diagnostics and retry classification. */
+  terminalMessage?: string;
 };
 
 export type LiveTokenToSolPipelineResult = {
@@ -104,6 +108,10 @@ export type LiveTokenToSolPipelineResult = {
   walletDrained?: boolean;
   /** Actual token atoms sold on-chain (sum across exit slices). Used for partial slipRealizedPct. */
   tokenAmountRawSold?: string;
+  /** Terminal sell failure class when `ok === false`; callers keep retryable intents pending. */
+  terminalKind?: 'sim_err' | 'send_failed' | 'confirm_timeout' | 'preflight' | 'other';
+  /** Short terminal message for journal diagnostics and retry classification. */
+  terminalMessage?: string;
 };
 
 export interface LiveOscarPhase4Tracker {
