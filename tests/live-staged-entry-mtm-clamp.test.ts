@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { clampLiveTrackerMtmForExit } from '../src/papertrader/executor/exit-policy-wave-b.js';
+import { resolveObservedPriceUsdForJournal } from '../src/live/sell-price-sanity.js';
 import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
@@ -60,14 +61,14 @@ describe('staged entry vs MTM tick clamp', () => {
     expect((jupiterMtmPx / signalPx - 1) * 100).toBeGreaterThan(-10);
   });
 
-  it('lastObservedPriceUsd stores raw MTM not exit-clamped value when clamp applies', () => {
+  it('lastObservedPriceUsd stores exit-clamped MTM when ghost tick clamp applies', () => {
     const prev = 1.0;
     const rawMtm = 0.5; // −50% single tick
     const ot = { lastObservedPriceUsd: prev } as OpenTrade;
     const clamped = clampLiveTrackerMtmForExit(ot, rawMtm);
     expect(clamped).toBeGreaterThan(rawMtm);
-    ot.lastObservedPriceUsd = rawMtm;
-    expect(ot.lastObservedPriceUsd).toBe(rawMtm);
-    expect(ot.lastObservedPriceUsd).not.toBe(clamped);
+    ot.lastObservedPriceUsd = resolveObservedPriceUsdForJournal(rawMtm, clamped);
+    expect(ot.lastObservedPriceUsd).toBe(clamped);
+    expect(ot.lastObservedPriceUsd).not.toBe(rawMtm);
   });
 });
