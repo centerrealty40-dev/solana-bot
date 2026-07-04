@@ -85,7 +85,8 @@ export function defaultStrategyWatchTargets(root) {
     {
       pm2: 'live-oscar',
       heartbeatPath: `${root}/data/ops-heartbeats/live-oscar.json`,
-      staleMs: 300_000,
+      /** Boot replay on multi-GB journal can block the event loop >5m before first paper heartbeat. */
+      staleMs: 900_000,
       fatalPath: `${root}/data/live/last-fatal-live-oscar.json`,
     },
     {

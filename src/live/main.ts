@@ -75,6 +75,7 @@ import {
 } from '../papertrader/discovery-health-window.js';
 import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import { writeOpsHeartbeat } from '../core/ops-heartbeat.js';
 import { liveConsecSimFailCount } from './phase5-state.js';
 import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
 import {
@@ -349,7 +350,13 @@ export async function main(): Promise<void> {
   } else {
     let anchorRpcPendingMints: string[] = [];
 
+    writeOpsHeartbeat('live-oscar', { bootPhase: 'replay_start' });
     liveStrategyReplay = replayLiveStrategyJournal(replayJournalOpts());
+    writeOpsHeartbeat('live-oscar', {
+      bootPhase: 'replay_done',
+      replayOpen: liveStrategyReplay.open.size,
+      journalTruncated: Boolean(liveStrategyReplay.journalTruncated),
+    });
     const journalTruncated = Boolean(liveStrategyReplay.journalTruncated);
     log.info(
       {
