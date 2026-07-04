@@ -56,6 +56,17 @@ export const PervyyVystrelConfigSchema = z.object({
   volAuthOrganicMin: z.coerce.number().min(0).max(1).default(0.45),
   volAuthMaxRoundTripShare: z.coerce.number().min(0).max(1).default(0.45),
   volAuthFailOpen: z.boolean().default(true),
+  /** PR2 — volume authenticity window + sub-thresholds (spec §6.4.2). */
+  volAuthWindowHours: z.coerce.number().positive().default(1),
+  volAuthMinSwaps: z.coerce.number().int().nonnegative().default(20),
+  volAuthMaxCycleShare: z.coerce.number().min(0).max(1).default(0.35),
+  volAuthMinBsRatio: z.coerce.number().positive().default(1.15),
+  volAuthMaxSelfTrade: z.coerce.number().min(0).max(1).default(0.25),
+  volAuthMinNetNewShare: z.coerce.number().min(0).max(1).default(0.40),
+  volAuthHolderStallPct: z.coerce.number().nonnegative().default(0.5),
+  minUnclusteredBuyers1h: z.coerce.number().int().nonnegative().default(15),
+  materializeEnabled: z.boolean().default(false),
+  materializeIntervalMin: z.coerce.number().int().positive().default(15),
 });
 
 export type PervyyVystrelConfig = z.infer<typeof PervyyVystrelConfigSchema>;
@@ -100,6 +111,16 @@ export function loadPervyyVystrelConfig(env: NodeJS.ProcessEnv = process.env): P
     volAuthOrganicMin: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_ORGANIC_MIN,
     volAuthMaxRoundTripShare: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_ROUND_TRIP_SHARE,
     volAuthFailOpen: envBool(env.PAPER_PERVYY_VYSTREL_VOL_AUTH_FAIL_OPEN, true),
+    volAuthWindowHours: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_WINDOW_H,
+    volAuthMinSwaps: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_SWAPS,
+    volAuthMaxCycleShare: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_CYCLE_SHARE,
+    volAuthMinBsRatio: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_BS_RATIO,
+    volAuthMaxSelfTrade: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_SELF_TRADE,
+    volAuthMinNetNewShare: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_NET_NEW_SHARE,
+    volAuthHolderStallPct: env.PAPER_PERVYY_VYSTREL_VOL_AUTH_HOLDER_STALL_PCT,
+    minUnclusteredBuyers1h: env.PAPER_PERVYY_VYSTREL_MIN_UNCLUSTERED_BUYERS_1H,
+    materializeEnabled: envBool(env.PERVYY_VYSTREL_MATERIALIZE_ENABLED, false),
+    materializeIntervalMin: env.PERVYY_VYSTREL_MATERIALIZE_INTERVAL_MIN,
   });
 }
 

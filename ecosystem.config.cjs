@@ -880,6 +880,15 @@ const PM2_APPS = [
         PAPER_PERVYY_VYSTREL_VOL_AUTH_ORGANIC_MIN: '0.45',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_ROUND_TRIP_SHARE: '0.45',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_FAIL_OPEN: '1',
+        /** PR2 — volume authenticity sub-thresholds (spec §6.4.2). */
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_WINDOW_H: '1',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_SWAPS: '20',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_CYCLE_SHARE: '0.35',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_BS_RATIO: '1.15',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_SELF_TRADE: '0.25',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_NET_NEW_SHARE: '0.40',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_HOLDER_STALL_PCT: '0.5',
+        PAPER_PERVYY_VYSTREL_MIN_UNCLUSTERED_BUYERS_1H: '15',
         LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'shadow',
         /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
         LIVE_OSCAR_INTEL_ENABLED: '1',
@@ -2004,6 +2013,33 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         BSCPULSE_SYNC_INTERVAL_SEC: '30',
+      },
+    },
+    /**
+     * Pervyy Vystrel PR2 batch — vol-auth + organic flow + cluster map materialize.
+     * DISABLED by default; enable after PR2 merge + shadow window (15m loop, off-peak bias ops).
+     */
+    {
+      name: 'pervyy-vystrel-materialize',
+      cwd: root,
+      script: 'src/scripts/pervyy-vystrel-materialize.ts',
+      interpreter: 'node',
+      interpreter_args: '--import tsx',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 20,
+      restart_delay: 30_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '0',
+        PERVYY_VYSTREL_MATERIALIZE_INTERVAL_MIN: '15',
+        PERVYY_VYSTREL_MATERIALIZE_TTL_SEC: '120',
+        PERVYY_VYSTREL_MATERIALIZE_LIMIT: '30',
+        PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
+        PAPER_PERVYY_VYSTREL_MODE: 'shadow',
       },
     },
     /**
