@@ -772,8 +772,8 @@ const ConfigSchema = z.object({
   volumeEphemeralNewMintMinActiveHours: z.coerce.number().int().min(0).max(24).default(10),
 
   /**
-   * PG data coverage guard (1.11.222): block when minute-bar history is gapped or
-   * too thin to trust volume sybil/ephemeral guards; Telegram ADVICE on near-entry skip.
+   * PG data coverage guard (1.11.222): measure minute-bar history gaps/thinness for volume
+   * guards; optional buy block via `pgDataCoverageBlockBuy` (default off).
    */
   pgDataCoverageGuardEnabled: z.boolean().default(false),
   pgDataCoverageLookbackHours: z.coerce.number().int().min(6).max(48).default(24),
@@ -793,6 +793,11 @@ const ConfigSchema = z.object({
   pgDataCoverageMaxGapMinutes: z.coerce.number().int().min(5).max(720).default(30),
   /** Block all entries while any dex snapshot table is stale right now. */
   pgDataCoverageBlockOnPgStale: z.boolean().default(true),
+  /**
+   * When false (default): coverage guard still runs for metrics/audit but never blocks buys.
+   * Env `PAPER_PG_DATA_COVERAGE_BLOCK_BUY`.
+   */
+  pgDataCoverageBlockBuy: z.boolean().default(false),
   /** After PG recovery, use strict min hour ratio for this many hours (full tier when auto-escalate). */
   pgDataCoverageStrictAfterRecoveryHours: z.coerce.number().int().min(0).max(72).default(24),
   /**
@@ -1676,6 +1681,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     pgDataCoverageMinMinutesPerHour: process.env.PAPER_PG_DATA_COVERAGE_MIN_MINUTES_PER_HOUR,
     pgDataCoverageMaxGapMinutes: process.env.PAPER_PG_DATA_COVERAGE_MAX_GAP_MINUTES,
     pgDataCoverageBlockOnPgStale: envBool(process.env.PAPER_PG_DATA_COVERAGE_BLOCK_ON_PG_STALE, true),
+    pgDataCoverageBlockBuy: envBool(process.env.PAPER_PG_DATA_COVERAGE_BLOCK_BUY, false),
     pgDataCoverageStrictAfterRecoveryHours: process.env.PAPER_PG_DATA_COVERAGE_STRICT_AFTER_RECOVERY_HOURS,
     pgDataCoverageAutoEscalate: envBool(process.env.PAPER_PG_DATA_COVERAGE_AUTO_ESCALATE, true),
     pgDataCoverageKnownMintGapBypass: envBool(

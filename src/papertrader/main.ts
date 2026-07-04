@@ -712,6 +712,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function notifyLiveOscarDataCoverageSkip(d: EvalDecision): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
+    if (!cfg.pgDataCoverageBlockBuy) return;
     if (process.env.LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     if (!d.features.pg_data_coverage?.nearEntry) return;

@@ -44,6 +44,7 @@ function pgCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     pgDataCoverageMinMinutesPerHour: 5,
     pgDataCoverageMaxGapMinutes: 30,
     pgDataCoverageBlockOnPgStale: true,
+    pgDataCoverageBlockBuy: true,
     pgDataCoverageStrictAfterRecoveryHours: 24,
     pgDataCoverageAutoEscalate: true,
     pgDataCoverageKnownMintGapBypass: true,
