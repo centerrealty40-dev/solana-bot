@@ -128,6 +128,8 @@ export interface LiveOscarPhase4Tracker {
     symbol: string;
     usdNotional: number;
     priceUsdPerToken: number;
+    /** Prior observed / entry anchor for ghost-quote deviation gate. */
+    referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
   }): Promise<LiveTokenToSolSellResult>;

@@ -63,9 +63,32 @@ describe('live re-entry hybrid gate', () => {
     expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
   });
 
-  it('after loss: still requires dip after 20m', () => {
-    const exitTs = Date.now() - 25 * 60_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
+  it('after loss cooldown expires: no exit-price ceiling (normal discovery gates)', () => {
+    const exitTs = Date.now() - 11 * 60_000;
+    const cfg = hybridCfg({
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 0.01300716,
+      effective_exit_price: 0.01300716,
+      netPnlUsd: -43,
+      exitReason: 'KILLSTOP',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(cfg, MINT, 0.0135, reasons, Date.now());
+    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+  });
+
+  it('after loss: still requires dip during cooldown window', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
       netPnlUsd: -22,
       exitReason: 'FLASH_CRASH_KILL',
     });
