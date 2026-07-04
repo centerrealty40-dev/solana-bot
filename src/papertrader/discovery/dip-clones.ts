@@ -4,6 +4,12 @@ import { snapshotRowTsMs } from '../stale-price.js';
 import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
 import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
 import { resolveShyftDefiMcap, type ShyftDefiMcapResult } from '../stream/shyft-defi-mcap.js';
+import {
+  resolveDiscoveryMarketQuote,
+  buildBirdeyeCoverageGapEvent,
+  buildBirdeyeTierInsufficientEvent,
+  type DiscoveryQuoteSource,
+} from '../pricing/discovery-market-quote.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
 import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
 import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
@@ -940,11 +946,85 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
 
     /**
+     * Birdeye REST primary (discovery eval): price/mcap/liq/vol5m with DexScreener → PG fallback.
+     * Default OFF (`birdeyePrimaryEnabled`). Shyft stream-primary (1.2) may still override price below.
+     */
+    let quoteMcapSource: DiscoveryQuoteSource | undefined;
+    let birdeyeMarketQuote: Awaited<ReturnType<typeof resolveDiscoveryMarketQuote>> | null = null;
+    if (cfg.birdeyePrimaryEnabled && cfg.strategyId === 'live-oscar') {
+      birdeyeMarketQuote = await resolveDiscoveryMarketQuote({
+        enabled: true,
+        mint: row.mint,
+        pgRow: row,
+        birdeyeTtlMs: cfg.birdeyeMarketTtlMs,
+        birdeyeMaxStaleMs: cfg.birdeyeMaxStaleMs,
+        coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
+      });
+      quoteMcapSource = birdeyeMarketQuote.source;
+      if (birdeyeMarketQuote.birdeyeTierInsufficient) {
+        auditRows.push(
+          buildBirdeyeTierInsufficientEvent({
+            mint: row.mint,
+            lane: String(lane),
+            errorKind: birdeyeMarketQuote.birdeyeErrorKind,
+          }),
+        );
+      }
+      const gap = birdeyeMarketQuote;
+      if (
+        gap.coverageGap &&
+        birdeyeMarketQuote.pgSnapshotAgeMs != null &&
+        birdeyeMarketQuote.pgSnapshotAgeMs > cfg.birdeyeCoverageGapMinMs
+      ) {
+        auditRows.push(
+          buildBirdeyeCoverageGapEvent({
+            mint: row.mint,
+            lane: String(lane),
+            pgSnapshotAgeMs: birdeyeMarketQuote.pgSnapshotAgeMs,
+            coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
+            source: birdeyeMarketQuote.source,
+          }),
+        );
+      }
+      if (birdeyeMarketQuote.source !== 'pg_snapshot') {
+        auditRows.push({
+          kind: 'live_birdeye_market_quote',
+          mint: row.mint,
+          lane: String(lane),
+          source: birdeyeMarketQuote.source,
+          pgPriceUsd: row.price_usd ?? null,
+          pgMcapUsd: row.market_cap_usd ?? null,
+          pgLiqUsd: row.liquidity_usd ?? null,
+          pgVol5mUsd: row.volume_5m ?? null,
+          pgSnapshotAgeMs: birdeyeMarketQuote.pgSnapshotAgeMs,
+          quotePriceUsd: birdeyeMarketQuote.priceUsd,
+          quoteMcapUsd: birdeyeMarketQuote.marketCapUsd,
+          quoteLiqUsd: birdeyeMarketQuote.liquidityUsd,
+          quoteVol5mUsd: birdeyeMarketQuote.volume5mUsd,
+        });
+      }
+    }
+
+    /**
      * Stage 1.2 (1.11.468) + 1.3 (1.11.469): build `evalRow` — a clone of `row` with the freshest
      * Shyft stream `price_usd` (1.2) and/or DeFi `market_cap_usd` / `liquidity_usd` (1.3) overrides
      * folded in — used by the snapshot/dip gates + reported features.
      */
     const evalOverrides: Partial<SnapshotCandidateRow> = {};
+    if (birdeyeMarketQuote && birdeyeMarketQuote.source !== 'pg_snapshot') {
+      if (birdeyeMarketQuote.priceUsd != null && birdeyeMarketQuote.priceUsd > 0) {
+        evalOverrides.price_usd = birdeyeMarketQuote.priceUsd;
+      }
+      if (birdeyeMarketQuote.marketCapUsd != null && birdeyeMarketQuote.marketCapUsd > 0) {
+        evalOverrides.market_cap_usd = birdeyeMarketQuote.marketCapUsd;
+      }
+      if (birdeyeMarketQuote.liquidityUsd != null && birdeyeMarketQuote.liquidityUsd > 0) {
+        evalOverrides.liquidity_usd = birdeyeMarketQuote.liquidityUsd;
+      }
+      if (birdeyeMarketQuote.volume5mUsd != null && birdeyeMarketQuote.volume5mUsd > 0) {
+        evalOverrides.volume_5m = birdeyeMarketQuote.volume5mUsd;
+      }
+    }
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryDiscoveryEnabled &&
@@ -999,6 +1079,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const discoveryMcap = resolveDiscoveryRefMcap(row, {
       defiMcapUsd: defiMcap?.mcapUsd,
       evalRow,
+      quoteMcapSource:
+        quoteMcapSource === 'birdeye' || quoteMcapSource === 'dexscreener'
+          ? quoteMcapSource
+          : undefined,
     });
     const hardMcapReasons: string[] = [];
     const isVolumeLeader = volumeLeaderMintSet.has(row.mint);
