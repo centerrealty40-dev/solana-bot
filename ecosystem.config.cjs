@@ -687,9 +687,9 @@ const PM2_APPS = [
          * точках входа/MTM — измеряет лаг PG vs стрим. Стрим-цена НИГДЕ не участвует в гейтах/eval/
          * исполнении. При OFF торговля байт-в-байт = текущая. Креды: SHYFT_GRPC_ENDPOINT (default
          * https://grpc.fra.shyft.to) + SHYFT_GRPC_TOKEN (x-token) в .env (НЕ сюда).
-         * 1.11.470 — включён ('1') для наблюдения (сбор лага PG); прочие Shyft-флаги остаются '0'.
+         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
          */
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '1',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
         /**
@@ -697,21 +697,21 @@ const PM2_APPS = [
          * discovery dip-eval), freshness-gate `SHYFT_MAX_STALE_MS` + fallback на PG/Jupiter. Master
          * флаг default OFF — при OFF источник цены байт-в-байт = текущий PG/Jupiter. Требует включённый
          * Stage 1.1 shadow-консьюмер (PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1 + SHYFT_GRPC_TOKEN), чтобы
-         * было что брать как primary. 1.11.549 — активирован полный Stage 1.2: MTM + discovery;
-         * shadow остаётся '1' для сравнения лага в журнале.
+         * было что брать как primary.
+         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
          */
-        SHYFT_PRICE_PRIMARY_ENABLED: '1',
-        SHYFT_PRICE_PRIMARY_MTM_ENABLED: '1',
-        SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '1',
+        SHYFT_PRICE_PRIMARY_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_MTM_ENABLED: '0',
+        SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '0',
         SHYFT_MAX_STALE_MS: '5000',
         /**
          * 1.11.469 — Этап 1.3: mcap/liq кандидата из Shyft DeFi API (`/v0/pools/get_by_token`) с
          * TTL-кэшем + fallback на PG/pump.fun. Override `refMcap` (tier) + входы snapshot mcap/liq-гейта.
          * Default OFF — при OFF источник mcap/liq байт-в-байт = текущий PG. Ключ DeFi REST API:
          * SHYFT_DEFI_API_KEY (или SHYFT_API_KEY) в .env; SHYFT_DEFI_API_BASE default https://defi.shyft.to.
-         * 1.11.549 — активирован Stage 1.3 (TTL 12s + PG fallback).
+         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
          */
-        SHYFT_DEFI_MCAP_ENABLED: '1',
+        SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
