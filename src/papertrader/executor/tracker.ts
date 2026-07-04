@@ -65,6 +65,11 @@ import type {
   LiveOscarPhase4Tracker,
   LiveTokenToSolSellResult,
 } from '../../live/phase4-types.js';
+import {
+  isGhostMtmExitTick,
+  resolveLiveSellReferencePriceUsd,
+  resolveObservedPriceUsdForJournal,
+} from '../../live/sell-price-sanity.js';
 import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
@@ -215,6 +220,7 @@ const FAILED_TP_SELL_RETRY_WINDOW_MS = 180_000;
 export function retryableFailedTpSell(sellOut: LiveTokenToSolSellResult): boolean {
   if (sellOut.ok) return false;
   if (sellOut.preflightSkipReason === 'wallet_spl_balance_zero') return false;
+  if (sellOut.preflightSkipReason === 'ghost_price_quote_rejected') return true;
   if (sellOut.terminalKind === 'sim_err' || sellOut.terminalKind === 'send_failed') return true;
   if (sellOut.terminalKind === 'preflight') {
     const msg = (sellOut.terminalMessage ?? sellOut.preflightSkipReason ?? '').toLowerCase();
@@ -311,6 +317,15 @@ function scheduleTailAfterLiveClose(
     dexSource,
     exitReason,
   });
+}
+
+function liveSellReferencePriceUsd(ot: OpenTrade): number | undefined {
+  const ref = resolveLiveSellReferencePriceUsd({
+    lastObservedPriceUsd: ot.lastObservedPriceUsd,
+    avgEntryMarket: ot.avgEntryMarket,
+    avgEntry: ot.avgEntry,
+  });
+  return ref != null && ref > 0 ? ref : undefined;
 }
 
 export { ladderRetraceTriggered } from './tp-ladder-state.js';
@@ -1088,6 +1103,7 @@ async function tryExecuteTpPartialSell(args: {
       symbol: ot.symbol,
       usdNotional: tokenSizingUsdForSwap,
       priceUsdPerToken: marketSell,
+      referencePriceUsd: liveSellReferencePriceUsd(ot),
       decimals: ot.tokenDecimals ?? 6,
       intentKind: 'sell_partial',
     });
@@ -2804,6 +2820,7 @@ export async function trackerForceFullExitLive(args: {
     symbol: ot.symbol,
     usdNotional: usdForSell,
     priceUsdPerToken: marketSell,
+    referencePriceUsd: liveSellReferencePriceUsd(ot),
     decimals: ot.tokenDecimals ?? 6,
     intentKind: 'sell_full',
   });
@@ -3268,6 +3285,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
     let curMetric = snapPx > 0 ? snapPx : 0;
+    let ghostExitTick = false;
     let entrySplitJupiterPx: number | undefined;
     let chainOscarUsdForMint = 0;
     if (liveChainMap && snapPx > 0) {
@@ -3617,8 +3635,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     /** Raw PG/Jupiter MTM before ±12% exit clamp — staged entry / signal-kill vs anchor use this, not clamped exit MTM. */
     const rawTrackerPriceUsd = curMetric > 0 ? curMetric : 0;
+    const prevObservedPriceUsd =
+      ot.lastObservedPriceUsd ??
+      (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
+    let exitMtmForJournal = rawTrackerPriceUsd;
     if (rawTrackerPriceUsd > 0 && (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
       const exitMtm = clampLiveTrackerMtmForExit(ot, rawTrackerPriceUsd);
+      exitMtmForJournal = exitMtm > 0 ? exitMtm : rawTrackerPriceUsd;
       if (exitMtm > 0 && Math.abs(exitMtm - rawTrackerPriceUsd) / Math.max(rawTrackerPriceUsd, 1e-18) > 0.002) {
         log.warn(
           {
@@ -3630,11 +3653,21 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           'live tracker: MTM tick jump clamped for exit decisions (ghost quote guard)',
         );
       }
-      curMetric = exitMtm > 0 ? exitMtm : rawTrackerPriceUsd;
+      curMetric = exitMtmForJournal;
     }
 
+    ghostExitTick =
+      rawTrackerPriceUsd > 0 &&
+      exitMtmForJournal > 0 &&
+      prevObservedPriceUsd > 0 &&
+      isGhostMtmExitTick({
+        previousObservedUsd: prevObservedPriceUsd,
+        rawUsd: rawTrackerPriceUsd,
+        clampedUsd: exitMtmForJournal,
+      });
+
     if (rawTrackerPriceUsd > 0) {
-      ot.lastObservedPriceUsd = rawTrackerPriceUsd;
+      ot.lastObservedPriceUsd = resolveObservedPriceUsdForJournal(rawTrackerPriceUsd, exitMtmForJournal);
       if (cfg.flashCrashKillEnabled && isLiveOscarTradingStrategyId(cfg.strategyId)) {
         appendFlashKillPriceSample(ot, Date.now(), curMetric);
       }
@@ -3781,6 +3814,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             symbol: ot.symbol,
             usdNotional: investedRemaining,
             priceUsdPerToken: marketSell,
+            referencePriceUsd: liveSellReferencePriceUsd(ot),
             decimals: ot.tokenDecimals ?? 6,
             intentKind: 'sell_full',
           });
@@ -4978,7 +5012,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         !isVariantAExitPolicy(ot) &&
         (inSignalKillTerritory || waveBKill || presetCScalpKill || runnerProbeKill || classicKill);
       if (inKillTerritory) {
-        if (waveBKill || presetCScalpKill || runnerProbeKill) {
+        if (ghostExitTick) {
+          ot.liveKillstopBelowStreak = 0;
+          log.warn(
+            {
+              mint: mint.slice(0, 8),
+              symbol: ot.symbol,
+              rawMtmUsd: +rawTrackerPriceUsd.toFixed(8),
+              exitMtmUsd: +exitMtmForJournal.toFixed(8),
+              prevObservedUsd: +prevObservedPriceUsd.toFixed(8),
+            },
+            'live tracker: KILLSTOP suppressed on ghost MTM tick',
+          );
+        } else if (waveBKill || presetCScalpKill || runnerProbeKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
         } else {
@@ -5177,6 +5223,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           symbol: ot.symbol,
           usdNotional: investedRemaining,
           priceUsdPerToken: marketSell,
+          referencePriceUsd: liveSellReferencePriceUsd(ot),
           decimals: ot.tokenDecimals ?? 6,
           intentKind: 'sell_full',
         });

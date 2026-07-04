@@ -46,6 +46,7 @@ type TokenToSolPipelineArgs = {
   symbol: string;
   usdNotional: number;
   priceUsdPerToken: number;
+  referencePriceUsd?: number | null;
   decimals: number;
   intentKind: 'sell_partial' | 'sell_full';
 };

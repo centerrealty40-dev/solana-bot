@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-
-/** Mirror of phase4 LIVE_SELL_MIN_PRICE_USD guard (NEST RCA: 6e-6 ghost quote). */
-const LIVE_SELL_MIN_PRICE_USD = 1e-5;
-
-function liveSellPriceUsdSane(priceUsdPerToken: number): boolean {
-  return Number.isFinite(priceUsdPerToken) && priceUsdPerToken >= LIVE_SELL_MIN_PRICE_USD;
-}
+import { liveSellPriceUsdSane } from '../src/live/sell-price-sanity.js';
 
 describe('live sell preflight price guard', () => {
   it('rejects ghost hot-tick prices below floor', () => {

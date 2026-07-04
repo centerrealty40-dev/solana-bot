@@ -30,7 +30,9 @@ describe('execution-layer post-exit re-entry gate', () => {
   });
 
   it('blocks buy_open when price has not dipped after KILLSTOP exit', () => {
-    recordLastExitMarketSnapshotAfterClose(MINT, Date.now() - 5_000, 1.0, {
+    const exitTs = Date.now() - 5_000;
+    lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
       netPnlUsd: -12,
       exitReason: 'KILLSTOP',
     });
@@ -39,7 +41,9 @@ describe('execution-layer post-exit re-entry gate', () => {
   });
 
   it('allows buy_open when price dipped enough after stress exit', () => {
-    recordLastExitMarketSnapshotAfterClose(MINT, Date.now() - 5_000, 1.0, {
+    const exitTs = Date.now() - 5_000;
+    lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
       netPnlUsd: -12,
       exitReason: 'KILLSTOP',
     });
@@ -48,8 +52,26 @@ describe('execution-layer post-exit re-entry gate', () => {
   });
 
   it('blocks during legacy post-exit loss cooldown minutes', () => {
-    lastPostExitBuyCooldownTsByMintMap.set(MINT, Date.now() - 60_000);
-    const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.5);
+    const exitTs = Date.now() - 60_000;
+    lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
+      netPnlUsd: -12,
+      exitReason: 'KILLSTOP',
+    });
+    const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.95);
     expect(reasons.some((r) => r.startsWith('post_exit_buy_cooldown_'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+  });
+
+  it('allows buy_open after loss cooldown even above last exit minus drop', () => {
+    const exitTs = Date.now() - 11 * 60_000;
+    lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
+      netPnlUsd: -12,
+      exitReason: 'KILLSTOP',
+    });
+    const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.95);
+    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+    expect(reasons.filter((r) => r.startsWith('post_exit_buy_cooldown_'))).toHaveLength(0);
   });
 });

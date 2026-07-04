@@ -95,6 +95,10 @@ import {
   isRetryablePreBroadcastError,
   isRetryableSellSimError,
 } from './execution-retry-errors.js';
+import {
+  capPartialSellTokenRaw,
+  liveSellQuotePriceSanity,
+} from './sell-price-sanity.js';
 
 export { isRetryableSellSimError } from './execution-retry-errors.js';
 
@@ -837,13 +841,6 @@ function resolveSellExecutionMode(liveCfg: LiveOscarConfig): LiveOscarConfig['ex
   return liveCfg.executionMode;
 }
 
-/** Reject ghost hot-tick quotes that oversize token raw (NEST RCA: ~6e-6 vs ~5e-3 entry). */
-const LIVE_SELL_MIN_PRICE_USD = 1e-5;
-
-function liveSellPriceUsdSane(priceUsdPerToken: number): boolean {
-  return Number.isFinite(priceUsdPerToken) && priceUsdPerToken >= LIVE_SELL_MIN_PRICE_USD;
-}
-
 function appendSellPreflightSkip(
   liveCfg: LiveOscarConfig,
   args: {
@@ -897,6 +894,8 @@ async function runTokenToSolPipeline(
     symbol: string;
     usdNotional: number;
     priceUsdPerToken: number;
+    /** Prior observed / entry anchor — ghost-quote deviation gate (DdPrHY RCA). */
+    referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
   },
@@ -914,18 +913,30 @@ async function runTokenToSolPipeline(
   }
   if (executionMode !== 'simulate' && executionMode !== 'live') return { ok: false };
 
-  if (!liveSellPriceUsdSane(args.priceUsdPerToken)) {
+  const quoteSanity = liveSellQuotePriceSanity({
+    quotePriceUsd: args.priceUsdPerToken,
+    referencePriceUsd: args.referencePriceUsd,
+  });
+  if (!quoteSanity.ok) {
+    const reason =
+      quoteSanity.reason === 'ghost_price_quote_rejected' &&
+      Number.isFinite(quoteSanity.referencePriceUsd) &&
+      quoteSanity.referencePriceUsd > 0
+        ? 'ghost_price_quote_rejected'
+        : 'sell_price_usd_insane';
     appendSellPreflightSkip(liveCfg, {
       mint: args.mint,
-      reason: 'sell_price_usd_insane',
+      reason,
       detail: JSON.stringify({
         mint: args.mint,
         intentKind: args.intentKind,
         priceUsdPerToken: args.priceUsdPerToken,
+        referencePriceUsd: args.referencePriceUsd ?? null,
+        deviationFrac: quoteSanity.deviationFrac,
       }).slice(0, 400),
       intentKind: args.intentKind,
     });
-    return { ok: false, preflightSkipReason: 'sell_price_usd_insane' };
+    return { ok: false, preflightSkipReason: reason };
   }
 
   let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
@@ -975,9 +986,18 @@ async function runTokenToSolPipeline(
       raw = chainAmt.toString();
       sellAmountSource = 'chain_full_balance';
     } else {
-      const capped = computedBn < chainAmt ? computedBn : chainAmt;
-      raw = capped.toString();
-      sellAmountSource = computedBn > chainAmt ? 'usd_capped_by_chain' : 'usd_math';
+      const partialCap = capPartialSellTokenRaw({
+        intentKind: args.intentKind,
+        computedRaw: computedBn,
+        chainAmt,
+      });
+      const chainCapped = partialCap.raw < chainAmt ? partialCap.raw : chainAmt;
+      raw = chainCapped.toString();
+      if (partialCap.cappedByPartialMax) {
+        sellAmountSource = 'usd_capped_by_chain';
+      } else {
+        sellAmountSource = computedBn > chainAmt ? 'usd_capped_by_chain' : 'usd_math';
+      }
     }
   }
 
@@ -1359,6 +1379,7 @@ export async function executeLiveTokenToSolPipeline(
     symbol: string;
     usdNotional: number;
     priceUsdPerToken: number;
+    referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
   },

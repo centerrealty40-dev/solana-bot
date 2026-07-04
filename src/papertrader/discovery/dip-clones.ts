@@ -281,6 +281,21 @@ export function isPostExitBuyCooldownActive(
   return resumeAt > 0 && nowMs < resumeAt;
 }
 
+/** Loss exits with post-exit cooldown: price ceiling only during cooldown, then normal discovery gates. */
+function shouldApplyPostExitReentryPriceGate(
+  cfg: PaperTraderConfig,
+  mint: string,
+  snap: LastExitMarketSnapshot,
+  nowMs: number,
+): boolean {
+  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return false;
+  if (!cfg.dipLossExitCooldownEnabled) return true;
+  const cooldownTs = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (cooldownTs <= 0) return true;
+  if (Math.abs(cooldownTs - snap.exitTs) > 60_000) return true;
+  return isPostExitBuyCooldownActive(cfg, mint, nowMs);
+}
+
 /** Admin ledger close must not mutate re-entry gate state after a recent real exit (KINS audit 04740207). */
 export function shouldPreserveRealExitReentryGate(
   mint: string,
@@ -438,7 +453,7 @@ export function appendLiveReentryHybridGateReasons(
 
   const snap = reentryExitSnapshotForGate(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
-  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
+  if (!shouldApplyPostExitReentryPriceGate(cfg, mint, snap, nowMs)) return;
 
   const lossExit = lastExitWasLossOrStress(snap);
   const dropPct =
@@ -523,7 +538,7 @@ export function appendLiveReentryPriceGapReasons(
   if (!(Number(pct) > 0)) return;
   const snap = reentryExitSnapshotForGate(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
-  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return;
+  if (!shouldApplyPostExitReentryPriceGate(cfg, mint, snap, nowMs)) return;
   const maxAllowed = snap.marketUsd * (1 - pct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
     out.push(
