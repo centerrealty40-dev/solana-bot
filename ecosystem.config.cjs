@@ -1091,10 +1091,11 @@ const PM2_APPS = [
         PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO: '0.08',
         PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD: '36000',
         /**
-         * PG data coverage (1.11.222): block near-entry when PG minute history is gapped/thin;
-         * ADVICE `live_oscar_pg_data_coverage` in Telegram when skip due to incomplete data.
+         * PG data coverage (1.11.222): metrics/audit only — do not block buys on thin PG history.
+         * Set PAPER_PG_DATA_COVERAGE_BLOCK_BUY=1 to restore legacy skip + TG ADVICE.
          */
         PAPER_PG_DATA_COVERAGE_GUARD_ENABLED: '1',
+        PAPER_PG_DATA_COVERAGE_BLOCK_BUY: '0',
         PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS: '24',
         /** Mint/sybil checks use last 6h during outage; full 24h tier auto-restores when PG healthy. */
         PAPER_PG_DATA_COVERAGE_RECENT_HOURS: '6',
@@ -1113,7 +1114,7 @@ const PM2_APPS = [
         /** Familiar repeat-traded mints: skip volume_ephemeral; optional pg_stale relax when vol stable. */
         PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED: '1',
         LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX: '1',
-        LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED: '1',
+        LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED: '0',
         LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_PG_DATA_COVERAGE_TELEGRAM_COOLDOWN_MS: '3600000',
         LIVE_PG_COVERAGE_MODE_TELEGRAM_COOLDOWN_MS: '7200000',

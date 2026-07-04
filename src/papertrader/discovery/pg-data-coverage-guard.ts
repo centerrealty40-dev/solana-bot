@@ -572,9 +572,10 @@ export function evaluatePgDataCoverageGuard(
     }
   }
 
+  const blockBuy = cfg.pgDataCoverageBlockBuy;
   return {
-    blocked: blockedReasons.length > 0,
-    blockedReasons,
+    blocked: blockBuy && blockedReasons.length > 0,
+    blockedReasons: blockBuy ? blockedReasons : [],
     features: { ...features, knownMintGapBypass, familiarMintStaleBypass },
   };
 }
