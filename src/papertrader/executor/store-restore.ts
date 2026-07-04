@@ -411,6 +411,63 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     if (Boolean(rawPayload.liveWavePreArmNoHalf8PartialTaken)) {
       ot.liveWavePreArmNoHalf8PartialTaken = true;
     }
+    const lpts = rawPayload.livePendingTpSell;
+    if (lpts != null && typeof lpts === 'object') {
+      const p = lpts as Record<string, unknown>;
+      const reason = p.reason;
+      const id = typeof p.id === 'string' && p.id.trim() ? p.id.trim() : '';
+      const sellFraction = Number(p.sellFraction ?? NaN);
+      const retryUntilTs = Number(p.retryUntilTs ?? NaN);
+      const createdTs = Number(p.createdTs ?? NaN);
+      const updatedTs = Number(p.updatedTs ?? NaN);
+      const ladderStepIndex = Number(p.ladderStepIndex ?? NaN);
+      const ladderRungsTotal = Number(p.ladderRungsTotal ?? 0);
+      const ladderPnlPct = Number(p.ladderPnlPct ?? NaN);
+      const triggerPnlFrac = Number(p.triggerPnlFrac ?? ladderPnlPct);
+      const protectBelowPnlFrac = Number(p.protectBelowPnlFrac ?? 0);
+      if (
+        id &&
+        (reason === 'TP_LADDER' ||
+          reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' ||
+          reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL') &&
+        sellFraction > 0 &&
+        sellFraction <= 1 &&
+        Number.isFinite(retryUntilTs) &&
+        retryUntilTs > 0 &&
+        Number.isFinite(ladderStepIndex) &&
+        Number.isFinite(ladderPnlPct)
+      ) {
+        ot.livePendingTpSell = {
+          id,
+          createdTs: Number.isFinite(createdTs) && createdTs > 0 ? createdTs : retryUntilTs,
+          updatedTs: Number.isFinite(updatedTs) && updatedTs > 0 ? updatedTs : retryUntilTs,
+          retryUntilTs,
+          attempts: Math.max(0, Math.floor(Number(p.attempts ?? 0))),
+          sellFraction,
+          reason,
+          ladderStepIndex: Math.floor(ladderStepIndex),
+          ladderRungsTotal: Number.isFinite(ladderRungsTotal) ? Math.max(0, Math.floor(ladderRungsTotal)) : 0,
+          ladderPnlPct,
+          tpGrid: Boolean(p.tpGrid),
+          logLabelPct: typeof p.logLabelPct === 'string' && p.logLabelPct.trim() ? p.logLabelPct.trim() : String(reason),
+          timelineLabelRu:
+            typeof p.timelineLabelRu === 'string' && p.timelineLabelRu.trim()
+              ? p.timelineLabelRu.trim()
+              : undefined,
+          triggerPnlFrac: Number.isFinite(triggerPnlFrac) ? triggerPnlFrac : ladderPnlPct,
+          protectBelowPnlFrac: Number.isFinite(protectBelowPnlFrac) ? protectBelowPnlFrac : 0,
+          terminalKind:
+            p.terminalKind === 'sim_err' ||
+            p.terminalKind === 'send_failed' ||
+            p.terminalKind === 'confirm_timeout' ||
+            p.terminalKind === 'preflight' ||
+            p.terminalKind === 'other'
+              ? p.terminalKind
+              : undefined,
+          terminalMessage: typeof p.terminalMessage === 'string' ? p.terminalMessage.slice(0, 400) : undefined,
+        };
+      }
+    }
     if (Boolean(rawPayload.liveWaveDip10ReachedBeforeTp8)) {
       ot.liveWaveDip10ReachedBeforeTp8 = true;
     }

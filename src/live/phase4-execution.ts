@@ -238,6 +238,11 @@ function terminalKindFromMessage(message: string): LiveBuyTerminalKind {
   return 'other';
 }
 
+function sellTerminalKindFromLiveOut(kind: string | undefined): LiveTokenToSolPipelineResult['terminalKind'] {
+  if (kind === 'sim_err' || kind === 'send_failed' || kind === 'confirm_timeout') return kind;
+  return 'other';
+}
+
 /** Estimates gross USD value of `mint` on the live wallet (before copy-leader subtraction). */
 async function estimateLiveWalletMintHoldingGrossUsd(args: {
   liveCfg: LiveOscarConfig;
@@ -1066,7 +1071,7 @@ async function runTokenToSolPipeline(
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
-      return { ok: false };
+      return { ok: false, terminalKind: 'sim_err', terminalMessage: reason };
     }
 
     const snapForAgeSell = (prep.quoteSnapshot ?? {}) as Record<string, unknown>;
@@ -1089,7 +1094,7 @@ async function runTokenToSolPipeline(
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
-      return { ok: false };
+      return { ok: false, terminalKind: 'sim_err', terminalMessage: staleMsg };
     }
 
     /**
@@ -1115,7 +1120,7 @@ async function runTokenToSolPipeline(
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
-      return { ok: false };
+      return { ok: false, terminalKind: 'sim_err', terminalMessage: message };
     }
 
     const wsolOut = wsolOutLamportsFromSellQuote(prep.quoteResponse);
@@ -1173,7 +1178,7 @@ async function runTokenToSolPipeline(
           await sleep(liveCfg.liveSellSimRetryDelayMs);
           continue;
         }
-        return { ok: false };
+        return { ok: false, terminalKind: 'sim_err', terminalMessage: message };
       }
 
       appendLiveJsonlEvent({
@@ -1253,6 +1258,12 @@ async function runTokenToSolPipeline(
       txSignature: liveOut.ok ? liveOut.signature : liveOut.signature ?? undefined,
       priceImpactPct,
       retryAttempts: attempt,
+      ...(!liveOut.ok
+        ? {
+            terminalKind: sellTerminalKindFromLiveOut(liveOut.kind),
+            terminalMessage: liveOut.message,
+          }
+        : {}),
     };
   }
 
