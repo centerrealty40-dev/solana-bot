@@ -82,6 +82,7 @@ import {
   ensurePositionFromWallet,
   fetchExecutionWalletBalanceRaw,
   reconcileGhostPositions,
+  reconcileOscarHandoffClosedFromDisk,
   refreshPositionFromWallet,
   syncPositionFromWallet,
   walletNotionalUsdFromRaw,
@@ -1465,6 +1466,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       try {
         await pollLeaderWallet(cfg, state);
         gcSeenSignatures(state, 48 * 3600_000);
+        reconcileOscarHandoffClosedFromDisk(cfg, state);
         writeCopyTraderState(cfg.statePath, state);
       } catch (err) {
         console.warn('[copy-trader] poll error', (err as Error).message);
