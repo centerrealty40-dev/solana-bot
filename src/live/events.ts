@@ -537,6 +537,52 @@ export const PervyyVystrelClusterDumpShadowSchema = z.object({
   pass: z.boolean().optional(),
 });
 
+/** Phase D armed window (PR3). */
+export const PervyyVystrelPhaseDArmedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_phase_d_armed'),
+  mint: z.string().min(1).max(64),
+  bottom_mcap: z.number().finite().optional(),
+  reramp_pct: z.number().finite().optional(),
+});
+
+/** Phase C retail-only dump skip (PR3). */
+export const PervyyVystrelDumpRetailSkippedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_dump_retail_skipped'),
+  mint: z.string().min(1).max(64),
+  retail_panic_score: z.number().finite().nullable().optional(),
+});
+
+/** Watchlist eviction (TTL / drop / arm window). */
+export const PervyyVystrelWatchEvictedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_watch_evicted'),
+  mint: z.string().min(1).max(64),
+  reason: z.string().max(128),
+});
+
+/** Phase A/B vol-auth hard block. */
+export const PervyyVystrelVolAuthWashBlockedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_vol_auth_wash_blocked'),
+  mint: z.string().min(1).max(64),
+  wash_score: z.number().finite(),
+  reasons: z.array(z.string().max(200)).max(12),
+});
+
+/** Phase B holder stall flag. */
+export const PervyyVystrelVolAuthDecayFlagSchema = z.object({
+  kind: z.literal('pervyy_vystrel_vol_auth_decay_flag'),
+  mint: z.string().min(1).max(64),
+  vol1h: z.number().finite().optional(),
+  holder_delta_30m: z.number().finite().optional(),
+});
+
+/** Phase C fake churn dump skip. */
+export const PervyyVystrelVolAuthFakeDumpSkippedSchema = z.object({
+  kind: z.literal('pervyy_vystrel_vol_auth_fake_dump_skipped'),
+  mint: z.string().min(1).max(64),
+  cycle_share: z.number().finite().optional(),
+  cluster_sell_ratio: z.number().finite().optional(),
+});
+
 /** Phase D phantom/replay requires materialized PR2 snapshots; never opens a position. */
 export const PervyyVystrelPhaseDMissingMaterializedSnapshotSchema = z.object({
   kind: z.literal('pervyy_vystrel_phase_d_missing_materialized_snapshot'),
@@ -876,6 +922,12 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   PervyyVystrelPhaseDMissingMaterializedSnapshotSchema,
   PervyyVystrelPhaseCCandidateSchema,
   PervyyVystrelPhaseDCandidateSchema,
+  PervyyVystrelPhaseDArmedSchema,
+  PervyyVystrelDumpRetailSkippedSchema,
+  PervyyVystrelWatchEvictedSchema,
+  PervyyVystrelVolAuthWashBlockedSchema,
+  PervyyVystrelVolAuthDecayFlagSchema,
+  PervyyVystrelVolAuthFakeDumpSkippedSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,

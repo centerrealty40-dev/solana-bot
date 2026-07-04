@@ -7,6 +7,15 @@ import {
   type PervyyVystrelMintMaterialized,
 } from './discovery/pervyy-vystrel-snapshot-cache.js';
 import {
+  evictStalePervyyVystrelWatches,
+  getPervyyVystrelWatchState,
+  loadPervyyVystrelWatchlistFromDisk,
+  onboardPervyyVystrelMint,
+  persistPervyyVystrelWatchlist,
+  tickPervyyVystrelWatch,
+  type PervyyVystrelWatchPhase,
+} from './pervyy-vystrel-watchlist.js';
+import {
   isPervyyVystrelLaneEnabled,
   isPervyyVystrelObservabilityActive as isPervyyVystrelObservabilityActiveCfg,
   PERVYY_VYSTREL_POSITION_SOURCE,
@@ -14,6 +23,12 @@ import {
 } from './live-oscar-pervyy-vystrel-config.js';
 import type { Lane, SnapshotCandidateRow } from './types.js';
 import { appendDiscoveryHardMcapReasons, type DiscoveryRefMcap } from './filters/snapshot-filter.js';
+
+export {
+  resetPervyyVystrelWatchlistForTests,
+  getPervyyVystrelWatchState,
+  getPervyyVystrelWatchCount,
+} from './pervyy-vystrel-watchlist.js';
 
 export { PERVYY_VYSTREL_POSITION_SOURCE };
 
@@ -55,11 +70,18 @@ export function pervyyVystrelEntryConfig(cfg: PaperTraderConfig): PaperTraderCon
 
 export type PervyyVystrelDiscoveryPhase =
   | 'phase0'
-  | 'phase_a'
-  | 'phase_b'
-  | 'phase_c'
-  | 'phase_d'
+  | PervyyVystrelWatchPhase
+  | 'cooldown'
   | 'out_of_band';
+
+let watchlistBootstrapped = false;
+
+/** Load persisted watchlist once per process (PR3). */
+export function ensurePervyyVystrelWatchlistLoaded(): void {
+  if (watchlistBootstrapped) return;
+  loadPervyyVystrelWatchlistFromDisk();
+  watchlistBootstrapped = true;
+}
 
 export interface PervyyVystrelVolAuthShadow {
   washScore: number | null;
@@ -150,6 +172,72 @@ export type PervyyVystrelShadowJournalEvent =
       materialize_enabled: boolean;
       pass: false;
       reasons: string[];
+    }
+  | {
+      kind: 'pervyy_vystrel_phase_a_tick';
+      mint: string;
+      peakMcap?: number;
+      unique_buyers_1h?: number;
+      cluster_ratio?: number | null;
+    }
+  | {
+      kind: 'pervyy_vystrel_surveillance_tick';
+      mint: string;
+      mcap?: number;
+      vol1h?: number;
+      holder_delta_30m?: number;
+    }
+  | {
+      kind: 'pervyy_vystrel_cluster_dump_confirmed';
+      mint: string;
+      dump_pct?: number;
+      cluster_sell_ratio?: number;
+    }
+  | {
+      kind: 'pervyy_vystrel_dump_retail_skipped';
+      mint: string;
+      retail_panic_score?: number | null;
+    }
+  | {
+      kind: 'pervyy_vystrel_phase_d_armed';
+      mint: string;
+      bottom_mcap?: number;
+      reramp_pct?: number;
+    }
+  | {
+      kind: 'pervyy_vystrel_entry_signal';
+      mint: string;
+      would_enter?: boolean;
+      enter?: boolean;
+    }
+  | {
+      kind: 'pervyy_vystrel_watch_evicted';
+      mint: string;
+      reason: string;
+    }
+  | {
+      kind: 'pervyy_vystrel_vol_auth_wash_blocked';
+      mint: string;
+      wash_score: number;
+      reasons: string[];
+    }
+  | {
+      kind: 'pervyy_vystrel_vol_auth_decay_flag';
+      mint: string;
+      vol1h?: number;
+      holder_delta_30m?: number;
+    }
+  | {
+      kind: 'pervyy_vystrel_vol_auth_fake_dump_skipped';
+      mint: string;
+      cycle_share?: number;
+      cluster_sell_ratio?: number;
+    }
+  | {
+      kind: 'pervyy_vystrel_shadow_skip';
+      mint: string;
+      phase?: string;
+      reasons: string[];
     };
 
 export interface PervyyVystrelDiscoveryEval {
@@ -159,11 +247,11 @@ export interface PervyyVystrelDiscoveryEval {
   reasons: string[];
   shadowMode: boolean;
   shadowAnalyzers?: PervyyVystrelShadowAnalyzers;
+  /** PR3 — phantom gates satisfied (still no live entry). */
+  phantomGatesPass?: boolean;
+  watchlistActive?: boolean;
 }
 
-function anchorBandLabel(pv: PervyyVystrelConfig): string {
-  return `${Math.round(pv.anchorMinMcapUsd / 1000)}k-${Math.round(pv.anchorMaxMcapUsd / 1000)}k`;
-}
 
 function inferShadowPhase(refMcap: number, pv: PervyyVystrelConfig): PervyyVystrelDiscoveryPhase {
   if (refMcap >= pv.anchorMaxMcapUsd * 1.6) return 'phase_c';
@@ -211,12 +299,16 @@ function clusterDumpShadowFromSnapshot(
   };
 }
 
-/** PR2 — read materialized cache; shadow eval for Phase A/B/C (pass:false for entry until PR3). */
+/**
+ * PR2 materialized read + PR3 watchlist tick journal events.
+ * Shadow analyzers emit vol-auth / organic / cluster materialized telemetry.
+ */
 export function evaluatePervyyVystrelShadowAnalyzers(args: {
   cfg: PaperTraderConfig;
   mint: string;
   refMcap: number;
   materialized?: PervyyVystrelMintMaterialized | null;
+  watchPhase?: PervyyVystrelDiscoveryPhase;
 }): PervyyVystrelShadowAnalyzers {
   const { cfg, mint, refMcap } = args;
   const pv = cfg.pervyyVystrel;
@@ -228,15 +320,17 @@ export function evaluatePervyyVystrelShadowAnalyzers(args: {
   const organicFlow = organicShadowFromSnapshot(snap?.organicFlow ?? null);
   const clusterDump = clusterDumpShadowFromSnapshot(snap?.clusterDumpShadow ?? null);
   const hasSnap = hasMaterializedSnapshot(snap);
-  const phase: PervyyVystrelDiscoveryPhase = !hasSnap
-    ? 'phase0'
-    : snap?.clusterDumpShadow?.pass === true && organicFlow?.pass === true && volAuth?.pass === true
-      ? 'phase_d'
-      : snap?.clusterDumpShadow
-        ? 'phase_c'
-        : inferShadowPhase(refMcap, pv);
+  const phase: PervyyVystrelDiscoveryPhase =
+    args.watchPhase ??
+    (!hasSnap
+      ? 'phase0'
+      : snap?.clusterDumpShadow?.pass === true && organicFlow?.pass === true && volAuth?.pass === true
+        ? 'phase_d'
+        : snap?.clusterDumpShadow
+          ? 'phase_c'
+          : inferShadowPhase(refMcap, pv));
 
-  if (!hasSnap) {
+  if (!hasSnap && materializeEnabled) {
     journalEvents.push({
       kind: 'pervyy_vystrel_phase_d_missing_materialized_snapshot',
       mint,
@@ -291,52 +385,12 @@ export function evaluatePervyyVystrelShadowAnalyzers(args: {
     });
   }
 
-  if (pv.clusterDumpMode !== 'off' && snap?.clusterDumpShadow) {
-    const c = snap.clusterDumpShadow;
-    journalEvents.push({
-      kind: 'pervyy_vystrel_phase_c_candidate',
-      mint,
-      cluster_dump_completed: c.pass,
-      cluster_sell_ratio: c.clusterSellRatio,
-      cluster_unique_sellers: c.clusterUniqueSellers,
-      retail_panic_score: c.retailPanicScore,
-      pass: false,
-      reasons: c.pass ? ['pervyy_vystrel_phase_c_cluster_dump_shadow_pass'] : c.reasons,
-    });
-  }
-
-  if (snap?.clusterDumpShadow?.pass) {
-    const freshRetailAbsorption =
-      organicFlow?.pass === true && (organicFlow.unclusteredBuyers ?? 0) >= pv.minUnclusteredBuyers1h;
-    const volumeAuthentic = volAuth?.pass === true;
-    const rerampConfirmation = freshRetailAbsorption && volumeAuthentic;
-    const reasons = ['pervyy_vystrel_phase_d_phantom_replay_only'];
-    if (!freshRetailAbsorption) reasons.push('pervyy_vystrel_phase_d_missing_fresh_retail_absorption');
-    if (!volumeAuthentic) reasons.push('pervyy_vystrel_phase_d_missing_volume_authenticity');
-    if (!rerampConfirmation) reasons.push('pervyy_vystrel_phase_d_reramp_unconfirmed');
-
-    journalEvents.push({
-      kind: 'pervyy_vystrel_phase_d_candidate',
-      mint,
-      cluster_dump_completed: true,
-      fresh_retail_absorption: freshRetailAbsorption,
-      reramp_confirmation: rerampConfirmation,
-      organic_score: volAuth?.organicScore ?? null,
-      unique_buyers_1h: organicFlow?.uniqueBuyers1h ?? null,
-      unclustered_buyers: organicFlow?.unclusteredBuyers ?? null,
-      wash_score: volAuth?.washScore ?? null,
-      pass: false,
-      would_enter: false,
-      reasons,
-    });
-  }
-
   return { phase, volAuth, organicFlow, clusterDump, journalEvents };
 }
 
 /**
- * PR1 shadow eval — Phase 0 watchlist onboard gates only (no phase machine / entry).
- * `pass` stays false until PR3 gate mode; `wouldOnboard` drives journal observability.
+ * PR3 — Phase 0 onboard + watchlist state machine (A/B/C/D phantom replay).
+ * `pass` stays false until PR4 gate mode; no live_position_open.
  */
 export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
   cfg: PaperTraderConfig;
@@ -346,11 +400,13 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
   ageMin: number;
   discoveryMcap: DiscoveryRefMcap;
   materialized?: PervyyVystrelMintMaterialized | null;
+  nowMs?: number;
 }): PervyyVystrelDiscoveryEval {
   const { cfg, row, refMcap, ageMin, discoveryMcap } = args;
   const pv = cfg.pervyyVystrel;
   const reasons: string[] = [];
   const shadowMode = !isPervyyVystrelTradingActive(cfg);
+  const nowMs = args.nowMs ?? Date.now();
 
   if (!isPervyyVystrelObservabilityActive(cfg)) {
     return {
@@ -361,6 +417,9 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
       shadowMode: true,
     };
   }
+
+  ensurePervyyVystrelWatchlistLoaded();
+  const evictEvents = evictStalePervyyVystrelWatches({ pv, nowMs });
 
   const hardReasons: string[] = [];
   const hardCfg = pervyyVystrelEntryConfig(cfg);
@@ -387,7 +446,7 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
     };
   }
 
-  if (refMcap + 1e-9 < pv.anchorMinMcapUsd) {
+  if (refMcap + 1e-9 < pv.anchorMinMcapUsd && !getPervyyVystrelWatchState(row.mint)) {
     reasons.push(`pervyy_vystrel_mcap_below_anchor_${pv.anchorMinMcapUsd}`);
     return {
       pass: false,
@@ -398,7 +457,11 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
     };
   }
 
-  if (refMcap > pv.anchorMaxMcapUsd + 1e-9 && refMcap > pv.entryMaxMcapUsd + 1e-9) {
+  if (
+    refMcap > pv.anchorMaxMcapUsd + 1e-9 &&
+    refMcap > pv.entryMaxMcapUsd + 1e-9 &&
+    !getPervyyVystrelWatchState(row.mint)
+  ) {
     reasons.push(`pervyy_vystrel_mcap_above_entry_max_${pv.entryMaxMcapUsd}`);
     return {
       pass: false,
@@ -410,7 +473,11 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
   }
 
   const vol1h = Number(row.volume_1h ?? 0);
-  if (!Number.isFinite(vol1h) || vol1h + 1e-9 < pv.minVol1hUsd) {
+  const inAnchorBand =
+    refMcap + 1e-9 >= pv.anchorMinMcapUsd && refMcap <= pv.anchorMaxMcapUsd + 1e-9;
+  const existingWatch = getPervyyVystrelWatchState(row.mint);
+
+  if (!existingWatch && (!Number.isFinite(vol1h) || vol1h + 1e-9 < pv.minVol1hUsd)) {
     reasons.push(`pervyy_vystrel_vol1h<${pv.minVol1hUsd}`);
     return {
       pass: false,
@@ -421,32 +488,70 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
     };
   }
 
+  const materializeEnabled = pv.materializeEnabled || args.materialized !== undefined;
+  const materialized = materializeEnabled
+    ? (args.materialized ?? readPervyyVystrelMintSnapshot(row.mint))
+    : null;
+
+  let wouldOnboard = false;
+  let watchlistActive = Boolean(existingWatch);
+
+  if (!existingWatch && inAnchorBand) {
+    onboardPervyyVystrelMint({
+      mint: row.mint,
+      refMcapUsd: refMcap,
+      priceUsd: Number(row.price_usd ?? 0),
+      holderCount: row.holder_count ?? null,
+      nowMs,
+    });
+    wouldOnboard = true;
+    watchlistActive = true;
+    persistPervyyVystrelWatchlist();
+  }
+
+  const watchState = getPervyyVystrelWatchState(row.mint);
+  let watchPhase: PervyyVystrelDiscoveryPhase = watchState?.phase ?? 'phase0';
+  let phantomGatesPass = false;
+  const watchJournalEvents: PervyyVystrelShadowJournalEvent[] = [
+    ...(evictEvents as PervyyVystrelShadowJournalEvent[]),
+  ];
+
+  if (watchState) {
+    const tick = tickPervyyVystrelWatch({
+      cfg: pv,
+      input: {
+        mint: row.mint,
+        refMcapUsd: refMcap,
+        priceUsd: Number(row.price_usd ?? 0),
+        vol1hUsd: vol1h,
+        holderCount: row.holder_count ?? null,
+        buys5m: Number(row.buys_5m ?? 0),
+        sells5m: Number(row.sells_5m ?? 0),
+        materialized,
+        nowMs,
+      },
+    });
+    if (tick) {
+      watchPhase = tick.state.phase;
+      phantomGatesPass = tick.phantomGatesPass;
+      watchJournalEvents.push(...(tick.journalEvents as PervyyVystrelShadowJournalEvent[]));
+      if (tick.phaseChanged) persistPervyyVystrelWatchlist();
+    }
+  }
+
   const shadowAnalyzers = evaluatePervyyVystrelShadowAnalyzers({
     cfg,
     mint: row.mint,
     refMcap,
-    materialized: args.materialized,
+    materialized,
+    watchPhase,
   });
+  shadowAnalyzers.journalEvents.push(...watchJournalEvents);
 
-  const inAnchorBand =
-    refMcap + 1e-9 >= pv.anchorMinMcapUsd && refMcap <= pv.anchorMaxMcapUsd + 1e-9;
-  const hasPhaseShadowEvents = shadowAnalyzers.journalEvents.some(
-    (ev) => ev.kind === 'pervyy_vystrel_phase_c_candidate' || ev.kind === 'pervyy_vystrel_phase_d_candidate',
-  );
-  if (!inAnchorBand && !hasPhaseShadowEvents) {
-    reasons.push(`pervyy_vystrel_mcap_outside_anchor_${anchorBandLabel(pv)}`);
-    return {
-      pass: false,
-      wouldOnboard: false,
-      phase: shadowAnalyzers.phase,
-      reasons,
-      shadowMode,
-      shadowAnalyzers,
-    };
-  }
-
-  if (inAnchorBand) reasons.push('pervyy_vystrel_phase0_would_onboard');
-  if (!inAnchorBand && hasPhaseShadowEvents) reasons.push('pervyy_vystrel_phase_d_phantom_replay_only');
+  if (inAnchorBand && wouldOnboard) reasons.push('pervyy_vystrel_phase0_would_onboard');
+  if (watchlistActive && !inAnchorBand) reasons.push('pervyy_vystrel_watchlist_active');
+  if (watchPhase === 'phase_d') reasons.push('pervyy_vystrel_phase_d_phantom_replay_only');
+  if (phantomGatesPass) reasons.push('pervyy_vystrel_phase_d_gates_pass_phantom');
   if (shadowMode) reasons.push('pervyy_vystrel_shadow_no_entry_pr3');
 
   if (shadowAnalyzers.volAuth && !shadowAnalyzers.volAuth.pass && pv.volAuthEnabled) {
@@ -458,10 +563,12 @@ export function evaluateLiveOscarPervyyVystrelDiscovery(args: {
 
   return {
     pass: false,
-    wouldOnboard: inAnchorBand,
-    phase: shadowAnalyzers.phase,
+    wouldOnboard,
+    phase: watchPhase,
     reasons,
     shadowMode,
     shadowAnalyzers,
+    phantomGatesPass,
+    watchlistActive,
   };
 }

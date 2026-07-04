@@ -189,11 +189,13 @@ export interface EvalDecision {
   positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
-  /** PR1 shadow — Phase 0 onboard telemetry (full machine PR3). */
+  /** PR3 — watchlist state machine shadow telemetry. */
   pervyyVystrel?: {
     phase: string;
     wouldOnboard: boolean;
     shadowMode: boolean;
+    watchlistActive?: boolean;
+    phantomGatesPass?: boolean;
     volAuth?: {
       washScore: number | null;
       organicScore: number | null;
@@ -2252,6 +2254,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           anchor_band: `${cfg.pervyyVystrel.anchorMinMcapUsd}-${cfg.pervyyVystrel.anchorMaxMcapUsd}`,
           shadowMode: pvEval.shadowMode,
         });
+      }
+      if (pvEval.watchlistActive || pvEval.wouldOnboard) {
         for (const ev of pvEval.shadowAnalyzers?.journalEvents ?? []) {
           auditRows.push(ev);
         }
@@ -2285,6 +2289,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           phase: pvEval.phase,
           wouldOnboard: pvEval.wouldOnboard,
           shadowMode: pvEval.shadowMode,
+          watchlistActive: pvEval.watchlistActive,
+          phantomGatesPass: pvEval.phantomGatesPass,
           volAuth: pvEval.shadowAnalyzers?.volAuth ?? undefined,
           organicFlow: pvEval.shadowAnalyzers?.organicFlow ?? undefined,
           clusterDump: pvEval.shadowAnalyzers?.clusterDump ?? undefined,
