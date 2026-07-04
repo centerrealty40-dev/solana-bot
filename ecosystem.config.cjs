@@ -1068,6 +1068,9 @@ const PM2_APPS = [
         /** Repeat mints (bot traded within lookback): skip pg_gap block; new mints stay strict. */
         PAPER_PG_DATA_COVERAGE_KNOWN_MINT_GAP_BYPASS: '1',
         PAPER_PG_DATA_COVERAGE_KNOWN_MINT_LOOKBACK_DAYS: '14',
+        /** Familiar repeat-traded mints: skip volume_ephemeral; optional pg_stale relax when vol stable. */
+        PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED: '1',
+        LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX: '1',
         LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED: '1',
         LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_PG_DATA_COVERAGE_TELEGRAM_COOLDOWN_MS: '3600000',

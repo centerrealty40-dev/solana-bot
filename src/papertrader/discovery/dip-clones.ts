@@ -126,6 +126,7 @@ import {
 } from './runner-mode.js';
 import {
   buildKnownMintTradeHistory,
+  isFamiliarMint,
   isKnownMint,
   isPgCoverageKnownMint as isPgCoverageKnownMintFromHistory,
 } from './known-mint.js';
@@ -1180,6 +1181,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.pgDataCoverageGuardEnabled) {
+        const familiarMint = isFamiliarMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         const knownMint = isPgCoverageKnownMint(cfg, row.mint, knownMintHistory);
         const evalRes = evaluatePgDataCoverageGuard(
           cfg,
@@ -1187,7 +1195,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           mintPgCoverageMap.get(row.mint),
           globalPgCoverage,
           true,
-          { knownMint },
+          { knownMint, familiarMint },
         );
         pgDataCoverageFeatures = evalRes.features;
         if (evalRes.blocked) {
@@ -1207,9 +1215,17 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
+        const familiarMint = isFamiliarMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
           knownMint,
+          familiarMint,
         });
         volumeEphemeralFeatures = evalRes.features;
         if (evalRes.blocked) {
@@ -1482,9 +1498,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         Date.now(),
         knownMintSupplement,
       );
+      const volumeEphemeralFamiliarMint = isFamiliarMint(
+        cfg,
+        row.mint,
+        knownMintHistory,
+        Date.now(),
+        knownMintSupplement,
+      );
       decisionFeatures.volume_ephemeral = {
         enabled: cfg.volumeEphemeralGuardEnabled,
         knownMint: volumeEphemeralKnownMint,
+        familiarMint: volumeEphemeralFamiliarMint,
+        familiarMintBypass: volumeEphemeralFeatures.familiarMintBypass === true,
         coverageOk: volumeEphemeralFeatures.coverageOk,
         lookbackHours: volumeEphemeralFeatures.lookbackHours,
         hoursWithData: volumeEphemeralFeatures.hoursWithData,
@@ -1548,6 +1573,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         sybilCoverageOk: pgDataCoverageFeatures.sybilCoverageOk,
         ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
         knownMintGapBypass: pgDataCoverageFeatures.knownMintGapBypass ?? false,
+        familiarMintStaleBypass: pgDataCoverageFeatures.familiarMintStaleBypass ?? false,
         global: {
           pgStaleNow: globalPgCoverage.pgStaleNow,
           systemHourRatio: globalPgCoverage.systemHourRatio,
@@ -1720,6 +1746,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       let scalpPass = scalpEval.pass;
       const scalpReasons = [...scalpEval.reasons];
       if (scalpPass) {
+        const familiarMint = isFamiliarMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         if (cfg.volumeSybilGuardEnabled) {
           const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
@@ -1735,7 +1768,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             cfg,
             row,
             volumeEphemeralMap.get(row.mint),
-            { knownMint },
+            { knownMint, familiarMint },
           );
           if (ephemeralRes.blocked) {
             scalpPass = false;
@@ -1798,6 +1831,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const reasons = [...probeEval.reasons];
 
       if (guardPass) {
+        const familiarMint = isFamiliarMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         if (cfg.volumeSybilGuardEnabled) {
           const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
@@ -1813,7 +1853,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             cfg,
             row,
             volumeEphemeralMap.get(row.mint),
-            { knownMint },
+            { knownMint, familiarMint },
           );
           if (ephemeralRes.blocked) {
             guardPass = false;
@@ -1945,6 +1985,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const reasons = [...liteEval.reasons];
 
       if (guardPass) {
+        const familiarMint = isFamiliarMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
         if (cfg.volumeSybilGuardEnabled) {
           const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
@@ -1960,7 +2007,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             cfg,
             row,
             volumeEphemeralMap.get(row.mint),
-            { knownMint },
+            { knownMint, familiarMint },
           );
           if (ephemeralRes.blocked) {
             guardPass = false;
@@ -2165,4 +2212,4 @@ export function isPgCoverageKnownMint(
   return isPgCoverageKnownMintFromHistory(cfg, mint, history, nowMs);
 }
 
-export { isKnownMint } from './known-mint.js';
+export { isFamiliarMint, isKnownMint } from './known-mint.js';
