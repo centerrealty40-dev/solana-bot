@@ -984,7 +984,7 @@ const PM2_APPS = [
         PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES: '10',
         PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS: '0',
         /**
-         * Re-entry после выхода: цена ≤ last_exit×(1−10%) (после loss cooldown 10m).
+         * Re-entry после выхода: price ceiling −10% только в post-exit cooldown (10m); после — без dip anchor.
          */
         LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '10',
         LIVE_REENTRY_MAX_WAIT_MINUTES: '240',

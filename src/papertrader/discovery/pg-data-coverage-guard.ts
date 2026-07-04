@@ -58,6 +58,8 @@ export interface MintPgCoverageFeatures {
   knownMintGapBypass?: boolean;
   /** True when familiar-mint stale relax removed pg_stale_now this eval. */
   familiarMintStaleBypass?: boolean;
+  /** True when fresh Birdeye/DexScreener quote removed PG coverage buy blocks. */
+  birdeyeFreshBypass?: boolean;
 }
 
 export interface PgDataCoverageEvalResult {
@@ -443,7 +445,7 @@ export function evaluatePgDataCoverageGuard(
   ctx: MintPgCoverageFeatures | undefined,
   global: GlobalPgCoverageState,
   nearEntry: boolean,
-  opts?: { knownMint?: boolean; familiarMint?: boolean },
+  opts?: { knownMint?: boolean; familiarMint?: boolean; freshExternalMarketQuote?: boolean },
 ): PgDataCoverageEvalResult {
   if (!cfg.pgDataCoverageGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_MINT };
@@ -572,10 +574,20 @@ export function evaluatePgDataCoverageGuard(
     }
   }
 
+  let birdeyeFreshBypass = false;
+  if (
+    opts?.freshExternalMarketQuote &&
+    cfg.pgCoverageBirdeyeFreshBypass &&
+    blockedReasons.length > 0
+  ) {
+    birdeyeFreshBypass = true;
+    blockedReasons.length = 0;
+  }
+
   const blockBuy = cfg.pgDataCoverageBlockBuy;
   return {
     blocked: blockBuy && blockedReasons.length > 0,
     blockedReasons: blockBuy ? blockedReasons : [],
-    features: { ...features, knownMintGapBypass, familiarMintStaleBypass },
+    features: { ...features, knownMintGapBypass, familiarMintStaleBypass, birdeyeFreshBypass },
   };
 }
