@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadPaperTraderConfig } from '../src/papertrader/config.js';
+import { loadPaperTraderConfig, parseDcaLevels } from '../src/papertrader/config.js';
 import {
   attachRunnerLitePendingScaleIn,
   countOpenRunnerLitePositions,
@@ -28,9 +28,11 @@ import {
 } from '../src/papertrader/live-oscar-runner-probe.js';
 import {
   isRunnerLiteExitPolicy,
+  runnerLiteDcaLevelsSpec,
   runnerLiteMaxPositionUsd,
   stampRunnerLiteExitPolicyOnOpen,
 } from '../src/papertrader/executor/exit-policy-runner-lite.js';
+import { dcaCrossedDownward } from '../src/papertrader/executor/dca-state.js';
 import type { OpenTrade, SnapshotCandidateRow } from '../src/papertrader/types.js';
 import type { RunnerWindowFeatures } from '../src/papertrader/discovery/runner-mode.js';
 
@@ -47,6 +49,7 @@ describe('live-oscar-runner-lite', () => {
       'PAPER_RUNNER_LITE_MAX_MCAP_USD',
       'PAPER_RUNNER_LITE_POSITION_USD',
       'PAPER_RUNNER_LITE_LEG_USD',
+      'PAPER_RUNNER_LITE_DCA_LEVELS',
       'PAPER_RUNNER_PROBE_ENABLED',
       'PAPER_RUNNER_PROBE_MIN_MCAP_USD',
       'LIVE_OSCAR_INTEL_ENABLED',
@@ -60,6 +63,7 @@ describe('live-oscar-runner-lite', () => {
     process.env.PAPER_RUNNER_LITE_MAX_MCAP_USD = '999999';
     process.env.PAPER_RUNNER_LITE_POSITION_USD = '200';
     process.env.PAPER_RUNNER_LITE_LEG_USD = '100';
+    process.env.PAPER_RUNNER_LITE_DCA_LEVELS = '-25:0.333';
     process.env.PAPER_RUNNER_PROBE_ENABLED = '1';
     process.env.PAPER_RUNNER_PROBE_MIN_MCAP_USD = '1000000';
     process.env.LIVE_OSCAR_INTEL_ENABLED = '0';
@@ -89,10 +93,10 @@ describe('live-oscar-runner-lite', () => {
     expect(runnerProbeCandidateInBand(cfg, 800_000, 1500)).toBe(false);
   });
 
-  it('2×$100 entry sizing and wave_b exit stamp', () => {
+  it('2×$100 entry sizing, −25% DCA +⅓ max, and wave_b exit stamp', () => {
     const cfg = loadPaperTraderConfig();
     expect(runnerLiteOpenLegUsd(cfg)).toBe(100);
-    expect(runnerLiteMaxPositionUsd(cfg)).toBe(200);
+    expect(runnerLiteMaxPositionUsd(cfg)).toBeCloseTo(266.6, 0);
     const ot = {
       mint: 'mintA',
       positionSource: RUNNER_LITE_POSITION_SOURCE,
@@ -103,6 +107,18 @@ describe('live-oscar-runner-lite', () => {
     expect(ot.liveExitPolicyId).toBe('runner_lite_v1');
     expect(ot.liveWaveFlatTpMode).toBe('half8_runner');
     expect(isRunnerLiteExitPolicy(ot)).toBe(true);
+  });
+
+  it('−25% drop triggers one DCA add of ⅓ positionUsd', () => {
+    const cfg = loadPaperTraderConfig();
+    const levels = parseDcaLevels(runnerLiteDcaLevelsSpec(cfg));
+    expect(levels).toHaveLength(1);
+    expect(levels[0]!.triggerPct).toBeCloseTo(-0.25);
+    expect(levels[0]!.addFraction).toBeCloseTo(0.333, 3);
+    const addUsd = cfg.runnerLitePositionUsd * levels[0]!.addFraction;
+    expect(addUsd).toBeCloseTo(66.6, 0);
+    expect(dcaCrossedDownward(Number.POSITIVE_INFINITY, -0.26, levels[0]!.triggerPct)).toBe(true);
+    expect(dcaCrossedDownward(-0.2, -0.22, levels[0]!.triggerPct)).toBe(false);
   });
 
   it('cross-lane open map prevents double-buy on same mint', () => {

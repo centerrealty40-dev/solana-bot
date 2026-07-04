@@ -823,6 +823,8 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_MAX_MCAP_USD: '999999',
         PAPER_RUNNER_LITE_POSITION_USD: '200',
         PAPER_RUNNER_LITE_LEG_USD: '100',
+        /** runner_lite: one DCA at −25% (+⅓ of position, $200 → max ~$266.67). */
+        PAPER_RUNNER_LITE_DCA_LEVELS: '-25:0.333',
         PAPER_RUNNER_LITE_MAX_CONCURRENT: '4',
         PAPER_RUNNER_LITE_MAX_EXPOSURE_USD: '800',
         PAPER_RUNNER_LITE_DIP_MIN_DROP_PCT: '-20',
