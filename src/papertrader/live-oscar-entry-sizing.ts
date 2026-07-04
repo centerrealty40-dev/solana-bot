@@ -48,7 +48,29 @@ function prodBandMaxUsd(cfg: PaperTraderConfig, band: LiveOscarProdMcapBand): nu
   }
 }
 
-/** Derive split/avg legs from band max cap (8×$300 pattern, scaled avg / leg count). */
+function prodEntrySplitLegUsdValues(cfg: PaperTraderConfig): readonly number[] {
+  return [
+    cfg.liveStagedEntryEntrySplitLegUsd,
+    cfg.liveStagedEntryEntrySplitLeg2Usd,
+    cfg.liveStagedEntryEntrySplitLeg3Usd,
+    cfg.liveStagedEntryEntrySplitLeg4Usd,
+    cfg.liveStagedEntryEntrySplitLeg5Usd,
+    cfg.liveStagedEntryEntrySplitLeg6Usd,
+    cfg.liveStagedEntryEntrySplitLeg7Usd,
+    cfg.liveStagedEntryEntrySplitLeg8Usd,
+  ];
+}
+
+function prodConfiguredEntrySplitLegCount(cfg: PaperTraderConfig): number {
+  const active = prodEntrySplitLegUsdValues(cfg).filter((usd) => usd > 0).length;
+  return Math.max(1, active);
+}
+
+function prodConfiguredEntrySplitTotalUsd(cfg: PaperTraderConfig): number {
+  return prodEntrySplitLegUsdValues(cfg).reduce((sum, usd) => sum + Math.max(0, usd), 0);
+}
+
+/** Derive split/avg legs from band max cap (configured split legs + staged avg). */
 export function deriveLiveOscarProdBandEntryPlan(
   cfg: PaperTraderConfig,
   band: LiveOscarProdMcapBand,
@@ -57,28 +79,29 @@ export function deriveLiveOscarProdBandEntryPlan(
   const legUsd = cfg.liveStagedEntryEntrySplitLegUsd;
   const avg1Default = cfg.liveStagedEntrySecondLegUsd;
   const avg2Default = cfg.liveStagedEntryThirdLegUsd;
-  const eightLeg = 8 * legUsd;
-  const fullMax = eightLeg + avg1Default + avg2Default;
+  const splitLegCount = prodConfiguredEntrySplitLegCount(cfg);
+  const splitTotal = prodConfiguredEntrySplitTotalUsd(cfg);
+  const fullMax = splitTotal + avg1Default + avg2Default;
 
   if (maxUsd >= fullMax) {
     return {
       band,
       maxUsd,
-      splitLegCount: 8,
+      splitLegCount,
       avgLeg1Usd: avg1Default,
       avgLeg2Usd: avg2Default,
     };
   }
-  if (maxUsd > eightLeg) {
+  if (maxUsd > splitTotal) {
     const avg1 = avg1Default;
-    const avg2 = Math.max(0, maxUsd - eightLeg - avg1);
-    return { band, maxUsd, splitLegCount: 8, avgLeg1Usd: avg1, avgLeg2Usd: avg2 };
+    const avg2 = Math.max(0, maxUsd - splitTotal - avg1);
+    return { band, maxUsd, splitLegCount, avgLeg1Usd: avg1, avgLeg2Usd: avg2 };
   }
-  if (maxUsd >= eightLeg) {
-    return { band, maxUsd, splitLegCount: 8, avgLeg1Usd: 0, avgLeg2Usd: 0 };
+  if (maxUsd >= splitTotal) {
+    return { band, maxUsd, splitLegCount, avgLeg1Usd: 0, avgLeg2Usd: 0 };
   }
-  const splitLegCount = Math.max(1, Math.floor(maxUsd / legUsd));
-  return { band, maxUsd, splitLegCount, avgLeg1Usd: 0, avgLeg2Usd: 0 };
+  const scaledSplitLegCount = legUsd > 0 ? Math.max(1, Math.floor(maxUsd / legUsd)) : 1;
+  return { band, maxUsd, splitLegCount: scaledSplitLegCount, avgLeg1Usd: 0, avgLeg2Usd: 0 };
 }
 
 function resolveProdBandPlanIfApplicable(

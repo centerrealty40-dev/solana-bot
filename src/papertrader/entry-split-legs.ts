@@ -1,6 +1,6 @@
 import type { LiveStagedEntryState } from './types.js';
 
-/** Max timed entry-split legs including open leg-1 (prod: 8×$300). */
+/** Max timed entry-split legs including open leg-1 (prod: 5×$1000). */
 export const ENTRY_SPLIT_LEG_COUNT = 8;
 
 export type EntrySplitLegIndex = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
