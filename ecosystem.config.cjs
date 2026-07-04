@@ -1407,8 +1407,6 @@ const PM2_APPS = [
         LIVE_STRATEGY_PROFILE: 'oscar',
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
-        /** 7GB journal + 200MB byte tail: cap replay/repair rows or boot batch OOMs (~7GB RSS on 8GB VPS). */
-        LIVE_REPLAY_TAIL_LINES: '100000',
         LIVE_OPEN_SNAPSHOT_PATH: path.join(root, 'data/live/live-oscar-open-snapshot.json'),
         /** Subtract copy-leader cost basis from wallet-holds-mint gate (golden-goose). */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
