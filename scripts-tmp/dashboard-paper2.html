@@ -297,6 +297,9 @@
             <span x-show="(s.strategyId === 'live-oscar') && s.liveReconcileReport && (s.liveReconcileReport.txAnchorMissing || s.liveReconcileReport.txAnchorRpcErrors)"
                   class="pill pill-warn shrink-0"
                   x-text="'tx anchor Δ ' + (s.liveReconcileReport?.txAnchorMissing || 0) + ' miss · ' + (s.liveReconcileReport?.txAnchorRpcErrors || 0) + ' rpc'"></span>
+            <span x-show="(s.strategyId === 'live-oscar') && (s.walletGhostCount || 0) > 0"
+                  class="pill pill-warn shrink-0"
+                  x-text="'ghost ' + (s.walletGhostCount || 0) + ' скрыто'"></span>
           </div>
         </div>
       </template>
@@ -535,6 +538,9 @@
                       <span x-show="selected === 'live-oscar' && (o.isRunnerProbe || o.liveOscarTradeLane === 'runner_probe' || o.positionSource === 'runner_probe')"
                             class="pill pill-lane ml-2 text-xs align-middle font-semibold"
                             title="Runner probe · fresh runners 12–36h lane">RUNNER</span>
+                      <span x-show="selected === 'live-oscar' && o.isWalletGhost"
+                            class="pill pill-bad ml-2 text-xs align-middle font-semibold"
+                            title="В журнале open, но mint отсутствует на кошельке">GHOST</span>
                       <span x-show="selected === 'live-oscar' && o.isCopyLeader && o.copyLeaderWalletShort"
                             class="pill ml-2 text-xs align-middle text-fuchsia-200 border-fuchsia-500/40"
                             x-text="'лидер ' + o.copyLeaderWalletShort"></span>
@@ -1592,8 +1598,8 @@
         },
         async boot() {
           this.loadStoredAuth();
-          await this.refresh();
-          if (!this.authNeeded) this.refreshCrypto();
+          void this.refresh();
+          void this.refreshCrypto();
           setInterval(() => { if (!this.authNeeded) this.refresh(); }, 15000);
           setInterval(() => { if (!this.authNeeded) this.refreshCrypto(); }, 60000);
         },

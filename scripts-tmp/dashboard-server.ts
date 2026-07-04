@@ -69,6 +69,7 @@ import {
   isLiveOpenSnapshotFresh,
   readLiveOpenSnapshot,
 } from '../src/live/open-snapshot.js';
+import { parseTokenBalancesFromGetTokenAccountsByOwnerResult } from '../src/live/reconcile-live.js';
 import { isRunnerProbeTrade } from '../src/papertrader/live-oscar-runner-probe.js';
 import { isLiveOscarScalpWaveTrade } from '../src/papertrader/live-oscar-scalp-wave.js';
 
@@ -118,6 +119,14 @@ const DASHBOARD_PAPER2_OPENS_CACHE_MS = Number(process.env.DASHBOARD_PAPER2_OPEN
 const DASHBOARD_PAPER2_STALE_SERVE_MS = Number(
   process.env.DASHBOARD_PAPER2_STALE_SERVE_MS ?? 30 * 60_000,
 );
+/** TTL for RPC wallet SPL mint set used to hide journal ghosts on Live Oscar open rows. */
+const DASHBOARD_WALLET_GHOST_CACHE_MS = Number(process.env.DASHBOARD_WALLET_GHOST_CACHE_MS ?? 60_000);
+/** When `1` (default), drop open rows whose mint is absent from `LIVE_WALLET_PUBKEY` SPL balances. */
+const DASHBOARD_WALLET_GHOST_FILTER_ENABLED =
+  (process.env.DASHBOARD_WALLET_GHOST_FILTER ?? '1').trim() !== '0';
+
+const SPL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const SPL_TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
 /** Substrings checked before JSON.parse — skips noisy live-oscar audit lines in dashboard tail scans. */
 const DASHBOARD_JSONL_SKIP_KIND_MARKERS = [
@@ -1910,6 +1919,8 @@ export type Paper2OpenItem = {
   positionSource?: 'copy_leader' | 'runner_probe' | null;
   /** Truncated leader wallet for UI, e.g. `498S…aNma`. */
   copyLeaderWalletShort?: string | null;
+  /** Journal/snapshot open with zero matching SPL on `LIVE_WALLET_PUBKEY` (display-only when filter off). */
+  isWalletGhost?: boolean;
 };
 
 type Paper2ClosedRow = Record<string, unknown>;
@@ -2017,6 +2028,8 @@ export type DashboardPaper2StrategyRow = {
   dcTraderWatching?: unknown[];
   /** SuperBot stream/race counters (pumpswap-flow-sniper journal). */
   superbot?: SuperbotDashboardLoad['superbot'];
+  /** Live Oscar opens hidden because mint is absent from wallet SPL (journal/snapshot ghost). */
+  walletGhostCount?: number;
   /** HL Oscar perp / majors bot meta (tiles 4 and 7). */
   hlOscar?: {
     mode: 'dry_run' | 'live';
@@ -3669,6 +3682,80 @@ export function applyWalletDrainedZombieInference(
   };
 }
 
+let dashboardWalletMintCache: { at: number; mints: Set<string> } | null = null;
+
+/** Test helper — reset SPL mint cache between cases. */
+export function _clearDashboardWalletMintCacheForTests(): void {
+  dashboardWalletMintCache = null;
+}
+
+async function fetchDashboardLiveWalletMintSet(): Promise<Set<string> | null> {
+  const pk = (process.env.LIVE_WALLET_PUBKEY || process.env.HOURLY_WALLET_PUBKEY || '').trim();
+  if (!pk) return null;
+  const now = Date.now();
+  if (
+    dashboardWalletMintCache &&
+    now - dashboardWalletMintCache.at < DASHBOARD_WALLET_GHOST_CACHE_MS
+  ) {
+    return dashboardWalletMintCache.mints;
+  }
+  const httpUrl =
+    liveOscarRpcHttpUrlFromEnv() ||
+    (process.env.HOURLY_RPC_URL || '').trim() ||
+    resolveSolanaRpcUrl() ||
+    undefined;
+  if (!httpUrl) return dashboardWalletMintCache?.mints ?? null;
+
+  const merged = new Map<string, bigint>();
+  for (const programId of [SPL_TOKEN_PROGRAM, SPL_TOKEN_2022_PROGRAM]) {
+    const res = await qnCall<unknown>(
+      'getTokenAccountsByOwner',
+      [pk, { programId }, { encoding: 'jsonParsed', commitment: 'confirmed' }],
+      { feature: 'sim', timeoutMs: 12_000, httpUrl, creditsPerCall: 2 },
+    );
+    if (!res.ok) return dashboardWalletMintCache?.mints ?? null;
+    const m = parseTokenBalancesFromGetTokenAccountsByOwnerResult(res.value);
+    for (const [mint, amt] of m) {
+      merged.set(mint, (merged.get(mint) ?? 0n) + amt);
+    }
+  }
+  const mints = new Set(merged.keys());
+  dashboardWalletMintCache = { at: now, mints };
+  return mints;
+}
+
+/** Hide or mark journal open rows whose mint is not present on the live wallet (SPL + Token-2022). */
+export function filterLiveOscarOpensByWalletMints(
+  open: Paper2OpenItem[],
+  walletMints: Set<string> | null,
+): { open: Paper2OpenItem[]; walletGhostCount: number } {
+  if (!walletMints) return { open, walletGhostCount: 0 };
+  const kept: Paper2OpenItem[] = [];
+  let walletGhostCount = 0;
+  for (const row of open) {
+    if (walletMints.has(row.mint)) {
+      kept.push(row);
+      continue;
+    }
+    walletGhostCount += 1;
+    if (!DASHBOARD_WALLET_GHOST_FILTER_ENABLED) {
+      kept.push({ ...row, isWalletGhost: true });
+    }
+  }
+  return { open: kept, walletGhostCount };
+}
+
+export async function reconcileLiveOscarLoadWithWalletChain(
+  load: LiveOscarPaper2Load,
+): Promise<{ load: LiveOscarPaper2Load; walletGhostCount: number }> {
+  const walletMints = await fetchDashboardLiveWalletMintSet();
+  const { open, walletGhostCount } = filterLiveOscarOpensByWalletMints(load.open, walletMints);
+  if (walletGhostCount === 0 && open.length === load.open.length) {
+    return { load, walletGhostCount: 0 };
+  }
+  return { load: { ...load, open }, walletGhostCount };
+}
+
 function emptyLiveOscarPaper2Load(): LiveOscarPaper2Load {
   const z = Date.now();
   return {
@@ -4685,6 +4772,7 @@ async function buildPaper2StrategyRowFromLoad(
     hbOpen?: number;
     hbClosed?: number;
     hlOscar?: DashboardPaper2StrategyRow['hlOscar'];
+    walletGhostCount?: number;
   },
   hb?: { hbOpen?: number; hbClosed?: number; reconcileExtras?: LiveOscarPaper2Extras },
   buildOpts?: { opensOnly?: boolean },
@@ -5308,6 +5396,9 @@ async function buildPaper2StrategyRowFromLoad(
     ...(loaded.dcTraderWatching ? { dcTraderWatching: loaded.dcTraderWatching } : {}),
     ...(loaded.superbot ? { superbot: loaded.superbot } : {}),
     ...(loaded.hlOscar ? { hlOscar: loaded.hlOscar } : {}),
+    ...(typeof loaded.walletGhostCount === 'number' && loaded.walletGhostCount > 0
+      ? { walletGhostCount: loaded.walletGhostCount }
+      : {}),
   };
 }
 
@@ -5341,7 +5432,8 @@ app.get('/api/paper2/crypto-ticker', async (_req, reply) => {
 
 async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
   const llRaw = loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
-  const { load: ll } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
+  const { load: llAugmented } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
+  const { load: ll, walletGhostCount } = await reconcileLiveOscarLoadWithWalletChain(llAugmented);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const dcLoad = loadDcTraderForDashboard(
     DASHBOARD_DC_TRADER_JSONL,
@@ -5355,6 +5447,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
 
   const liveRowP = buildPaper2StrategyRowFromLoad(DASHBOARD_LIVE_OSCAR_JSONL, 'live-oscar', {
     ...liveLoaded,
+    walletGhostCount,
   }, {
     hbOpen,
     hbClosed,
@@ -5494,12 +5587,13 @@ async function buildPaper2OpensPayload(): Promise<Record<string, unknown>> {
   const llRaw =
     loadLiveOscarOpensOnlyFromSnapshot(DASHBOARD_LIVE_OSCAR_JSONL) ??
     loadLiveOscarJsonlAsPaper2(DASHBOARD_LIVE_OSCAR_JSONL);
-  const { load: ll } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
+  const { load: llAugmented } = augmentLiveOscarLoadWithCopyLeaderOpens(llRaw);
+  const { load: ll, walletGhostCount } = await reconcileLiveOscarLoadWithWalletChain(llAugmented);
   const { hbOpen, hbClosed, liveExtras, ...liveLoaded } = ll;
   const row = await buildPaper2StrategyRowFromLoad(
     DASHBOARD_LIVE_OSCAR_JSONL,
     'live-oscar',
-    liveLoaded,
+    { ...liveLoaded, walletGhostCount },
     { hbOpen, hbClosed, reconcileExtras: liveExtras },
     { opensOnly: true },
   );
@@ -5699,6 +5793,12 @@ if (process.env.DASHBOARD_NO_LISTEN !== '1') {
       const cp = resolvedOrgCursorPath();
       console.log(`[dashboard] organizer cursor file: ${cp ?? '(n/a — not organizer journal)'}`);
       startQuickNodeUsageReporting();
+      startPaper2ApiBuild().catch((e) => {
+        console.warn('[dashboard] startup paper2 warm failed', String(e).slice(0, 200));
+      });
+      startPaper2OpensApiBuild().catch((e) => {
+        console.warn('[dashboard] startup paper2/opens warm failed', String(e).slice(0, 200));
+      });
     })
     .catch((err: unknown) => {
       console.error('[dashboard] listen failed (port in use or bind error):', err);
