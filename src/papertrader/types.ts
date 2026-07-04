@@ -785,6 +785,9 @@ export interface SnapshotFeatures {
     enabled: boolean;
     /** Prior bot trade in lookback — ephemeral spike blocks skipped (1.11.544). */
     knownMint?: boolean;
+    /** Familiar repeat-traded mint with bypass flag enabled. */
+    familiarMint?: boolean;
+    familiarMintBypass?: boolean;
     coverageOk: boolean;
     lookbackHours: number;
     hoursWithData: number;
@@ -837,6 +840,7 @@ export interface SnapshotFeatures {
     sybilCoverageOk: boolean;
     ephemeralCoverageOk: boolean;
     knownMintGapBypass?: boolean;
+    familiarMintStaleBypass?: boolean;
     global: {
       pgStaleNow: boolean;
       systemHourRatio: number | null;

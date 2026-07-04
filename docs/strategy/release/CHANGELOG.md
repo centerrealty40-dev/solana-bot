@@ -103,6 +103,22 @@
 
 ---
 
+## [Unreleased] — familiar mint gate bypass (manlet/DdPrHY RCA)
+
+**Проблема:** repeat-traded mint (manlet DdPrHY — copy→Oscar +$33, stable vol5m $16.3K) блокировался `pg_stale_now` при прошедших snapshot/dip; новые mint (FREE 82XVW) — корректный `volume_ephemeral` skip.
+
+- **`isFamiliarMint`:** journal lookback (open/close, любой lane) + `PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED=1`.
+- **`volume_ephemeral`:** familiar mint → полный bypass (new mint без изменений).
+- **`pg_stale_now`:** familiar mint + stable vol5m ≥ active-hour floor + `LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX=1` → bypass; audit `familiarMintStaleBypass` в `pg_data_coverage` features.
+
+**Env:** `PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED`, `LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX` (prod `ecosystem.config.cjs`).
+
+**Откат:** оба env `=0` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
+---
+
 ## [1.11.550] — 2026-07-03
 
 **Тег:** `sa-alpha-1.11.550`
