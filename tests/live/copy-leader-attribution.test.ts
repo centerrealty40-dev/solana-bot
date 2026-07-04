@@ -3,8 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  finalizeCopyLeaderOscarHandoffClose,
   oscarWalletMintUsdExcludingCopyLeader,
   readCopyLeaderCostBasisUsd,
+  resetOscarHandoffClosedMintCache,
 } from '../../src/live/copy-leader-attribution.js';
 
 describe('copy-leader-attribution', () => {
@@ -66,5 +68,20 @@ describe('copy-leader-attribution', () => {
     expect(
       oscarWalletMintUsdExcludingCopyLeader({ walletMintUsd: 3100, mint, statePath }),
     ).toBe(3100);
+  });
+
+  it('removes promoted row when Oscar closes handoff mint', () => {
+    resetOscarHandoffClosedMintCache();
+    const mint = 'MintHandoffClose111111111111111111111111111';
+    const promotedAt = Date.now() - 60_000;
+    const statePath = writeState({
+      [mint]: {
+        sizeUsd: 250,
+        entryDeployedCostUsd: 250,
+        oscarPromotedAt: promotedAt,
+      },
+    });
+    expect(finalizeCopyLeaderOscarHandoffClose({ mint, statePath })).toBe(true);
+    expect(readCopyLeaderCostBasisUsd(mint, statePath)).toBe(0);
   });
 });

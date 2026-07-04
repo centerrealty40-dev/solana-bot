@@ -106,6 +106,64 @@ export function isCopyLeaderPromotedToOscar(mint: string, statePath?: string): b
 }
 
 /** Mark copy position Oscar-managed so copy-trader stops proportional mirror sells. */
+/** Session cache: Oscar already closed this handoff mint (avoid re-adopt before disk sync). */
+const oscarHandoffClosedMints = new Set<string>();
+
+export function registerOscarHandoffClosedMint(mint: string): void {
+  const key = mint.trim();
+  if (key) oscarHandoffClosedMints.add(key);
+}
+
+export function isOscarHandoffClosedMint(mint: string): boolean {
+  return oscarHandoffClosedMints.has(mint.trim());
+}
+
+/** Reset session cache (tests). */
+export function resetOscarHandoffClosedMintCache(): void {
+  oscarHandoffClosedMints.clear();
+}
+
+/**
+ * After live-oscar `live_position_close` on a copy handoff mint: drop copy-trader row so
+ * `adoptCopyLeaderExitOpens` cannot resurrect a ghost open on an empty wallet.
+ */
+export function finalizeCopyLeaderOscarHandoffClose(args: {
+  mint: string;
+  statePath?: string;
+  closedAt?: number;
+}): boolean {
+  const fp = args.statePath ?? copyLeaderStatePathFromEnv();
+  const key = args.mint.trim();
+  if (!fp || !key) return false;
+
+  registerOscarHandoffClosedMint(key);
+
+  let parsed: CopyStateFile;
+  try {
+    parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as CopyStateFile;
+  } catch {
+    return false;
+  }
+
+  const pos = parsed.positions?.[key];
+  if (!pos) return false;
+  if (
+    typeof (pos as CopyStateRow).oscarPromotedAt !== 'number' ||
+    !((pos as CopyStateRow).oscarPromotedAt! > 0)
+  ) {
+    return false;
+  }
+
+  delete parsed.positions![key];
+
+  const dir = path.dirname(fp);
+  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${fp}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(parsed, null, 2), 'utf8');
+  fs.renameSync(tmp, fp);
+  return true;
+}
+
 export function markCopyLeaderPromotedToOscar(args: {
   mint: string;
   statePath?: string;
