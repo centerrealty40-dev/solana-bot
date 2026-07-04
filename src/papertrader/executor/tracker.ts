@@ -195,6 +195,7 @@ import {
   livePolicyOnlyExitsEnabled,
   recordPostHealChurnBlock,
 } from '../../live/policy-only-exits.js';
+import { isOscarHandoffClosedMint } from '../../live/copy-leader-attribution.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -414,7 +415,7 @@ export interface TrackerArgs {
    */
   reconcileOrphanMinPositionAgeMs?: number;
   /** After full close — e.g. clear staged entry signal so re-entry cannot bypass dip gate. */
-  onMintFullClose?: (mint: string) => void;
+  onMintFullClose?: (mint: string, openTrade?: OpenTrade) => void;
   /** Preset C scalp — check pending −10% entries between discovery ticks. */
   processPresetCScalpDeferredEntries?: () => Promise<void>;
 }
@@ -1859,7 +1860,7 @@ function afterFullCloseReentryGate(
     openTrade ? { openTrade } : undefined,
   );
   markPresetCTelegramGateConsumedOnFullClose(cfg.strategyId, openTrade);
-  args.onMintFullClose?.(ct.mint);
+  args.onMintFullClose?.(ct.mint, openTrade);
 }
 
 function hookLiveWhitelistAfterFullClose(
@@ -1948,6 +1949,8 @@ async function closeOpenTradeWalletZeroPolicySync(args: {
     liveOscarCfg,
     forcedExitReason,
   } = args;
+
+  if (isOscarHandoffClosedMint(mint)) return false;
 
   if (verifyReconcileOrphanWalletZero) {
     let allow: boolean;
@@ -2850,6 +2853,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       const m = mintFromOpenMapKey(openKey);
       if (!oz.has(m) && !oz.has(openKey)) continue;
       if (graceMs > 0 && ot.entryTs > 0 && nowOrphan - ot.entryTs < graceMs) continue;
+      if (isOscarHandoffClosedMint(m)) continue;
         const liveWalletZeroPolicy =
           liveOscarCfg?.strategyEnabled &&
           (liveOscarCfg.executionMode === 'live' || liveOscarCfg.executionMode === 'simulate');

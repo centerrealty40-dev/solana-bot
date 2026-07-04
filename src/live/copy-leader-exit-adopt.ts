@@ -8,10 +8,15 @@ import { applyEntryCosts } from '../papertrader/costs.js';
 import { applyWaveBGridOverrides } from '../papertrader/executor/exit-policy-wave-b.js';
 import { resolveLiveOscarMcapTier } from '../papertrader/live-oscar-mcap-tier.js';
 import type { DexId, Metrics, OpenTrade, PositionLeg } from '../papertrader/types.js';
+import type { ClosedTrade } from '../papertrader/types.js';
 import {
   copyLeaderStatePathFromEnv,
   readCopyLeaderMintAttribution,
 } from './copy-leader-attribution.js';
+import {
+  COPY_HANDOFF_WALLET_DUST_RAW,
+  shouldSkipCopyLeaderExitAdopt,
+} from './copy-oscar-handoff-lifecycle.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
 
 const EMPTY_METRICS: Metrics = {
@@ -42,6 +47,7 @@ export function copyLeaderExitAdoptEnabled(): boolean {
 export type CopyLeaderExitAdoptResult = {
   adopted: string[];
   skippedAlreadyOpen: string[];
+  skippedHandoffClosed: string[];
 };
 
 function buildOpenFromCopyLeader(args: {
@@ -129,19 +135,26 @@ export function adoptCopyLeaderExitOpens(args: {
   paperCfg: PaperTraderConfig;
   journalLiveStrategy?: (body: Record<string, unknown>) => void;
   statePath?: string;
+  /** Pre-fetched wallet SPL balances — skip adopt when chain empty (ghost heal guard). */
+  chainMap?: Map<string, bigint> | null;
+  /** Oscar closed trades — skip re-adopt after handoff exit. */
+  closedTrades?: readonly ClosedTrade[];
 }): CopyLeaderExitAdoptResult {
   const adopted: string[] = [];
   const skippedAlreadyOpen: string[] = [];
-  if (!copyLeaderExitAdoptEnabled()) return { adopted, skippedAlreadyOpen };
+  const skippedHandoffClosed: string[] = [];
+  if (!copyLeaderExitAdoptEnabled()) {
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
+  }
 
   const fp = args.statePath ?? copyLeaderStatePathFromEnv();
-  if (!fp) return { adopted, skippedAlreadyOpen };
+  if (!fp) return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
 
   let parsed: { positions?: Record<string, Record<string, unknown>> };
   try {
     parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as typeof parsed;
   } catch {
-    return { adopted, skippedAlreadyOpen };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
   }
 
   for (const [mint, row] of Object.entries(parsed.positions ?? {})) {
@@ -153,6 +166,24 @@ export function adoptCopyLeaderExitOpens(args: {
 
     if (args.open.has(mint)) {
       skippedAlreadyOpen.push(mint);
+      continue;
+    }
+
+    const chainRaw = args.chainMap?.get(mint);
+    const skipReason = shouldSkipCopyLeaderExitAdopt({
+      mint,
+      statePath: fp,
+      chainRaw: chainRaw ?? (args.chainMap ? 0n : undefined),
+      closedTrades: args.closedTrades,
+      open: args.open,
+    });
+    if (skipReason) {
+      skippedHandoffClosed.push(mint);
+      continue;
+    }
+
+    if (args.chainMap && (chainRaw == null || chainRaw <= COPY_HANDOFF_WALLET_DUST_RAW)) {
+      skippedHandoffClosed.push(mint);
       continue;
     }
 
@@ -193,5 +224,5 @@ export function adoptCopyLeaderExitOpens(args: {
     });
   }
 
-  return { adopted, skippedAlreadyOpen };
+  return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
 }

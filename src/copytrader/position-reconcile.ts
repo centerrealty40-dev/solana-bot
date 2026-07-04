@@ -4,6 +4,8 @@ import { cancelPendingBuysForMint } from './pending-buy-retry.js';
 import { cancelPendingSellsForMint } from './pending-sell-retry.js';
 import { appendCopyEvent } from './executor.js';
 import { fetchWalletMintBalanceRaw } from './rpc.js';
+import { leaderPreBalanceRaw } from './leader-ledger.js';
+import { readCopyTraderState } from './state.js';
 import { COPY_LEADER_POSITION_SOURCE, type CopyPosition, type CopyTraderState } from './state.js';
 
 /** SPL UI amount scale used across copy-trader journal/state. */
@@ -164,11 +166,79 @@ export async function refreshPositionFromWallet(
   return bal;
 }
 
+/** Drop in-memory promoted rows Oscar cleared on disk (avoid clobbering external state writes). */
+export function reconcileOscarHandoffClosedFromDisk(cfg: CopyTraderConfig, state: CopyTraderState): number {
+  let disk: CopyTraderState;
+  try {
+    disk = readCopyTraderState(cfg.statePath);
+  } catch {
+    return 0;
+  }
+  let cleared = 0;
+  for (const [mint, pos] of Object.entries({ ...state.positions })) {
+    if (!pos.oscarPromotedAt) continue;
+    if (disk.positions[mint]) continue;
+    delete state.positions[mint];
+    cancelPendingBuysForMint(state, mint, 'any');
+    cancelPendingSellsForMint(state, mint);
+    cleared += 1;
+    appendCopyEvent(cfg, {
+      kind: 'position_closed_wallet_empty',
+      mint,
+      symbol: pos.symbol,
+      reason: 'oscar_handoff_closed',
+    });
+  }
+  return cleared;
+}
+
+/** Oscar-managed handoff: clear when leader flat and copy leg is zero (DdPrHY stale state). */
+async function reconcileOscarPromotedFlat(cfg: CopyTraderConfig, state: CopyTraderState): Promise<number> {
+  let cleared = 0;
+  for (const [mint, pos] of Object.entries({ ...state.positions })) {
+    if (!pos.oscarPromotedAt) continue;
+    const tracked = copyTrackedTokenRaw(pos);
+    const leaderRaw = leaderPreBalanceRaw(state, mint);
+    if (tracked > 0n || leaderRaw > 0n) continue;
+
+    if (cfg.sharedOscarWallet) {
+      delete state.positions[mint];
+      cancelPendingBuysForMint(state, mint, 'any');
+      cancelPendingSellsForMint(state, mint);
+      cleared += 1;
+      appendCopyEvent(cfg, {
+        kind: 'position_closed_wallet_empty',
+        mint,
+        symbol: pos.symbol,
+        reason: 'oscar_handoff_leader_flat',
+      });
+      continue;
+    }
+
+    const bal = await fetchExecutionWalletBalanceRawRetry(cfg, mint, { attempts: 2, delayMs: 1500 });
+    if (bal !== 0n) continue;
+
+    delete state.positions[mint];
+    cancelPendingBuysForMint(state, mint, 'any');
+    cancelPendingSellsForMint(state, mint);
+    cleared += 1;
+    appendCopyEvent(cfg, {
+      kind: 'position_closed_wallet_empty',
+      mint,
+      symbol: pos.symbol,
+      reason: 'oscar_handoff_wallet_empty',
+    });
+  }
+  return cleared;
+}
+
 /** Drop state row when execution wallet holds no tokens (manual exit / drift). */
 export async function reconcileGhostPositions(cfg: CopyTraderConfig, state: CopyTraderState): Promise<number> {
+  let cleared = reconcileOscarHandoffClosedFromDisk(cfg, state);
+  cleared += await reconcileOscarPromotedFlat(cfg, state);
+
   const wallet = executionWalletPubkey(cfg);
   const now = Date.now();
-  let cleared = 0;
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
     if (pos.oscarPromotedAt) continue;
     if (now - pos.entryTs < COPY_TRADER_GHOST_RECONCILE_GRACE_MS) continue;

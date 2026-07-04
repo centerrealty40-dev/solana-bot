@@ -55,6 +55,8 @@ import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from 
 import { restoreWalletOrphanOpensOnBoot } from './boot-open-restore.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { adoptCopyLeaderExitOpens } from './copy-leader-exit-adopt.js';
+import { copyLeaderStatePathFromEnv } from './copy-leader-attribution.js';
+import { onOscarFullCloseCopyHandoffMint } from './copy-oscar-handoff-lifecycle.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { startLivePeriodicSelfHeal } from './periodic-self-heal.js';
 import { startLiveOpenPositionHotTick } from './open-position-hot-tick.js';
@@ -593,10 +595,15 @@ export async function main(): Promise<void> {
     journalAppend: createLiveDiscoveryAuditJournalAppend(liveCfg.liveDiscoveryAuditJsonlEnabled),
     skipPaperJsonlStore: true,
     liveStrategyReplay,
-    beforeTrackerTick: (open) => {
+    beforeTrackerTick: async ({ open, closed }) => {
+      const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+      const copyStatePath = process.env.LIVE_COPY_LEADER_STATE_PATH?.trim() || copyLeaderStatePathFromEnv() || undefined;
       const r = adoptCopyLeaderExitOpens({
         open,
         paperCfg: paperBaseline,
+        closedTrades: closed,
+        chainMap,
+        statePath: copyStatePath,
         journalLiveStrategy: (body) => {
           appendLiveJsonlEvent(body);
           try {
@@ -605,10 +612,25 @@ export async function main(): Promise<void> {
             log.warn({ err: (err as Error)?.message }, 'live open snapshot copy adopt failed');
           }
         },
-        statePath: process.env.LIVE_COPY_LEADER_STATE_PATH?.trim() || undefined,
       });
       if (r.adopted.length > 0) {
         log.info({ mints: r.adopted.map((m) => m.slice(0, 8)) }, 'live-oscar adopted copy-leader exit opens');
+      }
+    },
+    onMintFullClose: (mint, openTrade) => {
+      const cleared = onOscarFullCloseCopyHandoffMint({
+        mint,
+        openTrade,
+        statePath: process.env.LIVE_COPY_LEADER_STATE_PATH?.trim() || copyLeaderStatePathFromEnv() || undefined,
+      });
+      if (cleared) {
+        log.info({ mint: mint.slice(0, 8) }, 'live-oscar cleared copy-trader handoff state after close');
+        appendLiveJsonlEvent({
+          kind: 'risk_note',
+          reason: 'copy_handoff_state_cleared',
+          mint,
+          detail: { symbol: openTrade?.symbol ?? '?' },
+        });
       }
     },
     journalLiveStrategy: (body) => {

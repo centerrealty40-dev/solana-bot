@@ -252,7 +252,13 @@ export interface PapertraderMainOptions {
   ) => ReturnType<typeof setInterval> | null;
 
   /** Live-oscar: hook before each tracker tick (e.g. adopt copy-leader exit opens). */
-  beforeTrackerTick?: (open: Map<string, OpenTrade>) => void | Promise<void>;
+  beforeTrackerTick?: (ctx: {
+    open: Map<string, OpenTrade>;
+    closed: ClosedTrade[];
+  }) => void | Promise<void>;
+
+  /** Live-oscar: after Oscar full close (all exit paths). */
+  onMintFullClose?: (mint: string, openTrade?: OpenTrade) => void;
 
   /**
    * Live-oscar: override paper `PAPER_HEARTBEAT_INTERVAL_MS` for JSONL + `onOscarHeartbeat` cadence.
@@ -1166,8 +1172,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             journalLiveStrategy: opts?.journalLiveStrategy,
             btcCtx: getBtcContext,
             liveOscarCfg,
-            onMintFullClose: (mint) => {
+            onMintFullClose: (mint, ot) => {
               stagedEntrySignals.delete(mint);
+              opts?.onMintFullClose?.(mint, ot);
             },
           });
         },
@@ -2583,7 +2590,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     if (trackerRunning) return;
     trackerRunning = true;
     try {
-      await opts?.beforeTrackerTick?.(open);
+      await opts?.beforeTrackerTick?.({ open, closed });
       await withTimeout(
         trackerTick({
           cfg,
@@ -2600,9 +2607,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
           verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
-          onMintFullClose: (mint) => {
+          onMintFullClose: (mint, ot) => {
             stagedEntrySignals.delete(mint);
             removePresetCScalpPending(mint);
+            opts?.onMintFullClose?.(mint, ot);
           },
           processPresetCScalpDeferredEntries: async () => {
             await queuePresetCScalpDeferredEntries();
@@ -2717,7 +2725,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     getOpen: () => open,
     isTrackerBusy: () => trackerRunning,
     runTrackerTick: async () => {
-      await opts?.beforeTrackerTick?.(open);
+      await opts?.beforeTrackerTick?.({ open, closed });
       return withTimeout(
         trackerTick({
           cfg,
@@ -2734,9 +2742,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           reconcilePaperCloseZeroMints: opts?.reconcilePaperCloseZeroMints,
           verifyReconcileOrphanWalletZero: opts?.verifyReconcileOrphanWalletZero,
           reconcileOrphanMinPositionAgeMs: opts?.reconcileOrphanMinPositionAgeMs,
-          onMintFullClose: (mint) => {
+          onMintFullClose: (mint, ot) => {
             stagedEntrySignals.delete(mint);
             removePresetCScalpPending(mint);
+            opts?.onMintFullClose?.(mint, ot);
           },
           processPresetCScalpDeferredEntries: async () => {
             await queuePresetCScalpDeferredEntries();
