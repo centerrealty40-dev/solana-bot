@@ -3,13 +3,14 @@
 **Продукт:** `solana-alpha` / PM2 `live-oscar`  
 **Ветка:** `v2`  
 **Статус:** **DRAFT** (целевая архитектура; не normative до shadow evidence)  
-**Версия спеки:** 0.4 (2026-07-04)  
-**Код:** env contract + config stub (≥ **1.11.549**); eval lane — PR3
+**Версия спеки:** 0.5 (2026-07-04)
+**Код:** env contract + config stub (≥ **1.11.549**); eval lane — PR3 phantom/replay only
 
 ## Changelog (spec)
 
 | Версия | Дата | Изменение |
 |--------|------|-----------|
+| **0.5** | 2026-07-04 | PR3 уточнён как **Phase D phantom/replay**, не live entry; live buys запрещены до positive Phase C/D replay PnL + bottom-catch evidence; добавлены критерии reject для falling knife |
 | **0.4** | 2026-07-04 | **Position 2×$25** ($50/mint, staged entry как runner_lite); exposure **MAX_CONCURRENT=4**, **MAX_EXPOSURE_USD=200**; env scaffolding в `ecosystem.config.cjs` + `live-oscar-pervyy-vystrel-config.ts`; shadow-first, lane `pervyy_vystrel_v1` |
 | **0.3** | 2026-07-04 | §17 **disk forensics** (read-only SSH 22:50 UTC); §17.3 options **A–D пересмотрены**; §17.5 «Пересмотр: отдельный VPS + repo»; §17.6 **revised verdict** + pragmatic tiers (cleanup → B/D → C/D) |
 | **0.2** | 2026-07-04 | §6.4 **Volume authenticity analyzer** (wash vs real); §17 **Appendix** — VPS load snapshot (2026-07-04), Wallet Intel roadmap status, architecture verdict (PM2 worker + schema lane) |
@@ -252,11 +253,11 @@ State machine per mint в in-memory watchlist + optional PG table `pervyy_vystre
 
 **Cluster dump confirmed:** journal `pervyy_vystrel_cluster_dump_confirmed`, → Phase D armed.
 
-### Phase D — Entry (re-ramp)
+### Phase D — Phantom entry replay (re-ramp)
 
 **Arm window:** 30–180 min после Phase C confirm.
 
-**Entry gates (все AND):**
+**Entry/replay gates (все AND):**
 
 | # | Gate | Порог |
 |---|------|-------|
@@ -271,11 +272,13 @@ State machine per mint в in-memory watchlist + optional PG table `pervyy_vystre
 | D9 | Mutex | нет открытой `pervyy_vystrel` позиции на mint |
 | D10 | **Volume authenticity** | `authentic_pass` (§6.4): `organic_score ≥ 0.50`, `wash_score ≤ 0.55` |
 
-**hYhqi mapping:** dump bottom ~$200k → re-ramp $600k = **+200%** от дна, `mcap_now ≤ 0.85 × $800k` = $680k — **вход разрешён** в Phase D.
+**hYhqi mapping:** dump bottom ~$200k → re-ramp $600k = **+200%** от дна, `mcap_now ≤ 0.85 × $800k` = $680k — **phantom Phase D candidate разрешён**; live buy всё ещё запрещён до §13 gate.
 
-**Entry execution:** 2 legs × **$25** (staged entry: leg1 market, leg2 optional на +5% pullback или сразу 2× при strong bs — config `PAPER_PERVYY_VYSTREL_STAGED_ENTRY=1` default).
+**PR3 execution status:** только **phantom/replay**. Journal обязан писать `pass:false`, `would_enter:false`; `live_position_open` запрещён независимо от `PAPER_PERVYY_VYSTREL_ENABLED=0/1`, пока нет отдельного operator sign-off после replay evidence.
 
-Journal: `pervyy_vystrel_entry_signal` → `live_position_open` с `positionSource: pervyy_vystrel`, `liveExitPolicyId: pervyy_vystrel_v1`.
+**Future entry execution (после gate):** 2 legs × **$25** (staged entry: leg1 market, leg2 optional на +5% pullback или сразу 2× при strong bs — config `PAPER_PERVYY_VYSTREL_STAGED_ENTRY=1` default).
+
+Journal PR3: `pervyy_vystrel_phase_c_candidate` / `pervyy_vystrel_phase_d_candidate` для replay; `pervyy_vystrel_entry_signal` → `live_position_open` допускается только в future gate PR после §13 evidence.
 
 ---
 
@@ -583,21 +586,22 @@ Tier **жертвует** retail-only dip recoveries ради **точности
 
 **Acceptance:** replay hYhqi (when PG data exists) → Phase C `cluster_dump_confirmed` in shadow journal.
 
-### PR3 — Live eval lane (P1)
+### PR3 — Phase D phantom/replay lane (P1)
 
-**Цель:** full phase machine + optional entry.
+**Цель:** full phase machine + Phase C/D phantom evidence. Не live entry.
 
 | Deliverable | Файлы |
 |-------------|-------|
 | `live-oscar-pervyy-vystrel.ts` | parallel to runner-lite |
 | Wire `dip-clones.ts` after runner lanes | discovery eval |
-| `exit-policy-pervyy-vystrel.ts` | half8 stamp |
-| Open-map `mint::pervyy_vystrel` | `resolveOpenMapKey` extension |
-| Dashboard badge | Open positions API |
+| Phase C/D phantom journal | `pervyy_vystrel_phase_c_candidate`, `pervyy_vystrel_phase_d_candidate` |
+| Missing materialize reason | `pervyy_vystrel_phase_d_missing_materialized_snapshot` |
+| No-open tests | prove no `live_position_open`, `pass:false`, `would_enter:false` |
+| Dashboard badge | Shadow candidate counters |
 
-**Lane env:** `PAPER_PERVYY_VYSTREL_ENABLED=1`, `PAPER_PERVYY_VYSTREL_MODE=shadow`.
+**Lane env:** `PAPER_PERVYY_VYSTREL_ENABLED=0/1`, `PAPER_PERVYY_VYSTREL_MODE=shadow`; `PERVYY_VYSTREL_MATERIALIZE_ENABLED=1` required for Phase D candidates.
 
-**Acceptance:** 7d shadow, ≥95% eval без SQL timeout; manual review FP/FN samples.
+**Acceptance:** 7d shadow, ≥95% eval без SQL timeout; Phase C/D replay PnL positive; bottom catch proven on shadow candidates; manual review FP/FN samples; LojakPaul-style falling knife rejected.
 
 ---
 
@@ -651,6 +655,9 @@ PAPER_PERVYY_VYSTREL_MAX_EXPOSURE_USD=200
 | `pervyy_vystrel_phase_a_tick` | Phase A (15m throttle) | `peakMcap`, `unique_buyers_1h`, `cluster_ratio` |
 | `pervyy_vystrel_surveillance_tick` | Phase B hourly | `mcap`, `vol1h`, `holder_delta_30m` |
 | `pervyy_vystrel_cluster_dump_confirmed` | Phase C pass | `dump_pct`, `cluster_sell_ratio`, `sellers[]` |
+| `pervyy_vystrel_phase_c_candidate` | Phantom Phase C from materialized snapshot | `cluster_dump_completed`, `cluster_sell_ratio`, `retail_panic_score`, `pass:false` |
+| `pervyy_vystrel_phase_d_candidate` | Phantom Phase D replay candidate | `cluster_dump_completed`, `fresh_retail_absorption`, `reramp_confirmation`, `would_enter:false`, `pass:false` |
+| `pervyy_vystrel_phase_d_missing_materialized_snapshot` | Materialize disabled/missing | `materialize_enabled`, `reasons[]`, `pass:false` |
 | `pervyy_vystrel_dump_retail_skipped` | Phase C fail retail | `retail_panic_score` |
 | `pervyy_vystrel_phase_d_armed` | Phase D window open | `bottom_mcap`, `reramp_pct` |
 | `pervyy_vystrel_entry_signal` | All D gates pass | `would_enter` (shadow) / `enter` (gate) |
@@ -674,8 +681,10 @@ PAPER_PERVYY_VYSTREL_MAX_EXPOSURE_USD=200
 | S0 off | `ENABLED=0` | — | PR1 merged |
 | S1 watchlist shadow | `ENABLED=1`, `MODE=shadow`, organic/cluster shadow | **3d** | Snapshots >0 для ≥80% pump alerts |
 | S2 full shadow | all subgates shadow | **7d** | eval p95 <200ms; ≥10 cluster_dump events |
-| S3 advisory | Telegram ADVICE on Phase D would_enter | 48h | Operator review |
-| S4 gate | `MODE=gate` | — | FP manual review ≤20% would_enter |
+| S3 advisory | Telegram ADVICE on Phase D phantom candidate | 48h | Operator review |
+| S4 gate | `MODE=gate` | — | **После отдельного sign-off:** Phase C/D replay positive PnL, bottom-catch evidence, FP manual review ≤20% would_enter |
+
+**No-live-buy gate:** до S4 sign-off `pervyy_vystrel` остаётся phantom/shadow. Требования для перехода: (1) cluster dump completed, (2) fresh retail absorption, (3) re-ramp confirmation, (4) positive replay PnL, (5) доказанный bottom catch на shadow candidates. Если есть dump без fresh retail + re-ramp, это LojakPaul-style falling knife и он должен быть rejected.
 
 ### 13.2. Kill switches
 
@@ -712,6 +721,7 @@ PAPER_PERVYY_VYSTREL_MAX_EXPOSURE_USD=200
 | Включить gate без PR1 ingest | 100% FN (hYhqi) |
 | Entry на Phase A momentum | FOMO / wash |
 | Entry без cluster attribution | Retail panic trap |
+| LojakPaul-style falling knife | Dump без fresh retail absorption и re-ramp confirmation; PR3 обязан journal reject, не `would_enter` |
 | Holders live RPC в discovery tick | Budget |
 | `pm2 stop all` при rollout | NORM §5.3 |
 | Bump platform VERSION за product doc | Только `docs/strategy/**` |
@@ -722,6 +732,7 @@ PAPER_PERVYY_VYSTREL_MAX_EXPOSURE_USD=200
 
 | Версия | Дата | Изменение |
 |--------|------|-----------|
+| **0.5** | 2026-07-04 | PR3 = Phase D phantom/replay; no live buys until positive C/D replay PnL + bottom-catch evidence; falling-knife reject |
 | **0.4** | 2026-07-04 | Position **2×$25** ($50/mint); exposure **4×$50=$200**; env contract + config stub; shadow-first `pervyy_vystrel_v1` |
 | **0.3** | 2026-07-04 | §17 disk forensics + architecture revision (options A–D, separate VPS reassessment) |
 | **0.2** | 2026-07-04 | §6.4 volume authenticity; §17 infrastructure/architecture appendix; D10 gate; journal + PR2 |

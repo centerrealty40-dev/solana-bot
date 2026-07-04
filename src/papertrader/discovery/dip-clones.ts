@@ -1,21 +1,41 @@
-import type { PaperTraderConfig } from '../config.js';
-import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from '../types.js';
-import { snapshotRowTsMs } from '../stale-price.js';
-import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
-import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
-import { resolveShyftDefiMcap, type ShyftDefiMcapResult } from '../stream/shyft-defi-mcap.js';
-import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
-import { dedupeSnapshotTaggedByMintCanonical } from './snapshot-canonical-pick.js';
-import { discoverySnapshotSanityCfg } from './snapshot-row-sanity.js';
-import { explainCrowdedOutOnly, explainPostLaneUniverseMiss } from './universe-miss-explain.js';
+import type { PaperTraderConfig } from "../config.js";
+import type {
+  Lane,
+  SnapshotCandidateRow,
+  SnapshotFeatures,
+  WhaleAnalysis,
+} from "../types.js";
+import { snapshotRowTsMs } from "../stale-price.js";
+import {
+  getShyftShadowStreamPrice,
+  isShyftShadowEnabled,
+} from "../stream/shadow-state.js";
+import {
+  resolvePrimaryPriceUsd,
+  buildPricePrimaryEvent,
+} from "../stream/price-primary.js";
+import {
+  resolveShyftDefiMcap,
+  type ShyftDefiMcapResult,
+} from "../stream/shyft-defi-mcap.js";
+import {
+  fetchLatestCrossVenueSnapshotRowForMint,
+  fetchSnapshotLaneCandidates,
+} from "./snapshot.js";
+import { dedupeSnapshotTaggedByMintCanonical } from "./snapshot-canonical-pick.js";
+import { discoverySnapshotSanityCfg } from "./snapshot-row-sanity.js";
+import {
+  explainCrowdedOutOnly,
+  explainPostLaneUniverseMiss,
+} from "./universe-miss-explain.js";
 import {
   evaluateSnapshot,
   passesDiscoveryMinMarketCap,
   passesDiscoveryMaxMarketCap,
   evaluateSnapshotPriorityTier,
   resolveDiscoveryRefMcap,
-} from '../filters/snapshot-filter.js';
-import { globalGate } from '../filters/global-gate.js';
+} from "../filters/snapshot-filter.js";
+import { globalGate } from "../filters/global-gate.js";
 import {
   fetchDipContextMap,
   evaluateDip,
@@ -23,54 +43,57 @@ import {
   evaluateRecoveryVeto,
   type LocalHighVetoResult,
   type RecoveryVetoResult,
-} from '../dip-detector.js';
+} from "../dip-detector.js";
 import {
   evaluateStressKillReentryPath,
   getStressKillReentryContext,
-} from './stress-kill-reentry.js';
-import { fetchWhaleAnalysis } from '../whale-analysis.js';
-import { resolveHolderCount } from '../holders/holders-resolve.js';
-import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
-import { filterSnapshotTaggedByMintBlacklist, isMintBlacklisted } from './mint-blacklist-file.js';
+} from "./stress-kill-reentry.js";
+import { fetchWhaleAnalysis } from "../whale-analysis.js";
+import { resolveHolderCount } from "../holders/holders-resolve.js";
+import { impulsePgSnapTriggerOk } from "../pricing/impulse-confirm.js";
+import {
+  filterSnapshotTaggedByMintBlacklist,
+  isMintBlacklisted,
+} from "./mint-blacklist-file.js";
 import {
   fetchPolicyAPlusContextMap,
   evaluatePolicyAPlus,
   type PolicyAPlusFeatures,
-} from './policy-a-plus.js';
+} from "./policy-a-plus.js";
 import {
   fetchPostCrashContextMap,
   evaluatePostCrashFastPath,
   shouldBypassLocalHighVetoForPostCrash,
   type PostCrashFastPathResult,
-} from './post-crash-fast-path.js';
+} from "./post-crash-fast-path.js";
 import {
   fetchTrendStructureContextMap,
   evaluateTrendStructureVeto,
   type TrendStructureVetoResult,
-} from './trend-structure-veto.js';
+} from "./trend-structure-veto.js";
 import {
   fetchVolumeSybilContextMap,
   evaluateVolumeSybilGuard,
   type VolumeSybilFeatures,
-} from './volume-sybil-guard.js';
+} from "./volume-sybil-guard.js";
 import {
   fetchVolumeEphemeralContextMap,
   evaluateVolumeEphemeralGuard,
   type VolumeEphemeralFeatures,
-} from './volume-ephemeral-guard.js';
+} from "./volume-ephemeral-guard.js";
 import {
   fetchGlobalPgCoverageState,
   fetchMintPgCoverageMap,
   evaluatePgDataCoverageGuard,
   type MintPgCoverageFeatures,
-} from './pg-data-coverage-guard.js';
-import { injectWhitelistDiscoveryCandidates } from './whitelist-discovery-inject.js';
-import { writeDiscoveryCollectorPinMints } from './discovery-collector-pin.js';
-import { injectPriorityDiscoveryCandidates } from './priority-discovery-inject.js';
+} from "./pg-data-coverage-guard.js";
+import { injectWhitelistDiscoveryCandidates } from "./whitelist-discovery-inject.js";
+import { writeDiscoveryCollectorPinMints } from "./discovery-collector-pin.js";
+import { injectPriorityDiscoveryCandidates } from "./priority-discovery-inject.js";
 import {
   buildPriorityDiscoveryMintSet,
   getPriorityOpenMints,
-} from './priority-discovery-registry.js';
+} from "./priority-discovery-registry.js";
 import {
   isLiveOscarMcapTieringEnabled,
   liveOscarBelowMcapThresholdUsd,
@@ -78,11 +101,11 @@ import {
   resolveLiveOscarMcapTier,
   type LiveOscarMcapTier,
   type LiveOscarTradeTier,
-} from '../live-oscar-mcap-tier.js';
+} from "../live-oscar-mcap-tier.js";
 import {
   evaluateLiveOscarScalpWaveDiscovery,
   isLiveOscarScalpWaveLaneEnabled,
-} from '../live-oscar-scalp-wave.js';
+} from "../live-oscar-scalp-wave.js";
 import {
   evaluateLiveOscarRunnerProbeDiscovery,
   isRunnerProbeLaneEnabled,
@@ -90,50 +113,53 @@ import {
   runnerProbeRunnerFetchConfig,
   summariseRunnerPass,
   type RunnerProbeDiscoveryEval,
-} from '../live-oscar-runner-probe.js';
+} from "../live-oscar-runner-probe.js";
 import {
   evaluateLiveOscarRunnerLiteDiscovery,
   isRunnerLiteLaneEnabled,
   runnerLiteDiscoveryPrefilter,
   runnerLiteRunnerFetchConfig,
   type RunnerLiteDiscoveryEval,
-} from '../live-oscar-runner-lite.js';
+} from "../live-oscar-runner-lite.js";
 import {
   evaluateLiveOscarPervyyVystrelDiscovery,
   isPervyyVystrelObservabilityActive,
   pervyyVystrelDiscoveryPrefilter,
-} from '../live-oscar-pervyy-vystrel.js';
+} from "../live-oscar-pervyy-vystrel.js";
 import {
   resolveDiscoveryHardMcapMinUsd,
   resolveDiscoverySqlMinMarketCapUsd,
-} from './discovery-mcap-floor.js';
+} from "./discovery-mcap-floor.js";
 import {
   evaluateOscarIntelGateForRunnerProbe,
   evaluateOscarIntelGateForRunnerLite,
   evaluateOscarIntelGateForProd,
   oscarIntelGateSnapshotFromResult,
   type OscarIntelGateSnapshot,
-} from './oscar-intel-gate.js';
-import { injectVolumeLeaderCandidates } from './volume-leader-inject.js';
-import { refreshPriorityMintPricesFromJupiter } from './priority-dip-price-refresh.js';
-import { crossCheckVolumeLeaderSnapshotsFromJupiter } from './volume-leader-jupiter-crosscheck.js';
-import { refreshNearMissDipPricesFromJupiter } from './near-miss-dip-jupiter-refresh.js';
-import { shouldEvaluateMint } from './discovery-eval-throttle.js';
+} from "./oscar-intel-gate.js";
+import { injectVolumeLeaderCandidates } from "./volume-leader-inject.js";
+import { refreshPriorityMintPricesFromJupiter } from "./priority-dip-price-refresh.js";
+import { crossCheckVolumeLeaderSnapshotsFromJupiter } from "./volume-leader-jupiter-crosscheck.js";
+import { refreshNearMissDipPricesFromJupiter } from "./near-miss-dip-jupiter-refresh.js";
+import { shouldEvaluateMint } from "./discovery-eval-throttle.js";
 import {
   fetchRunnerContextMap,
   evaluateRunner,
   type RunnerWindowFeatures,
-} from './runner-mode.js';
+} from "./runner-mode.js";
 import {
   buildKnownMintTradeHistory,
   isFamiliarMint,
   isKnownMint,
   isPgCoverageKnownMint as isPgCoverageKnownMintFromHistory,
-} from './known-mint.js';
-import { scaleMcapWithPrice } from '../pricing/mcap-snapshot.js';
+} from "./known-mint.js";
+import { scaleMcapWithPrice } from "../pricing/mcap-snapshot.js";
 
-function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: ReadonlySet<string>): void {
-  if (cfg.strategyId !== 'live-oscar') return;
+function syncDiscoveryCollectorPin(
+  cfg: PaperTraderConfig,
+  priorityMintSet: ReadonlySet<string>,
+): void {
+  if (cfg.strategyId !== "live-oscar") return;
   try {
     writeDiscoveryCollectorPinMints(priorityMintSet);
   } catch {
@@ -144,7 +170,7 @@ function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: Read
 export interface HoldersDecisionMeta {
   holders_db: number;
   holders_live: number | null;
-  holders_source: 'qn_addon' | 'qn_gpa' | 'cache_pos' | 'db' | 'none';
+  holders_source: "qn_addon" | "qn_gpa" | "cache_pos" | "db" | "none";
   holders_age_ms: number | null;
   holders_fail_reason?: string;
   holders_used_for_gate: number;
@@ -168,18 +194,23 @@ export interface EvalDecision {
    *  - `runner`          — параллельный Runner Mode (1.11.232): магнит открытого интереса по 1h/12h/24h
    */
   entryPath?:
-    | 'dip_windows'
-    | 'impulse_pg_snap'
-    | 'runner'
-    | 'post_crash_fast'
-    | 'stress_kill_reentry'
-    | 'preset_c_pullback'
-    | 'preset_c_spike';
+    | "dip_windows"
+    | "impulse_pg_snap"
+    | "runner"
+    | "post_crash_fast"
+    | "stress_kill_reentry"
+    | "preset_c_pullback"
+    | "preset_c_spike";
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); runner lanes parallel. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
-  positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
+  liveOscarTradeLane?:
+    | "prod"
+    | "scalp_wave"
+    | "runner_probe"
+    | "runner_lite"
+    | "pervyy_vystrel";
+  positionSource?: "runner_probe" | "runner_lite" | "pervyy_vystrel";
   /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
   /** PR1 shadow — Phase 0 onboard telemetry (full machine PR3). */
@@ -199,6 +230,11 @@ export interface EvalDecision {
       unclusteredBuyers: number | null;
       pass: boolean;
     };
+    clusterDump?: {
+      clusterSellRatio: number | null;
+      clusterUniqueSellers: number | null;
+      pass: boolean;
+    };
   };
 }
 
@@ -210,7 +246,7 @@ export interface DiscoveryTickResult {
   /** Live deep audit rows (flushed via `journalAppend` in `papertrader/main`). */
   auditRows?: Record<string, unknown>[];
   /** PG coverage guard mode flip this tick (for ADVICE Telegram). */
-  pgCoverageModeChanged?: 'full' | 'relaxed' | null;
+  pgCoverageModeChanged?: "full" | "relaxed" | null;
   /** Priority tier mint set this tick (open + near-ready + recent eval + SQL pool). */
   priorityMintSet?: Set<string>;
 }
@@ -225,7 +261,7 @@ function allowDeepAuditLog(key: string, minMs: number): boolean {
   return true;
 }
 
-export { evaluatedAtMap } from './discovery-eval-throttle.js';
+export { evaluatedAtMap } from "./discovery-eval-throttle.js";
 export const lastEntryTsByMintMap = new Map<string, number>();
 /** Последний `exitTs` полного закрытия по mint (ms) — пауза перед повторным входом в тот же mint. */
 export const lastPostExitBuyCooldownTsByMintMap = new Map<string, number>();
@@ -238,13 +274,22 @@ export type LastExitMarketSnapshot = {
 };
 
 /** Рыночная цена последнего полного выхода (USD/token) — гейт повторного входа vs снимок. */
-export const lastExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
+export const lastExitMarketSnapshotByMintMap = new Map<
+  string,
+  LastExitMarketSnapshot
+>();
 
 /** Last on-chain / policy exit (never RECONCILE_ORPHAN / PERIODIC_HEAL) — source of truth for re-entry gates. */
-export const lastRealExitMarketSnapshotByMintMap = new Map<string, LastExitMarketSnapshot>();
+export const lastRealExitMarketSnapshotByMintMap = new Map<
+  string,
+  LastExitMarketSnapshot
+>();
 
 /** Ledger-only closes must not replace a recent real exit price (FLASH → RECONCILE ~seconds later). */
-const ADMIN_LEDGER_EXIT_REASONS = new Set(['RECONCILE_ORPHAN', 'PERIODIC_HEAL']);
+const ADMIN_LEDGER_EXIT_REASONS = new Set([
+  "RECONCILE_ORPHAN",
+  "PERIODIC_HEAL",
+]);
 const RECONCILE_REENTRY_GRACE_MS = 10 * 60_000;
 
 export function isAdminLedgerExitReason(exitReason?: string): boolean {
@@ -252,7 +297,9 @@ export function isAdminLedgerExitReason(exitReason?: string): boolean {
 }
 
 /** Snapshot used by post-exit dip/cooldown gates (ignores admin-only ledger closes when a real exit exists). */
-export function reentryExitSnapshotForGate(mint: string): LastExitMarketSnapshot | undefined {
+export function reentryExitSnapshotForGate(
+  mint: string,
+): LastExitMarketSnapshot | undefined {
   const real = lastRealExitMarketSnapshotByMintMap.get(mint);
   if (real) return real;
   const snap = lastExitMarketSnapshotByMintMap.get(mint);
@@ -290,9 +337,18 @@ export function shouldPreserveRealExitReentryGate(
   return isPostExitBuyCooldownActive(cfg, mint, nowMs);
 }
 
-const STRESS_EXIT_REASONS = new Set(['FLASH_CRASH_KILL', 'SL', 'KILLSTOP', 'LIQ_DRAIN']);
+const STRESS_EXIT_REASONS = new Set([
+  "FLASH_CRASH_KILL",
+  "SL",
+  "KILLSTOP",
+  "LIQ_DRAIN",
+]);
 
-type PartialSellForReentry = { marketPrice?: number; price?: number; reason?: string };
+type PartialSellForReentry = {
+  marketPrice?: number;
+  price?: number;
+  reason?: string;
+};
 
 /** RECONCILE_ORPHAN books remainder at avgEntry; re-entry gate needs last on-chain sell price. */
 export function resolveReconcileOrphanReentryGateMeta(
@@ -376,10 +432,19 @@ export function recordAfterFullCloseForMintRepeatGate(
 
 export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
   cfg: PaperTraderConfig,
-  ct: { mint: string; exitTs: number; theoretical_exit_price: number; effective_exit_price: number; netPnlUsd: number; exitReason: string },
+  ct: {
+    mint: string;
+    exitTs: number;
+    theoretical_exit_price: number;
+    effective_exit_price: number;
+    netPnlUsd: number;
+    exitReason: string;
+  },
   opts?: { openTrade?: { partialSells: PartialSellForReentry[] } },
 ): void {
-  if (shouldPreserveRealExitReentryGate(ct.mint, ct.exitReason, ct.exitTs, cfg)) {
+  if (
+    shouldPreserveRealExitReentryGate(ct.mint, ct.exitReason, ct.exitTs, cfg)
+  ) {
     return;
   }
   let theo = ct.theoretical_exit_price;
@@ -388,7 +453,7 @@ export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
     netPnlUsd: ct.netPnlUsd,
     exitReason: ct.exitReason,
   };
-  if (ct.exitReason === 'RECONCILE_ORPHAN' && opts?.openTrade) {
+  if (ct.exitReason === "RECONCILE_ORPHAN" && opts?.openTrade) {
     const resolved = resolveReconcileOrphanReentryGateMeta(opts.openTrade, ct);
     if (resolved) {
       theo = resolved.marketUsd;
@@ -396,17 +461,34 @@ export function recordAfterFullCloseForMintRepeatGateFromClosedTrade(
       meta = { netPnlUsd: resolved.netPnlUsd, exitReason: resolved.exitReason };
     }
   }
-  recordAfterFullCloseForMintRepeatGate(cfg, ct.mint, ct.exitTs, theo, eff, meta);
+  recordAfterFullCloseForMintRepeatGate(
+    cfg,
+    ct.mint,
+    ct.exitTs,
+    theo,
+    eff,
+    meta,
+  );
 }
 
-export function isLiveReentryHybridGateEnabled(cfg: PaperTraderConfig): boolean {
-  return cfg.liveReentryMinDropFromLastExitPct > 0 && cfg.liveReentryMaxWaitMinutes > 0;
+export function isLiveReentryHybridGateEnabled(
+  cfg: PaperTraderConfig,
+): boolean {
+  return (
+    cfg.liveReentryMinDropFromLastExitPct > 0 &&
+    cfg.liveReentryMaxWaitMinutes > 0
+  );
 }
 
 function lastExitWasLossOrStress(snap: LastExitMarketSnapshot): boolean {
   if ((snap.netPnlUsd ?? 0) < 0) return true;
-  const r = snap.exitReason ?? '';
-  return r === 'FLASH_CRASH_KILL' || r === 'SL' || r === 'KILLSTOP' || r === 'LIQ_DRAIN';
+  const r = snap.exitReason ?? "";
+  return (
+    r === "FLASH_CRASH_KILL" ||
+    r === "SL" ||
+    r === "KILLSTOP" ||
+    r === "LIQ_DRAIN"
+  );
 }
 
 function isLiveReentryGateExpired(
@@ -443,14 +525,18 @@ export function appendLiveReentryHybridGateReasons(
 
   const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
-    const suffix = lossExit ? '_loss' : '';
+    const suffix = lossExit ? "_loss" : "";
     out.push(
       `reentry_wait_dip${dropPct}pct${suffix}(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
     );
   }
 }
 
-function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: string, out: string[]): void {
+function appendLegacyPostExitBuyCooldownReasons(
+  cfg: PaperTraderConfig,
+  mint: string,
+  out: string[],
+): void {
   if (!cfg.dipLossExitCooldownEnabled) return;
   const lossMin = cfg.dipLossExitCooldownMinutes;
   const lossH = cfg.dipLossExitCooldownHours;
@@ -458,7 +544,7 @@ function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: st
   if (lastExit <= 0) return;
 
   let resumeAt = 0;
-  let label = '';
+  let label = "";
   if (Number(lossMin) > 0) {
     resumeAt = lastExit + lossMin * 60_000;
     label = `${lossMin}m`;
@@ -492,7 +578,9 @@ export function appendPostExitReentryGateReasons(
 let postExitReentryGatePaperCfg: PaperTraderConfig | null = null;
 
 /** Live execution pipeline (buy_open / entry_split / dca) — same cfg as discovery gates. */
-export function configurePostExitReentryGatePaperCfg(cfg: PaperTraderConfig): void {
+export function configurePostExitReentryGatePaperCfg(
+  cfg: PaperTraderConfig,
+): void {
   postExitReentryGatePaperCfg = cfg;
 }
 
@@ -502,7 +590,12 @@ export function postExitReentryGateReasonsForLiveBuy(
 ): string[] {
   if (!postExitReentryGatePaperCfg || !(candidatePriceUsd > 0)) return [];
   const reasons: string[] = [];
-  appendPostExitReentryGateReasons(postExitReentryGatePaperCfg, mint, candidatePriceUsd, reasons);
+  appendPostExitReentryGateReasons(
+    postExitReentryGatePaperCfg,
+    mint,
+    candidatePriceUsd,
+    reasons,
+  );
   return reasons;
 }
 
@@ -535,7 +628,8 @@ export function recordPostExitBuyCooldownIfApplicable(
 ): void {
   const h = cfg.dipLossExitCooldownHours;
   const m = cfg.dipLossExitCooldownMinutes;
-  if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
+  if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0)))
+    return;
   if (netPnlUsd != null && netPnlUsd >= -1e-9) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
@@ -584,12 +678,16 @@ function buildFeatures(
     price_usd: +Number(row.price_usd || 0).toFixed(8),
     snapshot_ts_ms: snapshotRowTsMs(row.ts),
     liq_usd: +Number(row.liquidity_usd || 0).toFixed(0),
-    pair_address: row.pair_address != null && String(row.pair_address).trim() ? String(row.pair_address) : null,
+    pair_address:
+      row.pair_address != null && String(row.pair_address).trim()
+        ? String(row.pair_address)
+        : null,
     vol5m_usd: +Number(row.volume_5m || 0).toFixed(0),
     vol1h_usd: +Number(row.volume_1h ?? 0).toFixed(0),
     buys5m: row.buys_5m,
     sells5m: row.sells_5m,
-    buy_sell_ratio_5m: row.sells_5m > 0 ? +(row.buys_5m / row.sells_5m).toFixed(2) : null,
+    buy_sell_ratio_5m:
+      row.sells_5m > 0 ? +(row.buys_5m / row.sells_5m).toFixed(2) : null,
     holders: row.holder_count,
     token_age_min: +Number(row.token_age_min ?? 0).toFixed(1),
     dip_pct: dipPct !== null ? +dipPct.toFixed(2) : null,
@@ -620,7 +718,10 @@ function buildFeatures(
       threshold_pct: cfg.dipLocalHighVetoMaxDistancePct,
       veto_windows_min: cfg.dipLocalHighVetoWindowsMin,
       distance_from_high_pct: Object.fromEntries(
-        Object.entries(localHighVeto.distanceFromHighPct).map(([k, v]) => [String(k), v]),
+        Object.entries(localHighVeto.distanceFromHighPct).map(([k, v]) => [
+          String(k),
+          v,
+        ]),
       ),
       vetoed: localHighVeto.reasons.length > 0,
       veto_reasons: localHighVeto.reasons,
@@ -682,32 +783,37 @@ async function warmupSnapshotHolderCounts(
   }
 }
 
-export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<DiscoveryTickResult> {
+export async function runDipDiscovery(
+  cfg: PaperTraderConfig,
+): Promise<DiscoveryTickResult> {
   const [migRows, postRows] = await Promise.all([
-    cfg.enableMigrationLane ? fetchSnapshotLaneCandidates(cfg, 'migration_event') : Promise.resolve([]),
-    cfg.enablePostLane ? fetchSnapshotLaneCandidates(cfg, 'post_migration') : Promise.resolve([]),
+    cfg.enableMigrationLane
+      ? fetchSnapshotLaneCandidates(cfg, "migration_event")
+      : Promise.resolve([]),
+    cfg.enablePostLane
+      ? fetchSnapshotLaneCandidates(cfg, "post_migration")
+      : Promise.resolve([]),
   ]);
   let snapshotTagged: Array<{ row: SnapshotCandidateRow; lane: Lane }> = [
-    ...migRows.map((row) => ({ row, lane: 'migration_event' as const })),
-    ...postRows.map((row) => ({ row, lane: 'post_migration' as const })),
+    ...migRows.map((row) => ({ row, lane: "migration_event" as const })),
+    ...postRows.map((row) => ({ row, lane: "post_migration" as const })),
   ];
   snapshotTagged = filterSnapshotTaggedByMintBlacklist(cfg, snapshotTagged);
-  const wlInjected = await injectWhitelistDiscoveryCandidates(cfg, snapshotTagged);
-  if (wlInjected.length > 0) {
-    snapshotTagged = [...snapshotTagged, ...wlInjected];
-  }
-  const { injected: priorityInjected, priorityMintSet } = await injectPriorityDiscoveryCandidates(
+  const wlInjected = await injectWhitelistDiscoveryCandidates(
     cfg,
     snapshotTagged,
   );
+  if (wlInjected.length > 0) {
+    snapshotTagged = [...snapshotTagged, ...wlInjected];
+  }
+  const { injected: priorityInjected, priorityMintSet } =
+    await injectPriorityDiscoveryCandidates(cfg, snapshotTagged);
   for (const { row } of snapshotTagged) priorityMintSet.add(row.mint);
   if (priorityInjected.length > 0) {
     snapshotTagged = [...snapshotTagged, ...priorityInjected];
   }
-  const { injected: volumeInjected, volumeLeaderMintSet } = await injectVolumeLeaderCandidates(
-    cfg,
-    snapshotTagged,
-  );
+  const { injected: volumeInjected, volumeLeaderMintSet } =
+    await injectVolumeLeaderCandidates(cfg, snapshotTagged);
   if (volumeInjected.length > 0) {
     snapshotTagged = [...snapshotTagged, ...volumeInjected];
   }
@@ -724,7 +830,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   }
   if (snapshotTagged.length === 0) {
     syncDiscoveryCollectorPin(cfg, priorityMintSet);
-    return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
+    return {
+      discovered: 0,
+      evaluated: 0,
+      passed: 0,
+      decisions: [],
+      priorityMintSet,
+    };
   }
 
   /**
@@ -751,7 +863,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       shouldEvaluate(row.mint, priorityMintSet, volumeLeaderMintSet, cfg),
     );
   }
-  const allowedSnapshotTagged = snapshotTagged.filter(({ row }) => allowedFlag.get(row.mint) === true);
+  const allowedSnapshotTagged = snapshotTagged.filter(
+    ({ row }) => allowedFlag.get(row.mint) === true,
+  );
 
   if (allowedSnapshotTagged.length === 0) {
     /** Все mint'ы на throttle — пишем deep-аудит для whitelist + priority tier. */
@@ -767,14 +881,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             `${row.mint}:tick_skip`,
             cfg.discoveryDeepAuditUniverseMissMinMs,
           )
-        ) continue;
+        )
+          continue;
         auditRowsThrottle.push({
-          kind: 'live_discovery_tick_skip',
+          kind: "live_discovery_tick_skip",
           mint: row.mint,
           symbol: row.symbol,
           lane,
           source: row.source,
-          reason: 'reeval_throttle',
+          reason: "reeval_throttle",
           discoveryReevalSec: reevalAfterSec,
         });
       }
@@ -809,36 +924,51 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         : isRunnerLiteLaneEnabled(cfg)
           ? runnerLiteRunnerFetchConfig(cfg)
           : { ...cfg, runnerModeEnabled: false };
-  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
-    await Promise.all([
-      fetchDipContextMap(cfg, rowsForCtx),
-      fetchPolicyAPlusContextMap(cfg, rowsForCtx),
-      fetchTrendStructureContextMap(cfg, rowsForCtx),
-      fetchPostCrashContextMap(cfg, rowsForCtx),
-      fetchVolumeSybilContextMap(cfg, rowsForCtx),
-      fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
-      fetchGlobalPgCoverageState(cfg),
-      fetchRunnerContextMap(runnerMapCfg, rowsForCtx),
-    ]);
+  const [
+    dipMap,
+    policyAPlusMap,
+    trendStructureMap,
+    postCrashMap,
+    volumeSybilMap,
+    volumeEphemeralMap,
+    globalPgCoverage,
+    runnerMap,
+  ] = await Promise.all([
+    fetchDipContextMap(cfg, rowsForCtx),
+    fetchPolicyAPlusContextMap(cfg, rowsForCtx),
+    fetchTrendStructureContextMap(cfg, rowsForCtx),
+    fetchPostCrashContextMap(cfg, rowsForCtx),
+    fetchVolumeSybilContextMap(cfg, rowsForCtx),
+    fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
+    fetchGlobalPgCoverageState(cfg),
+    fetchRunnerContextMap(runnerMapCfg, rowsForCtx),
+  ]);
   /** Jupiter spot refresh only after PG dip context — not on raw SQL pool (1.11.244 regression fix). */
   const jupiterPriorityMintSet = buildPriorityDiscoveryMintSet(cfg);
   const jupiterAlreadyRefreshed = new Set<string>();
   const { refreshedMints: volumeLeaderJupiterRefreshed } =
-    await crossCheckVolumeLeaderSnapshotsFromJupiter(cfg, rowsForCtx, volumeLeaderMintSet);
+    await crossCheckVolumeLeaderSnapshotsFromJupiter(
+      cfg,
+      rowsForCtx,
+      volumeLeaderMintSet,
+    );
   for (const m of volumeLeaderJupiterRefreshed) jupiterAlreadyRefreshed.add(m);
-  const { refreshedMints: priorityJupiterRefreshed } = await refreshPriorityMintPricesFromJupiter(
+  const { refreshedMints: priorityJupiterRefreshed } =
+    await refreshPriorityMintPricesFromJupiter(
+      cfg,
+      rowsForCtx,
+      jupiterPriorityMintSet,
+      jupiterAlreadyRefreshed,
+    );
+  for (const m of priorityJupiterRefreshed) jupiterAlreadyRefreshed.add(m);
+  await refreshNearMissDipPricesFromJupiter(
     cfg,
     rowsForCtx,
-    jupiterPriorityMintSet,
+    dipMap,
     jupiterAlreadyRefreshed,
   );
-  for (const m of priorityJupiterRefreshed) jupiterAlreadyRefreshed.add(m);
-  await refreshNearMissDipPricesFromJupiter(cfg, rowsForCtx, dipMap, jupiterAlreadyRefreshed);
-  const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> = await fetchMintPgCoverageMap(
-    cfg,
-    rowsForCtx,
-    globalPgCoverage,
-  );
+  const mintPgCoverageMap: Map<string, MintPgCoverageFeatures> =
+    await fetchMintPgCoverageMap(cfg, rowsForCtx, globalPgCoverage);
   await warmupSnapshotHolderCounts(cfg, allowedSnapshotTagged);
 
   const decisions: EvalDecision[] = [];
@@ -880,15 +1010,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           `${row.mint}:tick_skip`,
           cfg.discoveryDeepAuditUniverseMissMinMs,
         )
-      ) continue;
+      )
+        continue;
       auditRows.push({
-        kind: 'live_discovery_tick_skip',
+        kind: "live_discovery_tick_skip",
         mint: row.mint,
         symbol: row.symbol,
         lane,
         source: row.source,
-        reason: 'reeval_throttle',
-        discoveryReevalSec: resolveDiscoveryReevalSec(cfg, row.mint, priorityMintSet, volumeLeaderMintSet),
+        reason: "reeval_throttle",
+        discoveryReevalSec: resolveDiscoveryReevalSec(
+          cfg,
+          row.mint,
+          priorityMintSet,
+          volumeLeaderMintSet,
+        ),
       });
     }
   }
@@ -903,12 +1039,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      * byte-for-byte the current PG path. On the ON path any DeFi failure falls back to PG.
      */
     let defiMcap: ShyftDefiMcapResult | null = null;
-    if (cfg.shyftDefiMcapEnabled && cfg.strategyId === 'live-oscar') {
-      const fetched = await resolveShyftDefiMcap(row.mint, { ttlMs: cfg.shyftDefiMcapTtlMs });
+    if (cfg.shyftDefiMcapEnabled && cfg.strategyId === "live-oscar") {
+      const fetched = await resolveShyftDefiMcap(row.mint, {
+        ttlMs: cfg.shyftDefiMcapTtlMs,
+      });
       if (fetched && (fetched.mcapUsd != null || fetched.liqUsd != null)) {
         defiMcap = fetched;
         auditRows.push({
-          kind: 'live_shyft_defi_mcap',
+          kind: "live_shyft_defi_mcap",
           mint: row.mint,
           lane: String(lane),
           pgMcapUsd: row.market_cap_usd ?? null,
@@ -928,7 +1066,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryDiscoveryEnabled &&
-      cfg.strategyId === 'live-oscar' &&
+      cfg.strategyId === "live-oscar" &&
       isShyftShadowEnabled()
     ) {
       const nowPrimary = Date.now();
@@ -941,13 +1079,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         nowMs: nowPrimary,
         maxStaleMs: cfg.shyftMaxStaleMs,
       });
-      if (picked.source === 'stream' && picked.priceUsd != null && picked.priceUsd > 0 && streamPrimary) {
+      if (
+        picked.source === "stream" &&
+        picked.priceUsd != null &&
+        picked.priceUsd > 0 &&
+        streamPrimary
+      ) {
         evalOverrides.price_usd = picked.priceUsd;
         auditRows.push(
           buildPricePrimaryEvent({
             mint: row.mint,
             lane: String(lane),
-            surface: 'entry',
+            surface: "entry",
             baselinePriceUsd: row.price_usd ?? null,
             streamPriceUsd: streamPrimary.priceUsd,
             streamTsMs: streamPrimary.streamTsMs,
@@ -958,8 +1101,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         );
       }
     }
-    if (defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0) evalOverrides.market_cap_usd = defiMcap.mcapUsd;
-    if (defiMcap?.liqUsd != null && defiMcap.liqUsd > 0) evalOverrides.liquidity_usd = defiMcap.liqUsd;
+    if (defiMcap?.mcapUsd != null && defiMcap.mcapUsd > 0)
+      evalOverrides.market_cap_usd = defiMcap.mcapUsd;
+    if (defiMcap?.liqUsd != null && defiMcap.liqUsd > 0)
+      evalOverrides.liquidity_usd = defiMcap.liqUsd;
     if (
       evalOverrides.price_usd != null &&
       evalOverrides.market_cap_usd == null &&
@@ -974,7 +1119,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
       if (scaled != null && scaled > 0) evalOverrides.market_cap_usd = scaled;
     }
-    const evalRow = Object.keys(evalOverrides).length > 0 ? { ...row, ...evalOverrides } : row;
+    const evalRow =
+      Object.keys(evalOverrides).length > 0
+        ? { ...row, ...evalOverrides }
+        : row;
 
     const discoveryMcap = resolveDiscoveryRefMcap(row, {
       defiMcapUsd: defiMcap?.mcapUsd,
@@ -982,7 +1130,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     });
     const hardMcapReasons: string[] = [];
     const isVolumeLeader = volumeLeaderMintSet.has(row.mint);
-    const hardMinMcap = resolveDiscoveryHardMcapMinUsd(cfg, { volumeLeader: isVolumeLeader });
+    const hardMinMcap = resolveDiscoveryHardMcapMinUsd(cfg, {
+      volumeLeader: isVolumeLeader,
+    });
     if (hardMinMcap > 0 && discoveryMcap.refMcapUsd + 1e-9 < hardMinMcap) {
       hardMcapReasons.push(
         `discovery_hard_mcap=${Math.round(discoveryMcap.refMcapUsd)}<${hardMinMcap}_src=${discoveryMcap.source}`,
@@ -997,7 +1147,17 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         ageMin: +Number(row.age_min ?? 0).toFixed(1),
         pass: false,
         reasons: hardMcapReasons,
-        features: buildFeatures(evalRow, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        features: buildFeatures(
+          evalRow,
+          null,
+          null,
+          null,
+          cfg,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ),
         whale: null,
       });
       continue;
@@ -1006,8 +1166,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const refMcap = discoveryMcap.refMcapUsd;
     const oscarTier: LiveOscarMcapTier = isLiveOscarMcapTieringEnabled(cfg)
       ? resolveLiveOscarMcapTier(cfg, refMcap)
-      : 'prod';
-    if (oscarTier === 'below') {
+      : "prod";
+    if (oscarTier === "below") {
       const belowReasons = [`mcap<${liveOscarBelowMcapThresholdUsd(cfg)}`];
       decisions.push({
         lane,
@@ -1017,18 +1177,33 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         ageMin: +Number(row.age_min ?? 0).toFixed(1),
         pass: false,
         reasons: belowReasons,
-        features: buildFeatures(evalRow, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        features: buildFeatures(
+          evalRow,
+          null,
+          null,
+          null,
+          cfg,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ),
         whale: null,
       });
       continue;
     }
     const tierCfg = liveOscarTierEntryConfig(cfg, oscarTier);
     const mcapGateCfg =
-      isVolumeLeader && resolveDiscoverySqlMinMarketCapUsd(cfg) < (cfg.discoveryMinMarketCapUsd ?? 0)
-        ? { ...tierCfg, discoveryMinMarketCapUsd: resolveDiscoverySqlMinMarketCapUsd(cfg) }
+      isVolumeLeader &&
+      resolveDiscoverySqlMinMarketCapUsd(cfg) <
+        (cfg.discoveryMinMarketCapUsd ?? 0)
+        ? {
+            ...tierCfg,
+            discoveryMinMarketCapUsd: resolveDiscoverySqlMinMarketCapUsd(cfg),
+          }
         : tierCfg;
     const journalTier: LiveOscarTradeTier =
-      oscarTier === 'micro' ? 'micro' : oscarTier === 'low' ? 'low' : 'prod';
+      oscarTier === "micro" ? "micro" : oscarTier === "low" ? "low" : "prod";
 
     const v = priorityMintSet.has(row.mint)
       ? evaluateSnapshotPriorityTier(mcapGateCfg, evalRow, lane)
@@ -1038,7 +1213,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     });
     const snapshotGatePass = v.pass && globalReasons.length === 0;
     const lastExitSnap = reentryExitSnapshotForGate(row.mint);
-    const stressReentryCtx = getStressKillReentryContext(cfg, lastExitSnap, evalRow.price_usd);
+    const stressReentryCtx = getStressKillReentryContext(
+      cfg,
+      lastExitSnap,
+      evalRow.price_usd,
+    );
     const dipTierCfg =
       stressReentryCtx &&
       cfg.liveStressReentryDipMaxDropPct < tierCfg.dipMaxDropPct
@@ -1046,13 +1225,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         : tierCfg;
     const dipEval = evaluateDip(dipTierCfg, evalRow, dipMap.get(row.mint));
     let dipReasonsForGate = dipEval.reasons;
-    let entryPath: EvalDecision['entryPath'];
+    let entryPath: EvalDecision["entryPath"];
     let recoveryVeto: RecoveryVetoResult | undefined;
     let localHighVeto: LocalHighVetoResult | undefined;
     let trendStructureVeto: TrendStructureVetoResult | undefined;
     let postCrashFastPath: PostCrashFastPathResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
-      entryPath = 'dip_windows';
+      entryPath = "dip_windows";
     } else if (snapshotGatePass) {
       const stressPath = evaluateStressKillReentryPath(
         cfg,
@@ -1062,24 +1241,36 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
       if (stressPath.pass) {
         dipReasonsForGate = [];
-        entryPath = 'stress_kill_reentry';
+        entryPath = "stress_kill_reentry";
       } else if (stressPath.reasons.length > 0) {
         dipReasonsForGate = [...dipReasonsForGate, ...stressPath.reasons];
       }
     }
     if (entryPath == null && snapshotGatePass && cfg.postCrashFastPathEnabled) {
-      postCrashFastPath = evaluatePostCrashFastPath(tierCfg, row, postCrashMap.get(row.mint));
+      postCrashFastPath = evaluatePostCrashFastPath(
+        tierCfg,
+        row,
+        postCrashMap.get(row.mint),
+      );
       if (postCrashFastPath.pass) {
         dipReasonsForGate = [];
-        entryPath = 'post_crash_fast';
+        entryPath = "post_crash_fast";
       } else if (postCrashFastPath.reasons.length > 0) {
-        dipReasonsForGate = [...dipReasonsForGate, ...postCrashFastPath.reasons];
+        dipReasonsForGate = [
+          ...dipReasonsForGate,
+          ...postCrashFastPath.reasons,
+        ];
       }
     } else if (snapshotGatePass && cfg.entryImpulsePgBypassesDip) {
-      const bypass = await impulsePgSnapTriggerOk(cfg, row.mint, row.source, row.pair_address ?? null);
+      const bypass = await impulsePgSnapTriggerOk(
+        cfg,
+        row.mint,
+        row.source,
+        row.pair_address ?? null,
+      );
       if (bypass) {
         dipReasonsForGate = [];
-        entryPath = 'impulse_pg_snap';
+        entryPath = "impulse_pg_snap";
       }
     }
 
@@ -1103,7 +1294,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const runnerEval = evaluateRunner(cfg, row, runnerMap.get(row.mint));
       runnerFeatures = runnerEval.features;
       if (runnerEval.pass) {
-        entryPath = 'runner';
+        entryPath = "runner";
       } else {
         runnerReasons = runnerEval.reasons;
       }
@@ -1127,10 +1318,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
     if (entryPath != null) {
       const dipLookbackForRecovery =
-        entryPath === 'post_crash_fast'
-          ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
+        entryPath === "post_crash_fast"
+          ? (postCrashFastPath?.dipLookbackUsedMin ??
+            dipEval.dipLookbackUsedMin)
           : dipEval.dipLookbackUsedMin;
-      if (entryPath === 'stress_kill_reentry') {
+      if (entryPath === "stress_kill_reentry") {
         recoveryVeto = { reasons: [], bounces: {} };
       } else {
         const recoveryOpts = stressReentryCtx
@@ -1154,7 +1346,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath = undefined;
       } else {
         localHighVeto = evaluateLocalHighVeto(cfg, row, dipMap.get(row.mint));
-        const skipLocalHigh = shouldBypassLocalHighVetoForPostCrash(cfg, postCrashFastPath, entryPath);
+        const skipLocalHigh = shouldBypassLocalHighVetoForPostCrash(
+          cfg,
+          postCrashFastPath,
+          entryPath,
+        );
         if (!skipLocalHigh && localHighVeto.reasons.length > 0) {
           dipReasonsForGate = [...dipReasonsForGate, ...localHighVeto.reasons];
           entryPath = undefined;
@@ -1167,7 +1363,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           trendStructureMap.get(row.mint),
         );
         if (trendStructureVeto.reasons.length > 0) {
-          dipReasonsForGate = [...dipReasonsForGate, ...trendStructureVeto.reasons];
+          dipReasonsForGate = [
+            ...dipReasonsForGate,
+            ...trendStructureVeto.reasons,
+          ];
           entryPath = undefined;
         }
       }
@@ -1188,7 +1387,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           Date.now(),
           knownMintSupplement,
         );
-        const knownMint = isPgCoverageKnownMint(cfg, row.mint, knownMintHistory);
+        const knownMint = isPgCoverageKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+        );
         const evalRes = evaluatePgDataCoverageGuard(
           cfg,
           row,
@@ -1204,10 +1407,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       if (entryPath != null && cfg.volumeSybilGuardEnabled) {
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
-        const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
-          knownMint,
-        });
+        const knownMint = isKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
+        const evalRes = evaluateVolumeSybilGuard(
+          cfg,
+          row,
+          volumeSybilMap.get(row.mint),
+          {
+            knownMint,
+          },
+        );
         volumeSybilFeatures = evalRes.features;
         if (evalRes.blocked) {
           dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
@@ -1222,11 +1436,22 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           Date.now(),
           knownMintSupplement,
         );
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
-        const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
-          knownMint,
-          familiarMint,
-        });
+        const knownMint = isKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
+        const evalRes = evaluateVolumeEphemeralGuard(
+          cfg,
+          row,
+          volumeEphemeralMap.get(row.mint),
+          {
+            knownMint,
+            familiarMint,
+          },
+        );
         volumeEphemeralFeatures = evalRes.features;
         if (evalRes.blocked) {
           dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
@@ -1243,7 +1468,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      *  - не прошли: всё пусто (нечего блокировать).
      */
     let baseReasons: string[];
-    if (entryPath === 'runner') {
+    if (entryPath === "runner") {
       baseReasons = [...dipReasonsForGate]; // protector-reasons после runner-passed (если есть)
     } else if (entryPath != null) {
       baseReasons = [...v.reasons, ...globalReasons, ...dipReasonsForGate];
@@ -1257,16 +1482,25 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (baseDipPass && cfg.whaleEnabled) {
       whale = await fetchWhaleAnalysis(cfg, row.mint);
       if (whale.creator_dump_block) {
-        whaleReasons.push(`creator_dumping_${(whale.creator_dumped_pct * 100).toFixed(0)}%`);
+        whaleReasons.push(
+          `creator_dumping_${(whale.creator_dumped_pct * 100).toFixed(0)}%`,
+        );
       }
-      if (whale.dca_aggressive_present) whaleReasons.push('dca_aggressive_seller');
-      if (cfg.whaleRequireTrigger && !whale.trigger_fired && !whaleReasons.length) {
-        whaleReasons.push('no_whale_trigger');
+      if (whale.dca_aggressive_present)
+        whaleReasons.push("dca_aggressive_seller");
+      if (
+        cfg.whaleRequireTrigger &&
+        !whale.trigger_fired &&
+        !whaleReasons.length
+      ) {
+        whaleReasons.push("no_whale_trigger");
       }
     }
 
     const cooldownMin =
-      whale?.trigger_fired === 'dca_predictable' ? cfg.dipCooldownMinScalp : cfg.dipCooldownMinDefault;
+      whale?.trigger_fired === "dca_predictable"
+        ? cfg.dipCooldownMinScalp
+        : cfg.dipCooldownMinDefault;
     const lastEntry = lastEntryTsByMintMap.get(row.mint) || 0;
     const minutesSinceLast = (Date.now() - lastEntry) / 60_000;
     const cooldownReasons: string[] = [];
@@ -1276,13 +1510,16 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       );
     }
 
-    if (!isLiveReentryHybridGateEnabled(cfg) && cfg.dipLossExitCooldownEnabled) {
+    if (
+      !isLiveReentryHybridGateEnabled(cfg) &&
+      cfg.dipLossExitCooldownEnabled
+    ) {
       const lossMin = cfg.dipLossExitCooldownMinutes;
       const lossH = cfg.dipLossExitCooldownHours;
       const lastExit = lastPostExitBuyCooldownTsByMintMap.get(row.mint) ?? 0;
       if (lastExit > 0) {
         let resumeAt = 0;
-        let label = '';
+        let label = "";
         if (Number(lossMin) > 0) {
           resumeAt = lastExit + lossMin * 60_000;
           label = `${lossMin}m`;
@@ -1292,14 +1529,25 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
         if (resumeAt > 0 && Date.now() < resumeAt) {
           const leftMin = (resumeAt - Date.now()) / 60_000;
-          cooldownReasons.push(`post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
+          cooldownReasons.push(
+            `post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`,
+          );
         }
       }
     }
 
-    appendPostExitReentryGateReasons(cfg, row.mint, row.price_usd, cooldownReasons);
+    appendPostExitReentryGateReasons(
+      cfg,
+      row.mint,
+      row.price_usd,
+      cooldownReasons,
+    );
 
-    const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
+    const preHoldersReasons = [
+      ...baseReasons,
+      ...whaleReasons,
+      ...cooldownReasons,
+    ];
     const cheapPass = preHoldersReasons.length === 0;
 
     let holdersMeta: HoldersDecisionMeta | undefined;
@@ -1311,17 +1559,19 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         holdersMeta = {
           holders_db: dbHolders,
           holders_live: null,
-          holders_source: 'none',
+          holders_source: "none",
           holders_age_ms: null,
-          holders_fail_reason: 'budget_per_tick',
+          holders_fail_reason: "budget_per_tick",
           holders_used_for_gate: dbHolders,
         };
         if (liveHoldersForGate) {
-          if (cfg.holdersOnFail === 'block') {
-            holderReasons.push('holders_unknown:budget_per_tick');
-          } else if (cfg.holdersOnFail === 'db_fallback') {
+          if (cfg.holdersOnFail === "block") {
+            holderReasons.push("holders_unknown:budget_per_tick");
+          } else if (cfg.holdersOnFail === "db_fallback") {
             if (dbHolders < cfg.globalMinHolderCount) {
-              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+              holderReasons.push(
+                `holders<${cfg.globalMinHolderCount}:db_fallback`,
+              );
             }
           }
         }
@@ -1343,18 +1593,20 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           holdersMeta = {
             holders_db: dbHolders,
             holders_live: null,
-            holders_source: 'none',
+            holders_source: "none",
             holders_age_ms: null,
             holders_fail_reason: r.reason,
             holders_used_for_gate: dbHolders,
           };
           if (liveHoldersForGate) {
-            if (cfg.holdersOnFail === 'block') {
+            if (cfg.holdersOnFail === "block") {
               holderReasons.push(`holders_unknown:${r.reason}`);
-            } else if (cfg.holdersOnFail === 'db_fallback') {
-              holdersMeta.holders_source = 'db';
+            } else if (cfg.holdersOnFail === "db_fallback") {
+              holdersMeta.holders_source = "db";
               if (dbHolders < cfg.globalMinHolderCount) {
-                holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
+                holderReasons.push(
+                  `holders<${cfg.globalMinHolderCount}:db_fallback`,
+                );
               }
             }
           }
@@ -1381,11 +1633,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         oscarIntelProd = oscarIntelGateSnapshotFromResult(ig, true);
         if (ig.blocked) {
           pass = false;
-          mergedReasons = [...mergedReasons, ...ig.reasons.map((r) => `prod_intel_${r}`)];
+          mergedReasons = [
+            ...mergedReasons,
+            ...ig.reasons.map((r) => `prod_intel_${r}`),
+          ];
         } else if (ig.wouldBlock) {
           mergedReasons = [
             ...mergedReasons,
-            'prod_intel_shadow_would_block',
+            "prod_intel_shadow_would_block",
             ...ig.reasons.map((r) => `prod_intel_${r}`),
           ];
         }
@@ -1394,11 +1649,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (pass) passed++;
 
     const reportDipPct =
-      entryPath === 'post_crash_fast'
+      entryPath === "post_crash_fast"
         ? (postCrashFastPath?.features.dropFromPeakPct ?? dipEval.dipPct)
         : dipEval.dipPct;
     const reportDipLookback =
-      entryPath === 'post_crash_fast'
+      entryPath === "post_crash_fast"
         ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
         : dipEval.dipLookbackUsedMin;
 
@@ -1554,7 +1809,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
             ? Number(row.holder_count)
             : null,
         medianVol5m12hUsd: volumeEphemeralFeatures?.medianVol5m12hUsd ?? null,
-        singleTickStaleIgnored: volumeEphemeralFeatures?.singleTickStaleIgnored === true,
+        singleTickStaleIgnored:
+          volumeEphemeralFeatures?.singleTickStaleIgnored === true,
       };
     }
     if (pgDataCoverageFeatures != null) {
@@ -1573,7 +1829,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         sybilCoverageOk: pgDataCoverageFeatures.sybilCoverageOk,
         ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
         knownMintGapBypass: pgDataCoverageFeatures.knownMintGapBypass ?? false,
-        familiarMintStaleBypass: pgDataCoverageFeatures.familiarMintStaleBypass ?? false,
+        familiarMintStaleBypass:
+          pgDataCoverageFeatures.familiarMintStaleBypass ?? false,
         global: {
           pgStaleNow: globalPgCoverage.pgStaleNow,
           systemHourRatio: globalPgCoverage.systemHourRatio,
@@ -1601,8 +1858,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         vol24hUsd: runnerFeatures.vol24hUsd,
         vol1hAvg24hUsd: runnerFeatures.vol1hAvg24hUsd,
         vol1hVelocity: runnerFeatures.vol1hVelocity,
-        bs1h: Number.isFinite(runnerFeatures.bs1h ?? NaN) ? runnerFeatures.bs1h : null,
-        bs12h: Number.isFinite(runnerFeatures.bs12h ?? NaN) ? runnerFeatures.bs12h : null,
+        bs1h: Number.isFinite(runnerFeatures.bs1h ?? NaN)
+          ? runnerFeatures.bs1h
+          : null,
+        bs12h: Number.isFinite(runnerFeatures.bs12h ?? NaN)
+          ? runnerFeatures.bs12h
+          : null,
         vol5mPeak1hUsd: runnerFeatures.vol5mPeak1hUsd,
         liqNowUsd: runnerFeatures.liqNowUsd,
         liqP25_24hUsd: runnerFeatures.liqP25_24hUsd,
@@ -1643,9 +1904,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       whale,
       holdersMeta,
       entryPath,
-      liveOscarTradeLane: 'prod',
+      liveOscarTradeLane: "prod",
       ...(oscarIntelProd ? { oscarIntel: oscarIntelProd } : {}),
-      ...(isLiveOscarMcapTieringEnabled(cfg) ? { liveOscarMcapTier: journalTier } : {}),
+      ...(isLiveOscarMcapTieringEnabled(cfg)
+        ? { liveOscarMcapTier: journalTier }
+        : {}),
     });
   }
 
@@ -1666,7 +1929,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
       const probe = await fetchLatestCrossVenueSnapshotRowForMint(mint);
       if (probe && !passesDiscoveryMinMarketCap(cfg, probe)) continue;
-      const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
+      const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(
+        cfg,
+        probe,
+      );
       const crowded =
         probe != null && sqlReasons.length === 0
           ? explainCrowdedOutOnly(cfg, true)
@@ -1677,7 +1943,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         try {
           snapshotHint = JSON.stringify({
             source: probe.source,
-            ts: probe.ts instanceof Date ? probe.ts.toISOString() : String(probe.ts),
+            ts:
+              probe.ts instanceof Date
+                ? probe.ts.toISOString()
+                : String(probe.ts),
             price_usd: probe.price_usd,
             liquidity_usd: probe.liquidity_usd,
             volume_5m: probe.volume_5m,
@@ -1692,11 +1961,11 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
       auditRows.push({
-        kind: 'live_discovery_universe_miss',
+        kind: "live_discovery_universe_miss",
         mint,
         symbol,
-        lane: 'post_migration',
-        source: probe?.source ?? 'none',
+        lane: "post_migration",
+        source: probe?.source ?? "none",
         reasons,
         snapshotHint,
       });
@@ -1728,10 +1997,20 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           ageMin,
           pass: false,
           reasons: hardMcapReasons,
-          features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+          features: buildFeatures(
+            row,
+            null,
+            null,
+            null,
+            cfg,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+          ),
           whale: null,
-          liveOscarMcapTier: 'scalp_wave',
-          liveOscarTradeLane: 'scalp_wave',
+          liveOscarMcapTier: "scalp_wave",
+          liveOscarTradeLane: "scalp_wave",
         });
         continue;
       }
@@ -1753,11 +2032,22 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           Date.now(),
           knownMintSupplement,
         );
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
+        const knownMint = isKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         if (cfg.volumeSybilGuardEnabled) {
-          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
-            knownMint,
-          });
+          const sybilRes = evaluateVolumeSybilGuard(
+            cfg,
+            row,
+            volumeSybilMap.get(row.mint),
+            {
+              knownMint,
+            },
+          );
           if (sybilRes.blocked) {
             scalpPass = false;
             scalpReasons.push(...sybilRes.blockedReasons);
@@ -1786,18 +2076,31 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         ageMin,
         pass: scalpPass,
         reasons: scalpReasons,
-        features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        features: buildFeatures(
+          row,
+          null,
+          null,
+          null,
+          cfg,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ),
         whale: null,
         entryPath: scalpEval.entryPath,
-        liveOscarMcapTier: 'scalp_wave',
-        liveOscarTradeLane: 'scalp_wave',
+        liveOscarMcapTier: "scalp_wave",
+        liveOscarTradeLane: "scalp_wave",
       });
     }
   }
 
   // Runner lanes: probe ($500 full pass) → else runner_lite fallback (2×$100).
   const probeGuardPassedMints = new Set<string>();
-  const probeOutcomeByMint = new Map<string, { inBand: boolean; fullyPassed: boolean }>();
+  const probeOutcomeByMint = new Map<
+    string,
+    { inBand: boolean; fullyPassed: boolean }
+  >();
 
   if (isRunnerProbeLaneEnabled(cfg)) {
     type ProbeRow = {
@@ -1838,11 +2141,22 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           Date.now(),
           knownMintSupplement,
         );
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
+        const knownMint = isKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         if (cfg.volumeSybilGuardEnabled) {
-          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
-            knownMint,
-          });
+          const sybilRes = evaluateVolumeSybilGuard(
+            cfg,
+            row,
+            volumeSybilMap.get(row.mint),
+            {
+              knownMint,
+            },
+          );
           if (sybilRes.blocked) {
             guardPass = false;
             reasons.push(...sybilRes.blockedReasons);
@@ -1861,14 +2175,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           }
         }
         if (guardPass) {
-          const ig = await evaluateOscarIntelGateForRunnerProbe(row.mint, cfg, ageMin);
-          const intelSnap = oscarIntelGateSnapshotFromResult(ig, probeEval.pass);
+          const ig = await evaluateOscarIntelGateForRunnerProbe(
+            row.mint,
+            cfg,
+            ageMin,
+          );
+          const intelSnap = oscarIntelGateSnapshotFromResult(
+            ig,
+            probeEval.pass,
+          );
           if (ig.required) {
             if (ig.blocked) {
               guardPass = false;
               reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
             } else if (ig.wouldBlock) {
-              reasons.push('runner_probe_intel_shadow_would_block');
+              reasons.push("runner_probe_intel_shadow_would_block");
               reasons.push(...ig.reasons.map((r) => `runner_probe_intel_${r}`));
             }
           }
@@ -1885,11 +2206,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         }
       }
 
-      probeRows.push({ row, lane, ageMin, eval: probeEval, guardPass, reasons });
+      probeRows.push({
+        row,
+        lane,
+        ageMin,
+        eval: probeEval,
+        guardPass,
+        reasons,
+      });
     }
 
     for (const pr of probeRows) {
-      probeOutcomeByMint.set(pr.row.mint, { inBand: true, fullyPassed: pr.guardPass });
+      probeOutcomeByMint.set(pr.row.mint, {
+        inBand: true,
+        fullyPassed: pr.guardPass,
+      });
       if (pr.guardPass) probeGuardPassedMints.add(pr.row.mint);
     }
 
@@ -1903,7 +2234,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (pass) {
         if (rankSlots <= 0) {
           pass = false;
-          outReasons.push('runner_probe_rank_crowded_out');
+          outReasons.push("runner_probe_rank_crowded_out");
         } else {
           rankSlots -= 1;
         }
@@ -1939,8 +2270,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         features: baseFeatures,
         whale: null,
         entryPath: pr.eval.entryPath,
-        liveOscarTradeLane: 'runner_probe',
-        positionSource: 'runner_probe',
+        liveOscarTradeLane: "runner_probe",
+        positionSource: "runner_probe",
         oscarIntel: pr.oscarIntel,
       });
     }
@@ -1961,7 +2292,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     for (const { row, lane } of allowedSnapshotTagged) {
       const discoveryMcap = resolveDiscoveryRefMcap(row);
       const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
-      if (!runnerLiteDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)) {
+      if (
+        !runnerLiteDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)
+      ) {
         continue;
       }
       if (probeGuardPassedMints.has(row.mint)) {
@@ -1992,11 +2325,22 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           Date.now(),
           knownMintSupplement,
         );
-        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
+        const knownMint = isKnownMint(
+          cfg,
+          row.mint,
+          knownMintHistory,
+          Date.now(),
+          knownMintSupplement,
+        );
         if (cfg.volumeSybilGuardEnabled) {
-          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
-            knownMint,
-          });
+          const sybilRes = evaluateVolumeSybilGuard(
+            cfg,
+            row,
+            volumeSybilMap.get(row.mint),
+            {
+              knownMint,
+            },
+          );
           if (sybilRes.blocked) {
             guardPass = false;
             reasons.push(...sybilRes.blockedReasons);
@@ -2015,14 +2359,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           }
         }
         if (guardPass) {
-          const ig = await evaluateOscarIntelGateForRunnerLite(row.mint, cfg, ageMin);
+          const ig = await evaluateOscarIntelGateForRunnerLite(
+            row.mint,
+            cfg,
+            ageMin,
+          );
           const intelSnap = oscarIntelGateSnapshotFromResult(ig, liteEval.pass);
           if (ig.required) {
             if (ig.blocked) {
               guardPass = false;
               reasons.push(...ig.reasons.map((r) => `runner_lite_intel_${r}`));
             } else if (ig.wouldBlock) {
-              reasons.push('runner_lite_intel_shadow_would_block');
+              reasons.push("runner_lite_intel_shadow_would_block");
               reasons.push(...ig.reasons.map((r) => `runner_lite_intel_${r}`));
             }
           }
@@ -2052,7 +2400,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (pass) {
         if (liteRankSlots <= 0) {
           pass = false;
-          outReasons.push('runner_lite_rank_crowded_out');
+          outReasons.push("runner_lite_rank_crowded_out");
         } else {
           liteRankSlots -= 1;
         }
@@ -2088,8 +2436,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         features: baseFeatures,
         whale: null,
         entryPath: lr.eval.entryPath,
-        liveOscarTradeLane: 'runner_lite',
-        positionSource: 'runner_lite',
+        liveOscarTradeLane: "runner_lite",
+        positionSource: "runner_lite",
         oscarIntel: lr.oscarIntel,
       });
     }
@@ -2099,7 +2447,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     for (const { row, lane } of allowedSnapshotTagged) {
       const discoveryMcap = resolveDiscoveryRefMcap(row);
       const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
-      if (!pervyyVystrelDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)) {
+      if (
+        !pervyyVystrelDiscoveryPrefilter(cfg, discoveryMcap.refMcapUsd, ageMin)
+      ) {
         continue;
       }
       const pvEval = evaluateLiveOscarPervyyVystrelDiscovery({
@@ -2135,7 +2485,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       });
       if (pvEval.wouldOnboard) {
         auditRows.push({
-          kind: 'pervyy_vystrel_watch_onboard',
+          kind: "pervyy_vystrel_watch_onboard",
           mint: row.mint,
           symbol: row.symbol,
           lane,
@@ -2148,9 +2498,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         for (const ev of pvEval.shadowAnalyzers?.journalEvents ?? []) {
           auditRows.push(ev);
         }
-      } else if (pvEval.phase === 'phase0' || pvEval.reasons.some((r) => r.startsWith('pervyy_vystrel_'))) {
+      } else if (
+        pvEval.phase === "phase0" ||
+        pvEval.reasons.some((r) => r.startsWith("pervyy_vystrel_"))
+      ) {
         auditRows.push({
-          kind: 'pervyy_vystrel_shadow_skip',
+          kind: "pervyy_vystrel_shadow_skip",
           mint: row.mint,
           symbol: row.symbol,
           lane,
@@ -2158,6 +2511,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           reasons: pvEval.reasons.slice(0, 12),
           phase: pvEval.phase,
         });
+        for (const ev of pvEval.shadowAnalyzers?.journalEvents ?? []) {
+          auditRows.push(ev);
+        }
       }
       decisions.push({
         lane,
@@ -2169,14 +2525,15 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         reasons: pvEval.reasons,
         features: baseFeatures,
         whale: null,
-        liveOscarTradeLane: 'pervyy_vystrel',
-        positionSource: 'pervyy_vystrel',
+        liveOscarTradeLane: "pervyy_vystrel",
+        positionSource: "pervyy_vystrel",
         pervyyVystrel: {
           phase: pvEval.phase,
           wouldOnboard: pvEval.wouldOnboard,
           shadowMode: pvEval.shadowMode,
           volAuth: pvEval.shadowAnalyzers?.volAuth ?? undefined,
           organicFlow: pvEval.shadowAnalyzers?.organicFlow ?? undefined,
+          clusterDump: pvEval.shadowAnalyzers?.clusterDump ?? undefined,
         },
       });
     }
@@ -2212,4 +2569,4 @@ export function isPgCoverageKnownMint(
   return isPgCoverageKnownMintFromHistory(cfg, mint, history, nowMs);
 }
 
-export { isFamiliarMint, isKnownMint } from './known-mint.js';
+export { isFamiliarMint, isKnownMint } from "./known-mint.js";
