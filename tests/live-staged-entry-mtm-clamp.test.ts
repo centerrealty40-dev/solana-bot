@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { clampLiveTrackerMtmForExit } from '../src/papertrader/executor/exit-policy-wave-b.js';
 import { resolveObservedPriceUsdForJournal } from '../src/live/sell-price-sanity.js';
-import { resolveObservedPriceUsdForJournal } from '../src/live/sell-price-sanity.js';
 import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
