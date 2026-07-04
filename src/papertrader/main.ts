@@ -179,6 +179,7 @@ import {
   refreshLiveBuyTelegramSuppressForTick,
   resetLiveBuyTelegramSuppressTick,
 } from '../live/wallet-buy-affordability.js';
+import { handleBirdeyeObservabilityTelegram } from '../live/birdeye-telegram-alerts.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -1451,6 +1452,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           : await runSmartLotteryDiscovery(cfg);
       for (const row of res.auditRows ?? []) {
         journalAppend(row);
+        if (isLiveOscarMainStrategyId(cfg.strategyId)) {
+          journalLiveStrategy?.(row);
+          handleBirdeyeObservabilityTelegram(row);
+        }
       }
       stats.discovered += res.discovered;
       stats.evaluated += res.evaluated;

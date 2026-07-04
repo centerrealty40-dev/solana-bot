@@ -2,6 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
+import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -380,7 +381,26 @@ async function collectOneTick() {
         log,
         component: 'pumpswap-collector',
       });
-      if (finalRows.length > primaryRows.length) {
+      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
+        rows: finalRows,
+        bucketTs,
+        sourceTag: 'pumpswap',
+        fetchImpl: fetch,
+        fetchJsonWithRetry: fetchJsonEnrich,
+        normalizeDexPair: normalizeDexScreenerPair,
+        dedupByPairAddress,
+        log,
+        component: 'pumpswap-collector',
+      });
+      finalRows = birdeyeEnriched.rows;
+      if (birdeyeEnriched.stats?.tierInsufficient) {
+        log('warn', 'birdeye tier insufficient during collector enrich', {
+          kind: 'birdeye_tier_insufficient',
+          errorKind: birdeyeEnriched.stats.errorKind,
+          batchUnavailable: birdeyeEnriched.stats.batchUnavailable,
+        });
+      }
+      if (finalRows.length > primaryRows.length || birdeyeEnriched.stats?.changed) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }
     } catch (enrichError) {

@@ -652,6 +652,44 @@ export const LiveShyftDefiMcapSchema = z.object({
   defiLiqUsd: z.number().finite().nullable(),
 });
 
+/** Birdeye REST market quote picked over PG at discovery eval (observability). */
+export const LiveBirdeyeMarketQuoteSchema = z.object({
+  kind: z.literal('live_birdeye_market_quote'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  source: z.enum(['birdeye', 'dexscreener']),
+  pgPriceUsd: z.number().finite().nullable(),
+  pgMcapUsd: z.number().finite().nullable(),
+  pgLiqUsd: z.number().finite().nullable(),
+  pgVol5mUsd: z.number().finite().nullable(),
+  pgSnapshotAgeMs: z.number().finite().nullable(),
+  quotePriceUsd: z.number().finite().nullable(),
+  quoteMcapUsd: z.number().finite().nullable(),
+  quoteLiqUsd: z.number().finite().nullable(),
+  quoteVol5mUsd: z.number().finite().nullable(),
+});
+
+/** PG snapshot stale and REST fallbacks missed — coverage hole observability. */
+export const BirdeyeCoverageGapSchema = z.object({
+  kind: z.literal('birdeye_coverage_gap'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  reason: z.literal('birdeye_coverage_gap'),
+  pgSnapshotAgeMs: z.number().finite(),
+  coverageGapMinMs: z.number().finite().positive(),
+  resolvedSource: z.enum(['birdeye', 'dexscreener', 'pg_snapshot']),
+});
+
+/** Birdeye 429 / CU quota — subscription tier may be insufficient. */
+export const BirdeyeTierInsufficientSchema = z.object({
+  kind: z.literal('birdeye_tier_insufficient'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  reason: z.literal('birdeye_tier_insufficient'),
+  errorKind: z.enum(['rate_limit', 'quota', 'auth', 'network', 'parse']).optional(),
+  message: z.string().max(240).optional(),
+});
+
 /** Stage 0 (1.11.466) — PG snapshot price older than warn threshold at entry eval. */
 export const LiveStalePriceWarnSchema = z.object({
   kind: z.literal('live_stale_price_warn'),
@@ -843,6 +881,9 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveShyftShadowPriceSchema,
   LiveShyftPricePrimarySchema,
   LiveShyftDefiMcapSchema,
+  LiveBirdeyeMarketQuoteSchema,
+  BirdeyeCoverageGapSchema,
+  BirdeyeTierInsufficientSchema,
   LiveStalePriceWarnSchema,
   LiveBootSnapshotMergeSchema,
   LiveBootWalletOrphanRestoreSchema,
