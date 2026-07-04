@@ -47,11 +47,21 @@ import type {
   PartialSell,
   PositionLeg,
   PriceVerifyVerdict,
+  SnapshotCandidateRow,
 } from '../types.js';
 import { fetchLatestSnapshotQuote, getLiveMcUsd, getSolUsd } from '../pricing.js';
 import { buildShadowPriceEvent } from '../stream/shadow-price.js';
 import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
 import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
+import {
+  resolveDiscoveryMarketQuote,
+  buildBirdeyeCoverageGapEvent,
+  buildBirdeyeTierInsufficientEvent,
+} from '../pricing/discovery-market-quote.js';
+import {
+  notifyBirdeyeTierInsufficient,
+  notifyBirdeyeCoverageGap,
+} from '../../live/birdeye-telegram-alerts.js';
 import { verifyExitPrice } from '../pricing/price-verify.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
@@ -3247,6 +3257,111 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
+
+    /** Birdeye REST primary for MTM baseline: Birdeye → DexScreener → PG before Jupiter probe. */
+    if (cfg.birdeyePrimaryEnabled && isLiveOscarTradingStrategyId(cfg.strategyId)) {
+      const pgRow: SnapshotCandidateRow = {
+        mint,
+        symbol: ot.symbol ?? mint.slice(0, 8),
+        ts: snapTsMs != null ? new Date(snapTsMs) : new Date(),
+        launch_ts: null,
+        age_min: null,
+        price_usd: snapPx > 0 ? snapPx : 0,
+        liquidity_usd: 0,
+        volume_5m: snapVol5m ?? 0,
+        volume_1h: 0,
+        buys_5m: 0,
+        sells_5m: 0,
+        market_cap_usd: null,
+        source: ot.source ?? 'pumpswap',
+        holder_count: 0,
+        token_age_min: 0,
+        pair_address: ot.pairAddress ?? null,
+      };
+      const mtmQuote = await resolveDiscoveryMarketQuote({
+        enabled: true,
+        mint,
+        pgRow,
+        birdeyeTtlMs: cfg.birdeyeMarketTtlMs,
+        birdeyeMaxStaleMs: cfg.birdeyeMaxStaleMs,
+        coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
+      });
+      if (mtmQuote.birdeyeTierInsufficient) {
+        const tierEv = buildBirdeyeTierInsufficientEvent({
+          mint,
+          lane: 'mtm',
+          errorKind: mtmQuote.birdeyeErrorKind,
+        });
+        journalAppend(tierEv);
+        journalLiveStrategy?.(tierEv);
+        notifyBirdeyeTierInsufficient({
+          mint,
+          lane: 'mtm',
+          errorKind: mtmQuote.birdeyeErrorKind,
+          surface: 'mtm',
+        });
+      }
+      if (
+        mtmQuote.coverageGap &&
+        mtmQuote.pgSnapshotAgeMs != null &&
+        mtmQuote.pgSnapshotAgeMs > cfg.birdeyeCoverageGapMinMs
+      ) {
+        const gapEv = buildBirdeyeCoverageGapEvent({
+          mint,
+          lane: 'mtm',
+          pgSnapshotAgeMs: mtmQuote.pgSnapshotAgeMs,
+          coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
+          source: mtmQuote.source,
+        });
+        journalAppend(gapEv);
+        journalLiveStrategy?.(gapEv);
+        notifyBirdeyeCoverageGap({
+          mint,
+          lane: 'mtm',
+          pgSnapshotAgeMs: mtmQuote.pgSnapshotAgeMs,
+          coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
+          resolvedSource: mtmQuote.source,
+          surface: 'mtm',
+        });
+      }
+      if (mtmQuote.source !== 'pg_snapshot' && mtmQuote.priceUsd != null && mtmQuote.priceUsd > 0) {
+        journalAppend({
+          kind: 'live_birdeye_market_quote',
+          mint,
+          lane: 'mtm',
+          source: mtmQuote.source,
+          pgPriceUsd: snapPx > 0 ? snapPx : null,
+          pgMcapUsd: null,
+          pgLiqUsd: null,
+          pgVol5mUsd: snapVol5m,
+          pgSnapshotAgeMs: mtmQuote.pgSnapshotAgeMs,
+          quotePriceUsd: mtmQuote.priceUsd,
+          quoteMcapUsd: mtmQuote.marketCapUsd,
+          quoteLiqUsd: mtmQuote.liquidityUsd,
+          quoteVol5mUsd: mtmQuote.volume5mUsd,
+        });
+        journalLiveStrategy?.({
+          kind: 'live_birdeye_market_quote',
+          mint,
+          lane: 'mtm',
+          source: mtmQuote.source,
+          pgPriceUsd: snapPx > 0 ? snapPx : null,
+          pgMcapUsd: null,
+          pgLiqUsd: null,
+          pgVol5mUsd: snapVol5m,
+          pgSnapshotAgeMs: mtmQuote.pgSnapshotAgeMs,
+          quotePriceUsd: mtmQuote.priceUsd,
+          quoteMcapUsd: mtmQuote.marketCapUsd,
+          quoteLiqUsd: mtmQuote.liquidityUsd,
+          quoteVol5mUsd: mtmQuote.volume5mUsd,
+        });
+        snapPx = mtmQuote.priceUsd;
+        if (mtmQuote.volume5mUsd != null && mtmQuote.volume5mUsd > 0) {
+          snapVol5m = mtmQuote.volume5mUsd;
+        }
+      }
+    }
+
     /**
      * Shyft primary MTM: snapshot stream at tick start. Jupiter buy-probe can take >5s; using
      * `Date.now()` after the probe makes a fresh stream look stale vs `SHYFT_MAX_STALE_MS` and

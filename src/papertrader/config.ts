@@ -181,6 +181,8 @@ const ConfigSchema = z.object({
   birdeyeMaxStaleMs: z.coerce.number().int().positive().default(15_000),
   /** Emit `birdeye_coverage_gap` when PG snapshot age exceeds this and REST fallbacks miss. */
   birdeyeCoverageGapMinMs: z.coerce.number().int().positive().default(5 * 60_000),
+  /** Try Birdeye batch endpoint (`market-data/multiple`, Business tier). Default OFF (Lite uses per-mint). */
+  birdeyeBatchEnabled: z.boolean().default(false),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
   liveStagedEntryAvgCooldownMs: z.coerce.number().int().nonnegative().default(180_000),
   /** Min ms after first staged avg before second avg (−14%). */
@@ -1278,6 +1280,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     birdeyeMarketTtlMs: process.env.BIRDEYE_MARKET_TTL_MS,
     birdeyeMaxStaleMs: process.env.BIRDEYE_MAX_STALE_MS,
     birdeyeCoverageGapMinMs: process.env.BIRDEYE_COVERAGE_GAP_MIN_MS,
+    birdeyeBatchEnabled: envBool(process.env.BIRDEYE_USE_BATCH ?? process.env.BIRDEYE_BATCH_ENABLED, false),
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),

@@ -61,6 +61,24 @@ const JUPITER_PRO_TRADING_ENV = {
   LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
 };
 
+/**
+ * Birdeye REST market-data (Lite+). Key only in VPS `.env` — BIRDEYE_API_KEY (never commit).
+ * BIRDEYE_PRIMARY_ENABLED — discovery eval + MTM baseline (Birdeye → DexScreener → PG).
+ * BIRDEYE_COLLECTOR_ENABLED — enrich open/pin mints in DEX collectors before DexScreener fallback.
+ * BIRDEYE_USE_BATCH — try Business-tier `market-data/multiple`; Lite=0 falls back to per-mint.
+ * BIRDEYE_TELEGRAM_ENABLED — ALERT on tier limit (429/CU) and coverage gaps.
+ */
+const BIRDEYE_REST_ENV = {
+  BIRDEYE_COLLECTOR_ENABLED: '1',
+  BIRDEYE_USE_BATCH: '0',
+  BIRDEYE_TELEGRAM_ENABLED: '1',
+  BIRDEYE_MARKET_TTL_MS: '12000',
+  BIRDEYE_MAX_STALE_MS: '15000',
+  BIRDEYE_COVERAGE_GAP_MIN_MS: '300000',
+  BIRDEYE_COLLECTOR_MAX_MINTS_PER_TICK: '12',
+  BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS: '120',
+};
+
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
 /** Spike tiered pump/dump watch — отдельный бот, отдельный канал. */
@@ -394,6 +412,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...BIRDEYE_REST_ENV,
       },
     },
     {
@@ -420,6 +439,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...BIRDEYE_REST_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -473,6 +493,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...BIRDEYE_REST_ENV,
       },
     },
     {
@@ -713,6 +734,17 @@ const PM2_APPS = [
          */
         SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
+        /**
+         * Birdeye REST primary (2026-07): discovery eval + MTM baseline. Shyft OFF → Birdeye replaces
+         * stream-primary for fresher price/mcap. Key: BIRDEYE_API_KEY in `.env` only.
+         */
+        BIRDEYE_PRIMARY_ENABLED: '1',
+        ...BIRDEYE_REST_ENV,
+        /** Telegram ALERT when Birdeye Lite hits 429/CU quota or PG coverage gap persists. */
+        BIRDEYE_TELEGRAM_ENABLED: '1',
+        BIRDEYE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        BIRDEYE_TELEGRAM_TIER_COOLDOWN_MS: '1800000',
+        BIRDEYE_TELEGRAM_COVERAGE_GAP_COOLDOWN_MS: '1800000',
         PAPER_SAFETY_CHECK_ENABLED: '1',
         PAPER_PRIORITY_FEE_ENABLED: '1',
         PAPER_PRIORITY_FEE_TICKER_MS: '60000',

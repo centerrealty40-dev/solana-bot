@@ -2,6 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
+import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -347,6 +348,18 @@ async function collectOneTick() {
         log,
         component: 'meteora-collector',
       });
+      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
+        rows: finalRows,
+        bucketTs,
+        sourceTag: 'meteora',
+        fetchImpl: fetch,
+        fetchJsonWithRetry: fetchJsonEnrich,
+        normalizeDexPair: normalizeDexScreenerPair,
+        dedupByPairAddress,
+        log,
+        component: 'meteora-collector',
+      });
+      finalRows = birdeyeEnriched.rows;
       if (finalRows.length > primaryRows.length) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }

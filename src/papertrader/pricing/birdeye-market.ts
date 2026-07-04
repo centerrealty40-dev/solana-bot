@@ -74,6 +74,22 @@ export function isBirdeyeTierInsufficient(kind: BirdeyeFetchErrorKind | undefine
   return kind === 'rate_limit' || kind === 'quota';
 }
 
+/** True when HTTP 403 or message indicates batch/multiple endpoint unavailable on current tier. */
+export function isBirdeyeBatchEndpointUnavailable(status: number, message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    status === 403 ||
+    /not available|feature not|upgrade|business tier|multiple endpoint|market-data\/multiple/i.test(msg)
+  );
+}
+
+export interface BirdeyeBatchQuoteResult {
+  quotes: Map<string, BirdeyeMarketQuote & { tierInsufficient?: boolean; errorKind?: BirdeyeFetchErrorKind }>;
+  batchUnavailable: boolean;
+  tierInsufficient: boolean;
+  errorKind?: BirdeyeFetchErrorKind;
+}
+
 export interface BirdeyeMarketOptions {
   apiKey?: string;
   ttlMs: number;
@@ -209,4 +225,132 @@ export async function resolveBirdeyeMarketQuote(
     tierInsufficient: tierInsufficient || undefined,
     errorKind: lastErrorKind,
   };
+}
+
+function parseBirdeyeBatchMarketData(json: unknown): Map<string, Partial<BirdeyeMarketQuote>> {
+  const out = new Map<string, Partial<BirdeyeMarketQuote>>();
+  const root = json as { success?: boolean; data?: Record<string, Record<string, unknown>> };
+  if (root?.success === false || !root?.data || typeof root.data !== 'object') return out;
+  const now = Date.now();
+  for (const [mint, row] of Object.entries(root.data)) {
+    const parsed = parseBirdeyeMarketData({ success: true, data: row });
+    if (parsed) out.set(mint, { ...parsed, fetchedAtMs: now });
+  }
+  return out;
+}
+
+/**
+ * Batch market-data fetch (Business tier `market-data/multiple`). When `batchEnabled` is false or the
+ * endpoint returns 403/feature-missing, falls back to per-mint cached calls (Lite OK).
+ */
+export async function resolveBirdeyeMarketQuoteBatch(
+  mints: string[],
+  opts: BirdeyeMarketOptions & { batchEnabled?: boolean; interMintDelayMs?: number },
+): Promise<BirdeyeBatchQuoteResult> {
+  const unique = [...new Set(mints.filter(Boolean))];
+  const quotes = new Map<
+    string,
+    BirdeyeMarketQuote & { tierInsufficient?: boolean; errorKind?: BirdeyeFetchErrorKind }
+  >();
+  if (unique.length === 0) {
+    return { quotes, batchUnavailable: false, tierInsufficient: false };
+  }
+
+  const apiKey = resolveApiKey(opts);
+  if (!apiKey) {
+    return { quotes, batchUnavailable: false, tierInsufficient: false };
+  }
+
+  const now = opts.nowMs ?? Date.now();
+  const ttl = Number.isFinite(opts.ttlMs) && opts.ttlMs > 0 ? opts.ttlMs : 12_000;
+  const missing: string[] = [];
+  for (const mint of unique) {
+    const cached = cache.get(mint);
+    if (cached && now - cached.fetchedAtMs < ttl) {
+      quotes.set(mint, {
+        priceUsd: cached.priceUsd,
+        marketCapUsd: cached.marketCapUsd,
+        liquidityUsd: cached.liquidityUsd,
+        volume5mUsd: cached.volume5mUsd,
+        fetchedAtMs: cached.fetchedAtMs,
+        tierInsufficient: cached.tierInsufficient,
+        errorKind: cached.lastErrorKind,
+      });
+    } else {
+      missing.push(mint);
+    }
+  }
+  if (missing.length === 0) {
+    return { quotes, batchUnavailable: false, tierInsufficient: false };
+  }
+
+  const batchEnabled = opts.batchEnabled === true;
+  let batchUnavailable = false;
+  let tierInsufficient = false;
+  let batchErrorKind: BirdeyeFetchErrorKind | undefined;
+
+  if (batchEnabled && missing.length > 1) {
+    const doFetch = opts.fetchImpl ?? fetch;
+    const timeoutMs =
+      Number.isFinite(opts.timeoutMs) && (opts.timeoutMs ?? 0) > 0 ? (opts.timeoutMs as number) : 5_000;
+    const list = missing.map((m) => encodeURIComponent(m)).join(',');
+    const batchPath = `/defi/v3/token/market-data/multiple?list_address=${list}`;
+    const batchRes = await birdeyeGet(batchPath, apiKey, doFetch, timeoutMs);
+    if (batchRes.ok) {
+      const parsed = parseBirdeyeBatchMarketData(batchRes.json);
+      for (const mint of missing) {
+        const row = parsed.get(mint);
+        if (!row) continue;
+        const entry: CacheEntry = {
+          priceUsd: row.priceUsd ?? null,
+          marketCapUsd: row.marketCapUsd ?? null,
+          liquidityUsd: row.liquidityUsd ?? null,
+          volume5mUsd: row.volume5mUsd ?? null,
+          fetchedAtMs: now,
+        };
+        cache.set(mint, entry);
+        quotes.set(mint, entry);
+      }
+      const stillMissing = missing.filter((m) => !quotes.has(m));
+      for (const mint of stillMissing) {
+        const one = await resolveBirdeyeMarketQuote(mint, { ...opts, nowMs: now });
+        if (one) quotes.set(mint, one);
+        if (one?.tierInsufficient) {
+          tierInsufficient = true;
+          batchErrorKind = one.errorKind;
+        }
+      }
+      return { quotes, batchUnavailable: false, tierInsufficient, errorKind: batchErrorKind };
+    }
+    if (isBirdeyeBatchEndpointUnavailable(batchRes.status, batchRes.message)) {
+      batchUnavailable = true;
+      const kind = classifyBirdeyeError(batchRes.status, batchRes.message);
+      if (isBirdeyeTierInsufficient(kind)) {
+        tierInsufficient = true;
+        batchErrorKind = kind;
+      }
+    } else {
+      const kind = classifyBirdeyeError(batchRes.status, batchRes.message);
+      if (isBirdeyeTierInsufficient(kind)) {
+        tierInsufficient = true;
+        batchErrorKind = kind;
+      }
+    }
+  }
+
+  const delay = Math.max(0, opts.interMintDelayMs ?? 0);
+  for (let i = 0; i < missing.length; i += 1) {
+    const mint = missing[i]!;
+    const one = await resolveBirdeyeMarketQuote(mint, { ...opts, nowMs: now });
+    if (one) quotes.set(mint, one);
+    if (one?.tierInsufficient) {
+      tierInsufficient = true;
+      batchErrorKind = one.errorKind;
+    }
+    if (delay > 0 && i + 1 < missing.length) {
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  return { quotes, batchUnavailable: batchUnavailable || false, tierInsufficient, errorKind: batchErrorKind };
 }

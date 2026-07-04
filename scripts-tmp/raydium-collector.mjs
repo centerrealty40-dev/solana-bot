@@ -2,6 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
+import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
 
 const { Pool } = pg;
 
@@ -350,6 +351,22 @@ async function collectOneTick() {
         log,
         component: 'raydium-collector',
       });
+      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
+        rows: finalRows,
+        bucketTs,
+        sourceTag: 'raydium',
+        fetchImpl: fetch,
+        fetchJsonWithRetry: fetchJsonEnrich,
+        normalizeDexPair: (p, bt) => {
+          if (p?.chainId !== 'solana') return null;
+          if (String(p?.dexId || '').toLowerCase() !== 'raydium') return null;
+          return normalizeDexScreenerPair(p, bt);
+        },
+        dedupByPairAddress,
+        log,
+        component: 'raydium-collector',
+      });
+      finalRows = birdeyeEnriched.rows;
       if (finalRows.length > primaryRows.length) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }
