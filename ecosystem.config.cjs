@@ -741,8 +741,8 @@ const PM2_APPS = [
          * Micro/scalp_wave lanes disabled (1.11.500).
          */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
-        /** Не сканировать discovery pool / eval для mcap > $200M (экономия PG/CPU). Открытые позиции — исключение. */
-        PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '200000000',
+        /** Не сканировать discovery pool / eval для mcap > $500M (экономия PG/CPU). Открытые позиции — исключение. */
+        PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '500000000',
         /** 1.11.500 — micro lane OFF (min mcap $2M). */
         PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
