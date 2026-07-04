@@ -251,11 +251,12 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.522 — low $2–3M: 3×$300 entry ($900) — superseded by 1.11.524.
  * 1.11.518 — prod tiered max position by mcap at entry: $3–5M $3100, $5–8M $2800, $8–12M $2100, ≥$12M $1500; low $2–3M $850 unchanged.
  * 1.11.538 — prod ≥$3M: 8×$300 entry split; avg −10% $300, −20% $400 (all prod incl. ≥$12M); low 5×$300 + avg $300/$400; max $3100 / low $2200.
+ * 1.11.539 — prod ≥$3M: 5×$1000 entry split @10s (+3/−5% corridor); avg −10% $300, −20% $400; max $5700 / low unchanged.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '2400';
-const LIVE_OSCAR_MAX_POSITION_USD = '3100';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '5000';
+const LIVE_OSCAR_MAX_POSITION_USD = '5700';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -633,28 +634,28 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.538 — prod ≥$3M: 8×$300 entry split @5s (+3/−5% corridor); avg −10% $300, −20% $400; max $3100 (≥$12M incl. avg).
+         * 1.11.539 — prod ≥$3M: 5×$1000 entry split @10s (+3/−5% corridor); avg −10% $300, −20% $400; max $5700.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '300',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '5000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
         /** 0 = timed corridor splits (not dip-triggered leg-2). */
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '300',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '1000',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '300',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
@@ -917,8 +918,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '25000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '3100',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '3100',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '5700',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '5700',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
         PAPER_VOL_1H_MIN_USD: '35000',

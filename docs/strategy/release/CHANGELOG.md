@@ -82,6 +82,20 @@
 
 ---
 
+---
+
+## [1.11.552] — 2026-07-04
+
+**Тег:** `sa-alpha-1.11.552`
+
+### Live Oscar — prod tier (≥$3M) entry split 5×$1000 @10s
+
+- **Prod ≥$3M:** entry split **5×$1000** ($5000), interval **10s** (+3/−5% corridor); avg −10% $300, −20% $400; max **$5700**.
+- **Low $2M–$3M:** без изменений (5×$300, avg $300/$400, max $2200).
+- `deriveLiveOscarProdBandEntryPlan` — leg count из конфигурации env, не hardcoded 8.
+
+**Откат:** redeploy `sa-alpha-1.11.551`; prod: 8×$300 @5s, `PAPER_POSITION_USD=2400`, `LIVE_MAX_POSITION_USD=3100`, `PROD_MCAP_MAX_*=3100`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
 ## [1.11.551] — 2026-07-03
 
 **Тег:** `sa-alpha-1.11.551`
