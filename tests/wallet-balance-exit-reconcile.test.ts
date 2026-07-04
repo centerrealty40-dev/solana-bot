@@ -58,12 +58,36 @@ describe('wallet-balance-exit-reconcile', () => {
     expect(ot.remainingFraction).toBeCloseTo(0.9, 5);
   });
 
-  it('does not shrink journal when chain is below journal', () => {
+  it('does not shrink journal when chain is below journal without partials', () => {
     const ot = testOpen({ remainingFraction: 0.5, totalInvestedUsd: 200 });
     const before = ot.remainingFraction;
     const r = resyncRemainingFractionFromChain({ ot, chainOscarUsd: 50, minUsd: 5 });
     expect(r.resynced).toBe(false);
     expect(ot.remainingFraction).toBe(before);
+  });
+
+  it('shrinks journal when chain below after partial sells', () => {
+    const ot = testOpen({
+      remainingFraction: 0.5,
+      totalInvestedUsd: 200,
+      partialSells: [
+        {
+          ts: Date.now(),
+          price: 0.05,
+          marketPrice: 0.05,
+          sellFraction: 0.5,
+          reason: 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL',
+          proceedsUsd: 100,
+          grossProceedsUsd: 100,
+          pnlUsd: 50,
+          grossPnlUsd: 50,
+        },
+      ],
+    });
+    const r = resyncRemainingFractionFromChain({ ot, chainOscarUsd: 80, minUsd: 5 });
+    expect(r.resynced).toBe(true);
+    expect(r.reason).toBe('chain_below_journal_after_partial');
+    expect(ot.remainingFraction).toBeCloseTo(0.4, 5);
   });
 
   it('planFullExitUsdNotional prefers chain when journal is zero', () => {

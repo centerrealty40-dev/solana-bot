@@ -29,6 +29,7 @@ import {
   waveBHalf8TpTaken,
   waveBPreArmNoHalf8ScenarioActive,
   waveBPreArmNoHalf8PartialEligible,
+  waveBPreArmNoHalf8PartialConsumed,
   waveBPreArmNoHalf8PullbackFullExitEligible,
   waveBDip10FirstTp5PartialEligible,
   waveBDip10FirstTp5ScenarioActive,
@@ -312,6 +313,20 @@ describe('exit-policy-wave-b', () => {
     expect(ot.ladderUsedLevels.has(0.1)).toBe(false);
   });
 
+  it('waveBMaybeResetTpImpulse half8_runner preserves +8% rung at +2.5% dip', () => {
+    const ot = {
+      liveExitPolicyId: 'wave_b_v1',
+      liveWaveFlatTpMode: 'half8_runner',
+      liveWavePreArmReached: true,
+      ladderUsedLevels: new Set([0.08, 0.1]),
+      ladderUsedIndices: new Set<number>(),
+      liveWaveMaxExecutedTpFrac: 0.08,
+    } as unknown as OpenTrade;
+    expect(waveBMaybeResetTpImpulse(ot, 0.025, 0.08)).toBe(true);
+    expect(ot.ladderUsedLevels.has(0.08)).toBe(true);
+    expect(ot.ladderUsedLevels.has(0.1)).toBe(false);
+  });
+
   it('waveBBreakevenExitEligible stays true after impulse reset clears ladder marks', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
@@ -531,6 +546,20 @@ describe('exit-policy-wave-b', () => {
 
       const taken = { ...half8Ot, liveWavePreArmNoHalf8PartialTaken: true } as OpenTrade;
       expect(waveBPreArmNoHalf8PartialEligible(taken, ladderCfg, 0.08)).toBe(false);
+
+      const pending = {
+        ...half8Ot,
+        livePendingTpSell: { reason: 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' },
+      } as unknown as OpenTrade;
+      expect(waveBPreArmNoHalf8PartialConsumed(pending)).toBe(true);
+      expect(waveBPreArmNoHalf8PartialEligible(pending, ladderCfg, 0.08)).toBe(false);
+
+      const journaled = {
+        ...half8Ot,
+        partialSells: [{ reason: 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' }],
+      } as unknown as OpenTrade;
+      expect(waveBPreArmNoHalf8PartialConsumed(journaled)).toBe(true);
+      expect(waveBPreArmNoHalf8PartialEligible(journaled, ladderCfg, 0.08)).toBe(false);
 
       const disabled = cfg({ liveOscarWaveBPreArmNoHalf8LadderEnabled: false });
       expect(waveBPreArmNoHalf8PartialEligible(half8Ot, disabled, 0.08)).toBe(false);

@@ -1257,6 +1257,9 @@ async function tryExecuteTpPartialSell(args: {
   ot.partialSells.push(ps);
   ot.lastPartialSellTs = ps.ts;
   ot.remainingFraction *= 1 - sellFraction;
+  if (partialReason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' && sellChainRecorded) {
+    ot.liveWavePreArmNoHalf8PartialTaken = true;
+  }
   let walletDrainedFlush = false;
   if (
     liveOscarCfg?.strategyEnabled &&
@@ -1290,6 +1293,14 @@ async function tryExecuteTpPartialSell(args: {
         { mint: mint.slice(0, 8), symbol: ot.symbol },
         'live partial TP: SPL balance 0 after sell — sync remainingFraction=0 (avoid false orphan)',
       );
+    } else if (chainMap != null && bal != null && bal > 0n && marketSell > 0) {
+      const postSellOscarUsd = oscarChainUsdFromRaw({
+        raw: bal,
+        decimals: ot.tokenDecimals ?? 6,
+        priceUsd: marketSell,
+        mint,
+      }).oscarUsd;
+      resyncRemainingFractionFromChain({ ot, chainOscarUsd: postSellOscarUsd, minUsd: reconcileMinUsd });
     }
   }
   if (
@@ -1363,13 +1374,15 @@ async function tryExecuteTpPartialSell(args: {
   console.log(
     `[${logLabelPct}] ${mint.slice(0, 8)} $${ot.symbol} sold=${(sellFraction * 100).toFixed(0)}% pnl=$${pnlUsd.toFixed(2)} remain=${(ot.remainingFraction * 100).toFixed(0)}%`,
   );
-  if (
-    !sellOut.ok &&
-    (walletDrainedFlush ||
+  if (sellChainRecorded) {
+    if (
+      walletDrainedFlush ||
       sellOut.preflightSkipReason === 'wallet_spl_balance_zero' ||
-      livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained))
-  ) {
-    return 'wallet_zero';
+      livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained)
+    ) {
+      return 'wallet_zero';
+    }
+    return 'ok';
   }
   if (!sellOut.ok) return 'abort_mint';
   return 'ok';
@@ -1461,7 +1474,7 @@ async function tryExecutePendingFailedTpSell(args: {
     suppressPendingRetry: true,
   });
 
-  if (r === 'ok') {
+  if (r === 'ok' || r === 'wallet_zero') {
     if (pending.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') {
       ot.liveWavePreArmNoHalf8PartialTaken = true;
     } else if (pending.reason === 'WAVE_B_DIP10_FIRST_TP5_PARTIAL') {
@@ -1477,10 +1490,6 @@ async function tryExecutePendingFailedTpSell(args: {
       pnlFrac,
       sellFraction: pending.sellFraction,
     });
-    return 'executed';
-  }
-  if (r === 'wallet_zero') {
-    ot.livePendingTpSell = undefined;
     return 'executed';
   }
 
@@ -1684,6 +1693,7 @@ async function tryWaveBPreArmNoHalf8PartialExit(args: {
   ) {
     return;
   }
+  if (ot.livePendingTpSell?.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') return;
   const pnlFrac = xAvg - 1;
   if (!waveBPreArmNoHalf8PartialEligible(ot, cfg, pnlFrac)) return;
 
@@ -1712,7 +1722,7 @@ async function tryWaveBPreArmNoHalf8PartialExit(args: {
     timelineLabelRu:
       `Live Oscar wave B · pre-arm без +8% TP — фиксация ${(trimFrac * 100).toFixed(0)}% остатка @ +${partialPnlPct.toFixed(1)}% vs avg`,
   });
-  if (r === 'ok') {
+  if (r === 'ok' || r === 'wallet_zero') {
     ot.liveWavePreArmNoHalf8PartialTaken = true;
   }
 }

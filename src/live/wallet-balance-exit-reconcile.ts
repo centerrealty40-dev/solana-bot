@@ -12,6 +12,7 @@ export const WALLET_RECONCILE_REMAINING_EPS = 1e-6;
 
 export type WalletBalanceReconcileReason =
   | 'chain_above_journal'
+  | 'chain_below_journal_after_partial'
   | 'journal_zero_chain_holds'
   | 'chain_orphan_no_open';
 
@@ -76,8 +77,8 @@ export function hasManagedWalletExposure(args: {
 }
 
 /**
- * Bump journal `remainingFraction` upward when chain Oscar-attributed USD exceeds journal.
- * Never shrinks journal on chain deficit (partial sells / RPC lag handled elsewhere).
+ * Sync journal `remainingFraction` with Oscar-attributed chain USD.
+ * Expands when chain exceeds journal; shrinks only after partial sells when chain is materially lower.
  */
 export function resyncRemainingFractionFromChain(args: {
   ot: OpenTrade;
@@ -100,6 +101,27 @@ export function resyncRemainingFractionFromChain(args: {
 
   const journalZero = prev <= WALLET_RECONCILE_REMAINING_EPS;
   const chainAboveJournal = chainOscarUsd > journalUsd * 1.02 + 0.01;
+  const hasPartials = ot.partialSells.length > 0;
+  const chainBelowJournalAfterPartial =
+    hasPartials &&
+    !journalZero &&
+    chainOscarUsd < journalUsd * 0.98 - 0.01;
+
+  if (chainBelowJournalAfterPartial) {
+    const next = Math.max(
+      WALLET_RECONCILE_REMAINING_EPS,
+      Math.min(prev, chainOscarUsd / ot.totalInvestedUsd),
+    );
+    if (next < prev - 1e-9) {
+      ot.remainingFraction = next;
+      return {
+        ...base,
+        resynced: true,
+        nextRemainingFraction: next,
+        reason: 'chain_below_journal_after_partial',
+      };
+    }
+  }
 
   if (!journalZero && !chainAboveJournal) return base;
 
