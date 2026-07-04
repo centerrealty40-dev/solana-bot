@@ -629,6 +629,12 @@ export async function main(): Promise<void> {
       if (r.adopted.length > 0) {
         log.info({ mints: r.adopted.map((m) => m.slice(0, 8)) }, 'live-oscar adopted copy-leader exit opens');
       }
+      if (r.retroAttachedStagedEntry.length > 0) {
+        log.info(
+          { mints: r.retroAttachedStagedEntry.map((m) => m.slice(0, 8)) },
+          'live-oscar retro-attached staged entry on copy-leader adopt opens',
+        );
+      }
     },
     onMintFullClose: (mint, openTrade) => {
       const cleared = onOscarFullCloseCopyHandoffMint({
