@@ -6,9 +6,15 @@ import fs from 'node:fs';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import { applyEntryCosts } from '../papertrader/costs.js';
 import { applyWaveBGridOverrides } from '../papertrader/executor/exit-policy-wave-b.js';
+import {
+  buildLiveStagedEntryState,
+  markEntrySplitLeg1Filled,
+} from '../papertrader/executor/live-staged-entry-gates.js';
+import { applyCanonicalOpenLegUsd } from '../papertrader/live-oscar-entry-sizing.js';
 import { resolveLiveOscarMcapTier } from '../papertrader/live-oscar-mcap-tier.js';
 import type { DexId, Metrics, OpenTrade, PositionLeg } from '../papertrader/types.js';
 import type { ClosedTrade } from '../papertrader/types.js';
+import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import {
   copyLeaderStatePathFromEnv,
   readCopyLeaderMintAttribution,
@@ -46,9 +52,40 @@ export function copyLeaderExitAdoptEnabled(): boolean {
 
 export type CopyLeaderExitAdoptResult = {
   adopted: string[];
+  retroAttachedStagedEntry: string[];
   skippedAlreadyOpen: string[];
   skippedHandoffClosed: string[];
 };
+
+function copyLeaderLiveStagedEntryActive(cfg: PaperTraderConfig): boolean {
+  return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveStagedEntryEnabled;
+}
+
+/** Mirror discovery `attachLiveStagedEntryPlan`: copy buy = entry-split leg1 + pending avg legs. */
+function attachCopyLeaderLiveStagedEntryPlan(
+  ot: OpenTrade,
+  args: {
+    paperCfg: PaperTraderConfig;
+    entryTs: number;
+    entryPriceUsd: number;
+    entryMcapUsd?: number;
+  },
+): boolean {
+  if (!copyLeaderLiveStagedEntryActive(args.paperCfg)) return false;
+  const signalPriceUsd =
+    args.entryPriceUsd > 0 ? args.entryPriceUsd : ot.avgEntryMarket ?? ot.avgEntry ?? 0;
+  if (!(signalPriceUsd > 0)) return false;
+
+  const marketCapUsd = args.entryMcapUsd ?? ot.entryMarketCapUsd ?? null;
+  ot.liveStagedEntry = buildLiveStagedEntryState(
+    args.paperCfg,
+    { signalTs: args.entryTs, signalPriceUsd },
+    { marketCapUsd },
+  );
+  markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
+  applyCanonicalOpenLegUsd(args.paperCfg, ot);
+  return true;
+}
 
 function buildOpenFromCopyLeader(args: {
   mint: string;
@@ -124,6 +161,14 @@ function buildOpenFromCopyLeader(args: {
       gridFirstRungRetraceMinPnlPct: 0,
     };
   }
+
+  attachCopyLeaderLiveStagedEntryPlan(ot, {
+    paperCfg: args.paperCfg,
+    entryTs: args.entryTs,
+    entryPriceUsd: marketPrice,
+    entryMcapUsd: mcap > 0 ? mcap : undefined,
+  });
+
   return ot;
 }
 
@@ -141,20 +186,21 @@ export function adoptCopyLeaderExitOpens(args: {
   closedTrades?: readonly ClosedTrade[];
 }): CopyLeaderExitAdoptResult {
   const adopted: string[] = [];
+  const retroAttachedStagedEntry: string[] = [];
   const skippedAlreadyOpen: string[] = [];
   const skippedHandoffClosed: string[] = [];
   if (!copyLeaderExitAdoptEnabled()) {
-    return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
+    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
   }
 
   const fp = args.statePath ?? copyLeaderStatePathFromEnv();
-  if (!fp) return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
+  if (!fp) return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
 
   let parsed: { positions?: Record<string, Record<string, unknown>> };
   try {
     parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as typeof parsed;
   } catch {
-    return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
+    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
   }
 
   for (const [mint, row] of Object.entries(parsed.positions ?? {})) {
@@ -164,8 +210,39 @@ export function adoptCopyLeaderExitOpens(args: {
     const attr = readCopyLeaderMintAttribution(mint, fp);
     if (!attr || !(attr.costBasisUsd > 0)) continue;
 
+    const entryTs = typeof row.entryTs === 'number' && row.entryTs > 0 ? row.entryTs : promotedAt;
+    const entryPriceUsd =
+      typeof row.entryPriceUsd === 'number' && row.entryPriceUsd > 0
+        ? row.entryPriceUsd
+        : attr.entryPriceUsd ?? 0;
+    const entryMcapUsd =
+      typeof row.entryMcapUsd === 'number' && row.entryMcapUsd > 0 ? row.entryMcapUsd : undefined;
+
     if (args.open.has(mint)) {
-      skippedAlreadyOpen.push(mint);
+      const existing = args.open.get(mint)!;
+      if (existing.liveStagedEntry) {
+        skippedAlreadyOpen.push(mint);
+        continue;
+      }
+      if (
+        existing.copyToOscarPromoted &&
+        attachCopyLeaderLiveStagedEntryPlan(existing, {
+          paperCfg: args.paperCfg,
+          entryTs,
+          entryPriceUsd,
+          entryMcapUsd,
+        })
+      ) {
+        retroAttachedStagedEntry.push(mint);
+        args.journalLiveStrategy?.({
+          kind: 'live_staged_entry_attached',
+          mint,
+          entryPath: 'copy_leader_exit_adopt',
+          openTrade: serializeOpenTrade(existing),
+        });
+      } else {
+        skippedAlreadyOpen.push(mint);
+      }
       continue;
     }
 
@@ -189,13 +266,6 @@ export function adoptCopyLeaderExitOpens(args: {
 
     const symbol =
       typeof row.symbol === 'string' && row.symbol.trim() ? String(row.symbol).trim().slice(0, 32) : '?';
-    const entryTs = typeof row.entryTs === 'number' && row.entryTs > 0 ? row.entryTs : promotedAt;
-    const entryPriceUsd =
-      typeof row.entryPriceUsd === 'number' && row.entryPriceUsd > 0
-        ? row.entryPriceUsd
-        : attr.entryPriceUsd ?? 0;
-    const entryMcapUsd =
-      typeof row.entryMcapUsd === 'number' && row.entryMcapUsd > 0 ? row.entryMcapUsd : undefined;
     const entrySig =
       typeof row.ourEntrySig === 'string' && row.ourEntrySig.length > 8 ? row.ourEntrySig : undefined;
 
@@ -224,5 +294,5 @@ export function adoptCopyLeaderExitOpens(args: {
     });
   }
 
-  return { adopted, skippedAlreadyOpen, skippedHandoffClosed };
+  return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
 }
