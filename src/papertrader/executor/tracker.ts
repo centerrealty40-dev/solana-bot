@@ -135,6 +135,16 @@ import {
   scheduleLivePostCloseTailSweep,
 } from '../../live/post-close-tail-sweep.js';
 import { fetchLiveWalletSplBalancesByMint } from '../../live/reconcile-live.js';
+import {
+  hasManagedWalletExposure,
+  liveWalletBalanceReconcileMinUsd,
+  oscarChainUsdFromRaw,
+  planFullExitUsdNotional,
+  planPartialSellUsdNotional,
+  reconcileOpenPositionWalletBalance,
+  resyncRemainingFractionFromChain,
+  WALLET_RECONCILE_REMAINING_EPS,
+} from '../../live/wallet-balance-exit-reconcile.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
@@ -817,6 +827,8 @@ async function tryExecuteTpPartialSell(args: {
   /** Default `TP_LADDER`; use `BREAKEVEN_TRIM` for Live Oscar post-first-TP breakeven peel. */
   partialReason?: PartialSell['reason'];
   timelineLabelRu?: string;
+  /** Live: Oscar-attributed chain USD for this mint (wallet source of truth). */
+  chainOscarUsd?: number;
 }): Promise<TpPartialSellResult> {
   const {
     mint,
@@ -837,13 +849,34 @@ async function tryExecuteTpPartialSell(args: {
     logLabelPct,
     partialReason: partialReasonArg,
     timelineLabelRu,
+    chainOscarUsd: chainOscarUsdArg,
   } = args;
   const partialReason: PartialSell['reason'] = partialReasonArg ?? 'TP_LADDER';
+  const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
+  const marketSell = curMetric;
+  let chainOscarUsd = chainOscarUsdArg ?? 0;
+  if (livePhase4 && liveOscarCfg && marketSell > 0 && chainOscarUsd <= 0) {
+    const chainMap = await fetchLiveWalletSplBalancesByMint(liveOscarCfg);
+    const raw = chainMap?.get(mint) ?? 0n;
+    if (raw > 0n) {
+      chainOscarUsd = oscarChainUsdFromRaw({
+        raw,
+        decimals: ot.tokenDecimals ?? 6,
+        priceUsd: marketSell,
+        mint,
+      }).oscarUsd;
+      resyncRemainingFractionFromChain({ ot, chainOscarUsd, minUsd: reconcileMinUsd });
+    }
+  }
   if (livePhase4 && !isPolicyAllowedPartialSell(partialReason, liveOscarCfg)) {
     return 'defer_next';
   }
-  const marketSell = curMetric;
-  if (!(ot.remainingFraction > 1e-12)) return 'ok';
+  if (
+    !(ot.remainingFraction > WALLET_RECONCILE_REMAINING_EPS) &&
+    !hasManagedWalletExposure({ ot, chainOscarUsd, minUsd: reconcileMinUsd })
+  ) {
+    return 'ok';
+  }
   if (rawSellFrac <= 1e-12) {
     markLadder();
     return 'ok';
@@ -873,9 +906,16 @@ async function tryExecuteTpPartialSell(args: {
         ? ot.avgEntry
         : marketSell;
   const tokenSizingUsdForSwap =
-    marketSell > 1e-18 && entryPxForTokenSizing > 1e-18 && Number.isFinite(marketSell)
-      ? investedSoldUsd * (marketSell / entryPxForTokenSizing)
-      : investedSoldUsd;
+    livePhase4 && chainOscarUsd > 0
+      ? planPartialSellUsdNotional({
+          ot,
+          chainOscarUsd,
+          sellFraction,
+          marketPrice: marketSell,
+        })
+      : marketSell > 1e-18 && entryPxForTokenSizing > 1e-18 && Number.isFinite(marketSell)
+        ? investedSoldUsd * (marketSell / entryPxForTokenSizing)
+        : investedSoldUsd;
   const { effectivePrice: modeledEffectiveSell } = applyExitCosts(
     cfg,
     marketSell,
@@ -2866,6 +2906,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     });
     return;
   }
+
+  const liveWalletReconcileActive =
+    liveOscarCfg?.strategyEnabled &&
+    (liveOscarCfg.executionMode === 'live' || liveOscarCfg.executionMode === 'simulate');
+  const liveChainMap = liveWalletReconcileActive
+    ? await fetchLiveWalletSplBalancesByMint(liveOscarCfg!)
+    : null;
+
   const mints = [...open.keys()];
 
   for (const openKey of mints) {
@@ -2964,6 +3012,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
     let curMetric = snapPx > 0 ? snapPx : 0;
     let entrySplitJupiterPx: number | undefined;
+    let chainOscarUsdForMint = 0;
+    if (liveChainMap && snapPx > 0) {
+      const wrEarly = reconcileOpenPositionWalletBalance({
+        liveCfg: liveOscarCfg,
+        ot,
+        mint,
+        chainMap: liveChainMap,
+        priceUsd: snapPx,
+      });
+      chainOscarUsdForMint = wrEarly?.chainOscarUsd ?? 0;
+    }
 
     /**
      * Live: MTM для TP / trail / SL — в первую очередь Jupiter tradable (SOL→token quote), а не PG `price_usd`
@@ -2982,7 +3041,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             : snapPx > 0
               ? snapPx
               : 0;
-      const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
+      const remUsd = Math.max(
+        ot.totalInvestedUsd * 0.05,
+        planFullExitUsdNotional({ ot, chainOscarUsd: chainOscarUsdForMint }),
+      );
       /**
        * 1.11.230 — больше размер MTM probe = меньше price-impact distortion на тонких маршрутах.
        * Jupiter Pro оплачен; нагрузка на quote-endpoint не критична. Раньше: [5..45] @12% remUsd.
@@ -3319,6 +3381,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       if (cfg.flashCrashKillEnabled && isLiveOscarTradingStrategyId(cfg.strategyId)) {
         appendFlashKillPriceSample(ot, Date.now(), curMetric);
       }
+    }
+
+    if (liveChainMap && curMetric > 0) {
+      const wr = reconcileOpenPositionWalletBalance({
+        liveCfg: liveOscarCfg,
+        ot,
+        mint,
+        chainMap: liveChainMap,
+        priceUsd: curMetric,
+      });
+      chainOscarUsdForMint = wr?.chainOscarUsd ?? chainOscarUsdForMint;
     }
 
     if (isWaveBExitPolicy(ot) && curMetric > 0) {
@@ -4716,7 +4789,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ageH >= cfg.liveOscarWaveBTimeStopHours
     )
       exitReason = 'TIMEOUT';
-    if (!exitReason && ot.remainingFraction <= 1e-6) exitReason = 'TP';
+    if (!exitReason && ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS) {
+      const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
+      if (!(chainOscarUsdForMint >= reconcileMinUsd)) exitReason = 'TP';
+    }
 
     if (
       exitReason &&
@@ -4738,7 +4814,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
     if (exitReason) {
       const marketSell = curMetric;
-      const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+      const investedRemaining = planFullExitUsdNotional({
+        ot,
+        chainOscarUsd: chainOscarUsdForMint,
+      });
       const { effectivePrice: effectiveSell } = applyExitCosts(
         cfg,
         marketSell,

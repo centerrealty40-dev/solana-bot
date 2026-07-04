@@ -27,6 +27,13 @@ import {
 import { setArmedSellQuote } from './sell-quote-prearm.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
+import {
+  oscarChainUsdFromRaw,
+  planFullExitUsdNotional,
+  resyncRemainingFractionFromChain,
+  liveWalletBalanceReconcileMinUsd,
+  WALLET_RECONCILE_REMAINING_EPS,
+} from './wallet-balance-exit-reconcile.js';
 
 const log = child('open-position-hot-tick');
 
@@ -59,7 +66,29 @@ async function probeExecutableSellUsd(args: {
 }): Promise<{ sellUsd: number; tokenRaw: string; quoteAgeMs: number; wsolLamports: bigint } | null> {
   const { liveCfg, ot, mint, solUsd, userPublicKey } = args;
   const dec = ot.tokenDecimals ?? 6;
-  const remUsd = ot.totalInvestedUsd * Math.max(0.05, ot.remainingFraction);
+  let chainOscarUsd = 0;
+  if (liveCfg.executionMode === 'live') {
+    const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+    const chainAmt = chainMap?.get(mint) ?? 0n;
+    if (chainAmt > 0n) {
+      const px = ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry;
+      chainOscarUsd = oscarChainUsdFromRaw({
+        raw: chainAmt,
+        decimals: dec,
+        priceUsd: px > 0 ? px : ot.avgEntry,
+        mint,
+      }).oscarUsd;
+      resyncRemainingFractionFromChain({
+        ot,
+        chainOscarUsd,
+        minUsd: liveWalletBalanceReconcileMinUsd(liveCfg),
+      });
+    }
+  }
+  const remUsd = Math.max(
+    liveCfg.liveOpenHotProbeMinUsd,
+    planFullExitUsdNotional({ ot, chainOscarUsd }),
+  );
   const probeUsd = Math.max(
     liveCfg.liveOpenHotProbeMinUsd,
     Math.min(liveCfg.liveOpenHotProbeMaxUsd, remUsd * liveCfg.liveOpenHotProbeFraction),
@@ -187,8 +216,32 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
       if (!(solUsd > 0)) return;
 
       for (const [openKey, ot] of open) {
-        if (!ot || ot.remainingFraction <= 1e-6) continue;
+        if (!ot) continue;
         const mint = mintFromOpenMapKey(openKey);
+        if (
+          liveCfg.executionMode === 'live' &&
+          ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS
+        ) {
+          const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+          const raw = chainMap?.get(mint) ?? 0n;
+          const hintPx =
+            ot.lastObservedPriceUsd ??
+            (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry);
+          if (raw > 0n && hintPx > 0) {
+            const oscarUsd = oscarChainUsdFromRaw({
+              raw,
+              decimals: ot.tokenDecimals ?? 6,
+              priceUsd: hintPx,
+              mint,
+            }).oscarUsd;
+            resyncRemainingFractionFromChain({
+              ot,
+              chainOscarUsd: oscarUsd,
+              minUsd: liveWalletBalanceReconcileMinUsd(liveCfg),
+            });
+          }
+        }
+        if (ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS) continue;
         try {
           const probe = await probeExecutableSellUsd({
             liveCfg,

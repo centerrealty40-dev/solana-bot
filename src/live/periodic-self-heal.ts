@@ -16,6 +16,10 @@ import type { LiveOscarRuntimeBundle } from './phase4-types.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { livePolicyBlocksHealSyncSells } from './policy-only-exits.js';
+import {
+  emitChainOrphanReconcileIfNeeded,
+  oscarChainUsdFromRaw,
+} from './wallet-balance-exit-reconcile.js';
 
 export interface LivePeriodicSelfHealFactoryContext {
   liveCfg: LiveOscarConfig;
@@ -99,18 +103,32 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
       if (!policyOnly) {
       for (const [mint, rawBal] of chainMap) {
         if (mint === WRAPPED_SOL_MINT || rawBal === 0n) continue;
-        if (open.has(mint)) continue;
+        const hasOpen = open.has(mint);
 
-        const knownFromClosed = closedMintSeen.has(mint);
-        if (!allowUnknown && !knownFromClosed) continue;
-
-        const ref = lastClosedForMint(closed, mint);
+        const ref = hasOpen ? open.get(mint) : lastClosedForMint(closed, mint);
         const dec = ref?.tokenDecimals ?? 6;
         const spotUsd = await resolveSpotUsdPerToken(
           mint,
           ref?.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
         );
         if (typeof spotUsd !== 'number' || !Number.isFinite(spotUsd) || spotUsd <= 0) continue;
+        const { oscarUsd } = oscarChainUsdFromRaw({
+          raw: rawBal,
+          decimals: dec,
+          priceUsd: spotUsd,
+          mint,
+        });
+        emitChainOrphanReconcileIfNeeded({
+          liveCfg,
+          mint,
+          chainOscarUsd: oscarUsd,
+          hasOpen,
+        });
+        if (hasOpen) continue;
+
+        const knownFromClosed = closedMintSeen.has(mint);
+        if (!allowUnknown && !knownFromClosed) continue;
+
         const tokens = Number(rawBal) / 10 ** dec;
         const estUsd = tokens * spotUsd;
         if (!(estUsd >= minUsd)) continue;

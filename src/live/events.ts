@@ -562,6 +562,18 @@ export const LiveBootSnapshotMergeSchema = z.object({
 });
 
 /** Boot: wallet SPL orphan restored via full-journal mint replay (1.11.483). */
+/** Runtime wallet-vs-journal resync (manual adjustment / MENSA-class orphan). */
+export const OrphanReconcileSchema = z.object({
+  kind: z.literal('orphan_reconcile'),
+  mint: z.string().min(1).max(64),
+  reason: z.enum(['chain_above_journal', 'journal_zero_chain_holds', 'chain_orphan_no_open']),
+  prevRemainingFraction: z.number().finite().min(0).max(1).optional(),
+  nextRemainingFraction: z.number().finite().min(0).max(1).optional(),
+  journalRemainingUsd: z.number().finite().nonnegative().optional(),
+  chainOscarUsd: z.number().finite().nonnegative(),
+  minUsd: z.number().finite().nonnegative().optional(),
+});
+
 export const LiveBootWalletOrphanRestoreSchema = z.object({
   kind: z.literal('live_boot_wallet_orphan_restore'),
   restoredMints: z.array(z.string()).optional(),
@@ -711,6 +723,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveShyftShadowPriceSchema,
   LiveBootSnapshotMergeSchema,
   LiveBootWalletOrphanRestoreSchema,
+  OrphanReconcileSchema,
   EntrySplitAddSchema,
   StagedAvgAddSchema,
   ExitSlicePlanSchema,
