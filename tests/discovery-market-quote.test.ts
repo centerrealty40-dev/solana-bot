@@ -38,6 +38,18 @@ describe('parseBirdeyeTradeData5m', () => {
   });
 });
 
+describe('parseBirdeyeTradeDataVolumes', () => {
+  it('reads volume_5m_usd and volume_1h_usd', async () => {
+    const { parseBirdeyeTradeDataVolumes } = await import('../src/papertrader/pricing/birdeye-market.js');
+    const r = parseBirdeyeTradeDataVolumes({
+      success: true,
+      data: { volume_5m_usd: 12_000, volume_1h_usd: 88_000 },
+    });
+    expect(r.volume5mUsd).toBe(12_000);
+    expect(r.volume1hUsd).toBe(88_000);
+  });
+});
+
 describe('classifyBirdeyeError', () => {
   it('detects quota messages', () => {
     expect(classifyBirdeyeError(200, 'Compute units limit exceeded')).toBe('quota');
@@ -76,6 +88,7 @@ describe('pickDiscoveryMarketQuote — fallback chain', () => {
         marketCapUsd: 440_000,
         liquidityUsd: 55_000,
         volume5mUsd: 2_000,
+        volume1hUsd: 55_000,
         fetchedAtMs: NOW - 2_000,
       },
       nowMs: NOW,
@@ -85,6 +98,7 @@ describe('pickDiscoveryMarketQuote — fallback chain', () => {
     expect(r.source).toBe('birdeye');
     expect(r.priceUsd).toBe(0.0011);
     expect(r.volume5mUsd).toBe(2_000);
+    expect(r.volume1hUsd).toBe(55_000);
   });
 
   it('falls back to DexScreener when Birdeye stale', () => {
@@ -148,6 +162,7 @@ describe('isFreshExternalDiscoveryQuote', () => {
         marketCapUsd: 440_000,
         liquidityUsd: 55_000,
         volume5mUsd: 2_000,
+        volume1hUsd: 55_000,
         fetchedAtMs: NOW - 2_000,
       },
       nowMs: NOW,

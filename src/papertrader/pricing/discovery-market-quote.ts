@@ -20,6 +20,7 @@ export interface DiscoveryMarketQuote {
   marketCapUsd: number | null;
   liquidityUsd: number | null;
   volume5mUsd: number | null;
+  volume1hUsd: number | null;
   source: DiscoveryQuoteSource;
   /** Epoch ms when the chosen quote was observed (Birdeye fetch time or PG snapshot ts). */
   quoteTsMs: number | null;
@@ -33,13 +34,14 @@ export interface DiscoveryMarketQuote {
 export interface DiscoveryQuotePickInput {
   pgRow: Pick<
     SnapshotCandidateRow,
-    'price_usd' | 'market_cap_usd' | 'liquidity_usd' | 'volume_5m' | 'ts'
+    'price_usd' | 'market_cap_usd' | 'liquidity_usd' | 'volume_5m' | 'volume_1h' | 'ts'
   >;
   birdeye?: {
     priceUsd: number | null;
     marketCapUsd: number | null;
     liquidityUsd: number | null;
     volume5mUsd: number | null;
+    volume1hUsd: number | null;
     fetchedAtMs: number;
     tierInsufficient?: boolean;
     errorKind?: BirdeyeFetchErrorKind;
@@ -49,6 +51,7 @@ export interface DiscoveryQuotePickInput {
     marketCapUsd: number | null;
     liquidityUsd: number | null;
     volume5mUsd: number | null;
+    volume1hUsd: number | null;
     fetchedAtMs: number;
   } | null;
   nowMs: number;
@@ -64,6 +67,7 @@ function pgBaseline(input: DiscoveryQuotePickInput): DiscoveryMarketQuote {
     marketCapUsd: positive(input.pgRow.market_cap_usd),
     liquidityUsd: positive(input.pgRow.liquidity_usd),
     volume5mUsd: positive(input.pgRow.volume_5m),
+    volume1hUsd: positive(input.pgRow.volume_1h),
     source: 'pg_snapshot',
     quoteTsMs: pgTs,
     pgSnapshotAgeMs: pgAge,
@@ -94,12 +98,20 @@ export function pickDiscoveryMarketQuote(input: DiscoveryQuotePickInput): Discov
   const bFresh =
     b != null &&
     !b.tierInsufficient &&
-    (b.priceUsd != null || b.marketCapUsd != null || b.liquidityUsd != null || b.volume5mUsd != null) &&
+    (b.priceUsd != null ||
+      b.marketCapUsd != null ||
+      b.liquidityUsd != null ||
+      b.volume5mUsd != null ||
+      b.volume1hUsd != null) &&
     isFresh(b.fetchedAtMs, nowMs, maxStaleMs);
 
   const dFresh =
     d != null &&
-    (d.priceUsd != null || d.marketCapUsd != null || d.liquidityUsd != null || d.volume5mUsd != null) &&
+    (d.priceUsd != null ||
+      d.marketCapUsd != null ||
+      d.liquidityUsd != null ||
+      d.volume5mUsd != null ||
+      d.volume1hUsd != null) &&
     isFresh(d.fetchedAtMs, nowMs, maxStaleMs);
 
   let source: DiscoveryQuoteSource = 'pg_snapshot';
@@ -120,6 +132,8 @@ export function pickDiscoveryMarketQuote(input: DiscoveryQuotePickInput): Discov
     (bFresh ? b!.liquidityUsd : null) ?? (dFresh ? d!.liquidityUsd : null) ?? base.liquidityUsd;
   const pickVol =
     (bFresh ? b!.volume5mUsd : null) ?? (dFresh ? d!.volume5mUsd : null) ?? base.volume5mUsd;
+  const pickVol1h =
+    (bFresh ? b!.volume1hUsd : null) ?? (dFresh ? d!.volume1hUsd : null) ?? base.volume1hUsd;
 
   const coverageGap =
     base.pgSnapshotAgeMs != null &&
@@ -133,6 +147,7 @@ export function pickDiscoveryMarketQuote(input: DiscoveryQuotePickInput): Discov
     marketCapUsd: pickMcap,
     liquidityUsd: pickLiq,
     volume5mUsd: pickVol,
+    volume1hUsd: pickVol1h,
     source,
     quoteTsMs,
     pgSnapshotAgeMs: base.pgSnapshotAgeMs,
@@ -159,6 +174,7 @@ export interface DexScreenerMarketSnapshot {
   marketCapUsd: number | null;
   liquidityUsd: number | null;
   volume5mUsd: number | null;
+  volume1hUsd: number | null;
   fetchedAtMs: number;
 }
 
@@ -196,13 +212,15 @@ export function parseDexScreenerPair(pair: Record<string, unknown>): DexScreener
   const priceUsd = positive(pair.priceUsd);
   const marketCapUsd = positive((pair as { marketCap?: number }).marketCap ?? (pair as { fdv?: number }).fdv);
   const liquidityUsd = positive((pair.liquidity as { usd?: number } | undefined)?.usd);
-  const volume = pair.volume as { m5?: number } | undefined;
+  const volume = pair.volume as { m5?: number; h1?: number } | undefined;
   const volume5mUsd = positive(volume?.m5);
+  const volume1hUsd = positive(volume?.h1);
   return {
     priceUsd,
     marketCapUsd,
     liquidityUsd,
     volume5mUsd,
+    volume1hUsd,
     fetchedAtMs: Date.now(),
   };
 }
@@ -281,7 +299,8 @@ export async function resolveDiscoveryMarketQuote(
     (birdeye.priceUsd != null ||
       birdeye.marketCapUsd != null ||
       birdeye.liquidityUsd != null ||
-      birdeye.volume5mUsd != null);
+      birdeye.volume5mUsd != null ||
+      birdeye.volume1hUsd != null);
 
   if (!birdeyeUsable) {
     dexscreener = await fetchDexScreenerMarketSnapshot(opts.mint, {
@@ -298,6 +317,7 @@ export async function resolveDiscoveryMarketQuote(
           marketCapUsd: birdeye.marketCapUsd,
           liquidityUsd: birdeye.liquidityUsd,
           volume5mUsd: birdeye.volume5mUsd,
+          volume1hUsd: birdeye.volume1hUsd,
           fetchedAtMs: birdeye.fetchedAtMs,
           tierInsufficient: birdeye.tierInsufficient,
           errorKind: birdeye.errorKind,

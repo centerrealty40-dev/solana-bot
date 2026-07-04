@@ -770,6 +770,11 @@ const ConfigSchema = z.object({
    * Blocks spike-only wash (e.g. MUSHU: 2h burst + inflated vol1h, 10h dead).
    */
   volumeEphemeralNewMintMinActiveHours: z.coerce.number().int().min(0).max(24).default(10),
+  /**
+   * When fresh Birdeye/DexScreener quote shows healthy vol5m/vol1h spread, skip PG-blind
+   * ephemeral blocks (narrow hourly window / tail from stale PG peak). Env `PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS`.
+   */
+  volumeEphemeralBirdeyeFreshBypass: z.boolean().default(true),
 
   /**
    * PG data coverage guard (1.11.222): measure minute-bar history gaps/thinness for volume
@@ -1676,6 +1681,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralTailBlockEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED, true),
     volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
     volumeEphemeralNewMintMinActiveHours: process.env.PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS,
+    volumeEphemeralBirdeyeFreshBypass: envBool(
+      process.env.PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS,
+      true,
+    ),
     pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
     pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
     pgDataCoverageRecentHours: process.env.PAPER_PG_DATA_COVERAGE_RECENT_HOURS,

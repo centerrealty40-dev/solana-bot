@@ -16,6 +16,7 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
 import { sourceSnapshotTable } from '../dip-detector.js';
+import { isHealthyLiveVolumeSpread, vol5mToVol1hRatio } from './volume-spread-health.js';
 
 export interface VolumeEphemeralFeatures {
   lookbackHours: number;
@@ -41,6 +42,8 @@ export interface VolumeEphemeralFeatures {
   staleIgnoreFlag?: string;
   /** Full bypass for familiar repeat-traded mint. */
   familiarMintBypass?: boolean;
+  /** PG hourly blocks skipped — fresh Birdeye/DexScreener shows healthy vol spread. */
+  birdeyeFreshBypass?: boolean;
 }
 
 export interface VolumeEphemeralEvalResult {
@@ -54,6 +57,8 @@ export interface VolumeEphemeralEvalOpts {
   knownMint?: boolean;
   /** Familiar mint with bypass flag — skip all volume_ephemeral blocks. */
   familiarMint?: boolean;
+  /** Fresh Birdeye/DexScreener quote on evalRow — skip PG-blind ephemeral blocks when spread healthy. */
+  freshExternalMarketQuote?: boolean;
 }
 
 const EMPTY_FEATURES: VolumeEphemeralFeatures = {
@@ -80,10 +85,7 @@ function posVol(v: unknown): number | null {
 }
 
 function newMintVol5mVol1hRatio(row: SnapshotCandidateRow): number | null {
-  const vol1h = Number(row.volume_1h ?? 0);
-  const vol5m = Number(row.volume_5m ?? 0);
-  if (!(vol1h > 0) || !(vol5m >= 0)) return null;
-  return +(vol5m / vol1h).toFixed(4);
+  return vol5mToVol1hRatio(row);
 }
 
 /**
@@ -291,6 +293,19 @@ export function evaluateVolumeEphemeralGuard(
       blocked: false,
       blockedReasons: [],
       features: { ...features, familiarMintBypass: true },
+    };
+  }
+
+  /** Fresh Birdeye/DexScreener on evalRow: healthy vol spread proves live market — skip PG-blind blocks. */
+  if (
+    opts?.freshExternalMarketQuote &&
+    cfg.volumeEphemeralBirdeyeFreshBypass &&
+    isHealthyLiveVolumeSpread(cfg, row)
+  ) {
+    return {
+      blocked: false,
+      blockedReasons: [],
+      features: { ...features, birdeyeFreshBypass: true },
     };
   }
 

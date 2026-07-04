@@ -63,6 +63,19 @@ function parseMarketData(json) {
   return { priceUsd, marketCapUsd: mcap, liquidityUsd, fetchedAtMs: Date.now() };
 }
 
+function parseTradeDataVolumes(json) {
+  if (json?.success === false) return { volume5mUsd: null, volume1hUsd: null };
+  const d = json?.data;
+  if (!d || typeof d !== 'object') return { volume5mUsd: null, volume1hUsd: null };
+  return {
+    volume5mUsd: positive(d.volume_5m_usd ?? d.volume_5m),
+    volume1hUsd: positive(d.volume_1h_usd ?? d.volume_1h),
+  };
+}
+
+const BIRDEYE_COLLECTOR_VOLUME_OVERLAY =
+  process.env.BIRDEYE_COLLECTOR_VOLUME_OVERLAY !== '0';
+
 function parseBatchMarketData(json) {
   const out = new Map();
   if (json?.success === false || !json?.data || typeof json.data !== 'object') return out;
@@ -113,10 +126,38 @@ async function fetchBirdeyeForMint(mint, fetchImpl) {
   let parsed = res.ok ? parseMarketData(res.json) : null;
   const kind = res.ok ? undefined : classifyError(res.status, res.message);
   const tierInsufficient = kind != null && isTierInsufficient(kind);
+
+  let volume5mUsd = null;
+  let volume1hUsd = null;
+  if (BIRDEYE_COLLECTOR_VOLUME_OVERLAY && !tierInsufficient) {
+    const tradePath = `/defi/v3/token/trade-data/single?address=${encodeURIComponent(mint)}&frames=5m,1h`;
+    const tradeRes = await birdeyeGet(tradePath, fetchImpl);
+    if (tradeRes.ok) {
+      const vols = parseTradeDataVolumes(tradeRes.json);
+      volume5mUsd = vols.volume5mUsd;
+      volume1hUsd = vols.volume1hUsd;
+    }
+  }
+
   const val = parsed
-    ? { ...parsed, tierInsufficient: tierInsufficient || undefined, errorKind: kind }
+    ? {
+        ...parsed,
+        volume5mUsd,
+        volume1hUsd,
+        tierInsufficient: tierInsufficient || undefined,
+        errorKind: kind,
+      }
     : tierInsufficient
-      ? { priceUsd: null, marketCapUsd: null, liquidityUsd: null, fetchedAtMs: now, tierInsufficient: true, errorKind: kind }
+      ? {
+          priceUsd: null,
+          marketCapUsd: null,
+          liquidityUsd: null,
+          volume5mUsd,
+          volume1hUsd,
+          fetchedAtMs: now,
+          tierInsufficient: true,
+          errorKind: kind,
+        }
       : null;
   _cache.set(mint, { at: now, val });
   return val;
@@ -249,6 +290,14 @@ function overlayRowFromQuote(row, quote) {
   }
   if (quote.liquidityUsd != null) {
     row.liquidity_usd = quote.liquidityUsd;
+    changed = true;
+  }
+  if (quote.volume5mUsd != null) {
+    row.volume_5m = quote.volume5mUsd;
+    changed = true;
+  }
+  if (quote.volume1hUsd != null) {
+    row.volume_1h = quote.volume1hUsd;
     changed = true;
   }
   if (changed) row._birdeyeEnriched = true;
