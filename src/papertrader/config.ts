@@ -491,8 +491,8 @@ const ConfigSchema = z.object({
    */
   liveReentryMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(0),
   /**
-   * Hybrid re-entry с `liveReentryMinDropFromLastExitPct`: после loss-exit price-gap действует
-   * только в окне `PAPER_DIP_LOSS_EXIT_COOLDOWN_*`; после cooldown — обычные discovery gates.
+   * Hybrid re-entry с `liveReentryMinDropFromLastExitPct`: price ceiling только в окне
+   * `PAPER_DIP_LOSS_EXIT_COOLDOWN_*`; после cooldown — обычные discovery gates (без dip anchor).
    * `LIVE_REENTRY_MAX_WAIT_MINUTES` > 0 включает hybrid-режим (legacy price-gap path выкл.).
    * Env: `LIVE_REENTRY_MAX_WAIT_MINUTES`. `0` = только price-gap без hybrid wrapper.
    */
@@ -502,7 +502,7 @@ const ConfigSchema = z.object({
   /** After loss/stress exit: disable hybrid timer-only re-entry (must meet drop gate). */
   liveReentryHybridDisableTimerAfterLoss: z.boolean().default(true),
   /**
-   * Re-entry price gate (last exit −N%) действует только N ч после выхода; `0` = без лимита по времени.
+   * Re-entry price gate (last exit −N%) — legacy safety cap; основной лимит = post-exit cooldown.
    * Env: `LIVE_REENTRY_GATE_MAX_AGE_HOURS`.
    */
   liveReentryGateMaxAgeHours: z.coerce.number().min(0).max(168).default(4),
@@ -822,6 +822,11 @@ const ConfigSchema = z.object({
    * Env `LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX`.
    */
   pgCoverageFamiliarMintStaleRelax: z.boolean().default(false),
+  /**
+   * When true: fresh Birdeye/DexScreener REST quote bypasses PG coverage buy blocks
+   * (pg_stale, sybil samples, gaps). Env `PAPER_PG_COVERAGE_BIRDEYE_FRESH_BYPASS`.
+   */
+  pgCoverageBirdeyeFreshBypass: z.boolean().default(true),
 
   // ---- whale analysis ----
   whaleEnabled: z.boolean().default(false),
@@ -1694,6 +1699,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX,
       false,
     ),
+    pgCoverageBirdeyeFreshBypass: envBool(process.env.PAPER_PG_COVERAGE_BIRDEYE_FRESH_BYPASS, true),
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
     whaleLargeSellUsd: process.env.PAPER_DIP_LARGE_SELL_USD,

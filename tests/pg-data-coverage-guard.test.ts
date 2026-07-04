@@ -401,6 +401,47 @@ describe('evaluatePgDataCoverageGuard', () => {
     expect(r.features.sybilBaselineSamples).toBe(11);
     expect(r.features.nearEntry).toBe(true);
   });
+
+  it('bypasses PG coverage blocks when fresh external market quote is available', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageBlockBuy: true, pgCoverageBirdeyeFreshBypass: true }),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx({
+        recentHoursWithData: 3,
+        recentHourCoverageRatio: 0.5,
+        sybilBaselineSamples: 12,
+        sybilCoverageOk: false,
+        recentMaxGapMinutes: 42,
+      }),
+      globalState({
+        pgStaleNow: true,
+        worstAgeSec: 1028,
+        freshness: [
+          { source: 'pumpswap', table: 'pumpswap_pair_snapshots', latestTs: null, ageSec: 1028, ok: false },
+        ],
+        coverageMode: 'relaxed',
+      }),
+      true,
+      { freshExternalMarketQuote: true },
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.blockedReasons).toEqual([]);
+    expect(r.features.birdeyeFreshBypass).toBe(true);
+  });
+
+  it('still blocks on PG coverage when external quote bypass is disabled', () => {
+    const r = evaluatePgDataCoverageGuard(
+      baseCfg({ pgDataCoverageBlockBuy: true, pgCoverageBirdeyeFreshBypass: false }),
+      baseRow({ source: 'pumpswap' }),
+      mintCtx({ sybilBaselineSamples: 12, sybilCoverageOk: false }),
+      globalState({ coverageMode: 'relaxed' }),
+      true,
+      { freshExternalMarketQuote: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:sybil_pg_insufficient'))).toBe(true);
+    expect(r.features.birdeyeFreshBypass).toBeFalsy();
+  });
 });
 
 describe('isPgCoverageKnownMint', () => {

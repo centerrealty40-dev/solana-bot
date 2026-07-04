@@ -142,6 +142,18 @@ export function pickDiscoveryMarketQuote(input: DiscoveryQuotePickInput): Discov
   };
 }
 
+/** True when discovery eval resolved price/mcap/liq/vol from fresh Birdeye or DexScreener (not PG). */
+export function isFreshExternalDiscoveryQuote(
+  quote: DiscoveryMarketQuote | null | undefined,
+  maxStaleMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  if (quote == null || quote.source === 'pg_snapshot') return false;
+  if (quote.birdeyeTierInsufficient) return false;
+  if (quote.coverageGap) return false;
+  return isFresh(quote.quoteTsMs, nowMs, maxStaleMs);
+}
+
 export interface DexScreenerMarketSnapshot {
   priceUsd: number | null;
   marketCapUsd: number | null;

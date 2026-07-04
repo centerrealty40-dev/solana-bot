@@ -863,6 +863,7 @@ export interface SnapshotFeatures {
     ephemeralCoverageOk: boolean;
     knownMintGapBypass?: boolean;
     familiarMintStaleBypass?: boolean;
+    birdeyeFreshBypass?: boolean;
     global: {
       pgStaleNow: boolean;
       systemHourRatio: number | null;

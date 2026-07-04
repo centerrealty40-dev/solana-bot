@@ -5,6 +5,7 @@ import {
   appendLiveReentryHybridGateReasons,
   isLiveReentryHybridGateEnabled,
   lastExitMarketSnapshotByMintMap,
+  lastPostExitBuyCooldownTsByMintMap,
   lastRealExitMarketSnapshotByMintMap,
   recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordLastExitMarketSnapshotAfterClose,
@@ -22,6 +23,9 @@ function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfi
     liveReentryLossMinDropFromLastExitPct: 30,
     liveReentryHybridDisableTimerAfterLoss: true,
     liveReentryGateMaxAgeHours: 4,
+    dipLossExitCooldownEnabled: true,
+    dipLossExitCooldownMinutes: 10,
+    dipLossExitCooldownHours: 0,
     ...overrides,
   } as PaperTraderConfig;
 }
@@ -30,6 +34,7 @@ describe('live re-entry hybrid gate', () => {
   beforeEach(() => {
     lastExitMarketSnapshotByMintMap.clear();
     lastRealExitMarketSnapshotByMintMap.clear();
+    lastPostExitBuyCooldownTsByMintMap.clear();
   });
 
   it('enabled when drop and max wait both set', () => {
@@ -39,28 +44,74 @@ describe('live re-entry hybrid gate', () => {
     ).toBe(false);
   });
 
-  it('blocks when price above -20% from last exit', () => {
-    const exitTs = Date.now() - 10 * 60_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
+  it('blocks when price above -20% from last exit during cooldown', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
     expect(reasons.some((r) => r.startsWith('reentry_wait_dip20pct'))).toBe(true);
   });
 
-  it('allows dip re-entry when price hit -20%', () => {
-    const exitTs = Date.now() - 10 * 60_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0);
+  it('allows dip re-entry when price hit -20% during cooldown', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.79, reasons, Date.now());
     expect(reasons).toHaveLength(0);
   });
 
-  it('blocks same-price re-entry after 20m (no timer fallback)', () => {
+  it('allows same-price re-entry after cooldown (no multi-day dip anchor)', () => {
     const exitTs = Date.now() - 21 * 60_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: 50, exitReason: 'TRAIL' });
+    const cfg = hybridCfg({
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
     const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.0, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+    appendLiveReentryHybridGateReasons(cfg, MINT, 1.0, reasons, Date.now());
+    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+  });
+
+  it('MENSA scenario: exit 2d ago, eval now — no reentry_wait_dip after cooldown', () => {
+    const exitTs = Date.now() - 48 * 3_600_000;
+    const cfg = hybridCfg({
+      liveReentryMinDropFromLastExitPct: 10,
+      liveReentryMaxWaitMinutes: 240,
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 0.01300716,
+      effective_exit_price: 0.01300716,
+      netPnlUsd: 12.5,
+      exitReason: 'TRAIL',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(cfg, MINT, 0.0135, reasons, Date.now());
+    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
   });
 
   it('after loss cooldown expires: no exit-price ceiling (normal discovery gates)', () => {
@@ -97,17 +148,31 @@ describe('live re-entry hybrid gate', () => {
     expect(reasons.some((r) => r.includes('_loss'))).toBe(true);
   });
 
-  it('expires re-entry gate after max age hours', () => {
-    const exitTs = Date.now() - 5 * 3_600_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: 50, exitReason: 'TP' });
+  it('after cooldown: no exit-price ceiling for profit or loss exits', () => {
+    const exitTs = Date.now() - 11 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TP',
+    });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasons, Date.now());
     expect(reasons).toHaveLength(0);
   });
 
-  it('after loss: requires 30% dip not 20%', () => {
+  it('after loss: requires 30% dip not 20% during cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
-    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, { netPnlUsd: -10, exitReason: 'SL' });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: -10,
+      exitReason: 'SL',
+    });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.75, reasons, Date.now());
     expect(reasons.some((r) => r.includes('dip30pct') || r.includes('dip30pct_loss'))).toBe(true);
@@ -152,7 +217,11 @@ describe('live re-entry hybrid gate', () => {
         },
       ],
     };
-    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), ct, { openTrade });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(
+      { ...hybridCfg(), liveReentryMinDropFromLastExitPct: 12, liveReentryLossMinDropFromLastExitPct: 30 },
+      ct,
+      { openTrade },
+    );
     const snap = lastExitMarketSnapshotByMintMap.get(MINT);
     expect(snap?.marketUsd).toBeCloseTo(0.003895, 8);
     expect(snap?.exitReason).toBe('FLASH_CRASH_KILL');

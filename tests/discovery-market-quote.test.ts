@@ -7,6 +7,7 @@ import {
 } from '../src/papertrader/pricing/birdeye-market.js';
 import {
   __resetDexScreenerMarketCacheForTests,
+  isFreshExternalDiscoveryQuote,
   pickDiscoveryMarketQuote,
   parseDexScreenerPair,
 } from '../src/papertrader/pricing/discovery-market-quote.js';
@@ -129,6 +130,47 @@ describe('pickDiscoveryMarketQuote — fallback chain', () => {
     });
     expect(r.coverageGap).toBe(true);
     expect(r.birdeyeTierInsufficient).toBe(true);
+  });
+});
+
+describe('isFreshExternalDiscoveryQuote', () => {
+  it('returns true for fresh birdeye quote', () => {
+    const q = pickDiscoveryMarketQuote({
+      pgRow: {
+        price_usd: 0.001,
+        market_cap_usd: 400_000,
+        liquidity_usd: 50_000,
+        volume_5m: 1_000,
+        ts: new Date(NOW - 20 * 60_000),
+      },
+      birdeye: {
+        priceUsd: 0.0011,
+        marketCapUsd: 440_000,
+        liquidityUsd: 55_000,
+        volume5mUsd: 2_000,
+        fetchedAtMs: NOW - 2_000,
+      },
+      nowMs: NOW,
+      maxStaleMs: 15_000,
+      coverageGapMinMs: 5 * 60_000,
+    });
+    expect(isFreshExternalDiscoveryQuote(q, 15_000, NOW)).toBe(true);
+  });
+
+  it('returns false for pg-only quote', () => {
+    const q = pickDiscoveryMarketQuote({
+      pgRow: {
+        price_usd: 0.001,
+        market_cap_usd: 400_000,
+        liquidity_usd: 50_000,
+        volume_5m: 1_000,
+        ts: new Date(NOW - 20 * 60_000),
+      },
+      nowMs: NOW,
+      maxStaleMs: 15_000,
+      coverageGapMinMs: 5 * 60_000,
+    });
+    expect(isFreshExternalDiscoveryQuote(q, 15_000, NOW)).toBe(false);
   });
 });
 
