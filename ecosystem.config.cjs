@@ -1078,7 +1078,9 @@ const PM2_APPS = [
          * в узкое почасовое окно (разовый burst — паттерн GOAT).
          * Off on prod: buys proceed when snapshot/dip pass (DADDY RCA Jul 5); no TG advice.
          */
-        PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '0',
+        PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '1',
+        PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS: '1',
+        PAPER_PG_COVERAGE_BIRDEYE_FRESH_BYPASS: '1',
         PAPER_VOLUME_EPHEMERAL_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_EPHEMERAL_MIN_ACTIVE_HOUR_VOL5M_USD: '8000',
         PAPER_VOLUME_EPHEMERAL_MAX_ACTIVE_HOURS: '4',

@@ -17,6 +17,7 @@ export interface BirdeyeMarketQuote {
   marketCapUsd: number | null;
   liquidityUsd: number | null;
   volume5mUsd: number | null;
+  volume1hUsd: number | null;
   fetchedAtMs: number;
 }
 
@@ -45,15 +46,27 @@ export function parseBirdeyeMarketData(json: unknown): Partial<BirdeyeMarketQuot
   const fdv = positive(d.fdv);
   const mcap = marketCapUsd ?? fdv;
   if (priceUsd == null && mcap == null && liquidityUsd == null) return null;
-  return { priceUsd, marketCapUsd: mcap, liquidityUsd, volume5mUsd: null, fetchedAtMs: Date.now() };
+  return { priceUsd, marketCapUsd: mcap, liquidityUsd, volume5mUsd: null, volume1hUsd: null, fetchedAtMs: Date.now() };
+}
+
+export interface BirdeyeTradeDataVolumes {
+  volume5mUsd: number | null;
+  volume1hUsd: number | null;
+}
+
+export function parseBirdeyeTradeDataVolumes(json: unknown): BirdeyeTradeDataVolumes {
+  const root = json as { success?: boolean; data?: Record<string, unknown> };
+  if (root?.success === false) return { volume5mUsd: null, volume1hUsd: null };
+  const d = root?.data;
+  if (!d || typeof d !== 'object') return { volume5mUsd: null, volume1hUsd: null };
+  return {
+    volume5mUsd: positive(d.volume_5m_usd ?? d.volume_5m),
+    volume1hUsd: positive(d.volume_1h_usd ?? d.volume_1h),
+  };
 }
 
 export function parseBirdeyeTradeData5m(json: unknown): number | null {
-  const root = json as { success?: boolean; data?: Record<string, unknown> };
-  if (root?.success === false) return null;
-  const d = root?.data;
-  if (!d || typeof d !== 'object') return null;
-  return positive(d.volume_5m_usd ?? d.volume_5m);
+  return parseBirdeyeTradeDataVolumes(json).volume5mUsd;
 }
 
 export function classifyBirdeyeError(status: number, message: string): BirdeyeFetchErrorKind {
@@ -160,6 +173,7 @@ export async function resolveBirdeyeMarketQuote(
       marketCapUsd: cached.marketCapUsd,
       liquidityUsd: cached.liquidityUsd,
       volume5mUsd: cached.volume5mUsd,
+      volume1hUsd: cached.volume1hUsd ?? null,
       fetchedAtMs: cached.fetchedAtMs,
       tierInsufficient: cached.tierInsufficient,
       errorKind: cached.lastErrorKind,
@@ -185,12 +199,14 @@ export async function resolveBirdeyeMarketQuote(
   }
 
   let volume5mUsd: number | null = parsed?.volume5mUsd ?? null;
+  let volume1hUsd: number | null = null;
   if (opts.fetchVolume5m !== false && !tierInsufficient) {
-    const tradePath = `/defi/v3/token/trade-data/single?address=${encodeURIComponent(mint)}&frames=5m`;
+    const tradePath = `/defi/v3/token/trade-data/single?address=${encodeURIComponent(mint)}&frames=5m,1h`;
     const tradeRes = await birdeyeGet(tradePath, apiKey, doFetch, timeoutMs);
     if (tradeRes.ok) {
-      const vol = parseBirdeyeTradeData5m(tradeRes.json);
-      if (vol != null) volume5mUsd = vol;
+      const vols = parseBirdeyeTradeDataVolumes(tradeRes.json);
+      if (vols.volume5mUsd != null) volume5mUsd = vols.volume5mUsd;
+      if (vols.volume1hUsd != null) volume1hUsd = vols.volume1hUsd;
     } else {
       const kind = classifyBirdeyeError(tradeRes.status, tradeRes.message);
       if (isBirdeyeTierInsufficient(kind)) {
@@ -206,6 +222,7 @@ export async function resolveBirdeyeMarketQuote(
     marketCapUsd: parsed?.marketCapUsd ?? null,
     liquidityUsd: parsed?.liquidityUsd ?? null,
     volume5mUsd,
+    volume1hUsd,
     fetchedAtMs,
     tierInsufficient: tierInsufficient || undefined,
     lastErrorKind,
@@ -216,7 +233,8 @@ export async function resolveBirdeyeMarketQuote(
     out.priceUsd == null &&
     out.marketCapUsd == null &&
     out.liquidityUsd == null &&
-    out.volume5mUsd == null
+    out.volume5mUsd == null &&
+    out.volume1hUsd == null
   ) {
     return tierInsufficient ? { ...out, tierInsufficient: true, errorKind: lastErrorKind } : null;
   }
@@ -272,6 +290,7 @@ export async function resolveBirdeyeMarketQuoteBatch(
         marketCapUsd: cached.marketCapUsd,
         liquidityUsd: cached.liquidityUsd,
         volume5mUsd: cached.volume5mUsd,
+        volume1hUsd: cached.volume1hUsd ?? null,
         fetchedAtMs: cached.fetchedAtMs,
         tierInsufficient: cached.tierInsufficient,
         errorKind: cached.lastErrorKind,
@@ -306,6 +325,7 @@ export async function resolveBirdeyeMarketQuoteBatch(
           marketCapUsd: row.marketCapUsd ?? null,
           liquidityUsd: row.liquidityUsd ?? null,
           volume5mUsd: row.volume5mUsd ?? null,
+          volume1hUsd: row.volume1hUsd ?? null,
           fetchedAtMs: now,
         };
         cache.set(mint, entry);

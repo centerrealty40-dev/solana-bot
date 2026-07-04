@@ -810,6 +810,8 @@ export interface SnapshotFeatures {
     /** Familiar repeat-traded mint with bypass flag enabled. */
     familiarMint?: boolean;
     familiarMintBypass?: boolean;
+    /** Fresh Birdeye/DexScreener quote bypassed PG-blind ephemeral blocks. */
+    birdeyeFreshBypass?: boolean;
     coverageOk: boolean;
     lookbackHours: number;
     hoursWithData: number;

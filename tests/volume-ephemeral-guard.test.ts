@@ -315,4 +315,31 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blocked).toBe(false);
     expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(false);
   });
+
+  it('bypasses PG-blind narrow-window block when fresh Birdeye shows healthy spread', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralBirdeyeFreshBypass: true }),
+      baseRow({ volume_5m: 15_000, volume_1h: 95_000 }),
+      ctx({
+        coverageOk: true,
+        hoursWithData: 4,
+        activeHours: 2,
+        peakHourVol5mUsd: 250_000,
+      }),
+      { freshExternalMarketQuote: true },
+    );
+    expect(r.blocked).toBe(false);
+    expect(r.features.birdeyeFreshBypass).toBe(true);
+  });
+
+  it('still blocks wash when Birdeye spread is unhealthy', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralBirdeyeFreshBypass: true, volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({ volume_5m: 2_800, volume_1h: 90_000 }),
+      ctx({ coverageOk: true, hoursWithData: 4, activeHours: 2, peakHourVol5mUsd: 250_000 }),
+      { freshExternalMarketQuote: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.features.birdeyeFreshBypass).toBeFalsy();
+  });
 });

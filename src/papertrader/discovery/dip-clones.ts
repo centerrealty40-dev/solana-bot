@@ -989,6 +989,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           quoteMcapUsd: birdeyeMarketQuote.marketCapUsd,
           quoteLiqUsd: birdeyeMarketQuote.liquidityUsd,
           quoteVol5mUsd: birdeyeMarketQuote.volume5mUsd,
+          quoteVol1hUsd: birdeyeMarketQuote.volume1hUsd,
         });
       }
     }
@@ -1011,6 +1012,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
       if (birdeyeMarketQuote.volume5mUsd != null && birdeyeMarketQuote.volume5mUsd > 0) {
         evalOverrides.volume_5m = birdeyeMarketQuote.volume5mUsd;
+      }
+      if (birdeyeMarketQuote.volume1hUsd != null && birdeyeMarketQuote.volume1hUsd > 0) {
+        evalOverrides.volume_1h = birdeyeMarketQuote.volume1hUsd;
       }
     }
     if (
@@ -1063,6 +1067,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (scaled != null && scaled > 0) evalOverrides.market_cap_usd = scaled;
     }
     const evalRow = Object.keys(evalOverrides).length > 0 ? { ...row, ...evalOverrides } : row;
+    const freshExternalQuote = isFreshExternalDiscoveryQuote(
+      birdeyeMarketQuote,
+      cfg.birdeyeMaxStaleMs,
+    );
 
     const discoveryMcap = resolveDiscoveryRefMcap(row, {
       defiMcapUsd: defiMcap?.mcapUsd,
@@ -1283,17 +1291,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         const knownMint = isPgCoverageKnownMint(cfg, row.mint, knownMintHistory);
         const evalRes = evaluatePgDataCoverageGuard(
           cfg,
-          row,
+          evalRow,
           mintPgCoverageMap.get(row.mint),
           globalPgCoverage,
           true,
           {
             knownMint,
             familiarMint,
-            freshExternalMarketQuote: isFreshExternalDiscoveryQuote(
-              birdeyeMarketQuote,
-              cfg.birdeyeMaxStaleMs,
-            ),
+            freshExternalMarketQuote: freshExternalQuote,
           },
         );
         pgDataCoverageFeatures = evalRes.features;
@@ -1304,7 +1309,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
       if (entryPath != null && cfg.volumeSybilGuardEnabled) {
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
-        const evalRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), {
+        const evalRes = evaluateVolumeSybilGuard(cfg, evalRow, volumeSybilMap.get(row.mint), {
           knownMint,
         });
         volumeSybilFeatures = evalRes.features;
@@ -1322,9 +1327,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           knownMintSupplement,
         );
         const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
-        const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
+        const evalRes = evaluateVolumeEphemeralGuard(cfg, evalRow, volumeEphemeralMap.get(row.mint), {
           knownMint,
           familiarMint,
+          freshExternalMarketQuote: freshExternalQuote,
         });
         volumeEphemeralFeatures = evalRes.features;
         if (evalRes.blocked) {
@@ -1609,6 +1615,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         knownMint: volumeEphemeralKnownMint,
         familiarMint: volumeEphemeralFamiliarMint,
         familiarMintBypass: volumeEphemeralFeatures.familiarMintBypass === true,
+        birdeyeFreshBypass: volumeEphemeralFeatures.birdeyeFreshBypass === true,
         coverageOk: volumeEphemeralFeatures.coverageOk,
         lookbackHours: volumeEphemeralFeatures.lookbackHours,
         hoursWithData: volumeEphemeralFeatures.hoursWithData,
@@ -1644,7 +1651,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (knownMintForProfile) {
       decisionFeatures.known_mint_vol_profile = {
         vol5mUsd: Number(row.volume_5m ?? 0),
-        vol1hUsd: Number(row.volume_1h ?? 0),
+        vol1hUsd: Number(evalRow.volume_1h ?? 0),
         vol5mPrev1hUsd: volumeEphemeralFeatures?.vol5mPrev1hUsd ?? null,
         vol5mPrev2hUsd: volumeEphemeralFeatures?.vol5mPrev2hUsd ?? null,
         activeHours24h: volumeEphemeralFeatures?.activeHours ?? null,

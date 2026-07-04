@@ -16,6 +16,7 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
 import { sourceSnapshotTable } from '../dip-detector.js';
+import { vol5mToVol1hRatio } from './volume-spread-health.js';
 
 export interface VolumeSybilFeatures {
   lookbackHours: number;
@@ -201,8 +202,7 @@ export function evaluateVolumeSybilGuard(
   }
 
   const vol1h = Number(row.volume_1h ?? 0);
-  const vol5m = Number(row.volume_5m ?? 0);
-  const vol5mVol1h = vol1h > 0 && vol5m >= 0 ? vol5m / vol1h : null;
+  const vol5mVol1h = vol5mToVol1hRatio(row);
   const vol1hAliveExempt =
     Number.isFinite(vol1h) &&
     vol1h >= cfg.volumeSybilVol1hAliveExemptUsd &&
