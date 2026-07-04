@@ -199,6 +199,11 @@ export interface EvalDecision {
       unclusteredBuyers: number | null;
       pass: boolean;
     };
+    clusterDump?: {
+      clusterSellRatio: number | null;
+      clusterUniqueSellers: number | null;
+      pass: boolean;
+    };
   };
 }
 
@@ -2158,6 +2163,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           reasons: pvEval.reasons.slice(0, 12),
           phase: pvEval.phase,
         });
+        for (const ev of pvEval.shadowAnalyzers?.journalEvents ?? []) {
+          auditRows.push(ev);
+        }
       }
       decisions.push({
         lane,
@@ -2177,6 +2185,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           shadowMode: pvEval.shadowMode,
           volAuth: pvEval.shadowAnalyzers?.volAuth ?? undefined,
           organicFlow: pvEval.shadowAnalyzers?.organicFlow ?? undefined,
+          clusterDump: pvEval.shadowAnalyzers?.clusterDump ?? undefined,
         },
       });
     }

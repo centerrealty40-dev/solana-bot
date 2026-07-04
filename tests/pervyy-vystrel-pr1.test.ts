@@ -4,10 +4,12 @@ import {
   resolveDiscoverySqlMinMarketCapUsd,
 } from '../src/papertrader/discovery/discovery-mcap-floor.js';
 import {
+  evaluatePervyyVystrelShadowAnalyzers,
   evaluateLiveOscarPervyyVystrelDiscovery,
   isPervyyVystrelObservabilityActive,
 } from '../src/papertrader/live-oscar-pervyy-vystrel.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
+import type { PervyyVystrelMintMaterialized } from '../src/papertrader/discovery/pervyy-vystrel-snapshot-cache.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
 function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
@@ -144,5 +146,124 @@ describe('evaluateLiveOscarPervyyVystrelDiscovery (PR1 shadow)', () => {
     });
     expect(evalRes.wouldOnboard).toBe(false);
     expect(evalRes.reasons.some((x) => x.includes('vol1h'))).toBe(true);
+  });
+});
+
+describe('pervyy_vystrel Phase D phantom replay', () => {
+  const materializedPhaseD: PervyyVystrelMintMaterialized = {
+    volAuth: {
+      mint: 'MintPhaseD',
+      windowHours: 1,
+      computedAtMs: 1_700_000_000_000,
+      signals: {
+        swapCount: 42,
+        uniqueBuyers: 30,
+        uniqueSellers: 8,
+        uniqueBuyerSellerRatio: 3.75,
+        roundTripShare: 0.05,
+        selfTradeRatio: 0.02,
+        netNewWalletShare: 0.75,
+        cycleShare: 0.05,
+        totalVolumeUsd: 90_000,
+        holderDelta30mPct: 8,
+        volumeWithoutHolderGrowth: false,
+      },
+      washScore: 0.1,
+      organicScore: 0.72,
+      authenticPass: true,
+      insufficientData: false,
+      reasons: [],
+    },
+    organicFlow: {
+      mint: 'MintPhaseD',
+      windowHours: 1,
+      computedAtMs: 1_700_000_000_000,
+      uniqueBuyers1h: 31,
+      clusterBuyerRatio: 0.2,
+      unclusteredBuyers: 24,
+      unclusteredBuyUsd: 48_000,
+      totalBuyUsd: 60_000,
+      pass: true,
+      shadowPass: true,
+      reasons: [],
+    },
+    clusterMap: null,
+    clusterDumpShadow: {
+      mint: 'MintPhaseD',
+      clusterSellRatio: 0.68,
+      clusterUniqueSellers: 4,
+      top3ClusterSellShare: 0.52,
+      retailPanicScore: 0.21,
+      pass: true,
+      shadowPass: true,
+      reasons: [],
+    },
+  };
+
+  it('logs missing materialized snapshot when materialize is disabled', () => {
+    const cfg = baseCfg({
+      pervyyVystrel: {
+        ...baseCfg().pervyyVystrel,
+        materializeEnabled: false,
+        organicGateEnabled: true,
+        volAuthEnabled: true,
+      },
+    });
+
+    const shadow = evaluatePervyyVystrelShadowAnalyzers({
+      cfg,
+      mint: 'MintNoMaterialize',
+      refMcap: 150_000,
+    });
+
+    expect(shadow.journalEvents).toContainEqual({
+      kind: 'pervyy_vystrel_phase_d_missing_materialized_snapshot',
+      mint: 'MintNoMaterialize',
+      materialize_enabled: false,
+      pass: false,
+      reasons: ['pervyy_vystrel_phase_d_missing_materialized_snapshot'],
+    });
+  });
+
+  it('emits Phase C/D phantom events without live open when materialized snapshot passes', () => {
+    const cfg = baseCfg({
+      pervyyVystrel: {
+        ...baseCfg().pervyyVystrel,
+        enabled: false,
+        mode: 'shadow',
+        materializeEnabled: true,
+        organicGateEnabled: true,
+        volAuthEnabled: true,
+      },
+    });
+
+    const evalRes = evaluateLiveOscarPervyyVystrelDiscovery({
+      cfg,
+      row: row({ mint: 'MintPhaseD', market_cap_usd: 600_000, volume_1h: 90_000 }),
+      lane: 'post_migration',
+      refMcap: 600_000,
+      ageMin: 900,
+      discoveryMcap: { refMcapUsd: 600_000, source: 'pg_snapshot', pgMcapUsd: 600_000 },
+      materialized: materializedPhaseD,
+    });
+
+    expect(evalRes.pass).toBe(false);
+    expect(evalRes.wouldOnboard).toBe(false);
+    expect(evalRes.phase).toBe('phase_d');
+    expect(evalRes.reasons).toContain('pervyy_vystrel_phase_d_phantom_replay_only');
+
+    const events = evalRes.shadowAnalyzers?.journalEvents ?? [];
+    expect(events.map((ev) => ev.kind)).toContain('pervyy_vystrel_phase_c_candidate');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: 'pervyy_vystrel_phase_d_candidate',
+        pass: false,
+        would_enter: false,
+        cluster_dump_completed: true,
+        fresh_retail_absorption: true,
+        reramp_confirmation: true,
+      }),
+    );
+    expect(events.some((ev) => ev.kind === 'live_position_open')).toBe(false);
   });
 });

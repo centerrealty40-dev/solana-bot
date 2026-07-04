@@ -537,6 +537,43 @@ export const PervyyVystrelClusterDumpShadowSchema = z.object({
   pass: z.boolean().optional(),
 });
 
+/** Phase D phantom/replay requires materialized PR2 snapshots; never opens a position. */
+export const PervyyVystrelPhaseDMissingMaterializedSnapshotSchema = z.object({
+  kind: z.literal('pervyy_vystrel_phase_d_missing_materialized_snapshot'),
+  mint: z.string().min(1).max(64),
+  materialize_enabled: z.boolean(),
+  pass: z.literal(false),
+  reasons: z.array(z.string()).optional(),
+});
+
+/** Phase C phantom candidate from materialized cluster-dump attribution. */
+export const PervyyVystrelPhaseCCandidateSchema = z.object({
+  kind: z.literal('pervyy_vystrel_phase_c_candidate'),
+  mint: z.string().min(1).max(64),
+  cluster_dump_completed: z.boolean(),
+  cluster_sell_ratio: z.number().finite().nullable().optional(),
+  cluster_unique_sellers: z.number().int().nonnegative(),
+  retail_panic_score: z.number().finite().nullable().optional(),
+  pass: z.literal(false),
+  reasons: z.array(z.string()).optional(),
+});
+
+/** Phase D phantom/replay candidate. `would_enter:false` is the no-live-buy contract. */
+export const PervyyVystrelPhaseDCandidateSchema = z.object({
+  kind: z.literal('pervyy_vystrel_phase_d_candidate'),
+  mint: z.string().min(1).max(64),
+  cluster_dump_completed: z.boolean(),
+  fresh_retail_absorption: z.boolean(),
+  reramp_confirmation: z.boolean(),
+  organic_score: z.number().finite().nullable().optional(),
+  unique_buyers_1h: z.number().finite().nullable().optional(),
+  unclustered_buyers: z.number().finite().nullable().optional(),
+  wash_score: z.number().finite().nullable().optional(),
+  pass: z.literal(false),
+  would_enter: z.literal(false),
+  reasons: z.array(z.string()).optional(),
+});
+
 /** Daily Telegram summary tick (1.11.231+); appended to live JSONL for audit. */
 export const LiveDailySummarySchema = z.object({
   kind: z.literal('live_daily_summary'),
@@ -759,6 +796,9 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   PervyyVystrelVolAuthInsufficientDataSchema,
   PervyyVystrelOrganicFlowShadowSchema,
   PervyyVystrelClusterDumpShadowSchema,
+  PervyyVystrelPhaseDMissingMaterializedSnapshotSchema,
+  PervyyVystrelPhaseCCandidateSchema,
+  PervyyVystrelPhaseDCandidateSchema,
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,
