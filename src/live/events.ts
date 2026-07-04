@@ -626,6 +626,45 @@ export const LiveShyftShadowPriceSchema = z.object({
   streamSlot: z.number().finite().nullable().optional(),
 });
 
+/** Stage 1.2 (1.11.468) — stream price picked as primary at entry/MTM (observability). */
+export const LiveShyftPricePrimarySchema = z.object({
+  kind: z.literal('live_shyft_price_primary'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  surface: z.enum(['entry', 'mtm']),
+  source: z.literal('stream'),
+  baselinePriceUsd: z.number().finite().nullable(),
+  streamPriceUsd: z.number().finite(),
+  streamTsMs: z.number().finite(),
+  streamAgeMs: z.number().finite().nullable(),
+  streamVsBaselinePct: z.number().finite().nullable(),
+  streamSlot: z.number().finite().nullable().optional(),
+});
+
+/** Stage 1.3 (1.11.469) — Shyft DeFi mcap/liq vs PG at discovery eval (observability). */
+export const LiveShyftDefiMcapSchema = z.object({
+  kind: z.literal('live_shyft_defi_mcap'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  pgMcapUsd: z.number().finite().nullable(),
+  pgLiqUsd: z.number().finite().nullable(),
+  defiMcapUsd: z.number().finite().nullable(),
+  defiLiqUsd: z.number().finite().nullable(),
+});
+
+/** Stage 0 (1.11.466) — PG snapshot price older than warn threshold at entry eval. */
+export const LiveStalePriceWarnSchema = z.object({
+  kind: z.literal('live_stale_price_warn'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32).optional(),
+  source: z.string().max(64).optional(),
+  symbol: z.string().max(64).optional(),
+  priceAgeMs: z.number().int().nonnegative(),
+  warnThresholdMs: z.number().int().positive(),
+  priceUsd: z.number().finite().nullable().optional(),
+  snapshotTsMs: z.number().finite().nullable().optional(),
+});
+
 /** Boot: pre-boot open snapshot merged into truncated journal replay (1.11.483). */
 export const LiveBootSnapshotMergeSchema = z.object({
   kind: z.literal('live_boot_snapshot_merge'),
@@ -802,6 +841,9 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveDailySummarySchema,
   LiveShyftShadowStatusSchema,
   LiveShyftShadowPriceSchema,
+  LiveShyftPricePrimarySchema,
+  LiveShyftDefiMcapSchema,
+  LiveStalePriceWarnSchema,
   LiveBootSnapshotMergeSchema,
   LiveBootWalletOrphanRestoreSchema,
   OrphanReconcileSchema,
