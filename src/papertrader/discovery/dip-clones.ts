@@ -8,6 +8,7 @@ import {
   resolveDiscoveryMarketQuote,
   buildBirdeyeCoverageGapEvent,
   buildBirdeyeTierInsufficientEvent,
+  isFreshExternalDiscoveryQuote,
   type DiscoveryQuoteSource,
 } from '../pricing/discovery-market-quote.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
@@ -271,35 +272,40 @@ export function reentryExitSnapshotForGate(mint: string): LastExitMarketSnapshot
   return snap;
 }
 
+function postExitBuyCooldownResumeAtMs(
+  cfg: PaperTraderConfig,
+  exitTsMs: number,
+): number {
+  const lossMin = cfg.dipLossExitCooldownMinutes;
+  const lossH = cfg.dipLossExitCooldownHours;
+  if (Number(lossMin) > 0) return exitTsMs + lossMin * 60_000;
+  if (Number(lossH) > 0) return exitTsMs + lossH * 3_600_000;
+  return 0;
+}
+
 export function isPostExitBuyCooldownActive(
   cfg: PaperTraderConfig,
   mint: string,
   nowMs = Date.now(),
 ): boolean {
   if (!cfg.dipLossExitCooldownEnabled) return false;
-  const lastExit = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
-  if (lastExit <= 0) return false;
-  const lossMin = cfg.dipLossExitCooldownMinutes;
-  const lossH = cfg.dipLossExitCooldownHours;
-  let resumeAt = 0;
-  if (Number(lossMin) > 0) resumeAt = lastExit + lossMin * 60_000;
-  else if (Number(lossH) > 0) resumeAt = lastExit + lossH * 3_600_000;
+  const snap = reentryExitSnapshotForGate(mint);
+  const exitTs = snap?.exitTs ?? lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (exitTs <= 0) return false;
+  const resumeAt = postExitBuyCooldownResumeAtMs(cfg, exitTs);
   return resumeAt > 0 && nowMs < resumeAt;
 }
 
-/** Loss exits with post-exit cooldown: price ceiling only during cooldown, then normal discovery gates. */
+/** Price ceiling only during post-exit cooldown; after cooldown — normal discovery gates (no dip anchor). */
 function shouldApplyPostExitReentryPriceGate(
   cfg: PaperTraderConfig,
-  mint: string,
+  _mint: string,
   snap: LastExitMarketSnapshot,
   nowMs: number,
 ): boolean {
-  if (isLiveReentryGateExpired(cfg, snap, nowMs)) return false;
-  if (!cfg.dipLossExitCooldownEnabled) return true;
-  const cooldownTs = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
-  if (cooldownTs <= 0) return true;
-  if (Math.abs(cooldownTs - snap.exitTs) > 60_000) return true;
-  return isPostExitBuyCooldownActive(cfg, mint, nowMs);
+  if (!cfg.dipLossExitCooldownEnabled) return false;
+  const resumeAt = postExitBuyCooldownResumeAtMs(cfg, snap.exitTs);
+  return resumeAt > 0 && nowMs < resumeAt;
 }
 
 /** Admin ledger close must not mutate re-entry gate state after a recent real exit (KINS audit 04740207). */
@@ -435,17 +441,7 @@ function lastExitWasLossOrStress(snap: LastExitMarketSnapshot): boolean {
   return r === 'FLASH_CRASH_KILL' || r === 'SL' || r === 'KILLSTOP' || r === 'LIQ_DRAIN';
 }
 
-function isLiveReentryGateExpired(
-  cfg: PaperTraderConfig,
-  snap: LastExitMarketSnapshot,
-  nowMs: number,
-): boolean {
-  const maxAgeH = cfg.liveReentryGateMaxAgeHours;
-  if (!(maxAgeH > 0)) return false;
-  return nowMs - snap.exitTs > maxAgeH * 3_600_000;
-}
-
-/** Re-entry only when price ≤ lastExit×(1−drop%). No timer-only bypass at/above exit. */
+/** Re-entry price ceiling during post-exit cooldown only (price ≤ lastExit×(1−drop%)). */
 export function appendLiveReentryHybridGateReasons(
   cfg: PaperTraderConfig,
   mint: string,
@@ -477,22 +473,15 @@ export function appendLiveReentryHybridGateReasons(
 }
 
 function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: string, out: string[]): void {
-  if (!cfg.dipLossExitCooldownEnabled) return;
+  if (!isPostExitBuyCooldownActive(cfg, mint)) return;
+  const snap = reentryExitSnapshotForGate(mint);
+  const exitTs = snap?.exitTs ?? lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
+  if (exitTs <= 0) return;
   const lossMin = cfg.dipLossExitCooldownMinutes;
   const lossH = cfg.dipLossExitCooldownHours;
-  const lastExit = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
-  if (lastExit <= 0) return;
-
-  let resumeAt = 0;
-  let label = '';
-  if (Number(lossMin) > 0) {
-    resumeAt = lastExit + lossMin * 60_000;
-    label = `${lossMin}m`;
-  } else if (Number(lossH) > 0) {
-    resumeAt = lastExit + lossH * 3_600_000;
-    label = `${lossH}h`;
-  }
-  if (resumeAt > 0 && Date.now() < resumeAt) {
+  const label = Number(lossMin) > 0 ? `${lossMin}m` : `${lossH}h`;
+  const resumeAt = postExitBuyCooldownResumeAtMs(cfg, exitTs);
+  if (resumeAt > 0) {
     const leftMin = (resumeAt - Date.now()) / 60_000;
     out.push(`post_exit_buy_cooldown_${label}_left_${leftMin.toFixed(1)}m`);
   }
@@ -557,12 +546,11 @@ export function recordPostExitBuyCooldownIfApplicable(
   cfg: PaperTraderConfig,
   mint: string,
   exitTsMs: number,
-  netPnlUsd?: number,
+  _netPnlUsd?: number,
 ): void {
   const h = cfg.dipLossExitCooldownHours;
   const m = cfg.dipLossExitCooldownMinutes;
   if (!cfg.dipLossExitCooldownEnabled || (!(Number(m) > 0) && !(Number(h) > 0))) return;
-  if (netPnlUsd != null && netPnlUsd >= -1e-9) return;
   if (!(exitTsMs > 0)) return;
   const prev = lastPostExitBuyCooldownTsByMintMap.get(mint) ?? 0;
   if (exitTsMs >= prev) lastPostExitBuyCooldownTsByMintMap.set(mint, exitTsMs);
@@ -1299,7 +1287,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           mintPgCoverageMap.get(row.mint),
           globalPgCoverage,
           true,
-          { knownMint, familiarMint },
+          {
+            knownMint,
+            familiarMint,
+            freshExternalMarketQuote: isFreshExternalDiscoveryQuote(
+              birdeyeMarketQuote,
+              cfg.birdeyeMaxStaleMs,
+            ),
+          },
         );
         pgDataCoverageFeatures = evalRes.features;
         if (evalRes.blocked) {
@@ -1678,6 +1673,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         ephemeralCoverageOk: pgDataCoverageFeatures.ephemeralCoverageOk,
         knownMintGapBypass: pgDataCoverageFeatures.knownMintGapBypass ?? false,
         familiarMintStaleBypass: pgDataCoverageFeatures.familiarMintStaleBypass ?? false,
+        birdeyeFreshBypass: pgDataCoverageFeatures.birdeyeFreshBypass ?? false,
         global: {
           pgStaleNow: globalPgCoverage.pgStaleNow,
           systemHourRatio: globalPgCoverage.systemHourRatio,

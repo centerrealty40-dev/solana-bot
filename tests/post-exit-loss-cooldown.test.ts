@@ -11,13 +11,13 @@ describe('post-exit loss cooldown', () => {
     lastPostExitBuyCooldownTsByMintMap.clear();
   });
 
-  it('records cooldown only on loss exits', () => {
+  it('records cooldown on all full closes (profit and loss)', () => {
     process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED = 'true';
     process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES = '10';
     const cfg = loadPaperTraderConfig();
     const mint = 'mint123';
     recordPostExitBuyCooldownIfApplicable(cfg, mint, 1_000_000, 50);
-    expect(lastPostExitBuyCooldownTsByMintMap.has(mint)).toBe(false);
+    expect(lastPostExitBuyCooldownTsByMintMap.get(mint)).toBe(1_000_000);
     recordPostExitBuyCooldownIfApplicable(cfg, mint, 2_000_000, -12);
     expect(lastPostExitBuyCooldownTsByMintMap.get(mint)).toBe(2_000_000);
   });
