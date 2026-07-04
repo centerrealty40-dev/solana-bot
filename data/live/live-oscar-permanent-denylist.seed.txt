@@ -6,3 +6,5 @@ CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp
 E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump
 # MUSHU — ручной permanent block: вне целевого mcap-коридора, повторный re-entry (2026-06-30).
 5Jr9hGmJgxBRjjF8XGcGgQzXUdsbpZNNMpigEv8Wpump
+# BIRB — ручной permanent block по запросу оператора (2026-07-04).
+G7vQWurMkMMm2dU3iZpXYFTHT9Biio4F4gZCrwFpKNwG
