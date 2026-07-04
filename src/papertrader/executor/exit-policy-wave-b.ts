@@ -278,6 +278,13 @@ export function waveBPreArmNoHalf8ScenarioActive(ot: OpenTrade): boolean {
   return !waveBHalf8TpTaken(ot);
 }
 
+/** PRE_ARM partial already taken, pending retry, or journaled on chain. */
+export function waveBPreArmNoHalf8PartialConsumed(ot: OpenTrade): boolean {
+  if (ot.liveWavePreArmNoHalf8PartialTaken) return true;
+  if (ot.livePendingTpSell?.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL') return true;
+  return (ot.partialSells ?? []).some((p) => p.reason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL');
+}
+
 /** Pre-arm/no-TP8 ladder: one partial at/above configured PnL vs avg (default +5%). */
 export function waveBPreArmNoHalf8PartialEligible(
   ot: OpenTrade,
@@ -286,7 +293,7 @@ export function waveBPreArmNoHalf8PartialEligible(
 ): boolean {
   if (!cfg.liveOscarWaveBPreArmNoHalf8LadderEnabled) return false;
   if (!waveBPreArmNoHalf8ScenarioActive(ot)) return false;
-  if (ot.liveWavePreArmNoHalf8PartialTaken) return false;
+  if (waveBPreArmNoHalf8PartialConsumed(ot)) return false;
   if (ot.remainingFraction <= 1e-9) return false;
   return pnlFrac + LADDER_PNL_EPS >= cfg.liveOscarWaveBPreArmNoHalf8PartialPnlFrac;
 }
@@ -462,8 +469,12 @@ export function waveBMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl
   if (highest + LADDER_PNL_EPS < WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC) return false;
   if (pnlFrac > WAVE_B_TP_IMPULSE_RESET_PNL_FRAC + LADDER_PNL_EPS) return false;
   const floor = WAVE_B_TP_IMPULSE_RESET_PNL_FRAC;
+  /** half8_runner: +8% rung re-arms only below the rung, not on dip to +2.5%. */
+  const half8PreserveFrac =
+    ot.liveWaveFlatTpMode === 'half8_runner' ? WAVE_B_FLAT_TP_HALF8_RUNNER.gridStepPnl : null;
   let changed = false;
   for (const u of [...ot.ladderUsedLevels]) {
+    if (half8PreserveFrac != null && Math.abs(u - half8PreserveFrac) <= LADDER_PNL_EPS) continue;
     if (u > floor + LADDER_PNL_EPS) {
       ot.ladderUsedLevels.delete(u);
       changed = true;
@@ -471,6 +482,7 @@ export function waveBMaybeResetTpImpulse(ot: OpenTrade, pnlFrac: number, stepPnl
   }
   for (const idx of [...ot.ladderUsedIndices]) {
     const t = (idx + 1) * stepPnl;
+    if (half8PreserveFrac != null && Math.abs(t - half8PreserveFrac) <= LADDER_PNL_EPS) continue;
     if (t > floor + LADDER_PNL_EPS) {
       ot.ladderUsedIndices.delete(idx);
       changed = true;
