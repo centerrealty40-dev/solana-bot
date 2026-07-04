@@ -604,8 +604,8 @@ const PM2_APPS = [
       max_restarts: 20,
       restart_delay: 5000,
       kill_timeout: 15000,
-      /** Boot replay + wallet orphan scan exceed 200M; was causing PM2 restart loop before tracker starts. */
-      max_memory_restart: '512M',
+      /** Boot replay + wallet orphan scan on 7GB journal tail; 512M was OOM loop before executor start. */
+      max_memory_restart: '1024M',
       merge_logs: true,
       time: true,
       env: {

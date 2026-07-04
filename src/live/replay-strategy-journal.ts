@@ -11,16 +11,47 @@ import {
   runnerProbeOpenMapKey,
 } from '../papertrader/live-oscar-runner-probe.js';
 
+/** Minimal close payload for mint repeat-gate seeding without retaining full `ClosedTrade[]`. */
+export type ReplayClosedForRepeatGate = {
+  mint: string;
+  exitTs: number;
+  theoretical_exit_price: number;
+  effective_exit_price: number;
+  netPnlUsd: number;
+  exitReason: string;
+};
+
 /** Read UTF-8 lines; if file larger than `maxFileBytes`, only the trailing chunk is read (partial first line dropped). */
 export function readLiveJournalLinesBounded(
   storePath: string,
   maxFileBytes: number,
 ): { lines: string[]; truncated: boolean } {
+  const lines: string[] = [];
+  const { truncated } = iterateBoundedJournalLines(storePath, maxFileBytes, (line) => {
+    lines.push(line);
+  });
+  return { lines, truncated };
+}
+
+/**
+ * Stream journal lines without retaining the full file in memory.
+ * When the file exceeds `maxFileBytes`, only the trailing chunk is scanned.
+ */
+export function iterateBoundedJournalLines(
+  storePath: string,
+  maxFileBytes: number,
+  onLine: (line: string, lineIdx: number) => void,
+): { truncated: boolean } {
   const stat = fs.statSync(storePath);
   const sz = stat.size;
   if (sz <= maxFileBytes) {
-    return { lines: fs.readFileSync(storePath, 'utf-8').split('\n'), truncated: false };
+    const lines = fs.readFileSync(storePath, 'utf-8').split('\n');
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      onLine(lines[lineIdx]!, lineIdx);
+    }
+    return { truncated: false };
   }
+
   const fd = fs.openSync(storePath, 'r');
   try {
     const readLen = Math.min(maxFileBytes, sz);
@@ -32,7 +63,17 @@ export function readLiveJournalLinesBounded(
       const nl = text.indexOf('\n');
       if (nl !== -1) text = text.slice(nl + 1);
     }
-    return { lines: text.split('\n'), truncated: true };
+    let lineIdx = 0;
+    let cursor = 0;
+    while (cursor <= text.length) {
+      const nl = text.indexOf('\n', cursor);
+      const line = nl === -1 ? text.slice(cursor) : text.slice(cursor, nl);
+      onLine(line, lineIdx);
+      lineIdx += 1;
+      if (nl === -1) break;
+      cursor = nl + 1;
+    }
+    return { truncated: true };
   } finally {
     fs.closeSync(fd);
   }
@@ -62,6 +103,13 @@ export interface ReplayLiveStrategyJournalOpts {
    * W8.0-p7.1 — when false (default), `live_position_open` / `live_position_dca` rows without chain/simulate anchors are skipped.
    */
   trustGhostPositions?: boolean;
+  /**
+   * Boot-only: rebuild `open` map but skip retaining thousands of historical `ClosedTrade` objects.
+   * Repeat-gate seeding uses `onClosedForRepeatGate` instead of `closed[]`.
+   */
+  openPositionsOnly?: boolean;
+  /** Invoked for each `live_position_close` when `openPositionsOnly` (lightweight re-entry gate seed). */
+  onClosedForRepeatGate?: (ct: ReplayClosedForRepeatGate) => void;
 }
 
 interface SortRow {
@@ -100,6 +148,24 @@ export function openTradePassesReplayAnchorGate(raw: Record<string, unknown>, tr
   return entryLegSignaturesFromOpenTradeJson(raw).length > 0;
 }
 
+export function closedForRepeatGateFromJson(raw: Record<string, unknown>): ReplayClosedForRepeatGate | null {
+  const mint = raw.mint != null ? String(raw.mint) : '';
+  const exitTs = raw.exitTs;
+  if (!mint || typeof exitTs !== 'number' || !Number.isFinite(exitTs) || exitTs <= 0) return null;
+  const theo = raw.theoretical_exit_price;
+  const eff = raw.effective_exit_price;
+  const net = raw.netPnlUsd;
+  const reason = raw.exitReason != null ? String(raw.exitReason) : '';
+  return {
+    mint,
+    exitTs,
+    theoretical_exit_price: typeof theo === 'number' && Number.isFinite(theo) ? theo : 0,
+    effective_exit_price: typeof eff === 'number' && Number.isFinite(eff) ? eff : 0,
+    netPnlUsd: typeof net === 'number' && Number.isFinite(net) ? net : 0,
+    exitReason: reason,
+  };
+}
+
 export interface ReplayLiveStrategyJournalResult {
   open: Map<string, OpenTrade>;
   closed: ClosedTrade[];
@@ -107,6 +173,8 @@ export interface ReplayLiveStrategyJournalResult {
   replaySeenMints: Set<string>;
   /** True when only a trailing byte chunk of the journal was scanned (`maxFileBytes` cap). */
   journalTruncated?: boolean;
+  /** Set when boot replay skipped retaining historical closes in memory. */
+  openPositionsOnly?: boolean;
 }
 
 function lineMatchesChannel(row: Record<string, unknown>): boolean {
@@ -114,30 +182,15 @@ function lineMatchesChannel(row: Record<string, unknown>): boolean {
   return ch === undefined || ch === null || ch === 'live';
 }
 
-export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): ReplayLiveStrategyJournalResult {
-  const open = new Map<string, OpenTrade>();
-  const closed: ClosedTrade[] = [];
-  const trustGhost = opts.trustGhostPositions === true;
-
-  if (!opts.storePath?.trim() || !fs.existsSync(opts.storePath)) {
-    return { open, closed, replaySeenMints: new Set() };
-  }
-
-  const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
-  const { lines: rawLines, truncated } =
-    maxB >= Number.MAX_SAFE_INTEGER
-      ? { lines: fs.readFileSync(opts.storePath, 'utf-8').split('\n'), truncated: false }
-      : readLiveJournalLinesBounded(opts.storePath, maxB);
-
-  let lines = rawLines.filter((ln) => ln.trim().length > 0);
-  if (opts.tailLines != null && opts.tailLines > 0 && lines.length > opts.tailLines) {
-    lines = lines.slice(-opts.tailLines);
-  }
-
-  const replaySeenMints = new Set<string>();
+function collectReplayBatchFromLines(
+  lines: readonly string[],
+  opts: ReplayLiveStrategyJournalOpts,
+  replaySeenMints: Set<string>,
+): SortRow[] {
   const batch: SortRow[] = [];
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const ln = lines[lineIdx]!;
+    if (!ln.trim()) continue;
     let row: Record<string, unknown>;
     try {
       row = JSON.parse(ln) as Record<string, unknown>;
@@ -161,6 +214,86 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
     replaySeenMints.add(mint);
     batch.push({ ts, lineIdx, kind, mint, payload: row });
   }
+  return batch;
+}
+
+function tryPushReplayRow(
+  ln: string,
+  lineIdx: number,
+  opts: ReplayLiveStrategyJournalOpts,
+  replaySeenMints: Set<string>,
+  batch: SortRow[],
+): void {
+  if (!ln.trim()) return;
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(ln) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const sid = row.strategyId != null ? String(row.strategyId) : '';
+  if (sid !== opts.strategyId) return;
+  if (!lineMatchesChannel(row)) return;
+
+  const kind = row.kind != null ? String(row.kind) : '';
+  if (!POSITION_KINDS.has(kind)) return;
+
+  const tsRaw = row.ts;
+  const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
+  if (opts.sinceTs != null && ts < opts.sinceTs) return;
+
+  const mint = row.mint != null ? String(row.mint) : '';
+  if (!mint) return;
+
+  replaySeenMints.add(mint);
+  batch.push({ ts, lineIdx, kind, mint, payload: row });
+}
+
+function scanReplayBatch(
+  opts: ReplayLiveStrategyJournalOpts,
+  replaySeenMints: Set<string>,
+): { batch: SortRow[]; truncated: boolean } {
+  const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
+  if (maxB >= Number.MAX_SAFE_INTEGER) {
+    const lines = fs.readFileSync(opts.storePath, 'utf-8').split('\n');
+    let filtered = lines.filter((ln) => ln.trim().length > 0);
+    if (opts.tailLines != null && opts.tailLines > 0 && filtered.length > opts.tailLines) {
+      filtered = filtered.slice(-opts.tailLines);
+    }
+    return { batch: collectReplayBatchFromLines(filtered, opts, replaySeenMints), truncated: false };
+  }
+
+  const batch: SortRow[] = [];
+  if (opts.tailLines != null && opts.tailLines > 0) {
+    const tailBuf: string[] = [];
+    const { truncated } = iterateBoundedJournalLines(opts.storePath, maxB, (line) => {
+      if (!line.trim()) return;
+      tailBuf.push(line);
+      if (tailBuf.length > opts.tailLines!) tailBuf.shift();
+    });
+    return { batch: collectReplayBatchFromLines(tailBuf, opts, replaySeenMints), truncated };
+  }
+
+  let lineIdx = 0;
+  const { truncated } = iterateBoundedJournalLines(opts.storePath, maxB, (line) => {
+    tryPushReplayRow(line, lineIdx, opts, replaySeenMints, batch);
+    lineIdx += 1;
+  });
+  return { batch, truncated };
+}
+
+export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): ReplayLiveStrategyJournalResult {
+  const open = new Map<string, OpenTrade>();
+  const closed: ClosedTrade[] = [];
+  const trustGhost = opts.trustGhostPositions === true;
+  const openPositionsOnly = opts.openPositionsOnly === true;
+
+  if (!opts.storePath?.trim() || !fs.existsSync(opts.storePath)) {
+    return { open, closed, replaySeenMints: new Set() };
+  }
+
+  const replaySeenMints = new Set<string>();
+  const { batch, truncated } = scanReplayBatch(opts, replaySeenMints);
 
   batch.sort((a, b) => {
     if (a.ts !== b.ts) return a.ts - b.ts;
@@ -168,10 +301,16 @@ export function replayLiveStrategyJournal(opts: ReplayLiveStrategyJournalOpts): 
   });
 
   for (const row of batch) {
-    applyReplayRow(row, open, closed, trustGhost);
+    applyReplayRow(row, open, closed, trustGhost, openPositionsOnly, opts.onClosedForRepeatGate);
   }
 
-  return { open, closed, replaySeenMints, journalTruncated: truncated || undefined };
+  return {
+    open,
+    closed,
+    replaySeenMints,
+    journalTruncated: truncated || undefined,
+    openPositionsOnly: openPositionsOnly || undefined,
+  };
 }
 
 function applyReplayRow(
@@ -179,6 +318,8 @@ function applyReplayRow(
   open: Map<string, OpenTrade>,
   closed: ClosedTrade[],
   trustGhost: boolean,
+  openPositionsOnly: boolean,
+  onClosedForRepeatGate?: (ct: ReplayClosedForRepeatGate) => void,
 ): void {
   switch (row.kind) {
     case 'live_position_open':
@@ -204,14 +345,17 @@ function applyReplayRow(
     case 'live_position_close': {
       const ctRaw = row.payload.closedTrade;
       if (typeof ctRaw !== 'object' || ctRaw === null) break;
-      const ct = restoreClosedTradeFromJson(ctRaw as Record<string, unknown>);
-      if (ct) {
-        const bare = mintFromOpenMapKey(row.mint);
-        open.delete(row.mint);
-        open.delete(bare);
-        open.delete(runnerProbeOpenMapKey(bare));
-        closed.push(ct);
+      const bare = mintFromOpenMapKey(row.mint);
+      open.delete(row.mint);
+      open.delete(bare);
+      open.delete(runnerProbeOpenMapKey(bare));
+      if (openPositionsOnly) {
+        const gate = closedForRepeatGateFromJson(ctRaw as Record<string, unknown>);
+        if (gate) onClosedForRepeatGate?.(gate);
+        break;
       }
+      const ct = restoreClosedTradeFromJson(ctRaw as Record<string, unknown>);
+      if (ct) closed.push(ct);
       break;
     }
     default:
@@ -241,32 +385,43 @@ export async function replayLiveStrategyJournalForMints(
   }
 
   const maxB = opts.maxFileBytes ?? Number.MAX_SAFE_INTEGER;
-  const { lines: rawLines, truncated } =
-    maxB >= Number.MAX_SAFE_INTEGER
-      ? { lines: fs.readFileSync(opts.storePath, 'utf-8').split('\n'), truncated: false }
-      : readLiveJournalLinesBounded(opts.storePath, maxB);
-
   const batch: SortRow[] = [];
-  for (let lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
-    const trimmed = rawLines[lineIdx]!.trim();
-    if (!trimmed) continue;
+  const pushLine = (trimmed: string, lineIdx: number) => {
     let row: Record<string, unknown>;
     try {
       row = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
-      continue;
+      return;
     }
     const sid = row.strategyId != null ? String(row.strategyId) : '';
-    if (sid !== opts.strategyId) continue;
-    if (!lineMatchesChannel(row)) continue;
+    if (sid !== opts.strategyId) return;
+    if (!lineMatchesChannel(row)) return;
     const kind = row.kind != null ? String(row.kind) : '';
-    if (!POSITION_KINDS.has(kind)) continue;
+    if (!POSITION_KINDS.has(kind)) return;
     const mint = row.mint != null ? String(row.mint) : '';
-    if (!mint || !mintSet.has(mint)) continue;
+    if (!mint || !mintSet.has(mint)) return;
     const tsRaw = row.ts;
     const ts = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : 0;
     replaySeenMints.add(mint);
     batch.push({ ts, lineIdx, kind, mint, payload: row });
+  };
+
+  let truncated = false;
+  if (maxB >= Number.MAX_SAFE_INTEGER) {
+    const rawLines = fs.readFileSync(opts.storePath, 'utf-8').split('\n');
+    for (let lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
+      const trimmed = rawLines[lineIdx]!.trim();
+      if (!trimmed) continue;
+      pushLine(trimmed, lineIdx);
+    }
+  } else {
+    let lineIdx = 0;
+    truncated = iterateBoundedJournalLines(opts.storePath, maxB, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      pushLine(trimmed, lineIdx);
+      lineIdx += 1;
+    }).truncated;
   }
 
   batch.sort((a, b) => {
@@ -275,7 +430,7 @@ export async function replayLiveStrategyJournalForMints(
   });
 
   for (const row of batch) {
-    applyReplayRow(row, open, closed, trustGhost);
+    applyReplayRow(row, open, closed, trustGhost, false, undefined);
   }
 
   return { open, closed, replaySeenMints, journalTruncated: truncated || undefined };
