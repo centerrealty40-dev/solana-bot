@@ -351,7 +351,7 @@ const ConfigSchema = z.object({
   runnerProbeDcaLevelsSpec: z.string().default('-25:1'),
   /**
    * Live Oscar runner_lite lane (tier 1): mcap **$500k – <$1M**, age 12–48h (720–2880 min),
-   * relaxed vol gates (vol1h ≥ $50k, vol12h ≥ $200k), 2×$100 entry, wave_b half8_runner exit.
+   * relaxed vol gates (vol1h ≥ $50k, vol12h ≥ $200k), 2×$100 entry, optional −25% DCA +⅓, wave_b half8_runner exit.
    * **Mcap band selects lane** — probe-level metrics do not upgrade entry to $500; graduate only when mcap ≥ $1M.
    */
   runnerLiteEnabled: z.boolean().default(false),
@@ -363,6 +363,8 @@ const ConfigSchema = z.object({
   /** Total position cap ($200 = 2×$100 legs). */
   runnerLitePositionUsd: z.coerce.number().positive().default(200),
   runnerLiteLegUsd: z.coerce.number().positive().default(100),
+  /** One DCA leg at −25% (+⅓ of positionUsd, default $200 → max ~$266.67/position). */
+  runnerLiteDcaLevelsSpec: z.string().default('-25:0.333'),
   runnerLiteMaxConcurrent: z.coerce.number().int().min(1).max(10).default(2),
   runnerLiteMaxExposureUsd: z.coerce.number().positive().default(400),
   runnerLiteDipMinDropPct: z.coerce.number().default(-20),
@@ -1390,6 +1392,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     runnerLiteMaxMcapUsd: process.env.PAPER_RUNNER_LITE_MAX_MCAP_USD,
     runnerLitePositionUsd: process.env.PAPER_RUNNER_LITE_POSITION_USD,
     runnerLiteLegUsd: process.env.PAPER_RUNNER_LITE_LEG_USD,
+    runnerLiteDcaLevelsSpec: process.env.PAPER_RUNNER_LITE_DCA_LEVELS,
     runnerLiteMaxConcurrent: process.env.PAPER_RUNNER_LITE_MAX_CONCURRENT,
     runnerLiteMaxExposureUsd: process.env.PAPER_RUNNER_LITE_MAX_EXPOSURE_USD,
     runnerLiteDipMinDropPct: process.env.PAPER_RUNNER_LITE_DIP_MIN_DROP_PCT,

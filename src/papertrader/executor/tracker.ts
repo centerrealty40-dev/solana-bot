@@ -16,6 +16,7 @@ import {
 } from './exit-policy-runner-probe.js';
 import {
   stampRunnerLiteExitPolicyOnOpen,
+  runnerLiteDcaLevelsSpec,
 } from './exit-policy-runner-lite.js';
 import {
   applyLiveOscarPhaseEscalation,
@@ -2930,13 +2931,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     resolveLiveOscarExitPolicyForTick(ot, cfg);
     let effCfg = cfgEffectiveForOpen(cfg, ot);
     const tradeDcaLevels =
-      isLiveOscarScalpWaveTrade(ot) || isRunnerLiteTrade(ot)
-      ? []
-      : isRunnerProbeTrade(ot)
-        ? parseDcaLevels(runnerProbeDcaLevelsSpec(cfg))
-      : ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
-        ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
-        : dcaLevels;
+      isLiveOscarScalpWaveTrade(ot)
+        ? []
+        : isRunnerLiteTrade(ot)
+          ? parseDcaLevels(runnerLiteDcaLevelsSpec(cfg))
+          : isRunnerProbeTrade(ot)
+            ? parseDcaLevels(runnerProbeDcaLevelsSpec(cfg))
+            : ot.liveOscarMcapTier === 'low' || ot.liveOscarMcapTier === 'micro'
+              ? parseDcaLevels(liveOscarTierDcaLevelsSpec(cfg, ot.liveOscarMcapTier))
+              : dcaLevels;
     if (ot.liveOscarMcapTier === 'low') {
       effCfg = { ...effCfg, positionUsd: cfg.liveOscarLowMcapPositionUsd };
     } else if (ot.liveOscarMcapTier === 'micro') {
