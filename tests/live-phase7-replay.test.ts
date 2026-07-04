@@ -183,4 +183,73 @@ describe('replayLiveStrategyJournal (Phase 7)', () => {
     expect(r.open.has(mint)).toBe(false);
     expect(r.open.has(runnerProbeOpenMapKey(mint))).toBe(true);
   });
+
+  it('openPositionsOnly skips closed[] but still clears open on close', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-p7-open-only-'));
+    const p = path.join(dir, 'live.jsonl');
+    const mint = 'MintDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
+    const ot = minimalOpen(mint, 1);
+    fs.writeFileSync(
+      p,
+      [
+        JSON.stringify({
+          ts: 100,
+          strategyId: 'live-oscar',
+          channel: 'live',
+          kind: 'live_position_open',
+          mint,
+          openTrade: liveOpenTradeSnapshot(ot),
+        }),
+        JSON.stringify({
+          ts: 200,
+          strategyId: 'live-oscar',
+          channel: 'live',
+          kind: 'live_position_close',
+          mint,
+          closedTrade: serializeClosedTrade({
+            ...ot,
+            exitTs: 200,
+            exitMcUsd: 1,
+            exitReason: 'TP',
+            pnlPct: 1,
+            durationMin: 1,
+            totalProceedsUsd: 51,
+            netPnlUsd: 1,
+            grossTotalProceedsUsd: 51,
+            grossPnlUsd: 1,
+            grossPnlPct: 1,
+            costs: {
+              dex: 'raydium',
+              fee_bps_per_side: 0,
+              slip_base_bps_per_side: 0,
+              slip_dynamic_bps_entry: 0,
+              slip_dynamic_bps_exit: 0,
+              network_fee_usd_total: 0,
+              gross_pnl_usd: 1,
+              fee_cost_usd: 0,
+              slippage_cost_usd: 0,
+              network_cost_usd: 0,
+              net_pnl_usd: 1,
+            },
+            effective_entry_price: ot.avgEntry,
+            effective_exit_price: 1,
+            theoretical_entry_price: ot.avgEntryMarket,
+            theoretical_exit_price: 1,
+          } as ClosedTrade),
+        }),
+      ].join('\n') + '\n',
+      'utf-8',
+    );
+    const gates: string[] = [];
+    const r = replayLiveStrategyJournal({
+      storePath: p,
+      strategyId: 'live-oscar',
+      openPositionsOnly: true,
+      onClosedForRepeatGate: (ct) => gates.push(ct.mint),
+    });
+    expect(r.open.size).toBe(0);
+    expect(r.closed.length).toBe(0);
+    expect(r.openPositionsOnly).toBe(true);
+    expect(gates).toEqual([mint]);
+  });
 });

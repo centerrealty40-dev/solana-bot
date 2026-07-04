@@ -25,7 +25,7 @@ import {
   setShyftShadowMaxAgeMs,
 } from '../papertrader/stream/shadow-state.js';
 import { startShyftShadowConsumer } from '../papertrader/stream/shyft-shadow-consumer.js';
-import { configurePostExitReentryGatePaperCfg } from '../papertrader/discovery/dip-clones.js';
+import { configurePostExitReentryGatePaperCfg, recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../papertrader/discovery/dip-clones.js';
 import {
   assertLiveOscarUnifiedEntrySizing,
   resolveLiveOscarEntrySplitLegUsd,
@@ -51,7 +51,7 @@ import {
   type TxAnchorSampleResult,
 } from './reconcile-tx-anchor-sample.js';
 import { evaluateLiveNotionalParity } from './notional-parity.js';
-import { replayLiveStrategyJournal, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
+import { replayLiveStrategyJournal, type ReplayClosedForRepeatGate, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
 import { restoreWalletOrphanOpensOnBoot } from './boot-open-restore.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { adoptCopyLeaderExitOpens } from './copy-leader-exit-adopt.js';
@@ -324,6 +324,11 @@ export async function main(): Promise<void> {
     sinceTs: liveCfg.liveReplaySinceTs,
     maxFileBytes: liveCfg.liveReplayMaxFileBytes,
     trustGhostPositions: liveCfg.liveReplayTrustGhostPositions,
+    openPositionsOnly: liveCfg.liveReplayOpenPositionsOnly,
+    onClosedForRepeatGate: liveCfg.liveReplayOpenPositionsOnly
+      ? (ct: ReplayClosedForRepeatGate) =>
+          recordAfterFullCloseForMintRepeatGateFromClosedTrade(paperBaseline, ct)
+      : undefined,
   });
 
   if (!liveCfg.strategyEnabled) {

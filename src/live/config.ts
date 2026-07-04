@@ -306,6 +306,8 @@ const LiveOscarConfigSchema = z
 
     /** W8.0-p7.1 — replay keeps legacy rows without `entryLegSignatures` when true (dangerous). */
     liveReplayTrustGhostPositions: z.boolean().default(false),
+    /** Boot replay: rebuild open map only; seed repeat-gate from closes without retaining `ClosedTrade[]`. */
+    liveReplayOpenPositionsOnly: z.boolean().default(true),
     /** W8.0-p7.1 — enforce `PAPER_POSITION_USD` vs live entry/max limits at boot (live mode). */
     liveStrictNotionalParity: z.boolean().default(true),
     /** W8.0-p7.1 — after replay, verify each `entryLegSignatures` tx via RPC (live mode). */
@@ -770,6 +772,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       return Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 0;
     })(),
     liveReplayTrustGhostPositions: envBool(process.env.LIVE_REPLAY_TRUST_GHOST_POSITIONS, false),
+    liveReplayOpenPositionsOnly: envBool(process.env.LIVE_REPLAY_OPEN_POSITIONS_ONLY, true),
     liveStrictNotionalParity: envBool(process.env.LIVE_STRICT_NOTIONAL_PARITY, true),
     liveAnchorVerifyOnBoot: envBool(process.env.LIVE_ANCHOR_VERIFY_ON_BOOT, true),
 
