@@ -141,4 +141,37 @@ describe('wallet-balance-exit-reconcile', () => {
       }),
     ).toBe(false);
   });
+
+  it('force-closes manlet-class small tail when journal and chain both below flush threshold', () => {
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0.048,
+        chainOscarUsd: 54,
+        journalRemainingUsd: 48.43,
+        minUsd: 5,
+        tailFlushThresholdUsd: 100,
+        partialSellCount: 3,
+      }),
+    ).toBe(true);
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0.25,
+        chainOscarUsd: 250,
+        journalRemainingUsd: 240,
+        minUsd: 5,
+        tailFlushThresholdUsd: 100,
+        partialSellCount: 1,
+      }),
+    ).toBe(false);
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0.048,
+        chainOscarUsd: 54,
+        journalRemainingUsd: 48.43,
+        minUsd: 5,
+        tailFlushThresholdUsd: 100,
+        partialSellCount: 0,
+      }),
+    ).toBe(false);
+  });
 });

@@ -28,10 +28,12 @@ import { setArmedSellQuote } from './sell-quote-prearm.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import {
+  journalRemainingUsd,
   oscarChainUsdFromRaw,
   planFullExitUsdNotional,
   resyncRemainingFractionFromChain,
   liveWalletBalanceReconcileMinUsd,
+  shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from './wallet-balance-exit-reconcile.js';
 
@@ -203,6 +205,7 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
     running = true;
     let killTrigger = false;
     let tpTrigger = false;
+    let stuckSmallTailTrigger = false;
     try {
       const open = ctx.getOpen();
       if (open.size === 0) return;
@@ -239,6 +242,37 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
               chainOscarUsd: oscarUsd,
               minUsd: liveWalletBalanceReconcileMinUsd(liveCfg),
             });
+          }
+        }
+        if (
+          liveCfg.executionMode === 'live' &&
+          ot.partialSells.length > 0 &&
+          !stuckSmallTailTrigger
+        ) {
+          const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+          const raw = chainMap?.get(mint) ?? 0n;
+          const hintPx =
+            ot.lastObservedPriceUsd ??
+            (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry);
+          if (raw > 0n && hintPx > 0) {
+            const oscarUsd = oscarChainUsdFromRaw({
+              raw,
+              decimals: ot.tokenDecimals ?? 6,
+              priceUsd: hintPx,
+              mint,
+            }).oscarUsd;
+            if (
+              shouldForceCloseJournalZeroChainTail({
+                remainingFraction: ot.remainingFraction,
+                chainOscarUsd: oscarUsd,
+                journalRemainingUsd: journalRemainingUsd(ot),
+                minUsd: liveWalletBalanceReconcileMinUsd(liveCfg),
+                tailFlushThresholdUsd: liveCfg.liveTailFlushThresholdUsd,
+                partialSellCount: ot.partialSells.length,
+              })
+            ) {
+              stuckSmallTailTrigger = true;
+            }
           }
         }
         if (ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS) continue;
@@ -294,7 +328,7 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
         }
       }
 
-      if ((killTrigger || tpTrigger) && !ctx.isTrackerBusy()) {
+      if ((killTrigger || tpTrigger || stuckSmallTailTrigger) && !ctx.isTrackerBusy()) {
         await ctx.runTrackerTick();
       }
     } finally {
