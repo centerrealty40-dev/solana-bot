@@ -10,7 +10,9 @@ import {
   isFreshExternalDiscoveryQuote,
   pickDiscoveryMarketQuote,
   parseDexScreenerPair,
+  resolveDiscoveryMarketQuote,
 } from '../src/papertrader/pricing/discovery-market-quote.js';
+import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
 const NOW = 1_700_000_000_000;
 
@@ -200,6 +202,62 @@ describe('parseDexScreenerPair', () => {
     expect(r.priceUsd).toBe(0.5);
     expect(r.marketCapUsd).toBe(1_000_000);
     expect(r.volume5mUsd).toBe(15_000);
+  });
+});
+
+describe('resolveDiscoveryMarketQuote — birdeye off', () => {
+  const pgRow: SnapshotCandidateRow = {
+    mint: 'MintDexOnly',
+    symbol: 'DEX',
+    ts: new Date(NOW - 20 * 60_000),
+    launch_ts: null,
+    age_min: null,
+    price_usd: 0.001,
+    liquidity_usd: 50_000,
+    volume_5m: 1_000,
+    volume_1h: 0,
+    buys_5m: 0,
+    sells_5m: 0,
+    market_cap_usd: 400_000,
+    source: 'pumpswap',
+    holder_count: 0,
+    token_age_min: 0,
+    pair_address: null,
+  };
+
+  it('skips Birdeye REST and uses DexScreener when enabled=false', async () => {
+    __resetDexScreenerMarketCacheForTests();
+    const nowMs = Date.now();
+    const fetchImpl = async (url: string) => {
+      expect(url).toContain('dexscreener.com');
+      return {
+        ok: true,
+        json: async () => ({
+          pairs: [
+            {
+              chainId: 'solana',
+              baseToken: { address: 'MintDexOnly' },
+              priceUsd: '0.00108',
+              marketCap: 432_000,
+              liquidity: { usd: 52_000 },
+              volume: { m5: 1_500 },
+            },
+          ],
+        }),
+      } as Response;
+    };
+    const r = await resolveDiscoveryMarketQuote({
+      enabled: false,
+      mint: 'MintDexOnly',
+      pgRow,
+      birdeyeTtlMs: 30_000,
+      birdeyeMaxStaleMs: 15_000,
+      coverageGapMinMs: 5 * 60_000,
+      nowMs,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    expect(r.source).toBe('dexscreener');
+    expect(r.priceUsd).toBe(0.00108);
   });
 });
 

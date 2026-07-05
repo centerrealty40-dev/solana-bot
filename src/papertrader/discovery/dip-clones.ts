@@ -969,14 +969,14 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
 
     /**
-     * Birdeye REST primary (discovery eval): price/mcap/liq/vol5m with DexScreener → PG fallback.
-     * Default OFF (`birdeyePrimaryEnabled`). Shyft stream-primary (1.2) may still override price below.
+     * Discovery market quote: Birdeye (when primary ON) → DexScreener → PG.
+     * Shyft stream-primary (1.2) may still override price below.
      */
     let quoteMcapSource: DiscoveryQuoteSource | undefined;
     let birdeyeMarketQuote: Awaited<ReturnType<typeof resolveDiscoveryMarketQuote>> | null = null;
-    if (cfg.birdeyePrimaryEnabled && isLiveOscarDiscoveryQuoteStrategyId(cfg.strategyId)) {
+    if (isLiveOscarDiscoveryQuoteStrategyId(cfg.strategyId)) {
       birdeyeMarketQuote = await resolveDiscoveryMarketQuote({
-        enabled: true,
+        enabled: cfg.birdeyePrimaryEnabled,
         mint: row.mint,
         pgRow: row,
         birdeyeTtlMs: cfg.birdeyeMarketTtlMs,
@@ -984,7 +984,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         coverageGapMinMs: cfg.birdeyeCoverageGapMinMs,
       });
       quoteMcapSource = birdeyeMarketQuote.source;
-      if (birdeyeMarketQuote.birdeyeTierInsufficient) {
+      if (cfg.birdeyePrimaryEnabled && birdeyeMarketQuote.birdeyeTierInsufficient) {
         auditRows.push(
           buildBirdeyeTierInsufficientEvent({
             mint: row.mint,
@@ -995,6 +995,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
       const gap = birdeyeMarketQuote;
       if (
+        cfg.birdeyePrimaryEnabled &&
         gap.coverageGap &&
         birdeyeMarketQuote.pgSnapshotAgeMs != null &&
         birdeyeMarketQuote.pgSnapshotAgeMs > cfg.birdeyeCoverageGapMinMs
