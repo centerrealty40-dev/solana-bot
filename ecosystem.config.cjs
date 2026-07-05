@@ -953,9 +953,9 @@ const PM2_APPS = [
         /** Dedup via mint+intel-reason fingerprint in-process; no time cooldown. */
         LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '0',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '0',
-        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$25k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
+        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$100k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
         PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
-        PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '60000',
+        PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '8500',

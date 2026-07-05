@@ -289,9 +289,9 @@ const ConfigSchema = z.object({
   liveOscarLowMcapMaxUsd: z.coerce.number().nonnegative().default(3_000_000),
   liveOscarLowMcapDipMinDropPct: z.coerce.number().default(-30),
   liveOscarLowMcapVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
-  /** Prod tier (mcap ≥ maxUsd): near-miss runner corridor — dip −18%, vol1h ≥$60k. */
+  /** Prod tier (mcap ≥ maxUsd): near-miss runner corridor — dip −18%, vol1h ≥$100k. */
   liveOscarProdMcapDipMinDropPct: z.coerce.number().default(-18),
-  liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
+  liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** Prod sub-tier boundary ($3M floor = low max when low lane ON). */
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
   liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(8_500),
