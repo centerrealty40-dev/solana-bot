@@ -219,8 +219,8 @@ export function loadHlOscarPerpConfig(): HlOscarPerpConfig {
     ),
     localHighVetoMaxDistancePct: envNum('HL_OSCAR_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT', 2),
     tpRungs: parseFracCsv(
-      process.env.HL_OSCAR_TP_RUNGS?.trim() || '0.08,0.12,0.16',
-      [0.08, 0.12, 0.16],
+      process.env.HL_OSCAR_TP_RUNGS?.trim() || '0.05,0.075,0.1',
+      [0.05, 0.075, 0.1],
     ),
     trailArmFrac: resolvePctFrac('HL_OSCAR_TRAIL_ARM_PCT', 8),
     trailStepDropFrac: resolvePctFrac('HL_OSCAR_TRAIL_STEP_PCT', 2.5),

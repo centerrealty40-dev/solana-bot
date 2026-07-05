@@ -48,7 +48,7 @@ describe('hl-oscar-perp config sizing', () => {
     expect(cfg.stagedEntryEnabled).toBe(true);
     expect(cfg.leg2DropPct).toBe(5);
     expect(cfg.leg3DropPct).toBe(10);
-    expect(cfg.tpRungs).toEqual([0.08, 0.12, 0.16]);
+    expect(cfg.tpRungs).toEqual([0.05, 0.075, 0.1]);
     expect(cfg.trailArmFrac).toBeCloseTo(0.08);
     expect(cfg.recoveryVetoEnabled).toBe(false);
     expect(cfg.localHighVetoEnabled).toBe(false);
@@ -172,7 +172,7 @@ describe('hl-oscar-perp config sizing', () => {
     const labels = hlOscarStrategyLabelsFromEnv();
     expect(labels.dipMinPct).toBe(-12);
     expect(labels.impulseMinPct).toBe(8);
-    expect(labels.tpRungsPct).toEqual([8, 12, 16]);
+    expect(labels.tpRungsPct).toEqual([5, 7.5, 10]);
     expect(labels.trailArmPct).toBe(8);
     expect(labels.timeStopHours).toBe(12);
     expect(labels.recoveryVeto).toBe(true);

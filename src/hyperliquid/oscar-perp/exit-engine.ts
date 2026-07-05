@@ -11,7 +11,7 @@ import type { OscarOpenPosition } from './position-types.js';
  * Kill −45% and optional time stop are config-driven (`positionKillDropPct`, `timeStopHours`; `0` = off).
  */
 export const OSCAR_EXIT_DEFAULTS = {
-  tpRungs: [0.08, 0.12, 0.16] as const,
+  tpRungs: [0.05, 0.075, 0.1] as const,
   tpSellFrac: 0.5,
   trailArmFrac: 0.08,
   trailStepDropFrac: 0.025,

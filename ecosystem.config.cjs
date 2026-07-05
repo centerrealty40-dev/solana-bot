@@ -119,8 +119,8 @@ const HL_OSCAR_PERP_ENV = {
   HL_OSCAR_LOCAL_HIGH_VETO_ENABLED: '0',
   HL_OSCAR_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
   HL_OSCAR_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
-  /** Hold-longer TP ladder +8/+12/+16%, trail arm +8%, step −2.5%. */
-  HL_OSCAR_TP_RUNGS: '0.08,0.12,0.16',
+  /** TP ladder +5/+7.5/+10%, trail arm +8%, step −2.5%. */
+  HL_OSCAR_TP_RUNGS: '0.05,0.075,0.1',
   HL_OSCAR_TRAIL_ARM_PCT: '8',
   HL_OSCAR_TRAIL_STEP_PCT: '2.5',
   HL_OSCAR_TIME_STOP_ENABLED: '1',
