@@ -6,6 +6,7 @@ import {
   planFullExitUsdNotional,
   planPartialSellUsdNotional,
   resyncRemainingFractionFromChain,
+  shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../src/live/wallet-balance-exit-reconcile.js';
 
@@ -112,5 +113,32 @@ describe('wallet-balance-exit-reconcile', () => {
     expect(hasManagedWalletExposure({ ot, chainOscarUsd: 0, minUsd: 5 })).toBe(true);
     expect(ot.remainingFraction).toBeGreaterThan(WALLET_RECONCILE_REMAINING_EPS);
     expect(planFullExitUsdNotional({ ot, chainOscarUsd: 0 })).toBe(100);
+  });
+
+  it('force-closes zombie tail when journal zero but chain still holds after partials', () => {
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0,
+        chainOscarUsd: 53,
+        minUsd: 5,
+        partialSellCount: 2,
+      }),
+    ).toBe(true);
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0,
+        chainOscarUsd: 53,
+        minUsd: 5,
+        partialSellCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      shouldForceCloseJournalZeroChainTail({
+        remainingFraction: 0,
+        chainOscarUsd: 2,
+        minUsd: 5,
+        partialSellCount: 1,
+      }),
+    ).toBe(false);
   });
 });
