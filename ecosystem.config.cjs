@@ -352,16 +352,9 @@ const PM2_APPS = [
         DASHBOARD_DC_TRADER_JSONL: '/opt/dc-trader/data/trader-journal.jsonl',
         DASHBOARD_DC_TRADER_STATE_PATH: '/opt/dc-trader/data/trader-state.json',
         DASHBOARD_DC_TRADER_WALLET_PUBKEY: 'HoFKBH9novJha1rzkHTBRqPrMbXtRNQL3wgJUWqfmp19',
-        /** BasePulse (Base L2) — tile 5; journal synced from 72.62.152.201. */
-        DASHBOARD_BASEPULSE_JSONL: path.join(root, 'data/basepulse/basepulse-journal.jsonl'),
-        /** BasePulse journal ~350MB — tail-only + reverse open-state on same window (see basepulse-dashboard). */
-        DASHBOARD_BASEPULSE_FULL_SCAN_MAX_BYTES: String(32 * 1024 * 1024),
-        DASHBOARD_BASEPULSE_TAIL_BYTES: String(64 * 1024 * 1024),
-        /** BscPulse (BSC) — tile 6; journal synced from 72.62.152.201. */
-        DASHBOARD_BSCPULSE_JSONL: path.join(root, 'data/bscpulse/bscpulse-journal.jsonl'),
-        /** BscPulse journal multi-GB — 128MiB tail keeps tile responsive (was 1GiB → ~30s rebuild). */
-        DASHBOARD_BSCPULSE_FULL_SCAN_MAX_BYTES: String(32 * 1024 * 1024),
-        DASHBOARD_BSCPULSE_TAIL_BYTES: String(128 * 1024 * 1024),
+        /** LERA (cross-product tile) — journal synced from 72.62.152.201 or remote API. */
+        DASHBOARD_LERA_JSONL: path.join(root, 'data/lera/pt1-lera-live.jsonl'),
+        DASHBOARD_LERA_API_URL: 'http://72.62.152.201:3009/api/paper2',
         /** Wallet tiles: Alchemy via `.env` `SA_RPC_HTTP_URL` (Helius/QN fallback off). */
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,

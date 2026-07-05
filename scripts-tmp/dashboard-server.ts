@@ -49,8 +49,13 @@ import {
   type CopyTraderDashboardStats,
 } from './copytrader-dashboard.js';
 import { loadDcTraderForDashboard, type DcTraderDashboardStats } from './dc-trader-dashboard.js';
-import { loadBasePulseForDashboard, basePulseDashboardJsonlPath } from './basepulse-dashboard.js';
-import { loadBscPulseForDashboard, bscPulseDashboardJsonlPath } from './bscpulse-dashboard.js';
+import {
+  fetchLeraStrategyRowFromRemoteApi,
+  leraDashboardJsonlPath,
+  leraDashboardJournalReady,
+  LERA_DASHBOARD_STRATEGY_ID,
+  type LeraRemoteStrategyRow,
+} from './lera-dashboard.js';
 import {
   hlOscarMajorsDashboardJsonlPath,
   hlOscarMajorsHeartbeatPath,
@@ -159,20 +164,17 @@ function paper2EnrichModeForSid(sid: string): 'full' | 'lite' {
   if (mode === 'lite') return 'lite';
   return sid === 'live-oscar' ||
     sid === 'superbot' ||
-    sid === 'base-pulse' ||
-    sid === 'bsc-pulse' ||
+    sid === LERA_DASHBOARD_STRATEGY_ID ||
     isHlOscarSid(sid)
     ? 'full'
     : 'lite';
 }
 
-function isEvmPulseSid(sid: string): boolean {
-  return sid === 'base-pulse' || sid === 'bsc-pulse';
+function isEvmPulseSid(_sid: string): boolean {
+  return false;
 }
 
-function evmChainForSid(sid: string): 'base' | 'bsc' | null {
-  if (sid === 'base-pulse') return 'base';
-  if (sid === 'bsc-pulse') return 'bsc';
+function evmChainForSid(_sid: string): 'base' | 'bsc' | null {
   return null;
 }
 
@@ -311,6 +313,7 @@ export function resolveLiveOscarDashboardStrategyId(filePath: string): string {
     return LIVE_OSCAR_PRESET_C_STRATEGY_ID;
   }
   if (lower.includes('risky')) return 'live-oscar-risky';
+  if (lower.includes('pt1-lera') || lower.includes('live-lera')) return LERA_DASHBOARD_STRATEGY_ID;
   return 'live-oscar';
 }
 
@@ -1957,18 +1960,17 @@ function priceVerifyUiFields(pv: unknown): {
 
 const PAPER2_PRICE_VERIFY_AGG_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA · HL Oscar alts · BasePulse · BscPulse · HL Majors. */
+/** Плитки `/papertrader2`: Live Oscar · SuperBot · DCA · HL Oscar alts · LERA · HL Majors. */
 export const DASHBOARD_PANEL_ORDER = [
   'live-oscar',
   'superbot',
   'dc-trader',
   'hl-oscar-perp',
-  'base-pulse',
-  'bsc-pulse',
+  LERA_DASHBOARD_STRATEGY_ID,
   'hl-oscar-majors',
 ] as const;
 
-export const DASHBOARD_PAPER2_BUILD_ID = '2026-07-01-dashboard-runner-probe-badge-v1';
+export const DASHBOARD_PAPER2_BUILD_ID = '2026-07-05-dashboard-lera-tile-v1';
 
 export type DashboardPaper2StrategyRow = {
   strategyId: string;
@@ -4373,6 +4375,43 @@ function paper2Metrics(closed: Paper2ClosedRow[]): {
   };
 }
 
+function leraRemoteRowToDashboardRow(remote: LeraRemoteStrategyRow, file: string): DashboardPaper2StrategyRow {
+  const empty = makeEmptyDashboardStrategyRow(LERA_DASHBOARD_STRATEGY_ID, file);
+  return {
+    ...empty,
+    ...remote,
+    strategyId: LERA_DASHBOARD_STRATEGY_ID,
+    file: remote.file || file,
+    openCount: Number(remote.openCount ?? empty.openCount),
+    closedCount: Number(remote.closedCount ?? empty.closedCount),
+    startedAt: Number(remote.startedAt ?? empty.startedAt),
+    lastTs: Number(remote.lastTs ?? empty.lastTs),
+    hoursOfData: Number(remote.hoursOfData ?? empty.hoursOfData),
+    sumPnlUsd: Number(remote.sumPnlUsd ?? empty.sumPnlUsd),
+    realizedPnlUsd: Number(remote.realizedPnlUsd ?? empty.realizedPnlUsd),
+    unrealizedPnlUsd: Number(remote.unrealizedPnlUsd ?? empty.unrealizedPnlUsd),
+    totalPnlUsd: Number(remote.totalPnlUsd ?? empty.totalPnlUsd),
+    winRate: Number(remote.winRate ?? empty.winRate),
+    avgPnl: Number(remote.avgPnl ?? empty.avgPnl),
+    avgPeak: Number(remote.avgPeak ?? empty.avgPeak),
+    bestPnlUsd: Number(remote.bestPnlUsd ?? empty.bestPnlUsd),
+    worstPnlUsd: Number(remote.worstPnlUsd ?? empty.worstPnlUsd),
+    unrealizedUsd: Number(remote.unrealizedUsd ?? empty.unrealizedUsd),
+    evals1h: Number(remote.evals1h ?? empty.evals1h),
+    passed1h: Number(remote.passed1h ?? empty.passed1h),
+    failReasons: remote.failReasons ?? empty.failReasons,
+    open: remote.open ?? empty.open,
+    recentClosed: remote.recentClosed ?? empty.recentClosed,
+    priorityFeeUsdTotal: Number(remote.priorityFeeUsdTotal ?? empty.priorityFeeUsdTotal),
+    priceVerify: remote.priceVerify ?? empty.priceVerify,
+    liqDrain: remote.liqDrain ?? empty.liqDrain,
+    liveReconcileBoot: remote.liveReconcileBoot ?? empty.liveReconcileBoot,
+    liveReconcileReport: remote.liveReconcileReport ?? empty.liveReconcileReport,
+    exits: remote.exits ?? empty.exits,
+    exitsBreakdown: remote.exitsBreakdown ?? empty.exitsBreakdown,
+  };
+}
+
 function makeEmptyDashboardStrategyRow(strategyId: string, file: string): DashboardPaper2StrategyRow {
   const m = paper2Metrics([]);
   return {
@@ -5474,17 +5513,22 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] dc-trader panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('dc-trader', DASHBOARD_DC_TRADER_JSONL);
   });
-  const basePulseJsonl = basePulseDashboardJsonlPath();
-  const basePulseLoad = loadBasePulseForDashboard(basePulseJsonl);
-  const basePulseRowP = buildPaper2StrategyRowFromLoad(basePulseJsonl, 'base-pulse', basePulseLoad).catch((e) => {
-    console.warn('[dashboard] base-pulse panel failed', String(e).slice(0, 200));
-    return makeEmptyDashboardStrategyRow('base-pulse', basePulseJsonl);
-  });
-  const bscPulseJsonl = bscPulseDashboardJsonlPath();
-  const bscPulseLoad = loadBscPulseForDashboard(bscPulseJsonl);
-  const bscPulseRowP = buildPaper2StrategyRowFromLoad(bscPulseJsonl, 'bsc-pulse', bscPulseLoad).catch((e) => {
-    console.warn('[dashboard] bsc-pulse panel failed', String(e).slice(0, 200));
-    return makeEmptyDashboardStrategyRow('bsc-pulse', bscPulseJsonl);
+  const leraJsonl = leraDashboardJsonlPath();
+  const leraRowP = (async (): Promise<DashboardPaper2StrategyRow> => {
+    if (leraDashboardJournalReady(leraJsonl)) {
+      const leraLoad = loadLiveOscarJsonlAsPaper2(leraJsonl);
+      return buildPaper2StrategyRowFromLoad(leraJsonl, LERA_DASHBOARD_STRATEGY_ID, leraLoad, {
+        hbOpen: leraLoad.hbOpen,
+        hbClosed: leraLoad.hbClosed,
+        reconcileExtras: leraLoad.liveExtras,
+      });
+    }
+    const remote = await fetchLeraStrategyRowFromRemoteApi();
+    if (remote) return leraRemoteRowToDashboardRow(remote, leraJsonl);
+    return makeEmptyDashboardStrategyRow(LERA_DASHBOARD_STRATEGY_ID, leraJsonl);
+  })().catch((e) => {
+    console.warn('[dashboard] live-lera panel failed', String(e).slice(0, 200));
+    return makeEmptyDashboardStrategyRow(LERA_DASHBOARD_STRATEGY_ID, leraJsonl);
   });
   const hlOscarJsonl = hlOscarPerpDashboardJsonlPath();
   const hlOscarLoad = loadHlOscarPerpForDashboard(hlOscarJsonl);
@@ -5504,13 +5548,12 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     console.warn('[dashboard] hl-oscar-majors panel failed', String(e).slice(0, 200));
     return makeEmptyDashboardStrategyRow('hl-oscar-majors', hlMajorsJsonl);
   });
-  const [liveRow, superbotRow, dcTraderRow, hlOscarRow, basePulseRow, bscPulseRow, hlMajorsRow] = await Promise.all([
+  const [liveRow, superbotRow, dcTraderRow, hlOscarRow, leraRow, hlMajorsRow] = await Promise.all([
     liveRowP,
     superbotRowP,
     dcRowP,
     hlOscarRowP,
-    basePulseRowP,
-    bscPulseRowP,
+    leraRowP,
     hlMajorsRowP,
   ]);
   const merged = mergeDashboardStrategyPanels([
@@ -5518,8 +5561,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     superbotRow as DashboardPaper2StrategyRow,
     dcTraderRow as DashboardPaper2StrategyRow,
     hlOscarRow as DashboardPaper2StrategyRow,
-    basePulseRow as DashboardPaper2StrategyRow,
-    bscPulseRow as DashboardPaper2StrategyRow,
+    leraRow as DashboardPaper2StrategyRow,
     hlMajorsRow as DashboardPaper2StrategyRow,
   ]);
 
@@ -5553,8 +5595,7 @@ async function buildPaper2ApiPayload(): Promise<Record<string, unknown>> {
     liveOscarRiskyJsonl: DASHBOARD_LIVE_OSCAR_RISKY_JSONL,
     superbotJsonl: DASHBOARD_SUPERBOT_JSONL,
     hlTwapLiveJsonl: hlTwapDashboardJsonlPath(),
-    basePulseJsonl: basePulseDashboardJsonlPath(),
-    bscPulseJsonl: bscPulseDashboardJsonlPath(),
+    leraJsonl,
     hlOscarPerpJsonl: hlOscarPerpDashboardJsonlPath(),
     hlOscarMajorsJsonl: hlOscarMajorsDashboardJsonlPath(),
     panelOrder: DASHBOARD_PANEL_ORDER,

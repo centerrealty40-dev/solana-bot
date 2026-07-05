@@ -204,7 +204,7 @@ const LiveOscarConfigSchema = z
      * of at most this USD notional. **0** = off (single-shot sell).
      * Env: `LIVE_EXIT_SLICE_MAX_USD`.
      */
-    liveExitSliceMaxUsd: z.coerce.number().min(0).max(10_000).default(250),
+    liveExitSliceMaxUsd: z.coerce.number().min(0).max(10_000).default(400),
     /**
      * Ms to wait between exit slices when `liveExitSliceMaxUsd` splits a sell.
      * Env: `LIVE_EXIT_SLICE_DELAY_MS`.

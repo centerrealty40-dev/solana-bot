@@ -43,7 +43,7 @@
     .timeline-pane .timeline-ts { flex: 0 0 auto; width: 10.5rem; color: #cbd5e1; font-weight: 600; }
     @media (min-width: 768px) { .timeline-pane .timeline-ts { width: 11.25rem; } }
     /*
-      Десктоп: 7 плиток — Live Oscar · SuperBot · DCA · HL TWAP · BasePulse · BscPulse · HL Oscar Perp.
+      Десктоп: 6 плиток — Live Oscar · SuperBot · DCA · HL Oscar alts · LERA · HL Majors.
     */
     .dash-desktop-strategy-cols {
       display: grid;
@@ -52,7 +52,7 @@
     }
     @media (min-width: 1024px) {
       .dash-desktop-strategy-cols {
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 0.75rem;
       }
     }
@@ -882,8 +882,7 @@
       'superbot',
       'dc-trader',
       'hl-oscar-perp',
-      'base-pulse',
-      'bsc-pulse',
+      'live-lera',
       'hl-oscar-majors',
     ];
     function emptyOscarPanel(strategyId) {
@@ -1005,21 +1004,13 @@
         details:
           '**Плитка 4** · PM2 **`hl-twap-telegram-watch`** · журнал `data/hl-twap/live.jsonl`. Dry-run без ключа HL. Perp — в UI только **цена**, не mcap.',
       },
-      'base-pulse': {
-        label: 'BasePulse',
+      'live-lera': {
+        label: 'LERA',
         tag: 'live',
         oneLiner:
-          'Base L2 dip-buy: DexScreener + GeckoTerminal, пролив **3–25%**, staged entry, kill/trail/timeout. **$10**/позиция через KyberSwap на Base.',
+          'Live LERA (отдельный продукт на VPS **72.62.152.201**): Solana dip-buy по канону Oscar, тестовый sizing ÷10. Плитка читает журнал `pt1-lera-live.jsonl` или API `live-lera-dashboard`.',
         details:
-          '**Плитка 5** · VPS **72.62.152.201** · PM2 **`basepulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар Base (DexScreener + GeckoTerminal trending/new).\n• Вход на dip с фильтрами liq/vol; stage-2 add при −4% от entry.\n• Выход: kill **−8%**, trail после **+10%**, timeout **4h**.\n\n**Live:** swap через **KyberSwap** (fallback 0x с API key); `BPULSE_POSITION_USD=10`, max **3** concurrent.\n\n**Журнал:** `/opt/base-pulse/data/basepulse-journal.jsonl` → sync `data/basepulse/` на дашборде.',
-      },
-      'bsc-pulse': {
-        label: 'BscPulse',
-        tag: 'live',
-        oneLiner:
-          'BSC dip-buy на **крупные** пары: liq **≥$500k**, FDV **≥$5M**, пролив **3–22%**, staged entry. **$10**/позиция через Pancake/1inch.',
-        details:
-          '**Плитка 6** · VPS **72.62.152.201** · PM2 **`bscpulse-collector/engine/heartbeat`**.\n\n**Стратегия**\n• Сбор пар BSC (DexScreener + GeckoTerminal).\n• Только large-cap: `MIN_LIQ=$500k`, `MIN_FDV=$5M`; верхний FDV-cap отключён для Beat/UB.\n• Dip **3–22%** (5m/1h lookback); vol1h **≥$200k**, vol5m **≥$30k**.\n• Выход: kill/trail/timeout как BasePulse.\n\n**Live:** `BSCPULSE_POSITION_USD=10`, max concurrent по env.\n\n**Журнал:** `/opt/bsc-pulse/data/bscpulse-journal.jsonl` → sync `data/bscpulse/` (`DASHBOARD_BSCPULSE_JSONL`).',
+          '**Плитка 5** · VPS **72.62.152.201** · PM2 **`live-lera`** + **`live-lera-dashboard`** (порт **3009**).\n\n**Данные на Oscar-дашборде**\n• Локально: `data/lera/pt1-lera-live.jsonl` (`DASHBOARD_LERA_JSONL`) после `scripts/ops/sync-lera-journal.sh`.\n• Или remote: `DASHBOARD_LERA_API_URL` → `/api/paper2` LERA-дашборда (+ basic auth env).\n\n**Метрики плитки:** open positions, eval/pass за 1h, heartbeat reconcile, closed PnL — как у Live Oscar.\n\n**Журнал SSOT:** `/opt/lera/data/live/pt1-lera-live.jsonl`.',
       },
       'hl-oscar-perp': {
         label: 'HL Oscar Alts',
@@ -1035,7 +1026,7 @@
         oneLiner:
           'BTC+ETH only · Mode A knife **−6%** (impulse off): per-coin TP ladder, trail, kill **−15%**, time stop **12h**. PM2 **`hl-oscar-majors-watch`**.',
         details:
-          '**Плитка 7** · PM2 **`hl-oscar-majors-watch`** · журнал `data/hl-oscar-majors/live.jsonl` · heartbeat `data/hl-oscar-majors/heartbeat.json`.\n\n**Universe**\n• Whitelist **BTC, ETH** only (`universeSize` = 2).\n\n**Вход (Mode A)**\n• Knife dip **−6%** от high (2h/6h/12h), impulse filter **off**.\n• Single shot **$100** gross @ 2x (no staged legs by default).\n\n**Выход**\n• BTC TP **+2% / +3% / +4%** · ETH **+1.5% / +2% / +2.5%** (50% остатка на ступень).\n• Per-coin trail; kill **−15%**; time stop **12h**.\n\n**API:** `/api/hl-majors` · UI: HL mid price only.',
+          '**Плитка 6** · PM2 **`hl-oscar-majors-watch`** · журнал `data/hl-oscar-majors/live.jsonl` · heartbeat `data/hl-oscar-majors/heartbeat.json`.\n\n**Universe**\n• Whitelist **BTC, ETH** only (`universeSize` = 2).\n\n**Вход (Mode A)**\n• Knife dip **−6%** от high (2h/6h/12h), impulse filter **off**.\n• Single shot **$100** gross @ 2x (no staged legs by default).\n\n**Выход**\n• BTC TP **+2% / +3% / +4%** · ETH **+1.5% / +2% / +2.5%** (50% остатка на ступень).\n• Per-coin trail; kill **−15%**; time stop **12h**.\n\n**API:** `/api/hl-majors` · UI: HL mid price only.',
       },
       'paper-oscar-risky': {
         label: 'Paper Oscar Risky',

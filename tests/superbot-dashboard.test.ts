@@ -66,14 +66,16 @@ describe('DASHBOARD_PANEL_ORDER with superbot', () => {
     expect(DASHBOARD_PANEL_ORDER).toEqual([
       'live-oscar',
       'superbot',
-      'copy-trader',
-      'hl-twap-paper',
+      'dc-trader',
+      'hl-oscar-perp',
+      'live-lera',
+      'hl-oscar-majors',
     ]);
   });
 
-  it('mergeDashboardStrategyPanels fills four strategies', () => {
+  it('mergeDashboardStrategyPanels fills six strategies', () => {
     const merged = mergeDashboardStrategyPanels([row('superbot', 7), row('live-oscar', 1)]);
-    expect(merged.length).toBe(4);
+    expect(merged.length).toBe(6);
     expect(merged.map((s) => s.strategyId)).toEqual([...DASHBOARD_PANEL_ORDER]);
     expect(merged[1]!.totalPnlUsd).toBe(7);
   });
