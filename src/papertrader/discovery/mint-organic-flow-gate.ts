@@ -116,13 +116,24 @@ export async function fetchOrganicFlowBuyersFromPg(
   const rows = (await db.execute(dsql.raw(`
     SELECT s.wallet AS wallet,
            SUM(s.amount_usd)::float8 AS buy_usd,
-           ew.cluster_id AS cluster_id
+           COALESCE(
+             ew.cluster_id::text,
+             NULLIF(w.cluster_id, ''),
+             CASE
+               WHEN w.funding_source IS NOT NULL AND w.funding_source <> ''
+               THEN 'fs:' || w.funding_source
+             END
+           ) AS cluster_id
     FROM swaps s
     LEFT JOIN entity_wallets ew ON ew.wallet = s.wallet
+    LEFT JOIN wallets w ON w.address = s.wallet
     WHERE s.base_mint = ${mintSql}
       AND s.side = 'buy'
       AND s.block_time >= now() - interval '${h} hours'
-    GROUP BY s.wallet, ew.cluster_id
+    GROUP BY s.wallet,
+             ew.cluster_id,
+             w.cluster_id,
+             w.funding_source
     ORDER BY buy_usd DESC
     LIMIT 200
   `))) as unknown as Array<{ wallet: string; buy_usd: number; cluster_id: string | null }>;
