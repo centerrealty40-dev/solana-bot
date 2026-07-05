@@ -70,7 +70,8 @@ import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import {
   buildOptionalLiqWatchCloseStamp,
   evaluateLiqDrainState,
-  loadCurrentPoolLiqUsd,
+  loadLiqWatchLiqUsd,
+  refreshOpenTradeEntryLiqAfterDca,
 } from '../pricing/liq-watch.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import type {
@@ -3092,6 +3093,9 @@ async function tryPresetCScalpDcaLeg(args: {
     if (livePhase4 && dcaBuyRes) {
       appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
     }
+    if (cfg.liqWatchEnabled) {
+      await refreshOpenTradeEntryLiqAfterDca(ot, cfg);
+    }
     journalAppend({
       kind: 'dca_add',
       mint,
@@ -3889,7 +3893,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     // ----- W7.5 — liquidity drain watch (before TP/SL/TRAIL and NO_DATA stall close) -----
     if (cfg.liqWatchEnabled && ot.pairAddress && (ot.entryLiqUsd ?? 0) > 0) {
       const positionAgeMs = Math.max(0, Date.now() - ot.entryTs);
-      const load = await loadCurrentPoolLiqUsd({
+      const load = await loadLiqWatchLiqUsd({
+        mint,
+        symbol: ot.symbol,
         pairAddress: ot.pairAddress,
         source: ot.source as DexSource,
         cfg,
@@ -3909,6 +3915,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ot.liqWatchConsecutiveFailures = 0;
         ot.liqWatchLastLiqUsd = verdict.currentLiqUsd;
         ot.liqWatchLastDropPct = verdict.dropPct;
+      } else if (verdict.kind === 'skipped' && verdict.reason === 'liq-disagreement') {
+        ot.liqWatchConsecutiveFailures = 0;
+        ot.liqWatchLastLiqUsd = load.liqUsd;
+        ot.liqWatchLastDropPct = load.liqUsd != null && ot.entryLiqUsd
+          ? +(((ot.entryLiqUsd - load.liqUsd) / ot.entryLiqUsd) * 100).toFixed(3)
+          : null;
+        journalAppend({
+          kind: 'liq_watch_disagreement',
+          mint,
+          symbol: ot.symbol,
+          entryLiqUsd: ot.entryLiqUsd,
+          pgLiqUsd: verdict.pgLiqUsd ?? load.pgLiqUsd ?? null,
+          referenceLiqUsd: verdict.referenceLiqUsd ?? load.referenceLiqUsd ?? null,
+          referenceSource: load.referenceSource ?? null,
+          disagreementPct: verdict.disagreementPct ?? null,
+          thresholdPct: cfg.liqWatchDisagreementPct,
+          loadFrom: load.from,
+        });
       } else if (verdict.kind === 'force-close' && cfg.liqWatchForceClose) {
         ot.liqWatchConsecutiveFailures = cfg.liqWatchConsecutiveFailures;
         const rawPx =
@@ -4399,6 +4423,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
         }
+        if (cfg.liqWatchEnabled) {
+          await refreshOpenTradeEntryLiqAfterDca(ot, cfg);
+        }
         const mcUsdLive_dca = await getLiveMcUsd(
           mint,
           ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
@@ -4579,6 +4606,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+        }
+        if (cfg.liqWatchEnabled) {
+          await refreshOpenTradeEntryLiqAfterDca(ot, cfg);
         }
         const mcUsdLive_dca = await getLiveMcUsd(
           mint,

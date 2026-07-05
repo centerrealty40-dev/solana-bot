@@ -1091,6 +1091,10 @@ const ConfigSchema = z.object({
   liqWatchRpcFallback: z.boolean().default(false),
   liqWatchStampOnAllClose: z.boolean().default(true),
   liqWatchStampOnTrack: z.boolean().default(false),
+  /** PG pair snapshot vs Birdeye/DexScreener — block LIQ_DRAIN when sources disagree beyond this %. */
+  liqWatchDisagreementPct: z.coerce.number().min(5).max(90).default(25),
+  /** Resolve Birdeye → DexScreener → PG for liq-watch (not raw PG-only). */
+  liqWatchDiscoveryQuote: z.boolean().default(true),
 
   /**
    * Flash crash kill — velocity / post-fill drawdown (live-oscar). Fractions are negative (e.g. -0.06 = −6%).
@@ -1882,6 +1886,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liqWatchRpcFallback: process.env.PAPER_LIQ_WATCH_RPC_FALLBACK === '1',
     liqWatchStampOnAllClose: process.env.PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE !== '0',
     liqWatchStampOnTrack: process.env.PAPER_LIQ_WATCH_STAMP_ON_TRACK === '1',
+    liqWatchDisagreementPct: process.env.PAPER_LIQ_WATCH_DISAGREEMENT_PCT,
+    liqWatchDiscoveryQuote: envBool(process.env.PAPER_LIQ_WATCH_DISCOVERY_QUOTE, true),
     flashCrashKillEnabled: process.env.PAPER_FLASH_CRASH_KILL_ENABLED === '1',
     flashCrashKillDrop30sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_30S_PCT,
     flashCrashKillDrop60sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_60S_PCT,
