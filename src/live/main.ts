@@ -611,7 +611,7 @@ export async function main(): Promise<void> {
     beforeTrackerTick: async ({ open, closed }) => {
       const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
       const copyStatePath = process.env.LIVE_COPY_LEADER_STATE_PATH?.trim() || copyLeaderStatePathFromEnv() || undefined;
-      const r = adoptCopyLeaderExitOpens({
+      const r = await adoptCopyLeaderExitOpens({
         open,
         paperCfg: paperBaseline,
         closedTrades: closed,
@@ -628,6 +628,12 @@ export async function main(): Promise<void> {
       });
       if (r.adopted.length > 0) {
         log.info({ mints: r.adopted.map((m) => m.slice(0, 8)) }, 'live-oscar adopted copy-leader exit opens');
+      }
+      if (r.skippedBelowMcap.length > 0) {
+        log.info(
+          { mints: r.skippedBelowMcap.map((m) => m.slice(0, 8)) },
+          'live-oscar skipped copy-leader adopt (mcap below threshold or unknown)',
+        );
       }
       if (r.retroAttachedStagedEntry.length > 0) {
         log.info(

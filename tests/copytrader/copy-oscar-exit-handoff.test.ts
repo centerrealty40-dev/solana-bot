@@ -101,7 +101,7 @@ describe('copy oscar exit handoff', () => {
     expect(pos.oscarPromotedAt).toBeGreaterThan(0);
   });
 
-  it('adopts promoted copy position into live-oscar open map', () => {
+  it('adopts promoted copy position into live-oscar open map', async () => {
     const mint = 'MintAdoptCopy11111111111111111111111111111';
     const statePath = path.join(os.tmpdir(), `ct-adopt-${Date.now()}.json`);
     tmpFiles.push(statePath);
@@ -115,6 +115,7 @@ describe('copy oscar exit handoff', () => {
             symbol: 'ADOPT',
             entryTs: promotedAt,
             entryPriceUsd: 0.002,
+            entryMcapUsd: 5_000_000,
             sizeUsd: 250,
             entryDeployedCostUsd: 250,
             positionSource: 'copy_leader',
@@ -130,10 +131,11 @@ describe('copy oscar exit handoff', () => {
     const journal: Record<string, unknown>[] = [];
     const paperCfg = loadPaperTraderConfig();
 
-    const r = adoptCopyLeaderExitOpens({
+    const r = await adoptCopyLeaderExitOpens({
       open,
       paperCfg,
       statePath,
+      resolveMcapUsd: async () => 5_000_000,
       journalLiveStrategy: (body) => journal.push(body),
     });
 

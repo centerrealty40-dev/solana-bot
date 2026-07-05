@@ -2,8 +2,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { adoptCopyLeaderExitOpens } from '../../src/live/copy-leader-exit-adopt.js';
+import {
+  adoptCopyLeaderExitOpens,
+  resolveCopyLeaderAdoptTier,
+} from '../../src/live/copy-leader-exit-adopt.js';
 import { entrySplitLegDoneFromState } from '../../src/papertrader/entry-split-legs.js';
+import {
+  resolveLiveOscarEntrySplitLeg3Usd,
+  resolveLiveOscarEntrySplitLegUsd,
+} from '../../src/papertrader/live-oscar-entry-sizing.js';
 import { loadPaperTraderConfig } from '../../src/papertrader/config.js';
 import type { OpenTrade } from '../../src/papertrader/types.js';
 
@@ -27,6 +34,10 @@ describe('copy-leader exit adopt staged entry', () => {
 
   function saveEnv(key: string): void {
     if (!(key in envBackup)) envBackup[key] = process.env[key];
+  }
+
+  function mockResolveMcap(mcapUsd: number | null) {
+    return async () => mcapUsd;
   }
 
   function stagedEntryPaperCfg() {
@@ -92,7 +103,7 @@ describe('copy-leader exit adopt staged entry', () => {
     return fp;
   }
 
-  it('seeds liveStagedEntry with pending prod avg legs on adopt', () => {
+  it('seeds liveStagedEntry with pending prod avg legs on adopt', async () => {
     const mint = 'MintCopyStaged111111111111111111111111111111';
     const promotedAt = Date.now() - 120_000;
     const entryPriceUsd = 0.0042;
@@ -106,10 +117,17 @@ describe('copy-leader exit adopt staged entry', () => {
     const paperCfg = stagedEntryPaperCfg();
     const open = new Map<string, OpenTrade>();
 
-    const r = adoptCopyLeaderExitOpens({ open, paperCfg, statePath });
+    const r = await adoptCopyLeaderExitOpens({
+      open,
+      paperCfg,
+      statePath,
+      resolveMcapUsd: mockResolveMcap(5_000_000),
+    });
     expect(r.adopted).toEqual([mint]);
 
     const ot = open.get(mint)!;
+    expect(ot.entryMarketCapUsd).toBe(5_000_000);
+    expect(ot.liveOscarMcapTier).toBe('prod');
     const st = ot.liveStagedEntry;
     expect(st).toBeDefined();
     expect(st!.signalPriceUsd).toBe(entryPriceUsd);
@@ -125,7 +143,7 @@ describe('copy-leader exit adopt staged entry', () => {
     expect(st!.thirdLegDone).toBe(false);
   });
 
-  it('uses low-tier avg sizing from entry mcap', () => {
+  it('uses low-tier avg sizing from entry mcap', async () => {
     for (const key of [
       'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD',
@@ -153,13 +171,70 @@ describe('copy-leader exit adopt staged entry', () => {
     const paperCfg = stagedEntryPaperCfg();
     const open = new Map<string, OpenTrade>();
 
-    adoptCopyLeaderExitOpens({ open, paperCfg, statePath });
-    const st = open.get(mint)!.liveStagedEntry!;
+    await adoptCopyLeaderExitOpens({
+      open,
+      paperCfg,
+      statePath,
+      resolveMcapUsd: mockResolveMcap(2_500_000),
+    });
+    const ot = open.get(mint)!;
+    expect(ot.liveOscarMcapTier).toBe('low');
+    expect(ot.entryMarketCapUsd).toBe(2_500_000);
+    const st = ot.liveStagedEntry!;
     expect(st.avgSecondLegUsd).toBe(1000);
     expect(st.avgThirdLegUsd).toBe(1500);
   });
 
-  it('retro-attaches liveStagedEntry when open exists without plan', () => {
+  it('blocks adopt when mcap is below discovery threshold', async () => {
+    for (const key of ['PAPER_DISCOVERY_MIN_MARKET_CAP_USD', 'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED']) {
+      saveEnv(key);
+    }
+    process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD = '2000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '0';
+
+    const mint = 'MintCopyBelow1111111111111111111111111111111';
+    const statePath = writeCopyState({
+      mint,
+      promotedAt: Date.now() - 60_000,
+      entryPriceUsd: 0.001,
+      entryMcapUsd: 1_500_000,
+      costBasisUsd: 500,
+    });
+    const paperCfg = stagedEntryPaperCfg();
+    const open = new Map<string, OpenTrade>();
+
+    const r = await adoptCopyLeaderExitOpens({
+      open,
+      paperCfg,
+      statePath,
+      resolveMcapUsd: mockResolveMcap(1_500_000),
+    });
+
+    expect(r.adopted).toEqual([]);
+    expect(r.skippedBelowMcap).toEqual([mint]);
+    expect(open.has(mint)).toBe(false);
+  });
+
+  it('does not enable prod split legs for sub-prod mcap without tier', () => {
+    for (const key of ['PAPER_DISCOVERY_MIN_MARKET_CAP_USD', 'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED']) {
+      saveEnv(key);
+    }
+    process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD = '2000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '0';
+
+    const cfg = stagedEntryPaperCfg();
+    expect(resolveLiveOscarEntrySplitLegUsd(cfg, undefined, 1_500_000)).toBe(0);
+    expect(resolveLiveOscarEntrySplitLeg3Usd(cfg, undefined, 1_500_000)).toBe(0);
+  });
+
+  it('resolveCopyLeaderAdoptTier blocks unknown mcap', () => {
+    const cfg = stagedEntryPaperCfg();
+    const r = resolveCopyLeaderAdoptTier(cfg, null);
+    expect(r.adoptBlocked).toBe(true);
+    expect(r.blockReason).toBe('mcap_unknown');
+  });
+
+  it('retro-attaches liveStagedEntry when open exists without plan', async () => {
     const mint = 'MintCopyRetroStg111111111111111111111111111111';
     const promotedAt = Date.now() - 60_000;
     const entryPriceUsd = 0.0033;
@@ -180,7 +255,7 @@ describe('copy-leader exit adopt staged entry', () => {
       dex: 'raydium',
       entryTs: promotedAt - 60_000,
       entryMcUsd: entryPriceUsd,
-      entryMarketCapUsd: 6_000_000,
+      entryMarketCapUsd: null,
       entryMetrics: {
         uniqueBuyers: 0,
         uniqueSellers: 0,
@@ -218,17 +293,21 @@ describe('copy-leader exit adopt staged entry', () => {
     });
 
     const journal: Record<string, unknown>[] = [];
-    const r = adoptCopyLeaderExitOpens({
+    const r = await adoptCopyLeaderExitOpens({
       open,
       paperCfg,
       statePath,
+      resolveMcapUsd: mockResolveMcap(6_000_000),
       journalLiveStrategy: (body) => journal.push(body),
     });
 
     expect(r.adopted).toEqual([]);
     expect(r.retroAttachedStagedEntry).toEqual([mint]);
     expect(r.skippedAlreadyOpen).toEqual([]);
-    const st = open.get(mint)!.liveStagedEntry!;
+    const ot = open.get(mint)!;
+    expect(ot.entryMarketCapUsd).toBe(6_000_000);
+    expect(ot.liveOscarMcapTier).toBe('prod');
+    const st = ot.liveStagedEntry!;
     expect(st.signalPriceUsd).toBe(entryPriceUsd);
     expect(st.avgSecondLegUsd).toBe(1500);
     expect(st.avgThirdLegUsd).toBe(2000);
