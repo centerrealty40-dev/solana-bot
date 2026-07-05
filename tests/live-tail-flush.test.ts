@@ -14,6 +14,16 @@ describe('shouldLiveTailFlushWalletRemainder', () => {
     ).toBe(true);
   });
 
+  it('partial_exit flushes manlet-class remainder below threshold (journal may be 0)', () => {
+    // Wave B trail flush sold partial via usd_capped_by_chain; ~$53 chain tail must flush.
+    expect(
+      shouldLiveTailFlushWalletRemainder({ estUsd: 53, thresholdUsd: 100, context: 'partial_exit' }),
+    ).toBe(true);
+    expect(
+      shouldLiveTailFlushWalletRemainder({ estUsd: 99.99, thresholdUsd: 100, context: 'partial_exit' }),
+    ).toBe(true);
+  });
+
   it('partial_exit flushes only below threshold', () => {
     expect(
       shouldLiveTailFlushWalletRemainder({ estUsd: 99.99, thresholdUsd: 100, context: 'partial_exit' }),
