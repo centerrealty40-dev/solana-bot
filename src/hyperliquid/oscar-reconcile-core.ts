@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 import {
   fetchHlClearinghousePositions,
+  fetchHlCoinRealizedPnlSince,
   type HlExchangePosition,
 } from './twap/hyperliquid-meta.js';
 import { flattenCoinOnExchange } from './twap/live/flatten-position.js';
@@ -88,23 +89,45 @@ export function loadCoinsFromJournalHistory(journalPath: string): Set<string> {
   return coins;
 }
 
-function closePhantomJournalOpen(args: {
+function entryTsMs(entryTs: number): number {
+  if (entryTs > 1e15) return entryTs / 1000;
+  if (entryTs > 1e12) return entryTs;
+  return entryTs * 1000;
+}
+
+async function closePhantomJournalOpen(args: {
   appendJournal: (row: Record<string, unknown>) => void;
   state: OscarTrackerState;
   pos: OscarOpenPosition;
   reason: 'PAPER_STALE' | 'EXCHANGE_ORPHAN';
-}): void {
-  const { appendJournal, state, pos, reason } = args;
-  const holdHours = (Date.now() - pos.entryTs) / 3_600_000;
+  masterAddress?: string;
+}): Promise<void> {
+  const { appendJournal, state, pos, reason, masterAddress } = args;
+  const holdHours = (Date.now() - entryTsMs(pos.entryTs)) / 3_600_000;
+  let pnlUsd = 0;
+  let exitPx = pos.avgEntryPx;
+
+  if (reason === 'EXCHANGE_ORPHAN' && masterAddress) {
+    try {
+      const sinceMs = entryTsMs(pos.entryTs) - 60_000;
+      const hl = await fetchHlCoinRealizedPnlSince(masterAddress, pos.coin, sinceMs);
+      if (hl.exitPx != null) exitPx = hl.exitPx;
+      pnlUsd = hl.pnlUsd !== 0 ? hl.pnlUsd : pos.realizedPnlUsd;
+    } catch {
+      pnlUsd = pos.realizedPnlUsd;
+    }
+  }
+
+  const pnlPct = pos.totalGrossUsd > 0 ? (pnlUsd / pos.totalGrossUsd) * 100 : 0;
   appendJournal({
     kind: 'close',
     ts: Date.now(),
     id: pos.id,
     coin: pos.coin,
     reason,
-    exitPx: pos.avgEntryPx,
-    pnlUsd: 0,
-    pnlPct: 0,
+    exitPx,
+    pnlUsd,
+    pnlPct,
     holdHours,
     mode: 'live',
   });
@@ -246,11 +269,12 @@ export async function reconcileWithTracker(args: {
   if (args.purgePaperOpens) {
     for (const [, pos] of [...args.state.opens.entries()]) {
       if (args.state.openModes.get(pos.id) !== 'dry_run') continue;
-      closePhantomJournalOpen({
+      await closePhantomJournalOpen({
         appendJournal: args.appendJournal,
         state: args.state,
         pos,
         reason: 'PAPER_STALE',
+        masterAddress: args.masterAddress,
       });
       result.paperClosed += 1;
       console.warn(
@@ -283,11 +307,12 @@ export async function reconcileWithTracker(args: {
     if (args.state.openModes.get(id) !== 'live') continue;
     const ex = hlByCoin.get(pos.coin);
     if (ex) continue;
-    closePhantomJournalOpen({
+    await closePhantomJournalOpen({
       appendJournal: args.appendJournal,
       state: args.state,
       pos,
       reason: 'EXCHANGE_ORPHAN',
+      masterAddress: args.masterAddress,
     });
     result.exchangeOrphans += 1;
     console.warn(

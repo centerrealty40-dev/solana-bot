@@ -251,6 +251,63 @@ export async function fetchHlClearinghousePositions(user: string): Promise<HlExc
   return out;
 }
 
+export type HlUserFill = {
+  coin: string;
+  px: number;
+  sz: number;
+  /** `B` = buy, `A` = ask/sell (close long). */
+  side: 'B' | 'A';
+  closedPnl: number;
+  time: number;
+};
+
+/** User fills since `startTimeMs` (HL `userFillsByTime`). */
+export async function fetchHlUserFillsByTime(user: string, startTimeMs: number): Promise<HlUserFill[]> {
+  const raw = await postInfo<Array<Record<string, string | number>>>({
+    type: 'userFillsByTime',
+    user,
+    startTime: startTimeMs,
+  });
+  const out: HlUserFill[] = [];
+  for (const row of raw ?? []) {
+    const coin = String(row.coin ?? '');
+    if (!coin) continue;
+    const px = num(row.px) ?? 0;
+    const sz = num(row.sz) ?? 0;
+    const side = String(row.side ?? '') === 'A' ? 'A' : 'B';
+    const closedPnl = num(row.closedPnl) ?? 0;
+    const time = num(row.time) ?? 0;
+    out.push({ coin, px, sz, side, closedPnl, time });
+  }
+  out.sort((a, b) => a.time - b.time);
+  return out;
+}
+
+/** Sum `closedPnl` for one coin (partials + final close). */
+export function sumHlCoinClosedPnl(fills: HlUserFill[], coin: string): number {
+  return fills.filter((f) => f.coin === coin).reduce((s, f) => s + f.closedPnl, 0);
+}
+
+/** Last sell fill price for a coin, if any. */
+export function lastHlCoinSellPx(fills: HlUserFill[], coin: string): number | null {
+  const sells = fills.filter((f) => f.coin === coin && f.side === 'A');
+  if (sells.length === 0) return null;
+  return sells[sells.length - 1]!.px;
+}
+
+/** Realized PnL on HL for a coin since entry (includes partial closes). */
+export async function fetchHlCoinRealizedPnlSince(
+  user: string,
+  coin: string,
+  sinceMs: number,
+): Promise<{ pnlUsd: number; exitPx: number | null }> {
+  const fills = await fetchHlUserFillsByTime(user, sinceMs);
+  return {
+    pnlUsd: sumHlCoinClosedPnl(fills, coin),
+    exitPx: lastHlCoinSellPx(fills, coin),
+  };
+}
+
 /** Signed perp size (base units) for one coin; 0 if flat. */
 export async function fetchHlPerpPositionSzi(user: string, coin: string): Promise<number> {
   const st = await postInfo<{

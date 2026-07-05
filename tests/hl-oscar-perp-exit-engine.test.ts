@@ -72,12 +72,12 @@ describe('hl-oscar-perp exit-engine kill', () => {
 });
 
 describe('hl-oscar-perp exit-engine TP ladder', () => {
-  it('defaults tpRungs to +8%, +12%, +16% with 50% sell each', () => {
-    const exit = resolveOscarExitParams(testCfg());
-    expect(exit.tpRungs).toEqual([0.08, 0.12, 0.16]);
+  it('defaults tpRungs to +5%, +7.5%, +10% with 50% sell each', () => {
+    const exit = resolveOscarExitParams({ ...testCfg(), tpRungs: [] } as HlOscarPerpConfig);
+    expect(exit.tpRungs).toEqual([0.05, 0.075, 0.1]);
     expect(exit.tpSellFrac).toBe(0.5);
     expect(exit.trailArmFrac).toBe(0.08);
-    expect(OSCAR_EXIT_DEFAULTS.tpRungs).toEqual([0.08, 0.12, 0.16]);
+    expect(OSCAR_EXIT_DEFAULTS.tpRungs).toEqual([0.05, 0.075, 0.1]);
   });
 
   it('reads custom TP rungs from config', () => {

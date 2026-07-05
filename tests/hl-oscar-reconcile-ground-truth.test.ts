@@ -183,6 +183,66 @@ describe('oscar HL reconcile ground truth', () => {
     expect(state.opens.size).toBe(0);
   });
 
+  it('EXCHANGE_ORPHAN close records HL realized PnL from user fills', async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-oscar-orphan-pnl-'));
+    const journalPath = path.join(tmpDir, 'live.jsonl');
+    const entryTs = Date.now() - 3_600_000;
+    fs.writeFileSync(
+      journalPath,
+      JSON.stringify({
+        kind: 'open',
+        ts: entryTs,
+        id: 'live-pnl',
+        coin: 'ARB',
+        displaySymbol: 'ARB',
+        legIndex: 1,
+        signalPrice: 1,
+        fillPx: 1,
+        grossUsd: 100,
+        marginUsd: 50,
+        dipPct: -10,
+        impulsePct: 12,
+        windowMin: 120,
+        mode: 'live',
+      }) + '\n',
+      'utf8',
+    );
+
+    vi.spyOn(hyperliquidMeta, 'fetchHlClearinghousePositions').mockResolvedValue([]);
+    vi.spyOn(hyperliquidMeta, 'fetchHlCoinRealizedPnlSince').mockResolvedValue({
+      pnlUsd: 2.5,
+      exitPx: 1.03,
+    });
+
+    const state = createOscarTraderState(journalPath);
+    const twapCfg = loadHlTwapLiveConfig();
+    const client = createDryRunClient(twapCfg);
+    await client.init();
+
+    await reconcileWithTracker({
+      logPrefix: '[test]',
+      mode: 'live',
+      masterAddress: '0xabc',
+      client,
+      state,
+      universeCoins: new Set(['ARB']),
+      journalCoins: loadCoinsFromJournalHistory(journalPath),
+      leverage: 2,
+      markPxByCoin: new Map(),
+      appendJournal: (row) => fs.appendFileSync(journalPath, `${JSON.stringify(row)}\n`, 'utf8'),
+    });
+
+    const closeLine = fs
+      .readFileSync(journalPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((ln) => JSON.parse(ln) as { kind: string; reason: string; pnlUsd: number; exitPx: number })
+      .find((r) => r.kind === 'close');
+    expect(closeLine?.reason).toBe('EXCHANGE_ORPHAN');
+    expect(closeLine?.pnlUsd).toBe(2.5);
+    expect(closeLine?.exitPx).toBe(1.03);
+  });
+
   it('tracks open modes from journal', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-oscar-modes-'));
     const journalPath = path.join(tmpDir, 'live.jsonl');
