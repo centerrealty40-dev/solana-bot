@@ -29,8 +29,8 @@ function basePv(over: Partial<PervyyVystrelConfig> = {}): PervyyVystrelConfig {
     anchorMinMcapUsd: 100_000,
     anchorMaxMcapUsd: 250_000,
     entryMaxMcapUsd: 1_000_000,
-    minVol1hUsd: 50_000,
-    surveillanceMinVol1hUsd: 50_000,
+    minVol1hUsd: 60_000,
+    surveillanceMinVol1hUsd: 60_000,
     minAgeMin: 720,
     maxAgeMin: 2880,
     dumpMinPct: 50,
@@ -174,7 +174,7 @@ describe('pervyy-vystrel watchlist state machine (PR3)', () => {
         mint: 'MintA',
         refMcapUsd: 180_000,
         priceUsd: 0.0012,
-        vol1hUsd: 55_000,
+        vol1hUsd: 65_000,
         nowMs: t0 + PHASE_A_TICK_THROTTLE_MS,
       },
     });
@@ -377,7 +377,7 @@ describe('pervyy-vystrel watchlist state machine (PR3)', () => {
     onboardPervyyVystrelMint({ mint: 'MintDwell', refMcapUsd: 150_000, priceUsd: 0.001, nowMs: t0 });
     tickPervyyVystrelWatch({
       cfg: basePv(),
-      input: { mint: 'MintDwell', refMcapUsd: 160_000, priceUsd: 0.001, vol1hUsd: 55_000, nowMs: t0 + 1000 },
+      input: { mint: 'MintDwell', refMcapUsd: 160_000, priceUsd: 0.001, vol1hUsd: 65_000, nowMs: t0 + 1000 },
     });
     const tick = tickPervyyVystrelWatch({
       cfg: basePv(),
@@ -385,7 +385,7 @@ describe('pervyy-vystrel watchlist state machine (PR3)', () => {
         mint: 'MintDwell',
         refMcapUsd: 170_000,
         priceUsd: 0.0011,
-        vol1hUsd: 55_000,
+        vol1hUsd: 65_000,
         nowMs: t0 + PHASE_A_MIN_DWELL_MS + 1000,
       },
     });
