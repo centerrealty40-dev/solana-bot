@@ -45,6 +45,8 @@ export interface LiveBuyPipelineResult {
   terminalMessage?: string;
   /** Copy-leader handoff: top-up buy metadata for open-trade accounting. */
   copyToOscarPromotion?: CopyToOscarPromotionPlan;
+  /** All confirmed buy tx signatures when entry was split into multiple Jupiter swaps. */
+  confirmedBuyTxSignatures?: string[];
 }
 
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */
@@ -121,6 +123,8 @@ export interface LiveOscarPhase4Tracker {
     usdNotional: number;
     /** По умолчанию `dca_add`; вторая нога входа — `buy_scale_in`. */
     intentKind?: 'dca_add' | 'buy_scale_in';
+    /** low/prod mcap tier at entry — enables Jupiter buy slicing for staged adds. */
+    entryBuySliceEligible?: boolean;
   }): Promise<LiveBuyPipelineResult>;
 
   tryTokenToSolSell(args: {

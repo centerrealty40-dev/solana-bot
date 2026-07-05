@@ -150,6 +150,7 @@ import { recordMintTimedLossCooldown } from '../../live/mint-timed-loss-cooldown
 import { recordMintScratchReentry } from '../../live/mint-scratch-reentry.js';
 import { child } from '../../core/logger.js';
 import { appendLiveBuyAnchorsAfterDca, applyLiveBuyAnchorsAfterOpen } from '../../live/live-buy-anchor.js';
+import { entryBuySliceEligibleForOpen } from '../../live/entry-slice.js';
 import {
   runLivePartialExitTailFlush,
   scheduleLivePostCloseTailSweep,
@@ -1962,6 +1963,7 @@ async function tryWaveBPostTp1ScratchReentryOpens(args: {
         symbol: pending.symbol,
         usdNotional: pending.reentryUsd,
         intentKind: 'buy_scale_in',
+        entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
       });
       if (!buyOut.ok) {
         journalLiveStrategy?.({
@@ -3065,6 +3067,7 @@ async function tryPresetCScalpDcaLeg(args: {
         mint,
         symbol: ot.symbol,
         usdNotional: leg.addUsd,
+        entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
       });
       if (!dcaBuyRes.ok) return;
     }
@@ -4357,6 +4360,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             mint,
             symbol: ot.symbol,
             usdNotional: addUsd,
+            entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
           });
           if (!dcaBuyRes.ok) return false;
         }
@@ -4537,6 +4541,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             mint,
             symbol: ot.symbol,
             usdNotional: addUsd,
+            entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
           });
           if (!dcaBuyRes.ok) continue;
         }
