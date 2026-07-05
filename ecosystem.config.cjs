@@ -1300,8 +1300,8 @@ const PM2_APPS = [
         PAPER_PRICE_VERIFY_EXIT_MAX_DEFERS_ESCALATION: '60',
         /** Min ms between partial TP sells on same mint. Pro tier: 1000 (was 5000). */
         LIVE_PARTIAL_TP_MIN_INTERVAL_MS: '1000',
-        /** 1.11.502 — split large live exits (partial TP, kill, full close) into ≤$250 slices. */
-        LIVE_EXIT_SLICE_MAX_USD: '250',
+        /** 1.11.502 — split large live exits (partial TP, kill, full close) into ≤$400 slices (low + prod tiers). */
+        LIVE_EXIT_SLICE_MAX_USD: '400',
         LIVE_EXIT_SLICE_DELAY_MS: '5000',
 
         PAPER_SIM_AUDIT_ENABLED: '1',
