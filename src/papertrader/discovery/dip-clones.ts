@@ -138,6 +138,7 @@ import {
   isPgCoverageKnownMint as isPgCoverageKnownMintFromHistory,
 } from './known-mint.js';
 import { scaleMcapWithPrice } from '../pricing/mcap-snapshot.js';
+import { isLiveOscarDiscoveryQuoteStrategyId } from '../../preset-c/live-oscar-family.js';
 
 function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: ReadonlySet<string>): void {
   if (cfg.strategyId !== 'live-oscar') return;
@@ -951,7 +952,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      * byte-for-byte the current PG path. On the ON path any DeFi failure falls back to PG.
      */
     let defiMcap: ShyftDefiMcapResult | null = null;
-    if (cfg.shyftDefiMcapEnabled && cfg.strategyId === 'live-oscar') {
+    if (cfg.shyftDefiMcapEnabled && isLiveOscarDiscoveryQuoteStrategyId(cfg.strategyId)) {
       const fetched = await resolveShyftDefiMcap(row.mint, { ttlMs: cfg.shyftDefiMcapTtlMs });
       if (fetched && (fetched.mcapUsd != null || fetched.liqUsd != null)) {
         defiMcap = fetched;
@@ -973,7 +974,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      */
     let quoteMcapSource: DiscoveryQuoteSource | undefined;
     let birdeyeMarketQuote: Awaited<ReturnType<typeof resolveDiscoveryMarketQuote>> | null = null;
-    if (cfg.birdeyePrimaryEnabled && cfg.strategyId === 'live-oscar') {
+    if (cfg.birdeyePrimaryEnabled && isLiveOscarDiscoveryQuoteStrategyId(cfg.strategyId)) {
       birdeyeMarketQuote = await resolveDiscoveryMarketQuote({
         enabled: true,
         mint: row.mint,
@@ -1054,7 +1055,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryDiscoveryEnabled &&
-      cfg.strategyId === 'live-oscar' &&
+      isLiveOscarDiscoveryQuoteStrategyId(cfg.strategyId) &&
       isShyftShadowEnabled()
     ) {
       const nowPrimary = Date.now();
