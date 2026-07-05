@@ -9,9 +9,9 @@ import { db } from '../core/db/client.js';
 import { child } from '../core/logger.js';
 import {
   buildEarlyClusterMapFromSwaps,
+  buildWalletClusterMapForSwaps,
   evaluateClusterDumpShadow,
   fetchMintSwapsForClusterMap,
-  fetchWalletClusterMap,
 } from '../papertrader/discovery/mint-early-cluster-map.js';
 import {
   evaluateOrganicFlowGate,
@@ -91,14 +91,18 @@ async function materializeMint(mint: string): Promise<PervyyVystrelMintMateriali
     thresholds: organicThresholds,
   });
 
-  const wallets = clusterSwaps.map((s) => s.wallet);
-  const clusterLookup = await fetchWalletClusterMap(wallets);
+  const wallets = [...new Set(clusterSwaps.map((s) => s.wallet))];
+  const clusterLookup = await buildWalletClusterMapForSwaps(wallets);
   const clusterMap = buildEarlyClusterMapFromSwaps({
     mint,
     swaps: clusterSwaps,
     earlyBuyWindowSec: pv.earlyBuyWindowSec,
     walletClusters: clusterLookup,
   });
+
+  if (clusterSwaps.length === 0) {
+    log.warn({ mint }, 'materialize: no swaps in PG — cluster attribution blocked (U3 ingest gap)');
+  }
 
   const dumpWindowHours = 0.5;
   const dumpCutoffMs = Date.now() - dumpWindowHours * 3600 * 1000;
@@ -110,7 +114,9 @@ async function materializeMint(mint: string): Promise<PervyyVystrelMintMateriali
     clusterMap,
     dumpSells,
     clusterSellRatioMin: pv.clusterSellRatioMin,
+    clusterMinUniqueSellers: pv.clusterMinUniqueSellers,
     retailPanicMax: pv.retailPanicMax,
+    walletClusters: clusterLookup,
   });
 
   return { volAuth, organicFlow, clusterMap, clusterDumpShadow };

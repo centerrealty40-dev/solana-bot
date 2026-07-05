@@ -332,8 +332,9 @@ export function tickPervyyVystrelWatch(args: {
     }
 
     const dwellMs = nowMs - state.phaseAEnteredMs;
-    const peakReady = state.peakMcapUsd >= PHASE_A_PEAK_MCAP_USD;
-    const sustainReady = dwellMs >= PHASE_A_MIN_DWELL_MS && state.vol1hSustainSamples >= 2;
+    const peakReady = state.peakMcapUsd >= pv.phaseAPeakMcapUsd;
+    const sustainReady =
+      dwellMs >= pv.phaseAMinDwellHours * 60 * 60 * 1000 && state.vol1hSustainSamples >= 2;
     if (peakReady || sustainReady) {
       state.phase = 'phase_b';
       state.phaseBEnteredMs = nowMs;

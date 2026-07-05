@@ -34,6 +34,7 @@ function basePv(over: Partial<PervyyVystrelConfig> = {}): PervyyVystrelConfig {
     dumpMinPct: 50,
     dumpMinMultiple: 3,
     clusterSellRatioMin: 0.55,
+    clusterMinUniqueSellers: 3,
     retailPanicMax: 0.45,
     minUniqueBuyers1h: 25,
     maxClusterBuyerRatio: 0.35,
@@ -42,6 +43,8 @@ function basePv(over: Partial<PervyyVystrelConfig> = {}): PervyyVystrelConfig {
     watchTtlHours: 72,
     holderPollMin: 5,
     earlyBuyWindowSec: 180,
+    phaseAPeakMcapUsd: 400_000,
+    phaseAMinDwellHours: 4,
     killPct: 0.5,
     maxEntriesPerTick: 1,
     organicGateEnabled: false,
@@ -234,5 +237,54 @@ describe('mint-early-cluster-map shadow (PR2)', () => {
     expect(evalRes.clusterSellRatio).toBeGreaterThan(0.55);
     expect(evalRes.clusterUniqueSellers).toBeGreaterThanOrEqual(3);
     expect(evalRes.pass).toBe(true);
+  });
+
+  it('counts early buyers selling during dump even without atlas cluster_id', () => {
+    const t0 = 1_700_000_000_000;
+    const clusterMap = buildEarlyClusterMapFromSwaps({
+      mint: 'MintEarlySell',
+      swaps: [
+        { wallet: 'e1', side: 'buy', amountUsd: 5000, blockTimeMs: t0 },
+        { wallet: 'e2', side: 'buy', amountUsd: 4000, blockTimeMs: t0 + 1000 },
+        { wallet: 'e3', side: 'buy', amountUsd: 3000, blockTimeMs: t0 + 2000 },
+      ],
+      earlyBuyWindowSec: 180,
+      walletClusters: new Map(),
+    });
+    const dumpSells = [
+      { wallet: 'e1', side: 'sell', amountUsd: 8000, blockTimeMs: t0 + 3_600_000 },
+      { wallet: 'e2', side: 'sell', amountUsd: 7000, blockTimeMs: t0 + 3_600_100 },
+      { wallet: 'retail1', side: 'sell', amountUsd: 1000, blockTimeMs: t0 + 3_600_200 },
+    ];
+    const evalRes = evaluateClusterDumpShadow({
+      mint: 'MintEarlySell',
+      clusterMap,
+      dumpSells,
+      clusterMinUniqueSellers: 2,
+    });
+    expect(evalRes.clusterUniqueSellers).toBe(2);
+    expect(evalRes.clusterSellRatio).toBeGreaterThan(0.55);
+    expect(evalRes.pass).toBe(true);
+  });
+
+  it('assigns funding_source synthetic cluster ids in early map', () => {
+    const t0 = 1_700_000_000_000;
+    const clusters = new Map([
+      ['w1', 'fs:FUNDER_A'],
+      ['w2', 'fs:FUNDER_A'],
+      ['w3', 'fs:FUNDER_B'],
+    ]);
+    const map = buildEarlyClusterMapFromSwaps({
+      mint: 'MintFund',
+      swaps: [
+        { wallet: 'w1', side: 'buy', amountUsd: 1000, blockTimeMs: t0 },
+        { wallet: 'w2', side: 'buy', amountUsd: 900, blockTimeMs: t0 + 500 },
+        { wallet: 'w3', side: 'buy', amountUsd: 800, blockTimeMs: t0 + 1000 },
+      ],
+      earlyBuyWindowSec: 180,
+      walletClusters: clusters,
+    });
+    expect(map.clusterIds).toContain('fs:FUNDER_A');
+    expect(map.clusterWalletIds).toEqual(expect.arrayContaining(['w1', 'w2']));
   });
 });
