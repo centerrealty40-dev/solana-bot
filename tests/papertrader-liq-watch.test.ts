@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateLiqDrainState } from '../src/papertrader/pricing/liq-watch.js';
+import {
+  evaluateLiqDrainState,
+  liqSourceDisagreementPct,
+  refreshEntryLiqBaseline,
+  shouldBlockLiqDrainOnDisagreement,
+} from '../src/papertrader/pricing/liq-watch.js';
 
 const baseCfg = {
   liqWatchEnabled: true,
@@ -11,6 +16,8 @@ const baseCfg = {
   liqWatchRpcFallback: false,
   liqWatchStampOnAllClose: true,
   liqWatchStampOnTrack: false,
+  liqWatchDisagreementPct: 25,
+  liqWatchDiscoveryQuote: true,
 } as never;
 
 const minute = 60_000;
@@ -88,5 +95,79 @@ describe('evaluateLiqDrainState', () => {
     });
     expect(v.kind).toBe('skipped');
     if (v.kind === 'skipped') expect(v.reason).toBe('no-entry-liq');
+  });
+
+  it('uses discovery liq and avoids false LIQ_DRAIN when PG is stale low', () => {
+    const v = evaluateLiqDrainState({
+      cfg: baseCfg,
+      entryLiqUsd: 418_000,
+      load: {
+        liqUsd: 418_000,
+        ageMs: 5_000,
+        from: 'discovery',
+        pgLiqUsd: 194_000,
+        referenceLiqUsd: 418_000,
+        referenceSource: 'birdeye',
+      },
+      consecutiveFailures: 1,
+      positionAgeMs: 5 * minute,
+    });
+    expect(v.kind).toBe('ok');
+    if (v.kind === 'ok') expect(v.dropPct).toBe(0);
+  });
+
+  it('blocks force-close when PG vs reference disagree beyond threshold (RTM/JCK case)', () => {
+    const v = evaluateLiqDrainState({
+      cfg: baseCfg,
+      entryLiqUsd: 418_000,
+      load: {
+        liqUsd: 194_000,
+        ageMs: 5_000,
+        from: 'snapshot',
+        pgLiqUsd: 194_000,
+        referenceLiqUsd: 418_000,
+        referenceSource: 'birdeye',
+      },
+      consecutiveFailures: 1,
+      positionAgeMs: 5 * minute,
+    });
+    expect(v.kind).toBe('skipped');
+    if (v.kind === 'skipped') {
+      expect(v.reason).toBe('liq-disagreement');
+      expect(v.disagreementPct).toBeGreaterThan(25);
+    }
+  });
+});
+
+describe('liqSourceDisagreementPct', () => {
+  it('computes relative disagreement', () => {
+    expect(liqSourceDisagreementPct(418_000, 194_000)).toBeCloseTo(53.589, 2);
+    expect(liqSourceDisagreementPct(100_000, 90_000)).toBe(10);
+  });
+});
+
+describe('shouldBlockLiqDrainOnDisagreement', () => {
+  it('does not block when sources agree within threshold', () => {
+    const r = shouldBlockLiqDrainOnDisagreement({
+      cfg: baseCfg,
+      entryLiqUsd: 100_000,
+      dropPct: 40,
+      load: {
+        liqUsd: 60_000,
+        ageMs: 0,
+        from: 'snapshot',
+        pgLiqUsd: 60_000,
+        referenceLiqUsd: 65_000,
+      },
+    });
+    expect(r.block).toBe(false);
+  });
+});
+
+describe('refreshEntryLiqBaseline', () => {
+  it('keeps max of entry and current liq', () => {
+    expect(refreshEntryLiqBaseline(418_000, 500_000)).toBe(500_000);
+    expect(refreshEntryLiqBaseline(418_000, 194_000)).toBe(418_000);
+    expect(refreshEntryLiqBaseline(null, 100_000)).toBe(100_000);
   });
 });

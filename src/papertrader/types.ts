@@ -1108,8 +1108,12 @@ export type LiqWatchVerdict =
         | 'snapshot-stale'
         | 'rpc-disabled'
         | 'rpc-failed'
-        | 'pre-min-age';
+        | 'pre-min-age'
+        | 'liq-disagreement';
       ts: number;
+      pgLiqUsd?: number;
+      referenceLiqUsd?: number;
+      disagreementPct?: number;
     };
 
 /** Wrapped SOL mint — Jupiter quote `inputMint` for SOL → token. */

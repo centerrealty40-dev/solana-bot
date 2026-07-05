@@ -1389,6 +1389,8 @@ const PM2_APPS = [
         PAPER_LIQ_WATCH_RPC_FALLBACK: '1',
         PAPER_LIQ_WATCH_STAMP_ON_ALL_CLOSE: '1',
         PAPER_LIQ_WATCH_STAMP_ON_TRACK: '0',
+        PAPER_LIQ_WATCH_DISAGREEMENT_PCT: '25',
+        PAPER_LIQ_WATCH_DISCOVERY_QUOTE: '1',
 
         /**
          * 1.11.309 — flash crash kill (aggressive): velocity + post-fill guard; blocks DCA after trigger.
