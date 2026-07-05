@@ -77,7 +77,7 @@ describe('copy-leader handoff ghost heal (DdPrHY)', () => {
     expect(readCopyLeaderMintAttribution(DDPRHY_MINT, statePath)).toBeNull();
   });
 
-  it('does not re-adopt after Oscar close on empty wallet', () => {
+  it('does not re-adopt after Oscar close on empty wallet', async () => {
     const promotedAt = Date.now() - 300_000;
     const statePath = writeCopyState(DDPRHY_MINT, promotedAt);
     finalizeCopyLeaderOscarHandoffClose({ mint: DDPRHY_MINT, statePath });
@@ -114,12 +114,13 @@ describe('copy-leader handoff ghost heal (DdPrHY)', () => {
     const chainMap = new Map<string, bigint>([[DDPRHY_MINT, 0n]]);
     const paperCfg = loadPaperTraderConfig();
 
-    const r = adoptCopyLeaderExitOpens({
+    const r = await adoptCopyLeaderExitOpens({
       open,
       paperCfg,
       statePath,
       chainMap,
       closedTrades: closed,
+      resolveMcapUsd: async () => 3_000_000,
     });
 
     expect(r.adopted).toEqual([]);

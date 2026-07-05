@@ -11,7 +11,12 @@ import {
   markEntrySplitLeg1Filled,
 } from '../papertrader/executor/live-staged-entry-gates.js';
 import { applyCanonicalOpenLegUsd } from '../papertrader/live-oscar-entry-sizing.js';
-import { resolveLiveOscarMcapTier } from '../papertrader/live-oscar-mcap-tier.js';
+import {
+  resolveLiveOscarMcapTier,
+  type LiveOscarMcapTier,
+  type LiveOscarTradeTier,
+} from '../papertrader/live-oscar-mcap-tier.js';
+import { resolveBirdeyeMarketQuote } from '../papertrader/pricing/birdeye-market.js';
 import type { DexId, Metrics, OpenTrade, PositionLeg } from '../papertrader/types.js';
 import type { ClosedTrade } from '../papertrader/types.js';
 import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
@@ -50,15 +55,77 @@ export function copyLeaderExitAdoptEnabled(): boolean {
   return envBool(process.env.LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED, true);
 }
 
+export type CopyLeaderAdoptBlockReason = 'mcap_unknown' | 'mcap_below_threshold';
+
+export type CopyLeaderAdoptTierResolution = {
+  mcapUsd: number | null;
+  mcapTier: LiveOscarMcapTier;
+  tradeTier: LiveOscarTradeTier | undefined;
+  adoptBlocked: boolean;
+  blockReason?: CopyLeaderAdoptBlockReason;
+};
+
+/** Resolve trade tier for copy adopt — mirrors discovery mcap gate (below → block). */
+export function resolveCopyLeaderAdoptTier(
+  cfg: PaperTraderConfig,
+  mcapUsd: number | null | undefined,
+): CopyLeaderAdoptTierResolution {
+  if (mcapUsd == null || !(mcapUsd > 0)) {
+    return {
+      mcapUsd: null,
+      mcapTier: 'below',
+      tradeTier: undefined,
+      adoptBlocked: true,
+      blockReason: 'mcap_unknown',
+    };
+  }
+  const mcapTier = resolveLiveOscarMcapTier(cfg, mcapUsd);
+  if (mcapTier === 'below') {
+    return {
+      mcapUsd,
+      mcapTier,
+      tradeTier: undefined,
+      adoptBlocked: true,
+      blockReason: 'mcap_below_threshold',
+    };
+  }
+  const tradeTier: LiveOscarTradeTier | undefined =
+    mcapTier === 'micro' || mcapTier === 'low' || mcapTier === 'prod' || mcapTier === 'scalp_wave'
+      ? mcapTier
+      : undefined;
+  if (!tradeTier) {
+    return {
+      mcapUsd,
+      mcapTier,
+      tradeTier: undefined,
+      adoptBlocked: true,
+      blockReason: 'mcap_below_threshold',
+    };
+  }
+  return { mcapUsd, mcapTier, tradeTier, adoptBlocked: false };
+}
+
 export type CopyLeaderExitAdoptResult = {
   adopted: string[];
   retroAttachedStagedEntry: string[];
   skippedAlreadyOpen: string[];
   skippedHandoffClosed: string[];
+  skippedBelowMcap: string[];
 };
 
 function copyLeaderLiveStagedEntryActive(cfg: PaperTraderConfig): boolean {
   return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveStagedEntryEnabled;
+}
+
+function stampCopyLeaderAdoptTierFields(
+  ot: OpenTrade,
+  args: { entryMcapUsd: number; tradeTier: LiveOscarTradeTier },
+): void {
+  ot.entryMarketCapUsd = args.entryMcapUsd;
+  ot.liveOscarMcapTier = args.tradeTier;
+  if (args.tradeTier !== 'scalp_wave') {
+    ot.liveOscarTradeLane = 'prod';
+  }
 }
 
 /** Mirror discovery `attachLiveStagedEntryPlan`: copy buy = entry-split leg1 + pending avg legs. */
@@ -68,7 +135,8 @@ function attachCopyLeaderLiveStagedEntryPlan(
     paperCfg: PaperTraderConfig;
     entryTs: number;
     entryPriceUsd: number;
-    entryMcapUsd?: number;
+    entryMcapUsd: number;
+    tradeTier: LiveOscarTradeTier;
   },
 ): boolean {
   if (!copyLeaderLiveStagedEntryActive(args.paperCfg)) return false;
@@ -76,11 +144,15 @@ function attachCopyLeaderLiveStagedEntryPlan(
     args.entryPriceUsd > 0 ? args.entryPriceUsd : ot.avgEntryMarket ?? ot.avgEntry ?? 0;
   if (!(signalPriceUsd > 0)) return false;
 
-  const marketCapUsd = args.entryMcapUsd ?? ot.entryMarketCapUsd ?? null;
+  stampCopyLeaderAdoptTierFields(ot, {
+    entryMcapUsd: args.entryMcapUsd,
+    tradeTier: args.tradeTier,
+  });
+
   ot.liveStagedEntry = buildLiveStagedEntryState(
     args.paperCfg,
     { signalTs: args.entryTs, signalPriceUsd },
-    { marketCapUsd },
+    { marketCapUsd: args.entryMcapUsd },
   );
   markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
   applyCanonicalOpenLegUsd(args.paperCfg, ot);
@@ -93,7 +165,8 @@ function buildOpenFromCopyLeader(args: {
   investedUsd: number;
   entryPriceUsd: number;
   entryTs: number;
-  entryMcapUsd?: number;
+  entryMcapUsd: number;
+  tradeTier: LiveOscarTradeTier;
   entrySig?: string;
   paperCfg: PaperTraderConfig;
 }): OpenTrade {
@@ -107,12 +180,7 @@ function buildOpenFromCopyLeader(args: {
     sizeUsd: args.investedUsd,
     reason: 'open',
   };
-  const mcap = args.entryMcapUsd ?? 0;
-  const tierRaw = resolveLiveOscarMcapTier(args.paperCfg, mcap);
-  const tier =
-    tierRaw === 'micro' || tierRaw === 'low' || tierRaw === 'prod' || tierRaw === 'scalp_wave'
-      ? tierRaw
-      : 'prod';
+  const tier = args.tradeTier;
 
   const ot: OpenTrade = {
     mint: args.mint,
@@ -122,7 +190,7 @@ function buildOpenFromCopyLeader(args: {
     dex,
     entryTs: args.entryTs,
     entryMcUsd: marketPrice,
-    entryMarketCapUsd: mcap > 0 ? mcap : null,
+    entryMarketCapUsd: args.entryMcapUsd,
     entryMetrics: { ...EMPTY_METRICS },
     peakMcUsd: marketPrice,
     peakPnlPct: 0,
@@ -166,16 +234,46 @@ function buildOpenFromCopyLeader(args: {
     paperCfg: args.paperCfg,
     entryTs: args.entryTs,
     entryPriceUsd: marketPrice,
-    entryMcapUsd: mcap > 0 ? mcap : undefined,
+    entryMcapUsd: args.entryMcapUsd,
+    tradeTier: tier,
   });
 
   return ot;
 }
 
+export type ResolveCopyLeaderAdoptMcapUsd = (
+  mint: string,
+  entryMcapUsd?: number,
+) => Promise<number | null>;
+
+async function defaultResolveCopyLeaderAdoptMcapUsd(
+  mint: string,
+  paperCfg: PaperTraderConfig,
+  entryMcapUsd?: number,
+): Promise<number | null> {
+  const apiKey = process.env.BIRDEYE_API_KEY?.trim();
+  if (apiKey) {
+    const quote = await resolveBirdeyeMarketQuote(mint, {
+      apiKey,
+      ttlMs: paperCfg.birdeyeMarketTtlMs,
+      fetchVolume5m: false,
+    });
+    if (
+      quote?.marketCapUsd != null &&
+      quote.marketCapUsd > 0 &&
+      quote.tierInsufficient !== true
+    ) {
+      return quote.marketCapUsd;
+    }
+  }
+  if (entryMcapUsd != null && entryMcapUsd > 0) return entryMcapUsd;
+  return null;
+}
+
 /**
  * Seed live-oscar tracker opens from copy-trader state (`oscarPromotedAt` positions).
  */
-export function adoptCopyLeaderExitOpens(args: {
+export async function adoptCopyLeaderExitOpens(args: {
   open: Map<string, OpenTrade>;
   paperCfg: PaperTraderConfig;
   journalLiveStrategy?: (body: Record<string, unknown>) => void;
@@ -184,24 +282,33 @@ export function adoptCopyLeaderExitOpens(args: {
   chainMap?: Map<string, bigint> | null;
   /** Oscar closed trades — skip re-adopt after handoff exit. */
   closedTrades?: readonly ClosedTrade[];
-}): CopyLeaderExitAdoptResult {
+  /** Test hook: override Birdeye mcap resolution. */
+  resolveMcapUsd?: ResolveCopyLeaderAdoptMcapUsd;
+}): Promise<CopyLeaderExitAdoptResult> {
   const adopted: string[] = [];
   const retroAttachedStagedEntry: string[] = [];
   const skippedAlreadyOpen: string[] = [];
   const skippedHandoffClosed: string[] = [];
+  const skippedBelowMcap: string[] = [];
   if (!copyLeaderExitAdoptEnabled()) {
-    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
+    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
   }
 
   const fp = args.statePath ?? copyLeaderStatePathFromEnv();
-  if (!fp) return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
+  if (!fp) {
+    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+  }
 
   let parsed: { positions?: Record<string, Record<string, unknown>> };
   try {
     parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as typeof parsed;
   } catch {
-    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
+    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
   }
+
+  const resolveMcapUsd =
+    args.resolveMcapUsd ??
+    ((mint, entryMcapUsd) => defaultResolveCopyLeaderAdoptMcapUsd(mint, args.paperCfg, entryMcapUsd));
 
   for (const [mint, row] of Object.entries(parsed.positions ?? {})) {
     const promotedAt = row.oscarPromotedAt;
@@ -215,8 +322,15 @@ export function adoptCopyLeaderExitOpens(args: {
       typeof row.entryPriceUsd === 'number' && row.entryPriceUsd > 0
         ? row.entryPriceUsd
         : attr.entryPriceUsd ?? 0;
-    const entryMcapUsd =
+    const stateEntryMcapUsd =
       typeof row.entryMcapUsd === 'number' && row.entryMcapUsd > 0 ? row.entryMcapUsd : undefined;
+
+    const resolvedMcapUsd = await resolveMcapUsd(mint, stateEntryMcapUsd);
+    const tierCtx = resolveCopyLeaderAdoptTier(args.paperCfg, resolvedMcapUsd);
+    if (tierCtx.adoptBlocked || !tierCtx.tradeTier || tierCtx.mcapUsd == null) {
+      skippedBelowMcap.push(mint);
+      continue;
+    }
 
     if (args.open.has(mint)) {
       const existing = args.open.get(mint)!;
@@ -230,7 +344,8 @@ export function adoptCopyLeaderExitOpens(args: {
           paperCfg: args.paperCfg,
           entryTs,
           entryPriceUsd,
-          entryMcapUsd,
+          entryMcapUsd: tierCtx.mcapUsd,
+          tradeTier: tierCtx.tradeTier,
         })
       ) {
         retroAttachedStagedEntry.push(mint);
@@ -275,7 +390,8 @@ export function adoptCopyLeaderExitOpens(args: {
       investedUsd: attr.costBasisUsd,
       entryPriceUsd,
       entryTs,
-      entryMcapUsd,
+      entryMcapUsd: tierCtx.mcapUsd,
+      tradeTier: tierCtx.tradeTier,
       entrySig,
       paperCfg: args.paperCfg,
     });
@@ -294,5 +410,5 @@ export function adoptCopyLeaderExitOpens(args: {
     });
   }
 
-  return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed };
+  return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
 }

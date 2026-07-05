@@ -109,7 +109,7 @@ function resolveProdBandPlanIfApplicable(
   tier: LiveOscarTradeTier | undefined,
   marketCapUsd: number | null | undefined,
 ): LiveOscarProdBandEntryPlan | undefined {
-  const effectiveTier = tier ?? 'prod';
+  const effectiveTier = tier ?? resolveLiveOscarTradeTierFromMcap(cfg, marketCapUsd);
   if (effectiveTier !== 'prod') return undefined;
   if (marketCapUsd == null || !(marketCapUsd > 0)) return undefined;
   const band = resolveLiveOscarProdMcapBand(cfg, marketCapUsd);
@@ -123,8 +123,19 @@ function prodSplitLegEnabled(
   marketCapUsd: number | null | undefined,
   legIndex: EntrySplitLegIndex,
 ): boolean {
-  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
-  if (!plan) return true;
+  if (tier === 'micro' || tier === 'low' || tier === 'scalp_wave') return false;
+
+  const mcapTier =
+    marketCapUsd != null && marketCapUsd > 0 ? resolveLiveOscarMcapTier(cfg, marketCapUsd) : null;
+  if (mcapTier != null && mcapTier !== 'prod') return false;
+
+  const tradeTier = tier ?? resolveLiveOscarTradeTierFromMcap(cfg, marketCapUsd);
+  if (tradeTier != null && tradeTier !== 'prod') return false;
+
+  const plan = resolveProdBandPlanIfApplicable(cfg, 'prod', marketCapUsd);
+  if (!plan) {
+    return legIndex <= prodConfiguredEntrySplitLegCount(cfg);
+  }
   return legIndex <= plan.splitLegCount;
 }
 
