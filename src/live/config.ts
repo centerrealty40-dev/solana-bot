@@ -209,7 +209,18 @@ const LiveOscarConfigSchema = z
      * Ms to wait between exit slices when `liveExitSliceMaxUsd` splits a sell.
      * Env: `LIVE_EXIT_SLICE_DELAY_MS`.
      */
-    liveExitSliceDelayMs: z.coerce.number().int().min(0).max(120_000).default(5000),
+    liveExitSliceDelayMs: z.coerce.number().int().min(0).max(120_000).default(10_000),
+    /**
+     * 1.11.523 — Chunk large live entry/averaging buys (staged_avg, entry_split legs) on
+     * low/prod mcap tier into slices of at most this USD notional. **0** = off.
+     * Env: `LIVE_ENTRY_SLICE_MAX_USD`.
+     */
+    liveEntrySliceMaxUsd: z.coerce.number().min(0).max(10_000).default(500),
+    /**
+     * Ms to wait between entry buy slices when `liveEntrySliceMaxUsd` splits a buy.
+     * Env: `LIVE_ENTRY_SLICE_DELAY_MS`.
+     */
+    liveEntrySliceDelayMs: z.coerce.number().int().min(0).max(120_000).default(10_000),
 
     /**
      * 1.11.234 — Anti-chase guard для buy-pipeline.
@@ -726,6 +737,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
     liveExitSliceMaxUsd: process.env.LIVE_EXIT_SLICE_MAX_USD,
     liveExitSliceDelayMs: process.env.LIVE_EXIT_SLICE_DELAY_MS,
+    liveEntrySliceMaxUsd: process.env.LIVE_ENTRY_SLICE_MAX_USD,
+    liveEntrySliceDelayMs: process.env.LIVE_ENTRY_SLICE_DELAY_MS,
     liveBuyMaxChasePct: process.env.LIVE_BUY_MAX_CHASE_PCT,
     liveWalletSplBalanceCacheTtlMs: process.env.LIVE_WALLET_SPL_BALANCE_CACHE_TTL_MS,
     liveStagedAddSimErrThreshold: process.env.LIVE_STAGED_ADD_SIM_ERR_THRESHOLD,

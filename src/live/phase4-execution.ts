@@ -84,6 +84,7 @@ import {
 } from './staged-add-sim-cooldown.js';
 import { recordSendOutcome as recordPriorityFeeOutcome } from './adaptive-priority-fee.js';
 import { runSlicedTokenToSolPipeline } from './exit-slice.js';
+import { runSlicedSolToTokenPipeline } from './entry-slice.js';
 import {
   clearArmedSellQuote,
   consumeArmedSellQuote,
@@ -1532,12 +1533,17 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
 function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
   return {
     trySolToTokenBuy(args) {
-      return runSolToTokenPipeline(liveCfg, {
-        mint: args.mint,
-        symbol: args.symbol,
-        usdNotional: args.usdNotional,
-        intentKind: args.intentKind === 'buy_scale_in' ? 'buy_scale_in' : 'dca_add',
-      });
+      return runSlicedSolToTokenPipeline(
+        liveCfg,
+        {
+          mint: args.mint,
+          symbol: args.symbol,
+          usdNotional: args.usdNotional,
+          intentKind: args.intentKind === 'buy_scale_in' ? 'buy_scale_in' : 'dca_add',
+          entryBuySliceEligible: args.entryBuySliceEligible,
+        },
+        runSolToTokenPipeline,
+      );
     },
     tryTokenToSolSell(args) {
       return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline).then((r) => ({

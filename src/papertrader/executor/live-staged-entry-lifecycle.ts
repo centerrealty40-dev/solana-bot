@@ -9,6 +9,7 @@ import type { OpenTrade } from '../types.js';
 import type { LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
 import type { LiveBuyPipelineResult } from '../../live/phase4-types.js';
 import { appendLiveBuyAnchorsAfterDca, executedBuyUsd } from '../../live/live-buy-anchor.js';
+import { entryBuySliceEligibleForOpen } from '../../live/entry-slice.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import {
@@ -74,6 +75,7 @@ async function pushBuyLeg(args: {
       symbol: ot.symbol,
       usdNotional: addUsd,
       intentKind: reason === 'entry_split' ? 'buy_scale_in' : 'dca_add',
+      entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
     });
     if (!buyRes.ok) return false;
   }

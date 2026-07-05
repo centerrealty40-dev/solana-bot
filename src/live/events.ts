@@ -843,6 +843,35 @@ export const ExitSliceResultSchema = z.object({
   slicesCompleted: z.number().int().nonnegative().optional(),
 });
 
+/** 1.11.523 — planned multi-slice live entry/averaging buy (staged_avg, entry_split on low+prod). */
+export const EntrySlicePlanSchema = z.object({
+  kind: z.literal('entry_slice_plan'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.enum(['buy_open', 'dca_add', 'buy_scale_in']).optional(),
+  totalUsdNotional: z.number().finite().optional(),
+  maxUsdPerSlice: z.number().finite().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  delayMs: z.number().int().nonnegative().optional(),
+});
+
+export const EntrySliceAttemptSchema = z.object({
+  kind: z.literal('entry_slice_attempt'),
+  mint: z.string().min(1).max(64),
+  sliceIndex: z.number().int().nonnegative().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  usdNotional: z.number().finite().optional(),
+  intentKind: z.enum(['buy_open', 'dca_add', 'buy_scale_in']).optional(),
+});
+
+export const EntrySliceResultSchema = z.object({
+  kind: z.literal('entry_slice_result'),
+  mint: z.string().min(1).max(64),
+  sliceIndex: z.number().int().nonnegative().optional(),
+  sliceCount: z.number().int().positive().optional(),
+  ok: z.boolean().optional(),
+  slicesCompleted: z.number().int().nonnegative().optional(),
+});
+
 /** 1.11.458 — hot tick killstop pre-arm observability. */
 export const LiveKillstopPrearmSchema = z.object({
   kind: z.literal('live_killstop_prearm'),
@@ -945,6 +974,9 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   ExitSlicePlanSchema,
   ExitSliceAttemptSchema,
   ExitSliceResultSchema,
+  EntrySlicePlanSchema,
+  EntrySliceAttemptSchema,
+  EntrySliceResultSchema,
   LiveKillstopPrearmSchema,
   LiveSellQuotePrearmArmedSchema,
   LiveSellQuotePrearmExpiredSchema,

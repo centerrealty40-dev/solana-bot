@@ -59,10 +59,15 @@ export function appendLiveBuyAnchorsAfterDca(ot: OpenTrade, res: LiveBuyPipeline
     const last = ot.legs[ot.legs.length - 1];
     if (last) reconcileLegExecutedUsd(ot, last, res.executedUsdNotional);
   }
-  if (res.anchorMode === 'chain' && res.confirmedBuyTxSignature) {
-    ot.liveAnchorMode = 'chain';
-    ot.entryLegSignatures = [...(ot.entryLegSignatures ?? []), res.confirmedBuyTxSignature];
-    return;
+  if (res.anchorMode === 'chain') {
+    const sigs =
+      res.confirmedBuyTxSignatures ??
+      (res.confirmedBuyTxSignature ? [res.confirmedBuyTxSignature] : []);
+    if (sigs.length > 0) {
+      ot.liveAnchorMode = 'chain';
+      ot.entryLegSignatures = [...(ot.entryLegSignatures ?? []), ...sigs];
+      return;
+    }
   }
   if (res.anchorMode === 'simulate') {
     ot.liveAnchorMode = 'simulate';
