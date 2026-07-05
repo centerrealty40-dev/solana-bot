@@ -84,6 +84,19 @@
 
 ---
 
+## [1.11.554] — 2026-07-06
+
+**Тег:** `sa-alpha-1.11.554`
+
+### Live Oscar — Birdeye primary OFF, free-stack pricing
+
+- **`BIRDEYE_PRIMARY_ENABLED=0`** на live-oscar — discovery/liq-watch: DexScreener → PG; MTM/hot-tick: Jupiter executable (без Birdeye REST на каждый tick).
+- **`BIRDEYE_COLLECTOR_ENABLED=0`**, **`BIRDEYE_MARKET_TTL_MS=30000`**, **`BIRDEYE_TELEGRAM_ENABLED=0`** на live-oscar.
+- `resolveDiscoveryMarketQuote`: при primary OFF пропускает Birdeye, сохраняет DexScreener fallback; discovery eval всегда вызывает resolver на live-oscar.
+- **48h measurement:** сравнить skips, LIQ_DRAIN, PnL vs Birdeye-primary era (journal grep `live_birdeye_market_quote` / `birdeye_tier_insufficient`).
+
+**Откат:** `git checkout sa-alpha-1.11.553 -- ecosystem.config.cjs src/papertrader/pricing/discovery-market-quote.ts src/papertrader/discovery/dip-clones.ts src/papertrader/pricing/liq-watch.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
 ## [1.11.553] — 2026-07-05
 
 **Тег:** `sa-alpha-1.11.553`

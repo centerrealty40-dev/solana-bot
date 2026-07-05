@@ -2,7 +2,7 @@
  * Discovery market quote resolver: Birdeye → DexScreener → PG snapshot.
  *
  * Pure pick logic + async orchestrator used at live-oscar discovery eval.
- * Default-OFF via `BIRDEYE_PRIMARY_ENABLED`; when OFF returns PG baseline unchanged.
+ * Default-OFF via `BIRDEYE_PRIMARY_ENABLED`; when OFF skips Birdeye REST, DexScreener → PG.
  */
 import { fetch } from 'undici';
 import type { SnapshotCandidateRow } from '../types.js';
@@ -251,7 +251,7 @@ export async function fetchDexScreenerMarketSnapshot(
       dsCache.set(mint, { at: now, val: null });
       return null;
     }
-    const snap = parseDexScreenerPair(best);
+    const snap = { ...parseDexScreenerPair(best), fetchedAtMs: now };
     dsCache.set(mint, { at: now, val: snap });
     return snap;
   } catch {
@@ -272,25 +272,20 @@ export interface ResolveDiscoveryMarketQuoteOpts {
   fetchImpl?: typeof fetch;
 }
 
-/** Async orchestrator: fetch Birdeye (+ DexScreener on Birdeye miss) then pick via pure fallback. */
+/** Async orchestrator: Birdeye (optional) → DexScreener → PG via pure fallback pick. */
 export async function resolveDiscoveryMarketQuote(
   opts: ResolveDiscoveryMarketQuoteOpts,
 ): Promise<DiscoveryMarketQuote> {
   const nowMs = opts.nowMs ?? Date.now();
-  const pgPick = pickDiscoveryMarketQuote({
-    pgRow: opts.pgRow,
-    nowMs,
-    maxStaleMs: opts.birdeyeMaxStaleMs,
-    coverageGapMinMs: opts.coverageGapMinMs,
-  });
-  if (!opts.enabled) return pgPick;
 
-  const birdeye = await resolveBirdeyeMarketQuote(opts.mint, {
-    apiKey: opts.apiKey,
-    ttlMs: opts.birdeyeTtlMs,
-    fetchImpl: opts.fetchImpl,
-    nowMs,
-  });
+  const birdeye = opts.enabled
+    ? await resolveBirdeyeMarketQuote(opts.mint, {
+        apiKey: opts.apiKey,
+        ttlMs: opts.birdeyeTtlMs,
+        fetchImpl: opts.fetchImpl,
+        nowMs,
+      })
+    : null;
 
   let dexscreener: DexScreenerMarketSnapshot | null = null;
   const birdeyeUsable =
@@ -306,6 +301,7 @@ export async function resolveDiscoveryMarketQuote(
     dexscreener = await fetchDexScreenerMarketSnapshot(opts.mint, {
       fetchImpl: opts.fetchImpl,
       nowMs,
+      cacheTtlMs: opts.birdeyeTtlMs,
     });
   }
 

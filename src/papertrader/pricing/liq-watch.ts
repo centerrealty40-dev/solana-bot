@@ -198,7 +198,7 @@ export async function loadLiqWatchLiqUsd(args: LoadLiqWatchArgs): Promise<LoadLi
 
   try {
     const quote = await resolveDiscoveryMarketQuote({
-      enabled: true,
+      enabled: args.cfg.birdeyePrimaryEnabled,
       mint: args.mint,
       pgRow,
       birdeyeTtlMs: args.cfg.birdeyeMarketTtlMs,

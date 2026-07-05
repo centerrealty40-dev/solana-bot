@@ -81,7 +81,7 @@ const BIRDEYE_REST_ENV = {
 
 /**
  * DEX snapshot collectors (sa-raydium/meteora/pumpswap): Birdeye enrich OFF.
- * live-oscar keeps BIRDEYE_PRIMARY_ENABLED; collector enrich added +10–25 min/tick (RCA 2026-07).
+ * live-oscar: BIRDEYE_PRIMARY_ENABLED=0 (2026-07) — DexScreener → PG; collector enrich OFF on all processes.
  */
 const COLLECTOR_BIRDEYE_ENV = {
   BIRDEYE_COLLECTOR_ENABLED: '0',
@@ -737,13 +737,15 @@ const PM2_APPS = [
         SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
         /**
-         * Birdeye REST primary (2026-07): discovery eval + MTM baseline. Shyft OFF → Birdeye replaces
-         * stream-primary for fresher price/mcap. Key: BIRDEYE_API_KEY in `.env` only.
+         * Birdeye REST primary OFF (2026-07): free stack — DexScreener → PG at discovery + liq-watch;
+         * MTM/hot-tick = Jupiter executable. 48h measurement: compare skips, LIQ_DRAIN, PnL vs Birdeye era.
          */
-        BIRDEYE_PRIMARY_ENABLED: '1',
+        BIRDEYE_PRIMARY_ENABLED: '0',
         ...BIRDEYE_REST_ENV,
-        /** Telegram ALERT when Birdeye Lite hits 429/CU quota or PG coverage gap persists. */
-        BIRDEYE_TELEGRAM_ENABLED: '1',
+        BIRDEYE_COLLECTOR_ENABLED: '0',
+        BIRDEYE_MARKET_TTL_MS: '30000',
+        /** Telegram Birdeye alerts OFF while primary disabled (no REST quota burn). */
+        BIRDEYE_TELEGRAM_ENABLED: '0',
         BIRDEYE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         BIRDEYE_TELEGRAM_TIER_COOLDOWN_MS: '1800000',
         BIRDEYE_TELEGRAM_COVERAGE_GAP_COOLDOWN_MS: '1800000',
