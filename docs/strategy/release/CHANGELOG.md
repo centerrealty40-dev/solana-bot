@@ -84,6 +84,18 @@
 
 ---
 
+## [1.11.553] — 2026-07-05
+
+**Тег:** `sa-alpha-1.11.553`
+
+### Collectors — snapshot_stale false-positive + tick SLA
+
+- **`SNAPSHOT_FRESHNESS_MAX_AGE_SEC=1800`** (30 min) в `sa-snapshot-freshness-watch` и `live-oscar` — порог aligned с реальным tick SLA pumpswap/raydium/meteora (16–32 min при DexScreener 429).
+- **`BIRDEYE_COLLECTOR_ENABLED=0`** на sa-raydium / sa-meteora / sa-pumpswap — enrich давал +10–25 min/tick; live-oscar сохраняет `BIRDEYE_PRIMARY_ENABLED`.
+- Stagger DexScreener: meteora offset 40s, moonshot 80s (raydium 0).
+
+**Откат:** `git checkout sa-alpha-1.11.552 -- ecosystem.config.cjs docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only sa-raydium,sa-meteora,sa-moonshot,sa-pumpswap,sa-snapshot-freshness-watch,live-oscar --update-env`.
+
 ## [1.11.552] — 2026-07-04
 
 **Тег:** `sa-alpha-1.11.552`
