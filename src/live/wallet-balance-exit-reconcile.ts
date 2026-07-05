@@ -77,6 +77,23 @@ export function hasManagedWalletExposure(args: {
 }
 
 /**
+ * Zombie tail safety net: journal synced to zero after partials but chain still holds
+ * material balance (manlet-class usd_capped_by_chain drift without tail flush).
+ */
+export function shouldForceCloseJournalZeroChainTail(args: {
+  remainingFraction: number;
+  chainOscarUsd: number;
+  minUsd: number;
+  partialSellCount: number;
+}): boolean {
+  return (
+    args.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS &&
+    args.chainOscarUsd >= args.minUsd &&
+    args.partialSellCount > 0
+  );
+}
+
+/**
  * Sync journal `remainingFraction` with Oscar-attributed chain USD.
  * Expands when chain exceeds journal; shrinks only after partial sells when chain is materially lower.
  */
