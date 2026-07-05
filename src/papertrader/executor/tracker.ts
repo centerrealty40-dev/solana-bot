@@ -165,6 +165,7 @@ import {
   planPartialSellUsdNotional,
   reconcileOpenPositionWalletBalance,
   resyncRemainingFractionFromChain,
+  shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../../live/wallet-balance-exit-reconcile.js';
 import type { LiveOscarConfig } from '../../live/config.js';
@@ -5287,7 +5288,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       exitReason = 'TIMEOUT';
     if (!exitReason && ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS) {
       const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
-      if (!(chainOscarUsdForMint >= reconcileMinUsd)) exitReason = 'TP';
+      if (
+        shouldForceCloseJournalZeroChainTail({
+          remainingFraction: ot.remainingFraction,
+          chainOscarUsd: chainOscarUsdForMint,
+          minUsd: reconcileMinUsd,
+          partialSellCount: ot.partialSells.length,
+        })
+      ) {
+        const lastPartial = ot.partialSells[ot.partialSells.length - 1]!;
+        exitReason = partialReasonToExitReason(lastPartial.reason);
+      } else if (!(chainOscarUsdForMint >= reconcileMinUsd)) {
+        exitReason = 'TP';
+      }
     }
 
     if (
