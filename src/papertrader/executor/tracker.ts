@@ -25,7 +25,10 @@ import {
 } from '../live-oscar-phase-escalation.js';
 import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
-import { recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../discovery/dip-clones.js';
+import {
+  armPostExitReentryGateFromClosedTrade,
+  recordAfterFullCloseForMintRepeatGateFromClosedTrade,
+} from '../discovery/dip-clones.js';
 import { markPresetCTelegramGateConsumedOnFullClose } from '../../preset-c/telegram-gate.js';
 import {
   evaluatePresetCScalpExitAction,
@@ -5295,6 +5298,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         ageH,
         networkFeeUsdPerTx: perTxClose,
       });
+      /** Block re-entry while Jupiter full sell is still retrying (MENSA-class race). */
+      armPostExitReentryGateFromClosedTrade(cfg, ct);
       const prevCloseDefers = exitCloseVerifyDefersByMint.get(mint) ?? 0;
       const maxEsc = cfg.priceVerifyExitMaxDefersEscalation;
       /** After N verify defers, force proceed on full exit (TRAIL/KILLSTOP etc.), same cap as partial escalation. */

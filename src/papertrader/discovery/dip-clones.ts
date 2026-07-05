@@ -443,6 +443,28 @@ function lastExitWasLossOrStress(snap: LastExitMarketSnapshot): boolean {
   return r === 'FLASH_CRASH_KILL' || r === 'SL' || r === 'KILLSTOP' || r === 'LIQ_DRAIN';
 }
 
+/** Arm cooldown + exit snapshot when full exit is decided (before Jupiter sell confirms). Idempotent with final close. */
+export function armPostExitReentryGateFromClosedTrade(
+  cfg: PaperTraderConfig,
+  ct: {
+    mint: string;
+    exitTs: number;
+    theoretical_exit_price: number;
+    effective_exit_price: number;
+    netPnlUsd: number;
+    exitReason: string;
+  },
+): void {
+  recordAfterFullCloseForMintRepeatGate(
+    cfg,
+    ct.mint,
+    ct.exitTs,
+    ct.theoretical_exit_price,
+    ct.effective_exit_price,
+    { netPnlUsd: ct.netPnlUsd, exitReason: ct.exitReason },
+  );
+}
+
 /** Re-entry price ceiling during post-exit cooldown only (price ≤ lastExit×(1−drop%)). */
 export function appendLiveReentryHybridGateReasons(
   cfg: PaperTraderConfig,
@@ -460,16 +482,26 @@ export function appendLiveReentryHybridGateReasons(
   if (!shouldApplyPostExitReentryPriceGate(cfg, mint, snap, nowMs)) return;
 
   const lossExit = lastExitWasLossOrStress(snap);
+
+  /** Profit/TP: during cooldown block same-or-higher re-entry (no multi-day −10% dip anchor after cooldown). */
+  if (!lossExit) {
+    if (snapshotPriceUsd >= snap.marketUsd * (1 - 1e-9)) {
+      out.push(
+        `reentry_wait_below_last_exit_profit(last=${snap.marketUsd.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
+      );
+    }
+    return;
+  }
+
   const dropPct =
-    lossExit && cfg.liveReentryLossMinDropFromLastExitPct > 0
+    cfg.liveReentryLossMinDropFromLastExitPct > 0
       ? Math.max(baseDropPct, cfg.liveReentryLossMinDropFromLastExitPct)
       : baseDropPct;
 
   const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
   if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
-    const suffix = lossExit ? '_loss' : '';
     out.push(
-      `reentry_wait_dip${dropPct}pct${suffix}(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
+      `reentry_wait_dip${dropPct}pct_loss(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
     );
   }
 }

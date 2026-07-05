@@ -44,7 +44,7 @@ describe('live re-entry hybrid gate', () => {
     ).toBe(false);
   });
 
-  it('blocks when price above -20% from last exit during cooldown', () => {
+  it('blocks profit re-entry at same or higher price during cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -53,24 +53,57 @@ describe('live re-entry hybrid gate', () => {
       effective_exit_price: 1.0,
       netPnlUsd: 50,
       exitReason: 'TRAIL',
+    });
+    const reasonsSame: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.0, reasonsSame, Date.now());
+    expect(reasonsSame.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+    const reasonsHigher: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasonsHigher, Date.now());
+    expect(reasonsHigher.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+  });
+
+  it('allows profit re-entry below last exit during cooldown', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.99, reasons, Date.now());
+    expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
+  });
+
+  it('blocks when price above -20% from last exit during loss cooldown', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: -10,
+      exitReason: 'SL',
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip20pct'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
   });
 
-  it('allows dip re-entry when price hit -20% during cooldown', () => {
+  it('allows dip re-entry when price hit -20% during loss cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
       exitTs,
       theoretical_exit_price: 1.0,
       effective_exit_price: 1.0,
-      netPnlUsd: 50,
-      exitReason: 'TRAIL',
+      netPnlUsd: -10,
+      exitReason: 'SL',
     });
     const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.79, reasons, Date.now());
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.69, reasons, Date.now());
     expect(reasons).toHaveLength(0);
   });
 
@@ -90,10 +123,31 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(cfg, MINT, 1.0, reasons, Date.now());
-    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+    expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
   });
 
-  it('MENSA scenario: exit 2d ago, eval now — no reentry_wait_dip after cooldown', () => {
+  it('MENSA scenario: profit exit blocks same-price re-entry during cooldown', () => {
+    const exitTs = Date.now() - 83_000;
+    const cfg = hybridCfg({
+      liveReentryMinDropFromLastExitPct: 10,
+      liveReentryMaxWaitMinutes: 240,
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 0.00219361,
+      effective_exit_price: 0.00219361,
+      netPnlUsd: 2399.54,
+      exitReason: 'BREAKEVEN_EXIT',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(cfg, MINT, 0.00219361, reasons, Date.now());
+    expect(reasons.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+  });
+
+  it('MENSA scenario: exit 2d ago, eval now — no reentry_wait after cooldown', () => {
     const exitTs = Date.now() - 48 * 3_600_000;
     const cfg = hybridCfg({
       liveReentryMinDropFromLastExitPct: 10,
