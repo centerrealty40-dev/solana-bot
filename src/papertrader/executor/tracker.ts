@@ -1366,7 +1366,7 @@ async function tryExecuteTpPartialSell(args: {
     mint,
     openTrade: serializeOpenTrade(ot),
   });
-  if (sellChainRecorded && ot.remainingFraction > 1e-12) {
+  if (sellChainRecorded) {
     runLivePartialExitTailFlush({
       liveCfg: liveOscarCfg,
       mint,

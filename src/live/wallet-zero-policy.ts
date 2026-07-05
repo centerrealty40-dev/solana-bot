@@ -27,13 +27,14 @@ export function partialReasonToExitReason(reason: PartialSell['reason']): ExitRe
   }
 }
 
+/**
+ * True only when the partial sell actually emptied on-chain SPL for this mint.
+ * `usd_capped_by_chain` alone means USD math exceeded chain — not necessarily zero balance
+ * (manlet-class zombie tail when journal was synced to 0 without tail flush).
+ */
 export function livePartialSellDrainedWallet(
   sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain',
   walletDrained?: boolean,
 ): boolean {
-  return (
-    walletDrained === true ||
-    sellAmountSource === 'usd_capped_by_chain' ||
-    sellAmountSource === 'chain_full_balance'
-  );
+  return walletDrained === true || sellAmountSource === 'chain_full_balance';
 }

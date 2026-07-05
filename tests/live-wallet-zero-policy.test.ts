@@ -12,10 +12,11 @@ describe('wallet-zero-policy', () => {
     expect(partialReasonToExitReason('KILLSTOP')).toBe('KILLSTOP');
   });
 
-  it('detects wallet drain from chain cap metadata', () => {
-    expect(livePartialSellDrainedWallet('usd_capped_by_chain')).toBe(true);
+  it('detects wallet drain only when chain is fully sold or walletDrained flag set', () => {
+    expect(livePartialSellDrainedWallet('usd_capped_by_chain')).toBe(false);
     expect(livePartialSellDrainedWallet('chain_full_balance')).toBe(true);
     expect(livePartialSellDrainedWallet('usd_math')).toBe(false);
     expect(livePartialSellDrainedWallet(undefined, true)).toBe(true);
+    expect(livePartialSellDrainedWallet('usd_capped_by_chain', true)).toBe(true);
   });
 });

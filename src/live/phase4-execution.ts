@@ -880,12 +880,11 @@ function appendSellPreflightSkip(
 
 function sellPipelineWalletDrained(
   intentKind: 'sell_partial' | 'sell_full',
-  sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain',
+  soldRaw: bigint,
+  chainAmt: bigint,
 ): boolean {
-  return (
-    intentKind === 'sell_partial' &&
-    (sellAmountSource === 'usd_capped_by_chain' || sellAmountSource === 'chain_full_balance')
-  );
+  if (intentKind === 'sell_full') return chainAmt > 0n && soldRaw >= chainAmt;
+  return chainAmt > 0n && soldRaw >= chainAmt;
 }
 
 async function runTokenToSolPipeline(
@@ -952,6 +951,7 @@ async function runTokenToSolPipeline(
   }
 
   let sellAmountSource: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain' = 'usd_math';
+  let chainAmtBeforeSell = 0n;
   if (executionMode === 'live') {
     const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
     if (chainMap == null) {
@@ -964,6 +964,7 @@ async function runTokenToSolPipeline(
       return { ok: false, preflightSkipReason: 'spl_balance_rpc_null' };
     }
     const chainAmt = chainMap.get(args.mint) ?? 0n;
+    chainAmtBeforeSell = chainAmt;
     if (chainAmt === 0n) {
       appendSellPreflightSkip(liveCfg, {
         mint: args.mint,
@@ -1217,7 +1218,7 @@ async function runTokenToSolPipeline(
         priceImpactPct,
         retryAttempts: attempt,
         sellAmountSource,
-        walletDrained: sellPipelineWalletDrained(args.intentKind, sellAmountSource),
+        walletDrained: sellPipelineWalletDrained(args.intentKind, BigInt(raw), chainAmtBeforeSell),
         tokenAmountRawSold: raw,
       };
     }
@@ -1246,7 +1247,7 @@ async function runTokenToSolPipeline(
       lastResult.priceImpactPct = priceImpactPct;
       lastResult.retryAttempts = attempt;
       lastResult.sellAmountSource = sellAmountSource;
-      lastResult.walletDrained = sellPipelineWalletDrained(args.intentKind, sellAmountSource);
+      lastResult.walletDrained = sellPipelineWalletDrained(args.intentKind, BigInt(raw), chainAmtBeforeSell);
       lastResult.tokenAmountRawSold = raw;
       return lastResult;
     }
