@@ -15,7 +15,7 @@ function cfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     runnerModeEnabled: true,
     runnerMinPgSamples24h: 36,
-    runnerMinVol1hUsd: 80_000,
+    runnerMinVol1hUsd: 60_000,
     runnerMinVol12hUsd: 400_000,
     runnerVelocityMinX: 1.5,
     runnerMinVol5mPeak1hUsd: 20_000,
