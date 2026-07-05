@@ -79,6 +79,14 @@ const BIRDEYE_REST_ENV = {
   BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS: '120',
 };
 
+/**
+ * DEX snapshot collectors (sa-raydium/meteora/pumpswap): Birdeye enrich OFF.
+ * live-oscar keeps BIRDEYE_PRIMARY_ENABLED; collector enrich added +10–25 min/tick (RCA 2026-07).
+ */
+const COLLECTOR_BIRDEYE_ENV = {
+  BIRDEYE_COLLECTOR_ENABLED: '0',
+};
+
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
 /** Spike tiered pump/dump watch — отдельный бот, отдельный канал. */
@@ -405,7 +413,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...BIRDEYE_REST_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
       },
     },
     {
@@ -424,7 +432,7 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '120000',
-        METEORA_COLLECTOR_START_OFFSET_MS: '10000',
+        METEORA_COLLECTOR_START_OFFSET_MS: '40000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
@@ -432,7 +440,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...BIRDEYE_REST_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -452,7 +460,7 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
-        MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
+        MOONSHOT_COLLECTOR_START_OFFSET_MS: '80000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '2',
@@ -486,7 +494,7 @@ const PM2_APPS = [
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...BIRDEYE_REST_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
       },
     },
     {
@@ -552,7 +560,7 @@ const PM2_APPS = [
         /** [ALERT][snapshot_stale] при age PG snapshots > SNAPSHOT_FRESHNESS_MAX_AGE_SEC. */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         SNAPSHOT_FRESHNESS_POLL_MS: '300000',
-        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '900',
+        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
         SNAPSHOT_FRESHNESS_STALE_CONFIRM_TICKS: '2',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
         TELEGRAM_COOLDOWN_ALERT_SNAPSHOT_STALE_MS: '3600000',
@@ -1519,7 +1527,7 @@ const PM2_APPS = [
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
-        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '900',
+        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
         SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
