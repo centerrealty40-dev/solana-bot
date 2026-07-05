@@ -294,8 +294,8 @@ const ConfigSchema = z.object({
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** Prod sub-tier boundary ($3M floor = low max when low lane ON). */
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
-  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(8_500),
-  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(8_500),
+  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(7_500),
+  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(7_500),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(1000),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(1000),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
