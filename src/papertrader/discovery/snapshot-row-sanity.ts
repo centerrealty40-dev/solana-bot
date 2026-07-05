@@ -110,6 +110,21 @@ export function pickCanonicalSnapshotRowFromPool(
     : pickCanonicalSnapshotRow(sane);
 }
 
+export function coalesceMcapFromSiblingVenueRows(
+  pick: SnapshotCandidateRow,
+  group: readonly SnapshotCandidateRow[],
+): SnapshotCandidateRow {
+  const pickMcap = Number(pick.market_cap_usd ?? 0);
+  if (pickMcap > 0) return pick;
+  let bestMcap = 0;
+  for (const row of group) {
+    const m = Number(row.market_cap_usd ?? 0);
+    if (m > bestMcap) bestMcap = m;
+  }
+  if (bestMcap <= 0) return pick;
+  return { ...pick, market_cap_usd: bestMcap };
+}
+
 export function pickCanonicalSnapshotRowsByMint(
   rows: SnapshotCandidateRow[],
   sanity: DiscoverySnapshotSanityCfg,
@@ -124,7 +139,7 @@ export function pickCanonicalSnapshotRowsByMint(
   const out = new Map<string, SnapshotCandidateRow>();
   for (const [mint, group] of byMint) {
     const pick = pickCanonicalSnapshotRowFromPool(group, sanity, opts);
-    if (pick) out.set(mint, pick);
+    if (pick) out.set(mint, coalesceMcapFromSiblingVenueRows(pick, group));
   }
   return out;
 }

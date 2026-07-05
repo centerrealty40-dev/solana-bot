@@ -41,6 +41,13 @@ export function resolveDiscoveryRefMcap(
   if (defi != null && defi > 0) {
     return { refMcapUsd: defi, source: 'shyft_defi', pgMcapUsd };
   }
+  if (pgMcapUsd <= 0 && evalMcap > 0) {
+    const source =
+      opts?.quoteMcapSource === 'birdeye' || opts?.quoteMcapSource === 'dexscreener'
+        ? opts.quoteMcapSource
+        : 'price_scaled';
+    return { refMcapUsd: evalMcap, source, pgMcapUsd };
+  }
   if (
     opts?.quoteMcapSource === 'birdeye' ||
     opts?.quoteMcapSource === 'dexscreener'

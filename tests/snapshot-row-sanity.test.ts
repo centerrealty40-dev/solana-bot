@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 import {
+  coalesceMcapFromSiblingVenueRows,
   discoverySnapshotSanityCfg,
   filterSaneDiscoverySnapshotRows,
   isDiscoverySnapshotRowSane,
   pickCanonicalSnapshotRowFromPool,
+  pickCanonicalSnapshotRowsByMint,
 } from '../src/papertrader/discovery/snapshot-row-sanity.js';
 import { dedupeSnapshotTaggedByMintCanonical } from '../src/papertrader/discovery/snapshot-canonical-pick.js';
 
@@ -101,5 +103,33 @@ describe('snapshot-row-sanity', () => {
       discoverySnapshotSanityZeroLiqMaxMcapUsd: 500_000,
     } as never);
     expect(cfg.enabled).toBe(true);
+  });
+
+  it('pickCanonicalSnapshotRowsByMint borrows mcap from sibling venue when canonical row has zero', () => {
+    const mint = 'Mint444444444444444444444444444444444444444';
+    const meteora = row({
+      mint,
+      source: 'meteora',
+      liquidity_usd: 500_000,
+      market_cap_usd: 0,
+      ts: new Date('2026-07-05T10:00:00Z'),
+    });
+    const pumpswap = row({
+      mint,
+      source: 'pumpswap',
+      liquidity_usd: 480_000,
+      market_cap_usd: 3_200_000,
+      ts: new Date('2026-07-05T08:00:00Z'),
+    });
+    const picked = pickCanonicalSnapshotRowsByMint([meteora, pumpswap], {
+      ...SANITY,
+      enabled: false,
+    });
+    const canonical = picked.get(mint);
+    expect(canonical?.source).toBe('meteora');
+    expect(canonical?.market_cap_usd).toBe(3_200_000);
+    expect(coalesceMcapFromSiblingVenueRows(meteora, [meteora, pumpswap]).market_cap_usd).toBe(
+      3_200_000,
+    );
   });
 });

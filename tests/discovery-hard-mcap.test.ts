@@ -6,7 +6,7 @@ import {
 } from '../src/papertrader/filters/snapshot-filter.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
-function row(mcap: number): SnapshotCandidateRow {
+function row(mcap: number | null): SnapshotCandidateRow {
   return {
     mint: 'Mint111111111111111111111111111111111111111',
     symbol: 'T',
@@ -43,5 +43,26 @@ describe('discovery hard mcap floor', () => {
     appendDiscoveryHardMcapReasons(cfg, resolved, reasons);
     expect(resolved.source).toBe('shyft_defi');
     expect(reasons[0]).toContain('_src=shyft_defi');
+  });
+
+  it('uses shyft when pg mcap is zero', () => {
+    const resolved = resolveDiscoveryRefMcap(row(0), { defiMcapUsd: 3_500_000 });
+    expect(resolved).toEqual({
+      refMcapUsd: 3_500_000,
+      source: 'shyft_defi',
+      pgMcapUsd: 0,
+    });
+    const reasons: string[] = [];
+    appendDiscoveryHardMcapReasons(cfg, resolved, reasons);
+    expect(reasons).toEqual([]);
+  });
+
+  it('uses evalRow mcap when pg snapshot mcap is null', () => {
+    const pgRow = row(null);
+    const evalRow = { ...pgRow, market_cap_usd: 2_800_000 };
+    const resolved = resolveDiscoveryRefMcap(pgRow, { evalRow });
+    expect(resolved.refMcapUsd).toBe(2_800_000);
+    expect(resolved.source).toBe('price_scaled');
+    expect(resolved.pgMcapUsd).toBe(0);
   });
 });
