@@ -165,6 +165,7 @@ import {
   planPartialSellUsdNotional,
   reconcileOpenPositionWalletBalance,
   resyncRemainingFractionFromChain,
+  journalRemainingUsd,
   shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../../live/wallet-balance-exit-reconcile.js';
@@ -5286,19 +5287,23 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ageH >= cfg.liveOscarWaveBTimeStopHours
     )
       exitReason = 'TIMEOUT';
-    if (!exitReason && ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS) {
+    if (!exitReason && liveOscarCfg) {
       const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
+      const journalZero = ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS;
       if (
+        ot.partialSells.length > 0 &&
         shouldForceCloseJournalZeroChainTail({
           remainingFraction: ot.remainingFraction,
           chainOscarUsd: chainOscarUsdForMint,
+          journalRemainingUsd: journalRemainingUsd(ot),
           minUsd: reconcileMinUsd,
+          tailFlushThresholdUsd: liveOscarCfg.liveTailFlushThresholdUsd,
           partialSellCount: ot.partialSells.length,
         })
       ) {
         const lastPartial = ot.partialSells[ot.partialSells.length - 1]!;
         exitReason = partialReasonToExitReason(lastPartial.reason);
-      } else if (!(chainOscarUsdForMint >= reconcileMinUsd)) {
+      } else if (journalZero && !(chainOscarUsdForMint >= reconcileMinUsd)) {
         exitReason = 'TP';
       }
     }

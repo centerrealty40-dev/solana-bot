@@ -77,19 +77,36 @@ export function hasManagedWalletExposure(args: {
 }
 
 /**
- * Zombie tail safety net: journal synced to zero after partials but chain still holds
- * material balance (manlet-class usd_capped_by_chain drift without tail flush).
+ * Zombie tail safety net after partial sells:
+ * - journal zero but chain still holds (PR #391)
+ * - journal non-zero but both chain and journal below tail-flush threshold (manlet DdPrHY class)
  */
 export function shouldForceCloseJournalZeroChainTail(args: {
   remainingFraction: number;
   chainOscarUsd: number;
+  journalRemainingUsd?: number;
   minUsd: number;
+  tailFlushThresholdUsd?: number;
   partialSellCount: number;
 }): boolean {
+  if (args.partialSellCount <= 0) return false;
+  if (!(args.chainOscarUsd >= args.minUsd)) return false;
+
+  const journalZero = args.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS;
+  if (journalZero) return true;
+
+  const threshold =
+    typeof args.tailFlushThresholdUsd === 'number' &&
+    Number.isFinite(args.tailFlushThresholdUsd) &&
+    args.tailFlushThresholdUsd > 0
+      ? args.tailFlushThresholdUsd
+      : 100;
+  const journalUsd = args.journalRemainingUsd;
   return (
-    args.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS &&
-    args.chainOscarUsd >= args.minUsd &&
-    args.partialSellCount > 0
+    args.chainOscarUsd < threshold &&
+    typeof journalUsd === 'number' &&
+    Number.isFinite(journalUsd) &&
+    journalUsd < threshold
   );
 }
 
