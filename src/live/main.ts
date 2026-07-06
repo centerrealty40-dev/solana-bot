@@ -234,23 +234,35 @@ export async function main(): Promise<void> {
       );
       appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status: 'idle', detail: 'missing_token' });
     } else {
-      startShyftShadowConsumer(
-        {
-          endpoint: shyftEndpoint,
-          token: shyftToken,
-          maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
-          connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
-        },
-        {
-          onStatus: (status, detail) =>
-            appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status, ...(detail ? { detail } : {}) }),
-          onHealth: (snapshot) =>
-            appendLiveJsonlEvent(buildShyftStreamHealthEvent(snapshot)),
-          onError: (err) =>
-            log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
-        },
-      );
-      log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+      try {
+        startShyftShadowConsumer(
+          {
+            endpoint: shyftEndpoint,
+            token: shyftToken,
+            maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
+            connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
+          },
+          {
+            onStatus: (status, detail) =>
+              appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status, ...(detail ? { detail } : {}) }),
+            onHealth: (snapshot) =>
+              appendLiveJsonlEvent(buildShyftStreamHealthEvent(snapshot)),
+            onError: (err) =>
+              log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
+          },
+        );
+        log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+      } catch (err) {
+        log.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'live-oscar Shyft shadow consumer failed to start — trading path unaffected',
+        );
+        appendLiveJsonlEvent({
+          kind: 'live_shyft_shadow_status',
+          status: 'error',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   } else if (paperBaseline.liveOscarShyftShadowEnabled && !paperBaseline.shyftStreamEnabled) {
     log.warn({}, 'live-oscar Shyft shadow journal ON but SHYFT_STREAM_ENABLED=0 — no gRPC consumer');
