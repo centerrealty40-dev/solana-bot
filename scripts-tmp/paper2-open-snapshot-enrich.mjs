@@ -8,6 +8,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { acquireDexScreenerSlot } from './dexscreener-api-gate.mjs';
+import {
+  pairsResponseToCacheUpdates,
+  putCachedDexQuotes,
+  quoteCacheEnabled,
+} from './dexscreener-quote-cache.mjs';
 
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
 const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
@@ -256,11 +261,15 @@ async function fetchDexPairsForMintChunk({
   component,
   retryTag,
 }) {
+  const nowMs = bucketTs.getTime();
   const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
   try {
     await acquireDexScreenerSlot();
     const json = await fetchJsonWithRetry(url, {}, retryTag);
     const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
+    if (quoteCacheEnabled()) {
+      await putCachedDexQuotes(pairsResponseToCacheUpdates(pairs, chunk, nowMs));
+    }
     for (const p of pairs) {
       const row = normalizeDexPair(p, bucketTs);
       if (row) extra.push(row);

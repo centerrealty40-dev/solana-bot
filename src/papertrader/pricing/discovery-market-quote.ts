@@ -12,6 +12,11 @@ import {
   type BirdeyeFetchErrorKind,
 } from './birdeye-market.js';
 import { snapshotRowTsMs, snapshotPriceAgeMs } from '../stale-price.js';
+import {
+  dexQuoteCacheTtlMs,
+  fetchDexScreenerQuoteViaCache,
+  isDexQuoteCacheEnabled,
+} from './dexscreener-quote-cache.js';
 
 export type DiscoveryQuoteSource = 'birdeye' | 'dexscreener' | 'pg_snapshot';
 
@@ -231,7 +236,16 @@ export async function fetchDexScreenerMarketSnapshot(
 ): Promise<DexScreenerMarketSnapshot | null> {
   if (!mint) return null;
   const now = opts?.nowMs ?? Date.now();
-  const ttl = opts?.cacheTtlMs ?? 15_000;
+  const ttl = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
+
+  if (isDexQuoteCacheEnabled()) {
+    return fetchDexScreenerQuoteViaCache(mint, {
+      fetchImpl: opts?.fetchImpl,
+      cacheTtlMs: ttl,
+      nowMs: now,
+    });
+  }
+
   const cached = dsCache.get(mint);
   if (cached && now - cached.at < ttl) return cached.val;
 

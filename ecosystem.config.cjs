@@ -305,6 +305,13 @@ const DEXSCREENER_GATE_ENV = {
   DEXSCREENER_GLOBAL_GATE_PATH: path.join(root, 'data/dexscreener-api-gate.json'),
 };
 
+/** Cross-process Dex `/tokens/{mint}` quote cache — live-oscar + collectors on Oscar VPS. */
+const DEX_QUOTE_CACHE_ENV = {
+  DEX_QUOTE_CACHE_ENABLED: '1',
+  DEX_QUOTE_CACHE_TTL_MS: '20000',
+  DEX_QUOTE_CACHE_PATH: path.join(root, 'data/dexscreener-quote-cache.json'),
+};
+
 /**
  * Локальный дневной потолок QN (solana-rpc-meter / provider cache) — выкл.
  * Учёт credits в data/quicknode-usage.json остаётся; hard stop только от плана в кабинете QuickNode.
@@ -416,6 +423,7 @@ const PM2_APPS = [
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
       },
@@ -443,6 +451,7 @@ const PM2_APPS = [
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
       },
@@ -471,6 +480,7 @@ const PM2_APPS = [
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
       },
     },
@@ -497,6 +507,7 @@ const PM2_APPS = [
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
       },
@@ -630,8 +641,8 @@ const PM2_APPS = [
       max_restarts: 20,
       restart_delay: 5000,
       kill_timeout: 15000,
-      /** Boot replay + wallet orphan scan on 7GB journal tail; 512M was OOM loop before executor start. */
-      max_memory_restart: '1024M',
+      /** Boot replay + wallet orphan scan on 8GB journal tail; 1024M PM2 cap OOM before executor (PR #403 deploy). */
+      max_memory_restart: '3072M',
       merge_logs: true,
       time: true,
       env: {
@@ -745,6 +756,9 @@ const PM2_APPS = [
         BIRDEYE_PRIMARY_ENABLED: '0',
         ...BIRDEYE_REST_ENV,
         BIRDEYE_COLLECTOR_ENABLED: '0',
+        /** Shared Dex gate + quote cache with collectors (Oscar VPS single egress). */
+        ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         BIRDEYE_MARKET_TTL_MS: '30000',
         /** Telegram Birdeye alerts OFF while primary disabled (no REST quota burn). */
         BIRDEYE_TELEGRAM_ENABLED: '0',
