@@ -1,11 +1,14 @@
 /**
- * Old-mint dormant volume spike guard.
+ * Ephemeral volume spike guard (48h dormant → recent spike).
  *
- * Blocks entries on long-lived mints where PG history shows a prolonged quiet baseline
- * followed by a sudden vol1h/vol5m explosion (e.g. DADDY 4Cnk9EPn: ~dead Jun 23–26,
- * then Jul 4 vol1h $2.1M vs median ~$7k — sybil guard exempted on high vol1h).
+ * Blocks entries when PG hourly history shows a quiet baseline (24–48h ago, or the
+ * first 24h of eligible history for newly-eligible mints) followed by a sudden vol1h
+ * explosion in the recent window (e.g. DADDY 4Cnk9EPn: weak ~24h ago, spike today).
  *
- * Young pump mints (< maxYoungTokenAgeDays) are never blocked.
+ * Age-agnostic: applies to any mint with sufficient PG coverage (aligned with
+ * PAPER_POST_MIN_AGE_MIN=2880 / 48h entry floor). Mints younger than maxYoungTokenAgeDays
+ * are skipped (they cannot pass the post age gate anyway).
+ *
  * Missing PG baseline coverage => safe-skip.
  */
 
@@ -17,8 +20,15 @@ import { sourceSnapshotTable } from '../dip-detector.js';
 
 export interface OldMintDormantVolSpikeFeatures {
   lookbackHours: number;
+  /** Hours ago where baseline window starts (e.g. 48). */
+  baselineStartHoursAgo: number;
+  /** Hours ago where baseline window ends (e.g. 24). */
+  baselineEndHoursAgo: number;
+  /** @deprecated Alias for baselineStartHoursAgo (telemetry compat). */
   dormantLookbackHours: number;
   recentHours: number;
+  /** primary | fallback_first24h */
+  baselineMode: 'primary' | 'fallback_first24h' | null;
   tokenAgeDays: number | null;
   baselineHoursWithData: number;
   dormantHours: number;
@@ -43,8 +53,11 @@ export interface OldMintDormantVolSpikeEvalResult {
 
 const EMPTY_FEATURES: OldMintDormantVolSpikeFeatures = {
   lookbackHours: 0,
+  baselineStartHoursAgo: 0,
+  baselineEndHoursAgo: 0,
   dormantLookbackHours: 0,
   recentHours: 0,
+  baselineMode: null,
   tokenAgeDays: null,
   baselineHoursWithData: 0,
   dormantHours: 0,
@@ -92,14 +105,20 @@ export async function fetchOldMintDormantVolSpikeContextMap(
   if (rows.length === 0) return map;
 
   const lookbackHours = clampHours(cfg.oldMintDormantVolSpikeLookbackHours, 48, 168);
-  const dormantLookbackHours = clampHours(
-    cfg.oldMintDormantVolSpikeDormantLookbackHours,
+  const baselineStartHoursAgo = clampHours(
+    cfg.oldMintDormantVolSpikeBaselineStartHoursAgo,
     24,
     lookbackHours - 6,
+  );
+  const baselineEndHoursAgo = clampHours(
+    cfg.oldMintDormantVolSpikeBaselineEndHoursAgo,
+    6,
+    baselineStartHoursAgo - 6,
   );
   const recentHours = clampHours(cfg.oldMintDormantVolSpikeRecentHours, 3, 24);
   const dormantVol1hMax = cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd;
   const dormantVol5mMax = cfg.oldMintDormantVolSpikeDormantVol5mMaxUsd;
+  const minBaselineHours = cfg.oldMintDormantVolSpikeMinBaselineHours;
 
   const byTable = new Map<string, string[]>();
   for (const r of rows) {
@@ -125,71 +144,121 @@ export async function fetchOldMintDormantVolSpikeContextMap(
         WHERE ts >= now() - interval '${lookbackHours} hours'
           AND base_mint IN (${mintsSql})
         GROUP BY base_mint, date_trunc('hour', ts)
+      ),
+      mint_bounds AS (
+        SELECT mint, MIN(hour_bucket) AS first_bucket
+        FROM hourly
+        GROUP BY mint
+      ),
+      tagged AS (
+        SELECT
+          h.mint,
+          h.hour_bucket,
+          h.hour_max_vol1h,
+          h.hour_max_vol5m,
+          CASE
+            WHEN h.hour_bucket >= date_trunc('hour', now()) - interval '${baselineStartHoursAgo} hours'
+              AND h.hour_bucket < date_trunc('hour', now()) - interval '${baselineEndHoursAgo} hours'
+              THEN 'primary'
+            WHEN h.hour_bucket >= b.first_bucket
+              AND h.hour_bucket < b.first_bucket + interval '24 hours'
+              THEN 'fallback'
+            ELSE NULL
+          END AS baseline_kind
+        FROM hourly h
+        JOIN mint_bounds b ON b.mint = h.mint
       )
       SELECT
         mint,
+        COUNT(*) FILTER (WHERE baseline_kind = 'primary')::int AS primary_baseline_hours,
         COUNT(*) FILTER (
-          WHERE hour_bucket >= date_trunc('hour', now()) - interval '${dormantLookbackHours} hours'
-            AND hour_bucket < date_trunc('hour', now()) - interval '${recentHours} hours'
-        )::int AS baseline_hours,
-        COUNT(*) FILTER (
-          WHERE hour_bucket >= date_trunc('hour', now()) - interval '${dormantLookbackHours} hours'
-            AND hour_bucket < date_trunc('hour', now()) - interval '${recentHours} hours'
+          WHERE baseline_kind = 'primary'
             AND hour_max_vol1h <= ${dormantVol1hMax}
             AND hour_max_vol5m <= ${dormantVol5mMax}
-        )::int AS dormant_hours,
+        )::int AS primary_dormant_hours,
         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hour_max_vol1h) FILTER (
-          WHERE hour_bucket >= date_trunc('hour', now()) - interval '${dormantLookbackHours} hours'
-            AND hour_bucket < date_trunc('hour', now()) - interval '${recentHours} hours'
-        )::float AS baseline_median_vol1h,
+          WHERE baseline_kind = 'primary'
+        )::float AS primary_median_vol1h,
         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hour_max_vol5m) FILTER (
-          WHERE hour_bucket >= date_trunc('hour', now()) - interval '${dormantLookbackHours} hours'
-            AND hour_bucket < date_trunc('hour', now()) - interval '${recentHours} hours'
-        )::float AS baseline_median_vol5m,
+          WHERE baseline_kind = 'primary'
+        )::float AS primary_median_vol5m,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY hour_max_vol1h) FILTER (
-          WHERE hour_bucket >= date_trunc('hour', now()) - interval '${dormantLookbackHours} hours'
-            AND hour_bucket < date_trunc('hour', now()) - interval '${recentHours} hours'
-        )::float AS baseline_p90_vol1h,
+          WHERE baseline_kind = 'primary'
+        )::float AS primary_p90_vol1h,
+        COUNT(*) FILTER (WHERE baseline_kind = 'fallback')::int AS fallback_baseline_hours,
+        COUNT(*) FILTER (
+          WHERE baseline_kind = 'fallback'
+            AND hour_max_vol1h <= ${dormantVol1hMax}
+            AND hour_max_vol5m <= ${dormantVol5mMax}
+        )::int AS fallback_dormant_hours,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hour_max_vol1h) FILTER (
+          WHERE baseline_kind = 'fallback'
+        )::float AS fallback_median_vol1h,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hour_max_vol5m) FILTER (
+          WHERE baseline_kind = 'fallback'
+        )::float AS fallback_median_vol5m,
+        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY hour_max_vol1h) FILTER (
+          WHERE baseline_kind = 'fallback'
+        )::float AS fallback_p90_vol1h,
         MAX(hour_max_vol1h) FILTER (
           WHERE hour_bucket >= date_trunc('hour', now()) - interval '${recentHours} hours'
         )::float AS recent_max_vol1h,
         MAX(hour_max_vol5m) FILTER (
           WHERE hour_bucket >= date_trunc('hour', now()) - interval '${recentHours} hours'
         )::float AS recent_max_vol5m
-      FROM hourly
+      FROM tagged
       GROUP BY mint
     `));
     const out = r as unknown as Array<Record<string, unknown>>;
     for (const row of out) {
       const mint = String(row.mint ?? '');
-      const baselineHours = Number(row.baseline_hours ?? 0) | 0;
-      const dormantHours = Number(row.dormant_hours ?? 0) | 0;
+      const primaryBaselineHours = Number(row.primary_baseline_hours ?? 0) | 0;
+      const fallbackBaselineHours = Number(row.fallback_baseline_hours ?? 0) | 0;
+      const usePrimary = primaryBaselineHours >= minBaselineHours;
+      const baselineMode: 'primary' | 'fallback_first24h' | null = usePrimary
+        ? 'primary'
+        : fallbackBaselineHours >= minBaselineHours
+          ? 'fallback_first24h'
+          : null;
+
+      const baselineHours = usePrimary ? primaryBaselineHours : fallbackBaselineHours;
+      const dormantHours = usePrimary
+        ? (Number(row.primary_dormant_hours ?? 0) | 0)
+        : (Number(row.fallback_dormant_hours ?? 0) | 0);
       const dormantFrac = baselineHours > 0 ? +(dormantHours / baselineHours).toFixed(4) : null;
+
       map.set(mint, {
         lookbackHours,
-        dormantLookbackHours,
+        baselineStartHoursAgo,
+        baselineEndHoursAgo,
+        dormantLookbackHours: baselineStartHoursAgo,
         recentHours,
+        baselineMode,
         tokenAgeDays: null,
         baselineHoursWithData: baselineHours,
         dormantHours,
         dormantHourFraction: dormantFrac,
-        baselineMedianVol1hUsd: posVol(row.baseline_median_vol1h),
-        baselineMedianVol5mUsd: posVol(row.baseline_median_vol5m),
-        baselineP90Vol1hUsd: posVol(row.baseline_p90_vol1h),
+        baselineMedianVol1hUsd: posVol(
+          usePrimary ? row.primary_median_vol1h : row.fallback_median_vol1h,
+        ),
+        baselineMedianVol5mUsd: posVol(
+          usePrimary ? row.primary_median_vol5m : row.fallback_median_vol5m,
+        ),
+        baselineP90Vol1hUsd: posVol(usePrimary ? row.primary_p90_vol1h : row.fallback_p90_vol1h),
         recentMaxVol1hUsd: posVol(row.recent_max_vol1h),
         recentMaxVol5mUsd: posVol(row.recent_max_vol5m),
         currentVol1hUsd: null,
         currentVol5mUsd: null,
         effectiveRecentVol1hUsd: null,
         vol1hSpikeRatio: null,
-        coverageOk: baselineHours >= cfg.oldMintDormantVolSpikeMinBaselineHours,
+        coverageOk: baselineMode != null,
       });
     }
   }
   return map;
 }
 
-/** Apply old-mint dormant volume spike rules to one candidate. */
+/** Apply ephemeral dormant→spike volume rules to one candidate. */
 export function evaluateOldMintDormantVolSpikeGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
@@ -210,7 +279,7 @@ export function evaluateOldMintDormantVolSpikeGuard(
   }
 
   const minOldDays = cfg.oldMintDormantVolSpikeMinTokenAgeDays;
-  if (tokenAgeDays == null || tokenAgeDays < minOldDays) {
+  if (minOldDays > 0 && (tokenAgeDays == null || tokenAgeDays < minOldDays)) {
     return {
       blocked: false,
       blockedReasons: [],
@@ -267,8 +336,10 @@ export function evaluateOldMintDormantVolSpikeGuard(
     vol1hSpikeRatio != null && vol1hSpikeRatio >= cfg.oldMintDormantVolSpikeVol1hRatioMin;
 
   if (wasDormant && activeSpike && sharpSpike) {
+    const baselineTag =
+      features.baselineMode === 'fallback_first24h' ? 'baseline=fallback24h' : 'baseline=24-48h';
     blockedReasons.push(
-      `old_mint_sudden_volume_spike:age=${tokenAgeDays}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_p90=$${Math.round(features.baselineP90Vol1hUsd ?? features.baselineMedianVol1hUsd ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
+      `ephemeral_volume_spike:${baselineTag}_age=${tokenAgeDays ?? '?'}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_p90=$${Math.round(features.baselineP90Vol1hUsd ?? features.baselineMedianVol1hUsd ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
     );
   }
 

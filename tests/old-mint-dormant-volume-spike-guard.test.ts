@@ -33,31 +33,35 @@ function baseRow(over: Partial<SnapshotCandidateRow> = {}): SnapshotCandidateRow
 function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     oldMintDormantVolSpikeGuardEnabled: true,
-    oldMintDormantVolSpikeMinTokenAgeDays: 14,
-    oldMintDormantVolSpikeMaxYoungTokenAgeDays: 7,
-    oldMintDormantVolSpikeLookbackHours: 120,
-    oldMintDormantVolSpikeDormantLookbackHours: 72,
+    oldMintDormantVolSpikeMinTokenAgeDays: 0,
+    oldMintDormantVolSpikeMaxYoungTokenAgeDays: 2,
+    oldMintDormantVolSpikeLookbackHours: 48,
+    oldMintDormantVolSpikeBaselineStartHoursAgo: 48,
+    oldMintDormantVolSpikeBaselineEndHoursAgo: 24,
     oldMintDormantVolSpikeRecentHours: 6,
     oldMintDormantVolSpikeDormantVol1hMaxUsd: 10_000,
     oldMintDormantVolSpikeDormantVol5mMaxUsd: 5_000,
     oldMintDormantVolSpikeMinDormantHourFraction: 0.75,
-    oldMintDormantVolSpikeMinBaselineHours: 24,
+    oldMintDormantVolSpikeMinBaselineHours: 18,
     oldMintDormantVolSpikeMinSpikeVol1hUsd: 25_000,
     oldMintDormantVolSpikeVol1hRatioMin: 5,
     ...over,
   } as PaperTraderConfig;
 }
 
-/** PG context mocked from prod RCA (Jul 5 2026 entry): dormant median ~$7k, spike vol1h $130k+. */
+/** PG context mocked from prod RCA: weak 24–48h ago, spike in last 6h. */
 function daddyCtx(over: Partial<OldMintDormantVolSpikeFeatures> = {}): OldMintDormantVolSpikeFeatures {
   return {
-    lookbackHours: 120,
-    dormantLookbackHours: 72,
+    lookbackHours: 48,
+    baselineStartHoursAgo: 48,
+    baselineEndHoursAgo: 24,
+    dormantLookbackHours: 48,
     recentHours: 6,
+    baselineMode: 'primary',
     tokenAgeDays: null,
-    baselineHoursWithData: 60,
-    dormantHours: 52,
-    dormantHourFraction: 0.87,
+    baselineHoursWithData: 22,
+    dormantHours: 20,
+    dormantHourFraction: 0.91,
     baselineMedianVol1hUsd: 7032,
     baselineMedianVol5mUsd: 1308,
     baselineP90Vol1hUsd: 8500,
@@ -82,19 +86,10 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('passes young pump mint (< maxYoungTokenAgeDays)', () => {
+  it('passes mint below post age floor (< maxYoungTokenAgeDays)', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg(),
-      baseRow({ token_age_min: 3 * 1440 }),
-      daddyCtx(),
-    );
-    expect(r.blocked).toBe(false);
-  });
-
-  it('passes when token age below min threshold', () => {
-    const r = evaluateOldMintDormantVolSpikeGuard(
-      baseCfg(),
-      baseRow({ token_age_min: 10 * 1440 }),
+      baseRow({ token_age_min: 1 * 1440 }),
       daddyCtx(),
     );
     expect(r.blocked).toBe(false);
@@ -109,11 +104,21 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('blocks DADDY-like old mint dormant → sudden vol1h spike (4Cnk9EPn RCA)', () => {
+  it('blocks DADDY-like dormant→spike at any eligible age (4Cnk9EPn RCA)', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(baseCfg(), baseRow(), daddyCtx());
     expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('old_mint_sudden_volume_spike:'))).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('ephemeral_volume_spike:'))).toBe(true);
     expect(r.features.vol1hSpikeRatio).toBeGreaterThanOrEqual(5);
+  });
+
+  it('blocks 3-day-old mint with same ephemeral spike pattern (age-agnostic)', () => {
+    const r = evaluateOldMintDormantVolSpikeGuard(
+      baseCfg(),
+      baseRow({ token_age_min: 3 * 1440 }),
+      daddyCtx(),
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('ephemeral_volume_spike:'))).toBe(true);
   });
 
   it('passes normal young pump with sustained volume (no dormant baseline)', () => {
@@ -135,7 +140,7 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('passes old mint when spike ratio too small', () => {
+  it('passes when spike ratio too small', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg({ oldMintDormantVolSpikeVol1hRatioMin: 20 }),
       baseRow({ volume_1h: 12_000 }),
@@ -144,11 +149,20 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('passes old mint when baseline was not mostly dormant', () => {
+  it('passes when baseline was not mostly dormant', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg(),
       baseRow(),
       daddyCtx({ dormantHourFraction: 0.4 }),
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('respects legacy minTokenAgeDays when set > 0', () => {
+    const r = evaluateOldMintDormantVolSpikeGuard(
+      baseCfg({ oldMintDormantVolSpikeMinTokenAgeDays: 14 }),
+      baseRow({ token_age_min: 10 * 1440 }),
+      daddyCtx(),
     );
     expect(r.blocked).toBe(false);
   });
