@@ -652,7 +652,16 @@ export const LiveDailySummarySchema = z.object({
  */
 export const LiveShyftShadowStatusSchema = z.object({
   kind: z.literal('live_shyft_shadow_status'),
-  status: z.enum(['connecting', 'connected', 'end', 'error', 'decode_error', 'closed', 'idle']),
+  status: z.enum([
+    'connecting',
+    'connected',
+    'end',
+    'error',
+    'decode_error',
+    'closed',
+    'idle',
+    'circuit_open',
+  ]),
   detail: z.string().max(400).optional(),
 });
 

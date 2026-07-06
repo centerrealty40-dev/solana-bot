@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.558] — 2026-07-06
+
+**Тег:** `sa-alpha-1.11.558`
+
+### Live Oscar — Shyft gRPC reconnect resilience (RCA Jul-6, trading unchanged)
+
+- **Backoff reset:** reconnect backoff сбрасывается на 5s только после **первого observation** или **30s** стабильного соединения (`SHYFT_STREAM_STABLE_MS`), а не сразу после `subscribe()` — убирает 6s reconnect hammer после resubscribe.
+- **Circuit breaker:** после **5** fast-fail (<60s session) за **2 min** → cooldown **15 min** (`SHYFT_STREAM_CIRCUIT_*` env); статус `circuit_open` в журнале.
+- **Ping guard:** `writableStream` инвалидируется до `end()` — нет `write after end` при resubscribe.
+- **In-place mint update:** при изменении mint-set на ±1 mint и стабильном stream — `stream.write()` вместо full teardown.
+- **Trading unchanged:** `SHYFT_PRICE_PRIMARY_*=0`, shadow-only observability.
+
+**Откат:** redeploy `sa-alpha-1.11.557`; либо `git revert` этого коммита + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.557] — 2026-07-06
 
 **Тег:** `sa-alpha-1.11.557`

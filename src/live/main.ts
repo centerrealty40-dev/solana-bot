@@ -241,6 +241,10 @@ export async function main(): Promise<void> {
             token: shyftToken,
             maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
             connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
+            stableBeforeBackoffResetMs: Number(process.env.SHYFT_STREAM_STABLE_MS) || undefined,
+            circuitFastFails: Number(process.env.SHYFT_STREAM_CIRCUIT_FAST_FAILS) || undefined,
+            circuitFastFailWindowMs: Number(process.env.SHYFT_STREAM_CIRCUIT_WINDOW_MS) || undefined,
+            circuitCooldownMs: Number(process.env.SHYFT_STREAM_CIRCUIT_COOLDOWN_MS) || undefined,
           },
           {
             onStatus: (status, detail) =>
