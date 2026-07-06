@@ -84,6 +84,22 @@
 
 ---
 
+---
+
+## [1.11.556] — 2026-07-06
+
+**Тег:** `sa-alpha-1.11.556`
+
+### Live Oscar — post-exit re-entry fork (−10% / +20%)
+
+- **Fork после любого exit:** между last exit и −N% dip — block (`reentry_wait_dip_below_exit`); при −N% — re-entry; при +M% breakout — bypass dip-wait, стандартные discovery/dip gates (`reentry_breakout_standard_dip` в observability).
+- **Fix manlet-class churn:** profit exit больше не разрешает rebuy на той же цене после истечения 10m cooldown — fork держится в окне `LIVE_REENTRY_GATE_MAX_AGE_HOURS`.
+- **Env:** `LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT=20` (alias `PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT`); dip — `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT=10` (alias `PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT`).
+
+**Откат:** `git checkout sa-alpha-1.11.555 -- ecosystem.config.cjs src/papertrader/config.ts src/papertrader/discovery/dip-clones.ts tests/live-reentry-hybrid-gate.test.ts tests/execution-post-exit-reentry-gate.test.ts docs/strategy/release/`; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.555] — 2026-07-06
 
 **Тег:** `sa-alpha-1.11.555`

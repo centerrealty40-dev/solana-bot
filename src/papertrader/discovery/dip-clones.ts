@@ -299,7 +299,7 @@ export function isPostExitBuyCooldownActive(
   return resumeAt > 0 && nowMs < resumeAt;
 }
 
-/** Price ceiling only during post-exit cooldown; after cooldown — normal discovery gates (no dip anchor). */
+/** Legacy price-gap path: ceiling only during post-exit cooldown. */
 function shouldApplyPostExitReentryPriceGate(
   cfg: PaperTraderConfig,
   _mint: string,
@@ -309,6 +309,66 @@ function shouldApplyPostExitReentryPriceGate(
   if (!cfg.dipLossExitCooldownEnabled) return false;
   const resumeAt = postExitBuyCooldownResumeAtMs(cfg, snap.exitTs);
   return resumeAt > 0 && nowMs < resumeAt;
+}
+
+function isPostExitReentryForkExpired(
+  cfg: PaperTraderConfig,
+  snap: LastExitMarketSnapshot,
+  nowMs: number,
+): boolean {
+  const maxAgeH = cfg.liveReentryGateMaxAgeHours;
+  if (!(maxAgeH > 0)) return false;
+  return nowMs - snap.exitTs > maxAgeH * 3_600_000;
+}
+
+function resolvePostExitReentryDropPct(cfg: PaperTraderConfig, lossExit: boolean): number {
+  const base = cfg.liveReentryMinDropFromLastExitPct;
+  if (!lossExit) return base;
+  const lossMin = cfg.liveReentryLossMinDropFromLastExitPct;
+  return lossMin > 0 ? Math.max(base, lossMin) : base;
+}
+
+export type PostExitReentryForkResult =
+  | { kind: 'inactive' }
+  | { kind: 'expired' }
+  | { kind: 'breakout'; lastExit: number; snap: number; breakoutPct: number }
+  | { kind: 'dip_ok'; lastExit: number; snap: number; dropPct: number }
+  | { kind: 'wait_dip'; lastExit: number; snap: number; maxBuy: number; dropPct: number };
+
+/** Fork: block between exit and −N% dip; allow at/below −N%; +M% breakout → standard dip eval. */
+export function evaluatePostExitReentryFork(
+  cfg: PaperTraderConfig,
+  snap: LastExitMarketSnapshot,
+  snapshotPriceUsd: number,
+  nowMs = Date.now(),
+): PostExitReentryForkResult {
+  if (!(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return { kind: 'inactive' };
+  if (isPostExitReentryForkExpired(cfg, snap, nowMs)) return { kind: 'expired' };
+
+  const breakoutPct = cfg.liveReentryBreakoutAboveExitPct;
+  if (breakoutPct > 0 && snapshotPriceUsd >= snap.marketUsd * (1 + breakoutPct / 100) * (1 - 1e-9)) {
+    return {
+      kind: 'breakout',
+      lastExit: snap.marketUsd,
+      snap: snapshotPriceUsd,
+      breakoutPct,
+    };
+  }
+
+  const dropPct = resolvePostExitReentryDropPct(cfg, lastExitWasLossOrStress(snap));
+  const maxBuy = snap.marketUsd * (1 - dropPct / 100);
+  if (snapshotPriceUsd <= maxBuy * (1 + 1e-9)) {
+    return { kind: 'dip_ok', lastExit: snap.marketUsd, snap: snapshotPriceUsd, dropPct };
+  }
+
+  return { kind: 'wait_dip', lastExit: snap.marketUsd, snap: snapshotPriceUsd, maxBuy, dropPct };
+}
+
+export function postExitReentryForkObservabilityReason(
+  result: PostExitReentryForkResult,
+): string | null {
+  if (result.kind !== 'breakout') return null;
+  return `reentry_breakout_standard_dip(last=${result.lastExit.toFixed(8)} snap=${result.snap.toFixed(8)} breakout=+${result.breakoutPct}pct)`;
 }
 
 /** Admin ledger close must not mutate re-entry gate state after a recent real exit (KINS audit 04740207). */
@@ -466,13 +526,14 @@ export function armPostExitReentryGateFromClosedTrade(
   );
 }
 
-/** Re-entry price ceiling during post-exit cooldown only (price ≤ lastExit×(1−drop%)). */
+/** Re-entry fork within gate max-age: block between exit and −N%; +M% breakout bypasses wait. */
 export function appendLiveReentryHybridGateReasons(
   cfg: PaperTraderConfig,
   mint: string,
   snapshotPriceUsd: number,
   out: string[],
   nowMs = Date.now(),
+  observabilityOut?: string[],
 ): void {
   const baseDropPct = cfg.liveReentryMinDropFromLastExitPct;
   const maxWaitMin = cfg.liveReentryMaxWaitMinutes;
@@ -480,31 +541,16 @@ export function appendLiveReentryHybridGateReasons(
 
   const snap = reentryExitSnapshotForGate(mint);
   if (!snap || !(snap.marketUsd > 0) || !(snapshotPriceUsd > 0)) return;
-  if (!shouldApplyPostExitReentryPriceGate(cfg, mint, snap, nowMs)) return;
 
-  const lossExit = lastExitWasLossOrStress(snap);
+  const fork = evaluatePostExitReentryFork(cfg, snap, snapshotPriceUsd, nowMs);
+  const obs = postExitReentryForkObservabilityReason(fork);
+  if (obs && observabilityOut) observabilityOut.push(obs);
 
-  /** Profit/TP: during cooldown block same-or-higher re-entry (no multi-day −10% dip anchor after cooldown). */
-  if (!lossExit) {
-    if (snapshotPriceUsd >= snap.marketUsd * (1 - 1e-9)) {
-      out.push(
-        `reentry_wait_below_last_exit_profit(last=${snap.marketUsd.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
-      );
-    }
-    return;
-  }
+  if (fork.kind !== 'wait_dip') return;
 
-  const dropPct =
-    cfg.liveReentryLossMinDropFromLastExitPct > 0
-      ? Math.max(baseDropPct, cfg.liveReentryLossMinDropFromLastExitPct)
-      : baseDropPct;
-
-  const maxAllowed = snap.marketUsd * (1 - dropPct / 100);
-  if (snapshotPriceUsd > maxAllowed * (1 + 1e-9)) {
-    out.push(
-      `reentry_wait_dip${dropPct}pct_loss(last=${snap.marketUsd.toFixed(8)} max_buy=${maxAllowed.toFixed(8)} snap=${snapshotPriceUsd.toFixed(8)})`,
-    );
-  }
+  out.push(
+    `reentry_wait_dip_below_exit(last=${fork.lastExit.toFixed(8)} max_buy=${fork.maxBuy.toFixed(8)} snap=${fork.snap.toFixed(8)} dip=${fork.dropPct}pct)`,
+  );
 }
 
 function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: string, out: string[]): void {
@@ -522,18 +568,19 @@ function appendLegacyPostExitBuyCooldownReasons(cfg: PaperTraderConfig, mint: st
   }
 }
 
-/** Post-exit re-entry gate: hybrid dip+timer или legacy cooldown + price gap. */
+/** Post-exit re-entry gate: hybrid dip fork или legacy cooldown + price gap. */
 export function appendPostExitReentryGateReasons(
   cfg: PaperTraderConfig,
   mint: string,
   snapshotPriceUsd: number,
   out: string[],
+  observabilityOut?: string[],
 ): void {
   if (cfg.dipLossExitCooldownEnabled) {
     appendLegacyPostExitBuyCooldownReasons(cfg, mint, out);
   }
   if (isLiveReentryHybridGateEnabled(cfg)) {
-    appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out);
+    appendLiveReentryHybridGateReasons(cfg, mint, snapshotPriceUsd, out, Date.now(), observabilityOut);
     return;
   }
   appendLiveReentryPriceGapReasons(cfg, mint, snapshotPriceUsd, out);
@@ -1438,7 +1485,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       }
     }
 
-    appendPostExitReentryGateReasons(cfg, row.mint, row.price_usd, cooldownReasons);
+    const reentryObservability: string[] = [];
+    appendPostExitReentryGateReasons(cfg, row.mint, row.price_usd, cooldownReasons, reentryObservability);
 
     const preHoldersReasons = [...baseReasons, ...whaleReasons, ...cooldownReasons];
     const cheapPass = preHoldersReasons.length === 0;
@@ -1773,6 +1821,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     }
     if (isLiveOscarMcapTieringEnabled(cfg)) {
       decisionFeatures.live_oscar_mcap_tier = journalTier;
+    }
+    if (reentryObservability.length > 0) {
+      decisionFeatures.reentry_fork = { observability: reentryObservability };
     }
     decisions.push({
       lane,

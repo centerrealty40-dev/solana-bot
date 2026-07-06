@@ -14,8 +14,10 @@ const MINT = 'ExecGateMint111111111111111111111111111111';
 function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     liveReentryMinDropFromLastExitPct: 10,
+    liveReentryBreakoutAboveExitPct: 20,
     liveReentryMaxWaitMinutes: 10,
     liveReentryLossMinDropFromLastExitPct: 10,
+    liveReentryGateMaxAgeHours: 4,
     dipLossExitCooldownEnabled: true,
     dipLossExitCooldownMinutes: 10,
     ...overrides,
@@ -37,7 +39,7 @@ describe('execution-layer post-exit re-entry gate', () => {
       exitReason: 'KILLSTOP',
     });
     const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.95);
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
   it('allows buy_open when price dipped enough after stress exit', () => {
@@ -60,10 +62,10 @@ describe('execution-layer post-exit re-entry gate', () => {
     });
     const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.95);
     expect(reasons.some((r) => r.startsWith('post_exit_buy_cooldown_'))).toBe(true);
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
-  it('allows buy_open after loss cooldown even above last exit minus drop', () => {
+  it('blocks buy_open after loss cooldown when price still above -10% dip (fork persists)', () => {
     const exitTs = Date.now() - 11 * 60_000;
     lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
     recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
@@ -71,7 +73,18 @@ describe('execution-layer post-exit re-entry gate', () => {
       exitReason: 'KILLSTOP',
     });
     const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.95);
-    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
     expect(reasons.filter((r) => r.startsWith('post_exit_buy_cooldown_'))).toHaveLength(0);
+  });
+
+  it('allows buy_open after loss cooldown when price dipped -10%', () => {
+    const exitTs = Date.now() - 11 * 60_000;
+    lastPostExitBuyCooldownTsByMintMap.set(MINT, exitTs);
+    recordLastExitMarketSnapshotAfterClose(MINT, exitTs, 1.0, {
+      netPnlUsd: -12,
+      exitReason: 'KILLSTOP',
+    });
+    const reasons = executionPostExitReentryGateReasons(hybridCfg(), MINT, 0.89);
+    expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
   });
 });

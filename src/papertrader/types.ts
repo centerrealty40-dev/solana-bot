@@ -706,6 +706,10 @@ export interface SnapshotFeatures {
     vetoed: boolean;
     veto_reasons: string[];
   };
+  /** Post-exit re-entry fork observability (breakout bypass path). */
+  reentry_fork?: {
+    observability: string[];
+  };
   local_high_veto?: {
     threshold_pct: number;
     veto_windows_min: number[];

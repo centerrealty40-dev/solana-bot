@@ -485,15 +485,18 @@ const ConfigSchema = z.object({
    */
   dipLossExitCooldownEnabled: z.boolean().default(true),
   /**
-   * Live discovery: не открывать повторно по mint, пока цена кандидата (`snapshot price_usd`)
-   * не ниже последнего рыночного выхода минимум на N% (0 = выкл.).
-   * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT`.
+   * Live discovery / hybrid fork: min drop % below last exit before re-entry (0 = off).
+   * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` или aliases `PAPER_REENTRY_DIP_BELOW_EXIT_PCT`, `PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT`.
    */
   liveReentryMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(0),
   /**
-   * Hybrid re-entry с `liveReentryMinDropFromLastExitPct`: price ceiling только в окне
-   * `PAPER_DIP_LOSS_EXIT_COOLDOWN_*`; после cooldown — обычные discovery gates (без dip anchor).
-   * `LIVE_REENTRY_MAX_WAIT_MINUTES` > 0 включает hybrid-режим (legacy price-gap path выкл.).
+   * Hybrid fork: при цене ≥ lastExit×(1+M%) — bypass dip-wait, стандартные discovery/dip gates.
+   * Env: `LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT` или aliases `PAPER_REENTRY_ABORT_DIP_WAIT_ABOVE_EXIT_PCT`, `PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT`.
+   */
+  liveReentryBreakoutAboveExitPct: z.coerce.number().nonnegative().max(500).default(0),
+  /**
+   * Hybrid re-entry с `liveReentryMinDropFromLastExitPct`: fork в окне `LIVE_REENTRY_GATE_MAX_AGE_HOURS`
+   * (не только post-exit cooldown); legacy price-gap path выкл. при `LIVE_REENTRY_MAX_WAIT_MINUTES` > 0.
    * Env: `LIVE_REENTRY_MAX_WAIT_MINUTES`. `0` = только price-gap без hybrid wrapper.
    */
   liveReentryMaxWaitMinutes: z.coerce.number().nonnegative().max(24 * 60).default(0),
@@ -1516,7 +1519,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,
     dipLossExitCooldownMinutes: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_MINUTES,
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
-    liveReentryMinDropFromLastExitPct: process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT,
+    liveReentryMinDropFromLastExitPct:
+      process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT ??
+      process.env.PAPER_REENTRY_DIP_BELOW_EXIT_PCT ??
+      process.env.PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT,
+    liveReentryBreakoutAboveExitPct:
+      process.env.LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT ??
+      process.env.PAPER_REENTRY_ABORT_DIP_WAIT_ABOVE_EXIT_PCT ??
+      process.env.PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT,
     liveReentryMaxWaitMinutes: process.env.LIVE_REENTRY_MAX_WAIT_MINUTES,
     liveReentryLossMinDropFromLastExitPct: process.env.LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT,
     liveReentryHybridDisableTimerAfterLoss: envBool(
