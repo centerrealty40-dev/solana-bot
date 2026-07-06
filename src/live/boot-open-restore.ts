@@ -1,8 +1,11 @@
 /**
  * Boot recovery: wallet SPL holdings without tracker open state after truncated journal replay.
+ * Wallet = SoT: journal ghost (open + chain zero) → close journal, never buy.
  */
-import type { OpenTrade } from '../papertrader/types.js';
+import type { PaperTraderConfig } from '../papertrader/config.js';
+import type { ClosedTrade, OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
+import { closeJournalGhostOpensWhenChainEmpty } from './journal-ghost-close.js';
 import {
   normalizeRunnerProbeOpenMapKeys,
   resolveOpenMapKey,
@@ -78,4 +81,41 @@ export async function restoreWalletOrphanOpensOnBoot(
   }
 
   return { open: outOpen, restoredMints, walletMintsScanned };
+}
+
+export type BootJournalGhostCloseResult = {
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+  closedMints: string[];
+};
+
+/** After replay: close journal opens with zero chain exposure (PM2 reload hygiene). */
+export async function closeJournalGhostOpensOnBoot(args: {
+  liveCfg: LiveOscarConfig;
+  paperCfg: PaperTraderConfig;
+  open: Map<string, OpenTrade>;
+  closed: ClosedTrade[];
+}): Promise<BootJournalGhostCloseResult> {
+  const { liveCfg, paperCfg, open, closed } = args;
+  const outOpen = new Map(open);
+  const outClosed = [...closed];
+
+  if (
+    !liveCfg.strategyEnabled ||
+    (liveCfg.executionMode !== 'live' && liveCfg.executionMode !== 'simulate') ||
+    !liveCfg.walletSecret?.trim()
+  ) {
+    return { open: outOpen, closed: outClosed, closedMints: [] };
+  }
+
+  const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+  const { closedMints } = closeJournalGhostOpensWhenChainEmpty({
+    cfg: paperCfg,
+    open: outOpen,
+    closed: outClosed,
+    chainMap,
+    context: 'boot',
+  });
+
+  return { open: outOpen, closed: outClosed, closedMints };
 }

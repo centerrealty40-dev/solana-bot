@@ -14,7 +14,8 @@ export type WalletBalanceReconcileReason =
   | 'chain_above_journal'
   | 'chain_below_journal_after_partial'
   | 'journal_zero_chain_holds'
-  | 'chain_orphan_no_open';
+  | 'chain_orphan_no_open'
+  | 'journal_open_chain_zero';
 
 export type WalletBalanceReconcileResult = {
   resynced: boolean;
