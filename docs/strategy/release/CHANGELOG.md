@@ -84,6 +84,19 @@
 
 ---
 
+## [1.11.555] — 2026-07-06
+
+**Тег:** `sa-alpha-1.11.555`
+
+### Live Oscar — LIQ_DRAIN / liq-watch OFF
+
+- **`PAPER_LIQ_WATCH_ENABLED=0`**, **`PAPER_LIQ_WATCH_FORCE_CLOSE=0`** на live-oscar — нет force-close по просадке ликвидности; tracker не читает liq-watch снапшоты.
+- Откат false-positive LIQ_DRAIN (stale PG / DexScreener disagreement).
+
+**Откат:** `PAPER_LIQ_WATCH_ENABLED=1`, `PAPER_LIQ_WATCH_FORCE_CLOSE=1` в `ecosystem.config.cjs` live-oscar; `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.554] — 2026-07-06
 
 **Тег:** `sa-alpha-1.11.554`

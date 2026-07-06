@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { loadPaperTraderConfig } from '../src/papertrader/config.js';
 import {
   evaluateLiqDrainState,
   liqSourceDisagreementPct,
@@ -169,5 +170,21 @@ describe('refreshEntryLiqBaseline', () => {
     expect(refreshEntryLiqBaseline(418_000, 500_000)).toBe(500_000);
     expect(refreshEntryLiqBaseline(418_000, 194_000)).toBe(418_000);
     expect(refreshEntryLiqBaseline(null, 100_000)).toBe(100_000);
+  });
+});
+
+describe('loadPaperTraderConfig liq watch env', () => {
+  const saved = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('disables liq watch and force-close when PAPER_LIQ_WATCH_ENABLED=0', () => {
+    process.env.PAPER_LIQ_WATCH_ENABLED = '0';
+    process.env.PAPER_LIQ_WATCH_FORCE_CLOSE = '0';
+    const cfg = loadPaperTraderConfig();
+    expect(cfg.liqWatchEnabled).toBe(false);
+    expect(cfg.liqWatchForceClose).toBe(false);
   });
 });
