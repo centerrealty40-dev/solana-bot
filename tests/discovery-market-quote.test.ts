@@ -6,6 +6,9 @@ import {
   classifyBirdeyeError,
 } from '../src/papertrader/pricing/birdeye-market.js';
 import {
+  __resetDexQuoteCacheForTests,
+} from '../src/papertrader/pricing/dexscreener-quote-cache.js';
+import {
   __resetDexScreenerMarketCacheForTests,
   isFreshExternalDiscoveryQuote,
   pickDiscoveryMarketQuote,
@@ -227,6 +230,9 @@ describe('resolveDiscoveryMarketQuote — birdeye off', () => {
 
   it('skips Birdeye REST and uses DexScreener when enabled=false', async () => {
     __resetDexScreenerMarketCacheForTests();
+    __resetDexQuoteCacheForTests();
+    const prevCache = process.env.DEX_QUOTE_CACHE_ENABLED;
+    process.env.DEX_QUOTE_CACHE_ENABLED = '0';
     const nowMs = Date.now();
     const fetchImpl = async (url: string) => {
       expect(url).toContain('dexscreener.com');
@@ -258,13 +264,16 @@ describe('resolveDiscoveryMarketQuote — birdeye off', () => {
     });
     expect(r.source).toBe('dexscreener');
     expect(r.priceUsd).toBe(0.00108);
+    if (prevCache === undefined) delete process.env.DEX_QUOTE_CACHE_ENABLED;
+    else process.env.DEX_QUOTE_CACHE_ENABLED = prevCache;
   });
 });
 
 describe('cache resets', () => {
-  it('does not throw', () => {
+  it('does not throw', async () => {
     __resetBirdeyeMarketCacheForTests();
     __resetDexScreenerMarketCacheForTests();
+    __resetDexQuoteCacheForTests();
     expect(true).toBe(true);
   });
 });

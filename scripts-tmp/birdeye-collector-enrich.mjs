@@ -4,6 +4,13 @@
  * primary tick, overlay fresh price/mcap on existing rows, then DexScreener fallback for gaps.
  */
 import { acquireDexScreenerSlot } from './dexscreener-api-gate.mjs';
+import {
+  getCachedDexQuote,
+  pairsResponseToCacheUpdates,
+  putCachedDexQuotes,
+  quoteCacheEnabled,
+  snapshotToCollectorRow,
+} from './dexscreener-quote-cache.mjs';
 import { sendTagged } from '../scripts/lib/telegram.mjs';
 import {
   loadPaper2OpenMintsSync,
@@ -328,12 +335,27 @@ function rowFromBirdeye(mint, quote, bucketTs, sourceTag) {
 }
 
 
-async function fetchDexFallbackForMint(mint, bucketTs, fetchJsonWithRetry, normalizeDexPair, extra, log, component) {
+async function fetchDexFallbackForMint(mint, bucketTs, fetchJsonWithRetry, normalizeDexPair, extra, log, component, sourceTag) {
+  if (quoteCacheEnabled()) {
+    const cached = getCachedDexQuote(mint, bucketTs.getTime());
+    if (cached.hit) {
+      const row = snapshotToCollectorRow(mint, cached.entry, bucketTs, sourceTag ?? 'pumpswap');
+      if (row) {
+        extra.push(row);
+        return !cached.entry?.miss;
+      }
+      if (cached.entry?.miss) return false;
+    }
+  }
+
   const url = `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`;
   try {
     await acquireDexScreenerSlot();
     const json = await fetchJsonWithRetry(url, {}, 'dexscreener-birdeye-fallback');
     const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
+    if (quoteCacheEnabled()) {
+      await putCachedDexQuotes(pairsResponseToCacheUpdates(pairs, [mint], bucketTs.getTime()));
+    }
     for (const p of pairs) {
       const row = normalizeDexPair(p, bucketTs);
       if (row) extra.push(row);
@@ -438,6 +460,7 @@ export async function enrichCollectorRowsWithBirdeye({
       extra,
       log,
       component,
+      sourceTag,
     );
     if (ok) dexFallback += 1;
   }
