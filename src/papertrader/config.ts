@@ -812,7 +812,7 @@ const ConfigSchema = z.object({
    */
   oldMintDormantVolSpikeGuardEnabled: z.boolean().default(false),
   /** Min token age (days) from snapshot `token_age_min` before rule can apply. */
-  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(1).max(730).default(100),
+  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(1).max(730).default(14),
   /** Young mints below this age (days) always skip — do not block normal pumps. */
   oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(7),
   /** Total PG lookback window (hours). */

@@ -33,7 +33,7 @@ function baseRow(over: Partial<SnapshotCandidateRow> = {}): SnapshotCandidateRow
 function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
     oldMintDormantVolSpikeGuardEnabled: true,
-    oldMintDormantVolSpikeMinTokenAgeDays: 100,
+    oldMintDormantVolSpikeMinTokenAgeDays: 14,
     oldMintDormantVolSpikeMaxYoungTokenAgeDays: 7,
     oldMintDormantVolSpikeLookbackHours: 120,
     oldMintDormantVolSpikeDormantLookbackHours: 72,
@@ -94,7 +94,7 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
   it('passes when token age below min threshold', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg(),
-      baseRow({ token_age_min: 30 * 1440 }),
+      baseRow({ token_age_min: 10 * 1440 }),
       daddyCtx(),
     );
     expect(r.blocked).toBe(false);
