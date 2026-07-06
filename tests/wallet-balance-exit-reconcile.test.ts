@@ -3,9 +3,11 @@ import type { OpenTrade } from '../src/papertrader/types.js';
 import {
   effectiveRemainingUsdForExit,
   hasManagedWalletExposure,
+  planExitSliceUsdNotional,
   planFullExitUsdNotional,
   planPartialSellUsdNotional,
   resyncRemainingFractionFromChain,
+  shouldBypassExitSlicing,
   shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../src/live/wallet-balance-exit-reconcile.js';
@@ -65,6 +67,24 @@ describe('wallet-balance-exit-reconcile', () => {
     const r = resyncRemainingFractionFromChain({ ot, chainOscarUsd: 50, minUsd: 5 });
     expect(r.resynced).toBe(false);
     expect(ot.remainingFraction).toBe(before);
+  });
+
+  it('shrinks stale journal on exit-slice path via afterOnChainSell', () => {
+    const ot = testOpen({ remainingFraction: 1, totalInvestedUsd: 811 });
+    const r = resyncRemainingFractionFromChain({
+      ot,
+      chainOscarUsd: 95,
+      minUsd: 5,
+      afterOnChainSell: true,
+    });
+    expect(r.resynced).toBe(true);
+    expect(r.reason).toBe('chain_below_journal_after_partial');
+    expect(ot.remainingFraction).toBeCloseTo(95 / 811, 4);
+  });
+
+  it('planExitSliceUsdNotional caps stale journal by chain', () => {
+    expect(planExitSliceUsdNotional({ journalUsd: 811.28, chainOscarUsd: 95 })).toBe(95);
+    expect(planExitSliceUsdNotional({ journalUsd: 811.28, chainOscarUsd: 0 })).toBe(811.28);
   });
 
   it('shrinks journal when chain below after partial sells', () => {

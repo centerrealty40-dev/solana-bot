@@ -29,6 +29,7 @@ import { newLiveIntentId } from './intent.js';
 import type { LiveOscarConfig } from './config.js';
 import type {
   LiveBuyPipelineResult,
+  LiveExitSliceSuccessHook,
   LiveOscarPhase4Discovery,
   LiveOscarPhase4Tracker,
   LiveOscarRuntimeBundle,
@@ -1384,9 +1385,11 @@ export async function executeLiveTokenToSolPipeline(
     referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
+    onSliceSuccess?: LiveExitSliceSuccessHook;
   },
 ): Promise<LiveTokenToSolPipelineResult> {
-  return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline);
+  const { onSliceSuccess, ...pipeArgs } = args;
+  return runSlicedTokenToSolPipeline(liveCfg, pipeArgs, runTokenToSolPipeline, { onSliceSuccess });
 }
 
 function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
@@ -1547,7 +1550,10 @@ function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
       );
     },
     tryTokenToSolSell(args) {
-      return runSlicedTokenToSolPipeline(liveCfg, args, runTokenToSolPipeline).then((r) => ({
+      const { onSliceSuccess, ...pipeArgs } = args;
+      return runSlicedTokenToSolPipeline(liveCfg, pipeArgs, runTokenToSolPipeline, {
+        onSliceSuccess,
+      }).then((r) => ({
         ok: r.ok,
         preflightSkipReason: r.preflightSkipReason,
         solProceedsLamports: r.wsolOutLamports,

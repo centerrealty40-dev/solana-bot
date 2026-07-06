@@ -77,6 +77,7 @@ import {
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import type {
   LiveBuyPipelineResult,
+  LiveExitSliceSuccessHook,
   LiveOscarPhase4Tracker,
   LiveTokenToSolSellResult,
 } from '../../live/phase4-types.js';
@@ -344,6 +345,101 @@ function liveSellReferencePriceUsd(ot: OpenTrade): number | undefined {
     avgEntry: ot.avgEntry,
   });
   return ref != null && ref > 0 ? ref : undefined;
+}
+
+function exitReasonToPartialSellReason(exitReason: ExitReason): PartialSell['reason'] {
+  switch (exitReason) {
+    case 'TRAIL':
+      return 'TRAIL';
+    case 'KILLSTOP':
+    case 'SL':
+      return 'KILLSTOP';
+    case 'TIMEOUT':
+      return 'TIMEOUT';
+    case 'FLASH_CRASH_KILL':
+      return 'FLASH_CRASH_KILL';
+    case 'BREAKEVEN_EXIT':
+      return 'BREAKEVEN_TRIM';
+    default:
+      return 'TP_LADDER';
+  }
+}
+
+async function syncOpenTradeAfterLiveExitSlice(args: {
+  mint: string;
+  ot: OpenTrade;
+  marketSell: number;
+  liveOscarCfg: LiveOscarConfig;
+  reconcileMinUsd: number;
+  partialReason: PartialSell['reason'];
+  sliceInfo: Parameters<LiveExitSliceSuccessHook>[0];
+}): Promise<void> {
+  const { mint, ot, marketSell, liveOscarCfg, reconcileMinUsd, partialReason, sliceInfo } = args;
+  const spotSol = getSolUsd();
+  let proceedsUsd = 0;
+  let proceedsUsdSource: PartialSell['proceedsUsdSource'] = 'model';
+  if (spotSol > 0 && sliceInfo.wsolOutLamports > 0n) {
+    proceedsUsd = (Number(sliceInfo.wsolOutLamports) / 1e9) * spotSol;
+    proceedsUsdSource = 'chain_sol';
+  }
+
+  let postSellOscarUsd = 0;
+  const chainMap = await fetchLiveWalletSplBalancesByMint(liveOscarCfg);
+  if (chainMap) {
+    const bal = chainMap.get(mint) ?? 0n;
+    if (bal > 0n && marketSell > 0) {
+      postSellOscarUsd = oscarChainUsdFromRaw({
+        raw: bal,
+        decimals: ot.tokenDecimals ?? 6,
+        priceUsd: marketSell,
+        mint,
+      }).oscarUsd;
+    }
+  }
+
+  const prevRem = ot.remainingFraction;
+  resyncRemainingFractionFromChain({
+    ot,
+    chainOscarUsd: postSellOscarUsd,
+    minUsd: reconcileMinUsd,
+    afterOnChainSell: true,
+  });
+  const nextRem = ot.remainingFraction;
+
+  if (livePartialSellDrainedWallet(sliceInfo.sellAmountSource, sliceInfo.walletDrained)) {
+    ot.remainingFraction = 0;
+  } else if (prevRem > nextRem + 1e-9 && prevRem > 1e-9) {
+    const sellFraction = Math.min(1, Math.max(0, 1 - nextRem / prevRem));
+    const investedSoldUsd = ot.totalInvestedUsd * prevRem * sellFraction;
+    const pnlUsd = proceedsUsd > 0 ? proceedsUsd - investedSoldUsd : 0;
+    ot.partialSells.push({
+      ts: Date.now(),
+      price: marketSell,
+      marketPrice: marketSell,
+      sellFraction,
+      reason: partialReason,
+      proceedsUsd: proceedsUsd > 0 ? proceedsUsd : investedSoldUsd,
+      grossProceedsUsd: proceedsUsd > 0 ? proceedsUsd : investedSoldUsd,
+      pnlUsd,
+      grossPnlUsd: pnlUsd,
+      ...(sliceInfo.wsolOutLamports > 0n
+        ? { solProceedsLamports: sliceInfo.wsolOutLamports.toString() }
+        : {}),
+      proceedsUsdSource,
+      ...(sliceInfo.txSignature ? { exitTxSignature: sliceInfo.txSignature } : {}),
+      ...(sliceInfo.priceImpactPct != null ? { priceImpactPct: sliceInfo.priceImpactPct } : {}),
+    });
+    ot.lastPartialSellTs = Date.now();
+  }
+
+  runLivePartialExitTailFlush({
+    liveCfg: liveOscarCfg,
+    mint,
+    symbol: ot.symbol,
+    decimals: ot.tokenDecimals ?? 6,
+    hintPriceUsdPerToken: marketSell,
+    dexSource: ot.source,
+  });
 }
 
 export { ladderRetraceTriggered } from './tp-ladder-state.js';
@@ -5347,6 +5443,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     }
 
     if (exitReason) {
+      const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
       const marketSell = curMetric;
       const investedRemaining = planFullExitUsdNotional({
         ot,
@@ -5429,8 +5526,27 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           referencePriceUsd: liveSellReferencePriceUsd(ot),
           decimals: ot.tokenDecimals ?? 6,
           intentKind: 'sell_full',
+          onSliceSuccess: async (sliceInfo) => {
+            if (!liveOscarCfg) return;
+            await syncOpenTradeAfterLiveExitSlice({
+              mint,
+              ot,
+              marketSell,
+              liveOscarCfg,
+              reconcileMinUsd,
+              partialReason: exitReasonToPartialSellReason(exitReason),
+              sliceInfo,
+            });
+            journalLiveStrategy?.({
+              kind: 'live_position_partial_sell',
+              mint,
+              openTrade: serializeOpenTrade(ot),
+            });
+          },
         });
-        if (!sellFullOut.ok) {
+        const chainCloseProceeds =
+          sellFullOut.solProceedsLamports != null && sellFullOut.solProceedsLamports > 0n;
+        if (!sellFullOut.ok && !chainCloseProceeds) {
           if (sellFullOut.preflightSkipReason === 'wallet_spl_balance_zero') {
             const synced = await closeOpenTradeWalletZeroPolicySync({
               mint,
@@ -5453,6 +5569,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               continue;
             }
           }
+          continue;
+        }
+        if (!sellFullOut.ok && chainCloseProceeds) {
+          log.warn(
+            {
+              mint: mint.slice(0, 8),
+              symbol: ot.symbol,
+              preflightSkipReason: sellFullOut.preflightSkipReason,
+              solProceedsLamports: sellFullOut.solProceedsLamports?.toString(),
+            },
+            'live full exit exit-slice partial chain success — retry remainder next tick',
+          );
           continue;
         }
       }
