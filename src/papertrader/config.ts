@@ -807,6 +807,34 @@ const ConfigSchema = z.object({
   volumeEphemeralBirdeyeFreshBypass: z.boolean().default(true),
 
   /**
+   * Old-mint dormant volume spike guard: block long-lived mints after prolonged quiet
+   * baseline when vol1h suddenly explodes (DADDY RCA 2026-07-05).
+   */
+  oldMintDormantVolSpikeGuardEnabled: z.boolean().default(false),
+  /** Min token age (days) from snapshot `token_age_min` before rule can apply. */
+  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(1).max(730).default(100),
+  /** Young mints below this age (days) always skip — do not block normal pumps. */
+  oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(7),
+  /** Total PG lookback window (hours). */
+  oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(120),
+  /** Baseline dormant window length ending before recent spike window (hours). */
+  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(72),
+  /** Recent hours where spike is measured (excluded from baseline). */
+  oldMintDormantVolSpikeRecentHours: z.coerce.number().int().min(3).max(24).default(6),
+  /** Hour counts as dormant when max vol1h in hour <= this (USD). */
+  oldMintDormantVolSpikeDormantVol1hMaxUsd: z.coerce.number().nonnegative().default(10_000),
+  /** Hour counts as dormant when max vol5m in hour <= this (USD). */
+  oldMintDormantVolSpikeDormantVol5mMaxUsd: z.coerce.number().nonnegative().default(5_000),
+  /** Min share of baseline hours that were dormant (0–1). */
+  oldMintDormantVolSpikeMinDormantHourFraction: z.coerce.number().min(0.5).max(1).default(0.75),
+  /** Min baseline hours with PG data before rule applies. */
+  oldMintDormantVolSpikeMinBaselineHours: z.coerce.number().int().min(12).max(120).default(24),
+  /** Effective recent vol1h must reach this to count as spike (USD). */
+  oldMintDormantVolSpikeMinSpikeVol1hUsd: z.coerce.number().nonnegative().default(25_000),
+  /** Block when effectiveRecentVol1h / baselineP90Vol1h >= this ratio. */
+  oldMintDormantVolSpikeVol1hRatioMin: z.coerce.number().min(2).max(100).default(5),
+
+  /**
    * PG data coverage guard (1.11.222): measure minute-bar history gaps/thinness for volume
    * guards; optional buy block via `pgDataCoverageBlockBuy` (default off).
    */
@@ -1729,6 +1757,28 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS,
       true,
     ),
+    oldMintDormantVolSpikeGuardEnabled: envBool(
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_GUARD_ENABLED,
+      false,
+    ),
+    oldMintDormantVolSpikeMinTokenAgeDays: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_TOKEN_AGE_DAYS,
+    oldMintDormantVolSpikeMaxYoungTokenAgeDays:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MAX_YOUNG_TOKEN_AGE_DAYS,
+    oldMintDormantVolSpikeLookbackHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeDormantLookbackHours:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeRecentHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_RECENT_HOURS,
+    oldMintDormantVolSpikeDormantVol1hMaxUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL1H_MAX_USD,
+    oldMintDormantVolSpikeDormantVol5mMaxUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL5M_MAX_USD,
+    oldMintDormantVolSpikeMinDormantHourFraction:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_DORMANT_HOUR_FRACTION,
+    oldMintDormantVolSpikeMinBaselineHours:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_BASELINE_HOURS,
+    oldMintDormantVolSpikeMinSpikeVol1hUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_SPIKE_VOL1H_USD,
+    oldMintDormantVolSpikeVol1hRatioMin: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_VOL1H_RATIO_MIN,
     pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
     pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
     pgDataCoverageRecentHours: process.env.PAPER_PG_DATA_COVERAGE_RECENT_HOURS,

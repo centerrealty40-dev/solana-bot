@@ -841,6 +841,32 @@ export interface SnapshotFeatures {
       newMintMinActiveHours?: number;
     };
   };
+  /** Old-mint dormant baseline → sudden vol1h spike (DADDY RCA 2026-07-05). */
+  old_mint_dormant_vol_spike?: {
+    enabled: boolean;
+    tokenAgeDays: number | null;
+    coverageOk: boolean;
+    lookbackHours: number;
+    dormantLookbackHours: number;
+    recentHours: number;
+    baselineHoursWithData: number;
+    dormantHours: number;
+    dormantHourFraction: number | null;
+    baselineMedianVol1hUsd: number | null;
+    baselineP90Vol1hUsd: number | null;
+    recentMaxVol1hUsd: number | null;
+    currentVol1hUsd: number | null;
+    effectiveRecentVol1hUsd: number | null;
+    vol1hSpikeRatio: number | null;
+    thresholds: {
+      minTokenAgeDays: number;
+      maxYoungTokenAgeDays: number;
+      dormantVol1hMaxUsd: number;
+      minDormantHourFraction: number;
+      minSpikeVol1hUsd: number;
+      vol1hRatioMin: number;
+    };
+  };
   /** 1.11.545: holistic volume/holder profile for repeat mints on each discovery eval. */
   known_mint_vol_profile?: {
     vol5mUsd: number;
