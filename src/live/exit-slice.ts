@@ -1,6 +1,15 @@
 import type { LiveOscarConfig } from './config.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
-import type { LiveTokenToSolPipelineResult } from './phase4-types.js';
+import type {
+  LiveExitSliceSuccessHook,
+  LiveTokenToSolPipelineResult,
+} from './phase4-types.js';
+import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
+import {
+  oscarChainUsdFromRaw,
+  planExitSliceUsdNotional,
+  shouldBypassExitSlicing,
+} from './wallet-balance-exit-reconcile.js';
 
 export type ExitSellSlicePlan = {
   usdNotional: number;
@@ -56,131 +65,289 @@ type RunTokenToSolPipeline = (
   args: TokenToSolPipelineArgs,
 ) => Promise<LiveTokenToSolPipelineResult>;
 
+export type RunSlicedTokenToSolPipelineOpts = {
+  onSliceSuccess?: LiveExitSliceSuccessHook;
+  /** Test hook — skip RPC chain read. */
+  getChainOscarUsd?: () => Promise<number | null>;
+};
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function resolveChainOscarUsdForExitSlice(
+  liveCfg: LiveOscarConfig,
+  args: Pick<TokenToSolPipelineArgs, 'mint' | 'decimals' | 'priceUsdPerToken'>,
+): Promise<number | null> {
+  const chainMap = await fetchLiveWalletSplBalancesByMint(liveCfg);
+  if (!chainMap) return null;
+  const raw = chainMap.get(args.mint) ?? 0n;
+  if (raw === 0n) return 0;
+  const { oscarUsd } = oscarChainUsdFromRaw({
+    raw,
+    decimals: args.decimals,
+    priceUsd: args.priceUsdPerToken,
+    mint: args.mint,
+  });
+  return oscarUsd;
+}
+
+function aggregateSliceSuccess(
+  state: {
+    totalLamports: bigint;
+    totalTokenRawSold: bigint;
+    lastTxSig: string | null | undefined;
+    solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
+    maxPriceImpact: number | undefined;
+    totalRetryAttempts: number;
+    lastSellAmountSource: LiveTokenToSolPipelineResult['sellAmountSource'];
+    lastWalletDrained: boolean | undefined;
+  },
+  r: LiveTokenToSolPipelineResult,
+): void {
+  if (r.wsolOutLamports != null && r.wsolOutLamports > 0n) {
+    state.totalLamports += r.wsolOutLamports;
+  }
+  if (typeof r.tokenAmountRawSold === 'string' && /^\d+$/.test(r.tokenAmountRawSold)) {
+    state.totalTokenRawSold += BigInt(r.tokenAmountRawSold);
+  }
+  state.lastTxSig = r.txSignature;
+  state.solProceedsSource = r.solProceedsSource ?? state.solProceedsSource;
+  state.lastSellAmountSource = r.sellAmountSource ?? state.lastSellAmountSource;
+  state.lastWalletDrained = r.walletDrained ?? state.lastWalletDrained;
+  if (r.priceImpactPct != null && Number.isFinite(r.priceImpactPct)) {
+    state.maxPriceImpact =
+      state.maxPriceImpact == null
+        ? r.priceImpactPct
+        : Math.max(state.maxPriceImpact, r.priceImpactPct);
+  }
+  state.totalRetryAttempts += r.retryAttempts ?? 0;
+}
+
+function buildAggregatedResult(
+  state: {
+    totalLamports: bigint;
+    totalTokenRawSold: bigint;
+    lastTxSig: string | null | undefined;
+    solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
+    maxPriceImpact: number | undefined;
+    totalRetryAttempts: number;
+    lastSellAmountSource: LiveTokenToSolPipelineResult['sellAmountSource'];
+    lastWalletDrained: boolean | undefined;
+  },
+  ok: boolean,
+  extra?: Partial<LiveTokenToSolPipelineResult>,
+): LiveTokenToSolPipelineResult {
+  return {
+    ok,
+    wsolOutLamports: state.totalLamports > 0n ? state.totalLamports : undefined,
+    solProceedsSource: state.solProceedsSource,
+    txSignature: state.lastTxSig,
+    priceImpactPct: state.maxPriceImpact,
+    retryAttempts: state.totalRetryAttempts,
+    sellAmountSource: state.lastSellAmountSource,
+    walletDrained: state.lastWalletDrained,
+    tokenAmountRawSold:
+      state.totalTokenRawSold > 0n ? state.totalTokenRawSold.toString() : undefined,
+    ...extra,
+  };
+}
 
 /**
  * When planned sell notional exceeds `liveExitSliceMaxUsd`, execute multiple Jupiter sells
  * with `liveExitSliceDelayMs` gap (partial TP, kill stop, full close, etc.).
+ *
+ * Replans each slice from min(journal, chain) so stale journal notional cannot oversize slices.
  */
 export async function runSlicedTokenToSolPipeline(
   liveCfg: LiveOscarConfig,
   args: TokenToSolPipelineArgs,
   runOne: RunTokenToSolPipeline,
+  opts?: RunSlicedTokenToSolPipelineOpts,
 ): Promise<LiveTokenToSolPipelineResult> {
   const maxUsd = liveCfg.liveExitSliceMaxUsd;
-  if (!(maxUsd > 0) || !(args.usdNotional > maxUsd + 1e-9)) {
+  if (!(maxUsd > 0)) {
     return runOne(liveCfg, args);
   }
 
-  const plan = planExitSellSlices({
-    totalUsdNotional: args.usdNotional,
-    maxUsdPerSlice: maxUsd,
-    intentKind: args.intentKind,
+  const fetchChain =
+    opts?.getChainOscarUsd ??
+    (() =>
+      resolveChainOscarUsdForExitSlice(liveCfg, {
+        mint: args.mint,
+        decimals: args.decimals,
+        priceUsdPerToken: args.priceUsdPerToken,
+      }));
+
+  const chainUsd0 = await fetchChain();
+  const effective0 = planExitSliceUsdNotional({
+    journalUsd: args.usdNotional,
+    chainOscarUsd: chainUsd0 ?? args.usdNotional,
   });
-  if (plan.length <= 1) {
-    return runOne(liveCfg, args);
+
+  if (!(effective0 > 1e-9)) {
+    return { ok: false, preflightSkipReason: 'wallet_spl_balance_zero' };
+  }
+
+  if (shouldBypassExitSlicing({ effectiveUsd: effective0, liveCfg })) {
+    return runOne(liveCfg, {
+      ...args,
+      usdNotional: effective0,
+      intentKind: 'sell_full',
+    });
   }
 
   appendLiveJsonlEvent({
     kind: 'exit_slice_plan',
     mint: args.mint.slice(0, 12),
     intentKind: args.intentKind,
-    totalUsdNotional: +args.usdNotional.toFixed(4),
+    totalUsdNotional: +effective0.toFixed(4),
     maxUsdPerSlice: maxUsd,
-    sliceCount: plan.length,
     delayMs: liveCfg.liveExitSliceDelayMs,
   });
 
-  let totalLamports = 0n;
-  let totalTokenRawSold = 0n;
-  let lastTxSig: string | null | undefined;
-  let solProceedsSource: LiveTokenToSolPipelineResult['solProceedsSource'];
-  let maxPriceImpact: number | undefined;
-  let totalRetryAttempts = 0;
-  let lastSellAmountSource: LiveTokenToSolPipelineResult['sellAmountSource'];
-  let lastWalletDrained: boolean | undefined;
+  const state = {
+    totalLamports: 0n,
+    totalTokenRawSold: 0n,
+    lastTxSig: undefined as string | null | undefined,
+    solProceedsSource: undefined as LiveTokenToSolPipelineResult['solProceedsSource'],
+    maxPriceImpact: undefined as number | undefined,
+    totalRetryAttempts: 0,
+    lastSellAmountSource: undefined as LiveTokenToSolPipelineResult['sellAmountSource'],
+    lastWalletDrained: undefined as boolean | undefined,
+  };
 
-  for (let i = 0; i < plan.length; i++) {
-    if (i > 0 && liveCfg.liveExitSliceDelayMs > 0) {
+  let sliceIndex = 0;
+  const maxSlices = Math.max(1, Math.ceil(args.usdNotional / Math.max(maxUsd, 1e-9)) + 2);
+
+  while (sliceIndex < maxSlices) {
+    if (sliceIndex > 0 && liveCfg.liveExitSliceDelayMs > 0) {
       await sleep(liveCfg.liveExitSliceDelayMs);
     }
-    const slice = plan[i]!;
+
+    const chainUsd = await fetchChain();
+    const effectiveUsd = planExitSliceUsdNotional({
+      journalUsd: args.usdNotional,
+      chainOscarUsd: chainUsd ?? 0,
+    });
+
+    if (!(effectiveUsd > 1e-9)) {
+      if (state.totalLamports > 0n || sliceIndex > 0) {
+        appendLiveJsonlEvent({
+          kind: 'exit_slice_result',
+          mint: args.mint.slice(0, 12),
+          sliceCount: sliceIndex,
+          ok: true,
+          slicesCompleted: sliceIndex,
+        });
+        return buildAggregatedResult(state, true, { walletDrained: true });
+      }
+      return { ok: false, preflightSkipReason: 'wallet_spl_balance_zero' };
+    }
+
+    const useSingleFull =
+      shouldBypassExitSlicing({ effectiveUsd, liveCfg }) || effectiveUsd <= maxUsd + 1e-9;
+    const sliceUsd = useSingleFull ? effectiveUsd : Math.min(maxUsd, effectiveUsd);
+    const sliceIntent: 'sell_partial' | 'sell_full' = useSingleFull ? 'sell_full' : 'sell_partial';
+
     appendLiveJsonlEvent({
       kind: 'exit_slice_attempt',
       mint: args.mint.slice(0, 12),
-      sliceIndex: i,
-      sliceCount: plan.length,
-      usdNotional: +slice.usdNotional.toFixed(4),
-      intentKind: slice.intentKind,
+      sliceIndex,
+      usdNotional: +sliceUsd.toFixed(4),
+      intentKind: sliceIntent,
     });
 
     const r = await runOne(liveCfg, {
       ...args,
-      usdNotional: slice.usdNotional,
-      intentKind: slice.intentKind,
+      usdNotional: sliceUsd,
+      intentKind: sliceIntent,
     });
 
     if (!r.ok) {
       appendLiveJsonlEvent({
         kind: 'exit_slice_result',
         mint: args.mint.slice(0, 12),
-        sliceIndex: i,
-        sliceCount: plan.length,
+        sliceIndex,
+        sliceCount: sliceIndex + 1,
         ok: false,
-        slicesCompleted: i,
+        slicesCompleted: sliceIndex,
       });
       const walletDrainedAfterPartial =
         r.preflightSkipReason === 'wallet_spl_balance_zero' ||
         r.walletDrained === true ||
-        lastWalletDrained === true;
+        state.lastWalletDrained === true;
+      if (state.totalLamports > 0n || sliceIndex > 0) {
+        return buildAggregatedResult(state, false, {
+          preflightSkipReason: r.preflightSkipReason,
+          walletDrained: walletDrainedAfterPartial || undefined,
+          terminalKind: r.terminalKind,
+          terminalMessage: r.terminalMessage,
+        });
+      }
       return {
         ok: false,
         preflightSkipReason: r.preflightSkipReason,
-        wsolOutLamports: totalLamports > 0n ? totalLamports : undefined,
-        solProceedsSource,
-        txSignature: lastTxSig,
-        priceImpactPct: maxPriceImpact,
-        retryAttempts: totalRetryAttempts,
-        sellAmountSource: lastSellAmountSource ?? r.sellAmountSource,
-        walletDrained: walletDrainedAfterPartial || undefined,
-        tokenAmountRawSold: totalTokenRawSold > 0n ? totalTokenRawSold.toString() : undefined,
+        wsolOutLamports: r.wsolOutLamports,
+        solProceedsSource: r.solProceedsSource,
+        txSignature: r.txSignature,
+        priceImpactPct: r.priceImpactPct,
+        retryAttempts: r.retryAttempts,
+        sellAmountSource: r.sellAmountSource,
+        walletDrained: r.walletDrained,
+        tokenAmountRawSold: r.tokenAmountRawSold,
+        terminalKind: r.terminalKind,
+        terminalMessage: r.terminalMessage,
       };
     }
 
-    if (r.wsolOutLamports != null && r.wsolOutLamports > 0n) {
-      totalLamports += r.wsolOutLamports;
+    aggregateSliceSuccess(state, r);
+    sliceIndex += 1;
+
+    if (
+      opts?.onSliceSuccess &&
+      r.wsolOutLamports != null &&
+      r.wsolOutLamports > 0n &&
+      sliceIntent === 'sell_partial'
+    ) {
+      await opts.onSliceSuccess({
+        sliceIndex: sliceIndex - 1,
+        usdNotional: sliceUsd,
+        wsolOutLamports: r.wsolOutLamports,
+        tokenAmountRawSold: r.tokenAmountRawSold,
+        txSignature: r.txSignature,
+        sellAmountSource: r.sellAmountSource,
+        walletDrained: r.walletDrained,
+        priceImpactPct: r.priceImpactPct,
+      });
     }
-    if (typeof r.tokenAmountRawSold === 'string' && /^\d+$/.test(r.tokenAmountRawSold)) {
-      totalTokenRawSold += BigInt(r.tokenAmountRawSold);
+
+    const sliceComplete =
+      sliceIntent === 'sell_full' ||
+      r.walletDrained === true ||
+      r.sellAmountSource === 'chain_full_balance';
+
+    if (sliceComplete) {
+      appendLiveJsonlEvent({
+        kind: 'exit_slice_result',
+        mint: args.mint.slice(0, 12),
+        sliceCount: sliceIndex,
+        ok: true,
+        slicesCompleted: sliceIndex,
+      });
+      return buildAggregatedResult(state, true);
     }
-    lastTxSig = r.txSignature;
-    solProceedsSource = r.solProceedsSource ?? solProceedsSource;
-    lastSellAmountSource = r.sellAmountSource ?? lastSellAmountSource;
-    lastWalletDrained = r.walletDrained ?? lastWalletDrained;
-    if (r.priceImpactPct != null && Number.isFinite(r.priceImpactPct)) {
-      maxPriceImpact =
-        maxPriceImpact == null ? r.priceImpactPct : Math.max(maxPriceImpact, r.priceImpactPct);
-    }
-    totalRetryAttempts += r.retryAttempts ?? 0;
   }
 
   appendLiveJsonlEvent({
     kind: 'exit_slice_result',
     mint: args.mint.slice(0, 12),
-    sliceCount: plan.length,
-    ok: true,
-    slicesCompleted: plan.length,
+    sliceCount: sliceIndex,
+    ok: false,
+    slicesCompleted: sliceIndex,
   });
-
-  return {
-    ok: true,
-    wsolOutLamports: totalLamports > 0n ? totalLamports : undefined,
-    solProceedsSource,
-    txSignature: lastTxSig,
-    priceImpactPct: maxPriceImpact,
-    retryAttempts: totalRetryAttempts,
-    sellAmountSource: lastSellAmountSource,
-    walletDrained: lastWalletDrained,
-    tokenAmountRawSold: totalTokenRawSold > 0n ? totalTokenRawSold.toString() : undefined,
-  };
+  if (state.totalLamports > 0n || sliceIndex > 0) {
+    return buildAggregatedResult(state, false, {
+      preflightSkipReason: 'exit_slice_max_iterations',
+    });
+  }
+  return { ok: false, preflightSkipReason: 'exit_slice_max_iterations' };
 }

@@ -66,6 +66,37 @@ export function effectiveRemainingUsdForExit(journalUsd: number, chainOscarUsd: 
   return Math.max(j, c);
 }
 
+/** Exit-slice planner: min(journal, chain) — stale journal must not oversize slices. */
+export function planExitSliceUsdNotional(args: {
+  journalUsd: number;
+  chainOscarUsd: number;
+}): number {
+  const j = Number.isFinite(args.journalUsd) && args.journalUsd > 0 ? args.journalUsd : 0;
+  const c = Number.isFinite(args.chainOscarUsd) && args.chainOscarUsd > 0 ? args.chainOscarUsd : 0;
+  if (c <= 0) return j;
+  if (j <= 0) return c;
+  return Math.min(j, c);
+}
+
+/** When true, execute one `sell_full` instead of multi-slice exit. */
+export function shouldBypassExitSlicing(args: {
+  effectiveUsd: number;
+  liveCfg: Pick<
+    LiveOscarConfig,
+    'liveExitSliceMaxUsd' | 'liveTailFlushThresholdUsd' | 'liveExitSliceBypassBelowUsd'
+  >;
+}): boolean {
+  const { effectiveUsd, liveCfg } = args;
+  const maxUsd = liveCfg.liveExitSliceMaxUsd;
+  if (!(maxUsd > 0)) return true;
+  if (!(effectiveUsd > maxUsd + 1e-9)) return true;
+  const tail = liveCfg.liveTailFlushThresholdUsd;
+  if (tail > 0 && effectiveUsd <= tail + 1e-9) return true;
+  const bypass = liveCfg.liveExitSliceBypassBelowUsd;
+  if (bypass > 0 && effectiveUsd <= bypass + 1e-9) return true;
+  return false;
+}
+
 /** Whether exit policy should still manage this open (journal zero but chain holds). */
 export function hasManagedWalletExposure(args: {
   ot: OpenTrade;
@@ -118,6 +149,8 @@ export function resyncRemainingFractionFromChain(args: {
   ot: OpenTrade;
   chainOscarUsd: number;
   minUsd: number;
+  /** Live exit-slice: shrink vs stale journal after on-chain sell without prior partialSells rows. */
+  afterOnChainSell?: boolean;
 }): WalletBalanceReconcileResult {
   const { ot, chainOscarUsd, minUsd } = args;
   const prev = ot.remainingFraction;
@@ -137,7 +170,7 @@ export function resyncRemainingFractionFromChain(args: {
   const chainAboveJournal = chainOscarUsd > journalUsd * 1.02 + 0.01;
   const hasPartials = ot.partialSells.length > 0;
   const chainBelowJournalAfterPartial =
-    hasPartials &&
+    (hasPartials || args.afterOnChainSell === true) &&
     !journalZero &&
     chainOscarUsd < journalUsd * 0.98 - 0.01;
 

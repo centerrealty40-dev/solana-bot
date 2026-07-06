@@ -91,6 +91,18 @@ export type LiveTokenToSolSellResult = {
   terminalMessage?: string;
 };
 
+/** Called after each successful exit slice (partial intent) for journal + chain resync. */
+export type LiveExitSliceSuccessHook = (info: {
+  sliceIndex: number;
+  usdNotional: number;
+  wsolOutLamports: bigint;
+  tokenAmountRawSold?: string;
+  txSignature?: string | null;
+  sellAmountSource?: 'usd_math' | 'chain_full_balance' | 'usd_capped_by_chain';
+  walletDrained?: boolean;
+  priceImpactPct?: number;
+}) => void | Promise<void>;
+
 export type LiveTokenToSolPipelineResult = {
   ok: boolean;
   /** Set when sell aborted before quote/sim (`execution_skip` reason). */
@@ -136,6 +148,7 @@ export interface LiveOscarPhase4Tracker {
     referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
+    onSliceSuccess?: LiveExitSliceSuccessHook;
   }): Promise<LiveTokenToSolSellResult>;
 }
 

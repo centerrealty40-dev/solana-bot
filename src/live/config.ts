@@ -211,6 +211,12 @@ const LiveOscarConfigSchema = z
      */
     liveExitSliceDelayMs: z.coerce.number().int().min(0).max(120_000).default(10_000),
     /**
+     * Emergency bypass: when chain-capped exit notional ≤ this USD, skip multi-slice plan
+     * and use one `sell_full`. **0** = only `liveTailFlushThresholdUsd` / max-slice apply.
+     * Env: `LIVE_EXIT_SLICE_BYPASS_BELOW_USD`.
+     */
+    liveExitSliceBypassBelowUsd: z.coerce.number().min(0).max(10_000).default(100),
+    /**
      * 1.11.523 — Chunk large live entry/averaging buys (staged_avg, entry_split legs) on
      * low/prod mcap tier into slices of at most this USD notional. **0** = off.
      * Env: `LIVE_ENTRY_SLICE_MAX_USD`.
@@ -737,6 +743,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
     liveExitSliceMaxUsd: process.env.LIVE_EXIT_SLICE_MAX_USD,
     liveExitSliceDelayMs: process.env.LIVE_EXIT_SLICE_DELAY_MS,
+    liveExitSliceBypassBelowUsd: process.env.LIVE_EXIT_SLICE_BYPASS_BELOW_USD,
     liveEntrySliceMaxUsd: process.env.LIVE_ENTRY_SLICE_MAX_USD,
     liveEntrySliceDelayMs: process.env.LIVE_ENTRY_SLICE_DELAY_MS,
     liveBuyMaxChasePct: process.env.LIVE_BUY_MAX_CHASE_PCT,
