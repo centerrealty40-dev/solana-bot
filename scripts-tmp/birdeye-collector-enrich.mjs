@@ -27,12 +27,19 @@ const BIRDEYE_BATCH_ENABLED =
   process.env.BIRDEYE_USE_BATCH === '1' || process.env.BIRDEYE_BATCH_ENABLED === '1';
 const BIRDEYE_BATCH_CHUNK = Number(process.env.BIRDEYE_BATCH_CHUNK_SIZE || 20);
 const BIRDEYE_PER_MINT_DELAY_MS = Number(process.env.BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS || 120);
-const MAX_MINTS_PER_TICK = Number(process.env.BIRDEYE_COLLECTOR_MAX_MINTS_PER_TICK || 12);
 
 const _cache = new Map();
 
 function isEnabled() {
   return process.env.BIRDEYE_COLLECTOR_ENABLED === '1' && Boolean(process.env.BIRDEYE_API_KEY?.trim());
+}
+
+function resolveMaxMintsPerTick() {
+  const raw = Number(
+    process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK || process.env.BIRDEYE_COLLECTOR_MAX_MINTS_PER_TICK || 12,
+  );
+  if (!Number.isFinite(raw) || raw <= 0) return 12;
+  return Math.floor(raw);
 }
 
 function positive(v) {
@@ -311,6 +318,37 @@ function overlayRowFromQuote(row, quote) {
   return changed;
 }
 
+function overlayRowFromDexCache(row, mint, bucketTs, sourceTag) {
+  if (!quoteCacheEnabled()) return false;
+  const cached = getCachedDexQuote(mint, bucketTs.getTime());
+  if (!cached.hit || cached.entry?.miss) return false;
+  const fromCache = snapshotToCollectorRow(mint, cached.entry, bucketTs, sourceTag);
+  if (!fromCache) return false;
+  let changed = false;
+  if (fromCache.price_usd != null) {
+    row.price_usd = fromCache.price_usd;
+    changed = true;
+  }
+  if (fromCache.market_cap_usd != null) {
+    row.market_cap_usd = fromCache.market_cap_usd;
+    row.fdv_usd = fromCache.market_cap_usd;
+    changed = true;
+  }
+  if (fromCache.liquidity_usd != null) {
+    row.liquidity_usd = fromCache.liquidity_usd;
+    changed = true;
+  }
+  if (fromCache.volume_5m != null) {
+    row.volume_5m = fromCache.volume_5m;
+    changed = true;
+  }
+  if (fromCache.volume_1h != null) {
+    row.volume_1h = fromCache.volume_1h;
+    changed = true;
+  }
+  return changed;
+}
+
 function rowFromBirdeye(mint, quote, bucketTs, sourceTag) {
   if (!quote || (quote.priceUsd == null && quote.marketCapUsd == null && quote.liquidityUsd == null)) {
     return null;
@@ -408,13 +446,37 @@ export async function enrichCollectorRowsWithBirdeye({
   const covered = mintsWithBaseSnapshot(rows);
   const missingAll = [...openMintSet].filter((m) => !covered.has(m));
   const overlayCandidates = rows.filter((r) => r?.base_mint && openMintSet.has(r.base_mint));
-  const overlayMints = overlayCandidates.map((r) => r.base_mint);
-  const fetchMints = [...new Set([...missingAll, ...overlayMints])].slice(0, MAX_MINTS_PER_TICK);
-  const deferred = Math.max(0, missingAll.length + overlayMints.length - fetchMints.length);
+  const extra = [];
+  let overlayUpdatedFromDexCache = 0;
 
-  if (fetchMints.length === 0) return { rows, stats: { skipped: true } };
+  const missingForBirdeye = [];
+  for (const mint of missingAll) {
+    const cached = quoteCacheEnabled() ? getCachedDexQuote(mint, bucketTs.getTime()) : { hit: false };
+    if (cached.hit && !cached.entry?.miss) {
+      const row = snapshotToCollectorRow(mint, cached.entry, bucketTs, sourceTag);
+      if (row) extra.push(row);
+      continue;
+    }
+    missingForBirdeye.push(mint);
+  }
 
-  const missing = missingAll.filter((m) => fetchMints.includes(m));
+  const overlayForBirdeye = [];
+  for (const row of overlayCandidates) {
+    if (overlayRowFromDexCache(row, row.base_mint, bucketTs, sourceTag)) {
+      overlayUpdatedFromDexCache += 1;
+      continue;
+    }
+    overlayForBirdeye.push(row.base_mint);
+  }
+
+  const maxMintsPerTick = resolveMaxMintsPerTick();
+  const fetchMints = [...new Set([...missingForBirdeye, ...overlayForBirdeye])].slice(0, maxMintsPerTick);
+  const deferred = Math.max(0, missingForBirdeye.length + overlayForBirdeye.length - fetchMints.length);
+  if (fetchMints.length === 0 && extra.length === 0 && overlayUpdatedFromDexCache === 0) {
+    return { rows, stats: { skipped: true } };
+  }
+
+  const missing = missingForBirdeye.filter((m) => fetchMints.includes(m));
 
   const { quotes, batchUnavailable, tierInsufficient, errorKind } = await fetchBirdeyeBatch(
     fetchMints,
@@ -435,13 +497,12 @@ export async function enrichCollectorRowsWithBirdeye({
     notifyCollectorBirdeyeTierInsufficient({ errorKind, component });
   }
 
-  let overlayUpdated = 0;
+  let overlayUpdated = overlayUpdatedFromDexCache;
   for (const row of overlayCandidates) {
     const q = quotes.get(row.base_mint);
     if (overlayRowFromQuote(row, q)) overlayUpdated += 1;
   }
 
-  const extra = [];
   let birdeyeRows = 0;
   let dexFallback = 0;
   for (const mint of missing) {
@@ -472,6 +533,7 @@ export async function enrichCollectorRowsWithBirdeye({
         component,
         missing: missing.length,
         deferred,
+        overlayUpdatedFromDexCache,
         overlayUpdated,
         tierInsufficient,
         batchUnavailable,
@@ -482,6 +544,7 @@ export async function enrichCollectorRowsWithBirdeye({
       stats: {
         missing: missing.length,
         deferred,
+        overlayUpdatedFromDexCache,
         overlayUpdated,
         tierInsufficient,
         batchUnavailable,
@@ -499,6 +562,7 @@ export async function enrichCollectorRowsWithBirdeye({
       deferred,
       birdeyeRows,
       dexFallback,
+      overlayUpdatedFromDexCache,
       overlayUpdated,
       extraTotal: extra.length,
       batchUnavailable,
@@ -512,6 +576,7 @@ export async function enrichCollectorRowsWithBirdeye({
       deferred,
       birdeyeRows,
       dexFallback,
+      overlayUpdatedFromDexCache,
       overlayUpdated,
       tierInsufficient,
       batchUnavailable,

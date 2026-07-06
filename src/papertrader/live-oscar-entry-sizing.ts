@@ -3,6 +3,7 @@ import { isLiveOscarTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import {
   ENTRY_SPLIT_LEG_COUNT,
   type EntrySplitLegIndex,
+  entrySplitLegDoneFromState,
   entrySplitLegUsdFromState,
   setEntrySplitLegDone,
 } from './entry-split-legs.js';
@@ -441,7 +442,10 @@ export function applyCanonicalStagedEntrySizing(
   st.entrySplitLeg7Usd = resolveLiveOscarEntrySplitLeg7Usd(cfg, tier, marketCapUsd);
   st.entrySplitLeg8Usd = resolveLiveOscarEntrySplitLeg8Usd(cfg, tier, marketCapUsd);
   for (let i = 2; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
-    setEntrySplitLegDone(st, i as EntrySplitLegIndex, entrySplitLegUsdFromState(st, i as EntrySplitLegIndex) <= 0);
+    const legIndex = i as EntrySplitLegIndex;
+    const canonicalDisabled = entrySplitLegUsdFromState(st, legIndex) <= 0;
+    const alreadyDone = entrySplitLegDoneFromState(st, legIndex);
+    setEntrySplitLegDone(st, legIndex, canonicalDisabled || alreadyDone);
   }
   st.entrySplitDelayMs = cfg.liveStagedEntryEntrySplitDelayMs;
   st.entrySplitMaxUpPct = cfg.liveStagedEntryEntrySplitMaxUpPct;

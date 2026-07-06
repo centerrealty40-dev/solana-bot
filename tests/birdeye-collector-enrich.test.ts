@@ -9,6 +9,7 @@ describe('enrichCollectorRowsWithBirdeye', () => {
     __resetBirdeyeCollectorCacheForTests();
     delete process.env.BIRDEYE_API_KEY;
     delete process.env.BIRDEYE_COLLECTOR_ENABLED;
+    delete process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK;
     vi.restoreAllMocks();
   });
 
@@ -80,5 +81,53 @@ describe('enrichCollectorRowsWithBirdeye', () => {
     expect(res.stats?.changed).toBe(true);
     expect(res.rows[0].price_usd).toBe(0.99);
     expect(res.rows[0].market_cap_usd).toBe(900_000);
+  });
+
+  it('respects global collector enrich cap per tick', async () => {
+    process.env.BIRDEYE_API_KEY = 'k';
+    process.env.BIRDEYE_COLLECTOR_ENABLED = '1';
+    process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK = '1';
+    vi.spyOn(
+      await import('../scripts-tmp/paper2-open-snapshot-enrich.mjs'),
+      'loadPaper2OpenMintsSync',
+    ).mockReturnValue([
+      'MintOne11111111111111111111111111111111111',
+      'MintTwo22222222222222222222222222222222222',
+    ]);
+    vi.spyOn(
+      await import('../scripts-tmp/paper2-open-snapshot-enrich.mjs'),
+      'loadLiveOscarOpenMintsSync',
+    ).mockReturnValue([]);
+    vi.spyOn(
+      await import('../scripts-tmp/paper2-open-snapshot-enrich.mjs'),
+      'loadLiveOscarWhitelistMintsSync',
+    ).mockReturnValue([]);
+    vi.spyOn(
+      await import('../scripts-tmp/paper2-open-snapshot-enrich.mjs'),
+      'loadDiscoveryCollectorPinMintsSync',
+    ).mockReturnValue([]);
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          success: true,
+          data: { price: 0.99, market_cap: 900_000, liquidity: 40_000 },
+        }),
+    }));
+
+    const res = await enrichCollectorRowsWithBirdeye({
+      rows: [],
+      bucketTs: new Date(),
+      sourceTag: 'pumpswap',
+      fetchImpl,
+      fetchJsonWithRetry: vi.fn(),
+      normalizeDexPair: () => null,
+      dedupByPairAddress: (r: unknown[]) => r,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(res.stats?.deferred).toBeGreaterThanOrEqual(1);
   });
 });

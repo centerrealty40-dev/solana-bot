@@ -87,6 +87,11 @@ const COLLECTOR_BIRDEYE_ENV = {
   BIRDEYE_COLLECTOR_ENABLED: '0',
 };
 
+/** Cap per-mint Dex enrich per collector tick (#300 regression: ~70 mints → 15min ticks). */
+const COLLECTOR_ENRICH_ENV = {
+  COLLECTOR_ENRICH_MAX_MINTS_PER_TICK: '12',
+};
+
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
 const OPERATOR_TELEGRAM_CHAT_ID = '-1003878024799';
 /** Spike tiered pump/dump watch — отдельный бот, отдельный канал. */
@@ -427,6 +432,7 @@ const PM2_APPS = [
         ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -455,6 +461,7 @@ const PM2_APPS = [
         ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -483,6 +490,8 @@ const PM2_APPS = [
         ...DEXSCREENER_GATE_ENV,
         ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -511,6 +520,7 @@ const PM2_APPS = [
         ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
         ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {

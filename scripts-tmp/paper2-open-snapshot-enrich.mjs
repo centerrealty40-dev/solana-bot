@@ -28,6 +28,8 @@ const DS_DELAY_MS = Number(process.env.PAPER2_SNAPSHOT_DS_DELAY_MS || 500);
 const SOLO_FETCH_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK || 6);
 /** Cap batch `/tokens/{m1,m2,…}` chunks per tick (10 mints each). */
 const BATCH_CHUNKS_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK || 8);
+/** Global collector enrich budget per tick (shared expectation across collectors). */
+const COLLECTOR_ENRICH_MAX_MINTS_PER_TICK = Number(process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK || 12);
 
 /** Per-component rotation cursor for capped solo-fetch queues. */
 const _soloFetchRotation = new Map();
@@ -242,6 +244,12 @@ function selectRotatingBatch(list, component, max) {
   return selected;
 }
 
+function positiveIntOr(v, fallback) {
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  return fallback;
+}
+
 /** Discovery / dip eval keys on `base_mint` — quote-only presence must not skip enrich. */
 function mintsWithBaseSnapshot(rows) {
   const s = new Set();
@@ -352,9 +360,21 @@ export async function mergePaper2OpenMintSnapshots({
     whitelistSet,
     discoverySet,
   });
-  const missingSolo = selectRotatingBatch(prioritizedSolo, component, SOLO_FETCH_MAX_PER_TICK);
-  const batchChunkLimit = BATCH_CHUNKS_MAX_PER_TICK * TOKEN_CHUNK;
-  const missingBatch = missingBatchAll.slice(0, batchChunkLimit);
+  const totalMintBudget = positiveIntOr(
+    process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK,
+    COLLECTOR_ENRICH_MAX_MINTS_PER_TICK,
+  );
+  const soloCap = Math.min(
+    positiveIntOr(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK, SOLO_FETCH_MAX_PER_TICK),
+    totalMintBudget,
+  );
+  const missingSolo = selectRotatingBatch(prioritizedSolo, component, soloCap);
+  const batchChunkLimit = positiveIntOr(
+    process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK,
+    BATCH_CHUNKS_MAX_PER_TICK,
+  ) * TOKEN_CHUNK;
+  const remainingMintBudget = Math.max(0, totalMintBudget - missingSolo.length);
+  const missingBatch = missingBatchAll.slice(0, Math.min(batchChunkLimit, remainingMintBudget));
 
   const extra = [];
   let whitelistSingleFetchOk = 0;
@@ -405,6 +425,7 @@ export async function mergePaper2OpenMintSnapshots({
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
         missingSoloFetch: missingSolo.length,
+        totalMintBudget,
         soloFetchDeferred,
         batchFetchDeferred,
         stillMissingSoloFetch: stillMissingSolo.length,
@@ -422,6 +443,7 @@ export async function mergePaper2OpenMintSnapshots({
       discoveryPinMintCount,
       missingFromPrimaryTick: missing.length,
       missingSoloFetch: missingSolo.length,
+      totalMintBudget,
       soloFetchDeferred,
       batchFetchDeferred,
       soloFetchOk: whitelistSingleFetchOk,

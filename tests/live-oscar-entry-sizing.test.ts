@@ -596,6 +596,23 @@ describe('live-oscar-entry-sizing', () => {
 
   });
 
+
+
+  it('applyCanonicalStagedEntrySizing keeps already-filled timed split legs done', () => {
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD = '250';
+    process.env.PAPER_POSITION_USD = '3250';
+    const cfg = loadPaperTraderConfig();
+
+    const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 5_000_000 });
+    st.entrySplitLeg4Done = true;
+
+    applyCanonicalStagedEntrySizing(cfg, st);
+
+    expect(st.entrySplitLeg4Usd).toBe(250);
+    expect(st.entrySplitLeg4Done).toBe(true);
+
+  });
+
 });
 
 
