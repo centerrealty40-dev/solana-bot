@@ -817,12 +817,12 @@ const ConfigSchema = z.object({
   oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(2),
   /** Total PG lookback window (hours); default 48h aligned with post min age. */
   oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(48),
-  /** Baseline window start (hours ago); default 48h = [24h,48h) ago when paired with end. */
-  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(144).default(48),
+  /** Baseline window start (hours ago); default 48h = [24h,48h) ago when paired with end. Max aligns with lookback. */
+  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(168).default(48),
   /** Baseline window end (hours ago); default 24h. */
   oldMintDormantVolSpikeBaselineEndHoursAgo: z.coerce.number().int().min(6).max(120).default(24),
   /** @deprecated Use baselineStartHoursAgo; kept for env backward compat. */
-  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(48),
+  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(168).default(48),
   /** Recent hours where spike is measured (excluded from baseline). */
   oldMintDormantVolSpikeRecentHours: z.coerce.number().int().min(3).max(24).default(6),
   /** Hour counts as dormant when max vol1h in hour <= this (USD). */
