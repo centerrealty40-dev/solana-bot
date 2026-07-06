@@ -12,7 +12,8 @@
 | Изменение | Статус |
 |-----------|--------|
 | Tier sizing (mcap tiers, scalp_wave escalation) | **Merged PR #403** на Oscar |
-| Dex quote cache + gate (`DEX_QUOTE_CACHE_*`, `DEXSCREENER_GLOBAL_*`) | **Может быть in flight** — файлы есть локально в Oscar-репо, деплой на Oscar VPS проверить по `git rev-parse HEAD` и наличию `data/dexscreener-quote-cache.json` |
+| Dex quote cache + gate (`DEX_QUOTE_CACHE_*`, `DEXSCREENER_GLOBAL_*`) | **Deployed** на Oscar VPS (`cea8716`, Jul 2026) — `data/dexscreener-quote-cache.json` + gate json живут |
+| Collector HTTP timeout vs gate queue (Lera hotfix `0cf6a79`) | **Oscar ещё без hotfix** — inline `fetchJsonWithRetry` в collectors; **нужен mirror** (см. §2.6, §11) |
 
 Lera **не ждёт** merge Oscar dex-cache PR для старта: копирует **паттерн**, не общий файл кэша.
 
@@ -99,9 +100,45 @@ Oscar решил проблему трёхуровневым стеком на *
 
 ### 2.3. Gate (rate limit coordinator)
 
-- Env: `DEXSCREENER_GLOBAL_RATE_LIMIT=1` (default ON), `DEXSCREENER_GLOBAL_MAX_RPM=42`
+- Env: `DEXSCREENER_GLOBAL_RATE_LIMIT=1` (default ON), `DEXSCREENER_GLOBAL_MAX_RPM=42` (Oscar) / **`60`** (Lera при 4 collectors + live — см. §2.6)
 - `minGapMs = ceil(60000 / maxRpm)` — между **любыми** Dex HTTP с этого VPS
 - Collectors **дополнительно** вызывают `acquireDexScreenerSlot()` перед **любым** URL с `api.dexscreener.com` (не только `/tokens/`)
+
+### 2.6. Критично: gate **до** HTTP timeout (не после)
+
+**Регрессия (Lera Jul 2026, Oscar — тот же класс бага):** если `AbortController` / `AbortSignal.timeout()` стартует **до** `await acquireDexScreenerSlot()`, ожидание в gate-очереди «съедает» бюджет timeout (типично **15 s** у collectors). При 4 параллельных collectors и RPM=42 (`minGapMs ≈ 1.4 s`, но очередь может быть **>15 s**) запрос abort'ится **ещё до HTTP** → `AbortError`, collectors «слепые», enrich не доходит до Dex.
+
+**Правильный порядок (обязателен для collectors и любого shared fetch wrapper):**
+
+1. (optional) L1/L2 cache hit → return
+2. `await acquireDexScreenerSlot()` — **без** abort timer
+3. **Только затем** старт HTTP timeout (`AbortController` / `AbortSignal.timeout`)
+4. `fetch` → parse → cache write
+
+**Эталон:** Lera `scripts-tmp/collector-http-fetch.mjs` (`createCollectorFetchJsonWithRetry`) — gate/Birdeye slot first, abort second.
+
+**Анти-паттерн (Oscar collectors до hotfix):**
+
+```javascript
+// WRONG — timeout включает gate wait
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
+await fetch(url, { signal: controller.signal });
+```
+
+**Правильно:**
+
+```javascript
+if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+await fetch(url, { signal: controller.signal });
+```
+
+**RPM vs timeout:** при `N` процессах на одном gate и `COLLECTOR_TIMEOUT_MS=15000` стартовый RPM **42** часто недостаточен — Lera подняла до **60** (`minGapMs=1000`). Не поднимать выше **120** (hard cap в gate). Альтернатива: увеличить `*_COLLECTOR_TIMEOUT_MS` только для HTTP-фазы **после** gate (не смешивать с queue wait).
+
+**Quote cache module:** `dexscreener-quote-cache.mjs` / TS уже соблюдают порядок (gate → `AbortSignal.timeout(8000)` на HTTP). Баг — в **inline** `fetchJsonWithRetry` collectors, не в cache layer.
 
 ### 2.4. Формат L2 cache entry
 
@@ -165,6 +202,7 @@ Oscar решил проблему трёхуровневым стеком на *
 - [ ] `dexscreener-api-gate.mjs` (или TS-эквивалент) — **один** на VPS
 - [ ] `dexscreener-quote-cache.mjs` + TS wrapper для live-trader
 - [ ] Замена прямых `fetch('https://api.dexscreener.com/...')` на `fetchDexQuoteViaCache` / `fetchDexQuotesBatchViaCache`
+- [ ] Collectors: shared `collector-http-fetch.mjs` (или эквивалент) — **gate до abort timer** (§2.6)
 - [ ] Collectors: `isDexScreenerUrl(url)` → `acquireDexScreenerSlot()` в HTTP wrapper
 - [ ] `.env.example` + PM2 env blocks
 - [ ] Unit tests (vitest) по образцу Oscar `tests/dexscreener-quote-cache.test.ts`
@@ -176,7 +214,7 @@ Oscar решил проблему трёхуровневым стеком на *
 | Переменная | Default | Комментарий |
 |------------|---------|-------------|
 | `DEXSCREENER_GLOBAL_RATE_LIMIT` | `1` | OFF только для отладки |
-| `DEXSCREENER_GLOBAL_MAX_RPM` | `42` | Можно `30` если 429 остаются |
+| `DEXSCREENER_GLOBAL_MAX_RPM` | `60` (4 collectors + live) / `42` минимум | При 429 ↓ до `30`; при gate-queue `AbortError` ↑ до `60` **после** fix §2.6 |
 | `DEXSCREENER_GLOBAL_GATE_PATH` | `data/dexscreener-api-gate.json` | Абсolute via PM2 |
 | `DEX_QUOTE_CACHE_ENABLED` | `1` | |
 | `DEX_QUOTE_CACHE_TTL_MS` | `20000` | 12–60 s |
@@ -330,12 +368,15 @@ pm2 env <live-lera-app-id> | grep DEX_
 | Duplicate mint fetch | log counter или временный debug: mint+pid за 30s window | **≤1 HTTP/mint/TTL** across processes |
 | Discovery eval consistency | `evals1h`, `passed1h` в journal / dashboard API | без регрессии >5% за 48h |
 | `coverage_gap` / Dex miss events | journal `kind` grep | не растут |
-| Gate wait p95 | optional log `dex_gate_wait_ms` | < 3s при RPM=42 |
+| Gate wait p95 | optional log `dex_gate_wait_ms` | < 3s при RPM=60; **0** `AbortError` до HTTP |
+| Collector tick `elapsedMs` | `tick completed` в PM2 out | не >> `COLLECTOR_INTERVAL_MS` из-за abort/retry loop |
 
 **Команды на Lera VPS (read-only):**
 
 ```bash
 grep -h '429' ~/.pm2/logs/*-error*.log | tail -20
+grep -h 'AbortError' ~/.pm2/logs/sa-*-error*.log | tail -20   # gate-timeout regression
+grep -h 'tick completed' ~/.pm2/logs/sa-*-out*.log | tail -10  # elapsedMs sanity
 grep -h 'api.dexscreener.com' ~/.pm2/logs/*.log | wc -l   # до/после
 tail -f /opt/lera/data/live/pt1-lera-live.jsonl | rg 'coverage_gap|dex'
 stat /opt/lera/data/dexscreener-quote-cache.json
@@ -405,9 +446,23 @@ Oscar service → L1/L2 cache + gate + Dex HTTP
 |----------|---------------------|
 | Quote cache (mjs) | `scripts-tmp/dexscreener-quote-cache.mjs` |
 | API gate (mjs) | `scripts-tmp/dexscreener-api-gate.mjs` |
+| **Collector HTTP wrapper (Lera эталон)** | `lera/scripts-tmp/collector-http-fetch.mjs` — портировать в Oscar |
 | Quote cache (ts) | `src/papertrader/pricing/dexscreener-quote-cache.ts` |
 | Discovery integration | `src/papertrader/pricing/discovery-market-quote.ts` |
 | PM2 env | `ecosystem.config.cjs` → `DEXSCREENER_GATE_ENV`, `DEX_QUOTE_CACHE_ENV` |
 | Env docs | `.env.example` (строки Dex gate/cache + note про Lera) |
 | Tests | `tests/dexscreener-quote-cache.test.ts`, `tests/discovery-market-quote.test.ts` |
 | Lera journal (Oscar dashboard) | `scripts-tmp/lera-dashboard.ts` → `/opt/lera/data/live/pt1-lera-live.jsonl` |
+
+---
+
+## 11. Oscar hotfix (mirror Lera `0cf6a79`) — отдельная задача на solana-alpha
+
+**Не блокирует Lera rollout**, но Oscar collectors сейчас уязвимы к тому же gate-timeout.
+
+1. Добавить `scripts-tmp/collector-http-fetch.mjs` (копия из Lera; Birdeye slot optional если `birdeye-api-gate.mjs` есть).
+2. В `raydium-collector.mjs`, `meteora-collector.mjs`, `pumpswap-collector.mjs`, `moonshot-collector.mjs` — заменить inline `fetchJsonWithRetry` на `createCollectorFetchJsonWithRetry(...)`.
+3. `ecosystem.config.cjs`: `DEXSCREENER_GLOBAL_MAX_RPM: '60'` + комментарий про 4 collectors.
+4. Verify на VPS: `grep AbortError` → пусто после reload; `tick completed` `elapsedMs` < ~3–5 min; cache json растёт.
+
+**Scope:** collectors only; `dexscreener-quote-cache.mjs` / TS discovery уже OK.
