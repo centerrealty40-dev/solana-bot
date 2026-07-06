@@ -486,12 +486,12 @@ const ConfigSchema = z.object({
   dipLossExitCooldownEnabled: z.boolean().default(true),
   /**
    * Live discovery / hybrid fork: min drop % below last exit before re-entry (0 = off).
-   * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` или alias `PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT`.
+   * Env: `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` или aliases `PAPER_REENTRY_DIP_BELOW_EXIT_PCT`, `PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT`.
    */
   liveReentryMinDropFromLastExitPct: z.coerce.number().nonnegative().max(90).default(0),
   /**
    * Hybrid fork: при цене ≥ lastExit×(1+M%) — bypass dip-wait, стандартные discovery/dip gates.
-   * Env: `LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT` или alias `PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT`.
+   * Env: `LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT` или aliases `PAPER_REENTRY_ABORT_DIP_WAIT_ABOVE_EXIT_PCT`, `PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT`.
    */
   liveReentryBreakoutAboveExitPct: z.coerce.number().nonnegative().max(500).default(0),
   /**
@@ -1521,9 +1521,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLossExitCooldownEnabled: envBool(process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_ENABLED, true),
     liveReentryMinDropFromLastExitPct:
       process.env.LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT ??
+      process.env.PAPER_REENTRY_DIP_BELOW_EXIT_PCT ??
       process.env.PAPER_REENTRY_MIN_DIP_BELOW_EXIT_PCT,
     liveReentryBreakoutAboveExitPct:
       process.env.LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT ??
+      process.env.PAPER_REENTRY_ABORT_DIP_WAIT_ABOVE_EXIT_PCT ??
       process.env.PAPER_REENTRY_BREAKOUT_ABOVE_EXIT_PCT,
     liveReentryMaxWaitMinutes: process.env.LIVE_REENTRY_MAX_WAIT_MINUTES,
     liveReentryLossMinDropFromLastExitPct: process.env.LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT,
