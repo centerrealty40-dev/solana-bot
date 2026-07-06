@@ -16,6 +16,7 @@ import type { LiveOscarRuntimeBundle } from './phase4-types.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { fetchLiveWalletSplBalancesByMint } from './reconcile-live.js';
 import { livePolicyBlocksHealSyncSells } from './policy-only-exits.js';
+import { closeJournalGhostOpensWhenChainEmpty } from './journal-ghost-close.js';
 import {
   emitChainOrphanReconcileIfNeeded,
   oscarChainUsdFromRaw,
@@ -93,6 +94,17 @@ export function startLivePeriodicSelfHeal(ctx: LivePeriodicSelfHealFactoryContex
           note,
         });
         return;
+      }
+
+      const ghostClose = closeJournalGhostOpensWhenChainEmpty({
+        cfg: paperCfg,
+        open,
+        closed,
+        chainMap,
+        context: 'periodic_heal',
+      });
+      if (ghostClose.closedMints.length > 0) {
+        note = `journal_ghost_closed_${ghostClose.closedMints.length}`;
       }
 
       const closedMintSeen = new Set(closed.map((c) => c.mint));

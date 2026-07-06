@@ -1211,6 +1211,7 @@ async function tryExecuteTpPartialSell(args: {
 
   let sellOut: LiveTokenToSolSellResult = { ok: true };
   let chainPartialProceeds = false;
+  const partialSellsBeforeSlice = ot.partialSells.length;
   if (livePhase4 && marketSell > 0 && tokenSizingUsdForSwap > 1e-6) {
     sellOut = await livePhase4.tryTokenToSolSell({
       mint,
@@ -1220,6 +1221,23 @@ async function tryExecuteTpPartialSell(args: {
       referencePriceUsd: liveSellReferencePriceUsd(ot),
       decimals: ot.tokenDecimals ?? 6,
       intentKind: 'sell_partial',
+      onSliceSuccess: async (sliceInfo) => {
+        if (!liveOscarCfg) return;
+        await syncOpenTradeAfterLiveExitSlice({
+          mint,
+          ot,
+          marketSell,
+          liveOscarCfg,
+          reconcileMinUsd,
+          partialReason,
+          sliceInfo,
+        });
+        journalLiveStrategy?.({
+          kind: 'live_position_partial_sell',
+          mint,
+          openTrade: serializeOpenTrade(ot),
+        });
+      },
     });
     chainPartialProceeds =
       sellOut.solProceedsLamports != null && sellOut.solProceedsLamports > 0n;
@@ -1258,6 +1276,13 @@ async function tryExecuteTpPartialSell(args: {
         },
         'live partial sell exit-slice partial chain success — journaling proceeds before handling failure',
       );
+      if (ot.partialSells.length > partialSellsBeforeSlice) {
+        markLadder();
+        return sellOut.preflightSkipReason === 'wallet_spl_balance_zero' ||
+          livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained)
+          ? 'wallet_zero'
+          : 'defer_next';
+      }
     }
     if (sellOut.ok && (sellOut.solProceedsLamports == null || sellOut.solProceedsLamports <= 0n)) {
       log.warn(
@@ -1267,6 +1292,19 @@ async function tryExecuteTpPartialSell(args: {
     }
   }
   const sellChainRecorded = sellOut.ok || chainPartialProceeds;
+  const exitSliceJournaled = ot.partialSells.length > partialSellsBeforeSlice;
+
+  if (exitSliceJournaled && sellChainRecorded) {
+    markLadder();
+    if (
+      sellOut.preflightSkipReason === 'wallet_spl_balance_zero' ||
+      livePartialSellDrainedWallet(sellOut.sellAmountSource, sellOut.walletDrained) ||
+      ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS
+    ) {
+      return 'wallet_zero';
+    }
+    return 'ok';
+  }
 
   let proceedsUsdSource: NonNullable<PartialSell['proceedsUsdSource']> = 'model';
   let solProceedsLamports: string | undefined;

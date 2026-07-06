@@ -168,6 +168,8 @@ export const LivePositionCloseSchema = z.object({
   kind: z.literal('live_position_close'),
   mint: z.string().min(1).max(64),
   closedTrade: z.record(z.string(), z.unknown()),
+  walletSoTJournalOnly: z.boolean().optional(),
+  ghostCloseContext: z.enum(['boot', 'periodic_heal']).optional(),
 });
 
 /** Phase 7 structured boot diagnostic row (`liveSchema: 2` at write time). Legacy rows may include `mode`. */
@@ -811,12 +813,24 @@ export const LiveBootSnapshotMergeSchema = z.object({
 export const OrphanReconcileSchema = z.object({
   kind: z.literal('orphan_reconcile'),
   mint: z.string().min(1).max(64),
-  reason: z.enum(['chain_above_journal', 'journal_zero_chain_holds', 'chain_orphan_no_open']),
+  reason: z.enum([
+    'chain_above_journal',
+    'journal_zero_chain_holds',
+    'chain_orphan_no_open',
+    'journal_open_chain_zero',
+  ]),
+  context: z.enum(['boot', 'periodic_heal']).optional(),
   prevRemainingFraction: z.number().finite().min(0).max(1).optional(),
   nextRemainingFraction: z.number().finite().min(0).max(1).optional(),
   journalRemainingUsd: z.number().finite().nonnegative().optional(),
   chainOscarUsd: z.number().finite().nonnegative(),
   minUsd: z.number().finite().nonnegative().optional(),
+});
+
+export const LiveBootJournalGhostCloseSchema = z.object({
+  kind: z.literal('live_boot_journal_ghost_close'),
+  closedMints: z.array(z.string()).optional(),
+  replayOpenAfterClose: z.number().int().nonnegative().optional(),
 });
 
 export const LiveBootWalletOrphanRestoreSchema = z.object({
@@ -1018,6 +1032,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveStalePriceWarnSchema,
   LiveBootSnapshotMergeSchema,
   LiveBootWalletOrphanRestoreSchema,
+  LiveBootJournalGhostCloseSchema,
   OrphanReconcileSchema,
   EntrySplitAddSchema,
   StagedAvgAddSchema,

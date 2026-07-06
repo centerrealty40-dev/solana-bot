@@ -53,7 +53,10 @@ import {
 } from './reconcile-tx-anchor-sample.js';
 import { evaluateLiveNotionalParity } from './notional-parity.js';
 import { replayLiveStrategyJournal, type ReplayClosedForRepeatGate, type ReplayLiveStrategyJournalResult } from './replay-strategy-journal.js';
-import { restoreWalletOrphanOpensOnBoot } from './boot-open-restore.js';
+import {
+  closeJournalGhostOpensOnBoot,
+  restoreWalletOrphanOpensOnBoot,
+} from './boot-open-restore.js';
 import { repairMissedLiveBuysFromJournal } from './repair-missed-live-buys.js';
 import { adoptCopyLeaderExitOpens } from './copy-leader-exit-adopt.js';
 import { copyLeaderStatePathFromEnv } from './copy-leader-attribution.js';
@@ -587,6 +590,36 @@ export async function main(): Promise<void> {
       } catch (err) {
         log.warn({ err: (err as Error)?.message }, 'live-oscar boot wallet orphan restore failed');
       }
+    }
+
+    try {
+      const ghostClose = await closeJournalGhostOpensOnBoot({
+        liveCfg,
+        paperCfg: paperBootCfg,
+        open: liveStrategyReplay.open,
+        closed: liveStrategyReplay.closed,
+      });
+      if (ghostClose.closedMints.length > 0) {
+        liveStrategyReplay = {
+          ...liveStrategyReplay,
+          open: ghostClose.open,
+          closed: ghostClose.closed,
+        };
+        log.warn(
+          {
+            closedMints: ghostClose.closedMints.map((m) => m.slice(0, 8)),
+            replayOpen: liveStrategyReplay.open.size,
+          },
+          'live-oscar boot: closed journal ghost opens (wallet SoT — chain zero, no buy)',
+        );
+        appendLiveJsonlEvent({
+          kind: 'live_boot_journal_ghost_close',
+          closedMints: ghostClose.closedMints,
+          replayOpenAfterClose: liveStrategyReplay.open.size,
+        });
+      }
+    } catch (err) {
+      log.warn({ err: (err as Error)?.message }, 'live-oscar boot journal ghost close failed');
     }
 
     try {
