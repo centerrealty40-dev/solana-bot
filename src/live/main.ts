@@ -25,6 +25,7 @@ import {
   setShyftShadowMaxAgeMs,
 } from '../papertrader/stream/shadow-state.js';
 import { startShyftShadowConsumer } from '../papertrader/stream/shyft-shadow-consumer.js';
+import { buildShyftStreamHealthEvent } from '../papertrader/stream/shyft-shadow-observe.js';
 import { configurePostExitReentryGatePaperCfg, recordAfterFullCloseForMintRepeatGateFromClosedTrade } from '../papertrader/discovery/dip-clones.js';
 import {
   assertLiveOscarUnifiedEntrySizing,
@@ -222,7 +223,7 @@ export async function main(): Promise<void> {
    */
   setShyftShadowEnabled(paperBaseline.liveOscarShyftShadowEnabled);
   setShyftShadowMaxAgeMs(paperBaseline.liveOscarShyftShadowMaxAgeMs);
-  if (paperBaseline.liveOscarShyftShadowEnabled) {
+  if (paperBaseline.liveOscarShyftShadowEnabled && paperBaseline.shyftStreamEnabled) {
     const shyftEndpoint =
       process.env.SHYFT_GRPC_ENDPOINT?.trim() || 'https://grpc.fra.shyft.to';
     const shyftToken = process.env.SHYFT_GRPC_TOKEN?.trim() ?? '';
@@ -233,22 +234,38 @@ export async function main(): Promise<void> {
       );
       appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status: 'idle', detail: 'missing_token' });
     } else {
-      startShyftShadowConsumer(
-        {
-          endpoint: shyftEndpoint,
-          token: shyftToken,
-          maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
-          connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
-        },
-        {
-          onStatus: (status, detail) =>
-            appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status, ...(detail ? { detail } : {}) }),
-          onError: (err) =>
-            log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
-        },
-      );
-      log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+      try {
+        startShyftShadowConsumer(
+          {
+            endpoint: shyftEndpoint,
+            token: shyftToken,
+            maxAccountInclude: paperBaseline.liveOscarShyftShadowMaxMints,
+            connectGraceMs: paperBaseline.liveOscarShyftShadowConnectGraceMs,
+          },
+          {
+            onStatus: (status, detail) =>
+              appendLiveJsonlEvent({ kind: 'live_shyft_shadow_status', status, ...(detail ? { detail } : {}) }),
+            onHealth: (snapshot) =>
+              appendLiveJsonlEvent(buildShyftStreamHealthEvent(snapshot)),
+            onError: (err) =>
+              log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
+          },
+        );
+        log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+      } catch (err) {
+        log.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'live-oscar Shyft shadow consumer failed to start — trading path unaffected',
+        );
+        appendLiveJsonlEvent({
+          kind: 'live_shyft_shadow_status',
+          status: 'error',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
+  } else if (paperBaseline.liveOscarShyftShadowEnabled && !paperBaseline.shyftStreamEnabled) {
+    log.warn({}, 'live-oscar Shyft shadow journal ON but SHYFT_STREAM_ENABLED=0 — no gRPC consumer');
   }
 
   if (

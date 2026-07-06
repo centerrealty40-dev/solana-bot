@@ -220,6 +220,48 @@ describe('W8.0-p1 live JSONL contract', () => {
     expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(priceNoPg))).success).toBe(true);
   });
 
+  it('parses Shyft shadow health + vs Dex quote kinds (1.11.557)', () => {
+    const health: LiveEventBody = {
+      kind: 'live_shyft_stream_health',
+      status: 'connected',
+      watchedMintCount: 2,
+      reconnectCount: 1,
+      lastObservationMs: 1_700_000_000_500,
+      connectedUptimeMs: 120_000,
+      lastObservationAgeMs: 3_000,
+      observationsTotal: 17,
+      detail: 'grpc.fra.shyft.to mints=2',
+    };
+    const vsDex: LiveEventBody = {
+      kind: 'live_shyft_vs_dex_quote',
+      mint: 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      lane: 'prod',
+      surface: 'entry',
+      streamPriceUsd: 1.1,
+      streamTsMs: 1_700_000_000_500,
+      streamAgeMs: 2_000,
+      dexPriceUsd: 1.0,
+      dexMcapUsd: 1_000_000,
+      dexLiqUsd: 50_000,
+      shyftDefiMcapUsd: 1_050_000,
+      shyftDefiLiqUsd: 48_000,
+      prodPriceUsd: 1.05,
+      prodMcapUsd: 1_020_000,
+      prodLiqUsd: 49_000,
+      streamVsDexPricePct: 10,
+      streamVsProdPricePct: 4.7619,
+      shyftDefiVsDexMcapPct: 5,
+      shyftDefiVsDexLiqPct: -4,
+      prodVsDexPricePct: 5,
+      prodVsDexMcapPct: 2,
+      prodVsDexLiqPct: -2,
+    };
+    for (const b of [health, vsDex]) {
+      expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(b))).success).toBe(true);
+      expect(parseLiveEventBody(JSON.parse(JSON.stringify(b)))).toEqual(b);
+    }
+  });
+
   it('parses boot merge / orphan restore and staged add kinds (1.11.486)', () => {
     const bodies: LiveEventBody[] = [
       {

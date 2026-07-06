@@ -86,6 +86,23 @@
 
 ---
 
+---
+
+## [1.11.557] — 2026-07-06
+
+**Тег:** `sa-alpha-1.11.557`
+
+### Live Oscar — Shyft shadow mode (stream health + vs Dex, trading unchanged)
+
+- **Shadow ON:** `SHYFT_SHADOW_ENABLED=1`, `SHYFT_STREAM_ENABLED=1` (+ legacy `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1`). gRPC consumer reconnect fixes retained (debounced full reconnect, connect grace 30s, stale watchdog). **Open-mints-only** (`SHYFT_SHADOW_OPEN_MINTS_ONLY=1`, max 64 mints) — anti Jul-4 reconnect storm from discovery churn.
+- **Trading unchanged:** `SHYFT_PRICE_PRIMARY_*=0`, `SHYFT_DEFI_MCAP_ENABLED=0`, `BIRDEYE_PRIMARY_ENABLED=0` — prod path Dex→PG.
+- **Новые journal kinds:** `live_shyft_stream_health` (reconnects, observations, uptime), `live_shyft_vs_dex_quote` (stream vs DexScreener price/mcap/liq deltas + prod baseline).
+- **Модули:** `src/papertrader/stream/shyft-shadow-observe.ts`; health in `shyft-shadow-consumer.ts`.
+
+**Откат:** `SHYFT_SHADOW_ENABLED=0`, `SHYFT_STREAM_ENABLED=0`, `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=0` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`; либо redeploy `sa-alpha-1.11.556`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.556] — 2026-07-06
 
 **Тег:** `sa-alpha-1.11.556`

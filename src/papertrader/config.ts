@@ -19,6 +19,22 @@ function envBool(v: unknown, defaultVal: boolean): boolean {
   return defaultVal;
 }
 
+/** `SHYFT_SHADOW_ENABLED` (preferred) or legacy `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED`. */
+function resolveShyftShadowEnabledFromEnv(): boolean {
+  if (process.env.SHYFT_SHADOW_ENABLED != null && process.env.SHYFT_SHADOW_ENABLED !== '') {
+    return envBool(process.env.SHYFT_SHADOW_ENABLED, false);
+  }
+  return envBool(process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED, false);
+}
+
+/** `SHYFT_STREAM_ENABLED`; when unset follows shadow enabled (legacy compat). */
+function resolveShyftStreamEnabledFromEnv(shadowEnabled: boolean): boolean {
+  if (process.env.SHYFT_STREAM_ENABLED != null && process.env.SHYFT_STREAM_ENABLED !== '') {
+    return envBool(process.env.SHYFT_STREAM_ENABLED, false);
+  }
+  return shadowEnabled;
+}
+
 function envOptNum(v: unknown): number | undefined {
   if (v === undefined || v === null || v === '') return undefined;
   const n = Number(v);
@@ -137,14 +153,25 @@ const ConfigSchema = z.object({
    * stream price. At the entry / MTM comparison points a `live_shyft_shadow_price` journal record is
    * written next to the PG price to measure how far PG lags behind the stream. **Observability only —
    * the stream price never feeds a gate / eval / execution decision.** Default OFF (byte-for-byte prod).
+   * Alias: `SHYFT_SHADOW_ENABLED` (preferred) or legacy `PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED`.
    */
   liveOscarShyftShadowEnabled: z.boolean().default(false),
+  /**
+   * Start the Yellowstone gRPC consumer (`SHYFT_STREAM_ENABLED`). When unset, follows shadow enabled.
+   * Shadow journal can be ON while stream is OFF (no observations until stream connects).
+   */
+  shyftStreamEnabled: z.boolean().default(false),
   /** Max age (ms) a stored stream price may have to still be paired at a comparison point. */
   liveOscarShyftShadowMaxAgeMs: z.coerce.number().int().positive().default(60_000),
   /** Cap on `accountInclude` filter size (narrow, never program-wide firehose). */
   liveOscarShyftShadowMaxMints: z.coerce.number().int().positive().max(2_000).default(256),
   /** After gRPC connect, suppress mint-set resubscribes for this many ms (boot churn). */
   liveOscarShyftShadowConnectGraceMs: z.coerce.number().int().nonnegative().default(15_000),
+  /**
+   * Conservative shadow rollout: subscribe only to **open** mints (not discovery candidates).
+   * Reduces mint-set churn / reconnect storms. Default ON for live-oscar shadow mode.
+   */
+  liveOscarShyftShadowOpenMintsOnly: z.boolean().default(true),
   /**
    * Stage 1.2 (1.11.468) — use the Shyft **stream** price as PRIMARY for live-oscar decision points
    * (open-position MTM and discovery dip-eval), with a `shyftMaxStaleMs` freshness-gate and PG/Jupiter
@@ -1253,6 +1280,7 @@ function loadMintWhitelistPathToSet(absPath: string): ReadonlySet<string> {
 }
 
 export function loadPaperTraderConfig(): PaperTraderConfig {
+  const shyftShadowEnabled = resolveShyftShadowEnabledFromEnv();
   const parsed = ConfigSchema.safeParse({
     strategyId: process.env.PAPER_STRATEGY_ID,
     strategyKind: process.env.PAPER_STRATEGY_KIND,
@@ -1288,10 +1316,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
     liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
     liveOscarStalePriceWarnMs: process.env.PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS,
-    liveOscarShyftShadowEnabled: envBool(process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED, false),
+    liveOscarShyftShadowEnabled: shyftShadowEnabled,
+    shyftStreamEnabled: resolveShyftStreamEnabledFromEnv(shyftShadowEnabled),
     liveOscarShyftShadowMaxAgeMs: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS,
     liveOscarShyftShadowMaxMints: process.env.PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS,
     liveOscarShyftShadowConnectGraceMs: process.env.SHYFT_SHADOW_CONNECT_GRACE_MS,
+    liveOscarShyftShadowOpenMintsOnly: envBool(process.env.SHYFT_SHADOW_OPEN_MINTS_ONLY, true),
     shyftPricePrimaryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_ENABLED, false),
     shyftPricePrimaryMtmEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_MTM_ENABLED, true),
     shyftPricePrimaryDiscoveryEnabled: envBool(process.env.SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED, false),

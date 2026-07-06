@@ -54,6 +54,7 @@ import type {
 } from '../types.js';
 import { fetchLatestSnapshotQuote, getLiveMcUsd, getSolUsd } from '../pricing.js';
 import { buildShadowPriceEvent } from '../stream/shadow-price.js';
+import { buildShyftVsDexQuoteObservation } from '../stream/shyft-shadow-observe.js';
 import { getShyftShadowStreamPrice, isShyftShadowEnabled } from '../stream/shadow-state.js';
 import { resolvePrimaryPriceUsd, buildPricePrimaryEvent } from '../stream/price-primary.js';
 import {
@@ -3419,6 +3420,25 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
         journalAppend(shadowEvent);
         journalLiveStrategy?.(shadowEvent);
+        void buildShyftVsDexQuoteObservation({
+          mint,
+          lane: 'mtm',
+          surface: 'mtm',
+          stream: streamShadow,
+          prodPriceUsd: snapPx > 0 ? snapPx : null,
+          prodMcapUsd: null,
+          prodLiqUsd: null,
+          defiTtlMs: cfg.shyftDefiMcapTtlMs,
+          nowMs: nowShadow,
+        })
+          .then((vsDex) => {
+            if (!vsDex) return;
+            journalAppend(vsDex);
+            journalLiveStrategy?.(vsDex);
+          })
+          .catch(() => {
+            /* observability only */
+          });
       }
     }
     let curMetric = snapPx > 0 ? snapPx : 0;

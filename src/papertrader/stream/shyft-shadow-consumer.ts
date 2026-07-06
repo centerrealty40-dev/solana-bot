@@ -85,6 +85,50 @@ const STALE_CHECK_INTERVAL_MS = 30_000;
 
 type StreamStatus = 'connecting' | 'connected' | 'end' | 'error' | 'decode_error' | 'closed';
 
+export interface ShyftStreamHealthSnapshot {
+  status: StreamStatus | 'idle';
+  detail: string | null;
+  watchedMintCount: number;
+  reconnectCount: number;
+  lastObservationMs: number | null;
+  connectedSinceMs: number | null;
+  observationsTotal: number;
+}
+
+let healthStatus: ShyftStreamHealthSnapshot['status'] = 'idle';
+let healthDetail: string | null = null;
+let healthReconnectCount = 0;
+let healthLastObservationMs: number | null = null;
+let healthConnectedSinceMs: number | null = null;
+let healthObservationsTotal = 0;
+
+function refreshHealthSnapshot(): ShyftStreamHealthSnapshot {
+  return {
+    status: healthStatus,
+    detail: healthDetail,
+    watchedMintCount: getShyftShadowWatchedMints().length,
+    reconnectCount: healthReconnectCount,
+    lastObservationMs: healthLastObservationMs,
+    connectedSinceMs: healthConnectedSinceMs,
+    observationsTotal: healthObservationsTotal,
+  };
+}
+
+/** Read-only health snapshot for `live_shyft_stream_health` journal rows. */
+export function getShyftStreamHealthSnapshot(): ShyftStreamHealthSnapshot {
+  return refreshHealthSnapshot();
+}
+
+/** Test-only reset. */
+export function __resetShyftStreamHealthForTests(): void {
+  healthStatus = 'idle';
+  healthDetail = null;
+  healthReconnectCount = 0;
+  healthLastObservationMs = null;
+  healthConnectedSinceMs = null;
+  healthObservationsTotal = 0;
+}
+
 export interface ShyftShadowConsumerConfig {
   endpoint: string;
   token: string;
@@ -103,6 +147,8 @@ export interface ShyftShadowConsumerCallbacks {
   onError?: (err: unknown) => void;
   /** Per stored stream observation — diagnostics only. */
   onObservation?: (mint: string, priceUsd: number, streamTsMs: number) => void;
+  /** Periodic / transition health snapshot (`live_shyft_stream_health`). */
+  onHealth?: (snapshot: ShyftStreamHealthSnapshot) => void;
 }
 
 export interface ShyftShadowConsumerHandle {
@@ -183,9 +229,26 @@ export function startShyftShadowConsumer(
     }
   }
 
+  function emitHealth(): void {
+    cb.onHealth?.(refreshHealthSnapshot());
+  }
+
+  function noteStatus(status: StreamStatus, detail?: string): void {
+    healthStatus = status;
+    healthDetail = detail ?? null;
+    if (status === 'connected') {
+      healthConnectedSinceMs = Date.now();
+    } else if (status === 'end' || status === 'error' || status === 'closed') {
+      healthConnectedSinceMs = null;
+    }
+    cb.onStatus?.(status, detail);
+    emitHealth();
+  }
+
   function scheduleResubscribe(reason: string): void {
     if (closed || !activeStream) return;
-    cb.onStatus?.('error', reason);
+    healthReconnectCount += 1;
+    noteStatus('error', reason);
     try {
       activeStream.end();
     } catch {
@@ -236,7 +299,8 @@ export function startShyftShadowConsumer(
         try {
           await connectOnce();
         } catch (err) {
-          cb.onStatus?.('error', err instanceof Error ? err.message : String(err));
+          healthReconnectCount += 1;
+          noteStatus('error', err instanceof Error ? err.message : String(err));
           cb.onError?.(err);
         }
         if (closed) break;
@@ -274,7 +338,7 @@ export function startShyftShadowConsumer(
     try {
       parsed = encodeJsonParsed(info, 4 /* WasmUiTransactionEncoding.JsonParsed */, 0, false);
     } catch {
-      cb.onStatus?.('decode_error');
+      noteStatus('decode_error');
       return;
     }
     const balances = parsed.meta?.postTokenBalances;
@@ -291,6 +355,8 @@ export function startShyftShadowConsumer(
       const px = extractStreamPoolPriceUsd(balances, mint, solUsd);
       if (!px) continue;
       lastObservationMs = streamTsMs;
+      healthLastObservationMs = streamTsMs;
+      healthObservationsTotal += 1;
       recordShyftShadowStreamPrice(mint, {
         priceUsd: px.priceUsd,
         streamTsMs,
@@ -304,7 +370,7 @@ export function startShyftShadowConsumer(
     const mints = getShyftShadowWatchedMints();
     if (mints.length === 0) return;
 
-    cb.onStatus?.('connecting', cfg.endpoint);
+    noteStatus('connecting', cfg.endpoint);
     const YellowstoneClient = getYellowstoneClientCtor();
     const client = new YellowstoneClient(cfg.endpoint, cfg.token, undefined, { enabled: false });
     await client.connect();
@@ -314,7 +380,7 @@ export function startShyftShadowConsumer(
     connectedAtMs = Date.now();
     lastObservationMs = 0;
     armConnectGraceTimer();
-    cb.onStatus?.('connected', `${cfg.endpoint} mints=${mints.length}`);
+    noteStatus('connected', `${cfg.endpoint} mints=${mints.length}`);
 
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -322,8 +388,11 @@ export function startShyftShadowConsumer(
         if (settled) return;
         settled = true;
         if (staleTimer) clearInterval(staleTimer);
+        if (healthTimer) clearInterval(healthTimer);
         resolve();
       };
+      const healthTimer = setInterval(() => emitHealth(), 60_000);
+      if (typeof healthTimer.unref === 'function') healthTimer.unref();
       const staleTimer =
         staleStreamMs > 0
           ? setInterval(() => {
@@ -349,12 +418,13 @@ export function startShyftShadowConsumer(
       });
       stream.on('error', (err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        cb.onStatus?.('error', msg);
+        healthReconnectCount += 1;
+        noteStatus('error', msg);
         cb.onError?.(err);
         done();
       });
       stream.on('end', () => {
-        cb.onStatus?.('end');
+        noteStatus('end');
         done();
       });
       stream.on('close', () => done());
@@ -385,7 +455,7 @@ export function startShyftShadowConsumer(
       if (resubscribeDebounceTimer) clearTimeout(resubscribeDebounceTimer);
       clearConnectGraceTimer();
       onShyftShadowMintsChanged(null);
-      cb.onStatus?.('closed');
+      noteStatus('closed');
       try {
         activeStream?.end();
       } catch {

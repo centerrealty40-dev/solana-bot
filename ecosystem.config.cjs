@@ -705,24 +705,23 @@ const PM2_APPS = [
          */
         PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS: '45000',
         /**
-         * 1.11.467 — Этап 1.1: Shyft Yellowstone gRPC SHADOW-стрим (observability only, default OFF).
-         * При '1' один gRPC-консьюмер подписывается на swap-tx по watched/open mint'ам (узкий
-         * accountInclude, НЕ firehose) и пишет журнал `live_shyft_shadow_price` рядом с PG-ценой на
-         * точках входа/MTM — измеряет лаг PG vs стрим. Стрим-цена НИГДЕ не участвует в гейтах/eval/
-         * исполнении. При OFF торговля байт-в-байт = текущая. Креды: SHYFT_GRPC_ENDPOINT (default
-         * https://grpc.fra.shyft.to) + SHYFT_GRPC_TOKEN (x-token) в .env (НЕ сюда).
-         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
+         * Shyft shadow mode (1.11.557): gRPC stream + journal compare vs Dex/PG. Trading stays Dex→PG.
+         * Aliases: SHYFT_SHADOW_ENABLED / SHYFT_STREAM_ENABLED (preferred) + legacy PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED.
+         * Open-mints-only reduces Jul-4 reconnect storms from discovery mint churn.
          */
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
+        SHYFT_SHADOW_ENABLED: '1',
+        SHYFT_STREAM_ENABLED: '1',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '1',
+        SHYFT_SHADOW_OPEN_MINTS_ONLY: '1',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '64',
         /**
          * 1.11.468 — Этап 1.2: Shyft stream-цена PRIMARY для live-oscar (MTM открытых позиций +
          * discovery dip-eval), freshness-gate `SHYFT_MAX_STALE_MS` + fallback на PG/Jupiter. Master
          * флаг default OFF — при OFF источник цены байт-в-байт = текущий PG/Jupiter. Требует включённый
          * Stage 1.1 shadow-консьюмер (PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1 + SHYFT_GRPC_TOKEN), чтобы
          * было что брать как primary.
-         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
+         * Shadow rollout: primary OFF — prod path Dex→PG unchanged.
          */
         SHYFT_PRICE_PRIMARY_ENABLED: '0',
         SHYFT_PRICE_PRIMARY_MTM_ENABLED: '0',
@@ -733,7 +732,7 @@ const PM2_APPS = [
          * TTL-кэшем + fallback на PG/pump.fun. Override `refMcap` (tier) + входы snapshot mcap/liq-гейта.
          * Default OFF — при OFF источник mcap/liq байт-в-байт = текущий PG. Ключ DeFi REST API:
          * SHYFT_DEFI_API_KEY (или SHYFT_API_KEY) в .env; SHYFT_DEFI_API_BASE default https://defi.shyft.to.
-         * Shyft disabled 2026-07-04 — gRPC unstable, Birdeye primary migration.
+         * Shadow rollout: DeFi override OFF — observability via live_shyft_vs_dex_quote only.
          */
         SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
@@ -941,7 +940,7 @@ const PM2_APPS = [
         PERVYY_VYSTREL_MATERIALIZE_ENABLED: '1',
         PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
         /** Shyft shadow: suppress mint-set resubscribes right after connect (boot churn). */
-        SHYFT_SHADOW_CONNECT_GRACE_MS: '15000',
+        SHYFT_SHADOW_CONNECT_GRACE_MS: '30000',
         /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
         LIVE_OSCAR_INTEL_ENABLED: '1',
         LIVE_OSCAR_INTEL_MODE: 'shadow',
