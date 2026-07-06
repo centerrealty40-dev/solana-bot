@@ -996,6 +996,7 @@ const PM2_APPS = [
          * Re-entry после выхода: price ceiling −10% только в post-exit cooldown (10m); после — без dip anchor.
          */
         LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '10',
+        LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT: '20',
         LIVE_REENTRY_MAX_WAIT_MINUTES: '240',
         LIVE_REENTRY_GATE_MAX_AGE_HOURS: '4',
         LIVE_REENTRY_LOSS_MIN_DROP_FROM_LAST_EXIT_PCT: '10',

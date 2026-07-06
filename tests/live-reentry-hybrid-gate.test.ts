@@ -3,10 +3,12 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import {
   appendLiveReentryHybridGateReasons,
+  evaluatePostExitReentryFork,
   isLiveReentryHybridGateEnabled,
   lastExitMarketSnapshotByMintMap,
   lastPostExitBuyCooldownTsByMintMap,
   lastRealExitMarketSnapshotByMintMap,
+  postExitReentryForkObservabilityReason,
   recordAfterFullCloseForMintRepeatGateFromClosedTrade,
   recordLastExitMarketSnapshotAfterClose,
   reentryExitSnapshotForGate,
@@ -18,7 +20,8 @@ const MINT = 'TestMint1111111111111111111111111111111111';
 
 function hybridCfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
   return {
-    liveReentryMinDropFromLastExitPct: 20,
+    liveReentryMinDropFromLastExitPct: 10,
+    liveReentryBreakoutAboveExitPct: 20,
     liveReentryMaxWaitMinutes: 20,
     liveReentryLossMinDropFromLastExitPct: 30,
     liveReentryHybridDisableTimerAfterLoss: true,
@@ -44,7 +47,7 @@ describe('live re-entry hybrid gate', () => {
     ).toBe(false);
   });
 
-  it('blocks profit re-entry at same or higher price during cooldown', () => {
+  it('blocks profit re-entry at same or higher price (fork wait zone)', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -56,13 +59,13 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasonsSame: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.0, reasonsSame, Date.now());
-    expect(reasonsSame.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+    expect(reasonsSame.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
     const reasonsHigher: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasonsHigher, Date.now());
-    expect(reasonsHigher.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+    expect(reasonsHigher.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
-  it('allows profit re-entry below last exit during cooldown', () => {
+  it('blocks profit re-entry between exit and -10% dip (manlet-class churn)', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -74,10 +77,42 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.99, reasons, Date.now());
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
+  });
+
+  it('allows profit re-entry at or below -10% dip', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.89, reasons, Date.now());
     expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
   });
 
-  it('blocks when price above -20% from last exit during loss cooldown', () => {
+  it('+20% breakout bypasses dip wait (standard discovery gates)', () => {
+    const exitTs = Date.now() - 5 * 60_000;
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 1.0,
+      effective_exit_price: 1.0,
+      netPnlUsd: 50,
+      exitReason: 'TRAIL',
+    });
+    const reasons: string[] = [];
+    const obs: string[] = [];
+    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.21, reasons, Date.now(), obs);
+    expect(reasons).toHaveLength(0);
+    expect(obs.some((r) => r.startsWith('reentry_breakout_standard_dip'))).toBe(true);
+  });
+
+  it('blocks when price above -10% from last exit during loss cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -89,10 +124,10 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
-  it('allows dip re-entry when price hit -20% during loss cooldown', () => {
+  it('allows dip re-entry when price hit -30% during loss cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -107,7 +142,7 @@ describe('live re-entry hybrid gate', () => {
     expect(reasons).toHaveLength(0);
   });
 
-  it('allows same-price re-entry after cooldown (no multi-day dip anchor)', () => {
+  it('blocks same-price re-entry after cooldown within gate max-age (manlet fix)', () => {
     const exitTs = Date.now() - 21 * 60_000;
     const cfg = hybridCfg({
       dipLossExitCooldownEnabled: true,
@@ -123,7 +158,7 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(cfg, MINT, 1.0, reasons, Date.now());
-    expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
   it('MENSA scenario: profit exit blocks same-price re-entry during cooldown', () => {
@@ -144,10 +179,31 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(cfg, MINT, 0.00219361, reasons, Date.now());
-    expect(reasons.some((r) => r.startsWith('reentry_wait_below_last_exit_profit'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
-  it('MENSA scenario: exit 2d ago, eval now — no reentry_wait after cooldown', () => {
+  it('MENSA scenario: manlet same-price after cooldown still blocked within max-age', () => {
+    const exitTs = Date.now() - 11 * 60_000;
+    const cfg = hybridCfg({
+      liveReentryMinDropFromLastExitPct: 10,
+      liveReentryMaxWaitMinutes: 240,
+      dipLossExitCooldownEnabled: true,
+      dipLossExitCooldownMinutes: 10,
+    });
+    recordAfterFullCloseForMintRepeatGateFromClosedTrade(cfg, {
+      mint: MINT,
+      exitTs,
+      theoretical_exit_price: 0.01005996,
+      effective_exit_price: 0.01005996,
+      netPnlUsd: 4267,
+      exitReason: 'BREAKEVEN_EXIT',
+    });
+    const reasons: string[] = [];
+    appendLiveReentryHybridGateReasons(cfg, MINT, 0.01002, reasons, Date.now());
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
+  });
+
+  it('MENSA scenario: exit 2d ago, eval now — no reentry_wait after gate max-age', () => {
     const exitTs = Date.now() - 48 * 3_600_000;
     const cfg = hybridCfg({
       liveReentryMinDropFromLastExitPct: 10,
@@ -165,10 +221,10 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(cfg, MINT, 0.0135, reasons, Date.now());
-    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+    expect(reasons.filter((r) => r.startsWith('reentry_wait'))).toHaveLength(0);
   });
 
-  it('after loss cooldown expires: no exit-price ceiling (normal discovery gates)', () => {
+  it('after loss cooldown expires: still requires -10% dip within max-age', () => {
     const exitTs = Date.now() - 11 * 60_000;
     const cfg = hybridCfg({
       dipLossExitCooldownEnabled: true,
@@ -184,40 +240,10 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(cfg, MINT, 0.0135, reasons, Date.now());
-    expect(reasons.filter((r) => r.startsWith('reentry_wait_dip'))).toHaveLength(0);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
-  it('after loss: still requires dip during cooldown window', () => {
-    const exitTs = Date.now() - 5 * 60_000;
-    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
-      mint: MINT,
-      exitTs,
-      theoretical_exit_price: 1.0,
-      effective_exit_price: 1.0,
-      netPnlUsd: -22,
-      exitReason: 'FLASH_CRASH_KILL',
-    });
-    const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.85, reasons, Date.now());
-    expect(reasons.some((r) => r.includes('_loss'))).toBe(true);
-  });
-
-  it('after cooldown: no exit-price ceiling for profit or loss exits', () => {
-    const exitTs = Date.now() - 11 * 60_000;
-    recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
-      mint: MINT,
-      exitTs,
-      theoretical_exit_price: 1.0,
-      effective_exit_price: 1.0,
-      netPnlUsd: 50,
-      exitReason: 'TP',
-    });
-    const reasons: string[] = [];
-    appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 1.05, reasons, Date.now());
-    expect(reasons).toHaveLength(0);
-  });
-
-  it('after loss: requires 30% dip not 20% during cooldown', () => {
+  it('after loss: still requires 30% dip not 10% during cooldown', () => {
     const exitTs = Date.now() - 5 * 60_000;
     recordAfterFullCloseForMintRepeatGateFromClosedTrade(hybridCfg(), {
       mint: MINT,
@@ -229,10 +255,24 @@ describe('live re-entry hybrid gate', () => {
     });
     const reasons: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.75, reasons, Date.now());
-    expect(reasons.some((r) => r.includes('dip30pct') || r.includes('dip30pct_loss'))).toBe(true);
+    expect(reasons.some((r) => r.includes('dip=30pct'))).toBe(true);
     const ok: string[] = [];
     appendLiveReentryHybridGateReasons(hybridCfg(), MINT, 0.69, ok, Date.now());
     expect(ok).toHaveLength(0);
+  });
+
+  it('evaluatePostExitReentryFork returns breakout observability', () => {
+    const snap = {
+      exitTs: Date.now() - 60_000,
+      marketUsd: 1.0,
+      netPnlUsd: 10,
+      exitReason: 'TRAIL',
+    };
+    const fork = evaluatePostExitReentryFork(hybridCfg(), snap, 1.25);
+    expect(fork.kind).toBe('breakout');
+    expect(postExitReentryForkObservabilityReason(fork)?.startsWith('reentry_breakout_standard_dip')).toBe(
+      true,
+    );
   });
 
   it('RECONCILE_ORPHAN does not overwrite recent FLASH_CRASH exit snapshot', () => {
@@ -288,7 +328,7 @@ describe('live re-entry hybrid gate', () => {
       reasons,
       Date.now(),
     );
-    expect(reasons.some((r) => r.startsWith('reentry_wait_dip'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('reentry_wait_dip_below_exit'))).toBe(true);
   });
 
   it('resolveReconcileOrphanReentryGateMeta inherits stress partial reason', () => {
