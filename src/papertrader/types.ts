@@ -841,12 +841,15 @@ export interface SnapshotFeatures {
       newMintMinActiveHours?: number;
     };
   };
-  /** Old-mint dormant baseline → sudden vol1h spike (DADDY RCA 2026-07-05). */
+  /** Ephemeral volume spike: dormant baseline → sudden vol1h (48h, age-agnostic). */
   old_mint_dormant_vol_spike?: {
     enabled: boolean;
     tokenAgeDays: number | null;
     coverageOk: boolean;
     lookbackHours: number;
+    baselineStartHoursAgo: number;
+    baselineEndHoursAgo: number;
+    baselineMode: 'primary' | 'fallback_first24h' | null;
     dormantLookbackHours: number;
     recentHours: number;
     baselineHoursWithData: number;

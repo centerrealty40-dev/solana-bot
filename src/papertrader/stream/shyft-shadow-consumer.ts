@@ -22,6 +22,15 @@ import type {
 import { getSolUsd } from '../pricing.js';
 import { extractStreamPoolPriceUsd, type ShadowTokenBalance } from './shadow-price.js';
 import {
+  DEFAULT_CIRCUIT_COOLDOWN_MS,
+  DEFAULT_CIRCUIT_FAST_FAILS,
+  DEFAULT_CIRCUIT_FAST_FAIL_WINDOW_MS,
+  DEFAULT_STABLE_BEFORE_BACKOFF_RESET_MS,
+  FAST_FAIL_MAX_SESSION_MS,
+  isSingleMintSetChange,
+  ShyftStreamCircuitBreaker,
+} from './shyft-shadow-resilience.js';
+import {
   getShyftShadowWatchedMints,
   onShyftShadowMintsChanged,
   recordShyftShadowStreamPrice,
@@ -83,7 +92,14 @@ const DEFAULT_CONNECT_GRACE_MS = 15_000;
 const DEFAULT_STALE_STREAM_MS = 5 * 60_000;
 const STALE_CHECK_INTERVAL_MS = 30_000;
 
-type StreamStatus = 'connecting' | 'connected' | 'end' | 'error' | 'decode_error' | 'closed';
+type StreamStatus =
+  | 'connecting'
+  | 'connected'
+  | 'end'
+  | 'error'
+  | 'decode_error'
+  | 'closed'
+  | 'circuit_open';
 
 export interface ShyftStreamHealthSnapshot {
   status: StreamStatus | 'idle';
@@ -139,6 +155,11 @@ export interface ShyftShadowConsumerConfig {
   connectGraceMs?: number;
   /** Reconnect when connected but no prices observed for this many ms (0 = disabled). */
   staleStreamMs?: number;
+  /** Reset reconnect backoff only after first observation or this many ms stable (0 = first obs only). */
+  stableBeforeBackoffResetMs?: number;
+  circuitFastFails?: number;
+  circuitFastFailWindowMs?: number;
+  circuitCooldownMs?: number;
 }
 
 export interface ShyftShadowConsumerCallbacks {
@@ -159,6 +180,8 @@ export interface ShyftShadowConsumerHandle {
 interface ParsedTxView {
   meta?: { postTokenBalances?: readonly ShadowTokenBalance[] | null } | null;
 }
+
+type WritableStream = { write: (r: SubscribeRequest) => void; end: () => void };
 
 const encodeJsonParsed = txEncode.encode as unknown as (
   info: SubscribeUpdateTransactionInfo,
@@ -211,21 +234,40 @@ export function startShyftShadowConsumer(
   const reconnectInitialMs = cfg.reconnectInitialMs ?? DEFAULT_RECONNECT_INITIAL_MS;
   const connectGraceMs = cfg.connectGraceMs ?? DEFAULT_CONNECT_GRACE_MS;
   const staleStreamMs = cfg.staleStreamMs ?? DEFAULT_STALE_STREAM_MS;
+  const stableBeforeBackoffResetMs =
+    cfg.stableBeforeBackoffResetMs ?? DEFAULT_STABLE_BEFORE_BACKOFF_RESET_MS;
+  const circuit = new ShyftStreamCircuitBreaker(
+    cfg.circuitFastFails ?? DEFAULT_CIRCUIT_FAST_FAILS,
+    cfg.circuitFastFailWindowMs ?? DEFAULT_CIRCUIT_FAST_FAIL_WINDOW_MS,
+    cfg.circuitCooldownMs ?? DEFAULT_CIRCUIT_COOLDOWN_MS,
+  );
 
   let closed = false;
   let backoff = reconnectInitialMs;
   let connectLoopStarted = false;
-  let activeStream: { write: (r: SubscribeRequest) => void; end: () => void } | null = null;
+  let activeStream: WritableStream | null = null;
+  /** Stream handle allowed to accept writes (ping / in-place resubscribe). Cleared before end(). */
+  let writableStream: WritableStream | null = null;
   let resubscribeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let connectGraceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingResubscribeAfterGrace = false;
   let lastObservationMs = 0;
   let connectedAtMs = 0;
+  let subscribedMints: string[] = [];
+  let sessionBackoffReset = false;
+  let stableBackoffTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearConnectGraceTimer(): void {
     if (connectGraceTimer) {
       clearTimeout(connectGraceTimer);
       connectGraceTimer = null;
+    }
+  }
+
+  function clearStableBackoffTimer(): void {
+    if (stableBackoffTimer) {
+      clearTimeout(stableBackoffTimer);
+      stableBackoffTimer = null;
     }
   }
 
@@ -238,15 +280,56 @@ export function startShyftShadowConsumer(
     healthDetail = detail ?? null;
     if (status === 'connected') {
       healthConnectedSinceMs = Date.now();
-    } else if (status === 'end' || status === 'error' || status === 'closed') {
+    } else if (
+      status === 'end' ||
+      status === 'error' ||
+      status === 'closed' ||
+      status === 'circuit_open'
+    ) {
       healthConnectedSinceMs = null;
     }
     cb.onStatus?.(status, detail);
     emitHealth();
   }
 
+  function maybeResetBackoff(_reason: 'observation' | 'stable_timer'): void {
+    if (sessionBackoffReset) return;
+    sessionBackoffReset = true;
+    clearStableBackoffTimer();
+    backoff = reconnectInitialMs;
+    circuit.reset();
+  }
+
+  function armStableBackoffTimer(): void {
+    clearStableBackoffTimer();
+    if (stableBeforeBackoffResetMs <= 0) return;
+    stableBackoffTimer = setTimeout(() => {
+      stableBackoffTimer = null;
+      if (closed || !writableStream) return;
+      maybeResetBackoff('stable_timer');
+    }, stableBeforeBackoffResetMs);
+    if (typeof stableBackoffTimer.unref === 'function') stableBackoffTimer.unref();
+  }
+
+  function invalidateWritableStream(): void {
+    writableStream = null;
+  }
+
+  function safeStreamWrite(req: SubscribeRequest): boolean {
+    const stream = writableStream;
+    if (!stream || stream !== activeStream) return false;
+    try {
+      stream.write(req);
+      return true;
+    } catch {
+      invalidateWritableStream();
+      return false;
+    }
+  }
+
   function scheduleResubscribe(reason: string): void {
     if (closed || !activeStream) return;
+    invalidateWritableStream();
     healthReconnectCount += 1;
     noteStatus('error', reason);
     try {
@@ -266,6 +349,26 @@ export function startShyftShadowConsumer(
     if (resubscribeDebounceTimer) clearTimeout(resubscribeDebounceTimer);
     resubscribeDebounceTimer = setTimeout(() => {
       resubscribeDebounceTimer = null;
+      if (closed || !activeStream) return;
+
+      const newMints = getShyftShadowWatchedMints().slice(0, maxAccountInclude);
+      const streamStable =
+        lastObservationMs > 0 &&
+        connectedAtMs > 0 &&
+        Date.now() - connectedAtMs >= Math.min(connectGraceMs, stableBeforeBackoffResetMs);
+
+      if (
+        streamStable &&
+        writableStream &&
+        isSingleMintSetChange(subscribedMints, newMints)
+      ) {
+        if (safeStreamWrite(buildSubscribeRequest(newMints, maxAccountInclude))) {
+          subscribedMints = [...newMints];
+          noteStatus('connected', `in_place_mint_update mints=${newMints.length}`);
+          return;
+        }
+      }
+
       scheduleResubscribe('resubscribe_mint_set_changed');
     }, RESUBSCRIBE_DEBOUNCE_MS);
     if (typeof resubscribeDebounceTimer.unref === 'function') resubscribeDebounceTimer.unref();
@@ -286,21 +389,41 @@ export function startShyftShadowConsumer(
     if (typeof connectGraceTimer.unref === 'function') connectGraceTimer.unref();
   }
 
+  function recordSessionFailure(sessionStartedMs: number, errMsg: string): void {
+    const sessionMs = Date.now() - sessionStartedMs;
+    if (sessionMs <= FAST_FAIL_MAX_SESSION_MS) {
+      const tripped = circuit.recordFastFail();
+      if (tripped) {
+        noteStatus('circuit_open', `fast_fail_cooldown ${Math.round(circuit.remainingMs() / 1000)}s`);
+      }
+    }
+    noteStatus('error', errMsg);
+  }
+
   function startConnectLoop(): void {
     if (connectLoopStarted || closed) return;
     connectLoopStarted = true;
     void (async () => {
       while (!closed) {
+        if (circuit.isOpen()) {
+          const wait = circuit.remainingMs();
+          noteStatus('circuit_open', `cooldown ${Math.round(wait / 1000)}s remaining`);
+          await delay(wait);
+          continue;
+        }
+
         const mints = getShyftShadowWatchedMints();
         if (mints.length === 0) {
           await delay(reconnectInitialMs);
           continue;
         }
+        const sessionStartedMs = Date.now();
         try {
           await connectOnce();
         } catch (err) {
           healthReconnectCount += 1;
-          noteStatus('error', err instanceof Error ? err.message : String(err));
+          const msg = err instanceof Error ? err.message : String(err);
+          recordSessionFailure(sessionStartedMs, msg);
           cb.onError?.(err);
         }
         if (closed) break;
@@ -322,11 +445,7 @@ export function startShyftShadowConsumer(
 
   function handleUpdate(update: SubscribeUpdate): void {
     if (update.ping) {
-      try {
-        activeStream?.write(pingRequest());
-      } catch {
-        /* ignore ping write failures — keepalive is best-effort */
-      }
+      safeStreamWrite(pingRequest());
       return;
     }
     const info = update.transaction?.transaction;
@@ -357,6 +476,7 @@ export function startShyftShadowConsumer(
       lastObservationMs = streamTsMs;
       healthLastObservationMs = streamTsMs;
       healthObservationsTotal += 1;
+      maybeResetBackoff('observation');
       recordShyftShadowStreamPrice(mint, {
         priceUsd: px.priceUsd,
         streamTsMs,
@@ -376,19 +496,26 @@ export function startShyftShadowConsumer(
     await client.connect();
     const stream = await client.subscribe(buildSubscribeRequest(mints, maxAccountInclude));
     activeStream = stream;
-    backoff = reconnectInitialMs;
+    writableStream = stream;
+    subscribedMints = mints.slice(0, maxAccountInclude);
+    sessionBackoffReset = false;
     connectedAtMs = Date.now();
     lastObservationMs = 0;
     armConnectGraceTimer();
+    armStableBackoffTimer();
     noteStatus('connected', `${cfg.endpoint} mints=${mints.length}`);
 
     await new Promise<void>((resolve) => {
       let settled = false;
-      const done = (): void => {
+      const sessionStartedMs = connectedAtMs;
+      const done = (errMsg?: string): void => {
         if (settled) return;
         settled = true;
+        invalidateWritableStream();
+        clearStableBackoffTimer();
         if (staleTimer) clearInterval(staleTimer);
         if (healthTimer) clearInterval(healthTimer);
+        if (errMsg) recordSessionFailure(sessionStartedMs, errMsg);
         resolve();
       };
       const healthTimer = setInterval(() => emitHealth(), 60_000);
@@ -419,9 +546,8 @@ export function startShyftShadowConsumer(
       stream.on('error', (err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         healthReconnectCount += 1;
-        noteStatus('error', msg);
+        done(msg);
         cb.onError?.(err);
-        done();
       });
       stream.on('end', () => {
         noteStatus('end');
@@ -431,6 +557,7 @@ export function startShyftShadowConsumer(
     });
 
     activeStream = null;
+    invalidateWritableStream();
     try {
       stream.end();
     } catch {
@@ -454,7 +581,9 @@ export function startShyftShadowConsumer(
       closed = true;
       if (resubscribeDebounceTimer) clearTimeout(resubscribeDebounceTimer);
       clearConnectGraceTimer();
+      clearStableBackoffTimer();
       onShyftShadowMintsChanged(null);
+      invalidateWritableStream();
       noteStatus('closed');
       try {
         activeStream?.end();

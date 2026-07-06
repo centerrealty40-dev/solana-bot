@@ -111,8 +111,8 @@ const ConfigSchema = z.object({
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
   liveStagedEntryFirstLegUsd: z.coerce.number().nonnegative().default(400),
-  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(1500),
-  liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(2000),
+  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(1000),
+  liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(1000),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),
   /**
@@ -321,21 +321,21 @@ const ConfigSchema = z.object({
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** Prod sub-tier boundary ($3M floor = low max when low lane ON). */
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
-  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(7_500),
-  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(7_500),
+  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(5_000),
+  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(5_000),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(1000),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(1000),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
-  liveOscarLowMcapEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(1000),
+  liveOscarLowMcapEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapEntrySplitLeg4Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapEntrySplitLeg5Usd: z.coerce.number().nonnegative().default(0),
-  liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(3000),
+  liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(2000),
   /** Staged avg drop % from signal for low tier (e.g. 10 = −10%). */
   liveOscarLowMcapStagedAvgDropPct: z.coerce.number().min(0).max(90).default(10),
   /** Leg-3 staged avg @ −10% for low tier; prod uses `liveStagedEntrySecondLegUsd`. */
-  liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(1000),
+  liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(500),
   liveOscarLowMcapStagedAvgSecondDropPct: z.coerce.number().min(0).max(90).default(20),
-  liveOscarLowMcapStagedAvgSecondLegUsd: z.coerce.number().nonnegative().default(1500),
+  liveOscarLowMcapStagedAvgSecondLegUsd: z.coerce.number().nonnegative().default(500),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /**
    * Live Oscar scalp_wave lane: min age 12h (no max), $800k–$30M mcap, shallow dip −8..−15%,
@@ -807,18 +807,22 @@ const ConfigSchema = z.object({
   volumeEphemeralBirdeyeFreshBypass: z.boolean().default(true),
 
   /**
-   * Old-mint dormant volume spike guard: block long-lived mints after prolonged quiet
-   * baseline when vol1h suddenly explodes (DADDY RCA 2026-07-05).
+   * Ephemeral volume spike guard (48h): block dormant baseline → sudden vol1h explosion
+   * regardless of token age (DADDY RCA 2026-07-05). Aligns with PAPER_POST_MIN_AGE_MIN=2880.
    */
   oldMintDormantVolSpikeGuardEnabled: z.boolean().default(false),
-  /** Min token age (days) from snapshot `token_age_min` before rule can apply. */
-  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(1).max(730).default(14),
-  /** Young mints below this age (days) always skip — do not block normal pumps. */
-  oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(7),
-  /** Total PG lookback window (hours). */
-  oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(120),
-  /** Baseline dormant window length ending before recent spike window (hours). */
-  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(72),
+  /** Min token age (days) before rule applies; 0 = age-agnostic (default). */
+  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(0).max(730).default(0),
+  /** Mints below this age (days) skip — matches post entry floor (~48h / 2d). */
+  oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(2),
+  /** Total PG lookback window (hours); default 48h aligned with post min age. */
+  oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(48),
+  /** Baseline window start (hours ago); default 48h = [24h,48h) ago when paired with end. */
+  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(144).default(48),
+  /** Baseline window end (hours ago); default 24h. */
+  oldMintDormantVolSpikeBaselineEndHoursAgo: z.coerce.number().int().min(6).max(120).default(24),
+  /** @deprecated Use baselineStartHoursAgo; kept for env backward compat. */
+  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(48),
   /** Recent hours where spike is measured (excluded from baseline). */
   oldMintDormantVolSpikeRecentHours: z.coerce.number().int().min(3).max(24).default(6),
   /** Hour counts as dormant when max vol1h in hour <= this (USD). */
@@ -827,8 +831,8 @@ const ConfigSchema = z.object({
   oldMintDormantVolSpikeDormantVol5mMaxUsd: z.coerce.number().nonnegative().default(5_000),
   /** Min share of baseline hours that were dormant (0–1). */
   oldMintDormantVolSpikeMinDormantHourFraction: z.coerce.number().min(0.5).max(1).default(0.75),
-  /** Min baseline hours with PG data before rule applies. */
-  oldMintDormantVolSpikeMinBaselineHours: z.coerce.number().int().min(12).max(120).default(24),
+  /** Min baseline hours with PG data before rule applies (primary or fallback window). */
+  oldMintDormantVolSpikeMinBaselineHours: z.coerce.number().int().min(12).max(120).default(18),
   /** Effective recent vol1h must reach this to count as spike (USD). */
   oldMintDormantVolSpikeMinSpikeVol1hUsd: z.coerce.number().nonnegative().default(25_000),
   /** Block when effectiveRecentVol1h / baselineP90Vol1h >= this ratio. */
@@ -1765,6 +1769,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     oldMintDormantVolSpikeMaxYoungTokenAgeDays:
       process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MAX_YOUNG_TOKEN_AGE_DAYS,
     oldMintDormantVolSpikeLookbackHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeBaselineStartHoursAgo:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_START_HOURS ??
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeBaselineEndHoursAgo:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_END_HOURS,
     oldMintDormantVolSpikeDormantLookbackHours:
       process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_LOOKBACK_HOURS,
     oldMintDormantVolSpikeRecentHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_RECENT_HOURS,
