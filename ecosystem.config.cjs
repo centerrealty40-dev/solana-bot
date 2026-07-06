@@ -2017,6 +2017,7 @@ const PM2_APPS = [
         ...PM2_JUPITER_KEY_ENV,
         ...JUPITER_PRO_TRADING_ENV,
         ...PM2_SOLANA_RPC_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
         COPY_TRADER_SHARED_OSCAR_WALLET: '1',
