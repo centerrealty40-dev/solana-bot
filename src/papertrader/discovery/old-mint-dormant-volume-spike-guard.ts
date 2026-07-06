@@ -17,6 +17,7 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
 import { sourceSnapshotTable } from '../dip-detector.js';
+import { vol5mToVol1hRatio } from './volume-spread-health.js';
 
 export interface OldMintDormantVolSpikeFeatures {
   lookbackHours: number;
@@ -43,6 +44,13 @@ export interface OldMintDormantVolSpikeFeatures {
   effectiveRecentVol1hUsd: number | null;
   vol1hSpikeRatio: number | null;
   coverageOk: boolean;
+  /** Blocked via live Dex quote when PG baseline coverage was insufficient. */
+  liveQuoteNoPgBaselineBlock?: boolean;
+}
+
+export interface OldMintDormantVolSpikeEvalOpts {
+  /** Fresh Birdeye/DexScreener quote on evalRow — enables live-spike block without PG baseline. */
+  freshExternalMarketQuote?: boolean;
 }
 
 export interface OldMintDormantVolSpikeEvalResult {
@@ -91,6 +99,53 @@ function tokenAgeDaysFromRow(row: SnapshotCandidateRow): number | null {
   const ageMin = Number(row.token_age_min ?? row.age_min ?? 0);
   if (!Number.isFinite(ageMin) || ageMin <= 0) return null;
   return +(ageMin / 1440).toFixed(2);
+}
+
+/** Spike ratio denominator: median when baseline was mostly dormant (p90 skewed by rare bursts). */
+export function dormantSpikeBaselineRefUsd(
+  features: Pick<
+    OldMintDormantVolSpikeFeatures,
+    'baselineMedianVol1hUsd' | 'baselineP90Vol1hUsd' | 'dormantHourFraction'
+  >,
+  cfg: PaperTraderConfig,
+): number | null {
+  const median = features.baselineMedianVol1hUsd;
+  const p90 = features.baselineP90Vol1hUsd;
+  const dormantFrac = features.dormantHourFraction ?? 0;
+  const mostlyDormant = dormantFrac >= cfg.oldMintDormantVolSpikeMinDormantHourFraction;
+  const lowBaseline =
+    median != null && median <= cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd;
+  if (mostlyDormant && lowBaseline && median != null) {
+    return Math.max(median, 500);
+  }
+  if (p90 != null) return Math.max(p90, 500);
+  if (median != null) return Math.max(median, 500);
+  return null;
+}
+
+/**
+ * When PG baseline is thin: block inflated vol1h + dead vol5m tail on fresh Dex quote
+ * (DADDY RCA — coverageOk=false fail-open).
+ */
+function evaluateLiveQuoteSpikeWithoutPgBaseline(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+): { block: boolean; reason?: string } {
+  const vol1h = Number(row.volume_1h ?? 0);
+  const vol5m = Number(row.volume_5m ?? 0);
+  if (!Number.isFinite(vol1h) || vol1h < cfg.oldMintDormantVolSpikeMinSpikeVol1hUsd) {
+    return { block: false };
+  }
+  const deadVol5m =
+    Number.isFinite(vol5m) && vol5m <= cfg.oldMintDormantVolSpikeDormantVol5mMaxUsd;
+  const ratio = vol5mToVol1hRatio(row);
+  const washLike =
+    ratio != null && ratio < cfg.volumeGuardNewMintMinVol5mToVol1hRatio;
+  if (!deadVol5m || !washLike) return { block: false };
+  return {
+    block: true,
+    reason: `ephemeral_volume_spike:live_quote_no_pg_baseline_vol1h=$${Math.round(vol1h)}_vol5m=$${Math.round(vol5m)}_vol5m_vol1h=${(ratio * 100).toFixed(1)}%`,
+  };
 }
 
 /**
@@ -263,6 +318,7 @@ export function evaluateOldMintDormantVolSpikeGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: OldMintDormantVolSpikeFeatures,
+  opts?: OldMintDormantVolSpikeEvalOpts,
 ): OldMintDormantVolSpikeEvalResult {
   if (!cfg.oldMintDormantVolSpikeGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
@@ -296,29 +352,28 @@ export function evaluateOldMintDormantVolSpikeGuard(
       ? Math.max(currentVol1h ?? 0, recentMaxVol1h ?? 0)
       : null;
 
-  const baselineRef =
-    baseCtx.baselineP90Vol1hUsd != null
-      ? Math.max(baseCtx.baselineP90Vol1hUsd, 500)
-      : baseCtx.baselineMedianVol1hUsd != null
-        ? Math.max(baseCtx.baselineMedianVol1hUsd, 500)
-        : null;
-
-  const vol1hSpikeRatio =
-    effectiveRecentVol1h != null && baselineRef != null && baselineRef > 0
-      ? +(effectiveRecentVol1h / baselineRef).toFixed(2)
-      : null;
-
   const features: OldMintDormantVolSpikeFeatures = {
     ...baseCtx,
     tokenAgeDays,
     currentVol1hUsd: currentVol1h,
     currentVol5mUsd: currentVol5m,
     effectiveRecentVol1hUsd: effectiveRecentVol1h,
-    vol1hSpikeRatio,
+    vol1hSpikeRatio: null,
   };
 
   const blockedReasons: string[] = [];
   if (!features.coverageOk) {
+    if (opts?.freshExternalMarketQuote === true) {
+      const live = evaluateLiveQuoteSpikeWithoutPgBaseline(cfg, row);
+      if (live.block && live.reason) {
+        blockedReasons.push(live.reason);
+        return {
+          blocked: true,
+          blockedReasons,
+          features: { ...features, liveQuoteNoPgBaselineBlock: true },
+        };
+      }
+    }
     return { blocked: false, blockedReasons, features };
   }
 
@@ -329,6 +384,13 @@ export function evaluateOldMintDormantVolSpikeGuard(
     features.baselineMedianVol1hUsd <= cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd;
   const wasDormant = mostlyDormant && lowBaseline;
 
+  const baselineRef = dormantSpikeBaselineRefUsd(features, cfg);
+  const vol1hSpikeRatio =
+    effectiveRecentVol1h != null && baselineRef != null && baselineRef > 0
+      ? +(effectiveRecentVol1h / baselineRef).toFixed(2)
+      : null;
+  features.vol1hSpikeRatio = vol1hSpikeRatio;
+
   const activeSpike =
     effectiveRecentVol1h != null &&
     effectiveRecentVol1h >= cfg.oldMintDormantVolSpikeMinSpikeVol1hUsd;
@@ -337,9 +399,11 @@ export function evaluateOldMintDormantVolSpikeGuard(
 
   if (wasDormant && activeSpike && sharpSpike) {
     const baselineTag =
-      features.baselineMode === 'fallback_first24h' ? 'baseline=fallback24h' : 'baseline=24-48h';
+      features.baselineMode === 'fallback_first24h'
+        ? 'baseline=fallback24h'
+        : `baseline=${features.baselineStartHoursAgo}-${features.baselineEndHoursAgo}h`;
     blockedReasons.push(
-      `ephemeral_volume_spike:${baselineTag}_age=${tokenAgeDays ?? '?'}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_p90=$${Math.round(features.baselineP90Vol1hUsd ?? features.baselineMedianVol1hUsd ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
+      `ephemeral_volume_spike:${baselineTag}_age=${tokenAgeDays ?? '?'}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_ref=$${Math.round(baselineRef ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
     );
   }
 

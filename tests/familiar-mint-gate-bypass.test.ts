@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import { evaluatePgDataCoverageGuard } from '../src/papertrader/discovery/pg-data-coverage-guard.js';
 import { evaluateVolumeEphemeralGuard } from '../src/papertrader/discovery/volume-ephemeral-guard.js';
+import { isFamiliarMint, buildKnownMintTradeHistory } from '../src/papertrader/discovery/known-mint.js';
 import { lastEntryTsByMintMap } from '../src/papertrader/discovery/dip-clones.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 import type { GlobalPgCoverageState, MintPgCoverageFeatures } from '../src/papertrader/discovery/pg-data-coverage-guard.js';
@@ -49,8 +50,7 @@ function pgCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     pgDataCoverageAutoEscalate: true,
     pgDataCoverageKnownMintGapBypass: true,
     pgDataCoverageKnownMintLookbackDays: 14,
-    familiarMintGateBypassEnabled: true,
-    pgCoverageFamiliarMintStaleRelax: true,
+    pgCoverageBirdeyeFreshBypass: true,
     volumeEphemeralMinActiveHourVol5mUsd: 8_000,
     volumeSybilGuardEnabled: false,
     volumeEphemeralGuardEnabled: true,
@@ -73,7 +73,7 @@ function ephemeralCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig 
     volumeGuardNewMintMinVol5mToVol1hRatio: 0.08,
     volumeGuardNewMintVol1hWashMinUsd: 36_000,
     volumeEphemeralNewMintMinActiveHours: 8,
-    familiarMintGateBypassEnabled: true,
+    volumeEphemeralBirdeyeFreshBypass: true,
     ...over,
   } as PaperTraderConfig;
 }
@@ -139,12 +139,29 @@ function freeEphemeralCtx(): VolumeEphemeralFeatures {
   };
 }
 
-describe('familiar mint gate bypass — manlet-like (DdPrHY)', () => {
+describe('familiar mint tracking (audit only, no gate bypass)', () => {
   afterEach(() => {
     lastEntryTsByMintMap.delete(MANLET_MINT);
   });
 
-  it('passes pg_stale_now for familiar mint with stable vol5m when relax enabled', () => {
+  it('isFamiliarMint true for journal repeat-traded mint without bypass env', () => {
+    lastEntryTsByMintMap.set(MANLET_MINT, Date.now() - 6 * 3_600_000);
+    const history = buildKnownMintTradeHistory({
+      lastEntryTsByMint: lastEntryTsByMintMap,
+      lastPostExitBuyCooldownTsByMint: new Map(),
+      lastRealExitMarketSnapshotByMint: new Map(),
+      lastExitMarketSnapshotByMint: new Map(),
+    });
+    expect(isFamiliarMint(pgCfg(), MANLET_MINT, history)).toBe(true);
+  });
+});
+
+describe('manlet-like repeat mint — Dex fresh bypass replaces familiar crutch', () => {
+  afterEach(() => {
+    lastEntryTsByMintMap.delete(MANLET_MINT);
+  });
+
+  it('blocks familiar mint on pg_stale without fresh Dex quote', () => {
     lastEntryTsByMintMap.set(MANLET_MINT, Date.now() - 6 * 3_600_000);
     const r = evaluatePgDataCoverageGuard(
       pgCfg(),
@@ -152,28 +169,29 @@ describe('familiar mint gate bypass — manlet-like (DdPrHY)', () => {
       mintCtx(),
       globalStale(1071),
       true,
-      { knownMint: true, familiarMint: true },
+      { knownMint: true, freshExternalMarketQuote: false },
     );
-    expect(r.blocked).toBe(false);
-    expect(r.features.familiarMintStaleBypass).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(false);
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
+    expect(r.features.birdeyeFreshBypass).toBe(false);
   });
 
-  it('still blocks familiar mint on pg_stale when stable vol but relax disabled', () => {
+  it('passes familiar mint on pg_stale when fresh Dex quote bypass enabled', () => {
     lastEntryTsByMintMap.set(MANLET_MINT, Date.now() - 6 * 3_600_000);
     const r = evaluatePgDataCoverageGuard(
-      pgCfg({ pgCoverageFamiliarMintStaleRelax: false }),
+      pgCfg(),
       baseRow(),
       mintCtx(),
       globalStale(1071),
       true,
-      { knownMint: true, familiarMint: true },
+      { knownMint: true, freshExternalMarketQuote: true },
     );
-    expect(r.blocked).toBe(true);
-    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
+    expect(r.blocked).toBe(false);
+    expect(r.features.birdeyeFreshBypass).toBe(true);
+    expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(false);
   });
 
-  it('bypasses volume_ephemeral for familiar mint', () => {
+  it('still blocks familiar mint on volume_ephemeral spike (DADDY-class)', () => {
     const r = evaluateVolumeEphemeralGuard(
       ephemeralCfg(),
       baseRow({ volume_5m: 2_000, volume_1h: 80_000 }),
@@ -186,15 +204,17 @@ describe('familiar mint gate bypass — manlet-like (DdPrHY)', () => {
         peakToCurrentRatio: 0.004,
         coverageOk: true,
       },
-      { knownMint: true, familiarMint: true },
+      { knownMint: true, freshExternalMarketQuote: false },
     );
-    expect(r.blocked).toBe(false);
-    expect(r.features.familiarMintBypass).toBe(true);
+    expect(r.blocked).toBe(true);
+    expect(
+      r.blockedReasons.some((x) => x.startsWith('volume_ephemeral:known_mint_sustained_dead')),
+    ).toBe(true);
   });
 });
 
-describe('familiar mint gate bypass — FREE-like (82XVW new mint)', () => {
-  it('still blocks new mint on volume_ephemeral burst even when bypass flag enabled', () => {
+describe('new mint — guards stay strict', () => {
+  it('blocks new mint on volume_ephemeral burst', () => {
     const r = evaluateVolumeEphemeralGuard(
       ephemeralCfg(),
       baseRow({
@@ -205,7 +225,7 @@ describe('familiar mint gate bypass — FREE-like (82XVW new mint)', () => {
         market_cap_usd: 800_000,
       }),
       freeEphemeralCtx(),
-      { knownMint: false, familiarMint: false },
+      { knownMint: false },
     );
     expect(r.blocked).toBe(true);
     expect(
@@ -213,14 +233,14 @@ describe('familiar mint gate bypass — FREE-like (82XVW new mint)', () => {
     ).toBe(true);
   });
 
-  it('still blocks new mint on pg_stale even when relax flag enabled globally', () => {
+  it('blocks new mint on pg_stale without fresh Dex quote', () => {
     const r = evaluatePgDataCoverageGuard(
       pgCfg(),
       baseRow({ mint: FREE_MINT, symbol: 'FREE' }),
       mintCtx(),
       globalStale(1071),
       true,
-      { knownMint: false, familiarMint: false },
+      { knownMint: false, freshExternalMarketQuote: false },
     );
     expect(r.blocked).toBe(true);
     expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);

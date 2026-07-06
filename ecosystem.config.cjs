@@ -1103,7 +1103,7 @@ const PM2_APPS = [
         /**
          * Volume Ephemeral guard (1.11.219): блокирует монеты с объёмом, сжатым
          * в узкое почасовое окно (разовый burst — паттерн GOAT).
-         * Off on prod: buys proceed when snapshot/dip pass (DADDY RCA Jul 5); no TG advice.
+         * Re-enabled with Birdeye fresh bypass (DADDY RCA Jul 5–6).
          */
         PAPER_VOLUME_EPHEMERAL_GUARD_ENABLED: '1',
         PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS: '1',
@@ -1120,17 +1120,17 @@ const PM2_APPS = [
         PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS: '8',
         PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO: '0.08',
         PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD: '36000',
-        /** Ephemeral volume spike (48h dormant→spike, age-agnostic; DADDY RCA 2026-07-05). */
+        /** Ephemeral volume spike (7d dormant→spike, age-agnostic; DADDY RCA 2026-07-05). */
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_GUARD_ENABLED: '1',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_TOKEN_AGE_DAYS: '0',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MAX_YOUNG_TOKEN_AGE_DAYS: '2',
-        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_LOOKBACK_HOURS: '48',
-        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_START_HOURS: '48',
-        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_END_HOURS: '24',
+        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_LOOKBACK_HOURS: '168',
+        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_START_HOURS: '168',
+        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_END_HOURS: '48',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_RECENT_HOURS: '6',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL1H_MAX_USD: '10000',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL5M_MAX_USD: '5000',
-        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_DORMANT_HOUR_FRACTION: '0.75',
+        PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_DORMANT_HOUR_FRACTION: '0.55',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_BASELINE_HOURS: '18',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_SPIKE_VOL1H_USD: '25000',
         PAPER_OLD_MINT_DORMANT_VOL_SPIKE_VOL1H_RATIO_MIN: '5',
@@ -1155,9 +1155,7 @@ const PM2_APPS = [
         /** Repeat mints (bot traded within lookback): skip pg_gap block; new mints stay strict. */
         PAPER_PG_DATA_COVERAGE_KNOWN_MINT_GAP_BYPASS: '1',
         PAPER_PG_DATA_COVERAGE_KNOWN_MINT_LOOKBACK_DAYS: '14',
-        /** Familiar repeat-traded mints: skip volume_ephemeral; optional pg_stale relax when vol stable. */
-        PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED: '1',
-        LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX: '1',
+        /** Familiar bypass removed — pg_stale / volume guards use Dex cache SSOT (#404, #409). */
         LIVE_PG_DATA_COVERAGE_TELEGRAM_ENABLED: '0',
         LIVE_PG_DATA_COVERAGE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         LIVE_PG_DATA_COVERAGE_TELEGRAM_COOLDOWN_MS: '3600000',

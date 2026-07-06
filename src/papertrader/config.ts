@@ -880,16 +880,6 @@ const ConfigSchema = z.object({
   /** Lookback for prior bot open/close (journal-derived maps) to qualify as known mint. */
   pgDataCoverageKnownMintLookbackDays: z.coerce.number().int().min(1).max(90).default(14),
   /**
-   * When true: mints with prior bot trade (journal lookback) skip volume_ephemeral blocks.
-   * Env `PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED`.
-   */
-  familiarMintGateBypassEnabled: z.boolean().default(false),
-  /**
-   * When true with familiar mint + stable live vol5m: skip pg_stale_now coverage block.
-   * Env `LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX`.
-   */
-  pgCoverageFamiliarMintStaleRelax: z.boolean().default(false),
-  /**
    * When true: fresh Birdeye/DexScreener REST quote bypasses PG coverage buy blocks
    * (pg_stale, sybil samples, gaps). Env `PAPER_PG_COVERAGE_BIRDEYE_FRESH_BYPASS`.
    */
@@ -1806,11 +1796,6 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       false,
     ),
     pgDataCoverageKnownMintLookbackDays: process.env.PAPER_PG_DATA_COVERAGE_KNOWN_MINT_LOOKBACK_DAYS,
-    familiarMintGateBypassEnabled: envBool(process.env.PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED, false),
-    pgCoverageFamiliarMintStaleRelax: envBool(
-      process.env.LIVE_PG_COVERAGE_FAMILIAR_MINT_RELAX,
-      false,
-    ),
     pgCoverageBirdeyeFreshBypass: envBool(process.env.PAPER_PG_COVERAGE_BIRDEYE_FRESH_BYPASS, true),
     whaleEnabled: envBool(process.env.PAPER_DIP_WHALE_ANALYSIS_ENABLED, false),
     whaleRequireTrigger: envBool(process.env.PAPER_DIP_REQUIRE_WHALE_TRIGGER, false),
