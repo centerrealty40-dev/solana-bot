@@ -698,6 +698,45 @@ export const LiveShyftDefiMcapSchema = z.object({
   defiLiqUsd: z.number().finite().nullable(),
 });
 
+/** Shyft gRPC stream health (reconnects, observations, watched mint count). */
+export const LiveShyftStreamHealthSchema = z.object({
+  kind: z.literal('live_shyft_stream_health'),
+  status: z.string().max(32),
+  watchedMintCount: z.number().int().nonnegative(),
+  reconnectCount: z.number().int().nonnegative(),
+  lastObservationMs: z.number().finite().nullable(),
+  connectedUptimeMs: z.number().finite().nullable(),
+  lastObservationAgeMs: z.number().finite().nullable(),
+  observationsTotal: z.number().int().nonnegative(),
+  detail: z.string().max(400).optional(),
+});
+
+/** Shyft stream vs DexScreener (+ prod PG) quote deltas — observability only. */
+export const LiveShyftVsDexQuoteSchema = z.object({
+  kind: z.literal('live_shyft_vs_dex_quote'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  surface: z.enum(['entry', 'mtm']),
+  streamPriceUsd: z.number().finite(),
+  streamTsMs: z.number().finite(),
+  streamAgeMs: z.number().finite(),
+  dexPriceUsd: z.number().finite().nullable(),
+  dexMcapUsd: z.number().finite().nullable(),
+  dexLiqUsd: z.number().finite().nullable(),
+  shyftDefiMcapUsd: z.number().finite().nullable(),
+  shyftDefiLiqUsd: z.number().finite().nullable(),
+  prodPriceUsd: z.number().finite().nullable(),
+  prodMcapUsd: z.number().finite().nullable(),
+  prodLiqUsd: z.number().finite().nullable(),
+  streamVsDexPricePct: z.number().finite().nullable(),
+  streamVsProdPricePct: z.number().finite().nullable(),
+  shyftDefiVsDexMcapPct: z.number().finite().nullable(),
+  shyftDefiVsDexLiqPct: z.number().finite().nullable(),
+  prodVsDexPricePct: z.number().finite().nullable(),
+  prodVsDexMcapPct: z.number().finite().nullable(),
+  prodVsDexLiqPct: z.number().finite().nullable(),
+});
+
 /** Birdeye REST market quote picked over PG at discovery eval (observability). */
 export const LiveBirdeyeMarketQuoteSchema = z.object({
   kind: z.literal('live_birdeye_market_quote'),
@@ -962,6 +1001,8 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveShyftShadowPriceSchema,
   LiveShyftPricePrimarySchema,
   LiveShyftDefiMcapSchema,
+  LiveShyftStreamHealthSchema,
+  LiveShyftVsDexQuoteSchema,
   LiveBirdeyeMarketQuoteSchema,
   BirdeyeCoverageGapSchema,
   BirdeyeTierInsufficientSchema,

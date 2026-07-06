@@ -169,6 +169,7 @@ import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { isEntryPriceStale, snapshotPriceAgeMs } from './stale-price.js';
 import { buildShadowPriceEvent } from './stream/shadow-price.js';
+import { buildShyftVsDexQuoteObservation } from './stream/shyft-shadow-observe.js';
 import {
   getShyftShadowStreamPrice,
   isShyftShadowEnabled,
@@ -930,6 +931,25 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     });
     journalAppend(event);
     journalLiveStrategy?.(event);
+    void buildShyftVsDexQuoteObservation({
+      mint: d.mint,
+      lane: String(d.lane),
+      surface: 'entry',
+      stream,
+      prodPriceUsd: d.features.price_usd,
+      prodMcapUsd: d.features.market_cap_usd ?? null,
+      prodLiqUsd: d.features.liq_usd ?? null,
+      defiTtlMs: cfg.shyftDefiMcapTtlMs,
+      nowMs: now,
+    })
+      .then((vsDex) => {
+        if (!vsDex) return;
+        journalAppend(vsDex);
+        journalLiveStrategy?.(vsDex);
+      })
+      .catch(() => {
+        /* observability only */
+      });
   }
 
   function notifyLiveOscarStalePrice(d: EvalDecision, priceAgeMs: number): void {
@@ -1468,10 +1488,12 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         const near = res.decisions.filter((d) => !d.pass && isAwaitingDipQualityHold(d.reasons));
         updateNearReadyDipWatchlist(near.map((d) => ({ mint: d.mint, symbol: d.symbol ?? '?' })));
       }
-      // Stage 1.1 shadow: feed the narrow watched/open mint set to the Shyft gRPC consumer (default OFF).
+      // Stage 1.1 shadow: feed watched/open mint set to Shyft gRPC consumer (default OFF).
       if (cfg.liveOscarShyftShadowEnabled && isLiveOscarMainStrategyId(cfg.strategyId)) {
         const shadowMints = new Set<string>(open.keys());
-        for (const d of res.decisions) shadowMints.add(d.mint);
+        if (!cfg.liveOscarShyftShadowOpenMintsOnly) {
+          for (const d of res.decisions) shadowMints.add(d.mint);
+        }
         setShyftShadowWatchedMints(shadowMints);
       }
       const openedBeforeDiscoveryBatch = stats.opened;
