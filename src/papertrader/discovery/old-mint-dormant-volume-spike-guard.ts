@@ -101,6 +101,28 @@ function tokenAgeDaysFromRow(row: SnapshotCandidateRow): number | null {
   return +(ageMin / 1440).toFixed(2);
 }
 
+/** Spike ratio denominator: median when baseline was mostly dormant (p90 skewed by rare bursts). */
+export function dormantSpikeBaselineRefUsd(
+  features: Pick<
+    OldMintDormantVolSpikeFeatures,
+    'baselineMedianVol1hUsd' | 'baselineP90Vol1hUsd' | 'dormantHourFraction'
+  >,
+  cfg: PaperTraderConfig,
+): number | null {
+  const median = features.baselineMedianVol1hUsd;
+  const p90 = features.baselineP90Vol1hUsd;
+  const dormantFrac = features.dormantHourFraction ?? 0;
+  const mostlyDormant = dormantFrac >= cfg.oldMintDormantVolSpikeMinDormantHourFraction;
+  const lowBaseline =
+    median != null && median <= cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd;
+  if (mostlyDormant && lowBaseline && median != null) {
+    return Math.max(median, 500);
+  }
+  if (p90 != null) return Math.max(p90, 500);
+  if (median != null) return Math.max(median, 500);
+  return null;
+}
+
 /**
  * When PG baseline is thin: block inflated vol1h + dead vol5m tail on fresh Dex quote
  * (DADDY RCA — coverageOk=false fail-open).
@@ -330,25 +352,13 @@ export function evaluateOldMintDormantVolSpikeGuard(
       ? Math.max(currentVol1h ?? 0, recentMaxVol1h ?? 0)
       : null;
 
-  const baselineRef =
-    baseCtx.baselineP90Vol1hUsd != null
-      ? Math.max(baseCtx.baselineP90Vol1hUsd, 500)
-      : baseCtx.baselineMedianVol1hUsd != null
-        ? Math.max(baseCtx.baselineMedianVol1hUsd, 500)
-        : null;
-
-  const vol1hSpikeRatio =
-    effectiveRecentVol1h != null && baselineRef != null && baselineRef > 0
-      ? +(effectiveRecentVol1h / baselineRef).toFixed(2)
-      : null;
-
   const features: OldMintDormantVolSpikeFeatures = {
     ...baseCtx,
     tokenAgeDays,
     currentVol1hUsd: currentVol1h,
     currentVol5mUsd: currentVol5m,
     effectiveRecentVol1hUsd: effectiveRecentVol1h,
-    vol1hSpikeRatio,
+    vol1hSpikeRatio: null,
   };
 
   const blockedReasons: string[] = [];
@@ -374,6 +384,13 @@ export function evaluateOldMintDormantVolSpikeGuard(
     features.baselineMedianVol1hUsd <= cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd;
   const wasDormant = mostlyDormant && lowBaseline;
 
+  const baselineRef = dormantSpikeBaselineRefUsd(features, cfg);
+  const vol1hSpikeRatio =
+    effectiveRecentVol1h != null && baselineRef != null && baselineRef > 0
+      ? +(effectiveRecentVol1h / baselineRef).toFixed(2)
+      : null;
+  features.vol1hSpikeRatio = vol1hSpikeRatio;
+
   const activeSpike =
     effectiveRecentVol1h != null &&
     effectiveRecentVol1h >= cfg.oldMintDormantVolSpikeMinSpikeVol1hUsd;
@@ -382,9 +399,11 @@ export function evaluateOldMintDormantVolSpikeGuard(
 
   if (wasDormant && activeSpike && sharpSpike) {
     const baselineTag =
-      features.baselineMode === 'fallback_first24h' ? 'baseline=fallback24h' : 'baseline=24-48h';
+      features.baselineMode === 'fallback_first24h'
+        ? 'baseline=fallback24h'
+        : `baseline=${features.baselineStartHoursAgo}-${features.baselineEndHoursAgo}h`;
     blockedReasons.push(
-      `ephemeral_volume_spike:${baselineTag}_age=${tokenAgeDays ?? '?'}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_p90=$${Math.round(features.baselineP90Vol1hUsd ?? features.baselineMedianVol1hUsd ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
+      `ephemeral_volume_spike:${baselineTag}_age=${tokenAgeDays ?? '?'}d_vol1h=$${Math.round(effectiveRecentVol1h ?? 0)}/baseline_ref=$${Math.round(baselineRef ?? 0)}=${vol1hSpikeRatio}x_dormant=${(dormantFrac * 100).toFixed(0)}%`,
     );
   }
 

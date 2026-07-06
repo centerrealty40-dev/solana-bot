@@ -1,5 +1,4 @@
 import type { PaperTraderConfig } from '../config.js';
-import type { SnapshotCandidateRow } from '../types.js';
 
 /** Journal-derived trade timestamps for known-mint detection (14d lookback default). */
 export type KnownMintTradeHistory = {
@@ -47,8 +46,8 @@ export function isPgCoverageKnownMint(
 }
 
 /**
- * Prior bot trade (any lane) within lookback + master bypass flag — familiar mint.
- * Used to relax pg_stale_now when live vol is stable (volume_ephemeral stays enforced).
+ * Prior bot trade (any lane) within lookback — familiar repeat-traded mint (audit/logging only).
+ * Gate bypass removed: pg_stale / volume guards use fresh Dex quote SSOT (#404, #409).
  */
 export function isFamiliarMint(
   cfg: PaperTraderConfig,
@@ -57,17 +56,7 @@ export function isFamiliarMint(
   nowMs = Date.now(),
   supplement?: ReadonlySet<string>,
 ): boolean {
-  if (!cfg.familiarMintGateBypassEnabled) return false;
   return isKnownMint(cfg, mint, history, nowMs, supplement);
-}
-
-/** Live vol5m at/above active-hour floor — stable enough to trust during PG snapshot lag. */
-export function familiarMintHasStableVolume(
-  cfg: PaperTraderConfig,
-  row: SnapshotCandidateRow,
-): boolean {
-  const vol5m = Number(row.volume_5m ?? 0);
-  return Number.isFinite(vol5m) && vol5m >= cfg.volumeEphemeralMinActiveHourVol5mUsd;
 }
 
 export function buildKnownMintTradeHistory(args: {

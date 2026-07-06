@@ -20,7 +20,6 @@ import {
 } from '../../ingestion/pair-snapshot-freshness.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
-import { familiarMintHasStableVolume } from './known-mint.js';
 import { sourceSnapshotTable } from '../dip-detector.js';
 
 export type PgCoverageMode = 'relaxed' | 'full';
@@ -56,7 +55,7 @@ export interface MintPgCoverageFeatures {
   nearEntry: boolean;
   /** True when known-mint gap bypass removed pg_gap block reasons this eval. */
   knownMintGapBypass?: boolean;
-  /** True when familiar-mint stale relax removed pg_stale_now this eval. */
+  /** @deprecated Familiar stale bypass removed — use birdeyeFreshBypass. */
   familiarMintStaleBypass?: boolean;
   /** True when fresh Birdeye/DexScreener quote removed PG coverage buy blocks. */
   birdeyeFreshBypass?: boolean;
@@ -445,7 +444,7 @@ export function evaluatePgDataCoverageGuard(
   ctx: MintPgCoverageFeatures | undefined,
   global: GlobalPgCoverageState,
   nearEntry: boolean,
-  opts?: { knownMint?: boolean; familiarMint?: boolean; freshExternalMarketQuote?: boolean },
+  opts?: { knownMint?: boolean; freshExternalMarketQuote?: boolean },
 ): PgDataCoverageEvalResult {
   if (!cfg.pgDataCoverageGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_MINT };
@@ -559,21 +558,6 @@ export function evaluatePgDataCoverageGuard(
     }
   }
 
-  let familiarMintStaleBypass = false;
-  if (
-    opts?.familiarMint &&
-    cfg.pgCoverageFamiliarMintStaleRelax &&
-    familiarMintHasStableVolume(cfg, _row) &&
-    blockedReasons.some(isPgStaleNowBlockReason)
-  ) {
-    const filtered = blockedReasons.filter((r) => !isPgStaleNowBlockReason(r));
-    if (filtered.length !== blockedReasons.length) {
-      familiarMintStaleBypass = true;
-      blockedReasons.length = 0;
-      blockedReasons.push(...filtered);
-    }
-  }
-
   let birdeyeFreshBypass = false;
   if (
     opts?.freshExternalMarketQuote &&
@@ -588,6 +572,6 @@ export function evaluatePgDataCoverageGuard(
   return {
     blocked: blockBuy && blockedReasons.length > 0,
     blockedReasons: blockBuy ? blockedReasons : [],
-    features: { ...features, knownMintGapBypass, familiarMintStaleBypass, birdeyeFreshBypass },
+    features: { ...features, knownMintGapBypass, birdeyeFreshBypass },
   };
 }

@@ -136,6 +136,21 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.features.vol1hSpikeRatio).toBeGreaterThanOrEqual(5);
   });
 
+  it('uses median baseline ref when p90 is inflated by rare baseline bursts (DADDY live PG)', () => {
+    const r = evaluateOldMintDormantVolSpikeGuard(
+      baseCfg({ oldMintDormantVolSpikeMinDormantHourFraction: 0.55 }),
+      baseRow({ volume_1h: 130_113 }),
+      daddyCtx({
+        dormantHourFraction: 0.605,
+        baselineMedianVol1hUsd: 6817,
+        baselineP90Vol1hUsd: 36_654,
+        recentMaxVol1hUsd: 130_113,
+      }),
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.features.vol1hSpikeRatio).toBeGreaterThanOrEqual(5);
+  });
+
   it('blocks 3-day-old mint with same ephemeral spike pattern (age-agnostic)', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg(),

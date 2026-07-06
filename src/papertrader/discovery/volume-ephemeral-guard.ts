@@ -40,7 +40,7 @@ export interface VolumeEphemeralFeatures {
   singleTickStaleIgnored?: boolean;
   /** Audit flag when {@link singleTickStaleIgnored}. */
   staleIgnoreFlag?: string;
-  /** @deprecated Familiar mint no longer bypasses volume_ephemeral (pg_stale only). */
+  /** @deprecated Familiar bypass removed — audit field retained for journal compat. */
   familiarMintBypass?: boolean;
   /** PG hourly blocks skipped — fresh Birdeye/DexScreener shows healthy vol spread. */
   birdeyeFreshBypass?: boolean;
@@ -55,8 +55,6 @@ export interface VolumeEphemeralEvalResult {
 export interface VolumeEphemeralEvalOpts {
   /** Mint with prior bot trade in lookback — relaxed tail / wash rules. */
   knownMint?: boolean;
-  /** @deprecated Ignored — familiar bypass applies to pg_stale only, not volume_ephemeral. */
-  familiarMint?: boolean;
   /** Fresh Birdeye/DexScreener quote on evalRow — skip PG-blind ephemeral blocks when spread healthy. */
   freshExternalMarketQuote?: boolean;
 }
