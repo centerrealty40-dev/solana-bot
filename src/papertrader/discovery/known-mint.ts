@@ -48,7 +48,7 @@ export function isPgCoverageKnownMint(
 
 /**
  * Prior bot trade (any lane) within lookback + master bypass flag — familiar mint.
- * Used to skip volume_ephemeral blocks and optionally relax pg_stale_now when live vol is stable.
+ * Used to relax pg_stale_now when live vol is stable (volume_ephemeral stays enforced).
  */
 export function isFamiliarMint(
   cfg: PaperTraderConfig,

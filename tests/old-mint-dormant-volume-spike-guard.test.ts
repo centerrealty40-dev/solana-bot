@@ -45,6 +45,7 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     oldMintDormantVolSpikeMinBaselineHours: 18,
     oldMintDormantVolSpikeMinSpikeVol1hUsd: 25_000,
     oldMintDormantVolSpikeVol1hRatioMin: 5,
+    volumeGuardNewMintMinVol5mToVol1hRatio: 0.08,
     ...over,
   } as PaperTraderConfig;
 }
@@ -95,11 +96,35 @@ describe('evaluateOldMintDormantVolSpikeGuard', () => {
     expect(r.blocked).toBe(false);
   });
 
-  it('passes when PG baseline coverage insufficient (safe-skip)', () => {
+  it('passes when PG baseline coverage insufficient and no fresh quote (safe-skip)', () => {
     const r = evaluateOldMintDormantVolSpikeGuard(
       baseCfg(),
       baseRow(),
       daddyCtx({ coverageOk: false, baselineHoursWithData: 8 }),
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('blocks DADDY-like spike on fresh Dex quote when PG baseline weak (coverageOk=false)', () => {
+    const r = evaluateOldMintDormantVolSpikeGuard(
+      baseCfg(),
+      baseRow(),
+      daddyCtx({ coverageOk: false, baselineHoursWithData: 8 }),
+      { freshExternalMarketQuote: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(
+      r.blockedReasons.some((x) => x.startsWith('ephemeral_volume_spike:live_quote_no_pg_baseline')),
+    ).toBe(true);
+    expect(r.features.liveQuoteNoPgBaselineBlock).toBe(true);
+  });
+
+  it('passes weak PG baseline with fresh quote when vol spread is healthy', () => {
+    const r = evaluateOldMintDormantVolSpikeGuard(
+      baseCfg(),
+      baseRow({ volume_1h: 130_113, volume_5m: 18_000 }),
+      daddyCtx({ coverageOk: false, baselineHoursWithData: 8 }),
+      { freshExternalMarketQuote: true },
     );
     expect(r.blocked).toBe(false);
   });

@@ -173,7 +173,7 @@ describe('familiar mint gate bypass — manlet-like (DdPrHY)', () => {
     expect(r.blockedReasons.some((x) => x.startsWith('data_coverage:pg_stale_now'))).toBe(true);
   });
 
-  it('bypasses volume_ephemeral for familiar mint', () => {
+  it('still blocks familiar mint on volume_ephemeral spike (no full bypass)', () => {
     const r = evaluateVolumeEphemeralGuard(
       ephemeralCfg(),
       baseRow({ volume_5m: 2_000, volume_1h: 80_000 }),
@@ -188,8 +188,11 @@ describe('familiar mint gate bypass — manlet-like (DdPrHY)', () => {
       },
       { knownMint: true, familiarMint: true },
     );
-    expect(r.blocked).toBe(false);
-    expect(r.features.familiarMintBypass).toBe(true);
+    expect(r.blocked).toBe(true);
+    expect(
+      r.blockedReasons.some((x) => x.startsWith('volume_ephemeral:known_mint_sustained_dead')),
+    ).toBe(true);
+    expect(r.features.familiarMintBypass).toBeUndefined();
   });
 });
 

@@ -880,8 +880,8 @@ const ConfigSchema = z.object({
   /** Lookback for prior bot open/close (journal-derived maps) to qualify as known mint. */
   pgDataCoverageKnownMintLookbackDays: z.coerce.number().int().min(1).max(90).default(14),
   /**
-   * When true: mints with prior bot trade (journal lookback) skip volume_ephemeral blocks.
-   * Env `PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED`.
+   * When true: mints with prior bot trade (journal lookback) relax pg_stale_now when live vol stable.
+   * Does not bypass volume_ephemeral or ephemeral_volume_spike guards. Env `PAPER_FAMILIAR_MINT_GATE_BYPASS_ENABLED`.
    */
   familiarMintGateBypassEnabled: z.boolean().default(false),
   /**

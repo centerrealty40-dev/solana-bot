@@ -40,7 +40,7 @@ export interface VolumeEphemeralFeatures {
   singleTickStaleIgnored?: boolean;
   /** Audit flag when {@link singleTickStaleIgnored}. */
   staleIgnoreFlag?: string;
-  /** Full bypass for familiar repeat-traded mint. */
+  /** @deprecated Familiar mint no longer bypasses volume_ephemeral (pg_stale only). */
   familiarMintBypass?: boolean;
   /** PG hourly blocks skipped — fresh Birdeye/DexScreener shows healthy vol spread. */
   birdeyeFreshBypass?: boolean;
@@ -55,7 +55,7 @@ export interface VolumeEphemeralEvalResult {
 export interface VolumeEphemeralEvalOpts {
   /** Mint with prior bot trade in lookback — relaxed tail / wash rules. */
   knownMint?: boolean;
-  /** Familiar mint with bypass flag — skip all volume_ephemeral blocks. */
+  /** @deprecated Ignored — familiar bypass applies to pg_stale only, not volume_ephemeral. */
   familiarMint?: boolean;
   /** Fresh Birdeye/DexScreener quote on evalRow — skip PG-blind ephemeral blocks when spread healthy. */
   freshExternalMarketQuote?: boolean;
@@ -266,7 +266,6 @@ export function evaluateVolumeEphemeralGuard(
 ): VolumeEphemeralEvalResult {
   const lookbackHours = clampLookbackHours(cfg.volumeEphemeralLookbackHours);
   const knownMint = opts?.knownMint === true;
-  const familiarMint = opts?.familiarMint === true;
 
   if (!cfg.volumeEphemeralGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
@@ -286,15 +285,6 @@ export function evaluateVolumeEphemeralGuard(
     currentVol5mUsd: currentVol5m,
     peakToCurrentRatio: peakToCurrent,
   };
-
-  /** Familiar repeat-traded mint: skip all ephemeral volume blocks (FREE-like new mints stay strict). */
-  if (familiarMint) {
-    return {
-      blocked: false,
-      blockedReasons: [],
-      features: { ...features, familiarMintBypass: true },
-    };
-  }
 
   /** Fresh Birdeye/DexScreener on evalRow: healthy vol spread proves live market — skip PG-blind blocks. */
   if (

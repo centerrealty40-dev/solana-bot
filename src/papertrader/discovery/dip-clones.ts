@@ -1433,6 +1433,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           cfg,
           evalRow,
           oldMintDormantVolSpikeMap.get(row.mint),
+          { freshExternalMarketQuote: freshExternalQuote },
         );
         oldMintDormantVolSpikeFeatures = evalRes.features;
         if (evalRes.blocked) {

@@ -17,6 +17,7 @@ import { db } from '../../core/db/client.js';
 import type { PaperTraderConfig } from '../config.js';
 import type { SnapshotCandidateRow } from '../types.js';
 import { sourceSnapshotTable } from '../dip-detector.js';
+import { vol5mToVol1hRatio } from './volume-spread-health.js';
 
 export interface OldMintDormantVolSpikeFeatures {
   lookbackHours: number;
@@ -43,6 +44,13 @@ export interface OldMintDormantVolSpikeFeatures {
   effectiveRecentVol1hUsd: number | null;
   vol1hSpikeRatio: number | null;
   coverageOk: boolean;
+  /** Blocked via live Dex quote when PG baseline coverage was insufficient. */
+  liveQuoteNoPgBaselineBlock?: boolean;
+}
+
+export interface OldMintDormantVolSpikeEvalOpts {
+  /** Fresh Birdeye/DexScreener quote on evalRow — enables live-spike block without PG baseline. */
+  freshExternalMarketQuote?: boolean;
 }
 
 export interface OldMintDormantVolSpikeEvalResult {
@@ -91,6 +99,31 @@ function tokenAgeDaysFromRow(row: SnapshotCandidateRow): number | null {
   const ageMin = Number(row.token_age_min ?? row.age_min ?? 0);
   if (!Number.isFinite(ageMin) || ageMin <= 0) return null;
   return +(ageMin / 1440).toFixed(2);
+}
+
+/**
+ * When PG baseline is thin: block inflated vol1h + dead vol5m tail on fresh Dex quote
+ * (DADDY RCA — coverageOk=false fail-open).
+ */
+function evaluateLiveQuoteSpikeWithoutPgBaseline(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+): { block: boolean; reason?: string } {
+  const vol1h = Number(row.volume_1h ?? 0);
+  const vol5m = Number(row.volume_5m ?? 0);
+  if (!Number.isFinite(vol1h) || vol1h < cfg.oldMintDormantVolSpikeMinSpikeVol1hUsd) {
+    return { block: false };
+  }
+  const deadVol5m =
+    Number.isFinite(vol5m) && vol5m <= cfg.oldMintDormantVolSpikeDormantVol5mMaxUsd;
+  const ratio = vol5mToVol1hRatio(row);
+  const washLike =
+    ratio != null && ratio < cfg.volumeGuardNewMintMinVol5mToVol1hRatio;
+  if (!deadVol5m || !washLike) return { block: false };
+  return {
+    block: true,
+    reason: `ephemeral_volume_spike:live_quote_no_pg_baseline_vol1h=$${Math.round(vol1h)}_vol5m=$${Math.round(vol5m)}_vol5m_vol1h=${(ratio * 100).toFixed(1)}%`,
+  };
 }
 
 /**
@@ -263,6 +296,7 @@ export function evaluateOldMintDormantVolSpikeGuard(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: OldMintDormantVolSpikeFeatures,
+  opts?: OldMintDormantVolSpikeEvalOpts,
 ): OldMintDormantVolSpikeEvalResult {
   if (!cfg.oldMintDormantVolSpikeGuardEnabled) {
     return { blocked: false, blockedReasons: [], features: EMPTY_FEATURES };
@@ -319,6 +353,17 @@ export function evaluateOldMintDormantVolSpikeGuard(
 
   const blockedReasons: string[] = [];
   if (!features.coverageOk) {
+    if (opts?.freshExternalMarketQuote === true) {
+      const live = evaluateLiveQuoteSpikeWithoutPgBaseline(cfg, row);
+      if (live.block && live.reason) {
+        blockedReasons.push(live.reason);
+        return {
+          blocked: true,
+          blockedReasons,
+          features: { ...features, liveQuoteNoPgBaselineBlock: true },
+        };
+      }
+    }
     return { blocked: false, blockedReasons, features };
   }
 
