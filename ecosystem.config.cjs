@@ -641,8 +641,8 @@ const PM2_APPS = [
       max_restarts: 20,
       restart_delay: 5000,
       kill_timeout: 15000,
-      /** Boot replay + wallet orphan scan on 7GB journal tail; 512M was OOM loop before executor start. */
-      max_memory_restart: '1024M',
+      /** Boot replay + wallet orphan scan on 8GB journal tail; 1024M PM2 cap OOM before executor (PR #403 deploy). */
+      max_memory_restart: '3072M',
       merge_logs: true,
       time: true,
       env: {
