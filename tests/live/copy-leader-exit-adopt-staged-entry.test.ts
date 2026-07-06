@@ -62,12 +62,12 @@ describe('copy-leader exit adopt staged entry', () => {
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD = '1000';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD = '1000';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD = '1000';
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD = '1000';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD = '0';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD = '0';
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD = '0';
-    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '1500';
+    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '1000';
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT = '10';
-    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '2000';
+    process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD = '1000';
     process.env.PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT = '20';
     return loadPaperTraderConfig();
   }
@@ -133,9 +133,9 @@ describe('copy-leader exit adopt staged entry', () => {
     expect(st!.signalPriceUsd).toBe(entryPriceUsd);
     expect(entrySplitLegDoneFromState(st!, 1)).toBe(true);
     expect(st!.entrySplitLeg1Ts).toBe(promotedAt - 60_000);
-    expect(st!.avgSecondLegUsd).toBe(1500);
+    expect(st!.avgSecondLegUsd).toBe(1000);
     expect(st!.avgSecondDropPct).toBe(10);
-    expect(st!.avgThirdLegUsd).toBe(2000);
+    expect(st!.avgThirdLegUsd).toBe(1000);
     expect(st!.avgThirdDropPct).toBe(20);
     expect(st!.avgFirstLegDone).toBe(false);
     expect(st!.avgSecondLegDone).toBe(false);
@@ -156,8 +156,8 @@ describe('copy-leader exit adopt staged entry', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '1';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD = '2000000';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD = '3000000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '1000';
-    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD = '1500';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '500';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD = '500';
 
     const mint = 'MintCopyLowStg1111111111111111111111111111111';
     const promotedAt = Date.now() - 90_000;
@@ -181,8 +181,8 @@ describe('copy-leader exit adopt staged entry', () => {
     expect(ot.liveOscarMcapTier).toBe('low');
     expect(ot.entryMarketCapUsd).toBe(2_500_000);
     const st = ot.liveStagedEntry!;
-    expect(st.avgSecondLegUsd).toBe(1000);
-    expect(st.avgThirdLegUsd).toBe(1500);
+    expect(st.avgSecondLegUsd).toBe(500);
+    expect(st.avgThirdLegUsd).toBe(500);
   });
 
   it('blocks adopt when mcap is below discovery threshold', async () => {
@@ -309,8 +309,8 @@ describe('copy-leader exit adopt staged entry', () => {
     expect(ot.liveOscarMcapTier).toBe('prod');
     const st = ot.liveStagedEntry!;
     expect(st.signalPriceUsd).toBe(entryPriceUsd);
-    expect(st.avgSecondLegUsd).toBe(1500);
-    expect(st.avgThirdLegUsd).toBe(2000);
+    expect(st.avgSecondLegUsd).toBe(1000);
+    expect(st.avgThirdLegUsd).toBe(1000);
     expect(journal.some((j) => j.kind === 'live_staged_entry_attached')).toBe(true);
   });
 });

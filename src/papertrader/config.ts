@@ -111,8 +111,8 @@ const ConfigSchema = z.object({
   liveStagedEntryThirdDropPct: z.coerce.number().min(0).max(90).default(0),
   liveStagedEntryKillDropPct: z.coerce.number().min(0).max(95).default(25),
   liveStagedEntryFirstLegUsd: z.coerce.number().nonnegative().default(400),
-  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(1500),
-  liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(2000),
+  liveStagedEntrySecondLegUsd: z.coerce.number().nonnegative().default(1000),
+  liveStagedEntryThirdLegUsd: z.coerce.number().nonnegative().default(1000),
   /** 0 = no TTL — staged plan is not dropped by signal age (prod: `PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS=0`). */
   liveStagedEntrySignalTtlMs: z.coerce.number().int().nonnegative().default(0),
   /**
@@ -321,21 +321,21 @@ const ConfigSchema = z.object({
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** Prod sub-tier boundary ($3M floor = low max when low lane ON). */
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
-  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(7_500),
-  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(7_500),
+  liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(5_000),
+  liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(5_000),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(1000),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(1000),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
-  liveOscarLowMcapEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(1000),
+  liveOscarLowMcapEntrySplitLeg3Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapEntrySplitLeg4Usd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapEntrySplitLeg5Usd: z.coerce.number().nonnegative().default(0),
-  liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(3000),
+  liveOscarLowMcapPositionUsd: z.coerce.number().positive().default(2000),
   /** Staged avg drop % from signal for low tier (e.g. 10 = −10%). */
   liveOscarLowMcapStagedAvgDropPct: z.coerce.number().min(0).max(90).default(10),
   /** Leg-3 staged avg @ −10% for low tier; prod uses `liveStagedEntrySecondLegUsd`. */
-  liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(1000),
+  liveOscarLowMcapStagedAvgLegUsd: z.coerce.number().nonnegative().default(500),
   liveOscarLowMcapStagedAvgSecondDropPct: z.coerce.number().min(0).max(90).default(20),
-  liveOscarLowMcapStagedAvgSecondLegUsd: z.coerce.number().nonnegative().default(1500),
+  liveOscarLowMcapStagedAvgSecondLegUsd: z.coerce.number().nonnegative().default(500),
   liveOscarLowMcapDcaLevelsSpec: z.string().default('-10:0.375,-20:0.375'),
   /**
    * Live Oscar scalp_wave lane: min age 12h (no max), $800k–$30M mcap, shallow dip −8..−15%,
