@@ -21,6 +21,10 @@ import { initMintFileWatchers } from './mint-file-watchers.js';
 import { startLiveDailySummary } from './daily-summary.js';
 import { loadPaperTraderConfig } from '../papertrader/config.js';
 import {
+  isLiveLeraTradingStrategyId,
+  isLiveOscarMainStrategyId,
+} from '../preset-c/live-oscar-family.js';
+import {
   setShyftShadowEnabled,
   setShyftShadowMaxAgeMs,
 } from '../papertrader/stream/shadow-state.js';
@@ -224,9 +228,15 @@ export async function main(): Promise<void> {
    * feeds a trading gate / eval / execution decision. Endpoint/token reuse the shared `SHYFT_GRPC_*`
    * convention (same `SHYFT_GRPC_TOKEN` x-token used by the pumpswap flow-sniper reference).
    */
-  setShyftShadowEnabled(paperBaseline.liveOscarShyftShadowEnabled);
+  const shyftForOscarObs =
+    paperBaseline.liveOscarShyftShadowEnabled && isLiveOscarMainStrategyId(paperBaseline.strategyId);
+  const shyftForLeraOverlay =
+    paperBaseline.leraEntryOnchainOverlayEnabled &&
+    paperBaseline.leraOnchainOverlayShyftWatchEnabled &&
+    isLiveLeraTradingStrategyId(paperBaseline.strategyId);
+  setShyftShadowEnabled(shyftForOscarObs || shyftForLeraOverlay);
   setShyftShadowMaxAgeMs(paperBaseline.liveOscarShyftShadowMaxAgeMs);
-  if (paperBaseline.liveOscarShyftShadowEnabled && paperBaseline.shyftStreamEnabled) {
+  if ((shyftForOscarObs || shyftForLeraOverlay) && paperBaseline.shyftStreamEnabled) {
     const shyftEndpoint =
       process.env.SHYFT_GRPC_ENDPOINT?.trim() || 'https://grpc.fra.shyft.to';
     const shyftToken = process.env.SHYFT_GRPC_TOKEN?.trim() ?? '';
@@ -258,7 +268,10 @@ export async function main(): Promise<void> {
               log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shyft shadow consumer error'),
           },
         );
-        log.info({ endpoint: shyftEndpoint }, 'live-oscar Shyft shadow consumer started (observability only)');
+        log.info(
+          { endpoint: shyftEndpoint, strategyId: paperBaseline.strategyId },
+          'Shyft shadow consumer started (observability only)',
+        );
       } catch (err) {
         log.warn(
           { err: err instanceof Error ? err.message : String(err) },
@@ -271,8 +284,8 @@ export async function main(): Promise<void> {
         });
       }
     }
-  } else if (paperBaseline.liveOscarShyftShadowEnabled && !paperBaseline.shyftStreamEnabled) {
-    log.warn({}, 'live-oscar Shyft shadow journal ON but SHYFT_STREAM_ENABLED=0 — no gRPC consumer');
+  } else if ((shyftForOscarObs || shyftForLeraOverlay) && !paperBaseline.shyftStreamEnabled) {
+    log.warn({}, 'Shyft shadow journal ON but SHYFT_STREAM_ENABLED=0 — no gRPC consumer');
   }
 
   if (
