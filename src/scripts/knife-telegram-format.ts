@@ -47,9 +47,8 @@ export function knifeCloseReasonRu(reason: string): string {
   return CLOSE_REASON_RU[reason] ?? reason;
 }
 
-function header(mode: 'shadow' | 'live', title: string): string {
-  const tag = mode === 'shadow' ? 'knife_shadow' : 'knife_live';
-  return `<b>[REPORT][${tag}]</b>\n<b>${escapeKnifeHtml(title)}</b>`;
+function header(_mode: 'shadow' | 'live', title: string): string {
+  return `<b>${escapeKnifeHtml(title)}</b>`;
 }
 
 function mintBlock(mint: string): string {
@@ -127,20 +126,38 @@ export function buildKnifeCloseTelegram(args: {
   reason: string;
   legs: number;
   avgEntry: number;
+  exitVwap: number;
+  holdSec: number;
   investedUsd: number;
   realizedUsd: number;
   pnlPct: number;
+  sells: Array<{ reason: string; price: number; qty: number }>;
 }): string {
-  const { mode, mint, reason, legs, avgEntry, investedUsd, realizedUsd, pnlPct } = args;
+  const { mode, mint, reason, legs, avgEntry, exitVwap, holdSec, investedUsd, realizedUsd, pnlPct, sells } =
+    args;
   const pnlSign = pnlPct >= 0 ? '+' : '';
   const usdSign = realizedUsd >= 0 ? '+' : '';
+  const movePct = avgEntry > 0 ? ((exitVwap / avgEntry - 1) * 100) : 0;
+  const moveSign = movePct >= 0 ? '+' : '';
+  const sellLines =
+    sells.length > 0
+      ? sells
+          .slice(0, 5)
+          .map(
+            (s) =>
+              `  · ${escapeKnifeHtml(s.reason)}: <b>${fmtKnifePrice(s.price)}</b> (${((s.price / avgEntry - 1) * 100).toFixed(1)}% от entry)`,
+          )
+          .join('\n')
+      : '';
   const lines = [
     header(mode, '✅ ЗАКРЫТИЕ'),
     mintBlock(mint),
     `Причина: <b>${escapeKnifeHtml(knifeCloseReasonRu(reason))}</b>`,
-    `Вложено: <b>${fmtKnifeUsd(investedUsd)}</b> · ног: <b>${legs}</b> · avg entry: <b>${fmtKnifePrice(avgEntry)}</b>`,
-    `PnL (shadow): <b>${pnlSign}${pnlPct.toFixed(1)}%</b> (${usdSign}${fmtKnifeUsd(realizedUsd)})`,
-    mode === 'shadow' ? `Режим: <b>shadow</b> — смотри цену на GMGN, сравни с журналом.` : '',
+    `Вход (avg): <b>${fmtKnifePrice(avgEntry)}</b> · выход (vwap): <b>${fmtKnifePrice(exitVwap)}</b> · ход цены: <b>${moveSign}${movePct.toFixed(1)}%</b>`,
+    `Удержание: <b>${holdSec.toFixed(0)}с</b> · вложено: <b>${fmtKnifeUsd(investedUsd)}</b> · ног: <b>${legs}</b>`,
+    sellLines,
+    `PnL (shadow): <b>${pnlSign}${pnlPct.toFixed(1)}%</b> (${usdSign}${fmtKnifeUsd(realizedUsd)}) на вложенный leg`,
+    mode === 'shadow' ? `Режим: <b>shadow</b> — сверь entry/exit с GMGN.` : '',
   ].filter(Boolean);
   return `${lines.join('\n')}\n`;
 }

@@ -24,7 +24,6 @@ describe('knife telegram format', () => {
       maxEntryAfterDumpSec: 50,
       maxBouncePct: 5,
     });
-    expect(text).toContain('[REPORT][knife_shadow]');
     expect(text).toContain('WHALE DUMP');
     expect(text).toContain('gmgn.ai');
     expect(text).toContain('$1842');
@@ -46,19 +45,24 @@ describe('knife telegram format', () => {
     expect(text).toContain('shadow');
   });
 
-  it('builds close HTML with trusted PnL line', () => {
+  it('builds close HTML with entry, exit vwap and hold time', () => {
     const text = buildKnifeCloseTelegram({
       mode: 'shadow',
       mint: '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump',
       reason: 'ladder_complete',
       legs: 1,
-      avgEntry: 0.347,
+      avgEntry: 0.3363,
+      exitVwap: 0.341,
+      holdSec: 45,
       investedUsd: 5,
-      realizedUsd: 0.18,
-      pnlPct: 3.6,
+      realizedUsd: 0.07,
+      pnlPct: 1.4,
+      sells: [{ reason: 'tp_3.5pct', price: 0.341, qty: 1.5 }],
     });
     expect(text).toContain('ЗАКРЫТИЕ');
-    expect(text).not.toContain('артефакт');
-    expect(text).toContain('PnL (shadow)');
+    expect(text).toContain('Вход (avg)');
+    expect(text).toContain('выход (vwap)');
+    expect(text).toContain('45с');
+    expect(text).not.toContain('[REPORT]');
   });
 });
