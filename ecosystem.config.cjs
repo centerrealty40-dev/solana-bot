@@ -302,8 +302,13 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
 /** Shared DexScreener quota across sa-raydium/meteora/moonshot/pumpswap (one VPS egress IP). */
 const DEXSCREENER_GATE_ENV = {
   DEXSCREENER_GLOBAL_RATE_LIMIT: '1',
-  /** 60 RPM: 4 collectors + live lanes; 42 RPM caused gate-queue AbortError at 15s collector timeout. */
-  DEXSCREENER_GLOBAL_MAX_RPM: '60',
+  /**
+   * 120 RPM (up from 60): the gate is shared by 4 collectors + live-oscar discovery. At 60 RPM
+   * (minGap=1000ms) discovery's per-mint quotes queued behind collectors → discoveryTick timeouts.
+   * 120 RPM (minGap=500ms) halves worst-case gate wait; well under DexScreener /tokens ~300/min.
+   * History: 42 RPM caused gate-queue AbortError at 15s collector timeout.
+   */
+  DEXSCREENER_GLOBAL_MAX_RPM: '120',
   DEXSCREENER_GLOBAL_GATE_PATH: path.join(root, 'data/dexscreener-api-gate.json'),
 };
 
