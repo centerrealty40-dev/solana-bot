@@ -979,9 +979,9 @@ const PM2_APPS = [
         PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_NET_NEW_SHARE: '0.35',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_HOLDER_STALL_PCT: '0.5',
         PAPER_PERVYY_VYSTREL_MIN_UNCLUSTERED_BUYERS_1H: '10',
-        LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'shadow',
-        /** PR2 batch materialize — read cache at tick (worker: pervyy-vystrel-materialize). */
-        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '1',
+        LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'off',
+        /** PR2 batch materialize — OFF (tier removed 2026-07-07). */
+        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '0',
         PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
         /** Shyft shadow: suppress mint-set resubscribes right after connect (boot churn). */
         SHYFT_SHADOW_CONNECT_GRACE_MS: '30000',
@@ -2138,8 +2138,8 @@ const PM2_APPS = [
       },
     },
     /**
-     * Pervyy Vystrel PR2 batch — vol-auth + organic flow + cluster map materialize.
-     * DISABLED by default; enable after PR2 merge + shadow window (15m loop, off-peak bias ops).
+     * Pervyy Vystrel PR2 batch — REMOVED 2026-07-07 (tier off on live-oscar).
+     * Kept for pm2 delete/stop hygiene; autorestart false + MATERIALIZE_ENABLED=0.
      */
     {
       name: 'pervyy-vystrel-materialize',
@@ -2149,19 +2149,19 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
-      max_restarts: 20,
+      autorestart: false,
+      max_restarts: 0,
       restart_delay: 30_000,
       merge_logs: true,
       time: true,
       env: {
         NODE_ENV: 'production',
-        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '1',
+        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '0',
         PERVYY_VYSTREL_MATERIALIZE_INTERVAL_MIN: '15',
         PERVYY_VYSTREL_MATERIALIZE_TTL_SEC: '120',
         PERVYY_VYSTREL_MATERIALIZE_LIMIT: '30',
         PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
-        PAPER_PERVYY_VYSTREL_MODE: 'shadow',
+        PAPER_PERVYY_VYSTREL_MODE: 'off',
         PAPER_PERVYY_VYSTREL_ANCHOR_MIN_MCAP_USD: '100000',
         PAPER_PERVYY_VYSTREL_ANCHOR_MAX_MCAP_USD: '250000',
         PAPER_PERVYY_VYSTREL_MIN_VOL_1H_USD: '45000',
