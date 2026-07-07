@@ -851,7 +851,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT: '0.1',
         PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS: '3',
         /** 1.11.543 — runner_probe lane ON (fresh runners 12–48h, 2×$500); intel shadow 48h before gate. */
-        PAPER_RUNNER_PROBE_ENABLED: '1',
+        PAPER_RUNNER_PROBE_ENABLED: '0',
         PAPER_RUNNER_PROBE_MIN_AGE_MIN: '720',
         PAPER_RUNNER_PROBE_MAX_AGE_MIN: '2880',
         PAPER_RUNNER_PROBE_12H_INTEL_REQUIRED: '1',
@@ -880,7 +880,7 @@ const PM2_APPS = [
         PAPER_RUNNER_PROBE_DCA_LEVELS: '-10:0.5,-20:0.5',
         PAPER_RUNNER_PROBE_TIME_STOP_HOURS: '6',
         /** 1.11.545 — runner_lite tier routing: tier1 $500k–<$1M OR tier2 probe-fallback 2×$100. */
-        PAPER_RUNNER_LITE_ENABLED: '1',
+        PAPER_RUNNER_LITE_ENABLED: '0',
         PAPER_RUNNER_LITE_MIN_AGE_MIN: '720',
         PAPER_RUNNER_LITE_MAX_AGE_MIN: '2880',
         PAPER_RUNNER_LITE_12H_INTEL_REQUIRED: '0',
