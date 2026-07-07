@@ -928,11 +928,10 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_MIN_PG_SAMPLES_24H: '24',
         /** runner_lite: hard intel gate when tier gates pass (same as runner_probe). */
         LIVE_OSCAR_INTEL_MODE_RUNNER_LITE: 'gate',
-        /** Tier «Первый выстрел» — DISABLED / shadow (LIVE_OSCAR_PERVYY_VYSTREL_SPEC v0.4). PR3 eval lane.
-         *  Shadow experiment (2026-07 ~5d remaining of 7d window): relaxed thresholds to surface
-         *  more Phase C/D phantom candidates for replay — PAPER_PERVYY_VYSTREL_ENABLED stays 0. */
+        /** Tier «Первый выстрел» — OFF for prod-only LERA parity ($2M SQL floor).
+         *  shadow widens discovery SQL to anchorMinMcap $100k → eval storm + discovery tick timeout. */
         PAPER_PERVYY_VYSTREL_ENABLED: '0',
-        PAPER_PERVYY_VYSTREL_MODE: 'shadow',
+        PAPER_PERVYY_VYSTREL_MODE: 'off',
         PAPER_PERVYY_VYSTREL_FAIL_OPEN: '1',
         PAPER_PERVYY_VYSTREL_LEG_USD: '25',
         PAPER_PERVYY_VYSTREL_POSITION_USD: '50',
