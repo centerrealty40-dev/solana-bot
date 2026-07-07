@@ -2,15 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
 import { acquireBirdeyeSlot, isBirdeyeUrl } from './birdeye-api-gate.mjs';
-/**
- * Per-mint open/pin enrich removed 2026-07-07. It replayed the multi-GB live JSONL every tick
- * (`loadLiveOscarOpenMintsSync` → 12-34 min ticks) and, on Oscar, its module import crashed all
- * collectors (`birdeye-collector-api.mjs` missing `birdeyeMarketToDexPairShape`). Collectors now do
- * primary trending fetch + upsert only. This no-op keeps the tick pipeline shape intact.
- */
-async function mergePaper2OpenMintSnapshots({ rows }) {
-  return rows;
-}
+import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 import { fetchPrimarySnapshotRows } from './collector-primary-fetch.mjs';
 
 const { Pool } = pg;

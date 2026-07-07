@@ -402,6 +402,13 @@ const PM2_APPS = [
         QUICKNODE_BILLING_MILESTONES: '0',
       },
     },
+    /**
+     * DEX snapshot collectors — tick cadence (LERA prod policy 2026-07):
+     * - sa-pumpswap: 60s (primary lane — fastest cadence; do not go below 60s without 429 review)
+     * - sa-raydium / sa-meteora / sa-moonshot: 120s (2 min — DexScreener budget + staggered START_OFFSET_MS)
+     * Stagger offsets spread DexScreener search bursts across the minute grid.
+     * Enrich: open/live/pin mints via paper2-open-snapshot-enrich (stream-read + 30s cache; caps below).
+     */
     {
       name: 'sa-raydium',
       cwd: root,
@@ -417,18 +424,9 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        RAYDIUM_COLLECTOR_INTERVAL_MS: '60000',
+        RAYDIUM_COLLECTOR_INTERVAL_MS: '120000',
         RAYDIUM_COLLECTOR_START_OFFSET_MS: '0',
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
-        /**
-         * 2026-07-07 — per-mint open/pin enrich OFF (`PAPER2_SNAPSHOT_OPENS=0`). The enrich merge
-         * replayed the multi-GB `pt1-oscar-live.jsonl` (8.8GB) every tick via `loadLiveOscarOpenMintsSync`,
-         * pushing ticks to 12–34 min. Collectors now run primary DexScreener/Gecko trending fetch + upsert
-         * only (~300 rows/tick, ~60s) — the reliable "month ago" behavior. `PAPER2_SNAPSHOT_*` caps and the
-         * discovery-pin block below are inert while OPENS=0. Tradeoff: no fresh PG snapshots for open/live
-         * mints outside the trending feed (owner-accepted blindness).
-         */
-        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
@@ -454,11 +452,9 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        METEORA_COLLECTOR_INTERVAL_MS: '60000',
+        METEORA_COLLECTOR_INTERVAL_MS: '120000',
         METEORA_COLLECTOR_START_OFFSET_MS: '10000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
-        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
-        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
@@ -484,11 +480,9 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        MOONSHOT_COLLECTOR_INTERVAL_MS: '60000',
+        MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
         MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
-        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
-        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
@@ -516,8 +510,6 @@ const PM2_APPS = [
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000',
         PUMPSWAP_COLLECTOR_START_OFFSET_MS: '35000',
         PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
-        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
-        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
@@ -764,35 +756,18 @@ const PM2_APPS = [
          */
         PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS: '45000',
         /**
-         * Shyft shadow mode (1.11.557): gRPC stream + journal compare vs Dex/PG. Trading stays Dex→PG.
-         * Aliases: SHYFT_SHADOW_ENABLED / SHYFT_STREAM_ENABLED (preferred) + legacy PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED.
-         * Open-mints-only reduces Jul-4 reconnect storms from discovery mint churn.
+         * Shyft OFF — subscription ended (2026-07). DexScreener + PG + Jupiter cover discovery/MTM.
+         * LERA parity: shadow + primary all OFF; creds may remain in `.env` unused.
          */
-        SHYFT_SHADOW_ENABLED: '1',
-        SHYFT_STREAM_ENABLED: '1',
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '1',
-        SHYFT_SHADOW_OPEN_MINTS_ONLY: '1',
+        SHYFT_SHADOW_ENABLED: '0',
+        SHYFT_STREAM_ENABLED: '0',
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED: '0',
         PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_AGE_MS: '60000',
-        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '64',
-        /**
-         * 1.11.468 — Этап 1.2: Shyft stream-цена PRIMARY для live-oscar (MTM открытых позиций +
-         * discovery dip-eval), freshness-gate `SHYFT_MAX_STALE_MS` + fallback на PG/Jupiter. Master
-         * флаг default OFF — при OFF источник цены байт-в-байт = текущий PG/Jupiter. Требует включённый
-         * Stage 1.1 shadow-консьюмер (PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED=1 + SHYFT_GRPC_TOKEN), чтобы
-         * было что брать как primary.
-         * Shadow rollout: primary OFF — prod path Dex→PG unchanged.
-         */
+        PAPER_LIVE_OSCAR_SHYFT_SHADOW_MAX_MINTS: '256',
         SHYFT_PRICE_PRIMARY_ENABLED: '0',
         SHYFT_PRICE_PRIMARY_MTM_ENABLED: '0',
         SHYFT_PRICE_PRIMARY_DISCOVERY_ENABLED: '0',
         SHYFT_MAX_STALE_MS: '5000',
-        /**
-         * 1.11.469 — Этап 1.3: mcap/liq кандидата из Shyft DeFi API (`/v0/pools/get_by_token`) с
-         * TTL-кэшем + fallback на PG/pump.fun. Override `refMcap` (tier) + входы snapshot mcap/liq-гейта.
-         * Default OFF — при OFF источник mcap/liq байт-в-байт = текущий PG. Ключ DeFi REST API:
-         * SHYFT_DEFI_API_KEY (или SHYFT_API_KEY) в .env; SHYFT_DEFI_API_BASE default https://defi.shyft.to.
-         * Shadow rollout: DeFi override OFF — observability via live_shyft_vs_dex_quote only.
-         */
         SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
         /**
@@ -855,7 +830,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
         /** 1.11.555 — low $2M–$3M: 2×$1000 @ 10s (+3/−5% corridor), avg −10% $500 + −20% $500 (max $3000); TP2 = global DIP10_FIRST_TP5. */
-        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
+        /** Low $2M–$3M lane OFF — prod-only from $2M (LERA parity; runner/micro/scalp_wave also OFF). */
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
