@@ -786,6 +786,46 @@ export const BirdeyeTierInsufficientSchema = z.object({
   message: z.string().max(240).optional(),
 });
 
+/**
+ * Lera entry on-chain overlay (shadow) — verdict at buy-ready moment after TA gates pass.
+ * Oscar path does not emit this event (A/B: Oscar TA-only vs Lera TA+on-chain).
+ */
+export const LiveLeraEntryOnchainOverlaySchema = z.object({
+  kind: z.literal('live_lera_entry_onchain_overlay'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32).optional(),
+  symbol: z.string().max(64).optional(),
+  mode: z.literal('shadow'),
+  verdict: z.enum(['BUY', 'WAIT', 'SKIP']),
+  wouldBlock: z.boolean(),
+  blocked: z.literal(false),
+  reasons: z.array(z.string().max(120)),
+  hits: z
+    .array(
+      z.object({
+        wallet: z.string().max(64),
+        kind: z.enum([
+          'BLOCK_TRADE',
+          'bad_tag',
+          'atlas_cluster',
+          'scam_farm_meta',
+          'coord_sell',
+          'whale_dump',
+          'multi_large_sell',
+        ]),
+        amountUsd: z.number().finite().optional(),
+        ageSec: z.number().finite().optional(),
+      }),
+    )
+    .max(20),
+  recentSellCount: z.number().int().nonnegative(),
+  largeSellCount: z.number().int().nonnegative(),
+  totalSellUsd: z.number().finite().nonnegative(),
+  lookbackSec: z.number().int().positive(),
+  queryMs: z.number().int().nonnegative().optional(),
+  error: z.string().max(200).optional(),
+});
+
 /** Stage 0 (1.11.466) — PG snapshot price older than warn threshold at entry eval. */
 export const LiveStalePriceWarnSchema = z.object({
   kind: z.literal('live_stale_price_warn'),
@@ -1030,6 +1070,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBirdeyeMarketQuoteSchema,
   BirdeyeCoverageGapSchema,
   BirdeyeTierInsufficientSchema,
+  LiveLeraEntryOnchainOverlaySchema,
   LiveStalePriceWarnSchema,
   LiveBootSnapshotMergeSchema,
   LiveBootWalletOrphanRestoreSchema,

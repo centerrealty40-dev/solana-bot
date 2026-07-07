@@ -451,6 +451,25 @@ const ConfigSchema = z.object({
   liveOscarIntelBlockBadTags: z.boolean().default(true),
   liveOscarIntelBlockClusteredWallets: z.boolean().default(true),
   liveOscarIntelBlockScamFarmMeta: z.boolean().default(true),
+  /**
+   * Lera-only entry on-chain overlay at buy moment (shadow — journals verdict, never blocks).
+   * Oscar path untouched for A/B: Oscar = TA only, Lera = TA + on-chain analytics.
+   */
+  leraEntryOnchainOverlayEnabled: z.boolean().default(false),
+  leraEntryOnchainOverlayLookbackSec: z.coerce.number().int().min(30).max(600).default(120),
+  leraEntryOnchainOverlayMinSellUsd: z.coerce.number().nonnegative().default(500),
+  leraEntryOnchainOverlayLargeSellUsd: z.coerce.number().nonnegative().default(1_500),
+  leraEntryOnchainOverlayWhaleDumpMaxAgeSec: z.coerce.number().int().min(10).max(300).default(90),
+  leraEntryOnchainOverlayCoordSellWalletMin: z.coerce.number().int().min(2).max(20).default(3),
+  leraEntryOnchainOverlayQueryTimeoutMs: z.coerce.number().int().min(100).max(5_000).default(800),
+  leraEntryOnchainOverlayBlockIntelBlockTrade: z.boolean().default(true),
+  leraEntryOnchainOverlayBlockBadTags: z.boolean().default(true),
+  leraEntryOnchainOverlayBlockClusteredWallets: z.boolean().default(true),
+  leraEntryOnchainOverlayBlockScamFarmMeta: z.boolean().default(true),
+  /** Lera VPS: feed pass-candidate mints to Shyft stream for overlay correlation (observability). */
+  leraOnchainOverlayShyftWatchEnabled: z.boolean().default(false),
+  /** Telegram when shadow overlay would block but buy still executed (Lera A/B). */
+  leraEntryOnchainOverlayTelegramEnabled: z.boolean().default(true),
   /** Max snapshot rows after lane filters (ORDER BY ts DESC). Higher = scan more mints per tick. */
   snapshotCandidateLimit: z.coerce.number().int().min(50).max(5000).default(300),
   /** Min seconds before re-evaluating the same mint in discovery (per process). */
@@ -1534,6 +1553,34 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     ),
     liveOscarIntelBlockScamFarmMeta: envBool(
       process.env.LIVE_OSCAR_INTEL_BLOCK_SCAM_FARM_META,
+      true,
+    ),
+    leraEntryOnchainOverlayEnabled: envBool(process.env.LERA_ENTRY_ONCHAIN_OVERLAY_ENABLED, false),
+    leraEntryOnchainOverlayLookbackSec: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_LOOKBACK_SEC,
+    leraEntryOnchainOverlayMinSellUsd: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_MIN_SELL_USD,
+    leraEntryOnchainOverlayLargeSellUsd: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_LARGE_SELL_USD,
+    leraEntryOnchainOverlayWhaleDumpMaxAgeSec: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_WHALE_DUMP_MAX_AGE_SEC,
+    leraEntryOnchainOverlayCoordSellWalletMin: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_COORD_SELL_WALLET_MIN,
+    leraEntryOnchainOverlayQueryTimeoutMs: process.env.LERA_ENTRY_ONCHAIN_OVERLAY_QUERY_TIMEOUT_MS,
+    leraEntryOnchainOverlayBlockIntelBlockTrade: envBool(
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_BLOCK_INTEL_BLOCK_TRADE,
+      true,
+    ),
+    leraEntryOnchainOverlayBlockBadTags: envBool(
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_BLOCK_BAD_TAGS,
+      true,
+    ),
+    leraEntryOnchainOverlayBlockClusteredWallets: envBool(
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_BLOCK_CLUSTERED_WALLETS,
+      true,
+    ),
+    leraEntryOnchainOverlayBlockScamFarmMeta: envBool(
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_BLOCK_SCAM_FARM_META,
+      true,
+    ),
+    leraOnchainOverlayShyftWatchEnabled: envBool(process.env.LERA_ONCHAIN_OVERLAY_SHYFT_WATCH_ENABLED, false),
+    leraEntryOnchainOverlayTelegramEnabled: envBool(
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_TELEGRAM_ENABLED,
       true,
     ),
     liveOscarProdMcapDipMinDropPct: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT,

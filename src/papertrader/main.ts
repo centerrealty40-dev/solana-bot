@@ -54,6 +54,7 @@ import {
   isLiveOscarPresetCStrategyId,
   isLiveOscarTradingStrategyId,
   isLiveOscarFamilyTradingStrategyId,
+  isLiveLeraTradingStrategyId,
 } from '../preset-c/live-oscar-family.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
@@ -186,6 +187,11 @@ import {
   resetLiveBuyTelegramSuppressTick,
 } from '../live/wallet-buy-affordability.js';
 import { handleBirdeyeObservabilityTelegram } from '../live/birdeye-telegram-alerts.js';
+import { evaluateLeraEntryOnchainOverlay } from './entry-lera-onchain-overlay.js';
+import {
+  buildLeraOverlayShadowBuyTelegramText,
+  shouldNotifyLeraOverlayShadowBuy,
+} from './lera-entry-onchain-overlay-notify.js';
 
 const logger = pino({ name: 'papertrader' });
 
@@ -957,6 +963,91 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       });
   }
 
+  /**
+   * Lera-only shadow overlay at buy-ready moment (after TA gates, before open trade).
+   * Journals `live_lera_entry_onchain_overlay` — never blocks entry in shadow mode.
+   * Oscar path unchanged for A/B comparison (Oscar = TA only).
+   */
+  async function observeLeraEntryOnchainOverlay(
+    d: EvalDecision,
+  ): Promise<import('./entry-lera-onchain-overlay.js').LeraEntryOnchainOverlayResult | null> {
+    if (!cfg.leraEntryOnchainOverlayEnabled || !isLiveLeraTradingStrategyId(cfg.strategyId)) {
+      return null;
+    }
+    try {
+      const overlay = await evaluateLeraEntryOnchainOverlay(d.mint, cfg);
+      const event = {
+        kind: 'live_lera_entry_onchain_overlay' as const,
+        mint: d.mint,
+        lane: String(d.lane),
+        symbol: d.symbol,
+        mode: overlay.mode,
+        verdict: overlay.verdict,
+        wouldBlock: overlay.wouldBlock,
+        blocked: overlay.blocked,
+        reasons: overlay.reasons,
+        hits: overlay.hits,
+        recentSellCount: overlay.recentSellCount,
+        largeSellCount: overlay.largeSellCount,
+        totalSellUsd: overlay.totalSellUsd,
+        lookbackSec: overlay.lookbackSec,
+        ...(overlay.queryMs != null ? { queryMs: overlay.queryMs } : {}),
+        ...(overlay.error ? { error: overlay.error } : {}),
+      };
+      journalAppend(event);
+      journalLiveStrategy?.(event);
+      return overlay;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), mint: d.mint },
+        'lera entry onchain overlay failed — entry proceeds',
+      );
+      return null;
+    }
+  }
+
+  function notifyLeraOverlayShadowBuy(
+    d: EvalDecision,
+    ot: import('./types.js').OpenTrade,
+    overlay: import('./entry-lera-onchain-overlay.js').LeraEntryOnchainOverlayResult | null,
+  ): void {
+    if (!cfg.leraEntryOnchainOverlayEnabled || !isLiveLeraTradingStrategyId(cfg.strategyId)) return;
+    if (!cfg.leraEntryOnchainOverlayTelegramEnabled) return;
+    if (!shouldNotifyLeraOverlayShadowBuy(overlay)) return;
+
+    const token =
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LERA_ENTRY_ONCHAIN_OVERLAY_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: ot.mint }, 'lera overlay shadow-buy telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const text = buildLeraOverlayShadowBuyTelegramText({
+      d,
+      ot,
+      overlay,
+      strategyId: cfg.strategyId,
+      escapeHtml: escapeHtmlPlain,
+      mintHrefHtml: gmgnMintHrefHtml,
+      fmtUsd: fmtUsdCompact,
+    });
+
+    void sendTagged('ADVICE', 'lera_overlay_shadow_buy', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: ot.mint }, 'lera overlay shadow-buy telegram failed'),
+    );
+  }
+
   function notifyLiveOscarStalePrice(d: EvalDecision, priceAgeMs: number): void {
     if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
     // Throttled alert is opt-in (default OFF) — journal metric above is the primary observability surface.
@@ -1501,6 +1592,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         setShyftShadowWatchedMints(shadowMints);
       }
+      if (
+        cfg.leraEntryOnchainOverlayEnabled &&
+        cfg.leraOnchainOverlayShyftWatchEnabled &&
+        isLiveLeraTradingStrategyId(cfg.strategyId) &&
+        isShyftShadowEnabled()
+      ) {
+        const leraShadowMints = new Set<string>(open.keys());
+        for (const d of res.decisions) {
+          if (d.pass) leraShadowMints.add(d.mint);
+        }
+        setShyftShadowWatchedMints(leraShadowMints);
+      }
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
 
@@ -1933,6 +2036,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
         observeStaleEntryPrice(d);
         observeShyftShadowEntryPrice(d);
+        const leraEntryOverlay = await observeLeraEntryOnchainOverlay(d);
 
         const tradeLane = resolveDecisionTradeLane(d);
         let stagedEntrySignal: Awaited<ReturnType<typeof resolveLiveStagedEntrySignal>> | null = null;
@@ -2641,6 +2745,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         });
         recordEntryTs(ot.mint, ot.entryTs);
         stats.opened++;
+        notifyLeraOverlayShadowBuy(d, ot, leraEntryOverlay);
         schedulePendingFollowups(
           cfg,
           {
