@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
+import { acquireBirdeyeSlot, isBirdeyeUrl } from './birdeye-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
-import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
-import { createCollectorFetchJsonWithRetry } from './collector-http-fetch.mjs';
+import { fetchPrimarySnapshotRows } from './collector-primary-fetch.mjs';
 
 const { Pool } = pg;
 
@@ -57,12 +58,67 @@ function getMinuteBucketUtc(ts = Date.now()) {
   return new Date(Math.floor(ts / 60_000) * 60_000);
 }
 
-const fetchJsonWithRetry = createCollectorFetchJsonWithRetry({
-  log,
-  sleep,
-  timeoutMs: REQUEST_TIMEOUT_MS,
-  maxRetries: MAX_RETRIES,
-});
+async function fetchJsonWithRetry(url, options = {}, retryTag = 'http', retryOpts = {}) {
+  const maxRetries = Number.isFinite(retryOpts.maxRetries) ? retryOpts.maxRetries : MAX_RETRIES;
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      if (isBirdeyeUrl(url)) await acquireBirdeyeSlot();
+      else if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          accept: 'application/json',
+          ...(options.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        return await res.json();
+      }
+
+      const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+      if (!retryable || attempt === maxRetries) {
+        throw new Error(`${retryTag} non-retryable status=${res.status}`);
+      }
+
+      const retryAfterHeader = Number(res.headers.get('retry-after'));
+      const retryAfterMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : 0;
+      const backoffMs = retryAfterMs || Math.min(10_000, 500 * 2 ** attempt);
+      log('warn', 'request retry scheduled', {
+        retryTag,
+        url,
+        status: res.status,
+        attempt,
+        backoffMs,
+        elapsedMs: Date.now() - startedAt,
+      });
+      attempt += 1;
+      await sleep(backoffMs);
+    } catch (error) {
+      clearTimeout(timeout);
+      if (attempt === maxRetries) throw error;
+      const backoffMs = Math.min(10_000, 500 * 2 ** attempt);
+      log('warn', 'request failed, retrying', {
+        retryTag,
+        url,
+        attempt,
+        backoffMs,
+        error: String(error),
+      });
+      attempt += 1;
+      await sleep(backoffMs);
+    }
+  }
+  throw new Error(`${retryTag} failed after retries`);
+}
 
 function fetchJsonEnrich(url, options = {}, retryTag = 'http') {
   return fetchJsonWithRetry(url, options, retryTag, { maxRetries: ENRICH_MAX_RETRIES });
@@ -272,11 +328,16 @@ async function collectOneTick() {
   let enrichUpserted = 0;
 
   try {
-    primaryRows = await fetchFromDexScreener(bucketTs);
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal';
-      primaryRows = await fetchFromGeckoTrending(bucketTs);
-    }
+    ({ primaryRows, sourceUsed } = await fetchPrimarySnapshotRows({
+      dexSource: 'raydium',
+      bucketTs,
+      searchTerms: DEX_SEARCH_TERMS,
+      fetchFromDexScreener,
+      fetchFromGeckoTrending,
+      fetchJsonWithRetry,
+      sleep,
+      log,
+    }));
 
     // Persist primary search bucket first — MAX(ts) must advance even if enrich hits 429.
     primaryUpserted = await upsertSnapshots(primaryRows);
@@ -297,22 +358,6 @@ async function collectOneTick() {
         log,
         component: 'raydium-collector',
       });
-      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
-        rows: finalRows,
-        bucketTs,
-        sourceTag: 'raydium',
-        fetchImpl: fetch,
-        fetchJsonWithRetry: fetchJsonEnrich,
-        normalizeDexPair: (p, bt) => {
-          if (p?.chainId !== 'solana') return null;
-          if (String(p?.dexId || '').toLowerCase() !== 'raydium') return null;
-          return normalizeDexScreenerPair(p, bt);
-        },
-        dedupByPairAddress,
-        log,
-        component: 'raydium-collector',
-      });
-      finalRows = birdeyeEnriched.rows;
       if (finalRows.length > primaryRows.length) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }

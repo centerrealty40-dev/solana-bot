@@ -9,10 +9,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { acquireDexScreenerSlot } from './dexscreener-api-gate.mjs';
 import {
-  pairsResponseToCacheUpdates,
-  putCachedDexQuotes,
-  quoteCacheEnabled,
-} from './dexscreener-quote-cache.mjs';
+  BIRDEYE_DEX_MARKETS,
+  birdeyeEnabled,
+  birdeyeMarketToDexPairShape,
+  fetchBirdeyePairsForMint,
+} from './birdeye-collector-api.mjs';
 
 const DEFAULT_PAPER2_DIR = '/opt/solana-alpha/data/paper2';
 const DEFAULT_LIVE_JSONL = path.join(path.dirname(DEFAULT_PAPER2_DIR), 'live', 'pt1-oscar-live.jsonl');
@@ -28,8 +29,6 @@ const DS_DELAY_MS = Number(process.env.PAPER2_SNAPSHOT_DS_DELAY_MS || 500);
 const SOLO_FETCH_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK || 6);
 /** Cap batch `/tokens/{m1,m2,…}` chunks per tick (10 mints each). */
 const BATCH_CHUNKS_MAX_PER_TICK = Number(process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK || 8);
-/** Global collector enrich budget per tick (shared expectation across collectors). */
-const COLLECTOR_ENRICH_MAX_MINTS_PER_TICK = Number(process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK || 12);
 
 /** Per-component rotation cursor for capped solo-fetch queues. */
 const _soloFetchRotation = new Map();
@@ -244,12 +243,6 @@ function selectRotatingBatch(list, component, max) {
   return selected;
 }
 
-function positiveIntOr(v, fallback) {
-  const n = Number(v);
-  if (Number.isFinite(n) && n > 0) return Math.floor(n);
-  return fallback;
-}
-
 /** Discovery / dip eval keys on `base_mint` — quote-only presence must not skip enrich. */
 function mintsWithBaseSnapshot(rows) {
   const s = new Set();
@@ -257,6 +250,15 @@ function mintsWithBaseSnapshot(rows) {
     if (r?.base_mint) s.add(r.base_mint);
   }
   return s;
+}
+
+function dexSourceFromComponent(component) {
+  const c = String(component ?? '');
+  if (c.includes('pumpswap')) return 'pumpswap';
+  if (c.includes('moonshot')) return 'moonshot';
+  if (c.includes('meteora')) return 'meteora';
+  if (c.includes('orca')) return 'orca';
+  return 'raydium';
 }
 
 async function fetchDexPairsForMintChunk({
@@ -269,15 +271,66 @@ async function fetchDexPairsForMintChunk({
   component,
   retryTag,
 }) {
-  const nowMs = bucketTs.getTime();
+  const dexSource = dexSourceFromComponent(component);
+  const birdeyeMarkets = BIRDEYE_DEX_MARKETS[dexSource] ?? '';
+
+  if (birdeyeEnabled() && birdeyeMarkets) {
+    let birdeyePairs = 0;
+    for (const mint of chunk) {
+      try {
+        const rows = await fetchBirdeyePairsForMint({
+          mint,
+          markets: birdeyeMarkets,
+          dexSource,
+          bucketTs,
+          fetchJsonWithRetry,
+          withTradeData: true,
+        });
+        for (const row of rows) {
+          const shaped = birdeyeMarketToDexPairShape(
+            {
+              address: row.pair_address,
+              base_mint: row.base_mint,
+              quote_mint: row.quote_mint,
+              source: dexSource,
+              liquidity: row.liquidity_usd,
+            },
+            {
+              price: row.price_usd,
+              volume_5m_usd: row.volume_5m,
+              volume_1h_usd: row.volume_1h,
+              buy_5m: row.buys_5m,
+              sell_5m: row.sells_5m,
+              fdv: row.fdv_usd,
+              market_cap: row.market_cap_usd,
+              symbol: row.base_symbol,
+              name: row.base_name,
+            },
+          );
+          const normalized = normalizeDexPair(shaped, bucketTs);
+          if (normalized) {
+            extra.push(normalized);
+            birdeyePairs += 1;
+          }
+        }
+      } catch (e) {
+        if (log) {
+          log('warn', 'birdeye mint enrich failed; will try dexscreener chunk', {
+            error: String(e),
+            mint,
+            component,
+          });
+        }
+      }
+    }
+    if (birdeyePairs > 0) return { ok: true, pairs: birdeyePairs };
+  }
+
   const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.map((m) => encodeURIComponent(m)).join(',')}`;
   try {
     await acquireDexScreenerSlot();
     const json = await fetchJsonWithRetry(url, {}, retryTag);
     const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
-    if (quoteCacheEnabled()) {
-      await putCachedDexQuotes(pairsResponseToCacheUpdates(pairs, chunk, nowMs));
-    }
     for (const p of pairs) {
       const row = normalizeDexPair(p, bucketTs);
       if (row) extra.push(row);
@@ -360,21 +413,9 @@ export async function mergePaper2OpenMintSnapshots({
     whitelistSet,
     discoverySet,
   });
-  const totalMintBudget = positiveIntOr(
-    process.env.COLLECTOR_ENRICH_MAX_MINTS_PER_TICK,
-    COLLECTOR_ENRICH_MAX_MINTS_PER_TICK,
-  );
-  const soloCap = Math.min(
-    positiveIntOr(process.env.PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK, SOLO_FETCH_MAX_PER_TICK),
-    totalMintBudget,
-  );
-  const missingSolo = selectRotatingBatch(prioritizedSolo, component, soloCap);
-  const batchChunkLimit = positiveIntOr(
-    process.env.PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK,
-    BATCH_CHUNKS_MAX_PER_TICK,
-  ) * TOKEN_CHUNK;
-  const remainingMintBudget = Math.max(0, totalMintBudget - missingSolo.length);
-  const missingBatch = missingBatchAll.slice(0, Math.min(batchChunkLimit, remainingMintBudget));
+  const missingSolo = selectRotatingBatch(prioritizedSolo, component, SOLO_FETCH_MAX_PER_TICK);
+  const batchChunkLimit = BATCH_CHUNKS_MAX_PER_TICK * TOKEN_CHUNK;
+  const missingBatch = missingBatchAll.slice(0, batchChunkLimit);
 
   const extra = [];
   let whitelistSingleFetchOk = 0;
@@ -425,7 +466,6 @@ export async function mergePaper2OpenMintSnapshots({
         openMintCount: openMints.length,
         missingFromPrimaryTick: missing.length,
         missingSoloFetch: missingSolo.length,
-        totalMintBudget,
         soloFetchDeferred,
         batchFetchDeferred,
         stillMissingSoloFetch: stillMissingSolo.length,
@@ -443,7 +483,6 @@ export async function mergePaper2OpenMintSnapshots({
       discoveryPinMintCount,
       missingFromPrimaryTick: missing.length,
       missingSoloFetch: missingSolo.length,
-      totalMintBudget,
       soloFetchDeferred,
       batchFetchDeferred,
       soloFetchOk: whitelistSingleFetchOk,

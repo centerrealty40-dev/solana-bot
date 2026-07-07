@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { acquireDexScreenerSlot, isDexScreenerUrl } from './dexscreener-api-gate.mjs';
+import { acquireBirdeyeSlot, isBirdeyeUrl } from './birdeye-api-gate.mjs';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
-import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
-import { createCollectorFetchJsonWithRetry } from './collector-http-fetch.mjs';
+import { fetchPrimarySnapshotRows } from './collector-primary-fetch.mjs';
 
 const { Pool } = pg;
 
@@ -163,12 +164,67 @@ function normalizeGeckoPool(poolData, bucketTs) {
   };
 }
 
-const fetchJsonWithRetry = createCollectorFetchJsonWithRetry({
-  log,
-  sleep,
-  timeoutMs: REQUEST_TIMEOUT_MS,
-  maxRetries: MAX_RETRIES,
-});
+async function fetchJsonWithRetry(url, options = {}, retryTag = 'http', retryOpts = {}) {
+  const maxRetries = Number.isFinite(retryOpts.maxRetries) ? retryOpts.maxRetries : MAX_RETRIES;
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      if (isBirdeyeUrl(url)) await acquireBirdeyeSlot();
+      else if (isDexScreenerUrl(url)) await acquireDexScreenerSlot();
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          accept: 'application/json',
+          ...(options.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        return await res.json();
+      }
+
+      const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+      if (!retryable || attempt === maxRetries) {
+        throw new Error(`${retryTag} non-retryable status=${res.status}`);
+      }
+
+      const retryAfterHeader = Number(res.headers.get('retry-after'));
+      const retryAfterMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : 0;
+      const backoffMs = retryAfterMs || Math.min(10_000, 500 * 2 ** attempt);
+      log('warn', 'request retry scheduled', {
+        retryTag,
+        url,
+        status: res.status,
+        attempt,
+        backoffMs,
+        elapsedMs: Date.now() - startedAt,
+      });
+      attempt += 1;
+      await sleep(backoffMs);
+    } catch (error) {
+      clearTimeout(timeout);
+      if (attempt === maxRetries) throw error;
+      const backoffMs = Math.min(10_000, 500 * 2 ** attempt);
+      log('warn', 'request failed, retrying', {
+        retryTag,
+        url,
+        attempt,
+        backoffMs,
+        error: String(error),
+      });
+      attempt += 1;
+      await sleep(backoffMs);
+    }
+  }
+  throw new Error(`${retryTag} failed after retries`);
+}
 
 function fetchJsonEnrich(url, options = {}, retryTag = 'http') {
   return fetchJsonWithRetry(url, options, retryTag, { maxRetries: ENRICH_MAX_RETRIES });
@@ -282,35 +338,22 @@ async function collectOneTick() {
   let primaryUpserted = 0;
   let enrichUpserted = 0;
 
-  let dexRateLimited = false;
   try {
-    try {
-      primaryRows = await fetchFromDexScreener(bucketTs);
-    } catch (error) {
-      if (String(error).includes('status=429')) {
-        dexRateLimited = true;
-        log('warn', 'dexscreener rate limited; gecko fallback', { error: String(error) });
-        primaryRows = [];
-      } else {
-        throw error;
-      }
-    }
-    if (primaryRows.length === 0 || dexRateLimited) {
-      sourceUsed = dexRateLimited ? 'geckoterminal-trending-429-fallback' : 'geckoterminal-trending';
-      primaryRows = await fetchFromGecko(
-        bucketTs,
-        { path: 'trending_pools', pages: GECKO_TRENDING_PAGES },
-        'geckoterminal-trending',
-      );
-    }
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal-new-pools';
-      primaryRows = await fetchFromGecko(
-        bucketTs,
-        { path: 'new_pools', pages: GECKO_NEW_POOLS_PAGES },
-        'geckoterminal-new',
-      );
-    }
+    ({ primaryRows, sourceUsed } = await fetchPrimarySnapshotRows({
+      dexSource: 'pumpswap',
+      bucketTs,
+      searchTerms: DEX_SEARCH_TERMS,
+      fetchFromDexScreener,
+      fetchFromGeckoTrending: (bt) =>
+        fetchFromGecko(bt, { path: 'trending_pools', pages: GECKO_TRENDING_PAGES }, 'geckoterminal-trending'),
+      fetchFromGeckoNewPools: (bt) =>
+        fetchFromGecko(bt, { path: 'new_pools', pages: GECKO_NEW_POOLS_PAGES }, 'geckoterminal-new'),
+      fetchJsonWithRetry,
+      sleep,
+      log,
+      minLiquidityUsd: SHORTLIST_MIN_LIQ_USD,
+      minVolume5mUsd: SHORTLIST_MIN_VOL5M_USD,
+    }));
 
     // Persist primary search bucket first — MAX(ts) must advance even if enrich hits 429.
     primaryUpserted = await upsertSnapshots(primaryRows);
@@ -327,26 +370,7 @@ async function collectOneTick() {
         log,
         component: 'pumpswap-collector',
       });
-      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
-        rows: finalRows,
-        bucketTs,
-        sourceTag: 'pumpswap',
-        fetchImpl: fetch,
-        fetchJsonWithRetry: fetchJsonEnrich,
-        normalizeDexPair: normalizeDexScreenerPair,
-        dedupByPairAddress,
-        log,
-        component: 'pumpswap-collector',
-      });
-      finalRows = birdeyeEnriched.rows;
-      if (birdeyeEnriched.stats?.tierInsufficient) {
-        log('warn', 'birdeye tier insufficient during collector enrich', {
-          kind: 'birdeye_tier_insufficient',
-          errorKind: birdeyeEnriched.stats.errorKind,
-          batchUnavailable: birdeyeEnriched.stats.batchUnavailable,
-        });
-      }
-      if (finalRows.length > primaryRows.length || birdeyeEnriched.stats?.changed) {
+      if (finalRows.length > primaryRows.length) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }
     } catch (enrichError) {
