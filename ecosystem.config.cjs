@@ -417,9 +417,18 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        RAYDIUM_COLLECTOR_INTERVAL_MS: '120000',
+        RAYDIUM_COLLECTOR_INTERVAL_MS: '60000',
         RAYDIUM_COLLECTOR_START_OFFSET_MS: '0',
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        /**
+         * 2026-07-07 — per-mint open/pin enrich OFF (`PAPER2_SNAPSHOT_OPENS=0`). The enrich merge
+         * replayed the multi-GB `pt1-oscar-live.jsonl` (8.8GB) every tick via `loadLiveOscarOpenMintsSync`,
+         * pushing ticks to 12–34 min. Collectors now run primary DexScreener/Gecko trending fetch + upsert
+         * only (~300 rows/tick, ~60s) — the reliable "month ago" behavior. `PAPER2_SNAPSHOT_*` caps and the
+         * discovery-pin block below are inert while OPENS=0. Tradeoff: no fresh PG snapshots for open/live
+         * mints outside the trending feed (owner-accepted blindness).
+         */
+        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
@@ -445,9 +454,11 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        METEORA_COLLECTOR_INTERVAL_MS: '120000',
+        METEORA_COLLECTOR_INTERVAL_MS: '60000',
         METEORA_COLLECTOR_START_OFFSET_MS: '10000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
+        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
@@ -473,9 +484,11 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
+        MOONSHOT_COLLECTOR_INTERVAL_MS: '60000',
         MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
+        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
@@ -503,6 +516,8 @@ const PM2_APPS = [
         PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000',
         PUMPSWAP_COLLECTOR_START_OFFSET_MS: '35000',
         PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
+        /** 2026-07-07 — per-mint open/pin enrich OFF (see sa-raydium note). Primary trending fetch only. */
+        PAPER2_SNAPSHOT_OPENS: '0',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
