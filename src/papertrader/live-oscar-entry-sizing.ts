@@ -427,6 +427,7 @@ export function applyCanonicalStagedEntrySizing(
   tier?: LiveOscarTradeTier,
   marketCapUsd?: number | null,
 ): void {
+  if (st.copyLeaderAdoptStagedPlan) return;
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
   const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier, marketCapUsd);
   const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);

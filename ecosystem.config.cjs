@@ -1472,6 +1472,9 @@ const PM2_APPS = [
         /** Subtract copy-leader cost basis from wallet-holds-mint gate (golden-goose). */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        /** Copy-adopt: staged avg at adopt (−10% / −20%, each leg = 25% of initial open). */
+        LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED: '1',
+        LIVE_COPY_LEADER_ADOPT_AVG_LEG_PCT: '25',
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
