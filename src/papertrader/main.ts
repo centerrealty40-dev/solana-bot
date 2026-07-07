@@ -2666,20 +2666,26 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     }
   }
 
-  let discoveryRunning = false;
+  /** Blocks overlapping discovery ticks until the in-flight promise settles (timeout alone does not release). */
+  let discoveryInFlight: Promise<void> | null = null;
   let trackerRunning = false;
   let followupRunning = false;
+  const discoveryTickTimeoutMs = cfg.discoveryTickTimeoutMs;
 
-  const discoveryTimer = setInterval(async () => {
-    if (discoveryRunning) return;
-    discoveryRunning = true;
-    try {
-      await withTimeout(discoveryTick(), 60_000, 'discoveryTick');
-    } catch (err) {
-      stats.errors++;
-      logger.warn({ msg: 'discovery error', err: (err as Error).message });
-    }
-    discoveryRunning = false;
+  const discoveryTimer = setInterval(() => {
+    if (discoveryInFlight) return;
+    const tickPromise = discoveryTick();
+    discoveryInFlight = tickPromise.finally(() => {
+      discoveryInFlight = null;
+    });
+    void (async () => {
+      try {
+        await withTimeout(tickPromise, discoveryTickTimeoutMs, 'discoveryTick');
+      } catch (err) {
+        stats.errors++;
+        logger.warn({ msg: 'discovery error', err: (err as Error).message });
+      }
+    })();
   }, cfg.discoveryIntervalMs);
 
   const trackerTimer = setInterval(async () => {
@@ -2710,8 +2716,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           },
           processPresetCScalpDeferredEntries: async () => {
             await queuePresetCScalpDeferredEntries();
-            if (presetCScalpDeferredOpens.length > 0 && !discoveryRunning) {
-              await withTimeout(discoveryTick(), 60_000, 'discoveryTickScalpDeferred');
+            if (presetCScalpDeferredOpens.length > 0 && !discoveryInFlight) {
+              await withTimeout(discoveryTick(), discoveryTickTimeoutMs, 'discoveryTickScalpDeferred');
             }
           },
         }),
@@ -2845,8 +2851,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           },
           processPresetCScalpDeferredEntries: async () => {
             await queuePresetCScalpDeferredEntries();
-            if (presetCScalpDeferredOpens.length > 0 && !discoveryRunning) {
-              await withTimeout(discoveryTick(), 60_000, 'discoveryTickScalpDeferredHot');
+            if (presetCScalpDeferredOpens.length > 0 && !discoveryInFlight) {
+              await withTimeout(discoveryTick(), discoveryTickTimeoutMs, 'discoveryTickScalpDeferredHot');
             }
           },
         }),

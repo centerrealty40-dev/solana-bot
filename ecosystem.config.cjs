@@ -708,6 +708,8 @@ const PM2_APPS = [
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
         PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        /** Await cap per discovery tick; in-flight tick mutex prevents overlap after timeout. */
+        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
         /** 1.11.244: шире SQL-пул при малом числе активных монет. */
@@ -926,11 +928,10 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_MIN_PG_SAMPLES_24H: '24',
         /** runner_lite: hard intel gate when tier gates pass (same as runner_probe). */
         LIVE_OSCAR_INTEL_MODE_RUNNER_LITE: 'gate',
-        /** Tier «Первый выстрел» — DISABLED / shadow (LIVE_OSCAR_PERVYY_VYSTREL_SPEC v0.4). PR3 eval lane.
-         *  Shadow experiment (2026-07 ~5d remaining of 7d window): relaxed thresholds to surface
-         *  more Phase C/D phantom candidates for replay — PAPER_PERVYY_VYSTREL_ENABLED stays 0. */
+        /** Tier «Первый выстрел» — OFF for prod-only LERA parity ($2M SQL floor).
+         *  shadow widens discovery SQL to anchorMinMcap $100k → eval storm + discovery tick timeout. */
         PAPER_PERVYY_VYSTREL_ENABLED: '0',
-        PAPER_PERVYY_VYSTREL_MODE: 'shadow',
+        PAPER_PERVYY_VYSTREL_MODE: 'off',
         PAPER_PERVYY_VYSTREL_FAIL_OPEN: '1',
         PAPER_PERVYY_VYSTREL_LEG_USD: '25',
         PAPER_PERVYY_VYSTREL_POSITION_USD: '50',
@@ -960,11 +961,11 @@ const PM2_APPS = [
         PAPER_PERVYY_VYSTREL_PHASE_A_MIN_DWELL_H: '2',
         PAPER_PERVYY_VYSTREL_KILL_PCT: '0.50',
         PAPER_PERVYY_VYSTREL_MAX_ENTRIES_PER_TICK: '1',
-        PAPER_PERVYY_VYSTREL_ORGANIC_GATE_ENABLED: '1',
-        PAPER_PERVYY_VYSTREL_ORGANIC_GATE_MODE: 'shadow',
-        PAPER_PERVYY_VYSTREL_CLUSTER_DUMP_MODE: 'shadow',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_ENABLED: '1',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MODE: 'shadow',
+        PAPER_PERVYY_VYSTREL_ORGANIC_GATE_ENABLED: '0',
+        PAPER_PERVYY_VYSTREL_ORGANIC_GATE_MODE: 'off',
+        PAPER_PERVYY_VYSTREL_CLUSTER_DUMP_MODE: 'off',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_ENABLED: '0',
+        PAPER_PERVYY_VYSTREL_VOL_AUTH_MODE: 'off',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_WASH_MAX: '0.60',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_ORGANIC_MIN: '0.40',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_ROUND_TRIP_SHARE: '0.50',
@@ -978,10 +979,7 @@ const PM2_APPS = [
         PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_NET_NEW_SHARE: '0.35',
         PAPER_PERVYY_VYSTREL_VOL_AUTH_HOLDER_STALL_PCT: '0.5',
         PAPER_PERVYY_VYSTREL_MIN_UNCLUSTERED_BUYERS_1H: '10',
-        LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'shadow',
-        /** PR2 batch materialize — read cache at tick (worker: pervyy-vystrel-materialize). */
-        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '1',
-        PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
+        LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'off',
         /** Shyft shadow: suppress mint-set resubscribes right after connect (boot churn). */
         SHYFT_SHADOW_CONNECT_GRACE_MS: '30000',
         /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
@@ -2134,53 +2132,6 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         BSCPULSE_SYNC_INTERVAL_SEC: '30',
-      },
-    },
-    /**
-     * Pervyy Vystrel PR2 batch — vol-auth + organic flow + cluster map materialize.
-     * DISABLED by default; enable after PR2 merge + shadow window (15m loop, off-peak bias ops).
-     */
-    {
-      name: 'pervyy-vystrel-materialize',
-      cwd: root,
-      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
-      args: 'src/scripts/pervyy-vystrel-materialize.ts',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 20,
-      restart_delay: 30_000,
-      merge_logs: true,
-      time: true,
-      env: {
-        NODE_ENV: 'production',
-        PERVYY_VYSTREL_MATERIALIZE_ENABLED: '1',
-        PERVYY_VYSTREL_MATERIALIZE_INTERVAL_MIN: '15',
-        PERVYY_VYSTREL_MATERIALIZE_TTL_SEC: '120',
-        PERVYY_VYSTREL_MATERIALIZE_LIMIT: '30',
-        PERVYY_VYSTREL_MATERIALIZE_CACHE_PATH: path.join(root, 'data/pervyy-vystrel/materialized-snapshots.json'),
-        PAPER_PERVYY_VYSTREL_MODE: 'shadow',
-        PAPER_PERVYY_VYSTREL_ANCHOR_MIN_MCAP_USD: '100000',
-        PAPER_PERVYY_VYSTREL_ANCHOR_MAX_MCAP_USD: '250000',
-        PAPER_PERVYY_VYSTREL_MIN_VOL_1H_USD: '45000',
-        PAPER_PERVYY_VYSTREL_WATCH_TTL_HOURS: '72',
-        PAPER_PERVYY_VYSTREL_EARLY_BUY_WINDOW_SEC: '180',
-        PAPER_PERVYY_VYSTREL_CLUSTER_SELL_RATIO_MIN: '0.40',
-        PAPER_PERVYY_VYSTREL_CLUSTER_MIN_UNIQUE_SELLERS: '2',
-        PAPER_PERVYY_VYSTREL_RETAIL_PANIC_MAX: '0.55',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_WINDOW_H: '1',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_SWAPS: '15',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_WASH_MAX: '0.60',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_ORGANIC_MIN: '0.40',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_ROUND_TRIP_SHARE: '0.50',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_CYCLE_SHARE: '0.40',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_BS_RATIO: '1.10',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MAX_SELF_TRADE: '0.30',
-        PAPER_PERVYY_VYSTREL_VOL_AUTH_MIN_NET_NEW_SHARE: '0.35',
-        PAPER_PERVYY_VYSTREL_MIN_UNIQUE_BUYERS_1H: '18',
-        PAPER_PERVYY_VYSTREL_MAX_CLUSTER_BUYER_RATIO: '0.45',
-        PAPER_PERVYY_VYSTREL_MIN_UNCLUSTERED_BUYERS_1H: '10',
       },
     },
     /**

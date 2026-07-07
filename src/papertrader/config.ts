@@ -89,6 +89,8 @@ const ConfigSchema = z.object({
   strategyKind: StrategyKindSchema.default('fresh'),
   storePath: z.string().default('/tmp/paper-trades.jsonl'),
   discoveryIntervalMs: z.coerce.number().int().positive().default(10_000),
+  /** Hard cap for awaiting one discovery tick; does not cancel the in-flight tick (see main.ts mutex). */
+  discoveryTickTimeoutMs: z.coerce.number().int().min(10_000).max(600_000).default(60_000),
   trackIntervalMs: z.coerce.number().int().positive().default(30_000),
   followupTickMs: z.coerce.number().int().positive().default(30_000),
   heartbeatIntervalMs: z.coerce.number().int().positive().default(10_000),
@@ -1308,6 +1310,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     strategyKind: process.env.PAPER_STRATEGY_KIND,
     storePath: process.env.PAPER_TRADES_PATH,
     discoveryIntervalMs: process.env.PAPER_DISCOVERY_INTERVAL_MS,
+    discoveryTickTimeoutMs: process.env.PAPER_DISCOVERY_TICK_TIMEOUT_MS,
     trackIntervalMs: process.env.PAPER_TRACK_INTERVAL_MS,
     followupTickMs: process.env.PAPER_FOLLOWUP_TICK_MS,
     heartbeatIntervalMs: process.env.PAPER_HEARTBEAT_INTERVAL_MS,
