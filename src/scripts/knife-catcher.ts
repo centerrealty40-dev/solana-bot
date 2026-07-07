@@ -26,25 +26,22 @@ import {
   startShyftShadowConsumer,
   type ShyftObservationMeta,
 } from '../papertrader/stream/shyft-shadow-consumer.js';
-import { sendTagged } from '../core/telegram/sender.js';
+import {
+  buildKnifeAvgTelegram,
+  buildKnifeCloseTelegram,
+  buildKnifeDumpTelegram,
+  buildKnifeEntryTelegram,
+  buildKnifeSummaryTelegram,
+} from './knife-telegram-format.js';
 import {
   getKnifeCrossSourceTick,
   recordKnifePrice,
   startKnifeJupiterPoll,
 } from './knife-price-feed.js';
+import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
-
-function shortMint(mint: string): string {
-  return mint.length > 10 ? `${mint.slice(0, 4)}…${mint.slice(-4)}` : mint;
-}
-
-function fmtPrice(p: number): string {
-  if (!(p > 0)) return '0';
-  if (p >= 1) return p.toFixed(4);
-  return p.toPrecision(4);
-}
 
 function envBool(v: unknown, def: boolean): boolean {
   if (v === undefined || v === null || v === '') return def;
@@ -210,10 +207,20 @@ function appendJournal(cfg: KnifeConfig, ev: Record<string, unknown>): void {
   }
 }
 
-function notify(cfg: KnifeConfig, text: string): void {
+function notifyHtml(cfg: KnifeConfig, html: string): void {
   if (!cfg.telegramEnabled) return;
-  const prefix = cfg.mode === 'shadow' ? '🕯 SHADOW ' : '🔪 LIVE ';
-  void sendTagged('REPORT', 'knife', prefix + text, { skipQuietHours: true }).catch(() => false);
+  const subtag = cfg.mode === 'shadow' ? 'knife_shadow' : 'knife_live';
+  const token =
+    process.env.KNIFE_TELEGRAM_BOT_TOKEN?.trim() ||
+    process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chat =
+    process.env.KNIFE_TELEGRAM_CHAT_ID?.trim() ||
+    process.env.TELEGRAM_CHAT_ID?.trim();
+  void sendTagged('REPORT', subtag, html, {
+    parseMode: 'HTML',
+    skipQuietHours: true,
+    ...(token && chat ? { telegramBotToken: token, telegramChatId: chat } : {}),
+  }).catch(() => false);
 }
 
 function getOrCreateState(mint: string): MintState {
@@ -279,10 +286,18 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
       s.investedUsd > 0 ? Number(((s.realizedUsd / s.investedUsd) * 100).toFixed(3)) : 0,
   });
   const pnlPct = s.investedUsd > 0 ? (s.realizedUsd / s.investedUsd) * 100 : 0;
-  notify(
+  notifyHtml(
     cfg,
-    `✅ закрыт ${shortMint(s.mint)} (${reason}): pnl ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% ` +
-      `(${s.realizedUsd >= 0 ? '+' : ''}$${s.realizedUsd.toFixed(2)}), ног ${s.legs}, вложено $${s.investedUsd.toFixed(0)}`,
+    buildKnifeCloseTelegram({
+      mode: cfg.mode,
+      mint: s.mint,
+      reason,
+      legs: s.legs,
+      avgEntry: s.avgEntry,
+      investedUsd: s.investedUsd,
+      realizedUsd: s.realizedUsd,
+      pnlPct,
+    }),
   );
   log.info(
     { mint: s.mint, reason, pnlUsd: Number(s.realizedUsd.toFixed(2)) },
@@ -409,10 +424,17 @@ function tryWhaleDumpEntry(
     bouncePct: Number(bouncePct.toFixed(2)),
     entryDelayMs: elapsed,
   });
-  notify(
+  notifyHtml(
     cfg,
-    `🔪 вход ${shortMint(s.mint)} leg1 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
-      `(whale dump −${dump.dumpPct.toFixed(1)}%, sell $${Math.round(dump.sellUsd)})`,
+    buildKnifeEntryTelegram({
+      mode: cfg.mode,
+      mint: s.mint,
+      legUsd: cfg.legUsd,
+      priceUsd: price,
+      dump,
+      bouncePct: Number(bouncePct.toFixed(2)),
+      entryDelayMs: elapsed,
+    }),
   );
   log.info(
     { mint: s.mint, price, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd },
@@ -434,10 +456,16 @@ function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: 
       avgEntry: s.avgEntry,
       investedUsd: s.investedUsd,
     });
-    notify(
+    notifyHtml(
       cfg,
-      `↓ усреднение ${shortMint(s.mint)} leg2 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
-        `(−${(((s.leg1Price - price) / s.leg1Price) * 100).toFixed(1)}% от leg1, avg ${fmtPrice(s.avgEntry)})`,
+      buildKnifeAvgTelegram({
+        mode: cfg.mode,
+        mint: s.mint,
+        legUsd: cfg.legUsd,
+        priceUsd: price,
+        dropFromLeg1Pct: Number((((s.leg1Price - price) / s.leg1Price) * 100).toFixed(1)),
+        avgEntry: s.avgEntry,
+      }),
     );
     log.info({ mint: s.mint, price, avgEntry: s.avgEntry }, 'knife avg leg2');
   }
@@ -520,10 +548,16 @@ function onPrice(
           signature: dump.signature,
           source: dump.source,
         });
-        notify(
+        notifyHtml(
           cfg,
-          `🐋 dump ${shortMint(mint)} −${dump.dumpPct.toFixed(1)}% ` +
-            `(sell $${Math.round(dump.sellUsd)} @ ${fmtPrice(effectivePrice)})`,
+          buildKnifeDumpTelegram({
+            mode: cfg.mode,
+            mint,
+            dump,
+            priceUsd: effectivePrice,
+            maxEntryAfterDumpSec: Math.round(cfg.maxEntryAfterDumpMs / 1000),
+            maxBouncePct: cfg.maxBounceFromDumpPct,
+          }),
         );
         log.info(
           { mint, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd },
@@ -699,11 +733,20 @@ async function main(): Promise<void> {
     }
     const delta = realized - lastRealized;
     lastRealized = realized;
-    notify(
+    let pending = 0;
+    for (const s of states.values()) {
+      if (s.pendingDump) pending += 1;
+    }
+    notifyHtml(
       cfg,
-      `📊 сводка: слежу ${states.size} монет, открыто ${open}, ` +
-        `pnl (реализ.) ${realized >= 0 ? '+' : ''}$${realized.toFixed(2)} ` +
-        `(за период ${delta >= 0 ? '+' : ''}$${delta.toFixed(2)})`,
+      buildKnifeSummaryTelegram({
+        mode: cfg.mode,
+        watched: states.size,
+        open,
+        pendingDumps: pending,
+        realizedUsd: realized,
+        periodDeltaUsd: delta,
+      }),
     );
   }, cfg.summaryMs).unref();
 }
