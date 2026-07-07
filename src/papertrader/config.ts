@@ -636,6 +636,46 @@ const ConfigSchema = z.object({
   volumeEphemeralTailBlockEnabled: z.boolean().default(true),
   /** Tail block when current/peak <= this ratio (0–1). */
   volumeEphemeralTailMaxPeakRatio: z.coerce.number().min(0.01).max(1).default(0.3),
+  /** New mints: require this many active hours before allowing first entry. */
+  volumeEphemeralNewMintMinActiveHours: z.coerce.number().int().min(0).max(24).default(8),
+  /** Fresh Birdeye/Dex quote can bypass PG-blind ephemeral checks. */
+  volumeEphemeralBirdeyeFreshBypass: z.boolean().default(true),
+  /** Tail-wash block: minimum live vol5m/vol1h ratio for new mints. */
+  volumeGuardNewMintMinVol5mToVol1hRatio: z.coerce.number().min(0.01).max(1).default(0.08),
+  /** Tail-wash block activates when vol1h >= this threshold. */
+  volumeGuardNewMintVol1hWashMinUsd: z.coerce.number().nonnegative().default(36_000),
+
+  /**
+   * Ephemeral volume spike guard (48h): dormant baseline -> sudden vol1h explosion
+   * regardless of token age (DADDY RCA 2026-07-05).
+   */
+  oldMintDormantVolSpikeGuardEnabled: z.boolean().default(false),
+  /** Min token age (days) before rule applies; 0 = age-agnostic (default). */
+  oldMintDormantVolSpikeMinTokenAgeDays: z.coerce.number().int().min(0).max(730).default(0),
+  /** Mints below this age (days) skip to avoid blocking normal young pumps. */
+  oldMintDormantVolSpikeMaxYoungTokenAgeDays: z.coerce.number().int().min(0).max(30).default(2),
+  /** Total PG lookback window (hours). */
+  oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(48),
+  /** Baseline window start (hours ago), e.g. 48. */
+  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(144).default(48),
+  /** Baseline window end (hours ago), e.g. 24. */
+  oldMintDormantVolSpikeBaselineEndHoursAgo: z.coerce.number().int().min(6).max(120).default(24),
+  /** @deprecated Use baselineStartHoursAgo; kept for env backward compatibility. */
+  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(48),
+  /** Recent hours where spike is measured (excluded from baseline). */
+  oldMintDormantVolSpikeRecentHours: z.coerce.number().int().min(3).max(24).default(6),
+  /** Hour counts as dormant when max vol1h in hour <= this (USD). */
+  oldMintDormantVolSpikeDormantVol1hMaxUsd: z.coerce.number().nonnegative().default(10_000),
+  /** Hour counts as dormant when max vol5m in hour <= this (USD). */
+  oldMintDormantVolSpikeDormantVol5mMaxUsd: z.coerce.number().nonnegative().default(5_000),
+  /** Min share of baseline hours that were dormant (0-1). */
+  oldMintDormantVolSpikeMinDormantHourFraction: z.coerce.number().min(0.5).max(1).default(0.55),
+  /** Min baseline hours with PG data before rule applies. */
+  oldMintDormantVolSpikeMinBaselineHours: z.coerce.number().int().min(12).max(120).default(18),
+  /** Effective recent vol1h must reach this to count as spike (USD). */
+  oldMintDormantVolSpikeMinSpikeVol1hUsd: z.coerce.number().nonnegative().default(25_000),
+  /** Block when effectiveRecentVol1h / baselineRef >= this ratio. */
+  oldMintDormantVolSpikeVol1hRatioMin: z.coerce.number().min(2).max(100).default(5),
 
   /**
    * PG data coverage guard (1.11.222): block when minute-bar history is gapped or
@@ -1418,6 +1458,41 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralSparseHoursBuffer: process.env.PAPER_VOLUME_EPHEMERAL_SPARSE_HOURS_BUFFER,
     volumeEphemeralTailBlockEnabled: envBool(process.env.PAPER_VOLUME_EPHEMERAL_TAIL_BLOCK_ENABLED, true),
     volumeEphemeralTailMaxPeakRatio: process.env.PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO,
+    volumeEphemeralNewMintMinActiveHours: process.env.PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS,
+    volumeEphemeralBirdeyeFreshBypass: envBool(
+      process.env.PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS,
+      true,
+    ),
+    volumeGuardNewMintMinVol5mToVol1hRatio: process.env.PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO,
+    volumeGuardNewMintVol1hWashMinUsd: process.env.PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD,
+    oldMintDormantVolSpikeGuardEnabled: envBool(
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_GUARD_ENABLED,
+      false,
+    ),
+    oldMintDormantVolSpikeMinTokenAgeDays: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_TOKEN_AGE_DAYS,
+    oldMintDormantVolSpikeMaxYoungTokenAgeDays:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MAX_YOUNG_TOKEN_AGE_DAYS,
+    oldMintDormantVolSpikeLookbackHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeBaselineStartHoursAgo:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_START_HOURS ??
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeBaselineEndHoursAgo:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_BASELINE_END_HOURS,
+    oldMintDormantVolSpikeDormantLookbackHours:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_LOOKBACK_HOURS,
+    oldMintDormantVolSpikeRecentHours: process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_RECENT_HOURS,
+    oldMintDormantVolSpikeDormantVol1hMaxUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL1H_MAX_USD,
+    oldMintDormantVolSpikeDormantVol5mMaxUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_DORMANT_VOL5M_MAX_USD,
+    oldMintDormantVolSpikeMinDormantHourFraction:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_DORMANT_HOUR_FRACTION,
+    oldMintDormantVolSpikeMinBaselineHours:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_BASELINE_HOURS,
+    oldMintDormantVolSpikeMinSpikeVol1hUsd:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_MIN_SPIKE_VOL1H_USD,
+    oldMintDormantVolSpikeVol1hRatioMin:
+      process.env.PAPER_OLD_MINT_DORMANT_VOL_SPIKE_VOL1H_RATIO_MIN,
     pgDataCoverageGuardEnabled: envBool(process.env.PAPER_PG_DATA_COVERAGE_GUARD_ENABLED, false),
     pgDataCoverageLookbackHours: process.env.PAPER_PG_DATA_COVERAGE_LOOKBACK_HOURS,
     pgDataCoverageRecentHours: process.env.PAPER_PG_DATA_COVERAGE_RECENT_HOURS,

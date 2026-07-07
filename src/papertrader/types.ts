@@ -788,6 +788,36 @@ export interface SnapshotFeatures {
       tailMaxPeakRatio: number;
     };
   };
+  /** Ephemeral volume spike: dormant baseline -> sudden vol1h (DADDY pattern). */
+  old_mint_dormant_vol_spike?: {
+    enabled: boolean;
+    tokenAgeDays: number | null;
+    coverageOk: boolean;
+    lookbackHours: number;
+    baselineStartHoursAgo: number;
+    baselineEndHoursAgo: number;
+    baselineMode: 'primary' | 'fallback_first24h' | null;
+    dormantLookbackHours: number;
+    recentHours: number;
+    baselineHoursWithData: number;
+    dormantHours: number;
+    dormantHourFraction: number | null;
+    baselineMedianVol1hUsd: number | null;
+    baselineP90Vol1hUsd: number | null;
+    recentMaxVol1hUsd: number | null;
+    currentVol1hUsd: number | null;
+    effectiveRecentVol1hUsd: number | null;
+    vol1hSpikeRatio: number | null;
+    thresholds: {
+      minTokenAgeDays: number;
+      maxYoungTokenAgeDays: number;
+      dormantVol1hMaxUsd: number;
+      minDormantHourFraction: number;
+      minSpikeVol1hUsd: number;
+      vol1hRatioMin: number;
+    };
+  };
+
   /** 1.11.222: PG minute-bar coverage / gap metrics for volume guard trust. */
   pg_data_coverage?: {
     enabled: boolean;

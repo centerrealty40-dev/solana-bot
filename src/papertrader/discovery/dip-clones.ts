@@ -58,6 +58,11 @@ import {
   type VolumeEphemeralFeatures,
 } from './volume-ephemeral-guard.js';
 import {
+  fetchOldMintDormantVolSpikeContextMap,
+  evaluateOldMintDormantVolSpikeGuard,
+  type OldMintDormantVolSpikeFeatures,
+} from './old-mint-dormant-volume-spike-guard.js';
+import {
   fetchGlobalPgCoverageState,
   fetchMintPgCoverageMap,
   evaluatePgDataCoverageGuard,
@@ -733,7 +738,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
 
   const evalRows = allowedSnapshotTagged.map((x) => x.row);
   const rowsForCtx = evalRows;
-  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, globalPgCoverage, runnerMap] =
+  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, oldMintDormantVolSpikeMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),
       fetchPolicyAPlusContextMap(cfg, rowsForCtx),
@@ -741,6 +746,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       fetchPostCrashContextMap(cfg, rowsForCtx),
       fetchVolumeSybilContextMap(cfg, rowsForCtx),
       fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
+      fetchOldMintDormantVolSpikeContextMap(cfg, rowsForCtx),
       fetchGlobalPgCoverageState(cfg),
       fetchRunnerContextMap(cfg, rowsForCtx),
     ]);
@@ -1000,6 +1006,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let volumeSybilFeatures: VolumeSybilFeatures | undefined;
     let pgDataCoverageFeatures: MintPgCoverageFeatures | undefined;
     let volumeEphemeralFeatures: VolumeEphemeralFeatures | undefined;
+    let oldMintDormantVolSpikeFeatures: OldMintDormantVolSpikeFeatures | undefined;
     if (entryPath != null) {
       const dipLookbackForRecovery =
         entryPath === 'post_crash_fast'
@@ -1080,6 +1087,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (entryPath != null && cfg.volumeEphemeralGuardEnabled) {
         const evalRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint));
         volumeEphemeralFeatures = evalRes.features;
+        if (evalRes.blocked) {
+          dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
+          entryPath = undefined;
+        }
+      }
+      if (entryPath != null && cfg.oldMintDormantVolSpikeGuardEnabled) {
+        const evalRes = evaluateOldMintDormantVolSpikeGuard(
+          cfg,
+          evalRow,
+          oldMintDormantVolSpikeMap.get(row.mint),
+        );
+        oldMintDormantVolSpikeFeatures = evalRes.features;
         if (evalRes.blocked) {
           dipReasonsForGate = [...dipReasonsForGate, ...evalRes.blockedReasons];
           entryPath = undefined;
@@ -1343,6 +1362,36 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           sparseHoursBuffer: cfg.volumeEphemeralSparseHoursBuffer,
           tailBlockEnabled: cfg.volumeEphemeralTailBlockEnabled,
           tailMaxPeakRatio: cfg.volumeEphemeralTailMaxPeakRatio,
+        },
+      };
+    }
+    if (oldMintDormantVolSpikeFeatures != null) {
+      decisionFeatures.old_mint_dormant_vol_spike = {
+        enabled: cfg.oldMintDormantVolSpikeGuardEnabled,
+        tokenAgeDays: oldMintDormantVolSpikeFeatures.tokenAgeDays,
+        coverageOk: oldMintDormantVolSpikeFeatures.coverageOk,
+        lookbackHours: oldMintDormantVolSpikeFeatures.lookbackHours,
+        baselineStartHoursAgo: oldMintDormantVolSpikeFeatures.baselineStartHoursAgo,
+        baselineEndHoursAgo: oldMintDormantVolSpikeFeatures.baselineEndHoursAgo,
+        baselineMode: oldMintDormantVolSpikeFeatures.baselineMode,
+        dormantLookbackHours: oldMintDormantVolSpikeFeatures.dormantLookbackHours,
+        recentHours: oldMintDormantVolSpikeFeatures.recentHours,
+        baselineHoursWithData: oldMintDormantVolSpikeFeatures.baselineHoursWithData,
+        dormantHours: oldMintDormantVolSpikeFeatures.dormantHours,
+        dormantHourFraction: oldMintDormantVolSpikeFeatures.dormantHourFraction,
+        baselineMedianVol1hUsd: oldMintDormantVolSpikeFeatures.baselineMedianVol1hUsd,
+        baselineP90Vol1hUsd: oldMintDormantVolSpikeFeatures.baselineP90Vol1hUsd,
+        recentMaxVol1hUsd: oldMintDormantVolSpikeFeatures.recentMaxVol1hUsd,
+        currentVol1hUsd: oldMintDormantVolSpikeFeatures.currentVol1hUsd,
+        effectiveRecentVol1hUsd: oldMintDormantVolSpikeFeatures.effectiveRecentVol1hUsd,
+        vol1hSpikeRatio: oldMintDormantVolSpikeFeatures.vol1hSpikeRatio,
+        thresholds: {
+          minTokenAgeDays: cfg.oldMintDormantVolSpikeMinTokenAgeDays,
+          maxYoungTokenAgeDays: cfg.oldMintDormantVolSpikeMaxYoungTokenAgeDays,
+          dormantVol1hMaxUsd: cfg.oldMintDormantVolSpikeDormantVol1hMaxUsd,
+          minDormantHourFraction: cfg.oldMintDormantVolSpikeMinDormantHourFraction,
+          minSpikeVol1hUsd: cfg.oldMintDormantVolSpikeMinSpikeVol1hUsd,
+          vol1hRatioMin: cfg.oldMintDormantVolSpikeVol1hRatioMin,
         },
       };
     }
