@@ -11,6 +11,7 @@
  *
  * Dependency: `@triton-one/yellowstone-grpc` (Yellowstone gRPC NAPI client).
  */
+import bs58 from 'bs58';
 import * as YellowstoneGrpc from '@triton-one/yellowstone-grpc';
 import { CommitmentLevel, txEncode } from '@triton-one/yellowstone-grpc';
 import type ClientType from '@triton-one/yellowstone-grpc';
@@ -19,6 +20,9 @@ import type {
   SubscribeUpdate,
   SubscribeUpdateTransactionInfo,
 } from '@triton-one/yellowstone-grpc';
+import { decodeAllowlistedDexSwapInserts } from '../../parser/allowlisted-dex-swap.js';
+import { PUMP_FUN_PROGRAM_ID } from '../../parser/pumpfun.js';
+import type { TxJsonParsed } from '../../parser/rpc-http.js';
 import { getSolUsd } from '../pricing.js';
 import { extractStreamPoolPriceUsd, type ShadowTokenBalance } from './shadow-price.js';
 import {
@@ -145,9 +149,18 @@ export function __resetShyftStreamHealthForTests(): void {
   healthObservationsTotal = 0;
 }
 
+export type ShyftObservationMeta = {
+  source: string;
+  side: 'buy' | 'sell';
+  signature: string;
+  amountUsd: number;
+};
+
 export interface ShyftShadowConsumerConfig {
   endpoint: string;
   token: string;
+  /** vault = pool-reserve heuristic (live-oscar default); swap_decode = per-swap balance decode. */
+  priceExtraction?: 'vault' | 'swap_decode';
   maxAccountInclude?: number;
   reconnectInitialMs?: number;
   reconnectMaxMs?: number;
@@ -167,7 +180,7 @@ export interface ShyftShadowConsumerCallbacks {
   onStatus?: (status: StreamStatus, detail?: string) => void;
   onError?: (err: unknown) => void;
   /** Per stored stream observation — diagnostics only. */
-  onObservation?: (mint: string, priceUsd: number, streamTsMs: number) => void;
+  onObservation?: (mint: string, priceUsd: number, streamTsMs: number, meta?: ShyftObservationMeta) => void;
   /** Periodic / transition health snapshot (`live_shyft_stream_health`). */
   onHealth?: (snapshot: ShyftStreamHealthSnapshot) => void;
 }
@@ -179,6 +192,17 @@ export interface ShyftShadowConsumerHandle {
 /** Minimal parsed-tx view of the JsonParsed `txEncode.encode` output. */
 interface ParsedTxView {
   meta?: { postTokenBalances?: readonly ShadowTokenBalance[] | null } | null;
+  transaction?: TxJsonParsed['transaction'];
+}
+
+function extractTxSignature(info: SubscribeUpdateTransactionInfo): string | null {
+  const sigBytes = (info as { signature?: Uint8Array | Buffer | number[] }).signature;
+  if (!sigBytes || (sigBytes as Uint8Array).length === 0) return null;
+  try {
+    return bs58.encode(sigBytes as Uint8Array);
+  } catch {
+    return null;
+  }
 }
 
 type WritableStream = { write: (r: SubscribeRequest) => void; end: () => void };
@@ -230,6 +254,7 @@ export function startShyftShadowConsumer(
   cb: ShyftShadowConsumerCallbacks = {},
 ): ShyftShadowConsumerHandle {
   const maxAccountInclude = cfg.maxAccountInclude ?? DEFAULT_MAX_ACCOUNT_INCLUDE;
+  const priceExtraction = cfg.priceExtraction ?? 'vault';
   const reconnectMaxMs = cfg.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
   const reconnectInitialMs = cfg.reconnectInitialMs ?? DEFAULT_RECONNECT_INITIAL_MS;
   const connectGraceMs = cfg.connectGraceMs ?? DEFAULT_CONNECT_GRACE_MS;
@@ -443,6 +468,90 @@ export function startShyftShadowConsumer(
     queueMintSetResubscribe();
   });
 
+  function emitObservation(
+    mint: string,
+    priceUsd: number,
+    streamTsMs: number,
+    slot: number,
+    meta?: ShyftObservationMeta,
+  ): void {
+    lastObservationMs = streamTsMs;
+    healthLastObservationMs = streamTsMs;
+    healthObservationsTotal += 1;
+    maybeResetBackoff('observation');
+    recordShyftShadowStreamPrice(mint, {
+      priceUsd,
+      streamTsMs,
+      slot: Number.isFinite(slot) && slot > 0 ? slot : null,
+    });
+    cb.onObservation?.(mint, priceUsd, streamTsMs, meta);
+  }
+
+  function handleUpdateVault(
+    parsed: ParsedTxView,
+    streamTsMs: number,
+    slot: number,
+  ): void {
+    const balances = parsed.meta?.postTokenBalances;
+    if (!balances || balances.length === 0) return;
+
+    const watchedSet = new Set(getShyftShadowWatchedMints());
+    if (watchedSet.size === 0) return;
+    const solUsd = getSolUsd();
+    const seen = new Set<string>();
+    for (const b of balances) {
+      const mint = b?.mint ?? undefined;
+      if (!mint || seen.has(mint) || !watchedSet.has(mint)) continue;
+      seen.add(mint);
+      const px = extractStreamPoolPriceUsd(balances, mint, solUsd);
+      if (!px) continue;
+      emitObservation(mint, px.priceUsd, streamTsMs, slot);
+    }
+  }
+
+  function handleUpdateSwapDecode(
+    info: SubscribeUpdateTransactionInfo,
+    parsed: ParsedTxView,
+    streamTsMs: number,
+    slot: number,
+  ): void {
+    const watchedSet = new Set(getShyftShadowWatchedMints());
+    if (watchedSet.size === 0) return;
+
+    const sigFromInfo = extractTxSignature(info);
+    const sigFromParsed = parsed.transaction?.signatures?.[0];
+    const signature =
+      typeof sigFromParsed === 'string' && sigFromParsed.length > 0
+        ? sigFromParsed
+        : sigFromInfo ?? '';
+
+    const txJson = {
+      ...parsed,
+      slot: Number.isFinite(slot) && slot > 0 ? slot : undefined,
+      blockTime: Math.floor(streamTsMs / 1000),
+      transaction: {
+        ...parsed.transaction,
+        signatures: signature ? [signature] : parsed.transaction?.signatures,
+      },
+    } as TxJsonParsed;
+
+    const solUsd = getSolUsd();
+    const swaps = decodeAllowlistedDexSwapInserts(txJson, PUMP_FUN_PROGRAM_ID, solUsd);
+    if (swaps.length === 0) return;
+
+    for (const swap of swaps) {
+      if (!watchedSet.has(swap.baseMint)) continue;
+      if (!(swap.priceUsd > 0) || swap.source === 'allowlisted_dex_parser_noprice') continue;
+      const meta: ShyftObservationMeta = {
+        source: swap.dex,
+        side: swap.side,
+        signature: swap.signature,
+        amountUsd: swap.amountUsd,
+      };
+      emitObservation(swap.baseMint, swap.priceUsd, streamTsMs, slot, meta);
+    }
+  }
+
   function handleUpdate(update: SubscribeUpdate): void {
     if (update.ping) {
       safeStreamWrite(pingRequest());
@@ -460,29 +569,11 @@ export function startShyftShadowConsumer(
       noteStatus('decode_error');
       return;
     }
-    const balances = parsed.meta?.postTokenBalances;
-    if (!balances || balances.length === 0) return;
 
-    const watchedSet = new Set(getShyftShadowWatchedMints());
-    if (watchedSet.size === 0) return;
-    const solUsd = getSolUsd();
-    const seen = new Set<string>();
-    for (const b of balances) {
-      const mint = b?.mint ?? undefined;
-      if (!mint || seen.has(mint) || !watchedSet.has(mint)) continue;
-      seen.add(mint);
-      const px = extractStreamPoolPriceUsd(balances, mint, solUsd);
-      if (!px) continue;
-      lastObservationMs = streamTsMs;
-      healthLastObservationMs = streamTsMs;
-      healthObservationsTotal += 1;
-      maybeResetBackoff('observation');
-      recordShyftShadowStreamPrice(mint, {
-        priceUsd: px.priceUsd,
-        streamTsMs,
-        slot: Number.isFinite(slot) && slot > 0 ? slot : null,
-      });
-      cb.onObservation?.(mint, px.priceUsd, streamTsMs);
+    if (priceExtraction === 'swap_decode') {
+      handleUpdateSwapDecode(info, parsed, streamTsMs, slot);
+    } else {
+      handleUpdateVault(parsed, streamTsMs, slot);
     }
   }
 
