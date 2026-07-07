@@ -2191,34 +2191,40 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        KNIFE_CATCHER_ENABLED: '0',
+        /**
+         * All KNIFE_* below are .env-overridable (dotenv is loaded at top of this file), so the
+         * operator can enable/tune the shadow worker via /opt/solana-alpha/.env WITHOUT a redeploy.
+         * Defaults keep it OFF (ENABLED=0) and in shadow for safety.
+         */
+        KNIFE_CATCHER_ENABLED: process.env.KNIFE_CATCHER_ENABLED || '0',
         /** shadow = journal hypothetical fills only; live execution not wired yet. */
-        KNIFE_MODE: 'shadow',
-        KNIFE_TOP_N: '15',
-        KNIFE_WATCHLIST_REFRESH_MIN: '3',
-        KNIFE_WATCHLIST_LOOKBACK_MIN: '30',
-        KNIFE_MIN_VOL_1H_USD: '50000',
-        KNIFE_BUFFER_SEC: '300',
+        KNIFE_MODE: process.env.KNIFE_MODE || 'shadow',
+        KNIFE_TOP_N: process.env.KNIFE_TOP_N || '15',
+        KNIFE_WATCHLIST_REFRESH_MIN: process.env.KNIFE_WATCHLIST_REFRESH_MIN || '3',
+        KNIFE_WATCHLIST_LOOKBACK_MIN: process.env.KNIFE_WATCHLIST_LOOKBACK_MIN || '30',
+        KNIFE_MIN_VOL_1H_USD: process.env.KNIFE_MIN_VOL_1H_USD || '50000',
+        KNIFE_BUFFER_SEC: process.env.KNIFE_BUFFER_SEC || '300',
         /** knife = drop >= DROP_PCT within DROP_WINDOW_SEC from a very recent local high. */
-        KNIFE_DROP_WINDOW_SEC: '90',
-        KNIFE_DROP_PCT: '15',
+        KNIFE_DROP_WINDOW_SEC: process.env.KNIFE_DROP_WINDOW_SEC || '90',
+        KNIFE_DROP_PCT: process.env.KNIFE_DROP_PCT || '15',
         /** 2-leg entry: $25 on signal + $25 avg-down if it falls a further AVG_DROP_PCT. */
-        KNIFE_LEG_USD: '25',
-        KNIFE_POSITION_USD: '50',
-        KNIFE_AVG_DROP_PCT: '8',
+        KNIFE_LEG_USD: process.env.KNIFE_LEG_USD || '25',
+        KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '50',
+        KNIFE_AVG_DROP_PCT: process.env.KNIFE_AVG_DROP_PCT || '8',
         /** Escalating scalp TP ladder — sell TP_SELL_FRAC of size at each rung; then trail. */
-        KNIFE_TP_LADDER_PCT: '3.5,12,15',
-        KNIFE_TP_SELL_FRAC: '0.30',
-        KNIFE_TRAIL_PCT: '5',
-        KNIFE_KILL_PCT: '50',
-        KNIFE_MAX_HOLD_SEC: '0',
-        KNIFE_COOLDOWN_SEC: '900',
+        KNIFE_TP_LADDER_PCT: process.env.KNIFE_TP_LADDER_PCT || '3.5,12,15',
+        KNIFE_TP_SELL_FRAC: process.env.KNIFE_TP_SELL_FRAC || '0.30',
+        KNIFE_TRAIL_PCT: process.env.KNIFE_TRAIL_PCT || '5',
+        KNIFE_KILL_PCT: process.env.KNIFE_KILL_PCT || '50',
+        KNIFE_MAX_HOLD_SEC: process.env.KNIFE_MAX_HOLD_SEC || '0',
+        KNIFE_COOLDOWN_SEC: process.env.KNIFE_COOLDOWN_SEC || '900',
         /** Telegram: same operator chat as live-oscar health (bot token from .env). */
-        KNIFE_TELEGRAM_ENABLED: '1',
-        KNIFE_SUMMARY_MIN: '30',
-        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        KNIFE_CATCHER_JOURNAL_PATH: path.join(root, 'data/knife-catcher/knife-catcher.jsonl'),
-        SHYFT_GRPC_ENDPOINT: 'https://grpc.fra.shyft.to',
+        KNIFE_TELEGRAM_ENABLED: process.env.KNIFE_TELEGRAM_ENABLED || '1',
+        KNIFE_SUMMARY_MIN: process.env.KNIFE_SUMMARY_MIN || '30',
+        TELEGRAM_CHAT_ID: process.env.KNIFE_TELEGRAM_CHAT_ID || OPERATOR_TELEGRAM_CHAT_ID,
+        KNIFE_CATCHER_JOURNAL_PATH:
+          process.env.KNIFE_CATCHER_JOURNAL_PATH || path.join(root, 'data/knife-catcher/knife-catcher.jsonl'),
+        SHYFT_GRPC_ENDPOINT: process.env.SHYFT_GRPC_ENDPOINT || 'https://grpc.fra.shyft.to',
       },
     },
 ];
