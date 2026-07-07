@@ -79,9 +79,17 @@ const BIRDEYE_REST_ENV = {
   BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS: '120',
 };
 
-/** DexScreener-only collector enrich (Birdeye OFF on parity profile). */
-const BIRDEYE_COLLECTOR_ENV = {
+/**
+ * DEX snapshot collectors (sa-raydium/meteora/pumpswap): Birdeye enrich OFF.
+ * live-oscar: BIRDEYE_PRIMARY_ENABLED=0 (2026-07) — DexScreener → PG; collector enrich OFF on all processes.
+ */
+const COLLECTOR_BIRDEYE_ENV = {
   BIRDEYE_COLLECTOR_ENABLED: '0',
+};
+
+/** Cap per-mint Dex enrich per collector tick (#300 regression: ~70 mints → 15min ticks). */
+const COLLECTOR_ENRICH_ENV = {
+  COLLECTOR_ENRICH_MAX_MINTS_PER_TICK: '6',
 };
 
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
@@ -418,12 +426,13 @@ const PM2_APPS = [
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
-        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...BIRDEYE_COLLECTOR_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -442,16 +451,17 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '120000',
-        METEORA_COLLECTOR_START_OFFSET_MS: '10000',
+        METEORA_COLLECTOR_START_OFFSET_MS: '40000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
-        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...BIRDEYE_COLLECTOR_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -471,16 +481,17 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
-        MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
+        MOONSHOT_COLLECTOR_START_OFFSET_MS: '80000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
-        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...BIRDEYE_COLLECTOR_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -503,12 +514,13 @@ const PM2_APPS = [
         PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
-        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...BIRDEYE_COLLECTOR_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
+        ...COLLECTOR_BIRDEYE_ENV,
+        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -532,6 +544,36 @@ const PM2_APPS = [
         COLLECTOR_WATCH_TELEGRAM: '1',
         COLLECTOR_WATCH_SILENCE_MAX_MS: '720000',
         TELEGRAM_COOLDOWN_ALERT_DEX_COLLECTORS_MS: '300000',
+      },
+    },
+    {
+      name: 'sa-collector-health-telegram',
+      cwd: root,
+      script: 'scripts-tmp/collector-health-telegram.mjs',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '120M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        /** [HEALTH][collector_status] periodic + [ALERT][collector_blind] on degradation (2 min poll). */
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        COLLECTOR_HEALTH_TELEGRAM: '1',
+        COLLECTOR_HEALTH_POLL_MS: '120000',
+        COLLECTOR_HEALTH_STATUS_INTERVAL_MS: '1800000',
+        COLLECTOR_HEALTH_ALERT_REPEAT_MS: '900000',
+        COLLECTOR_HEALTH_TICK_STALE_MS: '180000',
+        COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS: '120000',
+        COLLECTOR_HEALTH_SHYFT_MAX_STALE_MS: '120000',
+        SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '900',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
+        TELEGRAM_COOLDOWN_ALERT_COLLECTOR_BLIND_MS: '300000',
+        TELEGRAM_COOLDOWN_HEALTH_COLLECTOR_STATUS_MS: '1700000',
       },
     },
     {
