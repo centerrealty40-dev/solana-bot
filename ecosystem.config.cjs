@@ -708,6 +708,8 @@ const PM2_APPS = [
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
         PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        /** Await cap per discovery tick; in-flight tick mutex prevents overlap after timeout. */
+        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
         /** 1.11.244: шире SQL-пул при малом числе активных монет. */
