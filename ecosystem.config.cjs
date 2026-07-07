@@ -1598,7 +1598,13 @@ const PM2_APPS = [
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
         /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
-        LIVE_HEARTBEAT_INTERVAL_MS: '1800000',
+        /**
+         * 1m heartbeat: `live-discovery-health.json` must stay fresher than
+         * `COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS` (120s) so sa-collector-health-telegram
+         * can send periodic `✅ Oscar collectors OK` (LERA parity). Pulse TG suppressed via
+         * `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=1`.
+         */
+        LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
         SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
