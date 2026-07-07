@@ -1,28 +1,17 @@
 /**
  * Knife-catcher — standalone worker (isolated; NOT wired into live-oscar).
  *
- * Idea (per product owner): don't index the whole chain. Continuously track the top 10–20
- * highest-volume runners (max retail interest), and when one prints a fast "knife" (sharp
- * drawdown from a very recent local high), buy the dip a few seconds after the drop and scalp
- * out on an escalating take-profit ladder. No snapshot lag, no snipers race — seconds latency ok.
+ * Event-driven whale-dump entry: detect large sell swaps that print a fast dump from a recent local
+ * high, enter the dip within a short window, scalp out on an escalating TP ladder + trail.
  *
- * ENTRY (2 legs, $50 total):
- *   - leg 1: enter immediately on the knife signal (no bounce wait — the first % IS the edge).
- *   - leg 2: average down $25 more only if the knife drops a further `avgDropPct` below leg 1.
- * EXIT (scalp ladder + trail): sell `tpSellFrac` (30%) of the filled size at each rung of an
- *   escalating TP ladder (3.5% / 12% / 15% / …); once the fixed rungs are done, a trailing stop
- *   keeps selling 30% chunks on each new-high → retrace (the "infinite ladder" tail). A wide
- *   `killPct` catastrophe stop closes the rest.
+ * Price path: Shyft gRPC swap_decode (per-swap balance deltas) + Jupiter buy-quote poll with
+ * cross-source sanity — avoids vault-heuristic garbage prices.
  *
  * ISOLATION CONTRACT:
  *  - Own PM2 process. Never imported by live-oscar / papertrader hot path.
- *  - Own Shyft Yellowstone gRPC consumer over a SMALL, slowly-changing mint set (≤ topN) — avoids
- *    the resubscribe/reconnect storm that forced Shyft OFF on live-oscar (fast mint churn there).
- *  - Uses the `shadow-state` singleton, but this is a SEPARATE process → process-local, cannot
- *    touch live-oscar.
+ *  - Own Shyft Yellowstone gRPC consumer over a SMALL, slowly-changing mint set (≤ topN).
  *  - Read-only on Postgres (watchlist ranking). Writes only its own JSONL journal.
- *  - `KNIFE_MODE=shadow` (default) journals hypothetical fills and never executes. Live execution
- *    (real swaps) is a separate wiring step (Jupiter/wallet) — intentionally not enabled here yet.
+ *  - `KNIFE_MODE=shadow` (default) journals hypothetical fills and never executes.
  */
 
 import 'dotenv/config';
@@ -33,8 +22,16 @@ import { db } from '../core/db/client.js';
 import { child } from '../core/logger.js';
 import { getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 import { setShyftShadowWatchedMints } from '../papertrader/stream/shadow-state.js';
-import { startShyftShadowConsumer } from '../papertrader/stream/shyft-shadow-consumer.js';
+import {
+  startShyftShadowConsumer,
+  type ShyftObservationMeta,
+} from '../papertrader/stream/shyft-shadow-consumer.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import {
+  getKnifeCrossSourceTick,
+  recordKnifePrice,
+  startKnifeJupiterPoll,
+} from './knife-price-feed.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
@@ -79,8 +76,16 @@ interface KnifeConfig {
   watchlistLookbackMin: number;
   minVol1hUsd: number;
   bufferMs: number;
-  dropWindowMs: number;
-  dropPct: number;
+  minDumpPct: number;
+  minSellUsd: number;
+  maxEntryAfterDumpMs: number;
+  preDumpHighMs: number;
+  maxBounceFromDumpPct: number;
+  maxDrawdownPct: number;
+  globalEntryGapMs: number;
+  minObs: number;
+  watchlistWarmupMs: number;
+  crossSourceMaxPct: number;
   legUsd: number;
   positionUsd: number;
   avgDropPct: number;
@@ -95,6 +100,10 @@ interface KnifeConfig {
   journalPath: string;
   shyftEndpoint: string;
   shyftToken: string;
+  jupiterPollIntervalMs: number;
+  jupiterSlippageBps: number;
+  jupiterTimeoutMs: number;
+  jupiterMaxMintsPerTick: number;
 }
 
 function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
@@ -108,8 +117,16 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     watchlistLookbackMin: envNum(env.KNIFE_WATCHLIST_LOOKBACK_MIN, 30),
     minVol1hUsd: envNum(env.KNIFE_MIN_VOL_1H_USD, 50_000),
     bufferMs: Math.round(envNum(env.KNIFE_BUFFER_SEC, 300) * 1000),
-    dropWindowMs: Math.round(envNum(env.KNIFE_DROP_WINDOW_SEC, 90) * 1000),
-    dropPct: envNum(env.KNIFE_DROP_PCT, 15),
+    minDumpPct: envNum(env.KNIFE_MIN_DUMP_PCT, 10),
+    minSellUsd: envNum(env.KNIFE_MIN_SELL_USD, 1500),
+    maxEntryAfterDumpMs: Math.round(envNum(env.KNIFE_MAX_ENTRY_AFTER_DUMP_SEC, 50) * 1000),
+    preDumpHighMs: Math.round(envNum(env.KNIFE_PRE_DUMP_HIGH_SEC, 120) * 1000),
+    maxBounceFromDumpPct: envNum(env.KNIFE_MAX_BOUNCE_FROM_DUMP_PCT, 5),
+    maxDrawdownPct: envNum(env.KNIFE_MAX_DRAWDOWN_PCT, 40),
+    globalEntryGapMs: Math.round(envNum(env.KNIFE_GLOBAL_ENTRY_GAP_SEC, 45) * 1000),
+    minObs: Math.round(Number(env.KNIFE_MIN_OBS ?? 3)),
+    watchlistWarmupMs: Math.round(envNum(env.KNIFE_WATCHLIST_WARMUP_SEC, 25) * 1000),
+    crossSourceMaxPct: envNum(env.KNIFE_CROSS_SOURCE_MAX_PCT, 30),
     legUsd,
     positionUsd,
     avgDropPct: envNum(env.KNIFE_AVG_DROP_PCT, 8),
@@ -118,7 +135,7 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     trailPct: envNum(env.KNIFE_TRAIL_PCT, 5),
     killPct: envNum(env.KNIFE_KILL_PCT, 50),
     maxHoldMs: Math.round(Number(env.KNIFE_MAX_HOLD_SEC ?? 0) * 1000) || 0,
-    cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 900) * 1000),
+    cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 600) * 1000),
     telegramEnabled: envBool(env.KNIFE_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.KNIFE_SUMMARY_MIN, 30) * 60_000),
     journalPath:
@@ -126,6 +143,10 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
       path.join('data', 'knife-catcher', 'knife-catcher.jsonl'),
     shyftEndpoint: env.SHYFT_GRPC_ENDPOINT?.trim() || 'https://grpc.fra.shyft.to',
     shyftToken: env.SHYFT_GRPC_TOKEN?.trim() ?? '',
+    jupiterPollIntervalMs: Math.round(envNum(env.KNIFE_JUPITER_POLL_SEC, 15) * 1000),
+    jupiterSlippageBps: Math.round(Number(env.KNIFE_JUPITER_SLIPPAGE_BPS ?? 300)),
+    jupiterTimeoutMs: Math.round(envNum(env.KNIFE_JUPITER_TIMEOUT_SEC, 8) * 1000),
+    jupiterMaxMintsPerTick: Math.round(envNum(env.KNIFE_JUPITER_MAX_MINTS_PER_TICK, 5)),
   };
 }
 
@@ -136,13 +157,24 @@ interface PricePoint {
   p: number;
 }
 
+export interface PendingWhaleDump {
+  detectedAtMs: number;
+  preDumpHigh: number;
+  dumpLow: number;
+  dumpPct: number;
+  sellUsd: number;
+  signature: string;
+  source: string;
+}
+
 interface MintState {
   mint: string;
   buf: PricePoint[];
   phase: Phase;
   obsCount: number;
   cooldownUntilMs: number;
-  // position
+  watchlistJoinedAtMs: number;
+  pendingDump: PendingWhaleDump | null;
   legs: number;
   leg1Price: number;
   entryTs: number;
@@ -159,6 +191,7 @@ interface MintState {
 
 const states = new Map<string, MintState>();
 let journalPathResolved: string | null = null;
+let globalLastEntryAtMs = 0;
 
 function appendJournal(cfg: KnifeConfig, ev: Record<string, unknown>): void {
   try {
@@ -192,6 +225,8 @@ function getOrCreateState(mint: string): MintState {
       phase: 'idle',
       obsCount: 0,
       cooldownUntilMs: 0,
+      watchlistJoinedAtMs: Date.now(),
+      pendingDump: null,
       legs: 0,
       leg1Price: 0,
       entryTs: 0,
@@ -210,7 +245,7 @@ function getOrCreateState(mint: string): MintState {
   return s;
 }
 
-/** Highest price within the last `dropWindowMs`, for fast-knife drawdown reference. */
+/** Highest price within the last `windowMs`. */
 function recentHigh(buf: PricePoint[], nowMs: number, windowMs: number): number {
   let hi = 0;
   const cutoff = nowMs - windowMs;
@@ -240,7 +275,7 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
     avgEntry: s.avgEntry,
     investedUsd: Number(s.investedUsd.toFixed(2)),
     realizedUsd: Number(s.realizedUsd.toFixed(2)),
-      totalPnlPct:
+    totalPnlPct:
       s.investedUsd > 0 ? Number(((s.realizedUsd / s.investedUsd) * 100).toFixed(3)) : 0,
   });
   const pnlPct = s.investedUsd > 0 ? (s.realizedUsd / s.investedUsd) * 100 : 0;
@@ -255,6 +290,7 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
   );
   s.phase = 'idle';
   s.cooldownUntilMs = nowMs + cfg.cooldownMs;
+  s.pendingDump = null;
   s.legs = 0;
   s.leg1Price = 0;
   s.entryTs = 0;
@@ -290,54 +326,108 @@ function sellChunk(cfg: KnifeConfig, s: MintState, price: number, reason: string
   });
 }
 
-function onPrice(cfg: KnifeConfig, mint: string, price: number, tsMs: number): void {
-  if (!(price > 0) || !Number.isFinite(price)) return;
-  const s = getOrCreateState(mint);
-  s.obsCount += 1;
-  s.buf.push({ t: tsMs, p: price });
-  const cutoff = tsMs - cfg.bufferMs;
-  while (s.buf.length > 0 && s.buf[0]!.t < cutoff) s.buf.shift();
+/**
+ * Detect whale dump from a large sell swap that prints a fast drop from a recent local high.
+ */
+export function detectWhaleDump(
+  buf: PricePoint[],
+  price: number,
+  tsMs: number,
+  meta: ShyftObservationMeta,
+  cfg: Pick<
+    KnifeConfig,
+    'minSellUsd' | 'minDumpPct' | 'preDumpHighMs' | 'maxDrawdownPct'
+  >,
+): PendingWhaleDump | null {
+  if (meta.side !== 'sell') return null;
+  if (!(meta.amountUsd >= cfg.minSellUsd)) return null;
 
-  if (s.phase === 'idle') {
-    if (tsMs < s.cooldownUntilMs) return;
-    const hi = recentHigh(s.buf, tsMs, cfg.dropWindowMs);
-    if (!(hi > 0)) return;
-    const drawdownPct = ((hi - price) / hi) * 100;
-    if (drawdownPct >= cfg.dropPct) {
-      // Immediate leg-1 entry — no bounce wait.
-      fillLeg(s, cfg.legUsd, price);
-      s.phase = 'in_pos';
-      s.leg1Price = price;
-      s.entryTs = tsMs;
-      s.peak = price;
-      appendJournal(cfg, {
-        kind: 'knife_entry',
-        mint,
-        leg: 1,
-        price,
-        high: hi,
-        drawdownPct: Number(drawdownPct.toFixed(2)),
-        legUsd: cfg.legUsd,
-      });
-      notify(
-        cfg,
-        `🔪 вход ${shortMint(mint)} leg1 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
-          `(нож −${drawdownPct.toFixed(1)}% за ${Math.round(cfg.dropWindowMs / 1000)}с)`,
-      );
-      log.info({ mint, price, drawdownPct: Number(drawdownPct.toFixed(2)) }, 'knife entry leg1');
-    }
+  const preHigh = recentHigh(buf, tsMs, cfg.preDumpHighMs);
+  if (!(preHigh > 0)) return null;
+
+  const dumpPct = ((preHigh - price) / preHigh) * 100;
+  if (dumpPct < cfg.minDumpPct) return null;
+  if (dumpPct > cfg.maxDrawdownPct) return null;
+
+  return {
+    detectedAtMs: tsMs,
+    preDumpHigh: preHigh,
+    dumpLow: price,
+    dumpPct: Number(dumpPct.toFixed(2)),
+    sellUsd: meta.amountUsd,
+    signature: meta.signature,
+    source: meta.source,
+  };
+}
+
+function tryWhaleDumpEntry(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  tsMs: number,
+): void {
+  if (!s.pendingDump) return;
+
+  const elapsed = tsMs - s.pendingDump.detectedAtMs;
+  if (elapsed > cfg.maxEntryAfterDumpMs) {
+    s.pendingDump = null;
     return;
   }
 
-  // phase === 'in_pos'
+  if (price < s.pendingDump.dumpLow) s.pendingDump.dumpLow = price;
+
+  const bouncePct = ((price - s.pendingDump.dumpLow) / s.pendingDump.dumpLow) * 100;
+  if (bouncePct > cfg.maxBounceFromDumpPct) {
+    s.pendingDump = null;
+    return;
+  }
+
+  if (tsMs - globalLastEntryAtMs < cfg.globalEntryGapMs) return;
+
+  fillLeg(s, cfg.legUsd, price);
+  s.phase = 'in_pos';
+  s.leg1Price = price;
+  s.entryTs = tsMs;
+  s.peak = price;
+  globalLastEntryAtMs = tsMs;
+
+  const dump = s.pendingDump;
+  s.pendingDump = null;
+
+  appendJournal(cfg, {
+    kind: 'knife_entry',
+    mint: s.mint,
+    trigger: 'whale_dump',
+    leg: 1,
+    price,
+    preDumpHigh: dump.preDumpHigh,
+    dumpPct: dump.dumpPct,
+    sellUsd: dump.sellUsd,
+    signature: dump.signature,
+    source: dump.source,
+    legUsd: cfg.legUsd,
+    bouncePct: Number(bouncePct.toFixed(2)),
+    entryDelayMs: elapsed,
+  });
+  notify(
+    cfg,
+    `🔪 вход ${shortMint(s.mint)} leg1 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
+      `(whale dump −${dump.dumpPct.toFixed(1)}%, sell $${Math.round(dump.sellUsd)})`,
+  );
+  log.info(
+    { mint: s.mint, price, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd },
+    'knife whale-dump entry leg1',
+  );
+}
+
+function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: number): void {
   if (price > s.peak) s.peak = price;
 
-  // Averaging leg 2 — only if the knife keeps falling below leg 1.
   if (s.legs < 2 && price <= s.leg1Price * (1 - cfg.avgDropPct / 100)) {
     fillLeg(s, cfg.legUsd, price);
     appendJournal(cfg, {
       kind: 'knife_avg_leg',
-      mint,
+      mint: s.mint,
       leg: 2,
       price,
       dropFromLeg1Pct: Number(((s.leg1Price - price) / s.leg1Price) * 100),
@@ -346,21 +436,19 @@ function onPrice(cfg: KnifeConfig, mint: string, price: number, tsMs: number): v
     });
     notify(
       cfg,
-      `↓ усреднение ${shortMint(mint)} leg2 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
+      `↓ усреднение ${shortMint(s.mint)} leg2 $${cfg.legUsd} @ ${fmtPrice(price)} ` +
         `(−${(((s.leg1Price - price) / s.leg1Price) * 100).toFixed(1)}% от leg1, avg ${fmtPrice(s.avgEntry)})`,
     );
-    log.info({ mint, price, avgEntry: s.avgEntry }, 'knife avg leg2');
+    log.info({ mint: s.mint, price, avgEntry: s.avgEntry }, 'knife avg leg2');
   }
 
-  // Catastrophe kill.
   if (price <= s.avgEntry * (1 - cfg.killPct / 100)) {
-    sellChunk(cfg, s, price, 'kill'); // partial safety fill on the reference chunk
+    sellChunk(cfg, s, price, 'kill');
     while (s.qty > EPS) sellChunk(cfg, s, price, 'kill');
     closePosition(cfg, s, tsMs, 'kill');
     return;
   }
 
-  // Fixed escalating TP ladder — sell a chunk at each rung.
   while (
     s.rungsFired < cfg.tpLadderPct.length &&
     price >= s.avgEntry * (1 + cfg.tpLadderPct[s.rungsFired]! / 100)
@@ -373,7 +461,6 @@ function onPrice(cfg: KnifeConfig, mint: string, price: number, tsMs: number): v
     }
   }
 
-  // Infinite ladder tail — trailing stop sells another chunk on each new-high → retrace.
   if (s.trailArmed && s.qty > EPS) {
     if (price > s.trailPeak) {
       s.trailPeak = price;
@@ -392,6 +479,64 @@ function onPrice(cfg: KnifeConfig, mint: string, price: number, tsMs: number): v
   if (s.qty <= EPS && s.phase === 'in_pos') {
     closePosition(cfg, s, tsMs, 'ladder_complete');
   }
+}
+
+function onPrice(
+  cfg: KnifeConfig,
+  mint: string,
+  price: number,
+  tsMs: number,
+  meta?: ShyftObservationMeta,
+): void {
+  if (!(price > 0) || !Number.isFinite(price)) return;
+
+  if (meta) recordKnifePrice(mint, price, tsMs, meta);
+
+  const tick = getKnifeCrossSourceTick(mint, cfg.crossSourceMaxPct, tsMs);
+  const effectivePrice = tick?.priceUsd ?? price;
+
+  const s = getOrCreateState(mint);
+  s.obsCount += 1;
+  s.buf.push({ t: tsMs, p: effectivePrice });
+  const cutoff = tsMs - cfg.bufferMs;
+  while (s.buf.length > 0 && s.buf[0]!.t < cutoff) s.buf.shift();
+
+  if (s.phase === 'idle') {
+    if (tsMs < s.cooldownUntilMs) return;
+    if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
+    if (s.obsCount < cfg.minObs) return;
+
+    if (meta?.side === 'sell') {
+      const dump = detectWhaleDump(s.buf, effectivePrice, tsMs, meta, cfg);
+      if (dump) {
+        s.pendingDump = dump;
+        appendJournal(cfg, {
+          kind: 'knife_dump_detected',
+          mint,
+          preDumpHigh: dump.preDumpHigh,
+          dumpLow: dump.dumpLow,
+          dumpPct: dump.dumpPct,
+          sellUsd: dump.sellUsd,
+          signature: dump.signature,
+          source: dump.source,
+        });
+        notify(
+          cfg,
+          `🐋 dump ${shortMint(mint)} −${dump.dumpPct.toFixed(1)}% ` +
+            `(sell $${Math.round(dump.sellUsd)} @ ${fmtPrice(effectivePrice)})`,
+        );
+        log.info(
+          { mint, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd },
+          'knife whale dump detected',
+        );
+      }
+    }
+
+    tryWhaleDumpEntry(cfg, s, effectivePrice, tsMs);
+    return;
+  }
+
+  onPriceInPosition(cfg, s, effectivePrice, tsMs);
 }
 
 async function refreshWatchlist(cfg: KnifeConfig): Promise<string[]> {
@@ -426,7 +571,6 @@ async function main(): Promise<void> {
     return;
   }
   if (cfg.mode === 'live') {
-    // Live execution wiring (Jupiter/wallet) is intentionally not implemented in this worker yet.
     log.warn('KNIFE_MODE=live requested but live execution is not wired — running SHADOW instead');
     cfg.mode = 'shadow';
   }
@@ -435,14 +579,14 @@ async function main(): Promise<void> {
     {
       mode: cfg.mode,
       topN: cfg.topN,
-      dropPct: cfg.dropPct,
+      minDumpPct: cfg.minDumpPct,
+      minSellUsd: cfg.minSellUsd,
+      maxEntryAfterDumpSec: cfg.maxEntryAfterDumpMs / 1000,
       legUsd: cfg.legUsd,
       positionUsd: cfg.positionUsd,
-      avgDropPct: cfg.avgDropPct,
       tpLadderPct: cfg.tpLadderPct,
-      tpSellFrac: cfg.tpSellFrac,
-      trailPct: cfg.trailPct,
       endpoint: cfg.shyftEndpoint,
+      priceExtraction: 'swap_decode',
     },
     'knife-catcher starting',
   );
@@ -457,7 +601,12 @@ async function main(): Promise<void> {
       const mints = await refreshWatchlist(cfg);
       if (mints.length > 0) {
         setShyftShadowWatchedMints(mints);
-        for (const m of mints) getOrCreateState(m);
+        const now = Date.now();
+        for (const m of mints) {
+          const isNew = !states.has(m);
+          const s = getOrCreateState(m);
+          if (isNew) s.watchlistJoinedAtMs = now;
+        }
         appendJournal(cfg, { kind: 'knife_watchlist', count: mints.length, mints });
         log.info({ count: mints.length }, 'watchlist refreshed');
       } else {
@@ -473,16 +622,38 @@ async function main(): Promise<void> {
     void applyWatchlist();
   }, cfg.watchlistRefreshMs).unref();
 
+  const getWatchedMints = (): string[] => [...states.keys()];
+
+  startKnifeJupiterPoll(
+    {
+      legUsd: cfg.legUsd,
+      pollIntervalMs: cfg.jupiterPollIntervalMs,
+      slippageBps: cfg.jupiterSlippageBps,
+      timeoutMs: cfg.jupiterTimeoutMs,
+      crossSourceMaxPct: cfg.crossSourceMaxPct,
+      maxMintsPerTick: cfg.jupiterMaxMintsPerTick,
+    },
+    getWatchedMints,
+    (mint, priceUsd, streamTsMs) => {
+      try {
+        onPrice(cfg, mint, priceUsd, streamTsMs);
+      } catch (e) {
+        log.debug({ mint, err: (e as Error).message }, 'jupiter onPrice failed');
+      }
+    },
+  );
+
   startShyftShadowConsumer(
     {
       endpoint: cfg.shyftEndpoint,
       token: cfg.shyftToken,
       maxAccountInclude: cfg.topN,
+      priceExtraction: 'swap_decode',
     },
     {
-      onObservation: (mint, priceUsd, streamTsMs) => {
+      onObservation: (mint, priceUsd, streamTsMs, meta) => {
         try {
-          onPrice(cfg, mint, priceUsd, streamTsMs);
+          onPrice(cfg, mint, priceUsd, streamTsMs, meta);
         } catch (e) {
           log.debug({ mint, err: (e as Error).message }, 'onPrice failed');
         }
@@ -498,18 +669,26 @@ async function main(): Promise<void> {
     let open = 0;
     let obs = 0;
     let realized = 0;
+    let pending = 0;
     for (const s of states.values()) {
       if (s.phase === 'in_pos') open += 1;
+      if (s.pendingDump) pending += 1;
       obs += s.obsCount;
       realized += s.realizedUsd;
     }
     log.info(
-      { watched: states.size, open, obsTotal: obs, realizedUsd: Number(realized.toFixed(2)), solUsd: getSolUsd() },
+      {
+        watched: states.size,
+        open,
+        pending,
+        obsTotal: obs,
+        realizedUsd: Number(realized.toFixed(2)),
+        solUsd: getSolUsd(),
+      },
       'knife-catcher heartbeat',
     );
   }, 60_000).unref();
 
-  // Periodic Telegram summary so the operator can follow shadow performance.
   let lastRealized = 0;
   setInterval(() => {
     let open = 0;
@@ -540,4 +719,10 @@ if (isMain) {
   });
 }
 
-export { loadConfig, onPrice, recentHigh, states as __knifeStatesForTests };
+export {
+  loadConfig,
+  onPrice,
+  recentHigh,
+  states as __knifeStatesForTests,
+  globalLastEntryAtMs as __knifeGlobalLastEntryForTests,
+};

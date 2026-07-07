@@ -2156,9 +2156,10 @@ const PM2_APPS = [
     },
     /**
      * knife-catcher — ISOLATED shadow worker (default OFF). Tracks top-N high-volume runners via a
-     * SMALL Shyft gRPC subscription and simulates 2-leg dip-buys on fast "knife" drawdowns with an
-     * escalating scalp TP ladder + trail. Fully decoupled from live-oscar: own process, own JSONL,
-     * read-only PG, never executes. SHYFT_GRPC_TOKEN / TELEGRAM_BOT_TOKEN read from .env (dotenv).
+     * SMALL Shyft gRPC subscription (swap_decode prices + Jupiter cross-check) and simulates 2-leg
+     * dip-buys on whale-dump events with an escalating scalp TP ladder + trail. Fully decoupled from
+     * live-oscar: own process, own JSONL, read-only PG, never executes. SHYFT_GRPC_TOKEN /
+     * TELEGRAM_BOT_TOKEN read from .env (dotenv).
      */
     {
       name: 'knife-catcher',
@@ -2189,9 +2190,22 @@ const PM2_APPS = [
         KNIFE_WATCHLIST_LOOKBACK_MIN: process.env.KNIFE_WATCHLIST_LOOKBACK_MIN || '30',
         KNIFE_MIN_VOL_1H_USD: process.env.KNIFE_MIN_VOL_1H_USD || '50000',
         KNIFE_BUFFER_SEC: process.env.KNIFE_BUFFER_SEC || '300',
-        /** knife = drop >= DROP_PCT within DROP_WINDOW_SEC from a very recent local high. */
-        KNIFE_DROP_WINDOW_SEC: process.env.KNIFE_DROP_WINDOW_SEC || '90',
-        KNIFE_DROP_PCT: process.env.KNIFE_DROP_PCT || '15',
+        /** Whale-dump entry: large sell swap + dump from recent local high. */
+        KNIFE_MIN_DUMP_PCT: process.env.KNIFE_MIN_DUMP_PCT || '10',
+        KNIFE_MIN_SELL_USD: process.env.KNIFE_MIN_SELL_USD || '1500',
+        KNIFE_MAX_ENTRY_AFTER_DUMP_SEC: process.env.KNIFE_MAX_ENTRY_AFTER_DUMP_SEC || '50',
+        KNIFE_PRE_DUMP_HIGH_SEC: process.env.KNIFE_PRE_DUMP_HIGH_SEC || '120',
+        KNIFE_MAX_BOUNCE_FROM_DUMP_PCT: process.env.KNIFE_MAX_BOUNCE_FROM_DUMP_PCT || '5',
+        KNIFE_MAX_DRAWDOWN_PCT: process.env.KNIFE_MAX_DRAWDOWN_PCT || '40',
+        KNIFE_GLOBAL_ENTRY_GAP_SEC: process.env.KNIFE_GLOBAL_ENTRY_GAP_SEC || '45',
+        KNIFE_MIN_OBS: process.env.KNIFE_MIN_OBS || '3',
+        KNIFE_WATCHLIST_WARMUP_SEC: process.env.KNIFE_WATCHLIST_WARMUP_SEC || '25',
+        KNIFE_CROSS_SOURCE_MAX_PCT: process.env.KNIFE_CROSS_SOURCE_MAX_PCT || '30',
+        /** Jupiter buy-quote poll (KNIFE_LEG_USD notional) for cross-source price sanity. */
+        KNIFE_JUPITER_POLL_SEC: process.env.KNIFE_JUPITER_POLL_SEC || '15',
+        KNIFE_JUPITER_SLIPPAGE_BPS: process.env.KNIFE_JUPITER_SLIPPAGE_BPS || '300',
+        KNIFE_JUPITER_TIMEOUT_SEC: process.env.KNIFE_JUPITER_TIMEOUT_SEC || '8',
+        KNIFE_JUPITER_MAX_MINTS_PER_TICK: process.env.KNIFE_JUPITER_MAX_MINTS_PER_TICK || '5',
         /** 2-leg entry: $25 on signal + $25 avg-down if it falls a further AVG_DROP_PCT. */
         KNIFE_LEG_USD: process.env.KNIFE_LEG_USD || '25',
         KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '50',
@@ -2202,7 +2216,7 @@ const PM2_APPS = [
         KNIFE_TRAIL_PCT: process.env.KNIFE_TRAIL_PCT || '5',
         KNIFE_KILL_PCT: process.env.KNIFE_KILL_PCT || '50',
         KNIFE_MAX_HOLD_SEC: process.env.KNIFE_MAX_HOLD_SEC || '0',
-        KNIFE_COOLDOWN_SEC: process.env.KNIFE_COOLDOWN_SEC || '900',
+        KNIFE_COOLDOWN_SEC: process.env.KNIFE_COOLDOWN_SEC || '600',
         /** Telegram: same operator chat as live-oscar health (bot token from .env). */
         KNIFE_TELEGRAM_ENABLED: process.env.KNIFE_TELEGRAM_ENABLED || '1',
         KNIFE_SUMMARY_MIN: process.env.KNIFE_SUMMARY_MIN || '30',
