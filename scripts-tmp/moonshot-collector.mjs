@@ -2,6 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
 import { createCollectorFetchJsonWithRetry } from './collector-http-fetch.mjs';
+import { fetchPrimarySnapshotRows } from './collector-primary-fetch.mjs';
 
 const { Pool } = pg;
 
@@ -282,23 +283,19 @@ async function collectOneTick() {
   let enrichUpserted = 0;
 
   try {
-    primaryRows = await fetchFromDexScreener(bucketTs);
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal-trending';
-      primaryRows = await fetchFromGecko(
-        bucketTs,
-        { path: 'trending_pools', pages: GECKO_TRENDING_PAGES },
-        'geckoterminal-trending',
-      );
-    }
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal-new-pools';
-      primaryRows = await fetchFromGecko(
-        bucketTs,
-        { path: 'new_pools', pages: GECKO_NEW_POOLS_PAGES },
-        'geckoterminal-new',
-      );
-    }
+    ({ primaryRows, sourceUsed } = await fetchPrimarySnapshotRows({
+      dexSource: 'moonshot',
+      bucketTs,
+      searchTerms: DEX_SEARCH_TERMS,
+      fetchFromDexScreener,
+      fetchFromGeckoTrending: (bt) =>
+        fetchFromGecko(bt, { path: 'trending_pools', pages: GECKO_TRENDING_PAGES }, 'geckoterminal-trending'),
+      fetchFromGeckoNewPools: (bt) =>
+        fetchFromGecko(bt, { path: 'new_pools', pages: GECKO_NEW_POOLS_PAGES }, 'geckoterminal-new'),
+      fetchJsonWithRetry,
+      sleep,
+      log,
+    }));
 
     // Persist primary search bucket first — MAX(ts) must advance even if enrich hits 429.
     primaryUpserted = await upsertSnapshots(primaryRows);

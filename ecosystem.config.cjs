@@ -79,17 +79,9 @@ const BIRDEYE_REST_ENV = {
   BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS: '120',
 };
 
-/**
- * DEX snapshot collectors (sa-raydium/meteora/pumpswap): Birdeye enrich OFF.
- * live-oscar: BIRDEYE_PRIMARY_ENABLED=0 (2026-07) — DexScreener → PG; collector enrich OFF on all processes.
- */
-const COLLECTOR_BIRDEYE_ENV = {
+/** DexScreener-only collector enrich (Birdeye OFF on parity profile). */
+const BIRDEYE_COLLECTOR_ENV = {
   BIRDEYE_COLLECTOR_ENABLED: '0',
-};
-
-/** Cap per-mint Dex enrich per collector tick (#300 regression: ~70 mints → 15min ticks). */
-const COLLECTOR_ENRICH_ENV = {
-  COLLECTOR_ENRICH_MAX_MINTS_PER_TICK: '6',
 };
 
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
@@ -425,14 +417,13 @@ const PM2_APPS = [
         RAYDIUM_COLLECTOR_START_OFFSET_MS: '0',
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -451,17 +442,16 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '120000',
-        METEORA_COLLECTOR_START_OFFSET_MS: '40000',
+        METEORA_COLLECTOR_START_OFFSET_MS: '10000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -481,17 +471,16 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
-        MOONSHOT_COLLECTOR_START_OFFSET_MS: '80000',
+        MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -509,18 +498,17 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        PUMPSWAP_COLLECTOR_INTERVAL_MS: '540000',
+        PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000',
         PUMPSWAP_COLLECTOR_START_OFFSET_MS: '35000',
         PUMPSWAP_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
-        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '1',
+        PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
