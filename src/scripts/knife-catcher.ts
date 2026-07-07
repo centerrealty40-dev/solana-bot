@@ -17,8 +17,6 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
-import { sql as dsql } from 'drizzle-orm';
-import { db } from '../core/db/client.js';
 import { child } from '../core/logger.js';
 import { getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 import { setShyftShadowWatchedMints } from '../papertrader/stream/shadow-state.js';
@@ -39,6 +37,15 @@ import {
   startKnifeJupiterPoll,
   tryAdoptKnifeSwapPrice,
 } from './knife-price-feed.js';
+import {
+  buildKnifeGuardPaperCfg,
+  cacheKnifeAnalyticsVerdict,
+  filterKnifeWatchlist,
+  getCachedKnifeAnalyticsVerdict,
+  isKnifeEntryAllowed,
+  loadKnifeAnalyticsConfig,
+  type KnifeAnalyticsConfig,
+} from './knife-analytics-gate.js';
 import { sendTagged } from '../core/telegram/sender.js';
 
 const log = child('knife-catcher');
@@ -194,6 +201,7 @@ interface MintState {
 const states = new Map<string, MintState>();
 let journalPathResolved: string | null = null;
 let globalLastEntryAtMs = 0;
+let knifeAnalyticsCfg: KnifeAnalyticsConfig = loadKnifeAnalyticsConfig();
 
 function appendJournal(cfg: KnifeConfig, ev: Record<string, unknown>): void {
   try {
@@ -394,6 +402,22 @@ function tryWhaleDumpEntry(
   tsMs: number,
 ): void {
   if (!s.pendingDump) return;
+
+  if (!isKnifeEntryAllowed(s.mint, knifeAnalyticsCfg)) {
+    const cached = getCachedKnifeAnalyticsVerdict(s.mint);
+    appendJournal(cfg, {
+      kind: 'knife_entry_blocked',
+      mint: s.mint,
+      reason: 'analytics_gate',
+      analyticsReasons: cached?.reasons ?? ['no_cached_verdict'],
+    });
+    s.pendingDump = null;
+    log.info(
+      { mint: s.mint, reasons: cached?.reasons ?? [] },
+      'knife entry blocked — analytics gate',
+    );
+    return;
+  }
 
   const elapsed = tsMs - s.pendingDump.detectedAtMs;
   if (elapsed > cfg.maxEntryAfterDumpMs) {
@@ -630,18 +654,28 @@ function onPrice(
   onStreamSwap(cfg, mint, price, tsMs, meta);
 }
 
-async function refreshWatchlist(cfg: KnifeConfig): Promise<string[]> {
-  const lookback = Math.max(5, Math.min(180, cfg.watchlistLookbackMin));
-  const rows = (await db.execute(dsql.raw(`
-    SELECT base_mint AS mint, MAX(COALESCE(volume_1h, 0)) AS vol
-    FROM pumpswap_pair_snapshots
-    WHERE ts >= now() - interval '${lookback} minutes'
-      AND COALESCE(volume_1h, 0) >= ${cfg.minVol1hUsd}
-    GROUP BY base_mint
-    ORDER BY vol DESC
-    LIMIT ${cfg.topN}
-  `))) as unknown as Array<{ mint: string }>;
-  return rows.map((r) => r.mint).filter(Boolean);
+async function refreshWatchlist(cfg: KnifeConfig): Promise<{
+  mints: string[];
+  rejected: Array<{ mint: string; reasons: string[] }>;
+}> {
+  const paperCfg = buildKnifeGuardPaperCfg(knifeAnalyticsCfg);
+  const result = await filterKnifeWatchlist(
+    knifeAnalyticsCfg,
+    paperCfg,
+    cfg.watchlistLookbackMin,
+    cfg.minVol1hUsd,
+    cfg.topN,
+  );
+  for (const p of result.passed) {
+    cacheKnifeAnalyticsVerdict(p.mint, p.verdict);
+  }
+  for (const r of result.rejected) {
+    cacheKnifeAnalyticsVerdict(r.mint, r.verdict);
+  }
+  return {
+    mints: result.mints,
+    rejected: result.rejected.map((r) => ({ mint: r.mint, reasons: r.verdict.reasons })),
+  };
 }
 
 async function main(): Promise<void> {
@@ -678,6 +712,10 @@ async function main(): Promise<void> {
       tpLadderPct: cfg.tpLadderPct,
       endpoint: cfg.shyftEndpoint,
       priceExtraction: 'swap_decode',
+      analyticsEnabled: knifeAnalyticsCfg.enabled,
+      minHolders: knifeAnalyticsCfg.minHolderCount,
+      maxVolPerHolder1h: knifeAnalyticsCfg.maxVolPerHolder1hUsd,
+      runnerGate: knifeAnalyticsCfg.runnerGateEnabled,
     },
     'knife-catcher starting',
   );
@@ -689,7 +727,8 @@ async function main(): Promise<void> {
 
   const applyWatchlist = async (): Promise<void> => {
     try {
-      const mints = await refreshWatchlist(cfg);
+      knifeAnalyticsCfg = loadKnifeAnalyticsConfig();
+      const { mints, rejected } = await refreshWatchlist(cfg);
       if (mints.length > 0) {
         setShyftShadowWatchedMints(mints);
         const now = Date.now();
@@ -698,10 +737,30 @@ async function main(): Promise<void> {
           const s = getOrCreateState(m);
           if (isNew) s.watchlistJoinedAtMs = now;
         }
-        appendJournal(cfg, { kind: 'knife_watchlist', count: mints.length, mints });
-        log.info({ count: mints.length }, 'watchlist refreshed');
+        appendJournal(cfg, {
+          kind: 'knife_watchlist',
+          count: mints.length,
+          mints,
+          analyticsEnabled: knifeAnalyticsCfg.enabled,
+          rejectedCount: rejected.length,
+        });
+        if (rejected.length > 0) {
+          appendJournal(cfg, {
+            kind: 'knife_analytics_reject',
+            samples: rejected.slice(0, 12),
+          });
+        }
+        log.info(
+          {
+            count: mints.length,
+            rejected: rejected.length,
+            analytics: knifeAnalyticsCfg.enabled,
+            minHolders: knifeAnalyticsCfg.minHolderCount,
+          },
+          'watchlist refreshed',
+        );
       } else {
-        log.warn('watchlist empty — no top-volume pumpswap mints in lookback window');
+        log.warn('watchlist empty — no mints passed volume + analytics gates');
       }
     } catch (e) {
       log.error({ err: (e as Error).message }, 'watchlist refresh failed');
