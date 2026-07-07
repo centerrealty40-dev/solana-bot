@@ -816,6 +816,7 @@ export const OrphanReconcileSchema = z.object({
   reason: z.enum([
     'chain_above_journal',
     'journal_zero_chain_holds',
+    'chain_below_journal_after_partial',
     'chain_orphan_no_open',
     'journal_open_chain_zero',
   ]),

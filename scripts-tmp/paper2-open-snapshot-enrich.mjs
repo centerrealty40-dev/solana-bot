@@ -45,6 +45,10 @@ const STREAM_CHUNK_BYTES = 256 * 1024;
  * per minute instead of every tick. Set to `0` to disable caching.
  */
 const OPEN_MINTS_CACHE_TTL_MS = Number(process.env.PAPER2_OPEN_MINTS_CACHE_TTL_MS || 30_000);
+/** Bounded tail for live JSONL open-mint scan — align with LIVE_REPLAY_MAX_FILE_BYTES (default 200 MiB). */
+const LIVE_OPEN_MINTS_MAX_BYTES = Number(
+  process.env.PAPER2_SNAPSHOT_LIVE_MAX_BYTES || process.env.LIVE_REPLAY_MAX_FILE_BYTES || 209_715_200,
+);
 
 const _openMintsCache = new Map(); // key -> { ts, mtimeMs, size, value }
 
@@ -134,34 +138,96 @@ export function loadPaper2OpenMintsSync(paper2Dir) {
   return [...out];
 }
 
+function liveOpenSnapshotPath() {
+  const explicit = process.env.LIVE_OPEN_SNAPSHOT_PATH?.trim();
+  if (explicit) return explicit;
+  const liveJsonl =
+    process.env.LIVE_TRADES_PATH?.trim() || process.env.PAPER2_SNAPSHOT_LIVE_JSONL?.trim() || DEFAULT_LIVE_JSONL;
+  return path.join(path.dirname(liveJsonl), 'live-oscar-open-snapshot.json');
+}
+
+/** Fast path: sidecar snapshot written by live-oscar (no multi-GB JSONL scan). */
+function loadLiveOpenSnapshotMintsSync() {
+  const fp = liveOpenSnapshotPath();
+  if (!fp || !fs.existsSync(fp)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    if (!Array.isArray(raw?.positions)) return null;
+    const out = [];
+    for (const p of raw.positions) {
+      const m = p?.mint;
+      if (isPlausibleMint(m)) out.push(m);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stream only the trailing `maxBytes` chunk of a huge JSONL (same policy as Phase 7 replay).
+ * Never scans multi-GB journals line-by-line from offset 0.
+ */
+function streamBoundedTailLinesSync(fp, maxBytes, onLine) {
+  const stat = fs.statSync(fp);
+  const sz = stat.size;
+  if (sz <= maxBytes) {
+    streamLinesSync(fp, onLine);
+    return false;
+  }
+  const fd = fs.openSync(fp, 'r');
+  try {
+    const readLen = Math.min(maxBytes, sz);
+    const start = sz - readLen;
+    const buf = Buffer.alloc(readLen);
+    fs.readSync(fd, buf, 0, readLen, start);
+    let text = buf.toString('utf-8');
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      if (nl !== -1) text = text.slice(nl + 1);
+    }
+    for (const ln of text.split('\n')) {
+      if (ln) onLine(ln);
+    }
+    return true;
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+function replayLiveOpenMintsFromJournal(fp) {
+  const open = new Map();
+  const applyLine = (ln) => {
+    if (!ln.trim()) return;
+    try {
+      const e = JSON.parse(ln);
+      if (e.channel && e.channel !== 'live') return;
+      const mint = e.mint;
+      if (!mint || typeof mint !== 'string') return;
+      const k = e.kind;
+      if (k === 'live_position_open' || k === 'live_position_scale_in' || k === 'live_position_dca') {
+        open.set(mint, true);
+      } else if (k === 'live_position_close') {
+        open.delete(mint);
+      }
+    } catch { /* ignore bad line */ }
+  };
+  try {
+    streamBoundedTailLinesSync(fp, LIVE_OPEN_MINTS_MAX_BYTES, applyLine);
+  } catch { /* ignore file errors */ }
+  const out = [];
+  for (const m of open.keys()) if (isPlausibleMint(m)) out.push(m);
+  return out;
+}
+
 /** Replay Live Oscar JSONL: open positions until `live_position_close`. */
 export function loadLiveOscarOpenMintsSync() {
   if (process.env.PAPER2_SNAPSHOT_LIVE_OPENS === '0') return [];
+  const snapshotMints = loadLiveOpenSnapshotMintsSync();
+  if (snapshotMints != null) return snapshotMints;
   const fp = process.env.LIVE_TRADES_PATH || process.env.PAPER2_SNAPSHOT_LIVE_JSONL || DEFAULT_LIVE_JSONL;
   if (!fp || !fs.existsSync(fp)) return [];
-  return getCachedOrCompute(`live:${fp}`, fp, () => {
-    const open = new Map();
-    try {
-      streamLinesSync(fp, (ln) => {
-        if (!ln.trim()) return;
-        try {
-          const e = JSON.parse(ln);
-          if (e.channel && e.channel !== 'live') return;
-          const mint = e.mint;
-          if (!mint || typeof mint !== 'string') return;
-          const k = e.kind;
-          if (k === 'live_position_open' || k === 'live_position_scale_in' || k === 'live_position_dca') {
-            open.set(mint, true);
-          } else if (k === 'live_position_close') {
-            open.delete(mint);
-          }
-        } catch { /* ignore bad line */ }
-      });
-    } catch { /* ignore file errors */ }
-    const out = [];
-    for (const m of open.keys()) if (isPlausibleMint(m)) out.push(m);
-    return out;
-  });
+  return getCachedOrCompute(`live:${fp}`, fp, () => replayLiveOpenMintsFromJournal(fp));
 }
 
 /** Tracked mint allowlist — same file as `LIVE_MINT_WHITELIST_PATH` on live-oscar. */
