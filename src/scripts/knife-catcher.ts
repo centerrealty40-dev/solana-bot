@@ -760,7 +760,20 @@ async function main(): Promise<void> {
           'watchlist refreshed',
         );
       } else {
-        log.warn('watchlist empty — no mints passed volume + analytics gates');
+        setShyftShadowWatchedMints([]);
+        if (rejected.length > 0) {
+          appendJournal(cfg, {
+            kind: 'knife_analytics_reject',
+            samples: rejected.slice(0, 12),
+          });
+        }
+        log.warn(
+          {
+            rejected: rejected.length,
+            analytics: knifeAnalyticsCfg.enabled,
+          },
+          'watchlist empty — no mints passed volume + analytics gates',
+        );
       }
     } catch (e) {
       log.error({ err: (e as Error).message }, 'watchlist refresh failed');
