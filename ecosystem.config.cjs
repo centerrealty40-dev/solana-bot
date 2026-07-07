@@ -2169,6 +2169,58 @@ const PM2_APPS = [
         TELEGRAM_COOLDOWN_REPORT_ALCHEMY_USAGE_MS: '3600000',
       },
     },
+    /**
+     * knife-catcher — ISOLATED shadow worker (default OFF). Tracks top-N high-volume runners via a
+     * SMALL Shyft gRPC subscription and simulates 2-leg dip-buys on fast "knife" drawdowns with an
+     * escalating scalp TP ladder + trail. Fully decoupled from live-oscar: own process, own JSONL,
+     * read-only PG, never executes. SHYFT_GRPC_TOKEN / TELEGRAM_BOT_TOKEN read from .env (dotenv).
+     */
+    {
+      name: 'knife-catcher',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/knife-catcher.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '350M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        KNIFE_CATCHER_ENABLED: '0',
+        /** shadow = journal hypothetical fills only; live execution not wired yet. */
+        KNIFE_MODE: 'shadow',
+        KNIFE_TOP_N: '15',
+        KNIFE_WATCHLIST_REFRESH_MIN: '3',
+        KNIFE_WATCHLIST_LOOKBACK_MIN: '30',
+        KNIFE_MIN_VOL_1H_USD: '50000',
+        KNIFE_BUFFER_SEC: '300',
+        /** knife = drop >= DROP_PCT within DROP_WINDOW_SEC from a very recent local high. */
+        KNIFE_DROP_WINDOW_SEC: '90',
+        KNIFE_DROP_PCT: '15',
+        /** 2-leg entry: $25 on signal + $25 avg-down if it falls a further AVG_DROP_PCT. */
+        KNIFE_LEG_USD: '25',
+        KNIFE_POSITION_USD: '50',
+        KNIFE_AVG_DROP_PCT: '8',
+        /** Escalating scalp TP ladder — sell TP_SELL_FRAC of size at each rung; then trail. */
+        KNIFE_TP_LADDER_PCT: '3.5,12,15',
+        KNIFE_TP_SELL_FRAC: '0.30',
+        KNIFE_TRAIL_PCT: '5',
+        KNIFE_KILL_PCT: '50',
+        KNIFE_MAX_HOLD_SEC: '0',
+        KNIFE_COOLDOWN_SEC: '900',
+        /** Telegram: same operator chat as live-oscar health (bot token from .env). */
+        KNIFE_TELEGRAM_ENABLED: '1',
+        KNIFE_SUMMARY_MIN: '30',
+        TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        KNIFE_CATCHER_JOURNAL_PATH: path.join(root, 'data/knife-catcher/knife-catcher.jsonl'),
+        SHYFT_GRPC_ENDPOINT: 'https://grpc.fra.shyft.to',
+      },
+    },
 ];
 
 module.exports = {
