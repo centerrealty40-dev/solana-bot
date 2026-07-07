@@ -263,6 +263,7 @@ describe('copy-leader exit adopt sizing', () => {
 
     expect(r.adopted).toEqual([]);
     expect(r.skippedAlreadyOpen).toEqual([mint]);
+    expect(open.get(mint)!.copyToOscarPromoted).toBe(true);
     expect(open.get(mint)!.liveStagedEntry?.avgSecondLegUsd).toBe(250);
     expect(open.get(mint)!.liveStagedEntry?.copyLeaderAdoptStagedPlan).toBe(true);
   });
