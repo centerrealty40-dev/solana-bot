@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   adoptCopyLeaderExitOpens,
+  attachCopyLeaderDiscoveryStagedEntryTopUp,
   resolveCopyLeaderAdoptTier,
 } from '../../src/live/copy-leader-exit-adopt.js';
 import { entrySplitLegDoneFromState } from '../../src/papertrader/entry-split-legs.js';
@@ -14,7 +15,7 @@ import {
 import { loadPaperTraderConfig } from '../../src/papertrader/config.js';
 import type { OpenTrade } from '../../src/papertrader/types.js';
 
-describe('copy-leader exit adopt staged entry', () => {
+describe('copy-leader exit adopt sizing', () => {
   const tmpFiles: string[] = [];
   const envBackup: Record<string, string | undefined> = {};
 
@@ -103,7 +104,7 @@ describe('copy-leader exit adopt staged entry', () => {
     return fp;
   }
 
-  it('seeds liveStagedEntry with pending prod avg legs on adopt', async () => {
+  it('adopts copy half only without liveStagedEntry plan', async () => {
     const mint = 'MintCopyStaged111111111111111111111111111111';
     const promotedAt = Date.now() - 120_000;
     const entryPriceUsd = 0.0042;
@@ -128,22 +129,80 @@ describe('copy-leader exit adopt staged entry', () => {
     const ot = open.get(mint)!;
     expect(ot.entryMarketCapUsd).toBe(5_000_000);
     expect(ot.liveOscarMcapTier).toBe('prod');
-    const st = ot.liveStagedEntry;
-    expect(st).toBeDefined();
-    expect(st!.signalPriceUsd).toBe(entryPriceUsd);
-    expect(entrySplitLegDoneFromState(st!, 1)).toBe(true);
-    expect(st!.entrySplitLeg1Ts).toBe(promotedAt - 60_000);
-    expect(st!.avgSecondLegUsd).toBe(1000);
-    expect(st!.avgSecondDropPct).toBe(10);
-    expect(st!.avgThirdLegUsd).toBe(1000);
-    expect(st!.avgThirdDropPct).toBe(20);
-    expect(st!.avgFirstLegDone).toBe(false);
-    expect(st!.avgSecondLegDone).toBe(false);
-    expect(st!.secondLegDone).toBe(false);
-    expect(st!.thirdLegDone).toBe(false);
+    expect(ot.copyToOscarPromoted).toBe(true);
+    expect(ot.totalInvestedUsd).toBe(1000);
+    expect(ot.liveStagedEntry).toBeUndefined();
   });
 
-  it('uses low-tier avg sizing from entry mcap', async () => {
+  it('attachCopyLeaderDiscoveryStagedEntryTopUp schedules pending split legs', () => {
+    const mint = 'MintCopyDiscovery111111111111111111111111111';
+    const promotedAt = Date.now() - 120_000;
+    const entryPriceUsd = 0.0042;
+    const paperCfg = stagedEntryPaperCfg();
+    const ot: OpenTrade = {
+      mint,
+      symbol: 'DISC',
+      lane: 'post_migration',
+      metricType: 'price',
+      dex: 'raydium',
+      entryTs: promotedAt - 60_000,
+      entryMcUsd: entryPriceUsd,
+      entryMarketCapUsd: 5_000_000,
+      entryMetrics: {
+        uniqueBuyers: 0,
+        uniqueSellers: 0,
+        sumBuySol: 0,
+        sumSellSol: 0,
+        topBuyerShare: 0,
+        bcProgress: 0,
+      },
+      peakMcUsd: entryPriceUsd,
+      peakPnlPct: 0,
+      trailingArmed: false,
+      legs: [
+        {
+          ts: promotedAt - 60_000,
+          price: entryPriceUsd,
+          marketPrice: entryPriceUsd,
+          sizeUsd: 1000,
+          reason: 'open',
+        },
+      ],
+      partialSells: [],
+      totalInvestedUsd: 1000,
+      avgEntry: entryPriceUsd,
+      avgEntryMarket: entryPriceUsd,
+      remainingFraction: 1,
+      dcaUsedLevels: new Set(),
+      dcaUsedIndices: new Set(),
+      ladderUsedLevels: new Set(),
+      ladderUsedIndices: new Set(),
+      pairAddress: null,
+      entryLiqUsd: null,
+      copyToOscarPromoted: true,
+      liveOscarMcapTier: 'prod',
+    };
+
+    const attached = attachCopyLeaderDiscoveryStagedEntryTopUp(ot, {
+      paperCfg,
+      entryTs: Date.now() - 30_000,
+      entryPriceUsd: 0.0045,
+      entryMcapUsd: 5_000_000,
+      tradeTier: 'prod',
+    });
+    expect(attached).toBe(true);
+
+    const st = ot.liveStagedEntry!;
+    expect(st.signalPriceUsd).toBe(0.0045);
+    expect(entrySplitLegDoneFromState(st, 1)).toBe(true);
+    expect(st.entrySplitLeg2Done).toBe(false);
+    expect(st.avgSecondLegUsd).toBe(1000);
+    expect(st.avgThirdLegUsd).toBe(1000);
+    expect(st.avgFirstLegDone).toBe(false);
+    expect(ot.totalInvestedUsd).toBe(1000);
+  });
+
+  it('uses low-tier avg sizing from entry mcap on discovery top-up', () => {
     for (const key of [
       'PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED',
       'PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD',
@@ -159,30 +218,61 @@ describe('copy-leader exit adopt staged entry', () => {
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD = '500';
     process.env.PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD = '500';
 
-    const mint = 'MintCopyLowStg1111111111111111111111111111111';
-    const promotedAt = Date.now() - 90_000;
-    const statePath = writeCopyState({
-      mint,
-      promotedAt,
+    const paperCfg = stagedEntryPaperCfg();
+    const ot: OpenTrade = {
+      mint: 'MintCopyLowStg1111111111111111111111111111111',
+      symbol: 'LOW',
+      lane: 'post_migration',
+      metricType: 'price',
+      dex: 'raydium',
+      entryTs: Date.now() - 90_000,
+      entryMcUsd: 0.002,
+      entryMarketCapUsd: 2_500_000,
+      entryMetrics: {
+        uniqueBuyers: 0,
+        uniqueSellers: 0,
+        sumBuySol: 0,
+        sumSellSol: 0,
+        topBuyerShare: 0,
+        bcProgress: 0,
+      },
+      peakMcUsd: 0.002,
+      peakPnlPct: 0,
+      trailingArmed: false,
+      legs: [
+        {
+          ts: Date.now() - 90_000,
+          price: 0.002,
+          marketPrice: 0.002,
+          sizeUsd: 500,
+          reason: 'open',
+        },
+      ],
+      partialSells: [],
+      totalInvestedUsd: 500,
+      avgEntry: 0.002,
+      avgEntryMarket: 0.002,
+      remainingFraction: 1,
+      dcaUsedLevels: new Set(),
+      dcaUsedIndices: new Set(),
+      ladderUsedLevels: new Set(),
+      ladderUsedIndices: new Set(),
+      pairAddress: null,
+      entryLiqUsd: null,
+      copyToOscarPromoted: true,
+    };
+
+    attachCopyLeaderDiscoveryStagedEntryTopUp(ot, {
+      paperCfg,
+      entryTs: Date.now() - 60_000,
       entryPriceUsd: 0.002,
       entryMcapUsd: 2_500_000,
-      costBasisUsd: 500,
+      tradeTier: 'low',
     });
-    const paperCfg = stagedEntryPaperCfg();
-    const open = new Map<string, OpenTrade>();
 
-    await adoptCopyLeaderExitOpens({
-      open,
-      paperCfg,
-      statePath,
-      resolveMcapUsd: mockResolveMcap(2_500_000),
-    });
-    const ot = open.get(mint)!;
     expect(ot.liveOscarMcapTier).toBe('low');
-    expect(ot.entryMarketCapUsd).toBe(2_500_000);
-    const st = ot.liveStagedEntry!;
-    expect(st.avgSecondLegUsd).toBe(500);
-    expect(st.avgThirdLegUsd).toBe(500);
+    expect(ot.liveStagedEntry!.avgSecondLegUsd).toBe(500);
+    expect(ot.liveStagedEntry!.avgThirdLegUsd).toBe(500);
   });
 
   it('blocks adopt when mcap is below discovery threshold', async () => {
@@ -234,7 +324,7 @@ describe('copy-leader exit adopt staged entry', () => {
     expect(r.blockReason).toBe('mcap_unknown');
   });
 
-  it('retro-attaches liveStagedEntry when open exists without plan', async () => {
+  it('skips adopt when open already exists (no retro staged entry)', async () => {
     const mint = 'MintCopyRetroStg111111111111111111111111111111';
     const promotedAt = Date.now() - 60_000;
     const entryPriceUsd = 0.0033;
@@ -292,25 +382,15 @@ describe('copy-leader exit adopt staged entry', () => {
       liveWaveFlatTpMode: 'half8_runner',
     });
 
-    const journal: Record<string, unknown>[] = [];
     const r = await adoptCopyLeaderExitOpens({
       open,
       paperCfg,
       statePath,
       resolveMcapUsd: mockResolveMcap(6_000_000),
-      journalLiveStrategy: (body) => journal.push(body),
     });
 
     expect(r.adopted).toEqual([]);
-    expect(r.retroAttachedStagedEntry).toEqual([mint]);
-    expect(r.skippedAlreadyOpen).toEqual([]);
-    const ot = open.get(mint)!;
-    expect(ot.entryMarketCapUsd).toBe(6_000_000);
-    expect(ot.liveOscarMcapTier).toBe('prod');
-    const st = ot.liveStagedEntry!;
-    expect(st.signalPriceUsd).toBe(entryPriceUsd);
-    expect(st.avgSecondLegUsd).toBe(1000);
-    expect(st.avgThirdLegUsd).toBe(1000);
-    expect(journal.some((j) => j.kind === 'live_staged_entry_attached')).toBe(true);
+    expect(r.skippedAlreadyOpen).toEqual([mint]);
+    expect(open.get(mint)!.liveStagedEntry).toBeUndefined();
   });
 });

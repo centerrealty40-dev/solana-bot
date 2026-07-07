@@ -154,6 +154,10 @@ import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-hea
 import type { LiveOpenPositionHotTickPaperContext } from '../live/open-position-hot-tick.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
 import { applyCopyToOscarPromotionAccounting } from '../live/copy-to-oscar-promotion.js';
+import {
+  attachCopyLeaderDiscoveryStagedEntryTopUp,
+  resolveCopyLeaderAdoptTier,
+} from '../live/copy-leader-exit-adopt.js';
 import { scheduleSignalLabPreBuyOpen } from '../live/signal-lab.js';
 import { serializeOpenTrade } from '../live/strategy-snapshot.js';
 import { cancelLivePostCloseTailSweepForMint } from '../live/post-close-tail-sweep.js';
@@ -1614,6 +1618,70 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         } else if (open.has(d.mint)) {
           const incomingLane = resolveDecisionTradeLane(d);
           const existing = open.get(d.mint)!;
+          if (
+            existing.copyToOscarPromoted &&
+            !existing.liveStagedEntry &&
+            incomingLane === 'prod' &&
+            liveStagedEntryActiveForDecision(d)
+          ) {
+            const stagedEntrySignal = resolveLiveStagedEntrySignal({
+              mint: d.mint,
+              symbol: d.symbol,
+              lane: d.lane,
+              source: d.source,
+              currentPriceUsd: d.features.price_usd,
+              marketCapUsd: d.features.market_cap_usd ?? null,
+              holderCount: d.features.holders ?? null,
+            });
+            if (stagedEntrySignal.ok) {
+              const mcapUsd =
+                d.features.market_cap_usd ?? existing.entryMarketCapUsd ?? null;
+              const tierFromDecision = d.liveOscarMcapTier;
+              const tier =
+                tierFromDecision === 'micro' ||
+                tierFromDecision === 'low' ||
+                tierFromDecision === 'prod'
+                  ? tierFromDecision
+                  : resolveCopyLeaderAdoptTier(cfg, mcapUsd).tradeTier;
+              if (tier && mcapUsd != null && mcapUsd > 0) {
+                if (
+                  attachCopyLeaderDiscoveryStagedEntryTopUp(existing, {
+                    paperCfg: cfg,
+                    entryTs: stagedEntrySignal.signal.signalTs,
+                    entryPriceUsd: stagedEntrySignal.signal.signalPriceUsd,
+                    entryMcapUsd: mcapUsd,
+                    tradeTier: tier,
+                  })
+                ) {
+                  clearStagedEntrySignalForConfirmedBuy(existing.mint, {
+                    signalTs: existing.liveStagedEntry!.signalTs,
+                    signalPriceUsd: existing.liveStagedEntry!.signalPriceUsd,
+                    expiresAt: liveStagedEntrySignalExpiresAt(
+                      cfg,
+                      existing.liveStagedEntry!.signalTs,
+                    ),
+                  });
+                  journalLiveStrategy?.({
+                    kind: 'live_staged_entry_attached',
+                    mint: d.mint,
+                    symbol: d.symbol,
+                    entryPath: 'copy_leader_discovery_top_up',
+                    openTrade: serializeOpenTrade(existing),
+                  });
+                  journalAppend({
+                    kind: 'eval-pass-open',
+                    lane: d.lane,
+                    source: d.source,
+                    mint: d.mint,
+                    symbol: d.symbol,
+                    entryPath: 'copy_leader_discovery_top_up',
+                    copyLeaderDiscoveryTopUp: true,
+                  });
+                  continue;
+                }
+              }
+            }
+          }
           const skipReason = liveOscarMintOpenSkipReason({
             open,
             mint: d.mint,

@@ -689,12 +689,6 @@ export async function main(): Promise<void> {
           'live-oscar skipped copy-leader adopt (mcap below threshold or unknown)',
         );
       }
-      if (r.retroAttachedStagedEntry.length > 0) {
-        log.info(
-          { mints: r.retroAttachedStagedEntry.map((m) => m.slice(0, 8)) },
-          'live-oscar retro-attached staged entry on copy-leader adopt opens',
-        );
-      }
     },
     onMintFullClose: (mint, openTrade) => {
       const cleared = onOscarFullCloseCopyHandoffMint({

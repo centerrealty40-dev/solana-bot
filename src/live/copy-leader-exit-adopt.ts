@@ -107,7 +107,6 @@ export function resolveCopyLeaderAdoptTier(
 
 export type CopyLeaderExitAdoptResult = {
   adopted: string[];
-  retroAttachedStagedEntry: string[];
   skippedAlreadyOpen: string[];
   skippedHandoffClosed: string[];
   skippedBelowMcap: string[];
@@ -128,8 +127,11 @@ function stampCopyLeaderAdoptTierFields(
   }
 }
 
-/** Mirror discovery `attachLiveStagedEntryPlan`: copy buy = entry-split leg1 + pending avg legs. */
-function attachCopyLeaderLiveStagedEntryPlan(
+/**
+ * Copy-adopted half position later passes discovery independently → attach tier staged-entry plan.
+ * Copy open leg counts as entry-split leg 1; legs 2+ execute via normal tracker lifecycle.
+ */
+export function attachCopyLeaderDiscoveryStagedEntryTopUp(
   ot: OpenTrade,
   args: {
     paperCfg: PaperTraderConfig;
@@ -140,6 +142,7 @@ function attachCopyLeaderLiveStagedEntryPlan(
   },
 ): boolean {
   if (!copyLeaderLiveStagedEntryActive(args.paperCfg)) return false;
+  if (!ot.copyToOscarPromoted || ot.liveStagedEntry) return false;
   const signalPriceUsd =
     args.entryPriceUsd > 0 ? args.entryPriceUsd : ot.avgEntryMarket ?? ot.avgEntry ?? 0;
   if (!(signalPriceUsd > 0)) return false;
@@ -230,10 +233,7 @@ function buildOpenFromCopyLeader(args: {
     };
   }
 
-  attachCopyLeaderLiveStagedEntryPlan(ot, {
-    paperCfg: args.paperCfg,
-    entryTs: args.entryTs,
-    entryPriceUsd: marketPrice,
+  stampCopyLeaderAdoptTierFields(ot, {
     entryMcapUsd: args.entryMcapUsd,
     tradeTier: tier,
   });
@@ -286,24 +286,23 @@ export async function adoptCopyLeaderExitOpens(args: {
   resolveMcapUsd?: ResolveCopyLeaderAdoptMcapUsd;
 }): Promise<CopyLeaderExitAdoptResult> {
   const adopted: string[] = [];
-  const retroAttachedStagedEntry: string[] = [];
   const skippedAlreadyOpen: string[] = [];
   const skippedHandoffClosed: string[] = [];
   const skippedBelowMcap: string[] = [];
   if (!copyLeaderExitAdoptEnabled()) {
-    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
   }
 
   const fp = args.statePath ?? copyLeaderStatePathFromEnv();
   if (!fp) {
-    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
   }
 
   let parsed: { positions?: Record<string, Record<string, unknown>> };
   try {
     parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as typeof parsed;
   } catch {
-    return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
   }
 
   const resolveMcapUsd =
@@ -333,31 +332,7 @@ export async function adoptCopyLeaderExitOpens(args: {
     }
 
     if (args.open.has(mint)) {
-      const existing = args.open.get(mint)!;
-      if (existing.liveStagedEntry) {
-        skippedAlreadyOpen.push(mint);
-        continue;
-      }
-      if (
-        existing.copyToOscarPromoted &&
-        attachCopyLeaderLiveStagedEntryPlan(existing, {
-          paperCfg: args.paperCfg,
-          entryTs,
-          entryPriceUsd,
-          entryMcapUsd: tierCtx.mcapUsd,
-          tradeTier: tierCtx.tradeTier,
-        })
-      ) {
-        retroAttachedStagedEntry.push(mint);
-        args.journalLiveStrategy?.({
-          kind: 'live_staged_entry_attached',
-          mint,
-          entryPath: 'copy_leader_exit_adopt',
-          openTrade: serializeOpenTrade(existing),
-        });
-      } else {
-        skippedAlreadyOpen.push(mint);
-      }
+      skippedAlreadyOpen.push(mint);
       continue;
     }
 
@@ -410,5 +385,5 @@ export async function adoptCopyLeaderExitOpens(args: {
     });
   }
 
-  return { adopted, retroAttachedStagedEntry, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+  return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
 }
