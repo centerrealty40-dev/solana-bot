@@ -1,5 +1,5 @@
 /**
- * Shared collector health assessment for LERA Telegram status/alerts.
+ * Shared collector health assessment for Oscar Telegram status/alerts.
  * Pure helpers — no I/O except where noted in the main script.
  */
 
@@ -204,7 +204,7 @@ export function assessBirdeyeConfig(flags) {
     primary: flags.birdeyePrimary,
     collector: flags.birdeyeCollector,
     wouldBlindIfOff: !enabled,
-    note: enabled ? 'on' : 'off (DexScreener+Shyft cover LERA)',
+    note: enabled ? 'on' : 'off (DexScreener covers Oscar)',
   };
 }
 
@@ -284,10 +284,10 @@ export function formatAgeSec(ageSec) {
 export function buildCollectorHealthBody(ctx) {
   const lines = [];
   const head = ctx.blind
-    ? '🚨 LERA collectors BLIND / degraded'
+    ? '🚨 Oscar collectors BLIND / degraded'
     : ctx.warn
-      ? '⚠️ LERA collectors — warnings'
-      : '✅ LERA collectors OK';
+      ? '⚠️ Oscar collectors — warnings'
+      : '✅ Oscar collectors OK';
   lines.push(head);
 
   const dexLines = ctx.collectors.map((c) => {
