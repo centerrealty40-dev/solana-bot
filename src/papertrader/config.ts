@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { QuoteResilience } from './pricing/jupiter-quote-resilience.js';
 import type { DexId } from './types.js';
+import { isLiveLeraTradingStrategyId } from '../preset-c/live-oscar-family.js';
 import {
   loadPervyyVystrelConfig,
   type PervyyVystrelConfig,
@@ -1834,7 +1835,13 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       if (m === 'stepped_grid') return 'stepped_grid' as const;
       return 'peak' as const;
     })(),
-    liveOscarExitPolicyWaveBEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B, false),
+    liveOscarExitPolicyWaveBEnabled: (() => {
+      const waveOscar = envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B, false);
+      const waveLera = envBool(process.env.PAPER_LIVE_LERA_EXIT_POLICY_WAVE_B, false);
+      const sid = (process.env.PAPER_STRATEGY_ID ?? '').trim();
+      if (isLiveLeraTradingStrategyId(sid)) return waveLera || waveOscar;
+      return waveOscar;
+    })(),
     liveOscarExitPolicyWaveBTrailSellFraction:
       process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_WAVE_B_TRAIL_SELL_FRACTION,
     liveOscarWaveBFlatTpEnabled: envBool(process.env.PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP, false),

@@ -4,7 +4,8 @@
  */
 import type { PaperTraderConfig } from '../config.js';
 import type { OpenTrade } from '../types.js';
-import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
+import type { LiveOscarConfig } from '../../live/config.js';
+import { isLiveOscarFamilyTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { LADDER_PNL_EPS } from './tp-ladder-state.js';
 import {
   stampVariantAOnOpen,
@@ -164,6 +165,24 @@ export const WAVE_B_ARM_MIN_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
 /** Wave B: if modeled remainder notional is below this, any TP/trail partial sells 100% (no dust). */
 export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
+
+/** Whether partial TP/trail sells should flush the full remainder below the tail threshold. */
+export function shouldApplyRemainderFlushOnPartialSell(
+  strategyId: string,
+  ot: OpenTrade,
+): boolean {
+  return isLiveOscarFamilyTradingStrategyId(strategyId) || isWaveBExitPolicy(ot);
+}
+
+export function resolveWaveBRemainderFlushUsd(
+  liveOscarCfg?: Pick<LiveOscarConfig, 'liveTailFlushThresholdUsd'> | null,
+): number {
+  const threshold = liveOscarCfg?.liveTailFlushThresholdUsd;
+  if (typeof threshold === 'number' && Number.isFinite(threshold) && threshold > 0) {
+    return threshold;
+  }
+  return WAVE_B_TRAIL_FLUSH_REMAIN_USD;
+}
 /** Max single-tick MTM jump vs last observed price for peak / trail / TP (anti ghost-quote). */
 export const WAVE_B_MTM_MAX_TICK_JUMP_FRAC = 0.12;
 
@@ -543,12 +562,13 @@ export function waveBAdjustSellFractionForRemainder(
   remainingValueNetUsd: number,
   requestedFraction: number,
   _cfg?: PaperTraderConfig,
+  flushRemainUsd: number = WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 ): number {
   if (!(requestedFraction > 1e-12)) return 0;
-  if (remainingValueNetUsd <= WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
+  if (remainingValueNetUsd <= flushRemainUsd) return 1;
   const frac = Math.min(1, requestedFraction);
   const afterRemainUsd = remainingValueNetUsd * (1 - frac);
-  if (afterRemainUsd < WAVE_B_TRAIL_FLUSH_REMAIN_USD) return 1;
+  if (afterRemainUsd < flushRemainUsd) return 1;
   return frac;
 }
 
@@ -556,17 +576,19 @@ export function waveBAdjustSellFractionForRemainder(
 export function waveBTrailSellFractionForRemainder(
   remainingValueNetUsd: number,
   cfg: PaperTraderConfig,
+  flushRemainUsd: number = WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 ): number {
   return waveBAdjustSellFractionForRemainder(
     remainingValueNetUsd,
     waveBTrailSellFraction(cfg),
     cfg,
+    flushRemainUsd,
   );
 }
 
 /** Stamp policy on first open (before journal). */
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
-  if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return;
+  if (!isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return;
   if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
   if (stampRunnerLiteExitPolicyOnOpen(ot, cfg)) return;
   if (stampRunnerProbeExitPolicyOnOpen(ot, cfg)) return;
@@ -600,7 +622,7 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
  * Wave-B opens keep their stamped overrides.
  */
 export function ensureLiveOscarExitPolicyPinned(ot: OpenTrade, cfg?: PaperTraderConfig): void {
-  if (cfg != null && !isLiveOscarTradingStrategyId(cfg.strategyId)) return;
+  if (cfg != null && !isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return;
   if (isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot) || isVariantAHybridExitPolicy(ot)) return;
   if (!ot.liveExitPolicyId) ot.liveExitPolicyId = 'legacy_grid';
   if (ot.liveExitPolicyId !== 'legacy_grid') return;
@@ -678,7 +700,7 @@ export function resolveLiveOscarExitPolicyForTick(
   cfg: PaperTraderConfig,
   pnlFrac?: number,
 ): boolean {
-  if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return false;
+  if (!isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return false;
   if (isPresetCScalpExitPolicy(ot) || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot)) return false;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {
     return migrateLegacyOpenToWaveB(ot, pnlFrac);

@@ -53,6 +53,7 @@ import {
   isLiveOscarMainStrategyId,
   isLiveOscarPresetCStrategyId,
   isLiveOscarTradingStrategyId,
+  isLiveOscarFamilyTradingStrategyId,
 } from '../preset-c/live-oscar-family.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
@@ -2438,7 +2439,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           }
         }
 
-        if (isLiveOscarTradingStrategyId(cfg.strategyId)) stampLiveOscarExitPolicyOnOpen(ot, cfg);
+        if (isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) stampLiveOscarExitPolicyOnOpen(ot, cfg);
         if (isLiveOscarPresetCStrategyId(cfg.strategyId) && !d._presetCScalpFromPending) {
           stampPresetCTgDedupeKeysOnOpen(ot);
         }
