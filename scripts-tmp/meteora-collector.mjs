@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import pg from 'pg';
 import { mergePaper2OpenMintSnapshots } from './paper2-open-snapshot-enrich.mjs';
-import { enrichCollectorRowsWithBirdeye } from './birdeye-collector-enrich.mjs';
 import { createCollectorFetchJsonWithRetry } from './collector-http-fetch.mjs';
+import { fetchPrimarySnapshotRows } from './collector-primary-fetch.mjs';
 
 const { Pool } = pg;
 
@@ -273,11 +273,16 @@ async function collectOneTick() {
   let enrichUpserted = 0;
 
   try {
-    primaryRows = await fetchFromDexScreener(bucketTs);
-    if (primaryRows.length === 0) {
-      sourceUsed = 'geckoterminal';
-      primaryRows = await fetchFromGeckoTrending(bucketTs);
-    }
+    ({ primaryRows, sourceUsed } = await fetchPrimarySnapshotRows({
+      dexSource: 'meteora',
+      bucketTs,
+      searchTerms: DEX_SEARCH_TERMS,
+      fetchFromDexScreener,
+      fetchFromGeckoTrending,
+      fetchJsonWithRetry,
+      sleep,
+      log,
+    }));
 
     // Persist primary search bucket first — MAX(ts) must advance even if enrich hits 429.
     primaryUpserted = await upsertSnapshots(primaryRows);
@@ -294,18 +299,6 @@ async function collectOneTick() {
         log,
         component: 'meteora-collector',
       });
-      const birdeyeEnriched = await enrichCollectorRowsWithBirdeye({
-        rows: finalRows,
-        bucketTs,
-        sourceTag: 'meteora',
-        fetchImpl: fetch,
-        fetchJsonWithRetry: fetchJsonEnrich,
-        normalizeDexPair: normalizeDexScreenerPair,
-        dedupByPairAddress,
-        log,
-        component: 'meteora-collector',
-      });
-      finalRows = birdeyeEnriched.rows;
       if (finalRows.length > primaryRows.length) {
         enrichUpserted = await upsertSnapshots(finalRows);
       }
