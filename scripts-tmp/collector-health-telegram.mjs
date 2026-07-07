@@ -1,5 +1,5 @@
 /**
- * Unified Oscar collector health → Telegram status + immediate blind alerts.
+ * Unified Oscar collector health → Telegram `[HEALTH][collector_status]` every 30m (OK or BLIND).
  *
  * PM2: sa-collector-health-telegram
  *
@@ -42,8 +42,6 @@ import {
   parseLastShyftStatusFromJsonlTail,
   parseSkipSources,
   parseCollectorTickStaleOverrides,
-  shouldSendBlindAlert,
-  shouldSendStatusReport,
 } from './collector-health-lib.mjs';
 
 const { Pool } = pg;
@@ -441,42 +439,17 @@ async function tick(pool) {
     }),
   );
 
-  const prevBlind = state.blind === true;
-  const sendAlert = shouldSendBlindAlert(prevBlind, ctx.blind, state.lastAlertAt ?? 0, nowMs, ALERT_REPEAT_MS);
-  const sendRecoveryStatus = shouldSendStatusReport(
-    ctx.blind || ctx.warn,
-    state.lastStatusAt ?? 0,
-    nowMs,
-    STATUS_INTERVAL_MS,
-    true,
-    prevBlind,
-  );
-  const sendPeriodicOk =
-    !ctx.blind &&
-    !ctx.warn &&
-    shouldSendStatusReport(false, state.lastStatusAt ?? 0, nowMs, STATUS_INTERVAL_MS, false, prevBlind);
+  const duePeriodic = nowMs - (state.lastStatusAt ?? 0) >= STATUS_INTERVAL_MS;
 
-  if (sendAlert) {
-    state.lastAlertAt = nowMs;
+  /** Every 30m: always send [HEALTH][collector_status] (OK or BLIND body). No silence when degraded. */
+  if (duePeriodic) {
     if (!DRY_RUN && TELEGRAM_ON) {
-      await sendTagged('ALERT', 'collector_blind', body, { skipQuietHours: true });
-    } else {
-      console.log(`[ALERT][collector_blind]\n${body}`);
-    }
-  } else if (sendRecoveryStatus && prevBlind && !ctx.blind) {
-    if (!DRY_RUN && TELEGRAM_ON) {
-      await sendTagged('HEALTH', 'collector_status', body, { skipQuietHours: true });
+      const sent = await sendTagged('HEALTH', 'collector_status', body, { skipQuietHours: true });
+      if (sent) state.lastStatusAt = nowMs;
     } else {
       console.log(`[HEALTH][collector_status]\n${body}`);
+      state.lastStatusAt = nowMs;
     }
-    state.lastStatusAt = nowMs;
-  } else if (sendPeriodicOk || (sendRecoveryStatus && !ctx.blind && ctx.warn)) {
-    if (!DRY_RUN && TELEGRAM_ON) {
-      await sendTagged('HEALTH', 'collector_status', body, { skipQuietHours: true });
-    } else {
-      console.log(`[HEALTH][collector_status]\n${body}`);
-    }
-    state.lastStatusAt = nowMs;
   }
 
   state.blind = ctx.blind;

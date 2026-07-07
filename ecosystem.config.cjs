@@ -567,7 +567,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** [HEALTH][collector_status] periodic + [ALERT][collector_blind] on degradation (2 min poll). */
+        /** [HEALTH][collector_status] every 30m — OK or BLIND body (2 min poll). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_TELEGRAM: '1',
         COLLECTOR_HEALTH_POLL_MS: '120000',
@@ -579,8 +579,7 @@ const PM2_APPS = [
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '900',
         SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
         COLLECTOR_HEALTH_LIVE_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
-        TELEGRAM_COOLDOWN_ALERT_COLLECTOR_BLIND_MS: '300000',
-        TELEGRAM_COOLDOWN_HEALTH_COLLECTOR_STATUS_MS: '1700000',
+        TELEGRAM_COOLDOWN_HEALTH_COLLECTOR_STATUS_MS: '0',
       },
     },
     {
@@ -1412,23 +1411,8 @@ const PM2_APPS = [
          */
         LIVE_BUY_MAX_CHASE_PCT: '3',
 
-        /**
-         * 1.11.235 — Telegram heartbeat: слать `[HEALTH][live_oscar_pulse]` сообщения
-         * только когда есть отклонения. Пользователь жаловался: "не надо мне присылать,
-         * нужно только сообщения, когда есть проблемы".
-         *
-         * Что считается отклонением (триггерит pulse):
-         *   - `stats.errors > 0` (runtime errors в дискавери/трекере)
-         *   - `consec_sim_fail > 0` (streak неудачных симуляций — QN/Jupiter проблема)
-         *   - `snapshot stale` (PG-снимки отстают от now() > порога)
-         *
-         * `snapshot_stale` ALERT — отправляется ВСЕГДА отдельным каналом
-         * (он не зависит от этого флага, это диагностика реальной PG-проблемы).
-         *
-         * `0` (или не задано) — старое поведение, слать pulse каждые ~10 минут.
-         * `1` — silent при нормальной работе.
-         */
-        LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT: '1',
+        /** `[HEALTH][live_oscar_pulse]` выключен — статус коллекторов только через sa-collector-health-telegram. */
+        LIVE_TELEGRAM_HEARTBEAT: '0',
 
         /**
          * 1.11.231 — TTL для кэша `getTokenAccountsByOwner` (баланс SPL-кошелька).
@@ -1596,13 +1580,11 @@ const PM2_APPS = [
         PAPER_DYNAMIC_KILLSTOP_SHADOW_SUPPORT_CLUSTER_PCT: '3',
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_TOUCHES: '2',
         PAPER_DYNAMIC_KILLSTOP_SHADOW_MIN_HOURLY_SAMPLES: '72',
-        /** Live JSONL + `[HEALTH][live_oscar_pulse]` Telegram (uses `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`). Отключить TG: `LIVE_TELEGRAM_HEARTBEAT=0`. */
+        /** Live JSONL; TG pulse off (`LIVE_TELEGRAM_HEARTBEAT=0`). Collector status: sa-collector-health-telegram. */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         /**
-         * 1m heartbeat: `live-discovery-health.json` must stay fresher than
-         * `COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS` (120s) so sa-collector-health-telegram
-         * can send periodic `✅ Oscar collectors OK` (LERA parity). Pulse TG suppressed via
-         * `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=1`.
+         * 1m heartbeat: keeps `live-discovery-health.json` fresh for sa-collector-health-telegram
+         * (`COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS` = 120s).
          */
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
